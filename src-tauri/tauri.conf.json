@@ -1,0 +1,32 @@
+{
+  "$schema": "https://schema.tauri.app/config/2.0.0",
+  "productName": "RAC Desktop",
+  "version": "0.1.0",
+  "identifier": "com.rac.desktop",
+  "build": {
+    "beforeDevCommand": "cd ../frontend && bun run dev -- --port 5190",
+    "devUrl": "http://localhost:5190",
+    "beforeBuildCommand": "cd ../frontend && bun run build",
+    "frontendDist": "../frontend/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "RAC Desktop",
+        "width": 1400,
+        "height": 900,
+        "minWidth": 1200,
+        "minHeight": 700,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": false,
+    "targets": "all"
+  }
+}
