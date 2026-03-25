@@ -32,9 +32,9 @@ impl BackendProcessManager {
         if next_to_exe.exists() {
             return Ok(next_to_exe);
         }
-        // When run from desktop/: CARGO_MANIFEST_DIR = desktop/src-tauri
-        if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
-            let base = std::path::Path::new(&manifest_dir);
+        // When run from desktop/: CARGO_MANIFEST_DIR = desktop/src-tauri (baked at compile time)
+        {
+            let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
             // desktop/target/release or desktop/target/debug
             for subdir in ["release", "debug"] {
                 let p = base.join("../../target").join(subdir).join("rac-server");
@@ -75,8 +75,8 @@ impl BackendProcessManager {
             .env("PORT", port.to_string())
             .env("RUST_LOG", std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()))
             .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
             .spawn()
             .context("Failed to spawn rac-server")?;
 
@@ -97,9 +97,14 @@ impl BackendProcessManager {
 
     fn wait_for_health(base_url: &str) -> Result<()> {
         let url = format!("{}/health", base_url);
+        let client = reqwest::blocking::Client::builder()
+            .connect_timeout(Duration::from_secs(1))
+            .timeout(Duration::from_secs(2))
+            .build()
+            .context("Failed to build HTTP client")?;
         let deadline = Instant::now() + Duration::from_secs(HEALTH_TIMEOUT_SECS);
         while deadline > Instant::now() {
-            if let Ok(resp) = reqwest::blocking::get(&url) {
+            if let Ok(resp) = client.get(&url).send() {
                 if resp.status().is_success() {
                     return Ok(());
                 }

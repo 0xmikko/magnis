@@ -28,7 +28,9 @@ impl AppPaths {
         std::fs::create_dir_all(&plugins_dir)
             .context("Failed to create plugins directory")?;
 
-        let db_path = app_data_dir.join("rac.db");
+        let db_path = std::env::var("DB_PATH")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| app_data_dir.join("rac.db"));
 
         Ok(Self {
             app_data_dir,
