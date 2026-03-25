@@ -135,7 +135,10 @@ impl Drop for BackendProcessManager {
     }
 }
 
-/// Pick a port for the backend. Uses DEFAULT_PORT; could be extended to try next if in use.
+/// Pick a port for the backend. Reads RAC_BACKEND_PORT env var, falls back to DEFAULT_PORT.
 pub fn pick_port() -> u16 {
-    DEFAULT_PORT
+    std::env::var("RAC_BACKEND_PORT")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(DEFAULT_PORT)
 }

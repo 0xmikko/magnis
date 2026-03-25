@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "identifier": "com.rac.desktop",
   "build": {
-    "beforeDevCommand": "cd ../frontend && bun run dev -- --port 5190",
+    "beforeDevCommand": "cd ../frontend && RAC_BACKEND_PORT=3765 bun run dev -- --port 5190",
     "devUrl": "http://localhost:5190",
     "beforeBuildCommand": "cd ../frontend && bun run build",
     "frontendDist": "../frontend/dist"
