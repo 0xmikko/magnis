@@ -18,7 +18,7 @@ fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
     let app_paths = AppPaths::init()?;
-    println!("RAC Desktop starting...");
+    println!("Magnis starting...");
     println!("App data dir: {:?}", app_paths.app_data_dir());
     println!("Database path: {:?}", app_paths.db_path());
 

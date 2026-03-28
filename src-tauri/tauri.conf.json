@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2.0.0",
-  "productName": "RAC Desktop",
+  "productName": "Magnis",
   "version": "0.1.0",
   "identifier": "com.rac.desktop",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "RAC Desktop",
+        "title": "Magnis",
         "width": 1400,
         "height": 900,
         "minWidth": 1200,
