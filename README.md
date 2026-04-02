@@ -2,7 +2,7 @@
 
 A system for turning communication into context, memory, and action.
 
-→ [Try Magnis](https://magnis.ai)
+→ Live demo: https://magnis.ai (early prototype)
 
 ## Why
 
@@ -47,3 +47,8 @@ See [docs/architecture.md](docs/architecture.md)
 Early-stage research and development.
 
 Building in public.
+
+## Links
+
+- Live demo: https://magnis.ai
+- Repository: https://github.com/0xmikko/magnis
