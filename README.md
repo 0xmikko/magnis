@@ -4,33 +4,74 @@ A system for turning communication into context, memory, and action.
 
 → Live demo: https://magnis.ai (early prototype)
 
-## Why
+---
 
-Most work happens in fragmented communication:
-- chats
-- emails
-- notes
-- discussions
+## About
 
-This context is usually lost, unstructured, and hard to act on.
+I’m building Gearbox Protocol — onchain credit infrastructure for DeFi.
 
-Magnis explores how to turn communication into a system.
+Over time, I ran into a different kind of problem.
 
-## Core idea
+Not in code — but in how systems are coordinated.
 
-Magnis treats communication as part of the system.
+Most of the work doesn’t live in logic.  
+It lives in communication.
+
+Messages, emails, discussions — that’s where decisions happen.
+
+But this layer is not structured, not persistent, and not executable.
+
+Magnis started as an attempt to fix that.
+
+---
+
+## The shift
+
+Most systems today assume:
+- data is structured
+- decisions are explicit
+- execution is well-defined
+
+In reality:
+- context lives in chats
+- decisions are buried in threads
+- knowledge is lost over time
+
+There is no system — only communication.
+
+---
+
+## Why this matters
+
+Most work is communication.
+
+Magnis makes it:
+- faster
+- more precise
+- context-aware
+
+It builds a graph of:
+people, messages, relationships, history.
+
+Agents operate on this context.
+
+Everything stays local.
+
+---
+
+## What Magnis is
+
+Magnis treats communication as a system primitive.
 
 It turns:
-- messages → structured context
+- messages → data
+- data → context
 - context → memory
 - memory → actions
 
-## What it is
+Not as logs — but as a working system.
 
-Magnis is a local-first system that:
-- connects to external sources
-- builds a unified graph of people, messages, projects, and events
-- enables agents to operate on real context
+---
 
 ## Architecture
 
@@ -42,11 +83,15 @@ Magnis is built around:
 
 See [docs/architecture.md](docs/architecture.md)
 
+---
+
 ## Status
 
-Early-stage research and development.
+Early-stage research.
 
 Building in public.
+
+---
 
 ## Links
 
