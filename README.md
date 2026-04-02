@@ -1,5 +1,8 @@
 # Magnis
+
 A system for turning communication into context, memory, and action.
+
+→ [Try Magnis](https://magnis.ai)
 
 ## Why
 
