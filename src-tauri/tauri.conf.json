@@ -2,9 +2,9 @@
   "$schema": "https://schema.tauri.app/config/2.0.0",
   "productName": "Magnis",
   "version": "0.1.0",
-  "identifier": "com.rac.desktop",
+  "identifier": "com.magnis.desktop",
   "build": {
-    "beforeDevCommand": "cd ../frontend && RAC_BACKEND_PORT=3765 VITE_API_URL=http://localhost:5190 bun run dev -- --port 5190",
+    "beforeDevCommand": "cd ../frontend && MAGNIS_BACKEND_PORT=3765 VITE_API_URL=http://localhost:5190 bun run dev -- --port 5190",
     "devUrl": "http://localhost:5190",
     "beforeBuildCommand": "cd ../frontend && bun run build",
     "frontendDist": "../../frontend/dist"

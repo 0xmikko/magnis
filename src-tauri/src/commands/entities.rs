@@ -1,4 +1,4 @@
-use rac_core::{Entity, EntityId};
+use magnis_core::{Entity, EntityId};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 

@@ -1,4 +1,4 @@
-use rac_core::ContextId;
+use magnis_core::ContextId;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 

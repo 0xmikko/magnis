@@ -59,11 +59,11 @@ sudo pacman -S webkit2gtk-4.1 \
 ### "Failed to find libwebkit2gtk"
 Install webkit2gtk-4.1-dev (Ubuntu/Debian) or webkit2gtk4.1-devel (Fedora)
 
-### "Failed to link @rac/core"
+### "Failed to link @magnis/core"
 Ensure the backend-ts/core symlink exists:
 ```bash
-mkdir -p frontend/node_modules/@rac
-ln -sf ../../backend-ts/core frontend/node_modules/@rac/core
+mkdir -p frontend/node_modules/@magnis
+ln -sf ../../backend-ts/core frontend/node_modules/@magnis/core
 ```
 
 ### Port 5173 already in use

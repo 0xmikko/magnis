@@ -1,4 +1,4 @@
-//! Spawns the rac-server binary as a child process and manages its lifecycle.
+//! Spawns the magnis-server binary as a child process and manages its lifecycle.
 //! The frontend connects to the server via HTTP (RPC) at the returned base URL.
 
 use anyhow::{Context, Result};
@@ -12,7 +12,7 @@ const DEFAULT_PORT: u16 = 3765;
 const HEALTH_POLL_INTERVAL_MS: u64 = 100;
 const HEALTH_TIMEOUT_SECS: u64 = 15;
 
-/// Manages the rac-server child process and exposes its base URL for the frontend.
+/// Manages the magnis-server child process and exposes its base URL for the frontend.
 pub struct BackendProcessManager {
     child: Option<Child>,
     base_url: String,
@@ -21,14 +21,14 @@ pub struct BackendProcessManager {
 }
 
 impl BackendProcessManager {
-    /// Resolve path to rac-server binary (next to current exe, or repo/desktop target dir).
+    /// Resolve path to magnis-server binary (next to current exe, or repo/desktop target dir).
     fn server_binary_path() -> Result<std::path::PathBuf> {
         let current_exe =
             std::env::current_exe().context("Failed to get current executable path")?;
         let parent = current_exe
             .parent()
             .context("Executable has no parent directory")?;
-        let next_to_exe = parent.join("rac-server");
+        let next_to_exe = parent.join("magnis-server");
         if next_to_exe.exists() {
             return Ok(next_to_exe);
         }
@@ -37,33 +37,33 @@ impl BackendProcessManager {
             let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
             // desktop/target/release or desktop/target/debug
             for subdir in ["release", "debug"] {
-                let p = base.join("../../target").join(subdir).join("rac-server");
+                let p = base.join("../../target").join(subdir).join("magnis-server");
                 if p.exists() {
                     return Ok(p.canonicalize()?);
                 }
             }
             // Repo root target (when desktop is in repo/desktop): repo/target/release
             for subdir in ["release", "debug"] {
-                let p = base.join("../../../target").join(subdir).join("rac-server");
+                let p = base.join("../../../target").join(subdir).join("magnis-server");
                 if p.exists() {
                     return Ok(p.canonicalize()?);
                 }
             }
         }
         // Explicit path for packaging
-        if let Ok(path) = std::env::var("RAC_SERVER_PATH") {
+        if let Ok(path) = std::env::var("MAGNIS_SERVER_PATH") {
             let p = std::path::Path::new(&path);
             if p.exists() {
                 return Ok(p.to_path_buf());
             }
         }
         anyhow::bail!(
-            "rac-server binary not found. From repo root run: cargo build -p rac-server --release. \
-             Or set RAC_SERVER_PATH to the binary path."
+            "magnis-server binary not found. From repo root run: cargo build -p magnis-server --release. \
+             Or set MAGNIS_SERVER_PATH to the binary path."
         )
     }
 
-    /// Spawn rac-server with DB_PATH and PORT; wait for /health to return 200.
+    /// Spawn magnis-server with DB_PATH and PORT; wait for /health to return 200.
     pub fn start(db_path: &std::path::Path, port: u16) -> Result<Self> {
         let bin = Self::server_binary_path()?;
         let db_path_str = db_path
@@ -78,7 +78,7 @@ impl BackendProcessManager {
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
             .spawn()
-            .context("Failed to spawn rac-server")?;
+            .context("Failed to spawn magnis-server")?;
 
         let base_url = format!("http://127.0.0.1:{}", port);
         let stopped = Arc::new(AtomicBool::new(false));
@@ -140,9 +140,9 @@ impl Drop for BackendProcessManager {
     }
 }
 
-/// Pick a port for the backend. Reads RAC_BACKEND_PORT env var, falls back to DEFAULT_PORT.
+/// Pick a port for the backend. Reads MAGNIS_BACKEND_PORT env var, falls back to DEFAULT_PORT.
 pub fn pick_port() -> u16 {
-    std::env::var("RAC_BACKEND_PORT")
+    std::env::var("MAGNIS_BACKEND_PORT")
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(DEFAULT_PORT)

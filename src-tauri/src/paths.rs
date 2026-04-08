@@ -14,7 +14,7 @@ impl AppPaths {
     pub fn init() -> Result<Self> {
         let app_data_dir = dirs::data_dir()
             .context("Failed to get data directory")?
-            .join("com.rac.desktop");
+            .join("com.magnis.desktop");
 
         // Create directories if they don't exist
         std::fs::create_dir_all(&app_data_dir)
@@ -30,7 +30,7 @@ impl AppPaths {
 
         let db_path = std::env::var("DB_PATH")
             .map(PathBuf::from)
-            .unwrap_or_else(|_| app_data_dir.join("rac.db"));
+            .unwrap_or_else(|_| app_data_dir.join("magnis.db"));
 
         Ok(Self {
             app_data_dir,

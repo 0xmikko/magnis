@@ -102,9 +102,9 @@ This ensures that:
 ## Database Location
 
 The Tauri app stores its database at:
-- **Linux**: `~/.local/share/rac-desktop/rac.db`
-- **macOS**: `~/Library/Application Support/rac-desktop/rac.db`
-- **Windows**: `%APPDATA%\rac-desktop\rac.db`
+- **Linux**: `~/.local/share/magnis-desktop/magnis.db`
+- **macOS**: `~/Library/Application Support/magnis-desktop/magnis.db`
+- **Windows**: `%APPDATA%\magnis-desktop\magnis.db`
 
 ## Environment Variables
 
@@ -165,7 +165,7 @@ To complete Tauri integration:
 ### Modified Files (3):
 - `desktop/src-tauri/src/main.rs` - Service initialization and command registration
 - `desktop/src-tauri/src/commands/mod.rs` - Export new command modules
-- `desktop/src-tauri/Cargo.toml` - Add rac-api dependency
+- `desktop/src-tauri/Cargo.toml` - Add magnis-api dependency
 
 ## Testing
 

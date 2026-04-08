@@ -11,7 +11,7 @@ use paths::AppPaths;
 use std::sync::Mutex;
 use tauri::Manager;
 
-/// Shared state for the backend process (spawned rac-server). Used to expose base_url and to stop on exit.
+/// Shared state for the backend process (spawned magnis-server). Used to expose base_url and to stop on exit.
 pub struct BackendState(pub Mutex<BackendProcessManager>);
 
 fn main() -> anyhow::Result<()> {

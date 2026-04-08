@@ -1,4 +1,4 @@
-use rac_core::Event;
+use magnis_core::Event;
 use serde::Deserialize;
 use serde_json::Value;
 

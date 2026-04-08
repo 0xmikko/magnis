@@ -1,5 +1,5 @@
-use rac_api::embeddings::EmbeddingService;
-use rac_application::services::*;
+use magnis_api::embeddings::EmbeddingService;
+use magnis_application::services::*;
 use std::sync::Arc;
 
 /// Tauri application state containing all services

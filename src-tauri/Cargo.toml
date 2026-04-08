@@ -1,12 +1,12 @@
 [workspace]
 
 [package]
-name = "rac-desktop"
+name = "magnis-desktop"
 version = "0.1.0"
 edition = "2021"
 
 [[bin]]
-name = "rac-desktop"
+name = "magnis-desktop"
 path = "src/main.rs"
 
 [dependencies]

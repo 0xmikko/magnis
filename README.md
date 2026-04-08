@@ -103,11 +103,11 @@ See `src/commands/` for implementation details.
 
 On first run, the app creates directories:
 
-- **macOS**: `~/Library/Application Support/com.rac.desktop/`
-- **Linux**: `~/.local/share/com.rac.desktop/`
-- **Windows**: `%APPDATA%\com.rac.desktop\`
+- **macOS**: `~/Library/Application Support/com.magnis.desktop/`
+- **Linux**: `~/.local/share/com.magnis.desktop/`
+- **Windows**: `%APPDATA%\com.magnis.desktop\`
 
 Contains:
-- `rac.db` - SQLite database
+- `magnis.db` - SQLite database
 - `logs/` - Application logs
 - `plugins/` - Plugin directory
