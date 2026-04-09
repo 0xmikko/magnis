@@ -70,6 +70,8 @@ impl BackendProcessManager {
             .to_str()
             .context("Database path is not valid UTF-8")?;
 
+        // Pass the repo .env file path so the backend loads the same config as standalone mode.
+        // DB_PATH overrides DATABASE_URL inside the backend's resolve_database_url().
         let child = Command::new(&bin)
             .env("DB_PATH", db_path_str)
             .env("PORT", port.to_string())

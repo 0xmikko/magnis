@@ -11,6 +11,12 @@ pub struct AppPaths {
 }
 
 impl AppPaths {
+    /// Resolve the repo root from CARGO_MANIFEST_DIR (desktop/src-tauri -> ../..)
+    fn repo_root() -> PathBuf {
+        let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        manifest.join("../..").canonicalize().unwrap_or_else(|_| manifest.to_path_buf())
+    }
+
     pub fn init() -> Result<Self> {
         let app_data_dir = dirs::data_dir()
             .context("Failed to get data directory")?
@@ -28,9 +34,16 @@ impl AppPaths {
         std::fs::create_dir_all(&plugins_dir)
             .context("Failed to create plugins directory")?;
 
+        // Use the same database as the standalone backend: {repo_root}/storage/magnis.db
+        // DB_PATH env var overrides if set explicitly.
+        let repo_root = Self::repo_root();
+        let storage_dir = repo_root.join("storage");
+        std::fs::create_dir_all(&storage_dir)
+            .context("Failed to create storage directory")?;
+
         let db_path = std::env::var("DB_PATH")
             .map(PathBuf::from)
-            .unwrap_or_else(|_| app_data_dir.join("magnis.db"));
+            .unwrap_or_else(|_| storage_dir.join("magnis.db"));
 
         Ok(Self {
             app_data_dir,

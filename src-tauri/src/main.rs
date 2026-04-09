@@ -7,6 +7,7 @@ mod paths;
 
 use backend_process::{pick_port, BackendProcessManager};
 use commands::backend::get_backend_config;
+use commands::oauth::open_oauth_window;
 use paths::AppPaths;
 use std::sync::Mutex;
 use tauri::Manager;
@@ -27,9 +28,10 @@ fn main() -> anyhow::Result<()> {
     println!("Backend server running at {}", backend.base_url());
 
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
         .manage(app_paths)
         .manage(BackendState(Mutex::new(backend)))
-        .invoke_handler(tauri::generate_handler![get_backend_config])
+        .invoke_handler(tauri::generate_handler![get_backend_config, open_oauth_window])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
