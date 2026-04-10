@@ -29,6 +29,7 @@ fn main() -> anyhow::Result<()> {
 
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(app_paths)
         .manage(BackendState(Mutex::new(backend)))
         .invoke_handler(tauri::generate_handler![get_backend_config, open_oauth_window])
