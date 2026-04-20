@@ -9,9 +9,11 @@ pub async fn open_oauth_window(app: AppHandle, url: String) -> Result<(), String
         let _ = existing.close();
     }
 
-    tauri::WebviewWindowBuilder::new(&app, "google-oauth", tauri::WebviewUrl::External(
-        url.parse().map_err(|e| format!("Invalid URL: {e}"))?
-    ))
+    tauri::WebviewWindowBuilder::new(
+        &app,
+        "google-oauth",
+        tauri::WebviewUrl::External(url.parse().map_err(|e| format!("Invalid URL: {e}"))?),
+    )
     .title("Sign in with Google")
     .inner_size(520.0, 720.0)
     .center()

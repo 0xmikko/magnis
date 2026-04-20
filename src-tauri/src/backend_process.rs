@@ -44,7 +44,10 @@ impl BackendProcessManager {
             }
             // Repo root target (when desktop is in repo/desktop): repo/target/release
             for subdir in ["release", "debug"] {
-                let p = base.join("../../../target").join(subdir).join("magnis-server");
+                let p = base
+                    .join("../../../target")
+                    .join(subdir)
+                    .join("magnis-server");
                 if p.exists() {
                     return Ok(p.canonicalize()?);
                 }
@@ -75,7 +78,10 @@ impl BackendProcessManager {
         let child = Command::new(&bin)
             .env("DB_PATH", db_path_str)
             .env("PORT", port.to_string())
-            .env("RUST_LOG", std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()))
+            .env(
+                "RUST_LOG",
+                std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()),
+            )
             .stdin(Stdio::null())
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())

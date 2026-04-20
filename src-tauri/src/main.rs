@@ -4,10 +4,12 @@
 mod backend_process;
 mod commands;
 mod paths;
+mod workspace_config;
 
 use backend_process::{pick_port, BackendProcessManager};
 use commands::backend::get_backend_config;
 use commands::oauth::open_oauth_window;
+use commands::workspaces::{get_workspace_config, set_selected_workspace};
 use paths::AppPaths;
 use std::sync::Mutex;
 use tauri::Manager;
@@ -32,7 +34,12 @@ fn main() -> anyhow::Result<()> {
         .plugin(tauri_plugin_dialog::init())
         .manage(app_paths)
         .manage(BackendState(Mutex::new(backend)))
-        .invoke_handler(tauri::generate_handler![get_backend_config, open_oauth_window])
+        .invoke_handler(tauri::generate_handler![
+            get_backend_config,
+            get_workspace_config,
+            set_selected_workspace,
+            open_oauth_window
+        ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
