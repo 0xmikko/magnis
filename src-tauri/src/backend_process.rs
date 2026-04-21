@@ -1,5 +1,10 @@
 //! Spawns the magnis-server binary as a child process and manages its lifecycle.
 //! The frontend connects to the server via HTTP (RPC) at the returned base URL.
+//!
+//! Local-mode contract: desktop boots the backend in `MAGNIS_DB_MODE=local`
+//! and points it at a `data_root` directory. The backend owns PGlite spawn,
+//! lockfile, and identity artefacts inside that directory. Desktop only
+//! resolves paths and passes envs; it never touches pgdata.
 
 use anyhow::{Context, Result};
 use std::process::{Child, Command, Stdio};
@@ -63,19 +68,92 @@ impl BackendProcessManager {
         )
     }
 
-    /// Spawn magnis-server with DB_PATH and PORT; wait for /health to return 200.
-    pub fn start(db_path: &std::path::Path, port: u16) -> Result<Self> {
-        let bin = Self::server_binary_path()?;
-        let db_path_str = db_path
-            .to_str()
-            .context("Database path is not valid UTF-8")?;
+    /// Resolve the bundled `pglite-server` sidecar binary.
+    ///
+    /// Tauri's `externalBin` convention drops the sidecar next to the main
+    /// executable, suffixed with the target triple (e.g.
+    /// `pglite-server-aarch64-apple-darwin`). In dev builds (no bundle),
+    /// fall back to the plain-name binary produced by
+    /// `desktop/build/bundle-pglite.sh`. `MAGNIS_PGLITE_SERVER_BIN` env
+    /// overrides both — useful for integration testing against a checked-out
+    /// binary, and explicitly documented in `docs/deployment/local.md`.
+    fn pglite_server_binary_path() -> Result<std::path::PathBuf> {
+        if let Ok(path) = std::env::var("MAGNIS_PGLITE_SERVER_BIN") {
+            let p = std::path::PathBuf::from(path);
+            if p.exists() {
+                return Ok(p);
+            }
+            anyhow::bail!(
+                "MAGNIS_PGLITE_SERVER_BIN set to {} but file does not exist",
+                p.display()
+            );
+        }
 
-        // Pass the repo .env file path so the backend loads the same config as standalone mode.
-        // DB_PATH overrides DATABASE_URL inside the backend's resolve_database_url().
+        let current_exe =
+            std::env::current_exe().context("Failed to get current executable path")?;
+        let parent = current_exe
+            .parent()
+            .context("Executable has no parent directory")?;
+
+        let triple = current_target_triple();
+        let suffixed = parent.join(format!("pglite-server-{triple}"));
+        if suffixed.exists() {
+            return Ok(suffixed);
+        }
+        let plain = parent.join("pglite-server");
+        if plain.exists() {
+            return Ok(plain);
+        }
+
+        // Dev builds: desktop/target or repo/target.
+        let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        for rel in [
+            "../../target/release/pglite-server",
+            "../../target/debug/pglite-server",
+            "../../../target/release/pglite-server",
+            "../../../target/debug/pglite-server",
+            "../build/pglite-server",
+        ] {
+            let p = base.join(rel);
+            if p.exists() {
+                return Ok(p.canonicalize()?);
+            }
+        }
+
+        anyhow::bail!(
+            "pglite-server sidecar not found. Run desktop/build/bundle-pglite.sh, or set \
+             MAGNIS_PGLITE_SERVER_BIN to a compiled binary. Expected suffixed name: \
+             pglite-server-{triple}"
+        )
+    }
+
+    /// Spawn magnis-server in Local mode against `data_root` and wait for `/health`.
+    ///
+    /// Local-mode env contract (see `docs/deployment/local.md`):
+    /// - `MAGNIS_DB_MODE=local` — selects `DbMode::Local` in the backend.
+    /// - `DB_PATH=<data_root>` — directory that owns pgdata/, magnis.lock, identity files.
+    /// - `STORAGE_DIR=<data_root>` — file storage lives under the same root.
+    /// - `MAGNIS_PGLITE_SERVER_BIN=<resolved>` — bundled sidecar path.
+    pub fn start(data_root: &std::path::Path, port: u16) -> Result<Self> {
+        let bin = Self::server_binary_path()?;
+        let data_root_str = data_root
+            .to_str()
+            .context("Data root path is not valid UTF-8")?;
+        let pglite_bin = Self::pglite_server_binary_path()?;
+        let pglite_bin_str = pglite_bin
+            .to_str()
+            .context("pglite-server path is not valid UTF-8")?;
+
         let child = Command::new(&bin)
-            .env("DB_PATH", db_path_str)
+            .env("MAGNIS_DB_MODE", "local")
+            .env("DB_PATH", data_root_str)
+            .env("STORAGE_DIR", data_root_str)
+            .env("MAGNIS_PGLITE_SERVER_BIN", pglite_bin_str)
             .env("PORT", port.to_string())
-            .env("RUST_LOG", std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()))
+            .env(
+                "RUST_LOG",
+                std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()),
+            )
             .stdin(Stdio::null())
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
@@ -148,4 +226,12 @@ pub fn pick_port() -> u16 {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(DEFAULT_PORT)
+}
+
+/// Host target triple baked in at compile time. Matches Tauri's `externalBin`
+/// naming (`<name>-<triple>`). Not `std::env::consts::ARCH/OS` — those don't
+/// carry the full triple format Tauri requires.
+fn current_target_triple() -> &'static str {
+    // `TARGET` is set by Cargo during the build (see `build.rs`).
+    env!("MAGNIS_TARGET_TRIPLE")
 }

@@ -21,10 +21,10 @@ fn main() -> anyhow::Result<()> {
     let app_paths = AppPaths::init()?;
     println!("Magnis starting...");
     println!("App data dir: {:?}", app_paths.app_data_dir());
-    println!("Database path: {:?}", app_paths.db_path());
+    println!("Data root: {:?}", app_paths.data_root());
 
     let port = pick_port();
-    let backend = BackendProcessManager::start(app_paths.db_path(), port)?;
+    let backend = BackendProcessManager::start(app_paths.data_root(), port)?;
     println!("Backend server running at {}", backend.base_url());
 
     let app = tauri::Builder::default()
