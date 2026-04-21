@@ -33,10 +33,23 @@ impl AppPaths {
         // override kept so operators can redirect (e.g. external
         // drive). If set, it MUST be an absolute directory path —
         // relative paths are resolved against the process CWD, which
-        // desktop bundles do not guarantee (plan invariant 8).
-        let data_root = std::env::var("DB_PATH")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| app_data_dir.clone());
+        // desktop bundles do not guarantee (plan invariant 8). Reject
+        // relative overrides loudly rather than silently resolving
+        // against an unknown CWD.
+        let data_root = match std::env::var("DB_PATH") {
+            Ok(raw) => {
+                let p = PathBuf::from(&raw);
+                if !p.is_absolute() {
+                    anyhow::bail!(
+                        "DB_PATH={raw:?} must be an absolute directory path; \
+                         desktop bundles do not guarantee CWD, so relative \
+                         paths cannot be resolved deterministically"
+                    );
+                }
+                p
+            }
+            Err(_) => app_data_dir.clone(),
+        };
         std::fs::create_dir_all(&data_root).context("Failed to create data root")?;
 
         Ok(Self {
