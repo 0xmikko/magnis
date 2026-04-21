@@ -107,7 +107,20 @@ On first run, the app creates directories:
 - **Linux**: `~/.local/share/com.magnis.desktop/`
 - **Windows**: `%APPDATA%\com.magnis.desktop\`
 
-Contains:
-- `magnis.db` - SQLite database
-- `logs/` - Application logs
-- `plugins/` - Plugin directory
+This directory is the **Local-mode `data_root`** — the backend owns everything
+inside it. Contents:
+
+- `pgdata/` — PGlite (embedded Postgres) data directory
+- `storage/` — file uploads, attachments
+- `magnis.lock` — POSIX fcntl lockfile enforcing single-instance semantics
+- `magnis.json` — instance identity record (pid, started_at, data_dir)
+- `pglite.json` — sidecar identity (port, pid) written by PGlite runtime
+- `jwt.secret` — per-instance auth signing key
+- `logs/` — application logs
+- `plugins/` — plugin directory
+
+Override the data root with `DB_PATH=/absolute/path` (must be an absolute
+directory — relative paths are rejected because bundled desktop builds do not
+guarantee the process CWD).
+
+See `docs/deployment/local.md` for the full Local-mode layout contract.
