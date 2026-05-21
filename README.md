@@ -2,7 +2,7 @@
 
 A system for turning communication into context, memory, and action.
 
-→ Live demo: https://magnis.ai (early prototype)
+→ Live demo: [magnis.ai](https://magnis.ai/?utm_source=github&utm_medium=readme&utm_campaign=demo) (early prototype)
 
 ---
 
