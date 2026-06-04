@@ -15,7 +15,9 @@ use std::time::Instant;
 
 const DEFAULT_PORT: u16 = 3765;
 const HEALTH_POLL_INTERVAL_MS: u64 = 100;
-const HEALTH_TIMEOUT_SECS: u64 = 15;
+// First desktop run extracts the bundled PostgreSQL archive and runs initdb
+// before /health binds — give it room (was 15s for the PGlite sidecar).
+const HEALTH_TIMEOUT_SECS: u64 = 120;
 
 /// Manages the magnis-server child process and exposes its base URL for the frontend.
 pub struct BackendProcessManager {
@@ -33,6 +35,13 @@ impl BackendProcessManager {
         let parent = current_exe
             .parent()
             .context("Executable has no parent directory")?;
+        // Tauri `externalBin` packages the sidecar target-triple-suffixed
+        // (mirrors the pglite-server resolver); try that first, then plain.
+        let triple = current_target_triple();
+        let suffixed = parent.join(format!("magnis-server-{triple}"));
+        if suffixed.exists() {
+            return Ok(suffixed);
+        }
         let next_to_exe = parent.join("magnis-server");
         if next_to_exe.exists() {
             return Ok(next_to_exe);
@@ -80,6 +89,8 @@ impl BackendProcessManager {
     /// `desktop/build/bundle-pglite.sh`. `MAGNIS_PGLITE_SERVER_BIN` env
     /// overrides both — useful for integration testing against a checked-out
     /// binary, and explicitly documented in `docs/deployment/local.md`.
+    // Retained for the dev-only PGlite opt-out (desktop ships embedded PG now).
+    #[allow(dead_code)]
     fn pglite_server_binary_path() -> Result<std::path::PathBuf> {
         if let Ok(path) = std::env::var("MAGNIS_PGLITE_SERVER_BIN") {
             let p = std::path::PathBuf::from(path);
@@ -136,22 +147,20 @@ impl BackendProcessManager {
     /// - `MAGNIS_DB_MODE=local` — selects `DbMode::Local` in the backend.
     /// - `DB_PATH=<data_root>` — directory that owns pgdata/, magnis.lock, identity files.
     /// - `STORAGE_DIR=<data_root>` — file storage lives under the same root.
-    /// - `MAGNIS_PGLITE_SERVER_BIN=<resolved>` — bundled sidecar path.
+    /// - `MAGNIS_LOCAL_PG=embedded` — desktop ships native embedded Postgres
+    ///   (bundled into magnis-server); no PGlite sidecar.
     pub fn start(data_root: &std::path::Path, port: u16) -> Result<Self> {
         let bin = Self::server_binary_path()?;
         let data_root_str = data_root
             .to_str()
             .context("Data root path is not valid UTF-8")?;
-        let pglite_bin = Self::pglite_server_binary_path()?;
-        let pglite_bin_str = pglite_bin
-            .to_str()
-            .context("pglite-server path is not valid UTF-8")?;
-
         let child = Command::new(&bin)
             .env("MAGNIS_DB_MODE", "local")
             .env("DB_PATH", data_root_str)
             .env("STORAGE_DIR", data_root_str)
-            .env("MAGNIS_PGLITE_SERVER_BIN", pglite_bin_str)
+            // Desktop ships native embedded Postgres (bundled into magnis-server);
+            // no PGlite sidecar. The PGlite opt-out is dev-only (not shipped).
+            .env("MAGNIS_LOCAL_PG", "embedded")
             .env("PORT", port.to_string())
             .env(
                 "RUST_LOG",

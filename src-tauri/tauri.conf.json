@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "cd ../frontend && MAGNIS_BACKEND_PORT=3765 VITE_API_URL=http://localhost:5190 bun run dev -- --port 5190",
     "devUrl": "http://localhost:5190",
-    "beforeBuildCommand": "bash build/bundle-pglite.sh && cd ../frontend && bun run build",
+    "beforeBuildCommand": "bash build/bundle-embedded-pg.sh && cd ../frontend && bun run build",
     "frontendDist": "../../frontend/dist"
   },
   "app": {
@@ -40,7 +40,7 @@
       "icons/icon.png"
     ],
     "externalBin": [
-      "binaries/pglite-server"
+      "binaries/magnis-server"
     ]
   }
 }
