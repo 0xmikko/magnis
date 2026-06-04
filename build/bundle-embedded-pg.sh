@@ -26,7 +26,7 @@ fi
 echo "Building magnis-server (--features embedded-pg,bundled, offline from cache)…"
 cd "$REPO_ROOT"
 POSTGRESQL_VERSION="=${PG_VERSION}" \
-  cargo build --locked --release -p magnis --bin magnis-server --features embedded-pg,bundled
+  cargo build --release -p magnis --bin magnis-server --features embedded-pg,bundled
 
 DEST="$REPO_ROOT/desktop/src-tauri/binaries"
 mkdir -p "$DEST"
