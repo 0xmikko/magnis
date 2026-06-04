@@ -7,7 +7,8 @@
 //! resolves paths and passes envs; it never touches pgdata.
 
 use anyhow::{Context, Result};
-use std::process::{Child, Command, Stdio};
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -18,6 +19,12 @@ const HEALTH_POLL_INTERVAL_MS: u64 = 100;
 // First desktop run extracts the bundled PostgreSQL archive and runs initdb
 // before /health binds — give it room (was 15s for the PGlite sidecar).
 const HEALTH_TIMEOUT_SECS: u64 = 120;
+// On quit, ask the backend to shut down gracefully (SIGTERM → main.rs runs
+// AppState::shutdown(): close pool, then stop the embedded postmaster) and wait
+// this long before escalating to SIGKILL. Native Postgres recovers from an
+// unclean kill, but a clean stop avoids leaving an orphan for the next boot.
+const SHUTDOWN_GRACE_SECS: u64 = 10;
+const SHUTDOWN_POLL_INTERVAL_MS: u64 = 50;
 
 /// Manages the magnis-server child process and exposes its base URL for the frontend.
 pub struct BackendProcessManager {
@@ -37,14 +44,8 @@ impl BackendProcessManager {
             .context("Executable has no parent directory")?;
         // Tauri `externalBin` packages the sidecar target-triple-suffixed
         // (mirrors the pglite-server resolver); try that first, then plain.
-        let triple = current_target_triple();
-        let suffixed = parent.join(format!("magnis-server-{triple}"));
-        if suffixed.exists() {
-            return Ok(suffixed);
-        }
-        let next_to_exe = parent.join("magnis-server");
-        if next_to_exe.exists() {
-            return Ok(next_to_exe);
+        if let Some(p) = pick_existing(parent, current_target_triple(), |p| p.exists()) {
+            return Ok(p);
         }
         // When run from desktop/: CARGO_MANIFEST_DIR = desktop/src-tauri (baked at compile time)
         {
@@ -214,16 +215,63 @@ impl BackendProcessManager {
         self.port
     }
 
-    /// Stop the backend process. Idempotent.
+    /// Stop the backend process gracefully (SIGTERM + grace → SIGKILL).
+    /// Idempotent.
     pub fn stop(&mut self) {
         if self.stopped.swap(true, Ordering::SeqCst) {
             return;
         }
         if let Some(mut child) = self.child.take() {
-            let _ = child.kill();
-            let _ = child.wait();
+            terminate_child(&mut child, Duration::from_secs(SHUTDOWN_GRACE_SECS));
         }
     }
+}
+
+/// Resolve the `magnis-server` binary next to `parent`: the Tauri
+/// `externalBin` triple-suffixed name first (`magnis-server-<triple>`), then the
+/// plain name. `exists` is injected so the precedence is unit-testable.
+fn pick_existing(parent: &Path, triple: &str, exists: impl Fn(&Path) -> bool) -> Option<PathBuf> {
+    let suffixed = parent.join(format!("magnis-server-{triple}"));
+    if exists(&suffixed) {
+        return Some(suffixed);
+    }
+    let plain = parent.join("magnis-server");
+    if exists(&plain) {
+        return Some(plain);
+    }
+    None
+}
+
+/// Terminate `child`, preferring a graceful shutdown: on unix send SIGTERM and
+/// poll up to `grace` for a clean exit (so the backend runs `AppState::shutdown`
+/// — pool close then embedded-postmaster stop), escalating to SIGKILL only if it
+/// outlives the grace. On non-unix (no SIGTERM) it force-kills. Returns the
+/// child's exit status. Effects use the real OS; tests drive it with a real
+/// short-lived child so every branch is exercised.
+fn terminate_child(child: &mut Child, grace: Duration) -> Option<ExitStatus> {
+    #[cfg(unix)]
+    {
+        // SAFETY: kill(2) with a real pid + SIGTERM; no memory is touched.
+        unsafe {
+            libc::kill(child.id() as libc::pid_t, libc::SIGTERM);
+        }
+        let deadline = Instant::now() + grace;
+        loop {
+            match child.try_wait() {
+                Ok(Some(status)) => return Some(status),
+                Ok(None) => {
+                    if Instant::now() >= deadline {
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(SHUTDOWN_POLL_INTERVAL_MS));
+                }
+                Err(_) => break,
+            }
+        }
+    }
+    // Grace elapsed (or non-unix): force-kill and reap.
+    let _ = child.kill();
+    child.wait().ok()
 }
 
 impl Drop for BackendProcessManager {
@@ -246,4 +294,93 @@ pub fn pick_port() -> u16 {
 fn current_target_triple() -> &'static str {
     // `TARGET` is set by Cargo during the build (see `build.rs`).
     env!("MAGNIS_TARGET_TRIPLE")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// tst_desktop_resolver_001: the triple-suffixed binary wins over the
+    /// plain name, and absence yields None (GAP-8 — packaging resolver order).
+    #[test]
+    fn tst_desktop_resolver_001_suffixed_precedence() {
+        let parent = Path::new("/opt/app");
+        let triple = "x86_64-unknown-linux-gnu";
+        let suffixed = parent.join(format!("magnis-server-{triple}"));
+        let plain = parent.join("magnis-server");
+
+        // Both present → suffixed (Tauri externalBin) wins.
+        let got = pick_existing(parent, triple, |p| p == suffixed || p == plain);
+        assert_eq!(got.as_deref(), Some(suffixed.as_path()));
+
+        // Only plain present → plain (dev build).
+        let got = pick_existing(parent, triple, |p| p == plain);
+        assert_eq!(got.as_deref(), Some(plain.as_path()));
+
+        // Only suffixed present → suffixed.
+        let got = pick_existing(parent, triple, |p| p == suffixed);
+        assert_eq!(got.as_deref(), Some(suffixed.as_path()));
+
+        // Neither → None (caller falls through to dev/target search).
+        let got = pick_existing(parent, triple, |_| false);
+        assert_eq!(got, None);
+    }
+
+    /// tst_desktop_term_001 (Finding 2): a child that exits on SIGTERM is
+    /// stopped GRACEFULLY — it exits via its own handler, not SIGKILL, so the
+    /// real backend's `AppState::shutdown` would have run.
+    #[cfg(unix)]
+    #[test]
+    fn tst_desktop_term_001_graceful_sigterm_exit() {
+        use std::os::unix::process::ExitStatusExt;
+        // TERM trap exits 0; `sleep & wait` so the trap fires PROMPTLY on the
+        // signal (a foreground `sleep` would defer it) — modelling the real
+        // backend's tokio SIGTERM handler.
+        let mut child = Command::new("sh")
+            .arg("-c")
+            .arg("trap 'exit 0' TERM; sleep 30 & wait")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn sh");
+        // Let the shell install the trap before signalling.
+        std::thread::sleep(Duration::from_millis(300));
+        let status = terminate_child(&mut child, Duration::from_secs(5));
+        let status = status.expect("child reaped");
+        assert_eq!(
+            status.signal(),
+            None,
+            "graceful exit must NOT be a signal-kill (got {status:?})"
+        );
+        assert_eq!(status.code(), Some(0), "TERM handler exits 0");
+    }
+
+    /// tst_desktop_term_002 (Finding 2): a child that IGNORES SIGTERM is force
+    /// -killed after the grace window (so quit can never hang forever).
+    #[cfg(unix)]
+    #[test]
+    fn tst_desktop_term_002_sigkill_escalation() {
+        use std::os::unix::process::ExitStatusExt;
+        // Ignores TERM and keeps sleeping → only SIGKILL stops it.
+        let mut child = Command::new("sh")
+            .arg("-c")
+            .arg("trap '' TERM; sleep 30")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn sh");
+        std::thread::sleep(Duration::from_millis(300));
+        let started = Instant::now();
+        let status = terminate_child(&mut child, Duration::from_millis(500));
+        assert!(
+            started.elapsed() >= Duration::from_millis(500),
+            "must wait the full grace before escalating"
+        );
+        let status = status.expect("child reaped");
+        assert_eq!(
+            status.signal(),
+            Some(libc::SIGKILL),
+            "TERM-ignoring child must be SIGKILLed (got {status:?})"
+        );
+    }
 }
