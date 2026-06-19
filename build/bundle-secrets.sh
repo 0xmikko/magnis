@@ -24,7 +24,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 OUT="${MAGNIS_SECRETS_OUT:-$REPO_ROOT/desktop/src-tauri/resources/magnis.env}"
 
-FIXTURE=0
+# FIXTURE / SRC may also come from the environment so CI can drive the fixed
+# `beforeBuildCommand` string without editing it (DEC-17): set
+# MAGNIS_SECRETS_FIXTURE=1 and MAGNIS_SECRETS_SRC=<ci-fixture.env>.
+FIXTURE="${MAGNIS_SECRETS_FIXTURE:-0}"
 SRC=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -32,7 +35,7 @@ while [[ $# -gt 0 ]]; do
     *) SRC="$1"; shift ;;
   esac
 done
-SRC="${SRC:-$REPO_ROOT/.env}"
+SRC="${SRC:-${MAGNIS_SECRETS_SRC:-$REPO_ROOT/.env}}"
 
 if [[ ! -f "$SRC" ]]; then
   echo "bundle-secrets: FATAL — source env file not found: $SRC" >&2
