@@ -15,6 +15,14 @@ use std::time::Duration;
 use std::time::Instant;
 
 const DEFAULT_PORT: u16 = 3765;
+
+/// CORS origins the desktop backend must allow: the Tauri webview origins plus
+/// loopback. Set explicitly so it ALWAYS wins over any `CORS_ALLOWED_ORIGINS`
+/// a `.env` on the machine carries — `dotenvy` walks parent dirs and would
+/// otherwise pick up a server-deployment list that omits `tauri://localhost`,
+/// blocking every webview request (the cause of the packaged-app "Load failed").
+pub const DESKTOP_CORS_ORIGINS: &str =
+    "tauri://localhost,https://tauri.localhost,http://localhost:*,http://127.0.0.1:*";
 const HEALTH_POLL_INTERVAL_MS: u64 = 100;
 // First desktop run extracts the bundled PostgreSQL archive and runs initdb
 // before /health binds — give it room (was 15s for the PGlite sidecar).
@@ -163,6 +171,8 @@ impl BackendProcessManager {
             // no PGlite sidecar. The PGlite opt-out is dev-only (not shipped).
             .env("MAGNIS_LOCAL_PG", "embedded")
             .env("PORT", port.to_string())
+            // Allow the Tauri webview origins (wins over any machine .env list).
+            .env("CORS_ALLOWED_ORIGINS", DESKTOP_CORS_ORIGINS)
             .env(
                 "RUST_LOG",
                 std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()),

@@ -109,6 +109,10 @@ pub fn backend_spec(l: &ServiceLayout) -> ServiceSpec {
             ),
             ("PORT".into(), BACKEND_PORT.to_string()),
             ("AGENT_URL".into(), format!("http://127.0.0.1:{AGENT_PORT}")),
+            (
+                "CORS_ALLOWED_ORIGINS".into(),
+                crate::backend_process::DESKTOP_CORS_ORIGINS.into(),
+            ),
             ("RUST_LOG".into(), "info".into()),
             (
                 "MAGNIS_ENV_FILE".into(),
@@ -235,6 +239,7 @@ mod tests {
             "STORAGE_DIR",
             "PORT",
             "AGENT_URL",
+            "CORS_ALLOWED_ORIGINS",
             "RUST_LOG",
             "MAGNIS_ENV_FILE",
         ] {
