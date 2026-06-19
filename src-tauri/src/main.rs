@@ -65,7 +65,17 @@ fn main() -> anyhow::Result<()> {
     );
     println!("Desktop backend mode: {mode:?}");
 
-    let backend = build_backend(mode, &app_paths)?;
+    let backend = match build_backend(mode, &app_paths) {
+        Ok(b) => b,
+        Err(e) => {
+            // Never disappear silently for a Finder-launched app — surface a
+            // native dialog (e.g. "move Magnis to Applications") then exit.
+            eprintln!("Startup failed: {e:?}");
+            #[cfg(target_os = "macos")]
+            service::show_startup_error(&e);
+            return Err(e);
+        }
+    };
     println!("Backend base URL: {}", backend.base_url());
 
     let app = tauri::Builder::default()

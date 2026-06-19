@@ -45,8 +45,6 @@ pub struct ServiceLayout {
     pub data_root: PathBuf,
     /// Directory for service stdout/stderr logs.
     pub logs_dir: PathBuf,
-    /// Target triple suffix Tauri appends to externalBin names.
-    pub triple: String,
     /// App version, used as the plist content stamp.
     pub version: String,
 }
@@ -73,9 +71,15 @@ pub fn bundle_paths_from_exe(exe: &Path) -> Option<BundlePaths> {
     })
 }
 
-/// Absolute path to a target-triple-suffixed sidecar next to the main exe.
-pub fn sidecar_path(macos_dir: &Path, name: &str, triple: &str) -> PathBuf {
-    macos_dir.join(format!("{name}-{triple}"))
+/// Absolute path to a bundled externalBin sidecar next to the main exe.
+///
+/// IMPORTANT: Tauri **strips the target-triple suffix** when bundling
+/// `externalBin` into the `.app` — the source `binaries/magnis-server-<triple>`
+/// lands at `Contents/MacOS/magnis-server` (plain). launchd must point at the
+/// plain name, or it cannot find the executable (`runs = 0`). Regression:
+/// `tst_desktop_paths_001` / `tst_desktop_plist_001`.
+pub fn sidecar_path(macos_dir: &Path, name: &str) -> PathBuf {
+    macos_dir.join(name)
 }
 
 /// Path to the bundled secrets file (`Contents/Resources/magnis.env`).
@@ -95,7 +99,7 @@ pub fn backend_spec(l: &ServiceLayout) -> ServiceSpec {
     let env_file = env_file_path(&l.resources_dir);
     ServiceSpec {
         label: BACKEND_LABEL.to_string(),
-        program: sidecar_path(&l.macos_dir, "magnis-server", &l.triple),
+        program: sidecar_path(&l.macos_dir, "magnis-server"),
         env: vec![
             ("MAGNIS_DB_MODE".into(), "local".into()),
             ("DB_PATH".into(), l.data_root.to_string_lossy().into_owned()),
@@ -122,7 +126,7 @@ pub fn agent_spec(l: &ServiceLayout) -> ServiceSpec {
     let env_file = env_file_path(&l.resources_dir);
     ServiceSpec {
         label: AGENT_LABEL.to_string(),
-        program: sidecar_path(&l.macos_dir, "agent-server", &l.triple),
+        program: sidecar_path(&l.macos_dir, "agent-server"),
         env: vec![
             ("AGENT_PORT".into(), AGENT_PORT.to_string()),
             ("AGENT_HOST".into(), "127.0.0.1".into()),
@@ -204,7 +208,6 @@ mod tests {
             resources_dir: PathBuf::from("/Applications/Magnis.app/Contents/Resources"),
             data_root: PathBuf::from("/Users/x/Library/Application Support/com.magnis.desktop"),
             logs_dir: PathBuf::from("/Users/x/Library/Application Support/com.magnis.desktop/logs"),
-            triple: "aarch64-apple-darwin".into(),
             version: "0.1.0".into(),
         }
     }
@@ -216,9 +219,14 @@ mod tests {
 
         let backend = render_plist(&backend_spec(&l));
         assert!(backend.contains("<string>com.magnis.backend</string>"));
-        assert!(backend.contains(
-            "<string>/Applications/Magnis.app/Contents/MacOS/magnis-server-aarch64-apple-darwin</string>"
-        ));
+        // PLAIN name — Tauri strips the triple suffix when bundling externalBin.
+        // A suffixed path here is the bug that left launchd with runs=0.
+        assert!(backend
+            .contains("<string>/Applications/Magnis.app/Contents/MacOS/magnis-server</string>"));
+        assert!(
+            !backend.contains("magnis-server-"),
+            "program path must NOT carry the triple suffix (Tauri strips it)"
+        );
         assert!(backend.contains("<key>RunAtLoad</key>\n    <true/>"));
         assert!(backend.contains("<key>KeepAlive</key>\n    <true/>"));
         for key in [
@@ -238,9 +246,13 @@ mod tests {
 
         let agent = render_plist(&agent_spec(&l));
         assert!(agent.contains("<string>com.magnis.agent</string>"));
-        assert!(agent.contains(
-            "<string>/Applications/Magnis.app/Contents/MacOS/agent-server-aarch64-apple-darwin</string>"
-        ));
+        assert!(
+            agent.contains("<string>/Applications/Magnis.app/Contents/MacOS/agent-server</string>")
+        );
+        assert!(
+            !agent.contains("agent-server-"),
+            "program path must NOT carry the triple suffix (Tauri strips it)"
+        );
         for (k, v) in [
             ("AGENT_PORT", "3002"),
             ("AGENT_HOST", "127.0.0.1"),
@@ -287,13 +299,14 @@ mod tests {
             bp.resources_dir,
             Path::new("/Applications/Magnis.app/Contents/Resources")
         );
+        // Tauri strips the triple suffix in the bundle → plain names.
         assert_eq!(
-            sidecar_path(&bp.macos_dir, "magnis-server", "aarch64-apple-darwin"),
-            Path::new("/Applications/Magnis.app/Contents/MacOS/magnis-server-aarch64-apple-darwin")
+            sidecar_path(&bp.macos_dir, "magnis-server"),
+            Path::new("/Applications/Magnis.app/Contents/MacOS/magnis-server")
         );
         assert_eq!(
-            sidecar_path(&bp.macos_dir, "agent-server", "aarch64-apple-darwin"),
-            Path::new("/Applications/Magnis.app/Contents/MacOS/agent-server-aarch64-apple-darwin")
+            sidecar_path(&bp.macos_dir, "agent-server"),
+            Path::new("/Applications/Magnis.app/Contents/MacOS/agent-server")
         );
         assert_eq!(
             env_file_path(&bp.resources_dir),

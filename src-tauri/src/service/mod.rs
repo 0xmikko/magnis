@@ -16,6 +16,64 @@ use std::path::{Path, PathBuf};
 
 use plist::{render_plist, ServiceSpec};
 
+/// The bundle is not under `/Applications`, so the background service can't be
+/// installed (DEC-16). A typed error so `main` can show the actionable
+/// "move to Applications" dialog rather than a generic failure.
+#[derive(Debug)]
+pub struct NotInApplications {
+    pub bundle_root: PathBuf,
+}
+
+impl std::fmt::Display for NotInApplications {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Magnis must be in /Applications to run its background service \
+             (found {}). Drag Magnis.app to Applications and open it again.",
+            self.bundle_root.display()
+        )
+    }
+}
+
+impl std::error::Error for NotInApplications {}
+
+/// Map a startup error to a user-facing dialog (title, body). The
+/// install-location guard gets actionable copy; anything else surfaces the
+/// underlying message so the failure is never silent.
+pub fn startup_error_dialog(err: &anyhow::Error) -> (String, String) {
+    if err.downcast_ref::<NotInApplications>().is_some() {
+        (
+            "Move Magnis to Applications".to_string(),
+            "Magnis must be in your Applications folder to run in the background.\n\n\
+             Drag Magnis.app to Applications, then open it again."
+                .to_string(),
+        )
+    } else {
+        (
+            "Magnis couldn't start".to_string(),
+            format!("The background service failed to start:\n\n{err}"),
+        )
+    }
+}
+
+/// Show a native macOS alert for a fatal startup error, so a Finder-launched
+/// app never just disappears. Best-effort (ignores osascript failure).
+#[cfg(target_os = "macos")]
+pub fn show_startup_error(err: &anyhow::Error) {
+    let (title, body) = startup_error_dialog(err);
+    // Escape backslashes and quotes for the AppleScript string literals.
+    let esc = |s: &str| s.replace('\\', "\\\\").replace('"', "\\\"");
+    let script = format!(
+        "display alert \"{}\" message \"{}\" as critical",
+        esc(&title),
+        esc(&body)
+    );
+    let _ = std::process::Command::new("osascript")
+        .arg("-e")
+        .arg(script)
+        .status();
+}
+
 /// Side-effecting `launchctl` operations, behind a trait so install logic is
 /// testable without touching the real service-management database.
 pub trait LaunchctlRunner {
@@ -108,11 +166,10 @@ impl<R: LaunchctlRunner> ServiceManager<R> {
         bundle_root: &Path,
     ) -> anyhow::Result<InstallReport> {
         if !plist::is_under_applications(bundle_root) {
-            anyhow::bail!(
-                "Magnis must be installed in /Applications to run its background \
-                 service (found {}). Drag Magnis.app to Applications and reopen.",
-                bundle_root.display()
-            );
+            return Err(NotInApplications {
+                bundle_root: bundle_root.to_path_buf(),
+            }
+            .into());
         }
         let mut report = InstallReport::default();
         report.record(self.ensure_service(&plist::backend_spec(layout))?);
@@ -218,7 +275,6 @@ fn layout_for(
         resources_dir: bundle.resources_dir.clone(),
         data_root: app_paths.data_root().clone(),
         logs_dir: app_paths.logs_dir().clone(),
-        triple: env!("MAGNIS_TARGET_TRIPLE").to_string(),
         version: version.to_string(),
     };
     Ok((layout, bundle.bundle_root))
@@ -314,7 +370,6 @@ mod tests {
             resources_dir: resources,
             data_root: PathBuf::from("/tmp/magnis-data"),
             logs_dir: PathBuf::from("/tmp/magnis-data/logs"),
-            triple: "aarch64-apple-darwin".into(),
             version: version.into(),
         };
         (layout, bundle_root)
@@ -373,8 +428,12 @@ mod tests {
         // From the DMG: refuse, write no plist.
         let (vol_layout, vol_root) = layout_in("/Volumes/Magnis", "0.1.0");
         let refused = mgr.ensure_installed(&vol_layout, &vol_root);
-        assert!(refused.is_err());
-        assert!(refused.unwrap_err().to_string().contains("/Applications"));
+        let err = refused.expect_err("must refuse outside /Applications");
+        assert!(
+            err.downcast_ref::<NotInApplications>().is_some(),
+            "guard must return the typed NotInApplications error"
+        );
+        assert!(err.to_string().contains("/Applications"));
         assert!(!tmp.path().join("com.magnis.backend.plist").exists());
 
         // Installed under /Applications: both services bootstrapped.
@@ -395,5 +454,23 @@ mod tests {
         assert_eq!(r3.updated, 2);
         assert_eq!(mgr.runner.bootstraps.borrow().len(), 4);
         assert_eq!(mgr.runner.bootouts.borrow().len(), 2);
+    }
+
+    // @test-id: tst_desktop_dialog_001  @invariant: INV-17 — startup failures map
+    // to a user-facing dialog (no silent exit). The guard gets actionable copy.
+    #[test]
+    fn tst_desktop_dialog_001_startup_error_text() {
+        let guard: anyhow::Error = NotInApplications {
+            bundle_root: PathBuf::from("/Volumes/Magnis/Magnis.app"),
+        }
+        .into();
+        let (title, body) = startup_error_dialog(&guard);
+        assert!(title.to_lowercase().contains("applications"));
+        assert!(body.contains("Applications"));
+
+        let generic = anyhow::anyhow!("backend service did not become healthy at …");
+        let (gtitle, gbody) = startup_error_dialog(&generic);
+        assert!(!gtitle.to_lowercase().contains("applications"));
+        assert!(gbody.contains("healthy"));
     }
 }
