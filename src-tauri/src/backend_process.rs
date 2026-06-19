@@ -288,6 +288,34 @@ pub fn pick_port() -> u16 {
         .unwrap_or(DEFAULT_PORT)
 }
 
+/// The backend the GUI talks to: either a child process it spawned (dev/`Spawn`
+/// mode) or a launchd-managed service it only connects to (`Service` mode). The
+/// commands read `base_url()` uniformly; only `Spawn` is stopped on window exit.
+pub enum BackendHandle {
+    /// `Spawn` mode — GUI owns the child and stops it on exit.
+    Spawned(BackendProcessManager),
+    /// `Service` mode — connect-only; launchd owns the lifecycle, so the service
+    /// intentionally outlives the GUI window (DEC-3/DEC-11). No child here.
+    Service { base_url: String },
+}
+
+impl BackendHandle {
+    pub fn base_url(&self) -> &str {
+        match self {
+            BackendHandle::Spawned(m) => m.base_url(),
+            BackendHandle::Service { base_url } => base_url,
+        }
+    }
+
+    /// Stop the spawned child (`Spawn` mode). In `Service` mode this is a no-op:
+    /// the launchd services keep running so background sync survives window close.
+    pub fn stop(&mut self) {
+        if let BackendHandle::Spawned(m) = self {
+            m.stop();
+        }
+    }
+}
+
 /// Host target triple baked in at compile time. Matches Tauri's `externalBin`
 /// naming (`<name>-<triple>`). Not `std::env::consts::ARCH/OS` — those don't
 /// carry the full triple format Tauri requires.

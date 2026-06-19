@@ -10,6 +10,8 @@ pub struct AppPaths {
     app_data_dir: PathBuf,
     data_root: PathBuf,
     logs_dir: PathBuf,
+    // Created on init and retained for future plugin loading; not read yet.
+    #[allow(dead_code)]
     plugins_dir: PathBuf,
 }
 
@@ -76,6 +78,7 @@ impl AppPaths {
         &self.logs_dir
     }
 
+    #[allow(dead_code)]
     pub fn plugins_dir(&self) -> &PathBuf {
         &self.plugins_dir
     }

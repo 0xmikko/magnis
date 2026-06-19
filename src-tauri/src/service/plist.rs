@@ -1,7 +1,3 @@
-// NOTE: items are consumed by `main.rs` starting in Stage 4 (mode wiring);
-// until then only `#[cfg(test)]` uses them, so suppress dead_code for this
-// stage. The allow is removed in Stage 4 when the service is wired in.
-#![allow(dead_code)]
 //! Pure launchd plist generation + bundle-path resolution for the macOS
 //! background services. No IO, no platform calls — every function here is a
 //! deterministic string/path transform, so the unit tests run on any host.

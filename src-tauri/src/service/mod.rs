@@ -1,6 +1,3 @@
-// NOTE: items are consumed by `main.rs` starting in Stage 4 (mode wiring);
-// until then only `#[cfg(test)]` uses them. The allow is removed in Stage 4.
-#![allow(dead_code)]
 //! macOS background-service management (launchd LaunchAgents).
 //!
 //! The packaged desktop app does not spawn the backend as a child (that is the
@@ -188,6 +185,90 @@ pub fn user_launch_agents_dir() -> anyhow::Result<PathBuf> {
     let dir = home.join("Library").join("LaunchAgents");
     std::fs::create_dir_all(&dir)?;
     Ok(dir)
+}
+
+/// How long to wait for the backend service `/health` after (re)bootstrapping.
+/// Longer than the spawn path's 15s because a cold boot may extract/initialise
+/// the embedded PostgreSQL cluster on first run.
+#[cfg(target_os = "macos")]
+const SERVICE_HEALTH_TIMEOUT_SECS: u64 = 45;
+
+/// Build the real `ServiceManager` (user LaunchAgents dir + real launchctl).
+#[cfg(target_os = "macos")]
+fn real_manager() -> anyhow::Result<ServiceManager<RealLaunchctl>> {
+    Ok(ServiceManager::new(
+        user_launch_agents_dir()?,
+        current_uid(),
+        RealLaunchctl,
+    ))
+}
+
+/// Resolve the running bundle's `ServiceLayout` from the desktop exe path and
+/// the app's data/log dirs.
+#[cfg(target_os = "macos")]
+fn layout_for(
+    app_paths: &crate::paths::AppPaths,
+    version: &str,
+) -> anyhow::Result<(plist::ServiceLayout, std::path::PathBuf)> {
+    let exe = std::env::current_exe()?;
+    let bundle = plist::bundle_paths_from_exe(&exe)
+        .ok_or_else(|| anyhow::anyhow!("cannot resolve .app bundle from {}", exe.display()))?;
+    let layout = plist::ServiceLayout {
+        macos_dir: bundle.macos_dir.clone(),
+        resources_dir: bundle.resources_dir.clone(),
+        data_root: app_paths.data_root().clone(),
+        logs_dir: app_paths.logs_dir().clone(),
+        triple: env!("MAGNIS_TARGET_TRIPLE").to_string(),
+        version: version.to_string(),
+    };
+    Ok((layout, bundle.bundle_root))
+}
+
+/// Install/refresh both LaunchAgents for the running bundle, then block until
+/// the backend `/health` is green. Returns the backend base URL the GUI uses.
+/// This is the `Service`-mode entry point called from `main` (DEC-3).
+#[cfg(target_os = "macos")]
+pub fn install_and_wait_healthy(
+    app_paths: &crate::paths::AppPaths,
+    version: &str,
+) -> anyhow::Result<String> {
+    let (layout, bundle_root) = layout_for(app_paths, version)?;
+    let mgr = real_manager()?;
+    let report = mgr.ensure_installed(&layout, &bundle_root)?;
+    println!("background services ensured: {report:?}");
+    let base_url = format!("http://127.0.0.1:{}", plist::BACKEND_PORT);
+    wait_for_health(&base_url)?;
+    Ok(base_url)
+}
+
+/// Tear down both LaunchAgents (used by the `uninstall_background_service`
+/// command). Idempotent.
+#[cfg(target_os = "macos")]
+pub fn uninstall_all() -> anyhow::Result<()> {
+    real_manager()?.uninstall()
+}
+
+/// Poll the backend `/health` until it succeeds or the timeout elapses.
+#[cfg(target_os = "macos")]
+fn wait_for_health(base_url: &str) -> anyhow::Result<()> {
+    use std::time::{Duration, Instant};
+    let url = format!("{base_url}/health");
+    let client = reqwest::blocking::Client::builder()
+        .connect_timeout(Duration::from_secs(1))
+        .timeout(Duration::from_secs(2))
+        .build()?;
+    let deadline = Instant::now() + Duration::from_secs(SERVICE_HEALTH_TIMEOUT_SECS);
+    while Instant::now() < deadline {
+        if let Ok(resp) = client.get(&url).send() {
+            if resp.status().is_success() {
+                return Ok(());
+            }
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    anyhow::bail!(
+        "backend service did not become healthy at {url} within {SERVICE_HEALTH_TIMEOUT_SECS}s"
+    )
 }
 
 #[cfg(test)]
