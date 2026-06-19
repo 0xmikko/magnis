@@ -113,6 +113,22 @@ pub fn backend_spec(l: &ServiceLayout) -> ServiceSpec {
                 "CORS_ALLOWED_ORIGINS".into(),
                 crate::backend_process::DESKTOP_CORS_ORIGINS.into(),
             ),
+            // Bundled plugin packages → presence-seeded at boot (companies,
+            // email, telegram, …) and the plugin store works offline.
+            (
+                "MAGNIS_PLUGINS_DIR".into(),
+                l.resources_dir
+                    .join("plugins")
+                    .to_string_lossy()
+                    .into_owned(),
+            ),
+            (
+                "MAGNIS_PLUGINS_DIST_DIR".into(),
+                l.resources_dir
+                    .join("plugins_dist")
+                    .to_string_lossy()
+                    .into_owned(),
+            ),
             ("RUST_LOG".into(), "info".into()),
             (
                 "MAGNIS_ENV_FILE".into(),
@@ -240,6 +256,8 @@ mod tests {
             "PORT",
             "AGENT_URL",
             "CORS_ALLOWED_ORIGINS",
+            "MAGNIS_PLUGINS_DIR",
+            "MAGNIS_PLUGINS_DIST_DIR",
             "RUST_LOG",
             "MAGNIS_ENV_FILE",
         ] {

@@ -23,6 +23,33 @@ const DEFAULT_PORT: u16 = 3765;
 /// blocking every webview request (the cause of the packaged-app "Load failed").
 pub const DESKTOP_CORS_ORIGINS: &str =
     "tauri://localhost,https://tauri.localhost,http://localhost:*,http://127.0.0.1:*";
+
+/// Resolve `(MAGNIS_PLUGINS_DIR, MAGNIS_PLUGINS_DIST_DIR)`: the bundled
+/// `Contents/Resources/{plugins,plugins_dist}` when running from a `.app`,
+/// else the repo dirs (dev / `cargo tauri dev`). `None` if neither is present.
+fn plugin_dirs() -> Option<(PathBuf, PathBuf)> {
+    // Bundle: <exe>/../.. = Contents → Contents/Resources/{plugins,plugins_dist}.
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(contents) = exe.parent().and_then(|p| p.parent()) {
+            let res = contents.join("Resources");
+            let plugins = res.join("plugins");
+            if plugins.exists() {
+                return Some((plugins, res.join("plugins_dist")));
+            }
+        }
+    }
+    // Dev: repo-root plugins/ (+ sibling plugins_dist/).
+    let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")); // desktop/src-tauri
+    for rel in ["../../plugins", "../../../plugins"] {
+        let plugins = base.join(rel);
+        if plugins.exists() {
+            let canon = plugins.canonicalize().ok()?;
+            let dist = canon.parent()?.join("plugins_dist");
+            return Some((canon, dist));
+        }
+    }
+    None
+}
 const HEALTH_POLL_INTERVAL_MS: u64 = 100;
 // First desktop run extracts the bundled PostgreSQL archive and runs initdb
 // before /health binds — give it room (was 15s for the PGlite sidecar).
@@ -163,8 +190,8 @@ impl BackendProcessManager {
         let data_root_str = data_root
             .to_str()
             .context("Data root path is not valid UTF-8")?;
-        let child = Command::new(&bin)
-            .env("MAGNIS_DB_MODE", "local")
+        let mut cmd = Command::new(&bin);
+        cmd.env("MAGNIS_DB_MODE", "local")
             .env("DB_PATH", data_root_str)
             .env("STORAGE_DIR", data_root_str)
             // Desktop ships native embedded Postgres (bundled into magnis-server);
@@ -179,9 +206,15 @@ impl BackendProcessManager {
             )
             .stdin(Stdio::null())
             .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .spawn()
-            .context("Failed to spawn magnis-server")?;
+            .stderr(Stdio::inherit());
+        // Enable first-party plugins (companies, email, telegram, …): point the
+        // backend at the bundled (or repo, in dev) plugin packages so they are
+        // presence-seeded at boot and the plugin store works.
+        if let Some((plugins_dir, plugins_dist)) = plugin_dirs() {
+            cmd.env("MAGNIS_PLUGINS_DIR", &plugins_dir)
+                .env("MAGNIS_PLUGINS_DIST_DIR", &plugins_dist);
+        }
+        let child = cmd.spawn().context("Failed to spawn magnis-server")?;
 
         let base_url = format!("http://127.0.0.1:{}", port);
         let stopped = Arc::new(AtomicBool::new(false));
