@@ -4,6 +4,7 @@
 mod backend_process;
 mod commands;
 mod paths;
+mod service;
 mod workspace_config;
 
 use backend_process::{pick_port, BackendProcessManager};
