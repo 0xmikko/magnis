@@ -44,7 +44,7 @@
       "binaries/agent-server"
     ],
     "resources": [
-      "resources/magnis.env"
+      "magnis.env"
     ]
   }
 }

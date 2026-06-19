@@ -22,7 +22,12 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-OUT="${MAGNIS_SECRETS_OUT:-$REPO_ROOT/desktop/src-tauri/resources/magnis.env}"
+# Source the file from the crate root (not a resources/ subdir) so Tauri's
+# `resources: ["magnis.env"]` lands it flat at Contents/Resources/magnis.env —
+# the exact path the service plists set for MAGNIS_ENV_FILE. An array-form
+# resource in a subdir would preserve the subdir (Contents/Resources/resources/…)
+# and the services would not find it.
+OUT="${MAGNIS_SECRETS_OUT:-$REPO_ROOT/desktop/src-tauri/magnis.env}"
 
 # FIXTURE / SRC may also come from the environment so CI can drive the fixed
 # `beforeBuildCommand` string without editing it (DEC-17): set
