@@ -116,6 +116,50 @@ impl BackendProcessManager {
         )
     }
 
+    /// Resolve the bundled `agent-server` sidecar binary the backend will
+    /// spawn (`MAGNIS_AGENT_COMMAND`). Mirrors [`Self::server_binary_path`]
+    /// precedence: the Tauri `externalBin` triple-suffixed name next to the
+    /// exe first, then plain. In dev builds (no bundle) fall back to the
+    /// compiled `agent-server` produced by `desktop/build/bundle-agent.sh`.
+    /// `MAGNIS_AGENT_SERVER_PATH` overrides everything.
+    fn agent_binary_path() -> Result<std::path::PathBuf> {
+        if let Ok(path) = std::env::var("MAGNIS_AGENT_SERVER_PATH") {
+            let p = std::path::Path::new(&path);
+            if p.exists() {
+                return Ok(p.to_path_buf());
+            }
+            anyhow::bail!(
+                "MAGNIS_AGENT_SERVER_PATH set to {} but file does not exist",
+                p.display()
+            );
+        }
+        let current_exe =
+            std::env::current_exe().context("Failed to get current executable path")?;
+        let parent = current_exe
+            .parent()
+            .context("Executable has no parent directory")?;
+        let triple = current_target_triple();
+        let suffixed = parent.join(format!("agent-server-{triple}"));
+        if suffixed.exists() {
+            return Ok(suffixed);
+        }
+        let plain = parent.join("agent-server");
+        if plain.exists() {
+            return Ok(plain);
+        }
+        // Dev: desktop/src-tauri/binaries (where bundle-agent.sh writes).
+        let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let dev_suffixed = base.join("binaries").join(format!("agent-server-{triple}"));
+        if dev_suffixed.exists() {
+            return Ok(dev_suffixed.canonicalize()?);
+        }
+        anyhow::bail!(
+            "agent-server sidecar not found. Run desktop/build/bundle-agent.sh, or set \
+             MAGNIS_AGENT_SERVER_PATH to a compiled binary. Expected suffixed name: \
+             agent-server-{triple}"
+        )
+    }
+
     /// Resolve the bundled `pglite-server` sidecar binary.
     ///
     /// Tauri's `externalBin` convention drops the sidecar next to the main
@@ -214,6 +258,15 @@ impl BackendProcessManager {
             cmd.env("MAGNIS_PLUGINS_DIR", &plugins_dir)
                 .env("MAGNIS_PLUGINS_DIST_DIR", &plugins_dist);
         }
+        // Backend owns the agent in spawn mode too: set the gate flag +
+        // the COMPLETE agent spawn spec on the backend, so it spawns +
+        // supervises `agent-server` itself (both ports wired from one
+        // owner). The MAGNIS_AGENT_COMMAND is the resolved sidecar path —
+        // the backend never guesses it. The agent's env file / MCP proxy /
+        // DEFAULT_ENGINE / PATH are forwarded from the desktop's own env
+        // (set by `run-spawn.sh` in dev) so the agent reaches node + the
+        // claude/codex CLI; PATH is the desktop's inherited PATH.
+        Self::apply_agent_spawn_env(&mut cmd, port);
         let child = cmd.spawn().context("Failed to spawn magnis-server")?;
 
         let base_url = format!("http://127.0.0.1:{}", port);
@@ -229,6 +282,68 @@ impl BackendProcessManager {
         Self::wait_for_health(&base_url)?;
 
         Ok(manager)
+    }
+
+    /// Set `MAGNIS_BACKEND_OWNS_AGENT=1` + the COMPLETE agent spawn spec on
+    /// the backend command (spawn mode). The backend reads these and spawns
+    /// + supervises `agent-server` itself, owning both ports.
+    ///
+    /// NO FALLBACK: the gate is enabled ONLY when every required input is
+    /// available — the resolved agent-server path AND `MAGNIS_ENV_FILE`
+    /// (the agent requires an env file; the supervisor filters out
+    /// `*_API_KEY` before the agent loads it). If either is missing the gate
+    /// stays OFF and the reason is logged, rather than spawning a broken
+    /// agent that crash-loops.
+    fn apply_agent_spawn_env(cmd: &mut Command, backend_port: u16) {
+        let agent_command = match Self::agent_binary_path() {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!(
+                    "[backend-owns-agent] not enabling: agent-server not found ({e}). \
+                     The backend will run without the agent."
+                );
+                return;
+            }
+        };
+        let env_file = match std::env::var("MAGNIS_ENV_FILE") {
+            Ok(v) if !v.is_empty() => v,
+            _ => {
+                eprintln!(
+                    "[backend-owns-agent] not enabling: MAGNIS_ENV_FILE is not set. \
+                     Set it to the env file (its API keys are filtered out before the agent \
+                     loads it)."
+                );
+                return;
+            }
+        };
+        let mcp_proxy = std::env::var("MAGNIS_MCP_PROXY_PATH")
+            .ok()
+            .unwrap_or_else(|| {
+                // Dev fallback to the repo proxy path is acceptable here because
+                // the suffix is a FIXED, known repo artifact (not a guessed
+                // value): desktop/src-tauri/../../agent/src/mcp-stdio-proxy.mjs.
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../agent/src/mcp-stdio-proxy.mjs")
+                    .to_string_lossy()
+                    .into_owned()
+            });
+        let default_engine =
+            std::env::var("DEFAULT_ENGINE").unwrap_or_else(|_| "claude".to_string());
+        let agent_port = std::env::var("AGENT_PORT").unwrap_or_else(|_| "3002".to_string());
+        let path = std::env::var("PATH").unwrap_or_default();
+
+        cmd.env("MAGNIS_BACKEND_OWNS_AGENT", "1")
+            .env("MAGNIS_AGENT_COMMAND", &agent_command)
+            .env("AGENT_PORT", &agent_port)
+            .env("AGENT_HOST", "127.0.0.1")
+            .env("BACKEND_URL", format!("http://127.0.0.1:{backend_port}"))
+            .env("MAGNIS_ENV_FILE", &env_file)
+            .env("DEFAULT_ENGINE", &default_engine)
+            .env("MAGNIS_MCP_PROXY_PATH", &mcp_proxy)
+            .env("PATH", &path)
+            // The backend's own AGENT_URL must match AGENT_PORT (same number)
+            // so frontend→backend→agent proxying hits the live agent.
+            .env("AGENT_URL", format!("http://127.0.0.1:{agent_port}"));
     }
 
     fn wait_for_health(base_url: &str) -> Result<()> {

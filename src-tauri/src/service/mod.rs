@@ -1,10 +1,14 @@
 //! macOS background-service management (launchd LaunchAgents).
 //!
 //! The packaged desktop app does not spawn the backend as a child (that is the
-//! dev/`spawn` path). Instead it installs two user LaunchAgents —
-//! `com.magnis.backend` and `com.magnis.agent` — so the backend (and its
-//! embedded PostgreSQL child) and the agent run 24/7 under launchd, surviving
-//! window close (DEC-1/2/3).
+//! dev/`spawn` path). Instead it installs ONE user LaunchAgent —
+//! `com.magnis.backend` — so the backend runs 24/7 under launchd, surviving
+//! window close (DEC-1/2/3). The backend owns BOTH its embedded PostgreSQL
+//! child AND (gated on `MAGNIS_BACKEND_OWNS_AGENT=1`) the `agent-server`
+//! sidecar — so the separate `com.magnis.agent` service is gone. On install
+//! we boot out + delete any stale `com.magnis.agent.plist` from an older
+//! install so launchd doesn't keep the old agent running alongside the
+//! backend-owned one (`docs/plans/local-agent-supervision.md`).
 //!
 //! The install/idempotency logic is platform-independent and unit-tested with a
 //! fake `LaunchctlRunner` + an injected `LaunchAgents` dir. Only the real
@@ -157,9 +161,12 @@ impl<R: LaunchctlRunner> ServiceManager<R> {
         })
     }
 
-    /// Install/refresh both services. Refuses unless the bundle is under
-    /// `/Applications` (DEC-16/INV-14): launchd points at absolute in-bundle
-    /// paths, which are unstable from the DMG or a translocated path.
+    /// Install/refresh the backend service. Refuses unless the bundle is
+    /// under `/Applications` (DEC-16/INV-14): launchd points at absolute
+    /// in-bundle paths, which are unstable from the DMG or a translocated
+    /// path. First runs the migration cleanup so a stale standalone
+    /// `com.magnis.agent` from an older install can't keep running
+    /// alongside the now backend-owned agent.
     pub fn ensure_installed(
         &self,
         layout: &plist::ServiceLayout,
@@ -171,10 +178,30 @@ impl<R: LaunchctlRunner> ServiceManager<R> {
             }
             .into());
         }
+        // Migration: older installs ran a separate com.magnis.agent
+        // LaunchAgent. The backend now owns the agent, so boot out + delete
+        // any stale plist before bootstrapping the backend.
+        self.cleanup_legacy_agent_service();
         let mut report = InstallReport::default();
         report.record(self.ensure_service(&plist::backend_spec(layout))?);
-        report.record(self.ensure_service(&plist::agent_spec(layout))?);
         Ok(report)
+    }
+
+    /// Boot out + delete a stale standalone `com.magnis.agent` LaunchAgent
+    /// left by an older install. Idempotent: when no stale plist is present
+    /// it does NOTHING (no launchctl churn on every install) — the common
+    /// case for a fresh backend-owns-agent install. When a stale plist IS
+    /// found it boots the service out of launchd and deletes the file.
+    /// Returns `true` iff a stale plist was present and cleaned up.
+    pub fn cleanup_legacy_agent_service(&self) -> bool {
+        let path = self.plist_path(plist::LEGACY_AGENT_LABEL);
+        if !path.exists() {
+            return false;
+        }
+        // Boot it out of launchd first (it may be loaded), then delete.
+        let _ = self.runner.bootout(self.uid, plist::LEGACY_AGENT_LABEL);
+        std::fs::remove_file(&path).ok();
+        true
     }
 
     /// Boot out and remove one service's plist (INV-10). Idempotent.
@@ -184,10 +211,11 @@ impl<R: LaunchctlRunner> ServiceManager<R> {
         Ok(())
     }
 
-    /// Tear down both services (INV-10).
+    /// Tear down the backend service (INV-10). Also cleans up any stale
+    /// standalone agent service from an older install.
     pub fn uninstall(&self) -> anyhow::Result<()> {
         self.uninstall_service(plist::BACKEND_LABEL)?;
-        self.uninstall_service(plist::AGENT_LABEL)?;
+        self.cleanup_legacy_agent_service();
         Ok(())
     }
 }
@@ -270,11 +298,14 @@ fn layout_for(
     let exe = std::env::current_exe()?;
     let bundle = plist::bundle_paths_from_exe(&exe)
         .ok_or_else(|| anyhow::anyhow!("cannot resolve .app bundle from {}", exe.display()))?;
+    let home_dir =
+        dirs::home_dir().ok_or_else(|| anyhow::anyhow!("cannot resolve user home directory"))?;
     let layout = plist::ServiceLayout {
         macos_dir: bundle.macos_dir.clone(),
         resources_dir: bundle.resources_dir.clone(),
         data_root: app_paths.data_root().clone(),
         logs_dir: app_paths.logs_dir().clone(),
+        home_dir,
         version: version.to_string(),
     };
     Ok((layout, bundle.bundle_root))
@@ -370,6 +401,7 @@ mod tests {
             resources_dir: resources,
             data_root: PathBuf::from("/tmp/magnis-data"),
             logs_dir: PathBuf::from("/tmp/magnis-data/logs"),
+            home_dir: PathBuf::from("/Users/x"),
             version: version.into(),
         };
         (layout, bundle_root)
@@ -402,21 +434,52 @@ mod tests {
     }
 
     // @test-id: tst_desktop_service_002  @invariant: INV-10 (uninstall)
+    // ONE service now: install writes only com.magnis.backend; uninstall
+    // boots it out (and best-effort cleans any legacy agent service).
     #[test]
-    fn tst_desktop_service_002_uninstall_both() {
+    fn tst_desktop_service_002_uninstall_single_service() {
         let tmp = tempfile::tempdir().unwrap();
         let mgr = ServiceManager::new(tmp.path().to_path_buf(), 501, FakeLaunchctl::default());
         let (layout, bundle_root) = layout_in("/Applications", "0.1.0");
         mgr.ensure_installed(&layout, &bundle_root).unwrap();
         assert!(tmp.path().join("com.magnis.backend.plist").exists());
-        assert!(tmp.path().join("com.magnis.agent.plist").exists());
+        // No standalone agent plist is ever written — the backend owns it.
+        assert!(!tmp.path().join("com.magnis.agent.plist").exists());
 
         mgr.uninstall().unwrap();
         let booted: Vec<String> = mgr.runner.bootouts.borrow().clone();
         assert!(booted.contains(&"com.magnis.backend".to_string()));
-        assert!(booted.contains(&"com.magnis.agent".to_string()));
         assert!(!tmp.path().join("com.magnis.backend.plist").exists());
-        assert!(!tmp.path().join("com.magnis.agent.plist").exists());
+    }
+
+    // @test-id: tst_desktop_service_003 — migration cleanup: on install, a
+    // stale standalone com.magnis.agent.plist from an older install is
+    // booted out + deleted, so launchd doesn't keep running it alongside
+    // the now backend-owned agent.
+    #[test]
+    fn tst_desktop_service_003_install_cleans_stale_agent_plist() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Simulate an older install: a stale agent plist on disk.
+        let stale = tmp.path().join("com.magnis.agent.plist");
+        std::fs::write(&stale, "<plist>old standalone agent</plist>").unwrap();
+
+        let mgr = ServiceManager::new(tmp.path().to_path_buf(), 501, FakeLaunchctl::default());
+        let (layout, bundle_root) = layout_in("/Applications", "0.1.0");
+        let report = mgr.ensure_installed(&layout, &bundle_root).unwrap();
+
+        // Backend installed; stale agent plist deleted + booted out.
+        assert_eq!(report.installed, 1);
+        assert!(
+            !stale.exists(),
+            "stale agent plist must be deleted on install"
+        );
+        assert!(
+            mgr.runner
+                .bootouts
+                .borrow()
+                .contains(&"com.magnis.agent".to_string()),
+            "stale agent service must be booted out of launchd"
+        );
     }
 
     // @test-id: tst_desktop_pathguard_001  @invariant: INV-14 (install-location)
@@ -436,24 +499,24 @@ mod tests {
         assert!(err.to_string().contains("/Applications"));
         assert!(!tmp.path().join("com.magnis.backend.plist").exists());
 
-        // Installed under /Applications: both services bootstrapped.
+        // Installed under /Applications: the ONE backend service bootstrapped.
         let (app_layout, app_root) = layout_in("/Applications", "0.1.0");
         let r1 = mgr.ensure_installed(&app_layout, &app_root).unwrap();
-        assert_eq!(r1.installed, 2);
-        assert_eq!(mgr.runner.bootstraps.borrow().len(), 2);
+        assert_eq!(r1.installed, 1);
+        assert_eq!(mgr.runner.bootstraps.borrow().len(), 1);
 
         // Same again: no churn.
         let r2 = mgr.ensure_installed(&app_layout, &app_root).unwrap();
-        assert_eq!(r2.unchanged, 2);
-        assert_eq!(mgr.runner.bootstraps.borrow().len(), 2);
+        assert_eq!(r2.unchanged, 1);
+        assert_eq!(mgr.runner.bootstraps.borrow().len(), 1);
 
         // Bundle moved to a DIFFERENT /Applications path → plist program path
-        // differs → both re-bootstrapped.
+        // differs → the backend service re-bootstrapped.
         let (moved_layout, moved_root) = layout_in("/Applications/Sub", "0.1.0");
         let r3 = mgr.ensure_installed(&moved_layout, &moved_root).unwrap();
-        assert_eq!(r3.updated, 2);
-        assert_eq!(mgr.runner.bootstraps.borrow().len(), 4);
-        assert_eq!(mgr.runner.bootouts.borrow().len(), 2);
+        assert_eq!(r3.updated, 1);
+        assert_eq!(mgr.runner.bootstraps.borrow().len(), 2);
+        assert_eq!(mgr.runner.bootouts.borrow().len(), 1);
     }
 
     // @test-id: tst_desktop_dialog_001  @invariant: INV-17 — startup failures map
