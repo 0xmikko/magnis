@@ -157,6 +157,10 @@ pub fn backend_spec(l: &ServiceLayout) -> ServiceSpec {
                 "CORS_ALLOWED_ORIGINS".into(),
                 crate::backend_process::DESKTOP_CORS_ORIGINS.into(),
             ),
+            // Local desktop uses the Claude Code SUBSCRIPTION (engine `claude`),
+            // not the cloud billable path — disable the billable-only gate so
+            // `claude`/`codex` are allowed locally (release default is `true`).
+            ("BILLABLE_ENGINES_ONLY".into(), "false".into()),
             // Bundled plugin packages → presence-seeded at boot (companies,
             // email, telegram, …) and the plugin store works offline.
             (

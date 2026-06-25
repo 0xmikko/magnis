@@ -244,6 +244,11 @@ impl BackendProcessManager {
             .env("PORT", port.to_string())
             // Allow the Tauri webview origins (wins over any machine .env list).
             .env("CORS_ALLOWED_ORIGINS", DESKTOP_CORS_ORIGINS)
+            // Local desktop uses the Claude Code SUBSCRIPTION (engine `claude`),
+            // not the cloud billable path. The release default of
+            // BILLABLE_ENGINES_ONLY is `true` (forces `builtin`); turn it off
+            // locally so `claude`/`codex` are allowed and `claude` is the default.
+            .env("BILLABLE_ENGINES_ONLY", "false")
             .env(
                 "RUST_LOG",
                 std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()),
