@@ -2,21 +2,29 @@
 //! background services. No IO, no platform calls — every function here is a
 //! deterministic string/path transform, so the unit tests run on any host.
 //!
-//! Two services are described (DEC-2): `com.magnis.backend` (runs the bundled
-//! `magnis-server`, which owns its embedded PostgreSQL child) and
-//! `com.magnis.agent` (runs the bundled `agent-server`). Plists carry ONLY
-//! non-secret env (DEC-7/INV-3); secrets live in the bundled `magnis.env` that
-//! `MAGNIS_ENV_FILE` points at.
+//! ONE service is described now (`docs/plans/local-agent-supervision.md`):
+//! `com.magnis.backend` runs the bundled `magnis-server`, which owns its
+//! embedded PostgreSQL child AND — gated on `MAGNIS_BACKEND_OWNS_AGENT=1` —
+//! spawns + supervises the bundled `agent-server` itself (so both ports are
+//! wired from one owner and can't desync). The separate `com.magnis.agent`
+//! launchd service is removed. Plists carry ONLY non-secret env
+//! (DEC-7/INV-3); secrets live in the bundled `magnis.env` that
+//! `MAGNIS_ENV_FILE` points at — AND the backend filters every `*_API_KEY`
+//! out of that file before the agent loads it (subscription-only).
 
 use std::path::{Path, PathBuf};
 
 /// launchd Label for the backend service.
 pub const BACKEND_LABEL: &str = "com.magnis.backend";
-/// launchd Label for the agent service.
-pub const AGENT_LABEL: &str = "com.magnis.agent";
+/// launchd Label for the legacy standalone agent service. The backend now
+/// owns the agent (`MAGNIS_BACKEND_OWNS_AGENT`), so this service is NO
+/// LONGER installed — the constant is retained only so the install path
+/// can boot out + delete any stale plist left by an older install
+/// (migration cleanup).
+pub const LEGACY_AGENT_LABEL: &str = "com.magnis.agent";
 /// Fixed backend HTTP port (matches `backend_process::DEFAULT_PORT`).
 pub const BACKEND_PORT: u16 = 3765;
-/// Fixed agent HTTP port.
+/// Fixed agent HTTP port (the backend wires both ends).
 pub const AGENT_PORT: u16 = 3002;
 
 /// Rendered inputs for one LaunchAgent. Pure data.
@@ -45,6 +53,11 @@ pub struct ServiceLayout {
     pub data_root: PathBuf,
     /// Directory for service stdout/stderr logs.
     pub logs_dir: PathBuf,
+    /// User home directory — used to build the agent `PATH` so the
+    /// supervised `agent-server` can reach `node` and `claude`/`codex`
+    /// (which live under `~/.bun/bin`, `~/.local/bin`). launchd plists
+    /// can't expand `$HOME`, so it is resolved into an absolute PATH here.
+    pub home_dir: PathBuf,
     /// App version, used as the plist content stamp.
     pub version: String,
 }
@@ -94,7 +107,38 @@ pub fn is_under_applications(bundle_root: &Path) -> bool {
     bundle_root.starts_with("/Applications")
 }
 
+/// Build the `PATH` the backend hands the supervised `agent-server`. It
+/// must reach `node` + the MCP stdio proxy, the `claude`/`codex` CLI
+/// (subscription login state), and the bundled connector sidecars. launchd
+/// can't expand `$HOME`, so we resolve the user paths into absolutes here.
+/// Order mirrors `desktop/run-spawn.sh`: user bins first, then Homebrew,
+/// then the bundle's `MacOS` dir (connectors), then the system minimum.
+pub fn agent_path(home_dir: &Path, macos_dir: &Path) -> String {
+    let parts = [
+        home_dir.join(".local/bin"),
+        PathBuf::from("/opt/homebrew/bin"),
+        home_dir.join(".bun/bin"),
+        macos_dir.to_path_buf(),
+        PathBuf::from("/usr/bin"),
+        PathBuf::from("/bin"),
+        PathBuf::from("/usr/sbin"),
+        PathBuf::from("/sbin"),
+    ];
+    parts
+        .iter()
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect::<Vec<_>>()
+        .join(":")
+}
+
 /// Build the backend service spec from the resolved layout.
+///
+/// The backend OWNS the agent now: the plist sets
+/// `MAGNIS_BACKEND_OWNS_AGENT=1` plus the COMPLETE agent spawn spec
+/// (command, ports, `BACKEND_URL`, env file, default engine, MCP proxy,
+/// PATH). The backend reads these and spawns + supervises `agent-server`
+/// itself — wiring both ports from one place so they can't desync. Never
+/// any `*_API_KEY` here (subscription-only).
 pub fn backend_spec(l: &ServiceLayout) -> ServiceSpec {
     let env_file = env_file_path(&l.resources_dir);
     ServiceSpec {
@@ -134,33 +178,32 @@ pub fn backend_spec(l: &ServiceLayout) -> ServiceSpec {
                 "MAGNIS_ENV_FILE".into(),
                 env_file.to_string_lossy().into_owned(),
             ),
-        ],
-        stdout_path: l.logs_dir.join("magnis-backend.out.log"),
-        stderr_path: l.logs_dir.join("magnis-backend.err.log"),
-        stamp: l.version.clone(),
-    }
-}
-
-/// Build the agent service spec from the resolved layout.
-pub fn agent_spec(l: &ServiceLayout) -> ServiceSpec {
-    let env_file = env_file_path(&l.resources_dir);
-    ServiceSpec {
-        label: AGENT_LABEL.to_string(),
-        program: sidecar_path(&l.macos_dir, "agent-server"),
-        env: vec![
+            // ── Backend-owns-agent: the COMPLETE agent spawn spec ──────
+            ("MAGNIS_BACKEND_OWNS_AGENT".into(), "1".into()),
+            (
+                "MAGNIS_AGENT_COMMAND".into(),
+                sidecar_path(&l.macos_dir, "agent-server")
+                    .to_string_lossy()
+                    .into_owned(),
+            ),
             ("AGENT_PORT".into(), AGENT_PORT.to_string()),
             ("AGENT_HOST".into(), "127.0.0.1".into()),
             (
                 "BACKEND_URL".into(),
                 format!("http://127.0.0.1:{BACKEND_PORT}"),
             ),
+            ("DEFAULT_ENGINE".into(), "claude".into()),
             (
-                "MAGNIS_ENV_FILE".into(),
-                env_file.to_string_lossy().into_owned(),
+                "MAGNIS_MCP_PROXY_PATH".into(),
+                l.resources_dir
+                    .join("mcp-stdio-proxy.mjs")
+                    .to_string_lossy()
+                    .into_owned(),
             ),
+            ("PATH".into(), agent_path(&l.home_dir, &l.macos_dir)),
         ],
-        stdout_path: l.logs_dir.join("magnis-agent.out.log"),
-        stderr_path: l.logs_dir.join("magnis-agent.err.log"),
+        stdout_path: l.logs_dir.join("magnis-backend.out.log"),
+        stderr_path: l.logs_dir.join("magnis-backend.err.log"),
         stamp: l.version.clone(),
     }
 }
@@ -228,13 +271,17 @@ mod tests {
             resources_dir: PathBuf::from("/Applications/Magnis.app/Contents/Resources"),
             data_root: PathBuf::from("/Users/x/Library/Application Support/com.magnis.desktop"),
             logs_dir: PathBuf::from("/Users/x/Library/Application Support/com.magnis.desktop/logs"),
+            home_dir: PathBuf::from("/Users/x"),
             version: "0.1.0".into(),
         }
     }
 
     // @test-id: tst_desktop_plist_001  @invariant: INV-1, INV-2
+    // The ONE service plist (com.magnis.backend) now carries the flag +
+    // the COMPLETE agent spawn spec — the backend owns the agent. There is
+    // no separate com.magnis.agent plist anymore.
     #[test]
-    fn tst_desktop_plist_001_both_plists_shape() {
+    fn tst_desktop_plist_001_backend_plist_owns_agent() {
         let l = fixture_layout();
 
         let backend = render_plist(&backend_spec(&l));
@@ -267,30 +314,51 @@ mod tests {
             );
         }
 
-        let agent = render_plist(&agent_spec(&l));
-        assert!(agent.contains("<string>com.magnis.agent</string>"));
-        assert!(
-            agent.contains("<string>/Applications/Magnis.app/Contents/MacOS/agent-server</string>")
-        );
-        assert!(
-            !agent.contains("agent-server-"),
-            "program path must NOT carry the triple suffix (Tauri strips it)"
-        );
+        // The gate flag + the COMPLETE agent spawn spec live on THIS plist.
+        assert!(backend.contains("<key>MAGNIS_BACKEND_OWNS_AGENT</key>"));
+        assert!(backend.contains("<string>1</string>"));
         for (k, v) in [
+            (
+                "MAGNIS_AGENT_COMMAND",
+                "/Applications/Magnis.app/Contents/MacOS/agent-server",
+            ),
             ("AGENT_PORT", "3002"),
             ("AGENT_HOST", "127.0.0.1"),
             ("BACKEND_URL", "http://127.0.0.1:3765"),
+            ("DEFAULT_ENGINE", "claude"),
+            (
+                "MAGNIS_MCP_PROXY_PATH",
+                "/Applications/Magnis.app/Contents/Resources/mcp-stdio-proxy.mjs",
+            ),
         ] {
             assert!(
-                agent.contains(&format!("<key>{k}</key>")),
-                "agent missing {k}"
+                backend.contains(&format!("<key>{k}</key>")),
+                "backend missing agent-spec key {k}"
             );
             assert!(
-                agent.contains(&format!("<string>{v}</string>")),
-                "agent missing val {v}"
+                backend.contains(&format!("<string>{v}</string>")),
+                "backend missing agent-spec val {v} (for {k})"
             );
         }
-        assert!(agent.contains("<key>MAGNIS_ENV_FILE</key>"));
+        // The agent-server command path must NOT carry the triple suffix.
+        assert!(
+            !backend.contains("agent-server-"),
+            "agent command must be the plain name (Tauri strips the suffix)"
+        );
+        // PATH reaches node/claude (~/.bun/bin, ~/.local/bin), Homebrew, and
+        // the bundle's connector sidecars (MacOS dir).
+        assert!(backend.contains("<key>PATH</key>"));
+        assert!(backend.contains("/Users/x/.bun/bin"));
+        assert!(backend.contains("/Users/x/.local/bin"));
+        assert!(backend.contains("/opt/homebrew/bin"));
+        assert!(backend.contains("/Applications/Magnis.app/Contents/MacOS"));
+
+        // No separate agent service exists: there is no com.magnis.agent
+        // label anywhere in the generated plist.
+        assert!(
+            !backend.contains("com.magnis.agent"),
+            "the standalone agent service is removed"
+        );
     }
 
     // @test-id: tst_desktop_plist_002  @invariant: INV-3 (no secrets in plist)
@@ -300,12 +368,14 @@ mod tests {
         // A secret value that lives in the bundled magnis.env, NOT the plist.
         let secret = "super-secret-google-client-secret-value";
         let backend = render_plist(&backend_spec(&l));
-        let agent = render_plist(&agent_spec(&l));
         assert!(!backend.contains(secret));
-        assert!(!agent.contains(secret));
         // Only the env-file PATH is present, never its contents.
         assert!(backend.contains("magnis.env"));
-        assert!(agent.contains("magnis.env"));
+        // Subscription-only: NO API-key env var on the plist.
+        assert!(
+            !backend.contains("ANTHROPIC_API_KEY") && !backend.contains("OPENAI_API_KEY"),
+            "the agent is subscription-only; no API key may appear in the plist"
+        );
     }
 
     // @test-id: tst_desktop_paths_001  @invariant: INV-15
