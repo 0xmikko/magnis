@@ -34,7 +34,9 @@ done
 # ── build connector binaries + plugin bundles if missing ───────────────────
 if [ ! -x "$REPO/target/release/magnis-google" ] || [ ! -x "$REPO/target/release/magnis-telegram" ]; then
   echo "▶ building source connectors…"
-  ( cd "$REPO" && cargo build --release -p magnis-source-google -p magnis-source-telegram )
+  # Connectors build in the plugin workspace (plugins-public-repo DEC-3),
+  # shared target keeps target/release paths stable.
+  ( cd "$REPO" && cargo build --release --manifest-path plugins/Cargo.toml --target-dir target -p magnis-source-google -p magnis-source-telegram )
 fi
 [ -d "$REPO/plugins_dist" ] || { echo "▶ building plugin UI bundles…"; ( cd "$REPO" && bun run scripts/build-plugins.ts ); }
 
