@@ -18,10 +18,10 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 echo "bundle-plugins: building plugin UI bundles → plugins_dist"
 cd "$REPO_ROOT"
-bun run plugins/scripts/build-plugins.ts
+bun run plugins-public/scripts/build-plugins.ts
 
 DEST="$REPO_ROOT/desktop/src-tauri"
 rm -rf "$DEST/plugins" "$DEST/plugins_dist"
-cp -R "$REPO_ROOT/plugins" "$DEST/plugins"
-cp -R "$REPO_ROOT/plugins_dist" "$DEST/plugins_dist"
+cp -R "$REPO_ROOT/plugins-public/plugins" "$DEST/plugins"
+cp -R "$REPO_ROOT/plugins-public/plugins_dist" "$DEST/plugins_dist"
 echo "bundle-plugins: staged $(ls "$DEST/plugins" | wc -l | tr -d ' ') plugin package(s) + plugins_dist"
