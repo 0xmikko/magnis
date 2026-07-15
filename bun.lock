@@ -74,6 +74,12 @@
       "name": "@magnis/plugin-x",
       "version": "0.1.0",
     },
+    "plugins/sources/google-ts": {
+      "name": "@magnis/source-google-ts",
+      "dependencies": {
+        "@magnis/connector-sdk": "workspace:*",
+      },
+    },
     "plugins/sources/linkedin": {
       "name": "@magnis/source-linkedin",
       "dependencies": {
@@ -175,6 +181,8 @@
     "@magnis/plugin-triggers": ["@magnis/plugin-triggers@workspace:plugins/modules/triggers"],
 
     "@magnis/plugin-x": ["@magnis/plugin-x@workspace:plugins/modules/x"],
+
+    "@magnis/source-google-ts": ["@magnis/source-google-ts@workspace:plugins/sources/google-ts"],
 
     "@magnis/source-linkedin": ["@magnis/source-linkedin@workspace:plugins/sources/linkedin"],
 

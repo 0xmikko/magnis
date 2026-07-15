@@ -1,0 +1,216 @@
+// Contacts surface: Google People API client + canonical conversion —
+// twin of plugins/sources/google/src/contacts.rs.
+//
+// Each contacts envelope's `payload` is a full Contact serialization and
+// `remote_id` is `gpeople:{stable_hash}` (dedup survives display-name change).
+
+import { createHash } from "node:crypto";
+import type { Envelope } from "@magnis/connector-sdk";
+import { checkRateLimit, fetchWithRetry, type FetchLike } from "./http";
+import { mergeProgress, progressCursor } from "./progress";
+import type { WindowFetchResult } from "./calendar";
+
+// ── Raw Google People API shapes (camelCase, as served) ───────
+
+interface GpeopleMetadata {
+  primary?: boolean | null;
+}
+
+interface GpeopleName {
+  displayName?: string | null;
+  givenName?: string | null;
+  familyName?: string | null;
+  metadata?: GpeopleMetadata | null;
+}
+
+interface GpeopleEmail {
+  value?: string | null;
+  type?: string | null;
+  metadata?: GpeopleMetadata | null;
+}
+
+interface GpeoplePhone {
+  value?: string | null;
+  canonicalForm?: string | null;
+  type?: string | null;
+  metadata?: GpeopleMetadata | null;
+}
+
+export interface GpeoplePerson {
+  /** Always present — looks like "people/c12345…". */
+  resourceName: string;
+  names?: GpeopleName[] | null;
+  emailAddresses?: GpeopleEmail[] | null;
+  phoneNumbers?: GpeoplePhone[] | null;
+  organizations?: { name?: string | null; title?: string | null; current?: boolean | null }[] | null;
+  photos?: { url?: string | null; metadata?: GpeopleMetadata | null }[] | null;
+  urls?: { value?: string | null; type?: string | null }[] | null;
+}
+
+interface GpeopleConnectionsResponse {
+  connections?: GpeoplePerson[] | null;
+  nextPageToken?: string | null;
+}
+
+// ── Canonical Contact shape ───────────────────────────────────
+
+export interface Contact {
+  id: string;
+  display_name: string | null;
+  given_name: string | null;
+  family_name: string | null;
+  emails: { address: string; label: string | null; is_primary: boolean }[];
+  phones: { number: string; label: string | null; is_primary: boolean }[];
+  organizations: { name: string | null; title: string | null; is_current: boolean }[];
+  photo_url: string | null;
+  external_url: string | null;
+}
+
+// ── GpeoplePerson → Contact conversion ────────────────────────
+
+function pickPrimary<T extends { metadata?: GpeopleMetadata | null }>(
+  items: T[],
+): T | undefined {
+  return items.find((x) => x.metadata?.primary === true) ?? items[0];
+}
+
+/** SHA-256 of the `people/{id}` resource name, hex, first 16 chars — stable
+ * across fetches and short enough for a graph external-link key. */
+export function stableContactId(resourceName: string): string {
+  return createHash("sha256").update(resourceName, "utf-8").digest("hex").slice(0, 16);
+}
+
+/** Convert a People API Person into a canonical Contact. Returns null when the
+ * person has no useful identity (no name, no email, no phone) —
+ * INV-CONTACTS-2. */
+export function gpeoplePersonToContact(p: GpeoplePerson): Contact | null {
+  const primaryName = pickPrimary(p.names ?? []);
+  const displayName =
+    primaryName?.displayName ??
+    (() => {
+      const g = primaryName?.givenName ?? null;
+      const f = primaryName?.familyName ?? null;
+      if (g !== null && f !== null) return `${g} ${f}`;
+      return g ?? f ?? null;
+    })();
+
+  const emails = (p.emailAddresses ?? []).flatMap((e) =>
+    e.value != null
+      ? [
+          {
+            address: e.value,
+            label: e.type ?? null,
+            is_primary: e.metadata?.primary === true,
+          },
+        ]
+      : [],
+  );
+
+  const phones = (p.phoneNumbers ?? []).flatMap((ph) => {
+    const number = ph.canonicalForm ?? ph.value ?? null;
+    return number !== null
+      ? [
+          {
+            number,
+            label: ph.type ?? null,
+            is_primary: ph.metadata?.primary === true,
+          },
+        ]
+      : [];
+  });
+
+  // INV-CONTACTS-2 filter: at least ONE of {name, email, phone}.
+  if (displayName === null && emails.length === 0 && phones.length === 0) {
+    return null;
+  }
+
+  const organizations = (p.organizations ?? []).map((o) => ({
+    name: o.name ?? null,
+    title: o.title ?? null,
+    is_current: o.current ?? false,
+  }));
+
+  const photoUrl = pickPrimary(p.photos ?? [])?.url ?? null;
+
+  const profileUrl = (p.urls ?? []).find(
+    (u) => u.type != null && u.type.toLowerCase() === "profile",
+  );
+  const externalUrl = profileUrl !== undefined ? (profileUrl.value ?? null) : null;
+
+  return {
+    id: stableContactId(p.resourceName),
+    display_name: displayName,
+    given_name: primaryName?.givenName ?? null,
+    family_name: primaryName?.familyName ?? null,
+    emails,
+    phones,
+    organizations,
+    photo_url: photoUrl,
+    external_url: externalUrl,
+  };
+}
+
+// ── REST client + fetch logic ─────────────────────────────────
+
+async function listConnectionsPage(
+  token: string,
+  pageToken: string | undefined,
+  fetchFn: FetchLike,
+): Promise<GpeopleConnectionsResponse> {
+  const params = new URLSearchParams({
+    personFields: "names,emailAddresses,phoneNumbers,organizations,photos,urls",
+    pageSize: "100",
+  });
+  if (pageToken !== undefined) params.set("pageToken", pageToken);
+  const url = `https://people.googleapis.com/v1/people/me/connections?${params}`;
+
+  const resp = await fetchWithRetry(fetchFn, url, {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  checkRateLimit(resp);
+  if (!resp.ok) {
+    throw new Error(
+      `People API list_connections failed: HTTP ${resp.status} — ${await resp.text()}`,
+    );
+  }
+  return (await resp.json()) as GpeopleConnectionsResponse;
+}
+
+/** Bootstrap/catch-up contacts fetch (People API has no delta token — every
+ * page is a full snapshot). Cumulative `discovered` only; `nextCursor` is
+ * null on the last page. */
+export async function fetchContactsPage(
+  token: string,
+  cursor: unknown,
+  fetchFn: FetchLike,
+): Promise<WindowFetchResult> {
+  const c =
+    cursor !== null && typeof cursor === "object"
+      ? (cursor as Record<string, unknown>)
+      : undefined;
+  const pageToken = typeof c?.page_token === "string" ? c.page_token : undefined;
+
+  const page = await listConnectionsPage(token, pageToken, fetchFn);
+
+  const envelopes: Envelope[] = [];
+  for (const person of page.connections ?? []) {
+    const contact = gpeoplePersonToContact(person);
+    if (contact === null) continue; // INV-CONTACTS-2: no useful identity
+    envelopes.push({
+      surface: "contacts",
+      payload: contact as unknown as Record<string, unknown>,
+      remote_id: `gpeople:${contact.id}`,
+      kind: "snapshot",
+    });
+  }
+
+  const progress = progressCursor(cursor, envelopes.length, undefined);
+
+  let nextCursor: Record<string, unknown> | null = null;
+  if (typeof page.nextPageToken === "string") {
+    nextCursor = { page_token: page.nextPageToken };
+    mergeProgress(nextCursor, progress);
+  }
+
+  return { envelopes, nextCursor, discovered: progress.discovered };
+}
