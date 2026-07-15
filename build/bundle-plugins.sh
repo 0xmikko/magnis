@@ -6,7 +6,7 @@
 # …) is presence-seeded at boot and the plugin store/install works offline.
 #
 #   - plugins/        first-party source packages (manifests + module + ui), tracked
-#   - plugins_dist/   built UI bundles (scripts/build-plugins.ts), gitignored
+#   - plugins_dist/   built UI bundles (plugins/scripts/build-plugins.ts), gitignored
 #
 # Output staged into desktop/src-tauri/{plugins,plugins_dist} (gitignored),
 # referenced by tauri.conf.json `bundle.resources`.
@@ -18,7 +18,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 echo "bundle-plugins: building plugin UI bundles → plugins_dist"
 cd "$REPO_ROOT"
-bun run scripts/build-plugins.ts
+bun run plugins/scripts/build-plugins.ts
 
 DEST="$REPO_ROOT/desktop/src-tauri"
 rm -rf "$DEST/plugins" "$DEST/plugins_dist"
