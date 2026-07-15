@@ -18,7 +18,11 @@ export interface Envelope {
 
 export interface FetchArgs {
   surface: string;
-  cursor?: number;
+  /** Arbitrary JSON cursor (S1.1) — the host round-trips it verbatim; a
+   * numeric cursor is just the JSON number a poll connector chose. */
+  cursor?: unknown;
+  /** Present-to-past by default; the host may ask "forward" on catch-up. */
+  direction?: "backward" | "forward";
   /** Tracked handles for this platform — set DEC-8 (host passes the opt-in set). */
   tracked_handles?: string[];
   limit?: number;
@@ -29,8 +33,11 @@ export interface FetchArgs {
 
 export interface FetchResult {
   envelopes: Envelope[];
-  nextCursor: number;
+  nextCursor: unknown;
   hasMore: boolean;
+  /** Optional sync-progress counters (profile.rs: bootstrap bar). */
+  total?: number | null;
+  discovered?: number | null;
 }
 
 /** JSON-RPC error codes shared with the host (backend runtime/runtime.rs).
@@ -64,6 +71,76 @@ export interface ConnectorConfig {
    * subject. Absent → magnis.auth.probe stays rejected (source cannot be
    * provisioned). */
   probeAuth?: (meta: Record<string, unknown> | undefined) => Promise<{ subject: string }>;
+  /** "push" advertises live delivery: the host opens `listen_start`
+   * subscriptions and consumes `notifications/magnis/envelope`. */
+  mode?: "poll" | "push";
+  /** Push session open (S1.2): called on `listen_start` (and the legacy
+   * `magnis.sync.listen` alias). `emit` stamps + writes one envelope
+   * notification for THIS subscription; after `listen_stop` it no-ops. */
+  listenStart?: (
+    args: { subscription_id: string; meta?: Record<string, unknown> },
+    emit: (envelope: Envelope) => void,
+  ) => Promise<void>;
+  /** Push session close (S1.2): called on `listen_stop`. */
+  listenStop?: (args: { subscription_id: string }) => Promise<void>;
+  /** Auth-flow handlers (S1.3) — the host relays magnis.auth.begin/step/
+   * exchange/revoke here with host-held inputs (+ `_meta`). A missing
+   * handler answers -32601 (this connector doesn't implement that step). */
+  auth?: Partial<
+    Record<
+      "begin" | "step" | "exchange" | "revoke",
+      (
+        args: Record<string, unknown>,
+        meta: Record<string, unknown> | undefined,
+      ) => Promise<Record<string, unknown>>
+    >
+  >;
+  /** Outbound actions (S1.4): `magnis.execute` payload `{ action, ... }`
+   * dispatches by name; unknown action answers -32601. */
+  execute?: Record<
+    string,
+    (
+      args: Record<string, unknown>,
+      meta: Record<string, unknown> | undefined,
+    ) => Promise<Record<string, unknown>>
+  >;
+  /** Notification writer override (tests). Default: process.stdout. */
+  onNotification?: (line: string) => void;
+}
+
+/** Live subscriptions this process holds (S1.2). Module-level: one connector
+ * process serves one host. */
+const liveSubscriptions = new Set<string>();
+
+function extractMeta(args: Record<string, unknown>): Record<string, unknown> | undefined {
+  return args._meta && typeof args._meta === "object"
+    ? (args._meta as Record<string, unknown>)
+    : undefined;
+}
+
+function makeEmitter(
+  config: ConnectorConfig,
+  subscriptionId: string,
+): (envelope: Envelope) => void {
+  const write =
+    config.onNotification ?? ((line: string) => process.stdout.write(line + "\n"));
+  return (envelope: Envelope) => {
+    // A stop kills the subscription; late emits are refused, not routed.
+    if (!liveSubscriptions.has(subscriptionId)) return;
+    write(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        method: "notifications/magnis/envelope",
+        params: {
+          subscription_id: subscriptionId,
+          surface: envelope.surface,
+          remote_id: envelope.remote_id,
+          kind: envelope.kind,
+          payload: envelope.payload,
+        },
+      }),
+    );
+  };
 }
 
 type JsonRpc = {
@@ -80,7 +157,7 @@ function capabilities(config: ConnectorConfig): Record<string, unknown> {
       magnis: {
         sync: {
           surfaces: config.surfaces,
-          mode: "poll",
+          mode: config.mode ?? "poll",
           interval_secs: config.intervalSecs ?? 300,
         },
       },
@@ -130,6 +207,106 @@ if (name === "magnis.auth.probe" && config.probeAuth) {
         };
       }
     }
+    const rawArgs = (msg.params?.arguments ?? {}) as Record<string, unknown>;
+    const metaArg = extractMeta(rawArgs);
+
+    // ── push sessions (S1.2) ────────────────────────────────────────────────
+    if (name === "listen_start" && config.listenStart) {
+      const subscriptionId =
+        typeof rawArgs.subscription_id === "string" && rawArgs.subscription_id
+          ? rawArgs.subscription_id
+          : "sub:legacy";
+      liveSubscriptions.add(subscriptionId);
+      try {
+        await config.listenStart(
+          { subscription_id: subscriptionId, meta: metaArg },
+          makeEmitter(config, subscriptionId),
+        );
+        return { jsonrpc: "2.0", id, result: { ok: true, subscription_id: subscriptionId } };
+      } catch (e) {
+        liveSubscriptions.delete(subscriptionId);
+        const message = e instanceof Error ? e.message : String(e);
+        return { jsonrpc: "2.0", id, error: { code: GENERIC_FETCH_ERROR_CODE, message } };
+      }
+    }
+    if (name === "listen_stop" && config.listenStop) {
+      const subscriptionId =
+        typeof rawArgs.subscription_id === "string" ? rawArgs.subscription_id : "sub:legacy";
+      liveSubscriptions.delete(subscriptionId);
+      try {
+        await config.listenStop({ subscription_id: subscriptionId });
+        return { jsonrpc: "2.0", id, result: { ok: true } };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return { jsonrpc: "2.0", id, error: { code: GENERIC_FETCH_ERROR_CODE, message } };
+      }
+    }
+    // Legacy alias, kept EXACTLY as the Rust telegram bin serves it: derive
+    // the subscription id from `_meta.account_id` and ack `{ ok, subscription_id }`.
+    if (name === "magnis.sync.listen" && config.listenStart) {
+      const account = metaArg && typeof metaArg.account_id === "string" ? metaArg.account_id : undefined;
+      const subscriptionId = account ? `sub:${account}` : "sub:legacy";
+      liveSubscriptions.add(subscriptionId);
+      try {
+        await config.listenStart(
+          { subscription_id: subscriptionId, meta: metaArg },
+          makeEmitter(config, subscriptionId),
+        );
+        return { jsonrpc: "2.0", id, result: { ok: true, subscription_id: subscriptionId } };
+      } catch (e) {
+        liveSubscriptions.delete(subscriptionId);
+        const message = e instanceof Error ? e.message : String(e);
+        return { jsonrpc: "2.0", id, error: { code: GENERIC_FETCH_ERROR_CODE, message } };
+      }
+    }
+
+    // ── auth flows (S1.3) ───────────────────────────────────────────────────
+    if (name.startsWith("magnis.auth.") && name !== "magnis.auth.probe") {
+      const op = name.slice("magnis.auth.".length) as "begin" | "step" | "exchange" | "revoke";
+      const handler = config.auth?.[op];
+      if (!handler) {
+        return { jsonrpc: "2.0", id, error: { code: -32601, message: `unknown tool ${name}` } };
+      }
+      try {
+        const result = await handler(rawArgs, metaArg);
+        return { jsonrpc: "2.0", id, result };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          jsonrpc: "2.0",
+          id,
+          error: { code: GENERIC_FETCH_ERROR_CODE, message, data: { kind: "auth", message } },
+        };
+      }
+    }
+
+    // ── outbound actions (S1.4) ─────────────────────────────────────────────
+    if (name === "magnis.execute") {
+      const action = typeof rawArgs.action === "string" ? rawArgs.action : "";
+      const handler = config.execute?.[action];
+      if (!handler) {
+        return {
+          jsonrpc: "2.0",
+          id,
+          error: { code: -32601, message: `unknown execute action '${action}'` },
+        };
+      }
+      try {
+        const result = await handler(rawArgs, metaArg);
+        return { jsonrpc: "2.0", id, result };
+      } catch (e) {
+        if (e instanceof RateLimitError) {
+          return {
+            jsonrpc: "2.0",
+            id,
+            error: { code: RATE_LIMIT_CODE, message: e.message, data: { retry_after: e.retryAfterSecs } },
+          };
+        }
+        const message = e instanceof Error ? e.message : String(e);
+        return { jsonrpc: "2.0", id, error: { code: GENERIC_FETCH_ERROR_CODE, message } };
+      }
+    }
+
     if (name !== "magnis.sync.fetch") {
       return {
         jsonrpc: "2.0",
@@ -137,22 +314,30 @@ if (name === "magnis.auth.probe" && config.probeAuth) {
         error: { code: -32601, message: `unknown tool ${name}` },
       };
     }
-    const args = (msg.params?.arguments ?? {}) as Record<string, unknown>;
+    const args = rawArgs;
     const surface =
       typeof args.surface === "string" ? args.surface : config.surfaces[0] ?? "";
-    const cursor = typeof args.cursor === "number" ? args.cursor : 0;
+    const cursor = args.cursor; // arbitrary JSON, verbatim (S1.1)
+    const direction =
+      args.direction === "forward" || args.direction === "backward"
+        ? args.direction
+        : undefined;
     const tracked = Array.isArray(args.tracked_handles)
       ? (args.tracked_handles.filter((h) => typeof h === "string") as string[])
       : undefined;
     const limit = typeof args.limit === "number" ? args.limit : undefined;
-    const meta =
-      args._meta && typeof args._meta === "object"
-        ? (args._meta as Record<string, unknown>)
-        : undefined;
+    const meta = metaArg;
     // A fetch failure must NOT crash the connector — return a JSON-RPC error so
     // the host degrades the surface (and backs off on a rate limit, S6).
     try {
-      const result = await config.fetch({ surface, cursor, tracked_handles: tracked, limit, meta });
+      const result = await config.fetch({
+        surface,
+        cursor,
+        direction,
+        tracked_handles: tracked,
+        limit,
+        meta,
+      });
       return { jsonrpc: "2.0", id, result };
     } catch (e) {
       if (e instanceof RateLimitError) {
