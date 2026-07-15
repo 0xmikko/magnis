@@ -2,3 +2,4 @@ node_modules/
 target/
 plugins_dist/
 *.log
+catalog/
