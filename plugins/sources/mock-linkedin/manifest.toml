@@ -1,0 +1,25 @@
+# mock-linkedin — LinkedIn fixture connector (SourceKind Mock; loaded ONLY when
+# ENABLED_SOURCES lists it). No network, no credentials — feeds the `linkedin`
+# surface with the same envelope shape as the live `linkedin` connector for
+# tests / e2e (INV-2/6). Read-only: only magnis.sync.fetch (INV-5).
+
+[source]
+id = "mock-linkedin"
+version = "1.0.0"
+dev = true
+surfaces = ["linkedin"]
+transport = "stdio"
+account_mode = "single"
+accounts = ["default"]
+kind = "mock"
+
+[spawn]
+command = "bun"
+args = ["run", "src/main.ts"]
+
+[profile]
+mode = "poll"
+
+# Declared install (extensions-lifecycle DEC-L4): host-standard routine.
+[lifecycle]
+install = "standard"

@@ -1,0 +1,18 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "experimentalDecorators": true
+  },
+  "include": [
+    "module/**/*.ts",
+    "types/**/*.ts",
+    "ui/**/*.ts",
+    "ui/**/*.tsx"
+  ],
+  "exclude": [
+    "module/__tests__",
+    "ui/__tests__"
+  ]
+}

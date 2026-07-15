@@ -1,0 +1,25 @@
+# StateMock archetype 'phone' (accounts-sync-status plan §11.1): the shared
+# magnis-mock-statemachine binary in a phone_code/push shape. Eval-only (kind=mock).
+
+[source]
+id = "mock-statemachine-phone"
+version = "1.0.0"
+dev = true
+surfaces = ["smp"]
+transport = "stdio"
+account_mode = "single"
+kind = "mock"
+
+[auth]
+type = "phone_code"
+
+[spawn]
+command = "magnis-mock-statemachine"
+args = ["--surfaces", "smp", "--mode", "push"]
+
+[profile]
+mode = "push"
+
+# Declared install (extensions-lifecycle DEC-L4): host-standard routine.
+[lifecycle]
+install = "standard"

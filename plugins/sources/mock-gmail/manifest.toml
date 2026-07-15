@@ -1,0 +1,35 @@
+# mock-gmail — reference external Magnis MCP source connector (Stage 7).
+#
+# The first source migrated out of the backend into the external-MCP format.
+# Feeds two surfaces (email + meetings) with the same canonical envelopes the
+# in-core mock did, so the emails/meetings modules ingest it unchanged.
+#
+# The server is the `magnis-mock-gmail` binary (built from the magnis crate for
+# v1; it will move to its own repo later). `command` resolves it on PATH — the
+# deploy places it next to `magnis-server`. MOCK_INJECT_FILE is the shared JSONL
+# both surface processes read; MOCK_EMAIL_PORT (optional) enables the HTTP
+# injection server for demos (`curl localhost:4020/inject`).
+
+[source]
+id = "mock-gmail"
+version = "1.0.0"
+dev = true
+surfaces = ["email", "meetings"]
+transport = "stdio"
+account_mode = "single"
+accounts = ["eval"]
+kind = "mock"
+
+[spawn]
+command = "magnis-mock-gmail"
+# args = []
+# env injected by the operator / launch scripts:
+#   MOCK_INJECT_FILE = "<storage>/mock-gmail/inject.jsonl"
+#   MOCK_EMAIL_PORT  = "4020"   # optional, demo injection
+
+[profile]
+mode = "poll"
+
+# Declared install (extensions-lifecycle DEC-L4): host-standard routine.
+[lifecycle]
+install = "standard"

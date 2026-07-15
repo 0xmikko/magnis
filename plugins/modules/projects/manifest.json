@@ -1,0 +1,183 @@
+{
+  "id": "projects",
+  "version": "0.1.0",
+  "magnis_api_version": "0.1.0",
+  "owns": [
+    "projects.*"
+  ],
+  "schemas": {
+    "entities": [
+      {
+        "id": "projects.project",
+        "name": "Project",
+        "description": "A project entity owned by the projects plugin."
+      }
+    ],
+    "facets": [
+      {
+        "id": "projects.project",
+        "entity_schema": "projects.project",
+        "version": 1,
+        "json_schema": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "mappings": [
+          {
+            "facet_path": "name",
+            "canonical_key": "project.name",
+            "strategy": "single_aligned"
+          },
+          {
+            "facet_path": "status",
+            "canonical_key": "project.status",
+            "strategy": "single_aligned"
+          }
+        ]
+      },
+      {
+        "id": "projects.project.checklist",
+        "entity_schema": "projects.project",
+        "version": 1,
+        "json_schema": {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "text": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "pending",
+                      "in_progress",
+                      "done",
+                      "blocked"
+                    ]
+                  },
+                  "notes": {
+                    "type": "string"
+                  },
+                  "updated_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                },
+                "required": [
+                  "id",
+                  "text",
+                  "status"
+                ]
+              }
+            }
+          },
+          "required": [
+            "items"
+          ]
+        },
+        "mappings": []
+      },
+      {
+        "id": "projects.description",
+        "entity_schema": "projects.project",
+        "version": 1,
+        "json_schema": {
+          "type": "object",
+          "properties": {
+            "body": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "body"
+          ],
+          "additionalProperties": false
+        },
+        "mappings": []
+      },
+      {
+        "id": "projects.memory",
+        "entity_schema": "projects.project",
+        "version": 1,
+        "json_schema": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string"
+            },
+            "body": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "title",
+            "body"
+          ],
+          "additionalProperties": false
+        },
+        "mappings": []
+      }
+    ],
+    "links": []
+  },
+  "capabilities": {
+    "facet_write_prefixes": [
+      "projects."
+    ],
+    "link_kinds_writable": [
+      "belongs_to"
+    ],
+    "rpc_calls": [],
+    "reads_schemas": [
+      "projects."
+    ],
+    "events_emitted": [],
+    "can_merge_schemas": []
+  },
+  "surfaces": {
+    "rpc_handlers": [
+      "projects.list",
+      "projects.get",
+      "projects.create",
+      "projects.update",
+      "projects.delete",
+      "projects.checklist.get",
+      "projects.checklist.update",
+      "projects.add_member",
+      "projects.remove_member",
+      "projects.list_for_entity"
+    ],
+    "tools": [
+      "projects.list",
+      "projects.get",
+      "projects.create",
+      "projects.update",
+      "projects.delete",
+      "projects.checklist.get",
+      "projects.checklist.update"
+    ],
+    "sync_handlers": []
+  },
+  "entry": {
+    "module": "module/index.ts",
+    "ui": "ui/index.tsx"
+  },
+  "presentation": {
+    "title": "Projects",
+    "summary": "Bundle meetings, messages, and tasks into long-running projects.",
+    "publisher": "Magnis",
+    "publisher_url": "https://magnis.ai",
+    "details": "# Projects\n\nA project is a durable container for everything that happens around a\ngoal: meetings, email threads, notes, and linked contacts. The\nProjects module keeps the timeline and the key players in sync.\n",
+    "icon_url": "/api/plugins/projects/ui/icon.svg"
+  },
+  "lifecycle": {
+    "install": "lifecycle/install.ts"
+  }
+}

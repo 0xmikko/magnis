@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "experimentalDecorators": true,
+    "allowImportingTsExtensions": true,
+    "useDefineForClassFields": false,
+    "paths": {
+      "@magnis/plugin-sdk": ["./packages/plugin-sdk/index.ts"],
+      "@magnis/connector-sdk": ["./packages/connector-sdk/index.ts"],
+      "@magnis/host/ui": ["./packages/host-stubs/types/frontend/src/components/ui/index.d.ts"],
+      "@magnis/host/*": ["./packages/host-stubs/types/frontend/src/runtime/plugins/hostShims/*"],
+      "@/*": ["./packages/host-stubs/types/frontend/src/*"],
+      "@magnis/agent-core": ["./packages/host-stubs/types/packages/agent-core/src/index.d.ts"]
+    }
+  }
+}

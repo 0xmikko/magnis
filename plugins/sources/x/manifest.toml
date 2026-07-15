@@ -1,0 +1,61 @@
+# x — read-only X (Twitter) source connector (DEC-1). bun/TS stdio MCP server
+# speaking the Magnis Sync Profile. Feeds the `x` surface with profile +
+# post envelopes for the user's TRACKED handles only (DEC-8 / INV-1).
+#
+# READ-ONLY (INV-5): the only tool is magnis.sync.fetch (provided by the SDK).
+# No write tools, no magnis.execute, no source_commands.
+#
+# Auth: app-only Bearer (DEC-5). The host injects `bearer_token` per call via
+# _meta, resolved from SOURCE_X_BEARER_TOKEN (DEC-6). initialize is cred-less
+# (DEC-7): a missing key fails at fetch, never at registration.
+
+[source]
+id = "x"
+version = "1.0.0"
+surfaces = ["x", "contacts"]
+transport = "stdio"
+account_mode = "single"
+kind = "plugin"
+
+[auth]
+type = "api_key"
+
+[credentials]
+# bearer_token is an app-cred (host-injected), NOT minted by an auth flow →
+# `minted` stays empty. inject = meta (per-call _meta). The label opts it into
+# Settings → Sources (source-keys DEC-1); resolution: vault → env.
+keys = [
+  { name = "bearer_token", label = "API bearer token", help_url = "https://developer.x.com/en/portal/dashboard", description = "Magnis uses the X API to fetch posts and profiles of the accounts you track. An app-only bearer token from your X developer portal is required." },
+]
+inject = "meta"
+
+[spawn]
+command = "bun"
+args = ["run", "src/main.ts"]
+
+[profile]
+mode = "poll"
+interval_secs = 300
+
+# Declared install (extensions-lifecycle DEC-L4): host-standard routine.
+[lifecycle]
+install = "standard"
+
+# Self-reporting catalog presentation (extensions-lifecycle DEC-L3).
+[presentation]
+title = "X"
+summary = "Sync posts from the X (Twitter) accounts you track."
+publisher = "Magnis"
+publisher_url = "https://magnis.ai"
+icon_url = "/api/plugins/x/ui/icon.svg"
+details = """
+# X (Twitter)
+
+Read-only. Pulls profiles and recent posts for the handles you opt in to
+tracking on a contact (Track on X). Only tracked handles are fetched — nothing
+else touches the X API.
+
+- App-only Bearer read access (set `SOURCE_X_BEARER_TOKEN`)
+- Opt-in per contact; untracked handles are never fetched
+- Feeds the X module (profiles + posts)
+"""

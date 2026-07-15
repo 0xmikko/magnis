@@ -1,0 +1,110 @@
+{
+  "id": "notes",
+  "version": "0.1.0",
+  "magnis_api_version": "0.1.0",
+  "owns": [
+    "notes.*"
+  ],
+  "schemas": {
+    "entities": [
+      {
+        "id": "notes.note",
+        "name": "Note",
+        "description": "A markdown note entity owned by the notes plugin."
+      }
+    ],
+    "facets": [
+      {
+        "id": "notes.note.content",
+        "entity_schema": "notes.note",
+        "version": 1,
+        "json_schema": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string"
+            },
+            "body": {
+              "type": "string"
+            },
+            "pinned": {
+              "type": "boolean"
+            },
+            "updated_at": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "required": [
+            "body"
+          ],
+          "additionalProperties": false
+        },
+        "mappings": [
+          {
+            "facet_path": "title",
+            "canonical_key": "note.title",
+            "strategy": "single_aligned"
+          },
+          {
+            "facet_path": "pinned",
+            "canonical_key": "note.pinned",
+            "strategy": "single_aligned"
+          },
+          {
+            "facet_path": "updated_at",
+            "canonical_key": "note.updated_at",
+            "strategy": "single_aligned"
+          }
+        ]
+      }
+    ],
+    "links": []
+  },
+  "capabilities": {
+    "facet_write_prefixes": [
+      "notes."
+    ],
+    "link_kinds_writable": [],
+    "rpc_calls": [],
+    "reads_schemas": [
+      "notes."
+    ],
+    "events_emitted": [],
+    "can_merge_schemas": []
+  },
+  "surfaces": {
+    "rpc_handlers": [
+      "notes.list",
+      "notes.get",
+      "notes.create",
+      "notes.update",
+      "notes.delete",
+      "notes.template.apply"
+    ],
+    "tools": [
+      "notes.list",
+      "notes.get",
+      "notes.create",
+      "notes.update",
+      "notes.delete",
+      "notes.template.apply"
+    ],
+    "sync_handlers": []
+  },
+  "entry": {
+    "module": "module/index.ts",
+    "ui": "index.tsx"
+  },
+  "presentation": {
+    "title": "Notes",
+    "summary": "Freeform notes linked to entities and projects.",
+    "publisher": "Magnis",
+    "publisher_url": "https://magnis.ai",
+    "details": "# Notes\n\nMarkdown notes with inline links to people, companies, meetings, and\nprojects. Every note lives in your local store and flows through the\nsame event log as the rest of your graph.\n",
+    "icon_url": "/api/plugins/notes/ui/icon.svg"
+  },
+  "lifecycle": {
+    "install": "lifecycle/install.ts"
+  }
+}

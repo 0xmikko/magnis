@@ -1,0 +1,10 @@
+{
+  "name": "@magnis/plugin-file",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Magnis file plugin — file.* read/manage surface (list/get/attach) + UI, served via the V8 plugin runtime. Bytes/storage stay in core FileService.",
+  "scripts": {
+    "typecheck": "cd ../../../frontend && bun run typecheck"
+  }
+}

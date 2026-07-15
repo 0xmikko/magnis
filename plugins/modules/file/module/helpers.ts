@@ -1,0 +1,29 @@
+import type { FileDetails } from "../types/index.ts";
+
+/// Route-correct serving URL (DEC-10): local content serves via
+/// `/files/{entity_id}` (the actual `GET /files/:entity_id` route); otherwise the
+/// `cloud_url` (S3) if set. Local takes precedence, mirroring native
+/// `resolve_url`'s ordering — but native built `/files/{local_path}`, which does
+/// NOT match the entity-id route, so we correct it to the entity id.
+export function resolveUrl(entityId: string, details: FileDetails): string | null {
+  if (details.local_path != null) return `/files/${entityId}`;
+  if (details.cloud_url != null) return details.cloud_url;
+  return null;
+}
+
+/// Whether the file has retrievable content visible from graph metadata. The
+/// native check also probed `source_ref.dest_subpath` on disk; the V8 plugin has
+/// no disk access, and the download worker sets `local_path` via `mark_downloaded`
+/// on completion, so `local_path || cloud_url` is authoritative for
+/// normally-downloaded files. Inconsistent dest_subpath-only rows are skipped.
+export function hasContent(details: FileDetails): boolean {
+  return details.local_path != null || details.cloud_url != null;
+}
+
+/// Build a list/get item from the file.details facet data + the entity id.
+export function itemFromDetails(
+  entityId: string,
+  details: FileDetails,
+): FileDetails & { entity_id: string; url: string | null } {
+  return { ...details, entity_id: entityId, url: resolveUrl(entityId, details) };
+}

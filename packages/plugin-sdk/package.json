@@ -1,0 +1,9 @@
+{
+  "name": "@magnis/plugin-sdk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared types + helpers for Magnis plugins. Type-only at runtime — backend transpile elides imports from this package, so the SDK can be consumed by both module/ (V8) and ui/ (browser) without a host shim.",
+  "main": "./index.ts",
+  "types": "./index.ts"
+}

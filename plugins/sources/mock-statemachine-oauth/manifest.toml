@@ -1,0 +1,25 @@
+# StateMock archetype 'oauth' (accounts-sync-status plan §11.1): the shared
+# magnis-mock-statemachine binary in a oauth2/poll shape. Eval-only (kind=mock).
+
+[source]
+id = "mock-statemachine-oauth"
+version = "1.0.0"
+dev = true
+surfaces = ["smo-a","smo-b","smo-c"]
+transport = "stdio"
+account_mode = "single"
+kind = "mock"
+
+[auth]
+type = "oauth2"
+
+[spawn]
+command = "magnis-mock-statemachine"
+args = ["--surfaces", "smo-a,smo-b,smo-c", "--mode", "poll"]
+
+[profile]
+mode = "poll"
+
+# Declared install (extensions-lifecycle DEC-L4): host-standard routine.
+[lifecycle]
+install = "standard"

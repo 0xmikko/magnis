@@ -1,0 +1,270 @@
+{
+  "id": "linkedin",
+  "version": "0.1.0",
+  "magnis_api_version": "0.1.0",
+  "owns": [
+    "linkedin.*"
+  ],
+  "requires_schemas": [],
+  "schemas": {
+    "entities": [
+      {
+        "id": "linkedin.profile",
+        "name": "Linkedin profile",
+        "description": "A tracked person's profile on a linkedin platform (X / LinkedIn)."
+      },
+      {
+        "id": "linkedin.post",
+        "name": "Linkedin post",
+        "description": "A post/tweet from a tracked linkedin profile.",
+        "triggerable": true
+      }
+    ],
+    "facets": [
+      {
+        "id": "linkedin.profile.identity",
+        "entity_schema": "linkedin.profile",
+        "version": 1,
+        "json_schema": {
+          "type": "object",
+          "properties": {
+            "platform": {
+              "type": "string",
+              "enum": [
+                "x",
+                "linkedin"
+              ]
+            },
+            "handle": {
+              "type": "string"
+            },
+            "display_name": {
+              "type": "string"
+            },
+            "url": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "avatar_url": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "bio": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "verified": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "follower_count": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "platform",
+            "handle"
+          ],
+          "additionalProperties": true
+        },
+        "mappings": [
+          {
+            "facet_path": "display_name",
+            "canonical_key": "linkedin.profile.display_name",
+            "strategy": "single_aligned"
+          },
+          {
+            "facet_path": "follower_count",
+            "canonical_key": "linkedin.profile.follower_count",
+            "strategy": "single_aligned"
+          }
+        ]
+      },
+      {
+        "id": "linkedin.post.content",
+        "entity_schema": "linkedin.post",
+        "version": 1,
+        "json_schema": {
+          "type": "object",
+          "properties": {
+            "platform": {
+              "type": "string",
+              "enum": [
+                "x",
+                "linkedin"
+              ]
+            },
+            "post_id": {
+              "type": "string"
+            },
+            "author_handle": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "created_at": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "url": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "is_reply": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "is_repost": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "lang": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "platform",
+            "post_id",
+            "author_handle",
+            "text"
+          ],
+          "additionalProperties": true
+        },
+        "mappings": [
+          {
+            "facet_path": "text",
+            "canonical_key": "linkedin.post.text",
+            "strategy": "single_aligned"
+          },
+          {
+            "facet_path": "created_at",
+            "canonical_key": "linkedin.post.created_at",
+            "strategy": "single_aligned"
+          }
+        ]
+      },
+      {
+        "id": "linkedin.post.metrics",
+        "entity_schema": "linkedin.post",
+        "version": 1,
+        "json_schema": {
+          "type": "object",
+          "properties": {
+            "likes": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "reposts": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "replies": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "impressions": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "mappings": []
+      }
+    ],
+    "links": []
+  },
+  "capabilities": {
+    "facet_write_prefixes": [
+      "linkedin."
+    ],
+    "link_kinds_writable": [
+      "linkedin.post:linkedin.profile",
+      "linkedin.profile:contacts.person"
+    ],
+    "reads_schemas": [
+      "linkedin.",
+      "contacts.person"
+    ],
+    "events_emitted": [],
+    "can_merge_schemas": [
+      "linkedin.profile",
+      "linkedin.post"
+    ],
+    "creates_schemas": [],
+    "rpc_calls": [
+      "contacts.get_social_tracking_by_handle",
+      "contacts.rename_if_placeholder",
+      "contacts.list_social_tracking"
+    ],
+    "op_grants": [
+      "sync_state",
+      "external_id_reads"
+    ]
+  },
+  "surfaces": {
+    "rpc_handlers": [
+      "linkedin.posts.list",
+      "linkedin.posts.get",
+      "linkedin.profiles.list",
+      "linkedin.profiles.get"
+    ],
+    "tools": [
+      "linkedin.posts.list",
+      "linkedin.posts.get",
+      "linkedin.profiles.list",
+      "linkedin.profiles.get"
+    ],
+    "sync_handlers": [
+      "linkedin"
+    ]
+  },
+  "entry": {
+    "module": "module/index.ts",
+    "ui": "index.tsx"
+  },
+  "presentation": {
+    "title": "LinkedIn",
+    "summary": "LinkedIn profiles and posts of the people you track, linked to contacts.",
+    "publisher": "Magnis",
+    "publisher_url": "https://magnis.ai",
+    "details": "# LinkedIn\n\nStores the LinkedIn profiles and posts ingested by the LinkedIn source and links\neach profile to the matching contact. Read-only today (a messaging path can be\nadded later, like Telegram). Displays only what the source fetches for the\nhandles you track.\n",
+    "icon_url": "/api/plugins/linkedin/ui/icon.svg"
+  },
+  "lifecycle": {
+    "install": "lifecycle/install.ts"
+  }
+}

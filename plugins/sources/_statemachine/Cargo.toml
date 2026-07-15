@@ -1,0 +1,18 @@
+[package]
+name = "magnis-source-statemachine"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+publish = false
+
+# StateMock (accounts-sync-status plan §11.1): ONE programmable connector
+# covering every contract-expressible outcome. Spawned by the three
+# mock-statemachine-{oauth,phone,key} archetype manifests.
+[[bin]]
+name = "magnis-mock-statemachine"
+path = "src/main.rs"
+
+[dependencies]
+serde_json = { workspace = true }
+tokio = { workspace = true }

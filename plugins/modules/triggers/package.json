@@ -1,0 +1,10 @@
+{
+  "name": "@magnis/plugin-triggers",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Magnis triggers plugin — definition CRUD + UI surface served via the V8 plugin runtime. The processing/execution engine stays native (backend/src/modules/triggers).",
+  "scripts": {
+    "typecheck": "cd ../../../frontend && bun run typecheck"
+  }
+}

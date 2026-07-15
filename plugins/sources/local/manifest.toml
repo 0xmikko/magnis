@@ -1,0 +1,24 @@
+# local — local-filesystem notes source (external MCP connector).
+#
+# RETIRED SYNC: the notes module is now a V8 plugin (graph-only) that declares
+# NO sync handler, so the `notes` surface has no module consumer. The `[profile]`
+# block was removed so the host builds NO source runtime for this connector
+# (mcp/mod.rs only spawns runtimes when `manifest.profile.is_some()`) — otherwise
+# a stale `local`/`notes` sync would hard-fail at module routing ("no module for
+# surface"). `surfaces` stays non-empty so manifest validation still passes. The
+# connector binary is kept; it is simply never synced.
+
+[source]
+id = "local"
+version = "1.0.0"
+dev = true
+surfaces = ["notes"]
+transport = "stdio"
+kind = "core"
+
+[spawn]
+command = "magnis-local"
+
+# Declared install (extensions-lifecycle DEC-L4): host-standard routine.
+[lifecycle]
+install = "standard"

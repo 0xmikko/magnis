@@ -1,0 +1,14 @@
+# Shipped-default Cat-M module config (credentials-model §5.4, layer 1).
+#
+# The module's OWN default MTProto app credentials, bundled WITH the module for
+# local-first out-of-the-box use. A server/enterprise deploy OVERRIDES these via
+# the encrypted vault (subject "__deployment__", set by an admin through
+# source.appconfig.set) — that override lives in the DB, outside the module
+# tree, so CI/CD updates to this file never clobber the deployment's real
+# credentials.
+#
+# The manifest declares only the key NAMES; the VALUES live here.
+# Populate with the module's registered Telegram application credentials:
+[credentials.default]
+# api_id = "<app-api-id>"
+# api_hash = "<app-api-hash>"

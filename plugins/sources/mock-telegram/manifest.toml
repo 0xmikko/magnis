@@ -1,0 +1,39 @@
+# mock-telegram — controllable external Magnis MCP source connector.
+#
+# A demo/eval-grade mock of a Telegram server: you drive the `telegram` surface
+# like the real thing — inject chats and messages over HTTP and they flow
+# through `magnis.sync.fetch` as canonical telegram envelopes the in-plugin
+# `telegram` module ingests unchanged. Chats arrive as `snapshot`, messages as
+# `live` (so message triggers fire, chat snapshots don't) — byte-identical to
+# the real `telegram` connector's envelope shapes.
+#
+# The server is the `magnis-mock-telegram` binary. `command` resolves it on PATH
+# — the deploy places it next to `magnis-server`. MOCK_INJECT_FILE is the shared
+# JSONL the surface process reads; MOCK_TELEGRAM_PORT (optional) enables the HTTP
+# control server for demos (`curl localhost:4030/inject-chat`).
+#
+# kind = "mock" → loaded only when explicitly listed in ENABLED_SOURCES.
+
+[source]
+id = "mock-telegram"
+version = "1.0.0"
+dev = true
+surfaces = ["telegram"]
+transport = "stdio"
+account_mode = "single"
+accounts = ["eval"]
+kind = "mock"
+
+[spawn]
+command = "magnis-mock-telegram"
+# args = []
+# env injected by the operator / launch scripts:
+#   MOCK_INJECT_FILE   = "<storage>/mock-telegram/inject.jsonl"
+#   MOCK_TELEGRAM_PORT = "4030"   # optional, demo injection
+
+[profile]
+mode = "poll"
+
+# Declared install (extensions-lifecycle DEC-L4): host-standard routine.
+[lifecycle]
+install = "standard"

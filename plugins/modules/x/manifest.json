@@ -1,0 +1,271 @@
+{
+  "id": "x",
+  "version": "0.1.0",
+  "magnis_api_version": "0.1.0",
+  "owns": [
+    "x.*"
+  ],
+  "requires_schemas": [],
+  "schemas": {
+    "entities": [
+      {
+        "id": "x.profile",
+        "name": "X profile",
+        "description": "A tracked person's profile on a x platform (X / LinkedIn)."
+      },
+      {
+        "id": "x.post",
+        "name": "X post",
+        "description": "A post/tweet from a tracked x profile.",
+        "triggerable": true
+      }
+    ],
+    "facets": [
+      {
+        "id": "x.profile.identity",
+        "entity_schema": "x.profile",
+        "version": 1,
+        "json_schema": {
+          "type": "object",
+          "properties": {
+            "platform": {
+              "type": "string",
+              "enum": [
+                "x",
+                "linkedin"
+              ]
+            },
+            "handle": {
+              "type": "string"
+            },
+            "display_name": {
+              "type": "string"
+            },
+            "url": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "avatar_url": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "bio": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "verified": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "follower_count": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "platform",
+            "handle"
+          ],
+          "additionalProperties": true
+        },
+        "mappings": [
+          {
+            "facet_path": "display_name",
+            "canonical_key": "x.profile.display_name",
+            "strategy": "single_aligned"
+          },
+          {
+            "facet_path": "follower_count",
+            "canonical_key": "x.profile.follower_count",
+            "strategy": "single_aligned"
+          }
+        ]
+      },
+      {
+        "id": "x.post.content",
+        "entity_schema": "x.post",
+        "version": 1,
+        "json_schema": {
+          "type": "object",
+          "properties": {
+            "platform": {
+              "type": "string",
+              "enum": [
+                "x",
+                "linkedin"
+              ]
+            },
+            "post_id": {
+              "type": "string"
+            },
+            "author_handle": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "created_at": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "url": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "is_reply": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "is_repost": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "lang": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "platform",
+            "post_id",
+            "author_handle",
+            "text"
+          ],
+          "additionalProperties": true
+        },
+        "mappings": [
+          {
+            "facet_path": "text",
+            "canonical_key": "x.post.text",
+            "strategy": "single_aligned"
+          },
+          {
+            "facet_path": "created_at",
+            "canonical_key": "x.post.created_at",
+            "strategy": "single_aligned"
+          }
+        ]
+      },
+      {
+        "id": "x.post.metrics",
+        "entity_schema": "x.post",
+        "version": 1,
+        "json_schema": {
+          "type": "object",
+          "properties": {
+            "likes": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "reposts": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "replies": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "impressions": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        },
+        "mappings": []
+      }
+    ],
+    "links": []
+  },
+  "capabilities": {
+    "facet_write_prefixes": [
+      "x."
+    ],
+    "link_kinds_writable": [
+      "x.post:x.profile",
+      "x.profile:contacts.person"
+    ],
+    "reads_schemas": [
+      "x.",
+      "contacts.person"
+    ],
+    "events_emitted": [],
+    "can_merge_schemas": [
+      "x.profile",
+      "x.post"
+    ],
+    "creates_schemas": [],
+    "rpc_calls": [
+      "contacts.get_social_tracking_by_handle",
+      "contacts.rename_if_placeholder",
+      "source.sync.bootstrap"
+    ],
+    "op_grants": [
+      "external_id_reads"
+    ]
+  },
+  "surfaces": {
+    "rpc_handlers": [
+      "x.posts.list",
+      "x.posts.get",
+      "x.profiles.list",
+      "x.profiles.get",
+      "x.import_following"
+    ],
+    "tools": [
+      "x.posts.list",
+      "x.posts.get",
+      "x.profiles.list",
+      "x.profiles.get",
+      "x.import_following"
+    ],
+    "sync_handlers": [
+      "x"
+    ]
+  },
+  "entry": {
+    "module": "module/index.ts",
+    "ui": "index.tsx"
+  },
+  "presentation": {
+    "title": "X",
+    "summary": "X (Twitter) profiles and posts of the people you track, linked to contacts.",
+    "publisher": "Magnis",
+    "publisher_url": "https://magnis.ai",
+    "icon_url": "/api/plugins/x/ui/icon.svg",
+    "details": "# X\n\nStores the X profiles and posts ingested by the X source and links each profile\nto the matching contact. Read-only today (a compose/DM path can be added later,\nlike Telegram). Displays only what the source fetches for the handles you track.\n"
+  },
+  "lifecycle": {
+    "install": "lifecycle/install.ts"
+  }
+}

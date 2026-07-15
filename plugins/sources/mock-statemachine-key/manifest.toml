@@ -1,0 +1,25 @@
+# StateMock archetype 'key' (accounts-sync-status plan §11.1): the shared
+# magnis-mock-statemachine binary in a api_key/poll shape. Eval-only (kind=mock).
+
+[source]
+id = "mock-statemachine-key"
+version = "1.0.0"
+dev = true
+surfaces = ["smk"]
+transport = "stdio"
+account_mode = "single"
+kind = "mock"
+
+[auth]
+type = "api_key"
+
+[spawn]
+command = "magnis-mock-statemachine"
+args = ["--surfaces", "smk", "--mode", "poll"]
+
+[profile]
+mode = "poll"
+
+# Declared install (extensions-lifecycle DEC-L4): host-standard routine.
+[lifecycle]
+install = "standard"

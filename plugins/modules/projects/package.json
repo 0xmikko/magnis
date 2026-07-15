@@ -1,0 +1,10 @@
+{
+  "name": "@magnis/plugin-projects",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Magnis projects plugin — backend module + UI surface served via the V8 plugin runtime.",
+  "scripts": {
+    "typecheck": "cd ../../../frontend && bun run typecheck"
+  }
+}

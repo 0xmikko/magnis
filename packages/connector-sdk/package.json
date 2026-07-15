@@ -1,0 +1,12 @@
+{
+  "name": "@magnis/connector-sdk",
+  "version": "0.1.0",
+  "description": "Magnis source-connector SDK — MCP-over-stdio framework (runConnector) implementing the Magnis Sync Profile wire contract.",
+  "type": "module",
+  "private": true,
+  "main": "./index.ts",
+  "types": "./index.ts",
+  "scripts": {
+    "test": "bun test"
+  }
+}

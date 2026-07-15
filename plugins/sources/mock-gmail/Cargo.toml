@@ -1,0 +1,26 @@
+[package]
+name = "magnis-source-mock-gmail"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+publish = false
+
+# The connector binary the Magnis host spawns (manifest.toml `command`). Named
+# without the crate prefix so the manifest + deploy refer to it as `magnis-mock-gmail`.
+[[bin]]
+name = "magnis-mock-gmail"
+path = "src/main.rs"
+
+[dependencies]
+serde_json = { workspace = true }
+tokio = { workspace = true }
+axum = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+magnis-mcp-testkit = { path = "../../../packages/mcp-testkit" }
+tokio = { workspace = true }
+serde_json = { workspace = true }
+reqwest = { workspace = true }

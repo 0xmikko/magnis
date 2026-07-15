@@ -1,0 +1,10 @@
+{
+  "name": "@magnis/plugin-x",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Magnis x plugin — ingests X / LinkedIn posts + profiles into the `x` surface; read-only.",
+  "scripts": {
+    "typecheck": "cd ../../../frontend && bun run typecheck"
+  }
+}

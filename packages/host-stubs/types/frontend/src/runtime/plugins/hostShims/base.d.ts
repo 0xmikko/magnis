@@ -1,0 +1,11 @@
+export { defineModule } from "@/modules/_base/defineModule";
+export { BaseEntityCard } from "@/modules/_base/BaseEntityCard";
+export { BaseToolCallCard } from "@/modules/_base/BaseToolCallCard";
+export { ActionPrefix } from "@/modules/_base/ActionPrefix";
+export { ListPaneHeaderActions } from "@/modules/_base/ListPaneHeaderActions";
+export type { ListPaneHeaderActionsProps } from "@/modules/_base/ListPaneHeaderActions";
+export { useEntityFacet } from "@/modules/_base/useEntityFacet";
+export { EntityDetailTabs } from "@/modules/shared/EntityDetailTabs";
+export { registerSchemaVisuals } from "@/modules/_base/schemaIcons";
+export type { LinkedEntitySummary, FacetSummary, AvatarColor, SidebarData, } from "@/modules/shared/types";
+export type { HeaderComponentProps, ListItem, ListItemContentProps, DetailPanelProps, } from "@/modules/_base/types";

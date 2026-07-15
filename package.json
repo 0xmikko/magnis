@@ -1,0 +1,29 @@
+{
+  "name": "magnis-plugins",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "plugins/modules/*",
+    "plugins/sources/*"
+  ],
+  "scripts": {
+    "typecheck": "bash scripts/typecheck-all.sh",
+    "test": "vitest run",
+    "test:connectors": "bash scripts/test-connectors.sh",
+    "test:scripts": "bun test scripts/",
+    "build:plugins": "bun scripts/build-plugins.ts"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.3",
+    "@types/node": "^22.5.4",
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.1",
+    "@tanstack/react-query": "^5.90.21",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "@types/react-dom": "^18.3.0",
+    "zustand": "^5.0.11",
+    "lucide-react": "^0.563.0",
+    "react-virtuoso": "^4.18.4"
+  }
+}
