@@ -8,7 +8,6 @@ members = [
     "packages/mcp-testkit",
     "plugins/sources/google",
     "plugins/sources/telegram",
-    "plugins/sources/_statemachine",
 ]
 resolver = "2"
 

@@ -1,5 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import {
+  ConnectorError,
   handleMessage,
   RateLimitError,
   RATE_LIMIT_CODE,
@@ -114,6 +115,22 @@ describe("connector SDK dispatch", () => {
     // The host reads the TYPED data.retry_after (runtime.rs RATE_LIMITED_CODE
     // contract, staging FLOOD_WAIT twin) — message text is informational only.
     expect(err.data).toEqual({ retry_after: 90 });
+  });
+
+  test("tst_sdk_006b a fetch ConnectorError → typed error data verbatim", async () => {
+    // The StateMock archetypes program typed failures (`{kind:"auth"|"network"
+    // |"rate_limited"|..}`) and the host reads `error.data`; the SDK must carry
+    // the connector's data object through untouched, code included.
+    const reply = await handleMessage(
+      { id: 61, method: "tools/call", params: { name: "magnis.sync.fetch", arguments: { surface: "social" } } },
+      cfg(async () => {
+        throw new ConnectorError("boom", { kind: "network", message: "boom" });
+      }),
+    );
+    const err = reply!.error as Record<string, any>;
+    expect(err.code).toBe(-32000);
+    expect(err.message).toBe("boom");
+    expect(err.data).toEqual({ kind: "network", message: "boom" });
   });
 
   test("tst_sdk_007 a generic fetch error → JSON-RPC error, not a throw", async () => {

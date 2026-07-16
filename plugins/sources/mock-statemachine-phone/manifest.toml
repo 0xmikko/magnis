@@ -1,5 +1,5 @@
 # StateMock archetype 'phone' (accounts-sync-status plan §11.1): the shared
-# magnis-mock-statemachine binary in a phone_code/push shape. Eval-only (kind=mock).
+# @magnis/source-statemachine connector (bun) in a phone_code/push shape. Eval-only (kind=mock).
 
 [source]
 id = "mock-statemachine-phone"
@@ -14,8 +14,8 @@ kind = "mock"
 type = "phone_code"
 
 [spawn]
-command = "magnis-mock-statemachine"
-args = ["--surfaces", "smp", "--mode", "push"]
+command = "bun"
+args = ["run", "src/main.ts", "--surfaces", "smp", "--mode", "push"]
 
 [profile]
 mode = "push"

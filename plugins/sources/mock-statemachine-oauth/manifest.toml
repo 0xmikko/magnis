@@ -1,5 +1,5 @@
 # StateMock archetype 'oauth' (accounts-sync-status plan §11.1): the shared
-# magnis-mock-statemachine binary in a oauth2/poll shape. Eval-only (kind=mock).
+# @magnis/source-statemachine connector (bun) in a oauth2/poll shape. Eval-only (kind=mock).
 
 [source]
 id = "mock-statemachine-oauth"
@@ -14,8 +14,8 @@ kind = "mock"
 type = "oauth2"
 
 [spawn]
-command = "magnis-mock-statemachine"
-args = ["--surfaces", "smo-a,smo-b,smo-c", "--mode", "poll"]
+command = "bun"
+args = ["run", "src/main.ts", "--surfaces", "smo-a,smo-b,smo-c", "--mode", "poll"]
 
 [profile]
 mode = "poll"

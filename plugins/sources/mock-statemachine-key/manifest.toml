@@ -1,5 +1,5 @@
 # StateMock archetype 'key' (accounts-sync-status plan §11.1): the shared
-# magnis-mock-statemachine binary in a api_key/poll shape. Eval-only (kind=mock).
+# @magnis/source-statemachine connector (bun) in a api_key/poll shape. Eval-only (kind=mock).
 
 [source]
 id = "mock-statemachine-key"
@@ -14,8 +14,8 @@ kind = "mock"
 type = "api_key"
 
 [spawn]
-command = "magnis-mock-statemachine"
-args = ["--surfaces", "smk", "--mode", "poll"]
+command = "bun"
+args = ["run", "src/main.ts", "--surfaces", "smk", "--mode", "poll"]
 
 [profile]
 mode = "poll"

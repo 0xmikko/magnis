@@ -57,6 +57,40 @@ export class RateLimitError extends Error {
   }
 }
 
+/** Throw this to answer with a TYPED JSON-RPC error: `data` reaches the host
+ * verbatim (it reads `data.kind` to classify the failure — auth / network /
+ * rate_limited / …). A plain Error stays untyped (`-32000`, message only). */
+export class ConnectorError extends Error {
+  constructor(
+    message: string,
+    readonly data: Record<string, unknown>,
+    readonly code: number = GENERIC_FETCH_ERROR_CODE,
+  ) {
+    super(message);
+    this.name = "ConnectorError";
+  }
+}
+
+/** The shared throw → JSON-RPC error mapping for the tool handlers. */
+function errorReply(id: unknown, e: unknown): Record<string, unknown> {
+  if (e instanceof ConnectorError) {
+    return { jsonrpc: "2.0", id, error: { code: e.code, message: e.message, data: e.data } };
+  }
+  if (e instanceof RateLimitError) {
+    return {
+      jsonrpc: "2.0",
+      id,
+      error: {
+        code: RATE_LIMIT_CODE,
+        message: e.message,
+        data: { retry_after: e.retryAfterSecs },
+      },
+    };
+  }
+  const message = e instanceof Error ? e.message : String(e);
+  return { jsonrpc: "2.0", id, error: { code: GENERIC_FETCH_ERROR_CODE, message } };
+}
+
 export interface ConnectorConfig {
   name: string;
   version: string;
@@ -295,15 +329,7 @@ if (name === "magnis.auth.probe" && config.probeAuth) {
         const result = await handler(rawArgs, metaArg);
         return { jsonrpc: "2.0", id, result };
       } catch (e) {
-        if (e instanceof RateLimitError) {
-          return {
-            jsonrpc: "2.0",
-            id,
-            error: { code: RATE_LIMIT_CODE, message: e.message, data: { retry_after: e.retryAfterSecs } },
-          };
-        }
-        const message = e instanceof Error ? e.message : String(e);
-        return { jsonrpc: "2.0", id, error: { code: GENERIC_FETCH_ERROR_CODE, message } };
+        return errorReply(id, e);
       }
     }
 
@@ -340,19 +366,7 @@ if (name === "magnis.auth.probe" && config.probeAuth) {
       });
       return { jsonrpc: "2.0", id, result };
     } catch (e) {
-      if (e instanceof RateLimitError) {
-        return {
-          jsonrpc: "2.0",
-          id,
-          error: {
-            code: RATE_LIMIT_CODE,
-            message: e.message,
-            data: { retry_after: e.retryAfterSecs },
-          },
-        };
-      }
-      const message = e instanceof Error ? e.message : String(e);
-      return { jsonrpc: "2.0", id, error: { code: GENERIC_FETCH_ERROR_CODE, message } };
+      return errorReply(id, e);
     }
   }
 

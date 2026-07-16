@@ -74,6 +74,12 @@
       "name": "@magnis/plugin-x",
       "version": "0.1.0",
     },
+    "plugins/sources/_statemachine": {
+      "name": "@magnis/source-statemachine",
+      "dependencies": {
+        "@magnis/connector-sdk": "workspace:*",
+      },
+    },
     "plugins/sources/google-ts": {
       "name": "@magnis/source-google-ts",
       "dependencies": {
@@ -86,8 +92,44 @@
         "@magnis/connector-sdk": "workspace:*",
       },
     },
+    "plugins/sources/local": {
+      "name": "@magnis/source-local",
+      "dependencies": {
+        "@magnis/connector-sdk": "workspace:*",
+      },
+    },
+    "plugins/sources/mock-gmail": {
+      "name": "@magnis/source-mock-gmail",
+      "dependencies": {
+        "@magnis/connector-sdk": "workspace:*",
+      },
+    },
     "plugins/sources/mock-linkedin": {
       "name": "@magnis/source-mock-linkedin",
+      "dependencies": {
+        "@magnis/connector-sdk": "workspace:*",
+      },
+    },
+    "plugins/sources/mock-statemachine-key": {
+      "name": "@magnis/source-mock-statemachine-key",
+      "dependencies": {
+        "@magnis/source-statemachine": "workspace:*",
+      },
+    },
+    "plugins/sources/mock-statemachine-oauth": {
+      "name": "@magnis/source-mock-statemachine-oauth",
+      "dependencies": {
+        "@magnis/source-statemachine": "workspace:*",
+      },
+    },
+    "plugins/sources/mock-statemachine-phone": {
+      "name": "@magnis/source-mock-statemachine-phone",
+      "dependencies": {
+        "@magnis/source-statemachine": "workspace:*",
+      },
+    },
+    "plugins/sources/mock-telegram": {
+      "name": "@magnis/source-mock-telegram",
       "dependencies": {
         "@magnis/connector-sdk": "workspace:*",
       },
@@ -196,9 +238,23 @@
 
     "@magnis/source-linkedin": ["@magnis/source-linkedin@workspace:plugins/sources/linkedin"],
 
+    "@magnis/source-local": ["@magnis/source-local@workspace:plugins/sources/local"],
+
+    "@magnis/source-mock-gmail": ["@magnis/source-mock-gmail@workspace:plugins/sources/mock-gmail"],
+
     "@magnis/source-mock-linkedin": ["@magnis/source-mock-linkedin@workspace:plugins/sources/mock-linkedin"],
 
+    "@magnis/source-mock-statemachine-key": ["@magnis/source-mock-statemachine-key@workspace:plugins/sources/mock-statemachine-key"],
+
+    "@magnis/source-mock-statemachine-oauth": ["@magnis/source-mock-statemachine-oauth@workspace:plugins/sources/mock-statemachine-oauth"],
+
+    "@magnis/source-mock-statemachine-phone": ["@magnis/source-mock-statemachine-phone@workspace:plugins/sources/mock-statemachine-phone"],
+
+    "@magnis/source-mock-telegram": ["@magnis/source-mock-telegram@workspace:plugins/sources/mock-telegram"],
+
     "@magnis/source-mock-x": ["@magnis/source-mock-x@workspace:plugins/sources/mock-x"],
+
+    "@magnis/source-statemachine": ["@magnis/source-statemachine@workspace:plugins/sources/_statemachine"],
 
     "@magnis/source-telegram-ts": ["@magnis/source-telegram-ts@workspace:plugins/sources/telegram-ts"],
 
