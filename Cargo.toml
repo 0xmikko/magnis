@@ -9,7 +9,6 @@ members = [
     "plugins/sources/google",
     "plugins/sources/telegram",
     "plugins/sources/local",
-    "plugins/sources/mock-gmail",
     "plugins/sources/mock-telegram",
     "plugins/sources/_statemachine",
 ]

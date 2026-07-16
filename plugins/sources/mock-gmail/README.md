@@ -7,8 +7,8 @@ through the in-core `emails` / `meetings` modules.
 
 ## What it is
 
-- **Server:** the `magnis-mock-gmail` binary (built from the `magnis` crate for
-  v1; designed to extract into its own repo later). Speaks the Magnis Sync
+- **Server:** `src/main.ts` on `@magnis/connector-sdk`, run by `bun` (the only
+  connector runtime — sources-typescript-port INV-TS-4). Speaks the Magnis Sync
   Profile over stdio JSON-RPC and advertises two surfaces, `email` + `meetings`,
   poll mode.
 - **Manifest:** [`manifest.toml`](manifest.toml) — `source_id = "mock-gmail"`,
@@ -23,8 +23,9 @@ through the in-core `emails` / `meetings` modules.
    to the old in-core mock).
 3. The `emails` / `meetings` modules ingest them into the graph.
 
-The host spawns one child per surface; both run the same binary and share state
-through the JSONL file, so injection (one process) and fetch (the other) agree.
+The host spawns one child per surface; both run the same connector and share
+state through the JSONL file, so injection (one process) and fetch (the other)
+agree.
 
 ## Configuration (env on the spawned process)
 

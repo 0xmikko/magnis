@@ -4,11 +4,10 @@
 # Feeds two surfaces (email + meetings) with the same canonical envelopes the
 # in-core mock did, so the emails/meetings modules ingest it unchanged.
 #
-# The server is the `magnis-mock-gmail` binary (built from the magnis crate for
-# v1; it will move to its own repo later). `command` resolves it on PATH — the
-# deploy places it next to `magnis-server`. MOCK_INJECT_FILE is the shared JSONL
-# both surface processes read; MOCK_EMAIL_PORT (optional) enables the HTTP
-# injection server for demos (`curl localhost:4020/inject`).
+# The server is `src/main.ts` on @magnis/connector-sdk, run by bun from this
+# manifest's directory (DEC-10 stamps it as the spawn cwd). MOCK_INJECT_FILE is
+# the shared JSONL both surface processes read; MOCK_EMAIL_PORT (optional)
+# enables the HTTP injection server for demos (`curl localhost:4020/inject`).
 
 [source]
 id = "mock-gmail"
@@ -21,8 +20,8 @@ accounts = ["eval"]
 kind = "mock"
 
 [spawn]
-command = "magnis-mock-gmail"
-# args = []
+command = "bun"
+args = ["run", "src/main.ts"]
 # env injected by the operator / launch scripts:
 #   MOCK_INJECT_FILE = "<storage>/mock-gmail/inject.jsonl"
 #   MOCK_EMAIL_PORT  = "4020"   # optional, demo injection
