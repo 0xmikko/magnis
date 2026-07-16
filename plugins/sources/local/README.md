@@ -9,7 +9,7 @@ the same canonical payload (`path`, `filename`, `body`, `size`, `mtime`,
 Note **writes** are unchanged — the `notes` module writes the same directory
 directly — so this connector only ingests.
 
-- **Server:** `magnis-local` binary (this crate).
+- **Server:** `src/main.ts` on `@magnis/connector-sdk`, run by `bun`.
 - **Manifest:** [`manifest.toml`](manifest.toml) — `id = "local"`,
   `surfaces = ["notes"]`, `core = true` (always loaded).
 - **Config (env, inherited from the backend):** `NOTES_DIR` (defaults to

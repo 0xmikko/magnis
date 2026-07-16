@@ -6,7 +6,7 @@
 # (mcp/mod.rs only spawns runtimes when `manifest.profile.is_some()`) — otherwise
 # a stale `local`/`notes` sync would hard-fail at module routing ("no module for
 # surface"). `surfaces` stays non-empty so manifest validation still passes. The
-# connector binary is kept; it is simply never synced.
+# connector itself is kept; it is simply never synced.
 
 [source]
 id = "local"
@@ -16,8 +16,13 @@ surfaces = ["notes"]
 transport = "stdio"
 kind = "core"
 
+# The server is `src/main.ts` on @magnis/connector-sdk, run by bun from this
+# manifest's directory (DEC-10 stamps it as the spawn cwd).
 [spawn]
-command = "magnis-local"
+command = "bun"
+args = ["run", "src/main.ts"]
+# env injected by the operator / launch scripts:
+#   NOTES_DIR = "<storage>/notes"   # optional, defaults to $STORAGE_DIR/notes
 
 # Declared install (extensions-lifecycle DEC-L4): host-standard routine.
 [lifecycle]
