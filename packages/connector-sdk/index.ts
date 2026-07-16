@@ -51,6 +51,10 @@ export interface FetchResult {
 // Twin: backend/src/sources/mcp/runtime.rs::RATE_LIMITED_CODE and the telegram
 // connector — the host reads `error.data.retry_after` (typed), NOT the message.
 export const RATE_LIMIT_CODE = -32002;
+// Twin: backend/src/sources/mcp/runtime.rs::CURSOR_EXPIRED_CODE. The host reads
+// the CODE alone — never the message — so only an explicit throw of
+// `CursorExpiredError` re-bootstraps. Everything else stays a hard failure.
+export const CURSOR_EXPIRED_CODE = -32003;
 const GENERIC_FETCH_ERROR_CODE = -32000;
 
 /** Throw this from a connector `fetch` on an upstream 429 so the host backs off
@@ -59,6 +63,18 @@ export class RateLimitError extends Error {
   constructor(readonly retryAfterSecs: number) {
     super(`rate limited; retry_after=${retryAfterSecs}`);
     this.name = "RateLimitError";
+  }
+}
+
+/** Throw this from a connector `fetch` when the cursor/watermark the host
+ * handed back is stale or invalid upstream (Gmail's historyId 404, a dropped
+ * delta token, …) so the host resets the sync phase to Bootstrap and re-syncs
+ * from scratch — rather than parking the source at `state=failed` forever.
+ * Not a failure: the host deliberately does not inflate the error streak. */
+export class CursorExpiredError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CursorExpiredError";
   }
 }
 
@@ -90,6 +106,13 @@ function errorReply(id: unknown, e: unknown): Record<string, unknown> {
         message: e.message,
         data: { retry_after: e.retryAfterSecs },
       },
+    };
+  }
+  if (e instanceof CursorExpiredError) {
+    return {
+      jsonrpc: "2.0",
+      id,
+      error: { code: CURSOR_EXPIRED_CODE, message: e.message },
     };
   }
   const message = e instanceof Error ? e.message : String(e);

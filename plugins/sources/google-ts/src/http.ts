@@ -1,7 +1,7 @@
 // Shared HTTP plumbing — TS twin of the Rust connector's `send_with_retry`
 // (plugins/sources/google/src/main.rs) + `check_rate_limit` (src/auth.rs).
 
-import { RateLimitError } from "@magnis/connector-sdk";
+import { CursorExpiredError, RateLimitError } from "@magnis/connector-sdk";
 
 /** Minimal fetch-compatible response surface, injectable in tests. */
 export interface HttpResponse {
@@ -37,8 +37,12 @@ export class AuthExpiredError extends Error {
   }
 }
 
-/** Gmail historyId expired (404) — the host re-bootstraps. FATAL. */
-export class HistoryExpiredError extends Error {
+/** Gmail historyId expired (404) — the host re-bootstraps. FATAL.
+ * Extends the SDK's `CursorExpiredError` so the SDK maps it to the typed
+ * `-32003`, which the host reads as `SourceErrorKind::CursorExpired` → reset
+ * to Bootstrap + drop the stale cursor. A plain Error lands on the generic
+ * `-32000`, which parks email sync at `state=failed` forever. */
+export class HistoryExpiredError extends CursorExpiredError {
   constructor() {
     super("Gmail historyId expired (404)");
     this.name = "HistoryExpiredError";

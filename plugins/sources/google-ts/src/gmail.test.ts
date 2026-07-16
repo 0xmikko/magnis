@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { RateLimitError } from "@magnis/connector-sdk";
+import {
+  CURSOR_EXPIRED_CODE,
+  CursorExpiredError,
+  handleMessage,
+  RateLimitError,
+} from "@magnis/connector-sdk";
 import {
   buildRawMessage,
   encodeBase64UrlNoPad,
@@ -15,7 +20,12 @@ import {
   type GmailMessage,
 } from "./gmail";
 import { extractBodyContent } from "./mime";
-import { GoogleRateLimitError, type FetchLike, type HttpResponse } from "./http";
+import {
+  GoogleRateLimitError,
+  HistoryExpiredError,
+  type FetchLike,
+  type HttpResponse,
+} from "./http";
 
 // ── Shared fakes ────────────────────────────────────────────────────────────
 
@@ -260,6 +270,41 @@ describe("history action resolution", () => {
     await expect(
       fetchHistoryChanges("tok", { history_id: "1" }, notFound),
     ).rejects.toThrow("Gmail historyId expired (404)");
+
+    // Both expiry paths are CursorExpiredError so the SDK maps them to -32003.
+    for (const cursor of [{}, { history_id: "1" }]) {
+      const e = await fetchHistoryChanges("tok", cursor, notFound).catch((x) => x);
+      expect(e).toBeInstanceOf(HistoryExpiredError);
+      expect(e).toBeInstanceOf(CursorExpiredError);
+    }
+  });
+
+  // The reason a history 404 must not be a plain Error: the host types it off
+  // the JSON-RPC code alone. -32003 → SourceErrorKind::CursorExpired → the
+  // scheduler resets to Bootstrap and re-syncs; anything else → SyncStatus
+  // ::Error, which parks email sync permanently (the live-run failure this
+  // fixes: state=failed, error="mcp rpc error -32000: Gmail historyId expired
+  // (404)"). Wire-level: drive the real 404 through the SDK's tools/call.
+  test("tst_gts_hist_008b history 404 reaches the host wire as -32003", async () => {
+    const notFound: FetchLike = async () => status(404, "gone");
+    const reply = await handleMessage(
+      {
+        id: 1,
+        method: "tools/call",
+        params: { name: "magnis.sync.fetch", arguments: { surface: "email" } },
+      },
+      {
+        name: "google-ts",
+        version: "0.0.1",
+        surfaces: ["email"],
+        fetch: async () =>
+          (await fetchHistoryChanges("tok", { history_id: "1" }, notFound)) as never,
+      },
+    );
+    const err = reply!.error as Record<string, unknown>;
+    expect(err.code).toBe(CURSOR_EXPIRED_CODE);
+    expect(err.code).toBe(-32003);
+    expect(err.message).toBe("Gmail historyId expired (404)");
   });
 });
 

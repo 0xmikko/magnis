@@ -1,6 +1,8 @@
 import { describe, test, expect } from "bun:test";
 import {
   ConnectorError,
+  CursorExpiredError,
+  CURSOR_EXPIRED_CODE,
   handleMessage,
   RateLimitError,
   RATE_LIMIT_CODE,
@@ -115,6 +117,23 @@ describe("connector SDK dispatch", () => {
     // The host reads the TYPED data.retry_after (runtime.rs RATE_LIMITED_CODE
     // contract, staging FLOOD_WAIT twin) — message text is informational only.
     expect(err.data).toEqual({ retry_after: 90 });
+  });
+
+  test("tst_sdk_006c a fetch CursorExpiredError → -32003 (host re-bootstraps)", async () => {
+    // Twin: backend/src/sources/mcp/runtime.rs::CURSOR_EXPIRED_CODE. The host
+    // maps THIS code — and only this code — to SourceErrorKind::CursorExpired,
+    // which resets the sync phase to Bootstrap and clears the stale cursor.
+    // Message text is informational only; the code is the contract.
+    const reply = await handleMessage(
+      { id: 62, method: "tools/call", params: { name: "magnis.sync.fetch", arguments: { surface: "email" } } },
+      cfg(async () => {
+        throw new CursorExpiredError("Gmail historyId expired (404)");
+      }),
+    );
+    const err = reply!.error as Record<string, any>;
+    expect(err.code).toBe(CURSOR_EXPIRED_CODE);
+    expect(CURSOR_EXPIRED_CODE).toBe(-32003);
+    expect(err.message).toBe("Gmail historyId expired (404)");
   });
 
   test("tst_sdk_006b a fetch ConnectorError → typed error data verbatim", async () => {
