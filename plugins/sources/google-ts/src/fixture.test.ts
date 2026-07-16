@@ -247,4 +247,70 @@ describe("live-mode wire errors (no fixture)", () => {
     expect((error.data as Record<string, unknown>).retry_after).toBe(45);
     expect(error.message).toBe("Google rate limited: retry after 45s");
   });
+
+  // The Rust twin passes the FULL tools/call args to `fetch_events_page`
+  // (main.rs:206), which reads `time_min`/`time_max` off them
+  // (calendar.rs:125-135) to override the default now-30d..now+90d window.
+  // The host does not send a window today, so this is dormant — but a silently
+  // ignored window would activate as a real divergence the day it does.
+  test("tst_gts_wire_007 calendar time_min/time_max window reaches the API", async () => {
+    let calendarUrl = "";
+    const capture: FetchLike = async (url) => {
+      if (url === "https://oauth2.googleapis.com/token") {
+        return {
+          ok: true,
+          status: 200,
+          headers: { get: () => null },
+          text: async () => "{}",
+          json: async () => ({ access_token: "at" }),
+        };
+      }
+      calendarUrl = url;
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        text: async () => "{}",
+        json: async () => ({ items: [] }),
+      };
+    };
+
+    const meta = { refresh_token: "r", client_id: "c", client_secret: "s" };
+    await handleMessage(
+      {
+        jsonrpc: "2.0",
+        id: 4,
+        method: "tools/call",
+        params: {
+          name: "magnis.sync.fetch",
+          arguments: {
+            surface: "meetings",
+            time_min: "2026-01-01T00:00:00Z",
+            time_max: "2026-02-01T00:00:00Z",
+            _meta: meta,
+          },
+        },
+      },
+      buildConnectorConfig(capture),
+    );
+    expect(calendarUrl).toContain("timeMin=2026-01-01T00%3A00%3A00Z");
+    expect(calendarUrl).toContain("timeMax=2026-02-01T00%3A00%3A00Z");
+
+    // No window sent → the default window still applies (Rust: unwrap_or_else).
+    calendarUrl = "";
+    await handleMessage(
+      {
+        jsonrpc: "2.0",
+        id: 5,
+        method: "tools/call",
+        params: {
+          name: "magnis.sync.fetch",
+          arguments: { surface: "meetings", _meta: meta },
+        },
+      },
+      buildConnectorConfig(capture),
+    );
+    expect(calendarUrl).toContain("timeMin=");
+    expect(calendarUrl).toContain("timeMax=");
+  });
 });

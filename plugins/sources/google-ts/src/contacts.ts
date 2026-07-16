@@ -9,6 +9,15 @@ import type { Envelope } from "@magnis/connector-sdk";
 import { checkRateLimit, fetchWithRetry, type FetchLike } from "./http";
 import { mergeProgress, progressCursor } from "./progress";
 import type { WindowFetchResult } from "./calendar";
+import {
+  asObject,
+  defaultObject,
+  defaultObjectArray,
+  defaultBool,
+  optBool,
+  optString,
+  reqString,
+} from "./validate";
 
 // ── Raw Google People API shapes (camelCase, as served) ───────
 
@@ -50,6 +59,68 @@ export interface GpeoplePerson {
 interface GpeopleConnectionsResponse {
   connections?: GpeoplePerson[] | null;
   nextPageToken?: string | null;
+}
+
+// ── Response parser (serde parity — see validate.ts) ──────────
+
+/** `GpeopleMetadata` (contacts.rs:103) — `#[serde(default)]` on the field, and
+ * `primary` is itself `#[serde(default)] bool` (absent → false). */
+function parseMetadata(
+  o: Record<string, unknown>,
+  ctx: string,
+): GpeopleMetadata {
+  const m = defaultObject(o, "metadata", ctx);
+  return { primary: defaultBool(m, "primary", `${ctx}.metadata`) };
+}
+
+/** `GpeopleConnectionsResponse` (contacts.rs:21) — `connections` is
+ * `#[serde(default)] Vec<_>`; each `GpeoplePerson.resource_name`
+ * (contacts.rs:31) is required and every sub-list is `#[serde(default)]`. */
+function parseGpeopleConnectionsResponse(
+  v: unknown,
+): GpeopleConnectionsResponse {
+  const ctx = "GpeopleConnectionsResponse";
+  const o = asObject(v, ctx);
+  const connections = defaultObjectArray(o, "connections", ctx).map((p, i) => {
+    const c = `${ctx}.connections[${i}]`;
+    return {
+      resourceName: reqString(p, "resourceName", c),
+      names: defaultObjectArray(p, "names", c).map((n, j) => ({
+        displayName: optString(n, "displayName", `${c}.names[${j}]`),
+        givenName: optString(n, "givenName", `${c}.names[${j}]`),
+        familyName: optString(n, "familyName", `${c}.names[${j}]`),
+        metadata: parseMetadata(n, `${c}.names[${j}]`),
+      })),
+      emailAddresses: defaultObjectArray(p, "emailAddresses", c).map((e, j) => ({
+        value: optString(e, "value", `${c}.emailAddresses[${j}]`),
+        type: optString(e, "type", `${c}.emailAddresses[${j}]`),
+        metadata: parseMetadata(e, `${c}.emailAddresses[${j}]`),
+      })),
+      phoneNumbers: defaultObjectArray(p, "phoneNumbers", c).map((ph, j) => ({
+        value: optString(ph, "value", `${c}.phoneNumbers[${j}]`),
+        canonicalForm: optString(ph, "canonicalForm", `${c}.phoneNumbers[${j}]`),
+        type: optString(ph, "type", `${c}.phoneNumbers[${j}]`),
+        metadata: parseMetadata(ph, `${c}.phoneNumbers[${j}]`),
+      })),
+      organizations: defaultObjectArray(p, "organizations", c).map((g, j) => ({
+        name: optString(g, "name", `${c}.organizations[${j}]`),
+        title: optString(g, "title", `${c}.organizations[${j}]`),
+        current: optBool(g, "current", `${c}.organizations[${j}]`),
+      })),
+      photos: defaultObjectArray(p, "photos", c).map((ph, j) => ({
+        url: optString(ph, "url", `${c}.photos[${j}]`),
+        metadata: parseMetadata(ph, `${c}.photos[${j}]`),
+      })),
+      urls: defaultObjectArray(p, "urls", c).map((u, j) => ({
+        value: optString(u, "value", `${c}.urls[${j}]`),
+        type: optString(u, "type", `${c}.urls[${j}]`),
+      })),
+    };
+  });
+  return {
+    connections,
+    nextPageToken: optString(o, "nextPageToken", ctx),
+  };
 }
 
 // ── Canonical Contact shape ───────────────────────────────────
@@ -173,7 +244,7 @@ async function listConnectionsPage(
       `People API list_connections failed: HTTP ${resp.status} — ${await resp.text()}`,
     );
   }
-  return (await resp.json()) as GpeopleConnectionsResponse;
+  return parseGpeopleConnectionsResponse(await resp.json());
 }
 
 /** Bootstrap/catch-up contacts fetch (People API has no delta token — every

@@ -8,6 +8,13 @@ import type { Envelope } from "@magnis/connector-sdk";
 import { checkRateLimit, fetchWithRetry, type FetchLike } from "./http";
 import { formatUtc } from "./gmail";
 import { mergeProgress, progressCursor } from "./progress";
+import {
+  asObject,
+  optObject,
+  optObjectArray,
+  optString,
+  reqString,
+} from "./validate";
 
 // ── Raw Google Calendar API shapes (camelCase, as served) ─────
 
@@ -31,6 +38,63 @@ export interface GcalEvent {
 interface GcalEventsResponse {
   items?: GcalEvent[] | null;
   nextPageToken?: string | null;
+}
+
+// ── Response parser (serde parity — see validate.ts) ──────────
+
+/** `GcalDateTime` (calendar.rs:42) — both fields `Option<String>`. */
+function parseGcalDateTime(
+  o: Record<string, unknown>,
+  field: string,
+  ctx: string,
+): GcalDateTime | null {
+  const dt = optObject(o, field, ctx);
+  if (dt === null) return null;
+  const c = `${ctx}.${field}`;
+  return {
+    dateTime: optString(dt, "dateTime", c),
+    date: optString(dt, "date", c),
+  };
+}
+
+/** `GcalEventsResponse` (calendar.rs:21) — both fields `Option<_>`, but each
+ * `GcalEvent.id` (calendar.rs:29) is required; every other event field is
+ * `Option<_>`, as is every `GcalAttendee` field (calendar.rs:49). */
+function parseGcalEventsResponse(v: unknown): GcalEventsResponse {
+  const ctx = "GcalEventsResponse";
+  const o = asObject(v, ctx);
+  const items = optObjectArray(o, "items", ctx);
+  return {
+    items:
+      items === null
+        ? null
+        : items.map((ev, i) => {
+            const c = `${ctx}.items[${i}]`;
+            const attendees = optObjectArray(ev, "attendees", c);
+            return {
+              id: reqString(ev, "id", c),
+              summary: optString(ev, "summary", c),
+              description: optString(ev, "description", c),
+              location: optString(ev, "location", c),
+              status: optString(ev, "status", c),
+              start: parseGcalDateTime(ev, "start", c),
+              end: parseGcalDateTime(ev, "end", c),
+              attendees:
+                attendees === null
+                  ? null
+                  : attendees.map((a, j) => ({
+                      email: optString(a, "email", `${c}.attendees[${j}]`),
+                      displayName: optString(
+                        a,
+                        "displayName",
+                        `${c}.attendees[${j}]`,
+                      ),
+                    })),
+              hangoutLink: optString(ev, "hangoutLink", c),
+            };
+          }),
+    nextPageToken: optString(o, "nextPageToken", ctx),
+  };
 }
 
 // ── Canonical CalendarEvent shape ─────────────────────────────
@@ -116,7 +180,7 @@ async function listEventsPage(
   if (!resp.ok) {
     throw new Error(`Calendar list events failed: ${await resp.text()}`);
   }
-  return (await resp.json()) as GcalEventsResponse;
+  return parseGcalEventsResponse(await resp.json());
 }
 
 export interface WindowFetchResult {

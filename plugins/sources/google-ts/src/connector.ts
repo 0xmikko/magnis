@@ -11,7 +11,7 @@ import type {
   FetchResult,
 } from "@magnis/connector-sdk";
 import { credsFromMeta, refreshAccessToken } from "./auth";
-import { fetchEventsPage } from "./calendar";
+import { fetchEventsPage, type EventsWindow } from "./calendar";
 import { fetchContactsPage } from "./contacts";
 import { fixtureExecuteResult, fixtureFetchResult, fixturePath } from "./fixture";
 import {
@@ -65,12 +65,20 @@ export function buildConnectorConfig(
         };
       }
       case "meetings": {
-        // Calendar is window-based: Bootstrap and CatchUp page the same
-        // time window. TODO(google-ts): the Rust connector reads optional
-        // top-level args.time_min/time_max overrides; the SDK's FetchArgs
-        // does not forward extra keys and the host never sends them today,
-        // so the defaults (now-30d..now+90d) always apply here.
-        const r = await fetchEventsPage(token, cursor, {}, fetchFn);
+        // Calendar is window-based: Bootstrap and CatchUp page the same time
+        // window. The Rust twin passes the full action payload down and reads
+        // optional `time_min`/`time_max` off it (calendar.rs:125-135), falling
+        // back to now-30d..now+90d when absent OR not a string — mirrored here
+        // via the SDK's verbatim `raw` args.
+        const str = (k: string): string | undefined =>
+          typeof args.raw?.[k] === "string"
+            ? (args.raw[k] as string)
+            : undefined;
+        const window: EventsWindow = {
+          time_min: str("time_min"),
+          time_max: str("time_max"),
+        };
+        const r = await fetchEventsPage(token, cursor, window, fetchFn);
         // No cheap total estimate → indeterminate "N synced…" (DEC-5).
         return {
           envelopes: r.envelopes,

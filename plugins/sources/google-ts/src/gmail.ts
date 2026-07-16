@@ -18,9 +18,23 @@ import {
   decodeBase64url,
   extractBodyContent,
   type AttachmentInfo,
+  type GmailBody,
+  type GmailPart,
   type GmailPayload,
 } from "./mime";
 import { mergeProgress, progressCursor, type Progress } from "./progress";
+import {
+  asObject,
+  defaultObjectArray,
+  defaultStringArray,
+  optNumber,
+  optObject,
+  optObjectArray,
+  optString,
+  optStringArray,
+  reqObject,
+  reqString,
+} from "./validate";
 
 /** How many `messages.get` calls to run concurrently when hydrating a page —
  * same fan-out as the Rust GMAIL_FETCH_CONCURRENCY. */
@@ -58,6 +72,161 @@ interface HistoryListResponse {
   history?: HistoryEntry[] | null;
   nextPageToken?: string | null;
   historyId: string;
+}
+
+// ── Response parsers (serde parity — see validate.ts) ─────────
+//
+// One parser per Rust response struct, field-for-field. Required fields throw;
+// `Option<T>` / `#[serde(default)]` fields stay tolerant. The throw is a plain
+// Error (≡ `GoogleSyncError::Other`), so fatality is decided by the caller
+// exactly as in Rust: a bad `messages.get` body skips ONE message, everything
+// else fails the whole fetch.
+
+/** `GmailHeader` (gmail.rs:63) — `name` and `value` are BOTH required. */
+function parseHeaders(
+  o: Record<string, unknown>,
+  field: string,
+  ctx: string,
+): { name: string; value: string }[] | null {
+  const raw = optObjectArray(o, field, ctx);
+  if (raw === null) return null;
+  return raw.map((h, i) => ({
+    name: reqString(h, "name", `${ctx}.${field}[${i}]`),
+    value: reqString(h, "value", `${ctx}.${field}[${i}]`),
+  }));
+}
+
+/** `GmailBody` (gmail.rs:70) — every field optional. */
+function parseBody(
+  o: Record<string, unknown>,
+  field: string,
+  ctx: string,
+): GmailBody | null {
+  const b = optObject(o, field, ctx);
+  if (b === null) return null;
+  const c = `${ctx}.${field}`;
+  return {
+    attachmentId: optString(b, "attachmentId", c),
+    size: optNumber(b, "size", c),
+    data: optString(b, "data", c),
+  };
+}
+
+/** `GmailPart` (gmail.rs:78) — all fields optional, recursive. `headers` is
+ * unused downstream but serde still validates it, so we do too. */
+function parseParts(
+  o: Record<string, unknown>,
+  field: string,
+  ctx: string,
+): GmailPart[] | null {
+  const raw = optObjectArray(o, field, ctx);
+  if (raw === null) return null;
+  return raw.map((p, i) => {
+    const c = `${ctx}.${field}[${i}]`;
+    parseHeaders(p, "headers", c);
+    return {
+      mimeType: optString(p, "mimeType", c),
+      filename: optString(p, "filename", c),
+      body: parseBody(p, "body", c),
+      parts: parseParts(p, "parts", c),
+    };
+  });
+}
+
+/** `GmailMessage` (gmail.rs:44) — `id` required, everything else optional. */
+function parseGmailMessage(v: unknown): GmailMessage {
+  const ctx = "GmailMessage";
+  const o = asObject(v, ctx);
+  const payloadRaw = optObject(o, "payload", ctx);
+  let payload: GmailPayload | null = null;
+  if (payloadRaw !== null) {
+    const c = `${ctx}.payload`;
+    payload = {
+      mimeType: optString(payloadRaw, "mimeType", c),
+      headers: parseHeaders(payloadRaw, "headers", c),
+      body: parseBody(payloadRaw, "body", c),
+      parts: parseParts(payloadRaw, "parts", c),
+    };
+  }
+  return {
+    id: reqString(o, "id", ctx),
+    threadId: optString(o, "threadId", ctx),
+    labelIds: optStringArray(o, "labelIds", ctx),
+    snippet: optString(o, "snippet", ctx),
+    payload,
+    internalDate: optString(o, "internalDate", ctx),
+  };
+}
+
+/** `GmailProfile` (gmail.rs:94) — `historyId` required; `messagesTotal` is
+ * `#[serde(default)] Option<u64>` (absent → indeterminate total). */
+function parseGmailProfile(v: unknown): GmailProfile {
+  const ctx = "GmailProfile";
+  const o = asObject(v, ctx);
+  return {
+    historyId: reqString(o, "historyId", ctx),
+    messagesTotal: optNumber(o, "messagesTotal", ctx),
+  };
+}
+
+/** `ListMessagesResponse` (gmail.rs:32) — both fields `Option<_>`, but each
+ * `GmailMessageRef.id` (gmail.rs:40) is required. */
+function parseListMessagesResponse(v: unknown): ListMessagesResponse {
+  const ctx = "ListMessagesResponse";
+  const o = asObject(v, ctx);
+  const refs = optObjectArray(o, "messages", ctx);
+  return {
+    messages:
+      refs === null
+        ? null
+        : refs.map((m, i) => ({ id: reqString(m, "id", `${ctx}.messages[${i}]`) })),
+    nextPageToken: optString(o, "nextPageToken", ctx),
+  };
+}
+
+/** `HistoryMessageEvent` (gmail.rs:126) / `HistoryLabelEvent` (gmail.rs:132) —
+ * `message` is required, and `HistoryMessageRef.id` (gmail.rs:142) with it.
+ *
+ * `withLabelIds` mirrors a real asymmetry: only `HistoryLabelEvent` declares
+ * `#[serde(default)] label_ids`, so serde VALIDATES it there but treats it as
+ * an ignorable unknown field on `messagesAdded`/`messagesDeleted`. Validating
+ * it everywhere would reject bodies the Rust accepts. */
+function parseHistoryEvents(
+  o: Record<string, unknown>,
+  field: string,
+  ctx: string,
+  withLabelIds: boolean,
+): { message: { id: string } }[] {
+  return defaultObjectArray(o, field, ctx).map((e, i) => {
+    const c = `${ctx}.${field}[${i}]`;
+    const msg = reqObject(e, "message", c);
+    // `label_ids` is unused downstream, but serde still type-checks it.
+    if (withLabelIds) defaultStringArray(e, "labelIds", c);
+    // `HistoryMessageRef.thread_id: Option<String>` — validated, unused.
+    optString(msg, "threadId", `${c}.message`);
+    return { message: { id: reqString(msg, "id", `${c}.message`) } };
+  });
+}
+
+/** `HistoryListResponse` (gmail.rs:105) — `historyId` required; `history` is
+ * `#[serde(default)] Vec<_>` (absent → no changes). */
+function parseHistoryListResponse(v: unknown): HistoryListResponse {
+  const ctx = "HistoryListResponse";
+  const o = asObject(v, ctx);
+  const entries = defaultObjectArray(o, "history", ctx).map((e, i) => {
+    const c = `${ctx}.history[${i}]`;
+    return {
+      messagesAdded: parseHistoryEvents(e, "messagesAdded", c, false),
+      messagesDeleted: parseHistoryEvents(e, "messagesDeleted", c, false),
+      labelsAdded: parseHistoryEvents(e, "labelsAdded", c, true),
+      labelsRemoved: parseHistoryEvents(e, "labelsRemoved", c, true),
+    };
+  });
+  return {
+    history: entries,
+    nextPageToken: optString(o, "nextPageToken", ctx),
+    historyId: reqString(o, "historyId", ctx),
+  };
 }
 
 // ── Canonical (pre-flatten) MailMessage shape ─────────────────
@@ -433,7 +602,7 @@ async function getProfile(
   if (!resp.ok) {
     throw new Error(`Gmail get profile failed: ${await resp.text()}`);
   }
-  return (await resp.json()) as GmailProfile;
+  return parseGmailProfile(await resp.json());
 }
 
 async function listMessagesPage(
@@ -450,7 +619,7 @@ async function listMessagesPage(
   if (!resp.ok) {
     throw new Error(`Gmail list messages failed: ${await resp.text()}`);
   }
-  return (await resp.json()) as ListMessagesResponse;
+  return parseListMessagesResponse(await resp.json());
 }
 
 async function fetchMessage(
@@ -468,7 +637,7 @@ async function fetchMessage(
       `GET message ${gmailMsgId} failed (${resp.status}): ${await resp.text()}`,
     );
   }
-  return (await resp.json()) as GmailMessage;
+  return parseGmailMessage(await resp.json());
 }
 
 async function listHistory(
@@ -487,7 +656,7 @@ async function listHistory(
   if (!resp.ok) {
     throw new Error(`Gmail list history failed: ${await resp.text()}`);
   }
-  return (await resp.json()) as HistoryListResponse;
+  return parseHistoryListResponse(await resp.json());
 }
 
 /** Send a draft: build RFC 2822 MIME, base64url-nopad encode, POST to
@@ -514,8 +683,12 @@ export async function sendMessage(
   if (!resp.ok) {
     throw new Error(`Gmail send failed (${resp.status}): ${await resp.text()}`);
   }
-  const body = (await resp.json()) as { id: string; threadId?: string | null };
-  return { message_id: body.id, thread_id: body.threadId ?? null };
+  // `SendResponse` (gmail.rs:347): `id` required, `thread_id` Option.
+  const body = asObject(await resp.json(), "SendResponse");
+  return {
+    message_id: reqString(body, "id", "SendResponse"),
+    thread_id: optString(body, "threadId", "SendResponse"),
+  };
 }
 
 /** Download one attachment's bytes ({data} is base64url). */
@@ -531,9 +704,12 @@ export async function downloadAttachment(
   });
   checkRateLimit(resp);
   if (!resp.ok) throw new Error(`Attachment download failed: ${resp.status}`);
-  const body = (await resp.json()) as { data?: string | null };
-  if (typeof body.data !== "string") throw new Error("No attachment data");
-  const bytes = decodeBase64url(body.data);
+  // `AttachmentResponse` (gmail.rs:88): `data: Option<String>` — absent is the
+  // "No attachment data" error, a non-string is a shape error.
+  const body = asObject(await resp.json(), "AttachmentResponse");
+  const data = optString(body, "data", "AttachmentResponse");
+  if (data === null) throw new Error("No attachment data");
+  const bytes = decodeBase64url(data);
   if (bytes === null) throw new Error("Base64 decode failed");
   return bytes;
 }

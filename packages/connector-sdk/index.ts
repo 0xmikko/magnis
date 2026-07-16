@@ -29,6 +29,11 @@ export interface FetchArgs {
   /** Host-injected credentials (DEC-6): the `_meta` object the host attaches to
    * each tools/call — e.g. `{ bearer_token }` (X) / `{ anysite_key }` (LinkedIn). */
   meta?: Record<string, unknown>;
+  /** The verbatim tools/call `arguments`. Surface-specific extras the typed
+   * fields above do not model live here — e.g. the Google connector's calendar
+   * `time_min`/`time_max` window, which its Rust twin reads straight off the
+   * action payload. Prefer a typed field above when one fits. */
+  raw?: Record<string, unknown>;
 }
 
 export interface FetchResult {
@@ -363,6 +368,7 @@ if (name === "magnis.auth.probe" && config.probeAuth) {
         tracked_handles: tracked,
         limit,
         meta,
+        raw: args,
       });
       return { jsonrpc: "2.0", id, result };
     } catch (e) {
