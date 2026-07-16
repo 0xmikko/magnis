@@ -157,14 +157,28 @@ function spawnFixtureListener(
   write: LineWriter,
 ): ListenerHandle {
   let cancelled = false;
-  void (async () => {
+  // WIRE PARITY (diff-connectors.ts): the replay MUST NOT start until the
+  // caller has written the listen ack. The Rust oracle gets this for free —
+  // subscriptions.rs:233 `tokio::spawn(async move { … })` hands the replay to
+  // the scheduler, so main.rs:318 writes `{ok, subscription_id}` FIRST and the
+  // notifications/magnis/envelope frames follow. An async IIFE is NOT the same:
+  // its body runs SYNCHRONOUSLY until the first await, so the first write()
+  // landed before spawnFixtureListener even returned — the host saw a push for
+  // a subscription it had not yet been told about (it routes by
+  // subscription_id). `setImmediate` defers past the pending microtasks the ack
+  // path awaits, restoring the Rust frame order (ack → push).
+  const replay = async (): Promise<void> => {
     for (const { payload, remote_id } of livePushes()) {
       if (cancelled) return;
       write(notificationLine(subscriptionId, accountId, payload, remote_id));
       // Yield so a concurrent stop can interrupt the replay.
       await Promise.resolve();
     }
-  })();
+  };
+  setImmediate(() => {
+    if (cancelled) return;
+    void replay();
+  });
   return {
     cancel: () => {
       cancelled = true;

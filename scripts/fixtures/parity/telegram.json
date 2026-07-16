@@ -1,0 +1,198 @@
+{
+  "_comment": [
+    "Parity fixture for scripts/diff-connectors.ts — ONE file, fed to BOTH the Rust",
+    "`magnis-telegram` binary and the `telegram-ts` twin via TELEGRAM_FIXTURE_FILE.",
+    "Targets the branches in the Rust oracle envelope.rs / fixture.rs:",
+    "  chat_payload      empty-title fallback, pinned, optional pts/member_count/username/avatar_url",
+    "  message_payload   optional chat_title/sender_name/sender_id/reply_to_msg_id/is_pinned/sender_info",
+    "  tg_media_subdir   photo|voice|video|video_note|animation|sticker|_ (envelope.rs:279-287)",
+    "  tg_media_ext      photo|voice|video|video_note|animation|sticker|audio|_ (envelope.rs:290-298)",
+    "  has_media=false   media_type WITHOUT source_ref/file_name (envelope.rs:153)",
+    "  file_name         explicit vs generated (envelope.rs:169-174)",
+    "  fixture.rs        0-message chat (no cursor entry), orphan message (chat-less),",
+    "                    live:true excluded from fetch, forward/backward watermarking"
+  ],
+
+  "chats": [
+    {
+      "_case": "pinned group, all optional keys present",
+      "chat_id": 111,
+      "title": "Project X",
+      "type": "group",
+      "is_pinned": true,
+      "pin_order": 1,
+      "unread_count": 2,
+      "unread_mark": true,
+      "read_inbox_max_id": 40,
+      "read_outbox_max_id": 39,
+      "unread_mentions_count": 1,
+      "top_message": 42,
+      "pts": 900,
+      "member_count": 5,
+      "username": "projectx",
+      "avatar_url": "https://avatar/111"
+    },
+    {
+      "_case": "unpinned private chat, all optional keys ABSENT (serde defaults)",
+      "chat_id": 222,
+      "title": "Алиса — 日本語",
+      "type": "private"
+    },
+    {
+      "_case": "channel with NEGATIVE id (supergroup-style) — media dest_subpath must keep the minus",
+      "chat_id": -1001234567890,
+      "title": "Announcements",
+      "type": "channel",
+      "unread_count": 7,
+      "top_message": 5
+    },
+    {
+      "_case": "EMPTY title → chat_payload falls back to 'Chat {id}' (envelope.rs:226-230)",
+      "chat_id": 333,
+      "title": "",
+      "type": "supergroup",
+      "pts": 12
+    },
+    {
+      "_case": "0-message chat → contributes NO nextCursor entry (fixture.rs:116 `highest > 0`)",
+      "chat_id": 444,
+      "title": "Silent chat",
+      "type": "private"
+    }
+  ],
+
+  "messages": [
+    {
+      "_case": "plain incoming text, sender_info full",
+      "message_id": 10,
+      "chat_id": 111,
+      "text": "Hello world",
+      "date": "2026-05-20T10:00:00+00:00",
+      "is_outgoing": false,
+      "chat_title": "Project X",
+      "sender_name": "Alice",
+      "sender_id": 222,
+      "has_media": false,
+      "sender_info": { "first_name": "Alice", "last_name": "Smith", "username": "alice", "phone": "+15550100001" }
+    },
+    {
+      "_case": "outgoing, pinned, reply, non-ASCII text, sender_info first_name only",
+      "message_id": 20,
+      "chat_id": 111,
+      "text": "Ответ — 日本語 🎉",
+      "date": "2026-05-20T10:05:00+00:00",
+      "is_outgoing": true,
+      "reply_to_msg_id": 10,
+      "is_pinned": true,
+      "has_media": false,
+      "sender_info": { "first_name": "Me" }
+    },
+    {
+      "_case": "photo media, has_media defaults TRUE (key absent), generated file_name",
+      "message_id": 30,
+      "chat_id": 111,
+      "date": "2026-05-20T10:10:00+00:00",
+      "media_type": "photo",
+      "account_id": "acct-1"
+    },
+    {
+      "_case": "document with EXPLICIT file_name",
+      "message_id": 31,
+      "chat_id": 111,
+      "date": "2026-05-20T10:11:00+00:00",
+      "media_type": "document",
+      "file_name": "отчёт.pdf",
+      "account_id": "acct-1"
+    },
+    {
+      "_case": "voice → voice/ogg",
+      "message_id": 32,
+      "chat_id": 111,
+      "date": "2026-05-20T10:12:00+00:00",
+      "media_type": "voice",
+      "account_id": "acct-1"
+    },
+    {
+      "_case": "audio → documents/mp3 (subdir default, ext audio)",
+      "message_id": 33,
+      "chat_id": 111,
+      "date": "2026-05-20T10:13:00+00:00",
+      "media_type": "audio",
+      "account_id": "acct-1"
+    },
+    {
+      "_case": "sticker → stickers/webp",
+      "message_id": 34,
+      "chat_id": 111,
+      "date": "2026-05-20T10:14:00+00:00",
+      "media_type": "sticker",
+      "account_id": "acct-1"
+    },
+    {
+      "_case": "video_note → videos/mp4",
+      "message_id": 35,
+      "chat_id": 111,
+      "date": "2026-05-20T10:15:00+00:00",
+      "media_type": "video_note",
+      "account_id": "acct-1"
+    },
+    {
+      "_case": "animation → videos/mp4",
+      "message_id": 36,
+      "chat_id": 111,
+      "date": "2026-05-20T10:16:00+00:00",
+      "media_type": "animation",
+      "account_id": "acct-1"
+    },
+    {
+      "_case": "unsupported media, has_media=false → media_type but NO source_ref/file_name",
+      "message_id": 37,
+      "chat_id": 111,
+      "text": "look",
+      "date": "2026-05-20T10:17:00+00:00",
+      "media_type": "unsupported",
+      "has_media": false
+    },
+    {
+      "_case": "video in NEGATIVE-id channel, EMPTY account_id (regression guard tst_src_tg_file_account_006)",
+      "message_id": 5,
+      "chat_id": -1001234567890,
+      "text": "",
+      "date": "2026-05-20T11:00:00+00:00",
+      "media_type": "video"
+    },
+    {
+      "_case": "missing sender entirely (no sender_name/sender_id/sender_info), no text",
+      "message_id": 1,
+      "chat_id": 222,
+      "date": "2026-05-20T09:00:00+00:00",
+      "has_media": false
+    },
+    {
+      "_case": "later message in private chat → drives the 222 watermark",
+      "message_id": 2,
+      "chat_id": 222,
+      "text": "Второе",
+      "date": "2026-05-20T09:30:00+00:00",
+      "is_outgoing": true,
+      "has_media": false
+    },
+    {
+      "_case": "ORPHAN — chat 999 has no `chats` entry (fixture.rs:123-146 orphan path)",
+      "message_id": 77,
+      "chat_id": 999,
+      "text": "orphan message",
+      "date": "2026-05-20T12:00:00+00:00",
+      "has_media": false
+    },
+    {
+      "_case": "LIVE arrival → excluded from fetch, replayed by magnis.sync.listen only",
+      "message_id": 99,
+      "chat_id": 111,
+      "text": "live push",
+      "date": "2026-05-20T13:00:00+00:00",
+      "live": true,
+      "has_media": false
+    }
+  ]
+}

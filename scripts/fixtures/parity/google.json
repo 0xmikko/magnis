@@ -1,0 +1,309 @@
+{
+  "_comment": [
+    "Parity fixture for scripts/diff-connectors.ts — ONE file, fed to BOTH the Rust",
+    "`magnis-google` binary and the `google-ts` twin via GOOGLE_FIXTURE_FILE.",
+    "Every entry targets a branch in the Rust oracle (the incumbent the host talks to):",
+    "  gmail.rs   gmail_message_to_mail_message / parse_email_address(es) / get_header",
+    "             / parse_rfc2822_date / internal_date_to_datetime / flatten_mail_payload",
+    "  mime.rs    extract_body_content / collect_attachments / decode_base64url",
+    "  calendar.rs gcal_event_to_calendar_event / resolve_datetime",
+    "  contacts.rs gpeople_person_to_contact / pick_primary / stable_contact_id",
+    "NOTE deliberately NO event without start/end and NO contact needing Utc::now():",
+    "calendar.rs:255 `_ => Ok((Utc::now(), false))` is wall-clock and can never be",
+    "diffed across two processes. That branch is called out in the report instead."
+  ],
+
+  "messages": [
+    {
+      "_case": "plain text/plain body, full headers, RFC2822 Date, several recipients",
+      "id": "m1",
+      "threadId": "t1",
+      "labelIds": ["INBOX", "UNREAD"],
+      "snippet": "Plain preview",
+      "internalDate": "1700000000000",
+      "payload": {
+        "mimeType": "text/plain",
+        "headers": [
+          { "name": "Subject", "value": "Plain subject" },
+          { "name": "From", "value": "Alice Smith <alice@x.com>" },
+          { "name": "To", "value": "Bob <bob@y.com>, carol@z.com, \"Dave, Jr\" <dave@z.com>" },
+          { "name": "Cc", "value": "eve@z.com" },
+          { "name": "Bcc", "value": "frank@z.com, grace@z.com" },
+          { "name": "Date", "value": "Tue, 14 Nov 2023 22:13:20 +0000" },
+          { "name": "Message-ID", "value": "<msg-1@x.com>" }
+        ],
+        "body": { "data": "UGxhaW4gYm9keSBsaW5lIDEKbGluZSAy" }
+      }
+    },
+    {
+      "_case": "multipart/alternative text+html, RFC2047-encoded subject (NOT decoded by the oracle), STARRED+read",
+      "id": "m2",
+      "threadId": "t2",
+      "labelIds": ["INBOX", "STARRED"],
+      "snippet": "Alt preview",
+      "internalDate": "1700000001000",
+      "payload": {
+        "mimeType": "multipart/alternative",
+        "headers": [
+          { "name": "subject", "value": "=?UTF-8?B?0J/RgNC40LLQtdGCINC80LjRgA==?=" },
+          { "name": "FROM", "value": "\"Quoted Name\" <quoted@x.com>" },
+          { "name": "To", "value": "bob@y.com" },
+          { "name": "Date", "value": "Tue, 14 Nov 2023 22:13:21 +0000" },
+          { "name": "Message-Id", "value": "<msg-2@x.com>" }
+        ],
+        "parts": [
+          { "mimeType": "text/plain", "body": { "size": 14, "data": "QWx0IHBsYWluIHBhcnQ" } },
+          { "mimeType": "text/html", "body": { "size": 26, "data": "PHA-QWx0IDxiPkhUTUw8L2I-IHBhcnQ8L3A-" } }
+        ]
+      }
+    },
+    {
+      "_case": "no payload at all → gmail.rs:577 anyhow error → entry SKIPPED entirely",
+      "id": "m3",
+      "threadId": "t3",
+      "labelIds": [],
+      "snippet": "never converted",
+      "internalDate": "1700000002000"
+    },
+    {
+      "_case": "no headers array + no Date → sent_at falls back to internalDate (gmail.rs:596-604)",
+      "id": "m4",
+      "snippet": "Headerless snippet",
+      "internalDate": "1700000003000",
+      "payload": { "mimeType": "text/plain", "body": { "data": "UGxhaW4gYm9keSBsaW5lIDEKbGluZSAy" } }
+    },
+    {
+      "_case": "whitespace-only body → body_text falls back to snippet (gmail.rs:625-628)",
+      "id": "m5",
+      "threadId": "t5",
+      "labelIds": ["INBOX"],
+      "snippet": "Snippet is the fallback body",
+      "internalDate": "1700000004000",
+      "payload": {
+        "mimeType": "text/plain",
+        "headers": [{ "name": "Subject", "value": "Empty body" }, { "name": "From", "value": "e@x.com" }],
+        "body": { "data": "ICAgCgkgIA" }
+      }
+    },
+    {
+      "_case": "PADDED URL_SAFE base64 → decode_base64url falls back to URL_SAFE (mime.rs:25)",
+      "id": "m6",
+      "threadId": "t6",
+      "labelIds": ["INBOX"],
+      "snippet": "padded",
+      "internalDate": "1700000005000",
+      "payload": {
+        "mimeType": "text/plain",
+        "headers": [{ "name": "Subject", "value": "Padded" }, { "name": "From", "value": "p@x.com" }],
+        "body": { "data": "UGFkZGVkIFVSTF9TQUZFIGJvZHkgPz8-Pg==" }
+      }
+    },
+    {
+      "_case": "multipart/mixed: nested text/plain, real attachment, filename-but-no-attachmentId (skipped), empty filename (skipped)",
+      "id": "m7",
+      "threadId": "t7",
+      "labelIds": ["INBOX"],
+      "snippet": "with attachments",
+      "internalDate": "1700000006000",
+      "payload": {
+        "mimeType": "multipart/mixed",
+        "headers": [
+          { "name": "Subject", "value": "Attachments — 日本語" },
+          { "name": "From", "value": "Sender <s@x.com>" },
+          { "name": "To", "value": "bob@y.com" },
+          { "name": "Date", "value": "Tue, 14 Nov 2023 22:13:26 +0000" }
+        ],
+        "parts": [
+          {
+            "mimeType": "multipart/alternative",
+            "parts": [{ "mimeType": "text/plain", "body": { "size": 21, "data": "TmVzdGVkIHBsYWluIGluIG1peGVk" } }]
+          },
+          {
+            "mimeType": "application/pdf",
+            "filename": "report.pdf",
+            "body": { "attachmentId": "att-1", "size": 4096 }
+          },
+          {
+            "mimeType": "image/png",
+            "filename": "inline.png",
+            "body": { "size": 12 }
+          },
+          {
+            "mimeType": "text/plain",
+            "filename": "",
+            "body": { "attachmentId": "att-ignored", "size": 3 }
+          },
+          {
+            "mimeType": "application/zip",
+            "filename": "деep/архив.zip",
+            "body": { "attachmentId": "att-2" }
+          }
+        ]
+      }
+    },
+    {
+      "_case": "bare From with no <>, unparsable Date → internalDate fallback; html-only single part",
+      "id": "m8",
+      "threadId": "t8",
+      "labelIds": ["INBOX", "UNREAD"],
+      "snippet": "html only",
+      "internalDate": "1700000007000",
+      "payload": {
+        "mimeType": "text/html",
+        "headers": [
+          { "name": "Subject", "value": "HTML only" },
+          { "name": "From", "value": "bare@x.com" },
+          { "name": "To", "value": "" },
+          { "name": "Date", "value": "not-a-date" }
+        ],
+        "body": { "data": "PGRpdj5IVE1MIG9ubHkg4oCUINC_0YDQuNCy0LXRgjwvZGl2Pg" }
+      }
+    },
+    {
+      "_case": "no Date AND no internalDate → sent_at = DateTime::default() = 1970-01-01T00:00:00Z (gmail.rs:604 unwrap_or_default)",
+      "id": "m9",
+      "labelIds": ["UNREAD"],
+      "snippet": "epoch",
+      "payload": {
+        "mimeType": "text/plain",
+        "headers": [
+          { "name": "Subject", "value": "" },
+          { "name": "From", "value": "<angle@x.com>" },
+          { "name": "To", "value": "  spaced@y.com  ,  , second@y.com" }
+        ],
+        "body": { "data": "0KLQtdC70L4g0L_QuNGB0YzQvNCwIOKAlCDml6XmnKzoqp4g8J-OiQ" }
+      }
+    },
+    {
+      "_case": "RFC3339 Date (parse_rfc2822_date second branch, gmail.rs:685) + Cc/Bcc absent",
+      "id": "m10",
+      "threadId": "t10",
+      "labelIds": ["INBOX"],
+      "snippet": "rfc3339 date",
+      "internalDate": "1700000009000",
+      "payload": {
+        "mimeType": "text/plain",
+        "headers": [
+          { "name": "Subject", "value": "RFC3339" },
+          { "name": "From", "value": "Zed <zed@x.com>" },
+          { "name": "To", "value": "bob@y.com" },
+          { "name": "Date", "value": "2023-11-14T22:13:29+02:00" }
+        ],
+        "body": { "data": "UGxhaW4gYm9keSBsaW5lIDEKbGluZSAy" }
+      }
+    }
+  ],
+
+  "events": [
+    {
+      "_case": "timed event, attendees, hangoutLink, description, location",
+      "id": "e1",
+      "summary": "Team standup",
+      "description": "Daily sync",
+      "location": "Room A",
+      "status": "confirmed",
+      "start": { "dateTime": "2026-03-13T09:00:00Z" },
+      "end": { "dateTime": "2026-03-13T09:15:00Z" },
+      "attendees": [
+        { "email": "alice@x.com", "displayName": "Alice" },
+        { "email": "bob@y.com" },
+        { "displayName": "No Email Attendee" }
+      ],
+      "hangoutLink": "https://meet.google.com/abc-defg-hij"
+    },
+    {
+      "_case": "all-day event → date → midnight UTC + all_day=true (calendar.rs:249-253)",
+      "id": "e2",
+      "summary": "Company offsite — Zürich",
+      "status": "confirmed",
+      "start": { "date": "2026-03-01" },
+      "end": { "date": "2026-03-02" }
+    },
+    {
+      "_case": "cancelled → DROPPED before conversion (fixture.rs:184)",
+      "id": "e3",
+      "summary": "Cancelled thing",
+      "status": "cancelled",
+      "start": { "dateTime": "2026-03-14T09:00:00Z" },
+      "end": { "dateTime": "2026-03-14T10:00:00Z" }
+    },
+    {
+      "_case": "no summary → 'Untitled Event'; no status → 'confirmed'; non-UTC offset datetime",
+      "id": "e4",
+      "start": { "dateTime": "2026-03-15T11:30:00+02:00" },
+      "end": { "dateTime": "2026-03-15T12:00:00+02:00" },
+      "attendees": []
+    },
+    {
+      "_case": "tentative status, declined-style attendee list, no conference link",
+      "id": "e5",
+      "summary": "Maybe meeting",
+      "status": "tentative",
+      "start": { "dateTime": "2026-03-16T08:00:00Z" },
+      "end": { "dateTime": "2026-03-16T08:30:00Z" },
+      "attendees": [{ "email": "declined@x.com", "displayName": "Declined Person" }]
+    }
+  ],
+
+  "connections": [
+    {
+      "_case": "full contact: primary name, 2 emails, phone canonicalForm, org, photo, profile url",
+      "resourceName": "people/c1",
+      "names": [
+        { "displayName": "Carol Danvers", "givenName": "Carol", "familyName": "Danvers", "metadata": { "primary": true } }
+      ],
+      "emailAddresses": [
+        { "value": "carol@work.com", "type": "work", "metadata": { "primary": true } },
+        { "value": "carol@home.com", "type": "home", "metadata": { "primary": false } }
+      ],
+      "phoneNumbers": [
+        { "value": "+1 (555) 010-0001", "canonicalForm": "+15550100001", "type": "mobile", "metadata": { "primary": true } }
+      ],
+      "organizations": [{ "name": "Acme", "title": "Engineer", "current": true }],
+      "photos": [{ "url": "https://photo/1", "metadata": { "primary": true } }],
+      "urls": [
+        { "value": "https://blog/1", "type": "blog" },
+        { "value": "https://profile/1", "type": "Profile" }
+      ]
+    },
+    {
+      "_case": "no displayName → 'given family' composed (contacts.rs:222-223); phone via value only (no canonicalForm)",
+      "resourceName": "people/c2",
+      "names": [{ "givenName": "Bruce", "familyName": "Banner", "metadata": { "primary": false } }],
+      "phoneNumbers": [{ "value": "555-0002", "metadata": { "primary": false } }]
+    },
+    {
+      "_case": "email only, no names at all → display_name null but kept (INV-CONTACTS-2)",
+      "resourceName": "people/c3",
+      "emailAddresses": [{ "value": "nameless@x.com" }]
+    },
+    {
+      "_case": "no name, no email, no phone → DROPPED (contacts.rs:259)",
+      "resourceName": "people/c4",
+      "organizations": [{ "name": "Ghost Corp" }]
+    },
+    {
+      "_case": "givenName only → display_name = given (contacts.rs:224); org with no current → is_current false",
+      "resourceName": "people/c5",
+      "names": [{ "givenName": "Mononym", "metadata": { "primary": true } }],
+      "organizations": [{ "title": "Consultant" }]
+    },
+    {
+      "_case": "familyName only → display_name = family (contacts.rs:225); pick_primary falls back to FIRST when none primary",
+      "resourceName": "people/c6",
+      "names": [
+        { "familyName": "Secondname", "metadata": { "primary": false } },
+        { "displayName": "Should Not Win", "metadata": { "primary": false } }
+      ],
+      "emailAddresses": [{ "value": "first@x.com", "type": null }]
+    },
+    {
+      "_case": "non-primary photo picked as FIRST; email with no value → filtered (contacts.rs:235)",
+      "resourceName": "people/c7",
+      "names": [{ "displayName": "Фёдор Достоевский", "givenName": "Фёдор", "familyName": "Достоевский", "metadata": { "primary": true } }],
+      "emailAddresses": [{ "type": "work" }, { "value": "fyodor@x.com", "metadata": { "primary": true } }],
+      "photos": [{ "url": "https://photo/first" }, { "url": "https://photo/second", "metadata": { "primary": true } }],
+      "urls": [{ "value": "https://nomatch/1", "type": "other" }]
+    }
+  ]
+}

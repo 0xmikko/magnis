@@ -266,6 +266,30 @@ describe("wire: subscriptions", () => {
     expect((r.error as Record<string, unknown>).message).toBe("missing required _meta.account_id");
   });
 
+  // scn_tgts_wire_012 — REGRESSION (found by scripts/diff-connectors.ts): the
+  // listener must NOT emit a push before its caller has written the listen ack.
+  // The Rust oracle gets this ordering from subscriptions.rs:233
+  // `tokio::spawn(async move { … })` — the replay is handed to the scheduler, so
+  // main.rs:318 writes `{ok, subscription_id}` FIRST. The TS listener used a bare
+  // async IIFE, whose body runs SYNCHRONOUSLY until its first await, so the first
+  // notification hit the wire BEFORE the ack — and the host routes a push by
+  // subscription_id, which it had not yet been told about.
+  test("tst_tgts_wire_012 fixture listener pushes only AFTER the listen ack", async () => {
+    withFixture(FIXTURE_DOC);
+    const frames: string[] = [];
+    const d = deps({ write: () => frames.push("push") });
+
+    const reply = await call("listen_start", { subscription_id: "s1", _meta: { account_id: "a" } }, d);
+    // At the moment the dispatcher hands the ack back, NOTHING may be on the wire.
+    expect(frames).toEqual([]);
+    frames.push("ack");
+    expect(reply.result).toEqual({ ok: true, subscription_id: "s1" });
+
+    // Let the deferred replay run: the push must land AFTER the ack.
+    await new Promise((res) => setTimeout(res, 50));
+    expect(frames).toEqual(["ack", "push"]);
+  });
+
   test("tst_tgts_wire_003 listen_start is idempotent by subscription_id", async () => {
     withFixture(FIXTURE_DOC);
     const d = deps();
