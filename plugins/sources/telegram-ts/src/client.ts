@@ -402,7 +402,8 @@ export function chatMemberCount(entity: EntityLike): number | undefined {
 /** Twin of the Rust `chat_username`: User/Channel only; a basic Group→null. */
 export function chatUsername(entity: EntityLike): string | undefined {
   if (entity.className === "User" || entity.className === "Channel") {
-    return entity.username !== undefined && entity.username !== "" ? entity.username : undefined;
+    // gramjs: absent username = null (grammers: Option::None) — fold both out.
+    return entity.username != null && entity.username !== "" ? entity.username : undefined;
   }
   return undefined;
 }
@@ -422,7 +423,7 @@ export function senderDisplayName(sender: EntityLike | null | undefined): string
   const name = entityName(sender);
   if (name !== "") return name;
   if (sender.className === "User") {
-    return sender.username !== undefined && sender.username !== ""
+    return sender.username != null && sender.username !== ""
       ? `@${sender.username}`
       : `User ${toNum(sender.id)}`;
   }

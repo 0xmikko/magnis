@@ -163,6 +163,22 @@ describe("chat entity conversion", () => {
     expect(chatUsername({ className: "Chat", username: "nope" })).toBeUndefined();
   });
 
+  test("tst_tgts_chat_003b gramjs null username never leaks into the chat payload", () => {
+    // gramjs: absent username = null. chatUsername must fold it to undefined,
+    // or chatToIntermediate spreads { username: null } and the module schema
+    // rejects the batch ("null is not of type \"string\" at /username").
+    expect(chatUsername({ className: "User", id: 7, username: null })).toBeUndefined();
+    expect(chatUsername({ className: "Channel", id: 8, username: null })).toBeUndefined();
+    const c = chatToIntermediate(
+      { className: "Channel", id: 9, title: "News", username: null },
+      { is_pinned: false, pin_order: 0, unread_count: 0, unread_mark: false,
+        read_inbox_max_id: 0, read_outbox_max_id: 0, unread_mentions_count: 0, top_message: 0 },
+    );
+    expect("username" in c).toBe(false);
+    // senderDisplayName: a nameless User with null username → "User {id}", not "@null"
+    expect(senderDisplayName({ className: "User", id: 5, username: null })).toBe("User 5");
+  });
+
   test("tst_tgts_chat_004 chatToIntermediate carries the meta + omits absent optionals", () => {
     const meta: DialogMeta = {
       is_pinned: true,
