@@ -365,7 +365,10 @@
     ],
     "sync_handlers": [
       "contacts"
-    ]
+    ],
+    "sync_item_schemas": {
+      "contacts": "contacts.person"
+    }
   },
   "entry": {
     "module": "module/index.ts",

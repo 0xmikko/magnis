@@ -62,7 +62,9 @@ export interface TelegramConversation {
   readonly contactInitials: string;
   readonly contactAvatarColor: string;
   readonly contactAvatarUrl?: string;
-  readonly status: string;
+  /** The chat's REAL graph message total — the newest `telegram.messages.list`
+   *  `total` for this chat (message units). NEVER the loaded page length. */
+  readonly messageTotal: number;
   readonly messages: readonly TelegramMessage[];
 }
 

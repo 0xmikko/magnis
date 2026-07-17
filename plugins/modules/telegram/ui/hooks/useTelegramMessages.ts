@@ -84,6 +84,9 @@ export function useTelegramMessages(
   const [hasMoreOnServer, setHasMoreOnServer] = useState(true);
   const [extraMessages, setExtraMessages] = useState<TelegramMessage[]>([]);
   const [optimisticMessages, setOptimisticMessages] = useState<TelegramMessage[]>([]);
+  // Newest `total` reported by a load-more/backfill page for THIS chat.
+  // Keyed by chatId so a chat switch can never surface a stale total.
+  const [fetchedTotal, setFetchedTotal] = useState<{ chatId: string; total: number } | null>(null);
   const offsetRef = useRef(0);
 
   // Derive initial messages from query
@@ -112,17 +115,25 @@ export function useTelegramMessages(
       queryData.items[0]?.sender,
     );
 
+    // The chat's graph message total: the initial page's `total`, advanced by
+    // any newer load-more/backfill page that reported a LARGER one (backfill
+    // ingest grows the graph between query-cache refreshes). Both numbers are
+    // real `telegram.messages.list` totals for this chat — never a page length.
+    const grownTotal =
+      fetchedTotal !== null && fetchedTotal.chatId === selectedChatId
+        ? fetchedTotal.total
+        : 0;
+
     return {
       chatId: selectedChatId,
       contactName: chatName,
       contactInitials: initialsFromName(chatName),
       contactAvatarColor: pickAvatarColor(chatName),
       contactAvatarUrl: chatData?.avatarUrl,
-      // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-      status: `${queryData.total} messages`,
+      messageTotal: Math.max(queryData.total, grownTotal),
       messages: allMessages,
     };
-  }, [selectedChatId, queryData, chats, allMessages]);
+  }, [selectedChatId, queryData, chats, allMessages, fetchedTotal]);
 
   // Update hasMore when query data arrives
   useEffect(() => {
@@ -139,6 +150,7 @@ export function useTelegramMessages(
     setOptimisticMessages([]);
     setHasMore(false);
     setHasMoreOnServer(true);
+    setFetchedTotal(null);
   }, [selectedChatId]);
 
   // Invalidate messages query when live sync arrives for this chat
@@ -184,6 +196,8 @@ export function useTelegramMessages(
           setExtraMessages(newMessages);
         }
         setHasMore(offset + result.items.length < result.total);
+        // Advance the chat's displayed total from the newest page's report.
+        setFetchedTotal({ chatId, total: result.total });
       } catch {
         // Keep current conversation on error
       } finally {

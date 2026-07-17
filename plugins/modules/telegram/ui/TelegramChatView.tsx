@@ -804,7 +804,7 @@ export function TelegramChatView({
         <TopBarHeader
           leading={null}
           title={chatTitle}
-          subtitle={conversation.status}
+          subtitle={`${String(conversation.messageTotal)} messages`}
           actions={(
             <div ref={headerBtnRef}>
               <IconButton variant="ghost" onClick={handleOpenHeaderMenu}>

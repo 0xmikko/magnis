@@ -32,28 +32,40 @@ import type { TelegramMessageListItem } from "../types";
 
 // ── Mocks ────────────────────────────────────────────────────────
 
-const rpcMock = vi.fn();
-const queryClientForRuntime = new QueryClient({
-  defaultOptions: { queries: { retry: false } },
-});
+const rpcMock = vi.hoisted(() => vi.fn());
 
-vi.mock("@magnis/host/runtime", () => ({
-  // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
-  useAppRuntime: () => ({
-    transport: {
-      baseUrl: "http://test",
-      rpc: rpcMock,
-      onEventType: (): (() => void) => (): void => undefined,
-    },
-    queryClient: queryClientForRuntime,
-    agent: { setReplyTo: (): void => undefined },
-  }),
-}));
+vi.mock("@magnis/host/runtime", async () => {
+  const { QueryClient: QC } = await import("@tanstack/react-query");
+  const queryClientForRuntime = new QC({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return {
+    // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
+    useAppRuntime: () => ({
+      transport: {
+        baseUrl: "http://test",
+        rpc: rpcMock,
+        onEventType: (): (() => void) => (): void => undefined,
+      },
+      queryClient: queryClientForRuntime,
+      agent: { setReplyTo: (): void => undefined },
+    }),
+  };
+});
 
 // PAGE_SIZE lives in the module barrel; mock it so the test does not pull the
 // whole plugin UI (and its host deps) in.
-vi.mock("../index.tsx", () => ({ PAGE_SIZE: 50, MESSAGE_MENU_ITEMS: [] }));
-vi.mock("..", () => ({ PAGE_SIZE: 50, MESSAGE_MENU_ITEMS: [] }));
+const indexMock = vi.hoisted(() => ({
+  PAGE_SIZE: 50,
+  MESSAGE_MENU_ITEMS: [],
+  TELEGRAM_SENDER_COLORS: ["#8774e1"],
+  TELEGRAM_AVATAR_COLORS: ["#8774e1"],
+  MEDIA_LABELS: {},
+  CHAT_CACHE_KEY: "tg-chat-cache-test",
+  CHAT_CACHE_TTL: 60_000,
+}));
+vi.mock("../index.tsx", () => indexMock);
+vi.mock("..", () => indexMock);
 
 vi.mock("react-virtuoso", () => ({
   // eslint-disable-next-line @typescript-eslint/explicit-function-return-type

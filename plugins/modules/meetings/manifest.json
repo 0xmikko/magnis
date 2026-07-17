@@ -252,7 +252,10 @@
     ],
     "sync_handlers": [
       "meetings"
-    ]
+    ],
+    "sync_item_schemas": {
+      "meetings": "meetings.calendar_event"
+    }
   },
   "entry": {
     "module": "module/index.ts",

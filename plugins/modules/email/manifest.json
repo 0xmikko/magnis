@@ -262,7 +262,10 @@
     ],
     "sync_handlers": [
       "email"
-    ]
+    ],
+    "sync_item_schemas": {
+      "email": "email.message"
+    }
   },
   "entry": {
     "module": "module/index.ts",

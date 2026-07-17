@@ -95,7 +95,7 @@ const CONVERSATION: TelegramConversation = {
   contactName: "Test User",
   contactInitials: "TU",
   contactAvatarColor: "#333",
-  status: "online",
+  messageTotal: 3,
   messages: [
     {
       id: "msg-1",

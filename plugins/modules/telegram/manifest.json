@@ -380,7 +380,10 @@
     ],
     "sync_handlers": [
       "telegram"
-    ]
+    ],
+    "sync_item_schemas": {
+      "telegram": "telegram.message"
+    }
   },
   "entry": {
     "module": "module/index.ts",
