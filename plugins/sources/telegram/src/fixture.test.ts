@@ -266,7 +266,7 @@ describe("wire: subscriptions", () => {
     expect((r.error as Record<string, unknown>).message).toBe("missing required _meta.account_id");
   });
 
-  // scn_tgts_wire_012 — REGRESSION (found by scripts/diff-connectors.ts): the
+  // scn_tgts_wire_012 — REGRESSION (found during Rust-vs-TS parity diffing): the
   // listener must NOT emit a push before its caller has written the listen ack.
   // The Rust oracle gets this ordering from subscriptions.rs:233
   // `tokio::spawn(async move { … })` — the replay is handed to the scheduler, so

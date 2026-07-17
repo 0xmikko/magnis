@@ -157,7 +157,7 @@ function spawnFixtureListener(
   write: LineWriter,
 ): ListenerHandle {
   let cancelled = false;
-  // WIRE PARITY (diff-connectors.ts): the replay MUST NOT start until the
+  // WIRE PARITY (Rust-vs-TS parity diff): the replay MUST NOT start until the
   // caller has written the listen ack. The Rust oracle gets this for free —
   // subscriptions.rs:233 `tokio::spawn(async move { … })` hands the replay to
   // the scheduler, so main.rs:318 writes `{ok, subscription_id}` FIRST and the

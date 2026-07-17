@@ -24,7 +24,7 @@
 //
 // Bending the SDK to all six would mean six per-connector override hooks (and
 // would risk the wire of the five connectors already on it: x, linkedin,
-// google-ts, mock-x, mock-linkedin). So the SDK is left UNTOUCHED and we import
+// google, mock-x, mock-linkedin). So the SDK is left UNTOUCHED and we import
 // only what genuinely matches: its shared `RATE_LIMIT_CODE` constant, so the
 // rate-limit contract stays defined in exactly one place.
 
