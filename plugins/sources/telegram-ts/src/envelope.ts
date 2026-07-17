@@ -179,9 +179,11 @@ export function messagePayload(m: TgMessage): Record<string, unknown> {
   if (m.sender_info !== undefined) {
     const si = m.sender_info;
     const senderInfo: Record<string, unknown> = { first_name: si.first_name };
-    if (si.last_name !== undefined) senderInfo.last_name = si.last_name;
-    if (si.username !== undefined) senderInfo.username = si.username;
-    if (si.phone !== undefined) senderInfo.phone = si.phone;
+    // `!= null` (not `!== undefined`): fixture JSON may carry explicit nulls,
+    // which Rust's Option + skip_serializing_if (envelope.rs:19-24) would omit.
+    if (si.last_name != null) senderInfo.last_name = si.last_name;
+    if (si.username != null) senderInfo.username = si.username;
+    if (si.phone != null) senderInfo.phone = si.phone;
     payload.sender_info = senderInfo;
   }
 

@@ -452,9 +452,12 @@ export function messageToIntermediate(
     sender !== null && sender !== undefined && sender.className === "User"
       ? {
           first_name: sender.firstName ?? "",
-          ...(sender.lastName !== undefined ? { last_name: sender.lastName } : {}),
-          ...(sender.username !== undefined ? { username: sender.username } : {}),
-          ...(sender.phone !== undefined ? { phone: sender.phone } : {}),
+          // gramjs sets absent fields to null (grammers: Option::None → key
+          // omitted, envelope.rs:19-24 skip_serializing_if). `!= null` drops
+          // both null and undefined — a null here fails the module schema.
+          ...(sender.lastName != null ? { last_name: sender.lastName } : {}),
+          ...(sender.username != null ? { username: sender.username } : {}),
+          ...(sender.phone != null ? { phone: sender.phone } : {}),
         }
       : undefined;
 

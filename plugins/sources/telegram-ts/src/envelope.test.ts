@@ -128,6 +128,23 @@ describe("message payload", () => {
     expect("phone" in (p.sender_info as Record<string, unknown>)).toBe(false);
   });
 
+  test("tst_tgts_env_003b explicit-null sender_info members are OMITTED like Rust serde (envelope.rs:19-24)", () => {
+    // A fixture may carry {"phone": null} — Rust deserializes null into
+    // Option::None and skip_serializing_if omits the key on output. The TS
+    // emission point must drop nulls identically, or the module schema
+    // rejects the batch ("null is not of type \"string\"").
+    const env = messageEnvelope(
+      baseMessage({
+        message_id: 8,
+        sender_info: { first_name: "Bob", last_name: null, username: null, phone: null } as never,
+      }),
+      "snapshot",
+    );
+    const p = env.payload as Record<string, unknown>;
+    expect(p.sender_info).toEqual({ first_name: "Bob" });
+    expect(Object.keys(p.sender_info as object)).toEqual(["first_name"]);
+  });
+
   test("tst_tgts_env_004 an original file_name wins over the generated one", () => {
     const p = messagePayload(
       baseMessage({ media_type: "document", has_media: true, file_name: "report.pdf" }),

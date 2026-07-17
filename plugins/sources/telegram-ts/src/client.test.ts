@@ -268,6 +268,16 @@ describe("messageToIntermediate", () => {
     expect(ch.sender_name).toBe("News");
   });
 
+  test("tst_tgts_msg_002b gramjs null sender fields are OMITTED, never null (envelope.rs:19-24 skip_serializing_if)", () => {
+    // gramjs sets absent User fields to null (NOT undefined) — the live trap:
+    // `!== undefined` lets null through, the module schema then rejects the
+    // whole batch ("null is not of type \"string\" at /sender_info/phone").
+    const nullUser = { className: "User", id: 7, firstName: "Bob", lastName: null, username: null, phone: null };
+    const m = messageToIntermediate({ id: 2, sender: nullUser, date: 0 }, "a", 1);
+    expect(m.sender_info).toEqual({ first_name: "Bob" });
+    expect(Object.keys(m.sender_info!)).toEqual(["first_name"]);
+  });
+
   test("tst_tgts_msg_003 the unix-seconds date becomes the +00:00 RFC3339 form", () => {
     const m = messageToIntermediate({ id: 1, date: 1779271200 }, "a", 1);
     expect(m.date).toBe("2026-05-20T10:00:00+00:00");
