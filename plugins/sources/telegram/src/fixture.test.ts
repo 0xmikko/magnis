@@ -382,7 +382,7 @@ describe("wire: initialize / tools/list", () => {
     )) as Record<string, unknown>;
     const result = reply.result as Record<string, unknown>;
     expect(result.protocolVersion).toBe("2025-06-18");
-    expect(result.serverInfo).toEqual({ name: "magnis-telegram-ts", version: "1.0.0" });
+    expect(result.serverInfo).toEqual({ name: "magnis-telegram", version: "1.0.0" });
     expect(result.capabilities).toEqual({
       tools: {},
       experimental: { magnis: { sync: { surfaces: ["telegram"], mode: "push" } } },

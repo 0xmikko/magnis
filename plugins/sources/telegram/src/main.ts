@@ -1,4 +1,4 @@
-// External `telegram-ts` connector — Telegram as a Magnis MCP source.
+// External `telegram` connector — Telegram as a Magnis MCP source.
 // TypeScript (gramjs) twin of the Rust plugins/sources/telegram connector: it
 // speaks the Magnis Sync Profile over stdio JSON-RPC and feeds ONE PUSH surface
 // (`telegram`) with canonical envelopes byte-identical to the Rust twin's, so the
@@ -21,12 +21,12 @@
 // check runs BEFORE any credential parsing. See fixture.ts.
 //
 // ## Deliberately NOT ported (host never calls them)
-// TODO(telegram-ts follow-up): the Rust binary also advertises 3 opinionated
+// TODO(telegram follow-up): the Rust binary also advertises 3 opinionated
 // tools in tools/list for direct Claude/agent use — `list_chats`, `list_messages`,
 // `send_message`. The host sync pipeline only calls magnis.sync.fetch /
 // magnis.execute / magnis.auth.* / listen_start / listen_stop, so they are
 // SKIPPED here and tools/list answers an empty list.
-// TODO(telegram-ts follow-up): the Rust binary also serves `magnis.test.sleep`,
+// TODO(telegram follow-up): the Rust binary also serves `magnis.test.sleep`,
 // an unadvertised slow-handler seam for its concurrency tests. Not ported.
 
 import { createInterface } from "node:readline";
@@ -99,7 +99,7 @@ async function runMcpStdio(): Promise<void> {
         const reply = await handleMessage(msg, deps);
         if (reply !== null) writeLine(JSON.stringify(reply));
       } catch (e) {
-        console.error(`magnis-telegram-ts: dispatch panic: ${String(e)}`);
+        console.error(`magnis-telegram: dispatch panic: ${String(e)}`);
       } finally {
         sem.release();
       }

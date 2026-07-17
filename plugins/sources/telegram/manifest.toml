@@ -32,7 +32,8 @@ type = "phone_code"
 ui = "auth/screen.tsx"
 
 [spawn]
-command = "magnis-telegram"
+command = "bun"
+args = ["run", "src/main.ts"]
 # env injected by the operator / launch scripts (real mode needs none — creds
 # arrive per-call via `_meta`):
 #   TELEGRAM_FIXTURE_FILE = "<path>/telegram-fixture.json"   # optional, e2e replay

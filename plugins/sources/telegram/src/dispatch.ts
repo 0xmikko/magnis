@@ -132,7 +132,7 @@ export interface JsonRpcMessage {
   params?: { name?: string; arguments?: Record<string, unknown> };
 }
 
-const SERVER_NAME = "magnis-telegram-ts";
+const SERVER_NAME = "magnis-telegram";
 const SERVER_VERSION = "1.0.0";
 
 /** `magnis.sync.fetch`. Fixture mode short-circuits BEFORE any cred parsing (it
@@ -189,7 +189,7 @@ export async function handleMessage(
 
   if (method === "tools/list") {
     if (id === undefined || id === null) return null;
-    // TODO(telegram-ts follow-up): the Rust connector advertises 3 opinionated
+    // TODO(telegram follow-up): the Rust connector advertises 3 opinionated
     // tools here for direct Claude/agent use (list_chats, list_messages,
     // send_message). The HOST only calls magnis.sync.fetch / magnis.execute /
     // magnis.auth.* / listen_start / listen_stop, so they are SKIPPED — as is

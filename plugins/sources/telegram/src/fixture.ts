@@ -118,14 +118,14 @@ export function load(): Fixture {
   try {
     raw = readFileSync(path, "utf-8");
   } catch (e) {
-    console.error(`magnis-telegram-ts: cannot read TELEGRAM_FIXTURE_FILE ${path}: ${e}`);
+    console.error(`magnis-telegram: cannot read TELEGRAM_FIXTURE_FILE ${path}: ${e}`);
     return EMPTY;
   }
   let doc: unknown;
   try {
     doc = JSON.parse(raw);
   } catch (e) {
-    console.error(`magnis-telegram-ts: malformed TELEGRAM_FIXTURE_FILE ${path}: ${e}`);
+    console.error(`magnis-telegram: malformed TELEGRAM_FIXTURE_FILE ${path}: ${e}`);
     return EMPTY;
   }
   const d = (doc ?? {}) as Record<string, unknown>;

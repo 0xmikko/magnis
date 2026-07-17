@@ -10,8 +10,9 @@
 // `base64(grammers Session::save())`; this connector mints a gramjs
 // `StringSession.save()` string. The two are DIFFERENT, mutually unreadable
 // formats. A `session` credential minted by one connector CANNOT be consumed by
-// the other — cutting over from `telegram` to `telegram-ts` (or back) requires
-// the user to RE-AUTHENTICATE. Everything else on the wire is parity.
+// the other — cutting over from the old Rust `telegram` to this TS `telegram`
+// (or back) requires the user to RE-AUTHENTICATE. Everything else on the wire
+// is parity.
 //
 // Live mode is BEST-EFFORT (as in Rust): the fully-tested path is fixture mode
 // plus the injectable seams below (`DialogPager`, `TgClientLike`), which the bun
@@ -251,7 +252,7 @@ export function resolveHydratedMessages(
   if (fetched.ok) return fetched.messages;
   if (historyErrorIsFatal(fetched.error)) throw fetched.error;
   console.error(
-    `magnis-telegram-ts: skipping history for chat ${chatId} ` +
+    `magnis-telegram: skipping history for chat ${chatId} ` +
       `(getHistory failed, transient — chat still discovered): ${String(fetched.error)}`,
   );
   return [];

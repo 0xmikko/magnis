@@ -203,7 +203,7 @@ function spawnLiveListener(
         write(notificationLine(subscriptionId, accountId, payload, remote_id));
       }
     } catch (e) {
-      console.error(`magnis-telegram-ts: live update error: ${String(e)}`);
+      console.error(`magnis-telegram: live update error: ${String(e)}`);
       cancelled = true;
     }
   });
