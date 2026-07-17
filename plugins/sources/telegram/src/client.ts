@@ -150,6 +150,44 @@ export async function sendWithFloodRetry<T>(
   }
 }
 
+// ── per-request timeout (the live-sync hang) ────────────────────────────────
+
+/** Wall-clock bound (ms) on a single MTProto request. gramjs `invoke` has NO
+ * hard timeout of its own: on a SILENTLY-dropped response (no error, no ack —
+ * common under rate-limiting / multi-session) it waits FOREVER, which is exactly
+ * what froze the live bootstrap at 154 chats (process stuck in ep_poll). 60s is
+ * long enough for a slow `getHistory` page yet short enough that a dropped
+ * request surfaces as a transient error the host can retry instead of hanging. */
+export const MTPROTO_REQUEST_TIMEOUT_MS = 60_000;
+
+/** Typed transient error raised when a gramjs call blows the request timeout. It
+ * carries NO `code`/`errorMessage`, so `historyErrorIsFatal` treats it as
+ * TRANSIENT (skip this chat / let the host respawn) rather than a fatal abort. */
+export class MtprotoTimeoutError extends Error {
+  constructor(
+    readonly label: string,
+    readonly ms: number,
+  ) {
+    super(`telegram ${label} timed out after ${ms}ms (no MTProto response — request likely dropped)`);
+    this.name = "MtprotoTimeoutError";
+  }
+}
+
+/** Bound a gramjs promise by wall-clock time. Races the call against a timer:
+ * whichever settles first wins, and the timer is ALWAYS cleared (no dangling
+ * handle keeping the event loop alive). On timeout it REJECTS with a typed
+ * `MtprotoTimeoutError` — it never fabricates a result. This is the single seam
+ * every live `invoke` / `getDialogs` / `getMessages` call is wrapped in. */
+export function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new MtprotoTimeoutError(label, ms)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer !== undefined) clearTimeout(timer);
+  });
+}
+
 // ── credentials (_meta) ────────────────────────────────────────────────────
 
 /** Credentials injected per call by the host under `_meta`. */

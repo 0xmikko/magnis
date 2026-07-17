@@ -13,10 +13,13 @@ import {
   floodWaitSecs,
   historyErrorIsFatal,
   messageToIntermediate,
+  MtprotoTimeoutError,
+  MTPROTO_REQUEST_TIMEOUT_MS,
   offsetPeerFromEntity,
   RATE_LIMITED_PREFIX,
   senderDisplayName,
   sendWithFloodRetry,
+  withTimeout,
   type DialogMeta,
   type EntityLike,
   type MessageLike,
@@ -457,5 +460,31 @@ describe("sendWithFloodRetry", () => {
       ),
     ).rejects.toThrow("boom");
     expect(calls).toBe(1);
+  });
+});
+
+// ── request timeout (the live-sync hang) ────────────────────────────────────
+
+describe("withTimeout", () => {
+  // THE bug that froze the live bootstrap at 154 chats: gramjs `invoke` waits
+  // FOREVER on a silently-dropped MTProto response (process stuck in ep_poll).
+  // withTimeout must REJECT with a typed error within the deadline, NOT hang.
+  test("tst_tgts_timeout_001 a never-resolving call rejects with MtprotoTimeoutError (does not hang)", async () => {
+    const never = new Promise<number>(() => {}); // never settles — the ep_poll hang
+    const start = Date.now();
+    await expect(withTimeout(never, 20, "invoke")).rejects.toBeInstanceOf(MtprotoTimeoutError);
+    expect(Date.now() - start).toBeLessThan(1000); // bounded — it did NOT wait forever
+  });
+
+  test("tst_tgts_timeout_002 a call that settles before the deadline passes through unchanged", async () => {
+    await expect(withTimeout(Promise.resolve(42), 1000, "invoke")).resolves.toBe(42);
+    await expect(withTimeout(Promise.reject(new Error("rpc")), 1000, "invoke")).rejects.toThrow(
+      "rpc",
+    );
+  });
+
+  test("tst_tgts_timeout_003 the default request timeout is a bounded, sane value", () => {
+    expect(MTPROTO_REQUEST_TIMEOUT_MS).toBeGreaterThan(0);
+    expect(MTPROTO_REQUEST_TIMEOUT_MS).toBeLessThanOrEqual(120_000);
   });
 });

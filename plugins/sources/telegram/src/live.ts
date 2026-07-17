@@ -29,9 +29,11 @@ import {
   buildDialogMeta,
   chatToIntermediate,
   messageToIntermediate,
+  MTPROTO_REQUEST_TIMEOUT_MS,
   offsetPeerFromEntity,
   resolveHydratedMessages,
   toNum,
+  withTimeout,
 } from "./client";
 import type { CatchupDialog, TgOps } from "./commands";
 
@@ -42,6 +44,34 @@ const INIT_PARAMS = {
   appVersion: "0.1.0",
   systemLangCode: "en",
   langCode: "en",
+} as const;
+
+/** gramjs `TelegramClient` options — the robustness knobs the original build
+ * left at defaults (the reason a dropped response could hang forever, where the
+ * deleted grammers twin reconnected). Each value is explicit + justified:
+ *
+ * - `timeout: 60`          per-connection sender timeout (s) before gramjs
+ *                          considers the socket stalled and cycles it.
+ * - `requestRetries: 2`    resend a request that errors transiently twice
+ *                          before failing (belt to withTimeout's suspenders).
+ * - `connectionRetries: 5` attempts to re-establish a dropped MTProto transport.
+ * - `retryDelay: 1000`     ms between reconnect attempts.
+ * - `autoReconnect: true`  reconnect the transport on drop instead of dying
+ *                          silently mid-run (gramjs default, pinned explicit).
+ * - `floodSleepThreshold`  floods <= 30s are auto-slept by gramjs (fine); a
+ *                          LONGER flood is THROWN as FloodWaitError so the
+ *                          connector surfaces it as a typed -32002 rate-limit
+ *                          (see dispatch.classifyToolError) instead of the host
+ *                          silently blocking for minutes. Matches
+ *                          FLOOD_WAIT_RETRY_MAX. */
+const CLIENT_OPTIONS = {
+  ...INIT_PARAMS,
+  timeout: 60,
+  requestRetries: 2,
+  connectionRetries: 5,
+  retryDelay: 1000,
+  autoReconnect: true,
+  floodSleepThreshold: 30,
 } as const;
 
 // ── auth-flow seams (auth.ts) ──────────────────────────────────────────────
@@ -84,12 +114,16 @@ function wrapAuthClient(client: TelegramClient): AuthClientLike {
     session: { save: () => (client.session as StringSession).save() },
     sendCode: (creds, phone) => client.sendCode(creds, phone),
     signIn: async (params) => {
-      const res = await client.invoke(
-        new Api.auth.SignIn({
-          phoneNumber: params.phoneNumber,
-          phoneCodeHash: params.phoneCodeHash,
-          phoneCode: params.phoneCode,
-        }),
+      const res = await withTimeout(
+        client.invoke(
+          new Api.auth.SignIn({
+            phoneNumber: params.phoneNumber,
+            phoneCodeHash: params.phoneCodeHash,
+            phoneCode: params.phoneCode,
+          }),
+        ),
+        MTPROTO_REQUEST_TIMEOUT_MS,
+        "auth.signIn",
       );
       const user = (res as { user?: unknown }).user;
       return user as TgUserLike;
@@ -107,7 +141,11 @@ function wrapAuthClient(client: TelegramClient): AuthClientLike {
       return user as unknown as TgUserLike;
     },
     logOut: async () => {
-      await client.invoke(new Api.auth.LogOut());
+      await withTimeout(
+        client.invoke(new Api.auth.LogOut()),
+        MTPROTO_REQUEST_TIMEOUT_MS,
+        "auth.logOut",
+      );
     },
   };
 }
@@ -116,14 +154,14 @@ function wrapAuthClient(client: TelegramClient): AuthClientLike {
 export const defaultAuthClientFactory: AuthClientFactory = {
   async connectFresh(apiId, apiHash) {
     const client = new TelegramClient(new StringSession(""), apiId, apiHash, {
-      ...INIT_PARAMS,
+      ...CLIENT_OPTIONS,
     });
     await client.connect();
     return wrapAuthClient(client);
   },
   async connectWithSession(apiId, apiHash, session) {
     const client = new TelegramClient(new StringSession(session), apiId, apiHash, {
-      ...INIT_PARAMS,
+      ...CLIENT_OPTIONS,
     });
     await client.connect();
     return wrapAuthClient(client);
@@ -145,7 +183,7 @@ export class TgClient implements TgOps {
       new StringSession(creds.session),
       creds.api_id,
       creds.api_hash,
-      { ...INIT_PARAMS },
+      { ...CLIENT_OPTIONS },
     );
     try {
       await client.connect();
@@ -162,7 +200,12 @@ export class TgClient implements TgOps {
   async resolvePeer(chatId: number): Promise<unknown> {
     const cached = this.peerCache.get(chatId);
     if (cached !== undefined) return cached;
-    for (const dialog of await this.client.getDialogs({})) {
+    const dialogs = await withTimeout(
+      this.client.getDialogs({}),
+      MTPROTO_REQUEST_TIMEOUT_MS,
+      "getDialogs(resolvePeer)",
+    );
+    for (const dialog of dialogs) {
       const entity = dialog.entity as EntityLike | undefined;
       if (entity === undefined) continue;
       const id = toNum(entity.id);
@@ -174,7 +217,12 @@ export class TgClient implements TgOps {
 
   async listDialogs(): Promise<CatchupDialog[]> {
     const out: CatchupDialog[] = [];
-    for (const dialog of await this.client.getDialogs({})) {
+    const dialogs = await withTimeout(
+      this.client.getDialogs({}),
+      MTPROTO_REQUEST_TIMEOUT_MS,
+      "getDialogs(listDialogs)",
+    );
+    for (const dialog of dialogs) {
       const entity = dialog.entity as EntityLike | undefined;
       if (entity === undefined) continue;
       this.peerCache.set(toNum(entity.id), entity);
@@ -192,7 +240,11 @@ export class TgClient implements TgOps {
     peer: unknown,
     params: { limit?: number; offsetId?: number; ids?: number[] },
   ): Promise<MessageLike[]> {
-    const msgs = await this.client.getMessages(peer as never, params);
+    const msgs = await withTimeout(
+      this.client.getMessages(peer as never, params),
+      MTPROTO_REQUEST_TIMEOUT_MS,
+      "getMessages",
+    );
     return msgs as unknown as MessageLike[];
   }
 
@@ -200,11 +252,21 @@ export class TgClient implements TgOps {
     peer: unknown,
     params: { message: string; replyTo?: number },
   ): Promise<{ id: number }> {
-    const msg = await this.client.sendMessage(peer as never, params);
+    const msg = await withTimeout(
+      this.client.sendMessage(peer as never, params),
+      MTPROTO_REQUEST_TIMEOUT_MS,
+      "sendMessage",
+    );
     return { id: msg.id };
   }
 
   async downloadMedia(message: MessageLike, dest: string): Promise<number> {
+    // NOT wrapped in withTimeout: a media download legitimately streams many MB
+    // over multiple chunks and can far exceed a single-RPC deadline; a fixed
+    // MTPROTO_REQUEST_TIMEOUT_MS would kill valid large files. gramjs internally
+    // bounds each file chunk by the client `timeout` + `requestRetries` set in
+    // CLIENT_OPTIONS, and downloads are host-scheduled discrete ops (a stall
+    // fails that one file, not the sync). See the report's caveat.
     await mkdir(dirname(dest), { recursive: true });
     const out = await this.client.downloadMedia(message as never, { outputFile: dest });
     if (out === undefined) {
@@ -293,7 +355,11 @@ export class LiveDialogPager implements DialogPager {
       hash: bigInt(0),
     });
 
-    const res = await this.tg.client.invoke(request);
+    const res = await withTimeout(
+      this.tg.client.invoke(request),
+      MTPROTO_REQUEST_TIMEOUT_MS,
+      "messages.getDialogs",
+    );
 
     // `total`: only the Slice variant carries an authoritative server-side count
     // (messages.dialogsSlice.count); the complete (non-slice) Dialogs variant has
