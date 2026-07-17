@@ -1,5 +1,5 @@
 {
-  "name": "@magnis/source-google-ts",
+  "name": "@magnis/source-google",
   "private": true,
   "type": "module",
   "scripts": {

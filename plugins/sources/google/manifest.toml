@@ -1,13 +1,15 @@
-# google — Gmail + Google Calendar + Google Contacts source.
+# google — Gmail + Google Calendar + Google Contacts source (TypeScript).
 #
-# Ported faithfully out of the in-backend `backend/src/sources/google` source.
-# Feeds three surfaces (email + meetings + contacts) with canonical
-# envelopes the corresponding modules ingest unchanged.
+# Ported faithfully from the former Rust `google` connector (itself a
+# port of the in-backend `backend/src/sources/google` source). Feeds three
+# surfaces (email + meetings + contacts) with canonical envelopes the
+# corresponding modules ingest unchanged — wire parity with the Rust connector
+# is the invariant (the host must not tell the difference).
 #
-# The server is the `magnis-google` binary. The connector does OAuth itself: the
-# host injects `_meta = { refresh_token, client_id, client_secret }` on every
-# tool call, the connector refreshes an access token and calls the Gmail /
-# Calendar REST API. Account discovery is host-side; no static accounts.
+# The connector does OAuth itself: the host injects
+# `_meta = { refresh_token, client_id, client_secret }` on every tool call, the
+# connector refreshes an access token and calls the Gmail / Calendar REST API.
+# Account discovery is host-side; no static accounts.
 #
 # For isolated e2e (no live Google), set GOOGLE_FIXTURE_FILE to a JSON fixture;
 # the connector then serves fetch from the file with NO network and NO OAuth.
@@ -34,7 +36,8 @@ auth_url = "https://accounts.google.com/o/oauth2/v2/auth"
 scopes = "openid email https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/contacts.readonly"
 
 [spawn]
-command = "magnis-google"
+command = "bun"
+args = ["run", "src/main.ts"]
 # env injected by the operator / launch scripts (real mode needs none — creds
 # arrive per-call via `_meta`):
 #   GOOGLE_FIXTURE_FILE = "<path>/google-fixture.json"   # optional, e2e replay

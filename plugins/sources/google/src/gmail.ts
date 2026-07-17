@@ -748,7 +748,7 @@ export function snapshotEnvelopesFromFetched(fetched: Fetched[]): Envelope[] {
     if (err !== undefined) {
       if (isFatal(err)) throw err;
       console.error(
-        `magnis-google-ts: skipping message ${id} (fetch failed: ${err})`,
+        `magnis-google: skipping message ${id} (fetch failed: ${err})`,
       );
       continue;
     }
@@ -759,7 +759,7 @@ export function snapshotEnvelopesFromFetched(fetched: Fetched[]): Envelope[] {
       envelopes.push({ surface: "email", payload, remote_id: id, kind: "snapshot" });
     } catch (e) {
       console.error(
-        `magnis-google-ts: skipping message ${id} (convert failed: ${e})`,
+        `magnis-google: skipping message ${id} (convert failed: ${e})`,
       );
     }
   }

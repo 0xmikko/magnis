@@ -294,7 +294,7 @@ describe("history action resolution", () => {
         params: { name: "magnis.sync.fetch", arguments: { surface: "email" } },
       },
       {
-        name: "google-ts",
+        name: "google",
         version: "0.0.1",
         surfaces: ["email"],
         fetch: async () =>

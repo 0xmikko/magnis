@@ -40,14 +40,14 @@ function load(): Fixture {
   try {
     raw = readFileSync(path, "utf-8");
   } catch (e) {
-    console.error(`magnis-google-ts: cannot read GOOGLE_FIXTURE_FILE ${path}: ${e}`);
+    console.error(`magnis-google: cannot read GOOGLE_FIXTURE_FILE ${path}: ${e}`);
     return EMPTY;
   }
   let doc: unknown;
   try {
     doc = JSON.parse(raw);
   } catch (e) {
-    console.error(`magnis-google-ts: malformed GOOGLE_FIXTURE_FILE ${path}: ${e}`);
+    console.error(`magnis-google: malformed GOOGLE_FIXTURE_FILE ${path}: ${e}`);
     return EMPTY;
   }
   const d = (doc ?? {}) as Record<string, unknown>;
@@ -68,7 +68,7 @@ function messageToEnvelope(raw: unknown): Envelope | null {
     flattenMailPayload(payload);
     return { surface: "email", payload, remote_id: msg.id, kind: "snapshot" };
   } catch (e) {
-    console.error(`magnis-google-ts: fixture message convert failed: ${e}`);
+    console.error(`magnis-google: fixture message convert failed: ${e}`);
     return null;
   }
 }
@@ -86,7 +86,7 @@ function eventToEnvelope(raw: unknown): Envelope | null {
       kind: "snapshot",
     };
   } catch (e) {
-    console.error(`magnis-google-ts: fixture event convert failed: ${e}`);
+    console.error(`magnis-google: fixture event convert failed: ${e}`);
     return null;
   }
 }
@@ -104,7 +104,7 @@ function connectionToEnvelope(raw: unknown): Envelope | null {
       kind: "snapshot",
     };
   } catch (e) {
-    console.error(`magnis-google-ts: fixture connection convert failed: ${e}`);
+    console.error(`magnis-google: fixture connection convert failed: ${e}`);
     return null;
   }
 }

@@ -227,7 +227,7 @@ export async function fetchEventsPage(
       calEvent = gcalEventToCalendarEvent(ev);
     } catch (e) {
       console.error(
-        `magnis-google-ts: failed to convert calendar event ${ev.id}: ${e}`,
+        `magnis-google: failed to convert calendar event ${ev.id}: ${e}`,
       );
       continue;
     }

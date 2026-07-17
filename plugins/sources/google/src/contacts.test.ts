@@ -30,7 +30,7 @@ function status(code: number, body = ""): HttpResponse {
 }
 
 /** The VERBATIM body the live People API returned when the overnight-stale
- * pageToken was replayed (real google-ts connector, real account). */
+ * pageToken was replayed (real google connector, real account). */
 const FAILED_PRECONDITION_BODY = JSON.stringify({
   error: {
     code: 400,
@@ -202,7 +202,7 @@ describe("contacts cursor expiry", () => {
         params: { name: "magnis.sync.fetch", arguments: { surface: "contacts" } },
       },
       {
-        name: "google-ts",
+        name: "google",
         version: "0.0.1",
         surfaces: ["contacts"],
         fetch: async () =>
@@ -233,7 +233,7 @@ describe("contacts cursor expiry", () => {
         params: { name: "magnis.sync.fetch", arguments: { surface: "contacts" } },
       },
       {
-        name: "google-ts",
+        name: "google",
         version: "0.0.1",
         surfaces: ["contacts"],
         fetch: async () =>

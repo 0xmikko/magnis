@@ -1,4 +1,4 @@
-// ConnectorConfig assembly — the google-ts twin of the Rust connector's
+// ConnectorConfig assembly — the TS twin of the Rust connector's
 // main.rs dispatch (fetch / execute / auth.exchange / auth.revoke), wired
 // through @magnis/connector-sdk. Kept separate from main.ts so tests can
 // exercise the exact handlers the host talks to.
@@ -159,7 +159,7 @@ export function buildConnectorConfig(
   });
 
   return {
-    name: "magnis-google-ts",
+    name: "magnis-google",
     version: "1.0.0",
     surfaces: ["email", "meetings", "contacts"],
     mode: "poll",
