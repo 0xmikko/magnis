@@ -397,4 +397,19 @@ describe("error classification", () => {
     expect(reply).toEqual({ code: -32601, message: "missing required arg 'chat_id'" });
     expect("data" in reply).toBe(false);
   });
+
+  // The BOOTSTRAP path: gramjs throws a RAW FloodWaitError (code 420, .seconds) out
+  // of getDialogs/getMessages — it never passes through the send-path sentinel
+  // wrapper. It must STILL surface as -32002 + retry_after, so a long flood during
+  // bootstrap makes the host back off instead of showing a frozen "bootstrapping".
+  test("tst_tgts_class_005 a RAW gramjs FloodWait (with .seconds) → -32002 + retry_after", () => {
+    const [code, message] = classifyToolError(floodErr(120));
+    expect(code).toBe(RATE_LIMITED_CODE);
+    expect(code).toBe(-32002);
+    expect(toolErrorReply(code, message)).toEqual({
+      code: -32002,
+      message: "rate limited; retry after 120s",
+      data: { retry_after: 120 },
+    });
+  });
 });
