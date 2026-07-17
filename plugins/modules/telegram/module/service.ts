@@ -697,7 +697,12 @@ export class TelegramModule {
           name: str(payload, "file_name") ?? undefined,
           mime_type: mediaTypeToMime(mediaType),
           source_ref: payload.source_ref as Record<string, unknown>,
-          source_module: "telegram",
+          // The host file worker routes download_file by (source_module,
+          // source_surface) — stamp the envelope's ACTUAL source_id, never a
+          // hardcoded name: the surface may be served by a differently-named
+          // connector (telegram-ts), and "telegram" would route to a runtime
+          // that doesn't exist ("no source runtime for (telegram, telegram)").
+          source_module: env.source_id,
           source_surface: "telegram",
           download: this.shouldIndex(fileChatDetails),
         });
@@ -885,7 +890,8 @@ export class TelegramModule {
         name: str(payload, "file_name") ?? undefined,
         mime_type: mediaTypeToMime(mediaType),
         source_ref: payload.source_ref as Record<string, unknown>,
-        source_module: "telegram",
+        // Envelope source_id, never hardcoded — see ingestMessageBatch.
+        source_module: envelope.source_id,
         source_surface: "telegram",
       });
     }

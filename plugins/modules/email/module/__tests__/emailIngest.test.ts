@@ -189,6 +189,29 @@ describe("email ingest — apply_batch shape (tst_be_emailingest_001)", () => {
     expect(call.source_module).toBe("google");
     expect(call.source_surface).toBe("email");
   });
+
+  // tst_fe_email_media_source_routing_001: source_module must be the ENVELOPE's
+  // source_id — the host file worker routes download_file by (source_module,
+  // source_surface). A hardcoded "google" breaks attachment downloads when the
+  // email surface is served by a differently-named connector (google-ts).
+  it("stamps the envelope's source_id as source_module (google-ts connector)", async () => {
+    await mod.ingest({
+      envelopes: [
+        env({
+          source_id: "google-ts",
+          remote_id: "m1",
+          payload: msgPayload({
+            attachments: [
+              { attachment_id: "att-1", filename: "photo.jpg", mime_type: "image/jpeg", size: 150000 },
+            ],
+          }),
+        }),
+      ],
+    });
+    const call = (graph.file_register as ReturnType<typeof vi.fn>).mock.calls[0][0] as Record<string, unknown>;
+    expect(call.source_module).toBe("google-ts");
+    expect(call.source_surface).toBe("email");
+  });
 });
 
 describe("email ingest — trigger / delete / empty-user parity", () => {

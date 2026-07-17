@@ -467,7 +467,11 @@ export class EmailModule {
             account_id: env.account_id,
             dest_subpath: destSubpath(env.account_id, remoteId, attId, filename),
           },
-          source_module: "google",
+          // The host file worker routes download_file by (source_module,
+          // source_surface) — stamp the envelope's ACTUAL source_id, never a
+          // hardcoded name: the email surface may be served by a
+          // differently-named connector (google-ts).
+          source_module: env.source_id,
           source_surface: "email",
           download: true,
         });
