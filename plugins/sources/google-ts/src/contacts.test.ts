@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
+import { CURSOR_EXPIRED_CODE, handleMessage } from "@magnis/connector-sdk";
 import {
   fetchContactsPage,
   gpeoplePersonToContact,
@@ -17,6 +18,26 @@ function ok(data: unknown): HttpResponse {
     json: async () => data,
   };
 }
+
+function status(code: number, body = ""): HttpResponse {
+  return {
+    ok: false,
+    status: code,
+    headers: { get: () => null },
+    text: async () => body,
+    json: async () => JSON.parse(body),
+  };
+}
+
+/** The VERBATIM body the live People API returned when the overnight-stale
+ * pageToken was replayed (real google-ts connector, real account). */
+const FAILED_PRECONDITION_BODY = JSON.stringify({
+  error: {
+    code: 400,
+    message: "Precondition check failed.",
+    status: "FAILED_PRECONDITION",
+  },
+});
 
 function fullPerson(): GpeoplePerson {
   return {
@@ -160,5 +181,80 @@ describe("contacts fetch", () => {
     expect(p2.envelopes).toHaveLength(1); // identity-less person skipped
     expect(p2.nextCursor).toBeNull(); // last page
     expect(p2.discovered).toBe(2); // cumulative, counts KEPT envelopes only
+  });
+});
+
+// ── Stale pagination cursor (the live overnight failure) ────────────────────
+//
+// A contacts sync parked at `state=failed` after sitting idle overnight: the
+// persisted `page_token` had expired, and the replay drew a 400
+// FAILED_PRECONDITION that landed on the generic -32000 — terminal.
+// Mirrors tst_gts_hist_008b: drive the real body through `fetchFn` and assert
+// the code that actually reaches the host wire.
+
+describe("contacts cursor expiry", () => {
+  test("tst_gts_gp_006 stale page_token 400 FAILED_PRECONDITION reaches the host wire as -32003", async () => {
+    const expired: FetchLike = async () => status(400, FAILED_PRECONDITION_BODY);
+    const reply = await handleMessage(
+      {
+        id: 1,
+        method: "tools/call",
+        params: { name: "magnis.sync.fetch", arguments: { surface: "contacts" } },
+      },
+      {
+        name: "google-ts",
+        version: "0.0.1",
+        surfaces: ["contacts"],
+        fetch: async () =>
+          (await fetchContactsPage(
+            "tok",
+            { page_token: "GiIKHgjIAWoLCNXu49IGEPir2BFyDAjM7uPSBhDwqcHRAxAC", discovered: 200 },
+            expired,
+          )) as never,
+      },
+    );
+    const err = reply!.error as Record<string, unknown>;
+    expect(err.code).toBe(CURSOR_EXPIRED_CODE);
+    expect(err.code).toBe(-32003);
+    expect(err.message).toBe("Google contacts pageToken expired (400 FAILED_PRECONDITION)");
+  });
+
+  // The inverse, and the reason the mapping is gated on a token being SENT:
+  // "Precondition check failed." on a FIRST page is an identity/auth fault
+  // (e.g. a service-account token minted with no `sub`), not a stale cursor.
+  // Re-bootstrapping on it would re-fetch page 1, fail identically, and loop
+  // forever. It MUST stay terminal.
+  test("tst_gts_gp_007 FAILED_PRECONDITION with NO page_token stays a hard error", async () => {
+    const failed: FetchLike = async () => status(400, FAILED_PRECONDITION_BODY);
+    const reply = await handleMessage(
+      {
+        id: 1,
+        method: "tools/call",
+        params: { name: "magnis.sync.fetch", arguments: { surface: "contacts" } },
+      },
+      {
+        name: "google-ts",
+        version: "0.0.1",
+        surfaces: ["contacts"],
+        fetch: async () =>
+          (await fetchContactsPage("tok", null, failed)) as never,
+      },
+    );
+    const err = reply!.error as Record<string, unknown>;
+    expect(err.code).not.toBe(CURSOR_EXPIRED_CODE);
+    expect(err.code).toBe(-32000);
+    expect(err.message).toContain("People API list_connections failed: HTTP 400");
+  });
+
+  // A 400 that is NOT FAILED_PRECONDITION must stay terminal even mid-pagination:
+  // the mapping keys on the status, never on the bare 400.
+  test("tst_gts_gp_008 non-FAILED_PRECONDITION 400 mid-pagination stays a hard error", async () => {
+    const body = JSON.stringify({
+      error: { code: 400, message: "Request contains an invalid argument.", status: "INVALID_ARGUMENT" },
+    });
+    const bad: FetchLike = async () => status(400, body);
+    await expect(
+      fetchContactsPage("tok", { page_token: "p2" }, bad),
+    ).rejects.toThrow("People API list_connections failed: HTTP 400");
   });
 });

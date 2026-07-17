@@ -6,7 +6,12 @@
 
 import { createHash } from "node:crypto";
 import type { Envelope } from "@magnis/connector-sdk";
-import { checkRateLimit, fetchWithRetry, type FetchLike } from "./http";
+import {
+  ContactsCursorExpiredError,
+  checkRateLimit,
+  fetchWithRetry,
+  type FetchLike,
+} from "./http";
 import { mergeProgress, progressCursor } from "./progress";
 import type { WindowFetchResult } from "./calendar";
 import {
@@ -223,6 +228,24 @@ export function gpeoplePersonToContact(p: GpeoplePerson): Contact | null {
 
 // ── REST client + fetch logic ─────────────────────────────────
 
+/** True ONLY for a Google JSON error body whose `error.status` is exactly
+ * `"FAILED_PRECONDITION"`. Anything else — a non-JSON body, a different
+ * status, a shape we don't recognise — returns false, so the caller raises the
+ * ordinary hard error. Deliberately narrow and failing-closed: a false
+ * positive here would silently wipe a cursor. */
+function isFailedPrecondition(body: string): boolean {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return false;
+  }
+  if (parsed === null || typeof parsed !== "object") return false;
+  const err = (parsed as Record<string, unknown>).error;
+  if (err === null || typeof err !== "object") return false;
+  return (err as Record<string, unknown>).status === "FAILED_PRECONDITION";
+}
+
 async function listConnectionsPage(
   token: string,
   pageToken: string | undefined,
@@ -240,16 +263,37 @@ async function listConnectionsPage(
   });
   checkRateLimit(resp);
   if (!resp.ok) {
+    const body = await resp.text();
+    // A pageToken we SENT was rejected as a failed precondition → the token is
+    // no longer valid (they are ephemeral, and this one sat idle overnight).
+    // Gated on `pageToken !== undefined` on purpose: the same 400 on a first
+    // page means an identity/auth fault, and re-bootstrapping it would refetch
+    // page 1, fail identically, and loop forever. `personFields`/`pageSize` are
+    // hardcoded literals above, so the API's other documented
+    // FAILED_PRECONDITION-with-a-token cause — "all other request parameters
+    // must match the first call" — is unreachable here.
+    if (
+      resp.status === 400 &&
+      pageToken !== undefined &&
+      isFailedPrecondition(body)
+    ) {
+      throw new ContactsCursorExpiredError();
+    }
     throw new Error(
-      `People API list_connections failed: HTTP ${resp.status} — ${await resp.text()}`,
+      `People API list_connections failed: HTTP ${resp.status} — ${body}`,
     );
   }
   return parseGpeopleConnectionsResponse(await resp.json());
 }
 
-/** Bootstrap/catch-up contacts fetch (People API has no delta token — every
- * page is a full snapshot). Cumulative `discovered` only; `nextCursor` is
- * null on the last page. */
+/** Bootstrap/catch-up contacts fetch. Cumulative `discovered` only;
+ * `nextCursor` is null on the last page.
+ *
+ * NOTE: the People API DOES have a delta token — `requestSyncToken=true` on a
+ * full sync returns a `nextSyncToken` (valid 7 days) that lists only changes.
+ * This connector does not use it: it persists the ephemeral `pageToken` as its
+ * cursor, so there is no incremental contacts sync and every completed run
+ * re-lists all connections from scratch. Documented, not fixed here. */
 export async function fetchContactsPage(
   token: string,
   cursor: unknown,

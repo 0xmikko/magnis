@@ -49,6 +49,23 @@ export class HistoryExpiredError extends CursorExpiredError {
   }
 }
 
+/** People API pagination `pageToken` no longer accepted (400
+ * FAILED_PRECONDITION) — the host re-bootstraps contacts. FATAL.
+ *
+ * Same contract as `HistoryExpiredError`: the SDK maps `CursorExpiredError` to
+ * `-32003` → the host resets to Bootstrap and drops the stale cursor, instead
+ * of parking contacts at `state=failed` forever (the live overnight failure).
+ *
+ * Raised ONLY when a pageToken was actually sent — `FAILED_PRECONDITION` is a
+ * heavily overloaded People API status and on a FIRST page it means an
+ * identity/auth fault, which must stay terminal. See `contacts.ts`. */
+export class ContactsCursorExpiredError extends CursorExpiredError {
+  constructor() {
+    super("Google contacts pageToken expired (400 FAILED_PRECONDITION)");
+    this.name = "ContactsCursorExpiredError";
+  }
+}
+
 /** Fatal errors abort the whole batch (twin of the Rust
  * `AuthExpired` / `RateLimited` / `HistoryExpired` arms); anything else skips
  * one message. */
