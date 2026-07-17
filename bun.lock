@@ -80,8 +80,8 @@
         "@magnis/connector-sdk": "workspace:*",
       },
     },
-    "plugins/sources/google-ts": {
-      "name": "@magnis/source-google-ts",
+    "plugins/sources/google": {
+      "name": "@magnis/source-google",
       "dependencies": {
         "@magnis/connector-sdk": "workspace:*",
       },
@@ -140,8 +140,8 @@
         "@magnis/connector-sdk": "workspace:*",
       },
     },
-    "plugins/sources/telegram-ts": {
-      "name": "@magnis/source-telegram-ts",
+    "plugins/sources/telegram": {
+      "name": "@magnis/source-telegram",
       "dependencies": {
         "@magnis/connector-sdk": "workspace:*",
         "big-integer": "^1.6.52",
@@ -234,7 +234,7 @@
 
     "@magnis/plugin-x": ["@magnis/plugin-x@workspace:plugins/modules/x"],
 
-    "@magnis/source-google-ts": ["@magnis/source-google-ts@workspace:plugins/sources/google-ts"],
+    "@magnis/source-google": ["@magnis/source-google@workspace:plugins/sources/google"],
 
     "@magnis/source-linkedin": ["@magnis/source-linkedin@workspace:plugins/sources/linkedin"],
 
@@ -256,7 +256,7 @@
 
     "@magnis/source-statemachine": ["@magnis/source-statemachine@workspace:plugins/sources/_statemachine"],
 
-    "@magnis/source-telegram-ts": ["@magnis/source-telegram-ts@workspace:plugins/sources/telegram-ts"],
+    "@magnis/source-telegram": ["@magnis/source-telegram@workspace:plugins/sources/telegram"],
 
     "@magnis/source-x": ["@magnis/source-x@workspace:plugins/sources/x"],
 
