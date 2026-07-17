@@ -85,6 +85,38 @@ See [docs/architecture.md](docs/architecture.md)
 
 ---
 
+## What's in this repository
+
+This repo is the **open plugin catalog** for Magnis. The core is closed; the
+ecosystem around it is public and lives here — the same split as an editor and
+its extensions.
+
+Everything here is **TypeScript, run by [bun](https://bun.sh)**. There are no
+per-platform binaries: a connector is a `bun run src/main.ts` process the core
+spawns and talks to over a small MCP-style stdio contract. One runtime, fully
+portable.
+
+```
+plugins/sources/   provider connectors — google, telegram, x, linkedin (+ dev mocks)
+plugins/modules/   domain adapters — contacts, email, meetings, telegram, companies …
+packages/          the SDKs a plugin builds against (connector-sdk, plugin-sdk, host-stubs)
+```
+
+A **source** pulls data from a service into the graph (cursored sync, live
+push, its own auth ceremony, rate-limit handling). A **module** shapes that
+data into the graph and serves the UI. Both are described by a `manifest.toml`
+the core reads to install and route them.
+
+- Plugin authoring & the connector contract: [CLAUDE.md](CLAUDE.md)
+- How code flows here: [docs/git-workflow.md](docs/git-workflow.md)
+
+```bash
+bun install --frozen-lockfile
+bun run typecheck && bun run test && bun run test:connectors
+```
+
+---
+
 ## Status
 
 Early-stage research.

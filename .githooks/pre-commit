@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Magnis plugin catalog — pre-commit gate.
+# Enable once per clone:  git config core.hooksPath .githooks
+set -euo pipefail
+
+branch="$(git rev-parse --abbrev-ref HEAD)"
+if [[ "$branch" == "main" || "$branch" == "staging" ]]; then
+  echo "✗ direct commits to '$branch' are not allowed."
+  echo "  Work on a feature branch and merge it in:  git switch -c fix/<topic> $branch"
+  exit 1
+fi
+
+echo "→ gate: typecheck"
+bun run typecheck
+echo "→ gate: vitest"
+bun run test
+echo "→ gate: connector suites"
+bun run test:connectors
+echo "→ gate: tooling"
+bun run test:scripts
+echo "✓ gate green"

@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Magnis plugin catalog — block direct pushes to main.
+# Enable once per clone:  git config core.hooksPath .githooks
+# (GitHub branch protection enforces the same rule server-side.)
+set -euo pipefail
+
+while read -r _local_ref _local_sha remote_ref _remote_sha; do
+  if [[ "$remote_ref" == "refs/heads/main" ]]; then
+    echo "✗ direct push to main is not allowed — main moves only via a reviewed PR from staging."
+    exit 1
+  fi
+done
+exit 0
