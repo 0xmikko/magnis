@@ -23,9 +23,7 @@
  */
 
 import { render, renderHook, screen, waitFor, act } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import React from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { TelegramConversation } from "../types";
 import type { TelegramMessageListItem } from "../types";
@@ -33,25 +31,39 @@ import type { TelegramMessageListItem } from "../types";
 // ── Mocks ────────────────────────────────────────────────────────
 
 const rpcMock = vi.hoisted(() => vi.fn());
+// Initial-page query state, programmable per test (replaces TanStack Query so
+// the test needs no QueryClientProvider — and no second React copy).
+const queryState = vi.hoisted(() => ({
+  data: undefined as unknown,
+  isLoading: false,
+}));
 
-vi.mock("@magnis/host/runtime", async () => {
-  const { QueryClient: QC } = await import("@tanstack/react-query");
-  const queryClientForRuntime = new QC({
-    defaultOptions: { queries: { retry: false } },
-  });
-  return {
-    // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
-    useAppRuntime: () => ({
-      transport: {
-        baseUrl: "http://test",
-        rpc: rpcMock,
-        onEventType: (): (() => void) => (): void => undefined,
-      },
-      queryClient: queryClientForRuntime,
-      agent: { setReplyTo: (): void => undefined },
-    }),
-  };
-});
+vi.mock("@magnis/host/runtime", () => ({
+  // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
+  useAppRuntime: () => ({
+    transport: {
+      baseUrl: "http://test",
+      rpc: rpcMock,
+      onEventType: (): (() => void) => (): void => undefined,
+    },
+    queryClient: { invalidateQueries: (): void => undefined },
+    agent: { setReplyTo: (): void => undefined },
+  }),
+}));
+
+vi.mock("../queries", () => ({
+  telegramKeys: {
+    all: ["telegram"],
+    messages: (chatId: string, params?: Record<string, unknown>): unknown[] => [
+      "telegram",
+      "messages",
+      chatId,
+      params,
+    ],
+  },
+  // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
+  useTelegramMessagesQuery: () => queryState,
+}));
 
 // PAGE_SIZE lives in the module barrel; mock it so the test does not pull the
 // whole plugin UI (and its host deps) in.
@@ -173,26 +185,21 @@ describe("telegram chat header total (graph total, never page length)", () => {
   // page reports total=250, the model must say 250, not the first page's 50
   // and not the loaded length (100).
   it("tst_plg_tgui_header_total_001 messageTotal follows the newest RPC total, not page length", async () => {
+    // Initial open: the graph holds 50 messages for this chat.
+    queryState.data = page(50, 50, 0);
+    queryState.isLoading = false;
     rpcMock.mockImplementation((method: string, params: Record<string, unknown>) => {
       if (method !== "telegram.messages.list") {
         return Promise.reject(new Error(`unexpected rpc ${method}`));
       }
       const offset = (params.offset as number | undefined) ?? 0;
-      // Initial open: the graph holds 50 messages for this chat.
-      if (offset === 0) return Promise.resolve(page(50, 50, 0));
       // After a backfill ingested more, a later page reports the grown total.
       return Promise.resolve(page(50, 250, offset));
     });
 
     const { useTelegramMessages } = await import("../hooks/useTelegramMessages");
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    const wrapper = ({ children }: { children: ReactNode }): React.ReactElement => (
-      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
-    );
 
-    const { result } = renderHook(() => useTelegramMessages("chat-entity-1", []), {
-      wrapper,
-    });
+    const { result } = renderHook(() => useTelegramMessages("chat-entity-1", []));
 
     await waitFor(() => {
       expect(result.current.conversation).toBeDefined();
