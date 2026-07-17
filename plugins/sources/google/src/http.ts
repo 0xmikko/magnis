@@ -78,11 +78,57 @@ export function isFatal(e: unknown): boolean {
 }
 
 const MAX_RETRIES = 3;
-const TIMEOUT_MS = 60_000;
+
+/** Wall-clock bound (ms) on a single Google HTTP request. `fetch` over a stalled
+ * socket (connection open, no bytes) has NO timeout of its own and hangs forever
+ * — the same class of failure that froze the Telegram sync. 30s is ample for a
+ * Gmail/People page yet short enough that a stalled response surfaces as a
+ * transient error the retry loop / host can act on instead of hanging. */
+export const HTTP_REQUEST_TIMEOUT_MS = 30_000;
+
+/** Typed error raised when a Google request blows the read timeout. Distinct
+ * from a bare `AbortError` so callers can tell "we timed out" from "the caller
+ * aborted". Not fatal (see `isFatal`) → the retry loop / host retries. */
+export class HttpTimeoutError extends Error {
+  constructor(
+    readonly url: string,
+    readonly ms: number,
+  ) {
+    super(`Google request to ${url} timed out after ${ms}ms`);
+    this.name = "HttpTimeoutError";
+  }
+}
+
+/** One HTTP attempt, bounded by an AbortController-driven timeout. The injected
+ * `fetchFn` receives `signal` (production `fetch` honors it; tests drive it), so
+ * a stalled socket is ABORTED at `timeoutMs` and the call REJECTS with a typed
+ * `HttpTimeoutError` — it never hangs and never fabricates an empty result. The
+ * `fetchFn` seam is preserved: `signal` is merged into the caller's `init`. */
+export async function fetchWithTimeout(
+  fetchFn: FetchLike,
+  url: string,
+  init?: Record<string, unknown>,
+  timeoutMs: number = HTTP_REQUEST_TIMEOUT_MS,
+): Promise<HttpResponse> {
+  const controller = new AbortController();
+  const timeoutError = new HttpTimeoutError(url, timeoutMs);
+  const timer = setTimeout(() => controller.abort(timeoutError), timeoutMs);
+  try {
+    return await fetchFn(url, { ...init, signal: controller.signal });
+  } catch (e) {
+    // If WE aborted (the deadline fired), surface the TYPED timeout regardless of
+    // what shape the runtime's abort rejection took (AbortError vs the reason).
+    if (controller.signal.aborted) throw timeoutError;
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /** Twin of the Rust `send_with_retry`: retry ONLY transient send failures
  * (network / timeout rejections) up to 3 times with 600/1200/2400ms backoff.
- * HTTP statuses are never retried. Every request gets a 60s timeout. */
+ * HTTP statuses are never retried. Every request gets a per-attempt read
+ * timeout (`fetchWithTimeout`) so a stalled socket can never hang the sync. */
 export async function fetchWithRetry(
   fetchFn: FetchLike,
   url: string,
@@ -91,7 +137,7 @@ export async function fetchWithRetry(
   let attempt = 0;
   for (;;) {
     try {
-      return await fetchFn(url, { ...init, signal: AbortSignal.timeout(TIMEOUT_MS) });
+      return await fetchWithTimeout(fetchFn, url, init);
     } catch (e) {
       if (attempt >= MAX_RETRIES) throw e;
       attempt += 1;
