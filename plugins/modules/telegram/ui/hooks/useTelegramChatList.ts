@@ -83,7 +83,6 @@ export function useTelegramChatList(): UseTelegramChatListResult {
       }
     }
     if (seeded > 0) {
-      // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
       console.log(`[prefetch] seeded ${seeded} chats from inline messages`);
     }
   }, [queryData, runtime.queryClient]);
@@ -186,7 +185,6 @@ export function useTelegramChatList(): UseTelegramChatListResult {
     if (chats.some((c) => c.id === selectedChatId)) return;
 
     let cancelled = false;
-    // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
     void (async () => {
       try {
         const result = await runtime.transport.rpc<PaginatedResponse<TelegramMessageListItem>>(
@@ -194,7 +192,6 @@ export function useTelegramChatList(): UseTelegramChatListResult {
           { entity_id: selectedChatId, limit: 1, offset: 0 },
         );
         const msg = result.items[0];
-        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         if (cancelled || !msg) return;
         const title = (msg.metadata?.chat_title as string | undefined) ?? msg.sender ?? selectedChatId;
         const name = normalizeTelegramChatTitle(title);
@@ -216,7 +213,6 @@ export function useTelegramChatList(): UseTelegramChatListResult {
         // Not critical — messages still load via query
       }
     })();
-    // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
     return () => { cancelled = true; };
   }, [selectedChatId, chats, isSearching, runtime.transport, baseUrl]);
 

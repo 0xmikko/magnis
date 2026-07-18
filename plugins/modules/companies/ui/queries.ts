@@ -9,7 +9,6 @@ export const companyKeys = {
   detail: (id: string) => [...companyKeys.all, "detail", id] as const,
 };
 
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type, @typescript-eslint/explicit-module-boundary-types
 export function useCompaniesListQuery(limit = 100, offset = 0) {
   const runtime = useAppRuntime();
   return useQuery({
@@ -21,7 +20,6 @@ export function useCompaniesListQuery(limit = 100, offset = 0) {
   });
 }
 
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type, @typescript-eslint/explicit-module-boundary-types
 export function useCompanyDetailQuery(id: string) {
   const runtime = useAppRuntime();
   return useQuery({

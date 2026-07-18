@@ -14,13 +14,11 @@ export const telegramKeys = {
   chatDetail: (chatId: string) => [...telegramKeys.all, "chat", chatId] as const,
 };
 
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type, @typescript-eslint/explicit-module-boundary-types
 export function useTelegramChatsQuery(limit: number, offset: number, search?: string) {
   const runtime = useAppRuntime();
   const params: Record<string, unknown> = { limit, offset };
   if (search) params.search = search;
   return useQuery({
-    // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
     queryKey: telegramKeys.chats({ limit, offset, search: search || undefined }),
     queryFn: () => runtime.transport.rpc<PaginatedResponse<TelegramChatListItem>>(
       "telegram.chats.list",
@@ -30,7 +28,6 @@ export function useTelegramChatsQuery(limit: number, offset: number, search?: st
   });
 }
 
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type, @typescript-eslint/explicit-module-boundary-types
 export function useTelegramMessagesQuery(chatId: string | undefined, limit: number, offset: number) {
   const runtime = useAppRuntime();
   return useQuery({

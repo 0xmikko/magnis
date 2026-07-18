@@ -40,7 +40,6 @@ export const ProjectsModule = defineModule({
     };
   },
   headerActionIcon: "plus",
-  // eslint-disable-next-line @typescript-eslint/no-misused-promises
   onHeaderAction: async (runtime, onCreated) => {
     const clientId = crypto.randomUUID();
     const result = await runtime.transport.rpc<{ id: string }>(

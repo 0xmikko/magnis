@@ -121,7 +121,6 @@ function flatten(row: Readonly<Record<string, unknown>>): Readonly<Record<string
 /** True when the expanded layout would carry information beyond the
  *  compact view (i.e. body, recipients list, or attachments). Used
  *  by `ExpandableEntityCard` to gate the chevron. */
-// eslint-disable-next-line react-refresh/only-export-components
 export function emailHasMore(data: Readonly<Record<string, unknown>>): boolean {
   const flat = flatten(data);
   if (bodyText(flat) !== undefined) return true;

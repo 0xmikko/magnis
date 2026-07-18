@@ -33,7 +33,6 @@ export function ContactBatchCreateRenderer({
 }: AgentRendererProps<ToolCallRendererPayload>): JSX.Element {
   const { toolCall: tc, toolResult, isAllowlisted, superseded, onApprove, onDeny, onAllowlistToggle } = payload;
   const args = tc.args as Record<string, unknown>;
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   const contacts = useMemo(() => (args.contacts as readonly BatchContact[]) ?? [], [args.contacts]);
 
   const [currentIndex, setCurrentIndex] = useState(0);

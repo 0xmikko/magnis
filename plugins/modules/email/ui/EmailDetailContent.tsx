@@ -18,7 +18,6 @@ export interface EmailDetailContentProps {
 
 /** Returns true when the HTML is a rich/designed email (tables, inline styles, multiple divs).
  *  Plain text wrapped in a single <div> with <br/> by Gmail is NOT rich. */
-// eslint-disable-next-line react-refresh/only-export-components
 export function isRichHtml(raw: string): boolean {
   if (/<table\b/i.test(raw)) return true;
   if (/style\s*=/i.test(raw)) return true;
@@ -109,12 +108,10 @@ function HtmlEmailFrame({ html, dark }: { html: string; dark: boolean }): JSX.El
 
 export function EmailDetailContent({ detail, linkedEntities }: EmailDetailContentProps): JSX.Element {
   const hasHtml = !!detail?.bodyHtml;
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   const rich = hasHtml && detail?.bodyHtml ? isRichHtml(detail.bodyHtml) : false;
 
   return (
     <Stack gap={0}>
-      {/* eslint-disable-next-line @typescript-eslint/no-unnecessary-condition */}
       {hasHtml && detail?.bodyHtml ? (
         <HtmlEmailFrame html={detail.bodyHtml} dark={!rich} />
       ) : (

@@ -60,7 +60,6 @@ export function MeetingsModule(): JSX.Element {
           .filter((m): m is NonNullable<typeof m> => {
             if (!m) return false;
             if (!q) return true;
-            // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
             return m.title.toLowerCase().includes(q) || (m.with?.toLowerCase().includes(q) ?? false);
           })
           .map((m) => ({

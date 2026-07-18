@@ -22,7 +22,6 @@ export interface TelegramStoreState {
   };
 }
 
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type, @typescript-eslint/explicit-module-boundary-types
 export function createTelegramStore(_runtime: AppRuntime) {
   return createStore<TelegramStoreState>((set) => ({
     selectedChatId: undefined,
@@ -31,13 +30,9 @@ export function createTelegramStore(_runtime: AppRuntime) {
     pendingMessageId: undefined,
     pendingTelegramMsgId: undefined,
     actions: {
-      // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
       setSelectedChatId: (chatId) => { set({ selectedChatId: chatId }); },
-      // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
       setSearchQuery: (query) => { set({ searchQuery: query }); },
-      // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
       setSyncProgress: (progress) => { set({ syncProgress: progress }); },
-      // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
       setPendingMessageId: (id, telegramMsgId) => { set({ pendingMessageId: id, pendingTelegramMsgId: telegramMsgId }); },
     },
   }));
@@ -47,11 +42,9 @@ export type TelegramStore = ReturnType<typeof createTelegramStore>;
 
 export function useTelegramStore(): TelegramStoreState;
 export function useTelegramStore<T>(selector: (state: TelegramStoreState) => T): T;
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type, @typescript-eslint/explicit-module-boundary-types
 export function useTelegramStore<T>(selector?: (state: TelegramStoreState) => T) {
   const runtime = useAppRuntime();
   const store = runtime.stores.get<TelegramStore>("telegram");
   if (!store) throw new Error("Telegram store not initialized");
-  // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
   return useStore(store, selector ?? ((s) => s as unknown as T));
 }

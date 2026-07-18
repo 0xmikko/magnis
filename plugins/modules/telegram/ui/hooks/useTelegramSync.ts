@@ -10,7 +10,6 @@ export function useTelegramSync(onRefreshChats: () => void): void {
   useEffect(() => {
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
-    // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
     const debouncedRefresh = () => {
       if (refreshTimer) clearTimeout(refreshTimer);
       refreshTimer = setTimeout(() => {
@@ -24,7 +23,6 @@ export function useTelegramSync(onRefreshChats: () => void): void {
       debouncedRefresh();
     });
 
-    // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
     return () => {
       offSyncProgress();
       if (refreshTimer) clearTimeout(refreshTimer);

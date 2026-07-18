@@ -11,7 +11,6 @@ export function TelegramToolCallRenderer({
     tc.chatName ??
     (args.chat_name as string | undefined) ??
     selectedChatName ??
-    // eslint-disable-next-line @typescript-eslint/no-base-to-string
     (args.chat_id != null ? `Chat ${String(args.chat_id)}` : "Telegram");
 
   return (
@@ -32,7 +31,6 @@ export function TelegramToolCallRenderer({
       onAllowlistToggle={onAllowlistToggle}
     >
       <p className="whitespace-pre-wrap text-[13px] leading-[1.5] text-agent-text">
-        {/* eslint-disable-next-line @typescript-eslint/no-base-to-string */}
         {args.text != null ? String(args.text) : ""}
       </p>
     </BaseToolCallCard>

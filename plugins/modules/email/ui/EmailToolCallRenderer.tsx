@@ -19,19 +19,16 @@ function useAttachmentNames(
       return;
     }
     let cancelled = false;
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     Promise.all(
       attachmentIds.map((id) =>
         runtime.transport
           .rpc<Record<string, unknown>>("file.get", { id })
-          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
           .then((r) => (r.name as string) ?? "attachment")
           .catch(() => "attachment"),
       ),
     ).then((resolved) => {
       if (!cancelled) setNames(resolved);
     });
-    // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
     return () => { cancelled = true; };
   }, [attachmentIds, runtime.transport]);
 
@@ -63,17 +60,13 @@ function useEmailContext(
         if (cancelled) return;
         const r = result as Record<string, unknown>;
         const metadata = r.metadata as Record<string, unknown> | undefined;
-        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         const sender = (metadata?.from_address as string) ?? (r.sender as string) ?? "";
-        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         const senderName = (r.sender as string) ?? undefined;
-        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         const myAddress = (metadata?.to_addresses as string) ?? "";
         setCtx({
           from: myAddress,
           to: sender,
           toName: senderName,
-          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
           subject: r.subject as string ?? "",
           previousText: r.body as string | undefined,
           previousSender: senderName,
@@ -85,7 +78,6 @@ function useEmailContext(
         });
       })
       .catch(() => { /* ignore */ });
-    // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
     return () => { cancelled = true; };
   }, [emailId, runtime.transport]);
 
@@ -150,7 +142,6 @@ export function EmailToolCallRenderer({
   const toName = (args.to_name as string | undefined) ?? emailCtx?.toName;
   const subject = (args.subject as string | undefined) ??
     (emailCtx?.subject ? `Re: ${emailCtx.subject.replace(/^Re:\s*/i, "")}` : undefined);
-  // eslint-disable-next-line @typescript-eslint/no-base-to-string
   const body = args.body != null ? String(args.body) : args.body_text != null ? String(args.body_text) : args.text != null ? String(args.text) : "";
   const attachmentNames = useAttachmentNames(args.attachment_ids as readonly string[] | undefined, runtime);
 

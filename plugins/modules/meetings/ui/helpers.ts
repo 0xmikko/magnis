@@ -25,7 +25,6 @@ export function attendeeDisplay(a: CalendarAttendee): string {
 }
 
 export function mapMeetingFromApi(m: MeetingListItem): MeetingItem {
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   const title = m.title?.trim() ? m.title.trim() : "Untitled meeting";
   const attendees = m.attendees.filter((a) => a.email.trim().length > 0);
   const attendeeLabels = attendees.map(attendeeDisplay);
@@ -33,7 +32,6 @@ export function mapMeetingFromApi(m: MeetingListItem): MeetingItem {
   const date = m.date?.trim() ? m.date : "TBD";
   const time = m.time?.trim() ? m.time : "TBD";
   const preview =
-    // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
     m.location?.trim() ||
     (attendeeLabels.length > 0 ? attendeeLabels.slice(0, 2).join(", ") : "No location");
 
@@ -82,7 +80,6 @@ export function buildWeekEvents(meetings: readonly MeetingListItem[]): MeetingCa
       return d >= monday && d < sunday;
     })
     .map((m) => {
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       const d = new Date(m.starts_at!);
       const col = ((d.getDay() + 6) % 7) + 1;
       return {
@@ -106,7 +103,6 @@ export function buildMonthEvents(meetings: readonly MeetingListItem[]): MeetingM
       return d.getFullYear() === year && d.getMonth() === month;
     })
     .map((m) => {
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       const d = new Date(m.starts_at!);
       return {
         dayIndex: d.getDate() - 1,
@@ -124,12 +120,10 @@ export function buildCurrentDateTitles(): {
   const now = new Date();
   const dayName = DAY_NAMES_LONG[now.getDay()];
   const monthName = MONTH_NAMES[now.getMonth()];
-  // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
   const dateStr = `${dayName}, ${monthName} ${now.getDate()}, ${now.getFullYear()}`;
   return {
     detail: dateStr,
     day: dateStr,
-    // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
     month: `${monthName} ${now.getFullYear()}`,
   };
 }
@@ -153,7 +147,6 @@ export function buildCurrentWeekDays(): { dateRange: string; days: MeetingWeekDa
 
   const sunday = new Date(monday);
   sunday.setDate(monday.getDate() + 6);
-  // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
   const dateRange = `${MONTH_NAMES[monday.getMonth()]} ${monday.getDate()} - ${sunday.getDate()}, ${sunday.getFullYear()}`;
 
   return { dateRange, days };
@@ -198,7 +191,6 @@ export function buildWeekEventsForRange(
       return d >= monday && d < sunday;
     })
     .map((m) => {
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       const d = new Date(m.starts_at!);
       const col = ((d.getDay() + 6) % 7) + 1;
       return {
@@ -222,7 +214,6 @@ export function buildMonthEventsForRange(
       return d >= start && d < end;
     })
     .map((m) => {
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       const d = new Date(m.starts_at!);
       return {
         dayIndex: d.getDate() - 1,
@@ -257,9 +248,7 @@ export function buildWeekDaysForRange(start: Date): {
   const sMonth = MONTH_NAMES[sunday.getMonth()];
   const dateRange =
     monday.getMonth() === sunday.getMonth()
-      // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
       ? `${mMonth} ${monday.getDate()} - ${sunday.getDate()}, ${sunday.getFullYear()}`
-      // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
       : `${mMonth} ${monday.getDate()} - ${sMonth} ${sunday.getDate()}, ${sunday.getFullYear()}`;
 
   return { dateRange, days };
@@ -329,10 +318,8 @@ export function buildMeetingDetail(m: MeetingListItem): MeetingDetailData {
     if (durationMins >= 60) {
       const hours = Math.floor(durationMins / 60);
       const mins = durationMins % 60;
-      // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
       subtitle += ` (${hours}h${mins > 0 ? ` ${mins}m` : ""})`;
     } else if (durationMins > 0) {
-      // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
       subtitle += ` (${durationMins}m)`;
     }
   }

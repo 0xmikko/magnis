@@ -29,7 +29,6 @@ export function EmailBatchSendRenderer({
 }: AgentRendererProps<ToolCallRendererPayload>): JSX.Element {
   const { toolCall: tc, toolResult, isAllowlisted, superseded, onApprove, onDeny, onAllowlistToggle } = payload;
   const args = tc.args as Record<string, unknown>;
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   const messages = useMemo(() => (args.messages as readonly BatchMessage[]) ?? [], [args.messages]);
 
   const [currentIndex, setCurrentIndex] = useState(0);

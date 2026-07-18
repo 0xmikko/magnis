@@ -9,7 +9,6 @@ export const emailKeys = {
   integrations: ["email", "integrations"] as const,
 };
 
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type, @typescript-eslint/explicit-module-boundary-types
 export function useEmailDetailQuery(id: string) {
   const runtime = useAppRuntime();
   return useQuery({
@@ -23,7 +22,6 @@ interface IntegrationsStatus {
   readonly google: { readonly connected: boolean };
 }
 
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type, @typescript-eslint/explicit-module-boundary-types
 export function useIntegrationsStatusQuery() {
   const runtime = useAppRuntime();
   return useQuery({

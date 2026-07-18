@@ -27,7 +27,6 @@ export function useTriggerDetail(
 ): TriggerDetail | null {
   const query = useQuery<TriggerDetail>({
     queryKey: ["triggers", entityId],
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     queryFn: () => runtime.transport.rpc<TriggerDetail>("triggers.get", { id: entityId! }),
     enabled: typeof entityId === "string" && entityId.length > 0,
     staleTime: 30_000,

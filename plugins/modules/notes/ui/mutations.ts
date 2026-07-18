@@ -23,7 +23,6 @@ interface DeleteNoteParams {
   readonly id: string;
 }
 
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type, @typescript-eslint/explicit-module-boundary-types
 export function useCreateNoteMutation() {
   const runtime = useAppRuntime();
   const queryClient = useQueryClient();
@@ -37,7 +36,6 @@ export function useCreateNoteMutation() {
   });
 }
 
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type, @typescript-eslint/explicit-module-boundary-types
 export function useUpdateNoteMutation() {
   const runtime = useAppRuntime();
   // The plugin UI runs on its OWN react-query client (the detail panel reads
@@ -135,7 +133,6 @@ export function useUpdateNoteMutation() {
   });
 }
 
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type, @typescript-eslint/explicit-module-boundary-types
 export function useDeleteNoteMutation() {
   const runtime = useAppRuntime();
   const queryClient = useQueryClient();

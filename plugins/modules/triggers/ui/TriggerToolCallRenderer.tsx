@@ -21,14 +21,12 @@ function useResolvedEntities(
   useEffect(() => {
     if (!watchIds || watchIds.length === 0) return;
     let cancelled = false;
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     Promise.all(
       watchIds.map((id) =>
         runtime.transport
           .rpc<Record<string, unknown>>("graph.entity.get", { id })
           .then((e) => ({
             id,
-            // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
             schema_id: (e.schema_id as string) ?? "",
             name: e.name as string | undefined,
             data: e,
@@ -41,7 +39,6 @@ function useResolvedEntities(
           results.filter((r): r is NonNullable<typeof r> => r !== null),
         );
     });
-    // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
     return () => {
       cancelled = true;
     };

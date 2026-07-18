@@ -41,7 +41,6 @@ export function groupNotesByTime(notes: readonly NoteListItem[]): readonly NoteG
     } else if (date >= last30Start) {
       last30.push(note);
     } else {
-      // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
       const monthKey = `${date.getFullYear()}-${String(date.getMonth()).padStart(2, "0")}`;
       const monthLabel = date.toLocaleDateString("en-US", {
         month: "long",

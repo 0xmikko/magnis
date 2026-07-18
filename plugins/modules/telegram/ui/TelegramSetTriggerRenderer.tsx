@@ -17,7 +17,6 @@ export function TelegramSetTriggerRenderer({
 }: AgentRendererProps<ToolCallRendererPayload>): JSX.Element {
   const { toolCall: tc, toolResult, isAllowlisted, superseded, onApprove, onDeny, onAllowlistToggle } = payload;
   const args = tc.args as Record<string, unknown>;
-  // eslint-disable-next-line @typescript-eslint/no-base-to-string
   const chatId = args.chat_id != null ? String(args.chat_id) : "?";
   const gate = typeof args.gate_prompt === "string" ? args.gate_prompt : "";
   const action = typeof args.action_prompt === "string" ? args.action_prompt : "";

@@ -100,7 +100,6 @@ export function getDateLabel(view: MeetingsView, dateOffset: number): string {
   if (view === "day") {
     const dayName = DAY_NAMES_LONG[d.getDay()];
     const monthAbbr = MONTH_ABBR[d.getMonth()];
-    // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
     return `${dayName}, ${monthAbbr} ${d.getDate()}, ${d.getFullYear()}`;
   }
   if (view === "week") {
@@ -112,14 +111,11 @@ export function getDateLabel(view: MeetingsView, dateOffset: number): string {
     const mAbbr = MONTH_ABBR[monday.getMonth()];
     const sAbbr = MONTH_ABBR[sunday.getMonth()];
     if (monday.getMonth() === sunday.getMonth()) {
-      // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
       return `${mAbbr} ${monday.getDate()} - ${sunday.getDate()}, ${sunday.getFullYear()}`;
     }
-    // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
     return `${mAbbr} ${monday.getDate()} - ${sAbbr} ${sunday.getDate()}, ${sunday.getFullYear()}`;
   }
   // month
-  // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
   return `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`;
 }
 

@@ -839,7 +839,6 @@ export function TelegramChatView({
       )}
 
       <div className="flex h-full flex-1 flex-col">
-        {/* eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing */}
         {(loading || backfilling) && (
           <div className="flex justify-center py-2">
             <span className="text-content-tertiary text-xs animate-pulse">

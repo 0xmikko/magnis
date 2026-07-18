@@ -10,7 +10,6 @@ export const projectKeys = {
   forEntity: (entityId: string) => [...projectKeys.all, "forEntity", entityId] as const,
 };
 
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type, @typescript-eslint/explicit-module-boundary-types
 export function useProjectsListQuery(limit = 100, offset = 0) {
   const runtime = useAppRuntime();
   return useQuery({
@@ -24,7 +23,6 @@ export function useProjectsListQuery(limit = 100, offset = 0) {
   });
 }
 
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type, @typescript-eslint/explicit-module-boundary-types
 export function useProjectsForEntityQuery(entityId: string) {
   const runtime = useAppRuntime();
   return useQuery({
@@ -38,7 +36,6 @@ export function useProjectsForEntityQuery(entityId: string) {
   });
 }
 
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type, @typescript-eslint/explicit-module-boundary-types
 export function useProjectDetailQuery(id: string) {
   const runtime = useAppRuntime();
   return useQuery({

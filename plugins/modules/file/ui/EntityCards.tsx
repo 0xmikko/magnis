@@ -19,7 +19,6 @@ function str(data: Readonly<Record<string, unknown>>, key: string): string | und
 }
 
 /** Chevron shows when file has preview-able content or extra meta to reveal. */
-// eslint-disable-next-line react-refresh/only-export-components
 export function fileHasMore(data: Readonly<Record<string, unknown>>): boolean {
   return (
     str(data, "preview_url") !== undefined ||

@@ -49,7 +49,6 @@ export function ContactOverview({
 
 function DescriptionPanel({ entityId }: { readonly entityId: string }): JSX.Element {
   const description = useEntityFacet(entityId, DESCRIPTION_SCHEMA_ID);
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   const body = (description.data?.body as string) ?? "";
   // @-mention suggestion plumbing — same hook NoteDetail and
   // EntityDetailTabs.DescriptionTab use post-MAG-34 so the editor

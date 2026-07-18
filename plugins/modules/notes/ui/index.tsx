@@ -20,7 +20,6 @@ export const NotesModule = defineModule({
   DetailPanel: NoteDetailPanel,
   detailType: "custom",
   headerActionIcon: "plus",
-  // eslint-disable-next-line @typescript-eslint/no-misused-promises
   onHeaderAction: async (runtime, onCreated) => {
     const clientId = crypto.randomUUID();
     const result = await runtime.transport.rpc<{ id: string }>(
@@ -45,7 +44,6 @@ export const NotesModule = defineModule({
     )
       return null;
     const args = tc.args as Record<string, unknown>;
-    // eslint-disable-next-line @typescript-eslint/no-base-to-string
     const title = args.title != null ? String(args.title) : "note";
     return {
       action: tc.name,

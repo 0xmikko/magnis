@@ -35,7 +35,6 @@ function useResolvedWatches(
           .rpc<Record<string, unknown>>("graph.entity.get", { id: w.id })
           .then((e) => ({
             id: w.id,
-            // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
             schema_id: (e.schema_id as string) ?? "",
             data: e,
           }))

@@ -30,10 +30,8 @@ export function NoteToolCallRenderer({
   const title = args.title as string | undefined;
   const body =
     args.body != null
-      // eslint-disable-next-line @typescript-eslint/no-base-to-string
       ? String(args.body)
       : args.text != null
-        // eslint-disable-next-line @typescript-eslint/no-base-to-string
         ? String(args.text)
         : "";
 
@@ -41,7 +39,6 @@ export function NoteToolCallRenderer({
     args.id as string | undefined,
   );
 
-  // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
   const handleApply = async () => {
     await onApprove();
     if (isCreate) {
@@ -50,7 +47,6 @@ export function NoteToolCallRenderer({
           "notes.list",
           { limit: 1, search: args.title as string },
         );
-        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         if (list?.items?.[0]?.id) setNoteId(list.items[0].id);
       } catch {
         /* best effort */
@@ -60,7 +56,6 @@ export function NoteToolCallRenderer({
   };
 
   const handleNavigate = noteId
-    // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
     ? () => {
         router.navigate("notes", "note", noteId);
       }

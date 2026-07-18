@@ -61,11 +61,8 @@ export function loadCachedChats(): { chats: TelegramChat[]; total: number } | nu
   try {
     const raw = localStorage.getItem(CHAT_CACHE_KEY);
     if (!raw) return null;
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const cached = JSON.parse(raw);
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     if (Date.now() - cached.ts > CHAT_CACHE_TTL) return null;
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
     return cached;
   } catch {
     return null;

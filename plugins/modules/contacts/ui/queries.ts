@@ -9,7 +9,6 @@ export const contactKeys = {
   detail: (id: string) => [...contactKeys.all, "detail", id] as const,
 };
 
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type, @typescript-eslint/explicit-module-boundary-types
 export function useContactsListQuery(limit = 100, offset = 0) {
   const runtime = useAppRuntime();
   return useQuery({
@@ -22,7 +21,6 @@ export function useContactsListQuery(limit = 100, offset = 0) {
   });
 }
 
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type, @typescript-eslint/explicit-module-boundary-types
 export function useContactDetailQuery(id: string) {
   const runtime = useAppRuntime();
   return useQuery({
@@ -45,7 +43,6 @@ export interface SocialTrackingState {
 export const socialTrackingKey = (id: string): readonly unknown[] =>
   [...contactKeys.detail(id), "social_tracking"] as const;
 
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type, @typescript-eslint/explicit-module-boundary-types
 export function useSocialTrackingQuery(id: string) {
   const runtime = useAppRuntime();
   return useQuery({

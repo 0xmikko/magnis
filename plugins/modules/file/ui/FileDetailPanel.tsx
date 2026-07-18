@@ -61,7 +61,6 @@ function useFileStatus(fileUrl: string, kind: string | null, entityId: string): 
 
     let cancelled = false;
 
-    // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
     async function poll() {
       try {
         const res = await fetch(fileUrl, {
@@ -96,7 +95,6 @@ function useFileStatus(fileUrl: string, kind: string | null, entityId: string): 
 
     void poll();
 
-    // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
     return () => {
       cancelled = true;
       if (timerRef.current) clearTimeout(timerRef.current);

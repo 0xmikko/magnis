@@ -54,7 +54,6 @@ function agenda(data: Readonly<Record<string, unknown>>): string | undefined {
  * Chevron shows when the meeting has fields beyond the 2-line collapsed row:
  * description, agenda, or an attendee list (collapsed only displays a count).
  */
-// eslint-disable-next-line react-refresh/only-export-components
 export function meetingHasMore(data: Readonly<Record<string, unknown>>): boolean {
   return (
     description(data) !== undefined ||

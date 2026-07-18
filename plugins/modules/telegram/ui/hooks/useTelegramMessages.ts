@@ -46,7 +46,6 @@ function mapMessages(items: readonly TelegramMessageListItem[], baseUrl: string)
           ?? (m.metadata?.text as string | undefined)
           ?? mediaLabel(mMediaType),
         time: formatMessageTime(m.timestamp),
-        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         date: m.timestamp?.slice(0, 10),
         mediaType: mMediaType,
         mediaUrl: prefixedMediaUrl,
@@ -315,7 +314,6 @@ export function useTelegramMessages(
     (text: string) => {
       if (!selectedChatId) return;
       const chatId = selectedChatId;
-      // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
       const pendingId = `_pending_${Date.now()}`;
       const now = new Date();
       const timeStr = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -332,7 +330,6 @@ export function useTelegramMessages(
 
       setOptimisticMessages((prev) => [...prev, optimistic]);
 
-      // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
       void (async () => {
         try {
           await runtime.transport.rpc("telegram.messages.send", {
@@ -378,7 +375,6 @@ export function useTelegramMessages(
         name: message.senderName ?? "Message",
         data: {
           sender: message.senderName ?? "Unknown",
-          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
           preview: message.text?.slice(0, 100),
           timestamp: message.time,
           metadata: {

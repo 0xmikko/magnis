@@ -49,9 +49,7 @@ export function TelegramChatItemContent({
   item,
 }: ListItemContentProps): JSX.Element {
   const runtime = useAppRuntime();
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   const initials = (item.metadata?.initials as string) ?? "?";
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   const avatarColor = (item.metadata?.avatarColor as string) ?? "#4A90D9";
   const avatarUrl = resolveAvatarUrl(runtime.transport.baseUrl, item.avatar_url ?? null);
   const muted = item.metadata?.muted as boolean | undefined;

@@ -37,7 +37,6 @@ export const CHAT_CACHE_TTL = 86_400_000; // 24 hours
 
 export const TELEGRAM_AUTH_POLL_INTERVAL = 1500;
 
-// eslint-disable-next-line react-refresh/only-export-components
 export const MEDIA_LABELS: Readonly<Record<string, string>> = {
   photo: "Photo",
   video: "Video",
@@ -72,7 +71,6 @@ export const TELEGRAM_SENDER_COLORS = [
   "#AED581",
 ] as const;
 
-// eslint-disable-next-line react-refresh/only-export-components
 export const MESSAGE_MENU_ITEMS: readonly ContextMenuEntry[] = [
   { id: "reply-agent", label: "Reply by Agent", icon: "bot" },
   { type: "separator" },
@@ -180,7 +178,6 @@ export const telegramAgentContribution: Omit<ModuleAgentContribution, "entityRen
   extractAllowlistTarget: (tc) => {
     if (tc.name !== "send_telegram_message" && tc.name !== "telegram_messages_send" && tc.name !== "telegram.messages.send") return null;
     const args = tc.args as Record<string, unknown>;
-    // eslint-disable-next-line @typescript-eslint/no-base-to-string
     const chatId = args.chat_id != null ? String(args.chat_id) : null;
     if (!chatId) return null;
     return {
@@ -228,13 +225,9 @@ export const TelegramModule = defineModule({
     pendingMessageId: undefined as string | undefined,
     pendingTelegramMsgId: undefined as number | undefined,
     actions: {
-      // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
       setSelectedChatId: (chatId: string | undefined) => { set({ selectedChatId: chatId }); },
-      // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
       setSearchQuery: (query: string) => { set({ searchQuery: query }); },
-      // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
       setSyncProgress: (progress: number | null) => { set({ syncProgress: progress }); },
-      // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
       setPendingMessageId: (id: string | undefined, telegramMsgId?: number) =>
         { set({ pendingMessageId: id, pendingTelegramMsgId: telegramMsgId }); },
     },
@@ -251,7 +244,6 @@ export const TelegramModule = defineModule({
         const links = await runtime.transport.rpc<{
           linked_entities: readonly { id: string; schema_id: string }[];
         }>("graph.entity.get", { id: entityId });
-        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         const chatLink = links.linked_entities?.find((e) => e.schema_id === "telegram.chat");
         chatEntityId = chatLink?.id;
         if (!telegramMsgId) {
@@ -309,7 +301,6 @@ export const TelegramModule = defineModule({
       ["sync.progress"],
       [telegramKeys.all],
     );
-    // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
     return () => { unsub2(); };
   },
 });

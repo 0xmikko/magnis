@@ -48,7 +48,6 @@ function memberNames(data: Readonly<Record<string, unknown>>): string[] {
  * collapsed 2-line body. We use a char threshold as a deterministic,
  * synchronously-evaluable proxy for the DOM line clamp.
  */
-// eslint-disable-next-line react-refresh/only-export-components
 export function telegramMessageHasMore(data: Readonly<Record<string, unknown>>): boolean {
   const text =
     (typeof data.preview === "string" ? data.preview : "") ||
@@ -58,7 +57,6 @@ export function telegramMessageHasMore(data: Readonly<Record<string, unknown>>):
 }
 
 /** Chevron shows when chat has members, a chat type, or a created timestamp. */
-// eslint-disable-next-line react-refresh/only-export-components
 export function telegramChatHasMore(data: Readonly<Record<string, unknown>>): boolean {
   return (
     memberNames(data).length > 0 ||

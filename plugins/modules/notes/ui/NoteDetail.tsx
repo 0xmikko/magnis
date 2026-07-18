@@ -51,7 +51,6 @@ export function NoteDetail({ noteId }: NoteDetailProps): JSX.Element {
   const deleteMutation = useDeleteNoteMutation();
   // Note: setSelectedNoteId was from old notes store. With BaseModule,
   // selection is managed by BaseModuleComponent via router.
-  // eslint-disable-next-line @typescript-eslint/no-empty-function
   const setSelectedNoteId = useCallback((_id: string | undefined) => {}, []);
 
   // --- State: only valid AFTER init effect confirms data for this noteId ---
@@ -86,7 +85,6 @@ export function NoteDetail({ noteId }: NoteDetailProps): JSX.Element {
   // Must be declared BEFORE init effect so cleanup runs first.
   useEffect(() => {
     const id = noteId;
-    // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
     return () => {
       if (saveTimerRef.current) {
         clearTimeout(saveTimerRef.current);
@@ -268,7 +266,6 @@ export function NoteDetail({ noteId }: NoteDetailProps): JSX.Element {
       <div className="flex-1 min-h-0">
         {mode === "wysiwyg" ? (
           <MarkdownEditor
-            // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
             key={`note-${noteId}-${editorKey}`}
             initialValue={localBody}
             onChange={handleBodyChange}

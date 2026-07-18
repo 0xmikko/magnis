@@ -9,7 +9,6 @@ import { FileDetailPanel } from "./FileDetailPanel";
 import { mimeToColor, sourceLabel } from "./helpers";
 
 function FileListItemContent({ item }: ListItemContentProps): JSX.Element {
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   const mimeType = (item.metadata?.mime_type as string) ?? "";
   const iconName = mimeToIcon(mimeType);
   const colorClass = mimeToColor(mimeType);
@@ -55,7 +54,6 @@ export const FilesModule = defineModule({
   DetailPanel: FileDetailPanel,
   detailType: "custom",
   headerActionIcon: "plus",
-  // eslint-disable-next-line @typescript-eslint/no-misused-promises
   onHeaderAction: async (runtime, onCreated) => {
     const result = await uploadFile(runtime.transport);
     if (result) {
@@ -66,16 +64,13 @@ export const FilesModule = defineModule({
   groupBy: "date",
   getGroupDate: (item) => item.timestamp ? new Date(item.timestamp) : null,
   mapListItem: (raw) => ({
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     id: (raw.entity_id as string) ?? (raw.id as string),
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     name: (raw.name as string) ?? null,
     schema_id: "file.object",
     preview: [
       raw.mime_type as string | undefined,
       raw.source_module ? sourceLabel(raw.source_module as string) : null,
     ].filter(Boolean).join(" · ") || null,
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     timestamp: (raw.created_at as string) ?? null,
     metadata: { mime_type: raw.mime_type ?? "" },
   }),

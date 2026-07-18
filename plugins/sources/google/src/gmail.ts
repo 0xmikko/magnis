@@ -439,7 +439,6 @@ export function sortedActions(
 
 /** Wrap in RFC 2047 encoded-word if non-ASCII; ASCII passes through. */
 export function mimeEncodeHeader(value: string): string {
-  // eslint-disable-next-line no-control-regex
   if (/^[\x00-\x7F]*$/.test(value)) return value;
   return `=?UTF-8?B?${Buffer.from(value, "utf-8").toString("base64")}?=`;
 }

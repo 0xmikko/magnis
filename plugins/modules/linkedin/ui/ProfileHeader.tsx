@@ -107,7 +107,6 @@ export function LinkedInProfileHeader({
   const setTracking = useMutation({
     mutationFn: (tracked: boolean) =>
       runtime.transport.rpc("contacts.set_social_tracking", {
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         id: tracking!.contact_id,
         platform: PLATFORM,
         tracked,

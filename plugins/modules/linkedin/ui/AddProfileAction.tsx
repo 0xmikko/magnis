@@ -133,7 +133,6 @@ export function AddProfileAction({
               </button>
               <button
                 type="button"
-                // eslint-disable-next-line @typescript-eslint/no-misused-promises
                 onClick={submit}
                 disabled={busy || !value.trim()}
                 className="text-xs px-4 py-2 rounded-lg bg-accent text-white font-medium disabled:opacity-50"

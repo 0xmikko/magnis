@@ -36,7 +36,6 @@ export function CompanyDetailContent({
           { label: fieldLabels.industry, value: company.industry },
           { label: fieldLabels.size, value: company.size },
           {
-            // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
             label: `${fieldLabels.teamMembers} (${company.members.length})`,
             value: (
               <Row gap={1.5} wrap className="mt-0.5">
