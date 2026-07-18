@@ -62,6 +62,8 @@ facet_path = "updated_at"
 canonical_key = "note.updated_at"
 strategy = "single_aligned"
 
+# Least-privilege grants: facet prefixes this module may write, schemas it may
+# read, events it emits, cross-module RPCs / canonical merges (none beyond own).
 [capabilities]
 facet_write_prefixes = [ "notes." ]
 link_kinds_writable = []
@@ -70,15 +72,19 @@ reads_schemas = [ "notes." ]
 events_emitted = []
 can_merge_schemas = []
 
+# Callable surface: `rpc_handlers` = intra-host RPC; `tools` = the same routes
+# exposed to the agent; `sync_handlers` = source-sync surfaces (none — local only).
 [surfaces]
 rpc_handlers = [ "notes.list", "notes.get", "notes.create", "notes.update", "notes.delete", "notes.template.apply" ]
 tools = [ "notes.list", "notes.get", "notes.create", "notes.update", "notes.delete", "notes.template.apply" ]
 sync_handlers = []
 
+# Entrypoints inside the package: V8 module bundle + React UI surface.
 [entry]
 module = "module/index.ts"
 ui = "index.tsx"
 
+# Self-reporting catalog card (title/summary/publisher/icon + markdown details).
 [presentation]
 title = "Notes"
 summary = "Freeform notes linked to entities and projects."
@@ -87,5 +93,7 @@ publisher_url = "https://magnis.ai"
 details = "# Notes\n\nMarkdown notes with inline links to people, companies, meetings, and\nprojects. Every note lives in your local store and flows through the\nsame event log as the rest of your graph.\n"
 icon_url = "/api/plugins/notes/ui/icon.svg"
 
+# Declared install entrypoint (DEC-L4): runs once in a transient isolate at
+# install time to register schemas. A module without it is NOT installable.
 [lifecycle]
 install = "lifecycle/install.ts"

@@ -1,42 +1,25 @@
 # x — X (Twitter) domain module (V8 plugin).
 #
-# Owns `x.*`: profile + post entities and their identity / content / metrics facets.
-# Ingests the `x` sync surface, links profiles to contacts (reads contacts.person;
-# link kind x.profile:contacts.person), imports the following list, and reads
-# contacts' social-tracking over RPC. Sandboxed V8 isolate; presence-seeded at
-# boot (DEC-10).
-
-# x — X / social-posts domain module (V8 plugin).
-#
-# Owns the `x.*` graph namespace: profile + post entities and their facets for
-# tracked people on social platforms. Despite the id, it covers BOTH X (Twitter)
-# and LinkedIn (see the `platform` enum on the facets). Ingests the surface fed
-# by the X source connector, links each profile to the matching contact, and is
-# read-only today. Runs as a sandboxed V8 isolate; presence-seeded at boot.
+# Owns the `x.*` graph namespace: profile + post entities and their identity /
+# content / metrics facets for the X accounts you track. Ingests the `x` sync
+# surface fed by the X source connector, links each profile to the matching
+# contact (reads contacts.person, creates the x.profile:contacts.person link),
+# and reads contacts' social-tracking over RPC. Read-only today. Sibling of the
+# LinkedIn module (shared facet shape). Sandboxed V8 isolate; presence-seeded.
 
 id = "x"
 version = "0.1.0"
 # SDK contract version this manifest targets (host accepts 0.x).
-
-# SDK contract version this manifest targets (host accepts 0.x).
 magnis_api_version = "0.1.0"
 # Ownership globs: every OWNED schema id / link kind must match one of these.
-
-# Ownership globs: every OWNED schema id / link kind declared below must match
-# one of these patterns — the host rejects the manifest otherwise.
 owns = [ "x.*" ]
-# Foreign schemas referenced but not owned — none needed here (the profile→person
-# link is a link kind, and `contacts.person` is reached only via RPC, not a facet).
-
-# Foreign schemas this module references but does NOT own — declaring them lets
-# its facets/links point at those entities without failing the dangling-ref check.
+# Foreign (non-owned) schemas referenced by facets — none; the profile→person
+# relationship is a link kind + RPC, not a facet on `contacts.person`.
 requires_schemas = []
 
-# Graph schemas this module owns: profile + post entities (post is `triggerable`
-# — its events can drive triggers) plus versioned facets with canonical mappings.
-
-# Graph schemas this module owns: entities, their versioned facets (each with a
-# json_schema + canonical `mappings` that feed derived-truth resolution), and links.
+# Graph schemas: profile + post entities (post is `triggerable` — its events can
+# drive triggers) plus versioned facets. The `platform` enum ("x"/"linkedin") on
+# the facets is shared with the sibling LinkedIn module.
 [schemas]
 links = []
 
@@ -168,16 +151,10 @@ type = [ "integer", "null" ]
 [schemas.facets.json_schema.properties.impressions]
 type = [ "integer", "null" ]
 
-# Least-privilege grants. `link_kinds_writable`: post→profile and profile→person
-# links. `reads_schemas` + `can_merge_schemas`: own schemas. `rpc_calls`: cross-
-# module calls into contacts (match/rename by handle) and the host source-sync
-# bootstrap. `op_grants`: may read external ids. `creates_schemas` empty — it
-# links to existing people rather than creating them.
-
-# Least-privilege grants the host enforces at runtime: facet prefixes / link kinds
-# this module may WRITE, schemas it may READ, events it emits, schemas it may merge
-# canonically — plus any cross-module rpc_calls, privileged op_grants, and foreign
-# creates_schemas listed below.
+# Least-privilege grants: facet prefixes it may write; `<from>:<to>` link kinds
+# it may create (post→profile, profile→contact); schemas it may read; canonical
+# merges; cross-module RPCs (contacts social-tracking + source.sync.bootstrap to
+# kick a follow import); privileged host ops (external-id reads).
 [capabilities]
 facet_write_prefixes = [ "x." ]
 link_kinds_writable = [ "x.post:x.profile", "x.profile:contacts.person" ]
@@ -188,24 +165,17 @@ creates_schemas = []
 rpc_calls = [ "contacts.get_social_tracking_by_handle", "contacts.rename_if_placeholder", "source.sync.bootstrap" ]
 op_grants = [ "external_id_reads" ]
 
-# Callable surface: `rpc_handlers` = intra-host RPC; `tools` = the agent-facing
-# subset; `sync_handlers` = the `x` source-sync surface this module ingests.
-
-# Callable surface: `rpc_handlers` = intra-host RPC; `tools` = the agent-facing
-# subset; `sync_handlers` = source-sync surfaces this module ingests.
+# Callable surface: `rpc_handlers` = intra-host RPC (incl. x.import_following);
+# `tools` = the agent-facing set; `sync_handlers` = the `x` source-sync surface.
 [surfaces]
 rpc_handlers = [ "x.posts.list", "x.posts.get", "x.profiles.list", "x.profiles.get", "x.import_following" ]
 tools = [ "x.posts.list", "x.posts.get", "x.profiles.list", "x.profiles.get", "x.import_following" ]
 sync_handlers = [ "x" ]
 
-# Entrypoints inside the package: the V8 module bundle and the React UI surface.
-
-# Entrypoints inside the package: the V8 module bundle + the React UI surface.
+# Entrypoints inside the package: V8 module bundle + React UI surface.
 [entry]
 module = "module/index.ts"
 ui = "index.tsx"
-
-# Self-reporting catalog card (title/summary/publisher/icon + markdown details).
 
 # Self-reporting catalog card (title/summary/publisher/icon + markdown details).
 [presentation]
@@ -218,8 +188,5 @@ details = "# X\n\nStores the X profiles and posts ingested by the X source and l
 
 # Declared install entrypoint (DEC-L4): runs once in a transient isolate at
 # install time to register schemas. A module without it is NOT installable.
-
-# Declared install entrypoint (DEC-L4): runs once in a transient isolate at install
-# time to register schemas. A module without it is NOT installable.
 [lifecycle]
 install = "lifecycle/install.ts"

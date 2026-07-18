@@ -1,9 +1,25 @@
+# linkedin — LinkedIn domain module (V8 plugin).
+#
+# Owns the `linkedin.*` graph namespace: profile + post entities and their
+# identity / content / metrics facets for the LinkedIn accounts you track.
+# Ingests the `linkedin` sync surface fed by the LinkedIn source connector,
+# links each profile to the matching contact (reads contacts.person, creates the
+# linkedin.profile:contacts.person link), and reads contacts' social-tracking
+# over RPC. Read-only today. Sandboxed V8 isolate; presence-seeded at boot.
+
 id = "linkedin"
 version = "0.1.0"
+# SDK contract version this manifest targets (host accepts 0.x).
 magnis_api_version = "0.1.0"
+# Ownership globs: every OWNED schema id / link kind must match one of these.
 owns = [ "linkedin.*" ]
+# Foreign (non-owned) schemas referenced by facets — none; the profile→person
+# relationship is a link kind + RPC, not a facet on `contacts.person`.
 requires_schemas = []
 
+# Graph schemas: profile + post entities (post is `triggerable` — its events can
+# drive triggers) plus versioned facets. The `platform` enum ("x"/"linkedin") on
+# the facets means the shape is shared with the sibling X module.
 [schemas]
 links = []
 
@@ -135,6 +151,10 @@ type = [ "integer", "null" ]
 [schemas.facets.json_schema.properties.impressions]
 type = [ "integer", "null" ]
 
+# Least-privilege grants: facet prefixes it may write; `<from>:<to>` link kinds
+# it may create (post→profile, profile→contact); schemas it may read; canonical
+# merges; cross-module RPCs into contacts (social-tracking lookup / placeholder
+# rename); privileged host ops (sync state, external-id reads).
 [capabilities]
 facet_write_prefixes = [ "linkedin." ]
 link_kinds_writable = [ "linkedin.post:linkedin.profile", "linkedin.profile:contacts.person" ]
@@ -145,15 +165,19 @@ creates_schemas = []
 rpc_calls = [ "contacts.get_social_tracking_by_handle", "contacts.rename_if_placeholder", "contacts.list_social_tracking" ]
 op_grants = [ "sync_state", "external_id_reads" ]
 
+# Callable surface: `rpc_handlers` = intra-host RPC; `tools` = agent-facing
+# subset; `sync_handlers` = the source-sync surface this module ingests.
 [surfaces]
 rpc_handlers = [ "linkedin.posts.list", "linkedin.posts.get", "linkedin.profiles.list", "linkedin.profiles.get" ]
 tools = [ "linkedin.posts.list", "linkedin.posts.get", "linkedin.profiles.list", "linkedin.profiles.get" ]
 sync_handlers = [ "linkedin" ]
 
+# Entrypoints inside the package: V8 module bundle + React UI surface.
 [entry]
 module = "module/index.ts"
 ui = "index.tsx"
 
+# Self-reporting catalog card (title/summary/publisher/icon + markdown details).
 [presentation]
 title = "LinkedIn"
 summary = "LinkedIn profiles and posts of the people you track, linked to contacts."

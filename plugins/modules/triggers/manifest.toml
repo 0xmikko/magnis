@@ -1,42 +1,23 @@
-# triggers — Triggers definition module (V8 plugin, tier = system).
+# triggers — Trigger definitions domain module (V8 plugin).
 #
-# Owns `triggers.*`: the trigger entity + config / execution facets, and the
-# definition CRUD + renderers. The trigger ENGINE stays NATIVE in the host — this
-# plugin only manages definitions and calls the engine over RPC (validate_watch /
-# resolve_watchable / invalidate_cache). Links triggers to the entities they watch
-# (`watches`). System tier: mandatory and non-removable. Sandboxed V8 isolate;
+# Owns the `triggers.*` graph namespace: the trigger entity plus its config and
+# execution facets. This module owns only the trigger DEFINITION CRUD + UI — the
+# native trigger ENGINE (evaluate + fire) stays in Core and reads these
+# definitions (hybrid split). Runs as a sandboxed V8 isolate; bundled and
 # presence-seeded at boot (DEC-10).
-
-# triggers — Triggers domain module (V8 plugin, HYBRID split).
-#
-# Owns the `triggers.*` graph namespace: the trigger entity + its config and
-# execution facets, and the definition CRUD/UI. The evaluation-and-fire ENGINE
-# stays NATIVE in Core — this plugin only manages the definitions the engine
-# reads; it calls back into the engine over RPC (see [capabilities] rpc_calls).
-# Runs as a sandboxed V8 isolate; bundled and presence-seeded at boot (DEC-10).
 
 id = "triggers"
 version = "0.1.0"
 # SDK contract version this manifest targets (host accepts 0.x).
-
-# SDK contract version this manifest targets (host accepts 0.x).
 magnis_api_version = "0.1.0"
-# tier = system → mandatory, always loaded, cannot be uninstalled/disabled
-# (DEC-7). Still a sandboxed V8 plugin; `system` is only a removability property.
-
-# tier = system: mandatory, always loaded, cannot be uninstalled or disabled.
+# tier = "system": mandatory, always-loaded, cannot be uninstalled/disabled
+# (DEC-7) — the trigger engine depends on these definitions. Still V8-sandboxed.
 tier = "system"
-# Ownership globs: EVERY schema id / link kind declared below must match one.
-
-# Ownership globs: every OWNED schema id / link kind declared below must match
-# one of these patterns — the host rejects the manifest otherwise.
+# Ownership globs: every schema id / link kind declared below must match one.
 owns = [ "triggers.*" ]
 
-# Graph schemas this module owns: the trigger entity plus its config facet (the
-# definition the native engine evaluates) and execution facet (fire history).
-
-# Graph schemas this module owns: entities, their versioned facets (each with a
-# json_schema + canonical `mappings` that feed derived-truth resolution), and links.
+# Graph schemas: the trigger entity + its versioned config (gate/action prompts,
+# watched event kinds, debounce/limits) and execution (fire history) facets.
 [schemas]
 links = []
 
@@ -124,15 +105,9 @@ format = "uuid"
 [schemas.facets.json_schema.properties.outcome]
 type = "string"
 
-# Least-privilege grants. `link_kinds_writable`: `watches` binds a trigger to the
-# entity it watches, `belongs_to` groups it. `rpc_calls`: the plugin→native-engine
-# seam — validate a watch target, resolve a watchable, and invalidate the engine's
-# definition cache when CRUD changes a trigger.
-
-# Least-privilege grants the host enforces at runtime: facet prefixes / link kinds
-# this module may WRITE, schemas it may READ, events it emits, schemas it may merge
-# canonically — plus any cross-module rpc_calls, privileged op_grants, and foreign
-# creates_schemas listed below.
+# Least-privilege grants: facet prefixes it may write; link kinds it may create
+# (`watches` = trigger→watched-entity, `belongs_to`); cross-module RPCs into the
+# native engine (validate/resolve watchable, invalidate cache); reads.
 [capabilities]
 facet_write_prefixes = [ "triggers." ]
 link_kinds_writable = [ "watches", "belongs_to" ]
@@ -141,24 +116,17 @@ reads_schemas = [ "triggers." ]
 events_emitted = []
 can_merge_schemas = []
 
-# Callable surface: definition CRUD + linking + fire-history, exposed both as
-# intra-host RPC and to the agent. No `sync_handlers` — triggers has no connector.
-
-# Callable surface: `rpc_handlers` = intra-host RPC; `tools` = the agent-facing
-# subset; `sync_handlers` = source-sync surfaces this module ingests.
+# Callable surface: definition CRUD + linking + fire-history reads. `rpc_handlers`
+# = intra-host RPC; `tools` = the agent-facing set; no source-sync surfaces.
 [surfaces]
 rpc_handlers = [ "triggers.create", "triggers.get", "triggers.list", "triggers.update", "triggers.delete", "triggers.link", "triggers.unlink", "triggers.list_for_entity", "triggers.fire_history" ]
 tools = [ "triggers.create", "triggers.get", "triggers.list", "triggers.update", "triggers.delete", "triggers.link", "triggers.unlink", "triggers.list_for_entity", "triggers.fire_history" ]
 sync_handlers = []
 
-# Entrypoints inside the package: the V8 module bundle and the React UI surface.
-
-# Entrypoints inside the package: the V8 module bundle + the React UI surface.
+# Entrypoints inside the package: V8 module bundle + React UI surface.
 [entry]
 module = "module/index.ts"
 ui = "index.tsx"
-
-# Self-reporting catalog card (title/summary/publisher/icon + markdown details).
 
 # Self-reporting catalog card (title/summary/publisher/icon + markdown details).
 [presentation]
@@ -171,8 +139,5 @@ icon_url = "/api/plugins/triggers/ui/icon.svg"
 
 # Declared install entrypoint (DEC-L4): runs once in a transient isolate at
 # install time to register schemas. A module without it is NOT installable.
-
-# Declared install entrypoint (DEC-L4): runs once in a transient isolate at install
-# time to register schemas. A module without it is NOT installable.
 [lifecycle]
 install = "lifecycle/install.ts"
