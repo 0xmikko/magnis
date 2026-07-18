@@ -1,0 +1,91 @@
+# notes — Notes domain module (V8 plugin).
+#
+# Owns the `notes.*` graph namespace: a single markdown note entity with a
+# content facet (title / body / pinned / updated_at). Local-only (no external
+# sync surface) — create / update / delete notes and apply templates. Notes
+# carry inline links to people, companies, meetings, and projects and flow
+# through the same event log as the rest of the graph. Runs as a sandboxed V8
+# isolate; bundled and presence-seeded at boot (DEC-10).
+
+id = "notes"
+version = "0.1.0"
+# SDK contract version this manifest targets (host accepts 0.x).
+magnis_api_version = "0.1.0"
+# Ownership globs: every schema id / link kind declared below must match one.
+owns = [ "notes.*" ]
+
+# Graph schemas: the note entity + its versioned content facet (json_schema +
+# canonical `mappings` feeding derived-truth resolution). No link kinds owned.
+[schemas]
+links = []
+
+[[schemas.entities]]
+id = "notes.note"
+name = "Note"
+description = "A markdown note entity owned by the notes plugin."
+
+[[schemas.facets]]
+id = "notes.note.content"
+entity_schema = "notes.note"
+version = 1
+
+[schemas.facets.json_schema]
+type = "object"
+required = [ "body" ]
+additionalProperties = false
+
+[schemas.facets.json_schema.properties.title]
+type = "string"
+
+[schemas.facets.json_schema.properties.body]
+type = "string"
+
+[schemas.facets.json_schema.properties.pinned]
+type = "boolean"
+
+[schemas.facets.json_schema.properties.updated_at]
+type = "string"
+format = "date-time"
+
+[[schemas.facets.mappings]]
+facet_path = "title"
+canonical_key = "note.title"
+strategy = "single_aligned"
+
+[[schemas.facets.mappings]]
+facet_path = "pinned"
+canonical_key = "note.pinned"
+strategy = "single_aligned"
+
+[[schemas.facets.mappings]]
+facet_path = "updated_at"
+canonical_key = "note.updated_at"
+strategy = "single_aligned"
+
+[capabilities]
+facet_write_prefixes = [ "notes." ]
+link_kinds_writable = []
+rpc_calls = []
+reads_schemas = [ "notes." ]
+events_emitted = []
+can_merge_schemas = []
+
+[surfaces]
+rpc_handlers = [ "notes.list", "notes.get", "notes.create", "notes.update", "notes.delete", "notes.template.apply" ]
+tools = [ "notes.list", "notes.get", "notes.create", "notes.update", "notes.delete", "notes.template.apply" ]
+sync_handlers = []
+
+[entry]
+module = "module/index.ts"
+ui = "index.tsx"
+
+[presentation]
+title = "Notes"
+summary = "Freeform notes linked to entities and projects."
+publisher = "Magnis"
+publisher_url = "https://magnis.ai"
+details = "# Notes\n\nMarkdown notes with inline links to people, companies, meetings, and\nprojects. Every note lives in your local store and flows through the\nsame event log as the rest of your graph.\n"
+icon_url = "/api/plugins/notes/ui/icon.svg"
+
+[lifecycle]
+install = "lifecycle/install.ts"

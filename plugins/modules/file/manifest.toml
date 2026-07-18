@@ -1,0 +1,144 @@
+# file — Files domain module (V8 plugin).
+#
+# Owns `file.*`: the file-object entity plus image / audio / video facets. This is
+# the graph + attachment surface only — the host FileService owns the bytes and
+# storage; the module lists, gets, and attaches files (link kind `attachment`).
+# `facet_write_prefixes` is empty: the isolate declares no direct facet writes.
+# Sandboxed V8 isolate; presence-seeded at boot (DEC-10).
+
+id = "file"
+version = "0.1.0"
+
+# SDK contract version this manifest targets (host accepts 0.x).
+magnis_api_version = "0.1.0"
+
+# Ownership globs: every OWNED schema id / link kind declared below must match
+# one of these patterns — the host rejects the manifest otherwise.
+owns = [ "file.*" ]
+
+# Graph schemas this module owns: entities, their versioned facets (each with a
+# json_schema + canonical `mappings` that feed derived-truth resolution), and links.
+[schemas]
+links = []
+
+[[schemas.entities]]
+id = "file.object"
+name = "File"
+description = "File or media attachment entity. Written by core FileService (storage engine); this plugin owns the schema + the read/manage surface."
+
+[[schemas.facets]]
+id = "file.details"
+entity_schema = "file.object"
+version = 1
+
+[schemas.facets.json_schema]
+type = "object"
+required = [ "mime_type", "source_module", "source_ref" ]
+additionalProperties = true
+
+[schemas.facets.json_schema.properties.name]
+type = [ "string", "null" ]
+
+[schemas.facets.json_schema.properties.mime_type]
+type = "string"
+
+[schemas.facets.json_schema.properties.size_bytes]
+type = [ "integer", "null" ]
+
+[schemas.facets.json_schema.properties.local_path]
+type = [ "string", "null" ]
+
+[schemas.facets.json_schema.properties.cloud_url]
+type = [ "string", "null" ]
+
+[schemas.facets.json_schema.properties.source_module]
+type = "string"
+
+[schemas.facets.json_schema.properties.source_ref]
+type = "object"
+
+[[schemas.facets]]
+id = "file.image"
+entity_schema = "file.object"
+version = 1
+
+[schemas.facets.json_schema]
+type = "object"
+required = [ "width", "height" ]
+additionalProperties = true
+
+[schemas.facets.json_schema.properties.width]
+type = "integer"
+
+[schemas.facets.json_schema.properties.height]
+type = "integer"
+
+[[schemas.facets]]
+id = "file.audio"
+entity_schema = "file.object"
+version = 1
+
+[schemas.facets.json_schema]
+type = "object"
+required = [ "duration_seconds" ]
+additionalProperties = true
+
+[schemas.facets.json_schema.properties.duration_seconds]
+type = "number"
+
+[[schemas.facets]]
+id = "file.video"
+entity_schema = "file.object"
+version = 1
+
+[schemas.facets.json_schema]
+type = "object"
+required = [ "duration_seconds", "width", "height" ]
+additionalProperties = true
+
+[schemas.facets.json_schema.properties.duration_seconds]
+type = "number"
+
+[schemas.facets.json_schema.properties.width]
+type = "integer"
+
+[schemas.facets.json_schema.properties.height]
+type = "integer"
+
+# Least-privilege grants the host enforces at runtime: facet prefixes / link kinds
+# this module may WRITE, schemas it may READ, events it emits, schemas it may merge
+# canonically — plus any cross-module rpc_calls, privileged op_grants, and foreign
+# creates_schemas listed below.
+[capabilities]
+facet_write_prefixes = []
+link_kinds_writable = [ "attachment" ]
+rpc_calls = []
+reads_schemas = [ "file." ]
+events_emitted = []
+can_merge_schemas = []
+
+# Callable surface: `rpc_handlers` = intra-host RPC; `tools` = the agent-facing
+# subset; `sync_handlers` = source-sync surfaces this module ingests.
+[surfaces]
+rpc_handlers = [ "file.list", "file.get", "file.attach" ]
+tools = [ "file.list", "file.get", "file.attach" ]
+sync_handlers = []
+
+# Entrypoints inside the package: the V8 module bundle + the React UI surface.
+[entry]
+module = "module/index.ts"
+ui = "index.tsx"
+
+# Self-reporting catalog card (title/summary/publisher/icon + markdown details).
+[presentation]
+title = "Files"
+summary = "Documents and attachments from your sources, in one place."
+publisher = "Magnis"
+publisher_url = "https://magnis.ai"
+details = "# Files\n\nFiles and attachments ingested from email and other sources, linked to\nthe people, companies, and projects they belong to. Browse, open, and\nattach files across your graph.\n"
+icon_url = "/api/plugins/file/ui/icon.svg"
+
+# Declared install entrypoint (DEC-L4): runs once in a transient isolate at install
+# time to register schemas. A module without it is NOT installable.
+[lifecycle]
+install = "lifecycle/install.ts"

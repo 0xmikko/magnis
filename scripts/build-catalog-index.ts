@@ -4,7 +4,7 @@
 //   catalog/packages/<kind>/<id>/**    the installable payload (files listed
 //                                      in the index with per-file sha256)
 // Payloads are DEPENDENCY-CLOSED:
-//   module        → plugins_dist/modules/<id> (prebuilt bundle) + lifecycle/ sources + manifest.json
+//   module        → plugins_dist/modules/<id> (prebuilt bundle) + lifecycle/ sources + manifest.toml
 //   source (ts)   → dist/main.js (bun build, SDK inlined) + manifest.toml
 //   source (rust) → manifest.toml only in v1 (binary ships with the app — DEC-7;
 //                   Stage-4 adds per-platform release binaries)
@@ -12,6 +12,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync, cpSync } from "node:fs";
 import { join, relative } from "node:path";
+import { parse as parseToml } from "smol-toml";
 
 const ROOT = join(import.meta.dir, "..");
 const OUT = process.env.CATALOG_OUT ?? join(ROOT, "catalog");
@@ -62,7 +63,11 @@ if (!existsSync(distModules)) {
 }
 for (const id of readdirSync(distModules).sort()) {
   const src = join(ROOT, "plugins", "modules", id);
-  const manifest = JSON.parse(readFileSync(join(src, "manifest.json"), "utf8"));
+  const manifest = parseToml(readFileSync(join(src, "manifest.toml"), "utf8")) as {
+    version: string;
+    dev?: boolean;
+    presentation?: { title?: string; summary?: string; publisher?: string };
+  };
   const files = stagePackage("module", id, (dst) => {
     cpSync(join(distModules, id), dst, { recursive: true });
     if (existsSync(join(src, "lifecycle"))) cpSync(join(src, "lifecycle"), join(dst, "lifecycle"), { recursive: true });

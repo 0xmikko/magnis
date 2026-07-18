@@ -7,7 +7,7 @@
 // rewritten to the host-shim endpoint at build time. Output:
 //   plugins_dist/<id>/ui/index.<hash>.js   (the bundle, prod JSX runtime)
 //   plugins_dist/<id>/bundle.json          ({ ui: { "<entry>": "index.<hash>.js" }, uiHash })
-//   plugins_dist/<id>/manifest.json        (copied)
+//   plugins_dist/<id>/manifest.toml        (copied)
 // The backend serves the bundle for the entry URL with ETag=hash (DEC-5).
 //
 // Single source of truth for the bare→slug map: scripts/plugin-host-imports.json
@@ -20,6 +20,7 @@ import { createHash } from "crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import ts from "typescript";
+import { parse as parseToml } from "smol-toml";
 
 const REPO_ROOT = join(import.meta.dir, "..");
 const SHIM_URL = (slug: string) => `/api/plugins/__host-shim.js?m=${slug}`;
@@ -71,8 +72,8 @@ export async function buildPlugin(pluginId: string, opts: BuildOpts = {}): Promi
   const distDir = opts.distDir ?? join(REPO_ROOT, "plugins_dist");
   const host = loadHostMap();
 
-  const manifestPath = join(pluginsDir, "modules", pluginId, "manifest.json");
-  const manifest: Manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  const manifestPath = join(pluginsDir, "modules", pluginId, "manifest.toml");
+  const manifest: Manifest = parseToml(readFileSync(manifestPath, "utf8")) as Manifest;
   // Entry is always under `ui/`. Manifests are inconsistent: most use
   // "index.tsx", projects uses "ui/index.tsx" — normalize by stripping a
   // leading "ui/" so the on-disk path + the entry key match what the frontend
@@ -220,12 +221,12 @@ export async function buildPlugin(pluginId: string, opts: BuildOpts = {}): Promi
       2,
     ),
   );
-  writeFileSync(join(pkgDir, "manifest.json"), readFileSync(manifestPath));
+  writeFileSync(join(pkgDir, "manifest.toml"), readFileSync(manifestPath));
 
   return { pluginId, bundleFile, hash };
 }
 
-/** Discover plugin ids: dirs under plugins/modules/ with manifest.json AND ui/. */
+/** Discover plugin ids: dirs under plugins/modules/ with manifest.toml AND ui/. */
 export function discoverPlugins(pluginsDir: string): string[] {
   const modulesDir = join(pluginsDir, "modules");
   return readdirSync(modulesDir)
@@ -234,7 +235,7 @@ export function discoverPlugins(pluginsDir: string): string[] {
       try {
         return (
           statSync(dir).isDirectory() &&
-          existsSync(join(dir, "manifest.json")) &&
+          existsSync(join(dir, "manifest.toml")) &&
           existsSync(join(dir, "ui"))
         );
       } catch {

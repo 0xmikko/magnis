@@ -16,7 +16,7 @@ hub, merge) or `plugins/modules/companies` (simpler). `/write_module` scaffolds 
 - Cross-module effects → which other module's RPC you'll call (the hub), NOT a
   foreign-schema write.
 
-## 1. `plugins/modules/<id>/manifest.json`
+## 1. `plugins/modules/<id>/manifest.toml`
 
 - `id`, `version`, `owns`, `schemas` (entities/facets/links with `mappings`),
   `surfaces` (`rpc_handlers`, `tools`), `entry`.

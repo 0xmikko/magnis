@@ -12,7 +12,7 @@ MAGNIS_PLUGINS_DIR=/path/to/magnis/plugins   # this checkout
 ```
 
 - **Module code** (`module/*.ts`): the plugins watcher evicts the V8 isolate
-  on every `.ts`/`manifest.json` change — next call re-transpiles on the fly.
+  on every `.ts`/`manifest.toml` change — next call re-transpiles on the fly.
 - **UI** (`ui/*.tsx`): served on-the-fly (no-store) by the dev fallback —
   refresh the browser tab.
 - No catalog, no index, no rebuild. In magnis-app the submodule checkout

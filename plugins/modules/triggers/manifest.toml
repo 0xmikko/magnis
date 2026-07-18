@@ -1,0 +1,178 @@
+# triggers — Triggers definition module (V8 plugin, tier = system).
+#
+# Owns `triggers.*`: the trigger entity + config / execution facets, and the
+# definition CRUD + renderers. The trigger ENGINE stays NATIVE in the host — this
+# plugin only manages definitions and calls the engine over RPC (validate_watch /
+# resolve_watchable / invalidate_cache). Links triggers to the entities they watch
+# (`watches`). System tier: mandatory and non-removable. Sandboxed V8 isolate;
+# presence-seeded at boot (DEC-10).
+
+# triggers — Triggers domain module (V8 plugin, HYBRID split).
+#
+# Owns the `triggers.*` graph namespace: the trigger entity + its config and
+# execution facets, and the definition CRUD/UI. The evaluation-and-fire ENGINE
+# stays NATIVE in Core — this plugin only manages the definitions the engine
+# reads; it calls back into the engine over RPC (see [capabilities] rpc_calls).
+# Runs as a sandboxed V8 isolate; bundled and presence-seeded at boot (DEC-10).
+
+id = "triggers"
+version = "0.1.0"
+# SDK contract version this manifest targets (host accepts 0.x).
+
+# SDK contract version this manifest targets (host accepts 0.x).
+magnis_api_version = "0.1.0"
+# tier = system → mandatory, always loaded, cannot be uninstalled/disabled
+# (DEC-7). Still a sandboxed V8 plugin; `system` is only a removability property.
+
+# tier = system: mandatory, always loaded, cannot be uninstalled or disabled.
+tier = "system"
+# Ownership globs: EVERY schema id / link kind declared below must match one.
+
+# Ownership globs: every OWNED schema id / link kind declared below must match
+# one of these patterns — the host rejects the manifest otherwise.
+owns = [ "triggers.*" ]
+
+# Graph schemas this module owns: the trigger entity plus its config facet (the
+# definition the native engine evaluates) and execution facet (fire history).
+
+# Graph schemas this module owns: entities, their versioned facets (each with a
+# json_schema + canonical `mappings` that feed derived-truth resolution), and links.
+[schemas]
+links = []
+
+[[schemas.entities]]
+id = "triggers.trigger"
+name = "Trigger"
+description = "An automation trigger entity. Its definition CRUD is owned by the triggers plugin; the native engine reads it to evaluate + fire."
+
+[[schemas.facets]]
+id = "triggers.trigger.config"
+entity_schema = "triggers.trigger"
+version = 1
+
+[schemas.facets.json_schema]
+type = "object"
+required = [ "name", "gate_prompt", "action_prompt", "status", "event_kinds" ]
+additionalProperties = false
+
+[schemas.facets.json_schema.properties.name]
+type = "string"
+
+[schemas.facets.json_schema.properties.gate_prompt]
+type = "string"
+
+[schemas.facets.json_schema.properties.action_prompt]
+type = "string"
+
+[schemas.facets.json_schema.properties.status]
+type = "string"
+
+[schemas.facets.json_schema.properties.event_kinds]
+type = "array"
+
+[schemas.facets.json_schema.properties.event_kinds.items]
+type = "string"
+
+[schemas.facets.json_schema.properties.schema_filter]
+type = "string"
+
+[schemas.facets.json_schema.properties.expires_at]
+type = "string"
+format = "date-time"
+
+[schemas.facets.json_schema.properties.debounce_seconds]
+type = "integer"
+
+[schemas.facets.json_schema.properties.max_wait_seconds]
+type = "integer"
+
+[schemas.facets.json_schema.properties.max_firings]
+type = "integer"
+
+[schemas.facets.json_schema.properties.firing_count]
+type = "integer"
+
+[schemas.facets.json_schema.properties.last_fired_at]
+type = "string"
+format = "date-time"
+
+[[schemas.facets]]
+id = "triggers.trigger.execution"
+entity_schema = "triggers.trigger"
+version = 1
+
+[schemas.facets.json_schema]
+type = "object"
+required = [ "fired_at", "event_entity_id", "outcome" ]
+additionalProperties = false
+
+[schemas.facets.json_schema.properties.fired_at]
+type = "string"
+format = "date-time"
+
+[schemas.facets.json_schema.properties.event_entity_id]
+type = "string"
+format = "uuid"
+
+[schemas.facets.json_schema.properties.gate_result]
+type = [ "string", "null" ]
+
+[schemas.facets.json_schema.properties.episode_id]
+type = [ "string", "null" ]
+format = "uuid"
+
+[schemas.facets.json_schema.properties.outcome]
+type = "string"
+
+# Least-privilege grants. `link_kinds_writable`: `watches` binds a trigger to the
+# entity it watches, `belongs_to` groups it. `rpc_calls`: the plugin→native-engine
+# seam — validate a watch target, resolve a watchable, and invalidate the engine's
+# definition cache when CRUD changes a trigger.
+
+# Least-privilege grants the host enforces at runtime: facet prefixes / link kinds
+# this module may WRITE, schemas it may READ, events it emits, schemas it may merge
+# canonically — plus any cross-module rpc_calls, privileged op_grants, and foreign
+# creates_schemas listed below.
+[capabilities]
+facet_write_prefixes = [ "triggers." ]
+link_kinds_writable = [ "watches", "belongs_to" ]
+rpc_calls = [ "triggers.validate_watch", "triggers.resolve_watchable", "triggers.invalidate_cache" ]
+reads_schemas = [ "triggers." ]
+events_emitted = []
+can_merge_schemas = []
+
+# Callable surface: definition CRUD + linking + fire-history, exposed both as
+# intra-host RPC and to the agent. No `sync_handlers` — triggers has no connector.
+
+# Callable surface: `rpc_handlers` = intra-host RPC; `tools` = the agent-facing
+# subset; `sync_handlers` = source-sync surfaces this module ingests.
+[surfaces]
+rpc_handlers = [ "triggers.create", "triggers.get", "triggers.list", "triggers.update", "triggers.delete", "triggers.link", "triggers.unlink", "triggers.list_for_entity", "triggers.fire_history" ]
+tools = [ "triggers.create", "triggers.get", "triggers.list", "triggers.update", "triggers.delete", "triggers.link", "triggers.unlink", "triggers.list_for_entity", "triggers.fire_history" ]
+sync_handlers = []
+
+# Entrypoints inside the package: the V8 module bundle and the React UI surface.
+
+# Entrypoints inside the package: the V8 module bundle + the React UI surface.
+[entry]
+module = "module/index.ts"
+ui = "index.tsx"
+
+# Self-reporting catalog card (title/summary/publisher/icon + markdown details).
+
+# Self-reporting catalog card (title/summary/publisher/icon + markdown details).
+[presentation]
+title = "Triggers"
+summary = "Automations that watch your graph and act on changes."
+publisher = "Magnis"
+publisher_url = "https://magnis.ai"
+details = "# Triggers\n\nDefine automations that watch entities and fire agent actions on\nchanges — new messages, meetings, or updates. The trigger engine is\nbuilt into Core; this manages the trigger definitions.\n"
+icon_url = "/api/plugins/triggers/ui/icon.svg"
+
+# Declared install entrypoint (DEC-L4): runs once in a transient isolate at
+# install time to register schemas. A module without it is NOT installable.
+
+# Declared install entrypoint (DEC-L4): runs once in a transient isolate at install
+# time to register schemas. A module without it is NOT installable.
+[lifecycle]
+install = "lifecycle/install.ts"

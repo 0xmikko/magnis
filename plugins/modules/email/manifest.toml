@@ -1,0 +1,212 @@
+# email — Email domain module (V8 plugin).
+#
+# Owns `email.*`: message + address entities and their facets. The graph-side half
+# of email — the email SOURCE connector feeds the `email` sync surface this module
+# ingests. Sends and replies through the host composer + source-command op grants,
+# registers attachments as files, and creates triggers over RPC. Sandboxed V8
+# isolate; presence-seeded at boot (DEC-10).
+
+id = "email"
+version = "0.1.0"
+
+# SDK contract version this manifest targets (host accepts 0.x).
+magnis_api_version = "0.1.0"
+
+# Ownership globs: every OWNED schema id / link kind declared below must match
+# one of these patterns — the host rejects the manifest otherwise.
+owns = [ "email.*" ]
+
+# Graph schemas this module owns: entities, their versioned facets (each with a
+# json_schema + canonical `mappings` that feed derived-truth resolution), and links.
+[schemas]
+links = []
+
+[[schemas.entities]]
+id = "email.message"
+name = "Email message"
+description = "An email message entity owned by the email plugin."
+
+[[schemas.entities]]
+id = "email.address"
+name = "Email address"
+description = "An email address entity (sender/recipient hub)."
+triggerable = true
+
+[[schemas.facets]]
+id = "email.message.details"
+entity_schema = "email.message"
+version = 1
+
+[schemas.facets.json_schema]
+type = "object"
+additionalProperties = true
+
+[schemas.facets.json_schema.properties.message_id]
+type = "string"
+
+[schemas.facets.json_schema.properties.subject]
+type = [ "string", "null" ]
+
+[schemas.facets.json_schema.properties.from_address]
+type = [ "string", "null" ]
+
+[schemas.facets.json_schema.properties.from_name]
+type = [ "string", "null" ]
+
+[schemas.facets.json_schema.properties.to_addresses]
+type = [ "string", "null" ]
+
+[schemas.facets.json_schema.properties.cc_addresses]
+type = [ "string", "null" ]
+
+[schemas.facets.json_schema.properties.bcc_addresses]
+type = [ "string", "null" ]
+
+[schemas.facets.json_schema.properties.snippet]
+type = [ "string", "null" ]
+
+[schemas.facets.json_schema.properties.body_text]
+type = [ "string", "null" ]
+
+[schemas.facets.json_schema.properties.body_html]
+type = [ "string", "null" ]
+
+[schemas.facets.json_schema.properties.has_html_body]
+type = "boolean"
+
+[schemas.facets.json_schema.properties.sent_at]
+type = [ "string", "null" ]
+format = "date-time"
+
+[schemas.facets.json_schema.properties.received_at]
+type = [ "string", "null" ]
+format = "date-time"
+
+[schemas.facets.json_schema.properties.labels]
+type = "array"
+
+[schemas.facets.json_schema.properties.labels.items]
+type = "string"
+
+[schemas.facets.json_schema.properties.is_read]
+type = "boolean"
+
+[schemas.facets.json_schema.properties.is_starred]
+type = "boolean"
+
+[schemas.facets.json_schema.properties.is_important]
+type = "boolean"
+
+[schemas.facets.json_schema.properties.has_attachments]
+type = "boolean"
+
+[schemas.facets.json_schema.properties.thread_id]
+type = "string"
+
+[schemas.facets.json_schema.properties.attachments]
+type = "array"
+
+[schemas.facets.json_schema.properties.attachments.items]
+type = "object"
+
+[schemas.facets.json_schema.properties.attachments.items.properties.filename]
+type = "string"
+
+[schemas.facets.json_schema.properties.attachments.items.properties.mime_type]
+type = "string"
+
+[schemas.facets.json_schema.properties.attachments.items.properties.size]
+type = "integer"
+
+[schemas.facets.json_schema.properties.attachments.items.properties.path]
+type = "string"
+
+[[schemas.facets.mappings]]
+facet_path = "from_address"
+canonical_key = "email.message.sender"
+strategy = "single_aligned"
+
+[[schemas.facets.mappings]]
+facet_path = "subject"
+canonical_key = "email.message.subject"
+strategy = "single_aligned"
+
+[[schemas.facets.mappings]]
+facet_path = "snippet"
+canonical_key = "email.message.preview"
+strategy = "single_aligned"
+
+[[schemas.facets.mappings]]
+facet_path = "body_text"
+canonical_key = "email.message.body"
+strategy = "single_aligned"
+
+[[schemas.facets.mappings]]
+facet_path = "from_name"
+canonical_key = "email.message.sender_name"
+strategy = "single_aligned"
+
+[[schemas.facets]]
+id = "email.address.details"
+entity_schema = "email.address"
+version = 1
+
+[schemas.facets.json_schema]
+type = "object"
+required = [ "address" ]
+additionalProperties = false
+
+[schemas.facets.json_schema.properties.address]
+type = "string"
+
+[schemas.facets.json_schema.properties.display_name]
+type = [ "string", "null" ]
+
+[[schemas.facets.mappings]]
+facet_path = "address"
+canonical_key = "email.address.canonical"
+strategy = "single_aligned"
+
+# Least-privilege grants the host enforces at runtime: facet prefixes / link kinds
+# this module may WRITE, schemas it may READ, events it emits, schemas it may merge
+# canonically — plus any cross-module rpc_calls, privileged op_grants, and foreign
+# creates_schemas listed below.
+[capabilities]
+facet_write_prefixes = [ "email." ]
+link_kinds_writable = [ "sent_from", "sent_to", "attachment" ]
+reads_schemas = [ "email." ]
+events_emitted = []
+can_merge_schemas = [ "email.message", "email.address" ]
+rpc_calls = [ "triggers.create" ]
+op_grants = [ "file_register", "external_id_reads", "source_commands", "sync_state", "composer" ]
+
+# Callable surface: `rpc_handlers` = intra-host RPC; `tools` = the agent-facing
+# subset; `sync_handlers` = source-sync surfaces this module ingests.
+[surfaces]
+rpc_handlers = [ "email.list", "email.get", "email.batch", "email.send", "email.reply", "email.batch_send", "email.set_trigger", "email.ensure_address", "email.sync.status", "email.sync.reset", "email.composer.read", "email.composer.set_text", "email.composer.append_text", "email.composer.set_attachments" ]
+tools = [ "email.list", "email.get", "email.batch", "email.send", "email.reply", "email.batch_send", "email.set_trigger" ]
+sync_handlers = [ "email" ]
+
+# Per-sync-surface primary-item schema: the entity whose user-scoped graph count
+# IS the surface's "items synced" badge (host source.status.list reads this).
+[surfaces.sync_item_schemas]
+email = "email.message"
+
+# Entrypoints inside the package: the V8 module bundle + the React UI surface.
+[entry]
+module = "module/index.ts"
+ui = "index.tsx"
+
+# Self-reporting catalog card (title/summary/publisher/icon + markdown details).
+[presentation]
+title = "Email"
+summary = "Ingest, search, and act on email threads from any provider."
+publisher = "Magnis"
+publisher_url = "https://magnis.ai"
+details = "# Email\n\nThreaded email indexed directly into your personal graph. Works with\nany source that fulfils the `email` surface — Gmail today, more\nproviders on the roadmap.\n\n- Full-thread ingestion with covered-range tracking\n- Linked to contacts, companies, and meetings\n- Ready for agent-driven replies and summaries\n"
+icon_url = "/api/plugins/email/ui/icon.svg"
+
+# Declared install entrypoint (DEC-L4): runs once in a transient isolate at install
+# time to register schemas. A module without it is NOT installable.
+[lifecycle]
+install = "lifecycle/install.ts"

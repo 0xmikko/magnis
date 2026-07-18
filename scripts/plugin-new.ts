@@ -4,7 +4,7 @@
 //   bun scripts/plugin-new.ts <id>
 //
 // Generates plugins/modules/<id>/ with the canonical layout (docs/plugins/authoring.md):
-// manifest.json (folder == manifest.id, INV-11; tier community; owns <id>.*),
+// manifest.toml (folder == manifest.id, INV-11; tier community; owns <id>.*),
 // module/ (decorated service + definePlugin entry + a unit test satisfying the
 // per-kind test bar, DEC-14/INV-5), ui/ (defineModule), types/, package.json,
 // tsconfig (experimentalDecorators — the isolate/build contract).
@@ -14,60 +14,60 @@
 
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
+import { stringify as tomlStringify } from "smol-toml";
 
 const ID_RE = /^[a-z][a-z0-9_]*$/;
 
-function manifestJson(id: string): string {
-  return `${JSON.stringify(
-    {
-      id,
-      version: "0.1.0",
-      magnis_api_version: "0.1.0",
-      tier: "community",
-      owns: [`${id}.*`],
-      schemas: {
-        entities: [
-          {
-            id: `${id}.item`,
-            name: "Item",
-            description: `An item owned by the ${id} plugin.`,
-          },
-        ],
-        facets: [
-          {
-            id: `${id}.item.details`,
-            entity_schema: `${id}.item`,
-            version: 1,
-            json_schema: {
-              type: "object",
-              properties: {
-                title: { type: "string" },
-              },
-              required: ["title"],
-              additionalProperties: false,
+function manifestToml(id: string): string {
+  const header =
+    `# ${id} — scaffolded Magnis domain module (V8 plugin). Flesh out the schemas,\n` +
+    `# capabilities, and surfaces below, then bundle with build-plugins.ts.\n\n`;
+  return `${header}${tomlStringify({
+    id,
+    version: "0.1.0",
+    magnis_api_version: "0.1.0",
+    tier: "community",
+    owns: [`${id}.*`],
+    schemas: {
+      entities: [
+        {
+          id: `${id}.item`,
+          name: "Item",
+          description: `An item owned by the ${id} plugin.`,
+        },
+      ],
+      facets: [
+        {
+          id: `${id}.item.details`,
+          entity_schema: `${id}.item`,
+          version: 1,
+          json_schema: {
+            type: "object",
+            properties: {
+              title: { type: "string" },
             },
-            mappings: [],
+            required: ["title"],
+            additionalProperties: false,
           },
-        ],
-        links: [],
-      },
-      capabilities: {
-        facet_write_prefixes: [`${id}.`],
-        link_kinds_writable: [],
-        rpc_calls: [],
-        reads_schemas: [`${id}.`],
-        events_emitted: [],
-        can_merge_schemas: [],
-      },
-      surfaces: {
-        rpc_handlers: [`${id}.list`],
-        tools: [`${id}.list`],
-        sync_handlers: [],
-      },
+          mappings: [],
+        },
+      ],
+      links: [],
     },
-    null,
-    2,
-  )}\n`;
+    capabilities: {
+      facet_write_prefixes: [`${id}.`],
+      link_kinds_writable: [],
+      rpc_calls: [],
+      reads_schemas: [`${id}.`],
+      events_emitted: [],
+      can_merge_schemas: [],
+    },
+    surfaces: {
+      rpc_handlers: [`${id}.list`],
+      tools: [`${id}.list`],
+      sync_handlers: [],
+    },
+  })}\n`;
 }
 
 function serviceTs(id: string, cls: string): string {
@@ -238,7 +238,7 @@ export function scaffoldPlugin(id: string, pluginsRoot: string): string {
   mkdirSync(join(dir, "ui"), { recursive: true });
   mkdirSync(join(dir, "types"), { recursive: true });
 
-  writeFileSync(join(dir, "manifest.json"), manifestJson(id));
+  writeFileSync(join(dir, "manifest.toml"), manifestToml(id));
   writeFileSync(
     join(dir, "module", "index.ts"),
     `import { definePlugin } from "@magnis/plugin-sdk";\nimport { ${cls} } from "./service.ts";\n\ndefinePlugin(${cls});\n`,
@@ -267,7 +267,7 @@ if (import.meta.main) {
   console.log(`scaffolded ${dir}
 
 next steps (docs/plugins/authoring.md):
-  1. flesh out manifest.json (schemas, capabilities, surfaces)
+  1. flesh out manifest.toml (schemas, capabilities, surfaces)
   2. implement module/service.ts + extend the unit test
   3. add a catalog entry to backend/data/extensions.toml (module:magnis.${id})
   4. add backend/tests/plugin_runtime_${id}.rs (integration bar)

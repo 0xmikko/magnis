@@ -1,0 +1,225 @@
+# x — X (Twitter) domain module (V8 plugin).
+#
+# Owns `x.*`: profile + post entities and their identity / content / metrics facets.
+# Ingests the `x` sync surface, links profiles to contacts (reads contacts.person;
+# link kind x.profile:contacts.person), imports the following list, and reads
+# contacts' social-tracking over RPC. Sandboxed V8 isolate; presence-seeded at
+# boot (DEC-10).
+
+# x — X / social-posts domain module (V8 plugin).
+#
+# Owns the `x.*` graph namespace: profile + post entities and their facets for
+# tracked people on social platforms. Despite the id, it covers BOTH X (Twitter)
+# and LinkedIn (see the `platform` enum on the facets). Ingests the surface fed
+# by the X source connector, links each profile to the matching contact, and is
+# read-only today. Runs as a sandboxed V8 isolate; presence-seeded at boot.
+
+id = "x"
+version = "0.1.0"
+# SDK contract version this manifest targets (host accepts 0.x).
+
+# SDK contract version this manifest targets (host accepts 0.x).
+magnis_api_version = "0.1.0"
+# Ownership globs: every OWNED schema id / link kind must match one of these.
+
+# Ownership globs: every OWNED schema id / link kind declared below must match
+# one of these patterns — the host rejects the manifest otherwise.
+owns = [ "x.*" ]
+# Foreign schemas referenced but not owned — none needed here (the profile→person
+# link is a link kind, and `contacts.person` is reached only via RPC, not a facet).
+
+# Foreign schemas this module references but does NOT own — declaring them lets
+# its facets/links point at those entities without failing the dangling-ref check.
+requires_schemas = []
+
+# Graph schemas this module owns: profile + post entities (post is `triggerable`
+# — its events can drive triggers) plus versioned facets with canonical mappings.
+
+# Graph schemas this module owns: entities, their versioned facets (each with a
+# json_schema + canonical `mappings` that feed derived-truth resolution), and links.
+[schemas]
+links = []
+
+[[schemas.entities]]
+id = "x.profile"
+name = "X profile"
+description = "A tracked person's profile on a x platform (X / LinkedIn)."
+
+[[schemas.entities]]
+id = "x.post"
+name = "X post"
+description = "A post/tweet from a tracked x profile."
+triggerable = true
+
+[[schemas.facets]]
+id = "x.profile.identity"
+entity_schema = "x.profile"
+version = 1
+
+[schemas.facets.json_schema]
+type = "object"
+required = [ "platform", "handle" ]
+additionalProperties = true
+
+[schemas.facets.json_schema.properties.platform]
+type = "string"
+enum = [ "x", "linkedin" ]
+
+[schemas.facets.json_schema.properties.handle]
+type = "string"
+
+[schemas.facets.json_schema.properties.display_name]
+type = "string"
+
+[schemas.facets.json_schema.properties.url]
+type = [ "string", "null" ]
+
+[schemas.facets.json_schema.properties.avatar_url]
+type = [ "string", "null" ]
+
+[schemas.facets.json_schema.properties.bio]
+type = [ "string", "null" ]
+
+[schemas.facets.json_schema.properties.verified]
+type = [ "boolean", "null" ]
+
+[schemas.facets.json_schema.properties.follower_count]
+type = [ "integer", "null" ]
+
+[[schemas.facets.mappings]]
+facet_path = "display_name"
+canonical_key = "x.profile.display_name"
+strategy = "single_aligned"
+
+[[schemas.facets.mappings]]
+facet_path = "follower_count"
+canonical_key = "x.profile.follower_count"
+strategy = "single_aligned"
+
+[[schemas.facets]]
+id = "x.post.content"
+entity_schema = "x.post"
+version = 1
+
+[schemas.facets.json_schema]
+type = "object"
+required = [ "platform", "post_id", "author_handle", "text" ]
+additionalProperties = true
+
+[schemas.facets.json_schema.properties.platform]
+type = "string"
+enum = [ "x", "linkedin" ]
+
+[schemas.facets.json_schema.properties.post_id]
+type = "string"
+
+[schemas.facets.json_schema.properties.author_handle]
+type = "string"
+
+[schemas.facets.json_schema.properties.text]
+type = "string"
+
+[schemas.facets.json_schema.properties.created_at]
+type = [ "string", "null" ]
+format = "date-time"
+
+[schemas.facets.json_schema.properties.url]
+type = [ "string", "null" ]
+
+[schemas.facets.json_schema.properties.is_reply]
+type = [ "boolean", "null" ]
+
+[schemas.facets.json_schema.properties.is_repost]
+type = [ "boolean", "null" ]
+
+[schemas.facets.json_schema.properties.lang]
+type = [ "string", "null" ]
+
+[[schemas.facets.mappings]]
+facet_path = "text"
+canonical_key = "x.post.text"
+strategy = "single_aligned"
+
+[[schemas.facets.mappings]]
+facet_path = "created_at"
+canonical_key = "x.post.created_at"
+strategy = "single_aligned"
+
+[[schemas.facets]]
+id = "x.post.metrics"
+entity_schema = "x.post"
+version = 1
+mappings = []
+
+[schemas.facets.json_schema]
+type = "object"
+required = []
+additionalProperties = true
+
+[schemas.facets.json_schema.properties.likes]
+type = [ "integer", "null" ]
+
+[schemas.facets.json_schema.properties.reposts]
+type = [ "integer", "null" ]
+
+[schemas.facets.json_schema.properties.replies]
+type = [ "integer", "null" ]
+
+[schemas.facets.json_schema.properties.impressions]
+type = [ "integer", "null" ]
+
+# Least-privilege grants. `link_kinds_writable`: post→profile and profile→person
+# links. `reads_schemas` + `can_merge_schemas`: own schemas. `rpc_calls`: cross-
+# module calls into contacts (match/rename by handle) and the host source-sync
+# bootstrap. `op_grants`: may read external ids. `creates_schemas` empty — it
+# links to existing people rather than creating them.
+
+# Least-privilege grants the host enforces at runtime: facet prefixes / link kinds
+# this module may WRITE, schemas it may READ, events it emits, schemas it may merge
+# canonically — plus any cross-module rpc_calls, privileged op_grants, and foreign
+# creates_schemas listed below.
+[capabilities]
+facet_write_prefixes = [ "x." ]
+link_kinds_writable = [ "x.post:x.profile", "x.profile:contacts.person" ]
+reads_schemas = [ "x.", "contacts.person" ]
+events_emitted = []
+can_merge_schemas = [ "x.profile", "x.post" ]
+creates_schemas = []
+rpc_calls = [ "contacts.get_social_tracking_by_handle", "contacts.rename_if_placeholder", "source.sync.bootstrap" ]
+op_grants = [ "external_id_reads" ]
+
+# Callable surface: `rpc_handlers` = intra-host RPC; `tools` = the agent-facing
+# subset; `sync_handlers` = the `x` source-sync surface this module ingests.
+
+# Callable surface: `rpc_handlers` = intra-host RPC; `tools` = the agent-facing
+# subset; `sync_handlers` = source-sync surfaces this module ingests.
+[surfaces]
+rpc_handlers = [ "x.posts.list", "x.posts.get", "x.profiles.list", "x.profiles.get", "x.import_following" ]
+tools = [ "x.posts.list", "x.posts.get", "x.profiles.list", "x.profiles.get", "x.import_following" ]
+sync_handlers = [ "x" ]
+
+# Entrypoints inside the package: the V8 module bundle and the React UI surface.
+
+# Entrypoints inside the package: the V8 module bundle + the React UI surface.
+[entry]
+module = "module/index.ts"
+ui = "index.tsx"
+
+# Self-reporting catalog card (title/summary/publisher/icon + markdown details).
+
+# Self-reporting catalog card (title/summary/publisher/icon + markdown details).
+[presentation]
+title = "X"
+summary = "X (Twitter) profiles and posts of the people you track, linked to contacts."
+publisher = "Magnis"
+publisher_url = "https://magnis.ai"
+icon_url = "/api/plugins/x/ui/icon.svg"
+details = "# X\n\nStores the X profiles and posts ingested by the X source and links each profile\nto the matching contact. Read-only today (a compose/DM path can be added later,\nlike Telegram). Displays only what the source fetches for the handles you track.\n"
+
+# Declared install entrypoint (DEC-L4): runs once in a transient isolate at
+# install time to register schemas. A module without it is NOT installable.
+
+# Declared install entrypoint (DEC-L4): runs once in a transient isolate at install
+# time to register schemas. A module without it is NOT installable.
+[lifecycle]
+install = "lifecycle/install.ts"

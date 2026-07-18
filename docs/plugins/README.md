@@ -15,7 +15,7 @@ code alongside these docs.
 1. **[architecture.md](architecture.md)** — the runtime model: V8 isolates, the
    one-thread-per-plugin dispatcher, why all DB I/O marshals to the host
    runtime, and the install/bootstrap lifecycle.
-2. **[manifest.md](manifest.md)** — `manifest.json` reference: schemas (with
+2. **[manifest.md](manifest.md)** — `manifest.toml` reference: schemas (with
    canonical `mappings`), capabilities, surfaces, entry points.
 3. **[backend-module.md](backend-module.md)** — writing the backend module:
    `definePlugin`, `@tool`/`@writeTool`, `PluginDeps`, the `graph` API, and how
@@ -37,7 +37,7 @@ verification gates.
 
 ```
 plugins/modules/<id>/
-  manifest.json          # schemas + capabilities + surfaces + entry points
+  manifest.toml          # schemas + capabilities + surfaces + entry points
   module/                # backend module (V8 isolate)
     index.ts             #   definePlugin(<Class>)
     service.ts           #   the @tool/@writeTool-decorated class

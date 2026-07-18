@@ -76,7 +76,7 @@ retains `AppState` (no `AppState ⇄ dispatcher` reference cycle). See
 
 ## Install + bootstrap lifecycle
 
-- **Install** (`services/plugin_install`): reads `plugins/modules/<id>/manifest.json`,
+- **Install** (`services/plugin_install`): reads `plugins/modules/<id>/manifest.toml`,
   validates it, persists the manifest + a row in `installed_extensions`
   (`implementation_kind = 'deno_plugin'`), and registers the module's schemas
   (entities/facets/links) **and canonical mappings** (DEC-16) into the graph.

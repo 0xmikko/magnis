@@ -1,0 +1,323 @@
+# contacts — Contacts domain module (V8 plugin).
+#
+# Owns the `contacts.*` namespace: the person entity and its profile / email /
+# phone / social / telegram-identity / description / memory facets — the core
+# people directory. Ingests the `contacts` sync surface, links people to companies
+# (reads companies.company), and reaches the email module over RPC to resolve
+# addresses. Sandboxed V8 isolate; presence-seeded at boot (DEC-10).
+
+id = "contacts"
+version = "0.1.0"
+
+# SDK contract version this manifest targets (host accepts 0.x).
+magnis_api_version = "0.1.0"
+
+# Ownership globs: every OWNED schema id / link kind declared below must match
+# one of these patterns — the host rejects the manifest otherwise.
+owns = [ "contacts.*" ]
+
+# Graph schemas this module owns: entities, their versioned facets (each with a
+# json_schema + canonical `mappings` that feed derived-truth resolution), and links.
+[schemas]
+links = []
+
+[[schemas.entities]]
+id = "contacts.person"
+name = "Person"
+description = "A person / contact entity owned by the contacts plugin."
+
+[[schemas.facets]]
+id = "contacts.person.profile"
+entity_schema = "contacts.person"
+version = 1
+
+[schemas.facets.json_schema]
+type = "object"
+additionalProperties = false
+
+[schemas.facets.json_schema.properties.first_name]
+type = "string"
+
+[schemas.facets.json_schema.properties.last_name]
+type = "string"
+
+[schemas.facets.json_schema.properties.username]
+type = "string"
+
+[schemas.facets.json_schema.properties.birthday]
+type = "string"
+
+[schemas.facets.json_schema.properties.bio]
+type = "string"
+
+[schemas.facets.json_schema.properties.is_bot]
+type = "boolean"
+
+[schemas.facets.json_schema.properties.is_verified]
+type = "boolean"
+
+[schemas.facets.json_schema.properties.is_scam]
+type = "boolean"
+
+[schemas.facets.json_schema.properties.is_fake]
+type = "boolean"
+
+[[schemas.facets.mappings]]
+facet_path = "first_name"
+canonical_key = "person.first_name"
+strategy = "single_aligned"
+
+[[schemas.facets.mappings]]
+facet_path = "last_name"
+canonical_key = "person.last_name"
+strategy = "single_aligned"
+
+[[schemas.facets.mappings]]
+facet_path = "username"
+canonical_key = "person.username"
+strategy = "single_aligned"
+
+[[schemas.facets.mappings]]
+facet_path = "birthday"
+canonical_key = "person.birthday"
+strategy = "single_aligned"
+
+[[schemas.facets.mappings]]
+facet_path = "bio"
+canonical_key = "person.bio"
+strategy = "single_aligned"
+
+[[schemas.facets]]
+id = "contacts.person.email"
+entity_schema = "contacts.person"
+version = 1
+
+[schemas.facets.json_schema]
+type = "object"
+required = [ "email" ]
+additionalProperties = false
+
+[schemas.facets.json_schema.properties.email]
+type = "string"
+
+[schemas.facets.json_schema.properties.type]
+type = "string"
+
+[schemas.facets.json_schema.properties.is_primary]
+type = "boolean"
+
+[[schemas.facets.mappings]]
+facet_path = "email"
+canonical_key = "person.emails"
+strategy = "collection"
+
+[[schemas.facets]]
+id = "contacts.person.phone"
+entity_schema = "contacts.person"
+version = 1
+
+[schemas.facets.json_schema]
+type = "object"
+required = [ "phone" ]
+additionalProperties = false
+
+[schemas.facets.json_schema.properties.phone]
+type = "string"
+
+[schemas.facets.json_schema.properties.type]
+type = "string"
+
+[schemas.facets.json_schema.properties.is_primary]
+type = "boolean"
+
+[[schemas.facets.mappings]]
+facet_path = "phone"
+canonical_key = "person.phones"
+strategy = "collection"
+
+[[schemas.facets]]
+id = "contacts.person.external_link"
+entity_schema = "contacts.person"
+version = 1
+
+[schemas.facets.json_schema]
+type = "object"
+required = [ "source_type", "external_id" ]
+additionalProperties = false
+
+[schemas.facets.json_schema.properties.source_type]
+type = "string"
+
+[schemas.facets.json_schema.properties.external_id]
+type = "string"
+
+[schemas.facets.json_schema.properties.external_url]
+type = "string"
+
+[schemas.facets.json_schema.properties.external_name]
+type = "string"
+
+[[schemas.facets]]
+id = "contacts.person.name_history"
+entity_schema = "contacts.person"
+version = 1
+
+[schemas.facets.json_schema]
+type = "object"
+additionalProperties = false
+
+[schemas.facets.json_schema.properties.first_name]
+type = "string"
+
+[schemas.facets.json_schema.properties.last_name]
+type = "string"
+
+[schemas.facets.json_schema.properties.username]
+type = "string"
+
+[schemas.facets.json_schema.properties.recorded_at]
+type = "string"
+format = "date-time"
+
+[[schemas.facets]]
+id = "contacts.identity.telegram"
+entity_schema = "contacts.person"
+version = 1
+
+[schemas.facets.json_schema]
+type = "object"
+required = [ "telegram_user_id" ]
+additionalProperties = false
+
+[schemas.facets.json_schema.properties.telegram_user_id]
+type = "integer"
+
+[schemas.facets.json_schema.properties.username]
+type = "string"
+
+[schemas.facets.json_schema.properties.first_name]
+type = "string"
+
+[schemas.facets.json_schema.properties.last_name]
+type = "string"
+
+[schemas.facets.json_schema.properties.phone]
+type = "string"
+
+[schemas.facets.json_schema.properties.bio]
+type = "string"
+
+[schemas.facets.json_schema.properties.is_bot]
+type = "boolean"
+
+[schemas.facets.json_schema.properties.is_verified]
+type = "boolean"
+
+[schemas.facets.json_schema.properties.is_scam]
+type = "boolean"
+
+[schemas.facets.json_schema.properties.is_fake]
+type = "boolean"
+
+[[schemas.facets.mappings]]
+facet_path = "username"
+canonical_key = "person.telegram_username"
+strategy = "single_aligned"
+
+[[schemas.facets.mappings]]
+facet_path = "telegram_user_id"
+canonical_key = "person.telegram_id"
+strategy = "single_aligned"
+
+[[schemas.facets]]
+id = "contacts.description"
+entity_schema = "contacts.person"
+version = 1
+
+[schemas.facets.json_schema]
+type = "object"
+required = [ "body" ]
+additionalProperties = false
+
+[schemas.facets.json_schema.properties.body]
+type = "string"
+
+[[schemas.facets]]
+id = "contacts.memory"
+entity_schema = "contacts.person"
+version = 1
+
+[schemas.facets.json_schema]
+type = "object"
+required = [ "title", "body" ]
+additionalProperties = false
+
+[schemas.facets.json_schema.properties.title]
+type = "string"
+
+[schemas.facets.json_schema.properties.body]
+type = "string"
+
+[[schemas.facets]]
+id = "contacts.person.social"
+entity_schema = "contacts.person"
+version = 1
+
+[schemas.facets.json_schema]
+type = "object"
+additionalProperties = false
+
+[schemas.facets.json_schema.properties.tracked_x]
+type = "boolean"
+
+[schemas.facets.json_schema.properties.x_handle]
+type = "string"
+
+[schemas.facets.json_schema.properties.tracked_linkedin]
+type = "boolean"
+
+[schemas.facets.json_schema.properties.linkedin_handle]
+type = "string"
+
+# Least-privilege grants the host enforces at runtime: facet prefixes / link kinds
+# this module may WRITE, schemas it may READ, events it emits, schemas it may merge
+# canonically — plus any cross-module rpc_calls, privileged op_grants, and foreign
+# creates_schemas listed below.
+[capabilities]
+facet_write_prefixes = [ "contacts." ]
+link_kinds_writable = [ "has_email" ]
+rpc_calls = [ "email.ensure_address" ]
+reads_schemas = [ "contacts.", "companies.company" ]
+events_emitted = []
+can_merge_schemas = [ "contacts.person" ]
+
+# Callable surface: `rpc_handlers` = intra-host RPC; `tools` = the agent-facing
+# subset; `sync_handlers` = source-sync surfaces this module ingests.
+[surfaces]
+rpc_handlers = [ "contacts.list", "contacts.get", "contacts.search", "contacts.create", "contacts.batch_create", "contacts.update", "contacts.merge_preview", "contacts.merge", "contacts.set_social_tracking", "contacts.get_social_tracking", "contacts.get_social_tracking_by_handle", "contacts.list_social_tracking", "contacts.track_social_profile", "contacts.batch_track_social", "contacts.rename_if_placeholder" ]
+tools = [ "contacts.list", "contacts.get", "contacts.search", "contacts.create", "contacts.batch_create", "contacts.update", "contacts.merge_preview", "contacts.merge", "contacts.set_social_tracking", "contacts.get_social_tracking", "contacts.get_social_tracking_by_handle", "contacts.list_social_tracking", "contacts.track_social_profile", "contacts.batch_track_social" ]
+sync_handlers = [ "contacts" ]
+
+# Per-sync-surface primary-item schema: the entity whose user-scoped graph count
+# IS the surface's "items synced" badge (host source.status.list reads this).
+[surfaces.sync_item_schemas]
+contacts = "contacts.person"
+
+# Entrypoints inside the package: the V8 module bundle + the React UI surface.
+[entry]
+module = "module/index.ts"
+ui = "index.tsx"
+
+# Self-reporting catalog card (title/summary/publisher/icon + markdown details).
+[presentation]
+title = "Contacts"
+summary = "People from every source, merged into one identity."
+publisher = "Magnis"
+publisher_url = "https://magnis.ai"
+details = "# Contacts\n\nA single graph of every person you know, automatically merged from\nemail, calendar, and chat. Contacts learns identity from every\nconnected source and keeps one canonical record per person.\n\n- Unified profile with provenance for every field\n- Automatic merge across email addresses and handles\n- Links to companies, meetings, and conversations\n"
+icon_url = "/api/plugins/contacts/ui/icon.svg"
+
+# Declared install entrypoint (DEC-L4): runs once in a transient isolate at install
+# time to register schemas. A module without it is NOT installable.
+[lifecycle]
+install = "lifecycle/install.ts"

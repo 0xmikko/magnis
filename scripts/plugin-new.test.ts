@@ -7,6 +7,7 @@ import { test, expect } from "bun:test";
 import { existsSync, readFileSync, readdirSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
+import { parse as tomlParse } from "smol-toml";
 
 import { scaffoldPlugin } from "./plugin-new.ts";
 
@@ -19,7 +20,7 @@ test("tst_build_plugin_new_001: scaffold produces a contract-satisfying skeleton
 
   // Standard layout present.
   for (const f of [
-    "manifest.json",
+    "manifest.toml",
     "module/index.ts",
     "module/service.ts",
     "module/__tests__/acme_crmRead.test.ts",
@@ -32,7 +33,7 @@ test("tst_build_plugin_new_001: scaffold produces a contract-satisfying skeleton
   }
 
   // Manifest contract: folder == id (INV-11); namespace discipline.
-  const manifest = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8")) as {
+  const manifest = tomlParse(readFileSync(join(dir, "manifest.toml"), "utf8")) as unknown as {
     id: string;
     owns: string[];
     tier: string;

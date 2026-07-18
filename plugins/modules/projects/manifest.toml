@@ -1,0 +1,176 @@
+# projects — Projects domain module (V8 plugin).
+#
+# Owns `projects.*`: the project entity plus checklist / description / memory
+# facets. Links entities into projects (link kind `belongs_to`); local-only (no
+# sync surface). Sandboxed V8 isolate; presence-seeded at boot (DEC-10).
+
+# projects — Projects domain module (V8 plugin).
+#
+# Owns the `projects.*` graph namespace: the project entity plus its detail,
+# checklist, description, and memory facets. A project is a durable container
+# that bundles meetings, messages, notes, and contacts around a goal; members
+# are attached with `belongs_to` links. Runs as a sandboxed V8 isolate (module
+# entry + React UI under [entry]); bundled and presence-seeded at boot (DEC-10).
+
+id = "projects"
+version = "0.1.0"
+# SDK contract version this manifest targets (host accepts 0.x).
+
+# SDK contract version this manifest targets (host accepts 0.x).
+magnis_api_version = "0.1.0"
+# Ownership globs: EVERY schema id / link kind declared below must match one of
+# these patterns — the host rejects the manifest otherwise.
+
+# Ownership globs: every OWNED schema id / link kind declared below must match
+# one of these patterns — the host rejects the manifest otherwise.
+owns = [ "projects.*" ]
+
+# Graph schemas this module owns: the entity and its versioned facets (each with
+# a json_schema + canonical `mappings` that feed derived-truth resolution).
+
+# Graph schemas this module owns: entities, their versioned facets (each with a
+# json_schema + canonical `mappings` that feed derived-truth resolution), and links.
+[schemas]
+links = []
+
+[[schemas.entities]]
+id = "projects.project"
+name = "Project"
+description = "A project entity owned by the projects plugin."
+
+[[schemas.facets]]
+id = "projects.project"
+entity_schema = "projects.project"
+version = 1
+
+[schemas.facets.json_schema]
+type = "object"
+additionalProperties = true
+
+[[schemas.facets.mappings]]
+facet_path = "name"
+canonical_key = "project.name"
+strategy = "single_aligned"
+
+[[schemas.facets.mappings]]
+facet_path = "status"
+canonical_key = "project.status"
+strategy = "single_aligned"
+
+[[schemas.facets]]
+id = "projects.project.checklist"
+entity_schema = "projects.project"
+version = 1
+mappings = []
+
+[schemas.facets.json_schema]
+type = "object"
+required = [ "items" ]
+
+[schemas.facets.json_schema.properties.items]
+type = "array"
+
+[schemas.facets.json_schema.properties.items.items]
+type = "object"
+required = [ "id", "text", "status" ]
+
+[schemas.facets.json_schema.properties.items.items.properties.id]
+type = "string"
+
+[schemas.facets.json_schema.properties.items.items.properties.text]
+type = "string"
+
+[schemas.facets.json_schema.properties.items.items.properties.status]
+type = "string"
+enum = [ "pending", "in_progress", "done", "blocked" ]
+
+[schemas.facets.json_schema.properties.items.items.properties.notes]
+type = "string"
+
+[schemas.facets.json_schema.properties.items.items.properties.updated_at]
+type = "string"
+format = "date-time"
+
+[[schemas.facets]]
+id = "projects.description"
+entity_schema = "projects.project"
+version = 1
+mappings = []
+
+[schemas.facets.json_schema]
+type = "object"
+required = [ "body" ]
+additionalProperties = false
+
+[schemas.facets.json_schema.properties.body]
+type = "string"
+
+[[schemas.facets]]
+id = "projects.memory"
+entity_schema = "projects.project"
+version = 1
+mappings = []
+
+[schemas.facets.json_schema]
+type = "object"
+required = [ "title", "body" ]
+additionalProperties = false
+
+[schemas.facets.json_schema.properties.title]
+type = "string"
+
+[schemas.facets.json_schema.properties.body]
+type = "string"
+
+# Least-privilege grants: facet prefixes this module may WRITE, link kinds it may
+# create (`belongs_to` attaches member entities to a project), schemas it may
+# READ, cross-module RPC it may call (none), and canonical merges (none).
+
+# Least-privilege grants the host enforces at runtime: facet prefixes / link kinds
+# this module may WRITE, schemas it may READ, events it emits, schemas it may merge
+# canonically — plus any cross-module rpc_calls, privileged op_grants, and foreign
+# creates_schemas listed below.
+[capabilities]
+facet_write_prefixes = [ "projects." ]
+link_kinds_writable = [ "belongs_to" ]
+rpc_calls = []
+reads_schemas = [ "projects." ]
+events_emitted = []
+can_merge_schemas = []
+
+# Callable surface: `rpc_handlers` = intra-host RPC methods; `tools` = the subset
+# exposed to the agent; `sync_handlers` = source-sync surfaces (none — projects
+# has no external connector).
+
+# Callable surface: `rpc_handlers` = intra-host RPC; `tools` = the agent-facing
+# subset; `sync_handlers` = source-sync surfaces this module ingests.
+[surfaces]
+rpc_handlers = [ "projects.list", "projects.get", "projects.create", "projects.update", "projects.delete", "projects.checklist.get", "projects.checklist.update", "projects.add_member", "projects.remove_member", "projects.list_for_entity" ]
+tools = [ "projects.list", "projects.get", "projects.create", "projects.update", "projects.delete", "projects.checklist.get", "projects.checklist.update" ]
+sync_handlers = []
+
+# Entrypoints inside the package: the V8 module bundle and the React UI surface.
+
+# Entrypoints inside the package: the V8 module bundle + the React UI surface.
+[entry]
+module = "module/index.ts"
+ui = "ui/index.tsx"
+
+# Self-reporting catalog card (title/summary/publisher/icon + markdown details).
+
+# Self-reporting catalog card (title/summary/publisher/icon + markdown details).
+[presentation]
+title = "Projects"
+summary = "Bundle meetings, messages, and tasks into long-running projects."
+publisher = "Magnis"
+publisher_url = "https://magnis.ai"
+details = "# Projects\n\nA project is a durable container for everything that happens around a\ngoal: meetings, email threads, notes, and linked contacts. The\nProjects module keeps the timeline and the key players in sync.\n"
+icon_url = "/api/plugins/projects/ui/icon.svg"
+
+# Declared install entrypoint (DEC-L4): runs once in a transient isolate at
+# install time to register schemas. A module without it is NOT installable.
+
+# Declared install entrypoint (DEC-L4): runs once in a transient isolate at install
+# time to register schemas. A module without it is NOT installable.
+[lifecycle]
+install = "lifecycle/install.ts"

@@ -1,0 +1,351 @@
+# telegram — Telegram Messages domain module (V8 plugin).
+#
+# Owns the `telegram.*` graph namespace: account / chat / message entities and
+# their facets. Ingests the surface fed by the Telegram SOURCE connector (see
+# plugins/sources/telegram) — this module is the graph-side half; the source is
+# the connector half. Also creates `contacts.person` entities for chat members
+# (cross-module create, see [capabilities]). Runs as a sandboxed V8 isolate;
+# bundled and presence-seeded at boot (DEC-10).
+
+id = "telegram"
+version = "0.1.0"
+# SDK contract version this manifest targets (host accepts 0.x).
+magnis_api_version = "0.1.0"
+# Ownership globs: every OWNED schema id / link kind must match one of these.
+owns = [ "telegram.*" ]
+# Schemas this module references but does NOT own — declaring them lets facets
+# below attach to `contacts.person` without failing the dangling-reference check.
+requires_schemas = [ "contacts.person" ]
+
+# Graph schemas: account/chat/message entities (chat is `triggerable` — its
+# events can drive triggers) plus versioned facets. Note `telegram.contact`
+# attaches to the FOREIGN `contacts.person` entity (declared in requires_schemas)
+# — telegram enriches people it discovers in chats.
+[schemas]
+links = []
+
+[[schemas.entities]]
+id = "telegram.account"
+name = "Telegram account"
+description = "A telegram account entity owned by the telegram plugin."
+
+[[schemas.entities]]
+id = "telegram.chat"
+name = "Telegram chat"
+description = "A telegram chat/dialog entity."
+triggerable = true
+
+[[schemas.entities]]
+id = "telegram.message"
+name = "Telegram message"
+description = "A telegram message entity."
+
+[[schemas.facets]]
+id = "telegram.account.details"
+entity_schema = "telegram.account"
+version = 1
+
+[schemas.facets.json_schema]
+type = "object"
+required = [ "account_id" ]
+additionalProperties = false
+
+[schemas.facets.json_schema.properties.account_id]
+type = "string"
+
+[schemas.facets.json_schema.properties.phone]
+type = "string"
+
+[schemas.facets.json_schema.properties.first_name]
+type = "string"
+
+[schemas.facets.json_schema.properties.last_name]
+type = "string"
+
+[schemas.facets.json_schema.properties.username]
+type = "string"
+
+[schemas.facets.json_schema.properties.auth_state]
+type = "string"
+
+[[schemas.facets.mappings]]
+facet_path = "phone"
+canonical_key = "telegram.account.phone"
+strategy = "single_aligned"
+
+[[schemas.facets.mappings]]
+facet_path = "username"
+canonical_key = "telegram.account.username"
+strategy = "single_aligned"
+
+[[schemas.facets]]
+id = "telegram.chat.details"
+entity_schema = "telegram.chat"
+version = 1
+
+[schemas.facets.json_schema]
+type = "object"
+required = [ "chat_id", "title", "type" ]
+additionalProperties = true
+
+[schemas.facets.json_schema.properties.chat_id]
+type = "integer"
+
+[schemas.facets.json_schema.properties.entity_type]
+type = "string"
+
+[schemas.facets.json_schema.properties.title]
+type = "string"
+
+[schemas.facets.json_schema.properties.type]
+type = "string"
+
+[schemas.facets.json_schema.properties.username]
+type = "string"
+
+[schemas.facets.json_schema.properties.avatar_url]
+type = "string"
+
+[schemas.facets.json_schema.properties.is_pinned]
+type = "boolean"
+
+[schemas.facets.json_schema.properties.pin_order]
+type = "integer"
+
+[schemas.facets.json_schema.properties.unread_count]
+type = "integer"
+
+[schemas.facets.json_schema.properties.unread_mark]
+type = "boolean"
+
+[schemas.facets.json_schema.properties.unread_mentions_count]
+type = "integer"
+
+[schemas.facets.json_schema.properties.read_inbox_max_id]
+type = "integer"
+
+[schemas.facets.json_schema.properties.read_outbox_max_id]
+type = "integer"
+
+[schemas.facets.json_schema.properties.top_message]
+type = "integer"
+
+[schemas.facets.json_schema.properties.pts]
+type = "integer"
+
+[schemas.facets.json_schema.properties.member_count]
+type = "integer"
+
+[schemas.facets.json_schema.properties.is_indexed]
+type = "boolean"
+
+[schemas.facets.json_schema.properties.last_message_date]
+type = "string"
+
+[schemas.facets.json_schema.properties.last_message_preview]
+type = "string"
+
+[schemas.facets.json_schema.properties.last_sender_name]
+type = "string"
+
+[schemas.facets.json_schema.properties.members]
+type = "array"
+
+[schemas.facets.json_schema.properties.members.items]
+type = "object"
+
+[schemas.facets.json_schema.properties.members.items.properties.user_id]
+type = "integer"
+
+[schemas.facets.json_schema.properties.members.items.properties.first_name]
+type = "string"
+
+[schemas.facets.json_schema.properties.members.items.properties.last_name]
+type = "string"
+
+[schemas.facets.json_schema.properties.members.items.properties.username]
+type = "string"
+
+[[schemas.facets.mappings]]
+facet_path = "title"
+canonical_key = "telegram.chat.title"
+strategy = "single_aligned"
+
+[[schemas.facets]]
+id = "telegram.message.details"
+entity_schema = "telegram.message"
+version = 1
+
+[schemas.facets.json_schema]
+type = "object"
+required = [ "message_id" ]
+additionalProperties = true
+
+[schemas.facets.json_schema.properties.message_id]
+type = "integer"
+
+[schemas.facets.json_schema.properties.text]
+type = "string"
+
+[schemas.facets.json_schema.properties.date]
+type = "string"
+format = "date-time"
+
+[schemas.facets.json_schema.properties.chat_id]
+type = "integer"
+
+[schemas.facets.json_schema.properties.chat_title]
+type = "string"
+
+[schemas.facets.json_schema.properties.sender_name]
+type = "string"
+
+[schemas.facets.json_schema.properties.sender_id]
+type = "integer"
+
+[schemas.facets.json_schema.properties.sender_info]
+type = "object"
+
+[schemas.facets.json_schema.properties.sender_info.properties.id]
+type = "integer"
+
+[schemas.facets.json_schema.properties.sender_info.properties.first_name]
+type = "string"
+
+[schemas.facets.json_schema.properties.sender_info.properties.last_name]
+type = "string"
+
+[schemas.facets.json_schema.properties.sender_info.properties.username]
+type = "string"
+
+[schemas.facets.json_schema.properties.sender_info.properties.phone]
+type = "string"
+
+[schemas.facets.json_schema.properties.reply_to_msg_id]
+type = "integer"
+
+[schemas.facets.json_schema.properties.is_outgoing]
+type = "boolean"
+
+[schemas.facets.json_schema.properties.media_type]
+type = "string"
+
+[schemas.facets.json_schema.properties.media_url]
+type = "string"
+
+[schemas.facets.json_schema.properties.is_pinned]
+type = "boolean"
+
+[schemas.facets.json_schema.properties.file_name]
+type = "string"
+
+[schemas.facets.json_schema.properties.sender_avatar_url]
+type = "string"
+
+[[schemas.facets.mappings]]
+facet_path = "text"
+canonical_key = "telegram.message.text"
+strategy = "single_aligned"
+
+[[schemas.facets.mappings]]
+facet_path = "sender_name"
+canonical_key = "telegram.message.sender"
+strategy = "single_aligned"
+
+[[schemas.facets]]
+id = "telegram.contact"
+entity_schema = "contacts.person"
+version = 1
+
+[schemas.facets.json_schema]
+type = "object"
+required = [ "telegram_user_id", "first_name" ]
+additionalProperties = false
+
+[schemas.facets.json_schema.properties.telegram_user_id]
+type = "integer"
+
+[schemas.facets.json_schema.properties.first_name]
+type = "string"
+
+[schemas.facets.json_schema.properties.last_name]
+type = "string"
+
+[schemas.facets.json_schema.properties.username]
+type = "string"
+
+[schemas.facets.json_schema.properties.phone]
+type = "string"
+
+[schemas.facets.json_schema.properties.photo_url]
+type = "string"
+
+[schemas.facets.json_schema.properties.avatar_url]
+type = "string"
+
+[schemas.facets.json_schema.properties.relevance_tier]
+type = "string"
+
+[[schemas.facets.mappings]]
+facet_path = "first_name"
+canonical_key = "person.first_name"
+strategy = "single_aligned"
+
+[[schemas.facets.mappings]]
+facet_path = "last_name"
+canonical_key = "person.last_name"
+strategy = "single_aligned"
+
+# Least-privilege grants (the host enforces each at runtime):
+#   facet_write_prefixes — facet namespaces this module may write
+#   link_kinds_writable  — `<from>:<to>` link kinds it may create
+#   reads_schemas        — schemas it may read (own + contacts.person)
+#   creates_schemas      — FOREIGN entities it may create (people from chats)
+#   rpc_calls            — cross-module RPC methods it may invoke (triggers.create)
+#   op_grants            — privileged host ops it may call (source sync, composer,
+#                          file/web register, external-id reads)
+[capabilities]
+facet_write_prefixes = [ "telegram." ]
+link_kinds_writable = [ "telegram.message:telegram.chat", "telegram.message:person", "person:telegram.chat" ]
+reads_schemas = [ "telegram.", "contacts.person" ]
+events_emitted = []
+can_merge_schemas = [ "telegram.account", "telegram.chat", "telegram.message" ]
+creates_schemas = [ "contacts.person" ]
+rpc_calls = [ "triggers.create" ]
+op_grants = [ "source_commands", "sync_state", "composer", "file_register", "web_register", "external_id_reads" ]
+
+# Callable surface: `rpc_handlers` = intra-host RPC; `tools` = the agent-facing
+# subset; `sync_handlers` = source-sync surfaces this module ingests.
+[surfaces]
+rpc_handlers = [ "telegram.chats.list", "telegram.messages.list", "telegram.messages.get", "telegram.chats.set_indexed", "telegram.messages.send", "telegram.messages.reply", "telegram.batch_send", "telegram.messages.backfill", "telegram.sync.status", "telegram.sync.reset", "telegram.composer.read", "telegram.composer.set_text", "telegram.composer.append_text", "telegram.set_trigger" ]
+tools = [ "telegram.chats.list", "telegram.messages.list", "telegram.messages.get", "telegram.messages.send", "telegram.messages.reply", "telegram.batch_send", "telegram.set_trigger" ]
+sync_handlers = [ "telegram" ]
+
+# Per-sync-surface primary-item schema: the entity whose user-scoped graph count
+# IS the surface's "items synced" badge (host source.status.list reads this).
+[surfaces.sync_item_schemas]
+telegram = "telegram.message"
+
+# Entrypoints inside the package: V8 module bundle + React UI surface.
+[entry]
+module = "module/index.ts"
+ui = "index.tsx"
+
+# Extra bare import specifiers the UI bundle may reference beyond the host-shim
+# defaults (react etc.) — rewritten to host-shim URLs at build/transpile time.
+[ui]
+extra_bare_imports = [ "react-virtuoso", "zustand", "zustand/vanilla" ]
+
+# Self-reporting catalog card (title/summary/publisher/icon + markdown details).
+[presentation]
+title = "Telegram Messages"
+summary = "Threaded Telegram chats indexed alongside the rest of your graph."
+publisher = "Magnis"
+publisher_url = "https://magnis.ai"
+details = "# Telegram Messages\n\nTelegram chats ingested as first-class messages — threaded,\nsearchable, and linked to the contacts and projects they belong to.\nPairs with the Telegram source for live sync.\n"
+icon_url = "/api/plugins/telegram/ui/icon.svg"
+
+# Declared install entrypoint (DEC-L4): runs once in a transient isolate at
+# install time to register schemas. A module without it is NOT installable.
+[lifecycle]
+install = "lifecycle/install.ts"

@@ -1,0 +1,230 @@
+# companies — Companies domain module (V8 plugin).
+#
+# Owns the `companies.*` graph namespace: the company entity plus its detail /
+# email / phone / external-link facets. Companies surface alongside contacts —
+# pulled from email signatures, calendar invites, and notes — and link to the
+# people who work there. Runs as a sandboxed V8 isolate (module entry + React UI
+# under [entry]); bundled and presence-seeded at boot (DEC-10).
+
+id = "companies"
+version = "0.1.0"
+# SDK contract version this manifest targets (host accepts 0.x).
+magnis_api_version = "0.1.0"
+# Ownership globs: EVERY schema id / link kind declared below must match one of
+# these patterns — the host rejects the manifest otherwise.
+owns = [ "companies.*" ]
+
+# Graph schemas this module owns: the entity, its versioned facets (each with a
+# json_schema + canonical `mappings` that feed derived-truth resolution), and
+# link kinds (none here).
+[schemas]
+links = []
+
+[[schemas.entities]]
+id = "companies.company"
+name = "Company"
+description = "A company / organisation entity owned by the companies plugin."
+
+[[schemas.facets]]
+id = "companies.company.details"
+entity_schema = "companies.company"
+version = 1
+
+[schemas.facets.json_schema]
+type = "object"
+additionalProperties = true
+
+[schemas.facets.json_schema.properties.name]
+type = "string"
+
+[schemas.facets.json_schema.properties.description]
+type = "string"
+
+[schemas.facets.json_schema.properties.industry]
+type = "string"
+
+[schemas.facets.json_schema.properties.domain]
+type = "string"
+
+[schemas.facets.json_schema.properties.website]
+type = "string"
+
+[schemas.facets.json_schema.properties.location]
+type = "string"
+
+[schemas.facets.json_schema.properties.size]
+type = "string"
+
+[schemas.facets.json_schema.properties.founded]
+type = "string"
+
+[schemas.facets.json_schema.properties.stage]
+type = "string"
+
+[schemas.facets.json_schema.properties.headcount]
+type = "integer"
+
+[schemas.facets.json_schema.properties.funding_total]
+type = "string"
+
+[[schemas.facets.mappings]]
+facet_path = "name"
+canonical_key = "companies.name"
+strategy = "single_aligned"
+
+[[schemas.facets.mappings]]
+facet_path = "description"
+canonical_key = "companies.description"
+strategy = "single_aligned"
+
+[[schemas.facets.mappings]]
+facet_path = "industry"
+canonical_key = "companies.industry"
+strategy = "single_aligned"
+
+[[schemas.facets.mappings]]
+facet_path = "domain"
+canonical_key = "companies.domain"
+strategy = "single_aligned"
+
+[[schemas.facets.mappings]]
+facet_path = "website"
+canonical_key = "companies.website"
+strategy = "single_aligned"
+
+[[schemas.facets.mappings]]
+facet_path = "location"
+canonical_key = "companies.location"
+strategy = "single_aligned"
+
+[[schemas.facets.mappings]]
+facet_path = "size"
+canonical_key = "companies.size"
+strategy = "single_aligned"
+
+[[schemas.facets.mappings]]
+facet_path = "founded"
+canonical_key = "companies.founded"
+strategy = "single_aligned"
+
+[[schemas.facets.mappings]]
+facet_path = "stage"
+canonical_key = "companies.stage"
+strategy = "single_aligned"
+
+[[schemas.facets.mappings]]
+facet_path = "headcount"
+canonical_key = "companies.headcount"
+strategy = "single_aligned"
+
+[[schemas.facets.mappings]]
+facet_path = "funding_total"
+canonical_key = "companies.funding_total"
+strategy = "single_aligned"
+
+[[schemas.facets]]
+id = "companies.company.email"
+entity_schema = "companies.company"
+version = 1
+
+[schemas.facets.json_schema]
+type = "object"
+required = [ "email" ]
+additionalProperties = false
+
+[schemas.facets.json_schema.properties.email]
+type = "string"
+
+[schemas.facets.json_schema.properties.type]
+type = "string"
+
+[schemas.facets.json_schema.properties.is_primary]
+type = "boolean"
+
+[[schemas.facets.mappings]]
+facet_path = "email"
+canonical_key = "companies.emails"
+strategy = "collection"
+
+[[schemas.facets]]
+id = "companies.company.phone"
+entity_schema = "companies.company"
+version = 1
+
+[schemas.facets.json_schema]
+type = "object"
+required = [ "phone" ]
+additionalProperties = false
+
+[schemas.facets.json_schema.properties.phone]
+type = "string"
+
+[schemas.facets.json_schema.properties.type]
+type = "string"
+
+[schemas.facets.json_schema.properties.is_primary]
+type = "boolean"
+
+[[schemas.facets.mappings]]
+facet_path = "phone"
+canonical_key = "companies.phones"
+strategy = "collection"
+
+[[schemas.facets]]
+id = "companies.company.external_link"
+entity_schema = "companies.company"
+version = 1
+
+[schemas.facets.json_schema]
+type = "object"
+required = [ "source_type", "external_id" ]
+additionalProperties = false
+
+[schemas.facets.json_schema.properties.source_type]
+type = "string"
+
+[schemas.facets.json_schema.properties.external_id]
+type = "string"
+
+[schemas.facets.json_schema.properties.external_url]
+type = "string"
+
+[schemas.facets.json_schema.properties.external_name]
+type = "string"
+
+# Least-privilege grants: which facet prefixes / link kinds this module may
+# WRITE, which schemas it may READ (its own + `contacts.person` for people
+# links), which events it emits, and which schemas it may merge canonically.
+[capabilities]
+facet_write_prefixes = [ "companies." ]
+link_kinds_writable = []
+reads_schemas = [ "companies.", "contacts.person" ]
+events_emitted = []
+can_merge_schemas = [ "companies.company" ]
+
+# Callable surface: `rpc_handlers` = intra-host RPC methods; `tools` = the same
+# routes exposed to the agent; `sync_handlers` = source-sync surfaces (none —
+# companies has no external connector).
+[surfaces]
+rpc_handlers = [ "companies.list", "companies.get", "companies.create", "companies.update" ]
+tools = [ "companies.list", "companies.get", "companies.create", "companies.update" ]
+sync_handlers = []
+
+# Entrypoints inside the package: the V8 module bundle and the React UI surface.
+[entry]
+module = "module/index.ts"
+ui = "index.tsx"
+
+# Self-reporting catalog card (title/summary/publisher/icon + markdown details).
+[presentation]
+title = "Companies"
+summary = "Track companies you interact with across email, meetings, and notes."
+publisher = "Magnis"
+publisher_url = "https://magnis.ai"
+details = "# Companies\n\nCompanies surface alongside your contacts — pulled from email\nsignatures, calendar invites, and notes. Every company is linked to\nthe people who work there and the projects you share.\n"
+icon_url = "/api/plugins/companies/ui/icon.svg"
+
+# Declared install entrypoint (DEC-L4): runs once in a transient isolate at
+# install time to register schemas. A module without it is NOT installable.
+[lifecycle]
+install = "lifecycle/install.ts"
