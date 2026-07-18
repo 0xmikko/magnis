@@ -150,7 +150,7 @@ export function TelegramChatCard(props: EntityRendererProps): JSX.Element {
             <ActionPrefix action={action} />
             {chatTitle ?? "Chat"}
           </span>
-          {messageCount != null && messageCount > 0 && (
+          {messageCount !== undefined && messageCount > 0 && (
             <span className="shrink-0 text-[11px] text-content-tertiary">
               {messageCount} msgs
             </span>

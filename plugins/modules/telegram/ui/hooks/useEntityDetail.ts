@@ -16,15 +16,15 @@ export function useEntityDetail(
     runtime.transport
       .rpc<Record<string, unknown>>(rpcMethod, { id: entityId })
       .then((d) => { if (!cancelled) setDetail(d); })
-      .catch(() => {});
-    return () => { cancelled = true; };
+      .catch(() => undefined);
+    return (): void => { cancelled = true; };
   }, [entityId, data, runtime, rpcMethod, hasDataCheck]);
 
   return detail ?? data;
 }
 
 export const hasMessageData = (d: Readonly<Record<string, unknown>>): boolean =>
-  Boolean(d.sender || d.preview || d.subject);
+  Boolean(d.sender) || Boolean(d.preview) || Boolean(d.subject);
 
 export const hasChatData = (d: Readonly<Record<string, unknown>>): boolean =>
-  Boolean(d.chat_title || d.last_message);
+  Boolean(d.chat_title) || Boolean(d.last_message);

@@ -61,7 +61,7 @@ export function loadCachedChats(): { chats: TelegramChat[]; total: number } | nu
   try {
     const raw = localStorage.getItem(CHAT_CACHE_KEY);
     if (!raw) return null;
-    const cached = JSON.parse(raw);
+    const cached = JSON.parse(raw) as { chats: TelegramChat[]; total: number; ts: number };
     if (Date.now() - cached.ts > CHAT_CACHE_TTL) return null;
     return cached;
   } catch {

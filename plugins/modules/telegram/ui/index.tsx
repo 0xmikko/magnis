@@ -178,7 +178,8 @@ export const telegramAgentContribution: Omit<ModuleAgentContribution, "entityRen
   extractAllowlistTarget: (tc) => {
     if (tc.name !== "send_telegram_message" && tc.name !== "telegram_messages_send" && tc.name !== "telegram.messages.send") return null;
     const args = tc.args as Record<string, unknown>;
-    const chatId = args.chat_id != null ? String(args.chat_id) : null;
+    const chatId =
+      typeof args.chat_id === "string" || typeof args.chat_id === "number" ? String(args.chat_id) : null;
     if (!chatId) return null;
     return {
       action: "send_telegram_message",
@@ -191,12 +192,12 @@ export const telegramAgentContribution: Omit<ModuleAgentContribution, "entityRen
     const p = payload as Record<string, unknown>;
     const chatId = (p.chatId ?? p.chat_id) as string | number | undefined;
     const text = (p.text ?? p.message) as string | undefined;
-    if (chatId != null && text != null) {
+    if (chatId !== undefined && text !== undefined) {
       // DEC-16: legacy onDraftRequest writes through the unified draft store
       // so the wrapped TelegramReplyComposer picks it up on mount.
       writeDraftDirect("telegram", String(chatId), { text });
     }
-    if (chatId != null) {
+    if (chatId !== undefined) {
       window.location.hash = `#/telegram/chat/${String(chatId)}`;
     } else {
       window.location.hash = `#/telegram`;
@@ -225,10 +226,10 @@ export const TelegramModule = defineModule({
     pendingMessageId: undefined as string | undefined,
     pendingTelegramMsgId: undefined as number | undefined,
     actions: {
-      setSelectedChatId: (chatId: string | undefined) => { set({ selectedChatId: chatId }); },
-      setSearchQuery: (query: string) => { set({ searchQuery: query }); },
-      setSyncProgress: (progress: number | null) => { set({ syncProgress: progress }); },
-      setPendingMessageId: (id: string | undefined, telegramMsgId?: number) =>
+      setSelectedChatId: (chatId: string | undefined): void => { set({ selectedChatId: chatId }); },
+      setSearchQuery: (query: string): void => { set({ searchQuery: query }); },
+      setSyncProgress: (progress: number | null): void => { set({ syncProgress: progress }); },
+      setPendingMessageId: (id: string | undefined, telegramMsgId?: number): void =>
         { set({ pendingMessageId: id, pendingTelegramMsgId: telegramMsgId }); },
     },
   }),
@@ -242,7 +243,7 @@ export const TelegramModule = defineModule({
       let chatEntityId: string | undefined;
       try {
         const links = await runtime.transport.rpc<{
-          linked_entities: readonly { id: string; schema_id: string }[];
+          linked_entities?: readonly { id: string; schema_id: string }[];
         }>("graph.entity.get", { id: entityId });
         const chatLink = links.linked_entities?.find((e) => e.schema_id === "telegram.chat");
         chatEntityId = chatLink?.id;
@@ -301,6 +302,6 @@ export const TelegramModule = defineModule({
       ["sync.progress"],
       [telegramKeys.all],
     );
-    return () => { unsub2(); };
+    return (): void => { unsub2(); };
   },
 });
