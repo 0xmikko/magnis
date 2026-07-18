@@ -30,6 +30,12 @@
       "name": "@magnis/plugin-sdk",
       "version": "0.1.0",
     },
+    "packages/source-statemachine": {
+      "name": "@magnis/source-statemachine",
+      "dependencies": {
+        "@magnis/connector-sdk": "workspace:*",
+      },
+    },
     "plugins/modules/companies": {
       "name": "@magnis/plugin-companies",
       "version": "0.1.0",
@@ -73,12 +79,6 @@
     "plugins/modules/x": {
       "name": "@magnis/plugin-x",
       "version": "0.1.0",
-    },
-    "plugins/sources/_statemachine": {
-      "name": "@magnis/source-statemachine",
-      "dependencies": {
-        "@magnis/connector-sdk": "workspace:*",
-      },
     },
     "plugins/sources/google": {
       "name": "@magnis/source-google",
@@ -254,7 +254,7 @@
 
     "@magnis/source-mock-x": ["@magnis/source-mock-x@workspace:plugins/sources/mock-x"],
 
-    "@magnis/source-statemachine": ["@magnis/source-statemachine@workspace:plugins/sources/_statemachine"],
+    "@magnis/source-statemachine": ["@magnis/source-statemachine@workspace:packages/source-statemachine"],
 
     "@magnis/source-telegram": ["@magnis/source-telegram@workspace:plugins/sources/telegram"],
 
