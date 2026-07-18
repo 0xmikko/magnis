@@ -295,12 +295,12 @@ export async function execute(
 
       const peer = await ops.resolvePeer(chatId);
       const messages = await ops.getMessages(peer, { ids: [messageId] });
-      const message = messages[0];
-      if (message === undefined) {
+      if (messages.length === 0) {
         throw new Error(
-          `download_file: message ${messageId} not found in chat ${chatId}`,
+          `download_file: message ${String(messageId)} not found in chat ${String(chatId)}`,
         );
       }
+      const message = messages[0];
       const sizeBytes = await ops.downloadMedia(message, dest);
       return { size_bytes: sizeBytes, local_path: localPath };
     }

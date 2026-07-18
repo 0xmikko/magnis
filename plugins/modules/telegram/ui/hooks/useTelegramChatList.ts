@@ -83,7 +83,7 @@ export function useTelegramChatList(): UseTelegramChatListResult {
       }
     }
     if (seeded > 0) {
-      console.log(`[prefetch] seeded ${seeded} chats from inline messages`);
+      console.log(`[prefetch] seeded ${String(seeded)} chats from inline messages`);
     }
   }, [queryData, runtime.queryClient]);
 
@@ -106,6 +106,7 @@ export function useTelegramChatList(): UseTelegramChatListResult {
   // Update total when query data arrives (skip caching search results)
   useEffect(() => {
     if (queryData && !isSearching) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- cache the server total when query data arrives (skipped while searching); external-data sync.
       setChatsTotal(queryData.total);
     }
   }, [queryData, isSearching]);
@@ -115,6 +116,7 @@ export function useTelegramChatList(): UseTelegramChatListResult {
     return router.entityId;
   });
   const selectedChatIdRef = useRef(selectedChatId);
+  // eslint-disable-next-line react-hooks/refs -- latest-ref pattern: getSelectedChatId reads the newest id without re-creating the callback; not consumed during render.
   selectedChatIdRef.current = selectedChatId;
 
   const getSelectedChatId = useCallback(() => selectedChatIdRef.current, []);
@@ -184,14 +186,17 @@ export function useTelegramChatList(): UseTelegramChatListResult {
     if (!selectedChatId || isSearching) return;
     if (chats.some((c) => c.id === selectedChatId)) return;
 
-    let cancelled = false;
-    void (async () => {
+    // `as boolean` widens past control-flow narrowing: the flag is only flipped
+    // in the cleanup below (defined after this closure in source order), so TS
+    // would otherwise treat `cancelled` as the literal `false` here.
+    let cancelled = false as boolean;
+    void (async (): Promise<void> => {
       try {
         const result = await runtime.transport.rpc<PaginatedResponse<TelegramMessageListItem>>(
           "telegram.messages.list",
           { entity_id: selectedChatId, limit: 1, offset: 0 },
         );
-        const msg = result.items[0];
+        const msg = result.items.at(0);
         if (cancelled || !msg) return;
         const title = (msg.metadata?.chat_title as string | undefined) ?? msg.sender ?? selectedChatId;
         const name = normalizeTelegramChatTitle(title);
@@ -213,13 +218,13 @@ export function useTelegramChatList(): UseTelegramChatListResult {
         // Not critical — messages still load via query
       }
     })();
-    return () => { cancelled = true; };
+    return (): void => { cancelled = true; };
   }, [selectedChatId, chats, isSearching, runtime.transport, baseUrl]);
 
   // Auto-select first chat when list loads and nothing is selected
   useEffect(() => {
     if (!selectedChatId && chats.length > 0) {
-       
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- auto-select the first chat once the list loads and nothing is selected; runs until a selection exists.
       setSelectedChatId(chats[0].id);
     }
   }, [chats, selectedChatId, setSelectedChatId]);

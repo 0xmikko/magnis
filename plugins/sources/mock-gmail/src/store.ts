@@ -10,8 +10,11 @@ import { dirname } from "node:path";
 
 export interface StoredItem {
   surface: string;
-  payload: Record<string, unknown>;
-  remote_id: string;
+  // Injected lines are parsed from arbitrary JSONL: a line may omit payload or
+  // remote_id (the Rust twin emits a null remote_id for such lines), so these
+  // are genuinely optional at the read boundary.
+  payload?: Record<string, unknown>;
+  remote_id?: string;
 }
 
 /** MOCK_INJECT_FILE is REQUIRED — the Rust twin panics without it (no fallback). */
@@ -43,8 +46,9 @@ export function readItems(surface: string): StoredItem[] {
     } catch {
       continue; // Rust: filter_map(from_str.ok()) — malformed lines are skipped
     }
-    const item = parsed as StoredItem;
-    if (item && typeof item === "object" && item.surface === surface) out.push(item);
+    if (parsed && typeof parsed === "object" && (parsed as StoredItem).surface === surface) {
+      out.push(parsed as StoredItem);
+    }
   }
   return out;
 }

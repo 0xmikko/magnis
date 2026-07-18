@@ -5,7 +5,7 @@ import { readItems, SURFACE } from "./store";
 // cursor is an INDEX into the surface's items in the shared file; the per-item
 // `kind` (snapshot for chats, live for messages) is replayed verbatim.
 
-export async function fetchMockTelegram(args: FetchArgs): Promise<FetchResult> {
+export function fetchMockTelegram(args: FetchArgs): Promise<FetchResult> {
   const surface = args.surface || SURFACE;
   const cursor = typeof args.cursor === "number" && args.cursor >= 0 ? Math.floor(args.cursor) : 0;
   const items = readItems(surface);
@@ -15,5 +15,5 @@ export async function fetchMockTelegram(args: FetchArgs): Promise<FetchResult> {
     remote_id: item.remote_id ?? (null as unknown as string),
     kind: (typeof item.kind === "string" ? item.kind : "live") as Envelope["kind"],
   }));
-  return { envelopes, nextCursor: items.length, hasMore: false };
+  return Promise.resolve({ envelopes, nextCursor: items.length, hasMore: false });
 }

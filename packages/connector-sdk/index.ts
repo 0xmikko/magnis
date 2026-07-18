@@ -61,7 +61,7 @@ const GENERIC_FETCH_ERROR_CODE = -32000;
  * for `retryAfterSecs` rather than treating it as a hard failure. */
 export class RateLimitError extends Error {
   constructor(readonly retryAfterSecs: number) {
-    super(`rate limited; retry_after=${retryAfterSecs}`);
+    super(`rate limited; retry_after=${String(retryAfterSecs)}`);
     this.name = "RateLimitError";
   }
 }
@@ -185,7 +185,10 @@ function makeEmitter(
   subscriptionId: string,
 ): (envelope: Envelope) => void {
   const write =
-    config.onNotification ?? ((line: string) => process.stdout.write(line + "\n"));
+    config.onNotification ??
+    ((line: string): void => {
+      process.stdout.write(line + "\n");
+    });
   return (envelope: Envelope) => {
     // A stop kills the subscription; late emits are refused, not routed.
     if (!liveSubscriptions.has(subscriptionId)) return;

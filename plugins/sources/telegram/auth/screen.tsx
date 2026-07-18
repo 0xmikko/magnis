@@ -15,6 +15,7 @@
  * plain elements + Tailwind (no `@magnis/host/ui` dependency).
  */
 import { useRef, useState } from "react";
+import type { JSX } from "react";
 
 export interface SourceAuthScreenProps {
   sourceId: string;

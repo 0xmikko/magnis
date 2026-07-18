@@ -57,9 +57,12 @@ export interface EntityLike {
   className?: string;
   id?: unknown;
   firstName?: string;
-  lastName?: string;
-  username?: string;
-  phone?: string;
+  // gramjs sets absent optional fields to `null` (not undefined), so these are
+  // string | null | undefined — the `!== null && !== undefined` guards below
+  // depend on the null arm being present in the type.
+  lastName?: string | null;
+  username?: string | null;
+  phone?: string | null;
   title?: string;
   participantsCount?: number;
   accessHash?: unknown;
@@ -146,7 +149,7 @@ export async function sendWithFloodRetry<T>(
       await sleep(secs);
       return await send();
     }
-    throw new Error(`${RATE_LIMITED_PREFIX}${secs}`);
+    throw new Error(`${RATE_LIMITED_PREFIX}${String(secs)}`, { cause: err });
   }
 }
 
@@ -168,7 +171,7 @@ export class MtprotoTimeoutError extends Error {
     readonly label: string,
     readonly ms: number,
   ) {
-    super(`telegram ${label} timed out after ${ms}ms (no MTProto response — request likely dropped)`);
+    super(`telegram ${label} timed out after ${String(ms)}ms (no MTProto response — request likely dropped)`);
     this.name = "MtprotoTimeoutError";
   }
 }
@@ -290,7 +293,7 @@ export function resolveHydratedMessages(
   if (fetched.ok) return fetched.messages;
   if (historyErrorIsFatal(fetched.error)) throw fetched.error;
   console.error(
-    `magnis-telegram: skipping history for chat ${chatId} ` +
+    `magnis-telegram: skipping history for chat ${String(chatId)} ` +
       `(getHistory failed, transient — chat still discovered): ${String(fetched.error)}`,
   );
   return [];
@@ -442,7 +445,9 @@ export function chatMemberCount(entity: EntityLike): number | undefined {
 export function chatUsername(entity: EntityLike): string | undefined {
   if (entity.className === "User" || entity.className === "Channel") {
     // gramjs: absent username = null (grammers: Option::None) — fold both out.
-    return entity.username != null && entity.username !== "" ? entity.username : undefined;
+    return entity.username !== null && entity.username !== undefined && entity.username !== ""
+      ? entity.username
+      : undefined;
   }
   return undefined;
 }
@@ -462,9 +467,9 @@ export function senderDisplayName(sender: EntityLike | null | undefined): string
   const name = entityName(sender);
   if (name !== "") return name;
   if (sender.className === "User") {
-    return sender.username != null && sender.username !== ""
+    return sender.username !== null && sender.username !== undefined && sender.username !== ""
       ? `@${sender.username}`
-      : `User ${toNum(sender.id)}`;
+      : `User ${String(toNum(sender.id))}`;
   }
   return String(toNum(sender.id));
 }
@@ -489,24 +494,25 @@ export function messageToIntermediate(
   const media = extractMediaInfo(message);
 
   const senderInfo: TgSenderInfo | undefined =
-    sender !== null && sender !== undefined && sender.className === "User"
+    sender?.className === "User"
       ? {
           first_name: sender.firstName ?? "",
           // gramjs sets absent fields to null (grammers: Option::None → key
-          // omitted, envelope.rs:19-24 skip_serializing_if). `!= null` drops
-          // both null and undefined — a null here fails the module schema.
-          ...(sender.lastName != null ? { last_name: sender.lastName } : {}),
-          ...(sender.username != null ? { username: sender.username } : {}),
-          ...(sender.phone != null ? { phone: sender.phone } : {}),
+          // omitted, envelope.rs:19-24 skip_serializing_if). Dropping BOTH null
+          // and undefined — a null here fails the module schema.
+          ...(sender.lastName !== null && sender.lastName !== undefined
+            ? { last_name: sender.lastName }
+            : {}),
+          ...(sender.username !== null && sender.username !== undefined
+            ? { username: sender.username }
+            : {}),
+          ...(sender.phone !== null && sender.phone !== undefined ? { phone: sender.phone } : {}),
         }
       : undefined;
 
   const senderName = senderDisplayName(sender);
   // sender_id is emitted ONLY for User senders (a channel/group sender has none).
-  const senderId =
-    sender !== null && sender !== undefined && sender.className === "User"
-      ? toNum(sender.id)
-      : undefined;
+  const senderId = sender?.className === "User" ? toNum(sender.id) : undefined;
   const replyTo = message.replyTo?.replyToMsgId;
 
   return {
@@ -518,7 +524,7 @@ export function messageToIntermediate(
     ...(chatName === "" ? {} : { chat_title: chatName }),
     ...(senderName === undefined ? {} : { sender_name: senderName }),
     ...(senderId === undefined ? {} : { sender_id: senderId }),
-    ...(replyTo === undefined || replyTo === null ? {} : { reply_to_msg_id: replyTo }),
+    ...(replyTo === undefined ? {} : { reply_to_msg_id: replyTo }),
     ...(media.media_type === undefined ? {} : { media_type: media.media_type }),
     has_media: media.has_media,
     ...(media.file_name === undefined ? {} : { file_name: media.file_name }),
@@ -584,7 +590,7 @@ export function buildDialogMeta(
     read_outbox_max_id: raw.readOutboxMaxId ?? 0,
     unread_mentions_count: raw.unreadMentionsCount ?? 0,
     top_message: raw.topMessage ?? 0,
-    ...(raw.pts === undefined || raw.pts === null ? {} : { pts: raw.pts }),
+    ...(raw.pts === undefined ? {} : { pts: raw.pts }),
   };
 }
 

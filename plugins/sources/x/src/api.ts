@@ -79,7 +79,7 @@ export class XApiError extends Error {
     readonly status: number,
     readonly detail: string,
   ) {
-    super(`X API ${status}: ${detail}`);
+    super(`X API ${String(status)}: ${detail}`);
     this.name = "XApiError";
   }
 }
@@ -102,7 +102,7 @@ export class XClient {
     private readonly fetchFn: FetchLike,
   ) {}
 
-  private async getBody<T>(path: string): Promise<{ data?: T; includes?: { media?: XMedia[] } }> {
+  private async getBody(path: string): Promise<{ data?: unknown; includes?: { media?: XMedia[] } }> {
     const res = await this.fetchFn(`${X_API_BASE}${path}`, {
       method: "GET",
       headers: { authorization: `Bearer ${this.bearer}` },
@@ -111,7 +111,7 @@ export class XClient {
       throw new RateLimitError(retryAfterSecs(res.headers));
     }
     const body = (await res.json().catch(() => ({}))) as {
-      data?: T;
+      data?: unknown;
       includes?: { media?: XMedia[] };
       detail?: string;
     };
@@ -126,8 +126,8 @@ export class XClient {
     return body;
   }
 
-  private async get<T>(path: string): Promise<T> {
-    return (await this.getBody<T>(path)).data as T;
+  private async get<T>(path: string): Promise<T | undefined> {
+    return (await this.getBody(path)).data as T | undefined;
   }
 
   /** Resolve a bare handle (no leading @) → user, or null when not found. */
@@ -145,12 +145,12 @@ export class XClient {
   /** Recent tweets for a user id (most-recent-first, capped at `max`) plus the
    * media includes their attachment keys resolve against. */
   async recentTweets(userId: string, max: number): Promise<XTweetPage> {
-    const body = await this.getBody<XTweet[]>(
-      `/2/users/${encodeURIComponent(userId)}/tweets?max_results=${max}` +
+    const body = await this.getBody(
+      `/2/users/${encodeURIComponent(userId)}/tweets?max_results=${String(max)}` +
         `&tweet.fields=${TWEET_FIELDS}&expansions=${TWEET_EXPANSIONS}&media.fields=${MEDIA_FIELDS}`,
     );
     return {
-      tweets: Array.isArray(body.data) ? body.data : [],
+      tweets: Array.isArray(body.data) ? (body.data as XTweet[]) : [],
       media: body.includes?.media ?? [],
     };
   }

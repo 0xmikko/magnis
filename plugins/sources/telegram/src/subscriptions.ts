@@ -180,7 +180,7 @@ function spawnFixtureListener(
     void replay();
   });
   return {
-    cancel: () => {
+    cancel: (): void => {
       cancelled = true;
     },
   };
@@ -208,7 +208,7 @@ function spawnLiveListener(
     }
   });
   return {
-    cancel: () => {
+    cancel: (): void => {
       cancelled = true;
     },
   };

@@ -113,7 +113,7 @@ function wrapAuthClient(client: TelegramClient): AuthClientLike {
     // whose `save()` returns the serializable blob. Narrow to it.
     session: { save: () => (client.session as StringSession).save() },
     sendCode: (creds, phone) => client.sendCode(creds, phone),
-    signIn: async (params) => {
+    signIn: async (params): Promise<TgUserLike> => {
       const res = await withTimeout(
         client.invoke(
           new Api.auth.SignIn({
@@ -128,19 +128,19 @@ function wrapAuthClient(client: TelegramClient): AuthClientLike {
       const user = (res as { user?: unknown }).user;
       return user as TgUserLike;
     },
-    signInWithPassword: async (password) => {
+    signInWithPassword: async (password): Promise<TgUserLike> => {
       const user = await client.signInWithPassword(
         { apiId: client.apiId, apiHash: client.apiHash },
         {
-          password: async () => password,
-          onError: async (e: Error) => {
+          password: () => Promise.resolve(password),
+          onError: (e: Error) => {
             throw e;
           },
         },
       );
       return user;
     },
-    logOut: async () => {
+    logOut: async (): Promise<void> => {
       await withTimeout(
         client.invoke(new Api.auth.LogOut()),
         MTPROTO_REQUEST_TIMEOUT_MS,
@@ -188,7 +188,7 @@ export class TgClient implements TgOps {
     try {
       await client.connect();
     } catch (e) {
-      throw new Error(`failed to connect to Telegram: ${String(e)}`);
+      throw new Error(`failed to connect to Telegram: ${String(e)}`, { cause: e });
     }
     return new TgClient(client);
   }
@@ -212,7 +212,7 @@ export class TgClient implements TgOps {
       this.peerCache.set(id, entity);
       if (id === chatId) return entity;
     }
-    throw new Error(`chat ${chatId} not found in any dialog`);
+    throw new Error(`chat ${String(chatId)} not found in any dialog`);
   }
 
   async listDialogs(): Promise<CatchupDialog[]> {
@@ -270,7 +270,7 @@ export class TgClient implements TgOps {
     await mkdir(dirname(dest), { recursive: true });
     const out = await this.client.downloadMedia(message as never, { outputFile: dest });
     if (out === undefined) {
-      throw new Error(`download_file: no downloadable media in message ${message.id}`);
+      throw new Error(`download_file: no downloadable media in message ${String(message.id)}`);
     }
     return (await stat(dest)).size;
   }
@@ -279,9 +279,9 @@ export class TgClient implements TgOps {
    * handles NEW + EDITED messages (both → the same message payload + `tg:msg:`
    * remote_id); other update kinds are dropped. */
   addLiveHandler(handler: (message: MessageLike) => void | Promise<void>): void {
-    const cb = async (event: { message?: unknown }) => {
+    const cb = (event: { message?: unknown }): void => {
       const msg = event.message as MessageLike | undefined;
-      if (msg !== undefined) await handler(msg);
+      if (msg !== undefined) void handler(msg);
     };
     this.client.addEventHandler(cb, new NewMessage({}));
     this.client.addEventHandler(cb, new EditedMessage({}));
@@ -292,14 +292,19 @@ export class TgClient implements TgOps {
 
 /** Stable key for a TL Peer, used to join dialogs to their entity. */
 function peerKey(peer: unknown): string | undefined {
-  const p = peer as { className?: string; userId?: unknown; chatId?: unknown; channelId?: unknown };
+  const p = peer as {
+    className?: string;
+    userId?: unknown;
+    chatId?: unknown;
+    channelId?: unknown;
+  } | null;
   switch (p?.className) {
     case "PeerUser":
-      return `user:${toNum(p.userId)}`;
+      return `user:${String(toNum(p.userId))}`;
     case "PeerChat":
-      return `chat:${toNum(p.chatId)}`;
+      return `chat:${String(toNum(p.chatId))}`;
     case "PeerChannel":
-      return `channel:${toNum(p.channelId)}`;
+      return `channel:${String(toNum(p.channelId))}`;
     default:
       return undefined;
   }
@@ -309,12 +314,12 @@ function peerKey(peer: unknown): string | undefined {
 function entityKey(entity: EntityLike): string {
   switch (entity.className) {
     case "User":
-      return `user:${toNum(entity.id)}`;
+      return `user:${String(toNum(entity.id))}`;
     case "Chat":
     case "ChatForbidden":
-      return `chat:${toNum(entity.id)}`;
+      return `chat:${String(toNum(entity.id))}`;
     default:
-      return `channel:${toNum(entity.id)}`;
+      return `channel:${String(toNum(entity.id))}`;
   }
 }
 
@@ -439,7 +444,7 @@ export class LiveDialogPager implements DialogPager {
       let offsetId = 0;
       for (let i = rawDialogs.length - 1; i >= 0; i -= 1) {
         const d = rawDialogs[i];
-        if (d === undefined || d.className === "DialogFolder") continue;
+        if (d.className === "DialogFolder") continue;
         const top = d.topMessage;
         const date = top === undefined ? undefined : msgDate.get(top);
         if (date !== undefined && top !== undefined) {
@@ -449,7 +454,7 @@ export class LiveDialogPager implements DialogPager {
         }
       }
       const last = rawDialogs[rawDialogs.length - 1];
-      const lastKey = last === undefined ? undefined : peerKey(last.peer);
+      const lastKey = peerKey(last.peer);
       const lastEntity = lastKey === undefined ? undefined : chatMap.get(lastKey);
       if (lastEntity !== undefined) {
         nextOffset = {
@@ -503,7 +508,7 @@ export class SessionPool {
       try {
         client = await TgClient.connect(creds);
       } catch (e) {
-        throw new Error(`connect telegram session '${accountId}': ${String(e)}`);
+        throw new Error(`connect telegram session '${accountId}': ${String(e)}`, { cause: e });
       }
       this.sessions.set(accountId, client);
       return client;
@@ -511,7 +516,7 @@ export class SessionPool {
   }
 
   evict(accountId: string): Promise<boolean> {
-    return this.withLock(async () => this.sessions.delete(accountId));
+    return this.withLock(() => Promise.resolve(this.sessions.delete(accountId)));
   }
 
   size(): number {
@@ -524,6 +529,6 @@ export class SessionPool {
 let globalPool: SessionPool | null = null;
 
 export function pool(): SessionPool {
-  if (globalPool === null) globalPool = new SessionPool();
+  globalPool ??= new SessionPool();
   return globalPool;
 }

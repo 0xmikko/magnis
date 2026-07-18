@@ -153,7 +153,7 @@ export class MeetingsModule {
   })
   async get(params: GetParams): Promise<MeetingDetailView> {
     const detail = await this.graph.get_entity_full(params.id, { links: true });
-    if (!detail || detail.entity.schema_id !== CAL) {
+    if (detail?.entity.schema_id !== CAL) {
       throw new Error(`meeting ${params.id} not found`);
     }
     const { entity, facets, links } = detail;
@@ -178,7 +178,7 @@ export class MeetingsModule {
     // (user-scoped → drops non-owned targets) hydrates names/schemas.
     const linked_entities: LinkedEntitySummary[] = [];
     if (links.length > 0) {
-      const neighbourId = (l: { from_id: string; to_id: string }) =>
+      const neighbourId = (l: { from_id: string; to_id: string }): string =>
         l.from_id === entity.id ? l.to_id : l.from_id;
       const targets = await this.graph.get_entities([...new Set(links.map(neighbourId))]);
       const byId = new Map<string, RawEntity>(targets.map((t) => [t.id, t]));
@@ -236,7 +236,7 @@ export class MeetingsModule {
 
     let results: SearchResultItem[] = entities
       .filter((e) => e.schema_id === EVENT)
-      .filter((e) => (query.length === 0 ? true : (e.name ?? "").toLowerCase().includes(query)))
+      .filter((e) => (query.length === 0 ? true : e.name.toLowerCase().includes(query)))
       .map((e) => ({
         id: e.id,
         name: e.name && e.name.length > 0 ? e.name : null,
@@ -251,7 +251,7 @@ export class MeetingsModule {
       return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
     });
 
-    if (params.limit != null && results.length > params.limit) {
+    if (params.limit !== undefined && results.length > params.limit) {
       results = results.slice(0, params.limit);
     }
 
@@ -328,8 +328,8 @@ export class MeetingsModule {
       attendees: normalizeAttendees(params.attendees),
       updated_at: now,
     };
-    if (params.description != null) data.description = params.description;
-    if (params.location != null) data.location = params.location;
+    if (params.description !== undefined) data.description = params.description;
+    if (params.location !== undefined) data.location = params.location;
 
     await this.graph.attach_facet({
       entity_id: entity.id,
@@ -352,8 +352,8 @@ export class MeetingsModule {
       ends_at: params.ends_at,
       attendees: normalizeAttendees(params.attendees),
     };
-    if (params.description != null) snap.description = params.description;
-    if (params.location != null) snap.location = params.location;
+    if (params.description !== undefined) snap.description = params.description;
+    if (params.location !== undefined) snap.location = params.location;
     return snap;
   }
 
@@ -369,7 +369,7 @@ export class MeetingsModule {
   async ingest(params: {
     envelopes?: SyncEnvelope[];
   }): Promise<{ ok: boolean; dropped_remote_ids: string[]; trigger_checks: MeetingTriggerCheck[] }> {
-    const envelopes = Array.isArray(params?.envelopes) ? params.envelopes : [];
+    const envelopes = Array.isArray(params.envelopes) ? params.envelopes : [];
 
     // INV-8: validate ALL user_ids before any write so a bad envelope writes
     // nothing (native bails on empty user_id; no "" attribution).
@@ -411,7 +411,8 @@ export class MeetingsModule {
   /// Upsert one calendar event + its details facet (idempotent on external_id),
   /// then, for LIVE events, assemble the trigger.check with attendee address ids.
   private async ingestUpsert(env: SyncEnvelope, triggers: MeetingTriggerCheck[]): Promise<void> {
-    const remoteId = env.remote_id!;
+    const remoteId = env.remote_id;
+    if (!remoteId) throw new Error("meetings ingest: envelope missing remote_id");
     const payload = env.payload as Data;
     const name = str(payload, "title") ?? "";
 
@@ -440,7 +441,7 @@ export class MeetingsModule {
         address: email,
         display_name: display,
       });
-      if (r?.id) touched.push(r.id);
+      if (r.id) touched.push(r.id);
     }
 
     triggers.push({

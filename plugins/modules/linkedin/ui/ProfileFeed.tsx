@@ -91,7 +91,7 @@ export function LinkedInProfileFeed({ entityId, runtime }: DetailPanelProps): JS
                 </Text>
               </Stack>
             )}
-            {profile?.follower_count != null && (
+            {profile?.follower_count !== null && profile?.follower_count !== undefined && (
               <Stack gap={1}>
                 <Text variant="caption" weight="semibold" color="tertiary">
                   Followers

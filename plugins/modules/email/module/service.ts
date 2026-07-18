@@ -256,7 +256,7 @@ export class EmailModule {
   /// neighbours' names — no per-link N+1.
   private async getDetail(id: string): Promise<MessageDetailView | null> {
     const detail = await this.graph.get_entity_full(id, { links: true });
-    if (!detail || detail.entity.schema_id !== MESSAGE_SCHEMA) return null;
+    if (detail?.entity.schema_id !== MESSAGE_SCHEMA) return null;
     const { entity, facets, links } = detail;
     const d = (facets.find((f) => f.schema_id === MESSAGE_DETAILS)?.data as Data | undefined) ?? {};
     const facetSummaries: FacetSummary[] = facets.map((f) => ({
@@ -272,7 +272,7 @@ export class EmailModule {
     // user-scoped → drops non-owned targets) hydrates names/schemas.
     const linked_entities: LinkedEntitySummary[] = [];
     if (links.length > 0) {
-      const neighbourId = (l: { from_id: string; to_id: string }) =>
+      const neighbourId = (l: { from_id: string; to_id: string }): string =>
         l.from_id === entity.id ? l.to_id : l.from_id;
       const targets = await this.graph.get_entities([...new Set(links.map(neighbourId))]);
       const byId = new Map(targets.map((t) => [t.id, t]));
@@ -319,7 +319,7 @@ export class EmailModule {
   async ingest(params: {
     envelopes?: SyncEnvelope[];
   }): Promise<{ ok: boolean; dropped_remote_ids: string[]; trigger_checks: EmailTriggerCheck[] }> {
-    const envelopes = Array.isArray(params?.envelopes) ? params.envelopes : [];
+    const envelopes = Array.isArray(params.envelopes) ? params.envelopes : [];
     const dropped: string[] = [];
     const triggers: EmailTriggerCheck[] = [];
     const messages: SyncEnvelope[] = [];
@@ -558,7 +558,7 @@ export class EmailModule {
     const attachmentIds = params.attachment_ids ?? [];
     // Read the original (user-scoped); reply has no meaning without it.
     const detail = await this.graph.get_entity_full(params.email_id, { links: false });
-    if (!detail || detail.entity.schema_id !== MESSAGE_SCHEMA) {
+    if (detail?.entity.schema_id !== MESSAGE_SCHEMA) {
       throw new Error(`Email not found: ${params.email_id}`);
     }
     const od = (detail.facets.find((f) => f.schema_id === MESSAGE_DETAILS)?.data as Data | undefined) ?? {};
@@ -633,14 +633,14 @@ export class EmailModule {
     },
   })
   async emailBatchSend(params: BatchSendParams): Promise<Record<string, unknown>> {
-    const messages = params.messages ?? [];
+    const messages = params.messages;
     if (messages.length === 0 || messages.length > 50) {
-      throw new Error(`batch size must be 1..=50, got ${messages.length}`);
+      throw new Error(`batch size must be 1..=50, got ${String(messages.length)}`);
     }
     messages.forEach((m, i) => {
-      if (!m.to) throw new Error(`message[${i}]: missing to`);
-      if (!m.subject) throw new Error(`message[${i}]: missing subject`);
-      if (!m.body_text) throw new Error(`message[${i}]: missing body_text`);
+      if (!m.to) throw new Error(`message[${String(i)}]: missing to`);
+      if (!m.subject) throw new Error(`message[${String(i)}]: missing subject`);
+      if (!m.body_text) throw new Error(`message[${String(i)}]: missing body_text`);
     });
     const excluded = new Set(params.excluded_indices ?? []);
 
@@ -713,7 +713,7 @@ export class EmailModule {
     const name =
       addresses.length <= 3
         ? `Email trigger: ${addresses.join(", ")}`
-        : `Email trigger: ${addresses.slice(0, 3).join(", ")} +${addresses.length - 3} more`;
+        : `Email trigger: ${addresses.slice(0, 3).join(", ")} +${String(addresses.length - 3)} more`;
 
     // Delegate to the triggers module via the cross-module hub (rpc_calls).
     return this.rpc.execute("triggers.create", {
@@ -763,7 +763,7 @@ export class EmailModule {
     },
   })
   async ensureAddress(params: { address: string; display_name?: string | null }): Promise<{ id: string }> {
-    const lower = (params.address ?? "").trim().toLowerCase();
+    const lower = params.address.trim().toLowerCase();
     if (lower.length === 0) {
       throw new Error("email.ensure_address: 'address' is required");
     }

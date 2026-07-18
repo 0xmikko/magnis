@@ -18,9 +18,12 @@ function metricLine(data: Readonly<Record<string, unknown>>): string | undefined
   const m = (data.metrics ?? {}) as Record<string, unknown>;
   const n = (k: string): number | undefined => (typeof m[k] === "number" ? (m[k]) : undefined);
   const parts: string[] = [];
-  if (n("likes") != null) parts.push(`♥ ${n("likes")}`);
-  if (n("reposts") != null) parts.push(`⇄ ${n("reposts")}`);
-  if (n("replies") != null) parts.push(`💬 ${n("replies")}`);
+  const likes = n("likes");
+  const reposts = n("reposts");
+  const replies = n("replies");
+  if (likes !== undefined) parts.push(`♥ ${String(likes)}`);
+  if (reposts !== undefined) parts.push(`⇄ ${String(reposts)}`);
+  if (replies !== undefined) parts.push(`💬 ${String(replies)}`);
   return parts.length ? parts.join("  ") : undefined;
 }
 
@@ -61,7 +64,7 @@ export function XProfileCard(props: EntityRendererProps): JSX.Element {
   const bio = (data.bio as string | undefined) ?? undefined;
   const avatar = (data.avatar_url as string | undefined) ?? undefined;
   const subtitle = handle
-    ? `@${handle}${followers != null ? ` · ${followers.toLocaleString()} followers` : ""}`
+    ? `@${handle}${followers !== undefined ? ` · ${followers.toLocaleString()} followers` : ""}`
     : undefined;
 
   return (

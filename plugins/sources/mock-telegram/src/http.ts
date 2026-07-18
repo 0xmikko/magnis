@@ -40,8 +40,8 @@ export function status(): Json {
 
 async function body(req: Request): Promise<Json> {
   try {
-    const parsed = await req.json();
-    return parsed && typeof parsed === "object" ? (parsed as Json) : {};
+    const parsed: unknown = await req.json();
+    return parsed !== null && typeof parsed === "object" ? (parsed as Json) : {};
   } catch {
     return {};
   }
@@ -71,10 +71,10 @@ export function maybeRunHttp(): void {
   if (!Number.isInteger(port) || port < 0 || port > 65535) return;
   try {
     Bun.serve({ port, hostname: "0.0.0.0", fetch: handleHttp });
-    process.stderr.write(`magnis-mock-telegram: control server on :${port}\n`);
+    process.stderr.write(`magnis-mock-telegram: control server on :${String(port)}\n`);
   } catch (e) {
     process.stderr.write(
-      `magnis-mock-telegram: control port ${port} unavailable (${e instanceof Error ? e.message : String(e)}); MCP-only\n`,
+      `magnis-mock-telegram: control port ${String(port)} unavailable (${e instanceof Error ? e.message : String(e)}); MCP-only\n`,
     );
   }
 }

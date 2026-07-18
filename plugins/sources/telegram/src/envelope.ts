@@ -16,12 +16,15 @@
 // that matters. We follow the Rust SOURCE's insertion order below for
 // readability; do not read "byte-identical" as "same key order".
 
-/** Sender details for module-side person-entity creation. */
+/** Sender details for module-side person-entity creation. Fixture JSON may carry
+ * explicit `null` for the optional fields (Rust `Option` + skip_serializing_if),
+ * so they are string | null | undefined — the `!== null && !== undefined` guards
+ * in `messagePayload` rely on the null arm. */
 export interface TgSenderInfo {
   first_name: string;
-  last_name?: string;
-  username?: string;
-  phone?: string;
+  last_name?: string | null;
+  username?: string | null;
+  phone?: string | null;
 }
 
 /** One message in canonical (intermediate) form. Live mode fills this from a
@@ -87,12 +90,12 @@ export function toRfc3339Utc(d: Date): string {
 
 /** `remote_id` for a message envelope — twin of `format!("tg:msg:{}:{}", …)`. */
 export function messageRemoteId(chatId: number, messageId: number): string {
-  return `tg:msg:${chatId}:${messageId}`;
+  return `tg:msg:${String(chatId)}:${String(messageId)}`;
 }
 
 /** `remote_id` for a chat envelope — twin of `format!("tg:chat:{}", …)`. */
 export function chatRemoteId(chatId: number): string {
-  return `tg:chat:${chatId}`;
+  return `tg:chat:${String(chatId)}`;
 }
 
 /** Subdirectory under `files/telegram/` for a given Telegram media type. */
@@ -163,13 +166,11 @@ export function messagePayload(m: TgMessage): Record<string, unknown> {
         chat_id: m.chat_id,
         message_id: m.message_id,
         media_type: mt,
-        dest_subpath: `telegram/${subdir}/tg_${m.chat_id}_${m.message_id}.${ext}`,
+        dest_subpath: `telegram/${subdir}/tg_${String(m.chat_id)}_${String(m.message_id)}.${ext}`,
       };
       // Attach the original filename or generate a descriptive one.
       payload.file_name =
-        m.file_name !== undefined
-          ? m.file_name
-          : `${mt}_${m.chat_id}_${m.message_id}.${ext}`;
+        m.file_name ?? `${mt}_${String(m.chat_id)}_${String(m.message_id)}.${ext}`;
     }
   }
 
@@ -179,11 +180,11 @@ export function messagePayload(m: TgMessage): Record<string, unknown> {
   if (m.sender_info !== undefined) {
     const si = m.sender_info;
     const senderInfo: Record<string, unknown> = { first_name: si.first_name };
-    // `!= null` (not `!== undefined`): fixture JSON may carry explicit nulls,
-    // which Rust's Option + skip_serializing_if (envelope.rs:19-24) would omit.
-    if (si.last_name != null) senderInfo.last_name = si.last_name;
-    if (si.username != null) senderInfo.username = si.username;
-    if (si.phone != null) senderInfo.phone = si.phone;
+    // Drop BOTH null and undefined (not just undefined): fixture JSON may carry
+    // explicit nulls, which Rust's Option + skip_serializing_if would omit.
+    if (si.last_name !== null && si.last_name !== undefined) senderInfo.last_name = si.last_name;
+    if (si.username !== null && si.username !== undefined) senderInfo.username = si.username;
+    if (si.phone !== null && si.phone !== undefined) senderInfo.phone = si.phone;
     payload.sender_info = senderInfo;
   }
 
@@ -209,7 +210,7 @@ export function messageEnvelope(m: TgMessage, kind: string): Record<string, unkn
 /** Build the canonical chat payload. */
 export function chatPayload(c: TgChat): Record<string, unknown> {
   // Title fallback mirrors the Rust `format!("Chat {}", chat_id)` when empty.
-  const title = c.title === "" ? `Chat ${c.chat_id}` : c.title;
+  const title = c.title === "" ? `Chat ${String(c.chat_id)}` : c.title;
 
   const payload: Record<string, unknown> = {
     entity_type: "telegram_chat",

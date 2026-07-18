@@ -56,7 +56,7 @@ export class CompaniesModule {
       });
       // Sort alphabetically by name (parity with staging, which sorted ALL
       // results; search_entities_by_name returns prefix/date order otherwise).
-      matched.sort((a, b) => (a.name ?? "").toLowerCase().localeCompare((b.name ?? "").toLowerCase()));
+      matched.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
       total = matched.length;
       rows = matched.slice(offset, offset + limit);
     } else {
@@ -99,7 +99,7 @@ export class CompaniesModule {
     // collection email/phone facets the old get returned). One get_canonical
     // for the canonical block.
     const detail = await this.graph.get_entity_full(params.id);
-    if (!detail || detail.entity.schema_id !== SCHEMA) {
+    if (detail?.entity.schema_id !== SCHEMA) {
       throw new Error(`company not found: ${params.id}`);
     }
     const { entity } = detail;
@@ -113,7 +113,7 @@ export class CompaniesModule {
       { type: "text", label: "Website", value: base.website },
       { type: "text", label: "Industry", value: base.industry },
       { type: "text", label: "Size", value: base.size },
-      { type: "chips", label: `Team members (${members.length})`, items: members },
+      { type: "chips", label: `Team members (${String(members.length)})`, items: members },
     ];
     return { ...base, canonical, facets, linked_entities: [], members, header_rows };
   }
@@ -151,7 +151,7 @@ export class CompaniesModule {
       schema_ids: ["companies.company"],
       limit: 25,
     });
-    const match = existing.find((c) => (c.name ?? "").trim().toLowerCase() === needle);
+    const match = existing.find((c) => c.name.trim().toLowerCase() === needle);
     if (match) {
       // Write path (idempotent return) — one canonical read hydrates the matched
       // entity's list item; not the hot read path.

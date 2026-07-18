@@ -21,13 +21,13 @@ function useResolvedEntities(
   useEffect(() => {
     if (!watchIds || watchIds.length === 0) return;
     let cancelled = false;
-    Promise.all(
+    void Promise.all(
       watchIds.map((id) =>
         runtime.transport
           .rpc<Record<string, unknown>>("graph.entity.get", { id })
           .then((e) => ({
             id,
-            schema_id: (e.schema_id as string) ?? "",
+            schema_id: (e.schema_id as string | undefined) ?? "",
             name: e.name as string | undefined,
             data: e,
           }))
@@ -39,7 +39,7 @@ function useResolvedEntities(
           results.filter((r): r is NonNullable<typeof r> => r !== null),
         );
     });
-    return () => {
+    return (): void => {
       cancelled = true;
     };
   }, [watchIds, runtime]);

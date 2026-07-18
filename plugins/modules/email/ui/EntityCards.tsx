@@ -104,7 +104,11 @@ function flatten(row: Readonly<Record<string, unknown>>): Readonly<Record<string
   }
 
   const linked = row.linked_entities;
-  if (flat.to == null && flat.to_addresses == null && Array.isArray(linked)) {
+  if (
+    (flat.to === null || flat.to === undefined) &&
+    (flat.to_addresses === null || flat.to_addresses === undefined) &&
+    Array.isArray(linked)
+  ) {
     const recipient = (linked as Record<string, unknown>[]).find(
       (e) => e.link_kind === "sent_to" && e.schema_id === "email.address",
     );

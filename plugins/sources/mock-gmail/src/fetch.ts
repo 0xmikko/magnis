@@ -5,7 +5,7 @@ import { readItems } from "./store";
 // the cursor is an INDEX into the surface's items in the shared file; every
 // item past it is returned, `nextCursor` is the total count, `hasMore` false.
 
-export async function fetchMockGmail(args: FetchArgs): Promise<FetchResult> {
+export function fetchMockGmail(args: FetchArgs): Promise<FetchResult> {
   // Rust: `surface` defaults to "email", `cursor` to 0 (as_u64 → non-numeric
   // cursors read as 0 too).
   const surface = args.surface || "email";
@@ -20,5 +20,5 @@ export async function fetchMockGmail(args: FetchArgs): Promise<FetchResult> {
     // stamped Live) so the modules' trigger.check fires.
     kind: "live",
   }));
-  return { envelopes, nextCursor: items.length, hasMore: false };
+  return Promise.resolve({ envelopes, nextCursor: items.length, hasMore: false });
 }

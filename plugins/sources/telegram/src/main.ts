@@ -93,7 +93,7 @@ async function runMcpStdio(): Promise<void> {
     // Dispatch WITHOUT awaiting so the read loop never blocks on a long-running
     // call. The permit is acquired INSIDE the task (so the loop itself never
     // waits), but the (bound+1)th task waits for a permit before it dispatches.
-    void (async () => {
+    void (async (): Promise<void> => {
       await sem.acquire();
       try {
         const reply = await handleMessage(msg, deps);

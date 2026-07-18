@@ -27,7 +27,10 @@ export function useTriggerDetail(
 ): TriggerDetail | null {
   const query = useQuery<TriggerDetail>({
     queryKey: ["triggers", entityId],
-    queryFn: () => runtime.transport.rpc<TriggerDetail>("triggers.get", { id: entityId! }),
+    queryFn: () => {
+      if (entityId === undefined) throw new Error("triggers.get: missing entityId");
+      return runtime.transport.rpc<TriggerDetail>("triggers.get", { id: entityId });
+    },
     enabled: typeof entityId === "string" && entityId.length > 0,
     staleTime: 30_000,
   });

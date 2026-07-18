@@ -8,7 +8,7 @@
 // already user-scoped `list_entities_window` / `list_entities_by_facet_field`.
 
 import { tool, writeTool, type GraphService, type PluginDeps } from "@magnis/plugin-sdk";
-import type { EntityDetail, FacetRecord, LinkSummary, WindowPage } from "@magnis/plugin-sdk";
+import type { EntityDetail, WindowPage } from "@magnis/plugin-sdk";
 import type {
   FileAttachParams,
   FileAttachResult,
@@ -109,7 +109,7 @@ export class FileModule {
         if (!(links).some((l) => l.from_id === params.parent_id)) continue;
       }
       // mime_prefix: prefix match, refined in-TS (window filter is exact — DEC-8).
-      if (params.mime_prefix && !(details.mime_type ?? "").startsWith(params.mime_prefix)) {
+      if (params.mime_prefix && !details.mime_type.startsWith(params.mime_prefix)) {
         continue;
       }
       // skip rows with no retrievable content (DEC-8; graph-visible part).
@@ -132,7 +132,7 @@ export class FileModule {
   async get(params: FileGetParams): Promise<Record<string, unknown>> {
     // user-scoped → null for a non-owned id; a wrong-schema id must never resolve.
     const detail = await this.graph.get_entity_full(params.id, { links: false });
-    if (!detail || detail.entity.schema_id !== ENTITY) {
+    if (detail?.entity.schema_id !== ENTITY) {
       throw new Error(`file not found: ${params.id}`);
     }
     const details = facetData(detail, DETAILS) as FileDetails | undefined;
@@ -169,7 +169,7 @@ export class FileModule {
     // DEC-7: own-check both (raw add_link is not user-scoped) and file_id must be
     // a file.object — cross-user/invalid ids surface as not-found, no link.
     const file = await this.graph.get_entity_full(params.file_id, { links: false });
-    if (!file || file.entity.schema_id !== ENTITY) {
+    if (file?.entity.schema_id !== ENTITY) {
       throw new Error(`file not found: ${params.file_id}`);
     }
     const target = await this.graph.get_entity_full(params.target_id, { links: false });

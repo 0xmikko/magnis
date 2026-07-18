@@ -9,7 +9,7 @@ import { readItems } from "./store";
 
 async function body(req: Request): Promise<Record<string, unknown>> {
   try {
-    const parsed = await req.json();
+    const parsed: unknown = await req.json();
     return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
   } catch {
     return {};
@@ -43,10 +43,10 @@ export function maybeRunHttp(): void {
   if (!Number.isInteger(port) || port < 0 || port > 65535) return;
   try {
     Bun.serve({ port, hostname: "0.0.0.0", fetch: handleHttp });
-    process.stderr.write(`magnis-mock-gmail: injection server on :${port}\n`);
+    process.stderr.write(`magnis-mock-gmail: injection server on :${String(port)}\n`);
   } catch (e) {
     process.stderr.write(
-      `magnis-mock-gmail: injection port ${port} unavailable (${e instanceof Error ? e.message : String(e)}); MCP-only\n`,
+      `magnis-mock-gmail: injection port ${String(port)} unavailable (${e instanceof Error ? e.message : String(e)}); MCP-only\n`,
     );
   }
 }

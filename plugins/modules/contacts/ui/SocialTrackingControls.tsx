@@ -24,7 +24,7 @@ export function SocialTrackingControls({ entityId }: { readonly entityId: string
           tracked={platform === "x" ? !!tracking.tracked_x : !!tracking.tracked_linkedin}
           handle={(platform === "x" ? tracking.x_handle : tracking.linkedin_handle) ?? ""}
           onSaved={() => {
-            void runtime.queryClient?.invalidateQueries({ queryKey: socialTrackingKey(entityId) });
+            void runtime.queryClient.invalidateQueries({ queryKey: socialTrackingKey(entityId) });
           }}
         />
       ))}

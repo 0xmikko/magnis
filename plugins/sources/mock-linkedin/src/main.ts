@@ -7,5 +7,5 @@ await runConnector({
   surfaces: ["linkedin"],
   intervalSecs: 5,
   fetch: fetchMockLinkedIn,
-  probeAuth: async () => ({ subject: "mock-linkedin-key" }),
+  probeAuth: () => Promise.resolve({ subject: "mock-linkedin-key" }),
 });

@@ -92,7 +92,7 @@ export class XModule {
   async ingest(params: {
     envelopes?: SyncEnvelope[];
   }): Promise<{ ok: boolean; dropped_remote_ids: string[] }> {
-    const envelopes = Array.isArray(params?.envelopes) ? params.envelopes : [];
+    const envelopes = Array.isArray(params.envelopes) ? params.envelopes : [];
     const dropped: string[] = [];
 
     const entities: BatchEntityInput[] = [];
@@ -102,7 +102,7 @@ export class XModule {
 
     for (const env of envelopes) {
       const remoteId = env.remote_id;
-      const payload = (env.payload ?? {});
+      const payload = env.payload;
       const entityType = str(payload, "entity_type");
       if (!remoteId || env.kind === "delete") {
         if (remoteId && env.kind === "delete") dropped.push(remoteId); // S0: no delete path yet
@@ -113,7 +113,7 @@ export class XModule {
         entities.push({
           key: remoteId,
           schema_id: PROFILE,
-          name: identity.display_name ?? identity.handle ?? remoteId,
+          name: identity.display_name ?? identity.handle,
           facets: [
             { schema_id: PROFILE_IDENTITY, data: payload, external_id: remoteId, confidence: 100 },
           ],
@@ -129,7 +129,7 @@ export class XModule {
         entities.push({
           key: remoteId,
           schema_id: POST,
-          name: (content.text ?? "").slice(0, 80),
+          name: content.text.slice(0, 80),
           date: content.created_at ?? undefined,
           facets,
         });
@@ -140,7 +140,7 @@ export class XModule {
 
     // authored_by links: post → its author profile when present in THIS page.
     for (const env of envelopes) {
-      const payload = (env.payload ?? {});
+      const payload = env.payload;
       if (str(payload, "entity_type") !== "post" || !env.remote_id) continue;
       const handle = str(payload, "author_handle");
       if (!handle) continue;
@@ -157,7 +157,7 @@ export class XModule {
       // owner and link profile→person (idempotent by (from,to,kind)). Any RPC
       // failure is swallowed: the next poll cycle re-ingests the profile and
       // repairs the link (self-healing, INV-1).
-      await this.linkProfilesToContacts(envelopes, applied.ids ?? {});
+      await this.linkProfilesToContacts(envelopes, applied.ids);
     }
     return { ok: dropped.length === 0, dropped_remote_ids: dropped };
   }
@@ -194,7 +194,7 @@ export class XModule {
       surface: "contacts",
       params: {
         handle: params.handle,
-        ...(params.limit != null ? { limit: params.limit } : {}),
+        ...(params.limit !== undefined ? { limit: params.limit } : {}),
       },
     });
     return { scheduled: true, surface: "contacts" };
@@ -205,7 +205,7 @@ export class XModule {
     ids: Record<string, string>,
   ): Promise<void> {
     for (const env of envelopes) {
-      const payload = (env.payload ?? {});
+      const payload = env.payload;
       if (str(payload, "entity_type") !== "profile" || !env.remote_id) continue;
       const handle = str(payload, "handle");
       const profileId = ids[env.remote_id];
@@ -276,7 +276,7 @@ export class XModule {
   })
   async postsGet(params: GetParams): Promise<PostListItem> {
     const detail = await this.graph.get_entity_full(params.id, { links: false });
-    if (!detail || detail.entity.schema_id !== POST) {
+    if (detail?.entity.schema_id !== POST) {
       throw new Error(`x post not found: ${params.id}`);
     }
     const data =
@@ -307,7 +307,7 @@ export class XModule {
   })
   async profilesGet(params: GetParams): Promise<ProfileDetail> {
     const detail = await this.graph.get_entity_full(params.id, { links: false });
-    if (!detail || detail.entity.schema_id !== PROFILE) {
+    if (detail?.entity.schema_id !== PROFILE) {
       throw new Error(`x profile not found: ${params.id}`);
     }
     const d =
@@ -319,7 +319,7 @@ export class XModule {
       id: detail.entity.id,
       platform: (str(d, "platform") as Platform | undefined) ?? null,
       handle: str(d, "handle") ?? null,
-      display_name: str(d, "display_name") ?? detail.entity.name ?? null,
+      display_name: str(d, "display_name") ?? detail.entity.name,
       follower_count: typeof fc === "number" ? fc : null,
       bio: str(d, "bio") ?? null,
       url: str(d, "url") ?? null,
@@ -391,7 +391,7 @@ export class XModule {
       conversation_id: str(d, "conversation_id") ?? null,
       platform: (str(d, "platform") as Platform | undefined) ?? null,
       author_handle: str(d, "author_handle") ?? null,
-      text: str(d, "text") ?? row.entity.name ?? "",
+      text: str(d, "text") ?? row.entity.name,
       created_at: str(d, "created_at") ?? null,
       url: str(d, "url") ?? null,
       ...richPostFields(d),
@@ -405,7 +405,7 @@ export class XModule {
       id: row.entity.id,
       platform: (str(d, "platform") as Platform | undefined) ?? null,
       handle: str(d, "handle") ?? null,
-      display_name: str(d, "display_name") ?? row.entity.name ?? null,
+      display_name: str(d, "display_name") ?? row.entity.name,
       follower_count: typeof fc === "number" ? fc : null,
       avatar_url: str(d, "avatar_url") ?? null,
     };

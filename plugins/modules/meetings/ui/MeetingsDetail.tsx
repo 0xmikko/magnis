@@ -87,7 +87,7 @@ function MeetingsDetailBody({ detail }: { readonly detail: MeetingDetailData }):
             const companies = await runtime.transport.rpc<{
               items: { id: string; name: string }[];
             }>("companies.list", { search: root });
-            const match = companies.items[0];
+            const match = companies.items.at(0);
             if (match) {
               await runtime.transport.rpc("graph.link.add", {
                 from: created.id,

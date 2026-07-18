@@ -6,8 +6,8 @@ import type { FileDetails } from "../types/index.ts";
 /// `resolve_url`'s ordering — but native built `/files/{local_path}`, which does
 /// NOT match the entity-id route, so we correct it to the entity id.
 export function resolveUrl(entityId: string, details: FileDetails): string | null {
-  if (details.local_path != null) return `/files/${entityId}`;
-  if (details.cloud_url != null) return details.cloud_url;
+  if (details.local_path !== null && details.local_path !== undefined) return `/files/${entityId}`;
+  if (details.cloud_url !== null && details.cloud_url !== undefined) return details.cloud_url;
   return null;
 }
 
@@ -17,7 +17,10 @@ export function resolveUrl(entityId: string, details: FileDetails): string | nul
 /// on completion, so `local_path || cloud_url` is authoritative for
 /// normally-downloaded files. Inconsistent dest_subpath-only rows are skipped.
 export function hasContent(details: FileDetails): boolean {
-  return details.local_path != null || details.cloud_url != null;
+  return (
+    (details.local_path !== null && details.local_path !== undefined) ||
+    (details.cloud_url !== null && details.cloud_url !== undefined)
+  );
 }
 
 /// Build a list/get item from the file.details facet data + the entity id.

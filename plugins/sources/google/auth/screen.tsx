@@ -11,6 +11,8 @@
  * NOTE: for oauth2, the generic `SourceConnect` host component performs the
  * navigation directly, so this screen is the catalog fallback / non-SPA entry.
  */
+import type { JSX } from "react";
+
 export interface SourceAuthScreenProps {
   sourceId: string;
 }

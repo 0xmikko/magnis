@@ -36,7 +36,7 @@ export function CompanyDetailContent({
           { label: fieldLabels.industry, value: company.industry },
           { label: fieldLabels.size, value: company.size },
           {
-            label: `${fieldLabels.teamMembers} (${company.members.length})`,
+            label: `${fieldLabels.teamMembers} (${String(company.members.length)})`,
             value: (
               <Row gap={1.5} wrap className="mt-0.5">
                 {company.members.map((member) => (

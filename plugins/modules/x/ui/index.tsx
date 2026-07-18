@@ -47,15 +47,15 @@ export const XModule = defineModule({
   primaryEntityType: "profile",
   rpc: { list: "x.profiles.list", get: "x.profiles.get" },
   mapListItem: (raw) => {
-    const handle = raw.handle ? String(raw.handle) : "";
+    const handle = typeof raw.handle === "string" ? raw.handle : "";
     const fc = typeof raw.follower_count === "number" ? raw.follower_count : null;
     return {
-      id: String(raw.id ?? ""),
-      name: raw.display_name ? String(raw.display_name) : handle || "Profile",
+      id: typeof raw.id === "string" ? raw.id : "",
+      name: typeof raw.display_name === "string" && raw.display_name ? raw.display_name : handle || "Profile",
       schema_id: "x.profile",
-      preview: handle ? `@${handle}${fc != null ? ` · ${fc.toLocaleString()} followers` : ""}` : null,
+      preview: handle ? `@${handle}${fc !== null ? ` · ${fc.toLocaleString()} followers` : ""}` : null,
       timestamp: null,
-      avatar_url: raw.avatar_url ? proxiedMediaUrl(String(raw.avatar_url)) : null,
+      avatar_url: typeof raw.avatar_url === "string" ? proxiedMediaUrl(raw.avatar_url) : null,
     };
   },
   // STANDARD detail: DetailPane + TopBarHeader via the framework path; the
@@ -75,6 +75,6 @@ export const XModule = defineModule({
       ["sync.progress"],
       [["x"]],
     );
-    return () => { unsub(); };
+    return (): void => { unsub(); };
   },
 });

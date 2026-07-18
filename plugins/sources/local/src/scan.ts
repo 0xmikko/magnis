@@ -31,7 +31,8 @@ export function scan(base: string): Entry[] {
   const out: Entry[] = [];
   const stack: string[] = [base];
   while (stack.length > 0) {
-    const dir = stack.pop()!;
+    const dir = stack.pop();
+    if (dir === undefined) break;
     let names: string[];
     try {
       names = readdirSync(dir);

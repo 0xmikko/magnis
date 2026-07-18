@@ -246,8 +246,8 @@ export interface MergeField {
   canonical_key: string;
   strategy: string;
   candidates: unknown[];
-  survivor_value: unknown | null;
-  retired_value: unknown | null;
+  survivor_value: unknown;
+  retired_value: unknown;
   auto_resolved: unknown;
 }
 export interface MergeSource {
@@ -524,6 +524,10 @@ interface ToolMeta {
 // same object, so definePlugin reads it back after `new`.
 const REGISTRY = new WeakMap<object, ToolMeta[]>();
 
+/** The legacy (experimentalDecorators) method-decorator returned by the tool
+ * factories — records the method into REGISTRY. */
+type MethodRecorder = (target: object, methodName: string, descriptor: PropertyDescriptor) => void;
+
 function record(suffix: string, spec: ToolSpecInput, write: boolean, isTool: boolean) {
   return function (target: object, methodName: string, _d: PropertyDescriptor): void {
     let list = REGISTRY.get(target);
@@ -537,12 +541,12 @@ function record(suffix: string, spec: ToolSpecInput, write: boolean, isTool: boo
 
 /// Declare a read tool. `suffix` is the method name only — the backend
 /// glues the `<plugin_id>.` prefix at init.
-export function tool(suffix: string, spec: ToolSpecInput) {
+export function tool(suffix: string, spec: ToolSpecInput): MethodRecorder {
   return record(suffix, spec, false, true);
 }
 /// Declare a write tool (→ `requires_approval: true` on the agent
 /// tool definition).
-export function writeTool(suffix: string, spec: ToolSpecInput) {
+export function writeTool(suffix: string, spec: ToolSpecInput): MethodRecorder {
   return record(suffix, spec, true, true);
 }
 /// Declare an RPC-only handler: reachable via RPC (frontend / other
@@ -550,7 +554,7 @@ export function writeTool(suffix: string, spec: ToolSpecInput) {
 /// internal/UI operations (e.g. add_member, list_for_entity) that the
 /// agent shouldn't call directly. Mirrors a native module's
 /// `rpc_methods()` that aren't in `tools()`.
-export function rpc(suffix: string, spec: ToolSpecInput = { description: "", params: {} }) {
+export function rpc(suffix: string, spec: ToolSpecInput = { description: "", params: {} }): MethodRecorder {
   return record(suffix, spec, false, false);
 }
 
@@ -561,7 +565,7 @@ export function rpc(suffix: string, spec: ToolSpecInput = { description: "", par
 /// routes to one of the plugin's declared `surfaces.sync_handlers`. The method
 /// dispatches internally by `envelope.kind` / payload `entity_type`. NOT an
 /// agent tool. One handler per plugin.
-export function syncHandler(_surface?: string) {
+export function syncHandler(_surface?: string): MethodRecorder {
   return record("__sync__", { description: "sync ingest handler", params: {} }, false, false);
 }
 
@@ -599,6 +603,10 @@ export function definePlugin<
   const rpcHandlers: PluginModuleShape["rpcHandlers"] = {};
   const toolDefinitions: ToolDefinitionWire[] = [];
 
+  // init has no async work of its own, but must stay async to satisfy
+  // PluginModuleShape.init's Promise<void> contract AND preserve throw→rejection
+  // semantics for the runtime's `await init(...)`.
+  // eslint-disable-next-line @typescript-eslint/require-await -- see above
   async function init(
     graph: unknown,
     ctx: PluginContext,
@@ -621,7 +629,7 @@ export function definePlugin<
       if (typeof method !== "function") {
         throw new Error(`plugin: decorated method "${m.methodName}" is not a function`);
       }
-      rpcHandlers[rpcName] = (params: unknown) => method.call(instance, params);
+      rpcHandlers[rpcName] = (params: unknown): unknown => method.call(instance, params);
       // RPC-only handlers (rpc()) register the handler but are NOT harvested
       // as agent tools (DEC-14).
       if (m.isTool) {

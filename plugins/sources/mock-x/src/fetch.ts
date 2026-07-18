@@ -106,16 +106,15 @@ function envelopes(f: Fixture): Envelope[] {
   ];
 }
 
-export async function fetchMockX(args: FetchArgs): Promise<FetchResult> {
+export function fetchMockX(args: FetchArgs): Promise<FetchResult> {
   const cursor = typeof args.cursor === "number" ? args.cursor : 0;
   if (cursor > 0) {
-    return { envelopes: [], nextCursor: cursor, hasMore: false };
+    return Promise.resolve({ envelopes: [], nextCursor: cursor, hasMore: false });
   }
   const tracked = args.tracked_handles ?? Object.keys(FIXTURES);
   const out: Envelope[] = [];
   for (const handle of tracked) {
-    const f = FIXTURES[handle];
-    if (f) out.push(...envelopes(f));
+    if (Object.hasOwn(FIXTURES, handle)) out.push(...envelopes(FIXTURES[handle]));
   }
-  return { envelopes: out, nextCursor: 1, hasMore: false };
+  return Promise.resolve({ envelopes: out, nextCursor: 1, hasMore: false });
 }

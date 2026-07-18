@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import type { UseQueryResult } from "@tanstack/react-query";
 import { useAppRuntime } from "@magnis/host/runtime";
 import type { ProjectListItem, ProjectDetailView } from "./types";
 import type { PaginatedResponse } from "@magnis/plugin-sdk";
@@ -10,7 +11,7 @@ export const projectKeys = {
   forEntity: (entityId: string) => [...projectKeys.all, "forEntity", entityId] as const,
 };
 
-export function useProjectsListQuery(limit = 100, offset = 0) {
+export function useProjectsListQuery(limit = 100, offset = 0): UseQueryResult<PaginatedResponse<ProjectListItem>> {
   const runtime = useAppRuntime();
   return useQuery({
     queryKey: projectKeys.list({ limit, offset }),
@@ -23,7 +24,7 @@ export function useProjectsListQuery(limit = 100, offset = 0) {
   });
 }
 
-export function useProjectsForEntityQuery(entityId: string) {
+export function useProjectsForEntityQuery(entityId: string): UseQueryResult<readonly ProjectListItem[]> {
   const runtime = useAppRuntime();
   return useQuery({
     queryKey: projectKeys.forEntity(entityId),
@@ -36,7 +37,7 @@ export function useProjectsForEntityQuery(entityId: string) {
   });
 }
 
-export function useProjectDetailQuery(id: string) {
+export function useProjectDetailQuery(id: string): UseQueryResult<ProjectDetailView> {
   const runtime = useAppRuntime();
   return useQuery({
     queryKey: projectKeys.detail(id),

@@ -95,7 +95,7 @@ export function XProfileFeed({ entityId, runtime }: DetailPanelProps): JSX.Eleme
                 </Text>
               </Stack>
             )}
-            {profile?.follower_count != null && (
+            {typeof profile?.follower_count === "number" && (
               <Stack gap={1}>
                 <Text variant="caption" weight="semibold" color="tertiary">
                   Followers

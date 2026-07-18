@@ -105,12 +105,14 @@ export function LinkedInProfileHeader({
   });
 
   const setTracking = useMutation({
-    mutationFn: (tracked: boolean) =>
-      runtime.transport.rpc("contacts.set_social_tracking", {
-        id: tracking!.contact_id,
+    mutationFn: (tracked: boolean) => {
+      if (!tracking) throw new Error("cannot toggle tracking before it resolves");
+      return runtime.transport.rpc("contacts.set_social_tracking", {
+        id: tracking.contact_id,
         platform: PLATFORM,
         tracked,
-      }),
+      });
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: trackingKey });
     },
@@ -131,7 +133,7 @@ export function LinkedInProfileHeader({
 
   const subtitle = profile?.handle
     ? `@${profile.handle}${
-        profile.follower_count != null
+        profile.follower_count !== null
           ? ` · ${profile.follower_count.toLocaleString()} followers`
           : ""
       }`

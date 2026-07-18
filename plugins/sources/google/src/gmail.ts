@@ -91,8 +91,8 @@ function parseHeaders(
   const raw = optObjectArray(o, field, ctx);
   if (raw === null) return null;
   return raw.map((h, i) => ({
-    name: reqString(h, "name", `${ctx}.${field}[${i}]`),
-    value: reqString(h, "value", `${ctx}.${field}[${i}]`),
+    name: reqString(h, "name", `${ctx}.${field}[${String(i)}]`),
+    value: reqString(h, "value", `${ctx}.${field}[${String(i)}]`),
   }));
 }
 
@@ -122,7 +122,7 @@ function parseParts(
   const raw = optObjectArray(o, field, ctx);
   if (raw === null) return null;
   return raw.map((p, i) => {
-    const c = `${ctx}.${field}[${i}]`;
+    const c = `${ctx}.${field}[${String(i)}]`;
     parseHeaders(p, "headers", c);
     return {
       mimeType: optString(p, "mimeType", c),
@@ -179,7 +179,7 @@ function parseListMessagesResponse(v: unknown): ListMessagesResponse {
     messages:
       refs === null
         ? null
-        : refs.map((m, i) => ({ id: reqString(m, "id", `${ctx}.messages[${i}]`) })),
+        : refs.map((m, i) => ({ id: reqString(m, "id", `${ctx}.messages[${String(i)}]`) })),
     nextPageToken: optString(o, "nextPageToken", ctx),
   };
 }
@@ -198,7 +198,7 @@ function parseHistoryEvents(
   withLabelIds: boolean,
 ): { message: { id: string } }[] {
   return defaultObjectArray(o, field, ctx).map((e, i) => {
-    const c = `${ctx}.${field}[${i}]`;
+    const c = `${ctx}.${field}[${String(i)}]`;
     const msg = reqObject(e, "message", c);
     // `label_ids` is unused downstream, but serde still type-checks it.
     if (withLabelIds) defaultStringArray(e, "labelIds", c);
@@ -214,7 +214,7 @@ function parseHistoryListResponse(v: unknown): HistoryListResponse {
   const ctx = "HistoryListResponse";
   const o = asObject(v, ctx);
   const entries = defaultObjectArray(o, "history", ctx).map((e, i) => {
-    const c = `${ctx}.history[${i}]`;
+    const c = `${ctx}.history[${String(i)}]`;
     return {
       messagesAdded: parseHistoryEvents(e, "messagesAdded", c, false),
       messagesDeleted: parseHistoryEvents(e, "messagesDeleted", c, false),
@@ -324,7 +324,7 @@ export function gmailMessageToMailMessage(msg: GmailMessage): MailMessage {
 
   const sentAt =
     (dateRaw !== null ? parseDateHeader(dateRaw) : null) ??
-    (msg.internalDate != null ? internalDateToDate(msg.internalDate) : null) ??
+    (msg.internalDate !== null && msg.internalDate !== undefined ? internalDateToDate(msg.internalDate) : null) ??
     new Date(0);
 
   const labels = msg.labelIds ?? [];
@@ -388,6 +388,7 @@ export function flattenMailPayload(payload: Record<string, unknown>): void {
         )
         .filter((a): a is string => typeof a === "string");
       payload[`${field}_addresses`] = addrs.join(", ");
+      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- payload is a local Record being normalized; the raw `field` key must be removed (setting undefined would leave the key), and `field` is a fixed internal set (to/cc/bcc).
       delete payload[field];
     }
   }
@@ -439,8 +440,12 @@ export function sortedActions(
 
 /** Wrap in RFC 2047 encoded-word if non-ASCII; ASCII passes through. */
 export function mimeEncodeHeader(value: string): string {
-  if (/^[\x00-\x7F]*$/.test(value)) return value;
-  return `=?UTF-8?B?${Buffer.from(value, "utf-8").toString("base64")}?=`;
+  for (let idx = 0; idx < value.length; idx++) {
+    if (value.charCodeAt(idx) > 0x7f) {
+      return `=?UTF-8?B?${Buffer.from(value, "utf-8").toString("base64")}?=`;
+    }
+  }
+  return value;
 }
 
 function formatRecipient(name: string | null | undefined, address: string): string {
@@ -465,7 +470,7 @@ function parseAddressList(v: unknown, field: string): EmailAddress[] {
   return v.map((item, i) => {
     const o = item as Record<string, unknown> | null;
     if (o === null || typeof o !== "object" || typeof o.address !== "string") {
-      throw new Error(`field \`${field}[${i}]\` missing string \`address\``);
+      throw new Error(`field \`${field}[${String(i)}]\` missing string \`address\``);
     }
     return {
       name: typeof o.name === "string" ? o.name : null,
@@ -481,10 +486,11 @@ const BASE64_STANDARD = /^[A-Za-z0-9+/]*={0,2}$/;
  * `data` is base64 STANDARD). Throws with the reason on any violation. */
 export function parseMailDraft(value: unknown): MailDraft {
   try {
-    const o = (value ?? {}) as Record<string, unknown>;
-    if (o === null || typeof o !== "object" || Array.isArray(o)) {
+    const raw: unknown = value ?? {};
+    if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
       throw new Error("draft must be an object");
     }
+    const o = raw as Record<string, unknown>;
     if (!("to" in o)) throw new Error("missing field `to`");
     if (typeof o.subject !== "string") throw new Error("missing field `subject`");
     if (typeof o.body_text !== "string") {
@@ -504,11 +510,11 @@ export function parseMailDraft(value: unknown): MailDraft {
         typeof a.data !== "string"
       ) {
         throw new Error(
-          `field \`attachments[${i}]\` needs string filename/mime_type/data`,
+          `field \`attachments[${String(i)}]\` needs string filename/mime_type/data`,
         );
       }
       if (!BASE64_STANDARD.test(a.data) || a.data.length % 4 !== 0) {
-        throw new Error(`field \`attachments[${i}].data\` is not valid base64`);
+        throw new Error(`field \`attachments[${String(i)}].data\` is not valid base64`);
       }
       return {
         filename: a.filename,
@@ -528,7 +534,7 @@ export function parseMailDraft(value: unknown): MailDraft {
     };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    throw new Error(`Invalid MailDraft payload: ${msg}`);
+    throw new Error(`Invalid MailDraft payload: ${msg}`, { cause: e });
   }
 }
 
@@ -633,7 +639,7 @@ async function fetchMessage(
   checkRateLimit(resp);
   if (!resp.ok) {
     throw new Error(
-      `GET message ${gmailMsgId} failed (${resp.status}): ${await resp.text()}`,
+      `GET message ${gmailMsgId} failed (${String(resp.status)}): ${await resp.text()}`,
     );
   }
   return parseGmailMessage(await resp.json());
@@ -680,7 +686,7 @@ export async function sendMessage(
   );
   checkRateLimit(resp);
   if (!resp.ok) {
-    throw new Error(`Gmail send failed (${resp.status}): ${await resp.text()}`);
+    throw new Error(`Gmail send failed (${String(resp.status)}): ${await resp.text()}`);
   }
   // `SendResponse` (gmail.rs:347): `id` required, `thread_id` Option.
   const body = asObject(await resp.json(), "SendResponse");
@@ -702,7 +708,7 @@ export async function downloadAttachment(
     headers: { authorization: `Bearer ${token}` },
   });
   checkRateLimit(resp);
-  if (!resp.ok) throw new Error(`Attachment download failed: ${resp.status}`);
+  if (!resp.ok) throw new Error(`Attachment download failed: ${String(resp.status)}`);
   // `AttachmentResponse` (gmail.rs:88): `data: Option<String>` — absent is the
   // "No attachment data" error, a non-string is a shape error.
   const body = asObject(await resp.json(), "AttachmentResponse");
@@ -741,24 +747,30 @@ async function mapConcurrent<T, R>(
 /** Turn (id, fetch-result) pairs into `snapshot` envelopes IN ORDER. A
  * non-fatal fetch error or a conversion failure SKIPS that message (logged);
  * a fatal error (rate-limit / auth / history-expired) aborts the batch. */
+function errText(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
+
 export function snapshotEnvelopesFromFetched(fetched: Fetched[]): Envelope[] {
   const envelopes: Envelope[] = [];
   for (const { id, msg, err } of fetched) {
     if (err !== undefined) {
+      // eslint-disable-next-line @typescript-eslint/only-throw-error -- rethrow the original caught value (unknown) to abort the batch; isFatal already classified it and wrapping would lose the original error identity.
       if (isFatal(err)) throw err;
       console.error(
-        `magnis-google: skipping message ${id} (fetch failed: ${err})`,
+        `magnis-google: skipping message ${id} (fetch failed: ${errText(err)})`,
       );
       continue;
     }
+    if (msg === undefined) continue;
     try {
-      const mail = gmailMessageToMailMessage(msg!);
+      const mail = gmailMessageToMailMessage(msg);
       const payload = { ...mail } as unknown as Record<string, unknown>;
       flattenMailPayload(payload);
       envelopes.push({ surface: "email", payload, remote_id: id, kind: "snapshot" });
     } catch (e) {
       console.error(
-        `magnis-google: skipping message ${id} (convert failed: ${e})`,
+        `magnis-google: skipping message ${id} (convert failed: ${errText(e)})`,
       );
     }
   }

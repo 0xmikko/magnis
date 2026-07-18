@@ -9,7 +9,7 @@ import { FileDetailPanel } from "./FileDetailPanel";
 import { mimeToColor, sourceLabel } from "./helpers";
 
 function FileListItemContent({ item }: ListItemContentProps): JSX.Element {
-  const mimeType = (item.metadata?.mime_type as string) ?? "";
+  const mimeType = (item.metadata?.mime_type as string | undefined) ?? "";
   const iconName = mimeToIcon(mimeType);
   const colorClass = mimeToColor(mimeType);
 
@@ -54,24 +54,26 @@ export const FilesModule = defineModule({
   DetailPanel: FileDetailPanel,
   detailType: "custom",
   headerActionIcon: "plus",
-  onHeaderAction: async (runtime, onCreated) => {
-    const result = await uploadFile(runtime.transport);
-    if (result) {
-      onCreated(result.id);
-    }
+  onHeaderAction: (runtime, onCreated) => {
+    void (async (): Promise<void> => {
+      const result = await uploadFile(runtime.transport);
+      if (result) {
+        onCreated(result.id);
+      }
+    })();
   },
   ListItemContent: FileListItemContent,
   groupBy: "date",
   getGroupDate: (item) => item.timestamp ? new Date(item.timestamp) : null,
   mapListItem: (raw) => ({
-    id: (raw.entity_id as string) ?? (raw.id as string),
-    name: (raw.name as string) ?? null,
+    id: (raw.entity_id as string | undefined) ?? (raw.id as string),
+    name: (raw.name as string | undefined) ?? null,
     schema_id: "file.object",
     preview: [
       raw.mime_type as string | undefined,
       raw.source_module ? sourceLabel(raw.source_module as string) : null,
     ].filter(Boolean).join(" · ") || null,
-    timestamp: (raw.created_at as string) ?? null,
+    timestamp: (raw.created_at as string | undefined) ?? null,
     metadata: { mime_type: raw.mime_type ?? "" },
   }),
 });

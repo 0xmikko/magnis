@@ -26,7 +26,7 @@ export async function probeXAuth(
     return { subject: `@${username}` };
   }
   if (me.status !== 403) {
-    throw new Error(`x: provider rejected the key (HTTP ${me.status})`);
+    throw new Error(`x: provider rejected the key (HTTP ${String(me.status)})`);
   }
 
   // 403 = valid token WITHOUT user context (app-only). Verify it can read.
@@ -35,7 +35,7 @@ export async function probeXAuth(
     headers,
   });
   if (!probe.ok) {
-    throw new Error(`x: provider rejected the key (HTTP ${probe.status})`);
+    throw new Error(`x: provider rejected the key (HTTP ${String(probe.status)})`);
   }
   const body = (await probe.json()) as { data?: { id?: string } };
   if (!body.data?.id) throw new Error("x: probe lookup returned no data");

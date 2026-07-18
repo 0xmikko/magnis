@@ -98,9 +98,9 @@ export class TriggersModule {
     },
   })
   async create(params: CreateTriggerParams): Promise<TriggerCreated | Record<string, unknown>> {
-    const name = (params.name ?? "").trim();
+    const name = params.name.trim();
     if (!name) throw new Error("missing or empty required param: name");
-    const action_prompt = (params.action_prompt ?? "").trim();
+    const action_prompt = params.action_prompt.trim();
     if (!action_prompt) throw new Error("missing or empty required param: action_prompt");
 
     const gate_prompt = params.gate_prompt ?? "";
@@ -205,7 +205,7 @@ export class TriggersModule {
     const items: TriggerListItem[] = [];
     for (const entity of page.items) {
       const detail = await this.graph.get_entity_full(entity.id, { links: true });
-      if (!detail || detail.entity.schema_id !== ENTITY) continue;
+      if (detail?.entity.schema_id !== ENTITY) continue;
       const config = this.configOf(detail);
       if (!config) continue;
       if (params.status && config.status !== params.status) continue;
@@ -343,7 +343,7 @@ export class TriggersModule {
     const watchable = await this.rpc.execute<ResolveWatchableResult>("triggers.resolve_watchable", {
       entity_id: params.entity_id,
     });
-    for (const w of watchable?.watchable ?? []) {
+    for (const w of watchable.watchable) {
       if (!anchors.includes(w.id)) anchors.push(w.id);
     }
 
@@ -358,7 +358,7 @@ export class TriggersModule {
         if (seen.has(triggerId)) continue;
         seen.add(triggerId);
         const detail = await this.graph.get_entity_full(triggerId, { links: true });
-        if (!detail || detail.entity.schema_id !== ENTITY) continue;
+        if (detail?.entity.schema_id !== ENTITY) continue;
         const config = this.configOf(detail);
         if (!config) continue;
         items.push(await this.listItem(detail, config));
@@ -403,7 +403,7 @@ export class TriggersModule {
   /// triggers tool must never touch a foreign entity (NotFound parity).
   private async requireTrigger(id: string): Promise<EntityDetail> {
     const detail = await this.graph.get_entity_full(id, { links: true });
-    if (!detail || detail.entity.schema_id !== ENTITY) {
+    if (detail?.entity.schema_id !== ENTITY) {
       throw new Error(`trigger not found: ${id}`);
     }
     return detail;

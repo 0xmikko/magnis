@@ -25,6 +25,7 @@ function useResolvedWatches(
   const [resolved, setResolved] = useState<readonly ResolvedEntity[]>([]);
   useEffect(() => {
     if (!watched || watched.length === 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset to empty when the watched set clears; mirrors the async resolve below.
       setResolved([]);
       return;
     }
@@ -35,7 +36,7 @@ function useResolvedWatches(
           .rpc<Record<string, unknown>>("graph.entity.get", { id: w.id })
           .then((e) => ({
             id: w.id,
-            schema_id: (e.schema_id as string) ?? "",
+            schema_id: (e.schema_id as string | undefined) ?? "",
             data: e,
           }))
           .catch(() => null),

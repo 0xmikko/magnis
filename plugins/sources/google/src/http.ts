@@ -24,7 +24,7 @@ export type FetchLike = (
 export class GoogleRateLimitError extends RateLimitError {
   constructor(retryAfterSecs: number) {
     super(retryAfterSecs);
-    this.message = `Google rate limited: retry after ${retryAfterSecs}s`;
+    this.message = `Google rate limited: retry after ${String(retryAfterSecs)}s`;
   }
 }
 
@@ -94,7 +94,7 @@ export class HttpTimeoutError extends Error {
     readonly url: string,
     readonly ms: number,
   ) {
-    super(`Google request to ${url} timed out after ${ms}ms`);
+    super(`Google request to ${url} timed out after ${String(ms)}ms`);
     this.name = "HttpTimeoutError";
   }
 }

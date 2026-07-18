@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import type { UseMutationResult } from "@tanstack/react-query";
 import { useAppRuntime } from "@magnis/host/runtime";
 import type { PaginatedResponse } from "@magnis/host/runtime";
 import { noteKeys } from "./queries";
@@ -23,7 +24,7 @@ interface DeleteNoteParams {
   readonly id: string;
 }
 
-export function useCreateNoteMutation() {
+export function useCreateNoteMutation(): UseMutationResult<CreateNoteResult, Error, CreateNoteParams> {
   const runtime = useAppRuntime();
   const queryClient = useQueryClient();
 
@@ -36,7 +37,13 @@ export function useCreateNoteMutation() {
   });
 }
 
-export function useUpdateNoteMutation() {
+interface UpdateNoteContext {
+  previous: NoteDetailView | undefined;
+  id: string;
+  previousLists: [readonly unknown[], unknown][];
+}
+
+export function useUpdateNoteMutation(): UseMutationResult<unknown, Error, UpdateNoteParams, UpdateNoteContext> {
   const runtime = useAppRuntime();
   // The plugin UI runs on its OWN react-query client (the detail panel reads
   // from it). The sidebar list, however, is the HOST's `useModuleList` query,
@@ -45,16 +52,7 @@ export function useUpdateNoteMutation() {
   const queryClient = useQueryClient();
   const hostQueryClient = runtime.queryClient;
 
-  return useMutation<
-    unknown,
-    Error,
-    UpdateNoteParams,
-    {
-      previous: NoteDetailView | undefined;
-      id: string;
-      previousLists: [readonly unknown[], unknown][];
-    }
-  >({
+  return useMutation<unknown, Error, UpdateNoteParams, UpdateNoteContext>({
     mutationFn: (params) =>
       runtime.transport.rpc("notes.update", { ...params }),
     onMutate: async (variables) => {
@@ -93,8 +91,8 @@ export function useUpdateNoteMutation() {
         ];
         hostQueryClient.setQueriesData<PaginatedResponse<NoteListItem>>(
           { queryKey: listKey },
-          (old) =>
-            old && Array.isArray(old.items)
+          (old: PaginatedResponse<NoteListItem> | undefined) =>
+            old
               ? {
                   ...old,
                   items: old.items.map((it) =>
@@ -133,7 +131,7 @@ export function useUpdateNoteMutation() {
   });
 }
 
-export function useDeleteNoteMutation() {
+export function useDeleteNoteMutation(): UseMutationResult<unknown, Error, DeleteNoteParams> {
   const runtime = useAppRuntime();
   const queryClient = useQueryClient();
 

@@ -21,6 +21,7 @@ function getMetadataString(
 
 export function mapEmail(message: MessageListItem): EmailItem {
   const fromName = getMetadataString(message.metadata, "from_name") ?? null;
+  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- intentional falsy fallback: an empty-string field must fall through to the next candidate (?? would keep "").
   const sender = fromName || message.sender || "Unknown";
   const sentAt = getMetadataString(message.metadata, "sent_at") ?? message.timestamp;
 
@@ -39,6 +40,7 @@ export function mapEmailDetail(message: MessageListItem): EmailDetailData {
   const fromName = getMetadataString(message.metadata, "from_name") ?? null;
   const fromAddress =
     getMetadataString(message.metadata, "from_address") ?? message.sender ?? null;
+  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- intentional falsy fallback: an empty-string field must fall through to the next candidate (?? would keep "").
   const senderName = fromName || fromAddress || "Unknown";
   const fromEmail = fromAddress ?? "Unknown";
   const sentAt = getMetadataString(message.metadata, "sent_at") ?? message.timestamp;
@@ -53,6 +55,7 @@ export function mapEmailDetail(message: MessageListItem): EmailDetailData {
     replyTo,
     bodyParagraphs: [
       decodeHtmlEntities(
+        // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- intentional falsy fallback: an empty-string field must fall through to the next candidate (?? would keep "").
         (message.preview || "No message body available yet.").trim(),
       ),
     ],
@@ -64,6 +67,7 @@ export function mapEmailDetailFromDetailView(view: MessageDetailView): EmailDeta
   const fromName = getMetadataString(view.metadata, "from_name") ?? null;
   const fromAddress =
     getMetadataString(view.metadata, "from_address") ?? view.sender ?? null;
+  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- intentional falsy fallback: an empty-string field must fall through to the next candidate (?? would keep "").
   const senderName = fromName || fromAddress || "Unknown";
   const fromEmail = fromAddress ?? "Unknown";
   const sentAt = getMetadataString(view.metadata, "sent_at") ?? view.timestamp;

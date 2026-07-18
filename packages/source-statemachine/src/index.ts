@@ -27,7 +27,10 @@ import {
 } from "@magnis/connector-sdk";
 import { logCall, mode, nextStep, surfaces } from "./state";
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 
 function str(v: unknown): string | undefined {
   return typeof v === "string" ? v : undefined;
@@ -44,29 +47,32 @@ export async function fetchStateMock(args: FetchArgs): Promise<FetchResult> {
   logCall({ surface, tool: "magnis.sync.fetch", cursor: args.cursor ?? null });
 
   const step = nextStep(surface);
-  const op = str(step?.op) ?? "";
+  // No programmed step (or a non-string op) ⇒ a clean empty fetch. Guarding here
+  // narrows `step` to defined for every real op below.
+  if (!step) return { envelopes: [], nextCursor: null, hasMore: false };
+  const op = str(step.op) ?? "";
   switch (op) {
     case "":
       return { envelopes: [], nextCursor: null, hasMore: false };
 
     case "fetch_ok": {
-      const n = uint(step!.envelopes) ?? 0;
+      const n = uint(step.envelopes) ?? 0;
       const envelopes: Envelope[] = Array.from({ length: n }, (_, i) => ({
         surface,
         payload: { n: i },
-        remote_id: `sm-${surface}-${i}`,
+        remote_id: `sm-${surface}-${String(i)}`,
         kind: "snapshot",
       }));
-      const nextCursor = step!.next_cursor ?? null;
+      const nextCursor = step.next_cursor ?? null;
       const out: Record<string, unknown> = {
         envelopes,
         nextCursor,
         hasMore: nextCursor !== null,
       };
       // `total` / `total_exact` are emitted ONLY when programmed non-null.
-      if (step!.total !== undefined && step!.total !== null) out.total = step!.total;
-      if (step!.total_exact !== undefined && step!.total_exact !== null) {
-        out.total_exact = step!.total_exact;
+      if (step.total !== undefined && step.total !== null) out.total = step.total;
+      if (step.total_exact !== undefined && step.total_exact !== null) {
+        out.total_exact = step.total_exact;
       }
       return out as unknown as FetchResult;
     }
@@ -76,12 +82,12 @@ export async function fetchStateMock(args: FetchArgs): Promise<FetchResult> {
       return { envelopes: [], nextCursor: null, hasMore: true };
 
     case "fetch_hang":
-      await sleep(uint(step!.ms) ?? 1000);
+      await sleep(uint(step.ms) ?? 1000);
       return { envelopes: [], nextCursor: null, hasMore: false };
 
     case "fetch_error": {
       // Typed error surface: mirrored to the MCP error data contract.
-      const err = (step!.error ?? { kind: "internal" }) as Record<string, unknown>;
+      const err = (step.error ?? { kind: "internal" }) as Record<string, unknown>;
       throw new ConnectorError(str(err.message) ?? "programmed error", err);
     }
 
@@ -96,15 +102,15 @@ export async function fetchStateMock(args: FetchArgs): Promise<FetchResult> {
 /** ProbeAuth: a programmed `probe_reject` fails the probe; anything else (incl.
  * an empty queue) answers the default identity, keeping zero-config archetypes
  * usable. */
-export async function probeStateMock(): Promise<{ subject: string }> {
+export function probeStateMock(): Promise<{ subject: string }> {
   logCall({ surface: "__auth__", tool: "magnis.auth.probe" });
   const step = nextStep("__auth__");
   if (str(step?.op) === "probe_reject") {
-    // The SDK maps a probe throw to `-32000 { data: { kind: "auth", message } }`
+    // The SDK maps a probe rejection to `-32000 { data: { kind: "auth", message } }`
     // — byte-identical to the Rust reject reply.
-    throw new Error(str(step!.message) ?? "rejected");
+    return Promise.reject(new Error(str(step?.message) ?? "rejected"));
   }
-  return { subject: str(step?.subject) ?? "statemock" };
+  return Promise.resolve({ subject: str(step?.subject) ?? "statemock" });
 }
 
 /** Run one StateMock archetype. Shape comes from the CLI (--surfaces/--mode),

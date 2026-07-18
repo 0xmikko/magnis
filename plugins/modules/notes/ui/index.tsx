@@ -20,13 +20,15 @@ export const NotesModule = defineModule({
   DetailPanel: NoteDetailPanel,
   detailType: "custom",
   headerActionIcon: "plus",
-  onHeaderAction: async (runtime, onCreated) => {
-    const clientId = crypto.randomUUID();
-    const result = await runtime.transport.rpc<{ id: string }>(
-      "notes.create",
-      { title: "New Note", body: "", client_id: clientId },
-    );
-    onCreated(result.id);
+  onHeaderAction: (runtime, onCreated) => {
+    void (async (): Promise<void> => {
+      const clientId = crypto.randomUUID();
+      const result = await runtime.transport.rpc<{ id: string }>(
+        "notes.create",
+        { title: "New Note", body: "", client_id: clientId },
+      );
+      onCreated(result.id);
+    })();
   },
   toolCallRenderers: [
     {
@@ -44,7 +46,7 @@ export const NotesModule = defineModule({
     )
       return null;
     const args = tc.args as Record<string, unknown>;
-    const title = args.title != null ? String(args.title) : "note";
+    const title = typeof args.title === "string" ? args.title : "note";
     return {
       action: tc.name,
       targetType: "note",

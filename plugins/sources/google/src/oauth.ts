@@ -48,7 +48,7 @@ export function validateIdTokenClaims(
   nowUnix: number,
 ): IdTokenClaims {
   // JWT = header.payload.signature — we read the payload segment.
-  const payloadB64 = idToken.split(".")[1];
+  const payloadB64 = idToken.split(".")[1] as string | undefined;
   if (payloadB64 === undefined) throw new Error("id_token is not a JWT");
   const bytes = base64UrlDecode(payloadB64);
   if (bytes === null) throw new Error("id_token payload not base64url");
@@ -57,11 +57,11 @@ export function validateIdTokenClaims(
   try {
     claims = JSON.parse(new TextDecoder().decode(bytes)) as Record<string, unknown>;
   } catch (e) {
-    throw new Error(`id_token claims not JSON: ${e}`);
+    throw new Error(`id_token claims not JSON: ${e instanceof Error ? e.message : String(e)}`, { cause: e });
   }
 
   if (typeof claims.iss !== "string" || !GOOGLE_ISS.includes(claims.iss)) {
-    throw new Error(`id_token iss not Google: ${claims.iss}`);
+    throw new Error(`id_token iss not Google: ${String(claims.iss)}`);
   }
   if (!audMatches(claims.aud, expectedAud)) {
     throw new Error("id_token aud != client_id");

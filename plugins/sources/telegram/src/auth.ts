@@ -131,9 +131,9 @@ export async function step(args: Record<string, unknown>): Promise<Record<string
       if (isInvalidCode(e)) {
         // Recoverable: RE-PARK UNCHANGED so the user can re-enter the code.
         flowSlot = flow;
-        throw new Error("invalid login code");
+        throw new Error("invalid login code", { cause: e });
       }
-      throw new Error(`sign_in failed: ${errText(e)}`);
+      throw new Error(`sign_in failed: ${errText(e)}`, { cause: e });
     }
   }
 
@@ -142,7 +142,7 @@ export async function step(args: Record<string, unknown>): Promise<Record<string
     const user = await flow.client.signInWithPassword(password);
     return minted(flow.client, user);
   } catch (e) {
-    throw new Error(`check_password failed: ${errText(e)}`);
+    throw new Error(`check_password failed: ${errText(e)}`, { cause: e });
   }
 }
 

@@ -29,7 +29,7 @@ export function EmailBatchSendRenderer({
 }: AgentRendererProps<ToolCallRendererPayload>): JSX.Element {
   const { toolCall: tc, toolResult, isAllowlisted, superseded, onApprove, onDeny, onAllowlistToggle } = payload;
   const args = tc.args as Record<string, unknown>;
-  const messages = useMemo(() => (args.messages as readonly BatchMessage[]) ?? [], [args.messages]);
+  const messages = useMemo(() => (args.messages as readonly BatchMessage[] | undefined) ?? [], [args.messages]);
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [excluded, setExcluded] = useState<Set<number>>(() => new Set());
@@ -40,7 +40,7 @@ export function EmailBatchSendRenderer({
 
   const total = messages.length;
   const activeCount = total - excluded.size;
-  const current = messages[currentIndex];
+  const current = messages.at(currentIndex);
   const isEditing = editingIndex === currentIndex;
   const isDraft = tc.status === "pending";
   const isExcluded = excluded.has(currentIndex);
@@ -70,7 +70,7 @@ export function EmailBatchSendRenderer({
   }, [current, currentIndex, savedEdits]);
 
   const saveEdit = useCallback((): void => {
-    if (editingIndex == null) return;
+    if (editingIndex === null) return;
     setSavedEdits((prev) => {
       const next = new Map(prev);
       next.set(editingIndex, { ...editDraft });
@@ -101,7 +101,7 @@ export function EmailBatchSendRenderer({
   const saved = savedEdits.get(currentIndex);
   const displaySubject = isEditing ? editDraft.subject : (saved?.subject ?? current.subject);
   const displayBody = isEditing ? editDraft.body_text : (saved?.body_text ?? current.body_text);
-  const hasEdits = saved != null;
+  const hasEdits = saved !== undefined;
 
   // Header navigation
   const headerNav = (

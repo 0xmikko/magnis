@@ -133,7 +133,7 @@ export function AddProfileAction({
               </button>
               <button
                 type="button"
-                onClick={submit}
+                onClick={() => { void submit(); }}
                 disabled={busy || !value.trim()}
                 className="text-xs px-4 py-2 rounded-lg bg-accent text-white font-medium disabled:opacity-50"
               >

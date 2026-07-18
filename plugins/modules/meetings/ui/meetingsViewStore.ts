@@ -100,7 +100,7 @@ export function getDateLabel(view: MeetingsView, dateOffset: number): string {
   if (view === "day") {
     const dayName = DAY_NAMES_LONG[d.getDay()];
     const monthAbbr = MONTH_ABBR[d.getMonth()];
-    return `${dayName}, ${monthAbbr} ${d.getDate()}, ${d.getFullYear()}`;
+    return `${dayName}, ${monthAbbr} ${String(d.getDate())}, ${String(d.getFullYear())}`;
   }
   if (view === "week") {
     const day = d.getDay();
@@ -111,12 +111,12 @@ export function getDateLabel(view: MeetingsView, dateOffset: number): string {
     const mAbbr = MONTH_ABBR[monday.getMonth()];
     const sAbbr = MONTH_ABBR[sunday.getMonth()];
     if (monday.getMonth() === sunday.getMonth()) {
-      return `${mAbbr} ${monday.getDate()} - ${sunday.getDate()}, ${sunday.getFullYear()}`;
+      return `${mAbbr} ${String(monday.getDate())} - ${String(sunday.getDate())}, ${String(sunday.getFullYear())}`;
     }
-    return `${mAbbr} ${monday.getDate()} - ${sAbbr} ${sunday.getDate()}, ${sunday.getFullYear()}`;
+    return `${mAbbr} ${String(monday.getDate())} - ${sAbbr} ${String(sunday.getDate())}, ${String(sunday.getFullYear())}`;
   }
   // month
-  return `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`;
+  return `${MONTH_NAMES[d.getMonth()]} ${String(d.getFullYear())}`;
 }
 
 /** Date range { start, end } for filtering meetings by starts_at. */

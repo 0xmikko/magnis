@@ -46,7 +46,7 @@ function mapMessages(items: readonly TelegramMessageListItem[], baseUrl: string)
           ?? (m.metadata?.text as string | undefined)
           ?? mediaLabel(mMediaType),
         time: formatMessageTime(m.timestamp),
-        date: m.timestamp?.slice(0, 10),
+        date: m.timestamp.slice(0, 10),
         mediaType: mMediaType,
         mediaUrl: prefixedMediaUrl,
         telegramMsgId: m.metadata?.message_id as number | undefined,
@@ -137,6 +137,7 @@ export function useTelegramMessages(
   // Update hasMore when query data arrives
   useEffect(() => {
     if (queryData) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- derive hasMore from freshly-arrived query data; external-data sync.
       setHasMore(queryData.items.length < queryData.total);
     }
   }, [queryData]);
@@ -145,6 +146,7 @@ export function useTelegramMessages(
   useEffect(() => {
     if (!selectedChatId) return;
     offsetRef.current = 0;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset all per-chat message state when the selected chat changes (keyed by selectedChatId).
     setExtraMessages([]);
     setOptimisticMessages([]);
     setHasMore(false);
@@ -242,7 +244,7 @@ export function useTelegramMessages(
     // Find oldest telegramMsgId in current messages (the "before" cursor)
     let oldestMsgId: number | undefined;
     for (const m of allMessages) {
-      if (m.telegramMsgId != null && (oldestMsgId == null || m.telegramMsgId < oldestMsgId)) {
+      if (m.telegramMsgId !== undefined && (oldestMsgId === undefined || m.telegramMsgId < oldestMsgId)) {
         oldestMsgId = m.telegramMsgId;
       }
     }
@@ -261,7 +263,7 @@ export function useTelegramMessages(
         before_message_id: oldestMsgId,
         limit: PAGE_SIZE,
       })
-      .catch((err) => {
+      .catch((err: unknown) => {
         console.error("Backfill request failed:", err);
         clearBackfillWait();
       });
@@ -277,7 +279,7 @@ export function useTelegramMessages(
     const off = runtime.transport.onEventType(["sync.backfill"], (event) => {
       if (!awaitingBackfillRef.current) return;
       const raw = (event.payload ?? {}) as Record<string, unknown>;
-      if (nativeChatId == null || String(raw.chat_id) !== String(nativeChatId)) return;
+      if (nativeChatId === undefined || String(raw.chat_id) !== nativeChatId) return;
       const ingested = typeof raw.ingested === "number" ? raw.ingested : 0;
       clearBackfillWait(); // consume: one reload per request
       if (ingested === 0) {
@@ -314,7 +316,7 @@ export function useTelegramMessages(
     (text: string) => {
       if (!selectedChatId) return;
       const chatId = selectedChatId;
-      const pendingId = `_pending_${Date.now()}`;
+      const pendingId = `_pending_${String(Date.now())}`;
       const now = new Date();
       const timeStr = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
       const dateStr = now.toISOString().slice(0, 10);
@@ -330,7 +332,7 @@ export function useTelegramMessages(
 
       setOptimisticMessages((prev) => [...prev, optimistic]);
 
-      void (async () => {
+      void (async (): Promise<void> => {
         try {
           await runtime.transport.rpc("telegram.messages.send", {
             chat_id: Number(nativeChatId),
@@ -375,7 +377,7 @@ export function useTelegramMessages(
         name: message.senderName ?? "Message",
         data: {
           sender: message.senderName ?? "Unknown",
-          preview: message.text?.slice(0, 100),
+          preview: message.text.slice(0, 100),
           timestamp: message.time,
           metadata: {
             message_id: message.telegramMsgId,

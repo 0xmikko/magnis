@@ -218,7 +218,7 @@ const TSCONFIG = `${JSON.stringify(
 export function scaffoldPlugin(id: string, pluginsRoot: string): string {
   if (!ID_RE.test(id)) {
     throw new Error(
-      `invalid plugin id ${JSON.stringify(id)}: must match ${ID_RE} (folder == manifest.id, INV-11)`,
+      `invalid plugin id ${JSON.stringify(id)}: must match ${String(ID_RE)} (folder == manifest.id, INV-11)`,
     );
   }
   const dir = join(pluginsRoot, "modules", id);
@@ -257,7 +257,7 @@ export function scaffoldPlugin(id: string, pluginsRoot: string): string {
 
 // ── CLI ───────────────────────────────────────────────────────────────────
 if (import.meta.main) {
-  const id = process.argv[2];
+  const id = process.argv.at(2);
   if (id === undefined || id.length === 0) {
     console.error("usage: bun scripts/plugin-new.ts <id>");
     process.exit(1);

@@ -124,7 +124,7 @@ export class NotesModule {
     // NotFound for a non-owned id (get_entity_full is user-scoped → null) AND for
     // an id that belongs to a different schema — a notes tool must never touch a
     // contact/project/etc. entity.
-    if (!detail || detail.entity.schema_id !== ENTITY) {
+    if (detail?.entity.schema_id !== ENTITY) {
       throw new Error(`note not found: ${params.id}`);
     }
     const e = detail.entity;
@@ -137,7 +137,7 @@ export class NotesModule {
     // get_entity_full) — no per-link N+1.
     const linked: LinkedEntitySummary[] = [];
     if (detail.links.length > 0) {
-      const neighbourId = (l: { from_id: string; to_id: string }) =>
+      const neighbourId = (l: { from_id: string; to_id: string }): string =>
         l.from_id === e.id ? l.to_id : l.from_id;
       const targets = await this.graph.get_entities([
         ...new Set(detail.links.map(neighbourId)),
@@ -199,7 +199,7 @@ export class NotesModule {
       // non-note entity is not a note hit — fall through; create_entity will
       // Conflict on the id rather than return a fake note snapshot.
       const existing = await this.graph.get_entity_full(params.client_id, { links: false });
-      if (existing && existing.entity.schema_id === ENTITY) {
+      if (existing?.entity.schema_id === ENTITY) {
         return this.snapshotFromDetail(existing);
       }
     }
@@ -236,7 +236,7 @@ export class NotesModule {
   })
   async update(params: UpdateParams): Promise<NoteSnapshot> {
     const detail = await this.graph.get_entity_full(params.id, { links: false });
-    if (!detail || detail.entity.schema_id !== ENTITY) {
+    if (detail?.entity.schema_id !== ENTITY) {
       throw new Error(`note not found: ${params.id}`);
     }
     const e = detail.entity;
@@ -266,7 +266,7 @@ export class NotesModule {
   })
   async delete(params: DeleteParams): Promise<{ deleted: boolean }> {
     const detail = await this.graph.get_entity_full(params.id, { links: false });
-    if (!detail || detail.entity.schema_id !== ENTITY) {
+    if (detail?.entity.schema_id !== ENTITY) {
       throw new Error(`note not found: ${params.id}`);
     }
     await this.graph.delete_entity(params.id);

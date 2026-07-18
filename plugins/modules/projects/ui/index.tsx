@@ -40,13 +40,15 @@ export const ProjectsModule = defineModule({
     };
   },
   headerActionIcon: "plus",
-  onHeaderAction: async (runtime, onCreated) => {
-    const clientId = crypto.randomUUID();
-    const result = await runtime.transport.rpc<{ id: string }>(
-      "projects.create",
-      { name: "New Project", client_id: clientId },
-    );
-    onCreated(result.id);
+  onHeaderAction: (runtime, onCreated) => {
+    void (async (): Promise<void> => {
+      const clientId = crypto.randomUUID();
+      const result = await runtime.transport.rpc<{ id: string }>(
+        "projects.create",
+        { name: "New Project", client_id: clientId },
+      );
+      onCreated(result.id);
+    })();
   },
   // Declarative "Link to Project" context-menu submenu for every entity.
   entityLink: {

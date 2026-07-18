@@ -37,7 +37,7 @@ const triggersAgentContribution: ModuleAgentContribution = {
     {
       id: "trigger-tool",
       moduleId: "triggers",
-      match: (block) => block.toolName != null && isTriggerTool(block.toolName),
+      match: (block) => block.toolName !== undefined && isTriggerTool(block.toolName),
       Render: TriggerToolCallRenderer as never,
       priority: 10,
     },

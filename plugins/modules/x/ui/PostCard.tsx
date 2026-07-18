@@ -62,7 +62,7 @@ export interface PostAuthor {
 export function formatNumber(n: number): string {
   if (n < 1000) return String(n);
   if (n < 10_000) return `${(n / 1000).toFixed(1)}K`;
-  if (n < 1_000_000) return `${Math.round(n / 1000)}K`;
+  if (n < 1_000_000) return `${String(Math.round(n / 1000))}K`;
   return `${(n / 1_000_000).toFixed(1)}M`;
 }
 
@@ -76,11 +76,11 @@ export function relativeTime(v: string | null): { label: string; title: string }
   const mins = Math.floor(diffMs / 60_000);
   const title = d.toISOString();
   if (mins < 1) return { label: "just now", title };
-  if (mins < 60) return { label: `${mins}m ago`, title };
+  if (mins < 60) return { label: `${String(mins)}m ago`, title };
   const hours = Math.floor(mins / 60);
-  if (hours < 24) return { label: `${hours}h ago`, title };
+  if (hours < 24) return { label: `${String(hours)}h ago`, title };
   const days = Math.floor(hours / 24);
-  if (days < 30) return { label: `${days}d ago`, title };
+  if (days < 30) return { label: `${String(days)}d ago`, title };
   return { label: title.slice(0, 10), title };
 }
 
@@ -103,7 +103,7 @@ export function linkifyText(text: string): ReactNode[] {
     if (match.index > lastIdx) out.push(text.slice(lastIdx, match.index));
     out.push(
       <a
-        key={`url-${match.index}`}
+        key={`url-${String(match.index)}`}
         href={url}
         target="_blank"
         rel="noopener noreferrer"
@@ -163,7 +163,7 @@ function MediaGrid({ media }: { media: RichPost["media"] }): JSX.Element | null 
     <div className={`grid gap-2 ${cols}`}>
       {items.map((m, i) => (
         <a
-          key={`${m.url ?? m.preview_image_url}-${i}`}
+          key={`${String(m.url ?? m.preview_image_url)}-${String(i)}`}
           href={proxiedMediaUrl(m.url ?? m.preview_image_url) ?? undefined}
           target="_blank"
           rel="noopener noreferrer"
@@ -181,7 +181,7 @@ function MediaGrid({ media }: { media: RichPost["media"] }): JSX.Element | null 
 }
 
 function MetricStat({ icon, value }: { icon: IconName; value: number | null | undefined }): JSX.Element | null {
-  if (value == null) return null;
+  if (value === null || value === undefined) return null;
   return (
     <Row gap={1} align="center">
       <Icon name={icon} size={14} className="text-content-tertiary" />
@@ -194,10 +194,10 @@ function MetricStat({ icon, value }: { icon: IconName; value: number | null | un
 function MetricsRow({ metrics }: { metrics: RichPost["metrics"] }): JSX.Element | null {
   if (!metrics) return null;
   const hasAny =
-    metrics.replies != null ||
-    metrics.reposts != null ||
-    metrics.likes != null ||
-    metrics.impressions != null;
+    metrics.replies !== null ||
+    metrics.reposts !== null ||
+    metrics.likes !== null ||
+    metrics.impressions !== null;
   if (!hasAny) return null;
   return (
     <Row gap={5} align="center" className="mt-1">

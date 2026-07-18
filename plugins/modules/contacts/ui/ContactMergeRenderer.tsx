@@ -38,7 +38,7 @@ interface MergeResult {
 }
 
 function fmtVal(value: unknown): string {
-  if (value == null) return "—";
+  if (value === null || value === undefined) return "—";
   if (typeof value === "string") return value;
   if (Array.isArray(value)) return value.map(fmtVal).join(", ");
   return JSON.stringify(value);
@@ -131,11 +131,12 @@ export function ContactMergeRenderer({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const isDone = tc.status === "approved" && toolResult != null;
+  const isDone = tc.status === "approved" && toolResult !== undefined;
 
   // Fetch preview only when NOT done (retired entity is deleted after merge)
   useEffect(() => {
     if (!survivorId || !retiredId || preview || isDone) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- show the spinner before the async merge-preview fetch below; the resolve/reject set state asynchronously.
     setLoading(true);
     runtime.transport
       .rpc("contacts.merge_preview", { survivor_id: survivorId, retired_id: retiredId })

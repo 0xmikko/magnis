@@ -49,23 +49,24 @@ export const LinkedinModule = defineModule({
   // List the tracked profiles (people), not posts.
   rpc: { list: "linkedin.profiles.list", get: "linkedin.profiles.get" },
   mapListItem: (raw) => {
-    const handle = raw.handle ? String(raw.handle) : "";
+    const asStr = (v: unknown): string => (typeof v === "string" ? v : typeof v === "number" ? String(v) : "");
+    const handle = asStr(raw.handle);
     const fc = typeof raw.follower_count === "number" ? raw.follower_count : null;
     // LA-2: a tracked-but-not-yet-synced placeholder reads "Syncing…" — the
     // honest optimistic state right after "+"; replaced by the real profile
     // on the next sync cycle.
     const pending = raw.pending === true;
     return {
-      id: String(raw.id ?? ""),
-      name: raw.display_name ? String(raw.display_name) : handle || "Profile",
+      id: asStr(raw.id),
+      name: asStr(raw.display_name) || handle || "Profile",
       schema_id: "linkedin.profile",
       preview: pending
         ? `@${handle} · Syncing…`
         : handle
-          ? `@${handle}${fc != null ? ` · ${fc.toLocaleString()} followers` : ""}`
+          ? `@${handle}${fc !== null ? ` · ${fc.toLocaleString()} followers` : ""}`
           : null,
       timestamp: null,
-      avatar_url: raw.avatar_url ? proxiedMediaUrl(String(raw.avatar_url)) : null,
+      avatar_url: typeof raw.avatar_url === "string" && raw.avatar_url ? proxiedMediaUrl(raw.avatar_url) : null,
     };
   },
   // STANDARD detail: DetailPane + TopBarHeader via the framework path; the
@@ -88,6 +89,6 @@ export const LinkedinModule = defineModule({
       ["sync.progress"],
       [["linkedin"]],
     );
-    return () => { unsub(); };
+    return (): void => { unsub(); };
   },
 });

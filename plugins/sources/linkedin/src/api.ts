@@ -58,16 +58,26 @@ export class AnysiteError extends Error {
     readonly status: number,
     readonly detail: string,
   ) {
-    super(`anysite ${status}: ${detail}`);
+    super(`anysite ${String(status)}: ${detail}`);
     this.name = "AnysiteError";
   }
+}
+
+/** First value that is actually a string, else "" — preserves the nullish-first
+ * precedence of `a ?? b ?? ""` while satisfying no-base-to-string (the fields are
+ * string-or-absent in the anysite payload). */
+function firstString(...vals: unknown[]): string {
+  for (const v of vals) {
+    if (typeof v === "string") return v;
+  }
+  return "";
 }
 
 /** anysite urn is `{ type, value }` or a bare string. */
 export function extractUrn(u: unknown): string {
   if (typeof u === "string") return u;
   if (u && typeof u === "object" && "value" in u) {
-    return String((u).value ?? "");
+    return firstString((u as { value?: unknown }).value);
   }
   return "";
 }
@@ -76,17 +86,17 @@ export function extractUrn(u: unknown): string {
  * null/undefined stays null — anysite ships no counters on many reshares and
  * a fabricated 0 would be a lie (operator feedback 2026-07-02). */
 export function totalReactions(reactions: unknown): number | null {
-  if (reactions == null) return null;
+  if (reactions === null || reactions === undefined) return null;
   if (!Array.isArray(reactions)) return Number(reactions) || 0;
   return reactions.reduce(
-    (sum: number, r) => sum + (Number((r as { count?: unknown })?.count ?? 0) || 0),
+    (sum: number, r) => sum + (Number((r as { count?: unknown } | null)?.count ?? 0) || 0),
     0,
   );
 }
 
 /** A count field that must stay null when absent (never a lying zero). */
 function countOrNull(v: unknown): number | null {
-  if (v == null) return null;
+  if (v === null || v === undefined) return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
 }
@@ -99,12 +109,12 @@ function postImages(p: Record<string, unknown>, repost?: Record<string, unknown>
 }
 
 function postText(p: Record<string, unknown>): string {
-  const own = String(p.text ?? p.commentary ?? p.content ?? "").trim();
+  const own = firstString(p.text, p.commentary, p.content).trim();
   if (own) return own;
   // Empty repost / reshare: the content lives in the nested original post
   // (confirmed live — i20h's feed is mostly `is_empty_repost` reshares).
   const repost = p.repost && typeof p.repost === "object" ? (p.repost as Record<string, unknown>) : undefined;
-  if (repost) return String(repost.text ?? repost.commentary ?? repost.content ?? "").trim();
+  if (repost) return firstString(repost.text, repost.commentary, repost.content).trim();
   return "";
 }
 
@@ -112,15 +122,15 @@ export function toKolPost(p: Record<string, unknown>): KolPost {
   const repost = p.repost && typeof p.repost === "object" ? (p.repost as Record<string, unknown>) : undefined;
   return {
     urn: extractUrn(p.urn),
-    url: String(p.share_url ?? p.url ?? (repost ? repost.url : "") ?? ""),
+    url: firstString(p.share_url, p.url, repost?.url),
     text: postText(p),
-    createdAt: p.created_at != null ? Number(p.created_at) : null,
+    createdAt: p.created_at !== null && p.created_at !== undefined ? Number(p.created_at) : null,
     // Own counters, falling back to the nested original's; null preserved.
     reactions: totalReactions(p.reactions ?? p.reaction_count ?? repost?.reactions),
     comments: countOrNull(p.comment_count ?? p.comments ?? repost?.comment_count),
     shares: countOrNull(p.share_count ?? p.repost_count ?? repost?.share_count),
     images: postImages(p, repost),
-    isRepost: Boolean(p.is_empty_repost) || repost != null,
+    isRepost: Boolean(p.is_empty_repost) || repost !== undefined,
   };
 }
 
@@ -162,11 +172,11 @@ export class AnysiteClient {
     const p = (Array.isArray(d) ? d[0] : d) as Record<string, unknown> | undefined;
     if (!p) return null;
     return {
-      name: String(p.name ?? ""),
+      name: firstString(p.name),
       urn: extractUrn(p.urn),
-      headline: String(p.headline ?? ""),
+      headline: firstString(p.headline),
       followerCount: Number(p.follower_count ?? 0) || 0,
-      url: String(p.url ?? ""),
+      url: firstString(p.url),
       avatarUrl: typeof p.image === "string" && p.image ? p.image : null,
     };
   }
@@ -174,12 +184,8 @@ export class AnysiteClient {
   /** Recent posts for a resolved fsd_profile urn, newest first. */
   async userPosts(profileUrn: string, count: number): Promise<KolPost[]> {
     const d = await this.post<unknown>("/api/linkedin/user/posts", { urn: profileUrn, count });
-    const arr = Array.isArray(d)
-      ? d
-      : ((d as Record<string, unknown>)?.posts ??
-        (d as Record<string, unknown>)?.data ??
-        (d as Record<string, unknown>)?.elements ??
-        []);
+    const obj = d as Record<string, unknown> | null;
+    const arr = Array.isArray(d) ? d : (obj?.posts ?? obj?.data ?? obj?.elements ?? []);
     return (arr as Record<string, unknown>[]).map(toKolPost);
   }
 }

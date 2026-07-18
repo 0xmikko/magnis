@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { useAppRuntime } from "@magnis/host/runtime";
 import type { ContactListItem, ContactDetailView } from "./types";
 import type { PaginatedResponse } from "@magnis/plugin-sdk";
@@ -9,7 +9,10 @@ export const contactKeys = {
   detail: (id: string) => [...contactKeys.all, "detail", id] as const,
 };
 
-export function useContactsListQuery(limit = 100, offset = 0) {
+export function useContactsListQuery(
+  limit = 100,
+  offset = 0,
+): UseQueryResult<PaginatedResponse<ContactListItem>> {
   const runtime = useAppRuntime();
   return useQuery({
     queryKey: contactKeys.list({ limit, offset }),
@@ -21,7 +24,7 @@ export function useContactsListQuery(limit = 100, offset = 0) {
   });
 }
 
-export function useContactDetailQuery(id: string) {
+export function useContactDetailQuery(id: string): UseQueryResult<ContactDetailView> {
   const runtime = useAppRuntime();
   return useQuery({
     queryKey: contactKeys.detail(id),
@@ -43,7 +46,7 @@ export interface SocialTrackingState {
 export const socialTrackingKey = (id: string): readonly unknown[] =>
   [...contactKeys.detail(id), "social_tracking"] as const;
 
-export function useSocialTrackingQuery(id: string) {
+export function useSocialTrackingQuery(id: string): UseQueryResult<SocialTrackingState> {
   const runtime = useAppRuntime();
   return useQuery({
     queryKey: socialTrackingKey(id),

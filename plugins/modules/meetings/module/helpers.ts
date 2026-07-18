@@ -32,7 +32,7 @@ export function parseAttendees(
   facetData: Data | undefined,
   entityId: string,
 ): CalendarAttendee[] {
-  const raw = facetData == null ? undefined : facetData.attendees;
+  const raw = facetData?.attendees;
   if (raw === undefined || raw === null) return [];
   if (!Array.isArray(raw)) {
     throw new Error(`malformed attendees facet for entity ${entityId}: expected an array`);
@@ -68,7 +68,7 @@ export async function resolveContactForEmail(
   for (const link of links) {
     if (link.kind !== "has_email" || link.to_id !== addrId) continue;
     const person = await graph.get_entity(link.from_id);
-    if (person && person.schema_id === "contacts.person") return person.id;
+    if (person?.schema_id === "contacts.person") return person.id;
   }
   return null;
 }
@@ -97,10 +97,10 @@ export function formatDateTime(
   const startM = typeof startsAt === "string"
     ? (/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/.exec(startsAt))
     : null;
-  const date = startM ? (startM[1] ?? null) : null;
-  const startTime = startM ? (startM[2] ?? null) : null;
+  const date = startM ? (startM.at(1) ?? null) : null;
+  const startTime = startM ? (startM.at(2) ?? null) : null;
   const endM = typeof endsAt === "string" ? (/T(\d{2}:\d{2})/.exec(endsAt)) : null;
-  const endTime = endM ? (endM[1] ?? null) : null;
+  const endTime = endM ? (endM.at(1) ?? null) : null;
 
   let time: string | null;
   if (startTime && endTime) time = `${startTime} - ${endTime}`;

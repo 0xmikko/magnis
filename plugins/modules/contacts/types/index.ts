@@ -26,7 +26,7 @@ export interface LinkedEntitySummary {
   schema_id: string;
   link_kind: string;
   created_at: string;
-  data: unknown | null;
+  data: unknown;
 }
 
 export interface ContactDetailView {

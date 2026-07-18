@@ -44,15 +44,18 @@ export function nextStep(surface: string): MockStep | null {
   const dir = stateDir();
   if (!dir) return null;
   const path = join(dir, "program.json");
-  let programs: Record<string, MockStep[]>;
+  // JSON.parse can yield null / a non-object for a malformed file, so the parsed
+  // value is genuinely nullable — the optional index below is not redundant.
+  let programs: Record<string, MockStep[]> | null;
   try {
-    programs = JSON.parse(readFileSync(path, "utf8")) as Record<string, MockStep[]>;
+    programs = JSON.parse(readFileSync(path, "utf8")) as Record<string, MockStep[]> | null;
   } catch {
     return null; // missing/unparseable ⇒ empty map ⇒ nothing queued
   }
   const queue = programs?.[surface];
   if (!Array.isArray(queue) || queue.length === 0) return null;
-  const step = queue.shift()!;
+  const step = queue.shift();
+  if (step === undefined) return null;
   try {
     writeFileSync(path, JSON.stringify(programs));
   } catch {

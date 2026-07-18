@@ -50,12 +50,13 @@ export function CompanyOverview({
 
 function DescriptionPanel({ entityId }: { readonly entityId: string }): JSX.Element {
   const description = useEntityFacet(entityId, DESCRIPTION_SCHEMA_ID);
-  const body = (description.data?.body as string) ?? "";
+  const body = (description.data?.body as string | undefined) ?? "";
   const mentionSuggestion = useEditorMentionSuggestion();
 
   const [editing, setEditing] = useState(false);
   const [editorKey, setEditorKey] = useState(0);
   const localRef = useRef(body);
+  // eslint-disable-next-line react-hooks/refs -- latest-ref pattern: storing the current body for the editor's uncontrolled read; not consumed during this render.
   localRef.current = body;
 
   const handleToggle = useCallback(() => {

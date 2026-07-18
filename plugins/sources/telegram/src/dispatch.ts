@@ -75,7 +75,7 @@ export function classifyToolError(err: unknown): [number, string] {
   // `toolErrorReply` attaches `data.retry_after` → the host sees a typed -32002
   // and backs off, instead of a generic error + a frozen "bootstrapping" UI.
   const flood = floodWaitSecs(err);
-  if (flood !== undefined) return [RATE_LIMITED_CODE, `${RATE_LIMITED_PREFIX}${flood}`];
+  if (flood !== undefined) return [RATE_LIMITED_CODE, `${RATE_LIMITED_PREFIX}${String(flood)}`];
   // Telegram signals auth/session failures as RPC error code 401. Match the
   // structured error, not the message text.
   const rpc = err as { code?: number } | null;
@@ -96,7 +96,7 @@ export function toolErrorReply(code: number, message: string): Record<string, un
       const secs = Number(rest);
       return {
         code,
-        message: `rate limited; retry after ${secs}s`,
+        message: `rate limited; retry after ${String(secs)}s`,
         data: { retry_after: secs },
       };
     }

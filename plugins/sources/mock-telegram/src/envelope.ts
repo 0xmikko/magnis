@@ -21,11 +21,11 @@ function bool(v: unknown, fallback: boolean): boolean {
 }
 
 export function chatRemoteId(chatId: number): string {
-  return `tg:chat:${chatId}`;
+  return `tg:chat:${String(chatId)}`;
 }
 
 export function messageRemoteId(chatId: number, messageId: number): string {
-  return `tg:msg:${chatId}:${messageId}`;
+  return `tg:msg:${String(chatId)}:${String(messageId)}`;
 }
 
 /** Canonical chat payload + remote_id. `null` when chat_id is missing/non-integer. */
@@ -36,7 +36,7 @@ export function buildChat(req: Json): { payload: Json; remoteId: string } | null
   const payload: Json = {
     entity_type: "telegram_chat",
     chat_id: chatId,
-    title: rawTitle === "" ? `Chat ${chatId}` : rawTitle,
+    title: rawTitle === "" ? `Chat ${String(chatId)}` : rawTitle,
     type: str(req.type) ?? "private",
     is_pinned: bool(req.is_pinned, false),
     // Rust reads pin_order as u64 (negatives fall back to 0), the rest as i64.

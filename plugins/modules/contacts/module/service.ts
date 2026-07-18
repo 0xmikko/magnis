@@ -1,7 +1,7 @@
 // Contacts plugin — backend module (V8). Decorated class; Stage-3
 // read path (list/get) mirrors the legacy Rust ContactsModuleService.
 
-import { rpc, searchEntitiesPage, syncHandler, tool, writeTool, type GraphService, type PluginDeps, type PluginUtil, type RpcExecutor } from "@magnis/plugin-sdk";
+import { rpc, searchEntitiesPage, syncHandler, tool, writeTool, type GraphService, type PluginDeps, type PluginUtil, type RawEntity, type RpcExecutor } from "@magnis/plugin-sdk";
 import type {
   BatchEntityInput,
   BatchFacetInput,
@@ -182,7 +182,7 @@ export class ContactsModule {
         // accumulated and reused for page hydration below (no second read).
         filter: includeAll
           ? undefined
-          : async (entities) => {
+          : async (entities): Promise<RawEntity[]> => {
               const facets = await this.facetsByEntity(entities.map((e) => e.id));
               prefetchedFacets = facets;
               return entities.filter(
@@ -226,7 +226,11 @@ export class ContactsModule {
     // get_canonical does); facets supply channels + relevance_tier.
     const ids = rows.map((e) => e.id);
     const canonById = await this.canonicalByEntity(ids);
-    const facetsById = prefetchedFacets ?? (await this.facetsByEntity(ids));
+    // The paging `filter` closure above may have populated prefetchedFacets, but
+    // TS control-flow narrows it back to `null` here (the assignment lives in a
+    // deferred callback), so widen before the nullish fallback.
+    const facetsById =
+      (prefetchedFacets as Map<string, FacetRecord[]> | null) ?? (await this.facetsByEntity(ids));
     const items = rows.map((e) =>
       buildListItem(e, canonById.get(e.id) ?? {}, facetsById.get(e.id) ?? []),
     );
@@ -247,7 +251,7 @@ export class ContactsModule {
     // for a non-owner or wrong schema). One get_canonical for the detail view's
     // canonical block; link neighbours resolved in ONE get_entities batch.
     const detail = await this.graph.get_entity_full(params.id, { links: true });
-    if (!detail || detail.entity.schema_id !== SCHEMA) {
+    if (detail?.entity.schema_id !== SCHEMA) {
       throw new Error(`contact not found: ${params.id}`);
     }
     const { entity: e, links } = detail;
@@ -260,7 +264,7 @@ export class ContactsModule {
 
     const linked: LinkedEntitySummary[] = [];
     if (links.length > 0) {
-      const neighbourId = (l: { from_id: string; to_id: string }) =>
+      const neighbourId = (l: { from_id: string; to_id: string }): string =>
         l.from_id === e.id ? l.to_id : l.from_id;
       const targets = await this.graph.get_entities([...new Set(links.map(neighbourId))]);
       const byId = new Map(targets.map((t) => [t.id, t]));
@@ -465,13 +469,13 @@ export class ContactsModule {
     },
   })
   async batch_create(params: BatchCreateParams): Promise<BatchCreateResult> {
-    const contacts = params.contacts ?? [];
+    const contacts = params.contacts;
     if (contacts.length < 1 || contacts.length > 50) {
-      throw new Error(`batch size must be 1..=50, got ${contacts.length}`);
+      throw new Error(`batch size must be 1..=50, got ${String(contacts.length)}`);
     }
     contacts.forEach((c, i) => {
       if (!c.name || c.name.trim().length === 0) {
-        throw new Error(`contact[${i}]: missing or empty name`);
+        throw new Error(`contact[${String(i)}]: missing or empty name`);
       }
     });
 
@@ -488,7 +492,7 @@ export class ContactsModule {
         continue;
       }
       const rowClientId = params.client_id
-        ? await this.util.uuid_v5(params.client_id, `contacts.batch_create:${i}`)
+        ? await this.util.uuid_v5(params.client_id, `contacts.batch_create:${String(i)}`)
         : undefined;
       const item = await this.create({
         name: c.name,
@@ -670,7 +674,7 @@ export class ContactsModule {
     ok: boolean;
     dropped_remote_ids: string[];
   }> {
-    const envelopes = Array.isArray(params?.envelopes) ? params.envelopes : [];
+    const envelopes = Array.isArray(params.envelopes) ? params.envelopes : [];
     const dropped: string[] = [];
 
     // Fold by remote_id so two envelopes for the same resourceName collapse to
@@ -855,7 +859,7 @@ export class ContactsModule {
   })
   async set_social_tracking(params: SetSocialTrackingParams): Promise<SocialTracking> {
     const existing = await this.graph.get_entity(params.id);
-    if (!existing || existing.schema_id !== SCHEMA) {
+    if (existing?.schema_id !== SCHEMA) {
       throw new Error(`contact not found: ${params.id}`);
     }
     // Merge onto the current facet so toggling one platform never clears the
@@ -958,9 +962,9 @@ export class ContactsModule {
     },
   })
   async batch_track_social(params: BatchTrackSocialParams): Promise<BatchTrackSocialResult> {
-    const profiles = params.profiles ?? [];
+    const profiles = params.profiles;
     if (profiles.length < 1 || profiles.length > 50) {
-      throw new Error(`batch size must be 1..=50, got ${profiles.length}`);
+      throw new Error(`batch size must be 1..=50, got ${String(profiles.length)}`);
     }
     const excluded = new Set(params.excluded_indices ?? []);
     const results: BatchTrackSocialRow[] = [];
@@ -1010,7 +1014,7 @@ export class ContactsModule {
         continue;
       }
       const rowClientId = params.client_id
-        ? await this.util.uuid_v5(params.client_id, `contacts.batch_track_social:${i}`)
+        ? await this.util.uuid_v5(params.client_id, `contacts.batch_track_social:${String(i)}`)
         : undefined;
       const contact = await this.create({
         name: row.name ?? parsed.handle,
@@ -1041,8 +1045,8 @@ export class ContactsModule {
   @rpc("rename_if_placeholder")
   async rename_if_placeholder(params: RenameIfPlaceholderParams): Promise<{ renamed: boolean }> {
     const entity = await this.graph.get_entity(params.id);
-    if (!entity || entity.schema_id !== SCHEMA) return { renamed: false };
-    if ((entity.name ?? "") !== params.expected_name) return { renamed: false };
+    if (entity?.schema_id !== SCHEMA) return { renamed: false };
+    if (entity.name !== params.expected_name) return { renamed: false };
     if (!params.new_name.trim() || params.new_name === params.expected_name) {
       return { renamed: false };
     }
@@ -1091,7 +1095,7 @@ export class ContactsModule {
       }
       for (const [entityId, social] of latestByEntity) {
         const stored = social[handleKey]?.trim();
-        if (stored && stored.toLowerCase() === want) {
+        if (stored?.toLowerCase() === want) {
           return { contact_id: entityId, tracked: social[trackedKey] === true, handle: stored };
         }
       }
@@ -1165,6 +1169,6 @@ export class ContactsModule {
   private async readSocialTracking(id: string): Promise<SocialTracking> {
     const facets = await this.graph.list_facets_for_entity(id);
     const latest = latestSocialFacet(facets);
-    return ((latest?.data as SocialTracking) ?? {}) satisfies SocialTracking;
+    return ((latest?.data as SocialTracking | undefined) ?? {}) satisfies SocialTracking;
   }
 }

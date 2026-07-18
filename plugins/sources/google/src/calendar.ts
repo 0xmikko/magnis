@@ -69,7 +69,7 @@ function parseGcalEventsResponse(v: unknown): GcalEventsResponse {
       items === null
         ? null
         : items.map((ev, i) => {
-            const c = `${ctx}.items[${i}]`;
+            const c = `${ctx}.items[${String(i)}]`;
             const attendees = optObjectArray(ev, "attendees", c);
             return {
               id: reqString(ev, "id", c),
@@ -83,11 +83,11 @@ function parseGcalEventsResponse(v: unknown): GcalEventsResponse {
                 attendees === null
                   ? null
                   : attendees.map((a, j) => ({
-                      email: optString(a, "email", `${c}.attendees[${j}]`),
+                      email: optString(a, "email", `${c}.attendees[${String(j)}]`),
                       displayName: optString(
                         a,
                         "displayName",
-                        `${c}.attendees[${j}]`,
+                        `${c}.attendees[${String(j)}]`,
                       ),
                     })),
               hangoutLink: optString(ev, "hangoutLink", c),
@@ -117,12 +117,12 @@ export interface CalendarEvent {
 function resolveDatetime(
   dt: GcalDateTime | null | undefined,
 ): [string, boolean] {
-  if (dt?.dateTime != null) {
+  if (dt?.dateTime !== null && dt?.dateTime !== undefined) {
     const t = Date.parse(dt.dateTime);
     if (Number.isNaN(t)) throw new Error(`bad datetime '${dt.dateTime}'`);
     return [formatUtc(new Date(t)), false];
   }
-  if (dt?.date != null) {
+  if (dt?.date !== null && dt?.date !== undefined) {
     // All-day event: "2026-03-01" → midnight UTC.
     const iso = `${dt.date}T00:00:00Z`;
     const t = Date.parse(iso);
@@ -137,7 +137,7 @@ export function gcalEventToCalendarEvent(ev: GcalEvent): CalendarEvent {
   const [endsAt] = resolveDatetime(ev.end);
 
   const attendees = (ev.attendees ?? []).flatMap((a) =>
-    a.email != null ? [{ name: a.displayName ?? null, email: a.email }] : [],
+    a.email !== null && a.email !== undefined ? [{ name: a.displayName ?? null, email: a.email }] : [],
   );
 
   return {
@@ -227,7 +227,7 @@ export async function fetchEventsPage(
       calEvent = gcalEventToCalendarEvent(ev);
     } catch (e) {
       console.error(
-        `magnis-google: failed to convert calendar event ${ev.id}: ${e}`,
+        `magnis-google: failed to convert calendar event ${ev.id}: ${e instanceof Error ? e.message : String(e)}`,
       );
       continue;
     }

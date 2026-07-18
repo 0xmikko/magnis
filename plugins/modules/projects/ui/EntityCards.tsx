@@ -23,7 +23,7 @@ export function projectHasMore(data: Readonly<Record<string, unknown>>): boolean
 
 export function ProjectCard(props: EntityRendererProps): JSX.Element {
   const { data, action } = props;
-  const name = (data.name as string) ?? "Untitled Project";
+  const name = (data.name as string | undefined) ?? "Untitled Project";
   const description = descriptionText(data);
   const preview = description ? description.slice(0, 80).replace(/\n/g, " ") : undefined;
   const { expanded } = useContext(ExpansionContext);

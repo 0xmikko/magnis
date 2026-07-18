@@ -41,7 +41,7 @@ export function groupNotesByTime(notes: readonly NoteListItem[]): readonly NoteG
     } else if (date >= last30Start) {
       last30.push(note);
     } else {
-      const monthKey = `${date.getFullYear()}-${String(date.getMonth()).padStart(2, "0")}`;
+      const monthKey = `${String(date.getFullYear())}-${String(date.getMonth()).padStart(2, "0")}`;
       const monthLabel = date.toLocaleDateString("en-US", {
         month: "long",
         year: "numeric",
@@ -68,7 +68,7 @@ export function groupNotesByTime(notes: readonly NoteListItem[]): readonly NoteG
   const sortedMonths = [...byMonth.entries()].sort(([a], [b]) => b.localeCompare(a));
   for (const [key, bucket] of sortedMonths) {
     const label = key.split("|")[1] ?? key;
-    const firstNote = bucket[0];
+    const firstNote = bucket.at(0);
     const firstDate = firstNote
       ? new Date(firstNote.updated_at ?? firstNote.created_at)
       : null;

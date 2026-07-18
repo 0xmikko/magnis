@@ -108,11 +108,11 @@ function HtmlEmailFrame({ html, dark }: { html: string; dark: boolean }): JSX.El
 
 export function EmailDetailContent({ detail, linkedEntities }: EmailDetailContentProps): JSX.Element {
   const hasHtml = !!detail?.bodyHtml;
-  const rich = hasHtml && detail?.bodyHtml ? isRichHtml(detail.bodyHtml) : false;
+  const rich = hasHtml && detail.bodyHtml ? isRichHtml(detail.bodyHtml) : false;
 
   return (
     <Stack gap={0}>
-      {hasHtml && detail?.bodyHtml ? (
+      {hasHtml && detail.bodyHtml ? (
         <HtmlEmailFrame html={detail.bodyHtml} dark={!rich} />
       ) : (
         /* Plain text fallback: padded */

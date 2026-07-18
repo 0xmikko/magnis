@@ -87,38 +87,38 @@ function parseGpeopleConnectionsResponse(
   const ctx = "GpeopleConnectionsResponse";
   const o = asObject(v, ctx);
   const connections = defaultObjectArray(o, "connections", ctx).map((p, i) => {
-    const c = `${ctx}.connections[${i}]`;
+    const c = `${ctx}.connections[${String(i)}]`;
     return {
       resourceName: reqString(p, "resourceName", c),
       names: defaultObjectArray(p, "names", c).map((n, j) => ({
-        displayName: optString(n, "displayName", `${c}.names[${j}]`),
-        givenName: optString(n, "givenName", `${c}.names[${j}]`),
-        familyName: optString(n, "familyName", `${c}.names[${j}]`),
-        metadata: parseMetadata(n, `${c}.names[${j}]`),
+        displayName: optString(n, "displayName", `${c}.names[${String(j)}]`),
+        givenName: optString(n, "givenName", `${c}.names[${String(j)}]`),
+        familyName: optString(n, "familyName", `${c}.names[${String(j)}]`),
+        metadata: parseMetadata(n, `${c}.names[${String(j)}]`),
       })),
       emailAddresses: defaultObjectArray(p, "emailAddresses", c).map((e, j) => ({
-        value: optString(e, "value", `${c}.emailAddresses[${j}]`),
-        type: optString(e, "type", `${c}.emailAddresses[${j}]`),
-        metadata: parseMetadata(e, `${c}.emailAddresses[${j}]`),
+        value: optString(e, "value", `${c}.emailAddresses[${String(j)}]`),
+        type: optString(e, "type", `${c}.emailAddresses[${String(j)}]`),
+        metadata: parseMetadata(e, `${c}.emailAddresses[${String(j)}]`),
       })),
       phoneNumbers: defaultObjectArray(p, "phoneNumbers", c).map((ph, j) => ({
-        value: optString(ph, "value", `${c}.phoneNumbers[${j}]`),
-        canonicalForm: optString(ph, "canonicalForm", `${c}.phoneNumbers[${j}]`),
-        type: optString(ph, "type", `${c}.phoneNumbers[${j}]`),
-        metadata: parseMetadata(ph, `${c}.phoneNumbers[${j}]`),
+        value: optString(ph, "value", `${c}.phoneNumbers[${String(j)}]`),
+        canonicalForm: optString(ph, "canonicalForm", `${c}.phoneNumbers[${String(j)}]`),
+        type: optString(ph, "type", `${c}.phoneNumbers[${String(j)}]`),
+        metadata: parseMetadata(ph, `${c}.phoneNumbers[${String(j)}]`),
       })),
       organizations: defaultObjectArray(p, "organizations", c).map((g, j) => ({
-        name: optString(g, "name", `${c}.organizations[${j}]`),
-        title: optString(g, "title", `${c}.organizations[${j}]`),
-        current: optBool(g, "current", `${c}.organizations[${j}]`),
+        name: optString(g, "name", `${c}.organizations[${String(j)}]`),
+        title: optString(g, "title", `${c}.organizations[${String(j)}]`),
+        current: optBool(g, "current", `${c}.organizations[${String(j)}]`),
       })),
       photos: defaultObjectArray(p, "photos", c).map((ph, j) => ({
-        url: optString(ph, "url", `${c}.photos[${j}]`),
-        metadata: parseMetadata(ph, `${c}.photos[${j}]`),
+        url: optString(ph, "url", `${c}.photos[${String(j)}]`),
+        metadata: parseMetadata(ph, `${c}.photos[${String(j)}]`),
       })),
       urls: defaultObjectArray(p, "urls", c).map((u, j) => ({
-        value: optString(u, "value", `${c}.urls[${j}]`),
-        type: optString(u, "type", `${c}.urls[${j}]`),
+        value: optString(u, "value", `${c}.urls[${String(j)}]`),
+        type: optString(u, "type", `${c}.urls[${String(j)}]`),
       })),
     };
   });
@@ -163,7 +163,7 @@ export function gpeoplePersonToContact(p: GpeoplePerson): Contact | null {
   const primaryName = pickPrimary(p.names ?? []);
   const displayName =
     primaryName?.displayName ??
-    (() => {
+    ((): string | null => {
       const g = primaryName?.givenName ?? null;
       const f = primaryName?.familyName ?? null;
       if (g !== null && f !== null) return `${g} ${f}`;
@@ -171,7 +171,7 @@ export function gpeoplePersonToContact(p: GpeoplePerson): Contact | null {
     })();
 
   const emails = (p.emailAddresses ?? []).flatMap((e) =>
-    e.value != null
+    e.value !== null && e.value !== undefined
       ? [
           {
             address: e.value,
@@ -209,7 +209,7 @@ export function gpeoplePersonToContact(p: GpeoplePerson): Contact | null {
   const photoUrl = pickPrimary(p.photos ?? [])?.url ?? null;
 
   const profileUrl = (p.urls ?? []).find(
-    (u) => u.type != null && u.type.toLowerCase() === "profile",
+    (u) => u.type?.toLowerCase() === "profile",
   );
   const externalUrl = profileUrl !== undefined ? (profileUrl.value ?? null) : null;
 
@@ -280,7 +280,7 @@ async function listConnectionsPage(
       throw new ContactsCursorExpiredError();
     }
     throw new Error(
-      `People API list_connections failed: HTTP ${resp.status} — ${body}`,
+      `People API list_connections failed: HTTP ${String(resp.status)} — ${body}`,
     );
   }
   return parseGpeopleConnectionsResponse(await resp.json());

@@ -48,8 +48,8 @@ const EMPTY: Fixture = { chats: [], messages: [] };
  * defaults to TRUE (`#[serde(default = "default_true")]`) so a fixture only needs
  * to set `media_type`; every other field defaults to empty/false. */
 function normalizeMessage(raw: Record<string, unknown>): TgMessage {
-  const opt = <T>(v: unknown, want: string): T | undefined =>
-    typeof v === want ? (v as T) : undefined;
+  const optStr = (v: unknown): string | undefined => (typeof v === "string" ? v : undefined);
+  const optNum = (v: unknown): number | undefined => (typeof v === "number" ? v : undefined);
   const senderInfo = raw.sender_info;
   return {
     message_id: Number(raw.message_id),
@@ -57,26 +57,16 @@ function normalizeMessage(raw: Record<string, unknown>): TgMessage {
     text: typeof raw.text === "string" ? raw.text : "",
     date: typeof raw.date === "string" ? raw.date : "",
     is_outgoing: raw.is_outgoing === true,
-    ...(opt<string>(raw.chat_title, "string") === undefined
-      ? {}
-      : { chat_title: raw.chat_title as string }),
-    ...(opt<string>(raw.sender_name, "string") === undefined
-      ? {}
-      : { sender_name: raw.sender_name as string }),
-    ...(opt<number>(raw.sender_id, "number") === undefined
-      ? {}
-      : { sender_id: raw.sender_id as number }),
-    ...(opt<number>(raw.reply_to_msg_id, "number") === undefined
+    ...(optStr(raw.chat_title) === undefined ? {} : { chat_title: raw.chat_title as string }),
+    ...(optStr(raw.sender_name) === undefined ? {} : { sender_name: raw.sender_name as string }),
+    ...(optNum(raw.sender_id) === undefined ? {} : { sender_id: raw.sender_id as number }),
+    ...(optNum(raw.reply_to_msg_id) === undefined
       ? {}
       : { reply_to_msg_id: raw.reply_to_msg_id as number }),
-    ...(opt<string>(raw.media_type, "string") === undefined
-      ? {}
-      : { media_type: raw.media_type as string }),
+    ...(optStr(raw.media_type) === undefined ? {} : { media_type: raw.media_type as string }),
     // serde `default = "default_true"`: absent → true.
     has_media: raw.has_media === undefined ? true : raw.has_media === true,
-    ...(opt<string>(raw.file_name, "string") === undefined
-      ? {}
-      : { file_name: raw.file_name as string }),
+    ...(optStr(raw.file_name) === undefined ? {} : { file_name: raw.file_name as string }),
     is_pinned: raw.is_pinned === true,
     ...(senderInfo !== null && typeof senderInfo === "object"
       ? { sender_info: senderInfo as TgMessage["sender_info"] }
@@ -118,14 +108,14 @@ export function load(): Fixture {
   try {
     raw = readFileSync(path, "utf-8");
   } catch (e) {
-    console.error(`magnis-telegram: cannot read TELEGRAM_FIXTURE_FILE ${path}: ${e}`);
+    console.error(`magnis-telegram: cannot read TELEGRAM_FIXTURE_FILE ${path}: ${String(e)}`);
     return EMPTY;
   }
   let doc: unknown;
   try {
     doc = JSON.parse(raw);
   } catch (e) {
-    console.error(`magnis-telegram: malformed TELEGRAM_FIXTURE_FILE ${path}: ${e}`);
+    console.error(`magnis-telegram: malformed TELEGRAM_FIXTURE_FILE ${path}: ${String(e)}`);
     return EMPTY;
   }
   const d = (doc ?? {}) as Record<string, unknown>;

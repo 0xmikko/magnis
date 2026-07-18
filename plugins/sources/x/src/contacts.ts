@@ -31,7 +31,7 @@ function socialContactEnvelope(user: XUser): Envelope {
     payload: {
       kind: "social_contact",
       handle: user.username,
-      display_name: user.name ?? user.username,
+      display_name: user.name,
       profile_url: `https://x.com/${user.username}`,
     },
   };
@@ -63,7 +63,7 @@ export async function fetchXContacts(args: FetchArgs, fetchFn: FetchLike): Promi
   const pageSize = Math.max(Math.min(PAGE_SIZE, limit - already), 1);
   const url =
     `${X_API_BASE}/2/users/${encodeURIComponent(ownerId)}/following` +
-    `?max_results=${pageSize}&user.fields=${USER_FIELDS}` +
+    `?max_results=${String(pageSize)}&user.fields=${USER_FIELDS}` +
     (cursor.token ? `&pagination_token=${encodeURIComponent(cursor.token)}` : "");
   const res = await fetchFn(url, {
     method: "GET",

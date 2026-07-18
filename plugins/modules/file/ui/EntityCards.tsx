@@ -57,7 +57,7 @@ export function FileCard(props: EntityRendererProps): JSX.Element {
 
   const rows: { label: string; value: string }[] = [];
   if (mimeType) rows.push({ label: "Type", value: mimeType });
-  if (sizeBytes != null) rows.push({ label: "Size", value: formatFileSize(sizeBytes) });
+  if (sizeBytes !== undefined) rows.push({ label: "Size", value: formatFileSize(sizeBytes) });
   if (createdAt) rows.push({ label: "Created", value: createdAt });
   if (description) rows.push({ label: "Notes", value: description });
 
@@ -73,7 +73,7 @@ export function FileCard(props: EntityRendererProps): JSX.Element {
         </span>
         {!expanded && (
           <span className="block truncate text-[11px] text-content-tertiary">
-            {sizeBytes != null ? formatFileSize(sizeBytes) : mimeType}
+            {sizeBytes !== undefined ? formatFileSize(sizeBytes) : mimeType}
             {sourceModule ? ` · ${sourceLabel(sourceModule)}` : ""}
           </span>
         )}

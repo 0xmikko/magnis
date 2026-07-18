@@ -7,7 +7,7 @@ const RECENT_POSTS = 5;
 // anysite `created_at` is epoch SECONDS (confirmed live, S4 spike) — but be
 // robust to ms too: a 10-digit value (< 1e12) is seconds → ×1000.
 function toIso(epoch: number | null): string | null {
-  if (epoch == null || !Number.isFinite(epoch)) return null;
+  if (epoch === null || !Number.isFinite(epoch)) return null;
   const ms = epoch < 1e12 ? epoch * 1000 : epoch;
   const d = new Date(ms);
   return Number.isNaN(d.getTime()) ? null : d.toISOString();

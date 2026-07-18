@@ -29,17 +29,17 @@ export function NoteToolCallRenderer({
   const isCreate = tc.name === "notes.create" || tc.name === "notes_create";
   const title = args.title as string | undefined;
   const body =
-    args.body != null
-      ? String(args.body)
-      : args.text != null
-        ? String(args.text)
+    typeof args.body === "string"
+      ? args.body
+      : typeof args.text === "string"
+        ? args.text
         : "";
 
   const [noteId, setNoteId] = useState<string | undefined>(
     args.id as string | undefined,
   );
 
-  const handleApply = async () => {
+  const handleApply = async (): Promise<void> => {
     await onApprove();
     if (isCreate) {
       try {
@@ -47,7 +47,8 @@ export function NoteToolCallRenderer({
           "notes.list",
           { limit: 1, search: args.title as string },
         );
-        if (list?.items?.[0]?.id) setNoteId(list.items[0].id);
+        const first = list.items.at(0);
+        if (first) setNoteId(first.id);
       } catch {
         /* best effort */
       }
@@ -56,7 +57,7 @@ export function NoteToolCallRenderer({
   };
 
   const handleNavigate = noteId
-    ? () => {
+    ? (): void => {
         router.navigate("notes", "note", noteId);
       }
     : undefined;

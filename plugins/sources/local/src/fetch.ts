@@ -12,7 +12,7 @@ import { notesDir, scan } from "./scan";
 // is what the Rust connector relied on. Do not "fix" this: adding kind:"live"
 // would fire the notes module's live-only side effects on every backfill.
 
-export async function fetchLocalNotes(args: FetchArgs): Promise<FetchResult> {
+export function fetchLocalNotes(args: FetchArgs): Promise<FetchResult> {
   const entries = scan(notesDir());
   const cursor = args.cursor as { last_mtime?: unknown } | undefined;
   const cursorMtime =
@@ -36,9 +36,9 @@ export async function fetchLocalNotes(args: FetchArgs): Promise<FetchResult> {
       remote_id: e.path,
     })) as unknown as Envelope[];
 
-  return {
+  return Promise.resolve({
     envelopes,
     nextCursor: newest === null ? null : { last_mtime: newest },
     hasMore: false,
-  };
+  });
 }

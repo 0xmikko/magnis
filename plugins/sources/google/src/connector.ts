@@ -36,7 +36,7 @@ export function buildConnectorConfig(
 ): ConnectorConfig {
   /** Mint an access token from the per-call `_meta` credentials (no caching —
    * every fetch/execute call refreshes, matching the Rust connector). */
-  const accessToken = (meta: Record<string, unknown> | undefined) =>
+  const accessToken = (meta: Record<string, unknown> | undefined): Promise<string> =>
     refreshAccessToken(credsFromMeta(meta), fetchFn);
 
   // ── magnis.sync.fetch ───────────────────────────────────────
@@ -119,7 +119,7 @@ export function buildConnectorConfig(
     }
     const token = await accessToken(meta);
     const sourceRef = args.source_ref as Record<string, unknown> | undefined;
-    if (sourceRef === undefined || sourceRef === null) {
+    if (sourceRef === undefined) {
       throw new Error("download_file: missing source_ref");
     }
     const dest = args.dest;
@@ -149,11 +149,11 @@ export function buildConnectorConfig(
   const execute = new Proxy(executeHandlers, {
     get(target, prop): ExecuteHandler | undefined {
       if (typeof prop !== "string") return undefined;
-      const known = target[prop];
+      const known = target[prop] as ExecuteHandler | undefined;
       if (known !== undefined) return known;
-      return async (args) => {
-        if (fixturePath() !== undefined) return fixtureExecuteResult(prop, args);
-        throw new Error(`Unknown gmail execute action: ${prop}`);
+      return (args): Promise<Record<string, unknown>> => {
+        if (fixturePath() !== undefined) return Promise.resolve(fixtureExecuteResult(prop, args));
+        return Promise.reject(new Error(`Unknown gmail execute action: ${prop}`));
       };
     },
   });

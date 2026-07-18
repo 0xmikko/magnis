@@ -202,7 +202,7 @@ function badTypeThrow(
   expected: string,
 ): never {
   throw new Error(
-    `${ctx}: invalid type for \`${field}[${index}]\`, expected ${expected}`,
+    `${ctx}: invalid type for \`${field}[${String(index)}]\`, expected ${expected}`,
   );
 }
 
