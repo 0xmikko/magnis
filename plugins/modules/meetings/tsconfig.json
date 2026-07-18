@@ -6,6 +6,7 @@
     "experimentalDecorators": true
   },
   "include": [
+    "lifecycle/**/*.ts",
     "module/**/*.ts",
     "types/**/*.ts",
     "ui/**/*.ts",
