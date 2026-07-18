@@ -8,6 +8,7 @@
   ],
   "scripts": {
     "typecheck": "bash scripts/typecheck-all.sh",
+    "lint": "eslint \"plugins/**/*.{ts,tsx}\" \"packages/**/*.{ts,tsx}\" \"scripts/**/*.ts\" --max-warnings 0",
     "test": "vitest run",
     "test:connectors": "bash scripts/test-connectors.sh",
     "test:scripts": "bun test scripts/",

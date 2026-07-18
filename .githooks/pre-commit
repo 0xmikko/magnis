@@ -12,6 +12,8 @@ fi
 
 echo "→ gate: typecheck"
 bun run typecheck
+echo "→ gate: lint"
+bun run lint
 echo "→ gate: vitest"
 bun run test
 echo "→ gate: connector suites"
