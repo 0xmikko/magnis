@@ -168,7 +168,7 @@ export function TelegramBatchSendRenderer({
         {isEditing ? (
           <textarea
             className="mb-2 w-full resize-none rounded border border-agent-border bg-transparent px-2 py-1 text-[13px] leading-[1.5] text-agent-text outline-none focus:border-sky-400"
-            style={{ fieldSizing: "content" } as React.CSSProperties}
+            style={{ fieldSizing: "content" }}
             rows={1}
             value={editText}
             onChange={(e): void => { setEditText(e.target.value); }}

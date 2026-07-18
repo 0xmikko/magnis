@@ -12,7 +12,7 @@ export function computeInitials(name: string): string {
     .split(/\s+/)
     .filter((w) => w.length > 0)
     .slice(0, 2)
-    .map((w) => w[0]!)
+    .map((w) => w[0])
     .join("")
     .toUpperCase();
 }
@@ -21,7 +21,7 @@ export function pickAvatarColor(id: string): string {
   const first = id.replace(/-/g, "").slice(0, 2);
   const hash = parseInt(first, 16);
   const idx = Number.isFinite(hash) ? hash % AVATAR_COLORS.length : 0;
-  return AVATAR_COLORS[idx]!;
+  return AVATAR_COLORS[idx];
 }
 
 function canonicalString(map: Partial<ContactCanonical>, key: keyof ContactCanonical): string | null {
@@ -34,7 +34,7 @@ function canonicalString(map: Partial<ContactCanonical>, key: keyof ContactCanon
 export function detectRelevanceTier(facets: FacetRecord[]): string | null {
   for (const f of facets) {
     const data = f.data as Record<string, unknown> | null;
-    const t = data?.["relevance_tier"];
+    const t = data?.relevance_tier;
     if (typeof t === "string") return t;
   }
   return null;

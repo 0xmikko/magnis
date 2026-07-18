@@ -58,14 +58,14 @@ function richPostFields(d: Record<string, unknown>): {
   urls: PostUrlEntity[];
   metrics: PostMetricsView | null;
 } {
-  const m = d["metrics"];
+  const m = d.metrics;
   const num = (o: Record<string, unknown>, k: string): number | null =>
-    typeof o[k] === "number" ? (o[k] as number) : null;
+    typeof o[k] === "number" ? (o[k]) : null;
   return {
     post_type: str(d, "post_type") ?? null,
     article_title: str(d, "article_title") ?? null,
-    media: Array.isArray(d["media"]) ? (d["media"] as PostMediaItem[]) : [],
-    urls: Array.isArray(d["urls"]) ? (d["urls"] as PostUrlEntity[]) : [],
+    media: Array.isArray(d.media) ? (d.media as PostMediaItem[]) : [],
+    urls: Array.isArray(d.urls) ? (d.urls as PostUrlEntity[]) : [],
     metrics:
       m && typeof m === "object"
         ? {
@@ -102,7 +102,7 @@ export class XModule {
 
     for (const env of envelopes) {
       const remoteId = env.remote_id;
-      const payload = (env.payload ?? {}) as Record<string, unknown>;
+      const payload = (env.payload ?? {});
       const entityType = str(payload, "entity_type");
       if (!remoteId || env.kind === "delete") {
         if (remoteId && env.kind === "delete") dropped.push(remoteId); // S0: no delete path yet
@@ -140,7 +140,7 @@ export class XModule {
 
     // authored_by links: post → its author profile when present in THIS page.
     for (const env of envelopes) {
-      const payload = (env.payload ?? {}) as Record<string, unknown>;
+      const payload = (env.payload ?? {});
       if (str(payload, "entity_type") !== "post" || !env.remote_id) continue;
       const handle = str(payload, "author_handle");
       if (!handle) continue;
@@ -205,7 +205,7 @@ export class XModule {
     ids: Record<string, string>,
   ): Promise<void> {
     for (const env of envelopes) {
-      const payload = (env.payload ?? {}) as Record<string, unknown>;
+      const payload = (env.payload ?? {});
       if (str(payload, "entity_type") !== "profile" || !env.remote_id) continue;
       const handle = str(payload, "handle");
       const profileId = ids[env.remote_id];
@@ -314,7 +314,7 @@ export class XModule {
       (detail.facets.find((f) => f.schema_id === PROFILE_IDENTITY)?.data as
         | Record<string, unknown>
         | undefined) ?? {};
-    const fc = d["follower_count"];
+    const fc = d.follower_count;
     return {
       id: detail.entity.id,
       platform: (str(d, "platform") as Platform | undefined) ?? null,
@@ -368,7 +368,7 @@ export class XModule {
         this.profileItem({
           entity: e,
           data: latest.get(e.id)?.data ?? {},
-        } as WindowRow),
+        }),
       );
       return { items, total, limit, offset };
     }
@@ -400,7 +400,7 @@ export class XModule {
 
   private profileItem(row: WindowRow): ProfileListItem {
     const d = (row.data ?? {}) as Record<string, unknown>;
-    const fc = d["follower_count"];
+    const fc = d.follower_count;
     return {
       id: row.entity.id,
       platform: (str(d, "platform") as Platform | undefined) ?? null,

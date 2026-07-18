@@ -161,7 +161,7 @@ export class ContactsModule {
     const search = (params.search ?? "").trim();
     const includeAll = params.include_all ?? false;
 
-    let rows: Array<{ id: string; schema_id: string; name: string; created_at?: string; is_pinned?: boolean | null }>;
+    let rows: { id: string; schema_id: string; name: string; created_at?: string; is_pinned?: boolean | null }[];
     let total: number;
     // When the search path pre-fetches facets (to filter by tier), it reuses
     // that map for hydration so the page is not facet-read twice.
@@ -303,7 +303,7 @@ export class ContactsModule {
       if (!c.entity_id) continue;
       const m = (out.get(c.entity_id) ?? {}) as Record<string, unknown>;
       m[c.key] = c.value;
-      out.set(c.entity_id, m as Partial<ContactCanonical>);
+      out.set(c.entity_id, m);
     }
     return out;
   }
@@ -481,7 +481,7 @@ export class ContactsModule {
     let excludedCount = 0;
 
     for (let i = 0; i < contacts.length; i++) {
-      const c = contacts[i]!;
+      const c = contacts[i];
       if (excluded.has(i)) {
         excludedCount += 1;
         results.push({ id: null, name: c.name, status: "excluded" });
@@ -684,7 +684,7 @@ export class ContactsModule {
       if (!env.remote_id) continue;
       // social_contact contract (plan §7): ALL fields required — a violating
       // envelope is reported dropped, never half-ingested.
-      const payload = (env.payload ?? {}) as Record<string, unknown>;
+      const payload = (env.payload ?? {});
       if (payload.kind === "social_contact" && !isValidSocialContact(payload)) {
         dropped.push(env.remote_id);
         continue;
@@ -719,7 +719,7 @@ export class ContactsModule {
     for (const env of envelopes) {
       const remoteId = env.remote_id;
       if (!remoteId) continue;
-      const raw = (env.payload ?? {}) as Record<string, unknown>;
+      const raw = (env.payload ?? {});
 
       // social_contact mapper (plan §7, S5): x/linkedin following imports on
       // the SAME surface. Mints an UNTRACKED social contact (tracking is a
@@ -968,7 +968,7 @@ export class ContactsModule {
     let excludedCount = 0;
 
     for (let i = 0; i < profiles.length; i++) {
-      const row = profiles[i]!;
+      const row = profiles[i];
       if (excluded.has(i)) {
         excludedCount += 1;
         results.push({
@@ -1113,10 +1113,10 @@ export class ContactsModule {
   })
   async list_social_tracking(params: {
     platform: SocialPlatform;
-  }): Promise<Array<{ contact_id: string; name: string; handle: string }>> {
+  }): Promise<{ contact_id: string; name: string; handle: string }[]> {
     const handleKey = params.platform === "x" ? "x_handle" : "linkedin_handle";
     const trackedKey = params.platform === "x" ? "tracked_x" : "tracked_linkedin";
-    const out: Array<{ contact_id: string; name: string; handle: string }> = [];
+    const out: { contact_id: string; name: string; handle: string }[] = [];
     // Same paged scan as get_social_tracking_by_handle: latest social facet
     // per person wins (runtime returns facets NEWEST-FIRST — never trust
     // append order).

@@ -38,7 +38,7 @@ function useResolvedEntities(
     ).then((results) => {
       if (!cancelled)
         setEntities(
-          results.filter((r): r is NonNullable<typeof r> => r !== null) as ResolvedEntity[],
+          results.filter((r): r is NonNullable<typeof r> => r !== null),
         );
     });
     // eslint-disable-next-line @typescript-eslint/explicit-function-return-type

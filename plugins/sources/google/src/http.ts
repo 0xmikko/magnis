@@ -112,7 +112,7 @@ export async function fetchWithTimeout(
 ): Promise<HttpResponse> {
   const controller = new AbortController();
   const timeoutError = new HttpTimeoutError(url, timeoutMs);
-  const timer = setTimeout(() => controller.abort(timeoutError), timeoutMs);
+  const timer = setTimeout(() => { controller.abort(timeoutError); }, timeoutMs);
   try {
     return await fetchFn(url, { ...init, signal: controller.signal });
   } catch (e) {

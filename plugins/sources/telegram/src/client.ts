@@ -107,7 +107,7 @@ export function toNum(v: unknown): number {
 /** Coerce an unknown thrown value into the RPC-error shape we classify on. */
 function asRpcError(e: unknown): RpcErrorLike | undefined {
   if (e === null || typeof e !== "object") return undefined;
-  return e as RpcErrorLike;
+  return e;
 }
 
 /** If `err` is a Telegram FLOOD_WAIT, return its wait in seconds. gramjs
@@ -181,7 +181,7 @@ export class MtprotoTimeoutError extends Error {
 export function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(() => reject(new MtprotoTimeoutError(label, ms)), ms);
+    timer = setTimeout(() => { reject(new MtprotoTimeoutError(label, ms)); }, ms);
   });
   return Promise.race([promise, timeout]).finally(() => {
     if (timer !== undefined) clearTimeout(timer);

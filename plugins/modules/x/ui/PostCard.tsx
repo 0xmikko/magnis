@@ -36,13 +36,13 @@ export interface RichPost {
   url: string | null;
   post_type: string | null;
   article_title: string | null;
-  media: Array<{
+  media: {
     type: string | null;
     url: string | null;
     preview_image_url: string | null;
     alt_text: string | null;
-  }>;
-  urls: Array<{ url: string | null; expanded_url: string | null; display_url: string | null }>;
+  }[];
+  urls: { url: string | null; expanded_url: string | null; display_url: string | null }[];
   metrics: {
     likes: number | null;
     reposts: number | null;

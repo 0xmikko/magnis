@@ -32,7 +32,7 @@ type ExecuteHandler = (
 /** Build the connector config. `fetchFn` is injectable for tests; production
  * uses the global fetch. */
 export function buildConnectorConfig(
-  fetchFn: FetchLike = fetch as unknown as FetchLike,
+  fetchFn: FetchLike = fetch,
 ): ConnectorConfig {
   /** Mint an access token from the per-call `_meta` credentials (no caching —
    * every fetch/execute call refreshes, matching the Rust connector). */
@@ -72,7 +72,7 @@ export function buildConnectorConfig(
         // via the SDK's verbatim `raw` args.
         const str = (k: string): string | undefined =>
           typeof args.raw?.[k] === "string"
-            ? (args.raw[k] as string)
+            ? (args.raw[k])
             : undefined;
         const window: EventsWindow = {
           time_min: str("time_min"),

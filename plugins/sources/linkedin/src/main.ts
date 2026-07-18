@@ -10,7 +10,7 @@ await runConnector({
   version: "0.1.0",
   surfaces: ["linkedin"],
   intervalSecs: 600,
-  fetch: (args) => fetchLinkedIn(args, fetch as never),
+  fetch: (args) => fetchLinkedIn(args, fetch),
   // ProbeAuth (plan §2.4) — see probe.ts (unit-tested F3 contract).
-  probeAuth: (meta) => probeLinkedInAuth(meta, fetch as never),
+  probeAuth: (meta) => probeLinkedInAuth(meta, fetch),
 });

@@ -200,7 +200,7 @@ export function EmailBatchSendRenderer({
         </div>
 
         {isEditing ? (
-          <textarea className="mb-2 w-full resize-none rounded border border-agent-border bg-transparent px-2 py-1 text-[13px] leading-[1.5] text-agent-text outline-none focus:border-rose-400" style={{ fieldSizing: "content" } as React.CSSProperties} rows={1} value={editDraft.body_text} onChange={(e): void => { setEditDraft((d) => ({ ...d, body_text: e.target.value })); }} />
+          <textarea className="mb-2 w-full resize-none rounded border border-agent-border bg-transparent px-2 py-1 text-[13px] leading-[1.5] text-agent-text outline-none focus:border-rose-400" style={{ fieldSizing: "content" }} rows={1} value={editDraft.body_text} onChange={(e): void => { setEditDraft((d) => ({ ...d, body_text: e.target.value })); }} />
         ) : (
           <p className={"mb-2 whitespace-pre-wrap rounded border border-transparent px-2 py-1 text-[13px] leading-[1.5] text-agent-text"}>{displayBody}</p>
         )}

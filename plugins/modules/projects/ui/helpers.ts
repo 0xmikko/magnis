@@ -16,8 +16,8 @@ function initialsFrom(name: string): string {
 function colorFromId(id: string): AvatarColor {
   let hash = 0;
   for (const ch of id) hash = (hash * 31 + ch.charCodeAt(0)) | 0;
-  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length]!;
+   
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
 }
 
 export function mapProject(item: ProjectListItem): ProjectProfile {

@@ -82,7 +82,7 @@ const str = (d: Data, k: string): string | null => {
   const v = d[k];
   return typeof v === "string" && v.length > 0 ? v : null;
 };
-const num = (d: Data, k: string): number | null => (typeof d[k] === "number" ? (d[k] as number) : null);
+const num = (d: Data, k: string): number | null => (typeof d[k] === "number" ? (d[k]) : null);
 const boolFlag = (d: Data, k: string): boolean | null => {
   const v = d[k];
   if (typeof v === "boolean") return v;
@@ -152,7 +152,7 @@ export class TelegramModule {
       chat_id: chatIdStr(d),
       chat_title: str(d, "title"),
       last_message: str(d, "last_message_preview"),
-      last_message_time: typeof d.last_message_date === "string" ? (d.last_message_date as string) : null,
+      last_message_time: typeof d.last_message_date === "string" ? (d.last_message_date) : null,
       last_message_sender: str(d, "last_sender_name"),
       is_outgoing: null,
       message_count: null,
@@ -319,7 +319,7 @@ export class TelegramModule {
       subject: entity.name && entity.name.length > 0 ? entity.name : null,
       preview: null,
       channel: "telegram",
-      timestamp: typeof d.date === "string" ? (d.date as string) : created,
+      timestamp: typeof d.date === "string" ? (d.date) : created,
       created_at: created,
       metadata: d,
     };
@@ -358,7 +358,7 @@ export class TelegramModule {
       subject: entity.name && entity.name.length > 0 ? entity.name : null,
       body: str(d, "text"),
       channel: "telegram",
-      timestamp: typeof d.date === "string" ? (d.date as string) : created,
+      timestamp: typeof d.date === "string" ? (d.date) : created,
       canonical: {},
       facets: facetSummaries,
       linked_entities: [],
@@ -401,7 +401,7 @@ export class TelegramModule {
     await this.graph.update_facet({
       facet_id: chatFacet.id,
       schema_id: CHAT_DETAILS,
-      data: { ...existing, is_indexed: params.is_indexed } as TelegramFacets["telegram.chat.details"],
+      data: { ...existing, is_indexed: params.is_indexed },
     });
     return { status: "ok" };
   }
@@ -759,7 +759,7 @@ export class TelegramModule {
           last_message_date: msgDate,
           last_message_preview: str(msg, "text") ?? "",
           last_sender_name: str(msg, "sender_name") ?? "",
-        } as TelegramFacets["telegram.chat.details"],
+        },
         external_id: `tg:chat:${key}`,
         confidence: 100,
       });
@@ -819,7 +819,7 @@ export class TelegramModule {
     await this.graph.attach_facet({
       entity_id: entityId,
       schema_id: CHAT_DETAILS,
-      data: details as TelegramFacets["telegram.chat.details"],
+      data: details,
       external_id: remoteId,
       confidence: 100,
     });
@@ -852,7 +852,7 @@ export class TelegramModule {
       await this.graph.attach_facet({
         entity_id: entityId,
         schema_id: MESSAGE_DETAILS,
-        data: payload as TelegramFacets["telegram.message.details"],
+        data: payload,
         external_id: remoteId,
         confidence: 100,
       });
@@ -870,7 +870,7 @@ export class TelegramModule {
 
     // Register any URLs in the message text as web.link entities (referenced
     // by the message). Mirrors native ingest's web.extractor pass.
-    const msgText = typeof payload.text === "string" ? (payload.text as string) : "";
+    const msgText = typeof payload.text === "string" ? (payload.text) : "";
     for (const url of extractUrls(msgText)) {
       await this.graph.web_register({ url, parent_entity_id: entityId, link_kind: "references" });
     }
@@ -950,7 +950,7 @@ export class TelegramModule {
         last_message_date: msgDate,
         last_message_preview: str(msg, "text") ?? "",
         last_sender_name: str(msg, "sender_name") ?? "",
-      } as TelegramFacets["telegram.chat.details"],
+      },
       external_id: `tg:chat:${String(chatId)}`,
       confidence: 100,
     });
@@ -1036,7 +1036,7 @@ export class TelegramModule {
       await this.graph.attach_facet({
         entity_id: personId,
         schema_id: CONTACT_FACET,
-        data: contactData as TelegramFacets["telegram.contact"],
+        data: contactData,
         external_id: userExt,
         confidence: 90,
       });
@@ -1174,7 +1174,7 @@ export class TelegramModule {
     // a manual retry double-sends it. The missing local copy is reconciled by the
     // normal sync, not by failing an already-delivered send (Codex round-2).
     try {
-      const messageId = typeof result.message_id === "number" ? (result.message_id as number) : 0;
+      const messageId = typeof result.message_id === "number" ? (result.message_id) : 0;
       const remoteId = `tg:msg:${String(chatId)}:${messageId}`;
       const sentPayload: Data = {
         message_id: messageId,

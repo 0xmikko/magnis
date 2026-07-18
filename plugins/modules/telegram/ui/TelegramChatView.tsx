@@ -139,8 +139,8 @@ function groupMessages(messages: readonly TelegramMessage[], isGroup: boolean): 
   let prevDate: string | undefined;
 
   for (let i = 0; i < messages.length; i++) {
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-    const msg = messages[i]!;
+     
+    const msg = messages[i];
     const prev = i > 0 ? messages[i - 1] : undefined;
     const next = i < messages.length - 1 ? messages[i + 1] : undefined;
 

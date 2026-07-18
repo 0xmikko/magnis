@@ -191,7 +191,7 @@ export function NoteDetail({ noteId }: NoteDetailProps): JSX.Element {
   }, [noteId, localBody, updateMutation]);
 
   // Wired to the context menu in Phase 5 — kept referenced until then.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   const handleDelete = useCallback(() => {
     deleteMutation.mutate({ id: noteId });
     setSelectedNoteId(undefined);

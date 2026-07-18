@@ -138,7 +138,7 @@ function wrapAuthClient(client: TelegramClient): AuthClientLike {
           },
         },
       );
-      return user as unknown as TgUserLike;
+      return user;
     },
     logOut: async () => {
       await withTimeout(
@@ -228,8 +228,8 @@ export class TgClient implements TgOps {
       this.peerCache.set(toNum(entity.id), entity);
       out.push({
         entity,
-        raw: dialog.dialog as unknown as RawDialogLike,
-        pinned: dialog.pinned === true,
+        raw: dialog.dialog,
+        pinned: dialog.pinned,
         peer: entity,
       });
     }
@@ -372,17 +372,17 @@ export class LiveDialogPager implements DialogPager {
     let sliceCount: number;
 
     if (res instanceof Api.messages.DialogsSlice) {
-      rawDialogs = res.dialogs as unknown as RawDialogLike[];
-      rawMessages = res.messages as unknown as { id?: number; date?: number }[];
-      users = res.users as unknown as EntityLike[];
-      chats = res.chats as unknown as EntityLike[];
+      rawDialogs = res.dialogs;
+      rawMessages = res.messages;
+      users = res.users;
+      chats = res.chats;
       isSlice = true;
       sliceCount = res.count;
     } else if (res instanceof Api.messages.Dialogs) {
-      rawDialogs = res.dialogs as unknown as RawDialogLike[];
-      rawMessages = res.messages as unknown as { id?: number; date?: number }[];
-      users = res.users as unknown as EntityLike[];
-      chats = res.chats as unknown as EntityLike[];
+      rawDialogs = res.dialogs;
+      rawMessages = res.messages;
+      users = res.users;
+      chats = res.chats;
       isSlice = false;
       sliceCount = res.dialogs.length;
     } else {

@@ -46,7 +46,7 @@ export class CompaniesModule {
     const offset = params.offset ?? 0;
     const search = (params.search ?? "").trim();
 
-    let rows: Array<{ id: string; schema_id: string; name: string; created_at?: string }>;
+    let rows: { id: string; schema_id: string; name: string; created_at?: string }[];
     let total: number;
     if (search.length > 0) {
       const matched = await this.graph.search_entities_by_name({
@@ -190,7 +190,7 @@ export class CompaniesModule {
       if (!c.entity_id) continue;
       const m = (out.get(c.entity_id) ?? {}) as Record<string, unknown>;
       m[c.key] = c.value;
-      out.set(c.entity_id, m as Partial<CompanyCanonical>);
+      out.set(c.entity_id, m);
     }
     return out;
   }
@@ -282,7 +282,7 @@ export class CompaniesModule {
         await this.graph.attach_facet({
           entity_id: params.id,
           schema_id: "companies.company.email",
-          data: { email: params.emails[i]!, is_primary: i === 0 },
+          data: { email: params.emails[i], is_primary: i === 0 },
         });
       }
     }
@@ -291,7 +291,7 @@ export class CompaniesModule {
         await this.graph.attach_facet({
           entity_id: params.id,
           schema_id: "companies.company.phone",
-          data: { phone: params.phones[i]!, is_primary: i === 0 },
+          data: { phone: params.phones[i], is_primary: i === 0 },
         });
       }
     }

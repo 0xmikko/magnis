@@ -14,7 +14,7 @@ export async function probeXAuth(
   meta: Record<string, unknown> | undefined,
   fetchFn: FetchLike,
 ): Promise<{ subject: string }> {
-  const bearer = typeof meta?.bearer_token === "string" ? (meta.bearer_token as string) : "";
+  const bearer = typeof meta?.bearer_token === "string" ? (meta.bearer_token) : "";
   if (!bearer) throw new Error("x: missing bearer_token");
   const headers = { authorization: `Bearer ${bearer}` };
 

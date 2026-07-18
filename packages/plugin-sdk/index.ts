@@ -466,7 +466,7 @@ export interface GraphService<
   merge_execute(p: {
     survivor_id: string;
     retired_id: string;
-    overrides?: Array<{ canonical_key: string; value: unknown }>;
+    overrides?: { canonical_key: string; value: unknown }[];
     reason?: string;
   }): Promise<MergeResult>;
 }

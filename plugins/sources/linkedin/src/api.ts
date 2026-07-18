@@ -67,7 +67,7 @@ export class AnysiteError extends Error {
 export function extractUrn(u: unknown): string {
   if (typeof u === "string") return u;
   if (u && typeof u === "object" && "value" in u) {
-    return String((u as { value: unknown }).value ?? "");
+    return String((u).value ?? "");
   }
   return "";
 }
@@ -180,6 +180,6 @@ export class AnysiteClient {
         (d as Record<string, unknown>)?.data ??
         (d as Record<string, unknown>)?.elements ??
         []);
-    return (arr as Array<Record<string, unknown>>).map(toKolPost);
+    return (arr as Record<string, unknown>[]).map(toKolPost);
   }
 }

@@ -16,7 +16,7 @@ function fmtDate(v: unknown): string | undefined {
 
 function metricLine(data: Readonly<Record<string, unknown>>): string | undefined {
   const m = (data.metrics ?? {}) as Record<string, unknown>;
-  const n = (k: string): number | undefined => (typeof m[k] === "number" ? (m[k] as number) : undefined);
+  const n = (k: string): number | undefined => (typeof m[k] === "number" ? (m[k]) : undefined);
   const parts: string[] = [];
   if (n("likes") != null) parts.push(`👍 ${n("likes")}`);
   if (n("reposts") != null) parts.push(`⇄ ${n("reposts")}`);
@@ -57,7 +57,7 @@ export function LinkedInProfileCard(props: EntityRendererProps): JSX.Element {
     "LinkedIn profile";
   const handle = (data.handle as string | undefined) ?? undefined;
   const followers =
-    typeof data.follower_count === "number" ? (data.follower_count as number) : undefined;
+    typeof data.follower_count === "number" ? (data.follower_count) : undefined;
   const bio = (data.bio as string | undefined) ?? undefined;
   const avatar = (data.avatar_url as string | undefined) ?? undefined;
   const subtitle = handle

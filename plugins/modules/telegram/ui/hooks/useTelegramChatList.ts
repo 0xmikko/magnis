@@ -223,8 +223,8 @@ export function useTelegramChatList(): UseTelegramChatListResult {
   // Auto-select first chat when list loads and nothing is selected
   useEffect(() => {
     if (!selectedChatId && chats.length > 0) {
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      setSelectedChatId(chats[0]!.id);
+       
+      setSelectedChatId(chats[0].id);
     }
   }, [chats, selectedChatId, setSelectedChatId]);
 

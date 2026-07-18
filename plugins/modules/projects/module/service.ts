@@ -62,7 +62,7 @@ export class ProjectsModule {
     const offset = params.offset ?? 0;
     const search = params.search?.trim();
 
-    let rows: Array<{ id: string; schema_id: string; name: string; created_at?: string; is_pinned?: boolean | null }>;
+    let rows: { id: string; schema_id: string; name: string; created_at?: string; is_pinned?: boolean | null }[];
     let total: number;
     if (search) {
       // search returns up to limit+offset, then we page in memory (native parity).
@@ -365,7 +365,7 @@ export class ProjectsModule {
       if (!c.entity_id) continue;
       const m = (out.get(c.entity_id) ?? {}) as Record<string, unknown>;
       m[c.key] = c.value;
-      out.set(c.entity_id, m as Partial<ProjectCanonical>);
+      out.set(c.entity_id, m);
     }
     return out;
   }

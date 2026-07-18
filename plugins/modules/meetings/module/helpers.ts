@@ -32,7 +32,7 @@ export function parseAttendees(
   facetData: Data | undefined,
   entityId: string,
 ): CalendarAttendee[] {
-  const raw = facetData == null ? undefined : facetData["attendees"];
+  const raw = facetData == null ? undefined : facetData.attendees;
   if (raw === undefined || raw === null) return [];
   if (!Array.isArray(raw)) {
     throw new Error(`malformed attendees facet for entity ${entityId}: expected an array`);
@@ -95,11 +95,11 @@ export function formatDateTime(
   endsAt: string | null | undefined,
 ): { date: string | null; time: string | null } {
   const startM = typeof startsAt === "string"
-    ? startsAt.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/)
+    ? (/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/.exec(startsAt))
     : null;
   const date = startM ? (startM[1] ?? null) : null;
   const startTime = startM ? (startM[2] ?? null) : null;
-  const endM = typeof endsAt === "string" ? endsAt.match(/T(\d{2}:\d{2})/) : null;
+  const endM = typeof endsAt === "string" ? (/T(\d{2}:\d{2})/.exec(endsAt)) : null;
   const endTime = endM ? (endM[1] ?? null) : null;
 
   let time: string | null;

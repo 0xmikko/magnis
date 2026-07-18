@@ -61,9 +61,9 @@ export function XProfileFeed({ entityId, runtime }: DetailPanelProps): JSX.Eleme
             <Stack gap={3}>
               {groupThreads(posts).map((thread) =>
                 thread.length === 1 ? (
-                  <PostCard key={thread[0]!.id} post={thread[0]!} author={author} />
+                  <PostCard key={thread[0].id} post={thread[0]} author={author} />
                 ) : (
-                  <ThreadCard key={thread[0]!.id} posts={thread} author={author} />
+                  <ThreadCard key={thread[0].id} posts={thread} author={author} />
                 ),
               )}
             </Stack>

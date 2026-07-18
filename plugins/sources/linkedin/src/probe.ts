@@ -9,7 +9,7 @@ export async function probeLinkedInAuth(
   meta: Record<string, unknown> | undefined,
   fetchFn: FetchLike,
 ): Promise<{ subject: string }> {
-  const key = typeof meta?.anysite_key === "string" ? (meta.anysite_key as string) : "";
+  const key = typeof meta?.anysite_key === "string" ? (meta.anysite_key) : "";
   if (!key) throw new Error("linkedin: missing anysite_key");
   const client = new AnysiteClient(key, fetchFn);
   const profile = await client.resolveProfile("linkedin");

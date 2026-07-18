@@ -73,8 +73,8 @@ export function loadCachedChats(): { chats: TelegramChat[]; total: number } | nu
 }
 
 export function senderColor(name: string): string {
-  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-  return TELEGRAM_SENDER_COLORS[Math.abs(hashCode(name)) % TELEGRAM_SENDER_COLORS.length]!;
+   
+  return TELEGRAM_SENDER_COLORS[Math.abs(hashCode(name)) % TELEGRAM_SENDER_COLORS.length];
 }
 
 export function saveChatCache(chats: TelegramChat[], total: number): void {

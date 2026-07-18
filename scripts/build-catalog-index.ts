@@ -17,7 +17,7 @@ import { parse as parseToml } from "smol-toml";
 const ROOT = join(import.meta.dir, "..");
 const OUT = process.env.CATALOG_OUT ?? join(ROOT, "catalog");
 
-type Entry = {
+interface Entry {
   kind: "module" | "source";
   id: string;
   version: string;
@@ -26,7 +26,7 @@ type Entry = {
   publisher: string;
   dev: boolean;
   files: { path: string; sha256: string }[];
-};
+}
 
 function sha256(buf: Buffer | string): string {
   return createHash("sha256").update(buf).digest("hex");
@@ -47,7 +47,7 @@ function stagePackage(kind: string, id: string, stage: (dst: string) => void): E
   return walk(dst).map((p) => ({ path: relative(dst, p), sha256: sha256(readFileSync(p)) }));
 }
 function tomlField(toml: string, field: string): string | undefined {
-  const m = toml.match(new RegExp(`^${field}\\s*=\\s*"([^"]*)"`, "m"));
+  const m = new RegExp(`^${field}\\s*=\\s*"([^"]*)"`, "m").exec(toml);
   return m?.[1];
 }
 

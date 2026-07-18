@@ -54,7 +54,7 @@ export function useUpdateNoteMutation() {
     {
       previous: NoteDetailView | undefined;
       id: string;
-      previousLists: Array<[readonly unknown[], unknown]>;
+      previousLists: [readonly unknown[], unknown][];
     }
   >({
     mutationFn: (params) =>
@@ -75,7 +75,7 @@ export function useUpdateNoteMutation() {
       // Optimistically patch the renamed title into every cached notes list so
       // the left panel updates at the SAME time as the detail (previously the
       // list only caught up on the next refetch — a visible lag on rename).
-      let previousLists: Array<[readonly unknown[], unknown]> = [];
+      let previousLists: [readonly unknown[], unknown][] = [];
       if (variables.title !== undefined) {
         const newTitle = variables.title;
         const listKey = [...noteKeys.all, "list"];

@@ -31,12 +31,12 @@ export interface LinkedInRichPost {
   created_at: string | null;
   url: string | null;
   is_repost: boolean;
-  media: Array<{
+  media: {
     type: string | null;
     url: string | null;
     preview_image_url: string | null;
     alt_text: string | null;
-  }>;
+  }[];
   metrics: { likes: number | null; reposts: number | null; replies: number | null } | null;
 }
 

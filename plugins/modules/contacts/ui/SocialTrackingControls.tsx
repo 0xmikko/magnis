@@ -85,7 +85,7 @@ function PlatformRow({
         value={draftHandle}
         placeholder={`${platform} handle`}
         aria-label={`${platform} handle`}
-        onChange={(e) => setDraftHandle(e.target.value)}
+        onChange={(e) => { setDraftHandle(e.target.value); }}
         onBlur={() => {
           // Persist a handle edit while tracked without flipping the toggle.
           if (tracked && draftHandle.trim() !== handle) void setTracking(true);

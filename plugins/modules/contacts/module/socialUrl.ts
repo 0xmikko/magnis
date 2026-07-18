@@ -49,7 +49,7 @@ export function parseSocialUrl(platform: SocialPlatform, input: string): ParseSo
     if (!hostRaw || hostRaw.includes("@") || hostRaw.includes(":")) return INVALID;
     const host = hostRaw.replace(/^www\./, "");
     // Query/fragment dropped BEFORE segmenting (DEC-10).
-    const path = slash === -1 ? "" : afterScheme.slice(slash + 1).split(/[?#]/)[0]!;
+    const path = slash === -1 ? "" : afterScheme.slice(slash + 1).split(/[?#]/)[0];
     const segments = path.split("/").filter(Boolean);
 
     if (platform === "linkedin") {

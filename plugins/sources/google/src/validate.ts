@@ -180,7 +180,7 @@ export function defaultStringArray(
   if (!Array.isArray(v)) throw badType(ctx, field, "a sequence");
   return v.map((item, i) => {
     if (typeof item !== "string") badTypeThrow(ctx, field, i, "a string");
-    return item as string;
+    return item;
   });
 }
 

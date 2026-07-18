@@ -7,7 +7,7 @@ import type { FetchArgs, FetchResult, Envelope } from "@magnis/connector-sdk";
 interface Fixture {
   user: { id: string; username: string; name: string; followers: number };
   /** Extra payload fields spread over the base post shape (rich S4 fields). */
-  tweets: Array<{ id: string; text: string } & Record<string, unknown>>;
+  tweets: ({ id: string; text: string } & Record<string, unknown>)[];
 }
 
 const FIXTURES: Record<string, Fixture> = {

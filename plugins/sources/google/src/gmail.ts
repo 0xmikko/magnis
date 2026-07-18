@@ -716,7 +716,7 @@ export async function downloadAttachment(
 
 // ── Concurrent hydration (order preserved) ────────────────────
 
-type Fetched = { id: string; msg?: GmailMessage; err?: unknown };
+interface Fetched { id: string; msg?: GmailMessage; err?: unknown }
 
 async function mapConcurrent<T, R>(
   items: T[],
@@ -753,7 +753,7 @@ export function snapshotEnvelopesFromFetched(fetched: Fetched[]): Envelope[] {
       continue;
     }
     try {
-      const mail = gmailMessageToMailMessage(msg as GmailMessage);
+      const mail = gmailMessageToMailMessage(msg!);
       const payload = { ...mail } as unknown as Record<string, unknown>;
       flattenMailPayload(payload);
       envelopes.push({ surface: "email", payload, remote_id: id, kind: "snapshot" });

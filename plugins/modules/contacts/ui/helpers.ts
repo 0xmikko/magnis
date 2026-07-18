@@ -16,7 +16,7 @@ export function mapContact(c: ContactListItem): ContactProfile {
     name: c.name,
     initials: c.initials,
     role: c.role ?? "",
-    // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
+     
     username: c.email ? `@${c.email.split("@")[0]}` : "",
     phone: c.phone ?? "",
     email: c.email ?? "",

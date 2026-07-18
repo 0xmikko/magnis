@@ -44,13 +44,13 @@ export interface XTweet {
   created_at?: string;
   lang?: string;
   conversation_id?: string;
-  referenced_tweets?: Array<{ type: string; id: string }>;
+  referenced_tweets?: { type: string; id: string }[];
   /** Long-form body — X truncates `.text` at 280; the full text lives here. */
   note_tweet?: { text?: string };
   /** X Article (premium long-form) — full body in plain_text. */
   article?: { title?: string; plain_text?: string };
   entities?: {
-    urls?: Array<{ url?: string; expanded_url?: string; display_url?: string }>;
+    urls?: { url?: string; expanded_url?: string; display_url?: string }[];
   };
   attachments?: { media_keys?: string[] };
   public_metrics?: {

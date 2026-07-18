@@ -37,7 +37,7 @@ export function MeetingsModule(): JSX.Element {
   });
 
   const { meetings } = data;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   const rawMeetings = useMemo(() => data.rawMeetings ?? [], [data.rawMeetings]);
   const meetingsMap = useMemo(
     () => new Map(meetings.map((m) => [m.id, m])),

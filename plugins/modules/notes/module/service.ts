@@ -79,7 +79,7 @@ export class NotesModule {
       const dataById = new Map<string, ContentData>();
       for (const f of facets) {
         if (f.schema_id === CONTENT && f.entity_id && !dataById.has(f.entity_id)) {
-          dataById.set(f.entity_id, (f.data ?? {}) as ContentData);
+          dataById.set(f.entity_id, (f.data ?? {}));
         }
       }
       const canonById = new Map<string, Partial<NoteCanonical>>();
@@ -87,7 +87,7 @@ export class NotesModule {
         if (!c.entity_id) continue;
         const m = (canonById.get(c.entity_id) ?? {}) as Record<string, unknown>;
         m[c.key] = c.value;
-        canonById.set(c.entity_id, m as Partial<NoteCanonical>);
+        canonById.set(c.entity_id, m);
       }
       const items = page.map((e) =>
         this.listItemFromParts(e, dataById.get(e.id) ?? {}, canonById.get(e.id) ?? {}),
@@ -317,7 +317,7 @@ export class NotesModule {
 
   private contentOf(detail: EntityDetail): ContentData {
     const content = detail.facets.find((f) => f.schema_id === CONTENT);
-    return (content?.data ?? {}) as ContentData;
+    return (content?.data ?? {});
   }
 
   private titleOf(e: RawEntity, data: ContentData, canonical: Partial<NoteCanonical>): string {
@@ -331,7 +331,7 @@ export class NotesModule {
   private listItemFromWindow(row: WindowRow): NoteListItem {
     // No-search path: the window inlines the latest content facet only; canonical
     // is not consulted (its keys are latest-wins from this same facet).
-    return this.listItemFromParts(row.entity, (row.data ?? {}) as ContentData, {});
+    return this.listItemFromParts(row.entity, (row.data ?? {}), {});
   }
 
   // Pure list-item shaping from an entity + its content facet data + its

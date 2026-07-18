@@ -34,7 +34,7 @@ export function renderTemplate(
   variables?: Record<string, unknown>,
 ): string {
   const projectName =
-    typeof variables?.["project_name"] === "string" ? (variables["project_name"] as string) : "";
+    typeof variables?.project_name === "string" ? (variables.project_name) : "";
   const projectRef = projectName ? `Project: ${projectName}\n\n` : "";
 
   switch (template) {

@@ -355,7 +355,7 @@ export class EmailModule {
       chunkAddrs = new Set();
     };
     for (const env of messages) {
-      const addrs = addressesOf(env.payload as Data);
+      const addrs = addressesOf(env.payload);
       const fresh = addrs.filter((a) => !chunkAddrs.has(a));
       // Flush BEFORE adding when this message would push the running chunk past
       // the cap. A single message is never split — its {message + folded
@@ -460,7 +460,7 @@ export class EmailModule {
           link_kind: "attachment",
           name: filename,
           mime_type: str(att, "mime_type") ?? "application/octet-stream",
-          size_bytes: typeof att.size === "number" ? (att.size as number) : undefined,
+          size_bytes: typeof att.size === "number" ? (att.size) : undefined,
           source_ref: {
             message_id: remoteId,
             attachment_id: attId,
@@ -786,7 +786,7 @@ export class EmailModule {
       refs: [],
       links: [],
     });
-    const id = r.ids["addr"];
+    const id = r.ids.addr;
     if (!id) throw new Error(`email.ensure_address: failed to resolve ${lower}`);
     return { id };
   }
@@ -861,7 +861,7 @@ export class EmailModule {
       if (!det) throw new Error(`file ${fid} not found`);
       const fd = det.facets.find((f) => f.schema_id === "file.details")?.data as Data | undefined;
       if (!fd) throw new Error(`file ${fid} not found`);
-      names.push(typeof fd.name === "string" ? (fd.name as string) : "attachment");
+      names.push(typeof fd.name === "string" ? (fd.name) : "attachment");
     }
     return names;
   }

@@ -175,7 +175,7 @@ export async function buildPlugin(pluginId: string, opts: BuildOpts = {}): Promi
       external: [],
       minify: false,
       define: { "process.env.NODE_ENV": '"production"' },
-      plugins: [legacyDecoratorTranspile as never],
+      plugins: [legacyDecoratorTranspile],
     });
     if (!modResult.success) {
       throw new Error(
@@ -299,7 +299,7 @@ if (import.meta.main) {
         debounce.set(
           id,
           setTimeout(() => {
-            buildOne(id).catch((e) => console.error(`  ✗ ${id}: ${(e as Error).message}`));
+            buildOne(id).catch((e) => { console.error(`  ✗ ${id}: ${(e as Error).message}`); });
           }, 120),
         );
       });

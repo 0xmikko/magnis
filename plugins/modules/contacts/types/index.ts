@@ -111,7 +111,7 @@ export interface TrackSocialProfileResult {
 // tracked contacts out. Per-row isolation + client_id idempotency (INV-5).
 export interface BatchTrackSocialParams {
   platform: "x" | "linkedin";
-  profiles: Array<{ url_or_handle: string; name?: string }>;
+  profiles: { url_or_handle: string; name?: string }[];
   client_id?: string;
   excluded_indices?: number[];
 }
@@ -167,7 +167,7 @@ export interface SearchResultItem {
   schema_version: number;
 }
 export interface ToolResult {
-  content: Array<{ type: "text"; text: string }>;
+  content: { type: "text"; text: string }[];
 }
 
 // contacts.merge / merge_preview — mirror the native handlers
@@ -179,7 +179,7 @@ export interface MergePreviewParams {
 export interface MergeParams {
   survivor_id: string;
   retired_id: string;
-  overrides?: Array<{ canonical_key: string; value: unknown }>;
+  overrides?: { canonical_key: string; value: unknown }[];
   reason?: string;
 }
 

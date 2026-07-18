@@ -147,10 +147,10 @@ export type ClarificationResult = Record<string, unknown> | null;
 
 /// Native `triggers.resolve_watchable` rpc response.
 export interface ResolveWatchableResult {
-  watchable: Array<{
+  watchable: {
     id: string;
     name: string | null;
     schema_id: string;
     link_kind: string;
-  }>;
+  }[];
 }

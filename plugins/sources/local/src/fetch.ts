@@ -20,7 +20,7 @@ export async function fetchLocalNotes(args: FetchArgs): Promise<FetchResult> {
       ? cursor.last_mtime
       : 0;
 
-  const newest = entries.length > 0 ? entries[0]!.mtime : null;
+  const newest = entries.length > 0 ? entries[0].mtime : null;
   const envelopes = entries
     .filter((e) => args.direction !== "forward" || e.mtime > cursorMtime)
     .map((e) => ({

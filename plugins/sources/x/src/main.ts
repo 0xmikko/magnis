@@ -17,8 +17,8 @@ await runConnector({
   // the following import as social_contact envelopes (cursor-seeded).
   fetch: (args) =>
     args.surface === "contacts"
-      ? fetchXContacts(args, fetch as never)
-      : fetchX(args, fetch as never),
+      ? fetchXContacts(args, fetch)
+      : fetchX(args, fetch),
   // ProbeAuth (plan §2.4) — see probe.ts (unit-tested F3 contract).
-  probeAuth: (meta) => probeXAuth(meta, fetch as never),
+  probeAuth: (meta) => probeXAuth(meta, fetch),
 });

@@ -266,7 +266,7 @@ export function useTelegramMessages(
         console.error("Backfill request failed:", err);
         clearBackfillWait();
       });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [selectedChatId, backfilling, hasMoreOnServer, allMessages, runtime, nativeChatId, clearBackfillWait]);
 
   // The detached host backfill emits `sync.backfill` when a page lands. Only act

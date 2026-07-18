@@ -55,12 +55,12 @@ function richPostFields(d: Record<string, unknown>): {
   media: PostMediaItem[];
   metrics: PostMetricsView | null;
 } {
-  const m = d["metrics"];
+  const m = d.metrics;
   const num = (o: Record<string, unknown>, k: string): number | null =>
-    typeof o[k] === "number" ? (o[k] as number) : null;
+    typeof o[k] === "number" ? (o[k]) : null;
   return {
-    is_repost: d["is_repost"] === true,
-    media: Array.isArray(d["media"]) ? (d["media"] as PostMediaItem[]) : [],
+    is_repost: d.is_repost === true,
+    media: Array.isArray(d.media) ? (d.media as PostMediaItem[]) : [],
     metrics:
       m && typeof m === "object"
         ? {
@@ -96,7 +96,7 @@ export class LinkedinModule {
 
     for (const env of envelopes) {
       const remoteId = env.remote_id;
-      const payload = (env.payload ?? {}) as Record<string, unknown>;
+      const payload = (env.payload ?? {});
       const entityType = str(payload, "entity_type");
       if (!remoteId || env.kind === "delete") {
         if (remoteId && env.kind === "delete") dropped.push(remoteId); // S0: no delete path yet
@@ -134,7 +134,7 @@ export class LinkedinModule {
 
     // authored_by links: post → its author profile when present in THIS page.
     for (const env of envelopes) {
-      const payload = (env.payload ?? {}) as Record<string, unknown>;
+      const payload = (env.payload ?? {});
       if (str(payload, "entity_type") !== "post" || !env.remote_id) continue;
       const handle = str(payload, "author_handle");
       if (!handle) continue;
@@ -161,7 +161,7 @@ export class LinkedinModule {
     ids: Record<string, string>,
   ): Promise<void> {
     for (const env of envelopes) {
-      const payload = (env.payload ?? {}) as Record<string, unknown>;
+      const payload = (env.payload ?? {});
       if (str(payload, "entity_type") !== "profile" || !env.remote_id) continue;
       const handle = str(payload, "handle");
       const profileId = ids[env.remote_id];
@@ -271,7 +271,7 @@ export class LinkedinModule {
       const handle = params.id.slice("pending:".length);
       let name = handle;
       try {
-        const tracked: Array<{ name: string; handle: string }> = await this.rpc.execute(
+        const tracked: { name: string; handle: string }[] = await this.rpc.execute(
           "contacts.list_social_tracking",
           { platform: "linkedin" },
         );
@@ -299,7 +299,7 @@ export class LinkedinModule {
       (detail.facets.find((f) => f.schema_id === PROFILE_IDENTITY)?.data as
         | Record<string, unknown>
         | undefined) ?? {};
-    const fc = d["follower_count"];
+    const fc = d.follower_count;
     return {
       id: detail.entity.id,
       platform: (str(d, "platform") as Platform | undefined) ?? null,
@@ -353,7 +353,7 @@ export class LinkedinModule {
         this.profileItem({
           entity: e,
           data: latest.get(e.id)?.data ?? {},
-        } as WindowRow),
+        }),
       );
       return { items, total, limit, offset };
     }
@@ -382,8 +382,8 @@ export class LinkedinModule {
   /// Tracked linkedin handles with NO ingested profile yet (LA-2). A contacts
   /// RPC failure yields no placeholders, never a broken list (the real rows
   /// are the payload; pending rows are advisory).
-  private async pendingProfiles(pageHandles: Array<string | null>): Promise<ProfileListItem[]> {
-    let tracked: Array<{ contact_id: string; name: string; handle: string }>;
+  private async pendingProfiles(pageHandles: (string | null)[]): Promise<ProfileListItem[]> {
+    let tracked: { contact_id: string; name: string; handle: string }[];
     try {
       tracked = await this.rpc.execute("contacts.list_social_tracking", {
         platform: "linkedin",
@@ -411,7 +411,7 @@ export class LinkedinModule {
       .filter((t) => !known.has(t.handle.toLowerCase()))
       .map((t) => ({
         id: `pending:${t.handle}`,
-        platform: "linkedin" as Platform,
+        platform: "linkedin",
         handle: t.handle,
         display_name: t.name || t.handle,
         follower_count: null,
@@ -435,7 +435,7 @@ export class LinkedinModule {
 
   private profileItem(row: WindowRow): ProfileListItem {
     const d = (row.data ?? {}) as Record<string, unknown>;
-    const fc = d["follower_count"];
+    const fc = d.follower_count;
     return {
       id: row.entity.id,
       platform: (str(d, "platform") as Platform | undefined) ?? null,

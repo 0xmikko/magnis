@@ -205,12 +205,12 @@ function makeEmitter(
   };
 }
 
-type JsonRpc = {
+interface JsonRpc {
   jsonrpc?: string;
   id?: unknown;
   method?: string;
   params?: { name?: string; arguments?: Record<string, unknown> };
-};
+}
 
 function capabilities(config: ConnectorConfig): Record<string, unknown> {
   return {
@@ -252,7 +252,7 @@ export async function handleMessage(
   if (method === "tools/call") {
     const name = msg.params?.name ?? "";
 if (name === "magnis.auth.probe" && config.probeAuth) {
-      const args = (msg.params?.arguments ?? {}) as Record<string, unknown>;
+      const args = (msg.params?.arguments ?? {});
       const meta =
         args._meta && typeof args._meta === "object"
           ? (args._meta as Record<string, unknown>)
@@ -269,7 +269,7 @@ if (name === "magnis.auth.probe" && config.probeAuth) {
         };
       }
     }
-    const rawArgs = (msg.params?.arguments ?? {}) as Record<string, unknown>;
+    const rawArgs = (msg.params?.arguments ?? {});
     const metaArg = extractMeta(rawArgs);
 
     // ── push sessions (S1.2) ────────────────────────────────────────────────
@@ -377,7 +377,7 @@ if (name === "magnis.auth.probe" && config.probeAuth) {
         ? args.direction
         : undefined;
     const tracked = Array.isArray(args.tracked_handles)
-      ? (args.tracked_handles.filter((h) => typeof h === "string") as string[])
+      ? (args.tracked_handles.filter((h) => typeof h === "string"))
       : undefined;
     const limit = typeof args.limit === "number" ? args.limit : undefined;
     const meta = metaArg;

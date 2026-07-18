@@ -90,10 +90,10 @@ export class FileModule {
 
     const facets = await this.graph.list_facets_for_entities(entityIds);
     const detailsById = new Map<string, FileDetails>();
-    for (const f of facets as FacetRecord[]) {
+    for (const f of facets) {
       // list_facets_for_entities (batch) always stamps entity_id.
       if (f.schema_id === DETAILS && f.entity_id !== undefined) {
-        detailsById.set(f.entity_id, f.data as unknown as FileDetails);
+        detailsById.set(f.entity_id, f.data as FileDetails);
       }
     }
 
@@ -106,7 +106,7 @@ export class FileModule {
       // query, not a facet filter).
       if (params.parent_id) {
         const links = await this.graph.list_links_for_entity(id);
-        if (!(links as LinkSummary[]).some((l) => l.from_id === params.parent_id)) continue;
+        if (!(links).some((l) => l.from_id === params.parent_id)) continue;
       }
       // mime_prefix: prefix match, refined in-TS (window filter is exact — DEC-8).
       if (params.mime_prefix && !(details.mime_type ?? "").startsWith(params.mime_prefix)) {

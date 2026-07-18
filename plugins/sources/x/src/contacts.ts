@@ -38,7 +38,7 @@ function socialContactEnvelope(user: XUser): Envelope {
 }
 
 export async function fetchXContacts(args: FetchArgs, fetchFn: FetchLike): Promise<FetchResult> {
-  const bearer = typeof args.meta?.bearer_token === "string" ? (args.meta.bearer_token as string) : "";
+  const bearer = typeof args.meta?.bearer_token === "string" ? (args.meta.bearer_token) : "";
   const cursor = (args.cursor ?? {}) as ContactsCursor;
   const spec = cursor.import;
   const handle = typeof spec?.handle === "string" ? spec.handle : "";
