@@ -23,13 +23,13 @@ import ts from "typescript";
 import { parse as parseToml } from "smol-toml";
 
 const REPO_ROOT = join(import.meta.dir, "..");
-const SHIM_URL = (slug: string) => `/api/plugins/__host-shim.js?m=${slug}`;
+const SHIM_URL = (slug: string): string => `/api/plugins/__host-shim.js?m=${slug}`;
 
 interface HostMap {
   static: Record<string, string>; // bare specifier → shim slug
 }
 function loadHostMap(): HostMap {
-  return JSON.parse(readFileSync(join(import.meta.dir, "plugin-host-imports.json"), "utf8"));
+  return JSON.parse(readFileSync(join(import.meta.dir, "plugin-host-imports.json"), "utf8")) as HostMap;
 }
 
 interface Manifest {
@@ -73,7 +73,7 @@ export async function buildPlugin(pluginId: string, opts: BuildOpts = {}): Promi
   const host = loadHostMap();
 
   const manifestPath = join(pluginsDir, "modules", pluginId, "manifest.toml");
-  const manifest: Manifest = parseToml(readFileSync(manifestPath, "utf8")) as Manifest;
+  const manifest: Manifest = parseToml(readFileSync(manifestPath, "utf8"));
   // Entry is always under `ui/`. Manifests are inconsistent: most use
   // "index.tsx", projects uses "ui/index.tsx" — normalize by stripping a
   // leading "ui/" so the on-disk path + the entry key match what the frontend
@@ -96,7 +96,7 @@ export async function buildPlugin(pluginId: string, opts: BuildOpts = {}): Promi
   });
   if (!result.success) {
     throw new Error(
-      `plugin ${pluginId}: bundle failed:\n${result.logs.map((l) => String(l)).join("\n")}`,
+      `plugin ${pluginId}: bundle failed:\n${result.logs.map((l) => l.message).join("\n")}`,
     );
   }
   const jsArtifact = result.outputs.find((o) => o.kind === "entry-point") ?? result.outputs[0];
@@ -151,7 +151,7 @@ export async function buildPlugin(pluginId: string, opts: BuildOpts = {}): Promi
           o: { filter: RegExp },
           cb: (a: { path: string }) => { contents: string; loader: "js" },
         ) => void;
-      }) {
+      }): void {
         build.onResolve({ filter: /^@magnis\/plugin-sdk$/ }, () => ({ path: sdkPath }));
         build.onLoad({ filter: /\.tsx?$/ }, (a) => {
           const out = ts.transpileModule(readFileSync(a.path, "utf8"), {
@@ -179,7 +179,7 @@ export async function buildPlugin(pluginId: string, opts: BuildOpts = {}): Promi
     });
     if (!modResult.success) {
       throw new Error(
-        `plugin ${pluginId}: module bundle failed:\n${modResult.logs.map((l) => String(l)).join("\n")}`,
+        `plugin ${pluginId}: module bundle failed:\n${modResult.logs.map((l) => l.message).join("\n")}`,
       );
     }
     const modArtifact =
@@ -267,13 +267,13 @@ if (import.meta.main) {
   const ids = args.filter((a, i) => !a.startsWith("--") && args[i - 1] !== "--out");
   const pluginsDir = join(REPO_ROOT, "plugins");
 
-  const buildOne = async (id: string) => {
+  const buildOne = async (id: string): Promise<void> => {
     const r = await buildPlugin(id, { pluginsDir, distDir });
     console.log(`  ✓ ${id} → ${distDir}/modules/${id}/ui/${r.bundleFile}`);
   };
-  const buildSet = async () => {
+  const buildSet = async (): Promise<void> => {
     const set = ids.length ? ids : discoverPlugins(pluginsDir);
-    console.log(`build:plugins — ${set.length} plugin(s)`);
+    console.log(`build:plugins — ${String(set.length)} plugin(s)`);
     for (const id of set) {
       try {
         await buildOne(id);
@@ -299,12 +299,14 @@ if (import.meta.main) {
         debounce.set(
           id,
           setTimeout(() => {
-            buildOne(id).catch((e) => { console.error(`  ✗ ${id}: ${(e as Error).message}`); });
+            buildOne(id).catch((e: unknown) => { console.error(`  ✗ ${id}: ${(e as Error).message}`); });
           }, 120),
         );
       });
     }
-    // Keep the process alive.
+    // Keep the process alive: a promise that never resolves so --watch runs
+    // until the process is signalled. The executor is intentionally a no-op.
+    // eslint-disable-next-line @typescript-eslint/no-empty-function -- required no-op executor; resolving would end the watch loop
     await new Promise(() => {});
   }
 }

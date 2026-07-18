@@ -104,7 +104,7 @@ for (const id of readdirSync(sourcesRoot).sort()) {
       // dependency-closed single-file bundle (../../_sdk can't resolve in a store)
       const r = Bun.spawnSync(["bun", "build", join(dir, "src", "main.ts"), "--target=bun", "--outfile", join(dst, "dist", "main.js")]);
       if (r.exitCode !== 0) {
-        console.error(`bun build failed for source '${id}':\n${r.stderr}`);
+        console.error(`bun build failed for source '${id}':\n${r.stderr.toString("utf8")}`);
         process.exit(1);
       }
     }
@@ -124,4 +124,4 @@ writeFileSync(join(OUT, "index.json"), JSON.stringify({
   generated_from: process.env.GITHUB_SHA ?? "local",
   packages,
 }, null, 2));
-console.log(`catalog: ${packages.length} packages → ${OUT}`);
+console.log(`catalog: ${String(packages.length)} packages → ${OUT}`);
