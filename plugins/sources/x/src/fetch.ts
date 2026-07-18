@@ -116,5 +116,6 @@ export async function fetchX(args: FetchArgs, fetchFn: FetchLike): Promise<Fetch
     }
   }
   // Poll is snapshot-per-cycle; no server cursor in v1 (DEC-5). hasMore=false.
-  return { envelopes, nextCursor: (args.cursor ?? 0) + 1, hasMore: false };
+  const cursor = typeof args.cursor === "number" ? args.cursor : 0;
+  return { envelopes, nextCursor: cursor + 1, hasMore: false };
 }

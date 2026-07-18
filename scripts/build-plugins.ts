@@ -33,7 +33,7 @@ function loadHostMap(): HostMap {
 }
 
 interface Manifest {
-  entry?: { ui?: string };
+  entry?: { ui?: string; module?: string };
   ui?: { extra_bare_imports?: string[] };
 }
 

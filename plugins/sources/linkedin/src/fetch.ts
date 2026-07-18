@@ -86,5 +86,6 @@ export async function fetchLinkedIn(args: FetchArgs, fetchFn: FetchLike): Promis
       envelopes.push(postEnvelope(handle, post));
     }
   }
-  return { envelopes, nextCursor: (args.cursor ?? 0) + 1, hasMore: false };
+  const cursor = typeof args.cursor === "number" ? args.cursor : 0;
+  return { envelopes, nextCursor: cursor + 1, hasMore: false };
 }

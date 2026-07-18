@@ -54,8 +54,9 @@ function envelopes(f: Fixture): Envelope[] {
 }
 
 export async function fetchMockLinkedIn(args: FetchArgs): Promise<FetchResult> {
-  if ((args.cursor ?? 0) > 0) {
-    return { envelopes: [], nextCursor: args.cursor ?? 0, hasMore: false };
+  const cursor = typeof args.cursor === "number" ? args.cursor : 0;
+  if (cursor > 0) {
+    return { envelopes: [], nextCursor: cursor, hasMore: false };
   }
   const tracked = args.tracked_handles ?? Object.keys(FIXTURES);
   const out: Envelope[] = [];

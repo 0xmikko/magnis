@@ -147,7 +147,7 @@ export default function TelegramAuthScreen({
         await submit("phone", current);
         await exec("begin");
         setPhase("code");
-      } else {
+      } else if (phase !== "connected") {
         await submit(phase, current);
         const { status } = await exec("step");
         if (status === "password") setPhase("password");
