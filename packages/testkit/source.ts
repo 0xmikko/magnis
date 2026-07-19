@@ -133,7 +133,7 @@ export async function driveMessage(
   drive: Drive = sdkDrive,
 ): Promise<Record<string, unknown>> {
   const reply = await drive(config, msg);
-  if (reply === null || reply === undefined) {
+  if (reply === null) {
     throw new Error(`no reply for ${JSON.stringify(msg)}`);
   }
   return reply;
@@ -150,7 +150,7 @@ export interface SurfaceFixture {
   /** Assert the drain produced at least this many envelopes across all pages. */
   minEnvelopes?: number;
   /** Assert every page carries the named progress counters (number | null). */
-  expectCounters?: "total" | "discovered" | Array<"total" | "discovered">;
+  expectCounters?: "total" | "discovered" | ("total" | "discovered")[];
   /** Safety bound on the drain loop (default 20). */
   maxPages?: number;
 }
@@ -265,7 +265,7 @@ export function runSourceContract(config: ConnectorConfig, fixtures: SourceContr
           all.push(...result.envelopes);
 
           // The host round-trips the cursor verbatim — it MUST survive JSON.
-          const roundTripped = JSON.parse(JSON.stringify(result.nextCursor ?? null));
+          const roundTripped: unknown = JSON.parse(JSON.stringify(result.nextCursor ?? null));
           expect(roundTripped).toEqual(result.nextCursor ?? null);
 
           for (const c of counters) {
@@ -276,7 +276,9 @@ export function runSourceContract(config: ConnectorConfig, fixtures: SourceContr
 
           if (!result.hasMore) break;
           cursor = result.nextCursor;
-          if (++pages > maxPages) throw new Error(`drain exceeded ${maxPages} pages for '${surface}'`);
+          if (++pages > maxPages) {
+            throw new Error(`drain exceeded ${String(maxPages)} pages for '${surface}'`);
+          }
         }
         if (fx.minEnvelopes !== undefined) {
           expect(all.length).toBeGreaterThanOrEqual(fx.minEnvelopes);
