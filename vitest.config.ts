@@ -12,7 +12,10 @@ export default defineConfig({
     include: [
       "plugins/modules/**/module/**/*.test.ts",
       "packages/plugin-sdk/__tests__/**/*.test.ts",
-      "packages/testkit/__tests__/**/*.test.ts",
+      // testkit ships TWO test lanes in one package: module.test.ts is vitest;
+      // source.test.ts is bun (`bun:test`, run by scripts/test-connectors.sh).
+      // Pick up ONLY the vitest one — globbing `**` would drag the bun file in.
+      "packages/testkit/__tests__/module.test.ts",
     ],
   },
   resolve: {

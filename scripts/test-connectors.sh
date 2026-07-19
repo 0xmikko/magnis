@@ -8,3 +8,9 @@ for d in plugins/sources/x plugins/sources/linkedin plugins/sources/google plugi
   echo "bun test: $d"
   (cd "$d" && bun test)
 done
+
+# @magnis/testkit/source self-test — the bun lane of the testkit package. Run
+# ONLY source.test.ts by path: the same dir also holds module.test.ts, which is
+# the vitest lane (imports `vitest`) and must not be swept up by `bun test`.
+echo "bun test: packages/testkit/__tests__/source.test.ts"
+(cd packages/testkit && bun test __tests__/source.test.ts)
