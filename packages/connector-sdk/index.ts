@@ -7,43 +7,16 @@
 //   - tools/call magnis.sync.fetch { surface, cursor } → { envelopes, nextCursor, hasMore }
 //   - notifications (no id) → no reply
 // Read-only: connectors expose ONLY the fetch tool (no write tools).
+//
+// The PURE CONTRACT types (Envelope, FetchArgs, FetchResult, ConnectorConfig +
+// its handler shapes) now live in ./contract/source — reviewable in isolation.
+// They are re-exported below so every `import ... from "@magnis/connector-sdk"`
+// resolves unchanged; only the runtime (runConnector, handleMessage, the error
+// classes, the JSON-RPC codes) lives here.
 
-/** One canonical sync envelope the host routes to the owning module's surface. */
-export interface Envelope {
-  surface: string;
-  remote_id: string;
-  kind: "snapshot" | "live" | "delete";
-  payload: Record<string, unknown>;
-}
+export * from "./contract/source";
 
-export interface FetchArgs {
-  surface: string;
-  /** Arbitrary JSON cursor (S1.1) — the host round-trips it verbatim; a
-   * numeric cursor is just the JSON number a poll connector chose. */
-  cursor?: unknown;
-  /** Present-to-past by default; the host may ask "forward" on catch-up. */
-  direction?: "backward" | "forward";
-  /** Tracked handles for this platform — set DEC-8 (host passes the opt-in set). */
-  tracked_handles?: string[];
-  limit?: number;
-  /** Host-injected credentials (DEC-6): the `_meta` object the host attaches to
-   * each tools/call — e.g. `{ bearer_token }` (X) / `{ anysite_key }` (LinkedIn). */
-  meta?: Record<string, unknown>;
-  /** The verbatim tools/call `arguments`. Surface-specific extras the typed
-   * fields above do not model live here — e.g. the Google connector's calendar
-   * `time_min`/`time_max` window, which its Rust twin reads straight off the
-   * action payload. Prefer a typed field above when one fits. */
-  raw?: Record<string, unknown>;
-}
-
-export interface FetchResult {
-  envelopes: Envelope[];
-  nextCursor: unknown;
-  hasMore: boolean;
-  /** Optional sync-progress counters (profile.rs: bootstrap bar). */
-  total?: number | null;
-  discovered?: number | null;
-}
+import type { ConnectorConfig, Envelope } from "./contract/source";
 
 /** JSON-RPC error codes shared with the host (backend runtime/runtime.rs).
  * RATE_LIMIT carries `retry_after=<secs>` in the message so the host backs off
@@ -117,57 +90,6 @@ function errorReply(id: unknown, e: unknown): Record<string, unknown> {
   }
   const message = e instanceof Error ? e.message : String(e);
   return { jsonrpc: "2.0", id, error: { code: GENERIC_FETCH_ERROR_CODE, message } };
-}
-
-export interface ConnectorConfig {
-  name: string;
-  version: string;
-  /** Surfaces this connector feeds (e.g. ["social"]). */
-  surfaces: string[];
-  /** Poll cadence advertised in capabilities. */
-  intervalSecs?: number;
-  /** The read handler — called for magnis.sync.fetch. Read-only. */
-  fetch: (args: FetchArgs) => Promise<FetchResult>;
-  /** ProbeAuth (sync-status plan §2.4) — called for magnis.auth.probe. MUST
-   * hit the real provider with the injected key and return the verified
-   * subject. Absent → magnis.auth.probe stays rejected (source cannot be
-   * provisioned). */
-  probeAuth?: (meta: Record<string, unknown> | undefined) => Promise<{ subject: string }>;
-  /** "push" advertises live delivery: the host opens `listen_start`
-   * subscriptions and consumes `notifications/magnis/envelope`. */
-  mode?: "poll" | "push";
-  /** Push session open (S1.2): called on `listen_start` (and the legacy
-   * `magnis.sync.listen` alias). `emit` stamps + writes one envelope
-   * notification for THIS subscription; after `listen_stop` it no-ops. */
-  listenStart?: (
-    args: { subscription_id: string; meta?: Record<string, unknown> },
-    emit: (envelope: Envelope) => void,
-  ) => Promise<void>;
-  /** Push session close (S1.2): called on `listen_stop`. */
-  listenStop?: (args: { subscription_id: string }) => Promise<void>;
-  /** Auth-flow handlers (S1.3) — the host relays magnis.auth.begin/step/
-   * exchange/revoke here with host-held inputs (+ `_meta`). A missing
-   * handler answers -32601 (this connector doesn't implement that step). */
-  auth?: Partial<
-    Record<
-      "begin" | "step" | "exchange" | "revoke",
-      (
-        args: Record<string, unknown>,
-        meta: Record<string, unknown> | undefined,
-      ) => Promise<Record<string, unknown>>
-    >
-  >;
-  /** Outbound actions (S1.4): `magnis.execute` payload `{ action, ... }`
-   * dispatches by name; unknown action answers -32601. */
-  execute?: Record<
-    string,
-    (
-      args: Record<string, unknown>,
-      meta: Record<string, unknown> | undefined,
-    ) => Promise<Record<string, unknown>>
-  >;
-  /** Notification writer override (tests). Default: process.stdout. */
-  onNotification?: (line: string) => void;
 }
 
 /** Live subscriptions this process holds (S1.2). Module-level: one connector
