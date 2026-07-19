@@ -12,8 +12,8 @@
  * registered as (telegram-ts, telegram)).
  */
 import { describe, expect, it, vi } from "vitest";
-import { TelegramModule } from "../service.ts";
-import type { SyncEnvelope } from "../../types/index.ts";
+import { TelegramModule } from "./service.ts";
+import type { SyncEnvelope } from "../types/index.ts";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 function makeGraph() {

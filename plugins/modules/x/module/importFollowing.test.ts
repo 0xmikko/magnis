@@ -4,8 +4,8 @@
 // @syncHandler → apply_batch).
 import { describe, expect, it, vi } from "vitest";
 import type { GraphService, PluginDeps } from "@magnis/plugin-sdk";
-import { XModule } from "../service.ts";
-import type { XCanonical, XFacets } from "../../types/index.ts";
+import { XModule } from "./service.ts";
+import type { XCanonical, XFacets } from "../types/index.ts";
 
 function makeDeps(opts?: { rpcError?: boolean }) {
   const reject =

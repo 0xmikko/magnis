@@ -13,7 +13,7 @@
     "ui/**/*.tsx"
   ],
   "exclude": [
-    "module/__tests__",
+    "module/**/*.test.ts",
     "ui/__tests__"
   ]
 }

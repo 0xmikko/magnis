@@ -10,7 +10,7 @@
  * remote delivery is the source of truth; local enrichment is best-effort.
  */
 import { describe, it, expect, vi } from "vitest";
-import { TelegramModule } from "../service.ts";
+import { TelegramModule } from "./service.ts";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 function makeModule() {

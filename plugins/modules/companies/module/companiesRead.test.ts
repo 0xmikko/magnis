@@ -19,8 +19,8 @@ import type {
   RawEntity,
   WindowPage,
 } from "@magnis/plugin-sdk";
-import { CompaniesModule } from "../service.ts";
-import type { CompanyCanonical, CompanyFacets } from "../../types/index.ts";
+import { CompaniesModule } from "./service.ts";
+import type { CompanyCanonical, CompanyFacets } from "../types/index.ts";
 
 const SCHEMA = "companies.company";
 const DETAILS = "companies.company.details";

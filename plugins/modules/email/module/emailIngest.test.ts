@@ -13,8 +13,8 @@ import type {
   GraphService,
   PluginDeps,
 } from "@magnis/plugin-sdk";
-import { EmailModule } from "../service.ts";
-import type { EmailCanonical, EmailFacets, SyncEnvelope } from "../../types/index.ts";
+import { EmailModule } from "./service.ts";
+import type { EmailCanonical, EmailFacets, SyncEnvelope } from "../types/index.ts";
 
 function makeGraph(): GraphService<EmailFacets, EmailCanonical> {
   const reject =

@@ -6,8 +6,8 @@
 
 import { describe, expect, it, vi } from "vitest";
 import type { EntityDetail, GraphService, PluginDeps } from "@magnis/plugin-sdk";
-import { FileModule } from "../service.ts";
-import type { FileCanonical, FileFacets } from "../../types/index.ts";
+import { FileModule } from "./service.ts";
+import type { FileCanonical, FileFacets } from "../types/index.ts";
 
 function makeGraph() {
   return {

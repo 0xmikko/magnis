@@ -10,7 +10,7 @@ export default defineConfig({
   test: {
     environment: "node",
     include: [
-      "plugins/modules/**/module/__tests__/**/*.test.ts",
+      "plugins/modules/**/module/**/*.test.ts",
       "packages/plugin-sdk/__tests__/**/*.test.ts",
     ],
   },

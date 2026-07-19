@@ -11,8 +11,8 @@ import type {
   GraphService,
   PluginDeps,
 } from "@magnis/plugin-sdk";
-import { EmailModule } from "../service.ts";
-import type { EmailCanonical, EmailFacets } from "../../types/index.ts";
+import { EmailModule } from "./service.ts";
+import type { EmailCanonical, EmailFacets } from "../types/index.ts";
 
 function makeGraph(over: Partial<Record<string, unknown>> = {}): GraphService<EmailFacets, EmailCanonical> {
   return {

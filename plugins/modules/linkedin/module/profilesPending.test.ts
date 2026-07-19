@@ -4,8 +4,8 @@
 // placeholder disappears because the handle now exists among profiles).
 import { describe, expect, it, vi } from "vitest";
 import type { GraphService, PluginDeps } from "@magnis/plugin-sdk";
-import { LinkedinModule } from "../service.ts";
-import type { LinkedinCanonical, LinkedinFacets } from "../../types/index.ts";
+import { LinkedinModule } from "./service.ts";
+import type { LinkedinCanonical, LinkedinFacets } from "../types/index.ts";
 
 function makeModule(opts: {
   profiles: Array<{ id: string; handle: string; name: string }>;

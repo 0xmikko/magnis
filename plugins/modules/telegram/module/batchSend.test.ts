@@ -10,7 +10,7 @@
  * a failure is recorded and the loop continues.
  */
 import { describe, it, expect, vi } from "vitest";
-import { runBatchSend } from "../batchSend";
+import { runBatchSend } from "./batchSend";
 
 describe("tst_fe_agent_005 — runBatchSend reports partial results without aborting", () => {
   it("continues past a failed recipient and records per-recipient status", async () => {

@@ -14,9 +14,9 @@ import type {
   RawEntity,
   WindowPage,
 } from "@magnis/plugin-sdk";
-import { MeetingsModule } from "../service.ts";
-import { parseAttendees } from "../helpers.ts";
-import type { MeetingsCanonical, MeetingsFacets } from "../../types/index.ts";
+import { MeetingsModule } from "./service.ts";
+import { parseAttendees } from "./helpers.ts";
+import type { MeetingsCanonical, MeetingsFacets } from "../types/index.ts";
 
 const CAL = "meetings.calendar_event";
 const CAL_DETAILS = "meetings.calendar_event.details";

@@ -3,8 +3,8 @@
 
 import { describe, expect, it, vi } from "vitest";
 import type { GraphBatchInput, GraphService, PluginDeps, RpcExecutor } from "@magnis/plugin-sdk";
-import { EmailModule } from "../service.ts";
-import type { EmailCanonical, EmailFacets } from "../../types/index.ts";
+import { EmailModule } from "./service.ts";
+import type { EmailCanonical, EmailFacets } from "../types/index.ts";
 
 function makeModule(
   graph: Partial<Record<string, unknown>>,

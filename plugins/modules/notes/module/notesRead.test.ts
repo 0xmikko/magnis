@@ -17,8 +17,8 @@ import type {
   RawEntity,
   WindowPage,
 } from "@magnis/plugin-sdk";
-import { NotesModule } from "../service.ts";
-import type { NoteCanonical, NoteFacets } from "../../types/index.ts";
+import { NotesModule } from "./service.ts";
+import type { NoteCanonical, NoteFacets } from "../types/index.ts";
 
 const ENTITY = "notes.note";
 const CONTENT = "notes.note.content";

@@ -2,7 +2,7 @@
 // exactly the documented forms per platform and rejects everything else with a
 // typed invalid_url error — no silent guessing.
 import { describe, expect, it, vi } from "vitest";
-import { parseSocialUrl } from "../socialUrl.ts";
+import { parseSocialUrl } from "./socialUrl.ts";
 
 // LIVE BUG (2026-07-02): the V8 isolate (bare deno_core) has NO global URL —
 // `new URL(...)` threw ReferenceError, the try/catch swallowed it, and every

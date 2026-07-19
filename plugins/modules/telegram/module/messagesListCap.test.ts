@@ -8,7 +8,7 @@
  * independent of the requested `limit`.
  */
 import { describe, it, expect, vi } from "vitest";
-import { TelegramModule } from "../service.ts";
+import { TelegramModule } from "./service.ts";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 function makeModule(listEntities: any) {

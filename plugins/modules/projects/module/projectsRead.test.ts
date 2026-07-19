@@ -17,8 +17,8 @@ import type {
   PluginDeps,
   RawEntity,
 } from "@magnis/plugin-sdk";
-import { ProjectsModule } from "../service.ts";
-import type { ProjectCanonical, ProjectFacets } from "../../types/index.ts";
+import { ProjectsModule } from "./service.ts";
+import type { ProjectCanonical, ProjectFacets } from "../types/index.ts";
 
 const SCHEMA = "projects.project";
 const MEMBER_LINK = "belongs_to";

@@ -14,8 +14,8 @@ import type {
   RawEntity,
   WindowPage,
 } from "@magnis/plugin-sdk";
-import { EmailModule } from "../service.ts";
-import type { EmailCanonical, EmailFacets } from "../../types/index.ts";
+import { EmailModule } from "./service.ts";
+import type { EmailCanonical, EmailFacets } from "../types/index.ts";
 
 // ── mock graph: only the ops the read path may legitimately touch are
 // stubbed; everything else throws so an accidental crossing fails loudly.

@@ -19,8 +19,8 @@ import type {
   RawEntity,
   WindowPage,
 } from "@magnis/plugin-sdk";
-import { ContactsModule } from "../service.ts";
-import type { ContactCanonical, ContactFacets } from "../../types/index.ts";
+import { ContactsModule } from "./service.ts";
+import type { ContactCanonical, ContactFacets } from "../types/index.ts";
 
 const SCHEMA = "contacts.person";
 
