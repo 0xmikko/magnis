@@ -43,6 +43,8 @@ root.
 <source>/
   manifest.toml          # [source], [spawn], [auth], [credentials], [lifecycle]
   config.default.toml    # optional shipped default app-creds
+  auth/                  # browser auth screen — ONLY for oauth2 / phone_code (see §6)
+    screen.tsx           # [auth] ui = "auth/screen.tsx"
   src/
     main.ts              # runConnector(buildConnectorConfig())  — the spawn entry
     connector.ts         # buildConnectorConfig(fetchFn = fetch) — wires surfaces
@@ -234,6 +236,72 @@ for `oauth2` you implement only `exchange` (code → token).
   and an auth-only spawn mode, Telegram supplies its own dispatcher instead of
   the SDK loop — see §10.
 
+### The auth UI and the flow
+
+For `oauth2` and `phone_code`, the source ships a **browser auth screen** at
+`auth/screen.tsx` (declared `[auth] ui = "auth/screen.tsx"`), sitting at the
+source root beside `src/` — the way a module's `ui/` does. `api_key` /
+`shared_provider` need **no screen**: the operator pastes the key in Settings →
+Sources (the fields come from your `[credentials]` key objects — `label`,
+`help_url`, `description`), the host stores it, and `probeAuth` verifies it.
+
+The screen is loaded and transpiled by the host and rendered in a sealed
+context, so it uses **plain elements + Tailwind only** — no `@magnis/host/ui`
+import (the isolate shim can't fully provide it). One gotcha: utility classes
+used *only* in a plugin auth screen are not scanned into the host's compiled
+CSS, so `w-`/`h-` geometry classes silently no-op — set geometry with inline
+`style`, and reuse colour classes the host already ships.
+
+The two flows are fundamentally different:
+
+**oauth2 — a pure browser round-trip, host-owned.** The screen does almost
+nothing:
+
+```ts
+export interface SourceAuthScreenProps { sourceId: string }
+// button onClick:
+window.location.assign(`/auth/sources/${sourceId}/start`);
+```
+
+The host owns the whole ceremony: `/auth/sources/<id>/start` 302-redirects to
+the provider's consent page; after consent the provider hits the host callback
+(`/auth/sources/<id>/callback`); the host runs your connector's
+`magnis.auth.exchange` **server-side** (code → minted `refresh_token`), stores
+it, and returns to the app with `?source_connected=<id>`. No secret, token, or
+connector transport touches the component. (In practice the generic host
+`SourceConnect` component performs this navigation, so the screen is the catalog
+fallback.)
+
+**phone_code — a multi-step form driven through the host.** No redirect. The
+host injects **driver props** so the screen never touches the transport itself:
+
+```ts
+export interface SourceAuthScreenProps {
+  sourceId: string;
+  submit: (step: "phone" | "code" | "password", value: string) => Promise<void>;  // → source.auth.submit (host stashes the value)
+  exec:   (op: "begin" | "step") => Promise<{ status: string }>;                   // → source.auth.exec  ("code_sent" | "password" | "connected")
+  onConnected?: () => void;
+}
+```
+
+The end-to-end sequence:
+
+1. User enters the phone number → `submit("phone", phone)` stashes it host-side
+   → `exec("begin")` relays into your connector's `magnis.auth.begin` with the
+   stashed value in `_meta` → screen advances to the code step.
+2. User enters the login code → `submit("code", code)` → `exec("step")` →
+   `magnis.auth.step`. The returned `status` decides the next phase: `password`
+   (2FA needed) or `connected`.
+3. If `password`: user enters it → `submit("password", …)` → `exec("step")` →
+   `connected`.
+4. `onConnected()` fires; the connector's minted `session` credential is stored
+   host-side keyed by connection and **never returns to the browser**.
+
+So the screen collects input and calls `submit`/`exec`; the host stashes each
+value and injects it into the connector's `magnis.auth.*` calls via `_meta`.
+Your connector implements only the `begin`/`step` handlers (§6 above); the UI and
+the host wiring are what turn them into a login flow.
+
 ---
 
 ## 7. Secrets — where credentials live and how they arrive
@@ -349,6 +417,9 @@ A source is done only when all hold:
 - [ ] Pagination round-trips its cursor and never claims `hasMore` without one.
 - [ ] `probeAuth` verifies against the real provider; auth ops implemented match
       the declared `[auth].type`.
+- [ ] For `oauth2` / `phone_code`: an `auth/screen.tsx` exists (plain elements +
+      Tailwind, geometry inline) and drives the flow via the host
+      (`window.location` for oauth2; `submit`/`exec` props for phone_code).
 - [ ] `[credentials]` declares keys / `minted` / `inject`; the connector reads
       only `_meta` (or env for `inject = "env"`), never a secret store.
 - [ ] Rate limits throw `RateLimitError` → `-32002` with `retry_after`.
