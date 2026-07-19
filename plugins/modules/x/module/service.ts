@@ -20,10 +20,7 @@ import type {
   Platform,
   PostContent,
   PostListItem,
-  PostMediaItem,
   PostMetrics,
-  PostMetricsView,
-  PostUrlEntity,
   PostsListParams,
   ProfileIdentity,
   ProfileDetail,
@@ -32,51 +29,17 @@ import type {
   XCanonical,
   XFacets,
   SyncEnvelope,
-} from "../types/index.ts";
-
-const PROFILE = "x.profile";
-const PROFILE_IDENTITY = "x.profile.identity";
-const POST = "x.post";
-const POST_CONTENT = "x.post.content";
-const POST_METRICS = "x.post.metrics";
-const AUTHORED_BY = "x.post:x.profile";
-// Identity link (social-contact-identity DEC-1): declared in the manifest
-// since the plugin split — created here at ingest, telegram-style.
-const PROFILE_PERSON_LINK = "x.profile:contacts.person";
-
-function str(o: Record<string, unknown>, k: string): string | undefined {
-  const v = o[k];
-  return typeof v === "string" ? v : undefined;
-}
-
-// Rich post fields (social-post-rendering S4): pass the connector's enriched
-// payload through to list/get responses. Pre-S4 rows lack them → null/[].
-function richPostFields(d: Record<string, unknown>): {
-  post_type: string | null;
-  article_title: string | null;
-  media: PostMediaItem[];
-  urls: PostUrlEntity[];
-  metrics: PostMetricsView | null;
-} {
-  const m = d.metrics;
-  const num = (o: Record<string, unknown>, k: string): number | null =>
-    typeof o[k] === "number" ? (o[k]) : null;
-  return {
-    post_type: str(d, "post_type") ?? null,
-    article_title: str(d, "article_title") ?? null,
-    media: Array.isArray(d.media) ? (d.media as PostMediaItem[]) : [],
-    urls: Array.isArray(d.urls) ? (d.urls as PostUrlEntity[]) : [],
-    metrics:
-      m && typeof m === "object"
-        ? {
-            likes: num(m as Record<string, unknown>, "likes"),
-            reposts: num(m as Record<string, unknown>, "reposts"),
-            replies: num(m as Record<string, unknown>, "replies"),
-            impressions: num(m as Record<string, unknown>, "impressions"),
-          }
-        : null,
-  };
-}
+} from "../types.ts";
+import {
+  AUTHORED_BY,
+  POST,
+  POST_CONTENT,
+  POST_METRICS,
+  PROFILE,
+  PROFILE_IDENTITY,
+  PROFILE_PERSON_LINK,
+} from "../schema.ts";
+import { richPostFields, str } from "./helpers.ts";
 
 export class XModule {
   private readonly graph: GraphService<XFacets, XCanonical>;

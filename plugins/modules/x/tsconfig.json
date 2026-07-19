@@ -8,7 +8,8 @@
   "include": [
     "lifecycle/**/*.ts",
     "module/**/*.ts",
-    "types/**/*.ts",
+    "schema.ts",
+    "types.ts",
     "ui/**/*.ts",
     "ui/**/*.tsx"
   ]

@@ -1,33 +1,21 @@
 // tst_plugin_x_ingest — sync ingest builds an idempotent apply_batch
 // (profiles + posts + authored_by link, external_id = remote_id) and read tools
-// map window rows. Mocked GraphService — no backend.
+// map window rows. Doubles come from @magnis/testkit/module (throwing mockGraph
+// — a read/ingest path hitting an unarranged op fails loudly).
 import { describe, expect, it, vi } from "vitest";
-import type { GraphService, PluginDeps, WindowPage } from "@magnis/plugin-sdk";
-import { XModule } from "./service.ts";
-import type { XCanonical, XFacets, SyncEnvelope } from "../types/index.ts";
+import type { GraphBatchInput } from "@magnis/plugin-sdk";
+import { entity, facet, mockGraph, mountModule, windowRow, type MockGraph } from "@magnis/testkit/module";
+import { XModule } from "../service.ts";
+import type { SyncEnvelope, XCanonical, XFacets } from "../../types.ts";
 
-function makeGraph(): GraphService<XFacets, XCanonical> {
-  return {
-    apply_batch: vi.fn().mockResolvedValue({
-      ids: {},
-      created: 0,
-      updated: 0,
-      links_added: 0,
-      dropped_keys: [],
-    }),
-    list_entities_window: vi.fn(),
-    get_entity_full: vi.fn(),
-  } as unknown as GraphService<XFacets, XCanonical>;
-}
+type G = MockGraph<XFacets, XCanonical>;
 
-function makeModule(graph: GraphService<XFacets, XCanonical>): XModule {
-  const deps = {
+function mountX(graph: G, execute: (method: string, params?: unknown) => unknown = vi.fn()): XModule {
+  return mountModule<XModule, XFacets, XCanonical>(XModule, {
     graph,
-    ctx: { extension_id: "x", user_id: "u1", extension_kind: "plugin" },
-    util: {},
-    rpc: { execute: vi.fn() },
-  } as unknown as PluginDeps<XFacets, XCanonical>;
-  return new XModule(deps);
+    ctx: { extension_id: "x" },
+    rpc: { execute },
+  }).module;
 }
 
 function env(remote_id: string, payload: Record<string, unknown>): SyncEnvelope {
@@ -43,10 +31,19 @@ function env(remote_id: string, payload: Record<string, unknown>): SyncEnvelope 
   };
 }
 
+function ingestGraph(): G {
+  return mockGraph<XFacets, XCanonical>({
+    apply_batch: () =>
+      Promise.resolve({ ids: {}, created: 0, updated: 0, links_added: 0, dropped_keys: [] }),
+    list_entities_window: () => Promise.resolve({ items: [], total: 0 }),
+    get_entity_full: () => Promise.resolve(null),
+  });
+}
+
 describe("x ingest", () => {
   it("tst_plugin_x_ingest_001 builds one apply_batch with profile+post+link, external_id=remote_id", async () => {
-    const graph = makeGraph();
-    const mod = makeModule(graph);
+    const graph = ingestGraph();
+    const mod = mountX(graph);
 
     const res = await mod.ingest({
       envelopes: [
@@ -70,12 +67,12 @@ describe("x ingest", () => {
     });
 
     expect(res.ok).toBe(true);
-    expect(vi.mocked(graph.apply_batch)).toHaveBeenCalledTimes(1);
-    const batch = vi.mocked(graph.apply_batch).mock.calls[0]![0];
+    expect(graph.spies.apply_batch).toHaveBeenCalledTimes(1);
+    const batch = graph.spies.apply_batch.mock.calls[0][0] as GraphBatchInput;
     expect(batch.entities).toHaveLength(2);
 
-    const profile = batch.entities.find((e: { schema_id: string }) => e.schema_id === "x.profile")!;
-    const post = batch.entities.find((e: { schema_id: string }) => e.schema_id === "x.post")!;
+    const profile = batch.entities.find((e) => e.schema_id === "x.profile")!;
+    const post = batch.entities.find((e) => e.schema_id === "x.post")!;
     expect(profile.facets[0]).toMatchObject({ schema_id: "x.profile.identity", external_id: "x:profile:jack" });
     expect(post.facets[0]).toMatchObject({ schema_id: "x.post.content", external_id: "x:post:1" });
     // authored_by link wired within the page (author_handle "Jack" → profile "jack").
@@ -85,8 +82,8 @@ describe("x ingest", () => {
   });
 
   it("tst_plugin_x_ingest_002 re-ingest keeps the same external_id (idempotent, INV-4)", async () => {
-    const graph = makeGraph();
-    const mod = makeModule(graph);
+    const graph = ingestGraph();
+    const mod = mountX(graph);
     const e = env("x:post:1", {
       entity_type: "post",
       platform: "x",
@@ -98,29 +95,32 @@ describe("x ingest", () => {
     await mod.ingest({ envelopes: [e] });
     await mod.ingest({ envelopes: [{ ...e, payload: { ...e.payload, text: "v2" } }] });
 
-    const first = vi.mocked(graph.apply_batch).mock.calls[0]![0].entities[0]!.facets[0]!.external_id;
-    const second = vi.mocked(graph.apply_batch).mock.calls[1]![0].entities[0]!.facets[0]!.external_id;
+    const first = (graph.spies.apply_batch.mock.calls[0][0] as GraphBatchInput).entities[0].facets[0].external_id;
+    const second = (graph.spies.apply_batch.mock.calls[1][0] as GraphBatchInput).entities[0].facets[0].external_id;
     expect(first).toBe("x:post:1");
     expect(second).toBe("x:post:1"); // same id → host upserts, no duplicate entity
   });
 
   it("tst_plugin_x_ingest_003 posts.list maps window rows", async () => {
-    const graph = makeGraph();
-    const mod = makeModule(graph);
-    vi.mocked(graph.list_entities_window).mockResolvedValue({
+    const graph = ingestGraph();
+    const mod = mountX(graph);
+    graph.spies.list_entities_window.mockResolvedValue({
       items: [
-        {
-          entity: { id: "p1", schema_id: "x.post", name: "hello" },
-          data: { platform: "x", author_handle: "jack", text: "hello", created_at: "t", url: null },
-        },
+        windowRow(entity("p1", "hello", { schema_id: "x.post" }), {
+          platform: "x",
+          author_handle: "jack",
+          text: "hello",
+          created_at: "t",
+          url: null,
+        }),
       ],
       total: 1,
-    } as unknown as WindowPage);
+    });
 
     const page = await mod.postsList({});
     expect(page.total).toBe(1);
     expect(page.items[0]).toMatchObject({ id: "p1", platform: "x", author_handle: "jack", text: "hello" });
-    expect(vi.mocked(graph.list_entities_window)).toHaveBeenCalledTimes(1);
+    expect(graph.spies.list_entities_window).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -128,17 +128,18 @@ describe("x ingest", () => {
 // a tracked-handle profile gets exactly one profile→person identity link and
 // the placeholder-name CAS upgrade; an untracked handle gets neither.
 describe("x ingest identity link (tst_ingest_link)", () => {
-  function linkGraph() {
-    return {
-      apply_batch: vi.fn().mockResolvedValue({
-        ids: { "x:profile:12": "prof-1" },
-        created: 1,
-        updated: 0,
-        links_added: 0,
-        dropped_keys: [],
-      }),
-      add_link: vi.fn().mockResolvedValue({ id: "l1" }),
-    } as unknown as GraphService<XFacets, XCanonical>;
+  function linkGraph(): G {
+    return mockGraph<XFacets, XCanonical>({
+      apply_batch: () =>
+        Promise.resolve({
+          ids: { "x:profile:12": "prof-1" },
+          created: 1,
+          updated: 0,
+          links_added: 0,
+          dropped_keys: [],
+        }),
+      add_link: () => Promise.resolve(),
+    });
   }
 
   const profileEnv = env("x:profile:12", {
@@ -150,24 +151,24 @@ describe("x ingest identity link (tst_ingest_link)", () => {
 
   it("tracked handle → one identity link + CAS rename call", async () => {
     const graph = linkGraph();
-    const rpcExecute = vi.fn(async (method: string) => {
+    const execute = vi.fn(async (method: string) => {
       if (method === "contacts.get_social_tracking_by_handle") {
         return { contact_id: "c1", tracked: true, handle: "jack" };
       }
       if (method === "contacts.rename_if_placeholder") return { renamed: true };
       throw new Error(`unexpected rpc ${method}`);
     });
-    const mod = makeModuleWithRpc(graph, rpcExecute);
+    const mod = mountX(graph, execute);
 
     await mod.ingest({ envelopes: [profileEnv] });
 
-    expect(graph.add_link).toHaveBeenCalledTimes(1);
-    expect(graph.add_link).toHaveBeenCalledWith({
+    expect(graph.spies.add_link).toHaveBeenCalledTimes(1);
+    expect(graph.spies.add_link).toHaveBeenCalledWith({
       from_id: "prof-1",
       to_id: "c1",
       kind: "x.profile:contacts.person",
     });
-    expect(rpcExecute).toHaveBeenCalledWith("contacts.rename_if_placeholder", {
+    expect(execute).toHaveBeenCalledWith("contacts.rename_if_placeholder", {
       id: "c1",
       expected_name: "jack",
       new_name: "Jack",
@@ -176,36 +177,24 @@ describe("x ingest identity link (tst_ingest_link)", () => {
 
   it("untracked handle → no link, no rename", async () => {
     const graph = linkGraph();
-    const rpcExecute = vi.fn(async () => null);
-    const mod = makeModuleWithRpc(graph, rpcExecute);
+    const mod = mountX(graph, vi.fn(async () => null));
     await mod.ingest({ envelopes: [profileEnv] });
-    expect(graph.add_link).not.toHaveBeenCalled();
+    expect(graph.spies.add_link).not.toHaveBeenCalled();
   });
 
   it("rpc failure never fails the ingest (self-healing next cycle)", async () => {
     const graph = linkGraph();
-    const rpcExecute = vi.fn(async () => {
-      throw new Error("hub unavailable");
-    });
-    const mod = makeModuleWithRpc(graph, rpcExecute);
+    const mod = mountX(
+      graph,
+      vi.fn(async () => {
+        throw new Error("hub unavailable");
+      }),
+    );
     const res = await mod.ingest({ envelopes: [profileEnv] });
     expect(res.ok).toBe(true);
-    expect(graph.add_link).not.toHaveBeenCalled();
+    expect(graph.spies.add_link).not.toHaveBeenCalled();
   });
 });
-
-function makeModuleWithRpc(
-  graph: GraphService<XFacets, XCanonical>,
-  execute: (method: string, params?: unknown) => Promise<unknown>,
-) {
-  const deps = {
-    graph,
-    ctx: { extension_id: "x", user_id: "u1", extension_kind: "plugin" },
-    util: {},
-    rpc: { execute },
-  } as unknown as PluginDeps<XFacets, XCanonical>;
-  return new XModule(deps);
-}
 
 // tst_profiles_search (live bug 2026-07-03): the framework list pane passes
 // `search` into profiles.list; the tool must accept it (schema) and filter by
@@ -213,21 +202,28 @@ function makeModuleWithRpc(
 // standard search box silently did nothing on this module.
 describe("x profiles.list search", () => {
   it("search → search_entities_by_name, facets hydrated, BACKEND order preserved", async () => {
-    const searchFn = vi.fn(async () => [
-      { id: "e2", schema_id: "x.profile", name: "Bob Builder" },
-      { id: "e1", schema_id: "x.profile", name: "Ann Doe" },
-    ]);
-    const graph = {
-      search_entities_by_name: searchFn,
-      list_facets_for_entities: vi.fn(async () => [
-        { entity_id: "e1", id: "f1", schema_id: "x.profile.identity", source: "s", observed_at: "2026-01-02T00:00:00Z", data: { handle: "ann", follower_count: 5, avatar_url: "https://a/1.jpg" } },
-        { entity_id: "e2", id: "f2", schema_id: "x.profile.identity", source: "s", observed_at: "2026-01-02T00:00:00Z", data: { handle: "bob", follower_count: 7, avatar_url: null } },
-      ]),
-    } as unknown as GraphService<XFacets, XCanonical>;
-    const mod = makeModuleWithRpc(graph, vi.fn());
+    const graph = mockGraph<XFacets, XCanonical>({
+      search_entities_by_name: () =>
+        Promise.resolve([
+          entity("e2", "Bob Builder", { schema_id: "x.profile" }),
+          entity("e1", "Ann Doe", { schema_id: "x.profile" }),
+        ]),
+      list_facets_for_entities: () =>
+        Promise.resolve([
+          facet("f1", "x.profile.identity", { handle: "ann", follower_count: 5, avatar_url: "https://a/1.jpg" }, {
+            entity_id: "e1",
+            observed_at: "2026-01-02T00:00:00Z",
+          }),
+          facet("f2", "x.profile.identity", { handle: "bob", follower_count: 7, avatar_url: null }, {
+            entity_id: "e2",
+            observed_at: "2026-01-02T00:00:00Z",
+          }),
+        ]),
+    });
+    const mod = mountX(graph);
 
     const r = await mod.profilesList({ search: "o", limit: 10 });
-    expect(searchFn).toHaveBeenCalledWith(
+    expect(graph.spies.search_entities_by_name).toHaveBeenCalledWith(
       expect.objectContaining({ query: "o", schema_ids: ["x.profile"] }),
     );
     // Backend order (stable total order) is preserved — no client re-sort
@@ -242,13 +238,12 @@ describe("x profiles.list search", () => {
 // the shown rows and hasMore (= items.length < total) was always false: the
 // standard infinite scroll silently died in search mode.
 describe("x profiles.list search pagination", () => {
-  function pagingGraph(dataset: Array<{ id: string; name: string }>) {
-    return {
-      search_entities_by_name: vi.fn(async ({ limit }: { limit: number }) =>
-        dataset.slice(0, limit).map((d) => ({ ...d, schema_id: "x.profile" })),
-      ),
-      list_facets_for_entities: vi.fn(async () => []),
-    } as unknown as GraphService<XFacets, XCanonical>;
+  function pagingGraph(dataset: { id: string; name: string }[]): G {
+    return mockGraph<XFacets, XCanonical>({
+      search_entities_by_name: (p) =>
+        Promise.resolve(dataset.slice(0, p.limit).map((d) => entity(d.id, d.name, { schema_id: "x.profile" }))),
+      list_facets_for_entities: () => Promise.resolve([]),
+    });
   }
   const dataset = [
     { id: "e1", name: "Ann" },
@@ -257,14 +252,14 @@ describe("x profiles.list search pagination", () => {
   ];
 
   it("page 1: total exceeds shown rows so hasMore stays true", async () => {
-    const mod = makeModuleWithRpc(pagingGraph(dataset), vi.fn());
+    const mod = mountX(pagingGraph(dataset));
     const r = await mod.profilesList({ search: "a", limit: 2, offset: 0 });
     expect(r.items).toHaveLength(2);
     expect(r.total).toBeGreaterThan(2); // items.length < total → framework loads more
   });
 
   it("page 2: returns the tail with an exact total", async () => {
-    const mod = makeModuleWithRpc(pagingGraph(dataset), vi.fn());
+    const mod = mountX(pagingGraph(dataset));
     const r = await mod.profilesList({ search: "a", limit: 2, offset: 2 });
     expect(r.items.map((i) => i.display_name)).toEqual(["Cat"]);
     expect(r.total).toBe(3);
