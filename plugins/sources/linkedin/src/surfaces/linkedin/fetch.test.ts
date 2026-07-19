@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import { fetchLinkedIn } from "./fetch";
-import type { FetchLike } from "./api";
+import type { FetchLike } from "../../api";
 
 // Fake anysite API: records URLs (INV-1 call counts), answers the two POST read
 // endpoints with canned data. NO live network (INV-6).

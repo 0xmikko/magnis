@@ -1,5 +1,5 @@
 import type { Envelope, FetchArgs, FetchResult } from "@magnis/connector-sdk";
-import { AnysiteClient, type FetchLike, type KolPost, type KolProfile } from "./api";
+import { AnysiteClient, type FetchLike, type KolPost, type KolProfile } from "../../api";
 
 const PLATFORM = "linkedin";
 const RECENT_POSTS = 5;

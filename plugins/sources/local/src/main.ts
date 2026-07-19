@@ -10,12 +10,6 @@
 // It is kept as the working reference implementation of a filesystem source.
 
 import { runConnector } from "@magnis/connector-sdk";
-import { fetchLocalNotes } from "./fetch";
+import { buildConnectorConfig } from "./connector";
 
-await runConnector({
-  name: "magnis-local",
-  version: "0.1.0",
-  surfaces: ["notes"],
-  intervalSecs: 60,
-  fetch: fetchLocalNotes,
-});
+await runConnector(buildConnectorConfig());
