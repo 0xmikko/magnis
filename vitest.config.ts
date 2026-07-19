@@ -12,12 +12,14 @@ export default defineConfig({
     include: [
       "plugins/modules/**/module/**/*.test.ts",
       "packages/plugin-sdk/__tests__/**/*.test.ts",
+      "packages/testkit/__tests__/**/*.test.ts",
     ],
   },
   resolve: {
     alias: {
       "@magnis/plugin-sdk": resolve(__dirname, "./packages/plugin-sdk/index.ts"),
       "@magnis/connector-sdk": resolve(__dirname, "./packages/connector-sdk/index.ts"),
+      "@magnis/testkit/module": resolve(__dirname, "./packages/testkit/module.ts"),
     },
   },
 });

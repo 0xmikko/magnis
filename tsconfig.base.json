@@ -17,6 +17,8 @@
     "paths": {
       "@magnis/plugin-sdk": ["./packages/plugin-sdk/index.ts"],
       "@magnis/connector-sdk": ["./packages/connector-sdk/index.ts"],
+      "@magnis/testkit/module": ["./packages/testkit/module.ts"],
+      "@magnis/testkit/source": ["./packages/testkit/source.ts"],
       "@magnis/host/ui": ["./packages/host-stubs/types/frontend/src/components/ui/index.d.ts"],
       "@magnis/host/*": ["./packages/host-stubs/types/frontend/src/runtime/plugins/hostShims/*"],
       "@/*": ["./packages/host-stubs/types/frontend/src/*"],
