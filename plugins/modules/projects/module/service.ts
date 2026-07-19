@@ -16,7 +16,6 @@ import {
   type GetParams,
   type PaginatedResponse,
   type LinkSummary,
-  type RawEntity,
 } from "@magnis/plugin-sdk";
 import type {
   ChecklistGetParams,
@@ -32,12 +31,15 @@ import type {
   ProjectsListParams,
   UpdateParams,
   LinkedEntitySummary,
-} from "../types/index.ts";
-import { buildProjectListItem, canonicalString } from "./helpers.ts";
-
-const SCHEMA = "projects.project";
-const CHECKLIST_SCHEMA = "projects.project.checklist";
-const MEMBER_LINK = "belongs_to";
+} from "../types.ts";
+import { MEMBER_LINK, PROJECT, PROJECT_CHECKLIST, PROJECT_DESCRIPTION } from "../schema.ts";
+import {
+  buildProjectListItem,
+  canonicalString,
+  entityCreatedAt,
+  isUuid,
+  linkSummary,
+} from "./helpers.ts";
 
 export class ProjectsModule {
   private readonly graph: GraphService<ProjectFacets, ProjectCanonical>;
@@ -68,7 +70,7 @@ export class ProjectsModule {
       // search returns up to limit+offset, then we page in memory (native parity).
       const matched = await this.graph.search_entities_by_name({
         query: search,
-        schema_ids: [SCHEMA],
+        schema_ids: [PROJECT],
         limit: limit + offset,
       });
       total = matched.length;
@@ -77,7 +79,7 @@ export class ProjectsModule {
       // Keep list_entities(order:"date") — its SQL applies pinned-first /
       // pin_order ASC then date DESC, which list_entities_window does NOT
       // reproduce. (The window would silently drop the pinned-first ordering.)
-      const page = await this.graph.list_entities({ schema_id: SCHEMA, order: "date", limit, offset });
+      const page = await this.graph.list_entities({ schema_id: PROJECT, order: "date", limit, offset });
       rows = page.items;
       total = page.total;
     }
@@ -104,7 +106,7 @@ export class ProjectsModule {
     const detail = await this.graph.get_entity_full(params.id, { links: true });
     if (!detail) throw new Error(`project ${params.id} not found`);
     const { entity, facets, links } = detail;
-    const canonical = await this.graph.get_canonical(entity.id, [SCHEMA]);
+    const canonical = await this.graph.get_canonical(entity.id, [PROJECT]);
 
     const name =
       entity.name && entity.name.length > 0
@@ -165,33 +167,33 @@ export class ProjectsModule {
       const existing = await this.graph.get_entity(params.client_id);
       if (existing) {
         const facets = await this.graph.list_facets_for_entity(existing.id);
-        const f = facets.find((x) => x.schema_id === SCHEMA);
+        const f = facets.find((x) => x.schema_id === PROJECT);
         const existingStatus =
           (f?.data as { status?: string } | undefined)?.status ?? "active";
         return {
           id: existing.id,
           name: existing.name && existing.name.length > 0 ? existing.name : params.name,
           status: existingStatus,
-          schema_id: SCHEMA,
+          schema_id: PROJECT,
           created_at: entityCreatedAt(existing),
         };
       }
     }
 
     const entity = await this.graph.create_entity({
-      schema_id: SCHEMA,
+      schema_id: PROJECT,
       name: params.name,
       client_id: params.client_id,
     });
     await this.graph.attach_facet({
       entity_id: entity.id,
-      schema_id: SCHEMA,
+      schema_id: PROJECT,
       data: { name: params.name, status: statusVal, created_at: new Date().toISOString() },
     });
     // Resolve canonical (project.name / project.status) from the facet —
     // native service.rs:309 calls resolve_canonical_for_entity.
     await this.graph.resolve_canonical(entity.id);
-    return { id: entity.id, name: params.name, status: statusVal, schema_id: SCHEMA, created_at: entityCreatedAt(entity) };
+    return { id: entity.id, name: params.name, status: statusVal, schema_id: PROJECT, created_at: entityCreatedAt(entity) };
   }
 
   @writeTool("update", {
@@ -220,7 +222,7 @@ export class ProjectsModule {
     if (!entity) throw new Error(`project ${params.id} not found`);
 
     const facets = await this.graph.list_facets_for_entity(params.id);
-    const existing = (facets.find((f) => f.schema_id === SCHEMA)?.data ?? {}) as Record<string, unknown>;
+    const existing = (facets.find((f) => f.schema_id === PROJECT)?.data ?? {}) as Record<string, unknown>;
     const data: Record<string, unknown> = { ...existing };
     if (params.name !== undefined) {
       data.name = params.name;
@@ -229,13 +231,13 @@ export class ProjectsModule {
     if (params.status !== undefined) data.status = params.status;
     data.updated_at = new Date().toISOString();
 
-    await this.graph.attach_facet({ entity_id: params.id, schema_id: SCHEMA, data });
+    await this.graph.attach_facet({ entity_id: params.id, schema_id: PROJECT, data });
     // Description is a separate markdown facet (parity with native
     // projects.update / staging 7182e4af). Overwrites the existing body.
     if (params.description !== undefined) {
       await this.graph.attach_facet({
         entity_id: params.id,
-        schema_id: "projects.description",
+        schema_id: PROJECT_DESCRIPTION,
         data: { body: params.description },
       });
     }
@@ -272,7 +274,7 @@ export class ProjectsModule {
     if (!params.project_id) throw new Error("missing required param: project_id");
     const entity = await this.requireProject(params.project_id);
     const facets = await this.graph.list_facets_for_entity(entity.id);
-    const f = facets.find((x) => x.schema_id === CHECKLIST_SCHEMA);
+    const f = facets.find((x) => x.schema_id === PROJECT_CHECKLIST);
     return (f?.data as { items: ChecklistItem[] } | undefined) ?? { items: [] };
   }
 
@@ -306,7 +308,7 @@ export class ProjectsModule {
     await this.requireProject(params.project_id);
     await this.graph.attach_facet({
       entity_id: params.project_id,
-      schema_id: CHECKLIST_SCHEMA,
+      schema_id: PROJECT_CHECKLIST,
       data: { items: params.items },
     });
     return { status: "ok", project_id: params.project_id };
@@ -346,7 +348,7 @@ export class ProjectsModule {
       parent_id: params.entity_id,
       link_kind: MEMBER_LINK,
       direction: "out",
-      child_schema: SCHEMA,
+      child_schema: PROJECT,
       limit: 1000,
       offset: 0,
     });
@@ -377,30 +379,7 @@ export class ProjectsModule {
   private async requireProject(id: string): Promise<{ id: string; schema_id: string; name: string }> {
     const entity = await this.graph.get_entity(id);
     if (!entity) throw new Error(`project not found: ${id}`);
-    if (entity.schema_id !== SCHEMA) throw new Error(`entity ${id} is not a project (schema: ${entity.schema_id})`);
+    if (entity.schema_id !== PROJECT) throw new Error(`entity ${id} is not a project (schema: ${entity.schema_id})`);
     return entity;
   }
-}
-
-function linkSummary(
-  e: { id: string; schema_id: string; name: string },
-  kind: string,
-): LinkedEntitySummary {
-  return {
-    id: e.id,
-    name: e.name && e.name.length > 0 ? e.name : null,
-    schema_id: e.schema_id,
-    link_kind: kind,
-    created_at: entityCreatedAt(e),
-    data: null,
-  };
-}
-
-function entityCreatedAt(e: RawEntity & { created_at?: string }): string {
-  return e.created_at ?? new Date(0).toISOString();
-}
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-function isUuid(s: string): boolean {
-  return UUID_RE.test(s);
 }
