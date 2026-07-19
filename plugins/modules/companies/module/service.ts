@@ -18,10 +18,15 @@ import type {
   CreateParams,
   HeaderRow,
   UpdateParams,
-} from "../types/index.ts";
+} from "../types.ts";
+import {
+  COMPANY,
+  COMPANY_DETAILS,
+  COMPANY_EMAIL,
+  COMPANY_EXTERNAL_LINK,
+  COMPANY_PHONE,
+} from "../schema.ts";
 import { buildListItem } from "./helpers.ts";
-
-const SCHEMA = "companies.company";
 
 export class CompaniesModule {
   private readonly graph: GraphService<CompanyFacets, CompanyCanonical>;
@@ -51,7 +56,7 @@ export class CompaniesModule {
     if (search.length > 0) {
       const matched = await this.graph.search_entities_by_name({
         query: search,
-        schema_ids: [SCHEMA],
+        schema_ids: [COMPANY],
         limit: limit + offset,
       });
       // Sort alphabetically by name (parity with staging, which sorted ALL
@@ -66,7 +71,7 @@ export class CompaniesModule {
       // only the explicit order, so it does NOT add pinned-first — matching
       // staging's JS name sort which had no pinned priority.
       const win = await this.graph.list_entities_window({
-        schema: SCHEMA,
+        schema: COMPANY,
         order: [{ field: { entity_field: "idx" }, desc: false }],
         limit,
         offset,
@@ -99,7 +104,7 @@ export class CompaniesModule {
     // collection email/phone facets the old get returned). One get_canonical
     // for the canonical block.
     const detail = await this.graph.get_entity_full(params.id);
-    if (detail?.entity.schema_id !== SCHEMA) {
+    if (detail?.entity.schema_id !== COMPANY) {
       throw new Error(`company not found: ${params.id}`);
     }
     const { entity } = detail;
@@ -148,7 +153,7 @@ export class CompaniesModule {
     const needle = params.name.trim().toLowerCase();
     const existing = await this.graph.search_entities_by_name({
       query: needle,
-      schema_ids: ["companies.company"],
+      schema_ids: [COMPANY],
       limit: 25,
     });
     const match = existing.find((c) => c.name.trim().toLowerCase() === needle);
@@ -159,7 +164,7 @@ export class CompaniesModule {
     }
 
     const e = await this.graph.create_entity({
-      schema_id: SCHEMA,
+      schema_id: COMPANY,
       name: params.name,
       client_id: params.client_id,
       idx: params.name.toLowerCase(),
@@ -175,7 +180,7 @@ export class CompaniesModule {
     if (params.summary) details.description = params.summary;
     await this.graph.attach_facet({
       entity_id: e.id,
-      schema_id: "companies.company.details",
+      schema_id: COMPANY_DETAILS,
       data: details,
     });
     await this.graph.resolve_canonical(e.id);
@@ -272,7 +277,7 @@ export class CompaniesModule {
     if (Object.keys(details).length > 0) {
       await this.graph.attach_facet({
         entity_id: params.id,
-        schema_id: "companies.company.details",
+        schema_id: COMPANY_DETAILS,
         data: details,
       });
     }
@@ -281,7 +286,7 @@ export class CompaniesModule {
       for (let i = 0; i < params.emails.length; i++) {
         await this.graph.attach_facet({
           entity_id: params.id,
-          schema_id: "companies.company.email",
+          schema_id: COMPANY_EMAIL,
           data: { email: params.emails[i], is_primary: i === 0 },
         });
       }
@@ -290,7 +295,7 @@ export class CompaniesModule {
       for (let i = 0; i < params.phones.length; i++) {
         await this.graph.attach_facet({
           entity_id: params.id,
-          schema_id: "companies.company.phone",
+          schema_id: COMPANY_PHONE,
           data: { phone: params.phones[i], is_primary: i === 0 },
         });
       }
@@ -299,7 +304,7 @@ export class CompaniesModule {
       for (const link of params.external_links) {
         await this.graph.attach_facet({
           entity_id: params.id,
-          schema_id: "companies.company.external_link",
+          schema_id: COMPANY_EXTERNAL_LINK,
           data: {
             source_type: link.source_type,
             external_id: link.external_id,

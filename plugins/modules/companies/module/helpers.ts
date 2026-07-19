@@ -5,7 +5,7 @@
 // saw before the migration.
 
 import type { RawEntity } from "@magnis/plugin-sdk";
-import type { CompanyCanonical, CompanyListItem } from "../types/index.ts";
+import type { CompanyCanonical, CompanyListItem } from "../types.ts";
 
 const AVATAR_COLORS = ["orange", "blue", "green", "red", "purple", "pink"];
 
