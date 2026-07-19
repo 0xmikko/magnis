@@ -1,5 +1,5 @@
 import { runConnector } from "@magnis/connector-sdk";
-import { fetchMockLinkedIn } from "./fetch";
+import { fetchMockLinkedIn } from "./surfaces/linkedin/fetch";
 
 await runConnector({
   name: "mock-linkedin",

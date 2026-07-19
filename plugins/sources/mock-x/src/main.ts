@@ -1,5 +1,5 @@
 import { runConnector } from "@magnis/connector-sdk";
-import { fetchMockX } from "./fetch";
+import { fetchMockX } from "./surfaces/x/fetch";
 
 await runConnector({
   name: "mock-x",
