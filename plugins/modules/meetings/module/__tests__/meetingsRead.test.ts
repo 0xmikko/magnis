@@ -1,59 +1,36 @@
-// Stage 1 — meetings read surface: shape parity + behavior. Unit-tests the V8
-// module class directly with a mock GraphService whose methods are vi.fn()
-// spies. Mirrors the native meetings domain (types.rs): list (window over
+// Stage 1 — meetings read surface: shape parity + behavior. Exercises the V8
+// module class through @magnis/testkit/module (mockGraph + mountModule).
+// Mirrors the native meetings domain (types.rs): list (window over
 // meetings.calendar_event, starts_at DESC), get (entity + facets + links),
 // search (meetings.EVENT schema — native quirk), attendee parse (INV-24c) and
 // read-time attendee→contact enrichment.
+//
+// mockGraph is a throwing Proxy: any op NOT arranged (or passed via `over`)
+// throws when hit, so an accidental crossing fails loudly — the guarantee that
+// REPLACES the old hand-rolled per-op reject() spies.
 
 import { describe, expect, it, vi } from "vitest";
-import type {
-  EntityDetail,
-  GraphService,
-  LinkSummary,
-  PluginDeps,
-  RawEntity,
-  WindowPage,
-} from "@magnis/plugin-sdk";
-import { MeetingsModule } from "./service.ts";
-import { parseAttendees } from "./helpers.ts";
-import type { MeetingsCanonical, MeetingsFacets } from "../types/index.ts";
+import type { EntityDetail, LinkSummary, RawEntity, WindowPage } from "@magnis/plugin-sdk";
+import { mockGraph, mountModule, type GraphOverrides, type MockGraph } from "@magnis/testkit/module";
+import { MeetingsModule } from "../service.ts";
+import { parseAttendees } from "../helpers.ts";
+import type { MeetingsCanonical, MeetingsFacets } from "../../types.ts";
 
 const CAL = "meetings.calendar_event";
 const CAL_DETAILS = "meetings.calendar_event.details";
+type G = MockGraph<MeetingsFacets, MeetingsCanonical>;
 
-// Mock graph: only the ops the read path may touch are stubbed; anything else
-// throws so an accidental crossing fails loudly.
-function makeGraph(over: Partial<Record<string, unknown>> = {}): GraphService<
-  MeetingsFacets,
-  MeetingsCanonical
-> {
-  const reject =
-    (name: string) =>
-    (..._a: unknown[]): never => {
-      throw new Error(`unexpected graph op on read path: ${name}`);
-    };
-  return {
-    list_entities_window: vi.fn(reject("list_entities_window")),
-    get_entity_full: vi.fn(reject("get_entity_full")),
-    list_entities_by_context: vi.fn(reject("list_entities_by_context")),
-    search_entities_by_name: vi.fn(reject("search_entities_by_name")),
-    list_facets_for_entities: vi.fn(reject("list_facets_for_entities")),
-    find_by_external_id: vi.fn(reject("find_by_external_id")),
-    list_links_for_entity: vi.fn(reject("list_links_for_entity")),
-    get_entity: vi.fn(reject("get_entity")),
-    get_entities: vi.fn().mockResolvedValue([]),
+// Only get_entities is arranged by default; the read path's other ops are
+// supplied per-test via `over`. Anything else throws via the mockGraph Proxy.
+function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
+  return mockGraph<MeetingsFacets, MeetingsCanonical>({
+    get_entities: () => Promise.resolve([]),
     ...over,
-  } as unknown as GraphService<MeetingsFacets, MeetingsCanonical>;
+  } as unknown as GraphOverrides<MeetingsFacets, MeetingsCanonical>);
 }
 
-function makeModule(graph: GraphService<MeetingsFacets, MeetingsCanonical>): MeetingsModule {
-  const deps = {
-    graph,
-    ctx: { extension_id: "meetings", user_id: "u1" },
-    util: {},
-    rpc: { execute: vi.fn() },
-  } as unknown as PluginDeps<MeetingsFacets, MeetingsCanonical>;
-  return new MeetingsModule(deps);
+function makeModule(graph: G): MeetingsModule {
+  return mountModule(MeetingsModule, { graph, ctx: { extension_id: "meetings" } }).module;
 }
 
 const entity = (id: string, name: string, created = "2026-01-01T00:00:00Z"): RawEntity =>

@@ -1,52 +1,47 @@
 // Stage 3 — meetings sync ingest (@syncHandler) + control (@rpc sync.status /
-// sync.reset). Unit-tests the module with a mock GraphService + RpcExecutor.
-// Asserts: snapshot/live upsert via apply_batch (external_id idempotency,
-// confidence 90), the full live trigger.check payload (INV-6) with attendee
-// email.address ids resolved through email.ensure_address (DEC-6), delete
-// (INV-7), empty-user hard error (INV-8), and the sync_state control surface.
+// sync.reset). Exercises the module through @magnis/testkit/module (mockGraph +
+// mountModule + a test RpcExecutor). Asserts: snapshot/live upsert via
+// apply_batch (external_id idempotency, confidence 90), the full live
+// trigger.check payload (INV-6) with attendee email.address ids resolved through
+// email.ensure_address (DEC-6), delete (INV-7), empty-user hard error (INV-8),
+// and the sync_state control surface.
 
 import { describe, expect, it, vi } from "vitest";
-import type {
-  GraphBatchInput,
-  GraphBatchResult,
-  GraphService,
-  PluginDeps,
-} from "@magnis/plugin-sdk";
-import { MeetingsModule } from "./service.ts";
-import type { MeetingsCanonical, MeetingsFacets, SyncEnvelope } from "../types/index.ts";
+import type { GraphBatchInput, GraphBatchResult } from "@magnis/plugin-sdk";
+import { mockGraph, mountModule, type GraphOverrides, type MockGraph } from "@magnis/testkit/module";
+import { MeetingsModule } from "../service.ts";
+import type { MeetingsCanonical, MeetingsFacets, SyncEnvelope } from "../../types.ts";
 
 const CAL = "meetings.calendar_event";
 const CAL_DETAILS = "meetings.calendar_event.details";
+type G = MockGraph<MeetingsFacets, MeetingsCanonical>;
 
-function makeGraph(over: Partial<Record<string, unknown>> = {}): GraphService<
-  MeetingsFacets,
-  MeetingsCanonical
-> {
-  return {
-    apply_batch: vi.fn(async (frag: GraphBatchInput): Promise<GraphBatchResult> => ({
-      ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
-      created: frag.entities.length,
-      updated: 0,
-      links_added: 0,
-      dropped_keys: [],
-    })),
-    find_by_external_id: vi.fn(async (_id: string): Promise<string | null> => null),
-    delete_entity: vi.fn(async (_id: string): Promise<void> => undefined),
-    sync_state: vi.fn(async (): Promise<Record<string, unknown>> => ({ ok: true })),
+function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
+  return mockGraph<MeetingsFacets, MeetingsCanonical>({
+    apply_batch: (frag: GraphBatchInput): Promise<GraphBatchResult> =>
+      Promise.resolve({
+        ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
+        created: frag.entities.length,
+        updated: 0,
+        links_added: 0,
+        dropped_keys: [],
+      }),
+    find_by_external_id: (_id: string): Promise<string | null> => Promise.resolve(null),
+    delete_entity: (_id: string): Promise<void> => Promise.resolve(undefined),
+    sync_state: (): Promise<Record<string, unknown>> => Promise.resolve({ ok: true }),
     ...over,
-  } as unknown as GraphService<MeetingsFacets, MeetingsCanonical>;
+  } as unknown as GraphOverrides<MeetingsFacets, MeetingsCanonical>);
 }
 
 function makeModule(
-  graph: GraphService<MeetingsFacets, MeetingsCanonical>,
-  execute = vi.fn(async (_m: string, p: { address: string }) => ({ id: `addr-${p.address}` })),
+  graph: G,
+  execute = vi.fn(async (_m: string, p?: unknown) => ({ id: `addr-${(p as { address: string }).address}` })),
 ): { mod: MeetingsModule; execute: ReturnType<typeof vi.fn> } {
-  const mod = new MeetingsModule({
+  const mod = mountModule(MeetingsModule, {
     graph,
-    ctx: { extension_id: "meetings", user_id: "u1" },
-    util: {},
+    ctx: { extension_id: "meetings" },
     rpc: { execute },
-  } as unknown as PluginDeps<MeetingsFacets, MeetingsCanonical>);
+  }).module;
   return { mod, execute };
 }
 

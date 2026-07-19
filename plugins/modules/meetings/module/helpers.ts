@@ -7,17 +7,35 @@ import type {
   CalendarAttendee,
   MeetingAttendeeView,
   MeetingListItem,
-} from "../types/index.ts";
+} from "../types.ts";
 
-type Data = Record<string, unknown>;
+export type Data = Record<string, unknown>;
 
-const str = (d: Data, k: string): string | null => {
+export const str = (d: Data, k: string): string | null => {
   const v = d[k];
   return typeof v === "string" && v.length > 0 ? v : null;
 };
 
 /** A string facet field, treated as null when empty (native `.filter(!is_empty)`). */
 const nonEmpty = (d: Data, k: string): string | null => str(d, k);
+
+/// Strict RFC-3339 parse (mirrors native chrono parse_from_rfc3339): returns the
+/// epoch ms, or null if the string isn't a well-formed RFC-3339 timestamp. JS
+/// `Date.parse` alone is too lenient, so gate on the canonical shape first.
+export function parseRfc3339(s: string): number | null {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/.test(s)) return null;
+  const t = Date.parse(s);
+  return Number.isNaN(t) ? null : t;
+}
+
+/// Normalize attendees to the canonical `{name, email}` shape (name → null when
+/// absent), matching the native facet/snapshot serialization.
+export function normalizeAttendees(attendees: CalendarAttendee[] | undefined): {
+  name: string | null;
+  email: string;
+}[] {
+  return (attendees ?? []).map((a) => ({ name: a.name ?? null, email: a.email }));
+}
 
 /// Parse the canonical `attendees` shape from a facet payload.
 ///

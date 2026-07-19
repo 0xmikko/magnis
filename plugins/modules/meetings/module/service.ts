@@ -20,7 +20,6 @@ import {
 } from "@magnis/plugin-sdk";
 import type { BatchEntityInput, RawEntity, RpcExecutor } from "@magnis/plugin-sdk";
 import type {
-  CalendarAttendee,
   FacetSummary,
   GetParams,
   LinkedEntitySummary,
@@ -36,37 +35,18 @@ import type {
   SearchResultItem,
   SyncEnvelope,
   ToolResult,
-} from "../types/index.ts";
-import { buildListItem, enrichAttendees, formatDateTime, parseAttendees } from "./helpers.ts";
-
-const CAL = "meetings.calendar_event";
-const CAL_DETAILS = "meetings.calendar_event.details";
-const EVENT = "meetings.event";
-
-type Data = Record<string, unknown>;
-
-const str = (d: Data, k: string): string | null => {
-  const v = d[k];
-  return typeof v === "string" && v.length > 0 ? v : null;
-};
-
-/// Strict RFC-3339 parse (mirrors native chrono parse_from_rfc3339): returns the
-/// epoch ms, or null if the string isn't a well-formed RFC-3339 timestamp. JS
-/// `Date.parse` alone is too lenient, so gate on the canonical shape first.
-function parseRfc3339(s: string): number | null {
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/.test(s)) return null;
-  const t = Date.parse(s);
-  return Number.isNaN(t) ? null : t;
-}
-
-/// Normalize attendees to the canonical `{name, email}` shape (name → null when
-/// absent), matching the native facet/snapshot serialization.
-function normalizeAttendees(attendees: CalendarAttendee[] | undefined): {
-  name: string | null;
-  email: string;
-}[] {
-  return (attendees ?? []).map((a) => ({ name: a.name ?? null, email: a.email }));
-}
+} from "../types.ts";
+import {
+  buildListItem,
+  enrichAttendees,
+  formatDateTime,
+  normalizeAttendees,
+  parseAttendees,
+  parseRfc3339,
+  str,
+  type Data,
+} from "./helpers.ts";
+import { CAL, CAL_DETAILS, EVENT, MEETING } from "../schema.ts";
 
 export class MeetingsModule {
   private readonly graph: GraphService<MeetingsFacets, MeetingsCanonical>;
@@ -447,7 +427,7 @@ export class MeetingsModule {
     triggers.push({
       type: "trigger.check",
       event_kind: "new_meeting",
-      schema_id: "meetings.meeting",
+      schema_id: MEETING,
       entity_id: entityId,
       phase: "live",
       touched_entity_ids: touched,
