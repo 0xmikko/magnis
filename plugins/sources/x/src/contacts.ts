@@ -8,6 +8,7 @@
 import { RateLimitError } from "@magnis/connector-sdk";
 import type { Envelope, FetchArgs, FetchResult } from "@magnis/connector-sdk";
 import { X_API_BASE, XApiError, XClient, type FetchLike, type XUser } from "./api";
+import { SURFACE_CONTACTS, socialContactRemoteId } from "./schema";
 
 const PAGE_SIZE = 1000;
 const HARD_MAX = 5000;
@@ -25,8 +26,8 @@ interface ContactsCursor {
 // may omit `name`; it is never absent from the envelope.
 function socialContactEnvelope(user: XUser): Envelope {
   return {
-    surface: "contacts",
-    remote_id: `x:social:${user.username.toLowerCase()}`,
+    surface: SURFACE_CONTACTS,
+    remote_id: socialContactRemoteId(user.username),
     kind: "snapshot",
     payload: {
       kind: "social_contact",

@@ -1,15 +1,16 @@
 import type { Envelope, FetchArgs, FetchResult } from "@magnis/connector-sdk";
 import { XClient, type FetchLike, type XMedia, type XTweet, type XUser } from "./api";
+import { fullText, postType } from "./helpers";
+import { PLATFORM, SURFACE_X, postRemoteId, profileRemoteId } from "./schema";
 
-const PLATFORM = "x";
 const RECENT_TWEETS = 10;
 
 // Map an X user → a x.profile envelope (entity_type "profile" — the x
 // module ingest discriminator). remote_id = idempotency key (INV-4).
 function profileEnvelope(user: XUser): Envelope {
   return {
-    surface: "x",
-    remote_id: `x:profile:${user.id}`,
+    surface: SURFACE_X,
+    remote_id: profileRemoteId(user.id),
     kind: "snapshot",
     payload: {
       entity_type: "profile",
@@ -23,22 +24,6 @@ function profileEnvelope(user: XUser): Envelope {
       follower_count: user.public_metrics?.followers_count ?? null,
     },
   };
-}
-
-// ContentOS ingest port (social-post-rendering S4 / INV-1): X truncates `.text`
-// at 280 — the FULL body lives in article.plain_text (Article) or
-// note_tweet.text (long-form). Store the full text, never the teaser.
-function fullText(tweet: XTweet): string {
-  return tweet.article?.plain_text ?? tweet.note_tweet?.text ?? tweet.text;
-}
-
-// Type precedence: article > long_form > reply > post (ContentOS tweetType;
-// threads deferred — no conversation assembly in v1).
-function postType(tweet: XTweet, isReply: boolean): string {
-  if (tweet.article?.plain_text || tweet.article?.title) return "article";
-  if (tweet.note_tweet?.text) return "long_form";
-  if (isReply) return "reply";
-  return "post";
 }
 
 function postEnvelope(user: XUser, tweet: XTweet, mediaByKey: Map<string, XMedia>): Envelope {
@@ -64,8 +49,8 @@ function postEnvelope(user: XUser, tweet: XTweet, mediaByKey: Map<string, XMedia
   }));
 
   return {
-    surface: "x",
-    remote_id: `x:post:${tweet.id}`,
+    surface: SURFACE_X,
+    remote_id: postRemoteId(tweet.id),
     kind: "live",
     payload: {
       entity_type: "post",
