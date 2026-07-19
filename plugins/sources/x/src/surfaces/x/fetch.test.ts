@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import { fetchX } from "./fetch";
-import type { FetchLike } from "./api";
+import type { FetchLike } from "../../api";
 
 // A fake X v2 API: records every URL hit (to assert INV-1 call counts) and
 // answers the two read endpoints with canned data. NO live network (INV-6).

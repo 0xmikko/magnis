@@ -1,7 +1,8 @@
 import type { Envelope, FetchArgs, FetchResult } from "@magnis/connector-sdk";
-import { XClient, type FetchLike, type XMedia, type XTweet, type XUser } from "./api";
+import { XClient, type FetchLike, type XMedia, type XTweet, type XUser } from "../../api";
 import { fullText, postType } from "./helpers";
-import { PLATFORM, SURFACE_X, postRemoteId, profileRemoteId } from "./schema";
+import { PLATFORM, SURFACE_X } from "../../schema";
+import { postRemoteId, profileRemoteId } from "./schema";
 
 const RECENT_TWEETS = 10;
 

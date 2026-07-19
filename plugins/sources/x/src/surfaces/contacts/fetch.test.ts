@@ -3,8 +3,8 @@
 // paged via nextCursor, clean empty fetch when nothing was requested.
 // NO live network (fake fetch).
 import { describe, test, expect } from "bun:test";
-import { fetchXContacts } from "./contacts";
-import type { FetchLike } from "./api";
+import { fetchXContacts } from "./fetch";
+import type { FetchLike } from "../../api";
 
 function pagedApi(pages: Array<Array<Record<string, unknown>>>) {
   const calls: string[] = [];

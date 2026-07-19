@@ -5,8 +5,8 @@
 
 import type { ConnectorConfig } from "@magnis/connector-sdk";
 import type { FetchLike } from "./api";
-import { fetchXContacts } from "./contacts";
-import { fetchX } from "./fetch";
+import { fetchXContacts } from "./surfaces/contacts/fetch";
+import { fetchX } from "./surfaces/x/fetch";
 import { probeXAuth } from "./probe";
 import { SURFACE_CONTACTS, SURFACE_X } from "./schema";
 

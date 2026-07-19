@@ -2,7 +2,7 @@
 // envelope builders read cleanly (mirrors the module pilot's linkedin
 // module/helpers.ts split of `richPostFields`). Pure functions over an XTweet.
 
-import type { XTweet } from "./api";
+import type { XTweet } from "../../api";
 
 /** ContentOS ingest port (social-post-rendering S4 / INV-1): X truncates `.text`
  *  at 280 — the FULL body lives in article.plain_text (Article) or

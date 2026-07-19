@@ -7,8 +7,9 @@
 
 import { RateLimitError } from "@magnis/connector-sdk";
 import type { Envelope, FetchArgs, FetchResult } from "@magnis/connector-sdk";
-import { X_API_BASE, XApiError, XClient, type FetchLike, type XUser } from "./api";
-import { SURFACE_CONTACTS, socialContactRemoteId } from "./schema";
+import { X_API_BASE, XApiError, XClient, type FetchLike, type XUser } from "../../api";
+import { SURFACE_CONTACTS } from "../../schema";
+import { socialContactRemoteId } from "./schema";
 
 const PAGE_SIZE = 1000;
 const HARD_MAX = 5000;
