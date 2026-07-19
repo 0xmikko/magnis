@@ -1,4 +1,12 @@
-import type { FileDetails } from "../types/index.ts";
+import type { EntityDetail } from "@magnis/plugin-sdk";
+import type { FileDetails } from "../types.ts";
+
+/// Extract a facet's data payload by schema_id from an EntityDetail (or
+/// undefined when the entity carries no facet of that schema).
+export function facetData(detail: EntityDetail, schemaId: string): Record<string, unknown> | undefined {
+  const f = detail.facets.find((x) => x.schema_id === schemaId);
+  return f?.data as Record<string, unknown> | undefined;
+}
 
 /// Route-correct serving URL (DEC-10): local content serves via
 /// `/files/{entity_id}` (the actual `GET /files/:entity_id` route); otherwise the
