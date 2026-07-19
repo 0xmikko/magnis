@@ -3,9 +3,52 @@
 // detect_relevance_tier) so list/detail output matches pre-migration.
 
 import type { FacetRecord, RawEntity } from "@magnis/plugin-sdk";
-import type { ContactCanonical, ContactListItem } from "../types/index.ts";
+import type { ContactCanonical, ContactListItem } from "../types.ts";
+import { CONTACT_SOCIAL } from "../schema.ts";
 
 const AVATAR_COLORS = ["orange", "blue", "green", "red", "purple", "pink"];
+
+/// Max contacts.person entities folded into one apply_batch (mirrors email's
+/// INGEST_CHUNK). A whole sync page is sliced into chunks so the lone PGlite
+/// connection is freed between transactions.
+export const INGEST_CHUNK = 200;
+
+// Handles are stored bare: no leading `@`, trimmed. The sync scheduler builds
+// the tracked-handle set from these; the connectors query the platform APIs by
+// bare handle.
+export function normalizeHandle(handle: string): string {
+  return handle.trim().replace(/^@+/, "");
+}
+
+/** observed_at (RFC3339) → epoch ms; unparseable → 0 (never wins a max). */
+export function facetTime(f: FacetRecord): number {
+  const t = Date.parse(f.observed_at);
+  return Number.isNaN(t) ? 0 : t;
+}
+
+/** The newest contacts.person.social facet, by observed_at — NOT by list
+ * position (the runtime returns newest-first; picking a list end reads the
+ * OLDEST facet and resurrects stale tracked state — live bug 2026-07-02). */
+export function latestSocialFacet(facets: readonly FacetRecord[]): FacetRecord | undefined {
+  let best: FacetRecord | undefined;
+  for (const f of facets) {
+    if (f.schema_id !== CONTACT_SOCIAL) continue;
+    if (!best || facetTime(f) > facetTime(best)) best = f;
+  }
+  return best;
+}
+
+/// plan §7 required-fields contract for social_contact envelopes.
+export function isValidSocialContact(p: Record<string, unknown>): boolean {
+  return (
+    typeof p.handle === "string" &&
+    p.handle.length > 0 &&
+    typeof p.display_name === "string" &&
+    p.display_name.length > 0 &&
+    typeof p.profile_url === "string" &&
+    p.profile_url.length > 0
+  );
+}
 
 export function computeInitials(name: string): string {
   return name

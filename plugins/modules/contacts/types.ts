@@ -231,3 +231,42 @@ export interface ContactsListParams {
   search?: string;
   include_all?: boolean;
 }
+
+// ── sync-ingest envelope shapes (@syncHandler "contacts") ──────────
+// Internal to the ingest path; the host bridge routes Google People-API
+// snapshots to `contacts.__sync__` as these envelopes.
+
+/// A sync envelope routed to the contacts surface by the host bridge.
+/// `payload` is a Google connector `Contact` (plugins/sources/google/src/
+/// surfaces.rs): { id, display_name, given_name, family_name, emails[],
+/// phones[], organizations[], photo_url, external_url }.
+export interface ContactsSyncEnvelope {
+  source_id?: string;
+  surface?: string;
+  account_id?: string;
+  user_id?: string;
+  kind?: string;
+  remote_id?: string;
+  payload?: Record<string, unknown>;
+  timestamp?: string;
+}
+
+export interface GoogleContactEmail {
+  address?: string;
+  label?: string | null;
+  is_primary?: boolean;
+}
+export interface GoogleContactPhone {
+  number?: string;
+  label?: string | null;
+  is_primary?: boolean;
+}
+export interface GoogleContactPayload {
+  id?: string;
+  display_name?: string | null;
+  given_name?: string | null;
+  family_name?: string | null;
+  emails?: GoogleContactEmail[];
+  phones?: GoogleContactPhone[];
+  external_url?: string | null;
+}

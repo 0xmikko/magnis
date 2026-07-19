@@ -1,20 +1,18 @@
 // Contacts sync ingest (@syncHandler "contacts"): apply_batch parity for Google
-// People-API contacts. Unit-tests the module with a mock GraphService whose ops
-// are vi.fn() spies; every op EXCEPT apply_batch rejects, proving ingest folds a
-// whole page of `contacts` envelopes into ONE graph.apply_batch (entities +
-// facets), idempotent on the Google resourceName-derived external_id.
-// Mirrors plugins/email/module/__tests__/emailIngest.test.ts.
+// People-API contacts. Exercises the module through @magnis/testkit/module — the
+// throwing `mockGraph` proves ingest folds a whole page of `contacts` envelopes
+// into ONE graph.apply_batch (entities + facets): every op it does NOT arrange
+// (create_entity/attach_facet/add_link/get_entity — the non-batch write traps)
+// throws `unexpected graph op: …`. Idempotent on the resourceName-derived
+// external_id. Mirrors plugins/email/module/__tests__/emailIngest.test.ts.
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import type {
-  BatchEntityInput,
-  GraphBatchInput,
-  GraphBatchResult,
-  GraphService,
-  PluginDeps,
-} from "@magnis/plugin-sdk";
-import { ContactsModule } from "./service.ts";
-import type { ContactCanonical, ContactFacets } from "../types/index.ts";
+import { beforeEach, describe, expect, it } from "vitest";
+import type { BatchEntityInput, GraphBatchInput } from "@magnis/plugin-sdk";
+import { mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
+import { ContactsModule } from "../service.ts";
+import type { ContactCanonical, ContactFacets } from "../../types.ts";
+
+type G = MockGraph<ContactFacets, ContactCanonical>;
 
 interface SyncEnvelope {
   source_id: string;
@@ -27,39 +25,23 @@ interface SyncEnvelope {
   timestamp: string;
 }
 
-function makeGraph(): GraphService<ContactFacets, ContactCanonical> {
-  const reject =
-    (name: string) =>
-    (..._a: unknown[]): never => {
-      throw new Error(`unexpected graph op on ingest path: ${name}`);
-    };
-  return {
-    // apply_batch echoes each key → a deterministic id.
-    apply_batch: vi.fn<(a: GraphBatchInput) => Promise<GraphBatchResult>>(async (frag) => ({
-      ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
-      created: frag.entities.length,
-      updated: 0,
-      links_added: frag.links?.length ?? 0,
-      dropped_keys: [],
-    })),
-    create_entity: vi.fn(reject("create_entity")),
-    attach_facet: vi.fn(reject("attach_facet")),
-    add_link: vi.fn(reject("add_link")),
-    get_entity: vi.fn(reject("get_entity")),
-    // social_contact find-or-create (INV-8) reads existing handles; the
-    // default world is empty. Tests override to simulate known contacts.
-    list_entities: vi.fn(async () => ({ items: [], total: 0 })),
-    list_facets_for_entities: vi.fn(async () => []),
-  } as unknown as GraphService<ContactFacets, ContactCanonical>;
-}
-
-function makeModule(graph: GraphService<ContactFacets, ContactCanonical>): ContactsModule {
-  return new ContactsModule({
-    graph,
-    ctx: { extension_id: "contacts", user_id: "u1" },
-    util: {},
-    rpc: { execute: vi.fn() },
-  } as unknown as PluginDeps<ContactFacets, ContactCanonical>);
+// The ingest-path ops. apply_batch echoes each key → a deterministic id;
+// list_entities/list_facets_for_entities feed the social find-or-create read
+// (default empty world). Ops NOT arranged (create_entity/attach_facet/add_link/
+// get_entity) throw via the mockGraph Proxy — the batch-only guarantee.
+function ingestGraph(): G {
+  return mockGraph<ContactFacets, ContactCanonical>({
+    apply_batch: (frag) =>
+      Promise.resolve({
+        ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
+        created: frag.entities.length,
+        updated: 0,
+        links_added: frag.links?.length ?? 0,
+        dropped_keys: [],
+      }),
+    list_entities: () => Promise.resolve({ items: [], total: 0 }),
+    list_facets_for_entities: () => Promise.resolve([]),
+  });
 }
 
 const env = (over: Partial<SyncEnvelope> & { payload?: Record<string, unknown> }): SyncEnvelope => ({
@@ -94,23 +76,23 @@ const personOf = (frag: GraphBatchInput, key: string): BatchEntityInput =>
 const facetOf = (e: BatchEntityInput, schema_id: string) =>
   e.facets.filter((f) => f.schema_id === schema_id);
 
-function lastBatch(graph: GraphService<ContactFacets, ContactCanonical>): GraphBatchInput {
-  const calls = (graph.apply_batch as ReturnType<typeof vi.fn>).mock.calls;
+function lastBatch(graph: G): GraphBatchInput {
+  const calls = graph.spies.apply_batch.mock.calls;
   return calls[calls.length - 1][0] as GraphBatchInput;
 }
 
 describe("contacts ingest — apply_batch shape (tst_be_contactsingest_001)", () => {
-  let graph: GraphService<ContactFacets, ContactCanonical>;
+  let graph: G;
   let mod: ContactsModule;
   beforeEach(() => {
-    graph = makeGraph();
-    mod = makeModule(graph);
+    graph = ingestGraph();
+    mod = mountModule(ContactsModule, { graph, ctx: { extension_id: "contacts" } }).module;
   });
 
   it("one Google contact envelope → one apply_batch with a contacts.person entity + profile/email/phone/external_link facets", async () => {
     await mod.ingest({ envelopes: [env({ remote_id: "gpeople:abc123", payload: contactPayload() })] });
 
-    expect(graph.apply_batch).toHaveBeenCalledTimes(1);
+    expect(graph.spies.apply_batch).toHaveBeenCalledTimes(1);
     const frag = lastBatch(graph);
 
     const people = frag.entities.filter((e) => e.schema_id === "contacts.person");
@@ -187,7 +169,7 @@ describe("contacts ingest — apply_batch shape (tst_be_contactsingest_001)", ()
 
   it("empty envelopes → no apply_batch", async () => {
     const r = await mod.ingest({ envelopes: [] });
-    expect(graph.apply_batch).toHaveBeenCalledTimes(0);
+    expect(graph.spies.apply_batch).toHaveBeenCalledTimes(0);
     expect(r.ok).toBe(true);
   });
 });
@@ -198,12 +180,12 @@ describe("contacts ingest — apply_batch shape (tst_be_contactsingest_001)", ()
 // ONE apply_batch path (no rpc, no direct writes) and drops envelopes that
 // violate the required-fields contract.
 describe("contacts ingest — social_contact envelopes", () => {
-  let graph: GraphService<ContactFacets, ContactCanonical>;
+  let graph: G;
   let mod: ContactsModule;
 
   beforeEach(() => {
-    graph = makeGraph();
-    mod = makeModule(graph);
+    graph = ingestGraph();
+    mod = mountModule(ContactsModule, { graph, ctx: { extension_id: "contacts" } }).module;
   });
 
   const socialEnv = (handle: string, over: Record<string, unknown> = {}) =>
@@ -224,7 +206,7 @@ describe("contacts ingest — social_contact envelopes", () => {
     expect(r.ok).toBe(true);
     expect(r.dropped_remote_ids).toEqual([]);
 
-    const batch = vi.mocked(graph.apply_batch).mock.calls.at(-1)?.[0];
+    const batch = graph.spies.apply_batch.mock.calls.at(-1)?.[0] as GraphBatchInput | undefined;
     expect(batch).toBeDefined();
     const entity = (batch!.entities as BatchEntityInput[]).find(
       (e) => e.key === "x:social:friend1",
@@ -255,11 +237,11 @@ describe("contacts ingest — social_contact envelopes", () => {
   // tracking opt-in. The old direct-write bug appended a fresh
   // {tracked_x: false} facet that silently untracked the person.
   it("tst_contacts_social_004 re-import never untracks an existing contact", async () => {
-    vi.mocked(graph.list_entities).mockResolvedValue({
+    graph.spies.list_entities.mockResolvedValue({
       items: [{ id: "e-alice", schema_id: "contacts.person", name: "Alice" }],
       total: 1,
     } as never);
-    vi.mocked(graph.list_facets_for_entities).mockResolvedValue([
+    graph.spies.list_facets_for_entities.mockResolvedValue([
       {
         id: "f1",
         entity_id: "e-alice",
@@ -272,7 +254,7 @@ describe("contacts ingest — social_contact envelopes", () => {
     const r = await mod.ingest({ envelopes: [socialEnv("Friend1")] as never });
     expect(r.ok).toBe(true);
     // NOTHING written: no batch call at all for a page of known handles.
-    expect(vi.mocked(graph.apply_batch)).not.toHaveBeenCalled();
+    expect(graph.spies.apply_batch).not.toHaveBeenCalled();
   });
 
   it("tst_contacts_social_003 mixes with google envelopes in the same page", async () => {
@@ -283,7 +265,7 @@ describe("contacts ingest — social_contact envelopes", () => {
       ] as never,
     });
     expect(r.ok).toBe(true);
-    const batch = vi.mocked(graph.apply_batch).mock.calls.at(-1)?.[0];
+    const batch = graph.spies.apply_batch.mock.calls.at(-1)?.[0] as GraphBatchInput | undefined;
     const keys = (batch!.entities as BatchEntityInput[]).map((e) => e.key);
     expect(keys).toContain("gpeople:abc123");
     expect(keys).toContain("x:social:friend3");

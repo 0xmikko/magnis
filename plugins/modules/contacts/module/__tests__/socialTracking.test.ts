@@ -2,123 +2,114 @@
 // get_social_tracking reads it back. RED invariant (S2): toggle tracked => handle
 // in the opt-in state; untoggle => out. Per-platform merge: toggling X never
 // clears LinkedIn. Handles are stored bare (no leading @).
+//
+// Exercised through @magnis/testkit/module (mockGraph + mountModule). Unlike the
+// read tests, these need a STATEFUL graph — a write must be visible to the next
+// read — so the mockGraph overrides close over an in-memory facet log. CRITICAL
+// runtime property mirrored here (tst_be_contacts_social_003 root cause): the
+// backend returns facets NEWEST-FIRST (`ORDER BY observed_at DESC` —
+// pg_facet.rs:88), so readers must NOT assume append order.
 
 import { describe, expect, it, vi } from "vitest";
-import type {
-  FacetRecord,
-  GraphService,
-  PluginDeps,
-  RawEntity,
-} from "@magnis/plugin-sdk";
-import { ContactsModule } from "./service.ts";
-import type { ContactCanonical, ContactFacets } from "../types/index.ts";
+import type { FacetRecord, RawEntity } from "@magnis/plugin-sdk";
+import { mockGraph, mountModule, type GraphOverrides, type MockGraph } from "@magnis/testkit/module";
+import { ContactsModule } from "../service.ts";
+import { CONTACT } from "../../schema.ts";
+import type { ContactCanonical, ContactFacets } from "../../types.ts";
 
-const SCHEMA = "contacts.person";
+const SCHEMA = CONTACT;
+type G = MockGraph<ContactFacets, ContactCanonical>;
+type Overrides = GraphOverrides<ContactFacets, ContactCanonical>;
 
-// An in-memory graph that records attached facets so a write is visible to the
-// next read. CRITICAL runtime property mirrored here (tst_be_contacts_social_003
-// root cause): the backend returns facets NEWEST-FIRST (`ORDER BY observed_at
-// DESC` — pg_facet.rs:88), so readers must NOT assume append order.
 let facetClock = 0;
 function isoAt(step: number): string {
   return new Date(Date.UTC(2026, 0, 1, 0, 0, step)).toISOString();
 }
-function makeGraph(entity: RawEntity | null) {
+
+function makeGraph(entity: RawEntity | null): { graph: G; facets: FacetRecord[] } {
   const facets: FacetRecord[] = [];
   const newestFirst = (list: FacetRecord[]): FacetRecord[] =>
     [...list].sort((a, b) => (a.observed_at < b.observed_at ? 1 : -1));
-  return {
-    graph: {
-      get_entity: vi.fn(async (_id: string) => entity),
-      list_facets_for_entity: vi.fn(async (entityId: string) =>
-        newestFirst(facets.filter((f) => f.entity_id === entityId)),
-      ),
-      attach_facet: vi.fn(async (input: { entity_id: string; schema_id: string; data: unknown }) => {
-        facets.push({
-          entity_id: input.entity_id,
-          id: `f-${facets.length}`,
-          schema_id: input.schema_id,
-          source: "manual",
-          observed_at: isoAt(facetClock++),
-          data: input.data,
-        });
-        return { id: `f-${facets.length - 1}` };
-      }),
-    } as unknown as GraphService<ContactFacets, ContactCanonical>,
-    facets,
-  };
+  const overrides = {
+    get_entity: async (_id: string) => entity,
+    list_facets_for_entity: async (entityId: string) =>
+      newestFirst(facets.filter((f) => f.entity_id === entityId)),
+    attach_facet: async (input: { entity_id: string; schema_id: string; data: unknown }) => {
+      facets.push({
+        entity_id: input.entity_id,
+        id: `f-${facets.length}`,
+        schema_id: input.schema_id,
+        source: "manual",
+        observed_at: isoAt(facetClock++),
+        data: input.data,
+      });
+      return { id: `f-${facets.length - 1}` };
+    },
+  } as unknown as Overrides;
+  return { graph: mockGraph<ContactFacets, ContactCanonical>(overrides), facets };
 }
-
-function makeModule(graph: GraphService<ContactFacets, ContactCanonical>): ContactsModule {
-  const deps = {
-    graph,
-    ctx: { extension_id: "contacts", user_id: "u1" },
-    // Deterministic uuid_v5 fake: stable per (namespace, name) → batch retries
-    // resolve to the same ids, mirroring the runtime op.
-    util: { uuid_v5: vi.fn(async (ns: string, name: string) => `v5-${ns}-${name}`) },
-    rpc: { call: vi.fn(), execute: vi.fn() },
-  } as unknown as PluginDeps<ContactFacets, ContactCanonical>;
-  return new ContactsModule(deps);
-}
-
-const person = (id: string, name = "Acme"): RawEntity =>
-  ({ id, schema_id: SCHEMA, name }) as unknown as RawEntity;
 
 // Graph with MANY persons + the batch read APIs the by-handle lookup uses,
 // plus create/rename so the S1 tools (track/ensure/rename) are testable.
 // Same NEWEST-FIRST ordering contract as makeGraph (matches the runtime).
-function makeMultiGraph(persons: RawEntity[]) {
+function makeMultiGraph(persons: RawEntity[]): { graph: G; facets: FacetRecord[]; renames: [string, string][] } {
   const facets: FacetRecord[] = [];
-  const renames: Array<[string, string]> = [];
+  const renames: [string, string][] = [];
   let created = 0;
   const newestFirst = (list: FacetRecord[]): FacetRecord[] =>
     [...list].sort((a, b) => (a.observed_at < b.observed_at ? 1 : -1));
-  return {
-    graph: {
-      get_entity: vi.fn(async (id: string) => persons.find((p) => p.id === id) ?? null),
-      create_entity: vi.fn(
-        async (input: { schema_id: string; name: string; client_id?: string }) => {
-          const e = {
-            id: input.client_id ?? `created-${created++}`,
-            schema_id: input.schema_id,
-            name: input.name,
-          } as unknown as RawEntity;
-          persons.push(e);
-          return e;
-        },
-      ),
-      update_entity_name: vi.fn(async (id: string, name: string) => {
-        renames.push([id, name]);
-        const e = persons.find((p) => p.id === id);
-        if (e) (e as { name: string }).name = name;
-      }),
-      get_canonical: vi.fn(async () => ({})),
-      list_entities: vi.fn(async ({ offset = 0, limit = 500 }: { offset?: number; limit?: number }) => ({
-        items: persons.slice(offset, offset + limit),
-        total: persons.length,
-      })),
-      list_facets_for_entity: vi.fn(async (entityId: string) =>
-        newestFirst(facets.filter((f) => f.entity_id === entityId)),
-      ),
-      list_facets_for_entities: vi.fn(async (ids: string[]) =>
-        newestFirst(facets.filter((f) => f.entity_id && ids.includes(f.entity_id))),
-      ),
-      attach_facet: vi.fn(async (input: { entity_id: string; schema_id: string; data: unknown }) => {
-        facets.push({
-          entity_id: input.entity_id,
-          id: `f-${facets.length}`,
-          schema_id: input.schema_id,
-          source: "manual",
-          observed_at: isoAt(facetClock++),
-          data: input.data,
-        });
-        return { id: `f-${facets.length - 1}` };
-      }),
-    } as unknown as GraphService<ContactFacets, ContactCanonical>,
-    facets,
-    renames,
-  };
+  const overrides = {
+    get_entity: async (id: string) => persons.find((p) => p.id === id) ?? null,
+    create_entity: async (input: { schema_id: string; name: string; client_id?: string }) => {
+      const e = {
+        id: input.client_id ?? `created-${created++}`,
+        schema_id: input.schema_id,
+        name: input.name,
+      } as unknown as RawEntity;
+      persons.push(e);
+      return e;
+    },
+    update_entity_name: async (id: string, name: string) => {
+      renames.push([id, name]);
+      const e = persons.find((p) => p.id === id);
+      if (e) (e as { name: string }).name = name;
+    },
+    get_canonical: async () => ({}),
+    list_entities: async ({ offset = 0, limit = 500 }: { offset?: number; limit?: number }) => ({
+      items: persons.slice(offset, offset + limit),
+      total: persons.length,
+    }),
+    list_facets_for_entity: async (entityId: string) =>
+      newestFirst(facets.filter((f) => f.entity_id === entityId)),
+    list_facets_for_entities: async (ids: string[]) =>
+      newestFirst(facets.filter((f) => f.entity_id && ids.includes(f.entity_id))),
+    attach_facet: async (input: { entity_id: string; schema_id: string; data: unknown }) => {
+      facets.push({
+        entity_id: input.entity_id,
+        id: `f-${facets.length}`,
+        schema_id: input.schema_id,
+        source: "manual",
+        observed_at: isoAt(facetClock++),
+        data: input.data,
+      });
+      return { id: `f-${facets.length - 1}` };
+    },
+  } as unknown as Overrides;
+  return { graph: mockGraph<ContactFacets, ContactCanonical>(overrides), facets, renames };
 }
+
+function makeModule(graph: G): ContactsModule {
+  return mountModule(ContactsModule, {
+    graph,
+    ctx: { extension_id: "contacts" },
+    // Deterministic uuid_v5 fake: stable per (namespace, name) → batch retries
+    // resolve to the same ids, mirroring the runtime op.
+    util: { uuid_v5: vi.fn(async (ns: string, name: string) => `v5-${ns}-${name}`) },
+  }).module;
+}
+
+const person = (id: string, name = "Acme"): RawEntity =>
+  ({ id, schema_id: SCHEMA, name }) as unknown as RawEntity;
 
 describe("contacts social tracking (tst_be_contacts_social_001)", () => {
   it("toggle tracked → handle in opt-in state; untoggle → out", async () => {
@@ -264,7 +255,7 @@ describe("contacts.batch_track_social (tst_batch, INV-5)", () => {
     { url_or_handle: "@zed" }, // excluded
   ];
 
-  async function setup() {
+  async function setup(): Promise<{ mod: ContactsModule; persons: RawEntity[] }> {
     const persons: RawEntity[] = [person("p1", "Jack")];
     const { graph } = makeMultiGraph(persons);
     const mod = makeModule(graph);
