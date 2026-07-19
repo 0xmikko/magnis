@@ -14,6 +14,14 @@ export interface NoteFacets {
   };
 }
 
+/// Payload of a `notes.note.content` facet as read back inside the module.
+export interface ContentData {
+  title?: string;
+  body?: string;
+  pinned?: boolean;
+  updated_at?: string;
+}
+
 /// Canonical key → value, used to parameterise GraphService<…, NoteCanonical>.
 export interface NoteCanonical {
   "note.title": string | null;

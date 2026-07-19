@@ -3,6 +3,16 @@
 
 const PREVIEW_MAX_CHARS = 80;
 
+/// Hyphenated 8-4-4-4-12 hex (matches crypto.randomUUID + the Rust uuid parser's
+/// hyphenated form). Native `notes.create` rejected a non-UUID client_id with a
+/// 400 before touching the graph (controller.rs:154-158).
+const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
+/// True when `id` is a hyphenated UUID accepted as a note `client_id`.
+export function isValidUuid(id: string): boolean {
+  return UUID_RE.test(id);
+}
+
 /// Truncate to `maxChars` codepoints (NOT bytes — Cyrillic/emoji safe),
 /// appending `suffix` only when truncation actually happened.
 function truncateChars(value: string, maxChars: number, suffix: string): string {

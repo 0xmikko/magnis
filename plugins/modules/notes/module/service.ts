@@ -8,6 +8,7 @@
 import { tool, writeTool, type GraphService, type PluginDeps } from "@magnis/plugin-sdk";
 import type { EntityDetail, PaginatedResponse, RawEntity, WindowRow } from "@magnis/plugin-sdk";
 import type {
+  ContentData,
   CreateParams,
   DeleteParams,
   GetParams,
@@ -20,23 +21,9 @@ import type {
   NotesListParams,
   TemplateApplyParams,
   UpdateParams,
-} from "../types/index.ts";
-import { previewFromBody, renderTemplate } from "./helpers.ts";
-
-const ENTITY = "notes.note";
-const CONTENT = "notes.note.content";
-
-/// Hyphenated 8-4-4-4-12 hex (matches crypto.randomUUID + the Rust uuid parser's
-/// hyphenated form). Native `notes.create` rejected a non-UUID client_id with a
-/// 400 before touching the graph (controller.rs:154-158).
-const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
-
-interface ContentData {
-  title?: string;
-  body?: string;
-  pinned?: boolean;
-  updated_at?: string;
-}
+} from "../types.ts";
+import { NOTE, NOTE_CONTENT } from "../schema.ts";
+import { isValidUuid, previewFromBody, renderTemplate } from "./helpers.ts";
 
 export class NotesModule {
   private readonly graph: GraphService<NoteFacets, NoteCanonical>;
@@ -68,7 +55,7 @@ export class NotesModule {
       // dropping the 2N+1 N+1.
       const all = await this.graph.search_entities_by_name({
         query: search,
-        schema_ids: [ENTITY],
+        schema_ids: [NOTE],
         limit: limit + offset,
       });
       const total = all.length;
@@ -78,7 +65,7 @@ export class NotesModule {
       const canon = await this.graph.list_canonical_for_entities(ids);
       const dataById = new Map<string, ContentData>();
       for (const f of facets) {
-        if (f.schema_id === CONTENT && f.entity_id && !dataById.has(f.entity_id)) {
+        if (f.schema_id === NOTE_CONTENT && f.entity_id && !dataById.has(f.entity_id)) {
           dataById.set(f.entity_id, (f.data ?? {}));
         }
       }
@@ -100,9 +87,9 @@ export class NotesModule {
     // and the exact total — one statement. This also stands in for the dropped
     // native `update_entity_date` recency (no such SDK op).
     const win = await this.graph.list_entities_window({
-      schema: ENTITY,
-      facet_schema: CONTENT,
-      order: [{ field: { facet_schema: CONTENT, facet_path: "updated_at" }, desc: true }],
+      schema: NOTE,
+      facet_schema: NOTE_CONTENT,
+      order: [{ field: { facet_schema: NOTE_CONTENT, facet_path: "updated_at" }, desc: true }],
       limit,
       offset,
     });
@@ -124,12 +111,12 @@ export class NotesModule {
     // NotFound for a non-owned id (get_entity_full is user-scoped → null) AND for
     // an id that belongs to a different schema — a notes tool must never touch a
     // contact/project/etc. entity.
-    if (detail?.entity.schema_id !== ENTITY) {
+    if (detail?.entity.schema_id !== NOTE) {
       throw new Error(`note not found: ${params.id}`);
     }
     const e = detail.entity;
     const data = this.contentOf(detail);
-    const canonical = await this.graph.get_canonical(e.id, [ENTITY]);
+    const canonical = await this.graph.get_canonical(e.id, [NOTE]);
     const pinned = (canonical["note.pinned"] as boolean | null) ?? data.pinned ?? false;
 
     // Resolve link neighbours via ONE get_entities batch (P5, user-scoped →
@@ -189,7 +176,7 @@ export class NotesModule {
     },
   })
   async create(params: CreateParams): Promise<NoteSnapshot> {
-    if (params.client_id !== undefined && !UUID_RE.test(params.client_id)) {
+    if (params.client_id !== undefined && !isValidUuid(params.client_id)) {
       throw new Error("client_id must be a valid UUID");
     }
     // Idempotency: a repeated client_id returns the existing note (as the full
@@ -199,7 +186,7 @@ export class NotesModule {
       // non-note entity is not a note hit — fall through; create_entity will
       // Conflict on the id rather than return a fake note snapshot.
       const existing = await this.graph.get_entity_full(params.client_id, { links: false });
-      if (existing?.entity.schema_id === ENTITY) {
+      if (existing?.entity.schema_id === NOTE) {
         return this.snapshotFromDetail(existing);
       }
     }
@@ -211,13 +198,13 @@ export class NotesModule {
     // rename (old title left visible in the body).
     const body = params.body;
     const entity = await this.graph.create_entity({
-      schema_id: ENTITY,
+      schema_id: NOTE,
       name: params.title,
       client_id: params.client_id,
     });
     await this.writeContent(entity.id, params.title, body, now);
 
-    return { id: entity.id, schema_id: ENTITY, title: params.title, body, updated_at: now };
+    return { id: entity.id, schema_id: NOTE, title: params.title, body, updated_at: now };
   }
 
   @writeTool("update", {
@@ -236,7 +223,7 @@ export class NotesModule {
   })
   async update(params: UpdateParams): Promise<NoteSnapshot> {
     const detail = await this.graph.get_entity_full(params.id, { links: false });
-    if (detail?.entity.schema_id !== ENTITY) {
+    if (detail?.entity.schema_id !== NOTE) {
       throw new Error(`note not found: ${params.id}`);
     }
     const e = detail.entity;
@@ -252,7 +239,7 @@ export class NotesModule {
     await this.writeContent(params.id, newTitle, newBody, now);
 
     // Full snapshot so the chat surface renders without a lazy fetch.
-    return { id: params.id, schema_id: ENTITY, title: newTitle, body: newBody, updated_at: now };
+    return { id: params.id, schema_id: NOTE, title: newTitle, body: newBody, updated_at: now };
   }
 
   @writeTool("delete", {
@@ -266,7 +253,7 @@ export class NotesModule {
   })
   async delete(params: DeleteParams): Promise<{ deleted: boolean }> {
     const detail = await this.graph.get_entity_full(params.id, { links: false });
-    if (detail?.entity.schema_id !== ENTITY) {
+    if (detail?.entity.schema_id !== NOTE) {
       throw new Error(`note not found: ${params.id}`);
     }
     await this.graph.delete_entity(params.id);
@@ -309,14 +296,14 @@ export class NotesModule {
   ): Promise<void> {
     await this.graph.attach_facet({
       entity_id: entityId,
-      schema_id: CONTENT,
+      schema_id: NOTE_CONTENT,
       data: { title, body, pinned: false, updated_at: updatedAt },
     });
     await this.graph.resolve_canonical(entityId);
   }
 
   private contentOf(detail: EntityDetail): ContentData {
-    const content = detail.facets.find((f) => f.schema_id === CONTENT);
+    const content = detail.facets.find((f) => f.schema_id === NOTE_CONTENT);
     return (content?.data ?? {});
   }
 
@@ -360,7 +347,7 @@ export class NotesModule {
     const data = this.contentOf(detail);
     return {
       id: e.id,
-      schema_id: ENTITY,
+      schema_id: NOTE,
       title: this.titleOf(e, data, {}),
       body: data.body ?? "",
       updated_at: data.updated_at ?? e.created_at ?? new Date(0).toISOString(),
