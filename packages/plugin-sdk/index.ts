@@ -72,6 +72,27 @@ export async function searchEntitiesPage(
   }
 }
 
+// ─────────────────── payload coercion helpers ──────────────────────────────
+// Domain-neutral readers for the opaque `Record<string, unknown>` maps every
+// plugin gets back from the graph (window-row `data`, `get_entity_full` facet
+// `data`, sync-envelope `payload`). These were copy-pasted VERBATIM across the
+// social modules (linkedin/x) — promoted here so there is ONE spelling. Runtime
+// (not type-only): module code runs the SDK in V8, like `searchEntitiesPage`.
+// Semantics are preserved EXACTLY — do not "fix" the asymmetric nullish returns
+// without auditing callers:
+//   - `str` → the value iff it is a string, else `undefined`.
+//   - `num` → the value iff it is a number, else `null`.
+// NB: email/meetings carry a DIFFERENT `str` variant that returns `null`; those
+// are not reconciled here (out of the module pilot's scope) — a sweep decision.
+export function str(o: Record<string, unknown>, k: string): string | undefined {
+  const v = o[k];
+  return typeof v === "string" ? v : undefined;
+}
+export function num(o: Record<string, unknown>, k: string): number | null {
+  const v = o[k];
+  return typeof v === "number" ? v : null;
+}
+
 // ─────────────────── tool metadata + decorators ───────────────────
 // The decorator SPEC types (ToolSpecInput, ToolDefinitionWire, MethodRecorder,
 // PluginModuleShape) live in ./contract/module. ToolMeta is the internal

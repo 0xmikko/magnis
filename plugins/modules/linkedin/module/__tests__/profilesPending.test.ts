@@ -2,44 +2,44 @@
 // PENDING rows at the top of profiles.list page 0 — the honest optimistic
 // state for the "+" flow ("Syncing…" until the real profile ingests, then the
 // placeholder disappears because the handle now exists among profiles).
+// Doubles from @magnis/testkit/module.
 import { describe, expect, it, vi } from "vitest";
-import type { GraphService, PluginDeps } from "@magnis/plugin-sdk";
-import { LinkedinModule } from "./service.ts";
-import type { LinkedinCanonical, LinkedinFacets } from "../types/index.ts";
+import type { WindowSpec } from "@magnis/plugin-sdk";
+import { entity, mockGraph, mountModule, windowRow, type MockGraph } from "@magnis/testkit/module";
+import { LinkedinModule } from "../service.ts";
+import { PROFILE } from "../../schema.ts";
+import type { LinkedinCanonical, LinkedinFacets } from "../../types.ts";
 
-function makeModule(opts: {
+type G = MockGraph<LinkedinFacets, LinkedinCanonical>;
+
+// Scenario fixture over the testkit: an ingested-profile window (paged by the
+// window's limit/offset) + a contacts.list_social_tracking RPC stub. Replaces
+// the old hand-rolled makeGraph/makeModule.
+function mountProfiles(opts: {
   profiles: Array<{ id: string; handle: string; name: string }>;
   tracked: Array<{ contact_id: string; name: string; handle: string }>;
 }): LinkedinModule {
-  const rows = opts.profiles.map((p) => ({
-    entity: { id: p.id, schema_id: "linkedin.profile", name: p.name },
-    data: { platform: "linkedin", handle: p.handle, display_name: p.name },
-  }));
-  const graph = {
-    list_entities_window: vi.fn(async ({ limit = 100, offset = 0 }) => ({
-      items: rows.slice(offset, offset + limit),
-      total: rows.length,
-      limit,
-      offset,
-    })),
-  } as unknown as GraphService<LinkedinFacets, LinkedinCanonical>;
-  const deps = {
-    graph,
-    ctx: { extension_id: "linkedin", user_id: "u1", extension_kind: "plugin" },
-    util: {},
-    rpc: {
-      execute: vi.fn(async (method: string) => {
-        if (method === "contacts.list_social_tracking") return opts.tracked;
-        throw new Error(`unexpected rpc ${method}`);
-      }),
-    },
-  } as unknown as PluginDeps<LinkedinFacets, LinkedinCanonical>;
-  return new LinkedinModule(deps);
+  const rows = opts.profiles.map((p) =>
+    windowRow(entity(p.id, p.name, { schema_id: PROFILE }), {
+      platform: "linkedin",
+      handle: p.handle,
+      display_name: p.name,
+    }),
+  );
+  const graph: G = mockGraph({
+    list_entities_window: (p: WindowSpec) =>
+      Promise.resolve({ items: rows.slice(p.offset, p.offset + p.limit), total: rows.length }),
+  });
+  const execute = vi.fn(async (method: string) => {
+    if (method === "contacts.list_social_tracking") return opts.tracked;
+    throw new Error(`unexpected rpc ${method}`);
+  });
+  return mountModule(LinkedinModule, { graph, ctx: { extension_id: "linkedin" }, rpc: { execute } }).module;
 }
 
 describe("linkedin pending profiles", () => {
   it("tst_plugin_linkedin_pending_001 tracked-not-synced handles prepend as pending rows", async () => {
-    const mod = makeModule({
+    const mod = mountProfiles({
       profiles: [{ id: "e1", handle: "synced_person", name: "Synced Person" }],
       tracked: [
         { contact_id: "c1", name: "Synced Person", handle: "synced_person" },
@@ -60,7 +60,7 @@ describe("linkedin pending profiles", () => {
   });
 
   it("tst_plugin_linkedin_pending_002 no pending rows on page 2+ or in search mode", async () => {
-    const mod = makeModule({
+    const mod = mountProfiles({
       profiles: [{ id: "e1", handle: "synced_person", name: "Synced Person" }],
       tracked: [{ contact_id: "c2", name: "G", handle: "sgershuni" }],
     });
@@ -69,7 +69,7 @@ describe("linkedin pending profiles", () => {
   });
 
   it("tst_plugin_linkedin_pending_003 pending profiles.get synthesizes a minimal detail", async () => {
-    const mod = makeModule({
+    const mod = mountProfiles({
       profiles: [],
       tracked: [{ contact_id: "c2", name: "Stepan Gershuni", handle: "sgershuni" }],
     });
@@ -84,22 +84,23 @@ describe("linkedin pending profiles", () => {
   });
 
   it("tst_plugin_linkedin_pending_004 a tracking-RPC failure never breaks the list", async () => {
-    const rows = [
-      {
-        entity: { id: "e1", schema_id: "linkedin.profile", name: "P" },
-        data: { platform: "linkedin", handle: "p", display_name: "P" },
-      },
-    ];
-    const graph = {
-      list_entities_window: vi.fn(async () => ({ items: rows, total: 1, limit: 50, offset: 0 })),
-    } as unknown as GraphService<LinkedinFacets, LinkedinCanonical>;
-    const deps = {
-      graph,
-      ctx: { extension_id: "linkedin", user_id: "u1", extension_kind: "plugin" },
-      util: {},
-      rpc: { execute: vi.fn(async () => { throw new Error("contacts down"); }) },
-    } as unknown as PluginDeps<LinkedinFacets, LinkedinCanonical>;
-    const mod = new LinkedinModule(deps);
+    const graph: G = mockGraph({
+      list_entities_window: () =>
+        Promise.resolve({
+          items: [
+            windowRow(entity("e1", "P", { schema_id: PROFILE }), {
+              platform: "linkedin",
+              handle: "p",
+              display_name: "P",
+            }),
+          ],
+          total: 1,
+        }),
+    });
+    const execute = vi.fn(async () => {
+      throw new Error("contacts down");
+    });
+    const { module: mod } = mountModule(LinkedinModule, { graph, ctx: { extension_id: "linkedin" }, rpc: { execute } });
     const page = await mod.profilesList({ limit: 50, offset: 0 });
     expect(page.items).toHaveLength(1);
   });

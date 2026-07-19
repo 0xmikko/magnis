@@ -8,7 +8,7 @@
 // Idempotent: facets carry external_id = the source remote_id (re-poll upserts,
 // INV-4). Provenance is stamped host-side from the calling plugin + envelope.
 
-import { searchEntitiesPage, syncHandler, tool, type GraphService, type PluginDeps } from "@magnis/plugin-sdk";
+import { searchEntitiesPage, str, syncHandler, tool, type GraphService, type PluginDeps } from "@magnis/plugin-sdk";
 import type {
   BatchEntityInput,
   BatchLinkInput,
@@ -28,49 +28,18 @@ import type {
   ProfilesListParams,
   LinkedinCanonical,
   LinkedinFacets,
-  PostMediaItem,
-  PostMetricsView,
   SyncEnvelope,
-} from "../types/index.ts";
-
-const PROFILE = "linkedin.profile";
-const PROFILE_IDENTITY = "linkedin.profile.identity";
-const POST = "linkedin.post";
-const POST_CONTENT = "linkedin.post.content";
-const POST_METRICS = "linkedin.post.metrics";
-const AUTHORED_BY = "linkedin.post:linkedin.profile";
-// Identity link (social-contact-identity DEC-1): declared in the manifest
-// since the plugin split — created here at ingest, telegram-style.
-const PROFILE_PERSON_LINK = "linkedin.profile:contacts.person";
-
-function str(o: Record<string, unknown>, k: string): string | undefined {
-  const v = o[k];
-  return typeof v === "string" ? v : undefined;
-}
-
-// Rich post fields (social-post-rendering S4): repost flag + reaction metrics
-// pass through from the anysite payload. Pre-S4 rows lack them → false/null.
-function richPostFields(d: Record<string, unknown>): {
-  is_repost: boolean;
-  media: PostMediaItem[];
-  metrics: PostMetricsView | null;
-} {
-  const m = d.metrics;
-  const num = (o: Record<string, unknown>, k: string): number | null =>
-    typeof o[k] === "number" ? (o[k]) : null;
-  return {
-    is_repost: d.is_repost === true,
-    media: Array.isArray(d.media) ? (d.media as PostMediaItem[]) : [],
-    metrics:
-      m && typeof m === "object"
-        ? {
-            likes: num(m as Record<string, unknown>, "likes"),
-            reposts: num(m as Record<string, unknown>, "reposts"),
-            replies: num(m as Record<string, unknown>, "replies"),
-          }
-        : null,
-  };
-}
+} from "../types.ts";
+import {
+  AUTHORED_BY,
+  POST,
+  POST_CONTENT,
+  POST_METRICS,
+  PROFILE,
+  PROFILE_IDENTITY,
+  PROFILE_PERSON_LINK,
+} from "../schema.ts";
+import { richPostFields } from "./helpers.ts";
 
 export class LinkedinModule {
   private readonly graph: GraphService<LinkedinFacets, LinkedinCanonical>;
