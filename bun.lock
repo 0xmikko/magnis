@@ -98,6 +98,9 @@
       "dependencies": {
         "@magnis/connector-sdk": "workspace:*",
       },
+      "devDependencies": {
+        "@magnis/testkit": "workspace:*",
+      },
     },
     "plugins/sources/linkedin": {
       "name": "@magnis/source-linkedin",
@@ -165,6 +168,9 @@
       "name": "@magnis/source-x",
       "dependencies": {
         "@magnis/connector-sdk": "workspace:*",
+      },
+      "devDependencies": {
+        "@magnis/testkit": "workspace:*",
       },
     },
   },

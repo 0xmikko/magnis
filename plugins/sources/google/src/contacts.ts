@@ -14,6 +14,7 @@ import {
 } from "./http";
 import { mergeProgress, progressCursor } from "./progress";
 import type { WindowFetchResult } from "./calendar";
+import { contactRemoteId } from "./schema";
 import {
   asObject,
   defaultObject,
@@ -314,7 +315,7 @@ export async function fetchContactsPage(
     envelopes.push({
       surface: "contacts",
       payload: contact as unknown as Record<string, unknown>,
-      remote_id: `gpeople:${contact.id}`,
+      remote_id: contactRemoteId(contact.id),
       kind: "snapshot",
     });
   }

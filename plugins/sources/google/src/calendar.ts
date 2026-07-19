@@ -8,6 +8,7 @@ import type { Envelope } from "@magnis/connector-sdk";
 import { checkRateLimit, fetchWithRetry, type FetchLike } from "./http";
 import { formatUtc } from "./gmail";
 import { mergeProgress, progressCursor } from "./progress";
+import { calendarRemoteId } from "./schema";
 import {
   asObject,
   optObject,
@@ -234,7 +235,7 @@ export async function fetchEventsPage(
     envelopes.push({
       surface: "meetings",
       payload: calEvent as unknown as Record<string, unknown>,
-      remote_id: `gcal:${ev.id}`,
+      remote_id: calendarRemoteId(ev.id),
       kind: "snapshot",
     });
   }

@@ -21,8 +21,10 @@ import {
   parseMailDraft,
   sendMessage,
 } from "./gmail";
+import { rawStr } from "./helpers";
 import type { FetchLike } from "./http";
 import { exchange, revoke } from "./oauth";
+import { SURFACES } from "./schema";
 
 type ExecuteHandler = (
   args: Record<string, unknown>,
@@ -70,13 +72,9 @@ export function buildConnectorConfig(
         // optional `time_min`/`time_max` off it (calendar.rs:125-135), falling
         // back to now-30d..now+90d when absent OR not a string — mirrored here
         // via the SDK's verbatim `raw` args.
-        const str = (k: string): string | undefined =>
-          typeof args.raw?.[k] === "string"
-            ? (args.raw[k])
-            : undefined;
         const window: EventsWindow = {
-          time_min: str("time_min"),
-          time_max: str("time_max"),
+          time_min: rawStr(args.raw, "time_min"),
+          time_max: rawStr(args.raw, "time_max"),
         };
         const r = await fetchEventsPage(token, cursor, window, fetchFn);
         // No cheap total estimate → indeterminate "N synced…" (DEC-5).
@@ -161,7 +159,7 @@ export function buildConnectorConfig(
   return {
     name: "magnis-google",
     version: "1.0.0",
-    surfaces: ["email", "meetings", "contacts"],
+    surfaces: SURFACES,
     mode: "poll",
     intervalSecs: 30,
     fetch: fetchHandler,

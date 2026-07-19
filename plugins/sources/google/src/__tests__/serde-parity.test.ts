@@ -17,10 +17,10 @@
 // surfaces the Rust happily syncs. The "tolerated" tests below pin that.
 
 import { describe, expect, test } from "bun:test";
-import { fetchHistoryChanges, fetchMessagePage, sendMessage } from "./gmail";
-import { fetchEventsPage } from "./calendar";
-import { fetchContactsPage } from "./contacts";
-import type { FetchLike, HttpResponse } from "./http";
+import { fetchHistoryChanges, fetchMessagePage, sendMessage } from "../gmail";
+import { fetchEventsPage } from "../calendar";
+import { fetchContactsPage } from "../contacts";
+import type { FetchLike, HttpResponse } from "../http";
 
 function ok(data: unknown): HttpResponse {
   return {

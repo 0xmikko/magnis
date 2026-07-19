@@ -3,9 +3,9 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { handleMessage, type FetchResult } from "@magnis/connector-sdk";
-import { buildConnectorConfig } from "./connector";
-import { stableContactId } from "./contacts";
-import type { FetchLike } from "./http";
+import { buildConnectorConfig } from "../connector";
+import { stableContactId } from "../contacts";
+import type { FetchLike } from "../http";
 
 const b64url = (s: string) => Buffer.from(s, "utf-8").toString("base64url");
 

@@ -19,6 +19,7 @@ import {
 } from "./gmail";
 import { gcalEventToCalendarEvent, type GcalEvent } from "./calendar";
 import { gpeoplePersonToContact, type GpeoplePerson } from "./contacts";
+import { calendarRemoteId, contactRemoteId } from "./schema";
 
 /** Path of the active fixture file, or undefined for live mode. */
 export function fixturePath(): string | undefined {
@@ -82,7 +83,7 @@ function eventToEnvelope(raw: unknown): Envelope | null {
     return {
       surface: "meetings",
       payload: cal as unknown as Record<string, unknown>,
-      remote_id: `gcal:${ev.id}`,
+      remote_id: calendarRemoteId(ev.id),
       kind: "snapshot",
     };
   } catch (e) {
@@ -100,7 +101,7 @@ function connectionToEnvelope(raw: unknown): Envelope | null {
     return {
       surface: "contacts",
       payload: contact as unknown as Record<string, unknown>,
-      remote_id: `gpeople:${contact.id}`,
+      remote_id: contactRemoteId(contact.id),
       kind: "snapshot",
     };
   } catch (e) {
