@@ -4,7 +4,7 @@ import {
   gcalEventToCalendarEvent,
   type GcalEvent,
 } from "./calendar";
-import type { FetchLike, HttpResponse } from "./http";
+import type { FetchLike, HttpResponse } from "../../http";
 
 function ok(data: unknown): HttpResponse {
   return {

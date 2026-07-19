@@ -11,8 +11,8 @@ import type {
   FetchResult,
 } from "@magnis/connector-sdk";
 import { credsFromMeta, refreshAccessToken } from "./auth";
-import { fetchEventsPage, type EventsWindow } from "./calendar";
-import { fetchContactsPage } from "./contacts";
+import { fetchEventsPage, type EventsWindow } from "./surfaces/meetings/calendar";
+import { fetchContactsPage } from "./surfaces/contacts/contacts";
 import { fixtureExecuteResult, fixtureFetchResult, fixturePath } from "./fixture";
 import {
   downloadAttachment,
@@ -20,7 +20,7 @@ import {
   fetchMessagePage,
   parseMailDraft,
   sendMessage,
-} from "./gmail";
+} from "./surfaces/email/gmail";
 import { rawStr } from "./helpers";
 import type { FetchLike } from "./http";
 import { exchange, revoke } from "./oauth";

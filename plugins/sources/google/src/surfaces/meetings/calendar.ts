@@ -5,9 +5,13 @@
 // (NOT flattened) and `remote_id` is `gcal:{event_id}`.
 
 import type { Envelope } from "@magnis/connector-sdk";
-import { checkRateLimit, fetchWithRetry, type FetchLike } from "./http";
-import { formatUtc } from "./gmail";
-import { mergeProgress, progressCursor } from "./progress";
+import { checkRateLimit, fetchWithRetry, type FetchLike } from "../../http";
+import { formatUtc } from "../../helpers";
+import {
+  mergeProgress,
+  progressCursor,
+  type WindowFetchResult,
+} from "../../progress";
 import { calendarRemoteId } from "./schema";
 import {
   asObject,
@@ -15,7 +19,7 @@ import {
   optObjectArray,
   optString,
   reqString,
-} from "./validate";
+} from "../../validate";
 
 // ── Raw Google Calendar API shapes (camelCase, as served) ─────
 
@@ -182,12 +186,6 @@ async function listEventsPage(
     throw new Error(`Calendar list events failed: ${await resp.text()}`);
   }
   return parseGcalEventsResponse(await resp.json());
-}
-
-export interface WindowFetchResult {
-  envelopes: Envelope[];
-  nextCursor: Record<string, unknown> | null;
-  discovered: number;
 }
 
 export interface EventsWindow {

@@ -12,7 +12,7 @@ import {
   HistoryExpiredError,
   isFatal,
   type FetchLike,
-} from "./http";
+} from "../../http";
 import {
   collectAttachments,
   decodeBase64url,
@@ -22,7 +22,8 @@ import {
   type GmailPart,
   type GmailPayload,
 } from "./mime";
-import { mergeProgress, progressCursor, type Progress } from "./progress";
+import { formatUtc } from "../../helpers";
+import { mergeProgress, progressCursor, type Progress } from "../../progress";
 import {
   asObject,
   defaultObjectArray,
@@ -34,7 +35,7 @@ import {
   optStringArray,
   reqObject,
   reqString,
-} from "./validate";
+} from "../../validate";
 
 /** How many `messages.get` calls to run concurrently when hydrating a page —
  * same fan-out as the Rust GMAIL_FETCH_CONCURRENCY. */
@@ -257,13 +258,7 @@ export interface MailMessage {
 }
 
 // ── Datetime helpers (chrono-compatible RFC3339 Z) ────────────
-
-/** Format a Date the way chrono serializes DateTime<Utc>: RFC3339 with `Z`,
- * fractional seconds only when non-zero. */
-export function formatUtc(d: Date): string {
-  const iso = d.toISOString();
-  return iso.endsWith(".000Z") ? `${iso.slice(0, -5)}Z` : iso;
-}
+// `formatUtc` is shared with the meetings surface → src/helpers.ts.
 
 /** RFC2822 (or RFC3339) Date header → Date, else null. */
 function parseDateHeader(raw: string): Date | null {

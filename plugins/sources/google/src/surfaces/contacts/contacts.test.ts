@@ -7,7 +7,7 @@ import {
   stableContactId,
   type GpeoplePerson,
 } from "./contacts";
-import type { FetchLike, HttpResponse } from "./http";
+import type { FetchLike, HttpResponse } from "../../http";
 
 function ok(data: unknown): HttpResponse {
   return {

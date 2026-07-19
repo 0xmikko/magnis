@@ -11,3 +11,11 @@ export function rawStr(raw: Record<string, unknown> | undefined, key: string): s
   const v = raw?.[key];
   return typeof v === "string" ? v : undefined;
 }
+
+/** Format a Date the way chrono serializes DateTime<Utc>: RFC3339 with `Z`,
+ * fractional seconds only when non-zero. Shared by the email + meetings
+ * surfaces, so it lives in the cross-surface helpers rather than either fetcher. */
+export function formatUtc(d: Date): string {
+  const iso = d.toISOString();
+  return iso.endsWith(".000Z") ? `${iso.slice(0, -5)}Z` : iso;
+}

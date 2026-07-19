@@ -8,6 +8,17 @@
 // - A catchup-style call (`total` absent, prior `discovered = N`) carries `N`
 //   forward — it never emits `discovered: 0`.
 
+import type { Envelope } from "@magnis/connector-sdk";
+
+/** Result of one page of a window/snapshot-paged surface fetch (meetings +
+ * contacts). Shared here — both fetchers return it and both populate its
+ * `nextCursor` via the progress helpers below — rather than in either surface. */
+export interface WindowFetchResult {
+  envelopes: Envelope[];
+  nextCursor: Record<string, unknown> | null;
+  discovered: number;
+}
+
 export interface Progress {
   /** Cumulative count of primary items enumerated so far (prior + this page). */
   discovered: number;

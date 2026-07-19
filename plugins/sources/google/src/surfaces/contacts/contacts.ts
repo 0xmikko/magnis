@@ -11,9 +11,12 @@ import {
   checkRateLimit,
   fetchWithRetry,
   type FetchLike,
-} from "./http";
-import { mergeProgress, progressCursor } from "./progress";
-import type { WindowFetchResult } from "./calendar";
+} from "../../http";
+import {
+  mergeProgress,
+  progressCursor,
+  type WindowFetchResult,
+} from "../../progress";
 import { contactRemoteId } from "./schema";
 import {
   asObject,
@@ -23,7 +26,7 @@ import {
   optBool,
   optString,
   reqString,
-} from "./validate";
+} from "../../validate";
 
 // ── Raw Google People API shapes (camelCase, as served) ───────
 

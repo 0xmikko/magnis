@@ -16,10 +16,17 @@ import {
   flattenMailPayload,
   gmailMessageToMailMessage,
   type GmailMessage,
-} from "./gmail";
-import { gcalEventToCalendarEvent, type GcalEvent } from "./calendar";
-import { gpeoplePersonToContact, type GpeoplePerson } from "./contacts";
-import { calendarRemoteId, contactRemoteId } from "./schema";
+} from "./surfaces/email/gmail";
+import {
+  gcalEventToCalendarEvent,
+  type GcalEvent,
+} from "./surfaces/meetings/calendar";
+import {
+  gpeoplePersonToContact,
+  type GpeoplePerson,
+} from "./surfaces/contacts/contacts";
+import { calendarRemoteId } from "./surfaces/meetings/schema";
+import { contactRemoteId } from "./surfaces/contacts/schema";
 
 /** Path of the active fixture file, or undefined for live mode. */
 export function fixturePath(): string | undefined {

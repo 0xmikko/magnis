@@ -25,7 +25,7 @@ import {
   HistoryExpiredError,
   type FetchLike,
   type HttpResponse,
-} from "./http";
+} from "../../http";
 
 // ── Shared fakes ────────────────────────────────────────────────────────────
 
