@@ -1,21 +1,26 @@
 // Stage 5+6 — sync control + reply composer. Thin @rpc wrappers that delegate
 // to the host graph ops (sync_state / composer), keyed by the calling module.
+// Exercised through @magnis/testkit/module: the passed-in spies are wrapped by
+// mockGraph's Proxy (which forwards args to them), so `expect(spy).toHaveBeen…`
+// still observes the delegated call; any op NOT provided throws.
 
 import { describe, expect, it, vi } from "vitest";
-import type { GraphBatchInput, GraphService, PluginDeps, RpcExecutor } from "@magnis/plugin-sdk";
-import { EmailModule } from "./service.ts";
-import type { EmailCanonical, EmailFacets } from "../types/index.ts";
+import type { GraphBatchInput, RpcExecutor } from "@magnis/plugin-sdk";
+import { mockGraph, mountModule, type GraphOverrides } from "@magnis/testkit/module";
+import { EmailModule } from "../service.ts";
+import type { EmailCanonical, EmailFacets } from "../../types.ts";
 
 function makeModule(
   graph: Partial<Record<string, unknown>>,
   rpc: RpcExecutor = { execute: vi.fn() },
 ): EmailModule {
-  return new EmailModule({
-    graph,
-    ctx: { extension_id: "email", user_id: "u1" },
-    util: {},
+  return mountModule(EmailModule, {
+    graph: mockGraph<EmailFacets, EmailCanonical>(
+      graph as unknown as GraphOverrides<EmailFacets, EmailCanonical>,
+    ),
+    ctx: { extension_id: "email" },
     rpc,
-  } as unknown as PluginDeps<EmailFacets, EmailCanonical>);
+  }).module;
 }
 
 describe("email sync control (Stage 5)", () => {

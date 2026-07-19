@@ -1,52 +1,37 @@
 // Stage 3 — email ingest (@syncHandler): apply_batch parity + DB-access
-// guarantees. Unit-tests the module with a mock GraphService whose ops are
-// vi.fn() spies. Asserts the fragment shape (entities/links/addresses folded
-// in), idempotency seams (external_ids), live trigger.check parity, delete,
-// empty-user skip, and the op-count gate INV-DB-3.
+// guarantees. Exercised through @magnis/testkit/module. Asserts the fragment
+// shape (entities/links/addresses folded in), idempotency seams (external_ids),
+// live trigger.check parity, delete, empty-user skip, and the op-count gate
+// INV-DB-3.
+//
+// mockGraph is a throwing Proxy: the per-item write ops (create_entity/
+// attach_facet/add_link) are NOT arranged, so any per-item crossing throws —
+// that guarantee REPLACES the old reject() spies AND their toHaveBeenCalledTimes(0)
+// assertions (an unarranged op has no spy to count).
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import type {
-  BatchEntityInput,
-  BatchLinkInput,
-  GraphBatchInput,
-  GraphBatchResult,
-  GraphService,
-  PluginDeps,
-} from "@magnis/plugin-sdk";
-import { EmailModule } from "./service.ts";
-import type { EmailCanonical, EmailFacets, SyncEnvelope } from "../types/index.ts";
+import { beforeEach, describe, expect, it } from "vitest";
+import type { BatchEntityInput, BatchLinkInput, GraphBatchInput } from "@magnis/plugin-sdk";
+import { mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
+import { EmailModule } from "../service.ts";
+import type { EmailCanonical, EmailFacets, SyncEnvelope } from "../../types.ts";
 
-function makeGraph(): GraphService<EmailFacets, EmailCanonical> {
-  const reject =
-    (name: string) =>
-    (..._a: unknown[]): never => {
-      throw new Error(`unexpected graph op on ingest path: ${name}`);
-    };
-  return {
+type G = MockGraph<EmailFacets, EmailCanonical>;
+
+function ingestGraph(): G {
+  return mockGraph<EmailFacets, EmailCanonical>({
     // apply_batch echoes each key → a deterministic id so post-apply can resolve.
-    apply_batch: vi.fn<(a: GraphBatchInput) => Promise<GraphBatchResult>>(async (frag) => ({
-      ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
-      created: frag.entities.length,
-      updated: 0,
-      links_added: frag.links?.length ?? 0,
-      dropped_keys: [],
-    })),
-    file_register: vi.fn<(a: unknown) => Promise<string>>().mockResolvedValue("file-id"),
-    find_by_external_id: vi.fn<(a: string) => Promise<string | null>>().mockResolvedValue("existing-id"),
-    delete_entity: vi.fn<(a: string) => Promise<void>>().mockResolvedValue(undefined),
-    create_entity: vi.fn(reject("create_entity")),
-    attach_facet: vi.fn(reject("attach_facet")),
-    add_link: vi.fn(reject("add_link")),
-  } as unknown as GraphService<EmailFacets, EmailCanonical>;
-}
-
-function makeModule(graph: GraphService<EmailFacets, EmailCanonical>): EmailModule {
-  return new EmailModule({
-    graph,
-    ctx: { extension_id: "email", user_id: "u1" },
-    util: {},
-    rpc: { call: vi.fn() },
-  } as unknown as PluginDeps<EmailFacets, EmailCanonical>);
+    apply_batch: (frag) =>
+      Promise.resolve({
+        ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
+        created: frag.entities.length,
+        updated: 0,
+        links_added: frag.links?.length ?? 0,
+        dropped_keys: [],
+      }),
+    file_register: () => Promise.resolve("file-id"),
+    find_by_external_id: () => Promise.resolve("existing-id"),
+    delete_entity: () => Promise.resolve(undefined),
+  });
 }
 
 const env = (over: Partial<SyncEnvelope> & { payload?: Record<string, unknown> }): SyncEnvelope => ({
@@ -75,11 +60,11 @@ const msgPayload = (over: Record<string, unknown> = {}) => ({
 });
 
 describe("email ingest — apply_batch shape (tst_be_emailingest_001)", () => {
-  let graph: GraphService<EmailFacets, EmailCanonical>;
+  let graph: G;
   let mod: EmailModule;
   beforeEach(() => {
-    graph = makeGraph();
-    mod = makeModule(graph);
+    graph = ingestGraph();
+    mod = mountModule(EmailModule, { graph, ctx: { extension_id: "email" } }).module;
   });
 
   it("folds messages + unique addresses + sent_from/sent_to links into one batch", async () => {
@@ -90,8 +75,8 @@ describe("email ingest — apply_batch shape (tst_be_emailingest_001)", () => {
       ],
     });
 
-    expect(graph.apply_batch).toHaveBeenCalledTimes(1);
-    const frag = (graph.apply_batch as ReturnType<typeof vi.fn>).mock.calls[0][0] as GraphBatchInput;
+    expect(graph.spies.apply_batch).toHaveBeenCalledTimes(1);
+    const frag = graph.spies.apply_batch.mock.calls[0][0] as GraphBatchInput;
 
     const msgs = frag.entities.filter((e: BatchEntityInput) => e.schema_id === "email.message");
     const addrs = frag.entities.filter((e: BatchEntityInput) => e.schema_id === "email.address");
@@ -134,7 +119,7 @@ describe("email ingest — apply_batch shape (tst_be_emailingest_001)", () => {
         }),
       ],
     });
-    const frag = (graph.apply_batch as ReturnType<typeof vi.fn>).mock.calls[0][0] as GraphBatchInput;
+    const frag = graph.spies.apply_batch.mock.calls[0][0] as GraphBatchInput;
     const addrIdx = frag.entities
       .filter((e: BatchEntityInput) => e.schema_id === "email.address")
       .map((e) => e.idx)
@@ -179,8 +164,8 @@ describe("email ingest — apply_batch shape (tst_be_emailingest_001)", () => {
         }),
       ],
     });
-    expect(graph.file_register).toHaveBeenCalledTimes(1);
-    const call = (graph.file_register as ReturnType<typeof vi.fn>).mock.calls[0][0] as Record<string, unknown>;
+    expect(graph.spies.file_register).toHaveBeenCalledTimes(1);
+    const call = graph.spies.file_register.mock.calls[0][0] as Record<string, unknown>;
     expect(call.external_id).toBe("file:gmail:acct-1:m1:att-1");
     expect(call.parent_external_id).toBe("m1");
     expect(call.link_kind).toBe("attachment");
@@ -208,18 +193,18 @@ describe("email ingest — apply_batch shape (tst_be_emailingest_001)", () => {
         }),
       ],
     });
-    const call = (graph.file_register as ReturnType<typeof vi.fn>).mock.calls[0][0] as Record<string, unknown>;
+    const call = graph.spies.file_register.mock.calls[0][0] as Record<string, unknown>;
     expect(call.source_module).toBe("google-ts");
     expect(call.source_surface).toBe("email");
   });
 });
 
 describe("email ingest — trigger / delete / empty-user parity", () => {
-  let graph: GraphService<EmailFacets, EmailCanonical>;
+  let graph: G;
   let mod: EmailModule;
   beforeEach(() => {
-    graph = makeGraph();
-    mod = makeModule(graph);
+    graph = ingestGraph();
+    mod = mountModule(EmailModule, { graph, ctx: { extension_id: "email" } }).module;
   });
 
   it("LIVE → one trigger.check (touched = message + recipients + sender); SNAPSHOT → none", async () => {
@@ -245,24 +230,24 @@ describe("email ingest — trigger / delete / empty-user parity", () => {
 
   it("DELETE → find_by_external_id + delete_entity, no apply_batch", async () => {
     await mod.ingest({ envelopes: [env({ kind: "delete", remote_id: "m-del", payload: {} })] });
-    expect(graph.find_by_external_id).toHaveBeenCalledTimes(1);
-    expect(graph.delete_entity).toHaveBeenCalledWith("existing-id");
-    expect(graph.apply_batch).toHaveBeenCalledTimes(0);
+    expect(graph.spies.find_by_external_id).toHaveBeenCalledTimes(1);
+    expect(graph.spies.delete_entity).toHaveBeenCalledWith("existing-id");
+    expect(graph.spies.apply_batch).toHaveBeenCalledTimes(0);
   });
 
   it("empty user_id → skipped (no batch, no entity)", async () => {
     const r = await mod.ingest({ envelopes: [env({ user_id: "", remote_id: "m1", payload: msgPayload() })] });
-    expect(graph.apply_batch).toHaveBeenCalledTimes(0);
+    expect(graph.spies.apply_batch).toHaveBeenCalledTimes(0);
     expect(r.trigger_checks).toHaveLength(0);
   });
 });
 
 describe("email ingest — DB-access guarantees (tst_be_emaildb_005 / INV-DB-3)", () => {
-  let graph: GraphService<EmailFacets, EmailCanonical>;
+  let graph: G;
   let mod: EmailModule;
   beforeEach(() => {
-    graph = makeGraph();
-    mod = makeModule(graph);
+    graph = ingestGraph();
+    mod = mountModule(EmailModule, { graph, ctx: { extension_id: "email" } }).module;
   });
 
   it("small page (msgs+addresses < 200) = exactly 1 apply_batch, 0 per-item crossings", async () => {
@@ -273,11 +258,11 @@ describe("email ingest — DB-access guarantees (tst_be_emaildb_005 / INV-DB-3)"
         env({ remote_id: "m3", payload: msgPayload({ message_id: "mail-3" }) }),
       ],
     });
-    expect(graph.apply_batch).toHaveBeenCalledTimes(1);
-    expect(graph.create_entity).toHaveBeenCalledTimes(0);
-    expect(graph.add_link).toHaveBeenCalledTimes(0);
-    expect(graph.attach_facet).toHaveBeenCalledTimes(0);
-    expect(graph.find_by_external_id).toHaveBeenCalledTimes(0); // delete-only
+    expect(graph.spies.apply_batch).toHaveBeenCalledTimes(1);
+    expect(graph.spies.find_by_external_id).toHaveBeenCalledTimes(0); // delete-only
+    // create_entity / add_link / attach_facet (the per-item crossings) are
+    // forbidden, unarranged ops — the throwing mockGraph guarantees they are
+    // never hit; there is no spy to assert 0 against.
   });
 
   it("large page chunks by TOTAL entities — >1 apply_batch, each ≤200, all messages applied", async () => {
@@ -298,7 +283,7 @@ describe("email ingest — DB-access guarantees (tst_be_emaildb_005 / INV-DB-3)"
     );
     await mod.ingest({ envelopes });
 
-    const calls = (graph.apply_batch as ReturnType<typeof vi.fn>).mock.calls;
+    const calls = graph.spies.apply_batch.mock.calls;
     expect(calls.length).toBeGreaterThan(1); // chunked, not one giant batch
     const seenMsgKeys = new Set<string>();
     for (const [frag] of calls as [GraphBatchInput][]) {
