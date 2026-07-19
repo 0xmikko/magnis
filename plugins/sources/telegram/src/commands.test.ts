@@ -320,7 +320,9 @@ describe("bootstrap", () => {
         return { dialogs: [], next_offset: null, total: null };
       },
     });
-    expect(seen).toEqual({
+    // `seen` is assigned inside the pager callback, which TS control-flow can't
+    // see — it narrows to `null`. Restore the declared type for the assertion.
+    expect(seen as DialogOffset | null).toEqual({
       offset_date: 1234,
       offset_id: 99,
       offset_peer: { ty: "channel", id: -100500, access_hash: 42 },

@@ -107,11 +107,18 @@ describe("StateMock fetch ops", () => {
         { op: "fetch_ok", envelopes: 0, total: null, total_exact: null },
       ],
     });
-    const withTotals = (await fetchStateMock({ surface: "smk" })) as Record<string, unknown>;
+    // Probe runtime-only keys (e.g. total_exact) not on the FetchResult type.
+    const withTotals = (await fetchStateMock({ surface: "smk" })) as unknown as Record<
+      string,
+      unknown
+    >;
     expect(withTotals.total).toBe(57);
     expect(withTotals.total_exact).toBe(false);
 
-    const without = (await fetchStateMock({ surface: "smk" })) as Record<string, unknown>;
+    const without = (await fetchStateMock({ surface: "smk" })) as unknown as Record<
+      string,
+      unknown
+    >;
     expect(without).not.toHaveProperty("total");
     expect(without).not.toHaveProperty("total_exact");
   });

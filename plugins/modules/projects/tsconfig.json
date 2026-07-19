@@ -11,9 +11,5 @@
     "types/**/*.ts",
     "ui/**/*.ts",
     "ui/**/*.tsx"
-  ],
-  "exclude": [
-    "module/**/*.test.ts",
-    "ui/__tests__"
   ]
 }

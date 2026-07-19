@@ -22,7 +22,7 @@ function makeModule(listEntities: any) {
 
 describe("tst_fe_tg_messages_list_cap_001 — messages.list hard cap", () => {
   it("clamps a huge limit to 50 (no full-history dump)", async () => {
-    const spy = vi.fn(async () => ({ items: [], total: 0 }));
+    const spy = vi.fn(async (_params: { limit?: number }) => ({ items: [], total: 0 }));
     const mod = makeModule(spy);
     await (mod as any).messagesList({ limit: 100000 });
     expect(spy).toHaveBeenCalledTimes(1);
@@ -30,14 +30,14 @@ describe("tst_fe_tg_messages_list_cap_001 — messages.list hard cap", () => {
   });
 
   it("defaults to 50 when no limit is given", async () => {
-    const spy = vi.fn(async () => ({ items: [], total: 0 }));
+    const spy = vi.fn(async (_params: { limit?: number }) => ({ items: [], total: 0 }));
     const mod = makeModule(spy);
     await (mod as any).messagesList({});
     expect(spy.mock.calls[0][0].limit).toBe(50);
   });
 
   it("passes through a small explicit limit unchanged", async () => {
-    const spy = vi.fn(async () => ({ items: [], total: 0 }));
+    const spy = vi.fn(async (_params: { limit?: number }) => ({ items: [], total: 0 }));
     const mod = makeModule(spy);
     await (mod as any).messagesList({ limit: 10 });
     expect(spy.mock.calls[0][0].limit).toBe(10);

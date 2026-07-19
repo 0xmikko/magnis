@@ -30,13 +30,13 @@ function makeGraph(): GraphService<NoteFacets, NoteCanonical> {
       throw new Error(`unexpected graph op on read path: ${name}`);
     };
   return {
-    list_entities_window: vi.fn<[unknown], Promise<WindowPage>>(),
-    get_entity_full: vi.fn<[string, unknown?], Promise<EntityDetail | null>>(),
-    get_entities: vi.fn<[string[]], Promise<RawEntity[]>>().mockResolvedValue([]),
-    search_entities_by_name: vi.fn<[unknown], Promise<RawEntity[]>>(),
-    list_facets_for_entities: vi.fn<[string[]], Promise<FacetRecord[]>>(),
-    list_canonical_for_entities: vi.fn<[string[]], Promise<CanonicalRecord[]>>(),
-    get_canonical: vi.fn<[string, string[]?], Promise<Partial<NoteCanonical>>>().mockResolvedValue({}),
+    list_entities_window: vi.fn<(a: unknown) => Promise<WindowPage>>(),
+    get_entity_full: vi.fn<(a: string, b?: unknown) => Promise<EntityDetail | null>>(),
+    get_entities: vi.fn<(a: string[]) => Promise<RawEntity[]>>().mockResolvedValue([]),
+    search_entities_by_name: vi.fn<(a: unknown) => Promise<RawEntity[]>>(),
+    list_facets_for_entities: vi.fn<(a: string[]) => Promise<FacetRecord[]>>(),
+    list_canonical_for_entities: vi.fn<(a: string[]) => Promise<CanonicalRecord[]>>(),
+    get_canonical: vi.fn<(a: string, b?: string[]) => Promise<Partial<NoteCanonical>>>().mockResolvedValue({}),
     // old N+1 ops — must never be hit on the read path
     list_facets_for_entity: vi.fn(reject("list_facets_for_entity")),
     get_entity: vi.fn(reject("get_entity")),

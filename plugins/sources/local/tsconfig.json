@@ -9,9 +9,5 @@
     "src/**/*.ts",
     "src/**/*.tsx",
     "auth/**/*.tsx"
-  ],
-  "exclude": [
-    "**/*.test.ts",
-    "**/*.test.tsx"
   ]
 }

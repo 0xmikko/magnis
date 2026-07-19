@@ -5,6 +5,5 @@
     "composite": false,
     "experimentalDecorators": true
   },
-  "include": ["**/*.ts"],
-  "exclude": ["**/*.test.ts"]
+  "include": ["**/*.ts"]
 }

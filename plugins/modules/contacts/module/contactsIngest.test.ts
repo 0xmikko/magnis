@@ -35,7 +35,7 @@ function makeGraph(): GraphService<ContactFacets, ContactCanonical> {
     };
   return {
     // apply_batch echoes each key → a deterministic id.
-    apply_batch: vi.fn<[GraphBatchInput], Promise<GraphBatchResult>>(async (frag) => ({
+    apply_batch: vi.fn<(a: GraphBatchInput) => Promise<GraphBatchResult>>(async (frag) => ({
       ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
       created: frag.entities.length,
       updated: 0,

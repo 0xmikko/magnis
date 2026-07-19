@@ -11,7 +11,7 @@ import type { FileCanonical, FileFacets } from "../types/index.ts";
 
 function makeGraph() {
   return {
-    get_entity_full: vi.fn<[string, unknown?], Promise<EntityDetail | null>>(),
+    get_entity_full: vi.fn<(a: string, b?: unknown) => Promise<EntityDetail | null>>(),
     add_link: vi.fn().mockResolvedValue(undefined),
     list_entities_window: vi.fn(),
     list_entities_by_facet_field: vi.fn(),

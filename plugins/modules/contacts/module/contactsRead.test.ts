@@ -31,19 +31,19 @@ function makeGraph(): GraphService<ContactFacets, ContactCanonical> {
       throw new Error(`unexpected graph op on read path: ${name}`);
     };
   return {
-    list_entities: vi.fn<[unknown], Promise<EntityPage>>(),
+    list_entities: vi.fn<(a: unknown) => Promise<EntityPage>>(),
     // Default (hide-group) list path filters tier at the query level via the
     // windowed read primitive — exact total + full pages.
-    list_entities_window: vi.fn<[unknown], Promise<WindowPage>>(),
-    search_entities_by_name: vi.fn<[unknown], Promise<RawEntity[]>>(),
-    list_canonical_for_entities: vi.fn<[string[]], Promise<CanonicalRecord[]>>().mockResolvedValue([]),
-    list_facets_for_entities: vi.fn<[string[]], Promise<FacetRecord[]>>().mockResolvedValue([]),
-    get_entity_full: vi.fn<[string, unknown?], Promise<EntityDetail | null>>(),
-    get_canonical: vi.fn<[string, string[]?], Promise<Partial<ContactCanonical>>>().mockResolvedValue({}),
-    get_entities: vi.fn<[string[]], Promise<RawEntity[]>>().mockResolvedValue([]),
+    list_entities_window: vi.fn<(a: unknown) => Promise<WindowPage>>(),
+    search_entities_by_name: vi.fn<(a: unknown) => Promise<RawEntity[]>>(),
+    list_canonical_for_entities: vi.fn<(a: string[]) => Promise<CanonicalRecord[]>>().mockResolvedValue([]),
+    list_facets_for_entities: vi.fn<(a: string[]) => Promise<FacetRecord[]>>().mockResolvedValue([]),
+    get_entity_full: vi.fn<(a: string, b?: unknown) => Promise<EntityDetail | null>>(),
+    get_canonical: vi.fn<(a: string, b?: string[]) => Promise<Partial<ContactCanonical>>>().mockResolvedValue({}),
+    get_entities: vi.fn<(a: string[]) => Promise<RawEntity[]>>().mockResolvedValue([]),
     // get reads ALL facets via list_facets_for_entity (one entity) — allowed in
     // get; the list paths must use the batch list_facets_for_entities instead.
-    list_facets_for_entity: vi.fn<[string], Promise<FacetRecord[]>>().mockResolvedValue([]),
+    list_facets_for_entity: vi.fn<(a: string) => Promise<FacetRecord[]>>().mockResolvedValue([]),
     // old N+1 op — must never be hit on the read path
     get_entity: vi.fn(reject("get_entity")),
   } as unknown as GraphService<ContactFacets, ContactCanonical>;

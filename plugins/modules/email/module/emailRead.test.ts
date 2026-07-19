@@ -26,11 +26,11 @@ function makeGraph(): GraphService<EmailFacets, EmailCanonical> {
       throw new Error(`unexpected graph op on read path: ${name}`);
     };
   return {
-    list_entities_window: vi.fn<[unknown], Promise<WindowPage>>(),
-    get_entity_full: vi.fn<[string, unknown?], Promise<EntityDetail | null>>(),
-    get_entities: vi.fn<[string[]], Promise<RawEntity[]>>().mockResolvedValue([]),
-    search_entities_by_name: vi.fn<[unknown], Promise<RawEntity[]>>(),
-    list_facets_for_entities: vi.fn<[string[]], Promise<FacetRecord[]>>(),
+    list_entities_window: vi.fn<(a: unknown) => Promise<WindowPage>>(),
+    get_entity_full: vi.fn<(a: string, b?: unknown) => Promise<EntityDetail | null>>(),
+    get_entities: vi.fn<(a: string[]) => Promise<RawEntity[]>>().mockResolvedValue([]),
+    search_entities_by_name: vi.fn<(a: unknown) => Promise<RawEntity[]>>(),
+    list_facets_for_entities: vi.fn<(a: string[]) => Promise<FacetRecord[]>>(),
     list_facets_for_entity: vi.fn(reject("list_facets_for_entity")),
     list_canonical_for_entity: vi.fn(reject("list_canonical_for_entity")),
     list_entities: vi.fn(reject("list_entities")),

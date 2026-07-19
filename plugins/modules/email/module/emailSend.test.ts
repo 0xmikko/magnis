@@ -16,16 +16,16 @@ import type { EmailCanonical, EmailFacets } from "../types/index.ts";
 
 function makeGraph(over: Partial<Record<string, unknown>> = {}): GraphService<EmailFacets, EmailCanonical> {
   return {
-    apply_batch: vi.fn<[GraphBatchInput], Promise<GraphBatchResult>>(async (frag) => ({
+    apply_batch: vi.fn<(a: GraphBatchInput) => Promise<GraphBatchResult>>(async (frag) => ({
       ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
       created: frag.entities.length,
       updated: 0,
       links_added: frag.links?.length ?? 0,
       dropped_keys: [],
     })),
-    add_link: vi.fn<[unknown], Promise<void>>().mockResolvedValue(undefined),
-    source_command: vi.fn<[unknown, unknown?], Promise<Record<string, unknown>>>().mockResolvedValue({ message_id: "src-1" }),
-    get_entity_full: vi.fn<[string, unknown?], Promise<EntityDetail | null>>(),
+    add_link: vi.fn<(a: unknown) => Promise<void>>().mockResolvedValue(undefined),
+    source_command: vi.fn<(a: unknown, b?: unknown) => Promise<Record<string, unknown>>>().mockResolvedValue({ message_id: "src-1" }),
+    get_entity_full: vi.fn<(a: string, b?: unknown) => Promise<EntityDetail | null>>(),
     ...over,
   } as unknown as GraphService<EmailFacets, EmailCanonical>;
 }

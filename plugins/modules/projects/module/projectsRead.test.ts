@@ -31,12 +31,12 @@ function makeGraph(): GraphService<ProjectFacets, ProjectCanonical> {
     };
   return {
     // no-search page query — keeps pinned-first (the window does not).
-    list_entities: vi.fn<[unknown], Promise<EntityPage>>(),
-    search_entities_by_name: vi.fn<[unknown], Promise<RawEntity[]>>(),
-    list_canonical_for_entities: vi.fn<[string[]], Promise<CanonicalRecord[]>>().mockResolvedValue([]),
-    list_linked: vi.fn<[unknown], Promise<LinkedPage>>(),
+    list_entities: vi.fn<(a: unknown) => Promise<EntityPage>>(),
+    search_entities_by_name: vi.fn<(a: unknown) => Promise<RawEntity[]>>(),
+    list_canonical_for_entities: vi.fn<(a: string[]) => Promise<CanonicalRecord[]>>().mockResolvedValue([]),
+    list_linked: vi.fn<(a: unknown) => Promise<LinkedPage>>(),
     // requireOwned uses get_entity once on the listForEntity path — allowed.
-    get_entity: vi.fn<[string], Promise<RawEntity | null>>(),
+    get_entity: vi.fn<(a: string) => Promise<RawEntity | null>>(),
     // ops these paths must never hit
     list_entities_window: vi.fn(reject("list_entities_window")),
     list_facets_for_entities: vi.fn(reject("list_facets_for_entities")),

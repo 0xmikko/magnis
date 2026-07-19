@@ -24,16 +24,16 @@ function makeGraph(): GraphService<EmailFacets, EmailCanonical> {
     };
   return {
     // apply_batch echoes each key → a deterministic id so post-apply can resolve.
-    apply_batch: vi.fn<[GraphBatchInput], Promise<GraphBatchResult>>(async (frag) => ({
+    apply_batch: vi.fn<(a: GraphBatchInput) => Promise<GraphBatchResult>>(async (frag) => ({
       ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
       created: frag.entities.length,
       updated: 0,
       links_added: frag.links?.length ?? 0,
       dropped_keys: [],
     })),
-    file_register: vi.fn<[unknown], Promise<string>>().mockResolvedValue("file-id"),
-    find_by_external_id: vi.fn<[string], Promise<string | null>>().mockResolvedValue("existing-id"),
-    delete_entity: vi.fn<[string], Promise<void>>().mockResolvedValue(undefined),
+    file_register: vi.fn<(a: unknown) => Promise<string>>().mockResolvedValue("file-id"),
+    find_by_external_id: vi.fn<(a: string) => Promise<string | null>>().mockResolvedValue("existing-id"),
+    delete_entity: vi.fn<(a: string) => Promise<void>>().mockResolvedValue(undefined),
     create_entity: vi.fn(reject("create_entity")),
     attach_facet: vi.fn(reject("attach_facet")),
     add_link: vi.fn(reject("add_link")),
