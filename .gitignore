@@ -3,3 +3,4 @@ target/
 plugins_dist/
 *.log
 catalog/
+.worktrees/

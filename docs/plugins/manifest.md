@@ -1,47 +1,61 @@
-# `manifest.json` Reference
+# `manifest.toml` Reference
 
-Every plugin has a `manifest.json` at its root. It is the **single source of
+Every plugin has a `manifest.toml` at its root. It is the **single source of
 truth** for a module's schemas, what it's allowed to do (capabilities), and
 what it exposes (surfaces). The Rust struct is `Manifest` in
-`backend/src/plugin_runtime/manifest.rs`; `Manifest::parse` validates it at
-install time. Use `plugins/modules/contacts/manifest.json` as the canonical example.
+`backend/src/plugin_runtime/manifest.rs`; `Manifest::parse_toml` validates it at
+install time. Use `plugins/modules/contacts/manifest.toml` as the canonical example.
+
+TOML is chosen over JSON for the same reason Cargo did: it is strictly typed
+(integers vs floats, native strings, no ambiguous coercion) **and** allows
+comments, so every non-obvious field can explain itself in place. Remember TOML's
+one ordering rule: all bare top-level keys (`id`, `version`, `owns`, …) must come
+**before** any `[table]`.
 
 ## Top level
 
-```jsonc
-{
-  "id": "contacts",                 // plugin id == RPC prefix == route key
-  "version": "0.1.0",
-  "magnis_api_version": "1",        // host API version this targets
-  "owns": ["contacts.person"],      // entity schema ids this module owns
-  "schemas": { "entities": [...], "facets": [...], "links": [...] },
-  "capabilities": { ... },
-  "requires_schemas": [],           // schemas from OTHER modules it reads/links
-  "surfaces": { "rpc_handlers": [...], "tools": [...], "sync_handlers": [] },
-  "entry": { "module": "module/index.ts", "ui": "ui/index.tsx" }
-}
+```toml
+id = "contacts"                # plugin id == RPC prefix == route key
+version = "0.1.0"
+magnis_api_version = "0.1.0"   # host SDK version this targets
+owns = ["contacts.*"]          # ownership globs; every owned schema id must match one
+requires_schemas = []          # schemas from OTHER modules it reads/links (informational)
+
+[schemas]        # entities + versioned facets (json_schema + canonical mappings) + links
+[capabilities]   # the security boundary — every array defaults to empty (deny)
+[surfaces]       # rpc_handlers / tools / sync_handlers
+
+[entry]
+module = "module/index.ts"
+ui = "ui/index.tsx"
 ```
 
 ## `schemas` — the data model the module owns
 
-```jsonc
-"schemas": {
-  "entities": [
-    { "id": "contacts.person", "name": "Person", "description": "..." }
-  ],
-  "facets": [
-    {
-      "id": "contacts.person.email",      // facet schema id (dotted)
-      "entity_schema": "contacts.person", // which entity it attaches to
-      "version": 1,
-      "json_schema": { "type": "object", "properties": { ... } },
-      "mappings": [ /* canonical mappings — see below */ ]
-    }
-  ],
-  "links": [
-    { "kind": "has_email", "from": "contacts.person", "to": "email.address" }
-  ]
-}
+```toml
+[[schemas.entities]]
+id = "contacts.person"
+name = "Person"
+description = "..."
+
+[[schemas.facets]]
+id = "contacts.person.email"       # facet schema id (dotted)
+entity_schema = "contacts.person"  # which entity it attaches to
+version = 1
+
+[schemas.facets.json_schema]
+type = "object"
+# properties nest as [schemas.facets.json_schema.properties.<field>]
+
+[[schemas.facets.mappings]]         # canonical mappings — see below
+facet_path = "email"
+canonical_key = "person.emails"
+strategy = "collection"
+
+[[schemas.links]]
+kind = "has_email"
+from = "contacts.person"
+to = "email.address"
 ```
 
 ### Canonical mappings (DEC-16)
@@ -63,12 +77,15 @@ Each mapping (`core::CanonicalMapping`, `backend/src/core/schema.rs`):
 
 Real example — the contacts email facet:
 
-```jsonc
-// facets[].mappings for "contacts.person.email"
-[ { "facet_path": "email", "canonical_key": "person.emails", "strategy": "collection" } ]
+```toml
+# schemas.facets[].mappings for "contacts.person.email"
+[[schemas.facets.mappings]]
+facet_path = "email"
+canonical_key = "person.emails"
+strategy = "collection"
 ```
 
-`strategy: "collection"` is why the canonical key is the **plural** `person.emails`
+`strategy = "collection"` is why the canonical key is the **plural** `person.emails`
 (a deduped list), not a scalar `person.email`. Pick `collection` for fields a
 person can have many of (emails, phones, handles); `single_aligned` for
 single-valued truth (full name, birthday).
@@ -110,8 +127,10 @@ Method names **must** be prefixed with `<id>.` — the SDK glues the prefix from
 
 ## `entry`
 
-```jsonc
-"entry": { "module": "module/index.ts", "ui": "ui/index.tsx" }
+```toml
+[entry]
+module = "module/index.ts"
+ui = "ui/index.tsx"
 ```
 
 `module` is the backend entry the isolate loads; `ui` is the file the frontend
