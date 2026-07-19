@@ -38,13 +38,8 @@ import type {
   TriggerListItem,
   UpdateTriggerParams,
   WatchedEntity,
-} from "../types/index.ts";
-
-const ENTITY = "triggers.trigger";
-const CONFIG = "triggers.trigger.config";
-const EXECUTION = "triggers.trigger.execution";
-const WATCHES = "watches";
-const BELONGS_TO = "belongs_to";
+} from "../types.ts";
+import { BELONGS_TO, TRIGGER, TRIGGER_CONFIG, TRIGGER_EXECUTION, WATCHES } from "../schema.ts";
 
 export class TriggersModule {
   private readonly graph: GraphService<TriggerFacets>;
@@ -133,7 +128,7 @@ export class TriggersModule {
       if (!episode) throw new Error(`episode not found: ${params.episode_id}`);
     }
 
-    const entity = await this.graph.create_entity({ schema_id: ENTITY, name });
+    const entity = await this.graph.create_entity({ schema_id: TRIGGER, name });
 
     const config: TriggerConfigData = {
       name,
@@ -148,7 +143,7 @@ export class TriggersModule {
     if (params.expires_at !== undefined) config.expires_at = params.expires_at;
     if (params.max_wait_seconds !== undefined) config.max_wait_seconds = params.max_wait_seconds;
     if (params.max_firings !== undefined) config.max_firings = params.max_firings;
-    await this.graph.attach_facet({ entity_id: entity.id, schema_id: CONFIG, data: config });
+    await this.graph.attach_facet({ entity_id: entity.id, schema_id: TRIGGER_CONFIG, data: config });
 
     for (const target of watch_entity_ids) {
       await this.graph.add_link({ from_id: entity.id, to_id: target, kind: WATCHES });
@@ -167,7 +162,7 @@ export class TriggersModule {
       action_prompt,
       firing_count: 0,
       last_fired_at: null,
-      schema_id: ENTITY,
+      schema_id: TRIGGER,
       created_at: entity.created_at ?? new Date().toISOString(),
       episode_id: params.episode_id ?? null,
     };
@@ -201,11 +196,11 @@ export class TriggersModule {
     },
   })
   async list(params: ListTriggersParams): Promise<TriggerListItem[]> {
-    const page = await this.graph.list_entities({ schema_id: ENTITY, order: "date", limit: 1000 });
+    const page = await this.graph.list_entities({ schema_id: TRIGGER, order: "date", limit: 1000 });
     const items: TriggerListItem[] = [];
     for (const entity of page.items) {
       const detail = await this.graph.get_entity_full(entity.id, { links: true });
-      if (detail?.entity.schema_id !== ENTITY) continue;
+      if (detail?.entity.schema_id !== TRIGGER) continue;
       const config = this.configOf(detail);
       if (!config) continue;
       if (params.status && config.status !== params.status) continue;
@@ -253,7 +248,7 @@ export class TriggersModule {
     if (params.max_wait_seconds !== undefined) config.max_wait_seconds = params.max_wait_seconds;
     if (params.max_firings !== undefined) config.max_firings = params.max_firings;
 
-    await this.graph.attach_facet({ entity_id: params.id, schema_id: CONFIG, data: config });
+    await this.graph.attach_facet({ entity_id: params.id, schema_id: TRIGGER_CONFIG, data: config });
     await this.invalidateCache();
 
     const fresh = await this.requireTrigger(params.id);
@@ -358,7 +353,7 @@ export class TriggersModule {
         if (seen.has(triggerId)) continue;
         seen.add(triggerId);
         const detail = await this.graph.get_entity_full(triggerId, { links: true });
-        if (detail?.entity.schema_id !== ENTITY) continue;
+        if (detail?.entity.schema_id !== TRIGGER) continue;
         const config = this.configOf(detail);
         if (!config) continue;
         items.push(await this.listItem(detail, config));
@@ -384,7 +379,7 @@ export class TriggersModule {
     const limit = params.limit ?? 50;
     const facets = await this.graph.list_facets_for_entity(params.trigger_id);
     const executions = facets
-      .filter((f) => f.schema_id === EXECUTION)
+      .filter((f) => f.schema_id === TRIGGER_EXECUTION)
       .map((f) => f.data as TriggerExecutionData)
       .sort((a, b) => (a.fired_at < b.fired_at ? 1 : a.fired_at > b.fired_at ? -1 : 0));
     return executions.slice(0, limit);
@@ -403,14 +398,14 @@ export class TriggersModule {
   /// triggers tool must never touch a foreign entity (NotFound parity).
   private async requireTrigger(id: string): Promise<EntityDetail> {
     const detail = await this.graph.get_entity_full(id, { links: true });
-    if (detail?.entity.schema_id !== ENTITY) {
+    if (detail?.entity.schema_id !== TRIGGER) {
       throw new Error(`trigger not found: ${id}`);
     }
     return detail;
   }
 
   private configOf(detail: EntityDetail): TriggerConfigData | null {
-    const facet = detail.facets.find((f) => f.schema_id === CONFIG);
+    const facet = detail.facets.find((f) => f.schema_id === TRIGGER_CONFIG);
     return facet ? (facet.data as TriggerConfigData) : null;
   }
 
@@ -431,7 +426,7 @@ export class TriggersModule {
       }
     }
     return {
-      schema_id: ENTITY,
+      schema_id: TRIGGER,
       id: detail.entity.id,
       name: config.name,
       status: config.status,
