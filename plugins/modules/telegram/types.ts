@@ -177,3 +177,17 @@ export interface TelegramCanonical {
   "telegram.message.text": string;
   "telegram.message.sender": string;
 }
+
+/// A trigger.check event the host PluginModuleController bridge forwards to the
+/// event_bus for LIVE messages (mirrors native ingest.rs). The trigger
+/// evaluator consumes it; bulk Snapshot/backfill ingests never emit one.
+export interface TriggerCheck {
+  type: "trigger.check";
+  event_kind: "new_message";
+  schema_id: string;
+  entity_id: string;
+  phase: "live";
+  touched_entity_ids: string[];
+  user_id: string;
+  context: { text: string; sender_name: string };
+}

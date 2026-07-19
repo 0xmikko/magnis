@@ -38,101 +38,31 @@ import type {
   TelegramCanonical,
   TelegramChatListItem,
   TelegramFacets,
-} from "../types/index.ts";
+  TriggerCheck,
+} from "../types.ts";
+import {
+  CHAT,
+  CHAT_DETAILS,
+  CONTACT_FACET,
+  MESSAGE,
+  MESSAGE_DETAILS,
+  PERSON,
+  PERSON_CHAT_LINK,
+} from "../schema.ts";
+import {
+  boolFlag,
+  chatIdOrNull,
+  chatIdStr,
+  extractUrls,
+  mediaTypeToMime,
+  num,
+  str,
+  CHAT_BATCH_THRESHOLD,
+  INDEXING_THRESHOLD,
+  INGEST_CHUNK,
+  type Data,
+} from "./helpers.ts";
 import { runBatchSend } from "./batchSend.ts";
-
-const CHAT_SCHEMA = "telegram.chat";
-const CHAT_DETAILS = "telegram.chat.details";
-const MESSAGE_SCHEMA = "telegram.message";
-const MESSAGE_DETAILS = "telegram.message.details";
-// Cross-module contact (DEC-10): telegram mints contacts.person from senders.
-const PERSON_SCHEMA = "contacts.person";
-const CONTACT_FACET = "telegram.contact";
-const PERSON_CHAT_LINK = "person:telegram.chat";
-// Groups above this member count don't auto-create contacts (native default).
-const INDEXING_THRESHOLD = 100;
-
-// PGlite is single-connection, so a sync page (the telegram dialog list is ONE
-// ~2400-chat page) must be applied in CHUNKS: at most this many entities per
-// graph.apply_batch, so each transaction is short and the lone DB connection is
-// freed between batches. Without this, one dispatch monopolizes the connection and
-// every other RPC (frontend polls, search indexer) times out.
-const INGEST_CHUNK = 200;
-// Above this many chats in a page = a bootstrap dialog list → batch + chunk them.
-// At/below = a re-sync; keep the per-envelope path that merges last_message_* into
-// chat.details (the connector snapshot doesn't carry those fields).
-const CHAT_BATCH_THRESHOLD = 50;
-
-/// A trigger.check event the host PluginModuleController bridge forwards to the
-/// event_bus for LIVE messages (mirrors native ingest.rs). The trigger
-/// evaluator consumes it; bulk Snapshot/backfill ingests never emit one.
-interface TriggerCheck {
-  type: "trigger.check";
-  event_kind: "new_message";
-  schema_id: string;
-  entity_id: string;
-  phase: "live";
-  touched_entity_ids: string[];
-  user_id: string;
-  context: { text: string; sender_name: string };
-}
-
-type Data = Record<string, unknown>;
-const str = (d: Data, k: string): string | null => {
-  const v = d[k];
-  return typeof v === "string" && v.length > 0 ? v : null;
-};
-const num = (d: Data, k: string): number | null => (typeof d[k] === "number" ? (d[k]) : null);
-const boolFlag = (d: Data, k: string): boolean | null => {
-  const v = d[k];
-  if (typeof v === "boolean") return v;
-  if (typeof v === "number") return v !== 0;
-  return null;
-};
-const chatIdStr = (d: Data): string => {
-  const v = d.chat_id;
-  if (typeof v === "number") return String(v);
-  if (typeof v === "string") return v;
-  return "";
-};
-// chat_id as a string key, or null when the payload carries no usable chat id.
-const chatIdOrNull = (d: Data): string | null => {
-  const s = chatIdStr(d);
-  return s.length > 0 ? s : null;
-};
-// http(s) URLs in free text, trailing punctuation trimmed.
-const URL_RE = /https?:\/\/[^\s<>"']+/g;
-function extractUrls(text: string): string[] {
-  const out: string[] = [];
-  for (const m of text.matchAll(URL_RE)) {
-    out.push(m[0].replace(/[.,;:!?)\]}>"']+$/, ""));
-  }
-  return out;
-}
-
-/// Map a telegram media_type to a MIME type. Mirrors the host's
-/// `media_type_to_mime` (backend/src/services/file/types.rs) so the plugin can
-/// build a source-agnostic file_register command (DEC: file.object survives the
-/// cutover).
-function mediaTypeToMime(mediaType: string): string {
-  switch (mediaType) {
-    case "photo":
-      return "image/jpeg";
-    case "voice":
-      return "audio/ogg";
-    case "video":
-    case "video_note":
-    case "animation":
-      return "video/mp4";
-    case "sticker":
-      return "image/webp";
-    case "audio":
-      return "audio/mpeg";
-    case "document":
-    default:
-      return "application/octet-stream";
-  }
-}
 
 export class TelegramModule {
   private readonly graph: GraphService<TelegramFacets, TelegramCanonical>;
@@ -152,7 +82,7 @@ export class TelegramModule {
   private buildChatItem(entity: RawEntity, d: Data): TelegramChatListItem {
     const avatar = str(d, "avatar_url") ?? str(d, "photo_url");
     return {
-      schema_id: CHAT_SCHEMA,
+      schema_id: CHAT,
       entity_id: entity.id,
       chat_id: chatIdStr(d),
       chat_title: str(d, "title"),
@@ -198,7 +128,7 @@ export class TelegramModule {
     // (pins live in the chat facet, not entity columns), render facet inline, one
     // statement. Replaces the telegram-specific list_chat_dialog_window.
     const page = await this.graph.list_entities_window({
-      schema: CHAT_SCHEMA,
+      schema: CHAT,
       facet_schema: CHAT_DETAILS,
       order: [
         { field: { facet_schema: CHAT_DETAILS, facet_path: "is_pinned" }, desc: true },
@@ -224,7 +154,7 @@ export class TelegramModule {
   ): Promise<PaginatedResponse<TelegramChatListItem>> {
     const matches = await this.graph.search_entities_by_name({
       query,
-      schema_ids: [CHAT_SCHEMA],
+      schema_ids: [CHAT],
       limit: limit + offset,
     });
     const total = matches.length;
@@ -278,7 +208,7 @@ export class TelegramModule {
     }
     // No chat filter → all of the user's telegram messages. ONE bulk facet read
     // (not a per-message detailsFacet), same anti-N+1 shape as searchChats.
-    const page = await this.graph.list_entities({ schema_id: MESSAGE_SCHEMA, limit, offset });
+    const page = await this.graph.list_entities({ schema_id: MESSAGE, limit, offset });
     const facets = await this.graph.list_facets_for_entities(page.items.map((e) => e.id));
     const byId = new Map<string, Data>();
     for (const f of facets) {
@@ -299,7 +229,7 @@ export class TelegramModule {
     // index-covered), order by entity-col date DESC, render facet inline. Kills the
     // old ~2N hops (op find_entity_for_user + per-message detailsFacet).
     const page = await this.graph.list_entities_window({
-      schema: MESSAGE_SCHEMA,
+      schema: MESSAGE,
       facet_schema: MESSAGE_DETAILS,
       filter_field: { entity_field: "idx" },
       filter_eq: chatId,
@@ -343,8 +273,8 @@ export class TelegramModule {
   async messagesGet(params: GetParams): Promise<MessageDetailView> {
     // P1 (graph-read-api §4): entity + its facets in ONE fetch, user-scoped.
     const detail = await this.graph.get_entity_full(params.id, { links: false });
-    if (detail?.entity.schema_id !== MESSAGE_SCHEMA) {
-      throw new Error(`${MESSAGE_SCHEMA} ${params.id} not found`);
+    if (detail?.entity.schema_id !== MESSAGE) {
+      throw new Error(`${MESSAGE} ${params.id} not found`);
     }
     const { entity, facets } = detail;
     const d = (facets.find((f) => f.schema_id === MESSAGE_DETAILS)?.data as Data | undefined) ?? {};
@@ -387,7 +317,7 @@ export class TelegramModule {
   })
   async chatsSetIndexed(params: SetIndexedParams): Promise<{ status: string }> {
     const found = await this.graph.list_entities_by_facet_field({
-      entity_schema: CHAT_SCHEMA,
+      entity_schema: CHAT,
       facet_schema: CHAT_DETAILS,
       field_path: "$.chat_id",
       field_value: String(params.chat_id),
@@ -427,7 +357,7 @@ export class TelegramModule {
   async syncReset(): Promise<Record<string, unknown>> {
     // Pass our own message schema — op_sync_state clears it, scoped to the
     // telegram namespace (the op is generalised, no longer hard-coded).
-    return this.graph.sync_state("reset", MESSAGE_SCHEMA);
+    return this.graph.sync_state("reset", MESSAGE);
   }
 
   // ── reply composer (RPC) ──────────────────────────────────────
@@ -550,7 +480,7 @@ export class TelegramModule {
         delete details.entity_type;
         entities.push({
           key: remoteId,
-          schema_id: CHAT_SCHEMA,
+          schema_id: CHAT,
           name: typeof payload.title === "string" ? payload.title : "",
           facets: [{ schema_id: CHAT_DETAILS, data: details, external_id: remoteId, confidence: 100 }],
         });
@@ -622,7 +552,7 @@ export class TelegramModule {
 
       entities.push({
         key: remoteId,
-        schema_id: MESSAGE_SCHEMA,
+        schema_id: MESSAGE,
         name: text.slice(0, 80),
         idx: cid ?? undefined,
         date: str(payload, "date") ?? undefined,
@@ -649,7 +579,7 @@ export class TelegramModule {
             const chatType = details ? str(details, "type") : null;
             entities.push({
               key: personKey,
-              schema_id: PERSON_SCHEMA,
+              schema_id: PERSON,
               name: str(payload, "sender_name") ?? "",
               facets: [
                 {
@@ -742,7 +672,7 @@ export class TelegramModule {
         triggers.push({
           type: "trigger.check",
           event_kind: "new_message",
-          schema_id: MESSAGE_SCHEMA,
+          schema_id: MESSAGE,
           entity_id: entityId,
           phase: "live",
           touched_entity_ids: touched,
@@ -816,7 +746,7 @@ export class TelegramModule {
     const existing = entityId ? await this.detailsFacet(entityId, CHAT_DETAILS) : null;
     if (!entityId) {
       const title = typeof payload.title === "string" ? payload.title : "";
-      const created = await this.graph.create_entity({ schema_id: CHAT_SCHEMA, name: title });
+      const created = await this.graph.create_entity({ schema_id: CHAT, name: title });
       entityId = created.id;
     }
     // The chat.details facet carries everything except the routing discriminant.
@@ -859,7 +789,7 @@ export class TelegramModule {
       // Date the entity by the MESSAGE date (native parity): with idx=chat_id it
       // feeds the chat index entities(schema_id, idx, date DESC).
       const date = typeof payload.date === "string" ? payload.date : undefined;
-      const created = await this.graph.create_entity({ schema_id: MESSAGE_SCHEMA, name, idx, date });
+      const created = await this.graph.create_entity({ schema_id: MESSAGE, name, idx, date });
       entityId = created.id;
     }
     try {
@@ -990,7 +920,7 @@ export class TelegramModule {
     // uses), then classify — instead of a find_by_external_id + detailsFacet N+1
     // per chat (which cost ~56s for 100 chats on the single PGlite connection).
     const page = await this.graph.list_entities_window({
-      schema: CHAT_SCHEMA,
+      schema: CHAT,
       facet_schema: CHAT_DETAILS,
       limit: 1_000_000,
       offset: 0,
@@ -1040,7 +970,7 @@ export class TelegramModule {
         : {};
       // first_name is required on telegram.contact — fall back to the display name.
       const firstName = str(info, "first_name") ?? senderName;
-      const person = await this.graph.create_entity({ schema_id: PERSON_SCHEMA, name: senderName });
+      const person = await this.graph.create_entity({ schema_id: PERSON, name: senderName });
       personId = person.id;
       const contactData: Data = {
         telegram_user_id: senderId,
