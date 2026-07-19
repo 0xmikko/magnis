@@ -95,7 +95,10 @@ export interface MountOpts<F extends object, C extends object> {
    *  extension_kind: "plugin", extension_id: "test" }`. */
   ctx?: Partial<PluginContext>;
   util?: PluginUtil;
-  rpc?: RpcExecutor;
+  /** A test rpc double. Looser than `RpcExecutor` (whose `execute` is generic
+   *  over the return type) so a bare `vi.fn(async (m) => …)` is assignable
+   *  without the `as unknown as PluginDeps` cast the modules used to carry. */
+  rpc?: { execute: (method: string, params?: unknown) => unknown };
 }
 
 export interface DirectMount<T, F extends object, C extends object> {
@@ -131,7 +134,9 @@ function buildDeps<F extends object, C extends object>(
   const util: PluginUtil = opts.util ?? {
     uuid_v5: vi.fn(() => Promise.resolve("00000000-0000-0000-0000-000000000000")),
   };
-  const rpc: RpcExecutor = opts.rpc ?? { execute: vi.fn() };
+  // The loose test rpc is widened to the module-facing generic `RpcExecutor`;
+  // the module's own `this.rpc.execute<T>(...)` call sites stay fully typed.
+  const rpc = (opts.rpc ?? { execute: vi.fn() }) as unknown as RpcExecutor;
   return { deps: { graph, ctx, util, rpc }, graph };
 }
 

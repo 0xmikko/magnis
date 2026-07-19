@@ -45,6 +45,10 @@
         "@magnis/connector-sdk": "workspace:*",
       },
     },
+    "packages/testkit": {
+      "name": "@magnis/testkit",
+      "version": "0.1.0",
+    },
     "plugins/modules/companies": {
       "name": "@magnis/plugin-companies",
       "version": "0.1.0",
@@ -338,6 +342,8 @@
     "@magnis/source-telegram": ["@magnis/source-telegram@workspace:plugins/sources/telegram"],
 
     "@magnis/source-x": ["@magnis/source-x@workspace:plugins/sources/x"],
+
+    "@magnis/testkit": ["@magnis/testkit@workspace:packages/testkit"],
 
     "@rollup/rollup-android-arm-eabi": ["@rollup/rollup-android-arm-eabi@4.62.2", "", { "os": "android", "cpu": "arm" }, "sha512-6o7ZLZK+BeenkZCFNDXqpbjw9bD6nuWonvS/lwQJp7NoVVxm6p3qE7qQ5jGuBjiFsgvqjD8mZAU5oWxTmbOeOg=="],
 
