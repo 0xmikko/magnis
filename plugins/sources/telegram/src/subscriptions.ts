@@ -15,8 +15,9 @@
 // this connector does NOT route push through the SDK (see dispatch.ts).
 
 import { credsFromMeta, accountIdFromMeta, type MessageLike } from "./client";
-import { messagePayload, messageRemoteId } from "./envelope";
-import { livePushes, fixturePath } from "./fixture";
+import { messagePayload } from "./surfaces/telegram/envelope";
+import { messageRemoteId } from "./surfaces/telegram/schema";
+import { livePushes, fixturePath } from "./surfaces/telegram/fixture";
 import { messageToIntermediate, toNum } from "./client";
 // `import type` ONLY: the gramjs stack is loaded LAZILY (live mode alone needs
 // it) so fixture-mode runs and the unit tests never load the MTProto stack.

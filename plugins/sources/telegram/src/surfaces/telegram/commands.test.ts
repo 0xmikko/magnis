@@ -9,8 +9,8 @@ import type {
   EntityLike,
   MessageLike,
   RawDialogLike,
-} from "./client";
-import { resolveHydratedMessages } from "./client";
+} from "../../client";
+import { resolveHydratedMessages } from "../../client";
 import type { TgChat, TgMessage } from "./envelope";
 import {
   BOOTSTRAP_BATCH_DIALOGS,

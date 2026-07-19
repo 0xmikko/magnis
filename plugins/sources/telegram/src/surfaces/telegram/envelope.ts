@@ -16,6 +16,9 @@
 // that matters. We follow the Rust SOURCE's insertion order below for
 // readability; do not read "byte-identical" as "same key order".
 
+import { SURFACE_TELEGRAM } from "../../schema";
+import { chatRemoteId, messageRemoteId } from "./schema";
+
 /** Sender details for module-side person-entity creation. Fixture JSON may carry
  * explicit `null` for the optional fields (Rust `Option` + skip_serializing_if),
  * so they are string | null | undefined — the `!== null && !== undefined` guards
@@ -86,16 +89,6 @@ export interface TgChat {
  * unix SECONDS, so the fraction is always zero in practice. */
 export function toRfc3339Utc(d: Date): string {
   return d.toISOString().replace(/\.000Z$/, "Z").replace(/Z$/, "+00:00");
-}
-
-/** `remote_id` for a message envelope — twin of `format!("tg:msg:{}:{}", …)`. */
-export function messageRemoteId(chatId: number, messageId: number): string {
-  return `tg:msg:${String(chatId)}:${String(messageId)}`;
-}
-
-/** `remote_id` for a chat envelope — twin of `format!("tg:chat:{}", …)`. */
-export function chatRemoteId(chatId: number): string {
-  return `tg:chat:${String(chatId)}`;
 }
 
 /** Subdirectory under `files/telegram/` for a given Telegram media type. */
@@ -199,7 +192,7 @@ export function messageCursor(m: TgMessage): Record<string, unknown> {
 /** One message → a wire envelope `{ surface, payload, remote_id, kind, cursor }`. */
 export function messageEnvelope(m: TgMessage, kind: string): Record<string, unknown> {
   return {
-    surface: "telegram",
+    surface: SURFACE_TELEGRAM,
     payload: messagePayload(m),
     remote_id: messageRemoteId(m.chat_id, m.message_id),
     kind,
@@ -238,7 +231,7 @@ export function chatPayload(c: TgChat): Record<string, unknown> {
  * field (mirroring the Rust `chat_envelope`). */
 export function chatEnvelope(c: TgChat): Record<string, unknown> {
   return {
-    surface: "telegram",
+    surface: SURFACE_TELEGRAM,
     payload: chatPayload(c),
     remote_id: chatRemoteId(c.chat_id),
     kind: "snapshot",

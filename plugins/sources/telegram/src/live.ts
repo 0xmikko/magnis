@@ -35,7 +35,7 @@ import {
   toNum,
   withTimeout,
 } from "./client";
-import type { CatchupDialog, TgOps } from "./commands";
+import type { CatchupDialog, TgOps } from "./surfaces/telegram/commands";
 
 /** Client init params — byte-identical to the Rust `InitParams`. */
 const INIT_PARAMS = {

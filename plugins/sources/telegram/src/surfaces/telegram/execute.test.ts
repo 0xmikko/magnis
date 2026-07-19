@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { argI64, backfillHasMore, execute, type TgOps } from "./commands";
-import type { MessageLike } from "./client";
+import type { MessageLike } from "../../client";
 import {
   classifyToolError,
   handleMessage,
@@ -12,8 +12,8 @@ import {
   AUTH_REQUIRED_CODE,
   RATE_LIMITED_CODE,
   TOOL_ERROR_CODE,
-} from "./dispatch";
-import { SubscriptionRegistry } from "./subscriptions";
+} from "../../dispatch";
+import { SubscriptionRegistry } from "../../subscriptions";
 
 const noSleep = { sleep: async () => {} };
 

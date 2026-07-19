@@ -31,10 +31,11 @@
 import { RATE_LIMIT_CODE } from "@magnis/connector-sdk";
 import { floodWaitSecs, RATE_LIMITED_PREFIX } from "./client";
 import * as auth from "./auth";
-import * as commands from "./commands";
+import * as commands from "./surfaces/telegram/commands";
 import type { DialogPager } from "./client";
-import type { TgOps } from "./commands";
-import * as fixture from "./fixture";
+import type { TgOps } from "./surfaces/telegram/commands";
+import * as fixture from "./surfaces/telegram/fixture";
+import { SURFACE_TELEGRAM } from "./schema";
 import type { LineWriter, SubscriptionRegistry } from "./subscriptions";
 
 // ── JSON-RPC error codes (protocol contract with the host) ────────────────
@@ -53,7 +54,7 @@ const INVALID_PARAMS_CODE = -32602;
 export function capabilities(): Record<string, unknown> {
   return {
     tools: {},
-    experimental: { magnis: { sync: { surfaces: ["telegram"], mode: "push" } } },
+    experimental: { magnis: { sync: { surfaces: [SURFACE_TELEGRAM], mode: "push" } } },
   };
 }
 

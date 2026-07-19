@@ -24,13 +24,8 @@
 
 import { readFileSync } from "node:fs";
 import type { TgChat, TgMessage } from "./envelope";
-import {
-  chatEnvelope,
-  messageEnvelope,
-  messagePayload,
-  messageRemoteId,
-  toRfc3339Utc,
-} from "./envelope";
+import { chatEnvelope, messageEnvelope, messagePayload, toRfc3339Utc } from "./envelope";
+import { messageRemoteId } from "./schema";
 
 /** Path of the active fixture file, or undefined for live mode. */
 export function fixturePath(): string | undefined {

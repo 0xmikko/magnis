@@ -18,8 +18,8 @@
 // plus the injectable seams below (`DialogPager`, `TgClientLike`), which the bun
 // tests drive with in-memory fakes — no network.
 
-import type { TgChat, TgMessage, TgSenderInfo } from "./envelope";
-import { toRfc3339Utc } from "./envelope";
+import type { TgChat, TgMessage, TgSenderInfo } from "./surfaces/telegram/envelope";
+import { toRfc3339Utc } from "./surfaces/telegram/envelope";
 
 /** Per-chat message hydration depth during bootstrap. Each enumerated dialog's
  * newest N messages are fetched (GetDialogs carries only each chat's single top

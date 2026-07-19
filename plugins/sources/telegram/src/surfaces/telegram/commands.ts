@@ -12,14 +12,14 @@ import type {
   EntityLike,
   MessageLike,
   RawDialogLike,
-} from "./client";
+} from "../../client";
 import {
   buildDialogMeta,
   chatToIntermediate,
   messageToIntermediate,
   sendWithFloodRetry,
   toNum,
-} from "./client";
+} from "../../client";
 import { chatEnvelope, messageEnvelope, toRfc3339Utc } from "./envelope";
 
 /** Page sizes, mirroring the Rust bootstrap/catch-up constants. One bootstrap
