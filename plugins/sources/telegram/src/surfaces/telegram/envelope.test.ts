@@ -180,7 +180,7 @@ describe("message payload", () => {
     expect(user.sender_id).toBe(5);
   });
 
-  // Twin of tst_src_tg_file_account_006 (INV-7, Bug 2).
+  // Twin of tst_src_tg_file_account_006 (Bug 2).
   test("tst_tgts_env_008 source_ref.account_id mirrors the message's account_id", () => {
     const media = (accountId: string): TgMessage =>
       baseMessage({

@@ -1,12 +1,12 @@
 /**
- * Telegram connect screen (per-source auth UI, DEC-3).
+ * Telegram connect screen (per-source auth UI).
  *
  * phone_code is a multi-step MTProto login with NO browser redirect: the screen
  * collects the phone number, then the SMS/app login code, then (if the account
  * has 2FA) the password — handing each to the host, which stashes it and injects
- * it into the connector's `magnis.auth.begin` / `magnis.auth.step` calls (DEC-24).
+ * it into the connector's `magnis.auth.begin` / `magnis.auth.step` calls.
  * No secret ever lives in this component beyond the moment it is handed off; the
- * minted session credential never returns to the browser (DEC-14 / CON-3).
+ * minted session credential never returns to the browser.
  *
  * Loaded + transpiled by the host (`loadSourceAuthScreen`). The host injects the
  * session drivers as props so this screen never touches the transport itself:
