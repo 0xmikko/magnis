@@ -82,7 +82,7 @@ export class NotesModule {
       return { items, total, limit, offset };
     }
 
-    // No search: P2 windowed list ordered by the content facet's `updated_at`
+    // No search: windowed list ordered by the content facet's `updated_at`
     // (most-recently-edited first), with the body facet inline for the preview
     // and the exact total — one statement. This also stands in for the dropped
     // native `update_entity_date` recency (no such SDK op).
@@ -119,8 +119,8 @@ export class NotesModule {
     const canonical = await this.graph.get_canonical(e.id, [NOTE]);
     const pinned = (canonical["note.pinned"] as boolean | null) ?? data.pinned ?? false;
 
-    // Resolve link neighbours via ONE get_entities batch (P5, user-scoped →
-    // drops non-owned targets, same Codex-3 visibility rule as the old per-link
+    // Resolve link neighbours via ONE get_entities batch (user-scoped →
+    // drops non-owned targets, same visibility rule as the old per-link
     // get_entity_full) — no per-link N+1.
     const linked: LinkedEntitySummary[] = [];
     if (detail.links.length > 0) {

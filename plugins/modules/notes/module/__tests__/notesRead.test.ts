@@ -1,11 +1,11 @@
 // Notes read surface — shape parity + DB-access guarantees after the
-// graph-read-api adoption. The no-search list already used list_entities_window
-// (P2); this stage fixes the two remaining N+1s: search (was per-row
+// graph-read-api adoption. The no-search list already used list_entities_window;
+// this stage fixes the two remaining N+1s: search (was per-row
 // list_facets_for_entity + get_canonical) now uses list_facets_for_entities +
 // list_canonical_for_entities (batch, byte-parity with the old canonical-aware
 // item), and get's link resolution (was per-link get_entity_full) now uses one
 // get_entities batch. Mirrors companies/module/__tests__/companiesRead.test.ts.
-// tst_be_notesread_001 (shape) + tst_be_notesdb_001 (op-counts → INV-7/10).
+// tst_be_notesread_001 (shape) + tst_be_notesdb_001 (op-counts).
 //
 // Doubles come from @magnis/testkit/module: `mockGraph` is a throwing Proxy, so
 // the read path hitting ANY op it did not arrange (get_entity /
