@@ -61,9 +61,9 @@ export interface ContactFacets {
   "contacts.person.social": SocialTracking;
 }
 
-// contacts.person.social facet (DEC-9): per-person opt-in for social tracking.
+// contacts.person.social facet: per-person opt-in for social tracking.
 // `contacts` OWNS this facet; the `social` plugin soft-reads it, and the sync
-// scheduler builds the tracked-handle set (DEC-8/INV-1) from it. One handle per
+// scheduler builds the tracked-handle set from it. One handle per
 // platform per person; handles are stored bare (no leading `@`).
 export interface SocialTracking {
   tracked_x?: boolean;
@@ -81,7 +81,7 @@ export interface SetSocialTrackingParams {
   handle?: string;
 }
 
-// contacts.get_social_tracking_by_handle (social-post-rendering DEC-A):
+// contacts.get_social_tracking_by_handle:
 // resolve the owning contact + tracked state from a platform handle. Handles
 // compare case-insensitively (stored = user-typed, profile = API-canonical).
 export interface GetSocialTrackingByHandleParams {
@@ -94,7 +94,7 @@ export interface SocialTrackingByHandle {
   handle: string;
 }
 
-// contacts.track_social_profile (social-contact-identity DEC-2): "+"/agent
+// contacts.track_social_profile: "+"/agent
 // entry — URL or handle in, tracked contact out (find-or-create).
 export interface TrackSocialProfileParams {
   platform: "x" | "linkedin";
@@ -107,8 +107,8 @@ export interface TrackSocialProfileResult {
   created: boolean;
 }
 
-// contacts.batch_track_social (DEC-3): agent batch — a pasted URL list in,
-// tracked contacts out. Per-row isolation + client_id idempotency (INV-5).
+// contacts.batch_track_social: agent batch — a pasted URL list in,
+// tracked contacts out. Per-row isolation + client_id idempotency.
 export interface BatchTrackSocialParams {
   platform: "x" | "linkedin";
   profiles: { url_or_handle: string; name?: string }[];
@@ -129,7 +129,7 @@ export interface BatchTrackSocialResult {
   excluded: number;
 }
 
-// contacts.rename_if_placeholder (DEC-4, INV-7): compare-and-set rename.
+// contacts.rename_if_placeholder: compare-and-set rename.
 export interface RenameIfPlaceholderParams {
   id: string;
   expected_name: string;
@@ -137,7 +137,7 @@ export interface RenameIfPlaceholderParams {
 }
 
 // contacts.create input. `client_id` is the frontend-only optimistic-
-// create UUID (DEC-11) — kept out of the agent-facing tool schema.
+// create UUID — kept out of the agent-facing tool schema.
 export interface CreateParams {
   name: string;
   email?: string;

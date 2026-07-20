@@ -1,4 +1,4 @@
-// tst_parse (social-contact-identity S1, DEC-10/INV-3): parseSocialUrl accepts
+// tst_parse — parseSocialUrl accepts
 // exactly the documented forms per platform and rejects everything else with a
 // typed invalid_url error — no silent guessing.
 import { describe, expect, it, vi } from "vitest";

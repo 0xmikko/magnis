@@ -174,7 +174,7 @@ describe("contacts ingest — apply_batch shape (tst_be_contactsingest_001)", ()
   });
 });
 
-// ── social_contact mapper (plan §7, S5) ─────────────────────────────────────
+// ── social_contact mapper ───────────────────────────────────────────────────
 // x/linkedin following imports arrive as social_contact envelopes on the SAME
 // contacts surface; the mapper mints untracked social contacts through the
 // ONE apply_batch path (no rpc, no direct writes) and drops envelopes that
@@ -232,7 +232,7 @@ describe("contacts ingest — social_contact envelopes", () => {
     expect(r.dropped_remote_ids).toEqual(["x:social:friend2"]);
   });
 
-  // INV-8 regression (review finding): re-importing a handle that ALREADY
+  // Regression (review finding): re-importing a handle that ALREADY
   // belongs to a contact must leave that contact untouched — especially its
   // tracking opt-in. The old direct-write bug appended a fresh
   // {tracked_x: false} facet that silently untracked the person.

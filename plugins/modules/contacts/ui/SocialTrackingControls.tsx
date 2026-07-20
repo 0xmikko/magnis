@@ -6,9 +6,9 @@ type Platform = "x" | "linkedin";
 
 const LABEL: Record<Platform, string> = { x: "Track on X", linkedin: "Track on LinkedIn" };
 
-/** Per-contact opt-in for social tracking (DEC-9). Toggling a platform on (with
+/** Per-contact opt-in for social tracking. Toggling a platform on (with
  * a handle) places that handle in the sync scheduler's tracked set so the X /
- * LinkedIn connectors fetch it; off removes it (INV-1). One row per platform. */
+ * LinkedIn connectors fetch it; off removes it. One row per platform. */
 export function SocialTrackingControls({ entityId }: { readonly entityId: string }): JSX.Element {
   const runtime = useAppRuntime();
   const { data } = useSocialTrackingQuery(entityId);

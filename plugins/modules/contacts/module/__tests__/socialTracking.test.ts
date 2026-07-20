@@ -1,5 +1,5 @@
-// contacts.person.social opt-in (DEC-9). set_social_tracking writes the facet;
-// get_social_tracking reads it back. RED invariant (S2): toggle tracked => handle
+// contacts.person.social opt-in. set_social_tracking writes the facet;
+// get_social_tracking reads it back. RED invariant: toggle tracked => handle
 // in the opt-in state; untoggle => out. Per-platform merge: toggling X never
 // clears LinkedIn. Handles are stored bare (no leading @).
 //
@@ -50,7 +50,7 @@ function makeGraph(entity: RawEntity | null): { graph: G; facets: FacetRecord[] 
 }
 
 // Graph with MANY persons + the batch read APIs the by-handle lookup uses,
-// plus create/rename so the S1 tools (track/ensure/rename) are testable.
+// plus create/rename so the social-identity tools (track/ensure/rename) are testable.
 // Same NEWEST-FIRST ordering contract as makeGraph (matches the runtime).
 function makeMultiGraph(persons: RawEntity[]): { graph: G; facets: FacetRecord[]; renames: [string, string][] } {
   const facets: FacetRecord[] = [];
@@ -166,7 +166,7 @@ describe("contacts social tracking (tst_be_contacts_social_001)", () => {
   });
 });
 
-// tst_be_contacts_social_002 (social-post-rendering S1, DEC-A): resolve the
+// tst_be_contacts_social_002 — resolve the
 // owning contact + tracked state from a platform handle. Case-insensitive —
 // stored handles are user-typed while profile handles carry the API's
 // canonical casing. Latest facet wins; null when no contact matches.
@@ -204,7 +204,7 @@ describe("contacts get_social_tracking_by_handle (tst_be_contacts_social_002)", 
   });
 });
 
-// ── social-contact-identity S1 (tst_track_one / tst_rename_cas / ensure) ────
+// ── social-contact identity (tst_track_one / tst_rename_cas / ensure) ────
 
 describe("contacts.track_social_profile (tst_track_one)", () => {
   it("(a) unknown handle from URL → contact created + tracked (created:true)", async () => {
@@ -351,7 +351,7 @@ describe("social tracking survives runtime facet ordering (tst_be_contacts_socia
     });
   });
 
-  // linkedin-add-flow LA-1: list every tracked handle for a platform in one
+  // List every tracked handle for a platform in one
   // call — feeds the linkedin "Syncing…" pending rows (tracked-but-not-yet-
   // synced placeholders in profiles.list).
   it("list_social_tracking returns tracked handles for the platform only", async () => {

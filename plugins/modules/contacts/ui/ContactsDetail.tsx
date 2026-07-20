@@ -25,7 +25,7 @@ export function ContactsDetail({
         searchable
         maxVisibleTabs={7}
       />
-      {/* DEC-9 opt-in: track this contact on X / LinkedIn (drives DEC-8 fetch). */}
+      {/* Opt-in: track this contact on X / LinkedIn (drives the connector fetch). */}
       <SocialTrackingControls entityId={entityId} />
     </>
   );

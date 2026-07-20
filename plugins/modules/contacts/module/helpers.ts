@@ -38,7 +38,7 @@ export function latestSocialFacet(facets: readonly FacetRecord[]): FacetRecord |
   return best;
 }
 
-/// plan §7 required-fields contract for social_contact envelopes.
+/// Required-fields contract for social_contact envelopes.
 export function isValidSocialContact(p: Record<string, unknown>): boolean {
   return (
     typeof p.handle === "string" &&

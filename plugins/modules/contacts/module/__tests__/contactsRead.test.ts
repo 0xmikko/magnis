@@ -4,9 +4,9 @@
 // list_canonical_for_entities (email/phone/role/company, collection-merged) AND
 // list_facets_for_entities (channels + relevance_tier) — instead of the old
 // per-row get_canonical + list_facets_for_entity 2N+1. get uses get_entity_full
-// (P1) + one get_canonical + one get_entities batch. Mirrors
+// + one get_canonical + one get_entities batch. Mirrors
 // companies/__tests__/companiesRead.test.ts. tst_be_contactsread_001 (shape) +
-// tst_be_contactsdb_001 (op-counts → INV-4/5/10).
+// tst_be_contactsdb_001 (op-counts).
 //
 // Doubles come from @magnis/testkit/module: `mockGraph` is a throwing Proxy, so
 // the read path hitting ANY op it did not arrange (e.g. the old per-row

@@ -1,4 +1,4 @@
-// Contacts plugin — backend module (V8). Decorated class; Stage-3
+// Contacts plugin — backend module (V8). Decorated class; the
 // read path (list/get) mirrors the legacy Rust ContactsModuleService.
 
 import { rpc, searchEntitiesPage, syncHandler, tool, writeTool, type GraphService, type PluginDeps, type PluginUtil, type RawEntity, type RpcExecutor } from "@magnis/plugin-sdk";
@@ -182,7 +182,7 @@ export class ContactsModule {
     },
   })
   async get(params: GetParams): Promise<ContactDetailView> {
-    // P1: entity + latest facets + link edges in ONE fetch (user-scoped → null
+    // Entity + latest facets + link edges in ONE fetch (user-scoped → null
     // for a non-owner or wrong schema). One get_canonical for the detail view's
     // canonical block; link neighbours resolved in ONE get_entities batch.
     const detail = await this.graph.get_entity_full(params.id, { links: true });
@@ -271,10 +271,10 @@ export class ContactsModule {
 
   // Mirrors the native ContactsModuleController::create_single_contact
   // graph writes (controller.rs:43-211). The `email.address` entity +
-  // `has_email` link are created via the cross-module RPC hub (DEC-9):
+  // `has_email` link are created via the cross-module RPC hub:
   // contacts asks the `email` module to ensure the address entity, then
   // links it — contacts never writes the foreign `email.address` schema
-  // itself. `params` is agent-facing (DEC-11): it omits `client_id` so the
+  // itself. `params` is agent-facing: it omits `client_id` so the
   // agent never invents an id; the handler still accepts it from the
   // frontend WS path via CreateParams.
   @writeTool("create", {
@@ -334,7 +334,7 @@ export class ContactsModule {
       });
     }
 
-    // Hub (DEC-9): ask the email module to ensure the email.address entity,
+    // Hub: ask the email module to ensure the email.address entity,
     // then link has_email. Restores native controller.rs:143-165 behavior
     // without contacts writing the foreign email.address schema directly.
     let email_address_entity_id: string | null = null;
@@ -372,7 +372,7 @@ export class ContactsModule {
   // so a retried batch reuses the same entity ids (idempotent), exactly
   // as the native handler (controller.rs:531). Each row delegates to
   // create(), inheriting the same facet writes AND the email.address +
-  // has_email hub path (DEC-9) when a row carries an email.
+  // has_email hub path when a row carries an email.
   @writeTool("batch_create", {
     description:
       "Create multiple contacts at once. Each requires a name, with optional " +
@@ -446,7 +446,7 @@ export class ContactsModule {
 
   // Mirrors native contacts.update (controller.rs:562) — name only:
   // rename the entity and re-attach the profile facet's first_name. The
-  // update_entity_name op is ownership-checked (DEC-12).
+  // update_entity_name op is ownership-checked.
   @writeTool("update", {
     description: "Update a contact's name.",
     params: {
@@ -477,7 +477,7 @@ export class ContactsModule {
   }
 
   // Read-only merge preview (controller.rs:631). Ownership is enforced
-  // backend-side in the op (DEC-12).
+  // backend-side in the op.
   @tool("merge_preview", {
     description: "Preview merging two contacts: which facets/links move and which fields conflict.",
     params: {
@@ -621,7 +621,7 @@ export class ContactsModule {
       if (!env.user_id) continue;
       if (env.kind !== "snapshot" && env.kind !== "live") continue;
       if (!env.remote_id) continue;
-      // social_contact contract (plan §7): ALL fields required — a violating
+      // social_contact contract: ALL fields required — a violating
       // envelope is reported dropped, never half-ingested.
       const payload = (env.payload ?? {});
       if (payload.kind === "social_contact" && !isValidSocialContact(payload)) {
@@ -660,10 +660,10 @@ export class ContactsModule {
       if (!remoteId) continue;
       const raw = (env.payload ?? {});
 
-      // social_contact mapper (plan §7, S5): x/linkedin following imports on
+      // social_contact mapper: x/linkedin following imports on
       // the SAME surface. Mints an UNTRACKED social contact (tracking is a
-      // per-person opt-in — importing must never start API spend, DEC-7).
-      // FIND-OR-CREATE (INV-8): a contact already carrying this handle is
+      // per-person opt-in — importing must never start API spend).
+      // FIND-OR-CREATE: a contact already carrying this handle is
       // returned untouched — re-importing must NEVER untrack an opted-in
       // person or duplicate an existing one.
       if (raw.kind === "social_contact") {
@@ -771,10 +771,10 @@ export class ContactsModule {
     await this.graph.apply_batch({ entities, refs: [], links: [] });
   }
 
-  // ── social tracking (DEC-9) ──────────────────────────────────────
+  // ── social tracking ──────────────────────────────────────────────
   // contacts OWNS the contacts.person.social facet. Opting a contact in on a
-  // platform places its handle in the sync scheduler's tracked set (DEC-8);
-  // opting out removes it → that handle is no longer fetched (INV-1). One handle
+  // platform places its handle in the sync scheduler's tracked set;
+  // opting out removes it → that handle is no longer fetched. One handle
   // per platform per person; the facet merges across platforms (latest wins).
   @writeTool("set_social_tracking", {
     description:
@@ -815,7 +815,7 @@ export class ContactsModule {
     return next;
   }
 
-  // ── social-contact-identity S1 (DEC-2/4/8.3) ──────────────────────
+  // ── social-contact identity ───────────────────────────────────────
   @writeTool("track_social_profile", {
     description:
       "Track a person's X or LinkedIn profile from a URL or handle. Finds the contact " +
@@ -863,9 +863,9 @@ export class ContactsModule {
     return { contact_id: contact.id, handle: parsed.handle, created: true };
   }
 
-  // DEC-3: batch entry for a pasted URL list. Per-row isolation — an invalid
+  // Batch entry for a pasted URL list. Per-row isolation — an invalid
   // URL marks its row and never aborts the rest; a retried batch (same
-  // client_id) resolves creates to the same uuid_v5 ids (INV-5).
+  // client_id) resolves creates to the same uuid_v5 ids.
   @writeTool("batch_track_social", {
     description:
       "Track MANY X or LinkedIn profiles at once from pasted URLs/handles (1-50). Each " +
@@ -973,7 +973,7 @@ export class ContactsModule {
     return { results, total: profiles.length, created, excluded: excludedCount };
   }
 
-  // DEC-4 (INV-7): compare-and-set rename — a contact auto-created from a URL
+  // Compare-and-set rename — a contact auto-created from a URL
   // carries its handle as a placeholder name; the first profile ingest upgrades
   // it to the real display name ONLY while the placeholder is still in place.
   // Internal RPC (never an agent tool).

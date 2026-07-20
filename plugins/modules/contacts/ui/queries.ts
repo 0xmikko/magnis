@@ -33,8 +33,8 @@ export function useContactDetailQuery(id: string): UseQueryResult<ContactDetailV
   });
 }
 
-// contacts.person.social opt-in state (DEC-9). The social source connectors
-// fetch ONLY tracked handles (DEC-8 / INV-1), so this is the UI seam that turns
+// contacts.person.social opt-in state. The social source connectors
+// fetch ONLY tracked handles, so this is the UI seam that turns
 // tracking on/off per platform.
 export interface SocialTrackingState {
   tracked_x?: boolean;

@@ -12,7 +12,7 @@ export const CONTACT_PROFILE = "contacts.person.profile";
 export const CONTACT_EMAIL = "contacts.person.email";
 /** Collection phone facet (one facet per number). */
 export const CONTACT_PHONE = "contacts.person.phone";
-/** Social-tracking opt-in facet (DEC-9: tracked_x/x_handle/tracked_linkedin/…). */
+/** Social-tracking opt-in facet (tracked_x / x_handle / tracked_linkedin / …). */
 export const CONTACT_SOCIAL = "contacts.person.social";
 /** External-link facet (source_type + external_id + url/name). */
 export const CONTACT_EXTERNAL_LINK = "contacts.person.external_link";
