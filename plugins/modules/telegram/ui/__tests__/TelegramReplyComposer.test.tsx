@@ -2,16 +2,16 @@
  * TelegramReplyComposer — component behavior tests.
  *
  * Traceability:
- * - tst_fe_composer_001 INV-6 Enter sends trimmed text once, clears draft
- * - tst_fe_composer_002 INV-6 Shift+Enter inserts newline, does not send
- * - tst_fe_composer_003 INV-6 Second Enter during in-flight send is ignored
- * - tst_fe_composer_004 INV-4 Successful send clears localStorage for telegram:<chatId>
- * - tst_fe_composer_005 INV-5 onSend rejection preserves text + localStorage
- * - tst_fe_composer_006 INV-7 Mount calls setPresence({mode:"telegram", thread_key: String(chatId)})
- * - tst_fe_composer_007 INV-11 Telegram mode: paperclip absent from DOM
- * - tst_fe_composer_008 INV-7 Mount/unmount/chatId switch lifecycle on setPresence
- * - tst_fe_composer_028 DEC-18 composer.apply set_text event with matching (mode, thread_key) updates textarea
- * - tst_fe_composer_029 INV-15 composer.apply event with mismatched thread_key is ignored
+ * - tst_fe_composer_001 Enter sends trimmed text once, clears draft
+ * - tst_fe_composer_002 Shift+Enter inserts newline, does not send
+ * - tst_fe_composer_003 Second Enter during in-flight send is ignored
+ * - tst_fe_composer_004 Successful send clears localStorage for telegram:<chatId>
+ * - tst_fe_composer_005 onSend rejection preserves text + localStorage
+ * - tst_fe_composer_006 Mount calls setPresence({mode:"telegram", thread_key: String(chatId)})
+ * - tst_fe_composer_007 Telegram mode: paperclip absent from DOM
+ * - tst_fe_composer_008 Mount/unmount/chatId switch lifecycle on setPresence
+ * - tst_fe_composer_028 composer.apply set_text event with matching (mode, thread_key) updates textarea
+ * - tst_fe_composer_029 composer.apply event with mismatched thread_key is ignored
  * - tst_fe_composer_030 append_text concatenates onto existing draft text
  */
 
@@ -95,7 +95,7 @@ function getTextarea(container: HTMLElement): HTMLTextAreaElement {
 // ──────────────────────────────────────────────────────────────────────
 
 describe("TelegramReplyComposer", () => {
-  // tst_fe_composer_001 — INV-6
+  // tst_fe_composer_001
   it("tst_fe_composer_001 Enter triggers onSendMessage once with trimmed text and clears draft", () => {
     const onSend = vi.fn();
     const { container } = render(
@@ -113,7 +113,7 @@ describe("TelegramReplyComposer", () => {
     expect(ta.value).toBe("");
   });
 
-  // tst_fe_composer_002 — INV-6
+  // tst_fe_composer_002
   it("tst_fe_composer_002 Shift+Enter inserts newline and does NOT send", () => {
     const onSend = vi.fn();
     const { container } = render(
@@ -131,7 +131,7 @@ describe("TelegramReplyComposer", () => {
     expect(ta.value).toBe("line1");
   });
 
-  // tst_fe_composer_003 — INV-6
+  // tst_fe_composer_003
   it("tst_fe_composer_003 Second Enter during in-flight send is ignored", async () => {
     const deferred: { resolve: () => void; promise: Promise<void> } = ((): {
       resolve: () => void;
@@ -162,7 +162,7 @@ describe("TelegramReplyComposer", () => {
     expect(onSend).toHaveBeenCalledTimes(1);
   });
 
-  // tst_fe_composer_004 — INV-4
+  // tst_fe_composer_004
   it("tst_fe_composer_004 successful send clears localStorage entry for telegram:<chatId>", () => {
     const onSend = vi.fn();
     const { container } = render(
@@ -186,7 +186,7 @@ describe("TelegramReplyComposer", () => {
     expect(parsedAfter["telegram:42"]).toBeUndefined();
   });
 
-  // tst_fe_composer_005 — INV-5
+  // tst_fe_composer_005
   it("tst_fe_composer_005 onSend rejection preserves text + localStorage entry", async () => {
     const onSend = vi.fn(() => Promise.reject(new Error("boom")));
     const { container } = render(
@@ -208,7 +208,7 @@ describe("TelegramReplyComposer", () => {
     expect(parsed["telegram:42"]?.text).toBe("hello");
   });
 
-  // tst_fe_composer_006 — INV-7 presence on mount
+  // tst_fe_composer_006 — presence on mount
   it("tst_fe_composer_006 mount triggers setPresence with {mode:\"telegram\", thread_key: String(chatId)}", () => {
     render(
       <Harness>
@@ -222,7 +222,7 @@ describe("TelegramReplyComposer", () => {
     });
   });
 
-  // tst_fe_composer_007 — INV-11
+  // tst_fe_composer_007
   it("tst_fe_composer_007 telegram mode: paperclip icon absent from rendered DOM", () => {
     const { container } = render(
       <Harness>
@@ -237,7 +237,7 @@ describe("TelegramReplyComposer", () => {
     expect(attachButtons.length).toBe(0);
   });
 
-  // tst_fe_composer_008 — INV-7 mount / unmount / chatId switch
+  // tst_fe_composer_008 — mount / unmount / chatId switch
   it("tst_fe_composer_008 mount → setPresence(params); unmount → setPresence(null); chatId change = null then new", () => {
     const { rerender, unmount } = render(
       <Harness>
@@ -265,7 +265,7 @@ describe("TelegramReplyComposer", () => {
     expect(setPresenceCalls.some((c) => c.params === null)).toBe(true);
   });
 
-  // tst_fe_composer_028 — DEC-18 composer.apply routes set_text to textarea
+  // tst_fe_composer_028 — composer.apply routes set_text to textarea
   it("tst_fe_composer_028 composer.apply set_text with matching (mode, thread_key) updates textarea", () => {
     const { container } = render(
       <Harness>
@@ -284,7 +284,7 @@ describe("TelegramReplyComposer", () => {
     expect(getTextarea(container).value).toBe("from agent");
   });
 
-  // tst_fe_composer_029 — INV-15 mismatched thread_key is ignored
+  // tst_fe_composer_029 — mismatched thread_key is ignored
   it("tst_fe_composer_029 composer.apply with mismatched thread_key does not update", () => {
     const { container } = render(
       <Harness>

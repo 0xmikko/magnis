@@ -4,8 +4,6 @@
  * Owns: draft persistence (via useComposerDraft), presence RPC on mount/unmount
  * and thread switch, mount-registry registration, Enter-to-send with in-flight
  * guard, and draft clearing on successful send.
- *
- * Plan refs: DEC-7, DEC-10, DEC-14, DEC-16, DEC-17; INV-4, INV-5, INV-6, INV-7, INV-11, INV-14.
  */
 
 import { useCallback, useEffect, useRef, useState, type JSX } from "react";
@@ -29,14 +27,14 @@ export function TelegramReplyComposer({
   placeholder,
   disabled,
 }: TelegramReplyComposerProps): JSX.Element {
-  // INV-14: canonical threadKey is String(chat_id).
+  // Canonical threadKey is String(chat_id).
   const threadKey = String(chatId);
   const runtime = useAppRuntime();
   const registry = useComposerMountRegistry();
   const { draft, setText, clear, applyRemote } = useComposerDraft("telegram", threadKey);
 
   // Register mount in the single-slot registry + manage presence lifecycle.
-  // INV-7: mount → setPresence({mode, thread_key}); unmount or thread switch → setPresence(null).
+  // Mount → setPresence({mode, thread_key}); unmount or thread switch → setPresence(null).
   useEffect(() => {
     const unregister = registry.register({
       mode: "telegram",
@@ -78,7 +76,7 @@ export function TelegramReplyComposer({
     };
   }, [runtime, threadKey, applyRemote]);
 
-  // Guard against Enter being pressed twice while a send is in flight (INV-6).
+  // Guard against Enter being pressed twice while a send is in flight.
   const [sending, setSending] = useState(false);
   const sendingRef = useRef(false);
 
@@ -93,7 +91,7 @@ export function TelegramReplyComposer({
     const finish = (ok: boolean): void => {
       sendingRef.current = false;
       setSending(false);
-      // INV-4 success → clear; INV-5 failure → preserve text.
+      // Success → clear; failure → preserve text.
       if (ok) clear();
     };
 

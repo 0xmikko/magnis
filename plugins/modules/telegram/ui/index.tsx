@@ -193,7 +193,7 @@ export const telegramAgentContribution: Omit<ModuleAgentContribution, "entityRen
     const chatId = (p.chatId ?? p.chat_id) as string | number | undefined;
     const text = (p.text ?? p.message) as string | undefined;
     if (chatId !== undefined && text !== undefined) {
-      // DEC-16: legacy onDraftRequest writes through the unified draft store
+      // Legacy onDraftRequest writes through the unified draft store
       // so the wrapped TelegramReplyComposer picks it up on mount.
       writeDraftDirect("telegram", String(chatId), { text });
     }

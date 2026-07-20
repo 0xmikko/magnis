@@ -2,7 +2,7 @@
  * @layer: fe_agent
  * @test-id: tst_agent_prompt_005
  *
- * DEC-6 / INV-8: the telegram MODULE prompt (not just the global system prompt)
+ * The telegram MODULE prompt (not just the global system prompt)
  * steers multi-recipient outreach to telegram.batch_send + one approval, rather
  * than fanning out N sends / one trigger per contact.
  */

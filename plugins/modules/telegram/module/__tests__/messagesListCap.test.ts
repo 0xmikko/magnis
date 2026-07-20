@@ -2,7 +2,7 @@
  * @layer: fe_agent
  * @test-id: tst_fe_tg_messages_list_cap_001
  *
- * INV-5: telegram.messages.list is a thin chat reader and must HARD-CAP its page
+ * telegram.messages.list is a thin chat reader and must HARD-CAP its page
  * size (max 50) — a caller asking for everything must NOT dump a whole history
  * into the agent context (the 37,904-message bug). The clamp is server-side,
  * independent of the requested `limit`.

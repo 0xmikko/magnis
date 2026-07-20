@@ -2,7 +2,7 @@
  * @layer: fe_agent
  * @test-id: tst_fe_agent_007
  *
- * R3-followup [Codex round-2]: sendMessage delivers the message via
+ * sendMessage delivers the message via
  * graph.source_command, THEN runs local enrichment (ingest + entity lookup). If
  * that local post-processing throws AFTER a successful delivery, the send must
  * still be reported as succeeded — otherwise a delivered message is recorded

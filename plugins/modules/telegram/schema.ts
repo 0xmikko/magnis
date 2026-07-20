@@ -12,7 +12,7 @@ export const CHAT_DETAILS = "telegram.chat.details";
 export const MESSAGE = "telegram.message";
 /** Message details facet (text/date/sender/media/…). */
 export const MESSAGE_DETAILS = "telegram.message.details";
-/** Cross-module contact (DEC-10): telegram mints contacts.person from senders. */
+/** Cross-module contact: telegram mints contacts.person from senders. */
 export const PERSON = "contacts.person";
 /** Contact facet minted on a person from a telegram sender. */
 export const CONTACT_FACET = "telegram.contact";

@@ -2,7 +2,7 @@
  * @layer: fe_agent
  * @test-id: tst_fe_agent_005
  *
- * R3 [DEC-4]: telegram.batch_send must capture a PER-RECIPIENT outcome and never
+ * telegram.batch_send must capture a PER-RECIPIENT outcome and never
  * throw mid-batch. The original loop pushed only status:"sent" and let a thrown
  * send (e.g. a long FLOOD_WAIT → RATE_LIMITED) abort the whole tool — discarding
  * the already-sent results (the tool promises "per-recipient results") and making

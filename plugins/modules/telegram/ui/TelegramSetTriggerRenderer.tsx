@@ -3,7 +3,7 @@
  *
  * Replaces the generic fallback ("Agent wants to: telegram.set trigger / Chat ID:
  * <raw>") with a card that shows what the automation actually does: which chat is
- * watched, the condition (When), and the action (Then) — DEC-7 / INV-7. Colocated
+ * watched, the condition (When), and the action (Then). Colocated
  * with the plugin (mirrors TelegramBatchSendRenderer); registered from
  * plugins/telegram/ui/index.tsx via the `set_trigger` action.
  */

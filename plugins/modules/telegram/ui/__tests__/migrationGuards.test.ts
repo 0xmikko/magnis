@@ -4,8 +4,8 @@
  * Relocated from the host-side guards when the telegram domain module moved
  * out of frontend/src/modules/telegram into this plugin:
  *   - src/modules/__tests__/queryMigration.test.ts           (react-query migration)
- *   - src/modules/__tests__/storeAndTransportMigration.test.ts (W3: runtime transport)
- *   - src/modules/_base/__tests__/BaseToolCallCard.test.ts    (INV-7: shared card)
+ *   - src/modules/__tests__/storeAndTransportMigration.test.ts (runtime transport)
+ *   - src/modules/_base/__tests__/BaseToolCallCard.test.ts    (shared card)
  *
  * They assert the same invariants those host guards enforced — no useWebSocket,
  * react-query for initial data + cache invalidation, runtime transport for sync,

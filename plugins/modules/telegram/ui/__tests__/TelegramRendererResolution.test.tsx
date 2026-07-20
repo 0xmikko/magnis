@@ -2,7 +2,7 @@
  * @layer: fe_agent
  * @test-id: tst_fe_agent_006
  *
- * INV-7 / INV-5b [DEC-7/DEC-4] — RESOLUTION guard. The original P4 bug was a
+ * RESOLUTION guard. The original bug was a
  * REGISTRATION defect: no renderer was registered for `set_trigger`, so the block
  * fell through to the generic ToolApprovalCard. The component tests
  * (TelegramSetTriggerRenderer / TelegramBatchSendRenderer) render the cards with
