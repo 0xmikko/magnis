@@ -5,8 +5,8 @@
 // the "contacts" surface (the following import walking TWO pages via
 // next_token); and an upstream 429 signals as the typed -32002 + retry_after.
 //
-// x has no magnis.execute table (the import moved onto the contacts surface —
-// plan §7), so there is no execute fixture. The per-file unit tests
+// x has no magnis.execute table (the import moved onto the contacts surface),
+// so there is no execute fixture. The per-file unit tests
 // (fetch/contacts/probe.test.ts) stay co-located and pin the fetchers; this
 // file adds ONLY the reusable wire-contract layer.
 import { mockFetch, runSourceContract } from "@magnis/testkit/source";

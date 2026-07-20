@@ -1,5 +1,5 @@
 // Remote-id builders for the `x` surface (tracked profiles + their posts).
-// These encode the idempotency keys (INV-4) the x module ingest dedups on.
+// These encode the idempotency keys the x module ingest dedups on.
 
 /** Profile entity → stable remote_id (`x:profile:{user_id}`). */
 export const profileRemoteId = (userId: string): string => `x:profile:${userId}`;

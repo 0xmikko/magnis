@@ -1,14 +1,14 @@
-// X (Twitter) API v2 — READ-ONLY client (INV-5). App-only Bearer auth for reads
-// (the bearer the host injects via _meta; DEC-5/6). Ported from content-os
+// X (Twitter) API v2 — READ-ONLY client. App-only Bearer auth for reads
+// (the bearer the host injects via _meta). Ported from content-os
 // src/x/api-client.ts + tweet-lookup.service.ts, stripped to the two read calls
 // the x connector needs: resolve a handle → profile, and recent tweets.
-// NO write paths, NO OAuth, NO persistence (content-os concerns dropped, DEC-3).
+// NO write paths, NO OAuth, NO persistence (content-os concerns dropped).
 
 import { RateLimitError } from "@magnis/connector-sdk";
 
 export const X_API_BASE = "https://api.x.com";
 
-/** Minimal fetch surface so tests inject a fake (no live API call — INV-6). */
+/** Minimal fetch surface so tests inject a fake (no live API call). */
 export type FetchLike = (
   url: string,
   init?: { method?: string; headers?: Record<string, string> },

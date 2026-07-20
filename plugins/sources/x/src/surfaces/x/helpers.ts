@@ -4,7 +4,7 @@
 
 import type { XTweet } from "../../api";
 
-/** ContentOS ingest port (social-post-rendering S4 / INV-1): X truncates `.text`
+/** ContentOS ingest port: X truncates `.text`
  *  at 280 — the FULL body lives in article.plain_text (Article) or
  *  note_tweet.text (long-form). Store the full text, never the teaser. */
 export function fullText(tweet: XTweet): string {

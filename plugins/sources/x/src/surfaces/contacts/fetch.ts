@@ -1,4 +1,4 @@
-// contacts surface (plan §7, S5): the following list flows through the ONE
+// contacts surface: the following list flows through the ONE
 // canonical ingest path — social_contact envelopes into the contacts module's
 // @syncHandler — instead of the old direct-write import. The import spec
 // arrives in the CURSOR (seeded host-side by `source.sync.bootstrap` when the
@@ -22,7 +22,7 @@ interface ContactsCursor {
   fetched?: number;
 }
 
-// Plan §7: payload {kind, handle, display_name, profile_url} — ALL fields
+// Payload {kind, handle, display_name, profile_url} — ALL fields
 // required. display_name falls back to the handle only because the provider
 // may omit `name`; it is never absent from the envelope.
 function socialContactEnvelope(user: XUser): Envelope {

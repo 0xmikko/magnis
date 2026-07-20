@@ -1,5 +1,5 @@
 // Remote-id builder for the `contacts` surface (the following import as
-// social_contact envelopes, plan §7). Encodes the idempotency key (INV-4).
+// social_contact envelopes). Encodes the idempotency key.
 
 /** Social-contact → stable remote_id (`x:social:{handle}`, lowercased so dedup
  *  survives handle-casing changes). */

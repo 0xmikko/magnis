@@ -11,8 +11,8 @@ import { probeXAuth } from "./probe";
 import { SURFACE_CONTACTS, SURFACE_X } from "./schema";
 
 /** Build the X connector config. Read-only: the host passes the opt-in handle
- * set (DEC-8) and the app-only bearer via _meta (DEC-6); this fetches profiles +
- * recent tweets. The friend import runs through the `contacts` surface (plan §7)
+ * set and the app-only bearer via _meta; this fetches profiles +
+ * recent tweets. The friend import runs through the `contacts` surface
  * — there is no magnis.execute command surface. */
 export function buildConnectorConfig(fetchFn: FetchLike = fetch): ConnectorConfig {
   return {
@@ -20,11 +20,11 @@ export function buildConnectorConfig(fetchFn: FetchLike = fetch): ConnectorConfi
     version: "0.1.0",
     surfaces: [SURFACE_X, SURFACE_CONTACTS],
     intervalSecs: 300,
-    // Surface router (plan §7): "x" = tracked profiles + posts; "contacts" =
+    // Surface router: "x" = tracked profiles + posts; "contacts" =
     // the following import as social_contact envelopes (cursor-seeded).
     fetch: (args) =>
       args.surface === SURFACE_CONTACTS ? fetchXContacts(args, fetchFn) : fetchX(args, fetchFn),
-    // ProbeAuth (plan §2.4) — see probe.ts (unit-tested F3 contract).
+    // ProbeAuth — see probe.ts for the unit-tested probe contract.
     probeAuth: (meta) => probeXAuth(meta, fetchFn),
   };
 }

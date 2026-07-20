@@ -1,6 +1,6 @@
-// ProbeAuth (plan §2.4): verify the key with a REAL provider call. X issues
+// ProbeAuth: verify the key with a REAL provider call. X issues
 // two token shapes: user-context (can call /2/users/me → @username) and
-// app-only (DEC-5 — our documented shape; /2/users/me answers 403 for it).
+// app-only (our documented shape; /2/users/me answers 403 for it).
 // The probe is a two-step protocol, not a fallback: whoami first; a 403
 // (token VALID but has no user context) verifies via a public lookup that
 // app-only tokens are allowed to make. 401/anything-else = key rejected.

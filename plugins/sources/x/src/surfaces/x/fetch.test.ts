@@ -2,8 +2,8 @@ import { describe, test, expect } from "bun:test";
 import { fetchX } from "./fetch";
 import type { FetchLike } from "../../api";
 
-// A fake X v2 API: records every URL hit (to assert INV-1 call counts) and
-// answers the two read endpoints with canned data. NO live network (INV-6).
+// A fake X v2 API: records every URL hit (to assert call counts) and
+// answers the two read endpoints with canned data. NO live network.
 function fakeApi() {
   const calls: string[] = [];
   const fetchFn: FetchLike = async (url) => {
@@ -111,9 +111,9 @@ describe("x connector fetch", () => {
     ).rejects.toBeInstanceOf(RateLimitError);
   });
 
-  // ── ContentOS ingest port (social-post-rendering S4) ──────────────────────
-  // INV-1: full text precedence article.plain_text ?? note_tweet.text ?? text.
-  // INV-2: post_type / media / urls / conversation_id present only when the API
+  // ── ContentOS ingest port ─────────────────────────────────────────────────
+  // Full text precedence: article.plain_text ?? note_tweet.text ?? text.
+  // post_type / media / urls / conversation_id present only when the API
   // provides them.
 
   function richApi() {

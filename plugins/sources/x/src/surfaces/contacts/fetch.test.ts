@@ -1,4 +1,4 @@
-// tst_x_contacts_surface (plan §7, S5): the contacts surface turns the
+// tst_x_contacts_surface: the contacts surface turns the
 // following list into social_contact envelopes — cursor-seeded import spec,
 // paged via nextCursor, clean empty fetch when nothing was requested.
 // NO live network (fake fetch).
@@ -82,7 +82,7 @@ describe("x connector contacts surface", () => {
   });
 });
 
-// Failure paths (restored from the deleted following.test.ts, plan §11):
+// Failure paths (restored from the deleted following.test.ts):
 // 429 → typed RateLimitError; unknown handle → typed error; provider 5xx →
 // XApiError; missing bearer rejects before any call.
 import { RateLimitError } from "@magnis/connector-sdk";

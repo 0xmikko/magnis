@@ -8,5 +8,5 @@ export const PLATFORM = "x";
 
 /** Wire surface: tracked profiles + their recent posts. */
 export const SURFACE_X = "x";
-/** Wire surface: the following import as social_contact envelopes (plan §7). */
+/** Wire surface: the following import as social_contact envelopes. */
 export const SURFACE_CONTACTS = "contacts";

@@ -7,7 +7,7 @@ import { postRemoteId, profileRemoteId } from "./schema";
 const RECENT_TWEETS = 10;
 
 // Map an X user → a x.profile envelope (entity_type "profile" — the x
-// module ingest discriminator). remote_id = idempotency key (INV-4).
+// module ingest discriminator). remote_id = idempotency key.
 function profileEnvelope(user: XUser): Envelope {
   return {
     surface: SURFACE_X,
@@ -33,7 +33,7 @@ function postEnvelope(user: XUser, tweet: XTweet, mediaByKey: Map<string, XMedia
   const isReply = refs.some((r) => r.type === "replied_to");
 
   // media_keys resolve against includes.media; keys with no include entry are
-  // dropped (nothing to render). INV-2: the key is absent when there is none.
+  // dropped (nothing to render). The key is absent when there is none.
   const media = (tweet.attachments?.media_keys ?? [])
     .map((k) => mediaByKey.get(k))
     .filter((x): x is XMedia => !!x)
@@ -80,8 +80,8 @@ function postEnvelope(user: XUser, tweet: XTweet, mediaByKey: Map<string, XMedia
 }
 
 /** Read-only fetch: resolve each TRACKED handle → profile + recent tweets.
- * Only tracked handles are queried (INV-1 — an untracked handle is never even
- * looked up). Missing bearer → auth error (DEC-7, fetch-time). Snapshot poll:
+ * Only tracked handles are queried (an untracked handle is never even
+ * looked up). Missing bearer → auth error (fetch-time). Snapshot poll:
  * one page, no cursor pagination in v1 (idempotent re-poll absorbs overlap). */
 export async function fetchX(args: FetchArgs, fetchFn: FetchLike): Promise<FetchResult> {
   const bearer = typeof args.meta?.bearer_token === "string" ? args.meta.bearer_token : "";
@@ -101,7 +101,7 @@ export async function fetchX(args: FetchArgs, fetchFn: FetchLike): Promise<Fetch
       envelopes.push(postEnvelope(user, tweet, mediaByKey));
     }
   }
-  // Poll is snapshot-per-cycle; no server cursor in v1 (DEC-5). hasMore=false.
+  // Poll is snapshot-per-cycle; no server cursor in v1. hasMore=false.
   const cursor = typeof args.cursor === "number" ? args.cursor : 0;
   return { envelopes, nextCursor: cursor + 1, hasMore: false };
 }
