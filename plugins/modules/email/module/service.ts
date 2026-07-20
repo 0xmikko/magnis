@@ -1,16 +1,16 @@
-// Email plugin — graph-native module. Read path (Stage 2): list (P2 windowed,
-// date-desc, facet inline), get (P1 entity+facets), batch (K·P1). Output is
+// Email plugin — graph-native module. Read path: list (windowed,
+// date-desc, facet inline), get (entity+facets), batch (one fetch per id). Output is
 // byte-compatible with the native module (MessageListItem / MessageDetailView)
 // and the UI's plugins/email/ui/types.ts copies.
 //
-// DB-access guarantees (INV-DB-1/2/4, asserted by module/__tests__/emailRead):
+// DB-access guarantees (asserted by module/__tests__/emailRead):
 //   - list (no search) = ONE list_entities_window (facet rendered inline) — no
 //     canonical read, no per-row facet hydrate.
 //   - list (search)    = ONE search_entities_by_name (ids) + ONE
 //     list_facets_for_entities over ONLY those ids — 2 crossings, no N+1.
 //   - get  = ONE get_entity_full. batch = K get_entity_full (one per id).
 //
-// Deferred (read-time enrichment, mirrors telegram Stage-1; verified visually
+// Deferred (read-time enrichment, mirrors the telegram module; verified visually
 // in the frontend, NOT asserted here): link-resolved linked_entities and the
 // canonical map. get returns linked_entities: [] / canonical: {} so it stays a
 // single fixed-statement op.
@@ -112,7 +112,7 @@ export class EmailModule {
       return { items, total, limit, offset };
     }
 
-    // P2: ONE statement — page of email.message ordered by the indexed entity
+    // ONE statement — page of email.message ordered by the indexed entity
     // `date` column DESC, each row carrying its latest details facet inline.
     const win = await this.graph.list_entities_window({
       schema: MESSAGE_SCHEMA,
@@ -154,7 +154,7 @@ export class EmailModule {
   async emailBatch(params: BatchParams): Promise<MessageDetailView[]> {
     const views: MessageDetailView[] = [];
     for (const id of params.ids) {
-      // K·P1: one get_entity_full per id; a not-found id is skipped (native
+      // One get_entity_full per id; a not-found id is skipped (native
       // get_batch parity — it warns + drops rather than failing the batch).
       const view = await this.getDetail(id);
       if (view) views.push(view);
@@ -162,10 +162,10 @@ export class EmailModule {
     return views;
   }
 
-  /// P1 detail fetch shared by get/batch. Returns null for a missing or
+  /// Detail fetch shared by get/batch. Returns null for a missing or
   /// non-email entity (get throws on null; batch skips it). At most TWO fixed
-  /// crossings: P1 get_entity_full (entity + facets + link edges) and, only
-  /// when the entity has links, ONE P5 get_entities batch to resolve the
+  /// crossings: get_entity_full (entity + facets + link edges) and, only
+  /// when the entity has links, ONE get_entities batch to resolve the
   /// neighbours' names — no per-link N+1.
   private async getDetail(id: string): Promise<MessageDetailView | null> {
     const detail = await this.graph.get_entity_full(id, { links: true });
@@ -181,8 +181,8 @@ export class EmailModule {
     }));
 
     // Resolve link neighbours (attachments, address hub, …) for the Context
-    // panel. Link edges carry ids + kind only; one batch get_entities (P5,
-    // user-scoped → drops non-owned targets) hydrates names/schemas.
+    // panel. Link edges carry ids + kind only; one batch get_entities
+    // (user-scoped → drops non-owned targets) hydrates names/schemas.
     const linked_entities: LinkedEntitySummary[] = [];
     if (links.length > 0) {
       const neighbourId = (l: { from_id: string; to_id: string }): string =>
@@ -665,7 +665,7 @@ export class EmailModule {
   // user, lowercased). The cross-module hub target: the contacts plugin and the
   // native meetings module call this (via rpc.execute / rpc_router) to link a
   // person/attendee to their email.address WITHOUT writing email.* themselves
-  // (the email plugin owns email.*). Replaces the deleted native shim (DEC-7).
+  // (the email plugin owns email.*). Replaces the deleted native shim.
   @rpc("ensure_address", {
     description: "Find-or-create the email.address entity for an address; returns its entity id.",
     params: {

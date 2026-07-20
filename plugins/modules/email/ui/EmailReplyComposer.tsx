@@ -1,14 +1,11 @@
 /**
  * EmailReplyComposer — per-surface wrapper container for the email reply composer.
  *
- * Owns: draft persistence (via useComposerDraft, keyed by thread_id per INV-3),
- * presence RPC on mount/unmount and thread switch (INV-7), mount-registry
- * registration for composer.apply events, attachment_ids forwarding (INV-11),
- * attachment picker UI, and draft clearing on successful send (INV-4) while
- * preserving on rejection (INV-5).
- *
- * Plan refs: DEC-3, DEC-5, DEC-10, DEC-13, DEC-14, DEC-15, DEC-16;
- * INV-3, INV-4, INV-5, INV-7, INV-11, INV-14.
+ * Owns: draft persistence (via useComposerDraft, keyed by thread_id),
+ * presence RPC on mount/unmount and thread switch, mount-registry
+ * registration for composer.apply events, attachment_ids forwarding,
+ * attachment picker UI, and draft clearing on successful send while
+ * preserving on rejection.
  */
 
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type JSX } from "react";
@@ -36,11 +33,11 @@ export function EmailReplyComposer({
 }: EmailReplyComposerProps): JSX.Element {
   const runtime = useAppRuntime();
   const registry = useComposerMountRegistry();
-  // INV-3: draft keyed by thread_id (not email_id) so multiple emails in the
+  // Draft keyed by thread_id (not email_id) so multiple emails in the
   // same thread share one draft.
   const { draft, setText, setAttachments, clear, applyRemote } = useComposerDraft("email", threadId);
 
-  // INV-7: mount → setPresence({mode:"email", thread_key}); unmount/thread switch → null.
+  // Mount → setPresence({mode:"email", thread_key}); unmount/thread switch → null.
   useEffect(() => {
     const unregister = registry.register({
       mode: "email",
@@ -68,7 +65,7 @@ export function EmailReplyComposer({
     attachmentMetaRef.current = draft.attachmentMeta;
   }, [draft.attachmentMeta]);
 
-  // Stage 4.4: subscribe to runtime.composer.onApply. Filter by
+  // Subscribe to runtime.composer.onApply. Filter by
   // (mode, thread_key) before delegating to applyComposerEvent.
   useEffect(() => {
     const unsubscribe = runtime.composer.onApply((event: ComposerApplyEventPayload): void => {
@@ -106,7 +103,7 @@ export function EmailReplyComposer({
       if (ok) clear();
     };
 
-    // DEC-15: outbound API is `email.reply {email_id, body_text, attachment_ids}`.
+    // Outbound API is `email.reply {email_id, body_text, attachment_ids}`.
     runtime.transport
       .rpc("email.reply", {
         email_id: emailId,

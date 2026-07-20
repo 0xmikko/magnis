@@ -51,10 +51,10 @@ export function EmailDetailPanel({ entityId }: DetailPanelProps): JSX.Element {
     );
   }
 
-  // DEC-14: email threadKey = metadata.thread_id. Per CLAUDE.md NO FALLBACKS:
+  // Email threadKey = metadata.thread_id. Per CLAUDE.md NO FALLBACKS:
   // if thread_id is absent we refuse to render the composer. Falling back
   // to a sentinel would collide every unrelated thread onto a single draft
-  // key (INV-1 violation).
+  // key.
   const threadIdRaw = detailView.metadata?.thread_id;
   const threadId = typeof threadIdRaw === "string" && threadIdRaw.length > 0 ? threadIdRaw : null;
 

@@ -85,7 +85,7 @@ export const EmailsModule = defineModule({
   ],
   extractAllowlistTarget: (tc) => {
     if (!isEmailTool(tc.name)) return null;
-    // Batch tools: allowlist handled server-side (INV-6)
+    // Batch tools: allowlist handled server-side
     if (tc.name.includes("batch")) return null;
     const args = tc.args as Record<string, unknown>;
     const to = typeof args.to === "string" ? args.to : null;

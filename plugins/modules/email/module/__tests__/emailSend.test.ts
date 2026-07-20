@@ -1,4 +1,4 @@
-// Stage 4 — email send / reply / batch_send (@writeTool). Native-parity flow:
+// Email send / reply / batch_send (@writeTool). Native-parity flow:
 // create the outgoing message FIRST (apply_batch), then route best-effort
 // (source failure non-fatal for send). Reply threads in_reply_to + links
 // attachments to the ORIGINAL. Exercised through @magnis/testkit/module.

@@ -1,8 +1,7 @@
-// Stage 3 — email ingest (@syncHandler): apply_batch parity + DB-access
+// Email ingest (@syncHandler): apply_batch parity + DB-access
 // guarantees. Exercised through @magnis/testkit/module. Asserts the fragment
 // shape (entities/links/addresses folded in), idempotency seams (external_ids),
-// live trigger.check parity, delete, empty-user skip, and the op-count gate
-// INV-DB-3.
+// live trigger.check parity, delete, empty-user skip, and the op-count gate.
 //
 // mockGraph is a throwing Proxy: the per-item write ops (create_entity/
 // attach_facet/add_link) are NOT arranged, so any per-item crossing throws —

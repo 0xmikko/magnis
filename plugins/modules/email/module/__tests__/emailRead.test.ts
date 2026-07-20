@@ -1,7 +1,7 @@
-// Stage 2 — email read surface: shape parity + DB-access guarantees.
+// Email read surface: shape parity + DB-access guarantees.
 // Exercises the V8 module class through @magnis/testkit/module (mockGraph +
 // mountModule). Asserts BOTH the returned DTO shape (tst_be_emailread_001) and
-// the exact graph op-counts per surface (tst_be_emaildb_003 → INV-DB-1/2/4): a
+// the exact graph op-counts per surface (tst_be_emaildb_003): a
 // fixed, N-independent number of crossings, no per-row hydrate, no
 // canonical/facet read on the hot path.
 //

@@ -1,4 +1,4 @@
-// Stage 5+6 — sync control + reply composer. Thin @rpc wrappers that delegate
+// Sync control + reply composer. Thin @rpc wrappers that delegate
 // to the host graph ops (sync_state / composer), keyed by the calling module.
 // Exercised through @magnis/testkit/module: the passed-in spies are wrapped by
 // mockGraph's Proxy (which forwards args to them), so `expect(spy).toHaveBeen…`
