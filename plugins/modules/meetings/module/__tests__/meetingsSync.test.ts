@@ -1,9 +1,9 @@
-// Stage 3 — meetings sync ingest (@syncHandler) + control (@rpc sync.status /
+// Meetings sync ingest (@syncHandler) + control (@rpc sync.status /
 // sync.reset). Exercises the module through @magnis/testkit/module (mockGraph +
 // mountModule + a test RpcExecutor). Asserts: snapshot/live upsert via
 // apply_batch (external_id idempotency, confidence 90), the full live
-// trigger.check payload (INV-6) with attendee email.address ids resolved through
-// email.ensure_address (DEC-6), delete (INV-7), empty-user hard error (INV-8),
+// trigger.check payload with attendee email.address ids resolved through
+// email.ensure_address, delete, empty-user hard error,
 // and the sync_state control surface.
 
 import { describe, expect, it, vi } from "vitest";

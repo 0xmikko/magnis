@@ -1,4 +1,4 @@
-// Stage 1 — meetings read surface: shape parity + behavior. Exercises the V8
+// Meetings read surface: shape parity + behavior. Exercises the V8
 // module class through @magnis/testkit/module (mockGraph + mountModule).
 // Mirrors the native meetings domain (types.rs): list (window over
 // meetings.calendar_event, starts_at DESC), get (entity + facets + links),

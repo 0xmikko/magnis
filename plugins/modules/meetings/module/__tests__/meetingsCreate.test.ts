@@ -1,5 +1,5 @@
-// Stage 2 — meetings.create write path: validation (INV-3, BEFORE any write),
-// snapshot shape (INV-13), and client_id idempotency (INV-4). Exercises the
+// meetings.create write path: validation (BEFORE any write),
+// snapshot shape, and client_id idempotency. Exercises the
 // module class through @magnis/testkit/module (mockGraph + mountModule).
 
 import { describe, expect, it, vi } from "vitest";

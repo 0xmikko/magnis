@@ -39,7 +39,7 @@ export function normalizeAttendees(attendees: CalendarAttendee[] | undefined): {
 
 /// Parse the canonical `attendees` shape from a facet payload.
 ///
-/// INV-24 / INV-24c — attendees use ONE format = `CalendarAttendee[]`
+/// Attendees use ONE format = `CalendarAttendee[]`
 /// (`{name?, email}`). Three explicit cases, strict NO FALLBACKS:
 ///   (a) field absent or `null`            → `[]` (valid empty state)
 ///   (b) valid array of `{name?, email}`   → parsed array

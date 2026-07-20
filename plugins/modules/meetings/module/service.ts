@@ -1,13 +1,13 @@
-// Meetings plugin — graph-native module. Read path (Stage 1): list (P2 windowed
-// over meetings.calendar_event, starts_at DESC, details facet inline), get (P1
-// entity + facets + links), search (meetings.EVENT schema — native quirk).
+// Meetings plugin — graph-native module. Read path: list (windowed
+// over meetings.calendar_event, starts_at DESC, details facet inline), get
+// (entity + facets + links), search (meetings.EVENT schema — native quirk).
 // Output is byte-compatible with the native module (types.rs MeetingListItem /
 // MeetingDetailView) and the UI's plugins/meetings/ui copies.
 //
 // Read-time enrichment ported from the native domain adapter: attendees resolve
 // to their contacts.person (email → email.address → has_email), and get's
 // linked_entities resolve the entity's link neighbours. Canonical is deferred to
-// {} on this hot path (mirrors email/telegram Stage-1; the detail UI is verified
+// {} on this hot path (mirrors the email/telegram modules; the detail UI is verified
 // visually in the frontend stage).
 
 import {
@@ -103,7 +103,7 @@ export class MeetingsModule {
       return { items, total, limit, offset };
     }
 
-    // P2: ONE window — page of meetings.calendar_event ordered by the details
+    // ONE window — page of meetings.calendar_event ordered by the details
     // facet's starts_at DESC, each row carrying its latest details facet inline.
     const win = await this.graph.list_entities_window({
       schema: CAL,
@@ -239,8 +239,8 @@ export class MeetingsModule {
   }
 
   // ── meetings.create (@writeTool) ──────────────────────────────
-  // Operator/agent create. Validates BEFORE any write (INV-3), idempotent on
-  // client_id (INV-4), returns the native snapshot shape (INV-13). The facet is
+  // Operator/agent create. Validates BEFORE any write, idempotent on
+  // client_id, returns the native snapshot shape. The facet is
   // written with source "local" semantics (confidence 100). NOTE: the native
   // agent-side "created" link (ToolDefinition.with_link_kind) is not expressible
   // through the @writeTool decorator and is dropped — consistent with the
@@ -274,7 +274,7 @@ export class MeetingsModule {
     },
   })
   async create(params: NewMeetingParams): Promise<Record<string, unknown>> {
-    // Validate BEFORE touching the graph (INV-3 / native messages).
+    // Validate BEFORE touching the graph (matches native messages).
     if (!params.title || params.title.trim().length === 0) {
       throw new Error("title must be a non-empty string");
     }
@@ -286,7 +286,7 @@ export class MeetingsModule {
       throw new Error("ends_at must be >= starts_at (ends_at < starts_at is rejected)");
     }
 
-    // Idempotency (INV-4): an existing client_id returns the existing entity,
+    // Idempotency: an existing client_id returns the existing entity,
     // no re-write (native repo create_local find_entity_for_user).
     if (params.client_id) {
       const existing = await this.graph.get_entity(params.client_id);
@@ -321,7 +321,7 @@ export class MeetingsModule {
     return this.snapshot(entity.id, params);
   }
 
-  /// Build the native create snapshot (INV-13): id + the canonical fields,
+  /// Build the native create snapshot: id + the canonical fields,
   /// description/location only when present.
   private snapshot(id: string, params: NewMeetingParams): Record<string, unknown> {
     const snap: Record<string, unknown> = {
@@ -351,7 +351,7 @@ export class MeetingsModule {
   }): Promise<{ ok: boolean; dropped_remote_ids: string[]; trigger_checks: MeetingTriggerCheck[] }> {
     const envelopes = Array.isArray(params.envelopes) ? params.envelopes : [];
 
-    // INV-8: validate ALL user_ids before any write so a bad envelope writes
+    // Validate ALL user_ids before any write so a bad envelope writes
     // nothing (native bails on empty user_id; no "" attribution).
     for (const env of envelopes) {
       if (!env.user_id) {
@@ -409,7 +409,7 @@ export class MeetingsModule {
     if (env.kind !== "live") return;
 
     // touched = [meeting, every attendee's email.address id]. email.address is
-    // owned by the email plugin → resolve via its ensure_address RPC (DEC-6),
+    // owned by the email plugin → resolve via its ensure_address RPC,
     // which converges on the shared hub id email:address:{lowercased}.
     const touched: string[] = [entityId];
     const attendees = Array.isArray(payload.attendees) ? (payload.attendees as Data[]) : [];
