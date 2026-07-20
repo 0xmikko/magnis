@@ -1,4 +1,4 @@
-// linkedin-add-flow LA-2: tracked-but-not-yet-synced handles surface as
+// Tracked-but-not-yet-synced handles surface as
 // PENDING rows at the top of profiles.list page 0 — the honest optimistic
 // state for the "+" flow ("Syncing…" until the real profile ingests, then the
 // placeholder disappears because the handle now exists among profiles).

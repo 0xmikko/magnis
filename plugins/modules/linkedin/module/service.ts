@@ -5,8 +5,8 @@
 // module, without touching x. v1 is read-only. (Split from the old shared
 // `social` module, see plan Revision.)
 // Writes ONLY `linkedin.*` (facet_write_prefixes); soft-reads contacts.person.
-// Idempotent: facets carry external_id = the source remote_id (re-poll upserts,
-// INV-4). Provenance is stamped host-side from the calling plugin + envelope.
+// Idempotent: facets carry external_id = the source remote_id (re-poll
+// upserts). Provenance is stamped host-side from the calling plugin + envelope.
 
 import { searchEntitiesPage, str, syncHandler, tool, type GraphService, type PluginDeps } from "@magnis/plugin-sdk";
 import type {
@@ -68,7 +68,7 @@ export class LinkedinModule {
       const payload = env.payload;
       const entityType = str(payload, "entity_type");
       if (!remoteId || env.kind === "delete") {
-        if (remoteId && env.kind === "delete") dropped.push(remoteId); // S0: no delete path yet
+        if (remoteId && env.kind === "delete") dropped.push(remoteId); // no delete path yet
         continue;
       }
       if (entityType === "profile") {
@@ -115,11 +115,11 @@ export class LinkedinModule {
 
     if (entities.length > 0) {
       const applied = await this.graph.apply_batch({ entities, links });
-      // Identity link + placeholder-name upgrade (DEC-1/DEC-4). A profile is
+      // Identity link + placeholder-name upgrade. A profile is
       // only ever ingested because a contact tracks its handle — resolve the
       // owner and link profile→person (idempotent by (from,to,kind)). Any RPC
       // failure is swallowed: the next poll cycle re-ingests the profile and
-      // repairs the link (self-healing, INV-1).
+      // repairs the link (self-healing).
       await this.linkProfilesToContacts(envelopes, applied.ids);
     }
     return { ok: dropped.length === 0, dropped_remote_ids: dropped };
@@ -146,7 +146,7 @@ export class LinkedinModule {
           to_id: owner.contact_id,
           kind: PROFILE_PERSON_LINK,
         });
-        // DEC-4 (INV-7): CAS rename — only upgrades a handle-placeholder name.
+        // CAS rename — only upgrades a handle-placeholder name.
         const displayName = str(payload, "display_name");
         if (displayName) {
           await this.rpc.execute("contacts.rename_if_placeholder", {
@@ -156,7 +156,7 @@ export class LinkedinModule {
           });
         }
       } catch {
-        // Self-healing (DEC-1): repaired on the next poll cycle.
+        // Self-healing: repaired on the next poll cycle.
       }
     }
   }
@@ -226,14 +226,14 @@ export class LinkedinModule {
     params: {
       type: "object",
       // Plain string, not uuid: pending placeholders use "pending:<handle>"
-      // ids (LA-2) and must pass schema validation.
+      // ids and must pass schema validation.
       properties: { id: { type: "string" } },
       required: ["id"],
       additionalProperties: false,
     },
   })
   async profilesGet(params: GetParams): Promise<ProfileDetail> {
-    // LA-2: a pending placeholder has no entity yet — synthesize the minimal
+    // A pending placeholder has no entity yet — synthesize the minimal
     // detail from the tracking record so the detail pane can render
     // "Syncing…" instead of erroring.
     if (params.id.startsWith("pending:")) {
@@ -334,7 +334,7 @@ export class LinkedinModule {
     });
     let items = win.items.map((row) => this.profileItem(row));
     if (params.platform) items = items.filter((i) => i.platform === params.platform);
-    // LA-2: page 0 (no search) prepends tracked-but-not-yet-synced handles as
+    // Page 0 (no search) prepends tracked-but-not-yet-synced handles as
     // PENDING rows — the honest optimistic state right after "+": the row
     // appears instantly and is replaced by the real profile once sync
     // ingests it (its handle then exists among profiles).
@@ -348,7 +348,7 @@ export class LinkedinModule {
     return { items, total: win.total, limit, offset };
   }
 
-  /// Tracked linkedin handles with NO ingested profile yet (LA-2). A contacts
+  /// Tracked linkedin handles with NO ingested profile yet. A contacts
   /// RPC failure yields no placeholders, never a broken list (the real rows
   /// are the payload; pending rows are advisory).
   private async pendingProfiles(pageHandles: (string | null)[]): Promise<ProfileListItem[]> {

@@ -1,4 +1,4 @@
-// tst_fe_li_header_001 (social-post-rendering S2, INV-6) — LinkedIn mirror of
+// tst_fe_li_header_001 — LinkedIn mirror of
 // tst_fe_x_header_001: Tracked badge + three-dots Untrack round-trips the
 // contacts tracking RPCs with platform "linkedin".
 import { describe, it, expect, vi } from "vitest";

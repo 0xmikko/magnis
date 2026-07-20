@@ -1,4 +1,4 @@
-// linkedin-add-flow LA-3 (reworks social-contact-identity S5): the "+" opens
+// The "+" opens
 // a DIALOG — paste a URL/handle, validation feedback inline, success confirms
 // "Syncing…" and keeps the dialog open for the next paste (batch-friendly).
 import { describe, it, expect, vi } from "vitest";

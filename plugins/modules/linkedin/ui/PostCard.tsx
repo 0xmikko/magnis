@@ -20,7 +20,7 @@ export function proxiedMediaUrl(url: string | null): string | null {
 }
 
 
-// ContentOS render model, LinkedIn form, X-native card layout (S5/S7): header
+// ContentOS render model, LinkedIn form, X-native card layout: header
 // = avatar + bold name + @handle · date (linked), body, icon metrics row.
 // anysite has no media/urls/article yet — the card renders what exists.
 
@@ -54,8 +54,8 @@ export function formatNumber(n: number): string {
   return `${(n / 1_000_000).toFixed(1)}M`;
 }
 
-/** ContentOS relativeTime with the null-guard (new Date(null) = 1970 trap —
- * INV-4): relative label + absolute ISO for the tooltip. */
+/** ContentOS relativeTime with the null-guard (new Date(null) = 1970 trap):
+ * relative label + absolute ISO for the tooltip. */
 export function relativeTime(v: string | null): { label: string; title: string } {
   if (!v) return { label: "—", title: "" };
   const d = new Date(v);

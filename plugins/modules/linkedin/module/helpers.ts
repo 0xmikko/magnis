@@ -5,8 +5,8 @@
 import { num } from "@magnis/plugin-sdk";
 import type { PostMediaItem, PostMetricsView } from "../types.ts";
 
-/// Rich post fields (social-post-rendering S4): repost flag + reaction metrics +
-/// media pass through from the anysite payload. Pre-S4 rows lack them → false/[]/null.
+/// Rich post fields: repost flag + reaction metrics +
+/// media pass through from the anysite payload. Older rows lack them → false/[]/null.
 export function richPostFields(d: Record<string, unknown>): {
   is_repost: boolean;
   media: PostMediaItem[];

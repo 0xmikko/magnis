@@ -12,6 +12,6 @@ export const POST_CONTENT = "linkedin.post.content";
 export const POST_METRICS = "linkedin.post.metrics";
 /** post → author-profile link (created at ingest within a page). */
 export const AUTHORED_BY = "linkedin.post:linkedin.profile";
-/** Identity link (social-contact-identity DEC-1): profile → the contact whose
+/** Social-contact identity link: profile → the contact whose
  *  tracked handle caused the profile to be ingested. */
 export const PROFILE_PERSON_LINK = "linkedin.profile:contacts.person";

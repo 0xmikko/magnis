@@ -1,4 +1,4 @@
-// Lifecycle install (extensions-lifecycle DEC-L4): the SDK default —
+// Lifecycle install: the SDK default —
 // register exactly the schemas the manifest declares.
 import { defineLifecycle } from "@magnis/plugin-sdk";
 

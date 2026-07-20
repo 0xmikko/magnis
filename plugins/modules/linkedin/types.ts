@@ -89,7 +89,7 @@ export interface GetParams {
   id: string;
 }
 
-// Rich post fields (social-post-rendering S4/S9): repost flag, reaction
+// Rich post fields: repost flag, reaction
 // metrics (null = anysite shipped no counter) and post images.
 export interface PostMediaItem {
   type: string | null;
@@ -122,7 +122,7 @@ export interface ProfileListItem {
   display_name: string | null;
   follower_count: number | null;
   avatar_url: string | null;
-  /** Tracked but not yet fetched by sync (linkedin-add-flow LA-2): a
+  /** Tracked but not yet fetched by sync: a
    * placeholder row shown as "Syncing…" until the real profile ingests. */
   pending?: boolean;
 }

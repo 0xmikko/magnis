@@ -43,7 +43,7 @@ export const LinkedinModule = defineModule({
   themeColor: "purple",
   entityTypes: ["profile", "post"],
   // Per-type entity cards: a profile in a contact\u2019s dynamic tab is an
-  // identity card, not a post (social-contact-identity S4/INV-2).
+  // identity card, not a post.
   entityLabels: { profile: { EntityCard: LinkedInProfileCard } },
   primaryEntityType: "profile",
   // List the tracked profiles (people), not posts.
@@ -52,7 +52,7 @@ export const LinkedinModule = defineModule({
     const asStr = (v: unknown): string => (typeof v === "string" ? v : typeof v === "number" ? String(v) : "");
     const handle = asStr(raw.handle);
     const fc = typeof raw.follower_count === "number" ? raw.follower_count : null;
-    // LA-2: a tracked-but-not-yet-synced placeholder reads "Syncing…" — the
+    // A tracked-but-not-yet-synced placeholder reads "Syncing…" — the
     // honest optimistic state right after "+"; replaced by the real profile
     // on the next sync cycle.
     const pending = raw.pending === true;
@@ -73,7 +73,7 @@ export const LinkedinModule = defineModule({
   // header extends the standard TopBarHeader through HeaderComponent (bio +
   // profile link in its `extra` slot, like email's To/Reply-To rows) and the
   // panel is only the BODY (posts). NEVER detailType:"custom" for headers.
-  // "+" add-profile input (S5): LinkedIn only — X friends come from the API.
+  // "+" add-profile input: LinkedIn only — X friends come from the API.
   HeaderActions: AddProfileAction,
   HeaderComponent: LinkedInProfileHeader,
   DetailPanel: LinkedInProfileFeed,
