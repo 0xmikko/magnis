@@ -16,7 +16,7 @@
 //
 // Ownership: every single-entity read + mutation goes through the user-scoped
 // `get_entity_full` precheck (raw `get_entity`/`attach_facet` are NOT user-scoped),
-// matching the native Codex-2/3 guards.
+// matching the native guards.
 
 import { tool, writeTool, type GraphService, type PluginDeps, type RpcExecutor } from "@magnis/plugin-sdk";
 import type { EntityDetail, LinkSummary } from "@magnis/plugin-sdk";
@@ -416,7 +416,7 @@ export class TriggersModule {
   private async listItem(detail: EntityDetail, config: TriggerConfigData): Promise<TriggerListItem> {
     const names: string[] = [];
     for (const link of this.watchesLinks(detail)) {
-      // User-scoped resolution (native Codex-2/3): a poisoned `watches` link to a
+      // User-scoped resolution (native guard): a poisoned `watches` link to a
       // foreign entity must NOT leak its name. `get_entity_full` returns null for
       // a non-owned target, so foreign names are dropped.
       const target = await this.graph.get_entity_full(link.to_id, { links: false });
@@ -444,7 +444,7 @@ export class TriggersModule {
 
     const watched: WatchedEntity[] = [];
     for (const link of this.watchesLinks(detail)) {
-      // User-scoped (native Codex-3): foreign watched-entity names resolve to null.
+      // User-scoped (native guard): foreign watched-entity names resolve to null.
       const target = await this.graph.get_entity_full(link.to_id, { links: false });
       watched.push({ id: link.to_id, name: target?.entity.name ?? null });
     }
@@ -456,7 +456,7 @@ export class TriggersModule {
     let parentEpisodeName: string | null = null;
     if (belongs) {
       parentEpisodeId = belongs.to_id;
-      // User-scoped (native Codex-2): a foreign parent-episode name resolves to null.
+      // User-scoped (native guard): a foreign parent-episode name resolves to null.
       const parent = await this.graph.get_entity_full(belongs.to_id, { links: false });
       parentEpisodeName = parent?.entity.name ?? null;
     }
