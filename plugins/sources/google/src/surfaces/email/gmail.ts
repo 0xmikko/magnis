@@ -852,7 +852,7 @@ export async function fetchMessagePage(
 
 /** CatchUp/forward incremental fetch via the History API. A missing
  * `history_id` in the cursor is a HistoryExpired error, never a silent
- * re-bootstrap. Carries bootstrap `discovered`/`total` FORWARD (INV-8). */
+ * re-bootstrap. Carries bootstrap `discovered`/`total` FORWARD. */
 export async function fetchHistoryChanges(
   token: string,
   cursor: unknown,
@@ -880,7 +880,7 @@ export async function fetchHistoryChanges(
     .map(([msgId]) => msgId);
   envelopes.push(...(await fetchSnapshotEnvelopes(token, fetchIds, fetchFn)));
 
-  // Carry bootstrap progress FORWARD (page_len 0 → no increment, INV-8).
+  // Carry bootstrap progress FORWARD (page_len 0 → no increment).
   const progress = progressCursor(cursor, 0, undefined);
 
   const hasMore = typeof resp.nextPageToken === "string";

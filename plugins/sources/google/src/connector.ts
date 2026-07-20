@@ -77,7 +77,7 @@ export function buildConnectorConfig(
           time_max: rawStr(args.raw, "time_max"),
         };
         const r = await fetchEventsPage(token, cursor, window, fetchFn);
-        // No cheap total estimate → indeterminate "N synced…" (DEC-5).
+        // No cheap total estimate → indeterminate "N synced…".
         return {
           envelopes: r.envelopes,
           nextCursor: r.nextCursor,

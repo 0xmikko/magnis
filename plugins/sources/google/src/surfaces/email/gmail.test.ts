@@ -251,7 +251,7 @@ describe("history action resolution", () => {
     });
     expect(r.envelopes[1].kind).toBe("snapshot");
     expect(r.envelopes[1].remote_id).toBe("mA");
-    // INV-8: counters carried FORWARD, never reset; watermark advances.
+    // Counters carried FORWARD, never reset; watermark advances.
     expect(r.hasMore).toBe(false);
     expect(r.nextCursor).toEqual({ history_id: "999", discovered: 200, total: 500 });
     expect(r.total).toBe(500);

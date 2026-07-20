@@ -1,11 +1,11 @@
 /**
- * Google connect screen (per-source auth UI, DEC-3).
+ * Google connect screen (per-source auth UI).
  *
  * OAuth2 is a pure browser round-trip: the HOST owns the ceremony, so this screen
  * only needs to send the browser to `GET /auth/sources/google/start`, which
  * 302-redirects to Google's consent page and (after callback) back into the app
  * with `?source_connected=google`. No secrets, no tokens, no isolate involvement
- * touch this component (CON-3 / DEC-14). Plain elements + Tailwind only (no
+ * touch this component. Plain elements + Tailwind only (no
  * `@magnis/host/ui` dependency, which the sealed-isolate shim can't fully provide).
  *
  * NOTE: for oauth2, the generic `SourceConnect` host component performs the

@@ -1,6 +1,6 @@
 // Pure sync-progress cursor helper — twin of plugins/sources/google/src/progress.rs.
 //
-// Contract (INV-2 / INV-7 / INV-8):
+// Contract:
 // - `discovered` is CUMULATIVE: prior `discovered` (read from the incoming
 //   cursor) + this page's item count. It never resets mid-bootstrap.
 // - `total` is a best-effort estimate resolved as `fresh ?? prior-cursor total`

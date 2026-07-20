@@ -1,5 +1,5 @@
 // magnis.auth.exchange / magnis.auth.revoke — twin of
-// plugins/sources/google/src/oauth_exchange.rs (DEC-15/16/25/26/27).
+// plugins/sources/google/src/oauth_exchange.rs.
 //
 // The HOST owns the OAuth ceremony (state/PKCE/nonce/consent URL) and, after
 // the browser callback, calls exchange with `_meta = { client_id,
@@ -171,7 +171,7 @@ export async function exchange(
   };
 }
 
-/** magnis.auth.revoke (DEC-27): ask Google to invalidate the stored
+/** magnis.auth.revoke: ask Google to invalidate the stored
  * refresh_token. 200 = revoked; 400 = already invalid — both mean "not usable
  * anymore", which is the goal. */
 export async function revoke(

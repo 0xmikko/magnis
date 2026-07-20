@@ -197,7 +197,7 @@ const DAY_MS = 86_400_000;
 
 /** Bootstrap/catch-up events fetch. Window defaults to now-30d..now+90d,
  * overridable via `window.time_min` / `window.time_max`. Cancelled events are
- * skipped. No cheap total estimate → cumulative `discovered` only (DEC-5);
+ * skipped. No cheap total estimate → cumulative `discovered` only;
  * `nextCursor` is null on the last page. */
 export async function fetchEventsPage(
   token: string,
