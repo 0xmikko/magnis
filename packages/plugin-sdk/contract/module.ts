@@ -47,7 +47,7 @@ export interface RawEntity {
   // The host serializes `Option<bool>` as `null` when unset (core/entity.rs)
   // — the wire carries boolean | null, never just absence.
   is_pinned?: boolean | null;
-  // Additive (graph-read-api §7b): index-backed columns some lists render/sort by.
+  // Additive: index-backed columns some lists render/sort by.
   date?: string | null;
   idx?: string | null;
 }
@@ -83,7 +83,7 @@ export interface SearchEntitiesParams {
 /// Filter entities by a facet field value (e.g. messages whose
 /// `telegram.message.details.chat_id == <id>`), optionally ordered by a facet
 /// field. Returns the page + total.
-/// A filter/order field for `list_entities_window` (graph-read-api §3 FieldRef):
+/// A filter/order field for `list_entities_window` (a FieldRef):
 /// an entity column, or a facet field (latest facet of `facet_schema`, JSON
 /// `facet_path`). Provide EITHER `entity_field` OR `facet_schema`+`facet_path`.
 export interface FieldRefDto {
@@ -96,7 +96,7 @@ export interface OrderKeyDto {
   /** desc → NULLS LAST, asc (default false) → NULLS FIRST. */
   desc?: boolean;
 }
-/// P2 windowed list: page of a schema, each row carrying the latest render
+/// Windowed list: page of a schema, each row carrying the latest render
 /// facet's `data` inline, ordered/filtered by entity-col or facet-field, with
 /// the exact total — one DB statement.
 export interface WindowSpec {
@@ -122,13 +122,13 @@ export interface WindowPage {
   items: WindowRow[];
   total: number;
 }
-/// P1 detail: an entity + its latest facets + its link edges (one fetch).
+/// Detail: an entity + its latest facets + its link edges (one fetch).
 export interface EntityDetail {
   entity: RawEntity;
   facets: FacetRecord[];
   links: LinkSummary[];
 }
-/// P3: a parent's neighbors over a typed link.
+/// A parent's neighbors over a typed link.
 export interface LinkedSpec {
   parent_id: string;
   link_kind: string;
@@ -323,20 +323,19 @@ export interface GraphService<
   list_entities(p: ListEntitiesParams): Promise<EntityPage>;
   // filter by a facet field value (+ optional facet-field order); page + total.
   list_entities_by_facet_field(p: FacetFieldListParams): Promise<EntityPage>;
-  // P2 — windowed list with the latest render facet inline + exact total, in one
-  // statement. Filter/order over entity columns or facet fields. [graph-read-api §4 P2]
+  // Windowed list with the latest render facet inline + exact total, in one
+  // statement. Filter/order over entity columns or facet fields.
   list_entities_window(p: WindowSpec): Promise<WindowPage>;
-  // P1 — one entity with its latest facets (optional schema subset) + link edges,
-  // user-scoped (null for a non-owner). [graph-read-api §4 P1]
+  // One entity with its latest facets (optional schema subset) + link edges,
+  // user-scoped (null for a non-owner).
   get_entity_full(
     id: string,
     opts?: { facets?: string[]; links?: boolean },
   ): Promise<EntityDetail | null>;
-  // P3 — a parent's neighbors over a typed link, render facet inline + the edge.
-  // [graph-read-api §4 P3]
+  // A parent's neighbors over a typed link, render facet inline + the edge.
   list_linked(p: LinkedSpec): Promise<LinkedPage>;
-  // P5 (batch) — resolve a set of entity ids in one statement, user-scoped, in
-  // input order. [graph-read-api §4 P5]
+  // Batch: resolve a set of entity ids in one statement, user-scoped, in
+  // input order.
   get_entities(ids: string[]): Promise<RawEntity[]>;
   // user-scoped; omit/empty context = all of the user's entities.
   list_entities_by_context(context?: string): Promise<RawEntity[]>;
@@ -461,7 +460,7 @@ export interface PluginUtil {
   uuid_v5(namespace: string, name: string): Promise<string>;
 }
 
-/// Cross-module RPC hub (DEC-3). `execute` calls another module's RPC
+/// Cross-module RPC hub. `execute` calls another module's RPC
 /// method over the host router. Allowed targets are declared in the
 /// manifest `capabilities.rpc_calls`; v0 supports native-module targets
 /// only (plugin→plugin is rejected host-side).

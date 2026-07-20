@@ -198,7 +198,7 @@ export function definePlugin<
       }
       rpcHandlers[rpcName] = (params: unknown): unknown => method.call(instance, params);
       // RPC-only handlers (rpc()) register the handler but are NOT harvested
-      // as agent tools (DEC-14).
+      // as agent tools.
       if (m.isTool) {
         toolDefinitions.push({
           name: rpcName,
@@ -217,7 +217,7 @@ export function definePlugin<
   };
 }
 
-// ── Lifecycle runtime (extensions-lifecycle Stage 4, spec docs/plugins/lifecycle.md §4.1)
+// ── Lifecycle runtime
 // The hook/context/step types (LifecycleHooks, InstallContext, MigrationStep)
 // live in ./contract/lifecycle.
 
@@ -238,7 +238,7 @@ export function defineLifecycle(hooks: LifecycleHooks): void {
   (globalThis as Record<string, unknown>).__magnis_lifecycle_install = declared;
 }
 
-/** Declare one data-migration ladder step (spec §4.2). Runs the step
+/** Declare one data-migration ladder step. Runs the step
  * immediately in the transient migrate isolate; on success the host bumps
  * `installed_extensions.version` to the step target in its own transaction —
  * a crash resumes from the last committed step. The step MUST be idempotent:

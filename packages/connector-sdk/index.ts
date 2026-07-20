@@ -92,7 +92,7 @@ function errorReply(id: unknown, e: unknown): Record<string, unknown> {
   return { jsonrpc: "2.0", id, error: { code: GENERIC_FETCH_ERROR_CODE, message } };
 }
 
-/** Live subscriptions this process holds (S1.2). Module-level: one connector
+/** Live subscriptions this process holds. Module-level: one connector
  * process serves one host. */
 const liveSubscriptions = new Set<string>();
 
@@ -197,7 +197,7 @@ if (name === "magnis.auth.probe" && config.probeAuth) {
     const rawArgs = (msg.params?.arguments ?? {});
     const metaArg = extractMeta(rawArgs);
 
-    // ── push sessions (S1.2) ────────────────────────────────────────────────
+    // ── push sessions ───────────────────────────────────────────────────────
     if (name === "listen_start" && config.listenStart) {
       const subscriptionId =
         typeof rawArgs.subscription_id === "string" && rawArgs.subscription_id
@@ -247,7 +247,7 @@ if (name === "magnis.auth.probe" && config.probeAuth) {
       }
     }
 
-    // ── auth flows (S1.3) ───────────────────────────────────────────────────
+    // ── auth flows ──────────────────────────────────────────────────────────
     if (name.startsWith("magnis.auth.") && name !== "magnis.auth.probe") {
       const op = name.slice("magnis.auth.".length) as "begin" | "step" | "exchange" | "revoke";
       const handler = config.auth?.[op];
@@ -267,7 +267,7 @@ if (name === "magnis.auth.probe" && config.probeAuth) {
       }
     }
 
-    // ── outbound actions (S1.4) ─────────────────────────────────────────────
+    // ── outbound actions ────────────────────────────────────────────────────
     if (name === "magnis.execute") {
       const action = typeof rawArgs.action === "string" ? rawArgs.action : "";
       const handler = config.execute?.[action];
@@ -296,7 +296,7 @@ if (name === "magnis.auth.probe" && config.probeAuth) {
     const args = rawArgs;
     const surface =
       typeof args.surface === "string" ? args.surface : config.surfaces[0] ?? "";
-    const cursor = args.cursor; // arbitrary JSON, verbatim (S1.1)
+    const cursor = args.cursor; // arbitrary JSON, verbatim
     const direction =
       args.direction === "forward" || args.direction === "backward"
         ? args.direction
@@ -324,8 +324,8 @@ if (name === "magnis.auth.probe" && config.probeAuth) {
     }
   }
 
-  // tools/list and anything else: advertise the single read tool (cred-less,
-  // DEC-7 — initialize/list never need a key; auth fails at fetch).
+  // tools/list and anything else: advertise the single read tool (cred-less —
+  // initialize/list never need a key; auth fails at fetch).
   if (method === "tools/list") {
     return {
       jsonrpc: "2.0",

@@ -1,5 +1,5 @@
-// StateMock — the ONE programmable mock connector (accounts-sync-status plan
-// §11.1). Tests drive it into ANY contract-expressible outcome.
+// StateMock — the ONE programmable mock connector. Tests drive it into ANY
+// contract-expressible outcome.
 //
 // TS port of the `magnis-mock-statemachine` Rust binary. Where the Rust twin
 // was ONE binary spawned by three archetype manifests, this is ONE package

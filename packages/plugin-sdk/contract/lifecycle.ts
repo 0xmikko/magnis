@@ -15,7 +15,7 @@
 // Every name below is re-exported from `@magnis/plugin-sdk`, so this move
 // changes no consumer.
 
-// ── Lifecycle hooks (extensions-lifecycle Stage 4, spec docs/plugins/lifecycle.md §4.1)
+// ── Lifecycle hooks
 
 /** The install context handed to a package's lifecycle install hook. The hook
  * DECLARES its installation actions; the host validates them against the
@@ -33,7 +33,7 @@ export interface LifecycleHooks {
   install(ctx: InstallContext): void;
 }
 
-/** One data-migration ladder step (spec §4.2), consumed by `defineMigration`.
+/** One data-migration ladder step, consumed by `defineMigration`.
  * The host runs it in the transient migrate isolate; on success it bumps
  * `installed_extensions.version` to the step target in its own transaction — a
  * crash resumes from the last committed step. The step MUST be idempotent: a

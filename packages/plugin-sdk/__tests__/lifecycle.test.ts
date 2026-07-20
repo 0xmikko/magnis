@@ -1,4 +1,4 @@
-// SDK lifecycle hooks (extensions-lifecycle Stage 4, spec §4.1).
+// SDK lifecycle hooks.
 // defineLifecycle runs the install hook immediately and publishes the
 // declaration on the well-known global the host reads back.
 

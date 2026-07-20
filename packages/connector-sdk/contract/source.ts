@@ -26,15 +26,15 @@ export interface Envelope {
 
 export interface FetchArgs {
   surface: string;
-  /** Arbitrary JSON cursor (S1.1) — the host round-trips it verbatim; a
+  /** Arbitrary JSON cursor — the host round-trips it verbatim; a
    * numeric cursor is just the JSON number a poll connector chose. */
   cursor?: unknown;
   /** Present-to-past by default; the host may ask "forward" on catch-up. */
   direction?: "backward" | "forward";
-  /** Tracked handles for this platform — set DEC-8 (host passes the opt-in set). */
+  /** Tracked handles for this platform — the host passes the opt-in set. */
   tracked_handles?: string[];
   limit?: number;
-  /** Host-injected credentials (DEC-6): the `_meta` object the host attaches to
+  /** Host-injected credentials: the `_meta` object the host attaches to
    * each tools/call — e.g. `{ bearer_token }` (X) / `{ anysite_key }` (LinkedIn). */
   meta?: Record<string, unknown>;
   /** The verbatim tools/call `arguments`. Surface-specific extras the typed
@@ -56,11 +56,11 @@ export interface FetchResult {
 /** The read handler — called for magnis.sync.fetch. Read-only. */
 export type FetchHandler = (args: FetchArgs) => Promise<FetchResult>;
 
-/** ProbeAuth (sync-status plan §2.4) — called for magnis.auth.probe. MUST hit
+/** ProbeAuth — called for magnis.auth.probe. MUST hit
  * the real provider with the injected key and return the verified subject. */
 export type ProbeAuthHandler = (meta: Record<string, unknown> | undefined) => Promise<{ subject: string }>;
 
-/** Push session open (S1.2): called on `listen_start` (and the legacy
+/** Push session open: called on `listen_start` (and the legacy
  * `magnis.sync.listen` alias). `emit` stamps + writes one envelope notification
  * for THIS subscription; after `listen_stop` it no-ops. */
 export type ListenStartHandler = (
@@ -68,7 +68,7 @@ export type ListenStartHandler = (
   emit: (envelope: Envelope) => void,
 ) => Promise<void>;
 
-/** Push session close (S1.2): called on `listen_stop`. */
+/** Push session close: called on `listen_stop`. */
 export type ListenStopHandler = (args: { subscription_id: string }) => Promise<void>;
 
 /** One host-relayed handler in the auth table / execute table: takes the
@@ -79,12 +79,12 @@ export type ConnectorActionHandler = (
   meta: Record<string, unknown> | undefined,
 ) => Promise<Record<string, unknown>>;
 
-/** Auth-flow handlers (S1.3) — the host relays magnis.auth.begin/step/exchange/
+/** Auth-flow handlers — the host relays magnis.auth.begin/step/exchange/
  * revoke here with host-held inputs (+ `_meta`). A missing handler answers
  * -32601 (this connector doesn't implement that step). */
 export type AuthHandlers = Partial<Record<"begin" | "step" | "exchange" | "revoke", ConnectorActionHandler>>;
 
-/** Outbound actions (S1.4): `magnis.execute` payload `{ action, ... }` dispatches
+/** Outbound actions: `magnis.execute` payload `{ action, ... }` dispatches
  * by name; unknown action answers -32601. */
 export type ExecuteTable = Record<string, ConnectorActionHandler>;
 
@@ -97,7 +97,7 @@ export interface ConnectorConfig {
   intervalSecs?: number;
   /** The read handler — called for magnis.sync.fetch. Read-only. */
   fetch: FetchHandler;
-  /** ProbeAuth (sync-status plan §2.4) — called for magnis.auth.probe. MUST
+  /** ProbeAuth — called for magnis.auth.probe. MUST
    * hit the real provider with the injected key and return the verified
    * subject. Absent → magnis.auth.probe stays rejected (source cannot be
    * provisioned). */
@@ -105,17 +105,17 @@ export interface ConnectorConfig {
   /** "push" advertises live delivery: the host opens `listen_start`
    * subscriptions and consumes `notifications/magnis/envelope`. */
   mode?: "poll" | "push";
-  /** Push session open (S1.2): called on `listen_start` (and the legacy
+  /** Push session open: called on `listen_start` (and the legacy
    * `magnis.sync.listen` alias). `emit` stamps + writes one envelope
    * notification for THIS subscription; after `listen_stop` it no-ops. */
   listenStart?: ListenStartHandler;
-  /** Push session close (S1.2): called on `listen_stop`. */
+  /** Push session close: called on `listen_stop`. */
   listenStop?: ListenStopHandler;
-  /** Auth-flow handlers (S1.3) — the host relays magnis.auth.begin/step/
+  /** Auth-flow handlers — the host relays magnis.auth.begin/step/
    * exchange/revoke here with host-held inputs (+ `_meta`). A missing
    * handler answers -32601 (this connector doesn't implement that step). */
   auth?: AuthHandlers;
-  /** Outbound actions (S1.4): `magnis.execute` payload `{ action, ... }`
+  /** Outbound actions: `magnis.execute` payload `{ action, ... }`
    * dispatches by name; unknown action answers -32601. */
   execute?: ExecuteTable;
   /** Notification writer override (tests). Default: process.stdout. */
