@@ -1,7 +1,7 @@
 // Shared DTOs for the companies plugin.
 //
 // Imported by both `module/` (V8 isolate, backend dispatch) and `ui/`
-// (browser, transpiled on the fly by the backend Stage-10 endpoint).
+// (browser, transpiled on the fly by the backend transpile endpoint).
 // Single source of truth for the wire shape that the host frontend
 // consumes via `useModuleList` and `useQuery(getRpcMethod)`.
 
@@ -80,7 +80,7 @@ export interface CreateParams {
   summary?: string;
   // caller-supplied entity UUID (local-first optimistic create); the
   // backend uses it as the entity id, or allocates one if omitted.
-  // Frontend-only — kept out of the agent tool schema (DEC-11).
+  // Frontend-only — kept out of the agent tool schema.
   client_id?: string;
 }
 

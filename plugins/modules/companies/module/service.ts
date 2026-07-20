@@ -3,9 +3,9 @@
 // contract with its RPC handler; definePlugin (index.ts) wires them.
 //
 // Reads use the efficient graph read-API (email parity): list →
-// list_entities_window (P2) with the details facet inline / search →
+// list_entities_window with the details facet inline / search →
 // search_entities_by_name + list_facets_for_entities (batch); get →
-// get_entity_full (P1) + one get_canonical. Fixed, N-independent crossings.
+// get_entity_full + one get_canonical. Fixed, N-independent crossings.
 
 import { tool, writeTool, type GraphService, type PluginDeps } from "@magnis/plugin-sdk";
 import type { GetParams, ListParams, PaginatedResponse } from "@magnis/plugin-sdk";
@@ -97,7 +97,7 @@ export class CompaniesModule {
     },
   })
   async get(params: GetParams): Promise<CompanyDetailView> {
-    // P1: user-scoped entity (+ schema guard) in ONE fetch. The detail view does
+    // User-scoped entity (+ schema guard) in ONE fetch. The detail view does
     // not surface link neighbours (members/linked_entities stay empty, native
     // parity). Facets come from list_facets_for_entity so the DTO carries ALL
     // facets (get_entity_full would dedup to latest-per-schema, dropping the
@@ -126,7 +126,7 @@ export class CompaniesModule {
   // `params` is the AGENT-facing schema → omits `client_id` (the
   // frontend-only optimistic-create UUID). The handler still accepts
   // it via CreateParams; the WS RPC path is not validated against this
-  // schema (DEC-11).
+  // schema.
   @writeTool("create", {
     description:
       "Create a company. Idempotent by name (case-insensitive, trimmed): if a " +

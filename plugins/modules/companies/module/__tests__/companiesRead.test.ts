@@ -7,7 +7,7 @@
 //   get:              get_entity_full (user-scoped entity) + list_facets_for_entity
 //                     (ALL facets for the DTO) + get_canonical (base/header)
 // Mirrors email/__tests__/emailRead.test.ts. tst_be_companiesread_001 (shape) +
-// tst_be_companiesdb_001 (op-counts → INV-1/2/3/10).
+// tst_be_companiesdb_001 (op-counts).
 //
 // Doubles come from @magnis/testkit/module: `mockGraph` is a throwing Proxy, so
 // the read path hitting ANY op it did not arrange (get_entity / get_entities /
