@@ -42,7 +42,7 @@ export const XModule = defineModule({
   themeColor: "blue",
   entityTypes: ["profile", "post"],
   // Per-type entity cards: a profile in a contact\u2019s dynamic tab is an
-  // identity card, not a post (social-contact-identity S4/INV-2).
+  // identity card, not a post.
   entityLabels: { profile: { EntityCard: XProfileCard } },
   primaryEntityType: "profile",
   rpc: { list: "x.profiles.list", get: "x.profiles.get" },

@@ -15,5 +15,5 @@ export const POST_CONTENT = "x.post.content";
 export const POST_METRICS = "x.post.metrics";
 /** Link kind: post → author profile. */
 export const AUTHORED_BY = "x.post:x.profile";
-/** Identity link (social-contact-identity DEC-1): profile → contacts.person. */
+/** Identity link: profile → contacts.person. */
 export const PROFILE_PERSON_LINK = "x.profile:contacts.person";

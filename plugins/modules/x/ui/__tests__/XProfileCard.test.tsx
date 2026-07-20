@@ -1,4 +1,4 @@
-// tst_fe_x_profilecard_001 (social-contact-identity S4, INV-2): the x.profile
+// tst_fe_x_profilecard_001: the x.profile
 // entity card (rendered inside a contact's dynamic X tab) shows the identity —
 // avatar, name, @handle · followers — not post content.
 import { describe, it, expect, vi } from "vitest";

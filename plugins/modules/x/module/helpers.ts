@@ -10,8 +10,8 @@ export function str(o: Record<string, unknown>, k: string): string | undefined {
   return typeof v === "string" ? v : undefined;
 }
 
-// Rich post fields (social-post-rendering S4): pass the connector's enriched
-// payload through to list/get responses. Pre-S4 rows lack them → null/[].
+// Rich post fields: pass the connector's enriched
+// payload through to list/get responses. Older rows lack them → null/[].
 export function richPostFields(d: Record<string, unknown>): {
   post_type: string | null;
   article_title: string | null;

@@ -89,7 +89,7 @@ export interface GetParams {
   id: string;
 }
 
-// Rich post fields (social-post-rendering S4, ContentOS ingest port).
+// Rich post fields (ContentOS ingest port).
 export interface PostMediaItem {
   type: string | null;
   url: string | null;
@@ -118,7 +118,7 @@ export interface PostListItem {
   text: string;
   created_at: string | null;
   url: string | null;
-  /** article | long_form | reply | post — null for pre-S4 rows. */
+  /** article | long_form | reply | post — null for rows ingested before rich fields existed. */
   post_type: string | null;
   article_title: string | null;
   media: PostMediaItem[];

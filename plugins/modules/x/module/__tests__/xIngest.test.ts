@@ -124,7 +124,7 @@ describe("x ingest", () => {
   });
 });
 
-// tst_ingest_link (social-contact-identity S3, DEC-1/DEC-4, INV-1/INV-7):
+// tst_ingest_link:
 // a tracked-handle profile gets exactly one profile→person identity link and
 // the placeholder-name CAS upgrade; an untracked handle gets neither.
 describe("x ingest identity link (tst_ingest_link)", () => {

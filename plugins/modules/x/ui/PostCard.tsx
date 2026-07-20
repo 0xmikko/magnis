@@ -20,7 +20,7 @@ export function proxiedMediaUrl(url: string | null): string | null {
 }
 
 
-// ContentOS render model in X-native card form (social-post-rendering S5/S7):
+// ContentOS render model in X-native card form:
 // header = avatar + bold name + @handle · date (the date links to the post),
 // body, media grid, icon metrics row — mirroring how X itself lays a tweet
 // out. Design-system primitives only; format helpers are verbatim ports of
@@ -66,8 +66,8 @@ export function formatNumber(n: number): string {
   return `${(n / 1_000_000).toFixed(1)}M`;
 }
 
-/** ContentOS relativeTime with the null-guard (new Date(null) = 1970 trap —
- * INV-4): relative label + absolute ISO for the tooltip. */
+/** ContentOS relativeTime with the null-guard (new Date(null) = 1970 trap):
+ * relative label + absolute ISO for the tooltip. */
 export function relativeTime(v: string | null): { label: string; title: string } {
   if (!v) return { label: "—", title: "" };
   const d = new Date(v);
@@ -280,7 +280,7 @@ function ThreadSegment({
 }
 
 /** A conversation card: the root post with its replies threaded beneath it
- * (operator feedback S8 — replies are analysed under their post, ContentOS
+ * (operator feedback — replies are analysed under their post, ContentOS
  * TweetThread layout with the avatar rail). */
 export function ThreadCard({
   posts,

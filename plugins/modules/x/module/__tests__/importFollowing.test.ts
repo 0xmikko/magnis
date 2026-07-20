@@ -1,6 +1,6 @@
-// tst_import (plan §7, S5): import_following is a bootstrap TRIGGER — it
+// tst_import: import_following is a bootstrap TRIGGER — it
 // schedules the x source's `contacts` surface via source.sync.bootstrap and
-// writes NOTHING itself (INV-ING-1: the data flows envelopes → contacts
+// writes NOTHING itself (the data flows envelopes → contacts
 // @syncHandler → apply_batch).
 //
 // Doubles come from @magnis/testkit/module. The graph is a fully-throwing

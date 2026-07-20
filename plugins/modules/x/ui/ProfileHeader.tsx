@@ -91,7 +91,7 @@ export function XProfileHeader({
   });
   const handle = profile?.handle ?? undefined;
 
-  // INV-6: tracked state resolved from the contacts facet by handle (DEC-A).
+  // Tracked state resolved from the contacts facet by handle.
   const trackingKey = [PLATFORM, "tracking", handle];
   const { data: tracking } = useQuery({
     queryKey: trackingKey,
