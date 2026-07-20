@@ -1,8 +1,8 @@
-// anysite.io LinkedIn — READ-ONLY client (INV-5). Auth is the `access-token`
-// header (NOT Bearer), key injected by the host via _meta (DEC-6). Ported from
+// anysite.io LinkedIn — READ-ONLY client. Auth is the `access-token`
+// header (NOT Bearer), key injected by the host via _meta. Ported from
 // content-os src/anysite/service.ts; resolve + reply/write paths kept only as
 // far as needed for reads (no posting). See plugins/sources/linkedin/README.md.
-// NOTE (DEC-13): endpoints/shapes are confirmed against content-os, pending a
+// NOTE: endpoints/shapes are confirmed against content-os, pending a
 // live re-confirmation via scripts/anysite-poc.ts before prod.
 
 import { RateLimitError } from "@magnis/connector-sdk";

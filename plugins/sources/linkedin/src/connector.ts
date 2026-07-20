@@ -9,7 +9,7 @@ import { fetchLinkedIn } from "./surfaces/linkedin/fetch";
 import { probeLinkedInAuth } from "./probe";
 
 /** Build the LinkedIn connector config. Read-only: the shared-provider key
- * arrives via _meta (DEC-6); this fetches tracked KOL profiles + their posts. */
+ * arrives via _meta; this fetches tracked KOL profiles + their posts. */
 export function buildConnectorConfig(fetchFn: FetchLike = fetch): ConnectorConfig {
   return {
     name: "linkedin",

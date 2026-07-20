@@ -1,4 +1,4 @@
-// tst_linkedin_probe (plan §2.4 F3): anysite probe — resolves one public
+// tst_linkedin_probe: anysite probe — resolves one public
 // profile with the injected key; subject is the masked key; rejects on a
 // dead key / missing key. NO live network.
 import { describe, test, expect } from "bun:test";

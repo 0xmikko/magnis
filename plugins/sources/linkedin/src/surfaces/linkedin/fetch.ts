@@ -46,7 +46,7 @@ function postEnvelope(handle: string, post: KolPost): Envelope {
       created_at: toIso(post.createdAt),
       url: post.url || null,
       is_repost: post.isRepost,
-      // Same media shape as the x connector (INV-2: absent stays absent).
+      // Same media shape as the x connector (absent stays absent).
       ...(post.images.length
         ? {
             media: post.images.map((u) => ({
@@ -67,8 +67,8 @@ function postEnvelope(handle: string, post: KolPost): Envelope {
 }
 
 /** Read-only fetch: resolve each TRACKED handle → profile + recent posts via
- * anysite (INV-1: only tracked handles queried). Missing key → fetch-time auth
- * error (DEC-7). A handle that resolves to no urn yields the profile only. */
+ * anysite (only tracked handles queried). Missing key → fetch-time auth
+ * error. A handle that resolves to no urn yields the profile only. */
 export async function fetchLinkedIn(args: FetchArgs, fetchFn: FetchLike): Promise<FetchResult> {
   const key = typeof args.meta?.anysite_key === "string" ? args.meta.anysite_key : "";
   if (!key) {

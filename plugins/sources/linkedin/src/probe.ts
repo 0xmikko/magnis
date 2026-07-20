@@ -1,7 +1,7 @@
-// ProbeAuth (plan §2.4): anysite has no whoami — the cheapest REAL
+// ProbeAuth: anysite has no whoami — the cheapest REAL
 // verification is resolving one stable public profile (costs 1 credit,
 // paid once per explicit user provision). anysite keys carry no identity,
-// so the subject is the masked key. Extracted for unit tests (F3 contract).
+// so the subject is the masked key. Extracted for unit tests (the probe contract).
 
 import { AnysiteClient, type FetchLike } from "./api";
 
