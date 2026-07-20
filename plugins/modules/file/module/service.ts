@@ -4,7 +4,7 @@
 // this module only touches graph metadata + links.
 //
 // Ownership: `get`/`attach` precheck via the user-scoped `get_entity_full`
-// (raw `add_link` is NOT user-scoped — DEC-7). `list` relies on the host's
+// (raw `add_link` is NOT user-scoped). `list` relies on the host's
 // already user-scoped `list_entities_window` / `list_entities_by_facet_field`.
 
 import { tool, writeTool, type GraphService, type PluginDeps } from "@magnis/plugin-sdk";
@@ -101,17 +101,17 @@ export class FileModule {
       const details = detailsById.get(id);
       if (!details) continue;
 
-      // parent_id: keep only files linked from the given parent (DEC-8 — a links
+      // parent_id: keep only files linked from the given parent (a links
       // query, not a facet filter).
       if (params.parent_id) {
         const links = await this.graph.list_links_for_entity(id);
         if (!(links).some((l) => l.from_id === params.parent_id)) continue;
       }
-      // mime_prefix: prefix match, refined in-TS (window filter is exact — DEC-8).
+      // mime_prefix: prefix match, refined in-TS (window filter is exact).
       if (params.mime_prefix && !details.mime_type.startsWith(params.mime_prefix)) {
         continue;
       }
-      // skip rows with no retrievable content (DEC-8; graph-visible part).
+      // skip rows with no retrievable content (graph-visible part).
       if (!hasContent(details)) continue;
 
       items.push(itemFromDetails(id, details));
@@ -162,10 +162,10 @@ export class FileModule {
   })
   async attach(params: FileAttachParams): Promise<FileAttachResult> {
     const kind = params.kind ?? "attachment";
-    // DEC-11: only the "attachment" kind is supported (the sole kind any caller uses).
+    // Only the "attachment" kind is supported (the sole kind any caller uses).
     if (kind !== "attachment") throw new Error(`unsupported attach kind: ${kind}`);
 
-    // DEC-7: own-check both (raw add_link is not user-scoped) and file_id must be
+    // Own-check both (raw add_link is not user-scoped) and file_id must be
     // a file.object — cross-user/invalid ids surface as not-found, no link.
     const file = await this.graph.get_entity_full(params.file_id, { links: false });
     if (file?.entity.schema_id !== FILE_OBJECT) {

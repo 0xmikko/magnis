@@ -1,8 +1,8 @@
 // File plugin module — exercised through @magnis/testkit/module (mockGraph +
 // mountModule), mirroring the other module __tests__. Validates the ported
-// file.list / file.get / file.attach behaviour incl. cross-user isolation
-// (DEC-7), the attachment-kind tightening (DEC-11), mime_prefix prefix-match +
-// content-skip (DEC-8), and route-correct URL (DEC-10).
+// file.list / file.get / file.attach behaviour incl. cross-user isolation,
+// the attachment-kind tightening, mime_prefix prefix-match +
+// content-skip, and route-correct URL.
 
 import { describe, expect, it } from "vitest";
 import type { EntityDetail } from "@magnis/plugin-sdk";

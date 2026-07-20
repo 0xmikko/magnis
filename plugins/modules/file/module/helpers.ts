@@ -8,7 +8,7 @@ export function facetData(detail: EntityDetail, schemaId: string): Record<string
   return f?.data as Record<string, unknown> | undefined;
 }
 
-/// Route-correct serving URL (DEC-10): local content serves via
+/// Route-correct serving URL: local content serves via
 /// `/files/{entity_id}` (the actual `GET /files/:entity_id` route); otherwise the
 /// `cloud_url` (S3) if set. Local takes precedence, mirroring native
 /// `resolve_url`'s ordering — but native built `/files/{local_path}`, which does
