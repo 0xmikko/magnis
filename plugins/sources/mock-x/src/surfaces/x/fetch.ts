@@ -1,19 +1,19 @@
 import type { FetchArgs, FetchResult, Envelope } from "@magnis/connector-sdk";
 
 // mock-x — deterministic X fixture (SourceKind Mock). Returns canned profile +
-// post envelopes for tracked handles only (INV-1), with NO network and NO
-// credentials, so e2e exercises the x pipeline end-to-end (INV-2/6). The
+// post envelopes for tracked handles only, with NO network and NO
+// credentials, so e2e exercises the x pipeline end-to-end. The
 // envelope shape matches the live `x` connector (entity_type "profile"/"post").
 interface Fixture {
   user: { id: string; username: string; name: string; followers: number };
-  /** Extra payload fields spread over the base post shape (rich S4 fields). */
+  /** Extra payload fields spread over the base post shape (rich post fields). */
   tweets: ({ id: string; text: string } & Record<string, unknown>)[];
 }
 
 const FIXTURES: Record<string, Fixture> = {
   jack: {
     user: { id: "12", username: "jack", name: "Jack", followers: 99 },
-    // One of each S4 format so the UI is verifiable without burning credits:
+    // One of each post format so the UI is verifiable without burning credits:
     // plain post, long-form (full text), article (title), media, repost.
     tweets: [
       { id: "1", text: "hello from the mock x connector", post_type: "post", conversation_id: "1" },
