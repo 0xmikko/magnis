@@ -4,9 +4,9 @@
 // reproduce it), hydrated per page in ONE list_canonical_for_entities batch:
 //   list (no search): list_entities(order:"date", pinned-first) + batch canonical
 //   list (search):    search_entities_by_name + batch canonical (no sort, native)
-//   list_for_entity:  list_linked (P3) + batch canonical (no per-link N+1)
-// get is already efficient (P1 + get_entities + get_canonical) and is NOT
-// retested here. tst_be_projectsread_001 (shape) + tst_be_projectsdb_001 (INV-6/10).
+//   list_for_entity:  list_linked + batch canonical (no per-link N+1)
+// get is already efficient (get_entity_full + get_entities + get_canonical) and is NOT
+// retested here. tst_be_projectsread_001 (shape) + tst_be_projectsdb_001 (op-counts).
 //
 // Doubles come from @magnis/testkit/module: `mockGraph` is a throwing Proxy, so
 // any op these read paths did NOT arrange (list_entities_window / get_canonical /

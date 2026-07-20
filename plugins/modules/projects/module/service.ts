@@ -4,8 +4,8 @@
 // Reads use the efficient graph read-API: list → list_entities (order:"date",
 // preserves pinned-first) / search_entities_by_name, then ONE
 // list_canonical_for_entities batch (canonical fields, no per-row get_canonical
-// N+1); get → get_entity_full (P1) + get_entities (P5); list_for_entity →
-// list_linked (P3) + canonical batch. Fixed, N-independent crossing counts.
+// N+1); get → get_entity_full + get_entities; list_for_entity →
+// list_linked + canonical batch. Fixed, N-independent crossing counts.
 
 import {
   tool,
@@ -102,7 +102,7 @@ export class ProjectsModule {
     },
   })
   async get(params: GetParams): Promise<ProjectDetailView> {
-    // P1 (graph-read-api §4): entity + facets + link edges in ONE fetch.
+    // Entity + facets + link edges in ONE fetch.
     const detail = await this.graph.get_entity_full(params.id, { links: true });
     if (!detail) throw new Error(`project ${params.id} not found`);
     const { entity, facets, links } = detail;
@@ -114,7 +114,7 @@ export class ProjectsModule {
         : (canonicalString(canonical, "project.name") ?? "Untitled Project");
     const status = canonicalString(canonical, "project.status");
 
-    // P5 (batch): resolve ALL link neighbors in ONE statement (was a per-link
+    // Batch: resolve ALL link neighbors in ONE statement (was a per-link
     // get_entity N+1). Outgoing → kind; incoming → "~kind" (native parity).
     const neighborIds = links.map((l) => (l.from_id === entity.id ? l.to_id : l.from_id));
     const byId = new Map((await this.graph.get_entities(neighborIds)).map((n) => [n.id, n]));
@@ -339,7 +339,7 @@ export class ProjectsModule {
   @rpc("list_for_entity")
   async listForEntity(params: ListForEntityParams): Promise<ProjectListItem[]> {
     await this.requireOwned(params.entity_id);
-    // P3: a parent's member projects over the belongs_to link, each row carrying
+    // A parent's member projects over the belongs_to link, each row carrying
     // the projects.project render facet inline — ONE statement, replacing the
     // list_links + per-link get_entity N+1. `child_schema` enforces what the old
     // loop did with a per-target schema check. (limit 1000: a member entity
