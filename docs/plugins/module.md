@@ -44,7 +44,7 @@ methods into a handler table, and routes calls to them.
     helpers.ts           # free functions the service uses
     __tests__/           # whole-module tests on @magnis/testkit/module
   ui/                    # the frontend part (React) — optional
-  lifecycle/             # ONLY if the module ships a migration (see §6)
+  lifecycle/             # ONLY if the module ships a migration (see §7)
   package.json
   tsconfig.json          # MUST set experimentalDecorators: true
 ```
@@ -129,7 +129,7 @@ rpc }`:
 
 **Prefer the batch reads** (`get_entities`, `list_facets_for_entities`,
 `list_canonical_for_entities`) over per-row calls — an N+1 in a list handler is
-a defect the tests forbid (§10).
+a defect the tests forbid (§11).
 
 ---
 
@@ -151,9 +151,69 @@ name — `@tool("list")` → `companies.list`. Dotted suffixes make sub-namespac
 `[surfaces]`. Only `@tool`/`@writeTool` methods become agent tools; `@rpc` and
 `@syncHandler` register handlers but stay off the agent surface.
 
+**Write tools are idempotent, and provenance is automatic.** Agents retry, so a
+create path should accept a `client_id` (UUID) and return the existing entity if
+it already exists; for batch rows derive per-row ids with
+`util.uuid_v5(batch_client_id, "<method>:<i>")` so a retried batch reuses ids.
+Every write is stamped with provenance (the owning module + source) for you —
+never fake it. And because every write is capability-checked with **no silent
+skip**, a write that "does nothing" almost always means a missing grant in
+`[capabilities]`, surfaced as a thrown error.
+
 ---
 
-## 6. Schemas — three separate concerns
+## 6. Cross-module calls — using another module's tools
+
+A module often needs an effect that belongs to **another** module.
+`contacts.create` needs an `email.address` entity, but contacts must not write
+the `email.*` schema — that is the email module's. Instead it **calls the email
+module's method** over RPC and links the result into its own slice of the graph.
+
+That is what `deps.rpc` is for. `rpc.execute<T>(method, params)` invokes another
+module's method by its fully-qualified name and returns the result, so you can
+use the id it hands back:
+
+```ts
+@writeTool("create", { /* … */ })
+async create(params: CreateParams): Promise<ContactCreated> {
+  let email_address_entity_id: string | null = null;
+  if (params.email) {
+    // ask the email module to find-or-create its own entity
+    const addr = await this.rpc.execute<{ id: string }>(
+      "email.ensure_address", { address: params.email },
+    );
+    email_address_entity_id = addr.id;
+    // link my contact to it — the kind must be granted (see below)
+    await this.graph.add_link({ from_id: contact.id, to_id: addr.id, kind: "has_email" });
+  }
+  // return the id your UI + tests read off the result
+  return { /* …list item… */, fields: { email_address_entity_id } };
+}
+```
+
+Two manifest grants make this legal, both least-privilege:
+
+```toml
+[capabilities]
+rpc_calls = ["email.ensure_address"]   # EXACT methods you may call — no wildcards
+link_kinds_writable = ["has_email"]     # link kinds you may create
+```
+
+`rpc_calls` lists **exact** fully-qualified methods: you may call
+`email.ensure_address` and nothing else. A call to an undeclared method is
+refused, and `add_link` with an ungranted kind is refused — there is **no silent
+skip**, so a missing grant surfaces as a thrown error, never a no-op. The call
+runs as the same user, so the target module is user-scoped exactly as your own
+reads are.
+
+**The callee side.** To let other modules call into yours, expose a plain
+`@rpc` method (§5) — off the agent surface — that is **idempotent** (callers
+retry) and returns the id(s) the caller needs to link. `email.ensure_address`
+is find-or-create: same address in, same entity id out.
+
+---
+
+## 7. Schemas — three separate concerns
 
 Owning an entity/facet involves three things that are easy to conflate:
 
@@ -181,7 +241,7 @@ To own a facet you: declare it in `[schemas]`, ensure `owns` covers it, grant
 
 ---
 
-## 7. The canonical-vs-facet gotcha
+## 8. The canonical-vs-facet gotcha
 
 The single mistake to avoid. There are two ways to read a field, and they
 resolve different values:
@@ -202,7 +262,7 @@ facet. Choose deliberately; the tests pin which one each handler uses.
 
 ---
 
-## 8. Sync ingest — receiving from a source
+## 9. Sync ingest — receiving from a source
 
 A module that owns a surface implements `@syncHandler`, which registers the
 reserved `<plugin_id>.__sync__` method. The host invokes it with a
@@ -214,29 +274,78 @@ sync handler decides how they land in the graph it owns.
 
 ---
 
-## 9. UI — connecting the frontend to your module
+## 10. UI — connecting the frontend to your module
 
-The UI entry (`[entry] ui = "index.tsx"`) calls `defineModule(config)` from the
-host shim, declaring `id, title, icon, entityTypes` and optional component slots
-(`EntityCard`, `DetailsTabContent`, `ListItemContent`, `HeaderActions`,
-`toolCallRenderers`). Component props are host-defined contracts (e.g.
-`DetailsTabContent` receives `{ entityId, facets, linkedEntities }`).
+The UI entry (`[entry] ui = "index.tsx"`) calls `defineModule(config)`, declaring
+your module's identity and the component slots the host mounts:
 
-**UI → backend calls go over RPC by the same `<plugin_id>.<suffix>` names** the
-module exposes: `runtime.transport.rpc("companies.list", { limit, offset })` via
-`useAppRuntime()`. The wire DTOs (`CompanyListItem`, `PaginatedResponse`) are
-shared between `module/` and `ui/` through the root `types.ts` — the reason it
-sits at the root, reachable by both parts.
+```tsx
+// ui/index.tsx
+import { Icon } from "@magnis/host/ui";
+import { defineModule } from "@magnis/host/base";
+import { ContactCard } from "./EntityCards";
+import { ContactOverview } from "./ContactOverview";
+import { ContactCreateRenderer } from "./ContactCreateRenderer";
 
-`build:plugins` bundles the UI (`Bun.build`, host bare-imports like `react` and
-`@magnis/host/*` externalized to host-shim URLs, hashed output + `bundle.json`
-with an ETag). The backend bundles the module isolate separately. Folder layout
-is invisible to both bundles as long as the manifest entries stay put — see
-[README.md](./README.md) §compilation.
+export const ContactsModule = defineModule({
+  id: "contacts",
+  title: "Contacts",
+  icon: <Icon name="user" size={26} />,
+  entityTypes: ["person"],
+  primaryEntityType: "person",
+  rpc: { update: "contacts.update" },   // enables inline rename in the header
+  enableListRename: true,
+  EntityCard: ContactCard,               // the agent's entity card
+  DetailsTabContent: ContactOverview,    // body of the entity's "Overview" tab
+  toolCallRenderers: [{ actions: ["create"], Render: ContactCreateRenderer }],
+  mapListItem: (raw) => ({ /* id, name, schema_id, preview, … */ }),
+});
+```
+
+The host renders the detail **shell** — avatar, name, the `OVERVIEW / MEMORY /
+FILES …` tabs; your `DetailsTabContent` fills the Overview tab. Tabs like
+MEETINGS or PROJECTS are contributed by *those* modules, not yours. Slot props
+are host-defined contracts (e.g. `DetailsTabContent` receives
+`{ entityId, facets, linkedEntities }`); provide only the slots your module
+needs (`EntityCard`, `DetailsTabContent`, `ListItemContent`, `HeaderActions`,
+`toolCallRenderers`).
+
+**Tool-call renderers.** When the agent calls one of your tools, the chat shows
+an approve/result card. A renderer per action (`toolCallRenderers`) wraps the
+host's `BaseToolCallCard` — the host owns the approve/deny/allowlist chrome; you
+render only the tool's args and result. Match the renderer's `actions` to the
+`@writeTool` suffix it renders (`create` → the `create` renderer).
+
+**UI → backend calls go over RPC by the same `<plugin_id>.<suffix>` names** your
+module exposes — `useAppRuntime().transport.rpc<T>("contacts.list", { limit,
+offset })`, not a bespoke client. The wire DTOs (`ContactListItem`,
+`PaginatedResponse`) are shared between `module/` and `ui/` through the root
+`types.ts` — the reason it sits at the root, reachable by both halves.
+
+**Import host code only through the `@magnis/host/*` surface** — never deep host
+paths. The curated entry points:
+
+| Import | Provides |
+|---|---|
+| `@magnis/host/ui` | design system: `Icon`, `Stack`, `Row`, `Text`, `Card`, `IconButton`, … |
+| `@magnis/host/base` | `defineModule`, `BaseEntityCard`, `BaseToolCallCard`, `useEntityFacet`, shared types |
+| `@magnis/host/runtime` | `useAppRuntime`, `AppRuntime`, renderer/contract types |
+| `@magnis/host/agent` | `ExpandableEntityCard`, `AllowlistDropdown`, `ExpansionContext` |
+| `@magnis/host/markdown` | `MarkdownEditor`, `useEditorMentionSuggestion` |
+| `@magnis/host/utils` | `toAvatarColor`, … |
+| `@magnis/plugin-sdk` | shared wire types (`PaginatedResponse`, …) |
+
+Tailwind utility classes used directly in a plugin `.tsx` are picked up by the
+host's build; if a brand-new plugin lays out fine but renders flat/unstyled,
+that scan (or a stale dev server) is the first thing to suspect.
+
+`build:plugins` bundles the UI; the module isolate is bundled separately. Folder
+layout is invisible to both as long as the manifest `[entry]` values stay put —
+see the commands in [README.md](./README.md).
 
 ---
 
-## 10. Testing
+## 11. Testing
 
 Module tests run under **vitest** (`bun run test`) with
 `@magnis/testkit/module` — no database:
@@ -257,7 +366,7 @@ handlers (assert the exact crossing counts). Whole-module tests live in
 
 ---
 
-## 11. Conformance checklist
+## 12. Conformance checklist
 
 A module is done only when all hold:
 
