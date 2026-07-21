@@ -8,8 +8,11 @@ what it can call, how schemas register, and the one read-path gotcha that bites
 everyone.
 
 If you are building a **source** (an external connector that streams data in),
-read [source.md](./source.md) instead. For the cross-cutting rules and commands
-that apply to both, read [README.md](./README.md).
+read [source.md](./source.md) instead. For the big-picture model start at
+[architecture.md](./architecture.md); the full `manifest.toml` fields are in
+[manifest.md](./manifest.md), the file-structure standard and code rules in
+[structure.md](./structure.md), and the cross-cutting commands in
+[README.md](./README.md).
 
 ---
 

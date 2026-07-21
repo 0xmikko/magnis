@@ -7,7 +7,11 @@ pass. Use it while developing, and use it to verify — a plugin that fails any
 "MUST" here is non-conforming.
 
 One rule, two kinds. Read "Two kinds" first; it explains why everything below
-splits the way it does.
+splits the way it does. For the big-picture model start at
+[architecture.md](./architecture.md); the end-to-end build guides are
+[module.md](./module.md) and [source.md](./source.md); the `manifest.toml` field
+reference is [manifest.md](./manifest.md); commands and the dev loop are in
+[README.md](./README.md).
 
 ---
 
@@ -29,6 +33,7 @@ it cannot leak or misbehave against it.
 - Idiom: a decorator-declared class handed to `definePlugin`
 - Entry: `module/index.ts` → `definePlugin(TheModule)`
 - Runs: in-process, restricted isolate, graph via host RPC
+- Full guide: [module.md](./module.md)
 
 ### Source — a spawned MCP subprocess
 
@@ -42,6 +47,7 @@ sockets) and authenticates as a peer; credentials arrive per-call in `_meta`.
 - Idiom: a `ConnectorConfig` object handed to `runConnector`
 - Entry: `src/main.ts` → `runConnector(buildConnectorConfig())`
 - Runs: separate process, stdio JSON-RPC (MCP), does real network I/O
+- Full guide: [source.md](./source.md)
 
 ### Why a source does NOT run in an isolate
 

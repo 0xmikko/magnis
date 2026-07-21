@@ -6,8 +6,11 @@ to a conforming, tested source: what a source is, how it is laid out, how it
 runs, how it authenticates, where secrets live, and how each surface fetches.
 
 If you are building a **module** (a graph-owning plugin with UI), read
-[module.md](./module.md) instead. For the cross-cutting rules and commands that
-apply to both, read [README.md](./README.md).
+[module.md](./module.md) instead. For the big-picture model start at
+[architecture.md](./architecture.md); the full `manifest.toml` fields are in
+[manifest.md](./manifest.md), the file-structure standard and code rules in
+[structure.md](./structure.md), and the cross-cutting commands in
+[README.md](./README.md).
 
 ---
 
