@@ -61,8 +61,10 @@ export function fetchMockLinkedIn(args: FetchArgs): Promise<FetchResult> {
   const tracked = args.tracked_handles ?? Object.keys(FIXTURES);
   const out: Envelope[] = [];
   for (const handle of tracked) {
+    if (!Object.hasOwn(FIXTURES, handle)) continue;
     const fixture = FIXTURES[handle];
-    if (fixture !== undefined) out.push(...envelopes(fixture));
+    if (fixture === undefined) continue;
+    out.push(...envelopes(fixture));
   }
   return Promise.resolve({ envelopes: out, nextCursor: 1, hasMore: false });
 }
