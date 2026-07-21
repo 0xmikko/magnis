@@ -419,8 +419,7 @@ export class ContactsModule {
     let created = 0;
     let excludedCount = 0;
 
-    for (let i = 0; i < contacts.length; i++) {
-      const c = contacts[i];
+    for (const [i, c] of contacts.entries()) {
       if (excluded.has(i)) {
         excludedCount += 1;
         results.push({ id: null, name: c.name, status: "excluded" });
@@ -906,8 +905,7 @@ export class ContactsModule {
     let created = 0;
     let excludedCount = 0;
 
-    for (let i = 0; i < profiles.length; i++) {
-      const row = profiles[i];
+    for (const [i, row] of profiles.entries()) {
       if (excluded.has(i)) {
         excludedCount += 1;
         results.push({

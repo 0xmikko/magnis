@@ -141,6 +141,7 @@ function groupMessages(messages: readonly TelegramMessage[], isGroup: boolean): 
   for (let i = 0; i < messages.length; i++) {
      
     const msg = messages[i];
+    if (!msg) continue;
     const prev = i > 0 ? messages[i - 1] : undefined;
     const next = i < messages.length - 1 ? messages[i + 1] : undefined;
 

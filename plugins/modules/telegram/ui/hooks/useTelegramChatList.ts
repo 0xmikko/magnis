@@ -223,9 +223,10 @@ export function useTelegramChatList(): UseTelegramChatListResult {
 
   // Auto-select first chat when list loads and nothing is selected
   useEffect(() => {
-    if (!selectedChatId && chats.length > 0) {
+    const first = chats[0];
+    if (!selectedChatId && first) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- auto-select the first chat once the list loads and nothing is selected; runs until a selection exists.
-      setSelectedChatId(chats[0].id);
+      setSelectedChatId(first.id);
     }
   }, [chats, selectedChatId, setSelectedChatId]);
 

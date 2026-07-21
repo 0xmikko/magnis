@@ -22,6 +22,15 @@ import type { ContactCanonical, ContactFacets } from "../../types.ts";
 const SCHEMA = CONTACT;
 type G = MockGraph<ContactFacets, ContactCanonical>;
 
+// `graph.spies` is a `Record<string, Mock>`, so under noUncheckedIndexedAccess
+// every lookup is `Mock | undefined`. A spy this test arranges/asserts always
+// exists by construction; surface a clear failure if it somehow does not.
+function spy(g: G, name: string) {
+  const s = g.spies[name];
+  if (s === undefined) throw new Error(`test setup: spy "${name}" not registered`);
+  return s;
+}
+
 // The read-path ops, arranged with benign defaults; individual tests re-arm
 // them via `graph.spies.<op>.mockResolvedValue(...)`. Ops NOT listed here
 // (get_entity — the N+1 trap) stay unarranged, so the throwing Proxy fails the
@@ -49,20 +58,20 @@ describe("contacts read — shape parity (tst_be_contactsread_001)", () => {
   });
 
   it("F1 list builds items from batch canonical (email/phone/role/company) + batch facets (channels/tier)", async () => {
-    graph.spies.list_entities_window.mockResolvedValue({
+    spy(graph, "list_entities_window").mockResolvedValue({
       items: [
         windowRow(entity("c1", "Alice Smith", { schema_id: SCHEMA })),
         windowRow(entity("c2", "Bob", { schema_id: SCHEMA })),
       ],
       total: 2,
     });
-    graph.spies.list_canonical_for_entities.mockResolvedValue([
+    spy(graph, "list_canonical_for_entities").mockResolvedValue([
       canonical("c1", "person.full_name", "Alice Smith"),
       canonical("c1", "person.email", "canon@x.com"),
       canonical("c1", "person.role", "CEO"),
       // c2 has NO singular person.email mapped → item email stays null
     ]);
-    graph.spies.list_facets_for_entities.mockResolvedValue([
+    spy(graph, "list_facets_for_entities").mockResolvedValue([
       // two email facets on c1 with DIFFERENT values — must NOT drive the item
       facet("fa", "contacts.person.email", { email: "facet-a@x.com" }, { entity_id: "c1" }),
       facet("fb", "contacts.person.email", { email: "facet-b@x.com" }, { entity_id: "c1" }),
@@ -71,7 +80,9 @@ describe("contacts read — shape parity (tst_be_contactsread_001)", () => {
 
     const page = await mod.list({ limit: 50, offset: 0 });
     expect(page.total).toBe(2);
-    const [a, b] = page.items;
+    const a = page.items[0];
+    const b = page.items[1];
+    if (a === undefined || b === undefined) throw new Error("F1: expected two items");
     expect(a.name).toBe("Alice Smith");
     expect(a.email).toBe("canon@x.com"); // from CANONICAL, not the email facets
     expect(a.role).toBe("CEO");
@@ -90,7 +101,7 @@ describe("contacts read — shape parity (tst_be_contactsread_001)", () => {
   // the page is full and `total` reflects the VISIBLE (non-group) count.
 
   it("F2 default list hides group-tier contacts at the query level (filter_op=distinct, value=group)", async () => {
-    graph.spies.list_entities_window.mockResolvedValue({
+    spy(graph, "list_entities_window").mockResolvedValue({
       items: [windowRow(entity("c1", "Real DM Person", { schema_id: SCHEMA }))],
       total: 933, // DB already excluded group rows → visible count
     });
@@ -99,7 +110,9 @@ describe("contacts read — shape parity (tst_be_contactsread_001)", () => {
 
     // The query-level filter expresses "tier != group" via IS DISTINCT FROM,
     // targeting the telegram.contact facet where the live data stores the tier.
-    const spec = graph.spies.list_entities_window.mock.calls[0]![0] as {
+    const windowCall0 = spy(graph, "list_entities_window").mock.calls[0];
+    if (windowCall0 === undefined) throw new Error("F2: list_entities_window not called");
+    const spec = windowCall0[0] as {
       schema: string;
       filter_field?: { facet_schema?: string; facet_path?: string };
       filter_eq?: string;
@@ -116,7 +129,7 @@ describe("contacts read — shape parity (tst_be_contactsread_001)", () => {
   });
 
   it("F2b total reflects the VISIBLE (non-group) count returned by the windowed query", async () => {
-    graph.spies.list_entities_window.mockResolvedValue({
+    spy(graph, "list_entities_window").mockResolvedValue({
       items: [
         windowRow(entity("c1", "A", { schema_id: SCHEMA })),
         windowRow(entity("c2", "B", { schema_id: SCHEMA })),
@@ -129,14 +142,14 @@ describe("contacts read — shape parity (tst_be_contactsread_001)", () => {
   });
 
   it("F2c include_all=true shows ALL contacts (group included) via the unfiltered list path", async () => {
-    graph.spies.list_entities.mockResolvedValue({
+    spy(graph, "list_entities").mockResolvedValue({
       items: [
         entity("c1", "Real DM Person", { schema_id: SCHEMA }),
         entity("c2", "Group Co-member", { schema_id: SCHEMA }),
       ],
       total: 2986,
     });
-    graph.spies.list_facets_for_entities.mockResolvedValue([
+    spy(graph, "list_facets_for_entities").mockResolvedValue([
       facet("f1", "telegram.contact", { relevance_tier: "group" }, { entity_id: "c2" }),
     ]);
 
@@ -148,7 +161,7 @@ describe("contacts read — shape parity (tst_be_contactsread_001)", () => {
   });
 
   it("F3 get returns a ContactDetailView; neighbours via one get_entities batch, non-owned dropped", async () => {
-    graph.spies.get_entity_full.mockResolvedValue({
+    spy(graph, "get_entity_full").mockResolvedValue({
       entity: entity("c1", "Alice", { schema_id: SCHEMA, created_at: "2026-01-01T00:00:00Z" }),
       facets: [],
       links: [
@@ -157,14 +170,14 @@ describe("contacts read — shape parity (tst_be_contactsread_001)", () => {
       ],
     });
     // channels come from the ALL-facets read (list_facets_for_entity)
-    graph.spies.list_facets_for_entity.mockResolvedValue([
+    spy(graph, "list_facets_for_entity").mockResolvedValue([
       facet("ft", "contacts.identity.telegram", { username: "alice" }, { entity_id: "c1" }),
     ]);
-    graph.spies.get_canonical.mockResolvedValue({
+    spy(graph, "get_canonical").mockResolvedValue({
       "person.full_name": "Alice",
       "person.company": "Acme",
     });
-    graph.spies.get_entities.mockResolvedValue([
+    spy(graph, "get_entities").mockResolvedValue([
       entity("co1", "Acme", { schema_id: "companies.company" }),
     ]);
 
@@ -178,7 +191,7 @@ describe("contacts read — shape parity (tst_be_contactsread_001)", () => {
   });
 
   it("F4 get throws on a missing / non-contact entity", async () => {
-    graph.spies.get_entity_full.mockResolvedValue(null);
+    spy(graph, "get_entity_full").mockResolvedValue(null);
     await expect(mod.get({ id: "nope" })).rejects.toThrow();
   });
 });
@@ -192,7 +205,7 @@ describe("contacts read — DB-access guarantees (tst_be_contactsdb_001 / INV-4/
   });
 
   it("list (no search, default) = 1 list_entities_window + 1 batch canonical + 1 batch facets, 0 per-row reads", async () => {
-    graph.spies.list_entities_window.mockResolvedValue({ items: [], total: 0 });
+    spy(graph, "list_entities_window").mockResolvedValue({ items: [], total: 0 });
     await mod.list({});
     expect(graph.spies.list_entities_window).toHaveBeenCalledTimes(1);
     expect(graph.spies.list_entities).toHaveBeenCalledTimes(0);
@@ -202,7 +215,7 @@ describe("contacts read — DB-access guarantees (tst_be_contactsdb_001 / INV-4/
   });
 
   it("list (no search, include_all) = 1 list_entities + 1 batch canonical + 1 batch facets", async () => {
-    graph.spies.list_entities.mockResolvedValue({ items: [], total: 0 });
+    spy(graph, "list_entities").mockResolvedValue({ items: [], total: 0 });
     await mod.list({ include_all: true });
     expect(graph.spies.list_entities).toHaveBeenCalledTimes(1);
     expect(graph.spies.list_entities_window).toHaveBeenCalledTimes(0);
@@ -211,7 +224,7 @@ describe("contacts read — DB-access guarantees (tst_be_contactsdb_001 / INV-4/
   });
 
   it("list (search) = 1 search + 1 batch canonical + 1 batch facets, 0 list_entities", async () => {
-    graph.spies.search_entities_by_name.mockResolvedValue([]);
+    spy(graph, "search_entities_by_name").mockResolvedValue([]);
     await mod.list({ search: "a" });
     expect(graph.spies.search_entities_by_name).toHaveBeenCalledTimes(1);
     expect(graph.spies.list_canonical_for_entities).toHaveBeenCalledTimes(1);
@@ -220,12 +233,12 @@ describe("contacts read — DB-access guarantees (tst_be_contactsdb_001 / INV-4/
   });
 
   it("get = 1 get_entity_full + 1 get_canonical + 1 get_entities (links present)", async () => {
-    graph.spies.get_entity_full.mockResolvedValue({
+    spy(graph, "get_entity_full").mockResolvedValue({
       entity: entity("c1", "A", { schema_id: SCHEMA }),
       facets: [],
       links: [{ id: "l1", from_id: "c1", to_id: "co1", kind: "works_at" }],
     });
-    graph.spies.get_entities.mockResolvedValue([
+    spy(graph, "get_entities").mockResolvedValue([
       entity("co1", "Acme", { schema_id: "companies.company" }),
     ]);
     await mod.get({ id: "c1" });

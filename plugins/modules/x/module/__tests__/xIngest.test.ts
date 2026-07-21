@@ -67,8 +67,12 @@ describe("x ingest", () => {
     });
 
     expect(res.ok).toBe(true);
-    expect(graph.spies.apply_batch).toHaveBeenCalledTimes(1);
-    const batch = graph.spies.apply_batch.mock.calls[0][0] as GraphBatchInput;
+    const applyBatch = graph.spies.apply_batch;
+    if (applyBatch === undefined) throw new Error("x ingest 001: missing apply_batch spy");
+    expect(applyBatch).toHaveBeenCalledTimes(1);
+    const batchCall = applyBatch.mock.calls[0];
+    if (batchCall === undefined) throw new Error("x ingest 001: no apply_batch call recorded");
+    const batch = batchCall[0] as GraphBatchInput;
     expect(batch.entities).toHaveLength(2);
 
     const profile = batch.entities.find((e) => e.schema_id === "x.profile")!;
@@ -95,8 +99,19 @@ describe("x ingest", () => {
     await mod.ingest({ envelopes: [e] });
     await mod.ingest({ envelopes: [{ ...e, payload: { ...e.payload, text: "v2" } }] });
 
-    const first = (graph.spies.apply_batch.mock.calls[0][0] as GraphBatchInput).entities[0].facets[0].external_id;
-    const second = (graph.spies.apply_batch.mock.calls[1][0] as GraphBatchInput).entities[0].facets[0].external_id;
+    const applyBatch = graph.spies.apply_batch;
+    if (applyBatch === undefined) throw new Error("x ingest 002: missing apply_batch spy");
+    const firstCall = applyBatch.mock.calls[0];
+    const secondCall = applyBatch.mock.calls[1];
+    if (firstCall === undefined || secondCall === undefined) throw new Error("x ingest 002: missing apply_batch call");
+    const firstEntity = (firstCall[0] as GraphBatchInput).entities[0];
+    const secondEntity = (secondCall[0] as GraphBatchInput).entities[0];
+    if (firstEntity === undefined || secondEntity === undefined) throw new Error("x ingest 002: missing batch entity");
+    const firstFacet = firstEntity.facets[0];
+    const secondFacet = secondEntity.facets[0];
+    if (firstFacet === undefined || secondFacet === undefined) throw new Error("x ingest 002: missing entity facet");
+    const first = firstFacet.external_id;
+    const second = secondFacet.external_id;
     expect(first).toBe("x:post:1");
     expect(second).toBe("x:post:1"); // same id → host upserts, no duplicate entity
   });
@@ -104,7 +119,9 @@ describe("x ingest", () => {
   it("tst_plugin_x_ingest_003 posts.list maps window rows", async () => {
     const graph = ingestGraph();
     const mod = mountX(graph);
-    graph.spies.list_entities_window.mockResolvedValue({
+    const listWindow = graph.spies.list_entities_window;
+    if (listWindow === undefined) throw new Error("x ingest 003: missing list_entities_window spy");
+    listWindow.mockResolvedValue({
       items: [
         windowRow(entity("p1", "hello", { schema_id: "x.post" }), {
           platform: "x",

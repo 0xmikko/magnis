@@ -48,7 +48,7 @@ export function validateIdTokenClaims(
   nowUnix: number,
 ): IdTokenClaims {
   // JWT = header.payload.signature — we read the payload segment.
-  const payloadB64 = idToken.split(".")[1] as string | undefined;
+  const payloadB64 = idToken.split(".")[1];
   if (payloadB64 === undefined) throw new Error("id_token is not a JWT");
   const bytes = base64UrlDecode(payloadB64);
   if (bytes === null) throw new Error("id_token payload not base64url");

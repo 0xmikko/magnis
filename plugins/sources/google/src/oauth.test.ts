@@ -143,7 +143,9 @@ describe("magnis.auth.exchange", () => {
     });
 
     // Token POST is form-encoded with the full grant.
-    const form = new URLSearchParams(calls[0].init?.body as string);
+    const call0 = calls[0];
+    if (call0 === undefined) throw new Error("exchange: missing token call");
+    const form = new URLSearchParams(call0.init?.body as string);
     expect(form.get("grant_type")).toBe("authorization_code");
     expect(form.get("code")).toBe("auth-code");
     expect(form.get("code_verifier")).toBe("verifier");
@@ -151,7 +153,9 @@ describe("magnis.auth.exchange", () => {
     expect(form.get("client_secret")).toBe("shh");
     expect(form.get("redirect_uri")).toBe(META.redirect_uri);
     // Userinfo hit with the bearer.
-    const headers = calls[1].init?.headers as Record<string, string>;
+    const call1 = calls[1];
+    if (call1 === undefined) throw new Error("exchange: missing userinfo call");
+    const headers = call1.init?.headers as Record<string, string>;
     expect(headers.authorization).toBe("Bearer at-1");
   });
 

@@ -560,8 +560,7 @@ export class EmailModule {
     const results: Record<string, unknown>[] = [];
     let sent = 0;
     let excludedCount = 0;
-    for (let i = 0; i < messages.length; i++) {
-      const m = messages[i];
+    for (const [i, m] of messages.entries()) {
       if (excluded.has(i)) {
         excludedCount++;
         results.push({ id: null, to: m.to, subject: m.subject, status: "excluded", attachment_count: 0 });
@@ -830,6 +829,7 @@ export class EmailModule {
       links: [{ from_key: msgKey, to_key: addrKey, kind: "sent_to" }],
     });
     const entityId = result.ids[msgKey];
+    if (entityId === undefined) throw new Error(`email.send: missing entity id for ${msgKey}`);
 
     for (const fid of attachmentIds) {
       await this.graph.add_link({ from_id: entityId, to_id: fid, kind: "attachment" });

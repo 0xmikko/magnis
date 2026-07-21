@@ -76,7 +76,9 @@ describe("people → contact conversion", () => {
     expect(c.emails).toEqual([
       { address: "mikhail@example.com", label: "work", is_primary: true },
     ]);
-    expect(c.phones[0].number).toBe("+4930 1234567"); // canonicalForm wins
+    const phone0 = c.phones[0];
+    if (phone0 === undefined) throw new Error("contact: missing phone 0");
+    expect(phone0.number).toBe("+4930 1234567"); // canonicalForm wins
     expect(c.organizations).toEqual([
       { name: "Acme", title: "Engineer", is_current: true },
     ]);
@@ -93,12 +95,14 @@ describe("people → contact conversion", () => {
 
   test("tst_gts_gp_002 display_name falls back to given/family combos", () => {
     const p = fullPerson();
-    p.names![0].displayName = null;
+    const name0 = p.names?.[0];
+    if (name0 === undefined) throw new Error("person: missing name 0");
+    name0.displayName = null;
     expect(gpeoplePersonToContact(p)!.display_name).toBe("Mikhail Lazarev");
-    p.names![0].familyName = null;
+    name0.familyName = null;
     expect(gpeoplePersonToContact(p)!.display_name).toBe("Mikhail");
-    p.names![0].givenName = null;
-    p.names![0].familyName = "Lazarev";
+    name0.givenName = null;
+    name0.familyName = "Lazarev";
     expect(gpeoplePersonToContact(p)!.display_name).toBe("Lazarev");
   });
 
@@ -141,7 +145,9 @@ describe("people → contact conversion", () => {
     expect(c.external_url).toBe("https://profile-url");
     // Phone falls back to raw value when canonicalForm is absent.
     p.phoneNumbers = [{ value: "030 111" }];
-    expect(gpeoplePersonToContact(p)!.phones[0].number).toBe("030 111");
+    const phone0 = gpeoplePersonToContact(p)!.phones[0];
+    if (phone0 === undefined) throw new Error("contact: missing phone 0");
+    expect(phone0.number).toBe("030 111");
   });
 });
 
@@ -163,14 +169,18 @@ describe("contacts fetch", () => {
 
     const p1 = await fetchContactsPage("tok", undefined, fetchFn);
     expect(p1.envelopes).toHaveLength(1);
-    expect(p1.envelopes[0].surface).toBe("contacts");
-    expect(p1.envelopes[0].kind).toBe("snapshot");
-    expect(p1.envelopes[0].remote_id).toBe(
+    const env0 = p1.envelopes[0];
+    if (env0 === undefined) throw new Error("contacts page: missing envelope 0");
+    expect(env0.surface).toBe("contacts");
+    expect(env0.kind).toBe("snapshot");
+    expect(env0.remote_id).toBe(
       `gpeople:${stableContactId("people/c12345")}`,
     );
     expect(p1.nextCursor).toEqual({ page_token: "p2", discovered: 1 });
 
-    const url = new URL(calls[0]);
+    const call0 = calls[0];
+    if (call0 === undefined) throw new Error("contacts fetch: missing call 0");
+    const url = new URL(call0);
     expect(url.pathname).toBe("/v1/people/me/connections");
     expect(url.searchParams.get("personFields")).toBe(
       "names,emailAddresses,phoneNumbers,organizations,photos,urls",

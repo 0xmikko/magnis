@@ -100,6 +100,7 @@ export async function buildPlugin(pluginId: string, opts: BuildOpts = {}): Promi
     );
   }
   const jsArtifact = result.outputs.find((o) => o.kind === "entry-point") ?? result.outputs[0];
+  if (jsArtifact === undefined) throw new Error(`plugin ${pluginId}: bundle produced no output`);
   const raw = await jsArtifact.text();
   const js = rewriteBareImports(raw, externals);
 
@@ -184,6 +185,7 @@ export async function buildPlugin(pluginId: string, opts: BuildOpts = {}): Promi
     }
     const modArtifact =
       modResult.outputs.find((o) => o.kind === "entry-point") ?? modResult.outputs[0];
+    if (modArtifact === undefined) throw new Error(`plugin ${pluginId}: module bundle produced no output`);
     const modJs = await modArtifact.text();
     moduleHash = createHash("sha256").update(modJs).digest("hex").slice(0, 16);
     moduleFile = `index.${moduleHash}.js`;
@@ -262,8 +264,14 @@ if (import.meta.main) {
   // where the backend serves from (hot-reload via ETag change — DEC-9); prod
   // leaves it at plugins_dist and boot seeds dist→store (DEC-13).
   const outIdx = args.indexOf("--out");
-  const distDir =
-    outIdx >= 0 ? args[outIdx + 1] : process.env.BUILD_PLUGINS_OUT ?? join(REPO_ROOT, "plugins_dist");
+  let distDir: string;
+  if (outIdx >= 0) {
+    const out = args[outIdx + 1];
+    if (out === undefined) throw new Error("--out requires a value");
+    distDir = out;
+  } else {
+    distDir = process.env.BUILD_PLUGINS_OUT ?? join(REPO_ROOT, "plugins_dist");
+  }
   const ids = args.filter((a, i) => !a.startsWith("--") && args[i - 1] !== "--out");
   const pluginsDir = join(REPO_ROOT, "plugins");
 

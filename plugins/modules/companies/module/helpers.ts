@@ -23,7 +23,9 @@ export function pickAvatarColor(id: string): string {
   const first = id.replace(/-/g, "").slice(0, 2);
   const hash = parseInt(first, 16);
   const idx = Number.isFinite(hash) ? hash % AVATAR_COLORS.length : 0;
-  return AVATAR_COLORS[idx];
+  const color = AVATAR_COLORS[idx];
+  if (color === undefined) throw new Error("pickAvatarColor: AVATAR_COLORS is empty");
+  return color;
 }
 
 function canonicalString(map: Partial<CompanyCanonical>, key: keyof CompanyCanonical): string | null {

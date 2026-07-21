@@ -59,13 +59,15 @@ export function XProfileFeed({ entityId, runtime }: DetailPanelProps): JSX.Eleme
             </Text>
           ) : (
             <Stack gap={3}>
-              {groupThreads(posts).map((thread) =>
-                thread.length === 1 ? (
-                  <PostCard key={thread[0].id} post={thread[0]} author={author} />
+              {groupThreads(posts).map((thread) => {
+                const first = thread[0];
+                if (!first) return null;
+                return thread.length === 1 ? (
+                  <PostCard key={first.id} post={first} author={author} />
                 ) : (
-                  <ThreadCard key={thread[0].id} posts={thread} author={author} />
-                ),
-              )}
+                  <ThreadCard key={first.id} posts={thread} author={author} />
+                );
+              })}
             </Stack>
           )
         ) : (

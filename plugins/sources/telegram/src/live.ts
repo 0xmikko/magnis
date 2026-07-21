@@ -444,7 +444,7 @@ export class LiveDialogPager implements DialogPager {
       let offsetId = 0;
       for (let i = rawDialogs.length - 1; i >= 0; i -= 1) {
         const d = rawDialogs[i];
-        if (d.className === "DialogFolder") continue;
+        if (d === undefined || d.className === "DialogFolder") continue;
         const top = d.topMessage;
         const date = top === undefined ? undefined : msgDate.get(top);
         if (date !== undefined && top !== undefined) {
@@ -454,6 +454,7 @@ export class LiveDialogPager implements DialogPager {
         }
       }
       const last = rawDialogs[rawDialogs.length - 1];
+      if (last === undefined) throw new Error("telegram.live: empty dialog slice");
       const lastKey = peerKey(last.peer);
       const lastEntity = lastKey === undefined ? undefined : chatMap.get(lastKey);
       if (lastEntity !== undefined) {

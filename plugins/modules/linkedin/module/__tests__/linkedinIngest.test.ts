@@ -60,8 +60,12 @@ describe("linkedin ingest", () => {
     });
 
     expect(res.ok).toBe(true);
-    expect(graph.spies.apply_batch).toHaveBeenCalledTimes(1);
-    const batch = graph.spies.apply_batch.mock.calls[0][0];
+    const applyBatch = graph.spies.apply_batch;
+    if (applyBatch === undefined) throw new Error("linkedin ingest 001: missing apply_batch spy");
+    expect(applyBatch).toHaveBeenCalledTimes(1);
+    const batchCall = applyBatch.mock.calls[0];
+    if (batchCall === undefined) throw new Error("linkedin ingest 001: no apply_batch call recorded");
+    const batch = batchCall[0];
     expect(batch.entities).toHaveLength(2);
 
     const profile = batch.entities.find((e: { schema_id: string }) => e.schema_id === PROFILE);
@@ -88,8 +92,13 @@ describe("linkedin ingest", () => {
     await mod.ingest({ envelopes: [e] });
     await mod.ingest({ envelopes: [{ ...e, payload: { ...e.payload, text: "v2" } }] });
 
-    const first = graph.spies.apply_batch.mock.calls[0][0].entities[0].facets[0].external_id;
-    const second = graph.spies.apply_batch.mock.calls[1][0].entities[0].facets[0].external_id;
+    const applyBatch = graph.spies.apply_batch;
+    if (applyBatch === undefined) throw new Error("linkedin ingest 002: missing apply_batch spy");
+    const firstCall = applyBatch.mock.calls[0];
+    const secondCall = applyBatch.mock.calls[1];
+    if (firstCall === undefined || secondCall === undefined) throw new Error("linkedin ingest 002: missing apply_batch call");
+    const first = firstCall[0].entities[0].facets[0].external_id;
+    const second = secondCall[0].entities[0].facets[0].external_id;
     expect(first).toBe("linkedin:post:1");
     expect(second).toBe("linkedin:post:1"); // same id → host upserts, no duplicate entity
   });

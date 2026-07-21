@@ -87,12 +87,16 @@ describe("meetings fetch", () => {
     };
     const r = await fetchEventsPage("tok", undefined, {}, fetchFn);
     expect(r.envelopes).toHaveLength(1); // cancelled dropped
-    expect(r.envelopes[0].surface).toBe("meetings");
-    expect(r.envelopes[0].kind).toBe("snapshot");
-    expect(r.envelopes[0].remote_id).toBe("gcal:evt_1");
-    expect(r.envelopes[0].payload.title).toBe("Team standup");
+    const env0 = r.envelopes[0];
+    if (env0 === undefined) throw new Error("meetings page: missing envelope 0");
+    expect(env0.surface).toBe("meetings");
+    expect(env0.kind).toBe("snapshot");
+    expect(env0.remote_id).toBe("gcal:evt_1");
+    expect(env0.payload.title).toBe("Team standup");
 
-    const url = new URL(calls[0]);
+    const call0 = calls[0];
+    if (call0 === undefined) throw new Error("meetings fetch: missing call 0");
+    const url = new URL(call0);
     expect(url.pathname).toBe("/calendar/v3/calendars/primary/events");
     expect(url.searchParams.get("singleEvents")).toBe("true");
     expect(url.searchParams.get("orderBy")).toBe("startTime");
@@ -109,7 +113,9 @@ describe("meetings fetch", () => {
       { time_min: "2026-01-01T00:00:00Z", time_max: "2026-02-01T00:00:00Z" },
       fetchFn,
     );
-    expect(new URL(calls[1]).searchParams.get("timeMin")).toBe("2026-01-01T00:00:00Z");
+    const call1 = calls[1];
+    if (call1 === undefined) throw new Error("meetings fetch: missing call 1");
+    expect(new URL(call1).searchParams.get("timeMin")).toBe("2026-01-01T00:00:00Z");
   });
 
   test("tst_gts_gcal_005 cursor null on last page; discovered cumulative; NO total", async () => {

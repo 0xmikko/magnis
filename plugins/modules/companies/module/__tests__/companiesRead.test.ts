@@ -40,6 +40,15 @@ function readGraph(): G {
   });
 }
 
+// noUncheckedIndexedAccess: `spies` is Record<string, Mock>, so each lookup is
+// `Mock | undefined`. Every op referenced below IS arranged by readGraph, so a
+// missing spy is a harness bug — surface it, never mask it.
+function spy(graph: G, op: string): G["spies"][string] {
+  const s = graph.spies[op];
+  if (s === undefined) throw new Error(`companies read test: spy '${op}' not arranged`);
+  return s;
+}
+
 describe("companies read — shape parity (tst_be_companiesread_001)", () => {
   let graph: G;
   let mod: CompaniesModule;
@@ -49,14 +58,14 @@ describe("companies read — shape parity (tst_be_companiesread_001)", () => {
   });
 
   it("F1 list (no search): fields from canonical, real created_at, name fallback, idx order", async () => {
-    graph.spies.list_entities_window.mockResolvedValue({
+    spy(graph, "list_entities_window").mockResolvedValue({
       items: [
         windowRow(entity("a", "", { created_at: "2026-01-01T00:00:00Z" })),
         windowRow(entity("z", "Zeta", { created_at: "2026-02-02T00:00:00Z" })),
       ],
       total: 2,
     });
-    graph.spies.list_canonical_for_entities.mockResolvedValue([
+    spy(graph, "list_canonical_for_entities").mockResolvedValue([
       canonical("a", "companies.name", "Acme"), // entity.name empty → canonical name
       canonical("z", "companies.website", "https://zeta.io"),
       canonical("z", "companies.industry", "Fintech"),
@@ -67,50 +76,58 @@ describe("companies read — shape parity (tst_be_companiesread_001)", () => {
     const page = await mod.list({ limit: 50, offset: 0 });
     expect(page.total).toBe(2);
     expect(page.items.map((i) => i.id)).toEqual(["a", "z"]); // window idx order preserved
-    expect(page.items[0].name).toBe("Acme");
-    expect(page.items[0].created_at).toBe("2026-01-01T00:00:00Z"); // real, not Date(0)
+    const first = page.items[0];
+    if (first === undefined) throw new Error("F1: missing first item");
+    expect(first.name).toBe("Acme");
+    expect(first.created_at).toBe("2026-01-01T00:00:00Z"); // real, not Date(0)
     const z = page.items[1];
     expect(z).toMatchObject({ name: "Zeta", website: "https://zeta.io", industry: "Fintech", size: "50", location: "NYC" });
 
-    const spec = graph.spies.list_entities_window.mock.calls[0][0];
+    const windowCall = spy(graph, "list_entities_window").mock.calls[0];
+    if (windowCall === undefined) throw new Error("F1: no list_entities_window call recorded");
+    const spec = windowCall[0];
     expect(spec.order?.[0]?.field?.entity_field).toBe("idx");
     expect(spec.facet_schema).toBeUndefined(); // no facet inline — canonical drives fields
   });
 
   it("F1b unknown when entity.name and canonical name both absent", async () => {
-    graph.spies.list_entities_window.mockResolvedValue({ items: [windowRow(entity("x", ""))], total: 1 });
+    spy(graph, "list_entities_window").mockResolvedValue({ items: [windowRow(entity("x", ""))], total: 1 });
     const page = await mod.list({});
-    expect(page.items[0].name).toBe("Unknown");
+    const first = page.items[0];
+    if (first === undefined) throw new Error("F1b: missing first item");
+    expect(first.name).toBe("Unknown");
   });
 
   it("F2 search is sorted alphabetically (parity with staging), fields from canonical", async () => {
-    graph.spies.search_entities_by_name.mockResolvedValue([
+    spy(graph, "search_entities_by_name").mockResolvedValue([
       entity("z", "Zeta"),
       entity("a", "Acme"),
       entity("m", "Mango"),
     ]); // backend returns NON-alphabetical (prefix/date) order
-    graph.spies.list_canonical_for_entities.mockResolvedValue([
+    spy(graph, "list_canonical_for_entities").mockResolvedValue([
       canonical("a", "companies.website", "https://acme.com"),
     ]);
 
     const page = await mod.list({ search: "x", limit: 10, offset: 0 });
     expect(page.total).toBe(3);
     expect(page.items.map((i) => i.name)).toEqual(["Acme", "Mango", "Zeta"]); // sorted
-    expect(page.items[0].website).toBe("https://acme.com");
+    const first = page.items[0];
+    if (first === undefined) throw new Error("F2: missing first item");
+    expect(first.website).toBe("https://acme.com");
   });
 
   it("F3 get: base/header from canonical, ALL facets preserved, empty members/linked", async () => {
-    graph.spies.get_entity_full.mockResolvedValue({
+    spy(graph, "get_entity_full").mockResolvedValue({
       entity: entity("c", "Acme", { schema_id: COMPANY }),
       facets: [],
       links: [],
     });
-    graph.spies.list_facets_for_entity.mockResolvedValue([
+    spy(graph, "list_facets_for_entity").mockResolvedValue([
       facet("fd", COMPANY_DETAILS, { website: "x" }),
       facet("fe1", COMPANY_EMAIL, { email: "a@acme.com" }),
       facet("fe2", COMPANY_EMAIL, { email: "b@acme.com" }),
     ]);
-    graph.spies.get_canonical.mockResolvedValue({
+    spy(graph, "get_canonical").mockResolvedValue({
       "companies.name": "Acme",
       "companies.website": "https://acme.com",
       "companies.industry": "SaaS",
@@ -128,13 +145,13 @@ describe("companies read — shape parity (tst_be_companiesread_001)", () => {
   });
 
   it("F4 empty page → {items:[], total:0}", async () => {
-    graph.spies.list_entities_window.mockResolvedValue({ items: [], total: 0 });
+    spy(graph, "list_entities_window").mockResolvedValue({ items: [], total: 0 });
     const page = await mod.list({});
     expect(page).toMatchObject({ items: [], total: 0 });
   });
 
   it("F5 get throws on missing / non-company entity", async () => {
-    graph.spies.get_entity_full.mockResolvedValue(null);
+    spy(graph, "get_entity_full").mockResolvedValue(null);
     await expect(mod.get({ id: "nope" })).rejects.toThrow();
   });
 });
@@ -164,7 +181,7 @@ describe("companies read — DB-access guarantees (tst_be_companiesdb_001 / INV-
   });
 
   it("get = 1 get_entity_full + 1 list_facets_for_entity + 1 get_canonical, 0 get_entities (INV-3)", async () => {
-    graph.spies.get_entity_full.mockResolvedValue({
+    spy(graph, "get_entity_full").mockResolvedValue({
       entity: entity("c", "Acme", { schema_id: COMPANY }),
       facets: [],
       links: [],

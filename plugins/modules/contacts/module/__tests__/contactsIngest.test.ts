@@ -14,6 +14,15 @@ import type { ContactCanonical, ContactFacets } from "../../types.ts";
 
 type G = MockGraph<ContactFacets, ContactCanonical>;
 
+// `graph.spies` is a `Record<string, Mock>`, so under noUncheckedIndexedAccess
+// every lookup is `Mock | undefined`. A spy this test arranges/asserts always
+// exists by construction; surface a clear failure if it somehow does not.
+function spy(g: G, name: string) {
+  const s = g.spies[name];
+  if (s === undefined) throw new Error(`test setup: spy "${name}" not registered`);
+  return s;
+}
+
 interface SyncEnvelope {
   source_id: string;
   surface: string;
@@ -70,15 +79,20 @@ const contactPayload = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-const personOf = (frag: GraphBatchInput, key: string): BatchEntityInput =>
-  frag.entities.find((e) => e.key === key)!;
+const personOf = (frag: GraphBatchInput, key: string): BatchEntityInput => {
+  const e = frag.entities.find((e) => e.key === key);
+  if (e === undefined) throw new Error(`personOf: no entity with key ${key}`);
+  return e;
+};
 
 const facetOf = (e: BatchEntityInput, schema_id: string) =>
   e.facets.filter((f) => f.schema_id === schema_id);
 
 function lastBatch(graph: G): GraphBatchInput {
-  const calls = graph.spies.apply_batch.mock.calls;
-  return calls[calls.length - 1][0] as GraphBatchInput;
+  const calls = spy(graph, "apply_batch").mock.calls;
+  const last = calls[calls.length - 1];
+  if (last === undefined) throw new Error("lastBatch: apply_batch never called");
+  return last[0] as GraphBatchInput;
 }
 
 describe("contacts ingest — apply_batch shape (tst_be_contactsingest_001)", () => {
@@ -104,16 +118,20 @@ describe("contacts ingest — apply_batch shape (tst_be_contactsingest_001)", ()
     // profile facet: first_name/last_name from given/family.
     const profile = facetOf(person, "contacts.person.profile");
     expect(profile).toHaveLength(1);
-    expect(profile[0].external_id).toBe("gpeople:abc123");
-    expect((profile[0].data as Record<string, unknown>).first_name).toBe("Mikhail");
-    expect((profile[0].data as Record<string, unknown>).last_name).toBe("Lazarev");
+    const profile0 = profile[0];
+    if (profile0 === undefined) throw new Error("expected a contacts.person.profile facet");
+    expect(profile0.external_id).toBe("gpeople:abc123");
+    expect((profile0.data as Record<string, unknown>).first_name).toBe("Mikhail");
+    expect((profile0.data as Record<string, unknown>).last_name).toBe("Lazarev");
 
     // external_link facet: source_type + external_id (idempotency key origin) + url + name.
     const ext = facetOf(person, "contacts.person.external_link");
     expect(ext).toHaveLength(1);
-    expect((ext[0].data as Record<string, unknown>).source_type).toBe("google");
-    expect((ext[0].data as Record<string, unknown>).external_id).toBe("abc123");
-    expect((ext[0].data as Record<string, unknown>).external_url).toBe(
+    const ext0 = ext[0];
+    if (ext0 === undefined) throw new Error("expected a contacts.person.external_link facet");
+    expect((ext0.data as Record<string, unknown>).source_type).toBe("google");
+    expect((ext0.data as Record<string, unknown>).external_id).toBe("abc123");
+    expect((ext0.data as Record<string, unknown>).external_url).toBe(
       "https://contacts.google.com/person/c12345",
     );
   });
@@ -140,15 +158,18 @@ describe("contacts ingest — apply_batch shape (tst_be_contactsingest_001)", ()
       "a@example.com",
       "b@example.com",
     ]);
-    const work = emails.find((f) => (f.data as Record<string, unknown>).email === "a@example.com")!;
+    const work = emails.find((f) => (f.data as Record<string, unknown>).email === "a@example.com");
+    if (work === undefined) throw new Error("expected the work email facet");
     expect((work.data as Record<string, unknown>).is_primary).toBe(true);
     expect((work.data as Record<string, unknown>).type).toBe("work");
 
     const phones = facetOf(person, "contacts.person.phone");
     expect(phones).toHaveLength(1);
-    expect((phones[0].data as Record<string, unknown>).phone).toBe("+10000000");
-    expect((phones[0].data as Record<string, unknown>).type).toBe("mobile");
-    expect((phones[0].data as Record<string, unknown>).is_primary).toBe(true);
+    const phone0 = phones[0];
+    if (phone0 === undefined) throw new Error("expected a contacts.person.phone facet");
+    expect((phone0.data as Record<string, unknown>).phone).toBe("+10000000");
+    expect((phone0.data as Record<string, unknown>).type).toBe("mobile");
+    expect((phone0.data as Record<string, unknown>).is_primary).toBe(true);
   });
 
   it("two envelopes for the same resourceName fold/upsert to one entity (no dup)", async () => {
@@ -164,7 +185,9 @@ describe("contacts ingest — apply_batch shape (tst_be_contactsingest_001)", ()
     const frag = lastBatch(graph);
     const people = frag.entities.filter((e) => e.schema_id === "contacts.person");
     expect(people).toHaveLength(1);
-    expect(people[0].key).toBe("gpeople:abc123");
+    const person0 = people[0];
+    if (person0 === undefined) throw new Error("expected one contacts.person entity");
+    expect(person0.key).toBe("gpeople:abc123");
   });
 
   it("empty envelopes → no apply_batch", async () => {
@@ -206,20 +229,24 @@ describe("contacts ingest — social_contact envelopes", () => {
     expect(r.ok).toBe(true);
     expect(r.dropped_remote_ids).toEqual([]);
 
-    const batch = graph.spies.apply_batch.mock.calls.at(-1)?.[0] as GraphBatchInput | undefined;
+    const batch = spy(graph, "apply_batch").mock.calls.at(-1)?.[0] as GraphBatchInput | undefined;
     expect(batch).toBeDefined();
-    const entity = (batch!.entities as BatchEntityInput[]).find(
+    if (batch === undefined) throw new Error("expected an apply_batch call");
+    const entity = (batch.entities as BatchEntityInput[]).find(
       (e) => e.key === "x:social:friend1",
     );
     expect(entity).toBeDefined();
-    expect(entity!.schema_id).toBe("contacts.person");
-    expect(entity!.name).toBe("Name Friend1");
-    const social = entity!.facets.find((f) => f.schema_id === "contacts.person.social");
+    if (entity === undefined) throw new Error("expected the friend1 social entity");
+    expect(entity.schema_id).toBe("contacts.person");
+    expect(entity.name).toBe("Name Friend1");
+    const social = entity.facets.find((f) => f.schema_id === "contacts.person.social");
     expect(social).toBeDefined();
-    expect(social!.data).toMatchObject({ x_handle: "Friend1", tracked_x: false });
-    const link = entity!.facets.find((f) => f.schema_id === "contacts.person.external_link");
+    if (social === undefined) throw new Error("expected a contacts.person.social facet");
+    expect(social.data).toMatchObject({ x_handle: "Friend1", tracked_x: false });
+    const link = entity.facets.find((f) => f.schema_id === "contacts.person.external_link");
     expect(link).toBeDefined();
-    expect(link!.data).toMatchObject({
+    if (link === undefined) throw new Error("expected a contacts.person.external_link facet");
+    expect(link.data).toMatchObject({
       source_type: "x",
       external_url: "https://x.com/Friend1",
     });
@@ -237,11 +264,11 @@ describe("contacts ingest — social_contact envelopes", () => {
   // tracking opt-in. The old direct-write bug appended a fresh
   // {tracked_x: false} facet that silently untracked the person.
   it("tst_contacts_social_004 re-import never untracks an existing contact", async () => {
-    graph.spies.list_entities.mockResolvedValue({
+    spy(graph, "list_entities").mockResolvedValue({
       items: [{ id: "e-alice", schema_id: "contacts.person", name: "Alice" }],
       total: 1,
     } as never);
-    graph.spies.list_facets_for_entities.mockResolvedValue([
+    spy(graph, "list_facets_for_entities").mockResolvedValue([
       {
         id: "f1",
         entity_id: "e-alice",
@@ -265,8 +292,9 @@ describe("contacts ingest — social_contact envelopes", () => {
       ] as never,
     });
     expect(r.ok).toBe(true);
-    const batch = graph.spies.apply_batch.mock.calls.at(-1)?.[0] as GraphBatchInput | undefined;
-    const keys = (batch!.entities as BatchEntityInput[]).map((e) => e.key);
+    const batch = spy(graph, "apply_batch").mock.calls.at(-1)?.[0] as GraphBatchInput | undefined;
+    if (batch === undefined) throw new Error("expected an apply_batch call");
+    const keys = (batch.entities as BatchEntityInput[]).map((e) => e.key);
     expect(keys).toContain("gpeople:abc123");
     expect(keys).toContain("x:social:friend3");
   });

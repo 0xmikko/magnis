@@ -147,7 +147,7 @@ export function buildConnectorConfig(
   const execute = new Proxy(executeHandlers, {
     get(target, prop): ExecuteHandler | undefined {
       if (typeof prop !== "string") return undefined;
-      const known = target[prop] as ExecuteHandler | undefined;
+      const known = target[prop];
       if (known !== undefined) return known;
       return (args): Promise<Record<string, unknown>> => {
         if (fixturePath() !== undefined) return Promise.resolve(fixtureExecuteResult(prop, args));

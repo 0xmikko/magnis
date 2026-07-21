@@ -30,6 +30,15 @@ function readGraph(): G {
   });
 }
 
+// noUncheckedIndexedAccess: `spies` is Record<string, Mock>, so each lookup is
+// `Mock | undefined`. Every op referenced below IS arranged by readGraph, so a
+// missing spy is a harness bug — surface it, never mask it.
+function spy(graph: G, op: string) {
+  const s = graph.spies[op];
+  if (s === undefined) throw new Error(`email read test: spy '${op}' not arranged`);
+  return s;
+}
+
 const ROW = (id: string, date: string, over: Record<string, unknown> = {}) => ({
   entity: { id, schema_id: "email.message", name: "Subject " + id, created_at: date },
   data: {
@@ -75,7 +84,7 @@ describe("email read — shape parity (tst_be_emailread_001)", () => {
   });
 
   it("list maps window rows to MessageListItem (sender fallback, snippet preview, body_html stripped)", async () => {
-    graph.spies.list_entities_window.mockResolvedValue({
+    spy(graph, "list_entities_window").mockResolvedValue({
       items: [ROW("b", "2026-06-02T10:00:00Z"), ROW("a", "2026-06-01T10:00:00Z")],
       total: 2,
     });
@@ -85,6 +94,7 @@ describe("email read — shape parity (tst_be_emailread_001)", () => {
     expect(page.total).toBe(2);
     expect(page.items.map((i) => i.id)).toEqual(["b", "a"]); // DB date-desc order preserved
     const first = page.items[0];
+    if (first === undefined) throw new Error("list: missing first item");
     expect(first.sender).toBe("Alice Johnson"); // from_name preferred over from_address
     expect(first.subject).toBe("Subject b");
     expect(first.preview).toBe("preview text b"); // snippet
@@ -96,16 +106,18 @@ describe("email read — shape parity (tst_be_emailread_001)", () => {
   });
 
   it("list falls back to from_address when from_name is absent", async () => {
-    graph.spies.list_entities_window.mockResolvedValue({
+    spy(graph, "list_entities_window").mockResolvedValue({
       items: [ROW("a", "2026-06-01T10:00:00Z", { from_name: "" })],
       total: 1,
     });
     const page = await mod.emailList({});
-    expect(page.items[0].sender).toBe("alice@example.com");
+    const first = page.items[0];
+    if (first === undefined) throw new Error("list fallback: missing first item");
+    expect(first.sender).toBe("alice@example.com");
   });
 
   it("get returns a MessageDetailView (body_text, full metadata incl body_html, facet summaries)", async () => {
-    graph.spies.get_entity_full.mockResolvedValue(DETAIL("x", "2026-06-03T09:00:00Z"));
+    spy(graph, "get_entity_full").mockResolvedValue(DETAIL("x", "2026-06-03T09:00:00Z"));
 
     const view = await mod.emailGet({ id: "x" });
 
@@ -116,20 +128,22 @@ describe("email read — shape parity (tst_be_emailread_001)", () => {
     expect(view.canonical).toEqual({});
     expect(view.linked_entities).toEqual([]);
     expect(view.facets).toHaveLength(1);
-    expect(view.facets[0].schema_id).toBe("email.message.details");
+    const facet0 = view.facets[0];
+    if (facet0 === undefined) throw new Error("get: missing facet[0]");
+    expect(facet0.schema_id).toBe("email.message.details");
     expect(view.metadata).toHaveProperty("body_html"); // detail keeps HTML
   });
 
   it("get resolves link neighbours into linked_entities (names via one batch)", async () => {
     const base = DETAIL("x", "2026-06-03T09:00:00Z");
-    graph.spies.get_entity_full.mockResolvedValue({
+    spy(graph, "get_entity_full").mockResolvedValue({
       ...base,
       links: [
         { id: "l1", from_id: "x", to_id: "file-1", kind: "attachment" },
         { id: "l2", from_id: "x", to_id: "file-2", kind: "attachment" },
       ],
     });
-    graph.spies.get_entities.mockResolvedValue([
+    spy(graph, "get_entities").mockResolvedValue([
       { id: "file-1", schema_id: "file.object", name: "photo.jpg", created_at: "2026-06-03T09:00:00Z" },
       { id: "file-2", schema_id: "file.object", name: "report.pdf", created_at: "2026-06-03T09:00:00Z" },
     ] satisfies RawEntity[]);
@@ -138,16 +152,16 @@ describe("email read — shape parity (tst_be_emailread_001)", () => {
     expect(view.linked_entities).toHaveLength(2);
     expect(view.linked_entities.map((l) => l.name)).toEqual(["photo.jpg", "report.pdf"]);
     expect(view.linked_entities.every((l) => l.link_kind === "attachment")).toBe(true);
-    expect(graph.spies.get_entities).toHaveBeenCalledTimes(1); // ONE batch, no per-link N+1
+    expect(spy(graph, "get_entities")).toHaveBeenCalledTimes(1); // ONE batch, no per-link N+1
   });
 
   it("get throws on a non-email / missing entity", async () => {
-    graph.spies.get_entity_full.mockResolvedValue(null);
+    spy(graph, "get_entity_full").mockResolvedValue(null);
     await expect(mod.emailGet({ id: "nope" })).rejects.toThrow();
   });
 
   it("batch returns one detail view per id and skips not-found", async () => {
-    graph.spies.get_entity_full
+    spy(graph, "get_entity_full")
       .mockResolvedValueOnce(DETAIL("a", "2026-06-01T10:00:00Z"))
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(DETAIL("c", "2026-06-03T10:00:00Z"));
@@ -157,10 +171,10 @@ describe("email read — shape parity (tst_be_emailread_001)", () => {
   });
 
   it("search hydrates only the matched ids via batch facet read", async () => {
-    graph.spies.search_entities_by_name.mockResolvedValue([
+    spy(graph, "search_entities_by_name").mockResolvedValue([
       { id: "a", schema_id: "email.message", name: "Subject a", created_at: "2026-06-01T10:00:00Z" },
     ] satisfies RawEntity[]);
-    graph.spies.list_facets_for_entities.mockResolvedValue([
+    spy(graph, "list_facets_for_entities").mockResolvedValue([
       {
         entity_id: "a",
         id: "f-a",
@@ -173,8 +187,10 @@ describe("email read — shape parity (tst_be_emailread_001)", () => {
 
     const page = await mod.emailList({ search: "invoice" });
     expect(page.items).toHaveLength(1);
-    expect(page.items[0].sender).toBe("Alice Johnson");
-    expect(page.items[0].preview).toBe("preview text a");
+    const first = page.items[0];
+    if (first === undefined) throw new Error("search: missing first item");
+    expect(first.sender).toBe("Alice Johnson");
+    expect(first.preview).toBe("preview text a");
   });
 });
 
@@ -187,38 +203,38 @@ describe("email read — DB-access guarantees (tst_be_emaildb_003 / INV-DB-1,2,4
   });
 
   it("list (no search) = exactly 1 list_entities_window, 0 facet/canonical reads (INV-DB-1)", async () => {
-    graph.spies.list_entities_window.mockResolvedValue({
+    spy(graph, "list_entities_window").mockResolvedValue({
       items: [ROW("a", "2026-06-01T10:00:00Z"), ROW("b", "2026-06-02T10:00:00Z")],
       total: 2,
     });
     await mod.emailList({ limit: 50 });
-    expect(graph.spies.list_entities_window).toHaveBeenCalledTimes(1);
-    expect(graph.spies.list_facets_for_entities).toHaveBeenCalledTimes(0);
-    expect(graph.spies.search_entities_by_name).toHaveBeenCalledTimes(0);
+    expect(spy(graph, "list_entities_window")).toHaveBeenCalledTimes(1);
+    expect(spy(graph, "list_facets_for_entities")).toHaveBeenCalledTimes(0);
+    expect(spy(graph, "search_entities_by_name")).toHaveBeenCalledTimes(0);
     // list_facets_for_entity (per-row N+1 trap) is a forbidden, unarranged op —
     // the throwing mockGraph guarantees it is never hit; no spy to assert 0.
   });
 
   it("list (search) = 1 search + 1 batch facet hydrate, 0 window, 0 per-row hydrate (INV-DB-4)", async () => {
-    graph.spies.search_entities_by_name.mockResolvedValue([]);
-    graph.spies.list_facets_for_entities.mockResolvedValue([]);
+    spy(graph, "search_entities_by_name").mockResolvedValue([]);
+    spy(graph, "list_facets_for_entities").mockResolvedValue([]);
     await mod.emailList({ search: "x" });
-    expect(graph.spies.search_entities_by_name).toHaveBeenCalledTimes(1);
-    expect(graph.spies.list_facets_for_entities).toHaveBeenCalledTimes(1);
-    expect(graph.spies.list_entities_window).toHaveBeenCalledTimes(0);
+    expect(spy(graph, "search_entities_by_name")).toHaveBeenCalledTimes(1);
+    expect(spy(graph, "list_facets_for_entities")).toHaveBeenCalledTimes(1);
+    expect(spy(graph, "list_entities_window")).toHaveBeenCalledTimes(0);
   });
 
   it("get = 1 get_entity_full (+0 get_entities when no links), 0 facet/canonical reads (INV-DB-2)", async () => {
-    graph.spies.get_entity_full.mockResolvedValue(DETAIL("x", "2026-06-03T09:00:00Z")); // links: []
+    spy(graph, "get_entity_full").mockResolvedValue(DETAIL("x", "2026-06-03T09:00:00Z")); // links: []
     await mod.emailGet({ id: "x" });
-    expect(graph.spies.get_entity_full).toHaveBeenCalledTimes(1);
-    expect(graph.spies.get_entities).toHaveBeenCalledTimes(0); // no links → no neighbour hydrate
+    expect(spy(graph, "get_entity_full")).toHaveBeenCalledTimes(1);
+    expect(spy(graph, "get_entities")).toHaveBeenCalledTimes(0); // no links → no neighbour hydrate
   });
 
   it("batch = exactly K get_entity_full for K ids (no extra crossings)", async () => {
-    graph.spies.get_entity_full.mockResolvedValue(DETAIL("a", "2026-06-01T10:00:00Z"));
+    spy(graph, "get_entity_full").mockResolvedValue(DETAIL("a", "2026-06-01T10:00:00Z"));
     await mod.emailBatch({ ids: ["a", "b", "c"] });
-    expect(graph.spies.get_entity_full).toHaveBeenCalledTimes(3);
-    expect(graph.spies.list_entities_window).toHaveBeenCalledTimes(0);
+    expect(spy(graph, "get_entity_full")).toHaveBeenCalledTimes(3);
+    expect(spy(graph, "list_entities_window")).toHaveBeenCalledTimes(0);
   });
 });

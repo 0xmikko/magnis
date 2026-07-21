@@ -283,20 +283,20 @@ export class CompaniesModule {
     }
 
     if (params.emails) {
-      for (let i = 0; i < params.emails.length; i++) {
+      for (const [i, email] of params.emails.entries()) {
         await this.graph.attach_facet({
           entity_id: params.id,
           schema_id: COMPANY_EMAIL,
-          data: { email: params.emails[i], is_primary: i === 0 },
+          data: { email, is_primary: i === 0 },
         });
       }
     }
     if (params.phones) {
-      for (let i = 0; i < params.phones.length; i++) {
+      for (const [i, phone] of params.phones.entries()) {
         await this.graph.attach_facet({
           entity_id: params.id,
           schema_id: COMPANY_PHONE,
-          data: { phone: params.phones[i], is_primary: i === 0 },
+          data: { phone, is_primary: i === 0 },
         });
       }
     }

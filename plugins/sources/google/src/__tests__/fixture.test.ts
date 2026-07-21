@@ -92,6 +92,7 @@ describe("fixture mode end-to-end", () => {
     expect("discovered" in email).toBe(false);
     expect(email.envelopes).toHaveLength(1); // broken message skipped
     const m = email.envelopes[0];
+    if (m === undefined) throw new Error("fixture email: missing envelope 0");
     expect(m.remote_id).toBe("m1");
     expect(m.kind).toBe("snapshot");
     expect(m.payload.from_address).toBe("alice@x.com");
@@ -102,16 +103,22 @@ describe("fixture mode end-to-end", () => {
     const meetings = (await call("magnis.sync.fetch", { surface: "meetings" }))
       .result as FetchResult;
     expect(meetings.envelopes).toHaveLength(1); // cancelled dropped
-    expect(meetings.envelopes[0].remote_id).toBe("gcal:e1");
-    expect(meetings.envelopes[0].payload.title).toBe("Standup");
+    const meeting = meetings.envelopes[0];
+    if (meeting === undefined)
+      throw new Error("fixture meetings: missing envelope 0");
+    expect(meeting.remote_id).toBe("gcal:e1");
+    expect(meeting.payload.title).toBe("Standup");
 
     const contacts = (await call("magnis.sync.fetch", { surface: "contacts" }))
       .result as FetchResult;
     expect(contacts.envelopes).toHaveLength(1); // identity-less dropped
-    expect(contacts.envelopes[0].remote_id).toBe(
+    const contact = contacts.envelopes[0];
+    if (contact === undefined)
+      throw new Error("fixture contacts: missing envelope 0");
+    expect(contact.remote_id).toBe(
       `gpeople:${stableContactId("people/c12345")}`,
     );
-    expect(contacts.envelopes[0].payload.display_name).toBe("Carol");
+    expect(contact.payload.display_name).toBe("Carol");
   });
 
   test("tst_gts_fx_002 missing arrays → empty envelopes (no crash)", async () => {

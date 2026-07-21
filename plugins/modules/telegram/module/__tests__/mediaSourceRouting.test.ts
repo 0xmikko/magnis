@@ -77,8 +77,12 @@ describe("tst_fe_tg_media_source_routing_001 — file.object source_module = env
 
     await mod.ingest({ envelopes: [mediaEnvelope("telegram-ts")] });
 
-    expect(graph.spies.file_register).toHaveBeenCalledTimes(1);
-    const call = graph.spies.file_register.mock.calls[0][0] as Record<string, unknown>;
+    const fileRegister = graph.spies.file_register;
+    if (fileRegister === undefined) throw new Error("batch ingest: missing file_register spy");
+    expect(fileRegister).toHaveBeenCalledTimes(1);
+    const callArgs = fileRegister.mock.calls[0];
+    if (callArgs === undefined) throw new Error("batch ingest: no file_register call recorded");
+    const call = callArgs[0] as Record<string, unknown>;
     expect(call.external_id).toBe("file:telegram:42:7");
     expect(call.source_module).toBe("telegram-ts");
     expect(call.source_surface).toBe("telegram");
@@ -92,8 +96,12 @@ describe("tst_fe_tg_media_source_routing_001 — file.object source_module = env
     const env = mediaEnvelope("telegram-ts");
     await mod.ingestMessage(env, env.payload);
 
-    expect(graph.spies.file_register).toHaveBeenCalledTimes(1);
-    const call = graph.spies.file_register.mock.calls[0][0] as Record<string, unknown>;
+    const fileRegister = graph.spies.file_register;
+    if (fileRegister === undefined) throw new Error("per-envelope ingest: missing file_register spy");
+    expect(fileRegister).toHaveBeenCalledTimes(1);
+    const callArgs = fileRegister.mock.calls[0];
+    if (callArgs === undefined) throw new Error("per-envelope ingest: no file_register call recorded");
+    const call = callArgs[0] as Record<string, unknown>;
     expect(call.source_module).toBe("telegram-ts");
     expect(call.source_surface).toBe("telegram");
   });

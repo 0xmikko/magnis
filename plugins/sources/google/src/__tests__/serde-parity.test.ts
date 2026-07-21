@@ -69,8 +69,11 @@ function gmailRoutes(opts: {
     }
     const m = url.match(/\/messages\/([^?]+)\?format=full/);
     if (m) {
-      const body = opts.messages?.[m[1]];
-      if (body === undefined) throw new Error(`unexpected message id ${m[1]}`);
+      const id = m[1];
+      if (id === undefined)
+        throw new Error("gmailRoutes: missing message id capture");
+      const body = opts.messages?.[id];
+      if (body === undefined) throw new Error(`unexpected message id ${id}`);
       return ok(body);
     }
     throw new Error(`unexpected url ${url}`);
@@ -191,7 +194,9 @@ describe("serde parity — gmail messages.get skips one message", () => {
     });
     const r = await fetchMessagePage("tok", undefined, fetchFn);
     expect(r.envelopes).toHaveLength(1);
-    expect(r.envelopes[0].remote_id).toBe("good");
+    const env = r.envelopes[0];
+    if (env === undefined) throw new Error("gmail page: missing envelope 0");
+    expect(env.remote_id).toBe("good");
   });
 
   // GmailHeader.name/value: String (gmail.rs:64-65) — both required. A header
@@ -206,7 +211,9 @@ describe("serde parity — gmail messages.get skips one message", () => {
     });
     const r = await fetchMessagePage("tok", undefined, fetchFn);
     expect(r.envelopes).toHaveLength(1);
-    expect(r.envelopes[0].remote_id).toBe("good");
+    const env = r.envelopes[0];
+    if (env === undefined) throw new Error("gmail page: missing envelope 0");
+    expect(env.remote_id).toBe("good");
   });
 });
 
@@ -312,7 +319,9 @@ describe("serde parity — optional/default fields stay tolerant", () => {
     const bare: FetchLike = async () => ok({ items: [{ id: "evt_1" }] });
     const r = await fetchEventsPage("tok", undefined, {}, bare);
     expect(r.envelopes).toHaveLength(1);
-    expect(r.envelopes[0].payload.title).toBe("Untitled Event");
+    const env = r.envelopes[0];
+    if (env === undefined) throw new Error("calendar page: missing envelope 0");
+    expect(env.payload.title).toBe("Untitled Event");
 
     const empty: FetchLike = async () => ok({});
     expect((await fetchEventsPage("tok", undefined, {}, empty)).envelopes).toHaveLength(0);
@@ -331,8 +340,10 @@ describe("serde parity — optional/default fields stay tolerant", () => {
       });
     const r = await fetchContactsPage("tok", undefined, fetchFn);
     expect(r.envelopes).toHaveLength(1);
-    expect(r.envelopes[0].payload.display_name).toBeNull();
-    expect((r.envelopes[0].payload.emails as unknown[])).toHaveLength(1);
+    const env = r.envelopes[0];
+    if (env === undefined) throw new Error("contacts page: missing envelope 0");
+    expect(env.payload.display_name).toBeNull();
+    expect((env.payload.emails as unknown[])).toHaveLength(1);
 
     const empty: FetchLike = async () => ok({});
     expect((await fetchContactsPage("tok", undefined, empty)).envelopes).toHaveLength(0);

@@ -17,7 +17,7 @@ export function mapContact(c: ContactListItem): ContactProfile {
     initials: c.initials,
     role: c.role ?? "",
      
-    username: c.email ? `@${c.email.split("@")[0]}` : "",
+    username: c.email ? `@${c.email.replace(/@.*$/s, "")}` : "",
     phone: c.phone ?? "",
     email: c.email ?? "",
     channels: [...c.channels],

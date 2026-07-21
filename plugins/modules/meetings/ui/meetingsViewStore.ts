@@ -100,6 +100,7 @@ export function getDateLabel(view: MeetingsView, dateOffset: number): string {
   if (view === "day") {
     const dayName = DAY_NAMES_LONG[d.getDay()];
     const monthAbbr = MONTH_ABBR[d.getMonth()];
+    if (dayName === undefined || monthAbbr === undefined) throw new Error("date name index out of range");
     return `${dayName}, ${monthAbbr} ${String(d.getDate())}, ${String(d.getFullYear())}`;
   }
   if (view === "week") {
@@ -110,13 +111,16 @@ export function getDateLabel(view: MeetingsView, dateOffset: number): string {
     sunday.setDate(monday.getDate() + 6);
     const mAbbr = MONTH_ABBR[monday.getMonth()];
     const sAbbr = MONTH_ABBR[sunday.getMonth()];
+    if (mAbbr === undefined || sAbbr === undefined) throw new Error("date name index out of range");
     if (monday.getMonth() === sunday.getMonth()) {
       return `${mAbbr} ${String(monday.getDate())} - ${String(sunday.getDate())}, ${String(sunday.getFullYear())}`;
     }
     return `${mAbbr} ${String(monday.getDate())} - ${sAbbr} ${String(sunday.getDate())}, ${String(sunday.getFullYear())}`;
   }
   // month
-  return `${MONTH_NAMES[d.getMonth()]} ${String(d.getFullYear())}`;
+  const monthName = MONTH_NAMES[d.getMonth()];
+  if (monthName === undefined) throw new Error("date name index out of range");
+  return `${monthName} ${String(d.getFullYear())}`;
 }
 
 /** Date range { start, end } for filtering meetings by starts_at. */

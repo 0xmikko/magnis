@@ -731,7 +731,9 @@ async function mapConcurrent<T, R>(
       for (;;) {
         const i = next++;
         if (i >= items.length) return;
-        results[i] = await fn(items[i]);
+        const item = items[i];
+        if (item === undefined) throw new Error("mapLimit: item index out of range");
+        results[i] = await fn(item);
       }
     },
   );

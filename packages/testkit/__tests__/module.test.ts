@@ -54,7 +54,10 @@ describe("mockGraph", () => {
 
   it("tst_testkit_mockgraph_003 the same op access returns a stable spy (re-arm works)", async () => {
     const graph = mockGraph({ get_entity: () => Promise.resolve(null) });
-    graph.spies.get_entity.mockResolvedValue(entity("z", "Zed"));
+    const getEntitySpy = graph.spies.get_entity;
+    if (getEntitySpy === undefined)
+      throw new Error("mockGraph: missing get_entity spy");
+    getEntitySpy.mockResolvedValue(entity("z", "Zed"));
     const e = await graph.get_entity("z");
     expect(e?.name).toBe("Zed");
   });

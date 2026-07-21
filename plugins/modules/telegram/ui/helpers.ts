@@ -70,8 +70,10 @@ export function loadCachedChats(): { chats: TelegramChat[]; total: number } | nu
 }
 
 export function senderColor(name: string): string {
-   
-  return TELEGRAM_SENDER_COLORS[Math.abs(hashCode(name)) % TELEGRAM_SENDER_COLORS.length];
+  const color =
+    TELEGRAM_SENDER_COLORS[Math.abs(hashCode(name)) % TELEGRAM_SENDER_COLORS.length];
+  if (color === undefined) throw new Error("senderColor: TELEGRAM_SENDER_COLORS is empty");
+  return color;
 }
 
 export function saveChatCache(chats: TelegramChat[], total: number): void {

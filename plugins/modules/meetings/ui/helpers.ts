@@ -133,6 +133,7 @@ export function buildCurrentDateTitles(): {
   const now = new Date();
   const dayName = DAY_NAMES_LONG[now.getDay()];
   const monthName = MONTH_NAMES[now.getMonth()];
+  if (dayName === undefined || monthName === undefined) throw new Error("date name index out of range");
   const dateStr = `${dayName}, ${monthName} ${String(now.getDate())}, ${String(now.getFullYear())}`;
   return {
     detail: dateStr,
@@ -160,7 +161,9 @@ export function buildCurrentWeekDays(): { dateRange: string; days: MeetingWeekDa
 
   const sunday = new Date(monday);
   sunday.setDate(monday.getDate() + 6);
-  const dateRange = `${MONTH_NAMES[monday.getMonth()]} ${String(monday.getDate())} - ${String(sunday.getDate())}, ${String(sunday.getFullYear())}`;
+  const rangeMonth = MONTH_NAMES[monday.getMonth()];
+  if (rangeMonth === undefined) throw new Error("date name index out of range");
+  const dateRange = `${rangeMonth} ${String(monday.getDate())} - ${String(sunday.getDate())}, ${String(sunday.getFullYear())}`;
 
   return { dateRange, days };
 }
@@ -259,6 +262,7 @@ export function buildWeekDaysForRange(start: Date): {
   sunday.setDate(monday.getDate() + 6);
   const mMonth = MONTH_NAMES[monday.getMonth()];
   const sMonth = MONTH_NAMES[sunday.getMonth()];
+  if (mMonth === undefined || sMonth === undefined) throw new Error("date name index out of range");
   const dateRange =
     monday.getMonth() === sunday.getMonth()
       ? `${mMonth} ${String(monday.getDate())} - ${String(sunday.getDate())}, ${String(sunday.getFullYear())}`

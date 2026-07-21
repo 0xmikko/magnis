@@ -16,8 +16,9 @@ function initialsFrom(name: string): string {
 function colorFromId(id: string): AvatarColor {
   let hash = 0;
   for (const ch of id) hash = (hash * 31 + ch.charCodeAt(0)) | 0;
-   
-  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+  const color = AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+  if (color === undefined) throw new Error("colorFromId: AVATAR_COLORS is empty");
+  return color;
 }
 
 export function mapProject(item: ProjectListItem): ProjectProfile {

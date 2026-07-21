@@ -78,10 +78,15 @@ describe("email ensure_address hub RPC (cross-module)", () => {
     const out = await mod.ensureAddress({ address: "Alice@Example.com", display_name: "Alice" });
 
     expect(out).toEqual({ id: "id-addr" });
-    const frag = apply_batch.mock.calls[0][0];
+    const call0 = apply_batch.mock.calls[0];
+    if (call0 === undefined) throw new Error("ensure_address: apply_batch not called");
+    const frag = call0[0];
     const addr = frag.entities[0];
+    if (addr === undefined) throw new Error("ensure_address: missing address entity");
     expect(addr.schema_id).toBe("email.address");
-    expect(addr.facets[0].external_id).toBe("email:address:alice@example.com"); // lowercased hub key
+    const addrFacet0 = addr.facets[0];
+    if (addrFacet0 === undefined) throw new Error("ensure_address: missing address facet[0]");
+    expect(addrFacet0.external_id).toBe("email:address:alice@example.com"); // lowercased hub key
   });
 
   it("rejects an empty address", async () => {
@@ -110,7 +115,9 @@ describe("email set_trigger (Stage 7)", () => {
     });
 
     // resolve-or-create email.address entities (lowercased, deduped, sorted)
-    const frag = apply_batch.mock.calls[0][0] as GraphBatchInput;
+    const call0 = apply_batch.mock.calls[0];
+    if (call0 === undefined) throw new Error("set_trigger: apply_batch not called");
+    const frag = call0[0] as GraphBatchInput;
     expect(frag.entities.map((e) => e.idx)).toEqual(["a@x.com", "b@x.com", "c@x.com"]);
     expect(frag.entities.every((e) => e.schema_id === "email.address")).toBe(true);
 

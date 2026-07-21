@@ -44,6 +44,15 @@ function readGraph(): G {
   });
 }
 
+// noUncheckedIndexedAccess: `spies` is Record<string, Mock>, so each lookup is
+// `Mock | undefined`. Every op referenced below IS arranged by readGraph, so a
+// missing spy is a harness bug — surface it, never mask it.
+function spy(graph: G, op: string): G["spies"][string] {
+  const s = graph.spies[op];
+  if (s === undefined) throw new Error(`notes read test: spy '${op}' not arranged`);
+  return s;
+}
+
 describe("notes read — shape parity (tst_be_notesread_001)", () => {
   let graph: G;
   let mod: NotesModule;
@@ -53,15 +62,15 @@ describe("notes read — shape parity (tst_be_notesread_001)", () => {
   });
 
   it("F1 search keeps canonical-derived pinned/updated_at/title (batch facets + batch canonical)", async () => {
-    graph.spies.search_entities_by_name.mockResolvedValue([
+    spy(graph, "search_entities_by_name").mockResolvedValue([
       entity("n1", "", { schema_id: NOTE, created_at: "2026-01-01T00:00:00Z" }),
     ]);
     // facet carries body only — NO pinned / updated_at / title
-    graph.spies.list_facets_for_entities.mockResolvedValue([
+    spy(graph, "list_facets_for_entities").mockResolvedValue([
       facet("f1", NOTE_CONTENT, { body: "hello world" }, { entity_id: "n1" }),
     ]);
     // canonical supplies pinned / updated_at / title
-    graph.spies.list_canonical_for_entities.mockResolvedValue([
+    spy(graph, "list_canonical_for_entities").mockResolvedValue([
       canonical("n1", "note.pinned", true),
       canonical("n1", "note.updated_at", "2026-03-03T00:00:00Z"),
       canonical("n1", "note.title", "Canon Title"),
@@ -70,6 +79,7 @@ describe("notes read — shape parity (tst_be_notesread_001)", () => {
     const page = await mod.list({ search: "canon", limit: 50, offset: 0 });
     expect(page.total).toBe(1);
     const item = page.items[0];
+    if (item === undefined) throw new Error("F1: missing first item");
     expect(item.title).toBe("Canon Title"); // entity.name empty, facet title absent → canonical
     expect(item.pinned).toBe(true); // from canonical note.pinned
     expect(item.updated_at).toBe("2026-03-03T00:00:00Z"); // from canonical note.updated_at
@@ -77,7 +87,7 @@ describe("notes read — shape parity (tst_be_notesread_001)", () => {
   });
 
   it("F2 get resolves link neighbours via ONE get_entities batch (no per-link fetch)", async () => {
-    graph.spies.get_entity_full.mockResolvedValue({
+    spy(graph, "get_entity_full").mockResolvedValue({
       entity: entity("n1", "My Note", { schema_id: NOTE }),
       facets: [facet("f1", NOTE_CONTENT, { body: "b" })],
       links: [
@@ -85,7 +95,7 @@ describe("notes read — shape parity (tst_be_notesread_001)", () => {
         { id: "l2", from_id: "n1", to_id: "c2", kind: "mentions" },
       ],
     });
-    graph.spies.get_entities.mockResolvedValue([
+    spy(graph, "get_entities").mockResolvedValue([
       entity("c1", "Alice", { schema_id: "contacts.person" }),
       entity("c2", "Bob", { schema_id: "contacts.person" }),
     ]);
@@ -97,12 +107,12 @@ describe("notes read — shape parity (tst_be_notesread_001)", () => {
   });
 
   it("F3 get throws on a non-notes / missing entity", async () => {
-    graph.spies.get_entity_full.mockResolvedValue(null);
+    spy(graph, "get_entity_full").mockResolvedValue(null);
     await expect(mod.get({ id: "nope" })).rejects.toThrow();
   });
 
   it("F4 list (no search) maps window rows", async () => {
-    graph.spies.list_entities_window.mockResolvedValue({
+    spy(graph, "list_entities_window").mockResolvedValue({
       items: [windowRow(entity("n1", "Title", { schema_id: NOTE }), { body: "body", pinned: true })],
       total: 1,
     });
@@ -120,7 +130,7 @@ describe("notes read — DB-access guarantees (tst_be_notesdb_001 / INV-7)", () 
   });
 
   it("search = 1 search + 1 batch facets + 1 batch canonical, 0 per-row reads, 0 window", async () => {
-    graph.spies.search_entities_by_name.mockResolvedValue([
+    spy(graph, "search_entities_by_name").mockResolvedValue([
       entity("n1", "n", { schema_id: NOTE }),
     ]);
     await mod.list({ search: "x" });
@@ -132,12 +142,12 @@ describe("notes read — DB-access guarantees (tst_be_notesdb_001 / INV-7)", () 
   });
 
   it("get = 1 get_entity_full + 1 get_canonical + 1 get_entities (links present), 0 per-link", async () => {
-    graph.spies.get_entity_full.mockResolvedValue({
+    spy(graph, "get_entity_full").mockResolvedValue({
       entity: entity("n1", "N", { schema_id: NOTE }),
       facets: [],
       links: [{ id: "l1", from_id: "n1", to_id: "c1", kind: "mentions" }],
     });
-    graph.spies.get_entities.mockResolvedValue([
+    spy(graph, "get_entities").mockResolvedValue([
       entity("c1", "Alice", { schema_id: "contacts.person" }),
     ]);
     await mod.get({ id: "n1" });
@@ -147,7 +157,7 @@ describe("notes read — DB-access guarantees (tst_be_notesdb_001 / INV-7)", () 
   });
 
   it("get with no links makes 0 get_entities", async () => {
-    graph.spies.get_entity_full.mockResolvedValue({
+    spy(graph, "get_entity_full").mockResolvedValue({
       entity: entity("n1", "N", { schema_id: NOTE }),
       facets: [],
       links: [],

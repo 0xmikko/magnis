@@ -102,6 +102,7 @@ export function mockFetch(routes: Route[]): MockFetch {
       const i = cursors.get(route) ?? 0;
       // Serve in order; clamp at the last element so re-polls stay stable.
       const canned = seq[Math.min(i, seq.length - 1)];
+      if (canned === undefined) throw new Error("mockFetch: route has no response");
       cursors.set(route, i + 1);
       return Promise.resolve(toResponse(canned));
     }

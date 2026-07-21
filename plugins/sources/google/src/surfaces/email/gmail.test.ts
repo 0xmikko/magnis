@@ -85,7 +85,9 @@ describe("gmail message conversion", () => {
     expect(mail.from.address).toBe("alice@example.com");
     expect(mail.from.name).toBe("Alice");
     expect(mail.to).toHaveLength(2);
-    expect(mail.to[1].address).toBe("carol@example.com");
+    const to1 = mail.to[1];
+    if (to1 === undefined) throw new Error("mail: missing to[1]");
+    expect(to1.address).toBe("carol@example.com");
     expect(mail.cc).toHaveLength(1);
     expect(mail.bcc).toHaveLength(0);
     expect(mail.is_read).toBe(false); // UNREAD present
@@ -249,8 +251,10 @@ describe("history action resolution", () => {
       remote_id: "mZ",
       kind: "delete",
     });
-    expect(r.envelopes[1].kind).toBe("snapshot");
-    expect(r.envelopes[1].remote_id).toBe("mA");
+    const env1 = r.envelopes[1];
+    if (env1 === undefined) throw new Error("email page: missing envelope 1");
+    expect(env1.kind).toBe("snapshot");
+    expect(env1.remote_id).toBe("mA");
     // Counters carried FORWARD, never reset; watermark advances.
     expect(r.hasMore).toBe(false);
     expect(r.nextCursor).toEqual({ history_id: "999", discovered: 200, total: 500 });
@@ -325,7 +329,10 @@ describe("email bootstrap cursor", () => {
         return ok({ messages: [{ id: "m1" }, { id: "m2" }], nextPageToken: "p2" });
       }
       if (url.includes("?format=full")) {
-        const id = url.split("/messages/")[1].split("?")[0];
+        const seg = url.split("/messages/")[1];
+        if (seg === undefined)
+          throw new Error("gmail url: missing message segment");
+        const id = seg.split("?")[0];
         return ok({ ...fullGmailMessage(), id });
       }
       throw new Error(`unexpected url ${url}`);
@@ -347,14 +354,16 @@ describe("email bootstrap cursor", () => {
     expect(p1.total).toBe(100);
     expect(p1.discovered).toBe(2);
     expect(p1.envelopes.map((e) => e.remote_id)).toEqual(["m1", "m2"]);
-    expect(p1.envelopes[0].kind).toBe("snapshot");
-    expect(p1.envelopes[0].surface).toBe("email");
+    const env0 = p1.envelopes[0];
+    if (env0 === undefined) throw new Error("email page: missing envelope 0");
+    expect(env0.kind).toBe("snapshot");
+    expect(env0.surface).toBe("email");
     // Payload is FLATTENED (from_name/from_address, joined *_addresses).
-    expect(p1.envelopes[0].payload.from_address).toBe("alice@example.com");
-    expect(p1.envelopes[0].payload.to_addresses).toBe(
+    expect(env0.payload.from_address).toBe("alice@example.com");
+    expect(env0.payload.to_addresses).toBe(
       "bob@example.com, carol@example.com",
     );
-    expect("from" in p1.envelopes[0].payload).toBe(false);
+    expect("from" in env0.payload).toBe(false);
 
     const profileCalls = calls.filter((u) => u.endsWith("/profile")).length;
     const p2 = await fetchMessagePage("tok", p1.nextCursor, fetchFn);
@@ -374,7 +383,10 @@ describe("email bootstrap cursor", () => {
         return ok({ messages: [{ id: "a" }, { id: "b" }, { id: "c" }] });
       }
       if (url.includes("/messages/b?")) return status(500, "boom");
-      const id = url.split("/messages/")[1].split("?")[0];
+      const seg = url.split("/messages/")[1];
+      if (seg === undefined)
+        throw new Error("gmail url: missing message segment");
+      const id = seg.split("?")[0];
       return ok({ ...fullGmailMessage(), id });
     };
     const r = await fetchMessagePage("tok", undefined, fetchFn);
