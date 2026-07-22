@@ -1,4 +1,15 @@
-# linkedin — read-only LinkedIn source connector (via anysite.io)
+# LinkedIn
+
+Read-only, via anysite.io. Pulls profiles and recent posts for the LinkedIn
+people you opt in to tracking. Only tracked handles are fetched.
+
+Availability is pending a provider spike (pricing / rate / coverage); see the
+spike notes below. Set `SOURCE_LINKEDIN_ANYSITE_KEY` once enabled.
+
+- Opt-in per contact; untracked handles are never fetched
+- Feeds the LinkedIn module (profiles + posts)
+
+## Connector notes
 
 Feeds the `linkedin` surface with profile + post envelopes for the user's TRACKED
 LinkedIn handles only (DEC-8 / INV-1). Read-only (INV-5): the only tool is

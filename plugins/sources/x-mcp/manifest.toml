@@ -14,11 +14,12 @@
 # "x-mcp" — the bridge needs npx on PATH and an X API plan with pay-per-use
 # credits, so it must never auto-load on every install.
 
-[source]
 id = "x-mcp"
 version = "1.0.0"
+title = "X MCP Tools"
+summary = "Agent-side X search, lookups, news and trends via the official X MCP server."
+publisher = "ai.magnis"
 surfaces = ["x-mcp"]
-transport = "stdio"
 kind = "mock"
 
 [credentials]
@@ -31,6 +32,8 @@ keys = [
 ]
 inject = "env"
 
+# [spawn] stays: this source is an external npx bridge, not the src/main.ts
+# convention.
 [spawn]
 command = "npx"
 args = ["-y", "@xdevplatform/xurl", "mcp"]

@@ -1,6 +1,7 @@
 // Magnis bun-connector SDK — the shared MCP-over-stdio framework for TS source
 // connectors (X / LinkedIn). A connector is an external process the host spawns
-// (manifest [spawn] command="bun" args=["run","src/main.ts"]); it speaks the
+// (by convention `bun run src/main.ts` when the package ships src/main.ts —
+// manifest v3; [spawn] appears only as an override); it speaks the
 // Magnis Sync Profile (line-delimited JSON-RPC) on stdin/stdout. Mirrors the
 // Rust mock-gmail wire contract exactly:
 //   - initialize → { protocolVersion, capabilities.experimental.magnis.sync, serverInfo }

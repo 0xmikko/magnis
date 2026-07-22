@@ -9,53 +9,25 @@
 # _meta, resolved from SOURCE_X_BEARER_TOKEN (DEC-6). initialize is cred-less
 # (DEC-7): a missing key fails at fetch, never at registration.
 
-[source]
 id = "x"
 version = "1.0.0"
+title = "X"
+summary = "Sync posts from the X (Twitter) accounts you track."
+publisher = "ai.magnis"
 surfaces = ["x", "contacts"]
-transport = "stdio"
 account_mode = "single"
-kind = "plugin"
 
 [auth]
 type = "api_key"
 
 [credentials]
 # bearer_token is an app-cred (host-injected), NOT minted by an auth flow →
-# `minted` stays empty. inject = meta (per-call _meta). The label opts it into
-# Settings → Sources (source-keys DEC-1); resolution: vault → env.
+# `minted` stays empty. Injected per-call via _meta (the default). The label
+# opts it into Settings → Sources (source-keys DEC-1); resolution: vault → env.
 keys = [
   { name = "bearer_token", label = "API bearer token", help_url = "https://developer.x.com/en/portal/dashboard", description = "Magnis uses the X API to fetch posts and profiles of the accounts you track. An app-only bearer token from your X developer portal is required." },
 ]
-inject = "meta"
 
-[spawn]
-command = "bun"
-args = ["run", "src/main.ts"]
-
-[profile]
+[sync]
 mode = "poll"
 interval_secs = 300
-
-# Declared install (extensions-lifecycle DEC-L4): host-standard routine.
-[lifecycle]
-install = "standard"
-
-# Self-reporting catalog presentation (extensions-lifecycle DEC-L3).
-[presentation]
-title = "X"
-summary = "Sync posts from the X (Twitter) accounts you track."
-publisher = "Magnis"
-publisher_url = "https://magnis.ai"
-icon_url = "/api/plugins/x/ui/icon.svg"
-details = """
-# X (Twitter)
-
-Read-only. Pulls profiles and recent posts for the handles you opt in to
-tracking on a contact (Track on X). Only tracked handles are fetched — nothing
-else touches the X API.
-
-- App-only Bearer read access (set `SOURCE_X_BEARER_TOKEN`)
-- Opt-in per contact; untracked handles are never fetched
-- Feeds the X module (profiles + posts)
-"""

@@ -13,7 +13,7 @@ one ordering rule: all bare top-level keys (`id`, `version`, …) must come
 **before** any `[table]`.
 
 This reference is split by kind — [module manifest](#module-manifest-v3) first,
-then [source manifest](#source-manifest). For how a module is built around this
+then [source manifest](#source-manifest-v3). For how a module is built around this
 manifest see [module.md](./module.md); for a source, [source.md](./source.md).
 
 ---
@@ -171,38 +171,60 @@ ONLY when the module ships real data migrations (see [module.md](./module.md)
 
 ---
 
-## Source manifest
+## Source manifest (v3)
 
-A source manifest declares the surfaces it serves, how the host spawns it, how it
-authenticates, and which credential keys it needs. Examples below are the real
-`x` (api_key) and `google` (oauth2) manifests.
+A source manifest is a **package card** plus the source's operating contract:
+the surfaces it serves, how it authenticates, and which credential keys it
+needs. Like a module, everything constant is convention: the host talks stdio
+JSON-RPC, spawns `bun run src/main.ts` when the package ships `src/main.ts`,
+installs it the standard way, and finds the auth screen at `auth/index.tsx`.
+Examples below are the real `x` (api_key) and `google` (oauth2) manifests.
 
-### `[source]`
+```
+plugins/sources/<id>/
+  manifest.toml    identity + [auth] + [credentials] + [sync]
+  README.md        catalog description (markdown detail page)
+  icon.svg|png     catalog icon, at the package ROOT (optional)
+  auth/index.tsx   browser auth screen — ONLY for oauth2 / phone_code (convention)
+  src/main.ts      the spawn entry (convention; presence = TS connector)
+```
+
+### Top level
 
 ```toml
-[source]
-id = "x"
+id = "x"                       # source id == credential namespace
 version = "1.0.0"
+title = "X"                    # catalog card
+summary = "Sync posts from the X (Twitter) accounts you track."
+publisher = "ai.magnis"        # reverse-domain publisher identity
 surfaces = ["x", "contacts"]   # the named streams it fetches
-transport = "stdio"            # the host talks to it over stdio JSON-RPC
 account_mode = "single"        # single | multi
-kind = "plugin"
 ```
 
-### `[spawn]`
+Optional flags: `kind = "core"` (always loaded) or `kind = "mock"` (loaded only
+when `ENABLED_SOURCES` lists it) — the default, a regular installable source,
+is written by omission. `dev = true` marks a dev/eval-only package in the
+catalog index.
+
+### Spawning — convention, `[spawn]` only as override
+
+A TS source ships `src/main.ts`; the host runs `bun run src/main.ts` with the
+source directory as cwd (Bun executes the TypeScript directly — no build, no
+dist). Write a `[spawn]` block ONLY when the source deviates from that
+convention — an external binary, or CLI flags:
 
 ```toml
+# x-mcp — an external npx bridge, no connector code
 [spawn]
-command = "bun"
-args = ["run", "src/main.ts"]   # the host runs this with the source dir as cwd
+command = "npx"
+args = ["-y", "@xdevplatform/xurl", "mcp"]
 ```
-
-Bun executes the TypeScript directly — no build, no dist.
 
 ### `[auth]`
 
 `type` selects the **ceremony** the host/UI runs. Add the `[auth.oauth2]`
-sub-table only for `oauth2`.
+sub-table only for `oauth2`. For `oauth2` / `phone_code` the browser screen is
+`auth/index.tsx` by convention — not declared.
 
 ```toml
 # api_key (x) — operator pastes a key; no browser screen
@@ -214,11 +236,10 @@ type = "api_key"
 # oauth2 (google) — host owns the browser ceremony; connector runs only exchange
 [auth]
 type = "oauth2"
-ui = "auth/screen.tsx"
 
 [auth.oauth2]
 auth_url = "https://accounts.google.com/o/oauth2/v2/auth"
-scopes = "openid email https://www.googleapis.com/auth/gmail.readonly …"
+scopes = ["openid", "email", "https://www.googleapis.com/auth/gmail.readonly"]
 ```
 
 | `type` | Used by | Connector implements |
@@ -242,7 +263,6 @@ they reach the process.
 keys = [
   { name = "bearer_token", label = "API bearer token", help_url = "https://developer.x.com/en/portal/dashboard", description = "App-only bearer token from your X developer portal." },
 ]
-inject = "meta"
 ```
 
 ```toml
@@ -250,50 +270,31 @@ inject = "meta"
 [credentials]
 keys   = ["refresh_token", "client_id", "client_secret"]
 minted = ["refresh_token"]   # keys the auth ceremony produces (vs operator-supplied)
-inject = "meta"              # "meta" (per-call _meta) | "env" (child-process env)
 ```
 
 | Field | Meaning |
 |---|---|
 | `keys` | credential keys the source reads — plain strings, or objects (`name`, `label`, `help_url`, `description`) to render fields in Settings → Sources |
 | `minted` | the subset produced by the auth ceremony and stored host-side; never operator-entered |
-| `inject` | `"meta"` (attached to every call's `_meta`, almost everyone) or `"env"` (put in the child process environment at spawn) |
+| `inject` | how keys reach the process — the default (`"meta"`, attached to every call's `_meta`) is written by omission; write `inject = "env"` only when the underlying binary reads its key from the child-process environment (x-mcp) |
 
 The connector reads only `_meta` (or env) — never a secret store. The full
 secrets model is in [source.md](./source.md) §7.
 
-### `[profile]`
+### `[sync]`
 
 ```toml
-[profile]
+[sync]
 mode = "poll"          # poll | push
 interval_secs = 300    # poll cadence (poll mode)
 ```
 
-### `[lifecycle]`
+A source without a `[sync]` block gets no source runtime — it is never synced
+(`local` uses this; `x-mcp` is tools-only and pairs it with `[tools]`).
 
-```toml
-[lifecycle]
-install = "standard"   # host-standard install routine
-```
-
-Sources declare lifecycle entirely here and carry no `lifecycle/` folder.
-
----
-
-## `[presentation]` (sources only)
-
-An optional catalog card a **source** reports about itself. Modules do NOT use
-this block: their card is the top-level `title` / `summary` / `publisher`, the
-markdown detail page is `README.md`, and the icon is `icon.svg|png` at the
-package root.
-
-```toml
-[presentation]
-title = "Google"
-summary = "Gmail + Calendar + Contacts over one OAuth ceremony."
-publisher = "Magnis"
-```
+The catalog card is the same convention as modules: top-level `title` /
+`summary` / `publisher`, the markdown detail page is `README.md`, and the icon
+is `icon.svg|png` at the package root (optional — no file, default icon).
 
 ---
 

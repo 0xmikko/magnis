@@ -11,13 +11,15 @@
 #
 # For isolated e2e (no live Telegram), set TELEGRAM_FIXTURE_FILE to a JSON
 # fixture; the connector then serves fetch from the file with NO MTProto network.
+# (env is injected by the operator / launch scripts — real mode needs none;
+# creds arrive per-call via `_meta`.)
 
-[source]
 id = "telegram"
 version = "1.0.0"
+title = "Telegram"
+summary = "Sync chats, groups, and contacts from Telegram."
+publisher = "ai.magnis"
 surfaces = ["telegram"]
-transport = "stdio"
-kind = "plugin"
 
 # Per-source authorization (DEC-15/16/24). phone_code: a multi-step MTProto login
 # driven over WS (no OAuth/callback). The host stashes the user-typed phone / login
@@ -26,40 +28,14 @@ kind = "plugin"
 # `SOURCE_TELEGRAM_API_ID` / `SOURCE_TELEGRAM_API_HASH`). The connector mints the
 # `session` credential; the host stores it keyed by connection_id. The connector's
 # `phone_code_hash` + interim grammers session round-trip via the host session
-# (the auth connector is cred-less one-per-call, DEC-21). Browser screen below.
+# (the auth connector is cred-less one-per-call, DEC-21). Browser screen is
+# `auth/index.tsx` (convention).
 [auth]
 type = "phone_code"
-ui = "auth/screen.tsx"
-
-[spawn]
-command = "bun"
-args = ["run", "src/main.ts"]
-# env injected by the operator / launch scripts (real mode needs none — creds
-# arrive per-call via `_meta`):
-#   TELEGRAM_FIXTURE_FILE = "<path>/telegram-fixture.json"   # optional, e2e replay
 
 [credentials]
 keys = ["api_id", "api_hash", "session"]
 minted = ["session"]
-inject = "meta"
 
-[profile]
+[sync]
 mode = "push"
-
-# Declared install (extensions-lifecycle DEC-L4): host-standard routine.
-[lifecycle]
-install = "standard"
-
-# Self-reporting catalog presentation (extensions-lifecycle DEC-L3).
-[presentation]
-icon_url = "/api/extension-icons/telegram.svg"
-title = "Telegram"
-summary = "Sync chats, groups, and contacts from Telegram."
-publisher = "Magnis"
-publisher_url = "https://magnis.ai"
-details = """
-# Telegram
-
-Connect Telegram via MTProto to sync private chats, groups, and
-contacts into your graph. Pairs with the Telegram Messages module.
-"""

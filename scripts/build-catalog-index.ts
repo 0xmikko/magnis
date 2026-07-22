@@ -47,9 +47,13 @@ function stagePackage(kind: string, id: string, stage: (dst: string) => void): E
   stage(dst);
   return walk(dst).map((p) => ({ path: relative(dst, p), sha256: sha256(readFileSync(p)) }));
 }
-function tomlField(toml: string, field: string): string | undefined {
-  const m = new RegExp(`^${field}\\s*=\\s*"([^"]*)"`, "m").exec(toml);
-  return m?.[1];
+/** The v3 package card — top-level manifest fields (modules and sources alike). */
+interface Card {
+  version?: string;
+  dev?: boolean;
+  title?: string;
+  summary?: string;
+  publisher?: string;
 }
 
 rmSync(OUT, { recursive: true, force: true });
@@ -65,13 +69,11 @@ if (!existsSync(distModules)) {
 for (const id of readdirSync(distModules).sort()) {
   const src = join(ROOT, "plugins", "modules", id);
   // Manifest v3: the catalog card (title/summary/publisher) lives top-level.
-  const manifest = parseToml(readFileSync(join(src, "manifest.toml"), "utf8")) as {
-    version: string;
-    dev?: boolean;
-    title?: string;
-    summary?: string;
-    publisher?: string;
-  };
+  const manifest = parseToml(readFileSync(join(src, "manifest.toml"), "utf8")) as Card;
+  if (!manifest.version) {
+    console.error(`module '${id}': manifest.toml has no version — refusing`);
+    process.exit(1);
+  }
   const files = stagePackage("module", id, (dst) => {
     cpSync(join(distModules, id), dst, { recursive: true });
   });
@@ -92,8 +94,9 @@ for (const id of readdirSync(sourcesRoot).sort()) {
   const dir = join(sourcesRoot, id);
   const manifestPath = join(dir, "manifest.toml");
   if (!existsSync(manifestPath)) continue;
-  const toml = readFileSync(manifestPath, "utf8");
-  const version = tomlField(toml, "version");
+  // Manifest v3: the catalog card (title/summary/publisher) lives top-level.
+  const manifest = parseToml(readFileSync(manifestPath, "utf8")) as Card;
+  const version = manifest.version;
   if (!version) {
     console.error(`source '${id}': manifest.toml has no version — refusing`);
     process.exit(1);
@@ -103,6 +106,11 @@ for (const id of readdirSync(sourcesRoot).sort()) {
     cpSync(manifestPath, join(dst, "manifest.toml"));
     if (existsSync(join(dir, "config.default.toml"))) cpSync(join(dir, "config.default.toml"), join(dst, "config.default.toml"));
     if (existsSync(join(dir, "auth"))) cpSync(join(dir, "auth"), join(dst, "auth"), { recursive: true });
+    // v3 package card assets: the markdown detail page + optional icon.
+    if (existsSync(join(dir, "README.md"))) cpSync(join(dir, "README.md"), join(dst, "README.md"));
+    for (const icon of ["icon.svg", "icon.png"]) {
+      if (existsSync(join(dir, icon))) cpSync(join(dir, icon), join(dst, icon));
+    }
     if (isTs) {
       // dependency-closed single-file bundle (../../_sdk can't resolve in a store)
       const r = Bun.spawnSync(["bun", "build", join(dir, "src", "main.ts"), "--target=bun", "--outfile", join(dst, "dist", "main.js")]);
@@ -114,10 +122,10 @@ for (const id of readdirSync(sourcesRoot).sort()) {
   });
   packages.push({
     kind: "source", id, version,
-    title: tomlField(toml, "title") ?? id,
-    summary: tomlField(toml, "summary") ?? "",
-    publisher: tomlField(toml, "publisher") ?? "",
-    dev: /^dev\s*=\s*true/m.test(toml),
+    title: manifest.title ?? id,
+    summary: manifest.summary ?? "",
+    publisher: manifest.publisher ?? "",
+    dev: manifest.dev === true,
     files,
   });
 }

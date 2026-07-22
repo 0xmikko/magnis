@@ -141,8 +141,8 @@ A `lifecycle/` folder appears only for:
    the graph must be transformed (`defineMigration` / a `MigrationStep`).
 
 Neither today: all 11 modules carry an identical stub. They lose the folder.
-(Sources declare lifecycle entirely in the manifest `[lifecycle]` section and
-never carry a folder.)
+(Sources are standard-installable by construction and never carry a folder —
+manifest v3 has no `[lifecycle]` section.)
 
 > Host dependency: "default lifecycle from the manifest" needs the backend to
 > treat a missing lifecycle entry as `registerManifestSchemas()`. Coordinated
@@ -152,9 +152,10 @@ never carry a folder.)
 
 ## 5. Building a source — the recipe
 
-1. **`manifest.toml`** — `[source]` with `surfaces = [...]`; `[spawn]` with
-   `command = "bun"`, `args = ["run", "src/main.ts"]`; `[auth]` / `[credentials]`
-   as the provider needs; `[lifecycle]` declaratively.
+1. **`manifest.toml`** — package card (`id`/`version`/`title`/`summary`/
+   `publisher`) + `surfaces = [...]` top-level; `[auth]` / `[credentials]` as
+   the provider needs; `[sync]` with the mode. Spawn is convention
+   (`bun run src/main.ts`); write `[spawn]` only to override it.
 2. **`src/main.ts`** — the entry the host spawns: `runConnector(buildConnectorConfig())`.
    Nothing else.
 3. **`src/connector.ts`** — `buildConnectorConfig(fetchFn = fetch)` wiring the

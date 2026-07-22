@@ -1,25 +1,24 @@
 # StateMock archetype 'key' (accounts-sync-status plan §11.1): the shared
 # @magnis/source-statemachine connector (bun) in a api_key/poll shape. Eval-only (kind=mock).
 
-[source]
 id = "mock-statemachine-key"
 version = "1.0.0"
+title = "StateMock (API key)"
+summary = "Shared state-machine mock connector in an api_key/poll shape."
+publisher = "ai.magnis"
 dev = true
 surfaces = ["smk"]
-transport = "stdio"
-account_mode = "single"
 kind = "mock"
+account_mode = "single"
 
 [auth]
 type = "api_key"
 
+# [spawn] stays: the shared statemachine binary is shaped by CLI flags, not the
+# bare src/main.ts convention.
 [spawn]
 command = "bun"
 args = ["run", "src/main.ts", "--surfaces", "smk", "--mode", "poll"]
 
-[profile]
+[sync]
 mode = "poll"
-
-# Declared install (extensions-lifecycle DEC-L4): host-standard routine.
-[lifecycle]
-install = "standard"

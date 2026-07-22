@@ -44,10 +44,12 @@ root.
 
 ```
 <source>/
-  manifest.toml          # [source], [spawn], [auth], [credentials], [lifecycle]
+  manifest.toml          # package card + [auth], [credentials], [sync]
+  README.md              # catalog description (markdown detail page)
+  icon.svg|png           # catalog icon at the package root (optional)
   config.default.toml    # optional shipped default app-creds
   auth/                  # browser auth screen — ONLY for oauth2 / phone_code (see §6)
-    screen.tsx           # [auth] ui = "auth/screen.tsx"
+    index.tsx            # convention: the entry of a folder is index
   src/
     main.ts              # runConnector(buildConnectorConfig())  — the spawn entry
     connector.ts         # buildConnectorConfig(fetchFn = fetch) — wires surfaces
@@ -72,18 +74,11 @@ even if there is one of each.
 
 ## 3. How it runs — spawn, transport, handshake
 
-**Spawn.** The manifest `[spawn]` block tells the host how to launch the
-process:
-
-```toml
-[spawn]
-command = "bun"
-args = ["run", "src/main.ts"]
-transport = "stdio"
-```
-
-The host runs `bun run src/main.ts` with the source directory as cwd. Bun
-executes the TypeScript directly — no build, no dist.
+**Spawn.** By convention: a source that ships `src/main.ts` is launched as
+`bun run src/main.ts` with the source directory as cwd. Bun executes the
+TypeScript directly — no build, no dist. A `[spawn]` block in the manifest
+exists ONLY as an override for sources that deviate (an external binary like
+x-mcp's npx bridge, or CLI flags).
 
 **Entry.** `src/main.ts` is one line:
 
@@ -198,10 +193,9 @@ For `oauth2`, add the sub-table:
 ```toml
 [auth]
 type = "oauth2"
-ui = "auth/screen.tsx"          # optional browser screen
 [auth.oauth2]
 auth_url = "https://accounts.google.com/o/oauth2/v2/auth"
-scopes   = "openid email https://www.googleapis.com/auth/gmail.readonly"
+scopes   = ["openid", "email", "https://www.googleapis.com/auth/gmail.readonly"]
 ```
 
 ### The ceremony contract
@@ -242,8 +236,8 @@ for `oauth2` you implement only `exchange` (code → token).
 ### The auth UI and the flow
 
 For `oauth2` and `phone_code`, the source ships a **browser auth screen** at
-`auth/screen.tsx` (declared `[auth] ui = "auth/screen.tsx"`), sitting at the
-source root beside `src/` — the way a module's `ui/` does. `api_key` /
+`auth/index.tsx` (pure convention — presence is the declaration), sitting at
+the source root beside `src/` — the way a module's `ui/` does. `api_key` /
 `shared_provider` need **no screen**: the operator pastes the key in Settings →
 Sources (the fields come from your `[credentials]` key objects — `label`,
 `help_url`, `description`), the host stores it, and `probeAuth` verifies it.
@@ -326,18 +320,18 @@ encryption are host-side.
 [credentials]
 keys   = ["refresh_token", "client_id", "client_secret"]   # or object form (label/help_url) to show in Settings → Sources
 minted = ["refresh_token"]                                  # keys the ceremony produces (vs operator-supplied)
-inject = "meta"                                             # "meta" (per-call _meta) | "env" (child process env)
+# inject = "env"  — write ONLY for env injection; the default (per-call _meta) is written by omission
 ```
 
 - **`minted`** are credentials the auth ceremony returns (`{ credential }`) —
   Google `refresh_token`, Telegram `session`. They are stored host-side keyed by
   connection and **never return to the browser**.
-- **`inject = "meta"`** (almost everyone) — the host attaches credentials as a
+- **`_meta` injection** (the default, written by omission) — the host attaches credentials as a
   `_meta` object on **every** `tools/call`. The SDK extracts it and threads it to
   every handler, so you read `args.meta.<key>` in fetch/execute/auth and
   `meta.<key>` in probe. Validate your own keys and throw a clear
   missing-credential error (the shape is untyped `Record<string, unknown>`).
-- **`inject = "env"`** (x-mcp only) — the host puts the key in the child process
+- **`inject = "env"`** (x-mcp only — the one written form) — the host puts the key in the child process
   environment at spawn (uppercased key name); saving a key in Settings respawns
   the source. Use this only when the underlying binary reads env, not `_meta`.
 
@@ -420,7 +414,7 @@ A source is done only when all hold:
 - [ ] Pagination round-trips its cursor and never claims `hasMore` without one.
 - [ ] `probeAuth` verifies against the real provider; auth ops implemented match
       the declared `[auth].type`.
-- [ ] For `oauth2` / `phone_code`: an `auth/screen.tsx` exists (plain elements +
+- [ ] For `oauth2` / `phone_code`: an `auth/index.tsx` exists (plain elements +
       Tailwind, geometry inline) and drives the flow via the host
       (`window.location` for oauth2; `submit`/`exec` props for phone_code).
 - [ ] `[credentials]` declares keys / `minted` / `inject`; the connector reads

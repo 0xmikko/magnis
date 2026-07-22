@@ -13,62 +13,40 @@
 #
 # For isolated e2e (no live Google), set GOOGLE_FIXTURE_FILE to a JSON fixture;
 # the connector then serves fetch from the file with NO network and NO OAuth.
+# (env is injected by the operator / launch scripts — real mode needs none;
+# creds arrive per-call via `_meta`.)
 
-[source]
 id = "google"
 version = "1.0.0"
+title = "Google"
+summary = "Sync Gmail and Google Calendar into your personal graph."
+publisher = "ai.magnis"
 surfaces = ["email", "meetings", "contacts"]
-transport = "stdio"
 
 # Per-source authorization (DEC-15/16/26). OAuth2: the HOST owns the ceremony
 # (state/PKCE-S256/nonce/consent URL) using the scopes below + a fixed redirect
 # `/auth/sources/google/callback`; the connector only runs `magnis.auth.exchange`
 # (code→token + id_token validation). `client_id`/`client_secret` come from env
 # `SOURCE_GOOGLE_CLIENT_ID` / `SOURCE_GOOGLE_CLIENT_SECRET` (server) — never the
-# browser/isolate (CON-3). The browser screen is `auth/screen.tsx`.
+# browser/isolate (CON-3). The browser screen is `auth/index.tsx` (convention).
 [auth]
 type = "oauth2"
-ui = "auth/screen.tsx"
 
 [auth.oauth2]
 auth_url = "https://accounts.google.com/o/oauth2/v2/auth"
 # Must match what the Gmail/Calendar/Contacts surfaces need at sync time.
-scopes = "openid email https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/contacts.readonly"
-
-[spawn]
-command = "bun"
-args = ["run", "src/main.ts"]
-# env injected by the operator / launch scripts (real mode needs none — creds
-# arrive per-call via `_meta`):
-#   GOOGLE_FIXTURE_FILE = "<path>/google-fixture.json"   # optional, e2e replay
+scopes = [
+  "openid",
+  "email",
+  "https://www.googleapis.com/auth/gmail.readonly",
+  "https://www.googleapis.com/auth/gmail.send",
+  "https://www.googleapis.com/auth/calendar.readonly",
+  "https://www.googleapis.com/auth/contacts.readonly",
+]
 
 [credentials]
 keys = ["refresh_token", "client_id", "client_secret"]
 minted = ["refresh_token"]
-inject = "meta"
 
-[profile]
+[sync]
 mode = "poll"
-
-# Declared install (extensions-lifecycle DEC-L4): host-standard routine.
-[lifecycle]
-install = "standard"
-
-# Self-reporting catalog presentation (extensions-lifecycle DEC-L3).
-[presentation]
-icon_url = "/api/extension-icons/google.svg"
-title = "Google"
-summary = "Sync Gmail and Google Calendar into your personal graph."
-publisher = "Magnis"
-publisher_url = "https://magnis.ai"
-details = """
-# Google
-
-Connect a Google account to ingest Gmail threads and Calendar events.
-The Google source fulfils both the `email` and `meetings` surfaces,
-feeding the Email and Meetings modules from a single OAuth grant.
-
-- OAuth-based connect flow
-- Present-to-past sync with covered-range tracking
-- Graceful re-auth when tokens expire
-"""
