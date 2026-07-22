@@ -17,7 +17,7 @@ summary = "LinkedIn profiles and posts of the people you track, linked to contac
 publisher = "ai.magnis"
 
 # Sync surface this module consumes (fed by the matching source connector).
-[ingests.linkedin]
+[surfaces.linkedin]
 
 # Foreign asks beyond the implicit own namespace: writes to `linkedin.` facets,
 # own:own links, and reads of own schemas need no declaration.

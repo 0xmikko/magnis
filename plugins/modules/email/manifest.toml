@@ -16,7 +16,7 @@ summary = "Ingest, search, and act on email threads from any provider."
 publisher = "ai.magnis"
 
 # Sync surface this module consumes (fed by the matching source connector).
-[ingests.email]
+[surfaces.email]
 # The surface's primary-item schema — its user-scoped graph count IS the
 # "items synced" badge (host source.status.list reads this).
 item = "email.message"

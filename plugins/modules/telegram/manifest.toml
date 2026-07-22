@@ -17,7 +17,7 @@ summary = "Threaded Telegram chats indexed alongside the rest of your graph."
 publisher = "ai.magnis"
 
 # Sync surface this module consumes (fed by the matching source connector).
-[ingests.telegram]
+[surfaces.telegram]
 # The surface's primary-item schema — its user-scoped graph count IS the
 # "items synced" badge (host source.status.list reads this).
 item = "telegram.message"

@@ -17,7 +17,7 @@ summary = "X (Twitter) profiles and posts of the people you track, linked to con
 publisher = "ai.magnis"
 
 # Sync surface this module consumes (fed by the matching source connector).
-[ingests.x]
+[surfaces.x]
 
 # Foreign asks beyond the implicit own namespace: writes to `x.` facets,
 # own:own links, and reads of own schemas need no declaration.

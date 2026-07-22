@@ -15,7 +15,7 @@ summary = "Schedule, track, and recap meetings across calendars."
 publisher = "ai.magnis"
 
 # Sync surface this module consumes (fed by the matching source connector).
-[ingests.meetings]
+[surfaces.meetings]
 # The surface's primary-item schema — its user-scoped graph count IS the
 # "items synced" badge (host source.status.list reads this).
 item = "meetings.calendar_event"

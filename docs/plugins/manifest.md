@@ -26,7 +26,7 @@ convention inside the package:
 
 ```
 plugins/modules/<id>/
-  manifest.toml    identity + [ingests] + [permissions]
+  manifest.toml    identity + [surfaces] + [permissions]
   README.md        catalog description (markdown detail page)
   icon.svg|png     catalog icon, at the package ROOT
   schemas/         graph model, convention-discovered (see below)
@@ -146,13 +146,13 @@ host  = ["sync_state"]               # privileged host ops it may call
 A denied op throws — there is **no silent skip**. If a write seems to do nothing,
 suspect a missing entry here (see [module.md](./module.md) §6).
 
-### `[ingests]` — sync configuration
+### `[surfaces]` — sync configuration
 
 One table per sync surface the module consumes from a source; omit entirely
 for pure-CRUD modules:
 
 ```toml
-[ingests.email]
+[surfaces.email]
 item = "email.message"   # optional: the surface's primary-item schema — its
                          # user-scoped graph count IS the "items synced" badge
 ```

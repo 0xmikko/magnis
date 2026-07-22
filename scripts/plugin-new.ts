@@ -45,7 +45,7 @@ publisher = "com.example"
 # host = []
 
 # Sync surface this module consumes — declare only if a source feeds it.
-# [ingests.${id}]
+# [surfaces.${id}]
 # item = "${id}.item"
 `;
 }
@@ -282,7 +282,7 @@ if (import.meta.main) {
   console.log(`scaffolded ${dir}
 
 next steps (docs/plugins/authoring.md):
-  1. flesh out schemas/ + manifest.toml ([permissions], [ingests])
+  1. flesh out schemas/ + manifest.toml ([permissions], [surfaces])
   2. implement module/service.ts + extend the unit test
   3. add a catalog entry to backend/data/extensions.toml (module:magnis.${id})
   4. add backend/tests/plugin_runtime_${id}.rs (integration bar)

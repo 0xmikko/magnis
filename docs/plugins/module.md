@@ -38,7 +38,7 @@ methods into a handler table, and routes calls to them.
 
 ```
 <module>/
-  manifest.toml          # the package card: identity + [ingests] + [permissions]
+  manifest.toml          # the package card: identity + [surfaces] + [permissions]
   README.md              # catalog description (markdown detail page)
   icon.svg               # catalog icon at the package ROOT (svg or png)
   schemas/               # graph model, one JSON file per entity/facet (see §7)
