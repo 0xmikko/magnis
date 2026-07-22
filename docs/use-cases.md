@@ -1,4 +1,3 @@
-md
 # Use Cases
 
 ## 1. Personal Operations
