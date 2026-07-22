@@ -12,22 +12,22 @@ Magnis is two halves plus a shell:
 
 ```mermaid
 flowchart LR
-    subgraph core [Core - closed]
-        graph[Knowledge graph / Postgres]
-        search[Search: graph + semantic]
-        agent[Agent runtime + approvals]
-        triggers[Event triggers]
+    subgraph core ["Core — closed"]
+        kg["Knowledge graph / Postgres"]
+        search["Search: graph + semantic"]
+        agent["Agent runtime + approvals"]
+        trig["Event triggers"]
     end
-    subgraph catalog [This repo - public]
-        modules[Domain modules - V8 isolates]
-        sources[Source connectors - stdio processes]
-        sdks[SDKs]
+    subgraph catalog ["This repo — public"]
+        modules["Domain modules — V8 isolates"]
+        sources["Source connectors — stdio processes"]
+        sdks["SDKs"]
     end
-    sources -- envelopes + cursors --> modules
-    modules --> graph
-    search --> graph
+    sources -- "envelopes + cursors" --> modules
+    modules --> kg
+    search --> kg
     agent --> search
-    triggers --> agent
+    trig --> agent
 ```
 
 ## The graph
