@@ -20,14 +20,12 @@
 // push notifications, and `magnis.execute` records/echoes the action. The fixture
 // check runs BEFORE any credential parsing. See fixture.ts.
 //
-// ## Deliberately NOT ported (host never calls them)
-// TODO(telegram follow-up): the Rust binary also advertises 3 opinionated
-// tools in tools/list for direct Claude/agent use — `list_chats`, `list_messages`,
-// `send_message`. The host sync pipeline only calls magnis.sync.fetch /
-// magnis.execute / magnis.auth.* / listen_start / listen_stop, so they are
-// SKIPPED here and tools/list answers an empty list.
-// TODO(telegram follow-up): the Rust binary also serves `magnis.test.sleep`,
-// an unadvertised slow-handler seam for its concurrency tests. Not ported.
+// ## Deliberately not advertised (host never calls them)
+// Opinionated direct-use tools — `list_chats`, `list_messages`, `send_message` —
+// are not exposed: the host sync pipeline only calls magnis.sync.fetch /
+// magnis.execute / magnis.auth.* / listen_start / listen_stop, so tools/list
+// answers an empty list. The `magnis.test.sleep` concurrency seam is likewise
+// not part of this connector.
 
 import { createInterface } from "node:readline";
 import { handleMessage, type DispatchDeps, type JsonRpcMessage } from "./dispatch";

@@ -1,7 +1,7 @@
 {
   "name": "@magnis/host-stubs",
   "version": "0.1.0",
-  "description": "Type declarations for the @magnis/host/* modules the Magnis frontend provides to plugin UIs. GENERATED from the closed host — see types/KEEP-ALIGNED.md.",
+  "description": "Type declarations for the @magnis/host/* modules the Magnis host provides to plugin UIs. GENERATED from the host — see types/KEEP-ALIGNED.md.",
   "private": true,
   "types": "./types/runtime/plugins/hostShims/base.d.ts"
 }

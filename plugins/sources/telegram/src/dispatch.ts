@@ -197,11 +197,10 @@ export async function handleMessage(
 
   if (method === "tools/list") {
     if (id === undefined || id === null) return null;
-    // TODO(telegram follow-up): the Rust connector advertises 3 opinionated
-    // tools here for direct Claude/agent use (list_chats, list_messages,
-    // send_message). The HOST only calls magnis.sync.fetch / magnis.execute /
-    // magnis.auth.* / listen_start / listen_stop, so they are SKIPPED — as is
-    // the `magnis.test.sleep` concurrency test seam.
+    // Opinionated direct-use tools (list_chats, list_messages, send_message)
+    // are deliberately not advertised: the HOST only calls magnis.sync.fetch /
+    // magnis.execute / magnis.auth.* / listen_start / listen_stop. The
+    // `magnis.test.sleep` concurrency seam is likewise not exposed.
     return { jsonrpc: "2.0", id, result: { tools: [] } };
   }
 

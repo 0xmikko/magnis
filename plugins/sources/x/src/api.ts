@@ -1,8 +1,7 @@
 // X (Twitter) API v2 — READ-ONLY client. App-only Bearer auth for reads
-// (the bearer the host injects via _meta). Ported from content-os
-// src/x/api-client.ts + tweet-lookup.service.ts, stripped to the two read calls
+// (the bearer the host injects via _meta). Stripped to the two read calls
 // the x connector needs: resolve a handle → profile, and recent tweets.
-// NO write paths, NO OAuth, NO persistence (content-os concerns dropped).
+// NO write paths, NO OAuth, NO persistence.
 
 import { RateLimitError } from "@magnis/connector-sdk";
 

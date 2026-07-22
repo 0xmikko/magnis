@@ -2,8 +2,8 @@
 // connectors (X / LinkedIn). A connector is an external process the host spawns
 // (by convention `bun run src/main.ts` when the package ships src/main.ts —
 // manifest v3; [spawn] appears only as an override); it speaks the
-// Magnis Sync Profile (line-delimited JSON-RPC) on stdin/stdout. Mirrors the
-// Rust mock-gmail wire contract exactly:
+// Magnis Sync Profile (line-delimited JSON-RPC) on stdin/stdout. The wire
+// contract, exactly:
 //   - initialize → { protocolVersion, capabilities.experimental.magnis.sync, serverInfo }
 //   - tools/call magnis.sync.fetch { surface, cursor } → { envelopes, nextCursor, hasMore }
 //   - notifications (no id) → no reply
@@ -19,15 +19,15 @@ export * from "./contract/source";
 
 import type { ConnectorConfig, Envelope } from "./contract/source";
 
-/** JSON-RPC error codes shared with the host (backend runtime/runtime.rs).
+/** JSON-RPC error codes shared with the host runtime.
  * RATE_LIMIT carries `retry_after=<secs>` in the message so the host backs off
  * for the right window instead of crashing the connector (INV — S6). */
-// Twin: backend/src/sources/mcp/runtime.rs::RATE_LIMITED_CODE and the telegram
-// connector — the host reads `error.data.retry_after` (typed), NOT the message.
+// Host contract: the host reads `error.data.retry_after` (typed), NOT the
+// message.
 export const RATE_LIMIT_CODE = -32002;
-// Twin: backend/src/sources/mcp/runtime.rs::CURSOR_EXPIRED_CODE. The host reads
-// the CODE alone — never the message — so only an explicit throw of
-// `CursorExpiredError` re-bootstraps. Everything else stays a hard failure.
+// Host contract: the host reads the CODE alone — never the message — so only
+// an explicit throw of `CursorExpiredError` re-bootstraps. Everything else
+// stays a hard failure.
 export const CURSOR_EXPIRED_CODE = -32003;
 const GENERIC_FETCH_ERROR_CODE = -32000;
 
