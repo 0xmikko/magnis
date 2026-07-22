@@ -1,5 +1,5 @@
 {
-  "_comment": "SINGLE SOURCE OF TRUTH (DEC-6) for the plugin bare-specifier -> host-shim slug map. Mirrors backend/src/services/plugin_ui/transpile.rs::BareImportMap::default_with_env (the STATIC set). The build (scripts/build-plugins.ts) externalizes these specifiers and rewrites them to /api/plugins/__host-shim.js?m=<slug>. Per-plugin manifest.ui.extra_bare_imports add more (slug = the specifier itself). Keep in sync with transpile.rs / host_shim.rs / hostModules.ts.",
+  "_comment": "SINGLE SOURCE OF TRUTH for the plugin bare-specifier -> host-shim slug map. Mirrors backend/src/services/plugin_ui/transpile.rs::BareImportMap::default_with_env (the STATIC set). The build (scripts/build-plugins.ts) externalizes these specifiers and rewrites them to /api/plugins/__host-shim.js?m=<slug>. Per-plugin manifest.ui.extra_bare_imports add more (slug = the specifier itself). Keep in sync with transpile.rs / host_shim.rs / hostModules.ts.",
   "static": {
     "react": "react",
     "react-dom": "react-dom",

@@ -3,15 +3,15 @@
 # Owns the `triggers.*` graph namespace: the trigger entity plus its config and
 # execution facets. This module owns only the trigger DEFINITION CRUD + UI — the
 # native trigger ENGINE (evaluate + fire) stays in Core and reads these
-# definitions (hybrid split). Runs as a sandboxed V8 isolate; bundled and
-# presence-seeded at boot (DEC-10).
+# definitions (hybrid split). Runs as a sandboxed V8 isolate; bundled with the
+# app and installed automatically at boot.
 
 id = "triggers"
 version = "0.1.0"
 # SDK contract version this manifest targets (host accepts 0.x).
 magnis_api_version = "0.1.0"
-# tier = "system": mandatory, always-loaded, cannot be uninstalled/disabled
-# (DEC-7). Still V8-sandboxed.
+# tier = "system": mandatory, always-loaded, cannot be uninstalled/disabled.
+# Still V8-sandboxed.
 tier = "system"
 title = "Triggers"
 summary = "Automations that watch your graph and act on changes."

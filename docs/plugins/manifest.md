@@ -117,7 +117,7 @@ defines no domain mappings of its own.
 > canonical key (`person.emails`, a deduped list) — the singular `person.email`
 > is then never populated. Read the collection key (or the facets array), not
 > the singular. Choose the strategy deliberately; the read side depends on it
-> (see [module.md](./module.md) §8, canonical vs facet).
+> (see the canonical-vs-facet section of [module.md](./module.md)).
 
 ### `[permissions]` — the security boundary
 
@@ -144,7 +144,8 @@ host  = ["sync_state"]               # privileged host ops it may call
 | `host` | privileged host ops (`sync_state`, `composer`, `file_register`, …) | exact op grant |
 
 A denied op throws — there is **no silent skip**. If a write seems to do nothing,
-suspect a missing entry here (see [module.md](./module.md) §6).
+suspect a missing entry here (see the cross-module calls section of
+[module.md](./module.md)).
 
 ### `[surfaces]` — sync configuration
 
@@ -166,8 +167,8 @@ Entrypoints are convention too: `module/index.ts` and `ui/index.tsx`.
 
 There is no install hook — installing a module registers its `schemas/` files
 natively. A `migrations/` folder (plus `[[migrations]]` in the manifest) exists
-ONLY when the module ships real data migrations (see [module.md](./module.md)
-§7).
+ONLY when the module ships real data migrations (see the schemas section of
+[module.md](./module.md)).
 
 ---
 
@@ -245,12 +246,12 @@ scopes = ["openid", "email", "https://www.googleapis.com/auth/gmail.readonly"]
 | `type` | Used by | Connector implements |
 |---|---|---|
 | `api_key` | X | only `probeAuth` (verify the key) |
-| `shared_provider` | LinkedIn | same as `api_key` (a shared upstream provider) |
+| `shared_provider` | Anysite | same as `api_key` (a shared upstream provider) |
 | `oauth2` | Google | `auth.exchange` (+ `revoke`); host owns the browser flow |
 | `phone_code` | Telegram | stateful `auth.begin` / `auth.step` / `auth.revoke` |
 
-The full ceremony contract and the auth screen live in [source.md](./source.md)
-§6.
+The full ceremony contract and the auth screen live in the authentication
+section of [source.md](./source.md).
 
 ### `[credentials]`
 
@@ -279,7 +280,7 @@ minted = ["refresh_token"]   # keys the auth ceremony produces (vs operator-supp
 | `inject` | how keys reach the process — the default (`"meta"`, attached to every call's `_meta`) is written by omission; write `inject = "env"` only when the underlying binary reads its key from the child-process environment (x-mcp) |
 
 The connector reads only `_meta` (or env) — never a secret store. The full
-secrets model is in [source.md](./source.md) §7.
+secrets model is in the secrets section of [source.md](./source.md).
 
 ### `[sync]`
 

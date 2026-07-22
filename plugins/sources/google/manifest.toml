@@ -23,12 +23,13 @@ summary = "Sync Gmail and Google Calendar into your personal graph."
 publisher = "ai.magnis"
 surfaces = ["email", "meetings", "contacts"]
 
-# Per-source authorization (DEC-15/16/26). OAuth2: the HOST owns the ceremony
-# (state/PKCE-S256/nonce/consent URL) using the scopes below + a fixed redirect
-# `/auth/sources/google/callback`; the connector only runs `magnis.auth.exchange`
-# (code→token + id_token validation). `client_id`/`client_secret` come from env
-# `SOURCE_GOOGLE_CLIENT_ID` / `SOURCE_GOOGLE_CLIENT_SECRET` (server) — never the
-# browser/isolate (CON-3). The browser screen is `auth/index.tsx` (convention).
+# OAuth2: the HOST owns the ceremony (state/PKCE-S256/nonce/consent URL) using
+# the scopes below + a fixed redirect `/auth/sources/google/callback`; the
+# connector only runs `magnis.auth.exchange` (code→token + id_token validation).
+# `client_id`/`client_secret` come from env `SOURCE_GOOGLE_CLIENT_ID` /
+# `SOURCE_GOOGLE_CLIENT_SECRET` (server) — client secrets never reach the
+# browser or the plugin isolate. The browser screen is `auth/index.tsx`
+# (convention). See docs/plugins/source.md for the auth model.
 [auth]
 type = "oauth2"
 

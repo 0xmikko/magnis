@@ -156,7 +156,7 @@ describe("companies read — shape parity (tst_be_companiesread_001)", () => {
   });
 });
 
-describe("companies read — DB-access guarantees (tst_be_companiesdb_001 / INV-1/2/3)", () => {
+describe("companies read — DB-access guarantees (tst_be_companiesdb_001)", () => {
   let graph: G;
   let mod: CompaniesModule;
   beforeEach(() => {
@@ -164,7 +164,7 @@ describe("companies read — DB-access guarantees (tst_be_companiesdb_001 / INV-
     mod = mountModule(CompaniesModule, { graph, ctx: { extension_id: "companies" } }).module;
   });
 
-  it("list (no search) = 1 window + 1 batch canonical, 0 search, 0 facet (INV-1)", async () => {
+  it("list (no search) = 1 window + 1 batch canonical, 0 search, 0 facet", async () => {
     await mod.list({ limit: 50 });
     expect(graph.spies.list_entities_window).toHaveBeenCalledTimes(1);
     expect(graph.spies.list_canonical_for_entities).toHaveBeenCalledTimes(1);
@@ -173,14 +173,14 @@ describe("companies read — DB-access guarantees (tst_be_companiesdb_001 / INV-
     // mockGraph guarantees it is never hit; no spy to assert 0 against.
   });
 
-  it("list (search) = 1 search + 1 batch canonical, 0 window (INV-2)", async () => {
+  it("list (search) = 1 search + 1 batch canonical, 0 window", async () => {
     await mod.list({ search: "x" });
     expect(graph.spies.search_entities_by_name).toHaveBeenCalledTimes(1);
     expect(graph.spies.list_canonical_for_entities).toHaveBeenCalledTimes(1);
     expect(graph.spies.list_entities_window).toHaveBeenCalledTimes(0);
   });
 
-  it("get = 1 get_entity_full + 1 list_facets_for_entity + 1 get_canonical, 0 get_entities (INV-3)", async () => {
+  it("get = 1 get_entity_full + 1 list_facets_for_entity + 1 get_canonical, 0 get_entities", async () => {
     spy(graph, "get_entity_full").mockResolvedValue({
       entity: entity("c", "Acme", { schema_id: COMPANY }),
       facets: [],

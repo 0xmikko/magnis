@@ -1,7 +1,7 @@
 # mock-x — X fixture connector (SourceKind Mock; loaded ONLY when ENABLED_SOURCES
 # lists it). No network, no credentials — feeds the `x` surface with the
-# same envelope shape as the live `x` connector for tests / e2e (INV-2/6).
-# Read-only: only magnis.sync.fetch (INV-5).
+# same envelope shape as the live `x` connector, keeping tests and e2e
+# hermetic. Read-only: the only tool is magnis.sync.fetch.
 
 id = "mock-x"
 version = "1.0.0"

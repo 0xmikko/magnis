@@ -9,10 +9,10 @@ export async function probeLinkedInAuth(
   meta: Record<string, unknown> | undefined,
   fetchFn: FetchLike,
 ): Promise<{ subject: string }> {
-  const key = typeof meta?.anysite_key === "string" ? (meta.anysite_key) : "";
-  if (!key) throw new Error("linkedin: missing anysite_key");
+  const key = typeof meta?.api_key === "string" ? meta.api_key : "";
+  if (!key) throw new Error("anysite: missing api_key");
   const client = new AnysiteClient(key, fetchFn);
   const profile = await client.resolveProfile("linkedin");
-  if (!profile) throw new Error("linkedin: probe resolved no profile — key rejected");
+  if (!profile) throw new Error("anysite: probe resolved no profile — key rejected");
   return { subject: `anysite …${key.slice(-4)}` };
 }

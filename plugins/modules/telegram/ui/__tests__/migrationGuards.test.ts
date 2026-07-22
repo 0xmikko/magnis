@@ -53,7 +53,7 @@ describe("Query migration: Telegram", () => {
   });
 });
 
-describe("W3: useTelegramSync uses runtime transport", () => {
+describe("Runtime transport: useTelegramSync", () => {
   it("does NOT import useWebSocket", () => {
     expect(readSource("hooks/useTelegramSync.ts")).not.toContain("useWebSocket");
   });
@@ -63,7 +63,7 @@ describe("W3: useTelegramSync uses runtime transport", () => {
   });
 });
 
-describe("INV-7: telegram tool-call renderer reuses BaseToolCallCard", () => {
+describe("Shared card: telegram tool-call renderer reuses BaseToolCallCard", () => {
   it("imports BaseToolCallCard", () => {
     expect(readSource("TelegramToolCallRenderer.tsx")).toContain("BaseToolCallCard");
   });

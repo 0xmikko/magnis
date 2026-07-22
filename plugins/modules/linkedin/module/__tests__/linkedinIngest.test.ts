@@ -78,7 +78,7 @@ describe("linkedin ingest", () => {
     ]);
   });
 
-  it("tst_plugin_linkedin_ingest_002 re-ingest keeps the same external_id (idempotent, INV-4)", async () => {
+  it("tst_plugin_linkedin_ingest_002 re-ingest keeps the same external_id (idempotent)", async () => {
     const graph: G = mockGraph({ apply_batch: () => Promise.resolve(emptyBatch) });
     const { module: mod } = mountModule(LinkedinModule, { graph, ctx: { extension_id: "linkedin" } });
     const e = env("linkedin:post:1", {

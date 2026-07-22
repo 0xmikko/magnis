@@ -85,7 +85,7 @@ describe("x ingest", () => {
     ]);
   });
 
-  it("tst_plugin_x_ingest_002 re-ingest keeps the same external_id (idempotent, INV-4)", async () => {
+  it("tst_plugin_x_ingest_002 re-ingest keeps the same external_id (idempotent)", async () => {
     const graph = ingestGraph();
     const mod = mountX(graph);
     const e = env("x:post:1", {

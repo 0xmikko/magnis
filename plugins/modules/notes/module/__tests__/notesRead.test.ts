@@ -121,7 +121,7 @@ describe("notes read — shape parity (tst_be_notesread_001)", () => {
   });
 });
 
-describe("notes read — DB-access guarantees (tst_be_notesdb_001 / INV-7)", () => {
+describe("notes read — DB-access guarantees (tst_be_notesdb_001)", () => {
   let graph: G;
   let mod: NotesModule;
   beforeEach(() => {

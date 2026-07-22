@@ -32,7 +32,7 @@ function fakeApi() {
             urn: "urn:li:activity:999",
             share_url: "https://linkedin.com/feed/update/999",
             text: "shipping",
-            created_at: 1_700_000_000, // anysite epoch is SECONDS (S4 spike)
+            created_at: 1_700_000_000, // anysite epoch is SECONDS (confirmed live)
             reactions: [{ type: "like", count: 7 }, { type: "praise", count: 3 }],
             comment_count: 2,
             share_count: 1,
@@ -67,9 +67,9 @@ function fakeApi() {
   return { fetchFn, calls };
 }
 
-const META = { meta: { anysite_key: "k" } };
+const META = { meta: { api_key: "k" } };
 
-describe("linkedin connector fetch", () => {
+describe("anysite connector fetch (linkedin surface)", () => {
   test("tst_li_001 tracked handle → profile + post envelopes (anysite mapped)", async () => {
     const { fetchFn } = fakeApi();
     const { envelopes } = await fetchLinkedIn(
@@ -86,7 +86,7 @@ describe("linkedin connector fetch", () => {
     expect(post.payload.text).toBe("shipping");
     // reactions array summed (7 + 3 = 10).
     expect((post.payload.metrics as { likes: number }).likes).toBe(10);
-    // epoch SECONDS → ISO (S4 spike: anysite created_at is seconds, not ms).
+    // epoch SECONDS → ISO (anysite created_at is seconds, not ms).
     expect(post.payload.created_at).toBe("2023-11-14T22:13:20.000Z");
     expect(post.remote_id).toBe("linkedin:post:urn:li:activity:999");
   });
@@ -117,18 +117,18 @@ describe("linkedin connector fetch", () => {
     expect(reshare.payload.metrics).toEqual({ likes: null, replies: null, reposts: null });
   });
 
-  test("tst_li_002 empty tracked set → ZERO API calls (INV-1)", async () => {
+  test("tst_li_002 empty tracked set → ZERO API calls (only tracked handles are ever fetched)", async () => {
     const { fetchFn, calls } = fakeApi();
     const { envelopes } = await fetchLinkedIn({ surface: "linkedin", tracked_handles: [], ...META }, fetchFn);
     expect(envelopes).toHaveLength(0);
     expect(calls).toHaveLength(0);
   });
 
-  test("tst_li_003 missing key → auth error at fetch (DEC-7)", async () => {
+  test("tst_li_003 missing key → auth error at fetch, not at registration", async () => {
     const { fetchFn } = fakeApi();
     await expect(
       fetchLinkedIn({ surface: "linkedin", tracked_handles: ["anndoe"] }, fetchFn),
-    ).rejects.toThrow(/anysite_key/);
+    ).rejects.toThrow(/api_key/);
   });
 
   test("tst_li_004 points exhausted (401) → RateLimitError (backoff, not dead)", async () => {

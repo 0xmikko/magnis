@@ -1,11 +1,11 @@
 // tst_build_plugin_new_001 — the scaffolder produces a skeleton that satisfies
-// the extension contracts (manifest v3): folder == manifest.id (INV-11), the
-// manifest is a package card (identity, no [schemas]/[capabilities]/[surfaces]/
-// [entry]/[lifecycle]/[presentation]), the graph model lives in schemas/ by
-// convention (entity file has NO "version"; facet file ALWAYS has one),
-// README.md is the catalog description, and a module/__tests__ unit test exists
-// (the test bar, DEC-14/INV-5). Smoke-level: structure + manifest shape, not a
-// full build.
+// the extension contracts (manifest v3): the folder name equals the manifest
+// id, the manifest is a package card (identity, no [schemas]/[capabilities]/
+// [surfaces]/[entry]/[lifecycle]/[presentation]), the graph model lives in
+// schemas/ by convention (entity file has NO "version"; facet file ALWAYS has
+// one), README.md is the catalog description, and a module/__tests__ unit test
+// exists (every module ships one). Smoke-level: structure + manifest shape,
+// not a full build.
 import { test, expect } from "bun:test";
 import { existsSync, readFileSync, readdirSync, rmSync } from "fs";
 import { join } from "path";
@@ -38,7 +38,7 @@ test("tst_build_plugin_new_001: scaffold produces a contract-satisfying v3 skele
     expect(existsSync(join(dir, f))).toBe(true);
   }
 
-  // Manifest contract: folder == id (INV-11); v3 = identity + permissions only.
+  // Manifest contract: folder name == id; v3 = identity + permissions only.
   const manifest = tomlParse(readFileSync(join(dir, "manifest.toml"), "utf8")) as unknown as Record<
     string,
     unknown

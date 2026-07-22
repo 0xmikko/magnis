@@ -1,5 +1,5 @@
 // build-catalog-index — assemble the CATALOG artifact the Magnis app installs
-// from (plugins-public-repo DEC-6). Output (default ./catalog):
+// from. Output (default ./catalog):
 //   catalog/index.json                 { schema_version, generated_from, packages[] }
 //   catalog/packages/<kind>/<id>/**    the installable payload (files listed
 //                                      in the index with per-file sha256)
@@ -7,8 +7,8 @@
 //   module        → plugins_dist/modules/<id> (prebuilt bundle + manifest.toml +
 //                   schemas/ + README.md + icon — manifest v3 package)
 //   source (ts)   → dist/main.js (bun build, SDK inlined) + manifest.toml
-//   source (rust) → manifest.toml only in v1 (binary ships with the app — DEC-7;
-//                   Stage-4 adds per-platform release binaries)
+//   source (rust) → manifest.toml only in v1 (the binary ships with the app;
+//                   per-platform release binaries are planned)
 //   source (manifest-only) → manifest.toml (external spawn must be version-pinned)
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync, cpSync } from "node:fs";

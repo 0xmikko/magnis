@@ -41,7 +41,7 @@ methods into a handler table, and routes calls to them.
   manifest.toml          # the package card: identity + [surfaces] + [permissions]
   README.md              # catalog description (markdown detail page)
   icon.svg               # catalog icon at the package ROOT (svg or png)
-  schemas/               # graph model, one JSON file per entity/facet (see §7)
+  schemas/               # graph model, one JSON file per entity/facet (see Schemas)
   types.ts               # wire DTOs + the two schema-map interfaces (Facets, Canonical)
   schema.ts              # schema-id string constants for read/write call sites
   module/                # the backend part (V8 isolate)
@@ -50,7 +50,7 @@ methods into a handler table, and routes calls to them.
     helpers.ts           # free functions the service uses
     __tests__/           # whole-module tests on @magnis/testkit/module
   ui/                    # the frontend part (React) — optional; ui/index.tsx = the entry
-  migrations/            # ONLY if the module ships a real data migration (see §7)
+  migrations/            # ONLY if the module ships a real data migration (see Schemas)
   package.json
   tsconfig.json          # MUST set experimentalDecorators: true
 ```
@@ -135,7 +135,7 @@ rpc }`:
 
 **Prefer the batch reads** (`get_entities`, `list_facets_for_entities`,
 `list_canonical_for_entities`) over per-row calls — an N+1 in a list handler is
-a defect the tests forbid (§11).
+a defect the tests forbid (see the Testing section).
 
 ---
 
@@ -217,7 +217,8 @@ no-op. The call runs as the same user, so the target module is user-scoped
 exactly as your own reads are.
 
 **The callee side.** To let other modules call into yours, expose a plain
-`@rpc` method (§5) — off the agent surface — that is **idempotent** (callers
+`@rpc` method (see the tools-and-RPC section) — off the agent surface — that
+is **idempotent** (callers
 retry) and returns the id(s) the caller needs to link. `email.ensure_address`
 is find-or-create: same address in, same entity id out.
 

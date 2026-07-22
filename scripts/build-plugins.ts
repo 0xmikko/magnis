@@ -1,19 +1,21 @@
 #!/usr/bin/env bun
 // build:plugins — bundle each plugin's `ui` surface into ONE ESM file.
 //
-// Per DEC-1/2/3/5/15: the JS build lives HERE (not in the Rust backend). Each
-// plugin's own files are inlined; the host bare specifiers (react, @magnis/host/*,
+// The JS build lives HERE (not in the Rust backend). Each plugin's own files
+// are inlined; the host bare specifiers (react, @magnis/host/*,
 // @tanstack/react-query, + manifest.ui.extra_bare_imports) stay EXTERNAL and are
 // rewritten to the host-shim endpoint at build time. Output:
 //   plugins_dist/<id>/ui/index.<hash>.js   (the bundle, prod JSX runtime)
 //   plugins_dist/<id>/bundle.json          ({ ui: { "<entry>": "index.<hash>.js" }, uiHash })
 //   plugins_dist/<id>/manifest.toml        (copied)
-// The backend serves the bundle for the entry URL with ETag=hash (DEC-5).
+// The backend serves the bundle for the entry URL with the content hash as its
+// ETag, so a rebuilt bundle invalidates the browser cache by itself.
 //
 // Single source of truth for the bare→slug map: scripts/plugin-host-imports.json
-// (mirrors transpile.rs::BareImportMap — DEC-6).
+// (mirrors transpile.rs::BareImportMap — keep the two in sync).
 
-// Force production JSX (jsx/jsxs, NOT jsxDEV) — DEC-15.
+// Force production JSX (jsx/jsxs, NOT jsxDEV) — the host shim only provides
+// the production React JSX runtime.
 process.env.NODE_ENV = "production";
 
 import { createHash } from "crypto";
@@ -106,8 +108,8 @@ export async function buildPlugin(pluginId: string, opts: BuildOpts = {}): Promi
   const hash = createHash("sha256").update(js).digest("hex").slice(0, 16);
   const bundleFile = `index.${hash}.js`;
 
-  // Write the package into plugins_dist/modules/<id>/ (DEC-10: dist mirrors
-  // the tree; boot seeding flattens into the id-keyed store).
+  // Write the package into plugins_dist/modules/<id>/ — dist mirrors the
+  // source tree; boot seeding flattens into the id-keyed store.
   const pkgDir = join(distDir, "modules", pluginId);
   const uiDir = join(pkgDir, "ui");
   // Clear any prior ui/*.js so exactly one bundle remains.
@@ -119,7 +121,7 @@ export async function buildPlugin(pluginId: string, opts: BuildOpts = {}): Promi
   mkdirSync(uiDir, { recursive: true });
   writeFileSync(join(uiDir, bundleFile), js);
 
-  // ── module surface (Stage 3): bundle the V8 isolate entry too ─────────────
+  // ── module surface: bundle the V8 isolate entry too ───────────────────────
   // No externals — the SDK (@magnis/plugin-sdk, zero imports, globalThis-based)
   // and relative files inline into ONE self-contained module the isolate loads
   // with no transpile + no resolution. Host ops arrive via injected globals.
@@ -131,8 +133,8 @@ export async function buildPlugin(pluginId: string, opts: BuildOpts = {}): Promi
   if (existsSync(moduleEntryPath)) {
     // Resolve the one allowed bare specifier deterministically (independent of
     // cwd / tsconfig-paths discovery): @magnis/plugin-sdk →
-    // packages/plugin-sdk/index.ts (DEC-11), so it inlines. (Mirrors the
-    // isolate loader's explicit sdk_root rule.)
+    // packages/plugin-sdk/index.ts, so it inlines. (Mirrors the isolate
+    // loader's explicit sdk_root rule.)
     const sdkPath = join(pluginsDir, "..", "packages", "plugin-sdk", "index.ts");
     // The @tool/@writeTool decorators use LEGACY (experimentalDecorators)
     // semantics — record(target=prototype, methodName, descriptor) — matching the
@@ -195,7 +197,7 @@ export async function buildPlugin(pluginId: string, opts: BuildOpts = {}): Promi
     writeFileSync(join(modDir, moduleFile), modJs);
   }
 
-  // ── static assets (plugin-icon-standard INV-1, manifest v3) ───────────────
+  // ── static assets (manifest v3 package icons) ─────────────────────────────
   // A plugin may ship icon.svg or icon.png at the PACKAGE ROOT — copied verbatim
   // into the dist package root and recorded in bundle.json.assets with a content
   // hash so the backend prod path can serve it (correct MIME + ETag). svg/png only.
@@ -273,8 +275,8 @@ if (import.meta.main) {
   const watch = args.includes("--watch");
   // `--out <dir>` (or $BUILD_PLUGINS_OUT) overrides the output dir. Dev points
   // it at the runtime store ($STORAGE_DIR/extensions) so a watcher rebuild lands
-  // where the backend serves from (hot-reload via ETag change — DEC-9); prod
-  // leaves it at plugins_dist and boot seeds dist→store (DEC-13).
+  // where the backend serves from (the changed ETag hot-reloads the browser);
+  // prod leaves it at plugins_dist and boot seeds dist→store.
   const outIdx = args.indexOf("--out");
   let distDir: string;
   if (outIdx >= 0) {

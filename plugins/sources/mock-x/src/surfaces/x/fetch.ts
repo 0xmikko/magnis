@@ -23,7 +23,7 @@ const FIXTURES: Record<string, Fixture> = {
           "Long-form body far beyond the 280-char teaser.\n\n" +
           "It has multiple paragraphs, preserved newlines and reads like a mini-essay. " +
           "The connector stored the FULL note_tweet text, not the truncated preview — " +
-          "which is exactly what INV-1 of the social-post-rendering plan demands.",
+          "exactly what a long-form post needs to render in full.",
         post_type: "long_form",
         metrics: { likes: 42, reposts: 7, replies: 3, impressions: 1900 },
       },

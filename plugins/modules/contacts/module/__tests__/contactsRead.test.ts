@@ -196,7 +196,7 @@ describe("contacts read — shape parity (tst_be_contactsread_001)", () => {
   });
 });
 
-describe("contacts read — DB-access guarantees (tst_be_contactsdb_001 / INV-4/5)", () => {
+describe("contacts read — DB-access guarantees (tst_be_contactsdb_001)", () => {
   let graph: G;
   let mod: ContactsModule;
   beforeEach(() => {

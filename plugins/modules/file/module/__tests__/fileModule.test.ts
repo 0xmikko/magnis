@@ -55,7 +55,7 @@ const detailsFacet = (data: Record<string, unknown>) => ({
 });
 const DETAILS = { mime_type: "image/png", source_module: "uploads", source_ref: {}, local_path: "2020-01/uploads/a.png" };
 
-describe("file.attach (DEC-7 isolation, DEC-11 kind)", () => {
+describe("file.attach (per-user isolation + allowed link kinds)", () => {
   it("attaches when both entities are owned and file_id is a file.object", async () => {
     const g = makeGraph();
     spy(g, "get_entity_full")
@@ -89,7 +89,7 @@ describe("file.attach (DEC-7 isolation, DEC-11 kind)", () => {
     expect(g.spies.add_link).not.toHaveBeenCalled();
   });
 
-  it("rejects an unsupported link kind (DEC-11)", async () => {
+  it("rejects an unsupported link kind", async () => {
     const g = makeGraph();
     await expect(
       makeModule(g).attach({ file_id: ID_F, target_id: ID_T, kind: "custom" }),
@@ -99,7 +99,7 @@ describe("file.attach (DEC-7 isolation, DEC-11 kind)", () => {
 });
 
 describe("file.get (ownership + schema + URL)", () => {
-  it("returns details + route-correct url for an owned file (DEC-10)", async () => {
+  it("returns details + route-correct url for an owned file", async () => {
     const g = makeGraph();
     spy(g, "get_entity_full").mockResolvedValueOnce(
       entity(ID_F, "file.object", [detailsFacet(DETAILS)]),
@@ -131,7 +131,7 @@ describe("file.get (ownership + schema + URL)", () => {
 });
 
 describe("file.list (filters + content skip)", () => {
-  it("filters by mime_prefix and skips rows without content (DEC-8)", async () => {
+  it("filters by mime_prefix and skips rows without content", async () => {
     const g = makeGraph();
     spy(g, "list_entities_window").mockResolvedValue({
       items: [{ entity: { id: "i1" } }, { entity: { id: "i2" } }, { entity: { id: "i3" } }],
@@ -147,7 +147,7 @@ describe("file.list (filters + content skip)", () => {
     expect(res.items.map((i) => i.entity_id)).toEqual(["i1"]); // i2 wrong mime, i3 no content
   });
 
-  it("filters by parent_id via a links query (DEC-8)", async () => {
+  it("filters by parent_id via a links query", async () => {
     const g = makeGraph();
     spy(g, "list_entities_window").mockResolvedValue({
       items: [{ entity: { id: "i1" } }, { entity: { id: "i2" } }],

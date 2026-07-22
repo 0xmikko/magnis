@@ -56,7 +56,7 @@ describe("x connector fetch", () => {
     expect(post.remote_id).toBe("x:post:1");
   });
 
-  test("tst_x_002 untracked handle → ZERO API calls (INV-1)", async () => {
+  test("tst_x_002 untracked handle → ZERO API calls", async () => {
     const { fetchFn, calls } = fakeApi();
     // jack is not in the tracked set → never queried; an empty set → no loop.
     const r1 = await fetchX({ surface: "x", tracked_handles: [], ...META }, fetchFn);
@@ -69,7 +69,7 @@ describe("x connector fetch", () => {
     expect(calls.every((u) => u.includes("/username/ghost"))).toBe(true);
   });
 
-  test("tst_x_003 missing bearer → auth error at fetch (DEC-7)", async () => {
+  test("tst_x_003 missing bearer → auth error at fetch, not registration", async () => {
     const { fetchFn } = fakeApi();
     await expect(
       fetchX({ surface: "x", tracked_handles: ["jack"] }, fetchFn),
@@ -167,7 +167,7 @@ describe("x connector fetch", () => {
     return fetchFn;
   }
 
-  test("tst_x_008 note_tweet → FULL text + post_type long_form (INV-1)", async () => {
+  test("tst_x_008 note_tweet → FULL text + post_type long_form", async () => {
     const { envelopes } = await fetchX(
       { surface: "x", tracked_handles: ["jack"], ...META },
       richApi(),
@@ -178,7 +178,7 @@ describe("x connector fetch", () => {
     expect(p.conversation_id).toBe("c-100");
   });
 
-  test("tst_x_009 article → plain_text + title + post_type article (INV-1)", async () => {
+  test("tst_x_009 article → plain_text + title + post_type article", async () => {
     const { envelopes } = await fetchX(
       { surface: "x", tracked_handles: ["jack"], ...META },
       richApi(),
@@ -189,7 +189,7 @@ describe("x connector fetch", () => {
     expect(p.article_title).toBe("My Article");
   });
 
-  test("tst_x_010 media keys resolve against includes; urls mapped; absent stays absent (INV-2)", async () => {
+  test("tst_x_010 media keys resolve against includes; urls mapped; absent stays absent", async () => {
     const { envelopes } = await fetchX(
       { surface: "x", tracked_handles: ["jack"], ...META },
       richApi(),
@@ -210,7 +210,7 @@ describe("x connector fetch", () => {
     expect("urls" in p1).toBe(false);
   });
 
-  test("tst_x_006 re-poll is idempotent — identical remote_ids (INV-4)", async () => {
+  test("tst_x_006 re-poll is idempotent — identical remote_ids", async () => {
     const { fetchFn } = fakeApi();
     const a = await fetchX({ surface: "x", tracked_handles: ["jack"], ...META }, fetchFn);
     const b = await fetchX({ surface: "x", tracked_handles: ["jack"], ...META }, fetchFn);

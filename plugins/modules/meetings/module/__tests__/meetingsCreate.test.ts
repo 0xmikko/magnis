@@ -32,7 +32,7 @@ const GOOD = {
   ends_at: "2026-02-01T10:00:00Z",
 };
 
-describe("meetings.create — validation (INV-3, no write on failure)", () => {
+describe("meetings.create — validation (rejected input writes nothing)", () => {
   it("rejects an empty / whitespace title", async () => {
     const create_entity = vi.fn();
     const mod = makeModule(makeGraph({ create_entity }));
@@ -60,7 +60,7 @@ describe("meetings.create — validation (INV-3, no write on failure)", () => {
   });
 });
 
-describe("meetings.create — happy path (INV-13 snapshot)", () => {
+describe("meetings.create — happy path (returns the full meeting snapshot)", () => {
   it("creates the entity + details facet and returns the snapshot", async () => {
     const create_entity = vi.fn(async (p: { name: string }) => ({
       id: "m-new",
@@ -113,7 +113,7 @@ describe("meetings.create — happy path (INV-13 snapshot)", () => {
   });
 });
 
-describe("meetings.create — idempotency (INV-4)", () => {
+describe("meetings.create — idempotency", () => {
   it("returns the existing entity for a repeat client_id without re-creating", async () => {
     const existing: RawEntity = { id: "cid-1", schema_id: CAL, name: "Sync" } as RawEntity;
     const get_entity = vi.fn().mockResolvedValue(existing);

@@ -2,10 +2,11 @@
 #
 # Owns the `linkedin.*` graph namespace: profile + post entities and their
 # identity / content / metrics facets for the LinkedIn accounts you track.
-# Ingests the `linkedin` sync surface fed by the LinkedIn source connector,
-# links each profile to the matching contact (reads contacts.person, creates the
-# linkedin.profile:contacts.person link), and reads contacts' social-tracking
-# over RPC. Read-only today. Sandboxed V8 isolate; presence-seeded at boot.
+# Ingests the `linkedin` sync surface (provided by the Anysite source
+# connector), links each profile to the matching contact (reads contacts.person,
+# creates the linkedin.profile:contacts.person link), and reads contacts'
+# social-tracking over RPC. Read-only today. Sandboxed V8 isolate; bundled with
+# the app and installed automatically at boot.
 
 id = "linkedin"
 version = "0.1.0"

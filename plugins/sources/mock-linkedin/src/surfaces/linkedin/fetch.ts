@@ -1,8 +1,8 @@
 import type { FetchArgs, FetchResult, Envelope } from "@magnis/connector-sdk";
 
-// mock-linkedin — LinkedIn fixture (SourceKind Mock; ENABLED_SOURCES-gated).
-// No network, no credentials — same envelope shape as the live `linkedin`
-// connector for tests / e2e. Read-only.
+// mock-linkedin — fixture for the `linkedin` surface (SourceKind Mock;
+// ENABLED_SOURCES-gated). No network, no credentials — same envelope shape as
+// the live `anysite` connector, so tests / e2e stay hermetic. Read-only.
 interface Fixture {
   handle: string;
   urn: string;

@@ -32,7 +32,8 @@ Key consequences of the process boundary:
 - A source has **real I/O** (this is why it is not a V8 isolate like a module).
 - The process boundary **is the trust boundary**: a source is an authenticated
   peer; credentials arrive per call, never baked in.
-- You can **run it by hand** — it is just a stdio program (see §9).
+- You can **run it by hand** — it is just a stdio program (see the Testing
+  section below).
 
 ---
 
@@ -48,7 +49,7 @@ root.
   README.md              # catalog description (markdown detail page)
   icon.svg|png           # catalog icon at the package root (optional)
   config.default.toml    # optional shipped default app-creds
-  auth/                  # browser auth screen — ONLY for oauth2 / phone_code (see §6)
+  auth/                  # browser auth screen — ONLY for oauth2 / phone_code (see Authentication)
     index.tsx            # convention: the entry of a folder is index
   src/
     main.ts              # runConnector(buildConnectorConfig())  — the spawn entry
@@ -109,7 +110,7 @@ methods a source answers (all via `tools/call` unless noted):
 The SDK gives you the whole loop, the handshake, `tools/list`, `_meta`
 extraction, and error framing for free. You implement handlers on the config.
 
-**Cred-less registration (DEC-7).** `initialize` and `tools/list` never require
+**Credential-less registration.** `initialize` and `tools/list` never require
 a credential — a source registers unconditionally. A missing key fails at
 **fetch**, not at registration.
 
@@ -125,7 +126,7 @@ throwing on an unknown surface.
 **The fetcher** is `(args: FetchArgs) => Promise<FetchResult>`:
 
 - `FetchArgs` = `{ surface, cursor?, direction?, tracked_handles?, limit?, meta?, raw? }`.
-  `meta` carries host-injected credentials (§6); `raw` is the verbatim call
+  `meta` carries host-injected credentials (see the Secrets section); `raw` is the verbatim call
   arguments for surface-specific extras (e.g. a calendar's `time_min`/`time_max`);
   `cursor` is whatever you returned last time.
 - `FetchResult` = `{ envelopes, nextCursor, hasMore, total?, discovered? }`.
@@ -184,7 +185,7 @@ implement none, some, or all of the corresponding steps.
 | `[auth].type` | Used by | Connector implements |
 |---|---|---|
 | `api_key` | X | **only** `probeAuth` — verify the key; read it from `_meta` in fetch |
-| `shared_provider` | LinkedIn | same as `api_key` (a shared upstream provider) |
+| `shared_provider` | Anysite | same as `api_key` (a shared upstream provider) |
 | `oauth2` | Google | `auth.exchange` (+ `revoke`); host owns the browser ceremony |
 | `phone_code` | Telegram | stateful `auth.begin` / `auth.step` / `auth.revoke` |
 
@@ -231,7 +232,7 @@ for `oauth2` you implement only `exchange` (code → token).
   `password` and returns `{ state: "password" }`; on success mints
   `{ credential: session, identity }`. Because phone_code needs cross-call state
   and an auth-only spawn mode, Telegram supplies its own dispatcher instead of
-  the SDK loop — see §10.
+  the SDK loop — see the Telegram exception below.
 
 ### The auth UI and the flow
 
@@ -296,7 +297,7 @@ The end-to-end sequence:
 
 So the screen collects input and calls `submit`/`exec`; the host stashes each
 value and injects it into the connector's `magnis.auth.*` calls via `_meta`.
-Your connector implements only the `begin`/`step` handlers (§6 above); the UI and
+Your connector implements only the `begin`/`step` handlers (above); the UI and
 the host wiring are what turn them into a login flow.
 
 ---

@@ -4,8 +4,8 @@ import { AnysiteClient, type FetchLike, type KolPost, type KolProfile } from "..
 const PLATFORM = "linkedin";
 const RECENT_POSTS = 5;
 
-// anysite `created_at` is epoch SECONDS (confirmed live, S4 spike) — but be
-// robust to ms too: a 10-digit value (< 1e12) is seconds → ×1000.
+// anysite `created_at` is epoch SECONDS (confirmed against the live API) — but
+// be robust to ms too: a 10-digit value (< 1e12) is seconds → ×1000.
 function toIso(epoch: number | null): string | null {
   if (epoch === null || !Number.isFinite(epoch)) return null;
   const ms = epoch < 1e12 ? epoch * 1000 : epoch;
@@ -70,9 +70,9 @@ function postEnvelope(handle: string, post: KolPost): Envelope {
  * anysite (only tracked handles queried). Missing key → fetch-time auth
  * error. A handle that resolves to no urn yields the profile only. */
 export async function fetchLinkedIn(args: FetchArgs, fetchFn: FetchLike): Promise<FetchResult> {
-  const key = typeof args.meta?.anysite_key === "string" ? args.meta.anysite_key : "";
+  const key = typeof args.meta?.api_key === "string" ? args.meta.api_key : "";
   if (!key) {
-    throw new Error("linkedin: missing anysite_key (set SOURCE_LINKEDIN_ANYSITE_KEY)");
+    throw new Error("anysite: missing api_key (set SOURCE_ANYSITE_API_KEY)");
   }
   const handles = args.tracked_handles ?? [];
   const client = new AnysiteClient(key, fetchFn);

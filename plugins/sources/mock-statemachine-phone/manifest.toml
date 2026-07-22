@@ -1,5 +1,6 @@
-# StateMock archetype 'phone' (accounts-sync-status plan §11.1): the shared
-# @magnis/source-statemachine connector (bun) in a phone_code/push shape. Eval-only (kind=mock).
+# StateMock 'phone' — the shared @magnis/source-statemachine connector (bun) in
+# a phone_code/push shape, exercising the phone-code auth ceremony and push
+# sync end-to-end in tests. Eval-only (kind=mock).
 
 id = "mock-statemachine-phone"
 version = "1.0.0"

@@ -1,5 +1,6 @@
-# StateMock archetype 'oauth' (accounts-sync-status plan §11.1): the shared
-# @magnis/source-statemachine connector (bun) in a oauth2/poll shape. Eval-only (kind=mock).
+# StateMock 'oauth' — the shared @magnis/source-statemachine connector (bun) in
+# an oauth2/poll shape, exercising the OAuth auth ceremony and poll sync
+# end-to-end in tests. Eval-only (kind=mock).
 
 id = "mock-statemachine-oauth"
 version = "1.0.0"

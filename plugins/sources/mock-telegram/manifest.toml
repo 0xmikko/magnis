@@ -8,7 +8,7 @@
 # the real `telegram` connector's envelope shapes.
 #
 # The server is `src/main.ts` on @magnis/connector-sdk, spawned by convention
-# (bun, from this manifest's directory — DEC-10 stamps it as the spawn cwd).
+# (bun, with this manifest's directory as the spawn cwd).
 # MOCK_INJECT_FILE is the shared JSONL the surface process reads;
 # MOCK_TELEGRAM_PORT (optional) enables the HTTP control server for demos
 # (`curl localhost:4030/inject-chat`). env injected by the operator / launch

@@ -35,7 +35,7 @@ export interface FetchArgs {
   tracked_handles?: string[];
   limit?: number;
   /** Host-injected credentials: the `_meta` object the host attaches to
-   * each tools/call — e.g. `{ bearer_token }` (X) / `{ anysite_key }` (LinkedIn). */
+   * each tools/call — e.g. `{ bearer_token }` (X) / `{ api_key }` (Anysite). */
   meta?: Record<string, unknown>;
   /** The verbatim tools/call `arguments`. Surface-specific extras the typed
    * fields above do not model live here — e.g. the Google connector's calendar

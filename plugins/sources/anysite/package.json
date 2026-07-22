@@ -1,5 +1,5 @@
 {
-  "name": "@magnis/source-linkedin",
+  "name": "@magnis/source-anysite",
   "private": true,
   "type": "module",
   "scripts": {

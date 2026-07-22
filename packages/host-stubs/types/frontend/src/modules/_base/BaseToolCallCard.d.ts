@@ -7,12 +7,12 @@
  * Modules provide only the card content via children prop.
  *
  * Invariants enforced:
- * - INV-1: Always shows status badge
- * - INV-2: Failed result → "Failed" (red), never "Applied"
- * - INV-3: Superseded = opacity-50, no action buttons
- * - INV-4: Done = green badge, no action buttons
- * - INV-5: Denied = red badge, no action buttons
- * - INV-6: Draft = action buttons visible
+ * - Always shows a status badge
+ * - Failed result → "Failed" (red), never "Applied"
+ * - Superseded = opacity-50, no action buttons
+ * - Done = green badge, no action buttons
+ * - Denied = red badge, no action buttons
+ * - Draft = action buttons visible
  */
 import { type ReactNode } from "react";
 import type { JSX } from "react";

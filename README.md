@@ -97,7 +97,7 @@ spawns and talks to over a small MCP-style stdio contract. One runtime, fully
 portable.
 
 ```
-plugins/sources/   provider connectors — google, telegram, x, linkedin (+ dev mocks)
+plugins/sources/   provider connectors — google, telegram, x, anysite (+ dev mocks)
 plugins/modules/   domain adapters — contacts, email, meetings, telegram, companies …
 packages/          the SDKs a plugin builds against (connector-sdk, plugin-sdk, host-stubs)
 ```

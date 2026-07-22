@@ -139,7 +139,7 @@ describe("projects read — shape parity (tst_be_projectsread_001)", () => {
   });
 });
 
-describe("projects read — DB-access guarantees (tst_be_projectsdb_001 / INV-6)", () => {
+describe("projects read — DB-access guarantees (tst_be_projectsdb_001)", () => {
   let graph: G;
   let mod: ProjectsModule;
   beforeEach(() => {

@@ -1,6 +1,6 @@
-// tst_build_bundle_001 (INV-1, DEC-15): build:plugins bundles a plugin UI into
-// ONE file whose only imports are host-shim URLs (relatives inlined), with the
-// PRODUCTION JSX runtime (no jsxDEV / no vite dep paths). Run: `bun test scripts/`.
+// tst_build_bundle_001: build:plugins bundles a plugin UI into ONE file whose
+// only imports are host-shim URLs (relatives inlined), with the PRODUCTION JSX
+// runtime (no jsxDEV / no vite dep paths). Run: `bun test scripts/`.
 import { test, expect, beforeAll } from "bun:test";
 import { buildPlugin } from "./build-plugins.ts";
 import { readFileSync, readdirSync } from "fs";
@@ -19,9 +19,9 @@ beforeAll(async () => {
   bundleRel = res.bundleFile; // e.g. "index.<hash>.js"
 });
 
-// tst_build_icon_001 (INV-1, plugin-icon-standard, manifest v3): a plugin
-// shipping icon.svg at the package root gets it copied into the dist package
-// root and recorded in bundle.json.assets with a content hash.
+// tst_build_icon_001 (manifest v3): a plugin shipping icon.svg at the package
+// root gets it copied into the dist package root and recorded in
+// bundle.json.assets with a content hash.
 test("tst_build_icon_001: icon.svg → dist copy + bundle.json.assets", async () => {
   // x ships plugins/x/icon.svg (the brand glyph, package root).
   await buildPlugin("x", { pluginsDir: join(REPO, "plugins"), distDir: DIST });
@@ -53,7 +53,7 @@ test("tst_build_bundle_001: file ui → one bundle, externals→shim, relatives 
   // relative imports are inlined — no `from "./..."` survives
   expect(js).not.toMatch(/from\s*["']\.\.?\//);
 
-  // PRODUCTION jsx runtime only (DEC-15)
+  // PRODUCTION jsx runtime only — the host shim provides no dev runtime
   expect(js).not.toContain("jsx-dev-runtime");
   expect(js).not.toContain("jsxDEV");
   expect(js).not.toContain("/node_modules/.vite/");

@@ -13,7 +13,7 @@ describe("mock-linkedin fetch", () => {
     expect(envelopes[1]!.payload.author_handle).toBe("anndoe");
   });
 
-  test("tst_mockli_002 untracked handle → no envelopes (INV-1)", async () => {
+  test("tst_mockli_002 untracked handle → no envelopes (only tracked handles are ever fetched)", async () => {
     const { envelopes } = await fetchMockLinkedIn({
       surface: "linkedin",
       cursor: 0,

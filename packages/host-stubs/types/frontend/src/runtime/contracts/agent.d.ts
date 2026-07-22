@@ -132,10 +132,10 @@ export interface ComposerRuntimeSurface {
      */
     setPresence(params: ComposerPresenceParams | null): void;
     /**
-     * Stage 4: subscribe to `composer.apply` events routed from the backend
-     * over the WS event bus. Returns an unsubscribe fn. Per INV-15, the WS
-     * filter on the backend already restricts delivery to the authenticated
-     * user; subscribers only need to filter on (mode, thread_key).
+     * Subscribe to `composer.apply` events routed from the backend over the
+     * WS event bus. Returns an unsubscribe fn. The WS filter on the backend
+     * already restricts delivery to the authenticated user; subscribers only
+     * need to filter on (mode, thread_key).
      */
     onApply(handler: (event: ComposerApplyEventPayload) => void): () => void;
 }

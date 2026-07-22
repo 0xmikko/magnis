@@ -78,7 +78,7 @@ not the runtime level:
 - **One testkit, no database:** `@magnis/testkit`.
 - **Standalone-runnable:** because a source is a plain stdio MCP server, a
   developer can run it by hand — `bun run src/main.ts` and pipe JSON-RPC — and
-  drive it without the host at all (see §5).
+  drive it without the host at all (see the source recipe below).
 
 So: two execution contexts (in-isolate vs subprocess) because the I/O and trust
 boundary demand it — but one runtime, one launch model, one test story on top.
@@ -117,10 +117,10 @@ marked optional.
    coercers (`str`, `num`) come from `@magnis/plugin-sdk`, not re-declared here.
 6. **`module/index.ts`** — `definePlugin(TheModule)`. Nothing else.
 7. **`module/__tests__/`** — whole-module tests on `@magnis/testkit/module`
-   (mock graph, no DB). See §6 for the test rule.
+   (mock graph, no DB). The test rule lives with the lint rules below.
 8. **`ui/`** (optional) — React surface; `entry.ui` points at its entry.
 9. **`lifecycle/`** — OMIT unless the module needs a migration or partial
-   registration (see §4).
+   registration (see the lifecycle section).
 
 `service.ts` MUST NOT contain constants or free functions. `types/` and
 `schema/` MUST NOT be folders.
@@ -218,7 +218,7 @@ Repo-level (run from the repo root):
 
 ```bash
 bun run typecheck        # tsc across every plugin + package (scripts/typecheck-all.sh)
-bun run lint             # eslint, --max-warnings 0 (the rules in §6)
+bun run lint             # eslint, --max-warnings 0 (the lint-rule table above)
 bun run test             # vitest — module + package tests
 bun run test:connectors  # bun test — source contract + testkit/source (scripts/test-connectors.sh)
 bun run test:scripts     # bun test scripts/
@@ -259,7 +259,8 @@ it; until then it is a review gate.)
 **Both kinds**
 - [ ] `bun run typecheck` clean; `bun run lint` clean (0 warnings, no `any`, no
       unjustified disable).
-- [ ] Layout matches §2: each real part in its folder, no single-file folders.
+- [ ] Layout matches the layout rule: each real part in its folder, no
+      single-file folders.
 - [ ] Tests on `@magnis/testkit`, no database stood up; green in the correct lane.
 - [ ] `manifest.toml` is the sole registration/spawn source of truth.
 
@@ -268,7 +269,7 @@ it; until then it is a review gate.)
 - [ ] `schema.ts` + `types.ts` are loose root files.
 - [ ] `module/index.ts` is `definePlugin(...)` and nothing else.
 - [ ] No `lifecycle/` folder unless it carries a real migration/partial
-      registration (§4).
+      registration (see the lifecycle section).
 - [ ] Whole-module tests in `module/__tests__/`, unit tests co-located.
 
 **Source**
@@ -287,4 +288,5 @@ A `create-module` / `create-surface` generator emits the empty skeleton in the
 shapes above — folder, stub files, manifest entry — so an author (or an agent)
 fills in behavior instead of remembering layout. The generator is the executable
 form of this document; if they disagree, the generator is the bug. The
-`check-plugin` conformance script (§8) is its mirror on the verification side.
+`check-plugin` conformance script (see the conformance checklist) is its
+mirror on the verification side.

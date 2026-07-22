@@ -23,7 +23,7 @@ function makeModule(
   }).module;
 }
 
-describe("email sync control (Stage 5)", () => {
+describe("email sync control", () => {
   it("sync.status delegates to graph.sync_state('status')", async () => {
     const sync_state = vi.fn().mockResolvedValue({ accounts: [] });
     const mod = makeModule({ sync_state });
@@ -39,7 +39,7 @@ describe("email sync control (Stage 5)", () => {
   });
 });
 
-describe("email reply composer (Stage 6)", () => {
+describe("email reply composer", () => {
   it("composer.read delegates to graph.composer('read')", async () => {
     const composer = vi.fn().mockResolvedValue({ present: false });
     await makeModule({ composer }).composerRead();
@@ -95,7 +95,7 @@ describe("email ensure_address hub RPC (cross-module)", () => {
   });
 });
 
-describe("email set_trigger (Stage 7)", () => {
+describe("email set_trigger", () => {
   it("normalizes addresses, resolves them via apply_batch, delegates to triggers.create", async () => {
     const apply_batch = vi.fn(async (frag: GraphBatchInput) => ({
       ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),

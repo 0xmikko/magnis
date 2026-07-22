@@ -1,6 +1,7 @@
 // Meetings read helpers — ports the native domain adapter (types.rs):
-// attendee parse (INV-24c, strict no-fallbacks), read-time attendee→contact
-// enrichment, RFC-3339 → date/time display, and the list-item builder.
+// strict attendee parsing (malformed input is rejected, never silently
+// repaired), read-time attendee→contact enrichment, RFC-3339 → date/time
+// display, and the list-item builder.
 
 import type { GraphService, RawEntity } from "@magnis/plugin-sdk";
 import type {

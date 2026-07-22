@@ -4,7 +4,7 @@
 # of email — the email SOURCE connector feeds the `email` sync surface this module
 # ingests. Sends and replies through the host composer + source-command op grants,
 # registers attachments as files, and creates triggers over RPC. Sandboxed V8
-# isolate; presence-seeded at boot (DEC-10).
+# isolate; bundled with the app and installed automatically at boot.
 
 id = "email"
 version = "0.1.0"

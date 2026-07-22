@@ -161,8 +161,7 @@ export function stableContactId(resourceName: string): string {
 }
 
 /** Convert a People API Person into a canonical Contact. Returns null when the
- * person has no useful identity (no name, no email, no phone) —
- * INV-CONTACTS-2. */
+ * person has no useful identity (no name, no email, no phone). */
 export function gpeoplePersonToContact(p: GpeoplePerson): Contact | null {
   const primaryName = pickPrimary(p.names ?? []);
   const displayName =
@@ -199,7 +198,7 @@ export function gpeoplePersonToContact(p: GpeoplePerson): Contact | null {
       : [];
   });
 
-  // INV-CONTACTS-2 filter: at least ONE of {name, email, phone}.
+  // Identity filter: keep only contacts with at least ONE of {name, email, phone}.
   if (displayName === null && emails.length === 0 && phones.length === 0) {
     return null;
   }
@@ -314,7 +313,7 @@ export async function fetchContactsPage(
   const envelopes: Envelope[] = [];
   for (const person of page.connections ?? []) {
     const contact = gpeoplePersonToContact(person);
-    if (contact === null) continue; // INV-CONTACTS-2: no useful identity
+    if (contact === null) continue; // no useful identity → dropped
     envelopes.push({
       surface: "contacts",
       payload: contact as unknown as Record<string, unknown>,

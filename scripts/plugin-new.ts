@@ -1,19 +1,20 @@
 #!/usr/bin/env bun
-// plugin-new — scaffold a Magnis module-plugin skeleton (Stage 10, optional).
+// plugin-new — scaffold a Magnis module-plugin skeleton.
 //
 //   bun scripts/plugin-new.ts <id>
 //
 // Generates plugins/modules/<id>/ with the canonical manifest-v3 package layout:
-// manifest.toml (folder == manifest.id, INV-11; tier community; identity +
-// permissions only — the module's namespace `<id>.*` is derived from the id),
-// schemas/ (convention-discovered entity + facet JSON files), README.md (the
-// catalog description), module/ (decorated service + definePlugin entry + a
-// unit test satisfying the per-kind test bar, DEC-14/INV-5), ui/ (defineModule),
-// types/, package.json, tsconfig (experimentalDecorators — the isolate/build
-// contract).
+// manifest.toml (the folder name must equal the manifest id; tier community;
+// identity + permissions only — the module's namespace `<id>.*` is derived from
+// the id), schemas/ (convention-discovered entity + facet JSON files), README.md
+// (the catalog description), module/ (decorated service + definePlugin entry +
+// a unit test covering the tool shape without per-row N+1 queries — the minimum
+// every module ships), ui/ (defineModule), types/, package.json, tsconfig
+// (experimentalDecorators — the isolate/build contract).
 //
-// It does NOT install anything: presence-seed picks the folder up on next boot
-// (DEC-10), and the printed next-steps cover the catalog entry + integration test.
+// It does NOT install anything: the host discovers the folder and installs it
+// on next boot, and the printed next-steps cover the catalog entry +
+// integration test. Layout standard: docs/plugins/structure.md.
 
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
@@ -121,8 +122,8 @@ export class ${cls} {
 }
 
 function moduleTestTs(id: string, cls: string): string {
-  return `// Unit test (mocked GraphService) — the module-kind minimum test bar
-// (DEC-14/INV-5): tool shape + no per-row N+1.
+  return `// Unit test (mocked GraphService) — the minimum every module ships:
+// assert the tool shape and that reads issue no per-row N+1 queries.
 import { describe, expect, it, vi } from "vitest";
 import type { GraphService, PluginDeps } from "@magnis/plugin-sdk";
 import { ${cls} } from "../service.ts";
@@ -229,7 +230,7 @@ const TSCONFIG = `${JSON.stringify(
 export function scaffoldPlugin(id: string, pluginsRoot: string): string {
   if (!ID_RE.test(id)) {
     throw new Error(
-      `invalid plugin id ${JSON.stringify(id)}: must match ${String(ID_RE)} (folder == manifest.id, INV-11)`,
+      `invalid plugin id ${JSON.stringify(id)}: must match ${String(ID_RE)} (the folder name must equal the manifest id)`,
     );
   }
   const dir = join(pluginsRoot, "modules", id);
@@ -287,5 +288,5 @@ next steps (docs/plugins/authoring.md):
   3. add a catalog entry to backend/data/extensions.toml (module:magnis.${id})
   4. add backend/tests/plugin_runtime_${id}.rs (integration bar)
   5. bun scripts/build-plugins.ts ${id}   # bundle ui + module
-  (presence-seed installs it on next boot — DEC-10)`);
+  (the host discovers the folder and installs it on next boot)`);
 }

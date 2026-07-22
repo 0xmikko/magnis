@@ -1,14 +1,14 @@
 # mock-gmail (external MCP connector)
 
 The reference Magnis external source — the first connector migrated out of the
-backend (Stage 7 of the external-MCP-sources work). It demonstrates the whole
+backend into the external-MCP format. It demonstrates the whole
 loop: a standalone MCP server, installed via a manifest, syncing into the graph
 through the in-core `emails` / `meetings` modules.
 
 ## What it is
 
-- **Server:** `src/main.ts` on `@magnis/connector-sdk`, run by `bun` (the only
-  connector runtime — sources-typescript-port INV-TS-4). Speaks the Magnis Sync
+- **Server:** `src/main.ts` on `@magnis/connector-sdk`, run by `bun` — the one
+  runtime every TypeScript connector uses. Speaks the Magnis Sync
   Profile over stdio JSON-RPC and advertises two surfaces, `email` + `meetings`,
   poll mode.
 - **Manifest:** [`manifest.toml`](manifest.toml) — `source_id = "mock-gmail"`,

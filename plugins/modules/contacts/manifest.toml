@@ -4,7 +4,8 @@
 # phone / social / telegram-identity / description / memory facets — the core
 # people directory. Ingests the `contacts` sync surface, links people to companies
 # (reads companies.company), and reaches the email module over RPC to resolve
-# addresses. Sandboxed V8 isolate; presence-seeded at boot (DEC-10).
+# addresses. Sandboxed V8 isolate; bundled with the app and installed
+# automatically at boot.
 
 id = "contacts"
 version = "0.1.0"

@@ -220,7 +220,7 @@ describe("contacts.track_social_profile (tst_track_one)", () => {
     ).toMatchObject({ contact_id: r.contact_id, tracked: true });
   });
 
-  it("(b) repeat call → same contact, created:false (INV-4)", async () => {
+  it("(b) repeat call → same contact, created:false (idempotent)", async () => {
     const persons: RawEntity[] = [];
     const { graph } = makeMultiGraph(persons);
     const mod = makeModule(graph);
@@ -247,7 +247,7 @@ describe("contacts.track_social_profile (tst_track_one)", () => {
   });
 });
 
-describe("contacts.batch_track_social (tst_batch, INV-5)", () => {
+describe("contacts.batch_track_social (tst_batch)", () => {
   const rows = [
     { url_or_handle: "@jack" }, // existing tracked contact
     { url_or_handle: "https://x.com/naval", name: "Naval" }, // new
@@ -303,7 +303,7 @@ describe("contacts.batch_track_social (tst_batch, INV-5)", () => {
   });
 });
 
-describe("contacts.rename_if_placeholder (tst_rename_cas, INV-7)", () => {
+describe("contacts.rename_if_placeholder (tst_rename_cas)", () => {
   it("renames only when current name equals expected_name", async () => {
     const { graph, renames } = makeMultiGraph([person("p1", "i20h")]);
     const mod = makeModule(graph);

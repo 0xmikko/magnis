@@ -86,7 +86,7 @@ describe("meetings @syncHandler — upsert", () => {
   });
 });
 
-describe("meetings @syncHandler — live trigger.check (INV-6)", () => {
+describe("meetings @syncHandler — live envelopes emit a trigger.check", () => {
   it("ensures attendee addresses via email.ensure_address and returns the full payload", async () => {
     const apply_batch = vi.fn(async () => ({
       ids: { r5: "m-r5" },
@@ -122,7 +122,7 @@ describe("meetings @syncHandler — live trigger.check (INV-6)", () => {
   });
 });
 
-describe("meetings @syncHandler — delete (INV-7)", () => {
+describe("meetings @syncHandler — delete", () => {
   it("deletes an existing meeting by external_id", async () => {
     const find_by_external_id = vi.fn().mockResolvedValue("m-del");
     const delete_entity = vi.fn().mockResolvedValue(undefined);
@@ -148,7 +148,7 @@ describe("meetings @syncHandler — delete (INV-7)", () => {
   });
 });
 
-describe("meetings @syncHandler — empty user_id is a hard error (INV-8)", () => {
+describe("meetings @syncHandler — empty user_id is a hard error", () => {
   it("throws and writes nothing", async () => {
     const apply_batch = vi.fn();
     const { mod } = makeModule(makeGraph({ apply_batch }));

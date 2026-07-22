@@ -5,7 +5,7 @@ import { describe, test, expect } from "bun:test";
 import { probeLinkedInAuth } from "./probe";
 import type { FetchLike } from "./api";
 
-describe("linkedin probeAuth (F3)", () => {
+describe("anysite probeAuth", () => {
   test("valid key → resolves a profile, subject = masked key", async () => {
     const fetchFn: FetchLike = async () =>
       ({
@@ -13,14 +13,14 @@ describe("linkedin probeAuth (F3)", () => {
         status: 200,
         json: async () => [{ name: "LinkedIn", urn: "urn:li:x", url: "u" }],
       }) as never;
-    const r = await probeLinkedInAuth({ anysite_key: "sk-test-ab12" }, fetchFn);
+    const r = await probeLinkedInAuth({ api_key: "sk-test-ab12" }, fetchFn);
     expect(r.subject).toBe("anysite …ab12");
   });
 
   test("no profile resolved → key rejected", async () => {
     const fetchFn: FetchLike = async () =>
       ({ ok: true, status: 200, json: async () => [] }) as never;
-    await expect(probeLinkedInAuth({ anysite_key: "sk" }, fetchFn)).rejects.toThrow(
+    await expect(probeLinkedInAuth({ api_key: "sk" }, fetchFn)).rejects.toThrow(
       /key rejected/,
     );
   });
@@ -29,6 +29,6 @@ describe("linkedin probeAuth (F3)", () => {
     const fetchFn: FetchLike = async () => {
       throw new Error("must not be called");
     };
-    await expect(probeLinkedInAuth({}, fetchFn)).rejects.toThrow(/missing anysite_key/);
+    await expect(probeLinkedInAuth({}, fetchFn)).rejects.toThrow(/missing api_key/);
   });
 });

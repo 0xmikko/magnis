@@ -56,7 +56,7 @@ export function TelegramReplyComposer({
     draftTextRef.current = draft.text;
   }, [draft.text]);
 
-  // Stage 4.4: subscribe to runtime.composer.onApply so agent tool calls
+  // Subscribe to runtime.composer.onApply so agent tool calls
   // (`*.composer.set_text` / `append_text` / `set_attachments`) reach this
   // mounted wrapper's draft. Filter by (mode, thread_key) here before
   // delegating to applyComposerEvent so we read the freshest draft text.

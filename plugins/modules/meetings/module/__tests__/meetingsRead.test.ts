@@ -2,8 +2,9 @@
 // module class through @magnis/testkit/module (mockGraph + mountModule).
 // Mirrors the native meetings domain (types.rs): list (window over
 // meetings.calendar_event, starts_at DESC), get (entity + facets + links),
-// search (meetings.EVENT schema — native quirk), attendee parse (INV-24c) and
-// read-time attendee→contact enrichment.
+// search (meetings.EVENT schema — native quirk), strict attendee parsing
+// (malformed input throws, never silently repaired) and read-time
+// attendee→contact enrichment.
 //
 // mockGraph is a throwing Proxy: any op NOT arranged (or passed via `over`)
 // throws when hit, so an accidental crossing fails loudly — the guarantee that
@@ -36,7 +37,7 @@ function makeModule(graph: G): MeetingsModule {
 const entity = (id: string, name: string, created = "2026-01-01T00:00:00Z"): RawEntity =>
   ({ id, schema_id: CAL, name, created_at: created }) as RawEntity;
 
-// ── parseAttendees (INV-24c) ──────────────────────────────────────
+// ── parseAttendees (strict — malformed input throws) ──────────────
 describe("parseAttendees", () => {
   it("parses the canonical {name?, email}[] array", () => {
     const out = parseAttendees(

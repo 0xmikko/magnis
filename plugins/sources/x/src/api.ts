@@ -85,12 +85,12 @@ export class XApiError extends Error {
 }
 
 const USER_FIELDS = "name,username,profile_image_url,description,verified,public_metrics";
-// ContentOS ingest port (social-post-rendering S4): note_tweet + article carry
-// the FULL text X truncates in `.text`; entities/attachments feed urls + media.
+// note_tweet + article carry the FULL text X truncates in `.text`;
+// entities/attachments feed urls + media.
 const TWEET_FIELDS =
   "created_at,public_metrics,text,lang,referenced_tweets,conversation_id,note_tweet,article,entities,attachments";
 // media_keys are bare keys — they only resolve to URLs when the expansion AND
-// media.fields are both requested (ContentOS lesson #4).
+// media.fields are both requested.
 const TWEET_EXPANSIONS = "attachments.media_keys";
 const MEDIA_FIELDS = "media_key,type,url,preview_image_url,alt_text";
 

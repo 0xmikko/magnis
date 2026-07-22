@@ -44,7 +44,7 @@ describe("PostCard (rich x post, X-native layout)", () => {
     expect(getByText(/25K/)).toBeTruthy();
   });
 
-  it("media grid renders images; null created_at → — (INV-4)", () => {
+  it("media grid renders images; null created_at renders as an em dash", () => {
     const { getByAltText, getByText } = render(
       <PostCard
         post={{

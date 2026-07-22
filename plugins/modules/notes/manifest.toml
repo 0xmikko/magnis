@@ -5,7 +5,7 @@
 # sync surface) — create / update / delete notes and apply templates. Notes
 # carry inline links to people, companies, meetings, and projects and flow
 # through the same event log as the rest of the graph. Runs as a sandboxed V8
-# isolate; bundled and presence-seeded at boot (DEC-10).
+# isolate; bundled with the app and installed automatically at boot.
 
 id = "notes"
 version = "0.1.0"

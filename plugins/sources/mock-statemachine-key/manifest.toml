@@ -1,5 +1,6 @@
-# StateMock archetype 'key' (accounts-sync-status plan §11.1): the shared
-# @magnis/source-statemachine connector (bun) in a api_key/poll shape. Eval-only (kind=mock).
+# StateMock 'key' — the shared @magnis/source-statemachine connector (bun) in
+# an api_key/poll shape, exercising the API-key auth ceremony and poll sync
+# end-to-end in tests. Eval-only (kind=mock).
 
 id = "mock-statemachine-key"
 version = "1.0.0"

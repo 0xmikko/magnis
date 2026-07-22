@@ -1,7 +1,7 @@
-# mock-linkedin — LinkedIn fixture connector (SourceKind Mock; loaded ONLY when
-# ENABLED_SOURCES lists it). No network, no credentials — feeds the `linkedin`
-# surface with the same envelope shape as the live `linkedin` connector for
-# tests / e2e (INV-2/6). Read-only: only magnis.sync.fetch (INV-5).
+# mock-linkedin — fixture connector for the `linkedin` surface (SourceKind
+# Mock; loaded ONLY when ENABLED_SOURCES lists it). No network, no credentials —
+# it emits the same envelope shape as the live `anysite` connector, so tests
+# and e2e runs stay hermetic. Read-only: the only tool is magnis.sync.fetch.
 
 id = "mock-linkedin"
 version = "1.0.0"

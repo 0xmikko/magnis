@@ -3,7 +3,7 @@
 # Owns `meetings.*`: calendar_event + event entities and their facets. Ingests the
 # `meetings` sync surface (calendar), links attendees to contacts (reads
 # contacts.person), and reaches the email module over RPC to resolve addresses.
-# Sandboxed V8 isolate; presence-seeded at boot (DEC-10).
+# Sandboxed V8 isolate; bundled with the app and installed automatically at boot.
 
 id = "meetings"
 version = "0.1.0"

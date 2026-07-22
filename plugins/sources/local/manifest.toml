@@ -8,7 +8,7 @@
 # still passes. The connector itself is kept; it is simply never synced.
 #
 # The server is `src/main.ts` on @magnis/connector-sdk, spawned by convention
-# (bun, from this manifest's directory — DEC-10 stamps it as the spawn cwd).
+# (bun, with this manifest's directory as the spawn cwd).
 # env injected by the operator / launch scripts:
 #   NOTES_DIR = "<storage>/notes"   # optional, defaults to $STORAGE_DIR/notes
 

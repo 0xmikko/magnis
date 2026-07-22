@@ -93,6 +93,12 @@
       "name": "@magnis/plugin-x",
       "version": "0.1.0",
     },
+    "plugins/sources/anysite": {
+      "name": "@magnis/source-anysite",
+      "dependencies": {
+        "@magnis/connector-sdk": "workspace:*",
+      },
+    },
     "plugins/sources/google": {
       "name": "@magnis/source-google",
       "dependencies": {
@@ -100,12 +106,6 @@
       },
       "devDependencies": {
         "@magnis/testkit": "workspace:*",
-      },
-    },
-    "plugins/sources/linkedin": {
-      "name": "@magnis/source-linkedin",
-      "dependencies": {
-        "@magnis/connector-sdk": "workspace:*",
       },
     },
     "plugins/sources/local": {
@@ -323,9 +323,9 @@
 
     "@magnis/plugin-x": ["@magnis/plugin-x@workspace:plugins/modules/x"],
 
-    "@magnis/source-google": ["@magnis/source-google@workspace:plugins/sources/google"],
+    "@magnis/source-anysite": ["@magnis/source-anysite@workspace:plugins/sources/anysite"],
 
-    "@magnis/source-linkedin": ["@magnis/source-linkedin@workspace:plugins/sources/linkedin"],
+    "@magnis/source-google": ["@magnis/source-google@workspace:plugins/sources/google"],
 
     "@magnis/source-local": ["@magnis/source-local@workspace:plugins/sources/local"],
 

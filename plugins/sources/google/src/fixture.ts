@@ -100,7 +100,7 @@ function eventToEnvelope(raw: unknown): Envelope | null {
 }
 
 /** One raw People connection → canonical contact envelope; identity-less
- * entries are dropped (INV-CONTACTS-2), matching live tolerance. */
+ * entries are dropped, matching live tolerance. */
 function connectionToEnvelope(raw: unknown): Envelope | null {
   try {
     const contact = gpeoplePersonToContact(raw as GpeoplePerson);

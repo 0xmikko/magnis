@@ -5,7 +5,7 @@ export interface ModuleIcon {
     readonly label: string;
     readonly active?: boolean;
     readonly onClick: () => void;
-    /** Extension icons are user-reorderable (DEC-17); pinned Core entries are not. */
+    /** Extension icons are user-reorderable; pinned Core entries are not. */
     readonly reorderable?: boolean;
 }
 /** Where a drop would land relative to the hovered icon. */

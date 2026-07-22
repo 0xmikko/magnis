@@ -1,8 +1,8 @@
 /**
  * Supersede heuristic for pending agent tool-calls.
  *
- * DEC-5 / INV-6: a pending tool-call is "Superseded" only when a LATER pending
- * call has the SAME tool name AND the SAME recipient identity. Keying on the
+ * A pending tool-call is "Superseded" only when a LATER pending call has the
+ * SAME tool name AND the SAME recipient identity. Keying on the
  * tool name alone (the old rule) collapsed a legitimate multi-recipient
  * fan-out — e.g. N telegram sends to N distinct chats — into "all but the last
  * superseded".

@@ -4,7 +4,7 @@
 # checklist, description, and memory facets. A project is a durable container
 # that bundles meetings, messages, notes, and contacts around a goal; members
 # are attached with `belongs_to` links. Runs as a sandboxed V8 isolate; bundled
-# and presence-seeded at boot (DEC-10).
+# with the app and installed automatically at boot.
 
 id = "projects"
 version = "0.1.0"
