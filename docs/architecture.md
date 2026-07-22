@@ -1,20 +1,20 @@
 # Architecture
 
-How this catalog relates to the Magnis core, and the model a plugin author builds against. For the end-to-end authoring guides, see [docs/plugins/](plugins/README.md).
+The whole system, top-down: what the core does, what this catalog adds, and the model a plugin author builds against. Concepts and data flows only — the core's implementation is closed; the contracts here are the stable surface. For hands-on authoring, see [docs/plugins/](plugins/README.md).
 
-## The split
+## System overview
 
-Magnis is two halves:
+Magnis is two halves plus a shell:
 
-- **The core (closed)** — a Rust knowledge-graph engine over Postgres, the agent runtime, event triggers, and the approval layer. It ships as a desktop app (with a real Postgres server compiled into the binary) or an on-prem server.
-- **This catalog (public)** — everything domain-specific: source connectors, domain modules, and the SDKs they build against. All TypeScript, run by bun. The core consumes this repo as a pinned dependency; `main` is the published catalog.
-
-The same split as an editor and its extensions: the host is private, the ecosystem is public, and the contract between them is the stable surface.
+- **The core (closed)** — a Rust knowledge-graph engine over Postgres, the agent runtime, event triggers, semantic + graph search, and the approval layer.
+- **This catalog (public)** — everything domain-specific: source connectors, domain modules, and the SDKs they build against. All TypeScript, run by bun. The core consumes the catalog as a pinned dependency.
+- **Deployment shells** — a desktop app with a real Postgres server compiled into the binary (zero-dependency install), or a self-hosted server against your own Postgres.
 
 ```mermaid
 flowchart LR
     subgraph core [Core - closed]
         graph[Knowledge graph / Postgres]
+        search[Search: graph + semantic]
         agent[Agent runtime + approvals]
         triggers[Event triggers]
     end
@@ -25,13 +25,14 @@ flowchart LR
     end
     sources -- envelopes + cursors --> modules
     modules --> graph
-    agent --> graph
+    search --> graph
+    agent --> search
     triggers --> agent
 ```
 
-## The graph model
+## The graph
 
-Everything a plugin reads or writes lands in one graph:
+Everything lands in one graph:
 
 - **entities** — people, messages, meetings, companies, projects
 - **facets** — typed data attached to an entity, with provenance
@@ -39,29 +40,60 @@ Everything a plugin reads or writes lands in one graph:
 - **events** — append-only mutation history
 - **canonical properties** — resolved truth when several sources disagree
 
-Provenance is load-bearing: every fact traces back to the message, meeting, or file it came from.
+Provenance is load-bearing: every fact traces back to the message, meeting, or file it came from. Nothing in the graph is a black-box assertion.
 
-## Two plugin kinds, two runtimes
-
-**Source connectors** (`plugins/sources/`) pull data from an external service. Each runs as a **separate bun process the core spawns**, speaking an MCP-style stdio protocol — line-delimited JSON-RPC. A source owns its credentials and auth ceremony (OAuth2, phone code, API key), serves cursored sync (`magnis.sync.fetch` → envelopes + an opaque JSON cursor), can push live updates, and exposes an action table (`magnis.execute`: send, backfill, …). The full wire contract lives in [docs/plugins/source.md](plugins/source.md); the SDK is `@magnis/connector-sdk`. Because the wire is the contract, the host cannot tell one implementation from another — that's the portability story: one runtime, no per-platform binaries.
-
-**Domain modules** (`plugins/modules/`) shape ingested data into the graph and serve the UI. They run **inside the core, in sandboxed V8 isolates**, with a capability manifest declaring what they own (`owns` namespaces), which operations they may call, and which surfaces they wire to. The SDK is `@magnis/plugin-sdk`; the host surface a module compiles against is typed by `@magnis/host-stubs`.
-
-## The sync flow
+## Ingestion and identity
 
 ```
 module (intent) → command → source → envelope(s) + cursor → module → graph
 ```
 
-Modules declare what they want kept in sync; sources talk to the provider; envelopes flow back and are shaped into entities, facets, and links. Cursors are opaque JSON, round-tripped verbatim. Rate limits surface as typed errors with `retry_after` — a connector never hangs silently.
+Modules declare what they want kept in sync; sources talk to the provider (poll or live push); envelopes flow back and are shaped into entities, facets, and links. Cursors are opaque JSON, round-tripped verbatim. Rate limits surface as typed errors with `retry_after` — a connector never hangs silently.
 
-## The agent loop
+**Identity resolution** is where the graph earns its keep: the same person arriving via Gmail, Telegram, and a meeting becomes *one* entity with a merged history. Candidate links start as hypotheses, accumulate evidence across sessions, and are promoted only past a confidence threshold with multiple confirmations — stale hypotheses decay. This mechanism is what our published evals measure ([evals/](../evals/README.md)): cross-session entity-resolution recall of 0.63–0.80, against a memoryless baseline that is structurally 0.
 
-Agents operate on the graph, not on raw provider data: read context, call tools, and pass every write through the **approval layer** — a proposed action becomes a pending approval the user confirms with one click. Triggers close the loop: they watch the graph and start agent episodes when something changes ("this deal went quiet").
+## Search
+
+Agents and the UI query the graph, not raw provider data. Retrieval is hybrid:
+
+- **structured graph queries** — typed traversal over entities, facets, and links ("open deals involving people from Tuesday's meeting");
+- **semantic search** — embedding-based retrieval over message and document content, with embeddings computed locally (any OpenAI-compatible/Ollama-style endpoint) so content never has to leave the perimeter.
+
+The combination is deliberate: multi-hop questions resolve through the graph, fuzzy recall resolves through embeddings, and both return provenance.
+
+## Agents
+
+The agent runtime drives tool-calling models — Claude primarily, with any OpenAI-compatible endpoint supported, down to fully local models for on-prem installs. Agents read through search, act through tools that plugins expose, and write through one gate:
+
+**Every write action stops at a one-click approval.** A proposed send or mutation becomes a pending approval the user confirms or denies; there is no autonomous-write mode. Agent memory rides the same graph as an overlay — agents hypothesize, gather evidence, and the graph promotes what holds — so memory written in one session (or by one engine) is readable in the next.
+
+## Triggers
+
+Triggers make the graph watchful: a watch-list plus a gate condition plus an action. When something changes — a key thread goes quiet, a counterpart replies, a deadline approaches — the trigger fires an agent episode that prepares the response before you've noticed. Same approval gate on the way out.
+
+## Multi-user
+
+Current state, stated plainly:
+
+- one server, one database, many users;
+- authentication with an open mode (single-user local installs) and a password mode (shared servers);
+- **strict per-user data isolation** — every entity and source account is scoped to its user;
+- an admin role for deployment ownership.
+
+**Team access controls — sharing, roles, ACL — are planned**, and are being shaped by our first design-partner deployment rather than designed in a vacuum.
+
+## Deployment modes
+
+| Mode | Database | Models |
+|---|---|---|
+| Desktop app | real Postgres compiled into the binary | cloud Claude, any OpenAI-compatible endpoint, or fully local |
+| Self-hosted server | your Postgres (Docker / VPC / bare metal) | same — including air-gapped local-only |
+
+No mandatory third-party API: the graph, the search embeddings, and the models can all run inside the user's perimeter.
 
 ## Trust boundaries
 
 - A source process owns its provider credentials; the core never sees them.
-- A module sees only what its manifest capabilities grant.
+- A module sees only what its capability manifest grants (V8 isolate, `owns` namespaces, operation grants).
 - Every agent write action stops at the approval layer.
-- Everything — graph, models, plugins — can run inside the user's perimeter.
+- Everything — graph, embeddings, models, plugins — can run inside the user's perimeter.

@@ -32,7 +32,7 @@ packages/
   host-stubs           TYPES ONLY — the host surface a plugin compiles against.
   source-statemachine  the auth/sync state machine shared by source connectors.
   testkit              dev-only test doubles + builders; never ships in a bundle.
-docs/          architecture, principles, use-cases, plugin authoring.
+docs/          architecture, plugin authoring, git workflow.
 scripts/       typecheck / test / bundle tooling.
 ```
 

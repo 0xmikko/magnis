@@ -3,7 +3,8 @@
 > Self-hosted company memory: a private knowledge graph built from a company's communication (email, chats, meetings, notes, files) with AI agents operating on top. Runs fully inside the company's perimeter — desktop app with embedded Postgres, on-prem server, optional fully local models. This repository is the OPEN PLUGIN CATALOG; the core engine is closed — the same split as an editor and its extensions.
 
 Key facts:
-- Core (closed): Rust knowledge-graph engine over Postgres (entities / facets / links / events, provenance on every link); agent runtime (tool-calling; Claude primary; any OpenAI-compatible endpoint incl. local models); event triggers; one-click approval gates on every write action. A real Postgres server is compiled into the desktop binary.
+- Core (closed): Rust knowledge-graph engine over Postgres (entities / facets / links / events, provenance on every link); hybrid search (structured graph traversal + semantic search with locally computed embeddings); agent runtime (tool-calling; Claude primary; any OpenAI-compatible endpoint incl. local models); event triggers; one-click approval gates on every write action. A real Postgres server is compiled into the desktop binary.
+- Multi-user: one server / one database / many users; per-user data isolation; admin role. Team access controls (sharing, roles/ACL) are planned, shaped by the first design-partner deployment.
 - This repo (public, TypeScript/bun only — no Rust, no per-platform binaries): 11 domain modules + 6 source connectors + dev mocks, and 5 SDK packages.
 - Modules run inside the core in sandboxed V8 isolates with capability manifests: contacts, email, meetings, companies, projects, notes, telegram, triggers, linkedin, x, file.
 - Sources run as separate MCP-over-stdio processes owning their credentials ("Magnis Sync Profile" wire contract): google (Gmail + Calendar), telegram, x, x-mcp (agent-side X search), anysite (LinkedIn), local (markdown notes, reference).
