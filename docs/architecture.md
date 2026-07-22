@@ -48,7 +48,7 @@ Provenance is load-bearing: every fact traces back to the message, meeting, or f
 module (intent) → command → source → envelope(s) + cursor → module → graph
 ```
 
-Modules declare what they want kept in sync; sources talk to the provider (poll or live push); envelopes flow back and are shaped into entities, facets, and links. Cursors are opaque JSON, round-tripped verbatim. Rate limits surface as typed errors with `retry_after` — a connector never hangs silently.
+Modules declare what they want kept in sync; sources talk to the provider (poll or live push); envelopes flow back and are shaped into entities, facets, and links. Cursors are opaque JSON, round-tripped verbatim. Resilience is contractual, not best-effort: rate limits surface as typed errors with `retry_after` the scheduler honors; expired cursors surface as their own typed signal and re-bootstrap cleanly; re-polls are idempotent (stable remote ids, upsert semantics), so a crashed fetch never duplicates data. A connector never hangs silently.
 
 **Identity resolution** is where the graph earns its keep: the same person arriving via Gmail, Telegram, and a meeting becomes *one* entity with a merged history. Candidate links start as hypotheses, accumulate evidence across sessions, and are promoted only past a confidence threshold with multiple confirmations — stale hypotheses decay. This mechanism is what our published evals measure ([evals/](../evals/README.md)): cross-session entity-resolution recall of 0.63–0.80, against a memoryless baseline that is structurally 0.
 
@@ -63,9 +63,11 @@ The combination is deliberate: multi-hop questions resolve through the graph, fu
 
 ## Agents
 
-The agent runtime drives tool-calling models — Claude primarily, with any OpenAI-compatible endpoint supported, down to fully local models for on-prem installs. Agents read through search, act through tools that plugins expose, and write through one gate:
+The agent runtime drives tool-calling models — Claude primarily, with any OpenAI-compatible endpoint supported, down to fully local models for on-prem installs. Agents read through search, act through tools that plugins expose, and write through one gate.
 
-**Every write action stops at a one-click approval.** A proposed send or mutation becomes a pending approval the user confirms or denies; there is no autonomous-write mode.
+**Engines.** The runtime treats engines as interchangeable: the built-in tool-calling engine (with an in-app model catalog — OpenRouter, any OpenAI-compatible endpoint, local servers, per-token pricing), or the user's existing Claude Code / Codex subscription driven over a long-lived session channel with no API keys to manage. All engines emit one streaming event union; every conversation is a persistent, resumable session rather than a transcript replay; and usage is metered per user, with credit limits checked *before* each turn starts.
+
+**Every write action stops at a one-click approval.** A proposed send or mutation becomes a pending approval the user confirms or denies; there is no autonomous-write mode. Drafting happens in a shared composer — the agent reads and edits the same draft the user sees (append, rewrite, attach), and the user always owns the send.
 
 **The speculative overlay.** Agent memory rides the same graph as an overlay of hypotheses. When an agent suspects something the data never states outright — two contacts are the same person, a commitment was made in passing, a deal is drifting — it records a hypothesis rather than a fact. Hypotheses accumulate evidence across sessions and channels; past a confidence threshold with multiple independent confirmations they are promoted into the graph, and stale ones decay instead of fossilizing. Because the overlay lives in the graph, not in a prompt, memory written by one agent — or one model — is readable by any other.
 
@@ -74,6 +76,10 @@ The agent runtime drives tool-calling models — Claude primarily, with any Open
 ## Triggers
 
 Triggers make the graph watchful: a watch-list plus a gate condition plus an action. When something changes — a key thread goes quiet, a counterpart replies, a deadline approaches — the trigger fires an agent episode that prepares the response before you've noticed. Same approval gate on the way out.
+
+## Plugin lifecycle
+
+Plugins are managed as a real package lifecycle, not file drops: installs reconcile what's on disk with what the database believes; versions migrate through gated steps; a running extension can be rebuilt and swapped live without restarting the app; dependency guards block unsafe disables; and extensions arrive from a signed remote catalog with system and community tiers.
 
 ## Multi-user
 
@@ -98,6 +104,11 @@ No mandatory third-party API: the graph, the search embeddings, and the models c
 ## Trust boundaries
 
 - A source process owns its provider credentials; the core never sees them.
+- Provider keys and stored credentials live in an AES-256-GCM encrypted vault (versioned keys, no plaintext fallback); account passwords are argon2-hashed.
 - A module sees only what its capability manifest grants (V8 isolate, `owns` namespaces, operation grants).
 - Every agent write action stops at the approval layer.
 - Everything — graph, embeddings, models, plugins — can run inside the user's perimeter.
+
+## Engineering discipline
+
+The core is verified by a deterministic, numbered integration-test ladder — thirteen stages from the runtime kernel up through sync, triggers, and auth — on top of ~2,100 Rust tests, with injectable clocks throughout. Determinism is a design rule, not an aspiration: if a test can flake, the seam it needed is the bug.

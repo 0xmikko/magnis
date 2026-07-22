@@ -37,6 +37,17 @@ Retrieval is the floor, not the point. Because the graph is typed and every fact
 - **Reconstruction.** After a lost thread or a failed migration, agents rebuild who promised what to whom from the surrounding communication.
 - **Watchfulness.** Ghost-thread digests: which conversations are going quiet, what the last commitment in each was, and a prepared follow-up — before anyone notices.
 
+## Under the hood
+
+Already built and running — the parts you'd expect to be missing at this stage:
+
+- **Bring any model.** An in-app model catalog with per-token pricing: cloud Claude, OpenRouter, any OpenAI-compatible endpoint, fully local servers — or drive the agent with your existing Claude Code or Codex subscription, no API keys to manage. Per-user credit limits meter usage and stop a turn *before* it overspends.
+- **Persistent agent sessions.** Every conversation is a resumable engine session — no transcript replay; the agent keeps a live to-do list and shows its context usage as it works.
+- **Native, resilient connectors.** A from-scratch Telegram MTProto client (O(N) bootstrap, flood-wait-aware sending, a dedicated send lane so a sync never starves an outbound message), plus Gmail + Calendar, X, and LinkedIn — with typed rate-limit backoff, expired-cursor recovery, and crash-safe idempotent sync.
+- **A shared composer.** The agent reads and edits the same draft you see — append, rewrite, attach — and you always own the send.
+- **Secrets encrypted at rest.** Provider keys and source credentials live in an AES-256-GCM vault with versioned keys; account passwords are argon2-hashed. No plaintext fallback, by design rule.
+- **A real plugin lifecycle.** Install, version-gated migrations, live rebuild-and-swap without restart, dependency guards, and a signed remote catalog with system and community tiers.
+
 ## Principles
 
 - communication is part of the system
