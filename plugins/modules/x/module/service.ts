@@ -4,7 +4,7 @@
 // tools + op_composer like the telegram module, without
 // touching linkedin. v1 is read-only. (Split from the old shared `social` module,
 // see plan Revision.)
-// Writes ONLY `x.*` (facet_write_prefixes); soft-reads contacts.person.
+// Writes ONLY `x.*` (implicit own-namespace grant); soft-reads contacts.person.
 // Idempotent: facets carry external_id = the source remote_id (re-poll upserts).
 // Provenance is stamped host-side from the calling plugin + envelope.
 

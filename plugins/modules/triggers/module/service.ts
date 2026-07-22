@@ -8,7 +8,7 @@
 // engine reads and runs.
 //
 // Two native dependencies are consulted over the host RPC bridge (manifest
-// `capabilities.rpc_calls`):
+// `[permissions] call`):
 //   - `triggers.validate_watch` / `triggers.resolve_watchable` — schema
 //     `triggerable` reads (plugins cannot read schema metadata).
 //   - `triggers.invalidate_cache` — drop the engine's in-memory reverse index

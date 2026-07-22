@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "mappings": [
+    {
+      "path": "phone",
+      "canonical": "telegram.account.phone",
+      "strategy": "single_aligned"
+    },
+    {
+      "path": "username",
+      "canonical": "telegram.account.username",
+      "strategy": "single_aligned"
+    }
+  ],
+  "type": "object",
+  "required": [
+    "account_id"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "account_id": {
+      "type": "string"
+    },
+    "phone": {
+      "type": "string"
+    },
+    "first_name": {
+      "type": "string"
+    },
+    "last_name": {
+      "type": "string"
+    },
+    "username": {
+      "type": "string"
+    },
+    "auth_state": {
+      "type": "string"
+    }
+  }
+}

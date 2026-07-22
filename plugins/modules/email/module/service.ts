@@ -627,7 +627,7 @@ export class EmailModule {
         ? `Email trigger: ${addresses.join(", ")}`
         : `Email trigger: ${addresses.slice(0, 3).join(", ")} +${String(addresses.length - 3)} more`;
 
-    // Delegate to the triggers module via the cross-module hub (rpc_calls).
+    // Delegate to the triggers module via the cross-module hub (`[permissions] call`).
     return this.rpc.execute("triggers.create", {
       name,
       watch_entity_ids: watchIds,

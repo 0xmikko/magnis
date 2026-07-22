@@ -3,139 +3,19 @@
 # Owns the `projects.*` graph namespace: the project entity plus its detail,
 # checklist, description, and memory facets. A project is a durable container
 # that bundles meetings, messages, notes, and contacts around a goal; members
-# are attached with `belongs_to` links. Runs as a sandboxed V8 isolate (module
-# entry + React UI under [entry]); bundled and presence-seeded at boot (DEC-10).
+# are attached with `belongs_to` links. Runs as a sandboxed V8 isolate; bundled
+# and presence-seeded at boot (DEC-10).
 
 id = "projects"
 version = "0.1.0"
 # SDK contract version this manifest targets (host accepts 0.x).
 magnis_api_version = "0.1.0"
-
-# Graph schemas: the project entity + its versioned facets (detail, checklist,
-# description, memory) with canonical `mappings` feeding derived truth.
-[schemas]
-links = []
-
-[[schemas.entities]]
-id = "projects.project"
-name = "Project"
-description = "A project entity owned by the projects plugin."
-
-[[schemas.facets]]
-id = "projects.project"
-entity_schema = "projects.project"
-version = 1
-
-[schemas.facets.json_schema]
-type = "object"
-additionalProperties = true
-
-[[schemas.facets.mappings]]
-facet_path = "name"
-canonical_key = "project.name"
-strategy = "single_aligned"
-
-[[schemas.facets.mappings]]
-facet_path = "status"
-canonical_key = "project.status"
-strategy = "single_aligned"
-
-[[schemas.facets]]
-id = "projects.project.checklist"
-entity_schema = "projects.project"
-version = 1
-mappings = []
-
-[schemas.facets.json_schema]
-type = "object"
-required = [ "items" ]
-
-[schemas.facets.json_schema.properties.items]
-type = "array"
-
-[schemas.facets.json_schema.properties.items.items]
-type = "object"
-required = [ "id", "text", "status" ]
-
-[schemas.facets.json_schema.properties.items.items.properties.id]
-type = "string"
-
-[schemas.facets.json_schema.properties.items.items.properties.text]
-type = "string"
-
-[schemas.facets.json_schema.properties.items.items.properties.status]
-type = "string"
-enum = [ "pending", "in_progress", "done", "blocked" ]
-
-[schemas.facets.json_schema.properties.items.items.properties.notes]
-type = "string"
-
-[schemas.facets.json_schema.properties.items.items.properties.updated_at]
-type = "string"
-format = "date-time"
-
-[[schemas.facets]]
-id = "projects.description"
-entity_schema = "projects.project"
-version = 1
-mappings = []
-
-[schemas.facets.json_schema]
-type = "object"
-required = [ "body" ]
-additionalProperties = false
-
-[schemas.facets.json_schema.properties.body]
-type = "string"
-
-[[schemas.facets]]
-id = "projects.memory"
-entity_schema = "projects.project"
-version = 1
-mappings = []
-
-[schemas.facets.json_schema]
-type = "object"
-required = [ "title", "body" ]
-additionalProperties = false
-
-[schemas.facets.json_schema.properties.title]
-type = "string"
-
-[schemas.facets.json_schema.properties.body]
-type = "string"
-
-# Least-privilege grants: facet prefixes it may write; the `belongs_to` link kind
-# it may create (attaching members/entities to a project); schemas it may read.
-[capabilities]
-facet_write_prefixes = [ "projects." ]
-link_kinds_writable = [ "belongs_to" ]
-rpc_calls = []
-reads_schemas = [ "projects." ]
-events_emitted = []
-can_merge_schemas = []
-
-# Callable surface: `rpc_handlers` = intra-host RPC; `tools` = the agent-facing
-# subset; `sync_handlers` = source-sync surfaces (none — projects has no connector).
-[surfaces]
-sync_handlers = []
-
-# Entrypoints inside the package: V8 module bundle + React UI surface (note the
-# `ui/` prefix — the build strips it when resolving the entry).
-[entry]
-module = "module/index.ts"
-ui = "ui/index.tsx"
-
-# Self-reporting catalog card (title/summary/publisher/icon + markdown details).
-[presentation]
 title = "Projects"
 summary = "Bundle meetings, messages, and tasks into long-running projects."
-publisher = "Magnis"
-publisher_url = "https://magnis.ai"
-details = "# Projects\n\nA project is a durable container for everything that happens around a\ngoal: meetings, email threads, notes, and linked contacts. The\nProjects module keeps the timeline and the key players in sync.\n"
-icon_url = "/api/plugins/projects/ui/icon.svg"
+# Reverse-domain publisher identity.
+publisher = "ai.magnis"
 
-# Declared install entrypoint (DEC-L4): runs once in a transient isolate at
-# install time to register schemas. A module without it is NOT installable.
-[lifecycle]
-install = "lifecycle/install.ts"
+# Foreign asks beyond the implicit own namespace: writes to `projects.` facets,
+# own:own links, and reads of own schemas need no declaration.
+[permissions]
+links = [ "belongs_to" ]

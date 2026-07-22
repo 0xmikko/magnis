@@ -1,0 +1,14 @@
+{
+  "id": "file.audio",
+  "version": 1,
+  "type": "object",
+  "required": [
+    "duration_seconds"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "duration_seconds": {
+      "type": "number"
+    }
+  }
+}

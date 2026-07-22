@@ -1,7 +1,6 @@
 // Triggers plugin — schema-id + link-kind constants. Deduped from
 // `module/service.ts` (the single spelling of each namespace string). The
-// manifest is the source of truth for REGISTRATION (lifecycle uses
-// registerManifestSchemas()); these consts are for read/write call sites only.
+// schemas/ files are the source of truth for REGISTRATION (registered natively at install); these consts are for read/write call sites only.
 
 /** Trigger definition entity schema. */
 export const TRIGGER = "triggers.trigger";

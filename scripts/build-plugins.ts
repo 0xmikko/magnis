@@ -32,8 +32,9 @@ function loadHostMap(): HostMap {
   return JSON.parse(readFileSync(join(import.meta.dir, "plugin-host-imports.json"), "utf8")) as HostMap;
 }
 
+// Manifest v3: entrypoints are convention (ui/index.tsx, module/index.ts) —
+// only the [ui] extras table matters to the build.
 interface Manifest {
-  entry?: { ui?: string; module?: string };
   ui?: { extra_bare_imports?: string[] };
 }
 
@@ -74,11 +75,9 @@ export async function buildPlugin(pluginId: string, opts: BuildOpts = {}): Promi
 
   const manifestPath = join(pluginsDir, "modules", pluginId, "manifest.toml");
   const manifest: Manifest = parseToml(readFileSync(manifestPath, "utf8"));
-  // Entry is always under `ui/`. Manifests are inconsistent: most use
-  // "index.tsx", projects uses "ui/index.tsx" — normalize by stripping a
-  // leading "ui/" so the on-disk path + the entry key match what the frontend
-  // loader requests (`/api/plugins/<id>/ui/index.tsx`).
-  const entryUi = (manifest.entry?.ui ?? "index.tsx").replace(/^ui\//, "");
+  // Entry is convention (manifest v3): ui/index.tsx — the entry key matches
+  // what the frontend loader requests (`/api/plugins/<id>/ui/index.tsx`).
+  const entryUi = "index.tsx";
   const entryPath = join(pluginsDir, "modules", pluginId, "ui", entryUi);
   if (!existsSync(entryPath)) {
     throw new Error(`plugin ${pluginId}: ui entry not found at ${entryPath}`);
@@ -126,8 +125,7 @@ export async function buildPlugin(pluginId: string, opts: BuildOpts = {}): Promi
   // with no transpile + no resolution. Host ops arrive via injected globals.
   // experimentalDecorators (tsconfig) keeps the @tool/@writeTool legacy
   // decorator semantics the isolate expects.
-  const moduleEntry = (manifest.entry?.module ?? "module/index.ts").replace(/^module\//, "");
-  const moduleEntryPath = join(pluginsDir, "modules", pluginId, "module", moduleEntry);
+  const moduleEntryPath = join(pluginsDir, "modules", pluginId, "module", "index.ts");
   let moduleFile: string | undefined;
   let moduleHash: string | undefined;
   if (existsSync(moduleEntryPath)) {
@@ -197,17 +195,31 @@ export async function buildPlugin(pluginId: string, opts: BuildOpts = {}): Promi
     writeFileSync(join(modDir, moduleFile), modJs);
   }
 
-  // ── static assets (plugin-icon-standard INV-1) ────────────────────────────
-  // A plugin may ship ui/icon.svg or ui/icon.png — copied verbatim into the dist
-  // ui/ dir and recorded in bundle.json.assets with a content hash so the backend
-  // prod path can serve it (correct MIME + ETag). svg/png only.
+  // ── static assets (plugin-icon-standard INV-1, manifest v3) ───────────────
+  // A plugin may ship icon.svg or icon.png at the PACKAGE ROOT — copied verbatim
+  // into the dist package root and recorded in bundle.json.assets with a content
+  // hash so the backend prod path can serve it (correct MIME + ETag). svg/png only.
   const assets: Record<string, string> = {};
   for (const name of ["icon.svg", "icon.png"]) {
-    const src = join(pluginsDir, "modules", pluginId, "ui", name);
+    const src = join(pluginsDir, "modules", pluginId, name);
     if (!existsSync(src)) continue;
     const bytes = readFileSync(src);
     assets[name] = createHash("sha256").update(bytes).digest("hex").slice(0, 16);
-    writeFileSync(join(uiDir, name), bytes);
+    writeFileSync(join(pkgDir, name), bytes);
+  }
+
+  // ── package card + graph model (manifest v3) ──────────────────────────────
+  // README.md and schemas/ travel with the dist package so the catalog payload
+  // stays dependency-closed (the host reads both at scan/install).
+  const readmePath = join(pluginsDir, "modules", pluginId, "README.md");
+  if (existsSync(readmePath)) writeFileSync(join(pkgDir, "README.md"), readFileSync(readmePath));
+  const schemasDir = join(pluginsDir, "modules", pluginId, "schemas");
+  if (existsSync(schemasDir)) {
+    const dstSchemas = join(pkgDir, "schemas");
+    mkdirSync(dstSchemas, { recursive: true });
+    for (const f of readdirSync(schemasDir)) {
+      if (f.endsWith(".json")) writeFileSync(join(dstSchemas, f), readFileSync(join(schemasDir, f)));
+    }
   }
 
   writeFileSync(

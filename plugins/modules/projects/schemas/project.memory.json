@@ -1,0 +1,18 @@
+{
+  "id": "projects.memory",
+  "version": 1,
+  "type": "object",
+  "required": [
+    "title",
+    "body"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "title": {
+      "type": "string"
+    },
+    "body": {
+      "type": "string"
+    }
+  }
+}

@@ -462,7 +462,7 @@ export interface PluginUtil {
 
 /// Cross-module RPC hub. `execute` calls another module's RPC
 /// method over the host router. Allowed targets are declared in the
-/// manifest `capabilities.rpc_calls`; v0 supports native-module targets
+/// manifest `[permissions]` `call` list; v0 supports native-module targets
 /// only (plugin→plugin is rejected host-side).
 export interface RpcExecutor {
   execute<T = unknown>(method: string, params?: unknown): Promise<T>;

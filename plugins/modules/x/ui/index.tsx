@@ -6,11 +6,12 @@ import { XPostCard, XProfileCard } from "./EntityCards";
 import { XProfileFeed } from "./ProfileFeed";
 import { XProfileHeader } from "./ProfileHeader";
 
-// Brand glyph shipped IN the plugin (plugins/x/ui/icon.svg) and served by the
-// backend from the plugin store — no external hosting (plugin-icon-standard).
-// Rendered as a CSS mask filled with currentColor: rail icons are ALWAYS
-// monochrome and must follow the rail's active/hover text color like lucide.
-const ICON_URL = "/api/plugins/x/ui/icon.svg";
+// Brand glyph shipped IN the plugin (plugins/x/icon.svg, package root) and
+// served by the backend from the plugin store — no external hosting
+// (plugin-icon-standard). Rendered as a CSS mask filled with currentColor:
+// rail icons are ALWAYS monochrome and must follow the rail's active/hover
+// text color like lucide.
+const ICON_URL = "/api/plugins/x/icon.svg";
 
 function XIcon(): JSX.Element {
   return (

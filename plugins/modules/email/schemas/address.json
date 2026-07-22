@@ -1,0 +1,6 @@
+{
+  "name": "Email address",
+  "description": "An email address entity (sender/recipient hub).",
+  "triggerable": true,
+  "mergeable": true
+}

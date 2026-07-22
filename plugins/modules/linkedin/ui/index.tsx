@@ -7,11 +7,12 @@ import { LinkedInProfileFeed } from "./ProfileFeed";
 import { LinkedInProfileHeader } from "./ProfileHeader";
 import { AddProfileAction } from "./AddProfileAction";
 
-// Brand glyph shipped IN the plugin (plugins/linkedin/ui/icon.svg) and served by
-// the backend from the plugin store — no external hosting (plugin-icon-standard).
-// Rendered as a CSS mask filled with currentColor: rail icons are ALWAYS
-// monochrome and must follow the rail's active/hover text color like lucide.
-const ICON_URL = "/api/plugins/linkedin/ui/icon.svg";
+// Brand glyph shipped IN the plugin (plugins/linkedin/icon.svg, package root)
+// and served by the backend from the plugin store — no external hosting
+// (plugin-icon-standard). Rendered as a CSS mask filled with currentColor:
+// rail icons are ALWAYS monochrome and must follow the rail's active/hover
+// text color like lucide.
+const ICON_URL = "/api/plugins/linkedin/icon.svg";
 
 function LinkedInIcon(): JSX.Element {
   return (

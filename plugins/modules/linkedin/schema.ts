@@ -1,7 +1,6 @@
 // LinkedIn plugin — schema-id / facet-id / link-kind constants. Deduped between
 // `module/service.ts` and the module tests (one spelling of each namespace
-// string). The manifest is the source of truth for REGISTRATION (lifecycle uses
-// registerManifestSchemas()); these consts are for read/write/ingest call sites.
+// string). The schemas/ files are the source of truth for REGISTRATION (registered natively at install); these consts are for read/write/ingest call sites.
 
 /** Profile entity + its identity facet. */
 export const PROFILE = "linkedin.profile";

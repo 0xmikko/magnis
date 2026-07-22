@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "mappings": [
+    {
+      "path": "email",
+      "canonical": "companies.emails",
+      "strategy": "collection"
+    }
+  ],
+  "type": "object",
+  "required": [
+    "email"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "email": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string"
+    },
+    "is_primary": {
+      "type": "boolean"
+    }
+  }
+}

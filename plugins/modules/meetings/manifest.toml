@@ -7,208 +7,27 @@
 
 id = "meetings"
 version = "0.1.0"
-
 # SDK contract version this manifest targets (host accepts 0.x).
 magnis_api_version = "0.1.0"
+title = "Meetings"
+summary = "Schedule, track, and recap meetings across calendars."
+# Reverse-domain publisher identity.
+publisher = "ai.magnis"
 
+# Sync surface this module consumes (fed by the matching source connector).
+[ingests.meetings]
+# The surface's primary-item schema — its user-scoped graph count IS the
+# "items synced" badge (host source.status.list reads this).
+item = "meetings.calendar_event"
 
-# Graph schemas this module owns: entities, their versioned facets (each with a
-# json_schema + canonical `mappings` that feed derived-truth resolution), and links.
-[schemas]
-links = []
-
-[[schemas.entities]]
-id = "meetings.calendar_event"
-name = "Calendar event"
-description = "A calendar event / meeting entity owned by the meetings plugin."
-triggerable = true
-
-[[schemas.entities]]
-id = "meetings.event"
-name = "Event"
-description = "A general event entity owned by the meetings plugin."
-
-[[schemas.facets]]
-id = "meetings.calendar_event.details"
-entity_schema = "meetings.calendar_event"
-version = 1
-
-[schemas.facets.json_schema]
-type = "object"
-additionalProperties = true
-
-[schemas.facets.json_schema.properties.title]
-type = [ "string", "null" ]
-
-[schemas.facets.json_schema.properties.starts_at]
-type = [ "string", "null" ]
-format = "date-time"
-
-[schemas.facets.json_schema.properties.ends_at]
-type = [ "string", "null" ]
-format = "date-time"
-
-[schemas.facets.json_schema.properties.location]
-type = [ "string", "null" ]
-
-[schemas.facets.json_schema.properties.description]
-type = [ "string", "null" ]
-
-[schemas.facets.json_schema.properties.status]
-type = [ "string", "null" ]
-
-[schemas.facets.json_schema.properties.attendees]
-[schemas.facets.json_schema.properties.all_day]
-type = "boolean"
-
-[schemas.facets.json_schema.properties.google_event_id]
-type = [ "string", "null" ]
-
-[schemas.facets.json_schema.properties.hangout_link]
-type = [ "string", "null" ]
-
-[schemas.facets.json_schema.properties.calendar_id]
-type = [ "string", "null" ]
-
-[schemas.facets.json_schema.properties.conference_link]
-type = [ "string", "null" ]
-
-[[schemas.facets.mappings]]
-facet_path = "title"
-canonical_key = "calendar_event.title"
-strategy = "single_aligned"
-
-[[schemas.facets.mappings]]
-facet_path = "starts_at"
-canonical_key = "calendar_event.starts_at"
-strategy = "single_aligned"
-
-[[schemas.facets.mappings]]
-facet_path = "ends_at"
-canonical_key = "calendar_event.ends_at"
-strategy = "single_aligned"
-
-[[schemas.facets.mappings]]
-facet_path = "location"
-canonical_key = "calendar_event.location"
-strategy = "single_aligned"
-
-[[schemas.facets.mappings]]
-facet_path = "description"
-canonical_key = "calendar_event.description"
-strategy = "single_aligned"
-
-[[schemas.facets.mappings]]
-facet_path = "attendees"
-canonical_key = "calendar_event.attendees"
-strategy = "single_aligned"
-
-[[schemas.facets.mappings]]
-facet_path = "status"
-canonical_key = "calendar_event.status"
-strategy = "single_aligned"
-
-[[schemas.facets]]
-id = "meetings.event.details"
-entity_schema = "meetings.event"
-version = 1
-
-[schemas.facets.json_schema]
-type = "object"
-required = [ "title", "starts_at" ]
-additionalProperties = true
-
-[schemas.facets.json_schema.properties.title]
-type = "string"
-
-[schemas.facets.json_schema.properties.description]
-type = [ "string", "null" ]
-
-[schemas.facets.json_schema.properties.starts_at]
-type = "string"
-format = "date-time"
-
-[schemas.facets.json_schema.properties.ends_at]
-type = [ "string", "null" ]
-format = "date-time"
-
-[schemas.facets.json_schema.properties.location]
-type = [ "string", "null" ]
-
-[schemas.facets.json_schema.properties.status]
-type = [ "string", "null" ]
-
-[schemas.facets.json_schema.properties.all_day]
-type = "boolean"
-
-[[schemas.facets.mappings]]
-facet_path = "title"
-canonical_key = "event.title"
-strategy = "single_aligned"
-
-[[schemas.facets.mappings]]
-facet_path = "starts_at"
-canonical_key = "event.starts_at"
-strategy = "single_aligned"
-
-[[schemas.facets.mappings]]
-facet_path = "ends_at"
-canonical_key = "event.ends_at"
-strategy = "single_aligned"
-
-[[schemas.facets.mappings]]
-facet_path = "location"
-canonical_key = "event.location"
-strategy = "single_aligned"
-
-[[schemas.facets.mappings]]
-facet_path = "status"
-canonical_key = "event.status"
-strategy = "single_aligned"
-
-# Least-privilege grants the host enforces at runtime: facet prefixes / link kinds
-# this module may WRITE, schemas it may READ, events it emits, schemas it may merge
-# canonically — plus any cross-module rpc_calls, privileged op_grants, and foreign
-# creates_schemas listed below.
-[capabilities]
-facet_write_prefixes = [ "meetings." ]
-link_kinds_writable = []
-reads_schemas = [ "meetings.", "contacts.person" ]
-events_emitted = []
-can_merge_schemas = [ "meetings.calendar_event" ]
-rpc_calls = [ "email.ensure_address" ]
-op_grants = [ "external_id_reads", "sync_state" ]
-
-# Callable surface: `rpc_handlers` = intra-host RPC; `tools` = the agent-facing
-# subset; `sync_handlers` = source-sync surfaces this module ingests.
-[surfaces]
-sync_handlers = [ "meetings" ]
-
-# Per-sync-surface primary-item schema: the entity whose user-scoped graph count
-# IS the surface's "items synced" badge (host source.status.list reads this).
-[surfaces.sync_item_schemas]
-meetings = "meetings.calendar_event"
-
-# Entrypoints inside the package: the V8 module bundle + the React UI surface.
-[entry]
-module = "module/index.ts"
-ui = "index.tsx"
+# Foreign asks beyond the implicit own namespace: writes to `meetings.` facets,
+# own:own links, and reads of own schemas need no declaration.
+[permissions]
+read = [ "contacts.person" ]
+call = [ "email.ensure_address" ]
+host = [ "external_id_reads", "sync_state" ]
 
 # Extra bare import specifiers the UI bundle may reference beyond the host-shim
 # defaults — rewritten to host-shim URLs at build/transpile time.
 [ui]
 extra_bare_imports = [ "zustand", "zustand/vanilla" ]
-
-# Self-reporting catalog card (title/summary/publisher/icon + markdown details).
-[presentation]
-title = "Meetings"
-summary = "Schedule, track, and recap meetings across calendars."
-publisher = "Magnis"
-publisher_url = "https://magnis.ai"
-details = "# Meetings\n\nEvery calendar event becomes a first-class entity with attendees,\nnotes, and linked projects. Meetings aggregates across providers and\nis the canonical home for your time.\n"
-icon_url = "/api/plugins/meetings/ui/icon.svg"
-
-# Declared install entrypoint (DEC-L4): runs once in a transient isolate at install
-# time to register schemas. A module without it is NOT installable.
-[lifecycle]
-install = "lifecycle/install.ts"

@@ -11,176 +11,18 @@ id = "linkedin"
 version = "0.1.0"
 # SDK contract version this manifest targets (host accepts 0.x).
 magnis_api_version = "0.1.0"
-# Foreign (non-owned) schemas referenced by facets — none; the profile→person
-# relationship is a link kind + RPC, not a facet on `contacts.person`.
-requires_schemas = []
-
-# Graph schemas: profile + post entities (post is `triggerable` — its events can
-# drive triggers) plus versioned facets. The `platform` enum ("x"/"linkedin") on
-# the facets means the shape is shared with the sibling X module.
-[schemas]
-links = []
-
-[[schemas.entities]]
-id = "linkedin.profile"
-name = "Linkedin profile"
-description = "A tracked person's profile on a linkedin platform (X / LinkedIn)."
-
-[[schemas.entities]]
-id = "linkedin.post"
-name = "Linkedin post"
-description = "A post/tweet from a tracked linkedin profile."
-triggerable = true
-
-[[schemas.facets]]
-id = "linkedin.profile.identity"
-entity_schema = "linkedin.profile"
-version = 1
-
-[schemas.facets.json_schema]
-type = "object"
-required = [ "platform", "handle" ]
-additionalProperties = true
-
-[schemas.facets.json_schema.properties.platform]
-type = "string"
-enum = [ "x", "linkedin" ]
-
-[schemas.facets.json_schema.properties.handle]
-type = "string"
-
-[schemas.facets.json_schema.properties.display_name]
-type = "string"
-
-[schemas.facets.json_schema.properties.url]
-type = [ "string", "null" ]
-
-[schemas.facets.json_schema.properties.avatar_url]
-type = [ "string", "null" ]
-
-[schemas.facets.json_schema.properties.bio]
-type = [ "string", "null" ]
-
-[schemas.facets.json_schema.properties.verified]
-type = [ "boolean", "null" ]
-
-[schemas.facets.json_schema.properties.follower_count]
-type = [ "integer", "null" ]
-
-[[schemas.facets.mappings]]
-facet_path = "display_name"
-canonical_key = "linkedin.profile.display_name"
-strategy = "single_aligned"
-
-[[schemas.facets.mappings]]
-facet_path = "follower_count"
-canonical_key = "linkedin.profile.follower_count"
-strategy = "single_aligned"
-
-[[schemas.facets]]
-id = "linkedin.post.content"
-entity_schema = "linkedin.post"
-version = 1
-
-[schemas.facets.json_schema]
-type = "object"
-required = [ "platform", "post_id", "author_handle", "text" ]
-additionalProperties = true
-
-[schemas.facets.json_schema.properties.platform]
-type = "string"
-enum = [ "x", "linkedin" ]
-
-[schemas.facets.json_schema.properties.post_id]
-type = "string"
-
-[schemas.facets.json_schema.properties.author_handle]
-type = "string"
-
-[schemas.facets.json_schema.properties.text]
-type = "string"
-
-[schemas.facets.json_schema.properties.created_at]
-type = [ "string", "null" ]
-format = "date-time"
-
-[schemas.facets.json_schema.properties.url]
-type = [ "string", "null" ]
-
-[schemas.facets.json_schema.properties.is_reply]
-type = [ "boolean", "null" ]
-
-[schemas.facets.json_schema.properties.is_repost]
-type = [ "boolean", "null" ]
-
-[schemas.facets.json_schema.properties.lang]
-type = [ "string", "null" ]
-
-[[schemas.facets.mappings]]
-facet_path = "text"
-canonical_key = "linkedin.post.text"
-strategy = "single_aligned"
-
-[[schemas.facets.mappings]]
-facet_path = "created_at"
-canonical_key = "linkedin.post.created_at"
-strategy = "single_aligned"
-
-[[schemas.facets]]
-id = "linkedin.post.metrics"
-entity_schema = "linkedin.post"
-version = 1
-mappings = []
-
-[schemas.facets.json_schema]
-type = "object"
-required = []
-additionalProperties = true
-
-[schemas.facets.json_schema.properties.likes]
-type = [ "integer", "null" ]
-
-[schemas.facets.json_schema.properties.reposts]
-type = [ "integer", "null" ]
-
-[schemas.facets.json_schema.properties.replies]
-type = [ "integer", "null" ]
-
-[schemas.facets.json_schema.properties.impressions]
-type = [ "integer", "null" ]
-
-# Least-privilege grants: facet prefixes it may write; `<from>:<to>` link kinds
-# it may create (post→profile, profile→contact); schemas it may read; canonical
-# merges; cross-module RPCs into contacts (social-tracking lookup / placeholder
-# rename); privileged host ops (sync state, external-id reads).
-[capabilities]
-facet_write_prefixes = [ "linkedin." ]
-link_kinds_writable = [ "linkedin.post:linkedin.profile", "linkedin.profile:contacts.person" ]
-reads_schemas = [ "linkedin.", "contacts.person" ]
-events_emitted = []
-can_merge_schemas = [ "linkedin.profile", "linkedin.post" ]
-creates_schemas = []
-rpc_calls = [ "contacts.get_social_tracking_by_handle", "contacts.rename_if_placeholder", "contacts.list_social_tracking" ]
-op_grants = [ "sync_state", "external_id_reads" ]
-
-# Callable surface: `rpc_handlers` = intra-host RPC; `tools` = agent-facing
-# subset; `sync_handlers` = the source-sync surface this module ingests.
-[surfaces]
-sync_handlers = [ "linkedin" ]
-
-# Entrypoints inside the package: V8 module bundle + React UI surface.
-[entry]
-module = "module/index.ts"
-ui = "index.tsx"
-
-# Self-reporting catalog card (title/summary/publisher/icon + markdown details).
-[presentation]
 title = "LinkedIn"
 summary = "LinkedIn profiles and posts of the people you track, linked to contacts."
-publisher = "Magnis"
-publisher_url = "https://magnis.ai"
-details = "# LinkedIn\n\nStores the LinkedIn profiles and posts ingested by the LinkedIn source and links\neach profile to the matching contact. Read-only today (a messaging path can be\nadded later, like Telegram). Displays only what the source fetches for the\nhandles you track.\n"
-icon_url = "/api/plugins/linkedin/ui/icon.svg"
+# Reverse-domain publisher identity.
+publisher = "ai.magnis"
 
-[lifecycle]
-install = "lifecycle/install.ts"
+# Sync surface this module consumes (fed by the matching source connector).
+[ingests.linkedin]
+
+# Foreign asks beyond the implicit own namespace: writes to `linkedin.` facets,
+# own:own links, and reads of own schemas need no declaration.
+[permissions]
+read = [ "contacts.person" ]
+links = [ "linkedin.profile:contacts.person" ]
+call = [ "contacts.get_social_tracking_by_handle", "contacts.rename_if_placeholder", "contacts.list_social_tracking" ]
+host = [ "sync_state", "external_id_reads" ]

@@ -38,16 +38,19 @@ methods into a handler table, and routes calls to them.
 
 ```
 <module>/
-  manifest.toml          # the declared contract: schemas, capabilities, surfaces, entry
+  manifest.toml          # the package card: identity + [ingests] + [permissions]
+  README.md              # catalog description (markdown detail page)
+  icon.svg               # catalog icon at the package ROOT (svg or png)
+  schemas/               # graph model, one JSON file per entity/facet (see §7)
   types.ts               # wire DTOs + the two schema-map interfaces (Facets, Canonical)
   schema.ts              # schema-id string constants for read/write call sites
   module/                # the backend part (V8 isolate)
-    index.ts             # definePlugin(TheClass) — nothing else
+    index.ts             # definePlugin(TheClass) — nothing else (the entry, by convention)
     service.ts           # the class ONLY — no constants, no free functions
     helpers.ts           # free functions the service uses
     __tests__/           # whole-module tests on @magnis/testkit/module
-  ui/                    # the frontend part (React) — optional
-  lifecycle/             # ONLY if the module ships a migration (see §7)
+  ui/                    # the frontend part (React) — optional; ui/index.tsx = the entry
+  migrations/            # ONLY if the module ships a real data migration (see §7)
   package.json
   tsconfig.json          # MUST set experimentalDecorators: true
 ```
@@ -107,9 +110,9 @@ rpc }`:
 - **`util`** — `uuid_v5(namespace, name)`, a deterministic UUIDv5 byte-equal to
   the Rust side, for deriving ids that match native handlers.
 - **`rpc`** — `execute<T>(method, params?)`, cross-module RPC over the host
-  router. Allowed targets are declared in the manifest
-  `capabilities.rpc_calls`. (LinkedIn uses it to call
-  `contacts.get_social_tracking_by_handle`, etc.)
+  router. Allowed targets are declared in the manifest `[permissions]` `call`
+  list. (LinkedIn uses it to call `contacts.get_social_tracking_by_handle`,
+  etc.)
 - **`graph: GraphService<Facets, Canonical>`** — the graph API, below.
 
 **The graph API** (payload types derived from the schema-id you pass):
@@ -161,9 +164,9 @@ create path should accept a `client_id` (UUID) and return the existing entity if
 it already exists; for batch rows derive per-row ids with
 `util.uuid_v5(batch_client_id, "<method>:<i>")` so a retried batch reuses ids.
 Every write is stamped with provenance (the owning module + source) for you —
-never fake it. And because every write is capability-checked with **no silent
+never fake it. And because every write is permission-checked with **no silent
 skip**, a write that "does nothing" almost always means a missing grant in
-`[capabilities]`, surfaced as a thrown error.
+`[permissions]`, surfaced as a thrown error.
 
 ---
 
@@ -196,20 +199,22 @@ async create(params: CreateParams): Promise<ContactCreated> {
 }
 ```
 
-Two manifest grants make this legal, both least-privilege:
+Two manifest grants make this legal, both least-privilege (own:own links and
+own-namespace writes never need declaring — `[permissions]` lists only the
+foreign asks):
 
 ```toml
-[capabilities]
-rpc_calls = ["email.ensure_address"]   # EXACT methods you may call — no wildcards
-link_kinds_writable = ["has_email"]     # link kinds you may create
+[permissions]
+call  = ["email.ensure_address"]   # EXACT methods you may call — no wildcards
+links = ["has_email"]              # foreign-touching link kinds you may create
 ```
 
-`rpc_calls` lists **exact** fully-qualified methods: you may call
+`call` lists **exact** fully-qualified methods: you may call
 `email.ensure_address` and nothing else. A call to an undeclared method is
-refused, and `add_link` with an ungranted kind is refused — there is **no silent
-skip**, so a missing grant surfaces as a thrown error, never a no-op. The call
-runs as the same user, so the target module is user-scoped exactly as your own
-reads are.
+refused, and `add_link` with an ungranted foreign kind is refused — there is
+**no silent skip**, so a missing grant surfaces as a thrown error, never a
+no-op. The call runs as the same user, so the target module is user-scoped
+exactly as your own reads are.
 
 **The callee side.** To let other modules call into yours, expose a plain
 `@rpc` method (§5) — off the agent surface — that is **idempotent** (callers
@@ -218,32 +223,33 @@ is find-or-create: same address in, same entity id out.
 
 ---
 
-## 7. Schemas — three separate concerns
+## 7. Schemas — two separate concerns
 
-Owning an entity/facet involves three things that are easy to conflate:
+Owning an entity/facet involves two things that are easy to conflate:
 
 1. **`schema.ts` constants** are *only* the deduped spelling of each namespace
    string for read/write call sites — e.g.
    `export const COMPANY = "companies.company"`. They are **not** the
    registration source.
-2. **Manifest `[schemas]`** is the source of truth: `[[schemas.entities]]`,
-   `[[schemas.facets]]` (each with `id`, `entity_schema`, `version`, a
-   `json_schema`, and canonical `mappings` tying a `facet_path` to a
-   `canonical_key` with a `strategy`), and `links`. Every declared id MUST
-   live inside the module's namespace — `<id>.…` — which the host derives
-   from the manifest `id` (there is no `owns` field to write).
-3. **Lifecycle registration** actually registers them. The default —
-   `registerManifestSchemas()` — registers exactly what the manifest declares.
-   It is a restatement of the manifest, so the **default carries no `lifecycle/`
-   folder**; the host synthesizes it.
+2. **The `schemas/` directory** is the source of truth, discovered by
+   convention. `<entity>.json` is an entity descriptor (`name`,
+   `description`, optional `triggerable` / `mergeable` traits);
+   `<entity>.<facet>.json` is a facet contract (`version`, canonical
+   `mappings` tying a `path` to a `canonical` key with a `strategy`, and the
+   JSON Schema shape flattened at top level). A facet file always has
+   `"version"`; an entity file never does. The schema id is derived from the
+   filename inside the module's namespace `<id>.…`; legacy ids override with
+   `"id"`, foreign-entity facets with `"entity"` (full rules in
+   [manifest.md](./manifest.md)).
 
-A `lifecycle/` folder appears **only** when the module needs real work: a
-**partial registration** (`ctx.register({ facets: [...] })`) or a **data
-migration** (`defineMigration` — transform rows already in the graph on a
-version bump). Neither is common; most modules have no lifecycle folder.
+Installing the module registers the `schemas/` files **natively** — there is
+no install hook to write. A `migrations/` folder (plus `[[migrations]]` in the
+manifest) appears **only** when the module needs a real **data migration**
+(`defineMigration` — transform rows already in the graph on a version bump).
+That is rare; most modules have no migrations folder.
 
-To own a facet you: declare it in `[schemas]` under the `<id>.…` namespace,
-grant `capabilities.facet_write_prefixes`, and (if custom) register via the hook.
+To own a facet you simply add its `schemas/` file — writes to your own
+namespace are implicitly granted; only foreign asks go in `[permissions]`.
 
 ---
 
@@ -282,7 +288,7 @@ sync handler decides how they land in the graph it owns.
 
 ## 10. UI — connecting the frontend to your module
 
-The UI entry (`[entry] ui = "index.tsx"`) calls `defineModule(config)`, declaring
+The UI entry (`ui/index.tsx`, by convention) calls `defineModule(config)`, declaring
 your module's identity and the component slots the host mounts:
 
 ```tsx
@@ -345,9 +351,9 @@ Tailwind utility classes used directly in a plugin `.tsx` are picked up by the
 host's build; if a brand-new plugin lays out fine but renders flat/unstyled,
 that scan (or a stale dev server) is the first thing to suspect.
 
-`build:plugins` bundles the UI; the module isolate is bundled separately. Folder
-layout is invisible to both as long as the manifest `[entry]` values stay put —
-see the commands in [README.md](./README.md).
+`build:plugins` bundles the UI; the module isolate is bundled separately. Both
+resolve their entries by convention (`ui/index.tsx`, `module/index.ts`) — see
+the commands in [README.md](./README.md).
 
 ---
 
@@ -381,10 +387,10 @@ A module is done only when all hold:
 - [ ] `service.ts` is the class only — no constants, no free functions.
 - [ ] `schema.ts` + `types.ts` are loose root files; no single-file folders.
 - [ ] `module/index.ts` is `definePlugin(...)` and nothing else.
-- [ ] No `lifecycle/` folder unless it carries a real migration/partial
-      registration.
-- [ ] Every entity/facet is declared in `[schemas]` under the `<id>.…`
-      namespace and write-granted in `[capabilities]`.
+- [ ] No `migrations/` folder unless it carries a real data migration.
+- [ ] Every entity/facet has its `schemas/` file under the `<id>.…` namespace
+      (entity file: no `version`; facet file: has `version`), and every
+      FOREIGN ask is declared in `[permissions]`.
 - [ ] List handlers read the intended value (canonical vs latest facet,
       deliberately) and use batch reads — no per-row N+1.
 - [ ] Whole-module tests in `module/__tests__/` on `@magnis/testkit/module`,

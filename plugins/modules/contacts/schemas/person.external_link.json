@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "type": "object",
+  "required": [
+    "source_type",
+    "external_id"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "source_type": {
+      "type": "string"
+    },
+    "external_id": {
+      "type": "string"
+    },
+    "external_url": {
+      "type": "string"
+    },
+    "external_name": {
+      "type": "string"
+    }
+  }
+}

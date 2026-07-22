@@ -1,8 +1,11 @@
 // tst_build_plugin_new_001 — the scaffolder produces a skeleton that satisfies
-// the extension contracts: folder == manifest.id (INV-11), manifest declares
-// schemas within the id-derived namespace, a module/__tests__ unit
-// test exists (the testbar bar, DEC-14/INV-5), and the standard files are
-// present. Smoke-level: structure + manifest shape, not a full build.
+// the extension contracts (manifest v3): folder == manifest.id (INV-11), the
+// manifest is a package card (identity, no [schemas]/[capabilities]/[surfaces]/
+// [entry]/[lifecycle]/[presentation]), the graph model lives in schemas/ by
+// convention (entity file has NO "version"; facet file ALWAYS has one),
+// README.md is the catalog description, and a module/__tests__ unit test exists
+// (the test bar, DEC-14/INV-5). Smoke-level: structure + manifest shape, not a
+// full build.
 import { test, expect } from "bun:test";
 import { existsSync, readFileSync, readdirSync, rmSync } from "fs";
 import { join } from "path";
@@ -11,16 +14,19 @@ import { parse as tomlParse } from "smol-toml";
 
 import { scaffoldPlugin } from "./plugin-new.ts";
 
-test("tst_build_plugin_new_001: scaffold produces a contract-satisfying skeleton", () => {
+test("tst_build_plugin_new_001: scaffold produces a contract-satisfying v3 skeleton", () => {
   const out = join(tmpdir(), `plugin-new-test-${process.pid}`);
   rmSync(out, { recursive: true, force: true });
 
   const dir = scaffoldPlugin("acme_crm", out);
   expect(dir).toBe(join(out, "modules", "acme_crm"));
 
-  // Standard layout present.
+  // Standard layout present (manifest v3 package).
   for (const f of [
     "manifest.toml",
+    "README.md",
+    "schemas/item.json",
+    "schemas/item.details.json",
     "module/index.ts",
     "module/service.ts",
     "module/__tests__/acme_crmRead.test.ts",
@@ -32,24 +38,50 @@ test("tst_build_plugin_new_001: scaffold produces a contract-satisfying skeleton
     expect(existsSync(join(dir, f))).toBe(true);
   }
 
-  // Manifest contract: folder == id (INV-11); namespace discipline.
-  const manifest = tomlParse(readFileSync(join(dir, "manifest.toml"), "utf8")) as unknown as {
-    id: string;
-    tier: string;
-    schemas: { entities: { id: string }[]; facets: { id: string; entity_schema: string }[] };
-  };
+  // Manifest contract: folder == id (INV-11); v3 = identity + permissions only.
+  const manifest = tomlParse(readFileSync(join(dir, "manifest.toml"), "utf8")) as unknown as Record<
+    string,
+    unknown
+  >;
   expect(manifest.id).toBe("acme_crm");
   expect(manifest.tier).toBe("community");
-  // Namespace discipline: every schema lives under the id-derived namespace.
-  // (`owns`, `rpc_handlers`, `tools` are gone — the namespace comes from the
-  // id, methods route by prefix, tools are harvested from code.)
-  expect("owns" in manifest).toBe(false);
-  for (const e of manifest.schemas.entities) {
-    expect(e.id.startsWith("acme_crm.")).toBe(true);
+  expect(typeof manifest.title).toBe("string");
+  expect(typeof manifest.summary).toBe("string");
+  expect(typeof manifest.publisher).toBe("string");
+  // Dead v2 tables must NOT be emitted — schemas/ + convention replaced them.
+  for (const dead of [
+    "owns",
+    "schemas",
+    "capabilities",
+    "surfaces",
+    "entry",
+    "lifecycle",
+    "presentation",
+    "requires_schemas",
+  ]) {
+    expect(dead in manifest).toBe(false);
   }
-  for (const f of manifest.schemas.facets) {
-    expect(f.id.startsWith("acme_crm.")).toBe(true);
-  }
+
+  // schemas/ discrimination rule: an entity file NEVER has "version"; a facet
+  // file ALWAYS does.
+  const entity = JSON.parse(readFileSync(join(dir, "schemas", "item.json"), "utf8")) as Record<
+    string,
+    unknown
+  >;
+  expect("version" in entity).toBe(false);
+  expect(typeof entity.name).toBe("string");
+  expect(typeof entity.description).toBe("string");
+  const facet = JSON.parse(
+    readFileSync(join(dir, "schemas", "item.details.json"), "utf8"),
+  ) as Record<string, unknown>;
+  expect(facet.version).toBe(1);
+  expect(facet.type).toBe("object");
+
+  // README.md is real markdown (the catalog detail page).
+  expect(readFileSync(join(dir, "README.md"), "utf8").startsWith("# ")).toBe(true);
+
+  // No lifecycle/ folder — install is native schema registration (v3).
+  expect(existsSync(join(dir, "lifecycle"))).toBe(false);
 
   // The module unit test (testbar requirement) is a real .ts test file.
   const tests = readdirSync(join(dir, "module", "__tests__"));

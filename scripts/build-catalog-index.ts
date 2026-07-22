@@ -4,7 +4,8 @@
 //   catalog/packages/<kind>/<id>/**    the installable payload (files listed
 //                                      in the index with per-file sha256)
 // Payloads are DEPENDENCY-CLOSED:
-//   module        → plugins_dist/modules/<id> (prebuilt bundle) + lifecycle/ sources + manifest.toml
+//   module        → plugins_dist/modules/<id> (prebuilt bundle + manifest.toml +
+//                   schemas/ + README.md + icon — manifest v3 package)
 //   source (ts)   → dist/main.js (bun build, SDK inlined) + manifest.toml
 //   source (rust) → manifest.toml only in v1 (binary ships with the app — DEC-7;
 //                   Stage-4 adds per-platform release binaries)
@@ -55,7 +56,7 @@ rmSync(OUT, { recursive: true, force: true });
 mkdirSync(join(OUT, "packages"), { recursive: true });
 const packages: Entry[] = [];
 
-// ── modules: prebuilt dist + lifecycle sources ────────────────────────────────
+// ── modules: prebuilt dist (self-contained manifest v3 packages) ─────────────
 const distModules = join(ROOT, "plugins_dist", "modules");
 if (!existsSync(distModules)) {
   console.error("plugins_dist missing — run `bun scripts/build-plugins.ts` first");
@@ -63,20 +64,22 @@ if (!existsSync(distModules)) {
 }
 for (const id of readdirSync(distModules).sort()) {
   const src = join(ROOT, "plugins", "modules", id);
+  // Manifest v3: the catalog card (title/summary/publisher) lives top-level.
   const manifest = parseToml(readFileSync(join(src, "manifest.toml"), "utf8")) as {
     version: string;
     dev?: boolean;
-    presentation?: { title?: string; summary?: string; publisher?: string };
+    title?: string;
+    summary?: string;
+    publisher?: string;
   };
   const files = stagePackage("module", id, (dst) => {
     cpSync(join(distModules, id), dst, { recursive: true });
-    if (existsSync(join(src, "lifecycle"))) cpSync(join(src, "lifecycle"), join(dst, "lifecycle"), { recursive: true });
   });
   packages.push({
     kind: "module", id, version: manifest.version,
-    title: manifest.presentation?.title ?? id,
-    summary: manifest.presentation?.summary ?? "",
-    publisher: manifest.presentation?.publisher ?? "",
+    title: manifest.title ?? id,
+    summary: manifest.summary ?? "",
+    publisher: manifest.publisher ?? "",
     dev: manifest.dev === true,
     files,
   });

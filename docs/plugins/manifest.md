@@ -12,17 +12,30 @@ comments, so every non-obvious field can explain itself in place. Remember TOML'
 one ordering rule: all bare top-level keys (`id`, `version`, …) must come
 **before** any `[table]`.
 
-This reference is split by kind — [module manifest](#module-manifest) first,
-then [source manifest](#source-manifest), then the [presentation](#presentation-both-kinds) block both share. For how a module is built around this manifest see
-[module.md](./module.md); for a source, [source.md](./source.md).
+This reference is split by kind — [module manifest](#module-manifest-v3) first,
+then [source manifest](#source-manifest). For how a module is built around this
+manifest see [module.md](./module.md); for a source, [source.md](./source.md).
 
 ---
 
-## Module manifest
+## Module manifest (v3)
 
-A module manifest declares the graph schemas the module owns, its capabilities,
-its callable surface, and its entry points. Example fields below are the real
-`companies` / `contacts` manifests.
+A module manifest is a **package card**: identity, the sync surfaces it
+ingests, and its foreign permission asks. Everything else is discovered by
+convention inside the package:
+
+```
+plugins/modules/<id>/
+  manifest.toml    identity + [ingests] + [permissions]
+  README.md        catalog description (markdown detail page)
+  icon.svg|png     catalog icon, at the package ROOT
+  schemas/         graph model, convention-discovered (see below)
+  module/index.ts  the module code the host loads (convention)
+  ui/index.tsx     the UI the frontend fetches (convention; presence = has UI)
+  migrations/      ONLY when real data migrations exist
+```
+
+Example fields below are the real `companies` / `contacts` manifests.
 
 ### Top level
 
@@ -30,63 +43,68 @@ its callable surface, and its entry points. Example fields below are the real
 id = "companies"                 # plugin id == RPC prefix == route key == namespace
 version = "0.1.0"
 magnis_api_version = "0.1.0"     # host SDK contract this manifest targets
-requires_schemas = []            # optional: schemas OWNED by other modules that
-                                 # this one reads/links (informational + ordering)
+title = "Companies"              # catalog card
+summary = "Track companies you interact with across email, meetings, and notes."
+publisher = "ai.magnis"          # reverse-domain publisher identity
 ```
 
-### `[schemas]` — the data model the module owns
+`tier = "system"` (optional) marks a mandatory, always-loaded module that
+cannot be uninstalled or disabled (`triggers` is the only one).
 
-Entities, their versioned facets (each a JSON Schema plus canonical `mappings`),
-and link kinds:
+### `schemas/` — the data model the module owns
 
-```toml
-[schemas]
-links = []                       # link kinds this module defines (see below)
+The graph model lives in per-schema JSON files under `schemas/`, discovered by
+convention — **not** in the manifest:
 
-[[schemas.entities]]
-id = "companies.company"
-name = "Company"
-description = "A company / organisation entity owned by the companies plugin."
+- `<entity>.json` — an **entity descriptor**: `name`, `description`, plus the
+  optional traits `"triggerable": true` (its events may drive triggers) and
+  `"mergeable": true` (canonical merge allowed).
+- `<entity>.<facet>.json` — a **facet contract**: `version`, optional
+  `mappings`, and the JSON Schema shape (`type` / `required` / `properties` /
+  `additionalProperties`) flattened at the top level. The facet's schema id is
+  derived from the filename: `schemas/company.details.json` in `companies` →
+  `companies.company.details`.
 
-[[schemas.facets]]
-id = "companies.company.details"   # facet schema id (dotted, under an owned prefix)
-entity_schema = "companies.company"  # which entity it attaches to
-version = 1
+The discrimination rule: a facet file **always** has `"version"`; an entity
+file **never** does. Two overrides exist for grandfathered ids:
 
-[schemas.facets.json_schema]
-type = "object"
-additionalProperties = true
-# each property nests as [schemas.facets.json_schema.properties.<field>]
+- `"id"` — a legacy facet id that doesn't nest as
+  `<plugin>.<entity>.<facet>` (e.g. `contacts.memory` lives in
+  `schemas/person.memory.json` with `"id": "contacts.memory"`).
+- `"entity"` — a facet attached to a FOREIGN entity (e.g. telegram's
+  `schemas/contact.json` carries `"entity": "contacts.person"`).
 
-[schemas.facets.json_schema.properties.name]
-type = "string"
+```jsonc
+// schemas/company.json — entity descriptor
+{ "name": "Company", "description": "A company / organisation entity…", "mergeable": true }
 
-[schemas.facets.json_schema.properties.headcount]
-type = "integer"
+// schemas/company.details.json — facet contract
+{
+  "version": 1,
+  "mappings": [
+    { "path": "name", "canonical": "companies.name", "strategy": "single_aligned" }
+  ],
+  "type": "object",
+  "additionalProperties": true,
+  "properties": { "name": { "type": "string" }, "headcount": { "type": "integer" } }
+}
 ```
 
-A link kind (from `contacts`, which links people to their email entities):
-
-```toml
-[[schemas.links]]
-kind = "has_email"
-from = "contacts.person"
-to   = "email.address"
-```
+Installing a module registers these schemas natively — there is no install
+hook to write.
 
 #### Canonical mappings
 
 A facet's `mappings` array declares how its fields project into **canonical
 properties** — the derived truth merged across every source that ever wrote the
 field. This is what lets `graph.get_canonical(...)` return a single merged value.
-Mappings travel in the manifest; the host reads them, and the generic core
+Mappings travel in the schema file; the host reads them, and the generic core
 defines no domain mappings of its own.
 
-```toml
-[[schemas.facets.mappings]]
-facet_path    = "name"             # dotted path into the facet data
-canonical_key = "companies.name"   # the canonical property it feeds
-strategy      = "single_aligned"   # how conflicting values merge
+```jsonc
+{ "path": "name",                  // dotted path into the facet data
+  "canonical": "companies.name",   // the canonical property it feeds
+  "strategy": "single_aligned" }   // how conflicting values merge
 ```
 
 | `strategy` | Merge behaviour | Use for |
@@ -101,68 +119,55 @@ strategy      = "single_aligned"   # how conflicting values merge
 > the singular. Choose the strategy deliberately; the read side depends on it
 > (see [module.md](./module.md) §8, canonical vs facet).
 
-### `[capabilities]` — the security boundary
+### `[permissions]` — the security boundary
 
-The host checks every capability on every op. **All arrays default to empty
-(deny)** — grant only what the module needs.
+**Own-namespace rights are implicit**: writes to `<id>.` facets, own:own
+links, and reads of own schemas need no declaration. `[permissions]` lists
+ONLY the foreign asks; omit the whole section when there are none. Every
+undeclared foreign op is denied.
 
 ```toml
-[capabilities]
-facet_write_prefixes = ["companies."]              # facets it may write
-link_kinds_writable  = []                          # link kinds it may create
-reads_schemas        = ["companies.", "contacts.person"]  # OTHER schemas it may read
-events_emitted       = []                          # event kinds it may emit
-can_merge_schemas    = ["companies.company"]       # entity schemas it may merge
-# rpc_calls          = ["email.ensure_address"]    # EXACT cross-module methods it may call
+[permissions]
+read  = ["contacts.person"]          # foreign schemas it may read
+create = []                          # foreign entities it may create
+links = ["has_email"]                # foreign-touching link kinds it may create
+call  = ["email.ensure_address"]     # EXACT cross-module methods it may call
+host  = ["sync_state"]               # privileged host ops it may call
 ```
 
 | Field | Gate | Matching |
 |---|---|---|
-| `facet_write_prefixes` | `graph.attach_facet` / `update_facet` | prefix (`"companies."`) / glob (`"companies.*"`) / exact |
-| `link_kinds_writable` | `graph.add_link` | same matcher, on the link `kind` |
-| `reads_schemas` | reads of OTHER schemas (own facets always readable) | same matcher |
-| `events_emitted` | `events.emit` | exact event kind |
-| `can_merge_schemas` | `merge_execute` | entity schema id |
-| `rpc_calls` | `rpc.execute` (cross-module) | **exact** fully-qualified method |
+| `read` | reads of foreign schemas (own always readable) | prefix (`"contacts."`) / exact |
+| `create` | creating foreign entities | entity schema id |
+| `links` | `graph.add_link` with a foreign-touching kind (own:own implicit) | link `kind` / `<from>:<to>` pair |
+| `call` | `rpc.execute` (cross-module) | **exact** fully-qualified method |
+| `host` | privileged host ops (`sync_state`, `composer`, `file_register`, …) | exact op grant |
 
 A denied op throws — there is **no silent skip**. If a write seems to do nothing,
 suspect a missing entry here (see [module.md](./module.md) §6).
 
-### `[surfaces]` — sync configuration
+### `[ingests]` — sync configuration
+
+One table per sync surface the module consumes from a source; omit entirely
+for pure-CRUD modules:
 
 ```toml
-[surfaces]
-sync_handlers = []
+[ingests.email]
+item = "email.message"   # optional: the surface's primary-item schema — its
+                         # user-scoped graph count IS the "items synced" badge
 ```
 
-| Field | Meaning |
-|---|---|
-| `sync_handlers` | sync surfaces the module ingests from a source (empty for pure-CRUD modules) |
+RPC methods and tools are **not** declared in the manifest — they live only in
+code. Every method a module registers is namespaced `<id>.…`, so the host
+routes by prefix, and tool definitions are harvested from the running module.
+Entrypoints are convention too: `module/index.ts` and `ui/index.tsx`.
 
-RPC methods and tools are **not** declared here — they live only in code.
-Every method a module registers is namespaced `<id>.…`, so the host routes
-by prefix, and tool definitions are harvested from the running module. There
-is nothing to keep in sync by hand.
+### Migrations
 
-### `[entry]`
-
-```toml
-[entry]
-module = "module/index.ts"   # the module code the host loads
-ui     = "index.tsx"         # the UI the frontend fetches (optional)
-```
-
-### `[lifecycle]`
-
-```toml
-[lifecycle]
-install = "lifecycle/install.ts"   # or "standard" for the host default
-```
-
-`install` runs once when the plugin is installed, to register its schemas.
-Most modules register exactly what the manifest declares and use the built-in
-`"standard"` routine (no `lifecycle/` folder); a file path is needed only for
-custom install / migration work (see [module.md](./module.md) §7).
+There is no install hook — installing a module registers its `schemas/` files
+natively. A `migrations/` folder (plus `[[migrations]]` in the manifest) exists
+ONLY when the module ships real data migrations (see [module.md](./module.md)
+§7).
 
 ---
 
@@ -276,19 +281,18 @@ Sources declare lifecycle entirely here and carry no `lifecycle/` folder.
 
 ---
 
-## `[presentation]` (both kinds)
+## `[presentation]` (sources only)
 
-An optional catalog card the plugin reports about itself: how it appears in the
-extensions catalog.
+An optional catalog card a **source** reports about itself. Modules do NOT use
+this block: their card is the top-level `title` / `summary` / `publisher`, the
+markdown detail page is `README.md`, and the icon is `icon.svg|png` at the
+package root.
 
 ```toml
 [presentation]
-title = "Companies"
-summary = "Track companies you interact with across email, meetings, and notes."
+title = "Google"
+summary = "Gmail + Calendar + Contacts over one OAuth ceremony."
 publisher = "Magnis"
-publisher_url = "https://magnis.ai"
-icon_url = "/api/plugins/companies/ui/icon.svg"
-details = "# Companies\n\nLonger markdown shown on the catalog detail page."
 ```
 
 ---
