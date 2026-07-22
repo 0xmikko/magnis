@@ -1,131 +1,62 @@
 # Magnis
 
-A system for turning communication into context, memory, and action.
+**Self-hosted company memory: a knowledge graph built from your communication, with AI agents on top.**
 
-→ Live demo: [magnis.ai](https://magnis.ai/?utm_source=github&utm_medium=readme&utm_campaign=demo) (early prototype)
+Magnis turns email, chats, meetings, notes, and files into a private, queryable graph of the business — every person, deal, decision, and commitment, with provenance on every link. Agents work on that graph: they draft replies with full cross-channel history, catch conversations before they stall, and run triggered workflows — every action behind a one-click approval.
 
----
+Everything can run inside your perimeter: a desktop app with a real Postgres server compiled into the binary, or an on-prem server — down to fully local models.
 
-## About
-
-I’m building Gearbox Protocol — onchain credit infrastructure for DeFi.
-
-Over time, I ran into a different kind of problem.
-
-Not in code — but in how systems are coordinated.
-
-Most of the work doesn’t live in logic.  
-It lives in communication.
-
-Messages, emails, discussions — that’s where decisions happen.
-
-But this layer is not structured, not persistent, and not executable.
-
-Magnis started as an attempt to fix that.
+→ Product: [magnis.ai](https://magnis.ai/?utm_source=github&utm_medium=readme&utm_campaign=demo) · Sandbox: [app.magnis.ai](https://app.magnis.ai)
 
 ---
 
-## The shift
+## Why
 
-Most systems today assume:
-- data is structured
-- decisions are explicit
-- execution is well-defined
+Most work is communication. Decisions happen in messages, threads, and meetings — a layer that is not structured, not persistent, and not executable. When people get busy or leave, that context dies with them.
 
-In reality:
-- context lives in chats
-- decisions are buried in threads
-- knowledge is lost over time
-
-There is no system — only communication.
-
----
-
-## Why this matters
-
-Most work is communication.
-
-Magnis makes it:
-- faster
-- more precise
-- context-aware
-
-It builds a graph of:
-people, messages, relationships, history.
-
-Agents operate on this context.
-
-Everything stays local.
-
----
-
-## What Magnis is
-
-Magnis treats communication as a system primitive.
-
-It turns:
-- messages → data
-- data → context
-- context → memory
-- memory → actions
-
-Not as logs — but as a working system.
-
----
-
-## Architecture
-
-Magnis is built around:
-- a Rust backend as the source of truth
-- graph-based local storage
-- provider/source integrations
-- agent workflows with controlled execution
-
-See [docs/architecture.md](docs/architecture.md)
+Magnis treats communication as a system primitive: messages → data → context → memory → actions. Not as logs — as a working system.
 
 ---
 
 ## What's in this repository
 
-This repo is the **open plugin catalog** for Magnis. The core is closed; the
-ecosystem around it is public and lives here — the same split as an editor and
-its extensions.
+This repo is the **open plugin catalog** for Magnis. The core engine is closed; the ecosystem around it is public and lives here — the same split as an editor and its extensions.
 
-Everything here is **TypeScript, run by [bun](https://bun.sh)**. There are no
-per-platform binaries: a connector is a `bun run src/main.ts` process the core
-spawns and talks to over a small MCP-style stdio contract. One runtime, fully
-portable.
+Everything here is **TypeScript, run by [bun](https://bun.sh)**. There are no per-platform binaries: a connector is a `bun run src/main.ts` process the core spawns and talks to over a small MCP-style stdio contract. One runtime, fully portable.
 
-```
-plugins/sources/   provider connectors — google, telegram, x, anysite (+ dev mocks)
-plugins/modules/   domain adapters — contacts, email, meetings, telegram, companies …
-packages/          the SDKs a plugin builds against (connector-sdk, plugin-sdk, host-stubs)
-```
+| Layer | Where | What |
+|---|---|---|
+| Core engine (closed) | desktop / server app | Rust knowledge-graph engine over Postgres, agent runtime, triggers, approval gates |
+| Plugin catalog | [`plugins/`](plugins/) | 11 domain modules + 6 source connectors (+ dev mocks used by CI) |
+| SDKs | [`packages/`](packages/) | connector SDK, plugin SDK, host type stubs, auth state machine, test kit |
 
-A **source** pulls data from a service into the graph (cursored sync, live
-push, its own auth ceremony, rate-limit handling). A **module** shapes that
-data into the graph and serves the UI. Both are described by a `manifest.toml`
-the core reads to install and route them.
+**Source connectors** pull data from a service into the graph — cursored sync, live push, their own auth ceremony, rate-limit handling. Each runs as a separate process that owns its credentials. Live today: **Gmail + Google Calendar** (`google`), **Telegram**, **X** (sync + agent-side MCP search via `x-mcp`), **LinkedIn** (via `anysite`), and **local markdown notes** (`local`, kept as a reference implementation).
 
-- Plugin authoring & the connector contract: [CLAUDE.md](CLAUDE.md)
-- How code flows here: [docs/git-workflow.md](docs/git-workflow.md)
+**Domain modules** shape ingested data into the graph and serve the UI, running inside the core in sandboxed V8 isolates with capability manifests: `contacts`, `email`, `meetings`, `companies`, `projects`, `notes`, `telegram`, `triggers`, `linkedin`, `x`, `file`.
+
+Both kinds are described by a manifest the core reads to install and route them. Plugins are written against a contract designed so **coding agents can generate them from high-level descriptions** — the X integration went from nothing to working in hours through the same contract every other integration uses.
+
+## Build a plugin
 
 ```bash
 bun install --frozen-lockfile
-bun run typecheck && bun run test && bun run test:connectors
+bun run typecheck && bun run lint && bun run test && bun run test:connectors
 ```
 
----
+- Start here: [docs/plugins/README.md](docs/plugins/README.md) — the authoring guide ([architecture](docs/plugins/architecture.md) · [modules](docs/plugins/module.md) · [sources](docs/plugins/source.md) · [structure](docs/plugins/structure.md) · [manifest reference](docs/plugins/manifest.md)).
+- Scaffold a module: `bun scripts/plugin-new.ts <id>`.
+- System overview: [docs/architecture.md](docs/architecture.md) · Contributing: [CONTRIBUTING.md](CONTRIBUTING.md) · Branch flow: [docs/git-workflow.md](docs/git-workflow.md)
+
+A source is an MCP-over-stdio process implementing the sync contract — if you can write a script that lists items, you can write a Magnis source.
+
+## Measured, not asserted
+
+The memory layer is eval-backed — see [`evals/`](evals/): cross-session entity-resolution recall of 0.63–0.80 across seeded runs (a memoryless baseline is structurally 0), including cross-engine memory transfer — memory written by one model, read by another. Fixed seeds, committed fixtures, raw runs alongside the notebooks.
 
 ## Status
 
-Early-stage research.
+Working product, used daily on the founder's real operations since February 2026. Not launched publicly yet; hosted sandbox at [app.magnis.ai](https://app.magnis.ai). Built by [@0xmikko](https://github.com/0xmikko) — previously co-founder & CTO of [Gearbox Protocol](https://gearbox.fi).
 
-Building in public.
+## License
 
----
-
-## Links
-
-- Live demo: https://magnis.ai
-- Repository: https://github.com/0xmikko/magnis
+Apache-2.0 — see [LICENSE](LICENSE).
