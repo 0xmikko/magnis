@@ -1,5 +1,6 @@
 {
   "name": "@magnis/source-statemachine",
+  "description": "Auth/sync state machine shared by Magnis source connectors — models the begin/step/exchange/revoke auth ceremony and the sync lifecycle.",
   "private": true,
   "type": "module",
   "main": "src/index.ts",
