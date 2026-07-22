@@ -12,9 +12,6 @@ version = "0.1.0"
 # SDK contract version this manifest targets (host accepts 0.x).
 magnis_api_version = "0.1.0"
 
-# Ownership globs: every OWNED schema id / link kind declared below must match
-# one of these patterns — the host rejects the manifest otherwise.
-owns = [ "email.*" ]
 
 # Graph schemas this module owns: entities, their versioned facets (each with a
 # json_schema + canonical `mappings` that feed derived-truth resolution), and links.
@@ -183,8 +180,6 @@ op_grants = [ "file_register", "external_id_reads", "source_commands", "sync_sta
 # Callable surface: `rpc_handlers` = intra-host RPC; `tools` = the agent-facing
 # subset; `sync_handlers` = source-sync surfaces this module ingests.
 [surfaces]
-rpc_handlers = [ "email.list", "email.get", "email.batch", "email.send", "email.reply", "email.batch_send", "email.set_trigger", "email.ensure_address", "email.sync.status", "email.sync.reset", "email.composer.read", "email.composer.set_text", "email.composer.append_text", "email.composer.set_attachments" ]
-tools = [ "email.list", "email.get", "email.batch", "email.send", "email.reply", "email.batch_send", "email.set_trigger" ]
 sync_handlers = [ "email" ]
 
 # Per-sync-surface primary-item schema: the entity whose user-scoped graph count

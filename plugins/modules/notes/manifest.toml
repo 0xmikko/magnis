@@ -11,8 +11,6 @@ id = "notes"
 version = "0.1.0"
 # SDK contract version this manifest targets (host accepts 0.x).
 magnis_api_version = "0.1.0"
-# Ownership globs: every schema id / link kind declared below must match one.
-owns = [ "notes.*" ]
 
 # Graph schemas: the note entity + its versioned content facet (json_schema +
 # canonical `mappings` feeding derived-truth resolution). No link kinds owned.
@@ -75,8 +73,6 @@ can_merge_schemas = []
 # Callable surface: `rpc_handlers` = intra-host RPC; `tools` = the same routes
 # exposed to the agent; `sync_handlers` = source-sync surfaces (none — local only).
 [surfaces]
-rpc_handlers = [ "notes.list", "notes.get", "notes.create", "notes.update", "notes.delete", "notes.template.apply" ]
-tools = [ "notes.list", "notes.get", "notes.create", "notes.update", "notes.delete", "notes.template.apply" ]
 sync_handlers = []
 
 # Entrypoints inside the package: V8 module bundle + React UI surface.

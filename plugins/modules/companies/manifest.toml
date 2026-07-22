@@ -10,9 +10,6 @@ id = "companies"
 version = "0.1.0"
 # SDK contract version this manifest targets (host accepts 0.x).
 magnis_api_version = "0.1.0"
-# Ownership globs: EVERY schema id / link kind declared below must match one of
-# these patterns — the host rejects the manifest otherwise.
-owns = [ "companies.*" ]
 
 # Graph schemas this module owns: the entity, its versioned facets (each with a
 # json_schema + canonical `mappings` that feed derived-truth resolution), and
@@ -206,8 +203,6 @@ can_merge_schemas = [ "companies.company" ]
 # routes exposed to the agent; `sync_handlers` = source-sync surfaces (none —
 # companies has no external connector).
 [surfaces]
-rpc_handlers = [ "companies.list", "companies.get", "companies.create", "companies.update" ]
-tools = [ "companies.list", "companies.get", "companies.create", "companies.update" ]
 sync_handlers = []
 
 # Entrypoints inside the package: the V8 module bundle and the React UI surface.

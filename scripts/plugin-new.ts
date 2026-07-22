@@ -4,7 +4,8 @@
 //   bun scripts/plugin-new.ts <id>
 //
 // Generates plugins/modules/<id>/ with the canonical layout (docs/plugins/authoring.md):
-// manifest.toml (folder == manifest.id, INV-11; tier community; owns <id>.*),
+// manifest.toml (folder == manifest.id, INV-11; tier community; the module's
+// namespace `<id>.*` is derived from the id — never declared),
 // module/ (decorated service + definePlugin entry + a unit test satisfying the
 // per-kind test bar, DEC-14/INV-5), ui/ (defineModule), types/, package.json,
 // tsconfig (experimentalDecorators — the isolate/build contract).
@@ -27,7 +28,6 @@ function manifestToml(id: string): string {
     version: "0.1.0",
     magnis_api_version: "0.1.0",
     tier: "community",
-    owns: [`${id}.*`],
     schemas: {
       entities: [
         {
@@ -63,8 +63,6 @@ function manifestToml(id: string): string {
       can_merge_schemas: [],
     },
     surfaces: {
-      rpc_handlers: [`${id}.list`],
-      tools: [`${id}.list`],
       sync_handlers: [],
     },
   })}\n`;

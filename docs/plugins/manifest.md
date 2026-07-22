@@ -4,12 +4,12 @@ Every plugin — module or source — has a `manifest.toml` at its root. It is t
 **single source of truth** for what the plugin is, what it owns, what it is
 allowed to do, and how the host loads or spawns it. The host validates it when
 the plugin is installed; a manifest that violates a rule below (an owned id
-outside `owns`, an unknown auth type) is rejected.
+outside the module's namespace, an unknown auth type) is rejected.
 
 TOML is chosen over JSON for the reason Cargo was: it is strictly typed
 (integers vs floats, native strings, no ambiguous coercion) **and** allows
 comments, so every non-obvious field can explain itself in place. Remember TOML's
-one ordering rule: all bare top-level keys (`id`, `version`, `owns`, …) must come
+one ordering rule: all bare top-level keys (`id`, `version`, …) must come
 **before** any `[table]`.
 
 This reference is split by kind — [module manifest](#module-manifest) first,
@@ -27,11 +27,9 @@ its callable surface, and its entry points. Example fields below are the real
 ### Top level
 
 ```toml
-id = "companies"                 # plugin id == RPC prefix == route key
+id = "companies"                 # plugin id == RPC prefix == route key == namespace
 version = "0.1.0"
 magnis_api_version = "0.1.0"     # host SDK contract this manifest targets
-owns = ["companies.*"]           # ownership globs — EVERY schema id / link kind
-                                 # declared below must match one, or it's rejected
 requires_schemas = []            # optional: schemas OWNED by other modules that
                                  # this one reads/links (informational + ordering)
 ```
@@ -130,23 +128,21 @@ can_merge_schemas    = ["companies.company"]       # entity schemas it may merge
 A denied op throws — there is **no silent skip**. If a write seems to do nothing,
 suspect a missing entry here (see [module.md](./module.md) §6).
 
-### `[surfaces]` — what the module exposes
+### `[surfaces]` — sync configuration
 
 ```toml
 [surfaces]
-rpc_handlers  = ["companies.list", "companies.get", "companies.create", "companies.update"]
-tools         = ["companies.list", "companies.get", "companies.create", "companies.update"]
 sync_handlers = []
 ```
 
 | Field | Meaning |
 |---|---|
-| `rpc_handlers` | fully-qualified methods the module answers; must match the routes its handlers register |
-| `tools` | the subset exposed to the **agent** as tools — usually the same list; omit internal-only methods |
 | `sync_handlers` | sync surfaces the module ingests from a source (empty for pure-CRUD modules) |
 
-Method names **must** be prefixed with `<id>.` — the SDK glues the prefix from
-the plugin id, and the host asserts ownership.
+RPC methods and tools are **not** declared here — they live only in code.
+Every method a module registers is namespaced `<id>.…`, so the host routes
+by prefix, and tool definitions are harvested from the running module. There
+is nothing to keep in sync by hand.
 
 ### `[entry]`
 

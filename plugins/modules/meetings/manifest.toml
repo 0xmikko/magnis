@@ -11,9 +11,6 @@ version = "0.1.0"
 # SDK contract version this manifest targets (host accepts 0.x).
 magnis_api_version = "0.1.0"
 
-# Ownership globs: every OWNED schema id / link kind declared below must match
-# one of these patterns — the host rejects the manifest otherwise.
-owns = [ "meetings.*" ]
 
 # Graph schemas this module owns: entities, their versioned facets (each with a
 # json_schema + canonical `mappings` that feed derived-truth resolution), and links.
@@ -185,8 +182,6 @@ op_grants = [ "external_id_reads", "sync_state" ]
 # Callable surface: `rpc_handlers` = intra-host RPC; `tools` = the agent-facing
 # subset; `sync_handlers` = source-sync surfaces this module ingests.
 [surfaces]
-rpc_handlers = [ "meetings.list", "meetings.get", "meetings.search", "meetings.create", "meetings.sync.status", "meetings.sync.reset" ]
-tools = [ "meetings.list", "meetings.get", "meetings.search", "meetings.create" ]
 sync_handlers = [ "meetings" ]
 
 # Per-sync-surface primary-item schema: the entity whose user-scoped graph count

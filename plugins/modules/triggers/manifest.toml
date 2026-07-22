@@ -13,8 +13,6 @@ magnis_api_version = "0.1.0"
 # tier = "system": mandatory, always-loaded, cannot be uninstalled/disabled
 # (DEC-7) — the trigger engine depends on these definitions. Still V8-sandboxed.
 tier = "system"
-# Ownership globs: every schema id / link kind declared below must match one.
-owns = [ "triggers.*" ]
 
 # Graph schemas: the trigger entity + its versioned config (gate/action prompts,
 # watched event kinds, debounce/limits) and execution (fire history) facets.
@@ -119,8 +117,6 @@ can_merge_schemas = []
 # Callable surface: definition CRUD + linking + fire-history reads. `rpc_handlers`
 # = intra-host RPC; `tools` = the agent-facing set; no source-sync surfaces.
 [surfaces]
-rpc_handlers = [ "triggers.create", "triggers.get", "triggers.list", "triggers.update", "triggers.delete", "triggers.link", "triggers.unlink", "triggers.list_for_entity", "triggers.fire_history" ]
-tools = [ "triggers.create", "triggers.get", "triggers.list", "triggers.update", "triggers.delete", "triggers.link", "triggers.unlink", "triggers.list_for_entity", "triggers.fire_history" ]
 sync_handlers = []
 
 # Entrypoints inside the package: V8 module bundle + React UI surface.

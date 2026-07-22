@@ -12,9 +12,6 @@ version = "0.1.0"
 # SDK contract version this manifest targets (host accepts 0.x).
 magnis_api_version = "0.1.0"
 
-# Ownership globs: every OWNED schema id / link kind declared below must match
-# one of these patterns — the host rejects the manifest otherwise.
-owns = [ "file.*" ]
 
 # Graph schemas this module owns: entities, their versioned facets (each with a
 # json_schema + canonical `mappings` that feed derived-truth resolution), and links.
@@ -120,8 +117,6 @@ can_merge_schemas = []
 # Callable surface: `rpc_handlers` = intra-host RPC; `tools` = the agent-facing
 # subset; `sync_handlers` = source-sync surfaces this module ingests.
 [surfaces]
-rpc_handlers = [ "file.list", "file.get", "file.attach" ]
-tools = [ "file.list", "file.get", "file.attach" ]
 sync_handlers = []
 
 # Entrypoints inside the package: the V8 module bundle + the React UI surface.

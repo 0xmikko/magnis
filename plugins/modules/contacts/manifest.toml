@@ -12,9 +12,6 @@ version = "0.1.0"
 # SDK contract version this manifest targets (host accepts 0.x).
 magnis_api_version = "0.1.0"
 
-# Ownership globs: every OWNED schema id / link kind declared below must match
-# one of these patterns — the host rejects the manifest otherwise.
-owns = [ "contacts.*" ]
 
 # Graph schemas this module owns: entities, their versioned facets (each with a
 # json_schema + canonical `mappings` that feed derived-truth resolution), and links.
@@ -294,8 +291,6 @@ can_merge_schemas = [ "contacts.person" ]
 # Callable surface: `rpc_handlers` = intra-host RPC; `tools` = the agent-facing
 # subset; `sync_handlers` = source-sync surfaces this module ingests.
 [surfaces]
-rpc_handlers = [ "contacts.list", "contacts.get", "contacts.search", "contacts.create", "contacts.batch_create", "contacts.update", "contacts.merge_preview", "contacts.merge", "contacts.set_social_tracking", "contacts.get_social_tracking", "contacts.get_social_tracking_by_handle", "contacts.list_social_tracking", "contacts.track_social_profile", "contacts.batch_track_social", "contacts.rename_if_placeholder" ]
-tools = [ "contacts.list", "contacts.get", "contacts.search", "contacts.create", "contacts.batch_create", "contacts.update", "contacts.merge_preview", "contacts.merge", "contacts.set_social_tracking", "contacts.get_social_tracking", "contacts.get_social_tracking_by_handle", "contacts.list_social_tracking", "contacts.track_social_profile", "contacts.batch_track_social" ]
 sync_handlers = [ "contacts" ]
 
 # Per-sync-surface primary-item schema: the entity whose user-scoped graph count

@@ -11,8 +11,6 @@ id = "telegram"
 version = "0.1.0"
 # SDK contract version this manifest targets (host accepts 0.x).
 magnis_api_version = "0.1.0"
-# Ownership globs: every OWNED schema id / link kind must match one of these.
-owns = [ "telegram.*" ]
 # Schemas this module references but does NOT own — declaring them lets facets
 # below attach to `contacts.person` without failing the dangling-reference check.
 requires_schemas = [ "contacts.person" ]
@@ -317,8 +315,6 @@ op_grants = [ "source_commands", "sync_state", "composer", "file_register", "web
 # Callable surface: `rpc_handlers` = intra-host RPC; `tools` = the agent-facing
 # subset; `sync_handlers` = source-sync surfaces this module ingests.
 [surfaces]
-rpc_handlers = [ "telegram.chats.list", "telegram.messages.list", "telegram.messages.get", "telegram.chats.set_indexed", "telegram.messages.send", "telegram.messages.reply", "telegram.batch_send", "telegram.messages.backfill", "telegram.sync.status", "telegram.sync.reset", "telegram.composer.read", "telegram.composer.set_text", "telegram.composer.append_text", "telegram.set_trigger" ]
-tools = [ "telegram.chats.list", "telegram.messages.list", "telegram.messages.get", "telegram.messages.send", "telegram.messages.reply", "telegram.batch_send", "telegram.set_trigger" ]
 sync_handlers = [ "telegram" ]
 
 # Per-sync-surface primary-item schema: the entity whose user-scoped graph count

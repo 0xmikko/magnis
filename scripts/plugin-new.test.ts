@@ -1,6 +1,6 @@
 // tst_build_plugin_new_001 — the scaffolder produces a skeleton that satisfies
 // the extension contracts: folder == manifest.id (INV-11), manifest declares
-// owns/schemas/surfaces within the owned namespace, a module/__tests__ unit
+// schemas within the id-derived namespace, a module/__tests__ unit
 // test exists (the testbar bar, DEC-14/INV-5), and the standard files are
 // present. Smoke-level: structure + manifest shape, not a full build.
 import { test, expect } from "bun:test";
@@ -35,23 +35,20 @@ test("tst_build_plugin_new_001: scaffold produces a contract-satisfying skeleton
   // Manifest contract: folder == id (INV-11); namespace discipline.
   const manifest = tomlParse(readFileSync(join(dir, "manifest.toml"), "utf8")) as unknown as {
     id: string;
-    owns: string[];
     tier: string;
     schemas: { entities: { id: string }[]; facets: { id: string; entity_schema: string }[] };
-    surfaces: { rpc_handlers: string[]; tools: string[] };
-    capabilities: { facet_write_prefixes: string[] };
   };
   expect(manifest.id).toBe("acme_crm");
-  expect(manifest.owns).toEqual(["acme_crm.*"]);
   expect(manifest.tier).toBe("community");
+  // Namespace discipline: every schema lives under the id-derived namespace.
+  // (`owns`, `rpc_handlers`, `tools` are gone — the namespace comes from the
+  // id, methods route by prefix, tools are harvested from code.)
+  expect("owns" in manifest).toBe(false);
   for (const e of manifest.schemas.entities) {
     expect(e.id.startsWith("acme_crm.")).toBe(true);
   }
   for (const f of manifest.schemas.facets) {
     expect(f.id.startsWith("acme_crm.")).toBe(true);
-  }
-  for (const h of [...manifest.surfaces.rpc_handlers, ...manifest.surfaces.tools]) {
-    expect(h.startsWith("acme_crm.")).toBe(true);
   }
 
   // The module unit test (testbar requirement) is a real .ts test file.

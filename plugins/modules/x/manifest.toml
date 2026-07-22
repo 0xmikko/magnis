@@ -11,8 +11,6 @@ id = "x"
 version = "0.1.0"
 # SDK contract version this manifest targets (host accepts 0.x).
 magnis_api_version = "0.1.0"
-# Ownership globs: every OWNED schema id / link kind must match one of these.
-owns = [ "x.*" ]
 # Foreign (non-owned) schemas referenced by facets — none; the profile→person
 # relationship is a link kind + RPC, not a facet on `contacts.person`.
 requires_schemas = []
@@ -168,8 +166,6 @@ op_grants = [ "external_id_reads" ]
 # Callable surface: `rpc_handlers` = intra-host RPC (incl. x.import_following);
 # `tools` = the agent-facing set; `sync_handlers` = the `x` source-sync surface.
 [surfaces]
-rpc_handlers = [ "x.posts.list", "x.posts.get", "x.profiles.list", "x.profiles.get", "x.import_following" ]
-tools = [ "x.posts.list", "x.posts.get", "x.profiles.list", "x.profiles.get", "x.import_following" ]
 sync_handlers = [ "x" ]
 
 # Entrypoints inside the package: V8 module bundle + React UI surface.

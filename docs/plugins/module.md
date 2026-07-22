@@ -150,8 +150,10 @@ Four decorators declare a method's role; the callable name is always
 
 `spec.params` is a JSON schema the agent sees. The suffix is the method's public
 name — `@tool("list")` → `companies.list`. Dotted suffixes make sub-namespaces:
-`@tool("posts.list")` → `linkedin.posts.list`, matching the manifest
-`[surfaces]`. Only `@tool`/`@writeTool` methods become agent tools; `@rpc` and
+`@tool("posts.list")` → `linkedin.posts.list`. The decorators are the ONLY
+declaration: the host routes any `<id>.…` method to the module by prefix and
+harvests tool definitions from the running code — nothing is listed in the
+manifest. Only `@tool`/`@writeTool` methods become agent tools; `@rpc` and
 `@syncHandler` register handlers but stay off the agent surface.
 
 **Write tools are idempotent, and provenance is automatic.** Agents retry, so a
@@ -227,8 +229,9 @@ Owning an entity/facet involves three things that are easy to conflate:
 2. **Manifest `[schemas]`** is the source of truth: `[[schemas.entities]]`,
    `[[schemas.facets]]` (each with `id`, `entity_schema`, `version`, a
    `json_schema`, and canonical `mappings` tying a `facet_path` to a
-   `canonical_key` with a `strategy`), and `links`. The `owns = ["<id>.*"]` glob
-   MUST cover every declared id.
+   `canonical_key` with a `strategy`), and `links`. Every declared id MUST
+   live inside the module's namespace — `<id>.…` — which the host derives
+   from the manifest `id` (there is no `owns` field to write).
 3. **Lifecycle registration** actually registers them. The default —
    `registerManifestSchemas()` — registers exactly what the manifest declares.
    It is a restatement of the manifest, so the **default carries no `lifecycle/`
@@ -239,8 +242,8 @@ A `lifecycle/` folder appears **only** when the module needs real work: a
 migration** (`defineMigration` — transform rows already in the graph on a
 version bump). Neither is common; most modules have no lifecycle folder.
 
-To own a facet you: declare it in `[schemas]`, ensure `owns` covers it, grant
-`capabilities.facet_write_prefixes`, and (if custom) register via the hook.
+To own a facet you: declare it in `[schemas]` under the `<id>.…` namespace,
+grant `capabilities.facet_write_prefixes`, and (if custom) register via the hook.
 
 ---
 
@@ -380,8 +383,8 @@ A module is done only when all hold:
 - [ ] `module/index.ts` is `definePlugin(...)` and nothing else.
 - [ ] No `lifecycle/` folder unless it carries a real migration/partial
       registration.
-- [ ] Every entity/facet is declared in `[schemas]`, covered by `owns`, and
-      write-granted in `[capabilities]`.
+- [ ] Every entity/facet is declared in `[schemas]` under the `<id>.…`
+      namespace and write-granted in `[capabilities]`.
 - [ ] List handlers read the intended value (canonical vs latest facet,
       deliberately) and use batch reads — no per-row N+1.
 - [ ] Whole-module tests in `module/__tests__/` on `@magnis/testkit/module`,
