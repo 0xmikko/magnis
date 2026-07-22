@@ -5,6 +5,7 @@
 Key facts:
 - Core (closed): Rust knowledge-graph engine over Postgres (entities / facets / links / events, provenance on every link); hybrid search (structured graph traversal + semantic search with locally computed embeddings); agent runtime (tool-calling; Claude primary; any OpenAI-compatible endpoint incl. local models); event triggers; one-click approval gates on every write action. A real Postgres server is compiled into the desktop binary.
 - Multi-user: one server / one database / many users; per-user data isolation; admin role. Team access controls (sharing, roles/ACL) are planned, shaped by the first design-partner deployment.
+- Agents reason over the graph, not just retrieve: speculative hypotheses promoted on accumulated evidence (confidence threshold, multiple confirmations, decay); on-demand analytics — account briefs with citations, hidden-blocker analysis, commitment reconstruction, ghost-thread digests.
 - This repo (public, TypeScript/bun only — no Rust, no per-platform binaries): 11 domain modules + 6 source connectors + dev mocks, and 5 SDK packages.
 - Modules run inside the core in sandboxed V8 isolates with capability manifests: contacts, email, meetings, companies, projects, notes, telegram, triggers, linkedin, x, file.
 - Sources run as separate MCP-over-stdio processes owning their credentials ("Magnis Sync Profile" wire contract): google (Gmail + Calendar), telegram, x, x-mcp (agent-side X search), anysite (LinkedIn), local (markdown notes, reference).

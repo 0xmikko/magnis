@@ -65,7 +65,11 @@ The combination is deliberate: multi-hop questions resolve through the graph, fu
 
 The agent runtime drives tool-calling models — Claude primarily, with any OpenAI-compatible endpoint supported, down to fully local models for on-prem installs. Agents read through search, act through tools that plugins expose, and write through one gate:
 
-**Every write action stops at a one-click approval.** A proposed send or mutation becomes a pending approval the user confirms or denies; there is no autonomous-write mode. Agent memory rides the same graph as an overlay — agents hypothesize, gather evidence, and the graph promotes what holds — so memory written in one session (or by one engine) is readable in the next.
+**Every write action stops at a one-click approval.** A proposed send or mutation becomes a pending approval the user confirms or denies; there is no autonomous-write mode.
+
+**The speculative overlay.** Agent memory rides the same graph as an overlay of hypotheses. When an agent suspects something the data never states outright — two contacts are the same person, a commitment was made in passing, a deal is drifting — it records a hypothesis rather than a fact. Hypotheses accumulate evidence across sessions and channels; past a confidence threshold with multiple independent confirmations they are promoted into the graph, and stale ones decay instead of fossilizing. Because the overlay lives in the graph, not in a prompt, memory written by one agent — or one model — is readable by any other.
+
+**Reasoning, not just retrieval.** The typed, provenance-carrying graph is what lets agents do analytical work rather than lookup: assemble an account brief from every channel with a citation on every claim; find the hidden blocker of a deal (the procurement email, not the product thread); reconstruct who promised what to whom after a lost thread; digest which conversations are going quiet and prepare the follow-ups. Each of these is a graph traversal plus judgment — none is answerable from a single inbox.
 
 ## Triggers
 

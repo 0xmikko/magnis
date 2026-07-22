@@ -28,6 +28,15 @@ One graph holds everything: **entities** (people, messages, meetings, companies)
 
 Full picture: [docs/architecture.md](docs/architecture.md)
 
+## What the agents do with it
+
+Retrieval is the floor, not the point. Because the graph is typed and every fact carries provenance, agents can *reason* over it:
+
+- **Hypotheses, not just answers.** Agents propose conclusions the data never states outright — "these two contacts are the same person", "this deal is stalling" — as hypotheses that accumulate evidence across sessions. The graph promotes what survives (confidence threshold, multiple confirmations) and decays what doesn't. Memory one agent writes, another agent can read.
+- **Analytics on demand.** Ask for an account brief and the agent assembles it from every channel — emails, chats, meetings, commitments — with a citation on every claim. Ask what's blocking a deal and it finds the *hidden* blocker: the procurement email, not the product thread everyone was staring at.
+- **Reconstruction.** After a lost thread or a failed migration, agents rebuild who promised what to whom from the surrounding communication.
+- **Watchfulness.** Ghost-thread digests: which conversations are going quiet, what the last commitment in each was, and a prepared follow-up — before anyone notices.
+
 ## Principles
 
 - communication is part of the system
