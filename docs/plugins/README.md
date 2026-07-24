@@ -27,6 +27,10 @@ reference implementations — read their code beside these docs.
 5. **[manifest.md](./manifest.md)** — the `manifest.toml` reference for both
    kinds.
 
+Or don't write it yourself: **[building-with-an-agent.md](./building-with-an-agent.md)**
+— describe the integration in a sentence and let an agent build it to the
+same contract. Measured in the [integration-authoring eval](../../evals/integration-authoring/README.md).
+
 ## Shared rules (both kinds)
 
 - **One runtime: Bun.** Bun runs TypeScript directly — no build step for a

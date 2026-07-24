@@ -1,6 +1,6 @@
 # Contributing
 
-This repo is the open plugin catalog for [Magnis](https://magnis.ai) — source connectors, domain modules, and the SDKs they build against. The core engine is closed; everything here is TypeScript, run by [bun](https://bun.sh).
+This repo is the public home of [Magnis](https://magnis.ai) — the plugin catalog (source connectors, domain modules, and the SDKs they build against), the public evals, and, as local install ships, testable builds via Releases. The core engine's source is closed; everything here is TypeScript, run by [bun](https://bun.sh).
 
 ## Setup
 
@@ -30,6 +30,8 @@ Start with the authoring guide: [docs/plugins/README.md](docs/plugins/README.md)
 
 - **Module** (domain adapter, runs in a V8 isolate inside the core): scaffold with `bun scripts/plugin-new.ts <id>`, then follow [docs/plugins/module.md](docs/plugins/module.md).
 - **Source** (provider connector, a separate stdio process): follow [docs/plugins/source.md](docs/plugins/source.md). The wire contract is frozen — add capabilities and error paths, never change envelope shapes or cursor semantics.
+
+Or don't write it yourself: describe the integration in a sentence and let an agent build it to the same contract — [docs/plugins/building-with-an-agent.md](docs/plugins/building-with-an-agent.md). We measured how well this works (and how much the authoring skills help) in the [integration-authoring eval](evals/integration-authoring/README.md).
 
 House rules that will come up in review:
 

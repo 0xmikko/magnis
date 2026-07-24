@@ -2,10 +2,11 @@
 
 ## What this repository is
 
-This is the **open plugin catalog** for [Magnis](https://magnis.ai) — the
-connectors, domain modules, and SDKs that plug into the (closed) Magnis core.
-Think of it the way VS Code splits from its extensions: the core is private,
-the ecosystem around it is public and here.
+This is the **official public repo** for [Magnis](https://magnis.ai) — the
+plugin catalog (connectors, domain modules, SDKs) that plugs into the (closed)
+Magnis core, plus the public evals; testable desktop builds ship here via
+Releases as local install lands. Think of it the way VS Code splits from its
+extensions: the core is private, the ecosystem around it is public and here.
 
 Everything in this repo is **TypeScript, run by bun**. There is no Rust here —
 connectors are `bun run src/main.ts` processes the core spawns and talks to over

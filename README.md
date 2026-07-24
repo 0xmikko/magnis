@@ -2,105 +2,62 @@
 
 **Self-hosted company memory: a knowledge graph built from your communication, with AI agents on top.**
 
-Magnis turns email, chats, meetings, notes, and files into a private, queryable graph of the business — every person, deal, decision, and commitment, with provenance on every link. Agents work on that graph: they draft replies with full cross-channel history, catch conversations before they stall, and run triggered workflows — every action behind a one-click approval.
+Magnis gives a company a private, self-hosted memory. It turns email, chats, meetings, notes, and files into a queryable knowledge graph — a live map of every person, deal, decision, and commitment with its full history — and puts AI agents on top of it, so important conversations stop disappearing.
 
-Everything can run inside your perimeter: a desktop app with a real Postgres server compiled into the binary, or a self-hosted server — down to fully local models.
+Most work is communication, and decisions live in messages, threads, and meetings — a layer that is not structured, not persistent, and not executable. Deals die because a thread went quiet; context leaves when a person does; every new hire starts from zero. Magnis turns that layer into a working system:
 
-→ Product: [magnis.ai](https://magnis.ai/?utm_source=github&utm_medium=readme&utm_campaign=demo) · Sandbox: [app.magnis.ai](https://app.magnis.ai)
+- **Everything in one place.** Mail, messengers, meetings, notes, and files — searchable, connected, with history.
+- **One person, one deal — across every channel.** The same contact in Gmail, Telegram, and a meeting is a single record with a merged history, resolved automatically.
+- **An agent that acts, not just answers.** It drafts replies with full cross-channel history, chases conversations that are about to stall, prepares you for meetings, and runs triggered workflows ("if this deal goes quiet, follow up") — with a one-click approval on every outgoing action.
+- **Research over company memory.** Agents reason over the graph, not just retrieve from it: they form hypotheses that accumulate evidence across sessions, assemble account briefs from every channel, and surface *hidden* blockers — with a citation on every claim.
+- **Built for teams.** As more of the team connects, Magnis becomes institutional memory: new hires inherit context, handoffs stop losing information. Private by default, shared by choice — per-user isolation, with access modeled in the graph itself (ACL), so shared memory has real boundaries.
+- **A real interface.** Desktop app and CLI (mobile and a Telegram bot coming), a composer the agent and you edit together, live agent progress — not a chat box bolted onto a database.
 
----
+Everything can run inside the company's perimeter: a desktop app with Postgres built in, or your own server — down to fully local models, so it works where data can't leave.
 
-## Why
+Not demo scenarios: the founder has run his own operations on Magnis daily since February 2026, and the memory layer is measured — cross-session identity resolution at **0.63–0.80 recall** where a memoryless baseline scores 0 ([evals/](evals/README.md)).
 
-Most work is communication. Decisions happen in messages, threads, and meetings — a layer that is not structured, not persistent, and not executable. When people get busy or leave, that context dies with them. Magnis treats communication as a system primitive: messages → data → context → memory → actions. Not as logs — as a working system.
-
-What that looks like in practice:
-
-- **Unified operations** — messages, email, notes, and meetings in one searchable, connected system.
-- **Relationship memory** — the same person across Gmail, Telegram, and meetings is one entity with full history.
-- **Project memory** — decisions, discussions, and commitments stay connected over time instead of evaporating.
-- **Agent workflows** — agents operate on real, persistent, structured state, not just prompts.
-- **Communication as input** — a message can update state, fire a trigger, or start a workflow.
+→ Product: [magnis.ai](https://magnis.ai/?utm_source=github&utm_medium=readme&utm_campaign=demo) · Try it: [app.magnis.ai](https://app.magnis.ai) · License: [Apache-2.0](LICENSE)
 
 ## How it works
 
-One graph holds everything: **entities** (people, messages, meetings, companies), **facets** (typed data with provenance), **links** (relationships), and an append-only **event** history. Source connectors stream provider data in; domain modules shape it into the graph; identity resolution merges the same person across channels — hypotheses accumulate evidence and are promoted only past a confidence threshold. Retrieval is hybrid: structured graph traversal plus local-embedding semantic search, both returning provenance. Agents (Claude primarily; any OpenAI-compatible endpoint; fully local models for on-prem) read through search, act through plugin tools, and stop at a **one-click approval gate** on every write. Triggers watch the graph and fire agent episodes when something changes — a deal going quiet, a reply arriving.
+- **An append-only knowledge graph with full provenance** — every fact traces back to the message, meeting, or file it came from; canonical truth is resolved deterministically when sources disagree.
+- **Agents operate on the graph, not on prompt stuffing** — they navigate: self-discovery tools, hybrid graph + semantic search, and hypotheses for what the data never states outright, promoted on evidence.
+- **Every external action requires a one-click approval** — humans act directly, agents propose; triggers schedule agent work into the future (pub/sub on the graph, cron included).
+- **Everything can run fully local, including the models** — a desktop app with embedded Postgres, or your own server; per-user isolation, with access control modeled in the graph itself (ACL).
+- **The plugin system is open; the core is closed** — any external system connects through the same typed contract every built-in integration uses.
 
-Full picture: [docs/architecture.md](docs/architecture.md)
+Full architecture: **[docs/architecture.md](docs/architecture.md)**. Deep references: [the graph](docs/graph.md) (anatomy, indexes, vector pipeline, speculative overlay) · [engines](docs/engines.md) (model layer, sessions, metering) · [plugins](docs/plugins/README.md) (authoring) · [evals](evals/README.md) (methodology and results).
 
-## What the agents do with it
+## Measured memory performance
 
-Retrieval is the floor, not the point. Because the graph is typed and every fact carries provenance, agents can *reason* over it:
+The memory layer is tested on real tasks over a seeded company workspace — fixed seeds, reproducible runs. Full harness, fixtures, and raw runs: [`/evals`](evals/README.md).
 
-- **Hypotheses, not just answers.** Agents propose conclusions the data never states outright — "these two contacts are the same person", "this deal is stalling" — as hypotheses that accumulate evidence across sessions. The graph promotes what survives (confidence threshold, multiple confirmations) and decays what doesn't. Memory one agent writes, another agent can read.
-- **Analytics on demand.** Ask for an account brief and the agent assembles it from every channel — emails, chats, meetings, commitments — with a citation on every claim. Ask what's blocking a deal and it finds the *hidden* blocker: the procurement email, not the product thread everyone was staring at.
-- **Reconstruction.** After a lost thread or a failed migration, agents rebuild who promised what to whom from the surrounding communication.
-- **Watchfulness.** Ghost-thread digests: which conversations are going quiet, what the last commitment in each was, and a prepared follow-up — before anyone notices.
-
-## Under the hood
-
-Already built and running — the parts you'd expect to be missing at this stage:
-
-- **Bring any model.** An in-app model catalog with per-token pricing: cloud Claude, OpenRouter, any OpenAI-compatible endpoint, fully local servers — or drive the agent with your existing Claude Code or Codex subscription, no API keys to manage. Per-user credit limits meter usage and stop a turn *before* it overspends.
-- **Persistent agent sessions.** Every conversation is a resumable engine session — no transcript replay; the agent keeps a live to-do list and shows its context usage as it works.
-- **Native, resilient connectors.** A from-scratch Telegram MTProto client (O(N) bootstrap, flood-wait-aware sending, a dedicated send lane so a sync never starves an outbound message), plus Gmail + Calendar, X, and LinkedIn — with typed rate-limit backoff, expired-cursor recovery, and crash-safe idempotent sync.
-- **A shared composer.** The agent reads and edits the same draft you see — append, rewrite, attach — and you always own the send.
-- **Secrets encrypted at rest.** Provider keys and source credentials live in an AES-256-GCM vault with versioned keys; account passwords are argon2-hashed. No plaintext fallback, by design rule.
-- **A real plugin lifecycle.** Install, version-gated migrations, live rebuild-and-swap without restart, dependency guards, and a signed remote catalog with system and community tiers.
-
-## Principles
-
-- communication is part of the system
-- context must persist across tools
-- memory must be structured
-- agents need real state, not just prompts
-- execution must be reviewable and constrained
-
-## What's in this repository
-
-This repo is the **open plugin catalog** for Magnis. The core engine is closed; the ecosystem around it is public and lives here — the same split as an editor and its extensions.
-
-Everything here is **TypeScript, run by [bun](https://bun.sh)**. There are no per-platform binaries: a connector is a `bun run src/main.ts` process the core spawns and talks to over a small MCP-style stdio contract. One runtime, fully portable.
-
-| Layer | Where | What |
+| Eval | What it measures | Result |
 |---|---|---|
-| Core engine (closed) | desktop / server app | Rust knowledge-graph engine over Postgres, agent runtime, search, triggers, approval gates |
-| Plugin catalog | [`plugins/`](plugins/) | 11 domain modules + 6 source connectors (+ dev mocks used by CI) |
-| SDKs | [`packages/`](packages/) | connector SDK, plugin SDK, host type stubs, auth state machine, test kit |
+| Cross-session identity resolution | Can the agent keep durable identity across channels and sessions? | **0.63–0.80 recall** (memoryless baseline: structurally 0) |
+| Cross-engine memory transfer | Can memory written by one model be read by another? | **0 → 0.71 recall** |
+| Communication QA | Accuracy, hallucination rate, provenance and cost vs long-context and vector-RAG baselines | *in progress* |
+| Trigger detection | Precision/recall of catching stalled conversations | *planned* |
 
-**Source connectors** pull data from a service into the graph — cursored sync, live push, their own auth ceremony, rate-limit handling. Each runs as a separate process that owns its credentials. Live today: **Gmail + Google Calendar** (`google`), **Telegram**, **X** (sync + agent-side MCP search via `x-mcp`), **LinkedIn** (via `anysite`), and **local markdown notes** (`local`, kept as a reference implementation).
+## Plugin repository
 
-**Domain modules** shape ingested data into the graph and serve the UI, running inside the core in sandboxed V8 isolates with capability manifests: `contacts`, `email`, `meetings`, `companies`, `projects`, `notes`, `telegram`, `triggers`, `linkedin`, `x`, `file`.
+Every external integration in Magnis is a plugin, and this repository is where they live. A plugin is one of two kinds:
 
-Both kinds are described by a manifest the core reads to install and route them. Plugins are written against a contract designed so **coding agents can generate them from high-level descriptions** — the X integration went from nothing to working in hours through the same contract every other integration uses.
+- **Sources** connect external systems — mail, messengers, social networks, internal tools — and stream their data in.
+- **Modules** own a domain — contacts, email, meetings — shape that data into the graph, and serve its tools and UI.
 
-## Build a plugin
+Every integration is written from the same skeleton: one contract, one file structure, one test gate. Scaffold it with a single command and fill in the behavior — that's what makes new integrations cheap, and what lets coding agents write them from a plain description.
 
-```bash
-bun install --frozen-lockfile
-bun run typecheck && bun run lint && bun run test && bun run test:connectors
-```
+- How it all fits together: [docs/plugins/architecture.md](docs/plugins/architecture.md)
+- How to write one: [docs/plugins/README.md](docs/plugins/README.md)
 
-- Start here: [docs/plugins/README.md](docs/plugins/README.md) — the authoring guide ([architecture](docs/plugins/architecture.md) · [modules](docs/plugins/module.md) · [sources](docs/plugins/source.md) · [structure](docs/plugins/structure.md) · [manifest reference](docs/plugins/manifest.md)).
-- Scaffold a module: `bun scripts/plugin-new.ts <id>`.
-- Contributing: [CONTRIBUTING.md](CONTRIBUTING.md) · Branch flow: [docs/git-workflow.md](docs/git-workflow.md)
+## Contributing
 
-A source is an MCP-over-stdio process implementing the sync contract — if you can write a script that lists items, you can write a Magnis source.
+Contribution rules live in [CONTRIBUTING.md](CONTRIBUTING.md): branch off `staging`, the full test gate green on every commit, a RED test first for every behavioral change.
 
-## Measured, not asserted
-
-The memory layer is eval-backed — see [`evals/`](evals/): cross-session entity-resolution recall of 0.63–0.80 across seeded runs (a memoryless baseline is structurally 0), including cross-engine memory transfer — memory written by one model, read by another. Fixed seeds, committed fixtures, raw runs alongside the notebooks.
-
-## Now → Next
-
-**Now:** the graph engine, desktop app with embedded Postgres, agents with approval gates, triggers, hybrid search, 17 plugins, multi-user auth with per-user isolation — used daily on the founder's real operations since February 2026.
-
-**Next:** first design-partner on-prem deployment · public evals landing in [`evals/`](evals/) · Slack and Notion connectors · local-install packaging · team access controls (sharing, roles) shaped by the design-partner deployment.
-
-## Status
-
-Working product, not launched publicly yet; hosted sandbox at [app.magnis.ai](https://app.magnis.ai). Built by [@0xmikko](https://github.com/0xmikko) — previously co-founder & CTO of [Gearbox Protocol](https://gearbox.fi).
+Development here is **AI-agent-driven**: the plugin contract is written so coding agents can generate a plugin from a high-level description (the X integration went from nothing to working in hours this way), and the repo ships the agent skills the coding agents follow — [CLAUDE.md](CLAUDE.md): the gate, the wire-contract rules, the TDD loop. Human or agent, the same rules apply.
 
 ## License
 
-Apache-2.0 — see [LICENSE](LICENSE).
+Apache-2.0 ([LICENSE](LICENSE)) — covers the plugin catalog, connectors, SDKs, and evals in this repository. The core engine is closed-source.
