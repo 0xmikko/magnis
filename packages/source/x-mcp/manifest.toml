@@ -1,0 +1,45 @@
+# x-mcp — the OFFICIAL X (Twitter) MCP server, adopted as a Magnis tools-only
+# source: agent-side search / lookups / trends via the
+# `@xdevplatform/xurl` stdio bridge. ZERO connector code — this manifest is
+# the whole integration.
+#
+# Distinct from the `x` SYNC source (plugins/sources/x): that one fills the
+# graph with tracked handles' posts; this one gives the agent ad-hoc query
+# tools. Both may run side by side (different source ids → different keys).
+#
+# Every bridged tool registers with requires_approval = true: nothing
+# executes without the operator approving (or allowlisting) it.
+#
+# kind = "mock"-tier gating semantics: loaded ONLY when ENABLED_SOURCES lists
+# "x-mcp" — the bridge needs npx on PATH and an X API plan with pay-per-use
+# credits, so it must never auto-load on every install.
+
+id = "x-mcp"
+version = "1.0.0"
+title = "X MCP Tools"
+summary = "Agent-side X search, lookups, news and trends via the official X MCP server."
+publisher = "ai.magnis"
+surfaces = ["x-mcp"]
+kind = "mock"
+
+[credentials]
+# App-only bearer (read paths). inject = "env": the xurl bridge reads its
+# token from the child environment (`BEARER_TOKEN` — the uppercased key
+# name). Settings-editable (labeled): saving a key in Settings → Sources
+# shuts this source's pools down so the next call respawns with the new key.
+keys = [
+  { name = "bearer_token", label = "API bearer token", help_url = "https://developer.x.com/en/portal/dashboard", description = "Used by the official X MCP server for agent-side search, lookups, news and trends. App-only bearer; requests bill to your X API plan." },
+]
+inject = "env"
+
+# [spawn] stays: this source is an external npx bridge, not the src/main.ts
+# convention.
+[spawn]
+command = "npx"
+args = ["-y", "@xdevplatform/xurl", "mcp"]
+
+[tools]
+enabled = true
+# No `include` filter: the server's tool names are its own contract and every
+# bridged tool already requires approval. Curate an include list once
+# the surface stabilizes.

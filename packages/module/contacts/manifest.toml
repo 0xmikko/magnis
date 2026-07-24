@@ -1,0 +1,30 @@
+# contacts — Contacts domain module (V8 plugin).
+#
+# Owns the `contacts.*` namespace: the person entity and its profile / email /
+# phone / social / telegram-identity / description / memory facets — the core
+# people directory. Ingests the `contacts` sync surface, links people to companies
+# (reads companies.company), and reaches the email module over RPC to resolve
+# addresses. Sandboxed V8 isolate; bundled with the app and installed
+# automatically at boot.
+
+id = "contacts"
+version = "0.1.0"
+# SDK contract version this manifest targets (host accepts 0.x).
+magnis_api_version = "0.1.0"
+title = "Contacts"
+summary = "People from every source, merged into one identity."
+# Reverse-domain publisher identity.
+publisher = "ai.magnis"
+
+# Sync surface this module consumes (fed by the matching source connector).
+[surfaces.contacts]
+# The surface's primary-item schema — its user-scoped graph count IS the
+# "items synced" badge (host source.status.list reads this).
+item = "contacts.person"
+
+# Foreign asks beyond the implicit own namespace: writes to `contacts.` facets,
+# own:own links, and reads of own schemas need no declaration.
+[permissions]
+read = [ "companies.company" ]
+links = [ "has_email" ]
+call = [ "email.ensure_address" ]

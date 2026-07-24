@@ -1,0 +1,46 @@
+{
+  "id": "file.details",
+  "version": 1,
+  "type": "object",
+  "required": [
+    "mime_type",
+    "source_module",
+    "source_ref"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "name": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "mime_type": {
+      "type": "string"
+    },
+    "size_bytes": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "local_path": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "cloud_url": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "source_module": {
+      "type": "string"
+    },
+    "source_ref": {
+      "type": "object"
+    }
+  }
+}

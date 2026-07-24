@@ -1,0 +1,25 @@
+# StateMock 'key' — the shared @magnis/source-statemachine connector (bun) in
+# an api_key/poll shape, exercising the API-key auth ceremony and poll sync
+# end-to-end in tests. Eval-only (kind=mock).
+
+id = "mock-statemachine-key"
+version = "1.0.0"
+title = "StateMock (API key)"
+summary = "Shared state-machine mock connector in an api_key/poll shape."
+publisher = "ai.magnis"
+dev = true
+surfaces = ["smk"]
+kind = "mock"
+account_mode = "single"
+
+[auth]
+type = "api_key"
+
+# [spawn] stays: the shared statemachine binary is shaped by CLI flags, not the
+# bare src/main.ts convention.
+[spawn]
+command = "bun"
+args = ["run", "src/main.ts", "--surfaces", "smk", "--mode", "poll"]
+
+[sync]
+mode = "poll"

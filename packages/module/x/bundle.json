@@ -1,0 +1,13 @@
+{
+  "ui": {
+    "index.tsx": "index.8dff38e63169040c.js"
+  },
+  "uiHash": "8dff38e63169040c",
+  "module": {
+    "dist": "index.ce2d7bbf162cc77a.js"
+  },
+  "moduleHash": "ce2d7bbf162cc77a",
+  "assets": {
+    "icon.svg": "883b0c9e62afa9ae"
+  }
+}

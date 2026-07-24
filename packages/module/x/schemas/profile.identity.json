@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "mappings": [
+    {
+      "path": "display_name",
+      "canonical": "x.profile.display_name",
+      "strategy": "single_aligned"
+    },
+    {
+      "path": "follower_count",
+      "canonical": "x.profile.follower_count",
+      "strategy": "single_aligned"
+    }
+  ],
+  "type": "object",
+  "required": [
+    "platform",
+    "handle"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "platform": {
+      "type": "string",
+      "enum": [
+        "x",
+        "linkedin"
+      ]
+    },
+    "handle": {
+      "type": "string"
+    },
+    "display_name": {
+      "type": "string"
+    },
+    "url": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "avatar_url": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "bio": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "verified": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "follower_count": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    }
+  }
+}

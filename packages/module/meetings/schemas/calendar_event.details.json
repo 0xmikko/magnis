@@ -1,0 +1,110 @@
+{
+  "version": 1,
+  "mappings": [
+    {
+      "path": "title",
+      "canonical": "calendar_event.title",
+      "strategy": "single_aligned"
+    },
+    {
+      "path": "starts_at",
+      "canonical": "calendar_event.starts_at",
+      "strategy": "single_aligned"
+    },
+    {
+      "path": "ends_at",
+      "canonical": "calendar_event.ends_at",
+      "strategy": "single_aligned"
+    },
+    {
+      "path": "location",
+      "canonical": "calendar_event.location",
+      "strategy": "single_aligned"
+    },
+    {
+      "path": "description",
+      "canonical": "calendar_event.description",
+      "strategy": "single_aligned"
+    },
+    {
+      "path": "attendees",
+      "canonical": "calendar_event.attendees",
+      "strategy": "single_aligned"
+    },
+    {
+      "path": "status",
+      "canonical": "calendar_event.status",
+      "strategy": "single_aligned"
+    }
+  ],
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "title": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "starts_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "ends_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "location": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "description": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "status": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "attendees": {},
+    "all_day": {
+      "type": "boolean"
+    },
+    "google_event_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "hangout_link": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "calendar_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "conference_link": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  }
+}

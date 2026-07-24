@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "mappings": [
+    {
+      "path": "title",
+      "canonical": "note.title",
+      "strategy": "single_aligned"
+    },
+    {
+      "path": "pinned",
+      "canonical": "note.pinned",
+      "strategy": "single_aligned"
+    },
+    {
+      "path": "updated_at",
+      "canonical": "note.updated_at",
+      "strategy": "single_aligned"
+    }
+  ],
+  "type": "object",
+  "required": [
+    "body"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "title": {
+      "type": "string"
+    },
+    "body": {
+      "type": "string"
+    },
+    "pinned": {
+      "type": "boolean"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

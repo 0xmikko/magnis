@@ -1,0 +1,938 @@
+{
+  "schema_version": 1,
+  "generated_from": "b69eec0b7a0b16a4e7c699129d24e818c71374e4",
+  "packages": [
+    {
+      "kind": "module",
+      "id": "companies",
+      "version": "0.1.0",
+      "title": "Companies",
+      "summary": "Track companies you interact with across email, meetings, and notes.",
+      "publisher": "ai.magnis",
+      "dev": false,
+      "files": [
+        {
+          "path": "schemas/company.phone.json",
+          "sha256": "1796b9b8e2bfcc9b7ce34ad2a9bc48958d5e750c7b99b5c9cd6edff8963c0b27"
+        },
+        {
+          "path": "schemas/company.details.json",
+          "sha256": "f00bd208d3f29ed880a075bf43cfa135d4ca9507e9af0194b1902c36dfbd8617"
+        },
+        {
+          "path": "schemas/company.email.json",
+          "sha256": "f77c688a62c14b1b47f46f7d248081c8b156f4d7b4fd3830b549c8e800bdc774"
+        },
+        {
+          "path": "schemas/company.external_link.json",
+          "sha256": "cb49e9d564bbf670502b10f77781566071c96ec0a2e8f6dbad0de41927b6638b"
+        },
+        {
+          "path": "schemas/company.json",
+          "sha256": "519886d37eae8710165cbc8c603e8e5ad5605600ce02497586444370b19de506"
+        },
+        {
+          "path": "module/dist/index.47864931d91ed60f.js",
+          "sha256": "47864931d91ed60f008a2fc61e4191d456cd9fb4bb3b573f2594cea5f3096e8d"
+        },
+        {
+          "path": "ui/index.089197c16df04457.js",
+          "sha256": "089197c16df04457d13efba98378255bd625d33692933a0d464f4c3784b06798"
+        },
+        {
+          "path": "icon.svg",
+          "sha256": "e430aa72fbd5bff899da38bde2ef008bafbe9ac6e97894248d08e01a40c6c718"
+        },
+        {
+          "path": "bundle.json",
+          "sha256": "1a0f3beb3f1fc75c5f47cf1c88fbd2c48f567c8a59c0c798c887e9f8982b2ecb"
+        },
+        {
+          "path": "manifest.toml",
+          "sha256": "be485ef470106a65f2fb1ac62421b8299d3c19d7dbc9c86ce275312024e05952"
+        },
+        {
+          "path": "README.md",
+          "sha256": "e3c3f288787d4f1f7cfe4dece87bc526aebcf49835f2b5d829e464b9e267905c"
+        }
+      ]
+    },
+    {
+      "kind": "module",
+      "id": "contacts",
+      "version": "0.1.0",
+      "title": "Contacts",
+      "summary": "People from every source, merged into one identity.",
+      "publisher": "ai.magnis",
+      "dev": false,
+      "files": [
+        {
+          "path": "schemas/person.email.json",
+          "sha256": "be861c7152d965463561603a061481e0aeccad7621585783b2885f58f0322a7b"
+        },
+        {
+          "path": "schemas/person.phone.json",
+          "sha256": "bd2f8ff3f82d3330218cdc990d99095bfbf7ec2a29395941f55fe8bad1c7a96b"
+        },
+        {
+          "path": "schemas/person.json",
+          "sha256": "b3258b20625c7a421d21617e2e6cd346d3097c8a327de1e54b9b3f0cf791fcfe"
+        },
+        {
+          "path": "schemas/person.identity_telegram.json",
+          "sha256": "42ff552b6f9bae4b3537ac3d043d9e586173e5067f562c754f1d638a8441f239"
+        },
+        {
+          "path": "schemas/person.memory.json",
+          "sha256": "2269be2604a127183644d01959a12a27212408f26a46176631a8db85d77f2689"
+        },
+        {
+          "path": "schemas/person.profile.json",
+          "sha256": "44813639d5af18768516e3926863c36d0ffd4ab061978689c9a482898a152406"
+        },
+        {
+          "path": "schemas/person.social.json",
+          "sha256": "01b6e1c03cf65aac3dc1b9938ba5f82e594684d030eb226089ff83f1d8db467d"
+        },
+        {
+          "path": "schemas/person.name_history.json",
+          "sha256": "1c022265543a45f9f6d3edbfbb833c424c42346f54991b8111d3788004e879bb"
+        },
+        {
+          "path": "schemas/person.description.json",
+          "sha256": "cad3d770ecda716d5d09b245987d321e08a9c1532e86c639589813c6f70a42a5"
+        },
+        {
+          "path": "schemas/person.external_link.json",
+          "sha256": "cb49e9d564bbf670502b10f77781566071c96ec0a2e8f6dbad0de41927b6638b"
+        },
+        {
+          "path": "module/dist/index.fb2e5e33b76e0135.js",
+          "sha256": "fb2e5e33b76e01359cd8208ff9cc7db06a306d111a31d5bc767b8f6f241e98a4"
+        },
+        {
+          "path": "ui/index.79b1ca8f362633b8.js",
+          "sha256": "79b1ca8f362633b85be301e284ed74d17521fae290b981ba109e33a04a4d5ee0"
+        },
+        {
+          "path": "icon.svg",
+          "sha256": "16037bdf9f4eab78923a082ef13d949951d53d589dc45084489a4a57bd3eab7a"
+        },
+        {
+          "path": "bundle.json",
+          "sha256": "531707871384483aa14d7e4c9474f437daea8c4d7e36a5514d2ce20b1d14fdd1"
+        },
+        {
+          "path": "manifest.toml",
+          "sha256": "dd8e9cf2798ed491609b94cf737165fec21bafc50d9793dbef1cfff080bbfcbb"
+        },
+        {
+          "path": "README.md",
+          "sha256": "b5e52a964d2a3aafe1c3ede2b5e9173fb4908465c753bce57a507e1d257be6a4"
+        }
+      ]
+    },
+    {
+      "kind": "module",
+      "id": "email",
+      "version": "0.1.0",
+      "title": "Email",
+      "summary": "Ingest, search, and act on email threads from any provider.",
+      "publisher": "ai.magnis",
+      "dev": false,
+      "files": [
+        {
+          "path": "schemas/message.json",
+          "sha256": "420f5aee83262bfffee3e9b0af1ee94271be8021a9484cd6c68156cefe0d205c"
+        },
+        {
+          "path": "schemas/address.details.json",
+          "sha256": "eb56775c9fe14d1f366822edb755c59b8eded7215c5678f14ea8a30e0f91fa93"
+        },
+        {
+          "path": "schemas/address.json",
+          "sha256": "67f8c488e6d7ec8ac48e7e9d012e75523487b132eee9a2870436f9aba6367b97"
+        },
+        {
+          "path": "schemas/message.details.json",
+          "sha256": "626c4068c382447742ea95f220c2005960e4e656daed67e6dff03b7e19d4a0c1"
+        },
+        {
+          "path": "module/dist/index.884751ba5295c0d2.js",
+          "sha256": "884751ba5295c0d2e0b2d4281d566222010fceac5b98625aa7613b7e51b61a8a"
+        },
+        {
+          "path": "ui/index.e230a6e740b09750.js",
+          "sha256": "e230a6e740b0975055c35dbb2bf2d6e6c6bc0889ad6d7406632e48b4f38af2be"
+        },
+        {
+          "path": "icon.svg",
+          "sha256": "22fdb076b973899f8e16f2f6879c6a9235ddcba7a16f083f21031ae857a7ee60"
+        },
+        {
+          "path": "bundle.json",
+          "sha256": "4809511c54c7036f8cdaf74deb8471f3dfa3f82708599a84575f4ad38aaa2008"
+        },
+        {
+          "path": "manifest.toml",
+          "sha256": "e615fc723d8816d7fe3cc042a5ec9e63ba8fd872fc63f323de8d5cd6a3e8427a"
+        },
+        {
+          "path": "README.md",
+          "sha256": "13b0d9ce6f2983cc7f93fc1dc9f4c805aae2bedb685263006801beae2ddfd7fe"
+        }
+      ]
+    },
+    {
+      "kind": "module",
+      "id": "file",
+      "version": "0.1.0",
+      "title": "Files",
+      "summary": "Documents and attachments from your sources, in one place.",
+      "publisher": "ai.magnis",
+      "dev": false,
+      "files": [
+        {
+          "path": "schemas/object.audio.json",
+          "sha256": "0c8e34174573f7be75b983bbb1774ebb00d2a4ade6cef644d831cd42c3860d24"
+        },
+        {
+          "path": "schemas/object.json",
+          "sha256": "9e71c32d011a5eb60ee524dbab233f547c1c95c10543bd214cb3a9f85f02fc58"
+        },
+        {
+          "path": "schemas/object.video.json",
+          "sha256": "cca851823d4eaa53b7c38c3b0f792a96a3f2c9710bf48e05fe4196edb29760fd"
+        },
+        {
+          "path": "schemas/object.details.json",
+          "sha256": "e2536e8723a6fb5344fad62dc01bde324ceccf0219843290da6651d023d1f331"
+        },
+        {
+          "path": "schemas/object.image.json",
+          "sha256": "8d40c082f58e884ab138032f1d59026548f077efbf134166f6f611e490d15630"
+        },
+        {
+          "path": "module/dist/index.8e3ab50b4aae8068.js",
+          "sha256": "8e3ab50b4aae806850ea6a81fa073555dfdff60c77d13a5e5b6723e9e36611cb"
+        },
+        {
+          "path": "ui/index.53b2dee49c64af81.js",
+          "sha256": "53b2dee49c64af81e41f9b7228be0a5318757f0c616035b3bfbb9bb3dea024e0"
+        },
+        {
+          "path": "icon.svg",
+          "sha256": "6438af8d979a08032884301864aa30d3f945c23f262bea145057919c0e0292ed"
+        },
+        {
+          "path": "bundle.json",
+          "sha256": "7794b20e821ac57a9bcdff673dc9745ced1614b66e2630660e5164af956a3723"
+        },
+        {
+          "path": "manifest.toml",
+          "sha256": "889e1e3e8e21d18ad71f1e921949ef175fbe9e9e835521311a26e0161bdaf432"
+        },
+        {
+          "path": "README.md",
+          "sha256": "60c710cda9a9a06458b19138a9ba2739442f3acb9f2ba0a2d99d0e73963e58a1"
+        }
+      ]
+    },
+    {
+      "kind": "module",
+      "id": "linkedin",
+      "version": "0.1.0",
+      "title": "LinkedIn",
+      "summary": "LinkedIn profiles and posts of the people you track, linked to contacts.",
+      "publisher": "ai.magnis",
+      "dev": false,
+      "files": [
+        {
+          "path": "schemas/profile.identity.json",
+          "sha256": "51c50badf161ded36f04b5499fbaec00fdb473bb824b2222153eb39c3e97d79f"
+        },
+        {
+          "path": "schemas/post.json",
+          "sha256": "b785b791d5fecfbfce9fd03f5fcf3b8fdd6e8ba2952e9b5cd3ef2bdbfaefaf4a"
+        },
+        {
+          "path": "schemas/post.metrics.json",
+          "sha256": "6bb7f076d0d95665262dfceb6c09c883c8c9678e15cf2d6ffa956f508fb275b7"
+        },
+        {
+          "path": "schemas/profile.json",
+          "sha256": "608896fc835d2fcfd478ece6a3340654b66b0110dc87a1ba4f269c46ad6c870a"
+        },
+        {
+          "path": "schemas/post.content.json",
+          "sha256": "d0a19228ede869fdf7a1d2f2803bd58677bfb7e88f3c4ba6ab963a3cd72d48b7"
+        },
+        {
+          "path": "module/dist/index.44b5258cc00a27c2.js",
+          "sha256": "44b5258cc00a27c28b420fb7d3bd353a361b38c817ebfee48bd56f3b42df66a7"
+        },
+        {
+          "path": "ui/index.d7792f276b88aeb2.js",
+          "sha256": "d7792f276b88aeb2716aab7752244929d3b8d64115c7a2f11136f2a7f4293573"
+        },
+        {
+          "path": "icon.svg",
+          "sha256": "3f1b7d715ac61648a3e2f510811947ad376c927ac5bc90af24c0b861a5adc66c"
+        },
+        {
+          "path": "bundle.json",
+          "sha256": "a732893243c6d67ac0012b2d9aea9bb70223bd03e5e70013d98e7119c5494adc"
+        },
+        {
+          "path": "manifest.toml",
+          "sha256": "e03c29ad268332c2560cfb3ee8c5f58d9985f159b2313dfe38b101f099848eb1"
+        },
+        {
+          "path": "README.md",
+          "sha256": "4df81ed42ed501872948de1da3ab896df7f534f261f1a206d2adc765dc60c907"
+        }
+      ]
+    },
+    {
+      "kind": "module",
+      "id": "meetings",
+      "version": "0.1.0",
+      "title": "Meetings",
+      "summary": "Schedule, track, and recap meetings across calendars.",
+      "publisher": "ai.magnis",
+      "dev": false,
+      "files": [
+        {
+          "path": "schemas/event.json",
+          "sha256": "91b4823bdf66ad676a9dc916b635aa80b825ab1881946a0c8cc3734df17d3af5"
+        },
+        {
+          "path": "schemas/calendar_event.details.json",
+          "sha256": "6a6997f6b9a661fb321dd101dd59c32e8ce4275641a858838e540275e04ec2f5"
+        },
+        {
+          "path": "schemas/calendar_event.json",
+          "sha256": "b36b20f3392e06a7c3113607d4e0cec6c12a779d5e45685bfa21ceb7f4d5e96f"
+        },
+        {
+          "path": "schemas/event.details.json",
+          "sha256": "3ca74e20180fd83d44a6fc2b7cf2cf15300c60cbe3237c35234aa50f322d43ec"
+        },
+        {
+          "path": "module/dist/index.5e4c74d70a08d19b.js",
+          "sha256": "5e4c74d70a08d19b771381e302cac0b295aa98a49ed86f42f00529683bf8f639"
+        },
+        {
+          "path": "ui/index.99e9524fa3262ed6.js",
+          "sha256": "99e9524fa3262ed699f74b80657b01c1cf18c9bb2b05f3daddd5592f9e90f8b2"
+        },
+        {
+          "path": "icon.svg",
+          "sha256": "26a67a8c7946ab2547a228839ccb4da024a55923851fe7c11b9ae5fc1e97f8f0"
+        },
+        {
+          "path": "bundle.json",
+          "sha256": "61964782863d20474a249390d9d3ba882ded5219f4cd0c39018770d994d26c45"
+        },
+        {
+          "path": "manifest.toml",
+          "sha256": "0eb61b56249531c039ac4f65978ec43d0f963e2aadae68ff1acd44f0deb403f8"
+        },
+        {
+          "path": "README.md",
+          "sha256": "08ba0875e8b3b19674a195e55c2ca55a5da08b74598f5938bfc1433696590c76"
+        }
+      ]
+    },
+    {
+      "kind": "module",
+      "id": "notes",
+      "version": "0.1.0",
+      "title": "Notes",
+      "summary": "Freeform notes linked to entities and projects.",
+      "publisher": "ai.magnis",
+      "dev": false,
+      "files": [
+        {
+          "path": "schemas/note.json",
+          "sha256": "e6a85214be788fa1c2240034b3df17346421cb04b711358cc7820c9dc3538d72"
+        },
+        {
+          "path": "schemas/note.content.json",
+          "sha256": "6c56f77bfcb203d79b948e54f5da7fa4515b59a766d583b65cdcc7c27ef9e45c"
+        },
+        {
+          "path": "module/dist/index.6805925e8919a914.js",
+          "sha256": "6805925e8919a914dfe99f8b565a60f0d3172f0559bec5215a594a65ac29342a"
+        },
+        {
+          "path": "ui/index.b2756dc82578cc65.js",
+          "sha256": "b2756dc82578cc6506f31691dd978aabe711342da581fc17157132c29c0bf1d8"
+        },
+        {
+          "path": "icon.svg",
+          "sha256": "6c0191db1473317ee2e6a8c2539076b980f8e7daf535f9d2450861ebeaba34b5"
+        },
+        {
+          "path": "bundle.json",
+          "sha256": "aa20d3bb5b28107f9c0d85ec20cbe18d014896914664198cea6844b3543c8422"
+        },
+        {
+          "path": "manifest.toml",
+          "sha256": "4a8440fc5f82766c90dfc858beaff96db2abafb6e3bbdb6154c2ad21ade3c985"
+        },
+        {
+          "path": "README.md",
+          "sha256": "02db3da620a2b2ec702d3498edeef7482bd3cd2fa64a53c1ed263e9fad062462"
+        }
+      ]
+    },
+    {
+      "kind": "module",
+      "id": "projects",
+      "version": "0.1.0",
+      "title": "Projects",
+      "summary": "Bundle meetings, messages, and tasks into long-running projects.",
+      "publisher": "ai.magnis",
+      "dev": false,
+      "files": [
+        {
+          "path": "schemas/project.description.json",
+          "sha256": "301ecb6797fac9eb650818a9e6bf4c4bebb6579cacb4346d342e9c55e66bc84a"
+        },
+        {
+          "path": "schemas/project.core.json",
+          "sha256": "15354ea585cd264a227418ecdd9cccf970892d6e2662639ec5fe82c2ebd02a69"
+        },
+        {
+          "path": "schemas/project.json",
+          "sha256": "b17e57bbbd4e2b27e9f2dd279c3f475f2ea3714d11f361d4d11b9c30fd067509"
+        },
+        {
+          "path": "schemas/project.memory.json",
+          "sha256": "6bbe14661289e00503774690d6e21391b9c7d3c8898a7fef1b666f16bb6d5570"
+        },
+        {
+          "path": "schemas/project.checklist.json",
+          "sha256": "e765fe8b74e4b9a29634ca3db8310af465bfe72cecf3195167a2d0bc939f9d55"
+        },
+        {
+          "path": "module/dist/index.98fc084b221bad44.js",
+          "sha256": "98fc084b221bad448fc77884194c5e4837d8024abafdfe6bd8c0eaec568863f4"
+        },
+        {
+          "path": "ui/index.d5dfea36a56a5b74.js",
+          "sha256": "d5dfea36a56a5b743e17c06e71f25cb9749ae339f57798e16d7464d84a7704ff"
+        },
+        {
+          "path": "icon.svg",
+          "sha256": "ce02ccc2e35b12b174f6bff964a2c2b9d9db01fe6ad98468a76ee05676902459"
+        },
+        {
+          "path": "bundle.json",
+          "sha256": "a3fa282a739a596f590daacb3cdbf179109006610f8d3aa0e5a07cc3036493f9"
+        },
+        {
+          "path": "manifest.toml",
+          "sha256": "7acd35b51a3cebde13a22307cc668b27f5f45b9b803c19fd13ae7f84e063b435"
+        },
+        {
+          "path": "README.md",
+          "sha256": "8e8badf1ae97aa34e30bff03bc8c6a88bfc15c1a8bdfbe2f60996d8efa3e4322"
+        }
+      ]
+    },
+    {
+      "kind": "module",
+      "id": "telegram",
+      "version": "0.1.0",
+      "title": "Telegram Messages",
+      "summary": "Threaded Telegram chats indexed alongside the rest of your graph.",
+      "publisher": "ai.magnis",
+      "dev": false,
+      "files": [
+        {
+          "path": "schemas/account.details.json",
+          "sha256": "0580b70ab6ba9b6bea5e59c73522641fd9043028a8bcb819642dc3edecbaa8ea"
+        },
+        {
+          "path": "schemas/contact.json",
+          "sha256": "3f0cd30a68f875ad77a847be1d61f58bfdc083aea4acd4dff4891a718c5e0318"
+        },
+        {
+          "path": "schemas/chat.json",
+          "sha256": "b7befc64139aa15d2bba6313dc10eba3a873be3342dc5594d808122707ac1ff5"
+        },
+        {
+          "path": "schemas/message.json",
+          "sha256": "a97a92de948b857a0c7b85138c606ff427dabb5eb0c85df252d1207bfdc2e7a7"
+        },
+        {
+          "path": "schemas/account.json",
+          "sha256": "6b1f4bb1e49bb706d4cc6b25584c023d91099bb0389d3c4ff4e5b7762708e4bf"
+        },
+        {
+          "path": "schemas/message.details.json",
+          "sha256": "04659a2658c6003acc84d77c173d6237e0ce23dab64f076de434cf62ff732ab4"
+        },
+        {
+          "path": "schemas/chat.details.json",
+          "sha256": "65385efe3a627d470ea27c9d89368eb511868e323b98b09e22da7d958687083b"
+        },
+        {
+          "path": "module/dist/index.7ea8c52d9e436039.js",
+          "sha256": "7ea8c52d9e436039723d4e6ab0c852c608c325aed4ba57cebac0dd290b45ec90"
+        },
+        {
+          "path": "ui/index.59065c6ae29905b1.js",
+          "sha256": "59065c6ae29905b1762a6ad198646bca40c113af97741fd6084aec632130f631"
+        },
+        {
+          "path": "icon.svg",
+          "sha256": "7b7169598f8e2109928ede973519a85841c12924834d262e748b2ead941511b0"
+        },
+        {
+          "path": "bundle.json",
+          "sha256": "e8c6729f7a57e1ca10aeca195effbef626a5c6675ef5fd6019b0fd7238fd3bb2"
+        },
+        {
+          "path": "manifest.toml",
+          "sha256": "05f688da27d8eed013032a2fa99909bf2c39133fe159b518de103195bc96c635"
+        },
+        {
+          "path": "README.md",
+          "sha256": "9aca7257794e0053f333323b4ea3894dd963a52889c813c61d48b9485e28538d"
+        }
+      ]
+    },
+    {
+      "kind": "module",
+      "id": "triggers",
+      "version": "0.1.0",
+      "title": "Triggers",
+      "summary": "Automations that watch your graph and act on changes.",
+      "publisher": "ai.magnis",
+      "dev": false,
+      "files": [
+        {
+          "path": "schemas/trigger.config.json",
+          "sha256": "9e1a2b0c1dca74d2c1d51deac2e760b573bc93741c7083a8b7315065e65eff96"
+        },
+        {
+          "path": "schemas/trigger.json",
+          "sha256": "f5cb6dec6cd5a68c3f56d1d8521346ebb00f708533fa78ec85458f2486449266"
+        },
+        {
+          "path": "schemas/trigger.execution.json",
+          "sha256": "87c274ff4f4570d31172c9c305c47e4bcbda6e15402615959a0dacc40d156019"
+        },
+        {
+          "path": "module/dist/index.f366906e6a4e99df.js",
+          "sha256": "f366906e6a4e99df60c2f4265863b010da4cb09a5e034e2f709adfba92a3ab6a"
+        },
+        {
+          "path": "ui/index.15397ddd2c557327.js",
+          "sha256": "15397ddd2c557327da9bce34cb2869f0d294de03964f087faa98bea43b8534f0"
+        },
+        {
+          "path": "icon.svg",
+          "sha256": "a833a5e6093e86e6fd971d9c888ebc9ebaca75b16ec60b4724cb5d372be92e36"
+        },
+        {
+          "path": "bundle.json",
+          "sha256": "2e7f1241d255d1e66e5c0af6758e4b594dc3410345d5ca17ba0d003e431c006e"
+        },
+        {
+          "path": "manifest.toml",
+          "sha256": "3cfc189822418d48b014e47a8a47ec6cd7f377a57765e20efa411c15bd9fc6d4"
+        },
+        {
+          "path": "README.md",
+          "sha256": "3512c6252fa99e97a6d80001f9f1033371b9d92e46bead0d4e10d3e68195f1ee"
+        }
+      ]
+    },
+    {
+      "kind": "module",
+      "id": "x",
+      "version": "0.1.0",
+      "title": "X",
+      "summary": "X (Twitter) profiles and posts of the people you track, linked to contacts.",
+      "publisher": "ai.magnis",
+      "dev": false,
+      "files": [
+        {
+          "path": "schemas/profile.identity.json",
+          "sha256": "61e5f636ca22276e25b1ce70ae6d4a0acfeada608c9cd2e31cc0cdefd47c4542"
+        },
+        {
+          "path": "schemas/post.json",
+          "sha256": "78263eee871392caa5a950f976108b2c0f9459126a9b4348483f54064e9376bc"
+        },
+        {
+          "path": "schemas/post.metrics.json",
+          "sha256": "6bb7f076d0d95665262dfceb6c09c883c8c9678e15cf2d6ffa956f508fb275b7"
+        },
+        {
+          "path": "schemas/profile.json",
+          "sha256": "96a4fe856ed8acc0b8ec7bb907937eee30ac2ff5ff1644f38b14f09598f81b72"
+        },
+        {
+          "path": "schemas/post.content.json",
+          "sha256": "5ae21f7224b2f5bc1b0efab4c5f525f2ecf499e77bca6bc0a178308fbae92eed"
+        },
+        {
+          "path": "module/dist/index.ce2d7bbf162cc77a.js",
+          "sha256": "ce2d7bbf162cc77abf4c5b436f9b2aeaa17eefca9e64624a16d3b5eb6dc36953"
+        },
+        {
+          "path": "ui/index.8dff38e63169040c.js",
+          "sha256": "8dff38e63169040c8db2acceb7af12b7f4c6b6fef3563c0f64393b8caa45ff07"
+        },
+        {
+          "path": "icon.svg",
+          "sha256": "883b0c9e62afa9ae43d16d45d0115063189f49e4026c996662a64645ff36f692"
+        },
+        {
+          "path": "bundle.json",
+          "sha256": "e8e52df5da0f098419daae53f40ec2ccf48697c3127da6841361083f9bc01072"
+        },
+        {
+          "path": "manifest.toml",
+          "sha256": "f802f79b511c119f6799efdb2b0d7fdcac9ebac3d15899bbb59e226841393927"
+        },
+        {
+          "path": "README.md",
+          "sha256": "0fc7c0137a16b3da7708bfe35ad0ea6be73291a0e3b1c41dfeae026c55f8d373"
+        }
+      ]
+    },
+    {
+      "kind": "source",
+      "id": "anysite",
+      "version": "1.0.0",
+      "title": "Anysite",
+      "summary": "LinkedIn profiles and posts of the people you track, via anysite.io. More surfaces may follow.",
+      "publisher": "ai.magnis",
+      "dev": false,
+      "files": [
+        {
+          "path": "icon.svg",
+          "sha256": "3f1b7d715ac61648a3e2f510811947ad376c927ac5bc90af24c0b861a5adc66c"
+        },
+        {
+          "path": "manifest.toml",
+          "sha256": "fe20d7237bd0f4cc39eef338a291eb5aad67e3c9d2f9bdfb32d2b79d1f49c73f"
+        },
+        {
+          "path": "dist/main.js",
+          "sha256": "fd55906878ed883c1e1f2a99290aa5b7a9f3e38378696630f763ab03ef6575f0"
+        },
+        {
+          "path": "README.md",
+          "sha256": "5dcb4a7d800980378f1e203f5b6db9beb5e160767c4cd52a04ef56b049c980ac"
+        }
+      ]
+    },
+    {
+      "kind": "source",
+      "id": "google",
+      "version": "1.0.0",
+      "title": "Google",
+      "summary": "Sync Gmail and Google Calendar into your personal graph.",
+      "publisher": "ai.magnis",
+      "dev": false,
+      "files": [
+        {
+          "path": "auth/index.tsx",
+          "sha256": "51fe7d9b99f90f68f74047a18a0cb66d9b98781dc3ac181756600cab34d810b6"
+        },
+        {
+          "path": "icon.svg",
+          "sha256": "bf210dd86998aea67b37ab61f270b028b49557dd6a64d4d0eb9cf2334caf0378"
+        },
+        {
+          "path": "manifest.toml",
+          "sha256": "b422c82c98bd81c43f48df65feaca7ca200564304737a4503bdacd2e7c8d9bbd"
+        },
+        {
+          "path": "dist/main.js",
+          "sha256": "d99e6b543b2f54cd3352b9aa9ad04cff25811511053169926e9136aa92331648"
+        },
+        {
+          "path": "README.md",
+          "sha256": "548ca4187ea1e4a502c93e1e28e0b0216c9758549e8e6f9e371f6c616f119ea5"
+        },
+        {
+          "path": "config.default.toml",
+          "sha256": "854f3c271a315f320edbbaeadb219035df28027871549ff2b12e787da0a225c8"
+        }
+      ]
+    },
+    {
+      "kind": "source",
+      "id": "local",
+      "version": "1.0.0",
+      "title": "Local Notes",
+      "summary": "Local-filesystem markdown notes connector (retired sync; kept as reference).",
+      "publisher": "ai.magnis",
+      "dev": true,
+      "files": [
+        {
+          "path": "manifest.toml",
+          "sha256": "6e4b2d6745c819f65ab141e7d2f0f81cab7bee32832e24d5bfebd8d57a3e4211"
+        },
+        {
+          "path": "dist/main.js",
+          "sha256": "133ea3adb3442cc7a2e16d61634ebf801720a05a7ec81ee4030bd17f3feaee2c"
+        },
+        {
+          "path": "README.md",
+          "sha256": "cde28cd6eeb2e5b744ee85c51b213c6a6d90a0df6353ec300ddb972df71fda6e"
+        }
+      ]
+    },
+    {
+      "kind": "source",
+      "id": "mock-gmail",
+      "version": "1.0.0",
+      "title": "Mock Gmail",
+      "summary": "Injectable mock email + meetings source for demos, evals, and e2e.",
+      "publisher": "ai.magnis",
+      "dev": true,
+      "files": [
+        {
+          "path": "manifest.toml",
+          "sha256": "7c5067fe8eadda00e4a4e290e1b37ab024f89459260c03ce3d2ece0138b12e90"
+        },
+        {
+          "path": "dist/main.js",
+          "sha256": "c2d01839409f7a15f66856f162a8396be135b2056de09b985a9df3359e1f66b2"
+        },
+        {
+          "path": "README.md",
+          "sha256": "a4a47872b439c57fda0dbf1c6de5eaf227eea720cad8813ea9fb41ccccb353d8"
+        }
+      ]
+    },
+    {
+      "kind": "source",
+      "id": "mock-linkedin",
+      "version": "1.0.0",
+      "title": "Mock LinkedIn",
+      "summary": "LinkedIn fixture source for tests and e2e.",
+      "publisher": "ai.magnis",
+      "dev": true,
+      "files": [
+        {
+          "path": "manifest.toml",
+          "sha256": "ab798a4b286cbdfc336f7e6e6519cf92b8cfceb6ddbe026681b52b075deded2b"
+        },
+        {
+          "path": "dist/main.js",
+          "sha256": "41129563d1238188ceda51e9c067c58c061a11857340101e199319b2db78d1d3"
+        },
+        {
+          "path": "README.md",
+          "sha256": "437b947365baeaec35c9509fd8330a8953d84ca774e6fb229a6030f47efae9aa"
+        }
+      ]
+    },
+    {
+      "kind": "source",
+      "id": "mock-statemachine-key",
+      "version": "1.0.0",
+      "title": "StateMock (API key)",
+      "summary": "Shared state-machine mock connector in an api_key/poll shape.",
+      "publisher": "ai.magnis",
+      "dev": true,
+      "files": [
+        {
+          "path": "manifest.toml",
+          "sha256": "8b978ff96c32890a8936f77c5a788a73f201e18fddff9b50c14ca9e743b4b467"
+        },
+        {
+          "path": "dist/main.js",
+          "sha256": "b0e4115a1d0161bc83e5eab01cb7c4a1e2e924c2a3b523b4fbd721b656479034"
+        },
+        {
+          "path": "README.md",
+          "sha256": "bab0be1afd3f07276409af37e0bd94d2906c5e50918325319dfbb7cb9b0fcbac"
+        }
+      ]
+    },
+    {
+      "kind": "source",
+      "id": "mock-statemachine-oauth",
+      "version": "1.0.0",
+      "title": "StateMock (OAuth)",
+      "summary": "Shared state-machine mock connector in an oauth2/poll shape.",
+      "publisher": "ai.magnis",
+      "dev": true,
+      "files": [
+        {
+          "path": "manifest.toml",
+          "sha256": "2b0e171e8949e393397e79d5592ae2da58e641d162b818bfe4a2a924df873dfa"
+        },
+        {
+          "path": "dist/main.js",
+          "sha256": "2a0c657ca6023cf29ba33829b3e69bc64b58f7d030d18518619aebd94eb49941"
+        },
+        {
+          "path": "README.md",
+          "sha256": "49875bb49826bc96e15f049e3615b088e59171e2de6f6ed915d1c24c23f24173"
+        }
+      ]
+    },
+    {
+      "kind": "source",
+      "id": "mock-statemachine-phone",
+      "version": "1.0.0",
+      "title": "StateMock (Phone)",
+      "summary": "Shared state-machine mock connector in a phone_code/push shape.",
+      "publisher": "ai.magnis",
+      "dev": true,
+      "files": [
+        {
+          "path": "manifest.toml",
+          "sha256": "0f3a558b33ee6e0b4b9f46e87d0ed58430c7bddacde44288c2fcd88af293e0b2"
+        },
+        {
+          "path": "dist/main.js",
+          "sha256": "26ec134c7b54636f3c400fe3e047df043f01d5826eb66e028b4cc0b19e443486"
+        },
+        {
+          "path": "README.md",
+          "sha256": "0d87b5e4b217ae1579184e72f677066586f20433b41ef2aca698e02316f7b4af"
+        }
+      ]
+    },
+    {
+      "kind": "source",
+      "id": "mock-telegram",
+      "version": "1.0.0",
+      "title": "Mock Telegram",
+      "summary": "Controllable mock Telegram source for demos, evals, and e2e.",
+      "publisher": "ai.magnis",
+      "dev": true,
+      "files": [
+        {
+          "path": "manifest.toml",
+          "sha256": "509556103fc00e3c3c068ae836da0577a52263b81668062bea9cdda4defab32b"
+        },
+        {
+          "path": "dist/main.js",
+          "sha256": "85d3b8f193f54454efa8609a79547207701e3df23793a532baa8c3e450d99ed5"
+        },
+        {
+          "path": "README.md",
+          "sha256": "f940ada879a3512d49e542c304c98b6f6601a2f7621e95bb7fcfaf04ed1f7902"
+        }
+      ]
+    },
+    {
+      "kind": "source",
+      "id": "mock-x",
+      "version": "1.0.0",
+      "title": "Mock X",
+      "summary": "X fixture source for tests and e2e.",
+      "publisher": "ai.magnis",
+      "dev": true,
+      "files": [
+        {
+          "path": "manifest.toml",
+          "sha256": "65e3412e8f5bea68ad3aff3316755b1e1c47e94409323eff783acb8a8449c900"
+        },
+        {
+          "path": "dist/main.js",
+          "sha256": "931ee8e3873c89551a4815f8a91519a8ea04ac9ddb18a5667b19e96c26cb7589"
+        },
+        {
+          "path": "README.md",
+          "sha256": "3ac938d21a1fb25ae3c3b945febd5f172f4b097d9a82d3e29b7bef2d7f418d05"
+        }
+      ]
+    },
+    {
+      "kind": "source",
+      "id": "telegram",
+      "version": "1.0.0",
+      "title": "Telegram",
+      "summary": "Sync chats, groups, and contacts from Telegram.",
+      "publisher": "ai.magnis",
+      "dev": false,
+      "files": [
+        {
+          "path": "auth/index.tsx",
+          "sha256": "e5e7e17f4be94ed8ea0c9426903084cacf5792d1974d953a6fa92d75c0680fa2"
+        },
+        {
+          "path": "icon.svg",
+          "sha256": "7b7169598f8e2109928ede973519a85841c12924834d262e748b2ead941511b0"
+        },
+        {
+          "path": "manifest.toml",
+          "sha256": "0bbcfa2ee98ee1590f1c36a3a1ef0c2a3309b1568a2cc935e1582f23777caa89"
+        },
+        {
+          "path": "dist/main.js",
+          "sha256": "940efa40beced797ee61bb77da7bc0b39554018b94c01c5054263160d2210943"
+        },
+        {
+          "path": "README.md",
+          "sha256": "553885dc1cf178792700ee0b6c601764fffe1602e4f7017f984c7898771c6931"
+        },
+        {
+          "path": "config.default.toml",
+          "sha256": "86554954edd0bc88f852b155095cf4763a3af202f8f29223bd8d583de9a5d3ba"
+        }
+      ]
+    },
+    {
+      "kind": "source",
+      "id": "x",
+      "version": "1.0.0",
+      "title": "X",
+      "summary": "Sync posts from the X (Twitter) accounts you track.",
+      "publisher": "ai.magnis",
+      "dev": false,
+      "files": [
+        {
+          "path": "icon.svg",
+          "sha256": "883b0c9e62afa9ae43d16d45d0115063189f49e4026c996662a64645ff36f692"
+        },
+        {
+          "path": "manifest.toml",
+          "sha256": "ff23354b00a9ed2e6077916eea97a326e36e78c70795f1fbb6c9532d45b6e706"
+        },
+        {
+          "path": "dist/main.js",
+          "sha256": "cce71247ade7e1df6b79518c8331df62298833dccc60d3ad3b0c3c61f5aa36e0"
+        },
+        {
+          "path": "README.md",
+          "sha256": "78b0f4a2bbc9e2f3bf4c4b4c5ba094cbeaa8c170d978b2efea6479e8d86d0190"
+        }
+      ]
+    },
+    {
+      "kind": "source",
+      "id": "x-mcp",
+      "version": "1.0.0",
+      "title": "X MCP Tools",
+      "summary": "Agent-side X search, lookups, news and trends via the official X MCP server.",
+      "publisher": "ai.magnis",
+      "dev": false,
+      "files": [
+        {
+          "path": "manifest.toml",
+          "sha256": "92eeaef848ad771f21f49bede65288be03fe630e1399a350eb517b59cd326b1d"
+        },
+        {
+          "path": "README.md",
+          "sha256": "bef27e2c2b8e2ca75a3f4afa0a6eb7c63f23d487c9a029397f1c1f157f26fa3e"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+# telegram — Telegram Messages domain module (V8 plugin).
+#
+# Owns the `telegram.*` graph namespace: account / chat / message entities and
+# their facets. Ingests the surface fed by the Telegram SOURCE connector (see
+# plugins/sources/telegram) — this module is the graph-side half; the source is
+# the connector half. Also creates `contacts.person` entities for chat members
+# (cross-module create, see [permissions]). Runs as a sandboxed V8 isolate;
+# bundled with the app and installed automatically at boot.
+
+id = "telegram"
+version = "0.1.0"
+# SDK contract version this manifest targets (host accepts 0.x).
+magnis_api_version = "0.1.0"
+title = "Telegram Messages"
+summary = "Threaded Telegram chats indexed alongside the rest of your graph."
+# Reverse-domain publisher identity.
+publisher = "ai.magnis"
+
+# Sync surface this module consumes (fed by the matching source connector).
+[surfaces.telegram]
+# The surface's primary-item schema — its user-scoped graph count IS the
+# "items synced" badge (host source.status.list reads this).
+item = "telegram.message"
+
+# Foreign asks beyond the implicit own namespace: writes to `telegram.` facets,
+# own:own links, and reads of own schemas need no declaration.
+[permissions]
+read = [ "contacts.person" ]
+create = [ "contacts.person" ]
+links = [ "telegram.message:person", "person:telegram.chat" ]
+call = [ "triggers.create" ]
+host = [ "source_commands", "sync_state", "composer", "file_register", "web_register", "external_id_reads" ]
+
+# Extra bare import specifiers the UI bundle may reference beyond the host-shim
+# defaults — rewritten to host-shim URLs at build/transpile time.
+[ui]
+extra_bare_imports = [ "react-virtuoso", "zustand", "zustand/vanilla" ]

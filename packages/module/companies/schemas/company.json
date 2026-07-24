@@ -1,0 +1,5 @@
+{
+  "name": "Company",
+  "description": "A company / organisation entity owned by the companies plugin.",
+  "mergeable": true
+}

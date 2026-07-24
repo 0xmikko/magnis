@@ -1,0 +1,35 @@
+# anysite — read-only source connector built on the anysite.io data API.
+# bun/TS stdio MCP server. Today it provides the `linkedin` surface: profile +
+# post envelopes for the people the user explicitly tracks — untracked handles
+# are never fetched. Read-only: the only tool is magnis.sync.fetch. The
+# provider can return more than LinkedIn, so further surfaces may be added
+# later; the surface names the data, the source names the provider.
+#
+# Auth: anysite `access-token` header. The host resolves `api_key` (vault,
+# then the SOURCE_ANYSITE_API_KEY env var) and injects it per call via _meta —
+# the connector never stores credentials. initialize is credential-less: a
+# missing key fails at fetch time, not at registration. See
+# [docs/plugins/source.md](../../../docs/plugins/source.md) for the connector
+# contract; README.md covers endpoints and the live verification.
+
+id = "anysite"
+version = "1.0.0"
+title = "Anysite"
+summary = "LinkedIn profiles and posts of the people you track, via anysite.io. More surfaces may follow."
+publisher = "ai.magnis"
+surfaces = ["linkedin"]
+account_mode = "single"
+
+[auth]
+type = "shared_provider"
+
+[credentials]
+# api_key is an app-cred; the label opts it into Settings → Sources.
+# Resolution order: vault, then the SOURCE_ANYSITE_API_KEY env var.
+keys = [
+  { name = "api_key", label = "Anysite API key", help_url = "https://anysite.io/dashboard", description = "Magnis uses anysite.io to fetch LinkedIn profiles and posts of the people you track. Requests are billed to your anysite account." },
+]
+
+[sync]
+mode = "poll"
+interval_secs = 600

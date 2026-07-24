@@ -1,0 +1,25 @@
+# triggers — Trigger definitions domain module (V8 plugin).
+#
+# Owns the `triggers.*` graph namespace: the trigger entity plus its config and
+# execution facets. This module owns only the trigger DEFINITION CRUD + UI — the
+# native trigger ENGINE (evaluate + fire) stays in Core and reads these
+# definitions (hybrid split). Runs as a sandboxed V8 isolate; bundled with the
+# app and installed automatically at boot.
+
+id = "triggers"
+version = "0.1.0"
+# SDK contract version this manifest targets (host accepts 0.x).
+magnis_api_version = "0.1.0"
+# tier = "system": mandatory, always-loaded, cannot be uninstalled/disabled.
+# Still V8-sandboxed.
+tier = "system"
+title = "Triggers"
+summary = "Automations that watch your graph and act on changes."
+# Reverse-domain publisher identity.
+publisher = "ai.magnis"
+
+# Foreign asks beyond the implicit own namespace: writes to `triggers.` facets,
+# own:own links, and reads of own schemas need no declaration.
+[permissions]
+links = [ "watches", "belongs_to" ]
+call = [ "triggers.validate_watch", "triggers.resolve_watchable", "triggers.invalidate_cache" ]
