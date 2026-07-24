@@ -1,24 +1,29 @@
-// Stage 5+6 — sync control + reply composer. Thin @rpc wrappers that delegate
+// Sync control + reply composer. Thin @rpc wrappers that delegate
 // to the host graph ops (sync_state / composer), keyed by the calling module.
+// Exercised through @magnis/testkit/module: the passed-in spies are wrapped by
+// mockGraph's Proxy (which forwards args to them), so `expect(spy).toHaveBeen…`
+// still observes the delegated call; any op NOT provided throws.
 
 import { describe, expect, it, vi } from "vitest";
-import type { GraphBatchInput, GraphService, PluginDeps, RpcExecutor } from "@magnis/plugin-sdk";
+import type { GraphBatchInput, RpcExecutor } from "@magnis/plugin-sdk";
+import { mockGraph, mountModule, type GraphOverrides } from "@magnis/testkit/module";
 import { EmailModule } from "../service.ts";
-import type { EmailCanonical, EmailFacets } from "../../types/index.ts";
+import type { EmailCanonical, EmailFacets } from "../../types.ts";
 
 function makeModule(
   graph: Partial<Record<string, unknown>>,
   rpc: RpcExecutor = { execute: vi.fn() },
 ): EmailModule {
-  return new EmailModule({
-    graph,
-    ctx: { extension_id: "email", user_id: "u1" },
-    util: {},
+  return mountModule(EmailModule, {
+    graph: mockGraph<EmailFacets, EmailCanonical>(
+      graph as unknown as GraphOverrides<EmailFacets, EmailCanonical>,
+    ),
+    ctx: { extension_id: "email" },
     rpc,
-  } as unknown as PluginDeps<EmailFacets, EmailCanonical>);
+  }).module;
 }
 
-describe("email sync control (Stage 5)", () => {
+describe("email sync control", () => {
   it("sync.status delegates to graph.sync_state('status')", async () => {
     const sync_state = vi.fn().mockResolvedValue({ accounts: [] });
     const mod = makeModule({ sync_state });
@@ -34,7 +39,7 @@ describe("email sync control (Stage 5)", () => {
   });
 });
 
-describe("email reply composer (Stage 6)", () => {
+describe("email reply composer", () => {
   it("composer.read delegates to graph.composer('read')", async () => {
     const composer = vi.fn().mockResolvedValue({ present: false });
     await makeModule({ composer }).composerRead();
@@ -73,10 +78,15 @@ describe("email ensure_address hub RPC (cross-module)", () => {
     const out = await mod.ensureAddress({ address: "Alice@Example.com", display_name: "Alice" });
 
     expect(out).toEqual({ id: "id-addr" });
-    const frag = apply_batch.mock.calls[0][0];
+    const call0 = apply_batch.mock.calls[0];
+    if (call0 === undefined) throw new Error("ensure_address: apply_batch not called");
+    const frag = call0[0];
     const addr = frag.entities[0];
+    if (addr === undefined) throw new Error("ensure_address: missing address entity");
     expect(addr.schema_id).toBe("email.address");
-    expect(addr.facets[0].external_id).toBe("email:address:alice@example.com"); // lowercased hub key
+    const addrFacet0 = addr.facets[0];
+    if (addrFacet0 === undefined) throw new Error("ensure_address: missing address facet[0]");
+    expect(addrFacet0.external_id).toBe("email:address:alice@example.com"); // lowercased hub key
   });
 
   it("rejects an empty address", async () => {
@@ -85,7 +95,7 @@ describe("email ensure_address hub RPC (cross-module)", () => {
   });
 });
 
-describe("email set_trigger (Stage 7)", () => {
+describe("email set_trigger", () => {
   it("normalizes addresses, resolves them via apply_batch, delegates to triggers.create", async () => {
     const apply_batch = vi.fn(async (frag: GraphBatchInput) => ({
       ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
@@ -105,7 +115,9 @@ describe("email set_trigger (Stage 7)", () => {
     });
 
     // resolve-or-create email.address entities (lowercased, deduped, sorted)
-    const frag = apply_batch.mock.calls[0][0] as GraphBatchInput;
+    const call0 = apply_batch.mock.calls[0];
+    if (call0 === undefined) throw new Error("set_trigger: apply_batch not called");
+    const frag = call0[0] as GraphBatchInput;
     expect(frag.entities.map((e) => e.idx)).toEqual(["a@x.com", "b@x.com", "c@x.com"]);
     expect(frag.entities.every((e) => e.schema_id === "email.address")).toBe(true);
 

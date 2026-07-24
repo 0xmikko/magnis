@@ -1,4 +1,4 @@
-// parseSocialUrl (social-contact-identity DEC-10/INV-3): the ONE place that
+// parseSocialUrl: the ONE place that
 // turns operator input (profile URL / @handle / bare handle) into a bare
 // normalized handle per platform. Accepts exactly the documented forms;
 // everything else → typed invalid_url. No silent guessing (NO FALLBACKS).
@@ -45,11 +45,11 @@ export function parseSocialUrl(platform: SocialPlatform, input: string): ParseSo
     const afterScheme = raw.replace(/^https?:\/\//i, "");
     const slash = afterScheme.indexOf("/");
     const hostRaw = (slash === -1 ? afterScheme : afterScheme.slice(0, slash)).toLowerCase();
-    // Userinfo / port tricks are rejected outright (DEC-10 SSRF-adjacent rules).
+    // Userinfo / port tricks are rejected outright (SSRF-adjacent rules).
     if (!hostRaw || hostRaw.includes("@") || hostRaw.includes(":")) return INVALID;
     const host = hostRaw.replace(/^www\./, "");
-    // Query/fragment dropped BEFORE segmenting (DEC-10).
-    const path = slash === -1 ? "" : afterScheme.slice(slash + 1).split(/[?#]/)[0]!;
+    // Query/fragment dropped BEFORE segmenting.
+    const path = slash === -1 ? "" : afterScheme.slice(slash + 1).replace(/[?#].*$/s, "");
     const segments = path.split("/").filter(Boolean);
 
     if (platform === "linkedin") {

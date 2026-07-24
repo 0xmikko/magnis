@@ -7,12 +7,15 @@ export function TelegramToolCallRenderer({
 }: AgentRendererProps<ToolCallRendererPayload>): JSX.Element {
   const { toolCall: tc, toolResult, isAllowlisted, superseded, selectedChatName, onApprove, onDeny, onEdit, onAllowlistToggle } = payload;
   const args = tc.args as Record<string, unknown>;
+  const chatIdLabel =
+    typeof args.chat_id === "string" || typeof args.chat_id === "number"
+      ? `Chat ${String(args.chat_id)}`
+      : "Telegram";
   const chatName =
     tc.chatName ??
     (args.chat_name as string | undefined) ??
     selectedChatName ??
-    // eslint-disable-next-line @typescript-eslint/no-base-to-string
-    (args.chat_id != null ? `Chat ${String(args.chat_id)}` : "Telegram");
+    chatIdLabel;
 
   return (
     <BaseToolCallCard
@@ -32,8 +35,7 @@ export function TelegramToolCallRenderer({
       onAllowlistToggle={onAllowlistToggle}
     >
       <p className="whitespace-pre-wrap text-[13px] leading-[1.5] text-agent-text">
-        {/* eslint-disable-next-line @typescript-eslint/no-base-to-string */}
-        {args.text != null ? String(args.text) : ""}
+        {typeof args.text === "string" ? args.text : ""}
       </p>
     </BaseToolCallCard>
   );

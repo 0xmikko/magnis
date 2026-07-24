@@ -1,50 +1,42 @@
-// Stage 2 — email read surface: shape parity + DB-access guarantees.
-// Unit-tests the V8 module class directly with a mock GraphService whose
-// methods are vi.fn() spies. Asserts BOTH the returned DTO shape
-// (tst_be_emailread_001) and the exact graph op-counts per surface
-// (tst_be_emaildb_003 → INV-DB-1/2/4): a fixed, N-independent number of
-// crossings, no per-row hydrate, no canonical/facet read on the hot path.
+// Email read surface: shape parity + DB-access guarantees.
+// Exercises the V8 module class through @magnis/testkit/module (mockGraph +
+// mountModule). Asserts BOTH the returned DTO shape (tst_be_emailread_001) and
+// the exact graph op-counts per surface (tst_be_emaildb_003): a
+// fixed, N-independent number of crossings, no per-row hydrate, no
+// canonical/facet read on the hot path.
+//
+// mockGraph is a throwing Proxy: any op NOT arranged below (list_facets_for_entity,
+// list_canonical_for_entity, list_entities — the N+1 traps) throws when hit, so
+// an accidental crossing fails loudly. That REPLACES the old per-op reject spies
+// AND the `toHaveBeenCalledTimes(0)` assertions on those forbidden ops.
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import type {
-  EntityDetail,
-  FacetRecord,
-  GraphService,
-  PluginDeps,
-  RawEntity,
-  WindowPage,
-} from "@magnis/plugin-sdk";
+import { beforeEach, describe, expect, it } from "vitest";
+import type { EntityDetail, FacetRecord, RawEntity } from "@magnis/plugin-sdk";
+import { mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { EmailModule } from "../service.ts";
-import type { EmailCanonical, EmailFacets } from "../../types/index.ts";
+import type { EmailCanonical, EmailFacets } from "../../types.ts";
 
-// ── mock graph: only the ops the read path may legitimately touch are
-// stubbed; everything else throws so an accidental crossing fails loudly.
-function makeGraph(): GraphService<EmailFacets, EmailCanonical> {
-  const reject =
-    (name: string) =>
-    (..._args: unknown[]): never => {
-      throw new Error(`unexpected graph op on read path: ${name}`);
-    };
-  return {
-    list_entities_window: vi.fn<[unknown], Promise<WindowPage>>(),
-    get_entity_full: vi.fn<[string, unknown?], Promise<EntityDetail | null>>(),
-    get_entities: vi.fn<[string[]], Promise<RawEntity[]>>().mockResolvedValue([]),
-    search_entities_by_name: vi.fn<[unknown], Promise<RawEntity[]>>(),
-    list_facets_for_entities: vi.fn<[string[]], Promise<FacetRecord[]>>(),
-    list_facets_for_entity: vi.fn(reject("list_facets_for_entity")),
-    list_canonical_for_entity: vi.fn(reject("list_canonical_for_entity")),
-    list_entities: vi.fn(reject("list_entities")),
-  } as unknown as GraphService<EmailFacets, EmailCanonical>;
+type G = MockGraph<EmailFacets, EmailCanonical>;
+
+// Only the ops the read path may legitimately touch are arranged with benign
+// defaults; everything else throws via the mockGraph Proxy.
+function readGraph(): G {
+  return mockGraph<EmailFacets, EmailCanonical>({
+    list_entities_window: () => Promise.resolve({ items: [], total: 0 }),
+    get_entity_full: () => Promise.resolve(null),
+    get_entities: () => Promise.resolve([]),
+    search_entities_by_name: () => Promise.resolve([]),
+    list_facets_for_entities: () => Promise.resolve([]),
+  });
 }
 
-function makeModule(graph: GraphService<EmailFacets, EmailCanonical>): EmailModule {
-  const deps = {
-    graph,
-    ctx: { extension_id: "email", user_id: "u1" },
-    util: {},
-    rpc: { call: vi.fn() },
-  } as unknown as PluginDeps<EmailFacets, EmailCanonical>;
-  return new EmailModule(deps);
+// noUncheckedIndexedAccess: `spies` is Record<string, Mock>, so each lookup is
+// `Mock | undefined`. Every op referenced below IS arranged by readGraph, so a
+// missing spy is a harness bug — surface it, never mask it.
+function spy(graph: G, op: string) {
+  const s = graph.spies[op];
+  if (s === undefined) throw new Error(`email read test: spy '${op}' not arranged`);
+  return s;
 }
 
 const ROW = (id: string, date: string, over: Record<string, unknown> = {}) => ({
@@ -84,15 +76,15 @@ const DETAIL = (id: string, date: string): EntityDetail => ({
 });
 
 describe("email read — shape parity (tst_be_emailread_001)", () => {
-  let graph: GraphService<EmailFacets, EmailCanonical>;
+  let graph: G;
   let mod: EmailModule;
   beforeEach(() => {
-    graph = makeGraph();
-    mod = makeModule(graph);
+    graph = readGraph();
+    mod = mountModule(EmailModule, { graph, ctx: { extension_id: "email" } }).module;
   });
 
   it("list maps window rows to MessageListItem (sender fallback, snippet preview, body_html stripped)", async () => {
-    (graph.list_entities_window as ReturnType<typeof vi.fn>).mockResolvedValue({
+    spy(graph, "list_entities_window").mockResolvedValue({
       items: [ROW("b", "2026-06-02T10:00:00Z"), ROW("a", "2026-06-01T10:00:00Z")],
       total: 2,
     });
@@ -102,6 +94,7 @@ describe("email read — shape parity (tst_be_emailread_001)", () => {
     expect(page.total).toBe(2);
     expect(page.items.map((i) => i.id)).toEqual(["b", "a"]); // DB date-desc order preserved
     const first = page.items[0];
+    if (first === undefined) throw new Error("list: missing first item");
     expect(first.sender).toBe("Alice Johnson"); // from_name preferred over from_address
     expect(first.subject).toBe("Subject b");
     expect(first.preview).toBe("preview text b"); // snippet
@@ -113,18 +106,18 @@ describe("email read — shape parity (tst_be_emailread_001)", () => {
   });
 
   it("list falls back to from_address when from_name is absent", async () => {
-    (graph.list_entities_window as ReturnType<typeof vi.fn>).mockResolvedValue({
+    spy(graph, "list_entities_window").mockResolvedValue({
       items: [ROW("a", "2026-06-01T10:00:00Z", { from_name: "" })],
       total: 1,
     });
     const page = await mod.emailList({});
-    expect(page.items[0].sender).toBe("alice@example.com");
+    const first = page.items[0];
+    if (first === undefined) throw new Error("list fallback: missing first item");
+    expect(first.sender).toBe("alice@example.com");
   });
 
   it("get returns a MessageDetailView (body_text, full metadata incl body_html, facet summaries)", async () => {
-    (graph.get_entity_full as ReturnType<typeof vi.fn>).mockResolvedValue(
-      DETAIL("x", "2026-06-03T09:00:00Z"),
-    );
+    spy(graph, "get_entity_full").mockResolvedValue(DETAIL("x", "2026-06-03T09:00:00Z"));
 
     const view = await mod.emailGet({ id: "x" });
 
@@ -135,20 +128,22 @@ describe("email read — shape parity (tst_be_emailread_001)", () => {
     expect(view.canonical).toEqual({});
     expect(view.linked_entities).toEqual([]);
     expect(view.facets).toHaveLength(1);
-    expect(view.facets[0].schema_id).toBe("email.message.details");
+    const facet0 = view.facets[0];
+    if (facet0 === undefined) throw new Error("get: missing facet[0]");
+    expect(facet0.schema_id).toBe("email.message.details");
     expect(view.metadata).toHaveProperty("body_html"); // detail keeps HTML
   });
 
   it("get resolves link neighbours into linked_entities (names via one batch)", async () => {
     const base = DETAIL("x", "2026-06-03T09:00:00Z");
-    (graph.get_entity_full as ReturnType<typeof vi.fn>).mockResolvedValue({
+    spy(graph, "get_entity_full").mockResolvedValue({
       ...base,
       links: [
         { id: "l1", from_id: "x", to_id: "file-1", kind: "attachment" },
         { id: "l2", from_id: "x", to_id: "file-2", kind: "attachment" },
       ],
     });
-    (graph.get_entities as ReturnType<typeof vi.fn>).mockResolvedValue([
+    spy(graph, "get_entities").mockResolvedValue([
       { id: "file-1", schema_id: "file.object", name: "photo.jpg", created_at: "2026-06-03T09:00:00Z" },
       { id: "file-2", schema_id: "file.object", name: "report.pdf", created_at: "2026-06-03T09:00:00Z" },
     ] satisfies RawEntity[]);
@@ -157,16 +152,16 @@ describe("email read — shape parity (tst_be_emailread_001)", () => {
     expect(view.linked_entities).toHaveLength(2);
     expect(view.linked_entities.map((l) => l.name)).toEqual(["photo.jpg", "report.pdf"]);
     expect(view.linked_entities.every((l) => l.link_kind === "attachment")).toBe(true);
-    expect(graph.get_entities).toHaveBeenCalledTimes(1); // ONE batch, no per-link N+1
+    expect(spy(graph, "get_entities")).toHaveBeenCalledTimes(1); // ONE batch, no per-link N+1
   });
 
   it("get throws on a non-email / missing entity", async () => {
-    (graph.get_entity_full as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    spy(graph, "get_entity_full").mockResolvedValue(null);
     await expect(mod.emailGet({ id: "nope" })).rejects.toThrow();
   });
 
   it("batch returns one detail view per id and skips not-found", async () => {
-    (graph.get_entity_full as ReturnType<typeof vi.fn>)
+    spy(graph, "get_entity_full")
       .mockResolvedValueOnce(DETAIL("a", "2026-06-01T10:00:00Z"))
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(DETAIL("c", "2026-06-03T10:00:00Z"));
@@ -176,10 +171,10 @@ describe("email read — shape parity (tst_be_emailread_001)", () => {
   });
 
   it("search hydrates only the matched ids via batch facet read", async () => {
-    (graph.search_entities_by_name as ReturnType<typeof vi.fn>).mockResolvedValue([
+    spy(graph, "search_entities_by_name").mockResolvedValue([
       { id: "a", schema_id: "email.message", name: "Subject a", created_at: "2026-06-01T10:00:00Z" },
     ] satisfies RawEntity[]);
-    (graph.list_facets_for_entities as ReturnType<typeof vi.fn>).mockResolvedValue([
+    spy(graph, "list_facets_for_entities").mockResolvedValue([
       {
         entity_id: "a",
         id: "f-a",
@@ -192,58 +187,54 @@ describe("email read — shape parity (tst_be_emailread_001)", () => {
 
     const page = await mod.emailList({ search: "invoice" });
     expect(page.items).toHaveLength(1);
-    expect(page.items[0].sender).toBe("Alice Johnson");
-    expect(page.items[0].preview).toBe("preview text a");
+    const first = page.items[0];
+    if (first === undefined) throw new Error("search: missing first item");
+    expect(first.sender).toBe("Alice Johnson");
+    expect(first.preview).toBe("preview text a");
   });
 });
 
 describe("email read — DB-access guarantees (tst_be_emaildb_003 / INV-DB-1,2,4)", () => {
-  let graph: GraphService<EmailFacets, EmailCanonical>;
+  let graph: G;
   let mod: EmailModule;
   beforeEach(() => {
-    graph = makeGraph();
-    mod = makeModule(graph);
+    graph = readGraph();
+    mod = mountModule(EmailModule, { graph, ctx: { extension_id: "email" } }).module;
   });
 
   it("list (no search) = exactly 1 list_entities_window, 0 facet/canonical reads (INV-DB-1)", async () => {
-    (graph.list_entities_window as ReturnType<typeof vi.fn>).mockResolvedValue({
+    spy(graph, "list_entities_window").mockResolvedValue({
       items: [ROW("a", "2026-06-01T10:00:00Z"), ROW("b", "2026-06-02T10:00:00Z")],
       total: 2,
     });
     await mod.emailList({ limit: 50 });
-    expect(graph.list_entities_window).toHaveBeenCalledTimes(1);
-    expect(graph.list_facets_for_entity).toHaveBeenCalledTimes(0);
-    expect(graph.list_facets_for_entities).toHaveBeenCalledTimes(0);
-    expect(graph.search_entities_by_name).toHaveBeenCalledTimes(0);
+    expect(spy(graph, "list_entities_window")).toHaveBeenCalledTimes(1);
+    expect(spy(graph, "list_facets_for_entities")).toHaveBeenCalledTimes(0);
+    expect(spy(graph, "search_entities_by_name")).toHaveBeenCalledTimes(0);
+    // list_facets_for_entity (per-row N+1 trap) is a forbidden, unarranged op —
+    // the throwing mockGraph guarantees it is never hit; no spy to assert 0.
   });
 
   it("list (search) = 1 search + 1 batch facet hydrate, 0 window, 0 per-row hydrate (INV-DB-4)", async () => {
-    (graph.search_entities_by_name as ReturnType<typeof vi.fn>).mockResolvedValue([]);
-    (graph.list_facets_for_entities as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    spy(graph, "search_entities_by_name").mockResolvedValue([]);
+    spy(graph, "list_facets_for_entities").mockResolvedValue([]);
     await mod.emailList({ search: "x" });
-    expect(graph.search_entities_by_name).toHaveBeenCalledTimes(1);
-    expect(graph.list_facets_for_entities).toHaveBeenCalledTimes(1);
-    expect(graph.list_entities_window).toHaveBeenCalledTimes(0);
-    expect(graph.list_facets_for_entity).toHaveBeenCalledTimes(0);
+    expect(spy(graph, "search_entities_by_name")).toHaveBeenCalledTimes(1);
+    expect(spy(graph, "list_facets_for_entities")).toHaveBeenCalledTimes(1);
+    expect(spy(graph, "list_entities_window")).toHaveBeenCalledTimes(0);
   });
 
   it("get = 1 get_entity_full (+0 get_entities when no links), 0 facet/canonical reads (INV-DB-2)", async () => {
-    (graph.get_entity_full as ReturnType<typeof vi.fn>).mockResolvedValue(
-      DETAIL("x", "2026-06-03T09:00:00Z"), // links: []
-    );
+    spy(graph, "get_entity_full").mockResolvedValue(DETAIL("x", "2026-06-03T09:00:00Z")); // links: []
     await mod.emailGet({ id: "x" });
-    expect(graph.get_entity_full).toHaveBeenCalledTimes(1);
-    expect(graph.get_entities).toHaveBeenCalledTimes(0); // no links → no neighbour hydrate
-    expect(graph.list_facets_for_entity).toHaveBeenCalledTimes(0);
+    expect(spy(graph, "get_entity_full")).toHaveBeenCalledTimes(1);
+    expect(spy(graph, "get_entities")).toHaveBeenCalledTimes(0); // no links → no neighbour hydrate
   });
 
   it("batch = exactly K get_entity_full for K ids (no extra crossings)", async () => {
-    (graph.get_entity_full as ReturnType<typeof vi.fn>).mockResolvedValue(
-      DETAIL("a", "2026-06-01T10:00:00Z"),
-    );
+    spy(graph, "get_entity_full").mockResolvedValue(DETAIL("a", "2026-06-01T10:00:00Z"));
     await mod.emailBatch({ ids: ["a", "b", "c"] });
-    expect(graph.get_entity_full).toHaveBeenCalledTimes(3);
-    expect(graph.list_facets_for_entity).toHaveBeenCalledTimes(0);
-    expect(graph.list_entities_window).toHaveBeenCalledTimes(0);
+    expect(spy(graph, "get_entity_full")).toHaveBeenCalledTimes(3);
+    expect(spy(graph, "list_entities_window")).toHaveBeenCalledTimes(0);
   });
 });

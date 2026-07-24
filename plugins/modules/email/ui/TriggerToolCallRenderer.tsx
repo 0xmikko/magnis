@@ -68,7 +68,7 @@ export function TriggerToolCallRenderer({
       </div>
 
       {/* Debounce info */}
-      {debounce != null && debounce > 0 && (
+      {debounce !== undefined && debounce > 0 && (
         <div className="text-[10px] text-agent-text-muted">
           Debounce: {String(debounce)}s
         </div>

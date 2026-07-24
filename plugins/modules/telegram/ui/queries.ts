@@ -2,7 +2,7 @@
  * Telegram TanStack Query hooks for server/cache state.
  */
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { useAppRuntime } from "@magnis/host/runtime";
 import type { TelegramChatListItem, TelegramMessageListItem } from "./types";
 import type { PaginatedResponse } from "@magnis/host/runtime";
@@ -14,14 +14,16 @@ export const telegramKeys = {
   chatDetail: (chatId: string) => [...telegramKeys.all, "chat", chatId] as const,
 };
 
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type, @typescript-eslint/explicit-module-boundary-types
-export function useTelegramChatsQuery(limit: number, offset: number, search?: string) {
+export function useTelegramChatsQuery(
+  limit: number,
+  offset: number,
+  search?: string,
+): UseQueryResult<PaginatedResponse<TelegramChatListItem>> {
   const runtime = useAppRuntime();
   const params: Record<string, unknown> = { limit, offset };
   if (search) params.search = search;
   return useQuery({
-    // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-    queryKey: telegramKeys.chats({ limit, offset, search: search || undefined }),
+    queryKey: telegramKeys.chats({ limit, offset, search: search === "" ? undefined : search }),
     queryFn: () => runtime.transport.rpc<PaginatedResponse<TelegramChatListItem>>(
       "telegram.chats.list",
       params,
@@ -30,8 +32,11 @@ export function useTelegramChatsQuery(limit: number, offset: number, search?: st
   });
 }
 
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type, @typescript-eslint/explicit-module-boundary-types
-export function useTelegramMessagesQuery(chatId: string | undefined, limit: number, offset: number) {
+export function useTelegramMessagesQuery(
+  chatId: string | undefined,
+  limit: number,
+  offset: number,
+): UseQueryResult<PaginatedResponse<TelegramMessageListItem>> {
   const runtime = useAppRuntime();
   return useQuery({
     queryKey: telegramKeys.messages(chatId ?? "", { limit, offset }),

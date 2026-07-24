@@ -1,42 +1,44 @@
-// Stage 4 — email send / reply / batch_send (@writeTool). Native-parity flow:
+// Email send / reply / batch_send (@writeTool). Native-parity flow:
 // create the outgoing message FIRST (apply_batch), then route best-effort
 // (source failure non-fatal for send). Reply threads in_reply_to + links
-// attachments to the ORIGINAL.
+// attachments to the ORIGINAL. Exercised through @magnis/testkit/module.
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import type {
-  EntityDetail,
-  GraphBatchInput,
-  GraphBatchResult,
-  GraphService,
-  PluginDeps,
-} from "@magnis/plugin-sdk";
+import { describe, expect, it } from "vitest";
+import type { EntityDetail, GraphBatchInput } from "@magnis/plugin-sdk";
+import { mockGraph, mountModule, type GraphOverrides, type MockGraph } from "@magnis/testkit/module";
 import { EmailModule } from "../service.ts";
-import type { EmailCanonical, EmailFacets } from "../../types/index.ts";
+import type { EmailCanonical, EmailFacets } from "../../types.ts";
 
-function makeGraph(over: Partial<Record<string, unknown>> = {}): GraphService<EmailFacets, EmailCanonical> {
-  return {
-    apply_batch: vi.fn<[GraphBatchInput], Promise<GraphBatchResult>>(async (frag) => ({
+type G = MockGraph<EmailFacets, EmailCanonical>;
+
+function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
+  const overrides = {
+    apply_batch: async (frag: GraphBatchInput) => ({
       ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
       created: frag.entities.length,
       updated: 0,
       links_added: frag.links?.length ?? 0,
       dropped_keys: [],
-    })),
-    add_link: vi.fn<[unknown], Promise<void>>().mockResolvedValue(undefined),
-    source_command: vi.fn<[unknown, unknown?], Promise<Record<string, unknown>>>().mockResolvedValue({ message_id: "src-1" }),
-    get_entity_full: vi.fn<[string, unknown?], Promise<EntityDetail | null>>(),
+    }),
+    add_link: () => Promise.resolve(undefined),
+    source_command: () => Promise.resolve({ message_id: "src-1" }),
+    get_entity_full: () => Promise.resolve(null),
     ...over,
-  } as unknown as GraphService<EmailFacets, EmailCanonical>;
+  } as unknown as GraphOverrides<EmailFacets, EmailCanonical>;
+  return mockGraph<EmailFacets, EmailCanonical>(overrides);
 }
 
-function makeModule(graph: GraphService<EmailFacets, EmailCanonical>): EmailModule {
-  return new EmailModule({
-    graph,
-    ctx: { extension_id: "email", user_id: "u1" },
-    util: {},
-    rpc: { call: vi.fn() },
-  } as unknown as PluginDeps<EmailFacets, EmailCanonical>);
+function makeModule(graph: G): EmailModule {
+  return mountModule(EmailModule, { graph, ctx: { extension_id: "email" } }).module;
+}
+
+// noUncheckedIndexedAccess: `spies` is Record<string, Mock>, so each lookup is
+// `Mock | undefined`. Every op referenced below IS arranged by makeGraph, so a
+// missing spy is a harness bug — surface it, never mask it.
+function spy(graph: G, op: string) {
+  const s = graph.spies[op];
+  if (s === undefined) throw new Error(`email send test: spy '${op}' not arranged`);
+  return s;
 }
 
 describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
@@ -45,17 +47,23 @@ describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
     const mod = makeModule(graph);
     const r = await mod.emailSend({ to: "Bob@Example.com", subject: "Hi", body_text: "hello" });
 
-    expect(graph.apply_batch).toHaveBeenCalledTimes(1);
-    const frag = (graph.apply_batch as ReturnType<typeof vi.fn>).mock.calls[0][0] as GraphBatchInput;
+    expect(spy(graph, "apply_batch")).toHaveBeenCalledTimes(1);
+    const applyCall0 = spy(graph, "apply_batch").mock.calls[0];
+    if (applyCall0 === undefined) throw new Error("send: apply_batch not called");
+    const frag = applyCall0[0] as GraphBatchInput;
     const msg = frag.entities.find((e) => e.schema_id === "email.message")!;
     const addr = frag.entities.find((e) => e.schema_id === "email.address")!;
     expect(addr.idx).toBe("bob@example.com"); // lowercased recipient
-    expect(addr.facets[0].external_id).toBe("email:address:bob@example.com");
-    expect((msg.facets[0].data as Record<string, unknown>).is_outgoing).toBe(true);
+    const addrFacet0 = addr.facets[0];
+    if (addrFacet0 === undefined) throw new Error("send: missing addr facet[0]");
+    expect(addrFacet0.external_id).toBe("email:address:bob@example.com");
+    const msgFacet0 = msg.facets[0];
+    if (msgFacet0 === undefined) throw new Error("send: missing msg facet[0]");
+    expect((msgFacet0.data as Record<string, unknown>).is_outgoing).toBe(true);
     expect(frag.links).toEqual([{ from_key: "out", to_key: "addr:bob@example.com", kind: "sent_to" }]);
 
     // source routed AFTER the entity exists
-    expect(graph.source_command).toHaveBeenCalledTimes(1);
+    expect(spy(graph, "source_command")).toHaveBeenCalledTimes(1);
     expect(r.id).toBe("id-out");
     expect(r.schema_id).toBe("email.message");
     expect(r.attachment_count).toBe(0);
@@ -63,30 +71,31 @@ describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
 
   it("source failure is NON-FATAL — the entity still persists", async () => {
     const graph = makeGraph({
-      source_command: vi.fn().mockRejectedValue(new Error("no connected account")),
+      source_command: () => Promise.reject(new Error("no connected account")),
     });
     const mod = makeModule(graph);
     const r = await mod.emailSend({ to: "b@x.com", subject: "S", body_text: "B" });
-    expect(graph.apply_batch).toHaveBeenCalledTimes(1); // created before the (failing) route
+    expect(spy(graph, "apply_batch")).toHaveBeenCalledTimes(1); // created before the (failing) route
     expect(r.id).toBe("id-out");
   });
 
   it("links attachments and checks ownership", async () => {
     const graph = makeGraph({
-      get_entity_full: vi.fn().mockResolvedValue({
-        entity: { id: "f1", schema_id: "file.object", name: "doc.pdf", created_at: "" },
-        facets: [{ id: "x", schema_id: "file.details", source: "s", observed_at: "", data: { name: "doc.pdf" } }],
-        links: [],
-      } satisfies EntityDetail),
+      get_entity_full: () =>
+        Promise.resolve({
+          entity: { id: "f1", schema_id: "file.object", name: "doc.pdf", created_at: "" },
+          facets: [{ id: "x", schema_id: "file.details", source: "s", observed_at: "", data: { name: "doc.pdf" } }],
+          links: [],
+        } satisfies EntityDetail),
     });
     const mod = makeModule(graph);
     const r = await mod.emailSend({ to: "b@x.com", subject: "S", body_text: "B", attachment_ids: ["f1"] });
-    expect(graph.add_link).toHaveBeenCalledWith({ from_id: "id-out", to_id: "f1", kind: "attachment" });
+    expect(spy(graph, "add_link")).toHaveBeenCalledWith({ from_id: "id-out", to_id: "f1", kind: "attachment" });
     expect(r.attachment_count).toBe(1);
   });
 
   it("rejects an unowned attachment", async () => {
-    const graph = makeGraph({ get_entity_full: vi.fn().mockResolvedValue(null) });
+    const graph = makeGraph({ get_entity_full: () => Promise.resolve(null) });
     const mod = makeModule(graph);
     await expect(
       mod.emailSend({ to: "b@x.com", subject: "S", body_text: "B", attachment_ids: ["f-other"] }),
@@ -95,17 +104,18 @@ describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
 
   it("rejects an owned NON-file entity (no file.details — native strictness, no fallback)", async () => {
     const graph = makeGraph({
-      get_entity_full: vi.fn().mockResolvedValue({
-        entity: { id: "c1", schema_id: "company", name: "Acme", created_at: "" },
-        facets: [{ id: "x", schema_id: "company.details", source: "s", observed_at: "", data: {} }],
-        links: [],
-      } satisfies EntityDetail),
+      get_entity_full: () =>
+        Promise.resolve({
+          entity: { id: "c1", schema_id: "company", name: "Acme", created_at: "" },
+          facets: [{ id: "x", schema_id: "company.details", source: "s", observed_at: "", data: {} }],
+          links: [],
+        } satisfies EntityDetail),
     });
     const mod = makeModule(graph);
     await expect(
       mod.emailSend({ to: "b@x.com", subject: "S", body_text: "B", attachment_ids: ["c1"] }),
     ).rejects.toThrow(/not found/);
-    expect(graph.add_link).not.toHaveBeenCalled();
+    expect(spy(graph, "add_link")).not.toHaveBeenCalled();
   });
 });
 
@@ -126,48 +136,58 @@ describe("email reply (tst_be_emailreply_003)", () => {
 
   it("threads in_reply_to from the original and links attachments to the ORIGINAL", async () => {
     const graph = makeGraph({
-      get_entity_full: vi
-        .fn()
-        .mockResolvedValueOnce(original()) // reply reads the original
-        .mockResolvedValue({
-          entity: { id: "f1", schema_id: "file.object", name: "a", created_at: "" },
-          facets: [{ id: "fd", schema_id: "file.details", source: "s", observed_at: "", data: { name: "a" } }],
-          links: [],
-        }),
+      get_entity_full: (() => {
+        let call = 0;
+        return () => {
+          call += 1;
+          if (call === 1) return Promise.resolve(original()); // reply reads the original
+          return Promise.resolve({
+            entity: { id: "f1", schema_id: "file.object", name: "a", created_at: "" },
+            facets: [{ id: "fd", schema_id: "file.details", source: "s", observed_at: "", data: { name: "a" } }],
+            links: [],
+          } satisfies EntityDetail);
+        };
+      })(),
     });
     const mod = makeModule(graph);
     const r = await mod.emailReply({ email_id: "orig", body_text: "thanks", attachment_ids: ["f1"] });
 
-    const draft = (graph.source_command as ReturnType<typeof vi.fn>).mock.calls[0][0] as Record<string, unknown>;
+    const srcCall0 = spy(graph, "source_command").mock.calls[0];
+    if (srcCall0 === undefined) throw new Error("reply: source_command not called");
+    const draft = srcCall0[0] as Record<string, unknown>;
     const d = draft.draft as Record<string, unknown>;
     expect(d.in_reply_to).toBe("gmail-orig-1");
     expect(d.subject).toBe("Re: Quarterly");
     expect(d.to).toEqual([{ address: "boss@corp.com" }]);
     // attachment linked to the ORIGINAL email, not a new entity
-    expect(graph.add_link).toHaveBeenCalledWith({ from_id: "orig", to_id: "f1", kind: "attachment" });
+    expect(spy(graph, "add_link")).toHaveBeenCalledWith({ from_id: "orig", to_id: "f1", kind: "attachment" });
     expect(r.reply_to).toBe("boss@corp.com");
-    expect(graph.apply_batch).not.toHaveBeenCalled(); // reply creates no new message entity
+    expect(spy(graph, "apply_batch")).not.toHaveBeenCalled(); // reply creates no new message entity
   });
 
   it("rejects an unowned attachment (reply path) BEFORE routing", async () => {
     const graph = makeGraph({
-      get_entity_full: vi
-        .fn()
-        .mockResolvedValueOnce(original()) // original resolves (owned)
-        .mockResolvedValue(null), // attachment not owned
+      get_entity_full: (() => {
+        let call = 0;
+        return () => {
+          call += 1;
+          if (call === 1) return Promise.resolve(original()); // original resolves (owned)
+          return Promise.resolve(null); // attachment not owned
+        };
+      })(),
     });
     const mod = makeModule(graph);
     await expect(
       mod.emailReply({ email_id: "orig", body_text: "thanks", attachment_ids: ["f-other"] }),
     ).rejects.toThrow(/not found/);
-    expect(graph.source_command).not.toHaveBeenCalled(); // rejected before send
-    expect(graph.add_link).not.toHaveBeenCalled();
+    expect(spy(graph, "source_command")).not.toHaveBeenCalled(); // rejected before send
+    expect(spy(graph, "add_link")).not.toHaveBeenCalled();
   });
 
   it("source failure is FATAL for reply (native parity)", async () => {
     const graph = makeGraph({
-      get_entity_full: vi.fn().mockResolvedValue(original()),
-      source_command: vi.fn().mockRejectedValue(new Error("send failed")),
+      get_entity_full: () => Promise.resolve(original()),
+      source_command: () => Promise.reject(new Error("send failed")),
     });
     const mod = makeModule(graph);
     await expect(mod.emailReply({ email_id: "orig", body_text: "x" })).rejects.toThrow(/send failed/);
@@ -190,10 +210,14 @@ describe("email batch_send (tst_be_emailbatch_send_004)", () => {
     expect(r.sent).toBe(2);
     expect(r.excluded).toBe(1);
     const results = r.results as Record<string, unknown>[];
-    expect(results[1].status).toBe("excluded");
-    expect(results[1].id).toBeNull();
-    expect(results[0].status).toBe("sent");
-    expect(graph.apply_batch).toHaveBeenCalledTimes(2); // only the 2 non-excluded
+    const result0 = results[0];
+    const result1 = results[1];
+    if (result0 === undefined) throw new Error("batch_send: missing result[0]");
+    if (result1 === undefined) throw new Error("batch_send: missing result[1]");
+    expect(result1.status).toBe("excluded");
+    expect(result1.id).toBeNull();
+    expect(result0.status).toBe("sent");
+    expect(spy(graph, "apply_batch")).toHaveBeenCalledTimes(2); // only the 2 non-excluded
   });
 
   it("rejects an out-of-range batch size", async () => {

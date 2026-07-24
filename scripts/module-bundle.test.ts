@@ -1,4 +1,4 @@
-// tst_module_decorators_001 — GATE for Stage 3b: the BUNDLED module surface must
+// tst_module_decorators_001 — GATE: the BUNDLED module surface must
 // register its tools via the @tool/@writeTool decorators exactly like the
 // deno_ast on-the-fly path. The decorators push metadata to a WeakMap keyed by
 // the class prototype; definePlugin's init() reads it back. If Bun's __decorate
@@ -38,7 +38,7 @@ beforeAll(async () => {
   mod = (globalThis as unknown as { __magnis_plugin_module: ModuleShape }).__magnis_plugin_module;
 });
 
-// GATE for Stage 3b. Bun.build alone lowers @tool/@writeTool to TC39 decorators
+// GATE. Bun.build alone lowers @tool/@writeTool to TC39 decorators
 // (ignoring tsconfig experimentalDecorators) → registry keyed by the wrong target
 // → 0 tools. build-plugins.ts works around this by transpiling each .ts with the
 // TypeScript compiler (legacy decorators) in a Bun onLoad hook, so the bundled

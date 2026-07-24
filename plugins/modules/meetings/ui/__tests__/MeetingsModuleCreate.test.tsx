@@ -1,14 +1,12 @@
 /**
- * Stage 6 of docs/plans/mock-google-calendar.md — frontend `+` button
- * wires to `meetings.create` RPC.
+ * Frontend `+` button wires to `meetings.create` RPC.
  *
  * tst_fe_meetings_create_001 — the create handler dispatches the right
  *   RPC params (title, starts_at, ends_at, client_id) and calls
- *   `onCreated` with the returned entity id. INV-16.
+ *   `onCreated` with the returned entity id.
  * tst_fe_meetings_create_002 — DecisionSummary regression: an approved
  *   `meetings.create` decision result resolves to schema_id
- *   `meetings.calendar_event` via the AgentPanelBlocks fallback
- *   (Stage 1.5 fix). INV-20.
+ *   `meetings.calendar_event` via the AgentPanelBlocks fallback.
  */
 import { describe, expect, it, vi } from "vitest";
 import { createMeetingFromHeaderButton } from "../createMeeting";
@@ -46,7 +44,7 @@ describe("tst_fe_meetings_create_001 — + button dispatches meetings.create", (
     // RFC-3339: must parse back to a Date.
     expect(Number.isNaN(Date.parse(params.starts_at as string))).toBe(false);
     expect(Number.isNaN(Date.parse(params.ends_at as string))).toBe(false);
-    // ends_at strictly after starts_at — backend rejects otherwise (INV-14).
+    // ends_at strictly after starts_at — backend rejects otherwise.
     expect(Date.parse(params.ends_at as string)).toBeGreaterThan(
       Date.parse(params.starts_at as string),
     );
@@ -80,8 +78,8 @@ describe("tst_fe_meetings_create_001 — + button dispatches meetings.create", (
 
 describe("tst_fe_meetings_create_002 — DecisionSummary single-entity collapse", () => {
   it("infers schema_id=meetings.calendar_event from a meetings.create result", () => {
-    // Stage 1.5 fix: TOOL_PREFIX_TO_SCHEMA.meetings === "meetings.calendar_event".
-    // INV-20 — the unified MeetingCard resolves via the canonical schema.
+    // TOOL_PREFIX_TO_SCHEMA.meetings === "meetings.calendar_event".
+    // The unified MeetingCard resolves via the canonical schema.
     const entities = extractEntities(
       { id: "m-1", title: "Standup", starts_at: "2026-05-14T10:00:00Z" },
       { toolName: "meetings.create" },

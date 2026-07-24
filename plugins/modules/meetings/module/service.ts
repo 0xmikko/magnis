@@ -1,13 +1,13 @@
-// Meetings plugin — graph-native module. Read path (Stage 1): list (P2 windowed
-// over meetings.calendar_event, starts_at DESC, details facet inline), get (P1
-// entity + facets + links), search (meetings.EVENT schema — native quirk).
+// Meetings plugin — graph-native module. Read path: list (windowed
+// over meetings.calendar_event, starts_at DESC, details facet inline), get
+// (entity + facets + links), search (meetings.EVENT schema — native quirk).
 // Output is byte-compatible with the native module (types.rs MeetingListItem /
 // MeetingDetailView) and the UI's plugins/meetings/ui copies.
 //
 // Read-time enrichment ported from the native domain adapter: attendees resolve
 // to their contacts.person (email → email.address → has_email), and get's
 // linked_entities resolve the entity's link neighbours. Canonical is deferred to
-// {} on this hot path (mirrors email/telegram Stage-1; the detail UI is verified
+// {} on this hot path (mirrors the email/telegram modules; the detail UI is verified
 // visually in the frontend stage).
 
 import {
@@ -20,7 +20,6 @@ import {
 } from "@magnis/plugin-sdk";
 import type { BatchEntityInput, RawEntity, RpcExecutor } from "@magnis/plugin-sdk";
 import type {
-  CalendarAttendee,
   FacetSummary,
   GetParams,
   LinkedEntitySummary,
@@ -36,37 +35,18 @@ import type {
   SearchResultItem,
   SyncEnvelope,
   ToolResult,
-} from "../types/index.ts";
-import { buildListItem, enrichAttendees, formatDateTime, parseAttendees } from "./helpers.ts";
-
-const CAL = "meetings.calendar_event";
-const CAL_DETAILS = "meetings.calendar_event.details";
-const EVENT = "meetings.event";
-
-type Data = Record<string, unknown>;
-
-const str = (d: Data, k: string): string | null => {
-  const v = d[k];
-  return typeof v === "string" && v.length > 0 ? v : null;
-};
-
-/// Strict RFC-3339 parse (mirrors native chrono parse_from_rfc3339): returns the
-/// epoch ms, or null if the string isn't a well-formed RFC-3339 timestamp. JS
-/// `Date.parse` alone is too lenient, so gate on the canonical shape first.
-function parseRfc3339(s: string): number | null {
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/.test(s)) return null;
-  const t = Date.parse(s);
-  return Number.isNaN(t) ? null : t;
-}
-
-/// Normalize attendees to the canonical `{name, email}` shape (name → null when
-/// absent), matching the native facet/snapshot serialization.
-function normalizeAttendees(attendees: CalendarAttendee[] | undefined): {
-  name: string | null;
-  email: string;
-}[] {
-  return (attendees ?? []).map((a) => ({ name: a.name ?? null, email: a.email }));
-}
+} from "../types.ts";
+import {
+  buildListItem,
+  enrichAttendees,
+  formatDateTime,
+  normalizeAttendees,
+  parseAttendees,
+  parseRfc3339,
+  str,
+  type Data,
+} from "./helpers.ts";
+import { CAL, CAL_DETAILS, EVENT, MEETING } from "../schema.ts";
 
 export class MeetingsModule {
   private readonly graph: GraphService<MeetingsFacets, MeetingsCanonical>;
@@ -123,7 +103,7 @@ export class MeetingsModule {
       return { items, total, limit, offset };
     }
 
-    // P2: ONE window — page of meetings.calendar_event ordered by the details
+    // ONE window — page of meetings.calendar_event ordered by the details
     // facet's starts_at DESC, each row carrying its latest details facet inline.
     const win = await this.graph.list_entities_window({
       schema: CAL,
@@ -153,7 +133,7 @@ export class MeetingsModule {
   })
   async get(params: GetParams): Promise<MeetingDetailView> {
     const detail = await this.graph.get_entity_full(params.id, { links: true });
-    if (!detail || detail.entity.schema_id !== CAL) {
+    if (detail?.entity.schema_id !== CAL) {
       throw new Error(`meeting ${params.id} not found`);
     }
     const { entity, facets, links } = detail;
@@ -178,7 +158,7 @@ export class MeetingsModule {
     // (user-scoped → drops non-owned targets) hydrates names/schemas.
     const linked_entities: LinkedEntitySummary[] = [];
     if (links.length > 0) {
-      const neighbourId = (l: { from_id: string; to_id: string }) =>
+      const neighbourId = (l: { from_id: string; to_id: string }): string =>
         l.from_id === entity.id ? l.to_id : l.from_id;
       const targets = await this.graph.get_entities([...new Set(links.map(neighbourId))]);
       const byId = new Map<string, RawEntity>(targets.map((t) => [t.id, t]));
@@ -236,7 +216,7 @@ export class MeetingsModule {
 
     let results: SearchResultItem[] = entities
       .filter((e) => e.schema_id === EVENT)
-      .filter((e) => (query.length === 0 ? true : (e.name ?? "").toLowerCase().includes(query)))
+      .filter((e) => (query.length === 0 ? true : e.name.toLowerCase().includes(query)))
       .map((e) => ({
         id: e.id,
         name: e.name && e.name.length > 0 ? e.name : null,
@@ -251,7 +231,7 @@ export class MeetingsModule {
       return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
     });
 
-    if (params.limit != null && results.length > params.limit) {
+    if (params.limit !== undefined && results.length > params.limit) {
       results = results.slice(0, params.limit);
     }
 
@@ -259,8 +239,8 @@ export class MeetingsModule {
   }
 
   // ── meetings.create (@writeTool) ──────────────────────────────
-  // Operator/agent create. Validates BEFORE any write (INV-3), idempotent on
-  // client_id (INV-4), returns the native snapshot shape (INV-13). The facet is
+  // Operator/agent create. Validates BEFORE any write, idempotent on
+  // client_id, returns the native snapshot shape. The facet is
   // written with source "local" semantics (confidence 100). NOTE: the native
   // agent-side "created" link (ToolDefinition.with_link_kind) is not expressible
   // through the @writeTool decorator and is dropped — consistent with the
@@ -294,7 +274,7 @@ export class MeetingsModule {
     },
   })
   async create(params: NewMeetingParams): Promise<Record<string, unknown>> {
-    // Validate BEFORE touching the graph (INV-3 / native messages).
+    // Validate BEFORE touching the graph (matches native messages).
     if (!params.title || params.title.trim().length === 0) {
       throw new Error("title must be a non-empty string");
     }
@@ -306,7 +286,7 @@ export class MeetingsModule {
       throw new Error("ends_at must be >= starts_at (ends_at < starts_at is rejected)");
     }
 
-    // Idempotency (INV-4): an existing client_id returns the existing entity,
+    // Idempotency: an existing client_id returns the existing entity,
     // no re-write (native repo create_local find_entity_for_user).
     if (params.client_id) {
       const existing = await this.graph.get_entity(params.client_id);
@@ -328,8 +308,8 @@ export class MeetingsModule {
       attendees: normalizeAttendees(params.attendees),
       updated_at: now,
     };
-    if (params.description != null) data.description = params.description;
-    if (params.location != null) data.location = params.location;
+    if (params.description !== undefined) data.description = params.description;
+    if (params.location !== undefined) data.location = params.location;
 
     await this.graph.attach_facet({
       entity_id: entity.id,
@@ -341,7 +321,7 @@ export class MeetingsModule {
     return this.snapshot(entity.id, params);
   }
 
-  /// Build the native create snapshot (INV-13): id + the canonical fields,
+  /// Build the native create snapshot: id + the canonical fields,
   /// description/location only when present.
   private snapshot(id: string, params: NewMeetingParams): Record<string, unknown> {
     const snap: Record<string, unknown> = {
@@ -352,8 +332,8 @@ export class MeetingsModule {
       ends_at: params.ends_at,
       attendees: normalizeAttendees(params.attendees),
     };
-    if (params.description != null) snap.description = params.description;
-    if (params.location != null) snap.location = params.location;
+    if (params.description !== undefined) snap.description = params.description;
+    if (params.location !== undefined) snap.location = params.location;
     return snap;
   }
 
@@ -369,9 +349,9 @@ export class MeetingsModule {
   async ingest(params: {
     envelopes?: SyncEnvelope[];
   }): Promise<{ ok: boolean; dropped_remote_ids: string[]; trigger_checks: MeetingTriggerCheck[] }> {
-    const envelopes = Array.isArray(params?.envelopes) ? params.envelopes : [];
+    const envelopes = Array.isArray(params.envelopes) ? params.envelopes : [];
 
-    // INV-8: validate ALL user_ids before any write so a bad envelope writes
+    // Validate ALL user_ids before any write so a bad envelope writes
     // nothing (native bails on empty user_id; no "" attribution).
     for (const env of envelopes) {
       if (!env.user_id) {
@@ -411,7 +391,8 @@ export class MeetingsModule {
   /// Upsert one calendar event + its details facet (idempotent on external_id),
   /// then, for LIVE events, assemble the trigger.check with attendee address ids.
   private async ingestUpsert(env: SyncEnvelope, triggers: MeetingTriggerCheck[]): Promise<void> {
-    const remoteId = env.remote_id!;
+    const remoteId = env.remote_id;
+    if (!remoteId) throw new Error("meetings ingest: envelope missing remote_id");
     const payload = env.payload as Data;
     const name = str(payload, "title") ?? "";
 
@@ -428,7 +409,7 @@ export class MeetingsModule {
     if (env.kind !== "live") return;
 
     // touched = [meeting, every attendee's email.address id]. email.address is
-    // owned by the email plugin → resolve via its ensure_address RPC (DEC-6),
+    // owned by the email plugin → resolve via its ensure_address RPC,
     // which converges on the shared hub id email:address:{lowercased}.
     const touched: string[] = [entityId];
     const attendees = Array.isArray(payload.attendees) ? (payload.attendees as Data[]) : [];
@@ -440,13 +421,13 @@ export class MeetingsModule {
         address: email,
         display_name: display,
       });
-      if (r?.id) touched.push(r.id);
+      if (r.id) touched.push(r.id);
     }
 
     triggers.push({
       type: "trigger.check",
       event_kind: "new_meeting",
-      schema_id: "meetings.meeting",
+      schema_id: MEETING,
       entity_id: entityId,
       phase: "live",
       touched_entity_ids: touched,

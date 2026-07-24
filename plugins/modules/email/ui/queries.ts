@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { useAppRuntime } from "@magnis/host/runtime";
 import type { MessageDetailView } from "./types";
 
@@ -9,8 +9,7 @@ export const emailKeys = {
   integrations: ["email", "integrations"] as const,
 };
 
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type, @typescript-eslint/explicit-module-boundary-types
-export function useEmailDetailQuery(id: string) {
+export function useEmailDetailQuery(id: string): UseQueryResult<MessageDetailView> {
   const runtime = useAppRuntime();
   return useQuery({
     queryKey: emailKeys.detail(id),
@@ -23,8 +22,7 @@ interface IntegrationsStatus {
   readonly google: { readonly connected: boolean };
 }
 
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type, @typescript-eslint/explicit-module-boundary-types
-export function useIntegrationsStatusQuery() {
+export function useIntegrationsStatusQuery(): UseQueryResult<IntegrationsStatus> {
   const runtime = useAppRuntime();
   return useQuery({
     queryKey: emailKeys.integrations,

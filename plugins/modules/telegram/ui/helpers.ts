@@ -61,11 +61,8 @@ export function loadCachedChats(): { chats: TelegramChat[]; total: number } | nu
   try {
     const raw = localStorage.getItem(CHAT_CACHE_KEY);
     if (!raw) return null;
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const cached = JSON.parse(raw);
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    const cached = JSON.parse(raw) as { chats: TelegramChat[]; total: number; ts: number };
     if (Date.now() - cached.ts > CHAT_CACHE_TTL) return null;
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
     return cached;
   } catch {
     return null;
@@ -73,8 +70,10 @@ export function loadCachedChats(): { chats: TelegramChat[]; total: number } | nu
 }
 
 export function senderColor(name: string): string {
-  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-  return TELEGRAM_SENDER_COLORS[Math.abs(hashCode(name)) % TELEGRAM_SENDER_COLORS.length]!;
+  const color =
+    TELEGRAM_SENDER_COLORS[Math.abs(hashCode(name)) % TELEGRAM_SENDER_COLORS.length];
+  if (color === undefined) throw new Error("senderColor: TELEGRAM_SENDER_COLORS is empty");
+  return color;
 }
 
 export function saveChatCache(chats: TelegramChat[], total: number): void {

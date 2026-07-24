@@ -1,4 +1,4 @@
-// tst_fe_x_header_001 (social-post-rendering S2, INV-6) — the profile header
+// tst_fe_x_header_001 — the profile header
 // shows a Tracked badge when the handle is tracked (via
 // contacts.get_social_tracking_by_handle) and the three-dots menu offers
 // Untrack, which round-trips contacts.set_social_tracking with the resolved

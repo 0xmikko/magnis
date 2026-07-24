@@ -1,5 +1,5 @@
 /**
- * Pure batch-send loop for telegram.batch_send (DEC-4 / R3).
+ * Pure batch-send loop for telegram.batch_send.
  *
  * Extracted from TelegramModule.messagesBatchSend so the per-recipient
  * failure-isolation behaviour can be unit-tested without instantiating the

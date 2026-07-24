@@ -2,8 +2,7 @@
  * Operator-driven optimistic create — fires the `meetings.create` RPC
  * with default title/time fields. Mirrors notes.create UX: the user
  * renames in-place after the row appears. The `client_id` makes the
- * call idempotent at the backend (INV-15). Stage 6 of
- * docs/plans/mock-google-calendar.md.
+ * call idempotent at the backend.
  */
 import type { AppRuntime } from "@magnis/host/runtime";
 

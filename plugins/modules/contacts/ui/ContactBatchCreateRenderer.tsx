@@ -33,8 +33,7 @@ export function ContactBatchCreateRenderer({
 }: AgentRendererProps<ToolCallRendererPayload>): JSX.Element {
   const { toolCall: tc, toolResult, isAllowlisted, superseded, onApprove, onDeny, onAllowlistToggle } = payload;
   const args = tc.args as Record<string, unknown>;
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-  const contacts = useMemo(() => (args.contacts as readonly BatchContact[]) ?? [], [args.contacts]);
+  const contacts = useMemo(() => (args.contacts as readonly BatchContact[] | undefined) ?? [], [args.contacts]);
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [excluded, setExcluded] = useState<Set<number>>(() => new Set());
@@ -44,7 +43,7 @@ export function ContactBatchCreateRenderer({
 
   const total = contacts.length;
   const activeCount = total - excluded.size;
-  const current = contacts[currentIndex];
+  const current = contacts.at(currentIndex);
   const isEditing = editingIndex === currentIndex;
   const isDraft = tc.status === "pending";
   const isExcluded = excluded.has(currentIndex);
@@ -74,7 +73,7 @@ export function ContactBatchCreateRenderer({
   }, [current, currentIndex, savedEdits]);
 
   const saveEdit = useCallback((): void => {
-    if (editingIndex == null) return;
+    if (editingIndex === null) return;
     setSavedEdits((prev) => {
       const next = new Map(prev);
       next.set(editingIndex, { ...editDraft });
@@ -115,7 +114,7 @@ export function ContactBatchCreateRenderer({
     company: isEditing ? editDraft.company : (saved?.company ?? current.company ?? ""),
     role: isEditing ? editDraft.role : (saved?.role ?? current.role ?? ""),
   };
-  const hasEdits = saved != null;
+  const hasEdits = saved !== undefined;
 
   const headerNav = (
     <div className="flex items-center gap-1">

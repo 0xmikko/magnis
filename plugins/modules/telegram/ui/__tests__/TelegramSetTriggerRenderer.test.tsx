@@ -2,7 +2,7 @@
  * @layer: fe_agent
  * @test-id: tst_fe_agent_004
  *
- * INV-7 [DEC-7]: the telegram.set_trigger approval renders a proper card —
+ * The telegram.set_trigger approval renders a proper card —
  * the watched chat + the condition (When) + the action (Then) — instead of the
  * generic fallback ("Agent wants to: telegram.set trigger / Chat ID: <raw>").
  */

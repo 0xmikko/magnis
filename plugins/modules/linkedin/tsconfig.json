@@ -6,13 +6,11 @@
     "experimentalDecorators": true
   },
   "include": [
+    "lifecycle/**/*.ts",
     "module/**/*.ts",
-    "types/**/*.ts",
+    "schema.ts",
+    "types.ts",
     "ui/**/*.ts",
     "ui/**/*.tsx"
-  ],
-  "exclude": [
-    "module/__tests__",
-    "ui/__tests__"
   ]
 }

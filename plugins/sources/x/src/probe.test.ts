@@ -1,4 +1,4 @@
-// tst_x_probe (plan §2.4 F3): the ProbeAuth contract itself — the probe MUST
+// tst_x_probe: the ProbeAuth contract itself — the probe MUST
 // hit the real endpoint with the injected key, return the provider-verified
 // subject, and reject on 401/no-identity/missing key. NO live network.
 import { describe, test, expect } from "bun:test";

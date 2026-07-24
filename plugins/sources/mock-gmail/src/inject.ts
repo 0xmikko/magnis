@@ -11,6 +11,12 @@ function str(v: unknown): string | undefined {
   return typeof v === "string" ? v : undefined;
 }
 
+/** Coerce an arbitrary parsed JSON value to a record (non-objects ⇒ {}), so the
+ * array elements from an untyped payload have a concrete shape to read. */
+function asRecord(v: unknown): Json {
+  return v && typeof v === "object" ? (v as Json) : {};
+}
+
 /** Rust: `req.get(k).cloned().unwrap_or(Value::Null)` — absent ⇒ JSON null. */
 function orNull(v: unknown): unknown {
   return v === undefined ? null : v;
@@ -18,13 +24,16 @@ function orNull(v: unknown): unknown {
 
 export function buildEmail(req: Json): { payload: Json; remoteId: string } {
   const messageId = str(req.message_id) ?? `mock-${randomUUID()}`;
-  const rawAttachments = Array.isArray(req.attachments) ? (req.attachments as Json[]) : [];
-  const attachments = rawAttachments.map((a) => ({
-    attachment_id: str(a?.attachment_id) ?? `att-${randomUUID()}`,
-    filename: orNull(a?.filename),
-    mime_type: orNull(a?.mime_type),
-    size: a?.size === undefined ? 0 : a.size,
-  }));
+  const rawAttachments: unknown[] = Array.isArray(req.attachments) ? req.attachments : [];
+  const attachments = rawAttachments.map((raw) => {
+    const a = asRecord(raw);
+    return {
+      attachment_id: str(a.attachment_id) ?? `att-${randomUUID()}`,
+      filename: orNull(a.filename),
+      mime_type: orNull(a.mime_type),
+      size: a.size === undefined ? 0 : a.size,
+    };
+  });
   const payload: Json = {
     message_id: messageId,
     from_address: orNull(req.from_address),
@@ -43,11 +52,14 @@ export function buildEmail(req: Json): { payload: Json; remoteId: string } {
 
 export function buildEvent(req: Json): { payload: Json; remoteId: string } {
   const id = str(req.id) ?? `mock-${randomUUID()}`;
-  const rawAttendees = Array.isArray(req.attendees) ? (req.attendees as Json[]) : [];
-  const attendees = rawAttendees.map((a) => ({
-    name: orNull(a?.name),
-    email: orNull(a?.email),
-  }));
+  const rawAttendees: unknown[] = Array.isArray(req.attendees) ? req.attendees : [];
+  const attendees = rawAttendees.map((raw) => {
+    const a = asRecord(raw);
+    return {
+      name: orNull(a.name),
+      email: orNull(a.email),
+    };
+  });
   const payload: Json = {
     id,
     title: orNull(req.title),

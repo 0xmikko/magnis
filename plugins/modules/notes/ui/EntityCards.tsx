@@ -39,7 +39,6 @@ function stripDuplicatedTitleHeading(body: string, title: string): string {
 }
 
 /** Chevron shows only when the note has a body payload to reveal. */
-// eslint-disable-next-line react-refresh/only-export-components
 export function noteHasMore(data: Readonly<Record<string, unknown>>): boolean {
   return noteBody(data) !== undefined;
 }

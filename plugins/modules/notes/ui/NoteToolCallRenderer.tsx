@@ -29,20 +29,17 @@ export function NoteToolCallRenderer({
   const isCreate = tc.name === "notes.create" || tc.name === "notes_create";
   const title = args.title as string | undefined;
   const body =
-    args.body != null
-      // eslint-disable-next-line @typescript-eslint/no-base-to-string
-      ? String(args.body)
-      : args.text != null
-        // eslint-disable-next-line @typescript-eslint/no-base-to-string
-        ? String(args.text)
+    typeof args.body === "string"
+      ? args.body
+      : typeof args.text === "string"
+        ? args.text
         : "";
 
   const [noteId, setNoteId] = useState<string | undefined>(
     args.id as string | undefined,
   );
 
-  // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
-  const handleApply = async () => {
+  const handleApply = async (): Promise<void> => {
     await onApprove();
     if (isCreate) {
       try {
@@ -50,8 +47,8 @@ export function NoteToolCallRenderer({
           "notes.list",
           { limit: 1, search: args.title as string },
         );
-        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-        if (list?.items?.[0]?.id) setNoteId(list.items[0].id);
+        const first = list.items.at(0);
+        if (first) setNoteId(first.id);
       } catch {
         /* best effort */
       }
@@ -60,8 +57,7 @@ export function NoteToolCallRenderer({
   };
 
   const handleNavigate = noteId
-    // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
-    ? () => {
+    ? (): void => {
         router.navigate("notes", "note", noteId);
       }
     : undefined;

@@ -36,7 +36,7 @@ export declare class AgentChatStore {
     private readonly freshKeys;
     /** Keys with in-flight episodes.create — prevents second sendMessage from skipping creation */
     private readonly pendingCreates;
-    /** Global subscribers to live `usage` stream frames (Stage 3) */
+    /** Global subscribers to live `usage` stream frames */
     private readonly usageListeners;
     /**
      * Subscribe to live LLM usage frames emitted during `chat.stream`. Listener

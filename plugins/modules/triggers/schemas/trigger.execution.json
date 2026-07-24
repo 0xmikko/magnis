@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "type": "object",
+  "required": [
+    "fired_at",
+    "event_entity_id",
+    "outcome"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "fired_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "event_entity_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "gate_result": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "episode_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    },
+    "outcome": {
+      "type": "string"
+    }
+  }
+}

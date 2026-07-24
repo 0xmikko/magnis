@@ -1,16 +1,16 @@
-// Email plugin — graph-native module. Read path (Stage 2): list (P2 windowed,
-// date-desc, facet inline), get (P1 entity+facets), batch (K·P1). Output is
+// Email plugin — graph-native module. Read path: list (windowed,
+// date-desc, facet inline), get (entity+facets), batch (one fetch per id). Output is
 // byte-compatible with the native module (MessageListItem / MessageDetailView)
 // and the UI's plugins/email/ui/types.ts copies.
 //
-// DB-access guarantees (INV-DB-1/2/4, asserted by module/__tests__/emailRead):
+// DB-access guarantees (asserted by module/__tests__/emailRead):
 //   - list (no search) = ONE list_entities_window (facet rendered inline) — no
 //     canonical read, no per-row facet hydrate.
 //   - list (search)    = ONE search_entities_by_name (ids) + ONE
 //     list_facets_for_entities over ONLY those ids — 2 crossings, no N+1.
 //   - get  = ONE get_entity_full. batch = K get_entity_full (one per id).
 //
-// Deferred (read-time enrichment, mirrors telegram Stage-1; verified visually
+// Deferred (read-time enrichment, mirrors the telegram module; verified visually
 // in the frontend, NOT asserted here): link-resolved linked_entities and the
 // canonical map. get returns linked_entities: [] / canonical: {} so it stays a
 // single fixed-statement op.
@@ -27,7 +27,6 @@ import type {
   BatchEntityInput,
   BatchLinkInput,
   PaginatedResponse,
-  RawEntity,
   RpcExecutor,
 } from "@magnis/plugin-sdk";
 import type {
@@ -46,111 +45,25 @@ import type {
   SendParams,
   SetTriggerParams,
   SyncEnvelope,
-} from "../types/index.ts";
-
-const MESSAGE_SCHEMA = "email.message";
-const MESSAGE_DETAILS = "email.message.details";
-const ADDRESS_SCHEMA = "email.address";
-const ADDRESS_DETAILS = "email.address.details";
-
-// PGlite is single-connection, so a sync page must be applied in CHUNKS — at
-// most this many TOTAL batch entities (messages + their unique addresses) per
-// apply_batch — so each transaction is short and other RPCs aren't starved.
-const INGEST_CHUNK = 200;
-
-// Placeholder sender for agent-composed outgoing mail (native parity — the real
-// from-address is stamped by the connector when the message actually sends).
-const OUTGOING_FROM = "user@magnis.local";
-
-type Data = Record<string, unknown>;
-
-const str = (d: Data, k: string): string | null => {
-  const v = d[k];
-  return typeof v === "string" && v.length > 0 ? v : null;
-};
-
-/// Lowercased, trimmed address (the hub key); null if empty.
-function lowerAddr(s: string | null): string | null {
-  if (!s) return null;
-  const t = s.trim().toLowerCase();
-  return t.length > 0 ? t : null;
-}
-
-/// Split a comma-separated address list into unique lowercased addresses.
-function splitRecipients(csv: string | null): string[] {
-  if (!csv) return [];
-  const out: string[] = [];
-  const seen = new Set<string>();
-  for (const part of csv.split(",")) {
-    const a = part.trim().toLowerCase();
-    if (a.length > 0 && !seen.has(a)) {
-      seen.add(a);
-      out.push(a);
-    }
-  }
-  return out;
-}
-
-/// Every unique recipient address (To + Cc + Bcc), lowercased + deduped. All
-/// three are real recipients: each gets a `sent_to` link and is included in a
-/// LIVE trigger's touched ids, so a trigger watching a Cc'd/Bcc'd address (e.g.
-/// "watch my inbox") fires and the recipient's contact surfaces the message.
-function recipientsOf(p: Data): string[] {
-  const set = new Set<string>();
-  for (const field of ["to_addresses", "cc_addresses", "bcc_addresses"]) {
-    for (const r of splitRecipients(str(p, field))) set.add(r);
-  }
-  return [...set];
-}
-
-/// Every unique address (sender + all recipients) a message contributes — used
-/// to size the apply_batch chunk by TOTAL entities, not message count.
-function addressesOf(p: Data): string[] {
-  const set = new Set<string>(recipientsOf(p));
-  const from = lowerAddr(str(p, "from_address"));
-  if (from) set.add(from);
-  return [...set];
-}
-
-/// Local destination for a downloaded attachment (host file worker joins
-/// files_dir + this). Mirrors the native dest_subpath; each segment sanitized.
-function destSubpath(account: string, remote: string, attId: string, filename: string): string {
-  const san = (s: string): string => s.replace(/[^A-Za-z0-9._-]/g, "_");
-  return `gmail/${san(account)}/${san(remote)}/${san(attId)}_${san(filename)}`;
-}
-
-/// Display sender: the source's from_name, else the raw from_address
-/// (mirrors native extract_sender).
-function senderOf(d: Data): string | null {
-  return str(d, "from_name") ?? str(d, "from_address");
-}
-
-/// List preview: the snippet, else the plain-text body (native extract_preview).
-function previewOf(d: Data): string | null {
-  return str(d, "snippet") ?? str(d, "body_text");
-}
-
-/// Strip the heavy rendered HTML from a list row's metadata — the list never
-/// renders it, and shipping it per row bloats the page (native strip_body_html).
-function stripBodyHtml(d: Data): Data {
-  const { body_html: _omit, ...rest } = d;
-  return rest;
-}
-
-function buildListItem(entity: RawEntity, d: Data): MessageListItem {
-  const created = entity.created_at ?? "";
-  return {
-    id: entity.id,
-    schema_id: entity.schema_id,
-    sender: senderOf(d),
-    subject: entity.name && entity.name.length > 0 ? entity.name : null,
-    preview: previewOf(d),
-    channel: "email",
-    timestamp: str(d, "sent_at") ?? created,
-    created_at: created,
-    metadata: stripBodyHtml(d),
-  };
-}
+} from "../types.ts";
+import {
+  addressesOf,
+  buildListItem,
+  destSubpath,
+  INGEST_CHUNK,
+  lowerAddr,
+  OUTGOING_FROM,
+  recipientsOf,
+  senderOf,
+  str,
+  type Data,
+} from "./helpers.ts";
+import {
+  ADDRESS_DETAILS,
+  ADDRESS_SCHEMA,
+  MESSAGE_DETAILS,
+  MESSAGE_SCHEMA,
+} from "../schema.ts";
 
 export class EmailModule {
   private readonly graph: GraphService<EmailFacets, EmailCanonical>;
@@ -199,7 +112,7 @@ export class EmailModule {
       return { items, total, limit, offset };
     }
 
-    // P2: ONE statement — page of email.message ordered by the indexed entity
+    // ONE statement — page of email.message ordered by the indexed entity
     // `date` column DESC, each row carrying its latest details facet inline.
     const win = await this.graph.list_entities_window({
       schema: MESSAGE_SCHEMA,
@@ -241,7 +154,7 @@ export class EmailModule {
   async emailBatch(params: BatchParams): Promise<MessageDetailView[]> {
     const views: MessageDetailView[] = [];
     for (const id of params.ids) {
-      // K·P1: one get_entity_full per id; a not-found id is skipped (native
+      // One get_entity_full per id; a not-found id is skipped (native
       // get_batch parity — it warns + drops rather than failing the batch).
       const view = await this.getDetail(id);
       if (view) views.push(view);
@@ -249,14 +162,14 @@ export class EmailModule {
     return views;
   }
 
-  /// P1 detail fetch shared by get/batch. Returns null for a missing or
+  /// Detail fetch shared by get/batch. Returns null for a missing or
   /// non-email entity (get throws on null; batch skips it). At most TWO fixed
-  /// crossings: P1 get_entity_full (entity + facets + link edges) and, only
-  /// when the entity has links, ONE P5 get_entities batch to resolve the
+  /// crossings: get_entity_full (entity + facets + link edges) and, only
+  /// when the entity has links, ONE get_entities batch to resolve the
   /// neighbours' names — no per-link N+1.
   private async getDetail(id: string): Promise<MessageDetailView | null> {
     const detail = await this.graph.get_entity_full(id, { links: true });
-    if (!detail || detail.entity.schema_id !== MESSAGE_SCHEMA) return null;
+    if (detail?.entity.schema_id !== MESSAGE_SCHEMA) return null;
     const { entity, facets, links } = detail;
     const d = (facets.find((f) => f.schema_id === MESSAGE_DETAILS)?.data as Data | undefined) ?? {};
     const facetSummaries: FacetSummary[] = facets.map((f) => ({
@@ -268,11 +181,11 @@ export class EmailModule {
     }));
 
     // Resolve link neighbours (attachments, address hub, …) for the Context
-    // panel. Link edges carry ids + kind only; one batch get_entities (P5,
-    // user-scoped → drops non-owned targets) hydrates names/schemas.
+    // panel. Link edges carry ids + kind only; one batch get_entities
+    // (user-scoped → drops non-owned targets) hydrates names/schemas.
     const linked_entities: LinkedEntitySummary[] = [];
     if (links.length > 0) {
-      const neighbourId = (l: { from_id: string; to_id: string }) =>
+      const neighbourId = (l: { from_id: string; to_id: string }): string =>
         l.from_id === entity.id ? l.to_id : l.from_id;
       const targets = await this.graph.get_entities([...new Set(links.map(neighbourId))]);
       const byId = new Map(targets.map((t) => [t.id, t]));
@@ -319,7 +232,7 @@ export class EmailModule {
   async ingest(params: {
     envelopes?: SyncEnvelope[];
   }): Promise<{ ok: boolean; dropped_remote_ids: string[]; trigger_checks: EmailTriggerCheck[] }> {
-    const envelopes = Array.isArray(params?.envelopes) ? params.envelopes : [];
+    const envelopes = Array.isArray(params.envelopes) ? params.envelopes : [];
     const dropped: string[] = [];
     const triggers: EmailTriggerCheck[] = [];
     const messages: SyncEnvelope[] = [];
@@ -355,7 +268,7 @@ export class EmailModule {
       chunkAddrs = new Set();
     };
     for (const env of messages) {
-      const addrs = addressesOf(env.payload as Data);
+      const addrs = addressesOf(env.payload);
       const fresh = addrs.filter((a) => !chunkAddrs.has(a));
       // Flush BEFORE adding when this message would push the running chunk past
       // the cap. A single message is never split — its {message + folded
@@ -460,7 +373,7 @@ export class EmailModule {
           link_kind: "attachment",
           name: filename,
           mime_type: str(att, "mime_type") ?? "application/octet-stream",
-          size_bytes: typeof att.size === "number" ? (att.size as number) : undefined,
+          size_bytes: typeof att.size === "number" ? (att.size) : undefined,
           source_ref: {
             message_id: remoteId,
             attachment_id: attId,
@@ -491,7 +404,7 @@ export class EmailModule {
         triggers.push({
           type: "trigger.check",
           event_kind: "new_email",
-          schema_id: "email.message",
+          schema_id: MESSAGE_SCHEMA,
           entity_id: entityId,
           phase: "live",
           touched_entity_ids: touched,
@@ -558,7 +471,7 @@ export class EmailModule {
     const attachmentIds = params.attachment_ids ?? [];
     // Read the original (user-scoped); reply has no meaning without it.
     const detail = await this.graph.get_entity_full(params.email_id, { links: false });
-    if (!detail || detail.entity.schema_id !== MESSAGE_SCHEMA) {
+    if (detail?.entity.schema_id !== MESSAGE_SCHEMA) {
       throw new Error(`Email not found: ${params.email_id}`);
     }
     const od = (detail.facets.find((f) => f.schema_id === MESSAGE_DETAILS)?.data as Data | undefined) ?? {};
@@ -633,22 +546,21 @@ export class EmailModule {
     },
   })
   async emailBatchSend(params: BatchSendParams): Promise<Record<string, unknown>> {
-    const messages = params.messages ?? [];
+    const messages = params.messages;
     if (messages.length === 0 || messages.length > 50) {
-      throw new Error(`batch size must be 1..=50, got ${messages.length}`);
+      throw new Error(`batch size must be 1..=50, got ${String(messages.length)}`);
     }
     messages.forEach((m, i) => {
-      if (!m.to) throw new Error(`message[${i}]: missing to`);
-      if (!m.subject) throw new Error(`message[${i}]: missing subject`);
-      if (!m.body_text) throw new Error(`message[${i}]: missing body_text`);
+      if (!m.to) throw new Error(`message[${String(i)}]: missing to`);
+      if (!m.subject) throw new Error(`message[${String(i)}]: missing subject`);
+      if (!m.body_text) throw new Error(`message[${String(i)}]: missing body_text`);
     });
     const excluded = new Set(params.excluded_indices ?? []);
 
     const results: Record<string, unknown>[] = [];
     let sent = 0;
     let excludedCount = 0;
-    for (let i = 0; i < messages.length; i++) {
-      const m = messages[i];
+    for (const [i, m] of messages.entries()) {
       if (excluded.has(i)) {
         excludedCount++;
         results.push({ id: null, to: m.to, subject: m.subject, status: "excluded", attachment_count: 0 });
@@ -713,9 +625,9 @@ export class EmailModule {
     const name =
       addresses.length <= 3
         ? `Email trigger: ${addresses.join(", ")}`
-        : `Email trigger: ${addresses.slice(0, 3).join(", ")} +${addresses.length - 3} more`;
+        : `Email trigger: ${addresses.slice(0, 3).join(", ")} +${String(addresses.length - 3)} more`;
 
-    // Delegate to the triggers module via the cross-module hub (rpc_calls).
+    // Delegate to the triggers module via the cross-module hub (`[permissions] call`).
     return this.rpc.execute("triggers.create", {
       name,
       watch_entity_ids: watchIds,
@@ -752,7 +664,7 @@ export class EmailModule {
   // user, lowercased). The cross-module hub target: the contacts plugin and the
   // native meetings module call this (via rpc.execute / rpc_router) to link a
   // person/attendee to their email.address WITHOUT writing email.* themselves
-  // (the email plugin owns email.*). Replaces the deleted native shim (DEC-7).
+  // (the email plugin owns email.*). Replaces the deleted native shim.
   @rpc("ensure_address", {
     description: "Find-or-create the email.address entity for an address; returns its entity id.",
     params: {
@@ -763,7 +675,7 @@ export class EmailModule {
     },
   })
   async ensureAddress(params: { address: string; display_name?: string | null }): Promise<{ id: string }> {
-    const lower = (params.address ?? "").trim().toLowerCase();
+    const lower = params.address.trim().toLowerCase();
     if (lower.length === 0) {
       throw new Error("email.ensure_address: 'address' is required");
     }
@@ -786,7 +698,7 @@ export class EmailModule {
       refs: [],
       links: [],
     });
-    const id = r.ids["addr"];
+    const id = r.ids.addr;
     if (!id) throw new Error(`email.ensure_address: failed to resolve ${lower}`);
     return { id };
   }
@@ -861,7 +773,7 @@ export class EmailModule {
       if (!det) throw new Error(`file ${fid} not found`);
       const fd = det.facets.find((f) => f.schema_id === "file.details")?.data as Data | undefined;
       if (!fd) throw new Error(`file ${fid} not found`);
-      names.push(typeof fd.name === "string" ? (fd.name as string) : "attachment");
+      names.push(typeof fd.name === "string" ? (fd.name) : "attachment");
     }
     return names;
   }
@@ -917,6 +829,7 @@ export class EmailModule {
       links: [{ from_key: msgKey, to_key: addrKey, kind: "sent_to" }],
     });
     const entityId = result.ids[msgKey];
+    if (entityId === undefined) throw new Error(`email.send: missing entity id for ${msgKey}`);
 
     for (const fid of attachmentIds) {
       await this.graph.add_link({ from_id: entityId, to_id: fid, kind: "attachment" });

@@ -31,8 +31,10 @@ export function TelegramBatchSendRenderer({
 }: AgentRendererProps<ToolCallRendererPayload>): JSX.Element {
   const { toolCall: tc, toolResult, isAllowlisted, superseded, onApprove, onDeny, onAllowlistToggle } = payload;
   const args = tc.args as Record<string, unknown>;
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-  const messages = useMemo(() => (args.messages as readonly BatchMessage[]) ?? [], [args.messages]);
+  const messages = useMemo(
+    () => (args.messages as readonly BatchMessage[] | undefined) ?? [],
+    [args.messages],
+  );
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [excluded, setExcluded] = useState<Set<number>>(() => new Set());
@@ -42,7 +44,7 @@ export function TelegramBatchSendRenderer({
 
   const total = messages.length;
   const activeCount = total - excluded.size;
-  const current = messages[currentIndex];
+  const current = messages.at(currentIndex);
   const isEditing = editingIndex === currentIndex;
   const isDraft = tc.status === "pending";
   const isExcluded = excluded.has(currentIndex);
@@ -65,7 +67,7 @@ export function TelegramBatchSendRenderer({
   }, [current, currentIndex, savedEdits]);
 
   const saveEdit = useCallback((): void => {
-    if (editingIndex == null) return;
+    if (editingIndex === null) return;
     setSavedEdits((prev) => {
       const next = new Map(prev);
       next.set(editingIndex, editText);
@@ -91,7 +93,7 @@ export function TelegramBatchSendRenderer({
 
   const saved = savedEdits.get(currentIndex);
   const displayText = isEditing ? editText : (saved ?? current.text);
-  const hasEdits = saved != null;
+  const hasEdits = saved !== undefined;
   const toLabel = current.chat_name && current.chat_name.length > 0 ? current.chat_name : String(current.chat_id);
 
   const headerNav = (
@@ -168,7 +170,7 @@ export function TelegramBatchSendRenderer({
         {isEditing ? (
           <textarea
             className="mb-2 w-full resize-none rounded border border-agent-border bg-transparent px-2 py-1 text-[13px] leading-[1.5] text-agent-text outline-none focus:border-sky-400"
-            style={{ fieldSizing: "content" } as React.CSSProperties}
+            style={{ fieldSizing: "content" }}
             rows={1}
             value={editText}
             onChange={(e): void => { setEditText(e.target.value); }}

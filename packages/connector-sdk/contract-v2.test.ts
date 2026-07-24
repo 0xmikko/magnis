@@ -93,7 +93,9 @@ describe("S1.2 push contract", () => {
     );
     expect((ack as any).result.subscription_id).toBe("sub:fx:default");
     expect(out.length).toBe(1);
-    const notif = JSON.parse(out[0]);
+    const out0 = out[0];
+    if (out0 === undefined) throw new Error("contract-v2: missing notification 0");
+    const notif = JSON.parse(out0);
     expect(notif.method).toBe("notifications/magnis/envelope");
     expect(notif.params.subscription_id).toBe("sub:fx:default");
     expect(notif.params.remote_id).toBe("m1");

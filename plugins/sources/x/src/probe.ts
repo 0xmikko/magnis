@@ -1,6 +1,6 @@
-// ProbeAuth (plan §2.4): verify the key with a REAL provider call. X issues
+// ProbeAuth: verify the key with a REAL provider call. X issues
 // two token shapes: user-context (can call /2/users/me → @username) and
-// app-only (DEC-5 — our documented shape; /2/users/me answers 403 for it).
+// app-only (our documented shape; /2/users/me answers 403 for it).
 // The probe is a two-step protocol, not a fallback: whoami first; a 403
 // (token VALID but has no user context) verifies via a public lookup that
 // app-only tokens are allowed to make. 401/anything-else = key rejected.
@@ -14,7 +14,7 @@ export async function probeXAuth(
   meta: Record<string, unknown> | undefined,
   fetchFn: FetchLike,
 ): Promise<{ subject: string }> {
-  const bearer = typeof meta?.bearer_token === "string" ? (meta.bearer_token as string) : "";
+  const bearer = typeof meta?.bearer_token === "string" ? (meta.bearer_token) : "";
   if (!bearer) throw new Error("x: missing bearer_token");
   const headers = { authorization: `Bearer ${bearer}` };
 
@@ -26,7 +26,7 @@ export async function probeXAuth(
     return { subject: `@${username}` };
   }
   if (me.status !== 403) {
-    throw new Error(`x: provider rejected the key (HTTP ${me.status})`);
+    throw new Error(`x: provider rejected the key (HTTP ${String(me.status)})`);
   }
 
   // 403 = valid token WITHOUT user context (app-only). Verify it can read.
@@ -35,7 +35,7 @@ export async function probeXAuth(
     headers,
   });
   if (!probe.ok) {
-    throw new Error(`x: provider rejected the key (HTTP ${probe.status})`);
+    throw new Error(`x: provider rejected the key (HTTP ${String(probe.status)})`);
   }
   const body = (await probe.json()) as { data?: { id?: string } };
   if (!body.data?.id) throw new Error("x: probe lookup returned no data");

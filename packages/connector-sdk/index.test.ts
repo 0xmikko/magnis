@@ -166,7 +166,7 @@ describe("connector SDK dispatch", () => {
 });
 
 // tst_sdk_008: magnis.execute is not part of the TS connector SDK (the only
-// implementor moved to the contacts sync surface, plan §7); the SDK rejects
+// implementor moved to the contacts sync surface); the SDK rejects
 // it like any unknown tool.
 describe("connector SDK execute rejection", () => {
   const base = {

@@ -1,4 +1,5 @@
 import { createStore } from "zustand/vanilla";
+import type { StoreApi } from "zustand/vanilla";
 import { useStore } from "zustand";
 import type { AppRuntime } from "@magnis/host/runtime";
 import { useAppRuntime } from "@magnis/host/runtime";
@@ -16,22 +17,17 @@ export interface MeetingsStoreState {
   };
 }
 
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type, @typescript-eslint/explicit-module-boundary-types
-export function createMeetingsStore(_runtime: AppRuntime) {
+export function createMeetingsStore(_runtime: AppRuntime): StoreApi<MeetingsStoreState> {
   return createStore<MeetingsStoreState>((set) => ({
     selectedMeetingId: undefined,
     searchQuery: "",
     viewMode: "week",
     dateOffset: 0,
     actions: {
-      // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
-      setSelectedMeetingId: (id) => { set({ selectedMeetingId: id }); },
-      // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
-      setSearchQuery: (query) => { set({ searchQuery: query }); },
-      // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
-      setViewMode: (mode) => { set({ viewMode: mode }); },
-      // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
-      setDateOffset: (offset) => { set({ dateOffset: offset }); },
+      setSelectedMeetingId: (id): void => { set({ selectedMeetingId: id }); },
+      setSearchQuery: (query): void => { set({ searchQuery: query }); },
+      setViewMode: (mode): void => { set({ viewMode: mode }); },
+      setDateOffset: (offset): void => { set({ dateOffset: offset }); },
     },
   }));
 }
@@ -40,11 +36,9 @@ export type MeetingsStore = ReturnType<typeof createMeetingsStore>;
 
 export function useMeetingsStore(): MeetingsStoreState;
 export function useMeetingsStore<T>(selector: (state: MeetingsStoreState) => T): T;
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type, @typescript-eslint/explicit-module-boundary-types
-export function useMeetingsStore<T>(selector?: (state: MeetingsStoreState) => T) {
+export function useMeetingsStore<T>(selector?: (state: MeetingsStoreState) => T): MeetingsStoreState | T {
   const runtime = useAppRuntime();
   const store = runtime.stores.get<MeetingsStore>("meetings");
   if (!store) throw new Error("Meetings store not initialized");
-  // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
-  return useStore(store, selector ?? ((s) => s as unknown as T));
+  return useStore(store, selector ?? ((s): T => s as unknown as T));
 }

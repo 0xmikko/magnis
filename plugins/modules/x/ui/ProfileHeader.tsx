@@ -91,7 +91,7 @@ export function XProfileHeader({
   });
   const handle = profile?.handle ?? undefined;
 
-  // INV-6: tracked state resolved from the contacts facet by handle (DEC-A).
+  // Tracked state resolved from the contacts facet by handle.
   const trackingKey = [PLATFORM, "tracking", handle];
   const { data: tracking } = useQuery({
     queryKey: trackingKey,
@@ -104,13 +104,14 @@ export function XProfileHeader({
   });
 
   const setTracking = useMutation({
-    mutationFn: (tracked: boolean) =>
-      runtime.transport.rpc("contacts.set_social_tracking", {
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-        id: tracking!.contact_id,
+    mutationFn: (tracked: boolean) => {
+      if (!tracking) throw new Error("x tracking record not loaded");
+      return runtime.transport.rpc("contacts.set_social_tracking", {
+        id: tracking.contact_id,
         platform: PLATFORM,
         tracked,
-      }),
+      });
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: trackingKey });
     },
@@ -131,7 +132,7 @@ export function XProfileHeader({
 
   const subtitle = profile?.handle
     ? `@${profile.handle}${
-        profile.follower_count != null
+        typeof profile.follower_count === "number"
           ? ` · ${profile.follower_count.toLocaleString()} followers`
           : ""
       }`

@@ -7,33 +7,27 @@
 # `live` (so message triggers fire, chat snapshots don't) — byte-identical to
 # the real `telegram` connector's envelope shapes.
 #
-# The server is `src/main.ts` on @magnis/connector-sdk, run by bun from this
-# manifest's directory (DEC-10 stamps it as the spawn cwd). MOCK_INJECT_FILE is
-# the shared JSONL the surface process reads; MOCK_TELEGRAM_PORT (optional)
-# enables the HTTP control server for demos (`curl localhost:4030/inject-chat`).
+# The server is `src/main.ts` on @magnis/connector-sdk, spawned by convention
+# (bun, with this manifest's directory as the spawn cwd).
+# MOCK_INJECT_FILE is the shared JSONL the surface process reads;
+# MOCK_TELEGRAM_PORT (optional) enables the HTTP control server for demos
+# (`curl localhost:4030/inject-chat`). env injected by the operator / launch
+# scripts:
+#   MOCK_INJECT_FILE   = "<storage>/mock-telegram/inject.jsonl"
+#   MOCK_TELEGRAM_PORT = "4030"   # optional, demo injection
 #
 # kind = "mock" → loaded only when explicitly listed in ENABLED_SOURCES.
 
-[source]
 id = "mock-telegram"
 version = "1.0.0"
+title = "Mock Telegram"
+summary = "Controllable mock Telegram source for demos, evals, and e2e."
+publisher = "ai.magnis"
 dev = true
 surfaces = ["telegram"]
-transport = "stdio"
+kind = "mock"
 account_mode = "single"
 accounts = ["eval"]
-kind = "mock"
 
-[spawn]
-command = "bun"
-args = ["run", "src/main.ts"]
-# env injected by the operator / launch scripts:
-#   MOCK_INJECT_FILE   = "<storage>/mock-telegram/inject.jsonl"
-#   MOCK_TELEGRAM_PORT = "4030"   # optional, demo injection
-
-[profile]
+[sync]
 mode = "poll"
-
-# Declared install (extensions-lifecycle DEC-L4): host-standard routine.
-[lifecycle]
-install = "standard"

@@ -4,9 +4,9 @@
 // tools + op_composer like the telegram module, without
 // touching linkedin. v1 is read-only. (Split from the old shared `social` module,
 // see plan Revision.)
-// Writes ONLY `x.*` (facet_write_prefixes); soft-reads contacts.person.
-// Idempotent: facets carry external_id = the source remote_id (re-poll upserts,
-// INV-4). Provenance is stamped host-side from the calling plugin + envelope.
+// Writes ONLY `x.*` (implicit own-namespace grant); soft-reads contacts.person.
+// Idempotent: facets carry external_id = the source remote_id (re-poll upserts).
+// Provenance is stamped host-side from the calling plugin + envelope.
 
 import { searchEntitiesPage, syncHandler, tool, writeTool, type GraphService, type PluginDeps } from "@magnis/plugin-sdk";
 import type {
@@ -20,10 +20,7 @@ import type {
   Platform,
   PostContent,
   PostListItem,
-  PostMediaItem,
   PostMetrics,
-  PostMetricsView,
-  PostUrlEntity,
   PostsListParams,
   ProfileIdentity,
   ProfileDetail,
@@ -32,51 +29,17 @@ import type {
   XCanonical,
   XFacets,
   SyncEnvelope,
-} from "../types/index.ts";
-
-const PROFILE = "x.profile";
-const PROFILE_IDENTITY = "x.profile.identity";
-const POST = "x.post";
-const POST_CONTENT = "x.post.content";
-const POST_METRICS = "x.post.metrics";
-const AUTHORED_BY = "x.post:x.profile";
-// Identity link (social-contact-identity DEC-1): declared in the manifest
-// since the plugin split — created here at ingest, telegram-style.
-const PROFILE_PERSON_LINK = "x.profile:contacts.person";
-
-function str(o: Record<string, unknown>, k: string): string | undefined {
-  const v = o[k];
-  return typeof v === "string" ? v : undefined;
-}
-
-// Rich post fields (social-post-rendering S4): pass the connector's enriched
-// payload through to list/get responses. Pre-S4 rows lack them → null/[].
-function richPostFields(d: Record<string, unknown>): {
-  post_type: string | null;
-  article_title: string | null;
-  media: PostMediaItem[];
-  urls: PostUrlEntity[];
-  metrics: PostMetricsView | null;
-} {
-  const m = d["metrics"];
-  const num = (o: Record<string, unknown>, k: string): number | null =>
-    typeof o[k] === "number" ? (o[k] as number) : null;
-  return {
-    post_type: str(d, "post_type") ?? null,
-    article_title: str(d, "article_title") ?? null,
-    media: Array.isArray(d["media"]) ? (d["media"] as PostMediaItem[]) : [],
-    urls: Array.isArray(d["urls"]) ? (d["urls"] as PostUrlEntity[]) : [],
-    metrics:
-      m && typeof m === "object"
-        ? {
-            likes: num(m as Record<string, unknown>, "likes"),
-            reposts: num(m as Record<string, unknown>, "reposts"),
-            replies: num(m as Record<string, unknown>, "replies"),
-            impressions: num(m as Record<string, unknown>, "impressions"),
-          }
-        : null,
-  };
-}
+} from "../types.ts";
+import {
+  AUTHORED_BY,
+  POST,
+  POST_CONTENT,
+  POST_METRICS,
+  PROFILE,
+  PROFILE_IDENTITY,
+  PROFILE_PERSON_LINK,
+} from "../schema.ts";
+import { richPostFields, str } from "./helpers.ts";
 
 export class XModule {
   private readonly graph: GraphService<XFacets, XCanonical>;
@@ -92,7 +55,7 @@ export class XModule {
   async ingest(params: {
     envelopes?: SyncEnvelope[];
   }): Promise<{ ok: boolean; dropped_remote_ids: string[] }> {
-    const envelopes = Array.isArray(params?.envelopes) ? params.envelopes : [];
+    const envelopes = Array.isArray(params.envelopes) ? params.envelopes : [];
     const dropped: string[] = [];
 
     const entities: BatchEntityInput[] = [];
@@ -102,10 +65,10 @@ export class XModule {
 
     for (const env of envelopes) {
       const remoteId = env.remote_id;
-      const payload = (env.payload ?? {}) as Record<string, unknown>;
+      const payload = env.payload;
       const entityType = str(payload, "entity_type");
       if (!remoteId || env.kind === "delete") {
-        if (remoteId && env.kind === "delete") dropped.push(remoteId); // S0: no delete path yet
+        if (remoteId && env.kind === "delete") dropped.push(remoteId); // no delete path yet
         continue;
       }
       if (entityType === "profile") {
@@ -113,7 +76,7 @@ export class XModule {
         entities.push({
           key: remoteId,
           schema_id: PROFILE,
-          name: identity.display_name ?? identity.handle ?? remoteId,
+          name: identity.display_name ?? identity.handle,
           facets: [
             { schema_id: PROFILE_IDENTITY, data: payload, external_id: remoteId, confidence: 100 },
           ],
@@ -129,7 +92,7 @@ export class XModule {
         entities.push({
           key: remoteId,
           schema_id: POST,
-          name: (content.text ?? "").slice(0, 80),
+          name: content.text.slice(0, 80),
           date: content.created_at ?? undefined,
           facets,
         });
@@ -140,7 +103,7 @@ export class XModule {
 
     // authored_by links: post → its author profile when present in THIS page.
     for (const env of envelopes) {
-      const payload = (env.payload ?? {}) as Record<string, unknown>;
+      const payload = env.payload;
       if (str(payload, "entity_type") !== "post" || !env.remote_id) continue;
       const handle = str(payload, "author_handle");
       if (!handle) continue;
@@ -152,17 +115,17 @@ export class XModule {
 
     if (entities.length > 0) {
       const applied = await this.graph.apply_batch({ entities, links });
-      // Identity link + placeholder-name upgrade (DEC-1/DEC-4). A profile is
+      // Identity link + placeholder-name upgrade. A profile is
       // only ever ingested because a contact tracks its handle — resolve the
       // owner and link profile→person (idempotent by (from,to,kind)). Any RPC
       // failure is swallowed: the next poll cycle re-ingests the profile and
-      // repairs the link (self-healing, INV-1).
-      await this.linkProfilesToContacts(envelopes, applied.ids ?? {});
+      // repairs the link (self-healing).
+      await this.linkProfilesToContacts(envelopes, applied.ids);
     }
     return { ok: dropped.length === 0, dropped_remote_ids: dropped };
   }
 
-  // ── X friend import = a bootstrap TRIGGER (plan §7, S5) ─────────────────
+  // ── X friend import = a bootstrap TRIGGER ───────────────────────────────
   // The following list flows through the ONE canonical ingest path: the host
   // seeds the x source's `contacts` surface with the import spec (cursor),
   // the connector emits social_contact envelopes, and the contacts module's
@@ -194,7 +157,7 @@ export class XModule {
       surface: "contacts",
       params: {
         handle: params.handle,
-        ...(params.limit != null ? { limit: params.limit } : {}),
+        ...(params.limit !== undefined ? { limit: params.limit } : {}),
       },
     });
     return { scheduled: true, surface: "contacts" };
@@ -205,7 +168,7 @@ export class XModule {
     ids: Record<string, string>,
   ): Promise<void> {
     for (const env of envelopes) {
-      const payload = (env.payload ?? {}) as Record<string, unknown>;
+      const payload = env.payload;
       if (str(payload, "entity_type") !== "profile" || !env.remote_id) continue;
       const handle = str(payload, "handle");
       const profileId = ids[env.remote_id];
@@ -221,7 +184,7 @@ export class XModule {
           to_id: owner.contact_id,
           kind: PROFILE_PERSON_LINK,
         });
-        // DEC-4 (INV-7): CAS rename — only upgrades a handle-placeholder name.
+        // CAS rename — only upgrades a handle-placeholder name.
         const displayName = str(payload, "display_name");
         if (displayName) {
           await this.rpc.execute("contacts.rename_if_placeholder", {
@@ -231,7 +194,7 @@ export class XModule {
           });
         }
       } catch {
-        // Self-healing (DEC-1): repaired on the next poll cycle.
+        // Self-healing: repaired on the next poll cycle.
       }
     }
   }
@@ -276,7 +239,7 @@ export class XModule {
   })
   async postsGet(params: GetParams): Promise<PostListItem> {
     const detail = await this.graph.get_entity_full(params.id, { links: false });
-    if (!detail || detail.entity.schema_id !== POST) {
+    if (detail?.entity.schema_id !== POST) {
       throw new Error(`x post not found: ${params.id}`);
     }
     const data =
@@ -307,19 +270,19 @@ export class XModule {
   })
   async profilesGet(params: GetParams): Promise<ProfileDetail> {
     const detail = await this.graph.get_entity_full(params.id, { links: false });
-    if (!detail || detail.entity.schema_id !== PROFILE) {
+    if (detail?.entity.schema_id !== PROFILE) {
       throw new Error(`x profile not found: ${params.id}`);
     }
     const d =
       (detail.facets.find((f) => f.schema_id === PROFILE_IDENTITY)?.data as
         | Record<string, unknown>
         | undefined) ?? {};
-    const fc = d["follower_count"];
+    const fc = d.follower_count;
     return {
       id: detail.entity.id,
       platform: (str(d, "platform") as Platform | undefined) ?? null,
       handle: str(d, "handle") ?? null,
-      display_name: str(d, "display_name") ?? detail.entity.name ?? null,
+      display_name: str(d, "display_name") ?? detail.entity.name,
       follower_count: typeof fc === "number" ? fc : null,
       bio: str(d, "bio") ?? null,
       url: str(d, "url") ?? null,
@@ -368,7 +331,7 @@ export class XModule {
         this.profileItem({
           entity: e,
           data: latest.get(e.id)?.data ?? {},
-        } as WindowRow),
+        }),
       );
       return { items, total, limit, offset };
     }
@@ -391,7 +354,7 @@ export class XModule {
       conversation_id: str(d, "conversation_id") ?? null,
       platform: (str(d, "platform") as Platform | undefined) ?? null,
       author_handle: str(d, "author_handle") ?? null,
-      text: str(d, "text") ?? row.entity.name ?? "",
+      text: str(d, "text") ?? row.entity.name,
       created_at: str(d, "created_at") ?? null,
       url: str(d, "url") ?? null,
       ...richPostFields(d),
@@ -400,12 +363,12 @@ export class XModule {
 
   private profileItem(row: WindowRow): ProfileListItem {
     const d = (row.data ?? {}) as Record<string, unknown>;
-    const fc = d["follower_count"];
+    const fc = d.follower_count;
     return {
       id: row.entity.id,
       platform: (str(d, "platform") as Platform | undefined) ?? null,
       handle: str(d, "handle") ?? null,
-      display_name: str(d, "display_name") ?? row.entity.name ?? null,
+      display_name: str(d, "display_name") ?? row.entity.name,
       follower_count: typeof fc === "number" ? fc : null,
       avatar_url: str(d, "avatar_url") ?? null,
     };

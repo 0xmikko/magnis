@@ -1,103 +1,188 @@
-# Plugin Runtime Architecture
+# Plugin architecture
 
-How a TypeScript module runs inside the Rust backend, and the constraints that
-shaped the design. Source of truth: `backend/src/plugin_runtime/`.
+Read this first. It explains, top down, what Magnis is, the graph every plugin
+reads and writes, the two kinds of plugin and what each is responsible for, and
+how data flows from an external service into the graph and out to the UI. Once
+this model is clear, the build guides ([module.md](./module.md),
+[source.md](./source.md)) and the [file-structure standard](./structure.md) are
+just the details.
 
-## The big picture
+This document is for **plugin authors**. It describes the model you build
+against — not how the host is implemented internally (its process model, its
+database engine, its threading). You never need those to write a plugin.
 
+---
+
+## 1. What Magnis is
+
+Magnis is a local-first personal operations system. A **Rust backend is the
+single source of truth**: it stores everything, resolves conflicts, and talks to
+external services. Everything the user sees — people, companies, emails,
+meetings, messages — lives in one **graph** the backend owns.
+
+**Plugins are how that graph gets its shape and its data.** The backend ships a
+small core; every domain (contacts, email, meetings, the X connector, …) is a
+plugin. A plugin never owns storage — it reads and writes the backend's graph
+through a typed API.
+
+```mermaid
+graph TD
+    subgraph Host["Rust backend — single source of truth"]
+        G[("The graph<br/>entities · facets · canonical · links")]
+    end
+    M["Modules<br/>own a slice of the graph"] -->|read / write| G
+    S["Sources<br/>bring external data"] -->|emit envelopes| M
+    UI["Plugin UI + agent"] -->|call module tools| M
+    ext(["External services<br/>Gmail · X · Telegram"]) -->|fetched by| S
 ```
-                        ┌─────────────────────── magnis-server (host) ───────────────────────┐
-  WS /ws ─┐             │  RpcRouter::dispatch(&AppState, ctx, method, params)                │
-  /api/rpc├─ method ───▶│   ├─ native module handler? run it (DB on host runtime)             │
-          │             │   └─ plugin route? → PluginDispatcher.dispatch_with_state(.., state) │
-          │             │                              │ mpsc                                  │
-          │             │   ┌──────────────────────────▼─────────────── plugin worker thread ─┐│
-          │             │   │ current-thread tokio rt + ONE V8 isolate (deno_core)            ││
-          │             │   │  PluginRegistry::dispatch_with_host → invoke JS handler         ││
-          │             │   │   JS calls Deno.core.ops.op_graph_* / op_plugin_rpc_call        ││
-          │             │   │     └─ on_host(fut) ── marshals the DB future ───┐              ││
-          │             │   └───────────────────────────────────────────────── │ ────────────┘│
-          │             │   host runtime runs the DB future on its single PGlite connection ◀──┘│
-          └─────────────┴──────────────────────────────────────────────────────────────────────┘
+
+---
+
+## 2. The graph — what every plugin works with
+
+Five concepts. Learn these and the rest follows.
+
+- **Entity** — a generic base object: a person, company, project, meeting,
+  message. It has an id and a type, and little else on its own.
+- **Facet** — a typed, versioned block of data attached to an entity, *with
+  provenance*: "according to Gmail, on this date, this person's name is X." Many
+  facets can describe the same field from different sources.
+- **Canonical property** — the single derived truth for a field, merged from
+  conflicting facets by a deterministic rule (e.g. highest-confidence, then most
+  recent). The canonical name is what the UI shows; the facets are the evidence
+  behind it.
+- **Link** — a typed relationship between two entities ("authored_by",
+  "attended", "works_at"). Links make the graph a graph.
+- **Event** — an immutable, append-only record of every mutation: the log of
+  what happened.
+
+```mermaid
+graph LR
+    P(["Person entity"])
+    F1["name = 'Sam'<br/>from Gmail, conf .9"]
+    F2["name = 'Samuel'<br/>from LinkedIn, conf .6"]
+    C["canonical name = 'Sam'<br/>merge: confidence then recency"]
+    Co(["Company entity"])
+    F1 --> P
+    F2 --> P
+    P -.resolves to.-> C
+    P -->|works_at| Co
 ```
 
-## Why one thread per plugin
+A **module** decides which entities and facets exist for its domain and how
+their facets merge into canonical truth. A **source** produces the raw facts (as
+*envelopes*) that become those facets.
 
-`deno_core` / `rusty_v8` aborts the process if a second `JsRuntime` is created
-while another is alive **on the same OS thread** ("Cannot create a handle
-without a HandleScope"). So `PluginDispatcher` (`dispatcher.rs`) runs each
-plugin on its **own dedicated OS thread** with a current-thread tokio runtime
-and exactly one isolate. The dispatcher holds only `mpsc::Sender`s + the
-`method → plugin_id` routing table, so it is `Clone + Send + Sync` and lives
-inside `AppState`. Cross-plugin calls run in parallel; one plugin's calls
-serialize through its own channel.
+---
 
-## Why workers never touch the DB (the PGlite constraint)
+## 3. The two kinds of plugin, and who owns what
 
-In Local/desktop mode the database is **PGlite**: a single WASM backend that
-permits **exactly one** sqlx connection. That connection is bound to the
-**host** runtime's reactor. A plugin worker, on its own current-thread runtime,
-**cannot** drive that connection — acquiring it cross-runtime times out
-(`pool timed out while waiting for an open connection`).
+Every plugin is one of two kinds. They are different on purpose — different
+jobs, different runtimes.
 
-Therefore **plugin workers do no DB I/O on their own runtime**. Two mechanisms:
+| | **Module** | **Source** |
+|---|---|---|
+| Job | Own a slice of the graph | Bring data in from an external service |
+| Owns | Entity/facet **schemas**, the read/write logic, the UI | Nothing in the graph |
+| Produces | Tools (for the agent + UI), canonical truth | **Envelopes** on named surfaces |
+| Examples | contacts, email, meetings, companies | google, x, telegram |
+| Runs as | a sandboxed **in-process** component | a separate **external process** (MCP) |
+| Build guide | [module.md](./module.md) | [source.md](./source.md) |
 
-1. **Discovery is handed in, not queried.** `PluginDispatcher::spawn` discovers
-   the routing table + each plugin's manifest capabilities **once on the host
-   runtime** (`PluginRegistry::discover_with_graph`), then hands each worker its
-   `PluginRoute` table via `PluginRegistry::from_routes` — the worker performs
-   **no** `SELECT`.
-2. **Ops marshal their futures to the host.** Every graph/rpc op wraps its DB
-   work in `on_host(&state, fut)` (`ops/graph.rs`), which does
-   `host_runtime.spawn(fut).await`. The future runs on the host runtime (where
-   the connection lives); the worker just awaits the join handle. The bootstrap
-   "completed" stamp marshals the same way. `on_host` falls back to an inline
-   `await` when no host runtime is registered (single-runtime unit tests).
+The division is strict: **a source owns no schema, a module reaches no external
+service.** The X source pulls tweets and emits them; the social/contacts module
+owns the graph shape they land in and decides how they merge. This keeps the
+trust boundary clean — the thing talking to the outside world (the source) is
+never the thing holding the truth (the graph, via the module).
 
-The boot handshake is **async** (`tokio::sync::oneshot`), not a blocking recv —
-otherwise the host thread would block waiting for the worker while the worker
-waits for the host to poll its marshaled future → deadlock on a current-thread
-host runtime.
+There is also a small third concept — a **lifecycle** hook — that a module uses
+only when it needs custom install or data-migration logic. Most modules don't;
+see [module.md](./module.md).
 
-> **Rule for op authors:** never `.await` a DB future directly on the worker.
-> Read what you need from `OpState` synchronously, then run the DB call inside
-> `on_host(&state, async move { ... })`. All captured values must be owned and
-> `move`d (the future must be `Send + 'static`).
+---
 
-## Per-dispatch identity + host handle
+## 4. How data flows
 
-Each RPC carries the calling `user_id`. `PluginRegistry::dispatch_with_host`
-stamps it onto `OpState`'s `ModuleContext` (`set_dispatch_user`, DEC-12) before
-the handler runs — the isolate is cached per-plugin, not per-user. The owned
-`AppState` for the cross-module hub is installed the same way
-(`set_dispatch_host`) and cleared after the handler returns, so a worker never
-retains `AppState` (no `AppState ⇄ dispatcher` reference cycle). See
-[cross-module-hub.md](cross-module-hub.md).
+The end-to-end path, from an external service to the user's screen:
 
-## Install + bootstrap lifecycle
+```mermaid
+sequenceDiagram
+    participant Ext as External service
+    participant Src as Source
+    participant Mod as Module
+    participant Graph as The graph
+    participant UI as UI / agent
 
-- **Install** (`services/plugin_install`): reads `plugins/modules/<id>/manifest.json`,
-  validates it, persists the manifest + a row in `installed_extensions`
-  (`implementation_kind = 'deno_plugin'`), and registers the module's schemas
-  (entities/facets/links) **and canonical mappings** (DEC-16) into the graph.
-  `install_bundled_plugins` installs every plugin under `MAGNIS_PLUGINS_DIR` at
-  server boot. **A module ships NO SQL migrations.** Entities, facets, and links
-  are generic rows in the shared graph tables; "registering a schema" inserts a
-  schema *definition* (+ its canonical mappings) that the core validates writes
-  against. You only touch migrations if you change the generic graph storage
-  itself — never per module.
-- **Discover** (`PluginRegistry::discover_with_graph`): joins
-  `installed_extensions` to `plugin_manifests` for enabled `deno_plugin` rows,
-  parses each manifest, and builds the `rpc_method → plugin_id` routes + the
-  `PluginRoute` table (which carries the parsed `capabilities`).
-- **Dispatch fallback** (`api/websocket/router.rs`): the router runs native
-  handlers first; if no native handler owns `method` but
-  `state.plugin_dispatcher.has_route(method)`, it delegates to the dispatcher.
+    Ext->>Src: fetch (paginated)
+    Src->>Mod: envelopes on a surface<br/>snapshot / live / delete
+    Mod->>Graph: attach facets, resolve canonical, add links
+    UI->>Mod: call a tool (contacts.list)
+    Mod->>Graph: read canonical + facets
+    Mod-->>UI: typed result
+```
 
-## Layering rule
+1. A **source** fetches from the external service and emits **envelopes** — each
+   a `{ surface, remote_id, kind, payload }` fact — on one of its named
+   *surfaces*.
+2. The **module** that owns that surface receives the envelopes in its sync
+   handler and writes them into the graph: it attaches facets (with the source
+   as provenance) and re-resolves canonical truth.
+3. The **UI and the agent** call the module's tools to read that truth and act
+   on it.
 
-`plugin_runtime` may depend on `crate::state::AppState` (single crate, the hub
-needs the router) but the DEPENDENCY DIRECTION of the domain logic still holds:
-plugins are clients of the host's storage, never direct DB drivers. The Rust
-core carries no domain schemas — deleting a native module must leave the core
-compiling (that is the migration's acceptance bar).
+The source and the module are decoupled by the envelope contract: the source
+knows nothing about the graph schema; the module knows nothing about the X API.
+
+---
+
+## 5. How each kind runs (what an author must know)
+
+You do not need the host's internals — only these two facts, because they
+explain the rules the guides enforce.
+
+**A module runs sandboxed, in-process, with no I/O of its own.** The host loads
+your module and calls into it; your code reaches the graph only through the
+host-provided API (`deps.graph`). It has **no network, no filesystem, no
+sockets** — that restriction is the point: a graph-owner can't leak to, or be
+attacked from, the outside. Anything needing the outside world is a source's
+job. (A module also ships **no database migrations** — "registering a schema"
+just declares your entities and facets to the graph; storage is the host's.)
+
+**A source runs as a separate process the host spawns**, speaking a small
+JSON-RPC protocol over stdin/stdout. Because it is its own process it *can* do
+real network I/O (OAuth, REST, sockets), it can be written in any language, and
+you can run it by hand. Credentials are handed to it per call; it holds no
+long-lived secret.
+
+```mermaid
+graph LR
+    subgraph HostProc["Host process"]
+        Host["Host"]
+        Iso["Module<br/>sandboxed, no I/O"]
+        Host <-->|graph API| Iso
+    end
+    Src["Source<br/>separate process"]
+    Host <-->|JSON-RPC over stdio| Src
+    Src <-->|network| Ext(["External API"])
+```
+
+That is the whole reason a source is a process and a module is not: a source
+*needs* I/O and a language-agnostic boundary; a module must *not* have I/O. The
+long-form argument is in
+[structure.md](./structure.md).
+
+Everything runs on one toolchain — **Bun** — with no build step for sources and
+one bundling step for module UI. Commands and the conformance checklist are in
+[README.md](./README.md).
+
+---
+
+## 6. Where to go next
+
+- **[module.md](./module.md)** — build a module end to end: the class, the graph
+  API, schemas, the canonical-vs-facet rule, tests.
+- **[source.md](./source.md)** — build a source end to end: surfaces,
+  authentication, secrets, the wire contract, tests.
+- **[structure.md](./structure.md)** — the file-structure standard both kinds
+  follow, and the enforced code rules.
+- **[manifest.md](./manifest.md)** — the `manifest.toml` reference.

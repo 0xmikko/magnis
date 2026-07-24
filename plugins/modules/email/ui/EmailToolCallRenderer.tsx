@@ -15,24 +15,22 @@ function useAttachmentNames(
 
   useEffect(() => {
     if (!attachmentIds || attachmentIds.length === 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset resolved names to empty when there are no attachments; mirrors the async resolve below.
       setNames([]);
       return;
     }
     let cancelled = false;
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    Promise.all(
+    void Promise.all(
       attachmentIds.map((id) =>
         runtime.transport
           .rpc<Record<string, unknown>>("file.get", { id })
-          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-          .then((r) => (r.name as string) ?? "attachment")
+          .then((r) => (r.name as string | undefined) ?? "attachment")
           .catch(() => "attachment"),
       ),
     ).then((resolved) => {
       if (!cancelled) setNames(resolved);
     });
-    // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
-    return () => { cancelled = true; };
+    return (): void => { cancelled = true; };
   }, [attachmentIds, runtime.transport]);
 
   return names;
@@ -63,18 +61,14 @@ function useEmailContext(
         if (cancelled) return;
         const r = result as Record<string, unknown>;
         const metadata = r.metadata as Record<string, unknown> | undefined;
-        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-        const sender = (metadata?.from_address as string) ?? (r.sender as string) ?? "";
-        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-        const senderName = (r.sender as string) ?? undefined;
-        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-        const myAddress = (metadata?.to_addresses as string) ?? "";
+        const sender = (metadata?.from_address as string | undefined) ?? (r.sender as string | undefined) ?? "";
+        const senderName = r.sender as string | undefined;
+        const myAddress = (metadata?.to_addresses as string | undefined) ?? "";
         setCtx({
           from: myAddress,
           to: sender,
           toName: senderName,
-          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-          subject: r.subject as string ?? "",
+          subject: (r.subject as string | undefined) ?? "",
           previousText: r.body as string | undefined,
           previousSender: senderName,
           previousDate: r.timestamp
@@ -85,8 +79,7 @@ function useEmailContext(
         });
       })
       .catch(() => { /* ignore */ });
-    // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
-    return () => { cancelled = true; };
+    return (): void => { cancelled = true; };
   }, [emailId, runtime.transport]);
 
   return ctx;
@@ -137,7 +130,9 @@ export function EmailToolCallRenderer({
   const verb = isReply ? "Reply" : "Send";
 
   const emailId = args.email_id as string | undefined;
-  const hasDirectFields = args.to != null || args.subject != null;
+  const hasDirectFields =
+    (args.to !== undefined && args.to !== null) ||
+    (args.subject !== undefined && args.subject !== null);
   // Pending: fetch the reply context email so we can quote it in the
   // preview. Skipped after approval because we then render the
   // unified EmailCard which carries its own snapshot.
@@ -150,8 +145,14 @@ export function EmailToolCallRenderer({
   const toName = (args.to_name as string | undefined) ?? emailCtx?.toName;
   const subject = (args.subject as string | undefined) ??
     (emailCtx?.subject ? `Re: ${emailCtx.subject.replace(/^Re:\s*/i, "")}` : undefined);
-  // eslint-disable-next-line @typescript-eslint/no-base-to-string
-  const body = args.body != null ? String(args.body) : args.body_text != null ? String(args.body_text) : args.text != null ? String(args.text) : "";
+  const body =
+    typeof args.body === "string"
+      ? args.body
+      : typeof args.body_text === "string"
+        ? args.body_text
+        : typeof args.text === "string"
+          ? args.text
+          : "";
   const attachmentNames = useAttachmentNames(args.attachment_ids as readonly string[] | undefined, runtime);
 
   const recipientLabel = toName ?? to ?? "recipient";
@@ -161,7 +162,7 @@ export function EmailToolCallRenderer({
   // карточки. Snapshot берётся из toolResult.result (backend кладёт
   // schema_id="email.message" + full row at controller.rs:378-394).
   if (tc.status === "approved" && toolResult) {
-    const entity = extractEntities(toolResult.result, { toolName: tc.name })[0];
+    const entity = extractEntities(toolResult.result, { toolName: tc.name }).at(0);
     if (entity) {
       return (
         <ExpandableEntityCard

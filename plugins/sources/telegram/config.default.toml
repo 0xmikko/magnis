@@ -1,4 +1,6 @@
-# Shipped-default Cat-M module config (credentials-model §5.4, layer 1).
+# Shipped-default app credentials — the first layer of the two-layer credential
+# model (see docs/plugins/source.md): defaults bundled with the source, with a
+# deploy-time override in the encrypted vault.
 #
 # The module's OWN default MTProto app credentials, bundled WITH the module for
 # local-first out-of-the-box use. A server/enterprise deploy OVERRIDES these via

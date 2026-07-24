@@ -45,10 +45,10 @@ function useTelegramChatFromFacets(entityId: string): TelegramChat | undefined {
 
   return useMemo(() => {
     if (!response || response.items.length === 0) return undefined;
-    const d = response.items[0]?.data;
+    const d = response.items.at(0)?.data;
     if (!d) return undefined;
-    // eslint-disable-next-line @typescript-eslint/no-base-to-string
-    const chatId = d.chat_id != null ? String(d.chat_id) : undefined;
+    const chatId =
+      typeof d.chat_id === "string" || typeof d.chat_id === "number" ? String(d.chat_id) : undefined;
     if (!chatId) return undefined;
     const rawTitle = (d.chat_title as string | undefined) ?? (d.title as string | undefined);
     const name = normalizeTelegramChatTitle(rawTitle);
@@ -115,8 +115,7 @@ export function TelegramDetailWrapper({
       onSendMessage={messages.handleSendMessage}
       onReplyByAgent={messages.handleReplyByAgent}
       isIndexed={selectedChat?.isIndexed}
-      // eslint-disable-next-line @typescript-eslint/no-misused-promises
-      onToggleIndexing={handleToggleIndexing}
+      onToggleIndexing={() => { void handleToggleIndexing(); }}
     />
   );
 }

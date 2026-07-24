@@ -1,25 +1,25 @@
-# StateMock archetype 'oauth' (accounts-sync-status plan §11.1): the shared
-# @magnis/source-statemachine connector (bun) in a oauth2/poll shape. Eval-only (kind=mock).
+# StateMock 'oauth' — the shared @magnis/source-statemachine connector (bun) in
+# an oauth2/poll shape, exercising the OAuth auth ceremony and poll sync
+# end-to-end in tests. Eval-only (kind=mock).
 
-[source]
 id = "mock-statemachine-oauth"
 version = "1.0.0"
+title = "StateMock (OAuth)"
+summary = "Shared state-machine mock connector in an oauth2/poll shape."
+publisher = "ai.magnis"
 dev = true
-surfaces = ["smo-a","smo-b","smo-c"]
-transport = "stdio"
-account_mode = "single"
+surfaces = ["smo-a", "smo-b", "smo-c"]
 kind = "mock"
+account_mode = "single"
 
 [auth]
 type = "oauth2"
 
+# [spawn] stays: the shared statemachine binary is shaped by CLI flags, not the
+# bare src/main.ts convention.
 [spawn]
 command = "bun"
 args = ["run", "src/main.ts", "--surfaces", "smo-a,smo-b,smo-c", "--mode", "poll"]
 
-[profile]
+[sync]
 mode = "poll"
-
-# Declared install (extensions-lifecycle DEC-L4): host-standard routine.
-[lifecycle]
-install = "standard"

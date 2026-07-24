@@ -3,7 +3,7 @@
  *
  * Replaces the generic fallback ("Agent wants to: telegram.set trigger / Chat ID:
  * <raw>") with a card that shows what the automation actually does: which chat is
- * watched, the condition (When), and the action (Then) — DEC-7 / INV-7. Colocated
+ * watched, the condition (When), and the action (Then). Colocated
  * with the plugin (mirrors TelegramBatchSendRenderer); registered from
  * plugins/telegram/ui/index.tsx via the `set_trigger` action.
  */
@@ -17,8 +17,8 @@ export function TelegramSetTriggerRenderer({
 }: AgentRendererProps<ToolCallRendererPayload>): JSX.Element {
   const { toolCall: tc, toolResult, isAllowlisted, superseded, onApprove, onDeny, onAllowlistToggle } = payload;
   const args = tc.args as Record<string, unknown>;
-  // eslint-disable-next-line @typescript-eslint/no-base-to-string
-  const chatId = args.chat_id != null ? String(args.chat_id) : "?";
+  const chatId =
+    typeof args.chat_id === "string" || typeof args.chat_id === "number" ? String(args.chat_id) : "?";
   const gate = typeof args.gate_prompt === "string" ? args.gate_prompt : "";
   const action = typeof args.action_prompt === "string" ? args.action_prompt : "";
   const debounce = typeof args.debounce_seconds === "number" ? args.debounce_seconds : 0;

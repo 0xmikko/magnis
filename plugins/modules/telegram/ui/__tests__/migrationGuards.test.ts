@@ -4,8 +4,8 @@
  * Relocated from the host-side guards when the telegram domain module moved
  * out of frontend/src/modules/telegram into this plugin:
  *   - src/modules/__tests__/queryMigration.test.ts           (react-query migration)
- *   - src/modules/__tests__/storeAndTransportMigration.test.ts (W3: runtime transport)
- *   - src/modules/_base/__tests__/BaseToolCallCard.test.ts    (INV-7: shared card)
+ *   - src/modules/__tests__/storeAndTransportMigration.test.ts (runtime transport)
+ *   - src/modules/_base/__tests__/BaseToolCallCard.test.ts    (shared card)
  *
  * They assert the same invariants those host guards enforced — no useWebSocket,
  * react-query for initial data + cache invalidation, runtime transport for sync,
@@ -53,7 +53,7 @@ describe("Query migration: Telegram", () => {
   });
 });
 
-describe("W3: useTelegramSync uses runtime transport", () => {
+describe("Runtime transport: useTelegramSync", () => {
   it("does NOT import useWebSocket", () => {
     expect(readSource("hooks/useTelegramSync.ts")).not.toContain("useWebSocket");
   });
@@ -63,7 +63,7 @@ describe("W3: useTelegramSync uses runtime transport", () => {
   });
 });
 
-describe("INV-7: telegram tool-call renderer reuses BaseToolCallCard", () => {
+describe("Shared card: telegram tool-call renderer reuses BaseToolCallCard", () => {
   it("imports BaseToolCallCard", () => {
     expect(readSource("TelegramToolCallRenderer.tsx")).toContain("BaseToolCallCard");
   });

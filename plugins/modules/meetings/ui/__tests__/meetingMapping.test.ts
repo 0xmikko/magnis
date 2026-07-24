@@ -51,8 +51,8 @@ describe("mapMeetingFromApi", () => {
   });
 
   /**
-   * tst_fe_meetings_helpers_attendees_001 — INV-24b: helpers consume
-   * the canonical `CalendarAttendee` API shape and render `name ?? email`.
+   * tst_fe_meetings_helpers_attendees_001 — helpers consume the
+   * canonical `CalendarAttendee` API shape and render `name ?? email`.
    * When `name` is null the email is the display string.
    */
   it("tst_fe_meetings_helpers_attendees_001 handles canonical attendee objects (name ?? email)", () => {

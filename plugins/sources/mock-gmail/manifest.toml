@@ -1,34 +1,27 @@
-# mock-gmail — reference external Magnis MCP source connector (Stage 7).
+# mock-gmail — the reference external Magnis MCP source connector.
 #
 # The first source migrated out of the backend into the external-MCP format.
 # Feeds two surfaces (email + meetings) with the same canonical envelopes the
 # in-core mock did, so the emails/meetings modules ingest it unchanged.
 #
-# The server is `src/main.ts` on @magnis/connector-sdk, run by bun from this
-# manifest's directory (DEC-10 stamps it as the spawn cwd). MOCK_INJECT_FILE is
-# the shared JSONL both surface processes read; MOCK_EMAIL_PORT (optional)
-# enables the HTTP injection server for demos (`curl localhost:4020/inject`).
-
-[source]
-id = "mock-gmail"
-version = "1.0.0"
-dev = true
-surfaces = ["email", "meetings"]
-transport = "stdio"
-account_mode = "single"
-accounts = ["eval"]
-kind = "mock"
-
-[spawn]
-command = "bun"
-args = ["run", "src/main.ts"]
-# env injected by the operator / launch scripts:
+# The server is `src/main.ts` on @magnis/connector-sdk, spawned by convention
+# (bun, with this manifest's directory as the spawn cwd).
+# MOCK_INJECT_FILE is the shared JSONL both surface processes read;
+# MOCK_EMAIL_PORT (optional) enables the HTTP injection server for demos
+# (`curl localhost:4020/inject`). env injected by the operator / launch scripts:
 #   MOCK_INJECT_FILE = "<storage>/mock-gmail/inject.jsonl"
 #   MOCK_EMAIL_PORT  = "4020"   # optional, demo injection
 
-[profile]
-mode = "poll"
+id = "mock-gmail"
+version = "1.0.0"
+title = "Mock Gmail"
+summary = "Injectable mock email + meetings source for demos, evals, and e2e."
+publisher = "ai.magnis"
+dev = true
+surfaces = ["email", "meetings"]
+kind = "mock"
+account_mode = "single"
+accounts = ["eval"]
 
-# Declared install (extensions-lifecycle DEC-L4): host-standard routine.
-[lifecycle]
-install = "standard"
+[sync]
+mode = "poll"

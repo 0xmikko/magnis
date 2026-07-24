@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import type { UseMutationResult } from "@tanstack/react-query";
 import { useAppRuntime } from "@magnis/host/runtime";
 import type { PaginatedResponse } from "@magnis/host/runtime";
 import { noteKeys } from "./queries";
@@ -23,8 +24,7 @@ interface DeleteNoteParams {
   readonly id: string;
 }
 
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type, @typescript-eslint/explicit-module-boundary-types
-export function useCreateNoteMutation() {
+export function useCreateNoteMutation(): UseMutationResult<CreateNoteResult, Error, CreateNoteParams> {
   const runtime = useAppRuntime();
   const queryClient = useQueryClient();
 
@@ -37,8 +37,13 @@ export function useCreateNoteMutation() {
   });
 }
 
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type, @typescript-eslint/explicit-module-boundary-types
-export function useUpdateNoteMutation() {
+interface UpdateNoteContext {
+  previous: NoteDetailView | undefined;
+  id: string;
+  previousLists: [readonly unknown[], unknown][];
+}
+
+export function useUpdateNoteMutation(): UseMutationResult<unknown, Error, UpdateNoteParams, UpdateNoteContext> {
   const runtime = useAppRuntime();
   // The plugin UI runs on its OWN react-query client (the detail panel reads
   // from it). The sidebar list, however, is the HOST's `useModuleList` query,
@@ -47,16 +52,7 @@ export function useUpdateNoteMutation() {
   const queryClient = useQueryClient();
   const hostQueryClient = runtime.queryClient;
 
-  return useMutation<
-    unknown,
-    Error,
-    UpdateNoteParams,
-    {
-      previous: NoteDetailView | undefined;
-      id: string;
-      previousLists: Array<[readonly unknown[], unknown]>;
-    }
-  >({
+  return useMutation<unknown, Error, UpdateNoteParams, UpdateNoteContext>({
     mutationFn: (params) =>
       runtime.transport.rpc("notes.update", { ...params }),
     onMutate: async (variables) => {
@@ -75,7 +71,7 @@ export function useUpdateNoteMutation() {
       // Optimistically patch the renamed title into every cached notes list so
       // the left panel updates at the SAME time as the detail (previously the
       // list only caught up on the next refetch — a visible lag on rename).
-      let previousLists: Array<[readonly unknown[], unknown]> = [];
+      let previousLists: [readonly unknown[], unknown][] = [];
       if (variables.title !== undefined) {
         const newTitle = variables.title;
         const listKey = [...noteKeys.all, "list"];
@@ -95,8 +91,8 @@ export function useUpdateNoteMutation() {
         ];
         hostQueryClient.setQueriesData<PaginatedResponse<NoteListItem>>(
           { queryKey: listKey },
-          (old) =>
-            old && Array.isArray(old.items)
+          (old: PaginatedResponse<NoteListItem> | undefined) =>
+            old
               ? {
                   ...old,
                   items: old.items.map((it) =>
@@ -135,8 +131,7 @@ export function useUpdateNoteMutation() {
   });
 }
 
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type, @typescript-eslint/explicit-module-boundary-types
-export function useDeleteNoteMutation() {
+export function useDeleteNoteMutation(): UseMutationResult<unknown, Error, DeleteNoteParams> {
   const runtime = useAppRuntime();
   const queryClient = useQueryClient();
 

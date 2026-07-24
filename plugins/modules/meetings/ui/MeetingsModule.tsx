@@ -37,7 +37,7 @@ export function MeetingsModule(): JSX.Element {
   });
 
   const { meetings } = data;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   const rawMeetings = useMemo(() => data.rawMeetings ?? [], [data.rawMeetings]);
   const meetingsMap = useMemo(
     () => new Map(meetings.map((m) => [m.id, m])),
@@ -60,8 +60,7 @@ export function MeetingsModule(): JSX.Element {
           .filter((m): m is NonNullable<typeof m> => {
             if (!m) return false;
             if (!q) return true;
-            // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-            return m.title.toLowerCase().includes(q) || (m.with?.toLowerCase().includes(q) ?? false);
+            return m.title.toLowerCase().includes(q) || m.with.toLowerCase().includes(q);
           })
           .map((m) => ({
             id: m.id,
@@ -91,10 +90,10 @@ export function MeetingsModule(): JSX.Element {
     hasScrolledRef.current = true;
 
     const todayTs = new Date().setHours(0, 0, 0, 0);
-    const targetGroup = groups.find((g) => g.date.getTime() >= todayTs) ?? groups[groups.length - 1];
+    const targetGroup = groups.find((g) => g.date.getTime() >= todayTs) ?? groups.at(-1);
     if (!targetGroup) return;
 
-    const firstItem = targetGroup.items[0];
+    const firstItem = targetGroup.items.at(0);
     if (firstItem && !list.selectedId) {
       list.setSelectedId(firstItem.id);
     }
@@ -104,6 +103,9 @@ export function MeetingsModule(): JSX.Element {
   }, [groups, list.selectedId, list.setSelectedId]);
 
   const [calendarDate, setCalendarDate] = useState<Date>(() => new Date());
+  const [displayMonth, setDisplayMonth] = useState(
+    () => new Date(new Date().getFullYear(), new Date().getMonth(), 1),
+  );
 
   const handleDateClick = useCallback((date: Date) => {
     setCalendarDate(date);
@@ -118,10 +120,6 @@ export function MeetingsModule(): JSX.Element {
       scrollToDate(scrollRef.current, targetGroup.date);
     });
   }, [groups]);
-
-  const [displayMonth, setDisplayMonth] = useState(
-    () => new Date(new Date().getFullYear(), new Date().getMonth(), 1),
-  );
 
   return (
     <ModuleLayout

@@ -3,9 +3,9 @@
 // contract with its RPC handler; definePlugin (index.ts) wires them.
 //
 // Reads use the efficient graph read-API (email parity): list →
-// list_entities_window (P2) with the details facet inline / search →
+// list_entities_window with the details facet inline / search →
 // search_entities_by_name + list_facets_for_entities (batch); get →
-// get_entity_full (P1) + one get_canonical. Fixed, N-independent crossings.
+// get_entity_full + one get_canonical. Fixed, N-independent crossings.
 
 import { tool, writeTool, type GraphService, type PluginDeps } from "@magnis/plugin-sdk";
 import type { GetParams, ListParams, PaginatedResponse } from "@magnis/plugin-sdk";
@@ -18,10 +18,15 @@ import type {
   CreateParams,
   HeaderRow,
   UpdateParams,
-} from "../types/index.ts";
+} from "../types.ts";
+import {
+  COMPANY,
+  COMPANY_DETAILS,
+  COMPANY_EMAIL,
+  COMPANY_EXTERNAL_LINK,
+  COMPANY_PHONE,
+} from "../schema.ts";
 import { buildListItem } from "./helpers.ts";
-
-const SCHEMA = "companies.company";
 
 export class CompaniesModule {
   private readonly graph: GraphService<CompanyFacets, CompanyCanonical>;
@@ -46,17 +51,17 @@ export class CompaniesModule {
     const offset = params.offset ?? 0;
     const search = (params.search ?? "").trim();
 
-    let rows: Array<{ id: string; schema_id: string; name: string; created_at?: string }>;
+    let rows: { id: string; schema_id: string; name: string; created_at?: string }[];
     let total: number;
     if (search.length > 0) {
       const matched = await this.graph.search_entities_by_name({
         query: search,
-        schema_ids: [SCHEMA],
+        schema_ids: [COMPANY],
         limit: limit + offset,
       });
       // Sort alphabetically by name (parity with staging, which sorted ALL
       // results; search_entities_by_name returns prefix/date order otherwise).
-      matched.sort((a, b) => (a.name ?? "").toLowerCase().localeCompare((b.name ?? "").toLowerCase()));
+      matched.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
       total = matched.length;
       rows = matched.slice(offset, offset + limit);
     } else {
@@ -66,7 +71,7 @@ export class CompaniesModule {
       // only the explicit order, so it does NOT add pinned-first — matching
       // staging's JS name sort which had no pinned priority.
       const win = await this.graph.list_entities_window({
-        schema: SCHEMA,
+        schema: COMPANY,
         order: [{ field: { entity_field: "idx" }, desc: false }],
         limit,
         offset,
@@ -92,14 +97,14 @@ export class CompaniesModule {
     },
   })
   async get(params: GetParams): Promise<CompanyDetailView> {
-    // P1: user-scoped entity (+ schema guard) in ONE fetch. The detail view does
+    // User-scoped entity (+ schema guard) in ONE fetch. The detail view does
     // not surface link neighbours (members/linked_entities stay empty, native
     // parity). Facets come from list_facets_for_entity so the DTO carries ALL
     // facets (get_entity_full would dedup to latest-per-schema, dropping the
     // collection email/phone facets the old get returned). One get_canonical
     // for the canonical block.
     const detail = await this.graph.get_entity_full(params.id);
-    if (!detail || detail.entity.schema_id !== SCHEMA) {
+    if (detail?.entity.schema_id !== COMPANY) {
       throw new Error(`company not found: ${params.id}`);
     }
     const { entity } = detail;
@@ -113,7 +118,7 @@ export class CompaniesModule {
       { type: "text", label: "Website", value: base.website },
       { type: "text", label: "Industry", value: base.industry },
       { type: "text", label: "Size", value: base.size },
-      { type: "chips", label: `Team members (${members.length})`, items: members },
+      { type: "chips", label: `Team members (${String(members.length)})`, items: members },
     ];
     return { ...base, canonical, facets, linked_entities: [], members, header_rows };
   }
@@ -121,7 +126,7 @@ export class CompaniesModule {
   // `params` is the AGENT-facing schema → omits `client_id` (the
   // frontend-only optimistic-create UUID). The handler still accepts
   // it via CreateParams; the WS RPC path is not validated against this
-  // schema (DEC-11).
+  // schema.
   @writeTool("create", {
     description:
       "Create a company. Idempotent by name (case-insensitive, trimmed): if a " +
@@ -148,10 +153,10 @@ export class CompaniesModule {
     const needle = params.name.trim().toLowerCase();
     const existing = await this.graph.search_entities_by_name({
       query: needle,
-      schema_ids: ["companies.company"],
+      schema_ids: [COMPANY],
       limit: 25,
     });
-    const match = existing.find((c) => (c.name ?? "").trim().toLowerCase() === needle);
+    const match = existing.find((c) => c.name.trim().toLowerCase() === needle);
     if (match) {
       // Write path (idempotent return) — one canonical read hydrates the matched
       // entity's list item; not the hot read path.
@@ -159,7 +164,7 @@ export class CompaniesModule {
     }
 
     const e = await this.graph.create_entity({
-      schema_id: SCHEMA,
+      schema_id: COMPANY,
       name: params.name,
       client_id: params.client_id,
       idx: params.name.toLowerCase(),
@@ -175,7 +180,7 @@ export class CompaniesModule {
     if (params.summary) details.description = params.summary;
     await this.graph.attach_facet({
       entity_id: e.id,
-      schema_id: "companies.company.details",
+      schema_id: COMPANY_DETAILS,
       data: details,
     });
     await this.graph.resolve_canonical(e.id);
@@ -190,7 +195,7 @@ export class CompaniesModule {
       if (!c.entity_id) continue;
       const m = (out.get(c.entity_id) ?? {}) as Record<string, unknown>;
       m[c.key] = c.value;
-      out.set(c.entity_id, m as Partial<CompanyCanonical>);
+      out.set(c.entity_id, m);
     }
     return out;
   }
@@ -272,26 +277,26 @@ export class CompaniesModule {
     if (Object.keys(details).length > 0) {
       await this.graph.attach_facet({
         entity_id: params.id,
-        schema_id: "companies.company.details",
+        schema_id: COMPANY_DETAILS,
         data: details,
       });
     }
 
     if (params.emails) {
-      for (let i = 0; i < params.emails.length; i++) {
+      for (const [i, email] of params.emails.entries()) {
         await this.graph.attach_facet({
           entity_id: params.id,
-          schema_id: "companies.company.email",
-          data: { email: params.emails[i]!, is_primary: i === 0 },
+          schema_id: COMPANY_EMAIL,
+          data: { email, is_primary: i === 0 },
         });
       }
     }
     if (params.phones) {
-      for (let i = 0; i < params.phones.length; i++) {
+      for (const [i, phone] of params.phones.entries()) {
         await this.graph.attach_facet({
           entity_id: params.id,
-          schema_id: "companies.company.phone",
-          data: { phone: params.phones[i]!, is_primary: i === 0 },
+          schema_id: COMPANY_PHONE,
+          data: { phone, is_primary: i === 0 },
         });
       }
     }
@@ -299,7 +304,7 @@ export class CompaniesModule {
       for (const link of params.external_links) {
         await this.graph.attach_facet({
           entity_id: params.id,
-          schema_id: "companies.company.external_link",
+          schema_id: COMPANY_EXTERNAL_LINK,
           data: {
             source_type: link.source_type,
             external_id: link.external_id,

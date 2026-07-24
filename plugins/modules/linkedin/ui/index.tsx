@@ -7,11 +7,12 @@ import { LinkedInProfileFeed } from "./ProfileFeed";
 import { LinkedInProfileHeader } from "./ProfileHeader";
 import { AddProfileAction } from "./AddProfileAction";
 
-// Brand glyph shipped IN the plugin (plugins/linkedin/ui/icon.svg) and served by
-// the backend from the plugin store — no external hosting (plugin-icon-standard).
-// Rendered as a CSS mask filled with currentColor: rail icons are ALWAYS
-// monochrome and must follow the rail's active/hover text color like lucide.
-const ICON_URL = "/api/plugins/linkedin/ui/icon.svg";
+// Brand glyph shipped IN the plugin (plugins/linkedin/icon.svg, package root)
+// and served by the backend from the plugin store — no external hosting
+// (plugin-icon-standard). Rendered as a CSS mask filled with currentColor:
+// rail icons are ALWAYS monochrome and must follow the rail's active/hover
+// text color like lucide.
+const ICON_URL = "/api/plugins/linkedin/icon.svg";
 
 function LinkedInIcon(): JSX.Element {
   return (
@@ -43,36 +44,37 @@ export const LinkedinModule = defineModule({
   themeColor: "purple",
   entityTypes: ["profile", "post"],
   // Per-type entity cards: a profile in a contact\u2019s dynamic tab is an
-  // identity card, not a post (social-contact-identity S4/INV-2).
+  // identity card, not a post.
   entityLabels: { profile: { EntityCard: LinkedInProfileCard } },
   primaryEntityType: "profile",
   // List the tracked profiles (people), not posts.
   rpc: { list: "linkedin.profiles.list", get: "linkedin.profiles.get" },
   mapListItem: (raw) => {
-    const handle = raw.handle ? String(raw.handle) : "";
+    const asStr = (v: unknown): string => (typeof v === "string" ? v : typeof v === "number" ? String(v) : "");
+    const handle = asStr(raw.handle);
     const fc = typeof raw.follower_count === "number" ? raw.follower_count : null;
-    // LA-2: a tracked-but-not-yet-synced placeholder reads "Syncing…" — the
+    // A tracked-but-not-yet-synced placeholder reads "Syncing…" — the
     // honest optimistic state right after "+"; replaced by the real profile
     // on the next sync cycle.
     const pending = raw.pending === true;
     return {
-      id: String(raw.id ?? ""),
-      name: raw.display_name ? String(raw.display_name) : handle || "Profile",
+      id: asStr(raw.id),
+      name: asStr(raw.display_name) || handle || "Profile",
       schema_id: "linkedin.profile",
       preview: pending
         ? `@${handle} · Syncing…`
         : handle
-          ? `@${handle}${fc != null ? ` · ${fc.toLocaleString()} followers` : ""}`
+          ? `@${handle}${fc !== null ? ` · ${fc.toLocaleString()} followers` : ""}`
           : null,
       timestamp: null,
-      avatar_url: raw.avatar_url ? proxiedMediaUrl(String(raw.avatar_url)) : null,
+      avatar_url: typeof raw.avatar_url === "string" && raw.avatar_url ? proxiedMediaUrl(raw.avatar_url) : null,
     };
   },
   // STANDARD detail: DetailPane + TopBarHeader via the framework path; the
   // header extends the standard TopBarHeader through HeaderComponent (bio +
   // profile link in its `extra` slot, like email's To/Reply-To rows) and the
   // panel is only the BODY (posts). NEVER detailType:"custom" for headers.
-  // "+" add-profile input (S5): LinkedIn only — X friends come from the API.
+  // "+" add-profile input: LinkedIn only — X friends come from the API.
   HeaderActions: AddProfileAction,
   HeaderComponent: LinkedInProfileHeader,
   DetailPanel: LinkedInProfileFeed,
@@ -88,7 +90,6 @@ export const LinkedinModule = defineModule({
       ["sync.progress"],
       [["linkedin"]],
     );
-    // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
-    return () => { unsub(); };
+    return (): void => { unsub(); };
   },
 });

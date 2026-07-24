@@ -49,7 +49,6 @@ function phoneList(data: Readonly<Record<string, unknown>>): string[] {
  * True when the attachment carries more contact info than the 2-line
  * collapsed row can display. Drives the ExpandableEntityCard chevron.
  */
-// eslint-disable-next-line react-refresh/only-export-components
 export function contactHasMore(data: Readonly<Record<string, unknown>>): boolean {
   const bio = typeof data.bio === "string" && data.bio.length > 0;
   const location = typeof data.location === "string" && data.location.length > 0;
@@ -86,7 +85,7 @@ export function ContactCard(props: EntityRendererProps): JSX.Element {
   const phone = data.phone as string | undefined;
   const role = data.role as string | undefined;
   const company = data.company as string | undefined;
-  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- intentional falsy fallback: an empty role·company subtitle must fall through to email/phone (?? would keep "").
   const subtitle = [role, company].filter(Boolean).join(" · ") || email || phone || "";
   const { expanded } = useContext(ExpansionContext);
 

@@ -1,0 +1,29 @@
+# linkedin — LinkedIn domain module (V8 plugin).
+#
+# Owns the `linkedin.*` graph namespace: profile + post entities and their
+# identity / content / metrics facets for the LinkedIn accounts you track.
+# Ingests the `linkedin` sync surface (provided by the Anysite source
+# connector), links each profile to the matching contact (reads contacts.person,
+# creates the linkedin.profile:contacts.person link), and reads contacts'
+# social-tracking over RPC. Read-only today. Sandboxed V8 isolate; bundled with
+# the app and installed automatically at boot.
+
+id = "linkedin"
+version = "0.1.0"
+# SDK contract version this manifest targets (host accepts 0.x).
+magnis_api_version = "0.1.0"
+title = "LinkedIn"
+summary = "LinkedIn profiles and posts of the people you track, linked to contacts."
+# Reverse-domain publisher identity.
+publisher = "ai.magnis"
+
+# Sync surface this module consumes (fed by the matching source connector).
+[surfaces.linkedin]
+
+# Foreign asks beyond the implicit own namespace: writes to `linkedin.` facets,
+# own:own links, and reads of own schemas need no declaration.
+[permissions]
+read = [ "contacts.person" ]
+links = [ "linkedin.profile:contacts.person" ]
+call = [ "contacts.get_social_tracking_by_handle", "contacts.rename_if_placeholder", "contacts.list_social_tracking" ]
+host = [ "sync_state", "external_id_reads" ]

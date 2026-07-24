@@ -30,7 +30,7 @@ function previewKind(mime: string): "image" | "video" | "audio" | "pdf" | null {
 function fileMetaLine(file: FileData | undefined, mime: string): string {
   const parts = [
     mime || null,
-    file?.size_bytes != null ? formatFileSize(file.size_bytes) : null,
+    file?.size_bytes !== undefined && file.size_bytes !== null ? formatFileSize(file.size_bytes) : null,
     file?.source_module ? sourceLabel(file.source_module) : null,
   ].filter((part): part is string => part !== null && part.length > 0);
 
@@ -50,6 +50,7 @@ function useFileStatus(fileUrl: string, kind: string | null, entityId: string): 
   const attemptRef = useRef(0);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset polling state to "checking" whenever the file inputs change; the async poll below drives subsequent transitions.
     setStatus("checking");
     attemptRef.current = 0;
 
@@ -61,8 +62,7 @@ function useFileStatus(fileUrl: string, kind: string | null, entityId: string): 
 
     let cancelled = false;
 
-    // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
-    async function poll() {
+    async function poll(): Promise<void> {
       try {
         const res = await fetch(fileUrl, {
           method: "HEAD",
@@ -96,8 +96,7 @@ function useFileStatus(fileUrl: string, kind: string | null, entityId: string): 
 
     void poll();
 
-    // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
-    return () => {
+    return (): void => {
       cancelled = true;
       if (timerRef.current) clearTimeout(timerRef.current);
     };
@@ -117,6 +116,7 @@ function useAuthenticatedPreviewUrl(
 
   useEffect(() => {
     if (!kind || fileStatus !== "ready") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear/revoke the preview object URL when the file is not ready; keyed by kind/fileStatus.
       setPreviewUrl((prev) => {
         if (prev) URL.revokeObjectURL(prev);
         return null;
@@ -206,7 +206,7 @@ export function FileDetailPanel({ entityId }: DetailPanelProps): JSX.Element {
       }
       footer={!hasInlinePreview ? (
         <div className="px-6 py-4 border-t border-edge space-y-2 text-sm">
-          {file?.size_bytes != null && (
+          {file?.size_bytes !== undefined && file.size_bytes !== null && (
             <div className="flex justify-between">
               <span className="text-content-secondary">Size</span>
               <span className="text-content">{formatFileSize(file.size_bytes)}</span>

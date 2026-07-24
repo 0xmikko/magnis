@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import type { UseQueryResult } from "@tanstack/react-query";
 import { useAppRuntime } from "@magnis/host/runtime";
 import type { MeetingListItem } from "./types";
 import type { PaginatedResponse } from "@magnis/host/runtime";
@@ -9,8 +10,7 @@ export const meetingKeys = {
   detail: (id: string) => [...meetingKeys.all, "detail", id] as const,
 };
 
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type, @typescript-eslint/explicit-module-boundary-types
-export function useMeetingsListQuery(limit = 100, offset = 0) {
+export function useMeetingsListQuery(limit = 100, offset = 0): UseQueryResult<PaginatedResponse<MeetingListItem>> {
   const runtime = useAppRuntime();
   return useQuery({
     queryKey: meetingKeys.list({ limit, offset }),
@@ -21,8 +21,7 @@ export function useMeetingsListQuery(limit = 100, offset = 0) {
   });
 }
 
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type, @typescript-eslint/explicit-module-boundary-types
-export function useMeetingDetailQuery(id: string) {
+export function useMeetingDetailQuery(id: string): UseQueryResult {
   const runtime = useAppRuntime();
   return useQuery({
     queryKey: meetingKeys.detail(id),

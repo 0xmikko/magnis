@@ -1,0 +1,11 @@
+{
+  "name": "@magnis/testkit",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Dev-only test doubles + builders for Magnis plugin tests. Two entry points: `@magnis/testkit/module` (V8 module tests, vitest) and `@magnis/testkit/source` (connector/source tests, bun — mockFetch + runSourceContract). Never shipped in a plugin bundle or the catalog.",
+  "exports": {
+    "./module": "./module.ts",
+    "./source": "./source.ts"
+  }
+}

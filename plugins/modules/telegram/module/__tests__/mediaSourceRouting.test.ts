@@ -10,38 +10,41 @@
  * differently-named connector (live failure: the telegram-ts rollout logged
  * thousands of `no source runtime for (telegram, telegram)` — the runtime was
  * registered as (telegram-ts, telegram)).
+ *
+ * Doubles come from @magnis/testkit/module. Both the batch (`ingest`) and the
+ * per-envelope (`ingestMessage`) paths are exercised through the real module.
  */
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
+import { entity, mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { TelegramModule } from "../service.ts";
-import type { SyncEnvelope } from "../../types/index.ts";
+import type { SyncEnvelope, TelegramCanonical, TelegramFacets } from "../../types.ts";
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-function makeGraph() {
-  return {
-    // No pre-existing chat/sender entities: lookups miss, batch creates.
-    find_by_external_id: vi.fn(async () => null),
-    list_facets_for_entity: vi.fn(async () => []),
-    apply_batch: vi.fn(async (frag: { entities: { key: string }[] }) => ({
-      ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
-      created: frag.entities.length,
-      updated: 0,
-      links_added: 0,
-      dropped_keys: [],
-    })),
-    web_register: vi.fn(async () => "web-id"),
-    file_register: vi.fn(async () => "file-id"),
-    attach_facet: vi.fn(async () => undefined),
-    create_entity: vi.fn(async () => ({ id: "created-id" })),
-    delete_entity: vi.fn(async () => undefined),
-  } as any;
+type G = MockGraph<TelegramFacets, TelegramCanonical>;
+
+// The private ingest helpers the test drives directly.
+interface TgInternals {
+  ingest(p: { envelopes?: SyncEnvelope[] }): Promise<unknown>;
+  ingestMessage(env: SyncEnvelope, payload: Record<string, unknown>): Promise<unknown>;
 }
 
-function makeModule(graph: any): TelegramModule {
-  return new (TelegramModule as any)({
-    graph,
-    ctx: { extension_id: "telegram", user_id: "u1" },
-    util: {},
-    rpc: { call: vi.fn() },
+function ingestGraph(): G {
+  return mockGraph<TelegramFacets, TelegramCanonical>({
+    // No pre-existing chat/sender entities: lookups miss, batch creates.
+    find_by_external_id: () => Promise.resolve(null),
+    list_facets_for_entity: () => Promise.resolve([]),
+    apply_batch: (frag) =>
+      Promise.resolve({
+        ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
+        created: frag.entities.length,
+        updated: 0,
+        links_added: 0,
+        dropped_keys: [],
+      }),
+    web_register: () => Promise.resolve("web-id"),
+    file_register: () => Promise.resolve("file-id"),
+    attach_facet: () => Promise.resolve({ id: "facet-id" }),
+    create_entity: () => Promise.resolve(entity("created-id", "")),
+    delete_entity: () => Promise.resolve(),
   });
 }
 
@@ -68,26 +71,37 @@ const mediaEnvelope = (sourceId: string): SyncEnvelope => ({
 
 describe("tst_fe_tg_media_source_routing_001 — file.object source_module = envelope source_id", () => {
   it("batch ingest stamps the envelope's source_id (telegram-ts), never a hardcoded name", async () => {
-    const graph = makeGraph();
-    const mod = makeModule(graph);
+    const graph = ingestGraph();
+    const mod = mountModule(TelegramModule, { graph, ctx: { extension_id: "telegram" } })
+      .module as unknown as TgInternals;
 
-    await (mod as any).ingest({ envelopes: [mediaEnvelope("telegram-ts")] });
+    await mod.ingest({ envelopes: [mediaEnvelope("telegram-ts")] });
 
-    expect(graph.file_register).toHaveBeenCalledTimes(1);
-    const call = graph.file_register.mock.calls[0][0] as Record<string, unknown>;
+    const fileRegister = graph.spies.file_register;
+    if (fileRegister === undefined) throw new Error("batch ingest: missing file_register spy");
+    expect(fileRegister).toHaveBeenCalledTimes(1);
+    const callArgs = fileRegister.mock.calls[0];
+    if (callArgs === undefined) throw new Error("batch ingest: no file_register call recorded");
+    const call = callArgs[0] as Record<string, unknown>;
     expect(call.external_id).toBe("file:telegram:42:7");
     expect(call.source_module).toBe("telegram-ts");
     expect(call.source_surface).toBe("telegram");
   });
 
   it("per-envelope ingestMessage stamps the envelope's source_id too", async () => {
-    const graph = makeGraph();
-    const mod = makeModule(graph);
+    const graph = ingestGraph();
+    const mod = mountModule(TelegramModule, { graph, ctx: { extension_id: "telegram" } })
+      .module as unknown as TgInternals;
 
-    await (mod as any).ingestMessage(mediaEnvelope("telegram-ts"), mediaEnvelope("telegram-ts").payload);
+    const env = mediaEnvelope("telegram-ts");
+    await mod.ingestMessage(env, env.payload);
 
-    expect(graph.file_register).toHaveBeenCalledTimes(1);
-    const call = graph.file_register.mock.calls[0][0] as Record<string, unknown>;
+    const fileRegister = graph.spies.file_register;
+    if (fileRegister === undefined) throw new Error("per-envelope ingest: missing file_register spy");
+    expect(fileRegister).toHaveBeenCalledTimes(1);
+    const callArgs = fileRegister.mock.calls[0];
+    if (callArgs === undefined) throw new Error("per-envelope ingest: no file_register call recorded");
+    const call = callArgs[0] as Record<string, unknown>;
     expect(call.source_module).toBe("telegram-ts");
     expect(call.source_surface).toBe("telegram");
   });

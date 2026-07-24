@@ -1,73 +1,85 @@
 #!/usr/bin/env bun
-// plugin-new — scaffold a Magnis module-plugin skeleton (Stage 10, optional).
+// plugin-new — scaffold a Magnis module-plugin skeleton.
 //
 //   bun scripts/plugin-new.ts <id>
 //
-// Generates plugins/modules/<id>/ with the canonical layout (docs/plugins/authoring.md):
-// manifest.json (folder == manifest.id, INV-11; tier community; owns <id>.*),
-// module/ (decorated service + definePlugin entry + a unit test satisfying the
-// per-kind test bar, DEC-14/INV-5), ui/ (defineModule), types/, package.json,
-// tsconfig (experimentalDecorators — the isolate/build contract).
+// Generates plugins/modules/<id>/ with the canonical manifest-v3 package layout:
+// manifest.toml (the folder name must equal the manifest id; tier community;
+// identity + permissions only — the module's namespace `<id>.*` is derived from
+// the id), schemas/ (convention-discovered entity + facet JSON files), README.md
+// (the catalog description), module/ (decorated service + definePlugin entry +
+// a unit test covering the tool shape without per-row N+1 queries — the minimum
+// every module ships), ui/ (defineModule), types/, package.json, tsconfig
+// (experimentalDecorators — the isolate/build contract).
 //
-// It does NOT install anything: presence-seed picks the folder up on next boot
-// (DEC-10), and the printed next-steps cover the catalog entry + integration test.
+// It does NOT install anything: the host discovers the folder and installs it
+// on next boot, and the printed next-steps cover the catalog entry +
+// integration test. Layout standard: docs/plugins/structure.md.
 
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 
 const ID_RE = /^[a-z][a-z0-9_]*$/;
 
-function manifestJson(id: string): string {
+function manifestToml(id: string, title: string): string {
+  return `# ${id} — scaffolded Magnis domain module (V8 plugin). Flesh out the
+# schemas/ files and the [permissions] below, then bundle with build-plugins.ts.
+
+id = ${JSON.stringify(id)}
+version = "0.1.0"
+# SDK contract version this manifest targets (host accepts 0.x).
+magnis_api_version = "0.1.0"
+tier = "community"
+title = ${JSON.stringify(title)}
+summary = ${JSON.stringify(`Scaffolded ${id} module.`)}
+# Reverse-domain publisher identity.
+publisher = "com.example"
+
+# Foreign asks beyond the implicit own namespace: writes to \`${id}.\` facets,
+# own:own links, and reads of own schemas need no declaration. Uncomment and
+# fill in only what the module actually needs.
+# [permissions]
+# read = []
+# create = []
+# links = []
+# call = []
+# host = []
+
+# Sync surface this module consumes — declare only if a source feeds it.
+# [surfaces.${id}]
+# item = "${id}.item"
+`;
+}
+
+/** schemas/item.json — an ENTITY descriptor (no "version" key, ever). */
+function entitySchemaJson(id: string): string {
   return `${JSON.stringify(
     {
-      id,
-      version: "0.1.0",
-      magnis_api_version: "0.1.0",
-      tier: "community",
-      owns: [`${id}.*`],
-      schemas: {
-        entities: [
-          {
-            id: `${id}.item`,
-            name: "Item",
-            description: `An item owned by the ${id} plugin.`,
-          },
-        ],
-        facets: [
-          {
-            id: `${id}.item.details`,
-            entity_schema: `${id}.item`,
-            version: 1,
-            json_schema: {
-              type: "object",
-              properties: {
-                title: { type: "string" },
-              },
-              required: ["title"],
-              additionalProperties: false,
-            },
-            mappings: [],
-          },
-        ],
-        links: [],
-      },
-      capabilities: {
-        facet_write_prefixes: [`${id}.`],
-        link_kinds_writable: [],
-        rpc_calls: [],
-        reads_schemas: [`${id}.`],
-        events_emitted: [],
-        can_merge_schemas: [],
-      },
-      surfaces: {
-        rpc_handlers: [`${id}.list`],
-        tools: [`${id}.list`],
-        sync_handlers: [],
-      },
+      name: "Item",
+      description: `An item owned by the ${id} plugin.`,
     },
     null,
     2,
   )}\n`;
+}
+
+/** schemas/item.details.json — a FACET contract (always has "version"). */
+function facetSchemaJson(): string {
+  return `${JSON.stringify(
+    {
+      version: 1,
+      type: "object",
+      properties: { title: { type: "string" } },
+      required: ["title"],
+      additionalProperties: false,
+    },
+    null,
+    2,
+  )}\n`;
+}
+
+function readmeMd(id: string, title: string): string {
+  return `# ${title}\n\nScaffolded ${id} module. Describe what it owns and does here — this file is\nthe catalog detail page.\n`;
 }
 
 function serviceTs(id: string, cls: string): string {
@@ -110,8 +122,8 @@ export class ${cls} {
 }
 
 function moduleTestTs(id: string, cls: string): string {
-  return `// Unit test (mocked GraphService) — the module-kind minimum test bar
-// (DEC-14/INV-5): tool shape + no per-row N+1.
+  return `// Unit test (mocked GraphService) — the minimum every module ships:
+// assert the tool shape and that reads issue no per-row N+1 queries.
 import { describe, expect, it, vi } from "vitest";
 import type { GraphService, PluginDeps } from "@magnis/plugin-sdk";
 import { ${cls} } from "../service.ts";
@@ -218,7 +230,7 @@ const TSCONFIG = `${JSON.stringify(
 export function scaffoldPlugin(id: string, pluginsRoot: string): string {
   if (!ID_RE.test(id)) {
     throw new Error(
-      `invalid plugin id ${JSON.stringify(id)}: must match ${ID_RE} (folder == manifest.id, INV-11)`,
+      `invalid plugin id ${JSON.stringify(id)}: must match ${String(ID_RE)} (the folder name must equal the manifest id)`,
     );
   }
   const dir = join(pluginsRoot, "modules", id);
@@ -237,8 +249,12 @@ export function scaffoldPlugin(id: string, pluginsRoot: string): string {
   mkdirSync(join(dir, "module", "__tests__"), { recursive: true });
   mkdirSync(join(dir, "ui"), { recursive: true });
   mkdirSync(join(dir, "types"), { recursive: true });
+  mkdirSync(join(dir, "schemas"), { recursive: true });
 
-  writeFileSync(join(dir, "manifest.json"), manifestJson(id));
+  writeFileSync(join(dir, "manifest.toml"), manifestToml(id, title));
+  writeFileSync(join(dir, "schemas", "item.json"), entitySchemaJson(id));
+  writeFileSync(join(dir, "schemas", "item.details.json"), facetSchemaJson());
+  writeFileSync(join(dir, "README.md"), readmeMd(id, title));
   writeFileSync(
     join(dir, "module", "index.ts"),
     `import { definePlugin } from "@magnis/plugin-sdk";\nimport { ${cls} } from "./service.ts";\n\ndefinePlugin(${cls});\n`,
@@ -257,7 +273,7 @@ export function scaffoldPlugin(id: string, pluginsRoot: string): string {
 
 // ── CLI ───────────────────────────────────────────────────────────────────
 if (import.meta.main) {
-  const id = process.argv[2];
+  const id = process.argv.at(2);
   if (id === undefined || id.length === 0) {
     console.error("usage: bun scripts/plugin-new.ts <id>");
     process.exit(1);
@@ -267,10 +283,10 @@ if (import.meta.main) {
   console.log(`scaffolded ${dir}
 
 next steps (docs/plugins/authoring.md):
-  1. flesh out manifest.json (schemas, capabilities, surfaces)
+  1. flesh out schemas/ + manifest.toml ([permissions], [surfaces])
   2. implement module/service.ts + extend the unit test
   3. add a catalog entry to backend/data/extensions.toml (module:magnis.${id})
   4. add backend/tests/plugin_runtime_${id}.rs (integration bar)
   5. bun scripts/build-plugins.ts ${id}   # bundle ui + module
-  (presence-seed installs it on next boot — DEC-10)`);
+  (the host discovers the folder and installs it on next boot)`);
 }

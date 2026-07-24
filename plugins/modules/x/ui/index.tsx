@@ -6,11 +6,12 @@ import { XPostCard, XProfileCard } from "./EntityCards";
 import { XProfileFeed } from "./ProfileFeed";
 import { XProfileHeader } from "./ProfileHeader";
 
-// Brand glyph shipped IN the plugin (plugins/x/ui/icon.svg) and served by the
-// backend from the plugin store — no external hosting (plugin-icon-standard).
-// Rendered as a CSS mask filled with currentColor: rail icons are ALWAYS
-// monochrome and must follow the rail's active/hover text color like lucide.
-const ICON_URL = "/api/plugins/x/ui/icon.svg";
+// Brand glyph shipped IN the plugin (plugins/x/icon.svg, package root) and
+// served by the backend from the plugin store — no external hosting
+// (plugin-icon-standard). Rendered as a CSS mask filled with currentColor:
+// rail icons are ALWAYS monochrome and must follow the rail's active/hover
+// text color like lucide.
+const ICON_URL = "/api/plugins/x/icon.svg";
 
 function XIcon(): JSX.Element {
   return (
@@ -42,20 +43,20 @@ export const XModule = defineModule({
   themeColor: "blue",
   entityTypes: ["profile", "post"],
   // Per-type entity cards: a profile in a contact\u2019s dynamic tab is an
-  // identity card, not a post (social-contact-identity S4/INV-2).
+  // identity card, not a post.
   entityLabels: { profile: { EntityCard: XProfileCard } },
   primaryEntityType: "profile",
   rpc: { list: "x.profiles.list", get: "x.profiles.get" },
   mapListItem: (raw) => {
-    const handle = raw.handle ? String(raw.handle) : "";
+    const handle = typeof raw.handle === "string" ? raw.handle : "";
     const fc = typeof raw.follower_count === "number" ? raw.follower_count : null;
     return {
-      id: String(raw.id ?? ""),
-      name: raw.display_name ? String(raw.display_name) : handle || "Profile",
+      id: typeof raw.id === "string" ? raw.id : "",
+      name: typeof raw.display_name === "string" && raw.display_name ? raw.display_name : handle || "Profile",
       schema_id: "x.profile",
-      preview: handle ? `@${handle}${fc != null ? ` · ${fc.toLocaleString()} followers` : ""}` : null,
+      preview: handle ? `@${handle}${fc !== null ? ` · ${fc.toLocaleString()} followers` : ""}` : null,
       timestamp: null,
-      avatar_url: raw.avatar_url ? proxiedMediaUrl(String(raw.avatar_url)) : null,
+      avatar_url: typeof raw.avatar_url === "string" ? proxiedMediaUrl(raw.avatar_url) : null,
     };
   },
   // STANDARD detail: DetailPane + TopBarHeader via the framework path; the
@@ -75,7 +76,6 @@ export const XModule = defineModule({
       ["sync.progress"],
       [["x"]],
     );
-    // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
-    return () => { unsub(); };
+    return (): void => { unsub(); };
   },
 });

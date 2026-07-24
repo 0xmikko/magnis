@@ -1,5 +1,5 @@
 import { runConnector } from "@magnis/connector-sdk";
-import { fetchMockLinkedIn } from "./fetch";
+import { fetchMockLinkedIn } from "./surfaces/linkedin/fetch";
 
 await runConnector({
   name: "mock-linkedin",
@@ -7,5 +7,5 @@ await runConnector({
   surfaces: ["linkedin"],
   intervalSecs: 5,
   fetch: fetchMockLinkedIn,
-  probeAuth: async () => ({ subject: "mock-linkedin-key" }),
+  probeAuth: () => Promise.resolve({ subject: "mock-linkedin-key" }),
 });

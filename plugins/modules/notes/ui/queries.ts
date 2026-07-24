@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import type { UseQueryResult } from "@tanstack/react-query";
 import { useAppRuntime } from "@magnis/host/runtime";
 import type { NoteListItem, NoteDetailView } from "./types";
 import type { PaginatedResponse } from "@magnis/host/runtime";
@@ -9,8 +10,7 @@ export const noteKeys = {
   detail: (id: string) => [...noteKeys.all, "detail", id] as const,
 };
 
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type, @typescript-eslint/explicit-module-boundary-types
-export function useNotesListQuery(limit = 200, offset = 0) {
+export function useNotesListQuery(limit = 200, offset = 0): UseQueryResult<PaginatedResponse<NoteListItem>> {
   const runtime = useAppRuntime();
   return useQuery({
     queryKey: noteKeys.list({ limit, offset }),
@@ -22,8 +22,7 @@ export function useNotesListQuery(limit = 200, offset = 0) {
   });
 }
 
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type, @typescript-eslint/explicit-module-boundary-types
-export function useNoteDetailQuery(id: string) {
+export function useNoteDetailQuery(id: string): UseQueryResult<NoteDetailView> {
   const runtime = useAppRuntime();
   return useQuery({
     queryKey: noteKeys.detail(id),

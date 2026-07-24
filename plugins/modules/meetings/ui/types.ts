@@ -2,8 +2,8 @@ import type { AvatarColor, FacetSummary, LinkedEntitySummary, SidebarData } from
 
 /**
  * Canonical API attendee — mirrors Rust `CalendarAttendee` at
- * `backend/src/sources/surfaces/calendar.rs:27-30`. INV-24 / INV-24b
- * keep this shape distinct from the UI-display `MeetingAttendee` below:
+ * `backend/src/sources/surfaces/calendar.rs:27-30`. Kept
+ * distinct from the UI-display `MeetingAttendee` below:
  * helpers construct UI attendees from API attendees (no leak of
  * rendering-only fields like `initials` / `color` into the wire type).
  */

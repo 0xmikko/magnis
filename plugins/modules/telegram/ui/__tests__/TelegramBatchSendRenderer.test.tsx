@@ -2,7 +2,7 @@
  * @layer: fe_agent
  * @test-id: tst_fe_agent_003
  *
- * INV-5b [DEC-4]: the telegram.batch_send approval is a paginated carousel — one
+ * The telegram.batch_send approval is a paginated carousel — one
  * recipient at a time with N/M paging — NOT one long uneditable scroll and NOT the
  * single-chat fallback. Mirrors the email batch card so each message is reviewable.
  */

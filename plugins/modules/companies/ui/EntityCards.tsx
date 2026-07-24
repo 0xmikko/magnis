@@ -16,7 +16,6 @@ function str(data: Readonly<Record<string, unknown>>, key: string): string | und
 }
 
 /** Chevron shows when the attachment carries any of the expandable fields. */
-// eslint-disable-next-line react-refresh/only-export-components
 export function companyHasMore(data: Readonly<Record<string, unknown>>): boolean {
   return (
     str(data, "description") !== undefined ||

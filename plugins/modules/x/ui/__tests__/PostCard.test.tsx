@@ -1,6 +1,6 @@
-// tst_fe_x_postcard_001 (social-post-rendering S5) — the feed card renders the
-// ContentOS model: type Tag, relative date (+ absolute tooltip, "—" for null —
-// INV-4), full text, media grid, formatted metrics, article title.
+// tst_fe_x_postcard_001 — the feed card renders the
+// ContentOS model: type Tag, relative date (+ absolute tooltip, "—" for null),
+// full text, media grid, formatted metrics, article title.
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
 import { PostCard, formatNumber, groupThreads, relativeTime } from "../PostCard";
@@ -44,7 +44,7 @@ describe("PostCard (rich x post, X-native layout)", () => {
     expect(getByText(/25K/)).toBeTruthy();
   });
 
-  it("media grid renders images; null created_at → — (INV-4)", () => {
+  it("media grid renders images; null created_at renders as an em dash", () => {
     const { getByAltText, getByText } = render(
       <PostCard
         post={{
@@ -73,7 +73,7 @@ describe("PostCard (rich x post, X-native layout)", () => {
   });
 });
 
-// tst_fe_x_thread_001 (S8, operator feedback): replies group UNDER their root
+// tst_fe_x_thread_001 (operator feedback): replies group UNDER their root
 // post (ContentOS thread model: COALESCE(conversation_id, post_id) + author).
 // Root first, replies in chronological order beneath; a reply to someone
 // ELSE's conversation (root not in our data) stays its own standalone group.

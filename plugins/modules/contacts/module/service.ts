@@ -1,7 +1,7 @@
-// Contacts plugin — backend module (V8). Decorated class; Stage-3
+// Contacts plugin — backend module (V8). Decorated class; the
 // read path (list/get) mirrors the legacy Rust ContactsModuleService.
 
-import { rpc, searchEntitiesPage, syncHandler, tool, writeTool, type GraphService, type PluginDeps, type PluginUtil, type RpcExecutor } from "@magnis/plugin-sdk";
+import { rpc, searchEntitiesPage, syncHandler, tool, writeTool, type GraphService, type PluginDeps, type PluginUtil, type RawEntity, type RpcExecutor } from "@magnis/plugin-sdk";
 import type {
   BatchEntityInput,
   BatchFacetInput,
@@ -38,96 +38,31 @@ import type {
   SocialTracking,
   ToolResult,
   UpdateParams,
-} from "../types/index.ts";
+  ContactsSyncEnvelope,
+  GoogleContactPayload,
+} from "../types.ts";
 import {
   buildListItem,
   computeInitials,
   detectChannels,
   detectRelevanceTier,
+  facetTime,
+  INGEST_CHUNK,
+  isValidSocialContact,
+  latestSocialFacet,
+  normalizeHandle,
   pickAvatarColor,
 } from "./helpers.ts";
 import { parseSocialUrl } from "./socialUrl.ts";
 import type { SocialPlatform } from "./socialUrl.ts";
-
-const SCHEMA = "contacts.person";
-const SOCIAL_FACET = "contacts.person.social";
-
-// Handles are stored bare: no leading `@`, trimmed. The sync scheduler builds
-// the tracked-handle set from these; the connectors query the platform APIs by
-// bare handle.
-function normalizeHandle(handle: string): string {
-  return handle.trim().replace(/^@+/, "");
-}
-
-/** observed_at (RFC3339) → epoch ms; unparseable → 0 (never wins a max). */
-function facetTime(f: FacetRecord): number {
-  const t = Date.parse(f.observed_at);
-  return Number.isNaN(t) ? 0 : t;
-}
-
-/** The newest contacts.person.social facet, by observed_at — NOT by list
- * position (the runtime returns newest-first; picking a list end reads the
- * OLDEST facet and resurrects stale tracked state — live bug 2026-07-02). */
-function latestSocialFacet(facets: readonly FacetRecord[]): FacetRecord | undefined {
-  let best: FacetRecord | undefined;
-  for (const f of facets) {
-    if (f.schema_id !== SOCIAL_FACET) continue;
-    if (!best || facetTime(f) > facetTime(best)) best = f;
-  }
-  return best;
-}
-
-/// Max contacts.person entities folded into one apply_batch (mirrors email's
-/// INGEST_CHUNK). A whole sync page is sliced into chunks so the lone PGlite
-/// connection is freed between transactions.
-const INGEST_CHUNK = 200;
-
-/// plan §7 required-fields contract for social_contact envelopes.
-function isValidSocialContact(p: Record<string, unknown>): boolean {
-  return (
-    typeof p.handle === "string" &&
-    p.handle.length > 0 &&
-    typeof p.display_name === "string" &&
-    p.display_name.length > 0 &&
-    typeof p.profile_url === "string" &&
-    p.profile_url.length > 0
-  );
-}
-
-/// A sync envelope routed to the contacts surface by the host bridge.
-/// `payload` is a Google connector `Contact` (plugins/sources/google/src/
-/// surfaces.rs): { id, display_name, given_name, family_name, emails[],
-/// phones[], organizations[], photo_url, external_url }.
-interface ContactsSyncEnvelope {
-  source_id?: string;
-  surface?: string;
-  account_id?: string;
-  user_id?: string;
-  kind?: string;
-  remote_id?: string;
-  payload?: Record<string, unknown>;
-  timestamp?: string;
-}
-
-interface GoogleContactEmail {
-  address?: string;
-  label?: string | null;
-  is_primary?: boolean;
-}
-interface GoogleContactPhone {
-  number?: string;
-  label?: string | null;
-  is_primary?: boolean;
-}
-interface GoogleContactPayload {
-  id?: string;
-  display_name?: string | null;
-  given_name?: string | null;
-  family_name?: string | null;
-  emails?: GoogleContactEmail[];
-  phones?: GoogleContactPhone[];
-  external_url?: string | null;
-}
+import {
+  CONTACT,
+  CONTACT_EMAIL,
+  CONTACT_EXTERNAL_LINK,
+  CONTACT_PHONE,
+  CONTACT_PROFILE,
+  CONTACT_SOCIAL,
+} from "../schema.ts";
 
 export class ContactsModule {
   private readonly graph: GraphService<ContactFacets, ContactCanonical>;
@@ -161,7 +96,7 @@ export class ContactsModule {
     const search = (params.search ?? "").trim();
     const includeAll = params.include_all ?? false;
 
-    let rows: Array<{ id: string; schema_id: string; name: string; created_at?: string; is_pinned?: boolean | null }>;
+    let rows: { id: string; schema_id: string; name: string; created_at?: string; is_pinned?: boolean | null }[];
     let total: number;
     // When the search path pre-fetches facets (to filter by tier), it reuses
     // that map for hydration so the page is not facet-read twice.
@@ -172,7 +107,7 @@ export class ContactsModule {
       // was dead in search mode (surfaced at 1000+ contacts).
       const page = await searchEntitiesPage(this.graph, {
         query: search,
-        schema_id: SCHEMA,
+        schema_id: CONTACT,
         limit,
         offset,
         // Group-tier visibility filter (staging e8ec4c82) INSIDE the paging
@@ -182,7 +117,7 @@ export class ContactsModule {
         // accumulated and reused for page hydration below (no second read).
         filter: includeAll
           ? undefined
-          : async (entities) => {
+          : async (entities): Promise<RawEntity[]> => {
               const facets = await this.facetsByEntity(entities.map((e) => e.id));
               prefetchedFacets = facets;
               return entities.filter(
@@ -194,7 +129,7 @@ export class ContactsModule {
       rows = page.entities;
     } else if (includeAll) {
       const page = await this.graph.list_entities({
-        schema_id: SCHEMA,
+        schema_id: CONTACT,
         limit,
         offset,
         order: "idx",
@@ -208,7 +143,7 @@ export class ContactsModule {
       // tier is NULL, stay visible) so the page is full and `total` is the exact
       // VISIBLE (non-group) count — correct, efficient pagination.
       const page = await this.graph.list_entities_window({
-        schema: SCHEMA,
+        schema: CONTACT,
         filter_field: { facet_schema: "telegram.contact", facet_path: "relevance_tier" },
         filter_eq: "group",
         filter_op: "distinct",
@@ -226,7 +161,11 @@ export class ContactsModule {
     // get_canonical does); facets supply channels + relevance_tier.
     const ids = rows.map((e) => e.id);
     const canonById = await this.canonicalByEntity(ids);
-    const facetsById = prefetchedFacets ?? (await this.facetsByEntity(ids));
+    // The paging `filter` closure above may have populated prefetchedFacets, but
+    // TS control-flow narrows it back to `null` here (the assignment lives in a
+    // deferred callback), so widen before the nullish fallback.
+    const facetsById =
+      (prefetchedFacets as Map<string, FacetRecord[]> | null) ?? (await this.facetsByEntity(ids));
     const items = rows.map((e) =>
       buildListItem(e, canonById.get(e.id) ?? {}, facetsById.get(e.id) ?? []),
     );
@@ -243,11 +182,11 @@ export class ContactsModule {
     },
   })
   async get(params: GetParams): Promise<ContactDetailView> {
-    // P1: entity + latest facets + link edges in ONE fetch (user-scoped → null
+    // Entity + latest facets + link edges in ONE fetch (user-scoped → null
     // for a non-owner or wrong schema). One get_canonical for the detail view's
     // canonical block; link neighbours resolved in ONE get_entities batch.
     const detail = await this.graph.get_entity_full(params.id, { links: true });
-    if (!detail || detail.entity.schema_id !== SCHEMA) {
+    if (detail?.entity.schema_id !== CONTACT) {
       throw new Error(`contact not found: ${params.id}`);
     }
     const { entity: e, links } = detail;
@@ -255,12 +194,12 @@ export class ContactsModule {
     // the collection email/phone facets channels/relevance_tier + the DTO rely
     // on). One fetch for a single entity — not the hot list path.
     const facets = await this.graph.list_facets_for_entity(e.id);
-    const canonical = await this.graph.get_canonical(e.id, ["contacts.person"]);
+    const canonical = await this.graph.get_canonical(e.id, [CONTACT]);
     const base = buildListItem(e, canonical, facets);
 
     const linked: LinkedEntitySummary[] = [];
     if (links.length > 0) {
-      const neighbourId = (l: { from_id: string; to_id: string }) =>
+      const neighbourId = (l: { from_id: string; to_id: string }): string =>
         l.from_id === e.id ? l.to_id : l.from_id;
       const targets = await this.graph.get_entities([...new Set(links.map(neighbourId))]);
       const byId = new Map(targets.map((t) => [t.id, t]));
@@ -303,7 +242,7 @@ export class ContactsModule {
       if (!c.entity_id) continue;
       const m = (out.get(c.entity_id) ?? {}) as Record<string, unknown>;
       m[c.key] = c.value;
-      out.set(c.entity_id, m as Partial<ContactCanonical>);
+      out.set(c.entity_id, m);
     }
     return out;
   }
@@ -325,17 +264,17 @@ export class ContactsModule {
   private async listItemFor(
     entity: { id: string; schema_id: string; name: string; created_at?: string; is_pinned?: boolean | null },
   ): Promise<ContactListItem> {
-    const canonical = await this.graph.get_canonical(entity.id, ["contacts.person"]);
+    const canonical = await this.graph.get_canonical(entity.id, [CONTACT]);
     const facets = await this.graph.list_facets_for_entity(entity.id);
     return buildListItem(entity, canonical, facets);
   }
 
   // Mirrors the native ContactsModuleController::create_single_contact
   // graph writes (controller.rs:43-211). The `email.address` entity +
-  // `has_email` link are created via the cross-module RPC hub (DEC-9):
+  // `has_email` link are created via the cross-module RPC hub:
   // contacts asks the `email` module to ensure the address entity, then
   // links it — contacts never writes the foreign `email.address` schema
-  // itself. `params` is agent-facing (DEC-11): it omits `client_id` so the
+  // itself. `params` is agent-facing: it omits `client_id` so the
   // agent never invents an id; the handler still accepts it from the
   // frontend WS path via CreateParams.
   @writeTool("create", {
@@ -370,32 +309,32 @@ export class ContactsModule {
     }
 
     const entity = await this.graph.create_entity({
-      schema_id: SCHEMA,
+      schema_id: CONTACT,
       name: params.name,
       client_id: params.client_id,
       idx: params.name.toLowerCase(),
     });
     await this.graph.attach_facet({
       entity_id: entity.id,
-      schema_id: "contacts.person.profile",
+      schema_id: CONTACT_PROFILE,
       data: { first_name: params.name },
     });
     if (params.email) {
       await this.graph.attach_facet({
         entity_id: entity.id,
-        schema_id: "contacts.person.email",
+        schema_id: CONTACT_EMAIL,
         data: { email: params.email, is_primary: true },
       });
     }
     if (params.phone) {
       await this.graph.attach_facet({
         entity_id: entity.id,
-        schema_id: "contacts.person.phone",
+        schema_id: CONTACT_PHONE,
         data: { phone: params.phone, is_primary: true },
       });
     }
 
-    // Hub (DEC-9): ask the email module to ensure the email.address entity,
+    // Hub: ask the email module to ensure the email.address entity,
     // then link has_email. Restores native controller.rs:143-165 behavior
     // without contacts writing the foreign email.address schema directly.
     let email_address_entity_id: string | null = null;
@@ -433,7 +372,7 @@ export class ContactsModule {
   // so a retried batch reuses the same entity ids (idempotent), exactly
   // as the native handler (controller.rs:531). Each row delegates to
   // create(), inheriting the same facet writes AND the email.address +
-  // has_email hub path (DEC-9) when a row carries an email.
+  // has_email hub path when a row carries an email.
   @writeTool("batch_create", {
     description:
       "Create multiple contacts at once. Each requires a name, with optional " +
@@ -465,13 +404,13 @@ export class ContactsModule {
     },
   })
   async batch_create(params: BatchCreateParams): Promise<BatchCreateResult> {
-    const contacts = params.contacts ?? [];
+    const contacts = params.contacts;
     if (contacts.length < 1 || contacts.length > 50) {
-      throw new Error(`batch size must be 1..=50, got ${contacts.length}`);
+      throw new Error(`batch size must be 1..=50, got ${String(contacts.length)}`);
     }
     contacts.forEach((c, i) => {
       if (!c.name || c.name.trim().length === 0) {
-        throw new Error(`contact[${i}]: missing or empty name`);
+        throw new Error(`contact[${String(i)}]: missing or empty name`);
       }
     });
 
@@ -480,15 +419,14 @@ export class ContactsModule {
     let created = 0;
     let excludedCount = 0;
 
-    for (let i = 0; i < contacts.length; i++) {
-      const c = contacts[i]!;
+    for (const [i, c] of contacts.entries()) {
       if (excluded.has(i)) {
         excludedCount += 1;
         results.push({ id: null, name: c.name, status: "excluded" });
         continue;
       }
       const rowClientId = params.client_id
-        ? await this.util.uuid_v5(params.client_id, `contacts.batch_create:${i}`)
+        ? await this.util.uuid_v5(params.client_id, `contacts.batch_create:${String(i)}`)
         : undefined;
       const item = await this.create({
         name: c.name,
@@ -507,7 +445,7 @@ export class ContactsModule {
 
   // Mirrors native contacts.update (controller.rs:562) — name only:
   // rename the entity and re-attach the profile facet's first_name. The
-  // update_entity_name op is ownership-checked (DEC-12).
+  // update_entity_name op is ownership-checked.
   @writeTool("update", {
     description: "Update a contact's name.",
     params: {
@@ -528,7 +466,7 @@ export class ContactsModule {
       await this.graph.update_entity_name(params.id, params.name);
       await this.graph.attach_facet({
         entity_id: params.id,
-        schema_id: "contacts.person.profile",
+        schema_id: CONTACT_PROFILE,
         data: { first_name: params.name },
       });
     }
@@ -538,7 +476,7 @@ export class ContactsModule {
   }
 
   // Read-only merge preview (controller.rs:631). Ownership is enforced
-  // backend-side in the op (DEC-12).
+  // backend-side in the op.
   @tool("merge_preview", {
     description: "Preview merging two contacts: which facets/links move and which fields conflict.",
     params: {
@@ -574,7 +512,14 @@ export class ContactsModule {
           type: "array",
           items: {
             type: "object",
-            properties: { canonical_key: { type: "string" }, value: {} },
+            properties: {
+              canonical_key: { type: "string" },
+              // Canonical override values are scalars (name, email, phone…).
+              // An explicit type union is REQUIRED: an empty `{}` schema is
+              // rejected by OpenAI strict function-calling and 400s the whole
+              // turn for every subscription/OpenAI-backed builtin chat.
+              value: { type: ["string", "number", "boolean", "null"] },
+            },
             required: ["canonical_key", "value"],
           },
         },
@@ -594,7 +539,7 @@ export class ContactsModule {
 
     // Re-derive entity name/idx from the merged canonicals so the
     // survivor's display name reflects the resolved profile.
-    const canon = await this.graph.get_canonical(params.survivor_id, ["contacts.person"]);
+    const canon = await this.graph.get_canonical(params.survivor_id, [CONTACT]);
     const first = canon["person.first_name"];
     if (typeof first === "string" && first.length > 0) {
       const last = canon["person.last_name"];
@@ -634,7 +579,7 @@ export class ContactsModule {
     const limit = Math.min(params.limit ?? 25, MAX_LIMIT);
     const matched = await this.graph.search_entities_by_name({
       query: params.query ?? "",
-      schema_ids: [SCHEMA],
+      schema_ids: [CONTACT],
       limit,
     });
 
@@ -670,7 +615,7 @@ export class ContactsModule {
     ok: boolean;
     dropped_remote_ids: string[];
   }> {
-    const envelopes = Array.isArray(params?.envelopes) ? params.envelopes : [];
+    const envelopes = Array.isArray(params.envelopes) ? params.envelopes : [];
     const dropped: string[] = [];
 
     // Fold by remote_id so two envelopes for the same resourceName collapse to
@@ -682,9 +627,9 @@ export class ContactsModule {
       if (!env.user_id) continue;
       if (env.kind !== "snapshot" && env.kind !== "live") continue;
       if (!env.remote_id) continue;
-      // social_contact contract (plan §7): ALL fields required — a violating
+      // social_contact contract: ALL fields required — a violating
       // envelope is reported dropped, never half-ingested.
-      const payload = (env.payload ?? {}) as Record<string, unknown>;
+      const payload = (env.payload ?? {});
       if (payload.kind === "social_contact" && !isValidSocialContact(payload)) {
         dropped.push(env.remote_id);
         continue;
@@ -719,12 +664,12 @@ export class ContactsModule {
     for (const env of envelopes) {
       const remoteId = env.remote_id;
       if (!remoteId) continue;
-      const raw = (env.payload ?? {}) as Record<string, unknown>;
+      const raw = (env.payload ?? {});
 
-      // social_contact mapper (plan §7, S5): x/linkedin following imports on
+      // social_contact mapper: x/linkedin following imports on
       // the SAME surface. Mints an UNTRACKED social contact (tracking is a
-      // per-person opt-in — importing must never start API spend, DEC-7).
-      // FIND-OR-CREATE (INV-8): a contact already carrying this handle is
+      // per-person opt-in — importing must never start API spend).
+      // FIND-OR-CREATE: a contact already carrying this handle is
       // returned untouched — re-importing must NEVER untrack an opted-in
       // person or duplicate an existing one.
       if (raw.kind === "social_contact") {
@@ -739,18 +684,18 @@ export class ContactsModule {
         const profileUrl = raw.profile_url as string;
         entities.push({
           key: remoteId,
-          schema_id: SCHEMA,
+          schema_id: CONTACT,
           name: displayName,
           idx: displayName.toLowerCase() || undefined,
           facets: [
             {
-              schema_id: "contacts.person.profile",
+              schema_id: CONTACT_PROFILE,
               data: {},
               external_id: remoteId,
               confidence: 90,
             },
             {
-              schema_id: SOCIAL_FACET,
+              schema_id: CONTACT_SOCIAL,
               data:
                 platform === "linkedin"
                   ? { linkedin_handle: handle, tracked_linkedin: false }
@@ -758,7 +703,7 @@ export class ContactsModule {
               confidence: 90,
             },
             {
-              schema_id: "contacts.person.external_link",
+              schema_id: CONTACT_EXTERNAL_LINK,
               data: {
                 source_type: platform,
                 external_id: remoteId,
@@ -782,7 +727,7 @@ export class ContactsModule {
       if (p.given_name) profile.first_name = p.given_name;
       if (p.family_name) profile.last_name = p.family_name;
       facets.push({
-        schema_id: "contacts.person.profile",
+        schema_id: CONTACT_PROFILE,
         data: profile,
         external_id: remoteId,
         confidence: 90,
@@ -795,7 +740,7 @@ export class ContactsModule {
         const data: Record<string, unknown> = { email: address };
         if (e.label) data.type = e.label;
         if (typeof e.is_primary === "boolean") data.is_primary = e.is_primary;
-        facets.push({ schema_id: "contacts.person.email", data, confidence: 90 });
+        facets.push({ schema_id: CONTACT_EMAIL, data, confidence: 90 });
       }
 
       // phone facets — one per number.
@@ -805,7 +750,7 @@ export class ContactsModule {
         const data: Record<string, unknown> = { phone: number };
         if (ph.label) data.type = ph.label;
         if (typeof ph.is_primary === "boolean") data.is_primary = ph.is_primary;
-        facets.push({ schema_id: "contacts.person.phone", data, confidence: 90 });
+        facets.push({ schema_id: CONTACT_PHONE, data, confidence: 90 });
       }
 
       // external_link facet — provenance back to the Google contact.
@@ -815,12 +760,12 @@ export class ContactsModule {
       };
       if (p.external_url) extData.external_url = p.external_url;
       if (p.display_name) extData.external_name = p.display_name;
-      facets.push({ schema_id: "contacts.person.external_link", data: extData, confidence: 90 });
+      facets.push({ schema_id: CONTACT_EXTERNAL_LINK, data: extData, confidence: 90 });
 
       const name = typeof p.display_name === "string" ? p.display_name : "";
       entities.push({
         key: remoteId,
-        schema_id: SCHEMA,
+        schema_id: CONTACT,
         name,
         idx: name.toLowerCase() || undefined,
         facets,
@@ -832,10 +777,10 @@ export class ContactsModule {
     await this.graph.apply_batch({ entities, refs: [], links: [] });
   }
 
-  // ── social tracking (DEC-9) ──────────────────────────────────────
+  // ── social tracking ──────────────────────────────────────────────
   // contacts OWNS the contacts.person.social facet. Opting a contact in on a
-  // platform places its handle in the sync scheduler's tracked set (DEC-8);
-  // opting out removes it → that handle is no longer fetched (INV-1). One handle
+  // platform places its handle in the sync scheduler's tracked set;
+  // opting out removes it → that handle is no longer fetched. One handle
   // per platform per person; the facet merges across platforms (latest wins).
   @writeTool("set_social_tracking", {
     description:
@@ -855,7 +800,7 @@ export class ContactsModule {
   })
   async set_social_tracking(params: SetSocialTrackingParams): Promise<SocialTracking> {
     const existing = await this.graph.get_entity(params.id);
-    if (!existing || existing.schema_id !== SCHEMA) {
+    if (existing?.schema_id !== CONTACT) {
       throw new Error(`contact not found: ${params.id}`);
     }
     // Merge onto the current facet so toggling one platform never clears the
@@ -870,13 +815,13 @@ export class ContactsModule {
     }
     await this.graph.attach_facet({
       entity_id: params.id,
-      schema_id: SOCIAL_FACET,
+      schema_id: CONTACT_SOCIAL,
       data: next,
     });
     return next;
   }
 
-  // ── social-contact-identity S1 (DEC-2/4/8.3) ──────────────────────
+  // ── social-contact identity ───────────────────────────────────────
   @writeTool("track_social_profile", {
     description:
       "Track a person's X or LinkedIn profile from a URL or handle. Finds the contact " +
@@ -924,9 +869,9 @@ export class ContactsModule {
     return { contact_id: contact.id, handle: parsed.handle, created: true };
   }
 
-  // DEC-3: batch entry for a pasted URL list. Per-row isolation — an invalid
+  // Batch entry for a pasted URL list. Per-row isolation — an invalid
   // URL marks its row and never aborts the rest; a retried batch (same
-  // client_id) resolves creates to the same uuid_v5 ids (INV-5).
+  // client_id) resolves creates to the same uuid_v5 ids.
   @writeTool("batch_track_social", {
     description:
       "Track MANY X or LinkedIn profiles at once from pasted URLs/handles (1-50). Each " +
@@ -958,17 +903,16 @@ export class ContactsModule {
     },
   })
   async batch_track_social(params: BatchTrackSocialParams): Promise<BatchTrackSocialResult> {
-    const profiles = params.profiles ?? [];
+    const profiles = params.profiles;
     if (profiles.length < 1 || profiles.length > 50) {
-      throw new Error(`batch size must be 1..=50, got ${profiles.length}`);
+      throw new Error(`batch size must be 1..=50, got ${String(profiles.length)}`);
     }
     const excluded = new Set(params.excluded_indices ?? []);
     const results: BatchTrackSocialRow[] = [];
     let created = 0;
     let excludedCount = 0;
 
-    for (let i = 0; i < profiles.length; i++) {
-      const row = profiles[i]!;
+    for (const [i, row] of profiles.entries()) {
       if (excluded.has(i)) {
         excludedCount += 1;
         results.push({
@@ -1010,7 +954,7 @@ export class ContactsModule {
         continue;
       }
       const rowClientId = params.client_id
-        ? await this.util.uuid_v5(params.client_id, `contacts.batch_track_social:${i}`)
+        ? await this.util.uuid_v5(params.client_id, `contacts.batch_track_social:${String(i)}`)
         : undefined;
       const contact = await this.create({
         name: row.name ?? parsed.handle,
@@ -1034,15 +978,15 @@ export class ContactsModule {
     return { results, total: profiles.length, created, excluded: excludedCount };
   }
 
-  // DEC-4 (INV-7): compare-and-set rename — a contact auto-created from a URL
+  // Compare-and-set rename — a contact auto-created from a URL
   // carries its handle as a placeholder name; the first profile ingest upgrades
   // it to the real display name ONLY while the placeholder is still in place.
   // Internal RPC (never an agent tool).
   @rpc("rename_if_placeholder")
   async rename_if_placeholder(params: RenameIfPlaceholderParams): Promise<{ renamed: boolean }> {
     const entity = await this.graph.get_entity(params.id);
-    if (!entity || entity.schema_id !== SCHEMA) return { renamed: false };
-    if ((entity.name ?? "") !== params.expected_name) return { renamed: false };
+    if (entity?.schema_id !== CONTACT) return { renamed: false };
+    if (entity.name !== params.expected_name) return { renamed: false };
     if (!params.new_name.trim() || params.new_name === params.expected_name) {
       return { renamed: false };
     }
@@ -1076,12 +1020,12 @@ export class ContactsModule {
     // the latest contacts.person.social facet per person wins (attach order).
     const PAGE = 500;
     for (let offset = 0; ; offset += PAGE) {
-      const page = await this.graph.list_entities({ schema_id: SCHEMA, limit: PAGE, offset });
+      const page = await this.graph.list_entities({ schema_id: CONTACT, limit: PAGE, offset });
       if (page.items.length === 0) return null;
       const facets = await this.graph.list_facets_for_entities(page.items.map((e) => e.id));
       const latestFacetByEntity = new Map<string, FacetRecord>();
       for (const f of facets) {
-        if (f.schema_id !== SOCIAL_FACET || !f.entity_id) continue;
+        if (f.schema_id !== CONTACT_SOCIAL || !f.entity_id) continue;
         const cur = latestFacetByEntity.get(f.entity_id);
         if (!cur || facetTime(f) > facetTime(cur)) latestFacetByEntity.set(f.entity_id, f);
       }
@@ -1091,7 +1035,7 @@ export class ContactsModule {
       }
       for (const [entityId, social] of latestByEntity) {
         const stored = social[handleKey]?.trim();
-        if (stored && stored.toLowerCase() === want) {
+        if (stored?.toLowerCase() === want) {
           return { contact_id: entityId, tracked: social[trackedKey] === true, handle: stored };
         }
       }
@@ -1113,21 +1057,21 @@ export class ContactsModule {
   })
   async list_social_tracking(params: {
     platform: SocialPlatform;
-  }): Promise<Array<{ contact_id: string; name: string; handle: string }>> {
+  }): Promise<{ contact_id: string; name: string; handle: string }[]> {
     const handleKey = params.platform === "x" ? "x_handle" : "linkedin_handle";
     const trackedKey = params.platform === "x" ? "tracked_x" : "tracked_linkedin";
-    const out: Array<{ contact_id: string; name: string; handle: string }> = [];
+    const out: { contact_id: string; name: string; handle: string }[] = [];
     // Same paged scan as get_social_tracking_by_handle: latest social facet
     // per person wins (runtime returns facets NEWEST-FIRST — never trust
     // append order).
     const PAGE = 500;
     for (let offset = 0; ; offset += PAGE) {
-      const page = await this.graph.list_entities({ schema_id: SCHEMA, limit: PAGE, offset });
+      const page = await this.graph.list_entities({ schema_id: CONTACT, limit: PAGE, offset });
       if (page.items.length === 0) break;
       const facets = await this.graph.list_facets_for_entities(page.items.map((e) => e.id));
       const latestFacetByEntity = new Map<string, FacetRecord>();
       for (const f of facets) {
-        if (f.schema_id !== SOCIAL_FACET || !f.entity_id) continue;
+        if (f.schema_id !== CONTACT_SOCIAL || !f.entity_id) continue;
         const cur = latestFacetByEntity.get(f.entity_id);
         if (!cur || facetTime(f) > facetTime(cur)) latestFacetByEntity.set(f.entity_id, f);
       }
@@ -1165,6 +1109,6 @@ export class ContactsModule {
   private async readSocialTracking(id: string): Promise<SocialTracking> {
     const facets = await this.graph.list_facets_for_entity(id);
     const latest = latestSocialFacet(facets);
-    return ((latest?.data as SocialTracking) ?? {}) satisfies SocialTracking;
+    return ((latest?.data as SocialTracking | undefined) ?? {}) satisfies SocialTracking;
   }
 }

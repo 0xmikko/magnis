@@ -2,10 +2,10 @@ import { useState, type JSX, type KeyboardEvent } from "react";
 import { Icon, IconButton } from "@magnis/host/ui";
 import type { AppRuntime } from "@magnis/host/runtime";
 
-// LinkedIn list-pane "+" (linkedin-add-flow LA-3, reworks S5/INV-6): opens a
+// LinkedIn list-pane "+": opens a
 // DIALOG — paste a profile URL or @handle → contacts.track_social_profile
 // finds-or-creates the contact and turns tracking on. The list shows the new
-// profile IMMEDIATELY as a pending "Syncing…" row (LA-2); the real profile
+// profile IMMEDIATELY as a pending "Syncing…" row; the real profile
 // replaces it on the next sync cycle. The dialog stays open after a
 // successful add — pasting several URLs in a row is the common flow.
 // LinkedIn ONLY — X friends come from the API import, not manual entry.
@@ -42,7 +42,7 @@ export function AddProfileAction({
       setValue("");
       setAdded(result.handle);
       // The pending row appears instantly: tracking is already in the DB and
-      // profiles.list prepends tracked-not-synced handles (LA-2).
+      // profiles.list prepends tracked-not-synced handles.
       void runtime.queryClient.invalidateQueries({ queryKey: ["linkedin"] });
       void runtime.queryClient.invalidateQueries({ queryKey: ["contacts"] });
     } catch (e) {
@@ -133,8 +133,7 @@ export function AddProfileAction({
               </button>
               <button
                 type="button"
-                // eslint-disable-next-line @typescript-eslint/no-misused-promises
-                onClick={submit}
+                onClick={() => { void submit(); }}
                 disabled={busy || !value.trim()}
                 className="text-xs px-4 py-2 rounded-lg bg-accent text-white font-medium disabled:opacity-50"
               >

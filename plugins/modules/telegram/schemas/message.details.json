@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "mappings": [
+    {
+      "path": "text",
+      "canonical": "telegram.message.text",
+      "strategy": "single_aligned"
+    },
+    {
+      "path": "sender_name",
+      "canonical": "telegram.message.sender",
+      "strategy": "single_aligned"
+    }
+  ],
+  "type": "object",
+  "required": [
+    "message_id"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "message_id": {
+      "type": "integer"
+    },
+    "text": {
+      "type": "string"
+    },
+    "date": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "chat_id": {
+      "type": "integer"
+    },
+    "chat_title": {
+      "type": "string"
+    },
+    "sender_name": {
+      "type": "string"
+    },
+    "sender_id": {
+      "type": "integer"
+    },
+    "sender_info": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "first_name": {
+          "type": "string"
+        },
+        "last_name": {
+          "type": "string"
+        },
+        "username": {
+          "type": "string"
+        },
+        "phone": {
+          "type": "string"
+        }
+      }
+    },
+    "reply_to_msg_id": {
+      "type": "integer"
+    },
+    "is_outgoing": {
+      "type": "boolean"
+    },
+    "media_type": {
+      "type": "string"
+    },
+    "media_url": {
+      "type": "string"
+    },
+    "is_pinned": {
+      "type": "boolean"
+    },
+    "file_name": {
+      "type": "string"
+    },
+    "sender_avatar_url": {
+      "type": "string"
+    }
+  }
+}

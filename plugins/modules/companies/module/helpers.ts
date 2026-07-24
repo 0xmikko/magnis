@@ -5,7 +5,7 @@
 // saw before the migration.
 
 import type { RawEntity } from "@magnis/plugin-sdk";
-import type { CompanyCanonical, CompanyListItem } from "../types/index.ts";
+import type { CompanyCanonical, CompanyListItem } from "../types.ts";
 
 const AVATAR_COLORS = ["orange", "blue", "green", "red", "purple", "pink"];
 
@@ -14,7 +14,7 @@ export function computeInitials(name: string): string {
     .split(/\s+/)
     .filter((w) => w.length > 0)
     .slice(0, 2)
-    .map((w) => w[0]!)
+    .map((w) => w[0])
     .join("")
     .toUpperCase();
 }
@@ -23,7 +23,9 @@ export function pickAvatarColor(id: string): string {
   const first = id.replace(/-/g, "").slice(0, 2);
   const hash = parseInt(first, 16);
   const idx = Number.isFinite(hash) ? hash % AVATAR_COLORS.length : 0;
-  return AVATAR_COLORS[idx]!;
+  const color = AVATAR_COLORS[idx];
+  if (color === undefined) throw new Error("pickAvatarColor: AVATAR_COLORS is empty");
+  return color;
 }
 
 function canonicalString(map: Partial<CompanyCanonical>, key: keyof CompanyCanonical): string | null {

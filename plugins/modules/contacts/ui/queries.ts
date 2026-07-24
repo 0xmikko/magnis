@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { useAppRuntime } from "@magnis/host/runtime";
 import type { ContactListItem, ContactDetailView } from "./types";
 import type { PaginatedResponse } from "@magnis/plugin-sdk";
@@ -9,8 +9,10 @@ export const contactKeys = {
   detail: (id: string) => [...contactKeys.all, "detail", id] as const,
 };
 
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type, @typescript-eslint/explicit-module-boundary-types
-export function useContactsListQuery(limit = 100, offset = 0) {
+export function useContactsListQuery(
+  limit = 100,
+  offset = 0,
+): UseQueryResult<PaginatedResponse<ContactListItem>> {
   const runtime = useAppRuntime();
   return useQuery({
     queryKey: contactKeys.list({ limit, offset }),
@@ -22,8 +24,7 @@ export function useContactsListQuery(limit = 100, offset = 0) {
   });
 }
 
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type, @typescript-eslint/explicit-module-boundary-types
-export function useContactDetailQuery(id: string) {
+export function useContactDetailQuery(id: string): UseQueryResult<ContactDetailView> {
   const runtime = useAppRuntime();
   return useQuery({
     queryKey: contactKeys.detail(id),
@@ -32,8 +33,8 @@ export function useContactDetailQuery(id: string) {
   });
 }
 
-// contacts.person.social opt-in state (DEC-9). The social source connectors
-// fetch ONLY tracked handles (DEC-8 / INV-1), so this is the UI seam that turns
+// contacts.person.social opt-in state. The social source connectors
+// fetch ONLY tracked handles, so this is the UI seam that turns
 // tracking on/off per platform.
 export interface SocialTrackingState {
   tracked_x?: boolean;
@@ -45,8 +46,7 @@ export interface SocialTrackingState {
 export const socialTrackingKey = (id: string): readonly unknown[] =>
   [...contactKeys.detail(id), "social_tracking"] as const;
 
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type, @typescript-eslint/explicit-module-boundary-types
-export function useSocialTrackingQuery(id: string) {
+export function useSocialTrackingQuery(id: string): UseQueryResult<SocialTrackingState> {
   const runtime = useAppRuntime();
   return useQuery({
     queryKey: socialTrackingKey(id),

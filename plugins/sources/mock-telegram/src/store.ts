@@ -9,11 +9,14 @@ import { dirname } from "node:path";
 /** The single surface this connector feeds. */
 export const SURFACE = "telegram";
 
+// A line in the shared JSONL. Only `surface` is guaranteed (we filter on it);
+// the rest may be absent on a hand-injected/partial line, so `fetchMockTelegram`
+// fills defaults (payload → {}, kind → "live").
 export interface StoredItem {
   surface: string;
-  payload: Record<string, unknown>;
-  remote_id: string;
-  kind: string;
+  payload?: Record<string, unknown>;
+  remote_id?: string;
+  kind?: string;
 }
 
 /** MOCK_INJECT_FILE is REQUIRED — the Rust twin panics without it (no fallback). */
@@ -45,8 +48,14 @@ export function readItems(surface: string): StoredItem[] {
     } catch {
       continue;
     }
-    const item = parsed as StoredItem;
-    if (item && typeof item === "object" && item.surface === surface) out.push(item);
+    if (
+      parsed !== null &&
+      typeof parsed === "object" &&
+      "surface" in parsed &&
+      parsed.surface === surface
+    ) {
+      out.push(parsed as StoredItem);
+    }
   }
   return out;
 }

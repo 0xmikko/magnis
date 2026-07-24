@@ -1,5 +1,5 @@
 import { runConnector } from "@magnis/connector-sdk";
-import { fetchMockX } from "./fetch";
+import { fetchMockX } from "./surfaces/x/fetch";
 
 await runConnector({
   name: "mock-x",
@@ -7,5 +7,5 @@ await runConnector({
   surfaces: ["x"],
   intervalSecs: 5,
   fetch: fetchMockX,
-  probeAuth: async () => ({ subject: "@mock_x_user" }),
+  probeAuth: () => Promise.resolve({ subject: "@mock_x_user" }),
 });

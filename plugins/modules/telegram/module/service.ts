@@ -38,96 +38,31 @@ import type {
   TelegramCanonical,
   TelegramChatListItem,
   TelegramFacets,
-} from "../types/index.ts";
+  TriggerCheck,
+} from "../types.ts";
+import {
+  CHAT,
+  CHAT_DETAILS,
+  CONTACT_FACET,
+  MESSAGE,
+  MESSAGE_DETAILS,
+  PERSON,
+  PERSON_CHAT_LINK,
+} from "../schema.ts";
+import {
+  boolFlag,
+  chatIdOrNull,
+  chatIdStr,
+  extractUrls,
+  mediaTypeToMime,
+  num,
+  str,
+  CHAT_BATCH_THRESHOLD,
+  INDEXING_THRESHOLD,
+  INGEST_CHUNK,
+  type Data,
+} from "./helpers.ts";
 import { runBatchSend } from "./batchSend.ts";
-
-const CHAT_SCHEMA = "telegram.chat";
-const CHAT_DETAILS = "telegram.chat.details";
-const MESSAGE_SCHEMA = "telegram.message";
-const MESSAGE_DETAILS = "telegram.message.details";
-// Cross-module contact (DEC-10): telegram mints contacts.person from senders.
-const PERSON_SCHEMA = "contacts.person";
-const CONTACT_FACET = "telegram.contact";
-const PERSON_CHAT_LINK = "person:telegram.chat";
-// Groups above this member count don't auto-create contacts (native default).
-const INDEXING_THRESHOLD = 100;
-
-// PGlite is single-connection, so a sync page (the telegram dialog list is ONE
-// ~2400-chat page) must be applied in CHUNKS: at most this many entities per
-// graph.apply_batch, so each transaction is short and the lone DB connection is
-// freed between batches. Without this, one dispatch monopolizes the connection and
-// every other RPC (frontend polls, search indexer) times out.
-const INGEST_CHUNK = 200;
-// Above this many chats in a page = a bootstrap dialog list → batch + chunk them.
-// At/below = a re-sync; keep the per-envelope path that merges last_message_* into
-// chat.details (the connector snapshot doesn't carry those fields).
-const CHAT_BATCH_THRESHOLD = 50;
-
-/// A trigger.check event the host PluginModuleController bridge forwards to the
-/// event_bus for LIVE messages (mirrors native ingest.rs). The trigger
-/// evaluator consumes it; bulk Snapshot/backfill ingests never emit one.
-interface TriggerCheck {
-  type: "trigger.check";
-  event_kind: "new_message";
-  schema_id: string;
-  entity_id: string;
-  phase: "live";
-  touched_entity_ids: string[];
-  user_id: string;
-  context: { text: string; sender_name: string };
-}
-
-type Data = Record<string, unknown>;
-const str = (d: Data, k: string): string | null => {
-  const v = d[k];
-  return typeof v === "string" && v.length > 0 ? v : null;
-};
-const num = (d: Data, k: string): number | null => (typeof d[k] === "number" ? (d[k] as number) : null);
-const boolFlag = (d: Data, k: string): boolean | null => {
-  const v = d[k];
-  if (typeof v === "boolean") return v;
-  if (typeof v === "number") return v !== 0;
-  return null;
-};
-const chatIdStr = (d: Data): string => {
-  const v = d.chat_id;
-  if (typeof v === "number") return String(v);
-  if (typeof v === "string") return v;
-  return "";
-};
-// http(s) URLs in free text, trailing punctuation trimmed.
-const URL_RE = /https?:\/\/[^\s<>"']+/g;
-function extractUrls(text: string): string[] {
-  const out: string[] = [];
-  for (const m of text.matchAll(URL_RE)) {
-    out.push(m[0].replace(/[.,;:!?)\]}>"']+$/, ""));
-  }
-  return out;
-}
-
-/// Map a telegram media_type to a MIME type. Mirrors the host's
-/// `media_type_to_mime` (backend/src/services/file/types.rs) so the plugin can
-/// build a source-agnostic file_register command (DEC: file.object survives the
-/// cutover).
-function mediaTypeToMime(mediaType: string): string {
-  switch (mediaType) {
-    case "photo":
-      return "image/jpeg";
-    case "voice":
-      return "audio/ogg";
-    case "video":
-    case "video_note":
-    case "animation":
-      return "video/mp4";
-    case "sticker":
-      return "image/webp";
-    case "audio":
-      return "audio/mpeg";
-    case "document":
-    default:
-      return "application/octet-stream";
-  }
-}
 
 export class TelegramModule {
   private readonly graph: GraphService<TelegramFacets, TelegramCanonical>;
@@ -147,12 +82,12 @@ export class TelegramModule {
   private buildChatItem(entity: RawEntity, d: Data): TelegramChatListItem {
     const avatar = str(d, "avatar_url") ?? str(d, "photo_url");
     return {
-      schema_id: CHAT_SCHEMA,
+      schema_id: CHAT,
       entity_id: entity.id,
       chat_id: chatIdStr(d),
       chat_title: str(d, "title"),
       last_message: str(d, "last_message_preview"),
-      last_message_time: typeof d.last_message_date === "string" ? (d.last_message_date as string) : null,
+      last_message_time: typeof d.last_message_date === "string" ? (d.last_message_date) : null,
       last_message_sender: str(d, "last_sender_name"),
       is_outgoing: null,
       message_count: null,
@@ -193,7 +128,7 @@ export class TelegramModule {
     // (pins live in the chat facet, not entity columns), render facet inline, one
     // statement. Replaces the telegram-specific list_chat_dialog_window.
     const page = await this.graph.list_entities_window({
-      schema: CHAT_SCHEMA,
+      schema: CHAT,
       facet_schema: CHAT_DETAILS,
       order: [
         { field: { facet_schema: CHAT_DETAILS, facet_path: "is_pinned" }, desc: true },
@@ -219,7 +154,7 @@ export class TelegramModule {
   ): Promise<PaginatedResponse<TelegramChatListItem>> {
     const matches = await this.graph.search_entities_by_name({
       query,
-      schema_ids: [CHAT_SCHEMA],
+      schema_ids: [CHAT],
       limit: limit + offset,
     });
     const total = matches.length;
@@ -262,7 +197,7 @@ export class TelegramModule {
     const offset = params.offset ?? 0;
 
     // Resolve chat_id: explicit chat_id, else entity_id → chat.details.chat_id.
-    let chatId: string | null = params.chat_id != null ? String(params.chat_id) : null;
+    let chatId: string | null = params.chat_id !== undefined ? String(params.chat_id) : null;
     if (chatId === null && params.entity_id) {
       const d = await this.detailsFacet(params.entity_id, CHAT_DETAILS);
       if (d) chatId = chatIdStr(d) || null;
@@ -273,7 +208,7 @@ export class TelegramModule {
     }
     // No chat filter → all of the user's telegram messages. ONE bulk facet read
     // (not a per-message detailsFacet), same anti-N+1 shape as searchChats.
-    const page = await this.graph.list_entities({ schema_id: MESSAGE_SCHEMA, limit, offset });
+    const page = await this.graph.list_entities({ schema_id: MESSAGE, limit, offset });
     const facets = await this.graph.list_facets_for_entities(page.items.map((e) => e.id));
     const byId = new Map<string, Data>();
     for (const f of facets) {
@@ -294,7 +229,7 @@ export class TelegramModule {
     // index-covered), order by entity-col date DESC, render facet inline. Kills the
     // old ~2N hops (op find_entity_for_user + per-message detailsFacet).
     const page = await this.graph.list_entities_window({
-      schema: MESSAGE_SCHEMA,
+      schema: MESSAGE,
       facet_schema: MESSAGE_DETAILS,
       filter_field: { entity_field: "idx" },
       filter_eq: chatId,
@@ -319,7 +254,7 @@ export class TelegramModule {
       subject: entity.name && entity.name.length > 0 ? entity.name : null,
       preview: null,
       channel: "telegram",
-      timestamp: typeof d.date === "string" ? (d.date as string) : created,
+      timestamp: typeof d.date === "string" ? (d.date) : created,
       created_at: created,
       metadata: d,
     };
@@ -338,8 +273,8 @@ export class TelegramModule {
   async messagesGet(params: GetParams): Promise<MessageDetailView> {
     // P1 (graph-read-api §4): entity + its facets in ONE fetch, user-scoped.
     const detail = await this.graph.get_entity_full(params.id, { links: false });
-    if (!detail || detail.entity.schema_id !== MESSAGE_SCHEMA) {
-      throw new Error(`${MESSAGE_SCHEMA} ${params.id} not found`);
+    if (detail?.entity.schema_id !== MESSAGE) {
+      throw new Error(`${MESSAGE} ${params.id} not found`);
     }
     const { entity, facets } = detail;
     const d = (facets.find((f) => f.schema_id === MESSAGE_DETAILS)?.data as Data | undefined) ?? {};
@@ -358,7 +293,7 @@ export class TelegramModule {
       subject: entity.name && entity.name.length > 0 ? entity.name : null,
       body: str(d, "text"),
       channel: "telegram",
-      timestamp: typeof d.date === "string" ? (d.date as string) : created,
+      timestamp: typeof d.date === "string" ? (d.date) : created,
       canonical: {},
       facets: facetSummaries,
       linked_entities: [],
@@ -382,14 +317,14 @@ export class TelegramModule {
   })
   async chatsSetIndexed(params: SetIndexedParams): Promise<{ status: string }> {
     const found = await this.graph.list_entities_by_facet_field({
-      entity_schema: CHAT_SCHEMA,
+      entity_schema: CHAT,
       facet_schema: CHAT_DETAILS,
       field_path: "$.chat_id",
       field_value: String(params.chat_id),
       limit: 1,
       offset: 0,
     });
-    const entity = found.items[0];
+    const entity = found.items.at(0);
     if (!entity) throw new Error(`chat ${String(params.chat_id)} not found`);
     // Patch the chat's details facet IN PLACE (update_facet by id) — attach_facet
     // would spawn a duplicate since the plugin sets no external_id, and
@@ -401,7 +336,7 @@ export class TelegramModule {
     await this.graph.update_facet({
       facet_id: chatFacet.id,
       schema_id: CHAT_DETAILS,
-      data: { ...existing, is_indexed: params.is_indexed } as TelegramFacets["telegram.chat.details"],
+      data: { ...existing, is_indexed: params.is_indexed },
     });
     return { status: "ok" };
   }
@@ -422,7 +357,7 @@ export class TelegramModule {
   async syncReset(): Promise<Record<string, unknown>> {
     // Pass our own message schema — op_sync_state clears it, scoped to the
     // telegram namespace (the op is generalised, no longer hard-coded).
-    return this.graph.sync_state("reset", MESSAGE_SCHEMA);
+    return this.graph.sync_state("reset", MESSAGE);
   }
 
   // ── reply composer (RPC) ──────────────────────────────────────
@@ -475,14 +410,14 @@ export class TelegramModule {
     // The scheduler reuses this reserved sync method to ask which chats are
     // high-priority for backfill (pinned/indexed) — it can't see chat metadata
     // itself. Branch out before the ingest path.
-    if (params?.backfill_priority) {
+    if (params.backfill_priority) {
       return this.backfillPriority(params.backfill_priority.chat_ids ?? []);
     }
     // Stage 3: the host bridge dispatches a WHOLE page of envelopes in one call.
     // Chat snapshots + deletes stay per-envelope (few, field-merge / cascade); the
     // message bulk collapses to ONE graph.apply_batch (the native per-message
     // find→create→attach→link pipeline is what made bootstrap take ~5.6h).
-    const envelopes = Array.isArray(params?.envelopes) ? params.envelopes : [];
+    const envelopes = Array.isArray(params.envelopes) ? params.envelopes : [];
     const dropped: string[] = [];
     const triggers: TriggerCheck[] = [];
     const chats: { env: SyncEnvelope; payload: Data }[] = [];
@@ -499,7 +434,7 @@ export class TelegramModule {
         continue;
       }
       if (kind !== "snapshot" && kind !== "live") continue;
-      const payload = (env.payload ?? {}) as Data;
+      const payload = env.payload;
       const entityType = typeof payload.entity_type === "string" ? payload.entity_type : "message";
       if (entityType === "chat" || entityType === "telegram_chat") chats.push({ env, payload });
       else messages.push({ env, payload });
@@ -545,7 +480,7 @@ export class TelegramModule {
         delete details.entity_type;
         entities.push({
           key: remoteId,
-          schema_id: CHAT_SCHEMA,
+          schema_id: CHAT,
           name: typeof payload.title === "string" ? payload.title : "",
           facets: [{ schema_id: CHAT_DETAILS, data: details, external_id: remoteId, confidence: 100 }],
         });
@@ -571,9 +506,9 @@ export class TelegramModule {
     const chatEntityId = new Map<string, string | null>();
     const chatDetails = new Map<string, Data | null>();
     for (const { payload } of messages) {
-      const cid = payload.chat_id;
-      if (cid == null) continue;
-      const key = String(cid);
+      const cid = chatIdOrNull(payload);
+      if (cid === null) continue;
+      const key = cid;
       if (chatEntityId.has(key)) continue;
       const eid = await this.graph.find_by_external_id(`tg:chat:${key}`);
       chatEntityId.set(key, eid);
@@ -584,7 +519,7 @@ export class TelegramModule {
     for (const { payload } of messages) {
       const sid = payload.sender_id;
       if (typeof sid !== "number" || senderExists.has(sid)) continue;
-      senderExists.set(sid, (await this.graph.find_by_external_id(`tg:user:${sid}`)) != null);
+      senderExists.set(sid, (await this.graph.find_by_external_id(`tg:user:${String(sid)}`)) !== null);
     }
 
     // 3. Build the fragment.
@@ -612,28 +547,28 @@ export class TelegramModule {
       const remoteId = env.remote_id;
       if (!remoteId) continue;
       const text = str(payload, "text") ?? "";
-      const cid = payload.chat_id;
-      const chatKey = cid != null ? `chat:${String(cid)}` : null;
+      const cid = chatIdOrNull(payload);
+      const chatKey = cid !== null ? `chat:${cid}` : null;
 
       entities.push({
         key: remoteId,
-        schema_id: MESSAGE_SCHEMA,
+        schema_id: MESSAGE,
         name: text.slice(0, 80),
-        idx: cid != null ? String(cid) : undefined,
+        idx: cid ?? undefined,
         date: str(payload, "date") ?? undefined,
         facets: [{ schema_id: MESSAGE_DETAILS, data: payload, external_id: remoteId, confidence: 100 }],
       });
 
-      if (cid != null && chatKey) {
-        addRef(chatKey, `tg:chat:${String(cid)}`);
+      if (cid !== null && chatKey) {
+        addRef(chatKey, `tg:chat:${cid}`);
         addLink(remoteId, chatKey, "telegram.message:telegram.chat");
       }
 
       const sid = payload.sender_id;
       if (typeof sid === "number") {
-        const personKey = `user:${sid}`;
-        const userExt = `tg:user:${sid}`;
-        const details = cid != null ? chatDetails.get(String(cid)) ?? null : null;
+        const personKey = `user:${String(sid)}`;
+        const userExt = `tg:user:${String(sid)}`;
+        const details = cid !== null ? chatDetails.get(cid) ?? null : null;
         const exists = senderExists.get(sid) ?? false;
         let linkPerson = false;
         if (exists) {
@@ -644,7 +579,7 @@ export class TelegramModule {
             const chatType = details ? str(details, "type") : null;
             entities.push({
               key: personKey,
-              schema_id: PERSON_SCHEMA,
+              schema_id: PERSON,
               name: str(payload, "sender_name") ?? "",
               facets: [
                 {
@@ -685,13 +620,19 @@ export class TelegramModule {
       const mediaType = str(payload, "media_type");
       const mChatId = num(payload, "chat_id");
       const mMessageId = num(payload, "message_id");
-      if (mediaType && payload.source_ref != null && mChatId != null && mMessageId != null) {
+      if (
+        mediaType &&
+        payload.source_ref !== null &&
+        payload.source_ref !== undefined &&
+        mChatId !== null &&
+        mMessageId !== null
+      ) {
         // is_indexed gates the byte fetch, not the entity: a non-indexed chat
         // still registers the file.object (the message keeps its attachment) but
         // skips the download — it is pulled on demand when the user opens it.
         const fileChatDetails = chatDetails.get(String(mChatId)) ?? null;
         await this.graph.file_register({
-          external_id: `file:telegram:${mChatId}:${mMessageId}`,
+          external_id: `file:telegram:${String(mChatId)}:${String(mMessageId)}`,
           parent_external_id: remoteId,
           link_kind: "telegram.message:file",
           name: str(payload, "file_name") ?? undefined,
@@ -708,9 +649,9 @@ export class TelegramModule {
         });
       }
 
-      const cid = payload.chat_id;
-      if (cid != null) {
-        const key = String(cid);
+      const cid = chatIdOrNull(payload);
+      if (cid !== null) {
+        const key = cid;
         const cur = newestPerChat.get(key);
         if (!cur || (str(payload, "date") ?? "") >= (str(cur, "date") ?? "")) {
           newestPerChat.set(key, payload);
@@ -719,19 +660,19 @@ export class TelegramModule {
 
       if (env.kind === "live") {
         const touched = [entityId];
-        if (cid != null) {
-          const ck = result.ids[`chat:${String(cid)}`];
+        if (cid !== null) {
+          const ck = result.ids[`chat:${cid}`];
           if (ck) touched.push(ck);
         }
         const sid = payload.sender_id;
         if (typeof sid === "number") {
-          const pk = result.ids[`user:${sid}`];
+          const pk = result.ids[`user:${String(sid)}`];
           if (pk) touched.push(pk);
         }
         triggers.push({
           type: "trigger.check",
           event_kind: "new_message",
-          schema_id: MESSAGE_SCHEMA,
+          schema_id: MESSAGE,
           entity_id: entityId,
           phase: "live",
           touched_entity_ids: touched,
@@ -759,7 +700,7 @@ export class TelegramModule {
           last_message_date: msgDate,
           last_message_preview: str(msg, "text") ?? "",
           last_sender_name: str(msg, "sender_name") ?? "",
-        } as TelegramFacets["telegram.chat.details"],
+        },
         external_id: `tg:chat:${key}`,
         confidence: 100,
       });
@@ -805,7 +746,7 @@ export class TelegramModule {
     const existing = entityId ? await this.detailsFacet(entityId, CHAT_DETAILS) : null;
     if (!entityId) {
       const title = typeof payload.title === "string" ? payload.title : "";
-      const created = await this.graph.create_entity({ schema_id: CHAT_SCHEMA, name: title });
+      const created = await this.graph.create_entity({ schema_id: CHAT, name: title });
       entityId = created.id;
     }
     // The chat.details facet carries everything except the routing discriminant.
@@ -813,13 +754,16 @@ export class TelegramModule {
     delete details.entity_type;
     if (existing) {
       for (const k of ["last_message_date", "last_message_preview", "last_sender_name"]) {
-        if (existing[k] != null && details[k] == null) details[k] = existing[k];
+        const ev = existing[k];
+        if (ev !== null && ev !== undefined && (details[k] === null || details[k] === undefined)) {
+          details[k] = ev;
+        }
       }
     }
     await this.graph.attach_facet({
       entity_id: entityId,
       schema_id: CHAT_DETAILS,
-      data: details as TelegramFacets["telegram.chat.details"],
+      data: details,
       external_id: remoteId,
       confidence: 100,
     });
@@ -837,22 +781,22 @@ export class TelegramModule {
     // a re-delivered message re-runs enrichment (idempotent facet upsert + denorm
     // + person link). The windowed chats.list removed the DB contention that the
     // old Fix-B skip was papering over, so re-runs are cheap and correct again.
-    const createdFresh = entityId == null;
+    const createdFresh = entityId === null;
     if (!entityId) {
       const text = typeof payload.text === "string" ? payload.text : "";
       const name = text.slice(0, 80);
-      const idx = payload.chat_id != null ? String(payload.chat_id) : undefined;
+      const idx = chatIdOrNull(payload) ?? undefined;
       // Date the entity by the MESSAGE date (native parity): with idx=chat_id it
       // feeds the chat index entities(schema_id, idx, date DESC).
       const date = typeof payload.date === "string" ? payload.date : undefined;
-      const created = await this.graph.create_entity({ schema_id: MESSAGE_SCHEMA, name, idx, date });
+      const created = await this.graph.create_entity({ schema_id: MESSAGE, name, idx, date });
       entityId = created.id;
     }
     try {
       await this.graph.attach_facet({
         entity_id: entityId,
         schema_id: MESSAGE_DETAILS,
-        data: payload as TelegramFacets["telegram.message.details"],
+        data: payload,
         external_id: remoteId,
         confidence: 100,
       });
@@ -870,7 +814,7 @@ export class TelegramModule {
 
     // Register any URLs in the message text as web.link entities (referenced
     // by the message). Mirrors native ingest's web.extractor pass.
-    const msgText = typeof payload.text === "string" ? (payload.text as string) : "";
+    const msgText = typeof payload.text === "string" ? (payload.text) : "";
     for (const url of extractUrls(msgText)) {
       await this.graph.web_register({ url, parent_entity_id: entityId, link_kind: "references" });
     }
@@ -882,9 +826,15 @@ export class TelegramModule {
     const mediaType = str(payload, "media_type");
     const mChatId = num(payload, "chat_id");
     const mMessageId = num(payload, "message_id");
-    if (mediaType && payload.source_ref != null && mChatId != null && mMessageId != null) {
+    if (
+      mediaType &&
+      payload.source_ref !== null &&
+      payload.source_ref !== undefined &&
+      mChatId !== null &&
+      mMessageId !== null
+    ) {
       await this.graph.file_register({
-        external_id: `file:telegram:${mChatId}:${mMessageId}`,
+        external_id: `file:telegram:${String(mChatId)}:${String(mMessageId)}`,
         parent_external_id: remoteId,
         link_kind: "telegram.message:file",
         name: str(payload, "file_name") ?? undefined,
@@ -901,9 +851,9 @@ export class TelegramModule {
     // both the last-message denormalization and the sender-contact tier gate.
     let chatEntityId: string | null = null;
     let chatDetails: Data | null = null;
-    const chatId = payload.chat_id;
-    if (chatId != null) {
-      chatEntityId = await this.graph.find_by_external_id(`tg:chat:${String(chatId)}`);
+    const chatId = chatIdOrNull(payload);
+    if (chatId !== null) {
+      chatEntityId = await this.graph.find_by_external_id(`tg:chat:${chatId}`);
       if (chatEntityId) {
         await this.graph.add_link({
           from_id: entityId,
@@ -941,7 +891,7 @@ export class TelegramModule {
     const curDate = str(chatDetails, "last_message_date") ?? "";
     if (curDate && msgDate < curDate) return; // older than the stored last message
     const chatId = num(msg, "chat_id");
-    if (chatId == null) return;
+    if (chatId === null) return;
     await this.graph.attach_facet({
       entity_id: chatEntityId,
       schema_id: CHAT_DETAILS,
@@ -950,7 +900,7 @@ export class TelegramModule {
         last_message_date: msgDate,
         last_message_preview: str(msg, "text") ?? "",
         last_sender_name: str(msg, "sender_name") ?? "",
-      } as TelegramFacets["telegram.chat.details"],
+      },
       external_id: `tg:chat:${String(chatId)}`,
       confidence: 100,
     });
@@ -970,7 +920,7 @@ export class TelegramModule {
     // uses), then classify — instead of a find_by_external_id + detailsFacet N+1
     // per chat (which cost ~56s for 100 chats on the single PGlite connection).
     const page = await this.graph.list_entities_window({
-      schema: CHAT_SCHEMA,
+      schema: CHAT,
       facet_schema: CHAT_DETAILS,
       limit: 1_000_000,
       offset: 0,
@@ -1005,7 +955,7 @@ export class TelegramModule {
     chatEntityId: string | null,
     chatDetails: Data | null,
   ): Promise<string | null> {
-    const userExt = `tg:user:${senderId}`;
+    const userExt = `tg:user:${String(senderId)}`;
     const chatType = chatDetails ? str(chatDetails, "type") : null;
     const tier = chatType === "private" ? "inner" : "group";
 
@@ -1020,7 +970,7 @@ export class TelegramModule {
         : {};
       // first_name is required on telegram.contact — fall back to the display name.
       const firstName = str(info, "first_name") ?? senderName;
-      const person = await this.graph.create_entity({ schema_id: PERSON_SCHEMA, name: senderName });
+      const person = await this.graph.create_entity({ schema_id: PERSON, name: senderName });
       personId = person.id;
       const contactData: Data = {
         telegram_user_id: senderId,
@@ -1036,7 +986,7 @@ export class TelegramModule {
       await this.graph.attach_facet({
         entity_id: personId,
         schema_id: CONTACT_FACET,
-        data: contactData as TelegramFacets["telegram.contact"],
+        data: contactData,
         external_id: userExt,
         confidence: 90,
       });
@@ -1127,19 +1077,22 @@ export class TelegramModule {
     },
   })
   async messagesBatchSend(params: BatchSendParams): Promise<Record<string, unknown>> {
-    const all = params.messages ?? [];
+    const all = params.messages;
     if (all.length === 0 || all.length > 50) {
-      throw new Error(`batch size must be 1..=50, got ${all.length}`);
+      throw new Error(`batch size must be 1..=50, got ${String(all.length)}`);
     }
     // The approval card applies per-message text edits into `messages` and lists
     // skipped recipients in `excluded_indices`; drop those before sending.
     const excluded = new Set(params.excluded_indices ?? []);
     const messages = all.filter((_, i) => !excluded.has(i));
     messages.forEach((m, i) => {
-      if (m.chat_id == null || String(m.chat_id).length === 0) {
-        throw new Error(`message[${i}]: missing chat_id`);
+      // chat_id is declared number|string but arrives from unvalidated tool-call
+      // JSON, so it can be missing at runtime — widen before the presence guard.
+      const cid = m.chat_id as number | string | null | undefined;
+      if (cid === null || cid === undefined || String(cid).length === 0) {
+        throw new Error(`message[${String(i)}]: missing chat_id`);
       }
-      if (!m.text) throw new Error(`message[${i}]: missing text`);
+      if (!m.text) throw new Error(`message[${String(i)}]: missing text`);
     });
     if (messages.length === 0) {
       return { results: [], total: 0, sent: 0, failed: 0 };
@@ -1166,7 +1119,7 @@ export class TelegramModule {
     accountId: string | undefined,
   ): Promise<Record<string, unknown>> {
     const payload: Data = { action: "send_message", chat_id: chatId, text };
-    if (replyTo != null) payload.reply_to_message_id = replyTo;
+    if (replyTo !== undefined) payload.reply_to_message_id = replyTo;
     const result = await this.graph.source_command(payload, accountId);
     // The message is DELIVERED past this point. Local ingest + entity lookup are
     // best-effort enrichment: a failure here must NOT propagate as a send failure,
@@ -1174,8 +1127,8 @@ export class TelegramModule {
     // a manual retry double-sends it. The missing local copy is reconciled by the
     // normal sync, not by failing an already-delivered send (Codex round-2).
     try {
-      const messageId = typeof result.message_id === "number" ? (result.message_id as number) : 0;
-      const remoteId = `tg:msg:${String(chatId)}:${messageId}`;
+      const messageId = typeof result.message_id === "number" ? result.message_id : 0;
+      const remoteId = `tg:msg:${String(chatId)}:${String(messageId)}`;
       const sentPayload: Data = {
         message_id: messageId,
         chat_id: chatId,

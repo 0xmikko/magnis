@@ -1,17 +1,18 @@
 // Meetings read helpers — ports the native domain adapter (types.rs):
-// attendee parse (INV-24c, strict no-fallbacks), read-time attendee→contact
-// enrichment, RFC-3339 → date/time display, and the list-item builder.
+// strict attendee parsing (malformed input is rejected, never silently
+// repaired), read-time attendee→contact enrichment, RFC-3339 → date/time
+// display, and the list-item builder.
 
 import type { GraphService, RawEntity } from "@magnis/plugin-sdk";
 import type {
   CalendarAttendee,
   MeetingAttendeeView,
   MeetingListItem,
-} from "../types/index.ts";
+} from "../types.ts";
 
-type Data = Record<string, unknown>;
+export type Data = Record<string, unknown>;
 
-const str = (d: Data, k: string): string | null => {
+export const str = (d: Data, k: string): string | null => {
   const v = d[k];
   return typeof v === "string" && v.length > 0 ? v : null;
 };
@@ -19,9 +20,27 @@ const str = (d: Data, k: string): string | null => {
 /** A string facet field, treated as null when empty (native `.filter(!is_empty)`). */
 const nonEmpty = (d: Data, k: string): string | null => str(d, k);
 
+/// Strict RFC-3339 parse (mirrors native chrono parse_from_rfc3339): returns the
+/// epoch ms, or null if the string isn't a well-formed RFC-3339 timestamp. JS
+/// `Date.parse` alone is too lenient, so gate on the canonical shape first.
+export function parseRfc3339(s: string): number | null {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/.test(s)) return null;
+  const t = Date.parse(s);
+  return Number.isNaN(t) ? null : t;
+}
+
+/// Normalize attendees to the canonical `{name, email}` shape (name → null when
+/// absent), matching the native facet/snapshot serialization.
+export function normalizeAttendees(attendees: CalendarAttendee[] | undefined): {
+  name: string | null;
+  email: string;
+}[] {
+  return (attendees ?? []).map((a) => ({ name: a.name ?? null, email: a.email }));
+}
+
 /// Parse the canonical `attendees` shape from a facet payload.
 ///
-/// INV-24 / INV-24c — attendees use ONE format = `CalendarAttendee[]`
+/// Attendees use ONE format = `CalendarAttendee[]`
 /// (`{name?, email}`). Three explicit cases, strict NO FALLBACKS:
 ///   (a) field absent or `null`            → `[]` (valid empty state)
 ///   (b) valid array of `{name?, email}`   → parsed array
@@ -32,7 +51,7 @@ export function parseAttendees(
   facetData: Data | undefined,
   entityId: string,
 ): CalendarAttendee[] {
-  const raw = facetData == null ? undefined : facetData["attendees"];
+  const raw = facetData?.attendees;
   if (raw === undefined || raw === null) return [];
   if (!Array.isArray(raw)) {
     throw new Error(`malformed attendees facet for entity ${entityId}: expected an array`);
@@ -68,7 +87,7 @@ export async function resolveContactForEmail(
   for (const link of links) {
     if (link.kind !== "has_email" || link.to_id !== addrId) continue;
     const person = await graph.get_entity(link.from_id);
-    if (person && person.schema_id === "contacts.person") return person.id;
+    if (person?.schema_id === "contacts.person") return person.id;
   }
   return null;
 }
@@ -95,12 +114,12 @@ export function formatDateTime(
   endsAt: string | null | undefined,
 ): { date: string | null; time: string | null } {
   const startM = typeof startsAt === "string"
-    ? startsAt.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/)
+    ? (/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/.exec(startsAt))
     : null;
-  const date = startM ? (startM[1] ?? null) : null;
-  const startTime = startM ? (startM[2] ?? null) : null;
-  const endM = typeof endsAt === "string" ? endsAt.match(/T(\d{2}:\d{2})/) : null;
-  const endTime = endM ? (endM[1] ?? null) : null;
+  const date = startM ? (startM.at(1) ?? null) : null;
+  const startTime = startM ? (startM.at(2) ?? null) : null;
+  const endM = typeof endsAt === "string" ? (/T(\d{2}:\d{2})/.exec(endsAt)) : null;
+  const endTime = endM ? (endM.at(1) ?? null) : null;
 
   let time: string | null;
   if (startTime && endTime) time = `${startTime} - ${endTime}`;

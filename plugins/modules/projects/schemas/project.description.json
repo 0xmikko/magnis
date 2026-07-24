@@ -1,0 +1,14 @@
+{
+  "id": "projects.description",
+  "version": 1,
+  "type": "object",
+  "required": [
+    "body"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "body": {
+      "type": "string"
+    }
+  }
+}

@@ -1,59 +1,33 @@
 // Magnis bun-connector SDK — the shared MCP-over-stdio framework for TS source
 // connectors (X / LinkedIn). A connector is an external process the host spawns
-// (manifest [spawn] command="bun" args=["run","src/main.ts"]); it speaks the
-// Magnis Sync Profile (line-delimited JSON-RPC) on stdin/stdout. Mirrors the
-// Rust mock-gmail wire contract exactly:
+// (by convention `bun run src/main.ts` when the package ships src/main.ts —
+// manifest v3; [spawn] appears only as an override); it speaks the
+// Magnis Sync Profile (line-delimited JSON-RPC) on stdin/stdout. The wire
+// contract, exactly:
 //   - initialize → { protocolVersion, capabilities.experimental.magnis.sync, serverInfo }
 //   - tools/call magnis.sync.fetch { surface, cursor } → { envelopes, nextCursor, hasMore }
 //   - notifications (no id) → no reply
 // Read-only: connectors expose ONLY the fetch tool (no write tools).
+//
+// The PURE CONTRACT types (Envelope, FetchArgs, FetchResult, ConnectorConfig +
+// its handler shapes) now live in ./contract/source — reviewable in isolation.
+// They are re-exported below so every `import ... from "@magnis/connector-sdk"`
+// resolves unchanged; only the runtime (runConnector, handleMessage, the error
+// classes, the JSON-RPC codes) lives here.
 
-/** One canonical sync envelope the host routes to the owning module's surface. */
-export interface Envelope {
-  surface: string;
-  remote_id: string;
-  kind: "snapshot" | "live" | "delete";
-  payload: Record<string, unknown>;
-}
+export * from "./contract/source";
 
-export interface FetchArgs {
-  surface: string;
-  /** Arbitrary JSON cursor (S1.1) — the host round-trips it verbatim; a
-   * numeric cursor is just the JSON number a poll connector chose. */
-  cursor?: unknown;
-  /** Present-to-past by default; the host may ask "forward" on catch-up. */
-  direction?: "backward" | "forward";
-  /** Tracked handles for this platform — set DEC-8 (host passes the opt-in set). */
-  tracked_handles?: string[];
-  limit?: number;
-  /** Host-injected credentials (DEC-6): the `_meta` object the host attaches to
-   * each tools/call — e.g. `{ bearer_token }` (X) / `{ anysite_key }` (LinkedIn). */
-  meta?: Record<string, unknown>;
-  /** The verbatim tools/call `arguments`. Surface-specific extras the typed
-   * fields above do not model live here — e.g. the Google connector's calendar
-   * `time_min`/`time_max` window, which its Rust twin reads straight off the
-   * action payload. Prefer a typed field above when one fits. */
-  raw?: Record<string, unknown>;
-}
+import type { ConnectorConfig, Envelope } from "./contract/source";
 
-export interface FetchResult {
-  envelopes: Envelope[];
-  nextCursor: unknown;
-  hasMore: boolean;
-  /** Optional sync-progress counters (profile.rs: bootstrap bar). */
-  total?: number | null;
-  discovered?: number | null;
-}
-
-/** JSON-RPC error codes shared with the host (backend runtime/runtime.rs).
+/** JSON-RPC error codes shared with the host runtime.
  * RATE_LIMIT carries `retry_after=<secs>` in the message so the host backs off
  * for the right window instead of crashing the connector (INV — S6). */
-// Twin: backend/src/sources/mcp/runtime.rs::RATE_LIMITED_CODE and the telegram
-// connector — the host reads `error.data.retry_after` (typed), NOT the message.
+// Host contract: the host reads `error.data.retry_after` (typed), NOT the
+// message.
 export const RATE_LIMIT_CODE = -32002;
-// Twin: backend/src/sources/mcp/runtime.rs::CURSOR_EXPIRED_CODE. The host reads
-// the CODE alone — never the message — so only an explicit throw of
-// `CursorExpiredError` re-bootstraps. Everything else stays a hard failure.
+// Host contract: the host reads the CODE alone — never the message — so only
+// an explicit throw of `CursorExpiredError` re-bootstraps. Everything else
+// stays a hard failure.
 export const CURSOR_EXPIRED_CODE = -32003;
 const GENERIC_FETCH_ERROR_CODE = -32000;
 
@@ -61,7 +35,7 @@ const GENERIC_FETCH_ERROR_CODE = -32000;
  * for `retryAfterSecs` rather than treating it as a hard failure. */
 export class RateLimitError extends Error {
   constructor(readonly retryAfterSecs: number) {
-    super(`rate limited; retry_after=${retryAfterSecs}`);
+    super(`rate limited; retry_after=${String(retryAfterSecs)}`);
     this.name = "RateLimitError";
   }
 }
@@ -119,58 +93,7 @@ function errorReply(id: unknown, e: unknown): Record<string, unknown> {
   return { jsonrpc: "2.0", id, error: { code: GENERIC_FETCH_ERROR_CODE, message } };
 }
 
-export interface ConnectorConfig {
-  name: string;
-  version: string;
-  /** Surfaces this connector feeds (e.g. ["social"]). */
-  surfaces: string[];
-  /** Poll cadence advertised in capabilities. */
-  intervalSecs?: number;
-  /** The read handler — called for magnis.sync.fetch. Read-only. */
-  fetch: (args: FetchArgs) => Promise<FetchResult>;
-  /** ProbeAuth (sync-status plan §2.4) — called for magnis.auth.probe. MUST
-   * hit the real provider with the injected key and return the verified
-   * subject. Absent → magnis.auth.probe stays rejected (source cannot be
-   * provisioned). */
-  probeAuth?: (meta: Record<string, unknown> | undefined) => Promise<{ subject: string }>;
-  /** "push" advertises live delivery: the host opens `listen_start`
-   * subscriptions and consumes `notifications/magnis/envelope`. */
-  mode?: "poll" | "push";
-  /** Push session open (S1.2): called on `listen_start` (and the legacy
-   * `magnis.sync.listen` alias). `emit` stamps + writes one envelope
-   * notification for THIS subscription; after `listen_stop` it no-ops. */
-  listenStart?: (
-    args: { subscription_id: string; meta?: Record<string, unknown> },
-    emit: (envelope: Envelope) => void,
-  ) => Promise<void>;
-  /** Push session close (S1.2): called on `listen_stop`. */
-  listenStop?: (args: { subscription_id: string }) => Promise<void>;
-  /** Auth-flow handlers (S1.3) — the host relays magnis.auth.begin/step/
-   * exchange/revoke here with host-held inputs (+ `_meta`). A missing
-   * handler answers -32601 (this connector doesn't implement that step). */
-  auth?: Partial<
-    Record<
-      "begin" | "step" | "exchange" | "revoke",
-      (
-        args: Record<string, unknown>,
-        meta: Record<string, unknown> | undefined,
-      ) => Promise<Record<string, unknown>>
-    >
-  >;
-  /** Outbound actions (S1.4): `magnis.execute` payload `{ action, ... }`
-   * dispatches by name; unknown action answers -32601. */
-  execute?: Record<
-    string,
-    (
-      args: Record<string, unknown>,
-      meta: Record<string, unknown> | undefined,
-    ) => Promise<Record<string, unknown>>
-  >;
-  /** Notification writer override (tests). Default: process.stdout. */
-  onNotification?: (line: string) => void;
-}
-
-/** Live subscriptions this process holds (S1.2). Module-level: one connector
+/** Live subscriptions this process holds. Module-level: one connector
  * process serves one host. */
 const liveSubscriptions = new Set<string>();
 
@@ -185,7 +108,10 @@ function makeEmitter(
   subscriptionId: string,
 ): (envelope: Envelope) => void {
   const write =
-    config.onNotification ?? ((line: string) => process.stdout.write(line + "\n"));
+    config.onNotification ??
+    ((line: string): void => {
+      process.stdout.write(line + "\n");
+    });
   return (envelope: Envelope) => {
     // A stop kills the subscription; late emits are refused, not routed.
     if (!liveSubscriptions.has(subscriptionId)) return;
@@ -205,12 +131,12 @@ function makeEmitter(
   };
 }
 
-type JsonRpc = {
+interface JsonRpc {
   jsonrpc?: string;
   id?: unknown;
   method?: string;
   params?: { name?: string; arguments?: Record<string, unknown> };
-};
+}
 
 function capabilities(config: ConnectorConfig): Record<string, unknown> {
   return {
@@ -252,7 +178,7 @@ export async function handleMessage(
   if (method === "tools/call") {
     const name = msg.params?.name ?? "";
 if (name === "magnis.auth.probe" && config.probeAuth) {
-      const args = (msg.params?.arguments ?? {}) as Record<string, unknown>;
+      const args = (msg.params?.arguments ?? {});
       const meta =
         args._meta && typeof args._meta === "object"
           ? (args._meta as Record<string, unknown>)
@@ -269,10 +195,10 @@ if (name === "magnis.auth.probe" && config.probeAuth) {
         };
       }
     }
-    const rawArgs = (msg.params?.arguments ?? {}) as Record<string, unknown>;
+    const rawArgs = (msg.params?.arguments ?? {});
     const metaArg = extractMeta(rawArgs);
 
-    // ── push sessions (S1.2) ────────────────────────────────────────────────
+    // ── push sessions ───────────────────────────────────────────────────────
     if (name === "listen_start" && config.listenStart) {
       const subscriptionId =
         typeof rawArgs.subscription_id === "string" && rawArgs.subscription_id
@@ -322,7 +248,7 @@ if (name === "magnis.auth.probe" && config.probeAuth) {
       }
     }
 
-    // ── auth flows (S1.3) ───────────────────────────────────────────────────
+    // ── auth flows ──────────────────────────────────────────────────────────
     if (name.startsWith("magnis.auth.") && name !== "magnis.auth.probe") {
       const op = name.slice("magnis.auth.".length) as "begin" | "step" | "exchange" | "revoke";
       const handler = config.auth?.[op];
@@ -342,7 +268,7 @@ if (name === "magnis.auth.probe" && config.probeAuth) {
       }
     }
 
-    // ── outbound actions (S1.4) ─────────────────────────────────────────────
+    // ── outbound actions ────────────────────────────────────────────────────
     if (name === "magnis.execute") {
       const action = typeof rawArgs.action === "string" ? rawArgs.action : "";
       const handler = config.execute?.[action];
@@ -371,13 +297,13 @@ if (name === "magnis.auth.probe" && config.probeAuth) {
     const args = rawArgs;
     const surface =
       typeof args.surface === "string" ? args.surface : config.surfaces[0] ?? "";
-    const cursor = args.cursor; // arbitrary JSON, verbatim (S1.1)
+    const cursor = args.cursor; // arbitrary JSON, verbatim
     const direction =
       args.direction === "forward" || args.direction === "backward"
         ? args.direction
         : undefined;
     const tracked = Array.isArray(args.tracked_handles)
-      ? (args.tracked_handles.filter((h) => typeof h === "string") as string[])
+      ? (args.tracked_handles.filter((h) => typeof h === "string"))
       : undefined;
     const limit = typeof args.limit === "number" ? args.limit : undefined;
     const meta = metaArg;
@@ -399,8 +325,8 @@ if (name === "magnis.auth.probe" && config.probeAuth) {
     }
   }
 
-  // tools/list and anything else: advertise the single read tool (cred-less,
-  // DEC-7 — initialize/list never need a key; auth fails at fetch).
+  // tools/list and anything else: advertise the single read tool (cred-less —
+  // initialize/list never need a key; auth fails at fetch).
   if (method === "tools/list") {
     return {
       jsonrpc: "2.0",

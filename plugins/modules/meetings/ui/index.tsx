@@ -5,7 +5,6 @@ import { MeetingsModule as MeetingsModuleComponent } from "./MeetingsModule";
 import { MeetingCard, meetingHasMore } from "./EntityCards";
 import { setupEventInvalidation } from "@magnis/host/runtime";
 
-// eslint-disable-next-line react-refresh/only-export-components
 export const MEETINGS_BASE_DATA: Omit<
   MeetingsModuleData,
   "meetings" | "rawMeetings" | "detailById" | "dateTitles" | "dayEvents" | "weekData" | "monthEvents"
@@ -72,7 +71,6 @@ const meetingsModuleDef = defineModule({
 });
 
 // Override the Component — meetings has a completely custom UI
-// eslint-disable-next-line react-refresh/only-export-components
 export const MeetingsModule = {
   ...meetingsModuleDef,
   Component: MeetingsModuleComponent,

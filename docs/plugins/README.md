@@ -1,69 +1,79 @@
-# Magnis Plugins — Developer Guide
+# Magnis plugins
 
-This directory documents how Magnis **domain modules** are built as plugins:
-TypeScript that runs in an embedded V8 isolate on the backend, plus a React UI
-served at runtime to the frontend. The Rust core stays **generic** — it owns
-storage, the graph, sync, and the agent runtime, but knows nothing about
-"contacts" or "companies". Each module ships its schemas, RPC surface, agent
-tools, and UI as a self-contained plugin under `plugins/modules/<id>/`.
+A **plugin** is how a domain enters Magnis. The Rust backend owns the graph and
+stays generic — it knows nothing about "contacts" or "email"; every domain ships
+as a plugin that declares its schemas, exposes tools, and (for a module) draws
+its own UI. There are two kinds:
 
-`companies` and `contacts` are the two reference implementations. Read their
-code alongside these docs.
+- **Module** — owns a slice of the graph: it registers entity/facet schemas,
+  reads and writes them, exposes tools to the agent and UI, and draws the
+  frontend. → [module.md](./module.md)
+- **Source** — connects to an external service (Gmail, X, Telegram) and streams
+  what it finds into the graph as envelopes; it owns no schema.
+  → [source.md](./source.md)
 
-## Read in this order
+`companies` / `contacts` (modules) and `google` / `x` (sources) are the
+reference implementations — read their code beside these docs.
 
-1. **[architecture.md](architecture.md)** — the runtime model: V8 isolates, the
-   one-thread-per-plugin dispatcher, why all DB I/O marshals to the host
-   runtime, and the install/bootstrap lifecycle.
-2. **[manifest.md](manifest.md)** — `manifest.json` reference: schemas (with
-   canonical `mappings`), capabilities, surfaces, entry points.
-3. **[backend-module.md](backend-module.md)** — writing the backend module:
-   `definePlugin`, `@tool`/`@writeTool`, `PluginDeps`, the `graph` API, and how
-   capabilities are enforced.
-4. **[cross-module-hub.md](cross-module-hub.md)** — the cross-module RPC "hub":
-   how a module calls **another** module (`rpc.execute`) instead of writing a
-   foreign schema, plus `graph.add_link`.
-5. **[ui.md](ui.md)** — the React UI: `plugins/modules/<id>/ui`, the `@magnis/host/*`
-   surface (and its three-layer wiring), Tailwind `@source`, and how the
-   frontend loads it.
-6. **[write-a-module.md](write-a-module.md)** — end-to-end checklist for a new
-   module. Start here once you understand the model.
+## Start here
 
-The **`/write_module`** skill (`.claude/skills/write_module/SKILL.md`, tracked in
-the repo) automates the scaffold + walks an agent through these steps and the
-verification gates.
+1. **[architecture.md](./architecture.md)** — the top-down model: the graph, the
+   two kinds, and how data flows external service → source → module → graph →
+   UI. Read this first.
+2. **[module.md](./module.md)** — build a module end to end.
+3. **[source.md](./source.md)** — build a source end to end.
+4. **[structure.md](./structure.md)** — the file-structure standard both kinds
+   follow, plus the lint-enforced code rules and the full conformance checklist.
+5. **[manifest.md](./manifest.md)** — the `manifest.toml` reference for both
+   kinds.
 
-## Directory layout of a plugin
+Or don't write it yourself: **[building-with-an-agent.md](./building-with-an-agent.md)**
+— describe the integration in a sentence and let an agent build it to the
+same contract. Measured in the [integration-authoring eval](../../evals/integration-authoring/README.md).
 
+## Shared rules (both kinds)
+
+- **One runtime: Bun.** Bun runs TypeScript directly — no build step for a
+  source, one bundling step for a module's UI.
+- **Strict lint, no `any`.** `bun run lint` runs type-aware `strictTypeChecked`
+  at zero warnings; a type lie is fixed, not silenced. Full rule list in
+  [structure.md](./structure.md).
+- **One testkit, no database.** `@magnis/testkit` — module tests run under
+  vitest, source tests under `bun test`.
+
+## Commands
+
+Run from the repo root:
+
+```bash
+bun run typecheck        # tsc across every plugin + package
+bun run lint             # eslint, zero warnings
+bun run test             # vitest — module + package tests
+bun run test:connectors  # bun test — source contract tests
+bun run build:plugins    # bundle every module's UI
 ```
-plugins/modules/<id>/
-  manifest.json          # schemas + capabilities + surfaces + entry points
-  module/                # backend module (V8 isolate)
-    index.ts             #   definePlugin(<Class>)
-    service.ts           #   the @tool/@writeTool-decorated class
-    helpers.ts, types/   #   view builders, DTOs
-  ui/                    # React UI (served at /api/plugins/modules/<id>/ui/<file>)
-    index.tsx            #   defineModule({ ... }) — the ModuleDefinition
-    *.tsx, queries.ts, types.ts, __tests__/
+
+Run one plugin's tests:
+
+```bash
+bun run test plugins/modules/<name>     # a module (vitest)
+bun test plugins/sources/<name>/src     # a source (bun test)
 ```
 
-`packages/plugin-sdk/index.ts` is the **single SDK** both halves import as
-`@magnis/plugin-sdk` (backend) and provides the UI's `@magnis/host/*` types.
+## Dev loop — no rebuild while you write
 
-## The decisions that shaped this (don't re-litigate without reason)
+Point the backend at your working checkout and just edit files:
 
-| # | Decision | Where |
-|---|----------|-------|
-| Rust is generic | No domain schemas in Rust; modules own their schemas via the manifest. Deleting a native module must leave the core compiling. | [architecture](architecture.md) |
-| One thread per plugin | deno_core aborts if two `JsRuntime`s live on one thread; each plugin gets its own OS thread + isolate. | [architecture](architecture.md) |
-| Workers are DB-free | PGlite allows exactly ONE connection, bound to the host runtime. Plugin workers never touch the DB on their own runtime — discovery is handed in, and every op marshals its DB future to the host via `on_host`. | [architecture](architecture.md) |
-| Manifest carries schemas + mappings (DEC-16) | Canonical `mappings` travel in `FacetSchema.mappings`; the installer persists them. The manifest is the single source of a module's schemas. | [manifest](manifest.md) |
-| Manifest-driven capabilities (DEC-10) | `ModuleContext` is built from the manifest's `capabilities`, not hard-coded. Every write/read/link/rpc is capability-checked. | [backend-module](backend-module.md) |
-| Cross-module RPC hub (DEC-1..9) | A module with the `rpc_calls` capability calls another module's RPC (`rpc.execute`) instead of writing its schema. Synchronous, native-only in v0, runs on the host runtime, inherits the caller's user. | [cross-module-hub](cross-module-hub.md) |
-| `graph.add_link` gated by `link_kinds_writable` (DEC-8) | Plugins create typed links only for declared kinds. | [cross-module-hub](cross-module-hub.md) |
-| UI is a runtime-loaded plugin | `plugins/modules/<id>/ui` is served by the backend and dynamic-imported by the frontend (`loadPluginModule`). It imports the host via `@magnis/host/*`, never deep frontend paths. | [ui](ui.md) |
-| Host surface = three synced layers | Every value a UI imports from `@magnis/host/*` must appear in `hostShims/<area>.ts` (typecheck), `hostModules.ts` (runtime registry), AND `host_shim.rs` (allowlist). Drift = runtime crash. | [ui](ui.md) |
-| Plugin UIs need Tailwind `@source` | Tailwind v4 only scans `frontend/`; `frontend/src/app.css` has `@source "../../plugins/**/ui/**"` so plugin utility classes aren't purged. | [ui](ui.md) |
+```bash
+MAGNIS_PLUGINS_DIR=/path/to/your/plugins
+```
 
-The full spec with rationale for the hub decisions is
-`docs/plans/plugin-cross-module-rpc-hub.md`.
+- **Module code** (`module/*.ts`, `manifest.toml`): the next call re-transpiles
+  your change on the fly — no rebuild, no reinstall.
+- **UI** (`ui/*.tsx`): served on the fly; refresh the browser tab.
+
+## Conformance
+
+A plugin is "done" only when it passes the conformance checklist. The per-kind
+checklists close [module.md](./module.md) and [source.md](./source.md); the
+combined, machine-checkable standard is in [structure.md](./structure.md).

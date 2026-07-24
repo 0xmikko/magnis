@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import type { UseQueryResult } from "@tanstack/react-query";
 import { useAppRuntime } from "@magnis/host/runtime";
 import type { CompanyListItem } from "./types";
 import type { PaginatedResponse } from "@magnis/plugin-sdk";
@@ -9,8 +10,7 @@ export const companyKeys = {
   detail: (id: string) => [...companyKeys.all, "detail", id] as const,
 };
 
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type, @typescript-eslint/explicit-module-boundary-types
-export function useCompaniesListQuery(limit = 100, offset = 0) {
+export function useCompaniesListQuery(limit = 100, offset = 0): UseQueryResult<PaginatedResponse<CompanyListItem>> {
   const runtime = useAppRuntime();
   return useQuery({
     queryKey: companyKeys.list({ limit, offset }),
@@ -21,8 +21,7 @@ export function useCompaniesListQuery(limit = 100, offset = 0) {
   });
 }
 
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type, @typescript-eslint/explicit-module-boundary-types
-export function useCompanyDetailQuery(id: string) {
+export function useCompanyDetailQuery(id: string): UseQueryResult {
   const runtime = useAppRuntime();
   return useQuery({
     queryKey: companyKeys.detail(id),

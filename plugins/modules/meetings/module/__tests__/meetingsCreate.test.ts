@@ -1,39 +1,29 @@
-// Stage 2 — meetings.create write path: validation (INV-3, BEFORE any write),
-// snapshot shape (INV-13), and client_id idempotency (INV-4). Unit-tests the
-// module class with a mock GraphService.
+// meetings.create write path: validation (BEFORE any write),
+// snapshot shape, and client_id idempotency. Exercises the
+// module class through @magnis/testkit/module (mockGraph + mountModule).
 
 import { describe, expect, it, vi } from "vitest";
-import type { GraphService, PluginDeps, RawEntity } from "@magnis/plugin-sdk";
+import type { RawEntity } from "@magnis/plugin-sdk";
+import { mockGraph, mountModule, type GraphOverrides, type MockGraph } from "@magnis/testkit/module";
 import { MeetingsModule } from "../service.ts";
-import type { MeetingsCanonical, MeetingsFacets } from "../../types/index.ts";
+import type { MeetingsCanonical, MeetingsFacets } from "../../types.ts";
 
 const CAL = "meetings.calendar_event";
 const CAL_DETAILS = "meetings.calendar_event.details";
+type G = MockGraph<MeetingsFacets, MeetingsCanonical>;
 
-function makeGraph(over: Partial<Record<string, unknown>> = {}): GraphService<
-  MeetingsFacets,
-  MeetingsCanonical
-> {
-  return {
-    create_entity: vi.fn(async (p: { client_id?: string; name: string }) => ({
-      id: p.client_id ?? "new-id",
-      schema_id: CAL,
-      name: p.name,
-    })),
-    attach_facet: vi.fn().mockResolvedValue(undefined),
-    get_entity: vi.fn().mockResolvedValue(null),
+function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
+  return mockGraph<MeetingsFacets, MeetingsCanonical>({
+    create_entity: (p: { client_id?: string; name: string }) =>
+      Promise.resolve({ id: p.client_id ?? "new-id", schema_id: CAL, name: p.name }),
+    attach_facet: () => Promise.resolve(undefined),
+    get_entity: () => Promise.resolve(null),
     ...over,
-  } as unknown as GraphService<MeetingsFacets, MeetingsCanonical>;
+  } as unknown as GraphOverrides<MeetingsFacets, MeetingsCanonical>);
 }
 
-function makeModule(graph: GraphService<MeetingsFacets, MeetingsCanonical>): MeetingsModule {
-  const deps = {
-    graph,
-    ctx: { extension_id: "meetings", user_id: "u1" },
-    util: {},
-    rpc: { execute: vi.fn() },
-  } as unknown as PluginDeps<MeetingsFacets, MeetingsCanonical>;
-  return new MeetingsModule(deps);
+function makeModule(graph: G): MeetingsModule {
+  return mountModule(MeetingsModule, { graph, ctx: { extension_id: "meetings" } }).module;
 }
 
 const GOOD = {
@@ -42,7 +32,7 @@ const GOOD = {
   ends_at: "2026-02-01T10:00:00Z",
 };
 
-describe("meetings.create — validation (INV-3, no write on failure)", () => {
+describe("meetings.create — validation (rejected input writes nothing)", () => {
   it("rejects an empty / whitespace title", async () => {
     const create_entity = vi.fn();
     const mod = makeModule(makeGraph({ create_entity }));
@@ -70,7 +60,7 @@ describe("meetings.create — validation (INV-3, no write on failure)", () => {
   });
 });
 
-describe("meetings.create — happy path (INV-13 snapshot)", () => {
+describe("meetings.create — happy path (returns the full meeting snapshot)", () => {
   it("creates the entity + details facet and returns the snapshot", async () => {
     const create_entity = vi.fn(async (p: { name: string }) => ({
       id: "m-new",
@@ -123,7 +113,7 @@ describe("meetings.create — happy path (INV-13 snapshot)", () => {
   });
 });
 
-describe("meetings.create — idempotency (INV-4)", () => {
+describe("meetings.create — idempotency", () => {
   it("returns the existing entity for a repeat client_id without re-creating", async () => {
     const existing: RawEntity = { id: "cid-1", schema_id: CAL, name: "Sync" } as RawEntity;
     const get_entity = vi.fn().mockResolvedValue(existing);

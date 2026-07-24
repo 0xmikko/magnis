@@ -17,15 +17,13 @@ function descriptionText(data: Readonly<Record<string, unknown>>): string | unde
 }
 
 /** Chevron shows only when the attachment carries a description. */
-// eslint-disable-next-line react-refresh/only-export-components
 export function projectHasMore(data: Readonly<Record<string, unknown>>): boolean {
   return descriptionText(data) !== undefined;
 }
 
 export function ProjectCard(props: EntityRendererProps): JSX.Element {
   const { data, action } = props;
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-  const name = (data.name as string) ?? "Untitled Project";
+  const name = (data.name as string | undefined) ?? "Untitled Project";
   const description = descriptionText(data);
   const preview = description ? description.slice(0, 80).replace(/\n/g, " ") : undefined;
   const { expanded } = useContext(ExpansionContext);

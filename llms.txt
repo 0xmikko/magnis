@@ -1,0 +1,35 @@
+# Magnis
+
+> Self-hosted company memory: a private knowledge graph built from a company's communication (email, chats, meetings, notes, files) with AI agents operating on top. Runs fully inside the company's perimeter — desktop app with embedded Postgres, on-prem server, optional fully local models. This repository is the OFFICIAL PUBLIC HOME of Magnis: the plugin catalog + SDKs, the public evals, and testable desktop builds via Releases as they ship; the core engine's source is closed — the same split as an editor and its extensions.
+
+Key facts:
+- Core (closed): Rust knowledge-graph engine over Postgres (entities / facets / links / events, provenance on every link); hybrid search (structured graph traversal + semantic search with locally computed embeddings); agent runtime (tool-calling; Claude primary; any OpenAI-compatible endpoint incl. local models); event triggers; one-click approval gates on every write action. A real Postgres server is compiled into the desktop binary.
+- Multi-user: one server / one database / many users; each user's sources and modules run under their own credentials and parameters; every entity has exactly one owner (schema-enforced); ownership is deliberately separate from visibility; sharing is modeled in the graph itself via a dedicated ACL entity, so access checks resolve as graph traversal — rolling out with the first design-partner deployment; admin role for deployment ownership.
+- Agents reason over the graph, not just retrieve: speculative hypotheses promoted on accumulated evidence (confidence threshold, multiple confirmations, decay); on-demand analytics — account briefs with citations, hidden-blocker analysis, commitment reconstruction, ghost-thread digests.
+- Triggers = pub/sub over the graph: subscribe to any graph change, a message from a specific person, thread silence, or cron-style schedules; each subscription carries a gate prompt (relevance filter) and an action prompt that starts an agent episode — deferred agent work over live company state.
+- Clients: one tool surface for everything — desktop app and CLI today, mobile and Telegram coming; any client or external system connects the same way an agent does, with the same per-user scoping. Approvals gate only autonomous (agent) writes; a human acting through a client is the principal and acts directly.
+- Engines: built-in tool-calling engine with an in-app model catalog (OpenRouter, any OpenAI-compatible endpoint, local servers, per-token pricing) OR the user's existing Claude Code / Codex subscription over long-lived resumable sessions; per-user metering with credit limits checked before each turn.
+- Security & resilience: AES-256-GCM encrypted secrets vault, argon2-hashed passwords; native Telegram MTProto connector; typed rate-limit/expired-cursor signals, crash-safe idempotent sync; live plugin rebuild-and-swap from a signed remote catalog.
+- This repo (public, TypeScript/bun only — no Rust, no per-platform binaries): 11 domain modules + 6 source connectors + dev mocks, and 5 SDK packages.
+- Modules run inside the core in sandboxed V8 isolates with capability manifests: contacts, email, meetings, companies, projects, notes, telegram, triggers, linkedin, x, file.
+- Sources run as separate MCP-over-stdio processes ("Magnis Sync Profile" wire contract); credentials are stored in a user-scoped encrypted vault and injected per call: google (Gmail + Calendar), telegram, x, x-mcp (agent-side X search), anysite (LinkedIn), local (markdown notes, reference).
+- Packages: @magnis/connector-sdk (the wire contract), @magnis/plugin-sdk (module runtime surface), @magnis/host-stubs (types only), @magnis/source-statemachine (auth/sync state machine), @magnis/testkit (dev-only test doubles).
+- Evals: cross-session entity-resolution recall 0.63–0.80 (memoryless baseline structurally 0); cross-engine memory transfer (memory written by one model, read by another). See /evals.
+- Founder: Mikhail Lazarev (@0xmikko), previously co-founder & CTO of Gearbox Protocol.
+
+Vocabulary: a "source" pulls provider data into the graph over the connector contract; a "module" shapes it and serves UI; an "envelope" is the sync payload unit; cursors are opaque JSON round-tripped verbatim; "surfaces" wire sources to modules in manifests.
+
+## Docs (read in this order)
+- [README](README.md): what Magnis is, repo layout, quickstart
+- [docs/architecture.md](docs/architecture.md): system overview, graph foundation, data pipeline, agents, clients
+- [docs/graph.md](docs/graph.md): entity/facet/link anatomy, schemas, search indexes, vector pipeline, speculative overlay, agent graph tools
+- [docs/engines.md](docs/engines.md): interchangeable model engines (built-in catalog / Claude Code / Codex subscriptions), persistent sessions, per-user metering
+- [docs/plugins/README.md](docs/plugins/README.md): plugin authoring index
+- [docs/plugins/module.md](docs/plugins/module.md) / [docs/plugins/source.md](docs/plugins/source.md): end-to-end guides
+- [docs/plugins/manifest.md](docs/plugins/manifest.md): manifest v3 reference
+- [evals/README.md](evals/README.md): eval methodology and results
+
+## Links
+- Product: https://magnis.ai
+- Sandbox: https://app.magnis.ai
+- Founder: https://mikko.build

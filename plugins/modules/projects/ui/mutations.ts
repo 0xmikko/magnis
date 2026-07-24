@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import type { UseMutationResult } from "@tanstack/react-query";
 import { useAppRuntime } from "@magnis/host/runtime";
 import { projectKeys } from "./queries";
 import type { ProjectListItem } from "./types";
@@ -18,24 +19,20 @@ interface RenameProjectParams {
   readonly name: string;
 }
 
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type, @typescript-eslint/explicit-module-boundary-types
-export function useRenameProjectMutation() {
+export function useRenameProjectMutation(): UseMutationResult<undefined, Error, RenameProjectParams> {
   const runtime = useAppRuntime();
   const queryClient = useQueryClient();
 
-  // eslint-disable-next-line @typescript-eslint/no-invalid-void-type
-  return useMutation<void, Error, RenameProjectParams>({
+  return useMutation<undefined, Error, RenameProjectParams>({
     mutationFn: (params) =>
-      // eslint-disable-next-line @typescript-eslint/no-invalid-void-type
-      runtime.transport.rpc<void>("projects.update", { id: params.id, name: params.name }),
+      runtime.transport.rpc<undefined>("projects.update", { id: params.id, name: params.name }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: projectKeys.all });
     },
   });
 }
 
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type, @typescript-eslint/explicit-module-boundary-types
-export function useCreateProjectMutation() {
+export function useCreateProjectMutation(): UseMutationResult<CreateProjectResult, Error, CreateProjectParams, { previous: PaginatedResponse<ProjectListItem> | undefined }> {
   const runtime = useAppRuntime();
   const queryClient = useQueryClient();
 
@@ -53,7 +50,7 @@ export function useCreateProjectMutation() {
         name: variables.name,
         status: variables.status ?? null,
         avatar_color: "blue",
-        initials: variables.name.split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join(""),
+        initials: variables.name.split(/\s+/).slice(0, 2).map((w) => w.at(0)?.toUpperCase() ?? "").join(""),
         created_at: new Date().toISOString(),
       };
 

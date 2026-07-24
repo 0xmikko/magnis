@@ -1,13 +1,21 @@
-import type { FileDetails } from "../types/index.ts";
+import type { EntityDetail } from "@magnis/plugin-sdk";
+import type { FileDetails } from "../types.ts";
 
-/// Route-correct serving URL (DEC-10): local content serves via
+/// Extract a facet's data payload by schema_id from an EntityDetail (or
+/// undefined when the entity carries no facet of that schema).
+export function facetData(detail: EntityDetail, schemaId: string): Record<string, unknown> | undefined {
+  const f = detail.facets.find((x) => x.schema_id === schemaId);
+  return f?.data as Record<string, unknown> | undefined;
+}
+
+/// Route-correct serving URL: local content serves via
 /// `/files/{entity_id}` (the actual `GET /files/:entity_id` route); otherwise the
 /// `cloud_url` (S3) if set. Local takes precedence, mirroring native
 /// `resolve_url`'s ordering — but native built `/files/{local_path}`, which does
 /// NOT match the entity-id route, so we correct it to the entity id.
 export function resolveUrl(entityId: string, details: FileDetails): string | null {
-  if (details.local_path != null) return `/files/${entityId}`;
-  if (details.cloud_url != null) return details.cloud_url;
+  if (details.local_path !== null && details.local_path !== undefined) return `/files/${entityId}`;
+  if (details.cloud_url !== null && details.cloud_url !== undefined) return details.cloud_url;
   return null;
 }
 
@@ -17,7 +25,10 @@ export function resolveUrl(entityId: string, details: FileDetails): string | nul
 /// on completion, so `local_path || cloud_url` is authoritative for
 /// normally-downloaded files. Inconsistent dest_subpath-only rows are skipped.
 export function hasContent(details: FileDetails): boolean {
-  return details.local_path != null || details.cloud_url != null;
+  return (
+    (details.local_path !== null && details.local_path !== undefined) ||
+    (details.cloud_url !== null && details.cloud_url !== undefined)
+  );
 }
 
 /// Build a list/get item from the file.details facet data + the entity id.

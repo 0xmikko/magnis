@@ -1,14 +1,13 @@
-// X (Twitter) API v2 — READ-ONLY client (INV-5). App-only Bearer auth for reads
-// (the bearer the host injects via _meta; DEC-5/6). Ported from content-os
-// src/x/api-client.ts + tweet-lookup.service.ts, stripped to the two read calls
+// X (Twitter) API v2 — READ-ONLY client. App-only Bearer auth for reads
+// (the bearer the host injects via _meta). Stripped to the two read calls
 // the x connector needs: resolve a handle → profile, and recent tweets.
-// NO write paths, NO OAuth, NO persistence (content-os concerns dropped, DEC-3).
+// NO write paths, NO OAuth, NO persistence.
 
 import { RateLimitError } from "@magnis/connector-sdk";
 
 export const X_API_BASE = "https://api.x.com";
 
-/** Minimal fetch surface so tests inject a fake (no live API call — INV-6). */
+/** Minimal fetch surface so tests inject a fake (no live API call). */
 export type FetchLike = (
   url: string,
   init?: { method?: string; headers?: Record<string, string> },
@@ -44,13 +43,13 @@ export interface XTweet {
   created_at?: string;
   lang?: string;
   conversation_id?: string;
-  referenced_tweets?: Array<{ type: string; id: string }>;
+  referenced_tweets?: { type: string; id: string }[];
   /** Long-form body — X truncates `.text` at 280; the full text lives here. */
   note_tweet?: { text?: string };
   /** X Article (premium long-form) — full body in plain_text. */
   article?: { title?: string; plain_text?: string };
   entities?: {
-    urls?: Array<{ url?: string; expanded_url?: string; display_url?: string }>;
+    urls?: { url?: string; expanded_url?: string; display_url?: string }[];
   };
   attachments?: { media_keys?: string[] };
   public_metrics?: {
@@ -79,18 +78,18 @@ export class XApiError extends Error {
     readonly status: number,
     readonly detail: string,
   ) {
-    super(`X API ${status}: ${detail}`);
+    super(`X API ${String(status)}: ${detail}`);
     this.name = "XApiError";
   }
 }
 
 const USER_FIELDS = "name,username,profile_image_url,description,verified,public_metrics";
-// ContentOS ingest port (social-post-rendering S4): note_tweet + article carry
-// the FULL text X truncates in `.text`; entities/attachments feed urls + media.
+// note_tweet + article carry the FULL text X truncates in `.text`;
+// entities/attachments feed urls + media.
 const TWEET_FIELDS =
   "created_at,public_metrics,text,lang,referenced_tweets,conversation_id,note_tweet,article,entities,attachments";
 // media_keys are bare keys — they only resolve to URLs when the expansion AND
-// media.fields are both requested (ContentOS lesson #4).
+// media.fields are both requested.
 const TWEET_EXPANSIONS = "attachments.media_keys";
 const MEDIA_FIELDS = "media_key,type,url,preview_image_url,alt_text";
 
@@ -102,7 +101,7 @@ export class XClient {
     private readonly fetchFn: FetchLike,
   ) {}
 
-  private async getBody<T>(path: string): Promise<{ data?: T; includes?: { media?: XMedia[] } }> {
+  private async getBody(path: string): Promise<{ data?: unknown; includes?: { media?: XMedia[] } }> {
     const res = await this.fetchFn(`${X_API_BASE}${path}`, {
       method: "GET",
       headers: { authorization: `Bearer ${this.bearer}` },
@@ -111,7 +110,7 @@ export class XClient {
       throw new RateLimitError(retryAfterSecs(res.headers));
     }
     const body = (await res.json().catch(() => ({}))) as {
-      data?: T;
+      data?: unknown;
       includes?: { media?: XMedia[] };
       detail?: string;
     };
@@ -126,8 +125,8 @@ export class XClient {
     return body;
   }
 
-  private async get<T>(path: string): Promise<T> {
-    return (await this.getBody<T>(path)).data as T;
+  private async get<T>(path: string): Promise<T | undefined> {
+    return (await this.getBody(path)).data as T | undefined;
   }
 
   /** Resolve a bare handle (no leading @) → user, or null when not found. */
@@ -145,12 +144,12 @@ export class XClient {
   /** Recent tweets for a user id (most-recent-first, capped at `max`) plus the
    * media includes their attachment keys resolve against. */
   async recentTweets(userId: string, max: number): Promise<XTweetPage> {
-    const body = await this.getBody<XTweet[]>(
-      `/2/users/${encodeURIComponent(userId)}/tweets?max_results=${max}` +
+    const body = await this.getBody(
+      `/2/users/${encodeURIComponent(userId)}/tweets?max_results=${String(max)}` +
         `&tweet.fields=${TWEET_FIELDS}&expansions=${TWEET_EXPANSIONS}&media.fields=${MEDIA_FIELDS}`,
     );
     return {
-      tweets: Array.isArray(body.data) ? body.data : [],
+      tweets: Array.isArray(body.data) ? (body.data as XTweet[]) : [],
       media: body.includes?.media ?? [],
     };
   }

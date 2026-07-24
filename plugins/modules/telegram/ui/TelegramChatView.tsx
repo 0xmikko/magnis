@@ -68,8 +68,8 @@ function renderMessageText(text: string): ReactNode[] {
 
     if (match[1]) {
       // Markdown link: [label](url)
-      const label = match[2] ?? "";
-      const url = match[3] ?? "";
+      const label = match.at(2) ?? "";
+      const url = match.at(3) ?? "";
       parts.push(
         <a
           key={`mdlink-${String(match.index)}`}
@@ -139,8 +139,9 @@ function groupMessages(messages: readonly TelegramMessage[], isGroup: boolean): 
   let prevDate: string | undefined;
 
   for (let i = 0; i < messages.length; i++) {
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-    const msg = messages[i]!;
+     
+    const msg = messages[i];
+    if (!msg) continue;
     const prev = i > 0 ? messages[i - 1] : undefined;
     const next = i < messages.length - 1 ? messages[i + 1] : undefined;
 
@@ -341,7 +342,7 @@ function InlineTime({
   readonly sendStatus?: "sending" | "sent" | "failed";
 }): JSX.Element {
   if (outgoing) {
-    let statusIcon: JSX.Element | null = null;
+    let statusIcon: JSX.Element | null;
 
     if (sendStatus === "sending") {
       // Clock icon (gray)
@@ -663,6 +664,7 @@ export function TelegramChatView({
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
+    // eslint-disable-next-line react-hooks/immutability -- `grouped` (a useMemo below) is only read here inside a layout effect that runs after render, so it is always initialized at call time; the source-order flag is a false positive.
     const count = grouped.length;
     const hasPending = !!pendingMessageId;
 
@@ -722,7 +724,7 @@ export function TelegramChatView({
     let el = document.getElementById(`tg-msg-${pendingMessageId}`);
 
     // Fallback: find by Telegram native message_id (entity UUID may differ between queries)
-    if (!el && pendingTelegramMsgId != null && conversation?.messages) {
+    if (!el && pendingTelegramMsgId !== undefined && conversation?.messages) {
       const match = conversation.messages.find((m) => m.telegramMsgId === pendingTelegramMsgId);
       if (match) {
         el = document.getElementById(`tg-msg-${match.id}`);
@@ -769,6 +771,7 @@ export function TelegramChatView({
   );
 
   // Group messages for rendering
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization -- the React Compiler bails on this large component (see the layout-effect ordering above); this useMemo's deps are exhaustive and correct, so the manual memoization is kept intentionally.
   const grouped = useMemo(
     () => groupMessages(dedupedMessages, isGroup),
     [dedupedMessages, isGroup],
@@ -778,7 +781,7 @@ export function TelegramChatView({
   const msgLookup = useMemo(() => {
     const map = new Map<number, TelegramMessage>();
     for (const m of dedupedMessages) {
-      if (m.telegramMsgId != null) {
+      if (m.telegramMsgId !== undefined) {
         map.set(m.telegramMsgId, m);
       }
     }
@@ -839,8 +842,7 @@ export function TelegramChatView({
       )}
 
       <div className="flex h-full flex-1 flex-col">
-        {/* eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing */}
-        {(loading || backfilling) && (
+        {(loading === true || backfilling === true) && (
           <div className="flex justify-center py-2">
             <span className="text-content-tertiary text-xs animate-pulse">
               {backfilling ? "Loading from Telegram..." : "Loading..."}
@@ -867,7 +869,7 @@ export function TelegramChatView({
               return <DateChip label={msg.time} />;
             }
 
-            const replyTo = msg.replyToMsgId != null
+            const replyTo = msg.replyToMsgId !== undefined
               ? msgLookup.get(msg.replyToMsgId)
               : undefined;
 

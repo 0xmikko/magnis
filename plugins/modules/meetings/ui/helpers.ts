@@ -24,18 +24,29 @@ export function attendeeDisplay(a: CalendarAttendee): string {
   return a.name ?? a.email;
 }
 
+/**
+ * Parse a meeting's `starts_at`. Callers here always pre-filter on a truthy
+ * `starts_at`, so a missing value is a programming error, not a runtime case.
+ */
+function requireStart(m: MeetingListItem): Date {
+  if (m.starts_at === null) throw new Error("meeting has no starts_at");
+  return new Date(m.starts_at);
+}
+
 export function mapMeetingFromApi(m: MeetingListItem): MeetingItem {
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-  const title = m.title?.trim() ? m.title.trim() : "Untitled meeting";
+  const title = m.title.trim() ? m.title.trim() : "Untitled meeting";
   const attendees = m.attendees.filter((a) => a.email.trim().length > 0);
   const attendeeLabels = attendees.map(attendeeDisplay);
   const withText = attendeeLabels.length > 0 ? attendeeLabels.join(", ") : "No attendees";
   const date = m.date?.trim() ? m.date : "TBD";
   const time = m.time?.trim() ? m.time : "TBD";
-  const preview =
-    // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-    m.location?.trim() ||
-    (attendeeLabels.length > 0 ? attendeeLabels.slice(0, 2).join(", ") : "No location");
+  const trimmedLocation = m.location?.trim();
+  let preview: string;
+  if (trimmedLocation) {
+    preview = trimmedLocation;
+  } else {
+    preview = attendeeLabels.length > 0 ? attendeeLabels.slice(0, 2).join(", ") : "No location";
+  }
 
   const initialsSource = attendeeLabels[0] ?? title;
 
@@ -82,8 +93,7 @@ export function buildWeekEvents(meetings: readonly MeetingListItem[]): MeetingCa
       return d >= monday && d < sunday;
     })
     .map((m) => {
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      const d = new Date(m.starts_at!);
+      const d = requireStart(m);
       const col = ((d.getDay() + 6) % 7) + 1;
       return {
         title: m.title,
@@ -106,8 +116,7 @@ export function buildMonthEvents(meetings: readonly MeetingListItem[]): MeetingM
       return d.getFullYear() === year && d.getMonth() === month;
     })
     .map((m) => {
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      const d = new Date(m.starts_at!);
+      const d = requireStart(m);
       return {
         dayIndex: d.getDate() - 1,
         title: m.title,
@@ -124,13 +133,12 @@ export function buildCurrentDateTitles(): {
   const now = new Date();
   const dayName = DAY_NAMES_LONG[now.getDay()];
   const monthName = MONTH_NAMES[now.getMonth()];
-  // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-  const dateStr = `${dayName}, ${monthName} ${now.getDate()}, ${now.getFullYear()}`;
+  if (dayName === undefined || monthName === undefined) throw new Error("date name index out of range");
+  const dateStr = `${dayName}, ${monthName} ${String(now.getDate())}, ${String(now.getFullYear())}`;
   return {
     detail: dateStr,
     day: dateStr,
-    // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-    month: `${monthName} ${now.getFullYear()}`,
+    month: `${monthName} ${String(now.getFullYear())}`,
   };
 }
 
@@ -153,8 +161,9 @@ export function buildCurrentWeekDays(): { dateRange: string; days: MeetingWeekDa
 
   const sunday = new Date(monday);
   sunday.setDate(monday.getDate() + 6);
-  // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-  const dateRange = `${MONTH_NAMES[monday.getMonth()]} ${monday.getDate()} - ${sunday.getDate()}, ${sunday.getFullYear()}`;
+  const rangeMonth = MONTH_NAMES[monday.getMonth()];
+  if (rangeMonth === undefined) throw new Error("date name index out of range");
+  const dateRange = `${rangeMonth} ${String(monday.getDate())} - ${String(sunday.getDate())}, ${String(sunday.getFullYear())}`;
 
   return { dateRange, days };
 }
@@ -198,8 +207,7 @@ export function buildWeekEventsForRange(
       return d >= monday && d < sunday;
     })
     .map((m) => {
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      const d = new Date(m.starts_at!);
+      const d = requireStart(m);
       const col = ((d.getDay() + 6) % 7) + 1;
       return {
         title: m.title,
@@ -222,8 +230,7 @@ export function buildMonthEventsForRange(
       return d >= start && d < end;
     })
     .map((m) => {
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      const d = new Date(m.starts_at!);
+      const d = requireStart(m);
       return {
         dayIndex: d.getDate() - 1,
         title: m.title,
@@ -255,12 +262,11 @@ export function buildWeekDaysForRange(start: Date): {
   sunday.setDate(monday.getDate() + 6);
   const mMonth = MONTH_NAMES[monday.getMonth()];
   const sMonth = MONTH_NAMES[sunday.getMonth()];
+  if (mMonth === undefined || sMonth === undefined) throw new Error("date name index out of range");
   const dateRange =
     monday.getMonth() === sunday.getMonth()
-      // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-      ? `${mMonth} ${monday.getDate()} - ${sunday.getDate()}, ${sunday.getFullYear()}`
-      // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-      : `${mMonth} ${monday.getDate()} - ${sMonth} ${sunday.getDate()}, ${sunday.getFullYear()}`;
+      ? `${mMonth} ${String(monday.getDate())} - ${String(sunday.getDate())}, ${String(sunday.getFullYear())}`
+      : `${mMonth} ${String(monday.getDate())} - ${sMonth} ${String(sunday.getDate())}, ${String(sunday.getFullYear())}`;
 
   return { dateRange, days };
 }
@@ -329,11 +335,9 @@ export function buildMeetingDetail(m: MeetingListItem): MeetingDetailData {
     if (durationMins >= 60) {
       const hours = Math.floor(durationMins / 60);
       const mins = durationMins % 60;
-      // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-      subtitle += ` (${hours}h${mins > 0 ? ` ${mins}m` : ""})`;
+      subtitle += ` (${String(hours)}h${mins > 0 ? ` ${String(mins)}m` : ""})`;
     } else if (durationMins > 0) {
-      // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-      subtitle += ` (${durationMins}m)`;
+      subtitle += ` (${String(durationMins)}m)`;
     }
   }
 

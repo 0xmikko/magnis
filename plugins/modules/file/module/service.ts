@@ -4,11 +4,11 @@
 // this module only touches graph metadata + links.
 //
 // Ownership: `get`/`attach` precheck via the user-scoped `get_entity_full`
-// (raw `add_link` is NOT user-scoped — DEC-7). `list` relies on the host's
+// (raw `add_link` is NOT user-scoped). `list` relies on the host's
 // already user-scoped `list_entities_window` / `list_entities_by_facet_field`.
 
 import { tool, writeTool, type GraphService, type PluginDeps } from "@magnis/plugin-sdk";
-import type { EntityDetail, FacetRecord, LinkSummary, WindowPage } from "@magnis/plugin-sdk";
+import type { WindowPage } from "@magnis/plugin-sdk";
 import type {
   FileAttachParams,
   FileAttachResult,
@@ -19,16 +19,15 @@ import type {
   FileItem,
   FileListParams,
   FileListResponse,
-} from "../types/index.ts";
-import { hasContent, itemFromDetails } from "./helpers.ts";
-
-const ENTITY = "file.object";
-const DETAILS = "file.details";
-
-function facetData(detail: EntityDetail, schemaId: string): Record<string, unknown> | undefined {
-  const f = detail.facets.find((x) => x.schema_id === schemaId);
-  return f?.data as Record<string, unknown> | undefined;
-}
+} from "../types.ts";
+import { facetData, hasContent, itemFromDetails } from "./helpers.ts";
+import {
+  FILE_AUDIO,
+  FILE_DETAILS,
+  FILE_IMAGE,
+  FILE_OBJECT,
+  FILE_VIDEO,
+} from "../schema.ts";
 
 export class FileModule {
   private readonly graph: GraphService<FileFacets, FileCanonical>;
@@ -66,8 +65,8 @@ export class FileModule {
     let total: number;
     if (params.source_module) {
       const page = await this.graph.list_entities_by_facet_field({
-        entity_schema: ENTITY,
-        facet_schema: DETAILS,
+        entity_schema: FILE_OBJECT,
+        facet_schema: FILE_DETAILS,
         field_path: "$.source_module",
         field_value: params.source_module,
         limit,
@@ -77,7 +76,7 @@ export class FileModule {
       total = page.total;
     } else {
       const win: WindowPage = await this.graph.list_entities_window({
-        schema: ENTITY,
+        schema: FILE_OBJECT,
         order: [{ field: { entity_field: "date" }, desc: true }],
         limit,
         offset,
@@ -90,10 +89,10 @@ export class FileModule {
 
     const facets = await this.graph.list_facets_for_entities(entityIds);
     const detailsById = new Map<string, FileDetails>();
-    for (const f of facets as FacetRecord[]) {
+    for (const f of facets) {
       // list_facets_for_entities (batch) always stamps entity_id.
-      if (f.schema_id === DETAILS && f.entity_id !== undefined) {
-        detailsById.set(f.entity_id, f.data as unknown as FileDetails);
+      if (f.schema_id === FILE_DETAILS && f.entity_id !== undefined) {
+        detailsById.set(f.entity_id, f.data as FileDetails);
       }
     }
 
@@ -102,17 +101,17 @@ export class FileModule {
       const details = detailsById.get(id);
       if (!details) continue;
 
-      // parent_id: keep only files linked from the given parent (DEC-8 — a links
+      // parent_id: keep only files linked from the given parent (a links
       // query, not a facet filter).
       if (params.parent_id) {
         const links = await this.graph.list_links_for_entity(id);
-        if (!(links as LinkSummary[]).some((l) => l.from_id === params.parent_id)) continue;
+        if (!(links).some((l) => l.from_id === params.parent_id)) continue;
       }
-      // mime_prefix: prefix match, refined in-TS (window filter is exact — DEC-8).
-      if (params.mime_prefix && !(details.mime_type ?? "").startsWith(params.mime_prefix)) {
+      // mime_prefix: prefix match, refined in-TS (window filter is exact).
+      if (params.mime_prefix && !details.mime_type.startsWith(params.mime_prefix)) {
         continue;
       }
-      // skip rows with no retrievable content (DEC-8; graph-visible part).
+      // skip rows with no retrievable content (graph-visible part).
       if (!hasContent(details)) continue;
 
       items.push(itemFromDetails(id, details));
@@ -132,16 +131,16 @@ export class FileModule {
   async get(params: FileGetParams): Promise<Record<string, unknown>> {
     // user-scoped → null for a non-owned id; a wrong-schema id must never resolve.
     const detail = await this.graph.get_entity_full(params.id, { links: false });
-    if (!detail || detail.entity.schema_id !== ENTITY) {
+    if (detail?.entity.schema_id !== FILE_OBJECT) {
       throw new Error(`file not found: ${params.id}`);
     }
-    const details = facetData(detail, DETAILS) as FileDetails | undefined;
+    const details = facetData(detail, FILE_DETAILS) as FileDetails | undefined;
     if (!details) throw new Error(`file not found: ${params.id}`);
 
     const base = itemFromDetails(params.id, details) as unknown as Record<string, unknown>;
-    const image = facetData(detail, "file.image");
-    const audio = facetData(detail, "file.audio");
-    const video = facetData(detail, "file.video");
+    const image = facetData(detail, FILE_IMAGE);
+    const audio = facetData(detail, FILE_AUDIO);
+    const video = facetData(detail, FILE_VIDEO);
     if (image) base.image = image;
     if (audio) base.audio = audio;
     if (video) base.video = video;
@@ -163,13 +162,13 @@ export class FileModule {
   })
   async attach(params: FileAttachParams): Promise<FileAttachResult> {
     const kind = params.kind ?? "attachment";
-    // DEC-11: only the "attachment" kind is supported (the sole kind any caller uses).
+    // Only the "attachment" kind is supported (the sole kind any caller uses).
     if (kind !== "attachment") throw new Error(`unsupported attach kind: ${kind}`);
 
-    // DEC-7: own-check both (raw add_link is not user-scoped) and file_id must be
+    // Own-check both (raw add_link is not user-scoped) and file_id must be
     // a file.object — cross-user/invalid ids surface as not-found, no link.
     const file = await this.graph.get_entity_full(params.file_id, { links: false });
-    if (!file || file.entity.schema_id !== ENTITY) {
+    if (file?.entity.schema_id !== FILE_OBJECT) {
       throw new Error(`file not found: ${params.file_id}`);
     }
     const target = await this.graph.get_entity_full(params.target_id, { links: false });

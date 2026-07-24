@@ -31,28 +31,20 @@ function mapEmailListItem(raw: Record<string, unknown>): ListItem {
   const meta = raw.metadata as Record<string, unknown> | undefined;
   const fromName = metaStr(meta, "from_name");
   const fromAddr = metaStr(meta, "from_address");
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-  const subject = metaStr(meta, "subject") ?? (raw.name as string) ?? null;
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-  const sender = fromName ?? fromAddr ?? (raw.sender as string) ?? null;
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-  const sentAt = metaStr(meta, "sent_at") ?? (raw.timestamp as string) ?? (raw.created_at as string) ?? null;
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-  const preview = (raw.preview as string) ?? null;
+  const subject = metaStr(meta, "subject") ?? (raw.name as string | undefined) ?? null;
+  const sender = fromName ?? fromAddr ?? (raw.sender as string | undefined) ?? null;
+  const sentAt = metaStr(meta, "sent_at") ?? (raw.timestamp as string | undefined) ?? (raw.created_at as string | undefined) ?? null;
+  const preview = (raw.preview as string | undefined) ?? null;
 
   return {
     id: raw.id as string,
     name: sender,
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-    schema_id: (raw.schema_id as string) ?? "",
+    schema_id: (raw.schema_id as string | undefined) ?? "",
     preview: subject ? decodeHtmlEntities(subject) : (preview ? decodeHtmlEntities(preview) : null),
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     timestamp: sentAt ?? null,
     avatar_url: null,
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-    is_pinned: (raw.is_pinned as boolean) ?? undefined,
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-    is_archived: (raw.is_archived as boolean) ?? undefined,
+    is_pinned: (raw.is_pinned as boolean | undefined) ?? undefined,
+    is_archived: (raw.is_archived as boolean | undefined) ?? undefined,
   };
 }
 
@@ -93,11 +85,10 @@ export const EmailsModule = defineModule({
   ],
   extractAllowlistTarget: (tc) => {
     if (!isEmailTool(tc.name)) return null;
-    // Batch tools: allowlist handled server-side (INV-6)
+    // Batch tools: allowlist handled server-side
     if (tc.name.includes("batch")) return null;
     const args = tc.args as Record<string, unknown>;
-    // eslint-disable-next-line @typescript-eslint/no-base-to-string
-    const to = args.to != null ? String(args.to) : null;
+    const to = typeof args.to === "string" ? args.to : null;
     if (!to) return null;
     return { action: tc.name, targetType: "email_address", targetId: to, targetLabel: to };
   },

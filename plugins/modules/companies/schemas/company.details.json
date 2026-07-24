@@ -1,0 +1,97 @@
+{
+  "version": 1,
+  "mappings": [
+    {
+      "path": "name",
+      "canonical": "companies.name",
+      "strategy": "single_aligned"
+    },
+    {
+      "path": "description",
+      "canonical": "companies.description",
+      "strategy": "single_aligned"
+    },
+    {
+      "path": "industry",
+      "canonical": "companies.industry",
+      "strategy": "single_aligned"
+    },
+    {
+      "path": "domain",
+      "canonical": "companies.domain",
+      "strategy": "single_aligned"
+    },
+    {
+      "path": "website",
+      "canonical": "companies.website",
+      "strategy": "single_aligned"
+    },
+    {
+      "path": "location",
+      "canonical": "companies.location",
+      "strategy": "single_aligned"
+    },
+    {
+      "path": "size",
+      "canonical": "companies.size",
+      "strategy": "single_aligned"
+    },
+    {
+      "path": "founded",
+      "canonical": "companies.founded",
+      "strategy": "single_aligned"
+    },
+    {
+      "path": "stage",
+      "canonical": "companies.stage",
+      "strategy": "single_aligned"
+    },
+    {
+      "path": "headcount",
+      "canonical": "companies.headcount",
+      "strategy": "single_aligned"
+    },
+    {
+      "path": "funding_total",
+      "canonical": "companies.funding_total",
+      "strategy": "single_aligned"
+    }
+  ],
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "industry": {
+      "type": "string"
+    },
+    "domain": {
+      "type": "string"
+    },
+    "website": {
+      "type": "string"
+    },
+    "location": {
+      "type": "string"
+    },
+    "size": {
+      "type": "string"
+    },
+    "founded": {
+      "type": "string"
+    },
+    "stage": {
+      "type": "string"
+    },
+    "headcount": {
+      "type": "integer"
+    },
+    "funding_total": {
+      "type": "string"
+    }
+  }
+}

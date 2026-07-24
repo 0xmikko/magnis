@@ -1,5 +1,5 @@
 /**
- * Stage 4 — NoteDetail wires the mention popup data flow.
+ * NoteDetail wires the mention popup data flow.
  *
  * What this test covers:
  *   - NoteDetail owns the `(mentionQuery, mentionActive)` state and feeds
@@ -10,10 +10,11 @@
  *     body that already contains the mention link, `notes.update` runs
  *     after the debounce.
  *   - Unmapped-schema results never reach the editor's onChange — the
- *     plugin closes silently (validated in Stage 2). Here we just check
- *     that NoteDetail doesn't try to massage / sync them itself.
+ *     plugin closes silently (covered by the mention-plugin unit tests).
+ *     Here we just check that NoteDetail doesn't try to massage / sync
+ *     them itself.
  *
- * What this test does NOT cover (deferred to Stage 6 manual smoke):
+ * What this test does NOT cover (left to manual smoke testing):
  *   - Booting Milkdown / ProseMirror in happy-dom.
  *   - The actual keystroke → plugin → popup → selectMention path. Those
  *     are unit-tested in mentionPlugin.test.tsx and

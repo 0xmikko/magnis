@@ -1,5 +1,5 @@
 // tst_fe_contacts_social_001 — the contact "Track on X / LinkedIn" toggle drives
-// contacts.set_social_tracking (DEC-9). Toggling on sends tracked=true + handle;
+// contacts.set_social_tracking. Toggling on sends tracked=true + handle;
 // the initial checkbox state reflects contacts.get_social_tracking.
 
 import { render, fireEvent, waitFor } from "@testing-library/react";

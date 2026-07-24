@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "mappings": [
+    {
+      "path": "address",
+      "canonical": "email.address.canonical",
+      "strategy": "single_aligned"
+    }
+  ],
+  "type": "object",
+  "required": [
+    "address"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "address": {
+      "type": "string"
+    },
+    "display_name": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  }
+}

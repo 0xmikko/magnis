@@ -1,25 +1,25 @@
-# StateMock archetype 'phone' (accounts-sync-status plan §11.1): the shared
-# @magnis/source-statemachine connector (bun) in a phone_code/push shape. Eval-only (kind=mock).
+# StateMock 'phone' — the shared @magnis/source-statemachine connector (bun) in
+# a phone_code/push shape, exercising the phone-code auth ceremony and push
+# sync end-to-end in tests. Eval-only (kind=mock).
 
-[source]
 id = "mock-statemachine-phone"
 version = "1.0.0"
+title = "StateMock (Phone)"
+summary = "Shared state-machine mock connector in a phone_code/push shape."
+publisher = "ai.magnis"
 dev = true
 surfaces = ["smp"]
-transport = "stdio"
-account_mode = "single"
 kind = "mock"
+account_mode = "single"
 
 [auth]
 type = "phone_code"
 
+# [spawn] stays: the shared statemachine binary is shaped by CLI flags, not the
+# bare src/main.ts convention.
 [spawn]
 command = "bun"
 args = ["run", "src/main.ts", "--surfaces", "smp", "--mode", "push"]
 
-[profile]
+[sync]
 mode = "push"
-
-# Declared install (extensions-lifecycle DEC-L4): host-standard routine.
-[lifecycle]
-install = "standard"

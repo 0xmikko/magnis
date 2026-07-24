@@ -104,7 +104,11 @@ function flatten(row: Readonly<Record<string, unknown>>): Readonly<Record<string
   }
 
   const linked = row.linked_entities;
-  if (flat.to == null && flat.to_addresses == null && Array.isArray(linked)) {
+  if (
+    (flat.to === null || flat.to === undefined) &&
+    (flat.to_addresses === null || flat.to_addresses === undefined) &&
+    Array.isArray(linked)
+  ) {
     const recipient = (linked as Record<string, unknown>[]).find(
       (e) => e.link_kind === "sent_to" && e.schema_id === "email.address",
     );
@@ -121,7 +125,6 @@ function flatten(row: Readonly<Record<string, unknown>>): Readonly<Record<string
 /** True when the expanded layout would carry information beyond the
  *  compact view (i.e. body, recipients list, or attachments). Used
  *  by `ExpandableEntityCard` to gate the chevron. */
-// eslint-disable-next-line react-refresh/only-export-components
 export function emailHasMore(data: Readonly<Record<string, unknown>>): boolean {
   const flat = flatten(data);
   if (bodyText(flat) !== undefined) return true;

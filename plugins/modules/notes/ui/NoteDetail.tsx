@@ -51,8 +51,9 @@ export function NoteDetail({ noteId }: NoteDetailProps): JSX.Element {
   const deleteMutation = useDeleteNoteMutation();
   // Note: setSelectedNoteId was from old notes store. With BaseModule,
   // selection is managed by BaseModuleComponent via router.
-  // eslint-disable-next-line @typescript-eslint/no-empty-function
-  const setSelectedNoteId = useCallback((_id: string | undefined) => {}, []);
+  const setSelectedNoteId = useCallback((_id: string | undefined) => {
+    /* no-op: selection is managed by BaseModuleComponent via the router */
+  }, []);
 
   // --- State: only valid AFTER init effect confirms data for this noteId ---
   const [localBody, setLocalBody] = useState("");
@@ -67,6 +68,7 @@ export function NoteDetail({ noteId }: NoteDetailProps): JSX.Element {
   const serverBodyRef = useRef("");
   const dirtyRef = useRef(false);
   const localBodyRef = useRef(localBody);
+  // eslint-disable-next-line react-hooks/refs -- latest-ref pattern: keep newest body for the unmount-flush effect; not read during render.
   localBodyRef.current = localBody;
 
   // Which noteId the editor is confirmed initialized for.
@@ -76,7 +78,9 @@ export function NoteDetail({ noteId }: NoteDetailProps): JSX.Element {
   // Synchronously block rendering when noteId changes.
   // This runs during render, BEFORE any effects or Milkdown callbacks.
   const prevNoteIdRef = useRef(noteId);
+  // eslint-disable-next-line react-hooks/refs -- intentional "prop changed since last render" guard (React's adjust-state-during-render pattern): compare + reset synchronously so no stale editor renders.
   if (prevNoteIdRef.current !== noteId) {
+    // eslint-disable-next-line react-hooks/refs -- see above: record the noteId we reset for.
     prevNoteIdRef.current = noteId;
     // Force loading state — editor unmounts immediately, no stale callbacks possible
     if (readyId !== null) setReadyId(null);
@@ -86,8 +90,7 @@ export function NoteDetail({ noteId }: NoteDetailProps): JSX.Element {
   // Must be declared BEFORE init effect so cleanup runs first.
   useEffect(() => {
     const id = noteId;
-    // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
-    return () => {
+    return (): void => {
       if (saveTimerRef.current) {
         clearTimeout(saveTimerRef.current);
         saveTimerRef.current = null;
@@ -112,6 +115,7 @@ export function NoteDetail({ noteId }: NoteDetailProps): JSX.Element {
       const body = stripDuplicatedTitleHeading(note.body ?? "", note.title);
       serverBodyRef.current = body;
       dirtyRef.current = false;
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot editor init when the query first delivers this note's data; gated by readyId so it runs once per noteId.
       setLocalBody(body);
       setEditorKey((k) => k + 1);
       setMode("wysiwyg");
@@ -191,7 +195,7 @@ export function NoteDetail({ noteId }: NoteDetailProps): JSX.Element {
   }, [noteId, localBody, updateMutation]);
 
   // Wired to the context menu in Phase 5 — kept referenced until then.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   const handleDelete = useCallback(() => {
     deleteMutation.mutate({ id: noteId });
     setSelectedNoteId(undefined);
@@ -268,8 +272,7 @@ export function NoteDetail({ noteId }: NoteDetailProps): JSX.Element {
       <div className="flex-1 min-h-0">
         {mode === "wysiwyg" ? (
           <MarkdownEditor
-            // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-            key={`note-${noteId}-${editorKey}`}
+            key={`note-${noteId}-${String(editorKey)}`}
             initialValue={localBody}
             onChange={handleBodyChange}
             placeholder="Start writing..."

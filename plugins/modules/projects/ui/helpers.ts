@@ -9,15 +9,16 @@ function initialsFrom(name: string): string {
   return name
     .split(/\s+/)
     .slice(0, 2)
-    .map((w) => w[0]?.toUpperCase() ?? "")
+    .map((w) => w.at(0)?.toUpperCase() ?? "")
     .join("");
 }
 
 function colorFromId(id: string): AvatarColor {
   let hash = 0;
   for (const ch of id) hash = (hash * 31 + ch.charCodeAt(0)) | 0;
-  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length]!;
+  const color = AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+  if (color === undefined) throw new Error("colorFromId: AVATAR_COLORS is empty");
+  return color;
 }
 
 export function mapProject(item: ProjectListItem): ProjectProfile {

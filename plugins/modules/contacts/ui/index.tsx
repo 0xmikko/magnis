@@ -6,7 +6,6 @@ import { ContactCreateRenderer } from "./ContactCreateRenderer";
 import { ContactMergeRenderer } from "./ContactMergeRenderer";
 import { ContactOverview } from "./ContactOverview";
 
-// eslint-disable-next-line react-refresh/only-export-components
 export const MOCK_TAGS: readonly string[] = [
   "Friend",
   "Partner",
@@ -46,18 +45,12 @@ export const ContactsModule = defineModule({
   getGroupLetter: (item) => item.name?.[0]?.toUpperCase() ?? "#",
   mapListItem: (raw) => ({
     id: raw.id as string,
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-    name: (raw.name as string) ?? null,
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-    schema_id: (raw.schema_id as string) ?? "",
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-    preview: (raw.email as string) ?? (raw.phone as string) ?? null,
+    name: (raw.name as string | undefined) ?? null,
+    schema_id: (raw.schema_id as string | undefined) ?? "",
+    preview: (raw.email as string | undefined) ?? (raw.phone as string | undefined) ?? null,
     timestamp: null,
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-    avatar_url: (raw.avatar_url as string) ?? null,
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-    is_pinned: (raw.is_pinned as boolean) ?? undefined,
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-    is_archived: (raw.is_archived as boolean) ?? undefined,
+    avatar_url: (raw.avatar_url as string | undefined) ?? null,
+    is_pinned: (raw.is_pinned as boolean | undefined) ?? undefined,
+    is_archived: (raw.is_archived as boolean | undefined) ?? undefined,
   }),
 });

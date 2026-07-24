@@ -1,5 +1,32 @@
 import type { RawEntity } from "@magnis/plugin-sdk";
-import type { ProjectCanonical, ProjectListItem } from "../types/index.ts";
+import type { LinkedEntitySummary, ProjectCanonical, ProjectListItem } from "../types.ts";
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** True when `s` is a hyphenated UUID accepted as a project `client_id`. */
+export function isUuid(s: string): boolean {
+  return UUID_RE.test(s);
+}
+
+/** Entity `created_at`, falling back to the epoch when absent (native parity). */
+export function entityCreatedAt(e: RawEntity & { created_at?: string }): string {
+  return e.created_at ?? new Date(0).toISOString();
+}
+
+/** Shape a link neighbour into the detail-view summary (native parity). */
+export function linkSummary(
+  e: { id: string; schema_id: string; name: string },
+  kind: string,
+): LinkedEntitySummary {
+  return {
+    id: e.id,
+    name: e.name && e.name.length > 0 ? e.name : null,
+    schema_id: e.schema_id,
+    link_kind: kind,
+    created_at: entityCreatedAt(e),
+    data: null,
+  };
+}
 
 export function canonicalString(
   c: Partial<ProjectCanonical>,

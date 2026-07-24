@@ -1,0 +1,11 @@
+{
+  "name": "@magnis/source-telegram",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "bun run src/main.ts", "test": "bun test" },
+  "dependencies": {
+    "@magnis/connector-sdk": "workspace:*",
+    "big-integer": "^1.6.52",
+    "telegram": "^2.26.22"
+  }
+}
