@@ -558,7 +558,9 @@ export interface RawDialogLike {
   readOutboxMaxId?: number;
   unreadMentionsCount?: number;
   topMessage?: number;
-  pts?: number;
+  /** Channels carry a pts; basic groups and users do not — gramjs sends an
+   * explicit `null` for those, so the wire type is nullable, not just absent. */
+  pts?: number | null;
   peer?: unknown;
 }
 
@@ -590,7 +592,11 @@ export function buildDialogMeta(
     read_outbox_max_id: raw.readOutboxMaxId ?? 0,
     unread_mentions_count: raw.unreadMentionsCount ?? 0,
     top_message: raw.topMessage ?? 0,
-    ...(raw.pts === undefined ? {} : { pts: raw.pts }),
+    // Absent AND explicit-null both mean "no pts". gramjs sends null for
+    // dialogs that have none — only channels carry one — and the canonical
+    // schema types pts as an integer without requiring it, so a null must be
+    // dropped: forwarding it fails validation for the WHOLE batch.
+    ...(raw.pts === undefined || raw.pts === null ? {} : { pts: raw.pts }),
   };
 }
 
