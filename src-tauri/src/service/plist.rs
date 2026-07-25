@@ -96,8 +96,13 @@ pub fn sidecar_path(macos_dir: &Path, name: &str) -> PathBuf {
 }
 
 /// Path to the bundled secrets file (`Contents/Resources/magnis.env`).
-pub fn env_file_path(resources_dir: &Path) -> PathBuf {
-    resources_dir.join("magnis.env")
+/// The optional operator env file. It lives under the WRITABLE data root, not
+/// in the app bundle: the supervisor writes its filtered twin next to the
+/// source (`.magnis.env.agent-filtered`), and `Contents/Resources` inside an
+/// installed `.app` is not writable. It need not exist — an absent file means
+/// "no baked config", which the supervisor treats as empty.
+pub fn env_file_path(data_root: &Path) -> PathBuf {
+    data_root.join("magnis.env")
 }
 
 /// Is the bundle installed under `/Applications`? Services reference absolute
@@ -151,7 +156,7 @@ pub fn backend_spec(l: &ServiceLayout) -> ServiceSpec {
 /// fork, or a `file://` mirror in tests. `None` uses [`DEFAULT_CATALOG_URL`].
 pub fn backend_spec_with_catalog(l: &ServiceLayout, catalog_override: Option<&str>) -> ServiceSpec {
     let catalog_url = catalog_override.unwrap_or(DEFAULT_CATALOG_URL);
-    let env_file = env_file_path(&l.resources_dir);
+    let env_file = env_file_path(&l.data_root);
     ServiceSpec {
         label: BACKEND_LABEL.to_string(),
         program: sidecar_path(&l.macos_dir, "magnis-server"),
@@ -375,6 +380,24 @@ mod tests {
         );
     }
 
+    // @test-id: tst_desktop_plist_012
+    // MAGNIS_ENV_FILE must point INTO the data root. The supervisor writes the
+    // agent's filtered copy next to the source, and Contents/Resources in an
+    // installed .app is read-only — pointing it at the bundle made the backend
+    // exit(1) at boot with an empty stderr.
+    #[test]
+    fn tst_desktop_plist_012_env_file_lives_in_the_writable_data_root() {
+        let l = fixture_layout();
+        let backend = render_plist(&backend_spec(&l));
+        assert!(backend.contains(
+            "<string>/Users/x/Library/Application Support/com.magnis.desktop/magnis.env</string>"
+        ));
+        assert!(
+            !backend.contains("Contents/Resources/magnis.env"),
+            "the bundle is not writable — the filtered twin cannot be written there"
+        );
+    }
+
     // @test-id: tst_desktop_plist_010  @invariant: dmg-github-catalog INV-2, INV-3
     // The DMG delivers plugins from the GitHub catalog, so the launchd env must
     // (a) carry MAGNIS_CATALOG_URL as a BASE url — remote_catalog appends
@@ -463,8 +486,10 @@ mod tests {
             Path::new("/Applications/Magnis.app/Contents/MacOS/agent-server")
         );
         assert_eq!(
-            env_file_path(&bp.resources_dir),
-            Path::new("/Applications/Magnis.app/Contents/Resources/magnis.env")
+            env_file_path(Path::new(
+                "/Users/x/Library/Application Support/com.magnis.desktop"
+            )),
+            Path::new("/Users/x/Library/Application Support/com.magnis.desktop/magnis.env")
         );
         assert!(is_under_applications(&bp.bundle_root));
         assert!(!is_under_applications(Path::new(
