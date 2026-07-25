@@ -62,6 +62,7 @@ fn main() -> anyhow::Result<()> {
         cfg!(debug_assertions),
         cfg!(target_os = "macos"),
         std::env::var("MAGNIS_DESKTOP_MODE").ok().as_deref(),
+        desktop_mode::bundle_is_signed(),
     );
     println!("Desktop backend mode: {mode:?}");
 
