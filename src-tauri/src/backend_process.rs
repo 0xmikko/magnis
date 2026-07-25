@@ -264,19 +264,43 @@ impl BackendProcessManager {
         // `paths::ensure_plugin_tree`, and the catalog channel is a BASE url.
         // A repo checkout still wins in dev so `cargo tauri dev` keeps working
         // against the working tree instead of the installed store.
+        // An explicit MAGNIS_PLUGINS_DIR from the environment wins over both
+        // the bundle and the repo probe. Without this an operator cannot point
+        // a packaged build at a real plugin tree — which is exactly what is
+        // needed to run the shipped shell against a working catalog (sources
+        // included) instead of the empty store dir the bundle ships with.
+        if let Ok(explicit) = std::env::var("MAGNIS_PLUGINS_DIR") {
+            if !explicit.is_empty() {
+                cmd.env("MAGNIS_PLUGINS_DIR", &explicit);
+            }
+        }
         match plugin_dirs() {
             Some((plugins_dir, plugins_dist)) => {
                 cmd.env("MAGNIS_PLUGINS_DIR", &plugins_dir)
                     .env("MAGNIS_PLUGINS_DIST_DIR", &plugins_dist);
             }
             None => {
-                if let Ok(dir) = crate::paths::ensure_plugin_tree(data_root) {
-                    cmd.env("MAGNIS_PLUGINS_DIR", &dir);
+                // Only fall back when nothing explicit was provided above.
+                if std::env::var("MAGNIS_PLUGINS_DIR")
+                    .ok()
+                    .filter(|v| !v.is_empty())
+                    .is_none()
+                {
+                    if let Ok(dir) = crate::paths::ensure_plugin_tree(data_root) {
+                        cmd.env("MAGNIS_PLUGINS_DIR", &dir);
+                    }
                 }
             }
         }
         // Same zero-download default as the launchd contract (plist.rs).
-        cmd.env("EMBEDDINGS_PROVIDER", "tfidf");
+        // Zero-download default, unless the operator asked for a real model.
+        if std::env::var("EMBEDDINGS_PROVIDER")
+            .ok()
+            .filter(|v| !v.is_empty())
+            .is_none()
+        {
+            cmd.env("EMBEDDINGS_PROVIDER", "tfidf");
+        }
         cmd.env(
             "MAGNIS_CATALOG_URL",
             std::env::var("MAGNIS_CATALOG_URL")
