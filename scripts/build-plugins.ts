@@ -147,13 +147,32 @@ export async function buildPlugin(pluginId: string, opts: BuildOpts = {}): Promi
     const legacyDecoratorTranspile = {
       name: "magnis-plugin-module",
       setup(build: {
-        onResolve: (o: { filter: RegExp }, cb: () => { path: string }) => void;
+        onResolve: (
+          o: { filter: RegExp },
+          cb: (a: { path: string; importer: string }) => { path: string },
+        ) => void;
         onLoad: (
           o: { filter: RegExp },
           cb: (a: { path: string }) => { contents: string; loader: "js" },
         ) => void;
       }): void {
         build.onResolve({ filter: /^@magnis\/plugin-sdk$/ }, () => ({ path: sdkPath }));
+        // Relative specifiers are resolved here for the same reason the SDK one
+        // is: determinism. The onLoad hook below hands Bun transpiled JS while
+        // the specifiers inside stay TypeScript's — `../schema.ts`. Asking Bun
+        // to resolve a `.ts` path out of a file we declared `loader: "js"` is a
+        // mismatch WE introduce, and its default resolver does not survive that
+        // uniformly: the same commit bundles on macOS and fails on Linux CI with
+        // `Could not resolve: "../schema.ts"`. We own the transpile, so we own
+        // the resolve. `join` normalises the `..` against the absolute importer.
+        //
+        // ONLY specifiers that already carry the `.ts`/`.tsx` extension: those
+        // name a real file, so joining them is exact. Extensionless ones like
+        // `./helpers` still need Bun's extension probing — taking those over
+        // would resolve them to a path that does not exist.
+        build.onResolve({ filter: /^\.\.?\/.*\.tsx?$/ }, (a) => ({
+          path: join(dirname(a.importer), a.path),
+        }));
         build.onLoad({ filter: /\.tsx?$/ }, (a) => {
           const out = ts.transpileModule(readFileSync(a.path, "utf8"), {
             compilerOptions: {
