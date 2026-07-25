@@ -19,6 +19,7 @@ import type { AgentHistoryBlock } from "@/runtime/contracts";
 import { TelegramModule } from "../index";
 import { TelegramSetTriggerRenderer } from "../TelegramSetTriggerRenderer";
 import { TelegramBatchSendRenderer } from "../TelegramBatchSendRenderer";
+import { TelegramToolCallRenderer } from "../TelegramToolCallRenderer";
 
 function blockFor(toolName: string): AgentHistoryBlock {
   return { toolName } as AgentHistoryBlock;
@@ -40,6 +41,24 @@ describe("tst_fe_agent_006 — telegram set_trigger/batch_send blocks resolve to
     const reg = registry.resolveHistoryRenderer(blockFor("telegram.batch_send"));
     expect(reg).not.toBeNull();
     expect(reg?.Render).toBe(TelegramBatchSendRenderer);
+  });
+
+  // The same registration defect, found again in production: the module gained
+  // a `messages.reply` write tool, the registry was never extended, and every
+  // reply approval rendered as "Agent wants to: telegram messages reply" with a
+  // raw "Chat ID: 12223076" line. Both spellings must resolve — defineModule
+  // emits the dotted and underscored forms, and the agent has been observed
+  // emitting the underscored one.
+  it("resolves telegram.messages.reply to TelegramToolCallRenderer", () => {
+    const reg = registry.resolveHistoryRenderer(blockFor("telegram.messages.reply"));
+    expect(reg).not.toBeNull();
+    expect(reg?.Render).toBe(TelegramToolCallRenderer);
+  });
+
+  it("resolves the underscored telegram_messages_reply too", () => {
+    const reg = registry.resolveHistoryRenderer(blockFor("telegram_messages_reply"));
+    expect(reg).not.toBeNull();
+    expect(reg?.Render).toBe(TelegramToolCallRenderer);
   });
 
   it("does NOT resolve an unrelated telegram tool (falls through to the generic card)", () => {
