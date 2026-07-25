@@ -314,7 +314,7 @@ impl BackendProcessManager {
         // DEFAULT_ENGINE / PATH are forwarded from the desktop's own env
         // (set by `run-spawn.sh` in dev) so the agent reaches node + the
         // claude/codex CLI; PATH is the desktop's inherited PATH.
-        Self::apply_agent_spawn_env(&mut cmd, port);
+        Self::apply_agent_spawn_env(&mut cmd, port, data_root);
         let child = cmd.spawn().context("Failed to spawn magnis-server")?;
 
         let base_url = format!("http://127.0.0.1:{}", port);
@@ -342,7 +342,7 @@ impl BackendProcessManager {
     /// `*_API_KEY` before the agent loads it). If either is missing the gate
     /// stays OFF and the reason is logged, rather than spawning a broken
     /// agent that crash-loops.
-    fn apply_agent_spawn_env(cmd: &mut Command, backend_port: u16) {
+    fn apply_agent_spawn_env(cmd: &mut Command, backend_port: u16, data_root: &std::path::Path) {
         let agent_command = match Self::agent_binary_path() {
             Ok(p) => p,
             Err(e) => {
@@ -353,16 +353,14 @@ impl BackendProcessManager {
                 return;
             }
         };
+        // Default to the same path the launchd contract uses. Bailing out here
+        // meant the agent silently never spawned in spawn mode — nothing sets
+        // this var outside the plist — and the app showed "No agents available
+        // — the agent runtime is not reachable" with no other clue. The file
+        // itself is optional: the supervisor treats an absent one as empty.
         let env_file = match std::env::var("MAGNIS_ENV_FILE") {
             Ok(v) if !v.is_empty() => v,
-            _ => {
-                eprintln!(
-                    "[backend-owns-agent] not enabling: MAGNIS_ENV_FILE is not set. \
-                     Set it to the env file (its API keys are filtered out before the agent \
-                     loads it)."
-                );
-                return;
-            }
+            _ => data_root.join("magnis.env").to_string_lossy().into_owned(),
         };
         let mcp_proxy = std::env::var("MAGNIS_MCP_PROXY_PATH")
             .ok()
