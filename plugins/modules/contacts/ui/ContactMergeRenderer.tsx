@@ -216,3 +216,18 @@ export function ContactMergeRenderer({
     </BaseToolCallCard>
   );
 }
+
+/**
+ * `contacts.merge_preview` renders NOTHING on purpose.
+ *
+ * It is a read tool whose whole payload — the survivor/retired comparison —
+ * is already drawn by ContactMergeRenderer, which fetches the preview itself.
+ * The agent nevertheless calls it explicitly once per candidate pair, so
+ * without a registration each call left a bare "contacts merge preview" row
+ * in the transcript: no content, no action, one per pair. Registering silence
+ * is the honest fix — the information is not missing, it is shown by the card
+ * the preview belongs to.
+ */
+export function ContactMergePreviewSilent(): null {
+  return null;
+}
