@@ -139,7 +139,18 @@ pub fn agent_path(home_dir: &Path, macos_dir: &Path) -> String {
 /// PATH). The backend reads these and spawns + supervises `agent-server`
 /// itself — wiring both ports from one place so they can't desync. Never
 /// any `*_API_KEY` here (subscription-only).
+/// The public plugin catalog channel: the `catalog` branch of the plugins
+/// repo, served raw. A BASE url — never suffixed with `index.json`.
+pub const DEFAULT_CATALOG_URL: &str = "https://raw.githubusercontent.com/0xmikko/magnis/catalog";
+
 pub fn backend_spec(l: &ServiceLayout) -> ServiceSpec {
+    backend_spec_with_catalog(l, None)
+}
+
+/// `backend_spec` with an explicit channel override — an operator env var, a
+/// fork, or a `file://` mirror in tests. `None` uses [`DEFAULT_CATALOG_URL`].
+pub fn backend_spec_with_catalog(l: &ServiceLayout, catalog_override: Option<&str>) -> ServiceSpec {
+    let catalog_url = catalog_override.unwrap_or(DEFAULT_CATALOG_URL);
     let env_file = env_file_path(&l.resources_dir);
     ServiceSpec {
         label: BACKEND_LABEL.to_string(),
@@ -161,22 +172,21 @@ pub fn backend_spec(l: &ServiceLayout) -> ServiceSpec {
             // not the cloud billable path — disable the billable-only gate so
             // `claude`/`codex` are allowed locally (release default is `true`).
             ("BILLABLE_ENGINES_ONLY".into(), "false".into()),
-            // Bundled plugin packages → presence-seeded at boot (companies,
-            // email, telegram, …) and the plugin store works offline.
+            // Plugins are NOT bundled — they are installed from the catalog
+            // channel into the store under the data root. The dir must still
+            // EXIST and be canonicalizable: `build_plugin_installer` returns
+            // None without `MAGNIS_PLUGINS_DIR`, and without an installer
+            // `extensions.install` cannot run at all. `paths` creates it.
+            // MAGNIS_PLUGINS_DIST_DIR is intentionally absent: bootstrap
+            // derives the `plugins_dist` sibling and no-ops when missing.
             (
                 "MAGNIS_PLUGINS_DIR".into(),
-                l.resources_dir
-                    .join("plugins")
-                    .to_string_lossy()
-                    .into_owned(),
+                l.data_root.join("plugins").to_string_lossy().into_owned(),
             ),
-            (
-                "MAGNIS_PLUGINS_DIST_DIR".into(),
-                l.resources_dir
-                    .join("plugins_dist")
-                    .to_string_lossy()
-                    .into_owned(),
-            ),
+            // The catalog channel is a BASE url — `remote_catalog::fetch_bytes`
+            // appends `index.json` / `packages/...` itself, so a URL ending in
+            // `/index.json` here would produce `.../index.json/index.json`.
+            ("MAGNIS_CATALOG_URL".into(), catalog_url.to_string()),
             ("RUST_LOG".into(), "info".into()),
             (
                 "MAGNIS_ENV_FILE".into(),
@@ -308,7 +318,7 @@ mod tests {
             "AGENT_URL",
             "CORS_ALLOWED_ORIGINS",
             "MAGNIS_PLUGINS_DIR",
-            "MAGNIS_PLUGINS_DIST_DIR",
+            "MAGNIS_CATALOG_URL",
             "RUST_LOG",
             "MAGNIS_ENV_FILE",
         ] {
@@ -363,6 +373,53 @@ mod tests {
             !backend.contains("com.magnis.agent"),
             "the standalone agent service is removed"
         );
+    }
+
+    // @test-id: tst_desktop_plist_010  @invariant: dmg-github-catalog INV-2, INV-3
+    // The DMG delivers plugins from the GitHub catalog, so the launchd env must
+    // (a) carry MAGNIS_CATALOG_URL as a BASE url — remote_catalog appends
+    // "/index.json" itself — and (b) point MAGNIS_PLUGINS_DIR at the writable
+    // data root, NOT at bundle resources that no longer ship a plugin payload.
+    // MAGNIS_PLUGINS_DIST_DIR is gone: bootstrap derives the sibling and no-ops.
+    #[test]
+    fn tst_desktop_plist_010_catalog_url_and_data_root_plugins() {
+        let l = fixture_layout();
+        let backend = render_plist(&backend_spec(&l));
+
+        assert!(
+            backend.contains("<key>MAGNIS_CATALOG_URL</key>"),
+            "launchd env must carry the catalog channel"
+        );
+        assert!(
+            !backend.contains("/index.json"),
+            "MAGNIS_CATALOG_URL must be the BASE url — fetch_bytes appends the rel path"
+        );
+        assert!(
+            backend.contains(
+                "<string>/Users/x/Library/Application Support/com.magnis.desktop/plugins</string>"
+            ),
+            "MAGNIS_PLUGINS_DIR must live under the data root"
+        );
+        assert!(
+            !backend.contains("Contents/Resources/plugins"),
+            "must not point at bundle resources — the DMG ships no plugin payload"
+        );
+        assert!(
+            !backend.contains("<key>MAGNIS_PLUGINS_DIST_DIR</key>"),
+            "dist dir is derived by the backend; nothing is bundled to point at"
+        );
+    }
+
+    // @test-id: tst_desktop_plist_011  @invariant: dmg-github-catalog INV-2
+    // An operator-supplied channel (a fork, or a file:// mirror in tests) wins
+    // over the default, so the same build can be pointed at a test catalog.
+    #[test]
+    fn tst_desktop_plist_011_ambient_catalog_url_overrides() {
+        let l = fixture_layout();
+        let spec = backend_spec_with_catalog(&l, Some("file:///tmp/cat"));
+        let backend = render_plist(&spec);
+        assert!(backend.contains("<string>file:///tmp/cat</string>"));
+        assert!(!backend.contains("raw.githubusercontent.com"));
     }
 
     // @test-id: tst_desktop_plist_002  @invariant: INV-3 (no secrets in plist)

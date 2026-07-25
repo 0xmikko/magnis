@@ -259,10 +259,27 @@ impl BackendProcessManager {
         // Enable first-party plugins (companies, email, telegram, …): point the
         // backend at the bundled (or repo, in dev) plugin packages so they are
         // presence-seeded at boot and the plugin store works.
-        if let Some((plugins_dir, plugins_dist)) = plugin_dirs() {
-            cmd.env("MAGNIS_PLUGINS_DIR", &plugins_dir)
-                .env("MAGNIS_PLUGINS_DIST_DIR", &plugins_dist);
+        // Dev/spawn parity with the launchd contract (service/plist.rs): the
+        // plugin root lives under the data root and is created by
+        // `paths::ensure_plugin_tree`, and the catalog channel is a BASE url.
+        // A repo checkout still wins in dev so `cargo tauri dev` keeps working
+        // against the working tree instead of the installed store.
+        match plugin_dirs() {
+            Some((plugins_dir, plugins_dist)) => {
+                cmd.env("MAGNIS_PLUGINS_DIR", &plugins_dir)
+                    .env("MAGNIS_PLUGINS_DIST_DIR", &plugins_dist);
+            }
+            None => {
+                if let Ok(dir) = crate::paths::ensure_plugin_tree(data_root) {
+                    cmd.env("MAGNIS_PLUGINS_DIR", &dir);
+                }
+            }
         }
+        cmd.env(
+            "MAGNIS_CATALOG_URL",
+            std::env::var("MAGNIS_CATALOG_URL")
+                .unwrap_or_else(|_| crate::service::plist::DEFAULT_CATALOG_URL.to_string()),
+        );
         // Backend owns the agent in spawn mode too: set the gate flag +
         // the COMPLETE agent spawn spec on the backend, so it spawns +
         // supervises `agent-server` itself (both ports wired from one

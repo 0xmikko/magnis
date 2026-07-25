@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "cd ../frontend && MAGNIS_BACKEND_PORT=3765 VITE_API_URL=http://localhost:5190 bun run dev -- --port 5190",
     "devUrl": "http://localhost:5190",
-    "beforeBuildCommand": "bash build/bundle-embedded-pg.sh && bash build/bundle-agent.sh && bash build/bundle-plugins.sh && cd ../frontend && VITE_API_URL=http://localhost:3765 bun run build",
+    "beforeBuildCommand": "bash build/bundle-embedded-pg.sh && bash build/bundle-agent.sh && cd ../frontend && VITE_API_URL=http://localhost:3765 bun run build",
     "frontendDist": "../../frontend/dist"
   },
   "app": {
@@ -44,9 +44,7 @@
       "binaries/agent-server"
     ],
     "resources": [
-      "magnis.env",
-      "plugins",
-      "plugins_dist"
+      "mcp-stdio-proxy.mjs"
     ]
   }
 }

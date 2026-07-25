@@ -9,8 +9,7 @@ use tauri::{AppHandle, Manager};
 /// Covers the google compatibility alias `/oauth/callback` and the namespaced
 /// `/auth/sources/<id>/callback`.
 fn is_oauth_callback_path(path: &str) -> bool {
-    path == "/oauth/callback"
-        || (path.starts_with("/auth/sources/") && path.ends_with("/callback"))
+    path == "/oauth/callback" || (path.starts_with("/auth/sources/") && path.ends_with("/callback"))
 }
 
 /// Open a new webview window for OAuth authentication.
