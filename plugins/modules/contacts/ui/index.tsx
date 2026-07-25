@@ -3,7 +3,7 @@ import { defineModule } from "@magnis/host/base";
 import { ContactCard, contactHasMore } from "./EntityCards";
 import { ContactBatchCreateRenderer } from "./ContactBatchCreateRenderer";
 import { ContactCreateRenderer } from "./ContactCreateRenderer";
-import { ContactMergeRenderer } from "./ContactMergeRenderer";
+import { ContactMergeRenderer, ContactMergePreviewSilent } from "./ContactMergeRenderer";
 import { ContactOverview } from "./ContactOverview";
 
 export const MOCK_TAGS: readonly string[] = [
@@ -36,9 +36,14 @@ export const ContactsModule = defineModule({
       actions: ["batch_create"],
       Render: ContactBatchCreateRenderer as never,
     },
-{
+    {
       actions: ["merge"],
       Render: ContactMergeRenderer as never,
+    },
+    {
+      // Drawn as nothing: the merge card already shows this preview.
+      actions: ["merge_preview"],
+      Render: ContactMergePreviewSilent as never,
     },
   ],
   groupBy: "letter",
