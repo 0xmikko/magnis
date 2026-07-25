@@ -275,6 +275,8 @@ impl BackendProcessManager {
                 }
             }
         }
+        // Same zero-download default as the launchd contract (plist.rs).
+        cmd.env("EMBEDDINGS_PROVIDER", "tfidf");
         cmd.env(
             "MAGNIS_CATALOG_URL",
             std::env::var("MAGNIS_CATALOG_URL")

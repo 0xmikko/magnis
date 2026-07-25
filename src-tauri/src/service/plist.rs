@@ -192,6 +192,13 @@ pub fn backend_spec_with_catalog(l: &ServiceLayout, catalog_override: Option<&st
             // appends `index.json` / `packages/...` itself, so a URL ending in
             // `/index.json` here would produce `.../index.json/index.json`.
             ("MAGNIS_CATALOG_URL".into(), catalog_url.to_string()),
+            // Boot must never download. The backend's default embedding
+            // provider is FastEmbed multilingual-e5-small — ~500 MB fetched
+            // from HuggingFace during startup, which no fresh machine can
+            // finish inside the health budget. Start on the zero-download
+            // keyword index; setup offers the heavier models explicitly, with
+            // their size shown and their download visible.
+            ("EMBEDDINGS_PROVIDER".into(), "tfidf".into()),
             ("RUST_LOG".into(), "info".into()),
             (
                 "MAGNIS_ENV_FILE".into(),
@@ -378,6 +385,17 @@ mod tests {
             !backend.contains("com.magnis.agent"),
             "the standalone agent service is removed"
         );
+    }
+
+    // @test-id: tst_desktop_plist_013
+    // A fresh install must not try to download a ~500 MB model while the
+    // desktop counts down its health timeout.
+    #[test]
+    fn tst_desktop_plist_013_boot_uses_the_zero_download_index() {
+        let l = fixture_layout();
+        let backend = render_plist(&backend_spec(&l));
+        assert!(backend.contains("<key>EMBEDDINGS_PROVIDER</key>"));
+        assert!(backend.contains("<string>tfidf</string>"));
     }
 
     // @test-id: tst_desktop_plist_012
