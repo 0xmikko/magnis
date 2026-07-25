@@ -130,6 +130,23 @@ describe("tst_fe_contacts_info_006 — no duplicate telegram link", () => {
   });
 });
 
+describe("tst_fe_contacts_info_008 — duplicate facet rows collapse", () => {
+  it("renders one row per distinct address, not one per facet", () => {
+    // Google-synced `contacts.person.email` facets carry external_id: null,
+    // so the partial unique index never applies and re-syncs pile up. The
+    // owner's live graph has an entity with 711 email facets covering 3
+    // distinct addresses; `contacts.get` returns every one of them.
+    const facets: FacetSummary[] = [];
+    for (let i = 0; i < 237; i++) {
+      facets.push(facet("contacts.person.email", { email: "a@x.com" }));
+      facets.push(facet("contacts.person.email", { email: "b@x.com" }));
+      facets.push(facet("contacts.person.email", { email: "c@x.com" }));
+    }
+    const { container } = render(<ContactInfoColumn facets={facets} />);
+    expect(container.querySelectorAll("a[href^='mailto:']").length).toBe(3);
+  });
+});
+
 describe("tst_fe_contacts_info_007 — designed empty state", () => {
   it("renders an empty state instead of nothing when there is no detail", () => {
     const { container, getByText } = render(<ContactInfoColumn facets={[]} />);
