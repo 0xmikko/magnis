@@ -118,6 +118,33 @@ pub fn is_under_applications(bundle_root: &Path) -> bool {
 /// can't expand `$HOME`, so we resolve the user paths into absolutes here.
 /// Order mirrors `desktop/run-spawn.sh`: user bins first, then Homebrew,
 /// then the bundle's `MacOS` dir (connectors), then the system minimum.
+/// The user's REAL `PATH`, asked from their login shell.
+///
+/// A Finder-launched app inherits a minimal environment — it never sources
+/// `.zshrc`/`.zprofile` — so `which claude` from inside the app finds nothing
+/// even when the CLI is installed and logged in. That is exactly how a working
+/// Claude Code install surfaced as "Not logged in · Please run /login": the
+/// agent could not see the binary at all. An interactive login shell gives the
+/// same PATH a terminal would, so tools installed anywhere the user configured
+/// are found — not just the handful of directories we happen to hardcode.
+///
+/// Best-effort: on any failure the caller falls back to the known locations.
+fn login_shell_path() -> Option<String> {
+    let shell = std::env::var("SHELL").ok()?;
+    let out = std::process::Command::new(&shell)
+        .args(["-ilc", "printf %s \"$PATH\""])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if path.is_empty() || !path.contains('/') {
+        return None;
+    }
+    Some(path)
+}
+
 pub fn agent_path(home_dir: &Path, macos_dir: &Path) -> String {
     let parts = [
         home_dir.join(".local/bin"),
@@ -129,11 +156,25 @@ pub fn agent_path(home_dir: &Path, macos_dir: &Path) -> String {
         PathBuf::from("/usr/sbin"),
         PathBuf::from("/sbin"),
     ];
-    parts
+    let known = parts
         .iter()
         .map(|p| p.to_string_lossy().into_owned())
-        .collect::<Vec<_>>()
-        .join(":")
+        .collect::<Vec<_>>();
+    // The sidecar dir must come first regardless — it is ours, and the login
+    // shell knows nothing about it. Everything the user's shell knows follows,
+    // then the known locations as a floor so a stripped profile still works.
+    let mut out: Vec<String> = vec![macos_dir.to_string_lossy().into_owned()];
+    for candidate in login_shell_path()
+        .unwrap_or_default()
+        .split(':')
+        .map(str::to_string)
+        .chain(known)
+    {
+        if !candidate.is_empty() && !out.contains(&candidate) {
+            out.push(candidate);
+        }
+    }
+    out.join(":")
 }
 
 /// Build the backend service spec from the resolved layout.

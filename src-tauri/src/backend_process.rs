@@ -376,7 +376,18 @@ impl BackendProcessManager {
         let default_engine =
             std::env::var("DEFAULT_ENGINE").unwrap_or_else(|_| "claude".to_string());
         let agent_port = std::env::var("AGENT_PORT").unwrap_or_else(|_| "3002".to_string());
-        let path = std::env::var("PATH").unwrap_or_default();
+        // Same PATH the launchd contract builds — asked from the login shell so
+        // the agent finds `claude`/`codex` wherever the user installed them.
+        // Inheriting the GUI process's PATH is not enough: a Finder launch
+        // never sources the shell profile, so a perfectly good Claude Code
+        // install reported "Not logged in" simply because it was invisible.
+        let path = crate::service::plist::agent_path(
+            &dirs::home_dir().unwrap_or_default(),
+            &std::env::current_exe()
+                .ok()
+                .and_then(|p| p.parent().map(std::path::Path::to_path_buf))
+                .unwrap_or_default(),
+        );
 
         cmd.env("MAGNIS_BACKEND_OWNS_AGENT", "1")
             .env("MAGNIS_AGENT_COMMAND", &agent_command)
