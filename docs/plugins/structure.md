@@ -282,11 +282,14 @@ it; until then it is a review gate.)
 
 ---
 
-## 9. Scaffolding (planned)
+## 9. Scaffolding
 
-A `create-module` / `create-surface` generator emits the empty skeleton in the
-shapes above — folder, stub files, manifest entry — so an author (or an agent)
-fills in behavior instead of remembering layout. The generator is the executable
-form of this document; if they disagree, the generator is the bug. The
-`check-plugin` conformance script (see the conformance checklist) is its
-mirror on the verification side.
+Module scaffolding exists today: `bun scripts/plugin-new.ts <id>` emits the
+empty module skeleton in the shapes above — folder, stub files, manifest entry —
+so an author (or an agent) fills in behavior instead of remembering layout. The
+generator is the executable form of this document; if they disagree, the
+generator is the bug.
+
+Planned: a source-connector scaffolder, and the `check-plugin` conformance
+script (see the conformance checklist) as the generator's mirror on the
+verification side.

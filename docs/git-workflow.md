@@ -29,14 +29,12 @@ follow this.
 
 ```bash
 bun install --frozen-lockfile
-bun run typecheck        # module packages + SDKs
+bun run typecheck        # modules + sources + packages + scripts
+bun run lint             # eslint
 bun run test             # vitest
 bun run test:connectors  # every source connector suite
 bun run test:scripts     # tooling
 ```
-
-Connectors under `plugins/sources/*` are not covered by `typecheck-all.sh` —
-when you touch one, also `tsc` it against `tsconfig.base.json`.
 
 ## Implementation loop (TDD)
 

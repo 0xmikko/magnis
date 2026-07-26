@@ -2,10 +2,11 @@
 
 ## What this repository is
 
-This is the **open plugin catalog** for [Magnis](https://magnis.ai) — the
-connectors, domain modules, and SDKs that plug into the (closed) Magnis core.
-Think of it the way VS Code splits from its extensions: the core is private,
-the ecosystem around it is public and here.
+This is the **official public repo** for [Magnis](https://magnis.ai) — the
+plugin catalog (connectors, domain modules, SDKs) that plugs into the (closed)
+Magnis core, plus the public evals; testable desktop builds ship here via
+Releases as local install lands. Think of it the way VS Code splits from its
+extensions: the core is private, the ecosystem around it is public and here.
 
 Everything in this repo is **TypeScript, run by bun**. There is no Rust here —
 connectors are `bun run src/main.ts` processes the core spawns and talks to over
@@ -20,16 +21,19 @@ published catalog; day-to-day work lands on `staging` (see Git workflow).
 ```
 plugins/
   sources/     provider connectors — pull data from an external service into the
-               graph over the connector contract (google, telegram, x, linkedin,
-               + dev mocks). Each: manifest.toml + src/main.ts + *.test.ts.
+               graph over the connector contract (google, telegram, x, x-mcp,
+               anysite, local, + dev mocks). Each: manifest.toml + src/main.ts +
+               *.test.ts.
   modules/     domain adapters — shape ingested data into the graph and serve the
                UI (contacts, email, meetings, telegram, companies, projects, …).
 packages/
-  connector-sdk   the wire contract a source implements (fetch cursors, push,
-                  auth flows, magnis.execute, rate-limit signalling).
-  plugin-sdk      the module/plugin runtime surface (definePlugin, graph ops).
-  host-stubs      TYPES ONLY — the host surface a plugin compiles against.
-docs/          architecture, principles, use-cases, plugin authoring.
+  connector-sdk        the wire contract a source implements (fetch cursors, push,
+                       auth flows, magnis.execute, rate-limit signalling).
+  plugin-sdk           the module/plugin runtime surface (definePlugin, graph ops).
+  host-stubs           TYPES ONLY — the host surface a plugin compiles against.
+  source-statemachine  the auth/sync state machine shared by source connectors.
+  testkit              dev-only test doubles + builders; never ships in a bundle.
+docs/          architecture, plugin authoring, git workflow.
 scripts/       typecheck / test / bundle tooling.
 ```
 
@@ -37,16 +41,13 @@ scripts/       typecheck / test / bundle tooling.
 
 ```bash
 bun install --frozen-lockfile
-bun run typecheck        # tsc over the module packages + SDKs
+bun run typecheck        # tsc over modules + sources + packages + scripts
+bun run lint             # eslint (also enforced by pre-commit and CI)
 bun run test             # vitest — modules + SDK unit tests
 bun run test:connectors  # each source connector's own suite
 bun run test:scripts     # tooling tests
 bun run build:plugins    # bundle each plugin's UI (build-time, dependency-closed)
 ```
-
-Note: `typecheck-all.sh` iterates the module packages and does **not** reach
-`plugins/sources/*`. When you change a connector, typecheck it directly against
-`tsconfig.base.json`.
 
 ## The connector contract (non-negotiable)
 
@@ -94,5 +95,5 @@ See [docs/git-workflow.md](docs/git-workflow.md). Summary:
 - Feature branches: `feat/<topic>`, `fix/<topic>`, `docs/<topic>`, `ci/<topic>`.
 - Conventional Commits, scope = the plugin/package touched
   (`fix(sources): …`, `feat(connector-sdk): …`, `docs: …`).
-- Every commit must leave `bun run typecheck && test && test:connectors &&
-  test:scripts` green.
+- Every commit must leave `bun run typecheck && lint && test && test:connectors
+  && test:scripts` green.

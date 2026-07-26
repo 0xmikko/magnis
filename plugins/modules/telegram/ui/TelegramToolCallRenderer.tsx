@@ -17,18 +17,24 @@ export function TelegramToolCallRenderer({
     selectedChatName ??
     chatIdLabel;
 
+  // `messages.reply` carries the same shape as `messages.send` plus the message
+  // it answers, so it shares this card rather than forking a near-duplicate.
+  // The wording still has to be honest: "Send" on a reply reads as a new
+  // message to the chat, which is not what approving it does.
+  const isReply = args.reply_to_message_id !== undefined;
+
   return (
     <BaseToolCallCard
       icon="send"
-      title={`Telegram to ${chatName}`}
+      title={isReply ? `Reply in ${chatName}` : `Telegram to ${chatName}`}
       variant="sky"
       status={tc.status}
       toolResult={toolResult}
       superseded={superseded}
       isAllowlisted={isAllowlisted}
-      primaryLabel="Send"
+      primaryLabel={isReply ? "Reply" : "Send"}
       primaryIcon="send"
-      doneLabel="Sent"
+      doneLabel={isReply ? "Replied" : "Sent"}
       onApprove={onApprove}
       onDeny={onDeny}
       onEdit={onEdit}

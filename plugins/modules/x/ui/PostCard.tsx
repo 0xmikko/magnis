@@ -20,11 +20,10 @@ export function proxiedMediaUrl(url: string | null): string | null {
 }
 
 
-// ContentOS render model in X-native card form:
+// Render model in X-native card form:
 // header = avatar + bold name + @handle · date (the date links to the post),
 // body, media grid, icon metrics row — mirroring how X itself lays a tweet
-// out. Design-system primitives only; format helpers are verbatim ports of
-// content-os frontend/src/lib/format.ts.
+// out. Design-system primitives only.
 
 export interface RichPost {
   id: string;

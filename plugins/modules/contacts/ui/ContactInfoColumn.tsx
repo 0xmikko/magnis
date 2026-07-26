@@ -8,10 +8,21 @@
  * no extra RPC fetch, no canonical-property dependency (so phone
  * numbers render immediately on restore, before the search-indexer
  * has populated `person.phones` canonical).
+ *
+ * `telegram.contact` is read here alongside the `contacts.person.*`
+ * facets on purpose. Telegram is the only module that declares
+ * `create = ["contacts.person"]`, and it writes that ONE facet — the
+ * person's telegram identity never lands in a `contacts.person.*`
+ * facet and never reaches canonical (`telegram.contact` maps only
+ * first_name/last_name). Matching `contacts.person.*` alone left every
+ * telegram-derived person with zero rows and an unmounted card. The
+ * contacts module already reads this facet directly elsewhere
+ * (relevance_tier filtering, channel detection), so this is the same
+ * layering, not a new coupling.
  */
 import type { JSX } from "react";
 
-import { Icon, Stack, Text } from "@magnis/host/ui";
+import { EmptyState, Icon, Stack, Text } from "@magnis/host/ui";
 import type { FacetSummary } from "@magnis/host/base";
 
 export interface ContactInfoColumnProps {
@@ -19,17 +30,32 @@ export interface ContactInfoColumnProps {
 }
 
 interface InfoRow {
-  readonly iconName: "mail" | "phone" | "gift" | "link" | "slack";
+  readonly iconName: "mail" | "phone" | "gift" | "link" | "slack" | "send";
   readonly value: string;
   readonly label?: string;
   readonly href?: string;
 }
 
-export function ContactInfoColumn({ facets }: ContactInfoColumnProps): JSX.Element | null {
+const CARD_CLASS = "rounded-2xl bg-surface-secondary/50 px-5 py-4";
+
+export function ContactInfoColumn({ facets }: ContactInfoColumnProps): JSX.Element {
   const rows = buildRows(facets);
-  if (rows.length === 0) return null;
+  if (rows.length === 0) {
+    // Never `null` — an unmounted card collapses the left grid track and
+    // leaves the Description panel floating in a half-empty Overview.
+    return (
+      <div className={CARD_CLASS}>
+        <EmptyState
+          className="!py-6"
+          icon={<Icon name="contacts" size={24} />}
+          title="No contact details yet"
+          subtitle="Emails, phones and links appear here as Magnis learns them."
+        />
+      </div>
+    );
+  }
   return (
-    <Stack gap={3} className="rounded-2xl bg-surface-secondary/50 px-5 py-4">
+    <Stack gap={3} className={CARD_CLASS}>
       <Text variant="title" className="text-sm font-semibold">
         Contact details
       </Text>
@@ -94,6 +120,31 @@ function buildRows(facets: readonly FacetSummary[]): InfoRow[] {
           value: phone,
           label: phoneLabel(f),
           href: `tel:${phone}`,
+        });
+      }
+    }
+  }
+  // Telegram identity. Phone goes after the authored `contacts.person.phone`
+  // rows so a typed label wins the dedupe; the handle goes BEFORE
+  // `external_link` so "@handle · Telegram" beats a Google-imported link
+  // pointing at the same t.me URL.
+  for (const f of facets) {
+    if (f.schema_id === "telegram.contact") {
+      const phone = stringField(f, "phone");
+      if (phone) {
+        rows.push({ iconName: "phone", value: phone, href: `tel:${phone}` });
+      }
+    }
+  }
+  for (const f of facets) {
+    if (f.schema_id === "telegram.contact") {
+      const username = stringField(f, "username");
+      if (username) {
+        rows.push({
+          iconName: "send",
+          value: `@${username}`,
+          label: "Telegram",
+          href: `https://t.me/${username}`,
         });
       }
     }
@@ -180,7 +231,11 @@ function dedupe(rows: InfoRow[]): InfoRow[] {
   const seen = new Set<string>();
   const out: InfoRow[] = [];
   for (const r of rows) {
-    const key = `${r.iconName}:${r.value}`;
+    // Two rows that resolve to the SAME target are one fact wearing two
+    // labels (a telegram handle and a Google-imported t.me link; a typed
+    // phone and the same number off `telegram.contact`). Key on the href
+    // so they collapse; fall back to icon+value for label-only rows.
+    const key = r.href ?? `${r.iconName}:${r.value}`;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(r);
