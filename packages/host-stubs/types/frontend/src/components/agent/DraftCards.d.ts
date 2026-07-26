@@ -1,15 +1,16 @@
 import type { JSX } from "react";
 import type { PendingToolCall } from "../../modules/episodes/types";
+import type { AllowlistScope, AllowlistState } from "../../runtime/contracts";
 export interface ToolDraftCardProps {
     readonly variant: "telegram" | "gmail";
     readonly toolCall?: PendingToolCall;
     readonly title: string;
     readonly body: string;
-    readonly isAllowlisted?: boolean;
+    readonly isAllowlisted?: AllowlistState;
     readonly superseded?: boolean;
     readonly onSend?: () => Promise<void> | void;
     readonly onEdit?: () => void;
-    readonly onAllowlistToggle?: () => void;
+    readonly onAllowlistToggle?: (scope?: AllowlistScope) => void;
 }
 export declare function ToolDraftCard({ variant, toolCall, title, body, isAllowlisted, superseded, onSend, onEdit: _onEdit, onAllowlistToggle, }: ToolDraftCardProps): JSX.Element;
 export interface EmailPreviousMessage {
@@ -26,10 +27,10 @@ export interface EmailDraftCardProps {
     readonly body: string;
     readonly previousMessage?: EmailPreviousMessage;
     readonly attachmentNames?: readonly string[];
-    readonly isAllowlisted?: boolean;
+    readonly isAllowlisted?: AllowlistState;
     readonly superseded?: boolean;
     readonly onSend?: () => Promise<void> | void;
     readonly onEdit?: () => void;
-    readonly onAllowlistToggle?: () => void;
+    readonly onAllowlistToggle?: (scope?: AllowlistScope) => void;
 }
 export declare function EmailDraftCard({ toolCall, from, to, toName, subject, body, previousMessage, attachmentNames, isAllowlisted, superseded, onSend, onEdit, onAllowlistToggle, }: EmailDraftCardProps): JSX.Element;

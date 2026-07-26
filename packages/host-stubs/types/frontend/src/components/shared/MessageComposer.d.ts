@@ -20,7 +20,7 @@ export interface MessageComposerProps {
     readonly sendIconClassName?: string;
     /**
      * When true, the attach (paperclip) button is NOT rendered.
-     * Telegram mode has no attachment plumbing, so it hides the button.
+     * Per DEC-3 / INV-11: telegram mode has no attachment plumbing.
      */
     readonly hideAttach?: boolean;
     /**
