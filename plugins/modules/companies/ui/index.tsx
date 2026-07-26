@@ -33,4 +33,20 @@ export const CompaniesModule = defineModule({
       Render: CompanyCreateRenderer as never,
     },
   ],
+  extractAllowlistTarget: (toolCall) => {
+    if (
+      toolCall.name !== "companies.create" &&
+      toolCall.name !== "companies_create" &&
+      toolCall.name !== "company.create" &&
+      toolCall.name !== "company_create"
+    ) {
+      return null;
+    }
+    return {
+      action: "companies.create",
+      targetType: "tool_action",
+      targetId: "companies.create",
+      targetLabel: "Create company",
+    };
+  },
 });

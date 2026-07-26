@@ -41,6 +41,35 @@ export const ContactsModule = defineModule({
       Render: ContactMergeRenderer as never,
     },
   ],
+  extractAllowlistTarget: (toolCall) => {
+    const aliases: Readonly<Record<string, string>> = {
+      "contacts.create": "contacts.create",
+      contacts_create: "contacts.create",
+      "contact.create": "contacts.create",
+      contact_create: "contacts.create",
+      "contacts.batch_create": "contacts.batch_create",
+      contacts_batch_create: "contacts.batch_create",
+      "contact.batch_create": "contacts.batch_create",
+      contact_batch_create: "contacts.batch_create",
+      "contacts.merge": "contacts.merge",
+      contacts_merge: "contacts.merge",
+      "contact.merge": "contacts.merge",
+      contact_merge: "contacts.merge",
+    };
+    const action = aliases[toolCall.name];
+    if (!action) return null;
+    const labels: Readonly<Record<string, string>> = {
+      "contacts.create": "Create contact",
+      "contacts.batch_create": "Create contacts",
+      "contacts.merge": "Merge contacts",
+    };
+    return {
+      action,
+      targetType: "tool_action",
+      targetId: action,
+      targetLabel: labels[action],
+    };
+  },
   groupBy: "letter",
   getGroupLetter: (item) => item.name?.[0]?.toUpperCase() ?? "#",
   mapListItem: (raw) => ({

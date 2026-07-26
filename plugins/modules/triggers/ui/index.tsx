@@ -42,6 +42,15 @@ const triggersAgentContribution: ModuleAgentContribution = {
       priority: 10,
     },
   ],
+  extractAllowlistTarget: (toolCall) => {
+    if (!isTriggerTool(toolCall.name)) return null;
+    return {
+      action: "triggers.create",
+      targetType: "tool_action",
+      targetId: "triggers.create",
+      targetLabel: "Create trigger",
+    };
+  },
 };
 
 /** Headless module — no sidebar tab, just entity card + tool-call renderers. */
