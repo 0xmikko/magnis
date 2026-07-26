@@ -1,0 +1,198 @@
+{
+  "schema_version": "magnis.p235-prepared-context-pilot.v1",
+  "status": "single-seed synthetic development pilot; P2 is calibrated",
+  "run_date": "2026-07-26",
+  "model": "gpt-5.6-sol",
+  "reasoning_effort": "high",
+  "evaluation_tool_call_limit": 60,
+  "corpus": {
+    "seed": 23501,
+    "email_records": 1396,
+    "telegram_records": 604,
+    "x_profiles": 3,
+    "x_posts": 10000,
+    "world_sha256": "249c2ba81c7127d9e4293a29826c2384d64b5c8efec248916a24946c17ea382e",
+    "magnis_corpus_sha256": "d9f1cd9b501585c3881c67b84c9f3730c0d4ead007f58c8abc9e54ab294dcbc4",
+    "raw_route_calls": {
+      "p2": 56,
+      "p3": 24,
+      "p5": 53
+    },
+    "deep_signal_rank": {
+      "p2": 4817,
+      "p5": 4817
+    }
+  },
+  "preparation": {
+    "initial": {
+      "prompt_sha256": "b47e2325dd5daf209d221bdb1a106e114cb6e78948e68d5792f1b2f7a8472d49",
+      "duration_ms": 356122,
+      "tool_calls": 152,
+      "input_tokens": 1221540,
+      "cached_input_tokens": 1097984,
+      "output_tokens": 13812,
+      "relationship_links_added": 44,
+      "receipt_sha256": "f72a4d18e937bfcf29cf65a95bdd71ab709d575e55e217fbcaac2ecfef3e3e7a",
+      "events_sha256": "cf55ac12445c6f4955896b5cdde1a9760f11c97051b4f3fac3b56fa8c2a6f8b0"
+    },
+    "generic_x_census_refinement": {
+      "prompt_sha256": "d0079ddf59764a9967327c64b7916366dba4105b1105d17a2413a4629d573aec",
+      "duration_ms": 307408,
+      "tool_calls": 188,
+      "input_tokens": 1374465,
+      "cached_input_tokens": 1262592,
+      "output_tokens": 12817,
+      "x_posts_paginated": 10000,
+      "x_timeline_pages": 101,
+      "graph_links_added": 34,
+      "receipt_sha256": "2535373581a610624a4786e1bff971d6631c2a343681a3519536d06bfb24c6ab",
+      "events_sha256": "9cc1b3414fe2bb17bacb78775c8ad4eea6a78866662a5aafb035f01b286a9839"
+    },
+    "cumulative_for_refined_p2": {
+      "duration_ms": 663530,
+      "tool_calls": 340,
+      "input_tokens": 2596005,
+      "cached_input_tokens": 2360576,
+      "output_tokens": 26629
+    }
+  },
+  "results": {
+    "p2": {
+      "task_family": "account acquisition cost with exact rows",
+      "prompt_sha256": "41abdc7fb06cf9c8ad4ff1c305c2a181984a1027d14db3e5c5ba6a30d809ed22",
+      "gold": {
+        "currency": "EUR",
+        "total": 900,
+        "row_refs": [
+          "email:card-rail",
+          "email:card-hotel",
+          "email:card-venue"
+        ]
+      },
+      "raw": {
+        "content_score": "PASS",
+        "task_score": "FAIL_BUDGET",
+        "row_recall": 1,
+        "row_precision": 1,
+        "evidence_recall": 1,
+        "observed_tool_calls": 150,
+        "duration_ms": 107932,
+        "input_tokens": 546430,
+        "receipt_sha256": "012392fcfc10da4dd72bd02d35cee14689d6f2ceca085510f0b058b08f3a07ca",
+        "events_sha256": "5f6d7251cd76565332d03f6ccd80b7e5ab95592b7223e4a772487b11638232cb"
+      },
+      "magnis_after_generic_refinement": {
+        "content_score": "PASS",
+        "task_score": "PASS",
+        "row_recall": 1,
+        "row_precision": 1,
+        "evidence_recall": 1,
+        "observed_tool_calls": 10,
+        "duration_ms": 59064,
+        "input_tokens": 406667,
+        "receipt_sha256": "75b6dc92ba9d928d351119568a1d0feeb3d4427bb5137bb5a843c404c80907b7",
+        "events_sha256": "503d4e666de66d035889ff38b33feb718b8621876e72194cf89defdcf48106b8"
+      },
+      "delta": {
+        "pass_difference": 1,
+        "tool_calls": -140,
+        "tool_call_reduction_percent": 93.3,
+        "input_token_reduction_percent": 25.6,
+        "duration_reduction_percent": 45.3
+      },
+      "calibration_disclosed": {
+        "initial_magnis_before_x_census": "FAIL_BUDGET",
+        "initial_magnis_observed_tool_calls": 108,
+        "finding": "profile-level preparation was insufficient; the generic preparation contract must complete long timelines"
+      }
+    },
+    "p3": {
+      "task_family": "human-level unanswered contacts across channels",
+      "prompt_sha256": "2a698fa83e1b8326dc73591f4da257ca952476fa71046d52b1b335c2b378e004",
+      "raw": {
+        "task_score": "PASS",
+        "human_recall": 1,
+        "human_precision": 1,
+        "evidence_recall": 1,
+        "observed_tool_calls": 34,
+        "duration_ms": 90849,
+        "input_tokens": 170431,
+        "receipt_sha256": "0372495de483c071309ff8653e93725779f6002faade5cea0c936757a2137ae2",
+        "events_sha256": "f3b82154792c1379b1d1f9f1e26e5ff6191f354873694375cf779d4f649c3fed"
+      },
+      "magnis": {
+        "task_score": "PASS",
+        "human_recall": 1,
+        "human_precision": 1,
+        "evidence_recall": 1,
+        "observed_tool_calls": 42,
+        "duration_ms": 146084,
+        "input_tokens": 571274,
+        "receipt_sha256": "d76626eeaa612dae525b0fedaa1b5588444124d91ae8cd8f10bbe069a06dfebe",
+        "events_sha256": "bfe6273df1abd949862d12f3776438b93925f335aaaadc3528681f52c8c8e219"
+      },
+      "verdict": "ceiling_tie_raw_more_efficient"
+    },
+    "p5": {
+      "task_family": "warm relationship, current company, and relationship owner",
+      "prompt_sha256": "2c13b707acfca406e24ade51b97011b358eb670d4196196c17b9dff20dec21c0",
+      "gold": {
+        "person": "Celia Ortiz",
+        "company": "Asteria Grid",
+        "relationship_facts": [
+          "design partner",
+          "recent personal catch-up"
+        ],
+        "relationship_owner": "Hana Ward"
+      },
+      "raw": {
+        "content_score": "PASS",
+        "task_score": "FAIL_BUDGET",
+        "evidence_recall": 1,
+        "observed_tool_calls": 84,
+        "duration_ms": 90468,
+        "input_tokens": 239519,
+        "receipt_sha256": "c816d04d0f2319ff74acabc4b98026e680bde4896fb87ceb8ad0a800a79784e5",
+        "events_sha256": "eca70ee2ed3db2ef0754add31a6d16271a5ca78134fab4412562d2c3670feee6"
+      },
+      "magnis": {
+        "content_score": "PASS",
+        "task_score": "PASS",
+        "evidence_recall": 1,
+        "observed_tool_calls": 31,
+        "duration_ms": 94513,
+        "input_tokens": 624497,
+        "receipt_sha256": "40e6b853d59f4b4b7677c3b06b225ab7fbddaa3225f733d43f689b8554e16d94",
+        "events_sha256": "3f83858aac6369ed08f3169f2d086bdfbdf40b7505a625d3450d3c03c2a1cec8"
+      },
+      "delta": {
+        "pass_difference": 1,
+        "tool_calls": -53,
+        "tool_call_reduction_percent": 63.1,
+        "input_token_reduction_percent": -160.7,
+        "duration_reduction_percent": -4.5
+      }
+    }
+  },
+  "development_summary": {
+    "this_combined_corpus": {
+      "raw_passes": 1,
+      "magnis_passes": 3,
+      "task_count": 3,
+      "pass_rate_difference_percentage_points": 66.7
+    },
+    "with_separately_reported_p1_pilot": {
+      "raw_passes": 1,
+      "magnis_passes": 4,
+      "task_count": 4,
+      "pass_rate_difference_percentage_points": 75
+    }
+  },
+  "limitations": [
+    "Single synthetic development seed; not a final multi-seed benchmark.",
+    "P2 is a post-calibration result after a disclosed generic preparation refinement, not an unseen holdout.",
+    "Preparation cost is one-time and excluded from critical-path task budgets but reported in full.",
+    "P5 shows a task PASS and call-count advantage, not a token or latency advantage.",
+    "P3 remains a ceiling tie and needs a harder predeclared ladder level."
+  ]
+}
