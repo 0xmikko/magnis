@@ -1,0 +1,12 @@
+{
+  "arm": "magnis",
+  "phase": "prepare",
+  "model": "gpt-5.6-sol",
+  "reasoning_effort": "high",
+  "prompt_sha256": "b47e2325dd5daf209d221bdb1a106e114cb6e78948e68d5792f1b2f7a8472d49",
+  "duration_ms": 382222,
+  "exit_code": 0,
+  "tool_call_limit": 250,
+  "observed_tool_calls": 187,
+  "budget_exceeded": false
+}
