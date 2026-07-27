@@ -2,8 +2,8 @@ import type { ComponentType } from "react";
 import type { StoreApi } from "zustand/vanilla";
 import type { AppRuntime } from "./runtime";
 import type { ReplyToContext } from "../../modules/episodes/types";
-export type { AgentContextDescriptor, AgentInvocationInput, AgentDraftRequest, AgentHistoryBlock, AgentTodoItem, AllowlistTarget, AgentRuntimeState, AgentChatStoreApi, } from "@magnis/client-core";
-import type { AgentContextDescriptor, AgentHistoryBlock, AgentTodoItem, AllowlistTarget, AgentRuntimeState, AgentChatStoreApi, AgentInvocationInput, AgentDraftRequest } from "@magnis/client-core";
+export type { AgentContextDescriptor, AgentInvocationInput, AgentDraftRequest, AgentHistoryBlock, AgentTodoItem, AllowlistTarget, AgentRuntimeState, AgentChatStoreApi, } from "@magnis/agent-core";
+import type { AgentContextDescriptor, AgentHistoryBlock, AgentTodoItem, AllowlistTarget, AgentRuntimeState, AgentChatStoreApi, AgentInvocationInput, AgentDraftRequest } from "@magnis/agent-core";
 export interface AgentRendererProps<TPayload = unknown> {
     readonly payload: TPayload;
     readonly runtime: AppRuntime;
@@ -84,8 +84,6 @@ export interface ModuleAgentContribution {
         args: unknown;
     }) => AllowlistTarget | null;
 }
-export type AllowlistScope = "dialog" | "always";
-export type AllowlistState = false | AllowlistScope;
 export interface ToolCallRendererPayload {
     readonly toolCall: {
         readonly id: string;
@@ -98,13 +96,13 @@ export interface ToolCallRendererPayload {
         readonly id: string;
         readonly result: unknown;
     };
-    readonly isAllowlisted: AllowlistState;
+    readonly isAllowlisted: boolean;
     readonly selectedChatName?: string;
     readonly superseded?: boolean;
     readonly onApprove: (argumentsOverride?: unknown) => Promise<void> | void;
     readonly onDeny: () => Promise<void> | void;
     readonly onEdit: () => void;
-    readonly onAllowlistToggle: (scope?: AllowlistScope) => void;
+    readonly onAllowlistToggle: () => void;
 }
 export interface ComposerPresenceParams {
     readonly mode: "email" | "telegram";
@@ -134,10 +132,10 @@ export interface ComposerRuntimeSurface {
      */
     setPresence(params: ComposerPresenceParams | null): void;
     /**
-     * Stage 4: subscribe to `composer.apply` events routed from the backend
-     * over the WS event bus. Returns an unsubscribe fn. Per INV-15, the WS
-     * filter on the backend already restricts delivery to the authenticated
-     * user; subscribers only need to filter on (mode, thread_key).
+     * Subscribe to `composer.apply` events routed from the backend over the
+     * WS event bus. Returns an unsubscribe fn. The WS filter on the backend
+     * already restricts delivery to the authenticated user; subscribers only
+     * need to filter on (mode, thread_key).
      */
     onApply(handler: (event: ComposerApplyEventPayload) => void): () => void;
 }

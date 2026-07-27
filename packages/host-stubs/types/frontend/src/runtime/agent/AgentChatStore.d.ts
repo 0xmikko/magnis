@@ -1,2 +1,2 @@
-export { AgentChatStore, parseUserMessageAttachments } from "@magnis/client-core";
-export type { Listener } from "@magnis/client-core";
+export { AgentChatStore, parseUserMessageAttachments } from "@magnis/agent-core";
+export type { Listener } from "@magnis/agent-core";

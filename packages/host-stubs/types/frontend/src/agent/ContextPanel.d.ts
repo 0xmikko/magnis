@@ -1,4 +1,4 @@
-import type { JSX, ReactNode } from "react";
+import type { JSX } from "react";
 import type { IconName } from "../components/ui/Icon";
 import type { AppRuntime } from "../runtime/contracts/runtime";
 export interface ContextPanelEntity {
@@ -26,13 +26,6 @@ export interface ContextPanelProps {
     readonly runtime: AppRuntime;
     /** When true, omit the PanelHeader (used when embedded in AgentPanel sidebar which has its own header). */
     readonly hideHeader?: boolean;
-    /**
-     * Optional region rendered BELOW the entity list, in the same scroll flow —
-     * home of the always-visible Todo + Context-stats transparency region
-     * (owner decision 2026-07-23: entities on top, Todo + stats beneath them,
-     * in the right Context panel rather than inline above the composer).
-     */
-    readonly bottomSlot?: ReactNode;
 }
-export declare function ContextPanel({ primaryEntity, replyToEntity, infoItems: _infoItems, connectedEntities, runtime, hideHeader, bottomSlot, }: ContextPanelProps): JSX.Element;
+export declare function ContextPanel({ primaryEntity, replyToEntity, infoItems: _infoItems, connectedEntities, runtime, hideHeader, }: ContextPanelProps): JSX.Element;
 export {};

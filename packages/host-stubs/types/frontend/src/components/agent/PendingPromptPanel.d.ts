@@ -1,5 +1,5 @@
 import type { JSX, ReactNode } from "react";
-import type { PendingPrompt } from "@magnis/client-core";
+import type { PendingPrompt } from "@magnis/agent-core";
 export interface PendingPromptPanelProps {
     /** Full queue of pending prompts (head shown, rest counted). */
     readonly queue: readonly PendingPrompt[];
