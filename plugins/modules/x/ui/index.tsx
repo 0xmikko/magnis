@@ -1,4 +1,4 @@
-import type { JSX } from "react";
+import { XIcon } from "./XIcon";
 import { defineModule } from "@magnis/host/base";
 import { setupEventInvalidation } from "@magnis/host/runtime";
 import { proxiedMediaUrl } from "./PostCard";
@@ -11,27 +11,6 @@ import { XProfileHeader } from "./ProfileHeader";
 // (plugin-icon-standard). Rendered as a CSS mask filled with currentColor:
 // rail icons are ALWAYS monochrome and must follow the rail's active/hover
 // text color like lucide.
-const ICON_URL = "/api/plugins/x/icon.svg";
-
-function XIcon(): JSX.Element {
-  return (
-    <span
-      role="img"
-      aria-label="X"
-      className="inline-block h-[20px] w-[20px] bg-current"
-      style={{
-        maskImage: `url(${ICON_URL})`,
-        maskRepeat: "no-repeat",
-        maskSize: "contain",
-        maskPosition: "center",
-        WebkitMaskImage: `url(${ICON_URL})`,
-        WebkitMaskRepeat: "no-repeat",
-        WebkitMaskSize: "contain",
-        WebkitMaskPosition: "center",
-      }}
-    />
-  );
-}
 
 // X module UI — list = tracked PEOPLE (profiles); main view = the selected
 // person's profile header + their post feed (ProfileFeed). Read-only.

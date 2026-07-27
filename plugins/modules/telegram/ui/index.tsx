@@ -283,7 +283,11 @@ export const TelegramModule = defineModule({
   },
   toolCallRenderers: [
     {
-      actions: ["messages.send"],
+      // Both write tools that put one message into one chat. `messages.reply`
+      // was added to the module without being registered here, so every reply
+      // approval fell through to the generic card. See the coverage gate in
+      // scripts/toolcall-renderer-coverage.test.ts.
+      actions: ["messages.send", "messages.reply"],
       Render: TelegramToolCallRenderer as never,
     },
     {
