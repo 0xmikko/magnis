@@ -3,8 +3,7 @@ import type { JSX } from "react";
 import { Icon } from "@magnis/host/ui";
 import type { AgentRendererProps, AppRuntime, ToolCallRendererPayload } from "@magnis/host/runtime";
 import { BaseToolCallCard } from "@magnis/host/base";
-import { ExpandableEntityCard } from "@magnis/host/agent";
-import { extractEntities } from "@magnis/host/agent";
+import { AllowlistDropdown, ExpandableEntityCard, extractEntities } from "@magnis/host/agent";
 
 /** Resolve attachment_ids to filenames. */
 function useAttachmentNames(
@@ -165,12 +164,20 @@ export function EmailToolCallRenderer({
     const entity = extractEntities(toolResult.result, { toolName: tc.name }).at(0);
     if (entity) {
       return (
-        <ExpandableEntityCard
-          schemaId={entity.schema_id as string}
-          data={entity}
-          runtime={runtime}
-          action={verb}
-        />
+        <div className="space-y-2">
+          <ExpandableEntityCard
+            schemaId={entity.schema_id as string}
+            data={entity}
+            runtime={runtime}
+            action={verb}
+          />
+          {isAllowlisted && !superseded && (
+            <AllowlistDropdown
+              isAllowlisted={isAllowlisted}
+              onToggle={onAllowlistToggle}
+            />
+          )}
+        </div>
       );
     }
   }

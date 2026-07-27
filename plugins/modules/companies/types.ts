@@ -21,10 +21,18 @@ export type HeaderRow =
   | { type: "text"; label: string; value: string | null }
   | { type: "chips"; label: string; items: string[] };
 
+export interface CompanyLinkedEntity {
+  id: string;
+  name: string;
+  schema_id: string;
+  /** Incoming edges use the shared `~kind` convention. */
+  link_kind: string;
+}
+
 export interface CompanyDetailView extends CompanyListItem {
   canonical: Partial<CompanyCanonical>;
   facets: unknown[];
-  linked_entities: unknown[];
+  linked_entities: CompanyLinkedEntity[];
   members: string[];
   header_rows: HeaderRow[];
 }
@@ -46,6 +54,7 @@ export interface CompanyDetailsFacet {
 }
 export interface CompanyFacets {
   "companies.company.details": CompanyDetailsFacet;
+  "companies.description": { body: string };
   "companies.company.email": { email: string; type?: string; is_primary?: boolean };
   "companies.company.phone": { phone: string; type?: string; is_primary?: boolean };
   "companies.company.external_link": {
@@ -59,6 +68,7 @@ export interface CompanyFacets {
 // canonical key → value
 export interface CompanyCanonical {
   "companies.name": string;
+  "companies.description": string | null;
   "companies.website": string | null;
   "companies.industry": string | null;
   "companies.size": string | null;

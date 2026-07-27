@@ -55,6 +55,7 @@ export function TriggerToolCallRenderer({
     payload;
   const args = tc.args as Record<string, unknown>;
   const result = toolResult?.result as Record<string, unknown> | undefined;
+  const isUpdate = tc.name === "triggers.update" || tc.name === "triggers_update";
 
   const [expanded, setExpanded] = useState(false);
 
@@ -74,9 +75,9 @@ export function TriggerToolCallRenderer({
       toolResult={toolResult}
       superseded={superseded}
       isAllowlisted={isAllowlisted}
-      primaryLabel="Create"
+      primaryLabel={isUpdate ? "Update" : "Create"}
       primaryIcon="zap"
-      doneLabel="Created"
+      doneLabel={isUpdate ? "Updated" : "Created"}
       onApprove={onApprove}
       onDeny={onDeny}
       onAllowlistToggle={onAllowlistToggle}

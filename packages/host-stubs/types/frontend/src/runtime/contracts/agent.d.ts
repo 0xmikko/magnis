@@ -84,6 +84,8 @@ export interface ModuleAgentContribution {
         args: unknown;
     }) => AllowlistTarget | null;
 }
+export type AllowlistScope = "dialog" | "always";
+export type AllowlistState = false | AllowlistScope;
 export interface ToolCallRendererPayload {
     readonly toolCall: {
         readonly id: string;
@@ -96,13 +98,13 @@ export interface ToolCallRendererPayload {
         readonly id: string;
         readonly result: unknown;
     };
-    readonly isAllowlisted: boolean;
+    readonly isAllowlisted: AllowlistState;
     readonly selectedChatName?: string;
     readonly superseded?: boolean;
     readonly onApprove: (argumentsOverride?: unknown) => Promise<void> | void;
     readonly onDeny: () => Promise<void> | void;
     readonly onEdit: () => void;
-    readonly onAllowlistToggle: () => void;
+    readonly onAllowlistToggle: (scope?: AllowlistScope) => void;
 }
 export interface ComposerPresenceParams {
     readonly mode: "email" | "telegram";

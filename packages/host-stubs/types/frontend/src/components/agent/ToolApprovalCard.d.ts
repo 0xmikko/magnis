@@ -1,8 +1,9 @@
 import type { JSX } from "react";
 import type { PendingToolCall } from "../../modules/episodes/types";
+import type { AllowlistScope, AllowlistState } from "../../runtime/contracts";
 export declare function AllowlistDropdown({ isAllowlisted, onToggle, }: {
-    readonly isAllowlisted: boolean;
-    readonly onToggle: () => void;
+    readonly isAllowlisted: AllowlistState;
+    readonly onToggle: (scope?: AllowlistScope) => void;
 }): JSX.Element;
 export interface ToolApprovalCardProps {
     readonly toolCall: PendingToolCall;

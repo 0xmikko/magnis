@@ -224,11 +224,14 @@ export class ProjectsModule {
     const facets = await this.graph.list_facets_for_entity(params.id);
     const existing = (facets.find((f) => f.schema_id === PROJECT)?.data ?? {}) as Record<string, unknown>;
     const data: Record<string, unknown> = { ...existing };
-    if (params.name !== undefined) {
+    // @tested-by: tst_mod_projects_update_001
+    // @invariant: runtime JSON null for an optional field means "omitted"; it
+    // must never erase the entity name or the existing project facet value.
+    if (typeof params.name === "string") {
       data.name = params.name;
       await this.graph.update_entity_name(params.id, params.name);
     }
-    if (params.status !== undefined) data.status = params.status;
+    if (typeof params.status === "string") data.status = params.status;
     data.updated_at = new Date().toISOString();
 
     await this.graph.attach_facet({ entity_id: params.id, schema_id: PROJECT, data });

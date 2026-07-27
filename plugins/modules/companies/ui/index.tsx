@@ -29,8 +29,29 @@ export const CompaniesModule = defineModule({
   DetailsTabContent: CompanyOverview,
   toolCallRenderers: [
     {
-      actions: ["create"],
+      actions: ["create", "update"],
       Render: CompanyCreateRenderer as never,
     },
   ],
+  extractAllowlistTarget: (toolCall) => {
+    const aliases: Readonly<Record<string, "companies.create" | "companies.update">> = {
+      "companies.create": "companies.create",
+      companies_create: "companies.create",
+      "company.create": "companies.create",
+      company_create: "companies.create",
+      "companies.update": "companies.update",
+      companies_update: "companies.update",
+      "company.update": "companies.update",
+      company_update: "companies.update",
+    };
+    const action = aliases[toolCall.name];
+    if (!action) return null;
+    const isUpdate = action === "companies.update";
+    return {
+      action,
+      targetType: "tool_action",
+      targetId: action,
+      targetLabel: isUpdate ? "Update company" : "Create company",
+    };
+  },
 });

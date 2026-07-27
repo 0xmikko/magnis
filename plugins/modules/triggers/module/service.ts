@@ -18,8 +18,13 @@
 // `get_entity_full` precheck (raw `get_entity`/`attach_facet` are NOT user-scoped),
 // matching the native guards.
 
-import { tool, writeTool, type GraphService, type PluginDeps, type RpcExecutor } from "@magnis/plugin-sdk";
-import type { EntityDetail, LinkSummary } from "@magnis/plugin-sdk";
+import { rpc, tool, writeTool, type GraphService, type PluginDeps, type RpcExecutor } from "@magnis/plugin-sdk";
+import type {
+  EntityDetail,
+  LinkSummary,
+  ListParams,
+  PaginatedResponse,
+} from "@magnis/plugin-sdk";
 import type {
   ClarificationResult,
   CreateTriggerParams,
@@ -207,6 +212,89 @@ export class TriggersModule {
       items.push(await this.listItem(detail, config));
     }
     return items;
+  }
+
+  @rpc("list_page", {
+    description: "Paginated trigger list for the standard frontend module.",
+    params: {
+      type: "object",
+      properties: {
+        limit: { type: "integer", minimum: 1 },
+        offset: { type: "integer", minimum: 0 },
+        search: { type: "string" },
+      },
+      additionalProperties: false,
+    },
+  })
+  async list_page(params: ListParams): Promise<PaginatedResponse<TriggerListItem>> {
+    const limit = params.limit ?? 50;
+    const offset = params.offset ?? 0;
+    const query = (params.search ?? "").trim().toLowerCase();
+
+    const hydrate = async (
+      rows: readonly { entity: { id: string } }[],
+    ): Promise<TriggerListItem[]> => {
+      const items: TriggerListItem[] = [];
+      for (const row of rows) {
+        const detail = await this.graph.get_entity_full(row.entity.id, { links: true });
+        if (detail?.entity.schema_id !== TRIGGER) continue;
+        const config = this.configOf(detail);
+        if (!config) continue;
+        items.push(await this.listItem(detail, config));
+      }
+      return items;
+    };
+
+    // @tested-by: tst_module_triggers_list_page_001
+    // @invariant: UI pagination reads the requested graph window directly and
+    // never inherits the agent-facing list tool's intentional 1,000-row cap.
+    if (query.length === 0) {
+      const page = await this.graph.list_entities_window({
+        schema: TRIGGER,
+        facet_schema: TRIGGER_CONFIG,
+        order: [{ field: { entity_field: "date" }, desc: true }],
+        limit,
+        offset,
+      });
+      return {
+        items: await hydrate(page.items),
+        total: page.total,
+        limit,
+        offset,
+      };
+    }
+
+    // GraphService has no full-text facet search. Scan exact graph windows so
+    // search includes gate/action/watch names without silently truncating at
+    // 1,000. Triggers are expected to be a small control-plane collection.
+    const scanLimit = 250;
+    let scanOffset = 0;
+    const filtered: TriggerListItem[] = [];
+    for (;;) {
+      const page = await this.graph.list_entities_window({
+        schema: TRIGGER,
+        facet_schema: TRIGGER_CONFIG,
+        order: [{ field: { entity_field: "date" }, desc: true }],
+        limit: scanLimit,
+        offset: scanOffset,
+      });
+      if (page.items.length === 0) break;
+      const items = await hydrate(page.items);
+      filtered.push(...items.filter((item) =>
+        `${item.name} ${item.gate_prompt} ${item.action_prompt} ${item.watched_entity_names.join(" ")}`
+          .toLowerCase()
+          .includes(query),
+      ));
+      scanOffset += page.items.length;
+      if (scanOffset >= page.total) break;
+    }
+
+    return {
+      items: filtered.slice(offset, offset + limit),
+      total: filtered.length,
+      limit,
+      offset,
+    };
   }
 
   @writeTool("update", {

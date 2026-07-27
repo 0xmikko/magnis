@@ -35,6 +35,7 @@ function readGraph(): G {
     search_entities_by_name: () => Promise.resolve([]),
     list_canonical_for_entities: () => Promise.resolve([]),
     get_entity_full: () => Promise.resolve(null),
+    get_entities: () => Promise.resolve([]),
     list_facets_for_entity: () => Promise.resolve([]),
     get_canonical: () => Promise.resolve({}),
   });
@@ -142,6 +143,54 @@ describe("companies read — shape parity (tst_be_companiesread_001)", () => {
     expect((view.facets as FacetRecord[]).filter((f) => f.schema_id === COMPANY_EMAIL)).toHaveLength(2);
     expect(view.header_rows.find((r) => r.label === "Website")).toMatchObject({ value: "https://acme.com" });
     expect(view.header_rows.find((r) => r.label === "Industry")).toMatchObject({ value: "SaaS" });
+  });
+
+  /**
+   * @test-id: tst_module_companies_002
+   * @scenario: scn_company_contacts_001
+   * @covers: plugins/modules/companies/module/service.ts::CompaniesModule.get
+   * @deterministic: yes
+   * @fixtures: inline company <-works_at- contact graph
+   *
+   * Test environment: CompaniesModule direct call
+   * Clients: direct calls
+   * Mocks: GraphService
+   * Data: one incoming works_at edge and its contact endpoint
+   */
+  it("tst_module_companies_002 returns incoming works_at contacts for the Contacts tab", async () => {
+    spy(graph, "get_entity_full").mockResolvedValue({
+      entity: entity("company-1", "Acme Labs", { schema_id: COMPANY }),
+      facets: [],
+      links: [
+        {
+          id: "link-1",
+          from_id: "contact-1",
+          to_id: "company-1",
+          kind: "works_at",
+        },
+      ],
+    });
+    spy(graph, "get_entities").mockResolvedValue([
+      entity("contact-1", "Mitchell Amador", { schema_id: "contacts.person" }),
+    ]);
+
+    const view = await mod.get({ id: "company-1" });
+
+    expect(view.linked_entities).toEqual([
+      {
+        id: "contact-1",
+        schema_id: "contacts.person",
+        name: "Mitchell Amador",
+        link_kind: "~works_at",
+      },
+    ]);
+    expect(view.members).toEqual(["Mitchell Amador"]);
+    expect(view.header_rows).toContainEqual({
+      type: "chips",
+      label: "Team members (1)",
+      items: ["Mitchell Amador"],
+    });
+    expect(graph.spies.get_entities).toHaveBeenCalledTimes(1);
   });
 
   it("F4 empty page → {items:[], total:0}", async () => {
