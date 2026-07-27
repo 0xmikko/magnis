@@ -1,0 +1,15 @@
+{
+  "schema_version": "magnis.p235-manifest.v1",
+  "seed": 23501,
+  "p2_signal_rank": 4817,
+  "p2_minimal_raw_route_calls": 56,
+  "p3_minimal_raw_route_calls": 24,
+  "p5_signal_rank": 4817,
+  "p5_minimal_raw_route_calls": 53,
+  "email_records": 1396,
+  "telegram_records": 604,
+  "x_profiles": 3,
+  "x_posts": 10000,
+  "world_sha256": "aecf0d6bcb05e8e7ae3dd0bf2f5f65984aaad3767e712874da2b37d876f900f5",
+  "magnis_corpus_sha256": "8fb3f672109cf5df383cc2e050754de5edbe56d079e6c83c745cb01673c02e95"
+}

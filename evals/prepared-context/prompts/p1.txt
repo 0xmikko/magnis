@@ -1,0 +1,5 @@
+Use the configured MCP tools and prepared workspace. Do not use web, prior knowledge, or guesses.
+
+Где сейчас работает Вася из нашей переписки про Orion migration?
+Назови текущую компанию и приложи стабильный ref записи, которая это подтверждает. Ref может быть исходным provider ref или внутренним graph entity UUID; scorer проверит, что он разрешается в точную исходную запись.
+Верни только JSON по заданной схеме.

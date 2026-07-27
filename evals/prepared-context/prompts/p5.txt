@@ -1,0 +1,6 @@
+Use the configured MCP tools and prepared workspace. Do not use web, prior knowledge, or guesses.
+
+Who is our strongest warm relationship at Asteria Grid, what exactly is the relationship, and which connected team-account owner owns it?
+Resolve stale affiliations and unrelated identifiers across the connected accounts. Return the current company, person, concise relationship grounded in the records, owner, and exact supporting source refs.
+
+Return only JSON matching the requested schema.
