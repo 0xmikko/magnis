@@ -1,61 +1,71 @@
-// Triggers plugin — UI entry. Headless agent-only contribution (no sidebar):
-// an entity card for `triggers.trigger` + a tool-call renderer for the write
-// `triggers.create`. Exported as a plain `ModuleDefinition` (the host loader
-// registers it identically to a builtin headless module).
-import type { ModuleDefinition, ModuleAgentContribution } from "@magnis/host/runtime";
-import { registerSchemaVisuals } from "@magnis/host/base";
+import { Icon } from "@magnis/host/ui";
+import { defineModule } from "@magnis/host/base";
+import type { ListItem } from "@magnis/host/base";
 import { TriggerCard } from "./TriggerCard";
+import { TriggerDetailPanel } from "./TriggerDetailPanel";
 import { TriggerToolCallRenderer } from "./TriggerToolCallRenderer";
 
-// Reproduce the builtin module's load-time side effect: register the
-// `triggers.trigger` schema visual (the headless ModuleDefinition path does not
-// auto-register visuals the way `defineModule` does).
-registerSchemaVisuals([{ schemaId: "triggers.trigger", entry: { icon: "zap", label: "Trigger" } }]);
+export function mapTriggerListItem(raw: Record<string, unknown>): ListItem {
+  const watchedEntityNames = Array.isArray(raw.watched_entity_names)
+    ? raw.watched_entity_names.filter((name): name is string => typeof name === "string")
+    : [];
+  const actionPrompt = typeof raw.action_prompt === "string" ? raw.action_prompt : "";
 
-/**
- * Match only the WRITE trigger tool. The dedicated TriggerToolCallRenderer is a
- * "Create / Created" approval-shaped card — applying it to read-only tools like
- * `triggers.list` / `triggers.get` produced a phantom "Trigger Created" row that
- * misled the operator. Read-only trigger tools fall through to the generic
- * `ToolCallCard` which renders "List triggers (N)".
- */
-function isTriggerTool(name: string): boolean {
-  return name === "triggers.create" || name === "triggers_create";
+  return {
+    id: raw.id as string,
+    name: typeof raw.name === "string" ? raw.name : null,
+    schema_id: "triggers.trigger",
+    preview:
+      watchedEntityNames.length > 0
+        ? `Watches ${watchedEntityNames.join(", ")}`
+        : actionPrompt,
+    timestamp: typeof raw.last_fired_at === "string" ? raw.last_fired_at : null,
+  };
 }
 
-const triggersAgentContribution: ModuleAgentContribution = {
-  entityRenderers: [
-    {
-      id: "trigger-entity",
-      moduleId: "triggers",
-      schemaMatch: "triggers.trigger",
-      Render: TriggerCard,
-      hasMore: (data) => typeof data.id === "string" && data.id.length > 0,
+export const TriggersModule = defineModule({
+  id: "triggers",
+  title: "Triggers",
+  icon: <Icon name="zap" size={26} />,
+  iconName: "zap",
+  themeColor: "green",
+  entityTypes: ["trigger"],
+  primaryEntityType: "trigger",
+  entityLabels: {
+    trigger: {
+      icon: "zap",
+      label: "Trigger",
     },
-  ],
-  historyRenderers: [
+  },
+  rpc: {
+    list: "triggers.list_page",
+    update: "triggers.update",
+  },
+  mapListItem: mapTriggerListItem,
+  DetailPanel: TriggerDetailPanel,
+  EntityCard: TriggerCard,
+  hasMore: (data) => typeof data.id === "string" && data.id.length > 0,
+  toolCallRenderers: [
     {
-      id: "trigger-tool",
-      moduleId: "triggers",
-      match: (block) => block.toolName !== undefined && isTriggerTool(block.toolName),
+      actions: ["create", "update"],
       Render: TriggerToolCallRenderer as never,
-      priority: 10,
     },
   ],
   extractAllowlistTarget: (toolCall) => {
-    if (!isTriggerTool(toolCall.name)) return null;
+    const isUpdate =
+      toolCall.name === "triggers.update" ||
+      toolCall.name === "triggers_update";
+    const isCreate =
+      toolCall.name === "triggers.create" ||
+      toolCall.name === "triggers_create";
+    if (!isCreate && !isUpdate) return null;
+
+    const action = isUpdate ? "triggers.update" : "triggers.create";
     return {
-      action: "triggers.create",
+      action,
       targetType: "tool_action",
-      targetId: "triggers.create",
-      targetLabel: "Create trigger",
+      targetId: action,
+      targetLabel: isUpdate ? "Update trigger" : "Create trigger",
     };
   },
-};
-
-/** Headless module — no sidebar tab, just entity card + tool-call renderers. */
-export const TriggersModule: ModuleDefinition = {
-  id: "triggers",
-  title: "Triggers",
-  agent: triggersAgentContribution,
-};
+});

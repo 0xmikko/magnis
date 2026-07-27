@@ -90,3 +90,44 @@ describe("tst_fe_notes_expand_004 — chevron flips NoteCard via context", () =>
     expect(getByText(/limit easily/)).toBeTruthy();
   });
 });
+
+/**
+ * @test-id: tst_fe_notes_markdown_001
+ * @scenario: scn_notes_card_markdown
+ * @covers: plugins/modules/notes/ui/EntityCards.tsx::NoteCard
+ * @deterministic: yes
+ * @fixtures: inline
+ * @video-mode: showcase
+ * @manual-flow: yes
+ */
+describe("tst_fe_notes_markdown_001 — expanded note Markdown", () => {
+  it("renders Markdown semantics instead of source markers", () => {
+    const runtime = mockRuntime(null);
+    const { container, getByRole, getByText } = render(
+      <ExpansionContext.Provider value={{ bare: false, expanded: true }}>
+        <NoteCard
+          schemaId="notes.note"
+          data={{
+            title: "RFQ tracker",
+            body: [
+              "**Source of truth.**",
+              "",
+              "## Scope",
+              "",
+              "| Item | Status |",
+              "|---|---|",
+              "| Audit | pending |",
+            ].join("\n"),
+          }}
+          runtime={runtime}
+        />
+      </ExpansionContext.Provider>,
+    );
+
+    expect(getByText("Source of truth.").tagName).toBe("STRONG");
+    expect(getByRole("heading", { name: "Scope", level: 2 })).toBeTruthy();
+    expect(container.querySelector("table")).not.toBeNull();
+    expect(container.textContent).not.toContain("**Source");
+    expect(container.textContent).not.toContain("## Scope");
+  });
+});

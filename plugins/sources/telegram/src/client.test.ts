@@ -297,6 +297,32 @@ describe("messageToIntermediate", () => {
     expect(Object.keys(m.sender_info!)).toEqual(["first_name"]);
   });
 
+  /**
+   * @test-id: tst_src_tg_024
+   * @scenario: scn_tg_sync_003
+   * @covers: plugins/sources/telegram/src/client.ts::messageToIntermediate
+   * @deterministic: yes
+   * @fixtures: inline gramjs-shaped message with a null reply id
+   *
+   * Test environment: source unit
+   * Clients: direct calls
+   * Mocks: none
+   * Data: one Telegram message with replyTo.replyToMsgId = null
+   */
+  test("tst_src_tg_024 gramjs null reply id is omitted before schema validation", () => {
+    const m = messageToIntermediate(
+      {
+        id: 2,
+        date: 0,
+        replyTo: { replyToMsgId: null as unknown as number },
+      },
+      "a",
+      1,
+    );
+    expect(m.reply_to_msg_id).toBeUndefined();
+    expect(m).not.toHaveProperty("reply_to_msg_id");
+  });
+
   test("tst_tgts_msg_003 the unix-seconds date becomes the +00:00 RFC3339 form", () => {
     const m = messageToIntermediate({ id: 1, date: 1779271200 }, "a", 1);
     expect(m.date).toBe("2026-05-20T10:00:00+00:00");

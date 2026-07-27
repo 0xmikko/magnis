@@ -312,6 +312,8 @@ export async function execute(
 /** Injectable side-effects for `execute` (the flood-retry sleeper). */
 export interface ExecuteDeps {
   sleep: (secs: number) => Promise<void>;
+  /** Local presentation safeguard: exercise approvals without Telegram delivery. */
+  demoDryRun?: boolean;
 }
 
 /** Real-time sleeper used in production. */
@@ -325,6 +327,18 @@ async function sendMessage(
   replyTo: number | undefined,
   deps: ExecuteDeps,
 ): Promise<Record<string, unknown>> {
+  if (deps.demoDryRun === true) {
+    // YC demo safeguard: deliberately do not resolve a peer or call
+    // `ops.sendMessage`. The result explicitly reports non-delivery and does
+    // not carry the telegram.message schema or a synthetic message id.
+    return {
+      chat_id: chatId,
+      text,
+      delivered: false,
+      demo_dry_run: true,
+      suppressed_by: "MAGNIS_TELEGRAM_DEMO_DRY_RUN",
+    };
+  }
   const peer = await ops.resolvePeer(chatId);
   // Wrap the live send in the FLOOD_WAIT-aware retry seam: a short FloodWait is
   // absorbed via wait+retry (the message still sends); a longer one surfaces the

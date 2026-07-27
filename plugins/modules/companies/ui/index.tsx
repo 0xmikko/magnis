@@ -29,24 +29,29 @@ export const CompaniesModule = defineModule({
   DetailsTabContent: CompanyOverview,
   toolCallRenderers: [
     {
-      actions: ["create"],
+      actions: ["create", "update"],
       Render: CompanyCreateRenderer as never,
     },
   ],
   extractAllowlistTarget: (toolCall) => {
-    if (
-      toolCall.name !== "companies.create" &&
-      toolCall.name !== "companies_create" &&
-      toolCall.name !== "company.create" &&
-      toolCall.name !== "company_create"
-    ) {
-      return null;
-    }
+    const aliases: Readonly<Record<string, "companies.create" | "companies.update">> = {
+      "companies.create": "companies.create",
+      companies_create: "companies.create",
+      "company.create": "companies.create",
+      company_create: "companies.create",
+      "companies.update": "companies.update",
+      companies_update: "companies.update",
+      "company.update": "companies.update",
+      company_update: "companies.update",
+    };
+    const action = aliases[toolCall.name];
+    if (!action) return null;
+    const isUpdate = action === "companies.update";
     return {
-      action: "companies.create",
+      action,
       targetType: "tool_action",
-      targetId: "companies.create",
-      targetLabel: "Create company",
+      targetId: action,
+      targetLabel: isUpdate ? "Update company" : "Create company",
     };
   },
 });

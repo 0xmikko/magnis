@@ -39,8 +39,8 @@ function makeUpdateProps(): AgentRendererProps<ToolCallRendererPayload> {
         id: "tc-project-update",
         name: "projects_update",
         args: {
-          id: "project-gearbox",
-          description: "Gearbox research summary",
+          id: "project-acme",
+          description: "Project research summary",
         },
         status: "pending",
       },
@@ -86,7 +86,7 @@ describe("project tool call cards", () => {
    * Scenario: scn_agent_allowlist_002
    * Covers: plugins-public/plugins/modules/projects/ui/index.tsx
    * Deterministic: yes
-   * Fixtures: Gearbox-style projects_update approval
+   * Fixtures: generic projects_update approval
    */
   it("tst_fe_projects_allowlist_001 registers and renders project update approvals", () => {
     const agent = ProjectsModule.agent;
@@ -97,7 +97,7 @@ describe("project tool call cards", () => {
         kind: "tool_call",
         toolName: "projects_update",
         payload: {
-          args: { id: "project-gearbox", description: "Gearbox research summary" },
+          args: { id: "project-acme", description: "Project research summary" },
           status: "pending",
         },
       }),

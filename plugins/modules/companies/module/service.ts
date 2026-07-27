@@ -21,6 +21,7 @@ import type {
 } from "../types.ts";
 import {
   COMPANY,
+  COMPANY_DESCRIPTION,
   COMPANY_DETAILS,
   COMPANY_EMAIL,
   COMPANY_EXTERNAL_LINK,
@@ -97,13 +98,11 @@ export class CompaniesModule {
     },
   })
   async get(params: GetParams): Promise<CompanyDetailView> {
-    // User-scoped entity (+ schema guard) in ONE fetch. The detail view does
-    // not surface link neighbours (members/linked_entities stay empty, native
-    // parity). Facets come from list_facets_for_entity so the DTO carries ALL
-    // facets (get_entity_full would dedup to latest-per-schema, dropping the
-    // collection email/phone facets the old get returned). One get_canonical
-    // for the canonical block.
-    const detail = await this.graph.get_entity_full(params.id);
+    // User-scoped entity (+ schema guard), latest facets, and every edge.
+    // Facets come from list_facets_for_entity so the DTO carries ALL facets
+    // (get_entity_full would dedup to latest-per-schema, dropping collection
+    // email/phone facets). Link endpoints are resolved in one batch below.
+    const detail = await this.graph.get_entity_full(params.id, { links: true });
     if (detail?.entity.schema_id !== COMPANY) {
       throw new Error(`company not found: ${params.id}`);
     }
@@ -113,14 +112,47 @@ export class CompaniesModule {
     // base/header read CANONICAL (single_aligned by confidence→recency), not the
     // latest facet — parity with staging's canonical-driven detail view.
     const base = buildListItem(entity, canonical);
-    const members: string[] = [];
+    const endpointIds = [...new Set(detail.links.flatMap((link) => {
+      if (link.from_id === entity.id) return [link.to_id];
+      if (link.to_id === entity.id) return [link.from_id];
+      return [];
+    }))];
+    const endpoints = endpointIds.length === 0
+      ? []
+      : await this.graph.get_entities(endpointIds);
+    const endpointsById = new Map(endpoints.map((endpoint) => [endpoint.id, endpoint] as const));
+    // @tested-by: tst_module_companies_002
+    // @invariant: Companies preserve the shared `~kind` convention for
+    // incoming edges so EntityDetailTabs can surface works_at contacts.
+    const linked_entities = detail.links.flatMap((link) => {
+      const incoming = link.to_id === entity.id;
+      const endpointId = incoming
+        ? link.from_id
+        : link.from_id === entity.id
+          ? link.to_id
+          : null;
+      if (endpointId === null) return [];
+      const endpoint = endpointsById.get(endpointId);
+      if (endpoint === undefined) return [];
+      return [{
+        id: endpoint.id,
+        name: endpoint.name,
+        schema_id: endpoint.schema_id,
+        link_kind: incoming ? `~${link.kind}` : link.kind,
+      }];
+    });
+    const members = linked_entities
+      .filter((linked) =>
+        linked.schema_id === "contacts.person" &&
+        linked.link_kind === "~works_at")
+      .map((linked) => linked.name);
     const header_rows: HeaderRow[] = [
       { type: "text", label: "Website", value: base.website },
       { type: "text", label: "Industry", value: base.industry },
       { type: "text", label: "Size", value: base.size },
       { type: "chips", label: `Team members (${String(members.length)})`, items: members },
     ];
-    return { ...base, canonical, facets, linked_entities: [], members, header_rows };
+    return { ...base, canonical, facets, linked_entities, members, header_rows };
   }
 
   // `params` is the AGENT-facing schema → omits `client_id` (the
@@ -132,7 +164,7 @@ export class CompaniesModule {
       "Create a company. Idempotent by name (case-insensitive, trimmed): if a " +
       "company with the same name already exists it is returned instead of " +
       "creating a duplicate. `domain` derives the website; `summary` becomes " +
-      "the description. Follow up with companies.update for richer enrichment.",
+      "the markdown description. Follow up with companies.update for richer enrichment.",
     params: {
       type: "object",
       properties: {
@@ -177,12 +209,21 @@ export class CompaniesModule {
     }
     if (params.website) details.website = params.website;
     if (params.industry) details.industry = params.industry;
-    if (params.summary) details.description = params.summary;
     await this.graph.attach_facet({
       entity_id: e.id,
       schema_id: COMPANY_DETAILS,
       data: details,
     });
+    // @tested-by: tst_mod_companies_description_002
+    // @invariant: The company Overview and agent writes share the same
+    // markdown facet contract; structured details never own the description.
+    if (params.summary) {
+      await this.graph.attach_facet({
+        entity_id: e.id,
+        schema_id: COMPANY_DESCRIPTION,
+        data: { body: params.summary },
+      });
+    }
     await this.graph.resolve_canonical(e.id);
     return this.listItemFor(e);
   }
@@ -215,8 +256,8 @@ export class CompaniesModule {
   @writeTool("update", {
     description:
       "Update / enrich a company. Provided fields are layered on; omitted " +
-      "fields stay untouched. `domain` derives the website; `summary` becomes " +
-      "the description; `emails`/`phones` are multi-instance.",
+      "fields stay untouched. `domain` derives the website; `summary` replaces " +
+      "the markdown description; `emails`/`phones` are multi-instance.",
     params: {
       type: "object",
       properties: {
@@ -273,12 +314,22 @@ export class CompaniesModule {
     if (params.stage !== undefined) details.stage = params.stage;
     if (params.headcount !== undefined) details.headcount = params.headcount;
     if (params.funding_total !== undefined) details.funding_total = params.funding_total;
-    if (params.summary !== undefined) details.description = params.summary;
     if (Object.keys(details).length > 0) {
       await this.graph.attach_facet({
         entity_id: params.id,
         schema_id: COMPANY_DETAILS,
         data: details,
+      });
+    }
+
+    // @tested-by: tst_mod_companies_description_001
+    // @invariant: The company Overview and agent writes share the same
+    // markdown facet contract; structured details never own the description.
+    if (params.summary !== undefined) {
+      await this.graph.attach_facet({
+        entity_id: params.id,
+        schema_id: COMPANY_DESCRIPTION,
+        data: { body: params.summary },
       });
     }
 

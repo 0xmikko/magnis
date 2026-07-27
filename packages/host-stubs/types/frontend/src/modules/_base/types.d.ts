@@ -58,7 +58,7 @@ export interface RightPaneProps {
     readonly runtime: AppRuntime;
 }
 export type { ContextMenuEntry } from "../../components/ui/ContextMenu";
-export type ModuleId = "companies" | "contacts" | "email" | "episodes" | "file" | "groups" | "meetings" | "notes" | "projects" | "settings" | "telegram" | "linkedin" | "x";
+export type ModuleId = "companies" | "contacts" | "email" | "episodes" | "file" | "groups" | "meetings" | "notes" | "projects" | "settings" | "telegram" | "triggers" | "linkedin" | "x";
 export interface ModuleConfig {
     readonly id: ModuleId;
     readonly title: string;
