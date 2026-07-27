@@ -108,7 +108,7 @@ describe("tst_fe_notes_markdown_001 — expanded note Markdown", () => {
         <NoteCard
           schemaId="notes.note"
           data={{
-            title: "RFQ tracker",
+            title: "Launch checklist",
             body: [
               "**Source of truth.**",
               "",
@@ -116,7 +116,7 @@ describe("tst_fe_notes_markdown_001 — expanded note Markdown", () => {
               "",
               "| Item | Status |",
               "|---|---|",
-              "| Audit | pending |",
+              "| Review | pending |",
             ].join("\n"),
           }}
           runtime={runtime}

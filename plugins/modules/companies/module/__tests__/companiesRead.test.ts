@@ -159,7 +159,7 @@ describe("companies read — shape parity (tst_be_companiesread_001)", () => {
    */
   it("tst_module_companies_002 returns incoming works_at contacts for the Contacts tab", async () => {
     spy(graph, "get_entity_full").mockResolvedValue({
-      entity: entity("company-1", "Acme Security", { schema_id: COMPANY }),
+      entity: entity("company-1", "Acme Labs", { schema_id: COMPANY }),
       facets: [],
       links: [
         {

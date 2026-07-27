@@ -20,15 +20,26 @@ import type {
 import { TriggersModule } from "../index";
 import { TriggerToolCallRenderer } from "../TriggerToolCallRenderer";
 
-function propsFor(name: string): AgentRendererProps<ToolCallRendererPayload> {
+function propsFor(
+  name: string,
+  completed = false,
+): AgentRendererProps<ToolCallRendererPayload> {
   return {
     payload: {
       toolCall: {
         id: `tc-${name}`,
         name,
-        args: { id: "trigger-1", name: "Vendor quote tracker" },
-        status: "pending",
+        args: { id: "trigger-1", name: "Incoming reply monitor" },
+        status: completed ? "approved" : "pending",
       },
+      ...(completed
+        ? {
+            toolResult: {
+              id: `result-${name}`,
+              result: { id: "trigger-1", name: "Incoming reply monitor" },
+            },
+          }
+        : {}),
       isAllowlisted: false,
       superseded: false,
       onApprove: () => undefined,
@@ -66,6 +77,12 @@ describe("tst_fe_agent_triggers_001 — trigger update renderer and module surfa
   ])("renders %s with the correct action label", (toolName, label) => {
     render(<TriggerToolCallRenderer {...propsFor(toolName)} />);
     expect(screen.getByRole("button", { name: new RegExp(`${label}$`) })).toBeTruthy();
+  });
+
+  it("renders a completed update as Updated, never Created", () => {
+    render(<TriggerToolCallRenderer {...propsFor("triggers.update", true)} />);
+    expect(screen.getAllByText("Updated").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Created")).toBeNull();
   });
 
   it("maps create and update approvals to separate allowlist targets", () => {

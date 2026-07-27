@@ -17,16 +17,16 @@ describe("tst_fe_agent_triggers_layout_001 — standard module shell", () => {
   it("maps the backend page into the standard one-line list item", () => {
     expect(mapTriggerListItem({
       id: "trigger-1",
-      name: "Vendor quote tracker",
+      name: "Incoming reply monitor",
       schema_id: "triggers.trigger",
-      watched_entity_names: ["Vendor A <> Example Corp", "Vendor B <> Example Corp"],
-      action_prompt: "Update the quote table",
+      watched_entity_names: ["Channel Alpha", "Channel Beta"],
+      action_prompt: "Update the shared status note",
       last_fired_at: "2026-07-27T12:00:00Z",
     })).toEqual({
       id: "trigger-1",
-      name: "Vendor quote tracker",
+      name: "Incoming reply monitor",
       schema_id: "triggers.trigger",
-      preview: "Watches Vendor A <> Example Corp, Vendor B <> Example Corp",
+      preview: "Watches Channel Alpha, Channel Beta",
       timestamp: "2026-07-27T12:00:00Z",
     });
   });

@@ -84,8 +84,8 @@ describe("tst_module_triggers_list_page_001 — standard module list RPC", () =>
   it("returns an exact filtered page without exposing the UI RPC as an agent tool", async () => {
     const details = new Map([
       ["trigger-1", "Daily summary"],
-      ["trigger-2", "Vendor audit quotes"],
-      ["trigger-3", "Vendor audit follow-up"],
+      ["trigger-2", "Incoming reply monitor"],
+      ["trigger-3", "Incoming reply follow-up"],
     ]);
     const graph = mockGraph<TriggerFacets>({
       list_entities_window: (params) =>
@@ -133,13 +133,13 @@ describe("tst_module_triggers_list_page_001 — standard module list RPC", () =>
     });
 
     const page = (await mounted.rpc("triggers.list_page", {
-      search: "vendor",
+      search: "incoming",
       limit: 1,
       offset: 1,
     })) as PaginatedResponse<TriggerListItem>;
 
     expect(page).toMatchObject({ total: 2, limit: 1, offset: 1 });
-    expect(page.items.map((item) => item.name)).toEqual(["Vendor audit follow-up"]);
+    expect(page.items.map((item) => item.name)).toEqual(["Incoming reply follow-up"]);
     expect(mounted.tools.some((tool) => tool.name === "triggers.list_page")).toBe(false);
   });
 });

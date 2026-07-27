@@ -17,6 +17,7 @@
 import { type ReactNode } from "react";
 import type { JSX } from "react";
 import type { IconName } from "../../components/ui/Icon";
+import type { AllowlistScope, AllowlistState } from "../../runtime/contracts";
 export type ToolCallState = "draft" | "in-flight" | "done" | "failed" | "denied" | "superseded";
 export declare function resolveToolCallState(status: "pending" | "approved" | "denied", superseded: boolean, inFlight: boolean, toolResult?: {
     result: unknown;
@@ -38,7 +39,7 @@ export interface BaseToolCallCardProps {
     /** Whether this card was superseded by a newer tool call */
     readonly superseded?: boolean;
     /** Whether this action is in the allowlist */
-    readonly isAllowlisted?: boolean;
+    readonly isAllowlisted?: AllowlistState;
     /** Module-specific content */
     readonly children: ReactNode;
     /** Extra content rendered in the header row (between title and badge) */
@@ -53,7 +54,7 @@ export interface BaseToolCallCardProps {
     readonly onApprove: () => Promise<void> | void;
     readonly onDeny?: () => Promise<void> | void;
     readonly onEdit?: () => void;
-    readonly onAllowlistToggle?: () => void;
+    readonly onAllowlistToggle?: (scope?: AllowlistScope) => void;
     /** Navigation after apply (clickable done state) */
     readonly onNavigate?: () => void;
     /** When provided, completely replaces the default action bar in pending state */

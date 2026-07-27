@@ -14,16 +14,16 @@ import { TriggerDetailPanel } from "../TriggerDetailPanel";
 
 const TRIGGER_DETAIL = {
   id: "trigger-1",
-  name: "Vendor quote tracker",
+  name: "Incoming reply monitor",
   gate_prompt: "Only relevant replies",
-  action_prompt: "Update the price table",
+  action_prompt: "Update the shared status note",
   status: "active",
   event_kinds: ["entity.created"],
   debounce_seconds: 0,
   firing_count: 0,
   watched_entities: [
-    { id: "chat-1", name: "Vendor A <> Example Corp" },
-    { id: "chat-duplicate", name: "Vendor A <> Example Corp" },
+    { id: "chat-1", name: "Shared channel" },
+    { id: "chat-duplicate", name: "Shared channel" },
   ],
 };
 
@@ -43,7 +43,7 @@ describe("tst_fe_agent_triggers_detail_001 — canonical watched entity rows", (
         return Promise.resolve({
           id,
           schema_id: "telegram.chat",
-          name: "Vendor A <> Example Corp",
+          name: "Shared channel",
         });
       }
       return Promise.reject(new Error(`unexpected RPC: ${method}`));
@@ -64,11 +64,11 @@ describe("tst_fe_agent_triggers_detail_001 — canonical watched entity rows", (
       ),
     );
 
-    const rendered = await findAllByText("Vendor A <> Example Corp");
+    const rendered = await findAllByText("Shared channel");
     expect(rendered).toHaveLength(2);
     expect(rendered.every((row) => row.closest("a") !== null)).toBe(true);
     expect(await findByText("Only relevant replies")).toBeTruthy();
-    expect(await findByText("Update the price table")).toBeTruthy();
+    expect(await findByText("Update the shared status note")).toBeTruthy();
     expect(await findByText("entity.created")).toBeTruthy();
     expect(await findByText("active")).toBeTruthy();
   });

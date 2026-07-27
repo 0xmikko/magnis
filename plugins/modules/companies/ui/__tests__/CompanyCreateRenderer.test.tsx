@@ -17,8 +17,8 @@ function makeUpdateProps(): AgentRendererProps<ToolCallRendererPayload> {
         name: "companies_update",
         args: {
           id: "company-acme",
-          summary: "Security platform and strategic partner",
-          industry: "Security / Bug Bounty",
+          summary: "Data platform and strategic partner",
+          industry: "Software",
         },
         status: "pending",
       },
@@ -55,7 +55,7 @@ describe("company tool call cards", () => {
         payload: {
           args: {
             id: "company-acme",
-            summary: "Security platform and strategic partner",
+            summary: "Data platform and strategic partner",
           },
           status: "pending",
         },
@@ -82,7 +82,7 @@ describe("company tool call cards", () => {
     );
 
     expect(screen.getByText("Update company")).toBeTruthy();
-    expect(screen.getByText("Security platform and strategic partner")).toBeTruthy();
+    expect(screen.getByText("Data platform and strategic partner")).toBeTruthy();
     expect(screen.getByRole("button", { name: /Update$/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Allowlist" })).toBeTruthy();
     expect(container.textContent).not.toContain("Agent wants to");
