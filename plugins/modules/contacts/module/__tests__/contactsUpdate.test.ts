@@ -1,5 +1,18 @@
+/**
+ * @layer: module
+ * @test-id: tst_plugin_contacts_update_001, tst_plugin_contacts_update_002
+ * @scenario: scn_hosted_demo_rich_data_001
+ * @covers: plugins/modules/contacts/module/service.ts::update
+ * @deterministic: yes
+ * @fixtures: inline contact profile facets
+ *
+ * Test environment: ContactsModule with scripted GraphService
+ * Clients: direct calls
+ * Mocks: GraphService and cross-module RPC
+ * Data: one Telegram-minted contact
+ */
 import { describe, expect, it, vi } from "vitest";
-import { entity, mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
+import { entity, facet, mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { ContactsModule } from "../service.ts";
 import type { ContactCanonical, ContactFacets } from "../../types.ts";
 
@@ -53,6 +66,52 @@ describe("contacts update", () => {
       from_id: "c1",
       to_id: "email-address-1",
       kind: "has_email",
+    });
+  });
+
+  it("tst_plugin_contacts_update_002 preserves unspecified profile fields across PATCH calls", async () => {
+    let profileData: ContactFacets["contacts.person.profile"] = {
+      first_name: "Kenji Watanabe",
+      username: "kenji_w",
+      bio: "Head of Partnerships at Lumen Labs",
+    };
+    const graph: G = mockGraph<ContactFacets, ContactCanonical>({
+      get_entity: () =>
+        Promise.resolve(entity("c1", "Kenji Watanabe", { schema_id: "contacts.person" })),
+      update_entity_name: () => Promise.resolve(undefined),
+      list_facets_for_entity: () =>
+        Promise.resolve([
+          facet("profile-1", "contacts.person.profile", profileData),
+        ]),
+      attach_facet: (input) => {
+        if (input.schema_id === "contacts.person.profile") {
+          profileData = input.data as ContactFacets["contacts.person.profile"];
+        }
+        return Promise.resolve({ id: "profile-1" });
+      },
+      get_canonical: () => Promise.resolve({}),
+    });
+    const module = mountModule<ContactsModule, ContactFacets, ContactCanonical>(
+      ContactsModule,
+      {
+        graph,
+        ctx: { extension_id: "contacts" },
+      },
+    ).module;
+
+    await module.update({
+      id: "c1",
+      bio: "Owns the Meridian partner handoff",
+    });
+    await module.update({
+      id: "c1",
+      username: "kenji_meridian",
+    });
+
+    expect(profileData).toEqual({
+      first_name: "Kenji Watanabe",
+      username: "kenji_meridian",
+      bio: "Owns the Meridian partner handoff",
     });
   });
 });

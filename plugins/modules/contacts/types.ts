@@ -54,6 +54,7 @@ export interface ContactFacets {
     first_name?: string;
     last_name?: string;
     username?: string;
+    bio?: string;
     relevance_tier?: string;
   };
   "contacts.person.email": { email: string; is_primary?: boolean; type?: string };

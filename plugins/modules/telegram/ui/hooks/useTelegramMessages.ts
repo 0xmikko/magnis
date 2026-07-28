@@ -65,6 +65,8 @@ export function useTelegramMessages(
   selectedChatId: string | undefined,
   chats: readonly TelegramChat[],
 ): UseTelegramMessagesResult {
+  // @tested-by: tst_plg_tgui_backfill_001
+  // @invariant: source_not_connected is a terminal demo history boundary.
   const runtime = useAppRuntime();
   const baseUrl = runtime.transport.baseUrl;
 

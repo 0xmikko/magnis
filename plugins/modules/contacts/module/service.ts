@@ -468,10 +468,23 @@ export class ContactsModule {
       await this.graph.update_entity_name(params.id, params.name);
     }
     if (params.name || params.bio !== undefined || params.username !== undefined) {
+      // @tested-by: tst_plugin_contacts_update_002
+      // @invariant: contacts.update has PATCH semantics; fields omitted by a
+      // later edit must not erase values stored by an earlier edit.
+      const currentFacet = (await this.graph.list_facets_for_entity(params.id)).find(
+        (facet) => facet.schema_id === CONTACT_PROFILE,
+      );
+      const currentProfile =
+        currentFacet?.data !== null &&
+        typeof currentFacet?.data === "object" &&
+        !Array.isArray(currentFacet.data)
+          ? (currentFacet.data as ContactFacets[typeof CONTACT_PROFILE])
+          : {};
       await this.graph.attach_facet({
         entity_id: params.id,
         schema_id: CONTACT_PROFILE,
         data: {
+          ...currentProfile,
           ...(params.name ? { first_name: params.name } : {}),
           ...(params.bio !== undefined ? { bio: params.bio } : {}),
           ...(params.username !== undefined ? { username: params.username } : {}),

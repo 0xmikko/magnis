@@ -1,9 +1,10 @@
 /**
- * @test-id: tst_plg_tgui_header_total_001..002
- * @scenario: scn_telegram_chat_header_total
+ * @test-id: tst_plg_tgui_header_total_001..002, tst_plg_tgui_backfill_001
+ * @scenario: scn_telegram_chat_header_total, scn_hosted_demo_rich_data_001
  * @covers: plugins/modules/telegram/ui/hooks/useTelegramMessages.ts,
  *          plugins/modules/telegram/ui/TelegramChatView.tsx
  * @deterministic: yes
+ * @fixtures: inline paginated Telegram RPC responses
  *
  * Bug (live-verified, stack A): the chat header said "50 messages" while the
  * chat held far more in the graph. `messages.list` returns the chat's REAL
@@ -241,10 +242,13 @@ describe("telegram chat header total (graph total, never page length)", () => {
 });
 
 describe("telegram hosted-demo backfill", () => {
-  // tst_plg_tgui_backfill_001: opening synthetic Telegram data has no connected
-  // source account. The host returns a terminal non-pending result; the hook
-  // must stop its operational backfill immediately and must not retry or log an
-  // error for this expected state.
+  /**
+   * @test-id: tst_plg_tgui_backfill_001
+   * @scenario: scn_hosted_demo_rich_data_001
+   * @covers: plugins/modules/telegram/ui/hooks/useTelegramMessages.ts
+   * @deterministic: yes
+   * @fixtures: source_not_connected host response
+   */
   it("tst_plg_tgui_backfill_001 treats source_not_connected as a terminal no-op", async () => {
     queryState.data = page(1, 1, 1);
     queryState.isLoading = false;
