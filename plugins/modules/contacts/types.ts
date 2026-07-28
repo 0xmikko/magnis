@@ -147,10 +147,14 @@ export interface CreateParams {
   client_id?: string;
 }
 
-// contacts.update — native only updates the name (controller.rs:562).
+// contacts.update — updates the fixture/user-editable person fields owned by
+// Contacts. Email-address entity resolution remains delegated to Email.
 export interface UpdateParams {
   id: string;
   name?: string;
+  email?: string;
+  bio?: string;
+  username?: string;
 }
 
 // contacts.search — agent tool returning an MCP ToolResult of

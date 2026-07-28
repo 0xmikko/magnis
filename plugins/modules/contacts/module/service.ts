@@ -443,9 +443,8 @@ export class ContactsModule {
     return { results, total: contacts.length, created, excluded: excludedCount };
   }
 
-  // Mirrors native contacts.update (controller.rs:562) — name only:
-  // rename the entity and re-attach the profile facet's first_name. The
-  // update_entity_name op is ownership-checked.
+  // Update the contact fields owned by this plugin. Email address identity is
+  // still resolved by the Email plugin through the cross-module hub.
   @writeTool("update", {
     description: "Update a contact's name.",
     params: {
@@ -453,6 +452,9 @@ export class ContactsModule {
       properties: {
         id: { type: "string", format: "uuid" },
         name: { type: "string" },
+        email: { type: "string" },
+        bio: { type: "string" },
+        username: { type: "string" },
       },
       required: ["id"],
       additionalProperties: false,
@@ -464,10 +466,33 @@ export class ContactsModule {
 
     if (params.name) {
       await this.graph.update_entity_name(params.id, params.name);
+    }
+    if (params.name || params.bio !== undefined || params.username !== undefined) {
       await this.graph.attach_facet({
         entity_id: params.id,
         schema_id: CONTACT_PROFILE,
-        data: { first_name: params.name },
+        data: {
+          ...(params.name ? { first_name: params.name } : {}),
+          ...(params.bio !== undefined ? { bio: params.bio } : {}),
+          ...(params.username !== undefined ? { username: params.username } : {}),
+        },
+        external_id: `contacts:update:profile:${params.id}`,
+      });
+    }
+    if (params.email !== undefined) {
+      await this.graph.attach_facet({
+        entity_id: params.id,
+        schema_id: CONTACT_EMAIL,
+        data: { email: params.email, is_primary: true },
+        external_id: `contacts:update:email:${params.id}`,
+      });
+      const address = await this.rpc.execute<{ id: string }>("email.ensure_address", {
+        address: params.email,
+      });
+      await this.graph.add_link({
+        from_id: params.id,
+        to_id: address.id,
+        kind: "has_email",
       });
     }
 
@@ -817,6 +842,7 @@ export class ContactsModule {
       entity_id: params.id,
       schema_id: CONTACT_SOCIAL,
       data: next,
+      external_id: `contacts:social:${params.id}`,
     });
     return next;
   }
