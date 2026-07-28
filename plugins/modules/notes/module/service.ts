@@ -23,7 +23,7 @@ import type {
   UpdateParams,
 } from "../types.ts";
 import { NOTE, NOTE_CONTENT } from "../schema.ts";
-import { isValidUuid, previewFromBody, renderTemplate } from "./helpers.ts";
+import { isValidUuid, previewFromBody, renderTemplate, resolveBody } from "./helpers.ts";
 
 export class NotesModule {
   private readonly graph: GraphService<NoteFacets, NoteCanonical>;
@@ -165,13 +165,18 @@ export class NotesModule {
       properties: {
         title: { type: "string", description: "Note title" },
         body: { type: "string", description: "Markdown content" },
+        content: {
+          type: "string",
+          description: "Markdown content — MCP-compatible alias for `body`. Supply one, not both.",
+        },
         client_id: {
           type: "string",
           format: "uuid",
           description: "Client-generated UUID for optimistic / idempotent create",
         },
       },
-      required: ["title", "body"],
+      required: ["title"],
+      anyOf: [{ required: ["body"] }, { required: ["content"] }],
       additionalProperties: false,
     },
   })
@@ -179,6 +184,10 @@ export class NotesModule {
     if (params.client_id !== undefined && !isValidUuid(params.client_id)) {
       throw new Error("client_id must be a valid UUID");
     }
+    // @tested-by: tst_module_notes_write_001
+    // @invariant: INV-1 — exactly one of `body` / `content` carries the note.
+    // Resolved BEFORE any write so a malformed call creates nothing.
+    const body = resolveBody(params);
     // Idempotency: a repeated client_id returns the existing note (as the full
     // snapshot), no second entity (native service.rs:376-380).
     if (params.client_id) {
@@ -196,13 +205,28 @@ export class NotesModule {
     // heading for empty notes (the native file-era default): the title lives in
     // its own field, so a body heading only duplicates it and goes stale on
     // rename (old title left visible in the body).
-    const body = params.body;
     const entity = await this.graph.create_entity({
       schema_id: NOTE,
       name: params.title,
       client_id: params.client_id,
     });
-    await this.writeContent(entity.id, params.title, body, now);
+    // @tested-by: tst_module_notes_write_001
+    // @invariant: INV-2 — create is externally atomic. A failed content write
+    // must not leave a title-only note in the user's graph; that orphan is what
+    // rendered as "an empty note appeared and everything broke".
+    try {
+      await this.writeContent(entity.id, params.title, body, now);
+    } catch (writeError) {
+      try {
+        await this.graph.delete_entity(entity.id);
+      } catch (rollbackError) {
+        throw new AggregateError(
+          [writeError, rollbackError],
+          `note content write and rollback both failed for ${entity.id}`,
+        );
+      }
+      throw writeError;
+    }
 
     return { id: entity.id, schema_id: NOTE, title: params.title, body, updated_at: now };
   }
@@ -233,10 +257,27 @@ export class NotesModule {
     const newBody = params.body ?? data.body ?? "";
     const now = new Date().toISOString();
 
-    if (params.title !== undefined && newTitle !== currentTitle) {
-      await this.graph.update_entity_name(params.id, newTitle);
-    }
+    // @tested-by: tst_module_notes_write_002
+    // @invariant: INV-25 — content first, then the rename. The old order left a
+    // note renamed for content it never received when the facet write failed.
+    // If the rename then fails, the prior content is restored so neither half
+    // is applied alone.
     await this.writeContent(params.id, newTitle, newBody, now);
+    if (params.title !== undefined && newTitle !== currentTitle) {
+      try {
+        await this.graph.update_entity_name(params.id, newTitle);
+      } catch (renameError) {
+        try {
+          await this.writeContent(params.id, currentTitle, data.body ?? "", now);
+        } catch (rollbackError) {
+          throw new AggregateError(
+            [renameError, rollbackError],
+            `note rename and content rollback both failed for ${params.id}`,
+          );
+        }
+        throw renameError;
+      }
+    }
 
     // Full snapshot so the chat surface renders without a lazy fetch.
     return { id: params.id, schema_id: NOTE, title: newTitle, body: newBody, updated_at: now };

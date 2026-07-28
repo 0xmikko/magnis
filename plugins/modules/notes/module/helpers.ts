@@ -13,6 +13,39 @@ export function isValidUuid(id: string): boolean {
   return UUID_RE.test(id);
 }
 
+/// Resolve the single markdown body from the two accepted wire names.
+///
+/// MCP clients send `content`; the UI and the graph facet use `body`. They name
+/// the SAME field, so exactly one must be present — supplying both is
+/// ambiguous (which wins?) and supplying neither is the call that used to
+/// produce a note with an empty body. Both are rejected before any write.
+// @tested-by: tst_module_notes_write_001
+export function resolveBody(params: { body?: string; content?: string }): string {
+  const hasBody = params.body !== undefined;
+  const hasContent = params.content !== undefined;
+  if (hasBody && hasContent) {
+    throw new Error("notes.create: supply the markdown under `body` OR `content`, not both");
+  }
+  if (hasBody) return params.body as string;
+  if (hasContent) return params.content as string;
+  throw new Error("notes.create: missing required param — `body` or `content`");
+}
+
+/// The lenient counterpart of `resolveBody`, for RENDERING a pending
+/// `notes.create`/`notes.update` tool call whose arguments have not been
+/// validated yet. Lives beside the tool schema on purpose: the card and the
+/// schema must agree on which wire names carry the body, and keeping the list
+/// in the renderer is how the card came to show an empty note for a `content`
+/// call. `text` is the legacy name, kept last.
+// @tested-by: tst_module_notes_write_003
+export function bodyFromToolArgs(args: Record<string, unknown>): string {
+  for (const key of ["body", "content", "text"] as const) {
+    const value = args[key];
+    if (typeof value === "string") return value;
+  }
+  return "";
+}
+
 /// Truncate to `maxChars` codepoints (NOT bytes — Cyrillic/emoji safe),
 /// appending `suffix` only when truncation actually happened.
 function truncateChars(value: string, maxChars: number, suffix: string): string {
