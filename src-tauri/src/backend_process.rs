@@ -72,47 +72,70 @@ pub struct BackendProcessManager {
 impl BackendProcessManager {
     /// Resolve path to magnis-server binary (next to current exe, or repo/desktop target dir).
     fn server_binary_path() -> Result<std::path::PathBuf> {
+        // @tested-by: tst_desktop_sidecar_001
+        // @invariant: INV-17 — an EXPLICIT path wins, and the log names both
+        // the winner and every candidate rejected before it.
+        //
+        // The old order tried the sidecar sitting next to the current
+        // executable FIRST and consulted MAGNIS_SERVER_PATH LAST, so a binary
+        // left over from a previous desktop build beat both the current build
+        // and an explicit override — silently. Several demo takes ran
+        // yesterday's backend that way, and nothing said so.
+        //
+        // `agent_binary_path` below already put its env var first; the two
+        // resolvers disagreed while a comment claimed they mirrored each other.
+        let mut rejected: Vec<String> = Vec::new();
+
+        if let Ok(path) = std::env::var("MAGNIS_SERVER_PATH") {
+            let p = std::path::Path::new(&path);
+            if p.exists() {
+                eprintln!("magnis-server: using {} (MAGNIS_SERVER_PATH)", p.display());
+                return Ok(p.to_path_buf());
+            }
+            rejected.push(format!("MAGNIS_SERVER_PATH={path} (missing)"));
+        }
+
+        // Dev: this worktree's own build. Preferred over a neighbour binary so
+        // `cargo tauri dev` runs what was just compiled.
+        {
+            let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+            for rel in ["../../target", "../../../target"] {
+                for subdir in ["release", "debug"] {
+                    let p = base.join(rel).join(subdir).join("magnis-server");
+                    if p.exists() {
+                        let p = p.canonicalize()?;
+                        eprintln!(
+                            "magnis-server: using {} (worktree target); skipped {:?}",
+                            p.display(),
+                            rejected
+                        );
+                        return Ok(p);
+                    }
+                    rejected.push(p.display().to_string());
+                }
+            }
+        }
+
+        // Packaged: the Tauri `externalBin` sidecar beside the executable.
         let current_exe =
             std::env::current_exe().context("Failed to get current executable path")?;
         let parent = current_exe
             .parent()
             .context("Executable has no parent directory")?;
-        // Tauri `externalBin` packages the sidecar target-triple-suffixed
-        // (mirrors the pglite-server resolver); try that first, then plain.
         if let Some(p) = pick_existing(parent, current_target_triple(), |p| p.exists()) {
+            eprintln!(
+                "magnis-server: using {} (bundled sidecar); skipped {:?}",
+                p.display(),
+                rejected
+            );
             return Ok(p);
         }
-        // When run from desktop/: CARGO_MANIFEST_DIR = desktop/src-tauri (baked at compile time)
-        {
-            let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-            // desktop/target/release or desktop/target/debug
-            for subdir in ["release", "debug"] {
-                let p = base.join("../../target").join(subdir).join("magnis-server");
-                if p.exists() {
-                    return Ok(p.canonicalize()?);
-                }
-            }
-            // Repo root target (when desktop is in repo/desktop): repo/target/release
-            for subdir in ["release", "debug"] {
-                let p = base
-                    .join("../../../target")
-                    .join(subdir)
-                    .join("magnis-server");
-                if p.exists() {
-                    return Ok(p.canonicalize()?);
-                }
-            }
-        }
-        // Explicit path for packaging
-        if let Ok(path) = std::env::var("MAGNIS_SERVER_PATH") {
-            let p = std::path::Path::new(&path);
-            if p.exists() {
-                return Ok(p.to_path_buf());
-            }
-        }
+        rejected.push(format!("{}/magnis-server*", parent.display()));
+
         anyhow::bail!(
-            "magnis-server binary not found. From repo root run: cargo build -p magnis-server --release. \
-             Or set MAGNIS_SERVER_PATH to the binary path."
+            "magnis-server binary not found. Tried: {rejected:?}. \
+             From repo root run: cargo build -p magnis-server --release, \
+             or set MAGNIS_SERVER_PATH."
         )
     }
 
