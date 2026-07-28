@@ -223,6 +223,7 @@ export class NotesModule {
         throw new AggregateError(
           [writeError, rollbackError],
           `note content write and rollback both failed for ${entity.id}`,
+          { cause: rollbackError },
         );
       }
       throw writeError;
@@ -273,6 +274,7 @@ export class NotesModule {
           throw new AggregateError(
             [renameError, rollbackError],
             `note rename and content rollback both failed for ${params.id}`,
+            { cause: rollbackError },
           );
         }
         throw renameError;

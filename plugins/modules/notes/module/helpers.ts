@@ -21,13 +21,12 @@ export function isValidUuid(id: string): boolean {
 /// produce a note with an empty body. Both are rejected before any write.
 // @tested-by: tst_module_notes_write_001
 export function resolveBody(params: { body?: string; content?: string }): string {
-  const hasBody = params.body !== undefined;
-  const hasContent = params.content !== undefined;
-  if (hasBody && hasContent) {
+  const { body, content } = params;
+  if (body !== undefined && content !== undefined) {
     throw new Error("notes.create: supply the markdown under `body` OR `content`, not both");
   }
-  if (hasBody) return params.body as string;
-  if (hasContent) return params.content as string;
+  if (body !== undefined) return body;
+  if (content !== undefined) return content;
   throw new Error("notes.create: missing required param — `body` or `content`");
 }
 
