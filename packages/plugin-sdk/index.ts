@@ -25,6 +25,7 @@ import type {
   MethodRecorder,
   PluginContext,
   PluginDeps,
+  PluginLogger,
   PluginModuleShape,
   PluginUtil,
   RawEntity,
@@ -179,12 +180,14 @@ export function definePlugin<
     ctx: PluginContext,
     util: PluginUtil,
     rpc: RpcExecutor,
+    log: PluginLogger,
   ): Promise<void> {
     const instance = new ModuleClass({
       graph: graph as GraphService<F, C>,
       ctx,
       util,
       rpc,
+      log,
     }) as Record<string, (p: unknown) => unknown>;
     // Prefix = the plugin id the runtime injects (== the module name,
     // per the Rust convention). The decorator carries only the suffix.
