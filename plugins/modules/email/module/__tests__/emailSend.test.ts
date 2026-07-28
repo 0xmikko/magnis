@@ -1,16 +1,15 @@
 // Email send / reply / batch_send (@writeTool).
 //
-// !! KNOWN-DEFECT PIN — DO NOT READ AS A DESIRED CONTRACT !!
-// The three assertions marked `pre-INV-5` below encode the CURRENT behaviour:
-// the outgoing message is written to the graph BEFORE the provider is called,
-// and a provider failure is swallowed. That is the defect where the tool
-// reported a send that never left Gmail. INV-5/INV-6/INV-27 invert it (send
-// first, persist the provider id, never re-send on retry); these assertions
-// are expected to be REWRITTEN then, not preserved.
+// Send flow (INV-5/6/27): validate the recipient, record a durable
+// `email.send_attempt`, route to the provider, and only then persist the
+// message carrying the provider's id. A refusal throws and stores nothing; a
+// retry whose attempt is already `sent` performs no provider call.
 //
-// Current flow: create the outgoing message FIRST (apply_batch), then route
-// best-effort (source failure non-fatal for send). Reply threads in_reply_to + links
-// attachments to the ORIGINAL. Exercised through @magnis/testkit/module.
+// Reply still routes first and links attachments afterwards, so a post-send
+// graph failure reports failure for mail that has already gone out. It is NOT
+// yet on the attempt ledger — tracked as the remaining half of B25.
+//
+// Exercised through @magnis/testkit/module.
 
 import { describe, expect, it } from "vitest";
 import type { EntityDetail, GraphBatchInput } from "@magnis/plugin-sdk";
