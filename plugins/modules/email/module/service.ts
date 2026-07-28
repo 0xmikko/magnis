@@ -391,11 +391,13 @@ export class EmailModule {
       }
 
       if (env.kind === "live") {
+        // @tested-by: tst_be_emailingest_trigger_006
+        // @invariant: INV-9 — only the SENDER is a trigger candidate. Listing
+        // recipients too meant a trigger watching the user's own address fired
+        // on the user's own traffic: the RFQ we had just sent counted as "a
+        // reply arrived". A trigger watches who it hears FROM, not who was
+        // copied.
         const touched = [entityId];
-        for (const r of recipientsOf(p)) {
-          const aid = result.ids[`addr:${r}`];
-          if (aid) touched.push(aid);
-        }
         const from = lowerAddr(str(p, "from_address"));
         if (from) {
           const sid = result.ids[`addr:${from}`];
@@ -413,6 +415,10 @@ export class EmailModule {
             from_address: str(p, "from_address"),
             from_name: str(p, "from_name"),
             subject: str(p, "subject"),
+            // @invariant: INV-10 — without the event's own timestamp the
+            // engine cannot tell a delayed backfill from a fresh arrival, so
+            // it fired on history. The engine fails closed when this is absent.
+            occurred_at: str(p, "sent_at"),
           },
         });
       }
