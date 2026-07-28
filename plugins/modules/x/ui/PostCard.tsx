@@ -1,22 +1,23 @@
 import type { JSX, ReactNode } from "react";
 import { Avatar, Card, Icon, Row, Stack, Tag, Text } from "@magnis/host/ui";
 import type { IconName } from "@magnis/host/ui";
-import { initialsFromName } from "@magnis/host/utils";
+import { initialsFromName, renderableMediaUrl } from "@magnis/host/utils";
 
 // Content blockers kill direct hotlinks to these CDNs (ERR_BLOCKED_BY_CLIENT,
 // live-observed 2026-07-02) — route them through the backend's same-origin
 // media proxy. Other URLs pass through untouched.
 const PROXIED_HOSTS = ["media.licdn.com", "pbs.twimg.com"];
 export function proxiedMediaUrl(url: string | null): string | null {
-  if (!url) return null;
+  const renderableUrl = renderableMediaUrl(url);
+  if (!renderableUrl) return null;
   try {
-    if (PROXIED_HOSTS.includes(new URL(url).host)) {
-      return `/api/media-proxy?url=${encodeURIComponent(url)}`;
+    if (PROXIED_HOSTS.includes(new URL(renderableUrl).host)) {
+      return `/api/media-proxy?url=${encodeURIComponent(renderableUrl)}`;
     }
   } catch {
-    return url;
+    return renderableUrl;
   }
-  return url;
+  return renderableUrl;
 }
 
 

@@ -1,4 +1,5 @@
 import type { TelegramChat } from "./types";
+import { renderableMediaUrl } from "@magnis/host/utils";
 import { hashCode } from "./utils/hash";
 import {
   MEDIA_LABELS,
@@ -50,11 +51,12 @@ export function pickAvatarColor(key: string): string {
 }
 
 export function resolveAvatarUrl(baseUrl: string, rawUrl: string | null): string | undefined {
-  if (!rawUrl) return undefined;
-  if (rawUrl.startsWith("http://") || rawUrl.startsWith("https://")) {
-    return rawUrl;
+  const renderableUrl = renderableMediaUrl(rawUrl);
+  if (!renderableUrl) return undefined;
+  if (renderableUrl.startsWith("http://") || renderableUrl.startsWith("https://")) {
+    return renderableUrl;
   }
-  return `${baseUrl}${rawUrl}`;
+  return `${baseUrl}${renderableUrl}`;
 }
 
 export function loadCachedChats(): { chats: TelegramChat[]; total: number } | null {

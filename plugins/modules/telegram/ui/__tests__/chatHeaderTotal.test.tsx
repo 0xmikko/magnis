@@ -239,3 +239,48 @@ describe("telegram chat header total (graph total, never page length)", () => {
     expect(screen.queryByText("3 messages")).toBeNull();
   });
 });
+
+describe("telegram hosted-demo backfill", () => {
+  // tst_plg_tgui_backfill_001: opening synthetic Telegram data has no connected
+  // source account. The host returns a terminal non-pending result; the hook
+  // must stop its operational backfill immediately and must not retry or log an
+  // error for this expected state.
+  it("tst_plg_tgui_backfill_001 treats source_not_connected as a terminal no-op", async () => {
+    queryState.data = page(1, 1, 1);
+    queryState.isLoading = false;
+    rpcMock.mockReset();
+    rpcMock.mockResolvedValue({ pending: false, reason: "source_not_connected" });
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const chats = [{
+      id: "chat-entity-1",
+      chatId: "10001",
+      name: "Gearbox SC devs",
+      initials: "GS",
+      avatarColor: "#333",
+      lastMessage: "Status?",
+      time: "10:00",
+    }];
+
+    const { useTelegramMessages } = await import("../hooks/useTelegramMessages");
+    const { result, unmount } = renderHook(() =>
+      useTelegramMessages("chat-entity-1", chats),
+    );
+
+    await waitFor(() => {
+      expect(rpcMock).toHaveBeenCalledWith("telegram.messages.backfill", {
+        chat_id: 10001,
+        before_message_id: 1,
+        limit: 50,
+      });
+    });
+    await waitFor(() => {
+      expect(result.current.backfilling).toBe(false);
+      expect(result.current.hasMoreOnServer).toBe(false);
+    });
+    expect(rpcMock).toHaveBeenCalledTimes(1);
+    expect(consoleError).not.toHaveBeenCalled();
+
+    unmount();
+    consoleError.mockRestore();
+  });
+});

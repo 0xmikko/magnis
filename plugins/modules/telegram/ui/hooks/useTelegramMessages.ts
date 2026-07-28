@@ -9,6 +9,7 @@ import { formatMessageTime } from "../utils/time";
 import { PAGE_SIZE } from "../index.tsx";
 import { initialsFromName } from "../utils/text";
 import { mediaLabel, pickAvatarColor } from "../helpers";
+import { renderableMediaUrl } from "@magnis/host/utils";
 
 export interface UseTelegramMessagesResult {
   readonly conversation: TelegramConversation | undefined;
@@ -26,12 +27,16 @@ export interface UseTelegramMessagesResult {
 function mapMessages(items: readonly TelegramMessageListItem[], baseUrl: string): TelegramMessage[] {
   return items
     .map((m) => {
-      const mMediaUrl = m.metadata?.media_url as string | undefined;
+      const mMediaUrl = renderableMediaUrl(
+        (m.metadata?.media_url as string | undefined) ?? null,
+      ) ?? undefined;
       const mMediaType = m.metadata?.media_type as string | undefined;
       const prefixedMediaUrl = mMediaUrl?.startsWith("/")
         ? `${baseUrl}${mMediaUrl}`
         : mMediaUrl;
-      const mSenderAvatarUrl = m.metadata?.sender_avatar_url as string | undefined;
+      const mSenderAvatarUrl = renderableMediaUrl(
+        (m.metadata?.sender_avatar_url as string | undefined) ?? null,
+      ) ?? undefined;
       const prefixedSenderAvatarUrl = mSenderAvatarUrl?.startsWith("/")
         ? `${baseUrl}${mSenderAvatarUrl}`
         : mSenderAvatarUrl;
@@ -262,6 +267,12 @@ export function useTelegramMessages(
         chat_id: Number(nativeChatId),
         before_message_id: oldestMsgId,
         limit: PAGE_SIZE,
+      })
+      .then((result) => {
+        if (result.pending !== true) {
+          setHasMoreOnServer(false);
+          clearBackfillWait();
+        }
       })
       .catch((err: unknown) => {
         console.error("Backfill request failed:", err);
