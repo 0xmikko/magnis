@@ -89,6 +89,21 @@ export function str(o: Record<string, unknown>, k: string): string | undefined {
   const v = o[k];
   return typeof v === "string" ? v : undefined;
 }
+/// Readable text for a thrown value. Domain-neutral, and it belongs here for
+/// the same reason `str`/`num` do — the alternative is a copy per module.
+/// It matters more than it looks: the host serialises a rejection as
+/// `String(e.stack)`, and a stack carries neither `AggregateError.errors` nor
+/// `.cause`, so anything the operator must see has to be IN the message.
+export function errText(value: unknown): string {
+  if (value instanceof Error) return value.message;
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return "unserialisable error";
+  }
+}
+
 export function num(o: Record<string, unknown>, k: string): number | null {
   const v = o[k];
   return typeof v === "number" ? v : null;

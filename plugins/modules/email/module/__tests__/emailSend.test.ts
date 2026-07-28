@@ -60,7 +60,7 @@ describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
     // row, the message itself, then the ledger's `sent` row. Two extra writes
     // is the price of being able to answer "did this already leave?" — Gmail
     // has no idempotency key, so the alternative is re-sending real mail.
-    expect(spy(graph, "apply_batch")).toHaveBeenCalledTimes(3);
+    expect(spy(graph, "apply_batch")).toHaveBeenCalledTimes(1);
     const applyCall0 = spy(graph, "apply_batch").mock.calls.find(
       (c) => (c[0] as GraphBatchInput).entities.some((e) => e.schema_id === "email.message"),
     );
@@ -109,27 +109,48 @@ describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
     expect(batched.every((e) => e.schema_id === "email.send_attempt")).toBe(true);
   });
 
-  // INV-27 — the half of DEC-5 that route-first alone does not give you.
-  it("does not re-send when a prior attempt already succeeded", async () => {
+  /**
+   * @test-id: tst_module_email_send_006
+   * @invariant INV-27 — once the provider has accepted, the mail is gone and
+   * cannot be recalled. Throwing here would report a failed send and invite a
+   * retry that delivers the message a SECOND time. The graph write is an
+   * optimistic view: Gmail's Sent folder is ingested with no label filter, so
+   * the next sync creates the message anyway.
+   */
+  it("a graph write that fails AFTER the provider accepted does not fail the send", async () => {
     const graph = makeGraph({
-      find_by_external_id: () => Promise.resolve("attempt-1"),
-      get_entity_full: () =>
-        Promise.resolve({
-          entity: { id: "attempt-1", schema_id: "email.send_attempt", name: "S", created_at: "" },
-          facets: [{
-            id: "a", schema_id: "email.send_attempt.details", source: "s", observed_at: "",
-            data: { status: "sent", provider_message_id: "src-1", message_entity_id: "id-out" },
-          }],
-          links: [],
-        }),
+      apply_batch: () => Promise.reject(new Error("graph unavailable")),
     });
     const mod = makeModule(graph);
 
     const r = await mod.emailSend({ to: "b@x.com", subject: "S", body_text: "B" });
 
-    expect(spy(graph, "source_command")).not.toHaveBeenCalled();
-    expect(r.id).toBe("id-out");
-    expect(r.already_sent).toBe(true);
+    expect(r.graph_write_failed).toBe(true);
+    expect(r.provider_message_id).toBe("src-1");
+    expect(r.id).toBeNull();
+    // Exactly one delivery — nothing invites a second attempt.
+    expect(spy(graph, "source_command")).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * @test-id: tst_module_email_send_005
+   * @invariant INV-6 — ingest matches on the facet `external_id` and nothing
+   * else, and Gmail hands back the same id for our own sent mail. Carrying it
+   * on the outgoing message is what stops the copy arriving from Sent becoming
+   * a SECOND entity.
+   */
+  it("stamps the provider ids so the copy arriving from Sent updates this entity", async () => {
+    const graph = makeGraph({
+      source_command: () => Promise.resolve({ message_id: "gmail-42", thread_id: "thr-9" }),
+    });
+    const mod = makeModule(graph);
+
+    await mod.emailSend({ to: "b@x.com", subject: "S", body_text: "B" });
+
+    const frag = spy(graph, "apply_batch").mock.calls[0]?.[0] as GraphBatchInput;
+    const msg = frag.entities.find((e) => e.schema_id === "email.message")!;
+    expect(msg.facets[0]?.external_id).toBe("gmail-42");
+    expect(msg.idx).toBe("thr-9");
   });
 
   it("links attachments and checks ownership", async () => {
@@ -270,8 +291,7 @@ describe("email batch_send (tst_be_emailbatch_send_004)", () => {
     expect(result1.status).toBe("excluded");
     expect(result1.id).toBeNull();
     expect(result0.status).toBe("sent");
-    // 2 sends x 3 writes each (routing, message, sent) — see the note above.
-    expect(spy(graph, "apply_batch")).toHaveBeenCalledTimes(6); // only the 2 non-excluded
+    expect(spy(graph, "apply_batch")).toHaveBeenCalledTimes(2); // only the 2 non-excluded
   });
 
   it("rejects an out-of-range batch size", async () => {
@@ -343,5 +363,38 @@ describe("batch_send validates every recipient before sending any", () => {
 
     expect(graph.spies.source_command).not.toHaveBeenCalled();
     expect(graph.spies.apply_batch).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * @test-id: tst_module_email_send_007
+ * @invariant INV-8 — messages already delivered cannot be recalled, so a later
+ * refusal must not discard their results. Making send fatal (INV-5) turned the
+ * loop into an all-or-nothing abort; this pins that it does not.
+ */
+describe("batch_send reports every message even when one is refused", () => {
+  it("keeps the results of messages already delivered", async () => {
+    let call = 0;
+    const graph = makeGraph({
+      source_command: () => {
+        call++;
+        return call === 2
+          ? Promise.reject(new Error("no connected account"))
+          : Promise.resolve({ message_id: `src-${String(call)}` });
+      },
+    });
+    const mod = makeModule(graph);
+
+    const r = (await mod.emailBatchSend({
+      messages: [
+        { to: "a@x.io", subject: "1", body_text: "b" },
+        { to: "b@x.io", subject: "2", body_text: "b" },
+        { to: "c@x.io", subject: "3", body_text: "b" },
+      ],
+    })) as { sent: number; failed: number; results: { status: string }[] };
+
+    expect(r.sent).toBe(2);
+    expect(r.failed).toBe(1);
+    expect(r.results.map((x) => x.status)).toEqual(["sent", "failed", "sent"]);
   });
 });

@@ -1,11 +1,12 @@
 // The wire names that carry a note's markdown body — the SINGLE source of
 // truth, shared by the tool schema, the write handlers and the approval card.
 //
-// Lives as a loose file in the plugin root beside `types.ts` / `schema.ts`
-// (docs/plugins/structure.md §2: "everything genuinely shared sits as a loose
-// file in the root"), NOT in `module/helpers.ts`. `module/` runs in a
-// restricted V8 isolate and `ui/` is a browser bundle; a `ui/ → module/`
-// import would couple the two execution contexts with nothing guarding it.
+// Lives in `ui/`, not in `module/` and not in the plugin root. `module/` runs
+// in a restricted V8 isolate and `ui/` is a browser bundle: the UI bundler
+// resolves nothing its entrypoint reaches OUTSIDE `ui/`, so a root file here
+// turns `bun run test:scripts` red while `build-plugins.ts` still succeeds on
+// its own — green to the eye, broken at the gate. `module/` reaches in the
+// other direction through the tsc onLoad hook, which does resolve it.
 //
 // Keeping ONE list here is the fix for B23: the card and the schema drifted,
 // so a `content` call rendered a blank approval card.

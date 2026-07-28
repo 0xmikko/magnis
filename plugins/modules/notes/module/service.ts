@@ -5,7 +5,8 @@
 // NOT user-scoped); `list`/`search` rely instead on the host's already
 // user-scoped `list_entities_window` / `search_entities_by_name` ops.
 
-import { tool, writeTool, type GraphService, type PluginDeps, type PluginLogger } from "@magnis/plugin-sdk";
+import { tool, writeTool, type GraphService, errText,
+  type PluginDeps, type PluginLogger } from "@magnis/plugin-sdk";
 import type { EntityDetail, PaginatedResponse, RawEntity, WindowRow } from "@magnis/plugin-sdk";
 import type {
   ContentData,
@@ -24,21 +25,7 @@ import type {
 } from "../types.ts";
 import { NOTE, NOTE_CONTENT } from "../schema.ts";
 import { isValidUuid, previewFromBody, renderTemplate } from "./helpers.ts";
-import { BODY_ONE_OF, resolveBody, resolveUpdateBody } from "../toolArgs.ts";
-
-/// Readable text for a thrown value. The host serialises a rejection as
-/// `String(e.stack)` (magnis-app backend/src/plugin_runtime/lifecycle.rs), and
-/// a stack carries neither `AggregateError.errors` nor `.cause` — so anything
-/// the operator must see has to be IN the message.
-function errText(value: unknown): string {
-  if (value instanceof Error) return value.message;
-  if (typeof value === "string") return value;
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return "unserialisable error";
-  }
-}
+import { BODY_ONE_OF, resolveBody, resolveUpdateBody } from "../ui/toolArgs.ts";
 
 export class NotesModule {
   private readonly graph: GraphService<NoteFacets, NoteCanonical>;
@@ -49,8 +36,8 @@ export class NotesModule {
   }
 
   /// DEC-7/INV-22: a compensated write is an operational branch, so it reports
-  /// itself. Deliberately NOT extracted to the SDK — `notes` and `triggers` are
-  /// separate packages whose only shared import crosses the repo boundary.
+  /// itself. Kept per-module rather than shared — see the note in the triggers
+  /// module; the earlier "crosses a repo boundary" justification was wrong.
   private async logFailure(
     decision: string,
     entityId: string,

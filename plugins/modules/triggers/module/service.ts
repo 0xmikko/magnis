@@ -18,7 +18,8 @@
 // `get_entity_full` precheck (raw `get_entity`/`attach_facet` are NOT user-scoped),
 // matching the native guards.
 
-import { rpc, tool, writeTool, type GraphService, type PluginDeps, type PluginLogger, type RpcExecutor } from "@magnis/plugin-sdk";
+import { rpc, tool, writeTool, type GraphService, errText,
+  type PluginDeps, type PluginLogger, type RpcExecutor } from "@magnis/plugin-sdk";
 import type {
   EntityDetail,
   LinkSummary,
@@ -46,20 +47,6 @@ import type {
 } from "../types.ts";
 import { BELONGS_TO, TRIGGER, TRIGGER_CONFIG, TRIGGER_EXECUTION, WATCHES } from "../schema.ts";
 
-/// Readable text for a thrown value. The host serialises a rejection as
-/// `String(e.stack)` (magnis-app backend/src/plugin_runtime/lifecycle.rs), and
-/// a stack carries neither `AggregateError.errors` nor `.cause` — so anything
-/// the operator must see has to be IN the message.
-function errText(value: unknown): string {
-  if (value instanceof Error) return value.message;
-  if (typeof value === "string") return value;
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return "unserialisable error";
-  }
-}
-
 export class TriggersModule {
   private readonly graph: GraphService<TriggerFacets>;
   private readonly rpc: RpcExecutor;
@@ -72,9 +59,12 @@ export class TriggersModule {
   }
 
   /// DEC-7/INV-22: a compensated write is an operational branch, so it reports
-  /// itself. Deliberately NOT extracted to the SDK — `notes` and `triggers` are
-  /// separate packages whose only shared import crosses the repo boundary, and
-  /// a control-flow helper there would need the F6 breaking-change dance.
+  /// itself. Kept per-module rather than shared: the four compensation blocks
+  /// differ in what they undo, and wrapping async graph calls in a closure to
+  /// hand to a helper reads worse than the two copies. (An earlier version of
+  /// this comment claimed the SDK was out of reach across a repo boundary —
+  /// that was simply wrong: `@magnis/plugin-sdk` is in this repository and both
+  /// modules already import it. `errText` now lives there.)
   private async logFailure(
     decision: string,
     entityId: string,

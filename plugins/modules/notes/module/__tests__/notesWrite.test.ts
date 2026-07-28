@@ -10,7 +10,7 @@
 import { describe, expect, it } from "vitest";
 import { entity, facet, mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { NotesModule } from "../service.ts";
-import { bodyFromToolArgs } from "../../toolArgs.ts";
+import { bodyFromToolArgs } from "../../ui/toolArgs.ts";
 import { NOTE, NOTE_CONTENT } from "../../schema.ts";
 import type { NoteCanonical, NoteFacets } from "../../types.ts";
 
@@ -157,5 +157,54 @@ describe("notes.update is atomic", () => {
     );
 
     expect(graph.spies.update_entity_name).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * @test-id: tst_module_notes_write_004
+ * @scenario: scn_demo_rfq_001
+ * @covers: plugins/modules/notes/module/service.ts::NotesModule.update
+ * @deterministic: yes
+ *
+ * @invariant INV-25 — the OTHER direction of the update compensation: the
+ * content write lands, the rename then fails, and the note must come back
+ * exactly as it was — title, body AND `updated_at`. Restoring with a fresh
+ * timestamp would still move the note in a list ordered by that field, so a
+ * failed update would visibly reorder the user's notes.
+ */
+describe("notes.update restores the note unchanged when the rename fails", () => {
+  it("tst_module_notes_write_004 title, body and updated_at all come back", async () => {
+    const writes: Record<string, unknown>[] = [];
+    const graph = mockGraph<NoteFacets, NoteCanonical>({
+      get_entity_full: () =>
+        Promise.resolve({
+          entity: entity(NOTE_ID, "old title", { schema_id: NOTE }),
+          facets: [
+            facet("f1", NOTE_CONTENT, {
+              title: "old title",
+              body: "old body",
+              updated_at: "2026-07-01T00:00:00Z",
+            }),
+          ],
+          links: [],
+        }),
+      attach_facet: (p: { data: Record<string, unknown> }) => {
+        writes.push({ ...p.data });
+        return Promise.resolve(undefined);
+      },
+      resolve_canonical: () => Promise.resolve(undefined),
+      update_entity_name: () => Promise.reject(new Error("rename store unavailable")),
+    } as never);
+    const { module } = mountModule(NotesModule, { graph });
+
+    await expect(
+      module.update({ id: NOTE_ID, title: "new title", body: "new body" }),
+    ).rejects.toThrow("rename store unavailable");
+
+    expect(writes.at(-1)).toMatchObject({
+      title: "old title",
+      body: "old body",
+      updated_at: "2026-07-01T00:00:00Z",
+    });
   });
 });

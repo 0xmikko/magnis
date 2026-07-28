@@ -22,7 +22,7 @@ import {
   writeTool,
   type GraphService,
   type PluginDeps,
-  type PluginUtil,
+  type PluginLogger,
 } from "@magnis/plugin-sdk";
 import type {
   BatchEntityInput,
@@ -65,50 +65,16 @@ import {
   ADDRESS_SCHEMA,
   MESSAGE_DETAILS,
   MESSAGE_SCHEMA,
-  SEND_ATTEMPT_DETAILS,
-  SEND_ATTEMPT_NS,
-  SEND_ATTEMPT_SCHEMA,
 } from "../schema.ts";
 
 export class EmailModule {
   private readonly graph: GraphService<EmailFacets, EmailCanonical>;
   private readonly rpc: RpcExecutor;
-  private readonly util: PluginUtil;
+  private readonly log: PluginLogger;
   constructor(deps: PluginDeps<EmailFacets, EmailCanonical>) {
     this.graph = deps.graph;
     this.rpc = deps.rpc;
-    this.util = deps.util;
-  }
-
-  /// Read the durable attempt for this exact message, if one exists.
-  ///
-  /// Sending crosses an irreversible boundary, so neither pure ordering is
-  /// safe: writing first leaves a FALSE record when the provider refuses
-  /// (the demo's "it said sent but Gmail never got it"), while routing first
-  /// lets a retry send the mail TWICE — `execute_tool` returns an error before
-  /// the approval is consumed, and Gmail's send has no idempotency key. The
-  /// attempt record is what makes "did this already leave?" answerable.
-  private async readAttempt(externalId: string): Promise<Data | null> {
-    const id = await this.graph.find_by_external_id(externalId);
-    if (!id) return null;
-    const detail = await this.graph.get_entity_full(id, { links: false });
-    const data = detail?.facets.find((f) => f.schema_id === SEND_ATTEMPT_DETAILS)?.data;
-    return (data as Data | undefined) ?? null;
-  }
-
-  /// Upsert the attempt. Idempotent on the facet's `external_id`, so the
-  /// routing -> sent/failed transitions land on ONE entity.
-  private async writeAttempt(externalId: string, data: Data): Promise<void> {
-    await this.graph.apply_batch({
-      entities: [{
-        key: "attempt",
-        schema_id: SEND_ATTEMPT_SCHEMA,
-        name: typeof data.subject === "string" ? data.subject : "outgoing email",
-        facets: [{ schema_id: SEND_ATTEMPT_DETAILS, data, external_id: externalId, confidence: 100 }],
-      }],
-      refs: [],
-      links: [],
-    });
+    this.log = deps.log;
   }
 
   // ── email.list ────────────────────────────────────────────────
@@ -613,6 +579,7 @@ export class EmailModule {
 
     const results: Record<string, unknown>[] = [];
     let sent = 0;
+    let failed = 0;
     let excludedCount = 0;
     for (const [i, m] of messages.entries()) {
       if (excluded.has(i)) {
@@ -620,11 +587,28 @@ export class EmailModule {
         results.push({ id: null, to: m.to, subject: m.subject, status: "excluded", attachment_count: 0 });
         continue;
       }
-      const r = await this.sendSingle(m.to, m.subject, m.body_text, m.attachment_ids ?? []);
-      sent++;
-      results.push({ id: r.id, to: m.to, subject: m.subject, status: "sent", attachment_count: r.attachment_count });
+      // @tested-by: tst_module_email_send_007
+      // @invariant: INV-8 — a refusal on message N must not discard the outcome
+      // of messages 1..N-1: those are already delivered and un-recallable, so
+      // dropping their results loses the only record the caller gets. Report
+      // every message and keep going.
+      try {
+        const r = await this.sendSingle(m.to, m.subject, m.body_text, m.attachment_ids ?? []);
+        sent++;
+        results.push({ id: r.id, to: m.to, subject: m.subject, status: "sent", attachment_count: r.attachment_count });
+      } catch (sendError) {
+        failed++;
+        results.push({
+          id: null,
+          to: m.to,
+          subject: m.subject,
+          status: "failed",
+          attachment_count: 0,
+          error: sendError instanceof Error ? sendError.message : String(sendError),
+        });
+      }
     }
-    return { results, total: messages.length, sent, excluded: excludedCount };
+    return { results, total: messages.length, sent, failed, excluded: excludedCount };
   }
 
   // ── set_trigger (@writeTool) ──────────────────────────────────
@@ -850,59 +834,25 @@ export class EmailModule {
     // it required a file.details facet — rejected otherwise, no fallback name).
     const attachmentNames = await this.resolveOwnedFileNames(attachmentIds);
     const now = new Date().toISOString();
-    // @tested-by: tst_module_email_send_004
-    // @invariant: INV-5 / INV-27 — route BEFORE persisting, with a durable
-    // attempt so a retry can tell "never sent" from "sent, graph write failed".
-    const attemptKey = await this.util.uuid_v5(SEND_ATTEMPT_NS, `${toLower}|${subject}|${bodyText}`);
-    const attemptExternalId = `email:send-attempt:${attemptKey}`;
-    const prior = await this.readAttempt(attemptExternalId);
-    if (prior?.status === "sent") {
-      // Already delivered. Do NOT hand Gmail the same message twice.
-      return {
-        schema_id: MESSAGE_SCHEMA,
-        id: prior.message_entity_id ?? null,
+    // @tested-by: tst_module_email_send_004, tst_module_email_send_006
+    // @invariant: INV-5 — route BEFORE persisting. A refusal must leave no
+    // trace: the demo's failure was a stored "outgoing" message for mail Gmail
+    // had rejected. No ledger is needed to make this safe — see the write
+    // below for why the tool never throws once the provider has accepted.
+    const routed = await this.graph.source_command({
+      action: "send_message",
+      draft: {
+        to: [{ address: toLower }],
+        cc: [],
+        bcc: [],
         subject,
-        to: toLower,
         body_text: bodyText,
-        attachment_count: attachmentIds.length,
-        from_address: OUTGOING_FROM,
-        sender: OUTGOING_FROM,
-        sent_at: now,
-        timestamp: now,
-        already_sent: true,
-      };
-    }
-
-    await this.writeAttempt(attemptExternalId, { status: "routing", to: toLower, subject });
-
-    let routed: unknown;
-    try {
-      routed = await this.graph.source_command({
-        action: "send_message",
-        draft: {
-          to: [{ address: toLower }],
-          cc: [],
-          bcc: [],
-          subject,
-          body_text: bodyText,
-          body_html: null,
-          in_reply_to: null,
-        },
-      });
-    } catch (sendError) {
-      // INV-5: the provider refused, so NOTHING is persisted. The old code
-      // swallowed this and reported a send that never happened.
-      await this.writeAttempt(attemptExternalId, {
-        status: "failed",
-        to: toLower,
-        subject,
-        reason: sendError instanceof Error ? sendError.message : String(sendError),
-      });
-      throw sendError;
-    }
-    // INV-6: keep the provider's id so a later ingest of the SAME message
-    // matches this entity instead of creating a second one.
-    const providerMessageId = str((routed ?? {}) as Data, "message_id");
+        body_html: null,
+        in_reply_to: null,
+      },
+    });
+    const providerMessageId = str(routed, "message_id");
+    const providerThreadId = str(routed, "thread_id");
 
     const facetData: Record<string, unknown> = {
       from_address: OUTGOING_FROM,
@@ -915,50 +865,78 @@ export class EmailModule {
       has_attachments: attachmentIds.length > 0,
       attachment_names: attachmentNames,
     };
-    // Outgoing message has no stable external_id → always created fresh; the
-    // recipient address resolves-or-creates by its external_id (the hub).
-    const msgKey = "out";
-    const addrKey = `addr:${toLower}`;
-    const result = await this.graph.apply_batch({
-      entities: [
-        {
-          key: msgKey,
-          schema_id: MESSAGE_SCHEMA,
-          name: subject,
-          date: now,
-          facets: [{ schema_id: MESSAGE_DETAILS, data: facetData, confidence: 100 }],
-        },
-        {
-          key: addrKey,
-          schema_id: ADDRESS_SCHEMA,
-          name: toLower,
-          idx: toLower,
-          facets: [
-            { schema_id: ADDRESS_DETAILS, data: { address: toLower }, external_id: `email:address:${toLower}`, confidence: 100 },
-          ],
-        },
-      ],
-      refs: [],
-      links: [{ from_key: msgKey, to_key: addrKey, kind: "sent_to" }],
-    });
-    const entityId = result.ids[msgKey];
-    if (entityId === undefined) throw new Error(`email.send: missing entity id for ${msgKey}`);
+    // @tested-by: tst_module_email_send_006
+    // @invariant: INV-27 — the provider has ACCEPTED by this point, so the mail
+    // is gone and cannot be recalled. Throwing here would report a failed send
+    // and invite a retry, which would deliver the message a SECOND time. The
+    // graph write is an optimistic view, not the record: Gmail's Sent folder is
+    // ingested with no label filter, so the next sync creates this message
+    // properly on its own. A failure is therefore logged and surfaced, never
+    // thrown.
+    let entityId: string | null = null;
+    let graphWriteFailed = false;
+    try {
+      // Outgoing message has no stable external_id → always created fresh; the
+      // recipient address resolves-or-creates by its external_id (the hub).
+      const msgKey = "out";
+      const addrKey = `addr:${toLower}`;
+      const result = await this.graph.apply_batch({
+        entities: [
+          {
+            key: msgKey,
+            schema_id: MESSAGE_SCHEMA,
+            name: subject,
+            // @tested-by: tst_module_email_send_005
+            // @invariant: INV-6 — Gmail returns the id it will later hand back as
+            // `remote_id` when sync ingests our own Sent folder, and ingest
+            // matches on the facet `external_id` and nothing else. Carrying it
+            // here is what makes the copy arriving from Sent UPDATE this entity
+            // instead of creating a second one. Without it every sent email
+            // exists in the graph twice.
+            idx: providerThreadId ?? undefined,
+            date: now,
+            facets: [{
+              schema_id: MESSAGE_DETAILS,
+              data: facetData,
+              external_id: providerMessageId ?? undefined,
+              confidence: 100,
+            }],
+          },
+          {
+            key: addrKey,
+            schema_id: ADDRESS_SCHEMA,
+            name: toLower,
+            idx: toLower,
+            facets: [
+              { schema_id: ADDRESS_DETAILS, data: { address: toLower }, external_id: `email:address:${toLower}`, confidence: 100 },
+            ],
+          },
+        ],
+        refs: [],
+        links: [{ from_key: msgKey, to_key: addrKey, kind: "sent_to" }],
+      });
+      const messageEntityId = result.ids[msgKey];
+      if (messageEntityId === undefined) throw new Error(`email.send: missing entity id for ${msgKey}`);
 
-    for (const fid of attachmentIds) {
-      await this.graph.add_link({ from_id: entityId, to_id: fid, kind: "attachment" });
+      for (const fid of attachmentIds) {
+        await this.graph.add_link({ from_id: messageEntityId, to_id: fid, kind: "attachment" });
+      }
+
+      entityId = messageEntityId;
+    } catch (writeError) {
+      graphWriteFailed = true;
+      await this.log.log("warn", "outgoing email persisted only in the mailbox", {
+        provider_message_id: providerMessageId,
+        to: toLower,
+        reason: writeError instanceof Error ? writeError.message : String(writeError),
+      });
     }
-
-    await this.writeAttempt(attemptExternalId, {
-      status: "sent",
-      to: toLower,
-      subject,
-      provider_message_id: providerMessageId,
-      message_entity_id: entityId,
-    });
 
     return {
       schema_id: MESSAGE_SCHEMA,
       id: entityId,
+      provider_message_id: providerMessageId,
+      graph_write_failed: graphWriteFailed,
       subject,
       to,
       body_text: bodyText,

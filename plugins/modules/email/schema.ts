@@ -13,9 +13,3 @@ export const ADDRESS_SCHEMA = "email.address";
 /** Address details facet (display name / provenance). */
 export const ADDRESS_DETAILS = "email.address.details";
 
-/** Durable send-attempt entity — the idempotency ledger for outgoing mail. */
-export const SEND_ATTEMPT_SCHEMA = "email.send_attempt";
-/** Its single-aligned details facet (status + provider ids). */
-export const SEND_ATTEMPT_DETAILS = "email.send_attempt.details";
-/** UUIDv5 namespace for deriving an attempt key from the message content. */
-export const SEND_ATTEMPT_NS = "6f9619ff-8b86-d011-b42d-00c04fc964ff";
