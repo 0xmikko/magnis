@@ -1,6 +1,15 @@
-// Email send / reply / batch_send (@writeTool). Native-parity flow:
-// create the outgoing message FIRST (apply_batch), then route best-effort
-// (source failure non-fatal for send). Reply threads in_reply_to + links
+// Email send / reply / batch_send (@writeTool).
+//
+// !! KNOWN-DEFECT PIN — DO NOT READ AS A DESIRED CONTRACT !!
+// The three assertions marked `pre-INV-5` below encode the CURRENT behaviour:
+// the outgoing message is written to the graph BEFORE the provider is called,
+// and a provider failure is swallowed. That is the defect where the tool
+// reported a send that never left Gmail. INV-5/INV-6/INV-27 invert it (send
+// first, persist the provider id, never re-send on retry); these assertions
+// are expected to be REWRITTEN then, not preserved.
+//
+// Current flow: create the outgoing message FIRST (apply_batch), then route
+// best-effort (source failure non-fatal for send). Reply threads in_reply_to + links
 // attachments to the ORIGINAL. Exercised through @magnis/testkit/module.
 
 import { describe, expect, it } from "vitest";
@@ -69,6 +78,7 @@ describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
     expect(r.attachment_count).toBe(0);
   });
 
+  // pre-INV-5: pins the defect, scheduled for reversal.
   it("source failure is NON-FATAL — the entity still persists", async () => {
     const graph = makeGraph({
       source_command: () => Promise.reject(new Error("no connected account")),
