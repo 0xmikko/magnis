@@ -10,7 +10,7 @@
 import { describe, expect, it } from "vitest";
 import { entity, facet, mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { NotesModule } from "../service.ts";
-import { bodyFromToolArgs } from "../helpers.ts";
+import { bodyFromToolArgs } from "../../toolArgs.ts";
 import { NOTE, NOTE_CONTENT } from "../../schema.ts";
 import type { NoteCanonical, NoteFacets } from "../../types.ts";
 
@@ -47,7 +47,7 @@ describe("notes.create accepts one body field and is atomic", () => {
     const graph = writeGraph();
     const { module } = mountModule(NotesModule, { graph });
 
-    const snap = await module.create({ title: "RFQ", content: "## prices" } as never);
+    const snap = await module.create({ title: "RFQ", content: "## prices" });
 
     expect(snap.body).toBe("## prices");
     expect(graph.spies.attach_facet).toHaveBeenCalledWith(

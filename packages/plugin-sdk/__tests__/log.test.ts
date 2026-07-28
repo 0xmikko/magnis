@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { mockLogger, mountModule } from "@magnis/testkit/module";
-import type { PluginDeps } from "@magnis/plugin-sdk";
+import { definePlugin } from "@magnis/plugin-sdk";
+import type { PluginDeps, PluginContext, PluginModuleShape } from "@magnis/plugin-sdk";
+
+const ctx: PluginContext = { user_id: "u1", extension_kind: "plugin", extension_id: "test" };
 
 /**
  * @test-id: tst_sdk_log_001
@@ -52,5 +55,31 @@ describe("plugin log surface", () => {
     const { deps } = mountModule(LoggingModule);
 
     expect(typeof deps.log.log).toBe("function");
+  });
+});
+
+/**
+ * @test-id: tst_sdk_log_002
+ * @scenario: scn_plugin_logging_001
+ * @covers: packages/plugin-sdk/index.ts::definePlugin.init
+ * @deterministic: yes
+ *
+ * @invariant INV-21 — the host boundary is Rust/V8 and passes arguments
+ * positionally, so TypeScript cannot enforce arity there. Before the guard,
+ * `init` with four arguments RESOLVED, every handler registered, and the
+ * plugin ran until a failure path touched `deps.log` — crashing inside the
+ * error handler. Proven by a review probe.
+ */
+describe("the host contract for the logger is enforced, not assumed", () => {
+  it("tst_sdk_log_002 init without the logger rejects instead of running blind", async () => {
+    definePlugin(LoggingModule);
+    const shape = (globalThis as unknown as { __magnis_plugin_module: PluginModuleShape })
+      .__magnis_plugin_module;
+
+    await expect(
+      (shape.init as unknown as (...a: unknown[]) => Promise<void>)({}, ctx, {}, {
+        execute: () => Promise.resolve(undefined),
+      }),
+    ).rejects.toThrow(/logger/i);
   });
 });

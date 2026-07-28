@@ -182,6 +182,19 @@ export function definePlugin<
     rpc: RpcExecutor,
     log: PluginLogger,
   ): Promise<void> {
+    // The host boundary is Rust/V8 and passes these positionally, so TypeScript
+    // cannot enforce arity there. Without this guard a host that has not caught
+    // up leaves `log` undefined, every handler registers, and the plugin runs
+    // normally until a FAILURE path calls `deps.log` — crashing inside the
+    // error handler. That is the swallow-the-failure shape this surface exists
+    // to remove, so the contract is checked here instead of assumed.
+    // @tested-by: tst_sdk_log_002
+    if (typeof (log as PluginLogger | undefined)?.log !== "function") {
+      throw new TypeError(
+        "plugin init: host did not supply the logger (5th argument). " +
+          "A plugin without a log channel cannot report its own failures.",
+      );
+    }
     const instance = new ModuleClass({
       graph: graph as GraphService<F, C>,
       ctx,

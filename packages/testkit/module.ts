@@ -117,7 +117,6 @@ export interface CapturedLogEntry {
  *  the capture rides alongside the real surface. */
 export interface MockLogger extends PluginLogger {
   readonly entries: CapturedLogEntry[];
-  readonly spy: Mock;
 }
 
 export function mockLogger(): MockLogger {
@@ -128,7 +127,7 @@ export function mockLogger(): MockLogger {
       return Promise.resolve();
     },
   );
-  return { entries, spy, log: spy };
+  return { entries, log: spy };
 }
 
 export interface DirectMount<T, F extends object, C extends object> {

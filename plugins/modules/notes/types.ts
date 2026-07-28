@@ -96,7 +96,10 @@ export type CreateParams = CreateParamsBase &
 export interface UpdateParams {
   id: string;
   title?: string;
+  /** Same two wire names as create — the approval card renders both, so the
+   *  handler must accept both or the card lies about what will be written. */
   body?: string;
+  content?: string;
 }
 export interface DeleteParams {
   id: string;

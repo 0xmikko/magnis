@@ -8,7 +8,7 @@ import type {
 } from "@magnis/host/runtime";
 import { useRouterContext } from "@magnis/host/runtime";
 import { BaseToolCallCard } from "@magnis/host/base";
-import { bodyFromToolArgs } from "../module/helpers.ts";
+import { bodyFromToolArgs } from "../toolArgs.ts";
 
 export function NoteToolCallRenderer({
   payload,

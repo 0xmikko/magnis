@@ -5,7 +5,7 @@
 // NOT user-scoped); `list`/`search` rely instead on the host's already
 // user-scoped `list_entities_window` / `search_entities_by_name` ops.
 
-import { tool, writeTool, type GraphService, type PluginDeps } from "@magnis/plugin-sdk";
+import { tool, writeTool, type GraphService, type PluginDeps, type PluginLogger } from "@magnis/plugin-sdk";
 import type { EntityDetail, PaginatedResponse, RawEntity, WindowRow } from "@magnis/plugin-sdk";
 import type {
   ContentData,
@@ -23,12 +23,45 @@ import type {
   UpdateParams,
 } from "../types.ts";
 import { NOTE, NOTE_CONTENT } from "../schema.ts";
-import { isValidUuid, previewFromBody, renderTemplate, resolveBody } from "./helpers.ts";
+import { isValidUuid, previewFromBody, renderTemplate } from "./helpers.ts";
+import { BODY_ONE_OF, resolveBody, resolveUpdateBody } from "../toolArgs.ts";
+
+/// Readable text for a thrown value. The host serialises a rejection as
+/// `String(e.stack)` (magnis-app backend/src/plugin_runtime/lifecycle.rs), and
+/// a stack carries neither `AggregateError.errors` nor `.cause` — so anything
+/// the operator must see has to be IN the message.
+function errText(value: unknown): string {
+  if (value instanceof Error) return value.message;
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return "unserialisable error";
+  }
+}
 
 export class NotesModule {
   private readonly graph: GraphService<NoteFacets, NoteCanonical>;
+  private readonly log: PluginLogger;
   constructor(deps: PluginDeps<NoteFacets, NoteCanonical>) {
     this.graph = deps.graph;
+    this.log = deps.log;
+  }
+
+  /// DEC-7/INV-22: a compensated write is an operational branch, so it reports
+  /// itself. Deliberately NOT extracted to the SDK — `notes` and `triggers` are
+  /// separate packages whose only shared import crosses the repo boundary.
+  private async logFailure(
+    decision: string,
+    entityId: string,
+    reason: unknown,
+    rollbackReason?: unknown,
+  ): Promise<void> {
+    await this.log.log("warn", decision, {
+      entity_id: entityId,
+      reason: errText(reason),
+      ...(rollbackReason === undefined ? {} : { rollback_reason: errText(rollbackReason) }),
+    });
   }
 
   @tool("list", {
@@ -176,7 +209,7 @@ export class NotesModule {
         },
       },
       required: ["title"],
-      anyOf: [{ required: ["body"] }, { required: ["content"] }],
+      oneOf: BODY_ONE_OF,
       additionalProperties: false,
     },
   })
@@ -184,10 +217,6 @@ export class NotesModule {
     if (params.client_id !== undefined && !isValidUuid(params.client_id)) {
       throw new Error("client_id must be a valid UUID");
     }
-    // @tested-by: tst_module_notes_write_001
-    // @invariant: INV-1 — exactly one of `body` / `content` carries the note.
-    // Resolved BEFORE any write so a malformed call creates nothing.
-    const body = resolveBody(params);
     // Idempotency: a repeated client_id returns the existing note (as the full
     // snapshot), no second entity (native service.rs:376-380).
     if (params.client_id) {
@@ -200,6 +229,11 @@ export class NotesModule {
       }
     }
 
+    // @tested-by: tst_module_notes_write_001
+    // @invariant: INV-1 — exactly one of `body`/`content`, non-blank. Resolved
+    // AFTER the client_id short-circuit above: an idempotent retry returns the
+    // EXISTING note and must not be forced to resend the body it already stored.
+    const body = resolveBody(params);
     const now = new Date().toISOString();
     // Store the body verbatim. We deliberately do NOT inject a `# ${title}`
     // heading for empty notes (the native file-era default): the title lives in
@@ -220,12 +254,14 @@ export class NotesModule {
       try {
         await this.graph.delete_entity(entity.id);
       } catch (rollbackError) {
-        throw new AggregateError(
-          [writeError, rollbackError],
-          `note content write and rollback both failed for ${entity.id}`,
+        await this.logFailure("note create rollback failed", entity.id, writeError, rollbackError);
+        throw new Error(
+          `note content write and rollback both failed for ${entity.id}: ` +
+            `write=${errText(writeError)}; rollback=${errText(rollbackError)}`,
           { cause: rollbackError },
         );
       }
+      await this.logFailure("note create rolled back", entity.id, writeError);
       throw writeError;
     }
 
@@ -241,6 +277,10 @@ export class NotesModule {
         id: { type: "string", format: "uuid", description: "Entity ID of the note" },
         title: { type: "string", description: "New title (optional)" },
         body: { type: "string", description: "New markdown body (optional)" },
+        content: {
+          type: "string",
+          description: "New markdown body — MCP alias for `body`. Supply one, not both.",
+        },
       },
       required: ["id"],
       additionalProperties: false,
@@ -255,8 +295,14 @@ export class NotesModule {
     const data = this.contentOf(detail);
     const currentTitle = this.titleOf(e, data, {});
     const newTitle = params.title ?? currentTitle;
-    const newBody = params.body ?? data.body ?? "";
+    const newBody = resolveUpdateBody(params) ?? data.body ?? "";
     const now = new Date().toISOString();
+    // @tested-by: tst_module_notes_write_004
+    // @invariant: INV-25 — the compensation must restore the note as it WAS,
+    // including its timestamp. Rewriting it with `now` changed `updated_at`,
+    // which reorders the note in the list (ordered by that very field), so a
+    // failed update still moved it.
+    const previousUpdatedAt = data.updated_at ?? now;
 
     // @tested-by: tst_module_notes_write_002
     // @invariant: INV-25 — content first, then the rename. The old order left a
@@ -269,14 +315,20 @@ export class NotesModule {
         await this.graph.update_entity_name(params.id, newTitle);
       } catch (renameError) {
         try {
-          await this.writeContent(params.id, currentTitle, data.body ?? "", now);
+          await this.writeContent(params.id, currentTitle, data.body ?? "", previousUpdatedAt);
         } catch (rollbackError) {
-          throw new AggregateError(
-            [renameError, rollbackError],
-            `note rename and content rollback both failed for ${params.id}`,
+          // The host serialises a thrown error as `String(e.stack)`
+          // (magnis-app backend/src/plugin_runtime/lifecycle.rs) and a stack
+          // carries neither `.errors` nor `.cause`, so an AggregateError here
+          // reached the operator naming NEITHER failure.
+          await this.logFailure("note rename rollback failed", params.id, renameError, rollbackError);
+          throw new Error(
+            `note rename and content rollback both failed for ${params.id}: ` +
+              `rename=${errText(renameError)}; rollback=${errText(rollbackError)}`,
             { cause: rollbackError },
           );
         }
+        await this.logFailure("note rename rolled back", params.id, renameError);
         throw renameError;
       }
     }

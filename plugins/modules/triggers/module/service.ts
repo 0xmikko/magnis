@@ -18,7 +18,7 @@
 // `get_entity_full` precheck (raw `get_entity`/`attach_facet` are NOT user-scoped),
 // matching the native guards.
 
-import { rpc, tool, writeTool, type GraphService, type PluginDeps, type RpcExecutor } from "@magnis/plugin-sdk";
+import { rpc, tool, writeTool, type GraphService, type PluginDeps, type PluginLogger, type RpcExecutor } from "@magnis/plugin-sdk";
 import type {
   EntityDetail,
   LinkSummary,
@@ -46,13 +46,46 @@ import type {
 } from "../types.ts";
 import { BELONGS_TO, TRIGGER, TRIGGER_CONFIG, TRIGGER_EXECUTION, WATCHES } from "../schema.ts";
 
+/// Readable text for a thrown value. The host serialises a rejection as
+/// `String(e.stack)` (magnis-app backend/src/plugin_runtime/lifecycle.rs), and
+/// a stack carries neither `AggregateError.errors` nor `.cause` — so anything
+/// the operator must see has to be IN the message.
+function errText(value: unknown): string {
+  if (value instanceof Error) return value.message;
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return "unserialisable error";
+  }
+}
+
 export class TriggersModule {
   private readonly graph: GraphService<TriggerFacets>;
   private readonly rpc: RpcExecutor;
+  private readonly log: PluginLogger;
 
   constructor(deps: PluginDeps<TriggerFacets>) {
     this.graph = deps.graph;
     this.rpc = deps.rpc;
+    this.log = deps.log;
+  }
+
+  /// DEC-7/INV-22: a compensated write is an operational branch, so it reports
+  /// itself. Deliberately NOT extracted to the SDK — `notes` and `triggers` are
+  /// separate packages whose only shared import crosses the repo boundary, and
+  /// a control-flow helper there would need the F6 breaking-change dance.
+  private async logFailure(
+    decision: string,
+    entityId: string,
+    reason: unknown,
+    rollbackReason?: unknown,
+  ): Promise<void> {
+    await this.log.log("warn", decision, {
+      entity_id: entityId,
+      reason: errText(reason),
+      ...(rollbackReason === undefined ? {} : { rollback_reason: errText(rollbackReason) }),
+    });
   }
 
   @writeTool("create", {
@@ -108,7 +141,10 @@ export class TriggersModule {
     // absent or blank one used to default to "", producing a live trigger that
     // fires on EVERYTHING it watches; that is how a trigger came out already
     // "fired once" against unrelated mail.
-    const gate_prompt = (params.gate_prompt ?? "").trim();
+    // The type says required, but the agent boundary is UNTYPED (B27: the schema
+    // is not enforced at dispatch), so a missing value must still produce this
+    // message rather than a TypeError from .trim().
+    const gate_prompt = typeof params.gate_prompt === "string" ? params.gate_prompt.trim() : "";
     if (!gate_prompt) throw new Error("missing or empty required param: gate_prompt");
     const event_kinds =
       params.event_kinds && params.event_kinds.length > 0 ? params.event_kinds : ["sync_ingested"];
@@ -180,12 +216,14 @@ export class TriggersModule {
       try {
         await this.graph.delete_entity(entity.id);
       } catch (rollbackError) {
-        throw new AggregateError(
-          [writeError, rollbackError],
-          `trigger write and rollback both failed for ${entity.id}`,
+        await this.logFailure("trigger create rollback failed", entity.id, writeError, rollbackError);
+        throw new Error(
+          `trigger write and rollback both failed for ${entity.id}: ` +
+            `write=${errText(writeError)}; rollback=${errText(rollbackError)}`,
           { cause: rollbackError },
         );
       }
+      await this.logFailure("trigger create rolled back", entity.id, writeError);
       throw writeError;
     }
 
@@ -354,6 +392,13 @@ export class TriggersModule {
     const config = this.configOf(detail);
     if (!config) throw new Error(`trigger config not found: ${params.id}`);
 
+    // @tested-by: tst_module_triggers_write_003
+    // @invariant: INV-25 — snapshot BEFORE any field is applied. Taking the
+    // copy after the first mutation made the compensation restore the old NAME
+    // while persisting the NEW gate_prompt, i.e. it silently changed the
+    // trigger's condition on a failed update — the opposite of its purpose.
+    const previousConfig = { ...config };
+
     // @tested-by: tst_module_triggers_write_002
     // @invariant: INV-4 — `update` accepted "" as a real gate value, which
     // silently disarmed the condition on an existing trigger.
@@ -363,10 +408,8 @@ export class TriggersModule {
       config.gate_prompt = gate;
     }
 
-    // @tested-by: tst_module_triggers_write_002
     // @invariant: INV-25 — the rename ran BEFORE the config write, so a failed
     // facet write left the trigger renamed for a config it never received.
-    const previousConfig = { ...config };
     if (params.name !== undefined) config.name = params.name;
     if (params.action_prompt !== undefined) config.action_prompt = params.action_prompt;
     if (params.status !== undefined) config.status = params.status;
@@ -389,12 +432,19 @@ export class TriggersModule {
             data: previousConfig,
           });
         } catch (rollbackError) {
-          throw new AggregateError(
-            [renameError, rollbackError],
-            `trigger rename and config rollback both failed for ${params.id}`,
+          // The host serialises a thrown error as `String(e.stack)`
+          // (magnis-app backend/src/plugin_runtime/lifecycle.rs), and a stack
+          // carries neither `.errors` nor `.cause`. An AggregateError here
+          // reached the operator naming NEITHER failure, so both messages are
+          // interpolated into the text instead.
+          await this.logFailure("trigger rename rollback failed", params.id, renameError, rollbackError);
+          throw new Error(
+            `trigger rename and config rollback both failed for ${params.id}: ` +
+              `rename=${errText(renameError)}; rollback=${errText(rollbackError)}`,
             { cause: rollbackError },
           );
         }
+        await this.logFailure("trigger rename rolled back", params.id, renameError);
         throw renameError;
       }
     }

@@ -161,3 +161,88 @@ describe("triggers.update keeps the gate real and the write whole", () => {
     expect(graph.spies.update_entity_name).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * @test-id: tst_module_triggers_write_003
+ * @scenario: scn_demo_trigger_002
+ * @covers: plugins/modules/triggers/module/service.ts::TriggersModule.update
+ * @deterministic: yes
+ * @fixtures: inline graph doubles
+ *
+ * @invariant INV-25 — regression. The snapshot used for compensation was taken
+ * AFTER the first field was applied, so a failed rename restored the old NAME
+ * while persisting the NEW gate_prompt: a failed update silently rewrote the
+ * trigger's condition. Found by review probe, not by the original tests.
+ */
+describe("triggers.update compensation restores EVERY field", () => {
+  it("tst_module_triggers_write_003 a failed rename keeps the original gate_prompt", async () => {
+    const writes: Record<string, unknown>[] = [];
+    const graph = mockGraph<TriggerFacets>({
+      get_entity_full: () =>
+        Promise.resolve({
+          entity: entity(TRIGGER_ID, "old name", { schema_id: TRIGGER }),
+          facets: [
+            facet("f1", TRIGGER_CONFIG, {
+              name: "old name",
+              gate_prompt: "OLD GATE",
+              action_prompt: "a",
+              status: "active",
+              event_kinds: ["sync_ingested"],
+              debounce_seconds: 0,
+              firing_count: 0,
+            }),
+          ],
+          links: [],
+        }),
+      attach_facet: (p: { data: Record<string, unknown> }) => {
+        writes.push({ ...p.data });
+        return Promise.resolve(undefined);
+      },
+      update_entity_name: () => Promise.reject(new Error("rename store unavailable")),
+    } as never);
+    const { module } = mountModule(TriggersModule, { graph, rpc });
+
+    await expect(
+      module.update({ id: TRIGGER_ID, name: "new name", gate_prompt: "NEW GATE" }),
+    ).rejects.toThrow("rename store unavailable");
+
+    const restored = writes.at(-1);
+    expect(restored).toMatchObject({ name: "old name", gate_prompt: "OLD GATE" });
+  });
+
+  it("tst_module_triggers_write_003 a failed rollback names BOTH failures", async () => {
+    let attaches = 0;
+    const graph = mockGraph<TriggerFacets>({
+      get_entity_full: () =>
+        Promise.resolve({
+          entity: entity(TRIGGER_ID, "old name", { schema_id: TRIGGER }),
+          facets: [
+            facet("f1", TRIGGER_CONFIG, {
+              name: "old name",
+              gate_prompt: "OLD GATE",
+              action_prompt: "a",
+              status: "active",
+              event_kinds: ["sync_ingested"],
+              debounce_seconds: 0,
+              firing_count: 0,
+            }),
+          ],
+          links: [],
+        }),
+      attach_facet: () => {
+        attaches++;
+        return attaches === 1
+          ? Promise.resolve(undefined)
+          : Promise.reject(new Error("rollback store unavailable"));
+      },
+      update_entity_name: () => Promise.reject(new Error("rename store unavailable")),
+    } as never);
+    const { module } = mountModule(TriggersModule, { graph, rpc });
+
+    // The host serialises errors as String(e.stack), which carries neither
+    // AggregateError.errors nor .cause — so both causes must be in the text.
+    await expect(module.update({ id: TRIGGER_ID, name: "new name" })).rejects.toThrow(
+      /rename store unavailable[\s\S]*rollback store unavailable/,
+    );
+  });
+});
