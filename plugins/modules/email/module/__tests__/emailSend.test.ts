@@ -31,6 +31,8 @@ function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
       dropped_keys: [],
     }),
     add_link: () => Promise.resolve(undefined),
+    // No prior send attempt unless a test arranges one.
+    find_by_external_id: () => Promise.resolve(null),
     source_command: () => Promise.resolve({ message_id: "src-1" }),
     get_entity_full: () => Promise.resolve(null),
     ...over,
@@ -56,9 +58,13 @@ describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
     const graph = makeGraph();
     const mod = makeModule(graph);
     const r = await mod.emailSend({ to: "Bob@Example.com", subject: "Hi", body_text: "hello" });
-
-    expect(spy(graph, "apply_batch")).toHaveBeenCalledTimes(1);
-    const applyCall0 = spy(graph, "apply_batch").mock.calls[0];
+    // row, the message itself, then the ledger's `sent` row. Two extra writes
+    // is the price of being able to answer "did this already leave?" — Gmail
+    // has no idempotency key, so the alternative is re-sending real mail.
+    expect(spy(graph, "apply_batch")).toHaveBeenCalledTimes(3);
+    const applyCall0 = spy(graph, "apply_batch").mock.calls.find(
+      (c) => (c[0] as GraphBatchInput).entities.some((e) => e.schema_id === "email.message"),
+    );
     if (applyCall0 === undefined) throw new Error("send: apply_batch not called");
     const frag = applyCall0[0] as GraphBatchInput;
     const msg = frag.entities.find((e) => e.schema_id === "email.message")!;
@@ -72,22 +78,59 @@ describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
     expect((msgFacet0.data as Record<string, unknown>).is_outgoing).toBe(true);
     expect(frag.links).toEqual([{ from_key: "out", to_key: "addr:bob@example.com", kind: "sent_to" }]);
 
-    // source routed AFTER the entity exists
+    // INV-5: the provider is called BEFORE the message is persisted, so a
+    // refusal cannot leave a record of a send that never happened.
     expect(spy(graph, "source_command")).toHaveBeenCalledTimes(1);
+    // INV-6: the provider's id rides on the stored message so a later ingest
+    // of that same mail matches it instead of creating a duplicate.
+    expect((msgFacet0.data as Record<string, unknown>).provider_message_id).toBe("src-1");
     expect(r.id).toBe("id-out");
     expect(r.schema_id).toBe("email.message");
     expect(r.attachment_count).toBe(0);
   });
 
-  // pre-INV-5: pins the defect, scheduled for reversal.
-  it("source failure is NON-FATAL — the entity still persists", async () => {
+  // INV-5. This test asserted the OPPOSITE until Stage 4b-ii: that a provider
+  // failure was non-fatal and the entity persisted anyway. That behaviour IS
+  // the demo defect — the tool reported a send Gmail never made.
+  it("a provider failure is FATAL and persists no message", async () => {
     const graph = makeGraph({
       source_command: () => Promise.reject(new Error("no connected account")),
     });
     const mod = makeModule(graph);
+
+    await expect(mod.emailSend({ to: "b@x.com", subject: "S", body_text: "B" })).rejects.toThrow(
+      "no connected account",
+    );
+
+    // The only apply_batch calls are the send-attempt ledger (routing, then
+    // failed) — never an email.message.
+    const batched = spy(graph, "apply_batch").mock.calls.flatMap(
+      (c) => (c[0] as GraphBatchInput).entities,
+    );
+    expect(batched.every((e) => e.schema_id === "email.send_attempt")).toBe(true);
+  });
+
+  // INV-27 — the half of DEC-5 that route-first alone does not give you.
+  it("does not re-send when a prior attempt already succeeded", async () => {
+    const graph = makeGraph({
+      find_by_external_id: () => Promise.resolve("attempt-1"),
+      get_entity_full: () =>
+        Promise.resolve({
+          entity: { id: "attempt-1", schema_id: "email.send_attempt", name: "S", created_at: "" },
+          facets: [{
+            id: "a", schema_id: "email.send_attempt.details", source: "s", observed_at: "",
+            data: { status: "sent", provider_message_id: "src-1", message_entity_id: "id-out" },
+          }],
+          links: [],
+        }),
+    });
+    const mod = makeModule(graph);
+
     const r = await mod.emailSend({ to: "b@x.com", subject: "S", body_text: "B" });
-    expect(spy(graph, "apply_batch")).toHaveBeenCalledTimes(1); // created before the (failing) route
+
+    expect(spy(graph, "source_command")).not.toHaveBeenCalled();
     expect(r.id).toBe("id-out");
+    expect(r.already_sent).toBe(true);
   });
 
   it("links attachments and checks ownership", async () => {
@@ -228,7 +271,8 @@ describe("email batch_send (tst_be_emailbatch_send_004)", () => {
     expect(result1.status).toBe("excluded");
     expect(result1.id).toBeNull();
     expect(result0.status).toBe("sent");
-    expect(spy(graph, "apply_batch")).toHaveBeenCalledTimes(2); // only the 2 non-excluded
+    // 2 sends x 3 writes each (routing, message, sent) — see the note above.
+    expect(spy(graph, "apply_batch")).toHaveBeenCalledTimes(6); // only the 2 non-excluded
   });
 
   it("rejects an out-of-range batch size", async () => {

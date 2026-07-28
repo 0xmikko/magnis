@@ -1,0 +1,6 @@
+{
+  "name": "Email send attempt",
+  "description": "A durable record of one outgoing-send attempt, keyed by the caller's content. Exists so a retry can tell 'never sent' from 'sent, but the graph write failed' — Gmail has no idempotency key, so without it a retry re-sends a real email.",
+  "triggerable": false,
+  "mergeable": false
+}

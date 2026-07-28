@@ -1,0 +1,5 @@
+{
+  "name": "Email send attempt details",
+  "description": "status (routing|sent|failed), the provider's message id once accepted, and the graph id of the message entity once written.",
+  "single_aligned": true
+}

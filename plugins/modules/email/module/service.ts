@@ -22,6 +22,7 @@ import {
   writeTool,
   type GraphService,
   type PluginDeps,
+  type PluginUtil,
 } from "@magnis/plugin-sdk";
 import type {
   BatchEntityInput,
@@ -64,14 +65,50 @@ import {
   ADDRESS_SCHEMA,
   MESSAGE_DETAILS,
   MESSAGE_SCHEMA,
+  SEND_ATTEMPT_DETAILS,
+  SEND_ATTEMPT_NS,
+  SEND_ATTEMPT_SCHEMA,
 } from "../schema.ts";
 
 export class EmailModule {
   private readonly graph: GraphService<EmailFacets, EmailCanonical>;
   private readonly rpc: RpcExecutor;
+  private readonly util: PluginUtil;
   constructor(deps: PluginDeps<EmailFacets, EmailCanonical>) {
     this.graph = deps.graph;
     this.rpc = deps.rpc;
+    this.util = deps.util;
+  }
+
+  /// Read the durable attempt for this exact message, if one exists.
+  ///
+  /// Sending crosses an irreversible boundary, so neither pure ordering is
+  /// safe: writing first leaves a FALSE record when the provider refuses
+  /// (the demo's "it said sent but Gmail never got it"), while routing first
+  /// lets a retry send the mail TWICE — `execute_tool` returns an error before
+  /// the approval is consumed, and Gmail's send has no idempotency key. The
+  /// attempt record is what makes "did this already leave?" answerable.
+  private async readAttempt(externalId: string): Promise<Data | null> {
+    const id = await this.graph.find_by_external_id(externalId);
+    if (!id) return null;
+    const detail = await this.graph.get_entity_full(id, { links: false });
+    const data = detail?.facets.find((f) => f.schema_id === SEND_ATTEMPT_DETAILS)?.data;
+    return (data as Data | undefined) ?? null;
+  }
+
+  /// Upsert the attempt. Idempotent on the facet's `external_id`, so the
+  /// routing -> sent/failed transitions land on ONE entity.
+  private async writeAttempt(externalId: string, data: Data): Promise<void> {
+    await this.graph.apply_batch({
+      entities: [{
+        key: "attempt",
+        schema_id: SEND_ATTEMPT_SCHEMA,
+        name: typeof data.subject === "string" ? data.subject : "outgoing email",
+        facets: [{ schema_id: SEND_ATTEMPT_DETAILS, data, external_id: externalId, confidence: 100 }],
+      }],
+      refs: [],
+      links: [],
+    });
   }
 
   // ── email.list ────────────────────────────────────────────────
@@ -813,6 +850,60 @@ export class EmailModule {
     // it required a file.details facet — rejected otherwise, no fallback name).
     const attachmentNames = await this.resolveOwnedFileNames(attachmentIds);
     const now = new Date().toISOString();
+    // @tested-by: tst_module_email_send_004
+    // @invariant: INV-5 / INV-27 — route BEFORE persisting, with a durable
+    // attempt so a retry can tell "never sent" from "sent, graph write failed".
+    const attemptKey = await this.util.uuid_v5(SEND_ATTEMPT_NS, `${toLower}|${subject}|${bodyText}`);
+    const attemptExternalId = `email:send-attempt:${attemptKey}`;
+    const prior = await this.readAttempt(attemptExternalId);
+    if (prior?.status === "sent") {
+      // Already delivered. Do NOT hand Gmail the same message twice.
+      return {
+        schema_id: MESSAGE_SCHEMA,
+        id: prior.message_entity_id ?? null,
+        subject,
+        to: toLower,
+        body_text: bodyText,
+        attachment_count: attachmentIds.length,
+        from_address: OUTGOING_FROM,
+        sender: OUTGOING_FROM,
+        sent_at: now,
+        timestamp: now,
+        already_sent: true,
+      };
+    }
+
+    await this.writeAttempt(attemptExternalId, { status: "routing", to: toLower, subject });
+
+    let routed: unknown;
+    try {
+      routed = await this.graph.source_command({
+        action: "send_message",
+        draft: {
+          to: [{ address: toLower }],
+          cc: [],
+          bcc: [],
+          subject,
+          body_text: bodyText,
+          body_html: null,
+          in_reply_to: null,
+        },
+      });
+    } catch (sendError) {
+      // INV-5: the provider refused, so NOTHING is persisted. The old code
+      // swallowed this and reported a send that never happened.
+      await this.writeAttempt(attemptExternalId, {
+        status: "failed",
+        to: toLower,
+        subject,
+        reason: sendError instanceof Error ? sendError.message : String(sendError),
+      });
+      throw sendError;
+    }
+    // INV-6: keep the provider's id so a later ingest of the SAME message
+    // matches this entity instead of creating a second one.
+    const providerMessageId = str((routed ?? {}) as Data, "message_id");
+
     const facetData: Record<string, unknown> = {
       from_address: OUTGOING_FROM,
       to_addresses: to,
@@ -820,6 +911,7 @@ export class EmailModule {
       body_text: bodyText,
       sent_at: now,
       is_outgoing: true,
+      provider_message_id: providerMessageId,
       has_attachments: attachmentIds.length > 0,
       attachment_names: attachmentNames,
     };
@@ -856,23 +948,13 @@ export class EmailModule {
       await this.graph.add_link({ from_id: entityId, to_id: fid, kind: "attachment" });
     }
 
-    // Best-effort source route — the created entity survives a source failure.
-    try {
-      await this.graph.source_command({
-        action: "send_message",
-        draft: {
-          to: [{ address: toLower }],
-          cc: [],
-          bcc: [],
-          subject,
-          body_text: bodyText,
-          body_html: null,
-          in_reply_to: null,
-        },
-      });
-    } catch {
-      // non-fatal: the email.message entity is already persisted.
-    }
+    await this.writeAttempt(attemptExternalId, {
+      status: "sent",
+      to: toLower,
+      subject,
+      provider_message_id: providerMessageId,
+      message_entity_id: entityId,
+    });
 
     return {
       schema_id: MESSAGE_SCHEMA,
