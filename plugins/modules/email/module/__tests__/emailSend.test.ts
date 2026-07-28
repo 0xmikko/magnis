@@ -16,6 +16,7 @@ import { describe, expect, it } from "vitest";
 import type { EntityDetail, GraphBatchInput } from "@magnis/plugin-sdk";
 import { mockGraph, mountModule, type GraphOverrides, type MockGraph } from "@magnis/testkit/module";
 import { EmailModule } from "../service.ts";
+import { normalizeRecipient } from "../helpers.ts";
 import type { EmailCanonical, EmailFacets } from "../../types.ts";
 
 type G = MockGraph<EmailFacets, EmailCanonical>;
@@ -240,5 +241,64 @@ describe("email batch_send (tst_be_emailbatch_send_004)", () => {
     await expect(
       mod.emailBatchSend({ messages: [{ to: "a@x.com", subject: "", body_text: "x" } as never] }),
     ).rejects.toThrow(/missing subject/);
+  });
+});
+
+/**
+ * @test-id: tst_module_email_send_002
+ * @scenario: scn_demo_send_failure_003
+ * @covers: plugins/modules/email/module/helpers.ts::normalizeRecipient
+ * @deterministic: yes
+ * @fixtures: inline addresses
+ *
+ * @invariant INV-7 — a recipient that is not one valid address is rejected
+ * before anything is written or routed. The demo sent
+ * '["Mikhail.trash2@gmail.com"]' — the JSON text of an array — Gmail refused
+ * it, and the refusal was swallowed.
+ */
+describe("email recipients are validated in the handler, not just declared", () => {
+  it("tst_module_email_send_002 accepts one bare address and lower-cases it", () => {
+    expect(normalizeRecipient("Omar@Decurity.io")).toBe("omar@decurity.io");
+    expect(normalizeRecipient("  a@b.co  ")).toBe("a@b.co");
+  });
+
+  it("tst_module_email_send_002 rejects the JSON text of an array", () => {
+    expect(() => normalizeRecipient('["Mikhail.trash2@gmail.com"]')).toThrow(/single valid address/);
+  });
+
+  it("tst_module_email_send_002 rejects lists, display names and empties", () => {
+    expect(() => normalizeRecipient("a@b.co, c@d.co")).toThrow(/single valid address/);
+    expect(() => normalizeRecipient("Omar <omar@x.io>")).toThrow(/single valid address/);
+    expect(() => normalizeRecipient("not-an-address")).toThrow(/single valid address/);
+    expect(() => normalizeRecipient("   ")).toThrow(/required/);
+  });
+});
+
+/**
+ * @test-id: tst_module_email_send_003
+ * @scenario: scn_demo_send_failure_003
+ * @covers: plugins/modules/email/module/service.ts::EmailModule.emailBatchSend
+ * @deterministic: yes
+ *
+ * @invariant INV-7 — a malformed recipient anywhere in a batch stops the whole
+ * batch BEFORE anything is routed. Validating lazily would leave the earlier
+ * messages already delivered, and an outgoing mail cannot be recalled.
+ */
+describe("batch_send validates every recipient before sending any", () => {
+  it("tst_module_email_send_003 a bad address in message 2 sends nothing at all", async () => {
+    const graph = makeGraph();
+    const { module: mod } = mountModule(EmailModule, { graph });
+
+    await expect(
+      mod.emailBatchSend({
+        messages: [
+          { to: "good@x.io", subject: "s", body_text: "b" },
+          { to: '["bad@x.io"]', subject: "s", body_text: "b" },
+        ],
+      }),
+    ).rejects.toThrow(/message\[1\][\s\S]*single valid address/);
+
+    expect(graph.spies.source_command).not.toHaveBeenCalled();
+    expect(graph.spies.apply_batch).not.toHaveBeenCalled();
   });
 });

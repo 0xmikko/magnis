@@ -52,6 +52,7 @@ import {
   destSubpath,
   INGEST_CHUNK,
   lowerAddr,
+  normalizeRecipient,
   OUTGOING_FROM,
   recipientsOf,
   senderOf,
@@ -556,10 +557,20 @@ export class EmailModule {
     if (messages.length === 0 || messages.length > 50) {
       throw new Error(`batch size must be 1..=50, got ${String(messages.length)}`);
     }
+    // @tested-by: tst_module_email_send_003
+    // @invariant: INV-7 — validate EVERY recipient before sending ANY of them.
+    // Validating lazily would leave earlier messages already delivered when a
+    // later address turns out to be malformed, and an outgoing mail cannot be
+    // recalled.
     messages.forEach((m, i) => {
       if (!m.to) throw new Error(`message[${String(i)}]: missing to`);
       if (!m.subject) throw new Error(`message[${String(i)}]: missing subject`);
       if (!m.body_text) throw new Error(`message[${String(i)}]: missing body_text`);
+      try {
+        normalizeRecipient(m.to);
+      } catch (error) {
+        throw new Error(`message[${String(i)}]: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+      }
     });
     const excluded = new Set(params.excluded_indices ?? []);
 
@@ -792,11 +803,15 @@ export class EmailModule {
     bodyText: string,
     attachmentIds: string[],
   ): Promise<Record<string, unknown>> {
+    // @tested-by: tst_module_email_send_002
+    // @invariant: INV-7 — reject a malformed recipient BEFORE any read, write
+    // or provider call. `to.trim().toLowerCase()` accepted anything, including
+    // the JSON text of an array, and let Gmail refuse it downstream.
+    const toLower = normalizeRecipient(to);
+
     // Attachment ownership + names (native put attachment_names on the facet;
     // it required a file.details facet — rejected otherwise, no fallback name).
     const attachmentNames = await this.resolveOwnedFileNames(attachmentIds);
-
-    const toLower = to.trim().toLowerCase();
     const now = new Date().toISOString();
     const facetData: Record<string, unknown> = {
       from_address: OUTGOING_FROM,
@@ -846,7 +861,7 @@ export class EmailModule {
       await this.graph.source_command({
         action: "send_message",
         draft: {
-          to: [{ address: to }],
+          to: [{ address: toLower }],
           cc: [],
           bcc: [],
           subject,
