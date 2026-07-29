@@ -513,6 +513,20 @@ export class EmailModule {
       },
     });
 
+    // @tested-by: tst_module_email_reply_004
+    // @invariant: INV-5 — the same receipt rule as `send`. `reply` reported
+    // `status: "sent"` for whatever the connector returned, including a success
+    // with nothing in it, and it did so while writing attachment links to the
+    // ORIGINAL email — so a reply that never left still mutated the graph.
+    // Checked BEFORE those links, so a refusal leaves no trace.
+    if (!str(result, "message_id")) {
+      throw new Error(
+        "email.reply: the source accepted the reply but returned no provider id — " +
+          "treating this as NOT sent. Check the connector's own logs; a silent " +
+          "success here means the mail never reached the provider.",
+      );
+    }
+
     // Link attachments to the ORIGINAL email (native parity).
     for (const fid of attachmentIds) {
       await this.graph.add_link({ from_id: params.email_id, to_id: fid, kind: "attachment" });

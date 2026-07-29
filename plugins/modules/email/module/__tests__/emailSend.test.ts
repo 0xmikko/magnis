@@ -258,6 +258,39 @@ describe("email reply (tst_be_emailreply_003)", () => {
     expect(spy(graph, "add_link")).not.toHaveBeenCalled();
   });
 
+  /**
+   * @test-id: tst_module_email_reply_004
+   * @scenario: scn_demo_send_failure_003
+   * @invariant INV-5 — reply obeys the same receipt rule as send. It reported
+   * `status: "sent"` for whatever the connector returned, and wrote attachment
+   * links to the ORIGINAL email while doing so — so a reply that never left
+   * still mutated the graph.
+   */
+  it("tst_module_email_reply_004 a source success without a provider id is not a reply", async () => {
+    const graph = makeGraph({
+      get_entity_full: (() => {
+        let call = 0;
+        return () => {
+          call += 1;
+          if (call === 1) return Promise.resolve(original());
+          return Promise.resolve({
+            entity: { id: "f1", schema_id: "file.object", name: "a", created_at: "" },
+            facets: [{ id: "fd", schema_id: "file.details", source: "s", observed_at: "", data: { name: "a" } }],
+            links: [],
+          } satisfies EntityDetail);
+        };
+      })(),
+      source_command: () => Promise.resolve({ thread_id: "thr-1" }), // no message_id
+    });
+    const mod = makeModule(graph);
+
+    await expect(
+      mod.emailReply({ email_id: "orig", body_text: "thanks", attachment_ids: ["f1"] }),
+    ).rejects.toThrow(/no provider id/);
+
+    expect(spy(graph, "add_link")).not.toHaveBeenCalled();
+  });
+
   it("source failure is FATAL for reply (native parity)", async () => {
     const graph = makeGraph({
       get_entity_full: () => Promise.resolve(original()),
