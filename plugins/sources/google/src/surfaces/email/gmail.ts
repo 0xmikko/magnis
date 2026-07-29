@@ -391,11 +391,15 @@ export function flattenMailPayload(payload: Record<string, unknown>): void {
 
 // ── History action resolution (ported) ────────────────────────
 
-export type HistoryAction = "fetch" | "delete";
+export type HistoryAction = "live" | "snapshot" | "delete";
 
 /** Resolve the last effective action per message across history entries:
  * within one entry Deleted beats Added; later entries override earlier ones;
- * label changes only apply if the message wasn't also added/deleted. */
+ * label changes only apply if the message wasn't also added/deleted.
+ *
+ * A newly-added message is `live` so downstream modules may emit trigger
+ * events. Label-only changes are `snapshot` so marking an existing message
+ * read/starred does not fire the same trigger again. */
 export function resolveHistoryActions(
   entries: HistoryEntry[],
 ): Map<string, HistoryAction> {
@@ -412,11 +416,14 @@ export function resolveHistoryActions(
 
     for (const id of deleted) actions.set(id, "delete");
     for (const id of added) {
-      if (!deleted.has(id)) actions.set(id, "fetch");
+      // @tested-by: tst_src_gmail_011
+      // @invariant: forward-sync additions are live events; label-only
+      // refreshes remain snapshots and cannot duplicate trigger firings.
+      if (!deleted.has(id)) actions.set(id, "live");
     }
     for (const id of labels) {
       if (!deleted.has(id) && !added.has(id) && !actions.has(id)) {
-        actions.set(id, "fetch");
+        actions.set(id, "snapshot");
       }
     }
   }
@@ -716,7 +723,14 @@ export async function downloadAttachment(
 
 // ── Concurrent hydration (order preserved) ────────────────────
 
-interface Fetched { id: string; msg?: GmailMessage; err?: unknown }
+type MessageEnvelopeKind = "snapshot" | "live";
+
+interface Fetched {
+  id: string;
+  kind: MessageEnvelopeKind;
+  msg?: GmailMessage;
+  err?: unknown;
+}
 
 async function mapConcurrent<T, R>(
   items: T[],
@@ -741,7 +755,7 @@ async function mapConcurrent<T, R>(
   return results;
 }
 
-/** Turn (id, fetch-result) pairs into `snapshot` envelopes IN ORDER. A
+/** Turn (id, kind, fetch-result) tuples into envelopes IN ORDER. A
  * non-fatal fetch error or a conversion failure SKIPS that message (logged);
  * a fatal error (rate-limit / auth / history-expired) aborts the batch. */
 function errText(e: unknown): string {
@@ -750,7 +764,7 @@ function errText(e: unknown): string {
 
 export function snapshotEnvelopesFromFetched(fetched: Fetched[]): Envelope[] {
   const envelopes: Envelope[] = [];
-  for (const { id, msg, err } of fetched) {
+  for (const { id, kind, msg, err } of fetched) {
     if (err !== undefined) {
       // eslint-disable-next-line @typescript-eslint/only-throw-error -- rethrow the original caught value (unknown) to abort the batch; isFatal already classified it and wrapping would lose the original error identity.
       if (isFatal(err)) throw err;
@@ -764,7 +778,7 @@ export function snapshotEnvelopesFromFetched(fetched: Fetched[]): Envelope[] {
       const mail = gmailMessageToMailMessage(msg);
       const payload = { ...mail } as unknown as Record<string, unknown>;
       flattenMailPayload(payload);
-      envelopes.push({ surface: "email", payload, remote_id: id, kind: "snapshot" });
+      envelopes.push({ surface: "email", payload, remote_id: id, kind });
     } catch (e) {
       console.error(
         `magnis-google: skipping message ${id} (convert failed: ${errText(e)})`,
@@ -779,14 +793,26 @@ async function fetchSnapshotEnvelopes(
   ids: string[],
   fetchFn: FetchLike,
 ): Promise<Envelope[]> {
+  return fetchEnvelopes(
+    token,
+    ids.map((id) => ({ id, kind: "snapshot" })),
+    fetchFn,
+  );
+}
+
+async function fetchEnvelopes(
+  token: string,
+  requests: { id: string; kind: MessageEnvelopeKind }[],
+  fetchFn: FetchLike,
+): Promise<Envelope[]> {
   const fetched = await mapConcurrent(
-    ids,
+    requests,
     GMAIL_FETCH_CONCURRENCY,
-    async (id): Promise<Fetched> => {
+    async ({ id, kind }): Promise<Fetched> => {
       try {
-        return { id, msg: await fetchMessage(token, id, fetchFn) };
+        return { id, kind, msg: await fetchMessage(token, id, fetchFn) };
       } catch (err) {
-        return { id, err };
+        return { id, kind, err };
       }
     },
   );
@@ -868,6 +894,11 @@ export async function fetchHistoryChanges(
 
   const resp = await listHistory(token, historyId, historyPageToken, fetchFn);
   const actions = sortedActions(resolveHistoryActions(resp.history ?? []));
+  if (actions.length > 0) {
+    console.error(
+      `magnis-google: gmail history actions ${JSON.stringify(actions)}`,
+    );
+  }
 
   const envelopes: Envelope[] = actions
     .filter(([, action]) => action === "delete")
@@ -877,10 +908,13 @@ export async function fetchHistoryChanges(
       remote_id: msgId,
       kind: "delete",
     }));
-  const fetchIds = actions
-    .filter(([, action]) => action === "fetch")
-    .map(([msgId]) => msgId);
-  envelopes.push(...(await fetchSnapshotEnvelopes(token, fetchIds, fetchFn)));
+  const fetchRequests = actions
+    .filter(([, action]) => action !== "delete")
+    .map(([id, action]) => ({
+      id,
+      kind: action === "live" ? "live" as const : "snapshot" as const,
+    }));
+  envelopes.push(...(await fetchEnvelopes(token, fetchRequests, fetchFn)));
 
   // Carry bootstrap progress FORWARD (page_len 0 → no increment).
   const progress = progressCursor(cursor, 0, undefined);

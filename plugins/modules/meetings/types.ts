@@ -184,5 +184,13 @@ export interface MeetingTriggerCheck {
   phase: "live";
   touched_entity_ids: string[];
   user_id: string;
-  context: { title: string | null; remote_id: string | null };
+  context: {
+    title: string | null;
+    remote_id: string | null;
+    /** When the meeting itself happens (its start). The trigger engine compares
+     *  this against the trigger's creation time so a backfilled calendar cannot
+     *  fire a trigger that did not exist yet; absent means the engine fails
+     *  closed, which is why every emitter must carry it. */
+    occurred_at: string | null;
+  };
 }

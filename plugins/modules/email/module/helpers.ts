@@ -104,3 +104,30 @@ export function buildListItem(entity: RawEntity, d: Data): MessageListItem {
     metadata: stripBodyHtml(d),
   };
 }
+
+/// One syntactically valid recipient, lower-cased — or a thrown error.
+///
+/// The demo failure this closes: the agent passed the JSON TEXT of an array,
+/// `'["Mikhail.trash2@gmail.com"]'`. Nothing rejected it, Gmail refused the
+/// header, the plugin swallowed the refusal and reported the mail as sent.
+/// Validation lives HERE, in the handler path, not only in the tool schema:
+/// declared params are not enforced at dispatch (the host forwards raw
+/// `params`), so a schema `format` alone would change nothing.
+///
+/// Deliberately strict rather than clever — one address, no display name, no
+/// comma list, no brackets. A caller wanting several recipients uses
+/// `batch_send`, which is per-message and reports each outcome.
+// @tested-by: tst_module_email_send_002
+export function normalizeRecipient(raw: string): string {
+  const value = raw.trim();
+  if (!value) throw new Error("email recipient is required");
+  // Exactly one local@domain with a dotted TLD, and nothing else around it.
+  const ONE_ADDRESS = /^[^\s@,<>"[\]]+@[^\s@,<>"[\]]+\.[A-Za-z]{2,}$/;
+  if (!ONE_ADDRESS.test(value)) {
+    throw new Error(
+      `email recipient is not a single valid address: ${JSON.stringify(raw)}. ` +
+        "Pass one bare address (name@example.com); use batch_send for several.",
+    );
+  }
+  return value.toLowerCase();
+}

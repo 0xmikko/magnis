@@ -25,6 +25,7 @@ import type {
   MethodRecorder,
   PluginContext,
   PluginDeps,
+  PluginLogger,
   PluginModuleShape,
   PluginUtil,
   RawEntity,
@@ -88,6 +89,21 @@ export function str(o: Record<string, unknown>, k: string): string | undefined {
   const v = o[k];
   return typeof v === "string" ? v : undefined;
 }
+/// Readable text for a thrown value. Domain-neutral, and it belongs here for
+/// the same reason `str`/`num` do — the alternative is a copy per module.
+/// It matters more than it looks: the host serialises a rejection as
+/// `String(e.stack)`, and a stack carries neither `AggregateError.errors` nor
+/// `.cause`, so anything the operator must see has to be IN the message.
+export function errText(value: unknown): string {
+  if (value instanceof Error) return value.message;
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return "unserialisable error";
+  }
+}
+
 export function num(o: Record<string, unknown>, k: string): number | null {
   const v = o[k];
   return typeof v === "number" ? v : null;
@@ -179,12 +195,27 @@ export function definePlugin<
     ctx: PluginContext,
     util: PluginUtil,
     rpc: RpcExecutor,
+    log: PluginLogger,
   ): Promise<void> {
+    // The host boundary is Rust/V8 and passes these positionally, so TypeScript
+    // cannot enforce arity there. Without this guard a host that has not caught
+    // up leaves `log` undefined, every handler registers, and the plugin runs
+    // normally until a FAILURE path calls `deps.log` — crashing inside the
+    // error handler. That is the swallow-the-failure shape this surface exists
+    // to remove, so the contract is checked here instead of assumed.
+    // @tested-by: tst_sdk_log_002
+    if (typeof (log as PluginLogger | undefined)?.log !== "function") {
+      throw new TypeError(
+        "plugin init: host did not supply the logger (5th argument). " +
+          "A plugin without a log channel cannot report its own failures.",
+      );
+    }
     const instance = new ModuleClass({
       graph: graph as GraphService<F, C>,
       ctx,
       util,
       rpc,
+      log,
     }) as Record<string, (p: unknown) => unknown>;
     // Prefix = the plugin id the runtime injects (== the module name,
     // per the Rust convention). The decorator carries only the suffix.
