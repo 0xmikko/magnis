@@ -17,9 +17,55 @@ pub struct AppPaths {
 
 impl AppPaths {
     pub fn init() -> Result<Self> {
-        let app_data_dir = dirs::data_dir()
+        // ONE ROOT. `MAGNIS_HOME` (default `~/.magnis`) is the single home for
+        // data, plugins, logs and secrets.
+        //
+        // Before this there were three independent roots with three different
+        // defaults — data under Application Support, sources under a RELATIVE
+        // path resolved against the process CWD, modules under whichever of
+        // those happened to win. Startup was therefore non-deterministic: the
+        // same build found its connectors from a terminal and not from Finder,
+        // and a "missing database" was really a different root. Every failure
+        // of that day traces back to there being no single answer to "where
+        // does this app live".
+        //
+        // Adoption, not silent divergence: when the home does not exist yet but
+        // a legacy Application Support root does, the legacy one is ADOPTED and
+        // the choice is printed. Starting empty beside 5 GB of existing data is
+        // the one outcome that must never happen quietly.
+        let legacy_dir = dirs::data_dir()
             .context("Failed to get data directory")?
             .join("com.magnis.desktop");
+        let home = match std::env::var("MAGNIS_HOME") {
+            Ok(raw) if !raw.trim().is_empty() => {
+                let p = PathBuf::from(&raw);
+                if !p.is_absolute() {
+                    anyhow::bail!(
+                        "MAGNIS_HOME={raw:?} must be an absolute path — desktop \
+                         bundles do not guarantee a working directory"
+                    );
+                }
+                p
+            }
+            _ => {
+                let default_home = dirs::home_dir()
+                    .context("Failed to get home directory")?
+                    .join(".magnis");
+                if !default_home.exists() && legacy_dir.exists() {
+                    eprintln!(
+                        "magnis: adopting the existing data root {} \
+                         (MAGNIS_HOME {} does not exist yet)",
+                        legacy_dir.display(),
+                        default_home.display()
+                    );
+                    legacy_dir.clone()
+                } else {
+                    default_home
+                }
+            }
+        };
+        eprintln!("magnis: home = {}", home.display());
+        let app_data_dir = home;
 
         std::fs::create_dir_all(&app_data_dir).context("Failed to create app data directory")?;
 

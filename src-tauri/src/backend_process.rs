@@ -260,6 +260,9 @@ impl BackendProcessManager {
         let mut cmd = Command::new(&bin);
         cmd.env("MAGNIS_DB_MODE", "local")
             .env("DB_PATH", data_root_str)
+            // ONE ROOT: the backend derives its own paths from the same home
+            // the shell resolved, instead of each side guessing separately.
+            .env("MAGNIS_HOME", data_root_str)
             .env("STORAGE_DIR", data_root_str)
             // Desktop ships native embedded Postgres (bundled into magnis-server);
             // no PGlite sidecar. The PGlite opt-out is dev-only (not shipped).
