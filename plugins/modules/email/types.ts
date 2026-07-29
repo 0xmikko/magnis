@@ -161,5 +161,13 @@ export interface EmailTriggerCheck {
   phase: "live";
   touched_entity_ids: string[];
   user_id: string;
-  context: { from_address: string | null; from_name: string | null; subject: string | null };
+  context: {
+    from_address: string | null;
+    from_name: string | null;
+    subject: string | null;
+    /** When the message itself happened (RFC3339). The trigger engine compares
+     *  it against the trigger's creation time so a delayed backfill cannot fire
+     *  a trigger that did not exist yet; absent means the engine fails closed. */
+    occurred_at: string | null;
+  };
 }

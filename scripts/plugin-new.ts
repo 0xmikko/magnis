@@ -143,6 +143,7 @@ function makeModule(graph: GraphService): ${cls} {
     ctx: { extension_id: "${id}", user_id: "u1" },
     util: {},
     rpc: { execute: vi.fn() },
+    log: { log: vi.fn() },
   } as unknown as PluginDeps;
   return new ${cls}(deps);
 }

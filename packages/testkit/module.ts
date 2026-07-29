@@ -24,6 +24,8 @@ import type {
   LinkedRow,
   PluginContext,
   PluginDeps,
+  PluginLogLevel,
+  PluginLogger,
   PluginModuleShape,
   PluginUtil,
   RawEntity,
@@ -99,6 +101,33 @@ export interface MountOpts<F extends object, C extends object> {
    *  over the return type) so a bare `vi.fn(async (m) => …)` is assignable
    *  without the `as unknown as PluginDeps` cast the modules used to carry. */
   rpc?: { execute: (method: string, params?: unknown) => unknown };
+  /** A capturing logger; defaults to a fresh `mockLogger()`. */
+  log?: MockLogger;
+}
+
+/** One entry a module emitted through `deps.log`. */
+export interface CapturedLogEntry {
+  level: PluginLogLevel;
+  message: string;
+  fields?: Record<string, unknown>;
+}
+
+/** A `PluginLogger` that records instead of shipping, so a test can assert
+ *  that a failure path actually reported itself. Mirrors `MockGraph.spies`:
+ *  the capture rides alongside the real surface. */
+export interface MockLogger extends PluginLogger {
+  readonly entries: CapturedLogEntry[];
+}
+
+export function mockLogger(): MockLogger {
+  const entries: CapturedLogEntry[] = [];
+  const spy = vi.fn(
+    (level: PluginLogLevel, message: string, fields?: Record<string, unknown>): Promise<void> => {
+      entries.push({ level, message, fields });
+      return Promise.resolve();
+    },
+  );
+  return { entries, log: spy };
 }
 
 export interface DirectMount<T, F extends object, C extends object> {
@@ -137,7 +166,8 @@ function buildDeps<F extends object, C extends object>(
   // The loose test rpc is widened to the module-facing generic `RpcExecutor`;
   // the module's own `this.rpc.execute<T>(...)` call sites stay fully typed.
   const rpc = (opts.rpc ?? { execute: vi.fn() }) as unknown as RpcExecutor;
-  return { deps: { graph, ctx, util, rpc }, graph };
+  const log = opts.log ?? mockLogger();
+  return { deps: { graph, ctx, util, rpc, log }, graph };
 }
 
 export function mountModule<
@@ -166,7 +196,7 @@ export function mountModule<
       definePlugin<F, C>(ModuleClass);
       const shape = (globalThis as unknown as { __magnis_plugin_module: PluginModuleShape })
         .__magnis_plugin_module;
-      await shape.init(deps.graph, deps.ctx, deps.util, deps.rpc);
+      await shape.init(deps.graph, deps.ctx, deps.util, deps.rpc, deps.log);
       const lookup = (n: string): ((params: unknown) => unknown) | undefined => shape.rpcHandlers[n];
       const call = (name: string, args?: unknown): unknown => {
         const handler = lookup(name) ?? lookup(`${deps.ctx.extension_id}.${name}`);
