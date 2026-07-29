@@ -853,6 +853,20 @@ export class EmailModule {
     });
     const providerMessageId = str(routed, "message_id");
     const providerThreadId = str(routed, "thread_id");
+    // @tested-by: tst_module_email_send_008
+    // @invariant: INV-5 — a provider that accepted a message returns its id.
+    // A success WITHOUT one is not proof of delivery, and treating it as one is
+    // how a send that never reached Gmail was reported as sent: the plugin had
+    // stopped swallowing the error, but the CONNECTOR returned ok having done
+    // nothing. No id, no send — and nothing is persisted, because this throws
+    // before the graph write below.
+    if (!providerMessageId) {
+      throw new Error(
+        "email.send: the source accepted the message but returned no provider id — " +
+          "treating this as NOT sent. Check the connector's own logs; a silent " +
+          "success here means the mail never reached the provider.",
+      );
+    }
 
     const facetData: Record<string, unknown> = {
       from_address: OUTGOING_FROM,
@@ -898,7 +912,7 @@ export class EmailModule {
             facets: [{
               schema_id: MESSAGE_DETAILS,
               data: facetData,
-              external_id: providerMessageId ?? undefined,
+              external_id: providerMessageId,
               confidence: 100,
             }],
           },

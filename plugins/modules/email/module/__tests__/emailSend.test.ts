@@ -398,3 +398,26 @@ describe("batch_send reports every message even when one is refused", () => {
     expect(r.results.map((x) => x.status)).toEqual(["sent", "failed", "sent"]);
   });
 });
+
+/**
+ * @test-id: tst_module_email_send_008
+ * @scenario: scn_demo_send_failure_003
+ * @invariant INV-5 — proof of delivery, not just absence of an error. Caught
+ * live: the connector returned success with no message_id, the plugin wrote the
+ * message, and the operator saw "sent" for mail Gmail never received. The
+ * provider id IS the receipt.
+ */
+describe("a source success without a provider id is not a send", () => {
+  it("tst_module_email_send_008 rejects and persists nothing", async () => {
+    const graph = makeGraph({
+      source_command: () => Promise.resolve({ thread_id: "thr-1" }), // no message_id
+    });
+    const mod = makeModule(graph);
+
+    await expect(
+      mod.emailSend({ to: "b@x.com", subject: "S", body_text: "B" }),
+    ).rejects.toThrow(/no provider id/);
+
+    expect(spy(graph, "apply_batch")).not.toHaveBeenCalled();
+  });
+});
