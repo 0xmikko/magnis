@@ -38,9 +38,23 @@ fn plugin_dirs() -> Option<(PathBuf, PathBuf)> {
             }
         }
     }
-    // Dev: repo-root plugins/ (+ sibling plugins_dist/).
+    // Dev: the catalog checkout (+ its sibling plugins_dist/).
+    //
+    // `plugins-public/plugins` comes FIRST and is why this function stopped
+    // working: the probe still named `plugins/` at the repo root, the layout
+    // from before the catalog moved into the `plugins-public` submodule. It
+    // could no longer match anything, so this returned None,
+    // MAGNIS_PLUGINS_DIST_DIR was never set, and the boot-time bundle seed
+    // silently copied nothing — leaving the app serving whatever plugin UI the
+    // store happened to hold, days stale. The bare `plugins` entries stay for
+    // a pre-submodule checkout.
     let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")); // desktop/src-tauri
-    for rel in ["../../plugins", "../../../plugins"] {
+    for rel in [
+        "../../plugins-public/plugins",
+        "../../../plugins-public/plugins",
+        "../../plugins",
+        "../../../plugins",
+    ] {
         let plugins = base.join(rel);
         if plugins.exists() {
             let canon = plugins.canonicalize().ok()?;
@@ -295,26 +309,31 @@ impl BackendProcessManager {
         // a packaged build at a real plugin tree — which is exactly what is
         // needed to run the shipped shell against a working catalog (sources
         // included) instead of the empty store dir the bundle ships with.
-        if let Ok(explicit) = std::env::var("MAGNIS_PLUGINS_DIR") {
-            if !explicit.is_empty() {
-                cmd.env("MAGNIS_PLUGINS_DIR", &explicit);
+        let explicit_plugins_dir = std::env::var("MAGNIS_PLUGINS_DIR")
+            .ok()
+            .filter(|v| !v.is_empty());
+        let probed = plugin_dirs();
+        match (&explicit_plugins_dir, &probed) {
+            // Explicit wins, as the comment above has always claimed. It did
+            // not: the probe branch below used to run unconditionally and
+            // overwrite the operator's value, so pointing a packaged shell at a
+            // real catalog quietly had no effect.
+            (Some(dir), probe) => {
+                cmd.env("MAGNIS_PLUGINS_DIR", dir);
+                // The dist dir is not derivable from an explicit plugins dir in
+                // general, so take the probe's when there is one; otherwise the
+                // operator sets MAGNIS_PLUGINS_DIST_DIR and it is inherited.
+                if let Some((_, dist)) = probe {
+                    cmd.env("MAGNIS_PLUGINS_DIST_DIR", dist);
+                }
             }
-        }
-        match plugin_dirs() {
-            Some((plugins_dir, plugins_dist)) => {
-                cmd.env("MAGNIS_PLUGINS_DIR", &plugins_dir)
-                    .env("MAGNIS_PLUGINS_DIST_DIR", &plugins_dist);
+            (None, Some((plugins_dir, plugins_dist))) => {
+                cmd.env("MAGNIS_PLUGINS_DIR", plugins_dir)
+                    .env("MAGNIS_PLUGINS_DIST_DIR", plugins_dist);
             }
-            None => {
-                // Only fall back when nothing explicit was provided above.
-                if std::env::var("MAGNIS_PLUGINS_DIR")
-                    .ok()
-                    .filter(|v| !v.is_empty())
-                    .is_none()
-                {
-                    if let Ok(dir) = crate::paths::ensure_plugin_tree(data_root) {
-                        cmd.env("MAGNIS_PLUGINS_DIR", &dir);
-                    }
+            (None, None) => {
+                if let Ok(dir) = crate::paths::ensure_plugin_tree(data_root) {
+                    cmd.env("MAGNIS_PLUGINS_DIR", &dir);
                 }
             }
         }
