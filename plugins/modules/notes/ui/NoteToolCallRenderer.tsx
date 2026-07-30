@@ -8,7 +8,10 @@ import type {
 } from "@magnis/host/runtime";
 import { useRouterContext } from "@magnis/host/runtime";
 import { BaseToolCallCard } from "@magnis/host/base";
-import { bodyFromToolArgs } from "./toolArgs.ts";
+// Extension-less, like every other relative import in the catalog. The dev
+// transpile path serves each file on request and resolves the specifier itself;
+// a `.ts` suffix is a spelling nothing else here uses.
+import { bodyFromToolArgs } from "./toolArgs";
 
 export function NoteToolCallRenderer({
   payload,
