@@ -22,6 +22,7 @@ import {
   writeTool,
   type GraphService,
   type PluginDeps,
+  type PluginLogger,
 } from "@magnis/plugin-sdk";
 import type {
   BatchEntityInput,
@@ -52,6 +53,7 @@ import {
   destSubpath,
   INGEST_CHUNK,
   lowerAddr,
+  normalizeRecipient,
   OUTGOING_FROM,
   recipientsOf,
   senderOf,
@@ -68,9 +70,11 @@ import {
 export class EmailModule {
   private readonly graph: GraphService<EmailFacets, EmailCanonical>;
   private readonly rpc: RpcExecutor;
+  private readonly log: PluginLogger;
   constructor(deps: PluginDeps<EmailFacets, EmailCanonical>) {
     this.graph = deps.graph;
     this.rpc = deps.rpc;
+    this.log = deps.log;
   }
 
   // ── email.list ────────────────────────────────────────────────
@@ -391,11 +395,13 @@ export class EmailModule {
       }
 
       if (env.kind === "live") {
+        // @tested-by: tst_be_emailingest_trigger_006
+        // @invariant: INV-9 — only the SENDER is a trigger candidate. Listing
+        // recipients too meant a trigger watching the user's own address fired
+        // on the user's own traffic: the RFQ we had just sent counted as "a
+        // reply arrived". A trigger watches who it hears FROM, not who was
+        // copied.
         const touched = [entityId];
-        for (const r of recipientsOf(p)) {
-          const aid = result.ids[`addr:${r}`];
-          if (aid) touched.push(aid);
-        }
         const from = lowerAddr(str(p, "from_address"));
         if (from) {
           const sid = result.ids[`addr:${from}`];
@@ -413,6 +419,10 @@ export class EmailModule {
             from_address: str(p, "from_address"),
             from_name: str(p, "from_name"),
             subject: str(p, "subject"),
+            // @invariant: INV-10 — without the event's own timestamp the
+            // engine cannot tell a delayed backfill from a fresh arrival, so
+            // it fired on history. The engine fails closed when this is absent.
+            occurred_at: str(p, "sent_at"),
           },
         });
       }
@@ -503,6 +513,20 @@ export class EmailModule {
       },
     });
 
+    // @tested-by: tst_module_email_reply_004
+    // @invariant: INV-5 — the same receipt rule as `send`. `reply` reported
+    // `status: "sent"` for whatever the connector returned, including a success
+    // with nothing in it, and it did so while writing attachment links to the
+    // ORIGINAL email — so a reply that never left still mutated the graph.
+    // Checked BEFORE those links, so a refusal leaves no trace.
+    if (!str(result, "message_id")) {
+      throw new Error(
+        "email.reply: the source accepted the reply but returned no provider id — " +
+          "treating this as NOT sent. Check the connector's own logs; a silent " +
+          "success here means the mail never reached the provider.",
+      );
+    }
+
     // Link attachments to the ORIGINAL email (native parity).
     for (const fid of attachmentIds) {
       await this.graph.add_link({ from_id: params.email_id, to_id: fid, kind: "attachment" });
@@ -550,15 +574,26 @@ export class EmailModule {
     if (messages.length === 0 || messages.length > 50) {
       throw new Error(`batch size must be 1..=50, got ${String(messages.length)}`);
     }
+    // @tested-by: tst_module_email_send_003
+    // @invariant: INV-7 — validate EVERY recipient before sending ANY of them.
+    // Validating lazily would leave earlier messages already delivered when a
+    // later address turns out to be malformed, and an outgoing mail cannot be
+    // recalled.
     messages.forEach((m, i) => {
       if (!m.to) throw new Error(`message[${String(i)}]: missing to`);
       if (!m.subject) throw new Error(`message[${String(i)}]: missing subject`);
       if (!m.body_text) throw new Error(`message[${String(i)}]: missing body_text`);
+      try {
+        normalizeRecipient(m.to);
+      } catch (error) {
+        throw new Error(`message[${String(i)}]: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+      }
     });
     const excluded = new Set(params.excluded_indices ?? []);
 
     const results: Record<string, unknown>[] = [];
     let sent = 0;
+    let failed = 0;
     let excludedCount = 0;
     for (const [i, m] of messages.entries()) {
       if (excluded.has(i)) {
@@ -566,11 +601,28 @@ export class EmailModule {
         results.push({ id: null, to: m.to, subject: m.subject, status: "excluded", attachment_count: 0 });
         continue;
       }
-      const r = await this.sendSingle(m.to, m.subject, m.body_text, m.attachment_ids ?? []);
-      sent++;
-      results.push({ id: r.id, to: m.to, subject: m.subject, status: "sent", attachment_count: r.attachment_count });
+      // @tested-by: tst_module_email_send_007
+      // @invariant: INV-8 — a refusal on message N must not discard the outcome
+      // of messages 1..N-1: those are already delivered and un-recallable, so
+      // dropping their results loses the only record the caller gets. Report
+      // every message and keep going.
+      try {
+        const r = await this.sendSingle(m.to, m.subject, m.body_text, m.attachment_ids ?? []);
+        sent++;
+        results.push({ id: r.id, to: m.to, subject: m.subject, status: "sent", attachment_count: r.attachment_count });
+      } catch (sendError) {
+        failed++;
+        results.push({
+          id: null,
+          to: m.to,
+          subject: m.subject,
+          status: "failed",
+          attachment_count: 0,
+          error: sendError instanceof Error ? sendError.message : String(sendError),
+        });
+      }
     }
-    return { results, total: messages.length, sent, excluded: excludedCount };
+    return { results, total: messages.length, sent, failed, excluded: excludedCount };
   }
 
   // ── set_trigger (@writeTool) ──────────────────────────────────
@@ -786,12 +838,50 @@ export class EmailModule {
     bodyText: string,
     attachmentIds: string[],
   ): Promise<Record<string, unknown>> {
+    // @tested-by: tst_module_email_send_002
+    // @invariant: INV-7 — reject a malformed recipient BEFORE any read, write
+    // or provider call. `to.trim().toLowerCase()` accepted anything, including
+    // the JSON text of an array, and let Gmail refuse it downstream.
+    const toLower = normalizeRecipient(to);
+
     // Attachment ownership + names (native put attachment_names on the facet;
     // it required a file.details facet — rejected otherwise, no fallback name).
     const attachmentNames = await this.resolveOwnedFileNames(attachmentIds);
-
-    const toLower = to.trim().toLowerCase();
     const now = new Date().toISOString();
+    // @tested-by: tst_module_email_send_004, tst_module_email_send_006
+    // @invariant: INV-5 — route BEFORE persisting. A refusal must leave no
+    // trace: the demo's failure was a stored "outgoing" message for mail Gmail
+    // had rejected. No ledger is needed to make this safe — see the write
+    // below for why the tool never throws once the provider has accepted.
+    const routed = await this.graph.source_command({
+      action: "send_message",
+      draft: {
+        to: [{ address: toLower }],
+        cc: [],
+        bcc: [],
+        subject,
+        body_text: bodyText,
+        body_html: null,
+        in_reply_to: null,
+      },
+    });
+    const providerMessageId = str(routed, "message_id");
+    const providerThreadId = str(routed, "thread_id");
+    // @tested-by: tst_module_email_send_008
+    // @invariant: INV-5 — a provider that accepted a message returns its id.
+    // A success WITHOUT one is not proof of delivery, and treating it as one is
+    // how a send that never reached Gmail was reported as sent: the plugin had
+    // stopped swallowing the error, but the CONNECTOR returned ok having done
+    // nothing. No id, no send — and nothing is persisted, because this throws
+    // before the graph write below.
+    if (!providerMessageId) {
+      throw new Error(
+        "email.send: the source accepted the message but returned no provider id — " +
+          "treating this as NOT sent. Check the connector's own logs; a silent " +
+          "success here means the mail never reached the provider.",
+      );
+    }
+
     const facetData: Record<string, unknown> = {
       from_address: OUTGOING_FROM,
       to_addresses: to,
@@ -799,63 +889,82 @@ export class EmailModule {
       body_text: bodyText,
       sent_at: now,
       is_outgoing: true,
+      provider_message_id: providerMessageId,
       has_attachments: attachmentIds.length > 0,
       attachment_names: attachmentNames,
     };
-    // Outgoing message has no stable external_id → always created fresh; the
-    // recipient address resolves-or-creates by its external_id (the hub).
-    const msgKey = "out";
-    const addrKey = `addr:${toLower}`;
-    const result = await this.graph.apply_batch({
-      entities: [
-        {
-          key: msgKey,
-          schema_id: MESSAGE_SCHEMA,
-          name: subject,
-          date: now,
-          facets: [{ schema_id: MESSAGE_DETAILS, data: facetData, confidence: 100 }],
-        },
-        {
-          key: addrKey,
-          schema_id: ADDRESS_SCHEMA,
-          name: toLower,
-          idx: toLower,
-          facets: [
-            { schema_id: ADDRESS_DETAILS, data: { address: toLower }, external_id: `email:address:${toLower}`, confidence: 100 },
-          ],
-        },
-      ],
-      refs: [],
-      links: [{ from_key: msgKey, to_key: addrKey, kind: "sent_to" }],
-    });
-    const entityId = result.ids[msgKey];
-    if (entityId === undefined) throw new Error(`email.send: missing entity id for ${msgKey}`);
-
-    for (const fid of attachmentIds) {
-      await this.graph.add_link({ from_id: entityId, to_id: fid, kind: "attachment" });
-    }
-
-    // Best-effort source route — the created entity survives a source failure.
+    // @tested-by: tst_module_email_send_006
+    // @invariant: INV-27 — the provider has ACCEPTED by this point, so the mail
+    // is gone and cannot be recalled. Throwing here would report a failed send
+    // and invite a retry, which would deliver the message a SECOND time. The
+    // graph write is an optimistic view, not the record: Gmail's Sent folder is
+    // ingested with no label filter, so the next sync creates this message
+    // properly on its own. A failure is therefore logged and surfaced, never
+    // thrown.
+    let entityId: string | null = null;
+    let graphWriteFailed = false;
     try {
-      await this.graph.source_command({
-        action: "send_message",
-        draft: {
-          to: [{ address: to }],
-          cc: [],
-          bcc: [],
-          subject,
-          body_text: bodyText,
-          body_html: null,
-          in_reply_to: null,
-        },
+      // Outgoing message has no stable external_id → always created fresh; the
+      // recipient address resolves-or-creates by its external_id (the hub).
+      const msgKey = "out";
+      const addrKey = `addr:${toLower}`;
+      const result = await this.graph.apply_batch({
+        entities: [
+          {
+            key: msgKey,
+            schema_id: MESSAGE_SCHEMA,
+            name: subject,
+            // @tested-by: tst_module_email_send_005
+            // @invariant: INV-6 — Gmail returns the id it will later hand back as
+            // `remote_id` when sync ingests our own Sent folder, and ingest
+            // matches on the facet `external_id` and nothing else. Carrying it
+            // here is what makes the copy arriving from Sent UPDATE this entity
+            // instead of creating a second one. Without it every sent email
+            // exists in the graph twice.
+            idx: providerThreadId ?? undefined,
+            date: now,
+            facets: [{
+              schema_id: MESSAGE_DETAILS,
+              data: facetData,
+              external_id: providerMessageId,
+              confidence: 100,
+            }],
+          },
+          {
+            key: addrKey,
+            schema_id: ADDRESS_SCHEMA,
+            name: toLower,
+            idx: toLower,
+            facets: [
+              { schema_id: ADDRESS_DETAILS, data: { address: toLower }, external_id: `email:address:${toLower}`, confidence: 100 },
+            ],
+          },
+        ],
+        refs: [],
+        links: [{ from_key: msgKey, to_key: addrKey, kind: "sent_to" }],
       });
-    } catch {
-      // non-fatal: the email.message entity is already persisted.
+      const messageEntityId = result.ids[msgKey];
+      if (messageEntityId === undefined) throw new Error(`email.send: missing entity id for ${msgKey}`);
+
+      for (const fid of attachmentIds) {
+        await this.graph.add_link({ from_id: messageEntityId, to_id: fid, kind: "attachment" });
+      }
+
+      entityId = messageEntityId;
+    } catch (writeError) {
+      graphWriteFailed = true;
+      await this.log.log("warn", "outgoing email persisted only in the mailbox", {
+        provider_message_id: providerMessageId,
+        to: toLower,
+        reason: writeError instanceof Error ? writeError.message : String(writeError),
+      });
     }
 
     return {
       schema_id: MESSAGE_SCHEMA,
       id: entityId,
+      provider_message_id: providerMessageId,
+      graph_write_failed: graphWriteFailed,
       subject,
       to,
       body_text: bodyText,

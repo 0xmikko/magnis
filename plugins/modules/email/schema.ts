@@ -12,3 +12,4 @@ export const MESSAGE_DETAILS = "email.message.details";
 export const ADDRESS_SCHEMA = "email.address";
 /** Address details facet (display name / provenance). */
 export const ADDRESS_DETAILS = "email.address.details";
+

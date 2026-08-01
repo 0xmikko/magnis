@@ -170,6 +170,7 @@ async function executeTool(
   const { ops, accountId } = await resolve(args);
   return await commands.execute(ops, accountId, args, {
     sleep: deps.sleep ?? commands.realSleep,
+    demoDryRun: process.env.MAGNIS_TELEGRAM_DEMO_DRY_RUN === "1",
   });
 }
 

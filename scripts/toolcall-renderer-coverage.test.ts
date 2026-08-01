@@ -44,7 +44,6 @@ const NO_CARD: Record<string, Record<string, string>> = {};
  * coverage is complete — it is the reference for what the rest should become.
  */
 const KNOWN_GAP: readonly string[] = [
-  "companies.update",
   "contacts.batch_track_social",
   "contacts.set_social_tracking",
   "contacts.track_social_profile",
@@ -55,12 +54,9 @@ const KNOWN_GAP: readonly string[] = [
   "notes.template.apply",
   "projects.checklist.update",
   "projects.delete",
-  "projects.update",
-  "triggers.create",
   "triggers.delete",
   "triggers.link",
   "triggers.unlink",
-  "triggers.update",
   "x.import_following",
 ];
 

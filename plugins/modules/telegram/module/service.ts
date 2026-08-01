@@ -467,10 +467,29 @@ export class TelegramModule {
 
   // Bulk chat ingest for the bootstrap dialog list (one huge page). Batches chat
   // entities + chat.details facets in CHUNKS, freeing the single PGlite connection
-  // between batches. No last_message_* merge here: bootstrap chats are new and the
-  // connector snapshot has no last-message fields anyway — ingestMessageBatch
-  // denormalizes them onto chat.details when messages arrive.
+  // between batches.
   private async ingestChatBatch(chats: { env: SyncEnvelope; payload: Data }[]): Promise<void> {
+    // A connector restart can emit another bootstrap-sized dialog snapshot for
+    // chats that already exist. Those snapshots intentionally omit fields that
+    // are derived by message ingest (and any locally resolved avatar), so load
+    // the current facets once and preserve those fields during the batch upsert.
+    //
+    // @tested-by: tst_mod_tg_ingest_001
+    // @invariant: repeated bootstrap snapshots never erase chat list previews,
+    // recency, sender names, or locally resolved avatar URLs.
+    const current = await this.graph.list_entities_window({
+      schema: CHAT,
+      facet_schema: CHAT_DETAILS,
+      limit: 1_000_000,
+      offset: 0,
+    });
+    const existingByChatId = new Map<string, Data>();
+    for (const { data } of current.items) {
+      const details = (data ?? {}) as Data;
+      const chatId = chatIdOrNull(details);
+      if (chatId !== null) existingByChatId.set(chatId, details);
+    }
+
     for (let i = 0; i < chats.length; i += INGEST_CHUNK) {
       const entities: BatchEntityInput[] = [];
       for (const { env, payload } of chats.slice(i, i + INGEST_CHUNK)) {
@@ -478,6 +497,25 @@ export class TelegramModule {
         if (!remoteId) continue;
         const details: Data = { ...payload };
         delete details.entity_type;
+        const chatId = chatIdOrNull(payload);
+        const existing = chatId === null ? undefined : existingByChatId.get(chatId);
+        if (existing !== undefined) {
+          for (const key of [
+            "last_message_date",
+            "last_message_preview",
+            "last_sender_name",
+            "avatar_url",
+            "photo_url",
+          ]) {
+            if (
+              existing[key] !== null &&
+              existing[key] !== undefined &&
+              (details[key] === null || details[key] === undefined)
+            ) {
+              details[key] = existing[key];
+            }
+          }
+        }
         entities.push({
           key: remoteId,
           schema_id: CHAT,

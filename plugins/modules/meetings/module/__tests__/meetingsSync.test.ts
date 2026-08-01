@@ -99,6 +99,7 @@ describe("meetings @syncHandler — live envelopes emit a trigger.check", () => 
 
     const payload = {
       title: "Standup",
+      starts_at: "2026-07-28T09:00:00Z",
       attendees: [{ name: "Alice", email: "a@x" }, { email: "b@x" }],
     };
     const res = await mod.ingest({
@@ -116,7 +117,10 @@ describe("meetings @syncHandler — live envelopes emit a trigger.check", () => 
         phase: "live",
         touched_entity_ids: ["m-r5", "addr-a@x", "addr-b@x"],
         user_id: "u1",
-        context: { title: "Standup", remote_id: "r5" },
+        // INV-10: the engine fails closed without the event's own time, so
+        // every trigger.check emitter must carry it — meetings included, or the
+        // whole module's triggers go silent.
+        context: { title: "Standup", remote_id: "r5", occurred_at: "2026-07-28T09:00:00Z" },
       },
     ]);
   });
@@ -172,5 +176,27 @@ describe("meetings sync control (@rpc)", () => {
     const { mod } = makeModule(makeGraph({ sync_state }));
     await mod.syncReset();
     expect(sync_state).toHaveBeenCalledWith("reset", CAL);
+  });
+});
+
+/**
+ * @test-id: tst_module_meetings_trigger_001
+ * @scenario: scn_demo_trigger_002
+ * @covers: plugins/modules/meetings/module/service.ts::MeetingsModule.ingest
+ * @deterministic: yes
+ *
+ * @invariant INV-10 — a meeting without a start time yields `occurred_at: null`,
+ * which the engine treats as fail-closed. The producing side must be explicit
+ * about that rather than omitting the key, or the contract is undetectable.
+ */
+describe("meetings trigger.check carries the event's own time", () => {
+  it("tst_module_meetings_trigger_001 a meeting with no start yields a null occurred_at", async () => {
+    const { mod } = makeModule(makeGraph());
+
+    const res = await mod.ingest({
+      envelopes: [env({ kind: "live", remote_id: "r9", payload: { title: "No start" } })],
+    });
+
+    expect(res.trigger_checks[0]?.context).toHaveProperty("occurred_at", null);
   });
 });

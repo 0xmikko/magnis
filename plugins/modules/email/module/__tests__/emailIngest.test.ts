@@ -151,7 +151,12 @@ describe("email ingest — apply_batch shape (tst_be_emailingest_001)", () => {
     expect(sentTo).toEqual(["addr:bcc@x.com", "addr:cc1@x.com", "addr:cc2@x.com", "addr:to@x.com"]);
   });
 
-  it("LIVE trigger touched_entity_ids includes Cc/Bcc recipients", async () => {
+  // tst_be_emailingest_trigger_006 — INV-9. This test previously asserted the
+  // OPPOSITE: that Cc/Bcc/To recipients were trigger candidates. That is the
+  // defect. A trigger watches an address to hear FROM it; listing recipients
+  // made the user's own address a candidate, so mail the user had just SENT
+  // satisfied a trigger waiting for a reply.
+  it("LIVE trigger candidates are the message and the SENDER only — never recipients", async () => {
     const triggers = (
       await mod.ingest({
         envelopes: [
@@ -166,9 +171,25 @@ describe("email ingest — apply_batch shape (tst_be_emailingest_001)", () => {
     expect(triggers).toHaveLength(1);
     const trigger0 = triggers[0];
     if (trigger0 === undefined) throw new Error("ingest: missing trigger[0]");
-    expect(trigger0.touched_entity_ids).toEqual(
+    expect(trigger0.touched_entity_ids).not.toEqual(
       expect.arrayContaining(["id-addr:cc@x.com", "id-addr:bcc@x.com", "id-addr:to@x.com"]),
     );
+    expect(trigger0.touched_entity_ids).toEqual(["id-m1", "id-addr:ceo@example.com"]);
+  });
+
+  // tst_be_emailingest_trigger_007 — INV-10. The engine needs the event's own
+  // time to refuse history; without it a delayed backfill fired a trigger that
+  // was created afterwards.
+  it("LIVE trigger context carries the message's occurred_at", async () => {
+    const triggers = (
+      await mod.ingest({
+        envelopes: [env({ kind: "live", remote_id: "m1", payload: msgPayload() })],
+      })
+    ).trigger_checks;
+    const trigger0 = triggers[0];
+    if (trigger0 === undefined) throw new Error("ingest: missing trigger[0]");
+    expect(trigger0.context).toHaveProperty("occurred_at");
+    expect(trigger0.context.occurred_at).toBeTruthy();
   });
 
   it("registers each attachment via file_register with native-parity ids", async () => {
@@ -231,7 +252,7 @@ describe("email ingest — trigger / delete / empty-user parity", () => {
     mod = mountModule(EmailModule, { graph, ctx: { extension_id: "email" } }).module;
   });
 
-  it("LIVE → one trigger.check (touched = message + recipients + sender); SNAPSHOT → none", async () => {
+  it("LIVE → one trigger.check (touched = message + sender only); SNAPSHOT → none", async () => {
     const live = await mod.ingest({ envelopes: [env({ kind: "live", remote_id: "m1", payload: msgPayload() })] });
     expect(live.trigger_checks).toHaveLength(1);
     const tc = live.trigger_checks[0];
@@ -239,15 +260,10 @@ describe("email ingest — trigger / delete / empty-user parity", () => {
     expect(tc.event_kind).toBe("new_email");
     expect(tc.entity_id).toBe("id-m1");
     expect(tc.context.from_address).toBe("CEO@example.com");
-    // touched: message id + recipient address ids + sender address id
-    expect(tc.touched_entity_ids).toEqual(
-      expect.arrayContaining([
-        "id-m1",
-        "id-addr:me@example.com",
-        "id-addr:ops@example.com",
-        "id-addr:ceo@example.com",
-      ]),
-    );
+    // INV-9: message id + the SENDER's address id. Recipients are deliberately
+    // absent — including them made the user's own address a trigger candidate.
+    expect(tc.touched_entity_ids).toEqual(["id-m1", "id-addr:ceo@example.com"]);
+    expect(tc.touched_entity_ids).not.toContain("id-addr:me@example.com");
 
     const snap = await mod.ingest({ envelopes: [env({ kind: "snapshot", remote_id: "m2", payload: msgPayload() })] });
     expect(snap.trigger_checks).toHaveLength(0);

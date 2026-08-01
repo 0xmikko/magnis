@@ -4,6 +4,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   accountIdFromMeta,
+  buildDialogMeta,
   chatMemberCount,
   chatToIntermediate,
   chatTypeStr,
@@ -217,6 +218,28 @@ describe("chat entity conversion", () => {
     // avatar_url is always absent here (twin of the Rust `avatar_url: None`).
     expect("avatar_url" in chat).toBe(false);
   });
+
+  test("tst_tgts_chat_005 a null pts from the wire is omitted, never forwarded as null", () => {
+    // Ported from the abandoned local commit d6f2ea2: its FIX reached upstream
+    // (client.ts drops a null pts) but this regression test did not, so nothing
+    // in the catalog pinned the behaviour.
+    //
+    // gramjs sends `pts: null` for dialogs that have none — only channels carry
+    // a pts, basic groups and users do not. `chat.details` types pts as an
+    // integer and does NOT require it, so the field must be OMITTED entirely.
+    // Forwarding null failed schema validation and killed the whole ingest
+    // batch ("null is not of type integer at /pts"), so no chat landed at all.
+    const meta = buildDialogMeta({ className: "Dialog", pts: null }, false, 0);
+    expect("pts" in meta).toBe(false);
+
+    // …and it must not resurface one hop later, on the canonical chat.
+    const chat = chatToIntermediate({ className: "Chat", id: 42, title: "Basic" }, meta);
+    expect("pts" in chat).toBe(false);
+
+    // A real pts still rides through untouched.
+    expect(buildDialogMeta({ className: "Dialog", pts: 77 }, false, 0).pts).toBe(77);
+  });
+
 });
 
 describe("senderDisplayName", () => {
@@ -295,6 +318,32 @@ describe("messageToIntermediate", () => {
     const m = messageToIntermediate({ id: 2, sender: nullUser, date: 0 }, "a", 1);
     expect(m.sender_info).toEqual({ first_name: "Bob" });
     expect(Object.keys(m.sender_info!)).toEqual(["first_name"]);
+  });
+
+  /**
+   * @test-id: tst_src_tg_024
+   * @scenario: scn_tg_sync_003
+   * @covers: plugins/sources/telegram/src/client.ts::messageToIntermediate
+   * @deterministic: yes
+   * @fixtures: inline gramjs-shaped message with a null reply id
+   *
+   * Test environment: source unit
+   * Clients: direct calls
+   * Mocks: none
+   * Data: one Telegram message with replyTo.replyToMsgId = null
+   */
+  test("tst_src_tg_024 gramjs null reply id is omitted before schema validation", () => {
+    const m = messageToIntermediate(
+      {
+        id: 2,
+        date: 0,
+        replyTo: { replyToMsgId: null as unknown as number },
+      },
+      "a",
+      1,
+    );
+    expect(m.reply_to_msg_id).toBeUndefined();
+    expect(m).not.toHaveProperty("reply_to_msg_id");
   });
 
   test("tst_tgts_msg_003 the unix-seconds date becomes the +00:00 RFC3339 form", () => {

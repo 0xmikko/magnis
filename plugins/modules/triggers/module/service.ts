@@ -18,8 +18,14 @@
 // `get_entity_full` precheck (raw `get_entity`/`attach_facet` are NOT user-scoped),
 // matching the native guards.
 
-import { tool, writeTool, type GraphService, type PluginDeps, type RpcExecutor } from "@magnis/plugin-sdk";
-import type { EntityDetail, LinkSummary } from "@magnis/plugin-sdk";
+import { rpc, tool, writeTool, type GraphService, errText,
+  type PluginDeps, type PluginLogger, type RpcExecutor } from "@magnis/plugin-sdk";
+import type {
+  EntityDetail,
+  LinkSummary,
+  ListParams,
+  PaginatedResponse,
+} from "@magnis/plugin-sdk";
 import type {
   ClarificationResult,
   CreateTriggerParams,
@@ -44,10 +50,32 @@ import { BELONGS_TO, TRIGGER, TRIGGER_CONFIG, TRIGGER_EXECUTION, WATCHES } from 
 export class TriggersModule {
   private readonly graph: GraphService<TriggerFacets>;
   private readonly rpc: RpcExecutor;
+  private readonly log: PluginLogger;
 
   constructor(deps: PluginDeps<TriggerFacets>) {
     this.graph = deps.graph;
     this.rpc = deps.rpc;
+    this.log = deps.log;
+  }
+
+  /// DEC-7/INV-22: a compensated write is an operational branch, so it reports
+  /// itself. Kept per-module rather than shared: the four compensation blocks
+  /// differ in what they undo, and wrapping async graph calls in a closure to
+  /// hand to a helper reads worse than the two copies. (An earlier version of
+  /// this comment claimed the SDK was out of reach across a repo boundary —
+  /// that was simply wrong: `@magnis/plugin-sdk` is in this repository and both
+  /// modules already import it. `errText` now lives there.)
+  private async logFailure(
+    decision: string,
+    entityId: string,
+    reason: unknown,
+    rollbackReason?: unknown,
+  ): Promise<void> {
+    await this.log.log("warn", decision, {
+      entity_id: entityId,
+      reason: errText(reason),
+      ...(rollbackReason === undefined ? {} : { rollback_reason: errText(rollbackReason) }),
+    });
   }
 
   @writeTool("create", {
@@ -88,7 +116,7 @@ export class TriggersModule {
         },
         max_firings: { type: "integer", description: "Maximum total firings before auto-expire" },
       },
-      required: ["name", "action_prompt"],
+      required: ["name", "gate_prompt", "action_prompt"],
       additionalProperties: false,
     },
   })
@@ -98,7 +126,16 @@ export class TriggersModule {
     const action_prompt = params.action_prompt.trim();
     if (!action_prompt) throw new Error("missing or empty required param: action_prompt");
 
-    const gate_prompt = params.gate_prompt ?? "";
+    // @tested-by: tst_module_triggers_write_001
+    // @invariant: INV-4 — the gate is what makes a trigger conditional. An
+    // absent or blank one used to default to "", producing a live trigger that
+    // fires on EVERYTHING it watches; that is how a trigger came out already
+    // "fired once" against unrelated mail.
+    // The type says required, but the agent boundary is UNTYPED (B27: the schema
+    // is not enforced at dispatch), so a missing value must still produce this
+    // message rather than a TypeError from .trim().
+    const gate_prompt = typeof params.gate_prompt === "string" ? params.gate_prompt.trim() : "";
+    if (!gate_prompt) throw new Error("missing or empty required param: gate_prompt");
     const event_kinds =
       params.event_kinds && params.event_kinds.length > 0 ? params.event_kinds : ["sync_ingested"];
     const watch_entity_ids = params.watch_entity_ids ?? [];
@@ -143,13 +180,41 @@ export class TriggersModule {
     if (params.expires_at !== undefined) config.expires_at = params.expires_at;
     if (params.max_wait_seconds !== undefined) config.max_wait_seconds = params.max_wait_seconds;
     if (params.max_firings !== undefined) config.max_firings = params.max_firings;
-    await this.graph.attach_facet({ entity_id: entity.id, schema_id: TRIGGER_CONFIG, data: config });
 
-    for (const target of watch_entity_ids) {
-      await this.graph.add_link({ from_id: entity.id, to_id: target, kind: WATCHES });
-    }
-    if (params.episode_id) {
-      await this.graph.add_link({ from_id: entity.id, to_id: params.episode_id, kind: BELONGS_TO });
+    // @tested-by: tst_module_triggers_write_001
+    // @invariant: INV-25 — create is externally atomic. Config and watch links
+    // were written one by one with nothing undone on failure, so a half-built
+    // trigger could survive: an entity with no condition, or one that watches
+    // nothing. Any failure after the entity exists removes it again.
+    try {
+      await this.graph.attach_facet({
+        entity_id: entity.id,
+        schema_id: TRIGGER_CONFIG,
+        data: config,
+      });
+      for (const target of watch_entity_ids) {
+        await this.graph.add_link({ from_id: entity.id, to_id: target, kind: WATCHES });
+      }
+      if (params.episode_id) {
+        await this.graph.add_link({
+          from_id: entity.id,
+          to_id: params.episode_id,
+          kind: BELONGS_TO,
+        });
+      }
+    } catch (writeError) {
+      try {
+        await this.graph.delete_entity(entity.id);
+      } catch (rollbackError) {
+        await this.logFailure("trigger create rollback failed", entity.id, writeError, rollbackError);
+        throw new Error(
+          `trigger write and rollback both failed for ${entity.id}: ` +
+            `write=${errText(writeError)}; rollback=${errText(rollbackError)}`,
+          { cause: rollbackError },
+        );
+      }
+      await this.logFailure("trigger create rolled back", entity.id, writeError);
+      throw writeError;
     }
 
     await this.invalidateCache();
@@ -209,6 +274,89 @@ export class TriggersModule {
     return items;
   }
 
+  @rpc("list_page", {
+    description: "Paginated trigger list for the standard frontend module.",
+    params: {
+      type: "object",
+      properties: {
+        limit: { type: "integer", minimum: 1 },
+        offset: { type: "integer", minimum: 0 },
+        search: { type: "string" },
+      },
+      additionalProperties: false,
+    },
+  })
+  async list_page(params: ListParams): Promise<PaginatedResponse<TriggerListItem>> {
+    const limit = params.limit ?? 50;
+    const offset = params.offset ?? 0;
+    const query = (params.search ?? "").trim().toLowerCase();
+
+    const hydrate = async (
+      rows: readonly { entity: { id: string } }[],
+    ): Promise<TriggerListItem[]> => {
+      const items: TriggerListItem[] = [];
+      for (const row of rows) {
+        const detail = await this.graph.get_entity_full(row.entity.id, { links: true });
+        if (detail?.entity.schema_id !== TRIGGER) continue;
+        const config = this.configOf(detail);
+        if (!config) continue;
+        items.push(await this.listItem(detail, config));
+      }
+      return items;
+    };
+
+    // @tested-by: tst_module_triggers_list_page_001
+    // @invariant: UI pagination reads the requested graph window directly and
+    // never inherits the agent-facing list tool's intentional 1,000-row cap.
+    if (query.length === 0) {
+      const page = await this.graph.list_entities_window({
+        schema: TRIGGER,
+        facet_schema: TRIGGER_CONFIG,
+        order: [{ field: { entity_field: "date" }, desc: true }],
+        limit,
+        offset,
+      });
+      return {
+        items: await hydrate(page.items),
+        total: page.total,
+        limit,
+        offset,
+      };
+    }
+
+    // GraphService has no full-text facet search. Scan exact graph windows so
+    // search includes gate/action/watch names without silently truncating at
+    // 1,000. Triggers are expected to be a small control-plane collection.
+    const scanLimit = 250;
+    let scanOffset = 0;
+    const filtered: TriggerListItem[] = [];
+    for (;;) {
+      const page = await this.graph.list_entities_window({
+        schema: TRIGGER,
+        facet_schema: TRIGGER_CONFIG,
+        order: [{ field: { entity_field: "date" }, desc: true }],
+        limit: scanLimit,
+        offset: scanOffset,
+      });
+      if (page.items.length === 0) break;
+      const items = await hydrate(page.items);
+      filtered.push(...items.filter((item) =>
+        `${item.name} ${item.gate_prompt} ${item.action_prompt} ${item.watched_entity_names.join(" ")}`
+          .toLowerCase()
+          .includes(query),
+      ));
+      scanOffset += page.items.length;
+      if (scanOffset >= page.total) break;
+    }
+
+    return {
+      items: filtered.slice(offset, offset + limit),
+      total: filtered.length,
+      limit,
+      offset,
+    };
+  }
+
   @writeTool("update", {
     description: "Update trigger fields (partial update).",
     params: {
@@ -234,11 +382,25 @@ export class TriggersModule {
     const config = this.configOf(detail);
     if (!config) throw new Error(`trigger config not found: ${params.id}`);
 
-    if (params.name !== undefined) {
-      config.name = params.name;
-      await this.graph.update_entity_name(params.id, params.name);
+    // @tested-by: tst_module_triggers_write_003
+    // @invariant: INV-25 — snapshot BEFORE any field is applied. Taking the
+    // copy after the first mutation made the compensation restore the old NAME
+    // while persisting the NEW gate_prompt, i.e. it silently changed the
+    // trigger's condition on a failed update — the opposite of its purpose.
+    const previousConfig = { ...config };
+
+    // @tested-by: tst_module_triggers_write_002
+    // @invariant: INV-4 — `update` accepted "" as a real gate value, which
+    // silently disarmed the condition on an existing trigger.
+    if (params.gate_prompt !== undefined) {
+      const gate = params.gate_prompt.trim();
+      if (!gate) throw new Error("missing or empty required param: gate_prompt");
+      config.gate_prompt = gate;
     }
-    if (params.gate_prompt !== undefined) config.gate_prompt = params.gate_prompt;
+
+    // @invariant: INV-25 — the rename ran BEFORE the config write, so a failed
+    // facet write left the trigger renamed for a config it never received.
+    if (params.name !== undefined) config.name = params.name;
     if (params.action_prompt !== undefined) config.action_prompt = params.action_prompt;
     if (params.status !== undefined) config.status = params.status;
     if (params.event_kinds !== undefined) config.event_kinds = params.event_kinds;
@@ -249,6 +411,33 @@ export class TriggersModule {
     if (params.max_firings !== undefined) config.max_firings = params.max_firings;
 
     await this.graph.attach_facet({ entity_id: params.id, schema_id: TRIGGER_CONFIG, data: config });
+    if (params.name !== undefined && params.name !== detail.entity.name) {
+      try {
+        await this.graph.update_entity_name(params.id, params.name);
+      } catch (renameError) {
+        try {
+          await this.graph.attach_facet({
+            entity_id: params.id,
+            schema_id: TRIGGER_CONFIG,
+            data: previousConfig,
+          });
+        } catch (rollbackError) {
+          // The host serialises a thrown error as `String(e.stack)`
+          // (magnis-app backend/src/plugin_runtime/lifecycle.rs), and a stack
+          // carries neither `.errors` nor `.cause`. An AggregateError here
+          // reached the operator naming NEITHER failure, so both messages are
+          // interpolated into the text instead.
+          await this.logFailure("trigger rename rollback failed", params.id, renameError, rollbackError);
+          throw new Error(
+            `trigger rename and config rollback both failed for ${params.id}: ` +
+              `rename=${errText(renameError)}; rollback=${errText(rollbackError)}`,
+            { cause: rollbackError },
+          );
+        }
+        await this.logFailure("trigger rename rolled back", params.id, renameError);
+        throw renameError;
+      }
+    }
     await this.invalidateCache();
 
     const fresh = await this.requireTrigger(params.id);

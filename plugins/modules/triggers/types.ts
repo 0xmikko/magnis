@@ -96,7 +96,8 @@ export interface TriggerCreated {
 
 export interface CreateTriggerParams {
   name: string;
-  gate_prompt?: string;
+  /** Required: a trigger with no condition fires on everything it watches. */
+  gate_prompt: string;
   action_prompt: string;
   event_kinds?: string[];
   watch_entity_ids?: string[];

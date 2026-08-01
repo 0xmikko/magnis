@@ -81,16 +81,25 @@ export interface NotesListParams {
 export interface GetParams {
   id: string;
 }
-export interface CreateParams {
+interface CreateParamsBase {
   title: string;
-  body: string;
   /** Client-generated UUID for optimistic create / idempotent retry. */
   client_id?: string;
 }
+
+/** MCP clients name the markdown field `content`; the graph facet stores it
+ *  canonically as `body`. Both are explicit wire variants of the SAME field,
+ *  so a caller supplies exactly one — never both, never neither. Accepting
+ *  only `body` is what made the agent's `content` call produce an empty note. */
+export type CreateParams = CreateParamsBase &
+  ({ body: string; content?: never } | { content: string; body?: never });
 export interface UpdateParams {
   id: string;
   title?: string;
+  /** Same two wire names as create — the approval card renders both, so the
+   *  handler must accept both or the card lies about what will be written. */
   body?: string;
+  content?: string;
 }
 export interface DeleteParams {
   id: string;

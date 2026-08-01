@@ -468,6 +468,21 @@ export interface RpcExecutor {
   execute<T = unknown>(method: string, params?: unknown): Promise<T>;
 }
 
+/// Severity of a plugin log entry. Mirrors the host's `LogLevel` so an entry
+/// crosses the boundary without translation.
+export type PluginLogLevel = "debug" | "info" | "warn" | "error";
+
+/// The plugin's channel into the host logger. Entries are recorded under the
+/// module's own origin, so a plugin failure is attributable without reading
+/// process stdout.
+///
+/// Log at operational branches and failure paths — a send that was rejected, a
+/// trigger that was skipped and why, a write that was rolled back. Do not log
+/// presentation or prompt text.
+export interface PluginLogger {
+  log(level: PluginLogLevel, message: string, fields?: Record<string, unknown>): Promise<void>;
+}
+
 export interface PluginDeps<
   Facets extends object = Record<string, unknown>,
   Canon extends object = Record<string, unknown>,
@@ -476,6 +491,7 @@ export interface PluginDeps<
   ctx: PluginContext;
   util: PluginUtil;
   rpc: RpcExecutor;
+  log: PluginLogger;
 }
 
 // ─────────────────── tool metadata + decorator specs ───────────────────
@@ -508,11 +524,17 @@ export interface ToolDefinitionWire {
 /// runtime: a lazy `init` (wires the decorated instance), the post-init RPC
 /// handler table, and the harvested agent-tool definitions.
 export interface PluginModuleShape {
+  /// The host supplies every dependency positionally. `log` is REQUIRED: a
+  /// host that does not pass it leaves modules unable to report failures, so
+  /// this is a deliberate breaking change rather than an optional argument
+  /// defaulted to a no-op sink (which would silently swallow diagnostics).
+  /// The host side lands together with the submodule bump.
   init: (
     graph: unknown,
     ctx: PluginContext,
     util: PluginUtil,
     rpc: RpcExecutor,
+    log: PluginLogger,
   ) => Promise<void>;
   rpcHandlers: Record<string, (params: unknown) => unknown>;
   toolDefinitions: ToolDefinitionWire[];
