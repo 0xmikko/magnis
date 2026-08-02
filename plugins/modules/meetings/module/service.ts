@@ -432,7 +432,16 @@ export class MeetingsModule {
       phase: "live",
       touched_entity_ids: touched,
       user_id: env.user_id,
-      context: { title: name.length > 0 ? name : null, remote_id: remoteId },
+      context: {
+        title: name.length > 0 ? name : null,
+        remote_id: remoteId,
+        // @tested-by: tst_module_meetings_trigger_001
+        // @invariant: INV-10 — the engine compares the event's own time against
+        // the trigger's creation time to refuse history, and fails CLOSED when
+        // it is absent. Without this every meeting trigger would stop firing
+        // the moment that comparison lands. A meeting's occurrence is its start.
+        occurred_at: str(payload, "starts_at") ?? null,
+      },
     });
   }
 

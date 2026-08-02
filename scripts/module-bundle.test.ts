@@ -5,6 +5,7 @@
 // passes a different target than deno_ast's legacy decorators, the registry is
 // empty → no tools → every plugin breaks in prod. `__decorate` is plain
 // engine-agnostic JS (no reflect-metadata), so verifying in Bun is sufficient.
+import type { PluginModuleShape } from "@magnis/plugin-sdk";
 import { test, expect, beforeAll } from "bun:test";
 import { buildPlugin, buildAll, discoverPlugins } from "./build-plugins.ts";
 import { existsSync, readFileSync } from "fs";
@@ -18,11 +19,11 @@ interface ToolDef {
   description: string;
   requires_approval: boolean;
 }
-interface ModuleShape {
-  init: (graph: unknown, ctx: unknown, util: unknown, rpc: unknown) => Promise<void>;
-  rpcHandlers: Record<string, unknown>;
-  toolDefinitions: ToolDef[];
-}
+// The shape is NOT re-declared here. A local copy is exactly how this gate
+// drifted from the SDK: it kept a 4-argument `init` after the contract grew a
+// required logger, so the bundle gate happily constructed modules with
+// `log: undefined` — the "run blind" state the contract forbids.
+type ModuleShape = Omit<PluginModuleShape, "toolDefinitions"> & { toolDefinitions: ToolDef[] };
 
 let mod: ModuleShape;
 
@@ -48,7 +49,7 @@ test("tst_module_decorators_001: bundled module decorators register the plugin's
   expect(mod).toBeTruthy();
   // toolDefinitions are empty until init() reads the decorator registry.
   const ctx = { extension_id: "file", user_id: "system", extension_kind: "module" };
-  await mod.init({}, ctx, {}, { execute: async () => undefined });
+  await mod.init({}, ctx, {}, { execute: async () => undefined }, { log: async () => undefined });
 
   const names = mod.toolDefinitions.map((t) => t.name).sort();
   expect(names).toContain("file.list");

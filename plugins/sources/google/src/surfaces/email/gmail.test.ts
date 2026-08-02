@@ -206,20 +206,20 @@ describe("history action resolution", () => {
     ]);
     expect(actions.get("m1")).toBe("delete");
 
-    // Across entries: later entry overrides (delete → re-add = fetch).
+    // Across entries: later entry overrides (delete → re-add = live).
     actions = resolveHistoryActions([
       { messagesDeleted: [added("m2")] },
       { messagesAdded: [added("m2")] },
     ]);
-    expect(actions.get("m2")).toBe("fetch");
+    expect(actions.get("m2")).toBe("live");
 
-    // Labels only fetch when the message wasn't added/deleted anywhere yet.
+    // Labels only snapshot when the message wasn't added/deleted anywhere yet.
     actions = resolveHistoryActions([
       { messagesDeleted: [added("m3")] },
       { labelsAdded: [added("m3")], labelsRemoved: [added("m4")] },
     ]);
     expect(actions.get("m3")).toBe("delete"); // or_insert keeps earlier delete
-    expect(actions.get("m4")).toBe("fetch");
+    expect(actions.get("m4")).toBe("snapshot");
 
     // sortedActions is BTreeMap-ordered (byte order of ids).
     expect(sortedActions(actions).map(([id]) => id)).toEqual(["m3", "m4"]);
@@ -244,7 +244,7 @@ describe("history action resolution", () => {
       { history_id: "100", discovered: 200, total: 500 },
       fetchFn,
     );
-    // Deletes first (BTreeMap order within kind), then hydrated snapshots.
+    // Deletes first (BTreeMap order within kind), then hydrated live messages.
     expect(r.envelopes[0]).toEqual({
       surface: "email",
       payload: {},
@@ -253,13 +253,54 @@ describe("history action resolution", () => {
     });
     const env1 = r.envelopes[1];
     if (env1 === undefined) throw new Error("email page: missing envelope 1");
-    expect(env1.kind).toBe("snapshot");
+    expect(env1.kind).toBe("live");
     expect(env1.remote_id).toBe("mA");
     // Counters carried FORWARD, never reset; watermark advances.
     expect(r.hasMore).toBe(false);
     expect(r.nextCursor).toEqual({ history_id: "999", discovered: 200, total: 500 });
     expect(r.total).toBe(500);
     expect(r.discovered).toBe(200);
+  });
+
+  /**
+   * @test-id: tst_src_gmail_011
+   * @scenario: scn_gmail_trigger_001
+   * @covers: plugins/sources/google/src/surfaces/email/gmail.ts::fetchHistoryChanges
+   * @deterministic: yes
+   * @fixtures: inline Gmail History API responses
+   *
+   * Test environment: Google source connector email forward-sync
+   * Clients: direct calls
+   * Mocks: fixture-backed FetchLike
+   * Data: one newly-added message and one label-only change
+   */
+  test("tst_src_gmail_011 forward sync marks new mail live but label-only changes snapshot", async () => {
+    const fetchFn: FetchLike = async (url) => {
+      if (url.includes("/history?startHistoryId=100")) {
+        return ok({
+          history: [
+            {
+              messagesAdded: [added("new-mail")],
+              labelsAdded: [added("existing-mail")],
+            },
+          ],
+          historyId: "101",
+        });
+      }
+      if (url.includes("/messages/new-mail?format=full")) {
+        return ok({ ...fullGmailMessage(), id: "new-mail" });
+      }
+      if (url.includes("/messages/existing-mail?format=full")) {
+        return ok({ ...fullGmailMessage(), id: "existing-mail" });
+      }
+      throw new Error(`unexpected url ${url}`);
+    };
+
+    const r = await fetchHistoryChanges("tok", { history_id: "100" }, fetchFn);
+    const byId = new Map(r.envelopes.map((envelope) => [envelope.remote_id, envelope]));
+
+    expect(byId.get("new-mail")?.kind).toBe("live");
+    expect(byId.get("existing-mail")?.kind).toBe("snapshot");
   });
 
   test("tst_gts_hist_008 missing history_id or HTTP 404 → historyId expired", async () => {

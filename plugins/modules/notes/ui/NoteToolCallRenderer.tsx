@@ -8,6 +8,10 @@ import type {
 } from "@magnis/host/runtime";
 import { useRouterContext } from "@magnis/host/runtime";
 import { BaseToolCallCard } from "@magnis/host/base";
+// Extension-less, like every other relative import in the catalog. The dev
+// transpile path serves each file on request and resolves the specifier itself;
+// a `.ts` suffix is a spelling nothing else here uses.
+import { bodyFromToolArgs } from "./toolArgs";
 
 export function NoteToolCallRenderer({
   payload,
@@ -28,12 +32,11 @@ export function NoteToolCallRenderer({
   const args = tc.args as Record<string, unknown>;
   const isCreate = tc.name === "notes.create" || tc.name === "notes_create";
   const title = args.title as string | undefined;
-  const body =
-    typeof args.body === "string"
-      ? args.body
-      : typeof args.text === "string"
-        ? args.text
-        : "";
+  // @tested-by: tst_module_notes_write_003
+  // @invariant: INV-3 — the card renders the body under EVERY wire name the
+  // tool accepts. The list lives beside the tool schema so the two cannot
+  // drift; keeping it here is why a `content` call rendered a blank card.
+  const body = bodyFromToolArgs(args);
 
   const [noteId, setNoteId] = useState<string | undefined>(
     args.id as string | undefined,

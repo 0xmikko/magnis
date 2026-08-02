@@ -6,6 +6,8 @@
 export const COMPANY = "companies.company";
 /** Single-aligned details facet (name/website/industry/size/location/…). */
 export const COMPANY_DETAILS = "companies.company.details";
+/** Markdown description facet (body). */
+export const COMPANY_DESCRIPTION = "companies.description";
 /** Collection email facet (one facet per address). */
 export const COMPANY_EMAIL = "companies.company.email";
 /** Collection phone facet (one facet per number). */

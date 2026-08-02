@@ -136,6 +136,109 @@ describe("send_message / reply", () => {
       execute(ops, "a", { action: "send_message", chat_id: 1 }, noSleep),
     ).rejects.toThrow("missing text");
   });
+
+  test("tst_tgts_exec_demo_001 local demo dry-run never calls Telegram sendMessage", async () => {
+    const { ops, calls } = fakeOps();
+
+    const out = await execute(
+      ops,
+      "acct",
+      { action: "send_message", chat_id: 111, text: "demo" },
+      { ...noSleep, demoDryRun: true },
+    );
+
+    expect(out).toEqual({
+      chat_id: 111,
+      text: "demo",
+      delivered: false,
+      demo_dry_run: true,
+      suppressed_by: "MAGNIS_TELEGRAM_DEMO_DRY_RUN",
+    });
+    expect(calls.sendMessage).toEqual([]);
+  });
+
+  test("tst_tgts_exec_demo_002 dispatch honors the demo flag and reports non-delivery", async () => {
+    const previous = process.env.MAGNIS_TELEGRAM_DEMO_DRY_RUN;
+    process.env.MAGNIS_TELEGRAM_DEMO_DRY_RUN = "1";
+    const { ops, calls } = fakeOps();
+    try {
+      const reply = await handleMessage(
+        {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: {
+            name: "magnis.execute",
+            arguments: { action: "send_message", chat_id: 111, text: "demo" },
+          },
+        },
+        {
+          authMode: false,
+          registry: new SubscriptionRegistry(),
+          write: () => {},
+          resolveClient: async () => ({
+            ops,
+            pager: { dialogPage: async () => ({ dialogs: [], next_offset: null, total: null }) },
+            accountId: "acct",
+          }),
+        },
+      );
+
+      expect(reply?.result).toEqual({
+        chat_id: 111,
+        text: "demo",
+        delivered: false,
+        demo_dry_run: true,
+        suppressed_by: "MAGNIS_TELEGRAM_DEMO_DRY_RUN",
+      });
+      expect(calls.sendMessage).toEqual([]);
+    } finally {
+      if (previous === undefined) delete process.env.MAGNIS_TELEGRAM_DEMO_DRY_RUN;
+      else process.env.MAGNIS_TELEGRAM_DEMO_DRY_RUN = previous;
+    }
+  });
+
+  test("tst_tgts_exec_demo_003 dispatch sends normally when the demo flag is absent", async () => {
+    const previous = process.env.MAGNIS_TELEGRAM_DEMO_DRY_RUN;
+    delete process.env.MAGNIS_TELEGRAM_DEMO_DRY_RUN;
+    const { ops, calls } = fakeOps();
+    try {
+      const reply = await handleMessage(
+        {
+          jsonrpc: "2.0",
+          id: 2,
+          method: "tools/call",
+          params: {
+            name: "magnis.execute",
+            arguments: { action: "send_message", chat_id: 222, text: "live" },
+          },
+        },
+        {
+          authMode: false,
+          registry: new SubscriptionRegistry(),
+          write: () => {},
+          resolveClient: async () => ({
+            ops,
+            pager: { dialogPage: async () => ({ dialogs: [], next_offset: null, total: null }) },
+            accountId: "acct",
+          }),
+        },
+      );
+
+      expect(reply?.result).toEqual({
+        message_id: 555,
+        chat_id: 222,
+        text: "live",
+        schema_id: "telegram.message",
+      });
+      expect(calls.sendMessage).toEqual([
+        { peer: "peer:222", message: "live", replyTo: undefined },
+      ]);
+    } finally {
+      if (previous === undefined) delete process.env.MAGNIS_TELEGRAM_DEMO_DRY_RUN;
+      else process.env.MAGNIS_TELEGRAM_DEMO_DRY_RUN = previous;
+    }
+  });
 });
 
 // ── backfill_chat ───────────────────────────────────────────────────────────
