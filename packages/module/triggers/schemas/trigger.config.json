@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "type": "object",
+  "required": [
+    "name",
+    "gate_prompt",
+    "action_prompt",
+    "status",
+    "event_kinds"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "gate_prompt": {
+      "type": "string"
+    },
+    "action_prompt": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    },
+    "event_kinds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "schema_filter": {
+      "type": "string"
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "debounce_seconds": {
+      "type": "integer"
+    },
+    "max_wait_seconds": {
+      "type": "integer"
+    },
+    "max_firings": {
+      "type": "integer"
+    },
+    "firing_count": {
+      "type": "integer"
+    },
+    "last_fired_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

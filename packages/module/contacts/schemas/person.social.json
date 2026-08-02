@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "tracked_x": {
+      "type": "boolean"
+    },
+    "x_handle": {
+      "type": "string"
+    },
+    "tracked_linkedin": {
+      "type": "boolean"
+    },
+    "linkedin_handle": {
+      "type": "string"
+    }
+  }
+}

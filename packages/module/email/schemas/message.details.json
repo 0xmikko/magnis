@@ -1,0 +1,149 @@
+{
+  "version": 1,
+  "mappings": [
+    {
+      "path": "from_address",
+      "canonical": "email.message.sender",
+      "strategy": "single_aligned"
+    },
+    {
+      "path": "subject",
+      "canonical": "email.message.subject",
+      "strategy": "single_aligned"
+    },
+    {
+      "path": "snippet",
+      "canonical": "email.message.preview",
+      "strategy": "single_aligned"
+    },
+    {
+      "path": "body_text",
+      "canonical": "email.message.body",
+      "strategy": "single_aligned"
+    },
+    {
+      "path": "from_name",
+      "canonical": "email.message.sender_name",
+      "strategy": "single_aligned"
+    }
+  ],
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "message_id": {
+      "type": "string"
+    },
+    "subject": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "from_address": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "from_name": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "to_addresses": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "cc_addresses": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "bcc_addresses": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "snippet": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "body_text": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "body_html": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "has_html_body": {
+      "type": "boolean"
+    },
+    "sent_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "received_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "labels": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "is_read": {
+      "type": "boolean"
+    },
+    "is_starred": {
+      "type": "boolean"
+    },
+    "is_important": {
+      "type": "boolean"
+    },
+    "has_attachments": {
+      "type": "boolean"
+    },
+    "thread_id": {
+      "type": "string"
+    },
+    "attachments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string"
+          },
+          "mime_type": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

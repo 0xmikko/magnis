@@ -1,0 +1,53 @@
+{
+  "id": "contacts.identity.telegram",
+  "version": 1,
+  "mappings": [
+    {
+      "path": "username",
+      "canonical": "person.telegram_username",
+      "strategy": "single_aligned"
+    },
+    {
+      "path": "telegram_user_id",
+      "canonical": "person.telegram_id",
+      "strategy": "single_aligned"
+    }
+  ],
+  "type": "object",
+  "required": [
+    "telegram_user_id"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "telegram_user_id": {
+      "type": "integer"
+    },
+    "username": {
+      "type": "string"
+    },
+    "first_name": {
+      "type": "string"
+    },
+    "last_name": {
+      "type": "string"
+    },
+    "phone": {
+      "type": "string"
+    },
+    "bio": {
+      "type": "string"
+    },
+    "is_bot": {
+      "type": "boolean"
+    },
+    "is_verified": {
+      "type": "boolean"
+    },
+    "is_scam": {
+      "type": "boolean"
+    },
+    "is_fake": {
+      "type": "boolean"
+    }
+  }
+}

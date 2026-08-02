@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "type": "object",
+  "required": [],
+  "additionalProperties": true,
+  "properties": {
+    "likes": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "reposts": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "replies": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "impressions": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    }
+  }
+}

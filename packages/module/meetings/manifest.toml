@@ -1,0 +1,33 @@
+# meetings — Meetings domain module (V8 plugin).
+#
+# Owns `meetings.*`: calendar_event + event entities and their facets. Ingests the
+# `meetings` sync surface (calendar), links attendees to contacts (reads
+# contacts.person), and reaches the email module over RPC to resolve addresses.
+# Sandboxed V8 isolate; bundled with the app and installed automatically at boot.
+
+id = "meetings"
+version = "0.1.0"
+# SDK contract version this manifest targets (host accepts 0.x).
+magnis_api_version = "0.1.0"
+title = "Meetings"
+summary = "Schedule, track, and recap meetings across calendars."
+# Reverse-domain publisher identity.
+publisher = "ai.magnis"
+
+# Sync surface this module consumes (fed by the matching source connector).
+[surfaces.meetings]
+# The surface's primary-item schema — its user-scoped graph count IS the
+# "items synced" badge (host source.status.list reads this).
+item = "meetings.calendar_event"
+
+# Foreign asks beyond the implicit own namespace: writes to `meetings.` facets,
+# own:own links, and reads of own schemas need no declaration.
+[permissions]
+read = [ "contacts.person" ]
+call = [ "email.ensure_address" ]
+host = [ "external_id_reads", "sync_state" ]
+
+# Extra bare import specifiers the UI bundle may reference beyond the host-shim
+# defaults — rewritten to host-shim URLs at build/transpile time.
+[ui]
+extra_bare_imports = [ "zustand", "zustand/vanilla" ]

@@ -1,0 +1,28 @@
+# x — X (Twitter) domain module (V8 plugin).
+#
+# Owns the `x.*` graph namespace: profile + post entities and their identity /
+# content / metrics facets for the X accounts you track. Ingests the `x` sync
+# surface fed by the X source connector, links each profile to the matching
+# contact (reads contacts.person, creates the x.profile:contacts.person link),
+# and reads contacts' social-tracking over RPC. Read-only today.
+# Sandboxed V8 isolate; presence-seeded at boot.
+
+id = "x"
+version = "0.1.0"
+# SDK contract version this manifest targets (host accepts 0.x).
+magnis_api_version = "0.1.0"
+title = "X"
+summary = "X (Twitter) profiles and posts of the people you track, linked to contacts."
+# Reverse-domain publisher identity.
+publisher = "ai.magnis"
+
+# Sync surface this module consumes (fed by the matching source connector).
+[surfaces.x]
+
+# Foreign asks beyond the implicit own namespace: writes to `x.` facets,
+# own:own links, and reads of own schemas need no declaration.
+[permissions]
+read = [ "contacts.person" ]
+links = [ "x.profile:contacts.person" ]
+call = [ "contacts.get_social_tracking_by_handle", "contacts.rename_if_placeholder", "source.sync.bootstrap" ]
+host = [ "external_id_reads" ]

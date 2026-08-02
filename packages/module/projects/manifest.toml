@@ -1,0 +1,21 @@
+# projects — Projects domain module (V8 plugin).
+#
+# Owns the `projects.*` graph namespace: the project entity plus its detail,
+# checklist, description, and memory facets. A project is a durable container
+# that bundles meetings, messages, notes, and contacts around a goal; members
+# are attached with `belongs_to` links. Runs as a sandboxed V8 isolate; bundled
+# with the app and installed automatically at boot.
+
+id = "projects"
+version = "0.1.0"
+# SDK contract version this manifest targets (host accepts 0.x).
+magnis_api_version = "0.1.0"
+title = "Projects"
+summary = "Bundle meetings, messages, and tasks into long-running projects."
+# Reverse-domain publisher identity.
+publisher = "ai.magnis"
+
+# Foreign asks beyond the implicit own namespace: writes to `projects.` facets,
+# own:own links, and reads of own schemas need no declaration.
+[permissions]
+links = [ "belongs_to" ]

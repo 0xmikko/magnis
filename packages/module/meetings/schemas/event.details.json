@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "mappings": [
+    {
+      "path": "title",
+      "canonical": "event.title",
+      "strategy": "single_aligned"
+    },
+    {
+      "path": "starts_at",
+      "canonical": "event.starts_at",
+      "strategy": "single_aligned"
+    },
+    {
+      "path": "ends_at",
+      "canonical": "event.ends_at",
+      "strategy": "single_aligned"
+    },
+    {
+      "path": "location",
+      "canonical": "event.location",
+      "strategy": "single_aligned"
+    },
+    {
+      "path": "status",
+      "canonical": "event.status",
+      "strategy": "single_aligned"
+    }
+  ],
+  "type": "object",
+  "required": [
+    "title",
+    "starts_at"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "title": {
+      "type": "string"
+    },
+    "description": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "starts_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "ends_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "location": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "status": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "all_day": {
+      "type": "boolean"
+    }
+  }
+}

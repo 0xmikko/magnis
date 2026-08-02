@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "mappings": [
+    {
+      "path": "phone",
+      "canonical": "companies.phones",
+      "strategy": "collection"
+    }
+  ],
+  "type": "object",
+  "required": [
+    "phone"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "phone": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string"
+    },
+    "is_primary": {
+      "type": "boolean"
+    }
+  }
+}

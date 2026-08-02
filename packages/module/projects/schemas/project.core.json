@@ -1,0 +1,18 @@
+{
+  "id": "projects.project",
+  "version": 1,
+  "mappings": [
+    {
+      "path": "name",
+      "canonical": "project.name",
+      "strategy": "single_aligned"
+    },
+    {
+      "path": "status",
+      "canonical": "project.status",
+      "strategy": "single_aligned"
+    }
+  ],
+  "type": "object",
+  "additionalProperties": true
+}

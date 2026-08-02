@@ -1,0 +1,48 @@
+{
+  "entity": "contacts.person",
+  "version": 1,
+  "mappings": [
+    {
+      "path": "first_name",
+      "canonical": "person.first_name",
+      "strategy": "single_aligned"
+    },
+    {
+      "path": "last_name",
+      "canonical": "person.last_name",
+      "strategy": "single_aligned"
+    }
+  ],
+  "type": "object",
+  "required": [
+    "telegram_user_id",
+    "first_name"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "telegram_user_id": {
+      "type": "integer"
+    },
+    "first_name": {
+      "type": "string"
+    },
+    "last_name": {
+      "type": "string"
+    },
+    "username": {
+      "type": "string"
+    },
+    "phone": {
+      "type": "string"
+    },
+    "photo_url": {
+      "type": "string"
+    },
+    "avatar_url": {
+      "type": "string"
+    },
+    "relevance_tier": {
+      "type": "string"
+    }
+  }
+}

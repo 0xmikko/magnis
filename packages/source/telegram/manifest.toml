@@ -1,0 +1,41 @@
+# telegram — Telegram source (external MCP connector).
+#
+# Ported faithfully out of the in-backend `backend/src/sources/telegram` source.
+# Feeds ONE surface (telegram) with the same canonical envelopes the in-core
+# source produced, so the telegram module ingests it unchanged.
+#
+# The server is the `magnis-telegram` binary. The connector builds its own
+# grammers MTProto client: the host injects `_meta = { api_id, api_hash, session }`
+# on every tool call. Telegram is a PUSH source — after `magnis.sync.listen` the
+# connector emits live `notifications/magnis/envelope` messages.
+#
+# For isolated e2e (no live Telegram), set TELEGRAM_FIXTURE_FILE to a JSON
+# fixture; the connector then serves fetch from the file with NO MTProto network.
+# (env is injected by the operator / launch scripts — real mode needs none;
+# creds arrive per-call via `_meta`.)
+
+id = "telegram"
+version = "1.0.0"
+title = "Telegram"
+summary = "Sync chats, groups, and contacts from Telegram."
+publisher = "ai.magnis"
+surfaces = ["telegram"]
+
+# phone_code: a multi-step MTProto login driven over WS (no OAuth/callback).
+# The host stashes the user-typed phone / login code / 2FA password and injects
+# them into each `magnis.auth.begin` / `magnis.auth.step` call via `_meta`,
+# alongside the app-creds `api_id`/`api_hash` (env `SOURCE_TELEGRAM_API_ID` /
+# `SOURCE_TELEGRAM_API_HASH`). The connector mints the `session` credential;
+# the host stores it keyed by connection_id. The connector's `phone_code_hash`
+# + interim grammers session round-trip via the host session — the auth
+# connector itself holds no credentials between calls. Browser screen is
+# `auth/index.tsx` (convention). See docs/plugins/source.md for the auth model.
+[auth]
+type = "phone_code"
+
+[credentials]
+keys = ["api_id", "api_hash", "session"]
+minted = ["session"]
+
+[sync]
+mode = "push"

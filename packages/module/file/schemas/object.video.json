@@ -1,0 +1,22 @@
+{
+  "id": "file.video",
+  "version": 1,
+  "type": "object",
+  "required": [
+    "duration_seconds",
+    "width",
+    "height"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "duration_seconds": {
+      "type": "number"
+    },
+    "width": {
+      "type": "integer"
+    },
+    "height": {
+      "type": "integer"
+    }
+  }
+}

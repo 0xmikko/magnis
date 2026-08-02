@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "mappings": [
+    {
+      "path": "first_name",
+      "canonical": "person.first_name",
+      "strategy": "single_aligned"
+    },
+    {
+      "path": "last_name",
+      "canonical": "person.last_name",
+      "strategy": "single_aligned"
+    },
+    {
+      "path": "username",
+      "canonical": "person.username",
+      "strategy": "single_aligned"
+    },
+    {
+      "path": "birthday",
+      "canonical": "person.birthday",
+      "strategy": "single_aligned"
+    },
+    {
+      "path": "bio",
+      "canonical": "person.bio",
+      "strategy": "single_aligned"
+    }
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "first_name": {
+      "type": "string"
+    },
+    "last_name": {
+      "type": "string"
+    },
+    "username": {
+      "type": "string"
+    },
+    "birthday": {
+      "type": "string"
+    },
+    "bio": {
+      "type": "string"
+    },
+    "is_bot": {
+      "type": "boolean"
+    },
+    "is_verified": {
+      "type": "boolean"
+    },
+    "is_scam": {
+      "type": "boolean"
+    },
+    "is_fake": {
+      "type": "boolean"
+    }
+  }
+}

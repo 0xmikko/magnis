@@ -1,0 +1,6 @@
+{
+  "name": "LinkedIn post",
+  "description": "A post from a tracked LinkedIn profile.",
+  "triggerable": true,
+  "mergeable": true
+}

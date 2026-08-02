@@ -1,0 +1,22 @@
+# local — local-filesystem notes source (external MCP connector).
+#
+# RETIRED SYNC: the notes module is now a V8 plugin (graph-only) that declares
+# NO sync handler, so the `notes` surface has no module consumer. The `[sync]`
+# block was removed so the host builds NO source runtime for this connector —
+# otherwise a stale `local`/`notes` sync would hard-fail at module routing
+# ("no module for surface"). `surfaces` stays non-empty so manifest validation
+# still passes. The connector itself is kept; it is simply never synced.
+#
+# The server is `src/main.ts` on @magnis/connector-sdk, spawned by convention
+# (bun, with this manifest's directory as the spawn cwd).
+# env injected by the operator / launch scripts:
+#   NOTES_DIR = "<storage>/notes"   # optional, defaults to $STORAGE_DIR/notes
+
+id = "local"
+version = "1.0.0"
+title = "Local Notes"
+summary = "Local-filesystem markdown notes connector (retired sync; kept as reference)."
+publisher = "ai.magnis"
+dev = true
+surfaces = ["notes"]
+kind = "core"

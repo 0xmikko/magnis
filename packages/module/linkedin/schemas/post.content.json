@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "mappings": [
+    {
+      "path": "text",
+      "canonical": "linkedin.post.text",
+      "strategy": "single_aligned"
+    },
+    {
+      "path": "created_at",
+      "canonical": "linkedin.post.created_at",
+      "strategy": "single_aligned"
+    }
+  ],
+  "type": "object",
+  "required": [
+    "platform",
+    "post_id",
+    "author_handle",
+    "text"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "platform": {
+      "type": "string",
+      "enum": [
+        "x",
+        "linkedin"
+      ]
+    },
+    "post_id": {
+      "type": "string"
+    },
+    "author_handle": {
+      "type": "string"
+    },
+    "text": {
+      "type": "string"
+    },
+    "created_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "url": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "is_reply": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "is_repost": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "lang": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  }
+}

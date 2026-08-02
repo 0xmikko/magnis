@@ -1,0 +1,18 @@
+{
+  "id": "file.image",
+  "version": 1,
+  "type": "object",
+  "required": [
+    "width",
+    "height"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "width": {
+      "type": "integer"
+    },
+    "height": {
+      "type": "integer"
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Telegram chat",
+  "description": "A telegram chat/dialog entity.",
+  "triggerable": true,
+  "mergeable": true
+}

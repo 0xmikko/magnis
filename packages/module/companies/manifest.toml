@@ -1,0 +1,21 @@
+# companies — Companies domain module (V8 plugin).
+#
+# Owns the `companies.*` graph namespace: the company entity plus its detail /
+# email / phone / external-link facets. Companies surface alongside contacts —
+# pulled from email signatures, calendar invites, and notes — and link to the
+# people who work there. Runs as a sandboxed V8 isolate; bundled with the
+# app and installed automatically at boot.
+
+id = "companies"
+version = "0.1.0"
+# SDK contract version this manifest targets (host accepts 0.x).
+magnis_api_version = "0.1.0"
+title = "Companies"
+summary = "Track companies you interact with across email, meetings, and notes."
+# Reverse-domain publisher identity.
+publisher = "ai.magnis"
+
+# Foreign asks beyond the implicit own namespace: writes to `companies.` facets,
+# own:own links, and reads of own schemas need no declaration.
+[permissions]
+read = [ "contacts.person" ]

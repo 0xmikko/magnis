@@ -1,0 +1,99 @@
+{
+  "version": 1,
+  "mappings": [
+    {
+      "path": "title",
+      "canonical": "telegram.chat.title",
+      "strategy": "single_aligned"
+    }
+  ],
+  "type": "object",
+  "required": [
+    "chat_id",
+    "title",
+    "type"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "chat_id": {
+      "type": "integer"
+    },
+    "entity_type": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string"
+    },
+    "username": {
+      "type": "string"
+    },
+    "avatar_url": {
+      "type": "string"
+    },
+    "is_pinned": {
+      "type": "boolean"
+    },
+    "pin_order": {
+      "type": "integer"
+    },
+    "unread_count": {
+      "type": "integer"
+    },
+    "unread_mark": {
+      "type": "boolean"
+    },
+    "unread_mentions_count": {
+      "type": "integer"
+    },
+    "read_inbox_max_id": {
+      "type": "integer"
+    },
+    "read_outbox_max_id": {
+      "type": "integer"
+    },
+    "top_message": {
+      "type": "integer"
+    },
+    "pts": {
+      "type": "integer"
+    },
+    "member_count": {
+      "type": "integer"
+    },
+    "is_indexed": {
+      "type": "boolean"
+    },
+    "last_message_date": {
+      "type": "string"
+    },
+    "last_message_preview": {
+      "type": "string"
+    },
+    "last_sender_name": {
+      "type": "string"
+    },
+    "members": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "integer"
+          },
+          "first_name": {
+            "type": "string"
+          },
+          "last_name": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}
