@@ -1,6 +1,6 @@
 # Magnis
 
-**A local-first AI workspace that keeps long-running work moving on your own data.**
+**Local-first AI that keeps company work moving until it’s done.**
 
 Magnis ingests continuously. Every connected account — email, messaging, calendars, meetings, notes, files — feeds a persistent company graph of people, projects, commitments, decisions, and artifacts. Every derived fact keeps its source and the permissions of the account it came from.
 
