@@ -83,10 +83,37 @@ pub struct BackendProcessManager {
     stopped: Arc<AtomicBool>,
 }
 
+/// An explicit binary override, or `None` when the variable is unset.
+///
+/// Set-but-missing is an ERROR, never a fallthrough. The variable exists to pin
+/// one specific binary, so quietly running a different one defeats its only
+/// purpose — and that is the exact failure this resolver was rewritten to stop:
+/// a stale binary won silently and "several demo takes ran yesterday's backend
+/// that way, and nothing said so".
+///
+/// `agent_binary_path` already refused; `server_binary_path` fell through and
+/// only noted the miss among its rejected candidates, while a comment in this
+/// file claimed the two resolvers mirrored each other. They now share this.
+///
+/// Pure in its input so the rule is testable without touching process env,
+/// which is global and would make such a test race with every other one.
+///
+/// @tested-by: tst_desktop_resolver_003
+fn explicit_override(var: &str, raw: Option<String>) -> Result<Option<std::path::PathBuf>> {
+    let Some(raw) = raw.filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    let path = std::path::PathBuf::from(&raw);
+    if !path.exists() {
+        anyhow::bail!("{var} set to {raw} but file does not exist");
+    }
+    Ok(Some(path))
+}
+
 impl BackendProcessManager {
     /// Resolve path to magnis-server binary (next to current exe, or repo/desktop target dir).
     fn server_binary_path() -> Result<std::path::PathBuf> {
-        // @tested-by: tst_desktop_sidecar_001
+        // @tested-by: tst_desktop_sidecar_001, tst_desktop_resolver_003
         // @invariant: INV-17 — an EXPLICIT path wins, and the log names both
         // the winner and every candidate rejected before it.
         //
@@ -100,13 +127,12 @@ impl BackendProcessManager {
         // resolvers disagreed while a comment claimed they mirrored each other.
         let mut rejected: Vec<String> = Vec::new();
 
-        if let Ok(path) = std::env::var("MAGNIS_SERVER_PATH") {
-            let p = std::path::Path::new(&path);
-            if p.exists() {
-                eprintln!("magnis-server: using {} (MAGNIS_SERVER_PATH)", p.display());
-                return Ok(p.to_path_buf());
-            }
-            rejected.push(format!("MAGNIS_SERVER_PATH={path} (missing)"));
+        if let Some(p) = explicit_override(
+            "MAGNIS_SERVER_PATH",
+            std::env::var("MAGNIS_SERVER_PATH").ok(),
+        )? {
+            eprintln!("magnis-server: using {} (MAGNIS_SERVER_PATH)", p.display());
+            return Ok(p);
         }
 
         // Dev: this worktree's own build. Preferred over a neighbour binary so
@@ -160,15 +186,11 @@ impl BackendProcessManager {
     /// compiled `agent-server` produced by `desktop/build/bundle-agent.sh`.
     /// `MAGNIS_AGENT_SERVER_PATH` overrides everything.
     fn agent_binary_path() -> Result<std::path::PathBuf> {
-        if let Ok(path) = std::env::var("MAGNIS_AGENT_SERVER_PATH") {
-            let p = std::path::Path::new(&path);
-            if p.exists() {
-                return Ok(p.to_path_buf());
-            }
-            anyhow::bail!(
-                "MAGNIS_AGENT_SERVER_PATH set to {} but file does not exist",
-                p.display()
-            );
+        if let Some(p) = explicit_override(
+            "MAGNIS_AGENT_SERVER_PATH",
+            std::env::var("MAGNIS_AGENT_SERVER_PATH").ok(),
+        )? {
+            return Ok(p);
         }
         let current_exe =
             std::env::current_exe().context("Failed to get current executable path")?;
@@ -587,6 +609,42 @@ fn current_target_triple() -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// tst_desktop_resolver_003 — an explicit override that points nowhere is
+    /// an ERROR, for BOTH sidecars.
+    ///
+    /// The variable exists to pin one specific binary. Falling through to the
+    /// next candidate defeats its only purpose and reintroduces exactly the
+    /// failure this resolver was rewritten to stop: "several demo takes ran
+    /// yesterday's backend that way, and nothing said so".
+    ///
+    /// `agent_binary_path` already refused; `server_binary_path` fell through
+    /// and merely noted the miss in its rejected list — while a comment in the
+    /// same file claimed the two resolvers mirrored each other.
+    #[test]
+    fn tst_desktop_resolver_003_missing_explicit_override_is_an_error() {
+        let here = Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
+
+        assert!(
+            explicit_override("MAGNIS_SERVER_PATH", None)
+                .expect("unset is not an error")
+                .is_none(),
+            "an unset override yields no candidate"
+        );
+
+        let found = explicit_override("MAGNIS_SERVER_PATH", Some(here.display().to_string()))
+            .expect("an existing path is accepted");
+        assert_eq!(found.as_deref(), Some(here.as_path()));
+
+        let err = explicit_override(
+            "MAGNIS_SERVER_PATH",
+            Some("/nowhere/magnis-server".to_string()),
+        )
+        .expect_err("a missing explicit path must not fall through");
+        let text = err.to_string();
+        assert!(text.contains("MAGNIS_SERVER_PATH"), "names the variable: {text}");
+        assert!(text.contains("/nowhere/magnis-server"), "names the path: {text}");
+    }
 
     /// tst_desktop_resolver_001: the triple-suffixed binary wins over the
     /// plain name, and absence yields None (GAP-8 — packaging resolver order).
