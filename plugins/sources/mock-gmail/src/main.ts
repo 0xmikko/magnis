@@ -1,16 +1,12 @@
 // mock-gmail — reference dev/eval Magnis MCP source connector.
 //
-// TS port of the `magnis-mock-gmail` Rust binary (wire-identical): feeds the
-// `email` + `meetings` surfaces from a shared JSONL file (MOCK_INJECT_FILE),
-// poll-only, plus the optional HTTP injection side-channel (MOCK_EMAIL_PORT).
+// Dataset actions emit production-shaped live envelopes for the `email`
+// surface. Polling remains intentionally empty; no raw injection side-channel
+// bypasses the host's dataset action validation or receipts.
 
 import { runConnector } from "@magnis/connector-sdk";
+import { emitMessage } from "./dataset";
 import { fetchMockGmail } from "./fetch";
-import { maybeRunHttp } from "./http";
-
-// HTTP injection runs in the background; the MCP stdio loop drives the process
-// lifetime (exits on stdin EOF when the host drops the connection).
-maybeRunHttp();
 
 await runConnector({
   name: "magnis-mock-gmail",
@@ -18,9 +14,8 @@ await runConnector({
   surfaces: ["email", "meetings"],
   intervalSecs: 5,
   fetch: fetchMockGmail,
+  datasetActions: { emit_message: emitMessage },
 });
 
-// stdin EOF = the host dropped the connection. Exit explicitly: a bound
-// injection server keeps bun's event loop alive forever, whereas the Rust
-// twin's runtime (and its background HTTP task) died with `main`.
+// stdin EOF = the host dropped the connection.
 process.exit(0);

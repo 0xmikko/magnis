@@ -88,6 +88,21 @@ export type AuthHandlers = Partial<Record<"begin" | "step" | "exchange" | "revok
  * by name; unknown action answers -32601. */
 export type ExecuteTable = Record<string, ConnectorActionHandler>;
 
+export interface DatasetActionArgs {
+  action: string;
+  invocation_id: string;
+  action_time: string;
+  payload: Record<string, unknown>;
+  meta?: Record<string, unknown>;
+}
+
+export interface DatasetActionResult {
+  envelopes: Envelope[];
+}
+
+export type DatasetActionHandler = (args: DatasetActionArgs) => Promise<DatasetActionResult>;
+export type DatasetActionTable = Record<string, DatasetActionHandler>;
+
 export interface ConnectorConfig {
   name: string;
   version: string;
@@ -118,6 +133,10 @@ export interface ConnectorConfig {
   /** Outbound actions: `magnis.execute` payload `{ action, ... }`
    * dispatches by name; unknown action answers -32601. */
   execute?: ExecuteTable;
+  /** Dataset-only event simulation. The host validates against the manifest
+   * schema first; the connector validates its own typed payload again and may
+   * return only production-shaped live envelopes. */
+  datasetActions?: DatasetActionTable;
   /** Notification writer override (tests). Default: process.stdout. */
   onNotification?: (line: string) => void;
 }
