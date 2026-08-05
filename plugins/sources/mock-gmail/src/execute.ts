@@ -21,20 +21,22 @@ function digest(value: string): string {
 }
 
 /** Deterministic local delivery receipt used only by the eval/dev connector. */
-export async function sendMessage(args: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const draft = record(args.draft, "draft");
-  const recipients = draft.to;
-  if (!Array.isArray(recipients) || recipients.length !== 1) {
-    throw new ConnectorError("invalid send_message recipient", { kind: "validation" });
-  }
-  const recipient = requiredString(record(recipients[0], "recipient").address, "recipient");
-  const subject = requiredString(draft.subject, "subject");
-  const body = requiredString(draft.body_text, "body_text");
-  const inReplyTo = typeof draft.in_reply_to === "string" ? draft.in_reply_to : "";
-  const messageKey = digest(`${recipient.toLowerCase()}\0${subject}\0${body}\0${inReplyTo}`);
-  const threadKey = digest(inReplyTo === "" ? subject.toLowerCase() : inReplyTo);
-  return {
-    message_id: `mock-gmail-${messageKey}`,
-    thread_id: `mock-gmail-thread-${threadKey}`,
-  };
+export function sendMessage(args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  return Promise.resolve().then(() => {
+    const draft = record(args.draft, "draft");
+    const recipients = draft.to;
+    if (!Array.isArray(recipients) || recipients.length !== 1) {
+      throw new ConnectorError("invalid send_message recipient", { kind: "validation" });
+    }
+    const recipient = requiredString(record(recipients[0], "recipient").address, "recipient");
+    const subject = requiredString(draft.subject, "subject");
+    const body = requiredString(draft.body_text, "body_text");
+    const inReplyTo = typeof draft.in_reply_to === "string" ? draft.in_reply_to : "";
+    const messageKey = digest(`${recipient.toLowerCase()}\0${subject}\0${body}\0${inReplyTo}`);
+    const threadKey = digest(inReplyTo === "" ? subject.toLowerCase() : inReplyTo);
+    return {
+      message_id: `mock-gmail-${messageKey}`,
+      thread_id: `mock-gmail-thread-${threadKey}`,
+    };
+  });
 }
