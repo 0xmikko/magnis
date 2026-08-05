@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { emitMessage } from "./dataset";
+import { emitMeeting, emitMessage } from "./dataset";
 
 describe("mock-gmail dataset actions", () => {
   test("tst_conn_mockgmail_dataset_001 emits a stable production-shaped live envelope", async () => {
@@ -47,5 +47,43 @@ describe("mock-gmail dataset actions", () => {
       }),
     ).rejects.toThrow(/message_id/);
   });
-});
 
+  test("tst_conn_mockgmail_dataset_003 emits a production-shaped meeting envelope", async () => {
+    const result = await emitMeeting({
+      action: "emit_meeting",
+      invocation_id: "inv-meeting-1",
+      action_time: "2026-08-05T10:00:00Z",
+      payload: {
+        event_id: "demo-call",
+        title: "Magnis demo",
+        starts_at: "2026-08-05T10:00:00Z",
+        ends_at: "2026-08-05T10:30:00Z",
+        location: "Google Meet",
+        attendees: [
+          { name: "Ava Chen", email: "ava@magnis.test" },
+          { email: "daniel@example.test" },
+        ],
+      },
+    });
+
+    expect(result.envelopes).toEqual([
+      {
+        surface: "meetings",
+        remote_id: "dataset:inv-meeting-1:0",
+        kind: "live",
+        payload: {
+          id: "demo-call",
+          title: "Magnis demo",
+          starts_at: "2026-08-05T10:00:00Z",
+          ends_at: "2026-08-05T10:30:00Z",
+          location: "Google Meet",
+          status: "confirmed",
+          attendees: [
+            { name: "Ava Chen", email: "ava@magnis.test" },
+            { email: "daniel@example.test" },
+          ],
+        },
+      },
+    ]);
+  });
+});

@@ -28,3 +28,7 @@ export_settings = []
 [[dataset.actions]]
 name = "emit_message"
 schema = "schemas/dataset-actions/emit-message.json"
+
+[[dataset.actions]]
+name = "emit_meeting"
+schema = "schemas/dataset-actions/emit-meeting.json"

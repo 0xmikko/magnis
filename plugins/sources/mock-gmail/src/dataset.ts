@@ -48,3 +48,56 @@ export const emitMessage: DatasetActionHandler = (args) => Promise.resolve().the
   };
   return { envelopes: [envelope] };
 });
+
+function meetingAttendees(payload: Json): Json[] {
+  if (!Array.isArray(payload.attendees)) {
+    throw new ConnectorError("invalid emit_meeting payload: attendees", {
+      kind: "contract",
+      field: "attendees",
+    });
+  }
+  return payload.attendees.map((value, index) => {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      throw new ConnectorError(`invalid emit_meeting payload: attendees[${String(index)}]`, {
+        kind: "contract",
+        field: `attendees[${String(index)}]`,
+      });
+    }
+    const attendee = value as Json;
+    const email = requiredString(attendee, "email");
+    return {
+      ...(typeof attendee.name === "string" ? { name: attendee.name } : {}),
+      email,
+    };
+  });
+}
+
+export const emitMeeting: DatasetActionHandler = (args) => Promise.resolve().then(() => {
+  const payload = args.payload;
+  const eventId = requiredString(payload, "event_id");
+  const title = requiredString(payload, "title");
+  const startsAt = requiredString(payload, "starts_at");
+  const endsAt = requiredString(payload, "ends_at");
+  if (Number.isNaN(Date.parse(startsAt)) || Number.isNaN(Date.parse(endsAt))) {
+    throw new ConnectorError("invalid emit_meeting payload: starts_at/ends_at", {
+      kind: "contract",
+    });
+  }
+  const attendees = meetingAttendees(payload);
+  const envelope: Envelope = {
+    surface: "meetings",
+    remote_id: `dataset:${args.invocation_id}:0`,
+    kind: "live",
+    payload: {
+      id: eventId,
+      title,
+      starts_at: startsAt,
+      ends_at: endsAt,
+      ...(typeof payload.description === "string" ? { description: payload.description } : {}),
+      ...(typeof payload.location === "string" ? { location: payload.location } : {}),
+      status: "confirmed",
+      attendees,
+    },
+  };
+  return { envelopes: [envelope] };
+});
