@@ -25,3 +25,10 @@ accounts = ["eval"]
 
 [sync]
 mode = "poll"
+
+[dataset]
+export_settings = []
+
+[[dataset.actions]]
+name = "emit_message"
+schema = "schemas/dataset-actions/emit-message.json"

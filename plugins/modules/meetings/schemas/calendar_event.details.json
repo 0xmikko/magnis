@@ -51,14 +51,16 @@
         "string",
         "null"
       ],
-      "format": "date-time"
+      "format": "date-time",
+      "x-magnis-time": "dataset_relative"
     },
     "ends_at": {
       "type": [
         "string",
         "null"
       ],
-      "format": "date-time"
+      "format": "date-time",
+      "x-magnis-time": "dataset_relative"
     },
     "location": {
       "type": [

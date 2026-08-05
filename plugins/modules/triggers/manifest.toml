@@ -18,6 +18,36 @@ summary = "Automations that watch your graph and act on changes."
 # Reverse-domain publisher identity.
 publisher = "ai.magnis"
 
+[[links]]
+kind = "watches"
+from = "triggers.trigger"
+to = "email.address"
+
+[[links]]
+kind = "watches"
+from = "triggers.trigger"
+to = "linkedin.post"
+
+[[links]]
+kind = "watches"
+from = "triggers.trigger"
+to = "meetings.calendar_event"
+
+[[links]]
+kind = "watches"
+from = "triggers.trigger"
+to = "telegram.chat"
+
+[[links]]
+kind = "watches"
+from = "triggers.trigger"
+to = "x.post"
+
+[[links]]
+kind = "belongs_to"
+from = "triggers.trigger"
+to = "episodes.episode"
+
 # Foreign asks beyond the implicit own namespace: writes to `triggers.` facets,
 # own:own links, and reads of own schemas need no declaration.
 [permissions]
