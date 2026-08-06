@@ -7,7 +7,13 @@
 // (raw `add_link` is NOT user-scoped). `list` relies on the host's
 // already user-scoped `list_entities_window` / `list_entities_by_facet_field`.
 
-import { tool, writeTool, type GraphService, type PluginDeps } from "@magnis/plugin-sdk";
+import {
+  tool,
+  writeTool,
+  type GraphService,
+  type PluginDeps,
+  type RawEntity,
+} from "@magnis/plugin-sdk";
 import type { WindowPage } from "@magnis/plugin-sdk";
 import type {
   FileAttachParams,
@@ -20,13 +26,9 @@ import type {
   FileListParams,
   FileListResponse,
 } from "../types.ts";
-import { facetData, hasContent, itemFromDetails } from "./helpers.ts";
+import { hasContent, itemFromDetails } from "./helpers.ts";
 import {
-  FILE_AUDIO,
-  FILE_DETAILS,
-  FILE_IMAGE,
   FILE_OBJECT,
-  FILE_VIDEO,
 } from "../schema.ts";
 
 export class FileModule {
@@ -63,15 +65,17 @@ export class FileModule {
     // Candidate page (host-side user-scoped) + the exact total.
     let entityIds: string[];
     let total: number;
+    let pageEntities: RawEntity[];
     if (params.source_module) {
-      const page = await this.graph.list_entities_by_facet_field({
+      // S1: the dictionary is the state — filter by the properties key.
+      const page = await this.graph.list_entities_by_property_field({
         entity_schema: FILE_OBJECT,
-        facet_schema: FILE_DETAILS,
-        field_path: "$.source_module",
-        field_value: params.source_module,
+        key: "source_module",
+        value: params.source_module,
         limit,
         offset,
       });
+      pageEntities = page.items;
       entityIds = page.items.map((e) => e.id);
       total = page.total;
     } else {
@@ -81,19 +85,17 @@ export class FileModule {
         limit,
         offset,
       });
+      pageEntities = win.items.map((r) => r.entity);
       entityIds = win.items.map((r) => r.entity.id);
       total = win.total;
     }
 
     if (entityIds.length === 0) return { items: [], total, limit, offset };
 
-    const facets = await this.graph.list_facets_for_entities(entityIds);
+    // S1: the dictionary rides the entity — the page-wide facet batch is gone.
     const detailsById = new Map<string, FileDetails>();
-    for (const f of facets) {
-      // list_facets_for_entities (batch) always stamps entity_id.
-      if (f.schema_id === FILE_DETAILS && f.entity_id !== undefined) {
-        detailsById.set(f.entity_id, f.data as FileDetails);
-      }
+    for (const e of pageEntities) {
+      detailsById.set(e.id, (e.properties ?? {}) as unknown as FileDetails);
     }
 
     const items: FileItem[] = [];
@@ -134,13 +136,15 @@ export class FileModule {
     if (detail?.entity.schema_id !== FILE_OBJECT) {
       throw new Error(`file not found: ${params.id}`);
     }
-    const details = facetData(detail, FILE_DETAILS) as FileDetails | undefined;
-    if (!details) throw new Error(`file not found: ${params.id}`);
+    // S1: the dictionary is the state.
+    const details = (detail.entity.properties ?? {}) as unknown as FileDetails;
 
     const base = itemFromDetails(params.id, details) as unknown as Record<string, unknown>;
-    const image = facetData(detail, FILE_IMAGE);
-    const audio = facetData(detail, FILE_AUDIO);
-    const video = facetData(detail, FILE_VIDEO);
+    // S1: the typed extras are dictionary keys.
+    const props = (detail.entity.properties ?? {});
+    const image = props.image;
+    const audio = props.audio;
+    const video = props.video;
     if (image) base.image = image;
     if (audio) base.audio = audio;
     if (video) base.video = video;

@@ -413,6 +413,12 @@ export interface GraphService<
   update_properties(
     p: { entity_id: string; properties: Record<string, unknown> },
   ): Promise<void>;
+  /// S1: filter a FOLDED family's entities by a top-level dictionary key —
+  /// the properties twin of list_entities_by_facet_field, user-scoped
+  /// natively. Returns the page and the exact total.
+  list_entities_by_property_field(
+    p: { entity_schema: string; key: string; value: string; limit?: number; offset?: number },
+  ): Promise<{ items: RawEntity[]; total: number }>;
   // all facets across schemas (data opaque) — used for cross-schema
   // reads like contacts' channel detection.
   list_facets_for_entity(entity_id: string): Promise<FacetRecord[]>;
