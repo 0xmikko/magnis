@@ -204,7 +204,11 @@ export class MeetingsModule {
       type: "object",
       properties: {
         query: { type: "string" },
-        context: { type: "string" },
+        context: {
+          type: "string",
+          format: "uuid",
+          description: "Optional context entity UUID. Omit to search every meeting.",
+        },
         limit: { type: "integer", minimum: 1 },
       },
       additionalProperties: false,
