@@ -67,7 +67,9 @@
       "type": "boolean"
     },
     "last_message_date": {
-      "type": "string"
+      "type": "string",
+      "format": "date-time",
+      "x-magnis-time": "dataset_relative"
     },
     "last_message_preview": {
       "type": "string"

@@ -15,7 +15,27 @@ summary = "Bundle meetings, messages, and tasks into long-running projects."
 # Reverse-domain publisher identity.
 publisher = "ai.magnis"
 
+[[links]]
+kind = "belongs_to"
+from = "any_registered_entity"
+to = "projects.project"
+
+[[links]]
+kind = "account"
+from = "projects.project"
+to = "companies.company"
+
+[[links]]
+kind = "prospect"
+from = "projects.project"
+to = "companies.company"
+
+[[links]]
+kind = "mentions"
+from = "projects.project"
+to = "contacts.person"
+
 # Foreign asks beyond the implicit own namespace: writes to `projects.` facets,
 # own:own links, and reads of own schemas need no declaration.
 [permissions]
-links = [ "belongs_to" ]
+links = [ "belongs_to", "account", "prospect", "mentions" ]

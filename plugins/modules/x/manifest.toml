@@ -16,6 +16,16 @@ summary = "X (Twitter) profiles and posts of the people you track, linked to con
 # Reverse-domain publisher identity.
 publisher = "ai.magnis"
 
+[[links]]
+kind = "x.post:x.profile"
+from = "x.post"
+to = "x.profile"
+
+[[links]]
+kind = "x.profile:contacts.person"
+from = "x.profile"
+to = "contacts.person"
+
 # Sync surface this module consumes (fed by the matching source connector).
 [surfaces.x]
 

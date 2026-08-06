@@ -10,11 +10,13 @@
   "properties": {
     "fired_at": {
       "type": "string",
-      "format": "date-time"
+      "format": "date-time",
+      "x-magnis-time": "dataset_relative"
     },
     "event_entity_id": {
       "type": "string",
-      "format": "uuid"
+      "format": "uuid",
+      "x-magnis-reference": "entity"
     },
     "gate_result": {
       "type": [
@@ -27,7 +29,8 @@
         "string",
         "null"
       ],
-      "format": "uuid"
+      "format": "uuid",
+      "x-magnis-reference": "entity"
     },
     "outcome": {
       "type": "string"
