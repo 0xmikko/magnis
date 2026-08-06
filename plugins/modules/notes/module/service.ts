@@ -80,24 +80,10 @@ export class NotesModule {
       });
       const total = all.length;
       const page = all.slice(offset, offset + limit);
-      const ids = page.map((e) => e.id);
-      const facets = await this.graph.list_facets_for_entities(ids);
-      const canon = await this.graph.list_canonical_for_entities(ids);
-      const dataById = new Map<string, ContentData>();
-      for (const f of facets) {
-        if (f.schema_id === NOTE_CONTENT && f.entity_id && !dataById.has(f.entity_id)) {
-          dataById.set(f.entity_id, (f.data ?? {}));
-        }
-      }
-      const canonById = new Map<string, Partial<NoteCanonical>>();
-      for (const c of canon) {
-        if (!c.entity_id) continue;
-        const m = (canonById.get(c.entity_id) ?? {}) as Record<string, unknown>;
-        m[c.key] = c.value;
-        canonById.set(c.entity_id, m);
-      }
+      // S1: the dictionary rides the entity — the facet and canonical batch
+      // reads (two round-trips per page) are gone.
       const items = page.map((e) =>
-        this.listItemFromParts(e, dataById.get(e.id) ?? {}, canonById.get(e.id) ?? {}),
+        this.listItemFromParts(e, (e.properties ?? {}) as ContentData, {}),
       );
       return { items, total, limit, offset };
     }
@@ -376,17 +362,18 @@ export class NotesModule {
     body: string,
     updatedAt: string,
   ): Promise<void> {
-    await this.graph.attach_facet({
+    // S1 (canonical-graph-structure): the note's state is the node's
+    // dictionary. One write, no canonical resolution pass, and an edit stops
+    // being an accidental collection (the facet path appended a row per save).
+    await this.graph.update_properties({
       entity_id: entityId,
-      schema_id: NOTE_CONTENT,
-      data: { title, body, pinned: false, updated_at: updatedAt },
+      properties: { title, body, pinned: false, updated_at: updatedAt },
     });
-    await this.graph.resolve_canonical(entityId);
   }
 
   private contentOf(detail: EntityDetail): ContentData {
-    const content = detail.facets.find((f) => f.schema_id === NOTE_CONTENT);
-    return (content?.data ?? {});
+    // S1: the dictionary IS the state; the frozen facet archive is not read.
+    return (detail.entity.properties ?? {});
   }
 
   private titleOf(e: RawEntity, data: ContentData, canonical: Partial<NoteCanonical>): string {
@@ -398,9 +385,13 @@ export class NotesModule {
   }
 
   private listItemFromWindow(row: WindowRow): NoteListItem {
-    // No-search path: the window inlines the latest content facet only; canonical
-    // is not consulted (its keys are latest-wins from this same facet).
-    return this.listItemFromParts(row.entity, (row.data ?? {}), {});
+    // S1: the dictionary rides the window's entity; the inlined render facet
+    // is the frozen archive and is not read.
+    return this.listItemFromParts(
+      row.entity,
+      ((row.entity).properties ?? {}),
+      {},
+    );
   }
 
   // Pure list-item shaping from an entity + its content facet data + its
