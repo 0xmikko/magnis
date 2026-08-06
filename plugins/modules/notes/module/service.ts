@@ -23,7 +23,7 @@ import type {
   TemplateApplyParams,
   UpdateParams,
 } from "../types.ts";
-import { NOTE, NOTE_CONTENT } from "../schema.ts";
+import { NOTE } from "../schema.ts";
 import { isValidUuid, previewFromBody, renderTemplate } from "./helpers.ts";
 import { BODY_ONE_OF, resolveBody, resolveUpdateBody } from "../ui/toolArgs.ts";
 
