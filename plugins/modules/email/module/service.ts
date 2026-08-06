@@ -374,7 +374,7 @@ export class EmailModule {
         await this.graph.file_register({
           external_id: `file:gmail:${env.account_id}:${remoteId}:${attId}`,
           parent_external_id: remoteId,
-          link_kind: "attachment",
+          link_kind: "file.attachment",
           name: filename,
           mime_type: str(att, "mime_type") ?? "application/octet-stream",
           size_bytes: typeof att.size === "number" ? (att.size) : undefined,
@@ -529,7 +529,7 @@ export class EmailModule {
 
     // Link attachments to the ORIGINAL email (native parity).
     for (const fid of attachmentIds) {
-      await this.graph.add_link({ from_id: params.email_id, to_id: fid, kind: "attachment" });
+      await this.graph.add_link({ from_id: params.email_id, to_id: fid, kind: "file.attachment" });
     }
 
     return {
@@ -947,7 +947,7 @@ export class EmailModule {
       if (messageEntityId === undefined) throw new Error(`email.send: missing entity id for ${msgKey}`);
 
       for (const fid of attachmentIds) {
-        await this.graph.add_link({ from_id: messageEntityId, to_id: fid, kind: "attachment" });
+        await this.graph.add_link({ from_id: messageEntityId, to_id: fid, kind: "file.attachment" });
       }
 
       entityId = messageEntityId;

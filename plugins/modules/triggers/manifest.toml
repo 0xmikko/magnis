@@ -21,5 +21,6 @@ publisher = "ai.magnis"
 # Foreign asks beyond the implicit own namespace: writes to `triggers.` facets,
 # own:own links, and reads of own schemas need no declaration.
 [permissions]
-links = [ "watches", "belongs_to" ]
+# triggers.belongs_to is own-prefixed — implicit (S2).
+links = [ "watches" ]
 call = [ "triggers.validate_watch", "triggers.resolve_watchable", "triggers.invalidate_cache", "triggers.fire_history" ]

@@ -164,7 +164,7 @@ describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
     });
     const mod = makeModule(graph);
     const r = await mod.emailSend({ to: "b@x.com", subject: "S", body_text: "B", attachment_ids: ["f1"] });
-    expect(spy(graph, "add_link")).toHaveBeenCalledWith({ from_id: "id-out", to_id: "f1", kind: "attachment" });
+    expect(spy(graph, "add_link")).toHaveBeenCalledWith({ from_id: "id-out", to_id: "f1", kind: "file.attachment" });
     expect(r.attachment_count).toBe(1);
   });
 
@@ -234,7 +234,7 @@ describe("email reply (tst_be_emailreply_003)", () => {
     expect(d.subject).toBe("Re: Quarterly");
     expect(d.to).toEqual([{ address: "boss@corp.com" }]);
     // attachment linked to the ORIGINAL email, not a new entity
-    expect(spy(graph, "add_link")).toHaveBeenCalledWith({ from_id: "orig", to_id: "f1", kind: "attachment" });
+    expect(spy(graph, "add_link")).toHaveBeenCalledWith({ from_id: "orig", to_id: "f1", kind: "file.attachment" });
     expect(r.reply_to).toBe("boss@corp.com");
     expect(spy(graph, "apply_batch")).not.toHaveBeenCalled(); // reply creates no new message entity
   });

@@ -139,8 +139,8 @@ describe("email read — shape parity (tst_be_emailread_001)", () => {
     spy(graph, "get_entity_full").mockResolvedValue({
       ...base,
       links: [
-        { id: "l1", from_id: "x", to_id: "file-1", kind: "attachment" },
-        { id: "l2", from_id: "x", to_id: "file-2", kind: "attachment" },
+        { id: "l1", from_id: "x", to_id: "file-1", kind: "file.attachment" },
+        { id: "l2", from_id: "x", to_id: "file-2", kind: "file.attachment" },
       ],
     });
     spy(graph, "get_entities").mockResolvedValue([
@@ -151,7 +151,7 @@ describe("email read — shape parity (tst_be_emailread_001)", () => {
     const view = await mod.emailGet({ id: "x" });
     expect(view.linked_entities).toHaveLength(2);
     expect(view.linked_entities.map((l) => l.name)).toEqual(["photo.jpg", "report.pdf"]);
-    expect(view.linked_entities.every((l) => l.link_kind === "attachment")).toBe(true);
+    expect(view.linked_entities.every((l) => l.link_kind === "file.attachment")).toBe(true);
     expect(spy(graph, "get_entities")).toHaveBeenCalledTimes(1); // ONE batch, no per-link N+1
   });
 

@@ -18,4 +18,5 @@ publisher = "ai.magnis"
 # Foreign asks beyond the implicit own namespace: writes to `projects.` facets,
 # own:own links, and reads of own schemas need no declaration.
 [permissions]
-links = [ "belongs_to" ]
+# projects.belongs_to is own-prefixed — implicit (S2), no declaration needed.
+links = [ ]

@@ -66,8 +66,8 @@ describe("file.attach (per-user isolation + allowed link kinds)", () => {
       .mockResolvedValueOnce(entity(ID_F, "file.object")) // file_id
       .mockResolvedValueOnce(entity(ID_T, "company.org")); // target_id
     const res = await makeModule(g).attach({ file_id: ID_F, target_id: ID_T });
-    expect(res).toEqual({ status: "ok", file_id: ID_F, target_id: ID_T, kind: "attachment" });
-    expect(g.spies.add_link).toHaveBeenCalledWith({ from_id: ID_T, to_id: ID_F, kind: "attachment" });
+    expect(res).toEqual({ status: "ok", file_id: ID_F, target_id: ID_T, kind: "file.attachment" });
+    expect(g.spies.add_link).toHaveBeenCalledWith({ from_id: ID_T, to_id: ID_F, kind: "file.attachment" });
   });
 
   it("rejects a cross-user / missing file_id (get_entity_full → null) without linking", async () => {
@@ -159,7 +159,7 @@ describe("file.list (filters + content skip)", () => {
       total: 2,
     });
     spy(g, "list_links_for_entity").mockImplementation(async (id: string) =>
-      id === "i1" ? [{ from_id: "parentX", to_id: "i1", kind: "attachment" }] : [],
+      id === "i1" ? [{ from_id: "parentX", to_id: "i1", kind: "file.attachment" }] : [],
     );
     const res = await makeModule(g).list({ parent_id: "parentX" });
     expect(res.items.map((i) => i.entity_id)).toEqual(["i1"]);

@@ -106,7 +106,7 @@ export class TriggersModule {
         episode_id: {
           type: "string",
           format: "uuid",
-          description: "Parent episode ID — creates belongs_to link",
+          description: "Parent episode ID — creates a triggers.belongs_to link",
         },
         schema_filter: { type: "string", description: "Only trigger for events with this schema" },
         expires_at: { type: "string", format: "date-time" },

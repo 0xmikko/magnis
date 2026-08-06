@@ -152,22 +152,22 @@ export class FileModule {
   }
 
   @writeTool("attach", {
-    description: "Attach a file entity to a target entity via an 'attachment' link.",
+    description: "Attach a file entity to a target entity via a 'file.attachment' link.",
     params: {
       type: "object",
       properties: {
         file_id: { type: "string", format: "uuid" },
         target_id: { type: "string", format: "uuid" },
-        kind: { type: "string", enum: ["attachment"] },
+        kind: { type: "string", enum: ["file.attachment"] },
       },
       required: ["file_id", "target_id"],
       additionalProperties: false,
     },
   })
   async attach(params: FileAttachParams): Promise<FileAttachResult> {
-    const kind = params.kind ?? "attachment";
-    // Only the "attachment" kind is supported (the sole kind any caller uses).
-    if (kind !== "attachment") throw new Error(`unsupported attach kind: ${kind}`);
+    const kind = params.kind ?? "file.attachment";
+    // Only the "file.attachment" kind is supported (the sole kind any caller uses).
+    if (kind !== "file.attachment") throw new Error(`unsupported attach kind: ${kind}`);
 
     // Own-check both (raw add_link is not user-scoped) and file_id must be
     // a file.object — cross-user/invalid ids surface as not-found, no link.

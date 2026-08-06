@@ -133,7 +133,7 @@ export function EmailDetailContent({ detail, linkedEntities }: EmailDetailConten
               </Text>
               {detail.attachments.map((att) => {
                 const linkedFile = linkedEntities?.find(
-                  (le) => le.link_kind === "attachment" && le.name === att.filename,
+                  (le) => le.link_kind === "file.attachment" && le.name === att.filename,
                 );
                 const href = linkedFile
                   ? `/#/file/object/${linkedFile.id}`

@@ -211,7 +211,7 @@ describe("email ingest — apply_batch shape (tst_be_emailingest_001)", () => {
     const call = fileCall0[0] as Record<string, unknown>;
     expect(call.external_id).toBe("file:gmail:acct-1:m1:att-1");
     expect(call.parent_external_id).toBe("m1");
-    expect(call.link_kind).toBe("attachment");
+    expect(call.link_kind).toBe("file.attachment");
     expect(call.name).toBe("photo.jpg");
     expect(call.mime_type).toBe("image/jpeg");
     expect(call.source_module).toBe("google");
