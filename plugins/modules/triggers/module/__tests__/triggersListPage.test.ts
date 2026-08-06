@@ -41,9 +41,9 @@ describe("tst_module_triggers_list_page_001 — standard module list RPC", () =>
         }),
       get_entity_full: (id: string) =>
         Promise.resolve({
-          entity: entity(id, "Last trigger", { schema_id: TRIGGER }),
-          facets: [
-            facet(`facet-${id}`, TRIGGER_CONFIG, {
+          entity: entity(id, "Last trigger", {
+            schema_id: TRIGGER,
+            properties: {
               name: "Last trigger",
               gate_prompt: "",
               action_prompt: "Run the last trigger",
@@ -51,8 +51,9 @@ describe("tst_module_triggers_list_page_001 — standard module list RPC", () =>
               event_kinds: ["entity.created"],
               debounce_seconds: 0,
               firing_count: 0,
-            }),
-          ],
+            },
+          }),
+          facets: [],
           links: [],
         }),
     });
@@ -72,7 +73,6 @@ describe("tst_module_triggers_list_page_001 — standard module list RPC", () =>
     expect(graph.spies.list_entities_window).toHaveBeenCalledWith(
       expect.objectContaining({
         schema: TRIGGER,
-        facet_schema: TRIGGER_CONFIG,
         limit: 1,
         offset: 1_000,
       }),
@@ -110,9 +110,9 @@ describe("tst_module_triggers_list_page_001 — standard module list RPC", () =>
         const name = details.get(id);
         if (!name) return Promise.resolve(null);
         return Promise.resolve({
-          entity: entity(id, name, { schema_id: TRIGGER }),
-          facets: [
-            facet(`facet-${id}`, TRIGGER_CONFIG, {
+          entity: entity(id, name, {
+            schema_id: TRIGGER,
+            properties: {
               name,
               gate_prompt: "",
               action_prompt: `Run ${name}`,
@@ -120,8 +120,9 @@ describe("tst_module_triggers_list_page_001 — standard module list RPC", () =>
               event_kinds: ["entity.created"],
               debounce_seconds: 0,
               firing_count: 0,
-            }),
-          ],
+            },
+          }),
+          facets: [],
           links: [],
         });
       },

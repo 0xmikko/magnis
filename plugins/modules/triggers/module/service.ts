@@ -45,7 +45,7 @@ import type {
   UpdateTriggerParams,
   WatchedEntity,
 } from "../types.ts";
-import { BELONGS_TO, TRIGGER, TRIGGER_CONFIG, WATCHES } from "../schema.ts";
+import { BELONGS_TO, TRIGGER, WATCHES } from "../schema.ts";
 
 export class TriggersModule {
   private readonly graph: GraphService<TriggerFacets>;
@@ -187,11 +187,8 @@ export class TriggersModule {
     // trigger could survive: an entity with no condition, or one that watches
     // nothing. Any failure after the entity exists removes it again.
     try {
-      await this.graph.attach_facet({
-        entity_id: entity.id,
-        schema_id: TRIGGER_CONFIG,
-        data: config,
-      });
+      // S1: the config IS the node's dictionary.
+      await this.graph.update_properties({ entity_id: entity.id, properties: config as unknown as Record<string, unknown> });
       for (const target of watch_entity_ids) {
         await this.graph.add_link({ from_id: entity.id, to_id: target, kind: WATCHES });
       }
@@ -311,7 +308,6 @@ export class TriggersModule {
     if (query.length === 0) {
       const page = await this.graph.list_entities_window({
         schema: TRIGGER,
-        facet_schema: TRIGGER_CONFIG,
         order: [{ field: { entity_field: "date" }, desc: true }],
         limit,
         offset,
@@ -333,7 +329,6 @@ export class TriggersModule {
     for (;;) {
       const page = await this.graph.list_entities_window({
         schema: TRIGGER,
-        facet_schema: TRIGGER_CONFIG,
         order: [{ field: { entity_field: "date" }, desc: true }],
         limit: scanLimit,
         offset: scanOffset,
@@ -410,16 +405,15 @@ export class TriggersModule {
     if (params.max_wait_seconds !== undefined) config.max_wait_seconds = params.max_wait_seconds;
     if (params.max_firings !== undefined) config.max_firings = params.max_firings;
 
-    await this.graph.attach_facet({ entity_id: params.id, schema_id: TRIGGER_CONFIG, data: config });
+    await this.graph.update_properties({ entity_id: params.id, properties: config as unknown as Record<string, unknown> });
     if (params.name !== undefined && params.name !== detail.entity.name) {
       try {
         await this.graph.update_entity_name(params.id, params.name);
       } catch (renameError) {
         try {
-          await this.graph.attach_facet({
+          await this.graph.update_properties({
             entity_id: params.id,
-            schema_id: TRIGGER_CONFIG,
-            data: previousConfig,
+            properties: previousConfig,
           });
         } catch (rollbackError) {
           // The host serialises a thrown error as `String(e.stack)`
@@ -594,8 +588,11 @@ export class TriggersModule {
   }
 
   private configOf(detail: EntityDetail): TriggerConfigData | null {
-    const facet = detail.facets.find((f) => f.schema_id === TRIGGER_CONFIG);
-    return facet ? (facet.data as TriggerConfigData) : null;
+    // S1: the dictionary is the state. An empty dictionary means the trigger
+    // was never configured — the same "no config" the missing facet meant.
+    const props = detail.entity.properties ?? {};
+    if (Object.keys(props).length === 0) return null;
+    return props as unknown as TriggerConfigData;
   }
 
   private watchesLinks(detail: EntityDetail): LinkSummary[] {

@@ -18,7 +18,7 @@ type G = MockGraph<TriggerFacets>;
 function createGraph(overrides: Record<string, unknown> = {}): G {
   return mockGraph<TriggerFacets>({
     create_entity: () => Promise.resolve(entity(TRIGGER_ID, "T", { schema_id: TRIGGER })),
-    attach_facet: () => Promise.resolve(undefined),
+    update_properties: () => Promise.resolve(undefined),
     add_link: () => Promise.resolve(undefined),
     delete_entity: () => Promise.resolve(undefined),
     ...overrides,
@@ -29,9 +29,9 @@ function existingTrigger(): G {
   return mockGraph<TriggerFacets>({
     get_entity_full: () =>
       Promise.resolve({
-        entity: entity(TRIGGER_ID, "watch replies", { schema_id: TRIGGER }),
-        facets: [
-          facet("f1", TRIGGER_CONFIG, {
+        entity: entity(TRIGGER_ID, "watch replies", {
+          schema_id: TRIGGER,
+          properties: {
             name: "watch replies",
             gate_prompt: "a reply from the vendor arrived",
             action_prompt: "update the note",
@@ -39,11 +39,12 @@ function existingTrigger(): G {
             event_kinds: ["sync_ingested"],
             debounce_seconds: 0,
             firing_count: 0,
-          }),
-        ],
+          },
+        }),
+        facets: [],
         links: [],
       }),
-    attach_facet: () => Promise.resolve(undefined),
+    update_properties: () => Promise.resolve(undefined),
     update_entity_name: () => Promise.resolve(undefined),
   } as never);
 }
@@ -82,7 +83,7 @@ describe("triggers.create requires a real gate condition", () => {
 
   it("tst_module_triggers_write_001 leaves no trigger behind when the config write fails", async () => {
     const graph = createGraph({
-      attach_facet: () => Promise.reject(new Error("facet store unavailable")),
+      update_properties: () => Promise.reject(new Error("facet store unavailable")),
     });
     const { module } = mountModule(TriggersModule, { graph, rpc });
 
@@ -128,16 +129,16 @@ describe("triggers.update keeps the gate real and the write whole", () => {
     const { module } = mountModule(TriggersModule, { graph, rpc });
 
     await expect(module.update({ id: TRIGGER_ID, gate_prompt: "" })).rejects.toThrow(/gate_prompt/);
-    expect(graph.spies.attach_facet).not.toHaveBeenCalled();
+    expect(graph.spies.update_properties).not.toHaveBeenCalled();
   });
 
   it("tst_module_triggers_write_002 does not rename when the config write fails", async () => {
     const graph = mockGraph<TriggerFacets>({
       get_entity_full: () =>
         Promise.resolve({
-          entity: entity(TRIGGER_ID, "old name", { schema_id: TRIGGER }),
-          facets: [
-            facet("f1", TRIGGER_CONFIG, {
+          entity: entity(TRIGGER_ID, "old name", {
+            schema_id: TRIGGER,
+            properties: {
               name: "old name",
               gate_prompt: "g",
               action_prompt: "a",
@@ -145,11 +146,12 @@ describe("triggers.update keeps the gate real and the write whole", () => {
               event_kinds: ["sync_ingested"],
               debounce_seconds: 0,
               firing_count: 0,
-            }),
-          ],
+            },
+          }),
+          facets: [],
           links: [],
         }),
-      attach_facet: () => Promise.reject(new Error("facet store unavailable")),
+      update_properties: () => Promise.reject(new Error("facet store unavailable")),
       update_entity_name: () => Promise.resolve(undefined),
     } as never);
     const { module } = mountModule(TriggersModule, { graph, rpc });
@@ -180,9 +182,9 @@ describe("triggers.update compensation restores EVERY field", () => {
     const graph = mockGraph<TriggerFacets>({
       get_entity_full: () =>
         Promise.resolve({
-          entity: entity(TRIGGER_ID, "old name", { schema_id: TRIGGER }),
-          facets: [
-            facet("f1", TRIGGER_CONFIG, {
+          entity: entity(TRIGGER_ID, "old name", {
+            schema_id: TRIGGER,
+            properties: {
               name: "old name",
               gate_prompt: "OLD GATE",
               action_prompt: "a",
@@ -190,12 +192,13 @@ describe("triggers.update compensation restores EVERY field", () => {
               event_kinds: ["sync_ingested"],
               debounce_seconds: 0,
               firing_count: 0,
-            }),
-          ],
+            },
+          }),
+          facets: [],
           links: [],
         }),
-      attach_facet: (p: { data: Record<string, unknown> }) => {
-        writes.push({ ...p.data });
+      update_properties: (p: { properties: Record<string, unknown> }) => {
+        writes.push({ ...p.properties });
         return Promise.resolve(undefined);
       },
       update_entity_name: () => Promise.reject(new Error("rename store unavailable")),
@@ -215,9 +218,9 @@ describe("triggers.update compensation restores EVERY field", () => {
     const graph = mockGraph<TriggerFacets>({
       get_entity_full: () =>
         Promise.resolve({
-          entity: entity(TRIGGER_ID, "old name", { schema_id: TRIGGER }),
-          facets: [
-            facet("f1", TRIGGER_CONFIG, {
+          entity: entity(TRIGGER_ID, "old name", {
+            schema_id: TRIGGER,
+            properties: {
               name: "old name",
               gate_prompt: "OLD GATE",
               action_prompt: "a",
@@ -225,11 +228,12 @@ describe("triggers.update compensation restores EVERY field", () => {
               event_kinds: ["sync_ingested"],
               debounce_seconds: 0,
               firing_count: 0,
-            }),
-          ],
+            },
+          }),
+          facets: [],
           links: [],
         }),
-      attach_facet: () => {
+      update_properties: () => {
         attaches++;
         return attaches === 1
           ? Promise.resolve(undefined)
