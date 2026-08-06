@@ -2,5 +2,5 @@
   "name": "X post",
   "description": "A tweet from a tracked X profile.",
   "triggerable": true,
-  "mergeable": true
+  "mergeable": false
 }

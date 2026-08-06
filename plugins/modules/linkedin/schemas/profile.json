@@ -1,5 +1,5 @@
 {
   "name": "LinkedIn profile",
   "description": "A tracked person's profile on LinkedIn.",
-  "mergeable": true
+  "mergeable": false
 }
