@@ -1,21 +1,27 @@
 # Magnis
 
-**Self-hosted company memory: a knowledge graph built from your communication, with AI agents on top.**
+**Local-first AI that keeps company work moving until it’s done.**
 
-Magnis gives a company a private, self-hosted memory. It turns email, chats, meetings, notes, and files into a queryable knowledge graph — a live map of every person, deal, decision, and commitment with its full history — and puts AI agents on top of it, so important conversations stop disappearing.
+Magnis ingests continuously. Every connected account — email, messaging, calendars, meetings, notes, files — feeds a persistent company graph of people, projects, commitments, decisions, and artifacts. Every derived fact keeps its source and the permissions of the account it came from.
 
-Most work is communication, and decisions live in messages, threads, and meetings — a layer that is not structured, not persistent, and not executable. Deals die because a thread went quiet; context leaves when a person does; every new hire starts from zero. Magnis turns that layer into a working system:
+That is the difference from session-based context assembly. An agent that starts from zero each time cannot reconcile identities across channels it has not accessed, and has nowhere to put what it learns. Magnis has both.
 
-- **Everything in one place.** Mail, messengers, meetings, notes, and files — searchable, connected, with history.
-- **One person, one deal — across every channel.** The same contact in Gmail, Telegram, and a meeting is a single record with a merged history, resolved automatically.
-- **An agent that acts, not just answers.** It drafts replies with full cross-channel history, chases conversations that are about to stall, prepares you for meetings, and runs triggered workflows ("if this deal goes quiet, follow up") — with a one-click approval on every outgoing action.
-- **Research over company memory.** Agents reason over the graph, not just retrieve from it: they form hypotheses that accumulate evidence across sessions, assemble account briefs from every channel, and surface *hidden* blockers — with a citation on every claim.
-- **Built for teams.** As more of the team connects, Magnis becomes institutional memory: new hires inherit context, handoffs stop losing information. Private by default, shared by choice — per-user isolation, with access modeled in the graph itself (ACL), so shared memory has real boundaries.
-- **A real interface.** Desktop app and CLI (mobile and a Telegram bot coming), a composer the agent and you edit together, live agent progress — not a chat box bolted onto a database.
+Because the state persists, you can open Magnis next to any message or document, or state an objective in the main chat. The agent knows what you are looking at and walks the graph to the related projects, people, and history — then answers, drafts, or acts, without you assembling the context first.
+
+- **Continuous ingestion into one graph.** Not a per-session retrieval pass — a durable map of people, projects, commitments, decisions, and artifacts that every new objective builds on.
+- **Missions created at runtime.** When work cannot finish in one sitting, Magnis turns a plain objective into a persistent mission — no pre-built agent, no workflow to wire up. It works out which future events could advance that mission and subscribes to them.
+- **Work that resumes on its own.** Every incoming message and change is evaluated against the open missions. On a match, Magnis updates the mission and its artifacts and takes the next step. Decisions and approvals land in your inbox; everything else continues in the background.
+- **Provenance and permissions on derived facts.** Access control follows the fact, not just the source document — so shared memory has real boundaries.
+- **Your data plane.** The graph and the execution state stay in your environment. Magnis connects through the accounts of the people doing the work, including personal messaging — where a bot API cannot read the history that predates it.
+- **Missions that cross people** *(team layer, September 2026)*. A mission also advances through replies in colleagues' inboxes, with permissions deciding what each colleague can see.
+
+A worked example: asked whether Gearbox had completed the Midas security audit, the graph showed the audit discussed but no evidence it had started. Magnis identified the relevant contracts and audit firms, prepared an RFQ, found the contacts, sent the requests on approval, and tracked the replies to keep the RFQ current as responses arrived.
 
 Everything can run inside the company's perimeter: a desktop app with Postgres built in, or your own server — down to fully local models, so it works where data can't leave.
 
-Not demo scenarios: the founder has run his own operations on Magnis daily since February 2026, and the memory layer is measured — cross-session identity resolution at **0.63–0.80 recall** where a memoryless baseline scores 0 ([evals/](evals/README.md)).
+Not demo scenarios: the founder has run his own operations on Magnis daily since February 2026, and the graph is measured — under a fixed task-time budget with the model held constant, a **prepared** graph completed 4/4 hard multi-source tasks against 1/4 for direct provider search, while an ingested-but-unprepared graph did not beat direct search at all ([evals/](evals/README.md)).
+
+The first users are small teams running expensive asynchronous processes with outside parties — security audits, vendor reviews, integrations — where the work happens in messaging and a missed thread costs money.
 
 → Product: [magnis.ai](https://magnis.ai/?utm_source=github&utm_medium=readme&utm_campaign=demo) · Try it: [app.magnis.ai](https://app.magnis.ai) · License: [Apache-2.0](LICENSE)
 
@@ -35,6 +41,7 @@ The memory layer is tested on real tasks over a seeded company workspace — fix
 
 | Eval | What it measures | Result |
 |---|---|---|
+| Prepared graph vs direct provider search | Does preparing the graph in advance beat the same model searching providers directly? | **4/4 vs 1/4** tasks inside a fixed 60-call budget; 8 calls vs a 52-call oracle route on P1. Indexing alone changed nothing — the gain came only from reusable, provenance-bearing links derived ahead of time. Single seed, synthetic, deterministic scoring, no LLM judge. |
 | Cross-session identity resolution | Can the agent keep durable identity across channels and sessions? | **0.63–0.80 recall** (memoryless baseline: structurally 0) |
 | Cross-engine memory transfer | Can memory written by one model be read by another? | **0 → 0.71 recall** |
 | Communication QA | Accuracy, hallucination rate, provenance and cost vs long-context and vector-RAG baselines | *in progress* |
