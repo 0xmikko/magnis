@@ -7,6 +7,7 @@ describe("mock-gmail dataset actions", () => {
       action: "emit_message",
       invocation_id: "inv-1",
       action_time: "2026-08-05T10:00:00Z",
+      settings: {},
       payload: {
         message_id: "m-1",
         from_address: "daniel@example.test",
@@ -43,6 +44,7 @@ describe("mock-gmail dataset actions", () => {
         action: "emit_message",
         invocation_id: "inv-2",
         action_time: "2026-08-05T10:00:00Z",
+        settings: {},
         payload: {},
       }),
     ).rejects.toThrow(/message_id/);
@@ -53,6 +55,7 @@ describe("mock-gmail dataset actions", () => {
       action: "emit_meeting",
       invocation_id: "inv-meeting-1",
       action_time: "2026-08-05T10:00:00Z",
+      settings: {},
       payload: {
         event_id: "demo-call",
         title: "Magnis demo",

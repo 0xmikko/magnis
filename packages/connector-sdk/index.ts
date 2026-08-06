@@ -283,8 +283,13 @@ if (name === "magnis.auth.probe" && config.probeAuth) {
         rawArgs.payload !== null && typeof rawArgs.payload === "object" && !Array.isArray(rawArgs.payload)
           ? (rawArgs.payload as Record<string, unknown>)
           : undefined;
+      const settings =
+        rawArgs.settings !== null && typeof rawArgs.settings === "object" && !Array.isArray(rawArgs.settings)
+          ? (rawArgs.settings as Record<string, unknown>)
+          : undefined;
       if (
         payload === undefined ||
+        settings === undefined ||
         typeof rawArgs.invocation_id !== "string" ||
         typeof rawArgs.action_time !== "string"
       ) {
@@ -299,6 +304,7 @@ if (name === "magnis.auth.probe" && config.probeAuth) {
           action,
           invocation_id: rawArgs.invocation_id,
           action_time: rawArgs.action_time,
+          settings,
           payload,
           meta: metaArg,
         };

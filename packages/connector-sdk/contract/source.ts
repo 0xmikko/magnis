@@ -92,6 +92,7 @@ export interface DatasetActionArgs {
   action: string;
   invocation_id: string;
   action_time: string;
+  settings: Record<string, unknown>;
   payload: Record<string, unknown>;
   meta?: Record<string, unknown>;
 }

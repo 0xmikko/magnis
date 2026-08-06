@@ -7,6 +7,7 @@ describe("mock-telegram dataset actions", () => {
       action: "emit_chat",
       invocation_id: "inv-chat",
       action_time: "2026-08-05T10:00:00Z",
+      settings: {},
       payload: { chat_id: 7, title: "Acme", chat_type: "group" },
     };
     const result = await emitChat(args);
@@ -24,6 +25,7 @@ describe("mock-telegram dataset actions", () => {
       action: "emit_message",
       invocation_id: "inv-message",
       action_time: "2026-08-05T10:00:00Z",
+      settings: {},
       payload: {
         chat_id: 7,
         message_id: 42,
@@ -44,9 +46,9 @@ describe("mock-telegram dataset actions", () => {
         action: "emit_message",
         invocation_id: "bad",
         action_time: "2026-08-05T10:00:00Z",
+        settings: {},
         payload: {},
       }),
     ).rejects.toThrow(/invalid/);
   });
 });
-
