@@ -26,6 +26,11 @@ to = "email.address"
 [[links]]
 kind = "watches"
 from = "triggers.trigger"
+to = "contacts.person"
+
+[[links]]
+kind = "watches"
+from = "triggers.trigger"
 to = "linkedin.post"
 
 [[links]]
