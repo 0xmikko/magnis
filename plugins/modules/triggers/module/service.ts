@@ -45,7 +45,7 @@ import type {
   UpdateTriggerParams,
   WatchedEntity,
 } from "../types.ts";
-import { BELONGS_TO, TRIGGER, TRIGGER_CONFIG, TRIGGER_EXECUTION, WATCHES } from "../schema.ts";
+import { BELONGS_TO, TRIGGER, TRIGGER_CONFIG, WATCHES } from "../schema.ts";
 
 export class TriggersModule {
   private readonly graph: GraphService<TriggerFacets>;
@@ -564,14 +564,14 @@ export class TriggersModule {
     },
   })
   async fire_history(params: FireHistoryParams): Promise<TriggerExecutionData[]> {
-    await this.requireTrigger(params.trigger_id);
-    const limit = params.limit ?? 50;
-    const facets = await this.graph.list_facets_for_entity(params.trigger_id);
-    const executions = facets
-      .filter((f) => f.schema_id === TRIGGER_EXECUTION)
-      .map((f) => f.data as TriggerExecutionData)
-      .sort((a, b) => (a.fired_at < b.fired_at ? 1 : a.fired_at > b.fired_at ? -1 : 0));
-    return executions.slice(0, limit);
+    // S1 (canonical-graph-structure): executions are trigger_execution rows,
+    // written and owned by the native engine. The native seam replaces the
+    // old scan over EVERY facet of the trigger — the read is one indexed
+    // query, and its cost no longer grows with the trigger's history.
+    return await this.rpc.execute<TriggerExecutionData[]>("triggers.fire_history", {
+      trigger_id: params.trigger_id,
+      limit: params.limit ?? 50,
+    });
   }
 
   // ── private helpers ──────────────────────────────────────────────
