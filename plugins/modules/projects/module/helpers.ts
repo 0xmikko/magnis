@@ -28,6 +28,17 @@ export function linkSummary(
   };
 }
 
+/// S1: project the node's dictionary into the canonical-keyed map the shaping
+/// helpers already consume — the seam that let every reader move to the
+/// dictionary without reshaping the list item.
+export function projectCanonFromProperties(e: RawEntity): Partial<ProjectCanonical> {
+  const p = (e.properties ?? {});
+  const out: Record<string, unknown> = {};
+  if (typeof p.name === "string") out["project.name"] = p.name;
+  if (typeof p.status === "string") out["project.status"] = p.status;
+  return out;
+}
+
 export function canonicalString(
   c: Partial<ProjectCanonical>,
   key: keyof ProjectCanonical,

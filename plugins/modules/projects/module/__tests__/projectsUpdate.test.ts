@@ -26,31 +26,18 @@ describe("projects.update runtime optional fields", () => {
   it("tst_mod_projects_update_001 treats null name/status as omitted during a description-only update", async () => {
     const project = entity("project-1", "Acme × ExampleCo", {
       schema_id: PROJECT,
+      properties: { name: "Acme × ExampleCo", status: "active" },
     });
     const graph = mockGraph<ProjectFacets, ProjectCanonical>({
       get_entity: () => Promise.resolve(project),
-      list_facets_for_entity: () =>
-        Promise.resolve([
-          facet("project-facet-1", PROJECT, {
-            name: "Acme × ExampleCo",
-            status: "active",
-          }),
-        ]),
       update_entity_name: () => Promise.resolve(),
-      attach_facet: (input) =>
-        Promise.resolve(
-          facet("attached-facet", input.schema_id, input.data, {
-            entity_id: input.entity_id,
-          }),
-        ),
-      resolve_canonical: () => Promise.resolve(),
+      update_properties: () => Promise.resolve(),
       get_entity_full: () =>
         Promise.resolve({
           entity: project,
           facets: [],
           links: [],
         }),
-      get_canonical: () => Promise.resolve({}),
       get_entities: () => Promise.resolve([]),
     });
     const module = mountModule(ProjectsModule, {
@@ -66,23 +53,16 @@ describe("projects.update runtime optional fields", () => {
     } as unknown as UpdateParams);
 
     expect(graph.spies.update_entity_name).not.toHaveBeenCalled();
-    const attachFacet = graph.spies.attach_facet;
-    if (attachFacet === undefined) throw new Error("projects update: missing attach_facet spy");
-    const projectFacetCall = attachFacet.mock.calls.find(
-      (call) => (call[0] as { schema_id?: string }).schema_id === PROJECT,
-    );
-    if (projectFacetCall === undefined) throw new Error("projects update: project facet not attached");
-    expect(projectFacetCall[0]).toMatchObject({
-      schema_id: PROJECT,
-      data: {
-        name: "Acme × ExampleCo",
-        status: "active",
-      },
-    });
-    expect(attachFacet).toHaveBeenCalledWith(
+    // S1: one dictionary write — nulls omitted, existing values preserved,
+    // the description riding the same write.
+    expect(graph.spies.update_properties).toHaveBeenCalledWith(
       expect.objectContaining({
-        schema_id: PROJECT_DESCRIPTION,
-        data: { body: "Updated project summary" },
+        entity_id: project.id,
+        properties: expect.objectContaining({
+          name: "Acme × ExampleCo",
+          status: "active",
+          description: "Updated project summary",
+        }),
       }),
     );
   });

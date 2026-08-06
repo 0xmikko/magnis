@@ -16,6 +16,7 @@ import {
   type GetParams,
   type PaginatedResponse,
   type LinkSummary,
+  type RawEntity,
 } from "@magnis/plugin-sdk";
 import type {
   ChecklistGetParams,
@@ -32,13 +33,14 @@ import type {
   UpdateParams,
   LinkedEntitySummary,
 } from "../types.ts";
-import { MEMBER_LINK, PROJECT, PROJECT_CHECKLIST, PROJECT_DESCRIPTION } from "../schema.ts";
+import { MEMBER_LINK, PROJECT } from "../schema.ts";
 import {
   buildProjectListItem,
   canonicalString,
   entityCreatedAt,
   isUuid,
   linkSummary,
+  projectCanonFromProperties,
 } from "./helpers.ts";
 
 export class ProjectsModule {
@@ -84,11 +86,10 @@ export class ProjectsModule {
       total = page.total;
     }
 
-    // Hydrate the page's canonical (project.name/status) in ONE batch read —
-    // canonical, not the latest facet (project.* are single_aligned, confidence→
-    // recency), so it reproduces staging's get_canonical values without N+1.
-    const canonById = await this.canonicalByEntity(rows.map((e) => e.id));
-    const items = rows.map((e) => buildProjectListItem(e, canonById.get(e.id) ?? {}));
+    // S1: the dictionary rides the entity — the page-wide canonical batch is gone.
+    const items = rows.map((e) =>
+      buildProjectListItem(e, projectCanonFromProperties(e as RawEntity)),
+    );
     return { items, total, limit, offset };
   }
 
@@ -106,7 +107,7 @@ export class ProjectsModule {
     const detail = await this.graph.get_entity_full(params.id, { links: true });
     if (!detail) throw new Error(`project ${params.id} not found`);
     const { entity, facets, links } = detail;
-    const canonical = await this.graph.get_canonical(entity.id, [PROJECT]);
+    const canonical = projectCanonFromProperties(entity);
 
     const name =
       entity.name && entity.name.length > 0
@@ -166,10 +167,9 @@ export class ProjectsModule {
     if (params.client_id) {
       const existing = await this.graph.get_entity(params.client_id);
       if (existing) {
-        const facets = await this.graph.list_facets_for_entity(existing.id);
-        const f = facets.find((x) => x.schema_id === PROJECT);
+        // S1: the dictionary rides the entity.
         const existingStatus =
-          (f?.data as { status?: string } | undefined)?.status ?? "active";
+          ((existing.properties ?? {}) as { status?: string }).status ?? "active";
         return {
           id: existing.id,
           name: existing.name && existing.name.length > 0 ? existing.name : params.name,
@@ -185,14 +185,12 @@ export class ProjectsModule {
       name: params.name,
       client_id: params.client_id,
     });
-    await this.graph.attach_facet({
+    // S1: the project's state is the node's dictionary — one write, no
+    // canonical resolution pass.
+    await this.graph.update_properties({
       entity_id: entity.id,
-      schema_id: PROJECT,
-      data: { name: params.name, status: statusVal, created_at: new Date().toISOString() },
+      properties: { name: params.name, status: statusVal, created_at: new Date().toISOString() },
     });
-    // Resolve canonical (project.name / project.status) from the facet —
-    // native service.rs:309 calls resolve_canonical_for_entity.
-    await this.graph.resolve_canonical(entity.id);
     return { id: entity.id, name: params.name, status: statusVal, schema_id: PROJECT, created_at: entityCreatedAt(entity) };
   }
 
@@ -221,9 +219,7 @@ export class ProjectsModule {
     const entity = await this.graph.get_entity(params.id);
     if (!entity) throw new Error(`project ${params.id} not found`);
 
-    const facets = await this.graph.list_facets_for_entity(params.id);
-    const existing = (facets.find((f) => f.schema_id === PROJECT)?.data ?? {}) as Record<string, unknown>;
-    const data: Record<string, unknown> = { ...existing };
+    const data: Record<string, unknown> = { ...((entity.properties ?? {})) };
     // @tested-by: tst_mod_projects_update_001
     // @invariant: runtime JSON null for an optional field means "omitted"; it
     // must never erase the entity name or the existing project facet value.
@@ -234,17 +230,9 @@ export class ProjectsModule {
     if (typeof params.status === "string") data.status = params.status;
     data.updated_at = new Date().toISOString();
 
-    await this.graph.attach_facet({ entity_id: params.id, schema_id: PROJECT, data });
-    // Description is a separate markdown facet (parity with native
-    // projects.update / staging 7182e4af). Overwrites the existing body.
-    if (params.description !== undefined) {
-      await this.graph.attach_facet({
-        entity_id: params.id,
-        schema_id: PROJECT_DESCRIPTION,
-        data: { body: params.description },
-      });
-    }
-    await this.graph.resolve_canonical(params.id);
+    // Description overwrites its key in the same dictionary write.
+    if (params.description !== undefined) data.description = params.description;
+    await this.graph.update_properties({ entity_id: params.id, properties: data });
     return this.get({ id: params.id });
   }
 
@@ -276,9 +264,8 @@ export class ProjectsModule {
   async checklistGet(params: ChecklistGetParams): Promise<{ items: ChecklistItem[] }> {
     if (!params.project_id) throw new Error("missing required param: project_id");
     const entity = await this.requireProject(params.project_id);
-    const facets = await this.graph.list_facets_for_entity(entity.id);
-    const f = facets.find((x) => x.schema_id === PROJECT_CHECKLIST);
-    return (f?.data as { items: ChecklistItem[] } | undefined) ?? { items: [] };
+    const items = ((entity.properties ?? {}) as { checklist?: ChecklistItem[] }).checklist;
+    return { items: items ?? [] };
   }
 
   @writeTool("checklist.update", {
@@ -308,11 +295,13 @@ export class ProjectsModule {
   })
   async checklistUpdate(params: ChecklistUpdateParams): Promise<{ status: string; project_id: string }> {
     if (!params.project_id) throw new Error("missing required param: project_id");
-    await this.requireProject(params.project_id);
-    await this.graph.attach_facet({
+    const entity = await this.requireProject(params.project_id);
+    await this.graph.update_properties({
       entity_id: params.project_id,
-      schema_id: PROJECT_CHECKLIST,
-      data: { items: params.items },
+      properties: {
+        ...((entity.properties ?? {})),
+        checklist: params.items,
+      },
     });
     return { status: "ok", project_id: params.project_id };
   }
@@ -355,31 +344,17 @@ export class ProjectsModule {
       limit: 1000,
       offset: 0,
     });
-    // Hydrate the member projects' canonical (name/status) in ONE batch — the
-    // list_linked render facet would not reproduce single_aligned canonical.
-    const canonById = await this.canonicalByEntity(linked.items.map((r) => r.entity.id));
+    // S1: the dictionary rides each linked entity.
     return linked.items.map(({ entity }) =>
-      buildProjectListItem(entity, canonById.get(entity.id) ?? {}),
+      buildProjectListItem(entity, projectCanonFromProperties(entity)),
     );
-  }
-
-  // Batch the given entities' canonical into a per-entity map in ONE crossing.
-  private async canonicalByEntity(ids: string[]): Promise<Map<string, Partial<ProjectCanonical>>> {
-    const out = new Map<string, Partial<ProjectCanonical>>();
-    for (const c of await this.graph.list_canonical_for_entities(ids)) {
-      if (!c.entity_id) continue;
-      const m = (out.get(c.entity_id) ?? {}) as Record<string, unknown>;
-      m[c.key] = c.value;
-      out.set(c.entity_id, m);
-    }
-    return out;
   }
 
   // ── helpers ──────────────────────────────────────────────────────
   private async requireOwned(id: string): Promise<void> {
     if (!(await this.graph.get_entity(id))) throw new Error(`entity ${id} not found`);
   }
-  private async requireProject(id: string): Promise<{ id: string; schema_id: string; name: string }> {
+  private async requireProject(id: string): Promise<RawEntity> {
     const entity = await this.graph.get_entity(id);
     if (!entity) throw new Error(`project not found: ${id}`);
     if (entity.schema_id !== PROJECT) throw new Error(`entity ${id} is not a project (schema: ${entity.schema_id})`);
