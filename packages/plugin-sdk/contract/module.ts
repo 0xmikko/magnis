@@ -50,6 +50,11 @@ export interface RawEntity {
   // Additive: index-backed columns some lists render/sort by.
   date?: string | null;
   idx?: string | null;
+  /// S1: the node's dictionary. Present on every entity the host serializes;
+  /// `{}` for entities whose family has not folded yet.
+  properties?: Record<string, unknown>;
+  /// S1: identity anchor (null until the family's backfill).
+  anchor?: string | null;
 }
 
 export interface CreateEntityParams {
@@ -401,6 +406,12 @@ export interface GraphService<
   ): Promise<{ id: string }>;
   update_facet<K extends keyof Facets & string>(
     p: { facet_id: string; schema_id: K; data: Facets[K] },
+  ): Promise<void>;
+  /// S1 (canonical-graph-structure): write the node's dictionary — the
+  /// property-graph write path. Replaces attach_facet for module state; the
+  /// host validates ownership (user + namespace) and an update un-archives.
+  update_properties(
+    p: { entity_id: string; properties: Record<string, unknown> },
   ): Promise<void>;
   // all facets across schemas (data opaque) — used for cross-schema
   // reads like contacts' channel detection.
