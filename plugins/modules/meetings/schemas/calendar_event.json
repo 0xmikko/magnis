@@ -2,5 +2,8 @@
   "name": "Calendar event",
   "description": "A calendar event / meeting entity owned by the meetings plugin.",
   "triggerable": true,
-  "mergeable": false
+  "mergeable": false,
+  "roles": [
+    "event"
+  ]
 }

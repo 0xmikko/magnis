@@ -95,6 +95,8 @@ export interface FieldRefDto {
   entity_field?: "idx" | "date" | "name" | "created_at" | "is_pinned" | "pin_order" | "context";
   facet_schema?: string;
   facet_path?: string;
+  /** A key of the node's dictionary (S1): `entities.properties->>path`. */
+  property_path?: string;
 }
 export interface OrderKeyDto {
   field: FieldRefDto;

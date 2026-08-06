@@ -20,3 +20,7 @@ publisher = "ai.magnis"
 [permissions]
 # projects.belongs_to is own-prefixed — implicit (S2), no declaration needed.
 links = [ ]
+
+# The kind this module OWNS (S2): a member entity belongs to a project.
+[[links]]
+kind = "projects.belongs_to"

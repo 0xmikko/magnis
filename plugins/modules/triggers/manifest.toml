@@ -24,3 +24,7 @@ publisher = "ai.magnis"
 # triggers.belongs_to is own-prefixed — implicit (S2).
 links = [ "watches" ]
 call = [ "triggers.validate_watch", "triggers.resolve_watchable", "triggers.invalidate_cache", "triggers.fire_history" ]
+
+# The kind this module OWNS (S2): a trigger belongs to a parent episode.
+[[links]]
+kind = "triggers.belongs_to"

@@ -19,3 +19,9 @@ publisher = "ai.magnis"
 [permissions]
 # file.attachment is own-prefixed — implicit (S2), no declaration needed.
 links = [ ]
+
+# The kind this module OWNS (S2): any entity may attach a file; the target
+# must be a file object. Roles, never foreign schema ids.
+[[links]]
+kind = "file.attachment"
+to = "file_object"

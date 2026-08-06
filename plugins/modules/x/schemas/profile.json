@@ -1,5 +1,8 @@
 {
   "name": "X profile",
   "description": "A tracked person's profile on X (Twitter).",
-  "mergeable": false
+  "mergeable": false,
+  "roles": [
+    "identity_channel"
+  ]
 }

@@ -88,14 +88,14 @@ export class NotesModule {
       return { items, total, limit, offset };
     }
 
-    // No search: windowed list ordered by the content facet's `updated_at`
-    // (most-recently-edited first), with the body facet inline for the preview
-    // and the exact total — one statement. This also stands in for the dropped
-    // native `update_entity_date` recency (no such SDK op).
+    // No search: windowed list ordered by the dictionary's `updated_at`
+    // (most-recently-edited first) — S1 moved note state into
+    // `entity.properties`, and an order key on the frozen facet would never
+    // see an edit again. Preview renders from the same dictionary; no facet
+    // is read.
     const win = await this.graph.list_entities_window({
       schema: NOTE,
-      facet_schema: NOTE_CONTENT,
-      order: [{ field: { facet_schema: NOTE_CONTENT, facet_path: "updated_at" }, desc: true }],
+      order: [{ field: { property_path: "updated_at" }, desc: true }],
       limit,
       offset,
     });
