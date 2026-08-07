@@ -23,6 +23,7 @@ import { useEntityFacet } from "@magnis/host/base";
 import type { FacetSummary } from "@magnis/host/base";
 
 import { ContactInfoColumn } from "./ContactInfoColumn";
+import { useContactDetailQuery } from "./queries";
 
 const DESCRIPTION_SCHEMA_ID = "contacts.description";
 
@@ -35,10 +36,16 @@ export function ContactOverview({
   entityId,
   facets,
 }: ContactOverviewProps): JSX.Element {
+  // S3 (§5.1): the composed card sections ride the detail DTO.
+  const detail = useContactDetailQuery(entityId);
   return (
     <div className="grid grid-cols-1 gap-6 md:grid-cols-[2fr_3fr] md:gap-6">
       <div>
-        <ContactInfoColumn facets={facets} />
+        <ContactInfoColumn
+          facets={facets}
+          emails={detail.data?.emails}
+          phones={detail.data?.phones}
+        />
       </div>
       <div>
         <DescriptionPanel entityId={entityId} />

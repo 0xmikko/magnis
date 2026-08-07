@@ -44,6 +44,16 @@ export interface ContactDetailView {
   facets: FacetRecord[];
   linked_entities: LinkedEntitySummary[];
   created_at: string;
+  /** S3 (§5.1): the composed card — the hub's curated dictionary. */
+  curated: Record<string, unknown>;
+  /** Composed emails: the shared email.address nodes one identity hop away. */
+  emails: { id: string; address: string }[];
+  /** Composed phones: hub phones[] ∪ replica phones, deduped by normalised
+   * value, labeled by origin ("curated" | source id). */
+  phones: { phone: string; type?: string | null; origin: string }[];
+  /** Source claims: the replica dictionaries one identity hop away, each
+   * labeled by its schema (contacts.google_contact, …). */
+  replicas: { id: string; schema_id: string; name: string | null; properties: Record<string, unknown> }[];
 }
 
 // ── schema → type maps that parameterise GraphService ──────────────

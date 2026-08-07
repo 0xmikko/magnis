@@ -134,3 +134,28 @@ export function replicaDict(p: {
   if (p.external_url) d.external_url = p.external_url;
   return d;
 }
+
+/** The card's channel badges, composed (S3 §5.1): an email channel when an
+ * address node is linked, a phone channel from the composed phone section,
+ * x / linkedin from the hub's tracking entries, telegram from the frozen
+ * facet archive until the telegram replica lands (S4). */
+export function composeChannels(
+  curated: Record<string, unknown>,
+  hasEmail: boolean,
+  replicas: { schema_id: string }[],
+  facets: readonly FacetRecord[],
+): string[] {
+  const channels = new Set<string>();
+  if (hasEmail) channels.add("email");
+  if (Array.isArray(curated.phones) && curated.phones.length > 0) channels.add("phone");
+  for (const r of replicas) {
+    if (r.schema_id === "contacts.google_contact") channels.add("google");
+  }
+  if (Array.isArray(curated.tracking)) {
+    for (const t of curated.tracking as { platform?: unknown; enabled?: unknown }[]) {
+      if (t.enabled === true && typeof t.platform === "string") channels.add(t.platform);
+    }
+  }
+  for (const c of detectChannels([...facets])) channels.add(c);
+  return [...channels].sort();
+}

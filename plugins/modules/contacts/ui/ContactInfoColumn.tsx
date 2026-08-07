@@ -27,6 +27,12 @@ import type { FacetSummary } from "@magnis/host/base";
 
 export interface ContactInfoColumnProps {
   readonly facets: readonly FacetSummary[];
+  /** S3 (§5.1): the composed card sections — emails from identity edges,
+   * phones = curated ∪ replicas (labeled by origin). When present they are
+   * the email/phone rows; the facet archive still feeds telegram /
+   * external-link / birthday rows until their stages fold. */
+  readonly emails?: readonly { id: string; address: string }[];
+  readonly phones?: readonly { phone: string; type?: string | null; origin: string }[];
 }
 
 interface InfoRow {
@@ -38,8 +44,8 @@ interface InfoRow {
 
 const CARD_CLASS = "rounded-2xl bg-surface-secondary/50 px-5 py-4";
 
-export function ContactInfoColumn({ facets }: ContactInfoColumnProps): JSX.Element {
-  const rows = buildRows(facets);
+export function ContactInfoColumn({ facets, emails, phones }: ContactInfoColumnProps): JSX.Element {
+  const rows = buildRows(facets, emails, phones);
   if (rows.length === 0) {
     // Never `null` — an unmounted card collapses the left grid track and
     // leaves the Description panel floating in a half-empty Overview.
@@ -93,13 +99,30 @@ function InfoRowView({ row }: { readonly row: InfoRow }): JSX.Element {
   );
 }
 
-function buildRows(facets: readonly FacetSummary[]): InfoRow[] {
+function buildRows(
+  facets: readonly FacetSummary[],
+  emails?: readonly { id: string; address: string }[],
+  phones?: readonly { phone: string; type?: string | null; origin: string }[],
+): InfoRow[] {
   const rows: InfoRow[] = [];
   // Stable iteration order: emails → phones → external links → birthday.
-  // Within a category the original facet ordering wins so authored
-  // primary contact info renders first.
+  // S3: the composed sections are the email/phone rows when present; the
+  // facet archive covers pre-fold contacts and the categories whose stages
+  // have not folded yet.
+  for (const e of emails ?? []) {
+    rows.push({ iconName: "mail", value: e.address, href: `mailto:${e.address}` });
+  }
+  for (const p of phones ?? []) {
+    rows.push({
+      iconName: "phone",
+      value: p.phone,
+      label: p.origin === "curated" ? (p.type ?? undefined) : p.origin,
+    });
+  }
+  const composedEmails = (emails?.length ?? 0) > 0;
+  const composedPhones = (phones?.length ?? 0) > 0;
   for (const f of facets) {
-    if (f.schema_id === "contacts.person.email") {
+    if (!composedEmails && f.schema_id === "contacts.person.email") {
       const email = stringField(f, "email");
       if (email) {
         rows.push({
@@ -112,7 +135,7 @@ function buildRows(facets: readonly FacetSummary[]): InfoRow[] {
     }
   }
   for (const f of facets) {
-    if (f.schema_id === "contacts.person.phone") {
+    if (!composedPhones && f.schema_id === "contacts.person.phone") {
       const phone = stringField(f, "phone");
       if (phone) {
         rows.push({

@@ -23,6 +23,16 @@ export interface ContactDetailView extends ContactListItem {
   readonly canonical: Record<string, unknown>;
   readonly facets: readonly FacetSummary[];
   readonly linked_entities: readonly LinkedEntitySummary[];
+  /** S3 (§5.1): the composed card sections. */
+  readonly curated: Record<string, unknown>;
+  readonly emails: readonly { id: string; address: string }[];
+  readonly phones: readonly { phone: string; type?: string | null; origin: string }[];
+  readonly replicas: readonly {
+    id: string;
+    schema_id: string;
+    name: string | null;
+    properties: Record<string, unknown>;
+  }[];
 }
 
 export interface ContactProfile {

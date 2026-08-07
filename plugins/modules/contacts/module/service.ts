@@ -43,9 +43,9 @@ import type {
 import {
   buildListItem,
   computeInitials,
-  detectChannels,
   detectRelevanceTier,
   INGEST_CHUNK,
+  composeChannels,
   normalizeHandle,
   pickAvatarColor,
   replicaDict,
@@ -55,9 +55,6 @@ import type { SocialPlatform } from "./socialUrl.ts";
 import {
   CONTACT,
   GOOGLE_CONTACT,
-  CONTACT_EMAIL,
-  CONTACT_PHONE,
-  CONTACT_PROFILE,
 } from "../schema.ts";
 
 export class ContactsModule {
@@ -194,13 +191,14 @@ export class ContactsModule {
     const base = buildListItem(e, canonical, facets);
 
     const linked: LinkedEntitySummary[] = [];
+    const neighbours = new Map<string, RawEntity & { created_at?: string }>();
     if (links.length > 0) {
       const neighbourId = (l: { from_id: string; to_id: string }): string =>
         l.from_id === e.id ? l.to_id : l.from_id;
       const targets = await this.graph.get_entities([...new Set(links.map(neighbourId))]);
-      const byId = new Map(targets.map((t) => [t.id, t]));
+      for (const t of targets) neighbours.set(t.id, t);
       for (const link of links) {
-        const t = byId.get(neighbourId(link));
+        const t = neighbours.get(neighbourId(link));
         if (!t) continue;
         linked.push({
           id: t.id,
@@ -213,21 +211,88 @@ export class ContactsModule {
       }
     }
 
+    // ── S3 (§5.1): the card is composed at read time ────────────────────
+    // Curated claims = the hub's dictionary. Source claims = the replica
+    // dictionaries one identity hop away. Emails = shared email.address
+    // nodes. Phones = curated ∪ replica, deduped by normalised value,
+    // labeled by origin. No propagation step exists to forget.
+    const curated: Record<string, unknown> = e.properties ?? {};
+    const identityIds = new Set(
+      links.filter((l) => l.kind === "identity" && l.from_id === e.id).map((l) => l.to_id),
+    );
+    const emails: { id: string; address: string }[] = [];
+    const replicas: ContactDetailView["replicas"] = [];
+    for (const id of identityIds) {
+      const t = neighbours.get(id);
+      if (!t) continue;
+      if (t.schema_id === "email.address") {
+        emails.push({ id: t.id, address: t.name });
+      } else if (t.schema_id !== CONTACT) {
+        replicas.push({
+          id: t.id,
+          schema_id: t.schema_id,
+          name: t.name,
+          properties: ((t as { properties?: unknown }).properties ?? {}) as Record<
+            string,
+            unknown
+          >,
+        });
+      }
+    }
+    const phones: ContactDetailView["phones"] = [];
+    const seenPhone = new Set<string>();
+    const pushPhone = (phone: unknown, type: unknown, origin: string): void => {
+      if (typeof phone !== "string" || phone.length === 0) return;
+      const norm = phone.replace(/[^0-9+]/gu, "");
+      if (seenPhone.has(norm)) return;
+      seenPhone.add(norm);
+      phones.push({ phone, type: typeof type === "string" ? type : null, origin });
+    };
+    if (Array.isArray(curated.phones)) {
+      for (const p of curated.phones as { phone?: unknown; type?: unknown }[]) {
+        pushPhone(p.phone, p.type, "curated");
+      }
+    }
+    for (const r of replicas) {
+      const source = r.schema_id === GOOGLE_CONTACT ? "google" : r.schema_id;
+      if (Array.isArray(r.properties.phones)) {
+        for (const p of r.properties.phones as { number?: unknown; label?: unknown }[]) {
+          pushPhone(p.number, p.label, source);
+        }
+      }
+    }
+
+    // Single-value picks stay deterministic: curated wins, else the
+    // composed sections (first address / first phone / first replica org).
+    const firstOrg = replicas
+      .flatMap((r) =>
+        Array.isArray(r.properties.organizations)
+          ? (r.properties.organizations as { name?: unknown; title?: unknown }[])
+          : [],
+      )
+      .find((o) => typeof o.name === "string" || typeof o.title === "string");
+
     return {
       id: e.id,
       schema_id: e.schema_id,
       name: base.name,
-      email: base.email,
-      phone: base.phone,
-      role: base.role,
-      company: base.company,
-      channels: detectChannels(facets),
+      email: emails[0]?.address ?? base.email,
+      phone: phones[0]?.phone ?? base.phone,
+      role:
+        base.role ?? (typeof firstOrg?.title === "string" ? firstOrg.title : null),
+      company:
+        base.company ?? (typeof firstOrg?.name === "string" ? firstOrg.name : null),
+      channels: composeChannels(curated, emails.length > 0, replicas, facets),
       avatar_color: pickAvatarColor(e.id),
       initials: computeInitials(base.name),
       canonical,
       facets,
       linked_entities: linked,
       created_at: base.created_at,
+      curated,
+      emails,
+      phones,
+      replicas,
     };
   }
 
@@ -310,24 +375,16 @@ export class ContactsModule {
       client_id: params.client_id,
       idx: params.name.toLowerCase(),
     });
-    await this.graph.attach_facet({
-      entity_id: entity.id,
-      schema_id: CONTACT_PROFILE,
-      data: { first_name: params.name },
-    });
-    if (params.email) {
-      await this.graph.attach_facet({
-        entity_id: entity.id,
-        schema_id: CONTACT_EMAIL,
-        data: { email: params.email, is_primary: true },
-      });
-    }
+    // S3: the hub dict takes the curated claims — no facet writes. The
+    // email becomes an identity edge to the shared address node below.
+    const curated: Record<string, unknown> = {};
     if (params.phone) {
-      await this.graph.attach_facet({
-        entity_id: entity.id,
-        schema_id: CONTACT_PHONE,
-        data: { phone: params.phone, is_primary: true },
-      });
+      curated.phones = [{ phone: params.phone, type: null, is_primary: true }];
+    }
+    if (params.role) curated.role = params.role;
+    if (params.company) curated.company = params.company;
+    if (Object.keys(curated).length > 0) {
+      await this.graph.update_properties({ entity_id: entity.id, properties: curated });
     }
 
     // Hub: ask the email module to ensure the email.address entity, then
@@ -459,12 +516,8 @@ export class ContactsModule {
     if (!existing) throw new Error(`contact not found: ${params.id}`);
 
     if (params.name) {
+      // S3: the name vouch lives on the entity row alone — no facet copy.
       await this.graph.update_entity_name(params.id, params.name);
-      await this.graph.attach_facet({
-        entity_id: params.id,
-        schema_id: CONTACT_PROFILE,
-        data: { first_name: params.name },
-      });
     }
 
     const fresh = await this.graph.get_entity(params.id);
