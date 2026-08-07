@@ -24,6 +24,6 @@ item = "email.message"
 # Foreign asks beyond the implicit own namespace: writes to `email.` facets,
 # own:own links, and reads of own schemas need no declaration.
 [permissions]
-links = [ "sent_from", "sent_to", "file.attachment" ]
+links = [ "authored_by", "sent_to", "file.attachment" ]
 call = [ "triggers.create" ]
 host = [ "file_register", "external_id_reads", "source_commands", "sync_state", "composer" ]

@@ -196,6 +196,10 @@ export interface AddLinkParams {
   from_id: string;
   to_id: string;
   kind: string;
+  /** S5: the EDGE dictionary (plan §2) — the per-pair facts that belong to
+   * neither endpoint (an invite's display name, an attendee's response). The
+   * curated twin of `BatchLinkInput.metadata`. */
+  metadata?: Record<string, unknown>;
   /** S3 (plan §5.2): "candidate" records a merge-candidate row, invisible to
    * canonical readers until promoted. Default: canonical. */
   status?: "canonical" | "candidate";

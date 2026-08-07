@@ -84,14 +84,15 @@ describe("email ensure_address hub RPC (cross-module)", () => {
     if (call0 === undefined) throw new Error("ensure_address: apply_batch not called");
     const frag = call0[0];
     const addr = frag.entities[0] as
-      | { schema_id: string; anchor?: string; facets: { external_id?: string }[] }
+      | { schema_id: string; anchor?: string; properties?: Record<string, unknown>; facets: unknown[] }
       | undefined;
     if (addr === undefined) throw new Error("ensure_address: missing address entity");
     expect(addr.schema_id).toBe("email.address");
+    // S5: the address node is its DICTIONARY under the chokepoint anchor —
+    // the details facet retired with the writer.
     expect(addr.anchor).toBe("email:address:alice@example.com");
-    const addrFacet0 = addr.facets[0];
-    if (addrFacet0 === undefined) throw new Error("ensure_address: missing address facet[0]");
-    expect(addrFacet0.external_id).toBe("email:address:alice@example.com"); // lowercased hub key
+    expect(addr.facets).toEqual([]);
+    expect(addr.properties).toMatchObject({ address: "alice@example.com" });
   });
 
   it("rejects an empty address", async () => {

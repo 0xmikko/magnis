@@ -69,12 +69,10 @@ describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
     const msg = frag.entities.find((e) => e.schema_id === "email.message")!;
     const addr = frag.entities.find((e) => e.schema_id === "email.address")!;
     expect(addr.idx).toBe("bob@example.com"); // lowercased recipient
-    const addrFacet0 = addr.facets[0];
-    if (addrFacet0 === undefined) throw new Error("send: missing addr facet[0]");
-    expect(addrFacet0.external_id).toBe("email:address:bob@example.com");
-    const msgFacet0 = msg.facets[0];
-    if (msgFacet0 === undefined) throw new Error("send: missing msg facet[0]");
-    expect((msgFacet0.data as Record<string, unknown>).is_outgoing).toBe(true);
+    // S5: nodes are dictionaries under their anchors.
+    expect(addr.anchor).toBe("email:address:bob@example.com");
+    expect(addr.properties?.address).toBe("bob@example.com");
+    expect(msg.properties?.is_outgoing).toBe(true);
     expect(frag.links).toEqual([{ from_key: "out", to_key: "addr:bob@example.com", kind: "sent_to" }]);
 
     // INV-5: the provider is called BEFORE the message is persisted, so a
@@ -82,7 +80,7 @@ describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
     expect(spy(graph, "source_command")).toHaveBeenCalledTimes(1);
     // INV-6: the provider's id rides on the stored message so a later ingest
     // of that same mail matches it instead of creating a duplicate.
-    expect((msgFacet0.data as Record<string, unknown>).provider_message_id).toBe("src-1");
+    expect(msg.properties?.provider_message_id).toBe("src-1");
     expect(r.id).toBe("id-out");
     expect(r.schema_id).toBe("email.message");
     expect(r.attachment_count).toBe(0);
@@ -149,7 +147,9 @@ describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
 
     const frag = spy(graph, "apply_batch").mock.calls[0]?.[0] as GraphBatchInput;
     const msg = frag.entities.find((e) => e.schema_id === "email.message")!;
-    expect(msg.facets[0]?.external_id).toBe("gmail-42");
+    // S5: the provider id is the node ANCHOR — that is what makes the copy
+    // arriving from Sent update this node instead of creating a second one.
+    expect(msg.anchor).toBe("gmail-42");
     expect(msg.idx).toBe("thr-9");
   });
 
@@ -194,17 +194,20 @@ describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
 });
 
 describe("email reply (tst_be_emailreply_003)", () => {
+  // S5: the original's DICT is what the reply reads.
   const original = (): EntityDetail => ({
-    entity: { id: "orig", schema_id: "email.message", name: "Quarterly", created_at: "" },
-    facets: [
-      {
-        id: "f",
-        schema_id: "email.message.details",
-        source: "gmail",
-        observed_at: "",
-        data: { from_address: "boss@corp.com", subject: "Quarterly", message_id: "gmail-orig-1" },
+    entity: {
+      id: "orig",
+      schema_id: "email.message",
+      name: "Quarterly",
+      created_at: "",
+      properties: {
+        from_address: "boss@corp.com",
+        subject: "Quarterly",
+        message_id: "gmail-orig-1",
       },
-    ],
+    } as EntityDetail["entity"],
+    facets: [],
     links: [],
   });
 

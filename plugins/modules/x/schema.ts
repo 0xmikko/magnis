@@ -4,15 +4,16 @@
 
 /** Profile entity schema. */
 export const PROFILE = "x.profile";
-/** Profile identity facet (handle/display_name/followers/bio/url/avatar). */
-export const PROFILE_IDENTITY = "x.profile.identity";
+
 /** Post entity schema. */
 export const POST = "x.post";
-/** Post content facet (text/created_at/media/urls/…). */
-export const POST_CONTENT = "x.post.content";
-/** Post metrics facet (likes/reposts/replies/impressions). */
-export const POST_METRICS = "x.post.metrics";
-/** Link kind: post → author profile. */
-export const AUTHORED_BY = "x.post:x.profile";
-/** Identity link: profile → contacts.person. */
-export const PROFILE_PERSON_LINK = "x.profile:contacts.person";
+
+// S5: the identity / content / metrics facets are frozen archive — the profile
+// and post dictionaries are the record. The schemas stay registered (no schema
+// is ever removed); nothing reads or writes them.
+
+/** S5: authorship is the host-owned RELATION, shared with every other
+ *  content family — content → the identity that produced it. */
+export const AUTHORED_BY = "authored_by";
+/** S5: the hub → channel relation, written contact-first. */
+export const IDENTITY = "identity";

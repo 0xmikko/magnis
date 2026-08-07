@@ -20,11 +20,13 @@ function mountProfiles(opts: {
   tracked: Array<{ contact_id: string; name: string; handle: string }>;
 }): LinkedinModule {
   const rows = opts.profiles.map((p) =>
-    windowRow(entity(p.id, p.name, { schema_id: PROFILE }), {
-      platform: "linkedin",
-      handle: p.handle,
-      display_name: p.name,
-    }),
+    windowRow(
+      entity(p.id, p.name, {
+        schema_id: PROFILE,
+        properties: { platform: "linkedin", handle: p.handle, display_name: p.name },
+      }),
+      null,
+    ),
   );
   const graph: G = mockGraph({
     list_entities_window: (p: WindowSpec) =>
@@ -88,11 +90,13 @@ describe("linkedin pending profiles", () => {
       list_entities_window: () =>
         Promise.resolve({
           items: [
-            windowRow(entity("e1", "P", { schema_id: PROFILE }), {
-              platform: "linkedin",
-              handle: "p",
-              display_name: "P",
-            }),
+            windowRow(
+              entity("e1", "P", {
+                schema_id: PROFILE,
+                properties: { platform: "linkedin", handle: "p", display_name: "P" },
+              }),
+              null,
+            ),
           ],
           total: 1,
         }),

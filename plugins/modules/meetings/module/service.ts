@@ -1,11 +1,12 @@
 // Meetings plugin — graph-native module. Read path: list (windowed
-// over meetings.calendar_event, starts_at DESC, details facet inline), get
-// (entity + facets + links), search (meetings.EVENT schema — native quirk).
+// over meetings.calendar_event, starts_at DESC, the node dictionary inline),
+// get (entity + links), search (meetings.EVENT schema — native quirk).
 // Output is byte-compatible with the native module (types.rs MeetingListItem /
 // MeetingDetailView) and the UI's plugins/meetings/ui copies.
 //
-// Read-time enrichment ported from the native domain adapter: attendees resolve
-// to their contacts.person (email → email.address → has_email), and get's
+// Read-time enrichment ported from the native domain adapter: attendees are the
+// event's `attendee` edges, each resolving through its address node to a
+// contacts.person over `identity` (plan §3/§6), and get's
 // linked_entities resolve the entity's link neighbours. Canonical is deferred to
 // {} on this hot path (mirrors the email/telegram modules; the detail UI is verified
 // visually in the frontend stage).
@@ -18,7 +19,13 @@ import {
   type GraphService,
   type PluginDeps,
 } from "@magnis/plugin-sdk";
-import type { BatchEntityInput, RawEntity, RpcExecutor } from "@magnis/plugin-sdk";
+import type {
+  BatchEntityInput,
+  BatchLinkInput,
+  BatchRefInput,
+  RawEntity,
+  RpcExecutor,
+} from "@magnis/plugin-sdk";
 import type {
   FacetSummary,
   GetParams,
@@ -46,7 +53,10 @@ import {
   str,
   type Data,
 } from "./helpers.ts";
-import { CAL, CAL_DETAILS, EVENT, MEETING } from "../schema.ts";
+import { CAL, EVENT, MEETING } from "../schema.ts";
+
+/// The node dictionary (S5): the record every read path renders from.
+const dictOf = (e: RawEntity): Data => e.properties ?? {};
 
 export class MeetingsModule {
   private readonly graph: GraphService<MeetingsFacets, MeetingsCanonical>;
@@ -78,8 +88,8 @@ export class MeetingsModule {
 
     if (search.length > 0) {
       // Search path (native domain.list search branch): name match over
-      // meetings.calendar_event returns ids only; hydrate ONLY the page's ids in
-      // one batch facet read — 2 crossings, no per-row N+1.
+      // meetings.calendar_event. S5: the matched rows carry their own
+      // dictionaries, so nothing is hydrated after the search.
       const matched = await this.graph.search_entities_by_name({
         query: search,
         schema_ids: [CAL],
@@ -87,36 +97,27 @@ export class MeetingsModule {
       });
       const total = matched.length;
       const page = matched.slice(offset, offset + limit);
-      const facets = await this.graph.list_facets_for_entities(page.map((e) => e.id));
-      const byId = new Map<string, Data>();
-      for (const f of facets) {
-        if (f.schema_id === CAL_DETAILS && f.entity_id && !byId.has(f.entity_id)) {
-          byId.set(f.entity_id, f.data as Data);
-        }
-      }
       const items: MeetingListItem[] = [];
       for (const e of page) {
-        const d = byId.get(e.id) ?? {};
-        const attendees = await enrichAttendees(this.graph, parseAttendees(d, e.id));
+        const d = dictOf(e);
+        const attendees = await enrichAttendees(this.graph, e.id);
         items.push(buildListItem(e, d, attendees));
       }
       return { items, total, limit, offset };
     }
 
-    // ONE window — page of meetings.calendar_event ordered by the details
-    // facet's starts_at DESC, each row carrying its latest details facet inline.
+    // ONE window — page of meetings.calendar_event ordered by the dictionary's
+    // starts_at DESC, each row carrying its dictionary inline.
     const win = await this.graph.list_entities_window({
       schema: CAL,
-      facet_schema: CAL_DETAILS,
-      order: [{ field: { facet_schema: CAL_DETAILS, facet_path: "starts_at" }, desc: true }],
+      order: [{ field: { property_path: "starts_at" }, desc: true }],
       limit,
       offset,
     });
     const items: MeetingListItem[] = [];
-    for (const { entity, data } of win.items) {
-      const d = (data ?? {}) as Data;
-      const attendees = await enrichAttendees(this.graph, parseAttendees(d, entity.id));
-      items.push(buildListItem(entity, d, attendees));
+    for (const { entity } of win.items) {
+      const attendees = await enrichAttendees(this.graph, entity.id);
+      items.push(buildListItem(entity, dictOf(entity), attendees));
     }
     return { items, total: win.total, limit, offset };
   }
@@ -137,9 +138,12 @@ export class MeetingsModule {
       throw new Error(`meeting ${params.id} not found`);
     }
     const { entity, facets, links } = detail;
-    const d = (facets.find((f) => f.schema_id === CAL_DETAILS)?.data as Data | undefined) ?? {};
+    // S5: the event DICT is the record; the frozen facets stay the archive.
+    const d = dictOf(entity);
 
-    const attendees = await enrichAttendees(this.graph, parseAttendees(d, entity.id));
+    // The links the detail already fetched carry the attendee edges — no
+    // second crossing to read them.
+    const attendees = await enrichAttendees(this.graph, entity.id, links);
     const { date, time } = formatDateTime(
       str(d, "starts_at") ?? undefined,
       str(d, "ends_at") ?? undefined,
@@ -305,22 +309,19 @@ export class MeetingsModule {
       date: now,
     });
 
+    // S5: the dictionary is the record — the attendees are NOT in it, they are
+    // the event's `attendee` edges.
     const data: MeetingCalendarEventDetails = {
       title: params.title,
       starts_at: params.starts_at,
       ends_at: params.ends_at,
-      attendees: normalizeAttendees(params.attendees),
       updated_at: now,
     };
     if (params.description !== undefined) data.description = params.description;
     if (params.location !== undefined) data.location = params.location;
 
-    await this.graph.attach_facet({
-      entity_id: entity.id,
-      schema_id: CAL_DETAILS,
-      data,
-      confidence: 100,
-    });
+    await this.graph.update_properties({ entity_id: entity.id, properties: { ...data } });
+    await this.writeAttendeeEdges(entity.id, normalizeAttendees(params.attendees));
 
     return this.snapshot(entity.id, params);
   }
@@ -392,41 +393,50 @@ export class MeetingsModule {
     if (id) await this.graph.delete_entity(id);
   }
 
-  /// Upsert one calendar event + its details facet (idempotent on external_id),
-  /// then, for LIVE events, assemble the trigger.check with attendee address ids.
+  /// Upsert one calendar event as a NODE (idempotent on its anchor) plus the
+  /// `attendee` edges its invite lists, then, for LIVE events, assemble the
+  /// trigger.check with those attendees' address ids.
   private async ingestUpsert(env: SyncEnvelope, triggers: MeetingTriggerCheck[]): Promise<void> {
     const remoteId = env.remote_id;
     if (!remoteId) throw new Error("meetings ingest: envelope missing remote_id");
     const payload = env.payload as Data;
     const name = str(payload, "title") ?? "";
 
+    // The attendees are edges now, so they leave the dictionary — the invite's
+    // per-event display name rides the edge, the address rides the node.
+    const attendees = parseAttendees(payload, remoteId);
+    const dict: Data = { ...payload };
+    delete dict.attendees;
+
     const entity: BatchEntityInput = {
       key: remoteId,
       schema_id: CAL,
       name,
-      facets: [{ schema_id: CAL_DETAILS, data: payload, external_id: remoteId, confidence: 90 }],
+      anchor: remoteId,
+      properties: dict,
+      facets: [],
     };
-    const result = await this.graph.apply_batch({ entities: [entity] });
+    const addressIds = await this.ensureAddresses(attendees);
+    const refs: BatchRefInput[] = [];
+    const links: BatchLinkInput[] = [];
+    for (const a of attendees) {
+      const lower = a.email.trim().toLowerCase();
+      const key = `addr:${lower}`;
+      if (!refs.some((r) => r.key === key)) {
+        refs.push({ key, anchor: `email:address:${lower}` });
+      }
+      links.push({
+        from_key: remoteId,
+        to_key: key,
+        kind: "attendee",
+        ...(a.name === undefined ? {} : { metadata: { display_name: a.name } }),
+      });
+    }
+    const result = await this.graph.apply_batch({ entities: [entity], refs, links });
     const entityId = result.ids[remoteId];
     if (!entityId) return;
 
     if (env.kind !== "live") return;
-
-    // touched = [meeting, every attendee's email.address id]. email.address is
-    // owned by the email plugin → resolve via its ensure_address RPC,
-    // which converges on the shared hub id email:address:{lowercased}.
-    const touched: string[] = [entityId];
-    const attendees = Array.isArray(payload.attendees) ? (payload.attendees as Data[]) : [];
-    for (const att of attendees) {
-      const email = str(att, "email");
-      if (!email) continue;
-      const display = str(att, "name");
-      const r = await this.rpc.execute<{ id: string }>("email.ensure_address", {
-        address: email,
-        display_name: display,
-      });
-      if (r.id) touched.push(r.id);
-    }
 
     triggers.push({
       type: "trigger.check",
@@ -434,7 +444,8 @@ export class MeetingsModule {
       schema_id: MEETING,
       entity_id: entityId,
       phase: "live",
-      touched_entity_ids: touched,
+      // touched = [meeting, every attendee's email.address id].
+      touched_entity_ids: [entityId, ...addressIds],
       user_id: env.user_id,
       context: {
         title: name.length > 0 ? name : null,
@@ -447,6 +458,39 @@ export class MeetingsModule {
         occurred_at: str(payload, "starts_at") ?? null,
       },
     });
+  }
+
+  /// `email.address` is the email plugin's schema, so the nodes are minted by
+  /// its own RPC — one crossing for the whole invite list — and this module
+  /// only points edges at them.
+  private async ensureAddresses(attendees: { email: string; name?: string }[]): Promise<string[]> {
+    if (attendees.length === 0) return [];
+    const r = await this.rpc.execute<{ ids: string[] }>("email.ensure_addresses", {
+      items: attendees.map((a) => ({ address: a.email, display_name: a.name ?? null })),
+    });
+    return r.ids;
+  }
+
+  /// The create path's attendees: the same edges the ingest path writes, over
+  /// the same shared address nodes.
+  private async writeAttendeeEdges(
+    eventId: string,
+    attendees: { email: string; name: string | null }[],
+  ): Promise<void> {
+    if (attendees.length === 0) return;
+    const ids = await this.ensureAddresses(
+      attendees.map((a) => ({ email: a.email, ...(a.name === null ? {} : { name: a.name }) })),
+    );
+    for (const [i, a] of attendees.entries()) {
+      const to_id = ids[i];
+      if (!to_id) continue;
+      await this.graph.add_link({
+        from_id: eventId,
+        to_id,
+        kind: "attendee",
+        ...(a.name === null ? {} : { metadata: { display_name: a.name } }),
+      });
+    }
   }
 
   // ── sync control (@rpc) ───────────────────────────────────────

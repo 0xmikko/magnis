@@ -9,21 +9,30 @@ import { MeetingsModule } from "../service.ts";
 import type { MeetingsCanonical, MeetingsFacets } from "../../types.ts";
 
 const CAL = "meetings.calendar_event";
-const CAL_DETAILS = "meetings.calendar_event.details";
 type G = MockGraph<MeetingsFacets, MeetingsCanonical>;
 
 function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
   return mockGraph<MeetingsFacets, MeetingsCanonical>({
     create_entity: (p: { client_id?: string; name: string }) =>
       Promise.resolve({ id: p.client_id ?? "new-id", schema_id: CAL, name: p.name }),
-    attach_facet: () => Promise.resolve(undefined),
+    update_properties: () => Promise.resolve(undefined),
+    add_link: () => Promise.resolve(undefined),
     get_entity: () => Promise.resolve(null),
     ...over,
   } as unknown as GraphOverrides<MeetingsFacets, MeetingsCanonical>);
 }
 
-function makeModule(graph: G): MeetingsModule {
-  return mountModule(MeetingsModule, { graph, ctx: { extension_id: "meetings" } }).module;
+function makeModule(
+  graph: G,
+  execute = vi.fn(async (_m: string, p?: unknown) => ({
+    ids: (p as { items: { address: string }[] }).items.map((i) => `addr-${i.address}`),
+  })),
+): MeetingsModule {
+  return mountModule(MeetingsModule, {
+    graph,
+    ctx: { extension_id: "meetings" },
+    rpc: { execute },
+  }).module;
 }
 
 const GOOD = {
@@ -61,14 +70,15 @@ describe("meetings.create — validation (rejected input writes nothing)", () =>
 });
 
 describe("meetings.create — happy path (returns the full meeting snapshot)", () => {
-  it("creates the entity + details facet and returns the snapshot", async () => {
+  it("creates the entity, writes its dictionary + attendee edges, returns the snapshot", async () => {
     const create_entity = vi.fn(async (p: { name: string }) => ({
       id: "m-new",
       schema_id: CAL,
       name: p.name,
     } as RawEntity));
-    const attach_facet = vi.fn().mockResolvedValue(undefined);
-    const mod = makeModule(makeGraph({ create_entity, attach_facet }));
+    const update_properties = vi.fn().mockResolvedValue(undefined);
+    const add_link = vi.fn().mockResolvedValue(undefined);
+    const mod = makeModule(makeGraph({ create_entity, update_properties, add_link }));
 
     const snap = await mod.create({
       ...GOOD,
@@ -79,17 +89,27 @@ describe("meetings.create — happy path (returns the full meeting snapshot)", (
 
     expect(create_entity).toHaveBeenCalledTimes(1);
     expect(create_entity.mock.calls[0]![0]).toMatchObject({ schema_id: CAL, name: "Sync" });
-    expect(attach_facet).toHaveBeenCalledTimes(1);
-    const facetCall = attach_facet.mock.calls[0]![0];
-    expect(facetCall.entity_id).toBe("m-new");
-    expect(facetCall.schema_id).toBe(CAL_DETAILS);
-    expect(facetCall.data).toMatchObject({
+    // The dictionary is the record — and the attendees are NOT in it.
+    expect(update_properties).toHaveBeenCalledTimes(1);
+    const dictCall = update_properties.mock.calls[0]![0] as {
+      entity_id: string;
+      properties: Record<string, unknown>;
+    };
+    expect(dictCall.entity_id).toBe("m-new");
+    expect(dictCall.properties).toMatchObject({
       title: "Sync",
       starts_at: GOOD.starts_at,
       ends_at: GOOD.ends_at,
-      attendees: [{ name: "Alice", email: "a@x" }],
       description: "Agenda",
       location: "HQ",
+    });
+    expect("attendees" in dictCall.properties).toBe(false);
+    // …they are edges to the shared address node, name on the edge.
+    expect(add_link).toHaveBeenCalledWith({
+      from_id: "m-new",
+      to_id: "addr-a@x",
+      kind: "attendee",
+      metadata: { display_name: "Alice" },
     });
 
     expect(snap).toMatchObject({
@@ -118,14 +138,14 @@ describe("meetings.create — idempotency", () => {
     const existing: RawEntity = { id: "cid-1", schema_id: CAL, name: "Sync" } as RawEntity;
     const get_entity = vi.fn().mockResolvedValue(existing);
     const create_entity = vi.fn();
-    const attach_facet = vi.fn();
-    const mod = makeModule(makeGraph({ get_entity, create_entity, attach_facet }));
+    const update_properties = vi.fn();
+    const mod = makeModule(makeGraph({ get_entity, create_entity, update_properties }));
 
     const snap = (await mod.create({ ...GOOD, client_id: "cid-1" })) as Record<string, unknown>;
 
     expect(get_entity).toHaveBeenCalledWith("cid-1");
     expect(create_entity).not.toHaveBeenCalled();
-    expect(attach_facet).not.toHaveBeenCalled();
+    expect(update_properties).not.toHaveBeenCalled();
     expect(snap.id).toBe("cid-1");
   });
 });

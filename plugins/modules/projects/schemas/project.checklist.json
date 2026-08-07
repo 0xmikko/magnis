@@ -7,6 +7,7 @@
   "properties": {
     "items": {
       "type": "array",
+      "maxItems": 500,
       "items": {
         "type": "object",
         "required": [

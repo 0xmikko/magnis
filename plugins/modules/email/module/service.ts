@@ -6,8 +6,8 @@
 // DB-access guarantees (asserted by module/__tests__/emailRead):
 //   - list (no search) = ONE list_entities_window (facet rendered inline) — no
 //     canonical read, no per-row facet hydrate.
-//   - list (search)    = ONE search_entities_by_name (ids) + ONE
-//     list_facets_for_entities over ONLY those ids — 2 crossings, no N+1.
+//   - list (search)    = ONE search_entities_by_name — the matched rows carry
+//     their own dictionaries, so there is no hydrate crossing at all.
 //   - get  = ONE get_entity_full. batch = K get_entity_full (one per id).
 //
 // Deferred (read-time enrichment, mirrors the telegram module; verified visually
@@ -61,9 +61,7 @@ import {
   type Data,
 } from "./helpers.ts";
 import {
-  ADDRESS_DETAILS,
   ADDRESS_SCHEMA,
-  MESSAGE_DETAILS,
   MESSAGE_SCHEMA,
 } from "../schema.ts";
 
@@ -96,8 +94,8 @@ export class EmailModule {
     const search = (params.search ?? "").trim();
 
     if (search.length > 0) {
-      // Search path: name match returns ids only (no facet); hydrate ONLY the
-      // page's ids in one batch facet read — 2 crossings, no per-row N+1.
+      // Search path: the matched rows already carry their dictionaries, so the
+      // page renders straight off them — ONE crossing, no hydrate.
       const matched = await this.graph.search_entities_by_name({
         query: search,
         schema_ids: [MESSAGE_SCHEMA],
@@ -105,14 +103,10 @@ export class EmailModule {
       });
       const total = matched.length;
       const page = matched.slice(offset, offset + limit);
-      const facets = await this.graph.list_facets_for_entities(page.map((e) => e.id));
-      const byId = new Map<string, Data>();
-      for (const f of facets) {
-        if (f.schema_id === MESSAGE_DETAILS && f.entity_id && !byId.has(f.entity_id)) {
-          byId.set(f.entity_id, f.data as Data);
-        }
-      }
-      const items = page.map((e) => buildListItem(e, byId.get(e.id) ?? {}));
+      // S5: the dictionary rides the entity rows the search returned.
+      const items = page.map((e) =>
+        buildListItem(e, ((e as { properties?: unknown }).properties ?? {}) as Data),
+      );
       return { items, total, limit, offset };
     }
 
@@ -120,12 +114,14 @@ export class EmailModule {
     // `date` column DESC, each row carrying its latest details facet inline.
     const win = await this.graph.list_entities_window({
       schema: MESSAGE_SCHEMA,
-      facet_schema: MESSAGE_DETAILS,
+
       order: [{ field: { entity_field: "date" }, desc: true }],
       limit,
       offset,
     });
-    const items = win.items.map(({ entity, data }) => buildListItem(entity, (data ?? {}) as Data));
+    const items = win.items.map(({ entity }) =>
+      buildListItem(entity, ((entity as { properties?: unknown }).properties ?? {}) as Data),
+    );
     return { items, total: win.total, limit, offset };
   }
 
@@ -175,7 +171,8 @@ export class EmailModule {
     const detail = await this.graph.get_entity_full(id, { links: true });
     if (detail?.entity.schema_id !== MESSAGE_SCHEMA) return null;
     const { entity, facets, links } = detail;
-    const d = (facets.find((f) => f.schema_id === MESSAGE_DETAILS)?.data as Data | undefined) ?? {};
+    // S5: the message DICT is the record; the frozen facet stays the archive.
+    const d = ((entity as { properties?: unknown }).properties ?? {}) as Data;
     const facetSummaries: FacetSummary[] = facets.map((f) => ({
       id: f.id,
       schema_id: f.schema_id,
@@ -320,9 +317,9 @@ export class EmailModule {
           schema_id: ADDRESS_SCHEMA,
           name: lower,
           idx: lower,
-          facets: [
-            { schema_id: ADDRESS_DETAILS, data, external_id: `email:address:${lower}`, confidence: 100 },
-          ],
+          anchor: `email:address:${lower}`,
+          properties: data,
+          facets: [],
         });
         addrSeen.add(key);
       }
@@ -340,16 +337,28 @@ export class EmailModule {
       const remoteId = env.remote_id;
       if (!remoteId) continue;
       const p = env.payload as Data;
+      // S5 (plan §7): the message DICT is the record, minus what the edges
+      // now represent — the attachments array and the three joined recipient
+      // strings. The from/to addresses stay as edges to shared address nodes.
+      const dict: Data = { ...p };
+      delete dict.attachments;
+      delete dict.to_addresses;
+      delete dict.cc_addresses;
+      delete dict.bcc_addresses;
       entities.push({
         key: remoteId,
         schema_id: MESSAGE_SCHEMA,
         name: str(p, "subject") ?? "",
         idx: str(p, "thread_id") ?? undefined,
         date: str(p, "sent_at") ?? undefined,
-        facets: [{ schema_id: MESSAGE_DETAILS, data: p, external_id: remoteId, confidence: 90 }],
+        anchor: remoteId,
+        properties: dict,
+        facets: [],
       });
       const from = lowerAddr(str(p, "from_address"));
-      if (from) addLink(remoteId, addAddress(from, str(p, "from_name")), "sent_from");
+      // S5: authorship is `authored_by` — the relation, not a channel-shaped
+      // kind. `sent_from` retires with this writer.
+      if (from) addLink(remoteId, addAddress(from, str(p, "from_name")), "authored_by");
       for (const r of recipientsOf(p)) {
         addLink(remoteId, addAddress(r, null), "sent_to");
       }
@@ -484,7 +493,7 @@ export class EmailModule {
     if (detail?.entity.schema_id !== MESSAGE_SCHEMA) {
       throw new Error(`Email not found: ${params.email_id}`);
     }
-    const od = (detail.facets.find((f) => f.schema_id === MESSAGE_DETAILS)?.data as Data | undefined) ?? {};
+    const od = ((detail.entity as { properties?: unknown }).properties ?? {}) as Data;
     const sender = str(od, "from_address");
     if (!sender) {
       throw new Error("Cannot determine recipient: email has no sender address");
@@ -665,9 +674,9 @@ export class EmailModule {
         schema_id: ADDRESS_SCHEMA,
         name: a,
         idx: a,
-        facets: [
-          { schema_id: ADDRESS_DETAILS, data: { address: a }, external_id: `email:address:${a}`, confidence: 100 },
-        ],
+        anchor: `email:address:${a}`,
+        properties: { address: a },
+        facets: [],
       })),
       refs: [],
       links: [],
@@ -788,10 +797,10 @@ export class EmailModule {
         idx: lower,
         // S3: the anchor is THE resolver — claimed through the chokepoint on
         // create, so re-ensures and anchor-refs converge on one node.
+        // S5: the address DICT is the record; the facet retired with it.
         anchor: `email:address:${lower}`,
-        facets: [
-          { schema_id: ADDRESS_DETAILS, data, external_id: `email:address:${lower}`, confidence: 100 },
-        ],
+        properties: data,
+        facets: [],
       });
     }
     const r = await this.graph.apply_batch({ entities, refs: [], links: [] });
@@ -970,21 +979,21 @@ export class EmailModule {
             // exists in the graph twice.
             idx: providerThreadId ?? undefined,
             date: now,
-            facets: [{
-              schema_id: MESSAGE_DETAILS,
-              data: facetData,
-              external_id: providerMessageId,
-              confidence: 100,
-            }],
+            // S5: the sent copy is a node with a DICT under the provider's own
+            // id as its anchor — that anchor is what makes the copy arriving
+            // from Sent update THIS node instead of creating a second one.
+            anchor: providerMessageId,
+            properties: facetData,
+            facets: [],
           },
           {
             key: addrKey,
             schema_id: ADDRESS_SCHEMA,
             name: toLower,
             idx: toLower,
-            facets: [
-              { schema_id: ADDRESS_DETAILS, data: { address: toLower }, external_id: `email:address:${toLower}`, confidence: 100 },
-            ],
+            anchor: `email:address:${toLower}`,
+            properties: { address: toLower },
+            facets: [],
           },
         ],
         refs: [],

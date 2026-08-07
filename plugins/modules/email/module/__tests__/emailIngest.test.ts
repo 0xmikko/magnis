@@ -99,21 +99,24 @@ describe("email ingest — apply_batch shape (tst_be_emailingest_001)", () => {
     expect(m1.name).toBe("Report Q3");
     expect(m1.idx).toBe("thread-1");
     expect(m1.date).toBe("2026-03-14T09:00:00Z");
-    const m1Facet0 = m1.facets[0];
-    if (m1Facet0 === undefined) throw new Error("ingest: missing m1 facet[0]");
-    expect(m1Facet0.schema_id).toBe("email.message.details");
-    expect(m1Facet0.external_id).toBe("m1");
+    // S5: the message node is its DICTIONARY under the remote_id anchor —
+    // the details facet retired, and the fields the edges now represent
+    // (attachments, the joined recipient strings) left the dict.
+    expect(m1.facets).toEqual([]);
+    expect(m1.anchor).toBe("m1");
+    expect(m1.properties?.subject).toBe("Report Q3");
+    expect(m1.properties?.attachments).toBeUndefined();
+    expect(m1.properties?.to_addresses).toBeUndefined();
 
-    // address entity carries a stable external_id (idempotent resolve-or-create)
+    // address entity resolves by its chokepoint anchor (idempotent)
     const ceo = addrs.find((a) => a.idx === "ceo@example.com")!;
-    const ceoFacet0 = ceo.facets[0];
-    if (ceoFacet0 === undefined) throw new Error("ingest: missing ceo facet[0]");
-    expect(ceoFacet0.external_id).toBe("email:address:ceo@example.com");
-    expect((ceoFacet0.data as Record<string, unknown>).address).toBe("ceo@example.com");
+    expect(ceo.facets).toEqual([]);
+    expect(ceo.anchor).toBe("email:address:ceo@example.com");
+    expect(ceo.properties?.address).toBe("ceo@example.com");
 
     // links: sent_from (msg→sender) + sent_to (msg→each recipient)
     const links = frag.links ?? [];
-    const m1from = links.filter((l: BatchLinkInput) => l.from_key === "m1" && l.kind === "sent_from");
+    const m1from = links.filter((l: BatchLinkInput) => l.from_key === "m1" && l.kind === "authored_by");
     const m1to = links.filter((l: BatchLinkInput) => l.from_key === "m1" && l.kind === "sent_to");
     expect(m1from).toHaveLength(1);
     const m1from0 = m1from[0];

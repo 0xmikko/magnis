@@ -20,7 +20,6 @@ import type {
   Platform,
   PostContent,
   PostListItem,
-  PostMetrics,
   PostsListParams,
   ProfileIdentity,
   ProfileDetail,
@@ -30,15 +29,7 @@ import type {
   LinkedinFacets,
   SyncEnvelope,
 } from "../types.ts";
-import {
-  AUTHORED_BY,
-  POST,
-  POST_CONTENT,
-  POST_METRICS,
-  PROFILE,
-  PROFILE_IDENTITY,
-  PROFILE_PERSON_LINK,
-} from "../schema.ts";
+import { AUTHORED_BY, IDENTITY, POST, PROFILE } from "../schema.ts";
 import { richPostFields } from "./helpers.ts";
 
 export class LinkedinModule {
@@ -73,28 +64,38 @@ export class LinkedinModule {
       }
       if (entityType === "profile") {
         const identity = payload as unknown as ProfileIdentity;
+        // Urn-only (plan §4): a LinkedIn handle is renameable, so it can never
+        // be an anchor. A profile that arrives without a urn is REJECTED —
+        // there is nothing stable to identify it by, and guessing would mint
+        // a duplicate the day the handle changes.
+        const urn = str(payload, "urn");
+        if (!urn) {
+          dropped.push(remoteId);
+          continue;
+        }
+        const profileAnchor = `linkedin:${urn}`;
         entities.push({
           key: remoteId,
           schema_id: PROFILE,
           name: identity.display_name ?? identity.handle,
-          facets: [
-            { schema_id: PROFILE_IDENTITY, data: payload, external_id: remoteId, confidence: 100 },
-          ],
+          // S5: the profile DICT is the record, under the issuer's own key.
+          anchor: profileAnchor,
+          properties: payload,
+          facets: [],
         });
         if (identity.handle) profileKeyByHandle.set(identity.handle.toLowerCase(), remoteId);
       } else if (entityType === "post") {
         const content = payload as unknown as PostContent;
-        const metrics = (payload.metrics ?? {}) as PostMetrics;
-        const facets = [
-          { schema_id: POST_CONTENT, data: payload, external_id: remoteId, confidence: 100 },
-          { schema_id: POST_METRICS, data: metrics as Record<string, unknown>, external_id: `${remoteId}:metrics`, confidence: 100 },
-        ];
+        // S5: content AND metrics are one dictionary — the metrics arrive
+        // inside the same payload and were only ever split to fit two facets.
         entities.push({
           key: remoteId,
           schema_id: POST,
           name: content.text.slice(0, 80),
           date: content.created_at ?? undefined,
-          facets,
+          anchor: remoteId,
+          properties: payload,
+          facets: [],
         });
       } else {
         if (remoteId) dropped.push(remoteId);
@@ -141,10 +142,12 @@ export class LinkedinModule {
           { platform: "linkedin", handle },
         );
         if (!owner) continue;
+        // S5: `identity` runs hub → channel, so the CONTACT is the from
+        // endpoint — the same edge contacts writes to every other replica.
         await this.graph.add_link({
-          from_id: profileId,
-          to_id: owner.contact_id,
-          kind: PROFILE_PERSON_LINK,
+          from_id: owner.contact_id,
+          to_id: profileId,
+          kind: IDENTITY,
         });
         // CAS rename — only upgrades a handle-placeholder name.
         const displayName = str(payload, "display_name");
@@ -181,8 +184,7 @@ export class LinkedinModule {
     const offset = params.offset ?? 0;
     const win = await this.graph.list_entities_window({
       schema: POST,
-      facet_schema: POST_CONTENT,
-      order: [{ field: { facet_schema: POST_CONTENT, facet_path: "created_at" }, desc: true }],
+      order: [{ field: { property_path: "created_at" }, desc: true }],
       limit,
       offset,
     });
@@ -206,10 +208,7 @@ export class LinkedinModule {
     if (detail?.entity.schema_id !== POST) {
       throw new Error(`linkedin post not found: ${params.id}`);
     }
-    const data =
-      (detail.facets.find((f) => f.schema_id === POST_CONTENT)?.data as
-        | Record<string, unknown>
-        | undefined) ?? {};
+    const data = detail.entity.properties ?? {};
     return {
       id: detail.entity.id,
       platform: (str(data, "platform") as Platform | undefined) ?? null,
@@ -264,10 +263,7 @@ export class LinkedinModule {
     if (detail?.entity.schema_id !== PROFILE) {
       throw new Error(`linkedin profile not found: ${params.id}`);
     }
-    const d =
-      (detail.facets.find((f) => f.schema_id === PROFILE_IDENTITY)?.data as
-        | Record<string, unknown>
-        | undefined) ?? {};
+    const d = detail.entity.properties ?? {};
     const fc = d.follower_count;
     return {
       id: detail.entity.id,
@@ -309,26 +305,12 @@ export class LinkedinModule {
         limit,
         offset,
       });
-      const facets = await this.graph.list_facets_for_entities(page.map((e) => e.id));
-      const latest = new Map<string, { observed_at: string; data: Record<string, unknown> }>();
-      for (const f of facets) {
-        if (f.schema_id !== PROFILE_IDENTITY || !f.entity_id) continue;
-        const cur = latest.get(f.entity_id);
-        if (!cur || f.observed_at > cur.observed_at) {
-          latest.set(f.entity_id, { observed_at: f.observed_at, data: f.data as Record<string, unknown> });
-        }
-      }
-      const items = page.map((e) =>
-        this.profileItem({
-          entity: e,
-          data: latest.get(e.id)?.data ?? {},
-        }),
-      );
+      // S5: the matched rows carry their dictionaries — nothing to hydrate.
+      const items = page.map((e) => this.profileItem({ entity: e, data: null }));
       return { items, total, limit, offset };
     }
     const win = await this.graph.list_entities_window({
       schema: PROFILE,
-      facet_schema: PROFILE_IDENTITY,
       limit,
       offset,
     });
@@ -368,12 +350,11 @@ export class LinkedinModule {
     );
     const win = await this.graph.list_entities_window({
       schema: PROFILE,
-      facet_schema: PROFILE_IDENTITY,
       limit: 1000,
       offset: 0,
     });
     for (const row of win.items) {
-      const h = str((row.data ?? {}) as Record<string, unknown>, "handle");
+      const h = str(row.entity.properties ?? {}, "handle");
       if (h) known.add(h.toLowerCase());
     }
     return tracked
@@ -390,7 +371,7 @@ export class LinkedinModule {
   }
 
   private postItem(row: WindowRow): PostListItem {
-    const d = (row.data ?? {}) as Record<string, unknown>;
+    const d = row.entity.properties ?? {};
     return {
       id: row.entity.id,
       platform: (str(d, "platform") as Platform | undefined) ?? null,
@@ -403,7 +384,7 @@ export class LinkedinModule {
   }
 
   private profileItem(row: WindowRow): ProfileListItem {
-    const d = (row.data ?? {}) as Record<string, unknown>;
+    const d = row.entity.properties ?? {};
     const fc = d.follower_count;
     return {
       id: row.entity.id,

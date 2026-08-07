@@ -1,9 +1,9 @@
 // Meetings sync ingest (@syncHandler) + control (@rpc sync.status /
 // sync.reset). Exercises the module through @magnis/testkit/module (mockGraph +
 // mountModule + a test RpcExecutor). Asserts: snapshot/live upsert via
-// apply_batch (external_id idempotency, confidence 90), the full live
-// trigger.check payload with attendee email.address ids resolved through
-// email.ensure_address, delete, empty-user hard error,
+// apply_batch (anchored on the remote id, attendees as `attendee` edges over
+// refs), the full live trigger.check payload with attendee email.address ids
+// resolved through email.ensure_addresses, delete, empty-user hard error,
 // and the sync_state control surface.
 
 import { describe, expect, it, vi } from "vitest";
@@ -13,7 +13,6 @@ import { MeetingsModule } from "../service.ts";
 import type { MeetingsCanonical, MeetingsFacets, SyncEnvelope } from "../../types.ts";
 
 const CAL = "meetings.calendar_event";
-const CAL_DETAILS = "meetings.calendar_event.details";
 type G = MockGraph<MeetingsFacets, MeetingsCanonical>;
 
 function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
@@ -35,7 +34,9 @@ function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
 
 function makeModule(
   graph: G,
-  execute = vi.fn(async (_m: string, p?: unknown) => ({ id: `addr-${(p as { address: string }).address}` })),
+  execute = vi.fn(async (_m: string, p?: unknown) => ({
+    ids: (p as { items: { address: string }[] }).items.map((i) => `addr-${i.address}`),
+  })),
 ): { mod: MeetingsModule; execute: ReturnType<typeof vi.fn> } {
   const mod = mountModule(MeetingsModule, {
     graph,
@@ -78,9 +79,12 @@ describe("meetings @syncHandler — upsert", () => {
         key: "r2",
         schema_id: CAL,
         name: "Past meeting",
-        facets: [{ schema_id: CAL_DETAILS, data: payload, external_id: "r2", confidence: 90 }],
+        anchor: "r2",
+        properties: payload,
+        facets: [],
       },
     ]);
+    expect(frag.links).toEqual([]);
     expect(res.trigger_checks).toEqual([]);
     expect(res.ok).toBe(true);
   });
@@ -88,7 +92,7 @@ describe("meetings @syncHandler — upsert", () => {
 
 describe("meetings @syncHandler — live envelopes emit a trigger.check", () => {
   it("ensures attendee addresses via email.ensure_address and returns the full payload", async () => {
-    const apply_batch = vi.fn(async () => ({
+    const apply_batch = vi.fn(async (_frag: GraphBatchInput) => ({
       ids: { r5: "m-r5" },
       created: 1,
       updated: 0,
@@ -106,8 +110,24 @@ describe("meetings @syncHandler — live envelopes emit a trigger.check", () => 
       envelopes: [env({ kind: "live", remote_id: "r5", payload })],
     });
 
-    expect(execute).toHaveBeenCalledWith("email.ensure_address", { address: "a@x", display_name: "Alice" });
-    expect(execute).toHaveBeenCalledWith("email.ensure_address", { address: "b@x", display_name: null });
+    expect(execute).toHaveBeenCalledWith("email.ensure_addresses", {
+      items: [{ address: "a@x", display_name: "Alice" }, { address: "b@x", display_name: null }],
+    });
+    // The attendees are EDGES to the shared address nodes, and the invite's
+    // per-event display name rides the edge dictionary.
+    const frag = apply_batch.mock.calls[0]![0] as GraphBatchInput;
+    expect(frag.entities[0]?.properties).toEqual({
+      title: "Standup",
+      starts_at: "2026-07-28T09:00:00Z",
+    });
+    expect(frag.refs).toEqual([
+      { key: "addr:a@x", anchor: "email:address:a@x" },
+      { key: "addr:b@x", anchor: "email:address:b@x" },
+    ]);
+    expect(frag.links).toEqual([
+      { from_key: "r5", to_key: "addr:a@x", kind: "attendee", metadata: { display_name: "Alice" } },
+      { from_key: "r5", to_key: "addr:b@x", kind: "attendee" },
+    ]);
     expect(res.trigger_checks).toEqual([
       {
         type: "trigger.check",

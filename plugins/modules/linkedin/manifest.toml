@@ -1,11 +1,10 @@
 # linkedin — LinkedIn domain module (V8 plugin).
 #
 # Owns the `linkedin.*` graph namespace: profile + post entities and their
-# identity / content / metrics facets for the LinkedIn accounts you track.
-# Ingests the `linkedin` sync surface (provided by the Anysite source
-# connector), links each profile to the matching contact (reads contacts.person,
-# creates the linkedin.profile:contacts.person link), and reads contacts'
-# social-tracking over RPC. Read-only today. Sandboxed V8 isolate; bundled with
+# dictionaries for the LinkedIn accounts you track. Ingests the `linkedin` sync
+# surface (provided by the Anysite source connector), joins each profile to the
+# matching contact with an `identity` edge (reads contacts.person), and reads
+# contacts' social-tracking over RPC. Read-only today. Sandboxed V8 isolate; bundled with
 # the app and installed automatically at boot.
 
 id = "linkedin"
@@ -24,16 +23,10 @@ publisher = "ai.magnis"
 # own:own links, and reads of own schemas need no declaration.
 [permissions]
 read = [ "contacts.person" ]
-links = [ "linkedin.profile:contacts.person" ]
+links = [ "authored_by", "identity" ]
 call = [ "contacts.get_social_tracking_by_handle", "contacts.rename_if_placeholder", "contacts.list_social_tracking" ]
 host = [ "sync_state", "external_id_reads" ]
 
-# The kinds this module OWNS (S2), endpoints as ROLES.
-[[links]]
-kind = "linkedin.post:linkedin.profile"
-from = "content"
-to = "identity_channel"
-
-[[links]]
-kind = "linkedin.profile:contacts.person"
-from = "identity_channel"
+# S5: this module owns no link kinds. Authorship and identity are host-owned
+# RELATIONS (backend/src/services/graph/link_kinds.rs), constrained by the
+# endpoint ROLES its own descriptors declare.

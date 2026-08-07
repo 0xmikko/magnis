@@ -1,10 +1,10 @@
 // tst_plugin_x_ingest — sync ingest builds an idempotent apply_batch
-// (profiles + posts + authored_by link, external_id = remote_id) and read tools
-// map window rows. Doubles come from @magnis/testkit/module (throwing mockGraph
+// (profiles + posts + authored_by link, each node anchored on its remote id)
+// and read tools map window rows. Doubles come from @magnis/testkit/module (throwing mockGraph
 // — a read/ingest path hitting an unarranged op fails loudly).
 import { describe, expect, it, vi } from "vitest";
 import type { GraphBatchInput } from "@magnis/plugin-sdk";
-import { entity, facet, mockGraph, mountModule, windowRow, type MockGraph } from "@magnis/testkit/module";
+import { entity, mockGraph, mountModule, windowRow, type MockGraph } from "@magnis/testkit/module";
 import { XModule } from "../service.ts";
 import type { SyncEnvelope, XCanonical, XFacets } from "../../types.ts";
 
@@ -41,7 +41,7 @@ function ingestGraph(): G {
 }
 
 describe("x ingest", () => {
-  it("tst_plugin_x_ingest_001 builds one apply_batch with profile+post+link, external_id=remote_id", async () => {
+  it("tst_plugin_x_ingest_001 builds one apply_batch with profile+post+link, each node anchored", async () => {
     const graph = ingestGraph();
     const mod = mountX(graph);
 
@@ -77,15 +77,22 @@ describe("x ingest", () => {
 
     const profile = batch.entities.find((e) => e.schema_id === "x.profile")!;
     const post = batch.entities.find((e) => e.schema_id === "x.post")!;
-    expect(profile.facets[0]).toMatchObject({ schema_id: "x.profile.identity", external_id: "x:profile:jack" });
-    expect(post.facets[0]).toMatchObject({ schema_id: "x.post.content", external_id: "x:post:1" });
+    // The dictionary IS the record; X renames handles, never account ids, so
+    // the remote id is the anchor.
+    expect(profile.facets).toEqual([]);
+    expect(profile.anchor).toBe("x:profile:jack");
+    expect(profile.properties).toMatchObject({ handle: "jack", follower_count: 100 });
+    expect(post.facets).toEqual([]);
+    expect(post.anchor).toBe("x:post:1");
+    // content AND metrics in ONE dictionary.
+    expect(post.properties).toMatchObject({ text: "hello world", metrics: { likes: 5 } });
     // authored_by link wired within the page (author_handle "Jack" → profile "jack").
     expect(batch.links).toEqual([
-      { from_key: "x:post:1", to_key: "x:profile:jack", kind: "x.post:x.profile" },
+      { from_key: "x:post:1", to_key: "x:profile:jack", kind: "authored_by" },
     ]);
   });
 
-  it("tst_plugin_x_ingest_002 re-ingest keeps the same external_id (idempotent)", async () => {
+  it("tst_plugin_x_ingest_002 re-ingest keeps the same anchor (idempotent)", async () => {
     const graph = ingestGraph();
     const mod = mountX(graph);
     const e = env("x:post:1", {
@@ -107,13 +114,8 @@ describe("x ingest", () => {
     const firstEntity = (firstCall[0] as GraphBatchInput).entities[0];
     const secondEntity = (secondCall[0] as GraphBatchInput).entities[0];
     if (firstEntity === undefined || secondEntity === undefined) throw new Error("x ingest 002: missing batch entity");
-    const firstFacet = firstEntity.facets[0];
-    const secondFacet = secondEntity.facets[0];
-    if (firstFacet === undefined || secondFacet === undefined) throw new Error("x ingest 002: missing entity facet");
-    const first = firstFacet.external_id;
-    const second = secondFacet.external_id;
-    expect(first).toBe("x:post:1");
-    expect(second).toBe("x:post:1"); // same id → host upserts, no duplicate entity
+    expect(firstEntity.anchor).toBe("x:post:1");
+    expect(secondEntity.anchor).toBe("x:post:1"); // same anchor → upsert, no duplicate
   });
 
   it("tst_plugin_x_ingest_003 posts.list maps window rows", async () => {
@@ -123,13 +125,19 @@ describe("x ingest", () => {
     if (listWindow === undefined) throw new Error("x ingest 003: missing list_entities_window spy");
     listWindow.mockResolvedValue({
       items: [
-        windowRow(entity("p1", "hello", { schema_id: "x.post" }), {
-          platform: "x",
-          author_handle: "jack",
-          text: "hello",
-          created_at: "t",
-          url: null,
-        }),
+        windowRow(
+          entity("p1", "hello", {
+            schema_id: "x.post",
+            properties: {
+              platform: "x",
+              author_handle: "jack",
+              text: "hello",
+              created_at: "t",
+              url: null,
+            },
+          }),
+          null,
+        ),
       ],
       total: 1,
     });
@@ -142,7 +150,7 @@ describe("x ingest", () => {
 });
 
 // tst_ingest_link:
-// a tracked-handle profile gets exactly one profile→person identity link and
+// a tracked-handle profile gets exactly one person→profile identity edge and
 // the placeholder-name CAS upgrade; an untracked handle gets neither.
 describe("x ingest identity link (tst_ingest_link)", () => {
   function linkGraph(): G {
@@ -180,10 +188,11 @@ describe("x ingest identity link (tst_ingest_link)", () => {
     await mod.ingest({ envelopes: [profileEnv] });
 
     expect(graph.spies.add_link).toHaveBeenCalledTimes(1);
+    // `identity` runs hub → channel: the contact is the FROM endpoint.
     expect(graph.spies.add_link).toHaveBeenCalledWith({
-      from_id: "prof-1",
-      to_id: "c1",
-      kind: "x.profile:contacts.person",
+      from_id: "c1",
+      to_id: "prof-1",
+      kind: "identity",
     });
     expect(execute).toHaveBeenCalledWith("contacts.rename_if_placeholder", {
       id: "c1",
@@ -218,22 +227,17 @@ describe("x ingest identity link (tst_ingest_link)", () => {
 // name — previously additionalProperties:false rejected the call and the
 // standard search box silently did nothing on this module.
 describe("x profiles.list search", () => {
-  it("search → search_entities_by_name, facets hydrated, BACKEND order preserved", async () => {
+  it("search → search_entities_by_name, dictionaries ride the rows, BACKEND order preserved", async () => {
     const graph = mockGraph<XFacets, XCanonical>({
       search_entities_by_name: () =>
         Promise.resolve([
-          entity("e2", "Bob Builder", { schema_id: "x.profile" }),
-          entity("e1", "Ann Doe", { schema_id: "x.profile" }),
-        ]),
-      list_facets_for_entities: () =>
-        Promise.resolve([
-          facet("f1", "x.profile.identity", { handle: "ann", follower_count: 5, avatar_url: "https://a/1.jpg" }, {
-            entity_id: "e1",
-            observed_at: "2026-01-02T00:00:00Z",
+          entity("e2", "Bob Builder", {
+            schema_id: "x.profile",
+            properties: { handle: "bob", follower_count: 7, avatar_url: null },
           }),
-          facet("f2", "x.profile.identity", { handle: "bob", follower_count: 7, avatar_url: null }, {
-            entity_id: "e2",
-            observed_at: "2026-01-02T00:00:00Z",
+          entity("e1", "Ann Doe", {
+            schema_id: "x.profile",
+            properties: { handle: "ann", follower_count: 5, avatar_url: "https://a/1.jpg" },
           }),
         ]),
     });
@@ -259,7 +263,6 @@ describe("x profiles.list search pagination", () => {
     return mockGraph<XFacets, XCanonical>({
       search_entities_by_name: (p) =>
         Promise.resolve(dataset.slice(0, p.limit).map((d) => entity(d.id, d.name, { schema_id: "x.profile" }))),
-      list_facets_for_entities: () => Promise.resolve([]),
     });
   }
   const dataset = [
