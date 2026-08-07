@@ -68,7 +68,16 @@ export function TriggerCard(props: EntityRendererProps): JSX.Element {
   const { expanded } = useContext(ExpansionContext);
   const watches = useResolvedWatches(expanded ? detail?.watched_entities : undefined, runtime);
   const watchedNames = detail?.watched_entities.map((e) => e.name ?? "?") ?? [];
-  const subtitle = watchedNames.length > 0 ? `Watches ${watchedNames.join(", ")}` : undefined;
+  // INV-UI-1 (plan Stage 5): a scheduled trigger's "when" IS its cron — a
+  // watch-less scheduled trigger must never render as a card with no
+  // subtitle at all.
+  const schedule = detail?.schedule ?? null;
+  const scheduleLabel = schedule ? `${schedule.cron} (${schedule.timezone})` : null;
+  const subtitle = scheduleLabel
+    ? `Schedule ${scheduleLabel}`
+    : watchedNames.length > 0
+      ? `Watches ${watchedNames.join(", ")}`
+      : undefined;
 
   return (
     <BaseEntityCard {...props}>
@@ -88,6 +97,12 @@ export function TriggerCard(props: EntityRendererProps): JSX.Element {
             data-testid={entityId ? `trigger-card-${entityId}-expanded` : undefined}
             className="mt-2 flex flex-col gap-1 text-[11px] text-content-tertiary"
           >
+            {scheduleLabel && (
+              <div className="flex gap-2">
+                <span className="w-20 shrink-0 text-content-tertiary">Schedule</span>
+                <span className="min-w-0 flex-1 break-words text-content">{scheduleLabel}</span>
+              </div>
+            )}
             {watches.length > 0 && (
               <div className="flex gap-2">
                 <span className="w-20 shrink-0 text-content-tertiary">Watches</span>

@@ -53,6 +53,24 @@
       "type": "string",
       "format": "date-time",
       "x-magnis-time": "dataset_relative"
+    },
+    "schedule": {
+      "type": "object",
+      "required": ["cron", "timezone", "activated_at"],
+      "additionalProperties": false,
+      "properties": {
+        "cron": {
+          "type": "string"
+        },
+        "timezone": {
+          "type": "string"
+        },
+        "activated_at": {
+          "type": "string",
+          "format": "date-time",
+          "x-magnis-time": "dataset_relative"
+        }
+      }
     }
   }
 }

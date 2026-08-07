@@ -34,6 +34,46 @@ function withQuery(node: JSX.Element): JSX.Element {
   return <QueryClientProvider client={client}>{node}</QueryClientProvider>;
 }
 
+/**
+ * @layer: fe_agent
+ * @test-id: tst_fe_agent_triggers_detail_002
+ *
+ * A scheduled trigger renders its cron + timezone instead of the dead
+ * `event_kinds` "When" row; a watched-only trigger keeps the "When" row.
+ */
+describe("tst_fe_agent_triggers_detail_002 — schedule rendering", () => {
+  it("shows cron + timezone for a scheduled trigger and drops the When row", async () => {
+    const scheduled = {
+      ...TRIGGER_DETAIL,
+      watched_entities: [],
+      schedule: {
+        cron: "0 9 * * MON-FRI",
+        timezone: "Europe/Belgrade",
+        activated_at: "2026-08-07T10:00:00Z",
+      },
+    };
+    const rpc = vi.fn((method: string) => {
+      if (method === "triggers.get") return Promise.resolve(scheduled);
+      return Promise.reject(new Error(`unexpected RPC: ${method}`));
+    });
+    const runtime = {
+      transport: { rpc },
+      agent: { resolveEntityRenderer: () => null },
+      modules: { get: () => undefined },
+    } as unknown as AppRuntime;
+
+    const { findByText, queryByText } = render(
+      withQuery(
+        <TriggerDetailPanel entityId="trigger-1" moduleId="triggers" runtime={runtime} />,
+      ),
+    );
+
+    expect(await findByText("0 9 * * MON-FRI")).toBeTruthy();
+    expect(await findByText("Europe/Belgrade")).toBeTruthy();
+    expect(queryByText("entity.created")).toBeNull();
+  });
+});
+
 describe("tst_fe_agent_triggers_detail_001 — canonical watched entity rows", () => {
   it("renders distinct same-name watches and the trigger configuration", async () => {
     const rpc = vi.fn((method: string, params: unknown) => {
