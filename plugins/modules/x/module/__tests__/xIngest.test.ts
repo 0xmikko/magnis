@@ -79,10 +79,8 @@ describe("x ingest", () => {
     const post = batch.entities.find((e) => e.schema_id === "x.post")!;
     // The dictionary IS the record; X renames handles, never account ids, so
     // the remote id is the anchor.
-    expect(profile.facets).toEqual([]);
     expect(profile.anchor).toBe("x:profile:jack");
     expect(profile.properties).toMatchObject({ handle: "jack", follower_count: 100 });
-    expect(post.facets).toEqual([]);
     expect(post.anchor).toBe("x:post:1");
     // content AND metrics in ONE dictionary.
     expect(post.properties).toMatchObject({ text: "hello world", metrics: { likes: 5 } });

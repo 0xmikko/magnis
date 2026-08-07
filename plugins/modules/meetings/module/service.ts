@@ -417,7 +417,6 @@ export class MeetingsModule {
       anchor: remoteId,
       properties: dict,
       confidence: 90,
-      facets: [],
     };
     const addressIds = await this.ensureAddresses(attendees);
     const refs: BatchRefInput[] = [];

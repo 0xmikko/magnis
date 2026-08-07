@@ -3,7 +3,7 @@
 // detect_relevance_tier) so list/detail output matches pre-migration.
 
 import type { FacetRecord, RawEntity } from "@magnis/plugin-sdk";
-import type { ContactCanonical, ContactListItem } from "../types.ts";
+import type { ContactListItem } from "../types.ts";
 
 const AVATAR_COLORS = ["orange", "blue", "green", "red", "purple", "pink"];
 
@@ -44,10 +44,6 @@ export function pickAvatarColor(id: string): string {
   return color;
 }
 
-function canonicalString(map: Partial<ContactCanonical>, key: keyof ContactCanonical): string | null {
-  const v = map[key];
-  return typeof v === "string" && v.length > 0 ? v : null;
-}
 
 /// Relevance tier read directly from facet data (canonical resolution
 /// is skipped during bulk ingest), mirroring detect_relevance_tier.
@@ -60,46 +56,61 @@ export function detectRelevanceTier(facets: FacetRecord[]): string | null {
   return null;
 }
 
-/// Channels inferred from facet schema_ids, mirroring detect_channels.
-export function detectChannels(facets: FacetRecord[]): string[] {
+
+/// The hub's channels, read off its `identity` edges (S6): a channel IS a
+/// node the hub reaches, so the edge set is the answer — no facet schema-id
+/// sniffing, and a channel the hub never linked cannot appear.
+function dictString(dict: Readonly<Record<string, unknown>>, key: string): string | null {
+  const v = dict[key];
+  return typeof v === "string" && v.length > 0 ? v : null;
+}
+
+export function channelsOf(identityNeighbours: readonly RawEntity[]): string[] {
   const out = new Set<string>();
-  for (const f of facets) {
-    const s = f.schema_id;
-    if (s.startsWith("contacts.identity.telegram") || s.startsWith("telegram.")) out.add("Telegram");
-    else if (s.startsWith("contacts.identity.email") || s.includes("email")) out.add("Email");
-    else if (s.startsWith("contacts.identity.slack")) out.add("Slack");
-    else if (s.startsWith("contacts.identity.zoom")) out.add("Zoom");
+  for (const n of identityNeighbours) {
+    if (n.schema_id === "email.address") out.add("Email");
+    else if (n.schema_id.startsWith("telegram.")) out.add("Telegram");
+    else if (n.schema_id === "x.profile") out.add("X");
+    else if (n.schema_id === "linkedin.profile") out.add("LinkedIn");
   }
   return [...out].sort();
 }
 
-// Pure list-item shaping from an entity + its canonical map + ALL its facets
-// (channels/relevance_tier are read across facet schemas). The hot list/get
-// paths fetch canonical (list_canonical_for_entities) and facets
-// (list_facets_for_entities) in two batches and pass them here — no per-row
-// graph access (graph-read-api adoption). email/phone/role/company come from the
-// canonical map (collection-merged for emails/phones), reproduced exactly by
-// the batch op, NOT from a latest-facet window.
+// Pure list-item shaping from an entity, its `identity` neighbours and the
+// frozen facets that still hold the telegram relevance tier. S6: name, phone,
+// role and company come from the hub's own DICTIONARY (one writer, nothing to
+// arbitrate); the email is the address node an identity edge reaches. The hot
+// list path batches the edges and the tier facets — no per-row graph access.
 export function buildListItem(
   entity: RawEntity & { created_at?: string; is_pinned?: boolean | null },
-  canonical: Partial<ContactCanonical>,
+  identityNeighbours: readonly RawEntity[],
   facets: FacetRecord[],
 ): ContactListItem {
+  const dict = entity.properties ?? {};
   const name =
-    entity.name && entity.name.length > 0
-      ? entity.name
-      : (canonicalString(canonical, "person.full_name") ?? "Unknown");
+    entity.name && entity.name.length > 0 ? entity.name : (dictString(dict, "name") ?? "Unknown");
+  const address = identityNeighbours.find((n) => n.schema_id === "email.address");
+  const phones = dict.phones;
+  const phone = Array.isArray(phones)
+    ? (phones
+        .map((p) => (p && typeof p === "object" ? (p as Record<string, unknown>).phone : null))
+        .find((v): v is string => typeof v === "string" && v.length > 0) ?? null)
+    : null;
   return {
     id: entity.id,
     schema_id: entity.schema_id,
     name,
-    email: canonicalString(canonical, "person.email"),
-    phone: canonicalString(canonical, "person.phone"),
-    role: canonicalString(canonical, "person.role"),
-    company: canonicalString(canonical, "person.company"),
-    channels: detectChannels(facets),
+    email: address ? (dictString(address.properties ?? {}, "address") ?? address.name) : null,
+    phone,
+    role: dictString(dict, "role"),
+    company: dictString(dict, "company"),
+    channels: channelsOf(identityNeighbours),
     avatar_color: pickAvatarColor(entity.id),
     initials: computeInitials(name),
+    // The telegram relevance tier is the one card field the property graph has
+    // no home for yet: it describes how the hub knows a telegram account, and
+    // S4 folded the facet that carried it without a destination. Until that
+    // lands it is read from the frozen archive, where it still is.
     relevance_tier: detectRelevanceTier(facets),
     created_at: entity.created_at ?? new Date(0).toISOString(),
     is_pinned: entity.is_pinned ?? null,
@@ -135,27 +146,29 @@ export function replicaDict(p: {
   return d;
 }
 
-/** The card's channel badges, composed (S3 §5.1): an email channel when an
- * address node is linked, a phone channel from the composed phone section,
- * x / linkedin from the hub's tracking entries, telegram from the frozen
- * facet archive until the telegram replica lands (S4). */
+/** The card's channel badges, composed (S3 §5.1 / S6): an email channel when
+ * an address node is linked, a phone channel from the composed phone section,
+ * x / linkedin from the hub's tracking entries, and every replica the hub
+ * reaches over `identity` — telegram included, now that the account replica
+ * exists. Nothing reads a facet schema id to guess a channel any more. */
 export function composeChannels(
   curated: Record<string, unknown>,
   hasEmail: boolean,
   replicas: { schema_id: string }[],
-  facets: readonly FacetRecord[],
 ): string[] {
   const channels = new Set<string>();
   if (hasEmail) channels.add("email");
   if (Array.isArray(curated.phones) && curated.phones.length > 0) channels.add("phone");
   for (const r of replicas) {
     if (r.schema_id === "contacts.google_contact") channels.add("google");
+    else if (r.schema_id.startsWith("telegram.")) channels.add("telegram");
+    else if (r.schema_id === "x.profile") channels.add("x");
+    else if (r.schema_id === "linkedin.profile") channels.add("linkedin");
   }
   if (Array.isArray(curated.tracking)) {
     for (const t of curated.tracking as { platform?: unknown; enabled?: unknown }[]) {
       if (t.enabled === true && typeof t.platform === "string") channels.add(t.platform);
     }
   }
-  for (const c of detectChannels([...facets])) channels.add(c);
   return [...channels].sort();
 }

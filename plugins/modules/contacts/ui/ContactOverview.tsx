@@ -1,10 +1,10 @@
 /**
  * Two-column "Overview" tab for a contact:
  *   - left:  ContactInfoColumn — emails / phones / slack / birthday
- *   - right: Description (markdown facet `contacts.description`)
+ *   - right: Description (the hub dictionary's `description` key)
  *
- * Composes the same `useEntityFacet` hook the standalone Description
- * tab used, so the description content is the SAME facet (no schema
+ * Composes the same `useEntityProperty` hook the standalone Description
+ * tab uses, so the description content is the SAME key (no schema
  * drift). When the user types in the right column the
  * 800ms-debounced save fires the same `graph.facet.attach` upsert as
  * before — switching tab structure is a pure UI change.
@@ -19,13 +19,12 @@ import type { JSX } from "react";
 import { Icon, IconButton, Stack, Text } from "@magnis/host/ui";
 import { MarkdownEditor } from "@magnis/host/markdown";
 import { useEditorMentionSuggestion } from "@magnis/host/markdown";
-import { useEntityFacet } from "@magnis/host/base";
+import { useEntityProperty } from "@magnis/host/base";
 import type { FacetSummary } from "@magnis/host/base";
 
 import { ContactInfoColumn } from "./ContactInfoColumn";
 import { useContactDetailQuery } from "./queries";
 
-const DESCRIPTION_SCHEMA_ID = "contacts.description";
 
 export interface ContactOverviewProps {
   readonly entityId: string;
@@ -55,8 +54,8 @@ export function ContactOverview({
 }
 
 function DescriptionPanel({ entityId }: { readonly entityId: string }): JSX.Element {
-  const description = useEntityFacet(entityId, DESCRIPTION_SCHEMA_ID);
-  const body = (description.data?.body as string | undefined) ?? "";
+  const description = useEntityProperty(entityId, "description");
+  const body = description.value;
   // @-mention suggestion plumbing — same hook NoteDetail and
   // EntityDetailTabs.DescriptionTab use post-MAG-34 so the editor
   // behaves identically across all surfaces.
@@ -79,7 +78,7 @@ function DescriptionPanel({ entityId }: { readonly entityId: string }): JSX.Elem
 
   const handleChange = useCallback(
     (markdown: string) => {
-      description.save({ body: markdown });
+      description.save(markdown);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [description.save],

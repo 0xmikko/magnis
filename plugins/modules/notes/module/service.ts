@@ -122,8 +122,11 @@ export class NotesModule {
     }
     const e = detail.entity;
     const data = this.contentOf(detail);
-    const canonical = await this.graph.get_canonical(e.id, [NOTE]);
-    const pinned = (canonical["note.pinned"] as boolean | null) ?? data.pinned ?? false;
+    // S6: the note's dictionary is the record — nothing resolves into
+    // canonical any more, and the DTO keeps the field only until the wire
+    // shape drops it.
+    const canonical = {};
+    const pinned = data.pinned ?? false;
 
     // Resolve link neighbours via ONE get_entities batch (user-scoped →
     // drops non-owned targets, same visibility rule as the old per-link
@@ -160,7 +163,7 @@ export class NotesModule {
       facets: detail.facets,
       linked_entities: linked,
       created_at: e.created_at ?? new Date(0).toISOString(),
-      updated_at: data.updated_at ?? (canonical["note.updated_at"] as string | null) ?? null,
+      updated_at: data.updated_at ?? null,
     };
   }
 
@@ -410,7 +413,7 @@ export class NotesModule {
       preview: previewFromBody(data.body ?? ""),
       pinned: (canonical["note.pinned"] as boolean | null) ?? data.pinned ?? false,
       created_at: e.created_at ?? new Date(0).toISOString(),
-      updated_at: data.updated_at ?? (canonical["note.updated_at"] as string | null) ?? null,
+      updated_at: data.updated_at ?? null,
       is_pinned: e.is_pinned ?? null,
     };
   }

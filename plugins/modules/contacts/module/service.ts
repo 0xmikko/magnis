@@ -148,19 +148,20 @@ export class ContactsModule {
       total = page.total;
     }
 
-    // Hydrate the page in TWO batch reads (no per-row N+1): canonical supplies
-    // name/email/phone/role/company (collection-merged for emails/phones, so a
-    // window cannot reproduce them — the batch op returns the same map
-    // get_canonical does); facets supply channels + relevance_tier.
+    // S6: the page hydrates from the hub's own DICTIONARY (it rides the rows)
+    // plus its `identity` EDGES — the email and the channel badges are nodes
+    // the hub reaches, so the edges are the answer. Two batch reads for the
+    // whole page, no per-row N+1. The frozen facets stay only for the one
+    // field the property graph has no home for yet (the telegram tier).
     const ids = rows.map((e) => e.id);
-    const canonById = await this.canonicalByEntity(ids);
+    const identityById = await this.identityNeighboursByEntity(ids);
     // The paging `filter` closure above may have populated prefetchedFacets, but
     // TS control-flow narrows it back to `null` here (the assignment lives in a
     // deferred callback), so widen before the nullish fallback.
     const facetsById =
       (prefetchedFacets as Map<string, FacetRecord[]> | null) ?? (await this.facetsByEntity(ids));
     const items = rows.map((e) =>
-      buildListItem(e, canonById.get(e.id) ?? {}, facetsById.get(e.id) ?? []),
+      buildListItem(e, identityById.get(e.id) ?? [], facetsById.get(e.id) ?? []),
     );
     return { items, total, limit, offset };
   }
@@ -183,12 +184,10 @@ export class ContactsModule {
       throw new Error(`contact not found: ${params.id}`);
     }
     const { entity: e, links } = detail;
-    // ALL facets (get_entity_full dedups to latest-per-schema, which would drop
-    // the collection email/phone facets channels/relevance_tier + the DTO rely
-    // on). One fetch for a single entity — not the hot list path.
+    // The frozen facets stay in the DTO (the detail view still ships them as
+    // the archive) and carry the one field the property graph has no home for
+    // yet — the telegram relevance tier. One fetch for a single entity.
     const facets = await this.graph.list_facets_for_entity(e.id);
-    const canonical = await this.graph.get_canonical(e.id, [CONTACT]);
-    const base = buildListItem(e, canonical, facets);
 
     const linked: LinkedEntitySummary[] = [];
     const neighbours = new Map<string, RawEntity & { created_at?: string }>();
@@ -210,6 +209,14 @@ export class ContactsModule {
         });
       }
     }
+
+    // S6: the base card reads the hub's dictionary plus the identity
+    // neighbours the detail already resolved — no canonical read.
+    const identityNeighbours = links
+      .filter((l) => l.kind === "identity" && l.from_id === e.id)
+      .map((l) => neighbours.get(l.to_id))
+      .filter((n): n is RawEntity & { created_at?: string } => n !== undefined);
+    const base = buildListItem(e, identityNeighbours, facets);
 
     // ── S3 (§5.1): the card is composed at read time ────────────────────
     // Curated claims = the hub's dictionary. Source claims = the replica
@@ -282,10 +289,13 @@ export class ContactsModule {
         base.role ?? (typeof firstOrg?.title === "string" ? firstOrg.title : null),
       company:
         base.company ?? (typeof firstOrg?.name === "string" ? firstOrg.name : null),
-      channels: composeChannels(curated, emails.length > 0, replicas, facets),
+      channels: composeChannels(curated, emails.length > 0, replicas),
       avatar_color: pickAvatarColor(e.id),
       initials: computeInitials(base.name),
-      canonical,
+      // S6: the canonical block is empty by construction — nothing resolves
+      // into it any more, and the DTO keeps the field only until the wire
+      // shape drops it.
+      canonical: {},
       facets,
       linked_entities: linked,
       created_at: base.created_at,
@@ -297,13 +307,25 @@ export class ContactsModule {
   }
 
   // ── read helpers (batch hydration + single-entity write-path shaping) ──
-  private async canonicalByEntity(ids: string[]): Promise<Map<string, Partial<ContactCanonical>>> {
-    const out = new Map<string, Partial<ContactCanonical>>();
-    for (const c of await this.graph.list_canonical_for_entities(ids)) {
-      if (!c.entity_id) continue;
-      const m = (out.get(c.entity_id) ?? {}) as Record<string, unknown>;
-      m[c.key] = c.value;
-      out.set(c.entity_id, m);
+  /// Every hub's `identity` neighbours for a whole page: ONE batch edge read
+  /// plus ONE batch entity read (S6). The channels and the email address are
+  /// nodes the hub reaches, so a card cannot be built without them.
+  private async identityNeighboursByEntity(ids: string[]): Promise<Map<string, RawEntity[]>> {
+    const out = new Map<string, RawEntity[]>();
+    if (ids.length === 0) return out;
+    const owned = new Set(ids);
+    const edges = (await this.graph.list_links_for_entities(ids)).filter(
+      (l) => l.kind === "identity" && owned.has(l.from_id),
+    );
+    if (edges.length === 0) return out;
+    const targets = await this.graph.get_entities([...new Set(edges.map((l) => l.to_id))]);
+    const byId = new Map(targets.map((t) => [t.id, t]));
+    for (const edge of edges) {
+      const target = byId.get(edge.to_id);
+      if (!target) continue;
+      const arr = out.get(edge.from_id) ?? [];
+      arr.push(target);
+      out.set(edge.from_id, arr);
     }
     return out;
   }
@@ -320,14 +342,20 @@ export class ContactsModule {
   }
 
   // Single-entity list-item shaping for the WRITE paths (create/update return
-  // values) — one canonical + one facet read for that entity, then the pure
-  // builder. Not the hot read path (no N+1 loop).
+  // values) — the node it just wrote, its identity edges and the frozen tier
+  // facets. Not the hot read path (no N+1 loop).
   private async listItemFor(
     entity: { id: string; schema_id: string; name: string; created_at?: string; is_pinned?: boolean | null },
   ): Promise<ContactListItem> {
-    const canonical = await this.graph.get_canonical(entity.id, [CONTACT]);
+    const fresh = await this.graph.get_entity(entity.id);
+    const node = fresh ?? { ...entity, properties: {} };
+    const identity = await this.identityNeighboursByEntity([entity.id]);
     const facets = await this.graph.list_facets_for_entity(entity.id);
-    return buildListItem(entity, canonical, facets);
+    return buildListItem(
+      { ...node, ...entity, properties: node.properties ?? {} },
+      identity.get(entity.id) ?? [],
+      facets,
+    );
   }
 
   // Mirrors the native ContactsModuleController::create_single_contact
@@ -749,7 +777,6 @@ export class ContactsModule {
         idx: name.toLowerCase() || undefined,
         anchor: remoteId,
         properties: replicaDict(p),
-        facets: [],
       };
     });
     const batch = await this.graph.apply_batch({ entities, refs: [], links: [] });

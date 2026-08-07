@@ -1,10 +1,9 @@
 // Contacts read surface — shape parity + DB-access guarantees after the
 // graph-read-api adoption. list keeps the page query (list_entities order idx /
 // search_entities_by_name) but hydrates the page with TWO batch reads —
-// list_canonical_for_entities (email/phone/role/company, collection-merged) AND
+// the hub DICTIONARY + its identity edges (email/phone/role/company) AND
 // list_facets_for_entities (channels + relevance_tier) — instead of the old
-// per-row get_canonical + list_facets_for_entity 2N+1. get uses get_entity_full
-// + one get_canonical + one get_entities batch. Mirrors
+// per-row reads. get uses get_entity_full + one get_entities batch. Mirrors
 // companies/__tests__/companiesRead.test.ts. tst_be_contactsread_001 (shape) +
 // tst_be_contactsdb_001 (op-counts).
 //
@@ -40,10 +39,9 @@ function readGraph(): G {
     list_entities: () => Promise.resolve({ items: [], total: 0 }),
     list_entities_window: () => Promise.resolve({ items: [], total: 0 }),
     search_entities_by_name: () => Promise.resolve([]),
-    list_canonical_for_entities: () => Promise.resolve([]),
+    list_links_for_entities: () => Promise.resolve([]),
     list_facets_for_entities: () => Promise.resolve([]),
     get_entity_full: () => Promise.resolve(null),
-    get_canonical: () => Promise.resolve({}),
     get_entities: () => Promise.resolve([]),
     list_facets_for_entity: () => Promise.resolve([]),
   });
@@ -57,24 +55,30 @@ describe("contacts read — shape parity (tst_be_contactsread_001)", () => {
     mod = mountModule(ContactsModule, { graph, ctx: { extension_id: "contacts" } }).module;
   });
 
-  it("F1 list builds items from batch canonical (email/phone/role/company) + batch facets (channels/tier)", async () => {
+  it("F1 list builds items from the hub DICTIONARY + its identity EDGES", async () => {
     spy(graph, "list_entities_window").mockResolvedValue({
       items: [
-        windowRow(entity("c1", "Alice Smith", { schema_id: SCHEMA })),
+        windowRow(
+          entity("c1", "Alice Smith", {
+            schema_id: SCHEMA,
+            properties: { role: "CEO", phones: [{ phone: "+1 555", is_primary: true }] },
+          }),
+        ),
         windowRow(entity("c2", "Bob", { schema_id: SCHEMA })),
       ],
       total: 2,
     });
-    spy(graph, "list_canonical_for_entities").mockResolvedValue([
-      canonical("c1", "person.full_name", "Alice Smith"),
-      canonical("c1", "person.email", "canon@x.com"),
-      canonical("c1", "person.role", "CEO"),
-      // c2 has NO singular person.email mapped → item email stays null
+    // c1 reaches an address node over `identity`; c2 reaches nothing.
+    spy(graph, "list_links_for_entities").mockResolvedValue([
+      { id: "l1", from_id: "c1", to_id: "addr-1", kind: "identity" },
+    ]);
+    spy(graph, "get_entities").mockResolvedValue([
+      entity("addr-1", "canon@x.com", {
+        schema_id: "email.address",
+        properties: { address: "canon@x.com" },
+      }),
     ]);
     spy(graph, "list_facets_for_entities").mockResolvedValue([
-      // two email facets on c1 with DIFFERENT values — must NOT drive the item
-      facet("fa", "contacts.person.email", { email: "facet-a@x.com" }, { entity_id: "c1" }),
-      facet("fb", "contacts.person.email", { email: "facet-b@x.com" }, { entity_id: "c1" }),
       facet("fc", "contacts.person.profile", { relevance_tier: "core" }, { entity_id: "c2" }),
     ]);
 
@@ -84,13 +88,15 @@ describe("contacts read — shape parity (tst_be_contactsread_001)", () => {
     const b = page.items[1];
     if (a === undefined || b === undefined) throw new Error("F1: expected two items");
     expect(a.name).toBe("Alice Smith");
-    expect(a.email).toBe("canon@x.com"); // from CANONICAL, not the email facets
-    expect(a.role).toBe("CEO");
-    expect(a.channels).toContain("Email"); // channel detected from the email facets
+    expect(a.email).toBe("canon@x.com"); // the address node the EDGE reaches
+    expect(a.role).toBe("CEO"); // the hub's dictionary
+    expect(a.phone).toBe("+1 555");
+    expect(a.channels).toContain("Email"); // a channel IS a linked node
     expect(b.name).toBe("Bob");
-    expect(b.email).toBeNull(); // person.email unmapped → null (parity, not facet)
+    expect(b.email).toBeNull(); // no identity edge → no address
     expect(b.phone).toBeNull();
     expect(b.company).toBeNull();
+    expect(b.channels).toEqual([]);
   });
 
   // ── Tier visibility (bug fix: hide Telegram group-only co-members) ──
@@ -162,31 +168,31 @@ describe("contacts read — shape parity (tst_be_contactsread_001)", () => {
 
   it("F3 get returns a ContactDetailView; neighbours via one get_entities batch, non-owned dropped", async () => {
     spy(graph, "get_entity_full").mockResolvedValue({
-      entity: entity("c1", "Alice", { schema_id: SCHEMA, created_at: "2026-01-01T00:00:00Z" }),
-      facets: [],
+      entity: entity("c1", "Alice", {
+        schema_id: SCHEMA,
+        created_at: "2026-01-01T00:00:00Z",
+        properties: { company: "Acme" },
+      }),
       links: [
         { id: "l1", from_id: "c1", to_id: "co1", kind: "works_at" },
         { id: "l2", from_id: "c1", to_id: "secret", kind: "works_at" }, // non-owned → dropped
+        { id: "l3", from_id: "c1", to_id: "tg-1", kind: "identity" },
       ],
-    });
-    // channels come from the ALL-facets read (list_facets_for_entity)
-    spy(graph, "list_facets_for_entity").mockResolvedValue([
-      facet("ft", "contacts.identity.telegram", { username: "alice" }, { entity_id: "c1" }),
-    ]);
-    spy(graph, "get_canonical").mockResolvedValue({
-      "person.full_name": "Alice",
-      "person.company": "Acme",
     });
     spy(graph, "get_entities").mockResolvedValue([
       entity("co1", "Acme", { schema_id: "companies.company" }),
+      entity("tg-1", "Alice", { schema_id: "telegram.account" }),
     ]);
 
     const view = await mod.get({ id: "c1" });
     expect(view.name).toBe("Alice");
     expect(view.company).toBe("Acme");
-    expect(view.channels).toContain("Telegram");
-    expect(view.canonical).toMatchObject({ "person.company": "Acme" });
-    expect(view.linked_entities.map((l) => l.id)).toEqual(["co1"]); // non-owned 'secret' dropped
+    // S6: a channel IS a node the hub reaches over `identity`.
+    expect(view.channels).toContain("telegram");
+    expect(view.canonical).toEqual({});
+    // Every owned neighbour is a Context row — the company and the telegram
+    // account the identity edge reaches; the non-owned 'secret' is dropped.
+    expect(view.linked_entities.map((l) => l.id)).toEqual(["co1", "tg-1"]);
     expect(graph.spies.get_entities).toHaveBeenCalledTimes(1);
   });
 
@@ -204,38 +210,46 @@ describe("contacts read — DB-access guarantees (tst_be_contactsdb_001)", () =>
     mod = mountModule(ContactsModule, { graph, ctx: { extension_id: "contacts" } }).module;
   });
 
-  it("list (no search, default) = 1 list_entities_window + 1 batch canonical + 1 batch facets, 0 per-row reads", async () => {
-    spy(graph, "list_entities_window").mockResolvedValue({ items: [], total: 0 });
+  it("list (no search, default) = 1 window + 1 batch edges + 1 batch facets, 0 canonical, 0 per-row reads", async () => {
+    spy(graph, "list_entities_window").mockResolvedValue({
+      items: [windowRow(entity("c1", "A", { schema_id: SCHEMA }))],
+      total: 1,
+    });
     await mod.list({});
     expect(graph.spies.list_entities_window).toHaveBeenCalledTimes(1);
     expect(graph.spies.list_entities).toHaveBeenCalledTimes(0);
-    expect(graph.spies.list_canonical_for_entities).toHaveBeenCalledTimes(1);
+    expect(graph.spies.list_links_for_entities).toHaveBeenCalledTimes(1);
     expect(graph.spies.list_facets_for_entities).toHaveBeenCalledTimes(1);
-    expect(graph.spies.get_canonical).toHaveBeenCalledTimes(0);
+    // get_canonical / list_canonical_for_entities are forbidden ops now — the
+    // throwing mockGraph would have rejected the call above.
   });
 
-  it("list (no search, include_all) = 1 list_entities + 1 batch canonical + 1 batch facets", async () => {
-    spy(graph, "list_entities").mockResolvedValue({ items: [], total: 0 });
+  it("list (no search, include_all) = 1 list_entities + 1 batch edges + 1 batch facets", async () => {
+    spy(graph, "list_entities").mockResolvedValue({
+      items: [entity("c1", "A", { schema_id: SCHEMA })],
+      total: 1,
+    });
     await mod.list({ include_all: true });
     expect(graph.spies.list_entities).toHaveBeenCalledTimes(1);
     expect(graph.spies.list_entities_window).toHaveBeenCalledTimes(0);
-    expect(graph.spies.list_canonical_for_entities).toHaveBeenCalledTimes(1);
+    expect(graph.spies.list_links_for_entities).toHaveBeenCalledTimes(1);
     expect(graph.spies.list_facets_for_entities).toHaveBeenCalledTimes(1);
   });
 
-  it("list (search) = 1 search + 1 batch canonical + 1 batch facets, 0 list_entities", async () => {
-    spy(graph, "search_entities_by_name").mockResolvedValue([]);
+  it("list (search) = 1 search + 1 batch edges + 1 batch facets, 0 list_entities", async () => {
+    spy(graph, "search_entities_by_name").mockResolvedValue([
+      entity("c1", "A", { schema_id: SCHEMA }),
+    ]);
     await mod.list({ search: "a" });
     expect(graph.spies.search_entities_by_name).toHaveBeenCalledTimes(1);
-    expect(graph.spies.list_canonical_for_entities).toHaveBeenCalledTimes(1);
+    expect(graph.spies.list_links_for_entities).toHaveBeenCalledTimes(1);
     expect(graph.spies.list_facets_for_entities).toHaveBeenCalledTimes(1);
     expect(graph.spies.list_entities).toHaveBeenCalledTimes(0);
   });
 
-  it("get = 1 get_entity_full + 1 get_canonical + 1 get_entities (links present)", async () => {
+  it("get = 1 get_entity_full + 1 facet read + 1 get_entities, 0 canonical", async () => {
     spy(graph, "get_entity_full").mockResolvedValue({
       entity: entity("c1", "A", { schema_id: SCHEMA }),
-      facets: [],
       links: [{ id: "l1", from_id: "c1", to_id: "co1", kind: "works_at" }],
     });
     spy(graph, "get_entities").mockResolvedValue([
@@ -244,7 +258,6 @@ describe("contacts read — DB-access guarantees (tst_be_contactsdb_001)", () =>
     await mod.get({ id: "c1" });
     expect(graph.spies.get_entity_full).toHaveBeenCalledTimes(1);
     expect(graph.spies.list_facets_for_entity).toHaveBeenCalledTimes(1);
-    expect(graph.spies.get_canonical).toHaveBeenCalledTimes(1);
     expect(graph.spies.get_entities).toHaveBeenCalledTimes(1);
   });
 });

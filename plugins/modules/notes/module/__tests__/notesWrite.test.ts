@@ -183,7 +183,6 @@ describe("notes.update restores the note unchanged when the rename fails", () =>
               updated_at: "2026-07-01T00:00:00Z",
             },
           }),
-          facets: [],
           links: [],
         }),
       update_properties: (p: { properties: Record<string, unknown> }) => {

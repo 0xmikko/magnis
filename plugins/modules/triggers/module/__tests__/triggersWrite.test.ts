@@ -41,7 +41,6 @@ function existingTrigger(): G {
             firing_count: 0,
           },
         }),
-        facets: [],
         links: [],
       }),
     update_properties: () => Promise.resolve(undefined),
@@ -148,7 +147,6 @@ describe("triggers.update keeps the gate real and the write whole", () => {
               firing_count: 0,
             },
           }),
-          facets: [],
           links: [],
         }),
       update_properties: () => Promise.reject(new Error("facet store unavailable")),
@@ -194,7 +192,6 @@ describe("triggers.update compensation restores EVERY field", () => {
               firing_count: 0,
             },
           }),
-          facets: [],
           links: [],
         }),
       update_properties: (p: { properties: Record<string, unknown> }) => {
@@ -230,7 +227,6 @@ describe("triggers.update compensation restores EVERY field", () => {
               firing_count: 0,
             },
           }),
-          facets: [],
           links: [],
         }),
       update_properties: () => {

@@ -273,15 +273,6 @@ export interface MergeResult {
   links_reflexive_removed: number;
 }
 
-/// One facet in an `apply_batch` entity. `external_id` + `confidence` mirror
-/// `attach_facet`; the host stamps the source identity from the calling plugin.
-export interface BatchFacetInput {
-  schema_id: string;
-  data: Record<string, unknown>;
-  external_id?: string;
-  confidence?: number;
-}
-
 /// One entity in an `apply_batch` fragment, identified within the batch by `key`
 /// (NOT a graph id). Its first facet that carries an `external_id` is the entity's
 /// resolve-or-create identity.
@@ -291,7 +282,7 @@ export interface BatchEntityInput {
   name?: string;
   idx?: string;
   date?: string;
-  facets: BatchFacetInput[];
+
   /** S3: the node's identity anchor — THE resolver when present. */
   anchor?: string;
   /** S3: the node's dictionary as this sync observed it. The replica
@@ -346,12 +337,14 @@ export interface GraphBatchResult {
 /// Parameterised by two plugin-declared schema→type maps:
 ///   - `Facets`: facet schema_id → payload type
 ///   - `Canon`:  canonical key   → value type
-/// The facet/canonical types are DERIVED from the schema_id/key literal
-/// at the call site (not free type params the caller can lie about).
+/// The canonical types are DERIVED from the key literal at the call site (not
+/// a free type param the caller can lie about). `_Facets` is the frozen facet
+/// map: S6 left no writer that could use it, and every module still names it
+/// positionally, so the slot stays and the name says why.
 ///
 /// The surface is the full target; ops are wired per migration stage.
 export interface GraphService<
-  Facets extends object = Record<string, unknown>,
+  _Facets extends object = Record<string, unknown>,
   Canon extends object = Record<string, unknown>,
 > {
   // entities — rows are always {id, schema_id, name}, no map needed.
@@ -433,18 +426,12 @@ export interface GraphService<
   update_entity_idx(id: string, idx: string | null): Promise<void>;
   delete_entity(id: string): Promise<void>;
 
-  // facets — payload type DERIVED from the schema_id literal.
-  // external_id (+ optional confidence 1-100) stamps provenance AND makes the
-  // attach idempotent (find-and-update the facet keyed by entity + external_id).
-  attach_facet<K extends keyof Facets & string>(
-    p: { entity_id: string; schema_id: K; data: Facets[K]; external_id?: string; confidence?: number },
-  ): Promise<{ id: string }>;
-  update_facet<K extends keyof Facets & string>(
-    p: { facet_id: string; schema_id: K; data: Facets[K] },
-  ): Promise<void>;
+  // S6: `attach_facet` / `update_facet` are GONE. Every module's state is its
+  // node's dictionary; the facet table is a frozen archive with no writer left
+  // in this contract — frozen by construction, not by promise. Reads stay.
   /// S1 (canonical-graph-structure): write the node's dictionary — the
-  /// property-graph write path. Replaces attach_facet for module state; the
-  /// host validates ownership (user + namespace) and an update un-archives.
+  /// property-graph write path. The host validates ownership (user +
+  /// namespace) and an update un-archives.
   update_properties(
     p: { entity_id: string; properties: Record<string, unknown> },
   ): Promise<void>;
@@ -470,7 +457,8 @@ export interface GraphService<
    *  back into a per-entity `Partial<Canon>` map. */
   list_canonical_for_entities(entity_ids: string[]): Promise<CanonicalRecord[]>;
   /// Recompute canonical properties from the entity's facets + mappings.
-  /// Call after attach_facet so get_canonical reflects the new data.
+  /// Recompute from the frozen facet archive. Nothing writes facets any more,
+  /// so this only ever reproduces what the archive already says.
   resolve_canonical(entity_id: string): Promise<void>;
   apply_canonical_override<K extends keyof Canon & string>(
     p: { entity_id: string; key: K; value: Canon[K] },
@@ -485,6 +473,10 @@ export interface GraphService<
   /** Canonical edges by default; `include_all_statuses` also returns
    * candidate / decayed rows (S4's reconciliation restores a rejoin). */
   list_links_for_entity(entity_id: string, include_all_statuses?: boolean): Promise<LinkSummary[]>;
+  /** S6 batch: every canonical edge of MANY entities in ONE round-trip. Each
+   * row carries `from_id`/`to_id`, so the caller groups. A page whose cards
+   * read their neighbours off the edges uses this, never a per-row read. */
+  list_links_for_entities(entity_ids: string[]): Promise<LinkSummary[]>;
 
   // batch — apply a whole graph fragment (entities + facets + links + events) in
   // ONE atomic transaction / one host crossing. The bulk ingest primitive: a page

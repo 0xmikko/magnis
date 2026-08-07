@@ -11,8 +11,6 @@ export interface EntityDetailTabsProps {
     readonly entityId: string;
     readonly linkedEntities: readonly LinkedEntitySummary[];
     readonly facets: readonly FacetSummary[];
-    /** Facet schema ID for memory (e.g. "contacts.person.memory") */
-    readonly memorySchemaId: string;
     /** Max visible tabs before overflow "..." (default 7) */
     readonly maxVisibleTabs?: number;
     /** Enable search mode in tabs */
@@ -24,4 +22,4 @@ export interface EntityDetailTabsProps {
      *  use this for the Google-Contacts-style contact-info column. */
     readonly detailsContent?: React.ReactNode;
 }
-export declare function EntityDetailTabs({ entityId, linkedEntities, facets: _facets, memorySchemaId, maxVisibleTabs, searchable, headerContent, detailsContent, }: EntityDetailTabsProps): JSX.Element;
+export declare function EntityDetailTabs({ entityId, linkedEntities, facets: _facets, maxVisibleTabs, searchable, headerContent, detailsContent, }: EntityDetailTabsProps): JSX.Element;

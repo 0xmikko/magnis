@@ -88,7 +88,6 @@ describe("notes read — shape parity (tst_be_notesread_001)", () => {
   it("F2 get resolves link neighbours via ONE get_entities batch (no per-link fetch)", async () => {
     spy(graph, "get_entity_full").mockResolvedValue({
       entity: entity("n1", "My Note", { schema_id: NOTE, properties: { body: "b" } }),
-      facets: [],
       links: [
         { id: "l1", from_id: "n1", to_id: "c1", kind: "mentions" },
         { id: "l2", from_id: "n1", to_id: "c2", kind: "mentions" },
@@ -146,10 +145,9 @@ describe("notes read — DB-access guarantees (tst_be_notesdb_001)", () => {
     expect(graph.spies.list_entities_window).toHaveBeenCalledTimes(0);
   });
 
-  it("get = 1 get_entity_full + 1 get_canonical + 1 get_entities (links present), 0 per-link", async () => {
+  it("get = 1 get_entity_full + 1 get_entities (links present), 0 canonical, 0 per-link", async () => {
     spy(graph, "get_entity_full").mockResolvedValue({
       entity: entity("n1", "N", { schema_id: NOTE }),
-      facets: [],
       links: [{ id: "l1", from_id: "n1", to_id: "c1", kind: "mentions" }],
     });
     spy(graph, "get_entities").mockResolvedValue([
@@ -157,14 +155,12 @@ describe("notes read — DB-access guarantees (tst_be_notesdb_001)", () => {
     ]);
     await mod.get({ id: "n1" });
     expect(graph.spies.get_entity_full).toHaveBeenCalledTimes(1);
-    expect(graph.spies.get_canonical).toHaveBeenCalledTimes(1);
     expect(graph.spies.get_entities).toHaveBeenCalledTimes(1);
   });
 
   it("get with no links makes 0 get_entities", async () => {
     spy(graph, "get_entity_full").mockResolvedValue({
       entity: entity("n1", "N", { schema_id: NOTE }),
-      facets: [],
       links: [],
     });
     await mod.get({ id: "n1" });

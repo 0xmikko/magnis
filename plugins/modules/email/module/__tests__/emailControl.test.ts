@@ -91,7 +91,6 @@ describe("email ensure_address hub RPC (cross-module)", () => {
     // S5: the address node is its DICTIONARY under the chokepoint anchor —
     // the details facet retired with the writer.
     expect(addr.anchor).toBe("email:address:alice@example.com");
-    expect(addr.facets).toEqual([]);
     expect(addr.properties).toMatchObject({ address: "alice@example.com" });
   });
 

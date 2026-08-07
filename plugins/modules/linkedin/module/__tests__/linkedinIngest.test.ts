@@ -65,10 +65,8 @@ describe("linkedin ingest", () => {
     const profile = batch.entities.find((e: { schema_id: string }) => e.schema_id === PROFILE);
     const post = batch.entities.find((e: { schema_id: string }) => e.schema_id === POST);
     // The dictionary IS the record, under an anchor its issuer will not rename.
-    expect(profile.facets).toEqual([]);
     expect(profile.anchor).toBe("linkedin:ACoAAB123");
     expect(profile.properties).toMatchObject({ handle: "jack", follower_count: 100 });
-    expect(post.facets).toEqual([]);
     expect(post.anchor).toBe("linkedin:post:1");
     // content AND metrics in ONE dictionary.
     expect(post.properties).toMatchObject({ text: "hello world", metrics: { likes: 5 } });

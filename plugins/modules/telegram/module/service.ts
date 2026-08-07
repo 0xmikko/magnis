@@ -471,7 +471,6 @@ export class TelegramModule {
           name: "",
           anchor: accountAnchor(key),
           properties: { telegram_user_id: Number(key), is_self: true },
-          facets: [],
         },
       ],
       refs: [],
@@ -699,7 +698,6 @@ export class TelegramModule {
           anchor: chatId !== null ? chatAnchor(chatId) : undefined,
           properties: details,
           confidence: 100,
-          facets: [],
         });
         // The edge IS the membership fact — a reported chat always gets it,
         // with the observed state as its dictionary when the page carries
@@ -801,7 +799,6 @@ export class TelegramModule {
         anchor: remoteId,
         properties: dict,
         confidence: 90,
-        facets: [],
       });
 
       if (cid !== null && chatKey) {
@@ -830,7 +827,6 @@ export class TelegramModule {
             name: displayName ?? "",
             anchor: accountAnchor(sid),
             properties: props,
-            facets: [],
           });
           accountKeys.add(accountKey);
         }

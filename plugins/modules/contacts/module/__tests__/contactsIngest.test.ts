@@ -139,9 +139,6 @@ const personOf = (frag: GraphBatchInput, key: string): BatchEntityInput => {
   return e;
 };
 
-const facetOf = (e: BatchEntityInput, schema_id: string) =>
-  e.facets.filter((f) => f.schema_id === schema_id);
-
 function lastBatch(graph: G): GraphBatchInput {
   const calls = spy(graph, "apply_batch").mock.calls;
   const last = calls[calls.length - 1];
@@ -162,7 +159,6 @@ describe("contacts ingest — the replica model (tst_be_contactsingest_001)", ()
     const replica = personOf(frag, "gpeople:abc123");
     expect(replica.anchor).toBe("gpeople:abc123");
     expect(replica.name).toBe("Mikhail Lazarev");
-    expect(replica.facets).toEqual([]);
     const props = replica.properties ?? {};
     expect(props.given_name).toBe("Mikhail");
     expect(props.family_name).toBe("Lazarev");

@@ -325,7 +325,6 @@ export class EmailModule {
           anchor: `email:address:${lower}`,
           properties: data,
           confidence: 100,
-          facets: [],
         });
         addrSeen.add(key);
       }
@@ -363,7 +362,6 @@ export class EmailModule {
         // own certainty in the dictionary it just wrote is 90, as the facet it
         // replaced carried.
         confidence: 90,
-        facets: [],
       });
       const from = lowerAddr(str(p, "from_address"));
       // S5: authorship is `authored_by` — the relation, not a channel-shaped
@@ -686,7 +684,6 @@ export class EmailModule {
         idx: a,
         anchor: `email:address:${a}`,
         properties: { address: a },
-        facets: [],
       })),
       refs: [],
       links: [],
@@ -810,7 +807,6 @@ export class EmailModule {
         // S5: the address DICT is the record; the facet retired with it.
         anchor: `email:address:${lower}`,
         properties: data,
-        facets: [],
       });
     }
     const r = await this.graph.apply_batch({ entities, refs: [], links: [] });
@@ -994,7 +990,6 @@ export class EmailModule {
             // from Sent update THIS node instead of creating a second one.
             anchor: providerMessageId,
             properties: facetData,
-            facets: [],
           },
           {
             key: addrKey,
@@ -1003,7 +998,6 @@ export class EmailModule {
             idx: toLower,
             anchor: `email:address:${toLower}`,
             properties: { address: toLower },
-            facets: [],
           },
         ],
         refs: [],

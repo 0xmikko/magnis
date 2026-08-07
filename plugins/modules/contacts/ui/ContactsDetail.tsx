@@ -20,7 +20,6 @@ export function ContactsDetail({
         entityId={entityId}
         linkedEntities={linkedEntities}
         facets={facets}
-        memorySchemaId="contacts.memory"
         searchable
         maxVisibleTabs={7}
       />

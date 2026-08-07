@@ -66,6 +66,7 @@ function makeMultiGraph(persons: RawEntity[]): { graph: G; renames: [string, str
       if (e) (e as { name: string }).name = name;
     },
     get_canonical: async () => ({}),
+    list_links_for_entities: async () => [],
     list_entities: async ({ offset = 0, limit = 500 }: { offset?: number; limit?: number }) => ({
       items: persons.slice(offset, offset + limit),
       total: persons.length,

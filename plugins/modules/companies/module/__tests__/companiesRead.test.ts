@@ -124,7 +124,6 @@ describe("companies read — shape parity (tst_be_companiesread_001)", () => {
         schema_id: COMPANY,
         properties: { website: "https://acme.com", industry: "SaaS" },
       }),
-      facets: [],
       links: [],
     });
 
@@ -153,7 +152,6 @@ describe("companies read — shape parity (tst_be_companiesread_001)", () => {
   it("tst_module_companies_002 returns incoming works_at contacts for the Contacts tab", async () => {
     spy(graph, "get_entity_full").mockResolvedValue({
       entity: entity("company-1", "Acme Labs", { schema_id: COMPANY }),
-      facets: [],
       links: [
         {
           id: "link-1",
@@ -224,7 +222,6 @@ describe("companies read — DB-access guarantees (tst_be_companiesdb_001)", () 
   it("get = 1 get_entity_full, 0 facet read, 0 canonical, 0 get_entities", async () => {
     spy(graph, "get_entity_full").mockResolvedValue({
       entity: entity("c", "Acme", { schema_id: COMPANY }),
-      facets: [],
       links: [],
     });
     await mod.get({ id: "c" });

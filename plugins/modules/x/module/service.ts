@@ -75,7 +75,6 @@ export class XModule {
           anchor: profileAnchor,
           properties: payload,
           confidence: 100,
-          facets: [],
         });
         if (identity.handle) profileKeyByHandle.set(identity.handle.toLowerCase(), remoteId);
       } else if (entityType === "post") {
@@ -90,7 +89,6 @@ export class XModule {
           anchor: remoteId,
           properties: payload,
           confidence: 100,
-          facets: [],
         });
       } else {
         if (remoteId) dropped.push(remoteId);

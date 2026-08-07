@@ -102,7 +102,6 @@ describe("email ingest — apply_batch shape (tst_be_emailingest_001)", () => {
     // S5: the message node is its DICTIONARY under the remote_id anchor —
     // the details facet retired, and the fields the edges now represent
     // (attachments, the joined recipient strings) left the dict.
-    expect(m1.facets).toEqual([]);
     expect(m1.anchor).toBe("m1");
     expect(m1.properties?.subject).toBe("Report Q3");
     expect(m1.properties?.attachments).toBeUndefined();
@@ -110,7 +109,6 @@ describe("email ingest — apply_batch shape (tst_be_emailingest_001)", () => {
 
     // address entity resolves by its chokepoint anchor (idempotent)
     const ceo = addrs.find((a) => a.idx === "ceo@example.com")!;
-    expect(ceo.facets).toEqual([]);
     expect(ceo.anchor).toBe("email:address:ceo@example.com");
     expect(ceo.properties?.address).toBe("ceo@example.com");
 

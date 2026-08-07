@@ -82,7 +82,6 @@ describe("meetings @syncHandler — upsert", () => {
         anchor: "r2",
         properties: payload,
         confidence: 90,
-        facets: [],
       },
     ]);
     expect(frag.links).toEqual([]);

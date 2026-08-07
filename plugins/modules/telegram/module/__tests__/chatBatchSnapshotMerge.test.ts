@@ -93,10 +93,9 @@ describe("telegram chat batch ingest", () => {
     const firstBatch = firstCall[0] as GraphBatchInput;
     const pinnedChat = firstBatch.entities.find((item) => item.key === "tg:chat:1");
 
-    // S4: the batch writes the DICTIONARY (zero facets) under the chat's
+    // S4: the batch writes the DICTIONARY under the chat's
     // anchor; per-account state (is_pinned/pin_order) leaves the dict for
     // the observed_in edge from the operator's account.
-    expect(pinnedChat?.facets).toEqual([]);
     expect(pinnedChat?.anchor).toBe("tg:chat:1");
     expect(pinnedChat?.properties).toMatchObject({
       last_message_date: "2026-07-26T19:00:00Z",

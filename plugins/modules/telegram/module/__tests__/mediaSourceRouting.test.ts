@@ -43,7 +43,6 @@ function ingestGraph(): G {
     web_register: () => Promise.resolve("web-id"),
     find_by_anchor: () => Promise.resolve(null),
     file_register: () => Promise.resolve("file-id"),
-    attach_facet: () => Promise.resolve({ id: "facet-id" }),
     create_entity: () => Promise.resolve(entity("created-id", "")),
     delete_entity: () => Promise.resolve(),
   });
@@ -103,11 +102,10 @@ describe("tst_fe_tg_media_source_routing_001 — file.object source_module = env
     const applyBatch = graph.spies.apply_batch;
     if (applyBatch === undefined) throw new Error("missing apply_batch spy");
     const frag = applyBatch.mock.calls[0]?.[0] as {
-      entities: { key: string; schema_id: string; anchor?: string; properties?: Record<string, unknown>; facets: unknown[] }[];
+      entities: { key: string; schema_id: string; anchor?: string; properties?: Record<string, unknown> }[];
       links?: { from_key: string; to_key: string; kind: string }[];
     };
     const msg = frag.entities.find((e) => e.key === "tg:msg:42:7");
-    expect(msg?.facets).toEqual([]);
     expect(msg?.anchor).toBe("tg:msg:42:7");
     expect(msg?.properties?.chat_id).toBeUndefined();
     expect(msg?.properties?.sender_id).toBeUndefined();
