@@ -68,6 +68,7 @@ export interface TriggerListItem {
   firing_count: number;
   last_fired_at?: string | null;
   watched_entity_names: string[];
+  schedule?: TriggerScheduleSpec | null;
 }
 
 /// Mirrors native `WatchedEntity`.
@@ -109,6 +110,8 @@ export interface TriggerCreated {
   schema_id: string;
   created_at: string;
   episode_id: string | null;
+  /// The persisted schedule, echoed so the tool-call card can render it.
+  schedule?: TriggerScheduleSpec | null;
 }
 
 // ── tool params ──────────────────────────────────────────────────

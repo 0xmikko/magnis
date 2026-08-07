@@ -127,6 +127,33 @@ describe("triggers.create with a schedule", () => {
 });
 
 /**
+ * @test-id: tst_module_triggers_sched_004
+ * @scenario: scn_cron_trigger_001
+ * @covers: plugins/modules/triggers/module/service.ts::TriggersModule.create
+ * @deterministic: yes
+ * @fixtures: inline graph doubles
+ *
+ * @invariant: INV-UI-1/3 (plan Stage 5) — the create response carries the
+ * persisted schedule so the tool-call card can render it from the result.
+ */
+describe("triggers.create response carries the schedule", () => {
+  it("tst_module_triggers_sched_004 returns the normalized spec in the response", async () => {
+    const graph = createGraph();
+    const rpc = seamRpc();
+    const { module } = mountModule(TriggersModule, { graph, rpc });
+
+    const created = await module.create({
+      name: "digest",
+      gate_prompt: "always",
+      action_prompt: "summarize",
+      schedule: { cron: "0 9 * * MON-FRI", timezone: "Europe/Belgrade" },
+    });
+
+    expect((created as { schedule?: unknown }).schedule).toEqual(NORMALIZED);
+  });
+});
+
+/**
  * @test-id: tst_module_triggers_sched_002
  * @scenario: scn_cron_trigger_002
  * @covers: plugins/modules/triggers/module/service.ts::TriggersModule.create

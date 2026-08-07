@@ -256,6 +256,7 @@ export class TriggersModule {
       schema_id: TRIGGER,
       created_at: entity.created_at ?? new Date().toISOString(),
       episode_id: params.episode_id ?? null,
+      schedule: schedule ?? null,
     };
   }
 
@@ -695,6 +696,7 @@ export class TriggersModule {
       firing_count: config.firing_count,
       last_fired_at: config.last_fired_at ?? null,
       watched_entity_names: names,
+      schedule: config.schedule ?? null,
     };
   }
 

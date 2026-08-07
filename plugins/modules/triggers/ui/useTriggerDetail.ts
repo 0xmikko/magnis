@@ -6,6 +6,11 @@ export interface WatchedEntityRef {
   readonly name: string | null;
 }
 
+export interface TriggerScheduleRef {
+  readonly cron: string;
+  readonly timezone: string;
+}
+
 export interface TriggerDetail {
   readonly name: string;
   readonly gate_prompt: string;
@@ -13,6 +18,7 @@ export interface TriggerDetail {
   readonly status: string;
   readonly watched_entities: readonly WatchedEntityRef[];
   readonly firing_count: number;
+  readonly schedule?: TriggerScheduleRef | null;
 }
 
 /**
