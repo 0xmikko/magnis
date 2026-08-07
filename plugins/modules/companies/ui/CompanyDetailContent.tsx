@@ -55,7 +55,6 @@ export function CompanyDetailContent({
       entityId={entityId}
       linkedEntities={linkedEntities}
       facets={facets}
-      descriptionSchemaId="companies.description"
       memorySchemaId="companies.memory"
       headerContent={headerContent}
       maxVisibleTabs={7}

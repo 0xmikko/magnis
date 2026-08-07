@@ -2,8 +2,8 @@ import type { ComponentType } from "react";
 import type { StoreApi } from "zustand/vanilla";
 import type { AppRuntime } from "./runtime";
 import type { ReplyToContext } from "../../modules/episodes/types";
-export type { AgentContextDescriptor, AgentInvocationInput, AgentDraftRequest, AgentHistoryBlock, AgentTodoItem, AllowlistTarget, AgentRuntimeState, AgentChatStoreApi, } from "@magnis/agent-core";
-import type { AgentContextDescriptor, AgentHistoryBlock, AgentTodoItem, AllowlistTarget, AgentRuntimeState, AgentChatStoreApi, AgentInvocationInput, AgentDraftRequest } from "@magnis/agent-core";
+export type { AgentContextDescriptor, AgentInvocationInput, AgentDraftRequest, AgentHistoryBlock, AgentTodoItem, AllowlistTarget, AgentRuntimeState, AgentChatStoreApi, } from "@magnis/client-core";
+import type { AgentContextDescriptor, AgentHistoryBlock, AgentTodoItem, AllowlistTarget, AgentRuntimeState, AgentChatStoreApi, AgentInvocationInput, AgentDraftRequest } from "@magnis/client-core";
 export interface AgentRendererProps<TPayload = unknown> {
     readonly payload: TPayload;
     readonly runtime: AppRuntime;
@@ -134,10 +134,10 @@ export interface ComposerRuntimeSurface {
      */
     setPresence(params: ComposerPresenceParams | null): void;
     /**
-     * Subscribe to `composer.apply` events routed from the backend over the
-     * WS event bus. Returns an unsubscribe fn. The WS filter on the backend
-     * already restricts delivery to the authenticated user; subscribers only
-     * need to filter on (mode, thread_key).
+     * Stage 4: subscribe to `composer.apply` events routed from the backend
+     * over the WS event bus. Returns an unsubscribe fn. Per INV-15, the WS
+     * filter on the backend already restricts delivery to the authenticated
+     * user; subscribers only need to filter on (mode, thread_key).
      */
     onApply(handler: (event: ComposerApplyEventPayload) => void): () => void;
 }

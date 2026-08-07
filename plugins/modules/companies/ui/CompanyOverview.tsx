@@ -1,8 +1,8 @@
 /**
  * Two-column "Overview" tab for a company. Mirrors `ContactOverview`:
  *   - left:  CompanyInfoColumn — website / industry / size / location /
- *            founded / stage / funding / emails / phones / external links
- *   - right: Description (markdown facet `companies.description`)
+ *            founded / stage / funding / emails / phones
+ *   - right: Description (the hub dictionary's `description` key)
  *
  * Same Markdown editor pattern as the contact Overview — single editor
  * toggling readOnly on the pencil click, no layout jump, @-mention
@@ -13,27 +13,26 @@ import type { JSX } from "react";
 
 import { Icon, IconButton, Stack, Text } from "@magnis/host/ui";
 import { MarkdownEditor, useEditorMentionSuggestion } from "@magnis/host/markdown";
-import { useEntityFacet } from "@magnis/host/base";
-import type { FacetSummary } from "@magnis/host/base";
+import { useEntityProperties, useEntityProperty } from "@magnis/host/base";
+import type { LinkedEntitySummary } from "@magnis/host/base";
 
 import { CompanyInfoColumn, hasCompanyInfo } from "./CompanyInfoColumn";
 
-const DESCRIPTION_SCHEMA_ID = "companies.description";
-
 export interface CompanyOverviewProps {
   readonly entityId: string;
-  readonly facets: readonly FacetSummary[];
+  readonly linkedEntities: readonly LinkedEntitySummary[];
 }
 
 export function CompanyOverview({
   entityId,
-  facets,
+  linkedEntities,
 }: CompanyOverviewProps): JSX.Element {
+  const { properties } = useEntityProperties(entityId);
   // Description panel is always rendered with its card chrome.
   // When the company has no info-column rows, the panel takes the
   // full width; otherwise we drop into the 3fr/2fr grid with the
   // info rail on the right.
-  if (!hasCompanyInfo(facets)) {
+  if (!hasCompanyInfo(properties, linkedEntities)) {
     return <DescriptionPanel entityId={entityId} />;
   }
   return (
@@ -42,15 +41,15 @@ export function CompanyOverview({
         <DescriptionPanel entityId={entityId} />
       </div>
       <div>
-        <CompanyInfoColumn facets={facets} />
+        <CompanyInfoColumn properties={properties} linkedEntities={linkedEntities} />
       </div>
     </div>
   );
 }
 
 function DescriptionPanel({ entityId }: { readonly entityId: string }): JSX.Element {
-  const description = useEntityFacet(entityId, DESCRIPTION_SCHEMA_ID);
-  const body = (description.data?.body as string | undefined) ?? "";
+  const description = useEntityProperty(entityId, "description");
+  const body = description.value;
   const mentionSuggestion = useEditorMentionSuggestion();
 
   const [editing, setEditing] = useState(false);
@@ -68,7 +67,7 @@ function DescriptionPanel({ entityId }: { readonly entityId: string }): JSX.Elem
 
   const handleChange = useCallback(
     (markdown: string) => {
-      description.save({ body: markdown });
+      description.save(markdown);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [description.save],

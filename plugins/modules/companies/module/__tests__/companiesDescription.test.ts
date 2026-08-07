@@ -12,7 +12,7 @@
  * Data: one existing company and a summary-only update.
  */
 import { describe, expect, it } from "vitest";
-import { entity, facet, mockGraph, mountModule } from "@magnis/testkit/module";
+import { entity, mockGraph, mountModule } from "@magnis/testkit/module";
 
 import { COMPANY, COMPANY_DETAILS } from "../../schema.ts";
 import type { CompanyCanonical, CompanyFacets } from "../../types.ts";
@@ -29,27 +29,19 @@ function writeGraph() {
       create_entity: () => Promise.resolve(company),
       search_entities_by_name: () => Promise.resolve([]),
       update_entity_name: () => Promise.resolve(),
-      attach_facet: (input) =>
-        Promise.resolve(
-          facet("attached-facet", input.schema_id, input.data, {
-            entity_id: input.entity_id,
-          }),
-        ),
-      resolve_canonical: () => Promise.resolve(),
-      get_canonical: () => Promise.resolve({}),
+      update_properties: () => Promise.resolve(),
       get_entity_full: () =>
         Promise.resolve({
           entity: company,
           facets: [],
           links: [],
         }),
-      list_facets_for_entity: () => Promise.resolve([]),
     }),
   };
 }
 
 describe("companies description write contract", () => {
-  it("tst_mod_companies_description_001 writes update summary to the markdown description facet", async () => {
+  it("tst_mod_companies_description_001 writes the update summary to the hub's description key", async () => {
     const { company, graph } = writeGraph();
     const module = mountModule(CompaniesModule, {
       graph,
@@ -61,19 +53,18 @@ describe("companies description write contract", () => {
       summary: "Updated company description",
     });
 
-    const attachFacet = graph.spies.attach_facet;
-    if (attachFacet === undefined) throw new Error("companies update: missing attach_facet spy");
-    expect(attachFacet).toHaveBeenCalledWith({
+    // S5: ONE dictionary merge carries the description — there is no second
+    // copy of it anywhere, and no facet is written at all.
+    const updateProperties = graph.spies.update_properties;
+    if (updateProperties === undefined) {
+      throw new Error("companies update: missing update_properties spy");
+    }
+    expect(updateProperties).toHaveBeenCalledTimes(1);
+    expect(updateProperties).toHaveBeenCalledWith({
       entity_id: company.id,
-      schema_id: COMPANY_DESCRIPTION,
-      data: { body: "Updated company description" },
+      properties: { description: "Updated company description" },
     });
-    expect(attachFacet).not.toHaveBeenCalledWith(
-      expect.objectContaining({
-        schema_id: COMPANY_DETAILS,
-        data: expect.objectContaining({ description: expect.anything() }),
-      }),
-    );
+    expect(graph.spies.attach_facet).toBeUndefined();
   });
 
   /**
@@ -88,7 +79,7 @@ describe("companies description write contract", () => {
    * Mocks: GraphService only.
    * Data: one new company with a summary.
    */
-  it("tst_mod_companies_description_002 writes create summary to the markdown description facet", async () => {
+  it("tst_mod_companies_description_002 writes the create summary to the hub's description key", async () => {
     const { company, graph } = writeGraph();
     const module = mountModule(CompaniesModule, {
       graph,
@@ -100,18 +91,14 @@ describe("companies description write contract", () => {
       summary: "Initial company description",
     });
 
-    const attachFacet = graph.spies.attach_facet;
-    if (attachFacet === undefined) throw new Error("companies create: missing attach_facet spy");
-    expect(attachFacet).toHaveBeenCalledWith({
+    const updateProperties = graph.spies.update_properties;
+    if (updateProperties === undefined) {
+      throw new Error("companies create: missing update_properties spy");
+    }
+    expect(updateProperties).toHaveBeenCalledWith({
       entity_id: company.id,
-      schema_id: COMPANY_DESCRIPTION,
-      data: { body: "Initial company description" },
+      properties: { name: company.name, description: "Initial company description" },
     });
-    expect(attachFacet).not.toHaveBeenCalledWith(
-      expect.objectContaining({
-        schema_id: COMPANY_DETAILS,
-        data: expect.objectContaining({ description: expect.anything() }),
-      }),
-    );
+    expect(graph.spies.attach_facet).toBeUndefined();
   });
 });

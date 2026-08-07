@@ -30,8 +30,6 @@ export interface CompanyLinkedEntity {
 }
 
 export interface CompanyDetailView extends CompanyListItem {
-  canonical: Partial<CompanyCanonical>;
-  facets: unknown[];
   linked_entities: CompanyLinkedEntity[];
   members: string[];
   header_rows: HeaderRow[];
@@ -39,8 +37,11 @@ export interface CompanyDetailView extends CompanyListItem {
 
 // ── schema → type maps that parameterise GraphService ──────────────
 // facet schema_id → payload shape
+/** The company hub's DICTIONARY (S5). Named for the facet it replaced; the
+ *  keys are the same, plus the curated collections the hub now owns. */
 export interface CompanyDetailsFacet {
   name?: string | null;
+  phones?: { phone: string; type: string | null; is_primary: boolean }[];
   description?: string | null;
   industry?: string | null;
   domain?: string | null;

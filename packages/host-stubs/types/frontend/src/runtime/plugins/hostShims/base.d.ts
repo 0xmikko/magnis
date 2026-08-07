@@ -5,6 +5,7 @@ export { ActionPrefix } from "@/modules/_base/ActionPrefix";
 export { ListPaneHeaderActions } from "@/modules/_base/ListPaneHeaderActions";
 export type { ListPaneHeaderActionsProps } from "@/modules/_base/ListPaneHeaderActions";
 export { useEntityFacet } from "@/modules/_base/useEntityFacet";
+export { useEntityProperties, useEntityProperty } from "@/modules/_base/useEntityProperty";
 export { EntityDetailTabs } from "@/modules/shared/EntityDetailTabs";
 export { registerSchemaVisuals } from "@/modules/_base/schemaIcons";
 export type { LinkedEntitySummary, FacetSummary, AvatarColor, SidebarData, } from "@/modules/shared/types";

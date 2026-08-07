@@ -9,9 +9,10 @@ export interface ModuleLayoutProps {
     readonly listPane: ReactNode;
     readonly detailPane: ReactNode;
     readonly rightPane?: ReactNode;
+    readonly defaultSidebarEnabled?: boolean;
     readonly containerClassName?: string;
     readonly detailPaneClassName?: string;
     readonly listHandleBackground?: string;
     readonly sidebarHandleBackground?: string;
 }
-export declare function ModuleLayout({ moduleName, listPane, detailPane, rightPane, containerClassName, detailPaneClassName, listHandleBackground, sidebarHandleBackground, }: ModuleLayoutProps): JSX.Element;
+export declare function ModuleLayout({ moduleName, listPane, detailPane, rightPane, defaultSidebarEnabled, containerClassName, detailPaneClassName, listHandleBackground, sidebarHandleBackground, }: ModuleLayoutProps): JSX.Element;

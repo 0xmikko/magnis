@@ -58,7 +58,7 @@ export interface RightPaneProps {
     readonly runtime: AppRuntime;
 }
 export type { ContextMenuEntry } from "../../components/ui/ContextMenu";
-export type ModuleId = "companies" | "contacts" | "email" | "episodes" | "file" | "groups" | "inbox" | "meetings" | "notes" | "projects" | "settings" | "telegram" | "triggers" | "linkedin" | "x";
+export type ModuleId = "companies" | "contacts" | "email" | "episodes" | "file" | "groups" | "meetings" | "notes" | "projects" | "settings" | "telegram" | "triggers" | "linkedin" | "x";
 export interface ModuleConfig {
     readonly id: ModuleId;
     readonly title: string;
@@ -72,7 +72,7 @@ export interface ModuleConfig {
     readonly primaryEntityType: string;
     /** Override auto-generated schema IDs. When set, these are used instead of
      *  `${id}.${entityType}` for invalidation and entity renderers.
-     *  Use when a module displays entities owned by another module (e.g. Inbox → episodes.episode). */
+     *  Use when a module displays entities owned by another module. */
     readonly schemas?: readonly string[];
     /** Per-entity-type visual info. Key = entity type suffix.
      *  e.g. { person: { icon: "user", label: "Contact" }, address: { icon: "mail", label: "Address", tabLabel: "Addresses" } }
@@ -90,7 +90,7 @@ export interface ModuleConfig {
          *  shows the chevron for this payload. */
         readonly hasMore?: (data: Readonly<Record<string, unknown>>, runtime: AppRuntime) => boolean;
     }>>;
-    /** Extra params merged into every list RPC call (e.g. status filter for inbox) */
+    /** Extra params merged into every list RPC call (e.g. a status filter) */
     readonly rpcListParams?: Readonly<Record<string, unknown>>;
     /** RPC method names — default: `${id}.list`, `${id}.get`, etc. */
     readonly rpc?: Partial<{

@@ -18,13 +18,18 @@ export interface ErrorGroup {
     readonly first_seen: string;
     readonly last_seen: string;
 }
-/** Accumulated sync progress per source. */
+/** Sync progress per source — the typed SAME-UNIT pair from `sync.progress`.
+ *  `discovered` is the connector's cumulative primary-item count (latest
+ *  event wins — NEVER an accumulated envelope sum: `ingested` counts
+ *  envelopes per cycle and double-counts across reconnects, and pairing it
+ *  with `total` was the "62,548 / 2,593" StatusBar lie). */
 export interface SyncProgress {
     readonly sourceId: string;
     readonly moduleId: string;
-    /** Running total of ingested envelopes across all batches. */
-    readonly ingested: number;
-    /** Estimated total items (from source, if available). */
+    /** Cumulative primary items discovered (same units as `total`); 0 = the
+     *  source has not reported one. */
+    readonly discovered: number;
+    /** Estimated total primary items (from source, if available). */
     readonly total: number | null;
     readonly phase: string;
     /** Latest status message (from app.status). */

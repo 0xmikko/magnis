@@ -4,13 +4,12 @@
 
 /** Entity schema. */
 export const COMPANY = "companies.company";
-/** Single-aligned details facet (name/website/industry/size/location/…). */
+
+// S5: the details / description / email / phone / external_link facets are
+// frozen archive — the company hub's DICTIONARY is the record, and its emails
+// are identity edges to the email module's address nodes. The schemas stay
+// registered (no schema is ever removed); nothing reads or writes them.
+//
+// The details schema id survives as a constant only because the module tests
+// name it when they assert that NOTHING writes it any more.
 export const COMPANY_DETAILS = "companies.company.details";
-/** Markdown description facet (body). */
-export const COMPANY_DESCRIPTION = "companies.description";
-/** Collection email facet (one facet per address). */
-export const COMPANY_EMAIL = "companies.company.email";
-/** Collection phone facet (one facet per number). */
-export const COMPANY_PHONE = "companies.company.phone";
-/** External-link facet (source_type + external_id + url/name). */
-export const COMPANY_EXTERNAL_LINK = "companies.company.external_link";
