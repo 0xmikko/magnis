@@ -26,5 +26,11 @@ item = "contacts.person"
 # own:own links, and reads of own schemas need no declaration.
 [permissions]
 read = [ "companies.company" ]
-links = [ "has_email" ]
-call = [ "email.ensure_address" ]
+# identity joins the hub to its replicas and addresses; same_as (candidate)
+# records a merge-candidate when several hubs claim one address (plan §5.2).
+links = [ "identity", "same_as" ]
+call = [ "email.ensure_address", "email.ensure_addresses" ]
+# The legacy-fleet probe (S3, dated removal): an old google-synced hub is
+# found by its hashed facet external_id so the first post-deploy sync
+# attaches instead of minting a duplicate.
+host = [ "external_id_reads" ]

@@ -727,32 +727,79 @@ export class EmailModule {
     },
   })
   async ensureAddress(params: { address: string; display_name?: string | null }): Promise<{ id: string }> {
-    const lower = params.address.trim().toLowerCase();
-    if (lower.length === 0) {
+    const ids = await this.ensureAddressBatch([params]);
+    const id = ids[0];
+    if (!id) throw new Error(`email.ensure_address: failed to resolve ${params.address}`);
+    return { id };
+  }
+
+  // ── ensure_addresses (batched, S3) ─────────────────────────────
+  // The address owner mints (plan §7): contacts hands over every address a
+  // sync page observed in ONE call; each get-or-creates by the
+  // `email:address:<lower>` ANCHOR through the chokepoint, so callers can
+  // also reference the node by that anchor with no id wired back.
+  @rpc("ensure_addresses", {
+    description: "Get-or-create email.address entities for many addresses (batched).",
+    params: {
+      type: "object",
+      properties: {
+        items: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              address: { type: "string" },
+              display_name: { type: "string" },
+            },
+            required: ["address"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["items"],
+      additionalProperties: false,
+    },
+  })
+  async ensureAddresses(params: {
+    items: { address: string; display_name?: string | null }[];
+  }): Promise<{ ids: string[] }> {
+    return { ids: await this.ensureAddressBatch(params.items) };
+  }
+
+  private async ensureAddressBatch(
+    items: { address: string; display_name?: string | null }[],
+  ): Promise<string[]> {
+    const lowers = items.map((p) => p.address.trim().toLowerCase());
+    if (lowers.some((l) => l.length === 0)) {
       throw new Error("email.ensure_address: 'address' is required");
     }
-    const data: Record<string, unknown> = { address: lower };
-    if (params.display_name) data.display_name = params.display_name;
-    // apply_batch resolves-or-creates by the facet external_id (the same hub key
-    // ingest/send use), so this converges on one entity per address per user.
-    const r = await this.graph.apply_batch({
-      entities: [
-        {
-          key: "addr",
-          schema_id: ADDRESS_SCHEMA,
-          name: lower,
-          idx: lower,
-          facets: [
-            { schema_id: ADDRESS_DETAILS, data, external_id: `email:address:${lower}`, confidence: 100 },
-          ],
-        },
-      ],
-      refs: [],
-      links: [],
+    const entities = [];
+    const seen = new Set<string>();
+    for (const [i, lower] of lowers.entries()) {
+      if (seen.has(lower)) continue;
+      seen.add(lower);
+      const item = items[i];
+      const data: Record<string, unknown> = { address: lower };
+      if (item?.display_name) data.display_name = item.display_name;
+      entities.push({
+        key: lower,
+        schema_id: ADDRESS_SCHEMA,
+        name: lower,
+        idx: lower,
+        // S3: the anchor is THE resolver — claimed through the chokepoint on
+        // create, so re-ensures and anchor-refs converge on one node.
+        anchor: `email:address:${lower}`,
+        facets: [
+          { schema_id: ADDRESS_DETAILS, data, external_id: `email:address:${lower}`, confidence: 100 },
+        ],
+      });
+    }
+    const r = await this.graph.apply_batch({ entities, refs: [], links: [] });
+    return lowers.map((lower) => {
+      const id = r.ids[lower];
+      if (!id) throw new Error(`email.ensure_address: failed to resolve ${lower}`);
+      return id;
     });
-    const id = r.ids.addr;
-    if (!id) throw new Error(`email.ensure_address: failed to resolve ${lower}`);
-    return { id };
   }
 
   // ── reply composer (RPC) ──────────────────────────────────────

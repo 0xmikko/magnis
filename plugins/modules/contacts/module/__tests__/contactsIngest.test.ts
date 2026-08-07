@@ -1,10 +1,11 @@
-// Contacts sync ingest (@syncHandler "contacts"): apply_batch parity for Google
-// People-API contacts. Exercises the module through @magnis/testkit/module — the
-// throwing `mockGraph` proves ingest folds a whole page of `contacts` envelopes
-// into ONE graph.apply_batch (entities + facets): every op it does NOT arrange
-// (create_entity/attach_facet/add_link/get_entity — the non-batch write traps)
-// throws `unexpected graph op: …`. Idempotent on the resourceName-derived
-// external_id. Mirrors plugins/email/module/__tests__/emailIngest.test.ts.
+// Contacts sync ingest (@syncHandler "contacts") — S3, the replica model
+// (plan §5): a page of Google contacts folds into ONE apply_batch of
+// contacts.google_contact REPLICA nodes (anchored by remote_id, dictionary =
+// fields as last synced, zero facets, zero hub entities), the addresses are
+// minted by their owner over email.ensure_addresses, and auto-attach then
+// wires identity edges — attach to the one hub sharing an address, mint a
+// hub when none exists, or mint + record same_as candidates when several
+// claim the address. The sync NEVER writes the hub.
 
 import { beforeEach, describe, expect, it } from "vitest";
 import type { BatchEntityInput, GraphBatchInput } from "@magnis/plugin-sdk";
@@ -34,23 +35,76 @@ interface SyncEnvelope {
   timestamp: string;
 }
 
-// The ingest-path ops. apply_batch echoes each key → a deterministic id;
-// list_entities/list_facets_for_entities feed the social find-or-create read
-// (default empty world). Ops NOT arranged (create_entity/attach_facet/add_link/
-// get_entity) throw via the mockGraph Proxy — the batch-only guarantee.
-function ingestGraph(): G {
-  return mockGraph<ContactFacets, ContactCanonical>({
-    apply_batch: (frag) =>
+// The ingest-path world: apply_batch echoes each key → a deterministic id;
+// links/entity reads feed auto-attach (default: empty world → every replica
+// mints a hub); add_link records the identity edges; create_entity records
+// hub mints. rpcCalls records the ensure_addresses hand-off.
+interface World {
+  graph: G;
+  rpcCalls: { method: string; params: unknown }[];
+  links: { from_id: string; to_id: string; kind: string; status?: string }[];
+  minted: { schema_id: string; name: string }[];
+  /** identity edges pre-existing in the world: entity id → its links. */
+  linksFor?: Record<string, { from_id: string; to_id: string; kind: string }[]>;
+  entities?: Record<string, { id: string; schema_id: string; name?: string }>;
+  externalIds?: Record<string, string>;
+}
+
+function ingestWorld(over: Partial<World> = {}): World {
+  const world: World = {
+    graph: undefined as unknown as G,
+    rpcCalls: [],
+    links: [],
+    minted: [],
+    ...over,
+  };
+  let mintSeq = 0;
+  world.graph = mockGraph<ContactFacets, ContactCanonical>({
+    apply_batch: (frag: GraphBatchInput) =>
       Promise.resolve({
-        ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
+        ids: Object.fromEntries(frag.entities.map((e: BatchEntityInput) => [e.key, `id-${e.key}`])),
         created: frag.entities.length,
         updated: 0,
         links_added: frag.links?.length ?? 0,
         dropped_keys: [],
       }),
+    list_links_for_entity: (id: string) => Promise.resolve(world.linksFor?.[id] ?? []),
+    get_entities: (ids: string[]) =>
+      Promise.resolve(
+        ids
+          .map((id) => world.entities?.[id])
+          .filter((e): e is NonNullable<typeof e> => e !== undefined),
+      ),
+    get_entity: (id: string) => Promise.resolve(world.entities?.[id] ?? null),
+    find_by_external_id: (ext: string) => Promise.resolve(world.externalIds?.[ext] ?? null),
+    create_entity: (input: { schema_id: string; name: string }) => {
+      world.minted.push({ schema_id: input.schema_id, name: input.name });
+      return Promise.resolve({ id: `hub-${mintSeq++}`, schema_id: input.schema_id, name: input.name });
+    },
+    add_link: (p: { from_id: string; to_id: string; kind: string; status?: string }) => {
+      world.links.push(p);
+      return Promise.resolve();
+    },
     list_entities: () => Promise.resolve({ items: [], total: 0 }),
-    list_facets_for_entities: () => Promise.resolve([]),
-  });
+  } as never);
+  return world;
+}
+
+function mountWorld(world: World): ContactsModule {
+  return mountModule(ContactsModule, {
+    graph: world.graph,
+    ctx: { extension_id: "contacts" },
+    rpc: {
+      execute: (method: string, params: unknown) => {
+        world.rpcCalls.push({ method, params });
+        if (method === "email.ensure_addresses") {
+          const items = (params as { items: { address: string }[] }).items;
+          return Promise.resolve({ ids: items.map((i) => `addr-${i.address}`) });
+        }
+        throw new Error(`unexpected rpc: ${method}`);
+      },
+    } as never,
+  }).module;
 }
 
 const env = (over: Partial<SyncEnvelope> & { payload?: Record<string, unknown> }): SyncEnvelope => ({
@@ -95,104 +149,133 @@ function lastBatch(graph: G): GraphBatchInput {
   return last[0] as GraphBatchInput;
 }
 
-describe("contacts ingest — apply_batch shape (tst_be_contactsingest_001)", () => {
-  let graph: G;
-  let mod: ContactsModule;
-  beforeEach(() => {
-    graph = ingestGraph();
-    mod = mountModule(ContactsModule, { graph, ctx: { extension_id: "contacts" } }).module;
-  });
-
-  it("one Google contact envelope → one apply_batch with a contacts.person entity + profile/email/phone/external_link facets", async () => {
+describe("contacts ingest — the replica model (tst_be_contactsingest_001)", () => {
+  it("one envelope → ONE replica node: anchored, dictionary as last synced, zero facets, zero hub writes in the batch", async () => {
+    const world = ingestWorld();
+    const mod = mountWorld(world);
     await mod.ingest({ envelopes: [env({ remote_id: "gpeople:abc123", payload: contactPayload() })] });
 
-    expect(graph.spies.apply_batch).toHaveBeenCalledTimes(1);
-    const frag = lastBatch(graph);
+    expect(world.graph.spies.apply_batch).toHaveBeenCalledTimes(1);
+    const frag = lastBatch(world.graph);
+    expect(frag.entities.map((e) => e.schema_id)).toEqual(["contacts.google_contact"]);
 
-    const people = frag.entities.filter((e) => e.schema_id === "contacts.person");
-    expect(people.map((p) => p.key)).toEqual(["gpeople:abc123"]);
+    const replica = personOf(frag, "gpeople:abc123");
+    expect(replica.anchor).toBe("gpeople:abc123");
+    expect(replica.name).toBe("Mikhail Lazarev");
+    expect(replica.facets).toEqual([]);
+    const props = replica.properties ?? {};
+    expect(props.given_name).toBe("Mikhail");
+    expect(props.family_name).toBe("Lazarev");
+    expect(props.photo_url).toBe("https://photos.example.com/a.jpg");
+    expect(Array.isArray(props.emails)).toBe(true);
+    expect(Array.isArray(props.phones)).toBe(true);
 
-    const person = personOf(frag, "gpeople:abc123");
-    expect(person.name).toBe("Mikhail Lazarev");
-
-    // profile facet: first_name/last_name from given/family.
-    const profile = facetOf(person, "contacts.person.profile");
-    expect(profile).toHaveLength(1);
-    const profile0 = profile[0];
-    if (profile0 === undefined) throw new Error("expected a contacts.person.profile facet");
-    expect(profile0.external_id).toBe("gpeople:abc123");
-    expect((profile0.data as Record<string, unknown>).first_name).toBe("Mikhail");
-    expect((profile0.data as Record<string, unknown>).last_name).toBe("Lazarev");
-
-    // external_link facet: source_type + external_id (idempotency key origin) + url + name.
-    const ext = facetOf(person, "contacts.person.external_link");
-    expect(ext).toHaveLength(1);
-    const ext0 = ext[0];
-    if (ext0 === undefined) throw new Error("expected a contacts.person.external_link facet");
-    expect((ext0.data as Record<string, unknown>).source_type).toBe("google");
-    expect((ext0.data as Record<string, unknown>).external_id).toBe("abc123");
-    expect((ext0.data as Record<string, unknown>).external_url).toBe(
-      "https://contacts.google.com/person/c12345",
-    );
+    // The address owner minted; contacts only asked.
+    expect(world.rpcCalls.map((c) => c.method)).toEqual(["email.ensure_addresses"]);
   });
 
-  it("email + phone present → contacts.person.email and contacts.person.phone facets", async () => {
-    await mod.ingest({
-      envelopes: [
-        env({
-          remote_id: "gpeople:abc123",
-          payload: contactPayload({
-            emails: [
-              { address: "a@example.com", label: "work", is_primary: true },
-              { address: "b@example.com", label: "home", is_primary: false },
-            ],
-            phones: [{ number: "+10000000", label: "mobile", is_primary: true }],
-          }),
-        }),
-      ],
-    });
-    const person = personOf(lastBatch(graph), "gpeople:abc123");
+  it("no hub anywhere → mint (name vouch) + identity edges to replica and address", async () => {
+    const world = ingestWorld();
+    const mod = mountWorld(world);
+    await mod.ingest({ envelopes: [env({ remote_id: "gpeople:abc123", payload: contactPayload() })] });
 
-    const emails = facetOf(person, "contacts.person.email");
-    expect(emails.map((f) => (f.data as Record<string, unknown>).email).sort()).toEqual([
-      "a@example.com",
-      "b@example.com",
+    expect(world.minted).toEqual([{ schema_id: "contacts.person", name: "Mikhail Lazarev" }]);
+    expect(world.links).toEqual([
+      { from_id: "hub-0", to_id: "id-gpeople:abc123", kind: "identity" },
+      { from_id: "hub-0", to_id: "addr-mikhail@example.com", kind: "identity" },
     ]);
-    const work = emails.find((f) => (f.data as Record<string, unknown>).email === "a@example.com");
-    if (work === undefined) throw new Error("expected the work email facet");
-    expect((work.data as Record<string, unknown>).is_primary).toBe(true);
-    expect((work.data as Record<string, unknown>).type).toBe("work");
-
-    const phones = facetOf(person, "contacts.person.phone");
-    expect(phones).toHaveLength(1);
-    const phone0 = phones[0];
-    if (phone0 === undefined) throw new Error("expected a contacts.person.phone facet");
-    expect((phone0.data as Record<string, unknown>).phone).toBe("+10000000");
-    expect((phone0.data as Record<string, unknown>).type).toBe("mobile");
-    expect((phone0.data as Record<string, unknown>).is_primary).toBe(true);
   });
 
-  it("two envelopes for the same resourceName fold/upsert to one entity (no dup)", async () => {
+  it("exactly one hub holds identity to a shared address → attach, no mint", async () => {
+    const world = ingestWorld({
+      linksFor: {
+        "addr-mikhail@example.com": [
+          { from_id: "hub-X", to_id: "addr-mikhail@example.com", kind: "identity" },
+        ],
+      },
+      entities: { "hub-X": { id: "hub-X", schema_id: "contacts.person", name: "Mika" } },
+    });
+    const mod = mountWorld(world);
+    await mod.ingest({ envelopes: [env({ remote_id: "gpeople:abc123", payload: contactPayload() })] });
+
+    expect(world.minted).toEqual([]);
+    expect(world.links).toEqual([
+      { from_id: "hub-X", to_id: "id-gpeople:abc123", kind: "identity" },
+      { from_id: "hub-X", to_id: "addr-mikhail@example.com", kind: "identity" },
+    ]);
+  });
+
+  it("several hubs claim the address → mint a separate hub + same_as merge-candidates", async () => {
+    const world = ingestWorld({
+      linksFor: {
+        "addr-mikhail@example.com": [
+          { from_id: "hub-A", to_id: "addr-mikhail@example.com", kind: "identity" },
+          { from_id: "hub-B", to_id: "addr-mikhail@example.com", kind: "identity" },
+        ],
+      },
+      entities: {
+        "hub-A": { id: "hub-A", schema_id: "contacts.person" },
+        "hub-B": { id: "hub-B", schema_id: "contacts.person" },
+      },
+    });
+    const mod = mountWorld(world);
+    await mod.ingest({ envelopes: [env({ remote_id: "gpeople:abc123", payload: contactPayload() })] });
+
+    expect(world.minted).toHaveLength(1);
+    const candidates = world.links.filter((l) => l.kind === "same_as");
+    expect(candidates.map((l) => l.to_id).sort()).toEqual(["hub-A", "hub-B"]);
+    expect(candidates.every((l) => l.status === "candidate")).toBe(true);
+  });
+
+  it("legacy fleet: no address match but the hashed key finds the old hub → attach, keep its identity", async () => {
+    const world = ingestWorld({
+      externalIds: { "gpeople:abc123": "old-hub" },
+      entities: { "old-hub": { id: "old-hub", schema_id: "contacts.person", name: "Old" } },
+    });
+    const mod = mountWorld(world);
+    await mod.ingest({
+      envelopes: [env({ remote_id: "gpeople:abc123", payload: contactPayload({ emails: [] }) })],
+    });
+
+    expect(world.minted).toEqual([]);
+    expect(world.links).toEqual([
+      { from_id: "old-hub", to_id: "id-gpeople:abc123", kind: "identity" },
+    ]);
+  });
+
+  it("re-sync: the replica already has its hub → zero new edges, zero mints", async () => {
+    const world = ingestWorld({
+      linksFor: {
+        "id-gpeople:abc123": [
+          { from_id: "hub-X", to_id: "id-gpeople:abc123", kind: "identity" },
+        ],
+      },
+    });
+    const mod = mountWorld(world);
+    await mod.ingest({ envelopes: [env({ remote_id: "gpeople:abc123", payload: contactPayload() })] });
+
+    expect(world.minted).toEqual([]);
+    expect(world.links).toEqual([]);
+  });
+
+  it("two envelopes for the same resourceName fold to one replica (no dup)", async () => {
+    const world = ingestWorld();
+    const mod = mountWorld(world);
     await mod.ingest({
       envelopes: [
         env({ remote_id: "gpeople:abc123", payload: contactPayload() }),
         env({ remote_id: "gpeople:abc123", payload: contactPayload({ display_name: "Mikhail L." }) }),
       ],
     });
-
-    // Same external_id → ONE contacts.person entity in the batch (apply_batch
-    // upserts on the facet external_id, so the key must collapse).
-    const frag = lastBatch(graph);
-    const people = frag.entities.filter((e) => e.schema_id === "contacts.person");
-    expect(people).toHaveLength(1);
-    const person0 = people[0];
-    if (person0 === undefined) throw new Error("expected one contacts.person entity");
-    expect(person0.key).toBe("gpeople:abc123");
+    const frag = lastBatch(world.graph);
+    expect(frag.entities).toHaveLength(1);
   });
 
   it("empty envelopes → no apply_batch", async () => {
+    const world = ingestWorld();
+    const mod = mountWorld(world);
     const r = await mod.ingest({ envelopes: [] });
-    expect(graph.spies.apply_batch).toHaveBeenCalledTimes(0);
+    expect(world.graph.spies.apply_batch).toHaveBeenCalledTimes(0);
     expect(r.ok).toBe(true);
   });
 });

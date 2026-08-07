@@ -158,7 +158,7 @@ describe("meetings.get", () => {
       ),
       list_links_for_entity: vi.fn(
         async (): Promise<LinkSummary[]> => [
-          { id: "hl", from_id: "person-1", to_id: "addr-alice", kind: "has_email" },
+          { id: "hl", from_id: "person-1", to_id: "addr-alice", kind: "identity" },
         ],
       ),
       get_entity: vi.fn(async (id: string) =>

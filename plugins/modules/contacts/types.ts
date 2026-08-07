@@ -263,10 +263,16 @@ export interface GoogleContactPhone {
 }
 export interface GoogleContactPayload {
   id?: string;
+  /** S3: verbatim People API identity — the replica's write-back base. */
+  resource_name?: string | null;
+  /** S3: verbatim optimistic-concurrency tag. */
+  etag?: string | null;
   display_name?: string | null;
   given_name?: string | null;
   family_name?: string | null;
   emails?: GoogleContactEmail[];
   phones?: GoogleContactPhone[];
+  organizations?: { name?: string | null; title?: string | null; is_current?: boolean }[];
+  photo_url?: string | null;
   external_url?: string | null;
 }

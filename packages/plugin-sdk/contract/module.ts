@@ -190,6 +190,9 @@ export interface AddLinkParams {
   from_id: string;
   to_id: string;
   kind: string;
+  /** S3 (plan §5.2): "candidate" records a merge-candidate row, invisible to
+   * canonical readers until promoted. Default: canonical. */
+  status?: "canonical" | "candidate";
 }
 export interface LinkSummary {
   id: string;
@@ -275,13 +278,22 @@ export interface BatchEntityInput {
   idx?: string;
   date?: string;
   facets: BatchFacetInput[];
+  /** S3: the node's identity anchor — THE resolver when present. */
+  anchor?: string;
+  /** S3: the node's dictionary as this sync observed it. The replica
+   * contract is fields-as-last-synced — a re-apply REPLACES the dict
+   * wholesale (one node, one writer). */
+  properties?: Record<string, unknown>;
 }
 
-/// A pre-existing entity an `apply_batch` link points to — resolved (user-scoped)
-/// by `external_id`, never created. An unresolved ref drops its links.
+/// A pre-existing entity an `apply_batch` link points to — resolved
+/// (user-scoped) by `anchor` (the S3 chokepoint; takes precedence) or the
+/// legacy facet `external_id`, never created. An unresolved ref drops its
+/// links.
 export interface BatchRefInput {
   key: string;
-  external_id: string;
+  external_id?: string;
+  anchor?: string;
 }
 
 /// A link in an `apply_batch` fragment, wiring two batch `key`s (entity or ref).

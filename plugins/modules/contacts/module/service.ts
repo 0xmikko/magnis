@@ -4,7 +4,6 @@
 import { rpc, searchEntitiesPage, syncHandler, tool, writeTool, type GraphService, type PluginDeps, type PluginUtil, type RawEntity, type RpcExecutor } from "@magnis/plugin-sdk";
 import type {
   BatchEntityInput,
-  BatchFacetInput,
   FacetRecord,
   GetParams,
   MergePreview,
@@ -49,13 +48,14 @@ import {
   INGEST_CHUNK,
   normalizeHandle,
   pickAvatarColor,
+  replicaDict,
 } from "./helpers.ts";
 import { parseSocialUrl } from "./socialUrl.ts";
 import type { SocialPlatform } from "./socialUrl.ts";
 import {
   CONTACT,
+  GOOGLE_CONTACT,
   CONTACT_EMAIL,
-  CONTACT_EXTERNAL_LINK,
   CONTACT_PHONE,
   CONTACT_PROFILE,
 } from "../schema.ts";
@@ -330,9 +330,9 @@ export class ContactsModule {
       });
     }
 
-    // Hub: ask the email module to ensure the email.address entity,
-    // then link has_email. Restores native controller.rs:143-165 behavior
-    // without contacts writing the foreign email.address schema directly.
+    // Hub: ask the email module to ensure the email.address entity, then
+    // join them with an identity edge (S3: has_email retired — an address IS
+    // an identity channel of the person).
     let email_address_entity_id: string | null = null;
     if (params.email) {
       try {
@@ -340,7 +340,7 @@ export class ContactsModule {
           address: params.email,
         });
         email_address_entity_id = addr.id;
-        await this.graph.add_link({ from_id: entity.id, to_id: addr.id, kind: "has_email" });
+        await this.graph.add_link({ from_id: entity.id, to_id: addr.id, kind: "identity" });
       } catch {
         // Parity with native controller.rs:167 — warn-and-continue. On the
         // single-runtime path (no host AppState) the email hub is unavailable;
@@ -648,71 +648,156 @@ export class ContactsModule {
   /// external_link facets. All facets stamp `external_id = remote_id` so the
   /// host upserts on a stable, resourceName-derived key.
   private async ingestContactBatch(envelopes: ContactsSyncEnvelope[]): Promise<void> {
-    const entities: BatchEntityInput[] = [];
-
+    // 1. Fold envelopes into rows: payload + its lowercased addresses.
+    interface Row {
+      remoteId: string;
+      p: GoogleContactPayload;
+      addresses: string[];
+    }
+    const rows: Row[] = [];
     for (const env of envelopes) {
       const remoteId = env.remote_id;
       if (!remoteId) continue;
-      const raw = (env.payload ?? {});
+      const p = (env.payload ?? {}) as GoogleContactPayload;
+      const addresses = [
+        ...new Set(
+          (p.emails ?? [])
+            .map((e) => (typeof e.address === "string" ? e.address.trim().toLowerCase() : ""))
+            .filter((a) => a.length > 0),
+        ),
+      ];
+      rows.push({ remoteId, p, addresses });
+    }
+    if (rows.length === 0) return;
 
-      const p = raw as GoogleContactPayload;
-
-      const facets: BatchFacetInput[] = [];
-
-      // profile facet — first/last name. external_id is the entity's
-      // resolve-or-create identity (first facet carrying one).
-      const profile: Record<string, unknown> = {};
-      if (p.given_name) profile.first_name = p.given_name;
-      if (p.family_name) profile.last_name = p.family_name;
-      facets.push({
-        schema_id: CONTACT_PROFILE,
-        data: profile,
-        external_id: remoteId,
-        confidence: 90,
+    // 2. The address owner mints (plan §7): one batched RPC for the whole
+    // chunk; the email module get-or-creates by the email:address anchor.
+    const allAddresses = [...new Set(rows.flatMap((r) => r.addresses))];
+    const addressId = new Map<string, string>();
+    if (allAddresses.length > 0) {
+      const r = await this.rpc.execute<{ ids: string[] }>("email.ensure_addresses", {
+        items: allAddresses.map((address) => ({ address })),
       });
-
-      // email facets — one per address (collection-merged canonical).
-      for (const e of p.emails ?? []) {
-        const address = typeof e.address === "string" ? e.address : undefined;
-        if (!address) continue;
-        const data: Record<string, unknown> = { email: address };
-        if (e.label) data.type = e.label;
-        if (typeof e.is_primary === "boolean") data.is_primary = e.is_primary;
-        facets.push({ schema_id: CONTACT_EMAIL, data, confidence: 90 });
-      }
-
-      // phone facets — one per number.
-      for (const ph of p.phones ?? []) {
-        const number = typeof ph.number === "string" ? ph.number : undefined;
-        if (!number) continue;
-        const data: Record<string, unknown> = { phone: number };
-        if (ph.label) data.type = ph.label;
-        if (typeof ph.is_primary === "boolean") data.is_primary = ph.is_primary;
-        facets.push({ schema_id: CONTACT_PHONE, data, confidence: 90 });
-      }
-
-      // external_link facet — provenance back to the Google contact.
-      const extData: Record<string, unknown> = {
-        source_type: "google",
-        external_id: typeof p.id === "string" ? p.id : remoteId,
-      };
-      if (p.external_url) extData.external_url = p.external_url;
-      if (p.display_name) extData.external_name = p.display_name;
-      facets.push({ schema_id: CONTACT_EXTERNAL_LINK, data: extData, confidence: 90 });
-
-      const name = typeof p.display_name === "string" ? p.display_name : "";
-      entities.push({
-        key: remoteId,
-        schema_id: CONTACT,
-        name,
-        idx: name.toLowerCase() || undefined,
-        facets,
+      allAddresses.forEach((a, i) => {
+        const id = r.ids[i];
+        if (id) addressId.set(a, id);
       });
     }
 
-    if (entities.length === 0) return;
-    // One atomic op (rolls back on failure; idempotent on facet external_id).
-    await this.graph.apply_batch({ entities, refs: [], links: [] });
+    // 3. Replica nodes (plan §5): fields-as-last-synced dictionaries,
+    // anchored by the stable remote_id — ONE batch, no facets, and the sync
+    // never writes the hub again.
+    const entities: BatchEntityInput[] = rows.map(({ remoteId, p }) => {
+      const name = typeof p.display_name === "string" ? p.display_name : "";
+      return {
+        key: remoteId,
+        schema_id: GOOGLE_CONTACT,
+        name,
+        idx: name.toLowerCase() || undefined,
+        anchor: remoteId,
+        properties: replicaDict(p),
+        facets: [],
+      };
+    });
+    const batch = await this.graph.apply_batch({ entities, refs: [], links: [] });
+
+    // 4. Auto-attach (plan §5.2): attach / mint / merge-candidate, on
+    // identity-grade anchors only. Fuzzy name matching is never automatic.
+    for (const row of rows) {
+      const replicaId = batch.ids[row.remoteId];
+      if (!replicaId) continue;
+      const addrIds = row.addresses
+        .map((a) => addressId.get(a))
+        .filter((id): id is string => typeof id === "string");
+      await this.attachReplica(replicaId, row.remoteId, row.p, addrIds);
+    }
+  }
+
+  /// The three outcomes, in order (plan §5.2 + the S3 legacy probe):
+  /// already-attached (re-sync) → done; exactly one hub holds identity to a
+  /// shared address → attach; none → probe the legacy fleet by the hashed
+  /// facet external_id, else mint a hub (name vouch, empty dictionary);
+  /// several → mint a separate hub and record merge-candidate rows —
+  /// ambiguity is a human decision, not a guess.
+  private async attachReplica(
+    replicaId: string,
+    remoteId: string,
+    p: GoogleContactPayload,
+    addrIds: string[],
+  ): Promise<void> {
+    // Re-sync short-circuit: the replica already has its hub.
+    const replicaLinks = await this.graph.list_links_for_entity(replicaId);
+    if (replicaLinks.some((l) => l.kind === "identity" && l.to_id === replicaId)) {
+      return;
+    }
+
+    // Hubs holding identity edges to any shared address. Companies hold
+    // identity edges to addresses too — filter to persons.
+    const candidates = new Set<string>();
+    for (const addrId of addrIds) {
+      const links = await this.graph.list_links_for_entity(addrId);
+      for (const l of links) {
+        if (l.kind === "identity" && l.to_id === addrId) candidates.add(l.from_id);
+      }
+    }
+    let hubs: string[] = [];
+    if (candidates.size > 0) {
+      const found = await this.graph.get_entities([...candidates]);
+      hubs = found.filter((e) => e.schema_id === CONTACT).map((e) => e.id);
+    }
+
+    let hubId: string | null = null;
+    let mergeCandidates: string[] = [];
+    if (hubs.length === 1) {
+      hubId = hubs[0] ?? null;
+    } else if (hubs.length === 0) {
+      // The legacy-fleet probe (dated removal, not a resident fallback): an
+      // old google-synced hub carries the SAME hashed key as this replica's
+      // remote_id in its frozen facets — catch it, attach, keep its anchor.
+      const legacy = await this.graph.find_by_external_id(remoteId);
+      if (legacy !== null && legacy !== replicaId) {
+        const e = await this.graph.get_entity(legacy);
+        if (e?.schema_id === CONTACT) hubId = legacy;
+      }
+    } else {
+      mergeCandidates = hubs;
+    }
+
+    if (hubId === null) {
+      // Mint: the name vouch and an empty dictionary — the card composes
+      // everything else from the replica at read time.
+      const firstAddress = (p.emails ?? []).find(
+        (e) => typeof e.address === "string" && e.address.length > 0,
+      )?.address;
+      const name =
+        (typeof p.display_name === "string" && p.display_name.length > 0
+          ? p.display_name
+          : undefined) ??
+        firstAddress ??
+        "Contact";
+      const hub = await this.graph.create_entity({
+        schema_id: CONTACT,
+        name,
+        idx: name.toLowerCase(),
+      });
+      hubId = hub.id;
+      // Several hubs claimed one address: record the ambiguity for a human.
+      for (const other of mergeCandidates) {
+        await this.graph.add_link({
+          from_id: hubId,
+          to_id: other,
+          kind: "same_as",
+          status: "candidate",
+        });
+      }
+    }
+
+    // The edges: hub → replica, hub → each shared address. Idempotent at the
+    // graph layer (re-sync never duplicates an identity edge).
+    await this.graph.add_link({ from_id: hubId, to_id: replicaId, kind: "identity" });
+    for (const addrId of addrIds) {
+      await this.graph.add_link({ from_id: hubId, to_id: addrId, kind: "identity" });
+    }
   }
 
   // ── social tracking ──────────────────────────────────────────────

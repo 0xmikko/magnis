@@ -85,7 +85,7 @@ export async function resolveContactForEmail(
   if (!addrId) return null;
   const links = await graph.list_links_for_entity(addrId);
   for (const link of links) {
-    if (link.kind !== "has_email" || link.to_id !== addrId) continue;
+    if (link.kind !== "identity" || link.to_id !== addrId) continue;
     const person = await graph.get_entity(link.from_id);
     if (person?.schema_id === "contacts.person") return person.id;
   }

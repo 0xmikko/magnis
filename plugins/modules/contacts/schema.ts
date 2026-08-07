@@ -4,8 +4,11 @@
 // (registered natively at install); these consts are for read/write
 // call sites only.
 
-/** Entity schema (person). */
+/** Entity schema (person) — the HUB. */
 export const CONTACT = "contacts.person";
+/** Entity schema (google replica, S3): fields as last synced, one node one
+ * writer; the hub composes the card from it at read time (plan §5). */
+export const GOOGLE_CONTACT = "contacts.google_contact";
 /** Profile facet (first_name/last_name/username/relevance_tier). */
 export const CONTACT_PROFILE = "contacts.person.profile";
 /** Collection email facet (one facet per address). */
