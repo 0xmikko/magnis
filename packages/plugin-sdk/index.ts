@@ -170,6 +170,20 @@ export function syncHandler(_surface?: string): MethodRecorder {
   return record("__sync__", { description: "sync ingest handler", params: {} }, false, false);
 }
 
+/// S4: the terminal sync marker. Invoked once when a bootstrap drain
+/// terminates — the page set the connector reported is COMPLETE, so an
+/// identity-scoped module can reconcile it: what the source no longer
+/// reports leaves the observed set. Payload: { user_id, source_id,
+/// account_id, identity_key, observed_remote_ids }. Opt-in.
+export function syncComplete(): MethodRecorder {
+  return record(
+    "__sync_complete__",
+    { description: "sync complete hook", params: {} },
+    false,
+    false,
+  );
+}
+
 /// S4: the connection-ready hook. Invoked by the host — user id from the
 /// CONNECT payload, never from an envelope — the moment a connection becomes
 /// provider-verified, BEFORE any envelope routes. The one place a module

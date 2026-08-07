@@ -12,7 +12,7 @@
 //     Stage 1 uses the facet's avatar_url / photo_url.
 //   - message-detail canonical map + linked_entities (Context panel).
 
-import { connectionReady, rpc, syncHandler, tool, writeTool, type GraphService, type PluginDeps } from "@magnis/plugin-sdk";
+import { connectionReady, rpc, syncComplete, syncHandler, tool, writeTool, type GraphService, type PluginDeps } from "@magnis/plugin-sdk";
 import type {
   BatchEntityInput,
   BatchLinkInput,
@@ -480,6 +480,57 @@ export class TelegramModule {
     return { ok: true };
   }
 
+  /// S4 (plan §8): the drain terminated — the reported set is COMPLETE.
+  /// A chat the operator's account still observes but the connector no
+  /// longer reports has been LEFT: its observed_in edge decays (the chat
+  /// node and its history stay — leaving is not deleting). A rejoin is the
+  /// next drain reporting it again, which restores the edge to canonical.
+  /// Idempotent: a second run over the same set changes nothing.
+  @syncComplete()
+  async onSyncComplete(params: {
+    user_id: string;
+    source_id: string;
+    account_id: string;
+    identity_key?: string | null;
+    observed_remote_ids?: string[];
+  }): Promise<{ decayed: number; restored: number }> {
+    const identityKey = params.identity_key;
+    if (!identityKey) return { decayed: 0, restored: 0 };
+    const selfId = await this.graph.find_by_anchor(accountAnchor(identityKey));
+    if (!selfId) return { decayed: 0, restored: 0 };
+
+    // The chat ids the drain reported (its envelopes are `tg:chat:<id>`).
+    const reported = new Set(
+      (params.observed_remote_ids ?? [])
+        .filter((id) => id.startsWith("tg:chat:"))
+        .map((id) => id.slice("tg:chat:".length)),
+    );
+    // A drain that reported no chats at all says nothing about membership —
+    // refuse to decay the whole set off an empty page (NO FALLBACKS).
+    if (reported.size === 0) return { decayed: 0, restored: 0 };
+
+    let decayed = 0;
+    let restored = 0;
+    const links = await this.graph.list_links_for_entity(selfId, true);
+    for (const link of links) {
+      if (link.kind !== "observed_in" || link.from_id !== selfId) continue;
+      const chat = await this.graph.get_entity(link.to_id);
+      const props = ((chat as { properties?: unknown } | null)?.properties ?? {}) as Data;
+      const chatId = chatIdOrNull(props);
+      if (chatId === null) continue;
+      const isReported = reported.has(chatId);
+      const isDecayed = link.status === "decayed";
+      if (!isReported && !isDecayed) {
+        await this.graph.set_link_status(link.id, "decayed");
+        decayed += 1;
+      } else if (isReported && isDecayed) {
+        await this.graph.set_link_status(link.id, "canonical");
+        restored += 1;
+      }
+    }
+    return { decayed, restored };
+  }
+
   @syncHandler("telegram")
   async ingest(
     params: { envelopes?: SyncEnvelope[]; backfill_priority?: { chat_ids?: string[] } },
@@ -649,7 +700,10 @@ export class TelegramModule {
           properties: details,
           facets: [],
         });
-        if (identityKey && Object.keys(state).length > 0) {
+        // The edge IS the membership fact — a reported chat always gets it,
+        // with the observed state as its dictionary when the page carries
+        // any. (The complete-set reconciliation decays exactly these.)
+        if (identityKey) {
           if (!selfRef) {
             refs.push({ key: "self", anchor: accountAnchor(identityKey) });
             selfRef = true;

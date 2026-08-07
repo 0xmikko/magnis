@@ -207,6 +207,8 @@ export interface LinkSummary {
   kind: string;
   /** S4: the edge dictionary — per-observer state (unread, pins). */
   metadata?: Record<string, unknown> | null;
+  /** S4: canonical | candidate | rejected | decayed. */
+  status?: string;
 }
 /// A facet as returned by list_facets_for_entity — all schemas, data
 /// kept opaque (the plugin narrows per schema_id at its own boundary).
@@ -468,7 +470,12 @@ export interface GraphService<
   // links — LinkSummary carries the link `id` for targeted deletion.
   add_link(p: AddLinkParams): Promise<void>;
   delete_link(id: string): Promise<void>;
-  list_links_for_entity(entity_id: string): Promise<LinkSummary[]>;
+  /** S4: decay an edge the source no longer reports, or restore it on a
+   * rejoin (canonical | candidate | rejected | decayed). */
+  set_link_status(id: string, status: string): Promise<void>;
+  /** Canonical edges by default; `include_all_statuses` also returns
+   * candidate / decayed rows (S4's reconciliation restores a rejoin). */
+  list_links_for_entity(entity_id: string, include_all_statuses?: boolean): Promise<LinkSummary[]>;
 
   // batch — apply a whole graph fragment (entities + facets + links + events) in
   // ONE atomic transaction / one host crossing. The bulk ingest primitive: a page
