@@ -46,10 +46,7 @@ import {
   computeInitials,
   detectChannels,
   detectRelevanceTier,
-  facetTime,
   INGEST_CHUNK,
-  isValidSocialContact,
-  latestSocialFacet,
   normalizeHandle,
   pickAvatarColor,
 } from "./helpers.ts";
@@ -61,7 +58,6 @@ import {
   CONTACT_EXTERNAL_LINK,
   CONTACT_PHONE,
   CONTACT_PROFILE,
-  CONTACT_SOCIAL,
 } from "../schema.ts";
 
 export class ContactsModule {
@@ -627,13 +623,6 @@ export class ContactsModule {
       if (!env.user_id) continue;
       if (env.kind !== "snapshot" && env.kind !== "live") continue;
       if (!env.remote_id) continue;
-      // social_contact contract: ALL fields required — a violating
-      // envelope is reported dropped, never half-ingested.
-      const payload = (env.payload ?? {});
-      if (payload.kind === "social_contact" && !isValidSocialContact(payload)) {
-        dropped.push(env.remote_id);
-        continue;
-      }
       byRemoteId.set(env.remote_id, env);
     }
 
@@ -665,57 +654,6 @@ export class ContactsModule {
       const remoteId = env.remote_id;
       if (!remoteId) continue;
       const raw = (env.payload ?? {});
-
-      // social_contact mapper: x/linkedin following imports on
-      // the SAME surface. Mints an UNTRACKED social contact (tracking is a
-      // per-person opt-in — importing must never start API spend).
-      // FIND-OR-CREATE: a contact already carrying this handle is
-      // returned untouched — re-importing must NEVER untrack an opted-in
-      // person or duplicate an existing one.
-      if (raw.kind === "social_contact") {
-        const platform = env.source_id === "linkedin" ? "linkedin" : "x";
-        const handle = raw.handle as string;
-        const existing = await this.get_social_tracking_by_handle({
-          platform,
-          handle,
-        });
-        if (existing) continue;
-        const displayName = raw.display_name as string;
-        const profileUrl = raw.profile_url as string;
-        entities.push({
-          key: remoteId,
-          schema_id: CONTACT,
-          name: displayName,
-          idx: displayName.toLowerCase() || undefined,
-          facets: [
-            {
-              schema_id: CONTACT_PROFILE,
-              data: {},
-              external_id: remoteId,
-              confidence: 90,
-            },
-            {
-              schema_id: CONTACT_SOCIAL,
-              data:
-                platform === "linkedin"
-                  ? { linkedin_handle: handle, tracked_linkedin: false }
-                  : { x_handle: handle, tracked_x: false },
-              confidence: 90,
-            },
-            {
-              schema_id: CONTACT_EXTERNAL_LINK,
-              data: {
-                source_type: platform,
-                external_id: remoteId,
-                external_url: profileUrl,
-                external_name: displayName,
-              },
-              confidence: 90,
-            },
-          ],
-        });
-        continue;
-      }
 
       const p = raw as GoogleContactPayload;
 
@@ -803,9 +741,10 @@ export class ContactsModule {
     if (existing?.schema_id !== CONTACT) {
       throw new Error(`contact not found: ${params.id}`);
     }
-    // Merge onto the current facet so toggling one platform never clears the
-    // other's opt-in / handle.
-    const next: SocialTracking = { ...(await this.readSocialTracking(params.id)) };
+    // S3: the opt-in lives in the hub dictionary — `tracking[]`, one
+    // {platform, handle, enabled} entry per platform. Merge onto the current
+    // entries so toggling one platform never clears the other's opt-in.
+    const next: SocialTracking = { ...trackingView(existing) };
     if (params.platform === "x") {
       next.tracked_x = params.tracked;
       if (params.handle !== undefined) next.x_handle = normalizeHandle(params.handle);
@@ -813,10 +752,9 @@ export class ContactsModule {
       next.tracked_linkedin = params.tracked;
       if (params.handle !== undefined) next.linkedin_handle = normalizeHandle(params.handle);
     }
-    await this.graph.attach_facet({
+    await this.graph.update_properties({
       entity_id: params.id,
-      schema_id: CONTACT_SOCIAL,
-      data: next,
+      properties: { tracking: trackingEntries(next) },
     });
     return next;
   }
@@ -1013,30 +951,19 @@ export class ContactsModule {
   ): Promise<SocialTrackingByHandle | null> {
     const want = params.handle.trim().toLowerCase();
     if (!want) return null;
-    const handleKey = params.platform === "x" ? "x_handle" : "linkedin_handle";
-    const trackedKey = params.platform === "x" ? "tracked_x" : "tracked_linkedin";
 
-    // Page through persons + batch-read facets (no N+1). Personal-CRM scale;
-    // the latest contacts.person.social facet per person wins (attach order).
+    // Page through persons reading the hub dictionaries directly (S3) — the
+    // entity rows already carry `tracking[]`, no facet read at all.
     const PAGE = 500;
     for (let offset = 0; ; offset += PAGE) {
       const page = await this.graph.list_entities({ schema_id: CONTACT, limit: PAGE, offset });
       if (page.items.length === 0) return null;
-      const facets = await this.graph.list_facets_for_entities(page.items.map((e) => e.id));
-      const latestFacetByEntity = new Map<string, FacetRecord>();
-      for (const f of facets) {
-        if (f.schema_id !== CONTACT_SOCIAL || !f.entity_id) continue;
-        const cur = latestFacetByEntity.get(f.entity_id);
-        if (!cur || facetTime(f) > facetTime(cur)) latestFacetByEntity.set(f.entity_id, f);
-      }
-      const latestByEntity = new Map<string, SocialTracking>();
-      for (const [eid, f] of latestFacetByEntity) {
-        latestByEntity.set(eid, f.data as SocialTracking);
-      }
-      for (const [entityId, social] of latestByEntity) {
-        const stored = social[handleKey]?.trim();
+      for (const e of page.items) {
+        const entry = trackingEntryOf(e, params.platform);
+        if (!entry) continue;
+        const stored = entry.handle?.trim();
         if (stored?.toLowerCase() === want) {
-          return { contact_id: entityId, tracked: social[trackedKey] === true, handle: stored };
+          return { contact_id: e.id, tracked: entry.enabled, handle: stored };
         }
       }
       if (offset + PAGE >= page.total) return null;
@@ -1058,29 +985,18 @@ export class ContactsModule {
   async list_social_tracking(params: {
     platform: SocialPlatform;
   }): Promise<{ contact_id: string; name: string; handle: string }[]> {
-    const handleKey = params.platform === "x" ? "x_handle" : "linkedin_handle";
-    const trackedKey = params.platform === "x" ? "tracked_x" : "tracked_linkedin";
     const out: { contact_id: string; name: string; handle: string }[] = [];
-    // Same paged scan as get_social_tracking_by_handle: latest social facet
-    // per person wins (runtime returns facets NEWEST-FIRST — never trust
-    // append order).
+    // Same paged scan as get_social_tracking_by_handle, straight off the
+    // hub dictionaries (S3).
     const PAGE = 500;
     for (let offset = 0; ; offset += PAGE) {
       const page = await this.graph.list_entities({ schema_id: CONTACT, limit: PAGE, offset });
       if (page.items.length === 0) break;
-      const facets = await this.graph.list_facets_for_entities(page.items.map((e) => e.id));
-      const latestFacetByEntity = new Map<string, FacetRecord>();
-      for (const f of facets) {
-        if (f.schema_id !== CONTACT_SOCIAL || !f.entity_id) continue;
-        const cur = latestFacetByEntity.get(f.entity_id);
-        if (!cur || facetTime(f) > facetTime(cur)) latestFacetByEntity.set(f.entity_id, f);
-      }
-      for (const [entityId, f] of latestFacetByEntity) {
-        const social = f.data as SocialTracking;
-        const handle = social[handleKey]?.trim();
-        if (social[trackedKey] === true && handle) {
-          const name = page.items.find((e) => e.id === entityId)?.name ?? handle;
-          out.push({ contact_id: entityId, name, handle });
+      for (const e of page.items) {
+        const entry = trackingEntryOf(e, params.platform);
+        const handle = entry?.handle?.trim();
+        if (entry?.enabled && handle) {
+          out.push({ contact_id: e.id, name: e.name || handle, handle });
         }
       }
       if (offset + PAGE >= page.total) break;
@@ -1101,14 +1017,62 @@ export class ContactsModule {
     return this.readSocialTracking(params.id);
   }
 
-  // Latest contacts.person.social facet for an entity, or {} when the contact
-  // has never been tracked. The runtime returns facets NEWEST-FIRST (`ORDER BY
-  // observed_at DESC`) — pick max(observed_at) explicitly, never a list end
-  // (live bug 2026-07-02: picking the OLDEST facet resurrected tracked=true on
-  // every toggle, so Untrack never stopped the scheduler fetching).
+  // The hub dictionary's tracking view, or {} when the contact has never
+  // been tracked (S3: `properties.tracking[]` is the single source).
   private async readSocialTracking(id: string): Promise<SocialTracking> {
-    const facets = await this.graph.list_facets_for_entity(id);
-    const latest = latestSocialFacet(facets);
-    return ((latest?.data as SocialTracking | undefined) ?? {}) satisfies SocialTracking;
+    const e = await this.graph.get_entity(id);
+    return e ? trackingView(e) : {};
   }
+}
+
+/** One `tracking[]` entry of the hub dictionary (plan §7 S3). */
+interface TrackingEntry {
+  platform: "x" | "linkedin";
+  handle?: string | null;
+  enabled: boolean;
+}
+
+function trackingOf(e: { properties?: unknown }): TrackingEntry[] {
+  const props = (e.properties ?? {}) as Record<string, unknown>;
+  return Array.isArray(props.tracking) ? (props.tracking as TrackingEntry[]) : [];
+}
+
+function trackingEntryOf(
+  e: { properties?: unknown },
+  platform: "x" | "linkedin",
+): TrackingEntry | undefined {
+  return trackingOf(e).find((t) => t.platform === platform);
+}
+
+/** The wire view the tools speak, derived from the dictionary entries. */
+function trackingView(e: { properties?: unknown }): SocialTracking {
+  const view: SocialTracking = {};
+  for (const t of trackingOf(e)) {
+    if (t.platform === "x") {
+      view.tracked_x = t.enabled;
+      if (t.handle) view.x_handle = t.handle;
+    } else {
+      view.tracked_linkedin = t.enabled;
+      if (t.handle) view.linkedin_handle = t.handle;
+    }
+  }
+  return view;
+}
+
+/** The dictionary entries a wire view stores as. Entries with neither a
+ * handle nor an opt-in are dropped — the dictionary holds claims, not
+ * placeholders. */
+function trackingEntries(v: SocialTracking): TrackingEntry[] {
+  const out: TrackingEntry[] = [];
+  if (v.x_handle || v.tracked_x) {
+    out.push({ platform: "x", handle: v.x_handle ?? null, enabled: v.tracked_x === true });
+  }
+  if (v.linkedin_handle || v.tracked_linkedin) {
+    out.push({
+      platform: "linkedin",
+      handle: v.linkedin_handle ?? null,
+      enabled: v.tracked_linkedin === true,
+    });
+  }
+  return out;
 }

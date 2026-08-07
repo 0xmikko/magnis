@@ -15,7 +15,7 @@ version = "1.0.0"
 title = "X"
 summary = "Sync posts from the X (Twitter) accounts you track."
 publisher = "ai.magnis"
-surfaces = ["x", "contacts"]
+surfaces = ["x"]
 account_mode = "single"
 
 [auth]
