@@ -88,6 +88,10 @@ export interface SyncEnvelope {
   surface: string;
   account_id: string;
   user_id: string;
+  /** S4: the provider-verified identity that observed this envelope —
+   * stamped HOST-side from the account row's ProbeAuth subject. The
+   * telegram ingest refuses envelopes without it (identity-scoped data). */
+  identity_key?: string;
   kind: string;
   remote_id?: string;
   cursor?: unknown;

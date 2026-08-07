@@ -170,6 +170,21 @@ export function syncHandler(_surface?: string): MethodRecorder {
   return record("__sync__", { description: "sync ingest handler", params: {} }, false, false);
 }
 
+/// S4: the connection-ready hook. Invoked by the host — user id from the
+/// CONNECT payload, never from an envelope — the moment a connection becomes
+/// provider-verified, BEFORE any envelope routes. The one place a module
+/// mints what identity-scoped ingest presumes (telegram: the operator's own
+/// account node). Payload: { user_id, source_id, account_id, identity_key }.
+/// NOT an agent tool. Opt-in — a module without it has nothing to prepare.
+export function connectionReady(): MethodRecorder {
+  return record(
+    "__connection_ready__",
+    { description: "connection ready hook", params: {} },
+    false,
+    false,
+  );
+}
+
 // ───────────────────── definePlugin — the entry ───────────────────
 /// Single plugin entry point. Generic over the plugin's schema maps —
 /// `F`/`C` are inferred from the constructor, so `definePlugin(Foo)`
