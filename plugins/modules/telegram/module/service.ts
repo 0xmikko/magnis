@@ -672,7 +672,7 @@ export class TelegramModule {
         await this.graph.file_register({
           external_id: `file:telegram:${String(mChatId)}:${String(mMessageId)}`,
           parent_external_id: remoteId,
-          link_kind: "attachment",
+          link_kind: "file.attachment",
           name: str(payload, "file_name") ?? undefined,
           mime_type: mediaTypeToMime(mediaType),
           source_ref: payload.source_ref as Record<string, unknown>,

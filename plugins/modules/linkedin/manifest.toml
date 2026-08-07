@@ -27,3 +27,13 @@ read = [ "contacts.person" ]
 links = [ "linkedin.profile:contacts.person" ]
 call = [ "contacts.get_social_tracking_by_handle", "contacts.rename_if_placeholder", "contacts.list_social_tracking" ]
 host = [ "sync_state", "external_id_reads" ]
+
+# The kinds this module OWNS (S2), endpoints as ROLES.
+[[links]]
+kind = "linkedin.post:linkedin.profile"
+from = "content"
+to = "identity_channel"
+
+[[links]]
+kind = "linkedin.profile:contacts.person"
+from = "identity_channel"
