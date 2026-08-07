@@ -14,5 +14,12 @@
     }
   ],
   "type": "object",
-  "additionalProperties": true
+  "additionalProperties": true,
+  "properties": {
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "x-magnis-time": "dataset_relative"
+    }
+  }
 }

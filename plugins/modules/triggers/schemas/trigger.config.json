@@ -33,7 +33,8 @@
     },
     "expires_at": {
       "type": "string",
-      "format": "date-time"
+      "format": "date-time",
+      "x-magnis-time": "dataset_relative"
     },
     "debounce_seconds": {
       "type": "integer"
@@ -49,7 +50,8 @@
     },
     "last_fired_at": {
       "type": "string",
-      "format": "date-time"
+      "format": "date-time",
+      "x-magnis-time": "dataset_relative"
     }
   }
 }

@@ -16,6 +16,16 @@ summary = "People from every source, merged into one identity."
 # Reverse-domain publisher identity.
 publisher = "ai.magnis"
 
+[[links]]
+kind = "has_email"
+from = "contacts.person"
+to = "email.address"
+
+[[links]]
+kind = "works_at"
+from = "contacts.person"
+to = "companies.company"
+
 # Sync surface this module consumes (fed by the matching source connector).
 [surfaces.contacts]
 # The surface's primary-item schema — its user-scoped graph count IS the
@@ -26,5 +36,5 @@ item = "contacts.person"
 # own:own links, and reads of own schemas need no declaration.
 [permissions]
 read = [ "companies.company" ]
-links = [ "has_email" ]
+links = [ "has_email", "works_at" ]
 call = [ "email.ensure_address" ]

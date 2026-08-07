@@ -15,3 +15,8 @@ title = "Notes"
 summary = "Freeform notes linked to entities and projects."
 # Reverse-domain publisher identity.
 publisher = "ai.magnis"
+
+[[links]]
+kind = "supports"
+from = "notes.note"
+to = "projects.project"

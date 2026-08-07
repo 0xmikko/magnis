@@ -17,6 +17,16 @@ summary = "LinkedIn profiles and posts of the people you track, linked to contac
 # Reverse-domain publisher identity.
 publisher = "ai.magnis"
 
+[[links]]
+kind = "linkedin.post:linkedin.profile"
+from = "linkedin.post"
+to = "linkedin.profile"
+
+[[links]]
+kind = "linkedin.profile:contacts.person"
+from = "linkedin.profile"
+to = "contacts.person"
+
 # Sync surface this module consumes (fed by the matching source connector).
 [surfaces.linkedin]
 

@@ -14,6 +14,11 @@ summary = "Documents and attachments from your sources, in one place."
 # Reverse-domain publisher identity.
 publisher = "ai.magnis"
 
+[[links]]
+kind = "attachment"
+from = "any_registered_entity"
+to = "file.object"
+
 # Foreign asks beyond the implicit own namespace: writes to `file.` facets,
 # own:own links, and reads of own schemas need no declaration.
 [permissions]

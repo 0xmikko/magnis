@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["chat_id", "title", "chat_type"],
+  "properties": {
+    "chat_id": { "type": "integer" },
+    "title": { "type": "string" },
+    "chat_type": { "type": "string", "enum": ["private", "group", "supergroup", "channel"] },
+    "username": { "type": "string" }
+  },
+  "additionalProperties": false
+}

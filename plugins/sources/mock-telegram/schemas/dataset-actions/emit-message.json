@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["chat_id", "message_id", "text", "date"],
+  "properties": {
+    "chat_id": { "type": "integer" },
+    "message_id": { "type": "integer" },
+    "text": { "type": "string" },
+    "date": {
+      "type": "string",
+      "format": "date-time",
+      "x-magnis-time": "dataset_relative"
+    },
+    "sender_id": { "type": "integer" },
+    "sender_name": { "type": "string" },
+    "reply_to_message_id": { "type": "integer" }
+  },
+  "additionalProperties": false
+}

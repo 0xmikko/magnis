@@ -17,7 +17,7 @@
 
 export * from "./contract/source";
 
-import type { ConnectorConfig, Envelope } from "./contract/source";
+import type { ConnectorConfig, DatasetActionArgs, Envelope } from "./contract/source";
 
 /** JSON-RPC error codes shared with the host runtime.
  * RATE_LIMIT carries `retry_after=<secs>` in the message so the host backs off
@@ -269,6 +269,52 @@ if (name === "magnis.auth.probe" && config.probeAuth) {
     }
 
     // ── outbound actions ────────────────────────────────────────────────────
+    if (name === "magnis.dataset.invoke") {
+      const action = typeof rawArgs.action === "string" ? rawArgs.action : "";
+      const handler = config.datasetActions?.[action];
+      if (!handler) {
+        return {
+          jsonrpc: "2.0",
+          id,
+          error: { code: -32601, message: `unknown dataset action '${action}'` },
+        };
+      }
+      const payload =
+        rawArgs.payload !== null && typeof rawArgs.payload === "object" && !Array.isArray(rawArgs.payload)
+          ? (rawArgs.payload as Record<string, unknown>)
+          : undefined;
+      const settings =
+        rawArgs.settings !== null && typeof rawArgs.settings === "object" && !Array.isArray(rawArgs.settings)
+          ? (rawArgs.settings as Record<string, unknown>)
+          : undefined;
+      if (
+        payload === undefined ||
+        settings === undefined ||
+        typeof rawArgs.invocation_id !== "string" ||
+        typeof rawArgs.action_time !== "string"
+      ) {
+        return {
+          jsonrpc: "2.0",
+          id,
+          error: { code: -32602, message: "invalid dataset invocation" },
+        };
+      }
+      try {
+        const args: DatasetActionArgs = {
+          action,
+          invocation_id: rawArgs.invocation_id,
+          action_time: rawArgs.action_time,
+          settings,
+          payload,
+          meta: metaArg,
+        };
+        const result = await handler(args);
+        return { jsonrpc: "2.0", id, result };
+      } catch (e) {
+        return errorReply(id, e);
+      }
+    }
+
     if (name === "magnis.execute") {
       const action = typeof rawArgs.action === "string" ? rawArgs.action : "";
       const handler = config.execute?.[action];
@@ -328,27 +374,43 @@ if (name === "magnis.auth.probe" && config.probeAuth) {
   // tools/list and anything else: advertise the single read tool (cred-less —
   // initialize/list never need a key; auth fails at fetch).
   if (method === "tools/list") {
+    const tools: Record<string, unknown>[] = [
+      {
+        name: "magnis.sync.fetch",
+        description: "Fetch a page of canonical envelopes for a surface.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            surface: { type: "string" },
+            cursor: {},
+            tracked_handles: { type: "array", items: { type: "string" } },
+            limit: { type: "integer" },
+          },
+          required: ["surface"],
+        },
+      },
+    ];
+    if (config.datasetActions !== undefined) {
+      tools.push({
+        name: "magnis.dataset.invoke",
+        description: "Invoke one manifest-declared dataset action.",
+        inputSchema: {
+          type: "object",
+          required: ["action", "invocation_id", "action_time", "payload"],
+          properties: {
+            action: { type: "string" },
+            invocation_id: { type: "string" },
+            action_time: { type: "string", format: "date-time" },
+            payload: { type: "object" },
+          },
+          additionalProperties: false,
+        },
+      });
+    }
     return {
       jsonrpc: "2.0",
       id,
-      result: {
-        tools: [
-          {
-            name: "magnis.sync.fetch",
-            description: "Fetch a page of canonical envelopes for a surface.",
-            inputSchema: {
-              type: "object",
-              properties: {
-                surface: { type: "string" },
-                cursor: { type: "integer" },
-                tracked_handles: { type: "array", items: { type: "string" } },
-                limit: { type: "integer" },
-              },
-              required: ["surface"],
-            },
-          },
-        ],
-      },
+      result: { tools },
     };
   }
 
