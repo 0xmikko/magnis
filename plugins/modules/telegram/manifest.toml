@@ -27,7 +27,7 @@ item = "telegram.message"
 [permissions]
 read = [ "contacts.person" ]
 create = [ "contacts.person" ]
-links = [ "telegram.message:person", "person:telegram.chat" ]
+links = [ "telegram.message:telegram.chat", "telegram.message:person", "person:telegram.chat" ]
 call = [ "triggers.create" ]
 host = [ "source_commands", "sync_state", "composer", "file_register", "web_register", "external_id_reads" ]
 

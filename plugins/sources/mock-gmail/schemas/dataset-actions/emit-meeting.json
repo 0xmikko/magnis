@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["event_id", "title", "starts_at", "ends_at", "attendees"],
+  "properties": {
+    "event_id": { "type": "string", "minLength": 1 },
+    "title": { "type": "string", "minLength": 1 },
+    "starts_at": {
+      "type": "string",
+      "format": "date-time",
+      "x-magnis-time": "dataset_relative"
+    },
+    "ends_at": {
+      "type": "string",
+      "format": "date-time",
+      "x-magnis-time": "dataset_relative"
+    },
+    "description": { "type": "string" },
+    "location": { "type": "string" },
+    "attendees": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["email"],
+        "properties": {
+          "name": { "type": "string" },
+          "email": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

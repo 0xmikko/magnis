@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["message_id", "from_address", "subject", "body_text", "sent_at"],
+  "properties": {
+    "message_id": { "type": "string", "minLength": 1 },
+    "thread_id": { "type": "string", "minLength": 1 },
+    "from_address": { "type": "string", "minLength": 1 },
+    "from_name": { "type": "string" },
+    "subject": { "type": "string" },
+    "body_text": { "type": "string" },
+    "sent_at": {
+      "type": "string",
+      "format": "date-time",
+      "x-magnis-time": "dataset_relative"
+    },
+    "attachments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["attachment_id", "filename", "mime_type", "size"],
+        "properties": {
+          "attachment_id": { "type": "string", "minLength": 1 },
+          "filename": { "type": "string" },
+          "mime_type": { "type": "string" },
+          "size": { "type": "integer", "minimum": 0 }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
