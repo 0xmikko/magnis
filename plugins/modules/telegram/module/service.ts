@@ -382,7 +382,7 @@ export class TelegramModule {
   async chatsSetIndexed(params: SetIndexedParams): Promise<{ status: string }> {
     // S4: the chat resolves through the anchor chokepoint and the toggle is
     // ONE dictionary merge — no facet, no duplicate-row hazard.
-    const entityId = await this.graph.find_by_external_id(`tg:chat:${String(params.chat_id)}`);
+    const entityId = await this.graph.find_by_anchor(chatAnchor(String(params.chat_id)));
     if (!entityId) throw new Error(`chat ${String(params.chat_id)} not found`);
     await this.graph.update_properties({
       entity_id: entityId,
@@ -528,8 +528,19 @@ export class TelegramModule {
       if (kind !== "snapshot" && kind !== "live") continue;
       const payload = env.payload;
       const entityType = typeof payload.entity_type === "string" ? payload.entity_type : "message";
-      if (entityType === "chat" || entityType === "telegram_chat") chats.push({ env, payload });
-      else messages.push({ env, payload });
+      if (entityType === "chat" || entityType === "telegram_chat") {
+        chats.push({ env, payload });
+        continue;
+      }
+      // S4: a message node is anchored `tg:msg:<chat>:<id>` — an envelope
+      // missing either part has no identity, so it is DROPPED (reported to
+      // the host, never fatal to the page). The facet schema used to catch
+      // this; the anchor rule catches it now.
+      if (chatIdOrNull(payload) === null || num(payload, "message_id") === null) {
+        if (env.remote_id) dropped.push(env.remote_id);
+        continue;
+      }
+      messages.push({ env, payload });
     }
 
     // Chats: a big page (the bootstrap dialog list) is batched + CHUNKED so it never
@@ -582,7 +593,7 @@ export class TelegramModule {
       for (const { payload } of chats) {
         const chatId = chatIdOrNull(payload);
         if (chatId === null || existingByChatId.has(chatId)) continue;
-        const eid = await this.graph.find_by_external_id(`tg:chat:${chatId}`);
+        const eid = await this.graph.find_by_anchor(chatAnchor(chatId));
         if (!eid) continue;
         const e = await this.graph.get_entity(eid);
         const props = ((e as { properties?: unknown } | null)?.properties ?? {}) as Data;
@@ -603,14 +614,12 @@ export class TelegramModule {
       for (const { env, payload } of chats.slice(i, i + INGEST_CHUNK)) {
         const remoteId = env.remote_id;
         if (!remoteId) continue;
-        const details: Data = { ...payload };
-        delete details.entity_type;
         const state: Data = {};
-        for (const key of STATE_KEYS) {
-          if (details[key] !== null && details[key] !== undefined) {
-            state[key] = details[key];
-            details[key] = undefined;
-          }
+        const details: Data = {};
+        for (const [key, value] of Object.entries(payload)) {
+          if (key === "entity_type" || value === null || value === undefined) continue;
+          if (STATE_KEYS.includes(key)) state[key] = value;
+          else details[key] = value;
         }
         const chatId = chatIdOrNull(payload);
         const existing = chatId === null ? undefined : existingByChatId.get(chatId);
@@ -677,7 +686,7 @@ export class TelegramModule {
       if (cid === null) continue;
       const key = cid;
       if (chatEntityId.has(key)) continue;
-      const eid = await this.graph.find_by_external_id(`tg:chat:${key}`);
+      const eid = await this.graph.find_by_anchor(chatAnchor(key));
       chatEntityId.set(key, eid);
       if (eid) {
         const e = await this.graph.get_entity(eid);
@@ -900,7 +909,11 @@ export class TelegramModule {
   private async ingestDelete(envelope: SyncEnvelope): Promise<void> {
     const remoteId = envelope.remote_id;
     if (!remoteId) return;
-    const entityId = await this.graph.find_by_external_id(remoteId);
+    // S4: messages and chats resolve by ANCHOR (their remote_id IS the
+    // anchor form) — the facet external_id retired with the facets.
+    const entityId =
+      (await this.graph.find_by_anchor(remoteId)) ??
+      (await this.graph.find_by_external_id(remoteId));
     if (entityId) await this.graph.delete_entity(entityId);
   }
 
@@ -1073,7 +1086,7 @@ export class TelegramModule {
         [{ env: this.syntheticEnvelope(remoteId, sentPayload, accountId), payload: sentPayload }],
         [],
       );
-      const entityId = await this.graph.find_by_external_id(remoteId);
+      const entityId = await this.graph.find_by_anchor(remoteId);
       return entityId ? { ...result, id: entityId } : result;
     } catch {
       return result;
@@ -1131,8 +1144,7 @@ export class TelegramModule {
     },
   })
   async setTrigger(params: SetTriggerParams): Promise<unknown> {
-    const chatExt = `tg:chat:${String(params.chat_id)}`;
-    const chatEntityId = await this.graph.find_by_external_id(chatExt);
+    const chatEntityId = await this.graph.find_by_anchor(chatAnchor(String(params.chat_id)));
     if (!chatEntityId) {
       throw new Error(`Telegram chat ${String(params.chat_id)} not found. Sync messages first.`);
     }

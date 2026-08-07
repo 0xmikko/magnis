@@ -370,6 +370,8 @@ export interface GraphService<
   // user-scoped find of the entity owning a facet with this source external_id
   // (ingest find-or-create). Returns the entity id or null.
   find_by_external_id(external_id: string): Promise<string | null>;
+  /** S1/S4: resolve a node by its identity ANCHOR through the chokepoint. */
+  find_by_anchor(anchor: string): Promise<string | null>;
   // register a web link (web.link entity + metadata facet + bg preview fetch),
   // optionally linked to a parent entity. Returns the web.link entity id.
   web_register(p: { url: string; parent_entity_id?: string; link_kind?: string }): Promise<string>;
