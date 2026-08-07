@@ -28,7 +28,7 @@ function ingestGraph(): G {
         dropped_keys: [],
       }),
     file_register: () => Promise.resolve("file-id"),
-    find_by_external_id: () => Promise.resolve("existing-id"),
+    find_by_anchor: () => Promise.resolve("existing-id"),
     delete_entity: () => Promise.resolve(undefined),
   });
 }
@@ -272,9 +272,9 @@ describe("email ingest — trigger / delete / empty-user parity", () => {
     expect(snap.trigger_checks).toHaveLength(0);
   });
 
-  it("DELETE → find_by_external_id + delete_entity, no apply_batch", async () => {
+  it("DELETE → find_by_anchor + delete_entity, no apply_batch", async () => {
     await mod.ingest({ envelopes: [env({ kind: "delete", remote_id: "m-del", payload: {} })] });
-    expect(spy(graph, "find_by_external_id")).toHaveBeenCalledTimes(1);
+    expect(spy(graph, "find_by_anchor")).toHaveBeenCalledTimes(1);
     expect(spy(graph, "delete_entity")).toHaveBeenCalledWith("existing-id");
     expect(spy(graph, "apply_batch")).toHaveBeenCalledTimes(0);
   });
@@ -303,7 +303,7 @@ describe("email ingest — DB-access guarantees (tst_be_emaildb_005 / INV-DB-3)"
       ],
     });
     expect(spy(graph, "apply_batch")).toHaveBeenCalledTimes(1);
-    expect(spy(graph, "find_by_external_id")).toHaveBeenCalledTimes(0); // delete-only
+    expect(spy(graph, "find_by_anchor")).toHaveBeenCalledTimes(0); // delete-only
     // create_entity / add_link / attach_facet (the per-item crossings) are
     // forbidden, unarranged ops — the throwing mockGraph guarantees they are
     // never hit; there is no spy to assert 0 against.

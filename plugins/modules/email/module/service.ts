@@ -295,7 +295,9 @@ export class EmailModule {
   /// Delete envelope: resolve the email by its source external_id and remove it.
   private async ingestDelete(env: SyncEnvelope): Promise<void> {
     if (!env.remote_id) return;
-    const id = await this.graph.find_by_external_id(env.remote_id);
+    // S5: the remote id IS the node's anchor — resolution goes through the
+    // one chokepoint, not the retired facet external id.
+    const id = await this.graph.find_by_anchor(env.remote_id);
     if (id) await this.graph.delete_entity(id);
   }
 
@@ -322,6 +324,7 @@ export class EmailModule {
           idx: lower,
           anchor: `email:address:${lower}`,
           properties: data,
+          confidence: 100,
           facets: [],
         });
         addrSeen.add(key);
@@ -356,6 +359,10 @@ export class EmailModule {
         date: str(p, "sent_at") ?? undefined,
         anchor: remoteId,
         properties: dict,
+        // The provider is the observer of a message it delivered; the module's
+        // own certainty in the dictionary it just wrote is 90, as the facet it
+        // replaced carried.
+        confidence: 90,
         facets: [],
       });
       const from = lowerAddr(str(p, "from_address"));

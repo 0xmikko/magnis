@@ -74,6 +74,7 @@ export class XModule {
           // S5: the profile DICT is the record, under the issuer's own key.
           anchor: profileAnchor,
           properties: payload,
+          confidence: 100,
           facets: [],
         });
         if (identity.handle) profileKeyByHandle.set(identity.handle.toLowerCase(), remoteId);
@@ -88,6 +89,7 @@ export class XModule {
           date: content.created_at ?? undefined,
           anchor: remoteId,
           properties: payload,
+          confidence: 100,
           facets: [],
         });
       } else {

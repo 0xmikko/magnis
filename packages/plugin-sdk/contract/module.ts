@@ -298,6 +298,11 @@ export interface BatchEntityInput {
    * contract is fields-as-last-synced — a re-apply REPLACES the dict
    * wholesale (one node, one writer). */
   properties?: Record<string, unknown>;
+  /** S5: how sure this module is of the dictionary it just wrote (0-100).
+   * The only part of the node's provenance stamp a module supplies — source,
+   * account, surface and observed_at are stamped host-side from the sync
+   * dispatch context. */
+  confidence?: number;
 }
 
 /// A pre-existing entity an `apply_batch` link points to — resolved

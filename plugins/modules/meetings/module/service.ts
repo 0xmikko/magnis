@@ -389,7 +389,9 @@ export class MeetingsModule {
   /// it. An unknown id is a silent no-op (native delete_by_remote_id parity).
   private async ingestDelete(env: SyncEnvelope): Promise<void> {
     if (!env.remote_id) return;
-    const id = await this.graph.find_by_external_id(env.remote_id);
+    // S5: the remote id IS the node's anchor — resolution goes through the
+    // one chokepoint, not the retired facet external id.
+    const id = await this.graph.find_by_anchor(env.remote_id);
     if (id) await this.graph.delete_entity(id);
   }
 
@@ -414,6 +416,7 @@ export class MeetingsModule {
       name,
       anchor: remoteId,
       properties: dict,
+      confidence: 90,
       facets: [],
     };
     const addressIds = await this.ensureAddresses(attendees);

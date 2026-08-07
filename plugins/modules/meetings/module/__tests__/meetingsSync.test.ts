@@ -25,7 +25,7 @@ function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
         links_added: 0,
         dropped_keys: [],
       }),
-    find_by_external_id: (_id: string): Promise<string | null> => Promise.resolve(null),
+    find_by_anchor: (_id: string): Promise<string | null> => Promise.resolve(null),
     delete_entity: (_id: string): Promise<void> => Promise.resolve(undefined),
     sync_state: (): Promise<Record<string, unknown>> => Promise.resolve({ ok: true }),
     ...over,
@@ -59,7 +59,7 @@ const env = (over: Partial<SyncEnvelope>): SyncEnvelope => ({
 });
 
 describe("meetings @syncHandler — upsert", () => {
-  it("upserts a snapshot via apply_batch keyed on external_id, no trigger", async () => {
+  it("upserts a snapshot via apply_batch keyed on its anchor, no trigger", async () => {
     const apply_batch = vi.fn(async (frag: GraphBatchInput) => ({
       ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
       created: 1,
@@ -81,6 +81,7 @@ describe("meetings @syncHandler — upsert", () => {
         name: "Past meeting",
         anchor: "r2",
         properties: payload,
+        confidence: 90,
         facets: [],
       },
     ]);
@@ -147,22 +148,22 @@ describe("meetings @syncHandler — live envelopes emit a trigger.check", () => 
 });
 
 describe("meetings @syncHandler — delete", () => {
-  it("deletes an existing meeting by external_id", async () => {
-    const find_by_external_id = vi.fn().mockResolvedValue("m-del");
+  it("deletes an existing meeting by its anchor", async () => {
+    const find_by_anchor = vi.fn().mockResolvedValue("m-del");
     const delete_entity = vi.fn().mockResolvedValue(undefined);
-    const { mod } = makeModule(makeGraph({ find_by_external_id, delete_entity }));
+    const { mod } = makeModule(makeGraph({ find_by_anchor, delete_entity }));
 
     const res = await mod.ingest({ envelopes: [env({ kind: "delete", remote_id: "rdel" })] });
 
-    expect(find_by_external_id).toHaveBeenCalledWith("rdel");
+    expect(find_by_anchor).toHaveBeenCalledWith("rdel");
     expect(delete_entity).toHaveBeenCalledWith("m-del");
     expect(res.dropped_remote_ids).toEqual([]);
   });
 
   it("is a no-op (not an error, not dropped) for an unknown delete id", async () => {
-    const find_by_external_id = vi.fn().mockResolvedValue(null);
+    const find_by_anchor = vi.fn().mockResolvedValue(null);
     const delete_entity = vi.fn();
-    const { mod } = makeModule(makeGraph({ find_by_external_id, delete_entity }));
+    const { mod } = makeModule(makeGraph({ find_by_anchor, delete_entity }));
 
     const res = await mod.ingest({ envelopes: [env({ kind: "delete", remote_id: "ghost" })] });
 

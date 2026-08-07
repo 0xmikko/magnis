@@ -698,6 +698,7 @@ export class TelegramModule {
           name: typeof payload.title === "string" ? payload.title : "",
           anchor: chatId !== null ? chatAnchor(chatId) : undefined,
           properties: details,
+          confidence: 100,
           facets: [],
         });
         // The edge IS the membership fact — a reported chat always gets it,
@@ -799,6 +800,7 @@ export class TelegramModule {
         date: str(payload, "date") ?? undefined,
         anchor: remoteId,
         properties: dict,
+        confidence: 90,
         facets: [],
       });
 
