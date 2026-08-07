@@ -532,11 +532,12 @@ export class TelegramModule {
         chats.push({ env, payload });
         continue;
       }
-      // S4: a message node is anchored `tg:msg:<chat>:<id>` — an envelope
-      // missing either part has no identity, so it is DROPPED (reported to
-      // the host, never fatal to the page). The facet schema used to catch
-      // this; the anchor rule catches it now.
-      if (chatIdOrNull(payload) === null || num(payload, "message_id") === null) {
+      // S4: a message node is identified by its message_id (the envelope's
+      // remote_id is its anchor) — an envelope without one has no identity,
+      // so it is DROPPED and reported, never fatal to the page. The facet
+      // schema used to catch this; the identity rule catches it now. A
+      // missing chat_id costs only the in_chat edge, not the node.
+      if (num(payload, "message_id") === null) {
         if (env.remote_id) dropped.push(env.remote_id);
         continue;
       }
