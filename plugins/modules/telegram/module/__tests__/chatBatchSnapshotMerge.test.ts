@@ -28,6 +28,7 @@ function chatEnvelope(chatId: number): SyncEnvelope {
     account_id: "acct-1",
     user_id: "u1",
     kind: "snapshot",
+    identity_key: "9001",
     remote_id: `tg:chat:${String(chatId)}`,
     payload: {
       entity_type: "telegram_chat",
@@ -47,18 +48,22 @@ describe("telegram chat batch ingest", () => {
         Promise.resolve({
           items: [
             {
-              entity: entity("chat-entity-1", "Pinned chat", {
-                schema_id: "telegram.chat",
-              }),
-              data: {
-                chat_id: 1,
-                title: "Pinned chat",
-                is_pinned: true,
-                last_message_date: "2026-07-26T19:00:00Z",
-                last_message_preview: "Existing last message",
-                last_sender_name: "Mikko",
-                avatar_url: "/media/avatars/tg_chat_1.jpg",
+              entity: {
+                ...entity("chat-entity-1", "Pinned chat", {
+                  schema_id: "telegram.chat",
+                }),
+                // S4: the chat DICT is the record — the window's entity row
+                // carries it; the render facet is dead.
+                properties: {
+                  chat_id: 1,
+                  title: "Pinned chat",
+                  last_message_date: "2026-07-26T19:00:00Z",
+                  last_message_preview: "Existing last message",
+                  last_sender_name: "Mikko",
+                  avatar_url: "/media/avatars/tg_chat_1.jpg",
+                },
               },
+              data: null,
             },
           ],
           total: 1,
@@ -87,13 +92,24 @@ describe("telegram chat batch ingest", () => {
     if (firstCall === undefined) throw new Error("chat batch merge: apply_batch was not called");
     const firstBatch = firstCall[0] as GraphBatchInput;
     const pinnedChat = firstBatch.entities.find((item) => item.key === "tg:chat:1");
-    const details = pinnedChat?.facets[0]?.data as Record<string, unknown>;
 
-    expect(details).toMatchObject({
+    // S4: the batch writes the DICTIONARY (zero facets) under the chat's
+    // anchor; per-account state (is_pinned/pin_order) leaves the dict for
+    // the observed_in edge from the operator's account.
+    expect(pinnedChat?.facets).toEqual([]);
+    expect(pinnedChat?.anchor).toBe("tg:chat:1");
+    expect(pinnedChat?.properties).toMatchObject({
       last_message_date: "2026-07-26T19:00:00Z",
       last_message_preview: "Existing last message",
       last_sender_name: "Mikko",
       avatar_url: "/media/avatars/tg_chat_1.jpg",
     });
+    expect(pinnedChat?.properties?.is_pinned).toBeUndefined();
+    const stateLink = firstBatch.links?.find(
+      (l) => l.to_key === "tg:chat:1" && l.kind === "observed_in",
+    );
+    expect(stateLink?.from_key).toBe("self");
+    expect(stateLink?.metadata).toMatchObject({ is_pinned: true, pin_order: 0 });
+    expect(firstBatch.refs?.find((r) => r.key === "self")?.anchor).toBe("tg:account:9001");
   });
 });

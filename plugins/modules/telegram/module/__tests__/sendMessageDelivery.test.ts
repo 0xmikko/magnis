@@ -26,7 +26,10 @@ interface TgInternals {
     replyTo: number | undefined,
     accountId: string | undefined,
   ): Promise<Record<string, unknown>>;
-  ingestMessage(env: SyncEnvelope, payload: Record<string, unknown>): Promise<unknown>;
+  ingestMessageBatch(
+    messages: { env: SyncEnvelope; payload: Record<string, unknown> }[],
+    triggers: unknown[],
+  ): Promise<unknown>;
 }
 
 function makeModule(): { mod: TgInternals; graph: G } {
@@ -42,7 +45,7 @@ function makeModule(): { mod: TgInternals; graph: G } {
 describe("tst_fe_agent_007 — sendMessage: delivery success survives local enrichment failure", () => {
   it("resolves (does NOT reject) when ingest fails after a successful delivery", async () => {
     const { mod, graph } = makeModule();
-    vi.spyOn(mod, "ingestMessage").mockRejectedValue(new Error("PGlite write failed"));
+    vi.spyOn(mod, "ingestMessageBatch").mockRejectedValue(new Error("PGlite write failed"));
 
     const result = await mod.sendMessage(42, "hi", undefined, "acct");
 
@@ -52,7 +55,7 @@ describe("tst_fe_agent_007 — sendMessage: delivery success survives local enri
 
   it("returns the enriched result (with entity id) on the happy path", async () => {
     const { mod } = makeModule();
-    vi.spyOn(mod, "ingestMessage").mockResolvedValue(undefined);
+    vi.spyOn(mod, "ingestMessageBatch").mockResolvedValue(undefined);
 
     const result = await mod.sendMessage(42, "hi", undefined, "acct");
 

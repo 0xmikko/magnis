@@ -97,6 +97,12 @@ export interface FieldRefDto {
   facet_path?: string;
   /** A key of the node's dictionary (S1): `entities.properties->>path`. */
   property_path?: string;
+  /** S4: a key of an EDGE dictionary — per-observer state (unread, pins).
+   * The edge is the one of `edge_kind` whose other endpoint carries
+   * `observer_anchor`. All three are required together. */
+  edge_kind?: string;
+  observer_anchor?: string;
+  edge_path?: string;
 }
 export interface OrderKeyDto {
   field: FieldRefDto;
@@ -199,6 +205,8 @@ export interface LinkSummary {
   from_id: string;
   to_id: string;
   kind: string;
+  /** S4: the edge dictionary — per-observer state (unread, pins). */
+  metadata?: Record<string, unknown> | null;
 }
 /// A facet as returned by list_facets_for_entity — all schemas, data
 /// kept opaque (the plugin narrows per schema_id at its own boundary).

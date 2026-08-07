@@ -26,8 +26,10 @@ item = "telegram.message"
 # own:own links, and reads of own schemas need no declaration.
 [permissions]
 read = [ "contacts.person" ]
-create = [ "contacts.person" ]
-links = [ "telegram.message:telegram.chat", "telegram.message:person", "person:telegram.chat" ]
+# S4: the module writes REGISTRY relations now (authored_by / in_chat /
+# observed_in / observed_participant) between its own nodes; the colon
+# pairs retire with the migration.
+links = [ "authored_by", "in_chat", "observed_in", "observed_participant" ]
 call = [ "triggers.create" ]
 host = [ "source_commands", "sync_state", "composer", "file_register", "web_register", "external_id_reads" ]
 
@@ -35,18 +37,3 @@ host = [ "source_commands", "sync_state", "composer", "file_register", "web_regi
 # defaults — rewritten to host-shim URLs at build/transpile time.
 [ui]
 extra_bare_imports = [ "react-virtuoso", "zustand", "zustand/vanilla" ]
-
-# The kinds this module OWNS (S2): colon pairs named by their endpoints'
-# families; endpoints as ROLES.
-[[links]]
-kind = "telegram.message:telegram.chat"
-from = "content"
-to = "container"
-
-[[links]]
-kind = "telegram.message:person"
-from = "content"
-
-[[links]]
-kind = "person:telegram.chat"
-to = "container"
