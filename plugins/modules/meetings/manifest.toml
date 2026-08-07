@@ -14,6 +14,21 @@ summary = "Schedule, track, and recap meetings across calendars."
 # Reverse-domain publisher identity.
 publisher = "ai.magnis"
 
+[[links]]
+kind = "mentions"
+from = "meetings.calendar_event"
+to = "contacts.person"
+
+[[links]]
+kind = "mentions"
+from = "meetings.calendar_event"
+to = "companies.company"
+
+[[links]]
+kind = "mentions"
+from = "meetings.calendar_event"
+to = "projects.project"
+
 # Sync surface this module consumes (fed by the matching source connector).
 [surfaces.meetings]
 # The surface's primary-item schema — its user-scoped graph count IS the

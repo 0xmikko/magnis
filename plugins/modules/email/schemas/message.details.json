@@ -95,14 +95,16 @@
         "string",
         "null"
       ],
-      "format": "date-time"
+      "format": "date-time",
+      "x-magnis-time": "dataset_relative"
     },
     "received_at": {
       "type": [
         "string",
         "null"
       ],
-      "format": "date-time"
+      "format": "date-time",
+      "x-magnis-time": "dataset_relative"
     },
     "labels": {
       "type": "array",

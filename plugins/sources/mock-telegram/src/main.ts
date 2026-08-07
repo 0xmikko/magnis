@@ -1,28 +1,21 @@
-// mock-telegram — a *controllable* dev/eval Magnis MCP source connector.
+// mock-telegram — dataset/eval Magnis MCP source connector.
 //
-// TS port of the `magnis-mock-telegram` Rust binary (wire-identical): drive the
-// `telegram` surface like a real server — inject chats and messages over HTTP
-// (MOCK_TELEGRAM_PORT) and they flow through magnis.sync.fetch as canonical
-// telegram envelopes the `telegram` module ingests unchanged. Poll-only.
+// Dataset actions emit production-shaped live envelopes for the `telegram`
+// surface. Polling remains intentionally empty; no raw injection side-channel
+// bypasses the host's dataset action validation or receipts.
 
 import { runConnector } from "@magnis/connector-sdk";
+import { emitChat, emitMessage } from "./dataset";
 import { fetchMockTelegram } from "./fetch";
-import { maybeRunHttp } from "./http";
-import { SURFACE } from "./store";
-
-// HTTP control runs in the background; the MCP stdio loop drives the process
-// lifetime (exits on stdin EOF when the host drops the connection).
-maybeRunHttp();
 
 await runConnector({
   name: "magnis-mock-telegram",
   version: "0.1.0",
-  surfaces: [SURFACE],
+  surfaces: ["telegram"],
   intervalSecs: 2,
   fetch: fetchMockTelegram,
+  datasetActions: { emit_chat: emitChat, emit_message: emitMessage },
 });
 
-// stdin EOF = the host dropped the connection. Exit explicitly: a bound
-// Bun.serve keeps the event loop alive forever, whereas the Rust twin's runtime
-// (and its background HTTP task) died with `main`.
+// stdin EOF = the host dropped the connection.
 process.exit(0);

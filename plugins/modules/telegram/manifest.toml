@@ -16,6 +16,21 @@ summary = "Threaded Telegram chats indexed alongside the rest of your graph."
 # Reverse-domain publisher identity.
 publisher = "ai.magnis"
 
+[[links]]
+kind = "telegram.message:telegram.chat"
+from = "telegram.message"
+to = "telegram.chat"
+
+[[links]]
+kind = "telegram.message:person"
+from = "telegram.message"
+to = "contacts.person"
+
+[[links]]
+kind = "person:telegram.chat"
+from = "contacts.person"
+to = "telegram.chat"
+
 # Sync surface this module consumes (fed by the matching source connector).
 [surfaces.telegram]
 # The surface's primary-item schema — its user-scoped graph count IS the
@@ -27,7 +42,7 @@ item = "telegram.message"
 [permissions]
 read = [ "contacts.person" ]
 create = [ "contacts.person" ]
-links = [ "telegram.message:person", "person:telegram.chat" ]
+links = [ "telegram.message:telegram.chat", "telegram.message:person", "person:telegram.chat" ]
 call = [ "triggers.create" ]
 host = [ "source_commands", "sync_state", "composer", "file_register", "web_register", "external_id_reads" ]
 

@@ -35,7 +35,8 @@
           },
           "updated_at": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "x-magnis-time": "dataset_relative"
           }
         }
       }
