@@ -41,6 +41,7 @@ function ingestGraph(): G {
         dropped_keys: [],
       }),
     web_register: () => Promise.resolve("web-id"),
+    find_by_anchor: () => Promise.resolve(null),
     file_register: () => Promise.resolve("file-id"),
     attach_facet: () => Promise.resolve({ id: "facet-id" }),
     create_entity: () => Promise.resolve(entity("created-id", "")),

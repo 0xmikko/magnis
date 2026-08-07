@@ -36,6 +36,7 @@ function makeModule(): { mod: TgInternals; graph: G } {
   const graph = mockGraph<TelegramFacets, TelegramCanonical>({
     source_command: () => Promise.resolve({ message_id: 777 }),
     find_by_external_id: () => Promise.resolve("ent-1"),
+    find_by_anchor: () => Promise.resolve("ent-1"),
   });
   const mod = mountModule(TelegramModule, { graph, ctx: { extension_id: "telegram" } })
     .module as unknown as TgInternals;
