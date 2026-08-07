@@ -57,4 +57,4 @@ to = "episodes.episode"
 # own:own links, and reads of own schemas need no declaration.
 [permissions]
 links = [ "watches", "belongs_to" ]
-call = [ "triggers.validate_watch", "triggers.resolve_watchable", "triggers.invalidate_cache" ]
+call = [ "triggers.validate_watch", "triggers.resolve_watchable", "triggers.invalidate_cache", "triggers.validate_schedule" ]

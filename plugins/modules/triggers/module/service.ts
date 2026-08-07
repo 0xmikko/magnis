@@ -36,12 +36,14 @@ import type {
   ListForEntityParams,
   ListTriggersParams,
   ResolveWatchableResult,
+  ScheduleParam,
   TriggerConfigData,
   TriggerCreated,
   TriggerDetailView,
   TriggerExecutionData,
   TriggerFacets,
   TriggerListItem,
+  TriggerScheduleSpec,
   UpdateTriggerParams,
   WatchedEntity,
 } from "../types.ts";
@@ -115,6 +117,21 @@ export class TriggersModule {
           description: "0=immediate fire (default), >0=minimum seconds between firings",
         },
         max_firings: { type: "integer", description: "Maximum total firings before auto-expire" },
+        schedule: {
+          type: "object",
+          description:
+            "Cron schedule — fires the trigger on a clock instead of (or in addition to) " +
+            "watched events. Minimum interval: 5 minutes.",
+          properties: {
+            cron: {
+              type: "string",
+              description: "Standard 5-field cron expression, e.g. '0 9 * * MON-FRI'",
+            },
+            timezone: { type: "string", description: "IANA timezone name (default: UTC)" },
+          },
+          required: ["cron"],
+          additionalProperties: false,
+        },
       },
       required: ["name", "gate_prompt", "action_prompt"],
       additionalProperties: false,
@@ -140,6 +157,14 @@ export class TriggersModule {
       params.event_kinds && params.event_kinds.length > 0 ? params.event_kinds : ["sync_ingested"];
     const watch_entity_ids = params.watch_entity_ids ?? [];
     const debounce_seconds = params.debounce_seconds ?? 0;
+
+    // @tested-by: tst_module_triggers_sched_001, tst_module_triggers_sched_002
+    // Schedule normalization is a HARD validation and runs before any row is
+    // written — an invalid cron / floor violation must not leave an entity.
+    let schedule: TriggerScheduleSpec | undefined;
+    if (params.schedule !== undefined && params.schedule !== null) {
+      schedule = await this.normalizeSchedule(params.schedule);
+    }
 
     // Validate watch targets are triggerable. The schema `triggerable` flag is
     // backend-only — delegate to the native resolver, which returns either a
@@ -180,6 +205,7 @@ export class TriggersModule {
     if (params.expires_at !== undefined) config.expires_at = params.expires_at;
     if (params.max_wait_seconds !== undefined) config.max_wait_seconds = params.max_wait_seconds;
     if (params.max_firings !== undefined) config.max_firings = params.max_firings;
+    if (schedule !== undefined) config.schedule = schedule;
 
     // @tested-by: tst_module_triggers_write_001
     // @invariant: INV-25 — create is externally atomic. Config and watch links
@@ -372,6 +398,22 @@ export class TriggersModule {
         expires_at: { type: "string", format: "date-time" },
         debounce_seconds: { type: "integer" },
         max_firings: { type: "integer" },
+        schedule: {
+          description:
+            "Set a cron schedule (object with cron + optional timezone) or clear it (null).",
+          anyOf: [
+            { type: "null" },
+            {
+              type: "object",
+              properties: {
+                cron: { type: "string" },
+                timezone: { type: "string" },
+              },
+              required: ["cron"],
+              additionalProperties: false,
+            },
+          ],
+        },
       },
       required: ["id"],
       additionalProperties: false,
@@ -409,6 +451,18 @@ export class TriggersModule {
     if (params.debounce_seconds !== undefined) config.debounce_seconds = params.debounce_seconds;
     if (params.max_wait_seconds !== undefined) config.max_wait_seconds = params.max_wait_seconds;
     if (params.max_firings !== undefined) config.max_firings = params.max_firings;
+
+    // @tested-by: tst_module_triggers_sched_003
+    // Every set/change re-normalizes through the seam (fresh engine-stamped
+    // activated_at — the activation boundary moves with the modification);
+    // `null` clears without consulting it.
+    if (params.schedule !== undefined) {
+      if (params.schedule === null) {
+        delete config.schedule;
+      } else {
+        config.schedule = await this.normalizeSchedule(params.schedule);
+      }
+    }
 
     await this.graph.attach_facet({ entity_id: params.id, schema_id: TRIGGER_CONFIG, data: config });
     if (params.name !== undefined && params.name !== detail.entity.name) {
@@ -598,6 +652,23 @@ export class TriggersModule {
     return facet ? (facet.data as TriggerConfigData) : null;
   }
 
+  /// One parser of record, one clock: the native seam validates the cron
+  /// expression and returns the normalized spec (engine-stamped `activated_at`,
+  /// materialized timezone), persisted verbatim. A caller-supplied
+  /// `activated_at` is never forwarded — only cron + timezone cross the seam.
+  private async normalizeSchedule(param: ScheduleParam): Promise<TriggerScheduleSpec> {
+    const request: { cron: string; timezone?: string } = { cron: param.cron };
+    if (param.timezone !== undefined) request.timezone = param.timezone;
+    const spec = await this.rpc.execute<TriggerScheduleSpec | null>(
+      "triggers.validate_schedule",
+      request,
+    );
+    if (!spec || typeof spec !== "object") {
+      throw new Error("triggers.validate_schedule returned no normalized spec");
+    }
+    return spec;
+  }
+
   private watchesLinks(detail: EntityDetail): LinkSummary[] {
     return detail.links.filter((l) => l.kind === WATCHES && l.from_id === detail.entity.id);
   }
@@ -667,6 +738,7 @@ export class TriggersModule {
       watched_entities: watched,
       parent_episode_id: parentEpisodeId,
       parent_episode_name: parentEpisodeName,
+      schedule: config.schedule ?? null,
     };
   }
 }
