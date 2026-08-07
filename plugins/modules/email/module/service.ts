@@ -199,7 +199,10 @@ export class EmailModule {
           schema_id: t.schema_id,
           link_kind: l.kind,
           created_at: t.created_at ?? "",
-          data: null,
+          // S5: a neighbour carries its own dictionary — the attachment row
+          // renders its size from the file node, not from a copy the message
+          // used to keep.
+          data: t.properties ?? null,
         });
       }
     }
