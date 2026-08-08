@@ -447,7 +447,6 @@ export interface GraphService<
   /** Batch: every facet for many entities in ONE DB round-trip (vs N). Each
    *  record carries entity_id so the caller can group. */
   list_facets_for_entities(entity_ids: string[]): Promise<FacetRecord[]>;
-  delete_facet(id: string): Promise<void>;
 
   // canonical — keys + values typed by the plugin's Canon map.
   get_canonical(entity_id: string, schemas?: string[]): Promise<Partial<Canon>>;
@@ -456,13 +455,6 @@ export interface GraphService<
    *  N get_canonical). Each record carries entity_id so the caller can group it
    *  back into a per-entity `Partial<Canon>` map. */
   list_canonical_for_entities(entity_ids: string[]): Promise<CanonicalRecord[]>;
-  /// Recompute canonical properties from the entity's facets + mappings.
-  /// Recompute from the frozen facet archive. Nothing writes facets any more,
-  /// so this only ever reproduces what the archive already says.
-  resolve_canonical(entity_id: string): Promise<void>;
-  apply_canonical_override<K extends keyof Canon & string>(
-    p: { entity_id: string; key: K; value: Canon[K] },
-  ): Promise<void>;
 
   // links — LinkSummary carries the link `id` for targeted deletion.
   add_link(p: AddLinkParams): Promise<void>;

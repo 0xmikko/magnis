@@ -149,6 +149,37 @@ describe("meetings @syncHandler — live envelopes emit a trigger.check", () => 
   });
 });
 
+describe("meetings @syncHandler — attendee edge reconcile", () => {
+  it("an attendee the provider no longer reports loses its edge; others survive", async () => {
+    const delete_link = vi.fn((_id: string) => Promise.resolve(undefined));
+    // The event already carries edges from an EARLIER invite revision: a
+    // now-removed guest, the still-current guest, a non-attendee edge, and an
+    // inbound edge that merely points AT the event.
+    const list_links_for_entity = vi.fn(() =>
+      Promise.resolve([
+        { id: "l-stale", from_id: "id-r6", to_id: "addr-old@x", kind: "attendee" },
+        { id: "l-keep", from_id: "id-r6", to_id: "addr-ann@x", kind: "attendee" },
+        { id: "l-proj", from_id: "id-r6", to_id: "proj-1", kind: "created_by" },
+        { id: "l-inbound", from_id: "other", to_id: "id-r6", kind: "attendee" },
+      ]),
+    );
+    const { mod } = makeModule(
+      makeGraph({ delete_link, list_links_for_entity } as Record<string, unknown>),
+    );
+    await mod.ingest({
+      envelopes: [
+        env({
+          remote_id: "r6",
+          payload: { title: "Sync", starts_at: "2026-07-29T09:00:00Z", attendees: [{ email: "ann@x" }] },
+        }),
+      ],
+    });
+    // Only the ex-guest's OUTBOUND attendee edge goes — wholesale-replace
+    // semantics the facet era gave for free, now explicit.
+    expect(delete_link.mock.calls.map((c) => c[0])).toEqual(["l-stale"]);
+  });
+});
+
 describe("meetings @syncHandler — delete", () => {
   it("deletes an existing meeting by its anchor", async () => {
     const find_by_anchor = vi.fn().mockResolvedValue("m-del");

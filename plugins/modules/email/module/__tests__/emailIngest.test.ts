@@ -8,7 +8,7 @@
 // that guarantee REPLACES the old reject() spies AND their toHaveBeenCalledTimes(0)
 // assertions (an unarranged op has no spy to count).
 
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { BatchEntityInput, BatchLinkInput, GraphBatchInput } from "@magnis/plugin-sdk";
 import { mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { EmailModule } from "../service.ts";
@@ -126,6 +126,29 @@ describe("email ingest — apply_batch shape (tst_be_emailingest_001)", () => {
     for (const l of m1to) {
       expect(l.metadata).toEqual({ role: "to" });
     }
+  });
+
+  it("a recipient listed under To AND Cc keeps the STRONGEST role", async () => {
+    await mod.ingest({
+      envelopes: [
+        env({
+          remote_id: "dup-1",
+          payload: {
+            subject: "Dup",
+            from_address: "boss@corp.com",
+            to_addresses: "ann@x.com",
+            cc_addresses: "ann@x.com, ben@x.com",
+          },
+        }),
+      ],
+    });
+    const call = spy(graph, "apply_batch").mock.calls[0] as [GraphBatchInput] | undefined;
+    if (call === undefined) throw new Error("ingest: apply_batch never called");
+    const sentTo = (call[0].links ?? []).filter((l) => l.kind === "sent_to");
+    const ann = sentTo.find((l) => l.to_key === "addr:ann@x.com");
+    const ben = sentTo.find((l) => l.to_key === "addr:ben@x.com");
+    expect(ann?.metadata).toEqual({ role: "to" });
+    expect(ben?.metadata).toEqual({ role: "cc" });
   });
 
   it("folds Cc + Bcc recipients into address entities + sent_to links", async () => {
