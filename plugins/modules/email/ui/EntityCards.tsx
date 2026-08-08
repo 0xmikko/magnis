@@ -22,6 +22,23 @@ import { ExpansionContext } from "@magnis/host/agent";
 
 // ── Field extractors ─────────────────────────────────────────────
 
+/** The generic context card carries the node's EDGES under `neighbours` —
+ * the recipients and attachments the dictionary no longer holds (they are
+ * `sent_to` / `file.attachment` edges since the property-graph landing). */
+function neighbourNames(data: Readonly<Record<string, unknown>>, kind: string): string[] {
+  const raw: unknown = data.neighbours;
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  for (const n of raw as readonly unknown[]) {
+    if (n === null || typeof n !== "object" || Array.isArray(n)) continue;
+    const rec = n as Record<string, unknown>;
+    if (rec.kind === kind && typeof rec.name === "string" && rec.name.length > 0) {
+      out.push(rec.name);
+    }
+  }
+  return out;
+}
+
 function toStringList(value: unknown): string[] {
   if (typeof value === "string") {
     return value
@@ -41,6 +58,7 @@ function bodyText(data: Readonly<Record<string, unknown>>): string | undefined {
 
 function senderOf(data: Readonly<Record<string, unknown>>): string | undefined {
   if (typeof data.sender === "string" && data.sender.length > 0) return data.sender;
+  if (typeof data.from_name === "string" && data.from_name.length > 0) return data.from_name;
   if (typeof data.from_address === "string" && data.from_address.length > 0) return data.from_address;
   if (typeof data.from === "string" && data.from.length > 0) return data.from;
   return undefined;
@@ -52,12 +70,13 @@ function recipients(data: Readonly<Record<string, unknown>>): string[] {
     ...single,
     ...toStringList(data.to_addresses),
     ...toStringList(data.recipients),
+    ...neighbourNames(data, "sent_to"),
   ]));
 }
 
 function attachments(data: Readonly<Record<string, unknown>>): string[] {
   const raw = data.attachments;
-  if (!Array.isArray(raw)) return [];
+  if (!Array.isArray(raw)) return neighbourNames(data, "file.attachment");
   const out: string[] = [];
   for (const item of raw) {
     if (typeof item === "string" && item.length > 0) out.push(item);

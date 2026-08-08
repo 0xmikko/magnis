@@ -103,7 +103,12 @@ export class XModule {
       if (!handle) continue;
       const profileKey = profileKeyByHandle.get(handle.toLowerCase());
       if (profileKey) {
-        links.push({ from_key: env.remote_id, to_key: profileKey, kind: AUTHORED_BY });
+        links.push({
+          from_key: env.remote_id,
+          to_key: profileKey,
+          kind: AUTHORED_BY,
+          declared_by: env.remote_id,
+        });
       }
     }
 

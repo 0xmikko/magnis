@@ -37,7 +37,25 @@ function contactDisplayName(data: Readonly<Record<string, unknown>>): string {
 
 function emailList(data: Readonly<Record<string, unknown>>): string[] {
   const single = typeof data.email === "string" && data.email.length > 0 ? [data.email] : [];
-  return Array.from(new Set([...single, ...toStringList(data.emails)]));
+  // The generic context card carries the address node the hub reaches over
+  // its `identity` edge — the dictionary itself holds no email (plan §3).
+  const viaIdentity: string[] = [];
+  const rawNeighbours: unknown = data.neighbours;
+  if (Array.isArray(rawNeighbours)) {
+    for (const n of rawNeighbours as readonly unknown[]) {
+      if (n === null || typeof n !== "object" || Array.isArray(n)) continue;
+      const rec = n as Record<string, unknown>;
+      if (
+        rec.kind === "identity" &&
+        rec.schema_id === "email.address" &&
+        typeof rec.name === "string" &&
+        rec.name.length > 0
+      ) {
+        viaIdentity.push(rec.name);
+      }
+    }
+  }
+  return Array.from(new Set([...single, ...toStringList(data.emails), ...viaIdentity]));
 }
 
 function phoneList(data: Readonly<Record<string, unknown>>): string[] {

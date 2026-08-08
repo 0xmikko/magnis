@@ -86,7 +86,12 @@ describe("x ingest", () => {
     expect(post.properties).toMatchObject({ text: "hello world", metrics: { likes: 5 } });
     // authored_by link wired within the page (author_handle "Jack" → profile "jack").
     expect(batch.links).toEqual([
-      { from_key: "x:post:1", to_key: "x:profile:jack", kind: "authored_by" },
+      {
+        from_key: "x:post:1",
+        to_key: "x:profile:jack",
+        kind: "authored_by",
+        declared_by: "x:post:1",
+      },
     ]);
   });
 

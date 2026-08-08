@@ -72,7 +72,12 @@ describe("linkedin ingest", () => {
     expect(post.properties).toMatchObject({ text: "hello world", metrics: { likes: 5 } });
     // authored_by link wired within the page (author_handle "Jack" → profile "jack").
     expect(batch.links).toEqual([
-      { from_key: "linkedin:post:1", to_key: "linkedin:profile:ACoAAB123", kind: AUTHORED_BY },
+      {
+        from_key: "linkedin:post:1",
+        to_key: "linkedin:profile:ACoAAB123",
+        kind: AUTHORED_BY,
+        declared_by: "linkedin:post:1",
+      },
     ]);
   });
 
