@@ -711,6 +711,7 @@ export class TelegramModule {
             from_key: "self",
             to_key: remoteId,
             kind: "observed_in",
+            declared_by: remoteId,
             metadata: state,
           });
         }
@@ -769,10 +770,15 @@ export class TelegramModule {
         chatRefKeys.add(key);
       }
     };
-    const addLink = (from_key: string, to_key: string, kind: string): void => {
+    const addLink = (
+      from_key: string,
+      to_key: string,
+      kind: string,
+      declared_by: string,
+    ): void => {
       const k = `${from_key} ${to_key} ${kind}`;
       if (!linkSeen.has(k)) {
-        links.push({ from_key, to_key, kind });
+        links.push({ from_key, to_key, kind, declared_by });
         linkSeen.add(k);
       }
     };
@@ -803,7 +809,7 @@ export class TelegramModule {
 
       if (cid !== null && chatKey) {
         addChatRef(chatKey, cid);
-        addLink(remoteId, chatKey, "in_chat");
+        addLink(remoteId, chatKey, "in_chat", remoteId);
       }
 
       const sid = payload.sender_id;
@@ -830,8 +836,8 @@ export class TelegramModule {
           });
           accountKeys.add(accountKey);
         }
-        addLink(remoteId, accountKey, "authored_by");
-        if (chatKey) addLink(accountKey, chatKey, "observed_participant");
+        addLink(remoteId, accountKey, "authored_by", remoteId);
+        if (chatKey) addLink(accountKey, chatKey, "observed_participant", remoteId);
       }
     }
 

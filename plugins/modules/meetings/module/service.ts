@@ -433,6 +433,7 @@ export class MeetingsModule {
         from_key: remoteId,
         to_key: key,
         kind: "attendee",
+        declared_by: remoteId,
         ...(a.name === undefined ? {} : { metadata: { display_name: a.name } }),
       });
     }

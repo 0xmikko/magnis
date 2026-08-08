@@ -127,9 +127,17 @@ describe("meetings @syncHandler — live envelopes emit a trigger.check", () => 
       { key: "addr:a@x", anchor: "email:address:a@x" },
       { key: "addr:b@x", anchor: "email:address:b@x" },
     ]);
+    // declared_by names the EMITTING batch item — the host resolves the edge
+    // stamp's observed_at through it on the sync dispatch.
     expect(frag.links).toEqual([
-      { from_key: "r5", to_key: "addr:a@x", kind: "attendee", metadata: { display_name: "Alice" } },
-      { from_key: "r5", to_key: "addr:b@x", kind: "attendee" },
+      {
+        from_key: "r5",
+        to_key: "addr:a@x",
+        kind: "attendee",
+        declared_by: "r5",
+        metadata: { display_name: "Alice" },
+      },
+      { from_key: "r5", to_key: "addr:b@x", kind: "attendee", declared_by: "r5" },
     ]);
     expect(res.trigger_checks).toEqual([
       {

@@ -313,6 +313,13 @@ export interface BatchLinkInput {
   kind: string;
   confidence?: number;
   metadata?: Record<string, unknown>;
+  /** S1 (plan §2): the key of the batch item whose mapper emitted this edge.
+   * On the sync dispatch the HOST stamps the edge's reserved
+   * `metadata.sources` array from the envelope context and resolves the
+   * stamp's `observed_at` through THIS key — an edge joins two nodes that may
+   * arrive in different envelopes, so neither endpoint's timestamp can stand
+   * in. A module never writes `sources` itself; the host strips it. */
+  declared_by?: string;
 }
 
 export interface GraphBatchInput {

@@ -334,11 +334,12 @@ export class EmailModule {
       from_key: string,
       to_key: string,
       kind: string,
+      declared_by: string,
       metadata?: Record<string, unknown>,
     ): void => {
       const k = `${from_key} ${to_key} ${kind}`;
       if (!linkSeen.has(k)) {
-        links.push({ from_key, to_key, kind, ...(metadata ? { metadata } : {}) });
+        links.push({ from_key, to_key, kind, declared_by, ...(metadata ? { metadata } : {}) });
         linkSeen.add(k);
       }
     };
@@ -371,9 +372,9 @@ export class EmailModule {
       const from = lowerAddr(str(p, "from_address"));
       // S5: authorship is `authored_by` — the relation, not a channel-shaped
       // kind. `sent_from` retires with this writer.
-      if (from) addLink(remoteId, addAddress(from, str(p, "from_name")), "authored_by");
+      if (from) addLink(remoteId, addAddress(from, str(p, "from_name")), "authored_by", remoteId);
       for (const r of recipientsWithRoles(p)) {
-        addLink(remoteId, addAddress(r.addr, null), "sent_to", { role: r.role });
+        addLink(remoteId, addAddress(r.addr, null), "sent_to", remoteId, { role: r.role });
       }
     }
 
