@@ -177,8 +177,8 @@ describe("contacts ingest — the replica model (tst_be_contactsingest_001)", ()
 
     expect(world.minted).toEqual([{ schema_id: "contacts.person", name: "Mikhail Lazarev" }]);
     expect(world.links).toEqual([
-      { from_id: "hub-0", to_id: "id-gpeople:abc123", kind: "identity" },
-      { from_id: "hub-0", to_id: "addr-mikhail@example.com", kind: "identity" },
+      { from_id: "hub-0", to_id: "id-gpeople:abc123", kind: "identity", declared_by: "gpeople:abc123" },
+      { from_id: "hub-0", to_id: "addr-mikhail@example.com", kind: "identity", declared_by: "gpeople:abc123" },
     ]);
   });
 
@@ -196,8 +196,13 @@ describe("contacts ingest — the replica model (tst_be_contactsingest_001)", ()
 
     expect(world.minted).toEqual([]);
     expect(world.links).toEqual([
-      { from_id: "hub-X", to_id: "id-gpeople:abc123", kind: "identity" },
-      { from_id: "hub-X", to_id: "addr-mikhail@example.com", kind: "identity" },
+      { from_id: "hub-X", to_id: "id-gpeople:abc123", kind: "identity", declared_by: "gpeople:abc123" },
+      {
+        from_id: "hub-X",
+        to_id: "addr-mikhail@example.com",
+        kind: "identity",
+        declared_by: "gpeople:abc123",
+      },
     ]);
   });
 
@@ -235,7 +240,7 @@ describe("contacts ingest — the replica model (tst_be_contactsingest_001)", ()
 
     expect(world.minted).toEqual([]);
     expect(world.links).toEqual([
-      { from_id: "old-hub", to_id: "id-gpeople:abc123", kind: "identity" },
+      { from_id: "old-hub", to_id: "id-gpeople:abc123", kind: "identity", declared_by: "gpeople:abc123" },
     ]);
   });
 

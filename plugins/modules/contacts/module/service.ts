@@ -870,15 +870,26 @@ export class ContactsModule {
           to_id: other,
           kind: "same_as",
           status: "candidate",
+          declared_by: remoteId,
         });
       }
     }
 
     // The edges: hub → replica, hub → each shared address. Idempotent at the
     // graph layer (re-sync never duplicates an identity edge).
-    await this.graph.add_link({ from_id: hubId, to_id: replicaId, kind: "identity" });
+    await this.graph.add_link({
+      from_id: hubId,
+      to_id: replicaId,
+      kind: "identity",
+      declared_by: remoteId,
+    });
     for (const addrId of addrIds) {
-      await this.graph.add_link({ from_id: hubId, to_id: addrId, kind: "identity" });
+      await this.graph.add_link({
+        from_id: hubId,
+        to_id: addrId,
+        kind: "identity",
+        declared_by: remoteId,
+      });
     }
   }
 
