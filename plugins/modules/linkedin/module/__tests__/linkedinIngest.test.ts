@@ -176,6 +176,7 @@ describe("linkedin ingest identity link (tst_ingest_link)", () => {
       from_id: "c1",
       to_id: "prof-1",
       kind: IDENTITY,
+      declared_by: "linkedin:profile:12",
     });
     expect(execute).toHaveBeenCalledWith("contacts.rename_if_placeholder", {
       id: "c1",

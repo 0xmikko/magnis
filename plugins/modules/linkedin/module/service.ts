@@ -153,6 +153,7 @@ export class LinkedinModule {
           from_id: owner.contact_id,
           to_id: profileId,
           kind: IDENTITY,
+          declared_by: env.remote_id,
         });
         // CAS rename — only upgrades a handle-placeholder name.
         const displayName = str(payload, "display_name");

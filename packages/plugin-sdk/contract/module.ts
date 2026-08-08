@@ -203,6 +203,11 @@ export interface AddLinkParams {
   /** S3 (plan §5.2): "candidate" records a merge-candidate row, invisible to
    * canonical readers until promoted. Default: canonical. */
   status?: "canonical" | "candidate";
+  /** S1 (plan §2): the envelope remote_id that witnessed this edge. On the
+   * sync dispatch the host stamps the edge's reserved `metadata.sources`
+   * entry and resolves its `observed_at` through THIS key. Meaningless off
+   * the sync path. */
+  declared_by?: string;
 }
 export interface LinkSummary {
   id: string;

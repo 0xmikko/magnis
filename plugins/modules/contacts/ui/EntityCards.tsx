@@ -60,7 +60,19 @@ function emailList(data: Readonly<Record<string, unknown>>): string[] {
 
 function phoneList(data: Readonly<Record<string, unknown>>): string[] {
   const single = typeof data.phone === "string" && data.phone.length > 0 ? [data.phone] : [];
-  return Array.from(new Set([...single, ...toStringList(data.phones)]));
+  // The hub dictionary's phones are OBJECTS ({phone, type}); legacy payloads
+  // carried bare strings — the presentation layer reads both.
+  const fromObjects: string[] = [];
+  const rawPhones: unknown = data.phones;
+  if (Array.isArray(rawPhones)) {
+    for (const entry of rawPhones as readonly unknown[]) {
+      if (entry !== null && typeof entry === "object" && !Array.isArray(entry)) {
+        const phone = (entry as Record<string, unknown>).phone;
+        if (typeof phone === "string" && phone.length > 0) fromObjects.push(phone);
+      }
+    }
+  }
+  return Array.from(new Set([...single, ...toStringList(data.phones), ...fromObjects]));
 }
 
 /**
