@@ -25,7 +25,6 @@ export function CompanyDetailContent({
   company,
   entityId,
   linkedEntities,
-  facets,
   fieldLabels,
 }: CompanyDetailContentProps): JSX.Element {
   const headerContent = (
@@ -54,7 +53,6 @@ export function CompanyDetailContent({
     <EntityDetailTabs
       entityId={entityId}
       linkedEntities={linkedEntities}
-      facets={facets}
       headerContent={headerContent}
       maxVisibleTabs={7}
     />

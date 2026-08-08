@@ -12,14 +12,12 @@ export interface ContactsDetailProps {
 export function ContactsDetail({
   entityId,
   linkedEntities,
-  facets,
 }: ContactsDetailProps): JSX.Element {
   return (
     <>
       <EntityDetailTabs
         entityId={entityId}
         linkedEntities={linkedEntities}
-        facets={facets}
         searchable
         maxVisibleTabs={7}
       />

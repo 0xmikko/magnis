@@ -164,10 +164,6 @@ export interface ModuleConfig {
     readonly extraSetup?: (runtime: AppRuntime) => void | (() => void);
     /** Transform backend response to ListItem */
     readonly mapListItem?: (item: Record<string, unknown>) => ListItem;
-    /** Facet schema for description tab (default: `${id}.description`) */
-    readonly descriptionSchema?: string;
-    /** Facet schema for memory tab (default: `${id}.memory`) */
-    readonly memorySchema?: string;
     /** Agent tool call renderers */
     readonly toolCallRenderers?: readonly ToolCallRendererRegistration[];
     /** Allowlist target extractor for agent tool approval */
