@@ -156,7 +156,7 @@ export class NotesModule {
     return {
       id: e.id,
       schema_id: e.schema_id,
-      title: this.titleOf(e, data, canonical),
+      title: this.titleOf(e, data),
       body: data.body ?? null,
       pinned,
       canonical,
@@ -269,7 +269,7 @@ export class NotesModule {
     }
     const e = detail.entity;
     const data = this.contentOf(detail);
-    const currentTitle = this.titleOf(e, data, {});
+    const currentTitle = this.titleOf(e, data);
     const newTitle = params.title ?? currentTitle;
     const newBody = resolveUpdateBody(params) ?? data.body ?? "";
     const now = new Date().toISOString();
@@ -379,11 +379,9 @@ export class NotesModule {
     return (detail.entity.properties ?? {});
   }
 
-  private titleOf(e: RawEntity, data: ContentData, canonical: Partial<NoteCanonical>): string {
+  private titleOf(e: RawEntity, data: ContentData): string {
     if (e.name && e.name.length > 0) return e.name;
     if (data.title && data.title.length > 0) return data.title;
-    const ct = canonical["note.title"];
-    if (typeof ct === "string" && ct.length > 0) return ct;
     return "Untitled";
   }
 
@@ -409,7 +407,7 @@ export class NotesModule {
     return {
       id: e.id,
       schema_id: e.schema_id,
-      title: this.titleOf(e, data, canonical),
+      title: this.titleOf(e, data),
       preview: previewFromBody(data.body ?? ""),
       pinned: (canonical["note.pinned"] as boolean | null) ?? data.pinned ?? false,
       created_at: e.created_at ?? new Date(0).toISOString(),
@@ -424,7 +422,7 @@ export class NotesModule {
     return {
       id: e.id,
       schema_id: NOTE,
-      title: this.titleOf(e, data, {}),
+      title: this.titleOf(e, data),
       body: data.body ?? "",
       updated_at: data.updated_at ?? e.created_at ?? new Date(0).toISOString(),
     };

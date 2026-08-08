@@ -26,6 +26,9 @@ function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
         dropped_keys: [],
       }),
     find_by_anchor: (_id: string): Promise<string | null> => Promise.resolve(null),
+    // The upsert reconciles the event's attendee edges against the invite's
+    // CURRENT list — one edge read per upserted event.
+    list_links_for_entity: (): Promise<never[]> => Promise.resolve([]),
     delete_entity: (_id: string): Promise<void> => Promise.resolve(undefined),
     sync_state: (): Promise<Record<string, unknown>> => Promise.resolve({ ok: true }),
     ...over,

@@ -121,6 +121,11 @@ describe("email ingest — apply_batch shape (tst_be_emailingest_001)", () => {
     if (m1from0 === undefined) throw new Error("ingest: missing m1from[0] link");
     expect(m1from0.to_key).toBe("addr:ceo@example.com");
     expect(m1to.map((l) => l.to_key).sort()).toEqual(["addr:me@example.com", "addr:ops@example.com"]);
+    // S5 review: the To/Cc/Bcc ROLE rides the edge dictionary — once the
+    // joined strings leave the dict, the edge is the only place it survives.
+    for (const l of m1to) {
+      expect(l.metadata).toEqual({ role: "to" });
+    }
   });
 
   it("folds Cc + Bcc recipients into address entities + sent_to links", async () => {

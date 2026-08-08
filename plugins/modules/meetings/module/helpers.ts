@@ -72,22 +72,6 @@ export function parseAttendees(
   });
 }
 
-/// Resolve one `email.address` node to the `contacts.person` it represents (or
-/// null): a guest IS a contact. The hub reaches its channel over `identity`
-/// (plan §3), so the person is the inbound endpoint of that edge.
-export async function resolveContactForAddress(
-  graph: GraphService,
-  addressId: string,
-): Promise<string | null> {
-  const links = await graph.list_links_for_entity(addressId);
-  for (const link of links) {
-    if (link.kind !== "identity" || link.to_id !== addressId) continue;
-    const person = await graph.get_entity(link.from_id);
-    if (person?.schema_id === "contacts.person") return person.id;
-  }
-  return null;
-}
-
 /// The event's attendees, read from its `attendee` edges (plan §6): the edge
 /// ends at the shared `email.address` node, and the display name the invite
 /// carried rides the edge dictionary — the address node is shared by every
@@ -97,22 +81,59 @@ export async function enrichAttendees(
   eventId: string,
   links?: LinkSummary[],
 ): Promise<MeetingAttendeeView[]> {
-  const edges = (links ?? (await graph.list_links_for_entity(eventId)))
-    .filter((l) => l.kind === "attendee" && l.from_id === eventId);
-  if (edges.length === 0) return [];
-  const addresses = await graph.get_entities([...new Set(edges.map((e) => e.to_id))]);
-  const byId = new Map(addresses.map((a) => [a.id, a]));
-  const out: MeetingAttendeeView[] = [];
+  const page = await attendeesForPage(graph, [eventId], links ? { [eventId]: links } : undefined);
+  return page.get(eventId) ?? [];
+}
+
+/// The PAGE-level twin (S6 review): a whole window's attendees in FOUR fixed
+/// crossings — event edges, address nodes, address identity edges, persons —
+/// where the per-row shape did one edge read per event plus up to three
+/// crossings per attendee.
+export async function attendeesForPage(
+  graph: GraphService,
+  eventIds: string[],
+  prefetched?: Record<string, LinkSummary[]>,
+): Promise<Map<string, MeetingAttendeeView[]>> {
+  const out = new Map<string, MeetingAttendeeView[]>();
+  if (eventIds.length === 0) return out;
+  const eventSet = new Set(eventIds);
+  const edges = (
+    prefetched
+      ? Object.values(prefetched).flat()
+      : await graph.list_links_for_entities(eventIds)
+  ).filter((l) => l.kind === "attendee" && eventSet.has(l.from_id));
+  if (edges.length === 0) return out;
+
+  const addressIds = [...new Set(edges.map((e) => e.to_id))];
+  const addresses = await graph.get_entities(addressIds);
+  const addressById = new Map(addresses.map((a) => [a.id, a]));
+
+  // One batch of the addresses' inbound identity edges, one batch of persons.
+  const identityEdges = (await graph.list_links_for_entities(addressIds)).filter(
+    (l) => l.kind === "identity" && addressById.has(l.to_id),
+  );
+  const personIds = [...new Set(identityEdges.map((l) => l.from_id))];
+  const persons = personIds.length === 0 ? [] : await graph.get_entities(personIds);
+  const personById = new Map(persons.map((p) => [p.id, p]));
+  const contactByAddress = new Map<string, string>();
+  for (const edge of identityEdges) {
+    const person = personById.get(edge.from_id);
+    if (person?.schema_id === "contacts.person" && !contactByAddress.has(edge.to_id)) {
+      contactByAddress.set(edge.to_id, person.id);
+    }
+  }
+
   for (const edge of edges) {
-    const addr = byId.get(edge.to_id);
+    const addr = addressById.get(edge.to_id);
     if (!addr) continue;
-    const email = str(addr.properties ?? {}, "address") ?? addr.name;
     const meta = (edge.metadata ?? {}) as Data;
-    out.push({
+    const arr = out.get(edge.from_id) ?? [];
+    arr.push({
       name: str(meta, "display_name"),
-      email,
-      contact_id: await resolveContactForAddress(graph, addr.id),
+      email: str(addr.properties ?? {}, "address") ?? addr.name,
+      contact_id: contactByAddress.get(addr.id) ?? null,
     });
+    out.set(edge.from_id, arr);
   }
   return out;
 }

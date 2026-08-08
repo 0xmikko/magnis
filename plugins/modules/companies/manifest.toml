@@ -1,9 +1,10 @@
 # companies — Companies domain module (V8 plugin).
 #
-# Owns the `companies.*` graph namespace: the company entity plus its detail /
-# email / phone / external-link facets. Companies surface alongside contacts —
-# pulled from email signatures, calendar invites, and notes — and link to the
-# people who work there. Runs as a sandboxed V8 isolate; bundled with the
+# Owns the `companies.*` graph namespace: the company entity and its
+# dictionary. Companies surface alongside contacts — pulled from email
+# signatures, calendar invites, and notes — and link to the people who work
+# there; their emails are `identity` edges to the email module's shared
+# address nodes, minted over its RPC. Runs as a sandboxed V8 isolate; bundled with the
 # app and installed automatically at boot.
 
 id = "companies"
@@ -19,3 +20,5 @@ publisher = "ai.magnis"
 # own:own links, and reads of own schemas need no declaration.
 [permissions]
 read = [ "contacts.person" ]
+links = [ "identity" ]
+call = [ "email.ensure_addresses" ]

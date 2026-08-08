@@ -1,9 +1,15 @@
+export interface TriggerScheduleSpec {
+    readonly cron: string;
+    readonly timezone: string;
+    readonly activated_at: string;
+}
 export interface TriggerListItem {
     readonly id: string;
     readonly name: string;
     readonly status: "active" | "paused" | "expired" | "disabled";
     readonly firing_count: number;
     readonly last_fired_at: string | null;
+    readonly schedule?: TriggerScheduleSpec | null;
 }
 export interface TriggerDetailView {
     readonly id: string;
@@ -19,6 +25,7 @@ export interface TriggerDetailView {
     readonly firing_count: number;
     readonly last_fired_at: string | null;
     readonly watched_entities: readonly WatchedEntity[];
+    readonly schedule?: TriggerScheduleSpec | null;
 }
 export interface WatchedEntity {
     readonly id: string;

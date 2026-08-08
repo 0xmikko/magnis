@@ -49,13 +49,13 @@ import type {
 } from "../types.ts";
 import {
   addressesOf,
+  recipientsWithRoles,
   buildListItem,
   destSubpath,
   INGEST_CHUNK,
   lowerAddr,
   normalizeRecipient,
   OUTGOING_FROM,
-  recipientsOf,
   senderOf,
   str,
   type Data,
@@ -330,10 +330,15 @@ export class EmailModule {
       }
       return key;
     };
-    const addLink = (from_key: string, to_key: string, kind: string): void => {
+    const addLink = (
+      from_key: string,
+      to_key: string,
+      kind: string,
+      metadata?: Record<string, unknown>,
+    ): void => {
       const k = `${from_key} ${to_key} ${kind}`;
       if (!linkSeen.has(k)) {
-        links.push({ from_key, to_key, kind });
+        links.push({ from_key, to_key, kind, ...(metadata ? { metadata } : {}) });
         linkSeen.add(k);
       }
     };
@@ -367,8 +372,8 @@ export class EmailModule {
       // S5: authorship is `authored_by` — the relation, not a channel-shaped
       // kind. `sent_from` retires with this writer.
       if (from) addLink(remoteId, addAddress(from, str(p, "from_name")), "authored_by");
-      for (const r of recipientsOf(p)) {
-        addLink(remoteId, addAddress(r, null), "sent_to");
+      for (const r of recipientsWithRoles(p)) {
+        addLink(remoteId, addAddress(r.addr, null), "sent_to", { role: r.role });
       }
     }
 

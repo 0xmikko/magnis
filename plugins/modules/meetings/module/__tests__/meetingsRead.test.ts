@@ -101,8 +101,8 @@ describe("meetings.list", () => {
     const mod = makeModule(
       makeGraph({
         list_entities_window,
-        // No attendee edges on either row.
-        list_links_for_entity: vi.fn(async (): Promise<LinkSummary[]> => []),
+        // No attendee edges on either row — ONE page-level batch read.
+        list_links_for_entities: vi.fn(async (): Promise<LinkSummary[]> => []),
       }),
     );
 
@@ -172,17 +172,14 @@ describe("meetings.get", () => {
             name: "bob@x.com",
             properties: { address: "bob@x.com" },
           },
+          { id: "person-1", schema_id: "contacts.person", name: "Alice" },
         ].filter((e) => ids.includes(e.id)),
       ),
-      // alice's address is claimed by a contact; bob's is not.
-      list_links_for_entity: vi.fn(async (id: string): Promise<LinkSummary[]> =>
-        id === "addr-alice"
-          ? [{ id: "hl", from_id: "person-1", to_id: "addr-alice", kind: "identity" }]
-          : [],
-      ),
-      get_entity: vi.fn(async (id: string) =>
-        id === "person-1" ? { id, schema_id: "contacts.person", name: "Alice" } : null,
-      ),
+      // alice's address is claimed by a contact; bob's is not. The batch
+      // reads BOTH addresses' edges in one call and the person in another.
+      list_links_for_entities: vi.fn(async (): Promise<LinkSummary[]> => [
+        { id: "hl", from_id: "person-1", to_id: "addr-alice", kind: "identity" },
+      ]),
     });
     const mod = makeModule(graph);
 

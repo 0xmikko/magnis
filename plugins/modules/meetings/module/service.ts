@@ -44,6 +44,7 @@ import type {
   ToolResult,
 } from "../types.ts";
 import {
+  attendeesForPage,
   buildListItem,
   enrichAttendees,
   formatDateTime,
@@ -97,12 +98,10 @@ export class MeetingsModule {
       });
       const total = matched.length;
       const page = matched.slice(offset, offset + limit);
-      const items: MeetingListItem[] = [];
-      for (const e of page) {
-        const d = dictOf(e);
-        const attendees = await enrichAttendees(this.graph, e.id);
-        items.push(buildListItem(e, d, attendees));
-      }
+      // S6: the whole page's attendees in four fixed crossings — never
+      // per-row edge reads.
+      const attendees = await attendeesForPage(this.graph, page.map((e) => e.id));
+      const items = page.map((e) => buildListItem(e, dictOf(e), attendees.get(e.id) ?? []));
       return { items, total, limit, offset };
     }
 
@@ -114,11 +113,14 @@ export class MeetingsModule {
       limit,
       offset,
     });
-    const items: MeetingListItem[] = [];
-    for (const { entity } of win.items) {
-      const attendees = await enrichAttendees(this.graph, entity.id);
-      items.push(buildListItem(entity, dictOf(entity), attendees));
-    }
+    // S6: the whole page's attendees in four fixed crossings.
+    const pageAttendees = await attendeesForPage(
+      this.graph,
+      win.items.map((r) => r.entity.id),
+    );
+    const items = win.items.map(({ entity }) =>
+      buildListItem(entity, dictOf(entity), pageAttendees.get(entity.id) ?? []),
+    );
     return { items, total: win.total, limit, offset };
   }
 
@@ -437,6 +439,19 @@ export class MeetingsModule {
     const result = await this.graph.apply_batch({ entities: [entity], refs, links });
     const entityId = result.ids[remoteId];
     if (!entityId) return;
+
+    // Reconcile: the invite's CURRENT list is complete for this event, so an
+    // attendee the provider no longer reports leaves — the facet era got this
+    // for free by replacing the array wholesale, and edges must not silently
+    // accumulate ex-guests.
+    const current = new Set(addressIds);
+    const existing = await this.graph.list_links_for_entity(entityId);
+    for (const edge of existing) {
+      if (edge.kind !== "attendee" || edge.from_id !== entityId) continue;
+      if (!current.has(edge.to_id)) {
+        await this.graph.delete_link(edge.id);
+      }
+    }
 
     if (env.kind !== "live") return;
 

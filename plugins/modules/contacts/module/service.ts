@@ -614,12 +614,14 @@ export class ContactsModule {
       reason: params.reason,
     });
 
-    // Re-derive entity name/idx from the merged canonicals so the
-    // survivor's display name reflects the resolved profile.
-    const canon = await this.graph.get_canonical(params.survivor_id, [CONTACT]);
-    const first = canon["person.first_name"];
+    // S6: re-derive entity name/idx from the survivor's merged DICTIONARY —
+    // the canonical map is dead and would always read empty here, silently
+    // skipping the rename.
+    const merged = await this.graph.get_entity(params.survivor_id);
+    const dict = merged?.properties ?? {};
+    const first = dict.first_name;
     if (typeof first === "string" && first.length > 0) {
-      const last = canon["person.last_name"];
+      const last = dict.last_name;
       const full = typeof last === "string" && last.length > 0 ? `${first} ${last}` : first;
       await this.graph.update_entity_name(params.survivor_id, full);
       await this.graph.update_entity_idx(params.survivor_id, full.toLowerCase());
