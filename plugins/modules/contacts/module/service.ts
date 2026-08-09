@@ -1110,6 +1110,27 @@ export class ContactsModule {
     return { renamed: true };
   }
 
+  // Search-plan stage First: the tracked hubs, straight from the FILTERED
+  // window — only dictionaries that carry `tracking` come back, so the walk
+  // is bounded by the tracked set, not by the address book. The old paged
+  // full scans read every person 500 at a time.
+  private async trackedHubs(): Promise<RawEntity[]> {
+    const PAGE = 500;
+    const out: RawEntity[] = [];
+    for (let offset = 0; ; offset += PAGE) {
+      const page = await this.graph.list_entities_window({
+        schema: CONTACT,
+        filter_field: { property_path: "tracking" },
+        filter_op: "exists",
+        limit: PAGE,
+        offset,
+      });
+      for (const row of page.items) out.push(row.entity);
+      if (page.items.length === 0 || offset + page.items.length >= page.total) break;
+    }
+    return out;
+  }
+
   @tool("get_social_tracking_by_handle", {
     description:
       "Resolve which contact tracks a given X / LinkedIn handle and whether tracking " +
@@ -1130,22 +1151,15 @@ export class ContactsModule {
     const want = params.handle.trim().toLowerCase();
     if (!want) return null;
 
-    // Page through persons reading the hub dictionaries directly (S3) — the
-    // entity rows already carry `tracking[]`, no facet read at all.
-    const PAGE = 500;
-    for (let offset = 0; ; offset += PAGE) {
-      const page = await this.graph.list_entities({ schema_id: CONTACT, limit: PAGE, offset });
-      if (page.items.length === 0) return null;
-      for (const e of page.items) {
-        const entry = trackingEntryOf(e, params.platform);
-        if (!entry) continue;
-        const stored = entry.handle?.trim();
-        if (stored?.toLowerCase() === want) {
-          return { contact_id: e.id, tracked: entry.enabled, handle: stored };
-        }
+    for (const e of await this.trackedHubs()) {
+      const entry = trackingEntryOf(e, params.platform);
+      if (!entry) continue;
+      const stored = entry.handle?.trim();
+      if (stored?.toLowerCase() === want) {
+        return { contact_id: e.id, tracked: entry.enabled, handle: stored };
       }
-      if (offset + PAGE >= page.total) return null;
     }
+    return null;
   }
 
   @tool("list_social_tracking", {
@@ -1164,20 +1178,12 @@ export class ContactsModule {
     platform: SocialPlatform;
   }): Promise<{ contact_id: string; name: string; handle: string }[]> {
     const out: { contact_id: string; name: string; handle: string }[] = [];
-    // Same paged scan as get_social_tracking_by_handle, straight off the
-    // hub dictionaries (S3).
-    const PAGE = 500;
-    for (let offset = 0; ; offset += PAGE) {
-      const page = await this.graph.list_entities({ schema_id: CONTACT, limit: PAGE, offset });
-      if (page.items.length === 0) break;
-      for (const e of page.items) {
-        const entry = trackingEntryOf(e, params.platform);
-        const handle = entry?.handle?.trim();
-        if (entry?.enabled && handle) {
-          out.push({ contact_id: e.id, name: e.name || handle, handle });
-        }
+    for (const e of await this.trackedHubs()) {
+      const entry = trackingEntryOf(e, params.platform);
+      const handle = entry?.handle?.trim();
+      if (entry?.enabled && handle) {
+        out.push({ contact_id: e.id, name: e.name || handle, handle });
       }
-      if (offset + PAGE >= page.total) break;
     }
     return out;
   }

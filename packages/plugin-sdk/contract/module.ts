@@ -120,8 +120,9 @@ export interface WindowSpec {
   /** How `filter_field` is compared to `filter_eq`. Default `"eq"` (=).
    *  `"distinct"` uses SQL `IS DISTINCT FROM` — i.e. "not equal, NULL counts as
    *  not-equal" — so it KEEPS rows whose field is NULL (e.g. untiered contacts)
-   *  while excluding the given value. */
-  filter_op?: "eq" | "distinct";
+   *  while excluding the given value. `"exists"` is `IS NOT NULL` — the field
+   *  carries ANY value; `filter_eq` is ignored. */
+  filter_op?: "eq" | "distinct" | "exists";
   order?: OrderKeyDto[];
   show_archived?: boolean;
   limit: number;

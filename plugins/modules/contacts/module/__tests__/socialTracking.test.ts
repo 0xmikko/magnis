@@ -71,6 +71,15 @@ function makeMultiGraph(persons: RawEntity[]): { graph: G; renames: [string, str
       items: persons.slice(offset, offset + limit),
       total: persons.length,
     }),
+    // Stage First: the tracked-hub walk goes through the FILTERED window —
+    // the fixture applies the same `tracking exists` narrowing the host does.
+    list_entities_window: async ({ offset = 0, limit = 500 }: { offset?: number; limit?: number }) => {
+      const tracked = persons.filter((e) => (e.properties as Record<string, unknown> | undefined)?.tracking !== undefined);
+      return {
+        items: tracked.slice(offset, offset + limit).map((entity) => ({ entity, data: null })),
+        total: tracked.length,
+      };
+    },
     // contacts.create still writes its profile facet until the S3 card
     // cutover — the social tools themselves never touch facets.
     attach_facet: async () => ({ id: "f-0" }),
