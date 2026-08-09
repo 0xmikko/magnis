@@ -1,0 +1,90 @@
+# X (module-search-contract §11): metrics fold NESTED — dotted paths descend.
+
+[[declaration]]
+entity = "x.profile"
+tools = "x.profile"
+
+default_order = [ { key = "handle", dir = "asc", nulls = "last" } ]
+
+[[declaration.field]]
+key = "handle"
+kind = "text"
+path = "handle"
+
+[[declaration.field]]
+key = "display_name"
+kind = "text"
+path = "display_name"
+
+[[declaration.field]]
+key = "bio"
+kind = "text"
+path = "bio"
+embed = "body"
+
+[[declaration.field]]
+key = "verified"
+kind = "boolean"
+path = "verified"
+
+[[declaration.field]]
+key = "follower_count"
+kind = "number"
+path = "follower_count"
+
+[[declaration]]
+entity = "x.post"
+tools = "x.post"
+
+default_order = [ { key = "created_at", dir = "desc", nulls = "last" } ]
+
+[[declaration.field]]
+key = "text"
+kind = "text"
+path = "text"
+embed = "body"
+
+[[declaration.field]]
+key = "author_handle"
+kind = "text"
+path = "author_handle"
+
+[[declaration.field]]
+key = "created_at"
+kind = "date"
+path = "created_at"
+
+[[declaration.field]]
+key = "is_reply"
+kind = "boolean"
+path = "is_reply"
+
+[[declaration.field]]
+key = "is_repost"
+kind = "boolean"
+path = "is_repost"
+
+[[declaration.field]]
+key = "lang"
+kind = "text"
+path = "lang"
+
+[[declaration.field]]
+key = "likes"
+kind = "number"
+path = "metrics.likes"
+
+[[declaration.field]]
+key = "reposts"
+kind = "number"
+path = "metrics.reposts"
+
+[[declaration.field]]
+key = "replies"
+kind = "number"
+path = "metrics.replies"
+
+[[declaration.field]]
+key = "impressions"
+kind = "number"
+path = "metrics.impressions"

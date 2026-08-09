@@ -1,0 +1,76 @@
+# Email's two entities (module-search-contract §11). Recipients-with-roles
+# are sent_to edges (edge.role clause); the sender's address is authored_by;
+# attachments are file.attachment edges — none of them fields here.
+
+[[declaration]]
+entity = "email.message"
+tools = "email.message"
+
+default_order = [ { key = "sent_at", dir = "desc", nulls = "last" } ]
+
+[[declaration.field]]
+key = "subject"
+kind = "text"
+path = "subject"
+embed = "title"
+
+[[declaration.field]]
+key = "from_name"
+kind = "text"
+path = "from_name"
+
+[[declaration.field]]
+key = "snippet"
+kind = "text"
+path = "snippet"
+
+[[declaration.field]]
+key = "body_text"
+kind = "text"
+path = "body_text"
+embed = "body"
+
+[[declaration.field]]
+key = "sent_at"
+kind = "date"
+path = "sent_at"
+
+[[declaration.field]]
+key = "received_at"
+kind = "date"
+path = "received_at"
+
+[[declaration.field]]
+key = "is_read"
+kind = "boolean"
+path = "is_read"
+
+[[declaration.field]]
+key = "is_starred"
+kind = "boolean"
+path = "is_starred"
+
+[[declaration.field]]
+key = "is_important"
+kind = "boolean"
+path = "is_important"
+
+[[declaration.field]]
+key = "thread_id"
+kind = "text"
+path = "thread_id"
+
+[[declaration.collection]]
+key = "labels"
+path = "labels"
+
+[[declaration]]
+entity = "email.address"
+tools = "email.address"
+
+default_order = [ { key = "address", dir = "asc", nulls = "last" } ]
+
+[[declaration.field]]
+key = "address"
+kind = "text"
+path = "address"

@@ -1,0 +1,23 @@
+entity = "notes.note"
+tools = "notes"
+
+# Natural order for a note is most-recently-edited first — what the live
+# list walks today, stated so `list` pages deterministically (§2).
+default_order = [ { key = "updated_at", dir = "desc", nulls = "last" } ]
+
+[[field]]
+key = "title"
+kind = "text"
+column = "name"
+embed = "title"
+
+[[field]]
+key = "body"
+kind = "text"
+path = "body"
+embed = "body"
+
+[[field]]
+key = "updated_at"
+kind = "date"
+path = "updated_at"
