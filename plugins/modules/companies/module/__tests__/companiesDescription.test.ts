@@ -15,7 +15,7 @@ import { describe, expect, it, vi } from "vitest";
 import { entity, mockGraph, mountModule } from "@magnis/testkit/module";
 
 import { COMPANY, COMPANY_DETAILS } from "../../schema.ts";
-import type { CompanyCanonical, CompanyFacets } from "../../types.ts";
+import type { CompanyCanonical } from "../../types.ts";
 import { CompaniesModule } from "../service.ts";
 
 const COMPANY_DESCRIPTION = "companies.description";
@@ -24,7 +24,7 @@ function writeGraph() {
   const company = entity("company-1", "Acme Labs", { schema_id: COMPANY });
   return {
     company,
-    graph: mockGraph<CompanyFacets, CompanyCanonical>({
+    graph: mockGraph<CompanyCanonical>({
       get_entity: () => Promise.resolve(company),
       create_entity: () => Promise.resolve(company),
       search_entities_by_name: () => Promise.resolve([]),
@@ -34,7 +34,6 @@ function writeGraph() {
       get_entity_full: () =>
         Promise.resolve({
           entity: company,
-          facets: [],
           links: [],
         }),
     }),
@@ -110,7 +109,7 @@ describe("companies description write contract", () => {
     });
 
     // S5: ONE dictionary merge carries the description — there is no second
-    // copy of it anywhere, and no facet is written at all.
+    // copy of it anywhere, and no record is written at all.
     const updateProperties = graph.spies.update_properties;
     if (updateProperties === undefined) {
       throw new Error("companies update: missing update_properties spy");

@@ -4,7 +4,7 @@
  * @scenario: scn_projects_description_update_001
  * @covers: plugins/modules/projects/module/service.ts::update
  * @deterministic: yes
- * @fixtures: inline project entity and facet
+ * @fixtures: inline project entity and record
  *
  * Test environment: ProjectsModule with a scripted GraphService.
  * Clients: direct calls.
@@ -13,12 +13,11 @@
  * runtime JSON nulls for optional name/status.
  */
 import { describe, expect, it } from "vitest";
-import { entity, facet, mockGraph, mountModule } from "@magnis/testkit/module";
+import { entity, mockGraph, mountModule } from "@magnis/testkit/module";
 import { ProjectsModule } from "../service.ts";
 import { PROJECT, PROJECT_DESCRIPTION } from "../../schema.ts";
 import type {
   ProjectCanonical,
-  ProjectFacets,
   UpdateParams,
 } from "../../types.ts";
 
@@ -28,14 +27,13 @@ describe("projects.update runtime optional fields", () => {
       schema_id: PROJECT,
       properties: { name: "Acme × ExampleCo", status: "active" },
     });
-    const graph = mockGraph<ProjectFacets, ProjectCanonical>({
+    const graph = mockGraph<ProjectCanonical>({
       get_entity: () => Promise.resolve(project),
       update_entity_name: () => Promise.resolve(),
       update_properties: () => Promise.resolve(),
       get_entity_full: () =>
         Promise.resolve({
           entity: project,
-          facets: [],
           links: [],
         }),
       get_entities: () => Promise.resolve([]),

@@ -5,7 +5,7 @@
 // touching linkedin. v1 is read-only. (Split from the old shared `social` module,
 // see plan Revision.)
 // Writes ONLY `x.*` (implicit own-namespace grant); soft-reads contacts.person.
-// Idempotent: facets carry external_id = the source remote_id (re-poll upserts).
+// Idempotent: records carry external_id = the source remote_id (re-poll upserts).
 // Provenance is stamped host-side from the calling plugin + envelope.
 
 import { searchEntitiesPage, syncHandler, tool, writeTool, type GraphService, type PluginDeps } from "@magnis/plugin-sdk";
@@ -26,16 +26,15 @@ import type {
   ProfileListItem,
   ProfilesListParams,
   XCanonical,
-  XFacets,
   SyncEnvelope,
 } from "../types.ts";
 import { AUTHORED_BY, IDENTITY, POST, PROFILE } from "../schema.ts";
 import { richPostFields, str } from "./helpers.ts";
 
 export class XModule {
-  private readonly graph: GraphService<XFacets, XCanonical>;
-  private readonly rpc: PluginDeps<XFacets, XCanonical>["rpc"];
-  constructor(deps: PluginDeps<XFacets, XCanonical>) {
+  private readonly graph: GraphService<XCanonical>;
+  private readonly rpc: PluginDeps<XCanonical>["rpc"];
+  constructor(deps: PluginDeps<XCanonical>) {
     this.graph = deps.graph;
     this.rpc = deps.rpc;
   }
@@ -80,7 +79,7 @@ export class XModule {
       } else if (entityType === "post") {
         const content = payload as unknown as PostContent;
         // S5: content AND metrics are one dictionary — the metrics arrive
-        // inside the same payload and were only ever split to fit two facets.
+        // inside the same payload and were only ever split to fit two records.
         entities.push({
           key: remoteId,
           schema_id: POST,
@@ -306,7 +305,7 @@ export class XModule {
     if (search) {
       // Framework list-pane search: shared paging helper (overfetch+1 keeps
       // hasMore truthful — infinite scroll works in search mode), identity
-      // facets batch-hydrated.
+      // records batch-hydrated.
       const { entities: page, total } = await searchEntitiesPage(this.graph, {
         query: search,
         schema_id: PROFILE,
@@ -314,7 +313,7 @@ export class XModule {
         offset,
       });
       // S5: the matched rows carry their dictionaries — nothing to hydrate.
-      const items = page.map((e) => this.profileItem({ entity: e, data: null }));
+      const items = page.map((e) => this.profileItem({ entity: e }));
       return { items, total, limit, offset };
     }
     const win = await this.graph.list_entities_window({

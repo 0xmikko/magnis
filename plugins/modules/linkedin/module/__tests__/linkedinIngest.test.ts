@@ -6,9 +6,9 @@ import { describe, expect, it, vi } from "vitest";
 import { entity, mockGraph, mountModule, windowRow, type MockGraph } from "@magnis/testkit/module";
 import { LinkedinModule } from "../service.ts";
 import { AUTHORED_BY, IDENTITY, POST, PROFILE } from "../../schema.ts";
-import type { LinkedinCanonical, LinkedinFacets, SyncEnvelope } from "../../types.ts";
+import type { LinkedinCanonical, SyncEnvelope } from "../../types.ts";
 
-type G = MockGraph<LinkedinFacets, LinkedinCanonical>;
+type G = MockGraph<LinkedinCanonical>;
 
 // SyncEnvelope is a module DTO (not an SDK type), so its builder stays local.
 function env(remote_id: string, payload: Record<string, unknown>): SyncEnvelope {
@@ -122,7 +122,6 @@ describe("linkedin ingest", () => {
                   url: null,
                 },
               }),
-              null,
             ),
           ],
           total: 1,

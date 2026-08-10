@@ -8,7 +8,7 @@ export const PROFILE = "x.profile";
 /** Post entity schema. */
 export const POST = "x.post";
 
-// S5: the identity / content / metrics facets are frozen archive — the profile
+// S5: the identity / content / metrics records are frozen archive — the profile
 // and post dictionaries are the record. The schemas stay registered (no schema
 // is ever removed); nothing reads or writes them.
 

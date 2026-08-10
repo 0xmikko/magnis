@@ -4,11 +4,11 @@
 
 /** File entity schema. */
 export const FILE_OBJECT = "file.object";
-/** Single-aligned file details facet (mime/source/path/url/…). */
+/** Single-aligned file details record (mime/source/path/url/…). */
 export const FILE_DETAILS = "file.details";
-/** Image-specific metadata facet (width/height/…). */
+/** Image-specific metadata record (width/height/…). */
 export const FILE_IMAGE = "file.image";
-/** Audio-specific metadata facet (duration/…). */
+/** Audio-specific metadata record (duration/…). */
 export const FILE_AUDIO = "file.audio";
-/** Video-specific metadata facet (duration/dimensions/…). */
+/** Video-specific metadata record (duration/dimensions/…). */
 export const FILE_VIDEO = "file.video";

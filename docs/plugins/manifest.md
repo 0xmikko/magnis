@@ -78,7 +78,7 @@ file **never** does. Two overrides exist for grandfathered ids:
 // schemas/company.json — entity descriptor
 { "name": "Company", "description": "A company / organisation entity…", "mergeable": true }
 
-// schemas/company.details.json — facet contract
+// schemas/company.details.json — record contract
 {
   "version": 1,
   "mappings": [
@@ -121,7 +121,7 @@ defines no domain mappings of its own.
 
 ### `[permissions]` — the security boundary
 
-**Own-namespace rights are implicit**: writes to `<id>.` facets, own:own
+**Own-namespace rights are implicit**: writes to `<id>.` records, own:own
 links, and reads of own schemas need no declaration. `[permissions]` lists
 ONLY the foreign asks; omit the whole section when there are none. Every
 undeclared foreign op is denied.

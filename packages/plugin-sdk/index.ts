@@ -75,7 +75,7 @@ export async function searchEntitiesPage(
 
 // ─────────────────── payload coercion helpers ──────────────────────────────
 // Domain-neutral readers for the opaque `Record<string, unknown>` maps every
-// plugin gets back from the graph (window-row `data`, `get_entity_full` facet
+// plugin gets back from the graph (window-row `data`, `get_entity_full` record
 // `data`, sync-envelope `payload`). These were copy-pasted VERBATIM across the
 // social modules (linkedin/x) — promoted here so there is ONE spelling. Runtime
 // (not type-only): module code runs the SDK in V8, like `searchEntitiesPage`.
@@ -200,15 +200,14 @@ export function connectionReady(): MethodRecorder {
 }
 
 // ───────────────────── definePlugin — the entry ───────────────────
-/// Single plugin entry point. Generic over the plugin's schema maps —
-/// `F`/`C` are inferred from the constructor, so `definePlugin(Foo)`
-/// needs no explicit type args and there is no `any` at the call site.
+/// Single plugin entry point. Generic over the plugin's canonical map — `C`
+/// is inferred from the constructor, so `definePlugin(Foo)` needs no explicit
+/// type args and there is no `any` at the call site.
 /// (The wire shape it publishes — PluginModuleShape / ToolDefinitionWire — is
 /// declared in ./contract/module.)
-export function definePlugin<
-  F extends object = Record<string, unknown>,
-  C extends object = Record<string, unknown>,
->(ModuleClass: new (deps: PluginDeps<F, C>) => object): void {
+export function definePlugin<C extends object = Record<string, unknown>>(
+  ModuleClass: new (deps: PluginDeps<C>) => object,
+): void {
   // Handed to the runtime AT MODULE EVAL, then mutated in place by
   // init(); the runtime reads rpcHandlers only post-init, so the
   // empty-then-filled sequence is safe.
@@ -240,7 +239,7 @@ export function definePlugin<
       );
     }
     const instance = new ModuleClass({
-      graph: graph as GraphService<F, C>,
+      graph: graph as GraphService<C>,
       ctx,
       util,
       rpc,
@@ -290,7 +289,7 @@ export function defineLifecycle(hooks: LifecycleHooks): void {
     registerManifestSchemas(): void {
       declared = "manifest";
     },
-    register(registrations: { entities?: string[]; facets?: string[] }): void {
+    register(registrations: { entities?: string[] }): void {
       declared = registrations;
     },
   };

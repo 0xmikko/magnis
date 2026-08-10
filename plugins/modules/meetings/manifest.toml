@@ -21,7 +21,7 @@ publisher = "ai.magnis"
 # "items synced" badge (host source.status.list reads this).
 item = "meetings.calendar_event"
 
-# Foreign asks beyond the implicit own namespace: writes to `meetings.` facets,
+# Foreign asks beyond the implicit own namespace: writes to `meetings.` records,
 # own:own links, and reads of own schemas need no declaration.
 [permissions]
 read = [ "contacts.person" ]

@@ -1,14 +1,14 @@
-// LinkedIn plugin — schema-id / facet-id / link-kind constants. Deduped between
+// LinkedIn plugin — schema-id / record-id / link-kind constants. Deduped between
 // `module/service.ts` and the module tests (one spelling of each namespace
 // string). The schemas/ files are the source of truth for REGISTRATION (registered natively at install); these consts are for read/write/ingest call sites.
 
-/** Profile entity + its identity facet. */
+/** Profile entity + its identity record. */
 export const PROFILE = "linkedin.profile";
 
-/** Post entity + its content/metrics facets. */
+/** Post entity + its content/metrics records. */
 export const POST = "linkedin.post";
 
-// S5: the identity / content / metrics facets are frozen archive — the profile
+// S5: the identity / content / metrics records are frozen archive — the profile
 // and post dictionaries are the record. The schemas stay registered (no schema
 // is ever removed); nothing reads or writes them.
 

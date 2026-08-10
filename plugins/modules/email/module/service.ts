@@ -1,11 +1,11 @@
 // Email plugin — graph-native module. Read path: list (windowed,
-// date-desc, facet inline), get (entity+facets), batch (one fetch per id). Output is
+// date-desc), get (entity + links), batch (one fetch per id). Output is
 // byte-compatible with the native module (MessageListItem / MessageDetailView)
 // and the UI's plugins/email/ui/types.ts copies.
 //
 // DB-access guarantees (asserted by module/__tests__/emailRead):
-//   - list (no search) = ONE list_entities_window (facet rendered inline) — no
-//     canonical read, no per-row facet hydrate.
+//   - list (no search) = ONE list_entities_window — no canonical read, no
+//     per-row hydrate.
 //   - list (search)    = ONE search_entities_by_name — the matched rows carry
 //     their own dictionaries, so there is no hydrate crossing at all.
 //   - get  = ONE get_entity_full. batch = K get_entity_full (one per id).
@@ -34,9 +34,7 @@ import type {
   BatchParams,
   BatchSendParams,
   EmailCanonical,
-  EmailFacets,
   EmailTriggerCheck,
-  FacetSummary,
   GetParams,
   LinkedEntitySummary,
   ListParams,
@@ -66,10 +64,10 @@ import {
 } from "../schema.ts";
 
 export class EmailModule {
-  private readonly graph: GraphService<EmailFacets, EmailCanonical>;
+  private readonly graph: GraphService<EmailCanonical>;
   private readonly rpc: RpcExecutor;
   private readonly log: PluginLogger;
-  constructor(deps: PluginDeps<EmailFacets, EmailCanonical>) {
+  constructor(deps: PluginDeps<EmailCanonical>) {
     this.graph = deps.graph;
     this.rpc = deps.rpc;
     this.log = deps.log;
@@ -111,7 +109,7 @@ export class EmailModule {
     }
 
     // ONE statement — page of email.message ordered by the indexed entity
-    // `date` column DESC, each row carrying its latest details facet inline.
+    // `date` column DESC; each row's dictionary rides on the entity.
     const win = await this.graph.list_entities_window({
       schema: MESSAGE_SCHEMA,
 
@@ -164,22 +162,15 @@ export class EmailModule {
 
   /// Detail fetch shared by get/batch. Returns null for a missing or
   /// non-email entity (get throws on null; batch skips it). At most TWO fixed
-  /// crossings: get_entity_full (entity + facets + link edges) and, only
+  /// crossings: get_entity_full (entity + link edges) and, only
   /// when the entity has links, ONE get_entities batch to resolve the
   /// neighbours' names — no per-link N+1.
   private async getDetail(id: string): Promise<MessageDetailView | null> {
     const detail = await this.graph.get_entity_full(id, { links: true });
     if (detail?.entity.schema_id !== MESSAGE_SCHEMA) return null;
-    const { entity, facets, links } = detail;
-    // S5: the message DICT is the record; the frozen facet stays the archive.
+    const { entity, links } = detail;
+    // S5: the message DICT is the record.
     const d = ((entity as { properties?: unknown }).properties ?? {}) as Data;
-    const facetSummaries: FacetSummary[] = facets.map((f) => ({
-      id: f.id,
-      schema_id: f.schema_id,
-      source: f.source,
-      observed_at: f.observed_at,
-      data: f.data,
-    }));
 
     // Resolve link neighbours (attachments, address hub, …) for the Context
     // panel. Link edges carry ids + kind only; one batch get_entities
@@ -217,7 +208,6 @@ export class EmailModule {
       channel: "email",
       timestamp: str(d, "sent_at") ?? created,
       canonical: {},
-      facets: facetSummaries,
       linked_entities,
       created_at: created,
       metadata: d,
@@ -296,7 +286,7 @@ export class EmailModule {
   private async ingestDelete(env: SyncEnvelope): Promise<void> {
     if (!env.remote_id) return;
     // S5: the remote id IS the node's anchor — resolution goes through the
-    // one chokepoint, not the retired facet external id.
+    // one chokepoint.
     const id = await this.graph.find_by_anchor(env.remote_id);
     if (id) await this.graph.delete_entity(id);
   }
@@ -365,7 +355,7 @@ export class EmailModule {
         anchor: remoteId,
         properties: dict,
         // The provider is the observer of a message it delivered; the module's
-        // own certainty in the dictionary it just wrote is 90, as the facet it
+        // own certainty in the dictionary it just wrote is 90, as the record it
         // replaced carried.
         confidence: 90,
       });
@@ -519,7 +509,7 @@ export class EmailModule {
     const inReplyTo = str(od, "message_id");
 
     // Attachment ownership + file-ness (user-scoped) — fail if the caller
-    // doesn't own a file, or the id isn't a real file (no file.details facet).
+    // doesn't own a file, or the id isn't a real file (empty dictionary).
     await this.resolveOwnedFileNames(attachmentIds);
 
     // Route the reply (native parity: FATAL on source failure).
@@ -810,7 +800,7 @@ export class EmailModule {
         idx: lower,
         // S3: the anchor is THE resolver — claimed through the chokepoint on
         // create, so re-ensures and anchor-refs converge on one node.
-        // S5: the address DICT is the record; the facet retired with it.
+        // S5: the address DICT is the record.
         anchor: `email:address:${lower}`,
         properties: data,
       });
@@ -883,17 +873,18 @@ export class EmailModule {
 
   /// Resolve each attachment id to its filename, enforcing native parity: the
   /// entity must be owned by the caller (user-scoped get_entity_full → not null)
-  /// AND carry a `file.details` facet. A non-file or detail-less entity is
-  /// rejected (NO fallback name) so only real files can be attached/linked.
+  /// AND be a `file.object` whose dictionary names it. A non-file or
+  /// nameless entity is rejected (NO fallback name) so only real files can be
+  /// attached/linked.
   /// Returns the per-file display names in input order.
   private async resolveOwnedFileNames(fileIds: string[]): Promise<string[]> {
     const names: string[] = [];
     for (const fid of fileIds) {
       const det = await this.graph.get_entity_full(fid, { links: false });
       if (!det) throw new Error(`file ${fid} not found`);
-      const fd = det.facets.find((f) => f.schema_id === "file.details")?.data as Data | undefined;
-      if (!fd) throw new Error(`file ${fid} not found`);
-      names.push(typeof fd.name === "string" ? (fd.name) : "attachment");
+      if (det.entity.schema_id !== "file.object") throw new Error(`file ${fid} not found`);
+      const fd = ((det.entity as { properties?: unknown }).properties ?? {}) as Data;
+      names.push(typeof fd.name === "string" ? fd.name : "attachment");
     }
     return names;
   }
@@ -912,8 +903,8 @@ export class EmailModule {
     // the JSON text of an array, and let Gmail refuse it downstream.
     const toLower = normalizeRecipient(to);
 
-    // Attachment ownership + names (native put attachment_names on the facet;
-    // it required a file.details facet — rejected otherwise, no fallback name).
+    // Attachment ownership + names (native put attachment_names on the record;
+    // it required a file dictionary — rejected otherwise, no fallback name).
     const attachmentNames = await this.resolveOwnedFileNames(attachmentIds);
     const now = new Date().toISOString();
     // @tested-by: tst_module_email_send_004, tst_module_email_send_006
@@ -950,7 +941,7 @@ export class EmailModule {
       );
     }
 
-    const facetData: Record<string, unknown> = {
+    const messageDict: Record<string, unknown> = {
       from_address: OUTGOING_FROM,
       to_addresses: to,
       subject,
@@ -985,7 +976,7 @@ export class EmailModule {
             // @tested-by: tst_module_email_send_005
             // @invariant: INV-6 — Gmail returns the id it will later hand back as
             // `remote_id` when sync ingests our own Sent folder, and ingest
-            // matches on the facet `external_id` and nothing else. Carrying it
+            // matches on the anchor and nothing else. Carrying it
             // here is what makes the copy arriving from Sent UPDATE this entity
             // instead of creating a second one. Without it every sent email
             // exists in the graph twice.
@@ -995,7 +986,7 @@ export class EmailModule {
             // id as its anchor — that anchor is what makes the copy arriving
             // from Sent update THIS node instead of creating a second one.
             anchor: providerMessageId,
-            properties: facetData,
+            properties: messageDict,
           },
           {
             key: addrKey,

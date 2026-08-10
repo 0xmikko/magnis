@@ -16,7 +16,6 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   canonical,
   entity,
-  facet,
   mockGraph,
   mountModule,
   windowRow,
@@ -24,19 +23,18 @@ import {
 } from "@magnis/testkit/module";
 import { NotesModule } from "../service.ts";
 import { NOTE, NOTE_CONTENT } from "../../schema.ts";
-import type { NoteCanonical, NoteFacets } from "../../types.ts";
+import type { NoteCanonical } from "../../types.ts";
 
-type G = MockGraph<NoteFacets, NoteCanonical>;
+type G = MockGraph<NoteCanonical>;
 
 // The read-path ops, arranged with benign defaults; individual tests re-arm them
 // via `graph.spies.<op>.mockResolvedValue(...)`. Ops NOT listed here
 // (list_facets_for_entity, get_entity) stay unarranged, so the throwing Proxy
 // fails the test if the read path hits them.
 function readGraph(): G {
-  return mockGraph<NoteFacets, NoteCanonical>({
+  return mockGraph<NoteCanonical>({
     list_entities_window: () => Promise.resolve({ items: [], total: 0 }),
     search_entities_by_name: () => Promise.resolve([]),
-    list_facets_for_entities: () => Promise.resolve([]),
     list_canonical_for_entities: () => Promise.resolve([]),
     get_entity_full: () => Promise.resolve(null),
     get_entities: () => Promise.resolve([]),
@@ -114,7 +112,6 @@ describe("notes read — shape parity (tst_be_notesread_001)", () => {
       items: [
         windowRow(
           entity("n1", "Title", { schema_id: NOTE, properties: { body: "body", pinned: true } }),
-          null,
         ),
       ],
       total: 1,
@@ -139,7 +136,6 @@ describe("notes read — DB-access guarantees (tst_be_notesdb_001)", () => {
     await mod.list({ search: "x" });
     expect(graph.spies.search_entities_by_name).toHaveBeenCalledTimes(1);
     // S1: the dictionary rides the entity — the two page-wide batch reads are gone.
-    expect(graph.spies.list_facets_for_entities).toHaveBeenCalledTimes(0);
     expect(graph.spies.list_canonical_for_entities).toHaveBeenCalledTimes(0);
     expect(graph.spies.get_canonical).toHaveBeenCalledTimes(0);
     expect(graph.spies.list_entities_window).toHaveBeenCalledTimes(0);

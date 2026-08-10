@@ -16,9 +16,9 @@ import type { EntityDetail, GraphBatchInput } from "@magnis/plugin-sdk";
 import { mockGraph, mountModule, type GraphOverrides, type MockGraph } from "@magnis/testkit/module";
 import { EmailModule } from "../service.ts";
 import { normalizeRecipient } from "../helpers.ts";
-import type { EmailCanonical, EmailFacets } from "../../types.ts";
+import type { EmailCanonical } from "../../types.ts";
 
-type G = MockGraph<EmailFacets, EmailCanonical>;
+type G = MockGraph<EmailCanonical>;
 
 function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
   const overrides = {
@@ -31,12 +31,11 @@ function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
     }),
     add_link: () => Promise.resolve(undefined),
     // No prior send attempt unless a test arranges one.
-    find_by_external_id: () => Promise.resolve(null),
     source_command: () => Promise.resolve({ message_id: "src-1" }),
     get_entity_full: () => Promise.resolve(null),
     ...over,
-  } as unknown as GraphOverrides<EmailFacets, EmailCanonical>;
-  return mockGraph<EmailFacets, EmailCanonical>(overrides);
+  } as unknown as GraphOverrides<EmailCanonical>;
+  return mockGraph<EmailCanonical>(overrides);
 }
 
 function makeModule(graph: G): EmailModule {
@@ -132,7 +131,7 @@ describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
 
   /**
    * @test-id: tst_module_email_send_005
-   * @invariant INV-6 — ingest matches on the facet `external_id` and nothing
+   * @invariant INV-6 — ingest matches on the record `external_id` and nothing
    * else, and Gmail hands back the same id for our own sent mail. Carrying it
    * on the outgoing message is what stops the copy arriving from Sent becoming
    * a SECOND entity.
@@ -158,7 +157,6 @@ describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
       get_entity_full: () =>
         Promise.resolve({
           entity: { id: "f1", schema_id: "file.object", name: "doc.pdf", created_at: "" },
-          facets: [{ id: "x", schema_id: "file.details", source: "s", observed_at: "", data: { name: "doc.pdf" } }],
           links: [],
         } satisfies EntityDetail),
     });
@@ -181,7 +179,6 @@ describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
       get_entity_full: () =>
         Promise.resolve({
           entity: { id: "c1", schema_id: "company", name: "Acme", created_at: "" },
-          facets: [{ id: "x", schema_id: "company.details", source: "s", observed_at: "", data: {} }],
           links: [],
         } satisfies EntityDetail),
     });
@@ -207,7 +204,6 @@ describe("email reply (tst_be_emailreply_003)", () => {
         message_id: "gmail-orig-1",
       },
     } as EntityDetail["entity"],
-    facets: [],
     links: [],
   });
 
@@ -220,7 +216,6 @@ describe("email reply (tst_be_emailreply_003)", () => {
           if (call === 1) return Promise.resolve(original()); // reply reads the original
           return Promise.resolve({
             entity: { id: "f1", schema_id: "file.object", name: "a", created_at: "" },
-            facets: [{ id: "fd", schema_id: "file.details", source: "s", observed_at: "", data: { name: "a" } }],
             links: [],
           } satisfies EntityDetail);
         };
@@ -278,7 +273,6 @@ describe("email reply (tst_be_emailreply_003)", () => {
           if (call === 1) return Promise.resolve(original());
           return Promise.resolve({
             entity: { id: "f1", schema_id: "file.object", name: "a", created_at: "" },
-            facets: [{ id: "fd", schema_id: "file.details", source: "s", observed_at: "", data: { name: "a" } }],
             links: [],
           } satisfies EntityDetail);
         };

@@ -1,4 +1,4 @@
-// File plugin — shared types. Mirrors the core file.* facet shapes
+// File plugin — shared types. Mirrors the core file.* record shapes
 // (backend/src/services/file/schemas.rs) and preserves the file.list/get/attach
 // RPC contracts (formerly the native files-module controller, now this plugin)
 // so call sites are unchanged.
@@ -26,13 +26,7 @@ export interface FileVideo {
   height: number;
 }
 
-/// Facet map for the host GraphService generic.
-export interface FileFacets {
-  "file.details": FileDetails;
-  "file.image": FileImage;
-  "file.audio": FileAudio;
-  "file.video": FileVideo;
-}
+/// Record map for the host GraphService generic.
 
 /// file.* has no canonical properties.
 export type FileCanonical = Record<string, never>;

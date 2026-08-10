@@ -112,7 +112,7 @@ What a typed slice actually looks like in the graph — a person, as the contact
 { schema: "person.profile", data: { first_name: "Samuel" },
   source: { source: "linkedin", external_id: "li:sam-ito", confidence: 60 } }
 
-// CANONICAL — the resolved truth (confidence, then recency); facets stay as evidence:
+// CANONICAL — the resolved truth (confidence, then recency); records stay as evidence:
 { "person.first_name": "Sam" }
 
 // LINKS — typed edges; the last one is a hypothesis, invisible until promoted:

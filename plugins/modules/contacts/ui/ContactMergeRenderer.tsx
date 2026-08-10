@@ -15,15 +15,14 @@ import { BaseToolCallCard } from "@magnis/host/base";
 
 interface MergeField {
   readonly canonical_key: string;
-  readonly strategy: string;
   readonly survivor_value: unknown;
   readonly retired_value: unknown;
   readonly auto_resolved: unknown;
 }
 
 interface MergePreviewData {
-  readonly survivor: { readonly id: string; readonly name: string | null; readonly facet_count: number };
-  readonly retired: { readonly id: string; readonly name: string | null; readonly facet_count: number };
+  readonly survivor: { readonly id: string; readonly name: string | null; readonly property_count: number };
+  readonly retired: { readonly id: string; readonly name: string | null; readonly property_count: number };
   readonly fields: Record<string, MergeField>;
   readonly links_to_repoint: number;
   readonly duplicate_links_to_remove: number;
@@ -32,7 +31,6 @@ interface MergePreviewData {
 interface MergeResult {
   readonly survivor_id: string;
   readonly retired_id: string;
-  readonly facets_moved: number;
   readonly links_repointed: number;
   readonly links_deduplicated: number;
 }
@@ -64,7 +62,7 @@ function extractMergeResult(raw: unknown): MergeResult | null {
   if (!raw || typeof raw !== "object") return null;
   const obj = raw as Record<string, unknown>;
   const candidate = (obj.result ?? obj) as Record<string, unknown>;
-  if ("survivor_id" in candidate && "facets_moved" in candidate) {
+  if ("survivor_id" in candidate && "links_repointed" in candidate) {
     return candidate as unknown as MergeResult;
   }
   return null;
@@ -162,7 +160,7 @@ export function ContactMergeRenderer({
 
   const fieldCount = preview ? Object.keys(preview.fields).length : 0;
   const doneLabel = mergeResult
-    ? `Merged (${String(mergeResult.facets_moved)} facets, ${String(mergeResult.links_repointed)} links)`
+    ? `Merged (${String(mergeResult.links_repointed)} links)`
     : "Merged";
 
   return (
@@ -208,7 +206,7 @@ export function ContactMergeRenderer({
             <span>Contacts merged successfully</span>
           </div>
           <div className="text-agent-text-muted">
-            {String(mergeResult.facets_moved)} facets transferred, {String(mergeResult.links_repointed)} links repointed
+            {String(mergeResult.links_repointed)} links repointed
             {mergeResult.links_deduplicated > 0 && `, ${String(mergeResult.links_deduplicated)} deduplicated`}
           </div>
         </div>

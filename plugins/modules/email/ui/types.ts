@@ -1,6 +1,5 @@
 import type {
   AvatarColor,
-  FacetSummary,
   LinkedEntitySummary,
   SidebarData,
 } from "@magnis/host/base";
@@ -19,7 +18,6 @@ export interface MessageListItem {
 export interface MessageDetailView extends MessageListItem {
   readonly body: string | null;
   readonly canonical: Record<string, unknown>;
-  readonly facets: readonly FacetSummary[];
   readonly linked_entities: readonly LinkedEntitySummary[];
 }
 

@@ -1,8 +1,8 @@
 // Contacts plugin helpers — mirror the legacy Rust contacts service
-// (compute_initials, pick_avatar_color, detect_channels,
-// detect_relevance_tier) so list/detail output matches pre-migration.
+// (compute_initials, pick_avatar_color, detect_channels) so list/detail
+// output matches pre-migration.
 
-import type { FacetRecord, RawEntity } from "@magnis/plugin-sdk";
+import type { RawEntity } from "@magnis/plugin-sdk";
 import type { ContactListItem } from "../types.ts";
 
 const AVATAR_COLORS = ["orange", "blue", "green", "red", "purple", "pink"];
@@ -17,12 +17,6 @@ export const INGEST_CHUNK = 200;
 // bare handle.
 export function normalizeHandle(handle: string): string {
   return handle.trim().replace(/^@+/, "");
-}
-
-/** observed_at (RFC3339) → epoch ms; unparseable → 0 (never wins a max). */
-export function facetTime(f: FacetRecord): number {
-  const t = Date.parse(f.observed_at);
-  return Number.isNaN(t) ? 0 : t;
 }
 
 export function computeInitials(name: string): string {
@@ -45,20 +39,8 @@ export function pickAvatarColor(id: string): string {
 }
 
 
-/// Relevance tier read directly from facet data (canonical resolution
-/// is skipped during bulk ingest), mirroring detect_relevance_tier.
-export function detectRelevanceTier(facets: FacetRecord[]): string | null {
-  for (const f of facets) {
-    const data = f.data as Record<string, unknown> | null;
-    const t = data?.relevance_tier;
-    if (typeof t === "string") return t;
-  }
-  return null;
-}
-
-
 /// The hub's channels, read off its `identity` edges (S6): a channel IS a
-/// node the hub reaches, so the edge set is the answer — no facet schema-id
+/// node the hub reaches, so the edge set is the answer — no schema-id
 /// sniffing, and a channel the hub never linked cannot appear.
 function dictString(dict: Readonly<Record<string, unknown>>, key: string): string | null {
   const v = dict[key];
@@ -76,15 +58,13 @@ export function channelsOf(identityNeighbours: readonly RawEntity[]): string[] {
   return [...out].sort();
 }
 
-// Pure list-item shaping from an entity, its `identity` neighbours and the
-// frozen facets that still hold the telegram relevance tier. S6: name, phone,
-// role and company come from the hub's own DICTIONARY (one writer, nothing to
-// arbitrate); the email is the address node an identity edge reaches. The hot
-// list path batches the edges and the tier facets — no per-row graph access.
+// Pure list-item shaping from an entity and its `identity` neighbours. S6:
+// name, phone, role and company come from the hub's own DICTIONARY (one
+// writer, nothing to arbitrate); the email is the address node an identity
+// edge reaches. The hot list path batches the edges — no per-row graph access.
 export function buildListItem(
   entity: RawEntity & { created_at?: string; is_pinned?: boolean | null },
   identityNeighbours: readonly RawEntity[],
-  facets: FacetRecord[],
 ): ContactListItem {
   const dict = entity.properties ?? {};
   const name =
@@ -107,11 +87,10 @@ export function buildListItem(
     channels: channelsOf(identityNeighbours),
     avatar_color: pickAvatarColor(entity.id),
     initials: computeInitials(name),
-    // The telegram relevance tier is the one card field the property graph has
-    // no home for yet: it describes how the hub knows a telegram account, and
-    // S4 folded the facet that carried it without a destination. Until that
-    // lands it is read from the frozen archive, where it still is.
-    relevance_tier: detectRelevanceTier(facets),
+    // The telegram relevance tier went with the archive that held it: the
+    // fold moved every other card field into a dictionary and left the tier
+    // without a destination, so nothing has written it since.
+    relevance_tier: null,
     created_at: entity.created_at ?? new Date(0).toISOString(),
     is_pinned: entity.is_pinned ?? null,
   };
@@ -150,7 +129,7 @@ export function replicaDict(p: {
  * an address node is linked, a phone channel from the composed phone section,
  * x / linkedin from the hub's tracking entries, and every replica the hub
  * reaches over `identity` — telegram included, now that the account replica
- * exists. Nothing reads a facet schema id to guess a channel any more. */
+ * exists. Nothing reads a schema id to guess a channel any more. */
 export function composeChannels(
   curated: Record<string, unknown>,
   hasEmail: boolean,

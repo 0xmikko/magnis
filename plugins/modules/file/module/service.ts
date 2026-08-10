@@ -20,7 +20,6 @@ import type {
   FileAttachResult,
   FileCanonical,
   FileDetails,
-  FileFacets,
   FileGetParams,
   FileItem,
   FileListParams,
@@ -32,8 +31,8 @@ import {
 } from "../schema.ts";
 
 export class FileModule {
-  private readonly graph: GraphService<FileFacets, FileCanonical>;
-  constructor(deps: PluginDeps<FileFacets, FileCanonical>) {
+  private readonly graph: GraphService<FileCanonical>;
+  constructor(deps: PluginDeps<FileCanonical>) {
     this.graph = deps.graph;
   }
 
@@ -92,7 +91,7 @@ export class FileModule {
 
     if (entityIds.length === 0) return { items: [], total, limit, offset };
 
-    // S1: the dictionary rides the entity — the page-wide facet batch is gone.
+    // S1: the dictionary rides the entity — the page-wide record batch is gone.
     const detailsById = new Map<string, FileDetails>();
     for (const e of pageEntities) {
       detailsById.set(e.id, (e.properties ?? {}) as unknown as FileDetails);
@@ -104,7 +103,7 @@ export class FileModule {
       if (!details) continue;
 
       // parent_id: keep only files linked from the given parent (a links
-      // query, not a facet filter).
+      // query, not a record filter).
       if (params.parent_id) {
         const links = await this.graph.list_links_for_entity(id);
         if (!(links).some((l) => l.from_id === params.parent_id)) continue;

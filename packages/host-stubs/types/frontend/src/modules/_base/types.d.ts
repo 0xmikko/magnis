@@ -1,7 +1,7 @@
 import type { ComponentType, ReactNode } from "react";
 import type { StoreApi } from "zustand/vanilla";
 import type { IconName } from "../../components/ui/Icon";
-import type { AvatarColor, FacetSummary, LinkedEntitySummary } from "./sharedTypes";
+import type { AvatarColor, LinkedEntitySummary } from "./sharedTypes";
 import type { AgentRendererProps, AllowlistTarget, EntityRendererProps, ModuleAgentContribution, ToolCallRendererPayload } from "../../runtime/contracts/agent";
 import type { AppRuntime } from "../../runtime/contracts/runtime";
 import type { EntityLinkContribution } from "../../runtime/contracts/module";
@@ -113,7 +113,6 @@ export interface ModuleConfig {
      *  emails / phones / birthday in a Google-Contacts-style column. */
     readonly DetailsTabContent?: ComponentType<{
         readonly entityId: string;
-        readonly facets: readonly FacetSummary[];
         readonly linkedEntities: readonly LinkedEntitySummary[];
     }>;
     /** Optional predicate — when present and returns false for the
@@ -122,7 +121,6 @@ export interface ModuleConfig {
      *  companies: with zero enrichment the Overview tab degenerates
      *  to just a description, so we fall back to the plain layout. */
     readonly shouldShowDetailsTab?: (args: {
-        readonly facets: readonly FacetSummary[];
         readonly linkedEntities: readonly LinkedEntitySummary[];
     }) => boolean;
     /**

@@ -4,7 +4,7 @@
 // HYBRID split: the trigger PROCESSING ENGINE (evaluator / executor / cache /
 // fire_trigger / gate) stays native in `backend/src/modules/triggers`. The graph
 // is the contract — this plugin writes the `triggers.trigger` entity +
-// `triggers.trigger.config` facet + `watches`/`belongs_to` links that the native
+// `triggers.trigger.config` record + `watches`/`belongs_to` links that the native
 // engine reads and runs.
 //
 // Two native dependencies are consulted over the host RPC bridge (manifest
@@ -41,7 +41,6 @@ import type {
   TriggerCreated,
   TriggerDetailView,
   TriggerExecutionData,
-  TriggerFacets,
   TriggerListItem,
   TriggerScheduleSpec,
   UpdateTriggerParams,
@@ -50,11 +49,11 @@ import type {
 import { BELONGS_TO, TRIGGER, WATCHES } from "../schema.ts";
 
 export class TriggersModule {
-  private readonly graph: GraphService<TriggerFacets>;
+  private readonly graph: GraphService;
   private readonly rpc: RpcExecutor;
   private readonly log: PluginLogger;
 
-  constructor(deps: PluginDeps<TriggerFacets>) {
+  constructor(deps: PluginDeps) {
     this.graph = deps.graph;
     this.rpc = deps.rpc;
     this.log = deps.log;
@@ -347,7 +346,7 @@ export class TriggersModule {
       };
     }
 
-    // GraphService has no full-text facet search. Scan exact graph windows so
+    // GraphService has no full-text record search. Scan exact graph windows so
     // search includes gate/action/watch names without silently truncating at
     // 1,000. Triggers are expected to be a small control-plane collection.
     const scanLimit = 250;
@@ -437,7 +436,7 @@ export class TriggersModule {
     }
 
     // @invariant: INV-25 — the rename ran BEFORE the config write, so a failed
-    // facet write left the trigger renamed for a config it never received.
+    // record write left the trigger renamed for a config it never received.
     if (params.name !== undefined) config.name = params.name;
     if (params.action_prompt !== undefined) config.action_prompt = params.action_prompt;
     if (params.status !== undefined) config.status = params.status;
@@ -460,7 +459,7 @@ export class TriggersModule {
       }
     }
 
-    // S1: the trigger config IS the node's dictionary — the facet write died
+    // S1: the trigger config IS the node's dictionary — the record write died
     // with the fold, and a cleared schedule has to REMOVE the key, which a
     // merge does with an explicit null.
     const next = { ...config } as unknown as Record<string, unknown>;
@@ -620,7 +619,7 @@ export class TriggersModule {
   async fire_history(params: FireHistoryParams): Promise<TriggerExecutionData[]> {
     // S1 (canonical-graph-structure): executions are trigger_execution rows,
     // written and owned by the native engine. The native seam replaces the
-    // old scan over EVERY facet of the trigger — the read is one indexed
+    // old scan over EVERY record of the trigger — the read is one indexed
     // query, and its cost no longer grows with the trigger's history.
     return await this.rpc.execute<TriggerExecutionData[]>("triggers.fire_history", {
       trigger_id: params.trigger_id,
@@ -649,7 +648,7 @@ export class TriggersModule {
 
   private configOf(detail: EntityDetail): TriggerConfigData | null {
     // S1: the dictionary is the state. An empty dictionary means the trigger
-    // was never configured — the same "no config" the missing facet meant.
+    // was never configured — the same "no config" the missing record meant.
     const props = detail.entity.properties ?? {};
     if (Object.keys(props).length === 0) return null;
     return props as unknown as TriggerConfigData;

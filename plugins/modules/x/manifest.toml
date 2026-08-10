@@ -19,7 +19,7 @@ publisher = "ai.magnis"
 # Sync surface this module consumes (fed by the matching source connector).
 [surfaces.x]
 
-# Foreign asks beyond the implicit own namespace: writes to `x.` facets,
+# Foreign asks beyond the implicit own namespace: writes to `x.` records,
 # own:own links, and reads of own schemas need no declaration.
 [permissions]
 read = [ "contacts.person" ]

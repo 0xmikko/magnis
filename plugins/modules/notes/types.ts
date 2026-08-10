@@ -2,19 +2,9 @@
 // Graph-only port of the native `backend/src/modules/notes` types: no
 // `file_path` / `content_hash` (the on-disk markdown mirror was dropped).
 
-import type { FacetRecord } from "@magnis/plugin-sdk";
 
-/// Facet schema_id → payload, used to parameterise GraphService<NoteFacets, …>.
-export interface NoteFacets {
-  "notes.note.content": {
-    title?: string;
-    body: string;
-    pinned?: boolean;
-    updated_at?: string;
-  };
-}
 
-/// Payload of a `notes.note.content` facet as read back inside the module.
+/// Payload of a `notes.note.content` record as read back inside the module.
 export interface ContentData {
   title?: string;
   body?: string;
@@ -56,7 +46,6 @@ export interface NoteDetailView {
   body: string | null;
   pinned: boolean;
   canonical: Partial<NoteCanonical>;
-  facets: FacetRecord[];
   linked_entities: LinkedEntitySummary[];
   created_at: string;
   updated_at: string | null;
@@ -87,7 +76,7 @@ interface CreateParamsBase {
   client_id?: string;
 }
 
-/** MCP clients name the markdown field `content`; the graph facet stores it
+/** MCP clients name the markdown field `content`; the graph record stores it
  *  canonically as `body`. Both are explicit wire variants of the SAME field,
  *  so a caller supplies exactly one — never both, never neither. Accepting
  *  only `body` is what made the agent's `content` call produce an empty note. */

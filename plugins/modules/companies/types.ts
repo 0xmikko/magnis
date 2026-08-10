@@ -36,8 +36,8 @@ export interface CompanyDetailView extends CompanyListItem {
 }
 
 // ── schema → type maps that parameterise GraphService ──────────────
-// facet schema_id → payload shape
-/** The company hub's DICTIONARY (S5). Named for the facet it replaced; the
+// record schema_id → payload shape
+/** The company hub's DICTIONARY (S5). Named for the record it replaced; the
  *  keys are the same, plus the curated collections the hub now owns. */
 export interface CompanyDetailsFacet {
   name?: string | null;
@@ -52,18 +52,6 @@ export interface CompanyDetailsFacet {
   stage?: string | null;
   headcount?: number | null;
   funding_total?: string | null;
-}
-export interface CompanyFacets {
-  "companies.company.details": CompanyDetailsFacet;
-  "companies.description": { body: string };
-  "companies.company.email": { email: string; type?: string; is_primary?: boolean };
-  "companies.company.phone": { phone: string; type?: string; is_primary?: boolean };
-  "companies.company.external_link": {
-    source_type: string;
-    external_id: string;
-    external_url?: string;
-    external_name?: string;
-  };
 }
 
 // canonical key → value
@@ -96,7 +84,7 @@ export interface CreateParams {
 }
 
 /** Full enrichment patch for companies.update. Each undefined field is
- *  left untouched; provided fields are layered on as fresh facet
+ *  left untouched; provided fields are layered on as fresh record
  *  versions (single-aligned details / collection email+phone). */
 export interface UpdateParams {
   id: string;

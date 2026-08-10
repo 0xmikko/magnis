@@ -2,7 +2,6 @@
 // consumes. Mirrors the legacy Rust contacts ContactListItem /
 // ContactDetailView 1:1.
 
-import type { FacetRecord } from "@magnis/plugin-sdk";
 
 export interface ContactListItem {
   id: string;
@@ -41,7 +40,6 @@ export interface ContactDetailView {
   avatar_color: string;
   initials: string;
   canonical: Partial<ContactCanonical>;
-  facets: FacetRecord[];
   linked_entities: LinkedEntitySummary[];
   created_at: string;
   /** S3 (§5.1): the composed card — the hub's curated dictionary. */
@@ -59,20 +57,9 @@ export interface ContactDetailView {
 // ── schema → type maps that parameterise GraphService ──────────────
 // Payloads mirror the native contacts handler exactly
 // (contacts/controller.rs:99,114,130 + schemas.rs).
-export interface ContactFacets {
-  "contacts.person.profile": {
-    first_name?: string;
-    last_name?: string;
-    username?: string;
-    relevance_tier?: string;
-  };
-  "contacts.person.email": { email: string; is_primary?: boolean; type?: string };
-  "contacts.person.phone": { phone: string; is_primary?: boolean; type?: string };
-  "contacts.person.social": SocialTracking;
-}
 
-// contacts.person.social facet: per-person opt-in for social tracking.
-// `contacts` OWNS this facet; the `social` plugin soft-reads it, and the sync
+// contacts.person.social record: per-person opt-in for social tracking.
+// `contacts` OWNS this record; the `social` plugin soft-reads it, and the sync
 // scheduler builds the tracked-handle set from it. One handle per
 // platform per person; handles are stored bare (no leading `@`).
 export interface SocialTracking {

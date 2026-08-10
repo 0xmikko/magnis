@@ -1,4 +1,4 @@
-# Projects (module-search-contract §11): the fold RENAMED the facet's body to
+# Projects (module-search-contract §11): the fold RENAMED the record's body to
 # `description`; the checklist is a dictionary collection.
 
 entity = "projects.project"

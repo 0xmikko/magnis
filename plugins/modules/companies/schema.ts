@@ -5,7 +5,7 @@
 /** Entity schema. */
 export const COMPANY = "companies.company";
 
-// S5: the details / description / email / phone / external_link facets are
+// S5: the details / description / email / phone / external_link records are
 // frozen archive — the company hub's DICTIONARY is the record, and its emails
 // are identity edges to the email module's address nodes. The schemas stay
 // registered (no schema is ever removed); nothing reads or writes them.

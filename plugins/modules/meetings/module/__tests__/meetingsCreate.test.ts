@@ -6,20 +6,20 @@ import { describe, expect, it, vi } from "vitest";
 import type { RawEntity } from "@magnis/plugin-sdk";
 import { mockGraph, mountModule, type GraphOverrides, type MockGraph } from "@magnis/testkit/module";
 import { MeetingsModule } from "../service.ts";
-import type { MeetingsCanonical, MeetingsFacets } from "../../types.ts";
+import type { MeetingsCanonical } from "../../types.ts";
 
 const CAL = "meetings.calendar_event";
-type G = MockGraph<MeetingsFacets, MeetingsCanonical>;
+type G = MockGraph<MeetingsCanonical>;
 
 function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
-  return mockGraph<MeetingsFacets, MeetingsCanonical>({
+  return mockGraph<MeetingsCanonical>({
     create_entity: (p: { client_id?: string; name: string }) =>
       Promise.resolve({ id: p.client_id ?? "new-id", schema_id: CAL, name: p.name }),
     update_properties: () => Promise.resolve(undefined),
     add_link: () => Promise.resolve(undefined),
     get_entity: () => Promise.resolve(null),
     ...over,
-  } as unknown as GraphOverrides<MeetingsFacets, MeetingsCanonical>);
+  } as unknown as GraphOverrides<MeetingsCanonical>);
 }
 
 function makeModule(

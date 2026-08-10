@@ -5,7 +5,7 @@ import { ActionPrefix } from "@magnis/host/base";
 import { proxiedMediaUrl } from "./PostCard";
 
 // SINGLE canonical LinkedIn-post card (docs/frontend/module-standard.md: ONE
-// COMPONENT PER ENTITY). Reads the merged canonical + linkedin.post.content facet
+// COMPONENT PER ENTITY). Reads the merged canonical + linkedin.post.content record
 // fields the host passes as `data`. Read-only.
 
 function fmtDate(v: unknown): string | undefined {

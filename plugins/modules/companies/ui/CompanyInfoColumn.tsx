@@ -34,7 +34,7 @@ interface InfoRow {
   readonly href?: string;
 }
 
-/** True iff `CompanyInfoColumn` would render any row for these facets.
+/** True iff `CompanyInfoColumn` would render any row for these records.
  *  Parents use this to decide whether to reserve a grid column at all
  *  — an empty column track still consumes space, so a company with
  *  zero enrichment should let the description fill the row. */

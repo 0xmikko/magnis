@@ -16,7 +16,7 @@ summary = "Track companies you interact with across email, meetings, and notes."
 # Reverse-domain publisher identity.
 publisher = "ai.magnis"
 
-# Foreign asks beyond the implicit own namespace: writes to `companies.` facets,
+# Foreign asks beyond the implicit own namespace: writes to `companies.` records,
 # own:own links, and reads of own schemas need no declaration.
 [permissions]
 read = [ "contacts.person" ]

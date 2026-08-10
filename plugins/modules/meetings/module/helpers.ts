@@ -17,7 +17,7 @@ export const str = (d: Data, k: string): string | null => {
   return typeof v === "string" && v.length > 0 ? v : null;
 };
 
-/** A string facet field, treated as null when empty (native `.filter(!is_empty)`). */
+/** A string record field, treated as null when empty (native `.filter(!is_empty)`). */
 const nonEmpty = (d: Data, k: string): string | null => str(d, k);
 
 /// Strict RFC-3339 parse (mirrors native chrono parse_from_rfc3339): returns the
@@ -30,7 +30,7 @@ export function parseRfc3339(s: string): number | null {
 }
 
 /// Normalize attendees to the canonical `{name, email}` shape (name → null when
-/// absent), matching the native facet/snapshot serialization.
+/// absent), matching the native record/snapshot serialization.
 export function normalizeAttendees(attendees: CalendarAttendee[] | undefined): {
   name: string | null;
   email: string;
@@ -162,7 +162,7 @@ export function formatDateTime(
   return { date, time };
 }
 
-/// Build a list/detail base item from an entity + its details facet data +
+/// Build a list/detail base item from an entity + its details record data +
 /// already-enriched attendees. Native title default = "Untitled Meeting".
 export function buildListItem(
   entity: RawEntity,

@@ -10,15 +10,15 @@
  */
 import { describe, expect, it } from "vitest";
 import type { PaginatedResponse } from "@magnis/plugin-sdk";
-import { entity, facet, mockGraph, mountModule } from "@magnis/testkit/module";
+import { entity, mockGraph, mountModule } from "@magnis/testkit/module";
 import { TriggersModule } from "../service.ts";
 import { TRIGGER, TRIGGER_CONFIG } from "../../schema.ts";
-import type { TriggerFacets, TriggerListItem } from "../../types.ts";
+import type { TriggerListItem } from "../../types.ts";
 
 describe("tst_module_triggers_list_page_001 — standard module list RPC", () => {
   it("paginates the graph directly beyond the agent list's 1,000-item cap", async () => {
     const last = entity("trigger-1001", "Last trigger", { schema_id: TRIGGER });
-    const graph = mockGraph<TriggerFacets>({
+    const graph = mockGraph({
       list_entities: () =>
         Promise.reject(new Error("list_page must not call the capped agent list source")),
       list_entities_window: (params) =>
@@ -53,7 +53,6 @@ describe("tst_module_triggers_list_page_001 — standard module list RPC", () =>
               firing_count: 0,
             },
           }),
-          facets: [],
           links: [],
         }),
     });
@@ -87,7 +86,7 @@ describe("tst_module_triggers_list_page_001 — standard module list RPC", () =>
       ["trigger-2", "Incoming reply monitor"],
       ["trigger-3", "Incoming reply follow-up"],
     ]);
-    const graph = mockGraph<TriggerFacets>({
+    const graph = mockGraph({
       list_entities_window: (params) =>
         Promise.resolve({
           items: params.offset === 0
@@ -122,7 +121,6 @@ describe("tst_module_triggers_list_page_001 — standard module list RPC", () =>
               firing_count: 0,
             },
           }),
-          facets: [],
           links: [],
         });
       },

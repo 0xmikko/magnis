@@ -4,5 +4,5 @@
 
 /** Entity schema. */
 export const NOTE = "notes.note";
-/** Single content facet (title/body/pinned/updated_at). */
+/** Single content record (title/body/pinned/updated_at). */
 export const NOTE_CONTENT = "notes.note.content";

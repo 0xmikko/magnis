@@ -12,12 +12,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { BatchEntityInput, BatchLinkInput, GraphBatchInput } from "@magnis/plugin-sdk";
 import { mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { EmailModule } from "../service.ts";
-import type { EmailCanonical, EmailFacets, SyncEnvelope } from "../../types.ts";
+import type { EmailCanonical, SyncEnvelope } from "../../types.ts";
 
-type G = MockGraph<EmailFacets, EmailCanonical>;
+type G = MockGraph<EmailCanonical>;
 
 function ingestGraph(): G {
-  return mockGraph<EmailFacets, EmailCanonical>({
+  return mockGraph<EmailCanonical>({
     // apply_batch echoes each key → a deterministic id so post-apply can resolve.
     apply_batch: (frag) =>
       Promise.resolve({
@@ -94,13 +94,13 @@ describe("email ingest — apply_batch shape (tst_be_emailingest_001)", () => {
     // unique, lowercased addresses: ceo@, me@, ops@ (m1+m2 share ceo@ and me@)
     expect(addrs.map((a) => a.idx).sort()).toEqual(["ceo@example.com", "me@example.com", "ops@example.com"]);
 
-    // message entity: name=subject, idx=thread_id, date=sent_at, facet external_id=remote_id
+    // message entity: name=subject, idx=thread_id, date=sent_at, anchor=remote_id
     const m1 = msgs.find((m) => m.key === "m1")!;
     expect(m1.name).toBe("Report Q3");
     expect(m1.idx).toBe("thread-1");
     expect(m1.date).toBe("2026-03-14T09:00:00Z");
     // S5: the message node is its DICTIONARY under the remote_id anchor —
-    // the details facet retired, and the fields the edges now represent
+    // the details record retired, and the fields the edges now represent
     // (attachments, the joined recipient strings) left the dict.
     expect(m1.anchor).toBe("m1");
     expect(m1.properties?.subject).toBe("Report Q3");

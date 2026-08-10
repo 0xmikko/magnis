@@ -50,7 +50,7 @@ export function canonicalString(
 // Mirrors the native ProjectsModuleService list-item shaping
 // (service.rs:94-127): name from entity.name or canonical project.name, status
 // from canonical project.status. Pure — reads the CANONICAL map (project.* are
-// single_aligned, resolved by confidence→recency, so a window's latest facet
+// single_aligned, resolved by confidence→recency, so a window's latest record
 // would not reproduce it). The per-page canonical map is fetched in one
 // list_canonical_for_entities batch — no per-row N+1.
 export function buildProjectListItem(

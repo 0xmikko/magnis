@@ -4,9 +4,9 @@
 
 /** Trigger definition entity schema. */
 export const TRIGGER = "triggers.trigger";
-/** Config facet (name/prompts/status/event_kinds/firing_count/…). */
+/** Config record (name/prompts/status/event_kinds/firing_count/…). */
 export const TRIGGER_CONFIG = "triggers.trigger.config";
-/** Execution-history facet (written by the native engine, read by fire_history). */
+/** Execution-history record (written by the native engine, read by fire_history). */
 export const TRIGGER_EXECUTION = "triggers.trigger.execution";
 /** Link kind: a trigger `watches` an entity. */
 export const WATCHES = "watches";

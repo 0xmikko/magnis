@@ -4,11 +4,11 @@
 // (registered natively at install); these consts are for read/write
 // call sites only.
 
-/** Entity schema (the primary facet shares this id: name/status). */
+/** Entity schema (the primary record shares this id: name/status). */
 export const PROJECT = "projects.project";
-/** Operational checklist facet (items array). */
+/** Operational checklist record (items array). */
 export const PROJECT_CHECKLIST = "projects.project.checklist";
-/** Markdown description facet (body). */
+/** Markdown description record (body). */
 export const PROJECT_DESCRIPTION = "projects.description";
 /** Link kind: a member entity belongs to a project (member → project). Own-prefixed (S2): the kind is projects vocabulary by construction. */
 export const MEMBER_LINK = "projects.belongs_to";

@@ -254,7 +254,7 @@ namespace are implicitly granted; only foreign asks go in `[permissions]`.
 
 ---
 
-## 8. The canonical-vs-facet gotcha
+## 8. The canonical-vs-record gotcha
 
 The single mistake to avoid. There are two ways to read a field, and they
 resolve different values:

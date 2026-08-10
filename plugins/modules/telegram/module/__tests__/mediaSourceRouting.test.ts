@@ -17,9 +17,9 @@
 import { describe, expect, it } from "vitest";
 import { entity, mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { TelegramModule } from "../service.ts";
-import type { SyncEnvelope, TelegramCanonical, TelegramFacets } from "../../types.ts";
+import type { SyncEnvelope, TelegramCanonical } from "../../types.ts";
 
-type G = MockGraph<TelegramFacets, TelegramCanonical>;
+type G = MockGraph<TelegramCanonical>;
 
 // The private ingest helpers the test drives directly.
 interface TgInternals {
@@ -28,10 +28,8 @@ interface TgInternals {
 }
 
 function ingestGraph(): G {
-  return mockGraph<TelegramFacets, TelegramCanonical>({
+  return mockGraph<TelegramCanonical>({
     // No pre-existing chat/sender entities: lookups miss, batch creates.
-    find_by_external_id: () => Promise.resolve(null),
-    list_facets_for_entity: () => Promise.resolve([]),
     apply_batch: (frag) =>
       Promise.resolve({
         ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),

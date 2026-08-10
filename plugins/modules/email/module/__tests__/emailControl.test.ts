@@ -8,15 +8,15 @@ import { describe, expect, it, vi } from "vitest";
 import type { GraphBatchInput, RpcExecutor } from "@magnis/plugin-sdk";
 import { mockGraph, mountModule, type GraphOverrides } from "@magnis/testkit/module";
 import { EmailModule } from "../service.ts";
-import type { EmailCanonical, EmailFacets } from "../../types.ts";
+import type { EmailCanonical } from "../../types.ts";
 
 function makeModule(
   graph: Partial<Record<string, unknown>>,
   rpc: RpcExecutor = { execute: vi.fn() },
 ): EmailModule {
   return mountModule(EmailModule, {
-    graph: mockGraph<EmailFacets, EmailCanonical>(
-      graph as unknown as GraphOverrides<EmailFacets, EmailCanonical>,
+    graph: mockGraph<EmailCanonical>(
+      graph as unknown as GraphOverrides<EmailCanonical>,
     ),
     ctx: { extension_id: "email" },
     rpc,
@@ -89,7 +89,7 @@ describe("email ensure_address hub RPC (cross-module)", () => {
     if (addr === undefined) throw new Error("ensure_address: missing address entity");
     expect(addr.schema_id).toBe("email.address");
     // S5: the address node is its DICTIONARY under the chokepoint anchor —
-    // the details facet retired with the writer.
+    // the details record retired with the writer.
     expect(addr.anchor).toBe("email:address:alice@example.com");
     expect(addr.properties).toMatchObject({ address: "alice@example.com" });
   });

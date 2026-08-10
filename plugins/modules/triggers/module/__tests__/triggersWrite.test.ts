@@ -2,21 +2,20 @@
 // EVERYTHING it watches. `create` silently defaulted a missing or blank
 // `gate_prompt` to "", and `update` accepted "" as a real value, so the agent
 // passing a differently-named field produced a live, unconditional trigger.
-// The partial-write paths are the second half: entity, facet and links were
+// The partial-write paths are the second half: entity, record and links were
 // written one by one with nothing undone when a later step failed.
 
 import { describe, expect, it, vi } from "vitest";
-import { entity, facet, mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
+import { entity, mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { TriggersModule } from "../service.ts";
 import { TRIGGER, TRIGGER_CONFIG } from "../../schema.ts";
-import type { TriggerFacets } from "../../types.ts";
 
 const TRIGGER_ID = "22222222-2222-4222-8222-222222222222";
 
-type G = MockGraph<TriggerFacets>;
+type G = MockGraph;
 
 function createGraph(overrides: Record<string, unknown> = {}): G {
-  return mockGraph<TriggerFacets>({
+  return mockGraph({
     create_entity: () => Promise.resolve(entity(TRIGGER_ID, "T", { schema_id: TRIGGER })),
     update_properties: () => Promise.resolve(undefined),
     add_link: () => Promise.resolve(undefined),
@@ -26,7 +25,7 @@ function createGraph(overrides: Record<string, unknown> = {}): G {
 }
 
 function existingTrigger(): G {
-  return mockGraph<TriggerFacets>({
+  return mockGraph({
     get_entity_full: () =>
       Promise.resolve({
         entity: entity(TRIGGER_ID, "watch replies", {
@@ -132,7 +131,7 @@ describe("triggers.update keeps the gate real and the write whole", () => {
   });
 
   it("tst_module_triggers_write_002 does not rename when the config write fails", async () => {
-    const graph = mockGraph<TriggerFacets>({
+    const graph = mockGraph({
       get_entity_full: () =>
         Promise.resolve({
           entity: entity(TRIGGER_ID, "old name", {
@@ -177,7 +176,7 @@ describe("triggers.update keeps the gate real and the write whole", () => {
 describe("triggers.update compensation restores EVERY field", () => {
   it("tst_module_triggers_write_003 a failed rename keeps the original gate_prompt", async () => {
     const writes: Record<string, unknown>[] = [];
-    const graph = mockGraph<TriggerFacets>({
+    const graph = mockGraph({
       get_entity_full: () =>
         Promise.resolve({
           entity: entity(TRIGGER_ID, "old name", {
@@ -212,7 +211,7 @@ describe("triggers.update compensation restores EVERY field", () => {
 
   it("tst_module_triggers_write_003 a failed rollback names BOTH failures", async () => {
     let attaches = 0;
-    const graph = mockGraph<TriggerFacets>({
+    const graph = mockGraph({
       get_entity_full: () =>
         Promise.resolve({
           entity: entity(TRIGGER_ID, "old name", {

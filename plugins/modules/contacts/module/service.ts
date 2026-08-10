@@ -4,7 +4,6 @@
 import { rpc, searchEntitiesPage, syncHandler, tool, writeTool, type GraphService, type PluginDeps, type PluginUtil, type RawEntity, type RpcExecutor } from "@magnis/plugin-sdk";
 import type {
   BatchEntityInput,
-  FacetRecord,
   GetParams,
   MergePreview,
   MergeResult,
@@ -16,7 +15,6 @@ import type {
   BatchCreateRow,
   ContactCanonical,
   ContactDetailView,
-  ContactFacets,
   ContactListItem,
   ContactsListParams,
   CreateParams,
@@ -43,7 +41,6 @@ import type {
 import {
   buildListItem,
   computeInitials,
-  detectRelevanceTier,
   INGEST_CHUNK,
   composeChannels,
   normalizeHandle,
@@ -58,26 +55,25 @@ import {
 } from "../schema.ts";
 
 export class ContactsModule {
-  private readonly graph: GraphService<ContactFacets, ContactCanonical>;
+  private readonly graph: GraphService<ContactCanonical>;
   private readonly util: PluginUtil;
   private readonly rpc: RpcExecutor;
-  constructor(deps: PluginDeps<ContactFacets, ContactCanonical>) {
+  constructor(deps: PluginDeps<ContactCanonical>) {
     this.graph = deps.graph;
     this.util = deps.util;
     this.rpc = deps.rpc;
   }
 
   @tool("list", {
-    description:
-      "List contacts with pagination and optional name search. By default, " +
-      "Telegram group-only co-members (relevance_tier 'group') are hidden; " +
-      "pass include_all: true to show every contact.",
+    description: "List contacts with pagination and optional name search.",
     params: {
       type: "object",
       properties: {
         limit: { type: "integer", minimum: 1 },
         offset: { type: "integer", minimum: 0 },
         search: { type: "string" },
+        // Retired with the tier it filtered on; still accepted so a stored
+        // agent call or an older client is not a hard error.
         include_all: { type: "boolean" },
       },
       additionalProperties: false,
@@ -87,13 +83,9 @@ export class ContactsModule {
     const limit = params.limit ?? 100;
     const offset = params.offset ?? 0;
     const search = (params.search ?? "").trim();
-    const includeAll = params.include_all ?? false;
 
     let rows: { id: string; schema_id: string; name: string; created_at?: string; is_pinned?: boolean | null }[];
     let total: number;
-    // When the search path pre-fetches facets (to filter by tier), it reuses
-    // that map for hydration so the page is not facet-read twice.
-    let prefetchedFacets: Map<string, FacetRecord[]> | null = null;
     if (search) {
       // Shared paging helper (2026-07-03): the old limit+offset fetch truncated
       // `total` to the visible window → hasMore never fired → infinite scroll
@@ -103,24 +95,14 @@ export class ContactsModule {
         schema_id: CONTACT,
         limit,
         offset,
-        // Group-tier visibility filter (staging e8ec4c82) INSIDE the paging
-        // helper: the helper re-fetches with a growing window until enough
-        // SURVIVORS fill the page (+1 for honest hasMore), so tier filtering
-        // no longer truncates totals. Facets fetched for the filter are
-        // accumulated and reused for page hydration below (no second read).
-        filter: includeAll
-          ? undefined
-          : async (entities): Promise<RawEntity[]> => {
-              const facets = await this.facetsByEntity(entities.map((e) => e.id));
-              prefetchedFacets = facets;
-              return entities.filter(
-                (e) => detectRelevanceTier(facets.get(e.id) ?? []) !== "group",
-              );
-            },
       });
       total = page.total;
       rows = page.entities;
-    } else if (includeAll) {
+    } else {
+      // The Telegram "group"-tier filter retired with the archive that
+      // held the tier: nothing has written `relevance_tier` since the fold,
+      // so `include_all` no longer changes what the list shows. The
+      // parameter stays on the wire until the clients drop it.
       const page = await this.graph.list_entities({
         schema_id: CONTACT,
         limit,
@@ -129,45 +111,20 @@ export class ContactsModule {
       });
       rows = page.items;
       total = page.total;
-    } else {
-      // DEFAULT: hide Telegram "group"-tier co-members at the QUERY level. The
-      // windowed read filters `telegram.contact.relevance_tier IS DISTINCT FROM
-      // 'group'` (IS DISTINCT FROM → untiered/manually-created contacts, whose
-      // tier is NULL, stay visible) so the page is full and `total` is the exact
-      // VISIBLE (non-group) count — correct, efficient pagination.
-      const page = await this.graph.list_entities_window({
-        schema: CONTACT,
-        filter_field: { facet_schema: "telegram.contact", facet_path: "relevance_tier" },
-        filter_eq: "group",
-        filter_op: "distinct",
-        order: [{ field: { entity_field: "idx" } }],
-        limit,
-        offset,
-      });
-      rows = page.items.map((r) => r.entity);
-      total = page.total;
     }
 
     // S6: the page hydrates from the hub's own DICTIONARY (it rides the rows)
     // plus its `identity` EDGES — the email and the channel badges are nodes
-    // the hub reaches, so the edges are the answer. Two batch reads for the
-    // whole page, no per-row N+1. The frozen facets stay only for the one
-    // field the property graph has no home for yet (the telegram tier).
+    // the hub reaches, so the edges are the answer. One batch read for the
+    // whole page, no per-row N+1.
     const ids = rows.map((e) => e.id);
     const identityById = await this.identityNeighboursByEntity(ids);
-    // The paging `filter` closure above may have populated prefetchedFacets, but
-    // TS control-flow narrows it back to `null` here (the assignment lives in a
-    // deferred callback), so widen before the nullish fallback.
-    const facetsById =
-      (prefetchedFacets as Map<string, FacetRecord[]> | null) ?? (await this.facetsByEntity(ids));
-    const items = rows.map((e) =>
-      buildListItem(e, identityById.get(e.id) ?? [], facetsById.get(e.id) ?? []),
-    );
+    const items = rows.map((e) => buildListItem(e, identityById.get(e.id) ?? []));
     return { items, total, limit, offset };
   }
 
   @tool("get", {
-    description: "Get a full contact detail view (canonical, facets, links) by id.",
+    description: "Get a full contact detail view (dictionary, links) by id.",
     params: {
       type: "object",
       properties: { id: { type: "string", format: "uuid" } },
@@ -176,18 +133,13 @@ export class ContactsModule {
     },
   })
   async get(params: GetParams): Promise<ContactDetailView> {
-    // Entity + latest facets + link edges in ONE fetch (user-scoped → null
-    // for a non-owner or wrong schema). One get_canonical for the detail view's
-    // canonical block; link neighbours resolved in ONE get_entities batch.
+    // Entity + link edges in ONE fetch (user-scoped → null for a non-owner
+    // or wrong schema); link neighbours resolved in ONE get_entities batch.
     const detail = await this.graph.get_entity_full(params.id, { links: true });
     if (detail?.entity.schema_id !== CONTACT) {
       throw new Error(`contact not found: ${params.id}`);
     }
     const { entity: e, links } = detail;
-    // The frozen facets stay in the DTO (the detail view still ships them as
-    // the archive) and carry the one field the property graph has no home for
-    // yet — the telegram relevance tier. One fetch for a single entity.
-    const facets = await this.graph.list_facets_for_entity(e.id);
 
     const linked: LinkedEntitySummary[] = [];
     const neighbours = new Map<string, RawEntity & { created_at?: string }>();
@@ -216,7 +168,7 @@ export class ContactsModule {
       .filter((l) => l.kind === "identity" && l.from_id === e.id)
       .map((l) => neighbours.get(l.to_id))
       .filter((n): n is RawEntity & { created_at?: string } => n !== undefined);
-    const base = buildListItem(e, identityNeighbours, facets);
+    const base = buildListItem(e, identityNeighbours);
 
     // ── S3 (§5.1): the card is composed at read time ────────────────────
     // Curated claims = the hub's dictionary. Source claims = the replica
@@ -296,7 +248,6 @@ export class ContactsModule {
       // into it any more, and the DTO keeps the field only until the wire
       // shape drops it.
       canonical: {},
-      facets,
       linked_entities: linked,
       created_at: base.created_at,
       curated,
@@ -330,31 +281,18 @@ export class ContactsModule {
     return out;
   }
 
-  private async facetsByEntity(ids: string[]): Promise<Map<string, FacetRecord[]>> {
-    const out = new Map<string, FacetRecord[]>();
-    for (const f of await this.graph.list_facets_for_entities(ids)) {
-      if (!f.entity_id) continue;
-      const arr = out.get(f.entity_id) ?? [];
-      arr.push(f);
-      out.set(f.entity_id, arr);
-    }
-    return out;
-  }
-
   // Single-entity list-item shaping for the WRITE paths (create/update return
-  // values) — the node it just wrote, its identity edges and the frozen tier
-  // facets. Not the hot read path (no N+1 loop).
+  // values) — the node it just wrote and its identity edges. Not the hot read
+  // path (no N+1 loop).
   private async listItemFor(
     entity: { id: string; schema_id: string; name: string; created_at?: string; is_pinned?: boolean | null },
   ): Promise<ContactListItem> {
     const fresh = await this.graph.get_entity(entity.id);
     const node = fresh ?? { ...entity, properties: {} };
     const identity = await this.identityNeighboursByEntity([entity.id]);
-    const facets = await this.graph.list_facets_for_entity(entity.id);
     return buildListItem(
       { ...node, ...entity, properties: node.properties ?? {} },
       identity.get(entity.id) ?? [],
-      facets,
     );
   }
 
@@ -403,7 +341,7 @@ export class ContactsModule {
       client_id: params.client_id,
       idx: params.name.toLowerCase(),
     });
-    // S3: the hub dict takes the curated claims — no facet writes. The
+    // S3: the hub dict takes the curated claims. The
     // email becomes an identity edge to the shared address node below.
     const curated: Record<string, unknown> = {};
     if (params.phone) {
@@ -429,7 +367,7 @@ export class ContactsModule {
       } catch {
         // Parity with native controller.rs:167 — warn-and-continue. On the
         // single-runtime path (no host AppState) the email hub is unavailable;
-        // the contact + its email facet still persist, just without the
+        // the contact + its email node still persist, just without the
         // email.address entity and has_email link.
         email_address_entity_id = null;
       }
@@ -452,7 +390,7 @@ export class ContactsModule {
   // ids derive as uuid_v5(batch client_id, "contacts.batch_create:{i}")
   // so a retried batch reuses the same entity ids (idempotent), exactly
   // as the native handler (controller.rs:531). Each row delegates to
-  // create(), inheriting the same facet writes AND the email.address +
+  // create(), inheriting the same dictionary writes AND the email.address +
   // has_email hub path when a row carries an email.
   @writeTool("batch_create", {
     description:
@@ -525,7 +463,7 @@ export class ContactsModule {
   }
 
   // Mirrors native contacts.update (controller.rs:562) — name only:
-  // rename the entity and re-attach the profile facet's first_name. The
+  // rename the entity and rewrite first_name on the replica. The
   // update_entity_name op is ownership-checked.
   @writeTool("update", {
     description: "Update a contact's name.",
@@ -544,7 +482,7 @@ export class ContactsModule {
     if (!existing) throw new Error(`contact not found: ${params.id}`);
 
     if (params.name) {
-      // S3: the name vouch lives on the entity row alone — no facet copy.
+      // S3: the name vouch lives on the entity row alone.
       await this.graph.update_entity_name(params.id, params.name);
     }
 
@@ -555,7 +493,7 @@ export class ContactsModule {
   // Read-only merge preview (controller.rs:631). Ownership is enforced
   // backend-side in the op.
   @tool("merge_preview", {
-    description: "Preview merging two contacts: which facets/links move and which fields conflict.",
+    description: "Preview merging two contacts: which links move and which dictionary keys conflict.",
     params: {
       type: "object",
       properties: {
@@ -573,12 +511,12 @@ export class ContactsModule {
     });
   }
 
-  // Merge two contacts (controller.rs:656): transfer facets/links from
+  // Merge two contacts (controller.rs:656): transfer links from
   // retired to survivor, delete retired, then re-derive the survivor's
   // name/idx from the resolved canonicals (first_name [+ last_name]).
   @writeTool("merge", {
     description:
-      "Merge two contacts into one. Transfers all facets, links, and history from " +
+      "Merge two contacts into one. Transfers all links and history from " +
       "retired to survivor, then deletes retired.",
     params: {
       type: "object",
@@ -683,12 +621,12 @@ export class ContactsModule {
   // a WHOLE page of `contacts` envelopes (Google People API snapshots). Mirrors
   // the email ingest principle: a page's contacts fold into apply_batch chunks —
   // one contacts.person entity per contact + its profile/email/phone/
-  // external_link facets, all in ONE atomic graph.apply_batch per chunk.
+  // external_link replicas, all in ONE atomic graph.apply_batch per chunk.
   //
-  // Idempotency: the entity key AND the facets' external_id are the envelope
+  // Idempotency: the entity key AND the anchors are the envelope
   // `remote_id` (`gpeople:{stable_id}`), so re-ingesting the same contact
   // upserts on that key — no duplicate entity (apply_batch resolves-or-creates
-  // by facet external_id, like email's message ingest).
+  // by anchor, like email's message ingest).
   @syncHandler("contacts")
   async ingest(params: { envelopes?: ContactsSyncEnvelope[] }): Promise<{
     ok: boolean;
@@ -728,7 +666,7 @@ export class ContactsModule {
 
   /// One chunk → one apply_batch. Each contact becomes a contacts.person entity
   /// keyed by its remote_id, carrying profile + per-email + per-phone +
-  /// external_link facets. All facets stamp `external_id = remote_id` so the
+  /// external_link replicas. Every node anchors on the remote_id so the
   /// host upserts on a stable, resourceName-derived key.
   private async ingestContactBatch(envelopes: ContactsSyncEnvelope[]): Promise<void> {
     // 1. Fold envelopes into rows: payload + its lowercased addresses.
@@ -768,7 +706,7 @@ export class ContactsModule {
     }
 
     // 3. Replica nodes (plan §5): fields-as-last-synced dictionaries,
-    // anchored by the stable remote_id — ONE batch, no facets, and the sync
+    // anchored by the stable remote_id — ONE batch, and the sync
     // never writes the hub again.
     const entities: BatchEntityInput[] = rows.map(({ remoteId, p }) => {
       const name = typeof p.display_name === "string" ? p.display_name : "";
@@ -798,7 +736,7 @@ export class ContactsModule {
   /// The three outcomes, in order (plan §5.2 + the S3 legacy probe):
   /// already-attached (re-sync) → done; exactly one hub holds identity to a
   /// shared address → attach; none → probe the legacy fleet by the hashed
-  /// facet external_id, else mint a hub (name vouch, empty dictionary);
+  /// anchor, else mint a hub (name vouch, empty dictionary);
   /// several → mint a separate hub and record merge-candidate rows —
   /// ambiguity is a human decision, not a guess.
   private async attachReplica(
@@ -832,16 +770,7 @@ export class ContactsModule {
     let mergeCandidates: string[] = [];
     if (hubs.length === 1) {
       hubId = hubs[0] ?? null;
-    } else if (hubs.length === 0) {
-      // The legacy-fleet probe (dated removal, not a resident fallback): an
-      // old google-synced hub carries the SAME hashed key as this replica's
-      // remote_id in its frozen facets — catch it, attach, keep its anchor.
-      const legacy = await this.graph.find_by_external_id(remoteId);
-      if (legacy !== null && legacy !== replicaId) {
-        const e = await this.graph.get_entity(legacy);
-        if (e?.schema_id === CONTACT) hubId = legacy;
-      }
-    } else {
+    } else if (hubs.length > 1) {
       mergeCandidates = hubs;
     }
 
@@ -894,10 +823,10 @@ export class ContactsModule {
   }
 
   // ── social tracking ──────────────────────────────────────────────
-  // contacts OWNS the contacts.person.social facet. Opting a contact in on a
+  // contacts OWNS the `tracking` key of its hub dictionary. Opting a contact in on a
   // platform places its handle in the sync scheduler's tracked set;
   // opting out removes it → that handle is no longer fetched. One handle
-  // per platform per person; the facet merges across platforms (latest wins).
+  // per platform per person; the dictionary merges across platforms (latest wins).
   @writeTool("set_social_tracking", {
     description:
       "Opt a contact in or out of social tracking on X or LinkedIn. Only tracked " +

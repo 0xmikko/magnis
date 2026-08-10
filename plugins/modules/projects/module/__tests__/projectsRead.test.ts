@@ -1,6 +1,6 @@
 // Projects read surface — shape parity + DB-access guarantees after the
 // graph-read-api adoption. List fields read CANONICAL (project.* are
-// single_aligned, confidence→recency — a latest-facet window would not
+// single_aligned, confidence→recency — a latest-record window would not
 // reproduce it), hydrated per page in ONE list_canonical_for_entities batch:
 //   list (no search): list_entities(order:"date", pinned-first) + batch canonical
 //   list (search):    search_entities_by_name + batch canonical (no sort, native)
@@ -17,9 +17,9 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { canonical, entity, linkedRow, mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { ProjectsModule } from "../service.ts";
 import { MEMBER_LINK, PROJECT } from "../../schema.ts";
-import type { ProjectCanonical, ProjectFacets } from "../../types.ts";
+import type { ProjectCanonical } from "../../types.ts";
 
-type G = MockGraph<ProjectFacets, ProjectCanonical>;
+type G = MockGraph<ProjectCanonical>;
 
 // `graph.spies` is a `Record<string, Mock>`, so under noUncheckedIndexedAccess
 // every lookup is `Mock | undefined`. A spy this test arranges/asserts always
@@ -35,7 +35,7 @@ function spy(g: G, name: string) {
 // Ops NOT listed here stay unarranged, so the throwing Proxy fails the test if
 // the read path hits them.
 function readGraph(): G {
-  return mockGraph<ProjectFacets, ProjectCanonical>({
+  return mockGraph<ProjectCanonical>({
     list_entities: () => Promise.resolve({ items: [], total: 0 }),
     search_entities_by_name: () => Promise.resolve([]),
     list_canonical_for_entities: () => Promise.resolve([]),
@@ -103,8 +103,8 @@ describe("projects read — shape parity (tst_be_projectsread_001)", () => {
     spy(graph, "get_entity").mockResolvedValue(entity("person-1", "Alice", { schema_id: "contacts.person" }));
     spy(graph, "list_linked").mockResolvedValue({
       items: [
-        linkedRow(ent("p1", "Proj One", { status: "active" }), null, { id: "l1", from_id: "person-1", to_id: "p1", kind: MEMBER_LINK }),
-        linkedRow(ent("p2", "Proj Two", { status: "done" }), null, { id: "l2", from_id: "person-1", to_id: "p2", kind: MEMBER_LINK }),
+        linkedRow(ent("p1", "Proj One", { status: "active" }), { id: "l1", from_id: "person-1", to_id: "p1", kind: MEMBER_LINK }),
+        linkedRow(ent("p2", "Proj Two", { status: "done" }), { id: "l2", from_id: "person-1", to_id: "p2", kind: MEMBER_LINK }),
       ],
       total: 2,
     });

@@ -9,7 +9,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { mockGraph, mountModule } from "@magnis/testkit/module";
 import { XModule } from "../service.ts";
-import type { XCanonical, XFacets } from "../../types.ts";
+import type { XCanonical } from "../../types.ts";
 
 function mountX(opts?: { rpcError?: boolean }): { mod: XModule; execute: ReturnType<typeof vi.fn> } {
   const execute = vi.fn(async (method: string) => {
@@ -17,8 +17,8 @@ function mountX(opts?: { rpcError?: boolean }): { mod: XModule; execute: ReturnT
     if (method === "source.sync.bootstrap") return { ok: true, seeded: 1 };
     throw new Error(`unexpected rpc ${method}`);
   });
-  const { module } = mountModule<XModule, XFacets, XCanonical>(XModule, {
-    graph: mockGraph<XFacets, XCanonical>(),
+  const { module } = mountModule<XModule, XCanonical>(XModule, {
+    graph: mockGraph<XCanonical>(),
     ctx: { extension_id: "x" },
     rpc: { execute },
   });

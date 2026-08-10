@@ -1,5 +1,5 @@
-import type { AvatarColor, FacetSummary, LinkedEntitySummary } from "@magnis/host/base";
-export type { FacetSummary, LinkedEntitySummary } from "@magnis/host/base";
+import type { AvatarColor, LinkedEntitySummary } from "@magnis/host/base";
+export type { LinkedEntitySummary } from "@magnis/host/base";
 
 export interface ContactListItem {
   readonly id: string;
@@ -15,13 +15,12 @@ export interface ContactListItem {
   /** True iff the operator authored this contact as part of their
    *  team (employee / co-founder). Distinguishes team members from
    *  contacts ingested via Gmail/Telegram sync. Sourced from the
-   *  `contacts.person.profile.is_team_member` facet. */
+   *  `contacts.person.profile.is_team_member` record. */
   readonly is_team_member?: boolean;
 }
 
 export interface ContactDetailView extends ContactListItem {
   readonly canonical: Record<string, unknown>;
-  readonly facets: readonly FacetSummary[];
   readonly linked_entities: readonly LinkedEntitySummary[];
   /** S3 (§5.1): the composed card sections. */
   readonly curated: Record<string, unknown>;

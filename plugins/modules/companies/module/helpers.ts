@@ -35,7 +35,7 @@ function dictString(dict: Readonly<Record<string, unknown>>, key: string): strin
 
 // Pure list-item shaping from an entity and its DICTIONARY. The hub has one
 // writer, so there is nothing to arbitrate between: the dict rides the entity
-// row the list already fetched — no canonical read, no facet hydrate, no
+// row the list already fetched — no canonical read, no dictionary hydrate, no
 // per-row N+1. `created_at` comes from the real entity column.
 export function buildListItem(entity: RawEntity & { created_at?: string }): CompanyListItem {
   const dict = entity.properties ?? {};

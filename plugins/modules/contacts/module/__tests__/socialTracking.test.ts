@@ -1,6 +1,6 @@
 // Social-tracking opt-in on the HUB DICTIONARY (S3): set_social_tracking
 // writes `properties.tracking[]` via update_properties; the readers page the
-// entity rows and read the dictionary — no facet reads anywhere.
+// entity rows and read the dictionary — no dictionary reads anywhere.
 // RED invariant: toggle tracked => handle in the opt-in state; untoggle =>
 // out. Per-platform merge: toggling X never clears LinkedIn. Handles are
 // stored bare (no leading @).
@@ -10,11 +10,11 @@ import type { RawEntity } from "@magnis/plugin-sdk";
 import { mockGraph, mountModule, type GraphOverrides, type MockGraph } from "@magnis/testkit/module";
 import { ContactsModule } from "../service.ts";
 import { CONTACT } from "../../schema.ts";
-import type { ContactCanonical, ContactFacets } from "../../types.ts";
+import type { ContactCanonical } from "../../types.ts";
 
 const SCHEMA = CONTACT;
-type G = MockGraph<ContactFacets, ContactCanonical>;
-type Overrides = GraphOverrides<ContactFacets, ContactCanonical>;
+type G = MockGraph<ContactCanonical>;
+type Overrides = GraphOverrides<ContactCanonical>;
 
 type Mutable = RawEntity & { properties?: Record<string, unknown> };
 
@@ -39,7 +39,7 @@ function dictOverrides(persons: Mutable[]): {
 function makeGraph(entity: RawEntity | null): { graph: G } {
   const persons: Mutable[] = entity ? [entity as Mutable] : [];
   const overrides = dictOverrides(persons) as unknown as Overrides;
-  return { graph: mockGraph<ContactFacets, ContactCanonical>(overrides) };
+  return { graph: mockGraph<ContactCanonical>(overrides) };
 }
 
 // Graph with MANY persons + the paged list the by-handle lookup uses, plus
@@ -80,12 +80,11 @@ function makeMultiGraph(persons: RawEntity[]): { graph: G; renames: [string, str
         total: tracked.length,
       };
     },
-    // contacts.create still writes its profile facet until the S3 card
-    // cutover — the social tools themselves never touch facets.
+    // contacts.create still writes its profile record until the S3 card
+    // cutover — the social tools themselves never touch records.
     attach_facet: async () => ({ id: "f-0" }),
-    list_facets_for_entity: async () => [],
   } as unknown as Overrides;
-  return { graph: mockGraph<ContactFacets, ContactCanonical>(overrides), renames };
+  return { graph: mockGraph<ContactCanonical>(overrides), renames };
 }
 
 function makeModule(graph: G): ContactsModule {
@@ -159,7 +158,7 @@ describe("contacts social tracking (tst_be_contacts_social_001)", () => {
 // tst_be_contacts_social_002 — resolve the
 // owning contact + tracked state from a platform handle. Case-insensitive —
 // stored handles are user-typed while profile handles carry the API's
-// canonical casing. Latest facet wins; null when no contact matches.
+// canonical casing. Latest record wins; null when no contact matches.
 describe("contacts get_social_tracking_by_handle (tst_be_contacts_social_002)", () => {
   it("finds the contact by handle, case-insensitively, with tracked state", async () => {
     const { graph } = makeMultiGraph([person("p1"), person("p2")]);
@@ -355,7 +354,7 @@ describe("social tracking toggle sequences (tst_be_contacts_social_003)", () => 
     expect(rows[0]).toMatchObject({ contact_id: "p1", handle: "sgershuni" });
     expect(typeof rows[0]!.name).toBe("string");
 
-    // Untracking removes the row (newest facet wins).
+    // Untracking removes the row (newest record wins).
     await mod.set_social_tracking({ id: "p1", platform: "linkedin", tracked: false });
     expect(await mod.list_social_tracking({ platform: "linkedin" })).toHaveLength(0);
   });

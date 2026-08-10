@@ -371,7 +371,7 @@ async function backfillChat(
   let oldest: number | null = null;
   // Stamp the connection's account_id into every backfilled message's source_ref.
   // Previously hardcoded "" — which the host did NOT re-stamp for the external
-  // connector, so backfilled media facets carried account_id="" and the
+  // connector, so backfilled media records carried account_id="" and the
   // file-download worker resolved the session for account '' and never
   // downloaded the attachment.
   for (const msg of messages) {

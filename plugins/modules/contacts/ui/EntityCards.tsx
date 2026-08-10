@@ -9,7 +9,7 @@ import { ExpansionContext } from "@magnis/host/agent";
  * ("ONE COMPONENT PER ENTITY"): reads `expanded` from `ExpansionContext`
  * and switches between compact (name + subtitle) and expanded (bio,
  * location, telegram, emails, phones, aliases, links) from the same
- * payload. No facet fetch — the agent includes the relevant contact
+ * payload. No record fetch — the agent includes the relevant contact
  * fields alongside the entity id at attachment time.
  */
 

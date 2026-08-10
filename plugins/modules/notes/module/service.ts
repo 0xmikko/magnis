@@ -16,7 +16,6 @@ import type {
   LinkedEntitySummary,
   NoteCanonical,
   NoteDetailView,
-  NoteFacets,
   NoteListItem,
   NoteSnapshot,
   NotesListParams,
@@ -28,9 +27,9 @@ import { isValidUuid, previewFromBody, renderTemplate } from "./helpers.ts";
 import { BODY_ONE_OF, resolveBody, resolveUpdateBody } from "../ui/toolArgs.ts";
 
 export class NotesModule {
-  private readonly graph: GraphService<NoteFacets, NoteCanonical>;
+  private readonly graph: GraphService<NoteCanonical>;
   private readonly log: PluginLogger;
-  constructor(deps: PluginDeps<NoteFacets, NoteCanonical>) {
+  constructor(deps: PluginDeps<NoteCanonical>) {
     this.graph = deps.graph;
     this.log = deps.log;
   }
@@ -70,7 +69,7 @@ export class NotesModule {
 
     if (search) {
       // Search path: name match returns ids only; hydrate ONLY the page in TWO
-      // batch reads — facets (preview/body) AND canonical (pinned/updated_at/
+      // batch reads — records (preview/body) AND canonical (pinned/updated_at/
       // title), so the item stays byte-identical to the old per-row build while
       // dropping the 2N+1 N+1.
       const all = await this.graph.search_entities_by_name({
@@ -80,7 +79,7 @@ export class NotesModule {
       });
       const total = all.length;
       const page = all.slice(offset, offset + limit);
-      // S1: the dictionary rides the entity — the facet and canonical batch
+      // S1: the dictionary rides the entity — the record and canonical batch
       // reads (two round-trips per page) are gone.
       const items = page.map((e) =>
         this.listItemFromParts(e, (e.properties ?? {}) as ContentData, {}),
@@ -90,8 +89,8 @@ export class NotesModule {
 
     // No search: windowed list ordered by the dictionary's `updated_at`
     // (most-recently-edited first) — S1 moved note state into
-    // `entity.properties`, and an order key on the frozen facet would never
-    // see an edit again. Preview renders from the same dictionary; no facet
+    // `entity.properties`, and an order key on the frozen record would never
+    // see an edit again. Preview renders from the same dictionary; no record
     // is read.
     const win = await this.graph.list_entities_window({
       schema: NOTE,
@@ -160,7 +159,6 @@ export class NotesModule {
       body: data.body ?? null,
       pinned,
       canonical,
-      facets: detail.facets,
       linked_entities: linked,
       created_at: e.created_at ?? new Date(0).toISOString(),
       updated_at: data.updated_at ?? null,
@@ -282,7 +280,7 @@ export class NotesModule {
 
     // @tested-by: tst_module_notes_write_002
     // @invariant: INV-25 — content first, then the rename. The old order left a
-    // note renamed for content it never received when the facet write failed.
+    // note renamed for content it never received when the record write failed.
     // If the rename then fails, the prior content is restored so neither half
     // is applied alone.
     await this.writeContent(params.id, newTitle, newBody, now);
@@ -356,7 +354,7 @@ export class NotesModule {
 
   // ── private helpers ──────────────────────────────────────────────
 
-  /// Attach a fresh `notes.note.content` facet and re-derive canonicals.
+  /// Attach a fresh `notes.note.content` record and re-derive canonicals.
   /// `pinned` is always written false (native parity — pinning is a separate
   /// `graph.entity.pin` op, not part of the note body write).
   private async writeContent(
@@ -367,7 +365,7 @@ export class NotesModule {
   ): Promise<void> {
     // S1 (canonical-graph-structure): the note's state is the node's
     // dictionary. One write, no canonical resolution pass, and an edit stops
-    // being an accidental collection (the facet path appended a row per save).
+    // being an accidental collection (the record path appended a row per save).
     await this.graph.update_properties({
       entity_id: entityId,
       properties: { title, body, pinned: false, updated_at: updatedAt },
@@ -375,7 +373,7 @@ export class NotesModule {
   }
 
   private contentOf(detail: EntityDetail): ContentData {
-    // S1: the dictionary IS the state; the frozen facet archive is not read.
+    // S1: the dictionary IS the state; the frozen retired archive is not read.
     return (detail.entity.properties ?? {});
   }
 
@@ -386,7 +384,7 @@ export class NotesModule {
   }
 
   private listItemFromWindow(row: WindowRow): NoteListItem {
-    // S1: the dictionary rides the window's entity; the inlined render facet
+    // S1: the dictionary rides the window's entity; the inlined render record
     // is the frozen archive and is not read.
     return this.listItemFromParts(
       row.entity,
@@ -395,8 +393,8 @@ export class NotesModule {
     );
   }
 
-  // Pure list-item shaping from an entity + its content facet data + its
-  // canonical map. The search path passes batch-fetched facets + canonical so it
+  // Pure list-item shaping from an entity + its content record data + its
+  // canonical map. The search path passes batch-fetched records + canonical so it
   // stays byte-identical to the old per-row build; the window path passes `{}`
   // canonical. No graph access.
   private listItemFromParts(

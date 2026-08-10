@@ -1,7 +1,7 @@
 // Contacts sync ingest (@syncHandler "contacts") — S3, the replica model
 // (plan §5): a page of Google contacts folds into ONE apply_batch of
 // contacts.google_contact REPLICA nodes (anchored by remote_id, dictionary =
-// fields as last synced, zero facets, zero hub entities), the addresses are
+// fields as last synced, zero records, zero hub entities), the addresses are
 // minted by their owner over email.ensure_addresses, and auto-attach then
 // wires identity edges — attach to the one hub sharing an address, mint a
 // hub when none exists, or mint + record same_as candidates when several
@@ -11,9 +11,9 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { BatchEntityInput, GraphBatchInput } from "@magnis/plugin-sdk";
 import { mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { ContactsModule } from "../service.ts";
-import type { ContactCanonical, ContactFacets } from "../../types.ts";
+import type { ContactCanonical } from "../../types.ts";
 
-type G = MockGraph<ContactFacets, ContactCanonical>;
+type G = MockGraph<ContactCanonical>;
 
 // `graph.spies` is a `Record<string, Mock>`, so under noUncheckedIndexedAccess
 // every lookup is `Mock | undefined`. A spy this test arranges/asserts always
@@ -59,7 +59,7 @@ function ingestWorld(over: Partial<World> = {}): World {
     ...over,
   };
   let mintSeq = 0;
-  world.graph = mockGraph<ContactFacets, ContactCanonical>({
+  world.graph = mockGraph<ContactCanonical>({
     apply_batch: (frag: GraphBatchInput) =>
       Promise.resolve({
         ids: Object.fromEntries(frag.entities.map((e: BatchEntityInput) => [e.key, `id-${e.key}`])),
@@ -76,7 +76,6 @@ function ingestWorld(over: Partial<World> = {}): World {
           .filter((e): e is NonNullable<typeof e> => e !== undefined),
       ),
     get_entity: (id: string) => Promise.resolve(world.entities?.[id] ?? null),
-    find_by_external_id: (ext: string) => Promise.resolve(world.externalIds?.[ext] ?? null),
     create_entity: (input: { schema_id: string; name: string }) => {
       world.minted.push({ schema_id: input.schema_id, name: input.name });
       return Promise.resolve({ id: `hub-${mintSeq++}`, schema_id: input.schema_id, name: input.name });
@@ -228,7 +227,12 @@ describe("contacts ingest — the replica model (tst_be_contactsingest_001)", ()
     expect(candidates.every((l) => l.status === "candidate")).toBe(true);
   });
 
-  it("legacy fleet: no address match but the hashed key finds the old hub → attach, keep its identity", async () => {
+  // The legacy-fleet probe retired with the archive it read: a pre-anchor hub
+  // was recognised by the hashed key sitting in its frozen rows, and those
+  // rows are gone. Such a hub is now invisible to ingest, so a fresh one is
+  // minted — the documented consequence of dropping the archive
+  // (docs/plans/facet-removal.md).
+  it("a pre-anchor hub is no longer recognised — ingest mints a fresh one", async () => {
     const world = ingestWorld({
       externalIds: { "gpeople:abc123": "old-hub" },
       entities: { "old-hub": { id: "old-hub", schema_id: "contacts.person", name: "Old" } },
@@ -238,9 +242,9 @@ describe("contacts ingest — the replica model (tst_be_contactsingest_001)", ()
       envelopes: [env({ remote_id: "gpeople:abc123", payload: contactPayload({ emails: [] }) })],
     });
 
-    expect(world.minted).toEqual([]);
+    expect(world.minted).toEqual([{ schema_id: "contacts.person", name: "Mikhail Lazarev" }]);
     expect(world.links).toEqual([
-      { from_id: "old-hub", to_id: "id-gpeople:abc123", kind: "identity", declared_by: "gpeople:abc123" },
+      { from_id: "hub-0", to_id: "id-gpeople:abc123", kind: "identity", declared_by: "gpeople:abc123" },
     ]);
   });
 

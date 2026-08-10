@@ -6,7 +6,6 @@ import { rpc, tool, type GraphService, type PluginDeps } from "@magnis/plugin-sd
 import {
   canonical,
   entity,
-  facet,
   linkedRow,
   mockGraph,
   mountModule,
@@ -118,22 +117,15 @@ describe("builders", () => {
   it("tst_testkit_builders_001 produce the real DTO shapes", () => {
     expect(entity("a", "Acme")).toMatchObject({ id: "a", name: "Acme", schema_id: "" });
     expect(entity("a", "Acme", { schema_id: "companies.company" }).schema_id).toBe("companies.company");
-    expect(windowRow(entity("a", "Acme"), { k: 1 })).toEqual({
+    expect(windowRow(entity("a", "Acme"))).toEqual({
       entity: { id: "a", name: "Acme", schema_id: "", created_at: "2026-01-01T00:00:00Z" },
-      data: { k: 1 },
-    });
-    expect(facet("f1", "s.details", { x: 1 }, { entity_id: "a" })).toMatchObject({
-      id: "f1",
-      schema_id: "s.details",
-      entity_id: "a",
-      data: { x: 1 },
     });
     expect(canonical("a", "companies.name", "Acme")).toEqual({
       entity_id: "a",
       key: "companies.name",
       value: "Acme",
     });
-    expect(linkedRow(entity("a", "Acme"), null, { kind: "authored_by" }).link).toMatchObject({
+    expect(linkedRow(entity("a", "Acme"), { kind: "authored_by" }).link).toMatchObject({
       from_id: "a",
       kind: "authored_by",
     });

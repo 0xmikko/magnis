@@ -6,7 +6,7 @@
  * Composes the same `useEntityProperty` hook the standalone Description
  * tab uses, so the description content is the SAME key (no schema
  * drift). When the user types in the right column the
- * 800ms-debounced save fires the same `graph.facet.attach` upsert as
+ * 800ms-debounced save fires the same `graph.record.attach` upsert as
  * before — switching tab structure is a pure UI change.
  *
  * The Description tab itself is suppressed from `EntityDetailTabs`
@@ -20,7 +20,6 @@ import { Icon, IconButton, Stack, Text } from "@magnis/host/ui";
 import { MarkdownEditor } from "@magnis/host/markdown";
 import { useEditorMentionSuggestion } from "@magnis/host/markdown";
 import { useEntityProperty } from "@magnis/host/base";
-import type { FacetSummary } from "@magnis/host/base";
 
 import { ContactInfoColumn } from "./ContactInfoColumn";
 import { useContactDetailQuery } from "./queries";
@@ -28,22 +27,18 @@ import { useContactDetailQuery } from "./queries";
 
 export interface ContactOverviewProps {
   readonly entityId: string;
-  readonly facets: readonly FacetSummary[];
 }
 
-export function ContactOverview({
-  entityId,
-  facets,
-}: ContactOverviewProps): JSX.Element {
+export function ContactOverview({ entityId }: ContactOverviewProps): JSX.Element {
   // S3 (§5.1): the composed card sections ride the detail DTO.
   const detail = useContactDetailQuery(entityId);
   return (
     <div className="grid grid-cols-1 gap-6 md:grid-cols-[2fr_3fr] md:gap-6">
       <div>
         <ContactInfoColumn
-          facets={facets}
           emails={detail.data?.emails}
           phones={detail.data?.phones}
+          replicas={detail.data?.replicas}
         />
       </div>
       <div>

@@ -14,7 +14,6 @@ import type {
   CompanyCanonical,
   CompanyDetailsFacet,
   CompanyDetailView,
-  CompanyFacets,
   CompanyListItem,
   CreateParams,
   HeaderRow,
@@ -24,9 +23,9 @@ import { COMPANY } from "../schema.ts";
 import { buildListItem } from "./helpers.ts";
 
 export class CompaniesModule {
-  private readonly graph: GraphService<CompanyFacets, CompanyCanonical>;
+  private readonly graph: GraphService<CompanyCanonical>;
   private readonly rpc: RpcExecutor;
-  constructor(deps: PluginDeps<CompanyFacets, CompanyCanonical>) {
+  constructor(deps: PluginDeps<CompanyCanonical>) {
     this.graph = deps.graph;
     this.rpc = deps.rpc;
   }
@@ -92,7 +91,7 @@ export class CompaniesModule {
   async get(params: GetParams): Promise<CompanyDetailView> {
     // User-scoped entity (+ schema guard) and every edge, in one read. S5:
     // the hub's DICTIONARY is the record — one writer, nothing to arbitrate —
-    // so the detail needs neither a canonical read nor a facet list.
+    // so the detail needs neither a canonical read nor a record list.
     const detail = await this.graph.get_entity_full(params.id, { links: true });
     if (detail?.entity.schema_id !== COMPANY) {
       throw new Error(`company not found: ${params.id}`);
@@ -188,7 +187,7 @@ export class CompaniesModule {
       idx: params.name.toLowerCase(),
     });
 
-    // S5: the hub dict takes the curated claims — one writer, no facets.
+    // S5: the hub dict takes the curated claims — one writer, no records.
     const details: CompanyDetailsFacet = { name: params.name };
     if (params.domain) {
       details.domain = params.domain;
@@ -214,8 +213,8 @@ export class CompaniesModule {
   }
 
   // Full-field enrichment (parity with staging "field parity" build). Each
-  // provided field is layered on as a fresh facet version; single-aligned
-  // details = latest wins, email/phone = collection (one facet per item).
+  // provided field is layered on as a fresh record version; single-aligned
+  // details = latest wins, email/phone = collection (one record per item).
   @writeTool("update", {
     description:
       "Update / enrich a company. Provided fields are layered on; omitted " +

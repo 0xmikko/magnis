@@ -27,7 +27,6 @@ import type {
   MemberParams,
   ProjectCanonical,
   ProjectDetailView,
-  ProjectFacets,
   ProjectListItem,
   ProjectsListParams,
   UpdateParams,
@@ -44,8 +43,8 @@ import {
 } from "./helpers.ts";
 
 export class ProjectsModule {
-  private readonly graph: GraphService<ProjectFacets, ProjectCanonical>;
-  constructor(deps: PluginDeps<ProjectFacets, ProjectCanonical>) {
+  private readonly graph: GraphService<ProjectCanonical>;
+  constructor(deps: PluginDeps<ProjectCanonical>) {
     this.graph = deps.graph;
   }
 
@@ -103,10 +102,10 @@ export class ProjectsModule {
     },
   })
   async get(params: GetParams): Promise<ProjectDetailView> {
-    // Entity + facets + link edges in ONE fetch.
+    // Entity + link edges in ONE fetch.
     const detail = await this.graph.get_entity_full(params.id, { links: true });
     if (!detail) throw new Error(`project ${params.id} not found`);
-    const { entity, facets, links } = detail;
+    const { entity, links } = detail;
     const canonical = projectCanonFromProperties(entity);
 
     const name =
@@ -136,7 +135,6 @@ export class ProjectsModule {
       name,
       status,
       canonical,
-      facets,
       linked_entities: linked,
       created_at: entityCreatedAt(entity),
     };
@@ -222,7 +220,7 @@ export class ProjectsModule {
     const data: Record<string, unknown> = { ...((entity.properties ?? {})) };
     // @tested-by: tst_mod_projects_update_001
     // @invariant: runtime JSON null for an optional field means "omitted"; it
-    // must never erase the entity name or the existing project facet value.
+    // must never erase the entity name or the existing project record value.
     if (typeof params.name === "string") {
       data.name = params.name;
       await this.graph.update_entity_name(params.id, params.name);
@@ -332,7 +330,7 @@ export class ProjectsModule {
   async listForEntity(params: ListForEntityParams): Promise<ProjectListItem[]> {
     await this.requireOwned(params.entity_id);
     // A parent's member projects over the belongs_to link, each row carrying
-    // the projects.project render facet inline — ONE statement, replacing the
+    // the projects.project render record inline — ONE statement, replacing the
     // list_links + per-link get_entity N+1. `child_schema` enforces what the old
     // loop did with a per-target schema check. (limit 1000: a member entity
     // belongs to far fewer projects; logged cap vs the old unbounded loop.)

@@ -1,7 +1,7 @@
 # triggers — Trigger definitions domain module (V8 plugin).
 #
 # Owns the `triggers.*` graph namespace: the trigger entity plus its config and
-# execution facets. This module owns only the trigger DEFINITION CRUD + UI — the
+# execution records. This module owns only the trigger DEFINITION CRUD + UI — the
 # native trigger ENGINE (evaluate + fire) stays in Core and reads these
 # definitions (hybrid split). Runs as a sandboxed V8 isolate; bundled with the
 # app and installed automatically at boot.
@@ -18,7 +18,7 @@ summary = "Automations that watch your graph and act on changes."
 # Reverse-domain publisher identity.
 publisher = "ai.magnis"
 
-# Foreign asks beyond the implicit own namespace: writes to `triggers.` facets,
+# Foreign asks beyond the implicit own namespace: writes to `triggers.` records,
 # own:own links, and reads of own schemas need no declaration.
 [permissions]
 # triggers.belongs_to is own-prefixed — implicit (S2).

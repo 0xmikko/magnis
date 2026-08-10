@@ -8,17 +8,15 @@ import { describe, expect, it } from "vitest";
 import type { EntityDetail } from "@magnis/plugin-sdk";
 import { mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { FileModule } from "../service.ts";
-import type { FileCanonical, FileFacets } from "../../types.ts";
+import type { FileCanonical } from "../../types.ts";
 
-type G = MockGraph<FileFacets, FileCanonical>;
+type G = MockGraph<FileCanonical>;
 
 function makeGraph(): G {
-  return mockGraph<FileFacets, FileCanonical>({
+  return mockGraph<FileCanonical>({
     get_entity_full: () => Promise.resolve(null),
     add_link: () => Promise.resolve(undefined),
     list_entities_window: () => Promise.resolve({ items: [], total: 0 }),
-    list_entities_by_facet_field: () => Promise.resolve({ items: [], total: 0 }),
-    list_facets_for_entities: () => Promise.resolve([]),
     list_links_for_entity: () => Promise.resolve([]),
   });
 }

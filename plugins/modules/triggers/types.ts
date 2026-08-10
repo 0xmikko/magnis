@@ -2,17 +2,12 @@
 // Byte-compatible TS port of the native `backend/src/modules/triggers/types.rs`
 // structs the engine reads/writes. The processing engine stays native; this
 // plugin only owns the DEFINITION CRUD, so these mirror the graph contract:
-// `triggers.trigger` entity + `triggers.trigger.config` facet + `watches` /
+// `triggers.trigger` entity + `triggers.trigger.config` record + `watches` /
 // `belongs_to` links.
 
-/// Facet schema_id → payload, used to parameterise GraphService<TriggerFacets, …>.
 /// `config` is written by the plugin (create/update) AND by the native engine
 /// (firing_count / last_fired_at); `execution` is written by the engine and
 /// read by the plugin's `fire_history`.
-export interface TriggerFacets {
-  "triggers.trigger.config": TriggerConfigData;
-  "triggers.trigger.execution": TriggerExecutionData;
-}
 
 /// Mirrors native `ScheduleSpec` (docs/plans/cron-triggers.md). The plugin
 /// never constructs one itself — it persists VERBATIM what the native
@@ -48,7 +43,7 @@ export interface TriggerConfigData {
   schedule?: TriggerScheduleSpec;
 }
 
-/// Mirrors native `TriggerExecution` (the `.execution` facet the engine writes).
+/// Mirrors native `TriggerExecution` (the `.execution` record the engine writes).
 export interface TriggerExecutionData {
   fired_at: string;
   event_entity_id: string;

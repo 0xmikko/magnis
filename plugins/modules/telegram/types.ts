@@ -26,7 +26,7 @@ export interface TelegramChatListItem {
 /// Generic message list item shared by telegram/email. Mirrors native
 /// `MessageListItem` (backend/src/modules/shared.rs). Telegram-specific
 /// fields (chat_id, message_id, text, sender_id, …) ride in `metadata`,
-/// which is the message-details facet payload.
+/// which is the message-details record payload.
 export interface MessageListItem {
   id: string;
   schema_id: string;
@@ -39,13 +39,6 @@ export interface MessageListItem {
   metadata?: Record<string, unknown> | null;
 }
 
-export interface FacetSummary {
-  id: string;
-  schema_id: string;
-  source: string;
-  observed_at: string;
-  data: unknown;
-}
 
 export interface LinkedEntitySummary {
   id: string;
@@ -66,7 +59,6 @@ export interface MessageDetailView {
   channel: string;
   timestamp: string;
   canonical: Record<string, unknown>;
-  facets: FacetSummary[];
   linked_entities: LinkedEntitySummary[];
   created_at: string;
   metadata?: Record<string, unknown> | null;
@@ -100,7 +92,7 @@ export interface SyncEnvelope {
 }
 
 // chat_id accepts the telegram numeric id (string|number) OR — for messages
-// list — an entity_id (chat entity UUID) resolved to chat_id via its facet.
+// list — an entity_id (chat entity UUID) resolved to chat_id via its record.
 export interface ChatsListParams {
   limit?: number;
   offset?: number;
@@ -168,13 +160,7 @@ export interface SetTriggerParams {
   episode_id?: string;
 }
 
-// facet schema_id → payload shape (parameterises GraphService writes/reads)
-export interface TelegramFacets {
-  "telegram.chat.details": Record<string, unknown>;
-  "telegram.message.details": Record<string, unknown>;
-  "telegram.account.details": Record<string, unknown>;
-  "telegram.contact": Record<string, unknown>;
-}
+// record schema_id → payload shape (parameterises GraphService writes/reads)
 
 export interface TelegramCanonical {
   "telegram.chat.title": string;

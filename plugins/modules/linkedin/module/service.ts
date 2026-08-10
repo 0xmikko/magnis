@@ -5,7 +5,7 @@
 // module, without touching x. v1 is read-only. (Split from the old shared
 // `social` module, see plan Revision.)
 // Writes ONLY `linkedin.*` (implicit own-namespace grant); soft-reads contacts.person.
-// Idempotent: facets carry external_id = the source remote_id (re-poll
+// Idempotent: records carry external_id = the source remote_id (re-poll
 // upserts). Provenance is stamped host-side from the calling plugin + envelope.
 
 import { searchEntitiesPage, str, syncHandler, tool, type GraphService, type PluginDeps } from "@magnis/plugin-sdk";
@@ -26,16 +26,15 @@ import type {
   ProfileListItem,
   ProfilesListParams,
   LinkedinCanonical,
-  LinkedinFacets,
   SyncEnvelope,
 } from "../types.ts";
 import { AUTHORED_BY, IDENTITY, POST, PROFILE } from "../schema.ts";
 import { richPostFields } from "./helpers.ts";
 
 export class LinkedinModule {
-  private readonly graph: GraphService<LinkedinFacets, LinkedinCanonical>;
-  private readonly rpc: PluginDeps<LinkedinFacets, LinkedinCanonical>["rpc"];
-  constructor(deps: PluginDeps<LinkedinFacets, LinkedinCanonical>) {
+  private readonly graph: GraphService<LinkedinCanonical>;
+  private readonly rpc: PluginDeps<LinkedinCanonical>["rpc"];
+  constructor(deps: PluginDeps<LinkedinCanonical>) {
     this.graph = deps.graph;
     this.rpc = deps.rpc;
   }
@@ -87,7 +86,7 @@ export class LinkedinModule {
       } else if (entityType === "post") {
         const content = payload as unknown as PostContent;
         // S5: content AND metrics are one dictionary — the metrics arrive
-        // inside the same payload and were only ever split to fit two facets.
+        // inside the same payload and were only ever split to fit two records.
         entities.push({
           key: remoteId,
           schema_id: POST,
@@ -304,7 +303,7 @@ export class LinkedinModule {
     if (search) {
       // Framework list-pane search: shared paging helper (overfetch+1 keeps
       // hasMore truthful — infinite scroll works in search mode), identity
-      // facets batch-hydrated.
+      // records batch-hydrated.
       const { entities: page, total } = await searchEntitiesPage(this.graph, {
         query: search,
         schema_id: PROFILE,
@@ -312,7 +311,7 @@ export class LinkedinModule {
         offset,
       });
       // S5: the matched rows carry their dictionaries — nothing to hydrate.
-      const items = page.map((e) => this.profileItem({ entity: e, data: null }));
+      const items = page.map((e) => this.profileItem({ entity: e }));
       return { items, total, limit, offset };
     }
     const win = await this.graph.list_entities_window({

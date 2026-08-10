@@ -9,7 +9,7 @@ export const MESSAGE_SCHEMA = "email.message";
 /** Address entity schema (the cross-module email.address hub). */
 export const ADDRESS_SCHEMA = "email.address";
 
-// S5: the details facets are frozen archive — the message and address
+// S5: the details records are frozen archive — the message and address
 // dictionaries are the record. The schemas stay registered (no schema is ever
 // removed); nothing reads or writes them, so no constant points at them.
 

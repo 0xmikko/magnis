@@ -8,9 +8,9 @@ import type { WindowSpec } from "@magnis/plugin-sdk";
 import { entity, mockGraph, mountModule, windowRow, type MockGraph } from "@magnis/testkit/module";
 import { LinkedinModule } from "../service.ts";
 import { PROFILE } from "../../schema.ts";
-import type { LinkedinCanonical, LinkedinFacets } from "../../types.ts";
+import type { LinkedinCanonical } from "../../types.ts";
 
-type G = MockGraph<LinkedinFacets, LinkedinCanonical>;
+type G = MockGraph<LinkedinCanonical>;
 
 // Scenario fixture over the testkit: an ingested-profile window (paged by the
 // window's limit/offset) + a contacts.list_social_tracking RPC stub. Replaces
@@ -25,7 +25,6 @@ function mountProfiles(opts: {
         schema_id: PROFILE,
         properties: { platform: "linkedin", handle: p.handle, display_name: p.name },
       }),
-      null,
     ),
   );
   const graph: G = mockGraph({
@@ -95,7 +94,6 @@ describe("linkedin pending profiles", () => {
                 schema_id: PROFILE,
                 properties: { platform: "linkedin", handle: "p", display_name: "P" },
               }),
-              null,
             ),
           ],
           total: 1,

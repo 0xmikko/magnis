@@ -13,13 +13,13 @@
 // single guarantee that REPLACES the old hand-rolled `reject()` spy.
 
 import { beforeEach, describe, expect, it } from "vitest";
-import { canonical, entity, facet, mockGraph, mountModule, windowRow, type MockGraph } from "@magnis/testkit/module";
+import { canonical, entity, mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { ContactsModule } from "../service.ts";
 import { CONTACT } from "../../schema.ts";
-import type { ContactCanonical, ContactFacets } from "../../types.ts";
+import type { ContactCanonical } from "../../types.ts";
 
 const SCHEMA = CONTACT;
-type G = MockGraph<ContactFacets, ContactCanonical>;
+type G = MockGraph<ContactCanonical>;
 
 // `graph.spies` is a `Record<string, Mock>`, so under noUncheckedIndexedAccess
 // every lookup is `Mock | undefined`. A spy this test arranges/asserts always
@@ -35,15 +35,12 @@ function spy(g: G, name: string) {
 // (get_entity — the N+1 trap) stay unarranged, so the throwing Proxy fails the
 // test if the read path hits them.
 function readGraph(): G {
-  return mockGraph<ContactFacets, ContactCanonical>({
+  return mockGraph<ContactCanonical>({
     list_entities: () => Promise.resolve({ items: [], total: 0 }),
-    list_entities_window: () => Promise.resolve({ items: [], total: 0 }),
     search_entities_by_name: () => Promise.resolve([]),
     list_links_for_entities: () => Promise.resolve([]),
-    list_facets_for_entities: () => Promise.resolve([]),
     get_entity_full: () => Promise.resolve(null),
     get_entities: () => Promise.resolve([]),
-    list_facets_for_entity: () => Promise.resolve([]),
   });
 }
 
@@ -56,15 +53,13 @@ describe("contacts read — shape parity (tst_be_contactsread_001)", () => {
   });
 
   it("F1 list builds items from the hub DICTIONARY + its identity EDGES", async () => {
-    spy(graph, "list_entities_window").mockResolvedValue({
+    spy(graph, "list_entities").mockResolvedValue({
       items: [
-        windowRow(
-          entity("c1", "Alice Smith", {
-            schema_id: SCHEMA,
-            properties: { role: "CEO", phones: [{ phone: "+1 555", is_primary: true }] },
-          }),
-        ),
-        windowRow(entity("c2", "Bob", { schema_id: SCHEMA })),
+        entity("c1", "Alice Smith", {
+          schema_id: SCHEMA,
+          properties: { role: "CEO", phones: [{ phone: "+1 555", is_primary: true }] },
+        }),
+        entity("c2", "Bob", { schema_id: SCHEMA }),
       ],
       total: 2,
     });
@@ -77,9 +72,6 @@ describe("contacts read — shape parity (tst_be_contactsread_001)", () => {
         schema_id: "email.address",
         properties: { address: "canon@x.com" },
       }),
-    ]);
-    spy(graph, "list_facets_for_entities").mockResolvedValue([
-      facet("fc", "contacts.person.profile", { relevance_tier: "core" }, { entity_id: "c2" }),
     ]);
 
     const page = await mod.list({ limit: 50, offset: 0 });
@@ -99,101 +91,38 @@ describe("contacts read — shape parity (tst_be_contactsread_001)", () => {
     expect(b.channels).toEqual([]);
   });
 
-  // ── Tier visibility (bug fix: hide Telegram group-only co-members) ──
-  // Live DB ground truth: contacts carry `relevance_tier` in the
-  // `telegram.contact` facet, valued "inner" (real DM/saved) or "group"
-  // (known only as group co-members). DEFAULT hides "group"; the window read
-  // filters at the QUERY level (`relevance_tier IS DISTINCT FROM 'group'`) so
-  // the page is full and `total` reflects the VISIBLE (non-group) count.
+  // ── Tier visibility ────────────────────────────────────────────────
+  // The Telegram "group"-tier filter retired with the archive that held the
+  // tier: nothing has written `relevance_tier` since the fold, so the default
+  // list and `include_all` are the SAME page. These tests pin that — a
+  // reintroduced filter has to come back with a live writer behind it.
 
-  it("F2 default list hides group-tier contacts at the query level (filter_op=distinct, value=group)", async () => {
-    spy(graph, "list_entities_window").mockResolvedValue({
-      items: [windowRow(entity("c1", "Real DM Person", { schema_id: SCHEMA }))],
-      total: 933, // DB already excluded group rows → visible count
-    });
-
-    const page = await mod.list({});
-
-    // The query-level filter expresses "tier != group" via IS DISTINCT FROM,
-    // targeting the telegram.contact facet where the live data stores the tier.
-    const windowCall0 = spy(graph, "list_entities_window").mock.calls[0];
-    if (windowCall0 === undefined) throw new Error("F2: list_entities_window not called");
-    const spec = windowCall0[0] as {
-      schema: string;
-      filter_field?: { facet_schema?: string; facet_path?: string };
-      filter_eq?: string;
-      filter_op?: string;
-    };
-    expect(spec.schema).toBe(SCHEMA);
-    expect(spec.filter_field?.facet_schema).toBe("telegram.contact");
-    expect(spec.filter_field?.facet_path).toBe("relevance_tier");
-    expect(spec.filter_eq).toBe("group");
-    expect(spec.filter_op).toBe("distinct");
-    expect(page.items.map((i) => i.id)).toEqual(["c1"]);
-    // group-tier never reaches the host on the default path
-    expect(graph.spies.list_entities).not.toHaveBeenCalled();
-  });
-
-  it("F2b total reflects the VISIBLE (non-group) count returned by the windowed query", async () => {
-    spy(graph, "list_entities_window").mockResolvedValue({
-      items: [
-        windowRow(entity("c1", "A", { schema_id: SCHEMA })),
-        windowRow(entity("c2", "B", { schema_id: SCHEMA })),
-      ],
-      total: 933, // NOT the 2986 unfiltered DB count
-    });
-
-    const page = await mod.list({ limit: 50, offset: 0 });
-    expect(page.total).toBe(933);
-  });
-
-  it("F2c include_all=true shows ALL contacts (group included) via the unfiltered list path", async () => {
+  it("F2 the default list no longer filters by tier — every contact is visible", async () => {
     spy(graph, "list_entities").mockResolvedValue({
       items: [
         entity("c1", "Real DM Person", { schema_id: SCHEMA }),
         entity("c2", "Group Co-member", { schema_id: SCHEMA }),
       ],
-      total: 2986,
+      total: 2,
     });
-    spy(graph, "list_facets_for_entities").mockResolvedValue([
-      facet("f1", "telegram.contact", { relevance_tier: "group" }, { entity_id: "c2" }),
-    ]);
 
-    const page = await mod.list({ include_all: true });
-    expect(page.items.map((i) => i.id)).toEqual(["c1", "c2"]); // group row kept
-    expect(page.total).toBe(2986);
-    // show-all path does NOT use the tier-filtered window
-    expect(graph.spies.list_entities_window).not.toHaveBeenCalled();
+    const page = await mod.list({});
+
+    expect(page.items.map((i) => i.id)).toEqual(["c1", "c2"]);
+    expect(page.total).toBe(2);
+    // No windowed read: there is no dictionary key left to filter on.
+    expect(graph.spies.list_entities_window).toBeUndefined();
   });
 
-  it("F3 get returns a ContactDetailView; neighbours via one get_entities batch, non-owned dropped", async () => {
-    spy(graph, "get_entity_full").mockResolvedValue({
-      entity: entity("c1", "Alice", {
-        schema_id: SCHEMA,
-        created_at: "2026-01-01T00:00:00Z",
-        properties: { company: "Acme" },
-      }),
-      links: [
-        { id: "l1", from_id: "c1", to_id: "co1", kind: "works_at" },
-        { id: "l2", from_id: "c1", to_id: "secret", kind: "works_at" }, // non-owned → dropped
-        { id: "l3", from_id: "c1", to_id: "tg-1", kind: "identity" },
-      ],
+  it("F2b relevance_tier is reported as unknown, not guessed", async () => {
+    spy(graph, "list_entities").mockResolvedValue({
+      items: [entity("c1", "Real DM Person", { schema_id: SCHEMA })],
+      total: 1,
     });
-    spy(graph, "get_entities").mockResolvedValue([
-      entity("co1", "Acme", { schema_id: "companies.company" }),
-      entity("tg-1", "Alice", { schema_id: "telegram.account" }),
-    ]);
 
-    const view = await mod.get({ id: "c1" });
-    expect(view.name).toBe("Alice");
-    expect(view.company).toBe("Acme");
-    // S6: a channel IS a node the hub reaches over `identity`.
-    expect(view.channels).toContain("telegram");
-    expect(view.canonical).toEqual({});
-    // Every owned neighbour is a Context row — the company and the telegram
-    // account the identity edge reaches; the non-owned 'secret' is dropped.
-    expect(view.linked_entities.map((l) => l.id)).toEqual(["co1", "tg-1"]);
-    expect(graph.spies.get_entities).toHaveBeenCalledTimes(1);
+    const page = await mod.list({});
+
+    expect(page.items[0]?.relevance_tier).toBeNull();
   });
 
   it("F4 get throws on a missing / non-contact entity", async () => {
@@ -210,44 +139,29 @@ describe("contacts read — DB-access guarantees (tst_be_contactsdb_001)", () =>
     mod = mountModule(ContactsModule, { graph, ctx: { extension_id: "contacts" } }).module;
   });
 
-  it("list (no search, default) = 1 window + 1 batch edges + 1 batch facets, 0 canonical, 0 per-row reads", async () => {
-    spy(graph, "list_entities_window").mockResolvedValue({
-      items: [windowRow(entity("c1", "A", { schema_id: SCHEMA }))],
-      total: 1,
-    });
-    await mod.list({});
-    expect(graph.spies.list_entities_window).toHaveBeenCalledTimes(1);
-    expect(graph.spies.list_entities).toHaveBeenCalledTimes(0);
-    expect(graph.spies.list_links_for_entities).toHaveBeenCalledTimes(1);
-    expect(graph.spies.list_facets_for_entities).toHaveBeenCalledTimes(1);
-    // get_canonical / list_canonical_for_entities are forbidden ops now — the
-    // throwing mockGraph would have rejected the call above.
-  });
-
-  it("list (no search, include_all) = 1 list_entities + 1 batch edges + 1 batch facets", async () => {
+  it("list (no search) = 1 list_entities + 1 batch edges, 0 canonical, 0 per-row reads", async () => {
     spy(graph, "list_entities").mockResolvedValue({
       items: [entity("c1", "A", { schema_id: SCHEMA })],
       total: 1,
     });
-    await mod.list({ include_all: true });
+    await mod.list({});
     expect(graph.spies.list_entities).toHaveBeenCalledTimes(1);
-    expect(graph.spies.list_entities_window).toHaveBeenCalledTimes(0);
     expect(graph.spies.list_links_for_entities).toHaveBeenCalledTimes(1);
-    expect(graph.spies.list_facets_for_entities).toHaveBeenCalledTimes(1);
+    // get_canonical / list_canonical_for_entities are forbidden ops now — the
+    // throwing mockGraph would have rejected the call above.
   });
 
-  it("list (search) = 1 search + 1 batch edges + 1 batch facets, 0 list_entities", async () => {
+  it("list (search) = 1 search + 1 batch edges, 0 list_entities", async () => {
     spy(graph, "search_entities_by_name").mockResolvedValue([
       entity("c1", "A", { schema_id: SCHEMA }),
     ]);
     await mod.list({ search: "a" });
     expect(graph.spies.search_entities_by_name).toHaveBeenCalledTimes(1);
     expect(graph.spies.list_links_for_entities).toHaveBeenCalledTimes(1);
-    expect(graph.spies.list_facets_for_entities).toHaveBeenCalledTimes(1);
     expect(graph.spies.list_entities).toHaveBeenCalledTimes(0);
   });
 
-  it("get = 1 get_entity_full + 1 facet read + 1 get_entities, 0 canonical", async () => {
+  it("get = 1 get_entity_full + 1 get_entities, 0 canonical", async () => {
     spy(graph, "get_entity_full").mockResolvedValue({
       entity: entity("c1", "A", { schema_id: SCHEMA }),
       links: [{ id: "l1", from_id: "c1", to_id: "co1", kind: "works_at" }],
@@ -257,7 +171,6 @@ describe("contacts read — DB-access guarantees (tst_be_contactsdb_001)", () =>
     ]);
     await mod.get({ id: "c1" });
     expect(graph.spies.get_entity_full).toHaveBeenCalledTimes(1);
-    expect(graph.spies.list_facets_for_entity).toHaveBeenCalledTimes(1);
     expect(graph.spies.get_entities).toHaveBeenCalledTimes(1);
   });
 });

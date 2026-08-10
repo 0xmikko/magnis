@@ -107,24 +107,8 @@ function flatten(row: Readonly<Record<string, unknown>>): Readonly<Record<string
     Object.assign(flat, meta as Record<string, unknown>);
   }
 
-  // S5: the message dictionary is the record. Recorded tool results from the
-  // facet era still arrive with a facets array; both are flattened, dictionary
-  // last, so the record wins wherever a payload carries both.
-  const facets = row.facets;
-  if (Array.isArray(facets)) {
-    for (const f of facets) {
-      if (f && typeof f === "object") {
-        const facet = f as Record<string, unknown>;
-        if (facet.schema_id === "email.message.details" || facet.schema_id === "email.message") {
-          const fd = facet.data;
-          if (fd && typeof fd === "object" && !Array.isArray(fd)) {
-            Object.assign(flat, fd as Record<string, unknown>);
-          }
-        }
-      }
-    }
-  }
-
+  // S5: the message dictionary is the record — it is flattened last so it
+  // wins over anything the envelope's metadata carried.
   const props = row.properties;
   if (props && typeof props === "object" && !Array.isArray(props)) {
     Object.assign(flat, props as Record<string, unknown>);

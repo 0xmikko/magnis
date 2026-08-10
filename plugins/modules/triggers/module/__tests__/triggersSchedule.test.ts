@@ -5,10 +5,10 @@
 // verbatim. A caller-supplied `activated_at` never reaches the config.
 
 import { describe, expect, it, vi } from "vitest";
-import { entity, facet, mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
+import { entity, mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { TriggersModule } from "../service.ts";
 import { TRIGGER, TRIGGER_CONFIG } from "../../schema.ts";
-import type { TriggerConfigData, TriggerFacets } from "../../types.ts";
+import type { TriggerConfigData } from "../../types.ts";
 
 const TRIGGER_ID = "22222222-2222-4222-8222-222222222222";
 
@@ -19,10 +19,10 @@ const NORMALIZED = {
   activated_at: "2026-08-07T10:00:00Z",
 };
 
-type G = MockGraph<TriggerFacets>;
+type G = MockGraph;
 
 function createGraph(overrides: Record<string, unknown> = {}): G {
-  return mockGraph<TriggerFacets>({
+  return mockGraph({
     create_entity: () => Promise.resolve(entity(TRIGGER_ID, "T", { schema_id: TRIGGER })),
     update_properties: () => Promise.resolve(undefined),
     add_link: () => Promise.resolve(undefined),
@@ -32,7 +32,7 @@ function createGraph(overrides: Record<string, unknown> = {}): G {
 }
 
 function existingTrigger(configExtra: Partial<TriggerConfigData> = {}): G {
-  return mockGraph<TriggerFacets>({
+  return mockGraph({
     get_entity_full: () =>
       Promise.resolve({
         // S1: the trigger config IS the node's dictionary.
@@ -49,7 +49,6 @@ function existingTrigger(configExtra: Partial<TriggerConfigData> = {}): G {
             ...configExtra,
           },
         }),
-        facets: [],
         links: [],
       }),
     update_properties: () => Promise.resolve(undefined),

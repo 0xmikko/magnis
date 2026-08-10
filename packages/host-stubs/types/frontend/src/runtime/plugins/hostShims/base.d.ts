@@ -7,5 +7,5 @@ export type { ListPaneHeaderActionsProps } from "@/modules/_base/ListPaneHeaderA
 export { useEntityProperties, useEntityProperty } from "@/modules/_base/useEntityProperty";
 export { EntityDetailTabs } from "@/modules/shared/EntityDetailTabs";
 export { registerSchemaVisuals } from "@/modules/_base/schemaIcons";
-export type { LinkedEntitySummary, FacetSummary, AvatarColor, SidebarData, } from "@/modules/shared/types";
+export type { LinkedEntitySummary, AvatarColor, SidebarData, } from "@/modules/shared/types";
 export type { HeaderComponentProps, ListItem, ListItemContentProps, DetailPanelProps, } from "@/modules/_base/types";

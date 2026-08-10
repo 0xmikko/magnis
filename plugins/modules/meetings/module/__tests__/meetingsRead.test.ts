@@ -15,18 +15,18 @@ import type { EntityDetail, LinkSummary, RawEntity, WindowPage } from "@magnis/p
 import { mockGraph, mountModule, type GraphOverrides, type MockGraph } from "@magnis/testkit/module";
 import { MeetingsModule } from "../service.ts";
 import { parseAttendees } from "../helpers.ts";
-import type { MeetingsCanonical, MeetingsFacets } from "../../types.ts";
+import type { MeetingsCanonical } from "../../types.ts";
 
 const CAL = "meetings.calendar_event";
-type G = MockGraph<MeetingsFacets, MeetingsCanonical>;
+type G = MockGraph<MeetingsCanonical>;
 
 // Only get_entities is arranged by default; the read path's other ops are
 // supplied per-test via `over`. Anything else throws via the mockGraph Proxy.
 function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
-  return mockGraph<MeetingsFacets, MeetingsCanonical>({
+  return mockGraph<MeetingsCanonical>({
     get_entities: () => Promise.resolve([]),
     ...over,
-  } as unknown as GraphOverrides<MeetingsFacets, MeetingsCanonical>);
+  } as unknown as GraphOverrides<MeetingsCanonical>);
 }
 
 function makeModule(graph: G): MeetingsModule {
@@ -84,7 +84,6 @@ describe("meetings.list", () => {
             location: "Room B",
             description: "Agenda 2",
           }),
-          data: null,
         },
         {
           entity: entity("m1", "Earlier meeting", {
@@ -92,7 +91,6 @@ describe("meetings.list", () => {
             ends_at: "2026-02-01T10:00:00Z",
             location: "",
           }),
-          data: null,
         },
       ],
       total: 2,
@@ -109,7 +107,7 @@ describe("meetings.list", () => {
     const res = await mod.list({ limit: 50, offset: 0 });
 
     // ONE window crossing; ordered by the DICTIONARY's starts_at DESC, and no
-    // facet schema is named anywhere on the read path.
+    // record schema is named anywhere on the read path.
     expect(list_entities_window).toHaveBeenCalledTimes(1);
     const spec = list_entities_window.mock.calls[0]![0];
     expect(spec.schema).toBe(CAL);
@@ -141,7 +139,6 @@ describe("meetings.get", () => {
         location: "HQ",
         description: "Weekly",
       }),
-      facets: [],
       // The attendee edges ride the detail's own links — no second crossing.
       links: [
         { id: "l1", from_id: "proj-1", to_id: "m1", kind: "created" },

@@ -71,7 +71,7 @@ graph LR
 
 A **module** decides which entities and facets exist for its domain and how
 their facets merge into canonical truth. A **source** produces the raw facts (as
-*envelopes*) that become those facets.
+*envelopes*) that become those records.
 
 ---
 

@@ -16,7 +16,7 @@ export interface SyncEnvelope {
   timestamp: string;
 }
 
-/** `linkedin.profile.identity` facet data. */
+/** `linkedin.profile.identity` record data. */
 export interface ProfileIdentity {
   platform: Platform;
   handle: string;
@@ -28,7 +28,7 @@ export interface ProfileIdentity {
   follower_count?: number | null;
 }
 
-/** `linkedin.post.content` facet data. */
+/** `linkedin.post.content` record data. */
 export interface PostContent {
   platform: Platform;
   post_id: string;
@@ -41,7 +41,7 @@ export interface PostContent {
   lang?: string | null;
 }
 
-/** `linkedin.post.metrics` facet data. */
+/** `linkedin.post.metrics` record data. */
 export interface PostMetrics {
   likes?: number | null;
   reposts?: number | null;
@@ -49,14 +49,9 @@ export interface PostMetrics {
   impressions?: number | null;
 }
 
-/** Facet map for the typed GraphService. */
-export interface LinkedinFacets {
-  "linkedin.profile.identity": ProfileIdentity;
-  "linkedin.post.content": PostContent;
-  "linkedin.post.metrics": PostMetrics;
-}
+/** Record map for the typed GraphService. */
 
-/** Canonical props derived by the host merge engine (from facet mappings). */
+/** Canonical props derived by the host merge engine (from record mappings). */
 export interface LinkedinCanonical {
   "linkedin.profile.display_name": string;
   "linkedin.profile.follower_count": number;

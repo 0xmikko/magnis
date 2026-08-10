@@ -9,13 +9,13 @@ export const CONTACT = "contacts.person";
 /** Entity schema (google replica, S3): fields as last synced, one node one
  * writer; the hub composes the card from it at read time (plan §5). */
 export const GOOGLE_CONTACT = "contacts.google_contact";
-/** Profile facet (first_name/last_name/username/relevance_tier). */
+/** Profile record (first_name/last_name/username/relevance_tier). */
 export const CONTACT_PROFILE = "contacts.person.profile";
-/** Collection email facet (one facet per address). */
+/** Collection email record (one record per address). */
 export const CONTACT_EMAIL = "contacts.person.email";
-/** Collection phone facet (one facet per number). */
+/** Collection phone record (one record per number). */
 export const CONTACT_PHONE = "contacts.person.phone";
-/** Social-tracking opt-in facet (tracked_x / x_handle / tracked_linkedin / …). */
+/** Social-tracking opt-in record (tracked_x / x_handle / tracked_linkedin / …). */
 export const CONTACT_SOCIAL = "contacts.person.social";
-/** External-link facet (source_type + external_id + url/name). */
+/** External-link record (source_type + external_id + url/name). */
 export const CONTACT_EXTERNAL_LINK = "contacts.person.external_link";

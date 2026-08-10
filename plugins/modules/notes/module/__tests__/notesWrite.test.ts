@@ -8,18 +8,18 @@
 // so any op the write path touches without being arranged fails the test.
 
 import { describe, expect, it } from "vitest";
-import { entity, facet, mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
+import { entity, mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { NotesModule } from "../service.ts";
 import { bodyFromToolArgs } from "../../ui/toolArgs.ts";
 import { NOTE, NOTE_CONTENT } from "../../schema.ts";
-import type { NoteCanonical, NoteFacets } from "../../types.ts";
+import type { NoteCanonical } from "../../types.ts";
 
-type G = MockGraph<NoteFacets, NoteCanonical>;
+type G = MockGraph<NoteCanonical>;
 
 const NOTE_ID = "11111111-1111-4111-8111-111111111111";
 
 function writeGraph(overrides: Record<string, unknown> = {}): G {
-  return mockGraph<NoteFacets, NoteCanonical>({
+  return mockGraph<NoteCanonical>({
     create_entity: () => Promise.resolve(entity(NOTE_ID, "T", { schema_id: NOTE })),
     update_properties: () => Promise.resolve(undefined),
     delete_entity: () => Promise.resolve(undefined),
@@ -137,11 +137,10 @@ describe("the approval card reads the same wire names the tool accepts", () => {
  */
 describe("notes.update is atomic", () => {
   it("tst_module_notes_write_002 does not rename when the content write fails", async () => {
-    const graph = mockGraph<NoteFacets, NoteCanonical>({
+    const graph = mockGraph<NoteCanonical>({
       get_entity_full: () =>
         Promise.resolve({
           entity: entity(NOTE_ID, "old title", { schema_id: NOTE }),
-          facets: [facet("f1", NOTE_CONTENT, { title: "old title", body: "old body" })],
           links: [],
         }),
       update_properties: () => Promise.reject(new Error("facet store unavailable")),
@@ -172,7 +171,7 @@ describe("notes.update is atomic", () => {
 describe("notes.update restores the note unchanged when the rename fails", () => {
   it("tst_module_notes_write_004 title, body and updated_at all come back", async () => {
     const writes: Record<string, unknown>[] = [];
-    const graph = mockGraph<NoteFacets, NoteCanonical>({
+    const graph = mockGraph<NoteCanonical>({
       get_entity_full: () =>
         Promise.resolve({
           entity: entity(NOTE_ID, "old title", {

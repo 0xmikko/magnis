@@ -4,7 +4,7 @@
  * @scenario: scn_tg_sync_001
  * @covers: plugins/modules/telegram/module/service.ts::ingestChatBatch
  * @deterministic: yes
- * @fixtures: inline existing chat facet + 51 connector snapshots
+ * @fixtures: inline existing chat record + 51 connector snapshots
  *
  * Test environment: TelegramModule with a scripted GraphService.
  * Clients: direct calls.
@@ -18,7 +18,6 @@ import { TelegramModule } from "../service.ts";
 import type {
   SyncEnvelope,
   TelegramCanonical,
-  TelegramFacets,
 } from "../../types.ts";
 
 function chatEnvelope(chatId: number): SyncEnvelope {
@@ -43,7 +42,7 @@ function chatEnvelope(chatId: number): SyncEnvelope {
 
 describe("telegram chat batch ingest", () => {
   it("tst_mod_tg_ingest_001 preserves derived preview and avatar fields during a repeated bootstrap", async () => {
-    const graph = mockGraph<TelegramFacets, TelegramCanonical>({
+    const graph = mockGraph<TelegramCanonical>({
       list_entities_window: () =>
         Promise.resolve({
           items: [
@@ -53,7 +52,7 @@ describe("telegram chat batch ingest", () => {
                   schema_id: "telegram.chat",
                 }),
                 // S4: the chat DICT is the record — the window's entity row
-                // carries it; the render facet is dead.
+                // carries it; the render record is dead.
                 properties: {
                   chat_id: 1,
                   title: "Pinned chat",

@@ -18,7 +18,6 @@ import { vi, type Mock } from "vitest";
 import { definePlugin } from "@magnis/plugin-sdk";
 import type {
   CanonicalRecord,
-  FacetRecord,
   GraphService,
   LinkSummary,
   LinkedRow,
@@ -38,23 +37,21 @@ import type {
 /** A `GraphService` whose overridden methods are `vi.fn` spies, exposed on
  *  `.spies` for arrangement (`graph.spies.list_entities_window.mockResolvedValue`)
  *  and assertion (`expect(graph.spies.foo).toHaveBeenCalledTimes(1)`). */
-export interface MockGraph<
-  F extends object = Record<string, unknown>,
-  C extends object = Record<string, unknown>,
-> extends GraphService<F, C> {
+export interface MockGraph<C extends object = Record<string, unknown>>
+  extends GraphService<C> {
   /** The `vi.fn` spies backing the overridden methods, keyed by op name. */
   spies: Record<string, Mock>;
 }
 
 /** The impls a test wants to install, typed against the REAL `GraphService`. */
-export type GraphOverrides<F extends object, C extends object> = Partial<GraphService<F, C>>;
+export type GraphOverrides<C extends object> = Partial<GraphService<C>>;
 
 // Property accesses vitest/promise machinery makes on the proxy that must NOT
 // be interpreted as graph ops (else `await`-ing or printing the graph throws).
 const NON_OP = new Set(["then", "catch", "finally", "constructor"]);
 
 /**
- * A THROWING `Proxy` over `GraphService<F,C>`. Any method NOT in `overrides`
+ * A THROWING `Proxy` over `GraphService<C>`. Any method NOT in `overrides`
  * throws `unexpected graph op: <name>` WHEN CALLED — so a test that hits an op
  * it didn't arrange fails loudly instead of returning `undefined`, and the kit
  * never needs updating when `GraphService` grows a method (contrast: a
@@ -62,10 +59,9 @@ const NON_OP = new Set(["then", "catch", "finally", "constructor"]);
  * spies wrapping the provided impl, reachable via the returned graph directly
  * (they ARE the methods) and via `.spies` for `.mock*`/assertions.
  */
-export function mockGraph<
-  F extends object = Record<string, unknown>,
-  C extends object = Record<string, unknown>,
->(overrides: GraphOverrides<F, C> = {}): MockGraph<F, C> {
+export function mockGraph<C extends object = Record<string, unknown>>(
+  overrides: GraphOverrides<C> = {},
+): MockGraph<C> {
   const spies: Record<string, Mock> = {};
   for (const [name, impl] of Object.entries(overrides)) {
     spies[name] = vi.fn(impl as (...args: unknown[]) => unknown);
@@ -83,16 +79,16 @@ export function mockGraph<
       },
     },
   );
-  return proxy as unknown as MockGraph<F, C>;
+  return proxy as unknown as MockGraph<C>;
 }
 
 // ──────────────────────────── mountModule ────────────────────────────
-export interface MountOpts<F extends object, C extends object> {
+export interface MountOpts<C extends object> {
   /** "direct" (default): `new Cls(deps)`. "dispatch": run through the SDK's
    *  `definePlugin`/`init` and expose the decorated `{ rpc, tools }` surface. */
   mode?: "direct" | "dispatch";
   /** The graph the module gets; defaults to an empty (fully-throwing) `mockGraph`. */
-  graph?: MockGraph<F, C>;
+  graph?: MockGraph<C>;
   /** Partial `PluginContext` merged over the defaults `{ user_id: "u1",
    *  extension_kind: "plugin", extension_id: "test" }`. */
   ctx?: Partial<PluginContext>;
@@ -130,27 +126,27 @@ export function mockLogger(): MockLogger {
   return { entries, log: spy };
 }
 
-export interface DirectMount<T, F extends object, C extends object> {
+export interface DirectMount<T, C extends object> {
   module: T;
-  graph: MockGraph<F, C>;
-  deps: PluginDeps<F, C>;
+  graph: MockGraph<C>;
+  deps: PluginDeps<C>;
 }
 
-export interface DispatchMount<F extends object, C extends object> {
+export interface DispatchMount<C extends object> {
   /** Route to a decorated handler by its full name (`"companies.list"`) or bare
    *  suffix (`"list"`) — the `ctx.extension_id` prefix is tried automatically. */
   rpc: (name: string, args?: unknown) => unknown;
   /** The agent tool definitions `definePlugin` harvested (read tools + write
    *  tools; RPC-only handlers are excluded, matching the runtime). */
   tools: ToolDefinitionWire[];
-  graph: MockGraph<F, C>;
-  deps: PluginDeps<F, C>;
+  graph: MockGraph<C>;
+  deps: PluginDeps<C>;
 }
 
-function buildDeps<F extends object, C extends object>(
-  opts: MountOpts<F, C>,
-): { deps: PluginDeps<F, C>; graph: MockGraph<F, C> } {
-  const graph = opts.graph ?? mockGraph<F, C>();
+function buildDeps<C extends object>(
+  opts: MountOpts<C>,
+): { deps: PluginDeps<C>; graph: MockGraph<C> } {
+  const graph = opts.graph ?? mockGraph<C>();
   const ctx: PluginContext = {
     user_id: "u1",
     extension_kind: "plugin",
@@ -170,30 +166,22 @@ function buildDeps<F extends object, C extends object>(
   return { deps: { graph, ctx, util, rpc, log }, graph };
 }
 
-export function mountModule<
-  T extends object,
-  F extends object = Record<string, unknown>,
-  C extends object = Record<string, unknown>,
->(ModuleClass: new (deps: PluginDeps<F, C>) => T, opts?: MountOpts<F, C> & { mode?: "direct" }): DirectMount<T, F, C>;
-export function mountModule<
-  F extends object = Record<string, unknown>,
-  C extends object = Record<string, unknown>,
->(
-  ModuleClass: new (deps: PluginDeps<F, C>) => object,
-  opts: MountOpts<F, C> & { mode: "dispatch" },
-): Promise<DispatchMount<F, C>>;
-export function mountModule<
-  T extends object,
-  F extends object = Record<string, unknown>,
-  C extends object = Record<string, unknown>,
->(
-  ModuleClass: new (deps: PluginDeps<F, C>) => T,
-  opts: MountOpts<F, C> = {},
-): DirectMount<T, F, C> | Promise<DispatchMount<F, C>> {
+export function mountModule<T extends object, C extends object = Record<string, unknown>>(
+  ModuleClass: new (deps: PluginDeps<C>) => T,
+  opts?: MountOpts<C> & { mode?: "direct" },
+): DirectMount<T, C>;
+export function mountModule<C extends object = Record<string, unknown>>(
+  ModuleClass: new (deps: PluginDeps<C>) => object,
+  opts: MountOpts<C> & { mode: "dispatch" },
+): Promise<DispatchMount<C>>;
+export function mountModule<T extends object, C extends object = Record<string, unknown>>(
+  ModuleClass: new (deps: PluginDeps<C>) => T,
+  opts: MountOpts<C> = {},
+): DirectMount<T, C> | Promise<DispatchMount<C>> {
   const { deps, graph } = buildDeps(opts);
   if (opts.mode === "dispatch") {
-    return (async (): Promise<DispatchMount<F, C>> => {
-      definePlugin<F, C>(ModuleClass);
+    return (async (): Promise<DispatchMount<C>> => {
+      definePlugin<C>(ModuleClass);
       const shape = (globalThis as unknown as { __magnis_plugin_module: PluginModuleShape })
         .__magnis_plugin_module;
       await shape.init(deps.graph, deps.ctx, deps.util, deps.rpc, deps.log);
@@ -220,19 +208,9 @@ export function entity(id: string, name: string, over: Partial<RawEntity> = {}):
   return { id, name, schema_id: "", created_at: "2026-01-01T00:00:00Z", ...over };
 }
 
-/** A `WindowRow` — an entity + its inline render-facet `data` (default `null`). */
-export function windowRow(ent: RawEntity, data: unknown = null): WindowRow {
-  return { entity: ent, data };
-}
-
-/** A `FacetRecord`. `over` sets `entity_id`/`source`/`observed_at`. */
-export function facet(
-  id: string,
-  schema_id: string,
-  data: unknown,
-  over: Partial<FacetRecord> = {},
-): FacetRecord {
-  return { id, schema_id, source: "test", observed_at: "2026-01-01T00:00:00Z", data, ...over };
+/** A `WindowRow` — an entity; its dictionary rides on the entity itself. */
+export function windowRow(ent: RawEntity): WindowRow {
+  return { entity: ent };
 }
 
 /** A `CanonicalRecord` — one merged (entity, key, value) triple. */
@@ -240,11 +218,10 @@ export function canonical(entity_id: string, key: string, value: unknown): Canon
   return { entity_id, key, value };
 }
 
-/** A `LinkedRow` — a neighbor entity + inline `data` + the edge that reached it. */
-export function linkedRow(ent: RawEntity, data: unknown = null, link: Partial<LinkSummary> = {}): LinkedRow {
+/** A `LinkedRow` — a neighbor entity + the edge that reached it. */
+export function linkedRow(ent: RawEntity, link: Partial<LinkSummary> = {}): LinkedRow {
   return {
     entity: ent,
-    data,
     link: { id: "l1", from_id: ent.id, to_id: "to", kind: "link", ...link },
   };
 }

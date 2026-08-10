@@ -27,14 +27,12 @@ import type {
   RpcExecutor,
 } from "@magnis/plugin-sdk";
 import type {
-  FacetSummary,
   GetParams,
   LinkedEntitySummary,
   ListParams,
   MeetingCalendarEventDetails,
   MeetingDetailView,
   MeetingsCanonical,
-  MeetingsFacets,
   MeetingListItem,
   MeetingTriggerCheck,
   NewMeetingParams,
@@ -60,9 +58,9 @@ import { CAL, EVENT, MEETING } from "../schema.ts";
 const dictOf = (e: RawEntity): Data => e.properties ?? {};
 
 export class MeetingsModule {
-  private readonly graph: GraphService<MeetingsFacets, MeetingsCanonical>;
+  private readonly graph: GraphService<MeetingsCanonical>;
   private readonly rpc: RpcExecutor;
-  constructor(deps: PluginDeps<MeetingsFacets, MeetingsCanonical>) {
+  constructor(deps: PluginDeps<MeetingsCanonical>) {
     this.graph = deps.graph;
     this.rpc = deps.rpc;
   }
@@ -139,8 +137,8 @@ export class MeetingsModule {
     if (detail?.entity.schema_id !== CAL) {
       throw new Error(`meeting ${params.id} not found`);
     }
-    const { entity, facets, links } = detail;
-    // S5: the event DICT is the record; the frozen facets stay the archive.
+    const { entity, links } = detail;
+    // S5: the event DICT is the record.
     const d = dictOf(entity);
 
     // The links the detail already fetched carry the attendee edges — no
@@ -151,13 +149,6 @@ export class MeetingsModule {
       str(d, "ends_at") ?? undefined,
     );
 
-    const facetSummaries: FacetSummary[] = facets.map((f) => ({
-      id: f.id,
-      schema_id: f.schema_id,
-      source: f.source,
-      observed_at: f.observed_at,
-      data: f.data,
-    }));
 
     // Resolve link neighbours (created-by project, attendee contacts, …) for the
     // Context panel. Link edges carry ids + kind only; one batch get_entities
@@ -195,7 +186,6 @@ export class MeetingsModule {
       conference_link: str(d, "conference_link"),
       attendees,
       canonical: {},
-      facets: facetSummaries,
       linked_entities,
       created_at: entity.created_at ?? "",
     };
@@ -250,7 +240,7 @@ export class MeetingsModule {
 
   // ── meetings.create (@writeTool) ──────────────────────────────
   // Operator/agent create. Validates BEFORE any write, idempotent on
-  // client_id, returns the native snapshot shape. The facet is
+  // client_id, returns the native snapshot shape. The record is
   // written with source "local" semantics (confidence 100). NOTE: the native
   // agent-side "created" link (ToolDefinition.with_link_kind) is not expressible
   // through the @writeTool decorator and is dropped — consistent with the
@@ -392,7 +382,7 @@ export class MeetingsModule {
   private async ingestDelete(env: SyncEnvelope): Promise<void> {
     if (!env.remote_id) return;
     // S5: the remote id IS the node's anchor — resolution goes through the
-    // one chokepoint, not the retired facet external id.
+    // one chokepoint, not the retired record external id.
     const id = await this.graph.find_by_anchor(env.remote_id);
     if (id) await this.graph.delete_entity(id);
   }
@@ -442,7 +432,7 @@ export class MeetingsModule {
     if (!entityId) return;
 
     // Reconcile: the invite's CURRENT list is complete for this event, so an
-    // attendee the provider no longer reports leaves — the facet era got this
+    // attendee the provider no longer reports leaves — the earlier design got this
     // for free by replacing the array wholesale, and edges must not silently
     // accumulate ex-guests.
     const current = new Set(addressIds);

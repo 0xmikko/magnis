@@ -1,7 +1,7 @@
 # telegram — Telegram Messages domain module (V8 plugin).
 #
 # Owns the `telegram.*` graph namespace: account / chat / message entities and
-# their facets. Ingests the surface fed by the Telegram SOURCE connector (see
+# their records. Ingests the surface fed by the Telegram SOURCE connector (see
 # plugins/sources/telegram) — this module is the graph-side half; the source is
 # the connector half. Also creates `contacts.person` entities for chat members
 # (cross-module create, see [permissions]). Runs as a sandboxed V8 isolate;
@@ -22,7 +22,7 @@ publisher = "ai.magnis"
 # "items synced" badge (host source.status.list reads this).
 item = "telegram.message"
 
-# Foreign asks beyond the implicit own namespace: writes to `telegram.` facets,
+# Foreign asks beyond the implicit own namespace: writes to `telegram.` records,
 # own:own links, and reads of own schemas need no declaration.
 [permissions]
 read = [ "contacts.person" ]

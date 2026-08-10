@@ -1,12 +1,11 @@
 import type { JSX } from "react";
 import { EntityDetailTabs } from "@magnis/host/base";
-import type { LinkedEntitySummary, FacetSummary } from "@magnis/host/base";
+import type { LinkedEntitySummary } from "@magnis/host/base";
 import { SocialTrackingControls } from "./SocialTrackingControls";
 
 export interface ContactsDetailProps {
   readonly entityId: string;
   readonly linkedEntities: readonly LinkedEntitySummary[];
-  readonly facets: readonly FacetSummary[];
 }
 
 export function ContactsDetail({

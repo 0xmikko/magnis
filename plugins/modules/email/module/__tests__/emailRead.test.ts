@@ -3,7 +3,7 @@
 // mountModule). Asserts BOTH the returned DTO shape (tst_be_emailread_001) and
 // the exact graph op-counts per surface (tst_be_emaildb_003): a
 // fixed, N-independent number of crossings, no per-row hydrate, no
-// canonical/facet read on the hot path.
+// canonical/record read on the hot path.
 //
 // mockGraph is a throwing Proxy: any op NOT arranged below (list_facets_for_entity,
 // list_canonical_for_entity, list_entities — the N+1 traps) throws when hit, so
@@ -14,19 +14,18 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { EntityDetail, RawEntity } from "@magnis/plugin-sdk";
 import { mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { EmailModule } from "../service.ts";
-import type { EmailCanonical, EmailFacets } from "../../types.ts";
+import type { EmailCanonical } from "../../types.ts";
 
-type G = MockGraph<EmailFacets, EmailCanonical>;
+type G = MockGraph<EmailCanonical>;
 
 // Only the ops the read path may legitimately touch are arranged with benign
 // defaults; everything else throws via the mockGraph Proxy.
 function readGraph(): G {
-  return mockGraph<EmailFacets, EmailCanonical>({
+  return mockGraph<EmailCanonical>({
     list_entities_window: () => Promise.resolve({ items: [], total: 0 }),
     get_entity_full: () => Promise.resolve(null),
     get_entities: () => Promise.resolve([]),
     search_entities_by_name: () => Promise.resolve([]),
-    list_facets_for_entities: () => Promise.resolve([]),
   });
 }
 
@@ -40,7 +39,7 @@ function spy(graph: G, op: string) {
 }
 
 const ROW = (id: string, date: string, over: Record<string, unknown> = {}) => ({
-  // S5: the message DICT rides the entity row; `data` (the render facet) is dead.
+  // S5: the message DICT rides the entity row; `data` (the render record) is dead.
   entity: {
     id,
     schema_id: "email.message",
@@ -60,7 +59,7 @@ const ROW = (id: string, date: string, over: Record<string, unknown> = {}) => ({
 });
 
 const DETAIL = (id: string, date: string): EntityDetail => ({
-  // S5: the detail reads the DICT; the frozen facet stays as the archive the
+  // S5: the detail reads the DICT; the frozen record stays as the archive the
   // view still surfaces.
   entity: {
     id,
@@ -76,15 +75,6 @@ const DETAIL = (id: string, date: string): EntityDetail => ({
       sent_at: date,
     },
   } as EntityDetail["entity"],
-  facets: [
-    {
-      id: "f-" + id,
-      schema_id: "email.message.details",
-      source: "gmail",
-      observed_at: date,
-      data: { archived: true },
-    },
-  ],
   links: [],
 });
 
@@ -140,10 +130,6 @@ describe("email read — shape parity (tst_be_emailread_001)", () => {
     expect(view.channel).toBe("email");
     expect(view.canonical).toEqual({});
     expect(view.linked_entities).toEqual([]);
-    expect(view.facets).toHaveLength(1);
-    const facet0 = view.facets[0];
-    if (facet0 === undefined) throw new Error("get: missing facet[0]");
-    expect(facet0.schema_id).toBe("email.message.details");
     expect(view.metadata).toHaveProperty("body_html"); // detail keeps HTML
   });
 
@@ -183,7 +169,7 @@ describe("email read — shape parity (tst_be_emailread_001)", () => {
     expect(views.map((v) => v.id)).toEqual(["a", "c"]); // 'b' skipped
   });
 
-  it("search reads the dictionary off the matched rows — zero facet hydrates", async () => {
+  it("search reads the dictionary off the matched rows", async () => {
     spy(graph, "search_entities_by_name").mockResolvedValue([
       {
         id: "a",
@@ -197,7 +183,6 @@ describe("email read — shape parity (tst_be_emailread_001)", () => {
         },
       } as RawEntity,
     ]);
-    const facets = spy(graph, "list_facets_for_entities");
 
     const page = await mod.emailList({ search: "invoice" });
     expect(page.items).toHaveLength(1);
@@ -205,7 +190,6 @@ describe("email read — shape parity (tst_be_emailread_001)", () => {
     if (first === undefined) throw new Error("search: missing first item");
     expect(first.sender).toBe("Alice Johnson");
     expect(first.preview).toBe("preview text a");
-    expect(facets).toHaveBeenCalledTimes(0);
   });
 });
 
@@ -224,7 +208,6 @@ describe("email read — DB-access guarantees (tst_be_emaildb_003 / INV-DB-1,2,4
     });
     await mod.emailList({ limit: 50 });
     expect(spy(graph, "list_entities_window")).toHaveBeenCalledTimes(1);
-    expect(spy(graph, "list_facets_for_entities")).toHaveBeenCalledTimes(0);
     expect(spy(graph, "search_entities_by_name")).toHaveBeenCalledTimes(0);
     // list_facets_for_entity (per-row N+1 trap) is a forbidden, unarranged op —
     // the throwing mockGraph guarantees it is never hit; no spy to assert 0.
@@ -234,7 +217,6 @@ describe("email read — DB-access guarantees (tst_be_emaildb_003 / INV-DB-1,2,4
     spy(graph, "search_entities_by_name").mockResolvedValue([]);
     await mod.emailList({ search: "x" });
     expect(spy(graph, "search_entities_by_name")).toHaveBeenCalledTimes(1);
-    expect(spy(graph, "list_facets_for_entities")).toHaveBeenCalledTimes(0);
     expect(spy(graph, "list_entities_window")).toHaveBeenCalledTimes(0);
   });
 

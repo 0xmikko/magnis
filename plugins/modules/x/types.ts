@@ -16,7 +16,7 @@ export interface SyncEnvelope {
   timestamp: string;
 }
 
-/** `x.profile.identity` facet data. */
+/** `x.profile.identity` record data. */
 export interface ProfileIdentity {
   platform: Platform;
   handle: string;
@@ -28,7 +28,7 @@ export interface ProfileIdentity {
   follower_count?: number | null;
 }
 
-/** `x.post.content` facet data. */
+/** `x.post.content` record data. */
 export interface PostContent {
   platform: Platform;
   post_id: string;
@@ -41,7 +41,7 @@ export interface PostContent {
   lang?: string | null;
 }
 
-/** `x.post.metrics` facet data. */
+/** `x.post.metrics` record data. */
 export interface PostMetrics {
   likes?: number | null;
   reposts?: number | null;
@@ -49,14 +49,9 @@ export interface PostMetrics {
   impressions?: number | null;
 }
 
-/** Facet map for the typed GraphService. */
-export interface XFacets {
-  "x.profile.identity": ProfileIdentity;
-  "x.post.content": PostContent;
-  "x.post.metrics": PostMetrics;
-}
+/** Record map for the typed GraphService. */
 
-/** Canonical props derived by the host merge engine (from facet mappings). */
+/** Canonical props derived by the host merge engine (from record mappings). */
 export interface XCanonical {
   "x.profile.display_name": string;
   "x.profile.follower_count": number;

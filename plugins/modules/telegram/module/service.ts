@@ -7,9 +7,9 @@
 // Deferred to the Stage 6 frontend cutover (read-time enrichments, verified
 // visually there, NOT asserted by any backend test):
 //   - link-resolved sender names (native resolve_linked_names "telegram.message:person");
-//     Stage 1 uses the facet's own sender_name, which ingest writes.
+//     Stage 1 uses the record's own sender_name, which ingest writes.
 //   - filesystem avatar resolution (native resolve_sender_avatar_fs / resolve_chat_avatar_fs);
-//     Stage 1 uses the facet's avatar_url / photo_url.
+//     Stage 1 uses the record's avatar_url / photo_url.
 //   - message-detail canonical map + linked_entities (Context panel).
 
 import { connectionReady, rpc, syncComplete, syncHandler, tool, writeTool, type GraphService, type PluginDeps } from "@magnis/plugin-sdk";
@@ -25,7 +25,6 @@ import type {
   BackfillParams,
   BatchSendParams,
   ChatsListParams,
-  FacetSummary,
   GetParams,
   MessageDetailView,
   MessageListItem,
@@ -37,7 +36,6 @@ import type {
   SyncEnvelope,
   TelegramCanonical,
   TelegramChatListItem,
-  TelegramFacets,
   TriggerCheck,
 } from "../types.ts";
 import {
@@ -63,9 +61,9 @@ import {
 import { runBatchSend } from "./batchSend.ts";
 
 export class TelegramModule {
-  private readonly graph: GraphService<TelegramFacets, TelegramCanonical>;
+  private readonly graph: GraphService<TelegramCanonical>;
   private readonly rpc: RpcExecutor;
-  constructor(deps: PluginDeps<TelegramFacets, TelegramCanonical>) {
+  constructor(deps: PluginDeps<TelegramCanonical>) {
     this.graph = deps.graph;
     this.rpc = deps.rpc;
   }
@@ -146,7 +144,7 @@ export class TelegramModule {
     // the native `list_chat_dialog_window` (6s → 0.65s), lost when the plugin
     // was ported from the pre-windowed staging line.
     // P2 (graph-read-api §4): pinned-first then recent, ordered by FACET fields
-    // (pins live in the chat facet, not entity columns), render facet inline, one
+    // (pins live in the chat record, not entity columns), render record inline, one
     // statement. Replaces the telegram-specific list_chat_dialog_window.
     // S4: the chat DICT holds what the chat is; per-account state (pins,
     // unread) rides the operator's observed_in edge, so the order keys read
@@ -180,7 +178,7 @@ export class TelegramModule {
   }
 
   /// Name search over the user's chats — native `search_chats`: user-scoped
-  /// name match (ILIKE) + manual offset, then the matched chats' details facets
+  /// name match (ILIKE) + manual offset, then the matched chats' details records
   /// to build the rows. Search results are name-ranked, not pinned-sorted.
   private async searchChats(
     query: string,
@@ -246,7 +244,7 @@ export class TelegramModule {
     if (chatId !== null) {
       return this.messagesForChat(chatId, limit, offset);
     }
-    // No chat filter → all of the user's telegram messages. ONE bulk facet read
+    // No chat filter → all of the user's telegram messages. ONE bulk record read
     // (not a per-message detailsFacet), same anti-N+1 shape as searchChats.
     const page = await this.graph.list_entities({ schema_id: MESSAGE, limit, offset });
     const byId = new Map<string, Data>();
@@ -263,7 +261,7 @@ export class TelegramModule {
     offset: number,
   ): Promise<PaginatedResponse<MessageListItem>> {
     // P2 (graph-read-api §4): ONE statement — filter by entity-col idx (= chat_id,
-    // index-covered), order by entity-col date DESC, render facet inline. Kills the
+    // index-covered), order by entity-col date DESC, render record inline. Kills the
     // old ~2N hops (op find_entity_for_user + per-message detailsFacet).
     const page = await this.graph.list_entities_window({
       schema: MESSAGE,
@@ -332,23 +330,15 @@ export class TelegramModule {
     },
   })
   async messagesGet(params: GetParams): Promise<MessageDetailView> {
-    // P1 (graph-read-api §4): entity + its facets in ONE fetch, user-scoped.
+    // P1 (graph-read-api §4): the entity in ONE fetch, user-scoped.
     const detail = await this.graph.get_entity_full(params.id, { links: false });
     if (detail?.entity.schema_id !== MESSAGE) {
       throw new Error(`${MESSAGE} ${params.id} not found`);
     }
-    const { entity, facets } = detail;
-    // S4: the message DICT is the record; the frozen facets stay as the
-    // archive the detail view still surfaces.
+    const { entity } = detail;
+    // S4: the message DICT is the record.
     const d = ((entity as { properties?: unknown }).properties ?? {}) as Data;
     const senderName = (await this.senderNamesFor([entity.id])).get(entity.id) ?? null;
-    const facetSummaries: FacetSummary[] = facets.map((f) => ({
-      id: f.id,
-      schema_id: f.schema_id,
-      source: f.source,
-      observed_at: f.observed_at,
-      data: f.data,
-    }));
     const created = entity.created_at ?? "";
     return {
       id: entity.id,
@@ -359,7 +349,6 @@ export class TelegramModule {
       channel: "telegram",
       timestamp: typeof d.date === "string" ? (d.date) : created,
       canonical: {},
-      facets: facetSummaries,
       linked_entities: [],
       created_at: created,
       metadata: d,
@@ -381,7 +370,7 @@ export class TelegramModule {
   })
   async chatsSetIndexed(params: SetIndexedParams): Promise<{ status: string }> {
     // S4: the chat resolves through the anchor chokepoint and the toggle is
-    // ONE dictionary merge — no facet, no duplicate-row hazard.
+    // ONE dictionary merge — no record, no duplicate-row hazard.
     const entityId = await this.graph.find_by_anchor(chatAnchor(String(params.chat_id)));
     if (!entityId) throw new Error(`chat ${String(params.chat_id)} not found`);
     await this.graph.update_properties({
@@ -449,7 +438,7 @@ export class TelegramModule {
   // Invoked by the host PluginModuleController bridge (reserved
   // `telegram.__sync__`) for each telegram SourceEnvelope. Ports the native
   // ingest.rs find-or-create pipeline. Stage 2a covers chat + message entities
-  // + facets + the message→chat link; contacts/media/web/delete land in 2b–2d.
+  // + records + the message→chat link; contacts/media/web/delete land in 2b–2d.
   /// S4: the connection is provider-verified — mint the OPERATOR's own
   /// telegram.account node before any envelope routes. The identity key is
   /// the numeric telegram user id the probe reported; the anchor makes the
@@ -584,7 +573,7 @@ export class TelegramModule {
       }
       // S4: a message node is identified by its message_id (the envelope's
       // remote_id is its anchor) — an envelope without one has no identity,
-      // so it is DROPPED and reported, never fatal to the page. The facet
+      // so it is DROPPED and reported, never fatal to the page. The record
       // schema used to catch this; the identity rule catches it now. A
       // missing chat_id costs only the in_chat edge, not the node.
       if (num(payload, "message_id") === null) {
@@ -612,7 +601,7 @@ export class TelegramModule {
   }
 
   // Bulk chat ingest for the bootstrap dialog list (one huge page). Batches chat
-  // entities + chat.details facets in CHUNKS, freeing the single PGlite connection
+  // entities + chat.details records in CHUNKS, freeing the single PGlite connection
   // between batches.
   private async ingestChatBatch(
     chats: { env: SyncEnvelope; payload: Data }[],
@@ -622,7 +611,7 @@ export class TelegramModule {
     // chats that already exist. Those snapshots intentionally omit fields that
     // are derived by message ingest (and any locally resolved avatar), so load
     // the current DICTIONARIES once and preserve those fields during the
-    // batch upsert (S4: the chat dict is the record — no facet writes).
+    // batch upsert (S4: the chat dict is the record — no dictionary writes).
     //
     // @tested-by: tst_mod_tg_ingest_001
     // @invariant: repeated bootstrap snapshots never erase chat list previews,
@@ -724,7 +713,7 @@ export class TelegramModule {
   }
 
   // Bulk message ingest: the whole page becomes ONE graph.apply_batch (message
-  // entities + details facets + chat refs + sender contacts + links). Unique chats
+  // entities + details records + chat refs + sender contacts + links). Unique chats
   // and senders are read ONCE (not per message), so this kills F1 (the per-message
   // list_links scan — links now dedup via the batch's ON CONFLICT), F2 (per-message
   // chat/sender reads), and F3 (op-per-op). Web/file registration + the chat
@@ -766,7 +755,7 @@ export class TelegramModule {
     const chatRefKeys = new Set<string>();
     const addChatRef = (key: string, cid: string): void => {
       if (!chatRefKeys.has(key)) {
-        refs.push({ key, anchor: chatAnchor(cid), external_id: `tg:chat:${cid}` });
+        refs.push({ key, anchor: chatAnchor(cid) });
         chatRefKeys.add(key);
       }
     };
@@ -943,7 +932,7 @@ export class TelegramModule {
     }
   }
 
-  // Build a telegram.contact facet from a message sender (extracted from the
+  // Build a telegram.contact record from a message sender (extracted from the
   // per-message ingestSenderContact so the batch path reuses the exact shape).
   private buildContactData(senderId: number, payload: Data, chatType: string | null): Data {
     const tier = chatType === "private" ? "inner" : "group";
@@ -964,15 +953,13 @@ export class TelegramModule {
   }
 
   // Delete the entity behind a remote_id (user-scoped). Mirrors native
-  // ingest_delete; delete_entity cascades the entity's facets + links.
+  // ingest_delete; delete_entity cascades the entity's links.
   private async ingestDelete(envelope: SyncEnvelope): Promise<void> {
     const remoteId = envelope.remote_id;
     if (!remoteId) return;
-    // S4: messages and chats resolve by ANCHOR (their remote_id IS the
-    // anchor form) — the facet external_id retired with the facets.
-    const entityId =
-      (await this.graph.find_by_anchor(remoteId)) ??
-      (await this.graph.find_by_external_id(remoteId));
+    // S4: messages and chats resolve by ANCHOR — their remote_id IS the
+    // anchor form.
+    const entityId = await this.graph.find_by_anchor(remoteId);
     if (entityId) await this.graph.delete_entity(entityId);
   }
 

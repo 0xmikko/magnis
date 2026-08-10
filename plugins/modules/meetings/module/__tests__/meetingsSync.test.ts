@@ -10,13 +10,13 @@ import { describe, expect, it, vi } from "vitest";
 import type { GraphBatchInput, GraphBatchResult } from "@magnis/plugin-sdk";
 import { mockGraph, mountModule, type GraphOverrides, type MockGraph } from "@magnis/testkit/module";
 import { MeetingsModule } from "../service.ts";
-import type { MeetingsCanonical, MeetingsFacets, SyncEnvelope } from "../../types.ts";
+import type { MeetingsCanonical, SyncEnvelope } from "../../types.ts";
 
 const CAL = "meetings.calendar_event";
-type G = MockGraph<MeetingsFacets, MeetingsCanonical>;
+type G = MockGraph<MeetingsCanonical>;
 
 function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
-  return mockGraph<MeetingsFacets, MeetingsCanonical>({
+  return mockGraph<MeetingsCanonical>({
     apply_batch: (frag: GraphBatchInput): Promise<GraphBatchResult> =>
       Promise.resolve({
         ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
@@ -32,7 +32,7 @@ function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
     delete_entity: (_id: string): Promise<void> => Promise.resolve(undefined),
     sync_state: (): Promise<Record<string, unknown>> => Promise.resolve({ ok: true }),
     ...over,
-  } as unknown as GraphOverrides<MeetingsFacets, MeetingsCanonical>);
+  } as unknown as GraphOverrides<MeetingsCanonical>);
 }
 
 function makeModule(
@@ -183,7 +183,7 @@ describe("meetings @syncHandler — attendee edge reconcile", () => {
       ],
     });
     // Only the ex-guest's OUTBOUND attendee edge goes — wholesale-replace
-    // semantics the facet era gave for free, now explicit.
+    // semantics the earlier design gave for free, now explicit.
     expect(delete_link.mock.calls.map((c) => c[0])).toEqual(["l-stale"]);
   });
 });

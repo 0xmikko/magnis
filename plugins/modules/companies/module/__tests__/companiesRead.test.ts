@@ -1,6 +1,6 @@
 // Companies read surface — shape parity + DB-access guarantees. S5: the hub
 // has ONE writer, so its DICTIONARY is the record and it rides the rows the
-// read already fetched — no canonical read, no facet hydrate, nothing to
+// read already fetched — no canonical read, no dictionary hydrate, nothing to
 // arbitrate:
 //   list (no search): list_entities_window (page+order:idx) — one crossing
 //   list (search):    search_entities_by_name + alphabetical sort
@@ -16,20 +16,19 @@
 // on those forbidden ops (kept only where the op IS arranged, e.g. window/search).
 
 import { beforeEach, describe, expect, it } from "vitest";
-import type { FacetRecord } from "@magnis/plugin-sdk";
-import { canonical, entity, facet, mockGraph, mountModule, windowRow, type MockGraph } from "@magnis/testkit/module";
+import { canonical, entity, mockGraph, mountModule, windowRow, type MockGraph } from "@magnis/testkit/module";
 import { CompaniesModule } from "../service.ts";
 import { COMPANY } from "../../schema.ts";
-import type { CompanyCanonical, CompanyFacets } from "../../types.ts";
+import type { CompanyCanonical } from "../../types.ts";
 
-type G = MockGraph<CompanyFacets, CompanyCanonical>;
+type G = MockGraph<CompanyCanonical>;
 
 // The read-path ops, arranged with benign defaults; individual tests re-arm
 // them via `graph.spies.<op>.mockResolvedValue(...)`. Ops NOT listed here
 // (get_entity, get_entities, list_entities, list_facets_for_entities) stay
 // unarranged, so the throwing Proxy fails the test if the read path hits them.
 function readGraph(): G {
-  return mockGraph<CompanyFacets, CompanyCanonical>({
+  return mockGraph<CompanyCanonical>({
     list_entities_window: () => Promise.resolve({ items: [], total: 0 }),
     search_entities_by_name: () => Promise.resolve([]),
     get_entity_full: () => Promise.resolve(null),
