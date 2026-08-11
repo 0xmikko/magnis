@@ -8,17 +8,15 @@ import { describe, expect, it } from "vitest";
 import type { EntityDetail } from "@magnis/plugin-sdk";
 import { mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { FileModule } from "../service.ts";
-import type { FileCanonical, FileFacets } from "../../types.ts";
+import type { FileCanonical } from "../../types.ts";
 
-type G = MockGraph<FileFacets, FileCanonical>;
+type G = MockGraph;
 
 function makeGraph(): G {
-  return mockGraph<FileFacets, FileCanonical>({
+  return mockGraph({
     get_entity_full: () => Promise.resolve(null),
     add_link: () => Promise.resolve(undefined),
     list_entities_window: () => Promise.resolve({ items: [], total: 0 }),
-    list_entities_by_facet_field: () => Promise.resolve({ items: [], total: 0 }),
-    list_facets_for_entities: () => Promise.resolve([]),
     list_links_for_entity: () => Promise.resolve([]),
   });
 }
@@ -39,20 +37,23 @@ function spy(graph: G, op: string): G["spies"][string] {
 const ID_F = "00000000-0000-0000-0000-0000000000f1";
 const ID_T = "00000000-0000-0000-0000-0000000000a1";
 
-function entity(id: string, schema = "file.object", facets: unknown[] = []): EntityDetail {
+// S1: the dictionary rides the entity — arrangements set `properties`.
+function entity(
+  id: string,
+  schema = "file.object",
+  properties: Record<string, unknown> = {},
+): EntityDetail {
   return {
-    entity: { id, schema_id: schema, name: "f", created_at: "2020-01-01T00:00:00Z" },
-    facets,
+    entity: {
+      id,
+      schema_id: schema,
+      name: "f",
+      created_at: "2020-01-01T00:00:00Z",
+      properties,
+    },
     links: [],
   } as unknown as EntityDetail;
 }
-const detailsFacet = (data: Record<string, unknown>) => ({
-  id: "fd",
-  schema_id: "file.details",
-  source: "x",
-  observed_at: "2020-01-01T00:00:00Z",
-  data,
-});
 const DETAILS = { mime_type: "image/png", source_module: "uploads", source_ref: {}, local_path: "2020-01/uploads/a.png" };
 
 describe("file.attach (per-user isolation + allowed link kinds)", () => {
@@ -62,8 +63,8 @@ describe("file.attach (per-user isolation + allowed link kinds)", () => {
       .mockResolvedValueOnce(entity(ID_F, "file.object")) // file_id
       .mockResolvedValueOnce(entity(ID_T, "company.org")); // target_id
     const res = await makeModule(g).attach({ file_id: ID_F, target_id: ID_T });
-    expect(res).toEqual({ status: "ok", file_id: ID_F, target_id: ID_T, kind: "attachment" });
-    expect(g.spies.add_link).toHaveBeenCalledWith({ from_id: ID_T, to_id: ID_F, kind: "attachment" });
+    expect(res).toEqual({ status: "ok", file_id: ID_F, target_id: ID_T, kind: "file.attachment" });
+    expect(g.spies.add_link).toHaveBeenCalledWith({ from_id: ID_T, to_id: ID_F, kind: "file.attachment" });
   });
 
   it("rejects a cross-user / missing file_id (get_entity_full → null) without linking", async () => {
@@ -102,7 +103,7 @@ describe("file.get (ownership + schema + URL)", () => {
   it("returns details + route-correct url for an owned file", async () => {
     const g = makeGraph();
     spy(g, "get_entity_full").mockResolvedValueOnce(
-      entity(ID_F, "file.object", [detailsFacet(DETAILS)]),
+      entity(ID_F, "file.object", DETAILS),
     );
     const res = await makeModule(g).get({ id: ID_F });
     expect(res.entity_id).toBe(ID_F);
@@ -113,9 +114,7 @@ describe("file.get (ownership + schema + URL)", () => {
   it("uses cloud_url when there is no local_path", async () => {
     const g = makeGraph();
     spy(g, "get_entity_full").mockResolvedValueOnce(
-      entity(ID_F, "file.object", [
-        detailsFacet({ mime_type: "application/pdf", source_module: "s", source_ref: {}, cloud_url: "https://cdn/x.pdf" }),
-      ]),
+      entity(ID_F, "file.object", { mime_type: "application/pdf", source_module: "s", source_ref: {}, cloud_url: "https://cdn/x.pdf" }),
     );
     const res = await makeModule(g).get({ id: ID_F });
     expect(res.url).toBe("https://cdn/x.pdf");
@@ -133,15 +132,15 @@ describe("file.get (ownership + schema + URL)", () => {
 describe("file.list (filters + content skip)", () => {
   it("filters by mime_prefix and skips rows without content", async () => {
     const g = makeGraph();
+    // S1: the dictionary rides each window row.
     spy(g, "list_entities_window").mockResolvedValue({
-      items: [{ entity: { id: "i1" } }, { entity: { id: "i2" } }, { entity: { id: "i3" } }],
+      items: [
+        { entity: { id: "i1", properties: { mime_type: "image/png", source_module: "u", source_ref: {}, local_path: "a" } } },
+        { entity: { id: "i2", properties: { mime_type: "application/pdf", source_module: "u", source_ref: {}, local_path: "b" } } },
+        { entity: { id: "i3", properties: { mime_type: "image/jpeg", source_module: "u", source_ref: {} } } }, // no content
+      ],
       total: 3,
     });
-    spy(g, "list_facets_for_entities").mockResolvedValue([
-      { entity_id: "i1", schema_id: "file.details", data: { mime_type: "image/png", source_module: "u", source_ref: {}, local_path: "a" } },
-      { entity_id: "i2", schema_id: "file.details", data: { mime_type: "application/pdf", source_module: "u", source_ref: {}, local_path: "b" } },
-      { entity_id: "i3", schema_id: "file.details", data: { mime_type: "image/jpeg", source_module: "u", source_ref: {} } }, // no content
-    ]);
     const res = await makeModule(g).list({ mime_prefix: "image/" });
     expect(res.total).toBe(3); // total is the unfiltered count (matches native)
     expect(res.items.map((i) => i.entity_id)).toEqual(["i1"]); // i2 wrong mime, i3 no content
@@ -150,15 +149,14 @@ describe("file.list (filters + content skip)", () => {
   it("filters by parent_id via a links query", async () => {
     const g = makeGraph();
     spy(g, "list_entities_window").mockResolvedValue({
-      items: [{ entity: { id: "i1" } }, { entity: { id: "i2" } }],
+      items: [
+        { entity: { id: "i1", properties: { mime_type: "x/y", source_module: "u", source_ref: {}, local_path: "a" } } },
+        { entity: { id: "i2", properties: { mime_type: "x/y", source_module: "u", source_ref: {}, local_path: "b" } } },
+      ],
       total: 2,
     });
-    spy(g, "list_facets_for_entities").mockResolvedValue([
-      { entity_id: "i1", schema_id: "file.details", data: { mime_type: "x/y", source_module: "u", source_ref: {}, local_path: "a" } },
-      { entity_id: "i2", schema_id: "file.details", data: { mime_type: "x/y", source_module: "u", source_ref: {}, local_path: "b" } },
-    ]);
     spy(g, "list_links_for_entity").mockImplementation(async (id: string) =>
-      id === "i1" ? [{ from_id: "parentX", to_id: "i1", kind: "attachment" }] : [],
+      id === "i1" ? [{ from_id: "parentX", to_id: "i1", kind: "file.attachment" }] : [],
     );
     const res = await makeModule(g).list({ parent_id: "parentX" });
     expect(res.items.map((i) => i.entity_id)).toEqual(["i1"]);

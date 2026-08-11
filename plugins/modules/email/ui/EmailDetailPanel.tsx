@@ -93,7 +93,7 @@ export function EmailDetailPanel({ entityId }: DetailPanelProps): JSX.Element {
         )
       }
     >
-      <EmailDetailContent detail={detail} linkedEntities={detailView.linked_entities} />
+      <EmailDetailContent detail={detail} />
     </DetailPane>
   );
 }

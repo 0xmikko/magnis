@@ -1,0 +1,33 @@
+# The contacts hub's search declaration (module-search-contract §11/§13).
+# The hub declares what the hub OWNS: the vouched name, the curated
+# description and phones. Profile facts live on the replicas the hub reaches
+# over `identity` (telegram.account, contacts.google_contact) — a hub field
+# for them would silently match curated contacts only. Emails are `identity`
+# edges to shared address nodes: a link condition, never a collection here.
+
+entity = "contacts.person"
+tools = "contacts"
+
+default_order = [
+  { key = "name", dir = "asc", nulls = "last" },
+]
+
+[[field]]
+key = "name"
+kind = "text"
+column = "name"
+
+[[field]]
+key = "description"
+kind = "text"
+path = "description"
+embed = "body"
+
+[[collection]]
+key = "phone"
+path = "phones"
+element = [
+  { key = "phone",      kind = "text" },
+  { key = "type",       kind = "text" },
+  { key = "is_primary", kind = "boolean" },
+]

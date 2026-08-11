@@ -8,7 +8,7 @@ export interface MountedComposer {
     applyOp(patch: ComposerDraftPatch): void;
 }
 interface MountRegistry {
-    /** Currently-mounted composer or null. Single-slot: at most one composer is mounted at a time. */
+    /** Currently-mounted composer or null. Single-slot per DEC-7. */
     current(): MountedComposer | null;
     register(m: MountedComposer): () => void;
 }

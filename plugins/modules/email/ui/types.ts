@@ -1,6 +1,5 @@
 import type {
   AvatarColor,
-  FacetSummary,
   LinkedEntitySummary,
   SidebarData,
 } from "@magnis/host/base";
@@ -19,7 +18,6 @@ export interface MessageListItem {
 export interface MessageDetailView extends MessageListItem {
   readonly body: string | null;
   readonly canonical: Record<string, unknown>;
-  readonly facets: readonly FacetSummary[];
   readonly linked_entities: readonly LinkedEntitySummary[];
 }
 
@@ -44,6 +42,8 @@ export interface EmailAttachment {
   readonly mime_type: string;
   readonly size: number;
   readonly path: string;
+  /** S5: the file node the `file.attachment` edge ends at. */
+  readonly id?: string;
 }
 
 export interface EmailDetailData {

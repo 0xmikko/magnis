@@ -58,119 +58,57 @@ convention — **not** in the manifest:
 
 - `<entity>.json` — an **entity descriptor**: `name`, `description`, plus the
   optional traits `"triggerable": true` (its events may drive triggers) and
-  `"mergeable": true` (canonical merge allowed).
-- `<entity>.<facet>.json` — a **facet contract**: `version`, optional
-  `mappings`, and the JSON Schema shape (`type` / `required` / `properties` /
-  `additionalProperties`) flattened at the top level. The facet's schema id is
-  derived from the filename: `schemas/company.details.json` in `companies` →
-  `companies.company.details`.
+  `"mergeable": true` (two of them may be merged into one).
+There is exactly ONE kind of file. The schema id is derived from the filename
+inside the module's namespace: `schemas/company.json` in `companies` →
+`companies.company`.
 
-The discrimination rule: a facet file **always** has `"version"`; an entity
-file **never** does. Two overrides exist for grandfathered ids:
+Two rules the installer ENFORCES, both refusals rather than warnings:
 
-- `"id"` — a legacy facet id that doesn't nest as
-  `<plugin>.<entity>.<facet>` (e.g. `contacts.memory` lives in
-  `schemas/person.memory.json` with `"id": "contacts.memory"`).
-- `"entity"` — a facet attached to a FOREIGN entity (e.g. telegram's
-  `schemas/contact.json` carries `"entity": "contacts.person"`).
+- **A file carrying `"version"` is refused.** That was the shape of a facet
+  contract — a per-block schema with canonical `mappings` and a merge
+  `strategy`. The node dictionary replaced all three, and a dictionary key
+  needs no contract, so a package still shipping one is rejected instead of
+  half-installed.
+- **The file name must be a SINGLE segment.** `company.json`, not
+  `company.details.json` — a dotted name was how a facet nested under its
+  entity, and allowing it now would let a package mint an id in a shape the
+  namespace check cannot reason about.
+
+Together they mean a package can only ever claim ids inside its own namespace:
+the id comes from the plugin id plus one file-name segment, so a foreign id is
+unforgeable by construction rather than by validation.
 
 ```jsonc
-// schemas/company.json — entity descriptor
-{ "name": "Company", "description": "A company / organisation entity…", "mergeable": true }
-
-// schemas/company.details.json — facet contract
-{
-  "version": 1,
-  "mappings": [
-    { "path": "name", "canonical": "companies.name", "strategy": "single_aligned" }
-  ],
-  "type": "object",
-  "additionalProperties": true,
-  "properties": { "name": { "type": "string" }, "headcount": { "type": "integer" } }
-}
+// schemas/company.json — the only kind of schema file
+{ "name": "Company",
+  "description": "A company / organisation entity…",
+  "roles": ["hub"],          // endpoint roles the link registry checks
+  "mergeable": true }        // two of these may be merged
 ```
+
+Which dictionary keys are SEARCHABLE, how each is typed and what the indexer
+embeds is declared separately, in `search.toml` — see
+[graph.md](../graph.md).
 
 Installing a module registers these schemas natively — there is no install
 hook to write.
 
-#### Canonical mappings
+#### Declaring a link kind you OWN
 
-A facet's `mappings` array declares how its fields project into **canonical
-properties** — the derived truth merged across every source that ever wrote the
-field. This is what lets `graph.get_canonical(...)` return a single merged value.
-Mappings travel in the schema file; the host reads them, and the generic core
-defines no domain mappings of its own.
-
-```jsonc
-{ "path": "name",                  // dotted path into the facet data
-  "canonical": "companies.name",   // the canonical property it feeds
-  "strategy": "single_aligned" }   // how conflicting values merge
-```
-
-| `strategy` | Merge behaviour | Use for |
-|---|---|---|
-| `single_aligned` | one value; conflicts resolved by confidence → recency | single-valued truth (name, website, industry) |
-| `collection` | a deduped list of every value seen | fields a subject can have many of (emails, phones, handles) |
-| `mergeable_object` | merge objects field-by-field | structured blocks assembled from several sources |
-
-> **Plural-vs-singular gotcha.** A `collection` strategy produces a **plural**
-> canonical key (`person.emails`, a deduped list) — the singular `person.email`
-> is then never populated. Read the collection key (or the facets array), not
-> the singular. Choose the strategy deliberately; the read side depends on it
-> (see the canonical-vs-facet section of [module.md](./module.md)).
-
-### `[permissions]` — the security boundary
-
-**Own-namespace rights are implicit**: writes to `<id>.` facets, own:own
-links, and reads of own schemas need no declaration. `[permissions]` lists
-ONLY the foreign asks; omit the whole section when there are none. Every
-undeclared foreign op is denied.
+Referencing a host-owned kind goes in `[permissions] links`. A kind the module
+OWNS is declared instead, and carries the module's namespace prefix:
 
 ```toml
-[permissions]
-read  = ["contacts.person"]          # foreign schemas it may read
-create = []                          # foreign entities it may create
-links = ["has_email"]                # foreign-touching link kinds it may create
-call  = ["email.ensure_address"]     # EXACT cross-module methods it may call
-host  = ["sync_state"]               # privileged host ops it may call
+[[links]]
+kind = "file.attachment"   # prefix must be the plugin's own id
+to   = "file_object"       # the ROLE the far endpoint must declare
 ```
 
-| Field | Gate | Matching |
-|---|---|---|
-| `read` | reads of foreign schemas (own always readable) | prefix (`"contacts."`) / exact |
-| `create` | creating foreign entities | entity schema id |
-| `links` | `graph.add_link` with a foreign-touching kind (own:own implicit) | link `kind` / `<from>:<to>` pair |
-| `call` | `rpc.execute` (cross-module) | **exact** fully-qualified method |
-| `host` | privileged host ops (`sync_state`, `composer`, `file_register`, …) | exact op grant |
+The prefix is what makes it unforgeable: a package cannot declare a kind in
+another module's namespace, so ownership is settled by the id rather than by a
+registry entry someone has to keep in step.
 
-A denied op throws — there is **no silent skip**. If a write seems to do nothing,
-suspect a missing entry here (see the cross-module calls section of
-[module.md](./module.md)).
-
-### `[surfaces]` — sync configuration
-
-One table per sync surface the module consumes from a source; omit entirely
-for pure-CRUD modules:
-
-```toml
-[surfaces.email]
-item = "email.message"   # optional: the surface's primary-item schema — its
-                         # user-scoped graph count IS the "items synced" badge
-```
-
-RPC methods and tools are **not** declared in the manifest — they live only in
-code. Every method a module registers is namespaced `<id>.…`, so the host
-routes by prefix, and tool definitions are harvested from the running module.
-Entrypoints are convention too: `module/index.ts` and `ui/index.tsx`.
-
-### Migrations
-
-There is no install hook — installing a module registers its `schemas/` files
-natively. A `migrations/` folder (plus `[[migrations]]` in the manifest) exists
-ONLY when the module ships real data migrations (see the schemas section of
-[module.md](./module.md)).
-
----
 
 ## Source manifest (v3)
 
@@ -302,6 +240,6 @@ is `icon.svg|png` at the package root (optional — no file, default icon).
 ## Changing a manifest
 
 When a plugin is reinstalled, the host runs a **breaking-change check** against
-the previously installed manifest — a newly-required facet field or a narrowed
+the previously installed manifest — a newly-required schema field or a narrowed
 type is rejected. Additive changes (new optional fields, new schemas, new
 capability entries) are safe. Bump `version` whenever you change schemas.

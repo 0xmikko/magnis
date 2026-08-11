@@ -3,7 +3,7 @@
 // mountModule). Asserts BOTH the returned DTO shape (tst_be_emailread_001) and
 // the exact graph op-counts per surface (tst_be_emaildb_003): a
 // fixed, N-independent number of crossings, no per-row hydrate, no
-// canonical/facet read on the hot path.
+// canonical/record read on the hot path.
 //
 // mockGraph is a throwing Proxy: any op NOT arranged below (list_facets_for_entity,
 // list_canonical_for_entity, list_entities — the N+1 traps) throws when hit, so
@@ -11,22 +11,21 @@
 // AND the `toHaveBeenCalledTimes(0)` assertions on those forbidden ops.
 
 import { beforeEach, describe, expect, it } from "vitest";
-import type { EntityDetail, FacetRecord, RawEntity } from "@magnis/plugin-sdk";
+import type { EntityDetail, RawEntity } from "@magnis/plugin-sdk";
 import { mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { EmailModule } from "../service.ts";
-import type { EmailCanonical, EmailFacets } from "../../types.ts";
+import type { EmailCanonical } from "../../types.ts";
 
-type G = MockGraph<EmailFacets, EmailCanonical>;
+type G = MockGraph;
 
 // Only the ops the read path may legitimately touch are arranged with benign
 // defaults; everything else throws via the mockGraph Proxy.
 function readGraph(): G {
-  return mockGraph<EmailFacets, EmailCanonical>({
+  return mockGraph({
     list_entities_window: () => Promise.resolve({ items: [], total: 0 }),
     get_entity_full: () => Promise.resolve(null),
     get_entities: () => Promise.resolve([]),
     search_entities_by_name: () => Promise.resolve([]),
-    list_facets_for_entities: () => Promise.resolve([]),
   });
 }
 
@@ -40,38 +39,42 @@ function spy(graph: G, op: string) {
 }
 
 const ROW = (id: string, date: string, over: Record<string, unknown> = {}) => ({
-  entity: { id, schema_id: "email.message", name: "Subject " + id, created_at: date },
-  data: {
-    from_address: "alice@example.com",
-    from_name: "Alice Johnson",
-    snippet: "preview text " + id,
-    body_text: "full body " + id,
-    body_html: "<p>full body " + id + "</p>",
-    sent_at: date,
-    to_addresses: "bob@example.com",
-    ...over,
+  // S5: the message DICT rides the entity row; `data` (the render record) is dead.
+  entity: {
+    id,
+    schema_id: "email.message",
+    name: "Subject " + id,
+    created_at: date,
+    properties: {
+      from_address: "alice@example.com",
+      from_name: "Alice Johnson",
+      snippet: "preview text " + id,
+      body_text: "full body " + id,
+      body_html: "<p>full body " + id + "</p>",
+      sent_at: date,
+      ...over,
+    },
   },
+  data: null,
 });
 
 const DETAIL = (id: string, date: string): EntityDetail => ({
-  entity: { id, schema_id: "email.message", name: "Subject " + id, created_at: date },
-  facets: [
-    {
-      id: "f-" + id,
-      schema_id: "email.message.details",
-      source: "gmail",
-      observed_at: date,
-      data: {
-        from_address: "alice@example.com",
-        from_name: "Alice Johnson",
-        snippet: "preview text " + id,
-        body_text: "full body " + id,
-        body_html: "<p>full body " + id + "</p>",
-        sent_at: date,
-        to_addresses: "bob@example.com",
-      },
+  // S5: the detail reads the DICT; the frozen record stays as the archive the
+  // view still surfaces.
+  entity: {
+    id,
+    schema_id: "email.message",
+    name: "Subject " + id,
+    created_at: date,
+    properties: {
+      from_address: "alice@example.com",
+      from_name: "Alice Johnson",
+      snippet: "preview text " + id,
+      body_text: "full body " + id,
+      body_html: "<p>full body " + id + "</p>",
+      sent_at: date,
     },
-  ],
+  } as EntityDetail["entity"],
   links: [],
 });
 
@@ -127,10 +130,6 @@ describe("email read — shape parity (tst_be_emailread_001)", () => {
     expect(view.channel).toBe("email");
     expect(view.canonical).toEqual({});
     expect(view.linked_entities).toEqual([]);
-    expect(view.facets).toHaveLength(1);
-    const facet0 = view.facets[0];
-    if (facet0 === undefined) throw new Error("get: missing facet[0]");
-    expect(facet0.schema_id).toBe("email.message.details");
     expect(view.metadata).toHaveProperty("body_html"); // detail keeps HTML
   });
 
@@ -139,8 +138,8 @@ describe("email read — shape parity (tst_be_emailread_001)", () => {
     spy(graph, "get_entity_full").mockResolvedValue({
       ...base,
       links: [
-        { id: "l1", from_id: "x", to_id: "file-1", kind: "attachment" },
-        { id: "l2", from_id: "x", to_id: "file-2", kind: "attachment" },
+        { id: "l1", from_id: "x", to_id: "file-1", kind: "file.attachment" },
+        { id: "l2", from_id: "x", to_id: "file-2", kind: "file.attachment" },
       ],
     });
     spy(graph, "get_entities").mockResolvedValue([
@@ -151,7 +150,7 @@ describe("email read — shape parity (tst_be_emailread_001)", () => {
     const view = await mod.emailGet({ id: "x" });
     expect(view.linked_entities).toHaveLength(2);
     expect(view.linked_entities.map((l) => l.name)).toEqual(["photo.jpg", "report.pdf"]);
-    expect(view.linked_entities.every((l) => l.link_kind === "attachment")).toBe(true);
+    expect(view.linked_entities.every((l) => l.link_kind === "file.attachment")).toBe(true);
     expect(spy(graph, "get_entities")).toHaveBeenCalledTimes(1); // ONE batch, no per-link N+1
   });
 
@@ -170,20 +169,20 @@ describe("email read — shape parity (tst_be_emailread_001)", () => {
     expect(views.map((v) => v.id)).toEqual(["a", "c"]); // 'b' skipped
   });
 
-  it("search hydrates only the matched ids via batch facet read", async () => {
+  it("search reads the dictionary off the matched rows", async () => {
     spy(graph, "search_entities_by_name").mockResolvedValue([
-      { id: "a", schema_id: "email.message", name: "Subject a", created_at: "2026-06-01T10:00:00Z" },
-    ] satisfies RawEntity[]);
-    spy(graph, "list_facets_for_entities").mockResolvedValue([
       {
-        entity_id: "a",
-        id: "f-a",
-        schema_id: "email.message.details",
-        source: "gmail",
-        observed_at: "2026-06-01T10:00:00Z",
-        data: { from_name: "Alice Johnson", snippet: "preview text a", sent_at: "2026-06-01T10:00:00Z" },
-      },
-    ] satisfies FacetRecord[]);
+        id: "a",
+        schema_id: "email.message",
+        name: "Subject a",
+        created_at: "2026-06-01T10:00:00Z",
+        properties: {
+          from_name: "Alice Johnson",
+          snippet: "preview text a",
+          sent_at: "2026-06-01T10:00:00Z",
+        },
+      } as RawEntity,
+    ]);
 
     const page = await mod.emailList({ search: "invoice" });
     expect(page.items).toHaveLength(1);
@@ -209,18 +208,15 @@ describe("email read — DB-access guarantees (tst_be_emaildb_003 / INV-DB-1,2,4
     });
     await mod.emailList({ limit: 50 });
     expect(spy(graph, "list_entities_window")).toHaveBeenCalledTimes(1);
-    expect(spy(graph, "list_facets_for_entities")).toHaveBeenCalledTimes(0);
     expect(spy(graph, "search_entities_by_name")).toHaveBeenCalledTimes(0);
     // list_facets_for_entity (per-row N+1 trap) is a forbidden, unarranged op —
     // the throwing mockGraph guarantees it is never hit; no spy to assert 0.
   });
 
-  it("list (search) = 1 search + 1 batch facet hydrate, 0 window, 0 per-row hydrate (INV-DB-4)", async () => {
+  it("list (search) = 1 search, 0 window, 0 facet hydrate (INV-DB-4)", async () => {
     spy(graph, "search_entities_by_name").mockResolvedValue([]);
-    spy(graph, "list_facets_for_entities").mockResolvedValue([]);
     await mod.emailList({ search: "x" });
     expect(spy(graph, "search_entities_by_name")).toHaveBeenCalledTimes(1);
-    expect(spy(graph, "list_facets_for_entities")).toHaveBeenCalledTimes(1);
     expect(spy(graph, "list_entities_window")).toHaveBeenCalledTimes(0);
   });
 

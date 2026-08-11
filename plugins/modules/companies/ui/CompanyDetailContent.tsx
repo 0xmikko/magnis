@@ -6,13 +6,12 @@ import {
 } from "@magnis/host/ui";
 import { EntityDetailTabs } from "@magnis/host/base";
 import type { CompanyProfile } from "./types";
-import type { LinkedEntitySummary, FacetSummary } from "@magnis/host/base";
+import type { LinkedEntitySummary } from "@magnis/host/base";
 
 export interface CompanyDetailContentProps {
   readonly company: CompanyProfile;
   readonly entityId: string;
   readonly linkedEntities: readonly LinkedEntitySummary[];
-  readonly facets: readonly FacetSummary[];
   readonly fieldLabels: {
     readonly website: string;
     readonly industry: string;
@@ -25,7 +24,6 @@ export function CompanyDetailContent({
   company,
   entityId,
   linkedEntities,
-  facets,
   fieldLabels,
 }: CompanyDetailContentProps): JSX.Element {
   const headerContent = (
@@ -54,9 +52,6 @@ export function CompanyDetailContent({
     <EntityDetailTabs
       entityId={entityId}
       linkedEntities={linkedEntities}
-      facets={facets}
-      descriptionSchemaId="companies.description"
-      memorySchemaId="companies.memory"
       headerContent={headerContent}
       maxVisibleTabs={7}
     />

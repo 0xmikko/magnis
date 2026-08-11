@@ -5,8 +5,8 @@ import { ActionPrefix } from "@magnis/host/base";
 import { proxiedMediaUrl } from "./PostCard";
 
 // SINGLE canonical X-post card (docs/frontend/module-standard.md: ONE COMPONENT
-// PER ENTITY). Reads the merged canonical + x.post.content facet fields the host
-// passes as `data` (text/author_handle/created_at/metrics). Read-only.
+// PER ENTITY). Reads the post DICTIONARY the host passes as `data`
+// (text/author_handle/created_at/metrics). Read-only.
 
 function fmtDate(v: unknown): string | undefined {
   if (typeof v !== "string" || v.length === 0) return undefined;

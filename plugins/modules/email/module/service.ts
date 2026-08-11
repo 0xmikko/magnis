@@ -1,13 +1,13 @@
 // Email plugin — graph-native module. Read path: list (windowed,
-// date-desc, facet inline), get (entity+facets), batch (one fetch per id). Output is
+// date-desc), get (entity + links), batch (one fetch per id). Output is
 // byte-compatible with the native module (MessageListItem / MessageDetailView)
 // and the UI's plugins/email/ui/types.ts copies.
 //
 // DB-access guarantees (asserted by module/__tests__/emailRead):
-//   - list (no search) = ONE list_entities_window (facet rendered inline) — no
-//     canonical read, no per-row facet hydrate.
-//   - list (search)    = ONE search_entities_by_name (ids) + ONE
-//     list_facets_for_entities over ONLY those ids — 2 crossings, no N+1.
+//   - list (no search) = ONE list_entities_window — no canonical read, no
+//     per-row hydrate.
+//   - list (search)    = ONE search_entities_by_name — the matched rows carry
+//     their own dictionaries, so there is no hydrate crossing at all.
 //   - get  = ONE get_entity_full. batch = K get_entity_full (one per id).
 //
 // Deferred (read-time enrichment, mirrors the telegram module; verified visually
@@ -33,10 +33,7 @@ import type {
 import type {
   BatchParams,
   BatchSendParams,
-  EmailCanonical,
-  EmailFacets,
   EmailTriggerCheck,
-  FacetSummary,
   GetParams,
   LinkedEntitySummary,
   ListParams,
@@ -49,29 +46,27 @@ import type {
 } from "../types.ts";
 import {
   addressesOf,
+  recipientsWithRoles,
   buildListItem,
   destSubpath,
   INGEST_CHUNK,
   lowerAddr,
   normalizeRecipient,
   OUTGOING_FROM,
-  recipientsOf,
   senderOf,
   str,
   type Data,
 } from "./helpers.ts";
 import {
-  ADDRESS_DETAILS,
   ADDRESS_SCHEMA,
-  MESSAGE_DETAILS,
   MESSAGE_SCHEMA,
 } from "../schema.ts";
 
 export class EmailModule {
-  private readonly graph: GraphService<EmailFacets, EmailCanonical>;
+  private readonly graph: GraphService;
   private readonly rpc: RpcExecutor;
   private readonly log: PluginLogger;
-  constructor(deps: PluginDeps<EmailFacets, EmailCanonical>) {
+  constructor(deps: PluginDeps) {
     this.graph = deps.graph;
     this.rpc = deps.rpc;
     this.log = deps.log;
@@ -96,8 +91,8 @@ export class EmailModule {
     const search = (params.search ?? "").trim();
 
     if (search.length > 0) {
-      // Search path: name match returns ids only (no facet); hydrate ONLY the
-      // page's ids in one batch facet read — 2 crossings, no per-row N+1.
+      // Search path: the matched rows already carry their dictionaries, so the
+      // page renders straight off them — ONE crossing, no hydrate.
       const matched = await this.graph.search_entities_by_name({
         query: search,
         schema_ids: [MESSAGE_SCHEMA],
@@ -105,27 +100,25 @@ export class EmailModule {
       });
       const total = matched.length;
       const page = matched.slice(offset, offset + limit);
-      const facets = await this.graph.list_facets_for_entities(page.map((e) => e.id));
-      const byId = new Map<string, Data>();
-      for (const f of facets) {
-        if (f.schema_id === MESSAGE_DETAILS && f.entity_id && !byId.has(f.entity_id)) {
-          byId.set(f.entity_id, f.data as Data);
-        }
-      }
-      const items = page.map((e) => buildListItem(e, byId.get(e.id) ?? {}));
+      // S5: the dictionary rides the entity rows the search returned.
+      const items = page.map((e) =>
+        buildListItem(e, ((e as { properties?: unknown }).properties ?? {}) as Data),
+      );
       return { items, total, limit, offset };
     }
 
     // ONE statement — page of email.message ordered by the indexed entity
-    // `date` column DESC, each row carrying its latest details facet inline.
+    // `date` column DESC; each row's dictionary rides on the entity.
     const win = await this.graph.list_entities_window({
       schema: MESSAGE_SCHEMA,
-      facet_schema: MESSAGE_DETAILS,
+
       order: [{ field: { entity_field: "date" }, desc: true }],
       limit,
       offset,
     });
-    const items = win.items.map(({ entity, data }) => buildListItem(entity, (data ?? {}) as Data));
+    const items = win.items.map(({ entity }) =>
+      buildListItem(entity, ((entity as { properties?: unknown }).properties ?? {}) as Data),
+    );
     return { items, total: win.total, limit, offset };
   }
 
@@ -168,21 +161,15 @@ export class EmailModule {
 
   /// Detail fetch shared by get/batch. Returns null for a missing or
   /// non-email entity (get throws on null; batch skips it). At most TWO fixed
-  /// crossings: get_entity_full (entity + facets + link edges) and, only
+  /// crossings: get_entity_full (entity + link edges) and, only
   /// when the entity has links, ONE get_entities batch to resolve the
   /// neighbours' names — no per-link N+1.
   private async getDetail(id: string): Promise<MessageDetailView | null> {
     const detail = await this.graph.get_entity_full(id, { links: true });
     if (detail?.entity.schema_id !== MESSAGE_SCHEMA) return null;
-    const { entity, facets, links } = detail;
-    const d = (facets.find((f) => f.schema_id === MESSAGE_DETAILS)?.data as Data | undefined) ?? {};
-    const facetSummaries: FacetSummary[] = facets.map((f) => ({
-      id: f.id,
-      schema_id: f.schema_id,
-      source: f.source,
-      observed_at: f.observed_at,
-      data: f.data,
-    }));
+    const { entity, links } = detail;
+    // S5: the message DICT is the record.
+    const d = ((entity as { properties?: unknown }).properties ?? {}) as Data;
 
     // Resolve link neighbours (attachments, address hub, …) for the Context
     // panel. Link edges carry ids + kind only; one batch get_entities
@@ -202,7 +189,10 @@ export class EmailModule {
           schema_id: t.schema_id,
           link_kind: l.kind,
           created_at: t.created_at ?? "",
-          data: null,
+          // S5: a neighbour carries its own dictionary — the attachment row
+          // renders its size from the file node, not from a copy the message
+          // used to keep.
+          data: t.properties ?? null,
         });
       }
     }
@@ -217,7 +207,6 @@ export class EmailModule {
       channel: "email",
       timestamp: str(d, "sent_at") ?? created,
       canonical: {},
-      facets: facetSummaries,
       linked_entities,
       created_at: created,
       metadata: d,
@@ -295,7 +284,9 @@ export class EmailModule {
   /// Delete envelope: resolve the email by its source external_id and remove it.
   private async ingestDelete(env: SyncEnvelope): Promise<void> {
     if (!env.remote_id) return;
-    const id = await this.graph.find_by_external_id(env.remote_id);
+    // S5: the remote id IS the node's anchor — resolution goes through the
+    // one chokepoint.
+    const id = await this.graph.find_by_anchor(env.remote_id);
     if (id) await this.graph.delete_entity(id);
   }
 
@@ -320,18 +311,24 @@ export class EmailModule {
           schema_id: ADDRESS_SCHEMA,
           name: lower,
           idx: lower,
-          facets: [
-            { schema_id: ADDRESS_DETAILS, data, external_id: `email:address:${lower}`, confidence: 100 },
-          ],
+          anchor: `email:address:${lower}`,
+          properties: data,
+          confidence: 100,
         });
         addrSeen.add(key);
       }
       return key;
     };
-    const addLink = (from_key: string, to_key: string, kind: string): void => {
+    const addLink = (
+      from_key: string,
+      to_key: string,
+      kind: string,
+      declared_by: string,
+      metadata?: Record<string, unknown>,
+    ): void => {
       const k = `${from_key} ${to_key} ${kind}`;
       if (!linkSeen.has(k)) {
-        links.push({ from_key, to_key, kind });
+        links.push({ from_key, to_key, kind, declared_by, ...(metadata ? { metadata } : {}) });
         linkSeen.add(k);
       }
     };
@@ -340,18 +337,33 @@ export class EmailModule {
       const remoteId = env.remote_id;
       if (!remoteId) continue;
       const p = env.payload as Data;
+      // S5 (plan §7): the message DICT is the record, minus what the edges
+      // now represent — the attachments array and the three joined recipient
+      // strings. The from/to addresses stay as edges to shared address nodes.
+      const dict: Data = { ...p };
+      delete dict.attachments;
+      delete dict.to_addresses;
+      delete dict.cc_addresses;
+      delete dict.bcc_addresses;
       entities.push({
         key: remoteId,
         schema_id: MESSAGE_SCHEMA,
         name: str(p, "subject") ?? "",
         idx: str(p, "thread_id") ?? undefined,
         date: str(p, "sent_at") ?? undefined,
-        facets: [{ schema_id: MESSAGE_DETAILS, data: p, external_id: remoteId, confidence: 90 }],
+        anchor: remoteId,
+        properties: dict,
+        // The provider is the observer of a message it delivered; the module's
+        // own certainty in the dictionary it just wrote is 90, as the record it
+        // replaced carried.
+        confidence: 90,
       });
       const from = lowerAddr(str(p, "from_address"));
-      if (from) addLink(remoteId, addAddress(from, str(p, "from_name")), "sent_from");
-      for (const r of recipientsOf(p)) {
-        addLink(remoteId, addAddress(r, null), "sent_to");
+      // S5: authorship is `authored_by` — the relation, not a channel-shaped
+      // kind. `sent_from` retires with this writer.
+      if (from) addLink(remoteId, addAddress(from, str(p, "from_name")), "authored_by", remoteId);
+      for (const r of recipientsWithRoles(p)) {
+        addLink(remoteId, addAddress(r.addr, null), "sent_to", remoteId, { role: r.role });
       }
     }
 
@@ -374,7 +386,7 @@ export class EmailModule {
         await this.graph.file_register({
           external_id: `file:gmail:${env.account_id}:${remoteId}:${attId}`,
           parent_external_id: remoteId,
-          link_kind: "attachment",
+          link_kind: "file.attachment",
           name: filename,
           mime_type: str(att, "mime_type") ?? "application/octet-stream",
           size_bytes: typeof att.size === "number" ? (att.size) : undefined,
@@ -484,7 +496,7 @@ export class EmailModule {
     if (detail?.entity.schema_id !== MESSAGE_SCHEMA) {
       throw new Error(`Email not found: ${params.email_id}`);
     }
-    const od = (detail.facets.find((f) => f.schema_id === MESSAGE_DETAILS)?.data as Data | undefined) ?? {};
+    const od = ((detail.entity as { properties?: unknown }).properties ?? {}) as Data;
     const sender = str(od, "from_address");
     if (!sender) {
       throw new Error("Cannot determine recipient: email has no sender address");
@@ -496,7 +508,7 @@ export class EmailModule {
     const inReplyTo = str(od, "message_id");
 
     // Attachment ownership + file-ness (user-scoped) — fail if the caller
-    // doesn't own a file, or the id isn't a real file (no file.details facet).
+    // doesn't own a file, or the id isn't a real file (empty dictionary).
     await this.resolveOwnedFileNames(attachmentIds);
 
     // Route the reply (native parity: FATAL on source failure).
@@ -529,7 +541,7 @@ export class EmailModule {
 
     // Link attachments to the ORIGINAL email (native parity).
     for (const fid of attachmentIds) {
-      await this.graph.add_link({ from_id: params.email_id, to_id: fid, kind: "attachment" });
+      await this.graph.add_link({ from_id: params.email_id, to_id: fid, kind: "file.attachment" });
     }
 
     return {
@@ -665,9 +677,8 @@ export class EmailModule {
         schema_id: ADDRESS_SCHEMA,
         name: a,
         idx: a,
-        facets: [
-          { schema_id: ADDRESS_DETAILS, data: { address: a }, external_id: `email:address:${a}`, confidence: 100 },
-        ],
+        anchor: `email:address:${a}`,
+        properties: { address: a },
       })),
       refs: [],
       links: [],
@@ -727,32 +738,78 @@ export class EmailModule {
     },
   })
   async ensureAddress(params: { address: string; display_name?: string | null }): Promise<{ id: string }> {
-    const lower = params.address.trim().toLowerCase();
-    if (lower.length === 0) {
+    const ids = await this.ensureAddressBatch([params]);
+    const id = ids[0];
+    if (!id) throw new Error(`email.ensure_address: failed to resolve ${params.address}`);
+    return { id };
+  }
+
+  // ── ensure_addresses (batched, S3) ─────────────────────────────
+  // The address owner mints (plan §7): contacts hands over every address a
+  // sync page observed in ONE call; each get-or-creates by the
+  // `email:address:<lower>` ANCHOR through the chokepoint, so callers can
+  // also reference the node by that anchor with no id wired back.
+  @rpc("ensure_addresses", {
+    description: "Get-or-create email.address entities for many addresses (batched).",
+    params: {
+      type: "object",
+      properties: {
+        items: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              address: { type: "string" },
+              display_name: { type: "string" },
+            },
+            required: ["address"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["items"],
+      additionalProperties: false,
+    },
+  })
+  async ensureAddresses(params: {
+    items: { address: string; display_name?: string | null }[];
+  }): Promise<{ ids: string[] }> {
+    return { ids: await this.ensureAddressBatch(params.items) };
+  }
+
+  private async ensureAddressBatch(
+    items: { address: string; display_name?: string | null }[],
+  ): Promise<string[]> {
+    const lowers = items.map((p) => p.address.trim().toLowerCase());
+    if (lowers.some((l) => l.length === 0)) {
       throw new Error("email.ensure_address: 'address' is required");
     }
-    const data: Record<string, unknown> = { address: lower };
-    if (params.display_name) data.display_name = params.display_name;
-    // apply_batch resolves-or-creates by the facet external_id (the same hub key
-    // ingest/send use), so this converges on one entity per address per user.
-    const r = await this.graph.apply_batch({
-      entities: [
-        {
-          key: "addr",
-          schema_id: ADDRESS_SCHEMA,
-          name: lower,
-          idx: lower,
-          facets: [
-            { schema_id: ADDRESS_DETAILS, data, external_id: `email:address:${lower}`, confidence: 100 },
-          ],
-        },
-      ],
-      refs: [],
-      links: [],
+    const entities = [];
+    const seen = new Set<string>();
+    for (const [i, lower] of lowers.entries()) {
+      if (seen.has(lower)) continue;
+      seen.add(lower);
+      const item = items[i];
+      const data: Record<string, unknown> = { address: lower };
+      if (item?.display_name) data.display_name = item.display_name;
+      entities.push({
+        key: lower,
+        schema_id: ADDRESS_SCHEMA,
+        name: lower,
+        idx: lower,
+        // S3: the anchor is THE resolver — claimed through the chokepoint on
+        // create, so re-ensures and anchor-refs converge on one node.
+        // S5: the address DICT is the record.
+        anchor: `email:address:${lower}`,
+        properties: data,
+      });
+    }
+    const r = await this.graph.apply_batch({ entities, refs: [], links: [] });
+    return lowers.map((lower) => {
+      const id = r.ids[lower];
+      if (!id) throw new Error(`email.ensure_address: failed to resolve ${lower}`);
+      return id;
     });
-    const id = r.ids.addr;
-    if (!id) throw new Error(`email.ensure_address: failed to resolve ${lower}`);
-    return { id };
   }
 
   // ── reply composer (RPC) ──────────────────────────────────────
@@ -815,17 +872,18 @@ export class EmailModule {
 
   /// Resolve each attachment id to its filename, enforcing native parity: the
   /// entity must be owned by the caller (user-scoped get_entity_full → not null)
-  /// AND carry a `file.details` facet. A non-file or detail-less entity is
-  /// rejected (NO fallback name) so only real files can be attached/linked.
+  /// AND be a `file.object` whose dictionary names it. A non-file or
+  /// nameless entity is rejected (NO fallback name) so only real files can be
+  /// attached/linked.
   /// Returns the per-file display names in input order.
   private async resolveOwnedFileNames(fileIds: string[]): Promise<string[]> {
     const names: string[] = [];
     for (const fid of fileIds) {
       const det = await this.graph.get_entity_full(fid, { links: false });
       if (!det) throw new Error(`file ${fid} not found`);
-      const fd = det.facets.find((f) => f.schema_id === "file.details")?.data as Data | undefined;
-      if (!fd) throw new Error(`file ${fid} not found`);
-      names.push(typeof fd.name === "string" ? (fd.name) : "attachment");
+      if (det.entity.schema_id !== "file.object") throw new Error(`file ${fid} not found`);
+      const fd = ((det.entity as { properties?: unknown }).properties ?? {}) as Data;
+      names.push(typeof fd.name === "string" ? fd.name : "attachment");
     }
     return names;
   }
@@ -844,8 +902,8 @@ export class EmailModule {
     // the JSON text of an array, and let Gmail refuse it downstream.
     const toLower = normalizeRecipient(to);
 
-    // Attachment ownership + names (native put attachment_names on the facet;
-    // it required a file.details facet — rejected otherwise, no fallback name).
+    // Attachment ownership + names (native put attachment_names on the record;
+    // it required a file dictionary — rejected otherwise, no fallback name).
     const attachmentNames = await this.resolveOwnedFileNames(attachmentIds);
     const now = new Date().toISOString();
     // @tested-by: tst_module_email_send_004, tst_module_email_send_006
@@ -882,7 +940,7 @@ export class EmailModule {
       );
     }
 
-    const facetData: Record<string, unknown> = {
+    const messageDict: Record<string, unknown> = {
       from_address: OUTGOING_FROM,
       to_addresses: to,
       subject,
@@ -917,27 +975,25 @@ export class EmailModule {
             // @tested-by: tst_module_email_send_005
             // @invariant: INV-6 — Gmail returns the id it will later hand back as
             // `remote_id` when sync ingests our own Sent folder, and ingest
-            // matches on the facet `external_id` and nothing else. Carrying it
+            // matches on the anchor and nothing else. Carrying it
             // here is what makes the copy arriving from Sent UPDATE this entity
             // instead of creating a second one. Without it every sent email
             // exists in the graph twice.
             idx: providerThreadId ?? undefined,
             date: now,
-            facets: [{
-              schema_id: MESSAGE_DETAILS,
-              data: facetData,
-              external_id: providerMessageId,
-              confidence: 100,
-            }],
+            // S5: the sent copy is a node with a DICT under the provider's own
+            // id as its anchor — that anchor is what makes the copy arriving
+            // from Sent update THIS node instead of creating a second one.
+            anchor: providerMessageId,
+            properties: messageDict,
           },
           {
             key: addrKey,
             schema_id: ADDRESS_SCHEMA,
             name: toLower,
             idx: toLower,
-            facets: [
-              { schema_id: ADDRESS_DETAILS, data: { address: toLower }, external_id: `email:address:${toLower}`, confidence: 100 },
-            ],
+            anchor: `email:address:${toLower}`,
+            properties: { address: toLower },
           },
         ],
         refs: [],
@@ -947,7 +1003,7 @@ export class EmailModule {
       if (messageEntityId === undefined) throw new Error(`email.send: missing entity id for ${msgKey}`);
 
       for (const fid of attachmentIds) {
-        await this.graph.add_link({ from_id: messageEntityId, to_id: fid, kind: "attachment" });
+        await this.graph.add_link({ from_id: messageEntityId, to_id: fid, kind: "file.attachment" });
       }
 
       entityId = messageEntityId;

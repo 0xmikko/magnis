@@ -1,6 +1,6 @@
 import { type ReactNode } from "react";
 import type { JSX } from "react";
-import { type ResolvedDecision } from "@magnis/agent-core";
+import { type AgentFailure, type ResolvedDecision } from "@magnis/client-core";
 import type { ChatMessageAttachment, PendingToolCall, CompletedToolResult, ContentBlock } from "../../modules/episodes/types";
 import type { AppRuntime } from "../../runtime/contracts/runtime";
 export interface AgentMessageListProps {
@@ -12,7 +12,7 @@ export interface AgentMessageListProps {
     }[];
     readonly streamingContent: string;
     readonly isStreaming: boolean;
-    readonly error: string | null;
+    readonly error: AgentFailure | null;
     readonly contentBlocks: readonly ContentBlock[];
     readonly toolCalls: readonly PendingToolCall[];
     readonly toolResults: readonly CompletedToolResult[];

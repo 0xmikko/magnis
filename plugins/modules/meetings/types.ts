@@ -1,5 +1,5 @@
 // Shared schema→type maps for the meetings plugin (single source of truth for
-// module/service.ts + ui/). Facet schema_id → payload type; canonical key →
+// module/service.ts + ui/). Record schema_id → payload type; canonical key →
 // value. Read DTOs are byte-compatible with the native module (types.rs
 // MeetingListItem / MeetingDetailView) and the UI's plugins/meetings/ui copies.
 
@@ -29,11 +29,7 @@ export interface MeetingEventDetails {
   all_day?: boolean;
 }
 
-/** Facet schema_id → payload type (parameterizes GraphService). */
-export interface MeetingsFacets {
-  "meetings.calendar_event.details": MeetingCalendarEventDetails;
-  "meetings.event.details": MeetingEventDetails;
-}
+/** Record schema_id → payload type (parameterizes GraphService). */
 
 /** Canonical key → value (parameterizes GraphService). */
 export interface MeetingsCanonical {
@@ -77,13 +73,6 @@ export interface NewMeetingParams {
   client_id?: string;
 }
 
-export interface FacetSummary {
-  id: string;
-  schema_id: string;
-  source: string;
-  observed_at: string;
-  data: unknown;
-}
 
 export interface LinkedEntitySummary {
   id: string;
@@ -122,7 +111,6 @@ export interface MeetingDetailView {
   conference_link: string | null;
   attendees: MeetingAttendeeView[];
   canonical: Record<string, unknown>;
-  facets: FacetSummary[];
   linked_entities: LinkedEntitySummary[];
   created_at: string;
 }

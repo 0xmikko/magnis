@@ -5,7 +5,7 @@
 // saw before the migration.
 
 import type { RawEntity } from "@magnis/plugin-sdk";
-import type { CompanyCanonical, CompanyListItem } from "../types.ts";
+import type { CompanyListItem } from "../types.ts";
 
 const AVATAR_COLORS = ["orange", "blue", "green", "red", "purple", "pink"];
 
@@ -28,33 +28,26 @@ export function pickAvatarColor(id: string): string {
   return color;
 }
 
-function canonicalString(map: Partial<CompanyCanonical>, key: keyof CompanyCanonical): string | null {
-  const v = map[key];
+function dictString(dict: Readonly<Record<string, unknown>>, key: string): string | null {
+  const v = dict[key];
   return typeof v === "string" && v.length > 0 ? v : null;
 }
 
-// Pure list-item shaping from an entity + its CANONICAL map. List fields read
-// canonical (not the latest render facet): companies.* are single_aligned, which
-// resolves by confidence then recency (core/canonical.rs), so a lower-confidence
-// newer facet must NOT win — only canonical reproduces staging's values. The
-// per-page canonical map is fetched in one list_canonical_for_entities batch, so
-// there is no per-row N+1. `created_at` now comes from the real entity column
-// instead of the old `new Date(0)` stub.
-export function buildListItem(
-  entity: RawEntity & { created_at?: string },
-  canonical: Partial<CompanyCanonical>,
-): CompanyListItem {
+// Pure list-item shaping from an entity and its DICTIONARY. The hub has one
+// writer, so there is nothing to arbitrate between: the dict rides the entity
+// row the list already fetched — no canonical read, no dictionary hydrate, no
+// per-row N+1. `created_at` comes from the real entity column.
+export function buildListItem(entity: RawEntity & { created_at?: string }): CompanyListItem {
+  const dict = entity.properties ?? {};
   const name =
-    entity.name && entity.name.length > 0
-      ? entity.name
-      : (canonicalString(canonical, "companies.name") ?? "Unknown");
+    entity.name && entity.name.length > 0 ? entity.name : (dictString(dict, "name") ?? "Unknown");
   return {
     id: entity.id,
     name,
-    website: canonicalString(canonical, "companies.website"),
-    industry: canonicalString(canonical, "companies.industry"),
-    size: canonicalString(canonical, "companies.size"),
-    location: canonicalString(canonical, "companies.location"),
+    website: dictString(dict, "website"),
+    industry: dictString(dict, "industry"),
+    size: dictString(dict, "size"),
+    location: dictString(dict, "location"),
     avatar_color: pickAvatarColor(entity.id),
     initials: computeInitials(name),
     created_at: entity.created_at ?? new Date(0).toISOString(),

@@ -26,7 +26,7 @@ export interface InstallContext {
    * default for every first-party package. */
   registerManifestSchemas(): void;
   /** Register an explicit subset (validated ⊆ manifest by the host). */
-  register(registrations: { entities?: string[]; facets?: string[] }): void;
+  register(registrations: { entities?: string[] }): void;
 }
 
 export interface LifecycleHooks {

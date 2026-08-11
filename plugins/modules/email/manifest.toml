@@ -1,6 +1,6 @@
 # email — Email domain module (V8 plugin).
 #
-# Owns `email.*`: message + address entities and their facets. The graph-side half
+# Owns `email.*`: message + address entities and their records. The graph-side half
 # of email — the email SOURCE connector feeds the `email` sync surface this module
 # ingests. Sends and replies through the host composer + source-command op grants,
 # registers attachments as files, and creates triggers over RPC. Sandboxed V8
@@ -15,25 +15,15 @@ summary = "Ingest, search, and act on email threads from any provider."
 # Reverse-domain publisher identity.
 publisher = "ai.magnis"
 
-[[links]]
-kind = "sent_from"
-from = "email.message"
-to = "email.address"
-
-[[links]]
-kind = "sent_to"
-from = "email.message"
-to = "email.address"
-
 # Sync surface this module consumes (fed by the matching source connector).
 [surfaces.email]
 # The surface's primary-item schema — its user-scoped graph count IS the
 # "items synced" badge (host source.status.list reads this).
 item = "email.message"
 
-# Foreign asks beyond the implicit own namespace: writes to `email.` facets,
+# Foreign asks beyond the implicit own namespace: writes to `email.` records,
 # own:own links, and reads of own schemas need no declaration.
 [permissions]
-links = [ "sent_from", "sent_to", "attachment" ]
+links = [ "authored_by", "sent_to", "file.attachment" ]
 call = [ "triggers.create" ]
 host = [ "file_register", "external_id_reads", "source_commands", "sync_state", "composer" ]

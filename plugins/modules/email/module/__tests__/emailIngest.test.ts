@@ -8,16 +8,16 @@
 // that guarantee REPLACES the old reject() spies AND their toHaveBeenCalledTimes(0)
 // assertions (an unarranged op has no spy to count).
 
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { BatchEntityInput, BatchLinkInput, GraphBatchInput } from "@magnis/plugin-sdk";
 import { mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { EmailModule } from "../service.ts";
-import type { EmailCanonical, EmailFacets, SyncEnvelope } from "../../types.ts";
+import type { EmailCanonical, SyncEnvelope } from "../../types.ts";
 
-type G = MockGraph<EmailFacets, EmailCanonical>;
+type G = MockGraph;
 
 function ingestGraph(): G {
-  return mockGraph<EmailFacets, EmailCanonical>({
+  return mockGraph({
     // apply_batch echoes each key → a deterministic id so post-apply can resolve.
     apply_batch: (frag) =>
       Promise.resolve({
@@ -28,7 +28,7 @@ function ingestGraph(): G {
         dropped_keys: [],
       }),
     file_register: () => Promise.resolve("file-id"),
-    find_by_external_id: () => Promise.resolve("existing-id"),
+    find_by_anchor: () => Promise.resolve("existing-id"),
     delete_entity: () => Promise.resolve(undefined),
   });
 }
@@ -94,32 +94,61 @@ describe("email ingest — apply_batch shape (tst_be_emailingest_001)", () => {
     // unique, lowercased addresses: ceo@, me@, ops@ (m1+m2 share ceo@ and me@)
     expect(addrs.map((a) => a.idx).sort()).toEqual(["ceo@example.com", "me@example.com", "ops@example.com"]);
 
-    // message entity: name=subject, idx=thread_id, date=sent_at, facet external_id=remote_id
+    // message entity: name=subject, idx=thread_id, date=sent_at, anchor=remote_id
     const m1 = msgs.find((m) => m.key === "m1")!;
     expect(m1.name).toBe("Report Q3");
     expect(m1.idx).toBe("thread-1");
     expect(m1.date).toBe("2026-03-14T09:00:00Z");
-    const m1Facet0 = m1.facets[0];
-    if (m1Facet0 === undefined) throw new Error("ingest: missing m1 facet[0]");
-    expect(m1Facet0.schema_id).toBe("email.message.details");
-    expect(m1Facet0.external_id).toBe("m1");
+    // S5: the message node is its DICTIONARY under the remote_id anchor —
+    // the details record retired, and the fields the edges now represent
+    // (attachments, the joined recipient strings) left the dict.
+    expect(m1.anchor).toBe("m1");
+    expect(m1.properties?.subject).toBe("Report Q3");
+    expect(m1.properties?.attachments).toBeUndefined();
+    expect(m1.properties?.to_addresses).toBeUndefined();
 
-    // address entity carries a stable external_id (idempotent resolve-or-create)
+    // address entity resolves by its chokepoint anchor (idempotent)
     const ceo = addrs.find((a) => a.idx === "ceo@example.com")!;
-    const ceoFacet0 = ceo.facets[0];
-    if (ceoFacet0 === undefined) throw new Error("ingest: missing ceo facet[0]");
-    expect(ceoFacet0.external_id).toBe("email:address:ceo@example.com");
-    expect((ceoFacet0.data as Record<string, unknown>).address).toBe("ceo@example.com");
+    expect(ceo.anchor).toBe("email:address:ceo@example.com");
+    expect(ceo.properties?.address).toBe("ceo@example.com");
 
     // links: sent_from (msg→sender) + sent_to (msg→each recipient)
     const links = frag.links ?? [];
-    const m1from = links.filter((l: BatchLinkInput) => l.from_key === "m1" && l.kind === "sent_from");
+    const m1from = links.filter((l: BatchLinkInput) => l.from_key === "m1" && l.kind === "authored_by");
     const m1to = links.filter((l: BatchLinkInput) => l.from_key === "m1" && l.kind === "sent_to");
     expect(m1from).toHaveLength(1);
     const m1from0 = m1from[0];
     if (m1from0 === undefined) throw new Error("ingest: missing m1from[0] link");
     expect(m1from0.to_key).toBe("addr:ceo@example.com");
     expect(m1to.map((l) => l.to_key).sort()).toEqual(["addr:me@example.com", "addr:ops@example.com"]);
+    // S5 review: the To/Cc/Bcc ROLE rides the edge dictionary — once the
+    // joined strings leave the dict, the edge is the only place it survives.
+    for (const l of m1to) {
+      expect(l.metadata).toEqual({ role: "to" });
+    }
+  });
+
+  it("a recipient listed under To AND Cc keeps the STRONGEST role", async () => {
+    await mod.ingest({
+      envelopes: [
+        env({
+          remote_id: "dup-1",
+          payload: {
+            subject: "Dup",
+            from_address: "boss@corp.com",
+            to_addresses: "ann@x.com",
+            cc_addresses: "ann@x.com, ben@x.com",
+          },
+        }),
+      ],
+    });
+    const call = spy(graph, "apply_batch").mock.calls[0] as [GraphBatchInput] | undefined;
+    if (call === undefined) throw new Error("ingest: apply_batch never called");
+    const sentTo = (call[0].links ?? []).filter((l) => l.kind === "sent_to");
+    const ann = sentTo.find((l) => l.to_key === "addr:ann@x.com");
+    const ben = sentTo.find((l) => l.to_key === "addr:ben@x.com");
+    expect(ann?.metadata).toEqual({ role: "to" });
+    expect(ben?.metadata).toEqual({ role: "cc" });
   });
 
   it("folds Cc + Bcc recipients into address entities + sent_to links", async () => {
@@ -211,7 +240,7 @@ describe("email ingest — apply_batch shape (tst_be_emailingest_001)", () => {
     const call = fileCall0[0] as Record<string, unknown>;
     expect(call.external_id).toBe("file:gmail:acct-1:m1:att-1");
     expect(call.parent_external_id).toBe("m1");
-    expect(call.link_kind).toBe("attachment");
+    expect(call.link_kind).toBe("file.attachment");
     expect(call.name).toBe("photo.jpg");
     expect(call.mime_type).toBe("image/jpeg");
     expect(call.source_module).toBe("google");
@@ -269,9 +298,9 @@ describe("email ingest — trigger / delete / empty-user parity", () => {
     expect(snap.trigger_checks).toHaveLength(0);
   });
 
-  it("DELETE → find_by_external_id + delete_entity, no apply_batch", async () => {
+  it("DELETE → find_by_anchor + delete_entity, no apply_batch", async () => {
     await mod.ingest({ envelopes: [env({ kind: "delete", remote_id: "m-del", payload: {} })] });
-    expect(spy(graph, "find_by_external_id")).toHaveBeenCalledTimes(1);
+    expect(spy(graph, "find_by_anchor")).toHaveBeenCalledTimes(1);
     expect(spy(graph, "delete_entity")).toHaveBeenCalledWith("existing-id");
     expect(spy(graph, "apply_batch")).toHaveBeenCalledTimes(0);
   });
@@ -300,7 +329,7 @@ describe("email ingest — DB-access guarantees (tst_be_emaildb_005 / INV-DB-3)"
       ],
     });
     expect(spy(graph, "apply_batch")).toHaveBeenCalledTimes(1);
-    expect(spy(graph, "find_by_external_id")).toHaveBeenCalledTimes(0); // delete-only
+    expect(spy(graph, "find_by_anchor")).toHaveBeenCalledTimes(0); // delete-only
     // create_entity / add_link / attach_facet (the per-item crossings) are
     // forbidden, unarranged ops — the throwing mockGraph guarantees they are
     // never hit; there is no spy to assert 0 against.

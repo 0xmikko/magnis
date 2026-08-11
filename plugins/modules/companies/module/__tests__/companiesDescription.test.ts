@@ -11,11 +11,11 @@
  * Mocks: GraphService only.
  * Data: one existing company and a summary-only update.
  */
-import { describe, expect, it } from "vitest";
-import { entity, facet, mockGraph, mountModule } from "@magnis/testkit/module";
+import { describe, expect, it, vi } from "vitest";
+import { entity, mockGraph, mountModule } from "@magnis/testkit/module";
 
 import { COMPANY, COMPANY_DETAILS } from "../../schema.ts";
-import type { CompanyCanonical, CompanyFacets } from "../../types.ts";
+import type { CompanyCanonical } from "../../types.ts";
 import { CompaniesModule } from "../service.ts";
 
 const COMPANY_DESCRIPTION = "companies.description";
@@ -24,32 +24,79 @@ function writeGraph() {
   const company = entity("company-1", "Acme Labs", { schema_id: COMPANY });
   return {
     company,
-    graph: mockGraph<CompanyFacets, CompanyCanonical>({
+    graph: mockGraph({
       get_entity: () => Promise.resolve(company),
       create_entity: () => Promise.resolve(company),
       search_entities_by_name: () => Promise.resolve([]),
       update_entity_name: () => Promise.resolve(),
-      attach_facet: (input) =>
-        Promise.resolve(
-          facet("attached-facet", input.schema_id, input.data, {
-            entity_id: input.entity_id,
-          }),
-        ),
-      resolve_canonical: () => Promise.resolve(),
-      get_canonical: () => Promise.resolve({}),
+      update_properties: () => Promise.resolve(),
+      add_link: () => Promise.resolve(undefined),
       get_entity_full: () =>
         Promise.resolve({
           entity: company,
-          facets: [],
           links: [],
         }),
-      list_facets_for_entity: () => Promise.resolve([]),
     }),
   };
 }
 
+describe("companies.update emails — the cross-module identity path", () => {
+  /**
+   * @test-id: tst_mod_companies_emails_001
+   * @covers: plugins/modules/companies/module/service.ts::CompaniesModule.update
+   * @invariant: an email is an identity CHANNEL — the email module mints the
+   * address nodes over ONE batched RPC and this module writes one `identity`
+   * edge per returned id. The manifest grant for both is what this guards:
+   * delete either permission and this call chain is denied at runtime.
+   */
+  it("tst_mod_companies_emails_001 mints addresses over RPC and writes identity edges", async () => {
+    const { company, graph } = writeGraph();
+    const execute = vi.fn((method: string) => {
+      if (method === "email.ensure_addresses") {
+        return Promise.resolve({ ids: ["addr-1", "addr-2"] });
+      }
+      throw new Error(`unexpected rpc ${method}`);
+    });
+    const module = mountModule(CompaniesModule, {
+      graph,
+      ctx: { extension_id: "companies" },
+      rpc: { execute },
+    }).module;
+
+    await module.update({
+      id: company.id,
+      emails: ["a@acme.com", "b@acme.com"],
+    });
+
+    expect(execute).toHaveBeenCalledWith("email.ensure_addresses", {
+      items: [{ address: "a@acme.com" }, { address: "b@acme.com" }],
+    });
+    const addLink = graph.spies.add_link;
+    if (!addLink) throw new Error("add_link spy not mounted");
+    expect(addLink.mock.calls.map(([p]) => p)).toEqual([
+      { from_id: company.id, to_id: "addr-1", kind: "identity" },
+      { from_id: company.id, to_id: "addr-2", kind: "identity" },
+    ]);
+  });
+
+  it("tst_mod_companies_emails_002 an RPC failure propagates — no silent half-write", async () => {
+    const { company, graph } = writeGraph();
+    const execute = vi.fn(() => Promise.reject(new Error("email module down")));
+    const module = mountModule(CompaniesModule, {
+      graph,
+      ctx: { extension_id: "companies" },
+      rpc: { execute },
+    }).module;
+
+    await expect(
+      module.update({ id: company.id, emails: ["a@acme.com"] }),
+    ).rejects.toThrow(/email module down/);
+    expect(graph.spies.add_link).not.toHaveBeenCalled();
+  });
+});
+
 describe("companies description write contract", () => {
-  it("tst_mod_companies_description_001 writes update summary to the markdown description facet", async () => {
+  it("tst_mod_companies_description_001 writes the update summary to the hub's description key", async () => {
     const { company, graph } = writeGraph();
     const module = mountModule(CompaniesModule, {
       graph,
@@ -61,19 +108,18 @@ describe("companies description write contract", () => {
       summary: "Updated company description",
     });
 
-    const attachFacet = graph.spies.attach_facet;
-    if (attachFacet === undefined) throw new Error("companies update: missing attach_facet spy");
-    expect(attachFacet).toHaveBeenCalledWith({
+    // S5: ONE dictionary merge carries the description — there is no second
+    // copy of it anywhere, and no record is written at all.
+    const updateProperties = graph.spies.update_properties;
+    if (updateProperties === undefined) {
+      throw new Error("companies update: missing update_properties spy");
+    }
+    expect(updateProperties).toHaveBeenCalledTimes(1);
+    expect(updateProperties).toHaveBeenCalledWith({
       entity_id: company.id,
-      schema_id: COMPANY_DESCRIPTION,
-      data: { body: "Updated company description" },
+      properties: { description: "Updated company description" },
     });
-    expect(attachFacet).not.toHaveBeenCalledWith(
-      expect.objectContaining({
-        schema_id: COMPANY_DETAILS,
-        data: expect.objectContaining({ description: expect.anything() }),
-      }),
-    );
+    expect(graph.spies.attach_facet).toBeUndefined();
   });
 
   /**
@@ -88,7 +134,7 @@ describe("companies description write contract", () => {
    * Mocks: GraphService only.
    * Data: one new company with a summary.
    */
-  it("tst_mod_companies_description_002 writes create summary to the markdown description facet", async () => {
+  it("tst_mod_companies_description_002 writes the create summary to the hub's description key", async () => {
     const { company, graph } = writeGraph();
     const module = mountModule(CompaniesModule, {
       graph,
@@ -100,18 +146,14 @@ describe("companies description write contract", () => {
       summary: "Initial company description",
     });
 
-    const attachFacet = graph.spies.attach_facet;
-    if (attachFacet === undefined) throw new Error("companies create: missing attach_facet spy");
-    expect(attachFacet).toHaveBeenCalledWith({
+    const updateProperties = graph.spies.update_properties;
+    if (updateProperties === undefined) {
+      throw new Error("companies create: missing update_properties spy");
+    }
+    expect(updateProperties).toHaveBeenCalledWith({
       entity_id: company.id,
-      schema_id: COMPANY_DESCRIPTION,
-      data: { body: "Initial company description" },
+      properties: { name: company.name, description: "Initial company description" },
     });
-    expect(attachFacet).not.toHaveBeenCalledWith(
-      expect.objectContaining({
-        schema_id: COMPANY_DETAILS,
-        data: expect.objectContaining({ description: expect.anything() }),
-      }),
-    );
+    expect(graph.spies.attach_facet).toBeUndefined();
   });
 });

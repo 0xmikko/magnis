@@ -43,18 +43,59 @@ export interface IdentityProfile {
 export interface AiProvider {
     readonly id: string;
     readonly name: string;
-    readonly api_key?: string;
-    readonly base_url?: string;
+    readonly base_url: string | null;
     readonly enabled: boolean;
+    readonly auth_kind: "api_key" | "codex_subscription";
+    readonly reserved: boolean;
+    /** INV-CAT-2a: the key value never crosses the wire — write-only. */
+    readonly api_key_set: boolean;
     readonly created_at: string;
     readonly updated_at: string;
+}
+/** A provider in the models.dev catalog (`ai_models.catalog_models`). */
+export interface CatalogProvider {
+    readonly id: string;
+    readonly name: string;
+    readonly family: string;
+    readonly api?: string | null;
+    readonly logo_url: string;
+}
+/**
+ * One agent-usable model from the models.dev catalog
+ * (`ai_models.catalog_models`, INV-MA-1). Costs are USD per 1M tokens as
+ * decimal strings ("3", "0.6", …); display as "$in / $out".
+ */
+export interface CatalogModel {
+    readonly provider_id: string;
+    readonly model_id: string;
+    readonly name: string;
+    readonly family: string;
+    readonly cost_input_usd_mtok?: string | null;
+    readonly cost_output_usd_mtok?: string | null;
+    readonly cost_cache_read_usd_mtok?: string | null;
+    readonly cost_cache_write_usd_mtok?: string | null;
+    readonly context_limit?: number | null;
+    readonly reasoning: boolean;
+    readonly logo_url: string;
+}
+/** Response of `ai_models.catalog_models` (INV-MA-1/2). */
+export interface CatalogResponse {
+    readonly source: "bundled" | "refreshed";
+    readonly version: string;
+    readonly providers: readonly CatalogProvider[];
+    readonly models: readonly CatalogModel[];
+}
+/** `ai_models.subscription_status` (INV-CAT-9). Tokens never appear here. */
+export interface SubscriptionStatus {
+    readonly connected: boolean;
+    readonly account_id?: string | null;
 }
 export interface AiModel {
     readonly id: string;
     readonly provider_id: string;
     readonly model_id: string;
     readonly name: string;
-    readonly capability: "transcription" | "embedding" | "reasoning" | "chat";
+    readonly capability: "embedding" | "reasoning" | "chat";
     readonly enabled: boolean;
     readonly config_json?: string;
     readonly created_at: string;
@@ -73,6 +114,7 @@ export interface AllowlistEntry {
     readonly access_level: string;
     readonly group_ids: readonly string[];
     readonly hook_ids: readonly string[];
+    readonly episode_id: string | null;
     readonly created_at: string;
 }
 export interface AllowlistCheckResult {

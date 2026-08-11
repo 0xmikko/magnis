@@ -70,7 +70,14 @@ export function TriggerDetailPanel({
   const trigger = detail.data;
   const configurationRows = [
     { label: "Status", value: trigger.status },
-    { label: "When", value: trigger.event_kinds.join(", ") },
+    // A scheduled trigger's "when" IS its cron; the event_kinds row only
+    // makes sense for the watched path.
+    ...(trigger.schedule
+      ? [
+          { label: "Schedule", value: trigger.schedule.cron },
+          { label: "Timezone", value: trigger.schedule.timezone },
+        ]
+      : [{ label: "When", value: trigger.event_kinds.join(", ") }]),
     ...(trigger.gate_prompt
       ? [{ label: "Gate", value: trigger.gate_prompt }]
       : []),

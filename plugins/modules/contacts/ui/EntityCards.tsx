@@ -9,7 +9,7 @@ import { ExpansionContext } from "@magnis/host/agent";
  * ("ONE COMPONENT PER ENTITY"): reads `expanded` from `ExpansionContext`
  * and switches between compact (name + subtitle) and expanded (bio,
  * location, telegram, emails, phones, aliases, links) from the same
- * payload. No facet fetch — the agent includes the relevant contact
+ * payload. No record fetch — the agent includes the relevant contact
  * fields alongside the entity id at attachment time.
  */
 
@@ -37,12 +37,42 @@ function contactDisplayName(data: Readonly<Record<string, unknown>>): string {
 
 function emailList(data: Readonly<Record<string, unknown>>): string[] {
   const single = typeof data.email === "string" && data.email.length > 0 ? [data.email] : [];
-  return Array.from(new Set([...single, ...toStringList(data.emails)]));
+  // The generic context card carries the address node the hub reaches over
+  // its `identity` edge — the dictionary itself holds no email (plan §3).
+  const viaIdentity: string[] = [];
+  const rawNeighbours: unknown = data.neighbours;
+  if (Array.isArray(rawNeighbours)) {
+    for (const n of rawNeighbours as readonly unknown[]) {
+      if (n === null || typeof n !== "object" || Array.isArray(n)) continue;
+      const rec = n as Record<string, unknown>;
+      if (
+        rec.kind === "identity" &&
+        rec.schema_id === "email.address" &&
+        typeof rec.name === "string" &&
+        rec.name.length > 0
+      ) {
+        viaIdentity.push(rec.name);
+      }
+    }
+  }
+  return Array.from(new Set([...single, ...toStringList(data.emails), ...viaIdentity]));
 }
 
 function phoneList(data: Readonly<Record<string, unknown>>): string[] {
   const single = typeof data.phone === "string" && data.phone.length > 0 ? [data.phone] : [];
-  return Array.from(new Set([...single, ...toStringList(data.phones)]));
+  // The hub dictionary's phones are OBJECTS ({phone, type}); legacy payloads
+  // carried bare strings — the presentation layer reads both.
+  const fromObjects: string[] = [];
+  const rawPhones: unknown = data.phones;
+  if (Array.isArray(rawPhones)) {
+    for (const entry of rawPhones as readonly unknown[]) {
+      if (entry !== null && typeof entry === "object" && !Array.isArray(entry)) {
+        const phone = (entry as Record<string, unknown>).phone;
+        if (typeof phone === "string" && phone.length > 0) fromObjects.push(phone);
+      }
+    }
+  }
+  return Array.from(new Set([...single, ...toStringList(data.phones), ...fromObjects]));
 }
 
 /**

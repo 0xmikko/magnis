@@ -8,21 +8,20 @@
 // so any op the write path touches without being arranged fails the test.
 
 import { describe, expect, it } from "vitest";
-import { entity, facet, mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
+import { entity, mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { NotesModule } from "../service.ts";
 import { bodyFromToolArgs } from "../../ui/toolArgs.ts";
 import { NOTE, NOTE_CONTENT } from "../../schema.ts";
-import type { NoteCanonical, NoteFacets } from "../../types.ts";
+import type { NoteCanonical } from "../../types.ts";
 
-type G = MockGraph<NoteFacets, NoteCanonical>;
+type G = MockGraph;
 
 const NOTE_ID = "11111111-1111-4111-8111-111111111111";
 
 function writeGraph(overrides: Record<string, unknown> = {}): G {
-  return mockGraph<NoteFacets, NoteCanonical>({
+  return mockGraph({
     create_entity: () => Promise.resolve(entity(NOTE_ID, "T", { schema_id: NOTE })),
-    attach_facet: () => Promise.resolve(undefined),
-    resolve_canonical: () => Promise.resolve(undefined),
+    update_properties: () => Promise.resolve(undefined),
     delete_entity: () => Promise.resolve(undefined),
     ...overrides,
   } as never);
@@ -50,10 +49,9 @@ describe("notes.create accepts one body field and is atomic", () => {
     const snap = await module.create({ title: "RFQ", content: "## prices" });
 
     expect(snap.body).toBe("## prices");
-    expect(graph.spies.attach_facet).toHaveBeenCalledWith(
+    expect(graph.spies.update_properties).toHaveBeenCalledWith(
       expect.objectContaining({
-        schema_id: NOTE_CONTENT,
-        data: expect.objectContaining({ body: "## prices", title: "RFQ" }),
+        properties: expect.objectContaining({ body: "## prices", title: "RFQ" }),
       }),
     );
   });
@@ -87,7 +85,7 @@ describe("notes.create accepts one body field and is atomic", () => {
 
   it("tst_module_notes_write_001 leaves no entity behind when the content write fails", async () => {
     const graph = writeGraph({
-      attach_facet: () => Promise.reject(new Error("facet store unavailable")),
+      update_properties: () => Promise.reject(new Error("facet store unavailable")),
     });
     const { module } = mountModule(NotesModule, { graph });
 
@@ -139,16 +137,14 @@ describe("the approval card reads the same wire names the tool accepts", () => {
  */
 describe("notes.update is atomic", () => {
   it("tst_module_notes_write_002 does not rename when the content write fails", async () => {
-    const graph = mockGraph<NoteFacets, NoteCanonical>({
+    const graph = mockGraph({
       get_entity_full: () =>
         Promise.resolve({
           entity: entity(NOTE_ID, "old title", { schema_id: NOTE }),
-          facets: [facet("f1", NOTE_CONTENT, { title: "old title", body: "old body" })],
           links: [],
         }),
-      attach_facet: () => Promise.reject(new Error("facet store unavailable")),
+      update_properties: () => Promise.reject(new Error("facet store unavailable")),
       update_entity_name: () => Promise.resolve(undefined),
-      resolve_canonical: () => Promise.resolve(undefined),
     } as never);
     const { module } = mountModule(NotesModule, { graph });
 
@@ -175,24 +171,23 @@ describe("notes.update is atomic", () => {
 describe("notes.update restores the note unchanged when the rename fails", () => {
   it("tst_module_notes_write_004 title, body and updated_at all come back", async () => {
     const writes: Record<string, unknown>[] = [];
-    const graph = mockGraph<NoteFacets, NoteCanonical>({
+    const graph = mockGraph({
       get_entity_full: () =>
         Promise.resolve({
-          entity: entity(NOTE_ID, "old title", { schema_id: NOTE }),
-          facets: [
-            facet("f1", NOTE_CONTENT, {
+          entity: entity(NOTE_ID, "old title", {
+            schema_id: NOTE,
+            properties: {
               title: "old title",
               body: "old body",
               updated_at: "2026-07-01T00:00:00Z",
-            }),
-          ],
+            },
+          }),
           links: [],
         }),
-      attach_facet: (p: { data: Record<string, unknown> }) => {
-        writes.push({ ...p.data });
+      update_properties: (p: { properties: Record<string, unknown> }) => {
+        writes.push({ ...p.properties });
         return Promise.resolve(undefined);
       },
-      resolve_canonical: () => Promise.resolve(undefined),
       update_entity_name: () => Promise.reject(new Error("rename store unavailable")),
     } as never);
     const { module } = mountModule(NotesModule, { graph });

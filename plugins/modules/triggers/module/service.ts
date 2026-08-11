@@ -4,7 +4,7 @@
 // HYBRID split: the trigger PROCESSING ENGINE (evaluator / executor / cache /
 // fire_trigger / gate) stays native in `backend/src/modules/triggers`. The graph
 // is the contract — this plugin writes the `triggers.trigger` entity +
-// `triggers.trigger.config` facet + `watches`/`belongs_to` links that the native
+// `triggers.trigger.config` record + `watches`/`belongs_to` links that the native
 // engine reads and runs.
 //
 // Two native dependencies are consulted over the host RPC bridge (manifest
@@ -36,23 +36,24 @@ import type {
   ListForEntityParams,
   ListTriggersParams,
   ResolveWatchableResult,
+  ScheduleParam,
   TriggerConfigData,
   TriggerCreated,
   TriggerDetailView,
   TriggerExecutionData,
-  TriggerFacets,
   TriggerListItem,
+  TriggerScheduleSpec,
   UpdateTriggerParams,
   WatchedEntity,
 } from "../types.ts";
-import { BELONGS_TO, TRIGGER, TRIGGER_CONFIG, TRIGGER_EXECUTION, WATCHES } from "../schema.ts";
+import { BELONGS_TO, TRIGGER, WATCHES } from "../schema.ts";
 
 export class TriggersModule {
-  private readonly graph: GraphService<TriggerFacets>;
+  private readonly graph: GraphService;
   private readonly rpc: RpcExecutor;
   private readonly log: PluginLogger;
 
-  constructor(deps: PluginDeps<TriggerFacets>) {
+  constructor(deps: PluginDeps) {
     this.graph = deps.graph;
     this.rpc = deps.rpc;
     this.log = deps.log;
@@ -106,7 +107,7 @@ export class TriggersModule {
         episode_id: {
           type: "string",
           format: "uuid",
-          description: "Parent episode ID — creates belongs_to link",
+          description: "Parent episode ID — creates a triggers.belongs_to link",
         },
         schema_filter: { type: "string", description: "Only trigger for events with this schema" },
         expires_at: { type: "string", format: "date-time" },
@@ -115,6 +116,21 @@ export class TriggersModule {
           description: "0=immediate fire (default), >0=minimum seconds between firings",
         },
         max_firings: { type: "integer", description: "Maximum total firings before auto-expire" },
+        schedule: {
+          type: "object",
+          description:
+            "Cron schedule — fires the trigger on a clock instead of (or in addition to) " +
+            "watched events. Minimum interval: 5 minutes.",
+          properties: {
+            cron: {
+              type: "string",
+              description: "Standard 5-field cron expression, e.g. '0 9 * * MON-FRI'",
+            },
+            timezone: { type: "string", description: "IANA timezone name (default: UTC)" },
+          },
+          required: ["cron"],
+          additionalProperties: false,
+        },
       },
       required: ["name", "gate_prompt", "action_prompt"],
       additionalProperties: false,
@@ -140,6 +156,14 @@ export class TriggersModule {
       params.event_kinds && params.event_kinds.length > 0 ? params.event_kinds : ["sync_ingested"];
     const watch_entity_ids = params.watch_entity_ids ?? [];
     const debounce_seconds = params.debounce_seconds ?? 0;
+
+    // @tested-by: tst_module_triggers_sched_001, tst_module_triggers_sched_002
+    // Schedule normalization is a HARD validation and runs before any row is
+    // written — an invalid cron / floor violation must not leave an entity.
+    let schedule: TriggerScheduleSpec | undefined;
+    if (params.schedule !== undefined && params.schedule !== null) {
+      schedule = await this.normalizeSchedule(params.schedule);
+    }
 
     // Validate watch targets are triggerable. The schema `triggerable` flag is
     // backend-only — delegate to the native resolver, which returns either a
@@ -180,6 +204,7 @@ export class TriggersModule {
     if (params.expires_at !== undefined) config.expires_at = params.expires_at;
     if (params.max_wait_seconds !== undefined) config.max_wait_seconds = params.max_wait_seconds;
     if (params.max_firings !== undefined) config.max_firings = params.max_firings;
+    if (schedule !== undefined) config.schedule = schedule;
 
     // @tested-by: tst_module_triggers_write_001
     // @invariant: INV-25 — create is externally atomic. Config and watch links
@@ -187,11 +212,8 @@ export class TriggersModule {
     // trigger could survive: an entity with no condition, or one that watches
     // nothing. Any failure after the entity exists removes it again.
     try {
-      await this.graph.attach_facet({
-        entity_id: entity.id,
-        schema_id: TRIGGER_CONFIG,
-        data: config,
-      });
+      // S1: the config IS the node's dictionary.
+      await this.graph.update_properties({ entity_id: entity.id, properties: config as unknown as Record<string, unknown> });
       for (const target of watch_entity_ids) {
         await this.graph.add_link({ from_id: entity.id, to_id: target, kind: WATCHES });
       }
@@ -230,6 +252,7 @@ export class TriggersModule {
       schema_id: TRIGGER,
       created_at: entity.created_at ?? new Date().toISOString(),
       episode_id: params.episode_id ?? null,
+      schedule: schedule ?? null,
     };
   }
 
@@ -311,7 +334,6 @@ export class TriggersModule {
     if (query.length === 0) {
       const page = await this.graph.list_entities_window({
         schema: TRIGGER,
-        facet_schema: TRIGGER_CONFIG,
         order: [{ field: { entity_field: "date" }, desc: true }],
         limit,
         offset,
@@ -324,7 +346,7 @@ export class TriggersModule {
       };
     }
 
-    // GraphService has no full-text facet search. Scan exact graph windows so
+    // GraphService has no full-text record search. Scan exact graph windows so
     // search includes gate/action/watch names without silently truncating at
     // 1,000. Triggers are expected to be a small control-plane collection.
     const scanLimit = 250;
@@ -333,7 +355,6 @@ export class TriggersModule {
     for (;;) {
       const page = await this.graph.list_entities_window({
         schema: TRIGGER,
-        facet_schema: TRIGGER_CONFIG,
         order: [{ field: { entity_field: "date" }, desc: true }],
         limit: scanLimit,
         offset: scanOffset,
@@ -372,6 +393,22 @@ export class TriggersModule {
         expires_at: { type: "string", format: "date-time" },
         debounce_seconds: { type: "integer" },
         max_firings: { type: "integer" },
+        schedule: {
+          description:
+            "Set a cron schedule (object with cron + optional timezone) or clear it (null).",
+          anyOf: [
+            { type: "null" },
+            {
+              type: "object",
+              properties: {
+                cron: { type: "string" },
+                timezone: { type: "string" },
+              },
+              required: ["cron"],
+              additionalProperties: false,
+            },
+          ],
+        },
       },
       required: ["id"],
       additionalProperties: false,
@@ -399,7 +436,7 @@ export class TriggersModule {
     }
 
     // @invariant: INV-25 — the rename ran BEFORE the config write, so a failed
-    // facet write left the trigger renamed for a config it never received.
+    // record write left the trigger renamed for a config it never received.
     if (params.name !== undefined) config.name = params.name;
     if (params.action_prompt !== undefined) config.action_prompt = params.action_prompt;
     if (params.status !== undefined) config.status = params.status;
@@ -410,16 +447,32 @@ export class TriggersModule {
     if (params.max_wait_seconds !== undefined) config.max_wait_seconds = params.max_wait_seconds;
     if (params.max_firings !== undefined) config.max_firings = params.max_firings;
 
-    await this.graph.attach_facet({ entity_id: params.id, schema_id: TRIGGER_CONFIG, data: config });
+    // @tested-by: tst_module_triggers_sched_003
+    // Every set/change re-normalizes through the seam (fresh engine-stamped
+    // activated_at — the activation boundary moves with the modification);
+    // `null` clears without consulting it.
+    if (params.schedule !== undefined) {
+      if (params.schedule === null) {
+        delete config.schedule;
+      } else {
+        config.schedule = await this.normalizeSchedule(params.schedule);
+      }
+    }
+
+    // S1: the trigger config IS the node's dictionary — the record write died
+    // with the fold, and a cleared schedule has to REMOVE the key, which a
+    // merge does with an explicit null.
+    const next = { ...config } as unknown as Record<string, unknown>;
+    if (params.schedule === null) next.schedule = null;
+    await this.graph.update_properties({ entity_id: params.id, properties: next });
     if (params.name !== undefined && params.name !== detail.entity.name) {
       try {
         await this.graph.update_entity_name(params.id, params.name);
       } catch (renameError) {
         try {
-          await this.graph.attach_facet({
+          await this.graph.update_properties({
             entity_id: params.id,
-            schema_id: TRIGGER_CONFIG,
-            data: previousConfig,
+            properties: previousConfig,
           });
         } catch (rollbackError) {
           // The host serialises a thrown error as `String(e.stack)`
@@ -564,14 +617,14 @@ export class TriggersModule {
     },
   })
   async fire_history(params: FireHistoryParams): Promise<TriggerExecutionData[]> {
-    await this.requireTrigger(params.trigger_id);
-    const limit = params.limit ?? 50;
-    const facets = await this.graph.list_facets_for_entity(params.trigger_id);
-    const executions = facets
-      .filter((f) => f.schema_id === TRIGGER_EXECUTION)
-      .map((f) => f.data as TriggerExecutionData)
-      .sort((a, b) => (a.fired_at < b.fired_at ? 1 : a.fired_at > b.fired_at ? -1 : 0));
-    return executions.slice(0, limit);
+    // S1 (canonical-graph-structure): executions are trigger_execution rows,
+    // written and owned by the native engine. The native seam replaces the
+    // old scan over EVERY record of the trigger — the read is one indexed
+    // query, and its cost no longer grows with the trigger's history.
+    return await this.rpc.execute<TriggerExecutionData[]>("triggers.fire_history", {
+      trigger_id: params.trigger_id,
+      limit: params.limit ?? 50,
+    });
   }
 
   // ── private helpers ──────────────────────────────────────────────
@@ -594,8 +647,28 @@ export class TriggersModule {
   }
 
   private configOf(detail: EntityDetail): TriggerConfigData | null {
-    const facet = detail.facets.find((f) => f.schema_id === TRIGGER_CONFIG);
-    return facet ? (facet.data as TriggerConfigData) : null;
+    // S1: the dictionary is the state. An empty dictionary means the trigger
+    // was never configured — the same "no config" the missing record meant.
+    const props = detail.entity.properties ?? {};
+    if (Object.keys(props).length === 0) return null;
+    return props as unknown as TriggerConfigData;
+  }
+
+  /// One parser of record, one clock: the native seam validates the cron
+  /// expression and returns the normalized spec (engine-stamped `activated_at`,
+  /// materialized timezone), persisted verbatim. A caller-supplied
+  /// `activated_at` is never forwarded — only cron + timezone cross the seam.
+  private async normalizeSchedule(param: ScheduleParam): Promise<TriggerScheduleSpec> {
+    const request: { cron: string; timezone?: string } = { cron: param.cron };
+    if (param.timezone !== undefined) request.timezone = param.timezone;
+    const spec = await this.rpc.execute<TriggerScheduleSpec | null>(
+      "triggers.validate_schedule",
+      request,
+    );
+    if (!spec || typeof spec !== "object") {
+      throw new Error("triggers.validate_schedule returned no normalized spec");
+    }
+    return spec;
   }
 
   private watchesLinks(detail: EntityDetail): LinkSummary[] {
@@ -624,6 +697,7 @@ export class TriggersModule {
       firing_count: config.firing_count,
       last_fired_at: config.last_fired_at ?? null,
       watched_entity_names: names,
+      schedule: config.schedule ?? null,
     };
   }
 
@@ -667,6 +741,7 @@ export class TriggersModule {
       watched_entities: watched,
       parent_episode_id: parentEpisodeId,
       parent_episode_name: parentEpisodeName,
+      schedule: config.schedule ?? null,
     };
   }
 }

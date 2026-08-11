@@ -1,5 +1,5 @@
 // Shared schema→type maps for the email plugin (single source of truth for
-// module/service.ts + ui/). Facet schema_id → payload type; canonical key → value.
+// module/service.ts + ui/). Record schema_id → payload type; canonical key → value.
 
 export interface EmailMessageDetails {
   message_id?: string;
@@ -29,11 +29,7 @@ export interface EmailAddressDetails {
   display_name?: string | null;
 }
 
-/** Facet schema_id → payload type (parameterizes GraphService). */
-export interface EmailFacets {
-  "email.message.details": EmailMessageDetails;
-  "email.address.details": EmailAddressDetails;
-}
+/** Record schema_id → payload type (parameterizes GraphService). */
 
 /** Canonical key → value (parameterizes GraphService). */
 export interface EmailCanonical {
@@ -50,13 +46,6 @@ export interface EmailCanonical {
 // copies). These cross the RPC boundary, so they must stay structurally
 // identical to both sides.
 
-export interface FacetSummary {
-  id: string;
-  schema_id: string;
-  source: string;
-  observed_at: string;
-  data: unknown;
-}
 
 export interface LinkedEntitySummary {
   id: string;
@@ -88,7 +77,6 @@ export interface MessageDetailView {
   channel: string;
   timestamp: string;
   canonical: Record<string, unknown>;
-  facets: FacetSummary[];
   linked_entities: LinkedEntitySummary[];
   created_at: string;
   metadata?: Record<string, unknown> | null;

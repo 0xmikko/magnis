@@ -1,0 +1,6 @@
+{
+  "name": "Google contact",
+  "description": "The Google People replica: fields as last synced, one node one writer (plan §5). The hub composes the card from it at read time; the source never writes the hub.",
+  "mergeable": false,
+  "roles": ["identity_channel"]
+}

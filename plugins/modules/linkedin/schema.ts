@@ -1,16 +1,20 @@
-// LinkedIn plugin — schema-id / facet-id / link-kind constants. Deduped between
+// LinkedIn plugin — schema-id / record-id / link-kind constants. Deduped between
 // `module/service.ts` and the module tests (one spelling of each namespace
 // string). The schemas/ files are the source of truth for REGISTRATION (registered natively at install); these consts are for read/write/ingest call sites.
 
-/** Profile entity + its identity facet. */
+/** Profile entity + its identity record. */
 export const PROFILE = "linkedin.profile";
-export const PROFILE_IDENTITY = "linkedin.profile.identity";
-/** Post entity + its content/metrics facets. */
+
+/** Post entity + its content/metrics records. */
 export const POST = "linkedin.post";
-export const POST_CONTENT = "linkedin.post.content";
-export const POST_METRICS = "linkedin.post.metrics";
-/** post → author-profile link (created at ingest within a page). */
-export const AUTHORED_BY = "linkedin.post:linkedin.profile";
-/** Social-contact identity link: profile → the contact whose
- *  tracked handle caused the profile to be ingested. */
-export const PROFILE_PERSON_LINK = "linkedin.profile:contacts.person";
+
+// S5: the identity / content / metrics records are frozen archive — the profile
+// and post dictionaries are the record. The schemas stay registered (no schema
+// is ever removed); nothing reads or writes them.
+
+/** S5: authorship is the host-owned RELATION, shared with every other
+ *  content family — content → the identity that produced it. */
+export const AUTHORED_BY = "authored_by";
+/** S5: the hub → channel relation, written contact-first (the tracked handle
+ *  is what caused the profile to be ingested at all). */
+export const IDENTITY = "identity";

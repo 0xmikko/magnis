@@ -1,20 +1,20 @@
 /**
  * Company-detail rail — Google-Contacts-style column for a company.
- * Surfaces single-instance fields from the `companies.company.details`
- * facet (industry / size / location / founded / stage / headcount /
- * funding_total / website) plus multi-instance facets (email / phone /
- * external_link) as icon + value + label rows.
+ * Surfaces the hub's DICTIONARY (industry / size / location / founded /
+ * stage / headcount / funding_total / website) plus its curated phones and
+ * the addresses its `identity` edges reach, as icon + value + label rows.
  *
- * Reads from the `facets` array passed by `BaseModuleComponent`; no
- * extra fetch. Empty fields are hidden.
+ * S5: the dictionary and the linked entities both come from the detail the
+ * parent already fetched — no extra crossing. Empty fields are hidden.
  */
 import type { JSX } from "react";
 
 import { Icon, Stack, Text } from "@magnis/host/ui";
-import type { FacetSummary } from "@magnis/host/base";
+import type { LinkedEntitySummary } from "@magnis/host/base";
 
 export interface CompanyInfoColumnProps {
-  readonly facets: readonly FacetSummary[];
+  readonly properties: Readonly<Record<string, unknown>>;
+  readonly linkedEntities: readonly LinkedEntitySummary[];
 }
 
 interface InfoRow {
@@ -34,16 +34,22 @@ interface InfoRow {
   readonly href?: string;
 }
 
-/** True iff `CompanyInfoColumn` would render any row for these facets.
+/** True iff `CompanyInfoColumn` would render any row for these records.
  *  Parents use this to decide whether to reserve a grid column at all
  *  — an empty column track still consumes space, so a company with
  *  zero enrichment should let the description fill the row. */
-export function hasCompanyInfo(facets: readonly FacetSummary[]): boolean {
-  return buildRows(facets).length > 0;
+export function hasCompanyInfo(
+  properties: Readonly<Record<string, unknown>>,
+  linkedEntities: readonly LinkedEntitySummary[],
+): boolean {
+  return buildRows(properties, linkedEntities).length > 0;
 }
 
-export function CompanyInfoColumn({ facets }: CompanyInfoColumnProps): JSX.Element | null {
-  const rows = buildRows(facets);
+export function CompanyInfoColumn({
+  properties,
+  linkedEntities,
+}: CompanyInfoColumnProps): JSX.Element | null {
+  const rows = buildRows(properties, linkedEntities);
   if (rows.length === 0) return null;
   return (
     <Stack gap={3} className="rounded-2xl bg-surface-secondary/50 px-5 py-4">
@@ -86,13 +92,11 @@ function InfoRowView({ row }: { readonly row: InfoRow }): JSX.Element {
   );
 }
 
-function buildRows(facets: readonly FacetSummary[]): InfoRow[] {
+function buildRows(
+  details: Readonly<Record<string, unknown>>,
+  linkedEntities: readonly LinkedEntitySummary[],
+): InfoRow[] {
   const rows: InfoRow[] = [];
-
-  // Pull the latest details facet (single-aligned schema — last wins).
-  const detailsList = facets.filter((f) => f.schema_id === "companies.company.details");
-  const lastDetails = detailsList.at(-1);
-  const details = lastDetails ? lastDetails.data : {};
 
   const website = stringField(details, "website") ?? domainAsUrl(details);
   if (website) {
@@ -127,45 +131,30 @@ function buildRows(facets: readonly FacetSummary[]): InfoRow[] {
   const funding = stringField(details, "funding_total");
   if (funding) rows.push({ iconName: "scale", value: funding, label: "Funding" });
 
-  for (const f of facets) {
-    if (f.schema_id === "companies.company.email") {
-      const email = stringField(f.data, "email");
-      if (email) {
-        rows.push({
-          iconName: "mail",
-          value: email,
-          label: emailLabel(f),
-          href: `mailto:${email}`,
-        });
-      }
-    }
+  // An address is an identity CHANNEL the company reaches over an edge, not
+  // a field of the company (plan §3).
+  for (const linked of linkedEntities) {
+    if (linked.schema_id !== "email.address" || linked.link_kind !== "identity") continue;
+    if (!linked.name) continue;
+    rows.push({
+      iconName: "mail",
+      value: linked.name,
+      label: "Email",
+      href: `mailto:${linked.name}`,
+    });
   }
-  for (const f of facets) {
-    if (f.schema_id === "companies.company.phone") {
-      const phone = stringField(f.data, "phone");
-      if (phone) {
-        rows.push({
-          iconName: "phone",
-          value: phone,
-          label: phoneLabel(f),
-          href: `tel:${phone}`,
-        });
-      }
-    }
-  }
-  for (const f of facets) {
-    if (f.schema_id === "companies.company.external_link") {
-      const url = stringField(f.data, "external_url");
-      const name = stringField(f.data, "external_name") ?? stringField(f.data, "external_id");
-      const sourceType = stringField(f.data, "source_type");
-      if (name) {
-        rows.push({
-          iconName: sourceType === "slack" ? "slack" : "link",
-          value: name,
-          label: sourceType ? capitalize(sourceType) : undefined,
-          href: url ?? undefined,
-        });
-      }
+  const phones = details.phones;
+  if (Array.isArray(phones)) {
+    for (const entry of phones) {
+      const phone = stringField(entry, "phone");
+      if (!phone) continue;
+      const type = stringField(entry, "type");
+      rows.push({
+        iconName: "phone",
+        value: phone,
+        label: type ? capitalize(type) : undefined,
+        href: `tel:${phone}`,
+      });
     }
   }
 
@@ -191,18 +180,6 @@ function domainAsUrl(data: unknown): string | undefined {
 
 function stripScheme(url: string): string {
   return url.replace(/^https?:\/\//, "");
-}
-
-function emailLabel(facet: FacetSummary): string | undefined {
-  const type = stringField(facet.data, "type");
-  if (type) return capitalize(type);
-  return undefined;
-}
-
-function phoneLabel(facet: FacetSummary): string | undefined {
-  const type = stringField(facet.data, "type");
-  if (type) return capitalize(type);
-  return undefined;
 }
 
 function capitalize(s: string): string {

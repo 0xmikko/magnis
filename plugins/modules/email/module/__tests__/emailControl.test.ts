@@ -8,15 +8,15 @@ import { describe, expect, it, vi } from "vitest";
 import type { GraphBatchInput, RpcExecutor } from "@magnis/plugin-sdk";
 import { mockGraph, mountModule, type GraphOverrides } from "@magnis/testkit/module";
 import { EmailModule } from "../service.ts";
-import type { EmailCanonical, EmailFacets } from "../../types.ts";
+import type { EmailCanonical } from "../../types.ts";
 
 function makeModule(
   graph: Partial<Record<string, unknown>>,
   rpc: RpcExecutor = { execute: vi.fn() },
 ): EmailModule {
   return mountModule(EmailModule, {
-    graph: mockGraph<EmailFacets, EmailCanonical>(
-      graph as unknown as GraphOverrides<EmailFacets, EmailCanonical>,
+    graph: mockGraph(
+      graph as unknown as GraphOverrides,
     ),
     ctx: { extension_id: "email" },
     rpc,
@@ -77,16 +77,21 @@ describe("email ensure_address hub RPC (cross-module)", () => {
     const mod = makeModule({ apply_batch });
     const out = await mod.ensureAddress({ address: "Alice@Example.com", display_name: "Alice" });
 
-    expect(out).toEqual({ id: "id-addr" });
+    // S3: the batch key is the lowered address; the node is ANCHORED by the
+    // email:address chokepoint key.
+    expect(out).toEqual({ id: "id-alice@example.com" });
     const call0 = apply_batch.mock.calls[0];
     if (call0 === undefined) throw new Error("ensure_address: apply_batch not called");
     const frag = call0[0];
-    const addr = frag.entities[0];
+    const addr = frag.entities[0] as
+      | { schema_id: string; anchor?: string; properties?: Record<string, unknown>; facets: unknown[] }
+      | undefined;
     if (addr === undefined) throw new Error("ensure_address: missing address entity");
     expect(addr.schema_id).toBe("email.address");
-    const addrFacet0 = addr.facets[0];
-    if (addrFacet0 === undefined) throw new Error("ensure_address: missing address facet[0]");
-    expect(addrFacet0.external_id).toBe("email:address:alice@example.com"); // lowercased hub key
+    // S5: the address node is its DICTIONARY under the chokepoint anchor —
+    // the details record retired with the writer.
+    expect(addr.anchor).toBe("email:address:alice@example.com");
+    expect(addr.properties).toMatchObject({ address: "alice@example.com" });
   });
 
   it("rejects an empty address", async () => {

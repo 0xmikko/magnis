@@ -1,0 +1,31 @@
+# Projects (module-search-contract §11): the fold RENAMED the record's body to
+# `description`; the checklist is a dictionary collection.
+
+entity = "projects.project"
+tools = "projects"
+
+default_order = [ { key = "name", dir = "asc", nulls = "last" } ]
+
+[[field]]
+key = "name"
+kind = "text"
+column = "name"
+
+[[field]]
+key = "description"
+kind = "text"
+path = "description"
+embed = "body"
+
+[[collection]]
+key = "checklist"
+path = "checklist"
+element = [
+  { key = "text",   kind = "text" },
+  { key = "status", kind = "enum" },
+]
+
+[[field]]
+key = "status"
+kind = "enum"
+path = "status"

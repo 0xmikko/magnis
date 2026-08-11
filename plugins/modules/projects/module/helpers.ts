@@ -28,6 +28,17 @@ export function linkSummary(
   };
 }
 
+/// S1: project the node's dictionary into the canonical-keyed map the shaping
+/// helpers already consume — the seam that let every reader move to the
+/// dictionary without reshaping the list item.
+export function projectCanonFromProperties(e: RawEntity): Partial<ProjectCanonical> {
+  const p = (e.properties ?? {});
+  const out: Record<string, unknown> = {};
+  if (typeof p.name === "string") out["project.name"] = p.name;
+  if (typeof p.status === "string") out["project.status"] = p.status;
+  return out;
+}
+
 export function canonicalString(
   c: Partial<ProjectCanonical>,
   key: keyof ProjectCanonical,
@@ -39,7 +50,7 @@ export function canonicalString(
 // Mirrors the native ProjectsModuleService list-item shaping
 // (service.rs:94-127): name from entity.name or canonical project.name, status
 // from canonical project.status. Pure — reads the CANONICAL map (project.* are
-// single_aligned, resolved by confidence→recency, so a window's latest facet
+// single_aligned, resolved by confidence→recency, so a window's latest record
 // would not reproduce it). The per-page canonical map is fetched in one
 // list_canonical_for_entities batch — no per-row N+1.
 export function buildProjectListItem(

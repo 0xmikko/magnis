@@ -10,13 +10,18 @@ export function mapTriggerListItem(raw: Record<string, unknown>): ListItem {
     ? raw.watched_entity_names.filter((name): name is string => typeof name === "string")
     : [];
   const actionPrompt = typeof raw.action_prompt === "string" ? raw.action_prompt : "";
+  // INV-UI-1 (plan Stage 5): the schedule IS a scheduled trigger's "when" —
+  // it outranks both the (empty) watches list and the action-prompt fallback.
+  const schedule = raw.schedule as { cron?: unknown } | null | undefined;
+  const cron = schedule && typeof schedule.cron === "string" ? schedule.cron : null;
 
   return {
     id: raw.id as string,
     name: typeof raw.name === "string" ? raw.name : null,
     schema_id: "triggers.trigger",
-    preview:
-      watchedEntityNames.length > 0
+    preview: cron
+      ? `Schedule ${cron}`
+      : watchedEntityNames.length > 0
         ? `Watches ${watchedEntityNames.join(", ")}`
         : actionPrompt,
     timestamp: typeof raw.last_fired_at === "string" ? raw.last_fired_at : null,

@@ -257,6 +257,12 @@ export async function buildPlugin(pluginId: string, opts: BuildOpts = {}): Promi
     ),
   );
   writeFileSync(join(pkgDir, "manifest.toml"), readFileSync(manifestPath));
+  // The search-contract declaration rides next to the manifest (host reads
+  // it from the built tree, same as manifest.toml).
+  const searchPath = join(pluginsDir, "modules", pluginId, "search.toml");
+  if (existsSync(searchPath)) {
+    writeFileSync(join(pkgDir, "search.toml"), readFileSync(searchPath));
+  }
 
   return { pluginId, bundleFile, hash };
 }

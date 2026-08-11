@@ -1,8 +1,9 @@
 # meetings — Meetings domain module (V8 plugin).
 #
-# Owns `meetings.*`: calendar_event + event entities and their facets. Ingests the
-# `meetings` sync surface (calendar), links attendees to contacts (reads
-# contacts.person), and reaches the email module over RPC to resolve addresses.
+# Owns `meetings.*`: calendar_event + event entities and their dictionaries.
+# Ingests the `meetings` sync surface (calendar), writes `attendee` edges to the
+# email module's shared address nodes (resolving them over RPC), and reads
+# contacts.person to name the guest behind an address.
 # Sandboxed V8 isolate; bundled with the app and installed automatically at boot.
 
 id = "meetings"
@@ -14,32 +15,18 @@ summary = "Schedule, track, and recap meetings across calendars."
 # Reverse-domain publisher identity.
 publisher = "ai.magnis"
 
-[[links]]
-kind = "mentions"
-from = "meetings.calendar_event"
-to = "contacts.person"
-
-[[links]]
-kind = "mentions"
-from = "meetings.calendar_event"
-to = "companies.company"
-
-[[links]]
-kind = "mentions"
-from = "meetings.calendar_event"
-to = "projects.project"
-
 # Sync surface this module consumes (fed by the matching source connector).
 [surfaces.meetings]
 # The surface's primary-item schema — its user-scoped graph count IS the
 # "items synced" badge (host source.status.list reads this).
 item = "meetings.calendar_event"
 
-# Foreign asks beyond the implicit own namespace: writes to `meetings.` facets,
+# Foreign asks beyond the implicit own namespace: writes to `meetings.` records,
 # own:own links, and reads of own schemas need no declaration.
 [permissions]
 read = [ "contacts.person" ]
-call = [ "email.ensure_address" ]
+links = [ "attendee" ]
+call = [ "email.ensure_address", "email.ensure_addresses" ]
 host = [ "external_id_reads", "sync_state" ]
 
 # Extra bare import specifiers the UI bundle may reference beyond the host-shim

@@ -1,4 +1,4 @@
-import type { JSX } from "react";
+import type { JSX, ReactNode } from "react";
 import type { IconName } from "./Icon";
 export type ContextMenuEntry = {
     readonly id: string;
@@ -29,8 +29,9 @@ interface ContextMenuSurfaceProps {
     readonly items: readonly ContextMenuEntry[];
     readonly onSelect: (itemId: string) => void;
     readonly header?: string;
+    readonly footer?: ReactNode;
     readonly className?: string;
 }
 export declare function ContextMenu({ items, position, onSelect, onClose }: ContextMenuProps): JSX.Element;
-export declare function ContextMenuSurface({ items, onSelect, header, className, }: ContextMenuSurfaceProps): JSX.Element;
+export declare function ContextMenuSurface({ items, onSelect, header, footer, className, }: ContextMenuSurfaceProps): JSX.Element;
 export {};

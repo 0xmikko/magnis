@@ -14,9 +14,7 @@
 
 import { beforeEach, describe, expect, it } from "vitest";
 import {
-  canonical,
   entity,
-  facet,
   mockGraph,
   mountModule,
   windowRow,
@@ -24,23 +22,20 @@ import {
 } from "@magnis/testkit/module";
 import { NotesModule } from "../service.ts";
 import { NOTE, NOTE_CONTENT } from "../../schema.ts";
-import type { NoteCanonical, NoteFacets } from "../../types.ts";
+import type { NoteCanonical } from "../../types.ts";
 
-type G = MockGraph<NoteFacets, NoteCanonical>;
+type G = MockGraph;
 
 // The read-path ops, arranged with benign defaults; individual tests re-arm them
 // via `graph.spies.<op>.mockResolvedValue(...)`. Ops NOT listed here
 // (list_facets_for_entity, get_entity) stay unarranged, so the throwing Proxy
 // fails the test if the read path hits them.
 function readGraph(): G {
-  return mockGraph<NoteFacets, NoteCanonical>({
+  return mockGraph({
     list_entities_window: () => Promise.resolve({ items: [], total: 0 }),
     search_entities_by_name: () => Promise.resolve([]),
-    list_facets_for_entities: () => Promise.resolve([]),
-    list_canonical_for_entities: () => Promise.resolve([]),
     get_entity_full: () => Promise.resolve(null),
     get_entities: () => Promise.resolve([]),
-    get_canonical: () => Promise.resolve({}),
   });
 }
 
@@ -61,35 +56,33 @@ describe("notes read — shape parity (tst_be_notesread_001)", () => {
     mod = mountModule(NotesModule, { graph, ctx: { extension_id: "notes" } }).module;
   });
 
-  it("F1 search keeps canonical-derived pinned/updated_at/title (batch facets + batch canonical)", async () => {
+  it("F1 search reads the dictionary riding the entity (S1: no batch facets, no canonical)", async () => {
     spy(graph, "search_entities_by_name").mockResolvedValue([
-      entity("n1", "", { schema_id: NOTE, created_at: "2026-01-01T00:00:00Z" }),
-    ]);
-    // facet carries body only — NO pinned / updated_at / title
-    spy(graph, "list_facets_for_entities").mockResolvedValue([
-      facet("f1", NOTE_CONTENT, { body: "hello world" }, { entity_id: "n1" }),
-    ]);
-    // canonical supplies pinned / updated_at / title
-    spy(graph, "list_canonical_for_entities").mockResolvedValue([
-      canonical("n1", "note.pinned", true),
-      canonical("n1", "note.updated_at", "2026-03-03T00:00:00Z"),
-      canonical("n1", "note.title", "Canon Title"),
+      entity("n1", "", {
+        schema_id: NOTE,
+        created_at: "2026-01-01T00:00:00Z",
+        properties: {
+          title: "Dict Title",
+          body: "hello world",
+          pinned: true,
+          updated_at: "2026-03-03T00:00:00Z",
+        },
+      }),
     ]);
 
-    const page = await mod.list({ search: "canon", limit: 50, offset: 0 });
+    const page = await mod.list({ search: "dict", limit: 50, offset: 0 });
     expect(page.total).toBe(1);
     const item = page.items[0];
     if (item === undefined) throw new Error("F1: missing first item");
-    expect(item.title).toBe("Canon Title"); // entity.name empty, facet title absent → canonical
-    expect(item.pinned).toBe(true); // from canonical note.pinned
-    expect(item.updated_at).toBe("2026-03-03T00:00:00Z"); // from canonical note.updated_at
-    expect(item.preview).toContain("hello"); // preview from facet body
+    expect(item.title).toBe("Dict Title");
+    expect(item.pinned).toBe(true);
+    expect(item.updated_at).toBe("2026-03-03T00:00:00Z");
+    expect(item.preview).toContain("hello");
   });
 
   it("F2 get resolves link neighbours via ONE get_entities batch (no per-link fetch)", async () => {
     spy(graph, "get_entity_full").mockResolvedValue({
-      entity: entity("n1", "My Note", { schema_id: NOTE }),
-      facets: [facet("f1", NOTE_CONTENT, { body: "b" })],
+      entity: entity("n1", "My Note", { schema_id: NOTE, properties: { body: "b" } }),
       links: [
         { id: "l1", from_id: "n1", to_id: "c1", kind: "mentions" },
         { id: "l2", from_id: "n1", to_id: "c2", kind: "mentions" },
@@ -113,7 +106,11 @@ describe("notes read — shape parity (tst_be_notesread_001)", () => {
 
   it("F4 list (no search) maps window rows", async () => {
     spy(graph, "list_entities_window").mockResolvedValue({
-      items: [windowRow(entity("n1", "Title", { schema_id: NOTE }), { body: "body", pinned: true })],
+      items: [
+        windowRow(
+          entity("n1", "Title", { schema_id: NOTE, properties: { body: "body", pinned: true } }),
+        ),
+      ],
       total: 1,
     });
     const page = await mod.list({});
@@ -129,22 +126,19 @@ describe("notes read — DB-access guarantees (tst_be_notesdb_001)", () => {
     mod = mountModule(NotesModule, { graph, ctx: { extension_id: "notes" } }).module;
   });
 
-  it("search = 1 search + 1 batch facets + 1 batch canonical, 0 per-row reads, 0 window", async () => {
+  it("search = 1 search, 0 batch facets, 0 0 per-row reads, 0 window", async () => {
     spy(graph, "search_entities_by_name").mockResolvedValue([
       entity("n1", "n", { schema_id: NOTE }),
     ]);
     await mod.list({ search: "x" });
     expect(graph.spies.search_entities_by_name).toHaveBeenCalledTimes(1);
-    expect(graph.spies.list_facets_for_entities).toHaveBeenCalledTimes(1);
-    expect(graph.spies.list_canonical_for_entities).toHaveBeenCalledTimes(1);
-    expect(graph.spies.get_canonical).toHaveBeenCalledTimes(0);
+    // S1: the dictionary rides the entity — the two page-wide batch reads are gone.
     expect(graph.spies.list_entities_window).toHaveBeenCalledTimes(0);
   });
 
-  it("get = 1 get_entity_full + 1 get_canonical + 1 get_entities (links present), 0 per-link", async () => {
+  it("get = 1 get_entity_full + 1 get_entities (links present), 0 0 per-link", async () => {
     spy(graph, "get_entity_full").mockResolvedValue({
       entity: entity("n1", "N", { schema_id: NOTE }),
-      facets: [],
       links: [{ id: "l1", from_id: "n1", to_id: "c1", kind: "mentions" }],
     });
     spy(graph, "get_entities").mockResolvedValue([
@@ -152,14 +146,12 @@ describe("notes read — DB-access guarantees (tst_be_notesdb_001)", () => {
     ]);
     await mod.get({ id: "n1" });
     expect(graph.spies.get_entity_full).toHaveBeenCalledTimes(1);
-    expect(graph.spies.get_canonical).toHaveBeenCalledTimes(1);
     expect(graph.spies.get_entities).toHaveBeenCalledTimes(1);
   });
 
   it("get with no links makes 0 get_entities", async () => {
     spy(graph, "get_entity_full").mockResolvedValue({
       entity: entity("n1", "N", { schema_id: NOTE }),
-      facets: [],
       links: [],
     });
     await mod.get({ id: "n1" });
