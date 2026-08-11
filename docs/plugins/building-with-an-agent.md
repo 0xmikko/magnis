@@ -20,7 +20,7 @@ follow-up:
 
 > Integrate GitHub as a fixture-replay source providing a `github`
 > surface, plus a github module consuming it: repository and issue
-> entities; facets repo.details (name, owner) and issue.details (title,
+> entities; dictionary keys on repo (name, owner) and on issue (title,
 > state, number, created_at, repo_id); a link issue→repository
 > (in_repo); tools list (issues, newest first) and get (issue by id,
 > including its repository name). Auth: none. Fixture-only.
@@ -37,7 +37,7 @@ to skip.
 1. **Interview.** The agent turns a vague request into the five answers
    a plugin needs: which service, does data flow *in* (→ a source) or is
    this a new graph domain (→ a module) or both, which entities and
-   facets, which tools, and what auth. Anything the request already
+   dictionary keys, which tools, and what auth. Anything the request already
    answers is not asked again.
 
 2. **Shape.** It decides source, module, or the pair, and fixes the one
@@ -46,7 +46,7 @@ to skip.
    closest reference implementation to copy — for a two-entity module
    consuming a surface, that is `x` + `mock-x`.
 
-3. **Design, in writing, before any code.** Entities, facets (with the
+3. **Design, in writing, before any code.** Entities, their dictionary keys (with the
    required fields and any canonical mappings), the link kind, the
    envelope payload shape, and the `remote_id` scheme — written down and
    checked against [module.md](./module.md) / [source.md](./source.md)

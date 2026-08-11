@@ -1,11 +1,11 @@
 # Building a module, end to end
 
 A **module** owns a slice of the graph — it registers schemas, reads and writes
-entities/facets, exposes tools to the agent, and draws UI. Companies, contacts,
-email, meetings are modules. This guide takes you from an empty folder to a
-conforming, tested module: what a module is, how it is laid out, how it runs,
-what it can call, how schemas register, and the one read-path gotcha that bites
-everyone.
+entities and their dictionaries, exposes tools to the agent, and draws UI.
+Companies, contacts, email, meetings are modules. This guide takes you from an
+empty folder to a conforming, tested module: what a module is, how it is laid
+out, how it runs, what it can call, how schemas register, and the write rule
+that catches everyone once.
 
 If you are building a **source** (an external connector that streams data in),
 read [source.md](./source.md) instead. For the big-picture model start at
@@ -41,8 +41,9 @@ methods into a handler table, and routes calls to them.
   manifest.toml          # the package card: identity + [surfaces] + [permissions]
   README.md              # catalog description (markdown detail page)
   icon.svg               # catalog icon at the package ROOT (svg or png)
-  schemas/               # graph model, one JSON file per entity/facet (see Schemas)
-  types.ts               # wire DTOs + the two schema-map interfaces (Facets, Canonical)
+  schemas/               # graph model, one JSON file per ENTITY (see Schemas)
+  search.toml            # which dictionary keys are searchable + what gets embedded
+  types.ts               # wire DTOs
   schema.ts              # schema-id string constants for read/write call sites
   module/                # the backend part (V8 isolate)
     index.ts             # definePlugin(TheClass) — nothing else (the entry, by convention)
@@ -74,8 +75,8 @@ The class takes one constructor arg, `PluginDeps`, and stores what it needs:
 
 ```ts
 export class CompaniesModule {
-  private readonly graph: GraphService<CompanyFacets, CompanyCanonical>;
-  constructor(deps: PluginDeps<CompanyFacets, CompanyCanonical>) {
+  private readonly graph: GraphService;
+  constructor(deps: PluginDeps) {
     this.graph = deps.graph;
   }
 
@@ -93,16 +94,15 @@ definePlugin(CompaniesModule);
 `definePlugin` takes the **class constructor**, not an instance. At load it
 instantiates the class, reads the decorated methods back off the prototype, and
 publishes a handler table keyed by `<plugin_id>.<method-suffix>` plus the
-agent-facing tool definitions. The generics `<Facets, Canonical>` are inferred
-from the constructor, so facet/canonical payload types are derived from the
-schema-id literal at every call site.
+agent-facing tool definitions. `GraphService` is not generic: a node's
+dictionary is a plain JSON map, and a module types it with its own interface at
+the call sites that care.
 
 ---
 
 ## 4. What a module can call — the deps
 
-The constructor receives `PluginDeps<Facets, Canonical> = { graph, ctx, util,
-rpc }`:
+The constructor receives `PluginDeps = { graph, ctx, util, rpc }`:
 
 - **`ctx: PluginContext`** — `{ user_id, extension_kind, extension_id }`.
   `extension_id` is the RPC-name prefix; `user_id` is stamped host-side for
@@ -113,29 +113,33 @@ rpc }`:
   router. Allowed targets are declared in the manifest `[permissions]` `call`
   list. (LinkedIn uses it to call `contacts.get_social_tracking_by_handle`,
   etc.)
-- **`graph: GraphService<Facets, Canonical>`** — the graph API, below.
+- **`graph: GraphService`** — the graph API, below.
 
-**The graph API** (payload types derived from the schema-id you pass):
+**The graph API:**
 
 - **Entities** — `create_entity`, `get_entity`/`get_entities` (batch),
-  `list_entities`, `list_entities_window` (page + latest render facet + exact
-  total in one statement), `list_entities_by_facet_field`,
-  `search_entities_by_name`, `get_entity_full(id, { facets?, links? })`,
-  `update_entity_name`, `delete_entity`, `find_by_external_id`, …
-- **Facets** — `attach_facet({ entity_id, schema_id, data, external_id?,
-  confidence? })` (idempotent by entity + external_id), `update_facet`,
-  `list_facets_for_entity`, `list_facets_for_entities` (batch), `delete_facet`.
-- **Canonical** — `get_canonical`, `list_canonical_for_entities` (batch),
-  `resolve_canonical(id)` (recompute after attaching facets),
-  `apply_canonical_override`.
-- **Links** — `add_link`, `delete_link`, `list_links_for_entity`.
-- **Batch/merge** — `apply_batch(GraphBatchInput)` (atomic
-  entities+facets+links fragment — the bulk-ingest primitive), `merge_preview`,
-  `merge_execute`.
+  `list_entities`, `list_entities_window` (a page + the exact total in ONE
+  statement, filtered/ordered over entity columns, dictionary keys or an edge
+  dictionary), `list_entities_by_property_field`, `search_entities_by_name`,
+  `get_entity_full(id, { links? })`, `update_entity_name`, `delete_entity`, …
+- **The node dictionary** — `update_properties({ entity_id, properties })`
+  MERGES the top-level keys you send, and an explicit `null` REMOVES a key.
+  The bulk `apply_batch` lane is the other way round: it REPLACES the
+  dictionary with the fields as last synced. Know which lane you are on — a
+  curated edit that resends the whole map is harmless, a sync that sends a
+  partial one silently drops the rest.
+- **Identity** — a node is found by its `anchor`, not by an external id column.
+  `create_entity` takes the anchor and the chokepoint resolves it, so the
+  second sync of the same provider record attaches instead of duplicating.
+- **Links** — `add_link`, `delete_link`, `list_links_for_entity`. An edge's own
+  dictionary (`metadata`) UNIONS on re-observation — many observers, unlike the
+  node.
+- **Batch/merge** — `apply_batch(GraphBatchInput)` (atomic entities+links
+  fragment — the bulk-ingest primitive), `merge_preview`, `merge_execute`.
 
-**Prefer the batch reads** (`get_entities`, `list_facets_for_entities`,
-`list_canonical_for_entities`) over per-row calls — an N+1 in a list handler is
-a defect the tests forbid (see the Testing section).
+**Prefer the batch reads** (`get_entities`, `list_entities_window`) over
+per-row calls — an N+1 in a list handler is a defect the tests forbid (see the
+Testing section).
 
 ---
 
@@ -226,22 +230,27 @@ is find-or-create: same address in, same entity id out.
 
 ## 7. Schemas — two separate concerns
 
-Owning an entity/facet involves two things that are easy to conflate:
+Owning an entity involves two things that are easy to conflate:
 
 1. **`schema.ts` constants** are *only* the deduped spelling of each namespace
    string for read/write call sites — e.g.
    `export const COMPANY = "companies.company"`. They are **not** the
    registration source.
 2. **The `schemas/` directory** is the source of truth, discovered by
-   convention. `<entity>.json` is an entity descriptor (`name`,
-   `description`, optional `triggerable` / `mergeable` traits);
-   `<entity>.<facet>.json` is a facet contract (`version`, canonical
-   `mappings` tying a `path` to a `canonical` key with a `strategy`, and the
-   JSON Schema shape flattened at top level). A facet file always has
-   `"version"`; an entity file never does. The schema id is derived from the
-   filename inside the module's namespace `<id>.…`; legacy ids override with
-   `"id"`, foreign-entity facets with `"entity"` (full rules in
-   [manifest.md](./manifest.md)).
+   convention — **one file per ENTITY**, nothing else. `<entity>.json` carries
+   `name`, `description`, the endpoint `roles` the link registry checks, and
+   optional `triggerable` / `mergeable` traits. The schema id is derived from
+   the filename inside the module's namespace `<id>.…` — a package cannot claim
+   a foreign one (full rules in [manifest.md](./manifest.md)).
+
+   A file carrying `"version"` is a **retired facet contract and is REFUSED at
+   install**. Per-block schemas, canonical `mappings` and merge strategies were
+   the facet model; the node dictionary replaced all three, and a dictionary
+   key needs no contract.
+
+3. **`search.toml`** declares which dictionary keys are searchable, how each is
+   typed, and what the indexer embeds — see [graph.md](../graph.md). It is what
+   generates the module's `<prefix>.search` / `.list` / `.predicate` tools.
 
 Installing the module registers the `schemas/` files **natively** — there is
 no install hook to write. A `migrations/` folder (plus `[[migrations]]` in the
@@ -249,29 +258,38 @@ manifest) appears **only** when the module needs a real **data migration**
 (`defineMigration` — transform rows already in the graph on a version bump).
 That is rare; most modules have no migrations folder.
 
-To own a facet you simply add its `schemas/` file — writes to your own
+To own an entity you simply add its `schemas/` file — writes to your own
 namespace are implicitly granted; only foreign asks go in `[permissions]`.
 
 ---
 
-## 8. The canonical-vs-record gotcha
+## 8. The write rule that catches everyone once
 
-The single mistake to avoid. There are two ways to read a field, and they
-resolve different values:
+**The two write lanes do NOT behave the same way.**
 
-- **Latest facet** (`list_entities_window` *with* a `facet_schema`) returns each
-  row's most recent render facet, ordered by `observed_at`.
-- **Canonical** (`get_canonical` / `list_canonical_for_entities`) returns the
-  *merged* value resolved by strategy — `single_aligned` = confidence → recency
-  — which is **not** the same as the latest facet.
+`apply_batch` — the sync lane — REPLACES a node's dictionary: after the write
+it is exactly what the source observed, never a mixture of this sync and the
+last one. That is what makes a re-sync safe, and it is why a sync handler that
+sends a partial map silently drops every key it omitted.
 
-If your module's truth is the merged canonical (companies: name, website,
-industry), read **canonical** — call the window with **no** `facet_schema` so the
-list fields come from canonical, then hydrate the page's canonical in **one
-batch** (`list_canonical_for_entities`, never per-row). A latest-facet window
-would silently produce a different value. If your truth is the freshest rendered
-data (LinkedIn: latest post metrics), pass the `facet_schema` and read the
-facet. Choose deliberately; the tests pin which one each handler uses.
+`update_properties` — the curated lane — MERGES the top-level keys you send,
+and an explicit `null` removes one. A human correcting a phone number does not
+have to resend the person.
+
+The invariant "one node, one writer" is about WHO writes, not about how much:
+no two sources contend for one dictionary, because each source's view lives on
+its own node and the hub reaches it over `identity`.
+
+An EDGE behaves the other way round: many observers, so re-observing a link
+UNIONS into its `metadata` rather than replacing it. Per-observer state — an
+unread count, a pin order — belongs there, not on the node, because the node
+has no room for two observers' answers.
+
+Reading is likewise one question, not two. There is no second store to consult:
+`list_entities_window` returns the page and its exact total in one statement,
+with filters and ordering over entity columns, dictionary keys, or an edge
+dictionary. The old "latest record vs merged canonical" fork is gone with the
+two stores that created it.
 
 ---
 
@@ -319,7 +337,7 @@ The host renders the detail **shell** — avatar, name, the `OVERVIEW / MEMORY /
 FILES …` tabs; your `DetailsTabContent` fills the Overview tab. Tabs like
 MEETINGS or PROJECTS are contributed by *those* modules, not yours. Slot props
 are host-defined contracts (e.g. `DetailsTabContent` receives
-`{ entityId, facets, linkedEntities }`); provide only the slots your module
+`{ entityId, linkedEntities }`); provide only the slots your module
 needs (`EntityCard`, `DetailsTabContent`, `ListItemContent`, `HeaderActions`,
 `toolCallRenderers`).
 
@@ -341,7 +359,7 @@ paths. The curated entry points:
 | Import | Provides |
 |---|---|
 | `@magnis/host/ui` | design system: `Icon`, `Stack`, `Row`, `Text`, `Card`, `IconButton`, … |
-| `@magnis/host/base` | `defineModule`, `BaseEntityCard`, `BaseToolCallCard`, `useEntityFacet`, shared types |
+| `@magnis/host/base` | `defineModule`, `BaseEntityCard`, `BaseToolCallCard`, shared types |
 | `@magnis/host/runtime` | `useAppRuntime`, `AppRuntime`, renderer/contract types |
 | `@magnis/host/agent` | `ExpandableEntityCard`, `AllowlistDropdown`, `ExpansionContext` |
 | `@magnis/host/markdown` | `MarkdownEditor`, `useEditorMentionSuggestion` |
@@ -365,8 +383,8 @@ Module tests run under **vitest** (`bun run test`) with
 
 - **`mockGraph(overrides?)`** — a throwing Proxy: any graph op you did not
   explicitly stub throws `unexpected graph op: <name>`. That is how a test
-  forbids an N+1 — leave `get_entities` / `list_facets_for_entities` unstubbed
-  and a per-row read blows up.
+  forbids an N+1 — leave `get_entities` / `list_entities_window` unstubbed and
+  a per-row read blows up.
 - **`mountModule(TheClass, opts?)`** — runs the class through the real
   `definePlugin`/init path. In dispatch mode it returns `{ rpc, tools }` so you
   assert the *decorated* names and routing (`call("companies.list", …)` or the
@@ -389,10 +407,14 @@ A module is done only when all hold:
 - [ ] `schema.ts` + `types.ts` are loose root files; no single-file folders.
 - [ ] `module/index.ts` is `definePlugin(...)` and nothing else.
 - [ ] No `migrations/` folder unless it carries a real data migration.
-- [ ] Every entity/facet has its `schemas/` file under the `<id>.…` namespace
-      (entity file: no `version`; facet file: has `version`), and every
-      FOREIGN ask is declared in `[permissions]`.
-- [ ] List handlers read the intended value (canonical vs latest facet,
-      deliberately) and use batch reads — no per-row N+1.
+- [ ] Every ENTITY has its `schemas/` file under the `<id>.…` namespace, with
+      its endpoint `roles`; no file carries `"version"` (that is a retired
+      facet contract and install refuses it); every FOREIGN ask is declared in
+      `[permissions]`.
+- [ ] Searchable keys are declared in `search.toml`, and what the module
+      filters on is what the indexer embeds.
+- [ ] Sync writers send the WHOLE dictionary (`apply_batch` replaces);
+      curated writers send only what changed (`update_properties` merges).
+- [ ] List handlers use batch reads — no per-row N+1.
 - [ ] Whole-module tests in `module/__tests__/` on `@magnis/testkit/module`,
       green under `bun run test`.

@@ -34,17 +34,18 @@ Every arrow is two-way — requests flow one direction, information flows back. 
 
 Everything lands in one graph:
 
-- **entities** — people, messages, meetings, companies, projects
-- **facets** — typed data attached to an entity, with provenance
-- **links** — typed relationships between entities ("works_at", "attended", "authored_by")
+- **entities** — people, messages, meetings, companies, projects — each with an
+  **anchor** (its identity), a host-stamped **source**, and a **dictionary** of
+  what its owning module knows
+- **links** — typed relationships between entities ("works_at", "attended",
+  "authored_by"), each with a dictionary of its own for the per-pair facts
 - **events** — append-only mutation history
-- **canonical properties** — resolved truth when several sources disagree
 
 One graph means one *connected data model per deployment* — not unrestricted cross-user access: the graph is partitioned by entity ownership and filtered by ACL visibility for every caller (below).
 
 ### Provenance and canonical truth
 
-Every facet and mutation carries provenance identifying the responsible module or source and, where applicable, the originating provider record — "according to Gmail, on this date, this person's name is X". Canonical properties are derived by deterministic merge rules and retain the contributing facets as evidence; agent inferences are stored separately as hypotheses, never asserted as source facts.
+Every write carries provenance identifying the responsible module or source and, where applicable, the originating provider record — "according to Gmail, on this date, this person's name is X" — and the HOST stamps it, so a plugin cannot forge it. Two sources describing the same person do not fight over one row: each owns its node, and a hub reaches them over `identity`. Agent inferences are stored separately as hypotheses — candidate edges in the same table, invisible to ordinary reads until they earn promotion — never asserted as source facts.
 
 ### Hypotheses
 
@@ -54,11 +55,11 @@ A **hypothesis** is a graph-resident, non-canonical assertion with a confidence 
 
 Every entity has exactly one owning user, recorded and enforced at the schema/storage boundary — below module code. Ownership is deliberately separated from **visibility**: owning a fact and being allowed to see it are two different questions, which is what lets team sharing layer on top without weakening isolation.
 
-Visibility beyond the owner is modeled **in the graph itself**: a dedicated **ACL entity** whose grant links include other users is linked to the resource being shared — an account, a project, a thread — and the grant covers that resource together with the facets and history attached to it. A read is authorized by resolving the caller's identity through those ACL links during traversal, before data is returned. There is no parallel permissions table to drift out of sync: the same graph that holds the knowledge holds who may see it. Ownership isolation is implemented today; ACL-based team sharing is the designed mechanism rolling out with our first design-partner deployment.
+Visibility beyond the owner is modeled **in the graph itself**: a dedicated **ACL entity** whose grant links include other users is linked to the resource being shared — an account, a project, a thread — and the grant covers that resource together with the dictionaries and history attached to it. A read is authorized by resolving the caller's identity through those ACL links during traversal, before data is returned. There is no parallel permissions table to drift out of sync: the same graph that holds the knowledge holds who may see it. Ownership isolation is implemented today; ACL-based team sharing is the designed mechanism rolling out with our first design-partner deployment.
 
 Note the two *independent* permission layers: graph ACL governs which **users** see which entities; module capability manifests (see the data pipeline) govern what **plugin code** may touch. They enforce different things at different boundaries.
 
-→ In depth: [docs/graph.md](graph.md) — entity/facet/link anatomy, link types, the search index, vector indexing, and the graph tools agents call.
+→ In depth: [docs/graph.md](graph.md) — entity/dictionary/link anatomy, link types, the search index, vector indexing, and the graph tools agents call.
 
 ---
 
@@ -85,7 +86,7 @@ sequenceDiagram
     Ext-->>Src: provider response
     Src->>Host: envelopes + nextCursor
     Host->>Mod: user-scoped envelopes, routed by surface
-    Mod->>G: entity/facet/link writes
+    Mod->>G: entity + link writes
 ```
 
 In push mode the direction inverts at the top: the source notifies the host as provider events arrive, and the same surface routing and user scoping apply.
@@ -98,7 +99,7 @@ In push mode the direction inverts at the top: the source notifies the host as p
 
 ### Modules — owning the graph's shape
 
-A **module** owns a slice of the graph for one domain — contacts, email, meetings, deals, tickets: whatever the business runs on, each domain is a module, and new domains are new modules, not core changes. Versioned schema files define its **strictly-typed entity and facet contracts**; installing the module registers those schemas with the host. The module decides how conflicting facets merge into canonical truth, and its public tools are harvested from its code — declared, not wired.
+A **module** owns a slice of the graph for one domain — contacts, email, meetings, deals, tickets: whatever the business runs on, each domain is a module, and new domains are new modules, not core changes. Versioned schema files define its **strictly-typed entity contracts** and a `search.toml` declares which of their dictionary keys are searchable; installing the module registers both with the host. Its public tools are harvested from its code — declared, not wired — and three more are generated from the search declaration.
 
 What a typed slice actually looks like in the graph — a person, as the contacts module stores them:
 
@@ -106,16 +107,18 @@ What a typed slice actually looks like in the graph — a person, as the contact
 // ENTITY — the thing itself. One owner, a typed schema, little else:
 { id: "e-91…", schema: "contacts.person", owner: "user-A", name: "Sam Ito" }
 
-// FACETS — each source's view, kept verbatim with provenance and confidence:
-{ schema: "person.profile", data: { first_name: "Sam" },
-  source: { source: "telegram", external_id: "tg:8841…", confidence: 90 } }
-{ schema: "person.profile", data: { first_name: "Samuel" },
-  source: { source: "linkedin", external_id: "li:sam-ito", confidence: 60 } }
+// Its DICTIONARY — one writer, replaced wholesale on each observation:
+{ properties: { first_name: "Sam", description: "met at the conference" },
+  anchor: "local:e-91…",
+  source: { source: "contacts", account: "default", confidence: 100 } }
 
-// CANONICAL — the resolved truth (confidence, then recency); records stay as evidence:
-{ "person.first_name": "Sam" }
+// A REPLICA — what another source saw, on its own node with its own identity:
+{ id: "a-44…", schema: "telegram.account", anchor: "tg:user:8841",
+  properties: { first_name: "Samuel", username: "sam_ito" },
+  source: { source: "telegram", account: "default", confidence: 90 } }
 
 // LINKS — typed edges; the last one is a hypothesis, invisible until promoted:
+{ kind: "identity",  to: "telegram.account: a-44…" }
 { kind: "works_at", to: "company: Lumen Labs" }
 { kind: "same_as",  to: "person: e-27…", status: "candidate", p: 0.74 }
 ```
@@ -124,7 +127,7 @@ Nothing here is module-private storage — it is all the one graph, typed by the
 
 **Sandbox.** Modules run inside the core process in V8 isolates with no I/O of their own — no network, no filesystem, no sockets. A module reaches the graph only through the typed graph API, and only within what its capability manifest grants: the namespaces it owns, the operations it may call, the surfaces it wires to. That restriction is the point: a graph-owner can't leak to, or be attacked from, the outside world — anything that needs the outside is a source's job.
 
-→ In depth: [docs/plugins/module.md](plugins/module.md) — build a module end to end: the class, the graph API, schemas, the canonical-vs-facet rule, tests.
+→ In depth: [docs/plugins/module.md](plugins/module.md) — build a module end to end: the class, the graph API, schemas, the replace-not-merge write rule, tests.
 
 ### Per-user isolation, end to end
 
@@ -140,7 +143,7 @@ The non-mixing of users' data is not one feature — it is a chain of boundaries
 
 Connecting a new system means writing a plugin against the same contract every built-in integration uses, and the platform treats plugins as real packages, not file drops:
 
-- **Typed from the first line.** The manifest declares package identity, surfaces, and capabilities; versioned schema files define the entity/facet contracts the graph enforces. There is no "dump JSON somewhere" path.
+- **Typed from the first line.** The manifest declares package identity, surfaces, and capabilities; versioned schema files define the entity contracts the graph enforces. There is no "dump JSON somewhere" path.
 - **Lifecycle, precisely.** Schema registration is host-native — modules ship no database-schema migrations; a module may ship an explicitly versioned *graph-data* migration when an upgrade must transform existing entities. Installs reconcile what's on disk with what the database believes; a running extension can be rebuilt and swapped live without restart; dependency guards block unsafe disables; extensions arrive from a signed remote catalog with system and community tiers.
 - **Tools register themselves.** A module's public tools are harvested from its code on install and become available to the agent and every client automatically — the same self-describing surface agents use for discovery.
 - **Agent-buildable by design.** The contract is written so coding agents can generate a plugin from a high-level description — our X integration went from nothing to working in hours this way.
@@ -198,7 +201,7 @@ The model layer underneath is swappable — built-in tool-calling engine, or the
 
 Triggers are how episodes start *asynchronously* — a publish/subscribe layer over the graph, and because everything becomes the graph, subscribing to the graph means subscribing to the business itself. A trigger is a subscription plus instructions for the future:
 
-- **Event triggers** subscribe to graph mutations — an entity created, a facet updated, a link added, a message arriving from a specific person.
+- **Event triggers** subscribe to graph mutations — an entity created, a dictionary updated, a link added, a message arriving from a specific person.
 - **Schedule triggers** fire at moments in time (cron-style) and evaluate current graph state — which is how "this thread has gone quiet" is detected.
 - **Gate.** When a subscription fires, a gate prompt decides whether this occurrence actually matters — a relevance classifier, not an authorization mechanism.
 - **Act.** If the gate passes, the trigger starts an agent episode with the prompt defined at subscription time — "draft the follow-up", "prepare my brief" — in the subscribing user's context. Agent-originated mutations from a triggered episode pass the same approval flow as any other.
@@ -209,7 +212,7 @@ This is how work gets scheduled into the future: the subscription carries the in
 
 An agent never queries raw provider data — it searches the graph. Retrieval is hybrid:
 
-- **structured graph queries** — typed traversal over entities, facets, and links ("open deals involving people from Tuesday's meeting");
+- **structured graph queries** — typed traversal over entities, their dictionaries, and links ("open deals involving people from Tuesday's meeting");
 - **semantic search** — embedding-based retrieval over message and document content. The embedding endpoint is deployment-configured: an in-perimeter local service (Ollama-style or any OpenAI-compatible server) keeps indexed content inside the deployment boundary; a remote endpoint is possible where policy allows.
 
 The combination is deliberate: multi-hop questions resolve through the graph, fuzzy recall resolves through embeddings, and both return provenance — every result carries the identifiers the agent needs for its next traversal hop. The same search serves clients. Index mechanics — full-text, vectors, rank fusion: [docs/graph.md](graph.md).
