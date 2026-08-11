@@ -59,13 +59,18 @@ export function TriggerDetailPanel({
   // clicks dispatched before React re-renders would both get past it and issue
   // two writes against the same trigger.
   //
-  // They hold the id being written, not a boolean. The host reuses this panel
-  // when the selection changes — `BaseModuleComponent` renders it unkeyed — so a
-  // boolean would survive the switch and silently swallow a legitimate action on
-  // the NEXT trigger until the previous one settled. Cleared on settle, and only
-  // if the id has not moved on since.
-  const statusInFlight = useRef<string | undefined>(undefined);
-  const removeInFlight = useRef<string | undefined>(undefined);
+  // SETS of in-flight ids, not one id and not a boolean. The host reuses this
+  // panel when the selection changes — `BaseModuleComponent` renders it
+  // unkeyed — so the guard has to be per trigger: a boolean would swallow a
+  // legitimate action on the next trigger, and a single remembered id would
+  // forget the first one, letting A be written twice over an A → B → A walk.
+  const statusInFlight = useRef(new Set<string>());
+  const removeInFlight = useRef(new Set<string>());
+  // The live selection, readable from a settle callback. Mutation options close
+  // over the render that created them, so a callback firing after the operator
+  // moved on would otherwise compare against a stale id.
+  const shownEntityId = useRef(entityId);
+  shownEntityId.current = entityId;
 
   const setStatus = useMutation({
     mutationFn: (vars: { readonly id: string; readonly status: string }) =>
@@ -74,7 +79,7 @@ export function TriggerDetailPanel({
       await queryClient.invalidateQueries({ queryKey: triggerKeys.all });
     },
     onSettled: (_data, _error, vars) => {
-      if (statusInFlight.current === vars.id) statusInFlight.current = undefined;
+      statusInFlight.current.delete(vars.id);
     },
   });
 
@@ -88,7 +93,7 @@ export function TriggerDetailPanel({
       // Only if the panel is still showing what was deleted. The selection can
       // have moved on while the write was in flight, and clearing it then would
       // close a trigger the operator had just opened.
-      if (deletedId === entityId) onDeleted?.();
+      if (deletedId === shownEntityId.current) onDeleted?.();
       // The plugin's own list, detail and history keys.
       void queryClient.invalidateQueries({ queryKey: triggerKeys.all });
       // INV-P2.3: and the owners that named this trigger. The panel has no
@@ -107,7 +112,7 @@ export function TriggerDetailPanel({
       });
     },
     onSettled: (_data, _error, deletedId) => {
-      if (removeInFlight.current === deletedId) removeInFlight.current = undefined;
+      removeInFlight.current.delete(deletedId);
     },
   });
   const watchIds = useMemo(
@@ -230,8 +235,8 @@ export function TriggerDetailPanel({
             // A ref, not `isPending`: that is a rendered snapshot, so two
             // clicks dispatched before React re-renders would both pass it and
             // issue two writes against the same trigger.
-            if (statusInFlight.current === entityId) return;
-            statusInFlight.current = entityId;
+            if (statusInFlight.current.has(entityId)) return;
+            statusInFlight.current.add(entityId);
             setStatus.mutate({
               id: entityId,
               status: trigger.status === "active" ? "paused" : "active",
@@ -243,8 +248,8 @@ export function TriggerDetailPanel({
           variant="danger"
           icon="trash"
           onClick={() => {
-            if (removeInFlight.current === entityId) return;
-            removeInFlight.current = entityId;
+            if (removeInFlight.current.has(entityId)) return;
+            removeInFlight.current.add(entityId);
             remove.mutate(entityId);
           }}
         />

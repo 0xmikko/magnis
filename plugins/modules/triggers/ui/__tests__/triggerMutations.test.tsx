@@ -344,6 +344,61 @@ describe("tst_fe_trig_003 — the panel pauses, resumes and deletes", () => {
     releaseFirst?.();
   });
 
+  it("Step 3c3 → walking A → B → A does not let A be deleted twice", async () => {
+    // A single remembered id would be overwritten by B, and coming back to A
+    // would find nothing in flight. Both writes are held open for the whole
+    // walk, so A is genuinely still pending when it is clicked again.
+    const holds = new Map<string, () => void>();
+    const rpc = vi.fn((method: string, params?: Record<string, unknown>) => {
+      if (method === "triggers.get") return Promise.resolve(detailWith("active"));
+      if (method === "triggers.fire_history") return Promise.resolve([]);
+      if (method === "triggers.delete") {
+        const id = String(params?.id);
+        return new Promise<{ deleted: boolean }>((resolve) => {
+          holds.set(id, () => {
+            resolve({ deleted: true });
+          });
+        });
+      }
+      return Promise.reject(new Error(`unexpected RPC: ${method}`));
+    });
+    const runtime = {
+      transport: { rpc },
+      agent: { resolveEntityRenderer: () => null },
+      modules: { get: () => undefined },
+    } as unknown as AppRuntime;
+    const client = freshClient();
+    const panel = (id: string): JSX.Element =>
+      withClient(
+        client,
+        <TriggerDetailPanel entityId={id} moduleId="triggers" runtime={runtime} />,
+      );
+    const deleted = (): string[] =>
+      rpc.mock.calls
+        .filter(([m]) => m === "triggers.delete")
+        .map(([, params]) => String((params as { id: string }).id));
+
+    const { findByText, rerender } = render(panel("trigger-1"));
+    fireEvent.click(await findByText("Delete"));
+    await waitFor(() => {
+      expect(deleted()).toEqual(["trigger-1"]);
+    });
+
+    rerender(panel("trigger-2"));
+    fireEvent.click(await findByText("Delete"));
+    await waitFor(() => {
+      expect(deleted()).toEqual(["trigger-1", "trigger-2"]);
+    });
+
+    // Back to A, whose write never settled.
+    rerender(panel("trigger-1"));
+    fireEvent.click(await findByText("Delete"));
+    await Promise.resolve();
+    expect(deleted()).toEqual(["trigger-1", "trigger-2"]);
+
+    for (const release of holds.values()) release();
+  });
+
   it("Step 3d → the host hears about the deletion before the cache work", async () => {
     const { runtime } = statefulRuntime();
     const client = freshClient();
