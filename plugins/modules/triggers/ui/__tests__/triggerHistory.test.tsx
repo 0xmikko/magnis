@@ -72,4 +72,24 @@ describe("tst_fe_trig_002 — the panel shows fire history", () => {
     expect(section?.textContent).toContain("Skipped (not relevant)");
     expect(rpc).toHaveBeenCalledWith("triggers.fire_history", { trigger_id: "trigger-1" });
   });
+
+  it("reads the event kind in the operator's words, not the backend's", async () => {
+    // The host panel carried this mapping and P3 deleted it with the host copy;
+    // it was restored by hand once already. Nothing pinned it, so deleting the
+    // map again left every test green and the row reading `sync_ingested`.
+    const rpc = vi.fn((method: string) => {
+      if (method === "triggers.get") return Promise.resolve(DETAIL);
+      if (method === "triggers.fire_history") return Promise.resolve([]);
+      return Promise.reject(new Error(`unexpected RPC: ${method}`));
+    });
+
+    const { findByText, queryByText } = render(
+      withProviders(
+        <TriggerDetailPanel entityId="trigger-1" moduleId="triggers" runtime={runtime(rpc)} />,
+      ),
+    );
+
+    expect(await findByText("New message/email")).toBeTruthy();
+    expect(queryByText("sync_ingested")).toBeNull();
+  });
 });

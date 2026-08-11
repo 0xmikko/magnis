@@ -185,15 +185,14 @@ export class ContactsModule {
     for (const [id, kind] of reached) {
       const t = neighbours.get(id);
       if (!t) continue;
-      // The hub does not inherit its replicas' message traffic. A shared
-      // `email.address` is on the far side of one edge per message ever sent to
-      // it, so a real mailbox would put thousands of rows in this response and
-      // a card per message in the Email tab. The host already treats individual
-      // messages as noise rather than linked entities and skips them when
-      // grouping (`entityTabUtils.ts`, "individual messages (too many,
-      // noise)"); messages are reached through the Email and Telegram
-      // surfaces, which page. Every other endpoint is returned, including a
-      // company that shares the address.
+      // The hub does not inherit its replicas' message traffic (INV-P2b.4, as
+      // amended). A shared `email.address` is on the far side of one edge per
+      // message ever sent to it, so a real mailbox would put thousands of rows
+      // in this response. The host skips `telegram.message` when grouping but
+      // NOT `email.message` (`entityTabUtils.ts:65`), so those would also draw
+      // a card per message in an Email tab on the contact's page. Messages are
+      // read through the Email and Telegram surfaces, which page. Every other
+      // endpoint is returned, including a company that shares the address.
       if (MESSAGE_SCHEMAS.has(t.schema_id)) continue;
       linked.push({
         id: t.id,

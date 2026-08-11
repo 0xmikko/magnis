@@ -1,4 +1,4 @@
-import { useMemo, type JSX } from "react";
+import { useMemo, useRef, type JSX } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { DetailPanelProps } from "@magnis/host/base";
 import { ExpandableEntityCard } from "@magnis/host/agent";
@@ -55,11 +55,20 @@ export function TriggerDetailPanel({
   const detail = useTriggerDetailQuery(entityId, runtime);
   const history = useTriggerHistory(entityId, runtime);
 
+  // Refs, not the mutations' `isPending`: that is a rendered snapshot, so two
+  // clicks dispatched before React re-renders would both get past it and issue
+  // two writes against the same trigger. Cleared on settle, success or not.
+  const statusInFlight = useRef(false);
+  const removeInFlight = useRef(false);
+
   const setStatus = useMutation({
     mutationFn: (status: string) =>
       runtime.transport.rpc("triggers.update", { id: entityId, status }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: triggerKeys.all });
+    },
+    onSettled: () => {
+      statusInFlight.current = false;
     },
   });
 
@@ -87,6 +96,9 @@ export function TriggerDetailPanel({
           return links.some((link) => (link as { id?: unknown } | null)?.id === entityId);
         },
       });
+    },
+    onSettled: () => {
+      removeInFlight.current = false;
     },
   });
   const watchIds = useMemo(
@@ -171,9 +183,10 @@ export function TriggerDetailPanel({
       {watchIds.length > 0 ? (
         <Stack gap={2}>
           <Text variant="title">Watches</Text>
-          {watchedEntities.isError ? (
-            <Text variant="body" color="tertiary">Watched entities unavailable</Text>
-          ) : !watchedEntities.data ? (
+          {/* No error branch: every per-item read is caught, so the query
+              cannot reject and an "unavailable" fallback would be dead code.
+              A watch that could not be read is named in the list below. */}
+          {!watchedEntities.data ? (
             <Text variant="body" color="tertiary">Loading entities…</Text>
           ) : (
             <Stack gap={2}>
@@ -205,9 +218,11 @@ export function TriggerDetailPanel({
           label={trigger.status === "active" ? "Pause" : "Resume"}
           icon={trigger.status === "active" ? "pause" : "activity"}
           onClick={() => {
-            // One in flight at a time: a second click would issue a second
-            // write against the same trigger.
-            if (setStatus.isPending) return;
+            // A ref, not `isPending`: that is a rendered snapshot, so two
+            // clicks dispatched before React re-renders would both pass it and
+            // issue two writes against the same trigger.
+            if (statusInFlight.current) return;
+            statusInFlight.current = true;
             setStatus.mutate(trigger.status === "active" ? "paused" : "active");
           }}
         />
@@ -216,7 +231,8 @@ export function TriggerDetailPanel({
           variant="danger"
           icon="trash"
           onClick={() => {
-            if (remove.isPending) return;
+            if (removeInFlight.current) return;
+            removeInFlight.current = true;
             remove.mutate();
           }}
         />

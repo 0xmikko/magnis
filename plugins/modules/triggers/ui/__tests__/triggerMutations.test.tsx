@@ -244,6 +244,84 @@ describe("tst_fe_trig_003 — the panel pauses, resumes and deletes", () => {
     expect(await findByText("Pause")).toBeTruthy();
   });
 
+  it("Step 3c → two clicks in one turn issue one write", async () => {
+    // The write is held open, so the second click lands while the first is still
+    // in flight and BEFORE React has re-rendered — which is why the guard is a
+    // ref and not the mutation's `isPending` snapshot.
+    let releaseDelete: (() => void) | undefined;
+    const held = new Promise<{ deleted: boolean }>((resolve) => {
+      releaseDelete = () => {
+        resolve({ deleted: true });
+      };
+    });
+    const rpc = vi.fn((method: string) => {
+      if (method === "triggers.get") return Promise.resolve(detailWith("active"));
+      if (method === "triggers.fire_history") return Promise.resolve([]);
+      if (method === "triggers.delete") return held;
+      return Promise.reject(new Error(`unexpected RPC: ${method}`));
+    });
+    const runtime = {
+      transport: { rpc },
+      agent: { resolveEntityRenderer: () => null },
+      modules: { get: () => undefined },
+    } as unknown as AppRuntime;
+
+    const { findByText } = render(
+      withClient(
+        freshClient(),
+        <TriggerDetailPanel entityId="trigger-1" moduleId="triggers" runtime={runtime} />,
+      ),
+    );
+    const button = await findByText("Delete");
+    // Both dispatched in the same turn, before any re-render could flip a
+    // rendered `isPending` to true.
+    fireEvent.click(button);
+    fireEvent.click(button);
+
+    const deletes = () => rpc.mock.calls.filter(([method]) => method === "triggers.delete");
+    // `mutate` reaches the mutationFn on a microtask, so let those run: without
+    // the ref guard BOTH clicks would have queued one and this settles at 2.
+    await waitFor(() => {
+      expect(deletes()).toHaveLength(1);
+    });
+    await Promise.resolve();
+    expect(deletes()).toHaveLength(1);
+    releaseDelete?.();
+  });
+
+  it("Step 3d → the host hears about the deletion before the cache work", async () => {
+    const { runtime } = statefulRuntime();
+    const client = freshClient();
+    const order: string[] = [];
+    vi.spyOn(client, "invalidateQueries").mockImplementation(() => {
+      order.push("invalidate");
+      return Promise.resolve();
+    });
+    const onDeleted = vi.fn(() => {
+      order.push("onDeleted");
+    });
+
+    const { findByText } = render(
+      withClient(
+        client,
+        <TriggerDetailPanel
+          entityId="trigger-1"
+          moduleId="triggers"
+          runtime={runtime}
+          onDeleted={onDeleted}
+        />,
+      ),
+    );
+    fireEvent.click(await findByText("Delete"));
+
+    await waitFor(() => {
+      expect(onDeleted).toHaveBeenCalled();
+    });
+    // Awaiting the invalidations first would refetch this panel's own dead
+    // queries — with retries, a second or more of a deleted trigger on screen.
+    expect(order[0]).toBe("onDeleted");
+  });
+
   it("Step 4 → one unreadable watch does not hide the others", async () => {
     const rpc = vi.fn((method: string, params?: Record<string, unknown>) => {
       if (method === "triggers.get") {
