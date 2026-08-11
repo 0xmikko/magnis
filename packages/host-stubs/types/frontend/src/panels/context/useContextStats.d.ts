@@ -1,4 +1,4 @@
-import type { AppRuntime } from "../runtime/contracts/runtime";
+import type { AppRuntime } from "../../runtime/contracts/runtime";
 export interface StatsDeps {
     /** Episode-cumulative cost in micros; null when the episode has none. */
     readonly fetchEpisodeCostMicros: (episodeId: string) => Promise<number | null>;

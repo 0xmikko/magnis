@@ -1,6 +1,6 @@
 import type { JSX, ReactNode } from "react";
-import type { IconName } from "../components/ui/Icon";
-import type { AppRuntime } from "../runtime/contracts/runtime";
+import type { IconName } from "../../components/ui/Icon";
+import type { AppRuntime } from "../../runtime/contracts/runtime";
 export interface ContextPanelEntity {
     readonly id: string;
     readonly schemaId: string;
