@@ -26,6 +26,7 @@ import type {
   BatchSendParams,
   ChatsListParams,
   GetParams,
+  LinkedEntitySummary,
   MessageDetailView,
   MessageListItem,
   MessagesListParams,
@@ -330,15 +331,50 @@ export class TelegramModule {
   })
   async messagesGet(params: GetParams): Promise<MessageDetailView> {
     // P1 (graph-read-api §4): the entity in ONE fetch, user-scoped.
-    const detail = await this.graph.get_entity_full(params.id, { links: false });
+    // P4: with its links. Returning nothing because the fetch asked for
+    // nothing was not a decision about what a message exposes.
+    const detail = await this.graph.get_entity_full(params.id, { links: true });
     if (detail?.entity.schema_id !== MESSAGE) {
       throw new Error(`${MESSAGE} ${params.id} not found`);
     }
-    const { entity } = detail;
+    const { entity, links } = detail;
     // S4: the message DICT is the record.
     const d = ((entity as { properties?: unknown }).properties ?? {}) as Data;
     const senderName = (await this.senderNamesFor([entity.id])).get(entity.id) ?? null;
     const created = entity.created_at ?? "";
+
+    // P4 — telegram's choice, stated: a message exposes its chat, its sender,
+    // and whatever points at it. Outgoing keeps the kind, incoming wears `~`,
+    // the convention projects and companies already use.
+    // @tested-by: tst_mod_tg_001
+    // @invariant: a message never lists itself, and one relation per endpoint
+    // survives — the first one found supplies the label.
+    const reached: { readonly id: string; readonly kind: string }[] = [];
+    for (const link of links) {
+      const outgoing = link.from_id === entity.id;
+      const endpoint = outgoing ? link.to_id : link.from_id;
+      if (endpoint === entity.id) continue;
+      reached.push({ id: endpoint, kind: outgoing ? link.kind : `~${link.kind}` });
+    }
+    const endpointIds = [...new Set(reached.map((r) => r.id))];
+    const endpoints = endpointIds.length === 0 ? [] : await this.graph.get_entities(endpointIds);
+    const endpointById = new Map(endpoints.map((e) => [e.id, e] as const));
+    const linked_entities: LinkedEntitySummary[] = [];
+    const claimed = new Set<string>();
+    for (const r of reached) {
+      if (claimed.has(r.id)) continue;
+      const target = endpointById.get(r.id);
+      if (target === undefined) continue;
+      claimed.add(r.id);
+      linked_entities.push({
+        id: target.id,
+        name: target.name,
+        schema_id: target.schema_id,
+        link_kind: r.kind,
+        created_at: (target as { created_at?: string }).created_at ?? new Date(0).toISOString(),
+        data: null,
+      });
+    }
     return {
       id: entity.id,
       schema_id: entity.schema_id,
@@ -348,7 +384,7 @@ export class TelegramModule {
       channel: "telegram",
       timestamp: typeof d.date === "string" ? (d.date) : created,
       canonical: {},
-      linked_entities: [],
+      linked_entities,
       created_at: created,
       metadata: d,
     };
