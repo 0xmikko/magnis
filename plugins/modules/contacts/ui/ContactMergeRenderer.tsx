@@ -17,7 +17,12 @@ interface MergeField {
   readonly canonical_key: string;
   readonly survivor_value: unknown;
   readonly retired_value: unknown;
+  /** What the merge will write. `null` when it will write nothing because
+   *  the key needs an answer — see `conflict`. */
   readonly auto_resolved: unknown;
+  /** Both contacts claim this key with different values. The merge REFUSES
+   *  to run until the operator answers it. */
+  readonly conflict?: boolean;
 }
 
 interface MergePreviewData {
@@ -91,7 +96,8 @@ function MergeTable({ preview }: { readonly preview: MergePreviewData }): JSX.El
       {fields.map(([key, field], rowIdx) => {
         const sv = fmtVal(field.survivor_value);
         const rv = fmtVal(field.retired_value);
-        const mr = fmtVal(field.auto_resolved);
+        const conflicted = field.conflict === true;
+        const mr = conflicted ? "needs your answer" : fmtVal(field.auto_resolved);
         const borderClass = rowIdx < fields.length - 1 ? "border-b border-agent-border/20" : "";
 
         return (
@@ -105,8 +111,18 @@ function MergeTable({ preview }: { readonly preview: MergePreviewData }): JSX.El
             <div className="flex items-center border-l border-agent-border/30 px-2 py-1.5">
               <span className="text-[11px] text-agent-text">{rv}</span>
             </div>
-            <div className="flex items-center border-l border-agent-border/30 bg-[var(--color-agent-tool-teal-soft-bg)] px-2 py-1.5">
-              <span className="text-[11px] font-medium text-[var(--color-agent-tool-teal-text)]">{mr}</span>
+            <div
+              className={`flex items-center border-l border-agent-border/30 px-2 py-1.5 ${
+                conflicted ? "" : "bg-[var(--color-agent-tool-teal-soft-bg)]"
+              }`}
+            >
+              <span
+                className={`text-[11px] font-medium ${
+                  conflicted ? "text-amber-400" : "text-[var(--color-agent-tool-teal-text)]"
+                }`}
+              >
+                {mr}
+              </span>
             </div>
           </div>
         );
@@ -159,6 +175,9 @@ export function ContactMergeRenderer({
     : null;
 
   const fieldCount = preview ? Object.keys(preview.fields).length : 0;
+  const conflictCount = preview
+    ? Object.values(preview.fields).filter((f) => f.conflict === true).length
+    : 0;
   const doneLabel = mergeResult
     ? `Merged (${String(mergeResult.links_repointed)} links)`
     : "Merged";
@@ -193,7 +212,12 @@ export function ContactMergeRenderer({
           {reason && <div className="text-[11px] text-agent-text-muted italic">{reason}</div>}
           <MergeTable preview={preview} />
           <div className="flex gap-3 text-[10px] text-agent-text-muted">
-            <span>{String(fieldCount)} fields resolved</span>
+            <span>{String(fieldCount - conflictCount)} fields resolved</span>
+            {conflictCount > 0 && (
+              <span className="text-amber-400">
+                {String(conflictCount)} need an answer — the merge will refuse until then
+              </span>
+            )}
             <span>{String(preview.links_to_repoint)} links to transfer</span>
           </div>
         </div>

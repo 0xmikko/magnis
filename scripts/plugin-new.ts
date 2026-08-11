@@ -6,7 +6,7 @@
 // Generates plugins/modules/<id>/ with the canonical manifest-v3 package layout:
 // manifest.toml (the folder name must equal the manifest id; tier community;
 // identity + permissions only — the module's namespace `<id>.*` is derived from
-// the id), schemas/ (convention-discovered entity + facet JSON files), README.md
+// the id), schemas/ (convention-discovered entity JSON files), README.md
 // (the catalog description), module/ (decorated service + definePlugin entry +
 // a unit test covering the tool shape without per-row N+1 queries — the minimum
 // every module ships), ui/ (defineModule), types/, package.json, tsconfig
@@ -35,7 +35,7 @@ summary = ${JSON.stringify(`Scaffolded ${id} module.`)}
 # Reverse-domain publisher identity.
 publisher = "com.example"
 
-# Foreign asks beyond the implicit own namespace: writes to \`${id}.\` facets,
+# Foreign asks beyond the implicit own namespace: writes to \`${id}.\` schemas,
 # own:own links, and reads of own schemas need no declaration. Uncomment and
 # fill in only what the module actually needs.
 # [permissions]
@@ -64,19 +64,6 @@ function entitySchemaJson(id: string): string {
 }
 
 /** schemas/item.details.json — a FACET contract (always has "version"). */
-function facetSchemaJson(): string {
-  return `${JSON.stringify(
-    {
-      version: 1,
-      type: "object",
-      properties: { title: { type: "string" } },
-      required: ["title"],
-      additionalProperties: false,
-    },
-    null,
-    2,
-  )}\n`;
-}
 
 function readmeMd(id: string, title: string): string {
   return `# ${title}\n\nScaffolded ${id} module. Describe what it owns and does here — this file is\nthe catalog detail page.\n`;
@@ -254,7 +241,6 @@ export function scaffoldPlugin(id: string, pluginsRoot: string): string {
 
   writeFileSync(join(dir, "manifest.toml"), manifestToml(id, title));
   writeFileSync(join(dir, "schemas", "item.json"), entitySchemaJson(id));
-  writeFileSync(join(dir, "schemas", "item.details.json"), facetSchemaJson());
   writeFileSync(join(dir, "README.md"), readmeMd(id, title));
   writeFileSync(
     join(dir, "module", "index.ts"),
