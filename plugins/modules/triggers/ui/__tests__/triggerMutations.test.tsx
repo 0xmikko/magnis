@@ -457,6 +457,67 @@ describe("tst_fe_trig_003 — the panel pauses, resumes and deletes", () => {
     });
   });
 
+  it("Step 3c5 → two writes in flight: A still reports when A is on screen", async () => {
+    // The ordering that a plain `entityId` closure gets wrong. Starting the
+    // second mutation DETACHES the first from TanStack's observer, so the first
+    // keeps the options it held at that moment — B's. Come back to A, let A
+    // settle, and the callback compares A against B and stays silent, leaving a
+    // deleted trigger selected. Only a live-selection read gets this right.
+    const holds = new Map<string, () => void>();
+    const rpc = vi.fn((method: string, params?: Record<string, unknown>) => {
+      if (method === "triggers.get") return Promise.resolve(detailWith("active"));
+      if (method === "triggers.fire_history") return Promise.resolve([]);
+      if (method === "triggers.delete") {
+        const id = String(params?.id);
+        return new Promise<{ deleted: boolean }>((resolve) => {
+          holds.set(id, () => {
+            resolve({ deleted: true });
+          });
+        });
+      }
+      return Promise.reject(new Error(`unexpected RPC: ${method}`));
+    });
+    const runtime = {
+      transport: { rpc },
+      agent: { resolveEntityRenderer: () => null },
+      modules: { get: () => undefined },
+    } as unknown as AppRuntime;
+    const client = freshClient();
+    const onDeleted = vi.fn();
+    const panel = (id: string): JSX.Element =>
+      withClient(
+        client,
+        <TriggerDetailPanel
+          entityId={id}
+          moduleId="triggers"
+          runtime={runtime}
+          onDeleted={onDeleted}
+        />,
+      );
+
+    const { findByText, rerender } = render(panel("trigger-1"));
+    fireEvent.click(await findByText("Delete")); // A: held open
+    await waitFor(() => {
+      expect(holds.has("trigger-1")).toBe(true);
+    });
+
+    rerender(panel("trigger-2"));
+    fireEvent.click(await findByText("Delete")); // B: held open, detaches A
+    await waitFor(() => {
+      expect(holds.has("trigger-2")).toBe(true);
+    });
+
+    // Back to A, which is what the operator is looking at when A lands.
+    rerender(panel("trigger-1"));
+    holds.get("trigger-1")?.();
+
+    await waitFor(() => {
+      expect(onDeleted).toHaveBeenCalledTimes(1);
+    });
+
+    holds.get("trigger-2")?.();
+  });
+
   it("Step 3d → the host hears about the deletion before the cache work", async () => {
     const { runtime } = statefulRuntime();
     const client = freshClient();
