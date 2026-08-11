@@ -399,6 +399,64 @@ describe("tst_fe_trig_003 — the panel pauses, resumes and deletes", () => {
     for (const release of holds.values()) release();
   });
 
+  it("Step 3c4 → a delete settling after a switch does not clear the new selection", async () => {
+    // The host clears the selection when this callback fires, so a write that
+    // lands after the operator has moved on must NOT report. Nothing pinned this
+    // before: the A → B → A walk passes no `onDeleted` at all, so a version
+    // comparing against a closure-captured id passed it either way.
+    let releaseFirst: (() => void) | undefined;
+    const held = new Promise<{ deleted: boolean }>((resolve) => {
+      releaseFirst = () => {
+        resolve({ deleted: true });
+      };
+    });
+    const rpc = vi.fn((method: string, params?: Record<string, unknown>) => {
+      if (method === "triggers.get") return Promise.resolve(detailWith("active"));
+      if (method === "triggers.fire_history") return Promise.resolve([]);
+      if (method === "triggers.delete") {
+        return params?.id === "trigger-1" ? held : Promise.resolve({ deleted: true });
+      }
+      return Promise.reject(new Error(`unexpected RPC: ${method}`));
+    });
+    const runtime = {
+      transport: { rpc },
+      agent: { resolveEntityRenderer: () => null },
+      modules: { get: () => undefined },
+    } as unknown as AppRuntime;
+    const client = freshClient();
+    const onDeleted = vi.fn();
+    const panel = (id: string): JSX.Element =>
+      withClient(
+        client,
+        <TriggerDetailPanel
+          entityId={id}
+          moduleId="triggers"
+          runtime={runtime}
+          onDeleted={onDeleted}
+        />,
+      );
+
+    const { findByText, rerender } = render(panel("trigger-1"));
+    fireEvent.click(await findByText("Delete"));
+    await waitFor(() => {
+      expect(rpc.mock.calls.filter(([m]) => m === "triggers.delete")).toHaveLength(1);
+    });
+
+    // The operator moves on, and only then does the first write land.
+    rerender(panel("trigger-2"));
+    releaseFirst?.();
+    await waitFor(() => {
+      expect(rpc.mock.calls.filter(([m]) => m === "triggers.get").length).toBeGreaterThan(0);
+    });
+    expect(onDeleted).not.toHaveBeenCalled();
+
+    // Deleting what IS on screen still reports.
+    fireEvent.click(await findByText("Delete"));
+    await waitFor(() => {
+      expect(onDeleted).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it("Step 3d → the host hears about the deletion before the cache work", async () => {
     const { runtime } = statefulRuntime();
     const client = freshClient();

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type JSX } from "react";
+import { useMemo, useRef, type JSX } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { DetailPanelProps } from "@magnis/host/base";
 import { ExpandableEntityCard } from "@magnis/host/agent";
@@ -66,13 +66,6 @@ export function TriggerDetailPanel({
   // forget the first one, letting A be written twice over an A → B → A walk.
   const statusInFlight = useRef(new Set<string>());
   const removeInFlight = useRef(new Set<string>());
-  // The live selection, readable from a settle callback. Mutation options close
-  // over the render that created them, so a callback firing after the operator
-  // moved on would otherwise compare against a stale id.
-  const shownEntityId = useRef(entityId);
-  useEffect(() => {
-    shownEntityId.current = entityId;
-  }, [entityId]);
 
   const setStatus = useMutation({
     mutationFn: (vars: { readonly id: string; readonly status: string }) =>
@@ -93,9 +86,15 @@ export function TriggerDetailPanel({
       // retries and backoff that is a second or more, and awaiting it would
       // leave a deleted trigger on screen with live Pause and Delete buttons.
       // Only if the panel is still showing what was deleted. The selection can
-      // have moved on while the write was in flight, and clearing it then would
-      // close a trigger the operator had just opened.
-      if (deletedId === shownEntityId.current) onDeleted?.();
+      // move on while a write is in flight, and clearing it then would close a
+      // trigger the operator had just opened — Step 3c4 pins that.
+      //
+      // `entityId` here is the LIVE selection, not a frozen capture: TanStack
+      // re-applies the observer's options on every render, so this callback runs
+      // against the latest one. A ref mirroring the selection was tried and
+      // removed — no test could tell the two apart, because there is no ordering
+      // in which they differ.
+      if (deletedId === entityId) onDeleted?.();
       // The plugin's own list, detail and history keys.
       void queryClient.invalidateQueries({ queryKey: triggerKeys.all });
       // INV-P2.3: and the owners that named this trigger. The panel has no
