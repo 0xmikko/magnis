@@ -27,6 +27,34 @@ export interface TriggerDetail {
  * fired count) renderers consume this hook so the RPC fires at most once
  * per trigger id regardless of how many times the card (re)mounts.
  */
+export interface TriggerExecutionRef {
+  readonly fired_at: string;
+  readonly outcome: string;
+}
+
+/**
+ * The trigger's own execution history. `@tool("fire_history")` forwards the
+ * native indexed read, so the cost does not grow with the trigger's past — the
+ * panel asks the module, not the graph.
+ */
+export function useTriggerHistory(
+  entityId: string | undefined,
+  runtime: AppRuntime,
+): readonly TriggerExecutionRef[] {
+  const query = useQuery<readonly TriggerExecutionRef[]>({
+    queryKey: ["triggers", "fire-history", entityId],
+    queryFn: () => {
+      if (entityId === undefined) throw new Error("triggers.fire_history: missing entityId");
+      return runtime.transport.rpc<readonly TriggerExecutionRef[]>("triggers.fire_history", {
+        trigger_id: entityId,
+      });
+    },
+    enabled: typeof entityId === "string" && entityId.length > 0,
+    staleTime: 10_000,
+  });
+  return query.data ?? [];
+}
+
 export function useTriggerDetail(
   entityId: string | undefined,
   runtime: AppRuntime,
