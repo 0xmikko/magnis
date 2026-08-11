@@ -140,25 +140,64 @@ export class ContactsModule {
     }
     const { entity: e, links } = detail;
 
-    const linked: LinkedEntitySummary[] = [];
+    // P2b: a contact is a hub, and the hub is empty. `identity` replaced the
+    // facet model — the replicas (the address node, the source replicas, the
+    // accounts) carry the edges, so THEIR links are read as the hub's own.
+    // Two hops, not transitive, because that is how a contact is shaped.
+    // @tested-by: tst_mod_contacts_001
+    // @invariant: everything incident to a replica is the hub's linked entity,
+    // except the hub itself — the replicas link back to it, and a hub is not
+    // its own linked entity. That is the only exclusion.
+    const identityIds = [
+      ...new Set(
+        links.filter((l) => l.kind === "identity" && l.from_id === e.id).map((l) => l.to_id),
+      ),
+    ];
+    const replicaSet = new Set(identityIds);
+    const replicaLinks =
+      identityIds.length === 0 ? [] : await this.graph.list_links_for_entities(identityIds);
+
+    // Each edge contributes the endpoint on its far side, labeled by direction
+    // relative to the node it was reached from: outgoing keeps the kind,
+    // incoming wears `~`.
+    const reached: { readonly id: string; readonly kind: string }[] = [];
+    for (const l of links) {
+      const outgoing = l.from_id === e.id;
+      const endpoint = outgoing ? l.to_id : l.from_id;
+      if (endpoint === e.id) continue;
+      reached.push({ id: endpoint, kind: outgoing ? l.kind : `~${l.kind}` });
+    }
+    for (const l of replicaLinks) {
+      const outgoing = replicaSet.has(l.from_id);
+      const endpoint = outgoing ? l.to_id : l.from_id;
+      if (endpoint === e.id) continue;
+      reached.push({ id: endpoint, kind: outgoing ? l.kind : `~${l.kind}` });
+    }
+
+    // ONE batch over the hub's endpoints ∪ the replicas', whatever the count.
     const neighbours = new Map<string, RawEntity & { created_at?: string }>();
-    if (links.length > 0) {
-      const neighbourId = (l: { from_id: string; to_id: string }): string =>
-        l.from_id === e.id ? l.to_id : l.from_id;
-      const targets = await this.graph.get_entities([...new Set(links.map(neighbourId))]);
-      for (const t of targets) neighbours.set(t.id, t);
-      for (const link of links) {
-        const t = neighbours.get(neighbourId(link));
-        if (!t) continue;
-        linked.push({
-          id: t.id,
-          name: t.name,
-          schema_id: t.schema_id,
-          link_kind: link.kind,
-          created_at: t.created_at ?? new Date(0).toISOString(),
-          data: null,
-        });
-      }
+    const reachedIds = [...new Set(reached.map((r) => r.id))];
+    if (reachedIds.length > 0) {
+      for (const t of await this.graph.get_entities(reachedIds)) neighbours.set(t.id, t);
+    }
+
+    // Deduped by entity id: the same entity can arrive from the hub and from a
+    // replica, and the first relation encountered supplies the label.
+    const linked: LinkedEntitySummary[] = [];
+    const claimed = new Set<string>();
+    for (const r of reached) {
+      if (claimed.has(r.id)) continue;
+      const t = neighbours.get(r.id);
+      if (!t) continue;
+      claimed.add(r.id);
+      linked.push({
+        id: t.id,
+        name: t.name,
+        schema_id: t.schema_id,
+        link_kind: r.kind,
+        created_at: t.created_at ?? new Date(0).toISOString(),
+        data: null,
+      });
     }
 
     // S6: the base card reads the hub's dictionary plus the identity
@@ -175,9 +214,6 @@ export class ContactsModule {
     // nodes. Phones = curated ∪ replica, deduped by normalised value,
     // labeled by origin. No propagation step exists to forget.
     const curated: Record<string, unknown> = e.properties ?? {};
-    const identityIds = new Set(
-      links.filter((l) => l.kind === "identity" && l.from_id === e.id).map((l) => l.to_id),
-    );
     const emails: { id: string; address: string }[] = [];
     const replicas: ContactDetailView["replicas"] = [];
     for (const id of identityIds) {
