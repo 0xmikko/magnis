@@ -63,8 +63,6 @@ function entitySchemaJson(id: string): string {
   )}\n`;
 }
 
-/** schemas/item.details.json — a FACET contract (always has "version"). */
-
 function readmeMd(id: string, title: string): string {
   return `# ${title}\n\nScaffolded ${id} module. Describe what it owns and does here — this file is\nthe catalog detail page.\n`;
 }
