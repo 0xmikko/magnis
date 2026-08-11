@@ -176,7 +176,7 @@ export interface MergePreviewParams {
 export interface MergeParams {
   survivor_id: string;
   retired_id: string;
-  overrides?: { canonical_key: string; value: unknown }[];
+  overrides?: { key: string; value: unknown }[];
   reason?: string;
 }
 

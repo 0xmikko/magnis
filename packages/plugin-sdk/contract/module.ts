@@ -209,10 +209,16 @@ export interface EntityPage {
 
 /// Mirrors Rust core/merge.rs MergePreview / MergeResult 1:1.
 export interface MergeField {
-  canonical_key: string;
+  /** The DICTIONARY key the two hubs agree or disagree on. */
+  key: string;
   survivor_value: unknown;
   retired_value: unknown;
+  /** What the merge will write — null when it will write NOTHING because the
+   *  key needs an answer. */
   auto_resolved: unknown;
+  /** Both dictionaries claim this key with DIFFERENT values; the merge
+   *  REFUSES to run until an override answers it. */
+  conflict: boolean;
 }
 export interface MergeSource {
   source: string;
@@ -301,9 +307,9 @@ export interface GraphBatchResult {
 /// `GraphService` (flat snake_case names); `actor` / `user_id` are
 /// stamped backend-side from `ModuleContext`, never supplied by JS.
 ///
-/// Parameterised by the plugin's canonical key→value map. The canonical types
-/// are DERIVED from the key literal at the call site (not a free type param
-/// the caller can lie about).
+/// Not parameterised: a node's dictionary is a plain JSON map, and a module
+/// types it with its own interface at the call sites that care. The `Canon`
+/// type parameter went with the canonical layer it existed to type.
 export interface GraphService {
   // entities — rows are always {id, schema_id, name}, no map needed.
   // All reads are user-scoped backend-side.
@@ -413,7 +419,7 @@ export interface GraphService {
   merge_execute(p: {
     survivor_id: string;
     retired_id: string;
-    overrides?: { canonical_key: string; value: unknown }[];
+    overrides?: { key: string; value: unknown }[];
     reason?: string;
   }): Promise<MergeResult>;
 }

@@ -527,14 +527,14 @@ export class ContactsModule {
           items: {
             type: "object",
             properties: {
-              canonical_key: { type: "string" },
+              key: { type: "string" },
               // Canonical override values are scalars (name, email, phone…).
               // An explicit type union is REQUIRED: an empty `{}` schema is
               // rejected by OpenAI strict function-calling and 400s the whole
               // turn for every subscription/OpenAI-backed builtin chat.
               value: { type: ["string", "number", "boolean", "null"] },
             },
-            required: ["canonical_key", "value"],
+            required: ["key", "value"],
           },
         },
         reason: { type: "string" },

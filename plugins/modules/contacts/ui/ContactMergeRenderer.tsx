@@ -14,7 +14,7 @@ import type { AgentRendererProps, ToolCallRendererPayload } from "@magnis/host/r
 import { BaseToolCallCard } from "@magnis/host/base";
 
 interface MergeField {
-  readonly canonical_key: string;
+  readonly key: string;
   readonly survivor_value: unknown;
   readonly retired_value: unknown;
   /** What the merge will write. `null` when it will write nothing because
