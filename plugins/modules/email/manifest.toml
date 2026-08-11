@@ -15,16 +15,6 @@ summary = "Ingest, search, and act on email threads from any provider."
 # Reverse-domain publisher identity.
 publisher = "ai.magnis"
 
-[[links]]
-kind = "sent_from"
-from = "email.message"
-to = "email.address"
-
-[[links]]
-kind = "sent_to"
-from = "email.message"
-to = "email.address"
-
 # Sync surface this module consumes (fed by the matching source connector).
 [surfaces.email]
 # The surface's primary-item schema — its user-scoped graph count IS the
