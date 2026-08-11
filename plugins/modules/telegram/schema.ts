@@ -14,8 +14,6 @@ export const MESSAGE = "telegram.message";
 export const MESSAGE_DETAILS = "telegram.message.details";
 /** Cross-module contact: telegram mints contacts.person from senders. */
 export const PERSON = "contacts.person";
-/** Contact record minted on a person from a telegram sender. */
-export const CONTACT_FACET = "telegram.contact";
 /** Link kind: person → chat (a sender belongs to a chat). RETIRES in S4's
  * migration (ambiguous rows → discard); no new writes. */
 export const PERSON_CHAT_LINK = "person:telegram.chat";

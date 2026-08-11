@@ -932,25 +932,6 @@ export class TelegramModule {
     }
   }
 
-  // Build a telegram.contact record from a message sender (extracted from the
-  // per-message ingestSenderContact so the batch path reuses the exact shape).
-  private buildContactData(senderId: number, payload: Data, chatType: string | null): Data {
-    const tier = chatType === "private" ? "inner" : "group";
-    const info =
-      payload.sender_info && typeof payload.sender_info === "object" ? (payload.sender_info as Data) : {};
-    const data: Data = {
-      telegram_user_id: senderId,
-      relevance_tier: tier,
-      first_name: str(info, "first_name") ?? str(payload, "sender_name") ?? "",
-    };
-    const lastName = str(info, "last_name");
-    const username = str(info, "username");
-    const phone = str(info, "phone");
-    if (lastName) data.last_name = lastName;
-    if (username) data.username = username;
-    if (phone) data.phone = phone;
-    return data;
-  }
 
   // Delete the entity behind a remote_id (user-scoped). Mirrors native
   // ingest_delete; delete_entity cascades the entity's links.
