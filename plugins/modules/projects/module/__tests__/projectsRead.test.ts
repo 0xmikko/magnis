@@ -14,12 +14,12 @@
 // `unexpected graph op: …` and fails the test.
 
 import { beforeEach, describe, expect, it } from "vitest";
-import { canonical, entity, linkedRow, mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
+import { entity, linkedRow, mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { ProjectsModule } from "../service.ts";
 import { MEMBER_LINK, PROJECT } from "../../schema.ts";
 import type { ProjectCanonical } from "../../types.ts";
 
-type G = MockGraph<ProjectCanonical>;
+type G = MockGraph;
 
 // `graph.spies` is a `Record<string, Mock>`, so under noUncheckedIndexedAccess
 // every lookup is `Mock | undefined`. A spy this test arranges/asserts always
@@ -35,10 +35,9 @@ function spy(g: G, name: string) {
 // Ops NOT listed here stay unarranged, so the throwing Proxy fails the test if
 // the read path hits them.
 function readGraph(): G {
-  return mockGraph<ProjectCanonical>({
+  return mockGraph({
     list_entities: () => Promise.resolve({ items: [], total: 0 }),
     search_entities_by_name: () => Promise.resolve([]),
-    list_canonical_for_entities: () => Promise.resolve([]),
     list_linked: () => Promise.resolve({ items: [], total: 0 }),
     get_entity: () => Promise.resolve(null),
   });
@@ -141,28 +140,25 @@ describe("projects read — DB-access guarantees (tst_be_projectsdb_001)", () =>
     mod = mountModule(ProjectsModule, { graph, ctx: { extension_id: "projects" } }).module;
   });
 
-  it("list (no search) = 1 list_entities, 0 canonical, 0 window, 0 search", async () => {
+  it("list (no search) = 1 list_entities, 0 0 window, 0 search", async () => {
     await mod.list({});
     expect(graph.spies.list_entities).toHaveBeenCalledTimes(1);
     // S1: the dictionary rides the entity — the canonical batch is gone.
-    expect(graph.spies.list_canonical_for_entities).toHaveBeenCalledTimes(0);
     expect(graph.spies.search_entities_by_name).toHaveBeenCalledTimes(0);
   });
 
-  it("list (search) = 1 search, 0 canonical, 0 list_entities", async () => {
+  it("list (search) = 1 search, 0 0 list_entities", async () => {
     await mod.list({ search: "x" });
     expect(graph.spies.search_entities_by_name).toHaveBeenCalledTimes(1);
     // S1: the dictionary rides the entity — the canonical batch is gone.
-    expect(graph.spies.list_canonical_for_entities).toHaveBeenCalledTimes(0);
     expect(graph.spies.list_entities).toHaveBeenCalledTimes(0);
   });
 
-  it("list_for_entity = 1 requireOwned + 1 list_linked, 0 canonical, 0 per-link", async () => {
+  it("list_for_entity = 1 requireOwned + 1 list_linked, 0 0 per-link", async () => {
     spy(graph, "get_entity").mockResolvedValue(entity("e", "A", { schema_id: "contacts.person" }));
     await mod.listForEntity({ entity_id: "e" });
     expect(graph.spies.get_entity).toHaveBeenCalledTimes(1);
     expect(graph.spies.list_linked).toHaveBeenCalledTimes(1);
     // S1: the dictionary rides the entity — the canonical batch is gone.
-    expect(graph.spies.list_canonical_for_entities).toHaveBeenCalledTimes(0);
   });
 });

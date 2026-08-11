@@ -11,7 +11,6 @@
 import { tool, writeTool, type GraphService, type PluginDeps, type RpcExecutor } from "@magnis/plugin-sdk";
 import type { GetParams, ListParams, PaginatedResponse } from "@magnis/plugin-sdk";
 import type {
-  CompanyCanonical,
   CompanyDetailsFacet,
   CompanyDetailView,
   CompanyListItem,
@@ -23,9 +22,9 @@ import { COMPANY } from "../schema.ts";
 import { buildListItem } from "./helpers.ts";
 
 export class CompaniesModule {
-  private readonly graph: GraphService<CompanyCanonical>;
+  private readonly graph: GraphService;
   private readonly rpc: RpcExecutor;
-  constructor(deps: PluginDeps<CompanyCanonical>) {
+  constructor(deps: PluginDeps) {
     this.graph = deps.graph;
     this.rpc = deps.rpc;
   }

@@ -13,10 +13,10 @@ import { MeetingsModule } from "../service.ts";
 import type { MeetingsCanonical, SyncEnvelope } from "../../types.ts";
 
 const CAL = "meetings.calendar_event";
-type G = MockGraph<MeetingsCanonical>;
+type G = MockGraph;
 
 function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
-  return mockGraph<MeetingsCanonical>({
+  return mockGraph({
     apply_batch: (frag: GraphBatchInput): Promise<GraphBatchResult> =>
       Promise.resolve({
         ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
@@ -32,7 +32,7 @@ function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
     delete_entity: (_id: string): Promise<void> => Promise.resolve(undefined),
     sync_state: (): Promise<Record<string, unknown>> => Promise.resolve({ ok: true }),
     ...over,
-  } as unknown as GraphOverrides<MeetingsCanonical>);
+  } as unknown as GraphOverrides);
 }
 
 function makeModule(

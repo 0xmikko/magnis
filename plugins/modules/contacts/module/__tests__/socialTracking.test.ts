@@ -13,8 +13,8 @@ import { CONTACT } from "../../schema.ts";
 import type { ContactCanonical } from "../../types.ts";
 
 const SCHEMA = CONTACT;
-type G = MockGraph<ContactCanonical>;
-type Overrides = GraphOverrides<ContactCanonical>;
+type G = MockGraph;
+type Overrides = GraphOverrides;
 
 type Mutable = RawEntity & { properties?: Record<string, unknown> };
 
@@ -39,7 +39,7 @@ function dictOverrides(persons: Mutable[]): {
 function makeGraph(entity: RawEntity | null): { graph: G } {
   const persons: Mutable[] = entity ? [entity as Mutable] : [];
   const overrides = dictOverrides(persons) as unknown as Overrides;
-  return { graph: mockGraph<ContactCanonical>(overrides) };
+  return { graph: mockGraph(overrides) };
 }
 
 // Graph with MANY persons + the paged list the by-handle lookup uses, plus
@@ -84,7 +84,7 @@ function makeMultiGraph(persons: RawEntity[]): { graph: G; renames: [string, str
     // cutover — the social tools themselves never touch records.
     attach_facet: async () => ({ id: "f-0" }),
   } as unknown as Overrides;
-  return { graph: mockGraph<ContactCanonical>(overrides), renames };
+  return { graph: mockGraph(overrides), renames };
 }
 
 function makeModule(graph: G): ContactsModule {

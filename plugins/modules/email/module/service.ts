@@ -33,7 +33,6 @@ import type {
 import type {
   BatchParams,
   BatchSendParams,
-  EmailCanonical,
   EmailTriggerCheck,
   GetParams,
   LinkedEntitySummary,
@@ -64,10 +63,10 @@ import {
 } from "../schema.ts";
 
 export class EmailModule {
-  private readonly graph: GraphService<EmailCanonical>;
+  private readonly graph: GraphService;
   private readonly rpc: RpcExecutor;
   private readonly log: PluginLogger;
-  constructor(deps: PluginDeps<EmailCanonical>) {
+  constructor(deps: PluginDeps) {
     this.graph = deps.graph;
     this.rpc = deps.rpc;
     this.log = deps.log;

@@ -17,7 +17,6 @@
 import { vi, type Mock } from "vitest";
 import { definePlugin } from "@magnis/plugin-sdk";
 import type {
-  CanonicalRecord,
   GraphService,
   LinkSummary,
   LinkedRow,
@@ -37,21 +36,21 @@ import type {
 /** A `GraphService` whose overridden methods are `vi.fn` spies, exposed on
  *  `.spies` for arrangement (`graph.spies.list_entities_window.mockResolvedValue`)
  *  and assertion (`expect(graph.spies.foo).toHaveBeenCalledTimes(1)`). */
-export interface MockGraph<C extends object = Record<string, unknown>>
-  extends GraphService<C> {
+export interface MockGraph
+  extends GraphService {
   /** The `vi.fn` spies backing the overridden methods, keyed by op name. */
   spies: Record<string, Mock>;
 }
 
 /** The impls a test wants to install, typed against the REAL `GraphService`. */
-export type GraphOverrides<C extends object> = Partial<GraphService<C>>;
+export type GraphOverrides = Partial<GraphService>;
 
 // Property accesses vitest/promise machinery makes on the proxy that must NOT
 // be interpreted as graph ops (else `await`-ing or printing the graph throws).
 const NON_OP = new Set(["then", "catch", "finally", "constructor"]);
 
 /**
- * A THROWING `Proxy` over `GraphService<C>`. Any method NOT in `overrides`
+ * A THROWING `Proxy` over `GraphService`. Any method NOT in `overrides`
  * throws `unexpected graph op: <name>` WHEN CALLED — so a test that hits an op
  * it didn't arrange fails loudly instead of returning `undefined`, and the kit
  * never needs updating when `GraphService` grows a method (contrast: a
@@ -59,9 +58,9 @@ const NON_OP = new Set(["then", "catch", "finally", "constructor"]);
  * spies wrapping the provided impl, reachable via the returned graph directly
  * (they ARE the methods) and via `.spies` for `.mock*`/assertions.
  */
-export function mockGraph<C extends object = Record<string, unknown>>(
-  overrides: GraphOverrides<C> = {},
-): MockGraph<C> {
+export function mockGraph(
+  overrides: GraphOverrides = {},
+): MockGraph {
   const spies: Record<string, Mock> = {};
   for (const [name, impl] of Object.entries(overrides)) {
     spies[name] = vi.fn(impl as (...args: unknown[]) => unknown);
@@ -79,16 +78,16 @@ export function mockGraph<C extends object = Record<string, unknown>>(
       },
     },
   );
-  return proxy as unknown as MockGraph<C>;
+  return proxy as unknown as MockGraph;
 }
 
 // ──────────────────────────── mountModule ────────────────────────────
-export interface MountOpts<C extends object> {
+export interface MountOpts {
   /** "direct" (default): `new Cls(deps)`. "dispatch": run through the SDK's
    *  `definePlugin`/`init` and expose the decorated `{ rpc, tools }` surface. */
   mode?: "direct" | "dispatch";
   /** The graph the module gets; defaults to an empty (fully-throwing) `mockGraph`. */
-  graph?: MockGraph<C>;
+  graph?: MockGraph;
   /** Partial `PluginContext` merged over the defaults `{ user_id: "u1",
    *  extension_kind: "plugin", extension_id: "test" }`. */
   ctx?: Partial<PluginContext>;
@@ -126,27 +125,27 @@ export function mockLogger(): MockLogger {
   return { entries, log: spy };
 }
 
-export interface DirectMount<T, C extends object> {
+export interface DirectMount<T> {
   module: T;
-  graph: MockGraph<C>;
-  deps: PluginDeps<C>;
+  graph: MockGraph;
+  deps: PluginDeps;
 }
 
-export interface DispatchMount<C extends object> {
+export interface DispatchMount {
   /** Route to a decorated handler by its full name (`"companies.list"`) or bare
    *  suffix (`"list"`) — the `ctx.extension_id` prefix is tried automatically. */
   rpc: (name: string, args?: unknown) => unknown;
   /** The agent tool definitions `definePlugin` harvested (read tools + write
    *  tools; RPC-only handlers are excluded, matching the runtime). */
   tools: ToolDefinitionWire[];
-  graph: MockGraph<C>;
-  deps: PluginDeps<C>;
+  graph: MockGraph;
+  deps: PluginDeps;
 }
 
-function buildDeps<C extends object>(
-  opts: MountOpts<C>,
-): { deps: PluginDeps<C>; graph: MockGraph<C> } {
-  const graph = opts.graph ?? mockGraph<C>();
+function buildDeps(
+  opts: MountOpts,
+): { deps: PluginDeps; graph: MockGraph } {
+  const graph = opts.graph ?? mockGraph();
   const ctx: PluginContext = {
     user_id: "u1",
     extension_kind: "plugin",
@@ -166,22 +165,22 @@ function buildDeps<C extends object>(
   return { deps: { graph, ctx, util, rpc, log }, graph };
 }
 
-export function mountModule<T extends object, C extends object = Record<string, unknown>>(
-  ModuleClass: new (deps: PluginDeps<C>) => T,
-  opts?: MountOpts<C> & { mode?: "direct" },
-): DirectMount<T, C>;
-export function mountModule<C extends object = Record<string, unknown>>(
-  ModuleClass: new (deps: PluginDeps<C>) => object,
-  opts: MountOpts<C> & { mode: "dispatch" },
-): Promise<DispatchMount<C>>;
-export function mountModule<T extends object, C extends object = Record<string, unknown>>(
-  ModuleClass: new (deps: PluginDeps<C>) => T,
-  opts: MountOpts<C> = {},
-): DirectMount<T, C> | Promise<DispatchMount<C>> {
+export function mountModule<T extends object>(
+  ModuleClass: new (deps: PluginDeps) => T,
+  opts?: MountOpts & { mode?: "direct" },
+): DirectMount<T>;
+export function mountModule(
+  ModuleClass: new (deps: PluginDeps) => object,
+  opts: MountOpts & { mode: "dispatch" },
+): Promise<DispatchMount>;
+export function mountModule<T extends object>(
+  ModuleClass: new (deps: PluginDeps) => T,
+  opts: MountOpts = {},
+): DirectMount<T> | Promise<DispatchMount> {
   const { deps, graph } = buildDeps(opts);
   if (opts.mode === "dispatch") {
-    return (async (): Promise<DispatchMount<C>> => {
-      definePlugin<C>(ModuleClass);
+    return (async (): Promise<DispatchMount> => {
+      definePlugin(ModuleClass);
       const shape = (globalThis as unknown as { __magnis_plugin_module: PluginModuleShape })
         .__magnis_plugin_module;
       await shape.init(deps.graph, deps.ctx, deps.util, deps.rpc, deps.log);
@@ -211,11 +210,6 @@ export function entity(id: string, name: string, over: Partial<RawEntity> = {}):
 /** A `WindowRow` — an entity; its dictionary rides on the entity itself. */
 export function windowRow(ent: RawEntity): WindowRow {
   return { entity: ent };
-}
-
-/** A `CanonicalRecord` — one merged (entity, key, value) triple. */
-export function canonical(entity_id: string, key: string, value: unknown): CanonicalRecord {
-  return { entity_id, key, value };
 }
 
 /** A `LinkedRow` — a neighbor entity + the edge that reached it. */

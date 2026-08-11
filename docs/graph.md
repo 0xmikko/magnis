@@ -16,7 +16,7 @@ One graph per deployment — one connected data model, partitioned by entity own
 
 An edge carries a **dictionary** of its own (`metadata`): the per-pair facts that belong to neither endpoint — an invite's display name on `attendee`, an unread count on `observed_in`.
 
-**Events** — an append-only log of every mutation, with an actor (`user` / `system` / `agent` / `plugin`): `entity_created`, `facet_attached`, `link_added`, `canonical_resolved`, `conflict_detected`, `override_applied`, `entities_merged`, and their removal counterparts. The graph's history is never rewritten.
+**Events** — an append-only log of every mutation, with an actor (`user` / `system` / `agent` / `plugin`): `entity_created`, `entity_properties_updated`, `link_added`, `link_status_changed`, `override_applied`, `entities_merged`, and their removal counterparts. The graph's history is never rewritten.
 
 ## Declaring a slice of the graph
 

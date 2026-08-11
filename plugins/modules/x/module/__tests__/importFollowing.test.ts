@@ -17,8 +17,8 @@ function mountX(opts?: { rpcError?: boolean }): { mod: XModule; execute: ReturnT
     if (method === "source.sync.bootstrap") return { ok: true, seeded: 1 };
     throw new Error(`unexpected rpc ${method}`);
   });
-  const { module } = mountModule<XModule, XCanonical>(XModule, {
-    graph: mockGraph<XCanonical>(),
+  const { module } = mountModule<XModule>(XModule, {
+    graph: mockGraph(),
     ctx: { extension_id: "x" },
     rpc: { execute },
   });

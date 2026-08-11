@@ -16,19 +16,19 @@
 // on those forbidden ops (kept only where the op IS arranged, e.g. window/search).
 
 import { beforeEach, describe, expect, it } from "vitest";
-import { canonical, entity, mockGraph, mountModule, windowRow, type MockGraph } from "@magnis/testkit/module";
+import { entity, mockGraph, mountModule, windowRow, type MockGraph } from "@magnis/testkit/module";
 import { CompaniesModule } from "../service.ts";
 import { COMPANY } from "../../schema.ts";
 import type { CompanyCanonical } from "../../types.ts";
 
-type G = MockGraph<CompanyCanonical>;
+type G = MockGraph;
 
 // The read-path ops, arranged with benign defaults; individual tests re-arm
 // them via `graph.spies.<op>.mockResolvedValue(...)`. Ops NOT listed here
 // (get_entity, get_entities, list_entities, list_facets_for_entities) stay
 // unarranged, so the throwing Proxy fails the test if the read path hits them.
 function readGraph(): G {
-  return mockGraph<CompanyCanonical>({
+  return mockGraph({
     list_entities_window: () => Promise.resolve({ items: [], total: 0 }),
     search_entities_by_name: () => Promise.resolve([]),
     get_entity_full: () => Promise.resolve(null),
@@ -203,7 +203,7 @@ describe("companies read — DB-access guarantees (tst_be_companiesdb_001)", () 
     mod = mountModule(CompaniesModule, { graph, ctx: { extension_id: "companies" } }).module;
   });
 
-  it("list (no search) = 1 window, 0 search, 0 canonical, 0 facet", async () => {
+  it("list (no search) = 1 window, 0 search, 0 0 facet", async () => {
     await mod.list({ limit: 50 });
     expect(graph.spies.list_entities_window).toHaveBeenCalledTimes(1);
     expect(graph.spies.search_entities_by_name).toHaveBeenCalledTimes(0);
@@ -218,7 +218,7 @@ describe("companies read — DB-access guarantees (tst_be_companiesdb_001)", () 
     expect(graph.spies.list_entities_window).toHaveBeenCalledTimes(0);
   });
 
-  it("get = 1 get_entity_full, 0 facet read, 0 canonical, 0 get_entities", async () => {
+  it("get = 1 get_entity_full, 0 facet read, 0 0 get_entities", async () => {
     spy(graph, "get_entity_full").mockResolvedValue({
       entity: entity("c", "Acme", { schema_id: COMPANY }),
       links: [],

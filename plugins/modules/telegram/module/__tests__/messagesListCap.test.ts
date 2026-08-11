@@ -14,12 +14,12 @@ import { mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { TelegramModule } from "../service.ts";
 import type { TelegramCanonical } from "../../types.ts";
 
-type G = MockGraph<TelegramCanonical>;
+type G = MockGraph;
 
 // No chat filter → messagesList takes the list_entities path, hydrating the page
 // via one list_facets_for_entities batch.
 function listGraph(): G {
-  return mockGraph<TelegramCanonical>({
+  return mockGraph({
     list_entities: () => Promise.resolve({ items: [], total: 0 }),
   });
 }

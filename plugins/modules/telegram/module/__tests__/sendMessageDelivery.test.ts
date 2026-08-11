@@ -16,7 +16,7 @@ import { mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { TelegramModule } from "../service.ts";
 import type { SyncEnvelope, TelegramCanonical } from "../../types.ts";
 
-type G = MockGraph<TelegramCanonical>;
+type G = MockGraph;
 
 // The private members the test drives / stubs directly.
 interface TgInternals {
@@ -33,7 +33,7 @@ interface TgInternals {
 }
 
 function makeModule(): { mod: TgInternals; graph: G } {
-  const graph = mockGraph<TelegramCanonical>({
+  const graph = mockGraph({
     source_command: () => Promise.resolve({ message_id: 777 }),
     find_by_anchor: () => Promise.resolve("ent-1"),
   });

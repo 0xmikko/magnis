@@ -27,7 +27,7 @@ describe("projects.update runtime optional fields", () => {
       schema_id: PROJECT,
       properties: { name: "Acme × ExampleCo", status: "active" },
     });
-    const graph = mockGraph<ProjectCanonical>({
+    const graph = mockGraph({
       get_entity: () => Promise.resolve(project),
       update_entity_name: () => Promise.resolve(),
       update_properties: () => Promise.resolve(),

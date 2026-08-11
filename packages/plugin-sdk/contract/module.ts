@@ -200,14 +200,6 @@ export interface LinkSummary {
   /** S4: canonical | candidate | rejected | decayed. */
   status?: string;
 }
-/// One canonical property as returned by list_canonical_for_entities (batch):
-/// the entity it belongs to, the canonical key, and the merged value. Callers
-/// group by entity_id to rebuild the per-entity map get_canonical returns.
-export interface CanonicalRecord {
-  entity_id: string;
-  key: string;
-  value: unknown;
-}
 /// `list_entities` returns the page + exact user-scoped total,
 /// mirroring native list_entities_for_user + count_entities_for_user.
 export interface EntityPage {
@@ -312,7 +304,7 @@ export interface GraphBatchResult {
 /// Parameterised by the plugin's canonical key→value map. The canonical types
 /// are DERIVED from the key literal at the call site (not a free type param
 /// the caller can lie about).
-export interface GraphService<Canon extends object = Record<string, unknown>> {
+export interface GraphService {
   // entities — rows are always {id, schema_id, name}, no map needed.
   // All reads are user-scoped backend-side.
   create_entity(p: CreateEntityParams): Promise<RawEntity>;
@@ -395,14 +387,6 @@ export interface GraphService<Canon extends object = Record<string, unknown>> {
   list_entities_by_property_field(
     p: { entity_schema: string; key: string; value: string; limit?: number; offset?: number },
   ): Promise<{ items: RawEntity[]; total: number }>;
-  // canonical — keys + values typed by the plugin's Canon map.
-  get_canonical(entity_id: string, schemas?: string[]): Promise<Partial<Canon>>;
-  list_canonical_for_entity(entity_id: string): Promise<Partial<Canon>>;
-  /** Batch: every canonical property for many entities in ONE DB round-trip (vs
-   *  N get_canonical). Each record carries entity_id so the caller can group it
-   *  back into a per-entity `Partial<Canon>` map. */
-  list_canonical_for_entities(entity_ids: string[]): Promise<CanonicalRecord[]>;
-
   // links — LinkSummary carries the link `id` for targeted deletion.
   add_link(p: AddLinkParams): Promise<void>;
   delete_link(id: string): Promise<void>;
@@ -471,8 +455,8 @@ export interface PluginLogger {
   log(level: PluginLogLevel, message: string, fields?: Record<string, unknown>): Promise<void>;
 }
 
-export interface PluginDeps<Canon extends object = Record<string, unknown>> {
-  graph: GraphService<Canon>;
+export interface PluginDeps {
+  graph: GraphService;
   ctx: PluginContext;
   util: PluginUtil;
   rpc: RpcExecutor;

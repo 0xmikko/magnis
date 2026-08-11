@@ -42,7 +42,7 @@ function chatEnvelope(chatId: number): SyncEnvelope {
 
 describe("telegram chat batch ingest", () => {
   it("tst_mod_tg_ingest_001 preserves derived preview and avatar fields during a repeated bootstrap", async () => {
-    const graph = mockGraph<TelegramCanonical>({
+    const graph = mockGraph({
       list_entities_window: () =>
         Promise.resolve({
           items: [

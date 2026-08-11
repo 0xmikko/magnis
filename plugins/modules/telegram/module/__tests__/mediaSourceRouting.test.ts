@@ -19,7 +19,7 @@ import { entity, mockGraph, mountModule, type MockGraph } from "@magnis/testkit/
 import { TelegramModule } from "../service.ts";
 import type { SyncEnvelope, TelegramCanonical } from "../../types.ts";
 
-type G = MockGraph<TelegramCanonical>;
+type G = MockGraph;
 
 // The private ingest helpers the test drives directly.
 interface TgInternals {
@@ -28,7 +28,7 @@ interface TgInternals {
 }
 
 function ingestGraph(): G {
-  return mockGraph<TelegramCanonical>({
+  return mockGraph({
     // No pre-existing chat/sender entities: lookups miss, batch creates.
     apply_batch: (frag) =>
       Promise.resolve({

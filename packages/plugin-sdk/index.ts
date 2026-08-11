@@ -205,8 +205,8 @@ export function connectionReady(): MethodRecorder {
 /// type args and there is no `any` at the call site.
 /// (The wire shape it publishes — PluginModuleShape / ToolDefinitionWire — is
 /// declared in ./contract/module.)
-export function definePlugin<C extends object = Record<string, unknown>>(
-  ModuleClass: new (deps: PluginDeps<C>) => object,
+export function definePlugin(
+  ModuleClass: new (deps: PluginDeps) => object,
 ): void {
   // Handed to the runtime AT MODULE EVAL, then mutated in place by
   // init(); the runtime reads rpcHandlers only post-init, so the
@@ -239,7 +239,7 @@ export function definePlugin<C extends object = Record<string, unknown>>(
       );
     }
     const instance = new ModuleClass({
-      graph: graph as GraphService<C>,
+      graph: graph as GraphService,
       ctx,
       util,
       rpc,

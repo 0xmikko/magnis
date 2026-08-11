@@ -13,7 +13,7 @@ import { mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { ContactsModule } from "../service.ts";
 import type { ContactCanonical } from "../../types.ts";
 
-type G = MockGraph<ContactCanonical>;
+type G = MockGraph;
 
 // `graph.spies` is a `Record<string, Mock>`, so under noUncheckedIndexedAccess
 // every lookup is `Mock | undefined`. A spy this test arranges/asserts always
@@ -59,7 +59,7 @@ function ingestWorld(over: Partial<World> = {}): World {
     ...over,
   };
   let mintSeq = 0;
-  world.graph = mockGraph<ContactCanonical>({
+  world.graph = mockGraph({
     apply_batch: (frag: GraphBatchInput) =>
       Promise.resolve({
         ids: Object.fromEntries(frag.entities.map((e: BatchEntityInput) => [e.key, `id-${e.key}`])),

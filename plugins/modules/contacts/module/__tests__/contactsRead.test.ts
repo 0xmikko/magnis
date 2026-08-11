@@ -13,13 +13,13 @@
 // single guarantee that REPLACES the old hand-rolled `reject()` spy.
 
 import { beforeEach, describe, expect, it } from "vitest";
-import { canonical, entity, mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
+import { entity, mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { ContactsModule } from "../service.ts";
 import { CONTACT } from "../../schema.ts";
 import type { ContactCanonical } from "../../types.ts";
 
 const SCHEMA = CONTACT;
-type G = MockGraph<ContactCanonical>;
+type G = MockGraph;
 
 // `graph.spies` is a `Record<string, Mock>`, so under noUncheckedIndexedAccess
 // every lookup is `Mock | undefined`. A spy this test arranges/asserts always
@@ -35,7 +35,7 @@ function spy(g: G, name: string) {
 // (get_entity — the N+1 trap) stay unarranged, so the throwing Proxy fails the
 // test if the read path hits them.
 function readGraph(): G {
-  return mockGraph<ContactCanonical>({
+  return mockGraph({
     list_entities: () => Promise.resolve({ items: [], total: 0 }),
     search_entities_by_name: () => Promise.resolve([]),
     list_links_for_entities: () => Promise.resolve([]),
@@ -139,7 +139,7 @@ describe("contacts read — DB-access guarantees (tst_be_contactsdb_001)", () =>
     mod = mountModule(ContactsModule, { graph, ctx: { extension_id: "contacts" } }).module;
   });
 
-  it("list (no search) = 1 list_entities + 1 batch edges, 0 canonical, 0 per-row reads", async () => {
+  it("list (no search) = 1 list_entities + 1 batch edges, 0 0 per-row reads", async () => {
     spy(graph, "list_entities").mockResolvedValue({
       items: [entity("c1", "A", { schema_id: SCHEMA })],
       total: 1,

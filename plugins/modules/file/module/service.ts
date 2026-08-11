@@ -18,7 +18,6 @@ import type { WindowPage } from "@magnis/plugin-sdk";
 import type {
   FileAttachParams,
   FileAttachResult,
-  FileCanonical,
   FileDetails,
   FileGetParams,
   FileItem,
@@ -31,8 +30,8 @@ import {
 } from "../schema.ts";
 
 export class FileModule {
-  private readonly graph: GraphService<FileCanonical>;
-  constructor(deps: PluginDeps<FileCanonical>) {
+  private readonly graph: GraphService;
+  constructor(deps: PluginDeps) {
     this.graph = deps.graph;
   }
 

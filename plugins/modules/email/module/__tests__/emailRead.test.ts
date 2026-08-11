@@ -16,12 +16,12 @@ import { mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { EmailModule } from "../service.ts";
 import type { EmailCanonical } from "../../types.ts";
 
-type G = MockGraph<EmailCanonical>;
+type G = MockGraph;
 
 // Only the ops the read path may legitimately touch are arranged with benign
 // defaults; everything else throws via the mockGraph Proxy.
 function readGraph(): G {
-  return mockGraph<EmailCanonical>({
+  return mockGraph({
     list_entities_window: () => Promise.resolve({ items: [], total: 0 }),
     get_entity_full: () => Promise.resolve(null),
     get_entities: () => Promise.resolve([]),

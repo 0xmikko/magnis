@@ -18,15 +18,15 @@ import { parseAttendees } from "../helpers.ts";
 import type { MeetingsCanonical } from "../../types.ts";
 
 const CAL = "meetings.calendar_event";
-type G = MockGraph<MeetingsCanonical>;
+type G = MockGraph;
 
 // Only get_entities is arranged by default; the read path's other ops are
 // supplied per-test via `over`. Anything else throws via the mockGraph Proxy.
 function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
-  return mockGraph<MeetingsCanonical>({
+  return mockGraph({
     get_entities: () => Promise.resolve([]),
     ...over,
-  } as unknown as GraphOverrides<MeetingsCanonical>);
+  } as unknown as GraphOverrides);
 }
 
 function makeModule(graph: G): MeetingsModule {

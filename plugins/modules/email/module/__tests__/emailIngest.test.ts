@@ -14,10 +14,10 @@ import { mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { EmailModule } from "../service.ts";
 import type { EmailCanonical, SyncEnvelope } from "../../types.ts";
 
-type G = MockGraph<EmailCanonical>;
+type G = MockGraph;
 
 function ingestGraph(): G {
-  return mockGraph<EmailCanonical>({
+  return mockGraph({
     // apply_batch echoes each key → a deterministic id so post-apply can resolve.
     apply_batch: (frag) =>
       Promise.resolve({

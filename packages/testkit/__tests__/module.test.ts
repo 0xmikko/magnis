@@ -4,7 +4,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { rpc, tool, type GraphService, type PluginDeps } from "@magnis/plugin-sdk";
 import {
-  canonical,
   entity,
   linkedRow,
   mockGraph,
@@ -119,11 +118,6 @@ describe("builders", () => {
     expect(entity("a", "Acme", { schema_id: "companies.company" }).schema_id).toBe("companies.company");
     expect(windowRow(entity("a", "Acme"))).toEqual({
       entity: { id: "a", name: "Acme", schema_id: "", created_at: "2026-01-01T00:00:00Z" },
-    });
-    expect(canonical("a", "companies.name", "Acme")).toEqual({
-      entity_id: "a",
-      key: "companies.name",
-      value: "Acme",
     });
     expect(linkedRow(entity("a", "Acme"), { kind: "authored_by" }).link).toMatchObject({
       from_id: "a",

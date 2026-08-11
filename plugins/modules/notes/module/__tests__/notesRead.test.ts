@@ -14,7 +14,6 @@
 
 import { beforeEach, describe, expect, it } from "vitest";
 import {
-  canonical,
   entity,
   mockGraph,
   mountModule,
@@ -25,20 +24,18 @@ import { NotesModule } from "../service.ts";
 import { NOTE, NOTE_CONTENT } from "../../schema.ts";
 import type { NoteCanonical } from "../../types.ts";
 
-type G = MockGraph<NoteCanonical>;
+type G = MockGraph;
 
 // The read-path ops, arranged with benign defaults; individual tests re-arm them
 // via `graph.spies.<op>.mockResolvedValue(...)`. Ops NOT listed here
 // (list_facets_for_entity, get_entity) stay unarranged, so the throwing Proxy
 // fails the test if the read path hits them.
 function readGraph(): G {
-  return mockGraph<NoteCanonical>({
+  return mockGraph({
     list_entities_window: () => Promise.resolve({ items: [], total: 0 }),
     search_entities_by_name: () => Promise.resolve([]),
-    list_canonical_for_entities: () => Promise.resolve([]),
     get_entity_full: () => Promise.resolve(null),
     get_entities: () => Promise.resolve([]),
-    get_canonical: () => Promise.resolve({}),
   });
 }
 
@@ -129,19 +126,17 @@ describe("notes read — DB-access guarantees (tst_be_notesdb_001)", () => {
     mod = mountModule(NotesModule, { graph, ctx: { extension_id: "notes" } }).module;
   });
 
-  it("search = 1 search, 0 batch facets, 0 canonical, 0 per-row reads, 0 window", async () => {
+  it("search = 1 search, 0 batch facets, 0 0 per-row reads, 0 window", async () => {
     spy(graph, "search_entities_by_name").mockResolvedValue([
       entity("n1", "n", { schema_id: NOTE }),
     ]);
     await mod.list({ search: "x" });
     expect(graph.spies.search_entities_by_name).toHaveBeenCalledTimes(1);
     // S1: the dictionary rides the entity — the two page-wide batch reads are gone.
-    expect(graph.spies.list_canonical_for_entities).toHaveBeenCalledTimes(0);
-    expect(graph.spies.get_canonical).toHaveBeenCalledTimes(0);
     expect(graph.spies.list_entities_window).toHaveBeenCalledTimes(0);
   });
 
-  it("get = 1 get_entity_full + 1 get_entities (links present), 0 canonical, 0 per-link", async () => {
+  it("get = 1 get_entity_full + 1 get_entities (links present), 0 0 per-link", async () => {
     spy(graph, "get_entity_full").mockResolvedValue({
       entity: entity("n1", "N", { schema_id: NOTE }),
       links: [{ id: "l1", from_id: "n1", to_id: "c1", kind: "mentions" }],

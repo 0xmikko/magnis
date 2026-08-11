@@ -14,12 +14,12 @@ import { bodyFromToolArgs } from "../../ui/toolArgs.ts";
 import { NOTE, NOTE_CONTENT } from "../../schema.ts";
 import type { NoteCanonical } from "../../types.ts";
 
-type G = MockGraph<NoteCanonical>;
+type G = MockGraph;
 
 const NOTE_ID = "11111111-1111-4111-8111-111111111111";
 
 function writeGraph(overrides: Record<string, unknown> = {}): G {
-  return mockGraph<NoteCanonical>({
+  return mockGraph({
     create_entity: () => Promise.resolve(entity(NOTE_ID, "T", { schema_id: NOTE })),
     update_properties: () => Promise.resolve(undefined),
     delete_entity: () => Promise.resolve(undefined),
@@ -137,7 +137,7 @@ describe("the approval card reads the same wire names the tool accepts", () => {
  */
 describe("notes.update is atomic", () => {
   it("tst_module_notes_write_002 does not rename when the content write fails", async () => {
-    const graph = mockGraph<NoteCanonical>({
+    const graph = mockGraph({
       get_entity_full: () =>
         Promise.resolve({
           entity: entity(NOTE_ID, "old title", { schema_id: NOTE }),
@@ -171,7 +171,7 @@ describe("notes.update is atomic", () => {
 describe("notes.update restores the note unchanged when the rename fails", () => {
   it("tst_module_notes_write_004 title, body and updated_at all come back", async () => {
     const writes: Record<string, unknown>[] = [];
-    const graph = mockGraph<NoteCanonical>({
+    const graph = mockGraph({
       get_entity_full: () =>
         Promise.resolve({
           entity: entity(NOTE_ID, "old title", {

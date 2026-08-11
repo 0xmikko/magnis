@@ -34,7 +34,6 @@ import type {
   SetIndexedParams,
   SetTriggerParams,
   SyncEnvelope,
-  TelegramCanonical,
   TelegramChatListItem,
   TriggerCheck,
 } from "../types.ts";
@@ -61,9 +60,9 @@ import {
 import { runBatchSend } from "./batchSend.ts";
 
 export class TelegramModule {
-  private readonly graph: GraphService<TelegramCanonical>;
+  private readonly graph: GraphService;
   private readonly rpc: RpcExecutor;
-  constructor(deps: PluginDeps<TelegramCanonical>) {
+  constructor(deps: PluginDeps) {
     this.graph = deps.graph;
     this.rpc = deps.rpc;
   }

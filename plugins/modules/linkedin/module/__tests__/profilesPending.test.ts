@@ -10,7 +10,7 @@ import { LinkedinModule } from "../service.ts";
 import { PROFILE } from "../../schema.ts";
 import type { LinkedinCanonical } from "../../types.ts";
 
-type G = MockGraph<LinkedinCanonical>;
+type G = MockGraph;
 
 // Scenario fixture over the testkit: an ingested-profile window (paged by the
 // window's limit/offset) + a contacts.list_social_tracking RPC stub. Replaces

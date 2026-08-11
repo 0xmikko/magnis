@@ -9,17 +9,17 @@ import { MeetingsModule } from "../service.ts";
 import type { MeetingsCanonical } from "../../types.ts";
 
 const CAL = "meetings.calendar_event";
-type G = MockGraph<MeetingsCanonical>;
+type G = MockGraph;
 
 function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
-  return mockGraph<MeetingsCanonical>({
+  return mockGraph({
     create_entity: (p: { client_id?: string; name: string }) =>
       Promise.resolve({ id: p.client_id ?? "new-id", schema_id: CAL, name: p.name }),
     update_properties: () => Promise.resolve(undefined),
     add_link: () => Promise.resolve(undefined),
     get_entity: () => Promise.resolve(null),
     ...over,
-  } as unknown as GraphOverrides<MeetingsCanonical>);
+  } as unknown as GraphOverrides);
 }
 
 function makeModule(

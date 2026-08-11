@@ -25,16 +25,15 @@ import type {
   ProfileDetail,
   ProfileListItem,
   ProfilesListParams,
-  XCanonical,
   SyncEnvelope,
 } from "../types.ts";
 import { AUTHORED_BY, IDENTITY, POST, PROFILE } from "../schema.ts";
 import { richPostFields, str } from "./helpers.ts";
 
 export class XModule {
-  private readonly graph: GraphService<XCanonical>;
-  private readonly rpc: PluginDeps<XCanonical>["rpc"];
-  constructor(deps: PluginDeps<XCanonical>) {
+  private readonly graph: GraphService;
+  private readonly rpc: PluginDeps["rpc"];
+  constructor(deps: PluginDeps) {
     this.graph = deps.graph;
     this.rpc = deps.rpc;
   }

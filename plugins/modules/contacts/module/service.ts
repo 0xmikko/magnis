@@ -13,7 +13,6 @@ import type {
   BatchCreateParams,
   BatchCreateResult,
   BatchCreateRow,
-  ContactCanonical,
   ContactDetailView,
   ContactListItem,
   ContactsListParams,
@@ -55,10 +54,10 @@ import {
 } from "../schema.ts";
 
 export class ContactsModule {
-  private readonly graph: GraphService<ContactCanonical>;
+  private readonly graph: GraphService;
   private readonly util: PluginUtil;
   private readonly rpc: RpcExecutor;
-  constructor(deps: PluginDeps<ContactCanonical>) {
+  constructor(deps: PluginDeps) {
     this.graph = deps.graph;
     this.util = deps.util;
     this.rpc = deps.rpc;

@@ -32,7 +32,6 @@ import type {
   ListParams,
   MeetingCalendarEventDetails,
   MeetingDetailView,
-  MeetingsCanonical,
   MeetingListItem,
   MeetingTriggerCheck,
   NewMeetingParams,
@@ -58,9 +57,9 @@ import { CAL, EVENT, MEETING } from "../schema.ts";
 const dictOf = (e: RawEntity): Data => e.properties ?? {};
 
 export class MeetingsModule {
-  private readonly graph: GraphService<MeetingsCanonical>;
+  private readonly graph: GraphService;
   private readonly rpc: RpcExecutor;
-  constructor(deps: PluginDeps<MeetingsCanonical>) {
+  constructor(deps: PluginDeps) {
     this.graph = deps.graph;
     this.rpc = deps.rpc;
   }

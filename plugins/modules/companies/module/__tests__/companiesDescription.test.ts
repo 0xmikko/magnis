@@ -24,7 +24,7 @@ function writeGraph() {
   const company = entity("company-1", "Acme Labs", { schema_id: COMPANY });
   return {
     company,
-    graph: mockGraph<CompanyCanonical>({
+    graph: mockGraph({
       get_entity: () => Promise.resolve(company),
       create_entity: () => Promise.resolve(company),
       search_entities_by_name: () => Promise.resolve([]),

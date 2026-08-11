@@ -18,7 +18,7 @@ import { EmailModule } from "../service.ts";
 import { normalizeRecipient } from "../helpers.ts";
 import type { EmailCanonical } from "../../types.ts";
 
-type G = MockGraph<EmailCanonical>;
+type G = MockGraph;
 
 function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
   const overrides = {
@@ -34,8 +34,8 @@ function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
     source_command: () => Promise.resolve({ message_id: "src-1" }),
     get_entity_full: () => Promise.resolve(null),
     ...over,
-  } as unknown as GraphOverrides<EmailCanonical>;
-  return mockGraph<EmailCanonical>(overrides);
+  } as unknown as GraphOverrides;
+  return mockGraph(overrides);
 }
 
 function makeModule(graph: G): EmailModule {

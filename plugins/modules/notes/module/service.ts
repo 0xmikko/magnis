@@ -27,9 +27,9 @@ import { isValidUuid, previewFromBody, renderTemplate } from "./helpers.ts";
 import { BODY_ONE_OF, resolveBody, resolveUpdateBody } from "../ui/toolArgs.ts";
 
 export class NotesModule {
-  private readonly graph: GraphService<NoteCanonical>;
+  private readonly graph: GraphService;
   private readonly log: PluginLogger;
-  constructor(deps: PluginDeps<NoteCanonical>) {
+  constructor(deps: PluginDeps) {
     this.graph = deps.graph;
     this.log = deps.log;
   }

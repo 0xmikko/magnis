@@ -25,16 +25,15 @@ import type {
   ProfileDetail,
   ProfileListItem,
   ProfilesListParams,
-  LinkedinCanonical,
   SyncEnvelope,
 } from "../types.ts";
 import { AUTHORED_BY, IDENTITY, POST, PROFILE } from "../schema.ts";
 import { richPostFields } from "./helpers.ts";
 
 export class LinkedinModule {
-  private readonly graph: GraphService<LinkedinCanonical>;
-  private readonly rpc: PluginDeps<LinkedinCanonical>["rpc"];
-  constructor(deps: PluginDeps<LinkedinCanonical>) {
+  private readonly graph: GraphService;
+  private readonly rpc: PluginDeps["rpc"];
+  constructor(deps: PluginDeps) {
     this.graph = deps.graph;
     this.rpc = deps.rpc;
   }

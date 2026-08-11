@@ -8,10 +8,10 @@ import { entity, mockGraph, mountModule, windowRow, type MockGraph } from "@magn
 import { XModule } from "../service.ts";
 import type { SyncEnvelope, XCanonical } from "../../types.ts";
 
-type G = MockGraph<XCanonical>;
+type G = MockGraph;
 
 function mountX(graph: G, execute: (method: string, params?: unknown) => unknown = vi.fn()): XModule {
-  return mountModule<XModule, XCanonical>(XModule, {
+  return mountModule<XModule>(XModule, {
     graph,
     ctx: { extension_id: "x" },
     rpc: { execute },
@@ -32,7 +32,7 @@ function env(remote_id: string, payload: Record<string, unknown>): SyncEnvelope 
 }
 
 function ingestGraph(): G {
-  return mockGraph<XCanonical>({
+  return mockGraph({
     apply_batch: () =>
       Promise.resolve({ ids: {}, created: 0, updated: 0, links_added: 0, dropped_keys: [] }),
     list_entities_window: () => Promise.resolve({ items: [], total: 0 }),
@@ -156,7 +156,7 @@ describe("x ingest", () => {
 // the placeholder-name CAS upgrade; an untracked handle gets neither.
 describe("x ingest identity link (tst_ingest_link)", () => {
   function linkGraph(): G {
-    return mockGraph<XCanonical>({
+    return mockGraph({
       apply_batch: () =>
         Promise.resolve({
           ids: { "x:profile:12": "prof-1" },
@@ -231,7 +231,7 @@ describe("x ingest identity link (tst_ingest_link)", () => {
 // standard search box silently did nothing on this module.
 describe("x profiles.list search", () => {
   it("search → search_entities_by_name, dictionaries ride the rows, BACKEND order preserved", async () => {
-    const graph = mockGraph<XCanonical>({
+    const graph = mockGraph({
       search_entities_by_name: () =>
         Promise.resolve([
           entity("e2", "Bob Builder", {
@@ -263,7 +263,7 @@ describe("x profiles.list search", () => {
 // standard infinite scroll silently died in search mode.
 describe("x profiles.list search pagination", () => {
   function pagingGraph(dataset: { id: string; name: string }[]): G {
-    return mockGraph<XCanonical>({
+    return mockGraph({
       search_entities_by_name: (p) =>
         Promise.resolve(dataset.slice(0, p.limit).map((d) => entity(d.id, d.name, { schema_id: "x.profile" }))),
     });

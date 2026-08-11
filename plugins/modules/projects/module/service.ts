@@ -25,7 +25,6 @@ import type {
   CreateParams,
   ListForEntityParams,
   MemberParams,
-  ProjectCanonical,
   ProjectDetailView,
   ProjectListItem,
   ProjectsListParams,
@@ -43,8 +42,8 @@ import {
 } from "./helpers.ts";
 
 export class ProjectsModule {
-  private readonly graph: GraphService<ProjectCanonical>;
-  constructor(deps: PluginDeps<ProjectCanonical>) {
+  private readonly graph: GraphService;
+  constructor(deps: PluginDeps) {
     this.graph = deps.graph;
   }
 

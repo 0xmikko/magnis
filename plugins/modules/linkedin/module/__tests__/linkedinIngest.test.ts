@@ -8,7 +8,7 @@ import { LinkedinModule } from "../service.ts";
 import { AUTHORED_BY, IDENTITY, POST, PROFILE } from "../../schema.ts";
 import type { LinkedinCanonical, SyncEnvelope } from "../../types.ts";
 
-type G = MockGraph<LinkedinCanonical>;
+type G = MockGraph;
 
 // SyncEnvelope is a module DTO (not an SDK type), so its builder stays local.
 function env(remote_id: string, payload: Record<string, unknown>): SyncEnvelope {

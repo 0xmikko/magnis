@@ -15,8 +15,8 @@ function makeModule(
   rpc: RpcExecutor = { execute: vi.fn() },
 ): EmailModule {
   return mountModule(EmailModule, {
-    graph: mockGraph<EmailCanonical>(
-      graph as unknown as GraphOverrides<EmailCanonical>,
+    graph: mockGraph(
+      graph as unknown as GraphOverrides,
     ),
     ctx: { extension_id: "email" },
     rpc,

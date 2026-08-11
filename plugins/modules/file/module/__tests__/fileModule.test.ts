@@ -10,10 +10,10 @@ import { mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { FileModule } from "../service.ts";
 import type { FileCanonical } from "../../types.ts";
 
-type G = MockGraph<FileCanonical>;
+type G = MockGraph;
 
 function makeGraph(): G {
-  return mockGraph<FileCanonical>({
+  return mockGraph({
     get_entity_full: () => Promise.resolve(null),
     add_link: () => Promise.resolve(undefined),
     list_entities_window: () => Promise.resolve({ items: [], total: 0 }),
