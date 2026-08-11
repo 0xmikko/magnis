@@ -1,4 +1,4 @@
-import { useMemo, useRef, type JSX } from "react";
+import { useEffect, useMemo, useRef, type JSX } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { DetailPanelProps } from "@magnis/host/base";
 import { ExpandableEntityCard } from "@magnis/host/agent";
@@ -70,7 +70,9 @@ export function TriggerDetailPanel({
   // over the render that created them, so a callback firing after the operator
   // moved on would otherwise compare against a stale id.
   const shownEntityId = useRef(entityId);
-  shownEntityId.current = entityId;
+  useEffect(() => {
+    shownEntityId.current = entityId;
+  }, [entityId]);
 
   const setStatus = useMutation({
     mutationFn: (vars: { readonly id: string; readonly status: string }) =>
