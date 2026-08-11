@@ -153,4 +153,133 @@ describe("tst_fe_trig_003 — the panel pauses, resumes and deletes", () => {
     expect(client.getQueryState(OWNER_WITH)?.isInvalidated).toBe(true);
     expect(client.getQueryState(OWNER_WITHOUT)?.isInvalidated).toBe(false);
   });
+
+  it("Step 2b → does not drop an owner's descendant queries", async () => {
+    const { runtime } = statefulRuntime();
+    const client = freshClient();
+
+    // Contacts nest `social_tracking` UNDER the detail key. A key-based
+    // invalidation matches by prefix and would take this with it; only the
+    // entry that actually names the trigger should go.
+    const OWNER = ["contacts", "detail", "c1"] as const;
+    const DESCENDANT = ["contacts", "detail", "c1", "social_tracking"] as const;
+    client.setQueryData(OWNER, {
+      id: "c1",
+      linked_entities: [{ id: "trigger-1", name: "Reply watch" }],
+    });
+    client.setQueryData(DESCENDANT, { tracked_x: true });
+
+    const { findByText } = render(
+      withClient(
+        client,
+        <TriggerDetailPanel entityId="trigger-1" moduleId="triggers" runtime={runtime} />,
+      ),
+    );
+    fireEvent.click(await findByText("Delete"));
+
+    await waitFor(() => {
+      expect(client.getQueryState(OWNER)?.isInvalidated).toBe(true);
+    });
+    expect(client.getQueryState(DESCENDANT)?.isInvalidated).toBe(false);
+  });
+
+  it("Step 3 → a rejected delete keeps the trigger and says why", async () => {
+    const rpc = vi.fn((method: string) => {
+      if (method === "triggers.get") return Promise.resolve(detailWith("active"));
+      if (method === "triggers.fire_history") return Promise.resolve([]);
+      if (method === "triggers.delete") return Promise.reject(new Error("permission denied"));
+      return Promise.reject(new Error(`unexpected RPC: ${method}`));
+    });
+    const runtime = {
+      transport: { rpc },
+      agent: { resolveEntityRenderer: () => null },
+      modules: { get: () => undefined },
+    } as unknown as AppRuntime;
+    const onDeleted = vi.fn();
+
+    const { findByText } = render(
+      withClient(
+        freshClient(),
+        <TriggerDetailPanel
+          entityId="trigger-1"
+          moduleId="triggers"
+          runtime={runtime}
+          onDeleted={onDeleted}
+        />,
+      ),
+    );
+    fireEvent.click(await findByText("Delete"));
+
+    // Surfaced, not swallowed — and the host is NOT told the entity is gone.
+    expect(await findByText(/Could not delete this trigger: permission denied/)).toBeTruthy();
+    expect(onDeleted).not.toHaveBeenCalled();
+    // The affordances are still there, because the trigger still is.
+    expect(await findByText("Delete")).toBeTruthy();
+    expect(await findByText("Pause")).toBeTruthy();
+  });
+
+  it("Step 3b → a rejected pause leaves the status alone and says why", async () => {
+    const rpc = vi.fn((method: string) => {
+      if (method === "triggers.get") return Promise.resolve(detailWith("active"));
+      if (method === "triggers.fire_history") return Promise.resolve([]);
+      if (method === "triggers.update") return Promise.reject(new Error("backend down"));
+      return Promise.reject(new Error(`unexpected RPC: ${method}`));
+    });
+    const runtime = {
+      transport: { rpc },
+      agent: { resolveEntityRenderer: () => null },
+      modules: { get: () => undefined },
+    } as unknown as AppRuntime;
+
+    const { findByText } = render(
+      withClient(
+        freshClient(),
+        <TriggerDetailPanel entityId="trigger-1" moduleId="triggers" runtime={runtime} />,
+      ),
+    );
+    fireEvent.click(await findByText("Pause"));
+
+    expect(await findByText(/Could not change the status: backend down/)).toBeTruthy();
+    // Still active, so still offering Pause.
+    expect(await findByText("Pause")).toBeTruthy();
+  });
+
+  it("Step 4 → one unreadable watch does not hide the others", async () => {
+    const rpc = vi.fn((method: string, params?: Record<string, unknown>) => {
+      if (method === "triggers.get") {
+        return Promise.resolve({
+          ...detailWith("active"),
+          watched_entities: [
+            { id: "w-ok", name: "Readable" },
+            { id: "w-bad", name: "Unreadable" },
+          ],
+        });
+      }
+      if (method === "triggers.fire_history") return Promise.resolve([]);
+      if (method === "graph.entity.get") {
+        if (params?.id === "w-ok") {
+          return Promise.resolve({ id: "w-ok", schema_id: "contacts.person", name: "Readable" });
+        }
+        return Promise.reject(new Error("entity unavailable"));
+      }
+      return Promise.reject(new Error(`unexpected RPC: ${method}`));
+    });
+    const runtime = {
+      transport: { rpc },
+      agent: { resolveEntityRenderer: () => null },
+      modules: { get: () => undefined },
+    } as unknown as AppRuntime;
+
+    const { findByText } = render(
+      withClient(
+        freshClient(),
+        <TriggerDetailPanel entityId="trigger-1" moduleId="triggers" runtime={runtime} />,
+      ),
+    );
+
+    // The readable watch renders, and the failed one is named rather than
+    // taking every other watch down with it.
+    expect(await findByText("Readable")).toBeTruthy();
+    expect(await findByText(/w-bad \(unavailable\)/)).toBeTruthy();
+  });
 });

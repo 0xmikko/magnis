@@ -1,7 +1,7 @@
 // Contacts plugin — backend module (V8). Decorated class; the
 // read path (list/get) mirrors the legacy Rust ContactsModuleService.
 
-import { rpc, searchEntitiesPage, syncHandler, tool, writeTool, type GraphService, type PluginDeps, type PluginUtil, type RawEntity, type RpcExecutor } from "@magnis/plugin-sdk";
+import { reachedEndpoints, rpc, searchEntitiesPage, syncHandler, tool, writeTool, type GraphService, type PluginDeps, type PluginUtil, type RawEntity, type RpcExecutor } from "@magnis/plugin-sdk";
 import type {
   BatchEntityInput,
   GetParams,
@@ -52,6 +52,13 @@ import {
   CONTACT,
   GOOGLE_CONTACT,
 } from "../schema.ts";
+
+/**
+ * Bulk message records. A contact's replicas sit on one edge per message ever
+ * addressed to them, and those are read through the owning module's own paging
+ * surface rather than inherited by the hub. See the note in `get`.
+ */
+const MESSAGE_SCHEMAS = new Set(["email.message", "telegram.message"]);
 
 export class ContactsModule {
   private readonly graph: GraphService;
@@ -157,44 +164,42 @@ export class ContactsModule {
     const replicaLinks =
       identityIds.length === 0 ? [] : await this.graph.list_links_for_entities(identityIds);
 
-    // Each edge contributes the endpoint on its far side, labeled by direction
-    // relative to the node it was reached from: outgoing keeps the kind,
-    // incoming wears `~`.
-    const reached: { readonly id: string; readonly kind: string }[] = [];
-    for (const l of links) {
-      const outgoing = l.from_id === e.id;
-      const endpoint = outgoing ? l.to_id : l.from_id;
-      if (endpoint === e.id) continue;
-      reached.push({ id: endpoint, kind: outgoing ? l.kind : `~${l.kind}` });
-    }
-    for (const l of replicaLinks) {
-      const outgoing = replicaSet.has(l.from_id);
-      const endpoint = outgoing ? l.to_id : l.from_id;
-      if (endpoint === e.id) continue;
-      reached.push({ id: endpoint, kind: outgoing ? l.kind : `~${l.kind}` });
-    }
+    // The hub's own edges first, so its own labels win, then the replicas'.
+    // Deduped by endpoint; the hub itself excluded.
+    const reached = reachedEndpoints(
+      [
+        { links, ownerIds: new Set([e.id]) },
+        { links: replicaLinks, ownerIds: replicaSet },
+      ],
+      new Set([e.id]),
+    );
 
     // ONE batch over the hub's endpoints ∪ the replicas', whatever the count.
     const neighbours = new Map<string, RawEntity & { created_at?: string }>();
-    const reachedIds = [...new Set(reached.map((r) => r.id))];
+    const reachedIds = [...reached.keys()];
     if (reachedIds.length > 0) {
       for (const t of await this.graph.get_entities(reachedIds)) neighbours.set(t.id, t);
     }
 
-    // Deduped by entity id: the same entity can arrive from the hub and from a
-    // replica, and the first relation encountered supplies the label.
     const linked: LinkedEntitySummary[] = [];
-    const claimed = new Set<string>();
-    for (const r of reached) {
-      if (claimed.has(r.id)) continue;
-      const t = neighbours.get(r.id);
+    for (const [id, kind] of reached) {
+      const t = neighbours.get(id);
       if (!t) continue;
-      claimed.add(r.id);
+      // The hub does not inherit its replicas' message traffic. A shared
+      // `email.address` is on the far side of one edge per message ever sent to
+      // it, so a real mailbox would put thousands of rows in this response and
+      // a card per message in the Email tab. The host already treats individual
+      // messages as noise rather than linked entities and skips them when
+      // grouping (`entityTabUtils.ts`, "individual messages (too many,
+      // noise)"); messages are reached through the Email and Telegram
+      // surfaces, which page. Every other endpoint is returned, including a
+      // company that shares the address.
+      if (MESSAGE_SCHEMAS.has(t.schema_id)) continue;
       linked.push({
         id: t.id,
         name: t.name,
         schema_id: t.schema_id,
-        link_kind: r.kind,
+        link_kind: kind,
         created_at: t.created_at ?? new Date(0).toISOString(),
         data: null,
       });

@@ -93,4 +93,23 @@ describe("tst_fe_trig_001 — the card shows only a status it read", () => {
     expect(await findByLabelText("status: paused")).toBeTruthy();
     expect(queryByLabelText("status: active")).toBeNull();
   });
+
+  it("Step 3 → the module's status wins over one carried on the summary", async () => {
+    // The conflicting case is the one that matters. A card preferring
+    // `data.status` passes both steps above, because a link summary carries
+    // none today — but `EntityDetailTabs` does spread the summary's `data` over
+    // id and name, so the moment a module sends one, a stale value would win.
+    const { findByLabelText, queryByLabelText } = render(
+      withProviders(
+        <TriggerCard
+          schemaId="triggers.trigger"
+          data={{ ...SUMMARY, status: "active" }}
+          runtime={runtimeWith(PAUSED_DETAIL)}
+        />,
+      ),
+    );
+
+    expect(await findByLabelText("status: paused")).toBeTruthy();
+    expect(queryByLabelText("status: active")).toBeNull();
+  });
 });

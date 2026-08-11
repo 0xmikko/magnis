@@ -29,17 +29,22 @@ type G = MockGraph;
 
 const MESSAGE_ID = "m1";
 
-// m1 —in_chat→ c1, m1 —authored_by→ a1, t1 —watches→ m1.
+// m1 —in_chat→ c1, m1 —authored_by→ a1, t1 —watches→ m1, plus the two outgoing
+// edges a real message also carries and this module does NOT claim to expose.
 const LINKS = [
   { id: "l1", from_id: MESSAGE_ID, to_id: "c1", kind: "in_chat" },
   { id: "l2", from_id: MESSAGE_ID, to_id: "a1", kind: "authored_by" },
   { id: "l3", from_id: "t1", to_id: MESSAGE_ID, kind: "watches" },
+  { id: "l4", from_id: MESSAGE_ID, to_id: "web-1", kind: "references" },
+  { id: "l5", from_id: MESSAGE_ID, to_id: "file-1", kind: "attachment" },
 ];
 
 const NEIGHBOURS = [
   entity("c1", "Ops chat", { schema_id: "telegram.chat" }),
   entity("a1", "Alice", { schema_id: "telegram.account" }),
   entity("t1", "Watch the thread", { schema_id: "triggers.trigger" }),
+  entity("web-1", "example.com", { schema_id: "web.link" }),
+  entity("file-1", "invoice.pdf", { schema_id: "file.object" }),
 ];
 
 function messageGraph(): G {
@@ -73,10 +78,20 @@ describe("tst_mod_tg_001 — a message exposes its own links", () => {
     // with `~` would pass a weaker assertion than this one.
     expect(byId.get("c1")?.link_kind).toBe("in_chat");
     expect(byId.get("a1")?.link_kind).toBe("authored_by");
-    // Incoming wears the tilde.
+    // Incoming wears the tilde — anything that points AT the message is
+    // returned whatever it is.
     expect(byId.get("t1")?.link_kind).toBe("~watches");
-    // All three, and the message never lists itself.
+    // Outgoing is only what the module says a message exposes: the web link and
+    // the attachment hang off this message too, and are not part of the answer.
+    expect(byId.has("web-1")).toBe(false);
+    expect(byId.has("file-1")).toBe(false);
+    // Those three, and the message never lists itself.
     expect(view.linked_entities).toHaveLength(3);
     expect(byId.has(MESSAGE_ID)).toBe(false);
+    // The batch argument, not just its count: a batch over the wrong ids would
+    // otherwise leave every assertion above intact.
+    expect(graph.spies.get_entities).toHaveBeenCalledWith(
+      expect.arrayContaining(["c1", "a1", "t1"]),
+    );
   });
 });

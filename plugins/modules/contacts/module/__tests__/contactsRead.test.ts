@@ -240,5 +240,43 @@ describe("contacts read — two hops (tst_mod_contacts_001)", () => {
     expect(byId.has("c1")).toBe(false);
     expect(graph.spies.list_links_for_entities).toHaveBeenCalledTimes(1);
     expect(graph.spies.get_entities).toHaveBeenCalledTimes(1);
+    // The BATCH ARGUMENT, not just the call count. The double answers with a
+    // fixed list whatever it is handed, so without this a batch over the wrong
+    // ids — the replicas instead of the endpoints, say — still produces the
+    // rows above and every assertion here passes while the feature is gone.
+    expect(graph.spies.get_entities).toHaveBeenCalledWith(
+      expect.arrayContaining(["addr-1", "t1", "t2", "co1"]),
+    );
+    const batched = spy(graph, "get_entities").mock.calls[0]?.[0] as string[];
+    expect(batched).not.toContain("c1");
+  });
+
+  it("does not inherit its replicas' message traffic", async () => {
+    // A shared address sits on one edge per message ever sent to it. Those are
+    // read through the owning module's paging surface, not returned here.
+    spy(graph, "get_entity_full").mockResolvedValue({
+      entity: entity("c1", "Alice", { schema_id: SCHEMA }),
+      links: [{ id: "l1", from_id: "c1", to_id: "addr-1", kind: "identity" }],
+    });
+    spy(graph, "list_links_for_entities").mockResolvedValue([
+      { id: "l2", from_id: "msg-1", to_id: "addr-1", kind: "sent_to" },
+      { id: "l3", from_id: "tg-1", to_id: "addr-1", kind: "sent_to" },
+      { id: "l4", from_id: "co1", to_id: "addr-1", kind: "identity" },
+    ]);
+    spy(graph, "get_entities").mockResolvedValue([
+      entity("addr-1", "alice@x.com", { schema_id: "email.address" }),
+      entity("msg-1", "Re: invoice", { schema_id: "email.message" }),
+      entity("tg-1", "hi", { schema_id: "telegram.message" }),
+      entity("co1", "Acme", { schema_id: "companies.company" }),
+    ]);
+
+    const view = await mod.get({ id: "c1" });
+    const ids = view.linked_entities.map((l) => l.id);
+
+    expect(ids).not.toContain("msg-1");
+    expect(ids).not.toContain("tg-1");
+    // Everything else incident to the replica still comes back.
+    expect(ids).toContain("co1");
+    expect(ids).toContain("addr-1");
   });
 });

@@ -12,7 +12,7 @@
 //     Stage 1 uses the record's avatar_url / photo_url.
 //   - message-detail canonical map + linked_entities (Context panel).
 
-import { connectionReady, rpc, syncComplete, syncHandler, tool, writeTool, type GraphService, type PluginDeps } from "@magnis/plugin-sdk";
+import { connectionReady, reachedEndpoints, rpc, syncComplete, syncHandler, tool, writeTool, type GraphService, type PluginDeps } from "@magnis/plugin-sdk";
 import type {
   BatchEntityInput,
   BatchLinkInput,
@@ -59,6 +59,13 @@ import {
   type Data,
 } from "./helpers.ts";
 import { runBatchSend } from "./batchSend.ts";
+
+/**
+ * What a message exposes on its own initiative: its chat and its sender. Web
+ * references and media edges also hang off a message, but they are not part of
+ * what this module says a message is.
+ */
+const EXPOSED_OUTGOING = new Set(["in_chat", "authored_by"]);
 
 export class TelegramModule {
   private readonly graph: GraphService;
@@ -349,28 +356,30 @@ export class TelegramModule {
     // @tested-by: tst_mod_tg_001
     // @invariant: a message never lists itself, and one relation per endpoint
     // survives — the first one found supplies the label.
-    const reached: { readonly id: string; readonly kind: string }[] = [];
-    for (const link of links) {
-      const outgoing = link.from_id === entity.id;
-      const endpoint = outgoing ? link.to_id : link.from_id;
-      if (endpoint === entity.id) continue;
-      reached.push({ id: endpoint, kind: outgoing ? link.kind : `~${link.kind}` });
-    }
-    const endpointIds = [...new Set(reached.map((r) => r.id))];
+    // Outgoing is restricted to the two the contract names. A message also has
+    // outgoing `references` edges to web links and edges to media, and exposing
+    // those here would make `messages.get` answer about things this module
+    // never claimed to expose. Everything that POINTS AT the message is
+    // returned, whatever it is.
+    const exposed = links.filter(
+      (link) => link.from_id !== entity.id || EXPOSED_OUTGOING.has(link.kind),
+    );
+    const reached = reachedEndpoints(
+      [{ links: exposed, ownerIds: new Set([entity.id]) }],
+      new Set([entity.id]),
+    );
+    const endpointIds = [...reached.keys()];
     const endpoints = endpointIds.length === 0 ? [] : await this.graph.get_entities(endpointIds);
     const endpointById = new Map(endpoints.map((e) => [e.id, e] as const));
     const linked_entities: LinkedEntitySummary[] = [];
-    const claimed = new Set<string>();
-    for (const r of reached) {
-      if (claimed.has(r.id)) continue;
-      const target = endpointById.get(r.id);
+    for (const [id, kind] of reached) {
+      const target = endpointById.get(id);
       if (target === undefined) continue;
-      claimed.add(r.id);
       linked_entities.push({
         id: target.id,
         name: target.name,
         schema_id: target.schema_id,
-        link_kind: r.kind,
+        link_kind: kind,
         created_at: (target as { created_at?: string }).created_at ?? new Date(0).toISOString(),
         data: null,
       });
