@@ -289,6 +289,61 @@ describe("tst_fe_trig_003 — the panel pauses, resumes and deletes", () => {
     releaseDelete?.();
   });
 
+  it("Step 3c2 → a write in flight does not lock the NEXT trigger", async () => {
+    // The host renders this panel unkeyed, so switching selection reuses the
+    // component instance and its refs. A boolean guard would survive the switch
+    // and swallow a legitimate Delete on the second trigger until the first
+    // settled; the guard holds an id for exactly this reason.
+    let releaseFirst: (() => void) | undefined;
+    const held = new Promise<{ deleted: boolean }>((resolve) => {
+      releaseFirst = () => {
+        resolve({ deleted: true });
+      };
+    });
+    const rpc = vi.fn((method: string, params?: Record<string, unknown>) => {
+      if (method === "triggers.get") return Promise.resolve(detailWith("active"));
+      if (method === "triggers.fire_history") return Promise.resolve([]);
+      if (method === "triggers.delete") {
+        return params?.id === "trigger-1" ? held : Promise.resolve({ deleted: true });
+      }
+      return Promise.reject(new Error(`unexpected RPC: ${method}`));
+    });
+    const runtime = {
+      transport: { rpc },
+      agent: { resolveEntityRenderer: () => null },
+      modules: { get: () => undefined },
+    } as unknown as AppRuntime;
+    const client = freshClient();
+
+    const { findByText, rerender } = render(
+      withClient(
+        client,
+        <TriggerDetailPanel entityId="trigger-1" moduleId="triggers" runtime={runtime} />,
+      ),
+    );
+    fireEvent.click(await findByText("Delete"));
+    await waitFor(() => {
+      expect(rpc.mock.calls.filter(([m]) => m === "triggers.delete")).toHaveLength(1);
+    });
+
+    // The operator moves to another trigger while the first write is still open.
+    rerender(
+      withClient(
+        client,
+        <TriggerDetailPanel entityId="trigger-2" moduleId="triggers" runtime={runtime} />,
+      ),
+    );
+    fireEvent.click(await findByText("Delete"));
+
+    await waitFor(() => {
+      const deleted = rpc.mock.calls
+        .filter(([m]) => m === "triggers.delete")
+        .map(([, params]) => (params as { id: string }).id);
+      expect(deleted).toEqual(["trigger-1", "trigger-2"]);
+    });
+    releaseFirst?.();
+  });
+
   it("Step 3d → the host hears about the deletion before the cache work", async () => {
     const { runtime } = statefulRuntime();
     const client = freshClient();

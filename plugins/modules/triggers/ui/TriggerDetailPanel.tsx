@@ -57,29 +57,38 @@ export function TriggerDetailPanel({
 
   // Refs, not the mutations' `isPending`: that is a rendered snapshot, so two
   // clicks dispatched before React re-renders would both get past it and issue
-  // two writes against the same trigger. Cleared on settle, success or not.
-  const statusInFlight = useRef(false);
-  const removeInFlight = useRef(false);
+  // two writes against the same trigger.
+  //
+  // They hold the id being written, not a boolean. The host reuses this panel
+  // when the selection changes — `BaseModuleComponent` renders it unkeyed — so a
+  // boolean would survive the switch and silently swallow a legitimate action on
+  // the NEXT trigger until the previous one settled. Cleared on settle, and only
+  // if the id has not moved on since.
+  const statusInFlight = useRef<string | undefined>(undefined);
+  const removeInFlight = useRef<string | undefined>(undefined);
 
   const setStatus = useMutation({
-    mutationFn: (status: string) =>
-      runtime.transport.rpc("triggers.update", { id: entityId, status }),
+    mutationFn: (vars: { readonly id: string; readonly status: string }) =>
+      runtime.transport.rpc("triggers.update", { id: vars.id, status: vars.status }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: triggerKeys.all });
     },
-    onSettled: () => {
-      statusInFlight.current = false;
+    onSettled: (_data, _error, vars) => {
+      if (statusInFlight.current === vars.id) statusInFlight.current = undefined;
     },
   });
 
   const remove = useMutation({
-    mutationFn: () => runtime.transport.rpc("triggers.delete", { id: entityId }),
-    onSuccess: () => {
+    mutationFn: (id: string) => runtime.transport.rpc("triggers.delete", { id }),
+    onSuccess: (_data, deletedId) => {
       // Report upward FIRST. The host owns what selection means, and the
       // invalidation below refetches this panel's own now-dead queries — with
       // retries and backoff that is a second or more, and awaiting it would
       // leave a deleted trigger on screen with live Pause and Delete buttons.
-      onDeleted?.();
+      // Only if the panel is still showing what was deleted. The selection can
+      // have moved on while the write was in flight, and clearing it then would
+      // close a trigger the operator had just opened.
+      if (deletedId === entityId) onDeleted?.();
       // The plugin's own list, detail and history keys.
       void queryClient.invalidateQueries({ queryKey: triggerKeys.all });
       // INV-P2.3: and the owners that named this trigger. The panel has no
@@ -93,12 +102,12 @@ export function TriggerDetailPanel({
           const links = (cached.state.data as { linked_entities?: unknown } | undefined)
             ?.linked_entities;
           if (!Array.isArray(links)) return false;
-          return links.some((link) => (link as { id?: unknown } | null)?.id === entityId);
+          return links.some((link) => (link as { id?: unknown } | null)?.id === deletedId);
         },
       });
     },
-    onSettled: () => {
-      removeInFlight.current = false;
+    onSettled: (_data, _error, deletedId) => {
+      if (removeInFlight.current === deletedId) removeInFlight.current = undefined;
     },
   });
   const watchIds = useMemo(
@@ -221,9 +230,12 @@ export function TriggerDetailPanel({
             // A ref, not `isPending`: that is a rendered snapshot, so two
             // clicks dispatched before React re-renders would both pass it and
             // issue two writes against the same trigger.
-            if (statusInFlight.current) return;
-            statusInFlight.current = true;
-            setStatus.mutate(trigger.status === "active" ? "paused" : "active");
+            if (statusInFlight.current === entityId) return;
+            statusInFlight.current = entityId;
+            setStatus.mutate({
+              id: entityId,
+              status: trigger.status === "active" ? "paused" : "active",
+            });
           }}
         />
         <ActionButton
@@ -231,9 +243,9 @@ export function TriggerDetailPanel({
           variant="danger"
           icon="trash"
           onClick={() => {
-            if (removeInFlight.current) return;
-            removeInFlight.current = true;
-            remove.mutate();
+            if (removeInFlight.current === entityId) return;
+            removeInFlight.current = entityId;
+            remove.mutate(entityId);
           }}
         />
       </Row>

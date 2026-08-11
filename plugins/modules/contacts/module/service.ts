@@ -154,7 +154,8 @@ export class ContactsModule {
     // @tested-by: tst_mod_contacts_001
     // @invariant: everything incident to a replica is the hub's linked entity,
     // except the hub itself — the replicas link back to it, and a hub is not
-    // its own linked entity. That is the only exclusion.
+    // its own linked entity — and its replicas' message traffic, dropped by the
+    // filter below (INV-P2b.4, as amended).
     const identityIds = [
       ...new Set(
         links.filter((l) => l.kind === "identity" && l.from_id === e.id).map((l) => l.to_id),
