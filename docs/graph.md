@@ -2,7 +2,7 @@
 
 The reference for Magnis's core data structure: what an entity, a dictionary, a link and an event actually are, how a module declares its slice, how the graph is indexed for search, and which graph tools an agent can call. For where the graph sits in the system, see [architecture.md](architecture.md); for building the plugins that shape it, see [plugins/](plugins/README.md).
 
-One graph per deployment — one connected data model, partitioned by entity ownership and filtered by ACL visibility for every caller ([details](architecture.md#ownership-visibility-and-acl)).
+One graph per deployment — one connected data model, partitioned by entity ownership. Ownership isolation is enforced today; ACL-based sharing beyond the owner is the designed mechanism, not yet the shipped one ([details](architecture.md#ownership-visibility-and-acl)).
 
 ## Anatomy
 
@@ -20,13 +20,15 @@ It is a **property graph**: nodes and edges each carry a dictionary, and identit
 
 Relations in use include `identity` (hub → its channels: an address, an account, a profile), `authored_by` (content → the identity that produced it), `sent_to`, `in_chat`, `observed_in`, `observed_participant`, `attendee`, `works_at`, `references`, `mentions`, `reply_to`, and `same_as` (speculative identity — symmetric, direction-normalized). A kind a module genuinely owns still carries its namespace prefix (`file.attachment`, `projects.belongs_to`) and is validated by prefix.
 
-An edge carries a **dictionary** of its own (`metadata`): the per-pair facts that belong to neither endpoint — an invite's display name on `attendee`, an unread count on `observed_in`. Unlike a node's, an edge's dictionary is written by many observers, so re-observing UNIONS rather than replaces, and the host stamps a `sources[]` list on it. That list is the host's provenance record and is **not searchable** — a search declaration naming `sources` (or any path beneath it) is rejected.
+An edge carries a **dictionary** of its own (`metadata`): the per-pair facts that belong to neither endpoint — an invite's display name on `attendee`, an unread count on `observed_in`. Its domain keys are NOT merged across observers: a sync REFRESHES them (fields as last synced, same contract as a node's), and `add_link` on an existing edge leaves them alone entirely, which is what keeps re-ingest idempotent.
+
+Exactly one key behaves differently, and it is the host's: `sources[]`. The host stamps it — a plugin cannot supply one — and it UNIONS, the incoming stamp replacing its own (source, account) entry while every other observer's survives, so corroboration accumulates instead of overwriting. Because it is the provenance record, a query may not read it: an `edge` clause naming `sources`, or any path beneath it, is rejected by the resolver.
 
 Roles matter more than they look. After the accounts migration a chat's participant is a `telegram.account` (role `identity_channel`), not the `contacts.person` hub behind it: the hub reaches the account over `identity`, and the account sits `observed_participant` in the chat. A predicate written against the hub would match nothing.
 
 **Events** — an append-only log of every mutation, with an actor (`user` / `system` / `agent` / `plugin`): `entity_created`, `entity_properties_updated`, `link_added`, `link_status_changed`, `override_applied`, `entities_merged`, and their removal counterparts. The graph's history is never rewritten.
 
-**Merging two nodes.** The merged truth is the dictionary UNION: the survivor's value wins, the retired value fills a gap, and a key both hubs claim with DIFFERENT values is a conflict the merge refuses to guess — it aborts, naming the keys, having written nothing. The operator answers with an override, which lands straight in the survivor's dictionary. The retired node's anchor survives as an alias of the survivor, so the next re-sync of the absorbed identity resolves to the right node.
+**Merging two nodes.** The merged truth is the dictionary UNION: the survivor's value wins, the retired value fills a gap, and a key both hubs claim with DIFFERENT values is a conflict the merge refuses to guess (`phones` is the one exemption — it unions mechanically) — it aborts, naming the keys, having written nothing. The operator answers with an override, which lands straight in the survivor's dictionary. The retired node's anchor survives as an alias of the survivor, so the next re-sync of the absorbed identity resolves to the right node.
 
 ## Declaring a slice of the graph
 
@@ -94,9 +96,9 @@ Four layers, each for a different question shape:
 
 A background index worker keeps the vector store in step with the graph. The indexed unit is the **entity**: one node, one watermark, one lane.
 
-- Walk the entities whose schema a declaration covers → extract text from the keys that declaration marks `embed` → **content watermark** over the plan and the dictionary (unchanged content is never re-embedded; a changed declaration or a changed model triggers re-indexing) → chunk with a **200-token sliding window, 20-token overlap** → embed each chunk → write FTS rows, vectors and the watermark atomically.
+- Walk the entities whose schema a declaration covers → extract text from the keys that declaration marks `embed` → **content watermark** over the declaration, the entity's name and its dictionary (unchanged content is never re-embedded; a changed declaration or a changed model triggers re-indexing) → chunk with a **200-word sliding window, 20-word overlap** → embed each chunk → write FTS rows, vectors and the watermark atomically.
 - The declaration is the single source of truth for BOTH halves: what the indexer embeds and what search can filter come from the same file, so the two cannot drift.
-- **Embedding providers are pluggable:** local ONNX models (e.g. a multilingual E5 at 384 dimensions), Ollama-style local servers, or OpenAI-compatible endpoints — the in-perimeter option keeps content inside the deployment boundary. Embedding calls are metered like any other model usage.
+- **Embedding providers are pluggable:** local ONNX models (e.g. a multilingual E5 at 384 dimensions), Ollama-style local servers (`OLLAMA_BASE_URL`), or OpenAI's embeddings endpoint — the in-perimeter option keeps content inside the deployment boundary. OpenAI calls are metered like any other model usage; the local providers are not.
 - **Acceleration is gated, correctness is not:** raw vectors are the source of truth; when the deployment enables pgvector, a parallel `vector(dim)` column with an **HNSW cosine index** is created and backfilled, and search switches to ANN — with a loud failure (never a silent fallback) if the gate is on but the extension is missing. Without pgvector, search falls back to exact cosine scoring.
 
 **Retrieval combines all layers:** vector and full-text results merge via **Reciprocal Rank Fusion** (k=60; weighted 0.7 vector / 0.3 FTS) at the entity level, and can then be **intersected with the graph neighborhood** of given entities — "things similar to this, near these" — where neighborhoods come from bidirectional breadth-first traversal.
@@ -131,7 +133,7 @@ All graph tools are bounded and paginated (result caps, `{items, total, has_more
 |---|---|
 | `<prefix>.search` | conditions per declared key, link conditions, ordering, keyset paging. The parameters ARE the searchable keys |
 | `<prefix>.list` | walk the entity in its declared default order; equality filters only |
-| `<prefix>.predicate` | describe a SET — returns `{about, where, explain}` to drop into another entity's `linked` condition. Executes nothing, stores nothing |
+| `<prefix>.predicate` | describe a SET — returns `{about, where}` (plus `explain` when the caller supplied one) to drop into another entity's `linked` condition. Executes nothing, stores nothing |
 
 A `linked` condition names a `kind`, a mode (`to`, `none` for the exact complement, `exists`), an optional `edge` clause over the edge's own dictionary, and an optional target described by a predicate. Composition is **one level deep** — predicates compose, they do not recurse.
 

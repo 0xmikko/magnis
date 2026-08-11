@@ -54,8 +54,9 @@ Four concepts. Learn these and the rest follows.
   and removes one by sending `null`.
 - **Link** — a typed relationship between two entities ("authored_by",
   "in_chat", "works_at"). Links make the graph a graph, and each carries a
-  dictionary of its own for the facts that belong to neither endpoint. An edge
-  has MANY observers, so re-observing UNIONS into it instead of replacing.
+  dictionary of its own for the facts that belong to neither endpoint. Its
+  domain keys are refreshed by a sync and left untouched by `add_link`; only
+  the host-stamped `sources[]` accumulates across observers.
 - **Event** — an immutable, append-only record of every mutation: the log of
   what happened.
 

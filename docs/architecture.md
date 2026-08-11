@@ -213,7 +213,7 @@ This is how work gets scheduled into the future: the subscription carries the in
 An agent never queries raw provider data — it searches the graph. Retrieval is hybrid:
 
 - **structured graph queries** — typed traversal over entities, their dictionaries, and links ("open deals involving people from Tuesday's meeting");
-- **semantic search** — embedding-based retrieval over message and document content. The embedding endpoint is deployment-configured: an in-perimeter local service (Ollama-style or any OpenAI-compatible server) keeps indexed content inside the deployment boundary; a remote endpoint is possible where policy allows.
+- **semantic search** — embedding-based retrieval over message and document content. The embedding endpoint is deployment-configured: an in-perimeter local service (Ollama-style or OpenAI's embeddings endpoint) keeps indexed content inside the deployment boundary; a remote endpoint is possible where policy allows.
 
 The combination is deliberate: multi-hop questions resolve through the graph, fuzzy recall resolves through embeddings, and both return provenance — every result carries the identifiers the agent needs for its next traversal hop. The same search serves clients. Index mechanics — full-text, vectors, rank fusion: [docs/graph.md](graph.md).
 

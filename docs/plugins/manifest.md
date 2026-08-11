@@ -94,6 +94,21 @@ embeds is declared separately, in `search.toml` — see
 Installing a module registers these schemas natively — there is no install
 hook to write.
 
+#### Declaring a link kind you OWN
+
+Referencing a host-owned kind goes in `[permissions] links`. A kind the module
+OWNS is declared instead, and carries the module's namespace prefix:
+
+```toml
+[[links]]
+kind = "file.attachment"   # prefix must be the plugin's own id
+to   = "file_object"       # the ROLE the far endpoint must declare
+```
+
+The prefix is what makes it unforgeable: a package cannot declare a kind in
+another module's namespace, so ownership is settled by the id rather than by a
+registry entry someone has to keep in step.
+
 
 ## Source manifest (v3)
 

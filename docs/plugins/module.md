@@ -102,7 +102,7 @@ the call sites that care.
 
 ## 4. What a module can call — the deps
 
-The constructor receives `PluginDeps = { graph, ctx, util, rpc }`:
+The constructor receives `PluginDeps = { graph, ctx, util, rpc, log }`:
 
 - **`ctx: PluginContext`** — `{ user_id, extension_kind, extension_id }`.
   `extension_id` is the RPC-name prefix; `user_id` is stamped host-side for
@@ -128,12 +128,15 @@ The constructor receives `PluginDeps = { graph, ctx, util, rpc }`:
   dictionary with the fields as last synced. Know which lane you are on — a
   curated edit that resends the whole map is harmless, a sync that sends a
   partial one silently drops the rest.
-- **Identity** — a node is found by its `anchor`, not by an external id column.
-  `create_entity` takes the anchor and the chokepoint resolves it, so the
-  second sync of the same provider record attaches instead of duplicating.
-- **Links** — `add_link`, `delete_link`, `list_links_for_entity`. An edge's own
-  dictionary (`metadata`) UNIONS on re-observation — many observers, unlike the
-  node.
+- **Identity** — a node is found by its `anchor`, not by an external id
+  column: read one with `find_by_anchor`. A curated `create_entity` does NOT
+  take an anchor — it always mints `local:<id>`. The issuer-key lane is
+  `apply_batch`, whose `BatchEntityInput.anchor` IS the resolver, so the second
+  sync of the same provider record attaches instead of duplicating.
+- **Links** — `add_link`, `delete_link`, `list_links_for_entity`. `add_link`
+  on an EXISTING edge does not rewrite its dictionary — that is what makes
+  re-ingest idempotent; the sync lane refreshes it. Only the host's reserved
+  `sources[]` unions across observers.
 - **Batch/merge** — `apply_batch(GraphBatchInput)` (atomic entities+links
   fragment — the bulk-ingest primitive), `merge_preview`, `merge_execute`.
 
@@ -196,7 +199,7 @@ async create(params: CreateParams): Promise<ContactCreated> {
     );
     email_address_entity_id = addr.id;
     // link my contact to it — the kind must be granted (see below)
-    await this.graph.add_link({ from_id: contact.id, to_id: addr.id, kind: "has_email" });
+    await this.graph.add_link({ from_id: contact.id, to_id: addr.id, kind: "identity" });
   }
   // return the id your UI + tests read off the result
   return { /* …list item… */, fields: { email_address_entity_id } };
@@ -210,7 +213,7 @@ foreign asks):
 ```toml
 [permissions]
 call  = ["email.ensure_address"]   # EXACT methods you may call — no wildcards
-links = ["has_email"]              # foreign-touching link kinds you may create
+links = ["identity"]              # foreign-touching link kinds you may create
 ```
 
 `call` lists **exact** fully-qualified methods: you may call
@@ -280,10 +283,12 @@ The invariant "one node, one writer" is about WHO writes, not about how much:
 no two sources contend for one dictionary, because each source's view lives on
 its own node and the hub reaches it over `identity`.
 
-An EDGE behaves the other way round: many observers, so re-observing a link
-UNIONS into its `metadata` rather than replacing it. Per-observer state — an
-unread count, a pin order — belongs there, not on the node, because the node
-has no room for two observers' answers.
+An EDGE is not a third lane: `add_link` on an existing edge leaves its
+dictionary alone (idempotent re-ingest), and the sync lane refreshes it the way
+it refreshes a node's. Per-observer state — an unread count, a pin order —
+still belongs on the edge rather than the node, because the node has no room
+for two observers' answers; just do not expect two observers' values to merge
+there. The one key that does accumulate is the host-stamped `sources[]`.
 
 Reading is likewise one question, not two. There is no second store to consult:
 `list_entities_window` returns the page and its exact total in one statement,
