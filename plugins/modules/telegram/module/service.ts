@@ -12,7 +12,7 @@
 //     Stage 1 uses the record's avatar_url / photo_url.
 //   - message-detail canonical map + linked_entities (Context panel).
 
-import { connectionReady, rpc, syncComplete, syncHandler, tool, writeTool, type GraphService, type PluginDeps } from "@magnis/plugin-sdk";
+import { connectionReady, reachedEndpoints, rpc, syncComplete, syncHandler, tool, writeTool, type GraphService, type PluginDeps } from "@magnis/plugin-sdk";
 import type {
   BatchEntityInput,
   BatchLinkInput,
@@ -26,6 +26,7 @@ import type {
   BatchSendParams,
   ChatsListParams,
   GetParams,
+  LinkedEntitySummary,
   MessageDetailView,
   MessageListItem,
   MessagesListParams,
@@ -58,6 +59,13 @@ import {
   type Data,
 } from "./helpers.ts";
 import { runBatchSend } from "./batchSend.ts";
+
+/**
+ * What a message exposes on its own initiative: its chat and its sender. Web
+ * references and media edges also hang off a message, but they are not part of
+ * what this module says a message is.
+ */
+const EXPOSED_OUTGOING = new Set(["in_chat", "authored_by"]);
 
 export class TelegramModule {
   private readonly graph: GraphService;
@@ -330,15 +338,52 @@ export class TelegramModule {
   })
   async messagesGet(params: GetParams): Promise<MessageDetailView> {
     // P1 (graph-read-api §4): the entity in ONE fetch, user-scoped.
-    const detail = await this.graph.get_entity_full(params.id, { links: false });
+    // P4: with its links. Returning nothing because the fetch asked for
+    // nothing was not a decision about what a message exposes.
+    const detail = await this.graph.get_entity_full(params.id, { links: true });
     if (detail?.entity.schema_id !== MESSAGE) {
       throw new Error(`${MESSAGE} ${params.id} not found`);
     }
-    const { entity } = detail;
+    const { entity, links } = detail;
     // S4: the message DICT is the record.
     const d = ((entity as { properties?: unknown }).properties ?? {}) as Data;
     const senderName = (await this.senderNamesFor([entity.id])).get(entity.id) ?? null;
     const created = entity.created_at ?? "";
+
+    // P4 — telegram's choice, stated: a message exposes its chat, its sender,
+    // and whatever points at it. Outgoing keeps the kind, incoming wears `~`,
+    // the convention projects and companies already use.
+    // @tested-by: tst_mod_tg_001
+    // @invariant: a message never lists itself, and one relation per endpoint
+    // survives — the first one found supplies the label.
+    // Outgoing is restricted to the two the contract names. A message also has
+    // outgoing `references` edges to web links and edges to media, and exposing
+    // those here would make `messages.get` answer about things this module
+    // never claimed to expose. Everything that POINTS AT the message is
+    // returned, whatever it is.
+    const exposed = links.filter(
+      (link) => link.from_id !== entity.id || EXPOSED_OUTGOING.has(link.kind),
+    );
+    const reached = reachedEndpoints(
+      [{ links: exposed, ownerIds: new Set([entity.id]) }],
+      new Set([entity.id]),
+    );
+    const endpointIds = [...reached.keys()];
+    const endpoints = endpointIds.length === 0 ? [] : await this.graph.get_entities(endpointIds);
+    const endpointById = new Map(endpoints.map((e) => [e.id, e] as const));
+    const linked_entities: LinkedEntitySummary[] = [];
+    for (const [id, kind] of reached) {
+      const target = endpointById.get(id);
+      if (target === undefined) continue;
+      linked_entities.push({
+        id: target.id,
+        name: target.name,
+        schema_id: target.schema_id,
+        link_kind: kind,
+        created_at: (target as { created_at?: string }).created_at ?? new Date(0).toISOString(),
+        data: null,
+      });
+    }
     return {
       id: entity.id,
       schema_id: entity.schema_id,
@@ -348,7 +393,7 @@ export class TelegramModule {
       channel: "telegram",
       timestamp: typeof d.date === "string" ? (d.date) : created,
       canonical: {},
-      linked_entities: [],
+      linked_entities,
       created_at: created,
       metadata: d,
     };

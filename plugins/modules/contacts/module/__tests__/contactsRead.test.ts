@@ -174,3 +174,109 @@ describe("contacts read — DB-access guarantees (tst_be_contactsdb_001)", () =>
     expect(graph.spies.get_entities).toHaveBeenCalledTimes(1);
   });
 });
+
+// ── P2b: the hub answers for its replicas' links ───────────────────────
+// A trigger hangs off the contact's address, not off the contact:
+// `contact —identity→ email.address ←watches— trigger`. identity replaced the
+// facet model, so the replicas carry the edges and their links are read as the
+// hub's own — all of them, with exactly one exclusion: the hub itself, because
+// the replicas link back to it.
+describe("contacts read — two hops (tst_mod_contacts_001)", () => {
+  let graph: G;
+  let mod: ContactsModule;
+  beforeEach(() => {
+    graph = readGraph();
+    mod = mountModule(ContactsModule, { graph, ctx: { extension_id: "contacts" } }).module;
+  });
+
+  /**
+   * @test-id tst_mod_contacts_001
+   * @scenario scn_contacts_001
+   * @covers plugins/modules/contacts/module/service.ts::ContactsModule.get
+   * @deterministic testkit graph double; no clock, no network
+   *
+   * INV-P2b.1 a trigger watching the contact's `email.address` appears in
+   *           `linked_entities`, marked `~watches`.
+   * INV-P2b.2 incoming edges are distinguishable from outgoing ones.
+   * INV-P2b.3 the contact itself never appears, though its replicas link back.
+   * INV-P2b.4 everything else incident to a replica is returned, including a
+   *           company sharing the address, as `~identity`.
+   * INV-P2b.5 a trigger watching BOTH the contact and its address appears once.
+   * INV-P2b.6 one `list_links_for_entities` and one `get_entities`, whatever
+   *           the neighbour count.
+   */
+  it("returns what hangs off its replicas, once each, without itself", async () => {
+    spy(graph, "get_entity_full").mockResolvedValue({
+      entity: entity("c1", "Alice", { schema_id: SCHEMA }),
+      links: [
+        { id: "l1", from_id: "c1", to_id: "addr-1", kind: "identity" },
+        { id: "l2", from_id: "t2", to_id: "c1", kind: "watches" },
+      ],
+    });
+    // Everything incident to the address — including the edge back to the hub.
+    spy(graph, "list_links_for_entities").mockResolvedValue([
+      { id: "l1", from_id: "c1", to_id: "addr-1", kind: "identity" },
+      { id: "l3", from_id: "t1", to_id: "addr-1", kind: "watches" },
+      { id: "l4", from_id: "t2", to_id: "addr-1", kind: "watches" },
+      { id: "l5", from_id: "co1", to_id: "addr-1", kind: "identity" },
+    ]);
+    spy(graph, "get_entities").mockResolvedValue([
+      entity("addr-1", "alice@x.com", {
+        schema_id: "email.address",
+        properties: { address: "alice@x.com" },
+      }),
+      entity("t1", "watch the address", { schema_id: "triggers.trigger" }),
+      entity("t2", "watch both", { schema_id: "triggers.trigger" }),
+      entity("co1", "Acme", { schema_id: "companies.company" }),
+    ]);
+
+    const view = await mod.get({ id: "c1" });
+    const byId = new Map(view.linked_entities.map((l) => [l.id, l] as const));
+
+    expect(byId.get("t1")?.link_kind).toBe("~watches");
+    expect(byId.get("addr-1")?.link_kind).toBe("identity");
+    expect(byId.get("co1")?.link_kind).toBe("~identity");
+    expect(view.linked_entities.filter((l) => l.id === "t2")).toHaveLength(1);
+    expect(byId.has("c1")).toBe(false);
+    expect(graph.spies.list_links_for_entities).toHaveBeenCalledTimes(1);
+    expect(graph.spies.get_entities).toHaveBeenCalledTimes(1);
+    // The BATCH ARGUMENT, not just the call count. The double answers with a
+    // fixed list whatever it is handed, so without this a batch over the wrong
+    // ids — the replicas instead of the endpoints, say — still produces the
+    // rows above and every assertion here passes while the feature is gone.
+    expect(graph.spies.get_entities).toHaveBeenCalledWith(
+      expect.arrayContaining(["addr-1", "t1", "t2", "co1"]),
+    );
+    const batched = spy(graph, "get_entities").mock.calls[0]?.[0] as string[];
+    expect(batched).not.toContain("c1");
+  });
+
+  it("does not inherit its replicas' message traffic", async () => {
+    // A shared address sits on one edge per message ever sent to it. Those are
+    // read through the owning module's paging surface, not returned here.
+    spy(graph, "get_entity_full").mockResolvedValue({
+      entity: entity("c1", "Alice", { schema_id: SCHEMA }),
+      links: [{ id: "l1", from_id: "c1", to_id: "addr-1", kind: "identity" }],
+    });
+    spy(graph, "list_links_for_entities").mockResolvedValue([
+      { id: "l2", from_id: "msg-1", to_id: "addr-1", kind: "sent_to" },
+      { id: "l3", from_id: "tg-1", to_id: "addr-1", kind: "sent_to" },
+      { id: "l4", from_id: "co1", to_id: "addr-1", kind: "identity" },
+    ]);
+    spy(graph, "get_entities").mockResolvedValue([
+      entity("addr-1", "alice@x.com", { schema_id: "email.address" }),
+      entity("msg-1", "Re: invoice", { schema_id: "email.message" }),
+      entity("tg-1", "hi", { schema_id: "telegram.message" }),
+      entity("co1", "Acme", { schema_id: "companies.company" }),
+    ]);
+
+    const view = await mod.get({ id: "c1" });
+    const ids = view.linked_entities.map((l) => l.id);
+
+    expect(ids).not.toContain("msg-1");
+    expect(ids).not.toContain("tg-1");
+    // Everything else incident to the replica still comes back.
+    expect(ids).toContain("co1");
+    expect(ids).toContain("addr-1");
+  });
+});
