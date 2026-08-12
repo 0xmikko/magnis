@@ -98,6 +98,110 @@ describe("notes.create accepts one body field and is atomic", () => {
 });
 
 /**
+ * @test-id: tst_module_notes_identity_001
+ * @scenario: scn_notes_identity_001
+ * @covers: plugins/modules/notes/module/service.ts::NotesModule.create,delete
+ * @deterministic: yes
+ * @fixtures: fixed UUID and strict graph doubles
+ * @legacy-id: tst_int_optcreate_007_notes_create_uses_client_id
+ * @legacy-id: tst_int_optcreate_009_notes_create_duplicate_client_id_is_idempotent
+ * @legacy-id: tst_int_optcreate_024_notes_invalid_client_id_returns_error
+ * @legacy-id: tst_notes_e2e_create_invalid_client_id_errors
+ * @legacy-id: tst_notes_e2e_rejects_non_note_id
+ */
+describe("notes identity and schema boundaries", () => {
+  it("forwards a valid client id and returns the existing note on retry", async () => {
+    const freshGraph = writeGraph({ get_entity_full: () => Promise.resolve(null) });
+    const fresh = mountModule(NotesModule, { graph: freshGraph }).module;
+
+    const created = await fresh.create({
+      title: "Original",
+      body: "Body",
+      client_id: NOTE_ID,
+    });
+
+    expect(created.id).toBe(NOTE_ID);
+    expect(freshGraph.spies.create_entity).toHaveBeenCalledWith({
+      schema_id: NOTE,
+      name: "Original",
+      client_id: NOTE_ID,
+    });
+
+    const retryGraph = mockGraph({
+      get_entity_full: () =>
+        Promise.resolve({
+          entity: entity(NOTE_ID, "Original", {
+            schema_id: NOTE,
+            properties: {
+              title: "Original",
+              body: "Body",
+              updated_at: "2026-01-02T00:00:00Z",
+            },
+          }),
+          links: [],
+        }),
+    });
+    const retry = mountModule(NotesModule, { graph: retryGraph }).module;
+
+    await expect(
+      retry.create({ title: "Ignored retry", client_id: NOTE_ID } as never),
+    ).resolves.toEqual({
+      id: NOTE_ID,
+      schema_id: NOTE,
+      title: "Original",
+      body: "Body",
+      updated_at: "2026-01-02T00:00:00Z",
+    });
+  });
+
+  it("rejects an invalid client id before any graph operation", async () => {
+    const graph = mockGraph();
+    const module = mountModule(NotesModule, { graph }).module;
+
+    await expect(
+      module.create({ title: "Invalid", body: "Body", client_id: "not-a-uuid" }),
+    ).rejects.toThrow("client_id must be a valid UUID");
+  });
+
+  it("does not reinterpret a foreign-schema client-id collision as a note", async () => {
+    const graph = mockGraph({
+      get_entity_full: () =>
+        Promise.resolve({
+          entity: entity(NOTE_ID, "Project", { schema_id: "projects.project" }),
+          links: [],
+        }),
+      create_entity: () => Promise.reject(new Error("entity already exists")),
+    });
+    const module = mountModule(NotesModule, { graph }).module;
+
+    await expect(
+      module.create({ title: "Must not impersonate", body: "Body", client_id: NOTE_ID }),
+    ).rejects.toThrow("entity already exists");
+  });
+
+  it("deletes only an owned note entity", async () => {
+    const graph = mockGraph({
+      get_entity_full: () =>
+        Promise.resolve({ entity: entity(NOTE_ID, "Note", { schema_id: NOTE }), links: [] }),
+      delete_entity: () => Promise.resolve(undefined),
+    });
+    const module = mountModule(NotesModule, { graph }).module;
+    await expect(module.delete({ id: NOTE_ID })).resolves.toEqual({ deleted: true });
+    expect(graph.spies.delete_entity).toHaveBeenCalledWith(NOTE_ID);
+
+    const foreignGraph = mockGraph({
+      get_entity_full: () =>
+        Promise.resolve({
+          entity: entity(NOTE_ID, "Project", { schema_id: "projects.project" }),
+          links: [],
+        }),
+    });
+    const foreign = mountModule(NotesModule, { graph: foreignGraph }).module;
+    await expect(foreign.delete({ id: NOTE_ID })).rejects.toThrow(`note not found: ${NOTE_ID}`);
+  });
+});
+
+/**
  * @test-id: tst_module_notes_write_003
  * @scenario: scn_demo_rfq_001
  * @covers: plugins/modules/notes/module/helpers.ts::bodyFromToolArgs
