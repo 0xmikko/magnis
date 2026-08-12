@@ -196,6 +196,7 @@ export function TriggerDetailPanel({
       <Row gap={2}>
         <ActionButton
           label={running ? "Stop" : "Start"}
+          size="sm"
           // Red only while it runs: stopping a live trigger is the consequential
           // direction. Starting one back up is ordinary.
           variant={running ? "danger" : "default"}
