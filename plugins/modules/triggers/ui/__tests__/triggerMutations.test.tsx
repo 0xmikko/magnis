@@ -568,9 +568,11 @@ describe("tst_fe_trig_003 — the panel pauses, resumes and deletes", () => {
     const reject = rejectFirst;
     rejectFirst = undefined;
     reject?.(new Error("permission denied"));
-    await waitFor(() => {
-      expect(rpc.mock.calls.filter(([m]) => m === "triggers.get").length).toBeGreaterThan(0);
-    });
+    // Wait for the ERROR to surface, not merely for a tick: React Query moves
+    // the mutation into its error state after `onSettled`, so this cannot pass
+    // before the guard has been released. Waiting on anything weaker would let
+    // this test go green on correct code by luck.
+    await findByText(/Could not delete this trigger/);
 
     // Back to A and try again. The button must still work.
     rerender(panel("trigger-1"));
