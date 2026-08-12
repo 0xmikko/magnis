@@ -80,6 +80,14 @@ async function call(
 }
 
 describe("fixture mode end-to-end", () => {
+  /**
+   * @test-id: tst_gts_fx_001
+   * @scenario: scn_backend_tests_006
+   * @covers: Google connector fixture-to-envelope mapping
+   * @legacy-id: tst_int_google_email_ingests_into_real_emails_module
+   * @legacy-id: tst_int_google_meetings_ingests_into_real_meetings_module
+   * @deterministic: yes
+   */
   test("tst_gts_fx_001 email/meetings/contacts served from file, one page, no counters", async () => {
     withFixture(FIXTURE_DOC);
 

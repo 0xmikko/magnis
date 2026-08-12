@@ -13,7 +13,7 @@
  * is written down in docs/backend/episodes.md.
  */
 import { type JSX } from "react";
-import type { AppRuntime } from "../runtime/contracts/runtime";
+import type { AppRuntime } from "../../runtime/contracts/runtime";
 export interface EpisodeMemory {
     readonly id: string;
     readonly memory_type: string;

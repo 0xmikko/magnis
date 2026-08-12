@@ -8,6 +8,18 @@
 // that guarantee REPLACES the old reject() spies AND their toHaveBeenCalledTimes(0)
 // assertions (an unarranged op has no spy to count).
 
+/**
+ * @test-id: tst_module_email_ingest_001
+ * @scenario: scn_backend_tests_006
+ * @covers: EmailModule.ingest
+ * @legacy-id: tst_int_emailsync_003_email_snapshot_ingest_becomes_visible_via_rpc
+ * @legacy-id: tst_int_emailsync_004_email_repeated_envelopes_converge_on_single_entity
+ * @legacy-id: tst_int_emailsync_005_email_delete_envelope_removes_synced_entity
+ * @legacy-id: tst_module_email_attach_001_ingest_creates_file_entities
+ * @legacy-id: tst_int_trig_033_email_ingest_resolves_address_in_touched_ids
+ * @deterministic: yes
+ */
+
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { BatchEntityInput, BatchLinkInput, GraphBatchInput } from "@magnis/plugin-sdk";
 import { mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";

@@ -5,7 +5,7 @@
 import type { IconName } from "../../components/ui/Icon";
 import type { AgentModuleData, LinkedEntitySummary } from "./types";
 import type { AvatarColor } from "../shared/types";
-import type { ContextPanelProps } from "../../agent/ContextPanel";
+import type { ContextPanelProps } from "../../panels";
 export interface TimelineItem {
     readonly id: string;
     readonly title: string;

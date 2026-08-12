@@ -1,5 +1,5 @@
 import type { JSX } from "react";
-import type { AppRuntime } from "../runtime/contracts/runtime";
+import type { AppRuntime } from "../../runtime/contracts/runtime";
 import { type StatsDeps } from "./useContextStats";
 export declare function AgentStatsRegion({ runtime, contextKey, episodeId, engineCurrent, deps, primaryEntityId, nameOf, }: {
     readonly runtime: AppRuntime;

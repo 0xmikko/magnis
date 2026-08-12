@@ -14,7 +14,7 @@
  * how much it is hiding.
  */
 import { type JSX, type ReactNode } from "react";
-import type { IconName } from "../components/ui/Icon";
+import type { IconName } from "../../components/ui/Icon";
 export interface PanelRegionProps {
     readonly title: string;
     readonly iconName: IconName;

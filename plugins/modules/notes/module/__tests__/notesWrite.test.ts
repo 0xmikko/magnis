@@ -33,6 +33,10 @@ function writeGraph(overrides: Record<string, unknown> = {}): G {
  * @covers: plugins/modules/notes/module/service.ts::NotesModule.create
  * @deterministic: yes
  * @fixtures: inline graph doubles
+ * @legacy-id: tst_notes_e2e_create_then_get_roundtrips_body
+ * @legacy-id: tst_notes_e2e_no_file_fields
+ * @legacy-id: tst_notes_e2e_create_stores_body_verbatim
+ * @legacy-id: tst_notes_e2e_create_rejects_blank_body
  *
  * Test environment: vitest node lane, direct module mount
  * Clients: direct calls
@@ -63,6 +67,21 @@ describe("notes.create accepts one body field and is atomic", () => {
     const snap = await module.create({ title: "RFQ", body: "## prices" });
 
     expect(snap.body).toBe("## prices");
+    expect(snap).not.toHaveProperty("file_path");
+    expect(snap).not.toHaveProperty("file_name");
+  });
+
+  it("tst_module_notes_write_001 preserves whitespace and rejects a blank body", async () => {
+    const graph = writeGraph();
+    const { module } = mountModule(NotesModule, { graph });
+    await expect(module.create({ title: "Exact", body: "  exact body  " })).resolves.toMatchObject({
+      body: "  exact body  ",
+    });
+
+    const blankGraph = writeGraph();
+    const blank = mountModule(NotesModule, { graph: blankGraph }).module;
+    await expect(blank.create({ title: "Blank", body: "   " })).rejects.toThrow(/blank/);
+    expect(blankGraph.spies.create_entity).not.toHaveBeenCalled();
   });
 
   it("tst_module_notes_write_001 rejects both names at once", async () => {
@@ -94,6 +113,117 @@ describe("notes.create accepts one body field and is atomic", () => {
     );
 
     expect(graph.spies.delete_entity).toHaveBeenCalledWith(NOTE_ID);
+  });
+});
+
+/**
+ * @test-id: tst_module_notes_identity_001
+ * @scenario: scn_notes_identity_001
+ * @covers: plugins/modules/notes/module/service.ts::NotesModule.create,delete
+ * @deterministic: yes
+ * @fixtures: fixed UUID and strict graph doubles
+ * @legacy-id: tst_int_optcreate_007_notes_create_uses_client_id
+ * @legacy-id: tst_int_optcreate_008_notes_create_without_client_id_generates_uuid
+ * @legacy-id: tst_int_optcreate_009_notes_create_duplicate_client_id_is_idempotent
+ * @legacy-id: tst_int_optcreate_010_notes_get_by_client_id
+ * @legacy-id: tst_int_optcreate_020_different_modules_same_client_id_independent
+ * @legacy-id: tst_int_optcreate_023_notes_client_id_in_list
+ * @legacy-id: tst_int_optcreate_024_notes_invalid_client_id_returns_error
+ * @legacy-id: tst_notes_e2e_create_invalid_client_id_errors
+ * @legacy-id: tst_notes_e2e_rejects_non_note_id
+ * @legacy-id: tst_notes_e2e_create_idempotent_on_client_id
+ * @legacy-id: tst_notes_e2e_delete_removes_note
+ * @legacy-id: tst_notes_e2e_ownership_notfound
+ */
+describe("notes identity and schema boundaries", () => {
+  it("forwards a valid client id and returns the existing note on retry", async () => {
+    const freshGraph = writeGraph({ get_entity_full: () => Promise.resolve(null) });
+    const fresh = mountModule(NotesModule, { graph: freshGraph }).module;
+
+    const created = await fresh.create({
+      title: "Original",
+      body: "Body",
+      client_id: NOTE_ID,
+    });
+
+    expect(created.id).toBe(NOTE_ID);
+    expect(freshGraph.spies.create_entity).toHaveBeenCalledWith({
+      schema_id: NOTE,
+      name: "Original",
+      client_id: NOTE_ID,
+    });
+
+    const retryGraph = mockGraph({
+      get_entity_full: () =>
+        Promise.resolve({
+          entity: entity(NOTE_ID, "Original", {
+            schema_id: NOTE,
+            properties: {
+              title: "Original",
+              body: "Body",
+              updated_at: "2026-01-02T00:00:00Z",
+            },
+          }),
+          links: [],
+        }),
+    });
+    const retry = mountModule(NotesModule, { graph: retryGraph }).module;
+
+    await expect(
+      retry.create({ title: "Ignored retry", client_id: NOTE_ID } as never),
+    ).resolves.toEqual({
+      id: NOTE_ID,
+      schema_id: NOTE,
+      title: "Original",
+      body: "Body",
+      updated_at: "2026-01-02T00:00:00Z",
+    });
+  });
+
+  it("rejects an invalid client id before any graph operation", async () => {
+    const graph = mockGraph();
+    const module = mountModule(NotesModule, { graph }).module;
+
+    await expect(
+      module.create({ title: "Invalid", body: "Body", client_id: "not-a-uuid" }),
+    ).rejects.toThrow("client_id must be a valid UUID");
+  });
+
+  it("does not reinterpret a foreign-schema client-id collision as a note", async () => {
+    const graph = mockGraph({
+      get_entity_full: () =>
+        Promise.resolve({
+          entity: entity(NOTE_ID, "Project", { schema_id: "projects.project" }),
+          links: [],
+        }),
+      create_entity: () => Promise.reject(new Error("entity already exists")),
+    });
+    const module = mountModule(NotesModule, { graph }).module;
+
+    await expect(
+      module.create({ title: "Must not impersonate", body: "Body", client_id: NOTE_ID }),
+    ).rejects.toThrow("entity already exists");
+  });
+
+  it("deletes only an owned note entity", async () => {
+    const graph = mockGraph({
+      get_entity_full: () =>
+        Promise.resolve({ entity: entity(NOTE_ID, "Note", { schema_id: NOTE }), links: [] }),
+      delete_entity: () => Promise.resolve(undefined),
+    });
+    const module = mountModule(NotesModule, { graph }).module;
+    await expect(module.delete({ id: NOTE_ID })).resolves.toEqual({ deleted: true });
+    expect(graph.spies.delete_entity).toHaveBeenCalledWith(NOTE_ID);
+
+    const foreignGraph = mockGraph({
+      get_entity_full: () =>
+        Promise.resolve({
+          entity: entity(NOTE_ID, "Project", { schema_id: "projects.project" }),
+          links: [],
+        }),
+    });
+    const foreign = mountModule(NotesModule, { graph: foreignGraph }).module;
+    await expect(foreign.delete({ id: NOTE_ID })).rejects.toThrow(`note not found: ${NOTE_ID}`);
   });
 });
 
@@ -131,11 +261,33 @@ describe("the approval card reads the same wire names the tool accepts", () => {
  * @covers: plugins/modules/notes/module/service.ts::NotesModule.update
  * @deterministic: yes
  * @fixtures: inline graph doubles
+ * @legacy-id: tst_notes_e2e_update_title_renames_entity
  *
  * @invariant INV-25 — a failed update leaves neither the title nor the body
  * half-applied.
  */
 describe("notes.update is atomic", () => {
+  it("tst_module_notes_write_002 writes the body and then renames on success", async () => {
+    const graph = mockGraph({
+      get_entity_full: () =>
+        Promise.resolve({
+          entity: entity(NOTE_ID, "old title", {
+            schema_id: NOTE,
+            properties: { body: "old body", updated_at: "2026-01-01T00:00:00Z" },
+          }),
+          links: [],
+        }),
+      update_properties: () => Promise.resolve(undefined),
+      update_entity_name: () => Promise.resolve(undefined),
+    } as never);
+    const { module } = mountModule(NotesModule, { graph });
+
+    await expect(
+      module.update({ id: NOTE_ID, title: "new title", body: "new body" }),
+    ).resolves.toMatchObject({ title: "new title", body: "new body" });
+    expect(graph.spies.update_entity_name).toHaveBeenCalledWith(NOTE_ID, "new title");
+  });
+
   it("tst_module_notes_write_002 does not rename when the content write fails", async () => {
     const graph = mockGraph({
       get_entity_full: () =>

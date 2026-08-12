@@ -14,7 +14,7 @@
  * and the region does not render.
  */
 import { type JSX } from "react";
-import type { AppRuntime } from "../runtime/contracts/runtime";
+import type { AppRuntime } from "../../runtime/contracts/runtime";
 export interface CandidateLink {
     readonly id: string;
     readonly from: string;
