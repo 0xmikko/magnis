@@ -289,22 +289,26 @@ describe("tst_fe_trig_003 — the panel pauses, resumes and deletes", () => {
     releaseDelete?.();
   });
 
-  it("Step 3c2 → a write in flight does not lock the NEXT trigger", async () => {
+  it("Step 3c2 → a PAUSE in flight does not lock the next trigger", async () => {
     // The host renders this panel unkeyed, so switching selection reuses the
     // component instance and its refs. A boolean guard would survive the switch
-    // and swallow a legitimate Delete on the second trigger until the first
-    // settled; the guard holds an id for exactly this reason.
+    // and swallow a legitimate Pause on the second trigger until the first
+    // settled; the guard holds ids for exactly this reason.
+    //
+    // Aimed at Pause rather than Delete on purpose: the delete guard is already
+    // covered by the A → B → A walk below, and this is the only test that pins
+    // the STATUS guard, which would otherwise be unmeasured machinery.
     let releaseFirst: (() => void) | undefined;
-    const held = new Promise<{ deleted: boolean }>((resolve) => {
+    const held = new Promise<{ updated: boolean }>((resolve) => {
       releaseFirst = () => {
-        resolve({ deleted: true });
+        resolve({ updated: true });
       };
     });
     const rpc = vi.fn((method: string, params?: Record<string, unknown>) => {
       if (method === "triggers.get") return Promise.resolve(detailWith("active"));
       if (method === "triggers.fire_history") return Promise.resolve([]);
-      if (method === "triggers.delete") {
-        return params?.id === "trigger-1" ? held : Promise.resolve({ deleted: true });
+      if (method === "triggers.update") {
+        return params?.id === "trigger-1" ? held : Promise.resolve({ updated: true });
       }
       return Promise.reject(new Error(`unexpected RPC: ${method}`));
     });
@@ -321,9 +325,9 @@ describe("tst_fe_trig_003 — the panel pauses, resumes and deletes", () => {
         <TriggerDetailPanel entityId="trigger-1" moduleId="triggers" runtime={runtime} />,
       ),
     );
-    fireEvent.click(await findByText("Delete"));
+    fireEvent.click(await findByText("Pause"));
     await waitFor(() => {
-      expect(rpc.mock.calls.filter(([m]) => m === "triggers.delete")).toHaveLength(1);
+      expect(rpc.mock.calls.filter(([m]) => m === "triggers.update")).toHaveLength(1);
     });
 
     // The operator moves to another trigger while the first write is still open.
@@ -333,13 +337,13 @@ describe("tst_fe_trig_003 — the panel pauses, resumes and deletes", () => {
         <TriggerDetailPanel entityId="trigger-2" moduleId="triggers" runtime={runtime} />,
       ),
     );
-    fireEvent.click(await findByText("Delete"));
+    fireEvent.click(await findByText("Pause"));
 
     await waitFor(() => {
-      const deleted = rpc.mock.calls
-        .filter(([m]) => m === "triggers.delete")
+      const paused = rpc.mock.calls
+        .filter(([m]) => m === "triggers.update")
         .map(([, params]) => (params as { id: string }).id);
-      expect(deleted).toEqual(["trigger-1", "trigger-2"]);
+      expect(paused).toEqual(["trigger-1", "trigger-2"]);
     });
     releaseFirst?.();
   });
