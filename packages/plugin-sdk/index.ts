@@ -22,6 +22,7 @@ export * from "./contract/lifecycle";
 
 import type {
   GraphService,
+  LinkSummary,
   MethodRecorder,
   PluginContext,
   PluginDeps,
@@ -37,6 +38,43 @@ import type {
   ToolSpecInput,
 } from "./contract/module";
 import type { InstallContext, LifecycleHooks, MigrationStep } from "./contract/lifecycle";
+
+// ── shared link-endpoint assembly (added 2026-08-12) ────────────────────────
+// Every module that answers `linked_entities` has to turn edges into endpoints:
+// take the far side of each edge, label it by direction, drop the node it was
+// read from, and keep one row per endpoint. Seven modules hand-rolled that and
+// four observable divergences followed — some labelled incoming edges with `~`
+// and some did not, some deduplicated and some did not. This is the one
+// implementation; WHICH edges to pass in stays each module's own decision,
+// because that is the part that legitimately differs (a contact reads its
+// replicas' edges, a message reads its own).
+//
+// Direction: an edge whose `from_id` is one of `ownerIds` is outgoing and keeps
+// its kind; anything else is incoming and wears `~`. Passes are applied in
+// order and the FIRST relation to reach an endpoint supplies its label, so a
+// caller that reads its own edges before its replicas' gets its own labels.
+export interface LinkEndpointPass {
+  readonly links: readonly LinkSummary[];
+  /** The nodes these edges were read from — `from_id` here means outgoing. */
+  readonly ownerIds: ReadonlySet<string>;
+}
+
+export function reachedEndpoints(
+  passes: readonly LinkEndpointPass[],
+  excludeIds: ReadonlySet<string>,
+): Map<string, string> {
+  const reached = new Map<string, string>();
+  for (const pass of passes) {
+    for (const link of pass.links) {
+      const outgoing = pass.ownerIds.has(link.from_id);
+      const endpoint = outgoing ? link.to_id : link.from_id;
+      if (excludeIds.has(endpoint)) continue;
+      if (reached.has(endpoint)) continue;
+      reached.set(endpoint, outgoing ? link.kind : `~${link.kind}`);
+    }
+  }
+  return reached;
+}
 
 // ── shared list-search paging (added 2026-07-03) ────────────────────────────
 // The host list pane pages via {limit, offset, search} and computes
