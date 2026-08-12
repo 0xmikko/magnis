@@ -13,17 +13,18 @@
  *
  * INV-P4.2 message navigation makes one module call and no `graph.entity.get`.
  */
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, type Mock } from "vitest";
 import type { AppRuntime } from "@magnis/host/runtime";
 import { TelegramModule } from "../index";
 
 const MESSAGE_ID = "m1";
 const CHAT_ID = "c1";
+type Navigate = (moduleId: string, entityType?: string, entityId?: string) => void;
 
 function harness(): {
   readonly runtime: AppRuntime;
   readonly rpc: ReturnType<typeof vi.fn>;
-  readonly navigate: ReturnType<typeof vi.fn>;
+  readonly navigate: Mock<Navigate>;
   readonly setSelectedChatId: ReturnType<typeof vi.fn>;
   readonly setPendingMessageId: ReturnType<typeof vi.fn>;
 } {
@@ -48,7 +49,7 @@ function harness(): {
   };
   return {
     rpc,
-    navigate: vi.fn(),
+    navigate: vi.fn<Navigate>(),
     setSelectedChatId,
     setPendingMessageId,
     runtime: {
