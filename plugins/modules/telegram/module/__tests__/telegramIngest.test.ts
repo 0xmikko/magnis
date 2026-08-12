@@ -5,16 +5,16 @@
  * @covers: plugins/modules/telegram/module/service.ts::onConnectionReady,ingest,onSyncComplete
  * @deterministic: yes
  * @fixtures: fixed source envelopes and strict graph doubles
- * @legacy-id: tst_be_tgingest_003
- * @legacy-id: tst_be_tgbatch_020
- * @legacy-id: tst_be_tgingest_018
- * @legacy-id: tst_be_tgingest_019
- * @legacy-id: tst_be_tgcontact_004b
- * @legacy-id: tst_be_tgcontact_004c
- * @legacy-id: tst_be_tgdelete_004d
- * @legacy-id: tst_be_tgweb_006
- * @legacy-id: tst_be_tgmedia_007
- * @legacy-id: tst_be_tgmedia_007b
+ * @legacy-id: tst_be_tgingest_003_plugin_ingests_chat_and_message
+ * @legacy-id: tst_be_tgbatch_020_page_dedups_sender_across_messages
+ * @legacy-id: tst_be_tgingest_018_message_entity_dated_by_message_date
+ * @legacy-id: tst_be_tgingest_019_reingest_reenriches_existing_message
+ * @legacy-id: tst_be_tgcontact_004b_message_sender_creates_contact
+ * @legacy-id: tst_be_tgcontact_004c_large_group_no_contact_but_message_stored
+ * @legacy-id: tst_be_tgdelete_004d_delete_removes_entity
+ * @legacy-id: tst_be_tgweb_006_message_url_creates_web_link
+ * @legacy-id: tst_be_tgmedia_007_message_media_registers_file
+ * @legacy-id: tst_be_tgmedia_007b_plain_message_no_file
  * @legacy-id: tst_be_tgtrigger_015
  * @legacy-id: tst_be_tgtrigger_016
  * @legacy-id: tst_kernel_link_001_leave_decays_rejoin_restores_once

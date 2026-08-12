@@ -257,6 +257,7 @@ describe("triggers.update compensation restores EVERY field", () => {
  * @legacy-id: tst_trig_plugin_102_create_belongs_to_episode
  * @legacy-id: tst_trig_plugin_104_update_partial_preserves_other_fields
  * @legacy-id: tst_trig_plugin_106_unlink_is_selective
+ * @legacy-id: tst_trig_plugin_108_not_found_paths_error
  */
 describe("tst_module_triggers_crud_001 — trigger definition commands", () => {
   it("creates a complete definition and parent/watch links before invalidating cache", async () => {

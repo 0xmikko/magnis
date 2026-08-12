@@ -8,6 +8,7 @@
  * @legacy-id: tst_trig_plugin_100_crud_roundtrip
  * @legacy-id: tst_trig_plugin_101_link_unlink_list_for_entity
  * @legacy-id: tst_trig_plugin_102_create_belongs_to_episode
+ * @legacy-id: tst_trig_plugin_108_not_found_paths_error
  */
 import { describe, expect, it, vi } from "vitest";
 import { entity, mockGraph, mountModule } from "@magnis/testkit/module";

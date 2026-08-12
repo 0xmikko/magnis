@@ -310,7 +310,22 @@ describe("email reply (tst_be_emailreply_003)", () => {
   });
 });
 
-describe("email batch_send (tst_be_emailbatch_send_004)", () => {
+/**
+ * @test-id: tst_module_email_batch_001
+ * @scenario: scn_email_batch_001
+ * @covers: EmailModule.emailBatchSend
+ * @deterministic: yes
+ * @fixtures: @magnis/testkit/module graph double
+ * @legacy-id: tst_ctrl_email_batch_001_happy_path
+ * @legacy-id: tst_ctrl_email_batch_002_empty_array
+ * @legacy-id: tst_ctrl_email_batch_003_exceeds_max
+ * @legacy-id: tst_ctrl_email_batch_004_missing_field
+ * @legacy-id: tst_ctrl_email_batch_005_excluded
+ * @legacy-id: tst_ctrl_email_batch_006_all_excluded
+ * @legacy-id: tst_ctrl_email_batch_007_with_attachments
+ * @legacy-id: tst_ctrl_email_batch_008_provider_without_message_id_is_not_sent
+ */
+describe("email batch_send (tst_module_email_batch_001)", () => {
   it("sends each message, skips excluded indices, reports counts", async () => {
     const graph = makeGraph();
     const mod = makeModule(graph);
@@ -336,9 +351,19 @@ describe("email batch_send (tst_be_emailbatch_send_004)", () => {
     expect(spy(graph, "apply_batch")).toHaveBeenCalledTimes(2); // only the 2 non-excluded
   });
 
-  it("rejects an out-of-range batch size", async () => {
+  it.each([
+    ["empty", []],
+    [
+      "over 50",
+      Array.from({ length: 51 }, (_, i) => ({
+        to: `person-${String(i)}@x.com`,
+        subject: "S",
+        body_text: "B",
+      })),
+    ],
+  ])("rejects an %s batch", async (_label, messages) => {
     const mod = makeModule(makeGraph());
-    await expect(mod.emailBatchSend({ messages: [] })).rejects.toThrow(/1\.\.=50/);
+    await expect(mod.emailBatchSend({ messages })).rejects.toThrow(/1\.\.=50/);
   });
 
   it("rejects a message missing a required field", async () => {
@@ -346,6 +371,23 @@ describe("email batch_send (tst_be_emailbatch_send_004)", () => {
     await expect(
       mod.emailBatchSend({ messages: [{ to: "a@x.com", subject: "", body_text: "x" } as never] }),
     ).rejects.toThrow(/missing subject/);
+  });
+
+  it("reports a provider success without a receipt as failed and persists nothing", async () => {
+    const graph = makeGraph({
+      source_command: () => Promise.resolve({ thread_id: "thr-without-message-id" }),
+    });
+    const mod = makeModule(graph);
+
+    const r = await mod.emailBatchSend({
+      messages: [{ to: "a@x.com", subject: "S", body_text: "B" }],
+    });
+
+    expect(r).toMatchObject({ total: 1, sent: 0, failed: 1, excluded: 0 });
+    expect(r.results).toEqual([
+      expect.objectContaining({ id: null, status: "failed", error: expect.stringMatching(/no provider id/) }),
+    ]);
+    expect(spy(graph, "apply_batch")).not.toHaveBeenCalled();
   });
 });
 

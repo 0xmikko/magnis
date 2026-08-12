@@ -1,3 +1,11 @@
+/**
+ * @test-id: tst_module_notes_read_001
+ * @scenario: scn_notes_identity_001
+ * @covers: NotesModule.get, NotesModule.list
+ * @deterministic: yes
+ * @fixtures: strict graph read doubles
+ * @legacy-id: tst_notes_e2e_canonical_resolved_on_get
+ */
 // Notes read surface — shape parity + DB-access guarantees after the
 // graph-read-api adoption. The no-search list already used list_entities_window;
 // this stage fixes the two remaining N+1s: search (was per-row

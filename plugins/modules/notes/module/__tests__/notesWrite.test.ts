@@ -123,7 +123,11 @@ describe("notes.create accepts one body field and is atomic", () => {
  * @deterministic: yes
  * @fixtures: fixed UUID and strict graph doubles
  * @legacy-id: tst_int_optcreate_007_notes_create_uses_client_id
+ * @legacy-id: tst_int_optcreate_008_notes_create_without_client_id_generates_uuid
  * @legacy-id: tst_int_optcreate_009_notes_create_duplicate_client_id_is_idempotent
+ * @legacy-id: tst_int_optcreate_010_notes_get_by_client_id
+ * @legacy-id: tst_int_optcreate_020_different_modules_same_client_id_independent
+ * @legacy-id: tst_int_optcreate_023_notes_client_id_in_list
  * @legacy-id: tst_int_optcreate_024_notes_invalid_client_id_returns_error
  * @legacy-id: tst_notes_e2e_create_invalid_client_id_errors
  * @legacy-id: tst_notes_e2e_rejects_non_note_id

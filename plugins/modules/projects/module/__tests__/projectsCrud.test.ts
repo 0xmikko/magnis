@@ -13,9 +13,14 @@
  * @legacy-id: tst_int_projrpc_008_description_visible_in_projects_get
  * @legacy-id: tst_int_projrpc_012_linked_entities_appear_in_projects_get
  * @legacy-id: tst_int_optcreate_001_projects_create_uses_client_id
+ * @legacy-id: tst_int_optcreate_002_projects_create_without_client_id_generates_uuid
  * @legacy-id: tst_int_optcreate_003_projects_create_duplicate_client_id_is_idempotent
+ * @legacy-id: tst_int_optcreate_004_projects_get_by_client_id
+ * @legacy-id: tst_int_optcreate_005_projects_client_id_in_list
  * @legacy-id: tst_int_optcreate_006_projects_invalid_client_id_returns_error
  * @legacy-id: tst_int_optcreate_019_duplicate_leaves_original_intact
+ * @legacy-id: tst_int_optcreate_026_entity_created_with_client_id_persisted
+ * @legacy-id: tst_int_optcreate_027_no_orphaned_entity_on_duplicate
  */
 import { describe, expect, it } from "vitest";
 import { entity, mockGraph, mountModule } from "@magnis/testkit/module";
@@ -64,6 +69,24 @@ describe("tst_module_projects_crud_001 — projects CRUD owns its domain contrac
     expect(graph.spies.update_properties).toHaveBeenCalledWith({
       entity_id: PROJECT_ID,
       properties: expect.objectContaining({ name: "Investor demo", status: "blocked" }),
+    });
+  });
+
+  it("lets the host mint an id when no client id is supplied", async () => {
+    const graph = mockGraph({
+      create_entity: () => Promise.resolve(project()),
+      update_properties: () => Promise.resolve(undefined),
+    });
+    const { module } = mountModule(ProjectsModule, { graph });
+
+    await expect(module.create({ name: "Host id" })).resolves.toMatchObject({
+      id: PROJECT_ID,
+      name: "Host id",
+    });
+    expect(graph.spies.create_entity).toHaveBeenCalledWith({
+      schema_id: PROJECT,
+      name: "Host id",
+      client_id: undefined,
     });
   });
 
