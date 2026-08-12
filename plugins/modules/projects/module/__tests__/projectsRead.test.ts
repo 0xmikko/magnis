@@ -1,3 +1,11 @@
+/**
+ * @test-id: tst_module_projects_read_001
+ * @scenario: scn_projects_crud_001
+ * @covers: ProjectsModule.list, ProjectsModule.listForEntity
+ * @deterministic: yes
+ * @fixtures: strict graph read doubles
+ * @legacy-id: tst_int_projrpc_002_projects_list_sees_newly_created_project
+ */
 // Projects read surface — shape parity + DB-access guarantees after the
 // graph-read-api adoption. List fields read CANONICAL (project.* are
 // single_aligned, confidence→recency — a latest-record window would not

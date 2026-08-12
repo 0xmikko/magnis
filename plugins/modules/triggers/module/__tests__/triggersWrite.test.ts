@@ -113,6 +113,42 @@ describe("triggers.create requires a real gate condition", () => {
 });
 
 /**
+ * @test-id: tst_module_triggers_watch_validation_001
+ * @scenario: scn_backend_tests_005
+ * @covers: plugins/modules/triggers/module/service.ts::TriggersModule.create
+ * @legacy-id: tst_int_trig_090_triggers_create_non_triggerable_returns_clarification
+ * @legacy-id: tst_int_trig_091_triggers_create_triggerable_succeeds
+ * @legacy-id: tst_int_trig_094_triggers_create_mixed_watchable_and_not
+ * @deterministic: yes
+ * @fixtures: strict native validate-watch RPC double
+ */
+describe("tst_module_triggers_watch_validation_001 — native watch validation", () => {
+  it("returns the native clarification verbatim before writing", async () => {
+    const clarification = {
+      status: "clarification_needed",
+      message: "one target does not produce events",
+      non_triggerable_entities: [{ entity: { id: "subject" }, linked_watchable_entities: [] }],
+    };
+    const graph = createGraph();
+    const execute = vi.fn((method: string) => {
+      if (method === "triggers.validate_watch") return Promise.resolve(clarification);
+      throw new Error(`unexpected rpc: ${method}`);
+    });
+    const { module } = mountModule(TriggersModule, { graph, rpc: { execute } });
+
+    await expect(
+      module.create({
+        name: "watch",
+        gate_prompt: "changed",
+        action_prompt: "notify",
+        watch_entity_ids: ["33333333-3333-4333-8333-333333333333"],
+      }),
+    ).resolves.toBe(clarification);
+    expect(graph.spies.create_entity).not.toHaveBeenCalled();
+  });
+});
+
+/**
  * @test-id: tst_module_triggers_write_002
  * @scenario: scn_demo_trigger_002
  * @covers: plugins/modules/triggers/module/service.ts::TriggersModule.update
@@ -243,5 +279,194 @@ describe("triggers.update compensation restores EVERY field", () => {
     await expect(module.update({ id: TRIGGER_ID, name: "new name" })).rejects.toThrow(
       /rename store unavailable[\s\S]*rollback store unavailable/,
     );
+  });
+});
+
+/**
+ * @test-id: tst_module_triggers_crud_001
+ * @scenario: scn_triggers_crud_001
+ * @covers: plugins/modules/triggers/module/service.ts::create,update,delete,link,unlink
+ * @deterministic: yes
+ * @fixtures: one trigger, two watch targets, and strict host doubles
+ * @legacy-id: tst_trig_plugin_100_crud_roundtrip
+ * @legacy-id: tst_trig_plugin_101_link_unlink_list_for_entity
+ * @legacy-id: tst_trig_plugin_102_create_belongs_to_episode
+ * @legacy-id: tst_trig_plugin_104_update_partial_preserves_other_fields
+ * @legacy-id: tst_trig_plugin_106_unlink_is_selective
+ * @legacy-id: tst_trig_plugin_108_not_found_paths_error
+ */
+describe("tst_module_triggers_crud_001 — trigger definition commands", () => {
+  it("creates a complete definition and parent/watch links before invalidating cache", async () => {
+    const targetId = "33333333-3333-4333-8333-333333333333";
+    const episodeId = "44444444-4444-4444-8444-444444444444";
+    const graph = createGraph({
+      get_entity_full: () =>
+        Promise.resolve({ entity: entity(episodeId, "Parent", { schema_id: "episodes.episode" }), links: [] }),
+    });
+    const execute = vi.fn((method: string) => {
+      if (method === "triggers.validate_watch") return Promise.resolve(null);
+      if (method === "triggers.invalidate_cache") return Promise.resolve(null);
+      throw new Error(`unexpected rpc: ${method}`);
+    });
+    const module = mountModule(TriggersModule, { graph, rpc: { execute } }).module;
+
+    const result = await module.create({
+      name: "  Price tracker  ",
+      gate_prompt: " price changed ",
+      action_prompt: " notify me ",
+      watch_entity_ids: [targetId],
+      episode_id: episodeId,
+      debounce_seconds: 30,
+    });
+
+    expect(result).toMatchObject({
+      id: TRIGGER_ID,
+      name: "Price tracker",
+      gate_prompt: "price changed",
+      action_prompt: "notify me",
+      status: "active",
+      episode_id: episodeId,
+    });
+    expect(graph.spies.update_properties).toHaveBeenCalledWith({
+      entity_id: TRIGGER_ID,
+      properties: expect.objectContaining({
+        name: "Price tracker",
+        gate_prompt: "price changed",
+        action_prompt: "notify me",
+        event_kinds: ["sync_ingested"],
+        debounce_seconds: 30,
+        firing_count: 0,
+      }),
+    });
+    const addLink = graph.spies.add_link;
+    if (addLink === undefined) throw new Error("trigger create: add_link spy missing");
+    expect(addLink.mock.calls.map(([value]) => value)).toEqual([
+      { from_id: TRIGGER_ID, to_id: targetId, kind: "watches" },
+      { from_id: TRIGGER_ID, to_id: episodeId, kind: "triggers.belongs_to" },
+    ]);
+    expect(execute).toHaveBeenLastCalledWith("triggers.invalidate_cache", {});
+  });
+
+  it("partially updates only requested config fields", async () => {
+    let properties = {
+      name: "watch replies",
+      gate_prompt: "a reply from the vendor arrived",
+      action_prompt: "update the note",
+      status: "active",
+      event_kinds: ["sync_ingested"],
+      debounce_seconds: 0,
+      firing_count: 0,
+    };
+    const graph = mockGraph({
+      get_entity_full: () =>
+        Promise.resolve({
+          entity: entity(TRIGGER_ID, "watch replies", {
+            schema_id: TRIGGER,
+            properties,
+          }),
+          links: [],
+        }),
+      update_properties: (params: { entity_id: string; properties: Record<string, unknown> }) => {
+        properties = { ...params.properties } as typeof properties;
+        return Promise.resolve(undefined);
+      },
+      update_entity_name: () => Promise.resolve(undefined),
+    });
+    const execute = vi.fn(() => Promise.resolve(null));
+    const module = mountModule(TriggersModule, { graph, rpc: { execute } }).module;
+
+    const result = await module.update({
+      id: TRIGGER_ID,
+      gate_prompt: "new condition",
+      debounce_seconds: 600,
+    });
+
+    expect(result).toMatchObject({
+      name: "watch replies",
+      gate_prompt: "new condition",
+      action_prompt: "update the note",
+      status: "active",
+      debounce_seconds: 600,
+    });
+    expect(graph.spies.update_entity_name).not.toHaveBeenCalled();
+    expect(graph.spies.update_properties).toHaveBeenCalledWith({
+      entity_id: TRIGGER_ID,
+      properties: expect.objectContaining({
+        name: "watch replies",
+        gate_prompt: "new condition",
+        action_prompt: "update the note",
+      }),
+    });
+  });
+
+  it("links an owned target and unlinks only the matching watches edge", async () => {
+    const targetId = "33333333-3333-4333-8333-333333333333";
+    const keepId = "44444444-4444-4444-8444-444444444444";
+    const triggerDetail = {
+      entity: entity(TRIGGER_ID, "T", {
+        schema_id: TRIGGER,
+        properties: {
+          name: "T",
+          gate_prompt: "g",
+          action_prompt: "a",
+          status: "active",
+          event_kinds: ["sync_ingested"],
+          debounce_seconds: 0,
+          firing_count: 0,
+        },
+      }),
+      links: [],
+    };
+    const graph = mockGraph({
+      get_entity_full: (id: string) =>
+        Promise.resolve(id === TRIGGER_ID ? triggerDetail : { entity: entity(id, "Target"), links: [] }),
+      add_link: () => Promise.resolve(undefined),
+      list_links_for_entity: () =>
+        Promise.resolve([
+          { id: "drop", from_id: TRIGGER_ID, to_id: targetId, kind: "watches" },
+          { id: "keep", from_id: TRIGGER_ID, to_id: keepId, kind: "watches" },
+          { id: "other-kind", from_id: TRIGGER_ID, to_id: targetId, kind: "belongs_to" },
+        ]),
+      delete_link: () => Promise.resolve(undefined),
+    });
+    const module = mountModule(TriggersModule, {
+      graph,
+      rpc: { execute: vi.fn(() => Promise.resolve(null)) },
+    }).module;
+
+    await expect(module.link({ trigger_id: TRIGGER_ID, entity_id: targetId })).resolves.toEqual({
+      linked: true,
+    });
+    await expect(module.unlink({ trigger_id: TRIGGER_ID, entity_id: targetId })).resolves.toEqual({
+      unlinked: true,
+    });
+    expect(graph.spies.delete_link).toHaveBeenCalledTimes(1);
+    expect(graph.spies.delete_link).toHaveBeenCalledWith("drop");
+  });
+
+  it("deletes an existing trigger and rejects missing command targets", async () => {
+    const graph = mockGraph({
+      get_entity_full: () => Promise.resolve(null),
+    });
+    const module = mountModule(TriggersModule, {
+      graph,
+      rpc: { execute: vi.fn(() => Promise.resolve(null)) },
+    }).module;
+
+    await expect(module.update({ id: TRIGGER_ID, name: "x" })).rejects.toThrow(
+      `trigger not found: ${TRIGGER_ID}`,
+    );
+    await expect(module.delete({ id: TRIGGER_ID })).rejects.toThrow(
+      `trigger not found: ${TRIGGER_ID}`,
+    );
+
+    const existing = existingTrigger();
+    existing.spies.delete_entity = vi.fn(() => Promise.resolve(undefined));
+    const deletable = mountModule(TriggersModule, {
+      graph: existing,
+      rpc: { execute: vi.fn(() => Promise.resolve(null)) },
+    }).module;
+    await expect(deletable.delete({ id: TRIGGER_ID })).resolves.toEqual({ deleted: true });
+    expect(existing.spies.delete_entity).toHaveBeenCalledWith(TRIGGER_ID);
   });
 });

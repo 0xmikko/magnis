@@ -2,6 +2,21 @@
 // snapshot shape, and client_id idempotency. Exercises the
 // module class through @magnis/testkit/module (mockGraph + mountModule).
 
+/**
+ * @test-id: tst_module_meetings_create_001
+ * @scenario: scn_backend_tests_006
+ * @covers: MeetingsModule.create
+ * @legacy-id: tst_be_meetings_create_001_writes_entity_and_facet
+ * @legacy-id: tst_be_meetings_create_002_idempotent_on_client_id
+ * @legacy-id: tst_be_meetings_create_003_validates_dates
+ * @legacy-id: tst_be_meetings_create_rpc_001_dispatch_round_trip
+ * @legacy-id: tst_be_meetings_create_rpc_002_requires_approval
+ * @legacy-id: tst_be_meetings_create_rpc_003_rejects_empty_title
+ * @legacy-id: tst_be_meetings_create_rpc_004_rejects_malformed_dates
+ * @legacy-id: tst_be_meetings_create_rpc_005_rejects_ends_before_starts
+ * @deterministic: yes
+ */
+
 import { describe, expect, it, vi } from "vitest";
 import type { RawEntity } from "@magnis/plugin-sdk";
 import { mockGraph, mountModule, type GraphOverrides, type MockGraph } from "@magnis/testkit/module";

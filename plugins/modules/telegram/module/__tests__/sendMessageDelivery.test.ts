@@ -1,6 +1,11 @@
 /**
  * @layer: fe_agent
  * @test-id: tst_fe_agent_007
+ * @scenario: scn_telegram_command_001
+ * @covers: TelegramModule.sendMessage
+ * @legacy-id: tst_be_tgsend_008_send_routes_and_ingests
+ * @legacy-id: tst_be_tgsend_009_send_explicit_account_routes_cross_named
+ * @deterministic: yes
  *
  * sendMessage delivers the message via
  * graph.source_command, THEN runs local enrichment (ingest + entity lookup). If

@@ -15,6 +15,14 @@
 // the old per-op `reject()` spies AND the `toHaveBeenCalledTimes(0)` assertions
 // on those forbidden ops (kept only where the op IS arranged, e.g. window/search).
 
+/**
+ * @test-id: tst_module_companies_read_001
+ * @scenario: scn_backend_tests_006
+ * @covers: CompaniesModule.list, CompaniesModule.get
+ * @legacy-id: tst_companies_e2e_plugin_returns_real_seeded_data
+ * @deterministic: yes
+ */
+
 import { beforeEach, describe, expect, it } from "vitest";
 import { entity, mockGraph, mountModule, windowRow, type MockGraph } from "@magnis/testkit/module";
 import { CompaniesModule } from "../service.ts";
