@@ -8,11 +8,6 @@ export interface WatchedEntityRef {
   readonly name: string | null;
 }
 
-export interface TriggerScheduleRef {
-  readonly cron: string;
-  readonly timezone: string;
-}
-
 export interface TriggerExecutionRef {
   readonly fired_at: string;
   readonly outcome: string;
