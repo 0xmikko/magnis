@@ -11,6 +11,7 @@ export default defineConfig({
     environment: "node",
     include: [
       "plugins/modules/**/module/**/*.test.ts",
+      "plugins/modules/**/ui/**/sourceStatusAdapter.test.ts",
       "packages/plugin-sdk/__tests__/**/*.test.ts",
       // testkit ships TWO test lanes in one package: module.test.ts is vitest;
       // source.test.ts is bun (`bun:test`, run by scripts/test-connectors.sh).

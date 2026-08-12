@@ -1,13 +1,3 @@
-export interface IntegrationsStatus {
-    readonly telegram: {
-        readonly configured: boolean;
-        readonly authorized: boolean;
-    };
-    readonly google: {
-        readonly configured: boolean;
-        readonly connected: boolean;
-    };
-}
 export interface SyncSurfaceStatus {
     readonly surface: string;
     readonly phase: string | null;

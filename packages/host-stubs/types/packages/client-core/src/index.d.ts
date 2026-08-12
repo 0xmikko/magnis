@@ -7,7 +7,8 @@ export type { ChatMessageAttachment, EntityMention, EntitySearchResult, ChatMess
 export { agentFailureMessage } from "./types/episode.ts";
 export { ASK_USER_MARKER_PREFIX, ASK_USER_MARKER_CLOSER, ASK_USER_TOOL_NAMES, buildAskUserPairings, isAskUserName, resolveDecisionForToolCall, selectPendingPromptQueue, selectSupersededToolCallIds, wrapAskUserAnswer, } from "./approvals/index.ts";
 export type { ApprovalReadState, PendingPromptQueueOptions } from "./approvals/index.ts";
-export type { IntegrationsStatus, SyncSurfaceStatus, SourceAccount, SourceListResponse, SourceAccountsListResponse, EnumOption, ModuleSettingFieldType, ModuleSettingField, ModuleSettingsSchema, ModuleSettingValue, ModuleSettingsEntry, } from "./types/settings.ts";
+export type { SyncSurfaceStatus, SourceAccount, SourceListResponse, SourceAccountsListResponse, EnumOption, ModuleSettingFieldType, ModuleSettingField, ModuleSettingsSchema, ModuleSettingValue, ModuleSettingsEntry, } from "./types/settings.ts";
+export type { Account, AccountState, AuthLossReason, Cursor, ItemCount, PriorSuccess, RepairAction, SourceAuthKind, SourceStatus, SourceStatusListResponse, SurfaceSync, SyncError, SyncReport, SyncRun, TotalEstimate, VerifiedAuth, } from "./types/source-status.ts";
 export { normalizeSchemaId } from "./util/normalizeSchemaId.ts";
 export { buildCopyPayload, extractArgSummary, extractEntities, extractResultCount, extractResultCountLabel, humanizeToolName, inferSchemaFromTool, isHiddenTool, projectEntityCards, resolveCardFields, rpcNameForToolCall, stripMcpPrefix, toolNamesEquivalent, toolResultError, TOOL_ERROR_MARKER, } from "./presentation/index.ts";
 export type { EntityCardProjection, ExtractEntitiesOptions, } from "./presentation/index.ts";
