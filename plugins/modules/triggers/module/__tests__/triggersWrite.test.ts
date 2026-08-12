@@ -113,6 +113,42 @@ describe("triggers.create requires a real gate condition", () => {
 });
 
 /**
+ * @test-id: tst_module_triggers_watch_validation_001
+ * @scenario: scn_backend_tests_005
+ * @covers: plugins/modules/triggers/module/service.ts::TriggersModule.create
+ * @legacy-id: tst_int_trig_090_triggers_create_non_triggerable_returns_clarification
+ * @legacy-id: tst_int_trig_091_triggers_create_triggerable_succeeds
+ * @legacy-id: tst_int_trig_094_triggers_create_mixed_watchable_and_not
+ * @deterministic: yes
+ * @fixtures: strict native validate-watch RPC double
+ */
+describe("tst_module_triggers_watch_validation_001 — native watch validation", () => {
+  it("returns the native clarification verbatim before writing", async () => {
+    const clarification = {
+      status: "clarification_needed",
+      message: "one target does not produce events",
+      non_triggerable_entities: [{ entity: { id: "subject" }, linked_watchable_entities: [] }],
+    };
+    const graph = createGraph();
+    const execute = vi.fn((method: string) => {
+      if (method === "triggers.validate_watch") return Promise.resolve(clarification);
+      throw new Error(`unexpected rpc: ${method}`);
+    });
+    const { module } = mountModule(TriggersModule, { graph, rpc: { execute } });
+
+    await expect(
+      module.create({
+        name: "watch",
+        gate_prompt: "changed",
+        action_prompt: "notify",
+        watch_entity_ids: ["33333333-3333-4333-8333-333333333333"],
+      }),
+    ).resolves.toBe(clarification);
+    expect(graph.spies.create_entity).not.toHaveBeenCalled();
+  });
+});
+
+/**
  * @test-id: tst_module_triggers_write_002
  * @scenario: scn_demo_trigger_002
  * @covers: plugins/modules/triggers/module/service.ts::TriggersModule.update
