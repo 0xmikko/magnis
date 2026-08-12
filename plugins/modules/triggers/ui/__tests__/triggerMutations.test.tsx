@@ -1,7 +1,7 @@
 /**
- * Pause, resume and delete belong to the module that owns the trigger. The
- * host's parallel panel had them; after this the plugin does, which is what
- * lets the host copy go.
+ * A trigger is part of the graph, so it is never deleted — it is stopped. The
+ * panel therefore carries exactly ONE write affordance, a toggle between
+ * `active` and `stopped`, and no destructive one at all.
  *
  * @layer: fe_trig
  * @test-id: tst_fe_trig_003
@@ -9,11 +9,9 @@
  * @covers plugins/modules/triggers/ui/TriggerDetailPanel.tsx::TriggerDetailPanel
  * @deterministic hand-built runtime double + explicit query cache; no network
  *
- * INV-P2.3 the panel can delete, pause and resume with the guards the host
- *          copy had. Deletion reports upward, invalidates the plugin's own
- *          keys, and drops exactly those owner details whose
- *          `linked_entities` name the deleted trigger — not every module
- *          detail, which would pass a weaker test.
+ * INV-P2.3 the panel can stop and restart a trigger, and CANNOT delete one.
+ *          A rejected write is surfaced, not swallowed, and one trigger's
+ *          in-flight write never blocks another's.
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, waitFor } from "@testing-library/react";
@@ -49,7 +47,6 @@ function statefulRuntime(): { readonly runtime: AppRuntime; readonly rpc: Return
       status = String(params?.status);
       return Promise.resolve({ updated: true });
     }
-    if (method === "triggers.delete") return Promise.resolve({ deleted: true });
     return Promise.reject(new Error(`unexpected RPC: ${method}`));
   });
   return {
@@ -70,8 +67,8 @@ function freshClient(): QueryClient {
   return new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 0 } } });
 }
 
-describe("tst_fe_trig_003 — the panel pauses, resumes and deletes", () => {
-  it("Step 1 → pauses, then resumes, reading the status back each time", async () => {
+describe("tst_fe_trig_003 — the panel stops and restarts, and cannot delete", () => {
+  it("Step 1 → stops, then starts, reading the status back each time", async () => {
     const { runtime, rpc } = statefulRuntime();
     const { findByText } = render(
       withClient(
@@ -80,18 +77,18 @@ describe("tst_fe_trig_003 — the panel pauses, resumes and deletes", () => {
       ),
     );
 
-    fireEvent.click(await findByText("Pause"));
+    fireEvent.click(await findByText("Stop"));
 
     await waitFor(() => {
       expect(rpc).toHaveBeenCalledWith("triggers.update", {
         id: "trigger-1",
-        status: "paused",
+        status: "stopped",
       });
     });
     // The label follows the status the module reports back.
-    expect(await findByText("Resume")).toBeTruthy();
+    expect(await findByText("Start")).toBeTruthy();
 
-    fireEvent.click(await findByText("Resume"));
+    fireEvent.click(await findByText("Start"));
 
     await waitFor(() => {
       expect(rpc).toHaveBeenCalledWith("triggers.update", {
@@ -99,126 +96,27 @@ describe("tst_fe_trig_003 — the panel pauses, resumes and deletes", () => {
         status: "active",
       });
     });
-    expect(await findByText("Pause")).toBeTruthy();
+    expect(await findByText("Stop")).toBeTruthy();
   });
 
-  it("Step 2 → deletes, and drops only the owners that named this trigger", async () => {
+  it("Step 2 → offers no way to delete a trigger", async () => {
+    // A trigger is part of the graph. The affordance is absent, not disabled:
+    // there is no Delete control and the panel never calls `triggers.delete`.
     const { runtime, rpc } = statefulRuntime();
-    const client = freshClient();
-    const onDeleted = vi.fn();
-
-    // Two cached owner details. One lists the trigger among its linked
-    // entities; the other does not and must survive.
-    const OWNER_WITH = ["contacts", "detail", "c1"] as const;
-    const OWNER_WITHOUT = ["companies", "detail", "co1"] as const;
-    client.setQueryData(OWNER_WITH, {
-      id: "c1",
-      linked_entities: [{ id: "trigger-1", name: "Reply watch" }],
-    });
-    client.setQueryData(OWNER_WITHOUT, {
-      id: "co1",
-      linked_entities: [{ id: "some-other-entity", name: "Unrelated" }],
-    });
-    const invalidate = vi.spyOn(client, "invalidateQueries");
-
-    const { findByText } = render(
+    const { findByText, queryByText } = render(
       withClient(
-        client,
-        <TriggerDetailPanel
-          entityId="trigger-1"
-          moduleId="triggers"
-          runtime={runtime}
-          onDeleted={onDeleted}
-        />,
-      ),
-    );
-
-    fireEvent.click(await findByText("Delete"));
-
-    await waitFor(() => {
-      expect(rpc).toHaveBeenCalledWith("triggers.delete", { id: "trigger-1" });
-    });
-    // Reports upward — the host owns what selection means.
-    await waitFor(() => {
-      expect(onDeleted).toHaveBeenCalledTimes(1);
-    });
-    // The plugin's own keys go.
-    expect(
-      invalidate.mock.calls.some(([arg]) => {
-        const key = (arg as { queryKey?: readonly unknown[] } | undefined)?.queryKey;
-        return Array.isArray(key) && key[0] === "triggers";
-      }),
-    ).toBe(true);
-    // And exactly the owner that named it.
-    expect(client.getQueryState(OWNER_WITH)?.isInvalidated).toBe(true);
-    expect(client.getQueryState(OWNER_WITHOUT)?.isInvalidated).toBe(false);
-  });
-
-  it("Step 2b → does not drop an owner's descendant queries", async () => {
-    const { runtime } = statefulRuntime();
-    const client = freshClient();
-
-    // Contacts nest `social_tracking` UNDER the detail key. A key-based
-    // invalidation matches by prefix and would take this with it; only the
-    // entry that actually names the trigger should go.
-    const OWNER = ["contacts", "detail", "c1"] as const;
-    const DESCENDANT = ["contacts", "detail", "c1", "social_tracking"] as const;
-    client.setQueryData(OWNER, {
-      id: "c1",
-      linked_entities: [{ id: "trigger-1", name: "Reply watch" }],
-    });
-    client.setQueryData(DESCENDANT, { tracked_x: true });
-
-    const { findByText } = render(
-      withClient(
-        client,
+        freshClient(),
         <TriggerDetailPanel entityId="trigger-1" moduleId="triggers" runtime={runtime} />,
       ),
     );
-    fireEvent.click(await findByText("Delete"));
 
-    await waitFor(() => {
-      expect(client.getQueryState(OWNER)?.isInvalidated).toBe(true);
-    });
-    expect(client.getQueryState(DESCENDANT)?.isInvalidated).toBe(false);
+    await findByText("Stop");
+    expect(queryByText("Delete")).toBeNull();
+    expect(queryByText(/Remove/i)).toBeNull();
+    expect(rpc.mock.calls.map(([m]) => m)).not.toContain("triggers.delete");
   });
 
-  it("Step 3 → a rejected delete keeps the trigger and says why", async () => {
-    const rpc = vi.fn((method: string) => {
-      if (method === "triggers.get") return Promise.resolve(detailWith("active"));
-      if (method === "triggers.fire_history") return Promise.resolve([]);
-      if (method === "triggers.delete") return Promise.reject(new Error("permission denied"));
-      return Promise.reject(new Error(`unexpected RPC: ${method}`));
-    });
-    const runtime = {
-      transport: { rpc },
-      agent: { resolveEntityRenderer: () => null },
-      modules: { get: () => undefined },
-    } as unknown as AppRuntime;
-    const onDeleted = vi.fn();
-
-    const { findByText } = render(
-      withClient(
-        freshClient(),
-        <TriggerDetailPanel
-          entityId="trigger-1"
-          moduleId="triggers"
-          runtime={runtime}
-          onDeleted={onDeleted}
-        />,
-      ),
-    );
-    fireEvent.click(await findByText("Delete"));
-
-    // Surfaced, not swallowed — and the host is NOT told the entity is gone.
-    expect(await findByText(/Could not delete this trigger: permission denied/)).toBeTruthy();
-    expect(onDeleted).not.toHaveBeenCalled();
-    // The affordances are still there, because the trigger still is.
-    expect(await findByText("Delete")).toBeTruthy();
-    expect(await findByText("Pause")).toBeTruthy();
-  });
-
-  it("Step 3b → a rejected pause leaves the status alone and says why", async () => {
+  it("Step 3 → a rejected stop leaves the status alone and says why", async () => {
     const rpc = vi.fn((method: string) => {
       if (method === "triggers.get") return Promise.resolve(detailWith("active"));
       if (method === "triggers.fire_history") return Promise.resolve([]);
@@ -237,27 +135,27 @@ describe("tst_fe_trig_003 — the panel pauses, resumes and deletes", () => {
         <TriggerDetailPanel entityId="trigger-1" moduleId="triggers" runtime={runtime} />,
       ),
     );
-    fireEvent.click(await findByText("Pause"));
+    fireEvent.click(await findByText("Stop"));
 
     expect(await findByText(/Could not change the status: backend down/)).toBeTruthy();
-    // Still active, so still offering Pause.
-    expect(await findByText("Pause")).toBeTruthy();
+    // Still active, so still offering Stop.
+    expect(await findByText("Stop")).toBeTruthy();
   });
 
-  it("Step 3c → two clicks in one turn issue one write", async () => {
-    // The write is held open, so the second click lands while the first is still
-    // in flight and BEFORE React has re-rendered — which is why the guard is a
-    // ref and not the mutation's `isPending` snapshot.
-    let releaseDelete: (() => void) | undefined;
-    const held = new Promise<{ deleted: boolean }>((resolve) => {
-      releaseDelete = () => {
-        resolve({ deleted: true });
+  it("Step 4 → two clicks in one turn issue one write", async () => {
+    // The write is held open, so the second click lands while the first is
+    // still in flight and BEFORE React has re-rendered — which is why the guard
+    // is a ref and not the mutation's `isPending` snapshot.
+    let release: (() => void) | undefined;
+    const held = new Promise<{ updated: boolean }>((resolve) => {
+      release = () => {
+        resolve({ updated: true });
       };
     });
     const rpc = vi.fn((method: string) => {
       if (method === "triggers.get") return Promise.resolve(detailWith("active"));
       if (method === "triggers.fire_history") return Promise.resolve([]);
-      if (method === "triggers.delete") return held;
+      if (method === "triggers.update") return held;
       return Promise.reject(new Error(`unexpected RPC: ${method}`));
     });
     const runtime = {
@@ -272,35 +170,27 @@ describe("tst_fe_trig_003 — the panel pauses, resumes and deletes", () => {
         <TriggerDetailPanel entityId="trigger-1" moduleId="triggers" runtime={runtime} />,
       ),
     );
-    const button = await findByText("Delete");
-    // Both dispatched in the same turn, before any re-render could flip a
-    // rendered `isPending` to true.
+    const button = await findByText("Stop");
     fireEvent.click(button);
     fireEvent.click(button);
 
-    const deletes = () => rpc.mock.calls.filter(([method]) => method === "triggers.delete");
-    // `mutate` reaches the mutationFn on a microtask, so let those run: without
-    // the ref guard BOTH clicks would have queued one and this settles at 2.
+    const updates = (): unknown[] =>
+      rpc.mock.calls.filter(([method]) => method === "triggers.update");
     await waitFor(() => {
-      expect(deletes()).toHaveLength(1);
+      expect(updates()).toHaveLength(1);
     });
     await Promise.resolve();
-    expect(deletes()).toHaveLength(1);
-    releaseDelete?.();
+    expect(updates()).toHaveLength(1);
+    release?.();
   });
 
-  it("Step 3c2 → a PAUSE in flight does not lock the next trigger", async () => {
+  it("Step 5 → a write in flight does not lock the next trigger", async () => {
     // The host renders this panel unkeyed, so switching selection reuses the
     // component instance and its refs. A boolean guard would survive the switch
-    // and swallow a legitimate Pause on the second trigger until the first
-    // settled; the guard holds ids for exactly this reason.
-    //
-    // Aimed at Pause rather than Delete on purpose: the delete guard is already
-    // covered by the A → B → A walk below, and this is the only test that pins
-    // the STATUS guard, which would otherwise be unmeasured machinery.
-    let releaseFirst: (() => void) | undefined;
+    // and swallow a legitimate Stop on the second trigger; the guard holds ids.
+    let release: (() => void) | undefined;
     const held = new Promise<{ updated: boolean }>((resolve) => {
-      releaseFirst = () => {
+      release = () => {
         resolve({ updated: true });
       };
     });
@@ -318,49 +208,42 @@ describe("tst_fe_trig_003 — the panel pauses, resumes and deletes", () => {
       modules: { get: () => undefined },
     } as unknown as AppRuntime;
     const client = freshClient();
-
-    const { findByText, rerender } = render(
+    const panel = (id: string): JSX.Element =>
       withClient(
         client,
-        <TriggerDetailPanel entityId="trigger-1" moduleId="triggers" runtime={runtime} />,
-      ),
-    );
-    fireEvent.click(await findByText("Pause"));
-    await waitFor(() => {
-      expect(rpc.mock.calls.filter(([m]) => m === "triggers.update")).toHaveLength(1);
-    });
-
-    // The operator moves to another trigger while the first write is still open.
-    rerender(
-      withClient(
-        client,
-        <TriggerDetailPanel entityId="trigger-2" moduleId="triggers" runtime={runtime} />,
-      ),
-    );
-    fireEvent.click(await findByText("Pause"));
-
-    await waitFor(() => {
-      const paused = rpc.mock.calls
+        <TriggerDetailPanel entityId={id} moduleId="triggers" runtime={runtime} />,
+      );
+    const stopped = (): string[] =>
+      rpc.mock.calls
         .filter(([m]) => m === "triggers.update")
-        .map(([, params]) => (params as { id: string }).id);
-      expect(paused).toEqual(["trigger-1", "trigger-2"]);
+        .map(([, params]) => String((params as { id: string }).id));
+
+    const { findByText, rerender } = render(panel("trigger-1"));
+    fireEvent.click(await findByText("Stop"));
+    await waitFor(() => {
+      expect(stopped()).toEqual(["trigger-1"]);
     });
-    releaseFirst?.();
+
+    rerender(panel("trigger-2"));
+    fireEvent.click(await findByText("Stop"));
+    await waitFor(() => {
+      expect(stopped()).toEqual(["trigger-1", "trigger-2"]);
+    });
+    release?.();
   });
 
-  it("Step 3c3 → walking A → B → A does not let A be deleted twice", async () => {
+  it("Step 6 → walking A → B → A does not write A twice", async () => {
     // A single remembered id would be overwritten by B, and coming back to A
-    // would find nothing in flight. Both writes are held open for the whole
-    // walk, so A is genuinely still pending when it is clicked again.
+    // would find nothing in flight. Both writes stay open for the whole walk.
     const holds = new Map<string, () => void>();
     const rpc = vi.fn((method: string, params?: Record<string, unknown>) => {
       if (method === "triggers.get") return Promise.resolve(detailWith("active"));
       if (method === "triggers.fire_history") return Promise.resolve([]);
-      if (method === "triggers.delete") {
+      if (method === "triggers.update") {
         const id = String(params?.id);
-        return new Promise<{ deleted: boolean }>((resolve) => {
+        return new Promise<{ updated: boolean }>((resolve) => {
           holds.set(id, () => {
-            resolve({ deleted: true });
+            resolve({ updated: true });
           });
         });
       }
@@ -377,167 +260,47 @@ describe("tst_fe_trig_003 — the panel pauses, resumes and deletes", () => {
         client,
         <TriggerDetailPanel entityId={id} moduleId="triggers" runtime={runtime} />,
       );
-    const deleted = (): string[] =>
+    const stopped = (): string[] =>
       rpc.mock.calls
-        .filter(([m]) => m === "triggers.delete")
+        .filter(([m]) => m === "triggers.update")
         .map(([, params]) => String((params as { id: string }).id));
 
     const { findByText, rerender } = render(panel("trigger-1"));
-    fireEvent.click(await findByText("Delete"));
+    fireEvent.click(await findByText("Stop"));
     await waitFor(() => {
-      expect(deleted()).toEqual(["trigger-1"]);
+      expect(stopped()).toEqual(["trigger-1"]);
     });
 
     rerender(panel("trigger-2"));
-    fireEvent.click(await findByText("Delete"));
+    fireEvent.click(await findByText("Stop"));
     await waitFor(() => {
-      expect(deleted()).toEqual(["trigger-1", "trigger-2"]);
+      expect(stopped()).toEqual(["trigger-1", "trigger-2"]);
     });
 
     // Back to A, whose write never settled.
     rerender(panel("trigger-1"));
-    fireEvent.click(await findByText("Delete"));
+    fireEvent.click(await findByText("Stop"));
     await Promise.resolve();
-    expect(deleted()).toEqual(["trigger-1", "trigger-2"]);
+    expect(stopped()).toEqual(["trigger-1", "trigger-2"]);
 
     for (const release of holds.values()) release();
   });
 
-  it("Step 3c4 → a delete settling after a switch does not clear the new selection", async () => {
-    // The host clears the selection when this callback fires, so a write that
-    // lands after the operator has moved on must NOT report. Nothing pinned this
-    // before: the A → B → A walk passes no `onDeleted` at all, so a version
-    // comparing against a closure-captured id passed it either way.
-    let releaseFirst: (() => void) | undefined;
-    const held = new Promise<{ deleted: boolean }>((resolve) => {
-      releaseFirst = () => {
-        resolve({ deleted: true });
-      };
+  it("Step 7 → a rejected write frees that trigger's guard, even after a switch", async () => {
+    // `onSettled` releases the id the write CARRIED, not whatever is shown when
+    // it lands. Releasing the shown id would leave the rejected trigger in the
+    // set forever and Stop would be dead for the life of the panel.
+    let reject: ((reason: Error) => void) | undefined;
+    const held = new Promise<never>((_resolve, rej) => {
+      reject = rej;
     });
     const rpc = vi.fn((method: string, params?: Record<string, unknown>) => {
       if (method === "triggers.get") return Promise.resolve(detailWith("active"));
       if (method === "triggers.fire_history") return Promise.resolve([]);
-      if (method === "triggers.delete") {
-        return params?.id === "trigger-1" ? held : Promise.resolve({ deleted: true });
-      }
-      return Promise.reject(new Error(`unexpected RPC: ${method}`));
-    });
-    const runtime = {
-      transport: { rpc },
-      agent: { resolveEntityRenderer: () => null },
-      modules: { get: () => undefined },
-    } as unknown as AppRuntime;
-    const client = freshClient();
-    const onDeleted = vi.fn();
-    const panel = (id: string): JSX.Element =>
-      withClient(
-        client,
-        <TriggerDetailPanel
-          entityId={id}
-          moduleId="triggers"
-          runtime={runtime}
-          onDeleted={onDeleted}
-        />,
-      );
-
-    const { findByText, rerender } = render(panel("trigger-1"));
-    fireEvent.click(await findByText("Delete"));
-    await waitFor(() => {
-      expect(rpc.mock.calls.filter(([m]) => m === "triggers.delete")).toHaveLength(1);
-    });
-
-    // The operator moves on, and only then does the first write land.
-    rerender(panel("trigger-2"));
-    releaseFirst?.();
-    await waitFor(() => {
-      expect(rpc.mock.calls.filter(([m]) => m === "triggers.get").length).toBeGreaterThan(0);
-    });
-    expect(onDeleted).not.toHaveBeenCalled();
-
-    // Deleting what IS on screen still reports.
-    fireEvent.click(await findByText("Delete"));
-    await waitFor(() => {
-      expect(onDeleted).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  it("Step 3c5 → two writes in flight: A still reports when A is on screen", async () => {
-    // The ordering that a plain `entityId` closure gets wrong. Starting the
-    // second mutation DETACHES the first from TanStack's observer, so the first
-    // keeps the options it held at that moment — B's. Come back to A, let A
-    // settle, and the callback compares A against B and stays silent, leaving a
-    // deleted trigger selected. Only a live-selection read gets this right.
-    const holds = new Map<string, () => void>();
-    const rpc = vi.fn((method: string, params?: Record<string, unknown>) => {
-      if (method === "triggers.get") return Promise.resolve(detailWith("active"));
-      if (method === "triggers.fire_history") return Promise.resolve([]);
-      if (method === "triggers.delete") {
-        const id = String(params?.id);
-        return new Promise<{ deleted: boolean }>((resolve) => {
-          holds.set(id, () => {
-            resolve({ deleted: true });
-          });
-        });
-      }
-      return Promise.reject(new Error(`unexpected RPC: ${method}`));
-    });
-    const runtime = {
-      transport: { rpc },
-      agent: { resolveEntityRenderer: () => null },
-      modules: { get: () => undefined },
-    } as unknown as AppRuntime;
-    const client = freshClient();
-    const onDeleted = vi.fn();
-    const panel = (id: string): JSX.Element =>
-      withClient(
-        client,
-        <TriggerDetailPanel
-          entityId={id}
-          moduleId="triggers"
-          runtime={runtime}
-          onDeleted={onDeleted}
-        />,
-      );
-
-    const { findByText, rerender } = render(panel("trigger-1"));
-    fireEvent.click(await findByText("Delete")); // A: held open
-    await waitFor(() => {
-      expect(holds.has("trigger-1")).toBe(true);
-    });
-
-    rerender(panel("trigger-2"));
-    fireEvent.click(await findByText("Delete")); // B: held open, detaches A
-    await waitFor(() => {
-      expect(holds.has("trigger-2")).toBe(true);
-    });
-
-    // Back to A, which is what the operator is looking at when A lands.
-    rerender(panel("trigger-1"));
-    holds.get("trigger-1")?.();
-
-    await waitFor(() => {
-      expect(onDeleted).toHaveBeenCalledTimes(1);
-    });
-
-    holds.get("trigger-2")?.();
-  });
-
-  it("Step 3c6 → a rejected delete frees that trigger's guard, even after a switch", async () => {
-    // `onSettled` has to release the id the write CARRIED, not whatever the panel
-    // happens to show when it lands. Releasing the shown id instead leaves the
-    // rejected trigger in the set forever and Delete is silently swallowed for
-    // the life of the panel — a dead button, not a near miss.
-    let rejectFirst: ((reason: Error) => void) | undefined;
-    const held = new Promise<never>((_resolve, reject) => {
-      rejectFirst = reject;
-    });
-    const rpc = vi.fn((method: string, params?: Record<string, unknown>) => {
-      if (method === "triggers.get") return Promise.resolve(detailWith("active"));
-      if (method === "triggers.fire_history") return Promise.resolve([]);
-      if (method === "triggers.delete") {
-        return params?.id === "trigger-1" && rejectFirst !== undefined
+      if (method === "triggers.update") {
+        return params?.id === "trigger-1" && reject !== undefined
           ? held
-          : Promise.resolve({ deleted: true });
+          : Promise.resolve({ updated: true });
       }
       return Promise.reject(new Error(`unexpected RPC: ${method}`));
     });
@@ -552,126 +315,34 @@ describe("tst_fe_trig_003 — the panel pauses, resumes and deletes", () => {
         client,
         <TriggerDetailPanel entityId={id} moduleId="triggers" runtime={runtime} />,
       );
-    const deletesOf = (id: string): number =>
+    const writesOf = (id: string): number =>
       rpc.mock.calls.filter(
-        ([m, params]) => m === "triggers.delete" && (params as { id: string }).id === id,
+        ([m, params]) => m === "triggers.update" && (params as { id: string }).id === id,
       ).length;
 
     const { findByText, rerender } = render(panel("trigger-1"));
-    fireEvent.click(await findByText("Delete"));
+    fireEvent.click(await findByText("Stop"));
     await waitFor(() => {
-      expect(deletesOf("trigger-1")).toBe(1);
+      expect(writesOf("trigger-1")).toBe(1);
     });
 
-    // The operator moves on, and A's write fails while B is on screen.
     rerender(panel("trigger-2"));
-    const reject = rejectFirst;
-    rejectFirst = undefined;
-    reject?.(new Error("permission denied"));
-    // Wait for the ERROR to surface, not merely for a tick: React Query moves
-    // the mutation into its error state after `onSettled`, so this cannot pass
-    // before the guard has been released. Waiting on anything weaker would let
-    // this test go green on correct code by luck.
-    await findByText(/Could not delete this trigger/);
+    const rejectNow = reject;
+    reject = undefined;
+    rejectNow?.(new Error("permission denied"));
+    // Wait for the error to surface: React Query moves the mutation into its
+    // error state after `onSettled`, so this cannot pass before the guard is
+    // released.
+    await findByText(/Could not change the status/);
 
-    // Back to A and try again. The button must still work.
     rerender(panel("trigger-1"));
-    fireEvent.click(await findByText("Delete"));
+    fireEvent.click(await findByText("Stop"));
     await waitFor(() => {
-      expect(deletesOf("trigger-1")).toBe(2);
+      expect(writesOf("trigger-1")).toBe(2);
     });
   });
 
-  it("Step 3c7 → a delete landing after a switch drops the DELETED trigger's owner", async () => {
-    // The predicate has to use the id that was deleted. Using the shown id
-    // would invalidate the wrong contact's detail and leave the stale one — the
-    // deleted trigger would keep showing on the page that listed it.
-    let releaseFirst: (() => void) | undefined;
-    const held = new Promise<{ deleted: boolean }>((resolve) => {
-      releaseFirst = () => {
-        resolve({ deleted: true });
-      };
-    });
-    const rpc = vi.fn((method: string, params?: Record<string, unknown>) => {
-      if (method === "triggers.get") return Promise.resolve(detailWith("active"));
-      if (method === "triggers.fire_history") return Promise.resolve([]);
-      if (method === "triggers.delete") {
-        return params?.id === "trigger-1" ? held : Promise.resolve({ deleted: true });
-      }
-      return Promise.reject(new Error(`unexpected RPC: ${method}`));
-    });
-    const runtime = {
-      transport: { rpc },
-      agent: { resolveEntityRenderer: () => null },
-      modules: { get: () => undefined },
-    } as unknown as AppRuntime;
-    const client = freshClient();
-    const OWNER_OF_A = ["contacts", "detail", "cA"] as const;
-    const OWNER_OF_B = ["contacts", "detail", "cB"] as const;
-    client.setQueryData(OWNER_OF_A, {
-      id: "cA",
-      linked_entities: [{ id: "trigger-1", name: "Reply watch" }],
-    });
-    client.setQueryData(OWNER_OF_B, {
-      id: "cB",
-      linked_entities: [{ id: "trigger-2", name: "Other watch" }],
-    });
-    const panel = (id: string): JSX.Element =>
-      withClient(
-        client,
-        <TriggerDetailPanel entityId={id} moduleId="triggers" runtime={runtime} />,
-      );
-
-    const { findByText, rerender } = render(panel("trigger-1"));
-    fireEvent.click(await findByText("Delete"));
-    await waitFor(() => {
-      expect(rpc.mock.calls.filter(([m]) => m === "triggers.delete")).toHaveLength(1);
-    });
-
-    // A lands while B is on screen.
-    rerender(panel("trigger-2"));
-    releaseFirst?.();
-
-    await waitFor(() => {
-      expect(client.getQueryState(OWNER_OF_A)?.isInvalidated).toBe(true);
-    });
-    expect(client.getQueryState(OWNER_OF_B)?.isInvalidated).toBe(false);
-  });
-
-  it("Step 3d → the host hears about the deletion before the cache work", async () => {
-    const { runtime } = statefulRuntime();
-    const client = freshClient();
-    const order: string[] = [];
-    vi.spyOn(client, "invalidateQueries").mockImplementation(() => {
-      order.push("invalidate");
-      return Promise.resolve();
-    });
-    const onDeleted = vi.fn(() => {
-      order.push("onDeleted");
-    });
-
-    const { findByText } = render(
-      withClient(
-        client,
-        <TriggerDetailPanel
-          entityId="trigger-1"
-          moduleId="triggers"
-          runtime={runtime}
-          onDeleted={onDeleted}
-        />,
-      ),
-    );
-    fireEvent.click(await findByText("Delete"));
-
-    await waitFor(() => {
-      expect(onDeleted).toHaveBeenCalled();
-    });
-    // Awaiting the invalidations first would refetch this panel's own dead
-    // queries — with retries, a second or more of a deleted trigger on screen.
-    expect(order[0]).toBe("onDeleted");
-  });
-
-  it("Step 4 → one unreadable watch does not hide the others", async () => {
+  it("Step 8 → one unreadable watch does not hide the others", async () => {
     const rpc = vi.fn((method: string, params?: Record<string, unknown>) => {
       if (method === "triggers.get") {
         return Promise.resolve({
@@ -704,8 +375,6 @@ describe("tst_fe_trig_003 — the panel pauses, resumes and deletes", () => {
       ),
     );
 
-    // The readable watch renders, and the failed one is named rather than
-    // taking every other watch down with it.
     expect(await findByText("Readable")).toBeTruthy();
     expect(await findByText(/w-bad \(unavailable\)/)).toBeTruthy();
   });

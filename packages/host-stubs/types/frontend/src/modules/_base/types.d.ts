@@ -39,13 +39,6 @@ export interface DetailPanelProps {
     readonly entityId: string;
     readonly moduleId: string;
     readonly runtime: AppRuntime;
-    /**
-     * The panel deleted the entity it was showing. The host clears the
-     * selection — both the router's and the list's, since the rendered id is
-     * the former falling back to the latter — so the deleted id cannot be
-     * restored by either.
-     */
-    readonly onDeleted?: () => void;
 }
 export interface ListItemContentProps {
     readonly item: ListItem;

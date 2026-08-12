@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, type JSX } from "react";
+import { useMemo, useRef, type JSX } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { DetailPanelProps } from "@magnis/host/base";
 import { ExpandableEntityCard } from "@magnis/host/agent";
@@ -49,36 +49,21 @@ function deduplicateEntities(entities: readonly ResolvedEntity[]): readonly Reso
 export function TriggerDetailPanel({
   entityId,
   runtime,
-  onDeleted,
 }: DetailPanelProps): JSX.Element {
   const queryClient = useQueryClient();
   const detail = useTriggerDetailQuery(entityId, runtime);
   const history = useTriggerHistory(entityId, runtime);
 
-  // Refs, not the mutations' `isPending`: that is a rendered snapshot, so two
+  // A ref, not the mutation's `isPending`: that is a rendered snapshot, so two
   // clicks dispatched before React re-renders would both get past it and issue
   // two writes against the same trigger.
   //
-  // SETS of in-flight ids, not one id and not a boolean. The host reuses this
-  // panel when the selection changes — `BaseModuleComponent` renders it
-  // unkeyed — so the guard has to be per trigger: a boolean would swallow a
-  // legitimate action on the next trigger, and a single remembered id would
-  // forget the first one, letting A be written twice over an A → B → A walk.
+  // A SET of in-flight ids, not a boolean. The host reuses this panel when the
+  // selection changes — `BaseModuleComponent` renders it unkeyed — so the guard
+  // has to be per trigger: a boolean would swallow a legitimate Stop on the next
+  // trigger, and a single remembered id would forget the first one over an
+  // A → B → A walk.
   const statusInFlight = useRef(new Set<string>());
-  const removeInFlight = useRef(new Set<string>());
-  // The live selection, readable from a settle callback.
-  //
-  // The callback genuinely can be stale, and a plain `entityId` closure is not
-  // enough: TanStack re-applies options on every render, but starting a SECOND
-  // mutation detaches the first from the observer, so the first keeps whatever
-  // options it held at that moment. Hold a delete on A, switch to B, start a
-  // delete on B, come back to A, and A settles carrying B's callback — it would
-  // compare A against B, skip `onDeleted`, and leave a deleted trigger selected.
-  // Layout effect, so this is current the moment the new selection commits.
-  const shownEntityId = useRef(entityId);
-  useLayoutEffect(() => {
-    shownEntityId.current = entityId;
-  }, [entityId]);
 
   const setStatus = useMutation({
     mutationFn: (vars: { readonly id: string; readonly status: string }) =>
@@ -91,40 +76,6 @@ export function TriggerDetailPanel({
     },
   });
 
-  const remove = useMutation({
-    mutationFn: (id: string) => runtime.transport.rpc("triggers.delete", { id }),
-    onSuccess: (_data, deletedId) => {
-      // Report upward FIRST. The host owns what selection means, and the
-      // invalidation below refetches this panel's own now-dead queries — with
-      // retries and backoff that is a second or more, and awaiting it would
-      // leave a deleted trigger on screen with live Pause and Delete buttons.
-      // Only if the panel is still showing what was deleted. The selection can
-      // move on while a write is in flight, and clearing it then would close a
-      // trigger the operator had just opened — Step 3c4 pins that.
-      //
-      // Read through the ref above, not this closure — see why there.
-      if (deletedId === shownEntityId.current) onDeleted?.();
-      // The plugin's own list, detail and history keys.
-      void queryClient.invalidateQueries({ queryKey: triggerKeys.all });
-      // INV-P2.3: and the owners that named this trigger. The panel has no
-      // owner id — a watched entity carries only id and name — so the
-      // predicate is explicit. A predicate rather than a per-entry key: a key
-      // matches by PREFIX, so invalidating a contact's detail would also drop
-      // its descendant queries (`contacts/ui/queries.ts` nests
-      // `social_tracking` under the detail key), which is more than this owns.
-      void queryClient.invalidateQueries({
-        predicate: (cached) => {
-          const links = (cached.state.data as { linked_entities?: unknown } | undefined)
-            ?.linked_entities;
-          if (!Array.isArray(links)) return false;
-          return links.some((link) => (link as { id?: unknown } | null)?.id === deletedId);
-        },
-      });
-    },
-    onSettled: (_data, _error, deletedId) => {
-      removeInFlight.current.delete(deletedId);
-    },
-  });
   const watchIds = useMemo(
     () => detail.data?.watched_entities.map((entity) => entity.id) ?? [],
     [detail.data?.watched_entities],
@@ -171,6 +122,9 @@ export function TriggerDetailPanel({
   }
 
   const trigger = detail.data;
+  // Anything that is not `active` does not fire — the engine compares exactly
+  // that, so "stopped" needs no engine support.
+  const running = trigger.status === "active";
   const configurationRows = [
     { label: "Status", value: trigger.status },
     // A scheduled trigger's "when" IS its cron; the event_kinds row only
@@ -237,44 +191,25 @@ export function TriggerDetailPanel({
 
       <InfoCard rows={configurationRows} />
 
+      {/* A trigger is part of the graph: it is stopped, never deleted. One
+          affordance, both directions. */}
       <Row gap={2}>
         <ActionButton
-          label={trigger.status === "active" ? "Pause" : "Resume"}
-          icon={trigger.status === "active" ? "pause" : "activity"}
+          label={running ? "Stop" : "Start"}
+          icon={running ? "square" : "play"}
           onClick={() => {
-            // A ref, not `isPending`: that is a rendered snapshot, so two
-            // clicks dispatched before React re-renders would both pass it and
-            // issue two writes against the same trigger.
             if (statusInFlight.current.has(entityId)) return;
             statusInFlight.current.add(entityId);
-            setStatus.mutate({
-              id: entityId,
-              status: trigger.status === "active" ? "paused" : "active",
-            });
-          }}
-        />
-        <ActionButton
-          label="Delete"
-          variant="danger"
-          icon="trash"
-          onClick={() => {
-            if (removeInFlight.current.has(entityId)) return;
-            removeInFlight.current.add(entityId);
-            remove.mutate(entityId);
+            setStatus.mutate({ id: entityId, status: running ? "stopped" : "active" });
           }}
         />
       </Row>
 
-      {/* A rejected write is surfaced, not swallowed: the row stays, the status
-          is unchanged, and the operator is told why. */}
+      {/* A rejected write is surfaced, not swallowed: the status is unchanged
+          and the operator is told why. */}
       {setStatus.isError ? (
         <Text variant="body" color="tertiary">
           {`Could not change the status: ${setStatus.error.message}`}
-        </Text>
-      ) : null}
-      {remove.isError ? (
-        <Text variant="body" color="tertiary">
-          {`Could not delete this trigger: ${remove.error.message}`}
         </Text>
       ) : null}
 

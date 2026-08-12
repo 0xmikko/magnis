@@ -53,6 +53,9 @@ function useResolvedWatches(
 
 const STATUS_DOT: Record<string, string> = {
   active: "bg-green-500",
+  // Stopped by the operator — a trigger is part of the graph, so this is what
+  // "turned off" looks like. `paused` stays for rows written before the change.
+  stopped: "bg-content-muted",
   paused: "bg-yellow-500",
   expired: "bg-content-muted",
   disabled: "bg-content-muted",
