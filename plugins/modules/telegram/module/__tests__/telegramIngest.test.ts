@@ -18,6 +18,10 @@
  * @legacy-id: tst_be_tgtrigger_015
  * @legacy-id: tst_be_tgtrigger_016
  * @legacy-id: tst_kernel_link_001_leave_decays_rejoin_restores_once
+ * @legacy-id: tst_be_tgidem_004_reingest_is_idempotent
+ * @legacy-id: tst_be_tgidem_005_reingest_does_not_duplicate_links
+ * @legacy-id: tst_be_tgiso_006_ingest_scoped_by_user
+ * @legacy-id: tst_be_tgiso_008_delete_scoped_by_user
  */
 import { describe, expect, it } from "vitest";
 import { entity, mockGraph, mountModule } from "@magnis/testkit/module";

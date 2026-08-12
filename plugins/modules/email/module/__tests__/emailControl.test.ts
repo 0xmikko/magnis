@@ -4,6 +4,22 @@
 // mockGraph's Proxy (which forwards args to them), so `expect(spy).toHaveBeen…`
 // still observes the delegated call; any op NOT provided throws.
 
+/**
+ * @test-id: tst_module_email_control_001
+ * @scenario: scn_backend_tests_006
+ * @covers: EmailModule.ensureAddress, EmailModule.setTrigger
+ * @legacy-id: tst_int_email_ensureaddr_001_idempotent
+ * @legacy-id: tst_int_trig_030_ensure_address_entity_creates_on_first_call
+ * @legacy-id: tst_int_trig_031_ensure_address_entity_returns_existing
+ * @legacy-id: tst_int_trig_032_contacts_create_creates_address_entity_and_link
+ * @legacy-id: tst_int_trig_034_full_cycle_contact_trigger_email
+ * @legacy-id: tst_int_trig_041_multi_address_trigger
+ * @legacy-id: tst_int_trig_042_single_address_compat
+ * @legacy-id: tst_int_trig_043_merged_deduped_sorted
+ * @legacy-id: tst_int_trig_044_no_address_error
+ * @deterministic: yes
+ */
+
 import { describe, expect, it, vi } from "vitest";
 import type { GraphBatchInput, RpcExecutor } from "@magnis/plugin-sdk";
 import { mockGraph, mountModule, type GraphOverrides } from "@magnis/testkit/module";

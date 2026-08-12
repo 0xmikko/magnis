@@ -12,6 +12,14 @@
 // get_entity N+1 trap) throws `unexpected graph op: …` and fails the test — the
 // single guarantee that REPLACES the old hand-rolled `reject()` spy.
 
+/**
+ * @test-id: tst_module_contacts_read_001
+ * @scenario: scn_backend_tests_006
+ * @covers: ContactsModule.list, ContactsModule.get
+ * @legacy-id: tst_contacts_e2e_list_and_get
+ * @deterministic: yes
+ */
+
 import { beforeEach, describe, expect, it } from "vitest";
 import { entity, mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { ContactsModule } from "../service.ts";

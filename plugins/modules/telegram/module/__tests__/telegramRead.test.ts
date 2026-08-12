@@ -6,6 +6,8 @@
  * @deterministic: yes
  * @fixtures: fixed chat/message/account entities and strict graph doubles
  * @legacy-id: tst_be_tgread_001
+ * @legacy-id: tst_be_tgread_001_read_path_served_by_plugin
+ * @legacy-id: tst_be_tgread_003_set_indexed_cross_user_denied
  * @legacy-id: tst_be_tgchatmeta_001_chats_list_last_message_and_order
  */
 import { describe, expect, it } from "vitest";

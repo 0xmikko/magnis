@@ -6,6 +6,17 @@
 // resolved through email.ensure_addresses, delete, empty-user hard error,
 // and the sync_state control surface.
 
+/**
+ * @test-id: tst_module_meetings_sync_001
+ * @scenario: scn_backend_tests_006
+ * @covers: MeetingsModule.ingest, MeetingsModule.syncStatus, MeetingsModule.syncReset
+ * @legacy-id: tst_int_mtsync_002_meetings_snapshot_ingest_becomes_visible_via_rpc
+ * @legacy-id: tst_int_mtsync_003_meetings_get_returns_synced_detail_view
+ * @legacy-id: tst_int_mtsync_004_meetings_repeated_envelopes_converge_on_updated_payload
+ * @legacy-id: tst_int_mtsync_005_meetings_delete_envelope_removes_synced_entity
+ * @deterministic: yes
+ */
+
 import { describe, expect, it, vi } from "vitest";
 import type { GraphBatchInput, GraphBatchResult } from "@magnis/plugin-sdk";
 import { mockGraph, mountModule, type GraphOverrides, type MockGraph } from "@magnis/testkit/module";

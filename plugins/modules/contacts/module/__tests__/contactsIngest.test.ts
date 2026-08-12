@@ -7,6 +7,22 @@
 // hub when none exists, or mint + record same_as candidates when several
 // claim the address. The sync NEVER writes the hub.
 
+/**
+ * @test-id: tst_module_contacts_ingest_001
+ * @scenario: scn_backend_tests_006
+ * @covers: ContactsModule.ingest
+ * @legacy-id: tst_src_int_contacts_002_synced_contact_reaches_its_address
+ * @legacy-id: tst_kernel_glist_001_resync_does_not_duplicate_the_identity_edge
+ * @legacy-id: tst_module_contacts_001_hub_edit_survives_a_full_resync
+ * @legacy-id: tst_module_contacts_002_replica_phone_reaches_the_card_with_zero_hub_writes
+ * @legacy-id: tst_module_contacts_003_shared_address_attaches_not_mints
+ * @legacy-id: cli_contacts_001_ingest_creates_person_entity
+ * @legacy-id: cli_contacts_002_ingest_is_idempotent
+ * @legacy-id: cli_contacts_003_partial_person_is_kept
+ * @legacy-id: cli_contacts_004_extra_email_grows_facets
+ * @deterministic: yes
+ */
+
 import { beforeEach, describe, expect, it } from "vitest";
 import type { BatchEntityInput, GraphBatchInput } from "@magnis/plugin-sdk";
 import { mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
@@ -284,4 +300,3 @@ describe("contacts ingest — the replica model (tst_be_contactsingest_001)", ()
     expect(r.ok).toBe(true);
   });
 });
-

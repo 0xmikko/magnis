@@ -11,6 +11,18 @@
 //
 // Exercised through @magnis/testkit/module.
 
+/**
+ * @test-id: tst_module_email_delivery_001
+ * @scenario: scn_backend_tests_006
+ * @covers: EmailModule.emailSend, EmailModule.emailReply
+ * @legacy-id: tst_module_email_attach_002_send_includes_attachments
+ * @legacy-id: tst_module_email_attach_003_reply_accepts_attachments
+ * @legacy-id: tst_module_email_attach_004_multitype_encoding
+ * @legacy-id: tst_module_email_attach_005_no_attachments_regression
+ * @legacy-id: tst_int_trig_040_email_send_without_a_connected_account_creates_nothing
+ * @deterministic: yes
+ */
+
 import { describe, expect, it } from "vitest";
 import type { EntityDetail, GraphBatchInput } from "@magnis/plugin-sdk";
 import { mockGraph, mountModule, type GraphOverrides, type MockGraph } from "@magnis/testkit/module";

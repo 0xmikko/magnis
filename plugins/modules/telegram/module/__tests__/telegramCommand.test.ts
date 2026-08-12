@@ -8,6 +8,10 @@
  * @legacy-id: tst_be_tgsync_012
  * @legacy-id: tst_be_tgcomposer_012
  * @legacy-id: tst_be_tgtrigger_013
+ * @legacy-id: tst_be_tgsync_011_reset_deletes_messages
+ * @legacy-id: tst_be_tgsync_012_status_lists_state
+ * @legacy-id: tst_be_tgcomposer_012_read_and_set
+ * @legacy-id: tst_be_tgtrigger_013_set_trigger_creates_trigger
  */
 import { describe, expect, it, vi } from "vitest";
 import { mockGraph, mountModule } from "@magnis/testkit/module";

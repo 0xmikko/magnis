@@ -21,6 +21,7 @@ import {
   type MockGraph,
 } from "@magnis/testkit/module";
 import { NotesModule } from "../service.ts";
+import { previewFromBody } from "../helpers.ts";
 import { NOTE, NOTE_CONTENT } from "../../schema.ts";
 import type { NoteCanonical } from "../../types.ts";
 
@@ -115,6 +116,22 @@ describe("notes read — shape parity (tst_be_notesread_001)", () => {
     });
     const page = await mod.list({});
     expect(page.items[0]).toMatchObject({ title: "Title", pinned: true });
+    const call = spy(graph, "list_entities_window").mock.calls[0]?.[0];
+    expect(call?.order).toEqual([{ field: { property_path: "updated_at" }, desc: true }]);
+  });
+
+  /**
+   * @test-id: tst_module_notes_preview_001
+   * @scenario: scn_backend_tests_006
+   * @covers: previewFromBody, NotesModule.list
+   * @legacy-id: tst_notes_e2e_list_orders_recent_first_with_preview
+   * @legacy-id: tst_notes_e2e_preview_truncates_unicode_on_boundary
+   * @deterministic: yes
+   */
+  it("tst_module_notes_preview_001 skips headings and truncates Unicode by codepoint", () => {
+    expect(previewFromBody("# Heading\n\nfirst useful line")).toBe("first useful line");
+    const unicode = "🙂".repeat(81);
+    expect(previewFromBody(unicode)).toBe(`${"🙂".repeat(80)}…`);
   });
 });
 
