@@ -196,6 +196,9 @@ export function TriggerDetailPanel({
       <Row gap={2}>
         <ActionButton
           label={running ? "Stop" : "Start"}
+          // Red only while it runs: stopping a live trigger is the consequential
+          // direction. Starting one back up is ordinary.
+          variant={running ? "danger" : "default"}
           icon={running ? "square" : "play"}
           onClick={() => {
             if (statusInFlight.current.has(entityId)) return;
