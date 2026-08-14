@@ -568,40 +568,37 @@ impl Drop for BackendProcessManager {
 // from a free one. Replaced by `ports::bind_port`, which reserves before
 // handing over (DEC-2).
 
-/// The backend the GUI talks to: either a child process it spawned (dev/`Spawn`
-/// mode) or a launchd-managed service it only connects to (`Service` mode). The
-/// commands read `base_url()` uniformly; only `Spawn` is stopped on window exit.
-pub enum BackendHandle {
-    /// `Spawn` mode — the shell owns BOTH the cluster and the child, and stops
-    /// them in that order on exit: backend first, then PostgreSQL. The reverse
-    /// pulls the database out from under a live pool and hands the backend
-    /// connection errors on its way out (DEC-9).
-    Spawned {
-        manager: Box<BackendProcessManager>,
-        cluster: Box<crate::postgres::PostgresHandle>,
-    },
-    /// `Service` mode — connect-only; launchd owns the lifecycle, so the service
-    /// intentionally outlives the GUI window (DEC-3/DEC-11). No child here.
-    Service { base_url: String },
+/// What the shell owns: the backend child and the cluster it talks to.
+///
+/// This was a two-arm enum whose second arm existed only for the launchd
+/// service path. DEC-1 removed that path, so the choice is gone and the type
+/// says so — a single-arm enum would have been ceremony.
+pub struct BackendHandle {
+    manager: Box<BackendProcessManager>,
+    cluster: Box<crate::postgres::PostgresHandle>,
 }
 
 impl BackendHandle {
-    pub fn base_url(&self) -> &str {
-        match self {
-            BackendHandle::Spawned { manager, .. } => manager.base_url(),
-            BackendHandle::Service { base_url } => base_url,
+    pub fn spawned(
+        manager: BackendProcessManager,
+        cluster: crate::postgres::PostgresHandle,
+    ) -> Self {
+        Self {
+            manager: Box::new(manager),
+            cluster: Box::new(cluster),
         }
     }
 
-    /// Stop the spawned child (`Spawn` mode). In `Service` mode this is a no-op:
-    /// the launchd services keep running so background sync survives window close.
+    pub fn base_url(&self) -> &str {
+        self.manager.base_url()
+    }
+
+    /// Ordered teardown, and the order is the invariant: the child must be gone
+    /// before the database it is connected to goes away. The reverse hands the
+    /// backend connection errors on its way out (DEC-9).
     pub fn stop(&mut self) {
-        if let BackendHandle::Spawned { manager, cluster } = self {
-            // Ordered teardown, and the order is the invariant: the child must
-            // be gone before the database it is connected to goes away.
-            manager.stop();
-            cluster.stop();
-        }
+        self.manager.stop();
+        self.cluster.stop();
     }
 }
 

@@ -3,77 +3,55 @@
 
 mod backend_process;
 mod commands;
-mod desktop_mode;
 mod paths;
 mod ports;
 mod postgres;
-// Background-service install is macOS-only (DEC-10); on other OSes the desktop
-// always uses Spawn mode and never references this module.
-#[cfg(target_os = "macos")]
-mod service;
 mod workspace_config;
 
 use backend_process::{BackendHandle, BackendProcessManager};
 use commands::backend::get_backend_config;
 use commands::oauth::open_oauth_window;
-use commands::service::uninstall_background_service;
 use commands::workspaces::{get_workspace_config, set_selected_workspace};
-use desktop_mode::{resolve_mode, DesktopMode};
 use paths::AppPaths;
 use std::sync::Mutex;
 use tauri::Manager;
 
-/// Shared backend connection (spawned child or connect-only service). Exposes
-/// `base_url` to the frontend and is stopped on exit (no-op in service mode).
+/// The backend connection the frontend reads `base_url` from. Stopped on exit.
 pub struct BackendState(pub Mutex<BackendHandle>);
 
-/// Acquire the backend per the resolved mode: spawn a child (dev) or install +
-/// connect to the launchd services (packaged macOS).
-fn build_backend(mode: DesktopMode, app_paths: &AppPaths) -> anyhow::Result<BackendHandle> {
-    match mode {
-        DesktopMode::Spawn => {
-            // Order is fixed (DEC-9): PostgreSQL first, then the backend — the
-            // child needs a reachable DATABASE_URL the moment it boots.
-            let pg_port = ports::bind_port("postgres", None)?.release();
-            println!("PostgreSQL port: {pg_port}");
-            let cluster = postgres::PostgresHandle::start(app_paths.data_root(), pg_port)?;
+/// Bring up everything the shell owns, in the one order that works.
+///
+/// There is no mode to resolve any more. The launchd path is gone (DEC-1): a
+/// LaunchAgent belonging to an unsigned app lands in Background Task Management
+/// *disabled* and launchd silently refuses to run it, which is unobservable
+/// from inside the app — it only ever surfaced as "the backend never became
+/// healthy". One owner, one topology.
+fn build_backend(app_paths: &AppPaths) -> anyhow::Result<BackendHandle> {
+    // Order is fixed (DEC-9): PostgreSQL first, then the backend — the child
+    // needs a reachable DATABASE_URL the moment it boots.
+    let pg_port = ports::bind_port("postgres", None)?.release();
+    println!("PostgreSQL port: {pg_port}");
+    let cluster = postgres::PostgresHandle::start(app_paths.data_root(), pg_port)?;
 
-            // Bind before spawning: the port is HELD by this process until the
-            // moment the child takes it, so a collision is detected here — with
-            // a message naming the port — instead of surfacing as an opaque
-            // bind failure from a child that has already been launched.
-            let pin = ports::parse_pin("backend", std::env::var("MAGNIS_BACKEND_PORT").ok())?;
-            let reserved = ports::bind_port("backend", pin)?;
-            println!(
-                "Backend port: {} ({})",
-                reserved.port(),
-                match pin {
-                    Some(_) => "pinned via MAGNIS_BACKEND_PORT",
-                    None => "bound free",
-                }
-            );
-            let port = reserved.release();
-            let manager =
-                BackendProcessManager::start(app_paths.data_root(), port, &cluster.database_url())?;
-            Ok(BackendHandle::Spawned {
-                manager: Box::new(manager),
-                cluster: Box::new(cluster),
-            })
+    // Bind before spawning: the port is HELD by this process until the moment
+    // the child takes it, so a collision is detected here — with a message
+    // naming the port — instead of surfacing as an opaque bind failure from a
+    // child that has already been launched.
+    let pin = ports::parse_pin("backend", std::env::var("MAGNIS_BACKEND_PORT").ok())?;
+    let reserved = ports::bind_port("backend", pin)?;
+    println!(
+        "Backend port: {} ({})",
+        reserved.port(),
+        match pin {
+            Some(_) => "pinned via MAGNIS_BACKEND_PORT",
+            None => "bound free",
         }
-        DesktopMode::Service => {
-            #[cfg(target_os = "macos")]
-            {
-                let base_url =
-                    service::install_and_wait_healthy(app_paths, env!("CARGO_PKG_VERSION"))?;
-                Ok(BackendHandle::Service { base_url })
-            }
-            #[cfg(not(target_os = "macos"))]
-            {
-                let _ = app_paths;
-                anyhow::bail!("Service mode is only supported on macOS")
-            }
-        }
-    }
+    );
+    let port = reserved.release();
+    let manager =
+        BackendProcessManager::start(app_paths.data_root(), port, &cluster.database_url())?;
+
+    Ok(BackendHandle::spawned(manager, cluster))
 }
 
 fn main() -> anyhow::Result<()> {
@@ -84,22 +62,15 @@ fn main() -> anyhow::Result<()> {
     println!("App data dir: {:?}", app_paths.app_data_dir());
     println!("Data root: {:?}", app_paths.data_root());
 
-    let mode = resolve_mode(
-        cfg!(debug_assertions),
-        cfg!(target_os = "macos"),
-        std::env::var("MAGNIS_DESKTOP_MODE").ok().as_deref(),
-        desktop_mode::bundle_is_signed(),
-    );
-    println!("Desktop backend mode: {mode:?}");
-
-    let backend = match build_backend(mode, &app_paths) {
+    let backend = match build_backend(&app_paths) {
         Ok(b) => b,
         Err(e) => {
-            // Never disappear silently for a Finder-launched app — surface a
-            // native dialog (e.g. "move Magnis to Applications") then exit.
+            // A startup failure must reach the user even with no window. The
+            // dialog that used to live in the deleted launchd tree is gone;
+            // until the tray carries the error state (DEC-31), stderr plus a
+            // non-zero exit is the honest surface — silently disappearing is
+            // the one outcome that is never acceptable.
             eprintln!("Startup failed: {e:?}");
-            #[cfg(target_os = "macos")]
-            service::show_startup_error(&e);
             return Err(e);
         }
     };
@@ -114,8 +85,7 @@ fn main() -> anyhow::Result<()> {
             get_backend_config,
             get_workspace_config,
             set_selected_workspace,
-            open_oauth_window,
-            uninstall_background_service
+            open_oauth_window
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
@@ -125,8 +95,7 @@ fn main() -> anyhow::Result<()> {
             event,
             tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
         ) {
-            // Spawn mode: stop the child. Service mode: no-op — launchd keeps the
-            // backend + agent running so background sync survives window close.
+            // The shell owns both children; stop them in order (DEC-9).
             let state = app_handle.state::<BackendState>();
             if let Ok(mut guard) = state.0.lock() {
                 guard.stop();
