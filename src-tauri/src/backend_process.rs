@@ -370,8 +370,7 @@ impl BackendProcessManager {
         }
         cmd.env(
             "MAGNIS_CATALOG_URL",
-            std::env::var("MAGNIS_CATALOG_URL")
-                .unwrap_or_else(|_| crate::service::plist::DEFAULT_CATALOG_URL.to_string()),
+            crate::paths::catalog_url(std::env::var("MAGNIS_CATALOG_URL").ok()),
         );
         // Backend owns the agent in spawn mode too: set the gate flag +
         // the COMPLETE agent spawn spec on the backend, so it spawns +
@@ -448,7 +447,7 @@ impl BackendProcessManager {
         // Inheriting the GUI process's PATH is not enough: a Finder launch
         // never sources the shell profile, so a perfectly good Claude Code
         // install reported "Not logged in" simply because it was invisible.
-        let path = crate::service::plist::agent_path(
+        let path = crate::paths::agent_path(
             &dirs::home_dir().unwrap_or_default(),
             &std::env::current_exe()
                 .ok()
@@ -642,8 +641,14 @@ mod tests {
         )
         .expect_err("a missing explicit path must not fall through");
         let text = err.to_string();
-        assert!(text.contains("MAGNIS_SERVER_PATH"), "names the variable: {text}");
-        assert!(text.contains("/nowhere/magnis-server"), "names the path: {text}");
+        assert!(
+            text.contains("MAGNIS_SERVER_PATH"),
+            "names the variable: {text}"
+        );
+        assert!(
+            text.contains("/nowhere/magnis-server"),
+            "names the path: {text}"
+        );
     }
 
     /// tst_desktop_resolver_001: the triple-suffixed binary wins over the

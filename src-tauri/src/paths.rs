@@ -9,6 +9,9 @@ use std::path::PathBuf;
 pub struct AppPaths {
     app_data_dir: PathBuf,
     data_root: PathBuf,
+    // Only `service/` reads this, and that tree is macOS-only until DEC-1
+    // deletes it. Gated rather than blanket-allowed so macOS keeps checking it.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     logs_dir: PathBuf,
     // Created on init and retained for future plugin loading; not read yet.
     #[allow(dead_code)]
@@ -124,6 +127,7 @@ impl AppPaths {
         self.app_data_dir.join("workspaces.json")
     }
 
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     pub fn logs_dir(&self) -> &PathBuf {
         &self.logs_dir
     }
@@ -147,6 +151,107 @@ pub fn ensure_plugin_tree(data_root: &std::path::Path) -> Result<PathBuf> {
             .with_context(|| format!("Failed to create plugins/{sub} under {plugins_dir:?}"))?;
     }
     Ok(plugins_dir)
+}
+
+/// The public plugin catalog channel: the `catalog` branch of the plugins repo,
+/// served raw. A BASE url — never suffixed with `index.json`, because the
+/// fetcher appends the relative path itself.
+///
+/// Rehomed here from `service/plist.rs`, which the tray topology deletes. It
+/// was only ever a launchd concern by accident of where it lived: the spawn
+/// path in `backend_process.rs` reads it too, and that is the path that
+/// survives.
+pub const DEFAULT_CATALOG_URL: &str = "https://raw.githubusercontent.com/0xmikko/magnis/catalog";
+
+/// Resolve the catalog channel: an ambient override wins, otherwise the
+/// default. Pure in its input so the rule is testable without touching process
+/// env, which is global and would race every other test.
+///
+/// Two value properties, not just presence — they were only ever covered by the
+/// launchd plist tests that DEC-1 deletes, and the spawn path is what survives:
+/// the URL is a BASE (the fetcher appends `/index.json` itself), and an
+/// operator-supplied channel — a fork, or a `file://` mirror in tests — beats
+/// the default.
+pub fn catalog_url(ambient: Option<String>) -> String {
+    ambient
+        .filter(|v| !v.trim().is_empty())
+        .unwrap_or_else(|| DEFAULT_CATALOG_URL.to_string())
+}
+
+/// The user's REAL `PATH`, asked from their login shell.
+///
+/// A Finder-launched app inherits a minimal environment — it never sources
+/// `.zshrc`/`.zprofile` — so `which claude` from inside the app finds nothing
+/// even when the CLI is installed and logged in. That is exactly how a working
+/// Claude Code install surfaced as "Not logged in · Please run /login": the
+/// agent could not see the binary at all.
+///
+/// Best-effort: on any failure the caller falls back to the known locations.
+fn login_shell_path() -> Option<String> {
+    let shell = std::env::var("SHELL").ok()?;
+    let out = std::process::Command::new(&shell)
+        .args(["-ilc", "printf %s \"$PATH\""])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if path.is_empty() || !path.contains('/') {
+        return None;
+    }
+    Some(path)
+}
+
+/// Platform-specific package-manager bin dirs worth having on the agent's
+/// `PATH`. Kept `cfg`-scoped rather than listed unconditionally: `/opt/homebrew`
+/// is macOS-only, and carrying it on Linux would be a directory that exists
+/// nowhere, in a variable whose whole job is finding real binaries.
+fn extra_tool_dirs() -> Vec<PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        vec![PathBuf::from("/opt/homebrew/bin")]
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        vec![PathBuf::from("/usr/local/bin")]
+    }
+}
+
+/// Build the `PATH` the backend hands the supervised agent. It must reach
+/// `node` + the MCP stdio proxy, the `claude`/`codex` CLI (subscription login
+/// state), and the bundled connector sidecars.
+///
+/// `sidecar_dir` comes first regardless — it is ours, and the login shell knows
+/// nothing about it. Everything the user's shell knows follows, then the known
+/// locations as a floor so a stripped profile still works.
+pub fn agent_path(home_dir: &std::path::Path, sidecar_dir: &std::path::Path) -> String {
+    let mut known = vec![home_dir.join(".local/bin")];
+    known.extend(extra_tool_dirs());
+    known.push(home_dir.join(".bun/bin"));
+    known.push(sidecar_dir.to_path_buf());
+    known.extend(
+        ["/usr/bin", "/bin", "/usr/sbin", "/sbin"]
+            .iter()
+            .map(PathBuf::from),
+    );
+    let known = known
+        .iter()
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+
+    let mut out: Vec<String> = vec![sidecar_dir.to_string_lossy().into_owned()];
+    for candidate in login_shell_path()
+        .unwrap_or_default()
+        .split(':')
+        .map(str::to_string)
+        .chain(known)
+    {
+        if !candidate.is_empty() && !out.contains(&candidate) {
+            out.push(candidate);
+        }
+    }
+    out.join(":")
 }
 
 #[cfg(test)]
@@ -181,5 +286,34 @@ mod tests {
         let second = ensure_plugin_tree(&root).unwrap();
         assert_eq!(first, second);
         assert!(second.join("modules").is_dir());
+    }
+}
+
+#[cfg(test)]
+mod catalog_tests {
+    use super::{catalog_url, DEFAULT_CATALOG_URL};
+
+    // @test-id: tst_desktop_catalog_001
+    // @covers: paths::catalog_url
+    // @deterministic: yes
+    // Re-pins the two value properties `tst_desktop_plist_010/011` were the only
+    // cover for; DEC-1 deletes that file, and the spawn path reads the same
+    // constant.
+    #[test]
+    fn tst_desktop_catalog_001_base_url_and_ambient_override() {
+        assert_eq!(
+            catalog_url(None),
+            DEFAULT_CATALOG_URL,
+            "no override resolves to the default channel"
+        );
+        assert!(
+            !catalog_url(None).ends_with("/index.json"),
+            "MUST be a BASE url — the fetcher appends the relative path itself"
+        );
+        assert_eq!(
+            catalog_url(Some("file:///tmp/cat".to_string())),
+            "file:///tmp/cat",
+            "an operator-supplied channel wins over the default"
+        );
     }
 }
