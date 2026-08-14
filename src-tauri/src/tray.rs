@@ -160,9 +160,40 @@ pub fn build(
         .on_menu_event(|app, event| match event.id.as_ref() {
             "open" => show_main_window(app),
             "quit" => app.exit(0),
+            "show_in_dock" => toggle_show_in_dock(app),
+            "start_at_login" => toggle_start_at_login(app),
             _ => {}
         })
         .build(app)
+}
+
+/// Flip Dock/taskbar visibility and remember it. A checkbox that does nothing
+/// when clicked is worse than no checkbox.
+fn toggle_show_in_dock(app: &tauri::AppHandle) {
+    use tauri::Manager;
+    let path = app.state::<crate::paths::AppPaths>().desktop_prefs_path();
+    let mut prefs = crate::workspace_config::load_desktop_prefs(&path);
+    prefs.show_in_dock = !prefs.show_in_dock;
+    crate::startup::apply_dock_visibility(app, prefs.show_in_dock);
+    if let Err(e) = crate::workspace_config::save_desktop_prefs(&path, &prefs) {
+        eprintln!("magnis: could not save the Dock preference: {e}");
+    }
+}
+
+/// Flip Start-at-Login. The user's choice from here is final: nothing
+/// re-enables it later.
+fn toggle_start_at_login(app: &tauri::AppHandle) {
+    use tauri_plugin_autostart::ManagerExt;
+    let manager = app.autolaunch();
+    let enabled = manager.is_enabled().unwrap_or(false);
+    let result = if enabled {
+        manager.disable()
+    } else {
+        manager.enable()
+    };
+    if let Err(e) = result {
+        eprintln!("magnis: could not change Start at Login: {e}");
+    }
 }
 
 /// Bring the window back. Used by the tray, by a second launch, and by the

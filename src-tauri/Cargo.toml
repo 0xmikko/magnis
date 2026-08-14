@@ -23,6 +23,7 @@ tauri-plugin-dialog = "2"
 # collapse into the running instance rather than start a rival owner of the
 # same data directory.
 tauri-plugin-single-instance = "2"
+tauri-plugin-autostart = "2"
 # PROBE (D1b): does the embedded-PostgreSQL crate build inside the Tauri crate?
 postgresql_embedded = { version = "0.20", default-features = false, features = ["tokio", "theseus", "bundled"] }
 

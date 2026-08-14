@@ -6,6 +6,7 @@ mod commands;
 mod paths;
 mod ports;
 mod postgres;
+mod startup;
 mod tray;
 mod workspace_config;
 
@@ -86,20 +87,66 @@ fn main() -> anyhow::Result<()> {
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             tray::show_main_window(app);
         }))
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec![startup::QUIET_FLAG]),
+        ))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(app_paths)
         .manage(BackendState(Mutex::new(backend)))
         .setup(move |app| {
-            // Toggle state is not persisted yet — D3 adds that together with
-            // Login Items. Passing today's values keeps the menu honest rather
-            // than inventing storage before it is used.
+            use tauri::Manager;
+            use tauri_plugin_autostart::ManagerExt;
+
+            let prefs_path = app.state::<AppPaths>().desktop_prefs_path();
+            let mut prefs = workspace_config::load_desktop_prefs(&prefs_path);
+
+            // Enable Start-at-Login once, and only from somewhere the bundle
+            // will still be after a reboot. Enabling from a mounted image or a
+            // translocated quarantine path records a login item that breaks on
+            // eject — and because we never re-enable, that break is permanent.
+            let autolaunch = app.autolaunch();
+            let currently_enabled = autolaunch.is_enabled().unwrap_or(false);
+            let persistent = std::env::current_exe()
+                .ok()
+                .map(|exe| startup::is_persistent_location(&exe))
+                .unwrap_or(false);
+            if startup::should_enable_autostart(
+                prefs.autostart_decided,
+                currently_enabled,
+                persistent,
+            ) {
+                match autolaunch.enable() {
+                    Ok(()) => {
+                        prefs.autostart_decided = true;
+                        if let Err(e) = workspace_config::save_desktop_prefs(&prefs_path, &prefs) {
+                            eprintln!("magnis: could not record the autostart decision: {e}");
+                        }
+                    }
+                    Err(e) => eprintln!("magnis: could not enable Start at Login: {e}"),
+                }
+            }
+
+            // Quiet start: Login Items launches with the flag, and the window
+            // is simply never shown. The window is created hidden either way,
+            // so there is one code path and no race with the tray.
+            if startup::should_create_window(std::env::args()) {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                }
+            } else {
+                println!("Quiet start: running in the status bar with no window");
+            }
+
+            startup::apply_dock_visibility(app.handle(), prefs.show_in_dock);
+
             tray::build(
                 app.handle(),
                 &tray::TrayStatus::Starting,
                 tray::TrayToggles {
-                    show_in_dock: true,
-                    start_at_login: false,
+                    show_in_dock: prefs.show_in_dock,
+                    start_at_login: autolaunch.is_enabled().unwrap_or(false),
                 },
             )?;
             tray::spawn_status_poll(app.handle().clone(), poll_url.clone());

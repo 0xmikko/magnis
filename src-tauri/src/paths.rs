@@ -127,6 +127,10 @@ impl AppPaths {
         self.app_data_dir.join("workspaces.json")
     }
 
+    pub fn desktop_prefs_path(&self) -> PathBuf {
+        self.app_data_dir.join("desktop.json")
+    }
+
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     pub fn logs_dir(&self) -> &PathBuf {
         &self.logs_dir

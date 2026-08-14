@@ -21,7 +21,8 @@
         "dragDropEnabled": false,
         "hiddenTitle": true,
         "resizable": true,
-        "fullscreen": false
+        "fullscreen": false,
+        "visible": false
       }
     ],
     "security": {
