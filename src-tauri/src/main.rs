@@ -6,6 +6,7 @@ mod commands;
 mod paths;
 mod ports;
 mod postgres;
+mod tray;
 mod workspace_config;
 
 use backend_process::{BackendHandle, BackendProcessManager};
@@ -74,13 +75,45 @@ fn main() -> anyhow::Result<()> {
             return Err(e);
         }
     };
-    println!("Backend base URL: {}", backend.base_url());
+    let poll_url = backend.base_url().to_string();
+    println!("Backend base URL: {poll_url}");
 
     let app = tauri::Builder::default()
+        // FIRST, as the plugin's docs require. A second launch must collapse
+        // into the running instance: two copies would be two owners of one data
+        // directory, and the second would fail on the lock anyway — but late,
+        // and after having tried to touch it.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            tray::show_main_window(app);
+        }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(app_paths)
         .manage(BackendState(Mutex::new(backend)))
+        .setup(move |app| {
+            // Toggle state is not persisted yet — D3 adds that together with
+            // Login Items. Passing today's values keeps the menu honest rather
+            // than inventing storage before it is used.
+            tray::build(
+                app.handle(),
+                &tray::TrayStatus::Starting,
+                tray::TrayToggles {
+                    show_in_dock: true,
+                    start_at_login: false,
+                },
+            )?;
+            tray::spawn_status_poll(app.handle().clone(), poll_url.clone());
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                // Closing the window hides it; the app keeps running in the
+                // status bar and the backend keeps indexing. The only exit is
+                // the tray's Quit.
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             get_backend_config,
             get_workspace_config,
@@ -91,6 +124,18 @@ fn main() -> anyhow::Result<()> {
         .expect("error while building tauri application");
 
     app.run(|app_handle, event| {
+        // macOS: clicking the dock icon of a running app with no visible window.
+        // Every other platform reaches the same place through the
+        // single-instance callback above.
+        #[cfg(target_os = "macos")]
+        if let tauri::RunEvent::Reopen {
+            has_visible_windows: false,
+            ..
+        } = event
+        {
+            tray::show_main_window(app_handle);
+        }
+
         if matches!(
             event,
             tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
