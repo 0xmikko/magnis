@@ -286,21 +286,25 @@ impl BackendProcessManager {
     /// - `STORAGE_DIR=<data_root>` — file storage lives under the same root.
     /// - `MAGNIS_LOCAL_PG=embedded` — desktop ships native embedded Postgres
     ///   (bundled into magnis-server); no PGlite sidecar.
-    pub fn start(data_root: &std::path::Path, port: u16) -> Result<Self> {
+    pub fn start(data_root: &std::path::Path, port: u16, database_url: &str) -> Result<Self> {
         let bin = Self::server_binary_path()?;
         let data_root_str = data_root
             .to_str()
             .context("Data root path is not valid UTF-8")?;
         let mut cmd = Command::new(&bin);
-        cmd.env("MAGNIS_DB_MODE", "local")
-            .env("DB_PATH", data_root_str)
+        // SERVER mode against the cluster the SHELL owns (DEC-18). Not `local`:
+        // that branch treats an injected DATABASE_URL as "a harness already
+        // applied the schema" and runs NO migrations, so the app would boot on
+        // an empty database. `DB_PATH` and `MAGNIS_LOCAL_PG` are retired for
+        // the same reason they are no longer true — the backend does not own a
+        // database any more, and `MAGNIS_LOCAL_PG` under server mode is not
+        // merely unused: the backend throws on it.
+        cmd.env("MAGNIS_DB_MODE", "server")
+            .env("DATABASE_URL", database_url)
             // ONE ROOT: the backend derives its own paths from the same home
             // the shell resolved, instead of each side guessing separately.
             .env("MAGNIS_HOME", data_root_str)
             .env("STORAGE_DIR", data_root_str)
-            // Desktop ships native embedded Postgres (bundled into magnis-server);
-            // no PGlite sidecar. The PGlite opt-out is dev-only (not shipped).
-            .env("MAGNIS_LOCAL_PG", "embedded")
             .env("PORT", port.to_string())
             // Allow the Tauri webview origins (wins over any machine .env list).
             .env("CORS_ALLOWED_ORIGINS", DESKTOP_CORS_ORIGINS)
@@ -568,8 +572,14 @@ impl Drop for BackendProcessManager {
 /// mode) or a launchd-managed service it only connects to (`Service` mode). The
 /// commands read `base_url()` uniformly; only `Spawn` is stopped on window exit.
 pub enum BackendHandle {
-    /// `Spawn` mode — GUI owns the child and stops it on exit.
-    Spawned(BackendProcessManager),
+    /// `Spawn` mode — the shell owns BOTH the cluster and the child, and stops
+    /// them in that order on exit: backend first, then PostgreSQL. The reverse
+    /// pulls the database out from under a live pool and hands the backend
+    /// connection errors on its way out (DEC-9).
+    Spawned {
+        manager: Box<BackendProcessManager>,
+        cluster: Box<crate::postgres::PostgresHandle>,
+    },
     /// `Service` mode — connect-only; launchd owns the lifecycle, so the service
     /// intentionally outlives the GUI window (DEC-3/DEC-11). No child here.
     Service { base_url: String },
@@ -578,7 +588,7 @@ pub enum BackendHandle {
 impl BackendHandle {
     pub fn base_url(&self) -> &str {
         match self {
-            BackendHandle::Spawned(m) => m.base_url(),
+            BackendHandle::Spawned { manager, .. } => manager.base_url(),
             BackendHandle::Service { base_url } => base_url,
         }
     }
@@ -586,8 +596,11 @@ impl BackendHandle {
     /// Stop the spawned child (`Spawn` mode). In `Service` mode this is a no-op:
     /// the launchd services keep running so background sync survives window close.
     pub fn stop(&mut self) {
-        if let BackendHandle::Spawned(m) = self {
-            m.stop();
+        if let BackendHandle::Spawned { manager, cluster } = self {
+            // Ordered teardown, and the order is the invariant: the child must
+            // be gone before the database it is connected to goes away.
+            manager.stop();
+            cluster.stop();
         }
     }
 }

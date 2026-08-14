@@ -6,6 +6,7 @@ mod commands;
 mod desktop_mode;
 mod paths;
 mod ports;
+mod postgres;
 // Background-service install is macOS-only (DEC-10); on other OSes the desktop
 // always uses Spawn mode and never references this module.
 #[cfg(target_os = "macos")]
@@ -31,6 +32,12 @@ pub struct BackendState(pub Mutex<BackendHandle>);
 fn build_backend(mode: DesktopMode, app_paths: &AppPaths) -> anyhow::Result<BackendHandle> {
     match mode {
         DesktopMode::Spawn => {
+            // Order is fixed (DEC-9): PostgreSQL first, then the backend — the
+            // child needs a reachable DATABASE_URL the moment it boots.
+            let pg_port = ports::bind_port("postgres", None)?.release();
+            println!("PostgreSQL port: {pg_port}");
+            let cluster = postgres::PostgresHandle::start(app_paths.data_root(), pg_port)?;
+
             // Bind before spawning: the port is HELD by this process until the
             // moment the child takes it, so a collision is detected here — with
             // a message naming the port — instead of surfacing as an opaque
@@ -46,8 +53,12 @@ fn build_backend(mode: DesktopMode, app_paths: &AppPaths) -> anyhow::Result<Back
                 }
             );
             let port = reserved.release();
-            let manager = BackendProcessManager::start(app_paths.data_root(), port)?;
-            Ok(BackendHandle::Spawned(manager))
+            let manager =
+                BackendProcessManager::start(app_paths.data_root(), port, &cluster.database_url())?;
+            Ok(BackendHandle::Spawned {
+                manager: Box::new(manager),
+                cluster: Box::new(cluster),
+            })
         }
         DesktopMode::Service => {
             #[cfg(target_os = "macos")]
