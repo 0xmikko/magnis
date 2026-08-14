@@ -19,6 +19,8 @@ reqwest = { version = "0.12", default-features = false, features = ["blocking", 
 tracing-subscriber = "0.3"
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
+# PROBE (D1b): does the embedded-PostgreSQL crate build inside the Tauri crate?
+postgresql_embedded = { version = "0.20", default-features = false, features = ["tokio", "theseus", "bundled"] }
 
 [target.'cfg(unix)'.dependencies]
 # SIGTERM for graceful backend shutdown (std Child::kill is SIGKILL only).

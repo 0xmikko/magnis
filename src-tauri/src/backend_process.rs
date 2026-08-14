@@ -14,8 +14,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 
-const DEFAULT_PORT: u16 = 3765;
-
 /// CORS origins the desktop backend must allow: the Tauri webview origins plus
 /// loopback. Set explicitly so it ALWAYS wins over any `CORS_ALLOWED_ORIGINS`
 /// a `.env` on the machine carries — `dotenvy` walks parent dirs and would
@@ -561,13 +559,10 @@ impl Drop for BackendProcessManager {
     }
 }
 
-/// Pick a port for the backend. Reads MAGNIS_BACKEND_PORT env var, falls back to DEFAULT_PORT.
-pub fn pick_port() -> u16 {
-    std::env::var("MAGNIS_BACKEND_PORT")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(DEFAULT_PORT)
-}
+// `pick_port()` lived here and picked nothing: it returned MAGNIS_BACKEND_PORT
+// or a hard-coded default, bound nothing, and so could not tell a busy port
+// from a free one. Replaced by `ports::bind_port`, which reserves before
+// handing over (DEC-2).
 
 /// The backend the GUI talks to: either a child process it spawned (dev/`Spawn`
 /// mode) or a launchd-managed service it only connects to (`Service` mode). The

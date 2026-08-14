@@ -5,13 +5,14 @@ mod backend_process;
 mod commands;
 mod desktop_mode;
 mod paths;
+mod ports;
 // Background-service install is macOS-only (DEC-10); on other OSes the desktop
 // always uses Spawn mode and never references this module.
 #[cfg(target_os = "macos")]
 mod service;
 mod workspace_config;
 
-use backend_process::{pick_port, BackendHandle, BackendProcessManager};
+use backend_process::{BackendHandle, BackendProcessManager};
 use commands::backend::get_backend_config;
 use commands::oauth::open_oauth_window;
 use commands::service::uninstall_background_service;
@@ -30,7 +31,21 @@ pub struct BackendState(pub Mutex<BackendHandle>);
 fn build_backend(mode: DesktopMode, app_paths: &AppPaths) -> anyhow::Result<BackendHandle> {
     match mode {
         DesktopMode::Spawn => {
-            let port = pick_port();
+            // Bind before spawning: the port is HELD by this process until the
+            // moment the child takes it, so a collision is detected here — with
+            // a message naming the port — instead of surfacing as an opaque
+            // bind failure from a child that has already been launched.
+            let pin = ports::parse_pin("backend", std::env::var("MAGNIS_BACKEND_PORT").ok())?;
+            let reserved = ports::bind_port("backend", pin)?;
+            println!(
+                "Backend port: {} ({})",
+                reserved.port(),
+                match pin {
+                    Some(_) => "pinned via MAGNIS_BACKEND_PORT",
+                    None => "bound free",
+                }
+            );
+            let port = reserved.release();
             let manager = BackendProcessManager::start(app_paths.data_root(), port)?;
             Ok(BackendHandle::Spawned(manager))
         }
