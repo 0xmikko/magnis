@@ -50,9 +50,9 @@ echo "bundle-agent: wrote $out ($(du -h "$out" | cut -f1))"
 # The MCP stdio proxy must ALSO ship. `bun build --compile` embeds the agent's
 # own modules, but the proxy is spawned as a SEPARATE process
 # (`node <proxy>`, engines/claude.ts + codex.ts) and inside a compiled binary
-# `__dirname` no longer resolves to it — the plist therefore points
-# MAGNIS_MCP_PROXY_PATH at Contents/Resources/mcp-stdio-proxy.mjs. Without this
-# copy that resource does not exist and claude/codex lose EVERY Magnis tool.
+# `__dirname` no longer resolves to it — the desktop shell therefore passes
+# MAGNIS_MCP_PROXY_PATH to the backend, which forwards it to the agent. Without
+# this copy that resource does not exist and claude/codex lose EVERY Magnis tool.
 PROXY_SRC="$REPO_ROOT/agent/src/mcp-stdio-proxy.mjs"
 PROXY_DEST="$REPO_ROOT/desktop/src-tauri/mcp-stdio-proxy.mjs"
 [[ -f "$PROXY_SRC" ]] || { echo "bundle-agent: FATAL — missing $PROXY_SRC" >&2; exit 1; }
