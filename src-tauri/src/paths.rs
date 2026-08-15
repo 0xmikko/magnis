@@ -157,6 +157,82 @@ pub fn ensure_plugin_tree(data_root: &std::path::Path) -> Result<PathBuf> {
     Ok(plugins_dir)
 }
 
+/// Read or create the JWT signing secret for this data root.
+///
+/// The backend used to do this itself — but only in local database mode. The
+/// shell now starts it in **server** mode, where the backend deliberately
+/// refuses to invent one: "AUTH_JWT_SECRET must be set (no derivation, no
+/// random fallback)". So ownership moved here with the database, and this is
+/// the port of those semantics: 32 random bytes, base64, `<data_root>/
+/// jwt.secret`, created exclusively at 0600, and read back unchanged on every
+/// later start.
+///
+/// Persistence is the point. A secret regenerated per launch invalidates every
+/// session the user had, silently, on a restart.
+pub fn ensure_jwt_secret(data_root: &std::path::Path) -> Result<String> {
+    use std::io::Write;
+
+    std::fs::create_dir_all(data_root)
+        .with_context(|| format!("creating {}", data_root.display()))?;
+    let path = data_root.join("jwt.secret");
+
+    match std::fs::read_to_string(&path) {
+        Ok(existing) => {
+            let trimmed = existing.trim();
+            if !trimmed.is_empty() {
+                return Ok(trimmed.to_string());
+            }
+            // An empty file is a half-finished write from a previous run, not a
+            // secret. Replacing it is correct; keeping it would hand the
+            // backend an empty string it will reject anyway.
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e).with_context(|| format!("reading {}", path.display())),
+    }
+
+    let mut bytes = [0u8; 32];
+    getrandom::getrandom(&mut bytes)
+        .map_err(|e| anyhow::anyhow!("generating a JWT secret: {e}"))?;
+    let secret = base64_encode(&bytes);
+
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options
+        .open(&path)
+        .with_context(|| format!("creating {}", path.display()))?;
+    file.write_all(secret.as_bytes())
+        .with_context(|| format!("writing {}", path.display()))?;
+
+    Ok(secret)
+}
+
+/// Minimal base64, so a 32-byte secret does not pull in a dependency.
+fn base64_encode(input: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
+    for chunk in input.chunks(3) {
+        let b = [
+            chunk[0],
+            *chunk.get(1).unwrap_or(&0),
+            *chunk.get(2).unwrap_or(&0),
+        ];
+        let n = (u32::from(b[0]) << 16) | (u32::from(b[1]) << 8) | u32::from(b[2]);
+        for i in 0..4 {
+            if i <= chunk.len() {
+                out.push(TABLE[((n >> (18 - 6 * i)) & 0x3F) as usize] as char);
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
+}
+
 /// The public plugin catalog channel: the `catalog` branch of the plugins repo,
 /// served raw. A BASE url — never suffixed with `index.json`, because the
 /// fetcher appends the relative path itself.
@@ -290,6 +366,59 @@ mod tests {
         let second = ensure_plugin_tree(&root).unwrap();
         assert_eq!(first, second);
         assert!(second.join("modules").is_dir());
+    }
+}
+
+#[cfg(test)]
+mod jwt_tests {
+    use super::ensure_jwt_secret;
+
+    // @test-id: tst_desktop_jwt_001
+    // @invariant: INV-DTR-23
+    // @covers: paths::ensure_jwt_secret
+    // @deterministic: yes
+    // @fixtures: a temporary data root
+    //
+    // The backend refuses to invent a signing secret in server mode — "no
+    // derivation, no random fallback" — so the shell owning one is what makes
+    // the packaged app boot at all. Persistence is the second half: a secret
+    // regenerated per launch silently invalidates every session on a restart.
+    #[test]
+    fn tst_desktop_jwt_001_generated_once_then_read_back() {
+        let dir = std::env::temp_dir().join(format!("magnis-jwt-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+
+        let first = ensure_jwt_secret(&dir).expect("first call generates");
+        assert!(
+            first.len() >= 40,
+            "32 random bytes, base64: {}",
+            first.len()
+        );
+
+        let second = ensure_jwt_secret(&dir).expect("second call reads back");
+        assert_eq!(first, second, "a restart must not invalidate every session");
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(dir.join("jwt.secret"))
+                .expect("stat")
+                .permissions()
+                .mode();
+            assert_eq!(
+                mode & 0o077,
+                0,
+                "the secret must not be group/world readable"
+            );
+        }
+
+        // A half-written empty file is not a secret; it must be replaced rather
+        // than handed to a backend that will reject an empty string.
+        std::fs::write(dir.join("jwt.secret"), "").expect("truncate");
+        let third = ensure_jwt_secret(&dir).expect("regenerates over an empty file");
+        assert!(!third.is_empty());
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
 

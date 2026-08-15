@@ -28,8 +28,30 @@ pub struct SourceStatus {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Account {
+    /// The account's own health. Dropping this was a real defect: an account
+    /// whose OAuth has expired has no *working* surface and no *broken*
+    /// surface either — its surfaces are simply `never_synced` — so the line
+    /// read "Connected" for an account that cannot sync at all. The wire
+    /// carries the answer one level up, and the TypeScript mirror checks it
+    /// first for the same reason.
+    pub state: AccountState,
     #[serde(default)]
     pub surfaces: Vec<SurfaceSync>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum AccountState {
+    Connected,
+    AuthLost,
+    #[serde(other)]
+    Unknown,
+}
+
+impl AccountState {
+    fn needs_attention(&self) -> bool {
+        !matches!(self, AccountState::Connected)
+    }
 }
 
 /// The seven surface states. `Unknown` is not a wire variant: it is what a
@@ -131,6 +153,21 @@ pub fn status_line(sources: &[SourceStatus]) -> String {
     if sources.iter().all(|s| s.accounts.is_empty()) {
         return "No accounts connected".to_string();
     }
+
+    // An account that lost its authorisation is checked BEFORE anything about
+    // its surfaces: a signed-out account has nothing working and nothing
+    // failing, so every surface-level signal reads healthy.
+    let broken_accounts = sources
+        .iter()
+        .flat_map(|s| s.accounts.iter())
+        .filter(|a| a.state.needs_attention())
+        .count();
+    if broken_accounts > 0 {
+        return match broken_accounts {
+            1 => "1 account needs attention".to_string(),
+            n => format!("{n} accounts need attention"),
+        };
+    }
     if let Some(working) = surfaces.iter().find(|s| s.is_working()) {
         return match working.surface() {
             Some(name) => format!("Indexing {name}…"),
@@ -214,6 +251,64 @@ mod tests {
         }
     }
 
+    // @test-id: tst_desktop_trayfmt_003
+    // @invariant: INV-DTR-9
+    // @covers: source_status::status_line, AccountState
+    // @deterministic: yes
+    // @fixtures: tests/fixtures/source-status/oauth-authlost-expired.json,
+    //            tests/fixtures/source-status/oauth-connected-multi.json
+    //
+    // The two assertions the shared fixtures exist for, and which the badge law
+    // alone does not make: an account that lost its authorisation must not read
+    // as healthy, and a settled surface's number is the graph total, never the
+    // last run's ingested count.
+    #[test]
+    fn tst_desktop_trayfmt_003_broken_account_and_the_settled_number() {
+        let by_name: std::collections::HashMap<String, Vec<SourceStatus>> =
+            load_all().into_iter().collect();
+
+        let expired = by_name
+            .get("oauth-authlost-expired.json")
+            .expect("the auth-lost fixture");
+        let line = status_line(expired);
+        assert!(
+            line.contains("need") && line.contains("attention"),
+            "an expired account must not read as healthy, got {line:?}"
+        );
+
+        // The "Email · 1" incident, as an assertion. This fixture pairs a
+        // settled email surface carrying items 17095 with a run that ingested
+        // 100; a mirror reading the run would render 100.
+        let multi = by_name
+            .get("oauth-connected-multi.json")
+            .expect("the multi-account fixture");
+        let counts: Vec<i64> = multi
+            .iter()
+            .flat_map(|s| s.accounts.iter())
+            .flat_map(|a| a.surfaces.iter())
+            .filter_map(|s| s.badge_count())
+            .collect();
+        assert!(
+            counts.contains(&17095),
+            "the settled surface must report the graph total, got {counts:?}"
+        );
+        assert!(
+            !counts.contains(&100),
+            "100 is the run's ingested count and must never become a badge: {counts:?}"
+        );
+
+        // Guard against the whole suite going vacuous if the wire shape moves:
+        // every field is `#[serde(default)]`, so a changed payload would parse
+        // into zero surfaces and every loop above would run zero times.
+        let surfaces: usize = by_name
+            .values()
+            .flat_map(|v| v.iter())
+            .flat_map(|s| s.accounts.iter())
+            .map(|a| a.surfaces.len())
+            .sum();
+        assert!(surfaces >= 5, "expected real surfaces, examined {surfaces}");
+    }
+
     // @test-id: tst_desktop_trayfmt_002
     // @invariant: INV-DTR-9
     // @covers: source_status::SurfaceSync (unknown variant), status_line
@@ -223,7 +318,8 @@ mod tests {
         // An eighth state the shell has never heard of must not fail to parse:
         // that would strand the tray on "unavailable" against a perfectly
         // healthy backend, and only a rebuild would fix it.
-        let raw = r#"[{"source_id":"google","accounts":[{"display":"x","surfaces":[
+        let raw = r#"[{"source_id":"google","accounts":[{"display":"x",
+            "state":{"state":"connected"},"surfaces":[
             {"state":"teleporting","surface":"email"}]}]}]"#;
         let parsed: Vec<SourceStatus> = serde_json::from_str(raw).expect("unknown variant parses");
         let surface = &parsed[0].accounts[0].surfaces[0];

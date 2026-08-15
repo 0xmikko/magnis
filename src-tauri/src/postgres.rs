@@ -100,6 +100,10 @@ pub struct PostgresHandle {
     pg: postgresql_embedded::PostgreSQL,
     _lock: DataDirLock,
     port: u16,
+    /// `stop()` is reachable twice — Tauri fires both `ExitRequested` and
+    /// `Exit` — and once more from `Drop`. Without this the second call logs a
+    /// failure that never happened.
+    stopped: bool,
 }
 
 impl PostgresHandle {
@@ -162,6 +166,7 @@ impl PostgresHandle {
             pg,
             _lock: lock,
             port,
+            stopped: false,
         })
     }
 
@@ -176,9 +181,29 @@ impl PostgresHandle {
     /// Stop the cluster. Called AFTER the backend has exited: stopping the
     /// database under a live pool hands the backend connection errors on its
     /// way out.
-    pub fn stop(&self) {
+    pub fn stop(&mut self) {
+        if self.stopped {
+            return;
+        }
+        self.stopped = true;
         if let Err(e) = tauri::async_runtime::block_on(self.pg.stop()) {
             eprintln!("magnis: PostgreSQL stop failed: {e}");
+        }
+    }
+}
+
+impl Drop for PostgresHandle {
+    /// Stop the cluster if the handle goes away without an explicit `stop()`.
+    ///
+    /// `temporary: false` means `postgresql_embedded` will not do this for us —
+    /// deliberately, since the cluster is the user's data. But it also means a
+    /// startup that fails AFTER the cluster came up (a busy pinned port, a
+    /// missing binary, a health timeout) would return `Err` and leave a live
+    /// postmaster with no owner. It self-heals on the next boot through the
+    /// orphan path; leaking it in the first place is still wrong.
+    fn drop(&mut self) {
+        if !self.stopped {
+            self.stop();
         }
     }
 }
@@ -281,13 +306,8 @@ mod tests {
     // @test-id: tst_desktop_pgstart_001
     // @invariant: INV-DTR-17 (cluster reuse), INV-DTR-18 (stale pid recovers)
     // @covers: postgres::PostgresHandle::start/stop, stop_orphan_postmaster
-    // @deterministic: yes (given the binaries; see the guard below)
+    // @deterministic: yes
     // @fixtures: a real cluster in a temporary data root, on a bound port
-    //
-    // Real clusters need the extracted binaries. Absent, this SKIPS — and a
-    // silent skip reported as green is exactly the failure the backend already
-    // paid to prevent, so `MAGNIS_DESKTOP_PG_REQUIRE=1` turns the skip into a
-    // hard failure for anyone who means to run it.
     #[test]
     fn tst_desktop_pgstart_001_start_reuse_and_stale_pid() {
         // No skip guard: the `bundled` feature compiles the archive INTO this
@@ -300,7 +320,7 @@ mod tests {
             .expect("bind a free port")
             .release();
 
-        let pg = super::PostgresHandle::start(&dir, port).expect("first start");
+        let mut pg = super::PostgresHandle::start(&dir, port).expect("first start");
         assert!(
             pg.database_url().contains(&port.to_string()),
             "the URL must carry the port we bound"
@@ -313,13 +333,18 @@ mod tests {
         drop(pg);
 
         // Second start on the same root: the cluster is REUSED, not rebuilt.
+        // Identity, not size: PG_VERSION holds a constant major-version string,
+        // so comparing its LENGTH passes even after a full re-initdb — the
+        // assertion could not fail. The inode changes only if the cluster was
+        // actually rebuilt.
+        use std::os::unix::fs::MetadataExt;
         let marker = dir.join("pgdata-native").join("PG_VERSION");
-        let before = std::fs::metadata(&marker).expect("PG_VERSION exists").len();
-        let pg2 = super::PostgresHandle::start(&dir, port).expect("restart on the same root");
+        let before = std::fs::metadata(&marker).expect("PG_VERSION exists").ino();
+        let mut pg2 = super::PostgresHandle::start(&dir, port).expect("restart on the same root");
         assert_eq!(
             std::fs::metadata(&marker)
                 .expect("PG_VERSION still there")
-                .len(),
+                .ino(),
             before,
             "restart must reuse the cluster, not re-initdb it"
         );
@@ -329,7 +354,7 @@ mod tests {
         // A stale pid file (process long gone) must not block a start.
         std::fs::write(dir.join("pgdata-native").join("postmaster.pid"), "999999\n")
             .expect("plant a stale pid file");
-        let pg3 = super::PostgresHandle::start(&dir, port).expect("stale pid must recover");
+        let mut pg3 = super::PostgresHandle::start(&dir, port).expect("stale pid must recover");
         pg3.stop();
         drop(pg3);
 
