@@ -53,6 +53,11 @@ impl MenuEntry {
 pub enum TrayStatus {
     /// Nothing polled yet.
     Starting,
+    /// Startup itself failed. Distinct from `Unavailable`, which means a
+    /// running app cannot reach a backend: this one means there is no backend
+    /// and never was. Quiet start has no window and no console, so without a
+    /// tray state a failed launch from Login Items vanishes with no trace.
+    FailedToStart { reason: String },
     /// A successful poll. `line` is already rendered for display.
     Ok { line: String },
     /// The backend answered, but not usefully — or did not answer at all.
@@ -65,6 +70,7 @@ impl TrayStatus {
     fn label(&self) -> String {
         match self {
             TrayStatus::Starting => "Starting…".to_string(),
+            TrayStatus::FailedToStart { reason } => format!("Could not start — {reason}"),
             TrayStatus::Ok { line } => line.clone(),
             TrayStatus::Unavailable { reason } => format!("Unavailable — {reason}"),
         }
@@ -194,6 +200,49 @@ fn toggle_start_at_login(app: &tauri::AppHandle) {
     if let Err(e) = result {
         eprintln!("magnis: could not change Start at Login: {e}");
     }
+}
+
+/// Turn a startup error into the title and body a user should see.
+///
+/// Re-homed from the deleted launchd tree, where it was the one piece of that
+/// subsystem worth keeping: a guard failure gets actionable copy, and anything
+/// else keeps its underlying text rather than being flattened into a shrug.
+/// Pure, so the mapping is testable without a GUI.
+pub fn startup_error_dialog(error: &str) -> (String, String) {
+    if error.contains("/Applications") || error.contains("persistent") {
+        return (
+            "Move Magnis to Applications".to_string(),
+            "Magnis is running from a temporary location. Drag it to your \
+             Applications folder and open it again."
+                .to_string(),
+        );
+    }
+    if error.contains("another Magnis instance") || error.contains("data-dir lock") {
+        return (
+            "Magnis is already running".to_string(),
+            "Another copy of Magnis owns this data folder. Quit it first.".to_string(),
+        );
+    }
+    (
+        "Magnis could not start".to_string(),
+        // The underlying text is preserved deliberately: a generic message
+        // here is what turns a diagnosable failure into a support ticket.
+        error.to_string(),
+    )
+}
+
+/// Drive the tray into its startup-failure state.
+///
+/// The surface that replaced the deleted launchd dialog. It is reachable only
+/// because the tray is built BEFORE the parts of startup that can fail — the
+/// ordering is the whole point, not an implementation detail.
+pub fn show_startup_failure(app: &tauri::AppHandle, reason: &str) {
+    update_status(
+        app,
+        &TrayStatus::FailedToStart {
+            reason: reason.to_string(),
+        },
+    );
 }
 
 /// Bring the window back. Used by the tray, by a second launch, and by the
@@ -369,7 +418,7 @@ fn update_status(app: &tauri::AppHandle, status: &TrayStatus) {
 
 #[cfg(test)]
 mod tests {
-    use super::{menu_model, TrayStatus, TrayToggles};
+    use super::{menu_model, startup_error_dialog, TrayStatus, TrayToggles};
 
     const TOGGLES: TrayToggles = TrayToggles {
         show_in_dock: true,
@@ -490,5 +539,57 @@ mod tests {
                 "a failure must never keep rendering the last good line"
             );
         }
+    }
+
+    // @test-id: tst_desktop_startupfail_001
+    // @invariant: INV-DTR-27
+    // @covers: tray::startup_error_dialog, tray::TrayStatus::FailedToStart
+    // @deterministic: yes
+    //
+    // Restores the coverage of the deleted `tst_desktop_dialog_001`. A failed
+    // start under quiet launch has no window and no console, so this mapping is
+    // the entire user-visible account of what went wrong.
+    #[test]
+    fn tst_desktop_startupfail_001_a_failed_start_says_why() {
+        // The guard case earns copy that names the fix. Matching on the message
+        // is what makes "move it to Applications" reachable at all.
+        let (title, body) =
+            startup_error_dialog("refusing to start: /Volumes/Magnis is not /Applications");
+        assert!(
+            title.contains("Applications") && body.contains("Applications"),
+            "the install-location guard must say what to do, got {title:?} / {body:?}"
+        );
+
+        // Everything else keeps its own text. Flattening an arbitrary failure
+        // into a generic apology is what turns a diagnosable bug into a
+        // support ticket, so the underlying words must survive verbatim.
+        let raw = "postgres exited with status 1: could not bind port 5432";
+        let (title, body) = startup_error_dialog(raw);
+        assert!(!title.is_empty(), "a dialog with no title is not a dialog");
+        assert!(
+            body.contains(raw),
+            "the underlying failure must be preserved, got {body:?}"
+        );
+
+        // And the tray must carry the same reason: the dialog is dismissed once,
+        // the menu is where the user looks afterwards.
+        let entries = menu_model(
+            &TrayStatus::FailedToStart {
+                reason: raw.to_string(),
+            },
+            TrayToggles {
+                show_in_dock: true,
+                start_at_login: false,
+            },
+        );
+        let labels: Vec<&str> = entries.iter().map(|e| e.label.as_str()).collect();
+        assert!(
+            labels.iter().any(|l| l.contains(raw)),
+            "the failure reason must be visible in the menu, got {labels:?}"
+        );
+        assert!(
+            entries.iter().any(|e| e.id == "quit"),
+            "a failed start must still be quittable from the tray"
+        );
     }
 }

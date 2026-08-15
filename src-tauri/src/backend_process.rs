@@ -222,21 +222,30 @@ impl BackendProcessManager {
     /// Spawn magnis-server in Local mode against `data_root` and wait for `/health`.
     ///
     /// Local-mode env contract (see `docs/deployment/local.md`):
-    /// - `MAGNIS_DB_MODE=local` — selects `DbMode::Local` in the backend.
-    /// - `DB_PATH=<data_root>` — directory that owns pgdata/, magnis.lock, identity files.
-    /// - `STORAGE_DIR=<data_root>` — file storage lives under the same root.
-    /// - `MAGNIS_LOCAL_PG=embedded` — desktop ships native embedded Postgres
-    ///   (bundled into magnis-server); no PGlite sidecar.
-    pub fn start(data_root: &std::path::Path, port: u16, database_url: &str) -> Result<Self> {
+    /// The database contract is in [`apply_database_env`], which is where it
+    /// is also asserted; the rest of the child's environment is set below.
+    /// Compose the command the backend child is spawned with — every variable,
+    /// no side effects.
+    ///
+    /// Split out from [`Self::start`] so the child's environment can be
+    /// asserted without a running process. That is not a stylistic
+    /// preference: the one shipped boot-stopper on this branch was a
+    /// *missing* variable, invisible to any test that could not enumerate
+    /// what `start` sets.
+    fn build_child_command(
+        bin: &std::path::Path,
+        data_root: &std::path::Path,
+        port: u16,
+        database_url: &str,
+    ) -> Result<Command> {
         // Server mode means the backend refuses to invent a signing secret —
         // "no derivation, no random fallback". Ownership moved here with the
         // database, so the shell supplies it or nothing boots.
         let jwt_secret = crate::paths::ensure_jwt_secret(data_root)?;
-        let bin = Self::server_binary_path()?;
         let data_root_str = data_root
             .to_str()
             .context("Data root path is not valid UTF-8")?;
-        let mut cmd = Command::new(&bin);
+        let mut cmd = Command::new(bin);
         // SERVER mode against the cluster the SHELL owns (DEC-18). Not `local`:
         // that branch treats an injected DATABASE_URL as "a harness already
         // applied the schema" and runs NO migrations, so the app would boot on
@@ -244,11 +253,21 @@ impl BackendProcessManager {
         // the same reason they are no longer true — the backend does not own a
         // database any more, and `MAGNIS_LOCAL_PG` under server mode is not
         // merely unused: the backend throws on it.
+        // The payload `scripts/build-backend.sh` stages beside the binary:
+        // `data/` and `migrations/`. A compiled bun binary resolves
+        // `import.meta.url` to the virtual `/$bunfs` filesystem, so the backend
+        // cannot find these by looking near itself — the launcher must say
+        // where they are. Set unconditionally: the backend does not read it
+        // yet, and pointing at the directory we just resolved the binary from
+        // is true whether it does or not.
+        let runtime_root = bin
+            .parent()
+            .context("Server binary has no parent directory")?
+            .to_str()
+            .context("Server binary directory is not valid UTF-8")?
+            .to_string();
         apply_database_env(&mut cmd, data_root_str, database_url, &jwt_secret)
-            // ONE ROOT: the backend derives its own paths from the same home
-            // the shell resolved, instead of each side guessing separately.
-            .env("MAGNIS_HOME", data_root_str)
-            .env("STORAGE_DIR", data_root_str)
+            .env("MAGNIS_RUNTIME_ROOT", &runtime_root)
             .env("PORT", port.to_string())
             // Allow the Tauri webview origins (wins over any machine .env list).
             .env("CORS_ALLOWED_ORIGINS", DESKTOP_CORS_ORIGINS)
@@ -327,6 +346,16 @@ impl BackendProcessManager {
         // (set by `run-spawn.sh` in dev) so the agent reaches node + the
         // claude/codex CLI; PATH is the desktop's inherited PATH.
         Self::apply_agent_spawn_env(&mut cmd, port, data_root);
+        Ok(cmd)
+    }
+
+    pub fn start(data_root: &std::path::Path, port: u16, database_url: &str) -> Result<Self> {
+        // Server mode means the backend refuses to invent a signing secret —
+        // "no derivation, no random fallback". Ownership moved here with the
+        // database, so the shell supplies it or nothing boots.
+        let bin = Self::server_binary_path()?;
+        let mut cmd = Self::build_child_command(&bin, data_root, port, database_url)?;
+
         let child = cmd.spawn().context("Failed to spawn magnis-server")?;
 
         let base_url = format!("http://127.0.0.1:{}", port);
@@ -585,6 +614,83 @@ fn current_target_triple() -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // @test-id: tst_desktop_childenv_002
+    // @invariant: INV-DTR-16
+    // @covers: BackendProcessManager::build_child_command
+    // @deterministic: yes
+    //
+    // The COMPLETE child environment, not the database subset. Round 1 shipped a
+    // boot-stopper — `AUTH_JWT_SECRET` unset — that no test could see, because
+    // every test asserted the variables someone had remembered to think about.
+    // This enumerates what `start` actually sets, so the next omission fails
+    // here instead of on a user's machine with no window and no console.
+    #[test]
+    fn tst_desktop_childenv_002_the_whole_spawn_environment_is_present() {
+        let tmp = tempfile::tempdir().expect("temp dir");
+        let bin = tmp.path().join("staged").join("magnis-server-test");
+        std::fs::create_dir_all(bin.parent().expect("parent")).expect("mkdir");
+        let cmd = BackendProcessManager::build_child_command(
+            &bin,
+            tmp.path(),
+            3010,
+            "postgres://127.0.0.1:5599/magnis",
+        )
+        .expect("compose the child command");
+
+        let envs: std::collections::HashMap<_, _> = cmd.get_envs().collect();
+        let get = |k: &str| {
+            envs.get(std::ffi::OsStr::new(k))
+                .and_then(|v| v.as_ref())
+                .map(|v| v.to_string_lossy().into_owned())
+        };
+
+        // Fatal by absence — each of these has a documented failure mode.
+        assert_eq!(get("MAGNIS_DB_MODE").as_deref(), Some("server"));
+        assert_eq!(
+            get("DATABASE_URL").as_deref(),
+            Some("postgres://127.0.0.1:5599/magnis")
+        );
+        assert!(
+            get("AUTH_JWT_SECRET").is_some_and(|v| !v.is_empty()),
+            "the backend throws in server mode without it — this is the round-1 bug"
+        );
+        assert_eq!(get("PORT").as_deref(), Some("3010"));
+        assert!(
+            get("CORS_ALLOWED_ORIGINS").is_some_and(|v| !v.is_empty()),
+            "dropping this is the recorded cause of the packaged app's Load failed"
+        );
+
+        // The staged payload lives beside the binary, and a compiled bun binary
+        // cannot find it by looking near itself.
+        assert_eq!(
+            get("MAGNIS_RUNTIME_ROOT").map(std::path::PathBuf::from),
+            bin.parent().map(std::path::Path::to_path_buf),
+            "the launcher must point at the directory data/ and migrations/ are staged in"
+        );
+
+        // One root, both names.
+        let root = tmp.path().to_string_lossy().into_owned();
+        assert_eq!(get("MAGNIS_HOME").as_deref(), Some(root.as_str()));
+        assert_eq!(get("STORAGE_DIR").as_deref(), Some(root.as_str()));
+
+        // Retired, and not merely unused: the backend throws on MAGNIS_LOCAL_PG
+        // under server mode. Asserted as an explicit removal, so inheriting one
+        // from the desktop's own environment cannot pass.
+        for retired in ["DB_PATH", "MAGNIS_LOCAL_PG"] {
+            assert_eq!(
+                envs.get(std::ffi::OsStr::new(retired)),
+                Some(&None),
+                "{retired} must be explicitly REMOVED, not merely unset"
+            );
+        }
+
+        // A model download on first run is a startup hang, not a preference.
+        assert!(
+            get("EMBEDDINGS_PROVIDER").is_some() || std::env::var("EMBEDDINGS_PROVIDER").is_ok(),
+            "unset means the backend downloads a model on first run"
+        );
+    }
 
     // @test-id: tst_desktop_childenv_001
     // @invariant: INV-DTR-16

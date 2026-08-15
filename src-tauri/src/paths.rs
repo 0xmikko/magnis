@@ -18,55 +18,60 @@ pub struct AppPaths {
     plugins_dir: PathBuf,
 }
 
+/// Where everything the app owns lives.
+///
+/// Pure in its inputs so the rule is testable without touching process-global
+/// env — the same reason `explicit_override` is pure, and the reason a rule
+/// this load-bearing had no test before.
+pub fn resolve_home(
+    env_override: Option<String>,
+    home_dir: Option<PathBuf>,
+    legacy_dir: Option<PathBuf>,
+) -> Result<PathBuf> {
+    // `legacy_dir` is taken and deliberately ignored. It is a parameter so the
+    // rule can be STATED — "a legacy directory is never adopted" is not a
+    // testable claim about a function that cannot see one, and the previous
+    // version of this code adopted it silently.
+    let _ = legacy_dir;
+    if let Some(raw) = env_override.filter(|v| !v.trim().is_empty()) {
+        let p = PathBuf::from(&raw);
+        if !p.is_absolute() {
+            anyhow::bail!(
+                "MAGNIS_HOME={raw:?} must be an absolute path — desktop \
+                 bundles do not guarantee a working directory"
+            );
+        }
+        return Ok(p);
+    }
+    Ok(home_dir
+        .context("Failed to get home directory")?
+        .join(".magnis"))
+}
+
 impl AppPaths {
     pub fn init() -> Result<Self> {
         // ONE ROOT. `MAGNIS_HOME` (default `~/.magnis`) is the single home for
         // data, plugins, logs and secrets.
         //
         // Before this there were three independent roots with three different
-        // defaults — data under Application Support, sources under a RELATIVE
-        // path resolved against the process CWD, modules under whichever of
-        // those happened to win. Startup was therefore non-deterministic: the
-        // same build found its connectors from a terminal and not from Finder,
-        // and a "missing database" was really a different root. Every failure
-        // of that day traces back to there being no single answer to "where
-        // does this app live".
+        // defaults, and startup was non-deterministic: the same build found its
+        // connectors from a terminal and not from Finder, and a "missing
+        // database" was really a different root.
         //
-        // Adoption, not silent divergence: when the home does not exist yet but
-        // a legacy Application Support root does, the legacy one is ADOPTED and
-        // the choice is printed. Starting empty beside 5 GB of existing data is
-        // the one outcome that must never happen quietly.
-        let legacy_dir = dirs::data_dir()
-            .context("Failed to get data directory")?
-            .join("com.magnis.desktop");
-        let home = match std::env::var("MAGNIS_HOME") {
-            Ok(raw) if !raw.trim().is_empty() => {
-                let p = PathBuf::from(&raw);
-                if !p.is_absolute() {
-                    anyhow::bail!(
-                        "MAGNIS_HOME={raw:?} must be an absolute path — desktop \
-                         bundles do not guarantee a working directory"
-                    );
-                }
-                p
-            }
-            _ => {
-                let default_home = dirs::home_dir()
-                    .context("Failed to get home directory")?
-                    .join(".magnis");
-                if !default_home.exists() && legacy_dir.exists() {
-                    eprintln!(
-                        "magnis: adopting the existing data root {} \
-                         (MAGNIS_HOME {} does not exist yet)",
-                        legacy_dir.display(),
-                        default_home.display()
-                    );
-                    legacy_dir.clone()
-                } else {
-                    default_home
-                }
-            }
-        };
+        // The legacy adoption branch is DELETED. It used to prefer an existing
+        // `com.magnis.desktop` Application Support directory whenever
+        // `~/.magnis` did not exist yet — so on any machine carrying one, "the
+        // standard path" quietly became a different path. Its stated reason was
+        // to avoid starting empty beside existing data, but there is no data
+        // migration in either direction: the cluster is created fresh in
+        // `pgdata-native`, and the legacy root holds a PGlite tree this build
+        // cannot read. Adoption bought the appearance of continuity and cost
+        // the one guarantee the root rule exists to give.
+        let home = resolve_home(
+            std::env::var("MAGNIS_HOME").ok(),
+            dirs::home_dir(),
+            dirs::data_dir().map(|d| d.join("com.magnis.desktop")),
+        )?;
         eprintln!("magnis: home = {}", home.display());
         let app_data_dir = home;
 
@@ -366,6 +371,63 @@ mod tests {
         let second = ensure_plugin_tree(&root).unwrap();
         assert_eq!(first, second);
         assert!(second.join("modules").is_dir());
+    }
+}
+
+#[cfg(test)]
+mod root_tests {
+    use super::resolve_home;
+    use std::path::PathBuf;
+
+    // @test-id: tst_desktop_dataroot_001
+    // @invariant: INV-DTR-24 (one root), DEC-29 (no legacy adoption)
+    // @covers: paths::resolve_home
+    // @deterministic: yes
+    //
+    // The rule the whole data-root guarantee rests on, and which had no test
+    // while the code shipped its opposite: an existing legacy Application
+    // Support directory used to WIN over `~/.magnis`, so on any machine that
+    // had ever run an older build, "the standard path" was silently a
+    // different path.
+    #[test]
+    fn tst_desktop_dataroot_001_home_relative_default_and_absolute_override() {
+        let home = PathBuf::from("/home/tester");
+
+        let legacy = PathBuf::from("/home/tester/Library/Application Support/com.magnis.desktop");
+
+        // The assertion DEC-29 exists for: a legacy root is present and the
+        // default still wins. The previous code returned `legacy` here.
+        assert_eq!(
+            resolve_home(None, Some(home.clone()), Some(legacy.clone())).expect("default"),
+            home.join(".magnis"),
+            "a legacy directory must never be adopted in place of the standard root"
+        );
+        assert_eq!(
+            resolve_home(Some("   ".into()), Some(home.clone()), Some(legacy.clone()))
+                .expect("blank is unset"),
+            home.join(".magnis")
+        );
+        assert_eq!(
+            resolve_home(
+                Some("/mnt/data/magnis".into()),
+                Some(home.clone()),
+                Some(legacy.clone())
+            )
+            .expect("absolute"),
+            PathBuf::from("/mnt/data/magnis"),
+            "an absolute override is honoured verbatim"
+        );
+
+        let err = resolve_home(Some("relative/path".into()), Some(home), Some(legacy))
+            .expect_err("a relative override must be refused");
+        let text = format!("{err:#}");
+        assert!(
+            text.contains("absolute"),
+            "the refusal must say why: {text}"
+        );
+
+        // No home directory and no override is not a place to guess at.
+        assert!(resolve_home(None, None, None).is_err());
     }
 }
 

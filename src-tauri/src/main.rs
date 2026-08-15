@@ -83,21 +83,50 @@ fn main() -> anyhow::Result<()> {
         .setup(|app| {
             use tauri::Manager;
 
-            // Startup happens HERE, not before the Builder. The single-instance
-            // plugin is registered above, so by this point a second launch has
-            // already been collapsed into the running one. Starting earlier
-            // meant the second copy bound ports and hit the data-dir lock
-            // before the plugin could speak — it exited with an error while the
-            // running window was never raised. Only macOS masked that, through
-            // the dock Reopen path.
+            // Preferences first — the tray renders their state, and the tray
+            // must exist before anything that can fail.
+            let prefs_path = app.state::<AppPaths>().desktop_prefs_path();
+            let mut prefs = workspace_config::load_desktop_prefs(&prefs_path);
+            let autolaunch_enabled = {
+                use tauri_plugin_autostart::ManagerExt;
+                app.autolaunch().is_enabled().unwrap_or(false)
+            };
+
+            // The tray is built BEFORE the parts of startup that can fail.
+            // Quiet start has no window and no console, so a failure after this
+            // point needs somewhere to be seen — and the dialog that used to do
+            // that was deleted with the launchd tree (DEC-31).
+            tray::build(
+                app.handle(),
+                &tray::TrayStatus::Starting,
+                tray::TrayToggles {
+                    show_in_dock: prefs.show_in_dock,
+                    start_at_login: autolaunch_enabled,
+                },
+            )?;
+            startup::apply_dock_visibility(app.handle(), prefs.show_in_dock);
+
+            // Startup happens HERE, not before the Builder: the single-instance
+            // plugin is registered above, so a second launch has already been
+            // collapsed into the running one. Starting earlier meant the second
+            // copy bound ports and hit the data-dir lock before the plugin
+            // could speak, exiting with an error while the running window was
+            // never raised.
             let backend = match build_backend(&app.state::<AppPaths>()) {
                 Ok(b) => b,
                 Err(e) => {
-                    // No window exists yet and the launchd dialog is gone, so
-                    // this is the surface: a message and a non-zero exit.
-                    // Disappearing silently is the one unacceptable outcome.
+                    // Report and STAY UP. Exiting here is what made a failed
+                    // launch from Login Items vanish without a trace. The tray
+                    // carries the reason, a dialog says it out loud, and the
+                    // user can quit from the menu.
+                    let (title, body) = tray::startup_error_dialog(&format!("{e:#}"));
                     eprintln!("Startup failed: {e:?}");
-                    return Err(e.into());
+                    tray::show_startup_failure(app.handle(), &body);
+                    {
+                        use tauri_plugin_dialog::DialogExt;
+                        app.dialog().message(&body).title(&title).blocking_show();
+                    }
+                    return Ok(());
                 }
             };
             let poll_url = backend.base_url().to_string();
@@ -105,15 +134,12 @@ fn main() -> anyhow::Result<()> {
             app.manage(BackendState(Mutex::new(backend)));
             use tauri_plugin_autostart::ManagerExt;
 
-            let prefs_path = app.state::<AppPaths>().desktop_prefs_path();
-            let mut prefs = workspace_config::load_desktop_prefs(&prefs_path);
-
             // Enable Start-at-Login once, and only from somewhere the bundle
             // will still be after a reboot. Enabling from a mounted image or a
             // translocated quarantine path records a login item that breaks on
             // eject — and because we never re-enable, that break is permanent.
             let autolaunch = app.autolaunch();
-            let currently_enabled = autolaunch.is_enabled().unwrap_or(false);
+            let currently_enabled = autolaunch_enabled;
             let persistent = std::env::current_exe()
                 .ok()
                 .map(|exe| startup::is_persistent_location(&exe))
@@ -146,15 +172,6 @@ fn main() -> anyhow::Result<()> {
             }
 
             startup::apply_dock_visibility(app.handle(), prefs.show_in_dock);
-
-            tray::build(
-                app.handle(),
-                &tray::TrayStatus::Starting,
-                tray::TrayToggles {
-                    show_in_dock: prefs.show_in_dock,
-                    start_at_login: autolaunch.is_enabled().unwrap_or(false),
-                },
-            )?;
             tray::spawn_status_poll(app.handle().clone(), poll_url.clone());
             Ok(())
         })
