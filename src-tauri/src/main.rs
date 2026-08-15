@@ -65,21 +65,6 @@ fn main() -> anyhow::Result<()> {
     println!("App data dir: {:?}", app_paths.app_data_dir());
     println!("Data root: {:?}", app_paths.data_root());
 
-    let backend = match build_backend(&app_paths) {
-        Ok(b) => b,
-        Err(e) => {
-            // A startup failure must reach the user even with no window. The
-            // dialog that used to live in the deleted launchd tree is gone;
-            // until the tray carries the error state (DEC-31), stderr plus a
-            // non-zero exit is the honest surface — silently disappearing is
-            // the one outcome that is never acceptable.
-            eprintln!("Startup failed: {e:?}");
-            return Err(e);
-        }
-    };
-    let poll_url = backend.base_url().to_string();
-    println!("Backend base URL: {poll_url}");
-
     let app = tauri::Builder::default()
         // FIRST, as the plugin's docs require. A second launch must collapse
         // into the running instance: two copies would be two owners of one data
@@ -95,9 +80,29 @@ fn main() -> anyhow::Result<()> {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(app_paths)
-        .manage(BackendState(Mutex::new(backend)))
-        .setup(move |app| {
+        .setup(|app| {
             use tauri::Manager;
+
+            // Startup happens HERE, not before the Builder. The single-instance
+            // plugin is registered above, so by this point a second launch has
+            // already been collapsed into the running one. Starting earlier
+            // meant the second copy bound ports and hit the data-dir lock
+            // before the plugin could speak — it exited with an error while the
+            // running window was never raised. Only macOS masked that, through
+            // the dock Reopen path.
+            let backend = match build_backend(&app.state::<AppPaths>()) {
+                Ok(b) => b,
+                Err(e) => {
+                    // No window exists yet and the launchd dialog is gone, so
+                    // this is the surface: a message and a non-zero exit.
+                    // Disappearing silently is the one unacceptable outcome.
+                    eprintln!("Startup failed: {e:?}");
+                    return Err(e.into());
+                }
+            };
+            let poll_url = backend.base_url().to_string();
+            println!("Backend base URL: {poll_url}");
+            app.manage(BackendState(Mutex::new(backend)));
             use tauri_plugin_autostart::ManagerExt;
 
             let prefs_path = app.state::<AppPaths>().desktop_prefs_path();

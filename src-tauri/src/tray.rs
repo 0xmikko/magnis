@@ -327,9 +327,16 @@ pub fn spawn_status_poll(app: tauri::AppHandle, base_url: String) {
         let mut token = login(&client, &base);
         let mut consecutive_401s = 0u32;
         loop {
+            // Re-login when there is no token at all. Without this the loop
+            // wedges: no token maps to Unauthorized, the counter climbs past
+            // its one retry, and nothing ever tries again — the permanent red
+            // light INV-DTR-28 exists to prevent, reached by the other door.
+            if token.is_none() {
+                token = login(&client, &base);
+            }
             let outcome = match token.as_deref() {
                 Some(t) => poll_once(&client, &base, t),
-                None => PollOutcome::Unauthorized,
+                None => PollOutcome::Transport("cannot sign in to the backend".to_string()),
             };
             let (next_count, action) = on_poll_outcome(consecutive_401s, outcome);
             consecutive_401s = next_count;
