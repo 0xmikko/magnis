@@ -29,7 +29,10 @@ pub struct BackendState(pub Mutex<BackendHandle>);
 /// *disabled* and launchd silently refuses to run it, which is unobservable
 /// from inside the app — it only ever surfaced as "the backend never became
 /// healthy". One owner, one topology.
-fn build_backend(app_paths: &AppPaths) -> anyhow::Result<BackendHandle> {
+fn build_backend(
+    app_paths: &AppPaths,
+    runtime_root: &std::path::Path,
+) -> anyhow::Result<BackendHandle> {
     // Order is fixed (DEC-9): PostgreSQL first, then the backend — the child
     // needs a reachable DATABASE_URL the moment it boots.
     let pg_port = ports::bind_port("postgres", None)?.release();
@@ -51,8 +54,12 @@ fn build_backend(app_paths: &AppPaths) -> anyhow::Result<BackendHandle> {
         }
     );
     let port = reserved.release();
-    let manager =
-        BackendProcessManager::start(app_paths.data_root(), port, &cluster.database_url())?;
+    let manager = BackendProcessManager::start(
+        app_paths.data_root(),
+        port,
+        &cluster.database_url(),
+        runtime_root,
+    )?;
 
     Ok(BackendHandle::spawned(manager, cluster))
 }
@@ -112,7 +119,17 @@ fn main() -> anyhow::Result<()> {
             // copy bound ports and hit the data-dir lock before the plugin
             // could speak, exiting with an error while the running window was
             // never raised.
-            let backend = match build_backend(&app.state::<AppPaths>()) {
+            // The payload's home, from the one API that is right both in
+            // development and inside a package. `resource_dir()` is the exe's
+            // own directory in a Cargo build — where `tauri-build` copies the
+            // declared resources — and the platform resource root once bundled.
+            let runtime_root = anyhow::Context::context(
+                app.path().resource_dir(),
+                "Could not resolve the resource directory",
+            )?
+            .join(backend_process::PAYLOAD_SUBDIR);
+
+            let backend = match build_backend(&app.state::<AppPaths>(), &runtime_root) {
                 Ok(b) => b,
                 Err(e) => {
                     // Report and STAY UP. Exiting here is what made a failed

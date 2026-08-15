@@ -77,6 +77,12 @@ const SHUTDOWN_GRACE_SECS: u64 = 10;
 const SHUTDOWN_POLL_INTERVAL_MS: u64 = 50;
 
 /// Manages the magnis-server child process and exposes its base URL for the frontend.
+/// The directory `scripts/build-backend.sh` stages the backend payload into,
+/// relative to the resource root. Declared in `tauri.conf.json` twice — as the
+/// staging argument and as a bundle resource glob — and asserted equal to this
+/// constant by `tst_desktop_serverbuild_001`.
+pub const PAYLOAD_SUBDIR: &str = "binaries";
+
 pub struct BackendProcessManager {
     child: Option<Child>,
     base_url: String,
@@ -237,6 +243,7 @@ impl BackendProcessManager {
         data_root: &std::path::Path,
         port: u16,
         database_url: &str,
+        runtime_root: &std::path::Path,
     ) -> Result<Command> {
         // Server mode means the backend refuses to invent a signing secret —
         // "no derivation, no random fallback". Ownership moved here with the
@@ -253,21 +260,21 @@ impl BackendProcessManager {
         // the same reason they are no longer true — the backend does not own a
         // database any more, and `MAGNIS_LOCAL_PG` under server mode is not
         // merely unused: the backend throws on it.
-        // The payload `scripts/build-backend.sh` stages beside the binary:
-        // `data/` and `migrations/`. A compiled bun binary resolves
-        // `import.meta.url` to the virtual `/$bunfs` filesystem, so the backend
-        // cannot find these by looking near itself — the launcher must say
-        // where they are. Set unconditionally: the backend does not read it
-        // yet, and pointing at the directory we just resolved the binary from
-        // is true whether it does or not.
-        let runtime_root = bin
-            .parent()
-            .context("Server binary has no parent directory")?
+        // Where `data/` and `migrations/` actually are. A compiled bun binary
+        // resolves `import.meta.url` to the virtual `/$bunfs` filesystem, so
+        // the backend cannot find them by looking near itself — the launcher
+        // must say where they are.
+        //
+        // NOT derived from the binary's own directory, which is only right in
+        // development. A packaged Linux app puts the sidecar in `/usr/bin` and
+        // the payload in `/usr/lib/<product>`; measured from a built `.deb`.
+        // The caller passes the resource root, which is the one path that is
+        // correct in both.
+        let runtime_root = runtime_root
             .to_str()
-            .context("Server binary directory is not valid UTF-8")?
-            .to_string();
+            .context("Runtime root is not valid UTF-8")?;
         apply_database_env(&mut cmd, data_root_str, database_url, &jwt_secret)
-            .env("MAGNIS_RUNTIME_ROOT", &runtime_root)
+            .env("MAGNIS_RUNTIME_ROOT", runtime_root)
             .env("PORT", port.to_string())
             // Allow the Tauri webview origins (wins over any machine .env list).
             .env("CORS_ALLOWED_ORIGINS", DESKTOP_CORS_ORIGINS)
@@ -349,12 +356,17 @@ impl BackendProcessManager {
         Ok(cmd)
     }
 
-    pub fn start(data_root: &std::path::Path, port: u16, database_url: &str) -> Result<Self> {
+    pub fn start(
+        data_root: &std::path::Path,
+        port: u16,
+        database_url: &str,
+        runtime_root: &std::path::Path,
+    ) -> Result<Self> {
         // Server mode means the backend refuses to invent a signing secret —
         // "no derivation, no random fallback". Ownership moved here with the
         // database, so the shell supplies it or nothing boots.
         let bin = Self::server_binary_path()?;
-        let mut cmd = Self::build_child_command(&bin, data_root, port, database_url)?;
+        let mut cmd = Self::build_child_command(&bin, data_root, port, database_url, runtime_root)?;
 
         let child = cmd.spawn().context("Failed to spawn magnis-server")?;
 
@@ -615,6 +627,39 @@ fn current_target_triple() -> &'static str {
 mod tests {
     use super::*;
 
+    // @test-id: tst_desktop_payloaddir_001
+    // @invariant: INV-DTR-25
+    // @covers: backend_process::PAYLOAD_SUBDIR vs tauri.conf.json
+    // @deterministic: yes
+    //
+    // The subdirectory name exists twice — compiled into the shell, and written
+    // in the bundler's config — and nothing connects them. A rename on either
+    // side produces an app that starts, finds no payload, and says nothing.
+    #[test]
+    fn tst_desktop_payloaddir_001_the_compiled_name_matches_the_bundled_one() {
+        let raw = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tauri.conf.json"),
+        )
+        .expect("tauri.conf.json");
+        let conf: serde_json::Value = serde_json::from_str(&raw).expect("valid JSON");
+
+        let server = conf["bundle"]["externalBin"]
+            .as_array()
+            .expect("externalBin")
+            .iter()
+            .filter_map(|v| v.as_str())
+            .find(|e| e.contains("magnis-server"))
+            .expect("the backend sidecar");
+        assert_eq!(
+            std::path::Path::new(server)
+                .parent()
+                .and_then(|p| p.to_str()),
+            Some(PAYLOAD_SUBDIR),
+            "the shell looks under {PAYLOAD_SUBDIR}/ inside the resource root; \
+             the bundler stages the sidecar somewhere else"
+        );
+    }
+
     // @test-id: tst_desktop_childenv_002
     // @invariant: INV-DTR-16
     // @covers: BackendProcessManager::build_child_command
@@ -630,11 +675,16 @@ mod tests {
         let tmp = tempfile::tempdir().expect("temp dir");
         let bin = tmp.path().join("staged").join("magnis-server-test");
         std::fs::create_dir_all(bin.parent().expect("parent")).expect("mkdir");
+        // The payload root is NOT the binary's directory — a packaged Linux
+        // app splits them (`/usr/bin` vs `/usr/lib/<product>`), so the test
+        // passes a distinct path and asserts the distinct path comes back.
+        let runtime_root = tmp.path().join("resources").join(PAYLOAD_SUBDIR);
         let cmd = BackendProcessManager::build_child_command(
             &bin,
             tmp.path(),
             3010,
             "postgres://127.0.0.1:5599/magnis",
+            &runtime_root,
         )
         .expect("compose the child command");
 
@@ -665,8 +715,14 @@ mod tests {
         // cannot find it by looking near itself.
         assert_eq!(
             get("MAGNIS_RUNTIME_ROOT").map(std::path::PathBuf::from),
+            Some(runtime_root.clone()),
+            "the launcher must point at the payload, not at the sidecar"
+        );
+        assert_ne!(
+            get("MAGNIS_RUNTIME_ROOT").map(std::path::PathBuf::from),
             bin.parent().map(std::path::Path::to_path_buf),
-            "the launcher must point at the directory data/ and migrations/ are staged in"
+            "deriving the payload root from the binary is exactly the bug a built \
+             .deb exposed: the sidecar is in /usr/bin and the payload is not"
         );
 
         // One root, both names.

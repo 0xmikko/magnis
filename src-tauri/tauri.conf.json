@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "identifier": "com.magnis.desktop",
   "build": {
-    "beforeDevCommand": "bash ../../scripts/build-backend.sh binaries && cd ../frontend && bun run dev -- --port 5190",
+    "beforeDevCommand": "bash ../scripts/build-backend.sh src-tauri/binaries && cd ../frontend && bun run dev -- --port 5190",
     "devUrl": "http://localhost:5190",
-    "beforeBuildCommand": "bash build/bundle-embedded-pg.sh && bash ../../scripts/build-backend.sh binaries && bash build/bundle-agent.sh && cd ../frontend && bun run build",
+    "beforeBuildCommand": "bash build/bundle-embedded-pg.sh && bash ../scripts/build-backend.sh src-tauri/binaries && bash build/bundle-agent.sh && cd ../frontend && bun run build",
     "frontendDist": "../../frontend/dist"
   },
   "app": {
@@ -46,7 +46,9 @@
       "binaries/agent-server"
     ],
     "resources": [
-      "mcp-stdio-proxy.mjs"
+      "mcp-stdio-proxy.mjs",
+      "binaries/data/**/*",
+      "binaries/migrations/**/*"
     ]
   }
 }
