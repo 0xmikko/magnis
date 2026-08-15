@@ -210,22 +210,99 @@ pub fn show_main_window(app: &tauri::AppHandle) {
 /// How often the tray asks the backend how it is doing.
 const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(10);
 
-/// Turn one probe outcome into a status.
+/// What one poll produced.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PollOutcome {
+    /// Parsed, with a rendered line.
+    Ok(String),
+    /// The token was rejected.
+    Unauthorized,
+    /// Reached the backend, got something unusable.
+    BadResponse(String),
+    /// Did not reach the backend.
+    Transport(String),
+}
+
+/// What to do next, given the outcome and how many 401s came before it.
 ///
-/// Pure so the mapping is testable: the interesting part is that distinct
-/// causes stay distinct, which a live poll cannot demonstrate cheaply.
-pub fn status_from_probe(outcome: Result<u16, String>) -> TrayStatus {
+/// A counter and an effect cannot live in a formatter, which is why this is its
+/// own function. Both halves are the bug: a counter that never resets turns one
+/// 401 a week into a permanent error state on the second week, and an unbounded
+/// retry hammers the login endpoint in a loop.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PollAction {
+    Show(TrayStatus),
+    /// Re-login, then show this if the retry also fails.
+    Reauthenticate,
+}
+
+pub fn on_poll_outcome(consecutive_401s: u32, outcome: PollOutcome) -> (u32, PollAction) {
     match outcome {
-        Ok(200) => TrayStatus::Ok {
-            line: "Connected".to_string(),
-        },
-        Ok(401) => TrayStatus::Unavailable {
-            reason: "not signed in".to_string(),
-        },
-        Ok(code) => TrayStatus::Unavailable {
-            reason: format!("backend returned {code}"),
-        },
-        Err(e) => TrayStatus::Unavailable { reason: e },
+        PollOutcome::Ok(line) => (0, PollAction::Show(TrayStatus::Ok { line })),
+        PollOutcome::Unauthorized if consecutive_401s == 0 => (1, PollAction::Reauthenticate),
+        PollOutcome::Unauthorized => (
+            consecutive_401s + 1,
+            PollAction::Show(TrayStatus::Unavailable {
+                reason: "not signed in".to_string(),
+            }),
+        ),
+        PollOutcome::BadResponse(what) => (
+            0,
+            PollAction::Show(TrayStatus::Unavailable {
+                reason: format!("unreadable response: {what}"),
+            }),
+        ),
+        PollOutcome::Transport(e) => (
+            0,
+            PollAction::Show(TrayStatus::Unavailable {
+                reason: format!("backend unreachable: {e}"),
+            }),
+        ),
+    }
+}
+
+/// Ask the backend for an access token. Open mode accepts an empty body, which
+/// is the documented path for a desktop shell.
+fn login(client: &reqwest::blocking::Client, base: &str) -> Option<String> {
+    let resp = client
+        .post(format!("{base}/api/auth/login"))
+        .json(&serde_json::json!({}))
+        .send()
+        .ok()?;
+    let body: serde_json::Value = resp.json().ok()?;
+    body.get("token")
+        .or_else(|| body.get("access_token"))
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+}
+
+/// One authenticated `source.status.list` call.
+fn poll_once(client: &reqwest::blocking::Client, base: &str, token: &str) -> PollOutcome {
+    let resp = match client
+        .post(format!("{base}/api/rpc"))
+        .bearer_auth(token)
+        .json(&serde_json::json!({ "method": "source.status.list", "params": {} }))
+        .send()
+    {
+        Ok(r) => r,
+        Err(e) => return PollOutcome::Transport(e.to_string()),
+    };
+    if resp.status().as_u16() == 401 {
+        return PollOutcome::Unauthorized;
+    }
+    if !resp.status().is_success() {
+        return PollOutcome::BadResponse(format!("status {}", resp.status().as_u16()));
+    }
+    let body: serde_json::Value = match resp.json() {
+        Ok(v) => v,
+        Err(e) => return PollOutcome::BadResponse(e.to_string()),
+    };
+    // The RPC envelope carries the payload under `result`; accept the bare
+    // array too rather than guessing which one this build uses.
+    let payload = body.get("result").unwrap_or(&body);
+    match serde_json::from_value::<Vec<crate::source_status::SourceStatus>>(payload.clone()) {
+        Ok(sources) => PollOutcome::Ok(crate::source_status::status_line(&sources)),
+        Err(e) => PollOutcome::BadResponse(e.to_string()),
     }
 }
 
@@ -246,15 +323,26 @@ pub fn spawn_status_poll(app: tauri::AppHandle, base_url: String) {
                 return;
             }
         };
-        let health = format!("{}/health", base_url.trim_end_matches('/'));
+        let base = base_url.trim_end_matches('/').to_string();
+        let mut token = login(&client, &base);
+        let mut consecutive_401s = 0u32;
         loop {
-            let outcome = client
-                .get(&health)
-                .send()
-                .map(|r| r.status().as_u16())
-                .map_err(|e| e.to_string());
-            let status = status_from_probe(outcome);
-            update_status(&app, &status);
+            let outcome = match token.as_deref() {
+                Some(t) => poll_once(&client, &base, t),
+                None => PollOutcome::Unauthorized,
+            };
+            let (next_count, action) = on_poll_outcome(consecutive_401s, outcome);
+            consecutive_401s = next_count;
+            match action {
+                PollAction::Show(status) => update_status(&app, &status),
+                PollAction::Reauthenticate => {
+                    // Tokens expire; the tray runs for weeks. One retry, then
+                    // the error state — otherwise a weekly expiry becomes a
+                    // permanent red light only a relaunch can clear.
+                    token = login(&client, &base);
+                    continue;
+                }
+            }
             std::thread::sleep(POLL_INTERVAL);
         }
     });
@@ -320,41 +408,50 @@ mod tests {
         assert_eq!(login.checked, Some(false));
     }
 
-    // @test-id: tst_desktop_probe_001
-    // @invariant: INV-DTR-9
-    // @covers: tray::status_from_probe
+    // @test-id: tst_desktop_reauth_001
+    // @invariant: INV-DTR-28 (one re-login, counter resets on success)
+    // @covers: tray::on_poll_outcome
     // @deterministic: yes
     #[test]
-    fn tst_desktop_probe_001_each_cause_reads_differently() {
-        use super::status_from_probe;
+    fn tst_desktop_reauth_001_one_retry_then_the_error_state() {
+        use super::{on_poll_outcome, PollAction, PollOutcome};
+
+        // First 401: retry, do NOT show an error yet.
+        let (count, action) = on_poll_outcome(0, PollOutcome::Unauthorized);
+        assert_eq!(count, 1);
+        assert_eq!(action, PollAction::Reauthenticate);
+
+        // Second consecutive 401: the retry did not help, so say so.
+        let (count, action) = on_poll_outcome(count, PollOutcome::Unauthorized);
+        assert_eq!(count, 2);
         assert!(matches!(
-            status_from_probe(Ok(200)),
-            super::TrayStatus::Ok { .. }
+            action,
+            PollAction::Show(super::TrayStatus::Unavailable { .. })
         ));
-        // A 401 must not read as "the backend is down" — the repair is
-        // different, and collapsing them sends the user looking in the wrong
-        // place.
-        let unauth = status_from_probe(Ok(401));
-        let down = status_from_probe(Err("connection refused".into()));
-        let odd = status_from_probe(Ok(503));
-        for s in [&unauth, &down, &odd] {
-            assert!(matches!(s, super::TrayStatus::Unavailable { .. }));
+
+        // A success RESETS the counter. Without this a single 401 a week makes
+        // the second week a permanent error state.
+        let (count, action) = on_poll_outcome(count, PollOutcome::Ok("Connected".into()));
+        assert_eq!(count, 0, "a good poll must clear the 401 streak");
+        assert!(matches!(
+            action,
+            PollAction::Show(super::TrayStatus::Ok { .. })
+        ));
+
+        // Non-auth failures never trigger a login attempt, and stay distinct.
+        for outcome in [
+            PollOutcome::Transport("refused".into()),
+            PollOutcome::BadResponse("garbage".into()),
+        ] {
+            let (count, action) = on_poll_outcome(0, outcome);
+            assert_eq!(count, 0);
+            match action {
+                PollAction::Show(super::TrayStatus::Unavailable { reason }) => {
+                    assert!(!reason.contains("not signed in"), "wrong cause: {reason}");
+                }
+                other => panic!("expected an unavailable state, got {other:?}"),
+            }
         }
-        let labels: Vec<String> = [&unauth, &down, &odd]
-            .iter()
-            .map(|s| match s {
-                super::TrayStatus::Unavailable { reason } => reason.clone(),
-                _ => unreachable!(),
-            })
-            .collect();
-        assert_eq!(
-            labels
-                .iter()
-                .collect::<std::collections::HashSet<_>>()
-                .len(),
-            3,
-            "three distinct causes must produce three distinct reasons: {labels:?}"
-        );
     }
 
     // @test-id: tst_desktop_traystatus_001

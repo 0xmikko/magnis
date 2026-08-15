@@ -6,6 +6,7 @@ mod commands;
 mod paths;
 mod ports;
 mod postgres;
+mod source_status;
 mod startup;
 mod tray;
 mod workspace_config;
