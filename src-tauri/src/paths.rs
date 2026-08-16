@@ -162,6 +162,40 @@ pub fn ensure_plugin_tree(data_root: &std::path::Path) -> Result<PathBuf> {
     Ok(plugins_dir)
 }
 
+/// Ensure the operator env file exists, and return its path.
+///
+/// The backend distinguishes two cases, and the shell was on the wrong side of
+/// the line. An *unnamed* env file is existence-checked and skipped when
+/// absent; a file the caller *names* — which is what `MAGNIS_ENV_FILE` does —
+/// must be readable, and the backend exits 64 when it is not. Measured against
+/// a compiled `magnis-server`:
+///
+/// ```text
+/// magnis-server: read --env-file <path>: ENOENT   exit=64
+/// ```
+///
+/// So the shell must not name a file it has not provisioned. It creates an
+/// empty one, which is semantically identical to no file — the operator adds
+/// credentials later by editing it — and keeps the agent gate, which requires a
+/// named env file, switchable on. This is the same provisioning the data root
+/// already gets for `jwt.secret` and the plugin tree, in the same directory the
+/// shell owns.
+pub fn ensure_env_file(data_root: &std::path::Path) -> Result<std::path::PathBuf> {
+    std::fs::create_dir_all(data_root)
+        .with_context(|| format!("creating {}", data_root.display()))?;
+    let path = data_root.join("magnis.env");
+    if !path.exists() {
+        std::fs::write(&path, b"").with_context(|| format!("creating {}", path.display()))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
+                .with_context(|| format!("securing {}", path.display()))?;
+        }
+    }
+    Ok(path)
+}
+
 /// Read or create the JWT signing secret for this data root.
 ///
 /// The backend used to do this itself — but only in local database mode. The

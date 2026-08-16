@@ -170,8 +170,8 @@ impl BackendProcessManager {
 
         anyhow::bail!(
             "magnis-server binary not found. Tried: {rejected:?}. \
-             From repo root run: cargo build -p magnis-server --release, \
-             or set MAGNIS_SERVER_PATH."
+             From the repo root run: bash scripts/build-backend.sh \
+             desktop/src-tauri/binaries, or set MAGNIS_SERVER_PATH."
         )
     }
 
@@ -406,14 +406,24 @@ impl BackendProcessManager {
                 return;
             }
         };
-        // Default to the same path the launchd contract uses. Bailing out here
-        // meant the agent silently never spawned in spawn mode — nothing sets
-        // this var outside the plist — and the app showed "No agents available
-        // — the agent runtime is not reachable" with no other clue. The file
-        // itself is optional: the supervisor treats an absent one as empty.
+        // Default to the file the data root owns. Bailing out here meant the
+        // agent silently never spawned in spawn mode — nothing else sets this
+        // var — and the app showed "No agents available" with no other clue.
+        //
+        // It is PROVISIONED, not merely named. The previous comment here said
+        // "the file itself is optional: the supervisor treats an absent one as
+        // empty", and that is false against this backend: naming a file that
+        // does not exist makes it exit 64 before serving anything. An empty
+        // file means the same thing and is a file.
         let env_file = match std::env::var("MAGNIS_ENV_FILE") {
             Ok(v) if !v.is_empty() => v,
-            _ => data_root.join("magnis.env").to_string_lossy().into_owned(),
+            _ => match crate::paths::ensure_env_file(data_root) {
+                Ok(p) => p.to_string_lossy().into_owned(),
+                Err(e) => {
+                    eprintln!("[backend-owns-agent] not enabling: {e:#}");
+                    return;
+                }
+            },
         };
         let mcp_proxy = std::env::var("MAGNIS_MCP_PROXY_PATH")
             .ok()
@@ -626,6 +636,75 @@ fn current_target_triple() -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // @test-id: tst_desktop_boot_001
+    // @invariant: INV-DTR-16, INV-DTR-18
+    // @covers: PostgresHandle::start + BackendProcessManager::start, end to end
+    // @deterministic: yes, but requires a staged sidecar — hence `ignore`
+    //
+    // The only test that answers the question the others merely approach: does
+    // the environment this shell composes actually boot the real backend?
+    // Every other assertion here is about the *shape* of that environment, and
+    // the round-1 boot-stopper proved a well-shaped environment can still be
+    // missing the one variable that matters.
+    //
+    // Ignored by default because it needs `scripts/build-backend.sh` to have
+    // run and it starts a real PostgreSQL cluster. Run it deliberately:
+    //
+    //   bash scripts/build-backend.sh desktop/src-tauri/binaries
+    //   cd desktop/src-tauri && cargo test tst_desktop_boot_001 -- --ignored --nocapture
+    #[test]
+    #[ignore = "needs a staged backend sidecar; starts a real PostgreSQL cluster"]
+    fn tst_desktop_boot_001_the_composed_environment_boots_the_real_backend() {
+        let tmp = tempfile::tempdir().expect("temp dir");
+        let data_root = tmp.path();
+
+        let pg_port = crate::ports::bind_port("postgres", None)
+            .expect("bind a postgres port")
+            .release();
+        let cluster =
+            crate::postgres::PostgresHandle::start(data_root, pg_port).expect("start PostgreSQL");
+
+        let backend_port = crate::ports::bind_port("backend", None)
+            .expect("bind a backend port")
+            .release();
+
+        // The payload lives beside the staged sidecar, which is where
+        // `build-backend.sh` puts it and where `tauri-build` copies it.
+        let runtime_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(PAYLOAD_SUBDIR);
+        assert!(
+            runtime_root.join("migrations").is_dir(),
+            "run scripts/build-backend.sh first: {} has no migrations/",
+            runtime_root.display()
+        );
+
+        // The resolver looks beside `current_exe()`, which under `cargo test`
+        // is `target/debug/deps`. `MAGNIS_SERVER_PATH` is the documented
+        // override and is what points it at the staged sidecar.
+        let sidecar = runtime_root.join(format!("magnis-server-{}", current_target_triple()));
+        assert!(
+            sidecar.is_file(),
+            "run scripts/build-backend.sh first: no {}",
+            sidecar.display()
+        );
+        // SAFETY: single-threaded test; no other thread reads the environment
+        // while this runs.
+        std::env::set_var("MAGNIS_SERVER_PATH", &sidecar);
+
+        let mut manager = BackendProcessManager::start(
+            data_root,
+            backend_port,
+            &cluster.database_url(),
+            &runtime_root,
+        )
+        .expect("the backend must become healthy with the environment the shell composes");
+
+        // `start` returns only after /health answers, so reaching here means
+        // the child booted, ran its migrations against the shell's cluster and
+        // served a request.
+        assert_eq!(manager.port(), backend_port);
+        manager.stop();
+    }
 
     // @test-id: tst_desktop_payloaddir_001
     // @invariant: INV-DTR-25
