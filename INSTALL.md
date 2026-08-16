@@ -60,10 +60,10 @@ sudo pacman -S webkit2gtk-4.1 \
 Install webkit2gtk-4.1-dev (Ubuntu/Debian) or webkit2gtk4.1-devel (Fedora)
 
 ### "Failed to link @magnis/core"
-Ensure the backend-ts/core symlink exists:
+Ensure the backend/core symlink exists:
 ```bash
 mkdir -p frontend/node_modules/@magnis
-ln -sf ../../backend-ts/core frontend/node_modules/@magnis/core
+ln -sf ../../backend/core frontend/node_modules/@magnis/core
 ```
 
 ### Port 5173 already in use
