@@ -342,7 +342,10 @@ impl BackendProcessManager {
         }
         cmd.env(
             "MAGNIS_CATALOG_URL",
-            crate::paths::catalog_url(std::env::var("MAGNIS_CATALOG_URL").ok()),
+            crate::paths::catalog_url(
+                std::env::var("MAGNIS_CATALOG_URL").ok(),
+                cfg!(debug_assertions),
+            ),
         );
         // Backend owns the agent in spawn mode too: set the gate flag +
         // the COMPLETE agent spawn spec on the backend, so it spawns +

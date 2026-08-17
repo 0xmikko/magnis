@@ -280,21 +280,40 @@ fn base64_encode(input: &[u8]) -> String {
 /// was only ever a launchd concern by accident of where it lived: the spawn
 /// path in `backend_process.rs` reads it too, and that is the path that
 /// survives.
-pub const DEFAULT_CATALOG_URL: &str = "https://raw.githubusercontent.com/0xmikko/magnis/catalog";
-
-/// Resolve the catalog channel: an ambient override wins, otherwise the
-/// default. Pure in its input so the rule is testable without touching process
-/// env, which is global and would race every other test.
+/// The STABLE channel: whatever the newest non-prerelease release holds.
 ///
-/// Two value properties, not just presence — they were only ever covered by the
-/// launchd plist tests that DEC-1 deletes, and the spawn path is what survives:
-/// the URL is a BASE (the fetcher appends `/index.json` itself), and an
-/// operator-supplied channel — a fork, or a `file://` mirror in tests — beats
-/// the default.
-pub fn catalog_url(ambient: Option<String>) -> String {
+/// `releases/latest/download` resolves to that release's assets and
+/// redirects to the signed url, so a shipped app carries no tag and never
+/// needs a new build to see a new catalog.
+pub const STABLE_CATALOG_URL: &str = "https://github.com/0xmikko/magnis/releases/latest/download";
+
+/// The STAGING channel: a release attached to a `staging` tag that moves,
+/// marked pre-release so it can never be picked up as `latest`. Assets are
+/// replaced in place, which is what "always fresh from this branch" costs —
+/// the index carries the archive hashes, so a stale read fails closed.
+pub const STAGING_CATALOG_URL: &str =
+    "https://github.com/0xmikko/magnis/releases/download/staging";
+
+/// Resolve the catalog channel for THIS build.
+///
+/// Three inputs in priority order, and the order is the point: an ambient
+/// override wins (a fork, or a `file://` mirror in tests), then the build kind
+/// decides. A debug build talks to the channel CI built from `staging`,
+/// because a developer wants to see what that branch publishes rather than
+/// what shipped months ago; a release build talks to stable.
+///
+/// Pure in its inputs so the rule is testable without touching process env,
+/// which is global and would race every other test.
+pub fn catalog_url(ambient: Option<String>, debug_build: bool) -> String {
     ambient
         .filter(|v| !v.trim().is_empty())
-        .unwrap_or_else(|| DEFAULT_CATALOG_URL.to_string())
+        .unwrap_or_else(|| {
+            if debug_build {
+                STAGING_CATALOG_URL.to_string()
+            } else {
+                STABLE_CATALOG_URL.to_string()
+            }
+        })
 }
 
 /// The user's REAL `PATH`, asked from their login shell.
@@ -520,7 +539,7 @@ mod jwt_tests {
 
 #[cfg(test)]
 mod catalog_tests {
-    use super::{catalog_url, DEFAULT_CATALOG_URL};
+    use super::{catalog_url, STABLE_CATALOG_URL, STAGING_CATALOG_URL};
 
     // @test-id: tst_desktop_catalog_001
     // @covers: paths::catalog_url
@@ -531,18 +550,42 @@ mod catalog_tests {
     #[test]
     fn tst_desktop_catalog_001_base_url_and_ambient_override() {
         assert_eq!(
-            catalog_url(None),
-            DEFAULT_CATALOG_URL,
-            "no override resolves to the default channel"
+            catalog_url(None, false),
+            STABLE_CATALOG_URL,
+            "a release build with no override resolves to the stable channel"
         );
         assert!(
-            !catalog_url(None).ends_with("/index.json"),
+            !catalog_url(None, false).ends_with("/index.json"),
             "MUST be a BASE url — the fetcher appends the relative path itself"
         );
         assert_eq!(
-            catalog_url(Some("file:///tmp/cat".to_string())),
+            catalog_url(Some("file:///tmp/cat".to_string()), false),
             "file:///tmp/cat",
             "an operator-supplied channel wins over the default"
+        );
+    }
+
+    // @test-id: tst_desktop_catalog_002
+    // @covers: paths::catalog_url
+    // @deterministic: yes
+    // INV-8: the build kind chooses the channel, and an explicit one still
+    // outranks it. A developer who cannot see what `staging` publishes has no
+    // way to test the thing this whole channel exists for.
+    #[test]
+    fn tst_desktop_catalog_002_build_kind_selects_the_channel() {
+        assert_eq!(
+            catalog_url(None, true),
+            STAGING_CATALOG_URL,
+            "a development build reads the channel CI built from staging"
+        );
+        assert_ne!(
+            STAGING_CATALOG_URL, STABLE_CATALOG_URL,
+            "the two channels must be different urls, or the choice is decoration"
+        );
+        assert_eq!(
+            catalog_url(Some("file:///tmp/cat".to_string()), true),
+            "file:///tmp/cat",
+            "an explicit channel outranks the build kind too"
         );
     }
 }
