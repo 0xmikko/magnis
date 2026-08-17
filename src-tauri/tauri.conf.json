@@ -42,9 +42,6 @@
     ],
     "externalBin": [
       "binaries/magnis-server"
-    ],
-    "resources": [
-      "mcp-stdio-proxy.mjs"
     ]
   }
 }
