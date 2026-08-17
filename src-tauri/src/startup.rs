@@ -86,7 +86,7 @@ pub fn apply_dock_visibility(app: &tauri::AppHandle, show: bool) {
             tauri::ActivationPolicy::Accessory
         };
         if let Err(e) = app.set_activation_policy(policy) {
-            eprintln!("magnis: could not change Dock visibility: {e}");
+            tracing::warn!(target: "shell", error = %e, "could not change Dock visibility");
         }
     }
     #[cfg(not(target_os = "macos"))]

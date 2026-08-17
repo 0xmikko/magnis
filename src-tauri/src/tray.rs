@@ -182,7 +182,7 @@ fn toggle_show_in_dock(app: &tauri::AppHandle) {
     prefs.show_in_dock = !prefs.show_in_dock;
     crate::startup::apply_dock_visibility(app, prefs.show_in_dock);
     if let Err(e) = crate::workspace_config::save_desktop_prefs(&path, &prefs) {
-        eprintln!("magnis: could not save the Dock preference: {e}");
+        tracing::warn!(target: "shell", error = %e, "could not save the Dock preference");
     }
 }
 
@@ -198,7 +198,7 @@ fn toggle_start_at_login(app: &tauri::AppHandle) {
         manager.enable()
     };
     if let Err(e) = result {
-        eprintln!("magnis: could not change Start at Login: {e}");
+        tracing::warn!(target: "shell", error = %e, "could not change Start at Login");
     }
 }
 
@@ -368,7 +368,7 @@ pub fn spawn_status_poll(app: tauri::AppHandle, base_url: String) {
         {
             Ok(c) => c,
             Err(e) => {
-                eprintln!("magnis: tray status poll disabled: {e}");
+                tracing::warn!(target: "shell", error = %e, "tray status poll disabled");
                 return;
             }
         };

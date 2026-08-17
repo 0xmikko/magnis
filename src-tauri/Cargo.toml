@@ -17,7 +17,10 @@ anyhow = "1.0"
 dirs = "5.0"
 getrandom = "0.2"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls-native-roots"] }
+tracing = "0.1"
 tracing-subscriber = "0.3"
+# The shell's own daily-rolling log file (backend-logging-system DEC-16).
+tracing-appender = "0.2"
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 # Registered FIRST at runtime, as its docs require: a second launch must
