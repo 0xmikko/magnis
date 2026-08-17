@@ -23,12 +23,10 @@ if [ ! -f "$CACHE/$ASSET" ]; then
     "https://github.com/theseus-rs/postgresql-binaries/releases/download/${PG_VERSION}/${ASSET}"
 fi
 
-echo "Building magnis-server (--features embedded-pg,bundled, offline from cache)…"
-cd "$REPO_ROOT"
-POSTGRESQL_VERSION="=${PG_VERSION}" \
-  cargo build --release -p magnis --bin magnis-server --features embedded-pg,bundled
-
-DEST="$REPO_ROOT/desktop/src-tauri/binaries"
-mkdir -p "$DEST"
-cp "$REPO_ROOT/target/release/magnis-server" "$DEST/magnis-server-${TARGET}"
-echo "Staged Tauri externalBin: $DEST/magnis-server-${TARGET}"
+echo "Pre-seed complete. The desktop crate embeds this archive itself:"
+echo "  - postgresql_embedded/bundled compiles it into magnis-desktop"
+echo "  - desktop/src-tauri/.cargo/config.toml pins POSTGRESQL_VERSION so the"
+echo "    build script reuses THIS file instead of resolving 'latest' online"
+echo
+echo "This script no longer builds a backend. The shell owns the cluster now,"
+echo "and the backend is a TypeScript binary produced by scripts/build-backend.sh."

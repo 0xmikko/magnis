@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 #
 # Bake the developer's credentials from a source .env into the bundled
-# resource `desktop/src-tauri/resources/magnis.env` that the packaged app's
-# launchd services load via MAGNIS_ENV_FILE (DEC-6). Secrets never enter git
-# (the output is gitignored) nor the plists (DEC-7).
+# `desktop/src-tauri/magnis.env`, which the app passes to the agent through
+# MAGNIS_ENV_FILE. Secrets never enter git — the output is gitignored.
+#
+# NOT IN THE BUILD CHAIN. `beforeBuildCommand` does not call this, so a packaged
+# app ships no baked credentials and reads its configuration at runtime instead.
+# Whether a bundle should carry credentials at all is undecided; the script is
+# kept because deleting it would also delete the decision.
 #
 # Usage:
 #   bundle-secrets.sh [--fixture] [SRC_ENV]
@@ -23,10 +27,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # Source the file from the crate root (not a resources/ subdir) so Tauri's
-# `resources: ["magnis.env"]` lands it flat at Contents/Resources/magnis.env —
-# the exact path the service plists set for MAGNIS_ENV_FILE. An array-form
-# resource in a subdir would preserve the subdir (Contents/Resources/resources/…)
-# and the services would not find it.
+# `resources: ["magnis.env"]` lands it flat at Contents/Resources/magnis.env.
+# An array-form resource in a subdir would preserve the subdir
+# (Contents/Resources/resources/…) and the lookup would miss it.
 OUT="${MAGNIS_SECRETS_OUT:-$REPO_ROOT/desktop/src-tauri/magnis.env}"
 
 # FIXTURE / SRC may also come from the environment so CI can drive the fixed

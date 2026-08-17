@@ -1,10 +1,13 @@
 //! Spawns the magnis-server binary as a child process and manages its lifecycle.
 //! The frontend connects to the server via HTTP (RPC) at the returned base URL.
 //!
-//! Local-mode contract: desktop boots the backend in `MAGNIS_DB_MODE=local`
-//! and points it at a `data_root` directory. The backend owns PGlite spawn,
-//! lockfile, and identity artefacts inside that directory. Desktop only
-//! resolves paths and passes envs; it never touches pgdata.
+//! Server-mode contract: the SHELL owns the PostgreSQL cluster and hands the
+//! backend a `DATABASE_URL` (DEC-18). The backend no longer owns a database,
+//! a data-dir lock or a JWT secret — those moved here with the cluster.
+//!
+//! Deliberately NOT `MAGNIS_DB_MODE=local`: that branch reads an injected
+//! `DATABASE_URL` as "a harness already applied the schema" and runs no
+//! migrations, so the app would boot against an empty database.
 
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
@@ -13,8 +16,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
-
-const DEFAULT_PORT: u16 = 3765;
 
 /// CORS origins the desktop backend must allow: the Tauri webview origins plus
 /// loopback. Set explicitly so it ALWAYS wins over any `CORS_ALLOWED_ORIGINS`
@@ -76,6 +77,12 @@ const SHUTDOWN_GRACE_SECS: u64 = 10;
 const SHUTDOWN_POLL_INTERVAL_MS: u64 = 50;
 
 /// Manages the magnis-server child process and exposes its base URL for the frontend.
+/// The directory `scripts/build-backend.sh` stages the backend payload into,
+/// relative to the resource root. Declared in `tauri.conf.json` twice — as the
+/// staging argument and as a bundle resource glob — and asserted equal to this
+/// constant by `tst_desktop_serverbuild_001`.
+pub const PAYLOAD_SUBDIR: &str = "binaries";
+
 pub struct BackendProcessManager {
     child: Option<Child>,
     base_url: String,
@@ -113,7 +120,7 @@ fn explicit_override(var: &str, raw: Option<String>) -> Result<Option<std::path:
 impl BackendProcessManager {
     /// Resolve path to magnis-server binary (next to current exe, or repo/desktop target dir).
     fn server_binary_path() -> Result<std::path::PathBuf> {
-        // @tested-by: tst_desktop_sidecar_001, tst_desktop_resolver_003
+        // @tested-by: tst_desktop_resolver_003
         // @invariant: INV-17 — an EXPLICIT path wins, and the log names both
         // the winner and every candidate rejected before it.
         //
@@ -135,26 +142,15 @@ impl BackendProcessManager {
             return Ok(p);
         }
 
-        // Dev: this worktree's own build. Preferred over a neighbour binary so
-        // `cargo tauri dev` runs what was just compiled.
-        {
-            let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-            for rel in ["../../target", "../../../target"] {
-                for subdir in ["release", "debug"] {
-                    let p = base.join(rel).join(subdir).join("magnis-server");
-                    if p.exists() {
-                        let p = p.canonicalize()?;
-                        eprintln!(
-                            "magnis-server: using {} (worktree target); skipped {:?}",
-                            p.display(),
-                            rejected
-                        );
-                        return Ok(p);
-                    }
-                    rejected.push(p.display().to_string());
-                }
-            }
-        }
+        // The dev-target probe that used to sit here is DELETED (DEC-30). It
+        // looked in `<repo>/target/{release,debug}/magnis-server` BEFORE the
+        // sidecar — and that path holds the RUST backend, which this branch no
+        // longer builds or ships. Once the sidecar became the compiled
+        // TypeScript backend, any machine that had ever built the Rust one
+        // silently ran it instead, against the shell's cluster, and succeeded.
+        // That is verbatim the failure `explicit_override` above exists to
+        // stop. One producer, one location: `scripts/build-backend.sh` stages
+        // the sidecar for dev and packaging alike.
 
         // Packaged: the Tauri `externalBin` sidecar beside the executable.
         let current_exe =
@@ -174,8 +170,8 @@ impl BackendProcessManager {
 
         anyhow::bail!(
             "magnis-server binary not found. Tried: {rejected:?}. \
-             From repo root run: cargo build -p magnis-server --release, \
-             or set MAGNIS_SERVER_PATH."
+             From the repo root run: bash scripts/build-backend.sh \
+             desktop/src-tauri/binaries, or set MAGNIS_SERVER_PATH."
         )
     }
 
@@ -229,80 +225,56 @@ impl BackendProcessManager {
     /// overrides both — useful for integration testing against a checked-out
     /// binary, and explicitly documented in `docs/deployment/local.md`.
     // Retained for the dev-only PGlite opt-out (desktop ships embedded PG now).
-    #[allow(dead_code)]
-    fn pglite_server_binary_path() -> Result<std::path::PathBuf> {
-        if let Ok(path) = std::env::var("MAGNIS_PGLITE_SERVER_BIN") {
-            let p = std::path::PathBuf::from(path);
-            if p.exists() {
-                return Ok(p);
-            }
-            anyhow::bail!(
-                "MAGNIS_PGLITE_SERVER_BIN set to {} but file does not exist",
-                p.display()
-            );
-        }
-
-        let current_exe =
-            std::env::current_exe().context("Failed to get current executable path")?;
-        let parent = current_exe
-            .parent()
-            .context("Executable has no parent directory")?;
-
-        let triple = current_target_triple();
-        let suffixed = parent.join(format!("pglite-server-{triple}"));
-        if suffixed.exists() {
-            return Ok(suffixed);
-        }
-        let plain = parent.join("pglite-server");
-        if plain.exists() {
-            return Ok(plain);
-        }
-
-        // Dev builds: desktop/target or repo/target.
-        let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        for rel in [
-            "../../target/release/pglite-server",
-            "../../target/debug/pglite-server",
-            "../../../target/release/pglite-server",
-            "../../../target/debug/pglite-server",
-            "../build/pglite-server",
-        ] {
-            let p = base.join(rel);
-            if p.exists() {
-                return Ok(p.canonicalize()?);
-            }
-        }
-
-        anyhow::bail!(
-            "pglite-server sidecar not found. Run desktop/build/bundle-pglite.sh, or set \
-             MAGNIS_PGLITE_SERVER_BIN to a compiled binary. Expected suffixed name: \
-             pglite-server-{triple}"
-        )
-    }
-
     /// Spawn magnis-server in Local mode against `data_root` and wait for `/health`.
     ///
     /// Local-mode env contract (see `docs/deployment/local.md`):
-    /// - `MAGNIS_DB_MODE=local` — selects `DbMode::Local` in the backend.
-    /// - `DB_PATH=<data_root>` — directory that owns pgdata/, magnis.lock, identity files.
-    /// - `STORAGE_DIR=<data_root>` — file storage lives under the same root.
-    /// - `MAGNIS_LOCAL_PG=embedded` — desktop ships native embedded Postgres
-    ///   (bundled into magnis-server); no PGlite sidecar.
-    pub fn start(data_root: &std::path::Path, port: u16) -> Result<Self> {
-        let bin = Self::server_binary_path()?;
+    /// The database contract is in [`apply_database_env`], which is where it
+    /// is also asserted; the rest of the child's environment is set below.
+    /// Compose the command the backend child is spawned with — every variable,
+    /// no side effects.
+    ///
+    /// Split out from [`Self::start`] so the child's environment can be
+    /// asserted without a running process. That is not a stylistic
+    /// preference: the one shipped boot-stopper on this branch was a
+    /// *missing* variable, invisible to any test that could not enumerate
+    /// what `start` sets.
+    fn build_child_command(
+        bin: &std::path::Path,
+        data_root: &std::path::Path,
+        port: u16,
+        database_url: &str,
+        runtime_root: &std::path::Path,
+    ) -> Result<Command> {
+        // Server mode means the backend refuses to invent a signing secret —
+        // "no derivation, no random fallback". Ownership moved here with the
+        // database, so the shell supplies it or nothing boots.
+        let jwt_secret = crate::paths::ensure_jwt_secret(data_root)?;
         let data_root_str = data_root
             .to_str()
             .context("Data root path is not valid UTF-8")?;
-        let mut cmd = Command::new(&bin);
-        cmd.env("MAGNIS_DB_MODE", "local")
-            .env("DB_PATH", data_root_str)
-            // ONE ROOT: the backend derives its own paths from the same home
-            // the shell resolved, instead of each side guessing separately.
-            .env("MAGNIS_HOME", data_root_str)
-            .env("STORAGE_DIR", data_root_str)
-            // Desktop ships native embedded Postgres (bundled into magnis-server);
-            // no PGlite sidecar. The PGlite opt-out is dev-only (not shipped).
-            .env("MAGNIS_LOCAL_PG", "embedded")
+        let mut cmd = Command::new(bin);
+        // SERVER mode against the cluster the SHELL owns (DEC-18). Not `local`:
+        // that branch treats an injected DATABASE_URL as "a harness already
+        // applied the schema" and runs NO migrations, so the app would boot on
+        // an empty database. `DB_PATH` and `MAGNIS_LOCAL_PG` are retired for
+        // the same reason they are no longer true — the backend does not own a
+        // database any more, and `MAGNIS_LOCAL_PG` under server mode is not
+        // merely unused: the backend throws on it.
+        // Where `data/` and `migrations/` actually are. A compiled bun binary
+        // resolves `import.meta.url` to the virtual `/$bunfs` filesystem, so
+        // the backend cannot find them by looking near itself — the launcher
+        // must say where they are.
+        //
+        // NOT derived from the binary's own directory, which is only right in
+        // development. A packaged Linux app puts the sidecar in `/usr/bin` and
+        // the payload in `/usr/lib/<product>`; measured from a built `.deb`.
+        // The caller passes the resource root, which is the one path that is
+        // correct in both.
+        let runtime_root = runtime_root
+            .to_str()
+            .context("Runtime root is not valid UTF-8")?;
+        apply_database_env(&mut cmd, data_root_str, database_url, &jwt_secret)
+            .env("MAGNIS_RUNTIME_ROOT", runtime_root)
             .env("PORT", port.to_string())
             // Allow the Tauri webview origins (wins over any machine .env list).
             .env("CORS_ALLOWED_ORIGINS", DESKTOP_CORS_ORIGINS)
@@ -370,8 +342,7 @@ impl BackendProcessManager {
         }
         cmd.env(
             "MAGNIS_CATALOG_URL",
-            std::env::var("MAGNIS_CATALOG_URL")
-                .unwrap_or_else(|_| crate::service::plist::DEFAULT_CATALOG_URL.to_string()),
+            crate::paths::catalog_url(std::env::var("MAGNIS_CATALOG_URL").ok()),
         );
         // Backend owns the agent in spawn mode too: set the gate flag +
         // the COMPLETE agent spawn spec on the backend, so it spawns +
@@ -382,6 +353,21 @@ impl BackendProcessManager {
         // (set by `run-spawn.sh` in dev) so the agent reaches node + the
         // claude/codex CLI; PATH is the desktop's inherited PATH.
         Self::apply_agent_spawn_env(&mut cmd, port, data_root);
+        Ok(cmd)
+    }
+
+    pub fn start(
+        data_root: &std::path::Path,
+        port: u16,
+        database_url: &str,
+        runtime_root: &std::path::Path,
+    ) -> Result<Self> {
+        // Server mode means the backend refuses to invent a signing secret —
+        // "no derivation, no random fallback". Ownership moved here with the
+        // database, so the shell supplies it or nothing boots.
+        let bin = Self::server_binary_path()?;
+        let mut cmd = Self::build_child_command(&bin, data_root, port, database_url, runtime_root)?;
+
         let child = cmd.spawn().context("Failed to spawn magnis-server")?;
 
         let base_url = format!("http://127.0.0.1:{}", port);
@@ -420,14 +406,24 @@ impl BackendProcessManager {
                 return;
             }
         };
-        // Default to the same path the launchd contract uses. Bailing out here
-        // meant the agent silently never spawned in spawn mode — nothing sets
-        // this var outside the plist — and the app showed "No agents available
-        // — the agent runtime is not reachable" with no other clue. The file
-        // itself is optional: the supervisor treats an absent one as empty.
+        // Default to the file the data root owns. Bailing out here meant the
+        // agent silently never spawned in spawn mode — nothing else sets this
+        // var — and the app showed "No agents available" with no other clue.
+        //
+        // It is PROVISIONED, not merely named. The previous comment here said
+        // "the file itself is optional: the supervisor treats an absent one as
+        // empty", and that is false against this backend: naming a file that
+        // does not exist makes it exit 64 before serving anything. An empty
+        // file means the same thing and is a file.
         let env_file = match std::env::var("MAGNIS_ENV_FILE") {
             Ok(v) if !v.is_empty() => v,
-            _ => data_root.join("magnis.env").to_string_lossy().into_owned(),
+            _ => match crate::paths::ensure_env_file(data_root) {
+                Ok(p) => p.to_string_lossy().into_owned(),
+                Err(e) => {
+                    eprintln!("[backend-owns-agent] not enabling: {e:#}");
+                    return;
+                }
+            },
         };
         let mcp_proxy = std::env::var("MAGNIS_MCP_PROXY_PATH")
             .ok()
@@ -448,7 +444,7 @@ impl BackendProcessManager {
         // Inheriting the GUI process's PATH is not enough: a Finder launch
         // never sources the shell profile, so a perfectly good Claude Code
         // install reported "Not logged in" simply because it was invisible.
-        let path = crate::service::plist::agent_path(
+        let path = crate::paths::agent_path(
             &dirs::home_dir().unwrap_or_default(),
             &std::env::current_exe()
                 .ok()
@@ -562,39 +558,70 @@ impl Drop for BackendProcessManager {
     }
 }
 
-/// Pick a port for the backend. Reads MAGNIS_BACKEND_PORT env var, falls back to DEFAULT_PORT.
-pub fn pick_port() -> u16 {
-    std::env::var("MAGNIS_BACKEND_PORT")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(DEFAULT_PORT)
+// `pick_port()` lived here and picked nothing: it returned MAGNIS_BACKEND_PORT
+// or a hard-coded default, bound nothing, and so could not tell a busy port
+// from a free one. Replaced by `ports::bind_port`, which reserves before
+// handing over (DEC-2).
+
+/// The database half of the child contract, in one place so it can be asserted
+/// as a whole.
+///
+/// It was inline, and the cost of that was concrete: the switch to server mode
+/// silently transferred ownership of the JWT secret from the backend to the
+/// shell, the shell never took it, and no test could see the gap because there
+/// was nothing to look at. Three reviewers found it by reading; a test should
+/// have.
+pub fn apply_database_env<'a>(
+    cmd: &'a mut Command,
+    data_root: &str,
+    database_url: &str,
+    jwt_secret: &str,
+) -> &'a mut Command {
+    cmd.env("MAGNIS_DB_MODE", "server")
+        .env("DATABASE_URL", database_url)
+        // Server mode refuses to derive or invent a signing secret, so this key
+        // is the difference between an app that boots and one that does not.
+        .env("AUTH_JWT_SECRET", jwt_secret)
+        .env("MAGNIS_HOME", data_root)
+        .env("STORAGE_DIR", data_root)
+        // Retired with the local branch, and not merely unused: the backend
+        // THROWS on MAGNIS_LOCAL_PG under server mode, so an inherited value
+        // from an operator shell would stop the app booting.
+        .env_remove("MAGNIS_LOCAL_PG")
+        .env_remove("DB_PATH")
 }
 
-/// The backend the GUI talks to: either a child process it spawned (dev/`Spawn`
-/// mode) or a launchd-managed service it only connects to (`Service` mode). The
-/// commands read `base_url()` uniformly; only `Spawn` is stopped on window exit.
-pub enum BackendHandle {
-    /// `Spawn` mode — GUI owns the child and stops it on exit.
-    Spawned(BackendProcessManager),
-    /// `Service` mode — connect-only; launchd owns the lifecycle, so the service
-    /// intentionally outlives the GUI window (DEC-3/DEC-11). No child here.
-    Service { base_url: String },
+/// What the shell owns: the backend child and the cluster it talks to.
+///
+/// This was a two-arm enum whose second arm existed only for the launchd
+/// service path. DEC-1 removed that path, so the choice is gone and the type
+/// says so — a single-arm enum would have been ceremony.
+pub struct BackendHandle {
+    manager: Box<BackendProcessManager>,
+    cluster: Box<crate::postgres::PostgresHandle>,
 }
 
 impl BackendHandle {
-    pub fn base_url(&self) -> &str {
-        match self {
-            BackendHandle::Spawned(m) => m.base_url(),
-            BackendHandle::Service { base_url } => base_url,
+    pub fn spawned(
+        manager: BackendProcessManager,
+        cluster: crate::postgres::PostgresHandle,
+    ) -> Self {
+        Self {
+            manager: Box::new(manager),
+            cluster: Box::new(cluster),
         }
     }
 
-    /// Stop the spawned child (`Spawn` mode). In `Service` mode this is a no-op:
-    /// the launchd services keep running so background sync survives window close.
+    pub fn base_url(&self) -> &str {
+        self.manager.base_url()
+    }
+
+    /// Ordered teardown, and the order is the invariant: the child must be gone
+    /// before the database it is connected to goes away. The reverse hands the
+    /// backend connection errors on its way out (DEC-9).
     pub fn stop(&mut self) {
-        if let BackendHandle::Spawned(m) = self {
-            m.stop();
-        }
+        self.manager.stop();
+        self.cluster.stop();
     }
 }
 
@@ -609,6 +636,253 @@ fn current_target_triple() -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // @test-id: tst_desktop_boot_001
+    // @invariant: INV-DTR-16, INV-DTR-18
+    // @covers: PostgresHandle::start + BackendProcessManager::start, end to end
+    // @deterministic: yes, but requires a staged sidecar — hence `ignore`
+    //
+    // The only test that answers the question the others merely approach: does
+    // the environment this shell composes actually boot the real backend?
+    // Every other assertion here is about the *shape* of that environment, and
+    // the round-1 boot-stopper proved a well-shaped environment can still be
+    // missing the one variable that matters.
+    //
+    // Ignored by default because it needs `scripts/build-backend.sh` to have
+    // run and it starts a real PostgreSQL cluster. Run it deliberately:
+    //
+    //   bash scripts/build-backend.sh desktop/src-tauri/binaries
+    //   cd desktop/src-tauri && cargo test tst_desktop_boot_001 -- --ignored --nocapture
+    #[test]
+    #[ignore = "needs a staged backend sidecar; starts a real PostgreSQL cluster"]
+    fn tst_desktop_boot_001_the_composed_environment_boots_the_real_backend() {
+        let tmp = tempfile::tempdir().expect("temp dir");
+        let data_root = tmp.path();
+
+        let pg_port = crate::ports::bind_port("postgres", None)
+            .expect("bind a postgres port")
+            .release();
+        let cluster =
+            crate::postgres::PostgresHandle::start(data_root, pg_port).expect("start PostgreSQL");
+
+        let backend_port = crate::ports::bind_port("backend", None)
+            .expect("bind a backend port")
+            .release();
+
+        // The payload lives beside the staged sidecar, which is where
+        // `build-backend.sh` puts it and where `tauri-build` copies it.
+        let runtime_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(PAYLOAD_SUBDIR);
+        assert!(
+            runtime_root.join("migrations").is_dir(),
+            "run scripts/build-backend.sh first: {} has no migrations/",
+            runtime_root.display()
+        );
+
+        // The resolver looks beside `current_exe()`, which under `cargo test`
+        // is `target/debug/deps`. `MAGNIS_SERVER_PATH` is the documented
+        // override and is what points it at the staged sidecar.
+        let sidecar = runtime_root.join(format!("magnis-server-{}", current_target_triple()));
+        assert!(
+            sidecar.is_file(),
+            "run scripts/build-backend.sh first: no {}",
+            sidecar.display()
+        );
+        // SAFETY: single-threaded test; no other thread reads the environment
+        // while this runs.
+        std::env::set_var("MAGNIS_SERVER_PATH", &sidecar);
+
+        let mut manager = BackendProcessManager::start(
+            data_root,
+            backend_port,
+            &cluster.database_url(),
+            &runtime_root,
+        )
+        .expect("the backend must become healthy with the environment the shell composes");
+
+        // `start` returns only after /health answers, so reaching here means
+        // the child booted, ran its migrations against the shell's cluster and
+        // served a request.
+        assert_eq!(manager.port(), backend_port);
+        manager.stop();
+    }
+
+    // @test-id: tst_desktop_payloaddir_001
+    // @invariant: INV-DTR-25
+    // @covers: backend_process::PAYLOAD_SUBDIR vs tauri.conf.json
+    // @deterministic: yes
+    //
+    // The subdirectory name exists twice — compiled into the shell, and written
+    // in the bundler's config — and nothing connects them. A rename on either
+    // side produces an app that starts, finds no payload, and says nothing.
+    #[test]
+    fn tst_desktop_payloaddir_001_the_compiled_name_matches_the_bundled_one() {
+        let raw = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tauri.conf.json"),
+        )
+        .expect("tauri.conf.json");
+        let conf: serde_json::Value = serde_json::from_str(&raw).expect("valid JSON");
+
+        let server = conf["bundle"]["externalBin"]
+            .as_array()
+            .expect("externalBin")
+            .iter()
+            .filter_map(|v| v.as_str())
+            .find(|e| e.contains("magnis-server"))
+            .expect("the backend sidecar");
+        assert_eq!(
+            std::path::Path::new(server)
+                .parent()
+                .and_then(|p| p.to_str()),
+            Some(PAYLOAD_SUBDIR),
+            "the shell looks under {PAYLOAD_SUBDIR}/ inside the resource root; \
+             the bundler stages the sidecar somewhere else"
+        );
+    }
+
+    // @test-id: tst_desktop_childenv_002
+    // @invariant: INV-DTR-16
+    // @covers: BackendProcessManager::build_child_command
+    // @deterministic: yes
+    //
+    // The COMPLETE child environment, not the database subset. Round 1 shipped a
+    // boot-stopper — `AUTH_JWT_SECRET` unset — that no test could see, because
+    // every test asserted the variables someone had remembered to think about.
+    // This enumerates what `start` actually sets, so the next omission fails
+    // here instead of on a user's machine with no window and no console.
+    #[test]
+    fn tst_desktop_childenv_002_the_whole_spawn_environment_is_present() {
+        let tmp = tempfile::tempdir().expect("temp dir");
+        let bin = tmp.path().join("staged").join("magnis-server-test");
+        std::fs::create_dir_all(bin.parent().expect("parent")).expect("mkdir");
+        // The payload root is NOT the binary's directory — a packaged Linux
+        // app splits them (`/usr/bin` vs `/usr/lib/<product>`), so the test
+        // passes a distinct path and asserts the distinct path comes back.
+        let runtime_root = tmp.path().join("resources").join(PAYLOAD_SUBDIR);
+        let cmd = BackendProcessManager::build_child_command(
+            &bin,
+            tmp.path(),
+            3010,
+            "postgres://127.0.0.1:5599/magnis",
+            &runtime_root,
+        )
+        .expect("compose the child command");
+
+        let envs: std::collections::HashMap<_, _> = cmd.get_envs().collect();
+        let get = |k: &str| {
+            envs.get(std::ffi::OsStr::new(k))
+                .and_then(|v| v.as_ref())
+                .map(|v| v.to_string_lossy().into_owned())
+        };
+
+        // Fatal by absence — each of these has a documented failure mode.
+        assert_eq!(get("MAGNIS_DB_MODE").as_deref(), Some("server"));
+        assert_eq!(
+            get("DATABASE_URL").as_deref(),
+            Some("postgres://127.0.0.1:5599/magnis")
+        );
+        assert!(
+            get("AUTH_JWT_SECRET").is_some_and(|v| !v.is_empty()),
+            "the backend throws in server mode without it — this is the round-1 bug"
+        );
+        assert_eq!(get("PORT").as_deref(), Some("3010"));
+        assert!(
+            get("CORS_ALLOWED_ORIGINS").is_some_and(|v| !v.is_empty()),
+            "dropping this is the recorded cause of the packaged app's Load failed"
+        );
+
+        // The staged payload lives beside the binary, and a compiled bun binary
+        // cannot find it by looking near itself.
+        assert_eq!(
+            get("MAGNIS_RUNTIME_ROOT").map(std::path::PathBuf::from),
+            Some(runtime_root.clone()),
+            "the launcher must point at the payload, not at the sidecar"
+        );
+        assert_ne!(
+            get("MAGNIS_RUNTIME_ROOT").map(std::path::PathBuf::from),
+            bin.parent().map(std::path::Path::to_path_buf),
+            "deriving the payload root from the binary is exactly the bug a built \
+             .deb exposed: the sidecar is in /usr/bin and the payload is not"
+        );
+
+        // One root, both names.
+        let root = tmp.path().to_string_lossy().into_owned();
+        assert_eq!(get("MAGNIS_HOME").as_deref(), Some(root.as_str()));
+        assert_eq!(get("STORAGE_DIR").as_deref(), Some(root.as_str()));
+
+        // Retired, and not merely unused: the backend throws on MAGNIS_LOCAL_PG
+        // under server mode. Asserted as an explicit removal, so inheriting one
+        // from the desktop's own environment cannot pass.
+        for retired in ["DB_PATH", "MAGNIS_LOCAL_PG"] {
+            assert_eq!(
+                envs.get(std::ffi::OsStr::new(retired)),
+                Some(&None),
+                "{retired} must be explicitly REMOVED, not merely unset"
+            );
+        }
+
+        // A model download on first run is a startup hang, not a preference.
+        assert!(
+            get("EMBEDDINGS_PROVIDER").is_some() || std::env::var("EMBEDDINGS_PROVIDER").is_ok(),
+            "unset means the backend downloads a model on first run"
+        );
+    }
+
+    // @test-id: tst_desktop_childenv_001
+    // @invariant: INV-DTR-16
+    // @covers: backend_process::apply_database_env
+    // @deterministic: yes
+    //
+    // The test that should have caught a shipped boot-stopper. Switching the
+    // child to server mode moved ownership of the JWT secret to the shell; the
+    // shell did not take it, and nothing here could see that, because the
+    // contract was inline in a 200-line spawn function with no seam.
+    #[test]
+    fn tst_desktop_childenv_001_the_database_contract_is_complete() {
+        use std::collections::HashMap;
+
+        let mut cmd = Command::new("/bin/true");
+        // Prove the retirement is a REMOVAL, not an omission: set both first.
+        cmd.env("MAGNIS_LOCAL_PG", "embedded")
+            .env("DB_PATH", "/old");
+        apply_database_env(
+            &mut cmd,
+            "/data/root",
+            "postgresql://x@127.0.0.1:5599/magnis",
+            "s3cret",
+        );
+
+        let envs: HashMap<String, Option<String>> = cmd
+            .get_envs()
+            .map(|(k, v)| {
+                (
+                    k.to_string_lossy().into_owned(),
+                    v.map(|v| v.to_string_lossy().into_owned()),
+                )
+            })
+            .collect();
+
+        assert_eq!(envs.get("MAGNIS_DB_MODE"), Some(&Some("server".into())));
+        assert_eq!(
+            envs.get("DATABASE_URL"),
+            Some(&Some("postgresql://x@127.0.0.1:5599/magnis".into()))
+        );
+        assert_eq!(
+            envs.get("AUTH_JWT_SECRET"),
+            Some(&Some("s3cret".into())),
+            "server mode refuses to invent one — without this the app never boots"
+        );
+        assert_eq!(envs.get("MAGNIS_HOME"), Some(&Some("/data/root".into())));
+        assert_eq!(envs.get("STORAGE_DIR"), Some(&Some("/data/root".into())));
+
+        // `None` is how Command records a REMOVAL, which is what these must be:
+        // an inherited MAGNIS_LOCAL_PG makes the backend throw under server mode.
+        assert_eq!(
+            envs.get("MAGNIS_LOCAL_PG"),
+            Some(&None),
+            "must be removed from the child, not merely left unset here"
+        );
+        assert_eq!(envs.get("DB_PATH"), Some(&None));
+    }
 
     /// tst_desktop_resolver_003 — an explicit override that points nowhere is
     /// an ERROR, for BOTH sidecars.
@@ -642,8 +916,14 @@ mod tests {
         )
         .expect_err("a missing explicit path must not fall through");
         let text = err.to_string();
-        assert!(text.contains("MAGNIS_SERVER_PATH"), "names the variable: {text}");
-        assert!(text.contains("/nowhere/magnis-server"), "names the path: {text}");
+        assert!(
+            text.contains("MAGNIS_SERVER_PATH"),
+            "names the variable: {text}"
+        );
+        assert!(
+            text.contains("/nowhere/magnis-server"),
+            "names the path: {text}"
+        );
     }
 
     /// tst_desktop_resolver_001: the triple-suffixed binary wins over the
