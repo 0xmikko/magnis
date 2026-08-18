@@ -35,6 +35,21 @@ interface Index {
   packages: Entry[];
 }
 
+interface Curation {
+  schema_version: number;
+  capabilities: {
+    id: string;
+    title: string;
+    modules: string[];
+    source: string | null;
+    people: boolean;
+    local: boolean;
+  }[];
+  always: string[];
+  hard_deps: Record<string, string[]>;
+  install_order: string[];
+}
+
 const outputs: string[] = [];
 
 function build(): { out: string; index: Index } {
@@ -121,6 +136,79 @@ describe("tst_pub_catalog_index_001", () => {
 
   test("the staging scratch directory is not published", () => {
     expect(readdirSync(first.out)).not.toContain(".stage");
+  });
+
+  test("the curation names capabilities the catalog can actually install", () => {
+    const curation = JSON.parse(
+      readFileSync(join(first.out, "onboarding.json"), "utf8"),
+    ) as Curation;
+    const carried = new Set(first.index.packages.map((entry) => entry.id));
+    expect(curation.capabilities.length).toBeGreaterThan(0);
+    for (const capability of curation.capabilities) {
+      for (const id of capability.modules) {
+        expect(carried.has(id), `capability '${capability.id}' names module '${id}'`).toBe(true);
+      }
+      if (capability.source !== null) {
+        expect(
+          carried.has(capability.source),
+          `capability '${capability.id}' names source '${capability.source}'`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  test("the always-installed set is DERIVED from tier, not restated", () => {
+    // `triggers/manifest.toml` says `tier = "system"`. The application used
+    // to carry `ALWAYS = ["triggers"]` as a literal — a copy of a fact the
+    // package already stated, which is exactly the duplicate this document
+    // exists to delete rather than relocate.
+    const curation = JSON.parse(
+      readFileSync(join(first.out, "onboarding.json"), "utf8"),
+    ) as Curation;
+    expect(curation.always).toContain("triggers");
+    const declaresSystem = readFileSync(
+      join(ROOT, "plugins", "modules", "triggers", "manifest.toml"),
+      "utf8",
+    ).includes('tier = "system"');
+    expect(declaresSystem).toBe(true);
+  });
+
+  test("hard dependencies come from the manifests and name only modules", () => {
+    const curation = JSON.parse(
+      readFileSync(join(first.out, "onboarding.json"), "utf8"),
+    ) as Curation;
+    // `contacts` calls `email.ensure_address`, so it hard-depends on email.
+    expect(curation.hard_deps["contacts"]).toContain("email");
+    // It only READS `companies.company`, which never blocks enabling — a
+    // soft edge, and the hand-written table this replaced had them merged.
+    expect(curation.hard_deps["contacts"] ?? []).not.toContain("companies");
+    // `x` calls `source.sync.bootstrap`; `source` is the HOST, not a
+    // package, and publishing it would send the wizard installing a module
+    // nobody wrote.
+    const modules = new Set(
+      first.index.packages.filter((entry) => entry.kind === "module").map((entry) => entry.id),
+    );
+    for (const deps of Object.values(curation.hard_deps)) {
+      for (const dep of deps) {
+        expect(modules.has(dep), `hard dependency '${dep}' must be a module`).toBe(true);
+      }
+    }
+  });
+
+  test("the install order puts every hard dependency before its dependent", () => {
+    const curation = JSON.parse(
+      readFileSync(join(first.out, "onboarding.json"), "utf8"),
+    ) as Curation;
+    const at = (id: string): number => curation.install_order.indexOf(id);
+    for (const [id, deps] of Object.entries(curation.hard_deps)) {
+      for (const dep of deps) {
+        expect(at(dep), `${dep} must install before ${id}`).toBeLessThan(at(id));
+      }
+    }
+    // Every module the catalog carries has a place in it.
+    for (const entry of first.index.packages) {
+      if (entry.kind === "module") expect(curation.install_order).toContain(entry.id);
+    }
   });
 
   test("two builds of the same tree produce byte-identical assets", () => {

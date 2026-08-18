@@ -1,0 +1,83 @@
+# What the first screen OFFERS.
+#
+# This is the one hand-written list in the catalog, and it is deliberately
+# short: everything a manifest already states is derived by the builder and
+# must not be repeated here. Concretely, do NOT add dependencies, an install
+# order, or an always-installed set — `build-catalog-index.ts` computes those
+# from `[permissions]` and `tier` in the package manifests themselves, and a
+# copy here would be a second truth that drifts.
+#
+# What is left is genuinely a judgement no manifest can make: which
+# capabilities to put in front of someone, what to call them, which packages
+# each one means, and which are safe to preselect.
+#
+# It lives here, beside the packages, rather than in the application, so a
+# newly published capability reaches the first screen with the next catalog
+# instead of the next app build.
+#
+# Fields:
+#   id       stable key; persisted in the user's setup document
+#   title    what the person reads
+#   modules  module packages this capability directly needs
+#   source   the source package it connects, if any
+#   people   brings people into the graph (pulls in `contacts`)
+#   local    costs nothing and needs no account — preselected
+
+[[capabilities]]
+id = "email"
+title = "Email"
+modules = ["email"]
+source = "google"
+people = true
+
+[[capabilities]]
+id = "meetings"
+title = "Meetings"
+modules = ["meetings"]
+source = "google"
+people = true
+
+[[capabilities]]
+id = "telegram"
+title = "Telegram"
+modules = ["telegram"]
+source = "telegram"
+people = true
+
+[[capabilities]]
+id = "x"
+title = "X"
+modules = ["x"]
+source = "x"
+people = true
+
+[[capabilities]]
+id = "linkedin"
+title = "LinkedIn"
+modules = ["linkedin"]
+source = "anysite"
+people = true
+
+[[capabilities]]
+id = "notes"
+title = "Notes"
+modules = ["notes"]
+local = true
+
+[[capabilities]]
+id = "projects"
+title = "Projects"
+modules = ["projects"]
+local = true
+
+[[capabilities]]
+id = "companies"
+title = "Companies"
+modules = ["companies"]
+local = true
+
+[[capabilities]]
+id = "files"
+title = "Files"
+modules = ["file"]
+local = true
