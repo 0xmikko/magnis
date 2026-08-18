@@ -24,8 +24,22 @@ jobs:
       - name: Bundle smoke
         run: bun run build:plugins
 
+# The channel the app actually reads. Two of them, and which one a build
+# takes is a launch key: a release build reads `catalog`, a development
+# build reads `catalog-staging`, and an explicit MAGNIS_CATALOG_URL beats
+# both. So `staging` gets its own published channel rather than being
+# tested against whatever a developer happens to have checked out.
+#
+# RELEASES rather than a branch: release assets are fetched anonymously
+# over a stable URL with no API and no token, which is the one property
+# the desktop app cannot do without (a token cannot ship in a DMG).
+# The tag NAMES the channel — never `latest`, because this repository
+# also publishes desktop builds as releases and `latest` would silently
+# become whichever went out last.
   catalog:
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: >-
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging')
     needs: [typescript]
     runs-on: ubuntu-latest
     permissions:
@@ -38,12 +52,18 @@ jobs:
       - run: bun scripts/build-catalog-index.ts
         env:
           GITHUB_SHA: ${{ github.sha }}
-      - name: Publish catalog branch
+          GITHUB_REPOSITORY: ${{ github.repository }}
+      - name: Publish the channel
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          cd catalog
-          git init -q -b catalog
-          git config user.name "magnis-catalog-bot"
-          git config user.email "catalog@magnis.ai"
-          git add -A
-          git commit -qm "catalog: ${GITHUB_SHA}"
-          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" catalog:catalog
+          set -euo pipefail
+          if [ "${GITHUB_REF}" = "refs/heads/main" ]; then TAG=catalog; else TAG=catalog-staging; fi
+          # Every asset is replaced, so a package withdrawn from the catalog
+          # stops being served instead of lingering as an orphan a stale
+          # index no longer mentions.
+          gh release delete "$TAG" --cleanup-tag --yes || true
+          gh release create "$TAG" \
+            --title "Plugin catalog (${TAG})" \
+            --notes "Built from ${GITHUB_SHA}. Fetched anonymously by the Magnis app." \
+            catalog/index.json catalog/onboarding.json catalog/*.tgz
