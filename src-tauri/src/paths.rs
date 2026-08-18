@@ -9,6 +9,10 @@ use std::path::PathBuf;
 pub struct AppPaths {
     app_data_dir: PathBuf,
     data_root: PathBuf,
+    /// `<data_root>/logs` — the folder both `desktop.<date>.log` (this shell)
+    /// and `backend.<date>.log` (the child, via `STORAGE_DIR = data_root`)
+    /// land in, also under a `DB_PATH` override (backend-logging-system DEC-16).
+    logs_dir: PathBuf,
     // Created on init and retained for future plugin loading; not read yet.
     #[allow(dead_code)]
     plugins_dir: PathBuf,
@@ -68,13 +72,9 @@ impl AppPaths {
             dirs::home_dir(),
             dirs::data_dir().map(|d| d.join("com.magnis.desktop")),
         )?;
-        eprintln!("magnis: home = {}", home.display());
         let app_data_dir = home;
 
         std::fs::create_dir_all(&app_data_dir).context("Failed to create app data directory")?;
-
-        std::fs::create_dir_all(app_data_dir.join("logs"))
-            .context("Failed to create logs directory")?;
 
         // Local-mode data root: `app_data_dir` itself. Backend will
         // create `pgdata/`, `storage/`, etc. under it. `DB_PATH` env
@@ -99,6 +99,12 @@ impl AppPaths {
             Err(_) => app_data_dir.clone(),
         };
         std::fs::create_dir_all(&data_root).context("Failed to create data root")?;
+        // The log folder hangs off the RESOLVED data root for the same reason
+        // the plugin tree does: the backend's `STORAGE_DIR` is the data root,
+        // so `desktop.*.log` and `backend.*.log` share one folder also when
+        // `DB_PATH` moved the root away from `app_data_dir`.
+        let logs_dir = data_root.join("logs");
+        std::fs::create_dir_all(&logs_dir).context("Failed to create logs directory")?;
 
         // The plugin tree MUST hang off the RESOLVED data root, not
         // `app_data_dir`: the launchd plist points `MAGNIS_PLUGINS_DIR` at
@@ -111,6 +117,7 @@ impl AppPaths {
         Ok(Self {
             app_data_dir,
             data_root,
+            logs_dir,
             plugins_dir,
         })
     }
@@ -129,6 +136,10 @@ impl AppPaths {
 
     pub fn desktop_prefs_path(&self) -> PathBuf {
         self.app_data_dir.join("desktop.json")
+    }
+
+    pub fn logs_dir(&self) -> &PathBuf {
+        &self.logs_dir
     }
 
     #[allow(dead_code)]

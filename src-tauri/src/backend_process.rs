@@ -11,6 +11,8 @@
 
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
+
+use crate::logging::{forward_child_stderr, StderrForwarder};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -74,6 +76,8 @@ const HEALTH_TIMEOUT_SECS: u64 = 120;
 // this long before escalating to SIGKILL. Native Postgres recovers from an
 // unclean kill, but a clean stop avoids leaving an orphan for the next boot.
 const SHUTDOWN_GRACE_SECS: u64 = 10;
+/// How long `stop()` waits for the stderr reader after the child is gone.
+const STDERR_JOIN_BOUND_SECS: u64 = 2;
 const SHUTDOWN_POLL_INTERVAL_MS: u64 = 50;
 
 /// Manages the magnis-server child process and exposes its base URL for the frontend.
@@ -85,6 +89,9 @@ pub const PAYLOAD_SUBDIR: &str = "binaries";
 
 pub struct BackendProcessManager {
     child: Option<Child>,
+    /// The child's stderr → `warn` events under `backend.stderr` (DEC-16);
+    /// joined with a bound on `stop()`, never blocking Quit past it.
+    stderr: Option<StderrForwarder>,
     base_url: String,
     port: u16,
     stopped: Arc<AtomicBool>,
@@ -138,7 +145,7 @@ impl BackendProcessManager {
             "MAGNIS_SERVER_PATH",
             std::env::var("MAGNIS_SERVER_PATH").ok(),
         )? {
-            eprintln!("magnis-server: using {} (MAGNIS_SERVER_PATH)", p.display());
+            tracing::info!(target: "shell", path = %p.display(), "magnis-server chosen via MAGNIS_SERVER_PATH");
             return Ok(p);
         }
 
@@ -159,10 +166,11 @@ impl BackendProcessManager {
             .parent()
             .context("Executable has no parent directory")?;
         if let Some(p) = pick_existing(parent, current_target_triple(), |p| p.exists()) {
-            eprintln!(
-                "magnis-server: using {} (bundled sidecar); skipped {:?}",
-                p.display(),
-                rejected
+            tracing::info!(
+                target: "shell",
+                path = %p.display(),
+                skipped = ?rejected,
+                "magnis-server chosen: bundled sidecar"
             );
             return Ok(p);
         }
@@ -288,8 +296,14 @@ impl BackendProcessManager {
                 std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()),
             )
             .stdin(Stdio::null())
+            // stdout stays inherited: the backend's own file sink already
+            // holds every record, so piping stdout would write the same JSON
+            // twice. stderr is PIPED and forwarded into the shell's log — it
+            // is the only place a failure from before the backend's logger
+            // existed (bad env file, exit 64) can be read on a Finder-launched
+            // app (DEC-16).
             .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit());
+            .stderr(Stdio::piped());
         // Enable first-party plugins (companies, email, telegram, …): point the
         // backend at the bundled (or repo, in dev) plugin packages so they are
         // presence-seeded at boot and the plugin store works.
@@ -371,13 +385,17 @@ impl BackendProcessManager {
         let bin = Self::server_binary_path()?;
         let mut cmd = Self::build_child_command(&bin, data_root, port, database_url, runtime_root)?;
 
-        let child = cmd.spawn().context("Failed to spawn magnis-server")?;
+        let mut child = cmd.spawn().context("Failed to spawn magnis-server")?;
+        // The reader starts BEFORE the health wait: an unread pipe blocks the
+        // child once its stderr passes the pipe buffer.
+        let stderr = child.stderr.take().map(forward_child_stderr);
 
         let base_url = format!("http://127.0.0.1:{}", port);
         let stopped = Arc::new(AtomicBool::new(false));
 
         let manager = Self {
             child: Some(child),
+            stderr,
             base_url: base_url.clone(),
             port,
             stopped: stopped.clone(),
@@ -402,9 +420,10 @@ impl BackendProcessManager {
         let agent_command = match Self::agent_binary_path() {
             Ok(p) => p,
             Err(e) => {
-                eprintln!(
-                    "[backend-owns-agent] not enabling: agent-server not found ({e}). \
-                     The backend will run without the agent."
+                tracing::warn!(
+                    target: "shell",
+                    error = %e,
+                    "backend-owns-agent not enabled: agent-server not found; the backend runs without the agent"
                 );
                 return;
             }
@@ -423,7 +442,7 @@ impl BackendProcessManager {
             _ => match crate::paths::ensure_env_file(data_root) {
                 Ok(p) => p.to_string_lossy().into_owned(),
                 Err(e) => {
-                    eprintln!("[backend-owns-agent] not enabling: {e:#}");
+                    tracing::warn!(target: "shell", error = format_args!("{e:#}"), "backend-owns-agent not enabled");
                     return;
                 }
             },
@@ -504,6 +523,12 @@ impl BackendProcessManager {
         }
         if let Some(mut child) = self.child.take() {
             terminate_child(&mut child, Duration::from_secs(SHUTDOWN_GRACE_SECS));
+        }
+        // EOF on the pipe arrives only when the child AND every connector that
+        // inherited its stderr are gone; bound the wait so Quit never hangs on
+        // a straggler — a reader still going is left detached.
+        if let Some(forwarder) = self.stderr.as_mut() {
+            let _ = forwarder.join_within(Duration::from_secs(STDERR_JOIN_BOUND_SECS));
         }
     }
 }

@@ -83,7 +83,7 @@ impl DataDirLock {
             );
         }
 
-        eprintln!("magnis: holding the data-dir lock at {}", path.display());
+        tracing::info!(target: "shell", path = %path.display(), "holding the data-dir lock");
         Ok(Self { _file: file })
     }
 }
@@ -187,7 +187,7 @@ impl PostgresHandle {
         }
         self.stopped = true;
         if let Err(e) = tauri::async_runtime::block_on(self.pg.stop()) {
-            eprintln!("magnis: PostgreSQL stop failed: {e}");
+            tracing::warn!(target: "shell", error = %e, "PostgreSQL stop failed");
         }
     }
 }
@@ -229,10 +229,7 @@ fn stop_orphan_postmaster(pgdata: &Path, installation_dir: &Path) {
         .output()
     {
         Ok(out) if out.status.success() => {
-            eprintln!(
-                "magnis: stopped an orphaned postmaster on {}",
-                pgdata.display()
-            );
+            tracing::warn!(target: "shell", pgdata = %pgdata.display(), "stopped an orphaned postmaster");
         }
         _ => {
             // Either the pid file is stale (the process is gone) or the

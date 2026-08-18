@@ -3,6 +3,7 @@
 
 mod backend_process;
 mod commands;
+mod logging;
 mod paths;
 mod ports;
 mod postgres;
@@ -36,7 +37,7 @@ fn build_backend(
     // Order is fixed (DEC-9): PostgreSQL first, then the backend — the child
     // needs a reachable DATABASE_URL the moment it boots.
     let pg_port = ports::bind_port("postgres", None)?.release();
-    println!("PostgreSQL port: {pg_port}");
+    tracing::info!(target: "shell", pg_port, "PostgreSQL port bound");
     let cluster = postgres::PostgresHandle::start(app_paths.data_root(), pg_port)?;
 
     // Bind before spawning: the port is HELD by this process until the moment
@@ -45,13 +46,14 @@ fn build_backend(
     // child that has already been launched.
     let pin = ports::parse_pin("backend", std::env::var("MAGNIS_BACKEND_PORT").ok())?;
     let reserved = ports::bind_port("backend", pin)?;
-    println!(
-        "Backend port: {} ({})",
-        reserved.port(),
-        match pin {
+    tracing::info!(
+        target: "shell",
+        port = reserved.port(),
+        how = match pin {
             Some(_) => "pinned via MAGNIS_BACKEND_PORT",
             None => "bound free",
-        }
+        },
+        "backend port bound"
     );
     let port = reserved.release();
     let manager = BackendProcessManager::start(
@@ -65,12 +67,17 @@ fn build_backend(
 }
 
 fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt::init();
-
     let app_paths = AppPaths::init()?;
-    println!("Magnis starting...");
-    println!("App data dir: {:?}", app_paths.app_data_dir());
-    println!("Data root: {:?}", app_paths.data_root());
+    // The shell's own log lives beside the backend's, in `<data_root>/logs`
+    // (DEC-16). Nothing above this line logs; `AppPaths::init` failures stay
+    // anyhow-on-stderr from `main`.
+    logging::init_logging(app_paths.logs_dir())?;
+    tracing::info!(
+        target: "shell",
+        app_data_dir = %app_paths.app_data_dir().display(),
+        data_root = %app_paths.data_root().display(),
+        "Magnis starting"
+    );
 
     let app = tauri::Builder::default()
         // FIRST, as the plugin's docs require. A second launch must collapse
@@ -137,7 +144,7 @@ fn main() -> anyhow::Result<()> {
                     // carries the reason, a dialog says it out loud, and the
                     // user can quit from the menu.
                     let (title, body) = tray::startup_error_dialog(&format!("{e:#}"));
-                    eprintln!("Startup failed: {e:?}");
+                    tracing::error!(target: "shell", error = ?e, "startup failed");
                     tray::show_startup_failure(app.handle(), &body);
                     {
                         use tauri_plugin_dialog::DialogExt;
@@ -147,7 +154,7 @@ fn main() -> anyhow::Result<()> {
                 }
             };
             let poll_url = backend.base_url().to_string();
-            println!("Backend base URL: {poll_url}");
+            tracing::info!(target: "shell", url = %poll_url, "backend base URL");
             app.manage(BackendState(Mutex::new(backend)));
             use tauri_plugin_autostart::ManagerExt;
 
@@ -170,10 +177,10 @@ fn main() -> anyhow::Result<()> {
                     Ok(()) => {
                         prefs.autostart_decided = true;
                         if let Err(e) = workspace_config::save_desktop_prefs(&prefs_path, &prefs) {
-                            eprintln!("magnis: could not record the autostart decision: {e}");
+                            tracing::warn!(target: "shell", error = %e, "could not record the autostart decision");
                         }
                     }
-                    Err(e) => eprintln!("magnis: could not enable Start at Login: {e}"),
+                    Err(e) => tracing::warn!(target: "shell", error = %e, "could not enable Start at Login"),
                 }
             }
 
@@ -185,7 +192,7 @@ fn main() -> anyhow::Result<()> {
                     let _ = window.show();
                 }
             } else {
-                println!("Quiet start: running in the status bar with no window");
+                tracing::info!(target: "shell", "quiet start: running in the status bar with no window");
             }
 
             startup::apply_dock_visibility(app.handle(), prefs.show_in_dock);
