@@ -27,43 +27,33 @@ use std::time::Instant;
 pub const DESKTOP_CORS_ORIGINS: &str =
     "tauri://localhost,https://tauri.localhost,http://localhost:*,http://127.0.0.1:*";
 
-/// Resolve `(MAGNIS_PLUGINS_DIR, MAGNIS_PLUGINS_DIST_DIR)`: the bundled
-/// `Contents/Resources/{plugins,plugins_dist}` when running from a `.app`,
-/// else the repo dirs (dev / `cargo tauri dev`). `None` if neither is present.
+/// Resolve `(MAGNIS_PLUGINS_DIR, MAGNIS_PLUGINS_DIST_DIR)` from the BUNDLE
+/// alone, or `None`.
+///
+/// The repository probe that used to follow is deleted. It walked up from
+/// `CARGO_MANIFEST_DIR` hunting for a `plugins-public` checkout, and the cost
+/// was two different products from one build: a developer's app served
+/// whatever that working tree happened to hold, a user's app served the
+/// channel, and the channel was therefore never exercised where it is
+/// developed. Its own comment recorded the consequence — the probe had
+/// silently stopped matching after the catalog moved into the submodule, and
+/// nothing said so for days.
+///
+/// Packages come from the channel for everyone now. `MAGNIS_PLUGINS_DIR`
+/// still lets an operator point deliberately at a tree; the shell no longer
+/// guesses at one.
+///
+/// The bundle branch stays because a build MAY carry a payload. Today none
+/// does, so this returns `None` and the backend is handed the data root's
+/// empty plugin tree — which boots, since Stage 1.
 fn plugin_dirs() -> Option<(PathBuf, PathBuf)> {
     // Bundle: <exe>/../.. = Contents → Contents/Resources/{plugins,plugins_dist}.
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(contents) = exe.parent().and_then(|p| p.parent()) {
-            let res = contents.join("Resources");
-            let plugins = res.join("plugins");
-            if plugins.exists() {
-                return Some((plugins, res.join("plugins_dist")));
-            }
-        }
-    }
-    // Dev: the catalog checkout (+ its sibling plugins_dist/).
-    //
-    // `plugins-public/plugins` comes FIRST and is why this function stopped
-    // working: the probe still named `plugins/` at the repo root, the layout
-    // from before the catalog moved into the `plugins-public` submodule. It
-    // could no longer match anything, so this returned None,
-    // MAGNIS_PLUGINS_DIST_DIR was never set, and the boot-time bundle seed
-    // silently copied nothing — leaving the app serving whatever plugin UI the
-    // store happened to hold, days stale. The bare `plugins` entries stay for
-    // a pre-submodule checkout.
-    let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")); // desktop/src-tauri
-    for rel in [
-        "../../plugins-public/plugins",
-        "../../../plugins-public/plugins",
-        "../../plugins",
-        "../../../plugins",
-    ] {
-        let plugins = base.join(rel);
-        if plugins.exists() {
-            let canon = plugins.canonicalize().ok()?;
-            let dist = canon.parent()?.join("plugins_dist");
-            return Some((canon, dist));
-        }
+    let exe = std::env::current_exe().ok()?;
+    let contents = exe.parent().and_then(|p| p.parent())?;
+    let resources = contents.join("Resources");
+    let plugins = resources.join("plugins");
+    if plugins.exists() {
+        return Some((plugins, resources.join("plugins_dist")));
     }
     None
 }
