@@ -63,3 +63,47 @@ test("tst_build_bundle_001: file ui → one bundle, externals→shim, relatives 
   expect(bj.ui["index.tsx"]).toBe(jsFiles[0]);
   expect(typeof bj.uiHash).toBe("string");
 });
+
+// tst_build_styles_001: a package carries its OWN styles.
+//
+// Until now the app's Tailwind pass produced every plugin's classes, by
+// scanning this repository through an `@source` glob in the host's
+// `app.css`. That cannot survive the channel: Tailwind runs at BUILD time
+// over source it can see, so a package published AFTER the app was built
+// has none of its utilities in the stylesheet — a third-party module
+// installed from the channel renders with whatever the app happens to use
+// already, and nothing else.
+//
+// A package carries its own JavaScript; it must carry its own CSS the same
+// way. The stylesheet travels INSIDE the bundle the browser already
+// imports, so there is no second file to serve and no second fetch to
+// fail.
+//
+// What this pins, and why each half matters:
+//   - the utilities the package's own UI uses are present;
+//   - they are injected once, under a marker keyed by plugin id, so two
+//     views of the same plugin do not stack stylesheets;
+//   - NO reset. `@import "tailwindcss"` would drag in Tailwind's base
+//     layer, and every plugin would then re-reset the host's page — once
+//     per plugin. Measured while planning this: the naive form emits 7.5 KB
+//     with a `@layer base`, the correct one 441 bytes with none.
+test("tst_build_styles_001: the bundle carries the package's own utilities, and no reset", async () => {
+  await buildPlugin("companies", { pluginsDir: join(REPO, "plugins"), distDir: DIST });
+  const uiDir = join(DIST, "modules", "companies", "ui");
+  const file = readdirSync(uiDir).find((f) => f.endsWith(".js"));
+  expect(file, "companies ui bundle").toBeDefined();
+  const bundle = readFileSync(join(uiDir, file as string), "utf8");
+
+  // `CompanyOverview.tsx` uses `rounded-2xl`; the class must be defined by
+  // the package now, not by whatever the host happened to compile.
+  expect(bundle).toContain(".rounded-2xl");
+  // Injected once, keyed by the plugin id.
+  expect(bundle).toContain('data-plugin="companies"');
+  // A themed colour resolves through the host's live variable, so the
+  // package follows a theme change (including the light switch) without
+  // being rebuilt.
+  expect(bundle).toContain("var(--color-surface-secondary");
+  // And no base layer: a plugin that resets the page it is embedded in is
+  // worse than an unstyled one.
+  expect(bundle).not.toContain("@layer base");
+});

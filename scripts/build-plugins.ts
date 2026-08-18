@@ -70,6 +70,105 @@ function rewriteBareImports(js: string, externals: Map<string, string>): string 
   return out;
 }
 
+/** The package's OWN stylesheet, compiled from its OWN UI, injected by the
+ * bundle the browser already imports.
+ *
+ * Why the package and not the app: Tailwind runs at BUILD time over source
+ * it can see. The host used to scan this repository through an `@source`
+ * glob, which worked only while every package lived in the same checkout —
+ * a package installed from the CHANNEL after the app was built has none of
+ * its utilities in the app's stylesheet, and renders with whatever the app
+ * happens to use already.
+ *
+ * Why inside the JS: the loader (`frontend/src/runtime/plugins/loader.ts`)
+ * `import()`s this file already. A second asset would mean a second route,
+ * a second fetch and a second way to fail; a string in the module cannot
+ * arrive half-way. The existing content hash covers it for free, because
+ * the CSS is IN the text it hashes.
+ *
+ * The input form is exact and was measured, not guessed:
+ *   - `@reference` for the framework and for the host's theme, so tokens
+ *     RESOLVE without their definitions being re-emitted;
+ *   - `utilities.css` alone, so no `base` layer — a plugin that ships
+ *     Tailwind's preflight would re-reset the host's page, once per plugin;
+ *   - `source(none)` plus one explicit `@source`, so the scan covers this
+ *     package and not the whole working directory.
+ * The naive `@import "tailwindcss"` emits 7.5 KB with a reset where this
+ * emits 441 bytes without one.
+ *
+ * @tested-by: tst_build_styles_001
+ */
+function withStyles(pluginId: string, pluginsDir: string, js: string): string {
+  const uiDir = join(pluginsDir, "modules", pluginId, "ui");
+  if (!existsSync(uiDir)) return js;
+
+  const themeCss = join(pluginsDir, "..", "packages", "host-stubs", "theme.css");
+  const input = [
+    '@reference "tailwindcss";',
+    `@reference "${themeCss}";`,
+    '@import "tailwindcss/utilities.css" source(none);',
+    `@source "${uiDir}";`,
+    // Tests are not shipped UI, and scanning them invents utilities: the
+    // word `container` in a render assertion produced Tailwind's whole
+    // `.container` block in the first build of this.
+    `@source not "${join(uiDir, "__tests__")}";`,
+    "",
+  ].join("\n");
+
+  // The input lives INSIDE this repository, not in the system temp dir:
+  // Tailwind resolves `@reference "tailwindcss"` relative to the input
+  // file, so a temp file elsewhere fails with "Can't resolve tailwindcss".
+  const inputFile = join(pluginsDir, "..", `.tw-${pluginId}-${String(process.pid)}.css`);
+  const outputFile = `${inputFile}.out`;
+  writeFileSync(inputFile, input);
+  try {
+    const run = Bun.spawnSync(
+      ["bunx", "@tailwindcss/cli", "-i", inputFile, "-o", outputFile],
+      { cwd: join(pluginsDir, "..") },
+    );
+    if (run.exitCode !== 0) {
+      throw new Error(
+        `plugin ${pluginId}: tailwind pass failed:\n${run.stderr.toString("utf8")}`,
+      );
+    }
+    const css = readFileSync(outputFile, "utf8");
+    // A package whose UI uses no utilities produces only the banner comment;
+    // injecting an empty <style> is noise, so it is skipped.
+    if (!css.includes("{")) return js;
+    return `${styleInjector(pluginId, css)}\n${js}`;
+  } finally {
+    rmSync(inputFile, { force: true });
+    rmSync(outputFile, { force: true });
+  }
+}
+
+/** Insert the stylesheet once per plugin id.
+ *
+ * Keyed by id rather than by content: two views of one plugin must not
+ * stack stylesheets, and a RELOADED plugin (dev overlay, `extensions.reload`)
+ * must replace rather than accumulate. JSON.stringify does the escaping —
+ * the CSS contains backslashes (`.bg-surface-secondary\/50`) that a
+ * template literal would eat. */
+function styleInjector(pluginId: string, css: string): string {
+  // The id is interpolated into the selector at BUILD time rather than
+  // concatenated at runtime, so the marker is greppable in the artifact —
+  // which is how the test, and anyone reading a shipped bundle, finds it.
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(pluginId)) {
+    throw new Error(`plugin ${pluginId}: id must be lowercase alphanumeric with dashes`);
+  }
+  const selector = `'style[data-plugin="${pluginId}"]'`;
+  return [
+    "(() => {",
+    "  if (typeof document === 'undefined') return;",
+    `  const found = document.querySelector(${selector});`,
+    "  const el = found ?? document.createElement('style');",
+    `  el.dataset.plugin = ${JSON.stringify(pluginId)};`,
+    `  el.textContent = ${JSON.stringify(css)};`,
+    "  if (!found) document.head.append(el);",
+    "})();",
+  ].join("\n");
+}
+
 export async function buildPlugin(pluginId: string, opts: BuildOpts = {}): Promise<BuildResult> {
   const pluginsDir = opts.pluginsDir ?? join(REPO_ROOT, "plugins");
   const distDir = opts.distDir ?? join(REPO_ROOT, "plugins_dist");
@@ -103,7 +202,7 @@ export async function buildPlugin(pluginId: string, opts: BuildOpts = {}): Promi
   const jsArtifact = result.outputs.find((o) => o.kind === "entry-point") ?? result.outputs[0];
   if (jsArtifact === undefined) throw new Error(`plugin ${pluginId}: bundle produced no output`);
   const raw = await jsArtifact.text();
-  const js = rewriteBareImports(raw, externals);
+  const js = withStyles(pluginId, pluginsDir, rewriteBareImports(raw, externals));
 
   const hash = createHash("sha256").update(js).digest("hex").slice(0, 16);
   const bundleFile = `index.${hash}.js`;

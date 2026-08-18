@@ -1,0 +1,165 @@
+/* GENERATED — do not edit.
+ *
+ * The host's `@theme` block, copied verbatim from `frontend/src/app.css` by
+ * `scripts/gen-host-stubs.sh` in the magnis-app repository, exactly as the
+ * host's TYPES beside it are.
+ *
+ * It exists so a package's own Tailwind pass can RESOLVE the host's design
+ * tokens (`bg-surface-secondary`, `text-content-tertiary`, …) without
+ * re-emitting them: the build `@reference`s this file, so the utilities it
+ * produces compile to `var(--color-surface-secondary)` and follow whatever
+ * the host defines at runtime — including the light-theme switch.
+ *
+ * Regenerate with `scripts/gen-host-stubs.sh` and commit the diff; the pin
+ * bump checks `git diff --exit-code`, so drift is caught there.
+ */
+@theme {
+  /* ── Colors: Surfaces ── */
+  --color-surface: #0e0e0e;
+  --color-surface-secondary: #1e1e1e;
+  --color-surface-tertiary: #171717;
+  --color-surface-hover: #1e1e1e;
+  --color-surface-selected: #353535;
+  --color-surface-chat: #0e0e0e;
+
+  /* ── Colors: Content (text) ── */
+  --color-content: #ffffff;
+  --color-content-secondary: #9a9a9a;
+  --color-content-tertiary: #6b6b6b;
+  --color-content-muted: #5a5a5a;
+
+  /* ── Colors: Accent ── */
+  --color-accent: #ff8400;
+  --color-accent-hover: #ff9419;
+  --color-accent-subtle: rgba(255, 132, 0, 0.14);
+
+  /* ── Colors: Semantic ── */
+  --color-blue: #0ea5e9;
+  --color-green: #22c55e;
+  --color-red: #ef4444;
+  --color-purple: #8b5cf6;
+  --color-pink: #ec4899;
+  --color-amber: #ffb020;
+  --color-amber-idle: #ffa500;
+  --color-email: #f05a4f;
+  --color-on-bright: #0d0d0d;
+
+  /* ── Colors: System Chat Bubble ── */
+  --color-chat-system-from: #0d4b3a;
+  --color-chat-system-to: #0b4737;
+  --color-chat-system-text: #b9e5d6;
+  --color-chat-system-highlight: #43d78e;
+  --color-chat-system-muted: #35ab6f;
+
+  /* ── Colors: Agent Panel ── */
+  --color-agent-bg: #0e0e0e;
+  --color-agent-bg-deep: #0e0e0e;
+  --color-agent-bg-card: #171717;
+  --color-agent-bg-elevated: #171717;
+  --color-agent-bg-pill: #1e1e1e;
+  --color-agent-bg-pill-active: #2a2a2a;
+  --color-agent-border: #2a2a2a;
+  --color-agent-border-strong: #2f2f2f;
+  --color-agent-border-input: #2a2a2a;
+  --color-agent-border-card: #2a2a2a;
+  --color-agent-text: #ffffff;
+  --color-agent-text-heading: #ffffff;
+  --color-agent-text-muted: #9a9a9a;
+  --color-agent-text-dim: #5a6a72;
+  --color-agent-text-subtle: #4a5a62;
+  --color-agent-accent: #ff8400;
+  --color-agent-accent-hover: #ff9419;
+  --color-agent-prompt-border: #68471f;
+  --color-agent-prompt-text: #d5a460;
+  --color-agent-prompt-border-hover: #845726;
+  --color-agent-prompt-text-hover: #e6b26a;
+
+  /* ── Colors: Agent Center (teal theme for A-screens) ── */
+  --color-agent-center-bg: #0e0e0e;
+  --color-agent-center-card: #171717;
+  --color-agent-center-border: #2a2a2a;
+  --color-agent-center-text: #ffffff;
+  --color-agent-center-text-heading: #ffffff;
+  --color-agent-center-text-muted: #6b6b6b;
+  --color-agent-plan-bg: #171717;
+  --color-agent-plan-border: #2a2a2a;
+  --color-agent-plan-header-border: #2a2a2a;
+  --color-agent-status-draft-bg: rgba(245, 158, 11, 0.18);
+  --color-agent-status-draft-border: rgba(245, 158, 11, 0.28);
+  --color-agent-status-draft-text: #fcd34d;
+  --color-agent-status-done-bg: rgba(16, 185, 129, 0.16);
+  --color-agent-status-done-border: rgba(16, 185, 129, 0.28);
+  --color-agent-status-done-text: #6ee7b7;
+  --color-agent-status-failed-bg: rgba(239, 68, 68, 0.16);
+  --color-agent-status-failed-border: rgba(239, 68, 68, 0.28);
+  --color-agent-status-failed-text: #fca5a5;
+  --color-agent-tool-amber-bg: #1a1710;
+  --color-agent-tool-amber-border: rgba(245, 158, 11, 0.4);
+  --color-agent-tool-amber-text: #fbbf24;
+  --color-agent-tool-amber-primary: #f59e0b;
+  --color-agent-tool-amber-primary-hover: #fbbf24;
+  --color-agent-tool-sky-bg: #111a1e;
+  --color-agent-tool-sky-border: rgba(14, 165, 233, 0.4);
+  --color-agent-tool-sky-text: #38bdf8;
+  --color-agent-tool-sky-primary: #0ea5e9;
+  --color-agent-tool-sky-primary-hover: #38bdf8;
+  --color-agent-tool-rose-bg: #191214;
+  --color-agent-tool-rose-border: rgba(244, 63, 94, 0.4);
+  --color-agent-tool-rose-text: #fb7185;
+  --color-agent-tool-rose-primary: #f43f5e;
+  --color-agent-tool-rose-primary-hover: #fb7185;
+  --color-agent-tool-teal-bg: #101a1a;
+  --color-agent-tool-teal-border: rgba(20, 184, 166, 0.4);
+  --color-agent-tool-teal-text: #2dd4bf;
+  --color-agent-tool-teal-soft-bg: rgba(20, 184, 166, 0.1);
+  --color-agent-tool-teal-primary: #14b8a6;
+  --color-agent-tool-teal-primary-hover: #2dd4bf;
+  --color-agent-tool-purple-bg: #161220;
+  --color-agent-tool-purple-border: rgba(139, 92, 246, 0.4);
+  --color-agent-tool-purple-text: #c4b5fd;
+  --color-agent-tool-purple-primary: #8b5cf6;
+  --color-agent-tool-purple-primary-hover: #a78bfa;
+
+  /* ── Colors: Telegram Theme ── */
+  --color-tg-bg: #0e1621;
+  --color-tg-bg-list: #17212b;
+  --color-tg-bg-search: #242f3d;
+  --color-tg-bg-msg-in: #182533;
+  --color-tg-bg-msg-out: #2b5278;
+  --color-tg-bg-date: #182533cc;
+  --color-tg-bg-selected: #2b5278;
+  --color-tg-border: #0e1621;
+  --color-tg-text: #e4ecf2;
+  --color-tg-text-muted: #6c7883;
+  --color-tg-text-date: #8e9ba7;
+  --color-tg-accent: #0ea5e9;
+
+  /* ── Colors: Borders ── */
+  --color-edge: #2a2a2a;
+  --color-edge-strong: #2f2f2f;
+
+  /* ── Shadows ── */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.5);
+
+  /* ── Border Radius ── */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
+
+  /* ── Font Sizes ── */
+  --font-size-xs: 0.6875rem; /* 11px */
+  --font-size-sm: 0.75rem; /* 12px */
+  --font-size-base: 0.875rem; /* 14px */
+  --font-size-lg: 1rem; /* 16px */
+  --font-size-xl: 1.125rem; /* 18px */
+
+  /* ── Font Family ── */
+  --font-sans:
+    "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen",
+    "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue",
+    sans-serif;
+}
