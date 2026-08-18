@@ -63,6 +63,13 @@ export declare class AgentChatStore {
      * @tested-by: tst_fe_agentcore_paused_012
      */
     private readonly turnParams;
+    /** Narration of the CURRENT turn already moved into `contentBlocks` (a
+     * tool call flushes the text streamed before it as a `thinking` block),
+     * per context key. Engines close a turn with the CUMULATIVE `full_content`;
+     * `handleDone` shows only what follows this prefix — the same rule the
+     * backend's persistence reducer applies to the persisted row. Reset per
+     * turn; store-internal, never part of the rendered `EpisodeState`. */
+    private readonly flushedNarration;
     /** Global subscribers to live `usage` stream frames (Stage 3) */
     private readonly usageListeners;
     /**

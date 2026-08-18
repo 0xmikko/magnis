@@ -1,7 +1,7 @@
 /**
  * Canonical tool-name normalization — the ONE client-side implementation
  * (A-3). The Rust twin is `tool_names_equivalent` in
- * `backend/src/api/websocket/controllers/chat.rs` — KEEP ALIGNED: any rule
+ * `the retired Rust crate's src/api/websocket/controllers/chat.rs` — KEEP ALIGNED: any rule
  * change must land in both, with the mirrored test tables
  * (tst_cc_names_* ↔ tst_be_unit_tool_names_eq_*).
  */

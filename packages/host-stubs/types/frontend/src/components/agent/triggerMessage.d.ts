@@ -1,7 +1,7 @@
 /**
  * Reader for autonomous-trigger first messages.
  *
- * Raw format (`backend/src/modules/triggers/service.rs`):
+ * Raw format (`the retired Rust crate's src/modules/triggers/service.rs`):
  * "[Autonomous trigger task] <preamble>\n\n<action_prompt>\n\n--- Event context ---\n..."
  */
 /**

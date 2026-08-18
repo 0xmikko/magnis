@@ -1,18 +1,7 @@
-/* GENERATED — do not edit.
- *
- * The host's `@theme` block, copied verbatim from `frontend/src/app.css` by
- * `scripts/gen-host-stubs.sh` in the magnis-app repository, exactly as the
- * host's TYPES beside it are.
- *
- * It exists so a package's own Tailwind pass can RESOLVE the host's design
- * tokens (`bg-surface-secondary`, `text-content-tertiary`, …) without
- * re-emitting them: the build `@reference`s this file, so the utilities it
- * produces compile to `var(--color-surface-secondary)` and follow whatever
- * the host defines at runtime — including the light-theme switch.
- *
- * Regenerate with `scripts/gen-host-stubs.sh` and commit the diff; the pin
- * bump checks `git diff --exit-code`, so drift is caught there.
- */
+/* GENERATED — do not edit. The host's `@theme` block, copied from
+ * frontend/src/app.css by scripts/gen-host-stubs.sh. A package's own
+ * Tailwind pass @references this so its utilities compile to
+ * var(--color-*) and follow the host's live theme. */
 @theme {
   /* ── Colors: Surfaces ── */
   --color-surface: #0e0e0e;
