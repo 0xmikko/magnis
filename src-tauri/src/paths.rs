@@ -281,19 +281,26 @@ fn base64_encode(input: &[u8]) -> String {
 /// was only ever a launchd concern by accident of where it lived: the spawn
 /// path in `backend_process.rs` reads it too, and that is the path that
 /// survives.
-/// The STABLE channel: whatever the newest non-prerelease release holds.
+/// The STABLE channel: the release the `catalog` tag points at.
 ///
-/// `releases/latest/download` resolves to that release's assets and
-/// redirects to the signed url, so a shipped app carries no tag and never
-/// needs a new build to see a new catalog.
-pub const STABLE_CATALOG_URL: &str = "https://github.com/0xmikko/magnis/releases/latest/download";
+/// A NAMED tag rather than `releases/latest/download`, and the difference
+/// matters. "Latest" is a property of the whole repository, and the catalog
+/// repository is also where desktop builds are meant to ship ("testable
+/// desktop builds ship here via Releases", its own CLAUDE.md) — so the first
+/// DMG release would silently become "latest" and the stable channel would
+/// start resolving to a release that carries no catalog assets at all. A tag
+/// this channel owns cannot be taken over by someone else's release.
+pub const STABLE_CATALOG_URL: &str = "https://github.com/0xmikko/magnis/releases/download/catalog";
 
-/// The STAGING channel: a release attached to a `staging` tag that moves,
-/// marked pre-release so it can never be picked up as `latest`. Assets are
-/// replaced in place, which is what "always fresh from this branch" costs —
-/// the index carries the archive hashes, so a stale read fails closed.
+/// The STAGING channel: the same shape, published from the catalog
+/// repository's `staging`.
+///
+/// Both tags MOVE when a catalog is published, and that is the accepted cost
+/// of "always current from this line of development" (DEC-3): the index
+/// carries every archive's sha256, so a stale or torn read fails the hash
+/// check and refuses the install rather than corrupting the store.
 pub const STAGING_CATALOG_URL: &str =
-    "https://github.com/0xmikko/magnis/releases/download/staging";
+    "https://github.com/0xmikko/magnis/releases/download/catalog-staging";
 
 /// Resolve the catalog channel for THIS build.
 ///
