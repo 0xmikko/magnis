@@ -339,6 +339,41 @@ for (const id of readdirSync(distModules).sort()) {
   });
 }
 
+
+/** Point a bundled source's manifest at the file the ARCHIVE contains.
+ *
+ * The package has no `src/` — the bundle is `dist/main.js` — so a manifest
+ * copied verbatim names an entrypoint that is not there. The host's loader
+ * takes an explicit `[spawn]` or `src/main.ts` beside the manifest and
+ * nothing else, so it refused every published TS source: "the connector
+ * cannot be launched". Nothing caught it because every stand that ever
+ * launched a connector did so from a checkout.
+ *
+ * Rewriting the TEXT rather than re-emitting parsed TOML keeps the manifest's
+ * comments, which carry the reasoning for the [spawn] blocks that already
+ * exist (the statemachine mocks pass CLI flags; x-mcp is an npx bridge).
+ *
+ * @tested-by: tst_pub_pkg_source_launchable_001
+ */
+function manifestForBundledSource(text: string): string {
+  if (/^\s*\[spawn\]/m.test(text)) {
+    // An existing [spawn] keeps its shape and its flags; only the script it
+    // runs moves to where the bundle actually is. An external bridge (npx)
+    // names no script and is left untouched.
+    return text.replace(/(["'])src\/main\.ts\1/g, '"dist/main.js"');
+  }
+  return (
+    text.trimEnd() +
+    "\n\n" +
+    "# Added by scripts/build-catalog-index.ts: the archive carries the\n" +
+    "# dependency-closed bundle, not the TypeScript source the convention\n" +
+    "# looks for.\n" +
+    "[spawn]\n" +
+    'command = "bun"\n' +
+    'args = ["run", "dist/main.js"]\n'
+  );
+}
+
 // ── sources ──────────────────────────────────────────────────────────────────
 const sourcesRoot = join(ROOT, "plugins", "sources");
 for (const id of readdirSync(sourcesRoot).sort()) {
@@ -354,8 +389,18 @@ for (const id of readdirSync(sourcesRoot).sort()) {
     process.exit(1);
   }
   const isTs = existsSync(join(dir, "src", "main.ts"));
+  const manifestText = readFileSync(manifestPath, "utf8");
   const archive = stagePackage("source", id, (dst) => {
-    cpSync(manifestPath, join(dst, "manifest.toml"));
+    writeFileSync(
+      join(dst, "manifest.toml"),
+      isTs ? manifestForBundledSource(manifestText) : manifestText,
+    );
+    // A manifest that REFERENCES a file needs that file in the package.
+    // `[[dataset.actions]].schema` paths live under schemas/, and leaving
+    // them out made the manifest fail to load before spawn was reached.
+    if (existsSync(join(dir, "schemas"))) {
+      cpSync(join(dir, "schemas"), join(dst, "schemas"), { recursive: true });
+    }
     if (existsSync(join(dir, "config.default.toml"))) cpSync(join(dir, "config.default.toml"), join(dst, "config.default.toml"));
     if (existsSync(join(dir, "auth"))) cpSync(join(dir, "auth"), join(dst, "auth"), { recursive: true });
     // v3 package card assets: the markdown detail page + optional icon.
