@@ -11,7 +11,8 @@
 //                   per-platform release binaries are planned)
 //   source (manifest-only) → manifest.toml (external spawn must be version-pinned)
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, utimesSync, writeFileSync, cpSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync, cpSync } from "node:fs";
+import { gzipSync } from "node:zlib";
 import { join, relative } from "node:path";
 import { parse as parseToml } from "smol-toml";
 
@@ -52,6 +53,68 @@ function walk(dir: string): string[] {
   }
   return out;
 }
+const TAR_BLOCK = 512;
+
+/** A ustar archive of `entries`, written here rather than shelled out to
+ * `tar`.
+ *
+ * The flags that make `tar` deterministic are not portable, and picking a
+ * side breaks the other: `--sort/--owner/--group` are GNU, `--uid/--gid`
+ * are BSD. This builder ran on macOS with the BSD spelling and failed on
+ * the Linux runner with "unrecognized option '--uid'" — a builder that
+ * only works where its author sat is not reproducible in any useful
+ * sense.
+ *
+ * Writing the bytes makes determinism structural instead of coaxed:
+ * entries arrive sorted, every mode/uid/gid/mtime is a constant here, and
+ * gzip is told not to stamp its own header. The same input produces the
+ * same archive on every machine, which is what lets a client skip a
+ * catalog it already has. */
+function tarBytes(root: string, entries: readonly string[]): Buffer {
+  const blocks: Buffer[] = [];
+  for (const entry of entries) {
+    const body = readFileSync(join(root, entry));
+    blocks.push(tarHeader(entry, body.length), body);
+    const padding = body.length % TAR_BLOCK;
+    if (padding !== 0) {
+      blocks.push(Buffer.alloc(TAR_BLOCK - padding));
+    }
+  }
+  // Two zero blocks close a tar archive.
+  blocks.push(Buffer.alloc(TAR_BLOCK * 2));
+  return Buffer.concat(blocks);
+}
+
+function tarHeader(name: string, size: number): Buffer {
+  if (Buffer.byteLength(name) > 99) {
+    // Refused rather than truncated or silently switched to a GNU long-name
+    // extension: a package whose path does not fit is a packaging problem to
+    // fix, not bytes to guess at.
+    console.error(`path too long for a ustar header (max 99 bytes): ${name}`);
+    process.exit(1);
+  }
+  const block = Buffer.alloc(TAR_BLOCK);
+  block.write(name, 0, 100, "utf8");
+  const octal = (value: number, offset: number, length: number): void => {
+    block.write(value.toString(8).padStart(length - 1, "0"), offset, length - 1, "ascii");
+  };
+  octal(0o644, 100, 8); // mode
+  octal(0, 108, 8); // uid — a constant, never the building user's
+  octal(0, 116, 8); // gid
+  octal(size, 124, 12);
+  octal(0, 136, 12); // mtime — a constant, never the file's
+  block.write("        ", 148, 8, "ascii"); // checksum placeholder
+  block.write("0", 156, 1, "ascii"); // regular file
+  block.write("ustar\0", 257, 6, "ascii");
+  block.write("00", 263, 2, "ascii");
+  let checksum = 0;
+  for (const byte of block) {
+    checksum += byte;
+  }
+  block.write(`${checksum.toString(8).padStart(6, "0")}\0 `, 148, 8, "ascii");
+  return block;
+}
+
 /** Stage a package into a scratch directory, tar+gzip it into ONE flat
  * asset, and return the asset's name and hash.
  *
@@ -62,46 +125,24 @@ function walk(dir: string): string[] {
  * it, instead of trusting a list of hashes it fetched from the same
  * place as the files.
  *
- * `--sort=name --mtime=0 --owner=0 --group=0 --numeric-owner` makes the
- * bytes a function of the CONTENT alone. Without it the archive's hash
- * changes on every build, every index differs from the last, and the
- * clients re-download a catalog that did not change. */
+ * The bytes are a function of the CONTENT alone — see `tarBytes` for how
+ * and why. Without that, the archive's hash changes on every build, every
+ * index differs from the last, and clients re-download a catalog that did
+ * not change. */
 function stagePackage(kind: string, id: string, stage: (dst: string) => void): Entry["archive"] {
   const work = join(OUT, ".stage", `${kind}__${id}`);
   rmSync(work, { recursive: true, force: true });
   mkdirSync(work, { recursive: true });
   stage(work);
 
-  // Determinism, portably. GNU tar has --sort/--mtime; the tar on macOS
-  // does not, and a builder that only works on the CI runner is a builder
-  // nobody can reproduce. So the three things that vary are removed by
-  // hand: entry ORDER (an explicit sorted file list), TIMESTAMPS (every
-  // staged file set to the epoch), and the gzip header's own clock
-  // (`gzip -n`). COPYFILE_DISABLE keeps macOS from adding `._*` twins.
   const entries = walk(work)
     .map((file) => relative(work, file))
     .sort();
-  for (const entry of entries) {
-    utimesSync(join(work, entry), 0, 0);
-  }
 
   const name = `${kind}__${id}.tgz`;
-  const tarPath = join(OUT, `${kind}__${id}.tar`);
-  const tar = Bun.spawnSync(
-    ["tar", "--uid", "0", "--gid", "0", "--numeric-owner", "-cf", tarPath, "-C", work, ...entries],
-    { env: { ...process.env, COPYFILE_DISABLE: "1" } },
-  );
-  if (tar.exitCode !== 0) {
-    console.error(`tar failed for ${kind} '${id}':\n${tar.stderr.toString("utf8")}`);
-    process.exit(1);
-  }
-  const gzip = Bun.spawnSync(["gzip", "-n", "-f", tarPath]);
-  if (gzip.exitCode !== 0) {
-    console.error(`gzip failed for ${kind} '${id}':\n${gzip.stderr.toString("utf8")}`);
-    process.exit(1);
-  }
-  renameSync(`${tarPath}.gz`, join(OUT, name));
-  return { name, sha256: sha256(readFileSync(join(OUT, name))) };
+  const archive = gzipSync(tarBytes(work, entries), { level: 9 });
+  writeFileSync(join(OUT, name), archive);
+  return { name, sha256: sha256(archive) };
 }
 
 /** The commit this catalog describes.
