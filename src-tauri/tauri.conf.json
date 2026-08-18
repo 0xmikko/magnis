@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "bash ../scripts/build-backend.sh src-tauri/binaries && cd ../frontend && bun run dev -- --port 5190",
     "devUrl": "http://localhost:5190",
-    "beforeBuildCommand": "bash build/bundle-embedded-pg.sh && bash ../scripts/build-backend.sh src-tauri/binaries && cd ../frontend && bun run build",
+    "beforeBuildCommand": "bash build/bundle-embedded-pg.sh && bash build/bundle-plugins.sh && bash ../scripts/build-backend.sh src-tauri/binaries && cd ../frontend && bun run build",
     "frontendDist": "../../frontend/dist"
   },
   "app": {
@@ -46,7 +46,9 @@
     ],
     "resources": [
       "binaries/data/**/*",
-      "binaries/migrations/**/*"
+      "binaries/migrations/**/*",
+      "plugins/**/*",
+      "plugins_dist/**/*"
     ]
   }
 }

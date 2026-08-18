@@ -22,6 +22,12 @@ bun run plugins-public/scripts/build-plugins.ts
 
 DEST="$REPO_ROOT/desktop/src-tauri"
 rm -rf "$DEST/plugins" "$DEST/plugins_dist"
-cp -R "$REPO_ROOT/plugins-public/plugins" "$DEST/plugins"
-cp -R "$REPO_ROOT/plugins-public/plugins_dist" "$DEST/plugins_dist"
+# rsync, not cp -R, and node_modules is excluded on purpose: a workspace
+# install leaves SYMLINKS in there pointing at packages outside the plugin
+# tree, and Tauri resolves every resource path at build time — one dangling
+# link and the whole app fails to build. The bundle needs manifests, schemas,
+# built bundles, icons and READMEs; a package's dev dependencies are not part
+# of what ships.
+rsync -a --exclude node_modules --exclude .git "$REPO_ROOT/plugins-public/plugins/" "$DEST/plugins/"
+rsync -a --exclude node_modules --exclude .git "$REPO_ROOT/plugins-public/plugins_dist/" "$DEST/plugins_dist/"
 echo "bundle-plugins: staged $(ls "$DEST/plugins" | wc -l | tr -d ' ') plugin package(s) + plugins_dist"

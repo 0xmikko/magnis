@@ -9,10 +9,6 @@ use std::path::PathBuf;
 pub struct AppPaths {
     app_data_dir: PathBuf,
     data_root: PathBuf,
-    // Only `service/` reads this, and that tree is macOS-only until DEC-1
-    // deletes it. Gated rather than blanket-allowed so macOS keeps checking it.
-    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-    logs_dir: PathBuf,
     // Created on init and retained for future plugin loading; not read yet.
     #[allow(dead_code)]
     plugins_dir: PathBuf,
@@ -77,8 +73,10 @@ impl AppPaths {
 
         std::fs::create_dir_all(&app_data_dir).context("Failed to create app data directory")?;
 
-        let logs_dir = app_data_dir.join("logs");
-        std::fs::create_dir_all(&logs_dir).context("Failed to create logs directory")?;
+        // The directory is created here — it is part of provisioning the
+        // data root — but WHERE a log goes is answered by `backend_log_path`
+        // below, so no long-lived field has to carry it.
+        std::fs::create_dir_all(logs_dir(&app_data_dir)).context("Failed to create logs directory")?;
 
         // Local-mode data root: `app_data_dir` itself. Backend will
         // create `pgdata/`, `storage/`, etc. under it. `DB_PATH` env
@@ -115,7 +113,6 @@ impl AppPaths {
         Ok(Self {
             app_data_dir,
             data_root,
-            logs_dir,
             plugins_dir,
         })
     }
@@ -134,11 +131,6 @@ impl AppPaths {
 
     pub fn desktop_prefs_path(&self) -> PathBuf {
         self.app_data_dir.join("desktop.json")
-    }
-
-    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-    pub fn logs_dir(&self) -> &PathBuf {
-        &self.logs_dir
     }
 
     #[allow(dead_code)]
@@ -586,6 +578,43 @@ mod catalog_tests {
             catalog_url(Some("file:///tmp/cat".to_string()), true),
             "file:///tmp/cat",
             "an explicit channel outranks the build kind too"
+        );
+    }
+}
+
+/// Where the shell keeps process logs for this data root.
+pub fn logs_dir(data_root: &std::path::Path) -> PathBuf {
+    data_root.join("logs")
+}
+
+/// The file the backend child's stdout and stderr are appended to.
+///
+/// One file per day. It exists because a Finder-launched bundle has nowhere
+/// to inherit stdout FROM: the child wrote to a descriptor nobody was
+/// reading, so a packaged app that failed to start showed a dialog saying the
+/// backend never became healthy and not one line about why. Measured the hard
+/// way — the cause was a container-init error printed into a void.
+///
+/// `day` is passed in rather than read from a clock, so the naming rule is
+/// testable without one.
+pub fn backend_log_path(data_root: &std::path::Path, day: &str) -> PathBuf {
+    logs_dir(data_root).join(format!("magnis-server.{day}.log"))
+}
+
+#[cfg(test)]
+mod log_path_tests {
+    use super::backend_log_path;
+    use std::path::Path;
+
+    // @test-id: tst_desktop_logpath_001
+    // @covers: paths::backend_log_path
+    // @deterministic: yes
+    #[test]
+    fn tst_desktop_logpath_001_lands_under_the_data_root_logs_dir() {
+        assert_eq!(
+            backend_log_path(Path::new("/tmp/root"), "2026-08-18"),
+            Path::new("/tmp/root/logs/magnis-server.2026-08-18.log"),
+            "the child's output belongs beside the data root it serves"
         );
     }
 }

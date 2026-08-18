@@ -76,6 +76,32 @@ const HEALTH_TIMEOUT_SECS: u64 = 120;
 const SHUTDOWN_GRACE_SECS: u64 = 10;
 const SHUTDOWN_POLL_INTERVAL_MS: u64 = 50;
 
+/// Today, as `YYYY-MM-DD`, for the log file name.
+///
+/// Computed from the wall clock without pulling in a date crate: the shell
+/// needs one string a day, and a dependency for that is a dependency to keep
+/// forever.
+fn today_utc() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let days = secs.div_euclid(86_400);
+    // Civil-from-days (Howard Hinnant's algorithm), shifted to an era
+    // starting 0000-03-01 so leap years fall at the end of the cycle.
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = if m <= 2 { y + 1 } else { y };
+    format!("{year:04}-{m:02}-{d:02}")
+}
+
 /// Manages the magnis-server child process and exposes its base URL for the frontend.
 /// The directory `scripts/build-backend.sh` stages the backend payload into,
 /// relative to the resource root. Declared in `tauri.conf.json` twice — as the
@@ -370,6 +396,24 @@ impl BackendProcessManager {
         // database, so the shell supplies it or nothing boots.
         let bin = Self::server_binary_path()?;
         let mut cmd = Self::build_child_command(&bin, data_root, port, database_url, runtime_root)?;
+
+        // Send the child's output to a FILE, not to an inherited descriptor.
+        // A bundle launched from Finder inherits nothing readable, so
+        // everything the backend said on its way to failing was discarded —
+        // including the reason. This is what a user can attach to a bug
+        // report, and it is appended so a restart does not erase the crash
+        // that caused it.
+        let log_path = crate::paths::backend_log_path(data_root, &today_utc());
+        let log = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
+            .with_context(|| format!("Failed to open backend log at {}", log_path.display()))?;
+        let log_err = log
+            .try_clone()
+            .context("Failed to duplicate the backend log handle")?;
+        cmd.stdout(Stdio::from(log)).stderr(Stdio::from(log_err));
+        println!("magnis: backend log → {}", log_path.display());
 
         let child = cmd.spawn().context("Failed to spawn magnis-server")?;
 
