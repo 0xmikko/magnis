@@ -58,8 +58,19 @@ function build(): { out: string; index: Index } {
 let first: { out: string; index: Index };
 
 beforeAll(() => {
+  // The builder refuses without `plugins_dist`, and refusing is right — it
+  // will not silently publish a catalog built from stale bundles. But that
+  // makes the bundles this test's PRECONDITION, not something to inherit
+  // from whatever command ran before it. Locally `plugins_dist` was left
+  // over from an earlier build and this passed; CI runs the tooling tests
+  // without building plugins first, and it failed there for exactly that
+  // reason.
+  const bundles = Bun.spawnSync(["bun", "scripts/build-plugins.ts"], { cwd: ROOT });
+  if (bundles.exitCode !== 0) {
+    throw new Error(`build-plugins failed: ${bundles.stderr.toString("utf8")}`);
+  }
   first = build();
-}, 300_000);
+}, 600_000);
 
 afterAll(() => {
   for (const dir of outputs.splice(0)) {
