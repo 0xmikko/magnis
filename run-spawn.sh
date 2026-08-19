@@ -32,14 +32,10 @@ for k in SOURCE_GOOGLE_CLIENT_ID SOURCE_GOOGLE_CLIENT_SECRET SOURCE_TELEGRAM_API
 done
 [ -d "$APP" ] || { echo "✗ $APP not built. Run: cd desktop && cargo tauri build"; exit 1; }
 
-# ── build connector binaries + plugin bundles if missing ───────────────────
-if [ ! -x "$REPO/target/release/magnis-google" ] || [ ! -x "$REPO/target/release/magnis-telegram" ]; then
-  echo "▶ building source connectors…"
-  # Connectors build in the plugin workspace (plugins-public-repo DEC-3),
-  # shared target keeps target/release paths stable.
-  ( cd "$REPO" && cargo build --release --manifest-path plugins-public/Cargo.toml --target-dir target -p magnis-source-google -p magnis-source-telegram )
-fi
-[ -d "$REPO/plugins_dist" ] || { echo "▶ building plugin UI bundles…"; ( cd "$REPO" && bun run scripts/build-plugins.ts ); }
+# No connector build, and no plugin bundles. Both steps predate the catalog
+# split twice over: the connectors stopped being Rust binaries (the catalog is
+# bun/TypeScript and has no Cargo.toml at all), and packages now reach the app
+# through the channel rather than being staged beside it.
 
 # ── stop any previous run ──────────────────────────────────────────────────
 pkill -f "Magnis.app/Contents/MacOS/magnis" 2>/dev/null || true
