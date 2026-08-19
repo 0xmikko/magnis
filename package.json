@@ -12,10 +12,12 @@
     "test": "vitest run",
     "test:connectors": "bash scripts/test-connectors.sh",
     "test:scripts": "bun test scripts/",
-    "build:plugins": "bun scripts/build-plugins.ts"
+    "build:plugins": "bun scripts/build-plugins.ts",
+    "test:ui": "vitest run --config vitest.ui.config.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@tailwindcss/cli": "^4.1.18",
     "@tanstack/react-query": "^5.90.21",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.2",
@@ -26,14 +28,18 @@
     "eslint": "^9",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.1.1",
+    "happy-dom": "^20.5.0",
     "lucide-react": "^0.563.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-markdown": "^10.1.0",
     "react-virtuoso": "^4.18.4",
+    "remark-gfm": "^4.0.1",
     "smol-toml": "^1.7.0",
+    "tailwindcss": "^4.1.18",
     "typescript": "^5.6.2",
     "typescript-eslint": "^8",
-    "vitest": "^2.1.1",
+    "vitest": "^4.0.18",
     "zustand": "^5.0.11"
   }
 }
