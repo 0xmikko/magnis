@@ -8,6 +8,7 @@ use crate::workspace_config::{
 use crate::BackendState;
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WorkspaceEntry {
     pub id: String,
     pub label: String,
@@ -17,12 +18,14 @@ pub struct WorkspaceEntry {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WorkspaceConfigResponse {
     pub selected_workspace_id: String,
     pub workspaces: Vec<WorkspaceEntry>,
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WorkspaceSelectionResponse {
     pub selected_workspace_id: String,
 }
