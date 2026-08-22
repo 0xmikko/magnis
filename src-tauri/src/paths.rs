@@ -130,10 +130,6 @@ impl AppPaths {
         &self.data_root
     }
 
-    pub fn workspace_config_path(&self) -> PathBuf {
-        self.app_data_dir.join("workspaces.json")
-    }
-
     pub fn desktop_prefs_path(&self) -> PathBuf {
         self.app_data_dir.join("desktop.json")
     }
@@ -313,15 +309,13 @@ pub const STAGING_CATALOG_URL: &str =
 /// Pure in its inputs so the rule is testable without touching process env,
 /// which is global and would race every other test.
 pub fn catalog_url(ambient: Option<String>, debug_build: bool) -> String {
-    ambient
-        .filter(|v| !v.trim().is_empty())
-        .unwrap_or_else(|| {
-            if debug_build {
-                STAGING_CATALOG_URL.to_string()
-            } else {
-                STABLE_CATALOG_URL.to_string()
-            }
-        })
+    ambient.filter(|v| !v.trim().is_empty()).unwrap_or_else(|| {
+        if debug_build {
+            STAGING_CATALOG_URL.to_string()
+        } else {
+            STABLE_CATALOG_URL.to_string()
+        }
+    })
 }
 
 /// The user's REAL `PATH`, asked from their login shell.
@@ -597,4 +591,3 @@ mod catalog_tests {
         );
     }
 }
-

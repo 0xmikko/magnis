@@ -15,7 +15,7 @@ mod workspace_config;
 use backend_process::{BackendHandle, BackendProcessManager};
 use commands::backend::get_backend_config;
 use commands::oauth::open_oauth_window;
-use commands::workspaces::{get_workspace_config, set_selected_workspace};
+use commands::workspaces::get_workspace_seeds;
 use paths::AppPaths;
 use std::sync::Mutex;
 use tauri::Manager;
@@ -210,8 +210,7 @@ fn main() -> anyhow::Result<()> {
         })
         .invoke_handler(tauri::generate_handler![
             get_backend_config,
-            get_workspace_config,
-            set_selected_workspace,
+            get_workspace_seeds,
             open_oauth_window
         ])
         .build(tauri::generate_context!())

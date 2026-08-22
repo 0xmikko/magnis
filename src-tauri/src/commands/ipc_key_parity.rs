@@ -9,9 +9,7 @@
 #[cfg(test)]
 mod tests {
     use crate::commands::backend::BackendConfig;
-    use crate::commands::workspaces::{
-        WorkspaceConfigResponse, WorkspaceEntry, WorkspaceSelectionResponse,
-    };
+    use crate::commands::workspaces::WorkspaceSeed;
     use serde_json::{json, Value};
 
     /// The frozen key sets, read from the file the TypeScript side is also
@@ -59,43 +57,21 @@ mod tests {
             "BackendConfig: what serde emits is what the frontend reads"
         );
 
-        let entry = WorkspaceEntry {
+        let seed = WorkspaceSeed {
             id: "local".to_string(),
-            label: "Local".to_string(),
-            kind: "local".to_string(),
-            api_base_url: Some("http://127.0.0.1:3001".to_string()),
-            auth_method: Some("open".to_string()),
+            url: "http://127.0.0.1:3001".to_string(),
+            source: "local".to_string(),
         };
         assert_eq!(
-            emitted_keys(&serde_json::to_value(&entry).unwrap()),
-            frozen("WorkspaceEntry")
-        );
-
-        // Nesting is covered by construction: serializing the response
-        // serializes the entry inside it, so a walker over the type graph would
-        // be more machinery than the thing it guards.
-        let response = WorkspaceConfigResponse {
-            selected_workspace_id: "local".to_string(),
-            workspaces: vec![entry],
-        };
-        let serialized = serde_json::to_value(&response).unwrap();
-        assert_eq!(emitted_keys(&serialized), frozen("WorkspaceConfigResponse"));
-        assert_eq!(
-            emitted_keys(&serialized["workspaces"][0]),
-            frozen("WorkspaceEntry"),
-            "the nested entry keeps its own key set"
-        );
-
-        let selection = WorkspaceSelectionResponse {
-            selected_workspace_id: "local".to_string(),
-        };
-        assert_eq!(
-            emitted_keys(&serde_json::to_value(&selection).unwrap()),
-            frozen("WorkspaceSelectionResponse")
+            emitted_keys(&serde_json::to_value(&seed).unwrap()),
+            frozen("WorkspaceSeed")
         );
 
         // A guard on the guard: the frozen set must not be empty, or every
         // assertion above would pass against nothing.
-        assert_eq!(frozen("BackendConfig"), vec![json!("baseUrl").as_str().unwrap().to_string()]);
+        assert_eq!(
+            frozen("BackendConfig"),
+            vec![json!("baseUrl").as_str().unwrap().to_string()]
+        );
     }
 }
