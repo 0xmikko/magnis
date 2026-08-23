@@ -27,36 +27,6 @@ use std::time::Instant;
 pub const DESKTOP_CORS_ORIGINS: &str =
     "tauri://localhost,https://tauri.localhost,http://localhost:*,http://127.0.0.1:*";
 
-/// Resolve `(MAGNIS_PLUGINS_DIR, MAGNIS_PLUGINS_DIST_DIR)` from the BUNDLE
-/// alone, or `None`.
-///
-/// The repository probe that used to follow is deleted. It walked up from
-/// `CARGO_MANIFEST_DIR` hunting for a `plugins-public` checkout, and the cost
-/// was two different products from one build: a developer's app served
-/// whatever that working tree happened to hold, a user's app served the
-/// channel, and the channel was therefore never exercised where it is
-/// developed. Its own comment recorded the consequence — the probe had
-/// silently stopped matching after the catalog moved into the submodule, and
-/// nothing said so for days.
-///
-/// Packages come from the channel for everyone now. `MAGNIS_PLUGINS_DIR`
-/// still lets an operator point deliberately at a tree; the shell no longer
-/// guesses at one.
-///
-/// The bundle branch stays because a build MAY carry a payload. Today none
-/// does, so this returns `None` and the backend is handed the data root's
-/// empty plugin tree — which boots, since Stage 1.
-fn plugin_dirs() -> Option<(PathBuf, PathBuf)> {
-    // Bundle: <exe>/../.. = Contents → Contents/Resources/{plugins,plugins_dist}.
-    let exe = std::env::current_exe().ok()?;
-    let contents = exe.parent().and_then(|p| p.parent())?;
-    let resources = contents.join("Resources");
-    let plugins = resources.join("plugins");
-    if plugins.exists() {
-        return Some((plugins, resources.join("plugins_dist")));
-    }
-    None
-}
 const HEALTH_POLL_INTERVAL_MS: u64 = 100;
 // First desktop run extracts the bundled PostgreSQL archive and runs initdb
 // before /health binds — give it room (was 15s for the PGlite sidecar).
@@ -273,6 +243,11 @@ impl BackendProcessManager {
             .context("Runtime root is not valid UTF-8")?;
         apply_database_env(&mut cmd, data_root_str, database_url, &jwt_secret)
             .env("MAGNIS_RUNTIME_ROOT", runtime_root)
+            // Desktop trusts installed extensions and uses this exact backend
+            // binary as the only runtime payload (`magnis-server plugin-host`).
+            // Hosted deployments opt into the isolated Deno profile instead.
+            .env("MAGNIS_PLUGIN_HOST_PROFILE", "trusted")
+            .env_remove("MAGNIS_DENO_PLUGIN_HOST_PATH")
             .env("PORT", port.to_string())
             // Allow the Tauri webview origins (wins over any machine .env list).
             .env("CORS_ALLOWED_ORIGINS", DESKTOP_CORS_ORIGINS)
@@ -294,47 +269,6 @@ impl BackendProcessManager {
             // app (DEC-16).
             .stdout(Stdio::inherit())
             .stderr(Stdio::piped());
-        // Enable first-party plugins (companies, email, telegram, …): point the
-        // backend at the bundled (or repo, in dev) plugin packages so they are
-        // presence-seeded at boot and the plugin store works.
-        // Dev/spawn parity with the launchd contract (service/plist.rs): the
-        // plugin root lives under the data root and is created by
-        // `paths::ensure_plugin_tree`, and the catalog channel is a BASE url.
-        // A repo checkout still wins in dev so `cargo tauri dev` keeps working
-        // against the working tree instead of the installed store.
-        // An explicit MAGNIS_PLUGINS_DIR from the environment wins over both
-        // the bundle and the repo probe. Without this an operator cannot point
-        // a packaged build at a real plugin tree — which is exactly what is
-        // needed to run the shipped shell against a working catalog (sources
-        // included) instead of the empty store dir the bundle ships with.
-        let explicit_plugins_dir = std::env::var("MAGNIS_PLUGINS_DIR")
-            .ok()
-            .filter(|v| !v.is_empty());
-        let probed = plugin_dirs();
-        match (&explicit_plugins_dir, &probed) {
-            // Explicit wins, as the comment above has always claimed. It did
-            // not: the probe branch below used to run unconditionally and
-            // overwrite the operator's value, so pointing a packaged shell at a
-            // real catalog quietly had no effect.
-            (Some(dir), probe) => {
-                cmd.env("MAGNIS_PLUGINS_DIR", dir);
-                // The dist dir is not derivable from an explicit plugins dir in
-                // general, so take the probe's when there is one; otherwise the
-                // operator sets MAGNIS_PLUGINS_DIST_DIR and it is inherited.
-                if let Some((_, dist)) = probe {
-                    cmd.env("MAGNIS_PLUGINS_DIST_DIR", dist);
-                }
-            }
-            (None, Some((plugins_dir, plugins_dist))) => {
-                cmd.env("MAGNIS_PLUGINS_DIR", plugins_dir)
-                    .env("MAGNIS_PLUGINS_DIST_DIR", plugins_dist);
-            }
-            (None, None) => {
-                if let Ok(dir) = crate::paths::ensure_plugin_tree(data_root) {
-                    cmd.env("MAGNIS_PLUGINS_DIR", &dir);
-                }
-            }
-        }
         // Same zero-download default as the launchd contract (plist.rs).
         // Zero-download default, unless the operator asked for a real model.
         if std::env::var("EMBEDDINGS_PROVIDER")
@@ -654,6 +588,55 @@ fn current_target_triple() -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // @test-id: tst_desktop_pluginhost_001
+    // @invariant: INV-EXT-31 — desktop has one trusted runtime payload
+    // @covers: BackendProcessManager::build_child_command + backend trusted self-spawn
+    // @deterministic: yes
+    #[test]
+    fn tst_desktop_pluginhost_001_uses_the_backend_as_the_only_plugin_host() {
+        let tmp = tempfile::tempdir().expect("temp dir");
+        let bin = tmp.path().join("magnis-server-test");
+        let runtime_root = tmp.path().join("runtime");
+        let cmd = BackendProcessManager::build_child_command(
+            &bin,
+            tmp.path(),
+            3010,
+            "postgres://127.0.0.1:5599/magnis",
+            &runtime_root,
+        )
+        .expect("compose the child command");
+
+        assert_eq!(cmd.get_program(), bin.as_os_str());
+        let envs: std::collections::HashMap<_, _> = cmd.get_envs().collect();
+        let get = |key: &str| {
+            envs.get(std::ffi::OsStr::new(key))
+                .and_then(|value| value.as_ref())
+                .map(|value| value.to_string_lossy().into_owned())
+        };
+        assert_eq!(
+            get("MAGNIS_PLUGIN_HOST_PROFILE").as_deref(),
+            Some("trusted")
+        );
+
+        for retired in [
+            "MAGNIS_DENO_PLUGIN_HOST_PATH",
+        ] {
+            assert_eq!(
+                envs.get(std::ffi::OsStr::new(retired)),
+                Some(&None),
+                "{retired} must not leak a second plugin runtime into desktop",
+            );
+        }
+
+        let mut plugin_host = Command::new(cmd.get_program());
+        plugin_host.arg("plugin-host");
+        assert_eq!(plugin_host.get_program(), bin.as_os_str());
+        assert_eq!(
+            plugin_host.get_args().collect::<Vec<_>>(),
+            vec![std::ffi::OsStr::new("plugin-host")],
+        );
+    }
 
     // @test-id: tst_desktop_boot_001
     // @invariant: INV-DTR-16, INV-DTR-18

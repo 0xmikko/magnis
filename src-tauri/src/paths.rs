@@ -13,9 +13,6 @@ pub struct AppPaths {
     /// and `backend.<date>.log` (the child, via `STORAGE_DIR = data_root`)
     /// land in, also under a `DB_PATH` override (backend-logging-system DEC-16).
     logs_dir: PathBuf,
-    // Created on init and retained for future plugin loading; not read yet.
-    #[allow(dead_code)]
-    plugins_dir: PathBuf,
 }
 
 /// Where everything the app owns lives.
@@ -100,25 +97,16 @@ impl AppPaths {
         };
         std::fs::create_dir_all(&data_root).context("Failed to create data root")?;
         // The log folder hangs off the RESOLVED data root for the same reason
-        // the plugin tree does: the backend's `STORAGE_DIR` is the data root,
-        // so `desktop.*.log` and `backend.*.log` share one folder also when
-        // `DB_PATH` moved the root away from `app_data_dir`.
+        // the backend's `STORAGE_DIR` is the data root, so `desktop.*.log` and
+        // `backend.*.log` share one folder also when `DB_PATH` moved the root
+        // away from `app_data_dir`.
         let logs_dir = data_root.join("logs");
         std::fs::create_dir_all(&logs_dir).context("Failed to create logs directory")?;
-
-        // The plugin tree MUST hang off the RESOLVED data root, not
-        // `app_data_dir`: the launchd plist points `MAGNIS_PLUGINS_DIR` at
-        // `<data_root>/plugins`, and a `DB_PATH` override moves the data root
-        // away from `app_data_dir`. Creating it in the wrong place leaves the
-        // backend with a non-canonicalizable path → `build_plugin_installer`
-        // returns None → `extensions.install` cannot run at all.
-        let plugins_dir = ensure_plugin_tree(&data_root)?;
 
         Ok(Self {
             app_data_dir,
             data_root,
             logs_dir,
-            plugins_dir,
         })
     }
 
@@ -137,26 +125,6 @@ impl AppPaths {
     pub fn logs_dir(&self) -> &PathBuf {
         &self.logs_dir
     }
-
-    #[allow(dead_code)]
-    pub fn plugins_dir(&self) -> &PathBuf {
-        &self.plugins_dir
-    }
-}
-
-/// Create `<data_root>/plugins` with its `modules/` and `sources/` subdirs and
-/// return the root. Pure in its input (no env), so it is directly testable.
-///
-/// The DMG ships NO plugin payload — packages are installed from the catalog
-/// channel into the store — but the directory must still exist: the installer
-/// canonicalizes it at construction.
-pub fn ensure_plugin_tree(data_root: &std::path::Path) -> Result<PathBuf> {
-    let plugins_dir = data_root.join("plugins");
-    for sub in ["modules", "sources"] {
-        std::fs::create_dir_all(plugins_dir.join(sub))
-            .with_context(|| format!("Failed to create plugins/{sub} under {plugins_dir:?}"))?;
-    }
-    Ok(plugins_dir)
 }
 
 /// Ensure the operator env file exists, and return its path.
@@ -392,41 +360,6 @@ pub fn agent_path(home_dir: &std::path::Path, sidecar_dir: &std::path::Path) -> 
         }
     }
     out.join(":")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // @test-id: tst_desktop_paths_010
-    // The plugin tree hangs off the data root the plist actually points at.
-    #[test]
-    fn tst_desktop_paths_010_plugin_tree_under_data_root() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path().join("custom-data-root");
-        std::fs::create_dir_all(&root).unwrap();
-
-        let plugins = ensure_plugin_tree(&root).unwrap();
-
-        assert_eq!(plugins, root.join("plugins"));
-        assert!(plugins.join("modules").is_dir(), "modules/ must exist");
-        assert!(plugins.join("sources").is_dir(), "sources/ must exist");
-        // Canonicalizable — PluginInstaller::new canonicalizes and returns
-        // None on failure, which silently disables extensions.install.
-        assert!(plugins.canonicalize().is_ok());
-    }
-
-    // @test-id: tst_desktop_paths_011
-    // Idempotent: a second launch must not fail on an existing tree.
-    #[test]
-    fn tst_desktop_paths_011_plugin_tree_is_idempotent() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path().to_path_buf();
-        let first = ensure_plugin_tree(&root).unwrap();
-        let second = ensure_plugin_tree(&root).unwrap();
-        assert_eq!(first, second);
-        assert!(second.join("modules").is_dir());
-    }
 }
 
 #[cfg(test)]
