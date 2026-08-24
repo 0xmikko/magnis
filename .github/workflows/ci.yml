@@ -17,6 +17,8 @@ jobs:
         run: bun run lint
       - name: Module + SDK tests
         run: bun run test
+      - name: Runtime artifact contract tests
+        run: bun run test:runtime-contracts
       - name: Plugin UI tests
         run: bun run test:ui
       - name: Connector tests

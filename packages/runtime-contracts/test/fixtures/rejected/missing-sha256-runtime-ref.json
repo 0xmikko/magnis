@@ -1,0 +1,6 @@
+{
+  "runtimeVersion": "0.1.0",
+  "protocolVersion": "magnis-runtime/v1",
+  "target": "x86_64-unknown-linux-gnu",
+  "url": "https://github.com/0xmikko/magnis/releases/download/runtime-v0.1.0/magnis-runtime-v0.1.0-x86_64-unknown-linux-gnu.tar.gz"
+}

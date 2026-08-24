@@ -48,6 +48,10 @@
       "name": "@magnis/plugin-sdk",
       "version": "0.1.0",
     },
+    "packages/runtime-contracts": {
+      "name": "@magnis/runtime-contracts",
+      "version": "0.1.0",
+    },
     "packages/source-statemachine": {
       "name": "@magnis/source-statemachine",
       "dependencies": {
@@ -287,6 +291,8 @@
     "@magnis/plugin-triggers": ["@magnis/plugin-triggers@workspace:plugins/modules/triggers"],
 
     "@magnis/plugin-x": ["@magnis/plugin-x@workspace:plugins/modules/x"],
+
+    "@magnis/runtime-contracts": ["@magnis/runtime-contracts@workspace:packages/runtime-contracts"],
 
     "@magnis/source-anysite": ["@magnis/source-anysite@workspace:plugins/sources/anysite"],
 

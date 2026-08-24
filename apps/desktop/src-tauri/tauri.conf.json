@@ -1,0 +1,53 @@
+{
+  "$schema": "https://schema.tauri.app/config/2.0.0",
+  "productName": "Magnis",
+  "version": "0.1.0",
+  "identifier": "com.magnis.desktop",
+  "build": {
+    "beforeDevCommand": "bun build/stage-runtime.ts",
+    "devUrl": "http://localhost:5190",
+    "beforeBuildCommand": "bash build/bundle-embedded-pg.sh && bun build/stage-runtime.ts",
+    "frontendDist": "binaries/runtime/web"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Magnis",
+        "width": 1400,
+        "height": 900,
+        "minWidth": 1200,
+        "minHeight": 700,
+        "titleBarStyle": "Overlay",
+        "dragDropEnabled": false,
+        "hiddenTitle": true,
+        "resizable": true,
+        "fullscreen": false,
+        "visible": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/64x64.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico",
+      "icons/icon.png"
+    ],
+    "externalBin": [
+      "binaries/bin/magnis-server"
+    ],
+    "resources": [
+      "binaries/runtime/data/**/*",
+      "binaries/runtime/migrations/**/*",
+      "binaries/runtime/web/**/*"
+    ]
+  }
+}
