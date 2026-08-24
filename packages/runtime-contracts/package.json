@@ -1,0 +1,12 @@
+{
+  "name": "@magnis/runtime-contracts",
+  "version": "0.1.0",
+  "description": "Public contract for immutable Magnis desktop runtime artifacts.",
+  "type": "module",
+  "private": true,
+  "main": "./src/artifact.ts",
+  "types": "./src/artifact.ts",
+  "scripts": {
+    "test": "bun test"
+  }
+}

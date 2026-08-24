@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "runtimeVersion": "0.1.0",
+  "protocolVersion": "magnis-runtime/v1",
+  "target": "aarch64-unknown-linux-gnu",
+  "executable": "bin/magnis-server-aarch64-unknown-linux-gnu",
+  "runtimeRoot": "runtime",
+  "webRoot": "runtime/web",
+  "migrationsDigest": "a0b1c2d3e4f5061728394a5b6c7d8e9f00112233445566778899aabbccddeeff",
+  "files": {
+    "bin/magnis-server-aarch64-unknown-linux-gnu": "cf7e3fdfd1f82cfa32ea2b0a706d2aacfc3f2285cf9e6ad5b6c568148bf30152",
+    "runtime/web/index.html": "3968d6b5723ab17015d7da9c82760d27491a20ef5a7bd48b7a76aa44a6b486a4"
+  }
+}

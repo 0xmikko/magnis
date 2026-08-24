@@ -10,6 +10,7 @@
     "typecheck": "bash scripts/typecheck-all.sh",
     "lint": "eslint \"plugins/**/*.{ts,tsx}\" \"packages/**/*.{ts,tsx}\" \"scripts/**/*.ts\" --max-warnings 0",
     "test": "vitest run",
+    "test:runtime-contracts": "bun test packages/runtime-contracts/test/",
     "test:connectors": "bash scripts/test-connectors.sh",
     "test:scripts": "bun test scripts/",
     "build:plugins": "bun scripts/build-plugins.ts",
