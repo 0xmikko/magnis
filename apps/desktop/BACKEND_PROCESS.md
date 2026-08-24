@@ -1,88 +1,27 @@
-# Backend Process Architecture
+# Backend process boundary
 
-The Tauri desktop app launches the Rust backend (`magnis-server`) as a **separate process** and connects to it via **HTTP (RPC)**.
+The public Tauri shell starts the closed `magnis-server` executable from a
+verified runtime artifact. The shell and backend communicate only over a
+loopback HTTP address returned to the webview by the existing Tauri IPC command.
 
-## Architecture
-
-```
-┌─────────────────┐
-│  Tauri Desktop  │
-│   (Frontend)     │
-│  React + Vite   │
-└────────┬────────┘
-         │ HTTP (RPC)
-         │ http://127.0.0.1:3765
-         ▼
-┌─────────────────┐
-│  magnis-server     │
-│  (Backend)      │
-│  Axum HTTP API  │
-└─────────────────┘
+```text
+Tauri shell
+  ├─ embedded PostgreSQL cluster
+  └─ magnis-server sidecar
+       └─ runtime/{data,migrations,web}
 ```
 
-## How It Works
+The startup order is fixed: select the application data root, start embedded
+PostgreSQL, reserve a loopback backend port, then start the sidecar with the
+database URL and `MAGNIS_RUNTIME_ROOT`. The runtime root is always the staged
+`binaries/runtime` directory, never inferred from an executable's location.
+This matters because packaged sidecars and bundle resources are installed in
+different directories on Linux.
 
-1. **Desktop app starts** (`desktop/src-tauri/src/main.rs`):
-   - Initializes app paths (database location, logs, plugins)
-   - Spawns `magnis-server` as a child process with `DB_PATH` and `PORT` env vars
-   - Waits for backend to become healthy (polls `/health` endpoint)
-   - Exposes `get_backend_config` Tauri command that returns `{ base_url: "http://127.0.0.1:3765" }`
+On quit the shell performs reverse shutdown: it asks the backend to exit,
+waits for the bounded graceful shutdown, and then stops PostgreSQL. An explicit
+`MAGNIS_SERVER_PATH` remains a developer/test override; a set-but-missing path
+is an error and must not fall through to another server binary.
 
-2. **Frontend connects** (`frontend/src/core/transport.ts`):
-   - In Tauri mode, calls `invoke("get_backend_config")` to get backend URL
-   - Creates `HttpClient` transport with that URL
-   - All API calls go over HTTP to the spawned backend process
-
-3. **On app exit**:
-   - Tauri window close event triggers backend process shutdown
-   - Backend process is killed gracefully
-
-## Building & Running
-
-### Prerequisites
-
-Build the backend server first:
-
-```bash
-# From repo root
-cargo build -p magnis-server --release
-```
-
-This creates `target/release/magnis-server`.
-
-### Running Desktop App
-
-```bash
-# From repo root
-cd desktop
-cargo tauri dev
-```
-
-The desktop app will:
-1. Look for `magnis-server` binary in:
-   - Same directory as desktop executable (`target/release/magnis-server` or `target/debug/magnis-server`)
-   - Repo root `target/release/magnis-server` or `target/debug/magnis-server`
-   - Or use `MAGNIS_SERVER_PATH` environment variable
-
-2. Spawn the backend on port 3765 (default)
-
-3. Frontend connects via HTTP to `http://127.0.0.1:3765`
-
-## Configuration
-
-- **Port**: Default is `3765`. Change in `desktop/src-tauri/src/backend_process.rs` → `pick_port()`
-- **Backend binary path**: Set `MAGNIS_SERVER_PATH` env var to override auto-detection
-- **Database**: Backend uses `DB_PATH` env var (set by desktop app to `~/.local/share/com.magnis.desktop/magnis.db`)
-
-## CORS
-
-The backend API (`backend/api/src/server.rs`) includes CORS middleware allowing requests from:
-- `http://localhost:*` (dev mode)
-- `tauri://localhost` (production Tauri app)
-
-## Benefits
-
-- **Separation**: Backend runs independently, can be debugged separately
-- **Flexibility**: Backend can be reused by other clients (CLI, web, etc.)
-- **Isolation**: Frontend crashes don't affect backend, and vice versa
-- **Development**: Can run backend standalone for testing
+The shell owns process lifecycle and transport only. It does not contain
+backend domain logic, private migrations or a second model/cache implementation.

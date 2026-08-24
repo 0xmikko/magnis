@@ -2,9 +2,9 @@ use anyhow::{Context, Result};
 use std::path::PathBuf;
 
 /// Desktop-side paths. Stage 4: switched from a single-file SQLite
-/// `db_path` to a `data_root` directory — Local-mode PGlite uses the
-/// whole directory (pgdata/, jwt.secret, magnis.lock, magnis.json,
-/// pglite.json, storage/). See `docs/deployment/local.md` for layout.
+/// `db_path` to a `data_root` directory — embedded PostgreSQL and the shell
+/// use the whole directory (pgdata-native/, jwt.secret, desktop.json,
+/// logs/, storage/).
 #[derive(Debug, Clone)]
 pub struct AppPaths {
     app_data_dir: PathBuf,

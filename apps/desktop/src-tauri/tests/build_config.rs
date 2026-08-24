@@ -37,19 +37,20 @@ fn tst_desktop_devcmd_001_every_script_the_hooks_invoke_exists() {
         let cmd = conf["build"][key]
             .as_str()
             .unwrap_or_else(|| panic!("{key} must be a string"));
-        // `bash <path>` — the token right after `bash` is the script.
+        // The hook invokes only public staging/preseed scripts. Tauri resolves
+        // both forms from the desktop app directory.
         let tokens: Vec<&str> = cmd.split_whitespace().collect();
         for (i, tok) in tokens.iter().enumerate() {
-            if *tok != "bash" {
+            if *tok != "bash" && *tok != "bun" {
                 continue;
             }
             let script = tokens
                 .get(i + 1)
-                .unwrap_or_else(|| panic!("{key}: `bash` with no script"));
+                .unwrap_or_else(|| panic!("{key}: `{tok}` with no script"));
             let resolved = base.join(script);
             assert!(
                 resolved.is_file(),
-                "{key} runs `bash {script}`, which does not exist. Tauri resolves it \
+                "{key} runs `{tok} {script}`, which does not exist. Tauri resolves it \
                  from {}, giving {}",
                 base.display(),
                 resolved.display()
@@ -57,7 +58,10 @@ fn tst_desktop_devcmd_001_every_script_the_hooks_invoke_exists() {
             checked += 1;
         }
     }
-    assert!(checked >= 3, "expected the hooks' scripts, found {checked}");
+    assert_eq!(
+        checked, 3,
+        "expected the two staging calls and PostgreSQL preseed, found {checked}"
+    );
 }
 
 // @test-id: tst_desktop_serverbuild_001
@@ -68,40 +72,24 @@ fn tst_desktop_devcmd_001_every_script_the_hooks_invoke_exists() {
 fn tst_desktop_serverbuild_001_the_backend_is_staged_where_external_bin_looks() {
     let conf = config();
 
-    // `externalBin` entries are relative to the CRATE root; the hook's out-dir
-    // argument is relative to `desktop/`. Two different bases for one directory
-    // is how a staged binary becomes invisible to the bundler — and that fails
-    // at bundling time, long after the compile that would have caught it.
+    // `externalBin` entries are relative to the crate root. The artifact
+    // stager extracts its server at this exact location before Tauri reads the
+    // config; no private source build is allowed to fill it.
     let external = conf["bundle"]["externalBin"]
         .as_array()
         .expect("externalBin");
     let server = external
         .iter()
         .filter_map(|v| v.as_str())
-        .find(|e| e.contains("magnis-server"))
+        .find(|e| *e == "binaries/bin/magnis-server")
         .expect("the backend sidecar must be declared");
-    let expected_dir = Path::new(server).parent().expect("a directory");
+    assert_eq!(server, "binaries/bin/magnis-server");
 
     let hook = conf["build"]["beforeBuildCommand"]
         .as_str()
         .expect("beforeBuildCommand");
-    let out_dir = hook
-        .split_whitespace()
-        .skip_while(|t| !t.ends_with("build-backend.sh"))
-        .nth(1)
-        .expect("build-backend.sh must be given an out-dir");
-
-    // Both made comparable by resolving each from its own base.
-    let staged = desktop_dir().join(out_dir);
-    let looked_for = desktop_dir().join("src-tauri").join(expected_dir);
-    assert_eq!(
-        staged,
-        looked_for,
-        "the hook stages the backend in {}, but externalBin `{server}` makes the \
-         bundler look in {}",
-        staged.display(),
-        looked_for.display()
-    );
+    assert!(hook.contains("bun build/stage-runtime.ts"));
+    assert!(!hook.contains("build-backend.sh") && !hook.contains("../frontend"));
 
     // The payload is a separate question from the binary, and the answer a
     // built `.deb` gave is that they do NOT travel together: the sidecar lands
@@ -115,13 +103,81 @@ fn tst_desktop_serverbuild_001_the_backend_is_staged_where_external_bin_looks() 
         .iter()
         .filter_map(|v| v.as_str())
         .collect();
-    let subdir = expected_dir.to_str().expect("utf-8");
-    for payload in ["data", "migrations"] {
-        let prefix = format!("{subdir}/{payload}");
+    for payload in ["data", "migrations", "web"] {
+        let prefix = format!("binaries/runtime/{payload}");
         assert!(
             resources.iter().any(|r| r.starts_with(&prefix)),
             "`{prefix}` is not a bundle resource, so a packaged app ships without \
              it — externalBin carries binaries only. Declared: {resources:?}"
+        );
+    }
+
+    let process_source =
+        std::fs::read_to_string(desktop_dir().join("src-tauri/src/backend_process.rs"))
+            .expect("backend process source");
+    assert!(
+        process_source.contains("pub const PAYLOAD_SUBDIR: &str = \"binaries/runtime\""),
+        "the backend must receive the extracted runtime root, not the sidecar directory"
+    );
+}
+
+// @test-id: tst_desktop_runtime_001
+// @invariant: INV-DTR-26
+// @covers: public runtime-artifact staging → Tauri package inputs
+// @deterministic: yes
+#[test]
+fn tst_desktop_runtime_001_public_artifact_stage_replaces_private_source_builds() {
+    let conf = config();
+    let build = &conf["build"];
+
+    for key in ["beforeDevCommand", "beforeBuildCommand"] {
+        let hook = build[key]
+            .as_str()
+            .unwrap_or_else(|| panic!("{key} must be a string"));
+        assert!(
+            hook.contains("bun build/stage-runtime.ts"),
+            "{key} must stage the exact public runtime artifact: {hook}"
+        );
+        assert!(
+            !hook.contains("build-backend.sh") && !hook.contains("../frontend"),
+            "{key} must not rebuild closed private sources: {hook}"
+        );
+    }
+
+    assert!(
+        desktop_dir().join("build/stage-runtime.ts").is_file(),
+        "the public artifact staging entrypoint must exist"
+    );
+    assert_eq!(
+        build["frontendDist"].as_str(),
+        Some("binaries/runtime/web"),
+        "the webview must use the web output from the same runtime artifact"
+    );
+
+    let external = conf["bundle"]["externalBin"]
+        .as_array()
+        .expect("externalBin");
+    assert!(
+        external
+            .iter()
+            .any(|entry| entry.as_str() == Some("binaries/bin/magnis-server")),
+        "the runtime artifact's server executable must be the only Tauri sidecar"
+    );
+
+    let resources: Vec<&str> = conf["bundle"]["resources"]
+        .as_array()
+        .expect("resources")
+        .iter()
+        .filter_map(|entry| entry.as_str())
+        .collect();
+    for path in [
+        "binaries/runtime/data/**/*",
+        "binaries/runtime/migrations/**/*",
+        "binaries/runtime/web/**/*",
+    ] {
+        assert!(
+            resources.contains(&path),
+            "the runtime resource `{path}` is missing: {resources:?}"
         );
     }
 }

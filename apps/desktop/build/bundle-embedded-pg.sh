@@ -25,8 +25,8 @@ fi
 
 echo "Pre-seed complete. The desktop crate embeds this archive itself:"
 echo "  - postgresql_embedded/bundled compiles it into magnis-desktop"
-echo "  - desktop/src-tauri/.cargo/config.toml pins POSTGRESQL_VERSION so the"
+echo "  - .cargo/config.toml pins POSTGRESQL_VERSION so the"
 echo "    build script reuses THIS file instead of resolving 'latest' online"
 echo
 echo "This script no longer builds a backend. The shell owns the cluster now,"
-echo "and the backend is a TypeScript binary produced by scripts/build-backend.sh."
+echo "and the backend is the checksum-verified binary staged from the public runtime artifact."

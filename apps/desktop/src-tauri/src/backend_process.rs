@@ -41,11 +41,10 @@ const STDERR_JOIN_BOUND_SECS: u64 = 2;
 const SHUTDOWN_POLL_INTERVAL_MS: u64 = 50;
 
 /// Manages the magnis-server child process and exposes its base URL for the frontend.
-/// The directory `scripts/build-backend.sh` stages the backend payload into,
-/// relative to the resource root. Declared in `tauri.conf.json` twice — as the
-/// staging argument and as a bundle resource glob — and asserted equal to this
-/// constant by `tst_desktop_serverbuild_001`.
-pub const PAYLOAD_SUBDIR: &str = "binaries";
+/// The exact runtime artifact stages its backend payload below this directory,
+/// relative to the resource root. Declared in `tauri.conf.json` as bundle
+/// resources and asserted equal to this constant by `tst_desktop_runtime_001`.
+pub const PAYLOAD_SUBDIR: &str = "binaries/runtime";
 
 pub struct BackendProcessManager {
     child: Option<Child>,
@@ -116,8 +115,8 @@ impl BackendProcessManager {
         // TypeScript backend, any machine that had ever built the Rust one
         // silently ran it instead, against the shell's cluster, and succeeded.
         // That is verbatim the failure `explicit_override` above exists to
-        // stop. One producer, one location: `scripts/build-backend.sh` stages
-        // the sidecar for dev and packaging alike.
+        // stop. One producer, one location: the checksum-verified public
+        // runtime artifact stages the sidecar for dev and packaging alike.
 
         // Packaged: the Tauri `externalBin` sidecar beside the executable.
         let current_exe =
@@ -138,8 +137,8 @@ impl BackendProcessManager {
 
         anyhow::bail!(
             "magnis-server binary not found. Tried: {rejected:?}. \
-             From the repo root run: bash scripts/build-backend.sh \
-             desktop/src-tauri/binaries, or set MAGNIS_SERVER_PATH."
+             Stage the exact public runtime artifact with MAGNIS_RUNTIME_ARCHIVE, \
+             MAGNIS_RUNTIME_REF and MAGNIS_RUNTIME_TARGET, or set MAGNIS_SERVER_PATH."
         )
     }
 
@@ -619,9 +618,7 @@ mod tests {
             Some("trusted")
         );
 
-        for retired in [
-            "MAGNIS_DENO_PLUGIN_HOST_PATH",
-        ] {
+        for retired in ["MAGNIS_DENO_PLUGIN_HOST_PATH"] {
             assert_eq!(
                 envs.get(std::ffi::OsStr::new(retired)),
                 Some(&None),
@@ -649,11 +646,12 @@ mod tests {
     // the round-1 boot-stopper proved a well-shaped environment can still be
     // missing the one variable that matters.
     //
-    // Ignored by default because it needs `scripts/build-backend.sh` to have
-    // run and it starts a real PostgreSQL cluster. Run it deliberately:
+    // Ignored by default because it needs the exact runtime artifact to have
+    // been staged and it starts a real PostgreSQL cluster. Run it deliberately:
     //
-    //   bash scripts/build-backend.sh desktop/src-tauri/binaries
-    //   cd desktop/src-tauri && cargo test tst_desktop_boot_001 -- --ignored --nocapture
+    //   bun apps/desktop/build/stage-runtime.ts
+    //   cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml \
+    //     tst_desktop_boot_001 -- --ignored --nocapture
     #[test]
     #[ignore = "needs a staged backend sidecar; starts a real PostgreSQL cluster"]
     fn tst_desktop_boot_001_the_composed_environment_boots_the_real_backend() {
@@ -670,22 +668,25 @@ mod tests {
             .expect("bind a backend port")
             .release();
 
-        // The payload lives beside the staged sidecar, which is where
-        // `build-backend.sh` puts it and where `tauri-build` copies it.
+        // The verified artifact keeps its runtime root separate from the
+        // Tauri sidecar, because packaged Linux applications install resources
+        // and external binaries in different locations.
         let runtime_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(PAYLOAD_SUBDIR);
         assert!(
             runtime_root.join("migrations").is_dir(),
-            "run scripts/build-backend.sh first: {} has no migrations/",
+            "stage the exact public runtime artifact first: {} has no migrations/",
             runtime_root.display()
         );
 
         // The resolver looks beside `current_exe()`, which under `cargo test`
         // is `target/debug/deps`. `MAGNIS_SERVER_PATH` is the documented
         // override and is what points it at the staged sidecar.
-        let sidecar = runtime_root.join(format!("magnis-server-{}", current_target_triple()));
+        let sidecar = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("binaries/bin")
+            .join(format!("magnis-server-{}", current_target_triple()));
         assert!(
             sidecar.is_file(),
-            "run scripts/build-backend.sh first: no {}",
+            "stage the exact public runtime artifact first: no {}",
             sidecar.display()
         );
         // SAFETY: single-threaded test; no other thread reads the environment
@@ -730,14 +731,20 @@ mod tests {
             .filter_map(|v| v.as_str())
             .find(|e| e.contains("magnis-server"))
             .expect("the backend sidecar");
-        assert_eq!(
-            std::path::Path::new(server)
-                .parent()
-                .and_then(|p| p.to_str()),
-            Some(PAYLOAD_SUBDIR),
-            "the shell looks under {PAYLOAD_SUBDIR}/ inside the resource root; \
-             the bundler stages the sidecar somewhere else"
-        );
+        assert_eq!(server, "binaries/bin/magnis-server");
+        assert_eq!(PAYLOAD_SUBDIR, "binaries/runtime");
+        let resources: Vec<&str> = conf["bundle"]["resources"]
+            .as_array()
+            .expect("resources")
+            .iter()
+            .filter_map(|value| value.as_str())
+            .collect();
+        for payload in ["data", "migrations", "web"] {
+            assert!(
+                resources.contains(&format!("{PAYLOAD_SUBDIR}/{payload}/**/*").as_str()),
+                "the compiled runtime root must include {payload}: {resources:?}"
+            );
+        }
     }
 
     // @test-id: tst_desktop_childenv_002

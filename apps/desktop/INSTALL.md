@@ -1,73 +1,17 @@
-# Installation Guide
+# Desktop build prerequisites
 
-## System Dependencies (Linux)
+The Magnis desktop package is built from public shell source plus one exact
+runtime artifact; a private backend or frontend checkout is neither required
+nor accepted. Select `MAGNIS_RUNTIME_ARCHIVE`, `MAGNIS_RUNTIME_REF` and
+`MAGNIS_RUNTIME_TARGET` as described in [README.md](README.md) before running
+Tauri.
 
-Before building the Tauri desktop app, install system dependencies:
+Install Rust, Bun and the Tauri system prerequisites for the target platform.
+For Linux, follow the [official Tauri prerequisites](https://v2.tauri.app/start/prerequisites/)
+for WebKitGTK, OpenSSL, appindicator and SVG support. On macOS install Xcode
+Command Line Tools.
 
-### Ubuntu/Debian
-```bash
-sudo apt update
-sudo apt install libwebkit2gtk-4.1-dev \
-  build-essential \
-  curl \
-  wget \
-  file \
-  libssl-dev \
-  libayatana-appindicator3-dev \
-  librsvg2-dev
-```
-
-### Fedora
-```bash
-sudo dnf install webkit2gtk4.1-devel \
-  openssl-devel \
-  curl \
-  wget \
-  file \
-  libappindicator-gtk3-devel \
-  librsvg2-devel
-```
-
-### Arch Linux
-```bash
-sudo pacman -S webkit2gtk-4.1 \
-  base-devel \
-  curl \
-  wget \
-  file \
-  openssl \
-  libappindicator-gtk3 \
-  librsvg
-```
-
-## Quick Start
-
-1. Install system dependencies (see above)
-2. Install frontend dependencies:
-   ```bash
-   cd frontend
-   bun install
-   ```
-3. Build and run:
-   ```bash
-   cd desktop/src-tauri
-   cargo tauri dev
-   ```
-
-## Troubleshooting
-
-### "Failed to find libwebkit2gtk"
-Install webkit2gtk-4.1-dev (Ubuntu/Debian) or webkit2gtk4.1-devel (Fedora)
-
-### "Failed to link @magnis/core"
-Ensure the backend/core symlink exists:
-```bash
-mkdir -p frontend/node_modules/@magnis
-ln -sf ../../backend/core frontend/node_modules/@magnis/core
-```
-
-### Port 5173 already in use
-Change the port in frontend/vite.config.ts or kill the existing process:
-```bash
-lsof -ti:5173 | xargs kill -9
-```
+Before an offline Cargo build, run `build/bundle-embedded-pg.sh` to preseed the
+exact PostgreSQL archive named by the public root `.cargo/config.toml`. The
+archive version is pinned; a build must fail if it cannot obtain that exact
+payload rather than silently choosing another PostgreSQL release.

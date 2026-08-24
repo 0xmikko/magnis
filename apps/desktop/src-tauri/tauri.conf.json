@@ -4,10 +4,10 @@
   "version": "0.1.0",
   "identifier": "com.magnis.desktop",
   "build": {
-    "beforeDevCommand": "bash ../scripts/build-backend.sh src-tauri/binaries && cd ../frontend && bun run dev -- --port 5190",
+    "beforeDevCommand": "bun build/stage-runtime.ts",
     "devUrl": "http://localhost:5190",
-    "beforeBuildCommand": "bash build/bundle-embedded-pg.sh && bash ../scripts/build-backend.sh src-tauri/binaries && cd ../frontend && bun run build",
-    "frontendDist": "../../frontend/dist"
+    "beforeBuildCommand": "bash build/bundle-embedded-pg.sh && bun build/stage-runtime.ts",
+    "frontendDist": "binaries/runtime/web"
   },
   "app": {
     "windows": [
@@ -42,11 +42,12 @@
       "icons/icon.png"
     ],
     "externalBin": [
-      "binaries/magnis-server"
+      "binaries/bin/magnis-server"
     ],
     "resources": [
-      "binaries/data/**/*",
-      "binaries/migrations/**/*"
+      "binaries/runtime/data/**/*",
+      "binaries/runtime/migrations/**/*",
+      "binaries/runtime/web/**/*"
     ]
   }
 }
