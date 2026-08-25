@@ -127,7 +127,10 @@ jobs:
             test -n "$deb"
             test -n "$appimage"
             dpkg-deb -c "$deb" > "$RUNNER_TEMP/magnis-deb-contents.txt"
-            grep -F "binaries/bin/$server" "$RUNNER_TEMP/magnis-deb-contents.txt" > /dev/null
+            # `externalBin` installs the sidecar beside the Linux application
+            # executable. The resolver accepts both the target-suffixed name
+            # Tauri stages and its package-manager plain-name variant.
+            grep -E "usr/bin/(${server}|magnis-server)$" "$RUNNER_TEMP/magnis-deb-contents.txt" > /dev/null
           fi
 
       - uses: actions/upload-artifact@v4

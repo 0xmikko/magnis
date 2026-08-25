@@ -84,6 +84,11 @@ impl OllamaHandle {
         }
     }
 
+    /// Whether this handle represents the only child the shell may terminate.
+    pub fn is_owned_by_shell(&self) -> bool {
+        self.owned_by_shell
+    }
+
     /// Returns whether this shell owned a child to stop. `Child::kill` is
     /// intentionally never called for an adopted daemon.
     pub fn stop(&mut self) -> bool {
@@ -117,6 +122,9 @@ pub enum OllamaAction {
     /// Inspect availability only. The UI renders its one setup prompt from the
     /// returned unavailable state.
     Prompt,
+    /// Re-check an explicitly opened settings flow without starting a process
+    /// or re-applying the one-time startup prompt policy.
+    Check,
     /// The user chose not to set local Ollama up. This is terminal for the
     /// selected local model; it is never translated to a hosted selection.
     Decline,
@@ -128,11 +136,12 @@ pub enum OllamaAction {
 
 impl OllamaAction {
     /// The frozen wire vocabulary shared by Tauri IPC and the headless CLI.
-    pub const WIRE_VALUES: &str = "prompt|start|decline|install";
+    pub const WIRE_VALUES: &str = "prompt|check|start|decline|install";
 
     pub fn from_wire(value: &str) -> Option<Self> {
         match value {
             "prompt" => Some(Self::Prompt),
+            "check" => Some(Self::Check),
             "decline" => Some(Self::Decline),
             "start" => Some(Self::StartInstalled),
             "install" => Some(Self::OpenInstall),
@@ -232,7 +241,7 @@ pub fn discover_selected_local(
         OllamaAction::Prompt if setup_prompted => anyhow::bail!(
             "local Ollama is unavailable and its one-time setup prompt was already dismissed"
         ),
-        OllamaAction::Prompt => Ok(unavailable_launch(unavailable, false)),
+        OllamaAction::Prompt | OllamaAction::Check => Ok(unavailable_launch(unavailable, false)),
         OllamaAction::Decline => Ok(unavailable_launch(unavailable, true)),
         OllamaAction::OpenInstall => match unavailable {
             OllamaAvailability::NotInstalled { .. } => Ok(unavailable_launch(unavailable, false)),
@@ -250,6 +259,32 @@ pub fn discover_selected_local(
             ready_launch(models, selected_model, handle)
         }
     }
+}
+
+/// Retain a previously spawned daemon when a later settings probe reaches its
+/// endpoint. The probe's external handle is deliberately discarded: replacing
+/// the owned handle would stop the daemon immediately when the old value drops.
+///
+/// @tested-by tst_desktop_ollama_003
+pub fn reconcile_selected_local_handle(
+    current: &mut Option<OllamaHandle>,
+    candidate: OllamaHandle,
+    availability: &mut OllamaAvailability,
+) {
+    if current
+        .as_ref()
+        .is_some_and(OllamaHandle::is_owned_by_shell)
+        && !candidate.is_owned_by_shell()
+    {
+        if let OllamaAvailability::Ready { owned_by_shell, .. } = availability {
+            *owned_by_shell = true;
+        }
+        return;
+    }
+    if let Some(previous) = current.as_mut() {
+        previous.stop();
+    }
+    *current = Some(candidate);
 }
 
 fn unavailable_launch(availability: OllamaAvailability, declined: bool) -> OllamaLaunch {
@@ -366,8 +401,8 @@ impl OllamaProbe for SystemOllamaProbe {
 #[cfg(test)]
 mod tests {
     use super::{
-        discover_selected_local, hosted_launch, OllamaAction, OllamaAvailability, OllamaHandle,
-        OllamaProbe, OLLAMA_PROVIDER_URL,
+        discover_selected_local, hosted_launch, reconcile_selected_local_handle, OllamaAction,
+        OllamaAvailability, OllamaHandle, OllamaProbe, OLLAMA_PROVIDER_URL,
     };
     use anyhow::Result;
     use std::path::{Path, PathBuf};
@@ -558,11 +593,62 @@ mod tests {
             .availability(),
             OllamaAvailability::Ready { .. }
         ));
-        assert_eq!(OllamaAction::WIRE_VALUES, "prompt|start|decline|install");
+        assert_eq!(
+            OllamaAction::WIRE_VALUES,
+            "prompt|check|start|decline|install"
+        );
         assert_eq!(
             OllamaAction::from_wire("start"),
             Some(OllamaAction::StartInstalled)
         );
+        assert_eq!(OllamaAction::from_wire("check"), Some(OllamaAction::Check));
         assert_eq!(OllamaAction::from_wire("hosted-fallback"), None);
+    }
+
+    // @test-id: tst_desktop_ollama_003
+    // @scenario: scn_desktop_model_002
+    // @invariant: a model change retains the child the shell already owns;
+    // an availability probe must not turn it into an adopted external daemon.
+    // @covers: ollama::reconcile_selected_local_handle
+    // @deterministic: yes; the daemon and process launcher are fakes.
+    // @fixtures: inline FakeOllama start and ready-probe sequences.
+    #[test]
+    fn tst_desktop_ollama_003_change_model_retains_shell_owned_daemon() {
+        let installed = PathBuf::from("/opt/ollama/bin/ollama");
+        let mut start_and_ready = FakeOllama {
+            tags: vec![
+                None,
+                Some(vec!["llama3.2".to_string(), "llama3.3".to_string()]),
+            ],
+            binary: Some(installed),
+            ..Default::default()
+        };
+        let mut initial = discover_selected_local(
+            &mut start_and_ready,
+            "llama3.2",
+            false,
+            OllamaAction::StartInstalled,
+        )
+        .expect("an explicit start owns the child");
+        let mut current = initial.take_handle();
+
+        let mut ready_probe = FakeOllama {
+            tags: vec![Some(vec!["llama3.2".to_string(), "llama3.3".to_string()])],
+            ..Default::default()
+        };
+        let mut changed =
+            discover_selected_local(&mut ready_probe, "llama3.3", true, OllamaAction::Check)
+                .expect("the owned daemon answers the change-model probe");
+        let mut availability = changed.availability().clone();
+        let candidate = changed
+            .take_handle()
+            .expect("ready probes produce a daemon handle");
+
+        reconcile_selected_local_handle(&mut current, candidate, &mut availability);
+
+        assert!(current
+            .as_ref()
+            .is_some_and(OllamaHandle::is_owned_by_shell));
+        assert!(availability.owned_by_shell());
     }
 }

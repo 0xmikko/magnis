@@ -6,7 +6,8 @@
 //! `OllamaProviderAdapter` and catalog already own those domain decisions.
 
 use magnis_desktop::ollama::{
-    discover_selected_local, OllamaAction, OllamaAvailability, SystemOllamaProbe,
+    discover_selected_local, reconcile_selected_local_handle, OllamaAction, OllamaAvailability,
+    SystemOllamaProbe,
 };
 use magnis_desktop::paths::AppPaths;
 use magnis_desktop::workspace_config::{load_desktop_prefs, save_desktop_prefs};
@@ -85,7 +86,11 @@ pub async fn prepare_local_ollama(
     let action = parse_action(&request.action)?;
     let prefs_path = paths.desktop_prefs_path();
     let mut prefs = load_desktop_prefs(&prefs_path);
-    if action != OllamaAction::Prompt && !prefs.ollama_setup_prompted {
+    if matches!(
+        action,
+        OllamaAction::Decline | OllamaAction::OpenInstall | OllamaAction::StartInstalled
+    ) && !prefs.ollama_setup_prompted
+    {
         // Persist BEFORE opening/installing/spawning. A crash during the
         // external action must not make the one-time prompt recur next launch.
         prefs.ollama_setup_prompted = true;
@@ -100,7 +105,7 @@ pub async fn prepare_local_ollama(
         action,
     )
     .map_err(|error| error.to_string())?;
-    let availability = launch.availability().clone();
+    let mut availability = launch.availability().clone();
 
     if action == OllamaAction::OpenInstall {
         let OllamaAvailability::NotInstalled { install_url } = &availability else {
@@ -116,10 +121,7 @@ pub async fn prepare_local_ollama(
 
     if let Some(handle) = launch.take_handle() {
         let mut current = state.0.lock().map_err(|error| error.to_string())?;
-        if let Some(previous) = current.as_mut() {
-            previous.stop();
-        }
-        *current = Some(handle);
+        reconcile_selected_local_handle(&mut current, handle, &mut availability);
     }
     Ok(status(availability, launch.was_declined()))
 }
@@ -142,6 +144,7 @@ mod tests {
     #[test]
     fn tst_desktop_ollama_ipc_001_reports_only_the_existing_provider_endpoint() {
         assert_eq!(parse_action("start"), Ok(OllamaAction::StartInstalled));
+        assert_eq!(parse_action("check"), Ok(OllamaAction::Check));
         assert!(parse_action("hosted-fallback").is_err());
         assert!(matches!(
             status(
