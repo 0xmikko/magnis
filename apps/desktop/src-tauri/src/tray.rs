@@ -177,11 +177,13 @@ pub fn build(
 /// when clicked is worse than no checkbox.
 fn toggle_show_in_dock(app: &tauri::AppHandle) {
     use tauri::Manager;
-    let path = app.state::<crate::paths::AppPaths>().desktop_prefs_path();
-    let mut prefs = crate::workspace_config::load_desktop_prefs(&path);
+    let path = app
+        .state::<magnis_desktop::paths::AppPaths>()
+        .desktop_prefs_path();
+    let mut prefs = magnis_desktop::workspace_config::load_desktop_prefs(&path);
     prefs.show_in_dock = !prefs.show_in_dock;
     crate::startup::apply_dock_visibility(app, prefs.show_in_dock);
-    if let Err(e) = crate::workspace_config::save_desktop_prefs(&path, &prefs) {
+    if let Err(e) = magnis_desktop::workspace_config::save_desktop_prefs(&path, &prefs) {
         tracing::warn!(target: "shell", error = %e, "could not save the Dock preference");
     }
 }

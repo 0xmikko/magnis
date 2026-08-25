@@ -12,6 +12,10 @@ pub struct DesktopPrefs {
     /// Its whole job is to stop us re-enabling something they later switched
     /// off — so it records that a decision was MADE, not what it was.
     pub autostart_decided: bool,
+    /// The local-Ollama setup prompt is intentionally one-time. A missing
+    /// field in an older preferences file is an undecided user, not an error.
+    #[serde(default)]
+    pub ollama_setup_prompted: bool,
 }
 
 impl Default for DesktopPrefs {
@@ -19,6 +23,7 @@ impl Default for DesktopPrefs {
         Self {
             show_in_dock: true,
             autostart_decided: false,
+            ollama_setup_prompted: false,
         }
     }
 }

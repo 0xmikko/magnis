@@ -64,9 +64,8 @@ pub struct BackendProcessManager {
 /// a stale binary won silently and "several demo takes ran yesterday's backend
 /// that way, and nothing said so".
 ///
-/// `agent_binary_path` already refused; `server_binary_path` fell through and
-/// only noted the miss among its rejected candidates, while a comment in this
-/// file claimed the two resolvers mirrored each other. They now share this.
+/// A missing explicit override is always an error: desktop has one verified
+/// backend sidecar and must never substitute a guessed executable.
 ///
 /// Pure in its input so the rule is testable without touching process env,
 /// which is global and would make such a test race with every other one.
@@ -96,8 +95,6 @@ impl BackendProcessManager {
         // and an explicit override — silently. Several demo takes ran
         // yesterday's backend that way, and nothing said so.
         //
-        // `agent_binary_path` below already put its env var first; the two
-        // resolvers disagreed while a comment claimed they mirrored each other.
         let mut rejected: Vec<String> = Vec::new();
 
         if let Some(p) = explicit_override(
@@ -142,46 +139,6 @@ impl BackendProcessManager {
         )
     }
 
-    /// Resolve the bundled `agent-server` sidecar binary the backend will
-    /// spawn (`MAGNIS_AGENT_COMMAND`). Mirrors [`Self::server_binary_path`]
-    /// precedence: the Tauri `externalBin` triple-suffixed name next to the
-    /// exe first, then plain. In dev builds (no bundle) fall back to the
-    /// compiled `agent-server` produced by `desktop/build/bundle-agent.sh`.
-    /// `MAGNIS_AGENT_SERVER_PATH` overrides everything.
-    fn agent_binary_path() -> Result<std::path::PathBuf> {
-        if let Some(p) = explicit_override(
-            "MAGNIS_AGENT_SERVER_PATH",
-            std::env::var("MAGNIS_AGENT_SERVER_PATH").ok(),
-        )? {
-            return Ok(p);
-        }
-        let current_exe =
-            std::env::current_exe().context("Failed to get current executable path")?;
-        let parent = current_exe
-            .parent()
-            .context("Executable has no parent directory")?;
-        let triple = current_target_triple();
-        let suffixed = parent.join(format!("agent-server-{triple}"));
-        if suffixed.exists() {
-            return Ok(suffixed);
-        }
-        let plain = parent.join("agent-server");
-        if plain.exists() {
-            return Ok(plain);
-        }
-        // Dev: desktop/src-tauri/binaries (where bundle-agent.sh writes).
-        let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        let dev_suffixed = base.join("binaries").join(format!("agent-server-{triple}"));
-        if dev_suffixed.exists() {
-            return Ok(dev_suffixed.canonicalize()?);
-        }
-        anyhow::bail!(
-            "agent-server sidecar not found. Run desktop/build/bundle-agent.sh, or set \
-             MAGNIS_AGENT_SERVER_PATH to a compiled binary. Expected suffixed name: \
-             agent-server-{triple}"
-        )
-    }
-
     /// Resolve the bundled `pglite-server` sidecar binary.
     ///
     /// Tauri's `externalBin` convention drops the sidecar next to the main
@@ -211,6 +168,7 @@ impl BackendProcessManager {
         port: u16,
         database_url: &str,
         runtime_root: &std::path::Path,
+        ollama_base_url: Option<&str>,
     ) -> Result<Command> {
         // Server mode means the backend refuses to invent a signing secret —
         // "no derivation, no random fallback". Ownership moved here with the
@@ -284,15 +242,30 @@ impl BackendProcessManager {
                 cfg!(debug_assertions),
             ),
         );
-        // Backend owns the agent in spawn mode too: set the gate flag +
-        // the COMPLETE agent spawn spec on the backend, so it spawns +
-        // supervises `agent-server` itself (both ports wired from one
-        // owner). The MAGNIS_AGENT_COMMAND is the resolved sidecar path —
-        // the backend never guesses it. The agent's env file / MCP proxy /
-        // DEFAULT_ENGINE / PATH are forwarded from the desktop's own env
-        // (set by `run-spawn.sh` in dev) so the agent reaches node + the
-        // claude/codex CLI; PATH is the desktop's inherited PATH.
-        Self::apply_agent_spawn_env(&mut cmd, port, data_root);
+        match ollama_base_url {
+            Some(endpoint) => {
+                cmd.env("OLLAMA_BASE_URL", endpoint);
+            }
+            // A hosted selection must not inherit a stale terminal setting and
+            // turn into an accidental local provider.
+            None => {
+                cmd.env_remove("OLLAMA_BASE_URL");
+            }
+        }
+        // The public runtime contains one verified backend sidecar. Remove all
+        // retired agent-sidecar inputs so no invocation can guess a second
+        // runtime process from a developer checkout or inherited environment.
+        for retired in [
+            "MAGNIS_BACKEND_OWNS_AGENT",
+            "MAGNIS_AGENT_COMMAND",
+            "MAGNIS_AGENT_SERVER_PATH",
+            "MAGNIS_MCP_PROXY_PATH",
+            "AGENT_PORT",
+            "AGENT_HOST",
+            "AGENT_URL",
+        ] {
+            cmd.env_remove(retired);
+        }
         Ok(cmd)
     }
 
@@ -301,12 +274,20 @@ impl BackendProcessManager {
         port: u16,
         database_url: &str,
         runtime_root: &std::path::Path,
+        ollama_base_url: Option<&str>,
     ) -> Result<Self> {
         // Server mode means the backend refuses to invent a signing secret —
         // "no derivation, no random fallback". Ownership moved here with the
         // database, so the shell supplies it or nothing boots.
         let bin = Self::server_binary_path()?;
-        let mut cmd = Self::build_child_command(&bin, data_root, port, database_url, runtime_root)?;
+        let mut cmd = Self::build_child_command(
+            &bin,
+            data_root,
+            port,
+            database_url,
+            runtime_root,
+            ollama_base_url,
+        )?;
 
         let mut child = cmd.spawn().context("Failed to spawn magnis-server")?;
         // The reader starts BEFORE the health wait: an unread pipe blocks the
@@ -327,88 +308,6 @@ impl BackendProcessManager {
         Self::wait_for_health(&base_url)?;
 
         Ok(manager)
-    }
-
-    /// Set `MAGNIS_BACKEND_OWNS_AGENT=1` + the COMPLETE agent spawn spec on
-    /// the backend command (spawn mode). The backend reads these and spawns
-    /// + supervises `agent-server` itself, owning both ports.
-    ///
-    /// NO FALLBACK: the gate is enabled ONLY when every required input is
-    /// available — the resolved agent-server path AND `MAGNIS_ENV_FILE`
-    /// (the agent requires an env file; the supervisor filters out
-    /// `*_API_KEY` before the agent loads it). If either is missing the gate
-    /// stays OFF and the reason is logged, rather than spawning a broken
-    /// agent that crash-loops.
-    fn apply_agent_spawn_env(cmd: &mut Command, backend_port: u16, data_root: &std::path::Path) {
-        let agent_command = match Self::agent_binary_path() {
-            Ok(p) => p,
-            Err(e) => {
-                tracing::warn!(
-                    target: "shell",
-                    error = %e,
-                    "backend-owns-agent not enabled: agent-server not found; the backend runs without the agent"
-                );
-                return;
-            }
-        };
-        // Default to the file the data root owns. Bailing out here meant the
-        // agent silently never spawned in spawn mode — nothing else sets this
-        // var — and the app showed "No agents available" with no other clue.
-        //
-        // It is PROVISIONED, not merely named. The previous comment here said
-        // "the file itself is optional: the supervisor treats an absent one as
-        // empty", and that is false against this backend: naming a file that
-        // does not exist makes it exit 64 before serving anything. An empty
-        // file means the same thing and is a file.
-        let env_file = match std::env::var("MAGNIS_ENV_FILE") {
-            Ok(v) if !v.is_empty() => v,
-            _ => match crate::paths::ensure_env_file(data_root) {
-                Ok(p) => p.to_string_lossy().into_owned(),
-                Err(e) => {
-                    tracing::warn!(target: "shell", error = format_args!("{e:#}"), "backend-owns-agent not enabled");
-                    return;
-                }
-            },
-        };
-        let mcp_proxy = std::env::var("MAGNIS_MCP_PROXY_PATH")
-            .ok()
-            .unwrap_or_else(|| {
-                // Dev fallback to the repo proxy path is acceptable here because
-                // the suffix is a FIXED, known repo artifact (not a guessed
-                // value): desktop/src-tauri/../../agent/src/mcp-stdio-proxy.mjs.
-                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                    .join("../../agent/src/mcp-stdio-proxy.mjs")
-                    .to_string_lossy()
-                    .into_owned()
-            });
-        let default_engine =
-            std::env::var("DEFAULT_ENGINE").unwrap_or_else(|_| "claude".to_string());
-        let agent_port = std::env::var("AGENT_PORT").unwrap_or_else(|_| "3002".to_string());
-        // Same PATH the launchd contract builds — asked from the login shell so
-        // the agent finds `claude`/`codex` wherever the user installed them.
-        // Inheriting the GUI process's PATH is not enough: a Finder launch
-        // never sources the shell profile, so a perfectly good Claude Code
-        // install reported "Not logged in" simply because it was invisible.
-        let path = crate::paths::agent_path(
-            &dirs::home_dir().unwrap_or_default(),
-            &std::env::current_exe()
-                .ok()
-                .and_then(|p| p.parent().map(std::path::Path::to_path_buf))
-                .unwrap_or_default(),
-        );
-
-        cmd.env("MAGNIS_BACKEND_OWNS_AGENT", "1")
-            .env("MAGNIS_AGENT_COMMAND", &agent_command)
-            .env("AGENT_PORT", &agent_port)
-            .env("AGENT_HOST", "127.0.0.1")
-            .env("BACKEND_URL", format!("http://127.0.0.1:{backend_port}"))
-            .env("MAGNIS_ENV_FILE", &env_file)
-            .env("DEFAULT_ENGINE", &default_engine)
-            .env("MAGNIS_MCP_PROXY_PATH", &mcp_proxy)
-            .env("PATH", &path)
-            // The backend's own AGENT_URL must match AGENT_PORT (same number)
-            // so frontend→backend→agent proxying hits the live agent.
-            .env("AGENT_URL", format!("http://127.0.0.1:{agent_port}"));
     }
 
     fn wait_for_health(base_url: &str) -> Result<()> {
@@ -603,6 +502,7 @@ mod tests {
             3010,
             "postgres://127.0.0.1:5599/magnis",
             &runtime_root,
+            None,
         )
         .expect("compose the child command");
 
@@ -618,7 +518,17 @@ mod tests {
             Some("trusted")
         );
 
-        for retired in ["MAGNIS_DENO_PLUGIN_HOST_PATH"] {
+        for retired in [
+            "MAGNIS_DENO_PLUGIN_HOST_PATH",
+            "MAGNIS_BACKEND_OWNS_AGENT",
+            "MAGNIS_AGENT_COMMAND",
+            "MAGNIS_AGENT_SERVER_PATH",
+            "MAGNIS_MCP_PROXY_PATH",
+            "AGENT_PORT",
+            "AGENT_HOST",
+            "AGENT_URL",
+            "OLLAMA_BASE_URL",
+        ] {
             assert_eq!(
                 envs.get(std::ffi::OsStr::new(retired)),
                 Some(&None),
@@ -698,6 +608,7 @@ mod tests {
             backend_port,
             &cluster.database_url(),
             &runtime_root,
+            None,
         )
         .expect("the backend must become healthy with the environment the shell composes");
 
@@ -772,6 +683,7 @@ mod tests {
             3010,
             "postgres://127.0.0.1:5599/magnis",
             &runtime_root,
+            None,
         )
         .expect("compose the child command");
 
@@ -832,6 +744,26 @@ mod tests {
         assert!(
             get("EMBEDDINGS_PROVIDER").is_some() || std::env::var("EMBEDDINGS_PROVIDER").is_ok(),
             "unset means the backend downloads a model on first run"
+        );
+
+        let local = BackendProcessManager::build_child_command(
+            &bin,
+            tmp.path(),
+            3011,
+            "postgres://127.0.0.1:5599/magnis",
+            &runtime_root,
+            Some("http://127.0.0.1:11434/v1"),
+        )
+        .expect("compose the selected-local child command");
+        let local_envs: std::collections::HashMap<_, _> = local.get_envs().collect();
+        assert_eq!(
+            local_envs
+                .get(std::ffi::OsStr::new("OLLAMA_BASE_URL"))
+                .and_then(|value| value.as_ref())
+                .map(|value| value.to_string_lossy().into_owned())
+                .as_deref(),
+            Some("http://127.0.0.1:11434/v1"),
+            "a selected local model gives the backend its verified endpoint"
         );
     }
 

@@ -188,11 +188,10 @@ pub fn status_line(sources: &[SourceStatus]) -> String {
 mod tests {
     use super::{status_line, SourceStatus, SurfaceSync};
 
-    /// The fixtures live at the repository root, shared with the Rust matrix
-    /// test and the frontend golden test. The desktop crate is its own
-    /// workspace, so the path climbs out of it explicitly.
+    /// The public shell owns these protocol fixtures with its renderer. The
+    /// desktop crate is its own workspace, so the path climbs out explicitly.
     fn fixture_dir() -> std::path::PathBuf {
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/source-status")
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../test/fixtures/source-status")
     }
 
     fn load_all() -> Vec<(String, Vec<SourceStatus>)> {

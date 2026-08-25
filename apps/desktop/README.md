@@ -67,6 +67,25 @@ extracted `runtime/` root. The sidecar serves the same compiled web identity
 that Tauri packages. On quit the shell stops the backend first, then the
 PostgreSQL cluster.
 
-The optional Ollama flow is a later shell capability. FastEmbed remains an
-in-process TypeScript library and verified cache of the closed backend; it is
-not a desktop process or artifact protocol.
+Ollama is optional and external. A hosted selection performs no Ollama probe.
+After a user selects a local model, the shell performs a bounded probe only at
+`http://127.0.0.1:11434/api/tags`. A ready daemon is adopted but never stopped;
+the UI offers one persisted explicit install/start decision when it is absent.
+Only an `ollama serve` process started after that decision is stopped during
+reverse shutdown. The UI returns the verified `http://127.0.0.1:11434/v1`
+endpoint to the existing backend provider/model control plane; it never
+switches a failed local selection to a hosted provider.
+
+The same lifecycle library powers the headless binary. It requires an exact
+runtime root and accepts an explicit staged-sidecar override for development:
+
+```bash
+cargo run --manifest-path apps/desktop/src-tauri/Cargo.toml --bin magnis-runtime -- \
+  --runtime-root /absolute/path/to/staged/runtime \
+  --server-path /absolute/path/to/staged/magnis-server \
+  --data-root /absolute/path/to/magnis-data \
+  --backend-port 3261
+```
+
+FastEmbed remains an in-process TypeScript library and verified cache of the
+closed backend; it is not a desktop process or artifact protocol.
