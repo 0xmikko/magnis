@@ -5,6 +5,7 @@
     "composite": false
   },
   "include": [
-    "stage-runtime.ts"
+    "stage-runtime.ts",
+    "download-runtime.ts"
   ]
 }

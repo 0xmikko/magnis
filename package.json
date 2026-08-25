@@ -7,13 +7,14 @@
     "plugins/sources/*"
   ],
   "scripts": {
+    "check": "bun run typecheck && bun run lint && bun run test && bun run test:runtime-contracts && bun run test:ui && bun run test:connectors && bun run test:scripts && bun run build:plugins",
     "typecheck": "bash scripts/typecheck-all.sh",
     "lint": "eslint \"plugins/**/*.{ts,tsx}\" \"packages/**/*.{ts,tsx}\" \"scripts/**/*.ts\" \"apps/desktop/build/**/*.ts\" --max-warnings 0",
-    "test": "vitest run && bun test apps/desktop/build/stage-runtime.test.ts",
+    "test": "vitest run && bun test apps/desktop/build/",
     "test:runtime-contracts": "bun test packages/runtime-contracts/test/",
     "test:connectors": "bash scripts/test-connectors.sh",
     "test:scripts": "bun test scripts/",
-    "test:desktop-runtime": "bun test apps/desktop/build/stage-runtime.test.ts",
+    "test:desktop-runtime": "bun test apps/desktop/build/",
     "build:plugins": "bun scripts/build-plugins.ts",
     "test:ui": "vitest run --config vitest.ui.config.ts"
   },

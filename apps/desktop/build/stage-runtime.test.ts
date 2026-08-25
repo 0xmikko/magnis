@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test } from "bun:test";
@@ -64,7 +64,68 @@ test("tst_desktop_runtime_stage_002 rejects a mismatched checksum without replac
   expect(await readFile(join(outputDirectory, "keep.txt"), "utf8")).toBe("do not replace");
 });
 
-async function createRuntimeFixture(): Promise<{
+// @test-id: tst_desktop_runtime_stage_003
+// @scenario: scn_desktop_artifact_003
+// @invariant: INV-DTR-27
+// @covers: stageRuntime archive source-leak policy
+// @deterministic: yes
+test("tst_desktop_runtime_stage_003 rejects a source map before extracting or replacing a staged runtime", async () => {
+  const fixture = await createRuntimeFixture({
+    "runtime/web/app.js.map": "{\"version\":3}\n",
+  });
+  const outputDirectory = join(fixture.root, "binaries");
+  await mkdir(outputDirectory, { recursive: true });
+  await writeFile(join(outputDirectory, "keep.txt"), "do not replace");
+
+  await expect(stageRuntime({
+    archivePath: fixture.archivePath,
+    referencePath: fixture.referencePath,
+    target: TARGET,
+    outputDirectory,
+  })).rejects.toThrow("source map");
+
+  expect(await readFile(join(outputDirectory, "keep.txt"), "utf8")).toBe("do not replace");
+});
+
+// @test-id: tst_desktop_runtime_stage_004
+// @scenario: scn_desktop_artifact_003
+// @invariant: INV-DTR-27
+// @covers: stageRuntime third-party notice policy
+// @deterministic: yes
+test("tst_desktop_runtime_stage_004 rejects an archive without offline third-party notices", async () => {
+  const fixture = await createRuntimeFixture({}, false);
+
+  await expect(stageRuntime({
+    archivePath: fixture.archivePath,
+    referencePath: fixture.referencePath,
+    target: TARGET,
+    outputDirectory: join(fixture.root, "binaries"),
+  })).rejects.toThrow("THIRD_PARTY_NOTICES");
+});
+
+// @test-id: tst_desktop_runtime_stage_005
+// @scenario: scn_desktop_artifact_003
+// @invariant: INV-DTR-27
+// @covers: stageRuntime archive entry-type policy
+// @deterministic: yes
+test("tst_desktop_runtime_stage_005 rejects a symlink before archive extraction", async () => {
+  const fixture = await createRuntimeFixture({}, true, {
+    "runtime/web/untrusted-link": "index.html",
+  });
+
+  await expect(stageRuntime({
+    archivePath: fixture.archivePath,
+    referencePath: fixture.referencePath,
+    target: TARGET,
+    outputDirectory: join(fixture.root, "binaries"),
+  })).rejects.toThrow("archive links are forbidden before extraction");
+});
+
+async function createRuntimeFixture(
+  additionalFiles: Readonly<Record<string, string>> = {},
+  includeThirdPartyNotices = true,
+  symlinks: Readonly<Record<string, string>> = {},
+): Promise<{
   readonly root: string;
   readonly archivePath: string;
   readonly referencePath: string;
@@ -77,12 +138,19 @@ async function createRuntimeFixture(): Promise<{
     "runtime/data/seed.json": "{}\n",
     "runtime/migrations/0001.sql": "select 1;\n",
     "runtime/web/index.html": "<main>Magnis</main>",
-    "THIRD_PARTY_NOTICES.txt": "fixture notice\n",
+    ...(includeThirdPartyNotices ? { "THIRD_PARTY_NOTICES.txt": "fixture notice\n" } : {}),
+    ...additionalFiles,
+    ...Object.fromEntries(Object.keys(symlinks).map((path) => [path, ""])),
   };
   await Promise.all(Object.entries(files).map(async ([path, contents]) => {
     const destination = join(layout, path);
     await mkdir(join(destination, ".."), { recursive: true });
     await writeFile(destination, contents);
+  }));
+  await Promise.all(Object.entries(symlinks).map(async ([path, target]) => {
+    const destination = join(layout, path);
+    await rm(destination);
+    await symlink(target, destination);
   }));
 
   const manifest = {
@@ -98,7 +166,17 @@ async function createRuntimeFixture(): Promise<{
   };
   await writeFile(join(layout, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
   const archivePath = join(root, "magnis-runtime-v0.1.0-x86_64-unknown-linux-gnu.tar.gz");
-  const archive = Bun.spawn(["tar", "-C", layout, "-czf", archivePath, "manifest.json", "bin", "runtime", "THIRD_PARTY_NOTICES.txt"]);
+  const archive = Bun.spawn([
+    "tar",
+    "-C",
+    layout,
+    "-czf",
+    archivePath,
+    "manifest.json",
+    "bin",
+    "runtime",
+    ...(includeThirdPartyNotices ? ["THIRD_PARTY_NOTICES.txt"] : []),
+  ]);
   expect(await archive.exited).toBe(0);
   const referencePath = join(root, "runtime-ref.json");
   await writeFile(referencePath, `${JSON.stringify({

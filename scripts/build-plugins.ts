@@ -123,7 +123,7 @@ function withStyles(pluginId: string, pluginsDir: string, js: string): string {
   writeFileSync(inputFile, input);
   try {
     const run = Bun.spawnSync(
-      ["bunx", "@tailwindcss/cli", "-i", inputFile, "-o", outputFile],
+      ["bunx", "--no-install", "tailwindcss", "-i", inputFile, "-o", outputFile],
       { cwd: join(pluginsDir, "..") },
     );
     if (run.exitCode !== 0) {

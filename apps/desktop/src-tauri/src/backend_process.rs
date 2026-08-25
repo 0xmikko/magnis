@@ -205,6 +205,9 @@ impl BackendProcessManager {
             // Hosted deployments opt into the isolated Deno profile instead.
             .env("MAGNIS_PLUGIN_HOST_PROFILE", "trusted")
             .env_remove("MAGNIS_DENO_PLUGIN_HOST_PATH")
+            // This backend is a desktop sidecar, not a LAN service. An
+            // inherited HOST must never widen its listener beyond loopback.
+            .env("HOST", "127.0.0.1")
             .env("PORT", port.to_string())
             // Allow the Tauri webview origins (wins over any machine .env list).
             .env("CORS_ALLOWED_ORIGINS", DESKTOP_CORS_ORIGINS)
@@ -705,6 +708,11 @@ mod tests {
             "the backend throws in server mode without it — this is the round-1 bug"
         );
         assert_eq!(get("PORT").as_deref(), Some("3010"));
+        assert_eq!(
+            get("HOST").as_deref(),
+            Some("127.0.0.1"),
+            "the desktop runtime must never expose its local backend beyond loopback"
+        );
         assert!(
             get("CORS_ALLOWED_ORIGINS").is_some_and(|v| !v.is_empty()),
             "dropping this is the recorded cause of the packaged app's Load failed"
