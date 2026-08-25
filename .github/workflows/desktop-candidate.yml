@@ -35,33 +35,16 @@ jobs:
       runner: ${{ steps.target.outputs.runner }}
       bundle_targets: ${{ steps.target.outputs.bundle_targets }}
     steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
+
       - id: target
         env:
           TARGET: ${{ inputs.runtime_target }}
-        run: |
-          set -euo pipefail
-          case "$TARGET" in
-            x86_64-unknown-linux-gnu)
-              echo 'runner=ubuntu-latest' >> "$GITHUB_OUTPUT"
-              echo 'bundle_targets=appimage,deb' >> "$GITHUB_OUTPUT"
-              ;;
-            aarch64-unknown-linux-gnu)
-              echo 'runner=ubuntu-24.04-arm' >> "$GITHUB_OUTPUT"
-              echo 'bundle_targets=appimage,deb' >> "$GITHUB_OUTPUT"
-              ;;
-            x86_64-apple-darwin)
-              echo 'runner=macos-13' >> "$GITHUB_OUTPUT"
-              echo 'bundle_targets=app' >> "$GITHUB_OUTPUT"
-              ;;
-            aarch64-apple-darwin)
-              echo 'runner=macos-14' >> "$GITHUB_OUTPUT"
-              echo 'bundle_targets=app' >> "$GITHUB_OUTPUT"
-              ;;
-            *)
-              echo "unsupported runtime target: $TARGET" >&2
-              exit 1
-              ;;
-          esac
+        run: bun apps/desktop/build/candidate-platform.ts "$TARGET" >> "$GITHUB_OUTPUT"
 
   package:
     needs: resolve-platform
@@ -131,7 +114,21 @@ jobs:
       - name: Require an unsigned package output
         run: |
           set -euo pipefail
-          test -n "$(find apps/desktop/src-tauri/target/release/bundle -type f -print -quit)"
+          bundle_root=apps/desktop/src-tauri/target/release/bundle
+          test -n "$(find "$bundle_root" -type f -print -quit)"
+          server="magnis-server-$RUNTIME_TARGET"
+          if [ "$RUNNER_OS" = macOS ]; then
+            app="$(find "$bundle_root" -type d -name '*.app' -print -quit)"
+            test -n "$app"
+            test -f "$app/Contents/MacOS/$server"
+          else
+            deb="$(find "$bundle_root" -type f -name '*.deb' -print -quit)"
+            appimage="$(find "$bundle_root" -type f -name '*.AppImage' -print -quit)"
+            test -n "$deb"
+            test -n "$appimage"
+            dpkg-deb -c "$deb" > "$RUNNER_TEMP/magnis-deb-contents.txt"
+            grep -F "binaries/bin/$server" "$RUNNER_TEMP/magnis-deb-contents.txt" > /dev/null
+          fi
 
       - uses: actions/upload-artifact@v4
         with:

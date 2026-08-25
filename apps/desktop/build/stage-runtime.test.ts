@@ -121,6 +121,42 @@ test("tst_desktop_runtime_stage_005 rejects a symlink before archive extraction"
   })).rejects.toThrow("archive links are forbidden before extraction");
 });
 
+// @test-id: tst_desktop_runtime_stage_006
+// @scenario: scn_desktop_artifact_003
+// @invariant: INV-DTR-27
+// @covers: stageRuntime opaque payload policy
+// @deterministic: yes
+test("tst_desktop_runtime_stage_006 rejects a native source file before extraction", async () => {
+  const fixture = await createRuntimeFixture({
+    "runtime/data/private-backend.rs": "fn secret() {}\n",
+  });
+
+  await expect(stageRuntime({
+    archivePath: fixture.archivePath,
+    referencePath: fixture.referencePath,
+    target: TARGET,
+    outputDirectory: join(fixture.root, "binaries"),
+  })).rejects.toThrow("source file");
+});
+
+// @test-id: tst_desktop_runtime_stage_007
+// @scenario: scn_desktop_artifact_003
+// @invariant: INV-DTR-27
+// @covers: stageRuntime web source policy
+// @deterministic: yes
+test("tst_desktop_runtime_stage_007 rejects TypeScript source even below the web payload root", async () => {
+  const fixture = await createRuntimeFixture({
+    "runtime/web/private.ts": "export const privateRuntime = true;\n",
+  });
+
+  await expect(stageRuntime({
+    archivePath: fixture.archivePath,
+    referencePath: fixture.referencePath,
+    target: TARGET,
+    outputDirectory: join(fixture.root, "binaries"),
+  })).rejects.toThrow("source file");
+});
+
 async function createRuntimeFixture(
   additionalFiles: Readonly<Record<string, string>> = {},
   includeThirdPartyNotices = true,

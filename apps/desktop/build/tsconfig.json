@@ -6,6 +6,7 @@
   },
   "include": [
     "stage-runtime.ts",
-    "download-runtime.ts"
+    "download-runtime.ts",
+    "candidate-platform.ts"
   ]
 }

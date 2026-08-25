@@ -39,13 +39,8 @@ pub enum LocalOllamaStatus {
 }
 
 fn parse_action(raw: &str) -> Result<OllamaAction, String> {
-    match raw {
-        "prompt" => Ok(OllamaAction::Prompt),
-        "decline" => Ok(OllamaAction::Decline),
-        "start" => Ok(OllamaAction::StartInstalled),
-        "install" => Ok(OllamaAction::OpenInstall),
-        _ => Err("Ollama action must be prompt, decline, start, or install".to_string()),
-    }
+    OllamaAction::from_wire(raw)
+        .ok_or_else(|| format!("Ollama action must be {}", OllamaAction::WIRE_VALUES))
 }
 
 fn status(availability: OllamaAvailability, declined: bool) -> LocalOllamaStatus {

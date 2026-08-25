@@ -160,7 +160,7 @@ function assertRuntimePayload(manifest: RuntimeArtifactManifest, entries: readon
       throw new Error(`runtime manifest must declare payload below '${prefix}'`);
     }
   }
-  assertArtifactPayloadPolicy(Object.keys(manifest.files));
+  assertArtifactPayloadPolicy(Object.keys(manifest.files), manifest.executable);
 }
 
 /**
@@ -172,12 +172,19 @@ function assertRuntimePayload(manifest: RuntimeArtifactManifest, entries: readon
  * @tested-by tst_desktop_runtime_stage_003
  * @tested-by tst_desktop_runtime_stage_004
  */
-function assertArtifactPayloadPolicy(paths: readonly string[]): void {
+function assertArtifactPayloadPolicy(paths: readonly string[], executable: string): void {
   if (!paths.some((path) => /^THIRD_PARTY_NOTICES(?:\.[A-Za-z0-9_-]+)?$/u.test(path))) {
     throw new Error("runtime archive must include a root THIRD_PARTY_NOTICES file");
   }
 
   for (const path of paths) {
+    if (
+      path !== executable
+      && !/^THIRD_PARTY_NOTICES(?:\.[A-Za-z0-9_-]+)?$/u.test(path)
+      && !/^runtime\/(?:data|migrations|web)\//u.test(path)
+    ) {
+      throw new Error(`runtime archive path is outside the declared payload layout: ${path}`);
+    }
     if (path.endsWith(".map")) {
       throw new Error(`runtime archive must not contain source map: ${path}`);
     }
@@ -192,7 +199,7 @@ function assertArtifactPayloadPolicy(paths: readonly string[]): void {
     ) {
       throw new Error(`runtime archive must not contain credentials: ${path}`);
     }
-    if (/\.(?:ts|tsx|mts|cts|jsx|map)$/iu.test(path)) {
+    if (/\.(?:ada|adb|asm|bas|c|cc|cpp|cs|cts|cxx|dart|ex|exs|f|f90|for|go|groovy|h|hpp|hs|java|jl|jsx|kt|kts|lua|m|map|mm|mts|nim|php|pl|pm|ps1|py|r|rb|rs|scala|sh|sol|swift|ts|tsx|vb|zig)$/iu.test(path)) {
       throw new Error(`runtime archive must not contain source file: ${path}`);
     }
   }

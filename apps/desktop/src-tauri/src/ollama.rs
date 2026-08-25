@@ -126,6 +126,21 @@ pub enum OllamaAction {
     StartInstalled,
 }
 
+impl OllamaAction {
+    /// The frozen wire vocabulary shared by Tauri IPC and the headless CLI.
+    pub const WIRE_VALUES: &str = "prompt|start|decline|install";
+
+    pub fn from_wire(value: &str) -> Option<Self> {
+        match value {
+            "prompt" => Some(Self::Prompt),
+            "decline" => Some(Self::Decline),
+            "start" => Some(Self::StartInstalled),
+            "install" => Some(Self::OpenInstall),
+            _ => None,
+        }
+    }
+}
+
 /// Result of a launch-time or UI-time local-model request. Hosted is a
 /// separate declared selection, not a recovery state for a failed local one.
 #[derive(Debug)]
@@ -189,7 +204,7 @@ pub fn hosted_launch() -> OllamaLaunch {
 /// Resolve one *already selected* local model. This function has no hosted
 /// fallback branch: callers get a local setup result or an error.
 pub fn discover_selected_local(
-    probe: &mut impl OllamaProbe,
+    probe: &mut (impl OllamaProbe + ?Sized),
     selected_model: &str,
     setup_prompted: bool,
     action: OllamaAction,
@@ -495,5 +510,59 @@ mod tests {
             .is_err(),
             "the setup prompt is persisted and shown once"
         );
+    }
+
+    // @test-id: tst_desktop_ollama_002
+    // @scenario: scn_desktop_model_001
+    // @invariant: INV-DTR-OLLAMA-1
+    // @covers: discover_selected_local unavailable and selected-model edges
+    // @deterministic: yes; the daemon and process launcher are fakes.
+    #[test]
+    fn tst_desktop_ollama_002_refuses_every_unavailable_or_mismatched_local_selection() {
+        let mut missing = FakeOllama {
+            tags: vec![None],
+            ..Default::default()
+        };
+        let install =
+            discover_selected_local(&mut missing, "llama3.2", false, OllamaAction::OpenInstall)
+                .expect(
+                    "the install action reports the official install path for an absent binary",
+                );
+        assert!(matches!(
+            install.availability(),
+            OllamaAvailability::NotInstalled { .. }
+        ));
+
+        let mut wrong_model = FakeOllama {
+            tags: vec![Some(vec!["llama3.1".to_string()])],
+            ..Default::default()
+        };
+        assert!(
+            discover_selected_local(&mut wrong_model, "llama3.2", true, OllamaAction::Prompt)
+                .is_err(),
+            "a ready daemon without the selected model is still a local error"
+        );
+
+        let mut ready_after_prompt = FakeOllama {
+            tags: vec![Some(vec!["llama3.2".to_string()])],
+            ..Default::default()
+        };
+        assert!(matches!(
+            discover_selected_local(
+                &mut ready_after_prompt,
+                "llama3.2",
+                true,
+                OllamaAction::Prompt,
+            )
+            .expect("a daemon that becomes ready is not suppressed by a past setup prompt")
+            .availability(),
+            OllamaAvailability::Ready { .. }
+        ));
+        assert_eq!(OllamaAction::WIRE_VALUES, "prompt|start|decline|install");
+        assert_eq!(
+            OllamaAction::from_wire("start"),
+            Some(OllamaAction::StartInstalled)
+        );
+        assert_eq!(OllamaAction::from_wire("hosted-fallback"), None);
     }
 }

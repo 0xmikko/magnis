@@ -4,11 +4,11 @@
 use crate::backend_process::{BackendHandle, BackendProcessManager};
 use crate::ollama::{
     discover_selected_local, hosted_launch, OllamaAction, OllamaAvailability, OllamaHandle,
-    SystemOllamaProbe,
+    OllamaProbe, SystemOllamaProbe,
 };
 use crate::paths::AppPaths;
 use crate::{ports, postgres};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,6 +57,24 @@ pub fn start(
     runtime_root: &Path,
     selection: ModelSelection,
 ) -> Result<RuntimeHandle> {
+    match &selection {
+        ModelSelection::Hosted => start_with_probe(selection, None, |ollama_base_url, ollama| {
+            start_infrastructure(app_paths, runtime_root, ollama_base_url, ollama)
+        }),
+        ModelSelection::Local { .. } => {
+            let mut probe = SystemOllamaProbe::new()?;
+            start_with_probe(selection, Some(&mut probe), |ollama_base_url, ollama| {
+                start_infrastructure(app_paths, runtime_root, ollama_base_url, ollama)
+            })
+        }
+    }
+}
+
+fn start_with_probe(
+    selection: ModelSelection,
+    probe: Option<&mut dyn OllamaProbe>,
+    start_infrastructure: impl FnOnce(Option<&str>, Option<OllamaHandle>) -> Result<RuntimeHandle>,
+) -> Result<RuntimeHandle> {
     let (ollama, ollama_base_url) = match selection {
         ModelSelection::Hosted => {
             let launch = hosted_launch();
@@ -68,8 +86,8 @@ pub fn start(
             action,
             setup_prompted,
         } => {
-            let mut probe = SystemOllamaProbe::new()?;
-            let mut launch = discover_selected_local(&mut probe, &model, setup_prompted, action)?;
+            let probe = probe.context("local Ollama selection requires a discovery probe")?;
+            let mut launch = discover_selected_local(probe, &model, setup_prompted, action)?;
             let availability = launch.availability().clone();
             let OllamaAvailability::Ready { base_url, .. } = availability else {
                 anyhow::bail!(
@@ -81,6 +99,15 @@ pub fn start(
         }
     };
 
+    start_infrastructure(ollama_base_url.as_deref(), ollama)
+}
+
+fn start_infrastructure(
+    app_paths: &AppPaths,
+    runtime_root: &Path,
+    ollama_base_url: Option<&str>,
+    ollama: Option<OllamaHandle>,
+) -> Result<RuntimeHandle> {
     // PostgreSQL starts first because the backend needs its reachable URL at
     // process creation. Any failure below drops the cluster through its handle.
     let pg_port = ports::bind_port("postgres", None)?.release();
@@ -104,11 +131,60 @@ pub fn start(
         port,
         &cluster.database_url(),
         runtime_root,
-        ollama_base_url.as_deref(),
+        ollama_base_url,
     )?;
 
     Ok(RuntimeHandle {
         backend: BackendHandle::spawned(manager, cluster),
         ollama,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{start_with_probe, ModelSelection};
+    use crate::ollama::{OllamaAction, OllamaHandle, OllamaProbe};
+    use anyhow::Result;
+    use std::path::{Path, PathBuf};
+
+    struct UnavailableProbe;
+
+    impl OllamaProbe for UnavailableProbe {
+        fn tags(&mut self) -> Result<Option<Vec<String>>> {
+            Ok(None)
+        }
+
+        fn installed_binary(&mut self) -> Result<Option<PathBuf>> {
+            Ok(None)
+        }
+
+        fn start(&mut self, _binary: &Path) -> Result<OllamaHandle> {
+            unreachable!("an absent binary must not be started")
+        }
+    }
+
+    // @test-id: tst_desktop_runtime_002
+    // @scenario: scn_desktop_launch_001
+    // @invariant: INV-DTR-OLLAMA-2 — a failed local selection stops before
+    // PostgreSQL or backend ownership begins.
+    // @deterministic: yes; the probe and infrastructure boundary are fakes.
+    #[test]
+    fn tst_desktop_runtime_002_unavailable_local_ollama_never_starts_infrastructure() {
+        let mut probe = UnavailableProbe;
+        let mut infrastructure_started = false;
+        let result = start_with_probe(
+            ModelSelection::Local {
+                model: "llama3.2".to_string(),
+                action: OllamaAction::Prompt,
+                setup_prompted: false,
+            },
+            Some(&mut probe),
+            |_base_url, _handle| {
+                infrastructure_started = true;
+                unreachable!("unavailable local Ollama must return before PostgreSQL/backend start")
+            },
+        );
+        assert!(result.is_err());
+        assert!(!infrastructure_started);
+    }
 }

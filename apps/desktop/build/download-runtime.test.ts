@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test } from "bun:test";
@@ -97,6 +97,118 @@ test("tst_desktop_runtime_download_002 rejects a mismatched dispatched digest be
   })).rejects.toThrow("explicit candidate input");
 
   expect(requested).toEqual([runtimeReferenceUrl(VERSION, TARGET)]);
+});
+
+// @test-id: tst_desktop_runtime_download_003
+// @scenario: scn_desktop_artifact_004
+// @invariant: INV-DTR-28
+// @covers: downloadRuntime requested release identity refusal
+// @deterministic: yes
+test("tst_desktop_runtime_download_003 rejects a reference for another version or target before its archive is requested", async () => {
+  const root = await mkdtemp(join(tmpdir(), "magnis-runtime-download-"));
+  temporaryRoots.push(root);
+  const digest = sha256(new TextEncoder().encode("opaque runtime archive"));
+  const requested: string[] = [];
+  const fetchImpl: typeof fetch = async (input) => {
+    requested.push(String(input));
+    return new Response(JSON.stringify({
+      runtimeVersion: "0.1.1",
+      protocolVersion: "magnis-runtime/v1",
+      target: TARGET,
+      url: runtimeArtifactUrl("0.1.1", TARGET),
+      sha256: digest,
+    }));
+  };
+
+  await expect(downloadRuntime({
+    runtimeVersion: VERSION,
+    target: TARGET,
+    expectedSha256: digest,
+    outputDirectory: join(root, "runtime-input"),
+    fetch: fetchImpl,
+  })).rejects.toThrow("requested version and target");
+  expect(requested).toEqual([runtimeReferenceUrl(VERSION, TARGET)]);
+});
+
+// @test-id: tst_desktop_runtime_download_004
+// @scenario: scn_desktop_artifact_004
+// @invariant: INV-DTR-28
+// @covers: downloadRuntime archive byte verification
+// @deterministic: yes
+test("tst_desktop_runtime_download_004 rejects archive bytes that differ from an otherwise matching reference", async () => {
+  const root = await mkdtemp(join(tmpdir(), "magnis-runtime-download-"));
+  temporaryRoots.push(root);
+  const expectedArchive = new TextEncoder().encode("expected opaque archive");
+  const receivedArchive = new TextEncoder().encode("substituted archive");
+  const digest = sha256(expectedArchive);
+  const reference = JSON.stringify({
+    runtimeVersion: VERSION,
+    protocolVersion: "magnis-runtime/v1",
+    target: TARGET,
+    url: runtimeArtifactUrl(VERSION, TARGET),
+    sha256: digest,
+  });
+  const fetchImpl: typeof fetch = async (input) => new Response(
+    String(input) === runtimeReferenceUrl(VERSION, TARGET) ? reference : receivedArchive,
+  );
+
+  await expect(downloadRuntime({
+    runtimeVersion: VERSION,
+    target: TARGET,
+    expectedSha256: digest,
+    outputDirectory: join(root, "runtime-input"),
+    fetch: fetchImpl,
+  })).rejects.toThrow("archive SHA-256");
+});
+
+// @test-id: tst_desktop_runtime_download_005
+// @scenario: scn_desktop_artifact_004
+// @invariant: INV-DTR-28
+// @covers: downloadRuntime canonical reference and output safety
+// @deterministic: yes
+test("tst_desktop_runtime_download_005 rejects non-canonical references and unsafe output destinations before writing", async () => {
+  const root = await mkdtemp(join(tmpdir(), "magnis-runtime-download-"));
+  temporaryRoots.push(root);
+  const archive = new TextEncoder().encode("opaque runtime archive");
+  const digest = sha256(archive);
+  const fetchImpl: typeof fetch = async () => new Response(JSON.stringify({
+    runtimeVersion: VERSION,
+    protocolVersion: "magnis-runtime/v1",
+    target: TARGET,
+    url: "https://example.invalid/runtime.tar.gz",
+    sha256: digest,
+  }));
+
+  await expect(downloadRuntime({
+    runtimeVersion: VERSION,
+    target: TARGET,
+    expectedSha256: digest,
+    outputDirectory: join(root, "noncanonical"),
+    fetch: fetchImpl,
+  })).rejects.toThrow();
+
+  const nonEmpty = join(root, "non-empty");
+  await mkdir(nonEmpty);
+  await writeFile(join(nonEmpty, "keep"), "keep");
+  await expect(downloadRuntime({
+    runtimeVersion: VERSION,
+    target: TARGET,
+    expectedSha256: digest,
+    outputDirectory: nonEmpty,
+    fetch: fetchImpl,
+  })).rejects.toThrow("output must be empty");
+
+  const realDirectory = join(root, "real-output");
+  await mkdir(realDirectory);
+  const linkedDirectory = join(root, "linked-output");
+  await symlink(realDirectory, linkedDirectory);
+  await expect(downloadRuntime({
+    runtimeVersion: VERSION,
+    target: TARGET,
+    expectedSha256: digest,
+    outputDirectory: linkedDirectory,
+    fetch: fetchImpl,
+  })).rejects.toThrow("real directory");
 });
 
 function sha256(value: Uint8Array): string {

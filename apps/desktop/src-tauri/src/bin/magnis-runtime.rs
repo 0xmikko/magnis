@@ -21,10 +21,13 @@ struct HeadlessArgs {
     dry_run: bool,
 }
 
-fn usage() -> &'static str {
-    "usage: magnis-runtime --runtime-root <absolute-path> [--server-path <absolute-path>] [--data-root <absolute-path>] \\
+fn usage() -> String {
+    format!(
+        "usage: magnis-runtime --runtime-root <absolute-path> [--server-path <absolute-path>] [--data-root <absolute-path>] \\
      [--backend-port <port>] [--local-ollama-model <model> \\
-     --ollama-action prompt|start|decline|install] [--dry-run]"
+     --ollama-action {}] [--dry-run]",
+        OllamaAction::WIRE_VALUES,
+    )
 }
 
 fn absolute(value: String, flag: &str) -> Result<PathBuf> {
@@ -36,13 +39,8 @@ fn absolute(value: String, flag: &str) -> Result<PathBuf> {
 }
 
 fn parse_action(value: String) -> Result<OllamaAction> {
-    match value.as_str() {
-        "prompt" => Ok(OllamaAction::Prompt),
-        "start" => Ok(OllamaAction::StartInstalled),
-        "decline" => Ok(OllamaAction::Decline),
-        "install" => Ok(OllamaAction::OpenInstall),
-        _ => anyhow::bail!("--ollama-action must be prompt, start, decline, or install"),
-    }
+    OllamaAction::from_wire(&value)
+        .ok_or_else(|| anyhow::anyhow!("--ollama-action must be {}", OllamaAction::WIRE_VALUES))
 }
 
 fn next_value(args: &mut impl Iterator<Item = String>, flag: &str) -> Result<String> {
@@ -159,7 +157,7 @@ fn main() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_args, OllamaAction};
+    use super::{parse_args, usage, OllamaAction};
 
     // @test-id: tst_desktop_headless_001
     // @scenario: scn_desktop_launch_001
@@ -168,6 +166,7 @@ mod tests {
     // @deterministic: yes
     #[test]
     fn tst_desktop_headless_001_requires_exact_runtime_and_explicit_local_action() {
+        assert!(usage().contains(OllamaAction::WIRE_VALUES));
         let plain = parse_args(vec![
             "magnis-runtime".to_string(),
             "--runtime-root".to_string(),
