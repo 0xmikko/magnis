@@ -264,7 +264,9 @@ describe("telegram chat header total (graph total, never page length)", () => {
         useTelegramMessages("chat-entity-1", chats),
       { initialProps: { chats: [] as readonly TelegramChat[] } },
     );
+    expect(result.current.canSend).toBe(false);
     rerender({ chats: [chat] });
+    expect(result.current.canSend).toBe(true);
     act(() => result.current.handleSendMessage("Ship it"));
 
     await waitFor(() => {

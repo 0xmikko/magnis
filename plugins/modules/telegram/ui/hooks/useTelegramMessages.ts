@@ -19,6 +19,7 @@ export interface UseTelegramMessagesResult {
   readonly fetchMessages: (chatId: string, offset: number, append: boolean) => Promise<void>;
   readonly handleLoadMore: () => void;
   readonly handleBackfill: () => void;
+  readonly canSend: boolean;
   readonly handleSendMessage: (text: string) => void;
   readonly handleReplyByAgent: (message: TelegramMessage) => void;
 }
@@ -398,6 +399,7 @@ export function useTelegramMessages(
     fetchMessages,
     handleLoadMore,
     handleBackfill,
+    canSend: nativeChatId !== undefined,
     handleSendMessage,
     handleReplyByAgent,
   };
