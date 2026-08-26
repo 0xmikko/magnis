@@ -13,6 +13,7 @@ The private producer publishes only to GitHub Releases in
 ```text
 tag:     runtime-v<version>
 asset:   magnis-runtime-v<version>-<target>.tar.gz
+ref:     magnis-runtime-v<version>-<target>.ref.json
 URL:     https://github.com/0xmikko/magnis/releases/download/runtime-v<version>/magnis-runtime-v<version>-<target>.tar.gz
 ```
 
@@ -21,6 +22,12 @@ new runtime version, not replacing an old archive. The private workflow uses
 the secret name `MAGNIS_RUNTIME_RELEASE_TOKEN`; it is a narrowly scoped
 credential with access only to create release contents in this public
 repository. Its value never enters source, logs, an artifact, or a lock file.
+
+The reference is a second release asset at the same path with its `.ref.json`
+name. A public candidate downloads that reference first, verifies that its
+version, target and archive URL are canonical, compares its archive SHA-256 to
+the explicitly dispatched digest, and only then downloads the archive. Neither
+step resolves a release channel, cached asset or `latest` tag.
 
 ## Identity and target vocabulary
 
@@ -49,6 +56,33 @@ becomes available only after the private candidate archive and public clean
 package receipts succeed, and then it may appear in the versioned runtime
 lock. Windows is not an accepted v1 target and must fail rather than fall back
 to another artifact.
+
+## Public candidate and offline builds
+
+The `Desktop runtime candidate` workflow is intentionally manual until a
+compatible release exists. It accepts exactly one runtime version, target and
+archive SHA-256; derives the matching release reference URL; runs the public
+TypeScript and Rust gates; and produces an unsigned package only if staging
+verifies the ref, archive, manifest and every payload file. The target selects
+its matching native GitHub runner; it is never cross-selected from the host.
+
+`runtime.staging.lock.json` is changed only in a public PR after that candidate
+has passed. It is not a downloader input and it is not a way to bless an
+unpublished or locally built archive.
+
+The staged package embeds the checked backend, compiled web UI, data and
+migrations, so a user needs no runtime download at first launch. For an
+offline rebuild, retain the exact downloaded archive and `.ref.json` and pass
+their absolute paths to `stage-runtime.ts`; it rechecks every identity and
+digest before replacing the build input. A package never substitutes a cache
+entry when those paths are absent or invalid.
+
+The public stager rejects source maps, TypeScript/JSX source, dependency
+metadata, credential-looking paths and archives without a root
+`THIRD_PARTY_NOTICES*` file. The backend child is explicitly bound to
+`127.0.0.1`; it cannot inherit a LAN listener from the launching environment.
+Unsigned candidate packages establish build correctness only. Signing,
+notarization and store publication require their separate platform credentials.
 
 ### Stage 0 candidate receipt — 2026-08-24
 

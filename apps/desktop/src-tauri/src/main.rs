@@ -1,70 +1,26 @@
 // Prevents additional console window on Windows in release
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod backend_process;
 mod commands;
-mod logging;
-mod paths;
-mod ports;
-mod postgres;
 mod source_status;
 mod startup;
 mod tray;
-mod workspace_config;
 
-use backend_process::{BackendHandle, BackendProcessManager};
 use commands::backend::get_backend_config;
 use commands::oauth::open_oauth_window;
+use commands::ollama::{prepare_local_ollama, stop_owned_ollama};
 use commands::workspaces::get_workspace_seeds;
-use paths::AppPaths;
+use magnis_desktop::backend_process::PAYLOAD_SUBDIR;
+use magnis_desktop::logging;
+use magnis_desktop::paths::AppPaths;
+use magnis_desktop::runtime::{self, ModelSelection, RuntimeHandle};
+use magnis_desktop::workspace_config;
 use std::sync::Mutex;
 use tauri::Manager;
 
 /// The backend connection the frontend reads `base_url` from. Stopped on exit.
-pub struct BackendState(pub Mutex<BackendHandle>);
-
-/// Bring up everything the shell owns, in the one order that works.
-///
-/// There is no mode to resolve any more. The launchd path is gone (DEC-1): a
-/// LaunchAgent belonging to an unsigned app lands in Background Task Management
-/// *disabled* and launchd silently refuses to run it, which is unobservable
-/// from inside the app — it only ever surfaced as "the backend never became
-/// healthy". One owner, one topology.
-fn build_backend(
-    app_paths: &AppPaths,
-    runtime_root: &std::path::Path,
-) -> anyhow::Result<BackendHandle> {
-    // Order is fixed (DEC-9): PostgreSQL first, then the backend — the child
-    // needs a reachable DATABASE_URL the moment it boots.
-    let pg_port = ports::bind_port("postgres", None)?.release();
-    tracing::info!(target: "shell", pg_port, "PostgreSQL port bound");
-    let cluster = postgres::PostgresHandle::start(app_paths.data_root(), pg_port)?;
-
-    // Bind before spawning: the port is HELD by this process until the moment
-    // the child takes it, so a collision is detected here — with a message
-    // naming the port — instead of surfacing as an opaque bind failure from a
-    // child that has already been launched.
-    let pin = ports::parse_pin("backend", std::env::var("MAGNIS_BACKEND_PORT").ok())?;
-    let reserved = ports::bind_port("backend", pin)?;
-    tracing::info!(
-        target: "shell",
-        port = reserved.port(),
-        how = match pin {
-            Some(_) => "pinned via MAGNIS_BACKEND_PORT",
-            None => "bound free",
-        },
-        "backend port bound"
-    );
-    let port = reserved.release();
-    let manager = BackendProcessManager::start(
-        app_paths.data_root(),
-        port,
-        &cluster.database_url(),
-        runtime_root,
-    )?;
-
-    Ok(BackendHandle::spawned(manager, cluster))
-}
+pub struct BackendState(pub Mutex<RuntimeHandle>);
+pub struct OllamaState(pub Mutex<Option<magnis_desktop::ollama::OllamaHandle>>);
 
 fn main() -> anyhow::Result<()> {
     let app_paths = AppPaths::init()?;
@@ -94,6 +50,7 @@ fn main() -> anyhow::Result<()> {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(app_paths)
+        .manage(OllamaState(Mutex::new(None)))
         .setup(|app| {
             use tauri::Manager;
 
@@ -134,9 +91,13 @@ fn main() -> anyhow::Result<()> {
                 app.path().resource_dir(),
                 "Could not resolve the resource directory",
             )?
-            .join(backend_process::PAYLOAD_SUBDIR);
+            .join(PAYLOAD_SUBDIR);
 
-            let backend = match build_backend(&app.state::<AppPaths>(), &runtime_root) {
+            let backend = match runtime::start(
+                &app.state::<AppPaths>(),
+                &runtime_root,
+                ModelSelection::Hosted,
+            ) {
                 Ok(b) => b,
                 Err(e) => {
                     // Report and STAY UP. Exiting here is what made a failed
@@ -211,7 +172,8 @@ fn main() -> anyhow::Result<()> {
         .invoke_handler(tauri::generate_handler![
             get_backend_config,
             get_workspace_seeds,
-            open_oauth_window
+            open_oauth_window,
+            prepare_local_ollama
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
@@ -238,6 +200,7 @@ fn main() -> anyhow::Result<()> {
             if let Ok(mut guard) = state.0.lock() {
                 guard.stop();
             };
+            stop_owned_ollama(&app_handle.state::<OllamaState>());
         }
     });
 

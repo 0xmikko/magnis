@@ -47,6 +47,7 @@ export async function stageRuntime(input: RuntimeStageInput): Promise<RuntimeArt
     throw new Error("runtime archive SHA-256 does not match the selected runtime reference");
   }
 
+  await assertArchiveEntryTypes(archivePath);
   const archiveEntries = await listArchiveEntries(archivePath);
   assertSafeArchiveEntries(archiveEntries);
   const manifest = parseRuntimeArtifactManifest(parseJson(
@@ -123,6 +124,23 @@ async function listArchiveEntries(archivePath: string): Promise<readonly string[
   return entries;
 }
 
+/**
+ * A safe pathname alone is insufficient: a symlink entry can turn a later
+ * safe-looking pathname into a write outside the extraction root. Refuse any
+ * non-file/non-directory type while the archive is still opaque to the host.
+ *
+ * @tested-by tst_desktop_runtime_stage_005
+ */
+async function assertArchiveEntryTypes(archivePath: string): Promise<void> {
+  const listing = await tarOutput(["-tvzf", archivePath]);
+  for (const line of listing.split("\n").filter((entry) => entry.length > 0)) {
+    const kind = line[0];
+    if (kind !== "-" && kind !== "d") {
+      throw new Error(`runtime archive links are forbidden before extraction: ${line}`);
+    }
+  }
+}
+
 function assertSafeArchiveEntries(entries: readonly string[]): void {
   for (const entry of entries) {
     const path = entry.endsWith("/") ? entry.slice(0, -1) : entry;
@@ -140,6 +158,49 @@ function assertRuntimePayload(manifest: RuntimeArtifactManifest, entries: readon
   for (const prefix of ["runtime/data/", "runtime/migrations/", "runtime/web/"]) {
     if (!Object.keys(manifest.files).some((path) => path.startsWith(prefix))) {
       throw new Error(`runtime manifest must declare payload below '${prefix}'`);
+    }
+  }
+  assertArtifactPayloadPolicy(Object.keys(manifest.files), manifest.executable);
+}
+
+/**
+ * The desktop artifact is executable payload, never a source/dependency dump.
+ * Licence notices stay in the archive so an offline package can surface them;
+ * source maps and package-manager metadata would either disclose closed source
+ * or make a package silently depend on a private build checkout.
+ *
+ * @tested-by tst_desktop_runtime_stage_003
+ * @tested-by tst_desktop_runtime_stage_004
+ */
+function assertArtifactPayloadPolicy(paths: readonly string[], executable: string): void {
+  if (!paths.some((path) => /^THIRD_PARTY_NOTICES(?:\.[A-Za-z0-9_-]+)?$/u.test(path))) {
+    throw new Error("runtime archive must include a root THIRD_PARTY_NOTICES file");
+  }
+
+  for (const path of paths) {
+    if (
+      path !== executable
+      && !/^THIRD_PARTY_NOTICES(?:\.[A-Za-z0-9_-]+)?$/u.test(path)
+      && !/^runtime\/(?:data|migrations|web)\//u.test(path)
+    ) {
+      throw new Error(`runtime archive path is outside the declared payload layout: ${path}`);
+    }
+    if (path.endsWith(".map")) {
+      throw new Error(`runtime archive must not contain source map: ${path}`);
+    }
+    if (
+      /(?:^|\/)(?:\.git|node_modules|\.pnpm)(?:\/|$)/u.test(path) ||
+      /(?:^|\/)(?:package\.json|package-lock\.json|bun\.lockb?|yarn\.lock|pnpm-lock\.yaml|Cargo\.toml|Cargo\.lock)$/u.test(path)
+    ) {
+      throw new Error(`runtime archive must not contain dependency metadata: ${path}`);
+    }
+    if (
+      /(?:^|\/)(?:\.env(?:\.[^/]+)?|id_rsa|credentials(?:\.[^/]+)?|secrets?(?:\.[^/]+)?)$/iu.test(path)
+    ) {
+      throw new Error(`runtime archive must not contain credentials: ${path}`);
+    }
+    if (/\.(?:ada|adb|asm|bas|c|cc|cpp|cs|cts|cxx|dart|ex|exs|f|f90|for|go|groovy|h|hpp|hs|java|jl|jsx|kt|kts|lua|m|map|mm|mts|nim|php|pl|pm|ps1|py|r|rb|rs|scala|sh|sol|swift|ts|tsx|vb|zig)$/iu.test(path)) {
+      throw new Error(`runtime archive must not contain source file: ${path}`);
     }
   }
 }

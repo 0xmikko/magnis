@@ -12,16 +12,15 @@ mod tests {
     use crate::commands::workspaces::WorkspaceSeed;
     use serde_json::{json, Value};
 
-    /// The frozen key sets, read from the file the TypeScript side is also
-    /// checked against. A literal here would let the two halves drift apart
-    /// while both stayed green.
+    /// The frozen key sets live with the public desktop owner. A literal here
+    /// would let a later IPC rename drift from its declared wire contract.
     fn frozen(struct_name: &str) -> Vec<String> {
         // Sorted, because a JSON object has no meaningful key order:
         // `serde_json::Value` stores one in a BTreeMap, so what serde "emits"
         // arrives alphabetically. The contract is the key SET.
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../../backend/test/fixtures/wire/tauri-ipc-keys.json"
+            "/../test/fixtures/tauri-ipc-keys.json"
         );
         let text = std::fs::read_to_string(path).expect("frozen IPC key set is readable");
         let document: Value = serde_json::from_str(&text).expect("frozen IPC key set is JSON");

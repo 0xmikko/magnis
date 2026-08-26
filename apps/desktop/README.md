@@ -14,7 +14,8 @@ arrive as one immutable Magnis runtime archive. The public contract is
 Every local build or package operation requires all three explicit values:
 
 - `MAGNIS_RUNTIME_ARCHIVE` — absolute path to the selected `.tar.gz` asset;
-- `MAGNIS_RUNTIME_REF` — absolute path to its matching `runtime-ref.json`;
+- `MAGNIS_RUNTIME_REF` — absolute path to its matching target-specific
+  `.ref.json` release asset;
 - `MAGNIS_RUNTIME_TARGET` — the exact target named by both documents.
 
 The staging command verifies the reference's canonical GitHub Release URL and
@@ -23,13 +24,27 @@ atomically replaces the ignored `src-tauri/binaries/` build input. A mismatch
 leaves an existing staged runtime untouched. There is no `latest`, source-tree,
 host-architecture or stale-sidecar fallback.
 
+For a published runtime, obtain both files with the downloader. It takes the
+version, target and SHA-256 you chose from the immutable release reference and
+does not inspect a cache or release channel:
+
 ```bash
 cd <public-magnis-checkout>
-export MAGNIS_RUNTIME_ARCHIVE=/absolute/path/magnis-runtime-v0.1.0-x86_64-unknown-linux-gnu.tar.gz
-export MAGNIS_RUNTIME_REF=/absolute/path/runtime-ref.json
+runtime_input="$PWD/.tmp/magnis-runtime-input"
+bun apps/desktop/build/download-runtime.ts \
+  --version 0.1.0 \
+  --target x86_64-unknown-linux-gnu \
+  --sha256 <lowercase-64-character-release-digest> \
+  --out-dir "$runtime_input"
+export MAGNIS_RUNTIME_ARCHIVE="$runtime_input/magnis-runtime-v0.1.0-x86_64-unknown-linux-gnu.tar.gz"
+export MAGNIS_RUNTIME_REF="$runtime_input/magnis-runtime-v0.1.0-x86_64-unknown-linux-gnu.ref.json"
 export MAGNIS_RUNTIME_TARGET=x86_64-unknown-linux-gnu
 bun apps/desktop/build/stage-runtime.ts
 ```
+
+The download directory must be empty. A later offline rebuild can reuse the
+same verified archive and reference by exporting those three paths directly;
+the runtime launcher never downloads after a package is built.
 
 The staged artifact has this Tauri input layout:
 
@@ -59,6 +74,11 @@ cargo tauri build
 `Cargo.lock` is tracked. Update it only with an intentional dependency change,
 review it with `Cargo.toml`, and use `--locked` in reproducible/CI builds.
 
+The public candidate workflow runs this sequence from an explicit
+version/target/SHA-256 dispatch and emits an unsigned package. It must pass
+before a PR records that asset in `runtime.staging.lock.json`; the lock is not
+created from a local build or an unverified release download.
+
 ## Runtime boundaries
 
 At start the shell starts embedded PostgreSQL, selects a loopback backend port,
@@ -67,6 +87,27 @@ extracted `runtime/` root. The sidecar serves the same compiled web identity
 that Tauri packages. On quit the shell stops the backend first, then the
 PostgreSQL cluster.
 
-The optional Ollama flow is a later shell capability. FastEmbed remains an
-in-process TypeScript library and verified cache of the closed backend; it is
-not a desktop process or artifact protocol.
+Ollama is optional and external. A hosted selection performs no Ollama probe.
+After a user selects a local model, the shell performs a bounded probe only at
+`http://127.0.0.1:11434/api/tags`. A ready daemon is adopted but never stopped;
+the UI offers one persisted explicit install/start decision when it is absent.
+Only an `ollama serve` process started after that decision is stopped during
+reverse shutdown. The UI returns the verified `http://127.0.0.1:11434/v1`
+endpoint to the existing backend provider/model control plane; it never
+switches a failed local selection to a hosted provider.
+
+The same lifecycle library powers the headless binary. It requires an exact
+runtime root and accepts an explicit staged-sidecar override for development:
+
+```bash
+cargo run --manifest-path apps/desktop/src-tauri/Cargo.toml --bin magnis-runtime -- \
+  --runtime-root /absolute/path/to/staged/runtime \
+  --server-path /absolute/path/to/staged/magnis-server \
+  --data-root /absolute/path/to/magnis-data \
+  --backend-port 3261
+```
+
+FastEmbed remains an in-process TypeScript library and verified cache of the
+closed backend; it is not a desktop process or artifact protocol. macOS signing
+and notarization remain separate credentialed release steps; a candidate
+package is intentionally unsigned.

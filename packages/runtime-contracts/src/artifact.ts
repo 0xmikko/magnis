@@ -57,10 +57,21 @@ export function runtimeArchiveName(runtimeVersion: string, target: RuntimeTarget
   return `magnis-runtime-v${runtimeVersion}-${target}.tar.gz`;
 }
 
+export function runtimeReferenceName(runtimeVersion: string, target: RuntimeTarget): string {
+  assertRuntimeVersion(runtimeVersion, "runtimeVersion");
+  return `magnis-runtime-v${runtimeVersion}-${target}.ref.json`;
+}
+
 export function runtimeArtifactUrl(runtimeVersion: string, target: RuntimeTarget): string {
   const releaseTag = runtimeReleaseTag(runtimeVersion);
   const archiveName = runtimeArchiveName(runtimeVersion, target);
   return `https://github.com/${RUNTIME_RELEASE_REPOSITORY}/releases/download/${releaseTag}/${archiveName}`;
+}
+
+export function runtimeReferenceUrl(runtimeVersion: string, target: RuntimeTarget): string {
+  const releaseTag = runtimeReleaseTag(runtimeVersion);
+  const referenceName = runtimeReferenceName(runtimeVersion, target);
+  return `https://github.com/${RUNTIME_RELEASE_REPOSITORY}/releases/download/${releaseTag}/${referenceName}`;
 }
 
 export function parseRuntimeArtifactRef(value: unknown): RuntimeArtifactRef {
