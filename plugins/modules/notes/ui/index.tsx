@@ -17,6 +17,13 @@ export async function createNoteFromHeader(
     body: "Start writing...",
     client_id: clientId,
   });
+  const list = await runtime.transport.rpc<{ readonly items: readonly { readonly id: string }[] }>(
+    "notes.list",
+    { limit: 100, offset: 0 },
+  );
+  if (!list.items.some((item) => item.id === result.id)) {
+    throw new Error(`created note ${result.id} is not visible in notes.list`);
+  }
   onCreated(result.id);
 }
 
