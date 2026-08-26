@@ -1,8 +1,24 @@
 import { Icon } from "@magnis/host/ui";
 import { defineModule } from "@magnis/host/base";
+import type { AppRuntime } from "@magnis/host/runtime";
 import { NoteCard, noteHasMore } from "./EntityCards";
 import { NoteDetailPanel } from "./NoteDetailPanel";
 import { NoteToolCallRenderer } from "./NoteToolCallRenderer";
+
+export async function createNoteFromHeader(
+  runtime: AppRuntime,
+  onCreated: (id: string) => void,
+): Promise<void> {
+  const clientId = crypto.randomUUID();
+  // @tested-by: tst_fe_notes_browser_001
+  // @invariant: browser-created notes satisfy the package's nonblank body contract.
+  const result = await runtime.transport.rpc<{ id: string }>("notes.create", {
+    title: "New Note",
+    body: "Start writing...",
+    client_id: clientId,
+  });
+  onCreated(result.id);
+}
 
 export const NotesModule = defineModule({
   id: "notes",
@@ -21,14 +37,7 @@ export const NotesModule = defineModule({
   detailType: "custom",
   headerActionIcon: "plus",
   onHeaderAction: (runtime, onCreated) => {
-    void (async (): Promise<void> => {
-      const clientId = crypto.randomUUID();
-      const result = await runtime.transport.rpc<{ id: string }>(
-        "notes.create",
-        { title: "New Note", body: "", client_id: clientId },
-      );
-      onCreated(result.id);
-    })();
+    void createNoteFromHeader(runtime, onCreated);
   },
   toolCallRenderers: [
     {
