@@ -197,8 +197,13 @@ export class NotesModule {
       // Idempotent only against an existing NOTE. A client_id colliding with a
       // non-note entity is not a note hit — fall through; create_entity will
       // Conflict on the id rather than return a fake note snapshot.
-      const existing = await this.graph.get_entity_full(params.client_id, { links: false });
-      if (existing?.entity.schema_id === NOTE) {
+      // @tested-by: tst_module_notes_identity_001
+      const existingEntity = await this.graph.get_entity(params.client_id);
+      if (existingEntity?.schema_id === NOTE) {
+        const existing = await this.graph.get_entity_full(params.client_id, { links: false });
+        if (!existing) {
+          throw new Error(`existing note ${params.client_id} has no detail snapshot`);
+        }
         return this.snapshotFromDetail(existing);
       }
     }
