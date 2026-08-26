@@ -88,6 +88,7 @@ export function ContactMergeAction({
       await runtime.transport.rpc("contacts.merge", {
         survivor_id: entityId,
         retired_id: retiredId,
+        overrides: [],
       });
       await runtime.queryClient.invalidateQueries({ queryKey: ["contacts"] });
       setMerged(true);

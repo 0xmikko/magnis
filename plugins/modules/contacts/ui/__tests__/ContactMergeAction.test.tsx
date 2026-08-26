@@ -78,6 +78,7 @@ describe("tst_fe_contacts_browser_002 browser contact merge", () => {
       expect(rpc).toHaveBeenCalledWith("contacts.merge", {
         survivor_id: "survivor",
         retired_id: "retired",
+        overrides: [],
       }),
     );
     expect(await view.findByText("Contacts merged successfully")).toBeTruthy();
