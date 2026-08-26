@@ -314,7 +314,7 @@ export function useTelegramMessages(
 
   const handleSendMessage = useCallback(
     (text: string) => {
-      if (!selectedChatId) return;
+      if (!selectedChatId || nativeChatId === undefined) return;
       const chatId = selectedChatId;
       const pendingId = `_pending_${String(Date.now())}`;
       const now = new Date();
@@ -364,8 +364,7 @@ export function useTelegramMessages(
         }
       })();
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [selectedChatId, runtime],
+    [nativeChatId, selectedChatId, runtime],
   );
 
   const handleReplyByAgent = useCallback(
@@ -387,8 +386,7 @@ export function useTelegramMessages(
         },
       });
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [runtime, selectedChatId],
+    [nativeChatId, runtime, selectedChatId],
   );
 
   return {
