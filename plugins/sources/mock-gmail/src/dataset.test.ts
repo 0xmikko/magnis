@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { emitMeeting, emitMessage } from "./dataset";
+import { RateLimitError } from "@magnis/connector-sdk";
+import { emitMeeting, emitMessage, rateLimitNextFetch } from "./dataset";
+import { fetchMockGmail } from "./fetch";
 
 describe("mock-gmail dataset actions", () => {
   test("tst_conn_mockgmail_dataset_001 emits a stable production-shaped live envelope", async () => {
@@ -88,5 +90,41 @@ describe("mock-gmail dataset actions", () => {
         },
       },
     ]);
+  });
+
+  test("tst_conn_mockgmail_dataset_004 rate-limits exactly the next fetch", async () => {
+    const result = await rateLimitNextFetch({
+      action: "rate_limit_next_fetch",
+      invocation_id: "inv-rate-limit-1",
+      action_time: "2026-08-05T10:00:00Z",
+      settings: {},
+      payload: { retry_after_secs: 12 },
+    });
+
+    expect(result.envelopes).toEqual([
+      {
+        surface: "email",
+        remote_id: "dataset:inv-rate-limit-1:0",
+        kind: "live",
+        payload: {
+          message_id: "rate-limit:inv-rate-limit-1",
+          from_address: "rate-limit@mock-gmail.test",
+          from_name: "Mock Gmail",
+          subject: "[E2E] Rate-limit administration",
+          body_text: "The next mock-Gmail fetch is configured to return a rate limit.",
+          sent_at: "2026-08-05T10:00:00Z",
+          has_attachments: false,
+          attachments: [],
+        },
+      },
+    ]);
+    await expect(fetchMockGmail({ surface: "email" })).rejects.toEqual(
+      new RateLimitError(12),
+    );
+    expect(await fetchMockGmail({ surface: "email" })).toEqual({
+      envelopes: [],
+      nextCursor: null,
+      hasMore: false,
+    });
   });
 });

@@ -1,4 +1,5 @@
 import { ConnectorError, type DatasetActionHandler, type Envelope } from "@magnis/connector-sdk";
+import { queueRateLimitNextFetch } from "./fetch";
 
 type Json = Record<string, unknown>;
 
@@ -100,4 +101,38 @@ export const emitMeeting: DatasetActionHandler = (args) => Promise.resolve().the
     },
   };
   return { envelopes: [envelope] };
+});
+
+export const rateLimitNextFetch: DatasetActionHandler = (args) => Promise.resolve().then(() => {
+  const retryAfterSecs = args.payload.retry_after_secs;
+  if (
+    typeof retryAfterSecs !== "number" ||
+    !Number.isInteger(retryAfterSecs) ||
+    retryAfterSecs < 1
+  ) {
+    throw new ConnectorError("invalid rate_limit_next_fetch payload: retry_after_secs", {
+      kind: "contract",
+      field: "retry_after_secs",
+    });
+  }
+  queueRateLimitNextFetch(retryAfterSecs);
+  return {
+    envelopes: [
+      {
+        surface: "email",
+        remote_id: `dataset:${args.invocation_id}:0`,
+        kind: "live",
+        payload: {
+          message_id: `rate-limit:${args.invocation_id}`,
+          from_address: "rate-limit@mock-gmail.test",
+          from_name: "Mock Gmail",
+          subject: "[E2E] Rate-limit administration",
+          body_text: "The next mock-Gmail fetch is configured to return a rate limit.",
+          sent_at: args.action_time,
+          has_attachments: false,
+          attachments: [],
+        },
+      },
+    ],
+  };
 });

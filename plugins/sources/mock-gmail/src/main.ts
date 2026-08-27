@@ -5,7 +5,7 @@
 // bypasses the host's dataset action validation or receipts.
 
 import { runConnector } from "@magnis/connector-sdk";
-import { emitMeeting, emitMessage } from "./dataset";
+import { emitMeeting, emitMessage, rateLimitNextFetch } from "./dataset";
 import { sendMessage } from "./execute";
 import { fetchMockGmail } from "./fetch";
 
@@ -16,7 +16,11 @@ await runConnector({
   intervalSecs: 5,
   fetch: fetchMockGmail,
   execute: { send_message: sendMessage },
-  datasetActions: { emit_meeting: emitMeeting, emit_message: emitMessage },
+  datasetActions: {
+    emit_meeting: emitMeeting,
+    emit_message: emitMessage,
+    rate_limit_next_fetch: rateLimitNextFetch,
+  },
 });
 
 // stdin EOF = the host dropped the connection.

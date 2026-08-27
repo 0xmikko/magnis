@@ -43,7 +43,9 @@ export const NotesModule = defineModule({
   DetailPanel: NoteDetailPanel,
   detailType: "custom",
   headerActionIcon: "plus",
-  onHeaderAction: (runtime, onCreated) => createNoteFromHeader(runtime, onCreated),
+  onHeaderAction: (runtime, onCreated) => {
+    void createNoteFromHeader(runtime, onCreated);
+  },
   toolCallRenderers: [
     {
       actions: ["update", "create"],
