@@ -37,7 +37,18 @@ export interface SourceHostEvidence {
   operationProbes: Readonly<Record<string, JsonRpcReply>>;
 }
 
-function probeArguments(operation: string): Record<string, unknown> {
+export interface SourceHostEvidenceOptions {
+  timeoutMs?: number;
+  operationArguments?: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
+  fixtureEnvironment?: Readonly<Record<string, string>>;
+}
+
+function probeArguments(
+  operation: string,
+  authored: Readonly<Record<string, Readonly<Record<string, unknown>>>>,
+): Record<string, unknown> {
+  const exact = authored[operation];
+  if (exact !== undefined) return { ...exact };
   if (operation === "listen_start") {
     return { subscription_id: "certification-probe", _meta: { account_id: "certification" } };
   }
@@ -48,7 +59,11 @@ function probeArguments(operation: string): Record<string, unknown> {
   return { _certification_probe: true };
 }
 
-function requestForOperation(id: number, operation: string): Record<string, unknown> {
+function requestForOperation(
+  id: number,
+  operation: string,
+  authored: Readonly<Record<string, Readonly<Record<string, unknown>>>>,
+): Record<string, unknown> {
   if (operation === "initialize") return { jsonrpc: "2.0", id, method: "initialize" };
   if (operation === "tools/list") return { jsonrpc: "2.0", id, method: "tools/list" };
   const separator = operation.indexOf(":");
@@ -57,7 +72,7 @@ function requestForOperation(id: number, operation: string): Record<string, unkn
     jsonrpc: "2.0",
     id,
     method: "tools/call",
-    params: { name: tool, arguments: probeArguments(operation) },
+    params: { name: tool, arguments: probeArguments(operation, authored) },
   };
 }
 
@@ -73,6 +88,30 @@ async function withDeadline<T>(promise: Promise<T>, timeoutMs: number, label: st
   });
 }
 
+interface TerminableSourceHost {
+  readonly exitCode: number | null;
+  readonly exited: Promise<number>;
+  kill(signal?: number): void;
+}
+
+/** Stop a certifier-owned child without allowing an ignored SIGTERM to hang
+ * the certification process forever. SIGKILL gets one final bounded wait; a
+ * kernel/process-table failure remains a hard certification error. */
+export async function terminateSourceHostProcess(
+  child: TerminableSourceHost,
+  timeoutMs = 250,
+): Promise<void> {
+  if (child.exitCode !== null) return;
+  child.kill();
+  try {
+    await withDeadline(child.exited, timeoutMs, "Source host SIGTERM shutdown");
+    return;
+  } catch {
+    child.kill(9);
+  }
+  await withDeadline(child.exited, timeoutMs, "Source host SIGKILL shutdown");
+}
+
 /** Execute one dependency-closed Source artifact over its real stdio boundary.
  * Every declared operation is probed; any absent dispatcher is a certification
  * failure even when initialize and tools/list succeed. */
@@ -81,13 +120,15 @@ async function collectSourceHostProcessEvidence(
   callableOperations: readonly string[],
   extraArgs: readonly string[],
   timeoutMs: number,
+  operationArguments: Readonly<Record<string, Readonly<Record<string, unknown>>>>,
+  fixtureEnvironment: Readonly<Record<string, string>>,
 ): Promise<SourceHostEvidence> {
   const operations = [...new Set(callableOperations)].sort();
   if (!operations.includes("initialize") || !operations.includes("tools/list")) {
     throw new Error("callable operations must include initialize and tools/list");
   }
   const requests = operations.map((operation, index) =>
-    requestForOperation(index + 1, operation),
+    requestForOperation(index + 1, operation, operationArguments),
   );
   const child = Bun.spawn([process.execPath, "run", "dist/main.js", ...extraArgs], {
     cwd: artifactRoot,
@@ -95,6 +136,7 @@ async function collectSourceHostProcessEvidence(
     stdout: "pipe",
     stderr: "pipe",
     env: {
+      ...fixtureEnvironment,
       LANG: "C.UTF-8",
       NO_COLOR: "1",
     },
@@ -155,16 +197,18 @@ async function collectSourceHostProcessEvidence(
       ),
     };
   } finally {
-    if (child.exitCode === null) child.kill();
-    await child.exited;
+    await terminateSourceHostProcess(child);
   }
 }
 
 export async function collectSourceHostEvidence(
   artifactRoot: string,
   callableOperations: readonly string[],
-  timeoutMs = 5_000,
+  options: SourceHostEvidenceOptions = {},
 ): Promise<SourceHostEvidence> {
+  const timeoutMs = options.timeoutMs ?? 5_000;
+  const operationArguments = options.operationArguments ?? {};
+  const fixtureEnvironment = options.fixtureEnvironment ?? {};
   const operations = [...new Set(callableOperations)].sort();
   const authOperations = operations.filter((operation) => operation.startsWith("magnis.auth."));
   const syncOperations = operations.filter((operation) => !operation.startsWith("magnis.auth."));
@@ -173,6 +217,8 @@ export async function collectSourceHostEvidence(
     syncOperations,
     [],
     timeoutMs,
+    operationArguments,
+    fixtureEnvironment,
   );
   if (authOperations.length === 0) return syncEvidence;
   const authEvidence = await collectSourceHostProcessEvidence(
@@ -180,6 +226,8 @@ export async function collectSourceHostEvidence(
     ["initialize", ...authOperations, "tools/list"],
     ["--auth-mode"],
     timeoutMs,
+    operationArguments,
+    fixtureEnvironment,
   );
   return {
     ...syncEvidence,

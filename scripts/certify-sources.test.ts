@@ -29,6 +29,7 @@ import {
   writeCertifiedCatalogIndexes,
 } from "./certify-sources";
 import { stageSourcePackage } from "./build-catalog-index";
+import { terminateSourceHostProcess } from "../packages/testkit/host-driver";
 
 const roots: string[] = [];
 
@@ -379,6 +380,54 @@ describe("tst_cat_src_cert_001 staged Source certification", () => {
     expect(() => discoverStagedCatalog(root)).toThrow(
       "source 'alpha' certification.protocol must be magnis.source/1",
     );
+  });
+
+  test("rejects drift between manifest auth and account compatibility auth", () => {
+    const root = temporaryRoot();
+    const sourcesRoot = join(root, "sources");
+    const packageRoot = join(sourcesRoot, "alpha");
+    mkdirSync(packageRoot, { recursive: true });
+    writeFileSync(
+      join(packageRoot, "manifest.toml"),
+      sourceManifest("alpha").replace(
+        '[certification.account_compatibility]\nauth = "oauth2"',
+        '[certification.account_compatibility]\nauth = "api_key"',
+      ),
+    );
+    expect(() => discoverSourceReleaseManifests(sourcesRoot)).toThrow(
+      "source 'alpha' manifest auth oauth2 does not match certification account auth api_key",
+    );
+
+    writeFileSync(
+      join(packageRoot, "manifest.toml"),
+      sourceManifest("alpha").replace('[auth]\ntype = "oauth2"\n\n', ""),
+    );
+    expect(() => discoverSourceReleaseManifests(sourcesRoot)).toThrow(
+      "source 'alpha' has no manifest auth but certifies account auth oauth2",
+    );
+  });
+
+  test("bounds Source host shutdown when a child ignores SIGTERM", async () => {
+    const child = Bun.spawn(
+      [
+        process.execPath,
+        "-e",
+        'process.on("SIGTERM", () => {}); console.log("ready"); setInterval(() => {}, 1000);',
+      ],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    try {
+      const reader = child.stdout.getReader();
+      await reader.read();
+      reader.releaseLock();
+      const startedAt = performance.now();
+      await terminateSourceHostProcess(child, 50);
+      expect(performance.now() - startedAt).toBeLessThan(500);
+      expect(await child.exited).not.toBe(0);
+    } finally {
+      if (child.exitCode === null) child.kill(9);
+      await child.exited;
+    }
   });
 
   test("discovers every release manifest once and requires an explicit disposition", () => {

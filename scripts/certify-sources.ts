@@ -541,6 +541,27 @@ export function decodeSourceCertificationDeclaration(
     false,
   );
   const accountCompatibility = decodeAccountCompatibility(sourceId, raw);
+  const manifestAuth = manifest.auth;
+  const declaredAuth = accountCompatibility.input.auth;
+  if (manifestAuth === undefined) {
+    if (declaredAuth !== null) {
+      throw new Error(
+        `source '${sourceId}' has no manifest auth but certifies account auth ${declaredAuth}`,
+      );
+    }
+  } else {
+    const manifestAuthRecord = requiredRecord(manifestAuth, `source '${sourceId}' auth`);
+    const manifestAuthKind = oneOf(
+      manifestAuthRecord.type,
+      ["api_key", "oauth2", "phone_code", "shared_provider"] as const,
+      `source '${sourceId}' auth.type`,
+    );
+    if (manifestAuthKind !== declaredAuth) {
+      throw new Error(
+        `source '${sourceId}' manifest auth ${manifestAuthKind} does not match certification account auth ${String(declaredAuth)}`,
+      );
+    }
+  }
   const interval = raw.poll_interval_secs;
   const pollIntervalSecs = interval === undefined ? null : interval;
   if (
@@ -965,32 +986,201 @@ export function reconcileSourceReceiptFixtures(
   }
 }
 
-export const SELECTED_CHANNEL_SOURCE_MATRIX = [
-  { id: "anysite", packageHash: "sha256:9ecf326ed1ac159d3b90042309c45c4a41fc8c9c6b4dbf3738be91aae9600eec", definitionHash: "sha256:8862b50d0094696a28082b4e560b9f753448e4c1e0c2a25289c5c48ea195ca5d" },
-  { id: "google", packageHash: "sha256:c37f10f70bc5cb0693f4d13cc870d3df891b41d5338bcf514b00468bec5e0938", definitionHash: "sha256:53cda0e75af3636a11dfb23ae18b34e3f81af9881852641e7272434a4ef565a4" },
-  { id: "local", packageHash: "sha256:a0af80600dfe74dab5ef5e8ee68f8fab4fa944eb8f7bd6bda1384ea81dac4b52", definitionHash: "sha256:c1c14b32bed15d1e12a573450cf0afe085ff77c47eb42c373a0accbdeaa9df9c" },
-  { id: "mock-gmail", packageHash: "sha256:f3e0077a1d9c8e0d2b4052786e3673dcb1275d06b3c8ca5a6059ffdb27542058", definitionHash: "sha256:78ce540f88ab3e2538b348b1c644be8cec8285df4e3b525e35a59d8f6d613655" },
-  { id: "mock-linkedin", packageHash: "sha256:408f1d7873e621a01e0fac9bac055c87e16fe38e5642bc1255380ec601d5cd86", definitionHash: "sha256:92edc85ac60a6013a2841008fb91af69d249a49b515bdfd542f11e23fbb1c283" },
-  { id: "mock-telegram", packageHash: "sha256:b8e372686672abb0450101e0275926d3f8d9f085d66fc98d3ed2b0f934281a85", definitionHash: "sha256:777a46188e110ba44abe96d971ca76b6c886a1cebe60f201f2d03016339d2d0c" },
-  { id: "mock-x", packageHash: "sha256:af53b579b2faaad14ad2ed79e027722fa218c5f51bd4bbe232fecffbe5072f1a", definitionHash: "sha256:e32d296f1abe0f850fac4dfff97394456ebdbb1deb3893ac10d3fa092467f11c" },
-  { id: "telegram", packageHash: "sha256:7857f6d70f85f899b196fcdc978e6ec1ba4836384c66e920ca0791b9fe20249b", definitionHash: "sha256:6b62c010d11c85212c6eeb772bc21a8e06827224871d9fd01018facd460c4f77" },
-  { id: "x", packageHash: "sha256:bc7bf25b35d7e857ca7cc07559ac6f97ef16d25d45fd909a5e03a2a3695e5c99", definitionHash: "sha256:b5d90a3901e020b6d993cb7aedfdcb5c87913c0fef65fd31128369bea14ed35a" },
-] as const;
-
-function selectedChannelDeclaration(
-  id: string,
-  current: SourceCertificationDeclaration,
-): SourceCertificationDeclaration {
-  if (id === "mock-gmail" || id === "mock-telegram") {
-    return {
-      ...current,
-      advertisedTools: ["magnis.sync.fetch"],
-      callableOperations: ["initialize", "magnis.sync.fetch", "tools/list"],
-      scenarioIds: ["tst_cat_src_legacy_001"],
-    };
-  }
-  return { ...current, scenarioIds: ["tst_cat_src_legacy_001"] };
+function historicalDeclaration(input: {
+  authority: "module_sync" | "tools_only";
+  releaseTier: "production" | "development_fixture";
+  delivery: "poll" | "push" | "none";
+  pollIntervalSecs: number | null;
+  serverInfoName: string;
+  serverInfoVersion: string;
+  runtimeKind: "connector_sdk" | "custom" | "external_wrapped";
+  runtimeVersion: string;
+  advertisedTools: readonly string[];
+  callableOperations: readonly string[];
+  accountInput: SourceAccountCompatibilityInput;
+}): SourceCertificationDeclaration {
+  return {
+    disposition: "admissible",
+    protocol: "magnis.source/1",
+    authority: input.authority,
+    releaseTier: input.releaseTier,
+    delivery: input.delivery,
+    pollIntervalSecs: input.pollIntervalSecs,
+    serverInfoName: input.serverInfoName,
+    serverInfoVersion: input.serverInfoVersion,
+    runtimeKind: input.runtimeKind,
+    runtimeVersion: input.runtimeVersion,
+    advertisedTools: input.advertisedTools,
+    callableOperations: input.callableOperations,
+    scenarioIds: ["tst_cat_src_legacy_001"],
+    accountCompatibility: {
+      hash: accountCompatibilityHash(input.accountInput),
+      migratesFrom: [],
+      input: input.accountInput,
+    },
+  };
 }
+
+/** Exact historical contracts for the nine already-selected package trees.
+ * Nothing is copied from the current manifest: each declaration is bound next
+ * to its immutable old package/definition hashes and describes observed old
+ * initialize/tools/call behavior. */
+export const SELECTED_CHANNEL_SOURCE_MATRIX = [
+  {
+    id: "anysite",
+    packageHash: "sha256:9ecf326ed1ac159d3b90042309c45c4a41fc8c9c6b4dbf3738be91aae9600eec",
+    definitionHash: "sha256:8862b50d0094696a28082b4e560b9f753448e4c1e0c2a25289c5c48ea195ca5d",
+    declaration: historicalDeclaration({
+      authority: "module_sync", releaseTier: "production", delivery: "poll", pollIntervalSecs: 600,
+      serverInfoName: "anysite", serverInfoVersion: "0.1.0",
+      runtimeKind: "connector_sdk", runtimeVersion: "0.1.0",
+      advertisedTools: ["magnis.sync.fetch"],
+      callableOperations: ["initialize", "magnis.auth.probe", "magnis.sync.fetch", "tools/list"],
+      accountInput: {
+        auth: "shared_provider", identityRule: "verified_provider_subject",
+        credentialKeys: ["api_key"], mintedCredentialKeys: [],
+        surfaces: [{
+          name: "linkedin", cursorTerminalNull: "retain",
+          progress: { target: "forward_and_backfill", continuation: "opaque_cursor", forwardCheckpoint: "opaque_cursor", coverage: "tracked_identity_set", liveFence: "none" },
+          receiverInterfaceHash: v1ReceiverInterfaceHash("linkedin"),
+        }],
+      },
+    }),
+  },
+  {
+    id: "google",
+    packageHash: "sha256:c37f10f70bc5cb0693f4d13cc870d3df891b41d5338bcf514b00468bec5e0938",
+    definitionHash: "sha256:53cda0e75af3636a11dfb23ae18b34e3f81af9881852641e7272434a4ef565a4",
+    declaration: historicalDeclaration({
+      authority: "module_sync", releaseTier: "production", delivery: "poll", pollIntervalSecs: 30,
+      serverInfoName: "magnis-google", serverInfoVersion: "1.0.0",
+      runtimeKind: "connector_sdk", runtimeVersion: "0.1.0",
+      advertisedTools: ["magnis.sync.fetch"],
+      callableOperations: ["initialize", "magnis.auth.exchange", "magnis.auth.revoke", "magnis.execute:download_file", "magnis.execute:send_message", "magnis.sync.fetch", "tools/list"],
+      accountInput: {
+        auth: "oauth2", identityRule: "verified_google_subject",
+        credentialKeys: ["client_id", "client_secret", "refresh_token"], mintedCredentialKeys: ["refresh_token"],
+        surfaces: [
+          { name: "contacts", cursorTerminalNull: "clear", progress: { target: "full_snapshot", continuation: "opaque_cursor", forwardCheckpoint: "opaque_cursor", coverage: "snapshot", liveFence: "none" }, receiverInterfaceHash: v1ReceiverInterfaceHash("contacts") },
+          { name: "email", cursorTerminalNull: "retain", progress: { target: "forward_and_backfill", continuation: "opaque_cursor", forwardCheckpoint: "opaque_cursor", coverage: "range", liveFence: "none" }, receiverInterfaceHash: v1ReceiverInterfaceHash("email") },
+          { name: "meetings", cursorTerminalNull: "clear", progress: { target: "bounded_window", continuation: "opaque_cursor", forwardCheckpoint: "opaque_cursor", coverage: "range", liveFence: "none" }, receiverInterfaceHash: v1ReceiverInterfaceHash("meetings") },
+        ],
+      },
+    }),
+  },
+  {
+    id: "local",
+    packageHash: "sha256:a0af80600dfe74dab5ef5e8ee68f8fab4fa944eb8f7bd6bda1384ea81dac4b52",
+    definitionHash: "sha256:c1c14b32bed15d1e12a573450cf0afe085ff77c47eb42c373a0accbdeaa9df9c",
+    declaration: historicalDeclaration({
+      authority: "module_sync", releaseTier: "development_fixture", delivery: "poll", pollIntervalSecs: 60,
+      serverInfoName: "magnis-local", serverInfoVersion: "0.1.0",
+      runtimeKind: "connector_sdk", runtimeVersion: "0.1.0",
+      advertisedTools: ["magnis.sync.fetch"], callableOperations: ["initialize", "magnis.sync.fetch", "tools/list"],
+      accountInput: {
+        auth: null, identityRule: "local_storage_root", credentialKeys: [], mintedCredentialKeys: [],
+        surfaces: [{ name: "notes", cursorTerminalNull: "retain", progress: { target: "forward_and_backfill", continuation: "opaque_cursor", forwardCheckpoint: "opaque_cursor", coverage: "range", liveFence: "none" }, receiverInterfaceHash: v1ReceiverInterfaceHash("notes") }],
+      },
+    }),
+  },
+  {
+    id: "mock-gmail",
+    packageHash: "sha256:f3e0077a1d9c8e0d2b4052786e3673dcb1275d06b3c8ca5a6059ffdb27542058",
+    definitionHash: "sha256:78ce540f88ab3e2538b348b1c644be8cec8285df4e3b525e35a59d8f6d613655",
+    declaration: historicalDeclaration({
+      authority: "module_sync", releaseTier: "development_fixture", delivery: "poll", pollIntervalSecs: 5,
+      serverInfoName: "magnis-mock-gmail", serverInfoVersion: "0.1.0",
+      runtimeKind: "connector_sdk", runtimeVersion: "0.1.0",
+      advertisedTools: ["magnis.sync.fetch"], callableOperations: ["initialize", "magnis.sync.fetch", "tools/list"],
+      accountInput: {
+        auth: null, identityRule: "manifest_account_subject", credentialKeys: [], mintedCredentialKeys: [],
+        surfaces: [
+          { name: "email", cursorTerminalNull: "retain", progress: { target: "forward_and_backfill", continuation: "opaque_cursor", forwardCheckpoint: "opaque_cursor", coverage: "range", liveFence: "none" }, receiverInterfaceHash: v1ReceiverInterfaceHash("email") },
+          { name: "meetings", cursorTerminalNull: "clear", progress: { target: "bounded_window", continuation: "opaque_cursor", forwardCheckpoint: "opaque_cursor", coverage: "range", liveFence: "none" }, receiverInterfaceHash: v1ReceiverInterfaceHash("meetings") },
+        ],
+      },
+    }),
+  },
+  {
+    id: "mock-linkedin",
+    packageHash: "sha256:408f1d7873e621a01e0fac9bac055c87e16fe38e5642bc1255380ec601d5cd86",
+    definitionHash: "sha256:92edc85ac60a6013a2841008fb91af69d249a49b515bdfd542f11e23fbb1c283",
+    declaration: historicalDeclaration({
+      authority: "module_sync", releaseTier: "development_fixture", delivery: "poll", pollIntervalSecs: 5,
+      serverInfoName: "mock-linkedin", serverInfoVersion: "0.1.0",
+      runtimeKind: "connector_sdk", runtimeVersion: "0.1.0",
+      advertisedTools: ["magnis.sync.fetch"], callableOperations: ["initialize", "magnis.auth.probe", "magnis.sync.fetch", "tools/list"],
+      accountInput: {
+        auth: null, identityRule: "manifest_account_subject", credentialKeys: [], mintedCredentialKeys: [],
+        surfaces: [{ name: "linkedin", cursorTerminalNull: "retain", progress: { target: "forward_and_backfill", continuation: "opaque_cursor", forwardCheckpoint: "opaque_cursor", coverage: "tracked_identity_set", liveFence: "none" }, receiverInterfaceHash: v1ReceiverInterfaceHash("linkedin") }],
+      },
+    }),
+  },
+  {
+    id: "mock-telegram",
+    packageHash: "sha256:b8e372686672abb0450101e0275926d3f8d9f085d66fc98d3ed2b0f934281a85",
+    definitionHash: "sha256:777a46188e110ba44abe96d971ca76b6c886a1cebe60f201f2d03016339d2d0c",
+    declaration: historicalDeclaration({
+      authority: "module_sync", releaseTier: "development_fixture", delivery: "poll", pollIntervalSecs: 2,
+      serverInfoName: "magnis-mock-telegram", serverInfoVersion: "0.1.0",
+      runtimeKind: "connector_sdk", runtimeVersion: "0.1.0",
+      advertisedTools: ["magnis.sync.fetch"], callableOperations: ["initialize", "magnis.sync.fetch", "tools/list"],
+      accountInput: {
+        auth: null, identityRule: "manifest_account_subject", credentialKeys: [], mintedCredentialKeys: [],
+        surfaces: [{ name: "telegram", cursorTerminalNull: "retain", progress: { target: "per_identity_history", continuation: "opaque_cursor", forwardCheckpoint: "opaque_cursor", coverage: "per_identity_range", liveFence: "none" }, receiverInterfaceHash: v1ReceiverInterfaceHash("telegram") }],
+      },
+    }),
+  },
+  {
+    id: "mock-x",
+    packageHash: "sha256:af53b579b2faaad14ad2ed79e027722fa218c5f51bd4bbe232fecffbe5072f1a",
+    definitionHash: "sha256:e32d296f1abe0f850fac4dfff97394456ebdbb1deb3893ac10d3fa092467f11c",
+    declaration: historicalDeclaration({
+      authority: "module_sync", releaseTier: "development_fixture", delivery: "poll", pollIntervalSecs: 5,
+      serverInfoName: "mock-x", serverInfoVersion: "0.1.0",
+      runtimeKind: "connector_sdk", runtimeVersion: "0.1.0",
+      advertisedTools: ["magnis.sync.fetch"], callableOperations: ["initialize", "magnis.auth.probe", "magnis.sync.fetch", "tools/list"],
+      accountInput: {
+        auth: null, identityRule: "manifest_account_subject", credentialKeys: [], mintedCredentialKeys: [],
+        surfaces: [{ name: "x", cursorTerminalNull: "retain", progress: { target: "forward_and_backfill", continuation: "opaque_cursor", forwardCheckpoint: "opaque_cursor", coverage: "tracked_identity_set", liveFence: "none" }, receiverInterfaceHash: v1ReceiverInterfaceHash("x") }],
+      },
+    }),
+  },
+  {
+    id: "telegram",
+    packageHash: "sha256:7857f6d70f85f899b196fcdc978e6ec1ba4836384c66e920ca0791b9fe20249b",
+    definitionHash: "sha256:6b62c010d11c85212c6eeb772bc21a8e06827224871d9fd01018facd460c4f77",
+    declaration: historicalDeclaration({
+      authority: "module_sync", releaseTier: "production", delivery: "push", pollIntervalSecs: null,
+      serverInfoName: "magnis-telegram", serverInfoVersion: "1.0.0",
+      runtimeKind: "custom", runtimeVersion: "1.0.0", advertisedTools: [],
+      callableOperations: ["initialize", "listen_start", "listen_stop", "magnis.auth.begin", "magnis.auth.revoke", "magnis.auth.step", "magnis.execute", "magnis.sync.fetch", "magnis.sync.listen", "tools/list"],
+      accountInput: {
+        auth: "phone_code", identityRule: "verified_telegram_user_id",
+        credentialKeys: ["api_hash", "api_id", "session"], mintedCredentialKeys: ["session"],
+        surfaces: [{ name: "telegram", cursorTerminalNull: "retain", progress: { target: "per_identity_history", continuation: "opaque_cursor", forwardCheckpoint: "opaque_cursor", coverage: "per_identity_range", liveFence: "subscription_ack" }, receiverInterfaceHash: v1ReceiverInterfaceHash("telegram") }],
+      },
+    }),
+  },
+  {
+    id: "x",
+    packageHash: "sha256:bc7bf25b35d7e857ca7cc07559ac6f97ef16d25d45fd909a5e03a2a3695e5c99",
+    definitionHash: "sha256:b5d90a3901e020b6d993cb7aedfdcb5c87913c0fef65fd31128369bea14ed35a",
+    declaration: historicalDeclaration({
+      authority: "module_sync", releaseTier: "production", delivery: "poll", pollIntervalSecs: 300,
+      serverInfoName: "x", serverInfoVersion: "0.1.0",
+      runtimeKind: "connector_sdk", runtimeVersion: "0.1.0",
+      advertisedTools: ["magnis.sync.fetch"], callableOperations: ["initialize", "magnis.auth.probe", "magnis.sync.fetch", "tools/list"],
+      accountInput: {
+        auth: "api_key", identityRule: "verified_provider_subject", credentialKeys: ["bearer_token"], mintedCredentialKeys: [],
+        surfaces: [
+          { name: "contacts", cursorTerminalNull: "retain", progress: { target: "forward_and_backfill", continuation: "opaque_cursor", forwardCheckpoint: "opaque_cursor", coverage: "tracked_identity_set", liveFence: "none" }, receiverInterfaceHash: v1ReceiverInterfaceHash("contacts") },
+          { name: "x", cursorTerminalNull: "retain", progress: { target: "forward_and_backfill", continuation: "opaque_cursor", forwardCheckpoint: "opaque_cursor", coverage: "tracked_identity_set", liveFence: "none" }, receiverInterfaceHash: v1ReceiverInterfaceHash("x") },
+        ],
+      },
+    }),
+  },
+] as const;
 
 /** Re-certify only the nine exact package identities already present in the
  * selected channel. Fixed hashes prevent an id/version lookalike from adopting
@@ -998,22 +1188,12 @@ function selectedChannelDeclaration(
  * wire instead of inheriting new dataset operations from current manifests. */
 export async function writeSelectedChannelSourceReceipts(options: {
   selectedSourcesRoot: string;
-  currentSourcesRoot: string;
   outputDir: string;
 }): Promise<readonly SourceCertificationReceipt[]> {
-  const current = new Map(
-    discoverSourceReleaseManifests(options.currentSourcesRoot)
-      .filter((release): release is AdmissibleSourceReleaseManifest => release.disposition === "admissible")
-      .map((release) => [release.id, release.declaration]),
-  );
   const entries = SELECTED_CHANNEL_SOURCE_MATRIX.map((expected) => {
-    const declaration = current.get(expected.id);
-    if (declaration === undefined) {
-      throw new Error(`selected-channel Source '${expected.id}' has no current v1 declaration`);
-    }
     const entry = inspectRetroactiveSourceArtifact(
       join(options.selectedSourcesRoot, expected.id),
-      selectedChannelDeclaration(expected.id, declaration),
+      expected.declaration,
     );
     if (entry.packageHash !== expected.packageHash) {
       throw new Error(`selected-channel Source '${expected.id}' package hash mismatch`);

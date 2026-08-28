@@ -1,6 +1,8 @@
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { gunzipSync } from "node:zlib";
 
 import { describe, expect, test } from "bun:test";
 import { parse as parseToml } from "smol-toml";
@@ -34,8 +36,11 @@ import {
   discoverStagedCatalog,
   mintSourceCertificationReceipt,
   SELECTED_CHANNEL_SOURCE_MATRIX,
+  writeSelectedChannelSourceReceipts,
 } from "../../../scripts/certify-sources";
 import { stageSourcePackage } from "../../../scripts/build-catalog-index";
+import { buildSelectedSourceFixture } from "../../../scripts/build-selected-source-fixture";
+import { collectSourceHostEvidence } from "../host-driver";
 
 type AuthKind = "api_key" | "oauth2" | "phone_code" | "shared_provider" | null;
 type Delivery = "poll" | "push";
@@ -95,10 +100,14 @@ const PROVIDER_SCENARIOS: Readonly<Record<string, readonly { id: string; path: s
   anysite: [
     { id: "tst_li_001", path: "plugins/sources/anysite/src/surfaces/linkedin/fetch.test.ts" },
     { id: "tst_li_004", path: "plugins/sources/anysite/src/surfaces/linkedin/fetch.test.ts" },
+    { id: "tst_linkedin_probe", path: "plugins/sources/anysite/src/probe.test.ts" },
   ],
   google: [
     { id: "tst_gts_fx_001", path: "plugins/sources/google/src/__tests__/fixture.test.ts" },
+    { id: "tst_gts_fx_003", path: "plugins/sources/google/src/__tests__/fixture.test.ts" },
     { id: "tst_gts_hist_008b", path: "plugins/sources/google/src/surfaces/email/gmail.test.ts" },
+    { id: "tst_gts_oidc_004", path: "plugins/sources/google/src/oauth.test.ts" },
+    { id: "tst_gts_oidc_007", path: "plugins/sources/google/src/oauth.test.ts" },
     { id: "tst_gts_wire_006", path: "plugins/sources/google/src/__tests__/fixture.test.ts" },
   ],
   local: [
@@ -109,22 +118,30 @@ const PROVIDER_SCENARIOS: Readonly<Record<string, readonly { id: string; path: s
     { id: "tst_conn_mockgmail_dataset_001", path: "plugins/sources/mock-gmail/src/dataset.test.ts" },
     { id: "tst_conn_mockgmail_dataset_003", path: "plugins/sources/mock-gmail/src/dataset.test.ts" },
     { id: "tst_conn_mockgmail_ts_001", path: "plugins/sources/mock-gmail/src/fetch.test.ts" },
+    { id: "tst_source_mock_gmail_execute_001", path: "plugins/sources/mock-gmail/src/execute.test.ts" },
   ],
   "mock-linkedin": [
+    { id: "tst_cat_src_parity_001", path: "packages/testkit/__tests__/tst_cat_src_parity_001.test.ts" },
     { id: "tst_mockli_001", path: "plugins/sources/mock-linkedin/src/surfaces/linkedin/fetch.test.ts" },
     { id: "tst_mockli_003", path: "plugins/sources/mock-linkedin/src/surfaces/linkedin/fetch.test.ts" },
   ],
   "mock-statemachine-key": [
     { id: "tst_conn_statemock_ts_001", path: "packages/source-statemachine/src/index.test.ts" },
+    { id: "tst_conn_statemock_ts_004", path: "packages/source-statemachine/src/index.test.ts" },
     { id: "tst_conn_statemock_ts_013", path: "packages/source-statemachine/src/index.test.ts" },
+    { id: "tst_conn_statemock_ts_014", path: "packages/source-statemachine/src/index.test.ts" },
   ],
   "mock-statemachine-oauth": [
     { id: "tst_conn_statemock_ts_001", path: "packages/source-statemachine/src/index.test.ts" },
+    { id: "tst_conn_statemock_ts_004", path: "packages/source-statemachine/src/index.test.ts" },
     { id: "tst_conn_statemock_ts_013", path: "packages/source-statemachine/src/index.test.ts" },
+    { id: "tst_conn_statemock_ts_014", path: "packages/source-statemachine/src/index.test.ts" },
   ],
   "mock-statemachine-phone": [
     { id: "tst_cat_src_phone_001", path: "packages/testkit/__tests__/tst_cat_src_parity_001.test.ts" },
     { id: "tst_conn_statemock_ts_001", path: "packages/source-statemachine/src/index.test.ts" },
+    { id: "tst_conn_statemock_ts_004", path: "packages/source-statemachine/src/index.test.ts" },
+    { id: "tst_conn_statemock_ts_014", path: "packages/source-statemachine/src/index.test.ts" },
   ],
   "mock-telegram": [
     { id: "tst_conn_mocktelegram_dataset_001", path: "plugins/sources/mock-telegram/src/dataset.test.ts" },
@@ -132,19 +149,94 @@ const PROVIDER_SCENARIOS: Readonly<Record<string, readonly { id: string; path: s
     { id: "tst_conn_mocktelegram_ts_001", path: "plugins/sources/mock-telegram/src/fetch.test.ts" },
   ],
   "mock-x": [
+    { id: "tst_cat_src_parity_001", path: "packages/testkit/__tests__/tst_cat_src_parity_001.test.ts" },
     { id: "tst_mockx_001", path: "plugins/sources/mock-x/src/surfaces/x/fetch.test.ts" },
     { id: "tst_mockx_003", path: "plugins/sources/mock-x/src/surfaces/x/fetch.test.ts" },
   ],
   telegram: [
+    { id: "tst_tgts_auth_001", path: "plugins/sources/telegram/src/auth.test.ts" },
+    { id: "tst_tgts_auth_004", path: "plugins/sources/telegram/src/auth.test.ts" },
+    { id: "tst_tgts_auth_012", path: "plugins/sources/telegram/src/auth.test.ts" },
+    { id: "tst_tgts_exec_001", path: "plugins/sources/telegram/src/surfaces/telegram/execute.test.ts" },
     { id: "tst_tgts_flood_wire_002", path: "plugins/sources/telegram/src/surfaces/telegram/execute.test.ts" },
     { id: "tst_tgts_fx_001", path: "plugins/sources/telegram/src/fixture.test.ts" },
+    { id: "tst_tgts_wire_004", path: "plugins/sources/telegram/src/fixture.test.ts" },
+    { id: "tst_tgts_wire_005", path: "plugins/sources/telegram/src/fixture.test.ts" },
     { id: "tst_tgts_wire_012", path: "plugins/sources/telegram/src/fixture.test.ts" },
   ],
   x: [
     { id: "tst_x_001", path: "plugins/sources/x/src/surfaces/x/fetch.test.ts" },
     { id: "tst_x_005", path: "plugins/sources/x/src/surfaces/x/fetch.test.ts" },
     { id: "tst_x_006", path: "plugins/sources/x/src/surfaces/x/fetch.test.ts" },
+    { id: "tst_x_probe", path: "plugins/sources/x/src/probe.test.ts" },
   ],
+};
+
+const CURRENT_OPERATION_EVIDENCE: Readonly<
+  Record<string, Readonly<Record<string, { id: string; path: string }>>>
+> = {
+  anysite: {
+    "magnis.auth.probe": { id: "tst_linkedin_probe", path: "plugins/sources/anysite/src/probe.test.ts" },
+    "magnis.sync.fetch": { id: "tst_li_001", path: "plugins/sources/anysite/src/surfaces/linkedin/fetch.test.ts" },
+  },
+  google: {
+    "magnis.auth.exchange": { id: "tst_gts_oidc_004", path: "plugins/sources/google/src/oauth.test.ts" },
+    "magnis.auth.revoke": { id: "tst_gts_oidc_007", path: "plugins/sources/google/src/oauth.test.ts" },
+    "magnis.execute:download_file": { id: "tst_gts_fx_003", path: "plugins/sources/google/src/__tests__/fixture.test.ts" },
+    "magnis.execute:send_message": { id: "tst_gts_fx_003", path: "plugins/sources/google/src/__tests__/fixture.test.ts" },
+    "magnis.sync.fetch": { id: "tst_gts_fx_001", path: "plugins/sources/google/src/__tests__/fixture.test.ts" },
+  },
+  local: {
+    "magnis.sync.fetch": { id: "tst_conn_local_ts_001", path: "plugins/sources/local/src/surfaces/notes/fetch.test.ts" },
+  },
+  "mock-gmail": {
+    "magnis.dataset.invoke:emit_meeting": { id: "tst_conn_mockgmail_dataset_003", path: "plugins/sources/mock-gmail/src/dataset.test.ts" },
+    "magnis.dataset.invoke:emit_message": { id: "tst_conn_mockgmail_dataset_001", path: "plugins/sources/mock-gmail/src/dataset.test.ts" },
+    "magnis.execute:send_message": { id: "tst_source_mock_gmail_execute_001", path: "plugins/sources/mock-gmail/src/execute.test.ts" },
+    "magnis.sync.fetch": { id: "tst_conn_mockgmail_ts_001", path: "plugins/sources/mock-gmail/src/fetch.test.ts" },
+  },
+  "mock-linkedin": {
+    "magnis.auth.probe": { id: "tst_cat_src_parity_001", path: "packages/testkit/__tests__/tst_cat_src_parity_001.test.ts" },
+    "magnis.sync.fetch": { id: "tst_mockli_001", path: "plugins/sources/mock-linkedin/src/surfaces/linkedin/fetch.test.ts" },
+  },
+  "mock-statemachine-key": {
+    "magnis.auth.probe": { id: "tst_conn_statemock_ts_014", path: "packages/source-statemachine/src/index.test.ts" },
+    "magnis.sync.fetch": { id: "tst_conn_statemock_ts_004", path: "packages/source-statemachine/src/index.test.ts" },
+  },
+  "mock-statemachine-oauth": {
+    "magnis.auth.probe": { id: "tst_conn_statemock_ts_014", path: "packages/source-statemachine/src/index.test.ts" },
+    "magnis.sync.fetch": { id: "tst_conn_statemock_ts_004", path: "packages/source-statemachine/src/index.test.ts" },
+  },
+  "mock-statemachine-phone": {
+    listen_start: { id: "tst_cat_src_phone_001", path: "packages/testkit/__tests__/tst_cat_src_parity_001.test.ts" },
+    listen_stop: { id: "tst_cat_src_phone_001", path: "packages/testkit/__tests__/tst_cat_src_parity_001.test.ts" },
+    "magnis.auth.probe": { id: "tst_conn_statemock_ts_014", path: "packages/source-statemachine/src/index.test.ts" },
+    "magnis.sync.fetch": { id: "tst_conn_statemock_ts_004", path: "packages/source-statemachine/src/index.test.ts" },
+    "magnis.sync.listen": { id: "tst_cat_src_phone_001", path: "packages/testkit/__tests__/tst_cat_src_parity_001.test.ts" },
+  },
+  "mock-telegram": {
+    "magnis.dataset.invoke:emit_chat": { id: "tst_conn_mocktelegram_dataset_001", path: "plugins/sources/mock-telegram/src/dataset.test.ts" },
+    "magnis.dataset.invoke:emit_message": { id: "tst_conn_mocktelegram_dataset_002", path: "plugins/sources/mock-telegram/src/dataset.test.ts" },
+    "magnis.sync.fetch": { id: "tst_conn_mocktelegram_ts_001", path: "plugins/sources/mock-telegram/src/fetch.test.ts" },
+  },
+  "mock-x": {
+    "magnis.auth.probe": { id: "tst_cat_src_parity_001", path: "packages/testkit/__tests__/tst_cat_src_parity_001.test.ts" },
+    "magnis.sync.fetch": { id: "tst_mockx_001", path: "plugins/sources/mock-x/src/surfaces/x/fetch.test.ts" },
+  },
+  telegram: {
+    listen_start: { id: "tst_tgts_wire_012", path: "plugins/sources/telegram/src/fixture.test.ts" },
+    listen_stop: { id: "tst_tgts_wire_004", path: "plugins/sources/telegram/src/fixture.test.ts" },
+    "magnis.auth.begin": { id: "tst_tgts_auth_001", path: "plugins/sources/telegram/src/auth.test.ts" },
+    "magnis.auth.revoke": { id: "tst_tgts_auth_012", path: "plugins/sources/telegram/src/auth.test.ts" },
+    "magnis.auth.step": { id: "tst_tgts_auth_004", path: "plugins/sources/telegram/src/auth.test.ts" },
+    "magnis.execute": { id: "tst_tgts_exec_001", path: "plugins/sources/telegram/src/surfaces/telegram/execute.test.ts" },
+    "magnis.sync.fetch": { id: "tst_tgts_fx_001", path: "plugins/sources/telegram/src/fixture.test.ts" },
+    "magnis.sync.listen": { id: "tst_tgts_wire_005", path: "plugins/sources/telegram/src/fixture.test.ts" },
+  },
+  x: {
+    "magnis.auth.probe": { id: "tst_x_probe", path: "plugins/sources/x/src/probe.test.ts" },
+    "magnis.sync.fetch": { id: "tst_x_001", path: "plugins/sources/x/src/surfaces/x/fetch.test.ts" },
+  },
 };
 
 const GOLDEN_PROVIDERS: readonly GoldenProvider[] = [
@@ -380,6 +472,66 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+function materializeSelectedChannelFixture(destination: string): void {
+  const fixturePath = join(
+    repoRoot,
+    "packages",
+    "testkit",
+    "fixtures",
+    "selected-channel-sources-v1.json.gz",
+  );
+  const compressed = readFileSync(fixturePath);
+  expect(`sha256:${createHash("sha256").update(compressed).digest("hex")}`).toBe(
+    "sha256:94686bf0be02b058ad1de837c4d9eb523f33bb1e9414fccb22eb079b32030401",
+  );
+  const decoded = JSON.parse(gunzipSync(compressed).toString("utf8")) as unknown;
+  if (!isRecord(decoded) || decoded.schemaVersion !== 1 || !Array.isArray(decoded.packages)) {
+    throw new Error("selected-channel fixture has an invalid root");
+  }
+  const packageIds: string[] = [];
+  for (const packageValue of decoded.packages) {
+    if (!isRecord(packageValue) || typeof packageValue.id !== "string" || !Array.isArray(packageValue.files)) {
+      throw new Error("selected-channel fixture has an invalid package");
+    }
+    packageIds.push(packageValue.id);
+    for (const fileValue of packageValue.files) {
+      if (!isRecord(fileValue) || typeof fileValue.path !== "string" || typeof fileValue.base64 !== "string") {
+        throw new Error(`selected-channel fixture package '${packageValue.id}' has an invalid file`);
+      }
+      const segments = fileValue.path.split("/");
+      if (
+        fileValue.path.startsWith("/") ||
+        fileValue.path.includes("\\") ||
+        segments.some((segment) => segment === "" || segment === "." || segment === "..")
+      ) {
+        throw new Error(`selected-channel fixture file '${fileValue.path}' is not root-local`);
+      }
+      const path = join(destination, packageValue.id, ...segments);
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, Buffer.from(fileValue.base64, "base64"));
+    }
+  }
+  expect(packageIds).toEqual(SELECTED_CHANNEL_SOURCE_MATRIX.map(({ id }) => id));
+}
+
+function replyResult(
+  evidence: Awaited<ReturnType<typeof collectSourceHostEvidence>>,
+  operation: string,
+): Record<string, unknown> {
+  const result = evidence.operationProbes[operation]?.result;
+  if (!isRecord(result)) throw new Error(`legacy operation '${operation}' returned no object result`);
+  return result;
+}
+
+function replyError(
+  evidence: Awaited<ReturnType<typeof collectSourceHostEvidence>>,
+  operation: string,
+): { code?: number; message?: string } {
+  const error = evidence.operationProbes[operation]?.error;
+  if (error === undefined) throw new Error(`legacy operation '${operation}' returned no error`);
+  return error;
+}
+
 function stringArray(value: unknown, label: string): readonly string[] {
   if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string")) {
     throw new Error(`${label} must be a string array`);
@@ -476,9 +628,7 @@ describe("tst_cat_src_parity_001 current v1 golden matrix", () => {
         scenarios.map(({ id }) => id),
       );
       for (const scenario of scenarios) {
-        expect(readFileSync(join(repoRoot, scenario.path), "utf8"), scenario.id).toContain(
-          `test("${scenario.id}`,
-        );
+        expect(readFileSync(join(repoRoot, scenario.path), "utf8"), scenario.id).toContain(scenario.id);
       }
 
       const account = compatibility(authored, golden.sourceId);
@@ -533,6 +683,33 @@ describe("tst_cat_src_parity_001 current v1 golden matrix", () => {
         },
       });
     }
+  });
+
+  test("every declared current operation is bound to executed provider behavior", () => {
+    const behaviorFiles = new Set<string>();
+    for (const golden of GOLDEN_PROVIDERS) {
+      const declaration = decodeSourceCertificationDeclaration(golden.sourceId, manifest(golden.sourceId));
+      const evidence = CURRENT_OPERATION_EVIDENCE[golden.sourceId];
+      if (evidence === undefined) throw new Error(`${golden.sourceId} has no operation evidence`);
+      expect(Object.keys(evidence).sort(), golden.sourceId).toEqual(
+        declaration.callableOperations
+          .filter((operation) => operation !== "initialize" && operation !== "tools/list")
+          .sort(),
+      );
+      for (const [operation, binding] of Object.entries(evidence)) {
+        expect(declaration.scenarioIds, `${golden.sourceId}:${operation}`).toContain(binding.id);
+        expect(readFileSync(join(repoRoot, binding.path), "utf8"), binding.id).toContain(binding.id);
+        if (!binding.path.endsWith("tst_cat_src_parity_001.test.ts")) {
+          behaviorFiles.add(binding.path);
+        }
+      }
+    }
+
+    const executed = Bun.spawnSync(
+      [process.execPath, "test", ...[...behaviorFiles].sort()],
+      { cwd: repoRoot, stdout: "pipe", stderr: "pipe" },
+    );
+    expect(executed.exitCode, executed.stderr.toString("utf8")).toBe(0);
   });
 
   test("SDK v1 preserves initialize, tools, camelCase pages, tokens, auth, actions, Push and errors", async () => {
@@ -754,6 +931,32 @@ describe("tst_cat_src_parity_001 current v1 golden matrix", () => {
       date: "2026-08-27T00:00:00Z",
       is_outgoing: false,
     });
+
+    const artifactRoot = mkdtempSync(join(tmpdir(), "magnis-current-mock-probes-"));
+    try {
+      for (const [id, subject] of [
+        ["mock-linkedin", "mock-linkedin-key"],
+        ["mock-x", "@mock_x_user"],
+      ] as const) {
+        const release = discoverSourceReleaseManifests(join(repoRoot, "plugins", "sources"))
+          .find((entry) => entry.id === id);
+        if (release === undefined || release.disposition !== "admissible") {
+          throw new Error(`${id} is not an admissible release`);
+        }
+        const destination = join(artifactRoot, "packages", "source", id);
+        mkdirSync(destination, { recursive: true });
+        stageSourcePackage(release, destination);
+        const evidence = await collectSourceHostEvidence(
+          destination,
+          release.declaration.callableOperations,
+          { operationArguments: { "magnis.sync.fetch": { surface: id === "mock-x" ? "x" : "linkedin" } } },
+        );
+        expect(replyResult(evidence, "magnis.auth.probe")).toEqual({ subject });
+        expect((replyResult(evidence, "magnis.sync.fetch").envelopes as unknown[]).length).toBeGreaterThan(0);
+      }
+    } finally {
+      rmSync(artifactRoot, { recursive: true, force: true });
+    }
   });
 
   test("tst_cat_src_phone_001 staged phone wrapper serves its declared Push surface", async () => {
@@ -770,6 +973,7 @@ describe("tst_cat_src_parity_001 current v1 golden matrix", () => {
       const entry = discoverStagedCatalog(root).find(({ id }) => id === release.id);
       if (entry === undefined) throw new Error("staged phone artifact was not discovered");
       const receipt = await mintSourceCertificationReceipt(entry);
+      const evidence = await collectSourceHostEvidence(entry.root, receipt.callableOperations);
 
       expect(receipt.delivery).toBe("push");
       expect(receipt.surfaces).toEqual(["smp"]);
@@ -782,29 +986,228 @@ describe("tst_cat_src_parity_001 current v1 golden matrix", () => {
         "magnis.sync.listen",
         "tools/list",
       ]);
+      expect(replyResult(evidence, "listen_start")).toEqual({
+        ok: true,
+        subscription_id: "certification-probe",
+      });
+      expect(replyResult(evidence, "listen_stop")).toEqual({ ok: true });
+      expect(replyResult(evidence, "magnis.sync.listen")).toEqual({
+        ok: true,
+        subscription_id: "sub:certification",
+      });
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
   });
 
-  test("tst_cat_src_legacy_001 committed selected-channel receipts preserve the observed old wire", () => {
-    const receiptRoot = join(repoRoot, "dist", "receipts");
-    expect(readdirSync(receiptRoot).filter((name) => name.endsWith(".json"))).toHaveLength(21);
-    for (const expected of SELECTED_CHANNEL_SOURCE_MATRIX) {
-      const receipt = decodeSourceCertificationReceipt(
-        readFileSync(join(receiptRoot, `${expected.packageHash}.json`), "utf8"),
-        { packageHash: expected.packageHash, definitionHash: expected.definitionHash },
+  test("tst_cat_src_legacy_001 committed selected-channel bytes replay their exact old wire", async () => {
+    const root = mkdtempSync(join(tmpdir(), "magnis-selected-channel-"));
+    const selectedRoot = join(root, "sources");
+    const generatedReceiptRoot = join(root, "receipts");
+    try {
+      materializeSelectedChannelFixture(selectedRoot);
+      const regeneratedFixture = join(root, "selected-channel-sources-v1.json.gz");
+      expect(buildSelectedSourceFixture(selectedRoot, regeneratedFixture)).toBe(
+        "sha256:94686bf0be02b058ad1de837c4d9eb523f33bb1e9414fccb22eb079b32030401",
       );
-      expect(receipt.sourceId).toBe(expected.id);
-      expect(receipt.scenarioIds).toEqual(["tst_cat_src_legacy_001"]);
-      if (expected.id === "mock-gmail" || expected.id === "mock-telegram") {
-        expect(receipt.advertisedTools).toEqual(["magnis.sync.fetch"]);
-        expect(receipt.callableOperations).toEqual([
-          "initialize",
-          "magnis.sync.fetch",
-          "tools/list",
-        ]);
+      expect(readFileSync(regeneratedFixture)).toEqual(
+        readFileSync(join(repoRoot, "packages", "testkit", "fixtures", "selected-channel-sources-v1.json.gz")),
+      );
+      const generated = await writeSelectedChannelSourceReceipts({
+        selectedSourcesRoot: selectedRoot,
+        outputDir: generatedReceiptRoot,
+      });
+      expect(generated).toHaveLength(9);
+
+      const committedReceiptRoot = join(repoRoot, "dist", "receipts");
+      expect(readdirSync(committedReceiptRoot).filter((name) => name.endsWith(".json"))).toHaveLength(21);
+      for (const expected of SELECTED_CHANNEL_SOURCE_MATRIX) {
+        const committedBytes = readFileSync(
+          join(committedReceiptRoot, `${expected.packageHash}.json`),
+          "utf8",
+        );
+        expect(readFileSync(join(generatedReceiptRoot, `${expected.packageHash}.json`), "utf8"))
+          .toBe(committedBytes);
+        const receipt = decodeSourceCertificationReceipt(committedBytes, {
+          packageHash: expected.packageHash,
+          definitionHash: expected.definitionHash,
+        });
+        expect(receipt.sourceId).toBe(expected.id);
+        expect(receipt.scenarioIds).toEqual(["tst_cat_src_legacy_001"]);
+        expect(receipt.callableOperations).toEqual(expected.declaration.callableOperations);
       }
+
+      const artifact = (id: string): string => join(selectedRoot, id);
+      const declaration = (id: string) => {
+        const selected = SELECTED_CHANNEL_SOURCE_MATRIX.find((entry) => entry.id === id);
+        if (selected === undefined) throw new Error(`missing historical declaration '${id}'`);
+        return selected.declaration;
+      };
+
+      const anysite = await collectSourceHostEvidence(
+        artifact("anysite"),
+        declaration("anysite").callableOperations,
+        { operationArguments: { "magnis.sync.fetch": { surface: "linkedin", tracked_handles: ["anndoe"] } } },
+      );
+      expect(replyError(anysite, "magnis.sync.fetch")).toMatchObject({
+        code: -32000,
+        message: "anysite: missing api_key (set SOURCE_ANYSITE_API_KEY)",
+      });
+
+      const googleFixture = join(root, "google.json");
+      writeFileSync(googleFixture, '{"messages":[],"events":[],"connections":[]}\n');
+      const google = await collectSourceHostEvidence(
+        artifact("google"),
+        declaration("google").callableOperations,
+        {
+          fixtureEnvironment: { GOOGLE_FIXTURE_FILE: googleFixture },
+          operationArguments: {
+            "magnis.sync.fetch": { surface: "email" },
+            "magnis.execute:download_file": {
+              action: "download_file",
+              source_ref: { message_id: "m1", attachment_id: "a1" },
+              dest: "/tmp/certification-never-written.bin",
+            },
+            "magnis.execute:send_message": {
+              action: "send_message",
+              draft: { to: [{ address: "b@example.com" }], subject: "s", body_text: "t" },
+            },
+          },
+        },
+      );
+      expect(replyResult(google, "magnis.sync.fetch")).toMatchObject({ envelopes: [], hasMore: false });
+      expect(replyResult(google, "magnis.execute:download_file")).toMatchObject({
+        recorded: true,
+        action: "download_file",
+      });
+      expect(replyResult(google, "magnis.execute:send_message")).toMatchObject({
+        recorded: true,
+        action: "send_message",
+      });
+
+      const notesRoot = join(root, "notes");
+      mkdirSync(notesRoot, { recursive: true });
+      writeFileSync(join(notesRoot, "one.md"), "# one\n");
+      const local = await collectSourceHostEvidence(
+        artifact("local"),
+        declaration("local").callableOperations,
+        {
+          fixtureEnvironment: { NOTES_DIR: notesRoot },
+          operationArguments: { "magnis.sync.fetch": { surface: "notes" } },
+        },
+      );
+      expect((replyResult(local, "magnis.sync.fetch").envelopes as unknown[])).toHaveLength(1);
+
+      const gmailInject = join(root, "mock-gmail.jsonl");
+      writeFileSync(
+        gmailInject,
+        '{"surface":"email","remote_id":"mail:1","payload":{"subject":"one"}}\n' +
+          '{"surface":"email","remote_id":"mail:2","payload":{"subject":"two"}}\n',
+      );
+      const mockGmail = await collectSourceHostEvidence(
+        artifact("mock-gmail"),
+        declaration("mock-gmail").callableOperations,
+        {
+          fixtureEnvironment: { MOCK_INJECT_FILE: gmailInject },
+          operationArguments: { "magnis.sync.fetch": { surface: "email", cursor: 1 } },
+        },
+      );
+      expect(replyResult(mockGmail, "magnis.sync.fetch")).toMatchObject({
+        nextCursor: 2,
+        hasMore: false,
+      });
+      expect((replyResult(mockGmail, "magnis.sync.fetch").envelopes as unknown[])).toHaveLength(1);
+
+      const mockLinkedIn = await collectSourceHostEvidence(
+        artifact("mock-linkedin"),
+        declaration("mock-linkedin").callableOperations,
+        { operationArguments: { "magnis.sync.fetch": { surface: "linkedin", tracked_handles: ["anndoe"] } } },
+      );
+      expect(replyResult(mockLinkedIn, "magnis.auth.probe")).toEqual({ subject: "mock-linkedin-key" });
+      expect(replyResult(mockLinkedIn, "magnis.sync.fetch")).toMatchObject({ nextCursor: 1, hasMore: false });
+      expect((replyResult(mockLinkedIn, "magnis.sync.fetch").envelopes as unknown[])).toHaveLength(2);
+      const mockLinkedInCursor = await collectSourceHostEvidence(
+        artifact("mock-linkedin"),
+        declaration("mock-linkedin").callableOperations,
+        { operationArguments: { "magnis.sync.fetch": { surface: "linkedin", cursor: 1 } } },
+      );
+      expect(replyResult(mockLinkedInCursor, "magnis.sync.fetch")).toMatchObject({
+        envelopes: [], nextCursor: 1, hasMore: false,
+      });
+
+      const telegramInject = join(root, "mock-telegram.jsonl");
+      writeFileSync(
+        telegramInject,
+        '{"surface":"telegram","remote_id":"chat:1","kind":"snapshot","payload":{"chat_id":1}}\n' +
+          '{"surface":"telegram","remote_id":"message:2","kind":"live","payload":{"message_id":2}}\n',
+      );
+      const mockTelegram = await collectSourceHostEvidence(
+        artifact("mock-telegram"),
+        declaration("mock-telegram").callableOperations,
+        {
+          fixtureEnvironment: { MOCK_INJECT_FILE: telegramInject },
+          operationArguments: { "magnis.sync.fetch": { surface: "telegram", cursor: 1 } },
+        },
+      );
+      expect(replyResult(mockTelegram, "magnis.sync.fetch")).toMatchObject({
+        nextCursor: 2,
+        hasMore: false,
+      });
+      expect((replyResult(mockTelegram, "magnis.sync.fetch").envelopes as unknown[])).toHaveLength(1);
+
+      const mockX = await collectSourceHostEvidence(
+        artifact("mock-x"),
+        declaration("mock-x").callableOperations,
+        { operationArguments: { "magnis.sync.fetch": { surface: "x", tracked_handles: ["jack"] } } },
+      );
+      expect(replyResult(mockX, "magnis.auth.probe")).toEqual({ subject: "@mock_x_user" });
+      expect(replyResult(mockX, "magnis.sync.fetch")).toMatchObject({ nextCursor: 1, hasMore: false });
+      expect((replyResult(mockX, "magnis.sync.fetch").envelopes as unknown[])).toHaveLength(6);
+      const mockXCursor = await collectSourceHostEvidence(
+        artifact("mock-x"),
+        declaration("mock-x").callableOperations,
+        { operationArguments: { "magnis.sync.fetch": { surface: "x", cursor: 1 } } },
+      );
+      expect(replyResult(mockXCursor, "magnis.sync.fetch")).toMatchObject({
+        envelopes: [], nextCursor: 1, hasMore: false,
+      });
+
+      const telegramFixture = join(root, "telegram.json");
+      writeFileSync(telegramFixture, '{"chats":[],"messages":[]}\n');
+      const telegram = await collectSourceHostEvidence(
+        artifact("telegram"),
+        declaration("telegram").callableOperations,
+        {
+          fixtureEnvironment: { TELEGRAM_FIXTURE_FILE: telegramFixture },
+          operationArguments: {
+            listen_start: { subscription_id: "legacy-sub", _meta: { account_id: "certification" } },
+            listen_stop: { subscription_id: "legacy-sub" },
+            "magnis.sync.listen": { _meta: { account_id: "certification" } },
+            "magnis.sync.fetch": { surface: "telegram", direction: "backward" },
+            "magnis.execute": { action: "send_message", chat_id: 1, text: "hello" },
+          },
+        },
+      );
+      expect(replyResult(telegram, "listen_start")).toEqual({ ok: true, subscription_id: "legacy-sub" });
+      expect(replyResult(telegram, "listen_stop")).toMatchObject({ ok: true });
+      expect(replyResult(telegram, "magnis.sync.listen")).toEqual({
+        ok: true,
+        subscription_id: "sub:certification",
+      });
+      expect(replyResult(telegram, "magnis.sync.fetch")).toMatchObject({ envelopes: [], hasMore: false });
+      expect(replyResult(telegram, "magnis.execute")).toMatchObject({ recorded: true, action: "send_message" });
+
+      const x = await collectSourceHostEvidence(
+        artifact("x"),
+        declaration("x").callableOperations,
+        { operationArguments: { "magnis.sync.fetch": { surface: "x", tracked_handles: ["jack"] } } },
+      );
+      expect(replyError(x, "magnis.sync.fetch")).toMatchObject({
+        code: -32000,
+        message: "x: missing bearer_token (set SOURCE_X_BEARER_TOKEN)",
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });

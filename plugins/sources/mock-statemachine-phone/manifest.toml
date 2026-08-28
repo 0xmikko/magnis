@@ -36,7 +36,7 @@ runtime_kind = "connector_sdk"
 runtime_version = "0.1.0"
 advertised_tools = ["magnis.sync.fetch"]
 callable_operations = ["initialize", "listen_start", "listen_stop", "magnis.auth.probe", "magnis.sync.fetch", "magnis.sync.listen", "tools/list"]
-scenario_ids = ["tst_cat_src_phone_001", "tst_conn_statemock_ts_001"]
+scenario_ids = ["tst_cat_src_phone_001", "tst_conn_statemock_ts_001", "tst_conn_statemock_ts_004", "tst_conn_statemock_ts_014"]
 
 [certification.account_compatibility]
 auth = "phone_code"

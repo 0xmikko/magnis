@@ -46,7 +46,7 @@ runtime_kind = "connector_sdk"
 runtime_version = "0.1.0"
 advertised_tools = ["magnis.dataset.invoke", "magnis.sync.fetch"]
 callable_operations = ["initialize", "magnis.dataset.invoke:emit_meeting", "magnis.dataset.invoke:emit_message", "magnis.execute:send_message", "magnis.sync.fetch", "tools/list"]
-scenario_ids = ["tst_conn_mockgmail_dataset_001", "tst_conn_mockgmail_dataset_003", "tst_conn_mockgmail_ts_001"]
+scenario_ids = ["tst_conn_mockgmail_dataset_001", "tst_conn_mockgmail_dataset_003", "tst_conn_mockgmail_ts_001", "tst_source_mock_gmail_execute_001"]
 
 [certification.account_compatibility]
 auth = "none"

@@ -47,7 +47,7 @@ runtime_kind = "connector_sdk"
 runtime_version = "0.1.0"
 advertised_tools = ["magnis.sync.fetch"]
 callable_operations = ["initialize", "magnis.auth.probe", "magnis.sync.fetch", "tools/list"]
-scenario_ids = ["tst_li_001", "tst_li_004"]
+scenario_ids = ["tst_li_001", "tst_li_004", "tst_linkedin_probe"]
 
 [certification.account_compatibility]
 auth = "shared_provider"

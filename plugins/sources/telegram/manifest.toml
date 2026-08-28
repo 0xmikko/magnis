@@ -52,7 +52,7 @@ runtime_kind = "custom"
 runtime_version = "1.0.0"
 advertised_tools = []
 callable_operations = ["initialize", "listen_start", "listen_stop", "magnis.auth.begin", "magnis.auth.revoke", "magnis.auth.step", "magnis.execute", "magnis.sync.fetch", "magnis.sync.listen", "tools/list"]
-scenario_ids = ["tst_tgts_flood_wire_002", "tst_tgts_fx_001", "tst_tgts_wire_012"]
+scenario_ids = ["tst_tgts_auth_001", "tst_tgts_auth_004", "tst_tgts_auth_012", "tst_tgts_exec_001", "tst_tgts_flood_wire_002", "tst_tgts_fx_001", "tst_tgts_wire_004", "tst_tgts_wire_005", "tst_tgts_wire_012"]
 
 [certification.account_compatibility]
 auth = "phone_code"
