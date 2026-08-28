@@ -33,3 +33,31 @@ keys = [
 [sync]
 mode = "poll"
 interval_secs = 600
+
+[certification]
+disposition = "admissible"
+protocol = "magnis.source/1"
+authority = "module_sync"
+release_tier = "production"
+delivery = "poll"
+poll_interval_secs = 600
+server_info_version = "0.1.0"
+server_info_name = "anysite"
+runtime_kind = "connector_sdk"
+runtime_version = "0.1.0"
+advertised_tools = ["magnis.sync.fetch"]
+callable_operations = ["initialize", "magnis.auth.probe", "magnis.sync.fetch", "tools/list"]
+scenario_ids = ["tst_li_001", "tst_li_004"]
+
+[certification.account_compatibility]
+auth = "shared_provider"
+identity_rule = "verified_provider_subject"
+credential_keys = ["api_key"]
+minted_credential_keys = []
+migrates_from = []
+
+[[certification.account_compatibility.surfaces]]
+name = "linkedin"
+cursor_terminal_null = "retain"
+progress = { target = "forward_and_backfill", continuation = "opaque_cursor", forward_checkpoint = "opaque_cursor", coverage = "tracked_identity_set", live_fence = "none" }
+receiver_interface_hash = "sha256:e2df69c769a5317e90656187b7d7a4feedc40af718f5b4d79169fe79915463fc"

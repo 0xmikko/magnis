@@ -16,3 +16,31 @@ accounts = ["default"]
 
 [sync]
 mode = "poll"
+
+[certification]
+disposition = "admissible"
+protocol = "magnis.source/1"
+authority = "module_sync"
+release_tier = "development_fixture"
+delivery = "poll"
+poll_interval_secs = 5
+server_info_version = "0.1.0"
+server_info_name = "mock-linkedin"
+runtime_kind = "connector_sdk"
+runtime_version = "0.1.0"
+advertised_tools = ["magnis.sync.fetch"]
+callable_operations = ["initialize", "magnis.auth.probe", "magnis.sync.fetch", "tools/list"]
+scenario_ids = ["tst_mockli_001", "tst_mockli_003"]
+
+[certification.account_compatibility]
+auth = "none"
+identity_rule = "manifest_account_subject"
+credential_keys = []
+minted_credential_keys = []
+migrates_from = []
+
+[[certification.account_compatibility.surfaces]]
+name = "linkedin"
+cursor_terminal_null = "retain"
+progress = { target = "forward_and_backfill", continuation = "opaque_cursor", forward_checkpoint = "opaque_cursor", coverage = "tracked_identity_set", live_fence = "none" }
+receiver_interface_hash = "sha256:e2df69c769a5317e90656187b7d7a4feedc40af718f5b4d79169fe79915463fc"

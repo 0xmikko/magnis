@@ -15,11 +15,39 @@ account_mode = "single"
 [auth]
 type = "api_key"
 
-# [spawn] stays: the shared statemachine binary is shaped by CLI flags, not the
-# bare src/main.ts convention.
+# The package-local wrapper fixes surfaces/mode before bundling. The installed
+# artifact therefore executes only its own root-local dependency-closed entry.
 [spawn]
 command = "bun"
-args = ["run", "src/main.ts", "--surfaces", "smk", "--mode", "poll"]
+args = ["run", "dist/main.js"]
 
 [sync]
 mode = "poll"
+
+[certification]
+disposition = "admissible"
+protocol = "magnis.source/1"
+authority = "module_sync"
+release_tier = "development_fixture"
+delivery = "poll"
+poll_interval_secs = 300
+server_info_version = "0.1.0"
+server_info_name = "magnis-mock-statemachine"
+runtime_kind = "connector_sdk"
+runtime_version = "0.1.0"
+advertised_tools = ["magnis.sync.fetch"]
+callable_operations = ["initialize", "magnis.auth.probe", "magnis.sync.fetch", "tools/list"]
+scenario_ids = ["tst_conn_statemock_ts_001", "tst_conn_statemock_ts_013"]
+
+[certification.account_compatibility]
+auth = "api_key"
+identity_rule = "verified_provider_subject"
+credential_keys = ["api_key"]
+minted_credential_keys = []
+migrates_from = []
+
+[[certification.account_compatibility.surfaces]]
+name = "smk"
+cursor_terminal_null = "retain"
+progress = { target = "programmable_fixture", continuation = "opaque_cursor", forward_checkpoint = "opaque_cursor", coverage = "unknown", live_fence = "none" }
+receiver_interface_hash = "sha256:8ac0db5aab4939808b93d823d4ade42d759d670c5cd38eacb6f14e56f370c990"

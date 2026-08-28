@@ -32,3 +32,37 @@ keys = [
 [sync]
 mode = "poll"
 interval_secs = 300
+
+[certification]
+disposition = "admissible"
+protocol = "magnis.source/1"
+authority = "module_sync"
+release_tier = "production"
+delivery = "poll"
+poll_interval_secs = 300
+server_info_version = "0.1.0"
+server_info_name = "x"
+runtime_kind = "connector_sdk"
+runtime_version = "0.1.0"
+advertised_tools = ["magnis.sync.fetch"]
+callable_operations = ["initialize", "magnis.auth.probe", "magnis.sync.fetch", "tools/list"]
+scenario_ids = ["tst_x_001", "tst_x_005", "tst_x_006"]
+
+[certification.account_compatibility]
+auth = "api_key"
+identity_rule = "verified_provider_subject"
+credential_keys = ["bearer_token"]
+minted_credential_keys = []
+migrates_from = []
+
+[[certification.account_compatibility.surfaces]]
+name = "contacts"
+cursor_terminal_null = "retain"
+progress = { target = "forward_and_backfill", continuation = "opaque_cursor", forward_checkpoint = "opaque_cursor", coverage = "tracked_identity_set", live_fence = "none" }
+receiver_interface_hash = "sha256:eaf8d476b7dfb12ceb729da8a36bbd52d3ec3fdc684837d06e4a81586a8acdcb"
+
+[[certification.account_compatibility.surfaces]]
+name = "x"
+cursor_terminal_null = "retain"
+progress = { target = "forward_and_backfill", continuation = "opaque_cursor", forward_checkpoint = "opaque_cursor", coverage = "tracked_identity_set", live_fence = "none" }
+receiver_interface_hash = "sha256:57be086241360fedb370e6e10de72205ec440ec9546dff534f86933d650f09d6"

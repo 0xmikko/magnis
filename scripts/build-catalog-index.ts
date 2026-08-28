@@ -10,42 +10,34 @@
 //   source (rust) → manifest.toml only in v1 (the binary ships with the app;
 //                   per-platform release binaries are planned)
 //   source (manifest-only) → manifest.toml (external spawn must be version-pinned)
-import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync, cpSync } from "node:fs";
-import { join, relative } from "node:path";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import { parse as parseToml } from "smol-toml";
+
+import {
+  discoverStagedCatalog,
+  discoverSourceReleaseManifests,
+  reconcileSourceReceiptFixtures,
+  SELECTED_CHANNEL_SOURCE_MATRIX,
+  sourceManifestReferencedFiles,
+  writeCertifiedCatalogIndexes,
+  writeSourceCertificationReceipts,
+  type AdmissibleSourceReleaseManifest,
+  type CertifiedCatalogResult,
+} from "./certify-sources";
 
 const ROOT = join(import.meta.dir, "..");
 const OUT = process.env.CATALOG_OUT ?? join(ROOT, "catalog");
 
-interface Entry {
-  kind: "module" | "source";
-  id: string;
-  version: string;
-  title: string;
-  summary: string;
-  publisher: string;
-  dev: boolean;
-  files: { path: string; sha256: string }[];
-}
-
-function sha256(buf: Buffer | string): string {
-  return createHash("sha256").update(buf).digest("hex");
-}
-function walk(dir: string): string[] {
-  const out: string[] = [];
-  for (const e of readdirSync(dir)) {
-    const p = join(dir, e);
-    if (statSync(p).isDirectory()) out.push(...walk(p));
-    else out.push(p);
-  }
-  return out;
-}
-function stagePackage(kind: string, id: string, stage: (dst: string) => void): Entry["files"] {
-  const dst = join(OUT, "packages", kind, id);
+function stagePackage(
+  catalogOut: string,
+  kind: string,
+  id: string,
+  stage: (dst: string) => void,
+): void {
+  const dst = join(catalogOut, "packages", kind, id);
   mkdirSync(dst, { recursive: true });
   stage(dst);
-  return walk(dst).map((p) => ({ path: relative(dst, p), sha256: sha256(readFileSync(p)) }));
 }
 /** The v3 package card — top-level manifest fields (modules and sources alike). */
 interface Card {
@@ -56,83 +48,126 @@ interface Card {
   publisher?: string;
 }
 
-rmSync(OUT, { recursive: true, force: true });
-mkdirSync(join(OUT, "packages"), { recursive: true });
-const packages: Entry[] = [];
-
-// ── modules: prebuilt dist (self-contained manifest v3 packages) ─────────────
-const distModules = join(ROOT, "plugins_dist", "modules");
-if (!existsSync(distModules)) {
-  console.error("plugins_dist missing — run `bun scripts/build-plugins.ts` first");
-  process.exit(1);
-}
-for (const id of readdirSync(distModules).sort()) {
-  const src = join(ROOT, "plugins", "modules", id);
-  // Manifest v3: the catalog card (title/summary/publisher) lives top-level.
-  const manifest = parseToml(readFileSync(join(src, "manifest.toml"), "utf8")) as Card;
-  if (!manifest.version) {
-    console.error(`module '${id}': manifest.toml has no version — refusing`);
-    process.exit(1);
-  }
-  const files = stagePackage("module", id, (dst) => {
-    cpSync(join(distModules, id), dst, { recursive: true });
-  });
-  packages.push({
-    kind: "module", id, version: manifest.version,
-    title: manifest.title ?? id,
-    summary: manifest.summary ?? "",
-    publisher: manifest.publisher ?? "",
-    dev: manifest.dev === true,
-    files,
-  });
+export interface BuildCatalogOptions {
+  repoRoot: string;
+  catalogOut: string;
+  generatedFrom: string;
+  receiptInputDir: string;
+  includeModules?: boolean;
 }
 
-// ── sources ──────────────────────────────────────────────────────────────────
-const sourcesRoot = join(ROOT, "plugins", "sources");
-for (const id of readdirSync(sourcesRoot).sort()) {
-  if (id.startsWith("_")) continue;
-  const dir = join(sourcesRoot, id);
-  const manifestPath = join(dir, "manifest.toml");
-  if (!existsSync(manifestPath)) continue;
-  // Manifest v3: the catalog card (title/summary/publisher) lives top-level.
-  const manifest = parseToml(readFileSync(manifestPath, "utf8")) as Card;
-  const version = manifest.version;
-  if (!version) {
-    console.error(`source '${id}': manifest.toml has no version — refusing`);
-    process.exit(1);
+/** Stage one admitted Source from its authored manifest snapshot. Every path
+ * referenced by the manifest is copied verbatim before the dependency-closed
+ * executable is built.
+ *
+ * @tested-by: tst_cat_src_cert_001
+ * @invariant: the package contains every manifest reference under the same
+ * root-relative path the immutable manifest declares.
+ */
+export function stageSourcePackage(
+  release: AdmissibleSourceReleaseManifest,
+  destination: string,
+): void {
+  const { id, root: sourceRoot, manifestPath, manifest } = release;
+  mkdirSync(destination, { recursive: true });
+  cpSync(manifestPath, join(destination, "manifest.toml"));
+  if (existsSync(join(sourceRoot, "config.default.toml"))) {
+    cpSync(join(sourceRoot, "config.default.toml"), join(destination, "config.default.toml"));
   }
-  const isTs = existsSync(join(dir, "src", "main.ts"));
-  const files = stagePackage("source", id, (dst) => {
-    cpSync(manifestPath, join(dst, "manifest.toml"));
-    if (existsSync(join(dir, "config.default.toml"))) cpSync(join(dir, "config.default.toml"), join(dst, "config.default.toml"));
-    if (existsSync(join(dir, "auth"))) cpSync(join(dir, "auth"), join(dst, "auth"), { recursive: true });
+  if (existsSync(join(sourceRoot, "auth"))) {
+    cpSync(join(sourceRoot, "auth"), join(destination, "auth"), { recursive: true });
+  }
+  for (const reference of sourceManifestReferencedFiles(id, manifest)) {
+    const source = join(sourceRoot, ...reference.split("/"));
+    const target = join(destination, ...reference.split("/"));
+    mkdirSync(join(target, ".."), { recursive: true });
+    cpSync(source, target);
+  }
     // v3 package card assets: the markdown detail page + optional icon.
-    if (existsSync(join(dir, "README.md"))) cpSync(join(dir, "README.md"), join(dst, "README.md"));
-    for (const icon of ["icon.svg", "icon.png"]) {
-      if (existsSync(join(dir, icon))) cpSync(join(dir, icon), join(dst, icon));
+  if (existsSync(join(sourceRoot, "README.md"))) {
+    cpSync(join(sourceRoot, "README.md"), join(destination, "README.md"));
+  }
+  for (const icon of ["icon.svg", "icon.png"]) {
+    if (existsSync(join(sourceRoot, icon))) {
+      cpSync(join(sourceRoot, icon), join(destination, icon));
     }
-    if (isTs) {
-      // dependency-closed single-file bundle (../../_sdk can't resolve in a store)
-      const r = Bun.spawnSync(["bun", "build", join(dir, "src", "main.ts"), "--target=bun", "--outfile", join(dst, "dist", "main.js")]);
-      if (r.exitCode !== 0) {
-        console.error(`bun build failed for source '${id}':\n${r.stderr.toString("utf8")}`);
-        process.exit(1);
-      }
+  }
+  const entry = join(sourceRoot, "src", "main.ts");
+  if (!existsSync(entry)) {
+    throw new Error(`source '${id}' has no root-local src/main.ts to bundle`);
+  }
+  const result = Bun.spawnSync([
+    "bun",
+    "build",
+    entry,
+    "--target=bun",
+    "--outfile",
+    join(destination, "dist", "main.js"),
+  ]);
+  if (result.exitCode !== 0) {
+    throw new Error(`bun build failed for source '${id}':\n${result.stderr.toString("utf8")}`);
+  }
+}
+
+/** Assemble the exact release snapshot. Source discovery happens once and its
+ * sorted result drives staging; explicit inadmissible entries are reported and
+ * never appear in either index.
+ */
+export async function buildCatalog(options: BuildCatalogOptions): Promise<CertifiedCatalogResult> {
+  const includeModules = options.includeModules ?? true;
+  rmSync(options.catalogOut, { recursive: true, force: true });
+  mkdirSync(join(options.catalogOut, "packages"), { recursive: true });
+
+  if (includeModules) {
+    const distModules = join(options.repoRoot, "plugins_dist", "modules");
+    if (!existsSync(distModules)) {
+      throw new Error("plugins_dist missing — run `bun scripts/build-plugins.ts` first");
     }
-  });
-  packages.push({
-    kind: "source", id, version,
-    title: manifest.title ?? id,
-    summary: manifest.summary ?? "",
-    publisher: manifest.publisher ?? "",
-    dev: manifest.dev === true,
-    files,
+    for (const id of readdirSync(distModules).sort()) {
+      const sourceRoot = join(options.repoRoot, "plugins", "modules", id);
+      const manifest = parseToml(
+        readFileSync(join(sourceRoot, "manifest.toml"), "utf8"),
+      ) as Card;
+      if (!manifest.version) throw new Error(`module '${id}': manifest.toml has no version`);
+      stagePackage(options.catalogOut, "module", id, (destination) => {
+        cpSync(join(distModules, id), destination, { recursive: true });
+      });
+    }
+  }
+
+  const sourceSnapshot = discoverSourceReleaseManifests(
+    join(options.repoRoot, "plugins", "sources"),
+  );
+  for (const release of sourceSnapshot) {
+    if (release.disposition === "inadmissible") {
+      console.warn(`catalog: source '${release.id}' inadmissible: ${release.reason}`);
+      continue;
+    }
+    stagePackage(options.catalogOut, "source", release.id, (destination) => {
+      stageSourcePackage(release, destination);
+    });
+  }
+
+  const discovered = discoverStagedCatalog(options.catalogOut);
+  const currentReceipts = await writeSourceCertificationReceipts(discovered, options.receiptInputDir);
+  reconcileSourceReceiptFixtures(options.receiptInputDir, [
+    ...currentReceipts.map(({ packageHash }) => packageHash),
+    ...SELECTED_CHANNEL_SOURCE_MATRIX.map(({ packageHash }) => packageHash),
+  ]);
+  return writeCertifiedCatalogIndexes({
+    catalogOut: options.catalogOut,
+    generatedFrom: options.generatedFrom,
+    receiptInputDir: options.receiptInputDir,
+    discovered,
   });
 }
 
-writeFileSync(join(OUT, "index.json"), JSON.stringify({
-  schema_version: 1,
-  generated_from: process.env.GITHUB_SHA ?? "local",
-  packages,
-}, null, 2));
-console.log(`catalog: ${String(packages.length)} packages → ${OUT}`);
+if (import.meta.main) {
+  const result = await buildCatalog({
+    repoRoot: ROOT,
+    catalogOut: OUT,
+    generatedFrom: process.env.GITHUB_SHA ?? "local",
+    receiptInputDir: process.env.SOURCE_RECEIPTS_IN ?? join(ROOT, "dist", "receipts"),
+  });
+  console.log(`catalog: ${String(result.discovered.length)} certified packages → ${OUT}`);
+}

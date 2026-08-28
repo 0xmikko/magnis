@@ -15,11 +15,51 @@ account_mode = "single"
 [auth]
 type = "oauth2"
 
-# [spawn] stays: the shared statemachine binary is shaped by CLI flags, not the
-# bare src/main.ts convention.
+# The package-local wrapper fixes surfaces/mode before bundling. The installed
+# artifact therefore executes only its own root-local dependency-closed entry.
 [spawn]
 command = "bun"
-args = ["run", "src/main.ts", "--surfaces", "smo-a,smo-b,smo-c", "--mode", "poll"]
+args = ["run", "dist/main.js"]
 
 [sync]
 mode = "poll"
+
+[certification]
+disposition = "admissible"
+protocol = "magnis.source/1"
+authority = "module_sync"
+release_tier = "development_fixture"
+delivery = "poll"
+poll_interval_secs = 300
+server_info_version = "0.1.0"
+server_info_name = "magnis-mock-statemachine"
+runtime_kind = "connector_sdk"
+runtime_version = "0.1.0"
+advertised_tools = ["magnis.sync.fetch"]
+callable_operations = ["initialize", "magnis.auth.probe", "magnis.sync.fetch", "tools/list"]
+scenario_ids = ["tst_conn_statemock_ts_001", "tst_conn_statemock_ts_013"]
+
+[certification.account_compatibility]
+auth = "oauth2"
+identity_rule = "verified_provider_subject"
+credential_keys = ["refresh_token"]
+minted_credential_keys = ["refresh_token"]
+migrates_from = []
+
+[[certification.account_compatibility.surfaces]]
+name = "smo-a"
+cursor_terminal_null = "retain"
+progress = { target = "programmable_fixture", continuation = "opaque_cursor", forward_checkpoint = "opaque_cursor", coverage = "unknown", live_fence = "none" }
+receiver_interface_hash = "sha256:f2b5524f212b9a9348fba847f64c2923f4f9d03d21e21e9f18e1b96228cab369"
+
+[[certification.account_compatibility.surfaces]]
+name = "smo-b"
+cursor_terminal_null = "retain"
+progress = { target = "programmable_fixture", continuation = "opaque_cursor", forward_checkpoint = "opaque_cursor", coverage = "unknown", live_fence = "none" }
+receiver_interface_hash = "sha256:52758c92b7b75066133ae5f70109433d8da2a61c810e9cd04111eb30ad72b556"
+
+[[certification.account_compatibility.surfaces]]
+name = "smo-c"
+cursor_terminal_null = "retain"
+progress = { target = "programmable_fixture", continuation = "opaque_cursor", forward_checkpoint = "opaque_cursor", coverage = "unknown", live_fence = "none" }
+receiver_interface_hash = "sha256:7b3044f72c9c6149ea97811865f6396f3fe66824814236df76e2cc050eb122e5"
