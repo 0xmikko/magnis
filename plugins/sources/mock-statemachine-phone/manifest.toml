@@ -15,11 +15,38 @@ account_mode = "single"
 [auth]
 type = "phone_code"
 
-# [spawn] stays: the shared statemachine binary is shaped by CLI flags, not the
-# bare src/main.ts convention.
+# The package-local wrapper fixes surfaces/mode before bundling. The installed
+# artifact therefore executes only its own root-local dependency-closed entry.
 [spawn]
 command = "bun"
-args = ["run", "src/main.ts", "--surfaces", "smp", "--mode", "push"]
+args = ["run", "dist/main.js"]
 
 [sync]
 mode = "push"
+
+[certification]
+disposition = "admissible"
+protocol = "magnis.source/1"
+authority = "module_sync"
+release_tier = "development_fixture"
+delivery = "push"
+server_info_version = "0.1.0"
+server_info_name = "magnis-mock-statemachine"
+runtime_kind = "connector_sdk"
+runtime_version = "0.1.0"
+advertised_tools = ["magnis.sync.fetch"]
+callable_operations = ["initialize", "listen_start", "listen_stop", "magnis.auth.probe", "magnis.sync.fetch", "magnis.sync.listen", "tools/list"]
+scenario_ids = ["tst_cat_src_phone_001", "tst_conn_statemock_ts_001", "tst_conn_statemock_ts_004", "tst_conn_statemock_ts_014"]
+
+[certification.account_compatibility]
+auth = "phone_code"
+identity_rule = "verified_provider_subject"
+credential_keys = ["session"]
+minted_credential_keys = ["session"]
+migrates_from = []
+
+[[certification.account_compatibility.surfaces]]
+name = "smp"
+cursor_terminal_null = "retain"
+progress = { target = "programmable_fixture", continuation = "opaque_cursor", forward_checkpoint = "opaque_cursor", coverage = "unknown", live_fence = "subscription_ack" }
+receiver_interface_hash = "sha256:461bdfa16713babbf429e488f0ade5e9e03afad6bb09cb9ddc258056086a83fb"
