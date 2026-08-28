@@ -472,6 +472,31 @@ function decodeAccountCompatibility(
   return { hash: accountCompatibilityHash(input), migratesFrom, input };
 }
 
+function assertManifestAuthCoherence(
+  manifest: Record<string, unknown>,
+  declaredAuth: SourceAccountCompatibilityInput["auth"],
+  label: string,
+): void {
+  const manifestAuth = manifest.auth;
+  if (manifestAuth === undefined) {
+    if (declaredAuth !== null) {
+      throw new Error(`${label} has no manifest auth but certifies account auth ${declaredAuth}`);
+    }
+    return;
+  }
+  const manifestAuthRecord = requiredRecord(manifestAuth, `${label} auth`);
+  const manifestAuthKind = oneOf(
+    manifestAuthRecord.type,
+    ["api_key", "oauth2", "phone_code", "shared_provider"] as const,
+    `${label} auth.type`,
+  );
+  if (manifestAuthKind !== declaredAuth) {
+    throw new Error(
+      `${label} manifest auth ${manifestAuthKind} does not match certification account auth ${String(declaredAuth)}`,
+    );
+  }
+}
+
 export function decodeSourceCertificationDeclaration(
   sourceId: string,
   manifest: Record<string, unknown>,
@@ -541,27 +566,7 @@ export function decodeSourceCertificationDeclaration(
     false,
   );
   const accountCompatibility = decodeAccountCompatibility(sourceId, raw);
-  const manifestAuth = manifest.auth;
-  const declaredAuth = accountCompatibility.input.auth;
-  if (manifestAuth === undefined) {
-    if (declaredAuth !== null) {
-      throw new Error(
-        `source '${sourceId}' has no manifest auth but certifies account auth ${declaredAuth}`,
-      );
-    }
-  } else {
-    const manifestAuthRecord = requiredRecord(manifestAuth, `source '${sourceId}' auth`);
-    const manifestAuthKind = oneOf(
-      manifestAuthRecord.type,
-      ["api_key", "oauth2", "phone_code", "shared_provider"] as const,
-      `source '${sourceId}' auth.type`,
-    );
-    if (manifestAuthKind !== declaredAuth) {
-      throw new Error(
-        `source '${sourceId}' manifest auth ${manifestAuthKind} does not match certification account auth ${String(declaredAuth)}`,
-      );
-    }
-  }
+  assertManifestAuthCoherence(manifest, accountCompatibility.input.auth, `source '${sourceId}'`);
   const interval = raw.poll_interval_secs;
   const pollIntervalSecs = interval === undefined ? null : interval;
   if (
@@ -792,8 +797,8 @@ export function discoverStagedCatalog(catalogOut: string): readonly StagedCatalo
   ];
 }
 
-/** Inspect one exact previously published Source tree using a declaration from
- * the canonical current matrix. The old manifest is never rewritten and its
+/** Inspect one exact previously published Source tree using its explicit
+ * historical declaration. The old manifest is never rewritten and its
  * package/definition hashes remain identities of the selected-channel bytes. */
 export function inspectRetroactiveSourceArtifact(
   root: string,
@@ -804,6 +809,11 @@ export function inspectRetroactiveSourceArtifact(
   if (!isRecord(parsed)) throw new Error(`retroactive Source '${root}' manifest must be a table`);
   const id = requiredString(parsed, "id", "retroactive Source manifest");
   if (!SOURCE_ID_PATTERN.test(id)) throw new Error(`retroactive Source '${id}' has an invalid id`);
+  assertManifestAuthCoherence(
+    parsed,
+    declaration.accountCompatibility.input.auth,
+    `retroactive Source '${id}'`,
+  );
   assertStagedSourceArtifactClosure(id, root, parsed);
   const files = sortedFiles(root).map((path) => ({
     path: relative(root, path).replaceAll("\\", "/"),

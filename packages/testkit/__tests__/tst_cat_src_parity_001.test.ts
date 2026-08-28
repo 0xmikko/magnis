@@ -34,8 +34,10 @@ import {
   decodeSourceCertificationDeclaration,
   discoverSourceReleaseManifests,
   discoverStagedCatalog,
+  inspectRetroactiveSourceArtifact,
   mintSourceCertificationReceipt,
   SELECTED_CHANNEL_SOURCE_MATRIX,
+  type SourceCertificationDeclaration,
   writeSelectedChannelSourceReceipts,
 } from "../../../scripts/certify-sources";
 import { stageSourcePackage } from "../../../scripts/build-catalog-index";
@@ -565,6 +567,21 @@ function sorted(values: readonly string[]): readonly string[] {
   return [...values].sort();
 }
 
+function declarationWithAuth(
+  declaration: SourceCertificationDeclaration,
+  auth: AuthKind,
+): SourceCertificationDeclaration {
+  const input = { ...declaration.accountCompatibility.input, auth };
+  return {
+    ...declaration,
+    accountCompatibility: {
+      ...declaration.accountCompatibility,
+      hash: accountCompatibilityHash(input),
+      input,
+    },
+  };
+}
+
 async function sdkCall(
   config: ConnectorConfig,
   id: number,
@@ -995,6 +1012,44 @@ describe("tst_cat_src_parity_001 current v1 golden matrix", () => {
         ok: true,
         subscription_id: "sub:certification",
       });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("retroactive manifest auth must match the explicit historical declaration", () => {
+    const root = mkdtempSync(join(tmpdir(), "magnis-selected-auth-"));
+    const selectedRoot = join(root, "sources");
+    try {
+      materializeSelectedChannelFixture(selectedRoot);
+      const historical = (id: string): SourceCertificationDeclaration => {
+        const selected = SELECTED_CHANNEL_SOURCE_MATRIX.find((entry) => entry.id === id);
+        if (selected === undefined) throw new Error(`missing historical declaration '${id}'`);
+        return selected.declaration;
+      };
+
+      expect(() => inspectRetroactiveSourceArtifact(
+        join(selectedRoot, "anysite"),
+        declarationWithAuth(historical("anysite"), "api_key"),
+      )).toThrow(
+        "retroactive Source 'anysite' manifest auth shared_provider does not match certification account auth api_key",
+      );
+      expect(() => inspectRetroactiveSourceArtifact(
+        join(selectedRoot, "anysite"),
+        declarationWithAuth(historical("anysite"), null),
+      )).toThrow(
+        "retroactive Source 'anysite' manifest auth shared_provider does not match certification account auth null",
+      );
+      expect(() => inspectRetroactiveSourceArtifact(
+        join(selectedRoot, "local"),
+        declarationWithAuth(historical("local"), "api_key"),
+      )).toThrow(
+        "retroactive Source 'local' has no manifest auth but certifies account auth api_key",
+      );
+      expect(inspectRetroactiveSourceArtifact(
+        join(selectedRoot, "local"),
+        historical("local"),
+      ).certification?.accountCompatibility.input.auth).toBeNull();
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
