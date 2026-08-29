@@ -123,6 +123,7 @@ describe("X exact-artifact certification", () => {
         "tst_x_006",
         "tst_x_cert_001",
         "tst_x_cert_002",
+        "tst_x_cert_003",
         "tst_x_probe",
       ],
     });
@@ -221,5 +222,53 @@ describe("X exact-artifact certification", () => {
       message: "rate limited; retry_after=37",
       data: { retry_after: 37 },
     });
+  });
+
+  /**
+   * @test-id: tst_x_cert_003
+   * @scenario: scn_x_v1_selected_fixture_fails_closed_003
+   * @covers: plugins/sources/x/src/fixture.ts::loadFixture
+   * @deterministic: yes
+   * @fixtures: nonexistent and malformed explicitly selected X fixture files
+   *
+   * Test environment: dependency-closed staged X artifact over real stdio.
+   * Clients: @magnis/testkit Source host evidence driver.
+   * Mocks: only the explicitly selected invalid fixture paths.
+   * Data: one absent file and one invalid JSON document.
+   */
+  test("tst_x_cert_003 selected missing or malformed fixtures fail closed", async () => {
+    const artifact = stageExactXArtifact();
+    const malformedFixture = join(artifact.fixtureRoot, "x-malformed-fixture.json");
+    writeFileSync(malformedFixture, "{\"users\":");
+
+    for (const fixtureFile of [
+      join(artifact.fixtureRoot, "x-missing-fixture.json"),
+      malformedFixture,
+    ]) {
+      const evidence = await collectSourceHostEvidence(
+        artifact.root,
+        ["initialize", "magnis.sync.fetch", "tools/list"],
+        {
+          fixtureEnvironment: { X_FIXTURE_FILE: fixtureFile },
+          operationArguments: {
+            "magnis.sync.fetch": {
+              surface: "x",
+              tracked_handles: ["jack"],
+              cursor: 41,
+              _meta: { bearer_token: "cert-key" },
+            },
+          },
+        },
+      );
+
+      expect(evidence.operationProbes["magnis.sync.fetch"]).toEqual({
+        jsonrpc: "2.0",
+        id: 2,
+        error: {
+          code: -32000,
+          message: `x fixture '${fixtureFile}' cannot be decoded`,
+        },
+      });
+    }
   });
 });
