@@ -100,6 +100,7 @@ const SDK_OPERATIONS = ["initialize", "magnis.sync.fetch", "tools/list"] as cons
 
 const PROVIDER_SCENARIOS: Readonly<Record<string, readonly { id: string; path: string }[]>> = {
   anysite: [
+    { id: "tst_anysite_cert_001", path: "plugins/sources/anysite/src/__tests__/certification.test.ts" },
     { id: "tst_li_001", path: "plugins/sources/anysite/src/surfaces/linkedin/fetch.test.ts" },
     { id: "tst_li_004", path: "plugins/sources/anysite/src/surfaces/linkedin/fetch.test.ts" },
     { id: "tst_linkedin_probe", path: "plugins/sources/anysite/src/probe.test.ts" },

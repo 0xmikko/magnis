@@ -5,12 +5,22 @@
 
 import type { ConnectorConfig } from "@magnis/connector-sdk";
 import type { FetchLike } from "./api";
+import { fixtureFetch } from "./fixture";
 import { fetchLinkedIn } from "./surfaces/linkedin/fetch";
 import { probeLinkedInAuth } from "./probe";
 
+/**
+ * @tested-by: tst_anysite_cert_001
+ * @invariant: an explicit certification fixture replaces the provider
+ * transport completely; ordinary runtime construction retains live fetch.
+ */
+function runtimeFetch(): FetchLike {
+  return process.env.ANYSITE_FIXTURE_FILE === undefined ? fetch : fixtureFetch;
+}
+
 /** Build the anysite connector config. Read-only: the shared-provider key
  * arrives via _meta; this fetches tracked KOL profiles + their posts. */
-export function buildConnectorConfig(fetchFn: FetchLike = fetch): ConnectorConfig {
+export function buildConnectorConfig(fetchFn: FetchLike = runtimeFetch()): ConnectorConfig {
   return {
     name: "anysite",
     version: "0.1.0",
