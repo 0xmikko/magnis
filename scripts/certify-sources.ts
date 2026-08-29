@@ -16,7 +16,10 @@ import { join, relative } from "node:path";
 import { parse as parseToml } from "smol-toml";
 
 import type { SourceCertificationReceipt } from "../packages/connector-sdk/contract/source";
-import { collectSourceHostEvidence } from "../packages/testkit/host-driver";
+import {
+  collectSourceHostEvidence,
+  type SourceHostEvidence,
+} from "../packages/testkit/host-driver";
 
 import {
   accountCompatibilityHash,
@@ -932,6 +935,37 @@ function advertisedToolNames(entry: StagedCatalogPackage, value: unknown): reado
   }).sort();
 }
 
+/** Execute certification evidence only while the staged package retains the
+ * exact immutable identity already assigned to its archive. Providers run
+ * from that tree, so both boundaries must be checked with the canonical app
+ * hash instead of trusting only the runtime entrypoint hash.
+ *
+ * @tested-by: tst_cat_src_cert_002
+ * @invariant: provider evidence cannot certify bytes different from the
+ * published package archive.
+ */
+async function collectImmutableSourceHostEvidence(
+  entry: StagedCatalogPackage,
+  callableOperations: readonly string[],
+): Promise<SourceHostEvidence> {
+  const assertPackageHash = (phase: "before" | "during"): void => {
+    const observed = sourceArtifactPackageHash(entry.root);
+    if (observed !== entry.packageHash) {
+      throw new Error(
+        `source '${entry.id}' staged package changed ${phase} certification evidence: ` +
+          `expected ${entry.packageHash}, received ${observed}`,
+      );
+    }
+  };
+
+  assertPackageHash("before");
+  try {
+    return await collectSourceHostEvidence(entry.root, callableOperations);
+  } finally {
+    assertPackageHash("during");
+  }
+}
+
 /** Mint a receipt only from a real dependency-closed stdio execution. Provider
  * scenario tests own semantic goldens; this probe additionally proves that the
  * exact artifact advertises its declared initialize shape and has a dispatcher
@@ -943,7 +977,10 @@ export async function mintSourceCertificationReceipt(
   if (entry.kind !== "source" || declaration === null) {
     throw new Error(`package '${entry.id}' is not a certifiable Source`);
   }
-  const evidence = await collectSourceHostEvidence(entry.root, declaration.callableOperations);
+  const evidence = await collectImmutableSourceHostEvidence(
+    entry,
+    declaration.callableOperations,
+  );
   const initialize = sourceInitializeEvidence(entry, evidence.initialize);
   const tools = advertisedToolNames(entry, evidence.toolsList);
   if (JSON.stringify(tools) !== JSON.stringify(declaration.advertisedTools)) {

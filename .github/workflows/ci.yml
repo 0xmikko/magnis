@@ -70,8 +70,11 @@ jobs:
           # Every asset is replaced, so a package withdrawn from the catalog
           # stops being served instead of lingering as an orphan a stale
           # index no longer mentions.
-          gh release delete "$TAG" --cleanup-tag --yes || true
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release delete "$TAG" --cleanup-tag --yes
+          fi
           gh release create "$TAG" \
+            --target "$GITHUB_SHA" \
             --title "Plugin catalog (${TAG})" \
             --notes "Built from ${GITHUB_SHA}. Fetched anonymously by the Magnis app." \
             catalog/index.json catalog/index.v2.json catalog/onboarding.json \

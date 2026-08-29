@@ -18,6 +18,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 const ROOT = join(import.meta.dir, "..");
 const SHA = "0123456789abcdef0123456789abcdef01234567";
 const SLUG = "owner/repo";
+const CI_WORKFLOW = join(ROOT, ".github", "workflows", "ci.yml");
 
 interface Entry {
   kind: string;
@@ -225,4 +226,33 @@ describe("tst_pub_catalog_index_001", () => {
       );
     }
   }, 300_000);
+});
+
+/**
+ * @test-id: tst_pub_catalog_release_001
+ * @scenario: scn_catalog_release_provenance_001
+ * @covers: .github/workflows/ci.yml::catalog Publish the channel
+ * @deterministic: yes
+ * @fixtures: tracked GitHub Actions workflow
+ *
+ * Test environment: static release workflow inspection.
+ * Clients: direct file read.
+ * Mocks: none.
+ * Data: .github/workflows/ci.yml.
+ */
+describe("tst_pub_catalog_release_001 catalog release provenance", () => {
+  test("replaces an existing channel without masking deletion and targets the built commit", () => {
+    const workflow = readFileSync(CI_WORKFLOW, "utf8");
+
+    expect(workflow).toContain(
+      'if gh release view "$TAG" >/dev/null 2>&1; then\n' +
+        '            gh release delete "$TAG" --cleanup-tag --yes\n' +
+        "          fi",
+    );
+    expect(workflow).not.toContain('gh release delete "$TAG" --cleanup-tag --yes || true');
+    expect(workflow).toContain(
+      'gh release create "$TAG" \\\n' +
+        '            --target "$GITHUB_SHA" \\',
+    );
+  });
 });

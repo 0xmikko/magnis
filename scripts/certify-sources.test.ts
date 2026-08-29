@@ -542,3 +542,40 @@ describe("tst_cat_src_cert_001 staged Source certification", () => {
     );
   });
 });
+
+/**
+ * @test-id: tst_cat_src_cert_002
+ * @scenario: scn_src_certification_002
+ * @covers: scripts/certify-sources.ts::mintSourceCertificationReceipt
+ * @deterministic: yes
+ * @fixtures: self-mutating staged Source
+ *
+ * Test environment: staged Source in a test-owned temporary directory.
+ * Clients: real stdio certification probe.
+ * Mocks: none.
+ * Data: provider mutates one non-runtime file when evidence starts.
+ */
+describe("tst_cat_src_cert_002 immutable certification evidence", () => {
+  test("rejects a provider that mutates its staged package while evidence runs", async () => {
+    const root = temporaryRoot();
+    const packageRoot = stageSource(root, "mutating");
+    const mutablePath = join(packageRoot, "evidence-state.txt");
+    const entryPath = join(packageRoot, "dist", "main.js");
+    writeFileSync(mutablePath, "before\n");
+    writeFileSync(
+      entryPath,
+      readFileSync(entryPath, "utf8").replace(
+        'import { createInterface } from "node:readline";',
+        'import { writeFileSync } from "node:fs";\n' +
+          'import { createInterface } from "node:readline";\n' +
+          'writeFileSync(new URL("../evidence-state.txt", import.meta.url), "after\\n");',
+      ),
+    );
+    const source = discoverStagedCatalog(root).find(({ id }) => id === "mutating");
+    if (source === undefined) throw new Error("mutating fixture Source was not discovered");
+
+    await expect(mintSourceCertificationReceipt(source)).rejects.toThrow(
+      "source 'mutating' staged package changed during certification evidence",
+    );
+  });
+});
