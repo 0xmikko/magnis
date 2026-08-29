@@ -15,7 +15,7 @@ version = "1.0.0"
 title = "X"
 summary = "Sync posts from the X (Twitter) accounts you track."
 publisher = "ai.magnis"
-surfaces = ["x", "contacts"]
+surfaces = ["x"]
 account_mode = "single"
 
 [auth]
@@ -54,12 +54,6 @@ identity_rule = "verified_provider_subject"
 credential_keys = ["bearer_token"]
 minted_credential_keys = []
 migrates_from = []
-
-[[certification.account_compatibility.surfaces]]
-name = "contacts"
-cursor_terminal_null = "retain"
-progress = { target = "forward_and_backfill", continuation = "opaque_cursor", forward_checkpoint = "opaque_cursor", coverage = "tracked_identity_set", live_fence = "none" }
-receiver_interface_hash = "sha256:eaf8d476b7dfb12ceb729da8a36bbd52d3ec3fdc684837d06e4a81586a8acdcb"
 
 [[certification.account_compatibility.surfaces]]
 name = "x"

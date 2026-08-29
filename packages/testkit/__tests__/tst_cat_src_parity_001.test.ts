@@ -463,10 +463,7 @@ const GOLDEN_PROVIDERS: readonly GoldenProvider[] = [
     credentialKeys: ["bearer_token"],
     mintedCredentialKeys: [],
     migratesFrom: [],
-    surfaces: [
-      surface("contacts", "retain", "forward_and_backfill", "tracked_identity_set"),
-      surface("x", "retain", "forward_and_backfill", "tracked_identity_set"),
-    ],
+    surfaces: [surface("x", "retain", "forward_and_backfill", "tracked_identity_set")],
   },
 ];
 

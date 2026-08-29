@@ -1,7 +1,7 @@
 import type { ComponentType, ReactNode } from "react";
 import type { StoreApi } from "zustand/vanilla";
 import type { IconName } from "../../components/ui/Icon";
-import type { AvatarColor, FacetSummary, LinkedEntitySummary } from "./sharedTypes";
+import type { AvatarColor, LinkedEntitySummary } from "./sharedTypes";
 import type { AgentRendererProps, AllowlistTarget, EntityRendererProps, ModuleAgentContribution, ToolCallRendererPayload } from "../../runtime/contracts/agent";
 import type { AppRuntime } from "../../runtime/contracts/runtime";
 import type { EntityLinkContribution } from "../../runtime/contracts/module";
@@ -58,7 +58,7 @@ export interface RightPaneProps {
     readonly runtime: AppRuntime;
 }
 export type { ContextMenuEntry } from "../../components/ui/ContextMenu";
-export type ModuleId = "companies" | "contacts" | "email" | "episodes" | "file" | "groups" | "inbox" | "meetings" | "notes" | "projects" | "settings" | "telegram" | "triggers" | "linkedin" | "x";
+export type ModuleId = "companies" | "contacts" | "email" | "episodes" | "file" | "groups" | "meetings" | "notes" | "projects" | "settings" | "telegram" | "triggers" | "linkedin" | "x";
 export interface ModuleConfig {
     readonly id: ModuleId;
     readonly title: string;
@@ -72,7 +72,7 @@ export interface ModuleConfig {
     readonly primaryEntityType: string;
     /** Override auto-generated schema IDs. When set, these are used instead of
      *  `${id}.${entityType}` for invalidation and entity renderers.
-     *  Use when a module displays entities owned by another module (e.g. Inbox → episodes.episode). */
+     *  Use when a module displays entities owned by another module. */
     readonly schemas?: readonly string[];
     /** Per-entity-type visual info. Key = entity type suffix.
      *  e.g. { person: { icon: "user", label: "Contact" }, address: { icon: "mail", label: "Address", tabLabel: "Addresses" } }
@@ -90,7 +90,7 @@ export interface ModuleConfig {
          *  shows the chevron for this payload. */
         readonly hasMore?: (data: Readonly<Record<string, unknown>>, runtime: AppRuntime) => boolean;
     }>>;
-    /** Extra params merged into every list RPC call (e.g. status filter for inbox) */
+    /** Extra params merged into every list RPC call (e.g. a status filter) */
     readonly rpcListParams?: Readonly<Record<string, unknown>>;
     /** RPC method names — default: `${id}.list`, `${id}.get`, etc. */
     readonly rpc?: Partial<{
@@ -113,7 +113,6 @@ export interface ModuleConfig {
      *  emails / phones / birthday in a Google-Contacts-style column. */
     readonly DetailsTabContent?: ComponentType<{
         readonly entityId: string;
-        readonly facets: readonly FacetSummary[];
         readonly linkedEntities: readonly LinkedEntitySummary[];
     }>;
     /** Optional predicate — when present and returns false for the
@@ -122,7 +121,6 @@ export interface ModuleConfig {
      *  companies: with zero enrichment the Overview tab degenerates
      *  to just a description, so we fall back to the plain layout. */
     readonly shouldShowDetailsTab?: (args: {
-        readonly facets: readonly FacetSummary[];
         readonly linkedEntities: readonly LinkedEntitySummary[];
     }) => boolean;
     /**
@@ -164,10 +162,6 @@ export interface ModuleConfig {
     readonly extraSetup?: (runtime: AppRuntime) => void | (() => void);
     /** Transform backend response to ListItem */
     readonly mapListItem?: (item: Record<string, unknown>) => ListItem;
-    /** Facet schema for description tab (default: `${id}.description`) */
-    readonly descriptionSchema?: string;
-    /** Facet schema for memory tab (default: `${id}.memory`) */
-    readonly memorySchema?: string;
     /** Agent tool call renderers */
     readonly toolCallRenderers?: readonly ToolCallRendererRegistration[];
     /** Allowlist target extractor for agent tool approval */

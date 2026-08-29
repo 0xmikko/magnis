@@ -1,0 +1,113 @@
+# Magnis desktop shell
+
+`apps/desktop` is the public Tauri owner of the local application lifecycle.
+It owns embedded PostgreSQL, the data root, loopback ports, the tray, the
+single-instance rule and reverse shutdown. It does not build, vendor or inspect
+a private Magnis checkout.
+
+The backend executable, migrations, runtime data and compiled web application
+arrive as one immutable Magnis runtime archive. The public contract is
+[runtime-artifact-contract.md](../../docs/runtime-artifact-contract.md).
+
+## Required runtime input
+
+Every local build or package operation requires all three explicit values:
+
+- `MAGNIS_RUNTIME_ARCHIVE` — absolute path to the selected `.tar.gz` asset;
+- `MAGNIS_RUNTIME_REF` — absolute path to its matching target-specific
+  `.ref.json` release asset;
+- `MAGNIS_RUNTIME_TARGET` — the exact target named by both documents.
+
+The staging command verifies the reference's canonical GitHub Release URL and
+checksum, validates the manifest identity and every extracted file digest, then
+atomically replaces the ignored `src-tauri/binaries/` build input. A mismatch
+leaves an existing staged runtime untouched. There is no `latest`, source-tree,
+host-architecture or stale-sidecar fallback.
+
+For a published runtime, obtain both files with the downloader. It takes the
+version, target and SHA-256 you chose from the immutable release reference and
+does not inspect a cache or release channel:
+
+```bash
+cd <public-magnis-checkout>
+runtime_input="$PWD/.tmp/magnis-runtime-input"
+bun apps/desktop/build/download-runtime.ts \
+  --version 0.1.0 \
+  --target x86_64-unknown-linux-gnu \
+  --sha256 <lowercase-64-character-release-digest> \
+  --out-dir "$runtime_input"
+export MAGNIS_RUNTIME_ARCHIVE="$runtime_input/magnis-runtime-v0.1.0-x86_64-unknown-linux-gnu.tar.gz"
+export MAGNIS_RUNTIME_REF="$runtime_input/magnis-runtime-v0.1.0-x86_64-unknown-linux-gnu.ref.json"
+export MAGNIS_RUNTIME_TARGET=x86_64-unknown-linux-gnu
+bun apps/desktop/build/stage-runtime.ts
+```
+
+The download directory must be empty. A later offline rebuild can reuse the
+same verified archive and reference by exporting those three paths directly;
+the runtime launcher never downloads after a package is built.
+
+The staged artifact has this Tauri input layout:
+
+```text
+src-tauri/binaries/
+  bin/magnis-server-<target>
+  runtime/{data,migrations,web}/
+```
+
+## Build and verification
+
+Install the Tauri system prerequisites for the host platform (see the
+[Tauri guide](https://v2.tauri.app/start/prerequisites/)). The PostgreSQL
+archive is pinned in the root `.cargo/config.toml`; preseed it before an
+offline Cargo build with `build/bundle-embedded-pg.sh`.
+
+```bash
+cd <public-magnis-checkout>
+bash apps/desktop/build/bundle-embedded-pg.sh
+cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check
+cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets -- -D warnings
+cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml
+cd apps/desktop/src-tauri
+cargo tauri build
+```
+
+`Cargo.lock` is tracked. Update it only with an intentional dependency change,
+review it with `Cargo.toml`, and use `--locked` in reproducible/CI builds.
+
+The public candidate workflow runs this sequence from an explicit
+version/target/SHA-256 dispatch and emits an unsigned package. It must pass
+before a PR records that asset in `runtime.staging.lock.json`; the lock is not
+created from a local build or an unverified release download.
+
+## Runtime boundaries
+
+At start the shell starts embedded PostgreSQL, selects a loopback backend port,
+then starts the staged `magnis-server` sidecar with the database URL and the
+extracted `runtime/` root. The sidecar serves the same compiled web identity
+that Tauri packages. On quit the shell stops the backend first, then the
+PostgreSQL cluster.
+
+Ollama is optional and external. A hosted selection performs no Ollama probe.
+After a user selects a local model, the shell performs a bounded probe only at
+`http://127.0.0.1:11434/api/tags`. A ready daemon is adopted but never stopped;
+the UI offers one persisted explicit install/start decision when it is absent.
+Only an `ollama serve` process started after that decision is stopped during
+reverse shutdown. The UI returns the verified `http://127.0.0.1:11434/v1`
+endpoint to the existing backend provider/model control plane; it never
+switches a failed local selection to a hosted provider.
+
+The same lifecycle library powers the headless binary. It requires an exact
+runtime root and accepts an explicit staged-sidecar override for development:
+
+```bash
+cargo run --manifest-path apps/desktop/src-tauri/Cargo.toml --bin magnis-runtime -- \
+  --runtime-root /absolute/path/to/staged/runtime \
+  --server-path /absolute/path/to/staged/magnis-server \
+  --data-root /absolute/path/to/magnis-data \
+  --backend-port 3261
+```
+
+FastEmbed remains an in-process TypeScript library and verified cache of the
+closed backend; it is not a desktop process or artifact protocol. macOS signing
+and notarization remain separate credentialed release steps; a candidate
+package is intentionally unsigned.

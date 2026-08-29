@@ -109,7 +109,32 @@ interface LegacyCatalogPackage {
   files: readonly { path: string; sha256: string }[];
 }
 
+/** The catalog channel's current flat-archive package shape. Certification
+ * binds the extracted immutable tree (`package_hash`) while `archive.sha256`
+ * protects the transport asset itself; those are deliberately different
+ * hashes with different owners. */
+export interface PublishedCatalogPackage {
+  kind: CatalogPackageKind;
+  id: string;
+  version: string;
+  title: string;
+  summary: string;
+  publisher: string;
+  dev: boolean;
+  archive: { name: string; sha256: string };
+  icon_url?: string;
+  details_url?: string;
+}
+
 interface StrictSourceCatalogPackage extends LegacyCatalogPackage {
+  package_hash: string;
+  certification: {
+    path: string;
+    sha256: string;
+  };
+}
+
+interface StrictPublishedSourceCatalogPackage extends PublishedCatalogPackage {
   package_hash: string;
   certification: {
     path: string;
@@ -120,13 +145,18 @@ interface StrictSourceCatalogPackage extends LegacyCatalogPackage {
 interface CatalogIndexV1 {
   schema_version: 1;
   generated_from: string;
-  packages: readonly LegacyCatalogPackage[];
+  packages: readonly (LegacyCatalogPackage | PublishedCatalogPackage)[];
 }
 
 interface CatalogIndexV2 {
   schema_version: 2;
   generated_from: string;
-  packages: readonly (LegacyCatalogPackage | StrictSourceCatalogPackage)[];
+  packages: readonly (
+    | LegacyCatalogPackage
+    | StrictSourceCatalogPackage
+    | PublishedCatalogPackage
+    | StrictPublishedSourceCatalogPackage
+  )[];
 }
 
 export interface WriteCertifiedCatalogIndexesOptions {
@@ -134,6 +164,7 @@ export interface WriteCertifiedCatalogIndexesOptions {
   generatedFrom: string;
   receiptInputDir: string;
   discovered?: readonly StagedCatalogPackage[];
+  publishedPackages?: readonly PublishedCatalogPackage[];
 }
 
 export interface CertifiedCatalogResult {
@@ -1293,12 +1324,44 @@ export async function writeCertifiedCatalogIndexes(
   options: WriteCertifiedCatalogIndexesOptions,
 ): Promise<CertifiedCatalogResult> {
   const discovered = options.discovered ?? discoverStagedCatalog(options.catalogOut);
-  const legacyPackages = discovered.map(legacyPackage);
-  const strictPackages: (LegacyCatalogPackage | StrictSourceCatalogPackage)[] = [];
+  const discoveredByKey = new Map(
+    discovered.map((entry) => [`${entry.kind}:${entry.id}`, entry] as const),
+  );
+  const published = options.publishedPackages;
+  let orderedEntries = discovered;
+  let legacyPackages: readonly (LegacyCatalogPackage | PublishedCatalogPackage)[] =
+    discovered.map(legacyPackage);
+  let publishedByKey: ReadonlyMap<string, PublishedCatalogPackage> | null = null;
+  if (published !== undefined) {
+    publishedByKey = new Map(
+      published.map((entry) => [`${entry.kind}:${entry.id}`, entry] as const),
+    );
+    if (publishedByKey.size !== published.length) {
+      throw new Error("published catalog package keys must be unique");
+    }
+    orderedEntries = published.map((entry) => {
+      const key = `${entry.kind}:${entry.id}` as const;
+      const staged = discoveredByKey.get(key);
+      if (staged === undefined) {
+        throw new Error(`published package '${key}' has no exact staged tree`);
+      }
+      return staged;
+    });
+    if (orderedEntries.length !== discovered.length) {
+      throw new Error("published catalog package set does not match the staged package set");
+    }
+    legacyPackages = published;
+  }
+  const strictPackages: (
+    | LegacyCatalogPackage
+    | StrictSourceCatalogPackage
+    | PublishedCatalogPackage
+    | StrictPublishedSourceCatalogPackage
+  )[] = [];
   const sidecars: { path: string; bytes: string }[] = [];
 
-  for (const entry of discovered) {
-    const legacy = legacyPackage(entry);
+  for (const entry of orderedEntries) {
+    const legacy = publishedByKey?.get(`${entry.kind}:${entry.id}`) ?? legacyPackage(entry);
     if (entry.kind === "module") {
       strictPackages.push(legacy);
       continue;

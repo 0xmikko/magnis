@@ -10,15 +10,15 @@
  */
 import { describe, expect, it } from "vitest";
 import type { PaginatedResponse } from "@magnis/plugin-sdk";
-import { entity, facet, mockGraph, mountModule } from "@magnis/testkit/module";
+import { entity, mockGraph, mountModule } from "@magnis/testkit/module";
 import { TriggersModule } from "../service.ts";
 import { TRIGGER, TRIGGER_CONFIG } from "../../schema.ts";
-import type { TriggerFacets, TriggerListItem } from "../../types.ts";
+import type { TriggerListItem } from "../../types.ts";
 
 describe("tst_module_triggers_list_page_001 — standard module list RPC", () => {
   it("paginates the graph directly beyond the agent list's 1,000-item cap", async () => {
     const last = entity("trigger-1001", "Last trigger", { schema_id: TRIGGER });
-    const graph = mockGraph<TriggerFacets>({
+    const graph = mockGraph({
       list_entities: () =>
         Promise.reject(new Error("list_page must not call the capped agent list source")),
       list_entities_window: (params) =>
@@ -41,9 +41,9 @@ describe("tst_module_triggers_list_page_001 — standard module list RPC", () =>
         }),
       get_entity_full: (id: string) =>
         Promise.resolve({
-          entity: entity(id, "Last trigger", { schema_id: TRIGGER }),
-          facets: [
-            facet(`facet-${id}`, TRIGGER_CONFIG, {
+          entity: entity(id, "Last trigger", {
+            schema_id: TRIGGER,
+            properties: {
               name: "Last trigger",
               gate_prompt: "",
               action_prompt: "Run the last trigger",
@@ -51,8 +51,8 @@ describe("tst_module_triggers_list_page_001 — standard module list RPC", () =>
               event_kinds: ["entity.created"],
               debounce_seconds: 0,
               firing_count: 0,
-            }),
-          ],
+            },
+          }),
           links: [],
         }),
     });
@@ -72,7 +72,6 @@ describe("tst_module_triggers_list_page_001 — standard module list RPC", () =>
     expect(graph.spies.list_entities_window).toHaveBeenCalledWith(
       expect.objectContaining({
         schema: TRIGGER,
-        facet_schema: TRIGGER_CONFIG,
         limit: 1,
         offset: 1_000,
       }),
@@ -87,7 +86,7 @@ describe("tst_module_triggers_list_page_001 — standard module list RPC", () =>
       ["trigger-2", "Incoming reply monitor"],
       ["trigger-3", "Incoming reply follow-up"],
     ]);
-    const graph = mockGraph<TriggerFacets>({
+    const graph = mockGraph({
       list_entities_window: (params) =>
         Promise.resolve({
           items: params.offset === 0
@@ -110,9 +109,9 @@ describe("tst_module_triggers_list_page_001 — standard module list RPC", () =>
         const name = details.get(id);
         if (!name) return Promise.resolve(null);
         return Promise.resolve({
-          entity: entity(id, name, { schema_id: TRIGGER }),
-          facets: [
-            facet(`facet-${id}`, TRIGGER_CONFIG, {
+          entity: entity(id, name, {
+            schema_id: TRIGGER,
+            properties: {
               name,
               gate_prompt: "",
               action_prompt: `Run ${name}`,
@@ -120,8 +119,8 @@ describe("tst_module_triggers_list_page_001 — standard module list RPC", () =>
               event_kinds: ["entity.created"],
               debounce_seconds: 0,
               firing_count: 0,
-            }),
-          ],
+            },
+          }),
           links: [],
         });
       },

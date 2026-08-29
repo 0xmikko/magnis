@@ -8,9 +8,9 @@ import type { WindowSpec } from "@magnis/plugin-sdk";
 import { entity, mockGraph, mountModule, windowRow, type MockGraph } from "@magnis/testkit/module";
 import { LinkedinModule } from "../service.ts";
 import { PROFILE } from "../../schema.ts";
-import type { LinkedinCanonical, LinkedinFacets } from "../../types.ts";
+import type { LinkedinCanonical } from "../../types.ts";
 
-type G = MockGraph<LinkedinFacets, LinkedinCanonical>;
+type G = MockGraph;
 
 // Scenario fixture over the testkit: an ingested-profile window (paged by the
 // window's limit/offset) + a contacts.list_social_tracking RPC stub. Replaces
@@ -20,11 +20,12 @@ function mountProfiles(opts: {
   tracked: Array<{ contact_id: string; name: string; handle: string }>;
 }): LinkedinModule {
   const rows = opts.profiles.map((p) =>
-    windowRow(entity(p.id, p.name, { schema_id: PROFILE }), {
-      platform: "linkedin",
-      handle: p.handle,
-      display_name: p.name,
-    }),
+    windowRow(
+      entity(p.id, p.name, {
+        schema_id: PROFILE,
+        properties: { platform: "linkedin", handle: p.handle, display_name: p.name },
+      }),
+    ),
   );
   const graph: G = mockGraph({
     list_entities_window: (p: WindowSpec) =>
@@ -88,11 +89,12 @@ describe("linkedin pending profiles", () => {
       list_entities_window: () =>
         Promise.resolve({
           items: [
-            windowRow(entity("e1", "P", { schema_id: PROFILE }), {
-              platform: "linkedin",
-              handle: "p",
-              display_name: "P",
-            }),
+            windowRow(
+              entity("e1", "P", {
+                schema_id: PROFILE,
+                properties: { platform: "linkedin", handle: "p", display_name: "P" },
+              }),
+            ),
           ],
           total: 1,
         }),

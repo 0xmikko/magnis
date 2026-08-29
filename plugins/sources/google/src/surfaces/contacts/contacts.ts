@@ -57,6 +57,8 @@ interface GpeoplePhone {
 export interface GpeoplePerson {
   /** Always present — looks like "people/c12345…". */
   resourceName: string;
+  /** Write-back base (S3): the People API's optimistic-concurrency tag. */
+  etag?: string | null;
   names?: GpeopleName[] | null;
   emailAddresses?: GpeopleEmail[] | null;
   phoneNumbers?: GpeoplePhone[] | null;
@@ -94,6 +96,7 @@ function parseGpeopleConnectionsResponse(
     const c = `${ctx}.connections[${String(i)}]`;
     return {
       resourceName: reqString(p, "resourceName", c),
+      etag: optString(p, "etag", c),
       names: defaultObjectArray(p, "names", c).map((n, j) => ({
         displayName: optString(n, "displayName", `${c}.names[${String(j)}]`),
         givenName: optString(n, "givenName", `${c}.names[${String(j)}]`),
@@ -136,6 +139,10 @@ function parseGpeopleConnectionsResponse(
 
 export interface Contact {
   id: string;
+  /** S3: verbatim People API identity — the replica's anchor base. */
+  resource_name: string;
+  /** S3: verbatim optimistic-concurrency tag — the write-back base. */
+  etag: string | null;
   display_name: string | null;
   given_name: string | null;
   family_name: string | null;
@@ -218,6 +225,8 @@ export function gpeoplePersonToContact(p: GpeoplePerson): Contact | null {
 
   return {
     id: stableContactId(p.resourceName),
+    resource_name: p.resourceName,
+    etag: p.etag ?? null,
     display_name: displayName,
     given_name: primaryName?.givenName ?? null,
     family_name: primaryName?.familyName ?? null,

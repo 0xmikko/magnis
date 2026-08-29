@@ -12,7 +12,7 @@ export interface UseAgentChatResult {
     readonly toolCalls: EpisodeState["toolCalls"];
     readonly toolResults: EpisodeState["toolResults"];
     readonly contentBlocks: EpisodeState["contentBlocks"];
-    readonly error: string | null;
+    readonly error: EpisodeState["error"];
     readonly episodeId: string | null;
     readonly episodeTitle: string | null;
     readonly replyTo: EpisodeState["replyTo"];

@@ -3,36 +3,30 @@
 // contract with its RPC handler; definePlugin (index.ts) wires them.
 //
 // Reads use the efficient graph read-API (email parity): list →
-// list_entities_window with the details facet inline / search →
-// search_entities_by_name + list_facets_for_entities (batch); get →
-// get_entity_full + one get_canonical. Fixed, N-independent crossings.
+// list_entities_window / search → search_entities_by_name; get →
+// get_entity_full. S5: every one of them renders from the node's own
+// DICTIONARY, which rides the rows they already fetched — fixed,
+// N-independent crossings with no hydrate step at all.
 
-import { tool, writeTool, type GraphService, type PluginDeps } from "@magnis/plugin-sdk";
+import { tool, writeTool, type GraphService, type PluginDeps, type RpcExecutor } from "@magnis/plugin-sdk";
 import type { GetParams, ListParams, PaginatedResponse } from "@magnis/plugin-sdk";
 import type {
-  CompanyCanonical,
   CompanyDetailsFacet,
   CompanyDetailView,
-  CompanyFacets,
   CompanyListItem,
   CreateParams,
   HeaderRow,
   UpdateParams,
 } from "../types.ts";
-import {
-  COMPANY,
-  COMPANY_DESCRIPTION,
-  COMPANY_DETAILS,
-  COMPANY_EMAIL,
-  COMPANY_EXTERNAL_LINK,
-  COMPANY_PHONE,
-} from "../schema.ts";
+import { COMPANY } from "../schema.ts";
 import { buildListItem } from "./helpers.ts";
 
 export class CompaniesModule {
-  private readonly graph: GraphService<CompanyFacets, CompanyCanonical>;
-  constructor(deps: PluginDeps<CompanyFacets, CompanyCanonical>) {
+  private readonly graph: GraphService;
+  private readonly rpc: RpcExecutor;
+  constructor(deps: PluginDeps) {
     this.graph = deps.graph;
+    this.rpc = deps.rpc;
   }
 
   @tool("list", {
@@ -67,10 +61,9 @@ export class CompaniesModule {
       rows = matched.slice(offset, offset + limit);
     } else {
       // Page + total ordered by the indexed `idx` column (lowercased name →
-      // case-insensitive name order). No facet_schema: the list fields come from
-      // canonical, not the latest facet (see buildListItem). The window honors
-      // only the explicit order, so it does NOT add pinned-first — matching
-      // staging's JS name sort which had no pinned priority.
+      // case-insensitive name order). The window honors only the explicit
+      // order, so it does NOT add pinned-first — matching staging's JS name
+      // sort which had no pinned priority.
       const win = await this.graph.list_entities_window({
         schema: COMPANY,
         order: [{ field: { entity_field: "idx" }, desc: false }],
@@ -81,10 +74,7 @@ export class CompaniesModule {
       total = win.total;
     }
 
-    // Hydrate the page's canonical (companies.name/website/industry/size/
-    // location) in ONE batch read — no per-row get_canonical N+1.
-    const canonById = await this.canonicalByEntity(rows.map((e) => e.id));
-    const items = rows.map((e) => buildListItem(e, canonById.get(e.id) ?? {}));
+    const items = rows.map((e) => buildListItem(e));
     return { items, total, limit, offset };
   }
 
@@ -98,20 +88,15 @@ export class CompaniesModule {
     },
   })
   async get(params: GetParams): Promise<CompanyDetailView> {
-    // User-scoped entity (+ schema guard), latest facets, and every edge.
-    // Facets come from list_facets_for_entity so the DTO carries ALL facets
-    // (get_entity_full would dedup to latest-per-schema, dropping collection
-    // email/phone facets). Link endpoints are resolved in one batch below.
+    // User-scoped entity (+ schema guard) and every edge, in one read. S5:
+    // the hub's DICTIONARY is the record — one writer, nothing to arbitrate —
+    // so the detail needs neither a canonical read nor a record list.
     const detail = await this.graph.get_entity_full(params.id, { links: true });
     if (detail?.entity.schema_id !== COMPANY) {
       throw new Error(`company not found: ${params.id}`);
     }
     const { entity } = detail;
-    const facets = await this.graph.list_facets_for_entity(entity.id);
-    const canonical = await this.graph.get_canonical(entity.id, []);
-    // base/header read CANONICAL (single_aligned by confidence→recency), not the
-    // latest facet — parity with staging's canonical-driven detail view.
-    const base = buildListItem(entity, canonical);
+    const base = buildListItem(entity);
     const endpointIds = [...new Set(detail.links.flatMap((link) => {
       if (link.from_id === entity.id) return [link.to_id];
       if (link.to_id === entity.id) return [link.from_id];
@@ -152,7 +137,7 @@ export class CompaniesModule {
       { type: "text", label: "Size", value: base.size },
       { type: "chips", label: `Team members (${String(members.length)})`, items: members },
     ];
-    return { ...base, canonical, facets, linked_entities, members, header_rows };
+    return { ...base, linked_entities, members, header_rows };
   }
 
   // `params` is the AGENT-facing schema → omits `client_id` (the
@@ -190,9 +175,8 @@ export class CompaniesModule {
     });
     const match = existing.find((c) => c.name.trim().toLowerCase() === needle);
     if (match) {
-      // Write path (idempotent return) — one canonical read hydrates the matched
-      // entity's list item; not the hot read path.
-      return this.listItemFor(match);
+      // Idempotent return: the matched row already carries its dictionary.
+      return buildListItem(match);
     }
 
     const e = await this.graph.create_entity({
@@ -202,6 +186,7 @@ export class CompaniesModule {
       idx: params.name.toLowerCase(),
     });
 
+    // S5: the hub dict takes the curated claims — one writer, no records.
     const details: CompanyDetailsFacet = { name: params.name };
     if (params.domain) {
       details.domain = params.domain;
@@ -209,55 +194,32 @@ export class CompaniesModule {
     }
     if (params.website) details.website = params.website;
     if (params.industry) details.industry = params.industry;
-    await this.graph.attach_facet({
-      entity_id: e.id,
-      schema_id: COMPANY_DETAILS,
-      data: details,
-    });
     // @tested-by: tst_mod_companies_description_002
-    // @invariant: The company Overview and agent writes share the same
-    // markdown facet contract; structured details never own the description.
-    if (params.summary) {
-      await this.graph.attach_facet({
-        entity_id: e.id,
-        schema_id: COMPANY_DESCRIPTION,
-        data: { body: params.summary },
-      });
-    }
-    await this.graph.resolve_canonical(e.id);
-    return this.listItemFor(e);
+    // @invariant: The company Overview and agent writes share one description
+    // key; structured details never own a second copy of it.
+    if (params.summary) details.description = params.summary;
+    await this.graph.update_properties({ entity_id: e.id, properties: { ...details } });
+    return this.listItemFor(e.id);
   }
 
   // ── read helpers ──────────────────────────────────────────────────
-  // Batch the page's canonical into a per-entity map in ONE crossing.
-  private async canonicalByEntity(ids: string[]): Promise<Map<string, Partial<CompanyCanonical>>> {
-    const out = new Map<string, Partial<CompanyCanonical>>();
-    for (const c of await this.graph.list_canonical_for_entities(ids)) {
-      if (!c.entity_id) continue;
-      const m = (out.get(c.entity_id) ?? {}) as Record<string, unknown>;
-      m[c.key] = c.value;
-      out.set(c.entity_id, m);
-    }
-    return out;
-  }
-
-  // Single-entity list item for the WRITE paths (create idempotent / new return)
-  // — one get_canonical, then the pure builder. Not the hot read path.
-  private async listItemFor(
-    entity: { id: string; schema_id: string; name: string; created_at?: string },
-  ): Promise<CompanyListItem> {
-    const canonical = await this.graph.get_canonical(entity.id, []);
-    return buildListItem(entity, canonical);
+  // Single-entity list item for the WRITE paths (create idempotent / new
+  // return) — one read of the node it just wrote, then the pure builder.
+  private async listItemFor(id: string): Promise<CompanyListItem> {
+    const entity = await this.graph.get_entity(id);
+    if (!entity) throw new Error(`company not found: ${id}`);
+    return buildListItem(entity);
   }
 
   // Full-field enrichment (parity with staging "field parity" build). Each
-  // provided field is layered on as a fresh facet version; single-aligned
-  // details = latest wins, email/phone = collection (one facet per item).
+  // provided field is layered on as a fresh record version; single-aligned
+  // details = latest wins, email/phone = collection (one record per item).
   @writeTool("update", {
     description:
       "Update / enrich a company. Provided fields are layered on; omitted " +
       "fields stay untouched. `domain` derives the website; `summary` replaces " +
-      "the markdown description; `emails`/`phones` are multi-instance.",
+      "the description; `emails` become identity edges to shared address " +
+      "nodes and `phones` are multi-instance.",
     params: {
       type: "object",
       properties: {
@@ -274,20 +236,6 @@ export class CompaniesModule {
         funding_total: { type: "string" },
         emails: { type: "array", items: { type: "string" } },
         phones: { type: "array", items: { type: "string" } },
-        external_links: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              source_type: { type: "string" },
-              external_id: { type: "string" },
-              external_url: { type: "string" },
-              external_name: { type: "string" },
-            },
-            required: ["source_type", "external_id"],
-            additionalProperties: false,
-          },
-        },
       },
       required: ["id"],
       additionalProperties: false,
@@ -314,59 +262,35 @@ export class CompaniesModule {
     if (params.stage !== undefined) details.stage = params.stage;
     if (params.headcount !== undefined) details.headcount = params.headcount;
     if (params.funding_total !== undefined) details.funding_total = params.funding_total;
-    if (Object.keys(details).length > 0) {
-      await this.graph.attach_facet({
-        entity_id: params.id,
-        schema_id: COMPANY_DETAILS,
-        data: details,
-      });
-    }
-
     // @tested-by: tst_mod_companies_description_001
-    // @invariant: The company Overview and agent writes share the same
-    // markdown facet contract; structured details never own the description.
-    if (params.summary !== undefined) {
-      await this.graph.attach_facet({
-        entity_id: params.id,
-        schema_id: COMPANY_DESCRIPTION,
-        data: { body: params.summary },
-      });
-    }
+    // @invariant: The company Overview and agent writes share one description
+    // key; structured details never own a second copy of it.
+    if (params.summary !== undefined) details.description = params.summary;
 
-    if (params.emails) {
-      for (const [i, email] of params.emails.entries()) {
-        await this.graph.attach_facet({
-          entity_id: params.id,
-          schema_id: COMPANY_EMAIL,
-          data: { email, is_primary: i === 0 },
-        });
-      }
-    }
+    // S5: one merge of the curated keys — a provided field is layered on, an
+    // omitted one stays untouched, and a null removes.
     if (params.phones) {
-      for (const [i, phone] of params.phones.entries()) {
-        await this.graph.attach_facet({
-          entity_id: params.id,
-          schema_id: COMPANY_PHONE,
-          data: { phone, is_primary: i === 0 },
-        });
-      }
+      details.phones = params.phones.map((phone, i) => ({
+        phone,
+        type: null,
+        is_primary: i === 0,
+      }));
     }
-    if (params.external_links) {
-      for (const link of params.external_links) {
-        await this.graph.attach_facet({
-          entity_id: params.id,
-          schema_id: COMPANY_EXTERNAL_LINK,
-          data: {
-            source_type: link.source_type,
-            external_id: link.external_id,
-            ...(link.external_url ? { external_url: link.external_url } : {}),
-            ...(link.external_name ? { external_name: link.external_name } : {}),
-          },
-        });
+    if (Object.keys(details).length > 0) {
+      await this.graph.update_properties({ entity_id: params.id, properties: { ...details } });
+    }
+
+    // An email is an identity CHANNEL, not a company field: the email module
+    // owns the address node, this module owns the edge to it (plan §3).
+    if (params.emails && params.emails.length > 0) {
+      const { ids } = await this.rpc.execute<{ ids: string[] }>("email.ensure_addresses", {
+        items: params.emails.map((address) => ({ address })),
+      });
+      for (const to_id of ids) {
+        await this.graph.add_link({ from_id: params.id, to_id, kind: "identity" });
       }
     }
 
-    await this.graph.resolve_canonical(params.id);
     return this.get({ id: params.id });
   }
 }

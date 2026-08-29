@@ -13,39 +13,28 @@ import { initialsFromName } from "./utils/text";
 import { pickAvatarColor, resolveAvatarUrl } from "./helpers";
 import { useAppRuntime } from "@magnis/host/runtime";
 
-interface FacetEntry {
+interface EntityResponse {
   readonly id: string;
-  readonly schema_id: string;
-  readonly data: Readonly<Record<string, unknown>>;
-}
-
-interface FacetListResponse {
-  readonly items: readonly FacetEntry[];
-  readonly total: number;
+  readonly properties?: Readonly<Record<string, unknown>> | null;
 }
 
 /**
- * Resolve a single Telegram chat from entity facets instead of loading the full
- * chat list. This works for chats on any page.
+ * Resolve a single Telegram chat from the node's DICTIONARY instead of loading
+ * the full chat list. This works for chats on any page.
  */
-function useTelegramChatFromFacets(entityId: string): TelegramChat | undefined {
+function useTelegramChatFromDictionary(entityId: string): TelegramChat | undefined {
   const runtime = useAppRuntime();
   const baseUrl = runtime.transport.baseUrl;
 
   const { data: response } = useQuery({
     queryKey: telegramKeys.chatDetail(entityId),
-    queryFn: () =>
-      runtime.transport.rpc<FacetListResponse>("graph.facet.list", {
-        entity_id: entityId,
-        schema_id: "telegram.chat.details",
-      }),
+    queryFn: () => runtime.transport.rpc<EntityResponse>("graph.entity.get", { id: entityId }),
     enabled: !!entityId,
     staleTime: 60_000,
   });
 
   return useMemo(() => {
-    if (!response || response.items.length === 0) return undefined;
-    const d = response.items.at(0)?.data;
+    const d = response?.properties;
     if (!d) return undefined;
     const chatId =
       typeof d.chat_id === "string" || typeof d.chat_id === "number" ? String(d.chat_id) : undefined;
@@ -75,7 +64,7 @@ export function TelegramDetailWrapper({
   const runtime = useAppRuntime();
   const queryClient = useQueryClient();
 
-  const selectedChat = useTelegramChatFromFacets(entityId);
+  const selectedChat = useTelegramChatFromDictionary(entityId);
 
   // Build a single-element chats array for useTelegramMessages
   const chats = useMemo<readonly TelegramChat[]>(

@@ -1,9 +1,9 @@
 // Meetings read helpers — ports the native domain adapter (types.rs):
 // strict attendee parsing (malformed input is rejected, never silently
-// repaired), read-time attendee→contact enrichment, RFC-3339 → date/time
-// display, and the list-item builder.
+// repaired), read-time attendee→contact enrichment over the `attendee` edges,
+// RFC-3339 → date/time display, and the list-item builder.
 
-import type { GraphService, RawEntity } from "@magnis/plugin-sdk";
+import type { GraphService, LinkSummary, RawEntity } from "@magnis/plugin-sdk";
 import type {
   CalendarAttendee,
   MeetingAttendeeView,
@@ -17,7 +17,7 @@ export const str = (d: Data, k: string): string | null => {
   return typeof v === "string" && v.length > 0 ? v : null;
 };
 
-/** A string facet field, treated as null when empty (native `.filter(!is_empty)`). */
+/** A string record field, treated as null when empty (native `.filter(!is_empty)`). */
 const nonEmpty = (d: Data, k: string): string | null => str(d, k);
 
 /// Strict RFC-3339 parse (mirrors native chrono parse_from_rfc3339): returns the
@@ -30,7 +30,7 @@ export function parseRfc3339(s: string): number | null {
 }
 
 /// Normalize attendees to the canonical `{name, email}` shape (name → null when
-/// absent), matching the native facet/snapshot serialization.
+/// absent), matching the native record/snapshot serialization.
 export function normalizeAttendees(attendees: CalendarAttendee[] | undefined): {
   name: string | null;
   email: string;
@@ -38,7 +38,8 @@ export function normalizeAttendees(attendees: CalendarAttendee[] | undefined): {
   return (attendees ?? []).map((a) => ({ name: a.name ?? null, email: a.email }));
 }
 
-/// Parse the canonical `attendees` shape from a facet payload.
+/// Parse the canonical `attendees` shape from a sync payload (the ingest write
+/// path — the read path goes through the edges, not this).
 ///
 /// Attendees use ONE format = `CalendarAttendee[]`
 /// (`{name?, email}`). Three explicit cases, strict NO FALLBACKS:
@@ -48,21 +49,21 @@ export function normalizeAttendees(attendees: CalendarAttendee[] | undefined): {
 ///       incl. a legacy comma-string)      → THROW, naming the entity.
 /// Case (c) must propagate to the caller (no log-and-`[]`).
 export function parseAttendees(
-  facetData: Data | undefined,
+  payload: Data | undefined,
   entityId: string,
 ): CalendarAttendee[] {
-  const raw = facetData?.attendees;
+  const raw = payload?.attendees;
   if (raw === undefined || raw === null) return [];
   if (!Array.isArray(raw)) {
-    throw new Error(`malformed attendees facet for entity ${entityId}: expected an array`);
+    throw new Error(`malformed attendees for entity ${entityId}: expected an array`);
   }
   return raw.map((a) => {
     if (typeof a !== "object" || a === null || Array.isArray(a)) {
-      throw new Error(`malformed attendees facet for entity ${entityId}: attendee is not an object`);
+      throw new Error(`malformed attendees for entity ${entityId}: attendee is not an object`);
     }
     const email = (a as Data).email;
     if (typeof email !== "string") {
-      throw new Error(`malformed attendees facet for entity ${entityId}: attendee missing email`);
+      throw new Error(`malformed attendees for entity ${entityId}: attendee missing email`);
     }
     const name = (a as Data).name;
     const out: CalendarAttendee = { email };
@@ -71,36 +72,68 @@ export function parseAttendees(
   });
 }
 
-/// Resolve one email to the `contacts.person` it represents (or null): a guest
-/// IS a contact. `email` → `email.address` (external id `email:address:{norm}`)
-/// → inbound `has_email` link from a `contacts.person`. Read-time, so it covers
-/// meetings whose attendee never went through the resolving trigger.
-export async function resolveContactForEmail(
-  graph: GraphService,
-  email: string,
-): Promise<string | null> {
-  const normalized = email.trim().toLowerCase();
-  if (normalized.length === 0) return null;
-  const addrId = await graph.find_by_external_id(`email:address:${normalized}`);
-  if (!addrId) return null;
-  const links = await graph.list_links_for_entity(addrId);
-  for (const link of links) {
-    if (link.kind !== "has_email" || link.to_id !== addrId) continue;
-    const person = await graph.get_entity(link.from_id);
-    if (person?.schema_id === "contacts.person") return person.id;
-  }
-  return null;
-}
-
-/// Resolve each raw attendee to its contact (or null), preserving order.
+/// The event's attendees, read from its `attendee` edges (plan §6): the edge
+/// ends at the shared `email.address` node, and the display name the invite
+/// carried rides the edge dictionary — the address node is shared by every
+/// event, so a per-invite name could never live on it.
 export async function enrichAttendees(
   graph: GraphService,
-  raw: CalendarAttendee[],
+  eventId: string,
+  links?: LinkSummary[],
 ): Promise<MeetingAttendeeView[]> {
-  const out: MeetingAttendeeView[] = [];
-  for (const a of raw) {
-    const contact_id = await resolveContactForEmail(graph, a.email);
-    out.push({ name: a.name ?? null, email: a.email, contact_id });
+  const page = await attendeesForPage(graph, [eventId], links ? { [eventId]: links } : undefined);
+  return page.get(eventId) ?? [];
+}
+
+/// The PAGE-level twin (S6 review): a whole window's attendees in FOUR fixed
+/// crossings — event edges, address nodes, address identity edges, persons —
+/// where the per-row shape did one edge read per event plus up to three
+/// crossings per attendee.
+export async function attendeesForPage(
+  graph: GraphService,
+  eventIds: string[],
+  prefetched?: Record<string, LinkSummary[]>,
+): Promise<Map<string, MeetingAttendeeView[]>> {
+  const out = new Map<string, MeetingAttendeeView[]>();
+  if (eventIds.length === 0) return out;
+  const eventSet = new Set(eventIds);
+  const edges = (
+    prefetched
+      ? Object.values(prefetched).flat()
+      : await graph.list_links_for_entities(eventIds)
+  ).filter((l) => l.kind === "attendee" && eventSet.has(l.from_id));
+  if (edges.length === 0) return out;
+
+  const addressIds = [...new Set(edges.map((e) => e.to_id))];
+  const addresses = await graph.get_entities(addressIds);
+  const addressById = new Map(addresses.map((a) => [a.id, a]));
+
+  // One batch of the addresses' inbound identity edges, one batch of persons.
+  const identityEdges = (await graph.list_links_for_entities(addressIds)).filter(
+    (l) => l.kind === "identity" && addressById.has(l.to_id),
+  );
+  const personIds = [...new Set(identityEdges.map((l) => l.from_id))];
+  const persons = personIds.length === 0 ? [] : await graph.get_entities(personIds);
+  const personById = new Map(persons.map((p) => [p.id, p]));
+  const contactByAddress = new Map<string, string>();
+  for (const edge of identityEdges) {
+    const person = personById.get(edge.from_id);
+    if (person?.schema_id === "contacts.person" && !contactByAddress.has(edge.to_id)) {
+      contactByAddress.set(edge.to_id, person.id);
+    }
+  }
+
+  for (const edge of edges) {
+    const addr = addressById.get(edge.to_id);
+    if (!addr) continue;
+    const meta = (edge.metadata ?? {}) as Data;
+    const arr = out.get(edge.from_id) ?? [];
+    arr.push({
+      name: str(meta, "display_name"),
+      email: str(addr.properties ?? {}, "address") ?? addr.name,
+      contact_id: contactByAddress.get(addr.id) ?? null,
+    });
+    out.set(edge.from_id, arr);
   }
   return out;
 }
@@ -129,7 +162,7 @@ export function formatDateTime(
   return { date, time };
 }
 
-/// Build a list/detail base item from an entity + its details facet data +
+/// Build a list/detail base item from an entity + its details record data +
 /// already-enriched attendees. Native title default = "Untitled Meeting".
 export function buildListItem(
   entity: RawEntity,

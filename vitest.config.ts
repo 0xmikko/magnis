@@ -1,8 +1,12 @@
-// Standalone plugin-tree test lane (plugins-public-repo DEC-3/DEC-4):
-// V8 module logic + SDK tests run with NOTHING from the closed frontend.
-// UI (__tests__ under ui/) stay in the closed frontend's vitest, which runs
-// them against the REAL @magnis/host shims — that is the integration gate;
-// standalone UI coverage is typecheck-only via @magnis/host-stubs.
+// The node lane: V8 module logic + SDK tests, with NOTHING DOM-shaped in
+// scope. A module that reaches for `document` fails here, and that is the
+// point of keeping this lane separate.
+//
+// The UI suites under `plugins/modules/*/ui/__tests__/` are the OTHER lane —
+// `vitest.ui.config.ts`, happy-dom, `@magnis/host/*` resolved at
+// `packages/host-testdouble`. They used to run in the closed frontend's
+// vitest, which checked this repository out as a git submodule; the submodule
+// is gone and they run here. `bun run test:ui`.
 import { resolve } from "node:path";
 import { defineConfig } from "vitest/config";
 
@@ -11,6 +15,7 @@ export default defineConfig({
     environment: "node",
     include: [
       "plugins/modules/**/module/**/*.test.ts",
+      "plugins/modules/**/ui/**/sourceStatusAdapter.test.ts",
       "packages/plugin-sdk/__tests__/**/*.test.ts",
       // testkit ships TWO test lanes in one package: module.test.ts is vitest;
       // source.test.ts is bun (`bun:test`, run by scripts/test-connectors.sh).

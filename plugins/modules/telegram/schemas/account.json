@@ -1,5 +1,8 @@
 {
   "name": "Telegram account",
   "description": "A telegram account entity owned by the telegram plugin.",
-  "mergeable": true
+  "mergeable": false,
+  "roles": [
+    "identity_channel"
+  ]
 }

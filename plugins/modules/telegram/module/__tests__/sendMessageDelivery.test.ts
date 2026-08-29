@@ -1,6 +1,11 @@
 /**
  * @layer: fe_agent
  * @test-id: tst_fe_agent_007
+ * @scenario: scn_telegram_command_001
+ * @covers: TelegramModule.sendMessage
+ * @legacy-id: tst_be_tgsend_008_send_routes_and_ingests
+ * @legacy-id: tst_be_tgsend_009_send_explicit_account_routes_cross_named
+ * @deterministic: yes
  *
  * sendMessage delivers the message via
  * graph.source_command, THEN runs local enrichment (ingest + entity lookup). If
@@ -14,9 +19,9 @@
 import { describe, it, expect, vi } from "vitest";
 import { mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { TelegramModule } from "../service.ts";
-import type { SyncEnvelope, TelegramCanonical, TelegramFacets } from "../../types.ts";
+import type { SyncEnvelope, TelegramCanonical } from "../../types.ts";
 
-type G = MockGraph<TelegramFacets, TelegramCanonical>;
+type G = MockGraph;
 
 // The private members the test drives / stubs directly.
 interface TgInternals {
@@ -26,13 +31,16 @@ interface TgInternals {
     replyTo: number | undefined,
     accountId: string | undefined,
   ): Promise<Record<string, unknown>>;
-  ingestMessage(env: SyncEnvelope, payload: Record<string, unknown>): Promise<unknown>;
+  ingestMessageBatch(
+    messages: { env: SyncEnvelope; payload: Record<string, unknown> }[],
+    triggers: unknown[],
+  ): Promise<unknown>;
 }
 
 function makeModule(): { mod: TgInternals; graph: G } {
-  const graph = mockGraph<TelegramFacets, TelegramCanonical>({
+  const graph = mockGraph({
     source_command: () => Promise.resolve({ message_id: 777 }),
-    find_by_external_id: () => Promise.resolve("ent-1"),
+    find_by_anchor: () => Promise.resolve("ent-1"),
   });
   const mod = mountModule(TelegramModule, { graph, ctx: { extension_id: "telegram" } })
     .module as unknown as TgInternals;
@@ -42,7 +50,7 @@ function makeModule(): { mod: TgInternals; graph: G } {
 describe("tst_fe_agent_007 — sendMessage: delivery success survives local enrichment failure", () => {
   it("resolves (does NOT reject) when ingest fails after a successful delivery", async () => {
     const { mod, graph } = makeModule();
-    vi.spyOn(mod, "ingestMessage").mockRejectedValue(new Error("PGlite write failed"));
+    vi.spyOn(mod, "ingestMessageBatch").mockRejectedValue(new Error("PGlite write failed"));
 
     const result = await mod.sendMessage(42, "hi", undefined, "acct");
 
@@ -52,7 +60,7 @@ describe("tst_fe_agent_007 — sendMessage: delivery success survives local enri
 
   it("returns the enriched result (with entity id) on the happy path", async () => {
     const { mod } = makeModule();
-    vi.spyOn(mod, "ingestMessage").mockResolvedValue(undefined);
+    vi.spyOn(mod, "ingestMessageBatch").mockResolvedValue(undefined);
 
     const result = await mod.sendMessage(42, "hi", undefined, "acct");
 

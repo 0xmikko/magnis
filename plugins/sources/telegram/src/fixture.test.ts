@@ -68,6 +68,13 @@ const envIds = (r: Record<string, unknown>): unknown[] =>
 // ── fixture fetch ───────────────────────────────────────────────────────────
 
 describe("fixture fetch", () => {
+  /**
+   * @test-id: tst_tgts_fx_001
+   * @scenario: scn_backend_tests_006
+   * @covers: Telegram connector fixture-to-envelope mapping
+   * @legacy-id: tst_int_telegram_ingests_into_plugin_module
+   * @deterministic: yes
+   */
   test("tst_tgts_fx_001 backward serves chat-then-its-messages, one page, no counters", async () => {
     withFixture(FIXTURE_DOC);
     const r = await call("magnis.sync.fetch", { direction: "backward" });

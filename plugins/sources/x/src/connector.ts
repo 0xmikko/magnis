@@ -5,25 +5,22 @@
 
 import type { ConnectorConfig } from "@magnis/connector-sdk";
 import type { FetchLike } from "./api";
-import { fetchXContacts } from "./surfaces/contacts/fetch";
 import { fetchX } from "./surfaces/x/fetch";
 import { probeXAuth } from "./probe";
-import { SURFACE_CONTACTS, SURFACE_X } from "./schema";
+import { SURFACE_X } from "./schema";
 
 /** Build the X connector config. Read-only: the host passes the opt-in handle
  * set and the app-only bearer via _meta; this fetches profiles +
- * recent tweets. The friend import runs through the `contacts` surface
- * — there is no magnis.execute command surface. */
+ * recent tweets. There is no magnis.execute command surface. S3: the friend
+ * import (`contacts` surface, x:social envelopes) is deleted — a handle is a
+ * mutable key, and the hub it minted could never be re-identified. */
 export function buildConnectorConfig(fetchFn: FetchLike = fetch): ConnectorConfig {
   return {
     name: "x",
     version: "0.1.0",
-    surfaces: [SURFACE_X, SURFACE_CONTACTS],
+    surfaces: [SURFACE_X],
     intervalSecs: 300,
-    // Surface router: "x" = tracked profiles + posts; "contacts" =
-    // the following import as social_contact envelopes (cursor-seeded).
-    fetch: (args) =>
-      args.surface === SURFACE_CONTACTS ? fetchXContacts(args, fetchFn) : fetchX(args, fetchFn),
+    fetch: (args) => fetchX(args, fetchFn),
     // ProbeAuth — see probe.ts for the unit-tested probe contract.
     probeAuth: (meta) => probeXAuth(meta, fetchFn),
   };

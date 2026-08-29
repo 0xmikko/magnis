@@ -1,10 +1,10 @@
 // Meetings read surface: shape parity + behavior. Exercises the V8
 // module class through @magnis/testkit/module (mockGraph + mountModule).
 // Mirrors the native meetings domain (types.rs): list (window over
-// meetings.calendar_event, starts_at DESC), get (entity + facets + links),
-// search (meetings.EVENT schema — native quirk), strict attendee parsing
-// (malformed input throws, never silently repaired) and read-time
-// attendee→contact enrichment.
+// meetings.calendar_event, the dictionary's starts_at DESC), get (entity +
+// links), search (meetings.EVENT schema — native quirk), strict attendee
+// parsing on the WRITE path (malformed input throws, never silently repaired)
+// and read-time attendee enrichment over the `attendee` edges.
 //
 // mockGraph is a throwing Proxy: any op NOT arranged (or passed via `over`)
 // throws when hit, so an accidental crossing fails loudly — the guarantee that
@@ -15,27 +15,30 @@ import type { EntityDetail, LinkSummary, RawEntity, WindowPage } from "@magnis/p
 import { mockGraph, mountModule, type GraphOverrides, type MockGraph } from "@magnis/testkit/module";
 import { MeetingsModule } from "../service.ts";
 import { parseAttendees } from "../helpers.ts";
-import type { MeetingsCanonical, MeetingsFacets } from "../../types.ts";
+import type { MeetingsCanonical } from "../../types.ts";
 
 const CAL = "meetings.calendar_event";
-const CAL_DETAILS = "meetings.calendar_event.details";
-type G = MockGraph<MeetingsFacets, MeetingsCanonical>;
+type G = MockGraph;
 
 // Only get_entities is arranged by default; the read path's other ops are
 // supplied per-test via `over`. Anything else throws via the mockGraph Proxy.
 function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
-  return mockGraph<MeetingsFacets, MeetingsCanonical>({
+  return mockGraph({
     get_entities: () => Promise.resolve([]),
     ...over,
-  } as unknown as GraphOverrides<MeetingsFacets, MeetingsCanonical>);
+  } as unknown as GraphOverrides);
 }
 
 function makeModule(graph: G): MeetingsModule {
   return mountModule(MeetingsModule, { graph, ctx: { extension_id: "meetings" } }).module;
 }
 
-const entity = (id: string, name: string, created = "2026-01-01T00:00:00Z"): RawEntity =>
-  ({ id, schema_id: CAL, name, created_at: created }) as RawEntity;
+const entity = (
+  id: string,
+  name: string,
+  properties: Record<string, unknown> = {},
+  created = "2026-01-01T00:00:00Z",
+): RawEntity => ({ id, schema_id: CAL, name, created_at: created, properties }) as RawEntity;
 
 // ── parseAttendees (strict — malformed input throws) ──────────────
 describe("parseAttendees", () => {
@@ -58,13 +61,13 @@ describe("parseAttendees", () => {
 
   it("throws on malformed attendees (missing email / non-array / legacy comma-string)", () => {
     expect(() => parseAttendees({ attendees: [{ name: "Alice" }] }, "ent-1")).toThrow(
-      /malformed attendees facet.*ent-1/,
+      /malformed attendees.*ent-1/,
     );
     expect(() => parseAttendees({ attendees: "Alice, Bob" }, "ent-1")).toThrow(
-      /malformed attendees facet/,
+      /malformed attendees/,
     );
     expect(() => parseAttendees({ attendees: "a@x, b@x" }, "ent-1")).toThrow(
-      /malformed attendees facet/,
+      /malformed attendees/,
     );
   });
 });
@@ -75,40 +78,41 @@ describe("meetings.list", () => {
     const win: WindowPage = {
       items: [
         {
-          entity: entity("m2", "Later meeting"),
-          data: {
+          entity: entity("m2", "Later meeting", {
             starts_at: "2026-02-02T15:00:00Z",
             ends_at: "2026-02-02T16:00:00Z",
             location: "Room B",
             description: "Agenda 2",
-            attendees: [],
-          },
+          }),
         },
         {
-          entity: entity("m1", "Earlier meeting"),
-          data: {
+          entity: entity("m1", "Earlier meeting", {
             starts_at: "2026-02-01T09:00:00Z",
             ends_at: "2026-02-01T10:00:00Z",
             location: "",
-            attendees: [],
-          },
+          }),
         },
       ],
       total: 2,
     };
     const list_entities_window = vi.fn().mockResolvedValue(win);
-    const mod = makeModule(makeGraph({ list_entities_window }));
+    const mod = makeModule(
+      makeGraph({
+        list_entities_window,
+        // No attendee edges on either row — ONE page-level batch read.
+        list_links_for_entities: vi.fn(async (): Promise<LinkSummary[]> => []),
+      }),
+    );
 
     const res = await mod.list({ limit: 50, offset: 0 });
 
-    // ONE window crossing; ordered by the details facet's starts_at DESC.
+    // ONE window crossing; ordered by the DICTIONARY's starts_at DESC, and no
+    // record schema is named anywhere on the read path.
     expect(list_entities_window).toHaveBeenCalledTimes(1);
     const spec = list_entities_window.mock.calls[0]![0];
     expect(spec.schema).toBe(CAL);
-    expect(spec.facet_schema).toBe(CAL_DETAILS);
-    expect(spec.order).toEqual([
-      { field: { facet_schema: CAL_DETAILS, facet_path: "starts_at" }, desc: true },
-    ]);
+    expect(spec.facet_schema).toBeUndefined();
+    expect(spec.order).toEqual([{ field: { property_path: "starts_at" }, desc: true }]);
 
     expect(res.total).toBe(2);
     expect(res.items.map((m) => m.id)).toEqual(["m2", "m1"]);
@@ -129,41 +133,50 @@ describe("meetings.list", () => {
 describe("meetings.get", () => {
   it("returns the detail view with enriched attendees + linked entities", async () => {
     const detail: EntityDetail = {
-      entity: entity("m1", "Sync meeting"),
-      facets: [
+      entity: entity("m1", "Sync meeting", {
+        starts_at: "2026-02-01T09:00:00Z",
+        ends_at: "2026-02-01T10:00:00Z",
+        location: "HQ",
+        description: "Weekly",
+      }),
+      // The attendee edges ride the detail's own links — no second crossing.
+      links: [
+        { id: "l1", from_id: "proj-1", to_id: "m1", kind: "created" },
         {
-          id: "f1",
-          schema_id: CAL_DETAILS,
-          source: "google",
-          observed_at: "2026-01-01T00:00:00Z",
-          data: {
-            starts_at: "2026-02-01T09:00:00Z",
-            ends_at: "2026-02-01T10:00:00Z",
-            location: "HQ",
-            description: "Weekly",
-            attendees: [{ name: "Alice", email: "alice@x.com" }, { email: "bob@x.com" }],
-          },
+          id: "l2",
+          from_id: "m1",
+          to_id: "addr-alice",
+          kind: "attendee",
+          metadata: { display_name: "Alice" },
         },
+        { id: "l3", from_id: "m1", to_id: "addr-bob", kind: "attendee" },
       ],
-      links: [{ id: "l1", from_id: "proj-1", to_id: "m1", kind: "created" }],
     };
     const graph = makeGraph({
       get_entity_full: vi.fn().mockResolvedValue(detail),
-      get_entities: vi
-        .fn()
-        .mockResolvedValue([{ id: "proj-1", schema_id: "projects.project", name: "Proj" }]),
-      // alice resolves to a contact; bob does not.
-      find_by_external_id: vi.fn(async (ext: string) =>
-        ext === "email:address:alice@x.com" ? "addr-alice" : null,
+      get_entities: vi.fn(async (ids: string[]) =>
+        [
+          { id: "proj-1", schema_id: "projects.project", name: "Proj" },
+          {
+            id: "addr-alice",
+            schema_id: "email.address",
+            name: "alice@x.com",
+            properties: { address: "alice@x.com" },
+          },
+          {
+            id: "addr-bob",
+            schema_id: "email.address",
+            name: "bob@x.com",
+            properties: { address: "bob@x.com" },
+          },
+          { id: "person-1", schema_id: "contacts.person", name: "Alice" },
+        ].filter((e) => ids.includes(e.id)),
       ),
-      list_links_for_entity: vi.fn(
-        async (): Promise<LinkSummary[]> => [
-          { id: "hl", from_id: "person-1", to_id: "addr-alice", kind: "has_email" },
-        ],
-      ),
-      get_entity: vi.fn(async (id: string) =>
-        id === "person-1" ? { id, schema_id: "contacts.person", name: "Alice" } : null,
-      ),
+      // alice's address is claimed by a contact; bob's is not. The batch
+      // reads BOTH addresses' edges in one call and the person in another.
+      list_links_for_entities: vi.fn(async (): Promise<LinkSummary[]> => [
+        { id: "hl", from_id: "person-1", to_id: "addr-alice", kind: "identity" },
+      ]),
     });
     const mod = makeModule(graph);
 
@@ -176,8 +189,12 @@ describe("meetings.get", () => {
       { name: "Alice", email: "alice@x.com", contact_id: "person-1" },
       { name: null, email: "bob@x.com", contact_id: null },
     ]);
+    // Every link neighbour is a Context-panel row — the project that created
+    // the meeting and both attendee addresses.
     expect(view.linked_entities).toEqual([
       expect.objectContaining({ id: "proj-1", link_kind: "created", schema_id: "projects.project" }),
+      expect.objectContaining({ id: "addr-alice", link_kind: "attendee" }),
+      expect.objectContaining({ id: "addr-bob", link_kind: "attendee" }),
     ]);
   });
 

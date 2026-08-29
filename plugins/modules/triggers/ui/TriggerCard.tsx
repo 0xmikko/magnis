@@ -53,6 +53,9 @@ function useResolvedWatches(
 
 const STATUS_DOT: Record<string, string> = {
   active: "bg-green-500",
+  // Stopped by the operator — a trigger is part of the graph, so this is what
+  // "turned off" looks like. `paused` stays for rows written before the change.
+  stopped: "bg-content-muted",
   paused: "bg-yellow-500",
   expired: "bg-content-muted",
   disabled: "bg-content-muted",
@@ -62,13 +65,26 @@ export function TriggerCard(props: EntityRendererProps): JSX.Element {
   const { data, runtime, action } = props;
   const entityId = data.id as string | undefined;
   const name = data.name as string | undefined;
-  const status = (data.status as string | undefined) ?? "active";
+  // INV-P2.1: the status comes from the module's own detail read and nowhere
+  // else. A link summary carries id and name, so guessing "active" here showed
+  // a paused trigger as running; while the read is in flight the card shows no
+  // status at all rather than one nobody reported.
 
   const detail = useTriggerDetail(entityId, runtime);
+  const status = detail?.status ?? null;
   const { expanded } = useContext(ExpansionContext);
   const watches = useResolvedWatches(expanded ? detail?.watched_entities : undefined, runtime);
   const watchedNames = detail?.watched_entities.map((e) => e.name ?? "?") ?? [];
-  const subtitle = watchedNames.length > 0 ? `Watches ${watchedNames.join(", ")}` : undefined;
+  // INV-UI-1 (plan Stage 5): a scheduled trigger's "when" IS its cron — a
+  // watch-less scheduled trigger must never render as a card with no
+  // subtitle at all.
+  const schedule = detail?.schedule ?? null;
+  const scheduleLabel = schedule ? `${schedule.cron} (${schedule.timezone})` : null;
+  const subtitle = scheduleLabel
+    ? `Schedule ${scheduleLabel}`
+    : watchedNames.length > 0
+      ? `Watches ${watchedNames.join(", ")}`
+      : undefined;
 
   return (
     <BaseEntityCard {...props}>
@@ -88,6 +104,12 @@ export function TriggerCard(props: EntityRendererProps): JSX.Element {
             data-testid={entityId ? `trigger-card-${entityId}-expanded` : undefined}
             className="mt-2 flex flex-col gap-1 text-[11px] text-content-tertiary"
           >
+            {scheduleLabel && (
+              <div className="flex gap-2">
+                <span className="w-20 shrink-0 text-content-tertiary">Schedule</span>
+                <span className="min-w-0 flex-1 break-words text-content">{scheduleLabel}</span>
+              </div>
+            )}
             {watches.length > 0 && (
               <div className="flex gap-2">
                 <span className="w-20 shrink-0 text-content-tertiary">Watches</span>
@@ -125,10 +147,12 @@ export function TriggerCard(props: EntityRendererProps): JSX.Element {
           </div>
         )}
       </div>
-      <span
-        className={`mt-[5px] h-2 w-2 shrink-0 rounded-full ${STATUS_DOT[status] ?? "bg-content-muted"}`}
-        aria-label={`status: ${status}`}
-      />
+      {status !== null && (
+        <span
+          className={`mt-[5px] h-2 w-2 shrink-0 rounded-full ${STATUS_DOT[status] ?? "bg-content-muted"}`}
+          aria-label={`status: ${status}`}
+        />
+      )}
     </BaseEntityCard>
   );
 }

@@ -1,4 +1,4 @@
-import type { FacetSummary, LinkedEntitySummary } from "@magnis/host/base";
+import type { LinkedEntitySummary } from "@magnis/host/base";
 
 export interface NoteListItem {
   readonly id: string;
@@ -13,6 +13,5 @@ export interface NoteListItem {
 export interface NoteDetailView extends NoteListItem {
   readonly body: string | null;
   readonly canonical: Record<string, unknown>;
-  readonly facets: readonly FacetSummary[];
   readonly linked_entities: readonly LinkedEntitySummary[];
 }

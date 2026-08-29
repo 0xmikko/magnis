@@ -1,0 +1,72 @@
+# The company hub (module-search-contract §11): dictionary fields plus the
+# vouched name. Emails are identity edges (link conditions); a company's
+# network presence is that network's profile entity, reached by a link.
+
+entity = "companies.company"
+tools = "companies"
+
+default_order = [ { key = "name", dir = "asc", nulls = "last" } ]
+
+[[field]]
+key = "name"
+kind = "text"
+column = "name"
+
+[[field]]
+key = "industry"
+kind = "text"
+path = "industry"
+
+[[field]]
+key = "domain"
+kind = "text"
+path = "domain"
+
+[[field]]
+key = "website"
+kind = "text"
+path = "website"
+
+[[field]]
+key = "location"
+kind = "text"
+path = "location"
+
+[[field]]
+key = "size"
+kind = "text"
+path = "size"
+
+[[field]]
+key = "stage"
+kind = "text"
+path = "stage"
+
+[[field]]
+key = "founded"
+kind = "number"
+path = "founded"
+
+[[field]]
+key = "headcount"
+kind = "number"
+path = "headcount"
+
+[[field]]
+key = "funding_total"
+kind = "text"
+path = "funding_total"
+
+[[field]]
+key = "description"
+kind = "text"
+path = "description"
+embed = "body"
+
+[[collection]]
+key = "phone"
+path = "phones"
+element = [
+  { key = "phone", kind = "text" },
+  { key = "type",  kind = "text" },
+]

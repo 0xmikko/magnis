@@ -1,0 +1,19 @@
+entity = "file.object"
+tools = "file"
+
+default_order = [ { key = "name", dir = "asc", nulls = "last" } ]
+
+[[field]]
+key = "name"
+kind = "text"
+path = "name"
+
+[[field]]
+key = "mime_type"
+kind = "text"
+path = "mime_type"
+
+[[field]]
+key = "size_bytes"
+kind = "number"
+path = "size_bytes"

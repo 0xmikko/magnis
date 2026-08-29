@@ -292,10 +292,28 @@ describe("tst_cat_src_cert_001 staged Source certification", () => {
       generatedFrom: "fixture-sha",
       receiptInputDir: join(root, "receipt-input"),
       discovered,
+      publishedPackages: discovered.map((entry) => ({
+        kind: entry.kind,
+        id: entry.id,
+        version: entry.version,
+        title: entry.title,
+        summary: entry.summary,
+        publisher: entry.publisher,
+        dev: entry.dev,
+        archive: {
+          name: `${entry.kind}__${entry.id}.tgz`,
+          sha256: createHash("sha256").update(`${entry.kind}:${entry.id}`).digest("hex"),
+        },
+      })),
     });
     const legacy = JSON.parse(readFileSync(join(root, "index.json"), "utf8")) as {
       schema_version: number;
-      packages: Array<{ kind: string; id: string }>;
+      packages: Array<{
+        kind: string;
+        id: string;
+        archive?: { name: string; sha256: string };
+        files?: unknown;
+      }>;
     };
     const strict = JSON.parse(readFileSync(join(root, "index.v2.json"), "utf8")) as {
       schema_version: number;
@@ -312,6 +330,11 @@ describe("tst_cat_src_cert_001 staged Source certification", () => {
     expect(legacy.packages.map(({ kind, id }) => `${kind}:${id}`)).toEqual(
       strict.packages.map(({ kind, id }) => `${kind}:${id}`),
     );
+    for (const entry of legacy.packages) {
+      expect(entry.archive?.name).toBe(`${entry.kind}__${entry.id}.tgz`);
+      expect(entry.archive?.sha256).toMatch(/^[0-9a-f]{64}$/);
+      expect(entry.files).toBeUndefined();
+    }
     expect(result.discovered).toBe(discovered);
     for (const entry of strict.packages) {
       if (entry.kind !== "source") continue;

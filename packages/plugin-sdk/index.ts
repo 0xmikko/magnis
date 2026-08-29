@@ -22,6 +22,7 @@ export * from "./contract/lifecycle";
 
 import type {
   GraphService,
+  LinkSummary,
   MethodRecorder,
   PluginContext,
   PluginDeps,
@@ -37,6 +38,43 @@ import type {
   ToolSpecInput,
 } from "./contract/module";
 import type { InstallContext, LifecycleHooks, MigrationStep } from "./contract/lifecycle";
+
+// ── shared link-endpoint assembly (added 2026-08-12) ────────────────────────
+// Every module that answers `linked_entities` has to turn edges into endpoints:
+// take the far side of each edge, label it by direction, drop the node it was
+// read from, and keep one row per endpoint. Seven modules hand-rolled that and
+// four observable divergences followed — some labelled incoming edges with `~`
+// and some did not, some deduplicated and some did not. This is the one
+// implementation; WHICH edges to pass in stays each module's own decision,
+// because that is the part that legitimately differs (a contact reads its
+// replicas' edges, a message reads its own).
+//
+// Direction: an edge whose `from_id` is one of `ownerIds` is outgoing and keeps
+// its kind; anything else is incoming and wears `~`. Passes are applied in
+// order and the FIRST relation to reach an endpoint supplies its label, so a
+// caller that reads its own edges before its replicas' gets its own labels.
+export interface LinkEndpointPass {
+  readonly links: readonly LinkSummary[];
+  /** The nodes these edges were read from — `from_id` here means outgoing. */
+  readonly ownerIds: ReadonlySet<string>;
+}
+
+export function reachedEndpoints(
+  passes: readonly LinkEndpointPass[],
+  excludeIds: ReadonlySet<string>,
+): Map<string, string> {
+  const reached = new Map<string, string>();
+  for (const pass of passes) {
+    for (const link of pass.links) {
+      const outgoing = pass.ownerIds.has(link.from_id);
+      const endpoint = outgoing ? link.to_id : link.from_id;
+      if (excludeIds.has(endpoint)) continue;
+      if (reached.has(endpoint)) continue;
+      reached.set(endpoint, outgoing ? link.kind : `~${link.kind}`);
+    }
+  }
+  return reached;
+}
 
 // ── shared list-search paging (added 2026-07-03) ────────────────────────────
 // The host list pane pages via {limit, offset, search} and computes
@@ -75,7 +113,7 @@ export async function searchEntitiesPage(
 
 // ─────────────────── payload coercion helpers ──────────────────────────────
 // Domain-neutral readers for the opaque `Record<string, unknown>` maps every
-// plugin gets back from the graph (window-row `data`, `get_entity_full` facet
+// plugin gets back from the graph (window-row `data`, `get_entity_full` record
 // `data`, sync-envelope `payload`). These were copy-pasted VERBATIM across the
 // social modules (linkedin/x) — promoted here so there is ONE spelling. Runtime
 // (not type-only): module code runs the SDK in V8, like `searchEntitiesPage`.
@@ -170,16 +208,44 @@ export function syncHandler(_surface?: string): MethodRecorder {
   return record("__sync__", { description: "sync ingest handler", params: {} }, false, false);
 }
 
+/// S4: the terminal sync marker. Invoked once when a bootstrap drain
+/// terminates — the page set the connector reported is COMPLETE, so an
+/// identity-scoped module can reconcile it: what the source no longer
+/// reports leaves the observed set. Payload: { user_id, source_id,
+/// account_id, identity_key, observed_remote_ids }. Opt-in.
+export function syncComplete(): MethodRecorder {
+  return record(
+    "__sync_complete__",
+    { description: "sync complete hook", params: {} },
+    false,
+    false,
+  );
+}
+
+/// S4: the connection-ready hook. Invoked by the host — user id from the
+/// CONNECT payload, never from an envelope — the moment a connection becomes
+/// provider-verified, BEFORE any envelope routes. The one place a module
+/// mints what identity-scoped ingest presumes (telegram: the operator's own
+/// account node). Payload: { user_id, source_id, account_id, identity_key }.
+/// NOT an agent tool. Opt-in — a module without it has nothing to prepare.
+export function connectionReady(): MethodRecorder {
+  return record(
+    "__connection_ready__",
+    { description: "connection ready hook", params: {} },
+    false,
+    false,
+  );
+}
+
 // ───────────────────── definePlugin — the entry ───────────────────
-/// Single plugin entry point. Generic over the plugin's schema maps —
-/// `F`/`C` are inferred from the constructor, so `definePlugin(Foo)`
-/// needs no explicit type args and there is no `any` at the call site.
+/// Single plugin entry point. Generic over the plugin's canonical map — `C`
+/// is inferred from the constructor, so `definePlugin(Foo)` needs no explicit
+/// type args and there is no `any` at the call site.
 /// (The wire shape it publishes — PluginModuleShape / ToolDefinitionWire — is
 /// declared in ./contract/module.)
-export function definePlugin<
-  F extends object = Record<string, unknown>,
-  C extends object = Record<string, unknown>,
->(ModuleClass: new (deps: PluginDeps<F, C>) => object): void {
+export function definePlugin(
+  ModuleClass: new (deps: PluginDeps) => object,
+): void {
   // Handed to the runtime AT MODULE EVAL, then mutated in place by
   // init(); the runtime reads rpcHandlers only post-init, so the
   // empty-then-filled sequence is safe.
@@ -211,7 +277,7 @@ export function definePlugin<
       );
     }
     const instance = new ModuleClass({
-      graph: graph as GraphService<F, C>,
+      graph: graph as GraphService,
       ctx,
       util,
       rpc,
@@ -261,7 +327,7 @@ export function defineLifecycle(hooks: LifecycleHooks): void {
     registerManifestSchemas(): void {
       declared = "manifest";
     },
-    register(registrations: { entities?: string[]; facets?: string[] }): void {
+    register(registrations: { entities?: string[] }): void {
       declared = registrations;
     },
   };

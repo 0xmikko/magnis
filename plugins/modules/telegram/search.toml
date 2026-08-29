@@ -1,0 +1,94 @@
+# Telegram's three entities (module-search-contract §11): the replica that
+# holds what telegram observed of a person, the chat, and the message. The
+# author and the chat of a message are EDGES (authored_by, in_chat) — link
+# conditions; the chat's view state (unread, pins) is the observed_in edge's
+# dictionary — the `edge` clause.
+
+[[declaration]]
+entity = "telegram.account"
+tools = "telegram.account"
+
+default_order = [ { key = "name", dir = "asc", nulls = "last" } ]
+
+[[declaration.field]]
+key = "name"
+kind = "text"
+any_of = [
+  { path = "display_name" },
+  { path = "first_name" },
+  { path = "last_name" },
+  { path = "username" },
+]
+
+[[declaration.field]]
+key = "username"
+kind = "text"
+path = "username"
+
+[[declaration.field]]
+key = "phone"
+kind = "text"
+path = "phone"
+
+[[declaration]]
+entity = "telegram.chat"
+tools = "telegram.chat"
+
+default_order = [ { key = "last_message_date", dir = "desc", nulls = "last" } ]
+
+[[declaration.field]]
+key = "title"
+kind = "text"
+path = "title"
+
+[[declaration.field]]
+key = "type"
+kind = "enum"
+path = "type"
+
+[[declaration.field]]
+key = "username"
+kind = "text"
+path = "username"
+
+[[declaration.field]]
+key = "member_count"
+kind = "number"
+path = "member_count"
+
+[[declaration.field]]
+key = "last_message_date"
+kind = "date"
+path = "last_message_date"
+
+[[declaration]]
+entity = "telegram.message"
+tools = "telegram.message"
+
+default_order = [ { key = "date", dir = "desc", nulls = "last" } ]
+
+[[declaration.field]]
+key = "text"
+kind = "text"
+path = "text"
+embed = "body"
+
+[[declaration.field]]
+key = "date"
+kind = "date"
+column = "date"
+
+[[declaration.field]]
+key = "is_outgoing"
+kind = "boolean"
+path = "is_outgoing"
+
+[[declaration.field]]
+key = "media_type"
+kind = "text"
+path = "media_type"
+
+[[declaration.field]]
+key = "file_name"
+kind = "text"
+path = "file_name"

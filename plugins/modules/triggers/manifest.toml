@@ -1,7 +1,7 @@
 # triggers — Trigger definitions domain module (V8 plugin).
 #
 # Owns the `triggers.*` graph namespace: the trigger entity plus its config and
-# execution facets. This module owns only the trigger DEFINITION CRUD + UI — the
+# execution records. This module owns only the trigger DEFINITION CRUD + UI — the
 # native trigger ENGINE (evaluate + fire) stays in Core and reads these
 # definitions (hybrid split). Runs as a sandboxed V8 isolate; bundled with the
 # app and installed automatically at boot.
@@ -18,43 +18,13 @@ summary = "Automations that watch your graph and act on changes."
 # Reverse-domain publisher identity.
 publisher = "ai.magnis"
 
-[[links]]
-kind = "watches"
-from = "triggers.trigger"
-to = "email.address"
-
-[[links]]
-kind = "watches"
-from = "triggers.trigger"
-to = "contacts.person"
-
-[[links]]
-kind = "watches"
-from = "triggers.trigger"
-to = "linkedin.post"
-
-[[links]]
-kind = "watches"
-from = "triggers.trigger"
-to = "meetings.calendar_event"
-
-[[links]]
-kind = "watches"
-from = "triggers.trigger"
-to = "telegram.chat"
-
-[[links]]
-kind = "watches"
-from = "triggers.trigger"
-to = "x.post"
-
-[[links]]
-kind = "belongs_to"
-from = "triggers.trigger"
-to = "episodes.episode"
-
-# Foreign asks beyond the implicit own namespace: writes to `triggers.` facets,
+# Foreign asks beyond the implicit own namespace: writes to `triggers.` records,
 # own:own links, and reads of own schemas need no declaration.
 [permissions]
-links = [ "watches", "belongs_to" ]
-call = [ "triggers.validate_watch", "triggers.resolve_watchable", "triggers.invalidate_cache" ]
+# triggers.belongs_to is own-prefixed — implicit (S2).
+links = [ "watches" ]
+call = [ "triggers.validate_watch", "triggers.resolve_watchable", "triggers.invalidate_cache", "triggers.fire_history", "triggers.validate_schedule" ]
+
+# The kind this module OWNS (S2): a trigger belongs to a parent episode.
+[[links]]
+kind = "triggers.belongs_to"

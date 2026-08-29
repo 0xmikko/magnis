@@ -11,14 +11,26 @@
 //
 // Exercised through @magnis/testkit/module.
 
+/**
+ * @test-id: tst_module_email_delivery_001
+ * @scenario: scn_backend_tests_006
+ * @covers: EmailModule.emailSend, EmailModule.emailReply
+ * @legacy-id: tst_module_email_attach_002_send_includes_attachments
+ * @legacy-id: tst_module_email_attach_003_reply_accepts_attachments
+ * @legacy-id: tst_module_email_attach_004_multitype_encoding
+ * @legacy-id: tst_module_email_attach_005_no_attachments_regression
+ * @legacy-id: tst_int_trig_040_email_send_without_a_connected_account_creates_nothing
+ * @deterministic: yes
+ */
+
 import { describe, expect, it } from "vitest";
 import type { EntityDetail, GraphBatchInput } from "@magnis/plugin-sdk";
 import { mockGraph, mountModule, type GraphOverrides, type MockGraph } from "@magnis/testkit/module";
 import { EmailModule } from "../service.ts";
 import { normalizeRecipient } from "../helpers.ts";
-import type { EmailCanonical, EmailFacets } from "../../types.ts";
+import type { EmailCanonical } from "../../types.ts";
 
-type G = MockGraph<EmailFacets, EmailCanonical>;
+type G = MockGraph;
 
 function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
   const overrides = {
@@ -31,12 +43,11 @@ function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
     }),
     add_link: () => Promise.resolve(undefined),
     // No prior send attempt unless a test arranges one.
-    find_by_external_id: () => Promise.resolve(null),
     source_command: () => Promise.resolve({ message_id: "src-1" }),
     get_entity_full: () => Promise.resolve(null),
     ...over,
-  } as unknown as GraphOverrides<EmailFacets, EmailCanonical>;
-  return mockGraph<EmailFacets, EmailCanonical>(overrides);
+  } as unknown as GraphOverrides;
+  return mockGraph(overrides);
 }
 
 function makeModule(graph: G): EmailModule {
@@ -69,12 +80,10 @@ describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
     const msg = frag.entities.find((e) => e.schema_id === "email.message")!;
     const addr = frag.entities.find((e) => e.schema_id === "email.address")!;
     expect(addr.idx).toBe("bob@example.com"); // lowercased recipient
-    const addrFacet0 = addr.facets[0];
-    if (addrFacet0 === undefined) throw new Error("send: missing addr facet[0]");
-    expect(addrFacet0.external_id).toBe("email:address:bob@example.com");
-    const msgFacet0 = msg.facets[0];
-    if (msgFacet0 === undefined) throw new Error("send: missing msg facet[0]");
-    expect((msgFacet0.data as Record<string, unknown>).is_outgoing).toBe(true);
+    // S5: nodes are dictionaries under their anchors.
+    expect(addr.anchor).toBe("email:address:bob@example.com");
+    expect(addr.properties?.address).toBe("bob@example.com");
+    expect(msg.properties?.is_outgoing).toBe(true);
     expect(frag.links).toEqual([{ from_key: "out", to_key: "addr:bob@example.com", kind: "sent_to" }]);
 
     // INV-5: the provider is called BEFORE the message is persisted, so a
@@ -82,7 +91,7 @@ describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
     expect(spy(graph, "source_command")).toHaveBeenCalledTimes(1);
     // INV-6: the provider's id rides on the stored message so a later ingest
     // of that same mail matches it instead of creating a duplicate.
-    expect((msgFacet0.data as Record<string, unknown>).provider_message_id).toBe("src-1");
+    expect(msg.properties?.provider_message_id).toBe("src-1");
     expect(r.id).toBe("id-out");
     expect(r.schema_id).toBe("email.message");
     expect(r.attachment_count).toBe(0);
@@ -134,7 +143,7 @@ describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
 
   /**
    * @test-id: tst_module_email_send_005
-   * @invariant INV-6 — ingest matches on the facet `external_id` and nothing
+   * @invariant INV-6 — ingest matches on the record `external_id` and nothing
    * else, and Gmail hands back the same id for our own sent mail. Carrying it
    * on the outgoing message is what stops the copy arriving from Sent becoming
    * a SECOND entity.
@@ -149,7 +158,9 @@ describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
 
     const frag = spy(graph, "apply_batch").mock.calls[0]?.[0] as GraphBatchInput;
     const msg = frag.entities.find((e) => e.schema_id === "email.message")!;
-    expect(msg.facets[0]?.external_id).toBe("gmail-42");
+    // S5: the provider id is the node ANCHOR — that is what makes the copy
+    // arriving from Sent update this node instead of creating a second one.
+    expect(msg.anchor).toBe("gmail-42");
     expect(msg.idx).toBe("thr-9");
   });
 
@@ -158,13 +169,12 @@ describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
       get_entity_full: () =>
         Promise.resolve({
           entity: { id: "f1", schema_id: "file.object", name: "doc.pdf", created_at: "" },
-          facets: [{ id: "x", schema_id: "file.details", source: "s", observed_at: "", data: { name: "doc.pdf" } }],
           links: [],
         } satisfies EntityDetail),
     });
     const mod = makeModule(graph);
     const r = await mod.emailSend({ to: "b@x.com", subject: "S", body_text: "B", attachment_ids: ["f1"] });
-    expect(spy(graph, "add_link")).toHaveBeenCalledWith({ from_id: "id-out", to_id: "f1", kind: "attachment" });
+    expect(spy(graph, "add_link")).toHaveBeenCalledWith({ from_id: "id-out", to_id: "f1", kind: "file.attachment" });
     expect(r.attachment_count).toBe(1);
   });
 
@@ -181,7 +191,6 @@ describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
       get_entity_full: () =>
         Promise.resolve({
           entity: { id: "c1", schema_id: "company", name: "Acme", created_at: "" },
-          facets: [{ id: "x", schema_id: "company.details", source: "s", observed_at: "", data: {} }],
           links: [],
         } satisfies EntityDetail),
     });
@@ -194,17 +203,19 @@ describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
 });
 
 describe("email reply (tst_be_emailreply_003)", () => {
+  // S5: the original's DICT is what the reply reads.
   const original = (): EntityDetail => ({
-    entity: { id: "orig", schema_id: "email.message", name: "Quarterly", created_at: "" },
-    facets: [
-      {
-        id: "f",
-        schema_id: "email.message.details",
-        source: "gmail",
-        observed_at: "",
-        data: { from_address: "boss@corp.com", subject: "Quarterly", message_id: "gmail-orig-1" },
+    entity: {
+      id: "orig",
+      schema_id: "email.message",
+      name: "Quarterly",
+      created_at: "",
+      properties: {
+        from_address: "boss@corp.com",
+        subject: "Quarterly",
+        message_id: "gmail-orig-1",
       },
-    ],
+    } as EntityDetail["entity"],
     links: [],
   });
 
@@ -217,7 +228,6 @@ describe("email reply (tst_be_emailreply_003)", () => {
           if (call === 1) return Promise.resolve(original()); // reply reads the original
           return Promise.resolve({
             entity: { id: "f1", schema_id: "file.object", name: "a", created_at: "" },
-            facets: [{ id: "fd", schema_id: "file.details", source: "s", observed_at: "", data: { name: "a" } }],
             links: [],
           } satisfies EntityDetail);
         };
@@ -234,7 +244,7 @@ describe("email reply (tst_be_emailreply_003)", () => {
     expect(d.subject).toBe("Re: Quarterly");
     expect(d.to).toEqual([{ address: "boss@corp.com" }]);
     // attachment linked to the ORIGINAL email, not a new entity
-    expect(spy(graph, "add_link")).toHaveBeenCalledWith({ from_id: "orig", to_id: "f1", kind: "attachment" });
+    expect(spy(graph, "add_link")).toHaveBeenCalledWith({ from_id: "orig", to_id: "f1", kind: "file.attachment" });
     expect(r.reply_to).toBe("boss@corp.com");
     expect(spy(graph, "apply_batch")).not.toHaveBeenCalled(); // reply creates no new message entity
   });
@@ -275,7 +285,6 @@ describe("email reply (tst_be_emailreply_003)", () => {
           if (call === 1) return Promise.resolve(original());
           return Promise.resolve({
             entity: { id: "f1", schema_id: "file.object", name: "a", created_at: "" },
-            facets: [{ id: "fd", schema_id: "file.details", source: "s", observed_at: "", data: { name: "a" } }],
             links: [],
           } satisfies EntityDetail);
         };
@@ -301,7 +310,22 @@ describe("email reply (tst_be_emailreply_003)", () => {
   });
 });
 
-describe("email batch_send (tst_be_emailbatch_send_004)", () => {
+/**
+ * @test-id: tst_module_email_batch_001
+ * @scenario: scn_email_batch_001
+ * @covers: EmailModule.emailBatchSend
+ * @deterministic: yes
+ * @fixtures: @magnis/testkit/module graph double
+ * @legacy-id: tst_ctrl_email_batch_001_happy_path
+ * @legacy-id: tst_ctrl_email_batch_002_empty_array
+ * @legacy-id: tst_ctrl_email_batch_003_exceeds_max
+ * @legacy-id: tst_ctrl_email_batch_004_missing_field
+ * @legacy-id: tst_ctrl_email_batch_005_excluded
+ * @legacy-id: tst_ctrl_email_batch_006_all_excluded
+ * @legacy-id: tst_ctrl_email_batch_007_with_attachments
+ * @legacy-id: tst_ctrl_email_batch_008_provider_without_message_id_is_not_sent
+ */
+describe("email batch_send (tst_module_email_batch_001)", () => {
   it("sends each message, skips excluded indices, reports counts", async () => {
     const graph = makeGraph();
     const mod = makeModule(graph);
@@ -327,9 +351,19 @@ describe("email batch_send (tst_be_emailbatch_send_004)", () => {
     expect(spy(graph, "apply_batch")).toHaveBeenCalledTimes(2); // only the 2 non-excluded
   });
 
-  it("rejects an out-of-range batch size", async () => {
+  it.each([
+    ["empty", []],
+    [
+      "over 50",
+      Array.from({ length: 51 }, (_, i) => ({
+        to: `person-${String(i)}@x.com`,
+        subject: "S",
+        body_text: "B",
+      })),
+    ],
+  ])("rejects an %s batch", async (_label, messages) => {
     const mod = makeModule(makeGraph());
-    await expect(mod.emailBatchSend({ messages: [] })).rejects.toThrow(/1\.\.=50/);
+    await expect(mod.emailBatchSend({ messages })).rejects.toThrow(/1\.\.=50/);
   });
 
   it("rejects a message missing a required field", async () => {
@@ -337,6 +371,23 @@ describe("email batch_send (tst_be_emailbatch_send_004)", () => {
     await expect(
       mod.emailBatchSend({ messages: [{ to: "a@x.com", subject: "", body_text: "x" } as never] }),
     ).rejects.toThrow(/missing subject/);
+  });
+
+  it("reports a provider success without a receipt as failed and persists nothing", async () => {
+    const graph = makeGraph({
+      source_command: () => Promise.resolve({ thread_id: "thr-without-message-id" }),
+    });
+    const mod = makeModule(graph);
+
+    const r = await mod.emailBatchSend({
+      messages: [{ to: "a@x.com", subject: "S", body_text: "B" }],
+    });
+
+    expect(r).toMatchObject({ total: 1, sent: 0, failed: 1, excluded: 0 });
+    expect(r.results).toEqual([
+      expect.objectContaining({ id: null, status: "failed", error: expect.stringMatching(/no provider id/) }),
+    ]);
+    expect(spy(graph, "apply_batch")).not.toHaveBeenCalled();
   });
 });
 

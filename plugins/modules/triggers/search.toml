@@ -1,0 +1,38 @@
+entity = "triggers.trigger"
+tools = "triggers.trigger"
+
+default_order = [ { key = "name", dir = "asc", nulls = "last" } ]
+
+[[field]]
+key = "name"
+kind = "text"
+path = "name"
+
+[[field]]
+key = "status"
+kind = "enum"
+path = "status"
+
+[[field]]
+key = "schema_filter"
+kind = "text"
+path = "schema_filter"
+
+[[field]]
+key = "expires_at"
+kind = "date"
+path = "expires_at"
+
+[[field]]
+key = "firing_count"
+kind = "number"
+path = "firing_count"
+
+[[field]]
+key = "last_fired_at"
+kind = "date"
+path = "last_fired_at"
+
+[[collection]]
+key = "event_kinds"
+path = "event_kinds"

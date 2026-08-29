@@ -15,6 +15,7 @@ export interface PendingAttachment {
 }
 export interface ComposerSharedProps {
     readonly isStreaming: boolean;
+    readonly disabledReason?: string | null;
     readonly onSend: (text: string, mentions: readonly EntityMention[]) => void;
     readonly onStop: () => void;
     readonly selectorItems?: readonly ModelSelectorItem[];
@@ -32,5 +33,5 @@ export declare function ReplyToBar({ replyTo, runtime, onDismiss, }: {
     readonly runtime: AppRuntime;
     readonly onDismiss: () => void;
 }): JSX.Element | null;
-export declare function AgentLandingComposer({ isStreaming, onSend, onStop, selectorItems, currentSelection, onSelectionChange, replyTo, onClearReplyTo, runtime, onAttachFile, pendingAttachments, onRemoveAttachment, }: ComposerSharedProps): JSX.Element;
-export declare function AgentDockedComposer({ isStreaming, onSend, onStop, selectorItems, currentSelection, onSelectionChange, replyTo, onClearReplyTo, runtime, onAttachFile, pendingAttachments, onRemoveAttachment, }: ComposerSharedProps): JSX.Element;
+export declare function AgentLandingComposer({ isStreaming, disabledReason, onSend, onStop, selectorItems, currentSelection, onSelectionChange, replyTo, onClearReplyTo, runtime, onAttachFile, pendingAttachments, onRemoveAttachment, }: ComposerSharedProps): JSX.Element;
+export declare function AgentDockedComposer({ isStreaming, disabledReason, onSend, onStop, selectorItems, currentSelection, onSelectionChange, replyTo, onClearReplyTo, runtime, onAttachFile, pendingAttachments, onRemoveAttachment, }: ComposerSharedProps): JSX.Element;

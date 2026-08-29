@@ -8,6 +8,7 @@ fail=0
 for t in plugins/modules/*/tsconfig.json \
          plugins/sources/*/tsconfig.json \
          packages/*/tsconfig.json \
+         apps/desktop/build/tsconfig.json \
          scripts/tsconfig.json; do
   [ -f "$t" ] || continue
   echo "tsc: $t"

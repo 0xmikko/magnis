@@ -16,21 +16,20 @@ import type {
   LinkedEntitySummary,
   NoteCanonical,
   NoteDetailView,
-  NoteFacets,
   NoteListItem,
   NoteSnapshot,
   NotesListParams,
   TemplateApplyParams,
   UpdateParams,
 } from "../types.ts";
-import { NOTE, NOTE_CONTENT } from "../schema.ts";
+import { NOTE } from "../schema.ts";
 import { isValidUuid, previewFromBody, renderTemplate } from "./helpers.ts";
 import { BODY_ONE_OF, resolveBody, resolveUpdateBody } from "../ui/toolArgs.ts";
 
 export class NotesModule {
-  private readonly graph: GraphService<NoteFacets, NoteCanonical>;
+  private readonly graph: GraphService;
   private readonly log: PluginLogger;
-  constructor(deps: PluginDeps<NoteFacets, NoteCanonical>) {
+  constructor(deps: PluginDeps) {
     this.graph = deps.graph;
     this.log = deps.log;
   }
@@ -70,7 +69,7 @@ export class NotesModule {
 
     if (search) {
       // Search path: name match returns ids only; hydrate ONLY the page in TWO
-      // batch reads — facets (preview/body) AND canonical (pinned/updated_at/
+      // batch reads — records (preview/body) AND canonical (pinned/updated_at/
       // title), so the item stays byte-identical to the old per-row build while
       // dropping the 2N+1 N+1.
       const all = await this.graph.search_entities_by_name({
@@ -80,36 +79,22 @@ export class NotesModule {
       });
       const total = all.length;
       const page = all.slice(offset, offset + limit);
-      const ids = page.map((e) => e.id);
-      const facets = await this.graph.list_facets_for_entities(ids);
-      const canon = await this.graph.list_canonical_for_entities(ids);
-      const dataById = new Map<string, ContentData>();
-      for (const f of facets) {
-        if (f.schema_id === NOTE_CONTENT && f.entity_id && !dataById.has(f.entity_id)) {
-          dataById.set(f.entity_id, (f.data ?? {}));
-        }
-      }
-      const canonById = new Map<string, Partial<NoteCanonical>>();
-      for (const c of canon) {
-        if (!c.entity_id) continue;
-        const m = (canonById.get(c.entity_id) ?? {}) as Record<string, unknown>;
-        m[c.key] = c.value;
-        canonById.set(c.entity_id, m);
-      }
+      // S1: the dictionary rides the entity — the record and canonical batch
+      // reads (two round-trips per page) are gone.
       const items = page.map((e) =>
-        this.listItemFromParts(e, dataById.get(e.id) ?? {}, canonById.get(e.id) ?? {}),
+        this.listItemFromParts(e, (e.properties ?? {}) as ContentData, {}),
       );
       return { items, total, limit, offset };
     }
 
-    // No search: windowed list ordered by the content facet's `updated_at`
-    // (most-recently-edited first), with the body facet inline for the preview
-    // and the exact total — one statement. This also stands in for the dropped
-    // native `update_entity_date` recency (no such SDK op).
+    // No search: windowed list ordered by the dictionary's `updated_at`
+    // (most-recently-edited first) — S1 moved note state into
+    // `entity.properties`, and an order key on the frozen record would never
+    // see an edit again. Preview renders from the same dictionary; no record
+    // is read.
     const win = await this.graph.list_entities_window({
       schema: NOTE,
-      facet_schema: NOTE_CONTENT,
-      order: [{ field: { facet_schema: NOTE_CONTENT, facet_path: "updated_at" }, desc: true }],
+      order: [{ field: { property_path: "updated_at" }, desc: true }],
       limit,
       offset,
     });
@@ -136,8 +121,11 @@ export class NotesModule {
     }
     const e = detail.entity;
     const data = this.contentOf(detail);
-    const canonical = await this.graph.get_canonical(e.id, [NOTE]);
-    const pinned = (canonical["note.pinned"] as boolean | null) ?? data.pinned ?? false;
+    // S6: the note's dictionary is the record — nothing resolves into
+    // canonical any more, and the DTO keeps the field only until the wire
+    // shape drops it.
+    const canonical = {};
+    const pinned = data.pinned ?? false;
 
     // Resolve link neighbours via ONE get_entities batch (user-scoped →
     // drops non-owned targets, same visibility rule as the old per-link
@@ -167,14 +155,13 @@ export class NotesModule {
     return {
       id: e.id,
       schema_id: e.schema_id,
-      title: this.titleOf(e, data, canonical),
+      title: this.titleOf(e, data),
       body: data.body ?? null,
       pinned,
       canonical,
-      facets: detail.facets,
       linked_entities: linked,
       created_at: e.created_at ?? new Date(0).toISOString(),
-      updated_at: data.updated_at ?? (canonical["note.updated_at"] as string | null) ?? null,
+      updated_at: data.updated_at ?? null,
     };
   }
 
@@ -280,7 +267,7 @@ export class NotesModule {
     }
     const e = detail.entity;
     const data = this.contentOf(detail);
-    const currentTitle = this.titleOf(e, data, {});
+    const currentTitle = this.titleOf(e, data);
     const newTitle = params.title ?? currentTitle;
     const newBody = resolveUpdateBody(params) ?? data.body ?? "";
     const now = new Date().toISOString();
@@ -293,7 +280,7 @@ export class NotesModule {
 
     // @tested-by: tst_module_notes_write_002
     // @invariant: INV-25 — content first, then the rename. The old order left a
-    // note renamed for content it never received when the facet write failed.
+    // note renamed for content it never received when the record write failed.
     // If the rename then fails, the prior content is restored so neither half
     // is applied alone.
     await this.writeContent(params.id, newTitle, newBody, now);
@@ -367,7 +354,7 @@ export class NotesModule {
 
   // ── private helpers ──────────────────────────────────────────────
 
-  /// Attach a fresh `notes.note.content` facet and re-derive canonicals.
+  /// Attach a fresh `notes.note.content` record and re-derive canonicals.
   /// `pinned` is always written false (native parity — pinning is a separate
   /// `graph.entity.pin` op, not part of the note body write).
   private async writeContent(
@@ -376,35 +363,38 @@ export class NotesModule {
     body: string,
     updatedAt: string,
   ): Promise<void> {
-    await this.graph.attach_facet({
+    // S1 (canonical-graph-structure): the note's state is the node's
+    // dictionary. One write, no canonical resolution pass, and an edit stops
+    // being an accidental collection (the record path appended a row per save).
+    await this.graph.update_properties({
       entity_id: entityId,
-      schema_id: NOTE_CONTENT,
-      data: { title, body, pinned: false, updated_at: updatedAt },
+      properties: { title, body, pinned: false, updated_at: updatedAt },
     });
-    await this.graph.resolve_canonical(entityId);
   }
 
   private contentOf(detail: EntityDetail): ContentData {
-    const content = detail.facets.find((f) => f.schema_id === NOTE_CONTENT);
-    return (content?.data ?? {});
+    // S1: the dictionary IS the state; the frozen retired archive is not read.
+    return (detail.entity.properties ?? {});
   }
 
-  private titleOf(e: RawEntity, data: ContentData, canonical: Partial<NoteCanonical>): string {
+  private titleOf(e: RawEntity, data: ContentData): string {
     if (e.name && e.name.length > 0) return e.name;
     if (data.title && data.title.length > 0) return data.title;
-    const ct = canonical["note.title"];
-    if (typeof ct === "string" && ct.length > 0) return ct;
     return "Untitled";
   }
 
   private listItemFromWindow(row: WindowRow): NoteListItem {
-    // No-search path: the window inlines the latest content facet only; canonical
-    // is not consulted (its keys are latest-wins from this same facet).
-    return this.listItemFromParts(row.entity, (row.data ?? {}), {});
+    // S1: the dictionary rides the window's entity; the inlined render record
+    // is the frozen archive and is not read.
+    return this.listItemFromParts(
+      row.entity,
+      ((row.entity).properties ?? {}),
+      {},
+    );
   }
 
-  // Pure list-item shaping from an entity + its content facet data + its
-  // canonical map. The search path passes batch-fetched facets + canonical so it
+  // Pure list-item shaping from an entity + its content record data + its
+  // canonical map. The search path passes batch-fetched records + canonical so it
   // stays byte-identical to the old per-row build; the window path passes `{}`
   // canonical. No graph access.
   private listItemFromParts(
@@ -415,11 +405,11 @@ export class NotesModule {
     return {
       id: e.id,
       schema_id: e.schema_id,
-      title: this.titleOf(e, data, canonical),
+      title: this.titleOf(e, data),
       preview: previewFromBody(data.body ?? ""),
       pinned: (canonical["note.pinned"] as boolean | null) ?? data.pinned ?? false,
       created_at: e.created_at ?? new Date(0).toISOString(),
-      updated_at: data.updated_at ?? (canonical["note.updated_at"] as string | null) ?? null,
+      updated_at: data.updated_at ?? null,
       is_pinned: e.is_pinned ?? null,
     };
   }
@@ -430,7 +420,7 @@ export class NotesModule {
     return {
       id: e.id,
       schema_id: NOTE,
-      title: this.titleOf(e, data, {}),
+      title: this.titleOf(e, data),
       body: data.body ?? "",
       updated_at: data.updated_at ?? e.created_at ?? new Date(0).toISOString(),
     };

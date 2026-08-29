@@ -141,7 +141,7 @@ export { AgendaList } from "./AgendaList";
 export type { AgendaListProps, AgendaGroup, AgendaGroupItem } from "./AgendaList";
 export { MiniCalendar } from "./MiniCalendar";
 export type { MiniCalendarProps } from "./MiniCalendar";
-export { ContextMenu } from "./ContextMenu";
+export { ContextMenu, ContextMenuSurface } from "./ContextMenu";
 export type { ContextMenuProps, ContextMenuEntry } from "./ContextMenu";
 export { useContextMenu } from "./useContextMenu";
 export type { SidebarSectionData, SidebarSectionItemData } from "./SidebarSectionList";

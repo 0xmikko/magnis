@@ -1,0 +1,47 @@
+[workspace]
+
+[package]
+name = "magnis-desktop"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "magnis-desktop"
+path = "src/main.rs"
+
+[[bin]]
+name = "magnis-runtime"
+path = "src/bin/magnis-runtime.rs"
+
+[dependencies]
+tauri = { version = "2.2.0", features = ["tray-icon"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+anyhow = "1.0"
+dirs = "5.0"
+getrandom = "0.2"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls-native-roots"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+# The shell's own daily-rolling log file (backend-logging-system DEC-16).
+tracing-appender = "0.2"
+ctrlc = "3"
+tauri-plugin-opener = "2"
+tauri-plugin-dialog = "2"
+# Registered FIRST at runtime, as its docs require: a second launch must
+# collapse into the running instance rather than start a rival owner of the
+# same data directory.
+tauri-plugin-single-instance = "2"
+tauri-plugin-autostart = "2"
+# PROBE (D1b): does the embedded-PostgreSQL crate build inside the Tauri crate?
+postgresql_embedded = { version = "0.20", default-features = false, features = ["tokio", "theseus", "bundled"] }
+
+[target.'cfg(unix)'.dependencies]
+# SIGTERM for graceful backend shutdown (std Child::kill is SIGKILL only).
+libc = "0.2"
+
+[build-dependencies]
+tauri-build = { version = "2.0.3", features = [] }
+
+[dev-dependencies]
+tempfile = "3"

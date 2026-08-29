@@ -69,6 +69,40 @@ describe("tst_fe_meetings_expand_003 — MeetingCard expanded layout", () => {
   });
 });
 
+describe("tst_fe_meetings_expand_005 — the GENERIC card renders from dictionary + edges", () => {
+  it("derives title/when from the flattened dictionary and attendees from attendee edges", () => {
+    const runtime = mockRuntime(null);
+    // What the chokepoint hands a renderer for a folded meeting: the node's
+    // dictionary FLAT at the root, the attendee EDGES under neighbours.
+    const { getByText } = render(
+      <ExpansionContext.Provider value={{ bare: false, expanded: true }}>
+        <MeetingCard
+          schemaId="meetings.calendar_event"
+          data={{
+            name: "Standup",
+            starts_at: "2026-05-12T10:00:00Z",
+            location: "Office",
+            neighbours: [
+              {
+                kind: "attendee",
+                name: "anna@x.test",
+                schema_id: "email.address",
+                metadata: { display_name: "Anna" },
+              },
+              { kind: "attendee", name: "boris@x.test", schema_id: "email.address" },
+              { kind: "created_by", name: "Project X", schema_id: "projects.project" },
+            ],
+          }}
+          runtime={runtime}
+        />
+      </ExpansionContext.Provider>,
+    );
+    expect(getByText("2026-05-12 · 10:00:00")).toBeTruthy();
+    expect(getByText("Office")).toBeTruthy();
+    expect(getByText("Anna, boris@x.test")).toBeTruthy();
+  });
+});
+
 describe("tst_fe_meetings_expand_004 — chevron flips MeetingCard via context", () => {
   it("renders attendees row only after clicking the chevron", () => {
     const registration: EntityRendererRegistration = {

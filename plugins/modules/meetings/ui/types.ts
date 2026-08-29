@@ -1,4 +1,4 @@
-import type { AvatarColor, FacetSummary, LinkedEntitySummary, SidebarData } from "@magnis/host/base";
+import type { AvatarColor, LinkedEntitySummary, SidebarData } from "@magnis/host/base";
 
 /**
  * Canonical API attendee — mirrors Rust `CalendarAttendee` at
@@ -31,7 +31,6 @@ export interface MeetingListItem {
 
 export interface MeetingDetailView extends MeetingListItem {
   readonly canonical: Record<string, unknown>;
-  readonly facets: readonly FacetSummary[];
   readonly linked_entities: readonly LinkedEntitySummary[];
 }
 

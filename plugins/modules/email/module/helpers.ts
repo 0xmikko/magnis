@@ -49,11 +49,26 @@ function splitRecipients(csv: string | null): string[] {
 /// LIVE trigger's touched ids, so a trigger watching a Cc'd/Bcc'd address (e.g.
 /// "watch my inbox") fires and the recipient's contact surfaces the message.
 export function recipientsOf(p: Data): string[] {
-  const set = new Set<string>();
-  for (const field of ["to_addresses", "cc_addresses", "bcc_addresses"]) {
-    for (const r of splitRecipients(str(p, field))) set.add(r);
+  return recipientsWithRoles(p).map((r) => r.addr);
+}
+
+/// Recipients with their ROLE — To/Cc/Bcc is a per-pair fact that rides the
+/// `sent_to` edge dictionary (S5 review): once the joined strings leave the
+/// message dict, the edge is the only place the distinction can survive.
+/// An address listed under several headers keeps the strongest role
+/// (to > cc > bcc — the same order the fields are scanned).
+export function recipientsWithRoles(p: Data): { addr: string; role: string }[] {
+  const seen = new Map<string, string>();
+  for (const [field, role] of [
+    ["to_addresses", "to"],
+    ["cc_addresses", "cc"],
+    ["bcc_addresses", "bcc"],
+  ] as const) {
+    for (const addr of splitRecipients(str(p, field))) {
+      if (!seen.has(addr)) seen.set(addr, role);
+    }
   }
-  return [...set];
+  return [...seen.entries()].map(([addr, role]) => ({ addr, role }));
 }
 
 /// Every unique address (sender + all recipients) a message contributes — used

@@ -50,6 +50,11 @@ export interface RawEntity {
   // Additive: index-backed columns some lists render/sort by.
   date?: string | null;
   idx?: string | null;
+  /// S1: the node's dictionary. Present on every entity the host serializes;
+  /// `{}` for entities whose family has not folded yet.
+  properties?: Record<string, unknown>;
+  /// S1: identity anchor (null until the family's backfill).
+  anchor?: string | null;
 }
 
 export interface CreateEntityParams {
@@ -80,35 +85,37 @@ export interface SearchEntitiesParams {
   schema_ids?: string[];
   limit?: number;
 }
-/// Filter entities by a facet field value (e.g. messages whose
-/// `telegram.message.details.chat_id == <id>`), optionally ordered by a facet
-/// field. Returns the page + total.
-/// A filter/order field for `list_entities_window` (a FieldRef):
-/// an entity column, or a facet field (latest facet of `facet_schema`, JSON
-/// `facet_path`). Provide EITHER `entity_field` OR `facet_schema`+`facet_path`.
+/// A filter/order field for `list_entities_window` (a FieldRef): an entity
+/// column, a key of the node's dictionary, or a key of an edge dictionary.
 export interface FieldRefDto {
   entity_field?: "idx" | "date" | "name" | "created_at" | "is_pinned" | "pin_order" | "context";
-  facet_schema?: string;
-  facet_path?: string;
+  /** A key of the node's dictionary (S1): `entities.properties->>path`. */
+  property_path?: string;
+  /** S4: a key of an EDGE dictionary — per-observer state (unread, pins).
+   * The edge is the one of `edge_kind` whose other endpoint carries
+   * `observer_anchor`. All three are required together. */
+  edge_kind?: string;
+  observer_anchor?: string;
+  edge_path?: string;
 }
 export interface OrderKeyDto {
   field: FieldRefDto;
   /** desc → NULLS LAST, asc (default false) → NULLS FIRST. */
   desc?: boolean;
 }
-/// Windowed list: page of a schema, each row carrying the latest render
-/// facet's `data` inline, ordered/filtered by entity-col or facet-field, with
-/// the exact total — one DB statement.
+/// Windowed list: page of a schema, ordered/filtered by entity column or
+/// dictionary key, with the exact total — one DB statement. Each row's
+/// dictionary rides on the entity itself.
 export interface WindowSpec {
   schema: string;
-  facet_schema?: string;
   filter_field?: FieldRefDto;
   filter_eq?: string;
   /** How `filter_field` is compared to `filter_eq`. Default `"eq"` (=).
    *  `"distinct"` uses SQL `IS DISTINCT FROM` — i.e. "not equal, NULL counts as
    *  not-equal" — so it KEEPS rows whose field is NULL (e.g. untiered contacts)
-   *  while excluding the given value. */
-  filter_op?: "eq" | "distinct";
+   *  while excluding the given value. `"exists"` is `IS NOT NULL` — the field
+   *  carries ANY value; `filter_eq` is ignored. */
+  filter_op?: "eq" | "distinct" | "exists";
   order?: OrderKeyDto[];
   show_archived?: boolean;
   limit: number;
@@ -116,16 +123,14 @@ export interface WindowSpec {
 }
 export interface WindowRow {
   entity: RawEntity;
-  data: unknown;
 }
 export interface WindowPage {
   items: WindowRow[];
   total: number;
 }
-/// Detail: an entity + its latest facets + its link edges (one fetch).
+/// Detail: an entity (dictionary included) + its link edges (one fetch).
 export interface EntityDetail {
   entity: RawEntity;
-  facets: FacetRecord[];
   links: LinkSummary[];
 }
 /// A parent's neighbors over a typed link.
@@ -134,14 +139,12 @@ export interface LinkedSpec {
   link_kind: string;
   direction: "out" | "in";
   child_schema?: string;
-  facet_schema?: string;
   order?: OrderKeyDto[];
   limit: number;
   offset: number;
 }
 export interface LinkedRow {
   entity: RawEntity;
-  data: unknown;
   link: LinkSummary;
 }
 export interface LinkedPage {
@@ -170,45 +173,32 @@ export interface SearchEntitiesPage {
   total: number;
 }
 
-export interface FacetFieldListParams {
-  entity_schema: string;
-  facet_schema: string;
-  field_path: string;
-  field_value: string;
-  order_field_path?: string;
-  limit?: number;
-  offset?: number;
-}
 export interface AddLinkParams {
   from_id: string;
   to_id: string;
   kind: string;
+  /** S5: the EDGE dictionary (plan §2) — the per-pair facts that belong to
+   * neither endpoint (an invite's display name, an attendee's response). The
+   * curated twin of `BatchLinkInput.metadata`. */
+  metadata?: Record<string, unknown>;
+  /** S3 (plan §5.2): "candidate" records a merge-candidate row, invisible to
+   * canonical readers until promoted. Default: canonical. */
+  status?: "canonical" | "candidate";
+  /** S1 (plan §2): the envelope remote_id that witnessed this edge. On the
+   * sync dispatch the host stamps the edge's reserved `metadata.sources`
+   * entry and resolves its `observed_at` through THIS key. Meaningless off
+   * the sync path. */
+  declared_by?: string;
 }
 export interface LinkSummary {
   id: string;
   from_id: string;
   to_id: string;
   kind: string;
-}
-/// A facet as returned by list_facets_for_entity — all schemas, data
-/// kept opaque (the plugin narrows per schema_id at its own boundary).
-export interface FacetRecord {
-  /** Only set by list_facets_for_entities (batch) — lets callers group facets
-   *  back to their entity without an N+1. */
-  entity_id?: string;
-  id: string;
-  schema_id: string;
-  source: string;
-  observed_at: string;
-  data: unknown;
-}
-/// One canonical property as returned by list_canonical_for_entities (batch):
-/// the entity it belongs to, the canonical key, and the merged value. Callers
-/// group by entity_id to rebuild the per-entity map get_canonical returns.
-export interface CanonicalRecord {
-  entity_id: string;
-  key: string;
-  value: unknown;
+  /** S4: the edge dictionary — per-observer state (unread, pins). */
+  metadata?: Record<string, unknown> | null;
+  /** S4: canonical | candidate | rejected | decayed. */
+  status?: string;
 }
 /// `list_entities` returns the page + exact user-scoped total,
 /// mirroring native list_entities_for_user + count_entities_for_user.
@@ -219,17 +209,21 @@ export interface EntityPage {
 
 /// Mirrors Rust core/merge.rs MergePreview / MergeResult 1:1.
 export interface MergeField {
-  canonical_key: string;
-  strategy: string;
-  candidates: unknown[];
+  /** The DICTIONARY key the two hubs agree or disagree on. */
+  key: string;
   survivor_value: unknown;
   retired_value: unknown;
+  /** What the merge will write — null when it will write NOTHING because the
+   *  key needs an answer. */
   auto_resolved: unknown;
+  /** Both dictionaries claim this key with DIFFERENT values; the merge
+   *  REFUSES to run until an override answers it. */
+  conflict: boolean;
 }
 export interface MergeSource {
   source: string;
   entity_id: string;
-  facet_count: number;
+  property_count: number;
 }
 export interface MergePreview {
   survivor: unknown;
@@ -243,38 +237,39 @@ export interface MergePreview {
 export interface MergeResult {
   survivor_id: string;
   retired_id: string;
-  facets_moved: number;
   links_repointed: number;
   links_deduplicated: number;
   links_reflexive_removed: number;
 }
 
-/// One facet in an `apply_batch` entity. `external_id` + `confidence` mirror
-/// `attach_facet`; the host stamps the source identity from the calling plugin.
-export interface BatchFacetInput {
-  schema_id: string;
-  data: Record<string, unknown>;
-  external_id?: string;
-  confidence?: number;
-}
-
-/// One entity in an `apply_batch` fragment, identified within the batch by `key`
-/// (NOT a graph id). Its first facet that carries an `external_id` is the entity's
-/// resolve-or-create identity.
+/// One entity in an `apply_batch` fragment, identified within the batch by
+/// `key` (NOT a graph id). Its `anchor` is its resolve-or-create identity.
 export interface BatchEntityInput {
   key: string;
   schema_id: string;
   name?: string;
   idx?: string;
   date?: string;
-  facets: BatchFacetInput[];
+
+  /** S3: the node's identity anchor — THE resolver when present. */
+  anchor?: string;
+  /** S3: the node's dictionary as this sync observed it. The replica
+   * contract is fields-as-last-synced — a re-apply REPLACES the dict
+   * wholesale (one node, one writer). */
+  properties?: Record<string, unknown>;
+  /** S5: how sure this module is of the dictionary it just wrote (0-100).
+   * The only part of the node's provenance stamp a module supplies — source,
+   * account, surface and observed_at are stamped host-side from the sync
+   * dispatch context. */
+  confidence?: number;
 }
 
-/// A pre-existing entity an `apply_batch` link points to — resolved (user-scoped)
-/// by `external_id`, never created. An unresolved ref drops its links.
+/// A pre-existing entity an `apply_batch` link points to — resolved
+/// (user-scoped) through the `anchor` chokepoint, never created. A ref that
+/// resolves to nothing drops its links.
 export interface BatchRefInput {
   key: string;
-  external_id: string;
+  anchor?: string;
 }
 
 /// A link in an `apply_batch` fragment, wiring two batch `key`s (entity or ref).
@@ -284,6 +279,13 @@ export interface BatchLinkInput {
   kind: string;
   confidence?: number;
   metadata?: Record<string, unknown>;
+  /** S1 (plan §2): the key of the batch item whose mapper emitted this edge.
+   * On the sync dispatch the HOST stamps the edge's reserved
+   * `metadata.sources` array from the envelope context and resolves the
+   * stamp's `observed_at` through THIS key — an edge joins two nodes that may
+   * arrive in different envelopes, so neither endpoint's timestamp can stand
+   * in. A module never writes `sources` itself; the host strips it. */
+  declared_by?: string;
 }
 
 export interface GraphBatchInput {
@@ -305,34 +307,22 @@ export interface GraphBatchResult {
 /// `GraphService` (flat snake_case names); `actor` / `user_id` are
 /// stamped backend-side from `ModuleContext`, never supplied by JS.
 ///
-/// Parameterised by two plugin-declared schema→type maps:
-///   - `Facets`: facet schema_id → payload type
-///   - `Canon`:  canonical key   → value type
-/// The facet/canonical types are DERIVED from the schema_id/key literal
-/// at the call site (not free type params the caller can lie about).
-///
-/// The surface is the full target; ops are wired per migration stage.
-export interface GraphService<
-  Facets extends object = Record<string, unknown>,
-  Canon extends object = Record<string, unknown>,
-> {
+/// Not parameterised: a node's dictionary is a plain JSON map, and a module
+/// types it with its own interface at the call sites that care. The `Canon`
+/// type parameter went with the canonical layer it existed to type.
+export interface GraphService {
   // entities — rows are always {id, schema_id, name}, no map needed.
   // All reads are user-scoped backend-side.
   create_entity(p: CreateEntityParams): Promise<RawEntity>;
   get_entity(id: string): Promise<RawEntity | null>;
   list_entities(p: ListEntitiesParams): Promise<EntityPage>;
-  // filter by a facet field value (+ optional facet-field order); page + total.
-  list_entities_by_facet_field(p: FacetFieldListParams): Promise<EntityPage>;
-  // Windowed list with the latest render facet inline + exact total, in one
-  // statement. Filter/order over entity columns or facet fields.
+  // Windowed list with the exact total, in one statement. Filter/order over
+  // entity columns or dictionary keys.
   list_entities_window(p: WindowSpec): Promise<WindowPage>;
-  // One entity with its latest facets (optional schema subset) + link edges,
-  // user-scoped (null for a non-owner).
-  get_entity_full(
-    id: string,
-    opts?: { facets?: string[]; links?: boolean },
-  ): Promise<EntityDetail | null>;
-  // A parent's neighbors over a typed link, render facet inline + the edge.
+  // One entity (dictionary included) + its link edges, user-scoped (null for
+  // a non-owner).
+  get_entity_full(id: string, opts?: { links?: boolean }): Promise<EntityDetail | null>;
+  // A parent's neighbors over a typed link, with the edge.
   list_linked(p: LinkedSpec): Promise<LinkedPage>;
   // Batch: resolve a set of entity ids in one statement, user-scoped, in
   // input order.
@@ -340,14 +330,13 @@ export interface GraphService<
   // user-scoped; omit/empty context = all of the user's entities.
   list_entities_by_context(context?: string): Promise<RawEntity[]>;
   search_entities_by_name(p: SearchEntitiesParams): Promise<RawEntity[]>;
-  // user-scoped find of the entity owning a facet with this source external_id
-  // (ingest find-or-create). Returns the entity id or null.
-  find_by_external_id(external_id: string): Promise<string | null>;
-  // register a web link (web.link entity + metadata facet + bg preview fetch),
+  /** S1/S4: resolve a node by its identity ANCHOR through the chokepoint. */
+  find_by_anchor(anchor: string): Promise<string | null>;
+  // register a web link (web.link entity + dictionary + bg preview fetch),
   // optionally linked to a parent entity. Returns the web.link entity id.
   web_register(p: { url: string; parent_entity_id?: string; link_kind?: string }): Promise<string>;
   // register a downloadable media file (find-or-create file.object entity +
-  // file.details facet + parent link + background download). mime_type is
+  // parent link + background download). mime_type is
   // computed plugin-side so the op stays source-agnostic. Returns the
   // file.object entity id.
   file_register(p: {
@@ -393,47 +382,36 @@ export interface GraphService<
   update_entity_idx(id: string, idx: string | null): Promise<void>;
   delete_entity(id: string): Promise<void>;
 
-  // facets — payload type DERIVED from the schema_id literal.
-  // external_id (+ optional confidence 1-100) stamps provenance AND makes the
-  // attach idempotent (find-and-update the facet keyed by entity + external_id).
-  attach_facet<K extends keyof Facets & string>(
-    p: { entity_id: string; schema_id: K; data: Facets[K]; external_id?: string; confidence?: number },
-  ): Promise<{ id: string }>;
-  update_facet<K extends keyof Facets & string>(
-    p: { facet_id: string; schema_id: K; data: Facets[K] },
+  /// S1 (canonical-graph-structure): write the node's dictionary — the
+  /// property-graph write path. The host validates ownership (user +
+  /// namespace) and an update un-archives.
+  update_properties(
+    p: { entity_id: string; properties: Record<string, unknown> },
   ): Promise<void>;
-  // all facets across schemas (data opaque) — used for cross-schema
-  // reads like contacts' channel detection.
-  list_facets_for_entity(entity_id: string): Promise<FacetRecord[]>;
-  /** Batch: every facet for many entities in ONE DB round-trip (vs N). Each
-   *  record carries entity_id so the caller can group. */
-  list_facets_for_entities(entity_ids: string[]): Promise<FacetRecord[]>;
-  delete_facet(id: string): Promise<void>;
-
-  // canonical — keys + values typed by the plugin's Canon map.
-  get_canonical(entity_id: string, schemas?: string[]): Promise<Partial<Canon>>;
-  list_canonical_for_entity(entity_id: string): Promise<Partial<Canon>>;
-  /** Batch: every canonical property for many entities in ONE DB round-trip (vs
-   *  N get_canonical). Each record carries entity_id so the caller can group it
-   *  back into a per-entity `Partial<Canon>` map. */
-  list_canonical_for_entities(entity_ids: string[]): Promise<CanonicalRecord[]>;
-  /// Recompute canonical properties from the entity's facets + mappings.
-  /// Call after attach_facet so get_canonical reflects the new data.
-  resolve_canonical(entity_id: string): Promise<void>;
-  apply_canonical_override<K extends keyof Canon & string>(
-    p: { entity_id: string; key: K; value: Canon[K] },
-  ): Promise<void>;
-
+  /// S1: filter a FOLDED family's entities by a top-level dictionary key,
+  /// user-scoped natively. Returns the page and the exact total.
+  list_entities_by_property_field(
+    p: { entity_schema: string; key: string; value: string; limit?: number; offset?: number },
+  ): Promise<{ items: RawEntity[]; total: number }>;
   // links — LinkSummary carries the link `id` for targeted deletion.
   add_link(p: AddLinkParams): Promise<void>;
   delete_link(id: string): Promise<void>;
-  list_links_for_entity(entity_id: string): Promise<LinkSummary[]>;
+  /** S4: decay an edge the source no longer reports, or restore it on a
+   * rejoin (canonical | candidate | rejected | decayed). */
+  set_link_status(id: string, status: string): Promise<void>;
+  /** Canonical edges by default; `include_all_statuses` also returns
+   * candidate / decayed rows (S4's reconciliation restores a rejoin). */
+  list_links_for_entity(entity_id: string, include_all_statuses?: boolean): Promise<LinkSummary[]>;
+  /** S6 batch: every canonical edge of MANY entities in ONE round-trip. Each
+   * row carries `from_id`/`to_id`, so the caller groups. A page whose cards
+   * read their neighbours off the edges uses this, never a per-row read. */
+  list_links_for_entities(entity_ids: string[]): Promise<LinkSummary[]>;
 
-  // batch — apply a whole graph fragment (entities + facets + links + events) in
-  // ONE atomic transaction / one host crossing. The bulk ingest primitive: a page
-  // of N messages becomes one call instead of ~3N create/attach/link ops. Entities
-  // are keyed by LOCAL `key`s (links/refs wire by key); a facet's `external_id` is
-  // the idempotency identity (resolve-or-create the owning entity, upsert the facet).
+  // batch — apply a whole graph fragment (entities + links + events) in ONE
+  // atomic transaction / one host crossing. The bulk ingest primitive: a page
+  // of N messages becomes one call instead of ~3N create/link ops. Entities
+  // are keyed by LOCAL `key`s (links/refs wire by key); the `anchor` is the
+  // idempotency identity (resolve-or-create).
   apply_batch(batch: GraphBatchInput): Promise<GraphBatchResult>;
 
   // merge — backed by GraphService::merge_execute, not composed.
@@ -441,7 +419,7 @@ export interface GraphService<
   merge_execute(p: {
     survivor_id: string;
     retired_id: string;
-    overrides?: { canonical_key: string; value: unknown }[];
+    overrides?: { key: string; value: unknown }[];
     reason?: string;
   }): Promise<MergeResult>;
 }
@@ -483,11 +461,8 @@ export interface PluginLogger {
   log(level: PluginLogLevel, message: string, fields?: Record<string, unknown>): Promise<void>;
 }
 
-export interface PluginDeps<
-  Facets extends object = Record<string, unknown>,
-  Canon extends object = Record<string, unknown>,
-> {
-  graph: GraphService<Facets, Canon>;
+export interface PluginDeps {
+  graph: GraphService;
   ctx: PluginContext;
   util: PluginUtil;
   rpc: RpcExecutor;

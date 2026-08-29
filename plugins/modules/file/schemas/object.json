@@ -1,4 +1,7 @@
 {
   "name": "File",
-  "description": "File or media attachment entity. Written by core FileService (storage engine); this plugin owns the schema + the read/manage surface."
+  "description": "File or media attachment entity. Written by core FileService (storage engine); this plugin owns the schema + the read/manage surface.",
+  "roles": [
+    "file_object"
+  ]
 }

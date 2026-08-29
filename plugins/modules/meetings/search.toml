@@ -1,0 +1,44 @@
+# Meetings (module-search-contract §11): the event dictionary; attendees are
+# attendee edges to address nodes (link conditions, count via the condition).
+
+entity = "meetings.calendar_event"
+tools = "meetings"
+
+default_order = [ { key = "starts_at", dir = "desc", nulls = "last" } ]
+
+[[field]]
+key = "title"
+kind = "text"
+path = "title"
+embed = "title"
+
+[[field]]
+key = "starts_at"
+kind = "date"
+path = "starts_at"
+
+[[field]]
+key = "ends_at"
+kind = "date"
+path = "ends_at"
+
+[[field]]
+key = "location"
+kind = "text"
+path = "location"
+
+[[field]]
+key = "description"
+kind = "text"
+path = "description"
+embed = "body"
+
+[[field]]
+key = "status"
+kind = "enum"
+path = "status"
+
+[[field]]
+key = "all_day"
+kind = "boolean"
+path = "all_day"

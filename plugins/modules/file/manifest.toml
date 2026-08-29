@@ -1,6 +1,6 @@
 # file — Files domain module (V8 plugin).
 #
-# Owns `file.*`: the file-object entity plus image / audio / video facets. This is
+# Owns `file.*`: the file-object entity plus image / audio / video records. This is
 # the graph + attachment surface only — the host FileService owns the bytes and
 # storage; the module lists, gets, and attaches files (link kind `attachment`).
 # Sandboxed V8 isolate; bundled with the app and installed automatically at boot.
@@ -14,12 +14,14 @@ summary = "Documents and attachments from your sources, in one place."
 # Reverse-domain publisher identity.
 publisher = "ai.magnis"
 
-[[links]]
-kind = "attachment"
-from = "any_registered_entity"
-to = "file.object"
-
-# Foreign asks beyond the implicit own namespace: writes to `file.` facets,
+# Foreign asks beyond the implicit own namespace: writes to `file.` records,
 # own:own links, and reads of own schemas need no declaration.
 [permissions]
-links = [ "attachment" ]
+# file.attachment is own-prefixed — implicit (S2), no declaration needed.
+links = [ ]
+
+# The kind this module OWNS (S2): any entity may attach a file; the target
+# must be a file object. Roles, never foreign schema ids.
+[[links]]
+kind = "file.attachment"
+to = "file_object"

@@ -120,3 +120,42 @@ describe("tst_fe_telegram_expand_005 — chevron flips TelegramMessageCard via c
     expect(queryAllByText(longText).length).toBeGreaterThan(0);
   });
 });
+
+/**
+ * A characterization guard, not a RED test: it passes before and after P4. Its
+ * job is to fail if teaching `messages.get` to return links quietly changed how
+ * a message is presented. Nothing should become visible — the card is the
+ * consumer of that RPC, and it draws the message, not its edges.
+ *
+ * @layer: mod_tg
+ * @test-id: tst_mod_tg_003
+ * @scenario: scn_telegram_003
+ * @covers plugins/modules/telegram/ui/EntityCards.tsx::TelegramMessageCard
+ * @deterministic pure render, no clock, no network
+ *
+ * INV-P4.3 nothing new becomes visible.
+ */
+describe("tst_mod_tg_003 — links do not change how a message is drawn", () => {
+  const BASE = { id: "m1", preview: "Full message text", sender: "Anna" };
+
+  function markup(data: Readonly<Record<string, unknown>>): string {
+    const { container } = render(
+      <ExpansionContext.Provider value={{ bare: false, expanded: true }}>
+        <TelegramMessageCard schemaId="telegram.message" data={data} runtime={mockRuntime(null)} />
+      </ExpansionContext.Provider>,
+    );
+    return container.innerHTML;
+  }
+
+  it("renders identically with and without linked_entities", () => {
+    const without = markup({ ...BASE });
+    const with_ = markup({
+      ...BASE,
+      linked_entities: [
+        { id: "c1", name: "Ops chat", schema_id: "telegram.chat", link_kind: "in_chat" },
+        { id: "t1", name: "Watcher", schema_id: "triggers.trigger", link_kind: "~watches" },
+      ],
+    });
+    expect(with_).toBe(without);
+  });
+});
