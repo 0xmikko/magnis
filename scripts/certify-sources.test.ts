@@ -339,11 +339,16 @@ describe("tst_cat_src_cert_001 staged Source certification", () => {
     for (const entry of strict.packages) {
       if (entry.kind !== "source") continue;
       expect(entry.package_hash).toMatch(/^sha256:[0-9a-f]{64}$/);
-      expect(entry.certification?.path).toBe(`receipts/${entry.package_hash}.json`);
-      expect(entry.certification?.sha256).toMatch(/^sha256:[0-9a-f]{64}$/);
-      expect(readFileSync(join(root, entry.certification?.path ?? ""), "utf8")).toContain(
-        `"packageHash":"${entry.package_hash}"`,
+      const reference = entry.certification;
+      expect(reference?.path).toMatch(/^receipt-[0-9a-f]{64}\.json$/);
+      expect(reference?.path).not.toContain("/");
+      expect(reference?.path).not.toContain(":");
+      expect(reference?.sha256).toMatch(/^sha256:[0-9a-f]{64}$/);
+      const sidecar = readFileSync(join(root, reference?.path ?? ""));
+      expect(`sha256:${createHash("sha256").update(sidecar).digest("hex")}`).toBe(
+        reference?.sha256,
       );
+      expect(sidecar.toString("utf8")).toContain(`"packageHash":"${entry.package_hash}"`);
     }
   });
 

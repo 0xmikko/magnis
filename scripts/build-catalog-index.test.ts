@@ -241,7 +241,7 @@ describe("tst_pub_catalog_index_001", () => {
  * Data: .github/workflows/ci.yml.
  */
 describe("tst_pub_catalog_release_001 catalog release provenance", () => {
-  test("replaces an existing channel without masking deletion and targets the built commit", () => {
+  test("forces the channel tag to the built commit before creating from the verified tag", () => {
     const workflow = readFileSync(CI_WORKFLOW, "utf8");
 
     expect(workflow).toContain(
@@ -251,8 +251,15 @@ describe("tst_pub_catalog_release_001 catalog release provenance", () => {
     );
     expect(workflow).not.toContain('gh release delete "$TAG" --cleanup-tag --yes || true');
     expect(workflow).toContain(
+      'git push --force origin "${GITHUB_SHA}:refs/tags/${TAG}"\n' +
+        '          gh release create "$TAG" \\\n' +
+        "            --verify-tag \\",
+    );
+    expect(workflow).not.toContain(
       'gh release create "$TAG" \\\n' +
         '            --target "$GITHUB_SHA" \\',
     );
+    expect(workflow).toContain("catalog/receipt-*.json catalog/*.tgz");
+    expect(workflow).not.toContain("catalog/receipts/*.json");
   });
 });

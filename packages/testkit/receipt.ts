@@ -366,7 +366,7 @@ export function encodeSourceCertificationReceipt(receipt: SourceCertificationRec
 export function certificationReference(receipt: SourceCertificationReceipt): CertificationReference {
   const bytes = encodeSourceCertificationReceipt(receipt);
   return {
-    path: `receipts/${receipt.packageHash}.json`,
+    path: `receipt-${receipt.packageHash.slice("sha256:".length)}.json`,
     sha256: sha256(bytes),
   };
 }

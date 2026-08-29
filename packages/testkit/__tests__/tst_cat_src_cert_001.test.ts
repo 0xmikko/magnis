@@ -111,7 +111,7 @@ describe("tst_cat_src_receipt_001", () => {
     expect(decoded).toEqual(exact);
     expect(encodeSourceCertificationReceipt(decoded)).toBe(bytes);
     expect(certificationReference(decoded)).toEqual({
-      path: `receipts/${PACKAGE_HASH}.json`,
+      path: `receipt-${"a".repeat(64)}.json`,
       sha256: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
     });
   });

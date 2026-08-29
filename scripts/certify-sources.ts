@@ -1442,7 +1442,6 @@ export async function writeCertifiedCatalogIndexes(
 
   for (const sidecar of sidecars) {
     const path = join(options.catalogOut, sidecar.path);
-    mkdirSync(join(options.catalogOut, "receipts"), { recursive: true });
     writeFileSync(path, sidecar.bytes);
   }
   writeFileSync(join(options.catalogOut, "index.json"), `${JSON.stringify(indexV1, null, 2)}\n`);
