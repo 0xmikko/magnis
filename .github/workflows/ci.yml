@@ -47,6 +47,9 @@ jobs:
       github.event_name == 'push' &&
       (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging')
     needs: [typescript]
+    concurrency:
+      group: catalog-${{ github.ref }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -70,6 +73,11 @@ jobs:
           # Every asset is replaced, so a package withdrawn from the catalog
           # stops being served instead of lingering as an orphan a stale
           # index no longer mentions.
+          REMOTE_HEAD="$(git ls-remote origin "${GITHUB_REF}" | cut -f1)"
+          if [ "$REMOTE_HEAD" != "$GITHUB_SHA" ]; then
+            echo "refusing stale catalog publication: ${GITHUB_REF} is ${REMOTE_HEAD}, expected ${GITHUB_SHA}" >&2
+            exit 1
+          fi
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release delete "$TAG" --cleanup-tag --yes
           fi

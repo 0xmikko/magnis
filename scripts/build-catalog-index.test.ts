@@ -241,6 +241,28 @@ describe("tst_pub_catalog_index_001", () => {
  * Data: .github/workflows/ci.yml.
  */
 describe("tst_pub_catalog_release_001 catalog release provenance", () => {
+  test("serializes each channel and rejects a stale run before destructive publication", () => {
+    const workflow = readFileSync(CI_WORKFLOW, "utf8");
+
+    expect(workflow).toContain(
+      "    concurrency:\n" +
+        "      group: catalog-${{ github.ref }}\n" +
+        "      cancel-in-progress: false",
+    );
+    const remoteGuard = workflow.indexOf(
+      'REMOTE_HEAD="$(git ls-remote origin "${GITHUB_REF}" | cut -f1)"',
+    );
+    const deleteRelease = workflow.indexOf('gh release delete "$TAG" --cleanup-tag --yes');
+    expect(remoteGuard).toBeGreaterThanOrEqual(0);
+    expect(workflow).toContain(
+      'if [ "$REMOTE_HEAD" != "$GITHUB_SHA" ]; then\n' +
+        '            echo "refusing stale catalog publication: ${GITHUB_REF} is ${REMOTE_HEAD}, expected ${GITHUB_SHA}" >&2\n' +
+        "            exit 1\n" +
+        "          fi",
+    );
+    expect(remoteGuard).toBeLessThan(deleteRelease);
+  });
+
   test("forces the channel tag to the built commit before creating from the verified tag", () => {
     const workflow = readFileSync(CI_WORKFLOW, "utf8");
 
