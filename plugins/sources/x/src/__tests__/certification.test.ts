@@ -122,6 +122,7 @@ describe("X exact-artifact certification", () => {
         "tst_x_005",
         "tst_x_006",
         "tst_x_cert_001",
+        "tst_x_cert_002",
         "tst_x_probe",
       ],
     });
@@ -168,5 +169,57 @@ describe("X exact-artifact certification", () => {
       },
     );
     expect(replyResult(repairEvidence, "magnis.auth.probe")).toEqual({ subject: "@jack" });
+  });
+
+  /**
+   * @test-id: tst_x_cert_002
+   * @scenario: scn_x_v1_exact_rate_limit_002
+   * @covers: plugins/sources/x/src/fixture.ts::fixtureFetch
+   * @covers: plugins/sources/x/src/surfaces/x/fetch.ts::fetchX
+   * @deterministic: yes
+   * @fixtures: captured X v2 tracked-handle 429 with retry-after
+   *
+   * Test environment: dependency-closed staged X artifact over real stdio.
+   * Clients: @magnis/testkit Source host evidence driver.
+   * Mocks: authored captured provider response selected only by X_FIXTURE_FILE.
+   * Data: tracked handle jack is rate limited for exactly 37 seconds.
+   */
+  test("tst_x_cert_002 exact v1 artifact preserves typed rate-limit recovery data", async () => {
+    const artifact = stageExactXArtifact();
+    const fixtureFile = join(artifact.fixtureRoot, "x-rate-limit-fixture.json");
+    writeFileSync(
+      fixtureFile,
+      JSON.stringify({
+        probe_user: { id: "12", username: "jack", name: "Jack" },
+        users: [],
+        tweets_by_user_id: {},
+        user_lookup_rate_limits: {
+          jack: { retry_after: 37, detail: "Too Many Requests" },
+        },
+      }),
+    );
+
+    const evidence = await collectSourceHostEvidence(
+      artifact.root,
+      artifact.callableOperations,
+      {
+        fixtureEnvironment: { X_FIXTURE_FILE: fixtureFile },
+        operationArguments: {
+          "magnis.auth.probe": { _meta: { bearer_token: "cert-key" } },
+          "magnis.sync.fetch": {
+            surface: "x",
+            tracked_handles: ["jack"],
+            cursor: 41,
+            _meta: { bearer_token: "cert-key" },
+          },
+        },
+      },
+    );
+
+    expect(evidence.operationProbes["magnis.sync.fetch"]?.error).toEqual({
+      code: -32002,
+      message: "rate limited; retry_after=37",
+      data: { retry_after: 37 },
+    });
   });
 });

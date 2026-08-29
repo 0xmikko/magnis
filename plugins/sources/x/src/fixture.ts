@@ -7,6 +7,12 @@ interface XFixture {
   readonly users: readonly XUser[];
   readonly tweetsByUserId: Readonly<Record<string, readonly XTweet[]>>;
   readonly mediaByUserId: Readonly<Record<string, readonly XMedia[]>>;
+  readonly userLookupRateLimits: Readonly<Record<string, XFixtureRateLimit>>;
+}
+
+interface XFixtureRateLimit {
+  readonly retryAfter: number;
+  readonly detail: string;
 }
 
 function record(value: unknown, label: string): Record<string, unknown> {
@@ -19,6 +25,13 @@ function record(value: unknown, label: string): Record<string, unknown> {
 function nonEmptyString(value: unknown, label: string): string {
   if (typeof value !== "string" || value.length === 0) {
     throw new Error(`x fixture ${label} must be a non-empty string`);
+  }
+  return value;
+}
+
+function positiveInteger(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+    throw new Error(`x fixture ${label} must be a positive integer`);
   }
   return value;
 }
@@ -50,6 +63,14 @@ function media(value: unknown, label: string): XMedia {
   };
 }
 
+function rateLimit(value: unknown, label: string): XFixtureRateLimit {
+  const input = record(value, label);
+  return {
+    retryAfter: positiveInteger(input.retry_after, `${label}.retry_after`),
+    detail: nonEmptyString(input.detail, `${label}.detail`),
+  };
+}
+
 function objectOfArrays<T>(
   value: unknown,
   label: string,
@@ -64,11 +85,22 @@ function objectOfArrays<T>(
   );
 }
 
+function objectOfValues<T>(
+  value: unknown,
+  label: string,
+  decode: (entry: unknown, entryLabel: string) => T,
+): Readonly<Record<string, T>> {
+  const input = record(value, label);
+  return Object.fromEntries(
+    Object.entries(input).map(([key, entry]) => [key, decode(entry, `${label}.${key}`)]),
+  );
+}
+
 /** Decode the explicitly selected captured provider payload. Missing or
  * malformed fixture bytes are certification failures, never live-network
  * fallbacks.
  *
- * @tested-by: tst_x_cert_001
+ * @tested-by: tst_x_cert_001, tst_x_cert_002
  * @invariant: exact-artifact certification is hermetic and exercises the same
  * XClient conversion path as production responses.
  */
@@ -90,17 +122,24 @@ function loadFixture(): XFixture {
     mediaByUserId: input.media_by_user_id === undefined
       ? {}
       : objectOfArrays(input.media_by_user_id, "media_by_user_id", media),
+    userLookupRateLimits: input.user_lookup_rate_limits === undefined
+      ? {}
+      : objectOfValues(input.user_lookup_rate_limits, "user_lookup_rate_limits", rateLimit),
   };
 }
 
 function response(
   status: number,
   body: unknown,
+  headers: Readonly<Record<string, string>> = {},
 ): Awaited<ReturnType<FetchLike>> {
+  const normalizedHeaders = Object.fromEntries(
+    Object.entries(headers).map(([name, value]) => [name.toLowerCase(), value]),
+  );
   return {
     ok: status >= 200 && status < 300,
     status,
-    headers: { get: () => null },
+    headers: { get: (name: string) => normalizedHeaders[name.toLowerCase()] ?? null },
     json: () => Promise.resolve(body),
   };
 }
@@ -124,6 +163,14 @@ export function fixtureFetch(
     const encoded = usernameMatch[1];
     if (encoded === undefined) throw new Error("x fixture username route is malformed");
     const username = decodeURIComponent(encoded);
+    const lookupRateLimit = fixture.userLookupRateLimits[username];
+    if (lookupRateLimit !== undefined) {
+      return Promise.resolve(response(
+        429,
+        { detail: lookupRateLimit.detail },
+        { "retry-after": String(lookupRateLimit.retryAfter) },
+      ));
+    }
     const match = fixture.users.find((candidate) => candidate.username === username);
     return Promise.resolve(match === undefined
       ? response(404, { detail: "not found" })
