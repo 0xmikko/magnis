@@ -1,5 +1,6 @@
 import {
   SOURCE_V2_MAX_FRAME_BYTES,
+  SOURCE_V2_CANCELLED_CODE,
   SourceV2CodecError,
   decodeSourceV2Frame,
   encodeSourceV2Frame,
@@ -9,7 +10,10 @@ import {
 } from "./codec";
 import type { ProviderOutputSchema } from "./contract/source";
 
-export const SOURCE_V2_CANCELLED_CODE = -32800;
+export { SOURCE_V2_CANCELLED_CODE } from "./codec";
+export const SOURCE_V2_BACKPRESSURE_CODE = -32005;
+export const SOURCE_V2_DEFAULT_MAX_CONCURRENT_REQUESTS = 32;
+export const SOURCE_V2_DEFAULT_CLOSE_TIMEOUT_MS = 5_000;
 
 export interface SourceV2OperationContext {
   readonly instanceId: string;
@@ -26,9 +30,14 @@ export interface SourceV2OperationDefinition<TInput, TOutput> {
 
 export interface RegisteredSourceV2Operation {
   readonly name: string;
-  decodeInput(value: unknown): unknown;
-  decodeOutput(value: unknown): unknown;
-  handle(input: unknown, context: SourceV2OperationContext): Promise<unknown>;
+  prepare(input: unknown): (context: SourceV2OperationContext) => Promise<unknown>;
+}
+
+class SourceV2ResultValidationError extends Error {
+  constructor(message: string, options: ErrorOptions) {
+    super(message, options);
+    this.name = "SourceV2ResultValidationError";
+  }
 }
 
 export function defineSourceV2Operation<TInput, TOutput>(
@@ -36,21 +45,56 @@ export function defineSourceV2Operation<TInput, TOutput>(
 ): RegisteredSourceV2Operation {
   return {
     name: definition.name,
-    decodeInput(value: unknown): TInput {
-      return definition.inputSchema.parse(value);
-    },
-    decodeOutput(value: unknown): TOutput {
-      return definition.outputSchema.parse(value);
-    },
-    async handle(input: unknown, context: SourceV2OperationContext): Promise<TOutput> {
-      return await definition.handle(definition.inputSchema.parse(input), context);
+    prepare(value: unknown): (context: SourceV2OperationContext) => Promise<TOutput> {
+      const input = definition.inputSchema.parse(value);
+      return async (context: SourceV2OperationContext): Promise<TOutput> => {
+        const output = await definition.handle(input, context);
+        try {
+          return definition.outputSchema.parse(output);
+        } catch (error: unknown) {
+          throw new SourceV2ResultValidationError(
+            `invalid result for '${definition.name}'`,
+            { cause: error },
+          );
+        }
+      };
     },
   };
+}
+
+export interface SourceV2DeadlineScheduler {
+  schedule(delayMs: number, onDeadline: () => void): () => void;
+}
+
+export const systemSourceV2DeadlineScheduler: SourceV2DeadlineScheduler = {
+  schedule(delayMs, onDeadline): () => void {
+    const timer = setTimeout(onDeadline, delayMs);
+    return (): void => {
+      clearTimeout(timer);
+    };
+  },
+};
+
+export class SourceV2CloseError extends Error {
+  readonly kind = "non_cooperative_requests";
+
+  constructor(
+    readonly activeRequestIds: readonly SourceV2RequestId[],
+    readonly timeoutMs: number,
+  ) {
+    super(
+      `Source v2 server could not join ${String(activeRequestIds.length)} request(s) within ${String(timeoutMs)}ms`,
+    );
+    this.name = "SourceV2CloseError";
+  }
 }
 
 export interface SourceV2ServerConfig {
   readonly instanceId: string;
   readonly operations: readonly RegisteredSourceV2Operation[];
+  readonly maxConcurrentRequests?: number;
+  readonly closeTimeoutMs?: number;
+  readonly deadlineScheduler?: SourceV2DeadlineScheduler;
   readonly onNotification?: (frame: string) => void;
   readonly onClientNotification?: (frame: SourceV2NotificationFrame) => void | Promise<void>;
 }
@@ -119,9 +163,23 @@ function errorFrame(
 export class SourceV2Server {
   private readonly operations = new Map<string, RegisteredSourceV2Operation>();
   private readonly active = new Map<SourceV2RequestId, ActiveRequest>();
+  private readonly maxConcurrentRequests: number;
+  private readonly closeTimeoutMs: number;
+  private readonly deadlineScheduler: SourceV2DeadlineScheduler;
+  private closeResult: Promise<void> | undefined;
   private closing = false;
 
   constructor(private readonly config: SourceV2ServerConfig) {
+    this.maxConcurrentRequests =
+      config.maxConcurrentRequests ?? SOURCE_V2_DEFAULT_MAX_CONCURRENT_REQUESTS;
+    this.closeTimeoutMs = config.closeTimeoutMs ?? SOURCE_V2_DEFAULT_CLOSE_TIMEOUT_MS;
+    this.deadlineScheduler = config.deadlineScheduler ?? systemSourceV2DeadlineScheduler;
+    if (!Number.isInteger(this.maxConcurrentRequests) || this.maxConcurrentRequests <= 0) {
+      throw new Error("Source v2 maxConcurrentRequests must be a positive integer");
+    }
+    if (!Number.isFinite(this.closeTimeoutMs) || this.closeTimeoutMs <= 0) {
+      throw new Error("Source v2 closeTimeoutMs must be positive and finite");
+    }
     for (const operation of config.operations) {
       if (operation.name.length === 0) throw new Error("Source v2 operation name must not be empty");
       if (this.operations.has(operation.name)) {
@@ -165,10 +223,18 @@ export class SourceV2Server {
     if (operation === undefined) {
       return errorFrame(frame.id, -32601, `unknown operation '${frame.method}'`);
     }
+    if (this.active.size >= this.maxConcurrentRequests) {
+      return errorFrame(
+        frame.id,
+        SOURCE_V2_BACKPRESSURE_CODE,
+        `Source v2 server concurrency limit ${String(this.maxConcurrentRequests)} reached`,
+        { kind: "backpressure", limit: this.maxConcurrentRequests },
+      );
+    }
 
-    let decodedInput: unknown;
+    let invoke: (context: SourceV2OperationContext) => Promise<unknown>;
     try {
-      decodedInput = operation.decodeInput(Object.hasOwn(frame, "params") ? frame.params : {});
+      invoke = operation.prepare(Object.hasOwn(frame, "params") ? frame.params : {});
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       return errorFrame(frame.id, -32602, `invalid params for '${frame.method}': ${message}`);
@@ -181,7 +247,7 @@ export class SourceV2Server {
     });
     this.active.set(frame.id, { controller, settled });
     try {
-      const result = await operation.handle(decodedInput, {
+      const result = await invoke({
         instanceId: this.config.instanceId,
         signal: controller.signal,
         notify: (method: string, params?: unknown): void => {
@@ -197,19 +263,17 @@ export class SourceV2Server {
           this.config.onNotification(encoded);
         },
       });
-      let decodedOutput: unknown;
-      try {
-        decodedOutput = operation.decodeOutput(result);
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error);
-        return errorFrame(frame.id, -32603, `invalid result for '${frame.method}': ${message}`);
-      }
-      return encodeSourceV2Frame({ jsonrpc: "2.0", id: frame.id, result: decodedOutput });
+      return encodeSourceV2Frame({ jsonrpc: "2.0", id: frame.id, result });
     } catch (error: unknown) {
       if (controller.signal.aborted) {
         const reason = controller.signal.reason as unknown;
         const message = reason instanceof Error ? reason.message : String(reason);
         return errorFrame(frame.id, SOURCE_V2_CANCELLED_CODE, message, { kind: "cancelled" });
+      }
+      if (error instanceof SourceV2ResultValidationError) {
+        const cause = error.cause;
+        const message = cause instanceof Error ? cause.message : String(cause);
+        return errorFrame(frame.id, -32603, `${error.message}: ${message}`);
       }
       const message = error instanceof Error ? error.message : String(error);
       return errorFrame(frame.id, -32000, message, { kind: "operation" });
@@ -220,18 +284,46 @@ export class SourceV2Server {
   }
 
   async close(): Promise<void> {
-    if (this.closing && this.active.size === 0) return;
+    if (this.closeResult !== undefined) {
+      await this.closeResult;
+      return;
+    }
     this.closing = true;
-    const active = [...this.active.values()];
-    for (const request of active) {
+    const active = [...this.active.entries()];
+    for (const [, request] of active) {
       request.controller.abort(new SourceV2CancellationError("Source v2 server closed"));
     }
-    await Promise.all(active.map(({ settled }) => settled));
+    if (active.length === 0) return;
+    this.closeResult = new Promise<void>((resolve, reject) => {
+      let complete = false;
+      const cancelDeadline = this.deadlineScheduler.schedule(this.closeTimeoutMs, () => {
+        if (complete) return;
+        complete = true;
+        const activeRequestIds = active
+          .map(([id]) => id)
+          .filter((id) => this.active.has(id));
+        if (activeRequestIds.length === 0) {
+          resolve();
+          return;
+        }
+        reject(new SourceV2CloseError(activeRequestIds, this.closeTimeoutMs));
+      });
+      void Promise.all(active.map(([, { settled }]) => settled)).then(() => {
+        if (complete) return;
+        complete = true;
+        cancelDeadline();
+        resolve();
+      });
+    });
+    await this.closeResult;
   }
 }
 
+export type SourceV2ServerInput = NodeJS.ReadableStream &
+  AsyncIterable<unknown> & { destroy(error?: Error): void };
+
 export interface SourceV2ServerIo {
-  readonly input?: NodeJS.ReadableStream & AsyncIterable<unknown>;
+  readonly input?: SourceV2ServerInput;
   readonly write?: (frame: string) => void;
 }
 
@@ -239,8 +331,8 @@ function isBlankFrame(value: Uint8Array): boolean {
   return value.every((byte) => byte === 9 || byte === 10 || byte === 13 || byte === 32);
 }
 
-async function* boundedSourceV2Lines(
-  input: NodeJS.ReadableStream & AsyncIterable<unknown>,
+export async function* boundedSourceV2Lines(
+  input: AsyncIterable<unknown>,
 ): AsyncGenerator<Uint8Array> {
   let buffered = Buffer.alloc(0);
   for await (const raw of input) {
@@ -302,12 +394,15 @@ export async function runSourceV2Server(
     };
   });
   const lines = boundedSourceV2Lines(input)[Symbol.asyncIterator]();
+  let pendingRead: ReturnType<typeof lines.next> | undefined;
   try {
     let reachedEof = false;
     while (!reachedEof) {
-      const nextOrFailure = await Promise.race([lines.next(), taskFailure]);
+      pendingRead = lines.next();
+      const nextOrFailure = await Promise.race([pendingRead, taskFailure]);
       if ("taskError" in nextOrFailure) throw nextOrFailure.taskError;
       const next = nextOrFailure;
+      pendingRead = undefined;
       if (next.done) {
         reachedEof = true;
         continue;
@@ -334,6 +429,17 @@ export async function runSourceV2Server(
     }
   } catch (error: unknown) {
     fatal ??= error;
+  } finally {
+    if (fatal !== undefined) {
+      const failure = fatal instanceof Error
+        ? fatal
+        : new Error("Source v2 server failed with a non-Error reason");
+      input.destroy(failure);
+      if (pendingRead !== undefined) {
+        await pendingRead.catch(() => undefined);
+      }
+      await lines.return(undefined).catch(() => undefined);
+    }
   }
   await server.close();
   await Promise.all(running);

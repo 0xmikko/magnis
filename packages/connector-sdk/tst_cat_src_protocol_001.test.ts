@@ -7,6 +7,8 @@ import {
   encodeSourceV2Frame,
 } from "@magnis/connector-sdk/codec";
 import {
+  SOURCE_V2_BACKPRESSURE_CODE,
+  SourceV2CloseError,
   SourceV2Server,
   defineSourceV2Operation,
   runSourceV2Server,
@@ -140,6 +142,132 @@ describe("strict Source protocol v2", () => {
       ),
     ).toContain('"code":-32602');
     await strictParams.close();
+
+    let inputParseCount = 0;
+    const parsedExactlyOnce = defineSourceV2Operation({
+      name: "fixture.parse-once",
+      inputSchema: {
+        parse(value: unknown): { value: string } {
+          inputParseCount += 1;
+          if (inputParseCount > 1) throw new Error("operation input parsed twice");
+          if (
+            value === null ||
+            typeof value !== "object" ||
+            Array.isArray(value) ||
+            typeof (value as { value?: unknown }).value !== "string"
+          ) {
+            throw new Error("value must be a string");
+          }
+          return { value: `${(value as { value: string }).value}:transformed` };
+        },
+      },
+      outputSchema: stringResultSchema,
+      async handle(input): Promise<{ value: string }> {
+        return input;
+      },
+    });
+    const parseBoundary = new SourceV2Server({
+      instanceId: "parse-boundary",
+      operations: [parsedExactlyOnce],
+    });
+    expect(
+      await parseBoundary.handleFrame(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: 12,
+          method: "fixture.parse-once",
+          params: { value: "input" },
+        }),
+      ),
+    ).toBe(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 12,
+        result: { value: "input:transformed" },
+      }),
+    );
+    expect(inputParseCount).toBe(1);
+    await parseBoundary.close();
+
+    const neverCooperates = defineSourceV2Operation({
+      name: "fixture.never-cooperates",
+      inputSchema: { parse: (value: unknown): unknown => value },
+      outputSchema: stringResultSchema,
+      async handle(): Promise<{ value: string }> {
+        return await new Promise<{ value: string }>(() => undefined);
+      },
+    });
+    let expireClose: (() => void) | undefined;
+    const bounded = new SourceV2Server({
+      instanceId: "bounded",
+      operations: [neverCooperates],
+      maxConcurrentRequests: 1,
+      closeTimeoutMs: 100,
+      deadlineScheduler: {
+        schedule(delayMs, onDeadline): () => void {
+          expect(delayMs).toBe(100);
+          expireClose = onDeadline;
+          return () => undefined;
+        },
+      },
+    });
+    const heldReply = bounded.handleFrame(
+      JSON.stringify({ jsonrpc: "2.0", id: 20, method: "fixture.never-cooperates", params: {} }),
+    );
+    expect(bounded.pendingRequestCount).toBe(1);
+    expect(
+      await bounded.handleFrame(
+        JSON.stringify({ jsonrpc: "2.0", id: 21, method: "fixture.never-cooperates", params: {} }),
+      ),
+    ).toBe(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 21,
+        error: {
+          code: SOURCE_V2_BACKPRESSURE_CODE,
+          message: "Source v2 server concurrency limit 1 reached",
+          data: { kind: "backpressure", limit: 1 },
+        },
+      }),
+    );
+    const closeOutcome = bounded.close().catch((error: unknown) => error);
+    await Promise.resolve();
+    expect(expireClose).toBeFunction();
+    expireClose?.();
+    const closeError = await closeOutcome;
+    expect(closeError).toBeInstanceOf(SourceV2CloseError);
+    expect((closeError as SourceV2CloseError).activeRequestIds).toEqual([20]);
+    expect(bounded.pendingRequestCount).toBe(1);
+    void heldReply;
+
+    const writerFailureInput = new PassThrough();
+    const writerFailureOperation = defineSourceV2Operation({
+      name: "fixture.writer-failure",
+      inputSchema: { parse: (value: unknown): unknown => value },
+      outputSchema: stringResultSchema,
+      async handle(): Promise<{ value: string }> {
+        return { value: "reply" };
+      },
+    });
+    const writerFailureRun = runSourceV2Server(
+      { instanceId: "writer-failure", operations: [writerFailureOperation] },
+      {
+        input: writerFailureInput,
+        write: () => {
+          throw new Error("fixture writer failed");
+        },
+      },
+    );
+    writerFailureInput.write(
+      `${JSON.stringify({
+        jsonrpc: "2.0",
+        id: 30,
+        method: "fixture.writer-failure",
+        params: {},
+      })}\n`,
+    );
+    await expect(writerFailureRun).rejects.toThrow("fixture writer failed");
+    expect(writerFailureInput.destroyed).toBe(true);
 
     const unterminated = new PassThrough();
     const streamed = runSourceV2Server(

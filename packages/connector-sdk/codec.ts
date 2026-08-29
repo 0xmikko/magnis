@@ -4,6 +4,7 @@ import type {
 } from "./contract/source";
 
 export const SOURCE_V2_MAX_FRAME_BYTES = 4 * 1024 * 1024;
+export const SOURCE_V2_CANCELLED_CODE = -32800;
 
 export type SourceV2RequestId = string | number;
 

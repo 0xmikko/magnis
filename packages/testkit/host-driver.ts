@@ -1,15 +1,21 @@
-import { stat } from "node:fs/promises";
-import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { realpath, stat } from "node:fs/promises";
+import { isAbsolute, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   SourceV2CodecError,
-  SOURCE_V2_MAX_FRAME_BYTES,
+  SOURCE_V2_CANCELLED_CODE,
   decodeSourceV2Frame,
   decodeSourceV2Result,
   encodeSourceV2Frame,
   type SourceV2NotificationFrame,
   type SourceV2RequestId,
 } from "../connector-sdk/codec";
+import {
+  boundedSourceV2Lines,
+  systemSourceV2DeadlineScheduler,
+  type SourceV2DeadlineScheduler,
+} from "../connector-sdk/server";
+import { sourceArtifactPackageHash } from "./receipt";
 import type { ProviderOperation } from "../connector-sdk/contract/source";
 
 export const SOURCE_HOST_MAX_STDERR_BYTES = 64 * 1024;
@@ -263,6 +269,8 @@ export interface BuiltSourceArtifact {
   readonly root: string;
   /** Absolute path or a path relative to root. */
   readonly entry: string;
+  /** Canonical byte identity produced by the catalog package-tree hash. */
+  readonly packageHash: string;
 }
 
 export interface SourceHostDriverOptions {
@@ -271,6 +279,7 @@ export interface SourceHostDriverOptions {
   readonly timeoutMs?: number;
   readonly environment?: Readonly<Record<string, string>>;
   readonly maxQueuedNotifications?: number;
+  readonly deadlineScheduler?: SourceV2DeadlineScheduler;
 }
 
 export interface SourceHostRequestOptions {
@@ -293,14 +302,32 @@ interface InteractiveSourceHost {
 interface PendingSourceHostRequest {
   readonly settle: (line: string) => void;
   readonly reject: (error: Error) => void;
-  readonly timer: ReturnType<typeof setTimeout>;
+  readonly cancelDeadline: () => void;
   readonly removeAbortListener: () => void;
 }
 
 interface NotificationWaiter {
   readonly resolve: (notification: SourceV2NotificationFrame) => void;
   readonly reject: (error: Error) => void;
-  readonly timer: ReturnType<typeof setTimeout>;
+  readonly cancelDeadline: () => void;
+}
+
+interface CancelledResponse {
+  readonly cancelDeadline: (() => void) | null;
+}
+
+export type SourceHostProtocolErrorKind =
+  | "unexpected_response_id"
+  | "invalid_cancel_response";
+
+export class SourceHostProtocolError extends Error {
+  constructor(
+    readonly kind: SourceHostProtocolErrorKind,
+    message: string,
+  ) {
+    super(message);
+    this.name = "SourceHostProtocolError";
+  }
 }
 
 function errorFromReason(reason: unknown, fallback: string): Error {
@@ -344,25 +371,69 @@ async function readCappedText(
     : text;
 }
 
-function exactArtifactEntry(artifact: BuiltSourceArtifact): string {
+async function* readableStreamChunks(
+  stream: ReadableStream<Uint8Array>,
+): AsyncGenerator<Uint8Array> {
+  const reader = stream.getReader();
+  try {
+    let read = await reader.read();
+    while (!read.done) {
+      yield read.value;
+      read = await reader.read();
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+function exactArtifactEntry(artifact: BuiltSourceArtifact): { root: string; entry: string } {
   const root = resolve(artifact.root);
   const entry = isAbsolute(artifact.entry) ? resolve(artifact.entry) : resolve(root, artifact.entry);
   const fromRoot = relative(root, entry);
   if (fromRoot === "" || fromRoot === ".." || fromRoot.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`) || isAbsolute(fromRoot)) {
     throw new Error("Source artifact entry must be a file inside the exact artifact root");
   }
-  return entry;
+  return { root, entry };
 }
 
-async function assertArtifactEntry(artifact: BuiltSourceArtifact): Promise<string> {
-  const entry = exactArtifactEntry(artifact);
+async function assertArtifactEntry(
+  artifact: BuiltSourceArtifact,
+): Promise<{ root: string; entry: string }> {
+  const lexical = exactArtifactEntry(artifact);
+  let root: string;
+  let entry: string;
   try {
-    const metadata = await stat(entry);
-    if (!metadata.isFile()) throw new Error("not a file");
+    root = await realpath(lexical.root);
+    if (!(await stat(root)).isDirectory()) {
+      throw new Error("Source artifact root must be a directory");
+    }
   } catch (error: unknown) {
-    throw new Error(`Source artifact entry does not exist: ${entry}`, { cause: error });
+    throw new Error(`Source artifact root does not exist: ${lexical.root}`, { cause: error });
   }
-  return entry;
+  try {
+    entry = await realpath(lexical.entry);
+  } catch (error: unknown) {
+    throw new Error(`Source artifact entry does not exist: ${lexical.entry}`, { cause: error });
+  }
+  const fromRoot = relative(root, entry);
+  if (
+    fromRoot === "" ||
+    fromRoot === ".." ||
+    fromRoot.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`) ||
+    isAbsolute(fromRoot)
+  ) {
+    throw new Error("Source artifact entry resolves outside the exact artifact root");
+  }
+  if (!(await stat(entry)).isFile()) {
+    throw new Error("Source artifact entry must be a regular file");
+  }
+  const actualPackageHash = sourceArtifactPackageHash(root);
+  if (actualPackageHash !== artifact.packageHash) {
+    throw new Error(
+      `Source artifact package hash does not match: expected ${artifact.packageHash}, received ${actualPackageHash}`,
+    );
+  }
+  return { root, entry };
 }
 
 /** A hermetic fixed host with the same one-argument contract as the app host. */
@@ -373,20 +444,23 @@ export function testkitFixedSourceHostCommand(): FixedSourceHostCommand {
   };
 }
 
-export async function runFixedSourceHost(entry: string): Promise<void> {
+export async function runFixedSourceHost(artifactRoot: string, entry: string): Promise<void> {
+  const exactRoot = resolve(artifactRoot);
   const exactEntry = resolve(entry);
   await stat(exactEntry);
-  process.chdir(dirname(dirname(exactEntry)));
+  process.chdir(exactRoot);
   await import(pathToFileURL(exactEntry).href);
 }
 
 /** Interactive client for a built artifact behind one fixed Source host. */
 export class SourceHostDriver {
   private readonly pending = new Map<SourceV2RequestId, PendingSourceHostRequest>();
+  private readonly cancelledResponses = new Map<SourceV2RequestId, CancelledResponse>();
   private readonly notifications: SourceV2NotificationFrame[] = [];
   private readonly notificationWaiters: NotificationWaiter[] = [];
   private readonly timeoutMs: number;
   private readonly maxQueuedNotifications: number;
+  private readonly deadlineScheduler: SourceV2DeadlineScheduler;
   private readonly stdoutDone: Promise<void>;
   private readonly stderrText: Promise<string>;
   private nextRequestId = 1;
@@ -400,6 +474,7 @@ export class SourceHostDriver {
   ) {
     this.timeoutMs = options.timeoutMs ?? 5_000;
     this.maxQueuedNotifications = options.maxQueuedNotifications ?? 256;
+    this.deadlineScheduler = options.deadlineScheduler ?? systemSourceV2DeadlineScheduler;
     this.stderrText = readCappedText(child.stderr, SOURCE_HOST_MAX_STDERR_BYTES);
     this.stdoutDone = this.consumeStdout();
     void child.exited.then(async (code) => {
@@ -411,11 +486,11 @@ export class SourceHostDriver {
   }
 
   static async open(options: SourceHostDriverOptions): Promise<SourceHostDriver> {
-    const entry = await assertArtifactEntry(options.artifact);
+    const { root, entry } = await assertArtifactEntry(options.artifact);
     const child = Bun.spawn(
-      [options.command.executable, ...options.command.args, entry],
+      [options.command.executable, ...options.command.args, root, entry],
       {
-        cwd: resolve(options.artifact.root),
+        cwd: root,
         stdin: "pipe",
         stdout: "pipe",
         stderr: "pipe",
@@ -431,6 +506,10 @@ export class SourceHostDriver {
 
   get pendingRequestCount(): number {
     return this.pending.size;
+  }
+
+  get pendingCancellationCount(): number {
+    return this.cancelledResponses.size;
   }
 
   get isJoined(): boolean {
@@ -473,14 +552,14 @@ export class SourceHostDriver {
         return;
       }
       options.signal?.addEventListener("abort", onAbort, { once: true });
-      const timer = setTimeout(() => {
+      const cancelDeadline = this.deadlineScheduler.schedule(deadlineMs, () => {
         this.cancelPending(
           id,
           new Error(`Source host request '${operation.name}' timed out after ${String(deadlineMs)}ms`),
         );
-      }, deadlineMs);
+      });
       this.pending.set(id, {
-        timer,
+        cancelDeadline,
         removeAbortListener: (): void => options.signal?.removeEventListener("abort", onAbort),
         reject,
         settle: (line: string): void => {
@@ -517,11 +596,11 @@ export class SourceHostDriver {
       const waiter: NotificationWaiter = {
         resolve: resolveNotification,
         reject: rejectNotification,
-        timer: setTimeout(() => {
+        cancelDeadline: this.deadlineScheduler.schedule(deadlineMs, () => {
           const index = this.notificationWaiters.indexOf(waiter);
           if (index >= 0) this.notificationWaiters.splice(index, 1);
           rejectNotification(new Error(`Source host notification timed out after ${String(deadlineMs)}ms`));
-        }, deadlineMs),
+        }),
       };
       this.notificationWaiters.push(waiter);
     });
@@ -532,7 +611,7 @@ export class SourceHostDriver {
     this.closing = true;
     this.notifications.splice(0);
     for (const waiter of this.notificationWaiters.splice(0)) {
-      clearTimeout(waiter.timer);
+      waiter.cancelDeadline();
       waiter.reject(new Error("Source host driver closed"));
     }
     for (const id of [...this.pending.keys()]) {
@@ -550,6 +629,8 @@ export class SourceHostDriver {
     }
     await this.stdoutDone;
     await this.stderrText;
+    this.clearCancelledResponses();
+    this.notifications.splice(0);
     this.joined = true;
   }
 
@@ -557,6 +638,7 @@ export class SourceHostDriver {
     const request = this.takePending(id);
     if (request === undefined) return;
     request.reject(error);
+    this.expectCancelledResponse(id);
     const frame = encodeSourceV2Frame({
       jsonrpc: "2.0",
       method: "notifications/cancelled",
@@ -573,43 +655,53 @@ export class SourceHostDriver {
     const request = this.pending.get(id);
     if (request === undefined) return undefined;
     this.pending.delete(id);
-    clearTimeout(request.timer);
+    request.cancelDeadline();
     request.removeAbortListener();
     return request;
   }
 
-  private async consumeStdout(): Promise<void> {
-    const reader = this.child.stdout.getReader();
-    const decoder = new TextDecoder();
-    let buffered = "";
-    try {
-      let read = await reader.read();
-      while (!read.done) {
-        const { value } = read;
-        buffered += decoder.decode(value, { stream: true });
-        let newline = buffered.indexOf("\n");
-        while (newline >= 0) {
-          const line = buffered.slice(0, newline).trim();
-          buffered = buffered.slice(newline + 1);
-          if (line.length > 0) this.acceptLine(line);
-          newline = buffered.indexOf("\n");
-        }
-        if (new TextEncoder().encode(buffered).byteLength > SOURCE_V2_MAX_FRAME_BYTES) {
+  private expectCancelledResponse(id: SourceV2RequestId): void {
+    const cancelDeadline = this.closing
+      ? null
+      : this.deadlineScheduler.schedule(this.timeoutMs, () => {
+          if (!this.cancelledResponses.delete(id)) return;
           this.fail(
-            new Error(
-              `Source host frame exceeds ${String(SOURCE_V2_MAX_FRAME_BYTES)} bytes before newline`,
+            new SourceHostProtocolError(
+              "invalid_cancel_response",
+              `Source host omitted the terminal cancellation response for '${String(id)}'`,
             ),
           );
           this.child.kill();
-          return;
-        }
-        read = await reader.read();
+        });
+    this.cancelledResponses.set(id, { cancelDeadline });
+  }
+
+  private takeCancelledResponse(id: SourceV2RequestId): boolean {
+    const cancelled = this.cancelledResponses.get(id);
+    if (cancelled === undefined) return false;
+    this.cancelledResponses.delete(id);
+    cancelled.cancelDeadline?.();
+    return true;
+  }
+
+  private clearCancelledResponses(): void {
+    for (const { cancelDeadline } of this.cancelledResponses.values()) {
+      cancelDeadline?.();
+    }
+    this.cancelledResponses.clear();
+  }
+
+  private async consumeStdout(): Promise<void> {
+    try {
+      for await (const frame of boundedSourceV2Lines(readableStreamChunks(this.child.stdout))) {
+        const line = new TextDecoder("utf-8", { fatal: true }).decode(frame);
+        this.acceptLine(line);
       }
-      buffered += decoder.decode();
-      const tail = buffered.trim();
-      if (tail.length > 0) this.acceptLine(tail);
-    } finally {
-      reader.releaseLock();
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      const detail = message.replace(/^Source v2 frame/, "Source host frame");
+      this.fail(new Error(detail));
+      this.child.kill();
     }
   }
 
@@ -626,7 +718,7 @@ export class SourceHostDriver {
     if (frame.kind === "notification") {
       const waiter = this.notificationWaiters.shift();
       if (waiter !== undefined) {
-        clearTimeout(waiter.timer);
+        waiter.cancelDeadline();
         waiter.resolve(frame);
         return;
       }
@@ -644,22 +736,47 @@ export class SourceHostDriver {
       return;
     }
     const pending = this.takePending(frame.id);
-    pending?.settle(line);
+    if (pending !== undefined) {
+      pending.settle(line);
+      return;
+    }
+    if (this.takeCancelledResponse(frame.id)) {
+      if (frame.kind === "error" && frame.error.code === SOURCE_V2_CANCELLED_CODE) return;
+      this.fail(
+        new SourceHostProtocolError(
+          "invalid_cancel_response",
+          `Source host returned a non-cancellation result for cancelled request '${String(frame.id)}'`,
+        ),
+      );
+      this.child.kill();
+      return;
+    }
+    this.fail(
+      new SourceHostProtocolError(
+        "unexpected_response_id",
+        `Source host emitted an unexpected or duplicate response id '${String(frame.id)}'`,
+      ),
+    );
+    this.child.kill();
   }
 
   private fail(error: Error): void {
     if (this.failure !== undefined) return;
     this.failure = error;
+    this.clearCancelledResponses();
     for (const id of [...this.pending.keys()]) this.rejectPending(id, error);
     for (const waiter of this.notificationWaiters.splice(0)) {
-      clearTimeout(waiter.timer);
+      waiter.cancelDeadline();
       waiter.reject(error);
     }
   }
 }
 
 if (import.meta.main && process.argv[2] === "--fixed-source-host") {
-  const entry = process.argv[3];
-  if (entry === undefined) throw new Error("fixed source-host requires one artifact entry argument");
-  await runFixedSourceHost(entry);
+  const artifactRoot = process.argv[3];
+  const entry = process.argv[4];
+  if (artifactRoot === undefined || entry === undefined) {
+    throw new Error("fixed source-host requires artifact root and entry arguments");
+  }
+  await runFixedSourceHost(artifactRoot, entry);
 }
