@@ -1,3 +1,19 @@
+import { stat } from "node:fs/promises";
+import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import {
+  SourceV2CodecError,
+  SOURCE_V2_MAX_FRAME_BYTES,
+  decodeSourceV2Frame,
+  decodeSourceV2Result,
+  encodeSourceV2Frame,
+  type SourceV2NotificationFrame,
+  type SourceV2RequestId,
+} from "../connector-sdk/codec";
+import type { ProviderOperation } from "../connector-sdk/contract/source";
+
+export const SOURCE_HOST_MAX_STDERR_BYTES = 64 * 1024;
+
 interface JsonRpcReply {
   jsonrpc?: string;
   id?: string | number | null;
@@ -236,4 +252,414 @@ export async function collectSourceHostEvidence(
       ...authEvidence.operationProbes,
     },
   };
+}
+
+export interface FixedSourceHostCommand {
+  readonly executable: string;
+  readonly args: readonly string[];
+}
+
+export interface BuiltSourceArtifact {
+  readonly root: string;
+  /** Absolute path or a path relative to root. */
+  readonly entry: string;
+}
+
+export interface SourceHostDriverOptions {
+  readonly artifact: BuiltSourceArtifact;
+  readonly command: FixedSourceHostCommand;
+  readonly timeoutMs?: number;
+  readonly environment?: Readonly<Record<string, string>>;
+  readonly maxQueuedNotifications?: number;
+}
+
+export interface SourceHostRequestOptions {
+  readonly deadlineMs?: number;
+  readonly signal?: AbortSignal;
+}
+
+interface InteractiveSourceHost {
+  readonly exitCode: number | null;
+  readonly exited: Promise<number>;
+  readonly stdin: {
+    write(value: string): number | Promise<number>;
+    end(): number | Promise<number>;
+  };
+  readonly stdout: ReadableStream<Uint8Array>;
+  readonly stderr: ReadableStream<Uint8Array>;
+  kill(signal?: number): void;
+}
+
+interface PendingSourceHostRequest {
+  readonly settle: (line: string) => void;
+  readonly reject: (error: Error) => void;
+  readonly timer: ReturnType<typeof setTimeout>;
+  readonly removeAbortListener: () => void;
+}
+
+interface NotificationWaiter {
+  readonly resolve: (notification: SourceV2NotificationFrame) => void;
+  readonly reject: (error: Error) => void;
+  readonly timer: ReturnType<typeof setTimeout>;
+}
+
+function errorFromReason(reason: unknown, fallback: string): Error {
+  if (reason instanceof Error) return reason;
+  if (typeof reason === "string" && reason.length > 0) return new Error(reason);
+  return new Error(fallback);
+}
+
+async function readCappedText(
+  stream: ReadableStream<Uint8Array>,
+  maxBytes: number,
+): Promise<string> {
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let retainedBytes = 0;
+  let truncated = false;
+  try {
+    let read = await reader.read();
+    while (!read.done) {
+      const remaining = maxBytes - retainedBytes;
+      if (remaining > 0) {
+        const retained = read.value.subarray(0, remaining);
+        chunks.push(retained);
+        retainedBytes += retained.byteLength;
+      }
+      if (read.value.byteLength > remaining) truncated = true;
+      read = await reader.read();
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(retainedBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  const text = new TextDecoder().decode(bytes);
+  return truncated
+    ? `${text}\n[stderr truncated at ${String(maxBytes)} bytes]`
+    : text;
+}
+
+function exactArtifactEntry(artifact: BuiltSourceArtifact): string {
+  const root = resolve(artifact.root);
+  const entry = isAbsolute(artifact.entry) ? resolve(artifact.entry) : resolve(root, artifact.entry);
+  const fromRoot = relative(root, entry);
+  if (fromRoot === "" || fromRoot === ".." || fromRoot.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`) || isAbsolute(fromRoot)) {
+    throw new Error("Source artifact entry must be a file inside the exact artifact root");
+  }
+  return entry;
+}
+
+async function assertArtifactEntry(artifact: BuiltSourceArtifact): Promise<string> {
+  const entry = exactArtifactEntry(artifact);
+  try {
+    const metadata = await stat(entry);
+    if (!metadata.isFile()) throw new Error("not a file");
+  } catch (error: unknown) {
+    throw new Error(`Source artifact entry does not exist: ${entry}`, { cause: error });
+  }
+  return entry;
+}
+
+/** A hermetic fixed host with the same one-argument contract as the app host. */
+export function testkitFixedSourceHostCommand(): FixedSourceHostCommand {
+  return {
+    executable: process.execPath,
+    args: ["run", fileURLToPath(import.meta.url), "--fixed-source-host"],
+  };
+}
+
+export async function runFixedSourceHost(entry: string): Promise<void> {
+  const exactEntry = resolve(entry);
+  await stat(exactEntry);
+  process.chdir(dirname(dirname(exactEntry)));
+  await import(pathToFileURL(exactEntry).href);
+}
+
+/** Interactive client for a built artifact behind one fixed Source host. */
+export class SourceHostDriver {
+  private readonly pending = new Map<SourceV2RequestId, PendingSourceHostRequest>();
+  private readonly notifications: SourceV2NotificationFrame[] = [];
+  private readonly notificationWaiters: NotificationWaiter[] = [];
+  private readonly timeoutMs: number;
+  private readonly maxQueuedNotifications: number;
+  private readonly stdoutDone: Promise<void>;
+  private readonly stderrText: Promise<string>;
+  private nextRequestId = 1;
+  private failure: Error | undefined;
+  private closing = false;
+  private joined = false;
+
+  private constructor(
+    private readonly child: InteractiveSourceHost,
+    options: SourceHostDriverOptions,
+  ) {
+    this.timeoutMs = options.timeoutMs ?? 5_000;
+    this.maxQueuedNotifications = options.maxQueuedNotifications ?? 256;
+    this.stderrText = readCappedText(child.stderr, SOURCE_HOST_MAX_STDERR_BYTES);
+    this.stdoutDone = this.consumeStdout();
+    void child.exited.then(async (code) => {
+      if (!this.closing) {
+        const stderr = (await this.stderrText).trim();
+        this.fail(new Error(`Source host exited ${String(code)}${stderr.length > 0 ? `: ${stderr}` : ""}`));
+      }
+    });
+  }
+
+  static async open(options: SourceHostDriverOptions): Promise<SourceHostDriver> {
+    const entry = await assertArtifactEntry(options.artifact);
+    const child = Bun.spawn(
+      [options.command.executable, ...options.command.args, entry],
+      {
+        cwd: resolve(options.artifact.root),
+        stdin: "pipe",
+        stdout: "pipe",
+        stderr: "pipe",
+        env: {
+          ...(options.environment ?? {}),
+          LANG: "C.UTF-8",
+          NO_COLOR: "1",
+        },
+      },
+    );
+    return new SourceHostDriver(child, options);
+  }
+
+  get pendingRequestCount(): number {
+    return this.pending.size;
+  }
+
+  get isJoined(): boolean {
+    return this.joined;
+  }
+
+  get pendingNotificationWaiterCount(): number {
+    return this.notificationWaiters.length;
+  }
+
+  async request<T>(
+    operation: ProviderOperation<T>,
+    params: unknown,
+    options: SourceHostRequestOptions = {},
+  ): Promise<T> {
+    if (this.failure !== undefined) throw this.failure;
+    if (this.closing) throw new Error("Source host driver is closing");
+    const id = this.nextRequestId;
+    this.nextRequestId += 1;
+    const frame = encodeSourceV2Frame({
+      jsonrpc: "2.0",
+      id,
+      method: operation.name,
+      params,
+    });
+    const deadlineMs = options.deadlineMs ?? this.timeoutMs;
+
+    return await new Promise<T>((resolveRequest, rejectRequest) => {
+      const reject = (error: Error): void => {
+        rejectRequest(error);
+      };
+      const onAbort = (): void => {
+        this.cancelPending(
+          id,
+          errorFromReason(options.signal?.reason, `Source host request '${operation.name}' cancelled`),
+        );
+      };
+      if (options.signal?.aborted === true) {
+        reject(errorFromReason(options.signal.reason, `Source host request '${operation.name}' cancelled`));
+        return;
+      }
+      options.signal?.addEventListener("abort", onAbort, { once: true });
+      const timer = setTimeout(() => {
+        this.cancelPending(
+          id,
+          new Error(`Source host request '${operation.name}' timed out after ${String(deadlineMs)}ms`),
+        );
+      }, deadlineMs);
+      this.pending.set(id, {
+        timer,
+        removeAbortListener: (): void => options.signal?.removeEventListener("abort", onAbort),
+        reject,
+        settle: (line: string): void => {
+          try {
+            resolveRequest(decodeSourceV2Result(line, id, operation));
+          } catch (error: unknown) {
+            reject(errorFromReason(error, `Source host request '${operation.name}' failed`));
+          }
+        },
+      });
+      void Promise.resolve(this.child.stdin.write(`${frame}\n`)).catch((error: unknown) => {
+        this.rejectPending(id, errorFromReason(error, "Source host stdin write failed"));
+      });
+    });
+  }
+
+  async notify(method: string, params?: unknown): Promise<void> {
+    if (this.failure !== undefined) throw this.failure;
+    if (this.closing) throw new Error("Source host driver is closing");
+    const frame = encodeSourceV2Frame({
+      jsonrpc: "2.0",
+      method,
+      ...(params === undefined ? {} : { params }),
+    });
+    await this.child.stdin.write(`${frame}\n`);
+  }
+
+  async nextNotification(deadlineMs = this.timeoutMs): Promise<SourceV2NotificationFrame> {
+    if (this.closing || this.joined) throw new Error("Source host driver is closed");
+    const queued = this.notifications.shift();
+    if (queued !== undefined) return queued;
+    if (this.failure !== undefined) throw this.failure;
+    return await new Promise<SourceV2NotificationFrame>((resolveNotification, rejectNotification) => {
+      const waiter: NotificationWaiter = {
+        resolve: resolveNotification,
+        reject: rejectNotification,
+        timer: setTimeout(() => {
+          const index = this.notificationWaiters.indexOf(waiter);
+          if (index >= 0) this.notificationWaiters.splice(index, 1);
+          rejectNotification(new Error(`Source host notification timed out after ${String(deadlineMs)}ms`));
+        }, deadlineMs),
+      };
+      this.notificationWaiters.push(waiter);
+    });
+  }
+
+  async close(): Promise<void> {
+    if (this.joined) return;
+    this.closing = true;
+    this.notifications.splice(0);
+    for (const waiter of this.notificationWaiters.splice(0)) {
+      clearTimeout(waiter.timer);
+      waiter.reject(new Error("Source host driver closed"));
+    }
+    for (const id of [...this.pending.keys()]) {
+      this.cancelPending(id, new Error("Source host driver closed"));
+    }
+    try {
+      await this.child.stdin.end();
+    } catch {
+      // A crashed child has already closed the pipe; its exit is still joined.
+    }
+    try {
+      await withDeadline(this.child.exited, this.timeoutMs, "Source host graceful close");
+    } catch {
+      await terminateSourceHostProcess(this.child, this.timeoutMs);
+    }
+    await this.stdoutDone;
+    await this.stderrText;
+    this.joined = true;
+  }
+
+  private cancelPending(id: SourceV2RequestId, error: Error): void {
+    const request = this.takePending(id);
+    if (request === undefined) return;
+    request.reject(error);
+    const frame = encodeSourceV2Frame({
+      jsonrpc: "2.0",
+      method: "notifications/cancelled",
+      params: { requestId: id, reason: error.message },
+    });
+    void Promise.resolve(this.child.stdin.write(`${frame}\n`)).catch(() => undefined);
+  }
+
+  private rejectPending(id: SourceV2RequestId, error: Error): void {
+    this.takePending(id)?.reject(error);
+  }
+
+  private takePending(id: SourceV2RequestId): PendingSourceHostRequest | undefined {
+    const request = this.pending.get(id);
+    if (request === undefined) return undefined;
+    this.pending.delete(id);
+    clearTimeout(request.timer);
+    request.removeAbortListener();
+    return request;
+  }
+
+  private async consumeStdout(): Promise<void> {
+    const reader = this.child.stdout.getReader();
+    const decoder = new TextDecoder();
+    let buffered = "";
+    try {
+      let read = await reader.read();
+      while (!read.done) {
+        const { value } = read;
+        buffered += decoder.decode(value, { stream: true });
+        let newline = buffered.indexOf("\n");
+        while (newline >= 0) {
+          const line = buffered.slice(0, newline).trim();
+          buffered = buffered.slice(newline + 1);
+          if (line.length > 0) this.acceptLine(line);
+          newline = buffered.indexOf("\n");
+        }
+        if (new TextEncoder().encode(buffered).byteLength > SOURCE_V2_MAX_FRAME_BYTES) {
+          this.fail(
+            new Error(
+              `Source host frame exceeds ${String(SOURCE_V2_MAX_FRAME_BYTES)} bytes before newline`,
+            ),
+          );
+          this.child.kill();
+          return;
+        }
+        read = await reader.read();
+      }
+      buffered += decoder.decode();
+      const tail = buffered.trim();
+      if (tail.length > 0) this.acceptLine(tail);
+    } finally {
+      reader.releaseLock();
+    }
+  }
+
+  private acceptLine(line: string): void {
+    let frame: ReturnType<typeof decodeSourceV2Frame>;
+    try {
+      frame = decodeSourceV2Frame(line);
+    } catch (error: unknown) {
+      const detail = error instanceof SourceV2CodecError ? error.message : String(error);
+      this.fail(new Error(`Source host emitted a malformed frame: ${detail}`));
+      this.child.kill();
+      return;
+    }
+    if (frame.kind === "notification") {
+      const waiter = this.notificationWaiters.shift();
+      if (waiter !== undefined) {
+        clearTimeout(waiter.timer);
+        waiter.resolve(frame);
+        return;
+      }
+      if (this.notifications.length >= this.maxQueuedNotifications) {
+        this.fail(new Error(`Source host notification queue exceeds ${String(this.maxQueuedNotifications)}`));
+        this.child.kill();
+        return;
+      }
+      this.notifications.push(frame);
+      return;
+    }
+    if (frame.kind === "request") {
+      this.fail(new Error("Source host emitted a request instead of a response or notification"));
+      this.child.kill();
+      return;
+    }
+    const pending = this.takePending(frame.id);
+    pending?.settle(line);
+  }
+
+  private fail(error: Error): void {
+    if (this.failure !== undefined) return;
+    this.failure = error;
+    for (const id of [...this.pending.keys()]) this.rejectPending(id, error);
+    for (const waiter of this.notificationWaiters.splice(0)) {
+      clearTimeout(waiter.timer);
+      waiter.reject(error);
+    }
+  }
+}
+
+if (import.meta.main && process.argv[2] === "--fixed-source-host") {
+  const entry = process.argv[3];
+  if (entry === undefined) throw new Error("fixed source-host requires one artifact entry argument");
+  await runFixedSourceHost(entry);
 }

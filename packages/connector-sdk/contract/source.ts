@@ -61,6 +61,19 @@ export type SourceReleaseTier = "production" | "development_fixture";
 export type SourceDeliveryMode = "poll" | "push" | "none";
 export type SourceAuthKind = "api_key" | "oauth2" | "phone_code" | "shared_provider";
 
+/** Structural subset implemented by a Zod output schema. Keeping the SDK
+ * contract structural lets callers bring their own pinned Zod version while
+ * every v2 call still returns only a decoded T, never raw JSON. */
+export interface ProviderOutputSchema<T> {
+  parse(value: unknown): T;
+}
+
+/** One exact v2 provider operation and the schema that admits its result. */
+export interface ProviderOperation<T> {
+  readonly name: string;
+  readonly outputSchema: ProviderOutputSchema<T>;
+}
+
 export interface SourceCertificationReceipt {
   packageHash: string;
   sourceId: string;
