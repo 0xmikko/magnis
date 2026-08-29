@@ -156,9 +156,11 @@ const PROVIDER_SCENARIOS: Readonly<Record<string, readonly { id: string; path: s
     { id: "tst_mockx_003", path: "plugins/sources/mock-x/src/surfaces/x/fetch.test.ts" },
   ],
   telegram: [
+    { id: "tst_cat_tg_gap_001", path: "plugins/sources/telegram/src/surfaces/telegram/tst_cat_tg_gap_001.test.ts" },
     { id: "tst_tgts_auth_001", path: "plugins/sources/telegram/src/auth.test.ts" },
     { id: "tst_tgts_auth_004", path: "plugins/sources/telegram/src/auth.test.ts" },
     { id: "tst_tgts_auth_012", path: "plugins/sources/telegram/src/auth.test.ts" },
+    { id: "tst_tgts_boot_001", path: "plugins/sources/telegram/src/surfaces/telegram/commands.test.ts" },
     { id: "tst_tgts_exec_001", path: "plugins/sources/telegram/src/surfaces/telegram/execute.test.ts" },
     { id: "tst_tgts_flood_wire_002", path: "plugins/sources/telegram/src/surfaces/telegram/execute.test.ts" },
     { id: "tst_tgts_fx_001", path: "plugins/sources/telegram/src/fixture.test.ts" },
@@ -427,7 +429,7 @@ const GOLDEN_PROVIDERS: readonly GoldenProvider[] = [
   {
     sourceId: "telegram",
     serverInfoName: "magnis-telegram",
-    serverInfoVersion: "1.0.0",
+    serverInfoVersion: "1.0.1",
     auth: "phone_code",
     delivery: "push",
     pollIntervalSecs: null,
@@ -868,7 +870,7 @@ describe("tst_cat_src_parity_001 current v1 golden matrix", () => {
     expect(authored.delivery).toBe("push");
     expect("poll_interval_secs" in authored).toBe(false);
     expect(authored.server_info_name).toBe("magnis-telegram");
-    expect(authored.server_info_version).toBe("1.0.0");
+    expect(authored.server_info_version).toBe("1.0.1");
     expect(authored.advertised_tools).toEqual([]);
     expect(stringArray(authored.callable_operations, "telegram.callable_operations")).toEqual(
       expect.arrayContaining([

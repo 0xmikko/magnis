@@ -154,9 +154,51 @@ export async function runBootstrap(
   };
 }
 
+interface CatchupProgress {
+  readonly lastMessageId: number;
+  readonly targetLastMessageId: number | undefined;
+  readonly beforeMessageId: number | undefined;
+}
+
+function catchupProgress(value: unknown): CatchupProgress {
+  const entry = asObject(value);
+  const lastMessageId =
+    typeof entry?.last_msg_id === "number" && entry.last_msg_id >= 0
+      ? entry.last_msg_id
+      : 0;
+  const targetLastMessageId =
+    typeof entry?.target_last_msg_id === "number" && entry.target_last_msg_id > 0
+      ? entry.target_last_msg_id
+      : undefined;
+  const beforeMessageId =
+    typeof entry?.before_message_id === "number" && entry.before_message_id > 0
+      ? entry.before_message_id
+      : undefined;
+
+  if ((targetLastMessageId === undefined) !== (beforeMessageId === undefined)) {
+    throw new Error("telegram CatchUp cursor has incomplete per-chat progress");
+  }
+  if (targetLastMessageId !== undefined && targetLastMessageId <= lastMessageId) {
+    throw new Error("telegram CatchUp cursor target does not advance its committed watermark");
+  }
+  return { lastMessageId, targetLastMessageId, beforeMessageId };
+}
+
+function hasPendingCatchup(value: unknown): boolean {
+  const progress = catchupProgress(value);
+  return progress.targetLastMessageId !== undefined;
+}
+
 /** CatchUp: walk ALL dialogs from the top and emit only messages newer than each
- * chat's watermark. Result carries NO `total` / `discovered` (bootstrap-only
- * progress counters) and `hasMore` is always false. */
+ * chat's committed watermark. A gap larger than one provider page remains an
+ * opaque per-chat continuation: `last_msg_id` stays committed while
+ * `target_last_msg_id` fences the newest edge and `before_message_id` walks
+ * toward the old watermark. Result carries NO `total` / `discovered`
+ * (bootstrap-only progress counters).
+ *
+ * @tested-by: tst_cat_tg_gap_001
+ * @invariant: a chat promotes its forward watermark only after CatchUp crosses
+ * the old watermark or proves that no older provider page exists. */
 export async function runCatchup(
   ops: TgOps,
   accountId: string,
@@ -164,14 +206,12 @@ export async function runCatchup(
 ): Promise<Record<string, unknown>> {
   const c = asObject(cursor);
   const inChats = asObject(c?.chats) ?? {};
-  const offsetFor = (chatId: number): number => {
-    const entry = asObject(inChats[String(chatId)]);
-    const last = entry?.last_msg_id;
-    return typeof last === "number" ? last : 0;
-  };
 
   const envelopes: Record<string, unknown>[] = [];
-  const newCursorChats: Record<string, unknown> = {};
+  // Preserve checkpoints for dialogs that are temporarily absent from the
+  // provider walk. Dropping one would turn a later reappearance into a fresh
+  // account and replay its entire history.
+  const newCursorChats: Record<string, unknown> = { ...inChats };
   // pinned_order restarts at 0 on every catch-up pass (the walk starts at the top).
   let pinnedOrder = 0;
 
@@ -187,37 +227,65 @@ export async function runCatchup(
     // The chat envelope is emitted ALWAYS, even when its history is skipped.
     envelopes.push(chatEnvelope(chatToIntermediate(dialog.entity, meta)));
 
-    const offsetId = offsetFor(chatId);
-    if (offsetId > 0 && meta.top_message <= offsetId) {
+    const chatKey = String(chatId);
+    const saved = catchupProgress(inChats[chatKey]);
+    const committed = saved.lastMessageId;
+    if (saved.targetLastMessageId === undefined && meta.top_message <= committed) {
       // Nothing new in this chat — carry the watermark, skip the history call.
-      newCursorChats[String(chatId)] = { last_msg_id: offsetId };
+      if (committed > 0) newCursorChats[chatKey] = { last_msg_id: committed };
       continue;
     }
 
-    let highest: number | undefined;
+    const target = saved.targetLastMessageId ?? meta.top_message;
+    if (target <= committed) {
+      if (committed > 0) newCursorChats[chatKey] = { last_msg_id: committed };
+      continue;
+    }
+    const before = saved.beforeMessageId ?? target + 1;
     const messages = await ops.getMessages(dialog.peer, {
       limit: CATCHUP_MESSAGES_PER_CHAT,
+      offsetId: before,
     });
+    let oldest: number | undefined;
+    let reachedCommitted = false;
     for (const msg of messages) {
       const msgId = msg.id;
-      // getMessages is newest-first: the first message at/below the watermark
-      // ends the walk for this chat.
-      if (offsetId > 0 && msgId <= offsetId) break;
-      highest = highest === undefined ? msgId : Math.max(highest, msgId);
+      if (msgId >= before || msgId > target) {
+        throw new Error("telegram CatchUp page escaped its requested target window");
+      }
+      oldest = oldest === undefined ? msgId : Math.min(oldest, msgId);
+      // getMessages is newest-first: the first message at/below the committed
+      // watermark proves this gap is closed. The old item is not re-emitted.
+      if (msgId <= committed) {
+        reachedCommitted = true;
+        break;
+      }
       envelopes.push(
         messageEnvelope(messageToIntermediate(msg, accountId, chatId), "snapshot"),
       );
     }
-    const newLast = Math.max(highest ?? offsetId, offsetId);
-    if (newLast > 0) newCursorChats[String(chatId)] = { last_msg_id: newLast };
+
+    if (reachedCommitted || messages.length === 0) {
+      newCursorChats[chatKey] = { last_msg_id: target };
+      continue;
+    }
+    if (oldest === undefined || oldest >= before) {
+      throw new Error("telegram CatchUp page did not advance its per-chat continuation");
+    }
+    newCursorChats[chatKey] = {
+      last_msg_id: committed,
+      target_last_msg_id: target,
+      before_message_id: oldest,
+    };
   }
 
+  const hasMore = Object.values(newCursorChats).some(hasPendingCatchup);
   const nextCursor =
     Object.keys(newCursorChats).length === 0
       ? null
       : { date: toRfc3339Utc(new Date()), chats: newCursorChats };
 
-  return { envelopes, nextCursor, hasMore: false };
+  return { envelopes, nextCursor, hasMore };
 }
 
 /** Extract an integer argument tolerant of how the host's V8 `source_command`
