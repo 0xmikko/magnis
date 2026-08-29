@@ -107,6 +107,7 @@ type ScenarioRegistry = Readonly<Record<string, readonly ScenarioBinding[]>>;
 
 const PROVIDER_SCENARIOS: ScenarioRegistry = {
   anysite: [
+    { id: "tst_anysite_cert_001", path: "plugins/sources/anysite/src/__tests__/certification.test.ts" },
     { id: "tst_li_001", path: "plugins/sources/anysite/src/surfaces/linkedin/fetch.test.ts" },
     { id: "tst_li_004", path: "plugins/sources/anysite/src/surfaces/linkedin/fetch.test.ts" },
     { id: "tst_linkedin_probe", path: "plugins/sources/anysite/src/probe.test.ts" },
