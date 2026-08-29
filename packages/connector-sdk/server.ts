@@ -21,6 +21,11 @@ export interface SourceV2OperationContext {
   notify(method: string, params?: unknown): void;
 }
 
+export interface SourceV2ClientNotificationContext {
+  readonly instanceId: string;
+  readonly signal: AbortSignal;
+}
+
 export interface SourceV2OperationDefinition<TInput, TOutput> {
   readonly name: string;
   readonly inputSchema: ProviderOutputSchema<TInput>;
@@ -80,12 +85,22 @@ export class SourceV2CloseError extends Error {
 
   constructor(
     readonly activeRequestIds: readonly SourceV2RequestId[],
+    readonly activeNotificationIds: readonly number[],
     readonly timeoutMs: number,
   ) {
     super(
-      `Source v2 server could not join ${String(activeRequestIds.length)} request(s) within ${String(timeoutMs)}ms`,
+      `Source v2 server could not join ${String(activeRequestIds.length + activeNotificationIds.length)} work item(s) within ${String(timeoutMs)}ms`,
     );
     this.name = "SourceV2CloseError";
+  }
+}
+
+export class SourceV2BackpressureError extends Error {
+  readonly kind = "backpressure";
+
+  constructor(readonly limit: number) {
+    super(`Source v2 server concurrency limit ${String(limit)} reached`);
+    this.name = "SourceV2BackpressureError";
   }
 }
 
@@ -96,7 +111,10 @@ export interface SourceV2ServerConfig {
   readonly closeTimeoutMs?: number;
   readonly deadlineScheduler?: SourceV2DeadlineScheduler;
   readonly onNotification?: (frame: string) => void;
-  readonly onClientNotification?: (frame: SourceV2NotificationFrame) => void | Promise<void>;
+  readonly onClientNotification?: (
+    frame: SourceV2NotificationFrame,
+    context: SourceV2ClientNotificationContext,
+  ) => void | Promise<void>;
 }
 
 class SourceV2CancellationError extends Error {
@@ -110,6 +128,8 @@ interface ActiveRequest {
   readonly controller: AbortController;
   readonly settled: Promise<void>;
 }
+
+type ActiveNotification = ActiveRequest;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -163,10 +183,12 @@ function errorFrame(
 export class SourceV2Server {
   private readonly operations = new Map<string, RegisteredSourceV2Operation>();
   private readonly active = new Map<SourceV2RequestId, ActiveRequest>();
+  private readonly activeNotifications = new Map<number, ActiveNotification>();
   private readonly maxConcurrentRequests: number;
   private readonly closeTimeoutMs: number;
   private readonly deadlineScheduler: SourceV2DeadlineScheduler;
   private closeResult: Promise<void> | undefined;
+  private nextNotificationId = 1;
   private closing = false;
 
   constructor(private readonly config: SourceV2ServerConfig) {
@@ -193,6 +215,14 @@ export class SourceV2Server {
     return this.active.size;
   }
 
+  get pendingNotificationCount(): number {
+    return this.activeNotifications.size;
+  }
+
+  private get pendingWorkCount(): number {
+    return this.active.size + this.activeNotifications.size;
+  }
+
   async handleFrame(input: string | Uint8Array): Promise<string | null> {
     const frame = decodeSourceV2Frame(input);
     if (frame.kind === "notification") {
@@ -211,7 +241,29 @@ export class SourceV2Server {
       this.active.get(requestId)?.controller.abort(new SourceV2CancellationError(reason));
       return;
     }
-    await this.config.onClientNotification?.(frame);
+    if (this.closing) throw new SourceV2CancellationError("Source v2 server is closing");
+    if (this.pendingWorkCount >= this.maxConcurrentRequests) {
+      throw new SourceV2BackpressureError(this.maxConcurrentRequests);
+    }
+    const notificationId = this.nextNotificationId;
+    this.nextNotificationId += 1;
+    const controller = new AbortController();
+    let settleActive: (() => void) | undefined;
+    const settled = new Promise<void>((resolve) => {
+      settleActive = resolve;
+    });
+    this.activeNotifications.set(notificationId, { controller, settled });
+    try {
+      await this.config.onClientNotification?.(frame, {
+        instanceId: this.config.instanceId,
+        signal: controller.signal,
+      });
+    } catch (error: unknown) {
+      if (!controller.signal.aborted) throw error;
+    } finally {
+      this.activeNotifications.delete(notificationId);
+      settleActive?.();
+    }
   }
 
   private async handleRequest(frame: SourceV2RequestFrame): Promise<string> {
@@ -223,7 +275,7 @@ export class SourceV2Server {
     if (operation === undefined) {
       return errorFrame(frame.id, -32601, `unknown operation '${frame.method}'`);
     }
-    if (this.active.size >= this.maxConcurrentRequests) {
+    if (this.pendingWorkCount >= this.maxConcurrentRequests) {
       return errorFrame(
         frame.id,
         SOURCE_V2_BACKPRESSURE_CODE,
@@ -289,26 +341,42 @@ export class SourceV2Server {
       return;
     }
     this.closing = true;
-    const active = [...this.active.entries()];
-    for (const [, request] of active) {
+    const activeRequests = [...this.active.entries()];
+    const activeNotifications = [...this.activeNotifications.entries()];
+    for (const [, request] of activeRequests) {
       request.controller.abort(new SourceV2CancellationError("Source v2 server closed"));
     }
-    if (active.length === 0) return;
+    for (const [, notification] of activeNotifications) {
+      notification.controller.abort(new SourceV2CancellationError("Source v2 server closed"));
+    }
+    if (activeRequests.length === 0 && activeNotifications.length === 0) return;
     this.closeResult = new Promise<void>((resolve, reject) => {
       let complete = false;
       const cancelDeadline = this.deadlineScheduler.schedule(this.closeTimeoutMs, () => {
         if (complete) return;
         complete = true;
-        const activeRequestIds = active
+        const activeRequestIds = activeRequests
           .map(([id]) => id)
           .filter((id) => this.active.has(id));
-        if (activeRequestIds.length === 0) {
+        const activeNotificationIds = activeNotifications
+          .map(([id]) => id)
+          .filter((id) => this.activeNotifications.has(id));
+        if (activeRequestIds.length === 0 && activeNotificationIds.length === 0) {
           resolve();
           return;
         }
-        reject(new SourceV2CloseError(activeRequestIds, this.closeTimeoutMs));
+        reject(
+          new SourceV2CloseError(
+            activeRequestIds,
+            activeNotificationIds,
+            this.closeTimeoutMs,
+          ),
+        );
       });
-      void Promise.all(active.map(([, { settled }]) => settled)).then(() => {
+      void Promise.all([
+        ...activeRequests.map(([, { settled }]) => settled),
+        ...activeNotifications.map(([, { settled }]) => settled),
+      ]).then(() => {
         if (complete) return;
         complete = true;
         cancelDeadline();

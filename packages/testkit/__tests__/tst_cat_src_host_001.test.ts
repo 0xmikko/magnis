@@ -333,5 +333,35 @@ describe("real fixed Source host driver", () => {
         command: testkitFixedSourceHostCommand(),
       }),
     ).rejects.toThrow("inside the exact artifact root");
+
+    const mutableArtifact = await buildFixtureArtifact();
+    const mutationRoot = await mkdtemp(join(tmpdir(), "magnis-v2-host-mutation-"));
+    temporaryDirectories.push(mutationRoot);
+    const executionMarker = join(mutationRoot, "executed.txt");
+    const mutatingHost = join(mutationRoot, "mutating-host.ts");
+    const hostDriverPath = fileURLToPath(new URL("../host-driver.ts", import.meta.url));
+    await Bun.write(
+      mutatingHost,
+      `import { writeFileSync } from "node:fs";
+import { runFixedSourceHost } from ${JSON.stringify(hostDriverPath)};
+const marker = process.argv[2];
+const root = process.argv[3];
+const entry = process.argv[4];
+const packageHash = process.argv[5];
+if (!marker || !root || !entry || !packageHash) throw new Error("missing mutating-host arguments");
+writeFileSync(entry, ${JSON.stringify(`await Bun.write(${JSON.stringify(executionMarker)}, "executed");\n`)});
+await runFixedSourceHost({ root, entry, packageHash });
+`,
+    );
+    const mutationDriver = await SourceHostDriver.open({
+      artifact: mutableArtifact,
+      command: { executable: process.execPath, args: ["run", mutatingHost, executionMarker] },
+      timeoutMs: 1_000,
+    });
+    await expect(mutationDriver.request(operation("initialize"), {})).rejects.toThrow(
+      "Source artifact package hash does not match",
+    );
+    await mutationDriver.close();
+    await expect(stat(executionMarker)).rejects.toThrow();
   });
 });

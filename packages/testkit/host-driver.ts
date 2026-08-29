@@ -436,7 +436,7 @@ async function assertArtifactEntry(
   return { root, entry };
 }
 
-/** A hermetic fixed host with the same one-argument contract as the app host. */
+/** A hermetic fixed host with one root/entry/package-hash execution contract. */
 export function testkitFixedSourceHostCommand(): FixedSourceHostCommand {
   return {
     executable: process.execPath,
@@ -444,12 +444,10 @@ export function testkitFixedSourceHostCommand(): FixedSourceHostCommand {
   };
 }
 
-export async function runFixedSourceHost(artifactRoot: string, entry: string): Promise<void> {
-  const exactRoot = resolve(artifactRoot);
-  const exactEntry = resolve(entry);
-  await stat(exactEntry);
-  process.chdir(exactRoot);
-  await import(pathToFileURL(exactEntry).href);
+export async function runFixedSourceHost(artifact: BuiltSourceArtifact): Promise<void> {
+  const { root, entry } = await assertArtifactEntry(artifact);
+  process.chdir(root);
+  await import(pathToFileURL(entry).href);
 }
 
 /** Interactive client for a built artifact behind one fixed Source host. */
@@ -488,7 +486,13 @@ export class SourceHostDriver {
   static async open(options: SourceHostDriverOptions): Promise<SourceHostDriver> {
     const { root, entry } = await assertArtifactEntry(options.artifact);
     const child = Bun.spawn(
-      [options.command.executable, ...options.command.args, root, entry],
+      [
+        options.command.executable,
+        ...options.command.args,
+        root,
+        entry,
+        options.artifact.packageHash,
+      ],
       {
         cwd: root,
         stdin: "pipe",
@@ -775,8 +779,9 @@ export class SourceHostDriver {
 if (import.meta.main && process.argv[2] === "--fixed-source-host") {
   const artifactRoot = process.argv[3];
   const entry = process.argv[4];
-  if (artifactRoot === undefined || entry === undefined) {
-    throw new Error("fixed source-host requires artifact root and entry arguments");
+  const packageHash = process.argv[5];
+  if (artifactRoot === undefined || entry === undefined || packageHash === undefined) {
+    throw new Error("fixed source-host requires artifact root, entry and package hash arguments");
   }
-  await runFixedSourceHost(artifactRoot, entry);
+  await runFixedSourceHost({ root: artifactRoot, entry, packageHash });
 }

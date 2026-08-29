@@ -240,6 +240,82 @@ describe("strict Source protocol v2", () => {
     expect(bounded.pendingRequestCount).toBe(1);
     void heldReply;
 
+    let notificationStarted: (() => void) | undefined;
+    let notificationAbortObserved = false;
+    const notificationStart = new Promise<void>((resolve) => {
+      notificationStarted = resolve;
+    });
+    const notificationInput = new PassThrough();
+    const notificationRun = runSourceV2Server(
+      {
+        instanceId: "notification-eof",
+        operations: [],
+        async onClientNotification(_frame, context): Promise<void> {
+          notificationStarted?.();
+          await new Promise<void>((resolve) => {
+            context.signal.addEventListener(
+              "abort",
+              () => {
+                notificationAbortObserved = true;
+                resolve();
+              },
+              { once: true },
+            );
+          });
+        },
+      },
+      { input: notificationInput, write: () => undefined },
+    );
+    notificationInput.end(
+      `${JSON.stringify({ jsonrpc: "2.0", method: "fixture.client-event", params: {} })}\n`,
+    );
+    await notificationStart;
+    await notificationRun;
+    expect(notificationAbortObserved).toBe(true);
+
+    let expireNotificationClose: (() => void) | undefined;
+    const boundedNotifications = new SourceV2Server({
+      instanceId: "bounded-notifications",
+      operations: [],
+      maxConcurrentRequests: 1,
+      closeTimeoutMs: 100,
+      deadlineScheduler: {
+        schedule(_delayMs, onDeadline): () => void {
+          expireNotificationClose = onDeadline;
+          return () => undefined;
+        },
+      },
+      async onClientNotification(frame): Promise<void> {
+        if (frame.method === "fixture.never-cooperates") {
+          await new Promise<void>(() => undefined);
+        }
+      },
+    });
+    const heldNotification = boundedNotifications.handleFrame(
+      JSON.stringify({ jsonrpc: "2.0", method: "fixture.never-cooperates", params: {} }),
+    );
+    expect(boundedNotifications.pendingNotificationCount).toBe(1);
+    await expect(
+      boundedNotifications.handleFrame(
+        JSON.stringify({ jsonrpc: "2.0", method: "fixture.excess", params: {} }),
+      ),
+    ).rejects.toMatchObject({
+      name: "SourceV2BackpressureError",
+      kind: "backpressure",
+      limit: 1,
+    });
+    const notificationCloseOutcome = boundedNotifications.close().catch((error: unknown) => error);
+    await Promise.resolve();
+    expect(expireNotificationClose).toBeFunction();
+    expireNotificationClose?.();
+    await expect(notificationCloseOutcome).resolves.toMatchObject({
+      name: "SourceV2CloseError",
+      activeRequestIds: [],
+      activeNotificationIds: [1],
+    });
+    expect(boundedNotifications.pendingNotificationCount).toBe(1);
+    void heldNotification;
+
     const writerFailureInput = new PassThrough();
     const writerFailureOperation = defineSourceV2Operation({
       name: "fixture.writer-failure",
