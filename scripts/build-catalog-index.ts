@@ -349,14 +349,17 @@ export function stageSourcePackage(
   if (!existsSync(entry)) {
     throw new Error(`source '${id}' has no root-local src/main.ts to bundle`);
   }
-  const result = Bun.spawnSync([
-    "bun",
-    "build",
-    entry,
-    "--target=bun",
-    "--outfile",
-    join(destination, "dist", "main.js"),
-  ]);
+  const result = Bun.spawnSync(
+    [
+      "bun",
+      "build",
+      entry,
+      "--target=bun",
+      "--outfile",
+      join(destination, "dist", "main.js"),
+    ],
+    { cwd: ROOT },
+  );
   if (result.exitCode !== 0) {
     throw new Error(`bun build failed for source '${id}':\n${result.stderr.toString("utf8")}`);
   }

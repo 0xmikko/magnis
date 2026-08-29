@@ -28,7 +28,7 @@ import {
   reconcileSourceReceiptFixtures,
   writeCertifiedCatalogIndexes,
 } from "./certify-sources";
-import { stageSourcePackage } from "./build-catalog-index";
+import { stageBundledSourcePackage, stageSourcePackage } from "./build-catalog-index";
 import { terminateSourceHostProcess } from "../packages/testkit/host-driver";
 
 const roots: string[] = [];
@@ -532,6 +532,33 @@ describe("tst_cat_src_cert_001 staged Source certification", () => {
     expect(() => discoverStagedCatalog(catalogRoot)).toThrow(
       "source 'alpha' referenced file 'schemas/dataset-actions/emit.json' is missing",
     );
+  });
+
+  test("stages byte-identical bundled Sources from every caller working directory", () => {
+    const root = temporaryRoot();
+    const sourceRoot = join(root, "sources", "alpha");
+    mkdirSync(join(sourceRoot, "src"), { recursive: true });
+    writeFileSync(join(sourceRoot, "src", "main.ts"), "process.stdin.resume();\n");
+    writeFileSync(join(sourceRoot, "manifest.toml"), sourceManifest("alpha"));
+    const [release] = discoverSourceReleaseManifests(join(root, "sources"));
+    if (release === undefined || release.disposition !== "admissible") {
+      throw new Error("admissible fixture Source was not discovered");
+    }
+
+    const fromRepoRoot = join(root, "from-repo-root");
+    stageBundledSourcePackage(release, fromRepoRoot);
+    const originalWorkingDirectory = process.cwd();
+    const nestedWorkingDirectory = join(root, "caller", "nested");
+    mkdirSync(nestedWorkingDirectory, { recursive: true });
+    const fromNestedDirectory = join(root, "from-nested-directory");
+    try {
+      process.chdir(nestedWorkingDirectory);
+      stageBundledSourcePackage(release, fromNestedDirectory);
+    } finally {
+      process.chdir(originalWorkingDirectory);
+    }
+
+    expect(hashStagedPackage(fromNestedDirectory)).toBe(hashStagedPackage(fromRepoRoot));
   });
 
   test("rejects a staged Source that delegates execution to an external command", () => {

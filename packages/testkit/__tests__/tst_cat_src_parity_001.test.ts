@@ -174,6 +174,7 @@ const PROVIDER_SCENARIOS: Readonly<Record<string, readonly { id: string; path: s
     { id: "tst_x_001", path: "plugins/sources/x/src/surfaces/x/fetch.test.ts" },
     { id: "tst_x_005", path: "plugins/sources/x/src/surfaces/x/fetch.test.ts" },
     { id: "tst_x_006", path: "plugins/sources/x/src/surfaces/x/fetch.test.ts" },
+    { id: "tst_x_cert_001", path: "plugins/sources/x/src/__tests__/certification.test.ts" },
     { id: "tst_x_probe", path: "plugins/sources/x/src/probe.test.ts" },
   ],
 };
