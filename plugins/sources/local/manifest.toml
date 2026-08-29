@@ -34,7 +34,7 @@ runtime_kind = "connector_sdk"
 runtime_version = "0.1.0"
 advertised_tools = ["magnis.sync.fetch"]
 callable_operations = ["initialize", "magnis.sync.fetch", "tools/list"]
-scenario_ids = ["tst_conn_local_ts_001", "tst_conn_local_ts_005"]
+scenario_ids = ["tst_conn_local_ts_001", "tst_conn_local_ts_005", "tst_local_cert_001"]
 
 [certification.account_compatibility]
 auth = "none"

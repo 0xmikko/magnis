@@ -30,7 +30,7 @@ runtime_kind = "connector_sdk"
 runtime_version = "0.1.0"
 advertised_tools = ["magnis.sync.fetch"]
 callable_operations = ["initialize", "magnis.auth.probe", "magnis.sync.fetch", "tools/list"]
-scenario_ids = ["tst_cat_src_parity_001", "tst_mockx_001", "tst_mockx_003"]
+scenario_ids = ["tst_cat_src_parity_001", "tst_mockx_001", "tst_mockx_003", "tst_mockx_cert_001"]
 
 [certification.account_compatibility]
 auth = "none"
