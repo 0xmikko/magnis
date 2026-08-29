@@ -23,6 +23,7 @@ import {
   certificationReference,
   decodeSourceCertificationReceipt,
   encodeSourceCertificationReceipt,
+  sourceArtifactPackageHash,
   v1ReceiverInterfaceHash,
 } from "../packages/testkit/receipt";
 import type {
@@ -244,11 +245,7 @@ function sortedFiles(root: string): string[] {
  * @invariant: certification binds the exact bytes the host later installs.
  */
 export function hashStagedPackage(root: string): string {
-  const files = sortedFiles(root).map((path): readonly [string, string] => [
-    relative(root, path).replaceAll("\\", "/"),
-    sha256(readFileSync(path)),
-  ]);
-  return prefixedSha256(JSON.stringify(files));
+  return sourceArtifactPackageHash(root);
 }
 
 function sourceDatasetActions(

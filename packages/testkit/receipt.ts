@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { lstatSync, readFileSync, readdirSync } from "node:fs";
+import { join, relative } from "node:path";
 
 import type {
   SourceAuthKind,
@@ -176,6 +178,36 @@ function canonicalJson(value: JsonValue): string {
 
 function sha256(value: string): string {
   return `sha256:${createHash("sha256").update(value).digest("hex")}`;
+}
+
+/** Hash one immutable Source artifact with the exact package-tree algebra used
+ * by catalog certification and app installation. Symbolic links are never
+ * package bytes and therefore cannot participate in an exact identity.
+ *
+ * @tested-by: tst_cat_src_host_001
+ * @invariant: the real host starts only the artifact bytes named by packageHash.
+ */
+export function sourceArtifactPackageHash(root: string): string {
+  const files: string[] = [];
+  const collect = (current: string): void => {
+    const entries = readdirSync(current, { withFileTypes: true }).sort((left, right) =>
+      left.name < right.name ? -1 : left.name > right.name ? 1 : 0,
+    );
+    for (const entry of entries) {
+      const path = join(current, entry.name);
+      const metadata = lstatSync(path);
+      if (metadata.isSymbolicLink()) throw new Error(`symlink in staged package: ${path}`);
+      if (metadata.isDirectory()) collect(path);
+      else if (metadata.isFile()) files.push(path);
+      else throw new Error(`unsupported staged package entry: ${path}`);
+    }
+  };
+  collect(root);
+  const exactFiles = files.map((path): readonly [string, string] => [
+    relative(root, path).replaceAll("\\", "/"),
+    createHash("sha256").update(readFileSync(path)).digest("hex"),
+  ]);
+  return sha256(JSON.stringify(exactFiles));
 }
 
 function validateReceipt(value: unknown): SourceCertificationReceipt {

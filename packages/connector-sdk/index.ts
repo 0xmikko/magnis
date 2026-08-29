@@ -16,6 +16,8 @@
 // classes, the JSON-RPC codes) lives here.
 
 export * from "./contract/source";
+export * from "./codec";
+export * from "./server";
 
 import type { ConnectorConfig, DatasetActionArgs, Envelope } from "./contract/source";
 
