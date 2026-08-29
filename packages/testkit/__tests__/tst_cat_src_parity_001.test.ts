@@ -157,6 +157,8 @@ const PROVIDER_SCENARIOS: Readonly<Record<string, readonly { id: string; path: s
   ],
   telegram: [
     { id: "tst_cat_tg_gap_001", path: "plugins/sources/telegram/src/surfaces/telegram/tst_cat_tg_gap_001.test.ts" },
+    { id: "tst_cat_tg_gap_002", path: "plugins/sources/telegram/src/surfaces/telegram/tst_cat_tg_gap_001.test.ts" },
+    { id: "tst_cat_tg_gap_003", path: "plugins/sources/telegram/src/surfaces/telegram/tst_cat_tg_gap_001.test.ts" },
     { id: "tst_tgts_auth_001", path: "plugins/sources/telegram/src/auth.test.ts" },
     { id: "tst_tgts_auth_004", path: "plugins/sources/telegram/src/auth.test.ts" },
     { id: "tst_tgts_auth_012", path: "plugins/sources/telegram/src/auth.test.ts" },

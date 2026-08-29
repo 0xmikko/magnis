@@ -150,4 +150,55 @@ describe("tst_cat_tg_gap_001 Telegram crash-safe CatchUp", () => {
     const uniqueGapIds = new Set([...messageIds(first, 1), ...messageIds(terminal, 1)]);
     expect([...uniqueGapIds].sort((left, right) => left - right)).toEqual(range(8, 42));
   });
+
+  /**
+   * @test-id: tst_cat_tg_gap_002
+   * @scenario: scn_tg_sync_003
+   * @covers: plugins/sources/telegram/src/surfaces/telegram/commands.ts::catchupProgress
+   * @deterministic: yes
+   * @fixtures: malformed intermediate cursor below its committed watermark
+   */
+  test("tst_cat_tg_gap_002 rejects a continuation outside its committed gap", async () => {
+    for (const beforeMessageId of [6, 44]) {
+      const calls: HistoryCall[] = [];
+      const malformedCursor = {
+        chats: {
+          "1": {
+            last_msg_id: 7,
+            target_last_msg_id: 42,
+            before_message_id: beforeMessageId,
+          },
+          "2": { last_msg_id: 102 },
+        },
+      };
+
+      await expect(runCatchup(gapOps(calls), "account-1", malformedCursor)).rejects.toThrow(
+        "telegram CatchUp cursor continuation is outside its committed gap",
+      );
+      expect(calls).toEqual([]);
+    }
+  });
+
+  /**
+   * @test-id: tst_cat_tg_gap_003
+   * @scenario: scn_tg_sync_003
+   * @covers: plugins/sources/telegram/src/surfaces/telegram/commands.ts::runCatchup
+   * @deterministic: yes
+   * @fixtures: pending cursor whose chat is absent from the provider dialog snapshot
+   */
+  test("tst_cat_tg_gap_003 rejects an absent pending chat instead of spinning hasMore", async () => {
+    const calls: HistoryCall[] = [];
+    const cursor = {
+      chats: {
+        "1": { last_msg_id: 42 },
+        "2": { last_msg_id: 102 },
+        "3": { last_msg_id: 55, target_last_msg_id: 70, before_message_id: 60 },
+      },
+    };
+
+    await expect(runCatchup(gapOps(calls), "account-1", cursor)).rejects.toThrow(
+      "telegram CatchUp pending chat '3' is absent from the dialog snapshot",
+    );
+    expect(calls).toEqual([]);
+  });
 });

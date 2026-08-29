@@ -181,6 +181,13 @@ function catchupProgress(value: unknown): CatchupProgress {
   if (targetLastMessageId !== undefined && targetLastMessageId <= lastMessageId) {
     throw new Error("telegram CatchUp cursor target does not advance its committed watermark");
   }
+  if (
+    targetLastMessageId !== undefined &&
+    beforeMessageId !== undefined &&
+    (beforeMessageId <= lastMessageId || beforeMessageId > targetLastMessageId + 1)
+  ) {
+    throw new Error("telegram CatchUp cursor continuation is outside its committed gap");
+  }
   return { lastMessageId, targetLastMessageId, beforeMessageId };
 }
 
@@ -215,7 +222,23 @@ export async function runCatchup(
   // pinned_order restarts at 0 on every catch-up pass (the walk starts at the top).
   let pinnedOrder = 0;
 
-  for (const dialog of await ops.listDialogs()) {
+  const dialogs = await ops.listDialogs();
+  const listedChatKeys = new Set(dialogs.map((dialog) => String(toNum(dialog.entity.id))));
+  // A pending chat cannot be silently treated as complete when Telegram omits
+  // it from the current snapshot. Reject the page so the host retains the old
+  // cursor and applies its typed failure backoff instead of spinning hasMore or
+  // promoting an unobserved target.
+  //
+  // @tested-by: tst_cat_tg_gap_003
+  for (const [chatKey, progress] of Object.entries(inChats)) {
+    if (hasPendingCatchup(progress) && !listedChatKeys.has(chatKey)) {
+      throw new Error(
+        `telegram CatchUp pending chat '${chatKey}' is absent from the dialog snapshot`,
+      );
+    }
+  }
+
+  for (const dialog of dialogs) {
     const chatId = toNum(dialog.entity.id);
     const isPinned = dialog.pinned;
     let pinOrder = 0;
