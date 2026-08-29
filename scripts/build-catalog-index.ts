@@ -318,6 +318,27 @@ function installOrder(known: ReadonlyMap<string, ModuleFacts>): string[] {
  *
  * @tested-by: tst_cat_src_cert_001
  */
+const CANONICAL_BUNDLE_BUILD_ROOT = "/__magnis_catalog_build__/";
+
+/** Remove the checkout identity Bun embeds for CommonJS `__dirname` and
+ * `__filename`. An installed dependency-closed artifact cannot use its build
+ * checkout, so those exact prefixes must have one portable identity.
+ *
+ * @tested-by: tst_cat_src_cert_001
+ */
+export function canonicalizeBundledSourceBuildRoot(
+  bundle: string,
+  buildRoot: string = ROOT,
+): string {
+  const normalizedRoot = buildRoot.replaceAll("\\", "/").replace(/\/+$/, "");
+  const buildRootPrefix = `${normalizedRoot}/`;
+  const canonical = bundle.replaceAll(buildRootPrefix, CANONICAL_BUNDLE_BUILD_ROOT);
+  if (canonical.includes(buildRootPrefix)) {
+    throw new Error(`bundled Source retains build checkout prefix '${buildRootPrefix}'`);
+  }
+  return canonical;
+}
+
 export function stageSourcePackage(
   release: AdmissibleSourceReleaseManifest,
   destination: string,
@@ -363,6 +384,11 @@ export function stageSourcePackage(
   if (result.exitCode !== 0) {
     throw new Error(`bun build failed for source '${id}':\n${result.stderr.toString("utf8")}`);
   }
+  const bundlePath = join(destination, "dist", "main.js");
+  writeFileSync(
+    bundlePath,
+    canonicalizeBundledSourceBuildRoot(readFileSync(bundlePath, "utf8")),
+  );
 }
 
 /** Point a bundled source's manifest at the file the ARCHIVE contains.

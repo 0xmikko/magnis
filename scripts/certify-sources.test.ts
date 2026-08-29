@@ -28,8 +28,8 @@ import {
   reconcileSourceReceiptFixtures,
   writeCertifiedCatalogIndexes,
 } from "./certify-sources";
-import { stageSourcePackage } from "./build-catalog-index";
-import { terminateSourceHostProcess } from "../packages/testkit/host-driver";
+import { canonicalizeBundledSourceBuildRoot, stageSourcePackage } from "./build-catalog-index";
+import { collectSourceHostEvidence, terminateSourceHostProcess } from "../packages/testkit/host-driver";
 
 const roots: string[] = [];
 
@@ -559,6 +559,50 @@ describe("tst_cat_src_cert_001 staged Source certification", () => {
     }
 
     expect(hashStagedPackage(fromNestedDirectory)).toBe(hashStagedPackage(fromRepoRoot));
+  });
+
+  test("canonicalizes exact build-root prefixes across independent checkouts", () => {
+    const firstRoot = "/workspace/first";
+    const secondRoot = "/workspace/second";
+    expect(
+      canonicalizeBundledSourceBuildRoot(
+        `const native = "${firstRoot}/node_modules/native";`,
+        firstRoot,
+      ),
+    ).toBe(
+      canonicalizeBundledSourceBuildRoot(
+        `const native = "${secondRoot}/node_modules/native";`,
+        secondRoot,
+      ),
+    );
+    expect(
+      canonicalizeBundledSourceBuildRoot(
+        `const adjacent = "${firstRoot}ish/node_modules/native";`,
+        firstRoot,
+      ),
+    ).toContain(`${firstRoot}ish/`);
+  });
+
+  test("stages Telegram without its build checkout and launches the exact bundle", async () => {
+    const repoRoot = join(import.meta.dir, "..");
+    const release = discoverSourceReleaseManifests(join(repoRoot, "plugins", "sources"))
+      .find(({ id }) => id === "telegram");
+    if (release === undefined || release.disposition !== "admissible") {
+      throw new Error("Telegram must be an admissible Source release");
+    }
+    const artifactRoot = join(temporaryRoot(), "telegram");
+    stageSourcePackage(release, artifactRoot);
+    const bundle = readFileSync(join(artifactRoot, "dist", "main.js"), "utf8");
+    expect(bundle).not.toContain(`${repoRoot}/`);
+    expect(bundle).toContain("/__magnis_catalog_build__/");
+
+    const evidence = await collectSourceHostEvidence(
+      artifactRoot,
+      release.declaration.callableOperations,
+    );
+    expect(evidence.initialize.result).toMatchObject({
+      serverInfo: { name: "magnis-telegram", version: "1.0.0" },
+    });
   });
 
   test("rejects a staged Source that delegates execution to an external command", () => {
