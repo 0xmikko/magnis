@@ -4,11 +4,24 @@ import type { FetchLike } from "./api";
 
 type JsonRecord = Record<string, unknown>;
 
-interface AnysiteFixture {
+interface SuccessfulAnysiteFixture {
+  readonly mode: "success";
   readonly probeProfile: JsonRecord;
   readonly profilesByHandle: Readonly<Record<string, JsonRecord>>;
   readonly postsByProfileUrn: Readonly<Record<string, readonly JsonRecord[]>>;
 }
+
+interface ProviderErrorFixture {
+  readonly mode: "provider_error";
+  readonly providerError: {
+    readonly path: string;
+    readonly status: number;
+    readonly detail: string;
+    readonly retryAfter: number;
+  };
+}
+
+type AnysiteFixture = SuccessfulAnysiteFixture | ProviderErrorFixture;
 
 function record(value: unknown, label: string): JsonRecord {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -29,6 +42,14 @@ function finiteNumber(value: unknown, label: string): number {
     throw new Error(`anysite fixture ${label} must be a finite number`);
   }
   return value;
+}
+
+function positiveInteger(value: unknown, label: string): number {
+  const number = finiteNumber(value, label);
+  if (!Number.isInteger(number) || number <= 0) {
+    throw new Error(`anysite fixture ${label} must be a positive integer`);
+  }
+  return number;
 }
 
 function nullableString(value: unknown, label: string): string | null {
@@ -134,18 +155,52 @@ function loadFixture(): AnysiteFixture {
     throw new Error(`anysite fixture '${path}' cannot be decoded`, { cause: error });
   }
   const input = record(parsed, "root");
+  const mode = nonEmptyString(input.mode, "mode");
+  if (mode === "provider_error") {
+    const providerError = record(input.provider_error, "provider_error");
+    const path = nonEmptyString(providerError.path, "provider_error.path");
+    if (!path.startsWith("/")) {
+      throw new Error("anysite fixture provider_error.path must be absolute");
+    }
+    const status = positiveInteger(providerError.status, "provider_error.status");
+    if (status < 400 || status > 599) {
+      throw new Error("anysite fixture provider_error.status must be an HTTP error status");
+    }
+    return {
+      mode,
+      providerError: {
+        path,
+        status,
+        detail: nonEmptyString(providerError.detail, "provider_error.detail"),
+        retryAfter: positiveInteger(providerError.retry_after, "provider_error.retry_after"),
+      },
+    };
+  }
+  if (mode !== "success") {
+    throw new Error("anysite fixture mode must be 'success' or 'provider_error'");
+  }
   return {
+    mode,
     probeProfile: profile(input.probe_profile, "probe_profile"),
     profilesByHandle: profileMap(input.profiles_by_handle, "profiles_by_handle"),
     postsByProfileUrn: postMap(input.posts_by_profile_urn, "posts_by_profile_urn"),
   };
 }
 
-function response(status: number, body: unknown): Awaited<ReturnType<FetchLike>> {
+function response(
+  status: number,
+  body: unknown,
+  retryAfter?: number,
+): Awaited<ReturnType<FetchLike>> {
   return {
     ok: status >= 200 && status < 300,
     status,
-    headers: { get: () => null },
+    headers: {
+      get: (name) =>
+        name.toLowerCase() === "retry-after" && retryAfter !== undefined
+          ? String(retryAfter)
+          : null,
+    },
     text: () => Promise.resolve(JSON.stringify(body)),
     json: () => Promise.resolve(body),
   };
@@ -175,6 +230,19 @@ export function fixtureFetch(
   const fixture = loadFixture();
   const request = new URL(url);
   const body = requestBody(init);
+
+  if (fixture.mode === "provider_error") {
+    if (request.pathname !== fixture.providerError.path) {
+      return Promise.reject(
+        new Error(`anysite fixture has no captured route for ${request.pathname}`),
+      );
+    }
+    return Promise.resolve(response(
+      fixture.providerError.status,
+      { detail: fixture.providerError.detail },
+      fixture.providerError.retryAfter,
+    ));
+  }
 
   if (request.pathname === "/api/linkedin/user") {
     const handle = nonEmptyString(body.user, "request body.user");

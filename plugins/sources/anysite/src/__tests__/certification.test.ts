@@ -87,6 +87,7 @@ describe("Anysite exact-artifact certification", () => {
     writeFileSync(
       fixtureFile,
       JSON.stringify({
+        mode: "success",
         probe_profile: {
           name: "LinkedIn",
           urn: "urn:li:fsd_profile:probe",
@@ -205,6 +206,71 @@ describe("Anysite exact-artifact certification", () => {
       "missing api_key",
     );
 
+    writeFileSync(
+      fixtureFile,
+      JSON.stringify({
+        mode: "provider_error",
+        provider_error: {
+          path: "/api/linkedin/user",
+          status: 401,
+          detail: "Points limit exhausted, required at least 9 points",
+          retry_after: 73,
+        },
+      }),
+    );
+    const pointsExhausted = await collectSourceHostEvidence(
+      artifact.root,
+      ["initialize", "magnis.sync.fetch", "tools/list"],
+      {
+        fixtureEnvironment: { ANYSITE_FIXTURE_FILE: fixtureFile },
+        operationArguments: {
+          "magnis.sync.fetch": {
+            surface: "linkedin",
+            tracked_handles: ["anndoe"],
+            cursor: 41,
+            _meta: { api_key: "deployment-key-1234" },
+          },
+        },
+      },
+    );
+    expect(pointsExhausted.operationProbes["magnis.sync.fetch"]?.error).toEqual({
+      code: -32002,
+      message: "rate limited; retry_after=73",
+      data: { retry_after: 73 },
+    });
+
+    rmSync(fixtureFile);
+    const missingFixture = await collectSourceHostEvidence(
+      artifact.root,
+      ["initialize", "magnis.auth.probe", "tools/list"],
+      {
+        fixtureEnvironment: { ANYSITE_FIXTURE_FILE: fixtureFile },
+        operationArguments: {
+          "magnis.auth.probe": { _meta: { api_key: "deployment-key-1234" } },
+        },
+      },
+    );
+    expect(missingFixture.operationProbes["magnis.auth.probe"]?.error).toMatchObject({
+      code: -32000,
+      message: expect.stringContaining("cannot be decoded"),
+    });
+
+    writeFileSync(fixtureFile, "{not-json");
+    const malformedBytes = await collectSourceHostEvidence(
+      artifact.root,
+      ["initialize", "magnis.auth.probe", "tools/list"],
+      {
+        fixtureEnvironment: { ANYSITE_FIXTURE_FILE: fixtureFile },
+        operationArguments: {
+          "magnis.auth.probe": { _meta: { api_key: "deployment-key-1234" } },
+        },
+      },
+    );
+    expect(malformedBytes.operationProbes["magnis.auth.probe"]?.error).toMatchObject({
+      code: -32000,
+      message: expect.stringContaining("cannot be decoded"),
+    });
+
     writeFileSync(fixtureFile, '{"profiles_by_handle":{},"posts_by_profile_urn":{}}');
     const malformedFixture = await collectSourceHostEvidence(
       artifact.root,
@@ -217,7 +283,7 @@ describe("Anysite exact-artifact certification", () => {
       },
     );
     expect(malformedFixture.operationProbes["magnis.auth.probe"]?.error?.message).toContain(
-      "probe_profile must be an object",
+      "mode must be a non-empty string",
     );
   });
 });
