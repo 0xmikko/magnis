@@ -534,6 +534,33 @@ describe("tst_cat_src_cert_001 staged Source certification", () => {
     );
   });
 
+  test("stages byte-identical bundled Sources from every caller working directory", () => {
+    const root = temporaryRoot();
+    const sourceRoot = join(root, "sources", "alpha");
+    mkdirSync(join(sourceRoot, "src"), { recursive: true });
+    writeFileSync(join(sourceRoot, "src", "main.ts"), "process.stdin.resume();\n");
+    writeFileSync(join(sourceRoot, "manifest.toml"), sourceManifest("alpha"));
+    const [release] = discoverSourceReleaseManifests(join(root, "sources"));
+    if (release === undefined || release.disposition !== "admissible") {
+      throw new Error("admissible fixture Source was not discovered");
+    }
+
+    const fromRepoRoot = join(root, "from-repo-root");
+    stageSourcePackage(release, fromRepoRoot);
+    const originalWorkingDirectory = process.cwd();
+    const nestedWorkingDirectory = join(root, "caller", "nested");
+    mkdirSync(nestedWorkingDirectory, { recursive: true });
+    const fromNestedDirectory = join(root, "from-nested-directory");
+    try {
+      process.chdir(nestedWorkingDirectory);
+      stageSourcePackage(release, fromNestedDirectory);
+    } finally {
+      process.chdir(originalWorkingDirectory);
+    }
+
+    expect(hashStagedPackage(fromNestedDirectory)).toBe(hashStagedPackage(fromRepoRoot));
+  });
+
   test("rejects a staged Source that delegates execution to an external command", () => {
     const root = temporaryRoot();
     const packageRoot = stageSource(root, "alpha");
