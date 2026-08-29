@@ -65,7 +65,7 @@ runtime_kind = "connector_sdk"
 runtime_version = "0.1.0"
 advertised_tools = ["magnis.sync.fetch"]
 callable_operations = ["initialize", "magnis.auth.exchange", "magnis.auth.revoke", "magnis.execute:download_file", "magnis.execute:send_message", "magnis.sync.fetch", "tools/list"]
-scenario_ids = ["tst_gts_fx_001", "tst_gts_fx_003", "tst_gts_hist_008b", "tst_gts_oidc_004", "tst_gts_oidc_007", "tst_gts_wire_006"]
+scenario_ids = ["tst_gts_email_009", "tst_gts_fx_001", "tst_gts_fx_003", "tst_gts_gcal_005", "tst_gts_gp_005", "tst_gts_gp_006", "tst_gts_hist_008b", "tst_gts_oidc_004", "tst_gts_oidc_007", "tst_gts_wire_006"]
 
 [certification.account_compatibility]
 auth = "oauth2"

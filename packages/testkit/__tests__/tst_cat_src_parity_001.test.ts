@@ -105,8 +105,12 @@ const PROVIDER_SCENARIOS: Readonly<Record<string, readonly { id: string; path: s
     { id: "tst_linkedin_probe", path: "plugins/sources/anysite/src/probe.test.ts" },
   ],
   google: [
+    { id: "tst_gts_email_009", path: "plugins/sources/google/src/surfaces/email/gmail.test.ts" },
     { id: "tst_gts_fx_001", path: "plugins/sources/google/src/__tests__/fixture.test.ts" },
     { id: "tst_gts_fx_003", path: "plugins/sources/google/src/__tests__/fixture.test.ts" },
+    { id: "tst_gts_gcal_005", path: "plugins/sources/google/src/surfaces/meetings/calendar.test.ts" },
+    { id: "tst_gts_gp_005", path: "plugins/sources/google/src/surfaces/contacts/contacts.test.ts" },
+    { id: "tst_gts_gp_006", path: "plugins/sources/google/src/surfaces/contacts/contacts.test.ts" },
     { id: "tst_gts_hist_008b", path: "plugins/sources/google/src/surfaces/email/gmail.test.ts" },
     { id: "tst_gts_oidc_004", path: "plugins/sources/google/src/oauth.test.ts" },
     { id: "tst_gts_oidc_007", path: "plugins/sources/google/src/oauth.test.ts" },

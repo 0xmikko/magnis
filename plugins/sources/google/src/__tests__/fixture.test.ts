@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -8,8 +8,11 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { handleMessage, type FetchResult } from "@magnis/connector-sdk";
 import { collectSourceHostEvidence } from "@magnis/testkit/host-driver";
 
-import { decodeSourceCertificationReceipt } from "../../../../../packages/testkit/receipt";
-import { stageSourcePackage } from "../../../../../scripts/build-catalog-index";
+import {
+  decodeSourceCertificationReceipt,
+  sourceArtifactPackageHash,
+} from "../../../../../packages/testkit/receipt";
+import { stageBundledSourcePackage } from "../../../../../scripts/build-catalog-index";
 import { discoverSourceReleaseManifests } from "../../../../../scripts/certify-sources";
 
 import { buildConnectorConfig } from "../connector";
@@ -152,29 +155,33 @@ describe("fixture mode end-to-end", () => {
     }
     const stageRoot = mkdtempSync(join(tmpdir(), "gts-certified-artifact-"));
     try {
-      stageSourcePackage(release, stageRoot);
+      stageBundledSourcePackage(release, stageRoot);
 
       const implementationHash = `sha256:${createHash("sha256")
         .update(readFileSync(join(stageRoot, "dist", "main.js")))
         .digest("hex")}`;
-      const matchingReceipts = readdirSync(join(repoRoot, "dist", "receipts"))
-        .filter((name) => name.endsWith(".json"))
-        .map((name) => ({
-          name,
-          receipt: decodeSourceCertificationReceipt(
-            readFileSync(join(repoRoot, "dist", "receipts", name), "utf8"),
-          ),
-        }))
-        .filter(({ receipt }) =>
-          receipt.sourceId === "google" && receipt.runtime.implementationHash === implementationHash,
-        );
-      expect(matchingReceipts).toHaveLength(1);
-      const currentReceipt = matchingReceipts[0];
-      if (currentReceipt === undefined) throw new Error("current Google receipt is missing");
-      expect(currentReceipt.name).toBe(`${currentReceipt.receipt.packageHash}.json`);
-      expect(currentReceipt.receipt.protocol).toBe("magnis.source/1");
-      expect(currentReceipt.receipt.auth).toBe("oauth2");
-      expect(currentReceipt.receipt.surfaces).toEqual(["contacts", "email", "meetings"]);
+      const packageHash = sourceArtifactPackageHash(stageRoot);
+      const receipt = decodeSourceCertificationReceipt(
+        readFileSync(join(repoRoot, "dist", "receipts", `${packageHash}.json`), "utf8"),
+        { packageHash },
+      );
+      expect(receipt.packageHash).toBe(packageHash);
+      expect(receipt.runtime.implementationHash).toBe(implementationHash);
+      expect(receipt.protocol).toBe("magnis.source/1");
+      expect(receipt.auth).toBe("oauth2");
+      expect(receipt.surfaces).toEqual(["contacts", "email", "meetings"]);
+      expect(receipt.scenarioIds).toEqual([
+        "tst_gts_email_009",
+        "tst_gts_fx_001",
+        "tst_gts_fx_003",
+        "tst_gts_gcal_005",
+        "tst_gts_gp_005",
+        "tst_gts_gp_006",
+        "tst_gts_hist_008b",
+        "tst_gts_oidc_004",
+        "tst_gts_oidc_007",
+        "tst_gts_wire_006",
+      ]);
 
       for (const surface of ["email", "meetings", "contacts"] as const) {
         const evidence = await collectSourceHostEvidence(
