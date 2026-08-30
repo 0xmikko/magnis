@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { gunzipSync } from "node:zlib";
 
 import { describe, expect, test } from "bun:test";
@@ -98,7 +98,14 @@ function surface(
 const SDK_TOOLS = ["magnis.sync.fetch"] as const;
 const SDK_OPERATIONS = ["initialize", "magnis.sync.fetch", "tools/list"] as const;
 
-const PROVIDER_SCENARIOS: Readonly<Record<string, readonly { id: string; path: string }[]>> = {
+interface ScenarioBinding {
+  readonly id: string;
+  readonly path: string;
+}
+
+type ScenarioRegistry = Readonly<Record<string, readonly ScenarioBinding[]>>;
+
+const PROVIDER_SCENARIOS: ScenarioRegistry = {
   anysite: [
     { id: "tst_li_001", path: "plugins/sources/anysite/src/surfaces/linkedin/fetch.test.ts" },
     { id: "tst_li_004", path: "plugins/sources/anysite/src/surfaces/linkedin/fetch.test.ts" },
@@ -177,6 +184,63 @@ const PROVIDER_SCENARIOS: Readonly<Record<string, readonly { id: string; path: s
     { id: "tst_x_probe", path: "plugins/sources/x/src/probe.test.ts" },
   ],
 };
+
+function providerTestFiles(root: string, sourceId: string): readonly string[] {
+  const providerRoot = join(root, "plugins", "sources", sourceId);
+  if (!existsSync(providerRoot)) return [];
+  const files: string[] = [];
+  const visit = (directory: string): void => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      if (entry.name === "node_modules" || entry.name === "dist") continue;
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) visit(path);
+      else if (entry.isFile() && entry.name.endsWith(".test.ts")) files.push(path);
+    }
+  };
+  visit(providerRoot);
+  return files.sort();
+}
+
+function fileContainsScenario(path: string, scenarioId: string): boolean {
+  const escaped = scenarioId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|[^A-Za-z0-9_])${escaped}([^A-Za-z0-9_]|$)`).test(
+    readFileSync(path, "utf8"),
+  );
+}
+
+function resolveProviderScenarios(
+  root: string,
+  sourceId: string,
+  authoredScenarioIds: readonly string[],
+  registry: ScenarioRegistry = PROVIDER_SCENARIOS,
+): readonly ScenarioBinding[] {
+  const explicit = registry[sourceId] ?? [];
+  const authored = new Set(authoredScenarioIds);
+  for (const binding of explicit) {
+    if (!authored.has(binding.id)) {
+      throw new Error(`source '${sourceId}' has stale explicit scenario '${binding.id}'`);
+    }
+  }
+  const localTestFiles = providerTestFiles(root, sourceId);
+  return authoredScenarioIds.map((scenarioId) => {
+    const explicitMatches = explicit.filter(({ id }) => id === scenarioId);
+    if (explicitMatches.length > 1) {
+      throw new Error(`scenario '${scenarioId}' has multiple explicit evidence bindings`);
+    }
+    const explicitMatch = explicitMatches[0];
+    if (explicitMatch !== undefined) return explicitMatch;
+    const localMatches = localTestFiles.filter((path) => fileContainsScenario(path, scenarioId));
+    if (localMatches.length === 0) {
+      throw new Error(`scenario '${scenarioId}' has no provider-local test file`);
+    }
+    if (localMatches.length > 1) {
+      throw new Error(`scenario '${scenarioId}' has multiple provider-local test files`);
+    }
+    const path = localMatches[0];
+    if (path === undefined) throw new Error(`scenario '${scenarioId}' resolution failed`);
+    return { id: scenarioId, path: relative(root, path) };
+  });
+}
 
 const CURRENT_OPERATION_EVIDENCE: Readonly<
   Record<string, Readonly<Record<string, { id: string; path: string }>>>
@@ -640,11 +704,11 @@ describe("tst_cat_src_parity_001 current v1 golden matrix", () => {
       expect(sorted(stringArray(authored.callable_operations, `${golden.sourceId}.callable_operations`))).toEqual(
         sorted(golden.callableOperations),
       );
-      const scenarios = PROVIDER_SCENARIOS[golden.sourceId];
-      if (scenarios === undefined) throw new Error(`${golden.sourceId} has no executable scenario evidence`);
-      expect(stringArray(authored.scenario_ids, `${golden.sourceId}.scenario_ids`)).toEqual(
-        scenarios.map(({ id }) => id),
+      const authoredScenarioIds = stringArray(
+        authored.scenario_ids,
+        `${golden.sourceId}.scenario_ids`,
       );
+      const scenarios = resolveProviderScenarios(repoRoot, golden.sourceId, authoredScenarioIds);
       for (const scenario of scenarios) {
         expect(readFileSync(join(repoRoot, scenario.path), "utf8"), scenario.id).toContain(scenario.id);
       }
@@ -700,6 +764,36 @@ describe("tst_cat_src_parity_001 current v1 golden matrix", () => {
           surfaces: golden.surfaces,
         },
       });
+    }
+  });
+
+  test("provider-local authored scenarios need no shared provider registry row", () => {
+    const root = mkdtempSync(join(tmpdir(), "magnis-provider-scenarios-"));
+    try {
+      const providerRoot = join(root, "plugins", "sources", "sample", "src");
+      mkdirSync(providerRoot, { recursive: true });
+      writeFileSync(
+        join(providerRoot, "certification.test.ts"),
+        'test("tst_sample_cert_001 exact artifact", () => {});\n',
+      );
+
+      expect(resolveProviderScenarios(root, "sample", ["tst_sample_cert_001"], {})).toEqual([
+        {
+          id: "tst_sample_cert_001",
+          path: "plugins/sources/sample/src/certification.test.ts",
+        },
+      ]);
+
+      writeFileSync(
+        join(providerRoot, "duplicate.test.ts"),
+        'test("tst_sample_cert_001 duplicate", () => {});\n',
+      );
+      expect(() => resolveProviderScenarios(root, "sample", ["tst_sample_cert_001"], {}))
+        .toThrow("scenario 'tst_sample_cert_001' has multiple provider-local test files");
+      expect(() => resolveProviderScenarios(root, "sample", ["tst_sample_missing_001"], {}))
+        .toThrow("scenario 'tst_sample_missing_001' has no provider-local test file");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 

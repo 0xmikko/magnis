@@ -34,7 +34,7 @@ import type {
   SearchEntitiesPage,
   SearchEntitiesPageParams,
   SearchEntitiesParams,
-  ToolDefinitionWire,
+  StandardMethodDecoratorContext,
   ToolSpecInput,
 } from "./contract/module";
 import type { InstallContext, LifecycleHooks, MigrationStep } from "./contract/lifecycle";
@@ -159,23 +159,123 @@ interface ToolMeta {
   /// false = RPC-only handler (registered as an RPC method but NOT
   /// harvested as an agent tool). See `rpc()`.
   isTool: boolean;
-  methodName: string;
+  methodName: string | symbol;
 }
 
-// Keyed by the class PROTOTYPE — legacy TS method decorators receive
-// the prototype as `target`, and a fresh instance's prototype is the
-// same object, so definePlugin reads it back after `new`.
-const REGISTRY = new WeakMap<object, ToolMeta[]>();
+// Legacy TS decorators receive the declaring prototype. Standard decorators
+// receive only the decorated method function, so their metadata is keyed by
+// that function at class-definition time. definePlugin joins both registries
+// by walking own method descriptors from the base prototype to the leaf.
+const LEGACY_REGISTRY = new WeakMap<object, ToolMeta[]>();
+const STANDARD_REGISTRY = new WeakMap<object, ToolMeta[]>();
 
-function record(suffix: string, spec: ToolSpecInput, write: boolean, isTool: boolean) {
-  return function (target: object, methodName: string, _d: PropertyDescriptor): void {
-    let list = REGISTRY.get(target);
-    if (!list) {
-      list = [];
-      REGISTRY.set(target, list);
+function registerMethod(
+  registry: WeakMap<object, ToolMeta[]>,
+  target: object,
+  meta: ToolMeta,
+): void {
+  const list = registry.get(target);
+  if (list === undefined) {
+    registry.set(target, [meta]);
+    return;
+  }
+  const exactRegistration = list.some(
+    (entry) =>
+      entry.methodName === meta.methodName &&
+      entry.suffix === meta.suffix &&
+      entry.description === meta.description &&
+      entry.params === meta.params &&
+      entry.write === meta.write &&
+      entry.isTool === meta.isTool,
+  );
+  if (exactRegistration) return;
+  if (list.some((entry) => entry.suffix === meta.suffix)) {
+    throw new TypeError(`duplicate plugin decorator suffix ${JSON.stringify(meta.suffix)}`);
+  }
+  list.push(meta);
+}
+
+function collectMethodMetadata(prototype: object): ToolMeta[] {
+  const chain: object[] = [];
+  let cursor: object | null = prototype;
+  while (cursor !== null && cursor !== Object.prototype) {
+    chain.unshift(cursor);
+    cursor = Object.getPrototypeOf(cursor) as object | null;
+  }
+
+  const collected: ToolMeta[] = [];
+  const suffixes = new Set<string>();
+  for (const owner of chain) {
+    const legacy = LEGACY_REGISTRY.get(owner) ?? [];
+    const visitedLegacy = new Set<ToolMeta>();
+    const ownerMetas: ToolMeta[] = [];
+    for (const methodName of Reflect.ownKeys(owner)) {
+      if (methodName === "constructor") continue;
+      for (const meta of legacy) {
+        if (meta.methodName === methodName) {
+          visitedLegacy.add(meta);
+          ownerMetas.push(meta);
+        }
+      }
+      const descriptor = Object.getOwnPropertyDescriptor(owner, methodName);
+      const method: unknown = descriptor?.value;
+      if (typeof method === "function") {
+        ownerMetas.push(...(STANDARD_REGISTRY.get(method) ?? []));
+      }
     }
-    list.push({ suffix, description: spec.description, params: spec.params, write, isTool, methodName });
-  };
+    // A valid legacy method is always an own prototype descriptor. Preserve
+    // the former validation path for malformed manual decorator calls so init
+    // reports the missing/non-callable method instead of silently omitting it.
+    for (const meta of legacy) {
+      if (!visitedLegacy.has(meta)) ownerMetas.push(meta);
+    }
+    for (const meta of ownerMetas) {
+      if (suffixes.has(meta.suffix)) {
+        throw new TypeError(`duplicate inherited plugin decorator suffix ${JSON.stringify(meta.suffix)}`);
+      }
+      suffixes.add(meta.suffix);
+      collected.push(meta);
+    }
+  }
+  return collected;
+}
+
+function record(suffix: string, spec: ToolSpecInput, write: boolean, isTool: boolean): MethodRecorder {
+  function decorate(
+    targetOrMethod: object,
+    methodNameOrContext: string | symbol | StandardMethodDecoratorContext,
+    _descriptor?: PropertyDescriptor,
+  ): void {
+    const common = {
+      suffix,
+      description: spec.description,
+      params: spec.params,
+      write,
+      isTool,
+    };
+    if (
+      typeof methodNameOrContext === "string" || typeof methodNameOrContext === "symbol"
+    ) {
+      if (typeof targetOrMethod === "function") {
+        throw new TypeError("plugin decorators require a public instance method");
+      }
+      registerMethod(LEGACY_REGISTRY, targetOrMethod, {
+        ...common,
+        methodName: methodNameOrContext,
+      });
+      return;
+    }
+
+    const context = methodNameOrContext;
+    if (context.static || context.private) {
+      throw new TypeError("plugin decorators require a public instance method");
+    }
+    registerMethod(STANDARD_REGISTRY, targetOrMethod, {
+      ...common,
+      methodName: context.name,
+    });
+  }
+  return decorate;
 }
 
 /// Declare a read tool. `suffix` is the method name only — the backend
@@ -249,9 +349,6 @@ export function definePlugin(
   // Handed to the runtime AT MODULE EVAL, then mutated in place by
   // init(); the runtime reads rpcHandlers only post-init, so the
   // empty-then-filled sequence is safe.
-  const rpcHandlers: PluginModuleShape["rpcHandlers"] = {};
-  const toolDefinitions: ToolDefinitionWire[] = [];
-
   // init has no async work of its own, but must stay async to satisfy
   // PluginModuleShape.init's Promise<void> contract AND preserve throw→rejection
   // semantics for the runtime's `await init(...)`.
@@ -263,6 +360,11 @@ export function definePlugin(
     rpc: RpcExecutor,
     log: PluginLogger,
   ): Promise<void> {
+    // Re-init is a replacement, not accumulation. Clear the published surface
+    // first so any constructor/metadata failure leaves no stale callable API.
+    // @tested-by: tst_testkit_mount_dispatch_004
+    shape.rpcHandlers = {};
+    shape.toolDefinitions = [];
     // The host boundary is Rust/V8 and passes these positionally, so TypeScript
     // cannot enforce arity there. Without this guard a host that has not caught
     // up leaves `log` undefined, every handler registers, and the plugin runs
@@ -282,22 +384,25 @@ export function definePlugin(
       util,
       rpc,
       log,
-    }) as Record<string, (p: unknown) => unknown>;
+    }) as Record<PropertyKey, unknown>;
     // Prefix = the plugin id the runtime injects (== the module name,
     // per the Rust convention). The decorator carries only the suffix.
     const prefix = ctx.extension_id;
-    const metas: ToolMeta[] = REGISTRY.get((ModuleClass as { prototype: object }).prototype) ?? [];
+    // Base handlers are inherited in declaration order. A repeated suffix is
+    // ambiguous and fails rather than silently choosing an ABI or subclass.
+    // @tested-by: tst_testkit_mount_dispatch_005
+    const metas = collectMethodMetadata((ModuleClass as { prototype: object }).prototype);
     for (const m of metas) {
       const rpcName = `${prefix}.${m.suffix}`;
       const method = instance[m.methodName];
       if (typeof method !== "function") {
-        throw new Error(`plugin: decorated method "${m.methodName}" is not a function`);
+        throw new Error(`plugin: decorated method "${String(m.methodName)}" is not a function`);
       }
-      rpcHandlers[rpcName] = (params: unknown): unknown => method.call(instance, params);
+      shape.rpcHandlers[rpcName] = (params: unknown): unknown => method.call(instance, params);
       // RPC-only handlers (rpc()) register the handler but are NOT harvested
       // as agent tools.
       if (m.isTool) {
-        toolDefinitions.push({
+        shape.toolDefinitions.push({
           name: rpcName,
           description: m.description,
           inputSchema: m.params,
@@ -307,11 +412,12 @@ export function definePlugin(
     }
   }
 
-  (globalThis as unknown as { __magnis_plugin_module: PluginModuleShape }).__magnis_plugin_module = {
+  const shape: PluginModuleShape = {
     init,
-    rpcHandlers,
-    toolDefinitions,
+    rpcHandlers: {},
+    toolDefinitions: [],
   };
+  (globalThis as unknown as { __magnis_plugin_module: PluginModuleShape }).__magnis_plugin_module = shape;
 }
 
 // ── Lifecycle runtime
