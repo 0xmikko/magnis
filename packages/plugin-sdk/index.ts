@@ -162,15 +162,21 @@ interface ToolMeta {
   methodName: string | symbol;
 }
 
-// Keyed by the class PROTOTYPE. Legacy TS decorators receive it directly;
-// standard decorators register it from their instance initializer. A fresh
-// instance has the same prototype, so definePlugin reads one canonical list.
-const REGISTRY = new WeakMap<object, ToolMeta[]>();
+// Legacy TS decorators receive the declaring prototype. Standard decorators
+// receive only the decorated method function, so their metadata is keyed by
+// that function at class-definition time. definePlugin joins both registries
+// by walking own method descriptors from the base prototype to the leaf.
+const LEGACY_REGISTRY = new WeakMap<object, ToolMeta[]>();
+const STANDARD_REGISTRY = new WeakMap<object, ToolMeta[]>();
 
-function registerMethod(target: object, meta: ToolMeta): void {
-  const list = REGISTRY.get(target);
+function registerMethod(
+  registry: WeakMap<object, ToolMeta[]>,
+  target: object,
+  meta: ToolMeta,
+): void {
+  const list = registry.get(target);
   if (list === undefined) {
-    REGISTRY.set(target, [meta]);
+    registry.set(target, [meta]);
     return;
   }
   const exactRegistration = list.some(
@@ -189,16 +195,6 @@ function registerMethod(target: object, meta: ToolMeta): void {
   list.push(meta);
 }
 
-function declaringPrototype(instance: object, methodName: string | symbol, method: object): object {
-  let prototype = Object.getPrototypeOf(instance) as object | null;
-  while (prototype !== null) {
-    const descriptor = Object.getOwnPropertyDescriptor(prototype, methodName);
-    if (descriptor?.value === method) return prototype;
-    prototype = Object.getPrototypeOf(prototype) as object | null;
-  }
-  throw new TypeError(`decorated plugin method ${String(methodName)} has no declaring prototype`);
-}
-
 function collectMethodMetadata(prototype: object): ToolMeta[] {
   const chain: object[] = [];
   let cursor: object | null = prototype;
@@ -210,7 +206,30 @@ function collectMethodMetadata(prototype: object): ToolMeta[] {
   const collected: ToolMeta[] = [];
   const suffixes = new Set<string>();
   for (const owner of chain) {
-    for (const meta of REGISTRY.get(owner) ?? []) {
+    const legacy = LEGACY_REGISTRY.get(owner) ?? [];
+    const visitedLegacy = new Set<ToolMeta>();
+    const ownerMetas: ToolMeta[] = [];
+    for (const methodName of Reflect.ownKeys(owner)) {
+      if (methodName === "constructor") continue;
+      for (const meta of legacy) {
+        if (meta.methodName === methodName) {
+          visitedLegacy.add(meta);
+          ownerMetas.push(meta);
+        }
+      }
+      const descriptor = Object.getOwnPropertyDescriptor(owner, methodName);
+      const method: unknown = descriptor?.value;
+      if (typeof method === "function") {
+        ownerMetas.push(...(STANDARD_REGISTRY.get(method) ?? []));
+      }
+    }
+    // A valid legacy method is always an own prototype descriptor. Preserve
+    // the former validation path for malformed manual decorator calls so init
+    // reports the missing/non-callable method instead of silently omitting it.
+    for (const meta of legacy) {
+      if (!visitedLegacy.has(meta)) ownerMetas.push(meta);
+    }
+    for (const meta of ownerMetas) {
       if (suffixes.has(meta.suffix)) {
         throw new TypeError(`duplicate inherited plugin decorator suffix ${JSON.stringify(meta.suffix)}`);
       }
@@ -240,7 +259,10 @@ function record(suffix: string, spec: ToolSpecInput, write: boolean, isTool: boo
       if (typeof targetOrMethod === "function") {
         throw new TypeError("plugin decorators require a public instance method");
       }
-      registerMethod(targetOrMethod, { ...common, methodName: methodNameOrContext });
+      registerMethod(LEGACY_REGISTRY, targetOrMethod, {
+        ...common,
+        methodName: methodNameOrContext,
+      });
       return;
     }
 
@@ -248,9 +270,9 @@ function record(suffix: string, spec: ToolSpecInput, write: boolean, isTool: boo
     if (context.static || context.private) {
       throw new TypeError("plugin decorators require a public instance method");
     }
-    context.addInitializer(function registerStandardDecorator(this: object): void {
-      const prototype = declaringPrototype(this, context.name, targetOrMethod);
-      registerMethod(prototype, { ...common, methodName: context.name });
+    registerMethod(STANDARD_REGISTRY, targetOrMethod, {
+      ...common,
+      methodName: context.name,
     });
   }
   return decorate;

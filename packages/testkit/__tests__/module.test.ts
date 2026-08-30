@@ -152,53 +152,58 @@ describe("mountModule — dispatch", () => {
    * @deterministic: yes
    * @fixtures: none
    */
-  it("tst_testkit_mount_dispatch_005 legacy and standard ABIs inherit the same base tool", async () => {
-    class LegacyBase {
+  it("tst_testkit_mount_dispatch_005 real Bun decorators publish base then derived tools", async () => {
+    class DecoratedBase {
       constructor(_deps: PluginDeps) {}
-      inherited(): string { return "legacy"; }
-    }
-    class LegacyDerived extends LegacyBase {}
-    const legacyDescriptor = Object.getOwnPropertyDescriptor(LegacyBase.prototype, "inherited");
-    if (legacyDescriptor === undefined) throw new Error("missing legacy method descriptor");
-    tool("inherited", { description: "inherited", params: {} })(
-      LegacyBase.prototype,
-      "inherited",
-      legacyDescriptor,
-    );
-    definePlugin(LegacyDerived);
-    const legacyShape = publishedShape();
-    await initializeShape(legacyShape, "legacy");
 
-    class StandardBase {
+      @tool("base", { description: "base", params: {} })
+      base(): string { return "base"; }
+    }
+
+    class DecoratedDerived extends DecoratedBase {
+      @tool("derived", { description: "derived", params: {} })
+      derived(): string { return "derived"; }
+    }
+
+    definePlugin(DecoratedDerived);
+    const shape = publishedShape();
+    await initializeShape(shape, "real");
+
+    expect(shape.toolDefinitions.map((definition) => definition.name)).toEqual([
+      "real.base",
+      "real.derived",
+    ]);
+    expect(shape.rpcHandlers["real.base"]?.({})).toBe("base");
+    expect(shape.rpcHandlers["real.derived"]?.({})).toBe("derived");
+  });
+
+  /**
+   * @test-id: tst_testkit_mount_dispatch_007
+   * @scenario: scn_module_decorator_007
+   * @covers: packages/plugin-sdk/index.ts::record
+   * @deterministic: yes
+   * @fixtures: none
+   */
+  it("tst_testkit_mount_dispatch_007 real Bun decorators reject duplicate inherited suffixes", async () => {
+    class DuplicateBase {
       constructor(_deps: PluginDeps) {}
-      inherited(): string { return "standard"; }
-    }
-    class StandardDerived extends StandardBase {}
-    const initializers: Array<(this: object) => void> = [];
-    tool("inherited", { description: "inherited", params: {} })(
-      StandardBase.prototype.inherited,
-      {
-        kind: "method",
-        name: "inherited",
-        static: false,
-        private: false,
-        addInitializer(initializer): void { initializers.push(initializer); },
-      },
-    );
-    const standardInstance = new StandardDerived(mountModule(FixtureModule).deps);
-    for (const initializer of initializers) initializer.call(standardInstance);
-    definePlugin(StandardDerived);
-    const standardShape = publishedShape();
-    await initializeShape(standardShape, "standard");
 
-    expect(legacyShape.toolDefinitions.map((definition) => definition.name)).toEqual([
-      "legacy.inherited",
-    ]);
-    expect(standardShape.toolDefinitions.map((definition) => definition.name)).toEqual([
-      "standard.inherited",
-    ]);
-    expect(legacyShape.rpcHandlers["legacy.inherited"]?.({})).toBe("legacy");
-    expect(standardShape.rpcHandlers["standard.inherited"]?.({})).toBe("standard");
+      @tool("duplicate", { description: "base", params: {} })
+      base(): string { return "base"; }
+    }
+
+    class DuplicateDerived extends DuplicateBase {
+      @tool("duplicate", { description: "derived", params: {} })
+      derived(): string { return "derived"; }
+    }
+
+    definePlugin(DuplicateDerived);
+    const shape = publishedShape();
+    await expect(initializeShape(shape, "duplicate")).rejects.toThrow(
+      'duplicate inherited plugin decorator suffix "duplicate"',
+    );
+    expect(shape.toolDefinitions).toEqual([]);
+    expect(shape.rpcHandlers).toEqual({});
   });
 
   /**
