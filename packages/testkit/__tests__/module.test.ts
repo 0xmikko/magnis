@@ -2,7 +2,14 @@
 // mountModule modes, and the DTO builders, so the 9 modules that depend on the
 // kit inherit a verified harness.
 import { describe, expect, it, vi } from "vitest";
-import { rpc, tool, type GraphService, type PluginDeps } from "@magnis/plugin-sdk";
+import {
+  definePlugin,
+  rpc,
+  tool,
+  type GraphService,
+  type PluginDeps,
+  type PluginModuleShape,
+} from "@magnis/plugin-sdk";
 import {
   entity,
   linkedRow,
@@ -34,6 +41,16 @@ class FixtureModule {
     const page = await this.graph.list_entities({ schema_id: "x" });
     return page.total;
   }
+}
+
+function publishedShape(): PluginModuleShape {
+  return (globalThis as unknown as { __magnis_plugin_module: PluginModuleShape })
+    .__magnis_plugin_module;
+}
+
+async function initializeShape(shape: PluginModuleShape, extensionId: string): Promise<void> {
+  const { deps } = mountModule(FixtureModule, { ctx: { extension_id: extensionId } });
+  await shape.init(deps.graph, deps.ctx, deps.util, deps.rpc, deps.log);
 }
 
 describe("mockGraph", () => {
@@ -110,6 +127,106 @@ describe("mountModule — dispatch", () => {
   it("tst_testkit_mount_dispatch_003 unknown handler throws", async () => {
     const { rpc: call } = await mountModule(FixtureModule, { mode: "dispatch", ctx: { extension_id: "fixture" } });
     expect(() => call("nope")).toThrow("no rpc handler: nope");
+  });
+
+  /**
+   * @test-id: tst_testkit_mount_dispatch_004
+   * @scenario: scn_module_decorator_004
+   * @covers: packages/plugin-sdk/index.ts::definePlugin
+   * @deterministic: yes
+   * @fixtures: none
+   */
+  it("tst_testkit_mount_dispatch_004 repeated init on one published shape stays idempotent", async () => {
+    definePlugin(FixtureModule);
+    const shape = publishedShape();
+    await initializeShape(shape, "fixture");
+    await initializeShape(shape, "fixture");
+    expect(shape.toolDefinitions.map((definition) => definition.name)).toEqual(["fixture.ping"]);
+    expect(Object.keys(shape.rpcHandlers).sort()).toEqual(["fixture.ping", "fixture.secret"]);
+  });
+
+  /**
+   * @test-id: tst_testkit_mount_dispatch_005
+   * @scenario: scn_module_decorator_005
+   * @covers: packages/plugin-sdk/index.ts::record
+   * @deterministic: yes
+   * @fixtures: none
+   */
+  it("tst_testkit_mount_dispatch_005 legacy and standard ABIs inherit the same base tool", async () => {
+    class LegacyBase {
+      constructor(_deps: PluginDeps) {}
+      inherited(): string { return "legacy"; }
+    }
+    class LegacyDerived extends LegacyBase {}
+    const legacyDescriptor = Object.getOwnPropertyDescriptor(LegacyBase.prototype, "inherited");
+    if (legacyDescriptor === undefined) throw new Error("missing legacy method descriptor");
+    tool("inherited", { description: "inherited", params: {} })(
+      LegacyBase.prototype,
+      "inherited",
+      legacyDescriptor,
+    );
+    definePlugin(LegacyDerived);
+    const legacyShape = publishedShape();
+    await initializeShape(legacyShape, "legacy");
+
+    class StandardBase {
+      constructor(_deps: PluginDeps) {}
+      inherited(): string { return "standard"; }
+    }
+    class StandardDerived extends StandardBase {}
+    const initializers: Array<(this: object) => void> = [];
+    tool("inherited", { description: "inherited", params: {} })(
+      StandardBase.prototype.inherited,
+      {
+        kind: "method",
+        name: "inherited",
+        static: false,
+        private: false,
+        addInitializer(initializer): void { initializers.push(initializer); },
+      },
+    );
+    const standardInstance = new StandardDerived(mountModule(FixtureModule).deps);
+    for (const initializer of initializers) initializer.call(standardInstance);
+    definePlugin(StandardDerived);
+    const standardShape = publishedShape();
+    await initializeShape(standardShape, "standard");
+
+    expect(legacyShape.toolDefinitions.map((definition) => definition.name)).toEqual([
+      "legacy.inherited",
+    ]);
+    expect(standardShape.toolDefinitions.map((definition) => definition.name)).toEqual([
+      "standard.inherited",
+    ]);
+    expect(legacyShape.rpcHandlers["legacy.inherited"]?.({})).toBe("legacy");
+    expect(standardShape.rpcHandlers["standard.inherited"]?.({})).toBe("standard");
+  });
+
+  /**
+   * @test-id: tst_testkit_mount_dispatch_006
+   * @scenario: scn_module_decorator_006
+   * @covers: packages/plugin-sdk/index.ts::record
+   * @deterministic: yes
+   * @fixtures: none
+   */
+  it("tst_testkit_mount_dispatch_006 both decorator ABIs reject static methods", () => {
+    class LegacyStatic {
+      static ping(): string { return "legacy"; }
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(LegacyStatic, "ping");
+    if (descriptor === undefined) throw new Error("missing static method descriptor");
+    expect(() =>
+      tool("ping", { description: "ping", params: {} })(LegacyStatic, "ping", descriptor)
+    ).toThrow("plugin decorators require a public instance method");
+
+    expect(() =>
+      tool("ping", { description: "ping", params: {} })(LegacyStatic.ping, {
+        kind: "method",
+        name: "ping",
+        static: true,
+        private: false,
+        addInitializer(): void {},
+      })
+    ).toThrow("plugin decorators require a public instance method");
   });
 });
 

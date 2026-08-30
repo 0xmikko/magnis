@@ -494,7 +494,10 @@ export interface StandardMethodDecoratorContext {
 
 /** Method decorator returned by the tool factories. TypeScript builds invoke
  * the legacy overload; Bun's direct TypeScript execution invokes the standard
- * overload. Both record the same method metadata. */
+ * overload. Both record the same method metadata. Public instance methods are
+ * inherited base-to-derived; publishing two decorators with one suffix anywhere
+ * in that chain is rejected as ambiguous. Static and private methods are never
+ * valid plugin handlers. */
 export interface MethodRecorder {
   (target: object, methodName: string | symbol, descriptor: PropertyDescriptor): void;
   (method: object, context: StandardMethodDecoratorContext): void;
