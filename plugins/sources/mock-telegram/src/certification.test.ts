@@ -18,6 +18,7 @@ describe("Mock Telegram exact-artifact certification", () => {
       "mock-telegram",
       {
         operationArguments: {
+          "magnis.sync.fetch": { surface: "telegram" },
           "magnis.dataset.invoke:emit_chat": {
             action: "emit_chat",
             invocation_id: "cert-chat",

@@ -18,6 +18,7 @@ describe("Mock Gmail exact-artifact certification", () => {
       "mock-gmail",
       {
         operationArguments: {
+          "magnis.sync.fetch": { surface: "email" },
           "magnis.dataset.invoke:emit_message": {
             action: "emit_message",
             invocation_id: "cert-message",
