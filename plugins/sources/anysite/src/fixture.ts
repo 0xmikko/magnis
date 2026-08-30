@@ -44,6 +44,11 @@ function finiteNumber(value: unknown, label: string): number {
   return value;
 }
 
+function nullableNumber(value: unknown, label: string): number | null {
+  if (value === null) return null;
+  return finiteNumber(value, label);
+}
+
 function positiveInteger(value: unknown, label: string): number {
   const number = finiteNumber(value, label);
   if (!Number.isInteger(number) || number <= 0) {
@@ -93,22 +98,50 @@ function reactions(value: unknown, label: string): readonly JsonRecord[] {
   });
 }
 
+function nullableReactions(value: unknown, label: string): readonly JsonRecord[] | null {
+  if (value === null) return null;
+  return reactions(value, label);
+}
+
 function stringArray(value: unknown, label: string): readonly string[] {
   if (!Array.isArray(value)) throw new Error(`anysite fixture ${label} must be an array`);
   return value.map((entry, index) => nonEmptyString(entry, `${label}[${String(index)}]`));
 }
 
-function post(value: unknown, label: string): JsonRecord {
+function nullableStringArray(value: unknown, label: string): readonly string[] | null {
+  if (value === null) return null;
+  return stringArray(value, label);
+}
+
+function repost(value: unknown, label: string): JsonRecord {
   const input = record(value, label);
   return {
+    text: nullableString(input.text, `${label}.text`),
+    url: nullableString(input.url, `${label}.url`),
+    images: nullableStringArray(input.images, `${label}.images`),
+    reactions: nullableReactions(input.reactions, `${label}.reactions`),
+    comment_count: nullableNumber(input.comment_count, `${label}.comment_count`),
+  };
+}
+
+function post(value: unknown, label: string): JsonRecord {
+  const input = record(value, label);
+  const isEmptyRepost = input.is_empty_repost;
+  if (isEmptyRepost !== undefined && typeof isEmptyRepost !== "boolean") {
+    throw new Error(`anysite fixture ${label}.is_empty_repost must be a boolean when present`);
+  }
+  const nestedRepost = input.repost;
+  return {
     urn: urn(input.urn, `${label}.urn`),
-    share_url: nonEmptyString(input.share_url, `${label}.share_url`),
-    text: nonEmptyString(input.text, `${label}.text`),
+    share_url: nullableString(input.share_url, `${label}.share_url`),
+    text: nullableString(input.text, `${label}.text`),
     created_at: finiteNumber(input.created_at, `${label}.created_at`),
-    reactions: reactions(input.reactions, `${label}.reactions`),
-    comment_count: finiteNumber(input.comment_count, `${label}.comment_count`),
-    share_count: finiteNumber(input.share_count, `${label}.share_count`),
-    images: stringArray(input.images, `${label}.images`),
+    reactions: nullableReactions(input.reactions, `${label}.reactions`),
+    comment_count: nullableNumber(input.comment_count, `${label}.comment_count`),
+    share_count: nullableNumber(input.share_count, `${label}.share_count`),
+    images: nullableStringArray(input.images, `${label}.images`),
+    ...(isEmptyRepost === undefined ? {} : { is_empty_repost: isEmptyRepost }),
+    ...(nestedRepost === undefined ? {} : { repost: repost(nestedRepost, `${label}.repost`) }),
   };
 }
 

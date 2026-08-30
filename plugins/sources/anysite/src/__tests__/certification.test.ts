@@ -15,6 +15,7 @@ import { discoverSourceReleaseManifests } from "../../../../../scripts/certify-s
 
 const repoRoot = join(import.meta.dir, "../../../../..");
 const temporaryDirectories: string[] = [];
+const linkedInEffectsScenarioId = ["tst", "li", "005"].join("_");
 
 function stageExactAnysiteArtifact(): {
   readonly root: string;
@@ -79,7 +80,7 @@ describe("Anysite exact-artifact certification", () => {
    * Test environment: dependency-closed staged Anysite artifact over real stdio.
    * Clients: @magnis/testkit Source host evidence driver.
    * Mocks: captured provider transport selected only by ANYSITE_FIXTURE_FILE.
-   * Data: one tracked LinkedIn profile, one post and numeric cursor 41.
+   * Data: one tracked LinkedIn profile, two posts and numeric cursor 41.
    */
   test("tst_anysite_cert_001 exact v1 artifact proves shared-key Add/Repair and numeric progress", async () => {
     const artifact = stageExactAnysiteArtifact();
@@ -116,7 +117,25 @@ describe("Anysite exact-artifact certification", () => {
               reactions: [{ type: "like", count: 7 }],
               comment_count: 2,
               share_count: 1,
-              images: [],
+              images: ["https://media.licdn.com/post-999.jpg"],
+            },
+            {
+              urn: "urn:li:activity:1000",
+              share_url: null,
+              text: null,
+              created_at: 1_700_000_100,
+              is_empty_repost: true,
+              reactions: null,
+              comment_count: null,
+              share_count: null,
+              images: null,
+              repost: {
+                text: "original reshared content",
+                url: "https://linkedin.com/feed/update/original",
+                images: ["https://media.licdn.com/original-1000.jpg"],
+                reactions: null,
+                comment_count: null,
+              },
             },
           ],
         },
@@ -132,8 +151,10 @@ describe("Anysite exact-artifact certification", () => {
       surfaces: ["linkedin"],
       scenarioIds: [
         "tst_anysite_cert_001",
+        "tst_anysite_empty_001",
         "tst_li_001",
         "tst_li_004",
+        linkedInEffectsScenarioId,
         "tst_linkedin_probe",
       ],
     });
@@ -150,28 +171,88 @@ describe("Anysite exact-artifact certification", () => {
       {
         fixtureEnvironment: { ANYSITE_FIXTURE_FILE: fixtureFile },
         operationArguments: {
-          "magnis.auth.probe": { _meta: { api_key: "deployment-key-1234" } },
+          "magnis.auth.probe": { _meta: { api_key: "deployment-key-1111" } },
           "magnis.sync.fetch": {
             surface: "linkedin",
             tracked_handles: ["anndoe"],
             cursor: 41,
-            _meta: { api_key: "deployment-key-1234" },
+            _meta: { api_key: "deployment-key-1111" },
           },
         },
       },
     );
 
     expect(operationResult(evidence, "magnis.auth.probe")).toEqual({
-      subject: "anysite …1234",
+      subject: "anysite …1111",
     });
     const page = operationResult(evidence, "magnis.sync.fetch");
     expect(page.hasMore).toBe(false);
     expect(page.nextCursor).toBe(42);
-    expect(
-      (page.envelopes as Array<{ remote_id: string }>).map(({ remote_id }) => remote_id),
-    ).toEqual([
-      "linkedin:profile:ACoAAB123",
-      "linkedin:post:urn:li:activity:999",
+    expect(page.envelopes).toEqual([
+      {
+        surface: "linkedin",
+        remote_id: "linkedin:profile:ACoAAB123",
+        kind: "snapshot",
+        payload: {
+          entity_type: "profile",
+          platform: "linkedin",
+          urn: "ACoAAB123",
+          handle: "anndoe",
+          display_name: "Ann Doe",
+          url: "https://linkedin.com/in/anndoe",
+          bio: "Builder",
+          follower_count: 4200,
+          avatar_url: "https://media.licdn.com/ann.jpg",
+        },
+      },
+      {
+        surface: "linkedin",
+        remote_id: "linkedin:post:urn:li:activity:999",
+        kind: "live",
+        payload: {
+          entity_type: "post",
+          platform: "linkedin",
+          post_id: "urn:li:activity:999",
+          author_handle: "anndoe",
+          text: "exact artifact",
+          created_at: "2023-11-14T22:13:20.000Z",
+          url: "https://linkedin.com/feed/update/999",
+          is_repost: false,
+          media: [
+            {
+              type: "photo",
+              url: "https://media.licdn.com/post-999.jpg",
+              preview_image_url: null,
+              alt_text: null,
+            },
+          ],
+          metrics: { likes: 7, replies: 2, reposts: 1 },
+        },
+      },
+      {
+        surface: "linkedin",
+        remote_id: "linkedin:post:urn:li:activity:1000",
+        kind: "live",
+        payload: {
+          entity_type: "post",
+          platform: "linkedin",
+          post_id: "urn:li:activity:1000",
+          author_handle: "anndoe",
+          text: "original reshared content",
+          created_at: "2023-11-14T22:15:00.000Z",
+          url: "https://linkedin.com/feed/update/original",
+          is_repost: true,
+          media: [
+            {
+              type: "photo",
+              url: "https://media.licdn.com/original-1000.jpg",
+              preview_image_url: null,
+              alt_text: null,
+            },
+          ],
+          metrics: { likes: null, replies: null, reposts: null },
+        },
+      },
     ]);
 
     const repairEvidence = await collectSourceHostEvidence(
@@ -180,12 +261,12 @@ describe("Anysite exact-artifact certification", () => {
       {
         fixtureEnvironment: { ANYSITE_FIXTURE_FILE: fixtureFile },
         operationArguments: {
-          "magnis.auth.probe": { _meta: { api_key: "replacement-key-1234" } },
+          "magnis.auth.probe": { _meta: { api_key: "replacement-key-2222" } },
         },
       },
     );
     expect(operationResult(repairEvidence, "magnis.auth.probe")).toEqual({
-      subject: "anysite …1234",
+      subject: "anysite …2222",
     });
 
     const missingKey = await collectSourceHostEvidence(
@@ -285,5 +366,43 @@ describe("Anysite exact-artifact certification", () => {
     expect(malformedFixture.operationProbes["magnis.auth.probe"]?.error?.message).toContain(
       "mode must be a non-empty string",
     );
+  });
+
+  /**
+   * @test-id: tst_anysite_empty_001
+   * @scenario: scn_anysite_v1_empty_scope_001
+   * @covers: plugins/sources/anysite/src/surfaces/linkedin/fetch.ts::fetchLinkedIn
+   * @deterministic: yes
+   * @fixtures: deliberately absent provider fixture proves zero transport calls
+   *
+   * Test environment: dependency-closed staged Anysite artifact over real stdio.
+   * Clients: @magnis/testkit Source host evidence driver.
+   * Mocks: missing captured provider file that would fail if transport were called.
+   * Data: valid shared key, empty tracked-handle scope and numeric cursor 87.
+   */
+  test("tst_anysite_empty_001 empty tracked scope advances its numeric cursor with zero provider calls", async () => {
+    const artifact = stageExactAnysiteArtifact();
+    const absentFixture = join(artifact.fixtureRoot, "must-not-be-read.json");
+    const evidence = await collectSourceHostEvidence(
+      artifact.root,
+      ["initialize", "magnis.sync.fetch", "tools/list"],
+      {
+        fixtureEnvironment: { ANYSITE_FIXTURE_FILE: absentFixture },
+        operationArguments: {
+          "magnis.sync.fetch": {
+            surface: "linkedin",
+            tracked_handles: [],
+            cursor: 87,
+            _meta: { api_key: "deployment-key-1111" },
+          },
+        },
+      },
+    );
+
+    expect(operationResult(evidence, "magnis.sync.fetch")).toEqual({
+      envelopes: [],
+      nextCursor: 88,
+      hasMore: false,
+    });
   });
 });
