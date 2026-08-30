@@ -11,23 +11,28 @@ describe("OAuth state-machine exact-artifact certification", () => {
    * @fixtures: unprogrammed fixed three-surface OAuth archetype
    */
   test("tst_statemock_oauth_cert_001 fixes every OAuth poll surface inside the artifact", async () => {
-    await withCertifiedFixtureArtifact(
-      "mock-statemachine-oauth",
-      { operationArguments: { "magnis.sync.fetch": { surface: "smo-b" } } },
-      ({ packageHash, receipt, evidence }) => {
-        expect(receipt).toMatchObject({
-          packageHash,
-          sourceId: "mock-statemachine-oauth",
-          auth: "oauth2",
-          delivery: "poll",
-          releaseTier: "development_fixture",
-          surfaces: ["smo-a", "smo-b", "smo-c"],
-          scenarioIds: expect.arrayContaining(["tst_statemock_oauth_cert_001"]),
-        });
-        expect(successfulOperation(evidence, "magnis.sync.fetch")).toEqual({
-          envelopes: [], nextCursor: null, hasMore: false,
-        });
-      },
-    );
+    for (const surface of ["smo-a", "smo-b", "smo-c"] as const) {
+      await withCertifiedFixtureArtifact(
+        "mock-statemachine-oauth",
+        { operationArguments: { "magnis.sync.fetch": { surface } } },
+        ({ packageHash, receipt, evidence }) => {
+          expect(receipt).toMatchObject({
+            packageHash,
+            sourceId: "mock-statemachine-oauth",
+            auth: "oauth2",
+            delivery: "poll",
+            releaseTier: "development_fixture",
+            surfaces: ["smo-a", "smo-b", "smo-c"],
+            scenarioIds: expect.arrayContaining(["tst_statemock_oauth_cert_001"]),
+          });
+          expect(successfulOperation(evidence, "magnis.sync.fetch"), surface).toEqual({
+            envelopes: [], nextCursor: null, hasMore: false,
+          });
+          expect(successfulOperation(evidence, "magnis.auth.probe"), surface).toEqual({
+            subject: "statemock",
+          });
+        },
+      );
+    }
   });
 });

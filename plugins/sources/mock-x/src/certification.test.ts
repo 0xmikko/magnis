@@ -24,6 +24,9 @@ describe("Mock X exact-artifact certification", () => {
         const page = successfulOperation(evidence, "magnis.sync.fetch");
         expect((page.envelopes as unknown[]).length).toBeGreaterThan(0);
         expect(page.hasMore).toBe(false);
+        expect(successfulOperation(evidence, "magnis.auth.probe")).toEqual({
+          subject: "@mock_x_user",
+        });
       },
     );
   });

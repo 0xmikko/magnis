@@ -28,6 +28,15 @@ describe("Phone state-machine exact-artifact certification", () => {
           ok: true, subscription_id: "certification-probe",
         });
         expect(successfulOperation(evidence, "listen_stop")).toEqual({ ok: true });
+        expect(successfulOperation(evidence, "magnis.sync.listen")).toEqual({
+          ok: true, subscription_id: "sub:certification",
+        });
+        expect(successfulOperation(evidence, "magnis.sync.fetch")).toEqual({
+          envelopes: [], nextCursor: null, hasMore: false,
+        });
+        expect(successfulOperation(evidence, "magnis.auth.probe")).toEqual({
+          subject: "statemock",
+        });
       },
     );
   });

@@ -27,6 +27,9 @@ describe("API-key state-machine exact-artifact certification", () => {
         expect(successfulOperation(evidence, "magnis.sync.fetch")).toEqual({
           envelopes: [], nextCursor: null, hasMore: false,
         });
+        expect(successfulOperation(evidence, "magnis.auth.probe")).toEqual({
+          subject: "statemock",
+        });
       },
     );
   });

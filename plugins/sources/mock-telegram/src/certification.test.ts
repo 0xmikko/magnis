@@ -14,19 +14,51 @@ describe("Mock Telegram exact-artifact certification", () => {
    * @fixtures: root-local Telegram dataset action schemas
    */
   test("tst_mocktelegram_cert_001 packages schemas and serves the declared fixture operations", async () => {
-    await withCertifiedFixtureArtifact("mock-telegram", {}, ({ root, packageHash, receipt, evidence }) => {
-      expect(receipt).toMatchObject({
-        packageHash,
-        sourceId: "mock-telegram",
-        releaseTier: "development_fixture",
-        surfaces: ["telegram"],
-        scenarioIds: expect.arrayContaining(["tst_mocktelegram_cert_001"]),
-      });
-      expect(existsSync(join(root, "schemas/dataset-actions/emit-chat.json"))).toBe(true);
-      expect(existsSync(join(root, "schemas/dataset-actions/emit-message.json"))).toBe(true);
-      expect(successfulOperation(evidence, "magnis.sync.fetch")).toEqual({
-        envelopes: [], nextCursor: null, hasMore: false,
-      });
-    });
+    await withCertifiedFixtureArtifact(
+      "mock-telegram",
+      {
+        operationArguments: {
+          "magnis.dataset.invoke:emit_chat": {
+            action: "emit_chat",
+            invocation_id: "cert-chat",
+            action_time: "2026-08-05T10:00:00Z",
+            settings: {},
+            payload: { chat_id: 7, title: "Certification", chat_type: "group" },
+          },
+          "magnis.dataset.invoke:emit_message": {
+            action: "emit_message",
+            invocation_id: "cert-message",
+            action_time: "2026-08-05T10:00:00Z",
+            settings: {},
+            payload: {
+              chat_id: 7,
+              message_id: 42,
+              text: "Exact staged artifact",
+              date: "2026-08-05T10:00:00Z",
+            },
+          },
+        },
+      },
+      ({ root, packageHash, receipt, evidence }) => {
+        expect(receipt).toMatchObject({
+          packageHash,
+          sourceId: "mock-telegram",
+          releaseTier: "development_fixture",
+          surfaces: ["telegram"],
+          scenarioIds: expect.arrayContaining(["tst_mocktelegram_cert_001"]),
+        });
+        expect(existsSync(join(root, "schemas/dataset-actions/emit-chat.json"))).toBe(true);
+        expect(existsSync(join(root, "schemas/dataset-actions/emit-message.json"))).toBe(true);
+        expect(successfulOperation(evidence, "magnis.sync.fetch")).toEqual({
+          envelopes: [], nextCursor: null, hasMore: false,
+        });
+        expect(successfulOperation(evidence, "magnis.dataset.invoke:emit_chat")).toMatchObject({
+          envelopes: [{ surface: "telegram", remote_id: "dataset:cert-chat:0" }],
+        });
+        expect(successfulOperation(evidence, "magnis.dataset.invoke:emit_message")).toMatchObject({
+          envelopes: [{ surface: "telegram", remote_id: "dataset:cert-message:0" }],
+        });
+      },
+    );
   });
 });
