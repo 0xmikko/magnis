@@ -5,16 +5,25 @@
 
 import type { ConnectorConfig } from "@magnis/connector-sdk";
 import type { FetchLike } from "./api";
+import { fixtureFetch } from "./fixture";
 import { fetchX } from "./surfaces/x/fetch";
 import { probeXAuth } from "./probe";
 import { SURFACE_X } from "./schema";
 
-/** Build the X connector config. Read-only: the host passes the opt-in handle
- * set and the app-only bearer via _meta; this fetches profiles +
- * recent tweets. There is no magnis.execute command surface. S3: the friend
- * import (`contacts` surface, x:social envelopes) is deleted — a handle is a
- * mutable key, and the hub it minted could never be re-identified. */
-export function buildConnectorConfig(fetchFn: FetchLike = fetch): ConnectorConfig {
+/**
+ * Build the X connector config. Read-only: the host passes the opt-in handle
+ * set and the app-only bearer via _meta; this fetches profiles and recent
+ * tweets. There is no magnis.execute command surface.
+ *
+ * @tested-by: tst_x_cert_001
+ * @invariant: certification uses only its explicit captured transport; an
+ * absent fixture selector preserves the production X transport unchanged.
+ */
+function runtimeFetch(): FetchLike {
+  return process.env.X_FIXTURE_FILE === undefined ? fetch : fixtureFetch;
+}
+
+export function buildConnectorConfig(fetchFn: FetchLike = runtimeFetch()): ConnectorConfig {
   return {
     name: "x",
     version: "0.1.0",
