@@ -99,7 +99,8 @@ describe("mountModule — dispatch", () => {
   });
 
   it("tst_testkit_mount_dispatch_002 routes by full name and by bare suffix", async () => {
-    const { rpc: call } = await mountModule(FixtureModule, { mode: "dispatch", ctx: { extension_id: "fixture" } });
+    const { rpc: call, tools } = await mountModule(FixtureModule, { mode: "dispatch", ctx: { extension_id: "fixture" } });
+    expect(tools.map((toolDefinition) => toolDefinition.name)).toEqual(["fixture.ping"]);
     expect(await call("fixture.ping", { n: 4 })).toEqual({ pong: 5 });
     expect(await call("ping", { n: 9 })).toEqual({ pong: 10 });
     // rpc-only handler is reachable via dispatch though absent from `tools`.

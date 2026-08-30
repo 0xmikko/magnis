@@ -34,6 +34,7 @@ import type {
   SearchEntitiesPage,
   SearchEntitiesPageParams,
   SearchEntitiesParams,
+  StandardMethodDecoratorContext,
   ToolDefinitionWire,
   ToolSpecInput,
 } from "./contract/module";
@@ -159,23 +160,61 @@ interface ToolMeta {
   /// false = RPC-only handler (registered as an RPC method but NOT
   /// harvested as an agent tool). See `rpc()`.
   isTool: boolean;
-  methodName: string;
+  methodName: string | symbol;
 }
 
-// Keyed by the class PROTOTYPE — legacy TS method decorators receive
-// the prototype as `target`, and a fresh instance's prototype is the
-// same object, so definePlugin reads it back after `new`.
+// Keyed by the class PROTOTYPE. Legacy TS decorators receive it directly;
+// standard decorators register it from their instance initializer. A fresh
+// instance has the same prototype, so definePlugin reads one canonical list.
 const REGISTRY = new WeakMap<object, ToolMeta[]>();
 
-function record(suffix: string, spec: ToolSpecInput, write: boolean, isTool: boolean) {
-  return function (target: object, methodName: string, _d: PropertyDescriptor): void {
-    let list = REGISTRY.get(target);
-    if (!list) {
-      list = [];
-      REGISTRY.set(target, list);
+function registerMethod(target: object, meta: ToolMeta): void {
+  const list = REGISTRY.get(target);
+  if (list === undefined) {
+    REGISTRY.set(target, [meta]);
+    return;
+  }
+  const alreadyRegistered = list.some(
+    (entry) =>
+      entry.methodName === meta.methodName &&
+      entry.suffix === meta.suffix &&
+      entry.write === meta.write &&
+      entry.isTool === meta.isTool,
+  );
+  if (!alreadyRegistered) list.push(meta);
+}
+
+function record(suffix: string, spec: ToolSpecInput, write: boolean, isTool: boolean): MethodRecorder {
+  function decorate(
+    targetOrMethod: object,
+    methodNameOrContext: string | symbol | StandardMethodDecoratorContext,
+    _descriptor?: PropertyDescriptor,
+  ): void {
+    const common = {
+      suffix,
+      description: spec.description,
+      params: spec.params,
+      write,
+      isTool,
+    };
+    if (
+      typeof methodNameOrContext === "string" || typeof methodNameOrContext === "symbol"
+    ) {
+      registerMethod(targetOrMethod, { ...common, methodName: methodNameOrContext });
+      return;
     }
-    list.push({ suffix, description: spec.description, params: spec.params, write, isTool, methodName });
-  };
+
+    const context = methodNameOrContext;
+    if (context.static || context.private) {
+      throw new TypeError("plugin decorators require a public instance method");
+    }
+    context.addInitializer(function registerStandardDecorator(this: object): void {
+      const prototype = Object.getPrototypeOf(this) as object | null;
+      if (prototype === null) throw new TypeError("decorated plugin instance has no prototype");
+      registerMethod(prototype, { ...common, methodName: context.name });
+    });
+  }
+  return decorate;
 }
 
 /// Declare a read tool. `suffix` is the method name only — the backend
@@ -282,7 +321,7 @@ export function definePlugin(
       util,
       rpc,
       log,
-    }) as Record<string, (p: unknown) => unknown>;
+    }) as Record<PropertyKey, unknown>;
     // Prefix = the plugin id the runtime injects (== the module name,
     // per the Rust convention). The decorator carries only the suffix.
     const prefix = ctx.extension_id;
@@ -291,7 +330,7 @@ export function definePlugin(
       const rpcName = `${prefix}.${m.suffix}`;
       const method = instance[m.methodName];
       if (typeof method !== "function") {
-        throw new Error(`plugin: decorated method "${m.methodName}" is not a function`);
+        throw new Error(`plugin: decorated method "${String(m.methodName)}" is not a function`);
       }
       rpcHandlers[rpcName] = (params: unknown): unknown => method.call(instance, params);
       // RPC-only handlers (rpc()) register the handler but are NOT harvested
