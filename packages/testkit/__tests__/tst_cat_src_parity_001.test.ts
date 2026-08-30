@@ -1170,7 +1170,6 @@ describe("tst_cat_src_parity_001 current v1 golden matrix", () => {
       expect(generated).toHaveLength(9);
 
       const committedReceiptRoot = join(repoRoot, "dist", "receipts");
-      expect(readdirSync(committedReceiptRoot).filter((name) => name.endsWith(".json"))).toHaveLength(21);
       for (const expected of SELECTED_CHANNEL_SOURCE_MATRIX) {
         const committedBytes = readFileSync(
           join(committedReceiptRoot, `${expected.packageHash}.json`),

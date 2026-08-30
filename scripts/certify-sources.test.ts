@@ -601,7 +601,10 @@ describe("tst_cat_src_cert_001 staged Source certification", () => {
       release.declaration.callableOperations,
     );
     expect(evidence.initialize.result).toMatchObject({
-      serverInfo: { name: "magnis-telegram", version: "1.0.0" },
+      serverInfo: {
+        name: release.declaration.serverInfoName,
+        version: release.declaration.serverInfoVersion,
+      },
     });
   });
 
