@@ -23,6 +23,9 @@ const MODULES = join(import.meta.dir, "..", "plugins", "modules");
 
 interface SurfaceDecl {
   item?: string;
+  reconciliation?: {
+    mode?: string;
+  };
 }
 
 interface ModuleManifest {
@@ -60,6 +63,15 @@ describe("tst_pub_item_schemas_001", () => {
       const surfaces = manifest(moduleId).surfaces ?? {};
       for (const [name, decl] of Object.entries(surfaces)) {
         expect(typeof decl.item, `${moduleId}: surface '${name}'`).toBe("string");
+      }
+    }
+  });
+
+  test("every syncing surface declares its host reconciliation policy", () => {
+    for (const [moduleId] of expected) {
+      const surfaces = manifest(moduleId).surfaces ?? {};
+      for (const [name, decl] of Object.entries(surfaces)) {
+        expect(decl.reconciliation, `${moduleId}: surface '${name}'`).toEqual({ mode: "none" });
       }
     }
   });
