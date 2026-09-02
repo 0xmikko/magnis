@@ -107,10 +107,19 @@ export class TelegramModule {
   // ── chats.list ────────────────────────────────────────────────
   private buildChatItem(entity: RawEntity, d: Data): TelegramChatListItem {
     const avatar = str(d, "avatar_url") ?? str(d, "photo_url");
+    const sourceAccounts = Array.isArray(d.sources)
+      ? d.sources.flatMap((source) => {
+          if (source === null || typeof source !== "object" || Array.isArray(source)) return [];
+          const account = (source as Record<string, unknown>).account;
+          return typeof account === "string" && account !== "" ? [account] : [];
+        })
+      : [];
+    const exactAccounts = [...new Set(sourceAccounts)];
     return {
       schema_id: CHAT,
       entity_id: entity.id,
       chat_id: chatIdStr(d),
+      account_id: exactAccounts.length === 1 ? (exactAccounts[0] ?? null) : null,
       chat_title: str(d, "title"),
       last_message: str(d, "last_message_preview"),
       last_message_time: typeof d.last_message_date === "string" ? (d.last_message_date) : null,
@@ -182,6 +191,27 @@ export class TelegramModule {
       }),
     );
     return { items, total: page.total, limit, offset };
+  }
+
+  @rpc("chats.get", {
+    description: "Resolve one Telegram chat and its exact actionable Source account.",
+    params: {
+      type: "object",
+      properties: { entity_id: { type: "string" } },
+      required: ["entity_id"],
+      additionalProperties: false,
+    },
+  })
+  async chatsGet(params: { entity_id: string }): Promise<TelegramChatListItem> {
+    const entity = await this.graph.get_entity(params.entity_id);
+    if (entity?.schema_id !== CHAT) {
+      throw new Error(`${CHAT} ${params.entity_id} not found`);
+    }
+    const state = await this.observedStateFor([entity.id]);
+    return this.buildChatItem(entity, {
+      ...((entity.properties ?? {}) as Data),
+      ...(state.get(entity.id) ?? {}),
+    });
   }
 
   /// Name search over the user's chats — native `search_chats`: user-scoped

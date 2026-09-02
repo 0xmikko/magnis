@@ -7,20 +7,16 @@ import { useTelegramSync } from "./hooks/useTelegramSync";
 import { telegramKeys } from "./queries";
 import { INPUT_PLACEHOLDER } from "./index.tsx";
 import type { DetailPanelProps } from "@magnis/host/base";
-import type { TelegramChat } from "./types";
+import type { TelegramChat, TelegramChatListItem } from "./types";
 import { normalizeTelegramChatTitle } from "./chatTitle";
 import { initialsFromName } from "./utils/text";
 import { pickAvatarColor, resolveAvatarUrl } from "./helpers";
 import { useAppRuntime } from "@magnis/host/runtime";
 
-interface EntityResponse {
-  readonly id: string;
-  readonly properties?: Readonly<Record<string, unknown>> | null;
-}
-
 /**
- * Resolve a single Telegram chat from the node's DICTIONARY instead of loading
- * the full chat list. This works for chats on any page.
+ * Resolve a single Telegram chat with the Source account attached to the
+ * operator's observed-in edge. This works for chats on any page and keeps
+ * write commands bound to the same account that made the row visible.
  */
 function useTelegramChatFromDictionary(entityId: string): TelegramChat | undefined {
   const runtime = useAppRuntime();
@@ -28,32 +24,28 @@ function useTelegramChatFromDictionary(entityId: string): TelegramChat | undefin
 
   const { data: response } = useQuery({
     queryKey: telegramKeys.chatDetail(entityId),
-    queryFn: () => runtime.transport.rpc<EntityResponse>("graph.entity.get", { id: entityId }),
+    queryFn: () => runtime.transport.rpc<TelegramChatListItem>("telegram.chats.get", {
+      entity_id: entityId,
+    }),
     enabled: !!entityId,
     staleTime: 60_000,
   });
 
   return useMemo(() => {
-    const d = response?.properties;
-    if (!d) return undefined;
-    const chatId =
-      typeof d.chat_id === "string" || typeof d.chat_id === "number" ? String(d.chat_id) : undefined;
-    if (!chatId) return undefined;
-    const rawTitle = (d.chat_title as string | undefined) ?? (d.title as string | undefined);
-    const name = normalizeTelegramChatTitle(rawTitle);
-    const avatarUrl = d.avatar_url as string | undefined;
-    const isIndexed = d.is_indexed as boolean | undefined;
+    if (!response) return undefined;
+    const name = normalizeTelegramChatTitle(response.chat_title);
     return {
       id: entityId,
-      chatId,
+      chatId: response.chat_id,
+      accountId: response.account_id,
       name,
       initials: initialsFromName(name),
       avatarColor: pickAvatarColor(name),
-      avatarUrl: resolveAvatarUrl(baseUrl, avatarUrl ?? null),
-      lastMessage: "",
-      time: "",
-      pinned: (d.is_pinned as boolean | undefined) ?? false,
-      isIndexed: isIndexed ?? undefined,
+      avatarUrl: resolveAvatarUrl(baseUrl, response.avatar_url),
+      lastMessage: response.last_message ?? "",
+      time: response.last_message_time ?? "",
+      pinned: response.is_pinned ?? false,
+      isIndexed: response.is_indexed ?? undefined,
     };
   }, [response, entityId, baseUrl]);
 }
