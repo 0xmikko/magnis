@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 import { describe, expect, test } from "bun:test";
 
@@ -94,7 +94,14 @@ describe("Phone state-machine exact-artifact certification", () => {
             "tst_statemock_phone_cert_001",
           ]),
         });
-        expect(existsSync(`${root}/auth/index.tsx`)).toBe(true);
+        expect(existsSync(`${root}/auth/screen.js`)).toBe(true);
+        expect(existsSync(`${root}/auth/index.tsx`)).toBe(false);
+        expect(readFileSync(`${root}/manifest.toml`, "utf8")).toContain(
+          'ui = "auth/screen.js"',
+        );
+        const authScreen = readFileSync(`${root}/auth/screen.js`, "utf8");
+        expect(authScreen).toContain("/api/plugins/__host-shim.js?m=react");
+        expect(authScreen).not.toMatch(/from\s*["']react(?:\/jsx-runtime)?["']/);
         expect(successfulOperation(evidence, "listen_start")).toEqual({
           ok: true, subscription_id: "certification-probe",
         });

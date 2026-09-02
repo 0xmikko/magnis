@@ -31,6 +31,11 @@ import type {
   AdmissibleSourceReleaseManifest,
   PublishedCatalogPackage,
 } from "./certify-sources";
+import {
+  loadHostMap,
+  resolveExternals,
+  rewriteBareImports,
+} from "./build-plugins";
 
 const ROOT = join(import.meta.dir, "..");
 const OUT = process.env.CATALOG_OUT ?? join(ROOT, "catalog");
@@ -406,15 +411,35 @@ export function stageSourcePackage(
  *
  * @tested-by: tst_pub_pkg_source_launchable_001
  */
-function manifestForBundledSource(text: string): string {
+function manifestForBundledSource(text: string, hasAuthScreen: boolean): string {
+  let published = text;
+  if (hasAuthScreen) {
+    const authHeader = /^\s*\[auth\]\s*$/m.exec(published);
+    if (authHeader === null) {
+      throw new Error("source auth/index.tsx requires an [auth] manifest section");
+    }
+    const sectionStart = authHeader.index + authHeader[0].length;
+    const nextSectionOffset = published.slice(sectionStart).search(/^\s*\[/m);
+    const sectionEnd = nextSectionOffset < 0
+      ? published.length
+      : sectionStart + nextSectionOffset;
+    const authSection = published.slice(sectionStart, sectionEnd);
+    const declaredUi = /^\s*ui\s*=\s*["']([^"']+)["']\s*$/m.exec(authSection)?.[1];
+    if (declaredUi !== undefined && declaredUi !== "auth/screen.js") {
+      throw new Error(`source auth UI must publish as auth/screen.js, got '${declaredUi}'`);
+    }
+    if (declaredUi === undefined) {
+      published = `${published.slice(0, sectionStart)}\nui = "auth/screen.js"${published.slice(sectionStart)}`;
+    }
+  }
   if (/^\s*\[spawn\]/m.test(text)) {
     // An existing [spawn] keeps its shape and its flags; only the script it
     // runs moves to where the bundle actually is. An external bridge (npx)
     // names no script and is left untouched.
-    return text.replace(/(["'])src\/main\.ts\1/g, '"dist/main.js"');
+    return published.replace(/(["'])src\/main\.ts\1/g, '"dist/main.js"');
   }
   return (
-    text.trimEnd() +
+    published.trimEnd() +
     "\n\n" +
     "# Added by scripts/build-catalog-index.ts: the archive carries the\n" +
     "# dependency-closed bundle, not the TypeScript source the convention\n" +
@@ -423,6 +448,47 @@ function manifestForBundledSource(text: string): string {
     'command = "bun"\n' +
     'args = ["run", "dist/main.js"]\n'
   );
+}
+
+/** Bundle a Source-owned auth screen as browser ESM against the same curated
+ * host shims as module UI. The published package carries executable JS only;
+ * the application never transpiles catalog TypeScript at runtime.
+ *
+ * @tested-by: tst_statemock_phone_cert_001
+ */
+function buildSourceAuthScreen(
+  sourceId: string,
+  sourceRoot: string,
+  destination: string,
+): boolean {
+  const entry = join(sourceRoot, "auth", "index.tsx");
+  if (!existsSync(entry)) return false;
+
+  const output = join(destination, "auth", "screen.js");
+  mkdirSync(join(destination, "auth"), { recursive: true });
+  const externals = resolveExternals({}, loadHostMap());
+  const args = [
+    "bun",
+    "build",
+    entry,
+    "--format=esm",
+    "--target=browser",
+    "--outfile",
+    output,
+  ];
+  for (const specifier of externals.keys()) args.push("--external", specifier);
+  const result = Bun.spawnSync(args, {
+    cwd: ROOT,
+    env: { ...process.env, NODE_ENV: "production" },
+  });
+  if (result.exitCode !== 0) {
+    throw new Error(
+      `bun build failed for source '${sourceId}' auth screen:\n${result.stderr.toString("utf8")}`,
+    );
+  }
+  writeFileSync(output, rewriteBareImports(readFileSync(output, "utf8"), externals));
+  rmSync(join(destination, "auth", "index.tsx"));
+  return true;
 }
 
 /** Stage the exact Source tree that enters the archive, including the
@@ -435,10 +501,11 @@ export function stageBundledSourcePackage(
   destination: string,
 ): void {
   stageSourcePackage(release, destination);
+  const hasAuthScreen = buildSourceAuthScreen(release.id, release.root, destination);
   const manifestPath = join(destination, "manifest.toml");
   writeFileSync(
     manifestPath,
-    manifestForBundledSource(readFileSync(manifestPath, "utf8")),
+    manifestForBundledSource(readFileSync(manifestPath, "utf8"), hasAuthScreen),
   );
 }
 

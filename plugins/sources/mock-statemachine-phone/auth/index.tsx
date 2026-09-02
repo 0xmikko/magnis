@@ -34,7 +34,7 @@ export default function FixturePhoneAuthScreen({
       } else {
         await submit(phase, value);
         const result = await exec("step");
-        if (result.status === "password") {
+        if (result.status === "password_required") {
           setPhase("password");
         } else if (result.status === "connected") {
           setPhase("connected");

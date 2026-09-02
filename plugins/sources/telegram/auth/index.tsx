@@ -151,7 +151,7 @@ export default function TelegramAuthScreen({
       } else if (phase !== "connected") {
         await submit(phase, current);
         const { status } = await exec("step");
-        if (status === "password") setPhase("password");
+        if (status === "password_required") setPhase("password");
         else if (status === "connected") {
           setPhase("connected");
           onConnected?.();
