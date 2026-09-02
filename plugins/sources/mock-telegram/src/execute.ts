@@ -27,6 +27,7 @@ export function sendMessage(args: Record<string, unknown>): Promise<Record<strin
     const replyTo = args.reply_to_message_id;
     if (
       replyTo !== undefined
+      && replyTo !== null
       && (typeof replyTo !== "number" || !Number.isSafeInteger(replyTo) || replyTo === 0)
     ) {
       throw new ConnectorError("invalid send_message reply_to_message_id", { kind: "validation" });

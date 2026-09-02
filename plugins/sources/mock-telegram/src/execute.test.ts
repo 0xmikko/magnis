@@ -15,8 +15,10 @@ describe("mock-telegram execute", () => {
 
     const first = await sendMessage(request);
     const replay = await sendMessage(request);
+    const explicitNull = await sendMessage({ ...request, reply_to_message_id: null });
 
     expect(first).toEqual(replay);
+    expect(explicitNull).toEqual(first);
     expect(first).toEqual({ message_id: expect.any(Number), recorded: true });
     expect(first.message_id).toBeGreaterThan(0);
   });
