@@ -149,12 +149,14 @@ const PROVIDER_SCENARIOS: ScenarioRegistry = {
     { id: "tst_conn_statemock_ts_004", path: "packages/source-statemachine/src/index.test.ts" },
     { id: "tst_conn_statemock_ts_013", path: "packages/source-statemachine/src/index.test.ts" },
     { id: "tst_conn_statemock_ts_014", path: "packages/source-statemachine/src/index.test.ts" },
+    { id: "tst_statemock_oauth_auth_001", path: "plugins/sources/mock-statemachine-oauth/src/auth.test.ts" },
   ],
   "mock-statemachine-phone": [
     { id: "tst_cat_src_phone_001", path: "packages/testkit/__tests__/tst_cat_src_parity_001.test.ts" },
     { id: "tst_conn_statemock_ts_001", path: "packages/source-statemachine/src/index.test.ts" },
     { id: "tst_conn_statemock_ts_004", path: "packages/source-statemachine/src/index.test.ts" },
     { id: "tst_conn_statemock_ts_014", path: "packages/source-statemachine/src/index.test.ts" },
+    { id: "tst_statemock_phone_auth_001", path: "plugins/sources/mock-statemachine-phone/src/auth.test.ts" },
   ],
   "mock-telegram": [
     { id: "tst_conn_mocktelegram_dataset_001", path: "plugins/sources/mock-telegram/src/dataset.test.ts" },
@@ -278,13 +280,18 @@ const CURRENT_OPERATION_EVIDENCE: Readonly<
     "magnis.sync.fetch": { id: "tst_conn_statemock_ts_004", path: "packages/source-statemachine/src/index.test.ts" },
   },
   "mock-statemachine-oauth": {
+    "magnis.auth.exchange": { id: "tst_statemock_oauth_auth_001", path: "plugins/sources/mock-statemachine-oauth/src/auth.test.ts" },
     "magnis.auth.probe": { id: "tst_conn_statemock_ts_014", path: "packages/source-statemachine/src/index.test.ts" },
+    "magnis.auth.revoke": { id: "tst_statemock_oauth_auth_001", path: "plugins/sources/mock-statemachine-oauth/src/auth.test.ts" },
     "magnis.sync.fetch": { id: "tst_conn_statemock_ts_004", path: "packages/source-statemachine/src/index.test.ts" },
   },
   "mock-statemachine-phone": {
     listen_start: { id: "tst_cat_src_phone_001", path: "packages/testkit/__tests__/tst_cat_src_parity_001.test.ts" },
     listen_stop: { id: "tst_cat_src_phone_001", path: "packages/testkit/__tests__/tst_cat_src_parity_001.test.ts" },
+    "magnis.auth.begin": { id: "tst_statemock_phone_auth_001", path: "plugins/sources/mock-statemachine-phone/src/auth.test.ts" },
     "magnis.auth.probe": { id: "tst_conn_statemock_ts_014", path: "packages/source-statemachine/src/index.test.ts" },
+    "magnis.auth.revoke": { id: "tst_statemock_phone_auth_001", path: "plugins/sources/mock-statemachine-phone/src/auth.test.ts" },
+    "magnis.auth.step": { id: "tst_statemock_phone_auth_001", path: "plugins/sources/mock-statemachine-phone/src/auth.test.ts" },
     "magnis.sync.fetch": { id: "tst_conn_statemock_ts_004", path: "packages/source-statemachine/src/index.test.ts" },
     "magnis.sync.listen": { id: "tst_cat_src_phone_001", path: "packages/testkit/__tests__/tst_cat_src_parity_001.test.ts" },
   },
@@ -430,16 +437,17 @@ const GOLDEN_PROVIDERS: readonly GoldenProvider[] = [
     delivery: "poll",
     pollIntervalSecs: 300,
     advertisedTools: SDK_TOOLS,
-    callableOperations: [...SDK_OPERATIONS, "magnis.auth.probe"],
-    identityRule: "verified_provider_subject",
-    credentialKeys: ["refresh_token"],
+    callableOperations: [
+      ...SDK_OPERATIONS,
+      "magnis.auth.exchange",
+      "magnis.auth.probe",
+      "magnis.auth.revoke",
+    ],
+    identityRule: "fixture_oauth_subject",
+    credentialKeys: ["client_id", "refresh_token"],
     mintedCredentialKeys: ["refresh_token"],
     migratesFrom: [],
-    surfaces: [
-      surface("smo-a", "retain", "programmable_fixture", "unknown"),
-      surface("smo-b", "retain", "programmable_fixture", "unknown"),
-      surface("smo-c", "retain", "programmable_fixture", "unknown"),
-    ],
+    surfaces: [surface("email", "retain", "programmable_fixture", "unknown")],
   },
   {
     sourceId: "mock-statemachine-phone",
@@ -453,14 +461,17 @@ const GOLDEN_PROVIDERS: readonly GoldenProvider[] = [
       ...SDK_OPERATIONS,
       "listen_start",
       "listen_stop",
+      "magnis.auth.begin",
       "magnis.auth.probe",
+      "magnis.auth.revoke",
+      "magnis.auth.step",
       "magnis.sync.listen",
     ],
-    identityRule: "verified_provider_subject",
+    identityRule: "fixture_phone_subject",
     credentialKeys: ["session"],
     mintedCredentialKeys: ["session"],
     migratesFrom: [],
-    surfaces: [surface("smp", "retain", "programmable_fixture", "unknown", "subscription_ack")],
+    surfaces: [surface("telegram", "retain", "programmable_fixture", "unknown", "subscription_ack")],
   },
   {
     sourceId: "mock-telegram",
@@ -1092,12 +1103,15 @@ describe("tst_cat_src_parity_001 current v1 golden matrix", () => {
       const evidence = await collectSourceHostEvidence(entry.root, receipt.callableOperations);
 
       expect(receipt.delivery).toBe("push");
-      expect(receipt.surfaces).toEqual(["smp"]);
+      expect(receipt.surfaces).toEqual(["telegram"]);
       expect(receipt.callableOperations).toEqual([
         "initialize",
         "listen_start",
         "listen_stop",
+        "magnis.auth.begin",
         "magnis.auth.probe",
+        "magnis.auth.revoke",
+        "magnis.auth.step",
         "magnis.sync.fetch",
         "magnis.sync.listen",
         "tools/list",

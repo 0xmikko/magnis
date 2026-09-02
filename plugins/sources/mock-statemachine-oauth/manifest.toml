@@ -3,17 +3,28 @@
 # end-to-end in tests. Eval-only (kind=mock).
 
 id = "mock-statemachine-oauth"
-version = "1.0.0"
+version = "1.0.1"
 title = "StateMock (OAuth)"
 summary = "Shared state-machine mock connector in an oauth2/poll shape."
 publisher = "ai.magnis"
 dev = true
-surfaces = ["smo-a", "smo-b", "smo-c"]
+surfaces = ["email"]
 kind = "mock"
 account_mode = "single"
 
 [auth]
 type = "oauth2"
+
+[auth.oauth2]
+auth_url = "https://provider.example/authorize"
+scopes = ["openid", "email"]
+
+[credentials]
+keys = ["client_id", "refresh_token"]
+minted = ["refresh_token"]
+
+[credentials.default]
+client_id = "magnis-fixture-oauth-client"
 
 # The package-local wrapper fixes surfaces/mode before bundling. The installed
 # artifact therefore executes only its own root-local dependency-closed entry.
@@ -36,30 +47,18 @@ server_info_name = "magnis-mock-statemachine"
 runtime_kind = "connector_sdk"
 runtime_version = "0.1.0"
 advertised_tools = ["magnis.sync.fetch"]
-callable_operations = ["initialize", "magnis.auth.probe", "magnis.sync.fetch", "tools/list"]
-scenario_ids = ["tst_conn_statemock_ts_001", "tst_conn_statemock_ts_004", "tst_conn_statemock_ts_013", "tst_conn_statemock_ts_014", "tst_statemock_oauth_cert_001"]
+callable_operations = ["initialize", "magnis.auth.exchange", "magnis.auth.probe", "magnis.auth.revoke", "magnis.sync.fetch", "tools/list"]
+scenario_ids = ["tst_conn_statemock_ts_001", "tst_conn_statemock_ts_004", "tst_conn_statemock_ts_013", "tst_conn_statemock_ts_014", "tst_statemock_oauth_auth_001", "tst_statemock_oauth_cert_001"]
 
 [certification.account_compatibility]
 auth = "oauth2"
-identity_rule = "verified_provider_subject"
-credential_keys = ["refresh_token"]
+identity_rule = "fixture_oauth_subject"
+credential_keys = ["client_id", "refresh_token"]
 minted_credential_keys = ["refresh_token"]
 migrates_from = []
 
 [[certification.account_compatibility.surfaces]]
-name = "smo-a"
+name = "email"
 cursor_terminal_null = "retain"
 progress = { target = "programmable_fixture", continuation = "opaque_cursor", forward_checkpoint = "opaque_cursor", coverage = "unknown", live_fence = "none" }
-receiver_interface_hash = "sha256:f2b5524f212b9a9348fba847f64c2923f4f9d03d21e21e9f18e1b96228cab369"
-
-[[certification.account_compatibility.surfaces]]
-name = "smo-b"
-cursor_terminal_null = "retain"
-progress = { target = "programmable_fixture", continuation = "opaque_cursor", forward_checkpoint = "opaque_cursor", coverage = "unknown", live_fence = "none" }
-receiver_interface_hash = "sha256:52758c92b7b75066133ae5f70109433d8da2a61c810e9cd04111eb30ad72b556"
-
-[[certification.account_compatibility.surfaces]]
-name = "smo-c"
-cursor_terminal_null = "retain"
-progress = { target = "programmable_fixture", continuation = "opaque_cursor", forward_checkpoint = "opaque_cursor", coverage = "unknown", live_fence = "none" }
-receiver_interface_hash = "sha256:7b3044f72c9c6149ea97811865f6396f3fe66824814236df76e2cc050eb122e5"
+receiver_interface_hash = "sha256:0d6480cd0a2d5bd3960e1ec902c825a73203e76aa0ef576a37836759acc9c193"
