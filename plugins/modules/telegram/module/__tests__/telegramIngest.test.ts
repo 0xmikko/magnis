@@ -85,6 +85,60 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
     );
   });
 
+  /**
+   * @test-id: tst_module_telegram_003
+   * @scenario: scn_telegram_ingest_001
+   * @covers: TelegramModule.ingestChatBatch
+   * @deterministic: yes
+   * @fixtures: one host-stamped chat envelope without a prior connection-ready hook
+   */
+  it("tst_module_telegram_003 atomically creates the observer before its chat membership", async () => {
+    const graph = mockGraph({
+      find_by_anchor: () => Promise.resolve(null),
+      apply_batch: (fragment) =>
+        Promise.resolve({
+          ids: Object.fromEntries(fragment.entities.map((item) => [item.key, `id:${item.key}`])),
+          created: fragment.entities.length,
+          updated: 0,
+          links_added: fragment.links?.length ?? 0,
+          dropped_keys: [],
+        }),
+    });
+    const module = mountModule(TelegramModule, { graph }).module;
+    const chat: SyncEnvelope = {
+      ...messageEnvelope(),
+      remote_id: "tg:chat:42",
+      payload: { entity_type: "chat", chat_id: 42, title: "Magnis Builders" },
+    };
+
+    await expect(module.ingest({ envelopes: [chat] })).resolves.toEqual({
+      dropped_remote_ids: [],
+      trigger_checks: [],
+    });
+    expect(graph.spies.apply_batch).toHaveBeenCalledWith({
+      entities: expect.arrayContaining([
+        expect.objectContaining({
+          key: "self",
+          schema_id: TELEGRAM_ACCOUNT,
+          anchor: "tg:account:9001",
+        }),
+        expect.objectContaining({
+          key: "tg:chat:42",
+          schema_id: CHAT,
+          anchor: "tg:chat:42",
+        }),
+      ]),
+      refs: [],
+      links: [{
+        from_key: "self",
+        to_key: "tg:chat:42",
+        kind: "observed_in",
+        declared_by: "tg:chat:42",
+        metadata: {},
+      }],
+    });
+  });
+
   it("maps message/account nodes and structural links in one batch", async () => {
     const graph = mockGraph({
       find_by_anchor: () => Promise.resolve("chat-entity"),

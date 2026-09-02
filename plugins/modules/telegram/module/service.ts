@@ -724,7 +724,7 @@ export class TelegramModule {
       const entities: BatchEntityInput[] = [];
       const refs: BatchRefInput[] = [];
       const links: BatchLinkInput[] = [];
-      let selfRef = false;
+      let selfEntity = false;
       for (const { env, payload } of chats.slice(i, i + INGEST_CHUNK)) {
         const remoteId = env.remote_id;
         if (!remoteId) continue;
@@ -766,9 +766,18 @@ export class TelegramModule {
         // with the observed state as its dictionary when the page carries
         // any. (The complete-set reconciliation decays exactly these.)
         if (identityKey) {
-          if (!selfRef) {
-            refs.push({ key: "self", anchor: accountAnchor(identityKey) });
-            selfRef = true;
+          // @tested-by: tst_module_telegram_003, tst_e2e_tg_001_chat_list_renders
+          // @invariant: the observer and its membership edge are one atomic
+          // graph fragment; ingest cannot depend on an earlier lifecycle hook.
+          if (!selfEntity) {
+            entities.unshift({
+              key: "self",
+              schema_id: TELEGRAM_ACCOUNT,
+              name: "",
+              anchor: accountAnchor(identityKey),
+              properties: { telegram_user_id: Number(identityKey), is_self: true },
+            });
+            selfEntity = true;
           }
           links.push({
             from_key: "self",

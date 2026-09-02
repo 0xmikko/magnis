@@ -19,6 +19,11 @@ describe("Mock Telegram exact-artifact certification", () => {
       {
         operationArguments: {
           "magnis.sync.fetch": { surface: "telegram" },
+          "magnis.execute:send_message": {
+            action: "send_message",
+            chat_id: 7,
+            text: "Exact staged send",
+          },
           "magnis.dataset.invoke:emit_chat": {
             action: "emit_chat",
             invocation_id: "cert-chat",
@@ -58,6 +63,10 @@ describe("Mock Telegram exact-artifact certification", () => {
         });
         expect(successfulOperation(evidence, "magnis.dataset.invoke:emit_message")).toMatchObject({
           envelopes: [{ surface: "telegram", remote_id: "dataset:cert-message:0" }],
+        });
+        expect(successfulOperation(evidence, "magnis.execute:send_message")).toEqual({
+          message_id: expect.any(Number),
+          recorded: true,
         });
       },
     );

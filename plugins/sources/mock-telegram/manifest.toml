@@ -46,8 +46,8 @@ server_info_name = "magnis-mock-telegram"
 runtime_kind = "connector_sdk"
 runtime_version = "0.1.0"
 advertised_tools = ["magnis.dataset.invoke", "magnis.sync.fetch"]
-callable_operations = ["initialize", "magnis.dataset.invoke:emit_chat", "magnis.dataset.invoke:emit_message", "magnis.sync.fetch", "tools/list"]
-scenario_ids = ["tst_conn_mocktelegram_dataset_001", "tst_conn_mocktelegram_dataset_002", "tst_conn_mocktelegram_ts_001", "tst_mocktelegram_cert_001"]
+callable_operations = ["initialize", "magnis.dataset.invoke:emit_chat", "magnis.dataset.invoke:emit_message", "magnis.execute:send_message", "magnis.sync.fetch", "tools/list"]
+scenario_ids = ["tst_conn_mocktelegram_dataset_001", "tst_conn_mocktelegram_dataset_002", "tst_conn_mocktelegram_ts_001", "tst_mocktelegram_cert_001", "tst_source_mock_telegram_execute_001"]
 
 [certification.account_compatibility]
 auth = "none"

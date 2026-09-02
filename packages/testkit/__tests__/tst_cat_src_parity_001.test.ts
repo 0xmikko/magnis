@@ -162,6 +162,7 @@ const PROVIDER_SCENARIOS: ScenarioRegistry = {
     { id: "tst_conn_mocktelegram_dataset_001", path: "plugins/sources/mock-telegram/src/dataset.test.ts" },
     { id: "tst_conn_mocktelegram_dataset_002", path: "plugins/sources/mock-telegram/src/dataset.test.ts" },
     { id: "tst_conn_mocktelegram_ts_001", path: "plugins/sources/mock-telegram/src/fetch.test.ts" },
+    { id: "tst_source_mock_telegram_execute_001", path: "plugins/sources/mock-telegram/src/execute.test.ts" },
   ],
   "mock-x": [
     { id: "tst_cat_src_parity_001", path: "packages/testkit/__tests__/tst_cat_src_parity_001.test.ts" },
@@ -298,6 +299,7 @@ const CURRENT_OPERATION_EVIDENCE: Readonly<
   "mock-telegram": {
     "magnis.dataset.invoke:emit_chat": { id: "tst_conn_mocktelegram_dataset_001", path: "plugins/sources/mock-telegram/src/dataset.test.ts" },
     "magnis.dataset.invoke:emit_message": { id: "tst_conn_mocktelegram_dataset_002", path: "plugins/sources/mock-telegram/src/dataset.test.ts" },
+    "magnis.execute:send_message": { id: "tst_source_mock_telegram_execute_001", path: "plugins/sources/mock-telegram/src/execute.test.ts" },
     "magnis.sync.fetch": { id: "tst_conn_mocktelegram_ts_001", path: "plugins/sources/mock-telegram/src/fetch.test.ts" },
   },
   "mock-x": {
@@ -485,6 +487,7 @@ const GOLDEN_PROVIDERS: readonly GoldenProvider[] = [
       ...SDK_OPERATIONS,
       "magnis.dataset.invoke:emit_chat",
       "magnis.dataset.invoke:emit_message",
+      "magnis.execute:send_message",
     ],
     identityRule: "manifest_account_subject",
     credentialKeys: [],
