@@ -669,8 +669,8 @@ export class ContactsModule {
   // by anchor, like email's message ingest).
   @syncHandler("contacts")
   async ingest(params: { envelopes?: ContactsSyncEnvelope[] }): Promise<{
-    ok: boolean;
     dropped_remote_ids: string[];
+    trigger_checks: [];
   }> {
     const envelopes = Array.isArray(params.envelopes) ? params.envelopes : [];
     const dropped: string[] = [];
@@ -701,7 +701,7 @@ export class ContactsModule {
     }
     await flush();
 
-    return { ok: dropped.length === 0, dropped_remote_ids: dropped };
+    return { dropped_remote_ids: dropped, trigger_checks: [] };
   }
 
   /// One chunk → one apply_batch. Each contact becomes a contacts.person entity

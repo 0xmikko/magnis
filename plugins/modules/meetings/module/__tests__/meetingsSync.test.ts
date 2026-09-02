@@ -99,8 +99,7 @@ describe("meetings @syncHandler — upsert", () => {
       },
     ]);
     expect(frag.links).toEqual([]);
-    expect(res.trigger_checks).toEqual([]);
-    expect(res.ok).toBe(true);
+    expect(res).toEqual({ dropped_remote_ids: [], trigger_checks: [] });
   });
 });
 
@@ -220,8 +219,7 @@ describe("meetings @syncHandler — delete", () => {
     const res = await mod.ingest({ envelopes: [env({ kind: "delete", remote_id: "ghost" })] });
 
     expect(delete_entity).not.toHaveBeenCalled();
-    expect(res.dropped_remote_ids).toEqual([]);
-    expect(res.ok).toBe(true);
+    expect(res).toEqual({ dropped_remote_ids: [], trigger_checks: [] });
   });
 });
 

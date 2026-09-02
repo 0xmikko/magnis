@@ -105,7 +105,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
 
     const result = await module.ingest({ envelopes: [messageEnvelope()] });
 
-    expect(result).toEqual({ ok: true, dropped_remote_ids: [], trigger_checks: [] });
+    expect(result).toEqual({ dropped_remote_ids: [], trigger_checks: [] });
     const applyBatch = graph.spies.apply_batch;
     if (applyBatch === undefined) throw new Error("telegram ingest: apply_batch spy missing");
     const fragment = applyBatch.mock.calls[0]?.[0] as {
@@ -156,8 +156,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
     const module = mountModule(TelegramModule, { graph }).module;
 
     const result = await module.ingest({ envelopes: [invalid, live] });
-    expect(result).toMatchObject({
-      ok: false,
+    expect(result).toEqual({
       dropped_remote_ids: ["tg:msg:42:missing"],
       trigger_checks: [expect.objectContaining({
         type: "trigger.check",
@@ -180,7 +179,10 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
       delete_entity: () => Promise.resolve(undefined),
     });
     const module = mountModule(TelegramModule, { graph }).module;
-    await expect(module.ingest({ envelopes: [envelope] })).resolves.toMatchObject({ ok: true });
+    await expect(module.ingest({ envelopes: [envelope] })).resolves.toEqual({
+      dropped_remote_ids: [],
+      trigger_checks: [],
+    });
     expect(graph.spies.delete_entity).toHaveBeenCalledWith("message-entity");
 
     const failing = mountModule(TelegramModule, {
@@ -189,9 +191,9 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
         delete_entity: () => Promise.reject(new Error("delete failed")),
       }),
     }).module;
-    await expect(failing.ingest({ envelopes: [envelope] })).resolves.toMatchObject({
-      ok: false,
+    await expect(failing.ingest({ envelopes: [envelope] })).resolves.toEqual({
       dropped_remote_ids: ["tg:msg:42:7"],
+      trigger_checks: [],
     });
   });
 

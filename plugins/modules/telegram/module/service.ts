@@ -567,7 +567,7 @@ export class TelegramModule {
   async ingest(
     params: { envelopes?: SyncEnvelope[]; backfill_priority?: { chat_ids?: string[] } },
   ): Promise<
-    | { ok: boolean; dropped_remote_ids: string[]; trigger_checks: TriggerCheck[] }
+    | { dropped_remote_ids: string[]; trigger_checks: TriggerCheck[] }
     | { priority: string[] }
   > {
     // The scheduler reuses this reserved sync method to ask which chats are
@@ -641,7 +641,7 @@ export class TelegramModule {
       await Promise.resolve(); // yield between chunks so waiting RPCs get the connection
     }
 
-    return { ok: dropped.length === 0, dropped_remote_ids: dropped, trigger_checks: triggers };
+    return { dropped_remote_ids: dropped, trigger_checks: triggers };
   }
 
   // Bulk chat ingest for the bootstrap dialog list (one huge page). Batches chat

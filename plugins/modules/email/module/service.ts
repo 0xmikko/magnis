@@ -224,7 +224,7 @@ export class EmailModule {
   @syncHandler("email")
   async ingest(params: {
     envelopes?: SyncEnvelope[];
-  }): Promise<{ ok: boolean; dropped_remote_ids: string[]; trigger_checks: EmailTriggerCheck[] }> {
+  }): Promise<{ dropped_remote_ids: string[]; trigger_checks: EmailTriggerCheck[] }> {
     const envelopes = Array.isArray(params.envelopes) ? params.envelopes : [];
     const dropped: string[] = [];
     const triggers: EmailTriggerCheck[] = [];
@@ -278,7 +278,7 @@ export class EmailModule {
     }
     await flush();
 
-    return { ok: dropped.length === 0, dropped_remote_ids: dropped, trigger_checks: triggers };
+    return { dropped_remote_ids: dropped, trigger_checks: triggers };
   }
 
   /// Delete envelope: resolve the email by its source external_id and remove it.
