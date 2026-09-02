@@ -1,0 +1,301 @@
+import { readFileSync } from "node:fs";
+
+import type { FetchLike } from "./api";
+
+type JsonRecord = Record<string, unknown>;
+
+interface SuccessfulAnysiteFixture {
+  readonly mode: "success";
+  readonly probeProfile: JsonRecord;
+  readonly profilesByHandle: Readonly<Record<string, JsonRecord>>;
+  readonly postsByProfileUrn: Readonly<Record<string, readonly JsonRecord[]>>;
+}
+
+interface ProviderErrorFixture {
+  readonly mode: "provider_error";
+  readonly providerError: {
+    readonly path: string;
+    readonly status: number;
+    readonly detail: string;
+    readonly retryAfter: number;
+  };
+}
+
+type AnysiteFixture = SuccessfulAnysiteFixture | ProviderErrorFixture;
+
+function record(value: unknown, label: string): JsonRecord {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`anysite fixture ${label} must be an object`);
+  }
+  return value as JsonRecord;
+}
+
+function nonEmptyString(value: unknown, label: string): string {
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error(`anysite fixture ${label} must be a non-empty string`);
+  }
+  return value;
+}
+
+function finiteNumber(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`anysite fixture ${label} must be a finite number`);
+  }
+  return value;
+}
+
+function nullableNumber(value: unknown, label: string): number | null {
+  if (value === null) return null;
+  return finiteNumber(value, label);
+}
+
+function positiveInteger(value: unknown, label: string): number {
+  const number = finiteNumber(value, label);
+  if (!Number.isInteger(number) || number <= 0) {
+    throw new Error(`anysite fixture ${label} must be a positive integer`);
+  }
+  return number;
+}
+
+function nullableString(value: unknown, label: string): string | null {
+  if (value === null) return null;
+  return nonEmptyString(value, label);
+}
+
+function urn(value: unknown, label: string): string | { readonly type?: string; readonly value: string } {
+  if (typeof value === "string") return nonEmptyString(value, label);
+  const input = record(value, label);
+  const type = input.type;
+  if (type !== undefined && typeof type !== "string") {
+    throw new Error(`anysite fixture ${label}.type must be a string when present`);
+  }
+  return {
+    ...(type === undefined ? {} : { type }),
+    value: nonEmptyString(input.value, `${label}.value`),
+  };
+}
+
+function profile(value: unknown, label: string): JsonRecord {
+  const input = record(value, label);
+  return {
+    name: nonEmptyString(input.name, `${label}.name`),
+    urn: urn(input.urn, `${label}.urn`),
+    headline: nonEmptyString(input.headline, `${label}.headline`),
+    follower_count: finiteNumber(input.follower_count, `${label}.follower_count`),
+    url: nonEmptyString(input.url, `${label}.url`),
+    image: nullableString(input.image, `${label}.image`),
+  };
+}
+
+function reactions(value: unknown, label: string): readonly JsonRecord[] {
+  if (!Array.isArray(value)) throw new Error(`anysite fixture ${label} must be an array`);
+  return value.map((entry, index) => {
+    const input = record(entry, `${label}[${String(index)}]`);
+    return {
+      type: nonEmptyString(input.type, `${label}[${String(index)}].type`),
+      count: finiteNumber(input.count, `${label}[${String(index)}].count`),
+    };
+  });
+}
+
+function nullableReactions(value: unknown, label: string): readonly JsonRecord[] | null {
+  if (value === null) return null;
+  return reactions(value, label);
+}
+
+function stringArray(value: unknown, label: string): readonly string[] {
+  if (!Array.isArray(value)) throw new Error(`anysite fixture ${label} must be an array`);
+  return value.map((entry, index) => nonEmptyString(entry, `${label}[${String(index)}]`));
+}
+
+function nullableStringArray(value: unknown, label: string): readonly string[] | null {
+  if (value === null) return null;
+  return stringArray(value, label);
+}
+
+function repost(value: unknown, label: string): JsonRecord {
+  const input = record(value, label);
+  return {
+    text: nullableString(input.text, `${label}.text`),
+    url: nullableString(input.url, `${label}.url`),
+    images: nullableStringArray(input.images, `${label}.images`),
+    reactions: nullableReactions(input.reactions, `${label}.reactions`),
+    comment_count: nullableNumber(input.comment_count, `${label}.comment_count`),
+  };
+}
+
+function post(value: unknown, label: string): JsonRecord {
+  const input = record(value, label);
+  const isEmptyRepost = input.is_empty_repost;
+  if (isEmptyRepost !== undefined && typeof isEmptyRepost !== "boolean") {
+    throw new Error(`anysite fixture ${label}.is_empty_repost must be a boolean when present`);
+  }
+  const nestedRepost = input.repost;
+  return {
+    urn: urn(input.urn, `${label}.urn`),
+    share_url: nullableString(input.share_url, `${label}.share_url`),
+    text: nullableString(input.text, `${label}.text`),
+    created_at: finiteNumber(input.created_at, `${label}.created_at`),
+    reactions: nullableReactions(input.reactions, `${label}.reactions`),
+    comment_count: nullableNumber(input.comment_count, `${label}.comment_count`),
+    share_count: nullableNumber(input.share_count, `${label}.share_count`),
+    images: nullableStringArray(input.images, `${label}.images`),
+    ...(isEmptyRepost === undefined ? {} : { is_empty_repost: isEmptyRepost }),
+    ...(nestedRepost === undefined ? {} : { repost: repost(nestedRepost, `${label}.repost`) }),
+  };
+}
+
+function profileMap(value: unknown, label: string): Readonly<Record<string, JsonRecord>> {
+  return Object.fromEntries(
+    Object.entries(record(value, label)).map(([handle, entry]) => [
+      nonEmptyString(handle, `${label} key`),
+      profile(entry, `${label}.${handle}`),
+    ]),
+  );
+}
+
+function postMap(value: unknown, label: string): Readonly<Record<string, readonly JsonRecord[]>> {
+  return Object.fromEntries(
+    Object.entries(record(value, label)).map(([profileUrn, entries]) => {
+      if (!Array.isArray(entries)) {
+        throw new Error(`anysite fixture ${label}.${profileUrn} must be an array`);
+      }
+      return [
+        nonEmptyString(profileUrn, `${label} key`),
+        entries.map((entry, index) => post(entry, `${label}.${profileUrn}[${String(index)}]`)),
+      ];
+    }),
+  );
+}
+
+/** Decode an explicitly selected captured Anysite response set. Missing or
+ * malformed bytes are terminal certification failures; fixture mode never
+ * reaches the live provider transport.
+ *
+ * @tested-by: tst_anysite_cert_001
+ * @invariant: the dependency-closed artifact uses captured provider payloads
+ * through the same AnysiteClient conversion path as production.
+ */
+function loadFixture(): AnysiteFixture {
+  const path = process.env.ANYSITE_FIXTURE_FILE;
+  if (path === undefined || path.length === 0) {
+    throw new Error("ANYSITE_FIXTURE_FILE is not set");
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(path, "utf8")) as unknown;
+  } catch (error: unknown) {
+    throw new Error(`anysite fixture '${path}' cannot be decoded`, { cause: error });
+  }
+  const input = record(parsed, "root");
+  const mode = nonEmptyString(input.mode, "mode");
+  if (mode === "provider_error") {
+    const providerError = record(input.provider_error, "provider_error");
+    const path = nonEmptyString(providerError.path, "provider_error.path");
+    if (!path.startsWith("/")) {
+      throw new Error("anysite fixture provider_error.path must be absolute");
+    }
+    const status = positiveInteger(providerError.status, "provider_error.status");
+    if (status < 400 || status > 599) {
+      throw new Error("anysite fixture provider_error.status must be an HTTP error status");
+    }
+    return {
+      mode,
+      providerError: {
+        path,
+        status,
+        detail: nonEmptyString(providerError.detail, "provider_error.detail"),
+        retryAfter: positiveInteger(providerError.retry_after, "provider_error.retry_after"),
+      },
+    };
+  }
+  if (mode !== "success") {
+    throw new Error("anysite fixture mode must be 'success' or 'provider_error'");
+  }
+  return {
+    mode,
+    probeProfile: profile(input.probe_profile, "probe_profile"),
+    profilesByHandle: profileMap(input.profiles_by_handle, "profiles_by_handle"),
+    postsByProfileUrn: postMap(input.posts_by_profile_urn, "posts_by_profile_urn"),
+  };
+}
+
+function response(
+  status: number,
+  body: unknown,
+  retryAfter?: number,
+): Awaited<ReturnType<FetchLike>> {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: {
+      get: (name) =>
+        name.toLowerCase() === "retry-after" && retryAfter !== undefined
+          ? String(retryAfter)
+          : null,
+    },
+    text: () => Promise.resolve(JSON.stringify(body)),
+    json: () => Promise.resolve(body),
+  };
+}
+
+function requestBody(init: Parameters<FetchLike>[1]): JsonRecord {
+  if (init?.method !== "POST") throw new Error("anysite fixture requires POST");
+  if (typeof init.body !== "string") throw new Error("anysite fixture requires a JSON body");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(init.body) as unknown;
+  } catch (error: unknown) {
+    throw new Error("anysite fixture request body is malformed", { cause: error });
+  }
+  return record(parsed, "request body");
+}
+
+/** Captured Anysite transport, activated only by ANYSITE_FIXTURE_FILE. */
+export function fixtureFetch(
+  url: string,
+  init?: Parameters<FetchLike>[1],
+): ReturnType<FetchLike> {
+  const key = init?.headers?.["access-token"];
+  if (typeof key !== "string" || key.length === 0) {
+    return Promise.resolve(response(401, { detail: "missing access-token" }));
+  }
+  const fixture = loadFixture();
+  const request = new URL(url);
+  const body = requestBody(init);
+
+  if (fixture.mode === "provider_error") {
+    if (request.pathname !== fixture.providerError.path) {
+      return Promise.reject(
+        new Error(`anysite fixture has no captured route for ${request.pathname}`),
+      );
+    }
+    return Promise.resolve(response(
+      fixture.providerError.status,
+      { detail: fixture.providerError.detail },
+      fixture.providerError.retryAfter,
+    ));
+  }
+
+  if (request.pathname === "/api/linkedin/user") {
+    const handle = nonEmptyString(body.user, "request body.user");
+    if (handle === "linkedin") return Promise.resolve(response(200, fixture.probeProfile));
+    const match = fixture.profilesByHandle[handle];
+    if (match === undefined) return Promise.resolve(response(200, []));
+    return Promise.resolve(response(200, match));
+  }
+  if (request.pathname === "/api/linkedin/user/posts") {
+    const profileUrn = nonEmptyString(body.urn, "request body.urn");
+    finiteNumber(body.count, "request body.count");
+    const posts = fixture.postsByProfileUrn[profileUrn];
+    if (posts === undefined) {
+      return Promise.reject(
+        new Error(`anysite fixture has no captured posts for profile '${profileUrn}'`),
+      );
+    }
+    return Promise.resolve(response(200, {
+      posts,
+    }));
+  }
+  return Promise.reject(new Error(`anysite fixture has no captured route for ${request.pathname}`));
+}
