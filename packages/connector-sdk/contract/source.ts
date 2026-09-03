@@ -53,6 +53,61 @@ export interface FetchResult {
   discovered?: number | null;
 }
 
+/** Authored values stored in an external Source certification receipt. The
+ * host maps these boundary spellings to its internal camelCase unions. */
+export type SourceProtocolVersion = "magnis.source/1" | "magnis.source/2";
+export type SourceAuthority = "module_sync" | "tools_only";
+export type SourceReleaseTier = "production" | "development_fixture";
+export type SourceDeliveryMode = "poll" | "push" | "none";
+export type SourceAuthKind = "api_key" | "oauth2" | "phone_code" | "shared_provider";
+
+/** Structural subset implemented by a Zod output schema. Keeping the SDK
+ * contract structural lets callers bring their own pinned Zod version while
+ * every v2 call still returns only a decoded T, never raw JSON. */
+export interface ProviderOutputSchema<T> {
+  parse(value: unknown): T;
+}
+
+/** One exact v2 provider operation and the schema that admits its result. */
+export interface ProviderOperation<T> {
+  readonly name: string;
+  readonly outputSchema: ProviderOutputSchema<T>;
+}
+
+export interface SourceCertificationReceipt {
+  packageHash: string;
+  sourceId: string;
+  protocol: SourceProtocolVersion;
+  definitionHash: string;
+  accountCompatibility: {
+    hash: string;
+    migratesFrom: readonly string[];
+  };
+  authority: SourceAuthority;
+  releaseTier: SourceReleaseTier;
+  delivery: SourceDeliveryMode;
+  auth: SourceAuthKind | null;
+  surfaces: readonly string[];
+  advertisedTools: readonly string[];
+  callableOperations: readonly string[];
+  initialize: {
+    mcpProtocolVersion: string;
+    serverInfoName: string;
+    serverInfoVersion: string;
+    capabilitiesHash: string;
+  };
+  interfaceHashes: readonly string[];
+  runtime: {
+    kind: "connector_sdk" | "custom" | "external_wrapped";
+    implementationHash: string;
+    version: string;
+  };
+  scenarioIds: readonly string[];
+  certifierVersion: string;
+  testkitVersion: string;
+  matrixVersion: string;
+}
+
 /** The read handler — called for magnis.sync.fetch. Read-only. */
 export type FetchHandler = (args: FetchArgs) => Promise<FetchResult>;
 

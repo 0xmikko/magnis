@@ -66,7 +66,7 @@ describe("x ingest", () => {
       ],
     });
 
-    expect(res.ok).toBe(true);
+    expect(res).toEqual({ dropped_remote_ids: [], trigger_checks: [] });
     const applyBatch = graph.spies.apply_batch;
     if (applyBatch === undefined) throw new Error("x ingest 001: missing apply_batch spy");
     expect(applyBatch).toHaveBeenCalledTimes(1);
@@ -220,7 +220,7 @@ describe("x ingest identity link (tst_ingest_link)", () => {
       }),
     );
     const res = await mod.ingest({ envelopes: [profileEnv] });
-    expect(res.ok).toBe(true);
+    expect(res).toEqual({ dropped_remote_ids: [], trigger_checks: [] });
     expect(graph.spies.add_link).not.toHaveBeenCalled();
   });
 });

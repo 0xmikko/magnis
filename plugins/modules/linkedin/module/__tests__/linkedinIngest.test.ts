@@ -53,7 +53,7 @@ describe("linkedin ingest", () => {
       ],
     });
 
-    expect(res.ok).toBe(true);
+    expect(res).toEqual({ dropped_remote_ids: [], trigger_checks: [] });
     const applyBatch = graph.spies.apply_batch;
     if (applyBatch === undefined) throw new Error("linkedin ingest 001: missing apply_batch spy");
     expect(applyBatch).toHaveBeenCalledTimes(1);
@@ -199,7 +199,7 @@ describe("linkedin ingest identity link (tst_ingest_link)", () => {
     });
     const { module: mod } = mountModule(LinkedinModule, { graph, ctx: { extension_id: "linkedin" }, rpc: { execute } });
     const res = await mod.ingest({ envelopes: [profileEnv] });
-    expect(res.ok).toBe(true);
+    expect(res).toEqual({ dropped_remote_ids: [], trigger_checks: [] });
     expect(graph.spies.add_link).not.toHaveBeenCalled();
   });
 });

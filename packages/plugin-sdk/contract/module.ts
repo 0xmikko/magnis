@@ -481,9 +481,27 @@ export interface ToolSpecInput {
   params: Record<string, unknown>;
 }
 
-/** The legacy (experimentalDecorators) method-decorator returned by the tool
- * factories — records the method into the module's tool REGISTRY. */
-export type MethodRecorder = (target: object, methodName: string, descriptor: PropertyDescriptor) => void;
+/** The standard decorator context Bun supplies when it executes TypeScript
+ * directly. Packaged modules still use the legacy decorator ABI, so the
+ * runtime recorder deliberately accepts both exact call shapes. */
+export interface StandardMethodDecoratorContext {
+  readonly kind: "method";
+  readonly name: string | symbol;
+  readonly static: boolean;
+  readonly private: boolean;
+  addInitializer(initializer: (this: object) => void): void;
+}
+
+/** Method decorator returned by the tool factories. TypeScript builds invoke
+ * the legacy overload; Bun's direct TypeScript execution invokes the standard
+ * overload. Both record the same method metadata. Public instance methods are
+ * inherited base-to-derived; publishing two decorators with one suffix anywhere
+ * in that chain is rejected as ambiguous. Static and private methods are never
+ * valid plugin handlers. */
+export interface MethodRecorder {
+  (target: object, methodName: string | symbol, descriptor: PropertyDescriptor): void;
+  (method: object, context: StandardMethodDecoratorContext): void;
+}
 
 /// The tool wire shape matches the Rust `ToolDefinition` serde
 /// (`inputSchema` MCP field; `requires_approval` write flag) so it

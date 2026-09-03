@@ -9,6 +9,8 @@ export interface TelegramChatListItem {
   schema_id: string;
   entity_id: string;
   chat_id: string;
+  /** Exact Source account whose observed-in edge made this row actionable. */
+  account_id: string | null;
   chat_title: string | null;
   last_message: string | null;
   last_message_time: string | null;

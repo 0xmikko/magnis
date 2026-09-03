@@ -1,6 +1,7 @@
 {
   "name": "magnis-plugins",
   "private": true,
+  "packageManager": "bun@1.3.13",
   "workspaces": [
     "packages/*",
     "plugins/modules/*",

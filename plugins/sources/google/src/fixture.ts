@@ -48,21 +48,39 @@ function load(): Fixture {
   try {
     raw = readFileSync(path, "utf-8");
   } catch (e) {
-    console.error(`magnis-google: cannot read GOOGLE_FIXTURE_FILE ${path}: ${e instanceof Error ? e.message : String(e)}`);
-    return EMPTY;
+    throw new Error(
+      `magnis-google: cannot read GOOGLE_FIXTURE_FILE ${path}: ${e instanceof Error ? e.message : String(e)}`,
+      { cause: e },
+    );
   }
   let doc: unknown;
   try {
     doc = JSON.parse(raw);
   } catch (e) {
-    console.error(`magnis-google: malformed GOOGLE_FIXTURE_FILE ${path}: ${e instanceof Error ? e.message : String(e)}`);
-    return EMPTY;
+    throw new Error(
+      `magnis-google: malformed GOOGLE_FIXTURE_FILE ${path}: ${e instanceof Error ? e.message : String(e)}`,
+      { cause: e },
+    );
   }
-  const d = (doc ?? {}) as Record<string, unknown>;
+  if (doc === null || typeof doc !== "object" || Array.isArray(doc)) {
+    throw new Error(`magnis-google: GOOGLE_FIXTURE_FILE ${path} must contain one object`);
+  }
+  const d = doc as Record<string, unknown>;
+  // @tested-by: tst_gts_fx_001
+  // @invariant: certification fixtures never coerce malformed provider data
+  // into a successful empty page.
+  const optionalArray = (key: keyof Fixture): unknown[] => {
+    const value = d[key];
+    if (value === undefined) return [];
+    if (!Array.isArray(value)) {
+      throw new Error(`magnis-google: GOOGLE_FIXTURE_FILE ${path} field '${key}' must be an array`);
+    }
+    return value;
+  };
   return {
-    messages: Array.isArray(d.messages) ? d.messages : [],
-    events: Array.isArray(d.events) ? d.events : [],
-    connections: Array.isArray(d.connections) ? d.connections : [],
+    messages: optionalArray("messages"),
+    events: optionalArray("events"),
+    connections: optionalArray("connections"),
   };
 }
 
@@ -139,7 +157,9 @@ export function fixtureFetchResult(surface: string): FetchResult {
         .filter((e): e is Envelope => e !== null);
       break;
     default:
-      envelopes = [];
+      // @tested-by: tst_gts_fx_001
+      // @invariant: fixture mode has the same closed surface set as live mode.
+      throw new Error(`unknown fixture surface '${surface}'`);
   }
   return { envelopes, nextCursor: null, hasMore: false };
 }

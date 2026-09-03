@@ -6,6 +6,7 @@
 
 import { runConnector } from "@magnis/connector-sdk";
 import { emitChat, emitMessage } from "./dataset";
+import { sendMessage } from "./execute";
 import { fetchMockTelegram } from "./fetch";
 
 await runConnector({
@@ -14,6 +15,7 @@ await runConnector({
   surfaces: ["telegram"],
   intervalSecs: 2,
   fetch: fetchMockTelegram,
+  execute: { send_message: sendMessage },
   datasetActions: { emit_chat: emitChat, emit_message: emitMessage },
 });
 

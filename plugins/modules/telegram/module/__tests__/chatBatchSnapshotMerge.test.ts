@@ -108,6 +108,6 @@ describe("telegram chat batch ingest", () => {
     );
     expect(stateLink?.from_key).toBe("self");
     expect(stateLink?.metadata).toMatchObject({ is_pinned: true, pin_order: 0 });
-    expect(firstBatch.refs?.find((r) => r.key === "self")?.anchor).toBe("tg:account:9001");
+    expect(firstBatch.entities.find((entity) => entity.key === "self")?.anchor).toBe("tg:account:9001");
   });
 });

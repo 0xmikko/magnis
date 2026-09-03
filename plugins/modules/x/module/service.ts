@@ -43,7 +43,7 @@ export class XModule {
   @syncHandler("x")
   async ingest(params: {
     envelopes?: SyncEnvelope[];
-  }): Promise<{ ok: boolean; dropped_remote_ids: string[] }> {
+  }): Promise<{ dropped_remote_ids: string[]; trigger_checks: [] }> {
     const envelopes = Array.isArray(params.envelopes) ? params.envelopes : [];
     const dropped: string[] = [];
 
@@ -119,7 +119,7 @@ export class XModule {
       // repairs the link (self-healing).
       await this.linkProfilesToContacts(envelopes, applied.ids);
     }
-    return { ok: dropped.length === 0, dropped_remote_ids: dropped };
+    return { dropped_remote_ids: dropped, trigger_checks: [] };
   }
 
   // ── X friend import = a bootstrap TRIGGER ───────────────────────────────

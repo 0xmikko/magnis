@@ -107,10 +107,19 @@ export class TelegramModule {
   // ── chats.list ────────────────────────────────────────────────
   private buildChatItem(entity: RawEntity, d: Data): TelegramChatListItem {
     const avatar = str(d, "avatar_url") ?? str(d, "photo_url");
+    const sourceAccounts = Array.isArray(d.sources)
+      ? d.sources.flatMap((source) => {
+          if (source === null || typeof source !== "object" || Array.isArray(source)) return [];
+          const account = (source as Record<string, unknown>).account;
+          return typeof account === "string" && account !== "" ? [account] : [];
+        })
+      : [];
+    const exactAccounts = [...new Set(sourceAccounts)];
     return {
       schema_id: CHAT,
       entity_id: entity.id,
       chat_id: chatIdStr(d),
+      account_id: exactAccounts.length === 1 ? (exactAccounts[0] ?? null) : null,
       chat_title: str(d, "title"),
       last_message: str(d, "last_message_preview"),
       last_message_time: typeof d.last_message_date === "string" ? (d.last_message_date) : null,
@@ -182,6 +191,27 @@ export class TelegramModule {
       }),
     );
     return { items, total: page.total, limit, offset };
+  }
+
+  @rpc("chats.get", {
+    description: "Resolve one Telegram chat and its exact actionable Source account.",
+    params: {
+      type: "object",
+      properties: { entity_id: { type: "string" } },
+      required: ["entity_id"],
+      additionalProperties: false,
+    },
+  })
+  async chatsGet(params: { entity_id: string }): Promise<TelegramChatListItem> {
+    const entity = await this.graph.get_entity(params.entity_id);
+    if (entity?.schema_id !== CHAT) {
+      throw new Error(`${CHAT} ${params.entity_id} not found`);
+    }
+    const state = await this.observedStateFor([entity.id]);
+    return this.buildChatItem(entity, {
+      ...((entity.properties ?? {}) as Data),
+      ...(state.get(entity.id) ?? {}),
+    });
   }
 
   /// Name search over the user's chats — native `search_chats`: user-scoped
@@ -567,7 +597,7 @@ export class TelegramModule {
   async ingest(
     params: { envelopes?: SyncEnvelope[]; backfill_priority?: { chat_ids?: string[] } },
   ): Promise<
-    | { ok: boolean; dropped_remote_ids: string[]; trigger_checks: TriggerCheck[] }
+    | { dropped_remote_ids: string[]; trigger_checks: TriggerCheck[] }
     | { priority: string[] }
   > {
     // The scheduler reuses this reserved sync method to ask which chats are
@@ -641,7 +671,7 @@ export class TelegramModule {
       await Promise.resolve(); // yield between chunks so waiting RPCs get the connection
     }
 
-    return { ok: dropped.length === 0, dropped_remote_ids: dropped, trigger_checks: triggers };
+    return { dropped_remote_ids: dropped, trigger_checks: triggers };
   }
 
   // Bulk chat ingest for the bootstrap dialog list (one huge page). Batches chat
@@ -694,7 +724,7 @@ export class TelegramModule {
       const entities: BatchEntityInput[] = [];
       const refs: BatchRefInput[] = [];
       const links: BatchLinkInput[] = [];
-      let selfRef = false;
+      let selfEntity = false;
       for (const { env, payload } of chats.slice(i, i + INGEST_CHUNK)) {
         const remoteId = env.remote_id;
         if (!remoteId) continue;
@@ -736,9 +766,18 @@ export class TelegramModule {
         // with the observed state as its dictionary when the page carries
         // any. (The complete-set reconciliation decays exactly these.)
         if (identityKey) {
-          if (!selfRef) {
-            refs.push({ key: "self", anchor: accountAnchor(identityKey) });
-            selfRef = true;
+          // @tested-by: tst_module_telegram_003, tst_e2e_tg_001_chat_list_renders
+          // @invariant: the observer and its membership edge are one atomic
+          // graph fragment; ingest cannot depend on an earlier lifecycle hook.
+          if (!selfEntity) {
+            entities.unshift({
+              key: "self",
+              schema_id: TELEGRAM_ACCOUNT,
+              name: "",
+              anchor: accountAnchor(identityKey),
+              properties: { telegram_user_id: Number(identityKey), is_self: true },
+            });
+            selfEntity = true;
           }
           links.push({
             from_key: "self",
