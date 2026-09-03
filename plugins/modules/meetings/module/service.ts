@@ -344,7 +344,7 @@ export class MeetingsModule {
   @syncHandler("meetings")
   async ingest(params: {
     envelopes?: SyncEnvelope[];
-  }): Promise<{ ok: boolean; dropped_remote_ids: string[]; trigger_checks: MeetingTriggerCheck[] }> {
+  }): Promise<{ dropped_remote_ids: string[]; trigger_checks: MeetingTriggerCheck[] }> {
     const envelopes = Array.isArray(params.envelopes) ? params.envelopes : [];
 
     // Validate ALL user_ids before any write so a bad envelope writes
@@ -373,7 +373,7 @@ export class MeetingsModule {
       await this.ingestUpsert(env, triggers);
     }
 
-    return { ok: dropped.length === 0, dropped_remote_ids: dropped, trigger_checks: triggers };
+    return { dropped_remote_ids: dropped, trigger_checks: triggers };
   }
 
   /// Delete envelope: resolve the meeting by its source external_id and remove

@@ -41,7 +41,17 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
       list_links_for_entity: (id: string) =>
         Promise.resolve(
           id === CHAT_ID
-            ? [{ id: "observed", from_id: ACCOUNT_ID, to_id: CHAT_ID, kind: "observed_in", metadata: { is_pinned: true, pin_order: 0 } }]
+            ? [{
+                id: "observed",
+                from_id: ACCOUNT_ID,
+                to_id: CHAT_ID,
+                kind: "observed_in",
+                metadata: {
+                  is_pinned: true,
+                  pin_order: 0,
+                  sources: [{ source: "mock-telegram", account: "account-1", surface: "messages" }],
+                },
+              }]
             : [],
         ),
     });
@@ -56,6 +66,7 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
       last_message_time: "2026-08-12T08:00:00Z",
       is_pinned: true,
       pin_order: 0,
+      account_id: "account-1",
     });
     expect(graph.spies.list_entities_window).toHaveBeenCalledWith({
       schema: CHAT,
@@ -117,6 +128,32 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
     expect(graph.spies.list_entities_window).toHaveBeenCalledWith(
       expect.objectContaining({ filter_eq: "-10042" }),
     );
+  });
+
+  it("resolves a deep-linked chat with its exact Source account", async () => {
+    const chat = entity(CHAT_ID, "Investor chat", {
+      schema_id: CHAT,
+      properties: { chat_id: 42, title: "Investor chat" },
+    });
+    const graph = mockGraph({
+      get_entity: () => Promise.resolve(chat),
+      list_links_for_entity: () => Promise.resolve([{
+        id: "observed",
+        from_id: ACCOUNT_ID,
+        to_id: CHAT_ID,
+        kind: "observed_in",
+        metadata: {
+          sources: [{ source: "mock-telegram", account: "account-1", surface: "messages" }],
+        },
+      }]),
+    });
+    const module = mountModule(TelegramModule, { graph }).module;
+
+    await expect(module.chatsGet({ entity_id: CHAT_ID })).resolves.toMatchObject({
+      entity_id: CHAT_ID,
+      chat_id: "42",
+      account_id: "account-1",
+    });
   });
 
   it("returns exact message detail and rejects missing or foreign schemas", async () => {

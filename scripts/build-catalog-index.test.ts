@@ -18,6 +18,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 const ROOT = join(import.meta.dir, "..");
 const SHA = "0123456789abcdef0123456789abcdef01234567";
 const SLUG = "owner/repo";
+const CI_WORKFLOW = join(ROOT, ".github", "workflows", "ci.yml");
 
 interface Entry {
   kind: string;
@@ -225,4 +226,62 @@ describe("tst_pub_catalog_index_001", () => {
       );
     }
   }, 300_000);
+});
+
+/**
+ * @test-id: tst_pub_catalog_release_001
+ * @scenario: scn_catalog_release_provenance_001
+ * @covers: .github/workflows/ci.yml::catalog Publish the channel
+ * @deterministic: yes
+ * @fixtures: tracked GitHub Actions workflow
+ *
+ * Test environment: static release workflow inspection.
+ * Clients: direct file read.
+ * Mocks: none.
+ * Data: .github/workflows/ci.yml.
+ */
+describe("tst_pub_catalog_release_001 catalog release provenance", () => {
+  test("serializes each channel and rejects a stale run before destructive publication", () => {
+    const workflow = readFileSync(CI_WORKFLOW, "utf8");
+
+    expect(workflow).toContain(
+      "    concurrency:\n" +
+        "      group: catalog-${{ github.ref }}\n" +
+        "      cancel-in-progress: false",
+    );
+    const remoteGuard = workflow.indexOf(
+      'REMOTE_HEAD="$(git ls-remote origin "${GITHUB_REF}" | cut -f1)"',
+    );
+    const deleteRelease = workflow.indexOf('gh release delete "$TAG" --cleanup-tag --yes');
+    expect(remoteGuard).toBeGreaterThanOrEqual(0);
+    expect(workflow).toContain(
+      'if [ "$REMOTE_HEAD" != "$GITHUB_SHA" ]; then\n' +
+        '            echo "refusing stale catalog publication: ${GITHUB_REF} is ${REMOTE_HEAD}, expected ${GITHUB_SHA}" >&2\n' +
+        "            exit 1\n" +
+        "          fi",
+    );
+    expect(remoteGuard).toBeLessThan(deleteRelease);
+  });
+
+  test("forces the channel tag to the built commit before creating from the verified tag", () => {
+    const workflow = readFileSync(CI_WORKFLOW, "utf8");
+
+    expect(workflow).toContain(
+      'if gh release view "$TAG" >/dev/null 2>&1; then\n' +
+        '            gh release delete "$TAG" --cleanup-tag --yes\n' +
+        "          fi",
+    );
+    expect(workflow).not.toContain('gh release delete "$TAG" --cleanup-tag --yes || true');
+    expect(workflow).toContain(
+      'git push --force origin "${GITHUB_SHA}:refs/tags/${TAG}"\n' +
+        '          gh release create "$TAG" \\\n' +
+        "            --verify-tag \\",
+    );
+    expect(workflow).not.toContain(
+      'gh release create "$TAG" \\\n' +
+        '            --target "$GITHUB_SHA" \\',
+    );
+    expect(workflow).toContain("catalog/receipt-*.json catalog/*.tgz");
+    expect(workflow).not.toContain("catalog/receipts/*.json");
+  });
 });

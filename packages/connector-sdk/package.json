@@ -6,6 +6,12 @@
   "private": true,
   "main": "./index.ts",
   "types": "./index.ts",
+  "exports": {
+    ".": "./index.ts",
+    "./codec": "./codec.ts",
+    "./server": "./server.ts",
+    "./contract/source": "./contract/source.ts"
+  },
   "scripts": {
     "test": "bun test"
   }

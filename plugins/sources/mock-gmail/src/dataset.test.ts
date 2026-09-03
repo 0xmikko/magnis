@@ -92,6 +92,13 @@ describe("mock-gmail dataset actions", () => {
     ]);
   });
 
+  /**
+   * @test-id: tst_conn_mockgmail_dataset_004
+   * @scenario: scn_mock_gmail_rate_limit_001
+   * @covers: plugins/sources/mock-gmail/src/dataset.ts::rateLimitNextFetch
+   * @deterministic: yes
+   * @fixtures: inline dataset action and empty poll queue
+   */
   test("tst_conn_mockgmail_dataset_004 rate-limits exactly the next fetch", async () => {
     const result = await rateLimitNextFetch({
       action: "rate_limit_next_fetch",

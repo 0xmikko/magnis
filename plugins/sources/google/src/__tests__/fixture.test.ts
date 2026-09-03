@@ -1,10 +1,23 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+import { afterEach, describe, expect, test } from "bun:test";
+
 import { handleMessage, type FetchResult } from "@magnis/connector-sdk";
+import { collectSourceHostEvidence } from "@magnis/testkit/host-driver";
+
+import {
+  decodeSourceCertificationReceipt,
+  sourceArtifactPackageHash,
+} from "../../../../../packages/testkit/receipt";
+import { stageBundledSourcePackage } from "../../../../../scripts/build-catalog-index";
+import { discoverSourceReleaseManifests } from "../../../../../scripts/certify-sources";
+
 import { buildConnectorConfig } from "../connector";
 import { stableContactId } from "../surfaces/contacts/contacts";
+
 import type { FetchLike } from "../http";
 
 const b64url = (s: string) => Buffer.from(s, "utf-8").toString("base64url");
@@ -55,6 +68,8 @@ const noNetwork: FetchLike = async (url) => {
   throw new Error(`fixture mode must not hit the network: ${url}`);
 };
 
+const repoRoot = join(import.meta.dir, "../../../../..");
+
 function withFixture(doc: unknown): string {
   const dir = mkdtempSync(join(tmpdir(), "gts-fixture-"));
   const path = join(dir, "google-fixture.json");
@@ -84,12 +99,14 @@ describe("fixture mode end-to-end", () => {
    * @test-id: tst_gts_fx_001
    * @scenario: scn_backend_tests_006
    * @covers: Google connector fixture-to-envelope mapping
+   * @covers: plugins/sources/google/src/fixture.ts::load
+   * @covers: packages/testkit/host-driver.ts::collectSourceHostEvidence
    * @legacy-id: tst_int_google_email_ingests_into_real_emails_module
    * @legacy-id: tst_int_google_meetings_ingests_into_real_meetings_module
    * @deterministic: yes
    */
-  test("tst_gts_fx_001 email/meetings/contacts served from file, one page, no counters", async () => {
-    withFixture(FIXTURE_DOC);
+  test("tst_gts_fx_001 exact artifact serves all surfaces and fixture faults fail closed", async () => {
+    const fixtureFile = withFixture(FIXTURE_DOC);
 
     const email = (await call("magnis.sync.fetch", { surface: "email" }))
       .result as FetchResult;
@@ -127,6 +144,96 @@ describe("fixture mode end-to-end", () => {
       `gpeople:${stableContactId("people/c12345")}`,
     );
     expect(contact.payload.display_name).toBe("Carol");
+
+    // Certification must prove the dependency-closed executable, not only the
+    // in-process ConnectorConfig used above. Stage the same fixed artifact the
+    // catalog builder archives and exercise each declared surface over stdio.
+    const release = discoverSourceReleaseManifests(join(repoRoot, "plugins", "sources"))
+      .find((entry) => entry.id === "google");
+    if (release === undefined || release.disposition !== "admissible") {
+      throw new Error("google is not an admissible Source release");
+    }
+    const stageRoot = mkdtempSync(join(tmpdir(), "gts-certified-artifact-"));
+    try {
+      stageBundledSourcePackage(release, stageRoot);
+
+      const implementationHash = `sha256:${createHash("sha256")
+        .update(readFileSync(join(stageRoot, "dist", "main.js")))
+        .digest("hex")}`;
+      const packageHash = sourceArtifactPackageHash(stageRoot);
+      const receipt = decodeSourceCertificationReceipt(
+        readFileSync(join(repoRoot, "dist", "receipts", `${packageHash}.json`), "utf8"),
+        { packageHash },
+      );
+      expect(receipt.packageHash).toBe(packageHash);
+      expect(receipt.runtime.implementationHash).toBe(implementationHash);
+      expect(receipt.protocol).toBe("magnis.source/1");
+      expect(receipt.auth).toBe("oauth2");
+      expect(receipt.surfaces).toEqual(["contacts", "email", "meetings"]);
+      expect(receipt.scenarioIds).toEqual([
+        "tst_gts_email_009",
+        "tst_gts_fx_001",
+        "tst_gts_fx_003",
+        "tst_gts_gcal_005",
+        "tst_gts_gp_005",
+        "tst_gts_gp_006",
+        "tst_gts_hist_008b",
+        "tst_gts_oidc_004",
+        "tst_gts_oidc_007",
+        "tst_gts_wire_006",
+      ]);
+
+      for (const surface of ["email", "meetings", "contacts"] as const) {
+        const evidence = await collectSourceHostEvidence(
+          stageRoot,
+          ["initialize", "magnis.sync.fetch", "tools/list"],
+          {
+            fixtureEnvironment: { GOOGLE_FIXTURE_FILE: fixtureFile },
+            operationArguments: { "magnis.sync.fetch": { surface } },
+          },
+        );
+        const reply = evidence.operationProbes["magnis.sync.fetch"];
+        if (reply?.error !== undefined || typeof reply?.result !== "object" || reply.result === null) {
+          throw new Error(`google exact artifact ${surface} fetch failed`);
+        }
+        const result = reply.result as Record<string, unknown>;
+        expect((result.envelopes as unknown[]).length).toBeGreaterThan(0);
+        expect(result.hasMore).toBe(false);
+        expect(result.nextCursor).toBeNull();
+      }
+    } finally {
+      rmSync(stageRoot, { recursive: true, force: true });
+    }
+
+    // Fixture mode is certification evidence, so missing or malformed bytes
+    // and an undeclared surface must remain terminal errors, never fabricated
+    // successful empty pages.
+    const missingRoot = mkdtempSync(join(tmpdir(), "gts-missing-"));
+    process.env.GOOGLE_FIXTURE_FILE = join(missingRoot, "google.json");
+    const missing = await call("magnis.sync.fetch", { surface: "email" });
+    expect((missing.error as Record<string, unknown>).message).toContain(
+      "cannot read GOOGLE_FIXTURE_FILE",
+    );
+
+    const malformed = join(mkdtempSync(join(tmpdir(), "gts-malformed-")), "google.json");
+    writeFileSync(malformed, "{not-json");
+    process.env.GOOGLE_FIXTURE_FILE = malformed;
+    const invalid = await call("magnis.sync.fetch", { surface: "email" });
+    expect((invalid.error as Record<string, unknown>).message).toContain(
+      "malformed GOOGLE_FIXTURE_FILE",
+    );
+
+    writeFileSync(malformed, '{"messages":{}}');
+    const wrongShape = await call("magnis.sync.fetch", { surface: "email" });
+    expect((wrongShape.error as Record<string, unknown>).message).toContain(
+      "field 'messages' must be an array",
+    );
+
+    process.env.GOOGLE_FIXTURE_FILE = fixtureFile;
+    const unknown = await call("magnis.sync.fetch", { surface: "unknown" });
+    expect((unknown.error as Record<string, unknown>).message).toBe(
+      "unknown fixture surface 'unknown'",
+    );
   });
 
   test("tst_gts_fx_002 missing arrays → empty envelopes (no crash)", async () => {

@@ -297,6 +297,6 @@ describe("contacts ingest — the replica model (tst_be_contactsingest_001)", ()
     const mod = mountWorld(world);
     const r = await mod.ingest({ envelopes: [] });
     expect(world.graph.spies.apply_batch).toHaveBeenCalledTimes(0);
-    expect(r.ok).toBe(true);
+    expect(r).toEqual({ dropped_remote_ids: [], trigger_checks: [] });
   });
 });

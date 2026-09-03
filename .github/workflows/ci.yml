@@ -10,6 +10,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.13"
       - run: bun install --frozen-lockfile
       - name: Typecheck (modules + sources + packages + scripts)
         run: bun run typecheck
@@ -45,12 +47,17 @@ jobs:
       github.event_name == 'push' &&
       (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging')
     needs: [typescript]
+    concurrency:
+      group: catalog-${{ github.ref }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.13"
       - run: bun install --frozen-lockfile
       - run: bun scripts/build-plugins.ts
       - run: bun scripts/build-catalog-index.ts
@@ -66,8 +73,18 @@ jobs:
           # Every asset is replaced, so a package withdrawn from the catalog
           # stops being served instead of lingering as an orphan a stale
           # index no longer mentions.
-          gh release delete "$TAG" --cleanup-tag --yes || true
+          REMOTE_HEAD="$(git ls-remote origin "${GITHUB_REF}" | cut -f1)"
+          if [ "$REMOTE_HEAD" != "$GITHUB_SHA" ]; then
+            echo "refusing stale catalog publication: ${GITHUB_REF} is ${REMOTE_HEAD}, expected ${GITHUB_SHA}" >&2
+            exit 1
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release delete "$TAG" --cleanup-tag --yes
+          fi
+          git push --force origin "${GITHUB_SHA}:refs/tags/${TAG}"
           gh release create "$TAG" \
+            --verify-tag \
             --title "Plugin catalog (${TAG})" \
             --notes "Built from ${GITHUB_SHA}. Fetched anonymously by the Magnis app." \
-            catalog/index.json catalog/onboarding.json catalog/*.tgz
+            catalog/index.json catalog/index.v2.json catalog/onboarding.json \
+            catalog/receipt-*.json catalog/*.tgz

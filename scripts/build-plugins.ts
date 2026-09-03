@@ -27,10 +27,10 @@ import { parse as parseToml } from "smol-toml";
 const REPO_ROOT = join(import.meta.dir, "..");
 const SHIM_URL = (slug: string): string => `/api/plugins/__host-shim.js?m=${slug}`;
 
-interface HostMap {
+export interface HostMap {
   static: Record<string, string>; // bare specifier → shim slug
 }
-function loadHostMap(): HostMap {
+export function loadHostMap(): HostMap {
   return JSON.parse(readFileSync(join(import.meta.dir, "plugin-host-imports.json"), "utf8")) as HostMap;
 }
 
@@ -52,7 +52,7 @@ export interface BuildResult {
 }
 
 /** Build the bare specifier → shim-URL map for one plugin (static + extras). */
-function resolveExternals(manifest: Manifest, host: HostMap): Map<string, string> {
+export function resolveExternals(manifest: Manifest, host: HostMap): Map<string, string> {
   const map = new Map<string, string>();
   for (const [spec, slug] of Object.entries(host.static)) map.set(spec, SHIM_URL(slug));
   for (const extra of manifest.ui?.extra_bare_imports ?? []) map.set(extra, SHIM_URL(extra));
@@ -60,7 +60,7 @@ function resolveExternals(manifest: Manifest, host: HostMap): Map<string, string
 }
 
 /** Rewrite the externalized bare imports in the bundle to host-shim URLs. */
-function rewriteBareImports(js: string, externals: Map<string, string>): string {
+export function rewriteBareImports(js: string, externals: Map<string, string>): string {
   let out = js;
   for (const [spec, url] of externals) {
     // Replace only the exact quoted specifier (import source position). Exact

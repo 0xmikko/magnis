@@ -295,6 +295,7 @@ describe("email ingest — trigger / delete / empty-user parity", () => {
 
   it("LIVE → one trigger.check (touched = message + sender only); SNAPSHOT → none", async () => {
     const live = await mod.ingest({ envelopes: [env({ kind: "live", remote_id: "m1", payload: msgPayload() })] });
+    expect(Object.keys(live).sort()).toEqual(["dropped_remote_ids", "trigger_checks"]);
     expect(live.trigger_checks).toHaveLength(1);
     const tc = live.trigger_checks[0];
     if (tc === undefined) throw new Error("ingest: missing live trigger_check[0]");

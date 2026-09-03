@@ -252,6 +252,7 @@ describe("telegram chat header total (graph total, never page length)", () => {
     const chat: TelegramChat = {
       id: "chat-entity-1",
       chatId: "4242",
+      accountId: "source-account-1",
       name: "Magnis Builders",
       initials: "MB",
       avatarColor: "#333",
@@ -272,6 +273,7 @@ describe("telegram chat header total (graph total, never page length)", () => {
     await waitFor(() => {
       expect(rpcMock).toHaveBeenCalledWith("telegram.messages.send", {
         chat_id: 4242,
+        account_id: "source-account-1",
         text: "Ship it",
         reply_to_message_id: null,
       });

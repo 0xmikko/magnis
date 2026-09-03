@@ -17,17 +17,31 @@ import { gzipSync } from "node:zlib";
 import { join, relative } from "node:path";
 import { parse as parseToml } from "smol-toml";
 
+import {
+  discoverStagedCatalog,
+  discoverSourceReleaseManifests,
+  reconcileSourceReceiptFixtures,
+  SELECTED_CHANNEL_SOURCE_MATRIX,
+  sourceManifestReferencedFiles,
+  writeCertifiedCatalogIndexes,
+  writeSourceCertificationReceipts,
+} from "./certify-sources";
+
+import type {
+  AdmissibleSourceReleaseManifest,
+  PublishedCatalogPackage,
+} from "./certify-sources";
+import {
+  loadHostMap,
+  resolveExternals,
+  rewriteBareImports,
+} from "./build-plugins";
+
 const ROOT = join(import.meta.dir, "..");
 const OUT = process.env.CATALOG_OUT ?? join(ROOT, "catalog");
+const RECEIPTS = process.env.SOURCE_RECEIPTS_IN ?? join(ROOT, "dist", "receipts");
 
-interface Entry {
-  kind: "module" | "source";
-  id: string;
-  version: string;
-  title: string;
-  summary: string;
-  publisher: string;
-  dev: boolean;
+interface Entry extends PublishedCatalogPackage {
   /** The ONE asset that carries the package, and the hash over it.
    * Release assets are a flat namespace — a name cannot contain `/` — so a
    * package travels as `<kind>__<id>.tgz` and the client fetches
@@ -131,7 +145,7 @@ function tarHeader(name: string, size: number): Buffer {
  * index differs from the last, and clients re-download a catalog that did
  * not change. */
 function stagePackage(kind: string, id: string, stage: (dst: string) => void): Entry["archive"] {
-  const work = join(OUT, ".stage", `${kind}__${id}`);
+  const work = join(OUT, ".stage", "packages", kind, id);
   rmSync(work, { recursive: true, force: true });
   mkdirSync(work, { recursive: true });
   stage(work);
@@ -303,10 +317,203 @@ function installOrder(known: ReadonlyMap<string, ModuleFacts>): string[] {
   return out;
 }
 
-rmSync(OUT, { recursive: true, force: true });
-mkdirSync(OUT, { recursive: true });
-const packages: Entry[] = [];
-const facts = new Map<string, ModuleFacts>();
+/** Stage one admitted Source from its authored manifest snapshot. Every path
+ * referenced by the manifest is copied before the dependency-closed executable
+ * is built, so certification observes the exact tree later archived.
+ *
+ * @tested-by: tst_cat_src_cert_001
+ */
+const CANONICAL_BUNDLE_BUILD_ROOT = "/__magnis_catalog_build__/";
+
+/** Remove the checkout identity Bun embeds for CommonJS `__dirname` and
+ * `__filename`. An installed dependency-closed artifact cannot use its build
+ * checkout, so those exact prefixes must have one portable identity.
+ *
+ * @tested-by: tst_cat_src_cert_001
+ */
+export function canonicalizeBundledSourceBuildRoot(
+  bundle: string,
+  buildRoot: string = ROOT,
+): string {
+  const normalizedRoot = buildRoot.replaceAll("\\", "/").replace(/\/+$/, "");
+  const buildRootPrefix = `${normalizedRoot}/`;
+  const canonical = bundle.replaceAll(buildRootPrefix, CANONICAL_BUNDLE_BUILD_ROOT);
+  if (canonical.includes(buildRootPrefix)) {
+    throw new Error(`bundled Source retains build checkout prefix '${buildRootPrefix}'`);
+  }
+  return canonical;
+}
+
+export function stageSourcePackage(
+  release: AdmissibleSourceReleaseManifest,
+  destination: string,
+): void {
+  const { id, root: sourceRoot, manifestPath, manifest } = release;
+  mkdirSync(destination, { recursive: true });
+  cpSync(manifestPath, join(destination, "manifest.toml"));
+  if (existsSync(join(sourceRoot, "config.default.toml"))) {
+    cpSync(join(sourceRoot, "config.default.toml"), join(destination, "config.default.toml"));
+  }
+  if (existsSync(join(sourceRoot, "auth"))) {
+    cpSync(join(sourceRoot, "auth"), join(destination, "auth"), { recursive: true });
+  }
+  for (const reference of sourceManifestReferencedFiles(id, manifest)) {
+    const source = join(sourceRoot, ...reference.split("/"));
+    const target = join(destination, ...reference.split("/"));
+    mkdirSync(join(target, ".."), { recursive: true });
+    cpSync(source, target);
+  }
+  if (existsSync(join(sourceRoot, "README.md"))) {
+    cpSync(join(sourceRoot, "README.md"), join(destination, "README.md"));
+  }
+  for (const icon of ["icon.svg", "icon.png"]) {
+    if (existsSync(join(sourceRoot, icon))) {
+      cpSync(join(sourceRoot, icon), join(destination, icon));
+    }
+  }
+  const entry = join(sourceRoot, "src", "main.ts");
+  if (!existsSync(entry)) {
+    throw new Error(`source '${id}' has no root-local src/main.ts to bundle`);
+  }
+  const result = Bun.spawnSync(
+    [
+      "bun",
+      "build",
+      entry,
+      "--target=bun",
+      "--outfile",
+      join(destination, "dist", "main.js"),
+    ],
+    { cwd: ROOT },
+  );
+  if (result.exitCode !== 0) {
+    throw new Error(`bun build failed for source '${id}':\n${result.stderr.toString("utf8")}`);
+  }
+  const bundlePath = join(destination, "dist", "main.js");
+  writeFileSync(
+    bundlePath,
+    canonicalizeBundledSourceBuildRoot(readFileSync(bundlePath, "utf8")),
+  );
+}
+
+/** Point a bundled source's manifest at the file the ARCHIVE contains.
+ *
+ * The package has no `src/` — the bundle is `dist/main.js` — so a manifest
+ * copied verbatim names an entrypoint that is not there. The host's loader
+ * takes an explicit `[spawn]` or `src/main.ts` beside the manifest and
+ * nothing else, so it refused every published TS source: "the connector
+ * cannot be launched". Nothing caught it because every stand that ever
+ * launched a connector did so from a checkout.
+ *
+ * Rewriting the TEXT rather than re-emitting parsed TOML keeps the manifest's
+ * comments, which carry the reasoning for the [spawn] blocks that already
+ * exist (the statemachine mocks pass CLI flags; x-mcp is an npx bridge).
+ *
+ * @tested-by: tst_pub_pkg_source_launchable_001
+ */
+function manifestForBundledSource(text: string, hasAuthScreen: boolean): string {
+  let published = text;
+  if (hasAuthScreen) {
+    const authHeader = /^\s*\[auth\]\s*$/m.exec(published);
+    if (authHeader === null) {
+      throw new Error("source auth/index.tsx requires an [auth] manifest section");
+    }
+    const sectionStart = authHeader.index + authHeader[0].length;
+    const nextSectionOffset = published.slice(sectionStart).search(/^\s*\[/m);
+    const sectionEnd = nextSectionOffset < 0
+      ? published.length
+      : sectionStart + nextSectionOffset;
+    const authSection = published.slice(sectionStart, sectionEnd);
+    const declaredUi = /^\s*ui\s*=\s*["']([^"']+)["']\s*$/m.exec(authSection)?.[1];
+    if (declaredUi !== undefined && declaredUi !== "auth/screen.js") {
+      throw new Error(`source auth UI must publish as auth/screen.js, got '${declaredUi}'`);
+    }
+    if (declaredUi === undefined) {
+      published = `${published.slice(0, sectionStart)}\nui = "auth/screen.js"${published.slice(sectionStart)}`;
+    }
+  }
+  if (/^\s*\[spawn\]/m.test(text)) {
+    // An existing [spawn] keeps its shape and its flags; only the script it
+    // runs moves to where the bundle actually is. An external bridge (npx)
+    // names no script and is left untouched.
+    return published.replace(/(["'])src\/main\.ts\1/g, '"dist/main.js"');
+  }
+  return (
+    published.trimEnd() +
+    "\n\n" +
+    "# Added by scripts/build-catalog-index.ts: the archive carries the\n" +
+    "# dependency-closed bundle, not the TypeScript source the convention\n" +
+    "# looks for.\n" +
+    "[spawn]\n" +
+    'command = "bun"\n' +
+    'args = ["run", "dist/main.js"]\n'
+  );
+}
+
+/** Bundle a Source-owned auth screen as browser ESM against the same curated
+ * host shims as module UI. The published package carries executable JS only;
+ * the application never transpiles catalog TypeScript at runtime.
+ *
+ * @tested-by: tst_statemock_phone_cert_001
+ */
+function buildSourceAuthScreen(
+  sourceId: string,
+  sourceRoot: string,
+  destination: string,
+): boolean {
+  const entry = join(sourceRoot, "auth", "index.tsx");
+  if (!existsSync(entry)) return false;
+
+  const output = join(destination, "auth", "screen.js");
+  mkdirSync(join(destination, "auth"), { recursive: true });
+  const externals = resolveExternals({}, loadHostMap());
+  const args = [
+    "bun",
+    "build",
+    entry,
+    "--format=esm",
+    "--target=browser",
+    "--outfile",
+    output,
+  ];
+  for (const specifier of externals.keys()) args.push("--external", specifier);
+  const result = Bun.spawnSync(args, {
+    cwd: ROOT,
+    env: { ...process.env, NODE_ENV: "production" },
+  });
+  if (result.exitCode !== 0) {
+    throw new Error(
+      `bun build failed for source '${sourceId}' auth screen:\n${result.stderr.toString("utf8")}`,
+    );
+  }
+  writeFileSync(output, rewriteBareImports(readFileSync(output, "utf8"), externals));
+  rmSync(join(destination, "auth", "index.tsx"));
+  return true;
+}
+
+/** Stage the exact Source tree that enters the archive, including the
+ * publication-time fixed spawn declaration.
+ *
+ * @tested-by: tst_gts_fx_001
+ */
+export function stageBundledSourcePackage(
+  release: AdmissibleSourceReleaseManifest,
+  destination: string,
+): void {
+  stageSourcePackage(release, destination);
+  const hasAuthScreen = buildSourceAuthScreen(release.id, release.root, destination);
+  const manifestPath = join(destination, "manifest.toml");
+  writeFileSync(
+    manifestPath,
+    manifestForBundledSource(readFileSync(manifestPath, "utf8"), hasAuthScreen),
+  );
+}
+
+async function buildCatalog(): Promise<void> {
+  rmSync(OUT, { recursive: true, force: true });
+  mkdirSync(OUT, { recursive: true });
+  const packages: Entry[] = [];
+  const facts = new Map<string, ModuleFacts>();
 
 // ── modules: prebuilt dist (self-contained manifest v3 packages) ─────────────
 const distModules = join(ROOT, "plugins_dist", "modules");
@@ -340,82 +547,23 @@ for (const id of readdirSync(distModules).sort()) {
 }
 
 
-/** Point a bundled source's manifest at the file the ARCHIVE contains.
- *
- * The package has no `src/` — the bundle is `dist/main.js` — so a manifest
- * copied verbatim names an entrypoint that is not there. The host's loader
- * takes an explicit `[spawn]` or `src/main.ts` beside the manifest and
- * nothing else, so it refused every published TS source: "the connector
- * cannot be launched". Nothing caught it because every stand that ever
- * launched a connector did so from a checkout.
- *
- * Rewriting the TEXT rather than re-emitting parsed TOML keeps the manifest's
- * comments, which carry the reasoning for the [spawn] blocks that already
- * exist (the statemachine mocks pass CLI flags; x-mcp is an npx bridge).
- *
- * @tested-by: tst_pub_pkg_source_launchable_001
- */
-function manifestForBundledSource(text: string): string {
-  if (/^\s*\[spawn\]/m.test(text)) {
-    // An existing [spawn] keeps its shape and its flags; only the script it
-    // runs moves to where the bundle actually is. An external bridge (npx)
-    // names no script and is left untouched.
-    return text.replace(/(["'])src\/main\.ts\1/g, '"dist/main.js"');
-  }
-  return (
-    text.trimEnd() +
-    "\n\n" +
-    "# Added by scripts/build-catalog-index.ts: the archive carries the\n" +
-    "# dependency-closed bundle, not the TypeScript source the convention\n" +
-    "# looks for.\n" +
-    "[spawn]\n" +
-    'command = "bun"\n' +
-    'args = ["run", "dist/main.js"]\n'
-  );
-}
-
 // ── sources ──────────────────────────────────────────────────────────────────
 const sourcesRoot = join(ROOT, "plugins", "sources");
-for (const id of readdirSync(sourcesRoot).sort()) {
-  if (id.startsWith("_")) continue;
-  const dir = join(sourcesRoot, id);
-  const manifestPath = join(dir, "manifest.toml");
-  if (!existsSync(manifestPath)) continue;
-  // Manifest v3: the catalog card (title/summary/publisher) lives top-level.
-  const manifest = parseToml(readFileSync(manifestPath, "utf8")) as Card;
+for (const release of discoverSourceReleaseManifests(sourcesRoot)) {
+  if (release.disposition === "inadmissible") {
+    console.warn(`catalog: source '${release.id}' inadmissible: ${release.reason}`);
+    continue;
+  }
+  const id = release.id;
+  const dir = release.root;
+  const manifest = release.manifest as Card;
   const version = manifest.version;
   if (!version) {
     console.error(`source '${id}': manifest.toml has no version — refusing`);
     process.exit(1);
   }
-  const isTs = existsSync(join(dir, "src", "main.ts"));
-  const manifestText = readFileSync(manifestPath, "utf8");
   const archive = stagePackage("source", id, (dst) => {
-    writeFileSync(
-      join(dst, "manifest.toml"),
-      isTs ? manifestForBundledSource(manifestText) : manifestText,
-    );
-    // A manifest that REFERENCES a file needs that file in the package.
-    // `[[dataset.actions]].schema` paths live under schemas/, and leaving
-    // them out made the manifest fail to load before spawn was reached.
-    if (existsSync(join(dir, "schemas"))) {
-      cpSync(join(dir, "schemas"), join(dst, "schemas"), { recursive: true });
-    }
-    if (existsSync(join(dir, "config.default.toml"))) cpSync(join(dir, "config.default.toml"), join(dst, "config.default.toml"));
-    if (existsSync(join(dir, "auth"))) cpSync(join(dir, "auth"), join(dst, "auth"), { recursive: true });
-    // v3 package card assets: the markdown detail page + optional icon.
-    if (existsSync(join(dir, "README.md"))) cpSync(join(dir, "README.md"), join(dst, "README.md"));
-    for (const icon of ["icon.svg", "icon.png"]) {
-      if (existsSync(join(dir, icon))) cpSync(join(dir, icon), join(dst, icon));
-    }
-    if (isTs) {
-      // dependency-closed single-file bundle (../../_sdk can't resolve in a store)
-      const r = Bun.spawnSync(["bun", "build", join(dir, "src", "main.ts"), "--target=bun", "--outfile", join(dst, "dist", "main.js")]);
-      if (r.exitCode !== 0) {
-        console.error(`bun build failed for source '${id}':\n${r.stderr.toString("utf8")}`);
-        process.exit(1);
-      }
-    }
+    stageBundledSourcePackage(release, dst);
   });
   packages.push({
     kind: "source", id, version,
@@ -428,12 +576,24 @@ for (const id of readdirSync(sourcesRoot).sort()) {
   });
 }
 
-rmSync(join(OUT, ".stage"), { recursive: true, force: true });
-writeFileSync(join(OUT, "index.json"), JSON.stringify({
-  schema_version: 1,
-  generated_from: GENERATED_FROM,
-  packages,
-}, null, 2));
+const stagedRoot = join(OUT, ".stage");
+const discovered = discoverStagedCatalog(stagedRoot);
+const currentReceipts = await writeSourceCertificationReceipts(
+  discovered,
+  RECEIPTS,
+);
+reconcileSourceReceiptFixtures(RECEIPTS, [
+  ...currentReceipts.map(({ packageHash }) => packageHash),
+  ...SELECTED_CHANNEL_SOURCE_MATRIX.map(({ packageHash }) => packageHash),
+]);
+await writeCertifiedCatalogIndexes({
+  catalogOut: OUT,
+  generatedFrom: GENERATED_FROM,
+  receiptInputDir: RECEIPTS,
+  discovered,
+  publishedPackages: packages,
+});
+rmSync(stagedRoot, { recursive: true, force: true });
 
 // -- onboarding.json: what to RECOMMEND, beside what EXISTS -------------------
 // A second document rather than a field on the first: they answer different
@@ -503,3 +663,8 @@ if (existsSync(curationPath)) {
   );
 }
 console.log(`catalog: ${String(packages.length)} packages → ${OUT}`);
+}
+
+if (import.meta.main) {
+  await buildCatalog();
+}

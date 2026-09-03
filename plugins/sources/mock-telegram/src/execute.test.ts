@@ -1,41 +1,37 @@
 /**
- * @layer: source_unit
- * @test-id: tst_source_mock_telegram_execute_001..002
+ * @test-id: tst_source_mock_telegram_execute_001
  * @scenario: scn_telegram_send_001
- * @invariant: deterministic mock sends return a provider-shaped numeric identity
- * @covers: plugins/sources/mock-telegram/src/execute.ts
+ * @covers: plugins/sources/mock-telegram/src/execute.ts::sendMessage
  * @deterministic: yes
- * @fixtures: inline outbound Telegram messages
+ * @fixtures: fixed Telegram send payloads
  */
 import { describe, expect, it } from "vitest";
 
 import { sendMessage } from "./execute";
 
-describe("mock-telegram outbound execution", () => {
-  it("tst_source_mock_telegram_execute_001 returns deterministic provider identity", async () => {
-    const args = {
-      action: "send_message",
-      chat_id: 4242,
-      text: "Ship the deterministic stand",
-    };
+describe("mock-telegram execute", () => {
+  it("tst_source_mock_telegram_execute_001 returns a stable delivery receipt", async () => {
+    const request = { action: "send_message", chat_id: 4242, text: "Ship it" };
 
-    const first = await sendMessage(args);
-    const second = await sendMessage(args);
+    const first = await sendMessage(request);
+    const replay = await sendMessage(request);
+    const explicitNull = await sendMessage({ ...request, reply_to_message_id: null });
 
-    expect(second).toEqual(first);
-    expect(first).toEqual({
-      action: "send_message",
-      chat_id: 4242,
-      message_id: expect.any(Number),
-      recorded: true,
-      text: "Ship the deterministic stand",
-    });
-    expect(first.message_id).toBeLessThan(0);
+    expect(first).toEqual(replay);
+    expect(explicitNull).toEqual(first);
+    expect(first).toEqual({ message_id: expect.any(Number), recorded: true });
+    expect(first.message_id).toBeGreaterThan(0);
   });
 
-  it("tst_source_mock_telegram_execute_002 rejects malformed messages", async () => {
-    await expect(sendMessage({ action: "send_message", chat_id: 4242 })).rejects.toThrow(
-      /text/,
-    );
+  /**
+   * @test-id: tst_source_mock_telegram_execute_002
+   * @scenario: scn_telegram_send_validation_001
+   * @covers: plugins/sources/mock-telegram/src/execute.ts::sendMessage
+   * @deterministic: yes
+   * @fixtures: malformed fixed Telegram send payload
+   */
+  it("tst_source_mock_telegram_execute_002 rejects malformed sends", async () => {
+    await expect(sendMessage({ action: "send_message", chat_id: 0, text: "" }))
+      .rejects.toThrow("invalid send_message");
   });
 });
