@@ -93,7 +93,7 @@ export function TelegramDetailWrapper({
       backfilling={messages.backfilling}
       hasMoreOnServer={messages.hasMoreOnServer}
       onBackfill={messages.handleBackfill}
-      onSendMessage={messages.handleSendMessage}
+      onSendMessage={messages.canSend ? messages.handleSendMessage : undefined}
       onReplyByAgent={messages.handleReplyByAgent}
       isIndexed={selectedChat?.isIndexed}
       onToggleIndexing={() => { void handleToggleIndexing(); }}

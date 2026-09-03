@@ -69,6 +69,9 @@ describe("Mock Gmail exact-artifact certification", () => {
         });
         expect(existsSync(join(root, "schemas/dataset-actions/emit-message.json"))).toBe(true);
         expect(existsSync(join(root, "schemas/dataset-actions/emit-meeting.json"))).toBe(true);
+        expect(existsSync(join(root, "schemas/dataset-actions/rate-limit-next-fetch.json"))).toBe(true);
+        expect(evidence.operationProbes["magnis.dataset.invoke:rate_limit_next_fetch"]?.error)
+          .toMatchObject({ code: expect.any(Number) });
         expect(successfulOperation(evidence, "magnis.sync.fetch")).toEqual({
           envelopes: [], nextCursor: null, hasMore: false,
         });

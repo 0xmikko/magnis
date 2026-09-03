@@ -3,9 +3,10 @@
 External MCP source used by dataset, eval, and E2E flows. It exposes the
 `email` and `meetings` surfaces over stdio JSON-RPC.
 
-Test data enters only through the manifest-declared `emit_message` dataset
-action. The host validates its payload, supplies invocation/account/user/time
-metadata, and accepts only production-shaped `Live` envelopes with stable
-remote IDs. The normal `magnis.sync.fetch` path is stateless and empty.
+Test data and administration enter only through manifest-declared dataset
+actions. The host validates each payload and supplies invocation/account/user/time
+metadata. Event actions return production-shaped `Live` envelopes with stable
+remote IDs; `rate_limit_next_fetch` makes exactly one subsequent poll surface
+the connector's typed rate-limit error before polling returns to empty success.
 
 There is no HTTP injection port, shared JSONL store, or provider bypass.

@@ -25,7 +25,7 @@ interface MergeField {
   readonly conflict?: boolean;
 }
 
-interface MergePreviewData {
+export interface MergePreviewData {
   readonly survivor: { readonly id: string; readonly name: string | null; readonly property_count: number };
   readonly retired: { readonly id: string; readonly name: string | null; readonly property_count: number };
   readonly fields: Record<string, MergeField>;
@@ -53,7 +53,7 @@ function fieldLabel(key: string): string {
   return last.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function extractPreview(raw: unknown): MergePreviewData | null {
+export function extractPreview(raw: unknown): MergePreviewData | null {
   if (!raw || typeof raw !== "object") return null;
   const obj = raw as Record<string, unknown>;
   const candidate = (obj.preview ?? obj) as Record<string, unknown>;
@@ -73,7 +73,7 @@ function extractMergeResult(raw: unknown): MergeResult | null {
   return null;
 }
 
-function MergeTable({ preview }: { readonly preview: MergePreviewData }): JSX.Element {
+export function MergeTable({ preview }: { readonly preview: MergePreviewData }): JSX.Element {
   const fields = Object.entries(preview.fields);
 
   return (

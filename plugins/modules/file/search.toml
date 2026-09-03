@@ -7,6 +7,7 @@ default_order = [ { key = "name", dir = "asc", nulls = "last" } ]
 key = "name"
 kind = "text"
 path = "name"
+embed = "title"
 
 [[field]]
 key = "mime_type"

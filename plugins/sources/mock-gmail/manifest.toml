@@ -33,6 +33,10 @@ schema = "schemas/dataset-actions/emit-message.json"
 name = "emit_meeting"
 schema = "schemas/dataset-actions/emit-meeting.json"
 
+[[dataset.actions]]
+name = "rate_limit_next_fetch"
+schema = "schemas/dataset-actions/rate-limit-next-fetch.json"
+
 [certification]
 disposition = "admissible"
 protocol = "magnis.source/1"
@@ -45,8 +49,8 @@ server_info_name = "magnis-mock-gmail"
 runtime_kind = "connector_sdk"
 runtime_version = "0.1.0"
 advertised_tools = ["magnis.dataset.invoke", "magnis.sync.fetch"]
-callable_operations = ["initialize", "magnis.dataset.invoke:emit_meeting", "magnis.dataset.invoke:emit_message", "magnis.execute:send_message", "magnis.sync.fetch", "tools/list"]
-scenario_ids = ["tst_conn_mockgmail_dataset_001", "tst_conn_mockgmail_dataset_003", "tst_conn_mockgmail_ts_001", "tst_mockgmail_cert_001", "tst_source_mock_gmail_execute_001"]
+callable_operations = ["initialize", "magnis.dataset.invoke:emit_meeting", "magnis.dataset.invoke:emit_message", "magnis.dataset.invoke:rate_limit_next_fetch", "magnis.execute:send_message", "magnis.sync.fetch", "tools/list"]
+scenario_ids = ["tst_conn_mockgmail_dataset_001", "tst_conn_mockgmail_dataset_003", "tst_conn_mockgmail_dataset_004", "tst_conn_mockgmail_ts_001", "tst_mockgmail_cert_001", "tst_source_mock_gmail_execute_001"]
 
 [certification.account_compatibility]
 auth = "none"

@@ -20,8 +20,10 @@ import { Icon, IconButton, Stack, Text } from "@magnis/host/ui";
 import { MarkdownEditor } from "@magnis/host/markdown";
 import { useEditorMentionSuggestion } from "@magnis/host/markdown";
 import { useEntityProperty } from "@magnis/host/base";
+import { useAppRuntime } from "@magnis/host/runtime";
 
 import { ContactInfoColumn } from "./ContactInfoColumn";
+import { ContactMergeAction } from "./ContactMergeAction";
 import { useContactDetailQuery } from "./queries";
 
 
@@ -31,18 +33,24 @@ export interface ContactOverviewProps {
 
 export function ContactOverview({ entityId }: ContactOverviewProps): JSX.Element {
   // S3 (§5.1): the composed card sections ride the detail DTO.
+  const runtime = useAppRuntime();
   const detail = useContactDetailQuery(entityId);
   return (
-    <div className="grid grid-cols-1 gap-6 md:grid-cols-[2fr_3fr] md:gap-6">
-      <div>
-        <ContactInfoColumn
-          emails={detail.data?.emails}
-          phones={detail.data?.phones}
-          replicas={detail.data?.replicas}
-        />
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <ContactMergeAction entityId={entityId} runtime={runtime} />
       </div>
-      <div>
-        <DescriptionPanel entityId={entityId} />
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-[2fr_3fr] md:gap-6">
+        <div>
+          <ContactInfoColumn
+            emails={detail.data?.emails}
+            phones={detail.data?.phones}
+            replicas={detail.data?.replicas}
+          />
+        </div>
+        <div>
+          <DescriptionPanel entityId={entityId} />
+        </div>
       </div>
     </div>
   );

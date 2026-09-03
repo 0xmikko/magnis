@@ -19,6 +19,7 @@ export interface UseTelegramMessagesResult {
   readonly fetchMessages: (chatId: string, offset: number, append: boolean) => Promise<void>;
   readonly handleLoadMore: () => void;
   readonly handleBackfill: () => void;
+  readonly canSend: boolean;
   readonly handleSendMessage: (text: string) => void;
   readonly handleReplyByAgent: (message: TelegramMessage) => void;
 }
@@ -320,7 +321,7 @@ export function useTelegramMessages(
 
   const handleSendMessage = useCallback(
     (text: string) => {
-      if (!selectedChatId) return;
+      if (!selectedChatId || nativeChatId === undefined) return;
       const chatId = selectedChatId;
       const pendingId = `_pending_${String(Date.now())}`;
       const now = new Date();
@@ -396,8 +397,7 @@ export function useTelegramMessages(
         },
       });
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [runtime, selectedChatId],
+    [nativeChatId, runtime, selectedChatId],
   );
 
   return {
@@ -409,6 +409,7 @@ export function useTelegramMessages(
     fetchMessages,
     handleLoadMore,
     handleBackfill,
+    canSend: nativeChatId !== undefined,
     handleSendMessage,
     handleReplyByAgent,
   };

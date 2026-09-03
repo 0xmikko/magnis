@@ -130,6 +130,7 @@ const PROVIDER_SCENARIOS: ScenarioRegistry = {
   "mock-gmail": [
     { id: "tst_conn_mockgmail_dataset_001", path: "plugins/sources/mock-gmail/src/dataset.test.ts" },
     { id: "tst_conn_mockgmail_dataset_003", path: "plugins/sources/mock-gmail/src/dataset.test.ts" },
+    { id: "tst_conn_mockgmail_dataset_004", path: "plugins/sources/mock-gmail/src/dataset.test.ts" },
     { id: "tst_conn_mockgmail_ts_001", path: "plugins/sources/mock-gmail/src/fetch.test.ts" },
     { id: "tst_source_mock_gmail_execute_001", path: "plugins/sources/mock-gmail/src/execute.test.ts" },
   ],
@@ -269,6 +270,7 @@ const CURRENT_OPERATION_EVIDENCE: Readonly<
   "mock-gmail": {
     "magnis.dataset.invoke:emit_meeting": { id: "tst_conn_mockgmail_dataset_003", path: "plugins/sources/mock-gmail/src/dataset.test.ts" },
     "magnis.dataset.invoke:emit_message": { id: "tst_conn_mockgmail_dataset_001", path: "plugins/sources/mock-gmail/src/dataset.test.ts" },
+    "magnis.dataset.invoke:rate_limit_next_fetch": { id: "tst_conn_mockgmail_dataset_004", path: "plugins/sources/mock-gmail/src/dataset.test.ts" },
     "magnis.execute:send_message": { id: "tst_source_mock_gmail_execute_001", path: "plugins/sources/mock-gmail/src/execute.test.ts" },
     "magnis.sync.fetch": { id: "tst_conn_mockgmail_ts_001", path: "plugins/sources/mock-gmail/src/fetch.test.ts" },
   },
@@ -390,6 +392,7 @@ const GOLDEN_PROVIDERS: readonly GoldenProvider[] = [
       ...SDK_OPERATIONS,
       "magnis.dataset.invoke:emit_meeting",
       "magnis.dataset.invoke:emit_message",
+      "magnis.dataset.invoke:rate_limit_next_fetch",
       "magnis.execute:send_message",
     ],
     identityRule: "manifest_account_subject",

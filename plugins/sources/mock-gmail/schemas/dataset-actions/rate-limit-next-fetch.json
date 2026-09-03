@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["retry_after_secs"],
+  "properties": {
+    "retry_after_secs": { "type": "integer", "minimum": 1 }
+  },
+  "additionalProperties": false
+}

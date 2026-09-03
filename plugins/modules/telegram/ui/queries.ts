@@ -10,7 +10,15 @@ import type { PaginatedResponse } from "@magnis/host/runtime";
 export const telegramKeys = {
   all: ["telegram"] as const,
   chats: (params?: Record<string, unknown>) => [...telegramKeys.all, "chats", params] as const,
-  messages: (chatId: string, params?: Record<string, unknown>) => [...telegramKeys.all, "messages", chatId, params] as const,
+  messages: (
+    chatId: string,
+    params?: Record<string, unknown>,
+  ):
+    | readonly ["telegram", "messages", string]
+    | readonly ["telegram", "messages", string, Record<string, unknown>] =>
+    params === undefined
+      ? [...telegramKeys.all, "messages", chatId] as const
+      : [...telegramKeys.all, "messages", chatId, params] as const,
   chatDetail: (chatId: string) => [...telegramKeys.all, "chat", chatId] as const,
 };
 

@@ -136,8 +136,11 @@ describe("notes.create accepts one body field and is atomic", () => {
  * @legacy-id: tst_notes_e2e_ownership_notfound
  */
 describe("notes identity and schema boundaries", () => {
-  it("forwards a valid client id and returns the existing note on retry", async () => {
-    const freshGraph = writeGraph({ get_entity_full: () => Promise.resolve(null) });
+  it("tst_module_notes_identity_001 forwards a valid client id and returns the existing note on retry", async () => {
+    const freshGraph = writeGraph({
+      get_entity: () => Promise.resolve(null),
+      get_entity_full: () => Promise.reject(new Error("missing entities must use get_entity")),
+    });
     const fresh = mountModule(NotesModule, { graph: freshGraph }).module;
 
     const created = await fresh.create({
@@ -154,6 +157,8 @@ describe("notes identity and schema boundaries", () => {
     });
 
     const retryGraph = mockGraph({
+      get_entity: () =>
+        Promise.resolve(entity(NOTE_ID, "Original", { schema_id: NOTE })),
       get_entity_full: () =>
         Promise.resolve({
           entity: entity(NOTE_ID, "Original", {
@@ -191,11 +196,8 @@ describe("notes identity and schema boundaries", () => {
 
   it("does not reinterpret a foreign-schema client-id collision as a note", async () => {
     const graph = mockGraph({
-      get_entity_full: () =>
-        Promise.resolve({
-          entity: entity(NOTE_ID, "Project", { schema_id: "projects.project" }),
-          links: [],
-        }),
+      get_entity: () =>
+        Promise.resolve(entity(NOTE_ID, "Project", { schema_id: "projects.project" })),
       create_entity: () => Promise.reject(new Error("entity already exists")),
     });
     const module = mountModule(NotesModule, { graph }).module;

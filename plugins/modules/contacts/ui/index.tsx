@@ -1,5 +1,6 @@
 import { Icon } from "@magnis/host/ui";
 import { defineModule } from "@magnis/host/base";
+import type { AppRuntime } from "@magnis/host/runtime";
 import { ContactCard, contactHasMore } from "./EntityCards";
 import { ContactBatchCreateRenderer } from "./ContactBatchCreateRenderer";
 import { ContactCreateRenderer } from "./ContactCreateRenderer";
@@ -13,6 +14,18 @@ export const MOCK_TAGS: readonly string[] = [
   "Berlin Tech",
 ];
 
+export async function createContactFromHeader(
+  runtime: AppRuntime,
+  onCreated: (id: string) => void,
+): Promise<void> {
+  // @tested-by: tst_fe_contacts_browser_001
+  const result = await runtime.transport.rpc<{ id: string }>("contacts.create", {
+    name: "New Contact",
+    client_id: crypto.randomUUID(),
+  });
+  onCreated(result.id);
+}
+
 export const ContactsModule = defineModule({
   id: "contacts",
   title: "Contacts",
@@ -24,6 +37,10 @@ export const ContactsModule = defineModule({
   entityLabels: { person: { icon: "user", label: "Contact" } },
   rpc: { update: "contacts.update" },
   enableListRename: true,
+  headerActionIcon: "plus",
+  onHeaderAction: (runtime, onCreated) => {
+    void createContactFromHeader(runtime, onCreated);
+  },
   EntityCard: ContactCard,
   hasMore: contactHasMore,
   DetailsTabContent: ContactOverview,
