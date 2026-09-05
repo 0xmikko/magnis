@@ -106,6 +106,35 @@ describe("tst_pub_catalog_index_001", () => {
     }
   });
 
+  /**
+   * @test-id: tst_pub_catalog_index_002
+   * @scenario: scn_catalog_module_install_001
+   * @covers: plugins/modules/<module>/manifest.toml sync-surface declarations
+   * @deterministic: yes
+   * @fixtures: checked-in module manifests
+   */
+  test("tst_pub_catalog_index_002 every module surface declares reconciliation", () => {
+    const modulesRoot = join(ROOT, "plugins", "modules");
+    for (const entry of readdirSync(modulesRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const manifestPath = join(modulesRoot, entry.name, "manifest.toml");
+      if (!existsSync(manifestPath)) continue;
+      const manifest = readFileSync(manifestPath, "utf8");
+      const surfaceHeaders = [...manifest.matchAll(/^\[surfaces\.([^\n]+)]\s*$/gm)];
+      for (const header of surfaceHeaders) {
+        const surface = header[1];
+        const start = (header.index ?? 0) + header[0].length;
+        const tail = manifest.slice(start);
+        const nextHeader = tail.search(/^\[/m);
+        const body = nextHeader === -1 ? tail : tail.slice(0, nextHeader);
+        expect(
+          body,
+          `${entry.name}:${surface ?? "unknown"} must declare reconciliation`,
+        ).toMatch(/^reconciliation\s*=/m);
+      }
+    }
+  });
+
   test("the recorded hash is the hash of the asset on disk", () => {
     for (const pkg of first.index.packages) {
       const bytes = readFileSync(join(first.out, pkg.archive.name));
