@@ -67,6 +67,10 @@ beforeAll(() => {
   // The archives under `catalog/` are what CI publishes; build them here so
   // the assertion is about the current packager rather than about whatever
   // was last left on disk.
+  execFileSync("bun", [join(ROOT, "scripts", "build-plugins.ts")], {
+    cwd: ROOT,
+    stdio: "ignore",
+  });
   execFileSync("bun", [join(ROOT, "scripts", "build-catalog-index.ts")], {
     cwd: ROOT,
     stdio: "ignore",
