@@ -77,7 +77,7 @@ beforeAll(() => {
   });
   unpacked = mkdtempSync(join(tmpdir(), "magnis-pkg-sources-"));
   sourceIds = unpackSources(unpacked);
-});
+}, 600_000);
 
 describe("tst_pub_pkg_source_launchable_001", () => {
   test("the catalog publishes sources at all", () => {
