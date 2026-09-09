@@ -9,4 +9,7 @@ metadata. Event actions return production-shaped `Live` envelopes with stable
 remote IDs; `rate_limit_next_fetch` makes exactly one subsequent poll surface
 the connector's typed rate-limit error before polling returns to empty success.
 
+`emit_message` carries `to_addresses` and `cc_addresses` (comma-separated lists)
+with the message, so the email module links whom a message was sent to.
+
 There is no HTTP injection port, shared JSONL store, or provider bypass.

@@ -1,4 +1,5 @@
 import { runConnector } from "@magnis/connector-sdk";
+import { emitPost, emitProfile } from "./dataset";
 import { fetchMockX } from "./surfaces/x/fetch";
 
 await runConnector({
@@ -8,4 +9,5 @@ await runConnector({
   intervalSecs: 5,
   fetch: fetchMockX,
   probeAuth: () => Promise.resolve({ subject: "@mock_x_user" }),
+  datasetActions: { emit_profile: emitProfile, emit_post: emitPost },
 });

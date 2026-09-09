@@ -131,6 +131,7 @@ const PROVIDER_SCENARIOS: ScenarioRegistry = {
     { id: "tst_conn_mockgmail_dataset_001", path: "plugins/sources/mock-gmail/src/dataset.test.ts" },
     { id: "tst_conn_mockgmail_dataset_003", path: "plugins/sources/mock-gmail/src/dataset.test.ts" },
     { id: "tst_conn_mockgmail_dataset_004", path: "plugins/sources/mock-gmail/src/dataset.test.ts" },
+    { id: "tst_conn_mockgmail_dataset_005", path: "plugins/sources/mock-gmail/src/dataset.test.ts" },
     { id: "tst_conn_mockgmail_ts_001", path: "plugins/sources/mock-gmail/src/fetch.test.ts" },
     { id: "tst_source_mock_gmail_execute_001", path: "plugins/sources/mock-gmail/src/execute.test.ts" },
   ],
@@ -167,6 +168,8 @@ const PROVIDER_SCENARIOS: ScenarioRegistry = {
   ],
   "mock-x": [
     { id: "tst_cat_src_parity_001", path: "packages/testkit/__tests__/tst_cat_src_parity_001.test.ts" },
+    { id: "tst_conn_mockx_dataset_001", path: "plugins/sources/mock-x/src/dataset.test.ts" },
+    { id: "tst_conn_mockx_dataset_002", path: "plugins/sources/mock-x/src/dataset.test.ts" },
     { id: "tst_mockx_001", path: "plugins/sources/mock-x/src/surfaces/x/fetch.test.ts" },
     { id: "tst_mockx_003", path: "plugins/sources/mock-x/src/surfaces/x/fetch.test.ts" },
   ],
@@ -306,6 +309,8 @@ const CURRENT_OPERATION_EVIDENCE: Readonly<
   },
   "mock-x": {
     "magnis.auth.probe": { id: "tst_cat_src_parity_001", path: "packages/testkit/__tests__/tst_cat_src_parity_001.test.ts" },
+    "magnis.dataset.invoke:emit_post": { id: "tst_conn_mockx_dataset_002", path: "plugins/sources/mock-x/src/dataset.test.ts" },
+    "magnis.dataset.invoke:emit_profile": { id: "tst_conn_mockx_dataset_001", path: "plugins/sources/mock-x/src/dataset.test.ts" },
     "magnis.sync.fetch": { id: "tst_mockx_001", path: "plugins/sources/mock-x/src/surfaces/x/fetch.test.ts" },
   },
   telegram: {
@@ -505,8 +510,13 @@ const GOLDEN_PROVIDERS: readonly GoldenProvider[] = [
     auth: null,
     delivery: "poll",
     pollIntervalSecs: 5,
-    advertisedTools: SDK_TOOLS,
-    callableOperations: [...SDK_OPERATIONS, "magnis.auth.probe"],
+    advertisedTools: ["magnis.dataset.invoke", "magnis.sync.fetch"],
+    callableOperations: [
+      ...SDK_OPERATIONS,
+      "magnis.auth.probe",
+      "magnis.dataset.invoke:emit_post",
+      "magnis.dataset.invoke:emit_profile",
+    ],
     identityRule: "manifest_account_subject",
     credentialKeys: [],
     mintedCredentialKeys: [],

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["handle"],
+  "properties": {
+    "handle": { "type": "string", "minLength": 1 },
+    "display_name": { "type": "string" },
+    "bio": { "type": "string" },
+    "follower_count": { "type": "integer", "minimum": 0 }
+  },
+  "additionalProperties": false
+}
