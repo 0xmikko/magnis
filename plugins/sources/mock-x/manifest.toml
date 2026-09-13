@@ -1,7 +1,8 @@
 # mock-x — X fixture connector (SourceKind Mock; loaded ONLY when ENABLED_SOURCES
 # lists it). No network, no credentials — feeds the `x` surface with the
 # same envelope shape as the live `x` connector, keeping tests and e2e
-# hermetic. Read-only: the only tool is magnis.sync.fetch.
+# hermetic. Datasets feed it through the manifest-declared `emit_profile` and
+# `emit_post` actions, the way mock-gmail and mock-telegram take their records.
 
 id = "mock-x"
 version = "1.0.0"
@@ -17,6 +18,17 @@ accounts = ["default"]
 [sync]
 mode = "poll"
 
+[dataset]
+export_settings = []
+
+[[dataset.actions]]
+name = "emit_profile"
+schema = "schemas/dataset-actions/emit-profile.json"
+
+[[dataset.actions]]
+name = "emit_post"
+schema = "schemas/dataset-actions/emit-post.json"
+
 [certification]
 disposition = "admissible"
 protocol = "magnis.source/1"
@@ -28,9 +40,9 @@ server_info_version = "0.1.0"
 server_info_name = "mock-x"
 runtime_kind = "connector_sdk"
 runtime_version = "0.1.0"
-advertised_tools = ["magnis.sync.fetch"]
-callable_operations = ["initialize", "magnis.auth.probe", "magnis.sync.fetch", "tools/list"]
-scenario_ids = ["tst_cat_src_parity_001", "tst_mockx_001", "tst_mockx_003", "tst_mockx_cert_001"]
+advertised_tools = ["magnis.dataset.invoke", "magnis.sync.fetch"]
+callable_operations = ["initialize", "magnis.auth.probe", "magnis.dataset.invoke:emit_post", "magnis.dataset.invoke:emit_profile", "magnis.sync.fetch", "tools/list"]
+scenario_ids = ["tst_cat_src_parity_001", "tst_conn_mockx_dataset_001", "tst_conn_mockx_dataset_002", "tst_mockx_001", "tst_mockx_003", "tst_mockx_cert_001"]
 
 [certification.account_compatibility]
 auth = "none"

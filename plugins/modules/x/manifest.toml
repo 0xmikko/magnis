@@ -29,13 +29,20 @@ to = "contacts.person"
 # Sync surface this module consumes (fed by the matching source connector).
 [surfaces.x]
 reconciliation = { mode = "none" }
+# The surface's primary-item schema — its user-scoped graph count IS the
+# "items synced" badge (host source.status.list reads this).
+item = "x.post"
 
 # Foreign asks beyond the implicit own namespace: writes to `x.` records,
 # own:own links, and reads of own schemas need no declaration.
 [permissions]
 read = [ "contacts.person" ]
 links = [ "authored_by", "identity" ]
-call = [ "contacts.get_social_tracking_by_handle", "contacts.rename_if_placeholder", "source.sync.bootstrap" ]
+# `source.sync.bootstrap` (the import_following tool's host call) is NOT listed here:
+# the host's dependency rule reads every `call` namespace as a module the x module
+# needs enabled first, and no module named `source` exists, so the entry made the
+# x module impossible to enable. The host RPC's own authorization is the host's.
+call = [ "contacts.get_social_tracking_by_handle", "contacts.rename_if_placeholder" ]
 host = [ "external_id_reads" ]
 
 # S5: this module owns no link kinds. Authorship and identity are host-owned

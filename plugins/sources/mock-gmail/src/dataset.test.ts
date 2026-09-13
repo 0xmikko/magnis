@@ -40,6 +40,38 @@ describe("mock-gmail dataset actions", () => {
     ]);
   });
 
+  test("tst_conn_mockgmail_dataset_005 carries the recipients so the module can link who was written to", async () => {
+    const result = await emitMessage({
+      action: "emit_message",
+      invocation_id: "inv-5",
+      action_time: "2026-08-05T10:00:00Z",
+      settings: {},
+      payload: {
+        message_id: "m-5",
+        from_address: "owner@example.test",
+        to_addresses: "nora.venn@north.example, pavel@example.test",
+        cc_addresses: "hana.ward@example.test",
+        subject: "Re: the ask",
+        body_text: "Answered on Telegram, see there.",
+        sent_at: "2026-08-05T10:00:00Z",
+      },
+    });
+    expect(result.envelopes[0]!.payload).toMatchObject({
+      from_address: "owner@example.test",
+      to_addresses: "nora.venn@north.example, pavel@example.test",
+      cc_addresses: "hana.ward@example.test",
+    });
+    // a message without recipients stays exactly as it was: no empty recipient fields
+    const bare = await emitMessage({
+      action: "emit_message",
+      invocation_id: "inv-5b",
+      action_time: "2026-08-05T10:00:00Z",
+      settings: {},
+      payload: { message_id: "m-5b", from_address: "a@example.test", subject: "s", body_text: "b", sent_at: "2026-08-05T10:00:00Z" },
+    });
+    expect(Object.keys(bare.envelopes[0]!.payload)).not.toContain("to_addresses");
+  });
+
   test("tst_conn_mockgmail_dataset_002 rejects malformed payload", async () => {
     expect(
       emitMessage({

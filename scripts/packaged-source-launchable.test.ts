@@ -67,14 +67,13 @@ beforeAll(() => {
   // The archives under `catalog/` are what CI publishes; build them here so
   // the assertion is about the current packager rather than about whatever
   // was last left on disk.
-  execFileSync("bun", [join(ROOT, "scripts", "build-plugins.ts")], {
-    cwd: ROOT,
-    stdio: "ignore",
-  });
-  execFileSync("bun", [join(ROOT, "scripts", "build-catalog-index.ts")], {
-    cwd: ROOT,
-    stdio: "ignore",
-  });
+  // Both builds run here rather than relying on the workflow's ordering, and
+  // their output is inherited: the packager exits 1 saying "plugins_dist
+  // missing", and that sentence is the whole diagnosis — discarding it turned a
+  // one-line cause into a bare non-zero exit in CI.
+  for (const script of ["build-plugins.ts", "build-catalog-index.ts"]) {
+    execFileSync("bun", [join(ROOT, "scripts", script)], { cwd: ROOT, stdio: "inherit" });
+  }
   unpacked = mkdtempSync(join(tmpdir(), "magnis-pkg-sources-"));
   sourceIds = unpackSources(unpacked);
 }, 600_000);
