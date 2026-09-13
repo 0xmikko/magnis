@@ -67,13 +67,19 @@ beforeAll(() => {
   // The archives under `catalog/` are what CI publishes; build them here so
   // the assertion is about the current packager rather than about whatever
   // was last left on disk.
-  execFileSync("bun", [join(ROOT, "scripts", "build-catalog-index.ts")], {
-    cwd: ROOT,
-    stdio: "ignore",
-  });
+  //
+  // The packager reads `plugins_dist/`, which is a build artefact and is absent
+  // from a fresh checkout — so this builds it rather than hoping a neighbouring
+  // CI step already did. It had been hoping: `test:scripts` runs before the
+  // bundle smoke step, and the packager's "plugins_dist missing" exit was
+  // invisible because the child's output was discarded.
+  for (const script of ["build-plugins.ts", "build-catalog-index.ts"]) {
+    execFileSync("bun", [join(ROOT, "scripts", script)], { cwd: ROOT, stdio: "inherit" });
+  }
   unpacked = mkdtempSync(join(tmpdir(), "magnis-pkg-sources-"));
   sourceIds = unpackSources(unpacked);
-});
+  // Two builds and an unpack: past the five seconds a hook gets by default.
+}, 120_000);
 
 describe("tst_pub_pkg_source_launchable_001", () => {
   test("the catalog publishes sources at all", () => {
