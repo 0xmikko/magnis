@@ -14,14 +14,24 @@
  * (resolves to `{ status }` = `code_sent` | `password` | `connected`). Uses only
  * plain elements + Tailwind (no `@magnis/host/ui` dependency).
  */
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
+
+/** What the host draws in its footer for this screen: the bottom-right
+ * corner, where a person looks for the action, reachable by Enter. A screen
+ * that publishes one does not draw its own. */
+export interface SourceAuthPrimary {
+  label: string;
+  disabled: boolean;
+  run: () => void;
+}
 
 export interface SourceAuthScreenProps {
   sourceId: string;
   submit: (step: "phone" | "code" | "password", value: string) => Promise<void>;
   exec: (op: "begin" | "step") => Promise<{ status: string }>;
   onConnected?: () => void;
+  onPrimary?: (action: SourceAuthPrimary | null) => void;
 }
 
 type Phase = "phone" | "code" | "password" | "connected";
@@ -130,6 +140,7 @@ export default function TelegramAuthScreen({
   submit,
   exec,
   onConnected,
+  onPrimary,
 }: SourceAuthScreenProps): JSX.Element {
   const [phase, setPhase] = useState<Phase>("phone");
   const [value, setValue] = useState("");
@@ -192,6 +203,23 @@ export default function TelegramAuthScreen({
         ? PHONE.test(value)
         : value.length > 0
   );
+  const actionLabel = phase === "phone" ? "Send code" : "Continue";
+  // The host draws this in its footer. `advance` is the same call Enter makes
+  // through the form below, so both routes are one action — but it is rebuilt
+  // on every render, so it travels by ref and stays OUT of the dependencies:
+  // an effect that runs on every render publishes on every render, and a host
+  // that holds what it is given then re-renders this screen for it, forever.
+  const latest = useRef(advance);
+  latest.current = advance;
+  useEffect(() => {
+    onPrimary?.({
+      label: actionLabel,
+      disabled: !canSubmit,
+      run: () => { void latest.current(); },
+    });
+    return (): void => { onPrimary?.(null); };
+  }, [actionLabel, canSubmit, onPrimary]);
+
   return (
     // A real form so Enter in the field submits (the default action), not just
     // a mouse click on the button.
@@ -226,13 +254,16 @@ export default function TelegramAuthScreen({
         />
       )}
       {error ? <p className="text-sm text-red-400">{error}</p> : null}
-      <button
-        type="submit"
-        disabled={!canSubmit}
-        className="w-full rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border-none"
-      >
-        {phase === "phone" ? "Send code" : "Continue"}
-      </button>
+      {onPrimary === undefined && (
+        // Only for a host that does not draw it. One button, never two.
+        <button
+          type="submit"
+          disabled={!canSubmit}
+          className="w-full rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border-none"
+        >
+          {actionLabel}
+        </button>
+      )}
     </form>
   );
 }
