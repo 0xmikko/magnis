@@ -36,6 +36,24 @@ export interface SourceAuthScreenProps {
 
 type Phase = "phone" | "code" | "password" | "connected";
 
+/** Where the ceremony stands after a code, read in the HOST's words.
+ *
+ * The host publishes its own vocabulary, not the connector's: this
+ * connector's `password` state reaches the browser as `password_required`,
+ * and reading the connector's spelling here left the screen sitting on the
+ * code boxes while the ceremony had already moved on — every later submit
+ * was answered `409: auth ceremony expected password`, which is what the
+ * person saw instead of the password field.
+ *
+ * A status nobody planned is an error, not a no-op: a screen that quietly
+ * stays put is exactly the failure that took an hour to find.
+ */
+export function phaseAfterCode(status: string): Phase {
+  if (status === "password_required") return "password";
+  if (status === "connected") return "connected";
+  throw new Error(`unexpected sign-in status: ${status}`);
+}
+
 /** Telegram login codes are 5 digits. */
 const CODE_LEN = 5;
 /** A country code and at least seven more digits — the shortest national
@@ -165,11 +183,9 @@ export default function TelegramAuthScreen({
       } else if (phase !== "connected") {
         await submit(phase, current);
         const { status } = await exec("step");
-        if (status === "password") setPhase("password");
-        else if (status === "connected") {
-          setPhase("connected");
-          onConnected?.();
-        }
+        const next = phaseAfterCode(status);
+        setPhase(next);
+        if (next === "connected") onConnected?.();
       }
       setValue("");
     } catch (e) {
