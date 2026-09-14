@@ -335,20 +335,21 @@ Scoped behavior file: scripts/tst_scripts_tgflood_001.test.ts. Commit: test(tele
 
 ##### Tasks
 
-- [ ] TGFLOOD_001 — Route Telegram tests through package.json and scripts/test-connectors.sh; prove routing and failures in tst_scripts_tgflood_001.test.ts. (25 min)
+- [x] TGFLOOD_001 — Route Telegram tests through package.json and scripts/test-connectors.sh; prove routing and failures in tst_scripts_tgflood_001.test.ts. (25 min) — 478c725f0206f579a0ec019e6a775f36e5160336
 <!-- plan:task-meta:{"writes":["package.json","scripts/test-connectors.sh","scripts/tst_scripts_tgflood_001.test.ts"],"predictedActiveMinutes":25,"predictedCredits":2,"how":"In package.json register agent:test:backend against the existing scripts/test-connectors.sh --agent entrypoint. Keep any standard stack bootstrap separate and explicit: a missing agent command is not a passing RED receipt. In scripts/tst_scripts_tgflood_001.test.ts use test-owned fake Bun/Vitest executables to demonstrate incorrect target dispatch, ignored arguments and swallowed nonzero exits against the existing launcher behavior. Create no provider session; the test must actually execute its assertions before RED is accepted. In scripts/test-connectors.sh add explicit scoped routing: Telegram .test.ts and this runner contract go to Bun; existing Vitest targets go to Vitest; reject unsupported or mixed incompatible targets instead of executing zero tests. Forward the selected target/filter and child exit code. --agent without a target preserves the prior Vitest default; invocation without --agent preserves the existing complete connector suite. In scripts/tst_scripts_tgflood_001.test.ts verify both successful lanes, exact argument forwarding, a failing child and unsupported-target refusal. Use one parameterized runner scenario tst_scripts_tgflood_001 / scn_tgflood_008, not file-list snapshot assertions.","red":"bun run agent:test:backend -- scripts/tst_scripts_tgflood_001.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- scripts/tst_scripts_tgflood_001.test.ts` exits 0 — exact Bun and Vitest targets are selected, filters are preserved, unsupported targets are refused and a child failure remains nonzero.
+- [x] `bun run agent:test:backend -- scripts/tst_scripts_tgflood_001.test.ts` exits 0 — exact Bun and Vitest targets are selected, filters are preserved, unsupported targets are refused and a child failure remains nonzero. — 478c725f0206f579a0ec019e6a775f36e5160336
 - [ ] The runner contract uses only test-owned fake executables; no Telegram credentials, network call or whole-suite run is used to prove routing.
-- [ ] Commit
+- [x] Commit — 478c725f0206f579a0ec019e6a775f36e5160336
 
 ##### Results
 
 <!-- plan:results:D1-S1:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| TGFLOOD_001 | 478c725f0206f579a0ec019e6a775f36e5160336 | 2026-09-14T20:48:00.632Z–2026-09-14T20:51:17.000Z | 3.2 / 3.27 min | unavailable: Runner exposes no per-Task credit usage. | RED executed the existing launcher and observed ignored target/filter with twelve full-lane invocations. GREEN: one coherent runner scenario, 21 assertions covering Bun/Vitest exact arguments, filter retention, child exit 23, same-lane multiple targets, missing/unsupported/mixed refusal, default Vitest and unchanged complete connector selection. Normal hook passed TypeScript and 3/3 tests across two scoped files (35 assertions). No provider traffic or full product gate. |
 <!-- plan:results:D1-S1:end -->
 <!-- plan:stage:D1-S1:end -->
 
@@ -585,4 +586,8 @@ Scoped behavior files: plugins/sources/telegram/src/tst_src_tgflood_001.test.ts,
 - deviation D1-S7: Sandbox Bun default temporary directory caused incomplete dependency extraction. Reinstalled 1016 locked packages successfully using BUN_TMPDIR and an isolated BUN_INSTALL_CACHE_DIR with agent:install -- --force; no dependency lock change or typecheck bypass.
 
 - close D1-S7 partial commit:503a6d7e4d6beb492e98095f900cd9ebf5196eee
+
+- record-result D1-S1 commit:478c725f0206f579a0ec019e6a775f36e5160336
+
+- close D1-S1 partial commit:478c725f0206f579a0ec019e6a775f36e5160336
 <!-- plan:execution:end -->

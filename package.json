@@ -30,6 +30,9 @@
     "ci": "external",
     "ciWorkflow": ".github/workflows/ci.yml"
   },
+  "patchedDependencies": {
+    "telegram@2.26.22": "patches/telegram@2.26.22.patch"
+  },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@tailwindcss/cli": "^4.1.18",

@@ -1,0 +1,484 @@
+import { expect, spyOn, test } from "bun:test";
+import bigInt from "big-integer";
+import { Api } from "telegram";
+
+import { LiveDialogPager } from "./live";
+import { AccountAdmission } from "./request-admission";
+import { execute, runBootstrap } from "./surfaces/telegram/commands";
+import { liveUpdatePushes } from "./subscriptions";
+import { createTransport, setupConfig, VirtualClock } from "./testing/mtproto-transport";
+
+function outcome(promise: Promise<unknown>): Promise<{ kind: "resolved" | "rejected"; value: unknown }> {
+  return promise.then((value) => ({ kind: "resolved", value }), (value: unknown) => ({ kind: "rejected", value }));
+}
+
+function stateResponse(): Api.updates.State {
+  return new Api.updates.State({ pts: 1, qts: 1, date: 1, seq: 1, unreadCount: 0 });
+}
+
+function envelopes(result: Record<string, unknown>): Record<string, unknown>[] {
+  if (!Array.isArray(result.envelopes)) throw new Error("Source did not emit envelopes");
+  return result.envelopes as Record<string, unknown>[];
+}
+
+function fixtureChat(id: number): Api.Chat {
+  return new Api.Chat({ id: bigInt(id), title: `fixture-${String(id)}`, photo: new Api.ChatPhotoEmpty(), participantsCount: 2, date: 1700000000, version: 1 });
+}
+
+function fixtureMessage(chatId: number, id: number): Api.Message {
+  return new Api.Message({ id, peerId: new Api.PeerChat({ chatId: bigInt(chatId) }), date: 1700000000 + id, message: `fixture-${String(chatId)}-${String(id)}`, out: false, pinned: id === 1 });
+}
+
+const ORIGINS = [
+  { name: "messages.GetDialogs", request: () => new Api.messages.GetDialogs({ offsetDate: 0, offsetId: 0, offsetPeer: new Api.InputPeerEmpty(), limit: 50, hash: bigInt.zero }) },
+  { name: "messages.GetHistory", request: () => new Api.messages.GetHistory({ peer: new Api.InputPeerChat({ chatId: bigInt(1) }), offsetId: 0, offsetDate: 0, addOffset: 0, limit: 50, maxId: 0, minId: 0, hash: bigInt.zero }) },
+  { name: "updates.GetState", request: () => new Api.updates.GetState() },
+  { name: "upload.GetFile", request: () => new Api.upload.GetFile({ location: new Api.InputDocumentFileLocation({ id: bigInt(1), accessHash: bigInt(2), fileReference: Buffer.alloc(0), thumbSize: "" }), offset: bigInt.zero, limit: 4096 }) },
+  { name: "messages.SendMessage", request: () => new Api.messages.SendMessage({ peer: new Api.InputPeerChat({ chatId: bigInt(1) }), message: "synthetic action", randomId: bigInt(9) }) },
+  { name: "auth.SendCode", request: () => new Api.auth.SendCode({ phoneNumber: "fixture-only", apiId: 1, apiHash: "fixture-only", settings: new Api.CodeSettings({}) }) },
+] as const;
+
+/** @test-id: tst_src_tgflood_001
+ * @scenario: scn_tgflood_001
+ * @covers: account-wide admission across real SDK application requests
+ * @deterministic: yes
+ * @fixtures: real SDK, fake MTProto I/O and monotonic clock
+ */
+test("tst_src_tgflood_001 healthy requests share a single paced application slot", async () => {
+  const clock = new VirtualClock();
+  const f = await createTransport(clock, undefined, true);
+  try {
+    const setup = await f.application(0);
+    expect(setup.method).toBe("InvokeWithLayer");
+    await f.reply(setup, setupConfig());
+    expect(await f.connected).toBe(true);
+    const first = outcome(f.client.invoke(new Api.updates.GetState()));
+    const second = outcome(f.client.invoke(new Api.updates.GetState()));
+    clock.advance(3000);
+    const sent = await f.application(1);
+    expect(f.writes).toHaveLength(2);
+    const response = new Api.updates.State({ pts: 1, qts: 1, date: 1, seq: 1, unreadCount: 0 });
+    await f.reply(sent, response);
+    expect((await first).kind).toBe("resolved");
+    clock.advance(3000);
+    const next = await f.application(2);
+    expect(next.at - sent.at).toBeGreaterThanOrEqual(3000);
+    await f.reply(next, response);
+    expect((await second).kind).toBe("resolved");
+    const counts = new Map([[101, 120], [102, 70], [103, 5]]);
+    const chats = [...counts.keys()].map(fixtureChat);
+    const histories = new Map([...counts].map(([chat, count]) => [chat, Array.from({ length: count }, (_, i) => fixtureMessage(chat, count - i))]));
+    let wireIndex = f.writes.length;
+    const answer = async (): Promise<void> => {
+      clock.advance(3000);
+      const sent = await f.application(wireIndex++);
+      const request: unknown = sent.state.request;
+      if (request instanceof Api.messages.GetDialogs) {
+        const dialogs = [...counts].map(([chat, count], i) => new Api.Dialog({ pinned: i < 2,
+          peer: new Api.PeerChat({ chatId: bigInt(chat) }), topMessage: count, readInboxMaxId: 0,
+          readOutboxMaxId: 0, unreadCount: 0, unreadMentionsCount: 0, unreadReactionsCount: 0, notifySettings: new Api.PeerNotifySettings({}) }));
+        await f.reply(sent, new Api.messages.Dialogs({ dialogs, messages: [...counts].map(([id, count]) => fixtureMessage(id, count)), chats, users: [] }));
+      } else if (request instanceof Api.messages.GetHistory && request.peer instanceof Api.InputPeerChat) {
+        const id = request.peer.chatId.toJSNumber();
+        const history = histories.get(id);
+        const count = counts.get(id);
+        if (!history || count === undefined) throw new Error("Unexpected history peer");
+        expect(request.limit).toBe(50);
+        const page = history.filter((message) => request.offsetId === 0 || message.id < request.offsetId).slice(0, request.limit);
+        await f.reply(sent, new Api.messages.MessagesSlice({ count, messages: page, chats: [fixtureChat(id)], users: [] }));
+      } else throw new Error(`Unexpected history request ${sent.method}`);
+    };
+    const bootstrap = runBootstrap(null, new LiveDialogPager(f.tg, "fixture-A"));
+    for (let i = 0; i < 4; i++) await answer();
+    const boot = await bootstrap;
+    const emitted = envelopes(boot);
+    expect(emitted.filter((item) => typeof item.remote_id === "string" && item.remote_id.startsWith("tg:chat:"))).toMatchObject([
+      { payload: { is_pinned: true, pin_order: 0 } }, { payload: { is_pinned: true, pin_order: 1 } }, { payload: { is_pinned: false, pin_order: 0 } },
+    ]);
+    expect(boot).toMatchObject({ discovered: 3, total: 3, hasMore: false });
+    const before = new Map([[101, 71], [102, 21], [103, 1]]);
+    while (before.size > 0) for (const [chat, offset] of [...before]) {
+      const filling = execute(f.tg, "fixture-A", { action: "backfill_chat", chat_id: chat, before_message_id: offset, limit: 50 }, { sleep: async () => { throw new Error("Unexpected independent sleep"); } });
+      await answer();
+      const page = await filling;
+      const batch = envelopes(page);
+      expect(batch.length).toBeLessThanOrEqual(50);
+      emitted.push(...batch);
+      if (page.has_more === false) {
+        expect(batch).toHaveLength(0);
+        before.delete(chat);
+      } else {
+        if (typeof page.oldest_message_id !== "number") throw new Error("Missing history continuation");
+        before.set(chat, page.oldest_message_id);
+      }
+    }
+    const actual = emitted.map((envelope) => envelope.remote_id).filter((id): id is string => typeof id === "string" && id.startsWith("tg:msg:"));
+    const expected = [...histories].flatMap(([chat, history]) => history.map((message) => `tg:msg:${String(chat)}:${String(message.id)}`));
+    expect(actual.length).toBe(195);
+    expect(new Set(actual)).toEqual(new Set(expected));
+    process.stdout.write("tst_src_tgflood_001 history:195\n");
+
+    // Resolve self through a real request before processing incoming updates.
+    const self = new Api.User({ id: bigInt(999), accessHash: bigInt(3), self: true, firstName: "Fixture" });
+    const me = f.client.getMe(true);
+    clock.advance(3000);
+    const meRequest = await f.application(wireIndex++);
+    expect(meRequest.method).toBe("users.GetUsers");
+    await f.reply(meRequest, { getBytes: (): Buffer => {
+      const header = Buffer.alloc(8);
+      header.writeUInt32LE(0x1cb5c415); header.writeUInt32LE(1, 4);
+      return Buffer.concat([header, self.getBytes()]);
+    } });
+    await me;
+    process.stdout.write("tst_src_tgflood_001 self:ready\n");
+    const liveIds: string[] = [];
+    let delivered: (() => void) | undefined;
+    const incomingDone = new Promise<void>((resolve) => { delivered = resolve; });
+    f.tg.addLiveHandler((message) => {
+      liveIds.push(...liveUpdatePushes(message, "fixture-A").map((push) => push.remote_id));
+      if (liveIds.length === 2) delivered?.();
+    });
+    const pendingHistory = outcome(f.client.invoke(new Api.updates.GetState()));
+    await f.incoming(new Api.Updates({ updates: [121, 122].map((id) => new Api.UpdateNewMessage({ message: fixtureMessage(101, id), pts: id, ptsCount: 1 })), chats: [fixtureChat(101)], users: [self], date: 1700000122, seq: 1 }));
+    await incomingDone;
+    process.stdout.write("tst_src_tgflood_001 live:2\n");
+    expect(liveIds).toEqual(["tg:msg:101:121", "tg:msg:101:122"]);
+    expect(f.writes).toHaveLength(wireIndex);
+    clock.advance(3000);
+    await f.reply(await f.application(wireIndex++), stateResponse());
+    expect((await pendingHistory).kind).toBe("resolved");
+
+    const exported = await f.exportedSender(1);
+    process.stdout.write("tst_src_tgflood_001 exported:ready\n");
+    expect(exported).not.toBe(f.sender);
+    const document = new Api.Document({ id: bigInt(7), accessHash: bigInt(8), fileReference: Buffer.from([1, 2]), date: 1700000000,
+      mimeType: "application/octet-stream", size: bigInt(262151), dcId: 1, attributes: [new Api.DocumentAttributeFilename({ fileName: "fixture.bin" })] });
+    const download = f.client.downloadMedia(new Api.MessageMediaDocument({ document }), {});
+    const overlappingHistory = f.tg.getMessages(new Api.InputPeerChat({ chatId: bigInt(101) }), { limit: 50 });
+    await Promise.all([f.tg.resolvePeer(101), f.tg.resolvePeer(103)]);
+    let historyAnswered = false;
+    for (const [offset, size] of [[0, 131072], [131072, 131072], [262144, 7]] as const) {
+      clock.advance(3000);
+      let chunk = await f.application(wireIndex++);
+      if (chunk.method === "messages.GetHistory") {
+        expect(historyAnswered).toBe(false);
+        historyAnswered = true;
+        await f.reply(chunk, new Api.messages.MessagesSlice({ count: 120, messages: Array.from({ length: 50 }, (_, index) => fixtureMessage(101, 120 - index)), chats: [fixtureChat(101)], users: [] }));
+        expect((await overlappingHistory).length).toBe(50);
+        clock.advance(3000);
+        chunk = await f.application(wireIndex++);
+      }
+      process.stdout.write(`tst_src_tgflood_001 media:${chunk.method}\n`);
+      const request: unknown = chunk.state.request;
+      expect(request).toBeInstanceOf(Api.upload.GetFile);
+      if (!(request instanceof Api.upload.GetFile)) throw new Error("Expected media request");
+      expect(request.offset.toJSNumber()).toBe(offset);
+      expect(chunk.sender).toBe(exported);
+      await f.reply(chunk, new Api.upload.File({ type: new Api.storage.FileUnknown(), mtime: 1700000000, bytes: Buffer.alloc(size, 7) }));
+    }
+    const bytes = await download;
+    expect(historyAnswered).toBe(true);
+    expect(Buffer.isBuffer(bytes) && bytes.length).toBe(262151);
+    const active = outcome(f.client.invoke(new Api.updates.GetState()));
+    clock.advance(3000);
+    const activeSend = await f.application(wireIndex++);
+    const viaOtherDc = outcome(f.client.invokeWithSender(new Api.updates.GetState(), exported));
+    await f.reply(activeSend, new Api.RpcError({ errorCode: 420, errorMessage: "FLOOD_WAIT_3600" }));
+    expect((await active).kind).toBe("rejected");
+    expect((await viaOtherDc).kind).toBe("rejected");
+    const independentClock = new VirtualClock();
+    const independent = await createTransport(independentClock, new AccountAdmission("fixture-B", independentClock, () => undefined));
+    try {
+      const progressing = outcome(independent.client.invoke(new Api.updates.GetState()));
+      await independent.reply(await independent.application(0), stateResponse());
+      expect((await progressing).kind).toBe("resolved");
+      expect(independent.admission.remoteFloods).toBe(0);
+    } finally { await independent.close(); }
+    expect(f.writes).toHaveLength(wireIndex);
+    f.admission.stop();
+    expect((await outcome(f.client.invoke(new Api.updates.GetState()))).kind).toBe("rejected");
+    expect(clock.timerCount).toBe(0);
+    expect(f.maximumInFlight()).toBe(1);
+    for (let i = 1; i < f.writes.length; i++) {
+      const a = f.writes[i - 1]; const b = f.writes[i];
+      if (!a || !b) throw new Error("Missing transmission");
+      expect(b.at - a.at).toBeGreaterThanOrEqual(3000);
+      expect(f.writes.filter((item) => item.at > b.at - 60_000 && item.at <= b.at).length).toBeLessThanOrEqual(20);
+    }
+  } finally { await f.close(); }
+});
+
+/** @test-id: tst_src_tgflood_004
+ * @scenario: scn_tgflood_006
+ * @covers: bounded account waiting queue and in-flight slot retention
+ * @deterministic: yes
+ * @fixtures: real SDK, blocked in-memory wire response, virtual clock
+ */
+test("tst_src_tgflood_004 an in-flight request bounds the shared waiting queue", async () => {
+  const clock = new VirtualClock();
+  const f = await createTransport(clock);
+  try {
+    const inFlight = outcome(f.client.invoke(new Api.updates.GetState()));
+    const first = await f.application(0);
+    const queued = Array.from({ length: 33 }, () => outcome(f.client.invoke(new Api.updates.GetState())));
+    const overflow = queued[32];
+    if (!overflow) throw new Error("Missing overflow fixture");
+    const next = await Promise.race([overflow, f.application(1).then(() => ({ kind: "transmitted" as const }))]);
+    expect(next.kind).toBe("rejected");
+    expect(f.writes).toHaveLength(1);
+    expect(f.admission.queued).toBe(32);
+    expect(clock.timerCount).toBe(1);
+    clock.advance(20_000);
+    for (const result of await Promise.all(queued)) expect(result.kind).toBe("rejected");
+    expect(f.admission.queued).toBe(0);
+    expect(clock.timerCount).toBe(0);
+    expect(f.admission.remoteFloods).toBe(0);
+    const callerTimeout = await Promise.race([inFlight, Promise.resolve("caller timed out")]);
+    expect(callerTimeout).toBe("caller timed out");
+    const afterTimeout = outcome(f.client.invoke(new Api.updates.GetState()));
+    clock.advance(3000);
+    expect(f.writes).toHaveLength(1);
+    await f.reply(first, stateResponse());
+    expect((await inFlight).kind).toBe("resolved");
+    const following = await f.application(1);
+    await f.reply(following, stateResponse());
+    expect((await afterTimeout).kind).toBe("resolved");
+    const replaying = outcome(f.client.invoke(new Api.updates.GetState()));
+    const waitingBeforeReconnect = outcome(f.client.invoke(new Api.updates.GetState()));
+    clock.advance(3000);
+    await f.application(2);
+    expect(f.admission.queued).toBe(1);
+    f.sender.isReconnecting = true;
+    await f.sender._reconnect();
+    const restoredQueue = (f.sender as unknown as { _sendQueue: { values(): ({ msgId?: unknown } | undefined)[] } })._sendQueue.values();
+    expect(restoredQueue.some((state) => state !== undefined && state.msgId === undefined)).toBe(true);
+    clock.advance(3000);
+    await f.reply(await f.application(3), stateResponse());
+    expect((await replaying).kind).toBe("resolved");
+    clock.advance(3000);
+    const restored = await f.application(4);
+    await f.reply(restored, stateResponse());
+    expect((await waitingBeforeReconnect).kind).toBe("resolved");
+  } finally { await f.close(); }
+  for (const duration of ["", "-1", "9".repeat(400), "9007199254740991"]) {
+    const malformed = await createTransport(new VirtualClock());
+    try {
+      const pending = outcome(malformed.client.invoke(new Api.updates.GetState()));
+      const sent = await malformed.application(0);
+      await malformed.reply(sent, new Api.RpcError({ errorCode: 420, errorMessage: `FLOOD_WAIT_${duration}` }));
+      expect((await pending).kind).toBe("rejected");
+      expect(malformed.admission.holdUntil).toBeNull();
+      expect(malformed.admission.remoteFloods).toBe(1);
+      const denied = await outcome(malformed.client.invoke(new Api.updates.GetState()));
+      expect(denied.kind).toBe("rejected");
+      expect(malformed.writes).toHaveLength(1);
+    } finally { await malformed.close(); }
+  }
+  const stoppingClock = new VirtualClock();
+  const stopping = await createTransport(stoppingClock, undefined, true);
+  try {
+    await stopping.reply(await stopping.application(0), setupConfig());
+    await stopping.connected;
+    const pending = outcome(stopping.client.invoke(new Api.updates.GetState()));
+    stoppingClock.advance(3000);
+    await stopping.application(1);
+    stopping.sender.reconnect();
+    await stopping.waitSleep(1000);
+    await stopping.client.destroy();
+    const settled = await Promise.race([pending, Promise.resolve({ kind: "unsettled" })]);
+    expect(settled.kind).toBe("rejected");
+    stopping.releaseSleep(1000);
+    stoppingClock.advance(60_000);
+    expect(stopping.writes).toHaveLength(2);
+    expect(stopping.sender._userConnected).toBe(false);
+  } finally { await stopping.close(); }
+  for (const point of ["packing", "encryption"] as const) {
+    const broken = await createTransport(new VirtualClock());
+    try {
+      broken.faults[point] = new Error(`fixture ${point} failure`);
+      expect((await outcome(broken.client.invoke(new Api.updates.GetState()))).kind).toBe("rejected");
+      expect(broken.writes).toHaveLength(0);
+      const recovered = outcome(broken.client.invoke(new Api.updates.GetState()));
+      await broken.reply(await broken.application(0), stateResponse());
+      expect((await recovered).kind).toBe("resolved");
+    } finally { await broken.close(); }
+  }
+  const expiredClock = new VirtualClock();
+  const expired = await createTransport(expiredClock);
+  try {
+    const barrier = expired.pauseEncryption();
+    const pending = outcome(expired.client.invoke(new Api.updates.GetState()));
+    await barrier.entered;
+    expiredClock.advance(20_000);
+    expect((await pending).kind).toBe("rejected");
+    barrier.release();
+    await expired.ping();
+    expect(expired.writes).toHaveLength(0);
+    expect(expiredClock.timerCount).toBe(0);
+  } finally { await expired.close(); }
+  const sendClock = new VirtualClock();
+  const sending = await createTransport(sendClock, undefined, true);
+  try {
+    await sending.reply(await sending.application(0), setupConfig());
+    await sending.connected;
+    sending.faults.send = new Error("fixture disconnected while sending");
+    const pending = outcome(sending.client.invoke(new Api.updates.GetState()));
+    sendClock.advance(3000);
+    await sending.waitSleep(1000);
+    // The SDK owns the uncertain attempt and reconnect; no second caller is
+    // admitted merely because the socket's send promise rejected.
+    expect(sending.writes).toHaveLength(1);
+    sending.releaseSleep(1000);
+    sendClock.advance(3000);
+    await sending.reply(await sending.application(1), stateResponse());
+    expect((await pending).kind).toBe("resolved");
+    expect(sending.admission.remoteFloods).toBe(0);
+  } finally { await sending.close(); }
+  const racingClock = new VirtualClock();
+  const racing = await createTransport(racingClock);
+  const encryption = racing.pauseEncryption();
+  let reconnect: Promise<void> | undefined;
+  try {
+    const pending = outcome(racing.client.invoke(new Api.updates.GetState()));
+    await encryption.entered;
+    racing.sender.isReconnecting = true;
+    reconnect = racing.sender._reconnect();
+    // Drain the fake connection's immediate promises, not real time. The old
+    // packet is deliberately still inside asynchronous crypto at this point.
+    await new Promise<void>((resolve) => { setImmediate(resolve); });
+    expect(racing.sender._userConnected).toBe(false);
+    encryption.release();
+    await reconnect;
+    const replay = await racing.application(0);
+    await racing.reply(replay, stateResponse());
+    expect((await pending).kind).toBe("resolved");
+    const next = outcome(racing.client.invoke(new Api.updates.GetState()));
+    racingClock.advance(3000);
+    await racing.reply(await racing.application(1), stateResponse());
+    expect((await next).kind).toBe("resolved");
+    expect(racing.maximumInFlight()).toBe(1);
+  } finally {
+    encryption.release();
+    await reconnect;
+    await racing.close();
+  }
+});
+
+/**
+ * @test-id: tst_src_tgflood_002
+ * @scenario: scn_tgflood_002
+ * @covers: real MTProtoSender RPCResult/error handling and application transmission
+ * @deterministic: yes
+ * @fixtures: actual GramJS sender/crypto with in-memory wire replies; no provider connection
+ */
+test("tst_src_tgflood_002 the first remote flood prevents the next actual SDK transmission", async () => {
+  for (const seconds of [4, 3600]) for (const origin of [...ORIGINS,
+    { name: "setup", request: () => new Api.updates.GetState() },
+    { name: "server-retry", request: () => new Api.updates.GetState() },
+    { name: "reconnect-replay", request: () => new Api.updates.GetState() },
+  ]) {
+    const clock = new VirtualClock();
+    const f = await createTransport(clock, undefined, origin.name === "setup");
+    try {
+      // A failed setup never resolves the client's connected barrier. Other
+      // SDK senders already exist during setup; exercise that real queue path.
+      const invokeState = async (): Promise<unknown> => origin.name === "setup"
+        ? f.sender.send(new Api.updates.GetState()) : f.client.invoke(new Api.updates.GetState());
+      const first = outcome(origin.name === "setup" ? f.connected : f.client.invoke(origin.request()));
+      let sent = await f.application(0);
+      if (origin.name === "server-retry") {
+        await f.reply(sent, new Api.RpcError({ errorCode: 500, errorMessage: "RPC_CALL_FAIL" }));
+        await f.waitSleep(2000);
+        clock.advance(3000);
+        f.releaseSleep(2000);
+        sent = await f.application(1);
+      } else if (origin.name === "reconnect-replay") {
+        f.sender.isReconnecting = true;
+        await f.sender._reconnect();
+        clock.advance(3000);
+        sent = await f.application(1);
+      }
+      expect(sent.method).toBe(origin.name === "setup" ? "InvokeWithLayer" : origin.name.endsWith("retry") || origin.name.endsWith("replay") ? "updates.GetState" : origin.name);
+      const queued = outcome(invokeState());
+      await f.reply(sent, new Api.RpcError({ errorCode: 420, errorMessage: `FLOOD_WAIT_${String(seconds)}` }));
+      expect((await first).kind).toBe("rejected");
+      expect((await queued).kind).toBe("rejected");
+      const transmitted = f.writes.length;
+      const hold = clock.now() + seconds * 1000 + 2000;
+      expect(f.admission.holdUntil).toBe(hold);
+      expect(f.admission.remoteFloods).toBe(1);
+      const second = outcome(invokeState());
+      const next = await Promise.race([second, f.application(transmitted).then(() => ({ kind: "transmitted" as const }))]);
+      expect(next.kind).toBe("rejected");
+      clock.advance(hold - clock.now() - 1);
+      const late = await outcome(invokeState());
+      expect(late.kind).toBe("rejected");
+      expect(late.value).toMatchObject({ code: 420, seconds: 1 });
+      expect(f.admission.holdUntil).toBe(hold);
+      expect(f.admission.remoteFloods).toBe(1);
+      expect(f.writes).toHaveLength(transmitted);
+      await f.ping();
+      expect(f.packets.some((packet) => packet.methods.includes("Ping"))).toBe(true);
+      expect(f.writes).toHaveLength(transmitted);
+      clock.advance(1);
+      const probe = outcome(invokeState());
+      const behindProbe = outcome(invokeState());
+      const admitted = await f.application(transmitted);
+      expect(admitted.at).toBe(hold);
+      expect(f.writes).toHaveLength(transmitted + 1);
+      if (seconds === 4) {
+        await f.reply(admitted, stateResponse());
+        expect((await probe).kind).toBe("resolved");
+        clock.advance(3000);
+        const following = await f.application(transmitted + 1);
+        expect(following.at - admitted.at).toBe(3000);
+        await f.reply(following, stateResponse());
+        expect((await behindProbe).kind).toBe("resolved");
+      } else {
+        await f.reply(admitted, new Api.RpcError({ errorCode: 420, errorMessage: "FLOOD_WAIT_4" }));
+        expect((await probe).kind).toBe("rejected");
+        expect((await behindProbe).kind).toBe("rejected");
+        expect(f.admission.remoteFloods).toBe(2);
+        expect(f.writes).toHaveLength(transmitted + 1);
+      }
+      process.stdout.write(`${JSON.stringify({ test: "tst_src_tgflood_002", origin: origin.name, seconds, transmissions: f.writes.length, remoteFloods: f.admission.remoteFloods, hold })}\n`);
+    } finally { await f.close(); }
+  }
+  // Three genuinely transmitted copies of one operation, separated by real
+  // reconnects, make old response IDs possible without concurrent RPC starts.
+  const delayedClock = new VirtualClock();
+  const delayed = await createTransport(delayedClock);
+  try {
+    const pending = outcome(delayed.client.invoke(new Api.updates.GetState()));
+    const originals = [await delayed.application(0)];
+    for (let index = 1; index < 3; index++) {
+      delayed.sender.isReconnecting = true;
+      await delayed.sender._reconnect();
+      delayedClock.advance(3000);
+      originals.push(await delayed.application(index));
+    }
+    const [oldest, middle, latest] = originals;
+    if (!oldest || !middle || !latest) throw new Error("Missing transmitted replay fixture");
+    await delayed.reply(latest, new Api.RpcError({ errorCode: 420, errorMessage: "FLOOD_WAIT_3600" }));
+    expect((await pending).kind).toBe("rejected");
+    const hold = delayed.admission.holdUntil;
+    delayedClock.advance(1000);
+    await delayed.reply(middle, new Api.RpcError({ errorCode: 420, errorMessage: "FLOOD_WAIT_4" }));
+    expect(delayed.admission.holdUntil).toBe(hold);
+    delayedClock.advance(1000);
+    await delayed.reply(oldest, new Api.RpcError({ errorCode: 420, errorMessage: "FLOOD_WAIT_7200" }));
+    const extended = delayedClock.now() + 7_202_000;
+    expect(delayed.admission.holdUntil).toBe(extended);
+    await delayed.reply(middle, stateResponse());
+    expect(delayed.admission.holdUntil).toBe(extended);
+    const wall = spyOn(Date, "now").mockReturnValue(1);
+    try {
+      expect((await outcome(delayed.client.invoke(new Api.updates.GetState()))).value).toMatchObject({ code: 420, seconds: 7202 });
+      wall.mockReturnValue(9_000_000_000_000);
+      expect((await outcome(delayed.client.invoke(new Api.updates.GetState()))).value).toMatchObject({ code: 420, seconds: 7202 });
+    } finally { wall.mockRestore(); }
+    expect(delayed.admission.holdUntil).toBe(extended);
+    expect(delayed.admission.remoteFloods).toBe(3);
+    expect(delayed.writes).toHaveLength(3);
+  } finally { await delayed.close(); }
+});

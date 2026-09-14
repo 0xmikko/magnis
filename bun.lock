@@ -174,7 +174,7 @@
       "dependencies": {
         "@magnis/connector-sdk": "workspace:*",
         "big-integer": "^1.6.52",
-        "telegram": "^2.26.22",
+        "telegram": "2.26.22",
       },
     },
     "plugins/sources/x": {
@@ -186,6 +186,9 @@
         "@magnis/testkit": "workspace:*",
       },
     },
+  },
+  "patchedDependencies": {
+    "telegram@2.26.22": "patches/telegram@2.26.22.patch",
   },
   "packages": {
     "@babel/code-frame": ["@babel/code-frame@7.29.7", "", { "dependencies": { "@babel/helper-validator-identifier": "^7.29.7", "js-tokens": "^4.0.0", "picocolors": "^1.1.1" } }, "sha512-Aup7aUOfpbAUg2ROOJN6Iw5f9DMBlzu0mIkm/malLQFN/YQgO48wCj0Kxa3sEHJvPVFg7siR+qRInwXd2qhQKw=="],

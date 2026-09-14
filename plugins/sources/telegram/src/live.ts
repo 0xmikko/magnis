@@ -1,11 +1,5 @@
-// Live gramjs glue — the ONLY module that imports `telegram` (gramjs). Everything
-// else in this connector is pure and unit-tested with in-memory fakes, mirroring
-// the Rust split where `commands.rs` is generic over the `DialogPager` seam.
-//
-// Live mode is BEST-EFFORT (as the Rust connector states): the fully-tested paths
-// are fixture mode + the injected seams. The gramjs wiring here mirrors
-// plugins/sources/telegram/src/client.rs but is exercised only against real
-// Telegram.
+// GramJS Source glue. Integration fixtures keep these SDK/client paths real
+// and replace only MTProto transport, synthetic session data and clock I/O.
 
 import { mkdir, stat } from "node:fs/promises";
 import { dirname } from "node:path";
@@ -14,6 +8,9 @@ import { Api, TelegramClient } from "telegram";
 import { StringSession } from "telegram/sessions";
 import { EditedMessage } from "telegram/events/EditedMessage";
 import { NewMessage } from "telegram/events/NewMessage";
+import type { TelegramClientParams } from "telegram/client/telegramBaseClient";
+import { AccountAdmission } from "./request-admission";
+import type { AdmissionClock, AdmissionEvent } from "./request-admission";
 import type {
   DialogOffset,
   DialogPage,
@@ -26,6 +23,7 @@ import type {
 } from "./client";
 import {
   BOOTSTRAP_MESSAGES_PER_CHAT,
+  floodWaitSecs,
   buildDialogMeta,
   chatToIntermediate,
   messageToIntermediate,
@@ -58,12 +56,8 @@ const INIT_PARAMS = {
  * - `retryDelay: 1000`     ms between reconnect attempts.
  * - `autoReconnect: true`  reconnect the transport on drop instead of dying
  *                          silently mid-run (gramjs default, pinned explicit).
- * - `floodSleepThreshold`  floods <= 30s are auto-slept by gramjs (fine); a
- *                          LONGER flood is THROWN as FloodWaitError so the
- *                          connector surfaces it as a typed -32002 rate-limit
- *                          (see dispatch.classifyToolError) instead of the host
- *                          silently blocking for minutes. Matches
- *                          FLOOD_WAIT_RETRY_MAX. */
+ * - `floodSleepThreshold`  zero: the shared account fence owns every wait,
+ *                          including short waits and SDK retries. */
 const CLIENT_OPTIONS = {
   ...INIT_PARAMS,
   timeout: 60,
@@ -71,8 +65,22 @@ const CLIENT_OPTIONS = {
   connectionRetries: 5,
   retryDelay: 1000,
   autoReconnect: true,
-  floodSleepThreshold: 30,
+  floodSleepThreshold: 0,
 } as const;
+
+type ClientTransportOptions = Pick<TelegramClientParams, "connection" | "networkSocket" | "baseLogger">;
+
+/** @tested-by: tst_src_tgflood_002 — install admission before any SDK connect. */
+export function createTelegramClient(session: StringSession, apiId: number, apiHash: string,
+  admission: AccountAdmission, transport: ClientTransportOptions = {}): TelegramClient {
+  const client = new TelegramClient(session, apiId, apiHash, { ...CLIENT_OPTIONS, ...transport, rpcAdmission: admission });
+  if (client.rpcAdmissionRevision !== 1 || client._rpcAdmission !== admission) {
+    throw new Error("Telegram SDK admission hook revision 1 is required before connecting");
+  }
+  return client;
+}
+
+const authAdmission = new AccountAdmission("auth-process");
 
 // ── auth-flow seams (auth.ts) ──────────────────────────────────────────────
 
@@ -150,23 +158,31 @@ function wrapAuthClient(client: TelegramClient): AuthClientLike {
   };
 }
 
-/** Production factory: builds + connects a real gramjs client. */
-export const defaultAuthClientFactory: AuthClientFactory = {
-  async connectFresh(apiId, apiHash) {
-    const client = new TelegramClient(new StringSession(""), apiId, apiHash, {
-      ...CLIENT_OPTIONS,
-    });
-    await client.connect();
+async function connectClient(client: TelegramClient): Promise<void> {
+  try { await client.connect(); }
+  catch (error) {
+    await client.destroy();
+    throw error;
+  }
+}
+
+/** Builds real clients; an auth process retains one provisional owner. */
+export function createAuthClientFactory(admission: AccountAdmission, transport: ClientTransportOptions = {}): AuthClientFactory {
+  return {
+  async connectFresh(apiId, apiHash): Promise<AuthClientLike> {
+    const client = createTelegramClient(new StringSession(""), apiId, apiHash, admission, transport);
+    await connectClient(client);
     return wrapAuthClient(client);
   },
-  async connectWithSession(apiId, apiHash, session) {
-    const client = new TelegramClient(new StringSession(session), apiId, apiHash, {
-      ...CLIENT_OPTIONS,
-    });
-    await client.connect();
+  async connectWithSession(apiId, apiHash, session): Promise<AuthClientLike> {
+    const client = createTelegramClient(new StringSession(session), apiId, apiHash, admission, transport);
+    await connectClient(client);
     return wrapAuthClient(client);
   },
-};
+  };
+}
+
+export const defaultAuthClientFactory: AuthClientFactory = createAuthClientFactory(authAdmission);
 
 // ── live client (fetch / execute / listen) ─────────────────────────────────
 
@@ -178,16 +194,12 @@ export class TgClient implements TgOps {
 
   /** Connect from the injected credentials. The session must already be
    * authorized (a gramjs StringSession minted by `magnis.auth.*`). */
-  static async connect(creds: TgCreds): Promise<TgClient> {
-    const client = new TelegramClient(
-      new StringSession(creds.session),
-      creds.api_id,
-      creds.api_hash,
-      { ...CLIENT_OPTIONS },
-    );
+  static async connect(creds: TgCreds, admission: AccountAdmission, transport: ClientTransportOptions = {}): Promise<TgClient> {
+    const client = createTelegramClient(new StringSession(creds.session), creds.api_id, creds.api_hash, admission, transport);
     try {
-      await client.connect();
+      await connectClient(client);
     } catch (e) {
+      if (floodWaitSecs(e) !== undefined) throw e;
       throw new Error(`failed to connect to Telegram: ${String(e)}`, { cause: e });
     }
     return new TgClient(client);
@@ -485,6 +497,23 @@ export class LiveDialogPager implements DialogPager {
  * scale (10s of accounts per process). */
 export class SessionPool {
   private readonly sessions = new Map<string, TgClient>();
+  private readonly admissions = new Map<string, AccountAdmission>();
+  constructor(private readonly options: {
+    clock?: AdmissionClock;
+    diagnostics?: (event: AdmissionEvent) => void;
+    transport?: ClientTransportOptions;
+  } = {}) {}
+
+  /** Retained on eviction: a new client is not a new account budget. */
+  admissionFor(accountId: string): AccountAdmission {
+    if (accountId === "") throw new Error("Missing account admission owner");
+    let admission = this.admissions.get(accountId);
+    if (!admission) {
+      admission = new AccountAdmission(accountId, this.options.clock, this.options.diagnostics);
+      this.admissions.set(accountId, admission);
+    }
+    return admission;
+  }
   /** Promise chain acting as an async mutex over `sessions`. */
   private lock: Promise<unknown> = Promise.resolve();
 
@@ -507,8 +536,9 @@ export class SessionPool {
       if (existing !== undefined) return existing;
       let client: TgClient;
       try {
-        client = await TgClient.connect(creds);
+        client = await TgClient.connect(creds, this.admissionFor(accountId), this.options.transport);
       } catch (e) {
+        if (floodWaitSecs(e) !== undefined) throw e;
         throw new Error(`connect telegram session '${accountId}': ${String(e)}`, { cause: e });
       }
       this.sessions.set(accountId, client);
@@ -517,7 +547,12 @@ export class SessionPool {
   }
 
   evict(accountId: string): Promise<boolean> {
-    return this.withLock(() => Promise.resolve(this.sessions.delete(accountId)));
+    return this.withLock(async () => {
+      const client = this.sessions.get(accountId);
+      if (!client) return false;
+      await client.client.destroy();
+      return this.sessions.delete(accountId);
+    });
   }
 
   size(): number {

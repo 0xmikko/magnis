@@ -6,6 +6,6 @@
   "dependencies": {
     "@magnis/connector-sdk": "workspace:*",
     "big-integer": "^1.6.52",
-    "telegram": "^2.26.22"
+    "telegram": "2.26.22"
   }
 }
