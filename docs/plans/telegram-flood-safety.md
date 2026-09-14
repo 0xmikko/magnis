@@ -422,21 +422,22 @@ Scoped behavior files: plugins/sources/telegram/src/client.test.ts and plugins/s
 
 ##### Tasks
 
-- [ ] TGFLOOD_005 — Remove short-flood resends in client.ts; preserve typed waits in client.test.ts and surfaces/telegram/execute.test.ts. (20 min)
+- [x] TGFLOOD_005 — Remove short-flood resends in client.ts; preserve typed waits in client.test.ts and surfaces/telegram/execute.test.ts. (20 min) — 3e148271da6da7f9735171494e1625925ce7640e
 <!-- plan:task-meta:{"writes":["plugins/sources/telegram/src/client.ts","plugins/sources/telegram/src/client.test.ts","plugins/sources/telegram/src/surfaces/telegram/execute.test.ts"],"predictedActiveMinutes":20,"predictedCredits":2,"how":"In plugins/sources/telegram/src/client.test.ts and plugins/sources/telegram/src/surfaces/telegram/execute.test.ts replace only explicitly superseded short-flood resend assertions with one attempt, immediate typed refusal and no helper sleep/resend. Preserve existing IDs and unrelated action/auth/rate-limit tests. Observe RED against the current helper before changing production behavior. In plugins/sources/telegram/src/client.ts remove the independent short-wait sleep-and-retry policy, validate durations and preserve the original remote error as cause while exposing the guard's remaining wait through the existing rate-limit convention. Do not introduce another timer, fixed new deadline or remote-observation increment. In plugins/sources/telegram/src/surfaces/telegram/execute.test.ts drive a synthetic send/reply failure through the public execute path: short and long waits both retain -32002 and retry_after; no message is sent twice. These fixture actions never contact Telegram or the owner's chats. Do not edit live.ts, the shared journey file, command schemas or execute production code.","red":"bun run agent:test:backend -- plugins/sources/telegram/src/client.test.ts plugins/sources/telegram/src/surfaces/telegram/execute.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- plugins/sources/telegram/src/client.test.ts plugins/sources/telegram/src/surfaces/telegram/execute.test.ts` exits 0 — short and long flood actions attempt once, return typed rate limits, and do not sleep/resend independently.
+- [x] `bun run agent:test:backend -- plugins/sources/telegram/src/client.test.ts plugins/sources/telegram/src/surfaces/telegram/execute.test.ts` exits 0 — short and long flood actions attempt once, return typed rate limits, and do not sleep/resend independently. — 6a03f4485e61b99251878095ddc6866467b25c74
 - [ ] Local refusals preserve the account's existing deadline and do not count as additional remote Telegram floods; original errors remain available as causes.
 - [ ] No unrelated regression assertion or existing canonical test ID is removed to obtain GREEN.
-- [ ] Commit
+- [x] Commit — 6a03f4485e61b99251878095ddc6866467b25c74
 
 ##### Results
 
 <!-- plan:results:D1-S3:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| TGFLOOD_005 | 3e148271da6da7f9735171494e1625925ce7640e | 2026-09-14T22:51:40.595Z–2026-09-14T23:00:22.000Z | 8.69 / 8.69 min | unavailable: Runner exposes no per-Task credit usage. Active time is the continuously attended Stage interval including tool waits. | TGFLOOD_005 behavioral RED: 6 failures / 56 passes / 170 assertions. The old helper unexpectedly returned second-send success, made two attempts instead of one, slept on local refusals, and produced a generic dispatcher error after the forbidden sleeper. Duration normalization also failed on fractional seconds. Minimum production fix removed short-wait resend and unused threshold, validated/rounded supported durations, preserved already-normalized error identity and cause, and retained the compatibility signature without using its sleeper. Exact same two-file command GREEN: 62 passes / 236 assertions; normal hook additionally passed docs/plan locks, Telegram TypeScript and client.ts ESLint, and repeated the same 62-test GREEN suite. Real AccountAdmission test observed one remote 4s wait, then local refusals at monotonic 1000/3000/5999ms with remaining 5/3/1 seconds, fixed holdUntil 6000, remoteFloods 1, localRefusals 3, original cause retained and no helper sleep. Existing public dispatcher tested send/reply for 4/120/3600s waits with -32002 and exact retry_after; attempts stayed one. All 62 existing canonical IDs retained; only explicitly superseded retry assertions changed. Diff: client.ts +16/-26; client.test.ts +72/-39; execute.test.ts +45/-37. No provider, Graph, UI or full stdio certification; these remain outside S3. No plan state was mutated in the child worktree. Test execution occurred within the recorded Stage interval; individual test UTC timestamps were not separately captured. |
 <!-- plan:results:D1-S3:end -->
 <!-- plan:stage:D1-S3:end -->
 
@@ -597,4 +598,8 @@ Scoped behavior files: plugins/sources/telegram/src/tst_src_tgflood_001.test.ts,
 - record-result D1-S2 commit:6911e138a5f858497840fd0bbccdc770a916ffb2
 
 - close D1-S2 partial commit:6911e138a5f858497840fd0bbccdc770a916ffb2
+
+- record-result D1-S3 commit:3e148271da6da7f9735171494e1625925ce7640e
+
+- close D1-S3 partial commit:6a03f4485e61b99251878095ddc6866467b25c74
 <!-- plan:execution:end -->
