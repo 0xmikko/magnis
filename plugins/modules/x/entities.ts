@@ -60,6 +60,24 @@ export const post = entity(
     is_reply: z.boolean().nullish(),
     is_repost: z.boolean().nullish(),
     lang: z.string().nullish(),
+    post_type: z.string().optional(),
+    article_title: z.string().optional(),
+    conversation_id: z.string().optional(),
+    media: z
+      .array(z.object({
+        type: z.string().nullish(),
+        url: z.string().nullish(),
+        preview_image_url: z.string().nullish(),
+        alt_text: z.string().nullish(),
+      }))
+      .optional(),
+    urls: z
+      .array(z.object({
+        url: z.string().nullish(),
+        expanded_url: z.string().nullish(),
+        display_url: z.string().nullish(),
+      }))
+      .optional(),
     metrics: z
       .object({
         likes: z.number().nullish(),
