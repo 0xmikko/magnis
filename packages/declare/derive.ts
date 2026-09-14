@@ -108,15 +108,17 @@ export function descriptorFrom(schema: z.ZodType): { stem: string; descriptor: E
     const columnName = raw[DECLARATION_KEYS.column];
     const inner = meaningful(raw);
 
+    keptProperties[key] = withoutBookkeeping(raw);
+    if (required.includes(key)) keptRequired.push(key);
+
     if (typeof columnName === "string") {
-      // A column is not a key inside `properties`, so the graph's schema must
-      // not demand it there.
+      // `column` answers WHERE SEARCH READS the value, not whether the module
+      // may write it. A name written into the dictionary and carried by the
+      // entity row is one value in two places: the graph enforces the key, and
+      // search takes the row's copy, which is the one every entity has.
       fields.push({ key, kind: kindOf(raw, key), column: columnName });
       continue;
     }
-
-    keptProperties[key] = withoutBookkeeping(raw);
-    if (required.includes(key)) keptRequired.push(key);
 
     if (inner.type === "array") {
       const items = isNode(inner.items) ? inner.items : {};

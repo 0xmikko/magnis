@@ -33,10 +33,12 @@ describe("a declaration becomes an entity descriptor", () => {
     expect(schema["additionalProperties"]).toBe(false);
   });
 
-  it("a column is a column, not a property", () => {
+  it("a column says where search reads, not whether the module may write it", () => {
     const { descriptor } = descriptorFrom(message);
     const props = (descriptor.json_schema as { properties: Record<string, unknown> }).properties;
-    expect(Object.keys(props)).not.toContain("sent_at");
+    // The module writes it into the dictionary, so the graph must accept it...
+    expect(Object.keys(props)).toContain("sent_at");
+    // ...and search takes the entity row's copy, which every entity has.
     const sentAt = descriptor.search.field.find((f) => f.key === "sent_at");
     expect(sentAt).toEqual({ key: "sent_at", kind: "date", column: "date" });
   });
