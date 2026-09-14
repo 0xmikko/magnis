@@ -602,6 +602,7 @@ export function TelegramChatView({
 }: TelegramChatViewProps): JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null);
   const virtuosoRef = useRef<VirtuosoHandle>(null);
+  const pendingPrependAnchor = useRef<{ chatId: string; messageId: string } | null>(null);
   // True when we should scroll to bottom on the next layout pass
   const scrollToBottomRef = useRef(true);
   // scrollHeight saved just before a prepend; useLayoutEffect uses it to restore position
@@ -873,15 +874,33 @@ export function TelegramChatView({
           data={grouped}
           firstItemIndex={messageWindow.firstItemIndex}
           computeItemKey={(_index, { msg }) => msg.id}
+          scrollIntoViewOnChange={() => {
+            const anchor = pendingPrependAnchor.current;
+            if (anchor === null || anchor.chatId !== conversation.chatId) return false;
+            const index = grouped.findIndex(({ msg }) => msg.id === anchor.messageId);
+            if (index <= 0) return false;
+            pendingPrependAnchor.current = null;
+            // Date/sender headers can shrink the former first row. Let
+            // Virtuoso remeasure and align it, not merely estimate a prefix.
+            return { index, align: "start", behavior: "auto",
+              calculateViewLocation: ({ locationParams }) => locationParams };
+          }}
           initialTopMostItemIndex={{ index: "LAST" }}
           followOutput="smooth"
           className="flex-1 py-2 overflow-x-hidden"
           increaseViewportBy={{ top: 400, bottom: 200 }}
           atTopStateChange={(atTop) => {
-            if (!atTop) return;
+            if (!atTop) {
+              // A user who moves away before the page arrives owns the scroll.
+              if (pendingPrependAnchor.current?.messageId === firstMessageId) pendingPrependAnchor.current = null;
+              return;
+            }
             // Page through DB history first; once the local DB is exhausted,
             // backfill older history from the Telegram server.
-            if (hasMore && onLoadMore) onLoadMore();
+            if (hasMore && onLoadMore) {
+              if (firstMessageId !== undefined) pendingPrependAnchor.current = { chatId: conversation.chatId, messageId: firstMessageId };
+              onLoadMore();
+            }
             else if (hasMoreOnServer && onBackfill) onBackfill();
           }}
           itemContent={(_index, { msg, position, showDate, showSender, showAvatar }) => {
@@ -894,7 +913,7 @@ export function TelegramChatView({
               : undefined;
 
             return (
-              <div id={`tg-msg-${msg.id}`} className="px-4" onContextMenu={(e) => { contextMenu.open(e, msg); }}>
+              <div id={`tg-msg-${msg.id}`} className="px-4 flow-root" onContextMenu={(e) => { contextMenu.open(e, msg); }}>
                 {showDate && msg.date && (
                   <DateChip label={formatDateSeparator(msg.date)} />
                 )}

@@ -14,23 +14,36 @@ import { describe, expect, it, vi } from "vitest";
 import type { TelegramConversation } from "../types";
 
 // ── Mocks ────────────────────────────────────────────────────────
+const virtualCallbacks = vi.hoisted<{
+  atTop: ((atTop: boolean) => void) | undefined;
+  onChange: (() => unknown) | undefined;
+}>(() => ({ atTop: undefined, onChange: undefined }));
 
 // Mock react-virtuoso: render items inline so we can inspect DOM
-vi.mock("react-virtuoso", () => ({
+vi.mock("react-virtuoso", async () => {
+  const { forwardRef } = await vi.importActual<typeof import("react")>("react");
+  return {
   // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
-  Virtuoso: ({
+  Virtuoso: forwardRef(function MockVirtuoso({
     data,
     itemContent,
     className,
     firstItemIndex,
     computeItemKey,
+    atTopStateChange,
+    scrollIntoViewOnChange,
   }: {
     data: readonly unknown[];
     itemContent: (index: number, item: unknown) => React.ReactNode;
     className?: string;
     firstItemIndex?: number;
     computeItemKey?: (index: number, item: unknown) => React.Key;
-  }) => (
+    atTopStateChange?: (atTop: boolean) => void;
+    scrollIntoViewOnChange?: () => unknown;
+  }, _ref) {
+    virtualCallbacks.atTop = atTopStateChange;
+    virtualCallbacks.onChange = scrollIntoViewOnChange;
+    return (
     <div data-testid="virtuoso-scroller" className={className}>
       {data.map((item, i) => (
         // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
@@ -41,8 +54,10 @@ vi.mock("react-virtuoso", () => ({
         </div>
       ))}
     </div>
-  ),
-}));
+    );
+  }),
+  };
+});
 
 // Mock telegram store
 vi.mock("../store", () => ({
@@ -147,7 +162,7 @@ describe("TelegramChatView message padding", () => {
       }));
     const current = messages(50, 50);
     const renderChat = (items: TelegramConversation["messages"], chatId = "chat-1"): React.ReactNode => (
-      <TelegramChatView conversation={{ ...CONVERSATION, chatId, messages: items }} inputPlaceholder="Message..." />
+      <TelegramChatView conversation={{ ...CONVERSATION, chatId, messages: items }} inputPlaceholder="Message..." hasMore onLoadMore={() => undefined} />
     );
     const view = render(renderChat(current));
     const identity = (id: string): { index: number; key: string | undefined } => {
@@ -158,16 +173,27 @@ describe("TelegramChatView message padding", () => {
     const before = identity("message-50");
     expect(before.index).toBeGreaterThan(50);
     expect(before.key).toBe("message-50");
+    virtualCallbacks.atTop?.(true);
     const prepended = [...messages(0, 50), ...current, ...messages(100, 1)];
     view.rerender(renderChat(prepended));
+    expect(virtualCallbacks.onChange?.()).toMatchObject({ index: 50, align: "start", behavior: "auto" });
+    expect(virtualCallbacks.onChange?.()).toBe(false);
     expect(identity("message-50")).toEqual(before);
+    expect(virtualCallbacks.onChange?.()).toBe(false);
     const oldest = identity("message-0");
     expect(oldest.index).toBe(before.index - 50);
     view.rerender(renderChat([...prepended, ...messages(101, 1)]));
     expect(identity("message-0")).toEqual(oldest);
     expect(identity("message-50")).toEqual(before);
+    expect(virtualCallbacks.onChange?.()).toBe(false);
+    virtualCallbacks.atTop?.(true);
+    virtualCallbacks.atTop?.(false);
+    view.rerender(renderChat([...messages(-50, 50), ...prepended, ...messages(101, 1)]));
+    expect(virtualCallbacks.onChange?.()).toBe(false);
     const oldScroller = view.getByTestId("virtuoso-scroller");
+    virtualCallbacks.atTop?.(true);
     view.rerender(renderChat(current, "chat-2"));
+    expect(virtualCallbacks.onChange?.()).toBe(false);
     expect(view.getByTestId("virtuoso-scroller")).not.toBe(oldScroller);
     expect(identity("message-50")).toEqual(before);
     view.unmount();
@@ -199,6 +225,9 @@ describe("TelegramChatView message padding", () => {
       const messageWrapper = item.firstElementChild as HTMLElement;
       expect(messageWrapper).toBeTruthy();
       expect(messageWrapper.className).toMatch(/\bpx-4\b/);
+      // Virtuoso measures each row's border box. Bubble margins must stay
+      // inside that box or every prepended row adds unmeasured scroll space.
+      expect(messageWrapper.className).toMatch(/\bflow-root\b/);
     }
   });
 });
