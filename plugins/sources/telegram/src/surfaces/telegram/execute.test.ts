@@ -410,7 +410,13 @@ describe("unknown action", () => {
 // ── FLOOD_WAIT → the wire ───────────────────────────────────────────────────
 
 describe("FLOOD_WAIT on the send path", () => {
-  test("tst_tgts_flood_wire_001 a SHORT FloodWait retries once and the send succeeds", async () => {
+  /** @test-id: tst_tgts_flood_wire_001
+   * @scenario: scn_tgflood_002
+   * @covers: TGFLOOD_005; public execute does not resend a flooded action
+   * @deterministic: yes
+   * @fixtures: existing fakeOps with synthetic provider failure
+   */
+  test("tst_tgts_flood_wire_001 a SHORT FloodWait fails without sleeping or resending", async () => {
     let attempts = 0;
     const slept: number[] = [];
     const { ops } = fakeOps({
@@ -420,49 +426,51 @@ describe("FLOOD_WAIT on the send path", () => {
         return { id: 900 };
       },
     });
-    const out = await execute(ops, "a", { chat_id: 1, text: "x" }, {
+    await expect(execute(ops, "a", { chat_id: 1, text: "x" }, {
       sleep: async (s) => {
         slept.push(s);
       },
-    });
-    expect(out.message_id).toBe(900);
-    expect(attempts).toBe(2);
-    expect(slept).toEqual([5]);
+    })).rejects.toThrow("RATE_LIMITED:5");
+    expect(attempts).toBe(1);
+    expect(slept).toEqual([]);
   });
 
-  test("tst_tgts_flood_wire_002 a LONG FloodWait → -32002 with data.retry_after", async () => {
-    const { ops } = fakeOps({
-      sendMessage: async () => {
-        throw floodErr(120);
-      },
-    });
-    const reply = (await handleMessage(
-      {
-        jsonrpc: "2.0",
-        id: 1,
-        method: "tools/call",
-        params: {
-          name: "magnis.execute",
-          arguments: { action: "send_message", chat_id: 1, text: "x" },
+  test("tst_tgts_flood_wire_002 short and long send/reply waits → -32002 with data.retry_after", async () => {
+    for (const seconds of [4, 120, 3600]) for (const action of ["send_message", "reply"]) {
+      const { ops, calls } = fakeOps({
+        sendMessage: async () => {
+          throw floodErr(seconds);
         },
-      },
-      {
-        authMode: false,
-        registry: new SubscriptionRegistry(),
-        write: () => {},
-        resolveClient: async () => ({ ops, pager: { dialogPage: async () => ({ dialogs: [], next_offset: null, total: null }) }, accountId: "a" }),
-        sleep: async () => {
-          throw new Error("a long FloodWait must NOT sleep");
+      });
+      const reply = (await handleMessage(
+        {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: {
+            name: "magnis.execute",
+            arguments: { action, chat_id: 1, text: "x", reply_to_message_id: 77 },
+          },
         },
-      },
-    )) as Record<string, unknown>;
+        {
+          authMode: false,
+          registry: new SubscriptionRegistry(),
+          write: () => {},
+          resolveClient: async () => ({ ops, pager: { dialogPage: async () => ({ dialogs: [], next_offset: null, total: null }) }, accountId: "a" }),
+          sleep: async () => {
+            throw new Error("a FloodWait must NOT sleep");
+          },
+        },
+      )) as Record<string, unknown>;
 
-    const error = reply.error as Record<string, unknown>;
-    expect(error.code).toBe(RATE_LIMITED_CODE);
-    expect(error.code).toBe(-32002);
-    // The host reads the TYPED retry_after, not the message text.
-    expect(error.data).toEqual({ retry_after: 120 });
-    expect(error.message).toBe("rate limited; retry after 120s");
+      const error = reply.error as Record<string, unknown>;
+      expect(error.code).toBe(RATE_LIMITED_CODE);
+      expect(error.code).toBe(-32002);
+      // The host reads the TYPED retry_after, not the message text.
+      expect(error.data).toEqual({ retry_after: seconds });
+      expect(error.message).toBe(`rate limited; retry after ${String(seconds)}s`);
+      expect(calls.sendMessage).toHaveLength(1);
+    }
   });
 });
 
