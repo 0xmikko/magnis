@@ -3,6 +3,7 @@ import bigInt from "big-integer";
 import { Api } from "telegram";
 
 import { LiveDialogPager } from "./live";
+import { MTPROTO_REQUEST_TIMEOUT_MS, MtprotoTimeoutError } from "./client";
 import { AccountAdmission } from "./request-admission";
 import { execute, runBootstrap } from "./surfaces/telegram/commands";
 import { liveUpdatePushes } from "./subscriptions";
@@ -37,6 +38,154 @@ const ORIGINS = [
   { name: "messages.SendMessage", request: () => new Api.messages.SendMessage({ peer: new Api.InputPeerChat({ chatId: bigInt(1) }), message: "synthetic action", randomId: bigInt(9) }) },
   { name: "auth.SendCode", request: () => new Api.auth.SendCode({ phoneNumber: "fixture-only", apiId: 1, apiHash: "fixture-only", settings: new Api.CodeSettings({}) }) },
 ] as const;
+
+/** @test-id: tst_src_tgflood_003
+ * @scenario: scn_tgflood_004
+ * @covers: shared resumable peer discovery, isolated cancellation and history recovery
+ * @deterministic: yes
+ * @fixtures: real Source/SDK with serialized dialog/history/update replies and fake I/O
+ */
+test("tst_src_tgflood_003 peer misses share a continuation through floods and cancellation", async () => {
+  const nativeTimeout = globalThis.setTimeout;
+  const clock = new VirtualClock();
+  const f = await createTransport(clock);
+  const deps = { sleep: async (): Promise<void> => { throw new Error("Unexpected independent retry sleep"); } };
+  let wireIndex = 0;
+  const dialogResponse = (ids: number[], slice: boolean): Api.messages.Dialogs | Api.messages.DialogsSlice => {
+    const data = { dialogs: ids.map((id) => new Api.Dialog({ pinned: id <= 2,
+      peer: new Api.PeerChat({ chatId: bigInt(id) }), topMessage: 1000 + id,
+      readInboxMaxId: 0, readOutboxMaxId: 0, unreadCount: 0, unreadMentionsCount: 0,
+      unreadReactionsCount: 0, notifySettings: new Api.PeerNotifySettings({}) })),
+      messages: ids.map((id) => fixtureMessage(id, 1000 + id)), chats: ids.map(fixtureChat), users: [] };
+    return slice ? new Api.messages.DialogsSlice({ ...data, count: 200 }) : new Api.messages.Dialogs(data);
+  };
+  try {
+    const a = outcome(f.tg.resolvePeer(201));
+    const b = outcome(f.tg.resolvePeer(202));
+    const first = await f.application(wireIndex++);
+    if (!(first.state.request instanceof Api.messages.GetDialogs)) throw new Error("Expected real discovery request");
+    expect(first.state.request.offsetId).toBe(0);
+    const firstIds = Array.from({ length: first.state.request.limit }, (_, index) => index + 1);
+    const lastId = firstIds.at(-1);
+    if (lastId === undefined) throw new Error("Empty discovery fixture");
+    await f.reply(first, dialogResponse(firstIds, true));
+    clock.advance(3000);
+    const failedPage = await f.application(wireIndex++);
+    if (!(failedPage.state.request instanceof Api.messages.GetDialogs)) throw new Error("Discovery must not hydrate history");
+    expect(failedPage.state.request.offsetId).toBe(1000 + lastId);
+    expect(failedPage.state.request.excludePinned).toBe(true);
+    const continuation = failedPage.state.request.getBytes();
+    await f.reply(failedPage, new Api.RpcError({ errorCode: 420, errorMessage: "FLOOD_WAIT_4" }));
+    expect((await a).value).toMatchObject({ code: 420, seconds: 6 });
+    expect((await b).value).toMatchObject({ code: 420, seconds: 6 });
+    const held = await outcome(f.tg.resolvePeer(201));
+    expect(held.value).toMatchObject({ code: 420, seconds: 6 });
+    expect(f.writes).toHaveLength(wireIndex);
+    expect(await f.tg.resolvePeer(1)).toMatchObject({ id: bigInt(1) });
+    expect(await f.tg.resolvePeer(2)).toMatchObject({ id: bigInt(2) });
+    clock.advance(6000);
+    const cancel = new AbortController();
+    const cancelled = outcome(f.tg.resolvePeer(201, cancel.signal));
+    const surviving = outcome(f.tg.resolvePeer(202));
+    const resumed = await f.application(wireIndex++);
+    expect(resumed.state.request.getBytes()).toEqual(continuation);
+    cancel.abort(new Error("fixture cancelled one lookup"));
+    expect((await cancelled).value).toMatchObject({ message: "fixture cancelled one lookup" });
+    await f.reply(resumed, dialogResponse([201, 202, 103], false));
+    expect((await surviving).value).toMatchObject({ id: bigInt(202) });
+    expect(await f.tg.resolvePeer(201)).toMatchObject({ id: bigInt(201) });
+    expect((await outcome(f.tg.resolvePeer(9999))).value).toMatchObject({ message: "chat 9999 not found in any dialog" });
+    expect(f.writes).toHaveLength(wireIndex);
+    expect(f.writes.filter((sent) => sent.state.request instanceof Api.messages.GetDialogs && sent.state.request.offsetId === 0)).toHaveLength(1);
+    expect(f.admission.remoteFloods).toBe(1);
+
+    const self = new Api.User({ id: bigInt(999), accessHash: bigInt(3), self: true, firstName: "Fixture" });
+    const me = f.client.getMe(true);
+    clock.advance(3000);
+    await f.reply(await f.application(wireIndex++), { getBytes: (): Buffer => {
+      const header = Buffer.alloc(8); header.writeUInt32LE(0x1cb5c415); header.writeUInt32LE(1, 4);
+      return Buffer.concat([header, self.getBytes()]);
+    } });
+    await me;
+    let delivered: (() => void) | undefined;
+    const live = new Promise<void>((resolve) => { delivered = resolve; });
+    f.tg.addLiveHandler(() => { delivered?.(); });
+    await f.incoming(new Api.Updates({ updates: [new Api.UpdateNewMessage({ message: fixtureMessage(888, 1), pts: 1, ptsCount: 1 })],
+      chats: [fixtureChat(888)], users: [self], date: 1700000001, seq: 1 }));
+    await live;
+    expect(await f.tg.resolvePeer(888)).toMatchObject({ id: bigInt(888) });
+    expect(f.writes).toHaveLength(wireIndex);
+
+    let expireHistory: (() => void) | undefined;
+    const timeoutHost: { setTimeout(callback: (...args: unknown[]) => void, delay?: number, ...args: unknown[]): ReturnType<typeof setTimeout> } = globalThis;
+    const timer = spyOn(timeoutHost, "setTimeout").mockImplementation((callback, delay, ...args) => {
+      const handle = nativeTimeout(callback, delay, ...args);
+      if (delay === MTPROTO_REQUEST_TIMEOUT_MS) { clearTimeout(handle); expireHistory = () => callback(...args); }
+      return handle;
+    });
+    try {
+      const timedOut = outcome(execute(f.tg, "fixture-A", { action: "backfill_chat", chat_id: 201, before_message_id: 0, limit: 50 }, deps));
+      clock.advance(3000);
+      const uncertain = await f.application(wireIndex++);
+      if (!expireHistory) throw new Error("History timeout was not armed");
+      expireHistory();
+      expect((await timedOut).value).toBeInstanceOf(MtprotoTimeoutError);
+      expect((await timedOut).value).not.toHaveProperty("envelopes");
+      expect((await timedOut).value).not.toHaveProperty("has_more");
+      // A late SDK success settles its slot, never the failed Source receipt.
+      await f.reply(uncertain, new Api.messages.Messages({ messages: [fixtureMessage(201, 120)], chats: [fixtureChat(201)], users: [] }));
+
+      const cursor = { chats: { "1": { last_msg_id: 7 } }, pinned_count: 2 };
+      const hydration = outcome(runBootstrap(cursor, new LiveDialogPager(f.tg, "fixture-A")));
+      clock.advance(3000);
+      await f.reply(await f.application(wireIndex++), dialogResponse([201], false));
+      clock.advance(3000);
+      const snapshot = await f.application(wireIndex++);
+      expect(snapshot.method).toBe("messages.GetHistory");
+      if (!expireHistory) throw new Error("Hydration timeout was not armed");
+      expireHistory();
+      const failedSnapshot = await hydration;
+      expect(failedSnapshot.kind).toBe("rejected");
+      expect(failedSnapshot.value).toBeInstanceOf(MtprotoTimeoutError);
+      expect(failedSnapshot.value).not.toHaveProperty("envelopes");
+      expect(failedSnapshot.value).not.toHaveProperty("cursor");
+      expect(cursor).toEqual({ chats: { "1": { last_msg_id: 7 } }, pinned_count: 2 });
+      await f.reply(snapshot, new Api.messages.Messages({ messages: [fixtureMessage(201, 120)], chats: [fixtureChat(201)], users: [] }));
+    } finally { timer.mockRestore(); }
+
+    const counts = new Map([[201, 120], [202, 70], [103, 5]]);
+    const emitted: string[] = [];
+    for (const [chat, count] of counts) {
+      let before = 0;
+      for (;;) {
+        const reading = execute(f.tg, "fixture-A", { action: "backfill_chat", chat_id: chat, before_message_id: before, limit: 50 }, deps);
+        clock.advance(3000);
+        const sent = await f.application(wireIndex++);
+        const request: unknown = sent.state.request;
+        if (!(request instanceof Api.messages.GetHistory)) throw new Error("Cached peer caused another discovery scan");
+        expect(request.offsetId).toBe(before);
+        expect(request.limit).toBe(50);
+        const messages = Array.from({ length: count }, (_, index) => count - index)
+          .filter((id) => before === 0 || id < before).slice(0, 50).map((id) => fixtureMessage(chat, id));
+        await f.reply(sent, new Api.messages.MessagesSlice({ count, messages, chats: [fixtureChat(chat)], users: [] }));
+        const page = await reading;
+        const batch = envelopes(page);
+        emitted.push(...batch.map((item) => String(item.remote_id)));
+        expect(batch.length).toBeLessThanOrEqual(50);
+        if (page.has_more === false) { expect(batch).toHaveLength(0); break; }
+        expect(page.has_more).toBe(true);
+        if (typeof page.oldest_message_id !== "number") throw new Error("Missing recovered history continuation");
+        before = page.oldest_message_id;
+      }
+    }
+    expect(emitted).toHaveLength(195);
+    expect(new Set(emitted)).toEqual(new Set([...counts].flatMap(([chat, count]) =>
+      Array.from({ length: count }, (_, index) => `tg:msg:${String(chat)}:${String(index + 1)}`))));
+    // Three discovery requests plus the independently requested snapshot page.
+    expect(f.writes.filter((sent) => sent.method === "messages.GetDialogs")).toHaveLength(4);
+    expect(f.maximumInFlight()).toBe(1);
+  } finally { await f.close(); }
+});
 
 /** @test-id: tst_src_tgflood_001
  * @scenario: scn_tgflood_001
