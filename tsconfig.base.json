@@ -18,6 +18,7 @@
     "paths": {
       "@magnis/plugin-sdk": ["./packages/plugin-sdk/index.ts"],
       "@magnis/declare": ["./packages/declare/index.ts"],
+      "@magnis/declare/derive": ["./packages/declare/derive.ts"],
       "@magnis/connector-sdk": ["./packages/connector-sdk/index.ts"],
       "@magnis/testkit/module": ["./packages/testkit/module.ts"],
       "@magnis/testkit/source": ["./packages/testkit/source.ts"],

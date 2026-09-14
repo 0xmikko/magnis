@@ -158,6 +158,10 @@ export function descriptorFrom(schema: z.ZodType): { stem: string; descriptor: E
       fields.push(...nestedFields(inner, key));
       continue;
     }
+    // An object with no declared shape is a pointer someone else reads — a
+    // source reference, a provider blob. The graph holds it; there is no field
+    // inside it to name, so search claims none.
+    if (inner.type === "object") continue;
 
     const embed = searched.title === key ? "title" : searched.body === key ? "body" : undefined;
     fields.push(embed === undefined

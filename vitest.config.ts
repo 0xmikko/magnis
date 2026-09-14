@@ -31,6 +31,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@magnis/plugin-sdk": resolve(__dirname, "./packages/plugin-sdk/index.ts"),
+      "@magnis/declare/derive": resolve(__dirname, "./packages/declare/derive.ts"),
       "@magnis/declare": resolve(__dirname, "./packages/declare/index.ts"),
       "@magnis/connector-sdk": resolve(__dirname, "./packages/connector-sdk/index.ts"),
       "@magnis/testkit/module": resolve(__dirname, "./packages/testkit/module.ts"),

@@ -3,7 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "How a module declares its entities. BUILD TIME ONLY — read by scripts/build-plugins.ts and by each module's entities.ts, never by module/ code, never by ui/. It imports zod; the isolate and the browser must never see it.",
+  "description": "How a module declares its entities. BUILD TIME ONLY \u2014 read by scripts/build-plugins.ts and by each module's entities.ts, never by module/ code, never by ui/. It imports zod; the isolate and the browser must never see it.",
   "main": "./index.ts",
-  "types": "./index.ts"
+  "types": "./index.ts",
+  "exports": {
+    ".": "./index.ts",
+    "./derive": "./derive.ts"
+  }
 }
