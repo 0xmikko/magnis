@@ -17,6 +17,8 @@ export default defineConfig({
       "plugins/modules/**/module/**/*.test.ts",
       "plugins/modules/**/ui/**/sourceStatusAdapter.test.ts",
       "packages/plugin-sdk/__tests__/**/*.test.ts",
+      // Build-time declaration helpers: what a module's entities.ts becomes.
+      "packages/declare/__tests__/**/*.test.ts",
       // testkit ships TWO test lanes in one package: module.test.ts is vitest;
       // source.test.ts is bun (`bun:test`, run by scripts/test-connectors.sh).
       // Pick up ONLY the vitest one — globbing `**` would drag the bun file in.
@@ -26,6 +28,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@magnis/plugin-sdk": resolve(__dirname, "./packages/plugin-sdk/index.ts"),
+      "@magnis/declare": resolve(__dirname, "./packages/declare/index.ts"),
       "@magnis/connector-sdk": resolve(__dirname, "./packages/connector-sdk/index.ts"),
       "@magnis/testkit/module": resolve(__dirname, "./packages/testkit/module.ts"),
     },

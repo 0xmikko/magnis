@@ -23,6 +23,9 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, wri
 import { dirname, join } from "path";
 import ts from "typescript";
 import { parse as parseToml } from "smol-toml";
+import { z } from "zod";
+
+import { descriptorFrom } from "../packages/declare/derive.ts";
 
 const REPO_ROOT = join(import.meta.dir, "..");
 const SHIM_URL = (slug: string): string => `/api/plugins/__host-shim.js?m=${slug}`;
@@ -333,8 +336,26 @@ export async function buildPlugin(pluginId: string, opts: BuildOpts = {}): Promi
   // stays dependency-closed (the host reads both at scan/install).
   const readmePath = join(pluginsDir, "modules", pluginId, "README.md");
   if (existsSync(readmePath)) writeFileSync(join(pkgDir, "README.md"), readFileSync(readmePath));
+  // A module that has been through its stage DECLARES its entities in one
+  // file, and the descriptors the host reads are derived from it here. One
+  // that has not still ships the hand-written schemas/ it always had.
+  const entitiesPath = join(pluginsDir, "modules", pluginId, "entities.ts");
   const schemasDir = join(pluginsDir, "modules", pluginId, "schemas");
-  if (existsSync(schemasDir)) {
+  if (existsSync(entitiesPath)) {
+    const dstSchemas = join(pkgDir, "schemas");
+    mkdirSync(dstSchemas, { recursive: true });
+    const declared = (await import(entitiesPath)) as Record<string, unknown>;
+    const written: string[] = [];
+    for (const value of Object.values(declared)) {
+      if (!(value instanceof z.ZodType)) continue;
+      const { stem, descriptor } = descriptorFrom(value);
+      writeFileSync(join(dstSchemas, `${stem}.json`), `${JSON.stringify(descriptor, null, 2)}\n`);
+      written.push(stem);
+    }
+    if (written.length === 0) {
+      throw new Error(`${pluginId}: entities.ts exports no declared entity`);
+    }
+  } else if (existsSync(schemasDir)) {
     const dstSchemas = join(pkgDir, "schemas");
     mkdirSync(dstSchemas, { recursive: true });
     for (const f of readdirSync(schemasDir)) {
