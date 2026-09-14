@@ -380,8 +380,14 @@ export async function buildPlugin(pluginId: string, opts: BuildOpts = {}): Promi
   // The search-contract declaration rides next to the manifest (host reads
   // it from the built tree, same as manifest.toml).
   const searchPath = join(pluginsDir, "modules", pluginId, "search.toml");
+  const distSearch = join(pkgDir, "search.toml");
   if (existsSync(searchPath)) {
-    writeFileSync(join(pkgDir, "search.toml"), readFileSync(searchPath));
+    writeFileSync(distSearch, readFileSync(searchPath));
+  } else {
+    // A module that moved its declaration into entities.ts deleted this file;
+    // a copy left behind from an earlier build would be a second answer to a
+    // question the descriptor now answers.
+    rmSync(distSearch, { force: true });
   }
 
   return { pluginId, bundleFile, hash };

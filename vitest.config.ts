@@ -15,6 +15,9 @@ export default defineConfig({
     environment: "node",
     include: [
       "plugins/modules/**/module/**/*.test.ts",
+      // A module's declaration is tested beside it, OUTSIDE module/: the module's
+      // own tsconfig must never see zod.
+      "plugins/modules/*/entities.test.ts",
       "plugins/modules/**/ui/**/sourceStatusAdapter.test.ts",
       "packages/plugin-sdk/__tests__/**/*.test.ts",
       // Build-time declaration helpers: what a module's entities.ts becomes.

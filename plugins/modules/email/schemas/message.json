@@ -1,8 +1,0 @@
-{
-  "name": "Email message",
-  "description": "An email message entity owned by the email plugin.",
-  "mergeable": false,
-  "roles": [
-    "content"
-  ]
-}

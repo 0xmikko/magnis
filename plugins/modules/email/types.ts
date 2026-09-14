@@ -1,14 +1,15 @@
 // Shared schema→type maps for the email plugin (single source of truth for
 // module/service.ts + ui/). Record schema_id → payload type; canonical key → value.
 
+/** One stored message record — the provider's dictionary MINUS what edges
+ * carry: the recipients are `sent_to`, the sender's address is `authored_by`,
+ * the attachments are `file.attachment`. `entities.ts` declares exactly this
+ * and the build proves the two are one type. */
 export interface EmailMessageDetails {
   message_id?: string;
   subject?: string | null;
   from_address?: string | null;
   from_name?: string | null;
-  to_addresses?: string | null;
-  cc_addresses?: string | null;
-  bcc_addresses?: string | null;
   snippet?: string | null;
   body_text?: string | null;
   body_html?: string | null;
@@ -21,7 +22,6 @@ export interface EmailMessageDetails {
   is_important?: boolean;
   has_attachments?: boolean;
   thread_id?: string;
-  attachments?: { filename: string; mime_type: string; size: number; path: string }[];
 }
 
 export interface EmailAddressDetails {
