@@ -1,8 +1,0 @@
-{
-  "name": "LinkedIn profile",
-  "description": "A tracked person's profile on LinkedIn.",
-  "mergeable": false,
-  "roles": [
-    "identity_channel"
-  ]
-}

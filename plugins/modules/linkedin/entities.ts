@@ -1,14 +1,12 @@
-/** What x's two entities ARE: the envelope payloads the module stores
+/** What linkedin's two entities ARE: the envelope payloads the module stores
  * verbatim, and how each is searched.
  *
  * BUILD TIME ONLY — a leaf. `module/`, `ui/` and `types.ts` import nothing
  * from here.
  *
- * A post's metrics are a nested object, which is how the module receives and
- * stores them. The hand-written declaration named likes/reposts/replies/
- * impressions as TOP-LEVEL paths, where no record has ever had them; the
- * derivation reaches them by the dotted path the resolver splits, which is
- * what linkedin's file spelled by hand and this one got wrong.
+ * A post's metrics are a nested object, and the hand-written file already
+ * reached them by their dotted path — the derivation does the same from the
+ * shape, so the path and the key stop being written out by hand.
  */
 import { z } from "zod";
 import { column, entity, moment, type AssertEqual } from "@magnis/declare";
@@ -19,14 +17,15 @@ const platform = z.enum(["x", "linkedin"]);
 
 export const profile = entity(
   {
-    id: "x.profile",
-    name: "X profile",
-    description: "A tracked person's profile on X (Twitter).",
+    id: "linkedin.profile",
+    name: "LinkedIn profile",
+    description: "A tracked person's profile on LinkedIn.",
     roles: ["identity_channel"],
   },
   {
     entity_type: z.literal("profile"),
     platform,
+    urn: z.string(),
     handle: z.string(),
     display_name: column("name", z.string().optional()),
     url: z.string().nullish(),
@@ -43,9 +42,9 @@ void _profileIsTheModulesOwnType;
 
 export const post = entity(
   {
-    id: "x.post",
-    name: "X post",
-    description: "A tweet from a tracked X profile.",
+    id: "linkedin.post",
+    name: "LinkedIn post",
+    description: "A post from a tracked LinkedIn profile.",
     roles: ["content"],
     triggerable: true,
   },

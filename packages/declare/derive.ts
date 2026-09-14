@@ -82,6 +82,24 @@ function withoutBookkeeping(value: unknown): unknown {
   return out;
 }
 
+/** The scalars inside a nested object, each one field named by its leaf and
+ * reached by the dotted path the resolver splits. */
+function nestedFields(node: Node, prefix: string): DeclaredField[] {
+  const properties = isNode(node.properties) ? node.properties : {};
+  const out: DeclaredField[] = [];
+  for (const [key, raw] of Object.entries(properties)) {
+    if (!isNode(raw)) continue;
+    const inner = meaningful(raw);
+    if (isNode(inner.properties)) {
+      out.push(...nestedFields(inner, `${prefix}.${key}`));
+      continue;
+    }
+    if (inner.type === "array") continue;
+    out.push({ key, kind: kindOf(raw, key), path: `${prefix}.${key}` });
+  }
+  return out;
+}
+
 export function descriptorFrom(schema: z.ZodType): { stem: string; descriptor: EntityDescriptor } {
   const converted = z.toJSONSchema(schema, { target: "draft-7", io: "input" }) as Node;
   const declared = converted[DECLARATION_KEYS.entity];
@@ -130,15 +148,28 @@ export function descriptorFrom(schema: z.ZodType): { stem: string; descriptor: E
       continue;
     }
 
-    // A nested object is enforced by the graph and NOT searched: the query
-    // language has no word for reaching inside one, so declaring it as a field
-    // would promise a filter that cannot be written. It stays in the schema.
-    if (inner.type === "object" || isNode(inner.properties)) continue;
+    // A nested object is reached by a dotted path: `metrics.likes` is one
+    // field named `likes`. The resolver splits on the dot, so a value inside
+    // is as searchable as one at the top.
+    if (isNode(inner.properties)) {
+      fields.push(...nestedFields(inner, key));
+      continue;
+    }
 
     const embed = searched.title === key ? "title" : searched.body === key ? "body" : undefined;
     fields.push(embed === undefined
       ? { key, kind: kindOf(raw, key), path: key }
       : { key, kind: kindOf(raw, key), path: key, embed });
+  }
+
+  // A leaf name that collides with another field is a filter nobody can
+  // address: two paths, one word.
+  const named = new Set<string>();
+  for (const field of fields) {
+    if (named.has(field.key)) {
+      throw new Error(`two fields are both named ${field.key}: the shape has to say which one a filter means`);
+    }
+    named.add(field.key);
   }
 
   for (const [name, legs] of Object.entries(searched.alias ?? {})) {

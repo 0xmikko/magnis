@@ -19,6 +19,10 @@ export interface SyncEnvelope {
 /** `linkedin.profile.identity` record data. */
 export interface ProfileIdentity {
   platform: Platform;
+  /** The stable LinkedIn URN. A handle is renameable, so it can never be an
+   * anchor — a profile arriving without this is dropped by ingest, which is
+   * why it is required rather than optional. */
+  urn: string;
   handle: string;
   display_name?: string;
   url?: string | null;

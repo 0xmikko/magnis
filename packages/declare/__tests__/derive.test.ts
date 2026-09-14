@@ -58,13 +58,14 @@ describe("a declaration becomes an entity descriptor", () => {
     expect(descriptor.search.field.map((f) => f.key)).not.toContain("labels");
   });
 
-  it("a nested object is enforced and not searched", () => {
+  it("a value inside a nested object is searchable by its dotted path", () => {
     const { descriptor } = descriptorFrom(message);
     const props = (descriptor.json_schema as { properties: Record<string, unknown> }).properties;
-    // The graph still holds a write to it...
+    // The graph enforces the whole object...
     expect(Object.keys(props)).toContain("schedule");
-    // ...and search claims no filter it could not answer.
+    // ...and the scalar inside it is one field, named by its leaf.
+    expect(descriptor.search.field).toContainEqual({ key: "cron", kind: "text", path: "schedule.cron" });
+    // The object itself is not a field — there is no filter for a whole object.
     expect(descriptor.search.field.map((f) => f.key)).not.toContain("schedule");
-    expect(descriptor.search.collection.map((c) => c.key)).not.toContain("schedule");
   });
 });
