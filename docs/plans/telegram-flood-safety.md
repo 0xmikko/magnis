@@ -461,21 +461,22 @@ Scoped behavior files: plugins/sources/telegram/src/tst_src_tgflood_001.test.ts 
 
 ##### Tasks
 
-- [ ] TGFLOOD_006 — Coalesce and resume peer discovery in live.ts; prove cache hits and failure recovery in tst_src_tgflood_001.test.ts. (35 min)
+- [x] TGFLOOD_006 — Coalesce and resume peer discovery in live.ts; prove cache hits and failure recovery in tst_src_tgflood_001.test.ts. (35 min) — a457be17c5acd9dc205f9ee2d895e52d69ebb710
 <!-- plan:task-meta:{"writes":["plugins/sources/telegram/src/live.ts","plugins/sources/telegram/src/tst_src_tgflood_001.test.ts"],"predictedActiveMinutes":35,"predictedCredits":4,"how":"In plugins/sources/telegram/src/tst_src_tgflood_001.test.ts add tst_src_tgflood_003 / scn_tgflood_004: simultaneously resolve two peers beyond page one, flood the next page, cancel one waiter, advance fake time and continue. Assert one shared scan, no repeated successful offset-zero page, unchanged failed-page continuation and exactly the expected recovered identities. In plugins/sources/telegram/src/live.ts extend the existing peer cache and LiveDialogPager, not a second discovery service. Cache entities observed during live delivery where available, share an advancing scan between misses, retain its last successful cursor through a flood and remove only the cancelled caller. A known peer uses zero GetDialogs calls. In plugins/sources/telegram/src/tst_src_tgflood_001.test.ts exercise pinned peers, scan exhaustion, an inaccessible peer and an independently timed-out history page. Failures remain failures: no fabricated empty success, EOF, successful Source receipt or cursor advancement. Finish the 120/70/5 history fixture and compare the exact 195 unique historical identities. In plugins/sources/telegram/src/live.ts keep existing account guard ownership and all admitted network calls from D1-S2. Do not reset pacing, restart the client, erase a known hold or modify commands.ts, subscriptions.ts, pagination wire formats or Graph state.","red":"bun run agent:test:backend -- plugins/sources/telegram/src/tst_src_tgflood_001.test.ts -t 'tst_src_tgflood_003'"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- plugins/sources/telegram/src/tst_src_tgflood_001.test.ts -t 'tst_src_tgflood_003'` exits 0 — concurrent misses share one advancing scan, known peers require zero discovery calls and a flood resumes without rereading successful pages.
-- [ ] `bun run agent:test:backend -- plugins/sources/telegram/src/live.test.ts` exits 0 — existing peer/paging/media regressions remain intact.
+- [x] `bun run agent:test:backend -- plugins/sources/telegram/src/tst_src_tgflood_001.test.ts -t 'tst_src_tgflood_003'` exits 0 — concurrent misses share one advancing scan, known peers require zero discovery calls and a flood resumes without rereading successful pages. — f47d5c0913a3156e240876768ca05f9a6eecd15e
+- [x] `bun run agent:test:backend -- plugins/sources/telegram/src/live.test.ts` exits 0 — existing peer/paging/media regressions remain intact. — f47d5c0913a3156e240876768ca05f9a6eecd15e
 - [ ] Cancelling one waiter preserves other callers; inaccessible peers and timed-out history pages do not emit successful coverage or advance continuation; recovery yields the exact 195 historical identities.
-- [ ] Commit
+- [x] Commit — f47d5c0913a3156e240876768ca05f9a6eecd15e
 
 ##### Results
 
 <!-- plan:results:D1-S4:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| TGFLOOD_006 | a457be17c5acd9dc205f9ee2d895e52d69ebb710 | 2026-09-14T22:51:40.672Z–2026-09-14T23:18:51.000Z | 27.17 / 27.17 min | unavailable: Runner exposes no per-Task credit usage. Active time is the continuously attended Stage interval including tool waits. | Behavioral RED: concurrent real peer misses transmitted a second offset-zero GetDialogs instead of continuation1100. After shared discovery, independent history hydration timeout separately returned a successful page instead of rejection. GREEN: named F4 journey68 assertions; two-file regression and normal hook5 scenarios/610 assertions, Source TypeScript and ESLint passed. One per-client advancing discovery page reuses the existing LiveDialogPager request/decoder, preserves byte-exact failed-page continuation through one real FLOOD, isolates AbortSignal waiter cancellation, retains pinned/live entity cache hits and refuses exhausted inaccessible peers. Real backfill and bootstrap timeout paths emit no successful envelopes/cursor; unchanged input cursor verified and later underlying SDK reply only settles its permit. Recovery emits exactly195 unique expected historical identities. Existing transient non-timeout hydration semantics remain unchanged. Source diff71 added/44 deleted; test149 added. Only declared two files changed; clean worktree. No provider, Graph, PR, push, plan mutation or complete-publication-gate claim. |
 <!-- plan:results:D1-S4:end -->
 <!-- plan:stage:D1-S4:end -->
 
@@ -602,4 +603,8 @@ Scoped behavior files: plugins/sources/telegram/src/tst_src_tgflood_001.test.ts,
 - record-result D1-S3 commit:3e148271da6da7f9735171494e1625925ce7640e
 
 - close D1-S3 partial commit:6a03f4485e61b99251878095ddc6866467b25c74
+
+- record-result D1-S4 commit:a457be17c5acd9dc205f9ee2d895e52d69ebb710
+
+- close D1-S4 partial commit:f47d5c0913a3156e240876768ca05f9a6eecd15e
 <!-- plan:execution:end -->

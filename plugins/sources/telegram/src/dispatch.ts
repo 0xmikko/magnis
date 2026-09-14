@@ -12,7 +12,8 @@
 //   2. Push notification params are {subscription_id, account_id, payload,
 //      remote_id} — the SDK's emitter always stamps `surface` + `kind` too.
 //   3. `listen_start` REQUIRES subscription_id (-32602 when missing); the SDK
-//      silently defaults it to "sub:legacy". Its errors are -32602, not -32000.
+//      silently defaults it to "sub:legacy". Input errors use -32602; runtime
+//      failures retain the connector's typed auth/rate-limit codes.
 //   4. `listen_stop` answers {ok, subscription_id, cancelled} and NEVER errors;
 //      the SDK answers a bare {ok:true} and can error.
 //   5. `capabilities` omits `interval_secs` entirely (push source); the SDK
@@ -28,8 +29,9 @@
 // only what genuinely matches: its shared `RATE_LIMIT_CODE` constant, so the
 // rate-limit contract stays defined in exactly one place.
 
+import { createInterface } from "node:readline";
 import { RATE_LIMIT_CODE } from "@magnis/connector-sdk";
-import { floodWaitSecs, RATE_LIMITED_PREFIX } from "./client";
+import { accountIdFromMeta, credsFromMeta, floodWaitSecs, RATE_LIMITED_PREFIX } from "./client";
 import * as auth from "./auth";
 import * as commands from "./surfaces/telegram/commands";
 import type { DialogPager } from "./client";
@@ -37,6 +39,7 @@ import type { TgOps } from "./surfaces/telegram/commands";
 import * as fixture from "./surfaces/telegram/fixture";
 import { SURFACE_TELEGRAM } from "./schema";
 import type { LineWriter, SubscriptionRegistry } from "./subscriptions";
+import type { AuthClientFactory } from "./live";
 
 // ── JSON-RPC error codes (protocol contract with the host) ────────────────
 //
@@ -64,19 +67,21 @@ function errText(e: unknown): string {
 
 /** Classify an error from a live tool op into `(code, message)`. A Telegram
  * auth/session failure (RPC code 401 — AUTH_KEY_UNREGISTERED, SESSION_REVOKED)
- * gets AUTH_REQUIRED_CODE; a long FLOOD_WAIT (the RATE_LIMITED sentinel, already
+ * gets AUTH_REQUIRED_CODE; any FLOOD_WAIT (the RATE_LIMITED sentinel, already
  * converted by the send wrapper) gets RATE_LIMITED_CODE; everything else keeps
  * the generic code. */
 export function classifyToolError(err: unknown): [number, string] {
   const message = errText(err);
-  if (message.startsWith(RATE_LIMITED_PREFIX)) return [RATE_LIMITED_CODE, message];
-  // A RAW gramjs FloodWaitError (code 420, `.seconds` set) thrown out of the
-  // BOOTSTRAP path (getDialogs / getMessages) never went through the send-path
-  // sentinel wrapper. Convert it to the SAME `RATE_LIMITED:{secs}` sentinel so
-  // `toolErrorReply` attaches `data.retry_after` → the host sees a typed -32002
-  // and backs off, instead of a generic error + a frozen "bootstrapping" UI.
-  const flood = floodWaitSecs(err);
-  if (flood !== undefined) return [RATE_LIMITED_CODE, `${RATE_LIMITED_PREFIX}${String(flood)}`];
+  // @tested-by: tst_src_tgflood_005 — auth.step preserves the remote cause.
+  const seen = new Set<unknown>();
+  for (let cause = err; cause !== undefined && !seen.has(cause);) {
+    seen.add(cause);
+    const text = errText(cause);
+    if (text.startsWith(RATE_LIMITED_PREFIX)) return [RATE_LIMITED_CODE, text];
+    const wait = floodWaitSecs(cause);
+    if (wait !== undefined) return [RATE_LIMITED_CODE, `${RATE_LIMITED_PREFIX}${String(wait)}`];
+    cause = cause instanceof Error ? cause.cause : undefined;
+  }
   // Telegram signals auth/session failures as RPC error code 401. Match the
   // structured error, not the message text.
   const rpc = err as { code?: number } | null;
@@ -129,8 +134,14 @@ export interface DispatchDeps {
   /** Writes notification lines (push envelopes) to the host. */
   write: LineWriter;
   resolveClient?: ClientResolver;
-  /** Flood-retry sleeper (tests inject a no-op). */
+  authFactory?: AuthClientFactory;
+  /** Existing execute compatibility argument; the helper never resends. */
   sleep?: (secs: number) => Promise<void>;
+}
+
+function validateListenerArgs(args: Record<string, unknown>): void {
+  accountIdFromMeta(args);
+  if (fixture.fixturePath() === undefined) credsFromMeta(args);
 }
 
 export interface JsonRpcMessage {
@@ -233,14 +244,19 @@ export async function handleMessage(
           error: { code: INVALID_PARAMS_CODE, message: "missing required arg 'subscription_id'" },
         };
       }
+      try { validateListenerArgs(args); }
+      catch (error) {
+        return { jsonrpc: "2.0", id, error: { code: INVALID_PARAMS_CODE, message: errText(error) } };
+      }
       try {
         await deps.registry.startFromEnv(subId, args, deps.write);
         return { jsonrpc: "2.0", id, result: { ok: true, subscription_id: subId } };
       } catch (e) {
+        const [code, message] = classifyToolError(e);
         return {
           jsonrpc: "2.0",
           id,
-          error: { code: INVALID_PARAMS_CODE, message: errText(e) },
+          error: toolErrorReply(code, message),
         };
       }
     }
@@ -268,14 +284,19 @@ export async function handleMessage(
       } catch {
         subId = "sub:legacy";
       }
+      try { validateListenerArgs(args); }
+      catch (error) {
+        return { jsonrpc: "2.0", id, error: { code: INVALID_PARAMS_CODE, message: errText(error) } };
+      }
       try {
         await deps.registry.startFromEnv(subId, args, deps.write);
         return { jsonrpc: "2.0", id, result: { ok: true, subscription_id: subId } };
       } catch (e) {
+        const [code, message] = classifyToolError(e);
         return {
           jsonrpc: "2.0",
           id,
-          error: { code: INVALID_PARAMS_CODE, message: errText(e) },
+          error: toolErrorReply(code, message),
         };
       }
     }
@@ -302,12 +323,14 @@ export async function handleMessage(
       try {
         const result =
           name === "magnis.auth.begin"
-            ? await auth.begin(args)
+            ? await auth.begin(args, deps.authFactory)
             : name === "magnis.auth.step"
               ? await auth.step(args)
-              : await auth.revoke(args);
+              : await auth.revoke(args, deps.authFactory);
         return { jsonrpc: "2.0", id, result };
       } catch (e) {
+        const [code, message] = classifyToolError(e);
+        if (code === RATE_LIMITED_CODE) return { jsonrpc: "2.0", id, error: toolErrorReply(code, message) };
         return { jsonrpc: "2.0", id, error: { code: AUTH_FLOW_ERROR_CODE, message: errText(e) } };
       }
     }
@@ -319,4 +342,75 @@ export async function handleMessage(
         error: { code: TOOL_ERROR_CODE, message: `unknown tool ${name}` },
       };
   }
+}
+
+/** Bound on concurrently-dispatched `tools/call`s. The read loop dispatches each
+ * call WITHOUT awaiting it, so an interactive send is never starved behind a
+ * long-running bootstrap fetch; this caps the in-flight count so a misbehaving
+ * caller cannot fork-bomb the connector. Twin of the Rust
+ * MAX_INFLIGHT_TOOL_CALLS + its semaphore. */
+const MAX_INFLIGHT_TOOL_CALLS = 8;
+
+/** Minimal counting semaphore (the Rust binary uses tokio's). */
+class Semaphore {
+  private available: number;
+  private readonly waiters: (() => void)[] = [];
+
+  constructor(permits: number) {
+    this.available = permits;
+  }
+
+  async acquire(): Promise<void> {
+    if (this.available > 0) {
+      this.available -= 1;
+      return;
+    }
+    await new Promise<void>((resolve) => this.waiters.push(resolve));
+  }
+
+  release(): void {
+    const next = this.waiters.shift();
+    if (next !== undefined) next();
+    else this.available += 1;
+  }
+}
+
+export async function runMcpStdio(input: NodeJS.ReadableStream, deps: DispatchDeps): Promise<void> {
+  const sem = new Semaphore(MAX_INFLIGHT_TOOL_CALLS);
+  const pending = new Set<Promise<void>>();
+
+  const rl = createInterface({ input });
+  for await (const line of rl) {
+    const trimmed = line.trim();
+    if (trimmed === "") continue;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(trimmed) as unknown;
+    } catch {
+      continue;
+    }
+    // @tested-by: tst_src_tgflood_005 — malformed input must not stop the Source.
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) continue;
+    const msg = parsed as JsonRpcMessage;
+
+    // Dispatch WITHOUT awaiting so the read loop never blocks on a long-running
+    // call. The permit is acquired INSIDE the task (so the loop itself never
+    // waits), but the (bound+1)th task waits for a permit before it dispatches.
+    // @tested-by: tst_src_tgflood_005 — stopping a subscription issues no RPC.
+    const control = msg.method === "tools/call" && msg.params?.name === "listen_stop";
+    const work = (async (): Promise<void> => {
+      if (!control) await sem.acquire();
+      try {
+        const reply = await handleMessage(msg, deps);
+        if (reply !== null) deps.write(JSON.stringify(reply));
+      } catch (e) {
+        console.error(`magnis-telegram: dispatch panic: ${String(e)}`);
+      } finally {
+        if (!control) sem.release();
+      }
+    })();
+    pending.add(work);
+    void work.then(() => { pending.delete(work); });
+  }
+  await Promise.all(pending);
 }

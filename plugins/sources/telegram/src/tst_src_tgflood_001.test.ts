@@ -1,10 +1,15 @@
+import { PassThrough } from "node:stream";
 import { expect, spyOn, test } from "bun:test";
 import bigInt from "big-integer";
 import { Api } from "telegram";
 
+import * as live from "./live";
+import { runMcpStdio, type DispatchDeps } from "./dispatch";
+import { resetAuthFlow } from "./auth";
+import { SubscriptionRegistry } from "./subscriptions";
 import { LiveDialogPager } from "./live";
 import { MTPROTO_REQUEST_TIMEOUT_MS, MtprotoTimeoutError } from "./client";
-import { AccountAdmission } from "./request-admission";
+import { AccountAdmission, type AdmissionEvent } from "./request-admission";
 import { execute, runBootstrap } from "./surfaces/telegram/commands";
 import { liveUpdatePushes } from "./subscriptions";
 import { createTransport, setupConfig, VirtualClock } from "./testing/mtproto-transport";
@@ -29,6 +34,254 @@ function fixtureChat(id: number): Api.Chat {
 function fixtureMessage(chatId: number, id: number): Api.Message {
   return new Api.Message({ id, peerId: new Api.PeerChat({ chatId: bigInt(chatId) }), date: 1700000000 + id, message: `fixture-${String(chatId)}-${String(id)}`, out: false, pinned: id === 1 });
 }
+
+function commandStream(overrides: Partial<DispatchDeps> = {}) {
+  const input = new PassThrough();
+  const records: Record<string, unknown>[] = [];
+  const replies = new Map<number, Record<string, unknown>>();
+  const waiting = new Map<number, (reply: Record<string, unknown>) => void>();
+  const registry = new SubscriptionRegistry();
+  const write = (line: string): void => {
+    const record = JSON.parse(line) as Record<string, unknown>;
+    records.push(record);
+    if (typeof record.id === "number") {
+      replies.set(record.id, record);
+      waiting.get(record.id)?.(record);
+      waiting.delete(record.id);
+    }
+  };
+  const running = runMcpStdio(input, { authMode: false, registry, ...overrides, write });
+  return {
+    input, records, replies, registry,
+    send: (id: number, name: string, args: Record<string, unknown>): void => {
+      input.write(JSON.stringify({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: args } }) + "\n");
+    },
+    reply: (id: number): Promise<Record<string, unknown>> => {
+      const existing = replies.get(id);
+      return existing ? Promise.resolve(existing) : new Promise((resolve) => { waiting.set(id, resolve); });
+    },
+    finish: async (): Promise<void> => { input.end(); await running; },
+  };
+}
+
+function flushCommands(): Promise<void> {
+  return new Promise((resolve) => { setImmediate(resolve); });
+}
+
+/** @test-id: tst_src_tgflood_005
+ * @scenario: scn_tgflood_007
+ * @covers: actual Source dispatcher, registry and guarded SDK setup
+ * @deterministic: yes
+ * @fixtures: real SessionPool and SDK; fake connection and monotonic clock
+ */
+test("tst_src_tgflood_005 the Source command loop preserves runtime flood replies", async () => {
+  const clock = new VirtualClock();
+  const options: ConstructorParameters<typeof live.SessionPool>[0] = { clock, diagnostics: () => undefined };
+  const sessions = new live.SessionPool(options);
+  const guard = sessions.admissionFor("fixture-stdio");
+  const choosePool = spyOn(live, "pool").mockReturnValue(sessions);
+  const stream = commandStream();
+  const f = await createTransport(clock, guard, true, async (transport, session) => {
+    options.transport = transport;
+    stream.send(1, "listen_start", {
+      subscription_id: "fixture-listen", _meta: { account_id: "fixture-stdio", api_id: 1, api_hash: "fixture-only", session },
+    });
+    return stream.reply(1);
+  });
+  try {
+    await f.reply(await f.application(0), new Api.RpcError({ errorCode: 420, errorMessage: "FLOOD_WAIT_4" }));
+    await f.connected;
+    expect(await stream.reply(1)).toMatchObject({ id: 1, error: { code: -32002, data: { retry_after: 6 } } });
+    expect(f.writes).toHaveLength(1);
+    stream.send(2, "listen_start", { subscription_id: "bad-meta" });
+    expect(await stream.reply(2)).toMatchObject({ error: { code: -32602 } });
+  } finally {
+    stream.registry.stop("fixture-listen");
+    await stream.finish();
+    await f.close();
+    choosePool.mockRestore();
+  }
+
+  const runningClock = new VirtualClock();
+  const diagnostics: AdmissionEvent[] = [];
+  const runningOptions: ConstructorParameters<typeof live.SessionPool>[0] = {
+    clock: runningClock, diagnostics: (event) => { diagnostics.push(event); },
+  };
+  const runningPool = new live.SessionPool(runningOptions);
+  const runningGuard = runningPool.admissionFor("fixture-stdio-main");
+  const poolFactory = spyOn(live, "pool").mockReturnValue(runningPool);
+  const io = commandStream();
+  let meta: Record<string, unknown> = {};
+  const actual = await createTransport(runningClock, runningGuard, true, (transport, session) => {
+    runningOptions.transport = transport;
+    meta = { account_id: "fixture-stdio-main", api_id: 1, api_hash: "fixture-only", session };
+    io.send(10, "listen_start", { subscription_id: "active", _meta: meta });
+    return io.reply(10);
+  });
+  try {
+    await actual.reply(await actual.application(0), setupConfig());
+    await actual.connected;
+    expect(await io.reply(10)).toMatchObject({ result: { ok: true } });
+    const self = actual.client.getMe(true);
+    runningClock.advance(3000);
+    const user = new Api.User({ id: bigInt(999), self: true, firstName: "fixture" });
+    await actual.reply(await actual.application(1), { getBytes: (): Buffer => {
+      const header = Buffer.alloc(8); header.writeUInt32LE(0x1cb5c415); header.writeInt32LE(1, 4);
+      return Buffer.concat([header, user.getBytes()]);
+    } });
+    await self;
+    let index = 2;
+    let id = 20;
+    const counts = new Map([[101, 120], [102, 70], [103, 5]]);
+    const answer = async (): Promise<void> => {
+      runningClock.advance(3000);
+      const sent = await actual.application(index++);
+      const request: unknown = sent.state.request;
+      if (request instanceof Api.messages.GetDialogs) {
+        const dialogs = [...counts].map(([chat, count], i) => new Api.Dialog({ pinned: i < 2,
+          peer: new Api.PeerChat({ chatId: bigInt(chat) }), topMessage: count, readInboxMaxId: 0,
+          readOutboxMaxId: 0, unreadCount: 0, unreadMentionsCount: 0, unreadReactionsCount: 0, notifySettings: new Api.PeerNotifySettings({}) }));
+        await actual.reply(sent, new Api.messages.Dialogs({ dialogs, chats: [...counts.keys()].map(fixtureChat), users: [],
+          messages: [...counts].map(([chat, count]) => fixtureMessage(chat, count)) }));
+      } else if (request instanceof Api.messages.GetHistory && request.peer instanceof Api.InputPeerChat) {
+        const chat = request.peer.chatId.toJSNumber();
+        const count = counts.get(chat);
+        if (count === undefined) throw new Error("Unexpected Source history peer");
+        expect(request.limit).toBe(50);
+        const messages = Array.from({ length: count }, (_, i) => fixtureMessage(chat, count - i))
+          .filter((message) => request.offsetId === 0 || message.id < request.offsetId).slice(0, 50);
+        await actual.reply(sent, new Api.messages.MessagesSlice({ count, messages, chats: [fixtureChat(chat)], users: [] }));
+      } else throw new Error(`Unexpected Source request ${sent.method}`);
+    };
+    io.send(id, "magnis.sync.fetch", { _meta: meta });
+    await answer();
+    runningClock.advance(3000);
+    const failed = await actual.application(index++);
+    expect(failed.method).toBe("messages.GetHistory");
+    await actual.reply(failed, new Api.RpcError({ errorCode: 420, errorMessage: "FLOOD_WAIT_4" }));
+    expect(await io.reply(id++)).toMatchObject({ error: { code: -32002, data: { retry_after: 6 } } });
+    expect(io.replies.get(20)).not.toHaveProperty("result");
+    const heldAt = actual.writes.length;
+    io.send(id, "magnis.execute", { action: "backfill_chat", chat_id: 101, _meta: meta });
+    expect(await io.reply(id++)).toMatchObject({ error: { code: -32002 } });
+    io.send(id, "magnis.execute", { action: "download_file", source_ref: { chat_id: 101, message_id: 1 },
+      dest: ".tmp/code-production/telegram-flood-safety/D1-S5/never-written.bin", _meta: meta });
+    expect(await io.reply(id++)).toMatchObject({ error: { code: -32002 } });
+    await actual.incoming(new Api.Updates({ date: 1700000122, seq: 1, users: [], chats: [fixtureChat(101)], updates: [
+      new Api.UpdateNewMessage({ message: fixtureMessage(101, 121), pts: 1, ptsCount: 1 }),
+      new Api.UpdateNewMessage({ message: fixtureMessage(101, 122), pts: 2, ptsCount: 1 }),
+    ] }));
+    await flushCommands();
+    const pushes = io.records.filter((record) => record.method === "notifications/magnis/envelope");
+    expect(pushes).toHaveLength(2);
+    expect(actual.writes).toHaveLength(heldAt);
+    expect(runningGuard.remoteFloods).toBe(1);
+    runningClock.advance(6000);
+    io.send(id, "magnis.sync.fetch", { _meta: meta });
+    for (let i = 0; i < 4; i++) await answer();
+    const result = (await io.reply(id++)).result as Record<string, unknown>;
+    const emitted = envelopes(result);
+    expect(result).toMatchObject({ hasMore: false, discovered: 3, total: 3 });
+    const before = new Map([[101, 71], [102, 21], [103, 1]]);
+    while (before.size) for (const [chat, offset] of [...before]) {
+      io.send(id, "magnis.execute", { action: "backfill_chat", chat_id: chat, before_message_id: offset, limit: 50, _meta: meta });
+      await answer();
+      const page = (await io.reply(id++)).result as Record<string, unknown>;
+      emitted.push(...envelopes(page));
+      if (page.has_more === false) before.delete(chat);
+      else {
+        expect(typeof page.oldest_message_id).toBe("number");
+        before.set(chat, Number(page.oldest_message_id));
+      }
+    }
+    const identities = new Set(emitted.map((item) => item.remote_id).filter((value): value is string => typeof value === "string" && value.startsWith("tg:msg:")));
+    for (const push of pushes) identities.add(String((push.params as Record<string, unknown>).remote_id));
+    const expected = [...counts].flatMap(([chat, count]) => Array.from({ length: count }, (_, i) => `tg:msg:${String(chat)}:${String(i + 1)}`));
+    expect([...identities].sort()).toEqual([...expected, "tg:msg:101:121", "tg:msg:101:122"].sort());
+    expect(identities.size).toBe(197);
+    const start = id;
+    for (let i = 0; i < 8; i++) io.send(id++, "magnis.execute", { action: "backfill_chat", chat_id: 101, limit: 50, _meta: meta });
+    runningClock.advance(3000);
+    const blocked = await actual.application(index++);
+    await flushCommands();
+    expect(runningGuard.queued).toBe(7);
+    io.send(id, "listen_stop", { subscription_id: "active" });
+    await flushCommands();
+    // Stop must have replied while all eight work commands still own their slots.
+    expect(io.replies.get(id++)).toMatchObject({ result: { ok: true, cancelled: true } });
+    expect(io.replies.has(start)).toBe(false);
+    await actual.reply(blocked, new Api.RpcError({ errorCode: 420, errorMessage: "FLOOD_WAIT_4" }));
+    for (let i = 0; i < 8; i++) expect(await io.reply(start + i)).toMatchObject({ error: { code: -32002 } });
+    expect(actual.maximumInFlight()).toBe(1);
+    const captured = JSON.stringify(diagnostics);
+    expect(diagnostics.length).toBeGreaterThan(0);
+    for (const secret of [String(meta.session), "fixture-only", "fixture-101-121", "fixture-phone"]) expect(captured).not.toContain(secret);
+  } finally {
+    io.registry.stop("active");
+    await actual.close();
+    await io.finish();
+    poolFactory.mockRestore();
+  }
+
+  for (const phase of ["begin", "step"] as const) {
+    const authClock = new VirtualClock();
+    const authEvents: AdmissionEvent[] = [];
+    const authGuard = new AccountAdmission(`fixture-auth-${phase}`, authClock, (event) => { authEvents.push(event); });
+    const transportOptions: NonNullable<Parameters<typeof live.createAuthClientFactory>[1]> = {};
+    const factory = live.createAuthClientFactory(authGuard, transportOptions);
+    const authIo = commandStream({ authMode: true, authFactory: factory });
+    const authTransport = await createTransport(authClock, authGuard, true, (transport) => {
+      Object.assign(transportOptions, transport);
+      authIo.send(1, "magnis.auth.begin", { _meta: { api_id: 1, api_hash: "fixture-only", phone: "+10000000000" } });
+      return authIo.reply(1);
+    });
+    try {
+      let sent = await authTransport.application(0);
+      if (phase === "step") {
+        await authTransport.reply(sent, setupConfig());
+        authClock.advance(3000);
+        sent = await authTransport.application(1);
+        expect(sent.method).toBe("auth.SendCode");
+        await authTransport.reply(sent, new Api.auth.SentCode({ type: new Api.auth.SentCodeTypeApp({ length: 5 }), phoneCodeHash: "fixture-code-hash" }));
+        expect(await authIo.reply(1)).toMatchObject({ result: { state: "code_sent" } });
+        authIo.send(2, "magnis.auth.step", { _meta: { code: "12345" } });
+        authClock.advance(3000);
+        sent = await authTransport.application(2);
+        expect(sent.method).toBe("auth.SignIn");
+      }
+      await authTransport.reply(sent, new Api.RpcError({ errorCode: 420, errorMessage: "FLOOD_WAIT_4" }));
+      expect(await authIo.reply(phase === "begin" ? 1 : 2)).toMatchObject({ error: { code: -32002, data: { retry_after: 6 } } });
+      authIo.send(3, "magnis.auth.begin", {});
+      expect(await authIo.reply(3)).toMatchObject({ error: { code: -32000 } });
+      expect(authGuard.remoteFloods).toBe(1);
+      expect(authTransport.writes).toHaveLength(phase === "begin" ? 1 : 3);
+      const captured = JSON.stringify(authEvents);
+      for (const secret of ["+10000000000", "12345", "fixture-only", "fixture-code-hash"]) expect(captured).not.toContain(secret);
+    } finally {
+      await authTransport.close();
+      await authIo.finish();
+      resetAuthFlow();
+    }
+  }
+
+  // The host imports the bundle: initialize/EOF must work without import.meta.main.
+  const child = Bun.spawn([process.execPath, "-e", "await import('./plugins/sources/telegram/src/main.ts')"], {
+    cwd: new URL("../../../..", import.meta.url).pathname,
+    stdin: "pipe", stdout: "pipe", stderr: "pipe",
+    env: {},
+  });
+  try {
+    child.stdin.write("null\n" + JSON.stringify({ jsonrpc: "2.0", id: 91, method: "initialize" }) + "\n");
+    child.stdin.end();
+    const output = await new Response(child.stdout).text();
+    expect(await child.exited).toBe(0);
+    expect(output.trim()).not.toBe("");
+    const records = output.trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ id: 91, result: { serverInfo: { name: "magnis-telegram" } } });
+    expect(await new Response(child.stderr).text()).toBe("");
+  } finally { child.kill(); }
+});
 
 const ORIGINS = [
   { name: "messages.GetDialogs", request: () => new Api.messages.GetDialogs({ offsetDate: 0, offsetId: 0, offsetPeer: new Api.InputPeerEmpty(), limit: 50, hash: bigInt.zero }) },
