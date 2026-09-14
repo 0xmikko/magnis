@@ -6,6 +6,7 @@
       "name": "magnis-plugins",
       "devDependencies": {
         "@eslint/js": "^10.0.1",
+        "@magnis/declare": "workspace:*",
         "@tailwindcss/cli": "^4.1.18",
         "@tanstack/react-query": "^5.90.21",
         "@testing-library/dom": "^10.4.1",
@@ -35,6 +36,10 @@
     },
     "packages/connector-sdk": {
       "name": "@magnis/connector-sdk",
+      "version": "0.1.0",
+    },
+    "packages/declare": {
+      "name": "@magnis/declare",
       "version": "0.1.0",
     },
     "packages/host-stubs": {
@@ -264,6 +269,8 @@
     "@jridgewell/trace-mapping": ["@jridgewell/trace-mapping@0.3.31", "", { "dependencies": { "@jridgewell/resolve-uri": "^3.1.0", "@jridgewell/sourcemap-codec": "^1.4.14" } }, "sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw=="],
 
     "@magnis/connector-sdk": ["@magnis/connector-sdk@workspace:packages/connector-sdk"],
+
+    "@magnis/declare": ["@magnis/declare@workspace:packages/declare"],
 
     "@magnis/host-stubs": ["@magnis/host-stubs@workspace:packages/host-stubs"],
 
