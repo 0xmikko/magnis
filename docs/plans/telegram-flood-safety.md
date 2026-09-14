@@ -290,27 +290,30 @@ Owner-authorized preparation moved the canonical plan into the implementation re
 
 ##### Tasks
 
-- [ ] TGFLOOD_009 — Expose catalog agent adapters in package.json and agent-verify.ts with regression proof in tst_scripts_agent_stack_001.test.ts. (15 min)
+- [x] TGFLOOD_009 — Expose catalog agent adapters in package.json and agent-verify.ts with regression proof in tst_scripts_agent_stack_001.test.ts. (15 min) — 503a6d7e4d6beb492e98095f900cd9ebf5196eee
 <!-- plan:task-meta:{"writes":["package.json","scripts/agent-verify.ts","scripts/tst_scripts_agent_stack_001.test.ts"],"predictedActiveMinutes":15,"predictedCredits":1,"how":"Bootstrap agent:test:backend with Bun as setup, then write real behavioral hook/adapter assertions in the named test file and observe RED on existing broad-hook dispatch and missing receipt reuse; missing tools/imports are not RED. Extend package.json with the seven adapters and external existing CI metadata. Reuse existing suites: complete gate remains bun run check; scoped commit gate identifies staged owners for typechecking and runs lint/tests only for affected files, preserving protected-branch refusal. Docs adapter uses installed canonical plan validation. Unsupported E2E is explicitly N/A with reason; Source integration remains in the connector lane. No independent second test runner is introduced.","red":"bun run agent:test:backend -- scripts/tst_scripts_agent_stack_001.test.ts"} -->
-- [ ] TGFLOOD_010 — Install planctl.ts, plan-update.ts, plan-gate.ts and manifest.json without editing shared upstream tools. (5 min)
+- [x] TGFLOOD_010 — Install planctl.ts, plan-update.ts, plan-gate.ts and manifest.json without editing shared upstream tools. (5 min) — 503a6d7e4d6beb492e98095f900cd9ebf5196eee
 <!-- plan:task-meta:{"writes":[".agents/code-production/runtime/planctl.ts",".agents/code-production/runtime/plan-update.ts",".agents/code-production/runtime/plan-gate.ts",".agents/code-production/manifest.json"],"predictedActiveMinutes":5,"predictedCredits":1,"how":"Use the approved canonical agent-stack installer to generate the three runtime files and manifest after safe hook reconciliation. Keep runtime bytes identical to its pinned source and external CI mode. Observe the same named behavioral RED before installation; verify local plan lock checks and journal enforcement after installation. Keep Task receipt lifecycle on one CLI version through completion; do not mix global V2 and vendored V1 timers.","red":"bun run agent:test:backend -- scripts/tst_scripts_agent_stack_001.test.ts"} -->
-- [ ] TGFLOOD_011 — Reconcile pre-commit, pre-push, post-commit and .gitignore while preserving branch bans and cached-receipt safety. (10 min)
+- [x] TGFLOOD_011 — Reconcile pre-commit, pre-push, post-commit and .gitignore while preserving branch bans and cached-receipt safety. (10 min) — 503a6d7e4d6beb492e98095f900cd9ebf5196eee
 <!-- plan:task-meta:{"writes":[".githooks/pre-commit",".githooks/pre-push",".githooks/post-commit",".gitignore"],"predictedActiveMinutes":10,"predictedCredits":1,"how":"Replace unmanaged catalog hooks with canonical templates as explicitly authorized, then run the installer to enable hooks for this worktree. Add only the project remote-main guard before any managed pre-push early return. Do not weaken existing checks: commit adapter retains main/staging protection and scoped checks, complete adapter retains every original suite. Regression fixture feeds allowed and forbidden refs in the same push batch with a valid cached receipt; forbidden main must still fail. Never perform a push. Report agent-stack check's sole expected pre-push template difference explicitly and verify all other installed assets unchanged; allow no arbitrary mismatch. Add generated local artifact ignores and retain existing ignores.","red":"bun run agent:test:backend -- scripts/tst_scripts_agent_stack_001.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- scripts/tst_scripts_agent_stack_001.test.ts` exits 0 — hooks route to scoped adapters, protected commits and every remote-main push are rejected, including cached-receipt reuse.
-- [ ] `bun run agent:verify:docs` exits 0 — canonical locked plan validates without modifying SPEC.
+- [x] `bun run agent:test:backend -- scripts/tst_scripts_agent_stack_001.test.ts` exits 0 — hooks route to scoped adapters, protected commits and every remote-main push are rejected, including cached-receipt reuse. — 503a6d7e4d6beb492e98095f900cd9ebf5196eee
+- [x] `bun run agent:verify:docs` exits 0 — canonical locked plan validates without modifying SPEC. — 503a6d7e4d6beb492e98095f900cd9ebf5196eee
 - [ ] All seven agent adapters exist; complete gate preserves the existing check command and CI; no full suite is invoked by the scoped commit adapter.
 - [ ] Canonical runtime and hooks match the installer except the explicitly tested remote-main pre-push extension; strict agent-stack check's expected mismatch is recorded, never concealed.
 - [ ] No PR, push, live Telegram request, upstream tooling change or approved SPEC change occurred.
-- [ ] Commit
+- [x] Commit — 503a6d7e4d6beb492e98095f900cd9ebf5196eee
 
 ##### Results
 
 <!-- plan:results:D1-S7:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| TGFLOOD_009 | 503a6d7e4d6beb492e98095f900cd9ebf5196eee | 2026-09-14T20:32:26.256Z–2026-09-14T20:46:29.000Z | 14 / 14.05 min | unavailable: Runner exposes no per-Task credit usage. | Behavioral RED: 2 executed failures (old broad pre-commit routing, absent receipt reuse), not the initial fixture syntax error. GREEN: 2/2 and 14 assertions. Normal pre-commit passed scripts TypeScript, strict ESLint, docs locks and the same scoped tests. Complete gate remains exact bun run check; seven adapters and existing external CI retained. SPEC unchanged. No push/PR/provider calls. Managed runtime comprises 3239 generated lines; Source code remains unchanged. |
+| TGFLOOD_010 | 503a6d7e4d6beb492e98095f900cd9ebf5196eee | 2026-09-14T20:32:26.256Z–2026-09-14T20:46:29.000Z | 14 / 14.05 min | unavailable: Runner exposes no per-Task credit usage. | Behavioral RED: 2 executed failures (old broad pre-commit routing, absent receipt reuse), not the initial fixture syntax error. GREEN: 2/2 and 14 assertions. Normal pre-commit passed scripts TypeScript, strict ESLint, docs locks and the same scoped tests. Complete gate remains exact bun run check; seven adapters and existing external CI retained. SPEC unchanged. No push/PR/provider calls. Managed runtime comprises 3239 generated lines; Source code remains unchanged. |
+| TGFLOOD_011 | 503a6d7e4d6beb492e98095f900cd9ebf5196eee | 2026-09-14T20:32:26.256Z–2026-09-14T20:46:29.000Z | 14 / 14.05 min | unavailable: Runner exposes no per-Task credit usage. | Behavioral RED: 2 executed failures (old broad pre-commit routing, absent receipt reuse), not the initial fixture syntax error. GREEN: 2/2 and 14 assertions. Normal pre-commit passed scripts TypeScript, strict ESLint, docs locks and the same scoped tests. Complete gate remains exact bun run check; seven adapters and existing external CI retained. SPEC unchanged. No push/PR/provider calls. Managed runtime comprises 3239 generated lines; Source code remains unchanged. |
 <!-- plan:results:D1-S7:end -->
 <!-- plan:stage:D1-S7:end -->
 
@@ -574,4 +577,12 @@ Scoped behavior files: plugins/sources/telegram/src/tst_src_tgflood_001.test.ts,
 - put-stage D1-S6
 
 - approve sha256:026e3fc44c7368bef48947d1c3fee69e0cb6b183bbd82fbf9697cf6cb7ca653e owner:$blueprint-start; давай (preparation, local only, no push/live/SPEC changes)
+
+- record-result D1-S7 commit:503a6d7e4d6beb492e98095f900cd9ebf5196eee
+
+- deviation D1-S7: Owner-authorized local/no-PR preparation exception. Strict agent-stack check reports exactly .githooks/pre-push: the tested remote-main protection must precede receipt reuse, so this intentional project extension is retained; all other managed assets match.
+
+- deviation D1-S7: Sandbox Bun default temporary directory caused incomplete dependency extraction. Reinstalled 1016 locked packages successfully using BUN_TMPDIR and an isolated BUN_INSTALL_CACHE_DIR with agent:install -- --force; no dependency lock change or typecheck bypass.
+
+- close D1-S7 partial commit:503a6d7e4d6beb492e98095f900cd9ebf5196eee
 <!-- plan:execution:end -->

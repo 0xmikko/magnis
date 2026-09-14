@@ -9,7 +9,7 @@
   ],
   "scripts": {
     "agent:install": "bun install --frozen-lockfile",
-    "agent:test:backend": "bun test",
+    "agent:test:backend": "bash scripts/test-connectors.sh --agent",
     "agent:test:frontend": "vitest run --config vitest.ui.config.ts",
     "agent:test:e2e": "echo 'N/A: catalog has no separate deployed E2E lane; Source journeys run in agent:test:backend'",
     "agent:verify:commit": "bun scripts/agent-verify.ts commit",
