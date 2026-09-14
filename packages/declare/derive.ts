@@ -82,8 +82,10 @@ function withoutBookkeeping(value: unknown): unknown {
   return out;
 }
 
-/** The scalars inside a nested object, each one field named by its leaf and
- * reached by the dotted path the resolver splits. */
+/** The scalars inside a nested object, each one field NAMED BY ITS PATH. The
+ * leaf alone would be ambiguous the moment two objects carry the same word —
+ * a message has a media_type and so does the file pointer inside it — and a
+ * filter nobody can address unambiguously is worse than a longer name. */
 function nestedFields(node: Node, prefix: string): DeclaredField[] {
   const properties = isNode(node.properties) ? node.properties : {};
   const out: DeclaredField[] = [];
@@ -95,7 +97,8 @@ function nestedFields(node: Node, prefix: string): DeclaredField[] {
       continue;
     }
     if (inner.type === "array") continue;
-    out.push({ key, kind: kindOf(raw, key), path: `${prefix}.${key}` });
+    const path = `${prefix}.${key}`;
+    out.push({ key: path, kind: kindOf(raw, key), path });
   }
   return out;
 }

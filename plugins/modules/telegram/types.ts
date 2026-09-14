@@ -5,6 +5,66 @@
 
 /// One row per chat (telegram.chat), showing the latest message.
 /// Mirrors native `TelegramChatListItem`.
+/** One stored chat record — the connector's dictionary minus what ONE account
+ * observes (unread counts and pins ride the observed_in edge) plus the last-
+ * message fields the module carries forward. `entities.ts` declares exactly
+ * this and the build proves the two are one type. */
+export interface TelegramChatDetails {
+  chat_id?: number;
+  title?: string;
+  type?: string;
+  username?: string;
+  avatar_url?: string;
+  member_count?: number;
+  read_inbox_max_id?: number;
+  read_outbox_max_id?: number;
+  unread_mentions_count?: number;
+  top_message?: number;
+  pts?: number;
+  last_message_date?: string;
+  last_message_preview?: string;
+  last_sender_name?: string;
+}
+
+/** One stored message record — the connector's dictionary minus what edges
+ * carry: the chat is an in_chat edge, the sender an authored_by edge. */
+export interface TelegramMessageDetails {
+  message_id?: number;
+  text?: string;
+  date?: string;
+  is_outgoing?: boolean;
+  chat_title?: string;
+  reply_to_msg_id?: number;
+  media_type?: string;
+  has_media?: boolean;
+  file_name?: string;
+  is_pinned?: boolean;
+  source_ref?: {
+    account_id?: string;
+    chat_id?: number;
+    message_id?: number;
+    media_type?: string;
+    dest_subpath?: string;
+  };
+  sender_info?: {
+    first_name?: string;
+    last_name?: string;
+    username?: string;
+    phone?: string;
+  };
+}
+
+/** One stored account record — the identity the module mints for a sender. */
+export interface TelegramAccountDetails {
+  telegram_user_id?: number;
+  is_self?: boolean;
+  display_name?: string;
+  first_name?: string;
+  last_name?: string;
+  username?: string;
+  phone?: string;
+}
+
 export interface TelegramChatListItem {
   schema_id: string;
   entity_id: string;

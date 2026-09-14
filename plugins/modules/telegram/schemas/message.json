@@ -1,8 +1,0 @@
-{
-  "name": "Telegram message",
-  "description": "A telegram message entity.",
-  "mergeable": false,
-  "roles": [
-    "content"
-  ]
-}

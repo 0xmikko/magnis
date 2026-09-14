@@ -64,7 +64,7 @@ describe("a declaration becomes an entity descriptor", () => {
     // The graph enforces the whole object...
     expect(Object.keys(props)).toContain("schedule");
     // ...and the scalar inside it is one field, named by its leaf.
-    expect(descriptor.search.field).toContainEqual({ key: "cron", kind: "text", path: "schedule.cron" });
+    expect(descriptor.search.field).toContainEqual({ key: "schedule.cron", kind: "text", path: "schedule.cron" });
     // The object itself is not a field — there is no filter for a whole object.
     expect(descriptor.search.field.map((f) => f.key)).not.toContain("schedule");
   });
