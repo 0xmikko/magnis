@@ -387,7 +387,7 @@ export class TriggersModule {
         name: { type: "string" },
         gate_prompt: { type: "string" },
         action_prompt: { type: "string" },
-        status: { type: "string" },
+        status: { type: "string", enum: ["active", "paused", "disabled", "expired"] },
         event_kinds: { type: "array", items: { type: "string" } },
         schema_filter: { type: "string" },
         expires_at: { type: "string", format: "date-time" },

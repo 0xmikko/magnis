@@ -128,6 +128,11 @@ export function descriptorFrom(schema: z.ZodType): { stem: string; descriptor: E
       continue;
     }
 
+    // A nested object is enforced by the graph and NOT searched: the query
+    // language has no word for reaching inside one, so declaring it as a field
+    // would promise a filter that cannot be written. It stays in the schema.
+    if (inner.type === "object" || isNode(inner.properties)) continue;
+
     const embed = searched.title === key ? "title" : searched.body === key ? "body" : undefined;
     fields.push(embed === undefined
       ? { key, kind: kindOf(raw, key), path: key }

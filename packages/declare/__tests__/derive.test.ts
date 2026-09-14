@@ -19,6 +19,7 @@ const message = entity(
     sent_at: column("date", moment().nullish()),
     is_read: z.boolean().optional(),
     labels: z.array(z.string()).optional(),
+    schedule: z.object({ cron: z.string() }).optional(),
   },
   { order: ["sent_at", "desc"], title: "subject", body: "body_text" },
 );
@@ -53,5 +54,15 @@ describe("a declaration becomes an entity descriptor", () => {
     // A list of scalars is a collection, not a field.
     expect(descriptor.search.collection).toEqual([{ key: "labels", path: "labels" }]);
     expect(descriptor.search.field.map((f) => f.key)).not.toContain("labels");
+  });
+
+  it("a nested object is enforced and not searched", () => {
+    const { descriptor } = descriptorFrom(message);
+    const props = (descriptor.json_schema as { properties: Record<string, unknown> }).properties;
+    // The graph still holds a write to it...
+    expect(Object.keys(props)).toContain("schedule");
+    // ...and search claims no filter it could not answer.
+    expect(descriptor.search.field.map((f) => f.key)).not.toContain("schedule");
+    expect(descriptor.search.collection.map((c) => c.key)).not.toContain("schedule");
   });
 });
