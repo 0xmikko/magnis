@@ -8,6 +8,13 @@
     "plugins/sources/*"
   ],
   "scripts": {
+    "agent:install": "bun install --frozen-lockfile",
+    "agent:test:backend": "bun test",
+    "agent:test:frontend": "vitest run --config vitest.ui.config.ts",
+    "agent:test:e2e": "echo 'N/A: catalog has no separate deployed E2E lane; Source journeys run in agent:test:backend'",
+    "agent:verify:commit": "bun scripts/agent-verify.ts commit",
+    "agent:verify:pr": "bun run check",
+    "agent:verify:docs": "bun scripts/agent-verify.ts docs",
     "check": "bun run typecheck && bun run lint && bun run test && bun run test:runtime-contracts && bun run test:ui && bun run test:connectors && bun run test:scripts && bun run build:plugins",
     "typecheck": "bash scripts/typecheck-all.sh",
     "lint": "eslint \"plugins/**/*.{ts,tsx}\" \"packages/**/*.{ts,tsx}\" \"scripts/**/*.ts\" \"apps/desktop/build/**/*.ts\" --max-warnings 0",
@@ -18,6 +25,10 @@
     "test:desktop-runtime": "bun test apps/desktop/build/",
     "build:plugins": "bun scripts/build-plugins.ts",
     "test:ui": "vitest run --config vitest.ui.config.ts"
+  },
+  "agentStack": {
+    "ci": "external",
+    "ciWorkflow": ".github/workflows/ci.yml"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
