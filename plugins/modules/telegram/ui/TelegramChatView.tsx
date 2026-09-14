@@ -6,7 +6,7 @@
  * Supports infinite scroll: fires onLoadMore when scrolling near the top.
  */
 
-import { useRef, useEffect, useLayoutEffect, useCallback, useMemo, type ReactNode } from "react";
+import { useRef, useState, useEffect, useLayoutEffect, useCallback, useMemo, type ReactNode } from "react";
 import type { JSX } from "react";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { Icon, IconButton, TopBarHeader, ContextMenu, useContextMenu, type ContextMenuEntry } from "@magnis/host/ui";
@@ -777,6 +777,23 @@ export function TelegramChatView({
     [dedupedMessages, isGroup],
   );
 
+  // @tested-by: tst_plg_tgui_scroll_anchor_001
+  // Virtuoso owns scroll restoration. Move its index origin only by the real
+  // prepended prefix; a simultaneous live append must not move the old rows.
+  const firstMessageId = grouped[0]?.msg.id;
+  const [messageWindow, setMessageWindow] = useState({
+    chatId: conversation?.chatId, firstMessageId, firstItemIndex: 1_000_000_000,
+  });
+  if (messageWindow.chatId !== conversation?.chatId || messageWindow.firstMessageId !== firstMessageId) {
+    const previousFirst = messageWindow.chatId === conversation?.chatId
+      ? grouped.findIndex(({ msg }) => msg.id === messageWindow.firstMessageId)
+      : -1;
+    // A different chat or replaced (non-overlapping) window starts a new origin.
+    const firstItemIndex = previousFirst < 0 ? 1_000_000_000 : messageWindow.firstItemIndex - previousFirst;
+    if (firstItemIndex <= 0) throw new Error("Telegram virtual message index exhausted");
+    setMessageWindow({ chatId: conversation?.chatId, firstMessageId, firstItemIndex });
+  }
+
   // Build a lookup map: telegramMsgId -> TelegramMessage (for reply resolution)
   const msgLookup = useMemo(() => {
     const map = new Map<number, TelegramMessage>();
@@ -851,9 +868,12 @@ export function TelegramChatView({
         )}
 
         <Virtuoso
+          key={conversation.chatId}
           ref={virtuosoRef}
           data={grouped}
-          initialTopMostItemIndex={grouped.length > 0 ? grouped.length - 1 : 0}
+          firstItemIndex={messageWindow.firstItemIndex}
+          computeItemKey={(_index, { msg }) => msg.id}
+          initialTopMostItemIndex={{ index: "LAST" }}
           followOutput="smooth"
           className="flex-1 py-2 overflow-x-hidden"
           increaseViewportBy={{ top: 400, bottom: 200 }}
