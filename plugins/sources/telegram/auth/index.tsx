@@ -28,6 +28,9 @@ type Phase = "phone" | "code" | "password" | "connected";
 
 /** Telegram login codes are 5 digits. */
 const CODE_LEN = 5;
+/** A country code and at least seven more digits — the shortest national
+ * numbers in use. Spaces, dashes and brackets are how people type them. */
+const PHONE = /^\+\d[\d\s().-]{7,}$/;
 
 /**
  * Segmented one-time-code input: `length` single-digit cells, digits only,
@@ -178,8 +181,17 @@ export default function TelegramAuthScreen({
         : "Two-factor password";
 
   const isCode = phase === "code";
-  // The code phase requires all CODE_LEN digits; other phases just non-empty.
-  const canSubmit = !busy && (isCode ? value.length === CODE_LEN : value.length > 0);
+  // The submit is this screen's primary action, so it stays disabled until the
+  // value could actually be accepted: the code needs all CODE_LEN digits, and
+  // a phone number needs a country code and enough digits to be one. A button
+  // that is live on "+" invites a round trip whose only answer is a refusal.
+  const canSubmit = !busy && (
+    isCode
+      ? value.length === CODE_LEN
+      : phase === "phone"
+        ? PHONE.test(value)
+        : value.length > 0
+  );
   return (
     // A real form so Enter in the field submits (the default action), not just
     // a mouse click on the button.
@@ -217,7 +229,7 @@ export default function TelegramAuthScreen({
       <button
         type="submit"
         disabled={!canSubmit}
-        className="w-full rounded-lg bg-[#2AABEE] px-4 py-2.5 text-sm font-medium text-white cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border-none"
+        className="w-full rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border-none"
       >
         {phase === "phone" ? "Send code" : "Continue"}
       </button>
