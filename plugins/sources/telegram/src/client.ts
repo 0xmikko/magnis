@@ -26,14 +26,8 @@ import { toRfc3339Utc } from "./surfaces/telegram/envelope";
  * message), preserving the snapshot the in-backend bootstrap produced. */
 export const BOOTSTRAP_MESSAGES_PER_CHAT = 50;
 
-/** Upper bound (seconds) on a FLOOD_WAIT the send path absorbs inline via
- * wait+retry. At or below this the connector sleeps and retries once (the
- * message still goes out); a longer one surfaces as a typed rate-limit so the
- * HOST schedules the backoff rather than the connector blocking for minutes. */
-export const FLOOD_WAIT_RETRY_MAX = 30;
-
-/** Sentinel prefix carried up the error channel for a FLOOD_WAIT longer than
- * FLOOD_WAIT_RETRY_MAX. `dispatch.ts::classifyToolError` recognizes it → JSON-RPC
+/** Sentinel prefix carried up the error channel for a FLOOD_WAIT.
+ * `dispatch.ts::classifyToolError` recognizes it → JSON-RPC
  * -32002 + `data: { retry_after: secs }`; the host maps that to
  * `SourceError::RateLimit`. Twin of the Rust `RATE_LIMITED_PREFIX`. */
 export const RATE_LIMITED_PREFIX = "RATE_LIMITED:";
@@ -113,42 +107,38 @@ function asRpcError(e: unknown): RpcErrorLike | undefined {
   return e;
 }
 
-/** If `err` is a Telegram FLOOD_WAIT, return its wait in seconds. gramjs
+/** If `err` is a Telegram FLOOD_WAIT, return its valid rounded-up wait in seconds. gramjs
  * surfaces a flood-wait as a `FloodWaitError` (code 420, `.seconds` set) whose
- * `errorMessage` is `FLOOD_WAIT`. Twin of the Rust `flood_wait_secs`. */
+ * `errorMessage` is `FLOOD_WAIT`.
+ * @tested-by: tst_tgts_flood_001 — TGFLOOD_005 never guesses an invalid wait. */
 export function floodWaitSecs(err: unknown): number | undefined {
   const rpc = asRpcError(err);
   if (rpc === undefined) return undefined;
   const isFlood =
     rpc.code === 420 || (rpc.errorMessage ?? "").startsWith("FLOOD_WAIT");
   if (!isFlood) return undefined;
-  return typeof rpc.seconds === "number" ? rpc.seconds : undefined;
+  const seconds = rpc.seconds;
+  return typeof seconds === "number" && seconds >= 0 && Number.isFinite(seconds) &&
+    Number.isSafeInteger(Math.ceil(seconds * 1000)) ? Math.ceil(seconds) : undefined;
 }
 
-/** FLOOD_WAIT-aware send wrapper. Generic over the send (so the live gramjs call
- * and a test fake share ONE policy) and over the sleeper (so tests don't wait
- * real seconds). Twin of the Rust `send_with_flood_retry`:
- *
- * - send succeeds → return the result.
- * - FLOOD_WAIT of `secs <= FLOOD_WAIT_RETRY_MAX` → sleep(secs), retry ONCE and
- *   return that retry's outcome (success OR error).
- * - FLOOD_WAIT of `secs > FLOOD_WAIT_RETRY_MAX` → throw `RATE_LIMITED:{secs}`
- *   IMMEDIATELY (no sleep, connector never blocks).
- * - any other error → propagated unchanged.
+/** Send once; the account admission guard owns waits and subsequent admission.
+ * Keep the legacy name/sleeper argument for existing command callers, but never
+ * sleep or resend here. Already-normalized local refusals retain their cause
+ * and remaining wait without creating a deadline or another remote observation.
+ * @tested-by: tst_tgts_flood_002, tst_tgts_flood_005, tst_tgts_flood_wire_001
+ * @invariant: TGFLOOD_005 — one helper invocation makes at most one send attempt.
  */
 export async function sendWithFloodRetry<T>(
   send: () => Promise<T>,
-  sleep: (secs: number) => Promise<void>,
+  _sleep: (secs: number) => Promise<void>,
 ): Promise<T> {
   try {
     return await send();
   } catch (err) {
     const secs = floodWaitSecs(err);
     if (secs === undefined) throw err;
-    if (secs <= FLOOD_WAIT_RETRY_MAX) {
-      await sleep(secs);
-      return await send();
-    }
+    if (err instanceof Error && err.message === `${RATE_LIMITED_PREFIX}${String(secs)}`) throw err;
     throw new Error(`${RATE_LIMITED_PREFIX}${String(secs)}`, { cause: err });
   }
 }
