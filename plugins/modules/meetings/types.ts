@@ -3,14 +3,18 @@
 // value. Read DTOs are byte-compatible with the native module (types.rs
 // MeetingListItem / MeetingDetailView) and the UI's plugins/meetings/ui copies.
 
+/** One stored calendar-event record — the provider's dictionary MINUS the
+ * attendees, which are the event's `attendee` edges. `entities.ts` declares
+ * exactly this and the build proves the two are one type. */
 export interface MeetingCalendarEventDetails {
+  /** The provider's own event id, written verbatim by ingest. */
+  id?: string;
   title?: string | null;
   starts_at?: string | null;
   ends_at?: string | null;
   location?: string | null;
   description?: string | null;
   status?: string | null;
-  attendees?: unknown;
   all_day?: boolean;
   google_event_id?: string | null;
   hangout_link?: string | null;

@@ -27,11 +27,16 @@ export interface ScheduleParam {
 }
 
 /// Mirrors native `TriggerConfig` (serde with skip-if-none optionals).
+/** The four states the module's own `list` tool documents and filters on. It
+ * was `string`, so `update` wrote whatever a caller sent and the graph kept
+ * it; the declaration in `entities.ts` now refuses the rest. */
+export type TriggerStatus = "active" | "paused" | "disabled" | "expired";
+
 export interface TriggerConfigData {
   name: string;
   gate_prompt: string;
   action_prompt: string;
-  status: string;
+  status: TriggerStatus;
   event_kinds: string[];
   schema_filter?: string;
   expires_at?: string;
@@ -139,7 +144,7 @@ export interface UpdateTriggerParams {
   name?: string;
   gate_prompt?: string;
   action_prompt?: string;
-  status?: string;
+  status?: TriggerStatus;
   event_kinds?: string[];
   schema_filter?: string;
   expires_at?: string;

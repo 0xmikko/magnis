@@ -248,6 +248,36 @@ export interface ContactsSyncEnvelope {
   timestamp?: string;
 }
 
+/** One stored hub record — the curated claims the module writes onto a person,
+ * plus the name parts its merge path reads back out of the dictionary.
+ * `entities.ts` declares exactly this and the build proves the two are one
+ * type. Profile facts are NOT here: they live on the replicas the hub reaches
+ * over `identity`. */
+export interface PersonDetails {
+  description?: string | null;
+  role?: string | null;
+  company?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  phones?: { phone: string; type: string | null; is_primary: boolean }[];
+  tracking?: { platform: "x" | "linkedin"; handle?: string | null; enabled: boolean }[];
+}
+
+/** One stored replica record — exactly what `replicaDict` writes. The payload
+ * type above it is the connector's INPUT; this is what lands in the graph. */
+export interface GoogleContactRecord {
+  resource_name?: string;
+  etag?: string;
+  display_name?: string;
+  given_name?: string;
+  family_name?: string;
+  emails?: GoogleContactEmail[];
+  phones?: GoogleContactPhone[];
+  organizations?: { name?: string | null; title?: string | null; is_current?: boolean }[];
+  photo_url?: string;
+  external_url?: string;
+}
+
 export interface GoogleContactEmail {
   address?: string;
   label?: string | null;

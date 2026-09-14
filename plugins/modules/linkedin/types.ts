@@ -19,6 +19,10 @@ export interface SyncEnvelope {
 /** `linkedin.profile.identity` record data. */
 export interface ProfileIdentity {
   platform: Platform;
+  /** The stable LinkedIn URN. A handle is renameable, so it can never be an
+   * anchor — a profile arriving without this is dropped by ingest, which is
+   * why it is required rather than optional. */
+  urn: string;
   handle: string;
   display_name?: string;
   url?: string | null;
@@ -39,6 +43,19 @@ export interface PostContent {
   is_reply?: boolean | null;
   is_repost?: boolean | null;
   lang?: string | null;
+  /** article > long_form > reply > post, as the connector classifies it. */
+  post_type?: string;
+  /** The article's headline, when the post is one. */
+  article_title?: string;
+  /** The thread this post belongs to. */
+  conversation_id?: string;
+  media?: {
+    type?: string | null;
+    url?: string | null;
+    preview_image_url?: string | null;
+    alt_text?: string | null;
+  }[];
+  urls?: { url?: string | null; expanded_url?: string | null; display_url?: string | null }[];
 }
 
 /** `linkedin.post.metrics` record data. */

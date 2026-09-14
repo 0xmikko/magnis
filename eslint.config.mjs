@@ -62,4 +62,19 @@ export default tseslint.config(
       ...reactHooks.configs.recommended.rules,
     },
   },
+  {
+    // A module's declaration is deliberately absent from the module's own
+    // tsconfig — including it there would pull zod's types into the module and
+    // its UI. tsconfig.declarations.json is the project that owns these files,
+    // so the type-aware rules are told where to look rather than the module
+    // being made to look at zod.
+    files: ["plugins/modules/*/entities.ts"],
+    languageOptions: {
+      parserOptions: {
+        project: "./tsconfig.declarations.json",
+        projectService: false,
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+  },
 );
