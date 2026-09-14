@@ -33,14 +33,21 @@ async function writtenProperties(): Promise<Record<string, unknown>[]> {
   const mod = mountModule(ProjectsModule, { graph, ctx: { extension_id: "projects" } }).module;
   await mod.create({ name: "Acme × ExampleCo", status: "active" });
   await mod.update({ id: PROJECT_ID, description: "Scope for Q3." });
+  // The checklist lands in the SAME dictionary, replaced whole — a declaration
+  // that forgets it turns this tool into a refusal.
+  await mod.checklistUpdate({
+    project_id: PROJECT_ID,
+    items: [{ id: "1", text: "Sign the SOW", status: "pending" }],
+  });
   return written;
 }
 
 describe("projects declares what it writes", () => {
   it("every record the module writes today passes its own declaration", async () => {
     const records = await writtenProperties();
-    // create AND update — a declaration that only fits one of them is wrong.
-    expect(records.length).toBeGreaterThan(1);
+    // create, update AND checklist.update — a declaration that fits only some
+    // of a module's write paths is wrong about the entity.
+    expect(records.length).toBeGreaterThan(2);
     for (const record of records) {
       expect(project.safeParse(record).error?.issues ?? []).toEqual([]);
     }

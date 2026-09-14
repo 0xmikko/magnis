@@ -9,7 +9,7 @@
  * record read back before a save has none of them.
  */
 import { z } from "zod";
-import { entity, moment, type AssertEqual } from "@magnis/declare";
+import { column, entity, moment, type AssertEqual } from "@magnis/declare";
 
 import type { ContentData } from "./types.ts";
 
@@ -20,7 +20,7 @@ export const note = entity(
     description: "A markdown note entity owned by the notes plugin.",
   },
   {
-    title: z.string().optional(),
+    title: column("name", z.string().optional()),
     body: z.string().optional(),
     pinned: z.boolean().optional(),
     updated_at: moment().optional(),

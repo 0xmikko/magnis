@@ -22,7 +22,7 @@ export const calendarEvent = entity(
   },
   {
     id: z.string().optional(),
-    title: column("name", z.string().nullish()),
+    title: z.string().nullish(),
     starts_at: moment().nullish(),
     ends_at: moment().nullish(),
     location: z.string().nullish(),

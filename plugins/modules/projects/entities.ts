@@ -8,7 +8,7 @@
  * key is optional because a record read back mid-edit may carry any subset.
  */
 import { z } from "zod";
-import { entity, moment, type AssertEqual } from "@magnis/declare";
+import { column, entity, moment, type AssertEqual } from "@magnis/declare";
 
 import type { ProjectDetails } from "./types.ts";
 
@@ -19,13 +19,22 @@ export const project = entity(
     description: "A project entity owned by the projects plugin.",
   },
   {
-    name: z.string().optional(),
+    name: column("name", z.string().optional()),
     status: z.string().optional(),
     description: z.string().optional(),
     created_at: moment().optional(),
     updated_at: moment().optional(),
+    checklist: z
+      .array(z.object({
+        id: z.string(),
+        text: z.string(),
+        status: z.enum(["pending", "in_progress", "done", "blocked"]),
+        notes: z.string().optional(),
+        updated_at: z.string().optional(),
+      }))
+      .optional(),
   },
-  { order: ["updated_at", "desc"], title: "name", body: "description" },
+  { order: ["name", "asc"], title: "name", body: "description" },
 ) satisfies z.ZodType<ProjectDetails>;
 
 const _projectIsTheModulesOwnType: AssertEqual<z.infer<typeof project>, ProjectDetails> = true;
