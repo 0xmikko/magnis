@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "source": "dltxperts/0_agents",
+  "commit": "7cbc4a534bf4b271dd22ded509ba1bad73fb09d4",
+  "ci": {
+    "kind": "external",
+    "workflow": ".github/workflows/ci.yml"
+  },
+  "files": [
+    ".agents/code-production/runtime/planctl.ts",
+    ".agents/code-production/runtime/plan-update.ts",
+    ".agents/code-production/runtime/plan-gate.ts",
+    ".githooks/pre-commit",
+    ".githooks/pre-push",
+    ".githooks/post-commit"
+  ]
+}

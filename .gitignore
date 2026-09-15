@@ -4,3 +4,6 @@ plugins_dist/
 *.log
 catalog/
 .worktrees/
+
+# Managed local agent state
+/.tmp/code-production/
