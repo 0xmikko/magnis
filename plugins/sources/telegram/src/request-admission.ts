@@ -59,8 +59,6 @@ export class AccountAdmission implements RpcAdmissionHooks {
   private readonly records = new WeakMap<RpcAdmissionState, Entry>();
   private readonly pending = new Set<Entry>();
   private active: Entry | undefined;
-  private starts: number[] = [];
-  private lastStart = -Infinity;
   private until = 0;
   private remoteCause: unknown;
   private closed: Error | undefined;
@@ -106,13 +104,6 @@ export class AccountAdmission implements RpcAdmissionHooks {
     entry.reject(error);
   }
 
-  private nextStart(): number {
-    const now = this.time.now();
-    this.starts = this.starts.filter((start) => start > now - 60_000);
-    const oldest = this.starts[0];
-    return Math.max(this.lastStart + 3000, this.starts.length >= 20 && oldest !== undefined ? oldest + 60_000 : now);
-  }
-
   private wake(): void {
     this.cancelTimer?.();
     this.cancelTimer = undefined;
@@ -122,15 +113,11 @@ export class AccountAdmission implements RpcAdmissionHooks {
       entry.wake();
       if (entry.phase !== "sent") due = Math.min(due, entry.deadline);
     }
-    if (this.pending.size && (!this.active || this.active.phase === "replay")) {
-      const next = this.nextStart();
-      if (next > now) due = Math.min(due, next);
-    }
     if (Number.isFinite(due)) this.cancelTimer = this.time.schedule((): void => {
       this.cancelTimer = undefined;
       for (const entry of [...this.pending]) {
         if (entry.phase !== "sent" && entry.deadline <= this.time.now()) {
-          this.reject(entry, new Error("Telegram application request expired in the pacing queue"));
+          this.reject(entry, new Error("Telegram application request expired in the admission queue"));
         }
       }
       this.wake();
@@ -144,7 +131,7 @@ export class AccountAdmission implements RpcAdmissionHooks {
     const prior = this.records.get(state);
     if (prior !== undefined && prior.promise === state.promise) {
       if (prior.phase === "done") return false;
-      // Replay keeps the outstanding operation slot, but needs a new paced transmission.
+      // Replay keeps the outstanding operation slot and rechecks the provider hold.
       if (prior.phase === "sent") {
         prior.phase = "replay";
         prior.deadline = this.time.now() + 20_000;
@@ -158,7 +145,7 @@ export class AccountAdmission implements RpcAdmissionHooks {
       this.report("localRefusal", name);
       throw denied;
     }
-    if (this.queued >= 32) throw new Error("Telegram application pacing queue is full (32)");
+    if (this.queued >= 32) throw new Error("Telegram application admission queue is full (32)");
     if (!state.promise) throw new Error("Application RPC has no completion promise");
     if (prior) this.finish(prior);
     const entry: Entry = { state, promise: state.promise, method: name, wake,
@@ -178,7 +165,7 @@ export class AccountAdmission implements RpcAdmissionHooks {
     const denied = this.refusal();
     if (denied) { this.reject(entry, denied); return "discard"; }
     if (entry.phase === "reserved") return "ready";
-    if ((this.active && this.active !== entry) || this.time.now() < this.nextStart()) return "wait";
+    if (this.active && this.active !== entry) return "wait";
     const first = [...this.pending].find((candidate) => candidate.phase !== "done");
     if (first !== entry) return "wait";
     this.active = entry;
@@ -194,8 +181,6 @@ export class AccountAdmission implements RpcAdmissionHooks {
     const denied = this.refusal();
     if (denied) throw denied;
     entry.phase = "sent";
-    this.lastStart = this.time.now();
-    this.starts.push(this.lastStart);
     this.attempt++;
     this.report("send", entry.method);
     this.wake();
@@ -209,13 +194,14 @@ export class AccountAdmission implements RpcAdmissionHooks {
     this.remoteFloods++;
     this.remoteCause = error;
     const seconds = "seconds" in error ? error.seconds : undefined;
-    const deadline = typeof seconds === "number" ? this.time.now() + seconds * 1000 + 2000 : NaN;
+    const deadline = typeof seconds === "number" ? this.time.now() + seconds * 1000 : NaN;
     if (typeof seconds !== "number" || seconds < 0 || !Number.isFinite(seconds) || !Number.isSafeInteger(Math.ceil(deadline))) {
       this.closed = new Error("Telegram flood duration is invalid; account admission is closed", { cause: error });
     } else this.until = Math.max(this.until, deadline);
     this.report("remoteFlood", state ? method(state) : "UnmatchedRpcResult");
-    const denied = this.refusal();
-    if (!denied) throw new Error("A remote flood did not close account admission");
+    // A valid zero wait is still an error for this operation, never an SDK
+    // sleep/retry loop or an invented cooldown for the next caller.
+    const denied = this.refusal() ?? new LocalFloodWait(0, error);
     for (const entry of [...this.pending]) {
       if (entry.state !== state && entry.phase !== "sent") this.reject(entry, denied);
     }
