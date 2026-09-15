@@ -513,7 +513,7 @@ describe("sendWithFloodRetry", () => {
       async (seconds): Promise<void> => { slept.push(seconds); },
     ).catch((error: unknown): unknown => error);
     expect(preserved).toBe(first);
-    for (const elapsed of [1000, 3000, 5999]) {
+    for (const elapsed of [1000, 3000, 3999]) {
       now = elapsed;
       let attempts = 0;
       const result = await sendWithFloodRetry(async (): Promise<void> => {
@@ -522,8 +522,8 @@ describe("sendWithFloodRetry", () => {
       }, async (seconds): Promise<void> => { slept.push(seconds); }).catch((error: unknown): unknown => error);
       expect(attempts).toBe(1);
       expect(result instanceof Error ? result.cause : undefined).toBe(remote);
-      expect(floodWaitSecs(result)).toBe(Math.ceil((6000 - elapsed) / 1000));
-      expect(guard.holdUntil).toBe(6000);
+      expect(floodWaitSecs(result)).toBe(Math.ceil((4000 - elapsed) / 1000));
+      expect(guard.holdUntil).toBe(4000);
       expect(guard.remoteFloods).toBe(1);
     }
     expect(guard.localRefusals).toBe(3);

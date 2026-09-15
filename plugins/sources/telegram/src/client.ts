@@ -25,6 +25,17 @@ import { toRfc3339Utc } from "./surfaces/telegram/envelope";
  * newest N messages are fetched (GetDialogs carries only each chat's single top
  * message), preserving the snapshot the in-backend bootstrap produced. */
 export const BOOTSTRAP_MESSAGES_PER_CHAT = 50;
+export const SOURCE_PAGE_HISTORY_LIMIT = 5;
+export const SOURCE_PAGE_BUDGET_MS = 20_000;
+
+/** @tested-by: tst_src_tgfast_003 — TGFAST_002 bounds each remaining read. */
+export function remainingPageBudget(deadline: number): number {
+  const remaining = Math.ceil(deadline - performance.now());
+  if (remaining <= 0) throw new MtprotoTimeoutError("source page", SOURCE_PAGE_BUDGET_MS);
+  return remaining;
+}
+
+export type MessagePage = MessageLike[] & { total?: number };
 
 /** Sentinel prefix carried up the error channel for a FLOOD_WAIT.
  * `dispatch.ts::classifyToolError` recognizes it → JSON-RPC
@@ -64,6 +75,7 @@ export interface EntityLike {
   gigagroup?: boolean;
   broadcast?: boolean;
   bot?: boolean;
+  self?: boolean;
 }
 
 /** gramjs media (Api.MessageMediaPhoto | …Document | …), narrowed. */
@@ -298,14 +310,20 @@ export interface DialogOffset {
   offset_date: number;
   offset_id: number;
   offset_peer: OffsetPeer;
+  hydration?: {
+    pending: PendingDialog[];
+    next_offset: DialogOffset | null;
+    total: number | null;
+  };
 }
 
 export interface OffsetPeer {
   /** `"user"` | `"chat"` | `"channel"` — the InputPeer category. */
   ty: string;
   id: number;
+  self?: boolean;
   /** Omitted entirely when null (basic groups / `min` peers have no hash). */
-  access_hash?: number;
+  access_hash?: number | string;
 }
 
 /** gramjs entity className → the persisted `OffsetPeer.ty`. Twin of the Rust
@@ -331,9 +349,12 @@ export function offsetPeerFromEntity(entity: EntityLike): OffsetPeer {
   const peer: OffsetPeer = {
     ty: offsetPeerTyFromEntity(entity),
     id: toNum(entity.id),
+    ...(entity.self === true ? { self: true } : {}),
   };
   if (entity.accessHash !== null && entity.accessHash !== undefined) {
-    peer.access_hash = toNum(entity.accessHash);
+    const text = String(entity.accessHash);
+    const number = Number(text);
+    peer.access_hash = Number.isSafeInteger(number) ? number : text;
   }
   return peer;
 }
@@ -344,6 +365,13 @@ export function offsetPeerFromEntity(entity: EntityLike): OffsetPeer {
 export interface PagedDialog {
   chat: TgChat;
   messages: TgMessage[];
+  peer?: OffsetPeer;
+}
+
+/** JSON-only continuation; never persist a GramJS entity or an access-hash float. */
+export interface PendingDialog {
+  chat: TgChat;
+  peer?: OffsetPeer;
 }
 
 /** One page of the dialog list. `next_offset === null` means the walk is
@@ -361,7 +389,8 @@ export interface DialogPage {
 /** Fetches one page of dialogs starting at `offset` (null = from the top). The
  * LIVE impl talks to Telegram; the test fake serves an in-memory list. */
 export interface DialogPager {
-  dialogPage(offset: DialogOffset | null, limit: number): Promise<DialogPage>;
+  dialogPage(offset: DialogOffset | null, limit: number,
+    options?: { hydrate?: boolean; timeoutMs?: number }): Promise<DialogPage>;
 }
 
 // ── gramjs → canonical intermediate conversion ─────────────────────────────

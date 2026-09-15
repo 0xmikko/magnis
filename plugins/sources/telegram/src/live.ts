@@ -4,7 +4,7 @@
 import { mkdir, stat } from "node:fs/promises";
 import { dirname } from "node:path";
 import bigInt from "big-integer";
-import { Api, TelegramClient } from "telegram";
+import { Api, TelegramClient, utils } from "telegram";
 import { StringSession } from "telegram/sessions";
 import { EditedMessage } from "telegram/events/EditedMessage";
 import { NewMessage } from "telegram/events/NewMessage";
@@ -17,12 +17,17 @@ import type {
   DialogPager,
   EntityLike,
   MessageLike,
+  MessagePage,
+  PendingDialog,
   PagedDialog,
   RawDialogLike,
   TgCreds,
 } from "./client";
 import {
   BOOTSTRAP_MESSAGES_PER_CHAT,
+  SOURCE_PAGE_HISTORY_LIMIT,
+  SOURCE_PAGE_BUDGET_MS,
+  remainingPageBudget,
   floodWaitSecs,
   buildDialogMeta,
   chatToIntermediate,
@@ -272,13 +277,33 @@ export class TgClient implements TgOps {
   async getMessages(
     peer: unknown,
     params: { limit?: number; offsetId?: number; ids?: number[] },
-  ): Promise<MessageLike[]> {
-    const msgs = await withTimeout(
-      this.client.getMessages(peer as never, params),
-      MTPROTO_REQUEST_TIMEOUT_MS,
-      "getMessages",
-    );
-    return msgs as unknown as MessageLike[];
+    timeoutMs = MTPROTO_REQUEST_TIMEOUT_MS,
+  ): Promise<MessagePage> {
+    if (timeoutMs <= 0) throw new MtprotoTimeoutError("getMessages", timeoutMs);
+    const read = async (): Promise<MessagePage> => {
+      const input = peer !== null && typeof peer === "object" && "ty" in peer
+        ? toInputPeer(peer as DialogOffset["offset_peer"]) : await this.client.getInputEntity(peer as never);
+      if (params.ids !== undefined) return await this.client.getMessages(input, params) as unknown as MessagePage;
+      // @tested-by: tst_src_tgfast_004 — TGFAST_002 reads one provider page and
+      // preserves count provenance; SDK iterMessages invents total=page.length.
+      const result = await this.client.invoke(new Api.messages.GetHistory({ peer: input,
+        offsetId: params.offsetId ?? 0, offsetDate: 0, addOffset: 0,
+        limit: Math.min(params.limit ?? BOOTSTRAP_MESSAGES_PER_CHAT, 100), maxId: 0, minId: 0, hash: bigInt(0) }));
+      if (result instanceof Api.messages.MessagesNotModified) throw new Error("GetHistory returned NotModified with hash=0");
+      if ("count" in result && (!Number.isSafeInteger(result.count) || result.count < 0)) {
+        throw new Error("GetHistory returned an invalid message count");
+      }
+      const entities = new Map([...result.users, ...result.chats].map((entity) => [utils.getPeerId(entity), entity]));
+      const messages = result.messages as unknown as MessagePage;
+      for (const message of result.messages) {
+        if (message instanceof Api.Message || message instanceof Api.MessageService) {
+          message._finishInit(this.client, entities, input);
+        }
+      }
+      if ("count" in result) messages.total = result.count;
+      return messages;
+    };
+    return await withTimeout(read(), Math.min(timeoutMs, MTPROTO_REQUEST_TIMEOUT_MS), "getMessages");
   }
 
   async sendMessage(
@@ -363,7 +388,9 @@ function entityKey(entity: EntityLike): string {
  * Twin of the Rust `OffsetPeer::to_input_peer` (which reconstructs a PackedChat):
  * "user"→InputPeerUser, "channel"→InputPeerChannel (Broadcast), _→InputPeerChat. */
 function toInputPeer(peer: DialogOffset["offset_peer"]): Api.TypeInputPeer {
-  const hash = bigInt(peer.access_hash ?? 0);
+  // @tested-by: tst_src_tgfast_002 — TGFAST_002 preserves Saved Messages in JSON.
+  if (peer.ty === "user" && peer.self === true) return new Api.InputPeerSelf();
+  const hash = bigInt(String(peer.access_hash ?? 0));
   switch (peer.ty) {
     case "user":
       return new Api.InputPeerUser({ userId: bigInt(peer.id), accessHash: hash });
@@ -383,7 +410,8 @@ export class LiveDialogPager implements DialogPager {
   ) {}
 
   /** Shared discovery decoder; peer lookups do not need history hydration. */
-  static async discoverPage(tg: TgClient, offset: DialogOffset | null, limit: number): Promise<{
+  static async discoverPage(tg: TgClient, offset: DialogOffset | null, limit: number,
+    timeoutMs = MTPROTO_REQUEST_TIMEOUT_MS): Promise<{
     dialogs: CatchupDialog[];
     next_offset: DialogOffset | null;
     total: number;
@@ -403,7 +431,7 @@ export class LiveDialogPager implements DialogPager {
 
     const res = await withTimeout(
       tg.client.invoke(request),
-      MTPROTO_REQUEST_TIMEOUT_MS,
+      Math.min(timeoutMs, MTPROTO_REQUEST_TIMEOUT_MS),
       "messages.getDialogs",
     );
 
@@ -487,17 +515,36 @@ export class LiveDialogPager implements DialogPager {
     return { dialogs, next_offset: nextOffset, total: sliceCount };
   }
 
-  async dialogPage(offset: DialogOffset | null, limit: number): Promise<DialogPage> {
-    const page = await LiveDialogPager.discoverPage(this.tg, offset, limit);
+  async dialogPage(offset: DialogOffset | null, limit: number,
+    options: { hydrate?: boolean; timeoutMs?: number } = {}): Promise<DialogPage> {
+    const deadline = performance.now() + Math.min(options.timeoutMs ?? SOURCE_PAGE_BUDGET_MS, SOURCE_PAGE_BUDGET_MS);
+    remainingPageBudget(deadline);
+    let continuation = offset?.hydration;
+    if (continuation === undefined) {
+      const page = await LiveDialogPager.discoverPage(this.tg, offset, limit, remainingPageBudget(deadline));
+      continuation = { next_offset: page.next_offset, total: page.total,
+        pending: page.dialogs.map(({ entity, raw, pinned }): PendingDialog => ({
+          chat: chatToIntermediate(entity, buildDialogMeta(raw, pinned, 0)), peer: offsetPeerFromEntity(entity),
+        })) };
+    }
+    if (!Array.isArray(continuation.pending) || continuation.pending.some((item) => !item.peer || !item.chat)) {
+      throw new Error("Telegram hydration continuation requires pending chats and peers");
+    }
+    if (options.hydrate === false) return {
+      dialogs: continuation.pending.map((item) => ({ ...item, chat: { ...item.chat }, messages: [] })),
+      next_offset: continuation.next_offset, total: continuation.total,
+    };
     const dialogs: PagedDialog[] = [];
-    for (const { entity, raw, pinned } of page.dialogs) {
-      const chatId = toNum(entity.id);
-      const chat = chatToIntermediate(entity, buildDialogMeta(raw, pinned, 0));
+    // @tested-by: tst_src_tgfast_002 — TGFAST_002 retains unhydrated pins and peers.
+    for (const item of continuation.pending) {
+      if (dialogs.length >= SOURCE_PAGE_HISTORY_LIMIT || (dialogs.length > 0 && performance.now() >= deadline)) break;
+      const chat = { ...item.chat };
+      const chatId = chat.chat_id;
       // GetDialogs carries only the top message. An uncertain timed-out
       // snapshot cannot certify a successful page or advance its cursor.
       let fetched: { ok: true; messages: ReturnType<typeof messageToIntermediate>[] } | { ok: false; error: unknown };
       try {
-        const msgs = await this.tg.getMessages(entity, { limit: BOOTSTRAP_MESSAGES_PER_CHAT });
+        const msgs = await this.tg.getMessages(item.peer, { limit: BOOTSTRAP_MESSAGES_PER_CHAT }, remainingPageBudget(deadline));
         fetched = { ok: true, messages: msgs.map((m) => messageToIntermediate(m, this.accountId, chatId)) };
       } catch (error) {
         if (error instanceof MtprotoTimeoutError) throw error;
@@ -505,7 +552,17 @@ export class LiveDialogPager implements DialogPager {
       }
       dialogs.push({ chat, messages: resolveHydratedMessages(chatId, fetched) });
     }
-    return { ...page, dialogs };
+    const pending = continuation.pending.slice(dialogs.length);
+    const firstPeer = pending[0]?.peer;
+    if (pending.length > 0 && firstPeer === undefined) throw new Error("Telegram pending hydration is missing its peer");
+    const next_offset: DialogOffset | null = firstPeer === undefined ? continuation.next_offset : {
+      offset_date: offset?.offset_date ?? 0, offset_id: offset?.offset_id ?? 0,
+      // This wrapper is never a provider offset: hydration retains the actual
+      // next_offset separately, including null for a completely discovered page.
+      offset_peer: offset?.offset_peer ?? firstPeer,
+      hydration: { ...continuation, pending },
+    };
+    return { dialogs, next_offset, total: continuation.total };
   }
 }
 

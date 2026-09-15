@@ -38,12 +38,12 @@ test("tst_src_tgflood_006 eviction and failed setup close the client without era
     expect(failed.client._destroyed).toBe(true);
     expect(failed.disconnectCount()).toBeGreaterThan(0);
     expect(pool.size()).toBe(0);
-    expect(guard.holdUntil).toBe(22_000);
+    expect(guard.holdUntil).toBe(20_000);
   } finally { await failed.close(); }
   const recreated = await createTransport(clock, guard, true, launch);
   try {
     const denied = await recreated.connected.then(() => undefined, (error: unknown) => error);
-    expect(denied).toMatchObject({ code: 420, seconds: 19 });
+    expect(denied).toMatchObject({ code: 420, seconds: 17 });
     expect(recreated.writes).toHaveLength(0);
     expect(recreated.client._destroyed).toBe(true);
     expect(pool.admissionFor("fixture-pool")).toBe(guard);
@@ -68,7 +68,7 @@ test("tst_src_tgflood_006 eviction and failed setup close the client without era
   const repeated = await createTransport(authClock, authGuard, true, launchAuth);
   try {
     const connected = await repeated.connected.then(() => undefined, (error: unknown) => error);
-    expect(connected).toMatchObject({ code: 420, seconds: 19 });
+    expect(connected).toMatchObject({ code: 420, seconds: 17 });
     expect(repeated.writes).toHaveLength(0);
     expect(repeated.client._destroyed).toBe(true);
     expect(authGuard.remoteFloods).toBe(1);
