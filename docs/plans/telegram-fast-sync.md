@@ -1,9 +1,9 @@
 # Restore fast Telegram synchronization with provider-owned waits
 
-Status: SPEC_LOCKED  
+Status: APPROVED  
 Spec lock: sha256:0804a6ac650ba5737a8e6f4be287b8e29740481b24a253322bd7a888c1031f54 owner:2026-09-15: ИСПРАВОЯЙ ПОКА НЕ БУДЕТ РАБОТАТЬ БЫСТРО  
-Implementation lock: unlocked  
-Active Delivery: none  
+Implementation lock: sha256:1014649347efa62c578d6261b6df2f89edf7a89c3d028c1b98eb092e9885bf4f owner:2026-09-15 owner orders immediate implementation of the published scope: ИСПРАВОЯЙ ПОКА НЕ БУДЕТ РАБОТАТЬ БЫСТРО; no additional approval loop requested  
+Active Delivery: D1  
 Unattended decisions: allowed  
 
 <!-- plan:spec:start -->
@@ -173,10 +173,135 @@ Each journey runs through the real production logic. Extend existing tests rathe
 
 <!-- plan:implementation:start -->
 ## Implementation contract
+
+<!-- plan:delivery:D1:start -->
+<!-- plan:delivery-meta:{"active":true,"depends":[],"predictedExternalWaitMinutes":0} -->
+### PR Delivery D1 — Restored fast Telegram pages and exact provider-owned waits
+
+Branch: `feat/telegram-fast-sync`; Depends: none; Gate: backend.
+
+Stage graph: `D1-S1 -> D1-S3; D1-S2 -> D1-S3`.
+
+Forecast: 114 active min / 12 credits across 3 Stages; longest dependency path 76 active min; external waits 0 min.
+
+Telegram uses an available account request slot immediately instead of invented three-second spacing and twenty-per-minute throttling. A real FLOOD_WAIT stops new transmissions for precisely the provider duration.
+
+Bootstrap preserves pinned order and fifty-message previews while yielding bounded continuations; catch-up retains gaps and provider totals. Existing SDK admission, transport, and Source paging mechanisms are extended.
+
+Real SDK wire-level mock journeys prove exact identities, deadline behavior, bounded pages and timing. Source-to-Graph proof follows in the separate app Delivery; this PR does not claim that Source output alone proves persisted progress.
+
+No UI rewrite, new persistent cooldown, live load test, push or publication is included. Production changes remain scoped to the Telegram Source.
+
+<!-- plan:stage:D1-S1:start -->
+<!-- plan:stage-meta:{"deliveryId":"D1","depends":[],"parallelWith":["D1-S2"],"writes":["plugins/sources/telegram/src/request-admission.ts","plugins/sources/telegram/src/tst_src_tgflood_001.test.ts"],"tempRoot":".tmp/code-production/telegram-fast-sync/D1-S1","verifyActiveMinutes":3,"verifyCredits":1} -->
+#### Stage D1-S1 — Removed artificial pacing while preserving account-wide provider waits
+
+- Owner: root; Profile: strong; Depends: none; Parallel with: D1-S2.
+- Writes: `plugins/sources/telegram/src/request-admission.ts`, `plugins/sources/telegram/src/tst_src_tgflood_001.test.ts`.
+- Temp root: `.tmp/code-production/telegram-fast-sync/D1-S1` (must be absent at handoff).
+- Predict: 38 active min / 4 credits.
+- Of which verification: 3 active min / 1 credits.
+
+Update plugins/sources/telegram/src/request-admission.ts to admit a free account slot immediately, delete 3s/20-per-minute/+2s policies, return typed zero waits without retry loops, and preserve FIFO/concurrency/queue/replay/crypto fences. Update plugins/sources/telegram/src/tst_src_tgflood_001.test.ts: healthy real SDK sends at unchanged clock time, >20 requests do not stall, exact deadline-minus-one/expiry, repeated/late/zero/malformed FLOOD and lifecycle cancellation. Preserve existing Source journeys and use wire-level mocks only.
+
+Commit. fix(telegram): removed artificial pacing while preserving account-wide provider waits — preserve complete history and provider safety while removing unnecessary latency.
+
+##### Tasks
+
+- [ ] TGFAST_001 — Remove invented spacing and prove exact provider waits in request-admission.ts and tst_src_tgflood_001.test.ts. (35 min)
+<!-- plan:task-meta:{"writes":["plugins/sources/telegram/src/request-admission.ts","plugins/sources/telegram/src/tst_src_tgflood_001.test.ts"],"predictedActiveMinutes":35,"predictedCredits":3,"how":"Update plugins/sources/telegram/src/request-admission.ts to admit a free account slot immediately, delete 3s/20-per-minute/+2s policies, return typed zero waits without retry loops, and preserve FIFO/concurrency/queue/replay/crypto fences. Update plugins/sources/telegram/src/tst_src_tgflood_001.test.ts: healthy real SDK sends at unchanged clock time, >20 requests do not stall, exact deadline-minus-one/expiry, repeated/late/zero/malformed FLOOD and lifecycle cancellation. Preserve existing Source journeys and use wire-level mocks only.","red":"bun run agent:test:backend -- plugins/sources/telegram/src/tst_src_tgflood_001.test.ts"} -->
+
+##### Acceptance criteria
+
+- [ ] `bun run agent:test:backend -- plugins/sources/telegram/src/tst_src_tgflood_001.test.ts` exits 0 — the stated behavior journeys pass
+- [ ] Commit
+
+##### Results
+
+<!-- plan:results:D1-S1:start -->
+| Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
+|---|---|---|---:|---|---|
+<!-- plan:results:D1-S1:end -->
+<!-- plan:stage:D1-S1:end -->
+
+<!-- plan:stage:D1-S2:start -->
+<!-- plan:stage-meta:{"deliveryId":"D1","depends":[],"parallelWith":["D1-S1"],"writes":["plugins/sources/telegram/src/client.ts","plugins/sources/telegram/src/live.ts","plugins/sources/telegram/src/surfaces/telegram/commands.ts","plugins/sources/telegram/src/surfaces/telegram/commands.test.ts"],"tempRoot":".tmp/code-production/telegram-fast-sync/D1-S2","verifyActiveMinutes":3,"verifyCredits":1} -->
+#### Stage D1-S2 — Bounded bootstrap and catch-up pages without dropping pinned chats or history
+
+- Owner: healthy_fixture_audit; Profile: strong; Depends: none; Parallel with: D1-S1.
+- Writes: `plugins/sources/telegram/src/client.ts`, `plugins/sources/telegram/src/live.ts`, `plugins/sources/telegram/src/surfaces/telegram/commands.ts`, `plugins/sources/telegram/src/surfaces/telegram/commands.test.ts`.
+- Temp root: `.tmp/code-production/telegram-fast-sync/D1-S2` (must be absent at handoff).
+- Predict: 48 active min / 4 credits.
+- Of which verification: 3 active min / 1 credits.
+
+Extend plugins/sources/telegram/src/client.ts and plugins/sources/telegram/src/live.ts existing paging types: discover 50 dialogs once, hydrate at most five chats of 50 messages per returned page, retain pending descriptors with OffsetPeer and provider continuation without dropping pins. A 20s page budget passes remaining timeout to operations; timeout fails without publishing candidate cursor. Extend plugins/sources/telegram/src/surfaces/telegram/commands.ts with bounded resumable catch-up and optional provider total through backfill. In plugins/sources/telegram/src/surfaces/telegram/commands.test.ts add three behavioral journeys: 50-dialog bounded hydration with pins, budget and large-gap continuation without skipped watermarks, known/null provider totals. Reuse the existing gap tests unchanged.
+
+Commit. fix(telegram): bounded bootstrap and catch-up pages without dropping pinned chats or history — preserve complete history and provider safety while removing unnecessary latency.
+
+##### Tasks
+
+- [ ] TGFAST_002 — Bound discovery/history work and preserve totals in client.ts, live.ts, surfaces/telegram/commands.ts and commands.test.ts. (45 min)
+<!-- plan:task-meta:{"writes":["plugins/sources/telegram/src/client.ts","plugins/sources/telegram/src/live.ts","plugins/sources/telegram/src/surfaces/telegram/commands.ts","plugins/sources/telegram/src/surfaces/telegram/commands.test.ts"],"predictedActiveMinutes":45,"predictedCredits":3,"how":"Extend plugins/sources/telegram/src/client.ts and plugins/sources/telegram/src/live.ts existing paging types: discover 50 dialogs once, hydrate at most five chats of 50 messages per returned page, retain pending descriptors with OffsetPeer and provider continuation without dropping pins. A 20s page budget passes remaining timeout to operations; timeout fails without publishing candidate cursor. Extend plugins/sources/telegram/src/surfaces/telegram/commands.ts with bounded resumable catch-up and optional provider total through backfill. In plugins/sources/telegram/src/surfaces/telegram/commands.test.ts add three behavioral journeys: 50-dialog bounded hydration with pins, budget and large-gap continuation without skipped watermarks, known/null provider totals. Reuse the existing gap tests unchanged.","red":"bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts"} -->
+
+##### Acceptance criteria
+
+- [ ] `bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts` exits 0 — the stated behavior journeys pass
+- [ ] Commit
+
+##### Results
+
+<!-- plan:results:D1-S2:start -->
+| Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
+|---|---|---|---:|---|---|
+<!-- plan:results:D1-S2:end -->
+<!-- plan:stage:D1-S2:end -->
+
+<!-- plan:stage:D1-S3:start -->
+<!-- plan:stage-meta:{"deliveryId":"D1","depends":["D1-S1","D1-S2"],"parallelWith":[],"writes":["plugins/sources/telegram/src/tst_src_tgflood_001.test.ts","plugins/sources/telegram/src/testing/mtproto-transport.ts","plugins/sources/telegram/src/live.test.ts"],"tempRoot":".tmp/code-production/telegram-fast-sync/D1-S3","verifyActiveMinutes":3,"verifyCredits":1} -->
+#### Stage D1-S3 — Verified integrated Source throughput and provider-wait regression journeys
+
+- Owner: root; Profile: strong; Depends: D1-S1, D1-S2; Parallel with: none.
+- Writes: `plugins/sources/telegram/src/tst_src_tgflood_001.test.ts`, `plugins/sources/telegram/src/testing/mtproto-transport.ts`, `plugins/sources/telegram/src/live.test.ts`.
+- Temp root: `.tmp/code-production/telegram-fast-sync/D1-S3` (must be absent at handoff).
+- Predict: 28 active min / 4 credits.
+- Of which verification: 3 active min / 1 credits.
+
+Extend plugins/sources/telegram/src/tst_src_tgflood_001.test.ts and plugins/sources/telegram/src/testing/mtproto-transport.ts real wire fixture to 50 dialogs, bounded hydrated pages and provider latency; exercise complete 120/70/5 histories and incoming live messages. Record wire count, deliberate wait, page latency, short-page continuation and exact IDs. Cover timeout compatibility in plugins/sources/telegram/src/live.test.ts. Compare identical workload timings against paced baseline and S32 where reproducible; label unavailable comparison, never invent measurements. Run existing SDK flood/replay/crypto tests after integrating both commits.
+
+Commit. fix(telegram): verified integrated source throughput and provider-wait regression journeys — preserve complete history and provider safety while removing unnecessary latency.
+
+##### Tasks
+
+- [ ] TGFAST_003 — Prove integrated fast Source journeys in tst_src_tgflood_001.test.ts using testing/mtproto-transport.ts and live.test.ts. (25 min)
+<!-- plan:task-meta:{"writes":["plugins/sources/telegram/src/tst_src_tgflood_001.test.ts","plugins/sources/telegram/src/testing/mtproto-transport.ts","plugins/sources/telegram/src/live.test.ts"],"predictedActiveMinutes":25,"predictedCredits":3,"how":"Extend plugins/sources/telegram/src/tst_src_tgflood_001.test.ts and plugins/sources/telegram/src/testing/mtproto-transport.ts real wire fixture to 50 dialogs, bounded hydrated pages and provider latency; exercise complete 120/70/5 histories and incoming live messages. Record wire count, deliberate wait, page latency, short-page continuation and exact IDs. Cover timeout compatibility in plugins/sources/telegram/src/live.test.ts. Compare identical workload timings against paced baseline and S32 where reproducible; label unavailable comparison, never invent measurements. Run existing SDK flood/replay/crypto tests after integrating both commits.","red":"bun run agent:test:backend -- plugins/sources/telegram/src/tst_src_tgflood_001.test.ts"} -->
+
+##### Acceptance criteria
+
+- [ ] `bun run agent:test:backend -- plugins/sources/telegram/src/tst_src_tgflood_001.test.ts` exits 0 — the stated behavior journeys pass
+- [ ] Commit
+
+##### Results
+
+<!-- plan:results:D1-S3:start -->
+| Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
+|---|---|---|---:|---|---|
+<!-- plan:results:D1-S3:end -->
+<!-- plan:stage:D1-S3:end -->
+<!-- plan:delivery:D1:end -->
 <!-- plan:implementation:end -->
 
 <!-- plan:execution:start -->
 ## Execution log
 
 - lock-spec sha256:0804a6ac650ba5737a8e6f4be287b8e29740481b24a253322bd7a888c1031f54 owner:2026-09-15: ИСПРАВОЯЙ ПОКА НЕ БУДЕТ РАБОТАТЬ БЫСТРО
+
+- put-delivery D1
+
+- put-stage D1-S1
+
+- put-stage D1-S2
+
+- put-stage D1-S3
+
+- approve sha256:1014649347efa62c578d6261b6df2f89edf7a89c3d028c1b98eb092e9885bf4f owner:2026-09-15 owner orders immediate implementation of the published scope: ИСПРАВОЯЙ ПОКА НЕ БУДЕТ РАБОТАТЬ БЫСТРО; no additional approval loop requested
 <!-- plan:execution:end -->
