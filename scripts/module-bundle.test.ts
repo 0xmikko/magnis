@@ -81,3 +81,28 @@ test("tst_module_decorators_002: no module bundle emits TC39 decorators", async 
   }
   expect(offenders).toEqual([]);
 });
+
+// All-plugin guard: a module DECLARES its entities in entities.ts, which is a
+// build-time leaf importing zod. Nothing the isolate loads may reach it — one
+// `import "../entities.ts"` from module/ code would put a schema library
+// inside a bare V8 isolate that has no business running one. The declaration's
+// own marker keyword is checked too, because it is what would arrive first.
+test("tst_module_decorators_003: no module bundle reaches its declaration", () => {
+  const pluginsDir = join(REPO, "plugins");
+  const declaring = discoverPlugins(pluginsDir)
+    .filter((id) => existsSync(join(pluginsDir, "modules", id, "entities.ts")));
+  // A guard over an empty set is green about nothing: this must run on real
+  // declarations, so it fails while no module has one.
+  expect(declaring.length).toBeGreaterThan(0);
+
+  const offenders: string[] = [];
+  for (const id of declaring) {
+    const bundlePath = join(DIST, "modules", id, "bundle.json");
+    if (!existsSync(bundlePath)) continue;
+    const bundle = JSON.parse(readFileSync(bundlePath, "utf8")) as { module?: { dist: string } };
+    if (!bundle.module) continue;
+    const js = readFileSync(join(DIST, "modules", id, "module", "dist", bundle.module.dist), "utf8");
+    if (js.includes("ZodType") || js.includes("x-magnis-entity")) offenders.push(id);
+  }
+  expect(offenders).toEqual([]);
+});

@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false
+  },
+  "include": [
+    "plugins/modules/*/entities.ts",
+    "plugins/modules/*/entities.test.ts",
+    "plugins/modules/*/types.ts"
+  ]
+}

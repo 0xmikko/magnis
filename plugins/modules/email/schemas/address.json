@@ -1,9 +1,0 @@
-{
-  "name": "Email address",
-  "description": "An email address entity (sender/recipient hub).",
-  "triggerable": true,
-  "mergeable": false,
-  "roles": [
-    "identity_channel"
-  ]
-}

@@ -39,6 +39,19 @@ export interface PostContent {
   is_reply?: boolean | null;
   is_repost?: boolean | null;
   lang?: string | null;
+  /** article > long_form > reply > post, as the connector classifies it. */
+  post_type?: string;
+  /** The article's headline, when the post is one. */
+  article_title?: string;
+  /** The thread this post belongs to. */
+  conversation_id?: string;
+  media?: {
+    type?: string | null;
+    url?: string | null;
+    preview_image_url?: string | null;
+    alt_text?: string | null;
+  }[];
+  urls?: { url?: string | null; expanded_url?: string | null; display_url?: string | null }[];
 }
 
 /** `x.post.metrics` record data. */

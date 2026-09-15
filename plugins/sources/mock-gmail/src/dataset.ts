@@ -40,6 +40,8 @@ export const emitMessage: DatasetActionHandler = (args) => Promise.resolve().the
       ...(typeof payload.thread_id === "string" ? { thread_id: payload.thread_id } : {}),
       from_address: payload.from_address,
       from_name: typeof payload.from_name === "string" ? payload.from_name : "",
+      ...(typeof payload.to_addresses === "string" ? { to_addresses: payload.to_addresses } : {}),
+      ...(typeof payload.cc_addresses === "string" ? { cc_addresses: payload.cc_addresses } : {}),
       subject: payload.subject,
       body_text: payload.body_text,
       sent_at: sentAt,
