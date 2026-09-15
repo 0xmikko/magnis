@@ -31,7 +31,9 @@ describe("fixture phone-code ceremony", () => {
     await expect(beginFixturePhone({}, { phone: "+15550001111" }))
       .resolves.toEqual({ state: "code_sent" });
     await expect(stepFixturePhone({}, { code: FIXTURE_PHONE_CODE }))
-      .resolves.toEqual({ state: "password_required" });
+      // The connector's own word; the HOST publishes it as
+      // `password_required`. See the note in auth.ts.
+      .resolves.toEqual({ state: "password" });
     await expect(stepFixturePhone({}, { password: FIXTURE_PHONE_PASSWORD }))
       .resolves.toEqual({
         credential: FIXTURE_PHONE_SESSION,

@@ -1,6 +1,14 @@
 export const FIXTURE_PHONE_CODE = "24680";
 export const FIXTURE_PHONE_PASSWORD = "fixture-password";
 export const FIXTURE_PHONE_SESSION = "fixture-phone-session";
+/** A code that makes this connector answer a state NOBODY's screen plans
+ * for. Real connectors grow states, and a screen that meets one and quietly
+ * stays where it is leaves the person pressing a button that only ever
+ * answers `409`. The fixture can produce that on demand so a walk can prove
+ * the screen SAYS something.
+ *
+ * @tested-by: tst_e2e_source_auth_screen_002 */
+export const FIXTURE_PHONE_STRANGE_CODE = "13579";
 
 type PhoneAuthPhase = "idle" | "awaiting_code" | "awaiting_password";
 
@@ -40,11 +48,23 @@ export function stepFixturePhone(
   meta: Record<string, unknown> | undefined,
 ): Promise<Record<string, unknown>> {
   if (phase === "awaiting_code") {
-    if (requireMeta(meta, "code") !== FIXTURE_PHONE_CODE) {
+    const code = requireMeta(meta, "code");
+    if (code === FIXTURE_PHONE_STRANGE_CODE) {
+      // Passed through by the host verbatim: a status no screen names.
+      return Promise.resolve({ state: "somewhere_else" });
+    }
+    if (code !== FIXTURE_PHONE_CODE) {
       throw new Error("fixture phone code is invalid");
     }
     phase = "awaiting_password";
-    return Promise.resolve({ state: "password_required" });
+    // The CONNECTOR's own word, which is what a real one answers — Telegram
+    // says `password` here. The host renames it to its own
+    // `password_required` on the way to the browser, and a fixture that
+    // answered the host's word instead left that rename unexercised: a
+    // screen reading the connector's spelling passed every test here and
+    // then sat frozen on a live stand while the ceremony had moved on.
+    // @tested-by: tst_e2e_source_auth_screen_001
+    return Promise.resolve({ state: "password" });
   }
   if (phase === "awaiting_password") {
     if (requireMeta(meta, "password") !== FIXTURE_PHONE_PASSWORD) {
