@@ -2,7 +2,7 @@
 
 Status: APPROVED  
 Spec lock: sha256:0804a6ac650ba5737a8e6f4be287b8e29740481b24a253322bd7a888c1031f54 owner:2026-09-15: ИСПРАВОЯЙ ПОКА НЕ БУДЕТ РАБОТАТЬ БЫСТРО  
-Implementation lock: sha256:8c1ca631b37af21dc32bcf5af30565c25e2938e264f00caaf4c7d81ee0979e7a owner:Owner-directed continued fast-sync correction: include the existing client.test.ts four-second wait assertion in the same compatibility task, alongside live.test.ts; mandatory neighbor hook revealed its obsolete +2-second expectation. No production or SPEC expansion.  
+Implementation lock: sha256:31b81b23c470583c4d59bdff0f26fec6f5e27ad0bc944753454ae586c4e1bf29 owner:Owner orders continuing until fast and complete: ИСПРАВОЯЙ ПОКА НЕ БУДЕТ РАБОТАТЬ БЫСТРО. Add the discovered peer-scoped dialog-date correction within the existing live.ts and real-wire test scope; no SPEC changes.  
 Active Delivery: D1  
 Unattended decisions: allowed  
 
@@ -243,33 +243,35 @@ Moved the already planned pool/timeout compatibility test before this Stage comm
 
 ##### Tasks
 
-- [ ] TGFAST_002 — Bound discovery/history work and preserve totals in client.ts, live.ts, surfaces/telegram/commands.ts and commands.test.ts. (45 min)
+- [x] TGFAST_002 — Bound discovery/history work and preserve totals in client.ts, live.ts, surfaces/telegram/commands.ts and commands.test.ts. (45 min) — 43a277e691695403a464d57194fa9b0d79de90a4
 <!-- plan:task-meta:{"writes":["plugins/sources/telegram/src/client.ts","plugins/sources/telegram/src/live.ts","plugins/sources/telegram/src/surfaces/telegram/commands.ts","plugins/sources/telegram/src/surfaces/telegram/commands.test.ts"],"predictedActiveMinutes":45,"predictedCredits":3,"how":"Extend plugins/sources/telegram/src/client.ts and plugins/sources/telegram/src/live.ts existing paging types: discover 50 dialogs once, hydrate at most five chats of 50 messages per returned page, retain pending descriptors with OffsetPeer and provider continuation without dropping pins. A 20s page budget passes remaining timeout to operations; timeout fails without publishing candidate cursor. Extend plugins/sources/telegram/src/surfaces/telegram/commands.ts with bounded resumable catch-up and optional provider total through backfill. In plugins/sources/telegram/src/surfaces/telegram/commands.test.ts add three behavioral journeys: 50-dialog bounded hydration with pins, budget and large-gap continuation without skipped watermarks, known/null provider totals. Reuse the existing gap tests unchanged.","red":"bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts"} -->
-- [ ] TGFAST_002B — Preserve exact provider waits through pool eviction and helper normalization in plugins/sources/telegram/src/live.test.ts and client.test.ts. (3 min)
+- [x] TGFAST_002B — Preserve exact provider waits through pool eviction and helper normalization in plugins/sources/telegram/src/live.test.ts and client.test.ts. (3 min) — 43a277e691695403a464d57194fa9b0d79de90a4
 <!-- plan:task-meta:{"writes":["plugins/sources/telegram/src/live.test.ts","plugins/sources/telegram/src/client.test.ts"],"predictedActiveMinutes":3,"predictedCredits":1,"how":"Update plugins/sources/telegram/src/live.test.ts to expect the actual 17-second provider wait, without the removed two-second margin. Keep eviction, failed setup, retained account admission and no-transmission assertions. This compatibility proof was already in S3 and is moved before the live.ts commit hook. Update plugins/sources/telegram/src/client.test.ts existing four-second remote-wait expectation from6000 to4000ms; preserve decreasing remaining wait and no independent retry.","red":"bun run agent:test:backend -- plugins/sources/telegram/src/live.test.ts plugins/sources/telegram/src/client.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts` exits 0 — the stated behavior journeys pass
-- [ ] `bun run agent:test:backend -- plugins/sources/telegram/src/live.test.ts plugins/sources/telegram/src/client.test.ts` exits 0 — real pool lifecycle keeps the exact provider hold
-- [ ] Commit
+- [x] `bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts` exits 0 — the stated behavior journeys pass — b4d6b6e40df1cb650f5feaf2d16dada9d5849b9b
+- [x] `bun run agent:test:backend -- plugins/sources/telegram/src/live.test.ts plugins/sources/telegram/src/client.test.ts` exits 0 — real pool lifecycle keeps the exact provider hold — b4d6b6e40df1cb650f5feaf2d16dada9d5849b9b
+- [x] Commit — b4d6b6e40df1cb650f5feaf2d16dada9d5849b9b
 
 ##### Results
 
 <!-- plan:results:D1-S2:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| TGFAST_002 | 43a277e691695403a464d57194fa9b0d79de90a4 | 2026-09-15T13:27:13.776Z–2026-09-15T14:52:49.000Z | 70 / 86 min | unavailable: Runner exposes no per-stage token or credit measurement | Implementation43a277e plus lint-only follow-upb4d6b6e; six-path Stage union. RED: bootstrap began sixth history read, provider total78 absent, large-gap catch-up started sixth read, Saved Messages serialized as InputPeerUser, and old compatibility waits expected6/22seconds instead of4/20. GREEN14:51:22Z explicit scoped gate: TypeScript, ESLint,63tests511assertions. GREEN on committedb4d6b6e14:52:48Z: commands+unchanged gap30tests365assertions.50dialogs/2500messages over10bounded Source replies;7pins surviveJSON;147exact large-gapIDs;20second partial-page budget; rawknown78, known1equalpage, absentnull totals; cold-discovery timeout does not continue scan after last waiter expires. Source proof only; Graph proof remains separate. |
+| TGFAST_002B | 43a277e691695403a464d57194fa9b0d79de90a4 | 2026-09-15T13:27:13.776Z–2026-09-15T14:52:49.000Z | 70 / 86 min | unavailable: Runner exposes no per-stage token or credit measurement | Implementation43a277e plus lint-only follow-upb4d6b6e; six-path Stage union. RED: bootstrap began sixth history read, provider total78 absent, large-gap catch-up started sixth read, Saved Messages serialized as InputPeerUser, and old compatibility waits expected6/22seconds instead of4/20. GREEN14:51:22Z explicit scoped gate: TypeScript, ESLint,63tests511assertions. GREEN on committedb4d6b6e14:52:48Z: commands+unchanged gap30tests365assertions.50dialogs/2500messages over10bounded Source replies;7pins surviveJSON;147exact large-gapIDs;20second partial-page budget; rawknown78, known1equalpage, absentnull totals; cold-discovery timeout does not continue scan after last waiter expires. Source proof only; Graph proof remains separate. |
 <!-- plan:results:D1-S2:end -->
 <!-- plan:stage:D1-S2:end -->
 
 <!-- plan:stage:D1-S3:start -->
-<!-- plan:stage-meta:{"deliveryId":"D1","depends":["D1-S1","D1-S2"],"parallelWith":[],"writes":["plugins/sources/telegram/src/tst_src_tgflood_001.test.ts","plugins/sources/telegram/src/testing/mtproto-transport.ts"],"tempRoot":".tmp/code-production/telegram-fast-sync/D1-S3","verifyActiveMinutes":3,"verifyCredits":1} -->
+<!-- plan:stage-meta:{"deliveryId":"D1","depends":["D1-S1","D1-S2"],"parallelWith":[],"writes":["plugins/sources/telegram/src/live.ts","plugins/sources/telegram/src/tst_src_tgflood_001.test.ts","plugins/sources/telegram/src/testing/mtproto-transport.ts"],"tempRoot":".tmp/code-production/telegram-fast-sync/D1-S3","verifyActiveMinutes":3,"verifyCredits":1} -->
 #### Stage D1-S3 — Verified integrated Source throughput and provider-wait regression journeys
 
 - Owner: root; Profile: strong; Depends: D1-S1, D1-S2; Parallel with: none.
-- Writes: `plugins/sources/telegram/src/tst_src_tgflood_001.test.ts`, `plugins/sources/telegram/src/testing/mtproto-transport.ts`.
+- Writes: `plugins/sources/telegram/src/live.ts`, `plugins/sources/telegram/src/tst_src_tgflood_001.test.ts`, `plugins/sources/telegram/src/testing/mtproto-transport.ts`.
 - Temp root: `.tmp/code-production/telegram-fast-sync/D1-S3` (must be absent at handoff).
-- Predict: 28 active min / 4 credits.
+- Predict: 33 active min / 5 credits.
 - Of which verification: 3 active min / 1 credits.
 
 Extend plugins/sources/telegram/src/tst_src_tgflood_001.test.ts and plugins/sources/telegram/src/testing/mtproto-transport.ts real wire fixture to 50 dialogs, bounded hydrated pages and provider latency; exercise complete 120/70/5 histories and incoming live messages. Record wire count, deliberate wait, page latency, short-page continuation and exact IDs. Pool compatibility is verified in D1-S2. Compare identical workload timings against paced baseline and S32 where reproducible; label unavailable comparison, never invent measurements. Run existing SDK flood/replay/crypto tests after integrating both commits.
@@ -280,6 +282,10 @@ Commit. fix(telegram): verified integrated source throughput and provider-wait r
 
 - [ ] TGFAST_003 — Prove integrated fast Source journeys in tst_src_tgflood_001.test.ts using testing/mtproto-transport.ts. (25 min)
 <!-- plan:task-meta:{"writes":["plugins/sources/telegram/src/tst_src_tgflood_001.test.ts","plugins/sources/telegram/src/testing/mtproto-transport.ts"],"predictedActiveMinutes":25,"predictedCredits":3,"how":"Extend plugins/sources/telegram/src/tst_src_tgflood_001.test.ts and plugins/sources/telegram/src/testing/mtproto-transport.ts real wire fixture to 50 dialogs, bounded hydrated pages and provider latency; exercise complete 120/70/5 histories and incoming live messages. Record wire count, deliberate wait, page latency, short-page continuation and exact IDs. Pool compatibility is verified in D1-S2. Compare identical workload timings against paced baseline and S32 where reproducible; label unavailable comparison, never invent measurements. Run existing SDK flood/replay/crypto tests after integrating both commits.","red":"bun run agent:test:backend -- plugins/sources/telegram/src/tst_src_tgflood_001.test.ts"} -->
+
+
+- [ ] TGFAST_003B — Preserve peer-scoped dialog dates in live.ts so pagination does not skip chats. (5 min)
+<!-- plan:task-meta:{"writes":["plugins/sources/telegram/src/live.ts"],"predictedActiveMinutes":5,"predictedCredits":1,"how":"Correct inherited dialog offset dates in live.ts using the existing peerKey plus message ID, so equal IDs from different chats cannot skip later dialogs. Extend the existing real-wire journey owned by TGFAST_003 with a colliding-ID paginated response; retain the exact last-dialog peer/id/date continuation. No SPEC, wire-contract or UI changes.","red":"bun run agent:test:backend -- plugins/sources/telegram/src/tst_src_tgflood_001.test.ts"} -->
 
 ##### Acceptance criteria
 
@@ -322,4 +328,12 @@ Commit. fix(telegram): verified integrated source throughput and provider-wait r
 - amend implementation owner:Owner 2026-09-15 orders continuing until fast; implementation sequencing correction within the already approved test scope: move existing live.test.ts compatibility work from S3 into S2 so its mandatory live.ts neighbor hook can pass; no SPEC or product scope changes. sha256:1c41d0a9428348a11f9abeb13f1e7212a239d0ae43f72b899b8af42df3f28d52
 
 - amend implementation owner:Owner-directed continued fast-sync correction: include the existing client.test.ts four-second wait assertion in the same compatibility task, alongside live.test.ts; mandatory neighbor hook revealed its obsolete +2-second expectation. No production or SPEC expansion. sha256:8c1ca631b37af21dc32bcf5af30565c25e2938e264f00caaf4c7d81ee0979e7a
+
+- record-result D1-S2 commit:43a277e691695403a464d57194fa9b0d79de90a4
+
+- deviation D1-S2: Ordinary git commit43a277e ran without hook output because no core.hooksPath was configured in that worktree; no bypass was used. The agent caught remaining typing/lint issues with explicit agent:verify:commit and made follow-upb4d6b6e without rewriting history. Final explicit gate passed. Stage spans two work commits instead of one; full six-path union remains within approved writes.
+
+- close D1-S2 closed commit:b4d6b6e40df1cb650f5feaf2d16dada9d5849b9b
+
+- amend implementation owner:Owner orders continuing until fast and complete: ИСПРАВОЯЙ ПОКА НЕ БУДЕТ РАБОТАТЬ БЫСТРО. Add the discovered peer-scoped dialog-date correction within the existing live.ts and real-wire test scope; no SPEC changes. sha256:31b81b23c470583c4d59bdff0f26fec6f5e27ad0bc944753454ae586c4e1bf29
 <!-- plan:execution:end -->

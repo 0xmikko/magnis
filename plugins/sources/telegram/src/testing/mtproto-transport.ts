@@ -86,7 +86,7 @@ export function caseEvidence(test: string, parameter: string): (
     const hold = fixture.admission.holdUntil;
     process.stdout.write(`${JSON.stringify({ test, parameter, startedAt, endedAt: new Date().toISOString(), artifactSet,
       reproduce: `bun run agent:test:backend -- plugins/sources/telegram/src/tst_src_tgflood_001.test.ts -t ${test}`,
-      actualTransmissions: fixture.writes.length, remoteFloods: fixture.admission.remoteFloods,
+      actualTransmissions: fixture.writes.length, virtualElapsedMs: clock.now(), remoteFloods: fixture.admission.remoteFloods,
       localRefusals: fixture.admission.localRefusals, holdUntil: hold,
       remaining: hold === null ? null : Math.max(0, Math.ceil((hold - clock.now()) / 1000)),
       maxInFlight: fixture.maximumInFlight(), ...details })}\n`);

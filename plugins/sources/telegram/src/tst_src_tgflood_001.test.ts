@@ -8,7 +8,7 @@ import { runMcpStdio, type DispatchDeps } from "./dispatch";
 import { resetAuthFlow } from "./auth";
 import { SubscriptionRegistry } from "./subscriptions";
 import { LiveDialogPager } from "./live";
-import { MTPROTO_REQUEST_TIMEOUT_MS, MtprotoTimeoutError } from "./client";
+import { SOURCE_PAGE_BUDGET_MS, MtprotoTimeoutError } from "./client";
 import { AccountAdmission, type AdmissionEvent } from "./request-admission";
 import { execute, runBootstrap } from "./surfaces/telegram/commands";
 import { liveUpdatePushes } from "./subscriptions";
@@ -379,7 +379,9 @@ test("tst_src_tgflood_003 peer misses share a continuation through floods and ca
     const timeoutHost: { setTimeout(callback: (...args: unknown[]) => void, delay?: number, ...args: unknown[]): ReturnType<typeof setTimeout> } = globalThis;
     const timer = spyOn(timeoutHost, "setTimeout").mockImplementation((callback, delay, ...args) => {
       const handle = nativeTimeout(callback, delay, ...args);
-      if (delay === MTPROTO_REQUEST_TIMEOUT_MS) { clearTimeout(handle); expireHistory = () => callback(...args); }
+      if (delay !== undefined && delay > 0 && delay <= SOURCE_PAGE_BUDGET_MS) {
+        clearTimeout(handle); expireHistory = () => callback(...args);
+      }
       return handle;
     });
     try {
@@ -611,6 +613,142 @@ test("tst_src_tgflood_001 healthy requests use a free application slot without d
     expect(f.writes).toHaveLength(45);
     evidence(f, clock, { expectedTransmissions: 45, expectedMessages: 197, actualMessages: actual.length + liveIds.length,
       identities: ["101:1..122", "102:1..70", "103:1..5"], mediaChunks: 3, mediaBytes: 262151, deliberateWaitMs: clock.now(), sameTimestampRequests: 45 });
+  } finally { await f.close(); }
+});
+
+/** @test-id: tst_src_tgfast_005
+ * @scenario: scn_telegram_fast_pages_001
+ * @covers: fifty-dialog Source continuations, actual SDK page sizes and provider latency
+ * @deterministic: yes; real SDK with a 100ms virtual provider round trip
+ * @fixtures: 50 dialogs, independent 120/70/5 histories, two live messages
+ */
+test("tst_src_tgfast_005 measures complete round-robin history without local pacing", async () => {
+  for (const batchSize of [50, 100, 200]) {
+    const clock = new VirtualClock();
+    const f = await createTransport(clock);
+    const now = spyOn(performance, "now").mockImplementation(() => clock.now());
+    const evidence = caseEvidence("tst_src_tgfast_005", `batch-${String(batchSize)}`);
+    const counts = new Map(Array.from({ length: 50 }, (_, index) => [101 + index, index === 0 ? 120 : index === 1 ? 70 : index === 2 ? 5 : 0]));
+    const expected = [...counts].flatMap(([chat, count]) => Array.from({ length: count }, (_, index) => `tg:msg:${String(chat)}:${String(index + 1)}`));
+    const emitted: Record<string, unknown>[] = [];
+    const liveIds: string[] = [];
+    const latencies: number[] = [];
+    const frameBytes: number[] = [];
+    let index = 0;
+    try {
+      const me = f.client.getMe(true);
+      const user = new Api.User({ id: bigInt(999), self: true, firstName: "Fixture" });
+      const sent = await f.application(index++);
+      clock.advance(100);
+      await f.reply(sent, { getBytes: (): Buffer => {
+        const header = Buffer.alloc(8); header.writeUInt32LE(0x1cb5c415); header.writeInt32LE(1, 4);
+        return Buffer.concat([header, user.getBytes()]);
+      } });
+      await me;
+      f.tg.addLiveHandler((message) => { liveIds.push(...liveUpdatePushes(message, "fixture-A").map((push) => push.remote_id)); });
+      const answer = async (): Promise<void> => {
+        const request = (await f.application(index++)).state.request;
+        const wire = f.writes[index - 1];
+        if (!wire) throw new Error("Missing benchmark transmission");
+        // This is provider work, never a configured Source inter-request sleep.
+        clock.advance(100);
+        if (request instanceof Api.messages.GetDialogs) {
+          expect(request.offsetId).toBe(0);
+          await f.reply(wire, new Api.messages.Dialogs({
+            dialogs: [...counts].map(([chat, count], pin) => new Api.Dialog({ pinned: pin < 7,
+              peer: new Api.PeerChat({ chatId: bigInt(chat) }), topMessage: count,
+              readInboxMaxId: 0, readOutboxMaxId: 0, unreadCount: 0, unreadMentionsCount: 0,
+              unreadReactionsCount: 0, notifySettings: new Api.PeerNotifySettings({}) })),
+            chats: [...counts.keys()].map(fixtureChat), users: [],
+            messages: [...counts].filter(([, count]) => count > 0).map(([chat, count]) => fixtureMessage(chat, count)),
+          }));
+        } else if (request instanceof Api.messages.GetHistory && request.peer instanceof Api.InputPeerChat) {
+          const chat = request.peer.chatId.toJSNumber();
+          const count = counts.get(chat);
+          if (count === undefined) throw new Error("Unknown benchmark chat");
+          expect(request.limit).toBeLessThanOrEqual(100);
+          const messages = Array.from({ length: count }, (_, message) => count - message)
+            .filter((id) => request.offsetId === 0 || id < request.offsetId).slice(0, request.limit)
+            .map((id) => fixtureMessage(chat, id));
+          await f.reply(wire, new Api.messages.MessagesSlice({ count, messages, chats: [fixtureChat(chat)], users: [] }));
+        } else throw new Error(`Unexpected benchmark request ${wire.method}`);
+      };
+      let cursor: unknown = null;
+      for (let page = 0; page < 10; page++) {
+        const started = clock.now();
+        const reading = runBootstrap(cursor, new LiveDialogPager(f.tg, "fixture-A"));
+        for (let call = 0; call < (page === 0 ? 6 : 5); call++) await answer();
+        const result = await reading;
+        latencies.push(clock.now() - started);
+        frameBytes.push(Buffer.byteLength(JSON.stringify(result)));
+        emitted.push(...envelopes(result));
+        expect(result).toMatchObject({ discovered: (page + 1) * 5, total: 50, hasMore: page < 9 });
+        cursor = JSON.parse(JSON.stringify(result.nextCursor)) as unknown;
+        if (page === 0) {
+          await f.incoming(new Api.Updates({ users: [user], chats: [fixtureChat(101)], date: 1700000122, seq: 1,
+            updates: [121, 122].map((id) => new Api.UpdateNewMessage({ message: fixtureMessage(101, id), pts: id, ptsCount: 1 })) }));
+          await flushCommands();
+          expect(liveIds).toEqual(["tg:msg:101:121", "tg:msg:101:122"]);
+        }
+      }
+      const before = new Map([[101, 71], [102, 21], [103, 1]]);
+      const visits: number[] = [];
+      while (before.size > 0) for (const [chat, offset] of [...before]) {
+        visits.push(chat);
+        const started = clock.now();
+        const reading = execute(f.tg, "fixture-A", { action: "backfill_chat", chat_id: chat, before_message_id: offset, limit: batchSize },
+          { sleep: async () => { throw new Error("Unexpected Source sleep"); } });
+        await answer();
+        const page = await reading;
+        latencies.push(clock.now() - started);
+        frameBytes.push(Buffer.byteLength(JSON.stringify(page)));
+        const messages = envelopes(page);
+        expect(page.total).toBe(counts.get(chat));
+        emitted.push(...messages);
+        if (page.has_more === false) { expect(messages).toHaveLength(0); before.delete(chat); }
+        else {
+          if (typeof page.oldest_message_id !== "number") throw new Error("Missing exclusive history continuation");
+          expect(page.oldest_message_id).toBeLessThan(offset);
+          before.set(chat, page.oldest_message_id);
+        }
+      }
+      expect(visits.slice(0, 3)).toEqual([101, 102, 103]);
+      const ids = emitted.map((item) => item.remote_id).filter((id): id is string => typeof id === "string" && id.startsWith("tg:msg:"));
+      expect(ids.sort()).toEqual(expected.sort());
+      expect(new Set([...ids, ...liveIds]).size).toBe(197);
+      expect(emitted.filter((item) => String(item.remote_id).startsWith("tg:chat:") && (item.payload as Record<string, unknown>).is_pinned === true)
+        .map((item) => (item.payload as Record<string, unknown>).pin_order)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+      expect(Math.max(...latencies)).toBe(600);
+      expect(f.writes.filter((wire) => wire.method === "messages.GetDialogs")).toHaveLength(1);
+      expect(f.writes).toHaveLength(batchSize === 50 ? 58 : 57);
+      expect(clock.now()).toBe(f.writes.length * 100);
+      expect(f.maximumInFlight()).toBe(1);
+      evidence(f, clock, { requestedBatchSize: batchSize, providerTimeMs: clock.now(), deliberateWaitMs: 0,
+        sourceCommands: latencies.length, maxSourceLatencyMs: Math.max(...latencies), maxFrameBytes: Math.max(...frameBytes),
+        expectedMessages: 197, actualMessages: ids.length + liveIds.length, dialogScans: 1,
+        databaseTransactions: "not measured at Source boundary" });
+    } finally { now.mockRestore(); await f.close(); }
+  }
+});
+
+/** @test-id: tst_src_tgfast_006
+ * @scenario: scn_telegram_fast_pages_002
+ * @covers: peer-scoped message dates in actual GetDialogs continuation
+ * @deterministic: yes
+ * @fixtures: different chats with the same message ID and reversed message vector
+ */
+test("tst_src_tgfast_006 dialog offsets use the date from their own chat", async () => {
+  const f = await createTransport(new VirtualClock());
+  try {
+    const reading = LiveDialogPager.discoverPage(f.tg, null, 2);
+    const messages = [101, 102].map((chat) => new Api.Message({ id: 7,
+      peerId: new Api.PeerChannel({ channelId: bigInt(chat) }), date: chat === 101 ? 200 : 100, message: "fixture" }));
+    await f.reply(await f.application(0), new Api.messages.DialogsSlice({ count: 3,
+      dialogs: [102, 101].map((chat) => new Api.Dialog({ pinned: chat === 102, peer: new Api.PeerChannel({ channelId: bigInt(chat) }), topMessage: 7,
+        readInboxMaxId: 0, readOutboxMaxId: 0, unreadCount: 0, unreadMentionsCount: 0, unreadReactionsCount: 0, notifySettings: new Api.PeerNotifySettings({}) })),
+      messages, chats: [101, 102].map((id) => new Api.Channel({ id: bigInt(id), accessHash: bigInt(99), title: "fixture", photo: new Api.ChatPhotoEmpty(), date: 1, broadcast: true })), users: [],
+    }));
+    expect((await reading).next_offset).toMatchObject({ offset_date: 200, offset_id: 7, offset_peer: { ty: "channel", id: 101 } });
   } finally { await f.close(); }
 });
 

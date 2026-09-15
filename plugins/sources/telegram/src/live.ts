@@ -439,7 +439,7 @@ export class LiveDialogPager implements DialogPager {
     // (messages.dialogsSlice.count); the complete (non-slice) Dialogs variant has
     // no count, so the full set IS its own total.
     let rawDialogs: RawDialogLike[];
-    let rawMessages: { id?: number; date?: number }[];
+    let rawMessages: { id?: number; date?: number; peerId?: unknown }[];
     let users: EntityLike[];
     let chats: EntityLike[];
     let isSlice: boolean;
@@ -466,10 +466,13 @@ export class LiveDialogPager implements DialogPager {
     const chatMap = new Map<string, EntityLike>();
     for (const e of [...users, ...chats]) chatMap.set(entityKey(e), e);
 
-    // (message id → date) for advancing the offset the way Telegram expects.
-    const msgDate = new Map<number, number>();
+    // @tested-by: tst_src_tgfast_006 — channel message IDs are only peer-local.
+    const msgDate = new Map<string, number>();
     for (const m of rawMessages) {
-      if (typeof m.id === "number" && typeof m.date === "number") msgDate.set(m.id, m.date);
+      const key = peerKey(m.peerId);
+      if (key !== undefined && typeof m.id === "number" && typeof m.date === "number") {
+        msgDate.set(`${key}:${String(m.id)}`, m.date);
+      }
     }
 
     const dialogs: CatchupDialog[] = [];
@@ -492,7 +495,8 @@ export class LiveDialogPager implements DialogPager {
         const d = rawDialogs[i];
         if (d === undefined || d.className === "DialogFolder") continue;
         const top = d.topMessage;
-        const date = top === undefined ? undefined : msgDate.get(top);
+        const key = peerKey(d.peer);
+        const date = top === undefined || key === undefined ? undefined : msgDate.get(`${key}:${String(top)}`);
         if (date !== undefined && top !== undefined) {
           offsetDate = date;
           offsetId = top;
