@@ -500,21 +500,22 @@ Scoped behavior file: plugins/sources/telegram/src/tst_src_tgflood_001.test.ts; 
 
 ##### Tasks
 
-- [ ] TGFLOOD_007 — Preserve flood replies and responsive listen_stop in dispatch.ts and main.ts; exercise stdio end to end in tst_src_tgflood_001.test.ts. (35 min)
+- [x] TGFLOOD_007 — Preserve flood replies and responsive listen_stop in dispatch.ts and main.ts; exercise stdio end to end in tst_src_tgflood_001.test.ts. (35 min) — 2b2d97911b359f8741a36d7d6a79cf205d1a4bed
 <!-- plan:task-meta:{"writes":["plugins/sources/telegram/src/dispatch.ts","plugins/sources/telegram/src/main.ts","plugins/sources/telegram/src/tst_src_tgflood_001.test.ts"],"predictedActiveMinutes":35,"predictedCredits":4,"how":"In plugins/sources/telegram/src/tst_src_tgflood_001.test.ts add tst_src_tgflood_005 / scn_tgflood_007 through the actual stdio loop, normal dispatcher, subscription registry and guarded real SDK on fake I/O. Prove runtime listen/auth/fetch floods are not malformed-parameter errors; malformed user arguments remain validation failures. In plugins/sources/telegram/src/dispatch.ts reuse classifyToolError/toolErrorReply for runtime failures and extract the existing stdio work loop into an exported function with injected streams/dependencies. Do not write a second protocol driver. Preserve existing JSON-RPC/Source schemas and return -32002 with the guard's remaining retry_after. In plugins/sources/telegram/src/main.ts invoke that same loop during normal import-based startup. Keep the eight-command work semaphore, but allow control-only listen_stop to bypass it. Do not exempt arbitrary commands or require import.meta.main, because the host imports the bundled Source. In plugins/sources/telegram/src/tst_src_tgflood_001.test.ts fill all eight slots with paced work, send listen_stop on the same input stream and observe completion without waiting for a quota permit or slot. During a flood queue history/media, inject two live identities and assert zero additional application sends and no failed-page success receipt. Resume after expiry and finish exactly 197 unique message identities. In plugins/sources/telegram/src/tst_src_tgflood_001.test.ts spawn a fixture-owned import of main.ts with initialize and EOF only to verify one initialization reply and clean exit without provider calls. Verify sanitized diagnostic fields and absence of session/phone/message/env sentinels. Shutdown every fixture-owned timer/client/task.","red":"bun run agent:test:backend -- plugins/sources/telegram/src/tst_src_tgflood_001.test.ts -t 'tst_src_tgflood_005'"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- plugins/sources/telegram/src/tst_src_tgflood_001.test.ts -t 'tst_src_tgflood_005'` exits 0 — actual stdio calls expose runtime -32002 waits, reject malformed args distinctly and process listen_stop while eight work slots are occupied.
+- [x] `bun run agent:test:backend -- plugins/sources/telegram/src/tst_src_tgflood_001.test.ts -t 'tst_src_tgflood_005'` exits 0 — actual stdio calls expose runtime -32002 waits, reject malformed args distinctly and process listen_stop while eight work slots are occupied. — 2b2d97911b359f8741a36d7d6a79cf205d1a4bed
 - [ ] During the account hold, history/media transmit zero extra application requests while the two incoming live identities are emitted; after expiry the run finishes exactly 197 unique identities with no false successful failed-page receipt.
 - [ ] Import-based initialize/EOF produces exactly one metadata reply and terminates without Telegram calls; captured diagnostics contain no fixture session, phone, request-body or environment sentinels.
-- [ ] Commit
+- [x] Commit — 2b2d97911b359f8741a36d7d6a79cf205d1a4bed
 
 ##### Results
 
 <!-- plan:results:D1-S5:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| TGFLOOD_007 | 2b2d97911b359f8741a36d7d6a79cf205d1a4bed | 2026-09-14T23:23:16.998Z–2026-09-14T23:50:13.000Z | 26.94 / 26.94 min | unavailable: Runner exposes no per-Task credit usage. Active time is the continuously attended Stage interval including tool waits. | Behavioral REDs: real listener startup FLOOD returned -32602 instead of -32002; actual stdio listen_stop had no reply with eight unresolved work slots; JSON null terminated the import-launched Source with exit1 instead of0. GREEN: final named F5 journey68 assertions; normal commit hook all five journeys657 assertions, TypeScript and ESLint passed. Moved the existing bounded stdio loop, not a duplicate dispatcher. Runtime and auth begin/code-step FLOODs preserve -32002 and retry_after6 through the existing codec; malformed listener metadata stays -32602 and ordinary auth failures -32000. Actual SessionPool/SubscriptionRegistry/SDK with only transport and virtual clock mocked: held history and media cause zero additional transmissions, two real SDK live updates continue, recovery emits exactly195 historical plus2 live identities, and subscription stop bypasses eight occupied work slots. Structured guard diagnostics exclude actual synthetic session/hash/payload/phone/code values. Metadata-only child imports main with empty env, ignores null and replies initialize without provider traffic. No live/Graph/UI health claim. Existing starting-listener cancellation and auth-flow reuse behavior are outside this scoped fix and unchanged. |
 <!-- plan:results:D1-S5:end -->
 <!-- plan:stage:D1-S5:end -->
 
@@ -607,4 +608,8 @@ Scoped behavior files: plugins/sources/telegram/src/tst_src_tgflood_001.test.ts,
 - record-result D1-S4 commit:a457be17c5acd9dc205f9ee2d895e52d69ebb710
 
 - close D1-S4 partial commit:f47d5c0913a3156e240876768ca05f9a6eecd15e
+
+- record-result D1-S5 commit:2b2d97911b359f8741a36d7d6a79cf205d1a4bed
+
+- close D1-S5 partial commit:2b2d97911b359f8741a36d7d6a79cf205d1a4bed
 <!-- plan:execution:end -->

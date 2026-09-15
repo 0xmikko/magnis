@@ -12,7 +12,7 @@ import { MTPROTO_REQUEST_TIMEOUT_MS, MtprotoTimeoutError } from "./client";
 import { AccountAdmission, type AdmissionEvent } from "./request-admission";
 import { execute, runBootstrap } from "./surfaces/telegram/commands";
 import { liveUpdatePushes } from "./subscriptions";
-import { createTransport, setupConfig, VirtualClock } from "./testing/mtproto-transport";
+import { caseEvidence, createTransport, setupConfig, VirtualClock } from "./testing/mtproto-transport";
 
 function outcome(promise: Promise<unknown>): Promise<{ kind: "resolved" | "rejected"; value: unknown }> {
   return promise.then((value) => ({ kind: "resolved", value }), (value: unknown) => ({ kind: "rejected", value }));
@@ -75,8 +75,10 @@ function flushCommands(): Promise<void> {
  * @fixtures: real SessionPool and SDK; fake connection and monotonic clock
  */
 test("tst_src_tgflood_005 the Source command loop preserves runtime flood replies", async () => {
+  const evidence = caseEvidence("tst_src_tgflood_005", "real-stdio");
   const clock = new VirtualClock();
-  const options: ConstructorParameters<typeof live.SessionPool>[0] = { clock, diagnostics: () => undefined };
+  const setupEvents: AdmissionEvent[] = [];
+  const options: ConstructorParameters<typeof live.SessionPool>[0] = { clock, diagnostics: (event) => { setupEvents.push(event); } };
   const sessions = new live.SessionPool(options);
   const guard = sessions.admissionFor("fixture-stdio");
   const choosePool = spyOn(live, "pool").mockReturnValue(sessions);
@@ -88,6 +90,8 @@ test("tst_src_tgflood_005 the Source command loop preserves runtime flood replie
     });
     return stream.reply(1);
   });
+  const previousSecret = process.env.TGFLOOD_TEST_DIAGNOSTIC_SECRET;
+  process.env.TGFLOOD_TEST_DIAGNOSTIC_SECRET = "fixture-env-secret";
   try {
     await f.reply(await f.application(0), new Api.RpcError({ errorCode: 420, errorMessage: "FLOOD_WAIT_4" }));
     await f.connected;
@@ -95,7 +99,11 @@ test("tst_src_tgflood_005 the Source command loop preserves runtime flood replie
     expect(f.writes).toHaveLength(1);
     stream.send(2, "listen_start", { subscription_id: "bad-meta" });
     expect(await stream.reply(2)).toMatchObject({ error: { code: -32602 } });
+    expect(setupEvents.some((event) => event.origin === "remoteFlood")).toBe(true);
+    expect(JSON.stringify(setupEvents)).not.toContain("fixture-env-secret");
   } finally {
+    if (previousSecret === undefined) delete process.env.TGFLOOD_TEST_DIAGNOSTIC_SECRET;
+    else process.env.TGFLOOD_TEST_DIAGNOSTIC_SECRET = previousSecret;
     stream.registry.stop("fixture-listen");
     await stream.finish();
     await f.close();
@@ -216,6 +224,9 @@ test("tst_src_tgflood_005 the Source command loop preserves runtime flood replie
     const captured = JSON.stringify(diagnostics);
     expect(diagnostics.length).toBeGreaterThan(0);
     for (const secret of [String(meta.session), "fixture-only", "fixture-101-121", "fixture-phone"]) expect(captured).not.toContain(secret);
+    expect(actual.writes).toHaveLength(15);
+    evidence(actual, runningClock, { expectedTransmissions: 15, expectedMessages: 197, actualMessages: identities.size,
+      identities: ["101:1..122", "102:1..70", "103:1..5"], failedFetchResults: 0, stoppedWithOccupiedSlots: 8 });
   } finally {
     io.registry.stop("active");
     await actual.close();
@@ -224,6 +235,7 @@ test("tst_src_tgflood_005 the Source command loop preserves runtime flood replie
   }
 
   for (const phase of ["begin", "step"] as const) {
+    const evidence = caseEvidence("tst_src_tgflood_005", `auth-${phase}`);
     const authClock = new VirtualClock();
     const authEvents: AdmissionEvent[] = [];
     const authGuard = new AccountAdmission(`fixture-auth-${phase}`, authClock, (event) => { authEvents.push(event); });
@@ -257,6 +269,7 @@ test("tst_src_tgflood_005 the Source command loop preserves runtime flood replie
       expect(authTransport.writes).toHaveLength(phase === "begin" ? 1 : 3);
       const captured = JSON.stringify(authEvents);
       for (const secret of ["+10000000000", "12345", "fixture-only", "fixture-code-hash"]) expect(captured).not.toContain(secret);
+      evidence(authTransport, authClock, { expectedTransmissions: phase === "begin" ? 1 : 3, wireError: -32002, retryAfter: 6 });
     } finally {
       await authTransport.close();
       await authIo.finish();
@@ -299,6 +312,7 @@ const ORIGINS = [
  * @fixtures: real Source/SDK with serialized dialog/history/update replies and fake I/O
  */
 test("tst_src_tgflood_003 peer misses share a continuation through floods and cancellation", async () => {
+  const evidence = caseEvidence("tst_src_tgflood_003", "discovery-recovery");
   const nativeTimeout = globalThis.setTimeout;
   const clock = new VirtualClock();
   const f = await createTransport(clock);
@@ -437,6 +451,9 @@ test("tst_src_tgflood_003 peer misses share a continuation through floods and ca
     // Three discovery requests plus the independently requested snapshot page.
     expect(f.writes.filter((sent) => sent.method === "messages.GetDialogs")).toHaveLength(4);
     expect(f.maximumInFlight()).toBe(1);
+    expect(f.writes).toHaveLength(16);
+    evidence(f, clock, { expectedTransmissions: 16, expectedMessages: 195, actualMessages: emitted.length,
+      identities: ["201:1..120", "202:1..70", "103:1..5"], timeoutResults: 0, discoveryStartPages: 1 });
   } finally { await f.close(); }
 });
 
@@ -447,6 +464,7 @@ test("tst_src_tgflood_003 peer misses share a continuation through floods and ca
  * @fixtures: real SDK, fake MTProto I/O and monotonic clock
  */
 test("tst_src_tgflood_001 healthy requests share a single paced application slot", async () => {
+  const evidence = caseEvidence("tst_src_tgflood_001", "history-live-media");
   const clock = new VirtualClock();
   const f = await createTransport(clock, undefined, true);
   try {
@@ -518,7 +536,6 @@ test("tst_src_tgflood_001 healthy requests share a single paced application slot
     const expected = [...histories].flatMap(([chat, history]) => history.map((message) => `tg:msg:${String(chat)}:${String(message.id)}`));
     expect(actual.length).toBe(195);
     expect(new Set(actual)).toEqual(new Set(expected));
-    process.stdout.write("tst_src_tgflood_001 history:195\n");
 
     // Resolve self through a real request before processing incoming updates.
     const self = new Api.User({ id: bigInt(999), accessHash: bigInt(3), self: true, firstName: "Fixture" });
@@ -532,7 +549,6 @@ test("tst_src_tgflood_001 healthy requests share a single paced application slot
       return Buffer.concat([header, self.getBytes()]);
     } });
     await me;
-    process.stdout.write("tst_src_tgflood_001 self:ready\n");
     const liveIds: string[] = [];
     let delivered: (() => void) | undefined;
     const incomingDone = new Promise<void>((resolve) => { delivered = resolve; });
@@ -543,7 +559,6 @@ test("tst_src_tgflood_001 healthy requests share a single paced application slot
     const pendingHistory = outcome(f.client.invoke(new Api.updates.GetState()));
     await f.incoming(new Api.Updates({ updates: [121, 122].map((id) => new Api.UpdateNewMessage({ message: fixtureMessage(101, id), pts: id, ptsCount: 1 })), chats: [fixtureChat(101)], users: [self], date: 1700000122, seq: 1 }));
     await incomingDone;
-    process.stdout.write("tst_src_tgflood_001 live:2\n");
     expect(liveIds).toEqual(["tg:msg:101:121", "tg:msg:101:122"]);
     expect(f.writes).toHaveLength(wireIndex);
     clock.advance(3000);
@@ -551,7 +566,6 @@ test("tst_src_tgflood_001 healthy requests share a single paced application slot
     expect((await pendingHistory).kind).toBe("resolved");
 
     const exported = await f.exportedSender(1);
-    process.stdout.write("tst_src_tgflood_001 exported:ready\n");
     expect(exported).not.toBe(f.sender);
     const document = new Api.Document({ id: bigInt(7), accessHash: bigInt(8), fileReference: Buffer.from([1, 2]), date: 1700000000,
       mimeType: "application/octet-stream", size: bigInt(262151), dcId: 1, attributes: [new Api.DocumentAttributeFilename({ fileName: "fixture.bin" })] });
@@ -570,7 +584,6 @@ test("tst_src_tgflood_001 healthy requests share a single paced application slot
         clock.advance(3000);
         chunk = await f.application(wireIndex++);
       }
-      process.stdout.write(`tst_src_tgflood_001 media:${chunk.method}\n`);
       const request: unknown = chunk.state.request;
       expect(request).toBeInstanceOf(Api.upload.GetFile);
       if (!(request instanceof Api.upload.GetFile)) throw new Error("Expected media request");
@@ -607,6 +620,9 @@ test("tst_src_tgflood_001 healthy requests share a single paced application slot
       expect(b.at - a.at).toBeGreaterThanOrEqual(3000);
       expect(f.writes.filter((item) => item.at > b.at - 60_000 && item.at <= b.at).length).toBeLessThanOrEqual(20);
     }
+    expect(f.writes).toHaveLength(20);
+    evidence(f, clock, { expectedTransmissions: 20, expectedMessages: 197, actualMessages: actual.length + liveIds.length,
+      identities: ["101:1..122", "102:1..70", "103:1..5"], mediaChunks: 3, mediaBytes: 262151, maxRollingMinute: 20 });
   } finally { await f.close(); }
 });
 
@@ -617,6 +633,7 @@ test("tst_src_tgflood_001 healthy requests share a single paced application slot
  * @fixtures: real SDK, blocked in-memory wire response, virtual clock
  */
 test("tst_src_tgflood_004 an in-flight request bounds the shared waiting queue", async () => {
+  const evidence = caseEvidence("tst_src_tgflood_004", "queue-timeout-reconnect-stop");
   const clock = new VirtualClock();
   const f = await createTransport(clock);
   try {
@@ -661,6 +678,8 @@ test("tst_src_tgflood_004 an in-flight request bounds the shared waiting queue",
     const restored = await f.application(4);
     await f.reply(restored, stateResponse());
     expect((await waitingBeforeReconnect).kind).toBe("resolved");
+    expect(f.maximumInFlight()).toBe(1);
+    evidence(f, clock, { expectedTransmissions: 5, queueLimit: 32, rejectedOverflow: 1, callerTimeoutReleasedPermit: false });
   } finally { await f.close(); }
   for (const duration of ["", "-1", "9".repeat(400), "9007199254740991"]) {
     const malformed = await createTransport(new VirtualClock());
@@ -684,16 +703,39 @@ test("tst_src_tgflood_004 an in-flight request bounds the shared waiting queue",
     const pending = outcome(stopping.client.invoke(new Api.updates.GetState()));
     stoppingClock.advance(3000);
     await stopping.application(1);
+    const queuedAtStop = outcome(stopping.client.invoke(new Api.updates.GetState()));
+    await stopping.ping();
+    expect(stopping.admission.queued).toBe(1);
     stopping.sender.reconnect();
     await stopping.waitSleep(1000);
     await stopping.client.destroy();
     const settled = await Promise.race([pending, Promise.resolve({ kind: "unsettled" })]);
     expect(settled.kind).toBe("rejected");
+    expect((await queuedAtStop).kind).toBe("rejected");
+    expect(stopping.admission.queued).toBe(0);
+    expect(stoppingClock.timerCount).toBe(0);
     stopping.releaseSleep(1000);
     stoppingClock.advance(60_000);
     expect(stopping.writes).toHaveLength(2);
     expect(stopping.sender._userConnected).toBe(false);
   } finally { await stopping.close(); }
+  const pacingClock = new VirtualClock();
+  const pacing = await createTransport(pacingClock);
+  try {
+    const first = outcome(pacing.client.invoke(new Api.updates.GetState()));
+    await pacing.reply(await pacing.application(0), stateResponse());
+    expect((await first).kind).toBe("resolved");
+    const waiting = outcome(pacing.client.invoke(new Api.updates.GetState()));
+    await pacing.ping();
+    expect(pacing.admission.queued).toBe(1);
+    expect(pacing.writes).toHaveLength(1);
+    await pacing.client.destroy();
+    expect((await waiting).kind).toBe("rejected");
+    expect(pacing.admission.queued).toBe(0);
+    expect(pacingClock.timerCount).toBe(0);
+    pacingClock.advance(60_000);
+    expect(pacing.writes).toHaveLength(1);
+  } finally { await pacing.close(); }
   for (const point of ["packing", "encryption"] as const) {
     const broken = await createTransport(new VirtualClock());
     try {
@@ -779,6 +821,7 @@ test("tst_src_tgflood_002 the first remote flood prevents the next actual SDK tr
     { name: "server-retry", request: () => new Api.updates.GetState() },
     { name: "reconnect-replay", request: () => new Api.updates.GetState() },
   ]) {
+    const evidence = caseEvidence("tst_src_tgflood_002", `${origin.name}:${String(seconds)}`);
     const clock = new VirtualClock();
     const f = await createTransport(clock, undefined, origin.name === "setup");
     try {
@@ -797,18 +840,21 @@ test("tst_src_tgflood_002 the first remote flood prevents the next actual SDK tr
       } else if (origin.name === "reconnect-replay") {
         f.sender.isReconnecting = true;
         await f.sender._reconnect();
+        await f.ping();
+        expect(f.writes).toHaveLength(1);
         clock.advance(3000);
         sent = await f.application(1);
+        expect(sent.at).toBe(3000);
       }
       expect(sent.method).toBe(origin.name === "setup" ? "InvokeWithLayer" : origin.name.endsWith("retry") || origin.name.endsWith("replay") ? "updates.GetState" : origin.name);
       const queued = outcome(invokeState());
       await f.reply(sent, new Api.RpcError({ errorCode: 420, errorMessage: `FLOOD_WAIT_${String(seconds)}` }));
-      expect((await first).kind).toBe("rejected");
-      expect((await queued).kind).toBe("rejected");
       const transmitted = f.writes.length;
       const hold = clock.now() + seconds * 1000 + 2000;
       expect(f.admission.holdUntil).toBe(hold);
       expect(f.admission.remoteFloods).toBe(1);
+      expect((await first).kind).toBe("rejected");
+      expect((await queued).kind).toBe("rejected");
       const second = outcome(invokeState());
       const next = await Promise.race([second, f.application(transmitted).then(() => ({ kind: "transmitted" as const }))]);
       expect(next.kind).toBe("rejected");
@@ -843,12 +889,58 @@ test("tst_src_tgflood_002 the first remote flood prevents the next actual SDK tr
         expect(f.admission.remoteFloods).toBe(2);
         expect(f.writes).toHaveLength(transmitted + 1);
       }
-      process.stdout.write(`${JSON.stringify({ test: "tst_src_tgflood_002", origin: origin.name, seconds, transmissions: f.writes.length, remoteFloods: f.admission.remoteFloods, hold })}\n`);
+      const expectedTransmissions = (origin.name.endsWith("retry") || origin.name.endsWith("replay") ? 2 : 1) + (seconds === 4 ? 2 : 1);
+      expect(f.writes).toHaveLength(expectedTransmissions);
+      expect(f.maximumInFlight()).toBe(1);
+      evidence(f, clock, { expectedTransmissions, transmissionsDuringHold: 0, firstHold: hold });
     } finally { await f.close(); }
+  }
+  // A response to an older, genuinely transmitted replay may arrive while a
+  // newer operation is inside crypto, or while its replay still owns the slot.
+  for (const phase of ["encryption", "held-replay"] as const) {
+    const evidence = caseEvidence("tst_src_tgflood_002", phase);
+    const raceClock = new VirtualClock();
+    const race = await createTransport(raceClock);
+    let encryption: ReturnType<typeof race.pauseEncryption> | undefined;
+    try {
+      const original = outcome(race.client.invoke(new Api.updates.GetState()));
+      const old = await race.application(0);
+      race.sender.isReconnecting = true;
+      await race.sender._reconnect();
+      raceClock.advance(3000);
+      const latest = await race.application(1);
+      let blocked = original;
+      if (phase === "encryption") {
+        await race.reply(latest, stateResponse());
+        expect((await original).kind).toBe("resolved");
+        encryption = race.pauseEncryption();
+        blocked = outcome(race.client.invoke(new Api.updates.GetState()));
+        raceClock.advance(3000);
+        await encryption.entered;
+      }
+      await race.reply(old, new Api.RpcError({ errorCode: 420, errorMessage: "FLOOD_WAIT_4" }));
+      expect(race.admission.holdUntil).toBe(raceClock.now() + 6000);
+      expect(race.admission.remoteFloods).toBe(1);
+      if (phase === "held-replay") {
+        race.sender.isReconnecting = true;
+        await race.sender._reconnect();
+      } else encryption?.release();
+      await race.ping();
+      expect(race.writes).toHaveLength(2);
+      expect((await blocked).value).toMatchObject({ code: 420, seconds: 6 });
+      expect(race.admission.queued).toBe(0);
+      raceClock.advance(6000);
+      const resumed = outcome(race.client.invoke(new Api.updates.GetState()));
+      await race.reply(await race.application(2), stateResponse());
+      expect((await resumed).kind).toBe("resolved");
+      expect(race.maximumInFlight()).toBe(1);
+      evidence(race, raceClock, { expectedTransmissions: 3, transmissionsDuringHold: 0 });
+    } finally { encryption?.release(); await race.close(); }
   }
   // Three genuinely transmitted copies of one operation, separated by real
   // reconnects, make old response IDs possible without concurrent RPC starts.
   const delayedClock = new VirtualClock();
+  const delayedEvidence = caseEvidence("tst_src_tgflood_002", "late-errors-and-success");
   const delayed = await createTransport(delayedClock);
   try {
     const pending = outcome(delayed.client.invoke(new Api.updates.GetState()));
@@ -882,5 +974,6 @@ test("tst_src_tgflood_002 the first remote flood prevents the next actual SDK tr
     expect(delayed.admission.holdUntil).toBe(extended);
     expect(delayed.admission.remoteFloods).toBe(3);
     expect(delayed.writes).toHaveLength(3);
+    delayedEvidence(delayed, delayedClock, { expectedTransmissions: 3, transmissionsDuringHold: 0, remainingAfterLateSuccess: 7202 });
   } finally { await delayed.close(); }
 });

@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import bigInt from "big-integer";
 import { spyOn } from "bun:test";
 import { Api } from "telegram";
@@ -58,6 +60,38 @@ interface SenderInternals {
   _recvLoopHandle?: Promise<void>;
 }
 interface Frame { readonly id: bigInt.BigInteger; readonly constructor: number }
+
+let artifactDigests: Record<string, string> | undefined;
+
+/** Compact evidence from synthetic data only; hashes identify the actual code. */
+export function caseEvidence(test: string, parameter: string): (
+  fixture: Awaited<ReturnType<typeof createTransport>>, clock: VirtualClock, details: Record<string, unknown>,
+) => void {
+  const startedAt = new Date().toISOString();
+  if (!artifactDigests) {
+    const local = ["client.ts", "live.ts", "request-admission.ts", "dispatch.ts", "main.ts", "auth.ts",
+      "subscriptions.ts", "surfaces/telegram/commands.ts", "surfaces/telegram/envelope.ts",
+      "tst_src_tgflood_001.test.ts", "testing/mtproto-transport.ts"];
+    const files: [string, URL][] = local.map((path) => [path, new URL(`../${path}`, import.meta.url)]);
+    files.push(["sdk.patch", new URL("../../../../../patches/telegram@2.26.22.patch", import.meta.url)]);
+    for (const path of ["client/telegramBaseClient.js", "client/telegramBaseClient.d.ts", "extensions/MessagePacker.js",
+      "extensions/MessagePacker.d.ts", "network/MTProtoSender.js"]) {
+      files.push([`telegram/${path}`, new URL(import.meta.resolve(`telegram/${path}`))]);
+    }
+    artifactDigests = Object.fromEntries(files.map(([name, path]) => [name, createHash("sha256").update(readFileSync(path)).digest("hex")]));
+    process.stdout.write(`${JSON.stringify({ telegramTestArtifacts: artifactDigests })}\n`);
+  }
+  const artifactSet = createHash("sha256").update(JSON.stringify(artifactDigests)).digest("hex");
+  return (fixture, clock, details): void => {
+    const hold = fixture.admission.holdUntil;
+    process.stdout.write(`${JSON.stringify({ test, parameter, startedAt, endedAt: new Date().toISOString(), artifactSet,
+      reproduce: `bun run agent:test:backend -- plugins/sources/telegram/src/tst_src_tgflood_001.test.ts -t ${test}`,
+      actualTransmissions: fixture.writes.length, remoteFloods: fixture.admission.remoteFloods,
+      localRefusals: fixture.admission.localRefusals, holdUntil: hold,
+      remaining: hold === null ? null : Math.max(0, Math.ceil((hold - clock.now()) / 1000)),
+      maxInFlight: fixture.maximumInFlight(), ...details })}\n`);
+  };
+}
 
 function frames(data: Buffer, offset = 0): Frame[] {
   const id = bigInt(data.readBigInt64LE(offset).toString());
