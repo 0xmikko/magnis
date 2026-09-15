@@ -352,7 +352,8 @@ export function offsetPeerFromEntity(entity: EntityLike): OffsetPeer {
     ...(entity.self === true ? { self: true } : {}),
   };
   if (entity.accessHash !== null && entity.accessHash !== undefined) {
-    const text = String(entity.accessHash);
+    const text = (entity.accessHash as { toString(): string }).toString();
+    if (!/^-?\d+$/.test(text)) throw new Error("Telegram peer returned an invalid access hash");
     const number = Number(text);
     peer.access_hash = Number.isSafeInteger(number) ? number : text;
   }

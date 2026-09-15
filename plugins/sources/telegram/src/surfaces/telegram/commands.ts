@@ -234,7 +234,7 @@ export async function runCatchup(
   const newCursorChats: Record<string, unknown> = { ...inChats };
   let page = asObject(c?.catchup_page) as unknown as CatchupPage | undefined;
   if (page !== undefined && (!Array.isArray(page.pending) ||
-    page.pending.some((item) => !item.chat || item.peer === undefined))) {
+    page.pending.some((item) => item.peer === undefined))) {
     throw new Error("Telegram CatchUp continuation requires pending chats and peers");
   }
   if (page === undefined || page.pending.length === 0) {

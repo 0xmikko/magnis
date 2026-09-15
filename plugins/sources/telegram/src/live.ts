@@ -527,7 +527,7 @@ export class LiveDialogPager implements DialogPager {
           chat: chatToIntermediate(entity, buildDialogMeta(raw, pinned, 0)), peer: offsetPeerFromEntity(entity),
         })) };
     }
-    if (!Array.isArray(continuation.pending) || continuation.pending.some((item) => !item.peer || !item.chat)) {
+    if (!Array.isArray(continuation.pending) || continuation.pending.some((item) => !item.peer)) {
       throw new Error("Telegram hydration continuation requires pending chats and peers");
     }
     if (options.hydrate === false) return {
