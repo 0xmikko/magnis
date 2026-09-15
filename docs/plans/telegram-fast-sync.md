@@ -1,7 +1,7 @@
 # Restore fast Telegram synchronization with provider-owned waits
 
-Status: SPEC_DRAFT  
-Spec lock: unlocked  
+Status: SPEC_LOCKED  
+Spec lock: sha256:0804a6ac650ba5737a8e6f4be287b8e29740481b24a253322bd7a888c1031f54 owner:2026-09-15: ИСПРАВОЯЙ ПОКА НЕ БУДЕТ РАБОТАТЬ БЫСТРО  
 Implementation lock: unlocked  
 Active Delivery: none  
 Unattended decisions: allowed  
@@ -177,4 +177,6 @@ Each journey runs through the real production logic. Extend existing tests rathe
 
 <!-- plan:execution:start -->
 ## Execution log
+
+- lock-spec sha256:0804a6ac650ba5737a8e6f4be287b8e29740481b24a253322bd7a888c1031f54 owner:2026-09-15: ИСПРАВОЯЙ ПОКА НЕ БУДЕТ РАБОТАТЬ БЫСТРО
 <!-- plan:execution:end -->
