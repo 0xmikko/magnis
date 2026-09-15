@@ -715,6 +715,7 @@ test("tst_src_tgflood_004 an in-flight request bounds the shared waiting queue",
     expect(stopping.admission.queued).toBe(0);
     expect(stoppingClock.timerCount).toBe(0);
     stopping.releaseSleep(1000);
+    await flushCommands();
     stoppingClock.advance(60_000);
     expect(stopping.writes).toHaveLength(2);
     expect(stopping.sender._userConnected).toBe(false);
