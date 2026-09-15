@@ -544,13 +544,13 @@ Scoped behavior files: plugins/sources/telegram/src/tst_src_tgflood_001.test.ts,
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- plugins/sources/telegram/src/tst_src_tgflood_001.test.ts` exits 0 — all five complete Source/SDK journeys satisfy exact identity counts, first-flood fencing, retained in-process holds, advancing discovery and responsive stdio control.
-- [ ] `bun run agent:test:backend -- plugins/sources/telegram/src/client.test.ts plugins/sources/telegram/src/surfaces/telegram/execute.test.ts` exits 0 — existing client/action contracts retain one attempt and typed short/long rate-limit replies.
+- [x] `bun run agent:test:backend -- plugins/sources/telegram/src/tst_src_tgflood_001.test.ts` exits 0 — all five complete Source/SDK journeys satisfy exact identity counts, first-flood fencing, retained in-process holds, advancing discovery and responsive stdio control. — cd31804a86a4828d3a3f152ccb64708d2f2b87a8
+- [x] `bun run agent:test:backend -- plugins/sources/telegram/src/client.test.ts plugins/sources/telegram/src/surfaces/telegram/execute.test.ts` exits 0 — existing client/action contracts retain one attempt and typed short/long rate-limit replies. — cd31804a86a4828d3a3f152ccb64708d2f2b87a8
 - [ ] In isolated fixture-owned mutations, removing the first-flood fence, permitting replay, resetting the guard or restarting discovery makes its relevant unchanged journey RED; restoring the intended code returns the same command GREEN.
-- [ ] `bun run agent:verify:pr` exits 0 — the approved adapter executes the existing complete catalog check on the exact integration head, including auth, commands, media and Source fixture regressions; receipt reuse avoids repeating an unchanged full gate.
+- [x] `bun run agent:verify:pr` exits 0 — the approved adapter executes the existing complete catalog check on the exact integration head, including auth, commands, media and Source fixture regressions; receipt reuse avoids repeating an unchanged full gate. — cd31804a86a4828d3a3f152ccb64708d2f2b87a8
 - [ ] The result records actual per-case timestamps and counts, exact commit/patch identities, Source/test/SDK diff sizes and unavailable usage explicitly; no mock result is described as live Telegram health or Graph persistence.
 - [ ] Only the sixteen approved Telegram product/test paths and the explicitly listed D1-S7 preparation artifacts are changed, unrelated work is preserved, registered temporary Stage roots are absent, and push/live activation remain withheld pending separate owner authorization.
-- [ ] Commit
+- [x] Commit — cd31804a86a4828d3a3f152ccb64708d2f2b87a8
 
 ##### Results
 
@@ -619,4 +619,10 @@ Scoped behavior files: plugins/sources/telegram/src/tst_src_tgflood_001.test.ts,
 - deviation D1-S6: planctl requires task-result import before close-stage and executes open command criteria itself. Full gate therefore follows this receipt and is recorded separately, not falsely claimed here.
 
 - deviation D1-S6: Read-only S6 review found a non-blocking evidence gap after the work commit: the shutdown check inspected state before the released reconnect callback resumed. Add one awaited existing scheduling barrier in the same declared journey and one scoped corrective commit; approved SPEC and Task meaning remain unchanged. This is recorded rework, not a new feature or an amended historical commit.
+
+- close D1-S6 partial commit:cd31804a86a4828d3a3f152ccb64708d2f2b87a8
+
+- deviation D1-S6: FINAL LOCAL GATE: planctl close-stage ran the two scoped commands and exactly one complete bun run agent:verify:pr on cd31804a86a4828d3a3f152ccb64708d2f2b87a8; all three executable criteria passed and are bound to that head. Gate interval observed2026-09-15T00:12:45Z–00:17:34Z (4.82minutes, separate from prior Task receipt). Corrective F4 scheduling barrier changed only one test line; named F4 GREEN99assertions and all five journeys GREEN729 at00:12:17.987–00:12:18.282UTC. Final journey SHA256b876d23b31c2551a44495121630195b2794daca03dd5164edf3cfa3cb8b7a11c; artifact-set2a00cfbe1c8ceb3a8abe38729b3e6c3a72e020c76ae360b845b08d213bc1c2da. Four negative-control proofs remain at914f1dd with their relevant F2/F3/retention test bodies unchanged. Source production diff remains514added/201deleted; tests/fixture now1573added/76deleted; actual SDK121added/16deleted. Full build replaced one generated receipt; restored the exact pre-gate tracked receipt and removed only its generated replacement, so no packaging artifact joins the approved diff. No pre-push receipt was fabricated and no push/PR/live activation occurred. The subsequent closure commit is documentation-only; the complete suite was not rerun merely to change a report SHA.
+
+- deviation D1-S6: Process limitation retained honestly: all11 Tasks have typed results and executable acceptance criteria passed, but this planctl version closes only command criteria and Commit, not narrative acceptance statements. Stage statuses therefore remain PARTIAL for owner review; narrative evidence is in Results and was not raw-edited or redefined. The local-only owner constraint withholds publication and live activation. Existing S7 pre-push-template exception preserves the catalog remote-main guard; no upstream tooling or approved SPEC was changed to hide it.
 <!-- plan:execution:end -->
