@@ -1,0 +1,17 @@
+[
+  {
+    "source_id": "google",
+    "kind": "oauth2",
+    "accounts": [
+      {
+        "account_id": "cid-2",
+        "display": "team@example.test",
+        "state": {"state": "auth_lost", "reason": {"reason": "oauth_expired"}},
+        "surfaces": [
+          {"state": "never_synced", "surface": "email"},
+          {"state": "failed", "surface": "drive", "error": {"kind": "auth", "message": "expired"}}
+        ]
+      }
+    ]
+  }
+]

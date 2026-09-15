@@ -4,19 +4,35 @@
 // mockGraph's Proxy (which forwards args to them), so `expect(spy).toHaveBeen…`
 // still observes the delegated call; any op NOT provided throws.
 
+/**
+ * @test-id: tst_module_email_control_001
+ * @scenario: scn_backend_tests_006
+ * @covers: EmailModule.ensureAddress, EmailModule.setTrigger
+ * @legacy-id: tst_int_email_ensureaddr_001_idempotent
+ * @legacy-id: tst_int_trig_030_ensure_address_entity_creates_on_first_call
+ * @legacy-id: tst_int_trig_031_ensure_address_entity_returns_existing
+ * @legacy-id: tst_int_trig_032_contacts_create_creates_address_entity_and_link
+ * @legacy-id: tst_int_trig_034_full_cycle_contact_trigger_email
+ * @legacy-id: tst_int_trig_041_multi_address_trigger
+ * @legacy-id: tst_int_trig_042_single_address_compat
+ * @legacy-id: tst_int_trig_043_merged_deduped_sorted
+ * @legacy-id: tst_int_trig_044_no_address_error
+ * @deterministic: yes
+ */
+
 import { describe, expect, it, vi } from "vitest";
 import type { GraphBatchInput, RpcExecutor } from "@magnis/plugin-sdk";
 import { mockGraph, mountModule, type GraphOverrides } from "@magnis/testkit/module";
 import { EmailModule } from "../service.ts";
-import type { EmailCanonical, EmailFacets } from "../../types.ts";
+import type { EmailCanonical } from "../../types.ts";
 
 function makeModule(
   graph: Partial<Record<string, unknown>>,
   rpc: RpcExecutor = { execute: vi.fn() },
 ): EmailModule {
   return mountModule(EmailModule, {
-    graph: mockGraph<EmailFacets, EmailCanonical>(
-      graph as unknown as GraphOverrides<EmailFacets, EmailCanonical>,
+    graph: mockGraph(
+      graph as unknown as GraphOverrides,
     ),
     ctx: { extension_id: "email" },
     rpc,
@@ -77,16 +93,21 @@ describe("email ensure_address hub RPC (cross-module)", () => {
     const mod = makeModule({ apply_batch });
     const out = await mod.ensureAddress({ address: "Alice@Example.com", display_name: "Alice" });
 
-    expect(out).toEqual({ id: "id-addr" });
+    // S3: the batch key is the lowered address; the node is ANCHORED by the
+    // email:address chokepoint key.
+    expect(out).toEqual({ id: "id-alice@example.com" });
     const call0 = apply_batch.mock.calls[0];
     if (call0 === undefined) throw new Error("ensure_address: apply_batch not called");
     const frag = call0[0];
-    const addr = frag.entities[0];
+    const addr = frag.entities[0] as
+      | { schema_id: string; anchor?: string; properties?: Record<string, unknown>; facets: unknown[] }
+      | undefined;
     if (addr === undefined) throw new Error("ensure_address: missing address entity");
     expect(addr.schema_id).toBe("email.address");
-    const addrFacet0 = addr.facets[0];
-    if (addrFacet0 === undefined) throw new Error("ensure_address: missing address facet[0]");
-    expect(addrFacet0.external_id).toBe("email:address:alice@example.com"); // lowercased hub key
+    // S5: the address node is its DICTIONARY under the chokepoint anchor —
+    // the details record retired with the writer.
+    expect(addr.anchor).toBe("email:address:alice@example.com");
+    expect(addr.properties).toMatchObject({ address: "alice@example.com" });
   });
 
   it("rejects an empty address", async () => {

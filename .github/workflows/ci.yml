@@ -10,6 +10,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.13"
       - run: bun install --frozen-lockfile
       - name: Typecheck (modules + sources + packages + scripts)
         run: bun run typecheck
@@ -17,6 +19,10 @@ jobs:
         run: bun run lint
       - name: Module + SDK tests
         run: bun run test
+      - name: Runtime artifact contract tests
+        run: bun run test:runtime-contracts
+      - name: Plugin UI tests
+        run: bun run test:ui
       - name: Connector tests
         run: bun run test:connectors
       - name: Tooling tests
@@ -24,26 +30,61 @@ jobs:
       - name: Bundle smoke
         run: bun run build:plugins
 
+# The channel the app actually reads. Two of them, and which one a build
+# takes is a launch key: a release build reads `catalog`, a development
+# build reads `catalog-staging`, and an explicit MAGNIS_CATALOG_URL beats
+# both. So `staging` gets its own published channel rather than being
+# tested against whatever a developer happens to have checked out.
+#
+# RELEASES rather than a branch: release assets are fetched anonymously
+# over a stable URL with no API and no token, which is the one property
+# the desktop app cannot do without (a token cannot ship in a DMG).
+# The tag NAMES the channel — never `latest`, because this repository
+# also publishes desktop builds as releases and `latest` would silently
+# become whichever went out last.
   catalog:
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: >-
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging')
     needs: [typescript]
+    concurrency:
+      group: catalog-${{ github.ref }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.13"
       - run: bun install --frozen-lockfile
       - run: bun scripts/build-plugins.ts
       - run: bun scripts/build-catalog-index.ts
         env:
           GITHUB_SHA: ${{ github.sha }}
-      - name: Publish catalog branch
+          GITHUB_REPOSITORY: ${{ github.repository }}
+      - name: Publish the channel
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          cd catalog
-          git init -q -b catalog
-          git config user.name "magnis-catalog-bot"
-          git config user.email "catalog@magnis.ai"
-          git add -A
-          git commit -qm "catalog: ${GITHUB_SHA}"
-          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" catalog:catalog
+          set -euo pipefail
+          if [ "${GITHUB_REF}" = "refs/heads/main" ]; then TAG=catalog; else TAG=catalog-staging; fi
+          # Every asset is replaced, so a package withdrawn from the catalog
+          # stops being served instead of lingering as an orphan a stale
+          # index no longer mentions.
+          REMOTE_HEAD="$(git ls-remote origin "${GITHUB_REF}" | cut -f1)"
+          if [ "$REMOTE_HEAD" != "$GITHUB_SHA" ]; then
+            echo "refusing stale catalog publication: ${GITHUB_REF} is ${REMOTE_HEAD}, expected ${GITHUB_SHA}" >&2
+            exit 1
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release delete "$TAG" --cleanup-tag --yes
+          fi
+          git push --force origin "${GITHUB_SHA}:refs/tags/${TAG}"
+          gh release create "$TAG" \
+            --verify-tag \
+            --title "Plugin catalog (${TAG})" \
+            --notes "Built from ${GITHUB_SHA}. Fetched anonymously by the Magnis app." \
+            catalog/index.json catalog/index.v2.json catalog/onboarding.json \
+            catalog/receipt-*.json catalog/*.tgz

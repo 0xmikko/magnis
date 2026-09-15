@@ -1,0 +1,382 @@
+import { describe, expect, it } from "bun:test";
+import { PassThrough } from "node:stream";
+import {
+  SOURCE_V2_MAX_FRAME_BYTES,
+  decodeSourceProtocol,
+  decodeSourceV2Result,
+  encodeSourceV2Frame,
+} from "@magnis/connector-sdk/codec";
+import {
+  SOURCE_V2_BACKPRESSURE_CODE,
+  SourceV2CloseError,
+  SourceV2Server,
+  defineSourceV2Operation,
+  runSourceV2Server,
+} from "@magnis/connector-sdk/server";
+import type { ProviderOperation, ProviderOutputSchema } from "@magnis/connector-sdk";
+
+const stringResultSchema: ProviderOutputSchema<{ value: string }> = {
+  parse(value: unknown): { value: string } {
+    if (
+      value === null ||
+      typeof value !== "object" ||
+      Array.isArray(value) ||
+      typeof (value as { value?: unknown }).value !== "string"
+    ) {
+      throw new Error("value must be a string");
+    }
+    return { value: (value as { value: string }).value };
+  },
+};
+
+const stringOperation: ProviderOperation<{ value: string }> = {
+  name: "fixture.wait",
+  outputSchema: stringResultSchema,
+};
+
+/**
+ * @test-id: tst_cat_src_protocol_001
+ * @scenario: scn_cat_src_protocol_001
+ * @covers: packages/connector-sdk/codec.ts, packages/connector-sdk/server.ts
+ * @deterministic: yes
+ * @fixtures: inline strict v2 frames and operations
+ *
+ * Test environment: connector-sdk codec and two in-process v2 servers
+ * Clients: direct calls
+ * Mocks: none
+ * Data: inline JSON-RPC frames
+ */
+describe("strict Source protocol v2", () => {
+  it("tst_cat_src_protocol_001 selects exact lanes and refuses malformed frames, results, and cross-instance cancellation", async () => {
+    expect(decodeSourceProtocol("magnis.source/1")).toBe("magnis.source/1");
+    expect(decodeSourceProtocol("magnis.source/2")).toBe("magnis.source/2");
+    expect(() => decodeSourceProtocol(undefined)).toThrow("missing Source protocol");
+    expect(() => decodeSourceProtocol("v2")).toThrow("unsupported Source protocol 'v2'");
+
+    expect(() => encodeSourceV2Frame({ jsonrpc: "2.0", id: 1, method: "fixture.wait", extra: true })).toThrow(
+      "unknown frame member 'extra'",
+    );
+    expect(() => encodeSourceV2Frame("x".repeat(SOURCE_V2_MAX_FRAME_BYTES + 1))).toThrow(
+      "exceeds 4194304 bytes",
+    );
+    expect(() =>
+      decodeSourceV2Result(
+        JSON.stringify({ jsonrpc: "2.0", id: 1, result: { value: 7 } }),
+        1,
+        stringOperation,
+      ),
+    ).toThrow("invalid result for 'fixture.wait'");
+
+    let resolveSecond: ((value: { value: string }) => void) | undefined;
+    const operation = defineSourceV2Operation({
+      name: "fixture.wait",
+      inputSchema: {
+        parse(value: unknown): unknown {
+          return value;
+        },
+      },
+      outputSchema: stringResultSchema,
+      async handle(_input: unknown, context): Promise<{ value: string }> {
+        return await new Promise<{ value: string }>((resolve, reject) => {
+          if (context.instanceId === "one") {
+            context.signal.addEventListener("abort", () => reject(context.signal.reason), { once: true });
+          } else {
+            resolveSecond = resolve;
+          }
+        });
+      },
+    });
+    const one = new SourceV2Server({ instanceId: "one", operations: [operation] });
+    const two = new SourceV2Server({ instanceId: "two", operations: [operation] });
+    const request = JSON.stringify({ jsonrpc: "2.0", id: 9, method: "fixture.wait", params: {} });
+    const firstReply = one.handleFrame(request);
+    const secondReply = two.handleFrame(request);
+
+    expect(
+      await one.handleFrame(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          method: "notifications/cancelled",
+          params: { requestId: 9, reason: "test cancellation" },
+        }),
+      ),
+    ).toBeNull();
+    expect(await firstReply).toEqual(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 9,
+        error: { code: -32800, message: "test cancellation", data: { kind: "cancelled" } },
+      }),
+    );
+    resolveSecond?.({ value: "still isolated" });
+    expect(await secondReply).toEqual(
+      JSON.stringify({ jsonrpc: "2.0", id: 9, result: { value: "still isolated" } }),
+    );
+
+    await Promise.all([one.close(), two.close()]);
+    expect(one.pendingRequestCount).toBe(0);
+    expect(two.pendingRequestCount).toBe(0);
+
+    const nullOnly = defineSourceV2Operation({
+      name: "fixture.null",
+      inputSchema: {
+        parse(value: unknown): null {
+          if (value !== null) throw new Error("params must be explicit null");
+          return null;
+        },
+      },
+      outputSchema: stringResultSchema,
+      async handle(): Promise<{ value: string }> {
+        return { value: "null retained" };
+      },
+    });
+    const strictParams = new SourceV2Server({ instanceId: "params", operations: [nullOnly] });
+    expect(
+      await strictParams.handleFrame(
+        JSON.stringify({ jsonrpc: "2.0", id: 10, method: "fixture.null", params: null }),
+      ),
+    ).toBe(JSON.stringify({ jsonrpc: "2.0", id: 10, result: { value: "null retained" } }));
+    expect(
+      await strictParams.handleFrame(
+        JSON.stringify({ jsonrpc: "2.0", id: 11, method: "fixture.null" }),
+      ),
+    ).toContain('"code":-32602');
+    await strictParams.close();
+
+    let inputParseCount = 0;
+    const parsedExactlyOnce = defineSourceV2Operation({
+      name: "fixture.parse-once",
+      inputSchema: {
+        parse(value: unknown): { value: string } {
+          inputParseCount += 1;
+          if (inputParseCount > 1) throw new Error("operation input parsed twice");
+          if (
+            value === null ||
+            typeof value !== "object" ||
+            Array.isArray(value) ||
+            typeof (value as { value?: unknown }).value !== "string"
+          ) {
+            throw new Error("value must be a string");
+          }
+          return { value: `${(value as { value: string }).value}:transformed` };
+        },
+      },
+      outputSchema: stringResultSchema,
+      async handle(input): Promise<{ value: string }> {
+        return input;
+      },
+    });
+    const parseBoundary = new SourceV2Server({
+      instanceId: "parse-boundary",
+      operations: [parsedExactlyOnce],
+    });
+    expect(
+      await parseBoundary.handleFrame(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: 12,
+          method: "fixture.parse-once",
+          params: { value: "input" },
+        }),
+      ),
+    ).toBe(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 12,
+        result: { value: "input:transformed" },
+      }),
+    );
+    expect(inputParseCount).toBe(1);
+    await parseBoundary.close();
+
+    const neverCooperates = defineSourceV2Operation({
+      name: "fixture.never-cooperates",
+      inputSchema: { parse: (value: unknown): unknown => value },
+      outputSchema: stringResultSchema,
+      async handle(): Promise<{ value: string }> {
+        return await new Promise<{ value: string }>(() => undefined);
+      },
+    });
+    let expireClose: (() => void) | undefined;
+    const bounded = new SourceV2Server({
+      instanceId: "bounded",
+      operations: [neverCooperates],
+      maxConcurrentRequests: 1,
+      closeTimeoutMs: 100,
+      deadlineScheduler: {
+        schedule(delayMs, onDeadline): () => void {
+          expect(delayMs).toBe(100);
+          expireClose = onDeadline;
+          return () => undefined;
+        },
+      },
+    });
+    const heldReply = bounded.handleFrame(
+      JSON.stringify({ jsonrpc: "2.0", id: 20, method: "fixture.never-cooperates", params: {} }),
+    );
+    expect(bounded.pendingRequestCount).toBe(1);
+    expect(
+      await bounded.handleFrame(
+        JSON.stringify({ jsonrpc: "2.0", id: 21, method: "fixture.never-cooperates", params: {} }),
+      ),
+    ).toBe(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 21,
+        error: {
+          code: SOURCE_V2_BACKPRESSURE_CODE,
+          message: "Source v2 server concurrency limit 1 reached",
+          data: { kind: "backpressure", limit: 1 },
+        },
+      }),
+    );
+    const closeOutcome = bounded.close().catch((error: unknown) => error);
+    await Promise.resolve();
+    expect(expireClose).toBeFunction();
+    expireClose?.();
+    const closeError = await closeOutcome;
+    expect(closeError).toBeInstanceOf(SourceV2CloseError);
+    expect((closeError as SourceV2CloseError).activeRequestIds).toEqual([20]);
+    expect(bounded.pendingRequestCount).toBe(1);
+    void heldReply;
+
+    let notificationStarted: (() => void) | undefined;
+    let notificationAbortObserved = false;
+    const notificationStart = new Promise<void>((resolve) => {
+      notificationStarted = resolve;
+    });
+    const notificationInput = new PassThrough();
+    const notificationRun = runSourceV2Server(
+      {
+        instanceId: "notification-eof",
+        operations: [],
+        async onClientNotification(_frame, context): Promise<void> {
+          notificationStarted?.();
+          await new Promise<void>((resolve) => {
+            context.signal.addEventListener(
+              "abort",
+              () => {
+                notificationAbortObserved = true;
+                resolve();
+              },
+              { once: true },
+            );
+          });
+        },
+      },
+      { input: notificationInput, write: () => undefined },
+    );
+    notificationInput.end(
+      `${JSON.stringify({ jsonrpc: "2.0", method: "fixture.client-event", params: {} })}\n`,
+    );
+    await notificationStart;
+    await notificationRun;
+    expect(notificationAbortObserved).toBe(true);
+
+    let expireNotificationClose: (() => void) | undefined;
+    const boundedNotifications = new SourceV2Server({
+      instanceId: "bounded-notifications",
+      operations: [],
+      maxConcurrentRequests: 1,
+      closeTimeoutMs: 100,
+      deadlineScheduler: {
+        schedule(_delayMs, onDeadline): () => void {
+          expireNotificationClose = onDeadline;
+          return () => undefined;
+        },
+      },
+      async onClientNotification(frame): Promise<void> {
+        if (frame.method === "fixture.never-cooperates") {
+          await new Promise<void>(() => undefined);
+        }
+      },
+    });
+    const heldNotification = boundedNotifications.handleFrame(
+      JSON.stringify({ jsonrpc: "2.0", method: "fixture.never-cooperates", params: {} }),
+    );
+    expect(boundedNotifications.pendingNotificationCount).toBe(1);
+    await expect(
+      boundedNotifications.handleFrame(
+        JSON.stringify({ jsonrpc: "2.0", method: "fixture.excess", params: {} }),
+      ),
+    ).rejects.toMatchObject({
+      name: "SourceV2BackpressureError",
+      kind: "backpressure",
+      limit: 1,
+    });
+    const notificationCloseOutcome = boundedNotifications.close().catch((error: unknown) => error);
+    await Promise.resolve();
+    expect(expireNotificationClose).toBeFunction();
+    expireNotificationClose?.();
+    await expect(notificationCloseOutcome).resolves.toMatchObject({
+      name: "SourceV2CloseError",
+      activeRequestIds: [],
+      activeNotificationIds: [1],
+    });
+    expect(boundedNotifications.pendingNotificationCount).toBe(1);
+    void heldNotification;
+
+    const writerFailureInput = new PassThrough();
+    const writerFailureOperation = defineSourceV2Operation({
+      name: "fixture.writer-failure",
+      inputSchema: { parse: (value: unknown): unknown => value },
+      outputSchema: stringResultSchema,
+      async handle(): Promise<{ value: string }> {
+        return { value: "reply" };
+      },
+    });
+    const writerFailureRun = runSourceV2Server(
+      { instanceId: "writer-failure", operations: [writerFailureOperation] },
+      {
+        input: writerFailureInput,
+        write: () => {
+          throw new Error("fixture writer failed");
+        },
+      },
+    );
+    writerFailureInput.write(
+      `${JSON.stringify({
+        jsonrpc: "2.0",
+        id: 30,
+        method: "fixture.writer-failure",
+        params: {},
+      })}\n`,
+    );
+    await expect(writerFailureRun).rejects.toThrow("fixture writer failed");
+    expect(writerFailureInput.destroyed).toBe(true);
+
+    const unterminated = new PassThrough();
+    const streamed = runSourceV2Server(
+      { instanceId: "stream", operations: [] },
+      { input: unterminated, write: () => undefined },
+    );
+    unterminated.write("x".repeat(SOURCE_V2_MAX_FRAME_BYTES + 1));
+    const streamResult = await Promise.race([
+      streamed.then(
+        () => "closed",
+        (error: unknown) => (error instanceof Error ? error.message : "non-error"),
+      ),
+      new Promise<string>((resolve) => setTimeout(() => resolve("still buffering"), 50)),
+    ]);
+    unterminated.destroy();
+    await streamed.catch(() => undefined);
+    expect(streamResult).toContain("exceeds 4194304 bytes");
+
+    const malformed = new PassThrough();
+    const malformedRun = runSourceV2Server(
+      { instanceId: "malformed", operations: [] },
+      { input: malformed, write: () => undefined },
+    );
+    malformed.write("not-json\n");
+    const malformedResult = await Promise.race([
+      malformedRun.then(
+        () => "closed",
+        (error: unknown) => (error instanceof Error ? error.message : "non-error"),
+      ),
+      new Promise<string>((resolve) => setTimeout(() => resolve("still reading"), 50)),
+    ]);
+    malformed.destroy();
+    await malformedRun.catch(() => undefined);
+    expect(malformedResult).toBe("Source v2 frame is not valid JSON");
+  });
+});

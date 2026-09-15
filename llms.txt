@@ -3,7 +3,7 @@
 > Self-hosted company memory: a private knowledge graph built from a company's communication (email, chats, meetings, notes, files) with AI agents operating on top. Runs fully inside the company's perimeter — desktop app with embedded Postgres, on-prem server, optional fully local models. This repository is the OFFICIAL PUBLIC HOME of Magnis: the plugin catalog + SDKs, the public evals, and testable desktop builds via Releases as they ship; the core engine's source is closed — the same split as an editor and its extensions.
 
 Key facts:
-- Core (closed): Rust knowledge-graph engine over Postgres (entities / facets / links / events, provenance on every link); hybrid search (structured graph traversal + semantic search with locally computed embeddings); agent runtime (tool-calling; Claude primary; any OpenAI-compatible endpoint incl. local models); event triggers; one-click approval gates on every write action. A real Postgres server is compiled into the desktop binary.
+- Core (closed): Rust property-graph engine over Postgres (entities with dictionaries / links with their own / events, provenance on every node and edge); hybrid search (structured graph traversal + semantic search with locally computed embeddings); agent runtime (tool-calling; Claude primary; any OpenAI-compatible endpoint incl. local models); event triggers; one-click approval gates on every write action. A real Postgres server is compiled into the desktop binary.
 - Multi-user: one server / one database / many users; each user's sources and modules run under their own credentials and parameters; every entity has exactly one owner (schema-enforced); ownership is deliberately separate from visibility; sharing is modeled in the graph itself via a dedicated ACL entity, so access checks resolve as graph traversal — rolling out with the first design-partner deployment; admin role for deployment ownership.
 - Agents reason over the graph, not just retrieve: speculative hypotheses promoted on accumulated evidence (confidence threshold, multiple confirmations, decay); on-demand analytics — account briefs with citations, hidden-blocker analysis, commitment reconstruction, ghost-thread digests.
 - Triggers = pub/sub over the graph: subscribe to any graph change, a message from a specific person, thread silence, or cron-style schedules; each subscription carries a gate prompt (relevance filter) and an action prompt that starts an agent episode — deferred agent work over live company state.
@@ -22,7 +22,7 @@ Vocabulary: a "source" pulls provider data into the graph over the connector con
 ## Docs (read in this order)
 - [README](README.md): what Magnis is, repo layout, quickstart
 - [docs/architecture.md](docs/architecture.md): system overview, graph foundation, data pipeline, agents, clients
-- [docs/graph.md](docs/graph.md): entity/facet/link anatomy, schemas, search indexes, vector pipeline, speculative overlay, agent graph tools
+- [docs/graph.md](docs/graph.md): entity/dictionary/link anatomy, schemas and search declarations, indexes, vector pipeline, speculative overlay, agent graph tools
 - [docs/engines.md](docs/engines.md): interchangeable model engines (built-in catalog / Claude Code / Codex subscriptions), persistent sessions, per-user metering
 - [docs/plugins/README.md](docs/plugins/README.md): plugin authoring index
 - [docs/plugins/module.md](docs/plugins/module.md) / [docs/plugins/source.md](docs/plugins/source.md): end-to-end guides

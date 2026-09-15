@@ -71,7 +71,13 @@ export function mapEmailDetailFromDetailView(view: MessageDetailView): EmailDeta
   const senderName = fromName || fromAddress || "Unknown";
   const fromEmail = fromAddress ?? "Unknown";
   const sentAt = getMetadataString(view.metadata, "sent_at") ?? view.timestamp;
-  const toAddresses = getMetadataString(view.metadata, "to_addresses") ?? undefined;
+  // S5: the recipients are `sent_to` edges to shared address nodes, not a
+  // joined string on the message.
+  const recipients = view.linked_entities
+    .filter((le) => le.link_kind === "sent_to")
+    .map((le) => le.name)
+    .filter((name): name is string => typeof name === "string" && name.length > 0);
+  const toAddresses = recipients.length > 0 ? recipients.join(", ") : undefined;
   const replyTo = getMetadataString(view.metadata, "reply_to") ?? undefined;
   const bodyHtmlRaw = getMetadataString(view.metadata, "body_html") ?? undefined;
 
@@ -80,22 +86,29 @@ export function mapEmailDetailFromDetailView(view: MessageDetailView): EmailDeta
     ? bodyText.split(/\n{2,}/).map((p) => decodeHtmlEntities(p.trim())).filter(Boolean)
     : ["No message body available yet."];
 
-  // Map attachments from metadata
-  const rawAttachments = view.metadata?.attachments;
+  // S5: the attachments are `file.attachment` edges — each row is a file node,
+  // and its own dictionary carries the size and mime type the message used to
+  // duplicate.
   const attachments: {
+    readonly id: string;
     readonly filename: string;
     readonly mime_type: string;
     readonly size: number;
     readonly path: string;
-  }[] = Array.isArray(rawAttachments)
-    ? (rawAttachments as { filename?: string; mime_type?: string; size?: number; path?: string }[])
-        .map((att) => ({
-          filename: typeof att.filename === "string" ? att.filename : "attachment",
-          mime_type: typeof att.mime_type === "string" ? att.mime_type : "application/octet-stream",
-          size: typeof att.size === "number" ? att.size : 0,
-          path: typeof att.path === "string" ? att.path : "",
-        }))
-    : [];
+  }[] = view.linked_entities
+    .filter((le) => le.link_kind === "file.attachment")
+    .map((le) => {
+      const d = le.data ?? {};
+      const mime = d.mime_type;
+      const size = d.size_bytes ?? d.size;
+      return {
+        id: le.id,
+        filename: le.name ?? "attachment",
+        mime_type: typeof mime === "string" ? mime : "application/octet-stream",
+        size: typeof size === "number" ? size : 0,
+        path: "",
+      };
+    });
 
   return {
     fromEmail,

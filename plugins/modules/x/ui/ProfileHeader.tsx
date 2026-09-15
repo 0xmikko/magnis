@@ -91,7 +91,7 @@ export function XProfileHeader({
   });
   const handle = profile?.handle ?? undefined;
 
-  // Tracked state resolved from the contacts facet by handle.
+  // Tracked state resolved from the contacts record by handle.
   const trackingKey = [PLATFORM, "tracking", handle];
   const { data: tracking } = useQuery({
     queryKey: trackingKey,
@@ -118,7 +118,7 @@ export function XProfileHeader({
   });
 
   // Track/Untrack only when the owning contact resolved (no contact = nothing
-  // to toggle — the facet lives on the contact).
+  // to toggle — the record lives on the contact).
   const menuItems: ContextMenuEntry[] = [
     ...(tracking
       ? [

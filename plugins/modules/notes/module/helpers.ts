@@ -13,6 +13,8 @@ export function isValidUuid(id: string): boolean {
   return UUID_RE.test(id);
 }
 
+
+
 /// Truncate to `maxChars` codepoints (NOT bytes — Cyrillic/emoji safe),
 /// appending `suffix` only when truncation actually happened.
 function truncateChars(value: string, maxChars: number, suffix: string): string {

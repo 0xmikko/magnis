@@ -49,11 +49,6 @@ export function NoteDetail({ noteId }: NoteDetailProps): JSX.Element {
   const { data: note, isLoading } = useNoteDetailQuery(noteId);
   const updateMutation = useUpdateNoteMutation();
   const deleteMutation = useDeleteNoteMutation();
-  // Note: setSelectedNoteId was from old notes store. With BaseModule,
-  // selection is managed by BaseModuleComponent via router.
-  const setSelectedNoteId = useCallback((_id: string | undefined) => {
-    /* no-op: selection is managed by BaseModuleComponent via the router */
-  }, []);
 
   // --- State: only valid AFTER init effect confirms data for this noteId ---
   const [localBody, setLocalBody] = useState("");
@@ -194,13 +189,10 @@ export function NoteDetail({ noteId }: NoteDetailProps): JSX.Element {
     }
   }, [noteId, localBody, updateMutation]);
 
-  // Wired to the context menu in Phase 5 — kept referenced until then.
-   
   const handleDelete = useCallback(() => {
+    // @tested-by: tst_fe_notes_browser_002
     deleteMutation.mutate({ id: noteId });
-    setSelectedNoteId(undefined);
-  }, [noteId, deleteMutation, setSelectedNoteId]);
-  void handleDelete;
+  }, [noteId, deleteMutation]);
 
   const handleTitleCommit = useCallback((newTitle: string) => {
     if (newTitle !== note?.title) {
@@ -262,8 +254,8 @@ export function NoteDetail({ noteId }: NoteDetailProps): JSX.Element {
           {note.pinned && (
             <Icon name="pin" size={14} className="text-accent" />
           )}
-          <IconButton variant="ghost">
-            <Icon name="ellipsis-vertical" size={15} />
+          <IconButton variant="ghost" label="Delete note" onClick={handleDelete}>
+            <Icon name="trash" size={15} />
           </IconButton>
         </div>
       </div>

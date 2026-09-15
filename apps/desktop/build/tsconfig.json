@@ -1,0 +1,12 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false
+  },
+  "include": [
+    "stage-runtime.ts",
+    "download-runtime.ts",
+    "candidate-platform.ts"
+  ]
+}

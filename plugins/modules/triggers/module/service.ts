@@ -4,7 +4,7 @@
 // HYBRID split: the trigger PROCESSING ENGINE (evaluator / executor / cache /
 // fire_trigger / gate) stays native in `backend/src/modules/triggers`. The graph
 // is the contract — this plugin writes the `triggers.trigger` entity +
-// `triggers.trigger.config` facet + `watches`/`belongs_to` links that the native
+// `triggers.trigger.config` record + `watches`/`belongs_to` links that the native
 // engine reads and runs.
 //
 // Two native dependencies are consulted over the host RPC bridge (manifest
@@ -18,8 +18,14 @@
 // `get_entity_full` precheck (raw `get_entity`/`attach_facet` are NOT user-scoped),
 // matching the native guards.
 
-import { tool, writeTool, type GraphService, type PluginDeps, type RpcExecutor } from "@magnis/plugin-sdk";
-import type { EntityDetail, LinkSummary } from "@magnis/plugin-sdk";
+import { rpc, tool, writeTool, type GraphService, errText,
+  type PluginDeps, type PluginLogger, type RpcExecutor } from "@magnis/plugin-sdk";
+import type {
+  EntityDetail,
+  LinkSummary,
+  ListParams,
+  PaginatedResponse,
+} from "@magnis/plugin-sdk";
 import type {
   ClarificationResult,
   CreateTriggerParams,
@@ -30,24 +36,47 @@ import type {
   ListForEntityParams,
   ListTriggersParams,
   ResolveWatchableResult,
+  ScheduleParam,
   TriggerConfigData,
   TriggerCreated,
   TriggerDetailView,
   TriggerExecutionData,
-  TriggerFacets,
   TriggerListItem,
+  TriggerScheduleSpec,
   UpdateTriggerParams,
   WatchedEntity,
 } from "../types.ts";
-import { BELONGS_TO, TRIGGER, TRIGGER_CONFIG, TRIGGER_EXECUTION, WATCHES } from "../schema.ts";
+import { BELONGS_TO, TRIGGER, WATCHES } from "../schema.ts";
 
 export class TriggersModule {
-  private readonly graph: GraphService<TriggerFacets>;
+  private readonly graph: GraphService;
   private readonly rpc: RpcExecutor;
+  private readonly log: PluginLogger;
 
-  constructor(deps: PluginDeps<TriggerFacets>) {
+  constructor(deps: PluginDeps) {
     this.graph = deps.graph;
     this.rpc = deps.rpc;
+    this.log = deps.log;
+  }
+
+  /// DEC-7/INV-22: a compensated write is an operational branch, so it reports
+  /// itself. Kept per-module rather than shared: the four compensation blocks
+  /// differ in what they undo, and wrapping async graph calls in a closure to
+  /// hand to a helper reads worse than the two copies. (An earlier version of
+  /// this comment claimed the SDK was out of reach across a repo boundary —
+  /// that was simply wrong: `@magnis/plugin-sdk` is in this repository and both
+  /// modules already import it. `errText` now lives there.)
+  private async logFailure(
+    decision: string,
+    entityId: string,
+    reason: unknown,
+    rollbackReason?: unknown,
+  ): Promise<void> {
+    await this.log.log("warn", decision, {
+      entity_id: entityId,
+      reason: errText(reason),
+      ...(rollbackReason === undefined ? {} : { rollback_reason: errText(rollbackReason) }),
+    });
   }
 
   @writeTool("create", {
@@ -78,7 +107,7 @@ export class TriggersModule {
         episode_id: {
           type: "string",
           format: "uuid",
-          description: "Parent episode ID — creates belongs_to link",
+          description: "Parent episode ID — creates a triggers.belongs_to link",
         },
         schema_filter: { type: "string", description: "Only trigger for events with this schema" },
         expires_at: { type: "string", format: "date-time" },
@@ -87,8 +116,23 @@ export class TriggersModule {
           description: "0=immediate fire (default), >0=minimum seconds between firings",
         },
         max_firings: { type: "integer", description: "Maximum total firings before auto-expire" },
+        schedule: {
+          type: "object",
+          description:
+            "Cron schedule — fires the trigger on a clock instead of (or in addition to) " +
+            "watched events. Minimum interval: 5 minutes.",
+          properties: {
+            cron: {
+              type: "string",
+              description: "Standard 5-field cron expression, e.g. '0 9 * * MON-FRI'",
+            },
+            timezone: { type: "string", description: "IANA timezone name (default: UTC)" },
+          },
+          required: ["cron"],
+          additionalProperties: false,
+        },
       },
-      required: ["name", "action_prompt"],
+      required: ["name", "gate_prompt", "action_prompt"],
       additionalProperties: false,
     },
   })
@@ -98,11 +142,28 @@ export class TriggersModule {
     const action_prompt = params.action_prompt.trim();
     if (!action_prompt) throw new Error("missing or empty required param: action_prompt");
 
-    const gate_prompt = params.gate_prompt ?? "";
+    // @tested-by: tst_module_triggers_write_001
+    // @invariant: INV-4 — the gate is what makes a trigger conditional. An
+    // absent or blank one used to default to "", producing a live trigger that
+    // fires on EVERYTHING it watches; that is how a trigger came out already
+    // "fired once" against unrelated mail.
+    // The type says required, but the agent boundary is UNTYPED (B27: the schema
+    // is not enforced at dispatch), so a missing value must still produce this
+    // message rather than a TypeError from .trim().
+    const gate_prompt = typeof params.gate_prompt === "string" ? params.gate_prompt.trim() : "";
+    if (!gate_prompt) throw new Error("missing or empty required param: gate_prompt");
     const event_kinds =
       params.event_kinds && params.event_kinds.length > 0 ? params.event_kinds : ["sync_ingested"];
     const watch_entity_ids = params.watch_entity_ids ?? [];
     const debounce_seconds = params.debounce_seconds ?? 0;
+
+    // @tested-by: tst_module_triggers_sched_001, tst_module_triggers_sched_002
+    // Schedule normalization is a HARD validation and runs before any row is
+    // written — an invalid cron / floor violation must not leave an entity.
+    let schedule: TriggerScheduleSpec | undefined;
+    if (params.schedule !== undefined && params.schedule !== null) {
+      schedule = await this.normalizeSchedule(params.schedule);
+    }
 
     // Validate watch targets are triggerable. The schema `triggerable` flag is
     // backend-only — delegate to the native resolver, which returns either a
@@ -143,13 +204,39 @@ export class TriggersModule {
     if (params.expires_at !== undefined) config.expires_at = params.expires_at;
     if (params.max_wait_seconds !== undefined) config.max_wait_seconds = params.max_wait_seconds;
     if (params.max_firings !== undefined) config.max_firings = params.max_firings;
-    await this.graph.attach_facet({ entity_id: entity.id, schema_id: TRIGGER_CONFIG, data: config });
+    if (schedule !== undefined) config.schedule = schedule;
 
-    for (const target of watch_entity_ids) {
-      await this.graph.add_link({ from_id: entity.id, to_id: target, kind: WATCHES });
-    }
-    if (params.episode_id) {
-      await this.graph.add_link({ from_id: entity.id, to_id: params.episode_id, kind: BELONGS_TO });
+    // @tested-by: tst_module_triggers_write_001
+    // @invariant: INV-25 — create is externally atomic. Config and watch links
+    // were written one by one with nothing undone on failure, so a half-built
+    // trigger could survive: an entity with no condition, or one that watches
+    // nothing. Any failure after the entity exists removes it again.
+    try {
+      // S1: the config IS the node's dictionary.
+      await this.graph.update_properties({ entity_id: entity.id, properties: config as unknown as Record<string, unknown> });
+      for (const target of watch_entity_ids) {
+        await this.graph.add_link({ from_id: entity.id, to_id: target, kind: WATCHES });
+      }
+      if (params.episode_id) {
+        await this.graph.add_link({
+          from_id: entity.id,
+          to_id: params.episode_id,
+          kind: BELONGS_TO,
+        });
+      }
+    } catch (writeError) {
+      try {
+        await this.graph.delete_entity(entity.id);
+      } catch (rollbackError) {
+        await this.logFailure("trigger create rollback failed", entity.id, writeError, rollbackError);
+        throw new Error(
+          `trigger write and rollback both failed for ${entity.id}: ` +
+            `write=${errText(writeError)}; rollback=${errText(rollbackError)}`,
+          { cause: rollbackError },
+        );
+      }
+      await this.logFailure("trigger create rolled back", entity.id, writeError);
+      throw writeError;
     }
 
     await this.invalidateCache();
@@ -165,6 +252,7 @@ export class TriggersModule {
       schema_id: TRIGGER,
       created_at: entity.created_at ?? new Date().toISOString(),
       episode_id: params.episode_id ?? null,
+      schedule: schedule ?? null,
     };
   }
 
@@ -209,6 +297,87 @@ export class TriggersModule {
     return items;
   }
 
+  @rpc("list_page", {
+    description: "Paginated trigger list for the standard frontend module.",
+    params: {
+      type: "object",
+      properties: {
+        limit: { type: "integer", minimum: 1 },
+        offset: { type: "integer", minimum: 0 },
+        search: { type: "string" },
+      },
+      additionalProperties: false,
+    },
+  })
+  async list_page(params: ListParams): Promise<PaginatedResponse<TriggerListItem>> {
+    const limit = params.limit ?? 50;
+    const offset = params.offset ?? 0;
+    const query = (params.search ?? "").trim().toLowerCase();
+
+    const hydrate = async (
+      rows: readonly { entity: { id: string } }[],
+    ): Promise<TriggerListItem[]> => {
+      const items: TriggerListItem[] = [];
+      for (const row of rows) {
+        const detail = await this.graph.get_entity_full(row.entity.id, { links: true });
+        if (detail?.entity.schema_id !== TRIGGER) continue;
+        const config = this.configOf(detail);
+        if (!config) continue;
+        items.push(await this.listItem(detail, config));
+      }
+      return items;
+    };
+
+    // @tested-by: tst_module_triggers_list_page_001
+    // @invariant: UI pagination reads the requested graph window directly and
+    // never inherits the agent-facing list tool's intentional 1,000-row cap.
+    if (query.length === 0) {
+      const page = await this.graph.list_entities_window({
+        schema: TRIGGER,
+        order: [{ field: { entity_field: "date" }, desc: true }],
+        limit,
+        offset,
+      });
+      return {
+        items: await hydrate(page.items),
+        total: page.total,
+        limit,
+        offset,
+      };
+    }
+
+    // GraphService has no full-text record search. Scan exact graph windows so
+    // search includes gate/action/watch names without silently truncating at
+    // 1,000. Triggers are expected to be a small control-plane collection.
+    const scanLimit = 250;
+    let scanOffset = 0;
+    const filtered: TriggerListItem[] = [];
+    for (;;) {
+      const page = await this.graph.list_entities_window({
+        schema: TRIGGER,
+        order: [{ field: { entity_field: "date" }, desc: true }],
+        limit: scanLimit,
+        offset: scanOffset,
+      });
+      if (page.items.length === 0) break;
+      const items = await hydrate(page.items);
+      filtered.push(...items.filter((item) =>
+        `${item.name} ${item.gate_prompt} ${item.action_prompt} ${item.watched_entity_names.join(" ")}`
+          .toLowerCase()
+          .includes(query),
+      ));
+      scanOffset += page.items.length;
+      if (scanOffset >= page.total) break;
+    }
+
+    return {
+      items: filtered.slice(offset, offset + limit),
+      total: filtered.length,
+      limit,
+      offset,
+    };
+  }
+
   @writeTool("update", {
     description: "Update trigger fields (partial update).",
     params: {
@@ -218,12 +387,28 @@ export class TriggersModule {
         name: { type: "string" },
         gate_prompt: { type: "string" },
         action_prompt: { type: "string" },
-        status: { type: "string" },
+        status: { type: "string", enum: ["active", "paused", "disabled", "expired"] },
         event_kinds: { type: "array", items: { type: "string" } },
         schema_filter: { type: "string" },
         expires_at: { type: "string", format: "date-time" },
         debounce_seconds: { type: "integer" },
         max_firings: { type: "integer" },
+        schedule: {
+          description:
+            "Set a cron schedule (object with cron + optional timezone) or clear it (null).",
+          anyOf: [
+            { type: "null" },
+            {
+              type: "object",
+              properties: {
+                cron: { type: "string" },
+                timezone: { type: "string" },
+              },
+              required: ["cron"],
+              additionalProperties: false,
+            },
+          ],
+        },
       },
       required: ["id"],
       additionalProperties: false,
@@ -234,11 +419,25 @@ export class TriggersModule {
     const config = this.configOf(detail);
     if (!config) throw new Error(`trigger config not found: ${params.id}`);
 
-    if (params.name !== undefined) {
-      config.name = params.name;
-      await this.graph.update_entity_name(params.id, params.name);
+    // @tested-by: tst_module_triggers_write_003
+    // @invariant: INV-25 — snapshot BEFORE any field is applied. Taking the
+    // copy after the first mutation made the compensation restore the old NAME
+    // while persisting the NEW gate_prompt, i.e. it silently changed the
+    // trigger's condition on a failed update — the opposite of its purpose.
+    const previousConfig = { ...config };
+
+    // @tested-by: tst_module_triggers_write_002
+    // @invariant: INV-4 — `update` accepted "" as a real gate value, which
+    // silently disarmed the condition on an existing trigger.
+    if (params.gate_prompt !== undefined) {
+      const gate = params.gate_prompt.trim();
+      if (!gate) throw new Error("missing or empty required param: gate_prompt");
+      config.gate_prompt = gate;
     }
-    if (params.gate_prompt !== undefined) config.gate_prompt = params.gate_prompt;
+
+    // @invariant: INV-25 — the rename ran BEFORE the config write, so a failed
+    // record write left the trigger renamed for a config it never received.
+    if (params.name !== undefined) config.name = params.name;
     if (params.action_prompt !== undefined) config.action_prompt = params.action_prompt;
     if (params.status !== undefined) config.status = params.status;
     if (params.event_kinds !== undefined) config.event_kinds = params.event_kinds;
@@ -248,7 +447,50 @@ export class TriggersModule {
     if (params.max_wait_seconds !== undefined) config.max_wait_seconds = params.max_wait_seconds;
     if (params.max_firings !== undefined) config.max_firings = params.max_firings;
 
-    await this.graph.attach_facet({ entity_id: params.id, schema_id: TRIGGER_CONFIG, data: config });
+    // @tested-by: tst_module_triggers_sched_003
+    // Every set/change re-normalizes through the seam (fresh engine-stamped
+    // activated_at — the activation boundary moves with the modification);
+    // `null` clears without consulting it.
+    if (params.schedule !== undefined) {
+      if (params.schedule === null) {
+        delete config.schedule;
+      } else {
+        config.schedule = await this.normalizeSchedule(params.schedule);
+      }
+    }
+
+    // S1: the trigger config IS the node's dictionary — the record write died
+    // with the fold, and a cleared schedule has to REMOVE the key, which a
+    // merge does with an explicit null.
+    const next = { ...config } as unknown as Record<string, unknown>;
+    if (params.schedule === null) next.schedule = null;
+    await this.graph.update_properties({ entity_id: params.id, properties: next });
+    if (params.name !== undefined && params.name !== detail.entity.name) {
+      try {
+        await this.graph.update_entity_name(params.id, params.name);
+      } catch (renameError) {
+        try {
+          await this.graph.update_properties({
+            entity_id: params.id,
+            properties: previousConfig,
+          });
+        } catch (rollbackError) {
+          // The host serialises a thrown error as `String(e.stack)`
+          // (magnis-app backend/src/plugin_runtime/lifecycle.rs), and a stack
+          // carries neither `.errors` nor `.cause`. An AggregateError here
+          // reached the operator naming NEITHER failure, so both messages are
+          // interpolated into the text instead.
+          await this.logFailure("trigger rename rollback failed", params.id, renameError, rollbackError);
+          throw new Error(
+            `trigger rename and config rollback both failed for ${params.id}: ` +
+              `rename=${errText(renameError)}; rollback=${errText(rollbackError)}`,
+            { cause: rollbackError },
+          );
+        }
+        await this.logFailure("trigger rename rolled back", params.id, renameError);
+        throw renameError;
+      }
+    }
     await this.invalidateCache();
 
     const fresh = await this.requireTrigger(params.id);
@@ -375,14 +617,14 @@ export class TriggersModule {
     },
   })
   async fire_history(params: FireHistoryParams): Promise<TriggerExecutionData[]> {
-    await this.requireTrigger(params.trigger_id);
-    const limit = params.limit ?? 50;
-    const facets = await this.graph.list_facets_for_entity(params.trigger_id);
-    const executions = facets
-      .filter((f) => f.schema_id === TRIGGER_EXECUTION)
-      .map((f) => f.data as TriggerExecutionData)
-      .sort((a, b) => (a.fired_at < b.fired_at ? 1 : a.fired_at > b.fired_at ? -1 : 0));
-    return executions.slice(0, limit);
+    // S1 (canonical-graph-structure): executions are trigger_execution rows,
+    // written and owned by the native engine. The native seam replaces the
+    // old scan over EVERY record of the trigger — the read is one indexed
+    // query, and its cost no longer grows with the trigger's history.
+    return await this.rpc.execute<TriggerExecutionData[]>("triggers.fire_history", {
+      trigger_id: params.trigger_id,
+      limit: params.limit ?? 50,
+    });
   }
 
   // ── private helpers ──────────────────────────────────────────────
@@ -405,8 +647,28 @@ export class TriggersModule {
   }
 
   private configOf(detail: EntityDetail): TriggerConfigData | null {
-    const facet = detail.facets.find((f) => f.schema_id === TRIGGER_CONFIG);
-    return facet ? (facet.data as TriggerConfigData) : null;
+    // S1: the dictionary is the state. An empty dictionary means the trigger
+    // was never configured — the same "no config" the missing record meant.
+    const props = detail.entity.properties ?? {};
+    if (Object.keys(props).length === 0) return null;
+    return props as unknown as TriggerConfigData;
+  }
+
+  /// One parser of record, one clock: the native seam validates the cron
+  /// expression and returns the normalized spec (engine-stamped `activated_at`,
+  /// materialized timezone), persisted verbatim. A caller-supplied
+  /// `activated_at` is never forwarded — only cron + timezone cross the seam.
+  private async normalizeSchedule(param: ScheduleParam): Promise<TriggerScheduleSpec> {
+    const request: { cron: string; timezone?: string } = { cron: param.cron };
+    if (param.timezone !== undefined) request.timezone = param.timezone;
+    const spec = await this.rpc.execute<TriggerScheduleSpec | null>(
+      "triggers.validate_schedule",
+      request,
+    );
+    if (!spec || typeof spec !== "object") {
+      throw new Error("triggers.validate_schedule returned no normalized spec");
+    }
+    return spec;
   }
 
   private watchesLinks(detail: EntityDetail): LinkSummary[] {
@@ -435,6 +697,7 @@ export class TriggersModule {
       firing_count: config.firing_count,
       last_fired_at: config.last_fired_at ?? null,
       watched_entity_names: names,
+      schedule: config.schedule ?? null,
     };
   }
 
@@ -478,6 +741,7 @@ export class TriggersModule {
       watched_entities: watched,
       parent_episode_id: parentEpisodeId,
       parent_episode_name: parentEpisodeName,
+      schedule: config.schedule ?? null,
     };
   }
 }

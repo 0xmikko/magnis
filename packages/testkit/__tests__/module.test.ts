@@ -2,11 +2,16 @@
 // mountModule modes, and the DTO builders, so the 9 modules that depend on the
 // kit inherit a verified harness.
 import { describe, expect, it, vi } from "vitest";
-import { rpc, tool, type GraphService, type PluginDeps } from "@magnis/plugin-sdk";
 import {
-  canonical,
+  definePlugin,
+  rpc,
+  tool,
+  type GraphService,
+  type PluginDeps,
+  type PluginModuleShape,
+} from "@magnis/plugin-sdk";
+import {
   entity,
-  facet,
   linkedRow,
   mockGraph,
   mountModule,
@@ -36,6 +41,16 @@ class FixtureModule {
     const page = await this.graph.list_entities({ schema_id: "x" });
     return page.total;
   }
+}
+
+function publishedShape(): PluginModuleShape {
+  return (globalThis as unknown as { __magnis_plugin_module: PluginModuleShape })
+    .__magnis_plugin_module;
+}
+
+async function initializeShape(shape: PluginModuleShape, extensionId: string): Promise<void> {
+  const { deps } = mountModule(FixtureModule, { ctx: { extension_id: extensionId } });
+  await shape.init(deps.graph, deps.ctx, deps.util, deps.rpc, deps.log);
 }
 
 describe("mockGraph", () => {
@@ -101,7 +116,8 @@ describe("mountModule — dispatch", () => {
   });
 
   it("tst_testkit_mount_dispatch_002 routes by full name and by bare suffix", async () => {
-    const { rpc: call } = await mountModule(FixtureModule, { mode: "dispatch", ctx: { extension_id: "fixture" } });
+    const { rpc: call, tools } = await mountModule(FixtureModule, { mode: "dispatch", ctx: { extension_id: "fixture" } });
+    expect(tools.map((toolDefinition) => toolDefinition.name)).toEqual(["fixture.ping"]);
     expect(await call("fixture.ping", { n: 4 })).toEqual({ pong: 5 });
     expect(await call("ping", { n: 9 })).toEqual({ pong: 10 });
     // rpc-only handler is reachable via dispatch though absent from `tools`.
@@ -112,28 +128,121 @@ describe("mountModule — dispatch", () => {
     const { rpc: call } = await mountModule(FixtureModule, { mode: "dispatch", ctx: { extension_id: "fixture" } });
     expect(() => call("nope")).toThrow("no rpc handler: nope");
   });
+
+  /**
+   * @test-id: tst_testkit_mount_dispatch_004
+   * @scenario: scn_module_decorator_004
+   * @covers: packages/plugin-sdk/index.ts::definePlugin
+   * @deterministic: yes
+   * @fixtures: none
+   */
+  it("tst_testkit_mount_dispatch_004 repeated init on one published shape stays idempotent", async () => {
+    definePlugin(FixtureModule);
+    const shape = publishedShape();
+    await initializeShape(shape, "fixture");
+    await initializeShape(shape, "fixture");
+    expect(shape.toolDefinitions.map((definition) => definition.name)).toEqual(["fixture.ping"]);
+    expect(Object.keys(shape.rpcHandlers).sort()).toEqual(["fixture.ping", "fixture.secret"]);
+  });
+
+  /**
+   * @test-id: tst_testkit_mount_dispatch_005
+   * @scenario: scn_module_decorator_005
+   * @covers: packages/plugin-sdk/index.ts::record
+   * @deterministic: yes
+   * @fixtures: none
+   */
+  it("tst_testkit_mount_dispatch_005 real Bun decorators publish base then derived tools", async () => {
+    class DecoratedBase {
+      constructor(_deps: PluginDeps) {}
+
+      @tool("base", { description: "base", params: {} })
+      base(): string { return "base"; }
+    }
+
+    class DecoratedDerived extends DecoratedBase {
+      @tool("derived", { description: "derived", params: {} })
+      derived(): string { return "derived"; }
+    }
+
+    definePlugin(DecoratedDerived);
+    const shape = publishedShape();
+    await initializeShape(shape, "real");
+
+    expect(shape.toolDefinitions.map((definition) => definition.name)).toEqual([
+      "real.base",
+      "real.derived",
+    ]);
+    expect(shape.rpcHandlers["real.base"]?.({})).toBe("base");
+    expect(shape.rpcHandlers["real.derived"]?.({})).toBe("derived");
+  });
+
+  /**
+   * @test-id: tst_testkit_mount_dispatch_007
+   * @scenario: scn_module_decorator_007
+   * @covers: packages/plugin-sdk/index.ts::record
+   * @deterministic: yes
+   * @fixtures: none
+   */
+  it("tst_testkit_mount_dispatch_007 real Bun decorators reject duplicate inherited suffixes", async () => {
+    class DuplicateBase {
+      constructor(_deps: PluginDeps) {}
+
+      @tool("duplicate", { description: "base", params: {} })
+      base(): string { return "base"; }
+    }
+
+    class DuplicateDerived extends DuplicateBase {
+      @tool("duplicate", { description: "derived", params: {} })
+      derived(): string { return "derived"; }
+    }
+
+    definePlugin(DuplicateDerived);
+    const shape = publishedShape();
+    await expect(initializeShape(shape, "duplicate")).rejects.toThrow(
+      'duplicate inherited plugin decorator suffix "duplicate"',
+    );
+    expect(shape.toolDefinitions).toEqual([]);
+    expect(shape.rpcHandlers).toEqual({});
+  });
+
+  /**
+   * @test-id: tst_testkit_mount_dispatch_006
+   * @scenario: scn_module_decorator_006
+   * @covers: packages/plugin-sdk/index.ts::record
+   * @deterministic: yes
+   * @fixtures: none
+   */
+  it("tst_testkit_mount_dispatch_006 both decorator ABIs reject static methods", () => {
+    class LegacyStatic {
+      static ping(): string { return "legacy"; }
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(LegacyStatic, "ping");
+    if (descriptor === undefined) throw new Error("missing static method descriptor");
+    expect(() =>
+      tool("ping", { description: "ping", params: {} })(LegacyStatic, "ping", descriptor)
+    ).toThrow("plugin decorators require a public instance method");
+
+    expect(() =>
+      tool("ping", { description: "ping", params: {} })(LegacyStatic.ping, {
+        kind: "method",
+        name: "ping",
+        static: true,
+        private: false,
+        addInitializer(): void {},
+      })
+    ).toThrow("plugin decorators require a public instance method");
+  });
 });
 
 describe("builders", () => {
   it("tst_testkit_builders_001 produce the real DTO shapes", () => {
     expect(entity("a", "Acme")).toMatchObject({ id: "a", name: "Acme", schema_id: "" });
     expect(entity("a", "Acme", { schema_id: "companies.company" }).schema_id).toBe("companies.company");
-    expect(windowRow(entity("a", "Acme"), { k: 1 })).toEqual({
+    expect(windowRow(entity("a", "Acme"))).toEqual({
       entity: { id: "a", name: "Acme", schema_id: "", created_at: "2026-01-01T00:00:00Z" },
-      data: { k: 1 },
     });
-    expect(facet("f1", "s.details", { x: 1 }, { entity_id: "a" })).toMatchObject({
-      id: "f1",
-      schema_id: "s.details",
-      entity_id: "a",
-      data: { x: 1 },
-    });
-    expect(canonical("a", "companies.name", "Acme")).toEqual({
-      entity_id: "a",
-      key: "companies.name",
-      value: "Acme",
-    });
-    expect(linkedRow(entity("a", "Acme"), null, { kind: "authored_by" }).link).toMatchObject({
+    expect(linkedRow(entity("a", "Acme"), { kind: "authored_by" }).link).toMatchObject({
       from_id: "a",
       kind: "authored_by",
     });

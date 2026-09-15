@@ -1,27 +1,18 @@
 # mock-telegram — controllable external Magnis MCP source connector.
 #
-# A demo/eval-grade mock of a Telegram server: you drive the `telegram` surface
-# like the real thing — inject chats and messages over HTTP and they flow
-# through `magnis.sync.fetch` as canonical telegram envelopes the in-plugin
-# `telegram` module ingests unchanged. Chats arrive as `snapshot`, messages as
-# `live` (so message triggers fire, chat snapshots don't) — byte-identical to
-# the real `telegram` connector's envelope shapes.
+# A dataset/eval-grade mock of a Telegram server. Manifest-declared actions
+# produce canonical telegram envelopes that the in-plugin module ingests
+# unchanged. Dataset actions emit `live` events so trigger behavior uses the
+# same source -> module path as production.
 #
 # The server is `src/main.ts` on @magnis/connector-sdk, spawned by convention
 # (bun, with this manifest's directory as the spawn cwd).
-# MOCK_INJECT_FILE is the shared JSONL the surface process reads;
-# MOCK_TELEGRAM_PORT (optional) enables the HTTP control server for demos
-# (`curl localhost:4030/inject-chat`). env injected by the operator / launch
-# scripts:
-#   MOCK_INJECT_FILE   = "<storage>/mock-telegram/inject.jsonl"
-#   MOCK_TELEGRAM_PORT = "4030"   # optional, demo injection
-#
 # kind = "mock" → loaded only when explicitly listed in ENABLED_SOURCES.
 
 id = "mock-telegram"
 version = "1.0.0"
 title = "Mock Telegram"
-summary = "Controllable mock Telegram source for demos, evals, and e2e."
+summary = "Dataset-driven mock Telegram source for evals and e2e."
 publisher = "ai.magnis"
 dev = true
 surfaces = ["telegram"]
@@ -31,3 +22,42 @@ accounts = ["eval"]
 
 [sync]
 mode = "poll"
+
+[dataset]
+export_settings = []
+
+[[dataset.actions]]
+name = "emit_chat"
+schema = "schemas/dataset-actions/emit-chat.json"
+
+[[dataset.actions]]
+name = "emit_message"
+schema = "schemas/dataset-actions/emit-message.json"
+
+[certification]
+disposition = "admissible"
+protocol = "magnis.source/1"
+authority = "module_sync"
+release_tier = "development_fixture"
+delivery = "poll"
+poll_interval_secs = 2
+server_info_version = "0.1.0"
+server_info_name = "magnis-mock-telegram"
+runtime_kind = "connector_sdk"
+runtime_version = "0.1.0"
+advertised_tools = ["magnis.dataset.invoke", "magnis.sync.fetch"]
+callable_operations = ["initialize", "magnis.dataset.invoke:emit_chat", "magnis.dataset.invoke:emit_message", "magnis.execute:send_message", "magnis.sync.fetch", "tools/list"]
+scenario_ids = ["tst_conn_mocktelegram_dataset_001", "tst_conn_mocktelegram_dataset_002", "tst_conn_mocktelegram_ts_001", "tst_mocktelegram_cert_001", "tst_source_mock_telegram_execute_001"]
+
+[certification.account_compatibility]
+auth = "none"
+identity_rule = "manifest_account_subject"
+credential_keys = []
+minted_credential_keys = []
+migrates_from = []
+
+[[certification.account_compatibility.surfaces]]
+name = "telegram"
+cursor_terminal_null = "retain"
+progress = { target = "per_identity_history", continuation = "opaque_cursor", forward_checkpoint = "opaque_cursor", coverage = "per_identity_range", live_fence = "none" }
+receiver_interface_hash = "sha256:04cd915af1a9017a9becd9a3c947187cbdd8c1479d02e60cc6dbfa10d7b8359c"

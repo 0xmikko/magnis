@@ -3,23 +3,62 @@
 # end-to-end in tests. Eval-only (kind=mock).
 
 id = "mock-statemachine-oauth"
-version = "1.0.0"
+version = "1.0.1"
 title = "StateMock (OAuth)"
 summary = "Shared state-machine mock connector in an oauth2/poll shape."
 publisher = "ai.magnis"
 dev = true
-surfaces = ["smo-a", "smo-b", "smo-c"]
+surfaces = ["email"]
 kind = "mock"
 account_mode = "single"
 
 [auth]
 type = "oauth2"
 
-# [spawn] stays: the shared statemachine binary is shaped by CLI flags, not the
-# bare src/main.ts convention.
+[auth.oauth2]
+auth_url = "https://provider.example/authorize"
+scopes = ["openid", "email"]
+
+[credentials]
+keys = ["client_id", "refresh_token"]
+minted = ["refresh_token"]
+
+[credentials.default]
+client_id = "magnis-fixture-oauth-client"
+
+# The package-local wrapper fixes surfaces/mode before bundling. The installed
+# artifact therefore executes only its own root-local dependency-closed entry.
 [spawn]
 command = "bun"
-args = ["run", "src/main.ts", "--surfaces", "smo-a,smo-b,smo-c", "--mode", "poll"]
+args = ["run", "dist/main.js"]
 
 [sync]
 mode = "poll"
+
+[certification]
+disposition = "admissible"
+protocol = "magnis.source/1"
+authority = "module_sync"
+release_tier = "development_fixture"
+delivery = "poll"
+poll_interval_secs = 300
+server_info_version = "0.1.0"
+server_info_name = "magnis-mock-statemachine"
+runtime_kind = "connector_sdk"
+runtime_version = "0.1.0"
+advertised_tools = ["magnis.sync.fetch"]
+callable_operations = ["initialize", "magnis.auth.exchange", "magnis.auth.probe", "magnis.auth.revoke", "magnis.sync.fetch", "tools/list"]
+scenario_ids = ["tst_conn_statemock_ts_001", "tst_conn_statemock_ts_004", "tst_conn_statemock_ts_013", "tst_conn_statemock_ts_014", "tst_statemock_oauth_auth_001", "tst_statemock_oauth_cert_001"]
+
+[certification.account_compatibility]
+auth = "oauth2"
+identity_rule = "fixture_oauth_subject"
+credential_keys = ["client_id", "refresh_token"]
+minted_credential_keys = ["refresh_token"]
+migrates_from = []
+
+[[certification.account_compatibility.surfaces]]
+name = "email"
+cursor_terminal_null = "retain"
+progress = { target = "programmable_fixture", continuation = "opaque_cursor", forward_checkpoint = "opaque_cursor", coverage = "unknown", live_fence = "none" }
+receiver_interface_hash = "sha256:0d6480cd0a2d5bd3960e1ec902c825a73203e76aa0ef576a37836759acc9c193"

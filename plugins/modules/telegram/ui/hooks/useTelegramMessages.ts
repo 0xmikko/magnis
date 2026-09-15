@@ -19,6 +19,7 @@ export interface UseTelegramMessagesResult {
   readonly fetchMessages: (chatId: string, offset: number, append: boolean) => Promise<void>;
   readonly handleLoadMore: () => void;
   readonly handleBackfill: () => void;
+  readonly canSend: boolean;
   readonly handleSendMessage: (text: string) => void;
   readonly handleReplyByAgent: (message: TelegramMessage) => void;
 }
@@ -64,11 +65,12 @@ export function useTelegramMessages(
   const baseUrl = runtime.transport.baseUrl;
 
   // Resolve native telegram chat_id from entity UUID (for send/backfill RPCs)
-  const nativeChatId = useMemo(() => {
+  const selectedChat = useMemo(() => {
     if (!selectedChatId) return undefined;
-    const chat = chats.find((c) => c.id === selectedChatId);
-    return chat?.chatId;
+    return chats.find((chat) => chat.id === selectedChatId);
   }, [selectedChatId, chats]);
+  const nativeChatId = selectedChat?.chatId;
+  const sourceAccountId = selectedChat?.accountId ?? null;
 
   // TanStack Query for initial message fetch
   const { data: queryData, isLoading: queryLoading } = useTelegramMessagesQuery(
@@ -240,6 +242,10 @@ export function useTelegramMessages(
   }, []);
   const handleBackfill = useCallback(() => {
     if (!selectedChatId || backfilling || !hasMoreOnServer) return;
+    if (sourceAccountId === null) {
+      console.error("Backfill request refused: chat has no exact Source account");
+      return;
+    }
 
     // Find oldest telegramMsgId in current messages (the "before" cursor)
     let oldestMsgId: number | undefined;
@@ -260,6 +266,7 @@ export function useTelegramMessages(
     void runtime.transport
       .rpc<{ pending?: boolean; count?: number }>("telegram.messages.backfill", {
         chat_id: Number(nativeChatId),
+        account_id: sourceAccountId,
         before_message_id: oldestMsgId,
         limit: PAGE_SIZE,
       })
@@ -268,7 +275,7 @@ export function useTelegramMessages(
         clearBackfillWait();
       });
    
-  }, [selectedChatId, backfilling, hasMoreOnServer, allMessages, runtime, nativeChatId, clearBackfillWait]);
+  }, [selectedChatId, backfilling, hasMoreOnServer, allMessages, runtime, nativeChatId, sourceAccountId, clearBackfillWait]);
 
   // The detached host backfill emits `sync.backfill` when a page lands. Only act
   // on the event for OUR in-flight request (awaitingBackfillRef) — ignore the
@@ -314,7 +321,7 @@ export function useTelegramMessages(
 
   const handleSendMessage = useCallback(
     (text: string) => {
-      if (!selectedChatId) return;
+      if (!selectedChatId || nativeChatId === undefined) return;
       const chatId = selectedChatId;
       const pendingId = `_pending_${String(Date.now())}`;
       const now = new Date();
@@ -334,8 +341,12 @@ export function useTelegramMessages(
 
       void (async (): Promise<void> => {
         try {
+          if (sourceAccountId === null) {
+            throw new Error("Telegram send refused: chat has no exact Source account");
+          }
           await runtime.transport.rpc("telegram.messages.send", {
             chat_id: Number(nativeChatId),
+            account_id: sourceAccountId,
             text,
             reply_to_message_id: null,
           });
@@ -364,8 +375,7 @@ export function useTelegramMessages(
         }
       })();
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [selectedChatId, runtime],
+    [selectedChatId, runtime, nativeChatId, sourceAccountId],
   );
 
   const handleReplyByAgent = useCallback(
@@ -387,8 +397,7 @@ export function useTelegramMessages(
         },
       });
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [runtime, selectedChatId],
+    [nativeChatId, runtime, selectedChatId],
   );
 
   return {
@@ -400,6 +409,7 @@ export function useTelegramMessages(
     fetchMessages,
     handleLoadMore,
     handleBackfill,
+    canSend: nativeChatId !== undefined,
     handleSendMessage,
     handleReplyByAgent,
   };

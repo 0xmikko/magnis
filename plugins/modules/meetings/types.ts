@@ -1,16 +1,20 @@
 // Shared schema→type maps for the meetings plugin (single source of truth for
-// module/service.ts + ui/). Facet schema_id → payload type; canonical key →
+// module/service.ts + ui/). Record schema_id → payload type; canonical key →
 // value. Read DTOs are byte-compatible with the native module (types.rs
 // MeetingListItem / MeetingDetailView) and the UI's plugins/meetings/ui copies.
 
+/** One stored calendar-event record — the provider's dictionary MINUS the
+ * attendees, which are the event's `attendee` edges. `entities.ts` declares
+ * exactly this and the build proves the two are one type. */
 export interface MeetingCalendarEventDetails {
+  /** The provider's own event id, written verbatim by ingest. */
+  id?: string;
   title?: string | null;
   starts_at?: string | null;
   ends_at?: string | null;
   location?: string | null;
   description?: string | null;
   status?: string | null;
-  attendees?: unknown;
   all_day?: boolean;
   google_event_id?: string | null;
   hangout_link?: string | null;
@@ -29,11 +33,7 @@ export interface MeetingEventDetails {
   all_day?: boolean;
 }
 
-/** Facet schema_id → payload type (parameterizes GraphService). */
-export interface MeetingsFacets {
-  "meetings.calendar_event.details": MeetingCalendarEventDetails;
-  "meetings.event.details": MeetingEventDetails;
-}
+/** Record schema_id → payload type (parameterizes GraphService). */
 
 /** Canonical key → value (parameterizes GraphService). */
 export interface MeetingsCanonical {
@@ -77,13 +77,6 @@ export interface NewMeetingParams {
   client_id?: string;
 }
 
-export interface FacetSummary {
-  id: string;
-  schema_id: string;
-  source: string;
-  observed_at: string;
-  data: unknown;
-}
 
 export interface LinkedEntitySummary {
   id: string;
@@ -122,7 +115,6 @@ export interface MeetingDetailView {
   conference_link: string | null;
   attendees: MeetingAttendeeView[];
   canonical: Record<string, unknown>;
-  facets: FacetSummary[];
   linked_entities: LinkedEntitySummary[];
   created_at: string;
 }
@@ -184,5 +176,13 @@ export interface MeetingTriggerCheck {
   phase: "live";
   touched_entity_ids: string[];
   user_id: string;
-  context: { title: string | null; remote_id: string | null };
+  context: {
+    title: string | null;
+    remote_id: string | null;
+    /** When the meeting itself happens (its start). The trigger engine compares
+     *  this against the trigger's creation time so a backfilled calendar cannot
+     *  fire a trigger that did not exist yet; absent means the engine fails
+     *  closed, which is why every emitter must carry it. */
+    occurred_at: string | null;
+  };
 }

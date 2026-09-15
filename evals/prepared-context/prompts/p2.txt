@@ -1,0 +1,6 @@
+Use the configured MCP tools and prepared workspace. Do not use web, prior knowledge, or guesses.
+
+What did winning the Helio Systems account cost us?
+Reconstruct the business relationship and the trip or event that produced it. Return the exact corporate-card email refs and EUR amounts that belong to that effort, the exact total, and the source refs that connect the account to those rows. Do not include later or unrelated spending.
+
+Return only JSON matching the requested schema.

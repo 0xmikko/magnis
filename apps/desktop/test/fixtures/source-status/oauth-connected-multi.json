@@ -1,0 +1,31 @@
+[
+  {
+    "source_id": "google",
+    "kind": "oauth2",
+    "accounts": [
+      {
+        "account_id": "cid-1",
+        "display": "mike@example.test",
+        "state": {"state": "connected"},
+        "surfaces": [
+          {
+            "state": "synced",
+            "surface": "email",
+            "items": {"state": "exact", "value": 17095},
+            "last_success": {"fetched": 100, "ingested": 100}
+          },
+          {
+            "state": "catching_up",
+            "surface": "meetings",
+            "run": {"fetched": 20, "ingested": 18}
+          },
+          {
+            "state": "bootstrapping",
+            "surface": "contacts",
+            "run": {"fetched": 150, "ingested": 150}
+          }
+        ]
+      }
+    ]
+  }
+]

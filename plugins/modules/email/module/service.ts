@@ -1,13 +1,13 @@
 // Email plugin — graph-native module. Read path: list (windowed,
-// date-desc, facet inline), get (entity+facets), batch (one fetch per id). Output is
+// date-desc), get (entity + links), batch (one fetch per id). Output is
 // byte-compatible with the native module (MessageListItem / MessageDetailView)
 // and the UI's plugins/email/ui/types.ts copies.
 //
 // DB-access guarantees (asserted by module/__tests__/emailRead):
-//   - list (no search) = ONE list_entities_window (facet rendered inline) — no
-//     canonical read, no per-row facet hydrate.
-//   - list (search)    = ONE search_entities_by_name (ids) + ONE
-//     list_facets_for_entities over ONLY those ids — 2 crossings, no N+1.
+//   - list (no search) = ONE list_entities_window — no canonical read, no
+//     per-row hydrate.
+//   - list (search)    = ONE search_entities_by_name — the matched rows carry
+//     their own dictionaries, so there is no hydrate crossing at all.
 //   - get  = ONE get_entity_full. batch = K get_entity_full (one per id).
 //
 // Deferred (read-time enrichment, mirrors the telegram module; verified visually
@@ -22,6 +22,7 @@ import {
   writeTool,
   type GraphService,
   type PluginDeps,
+  type PluginLogger,
 } from "@magnis/plugin-sdk";
 import type {
   BatchEntityInput,
@@ -32,10 +33,7 @@ import type {
 import type {
   BatchParams,
   BatchSendParams,
-  EmailCanonical,
-  EmailFacets,
   EmailTriggerCheck,
-  FacetSummary,
   GetParams,
   LinkedEntitySummary,
   ListParams,
@@ -48,29 +46,30 @@ import type {
 } from "../types.ts";
 import {
   addressesOf,
+  recipientsWithRoles,
   buildListItem,
   destSubpath,
   INGEST_CHUNK,
   lowerAddr,
+  normalizeRecipient,
   OUTGOING_FROM,
-  recipientsOf,
   senderOf,
   str,
   type Data,
 } from "./helpers.ts";
 import {
-  ADDRESS_DETAILS,
   ADDRESS_SCHEMA,
-  MESSAGE_DETAILS,
   MESSAGE_SCHEMA,
 } from "../schema.ts";
 
 export class EmailModule {
-  private readonly graph: GraphService<EmailFacets, EmailCanonical>;
+  private readonly graph: GraphService;
   private readonly rpc: RpcExecutor;
-  constructor(deps: PluginDeps<EmailFacets, EmailCanonical>) {
+  private readonly log: PluginLogger;
+  constructor(deps: PluginDeps) {
     this.graph = deps.graph;
     this.rpc = deps.rpc;
+    this.log = deps.log;
   }
 
   // ── email.list ────────────────────────────────────────────────
@@ -92,8 +91,8 @@ export class EmailModule {
     const search = (params.search ?? "").trim();
 
     if (search.length > 0) {
-      // Search path: name match returns ids only (no facet); hydrate ONLY the
-      // page's ids in one batch facet read — 2 crossings, no per-row N+1.
+      // Search path: the matched rows already carry their dictionaries, so the
+      // page renders straight off them — ONE crossing, no hydrate.
       const matched = await this.graph.search_entities_by_name({
         query: search,
         schema_ids: [MESSAGE_SCHEMA],
@@ -101,27 +100,25 @@ export class EmailModule {
       });
       const total = matched.length;
       const page = matched.slice(offset, offset + limit);
-      const facets = await this.graph.list_facets_for_entities(page.map((e) => e.id));
-      const byId = new Map<string, Data>();
-      for (const f of facets) {
-        if (f.schema_id === MESSAGE_DETAILS && f.entity_id && !byId.has(f.entity_id)) {
-          byId.set(f.entity_id, f.data as Data);
-        }
-      }
-      const items = page.map((e) => buildListItem(e, byId.get(e.id) ?? {}));
+      // S5: the dictionary rides the entity rows the search returned.
+      const items = page.map((e) =>
+        buildListItem(e, ((e as { properties?: unknown }).properties ?? {}) as Data),
+      );
       return { items, total, limit, offset };
     }
 
     // ONE statement — page of email.message ordered by the indexed entity
-    // `date` column DESC, each row carrying its latest details facet inline.
+    // `date` column DESC; each row's dictionary rides on the entity.
     const win = await this.graph.list_entities_window({
       schema: MESSAGE_SCHEMA,
-      facet_schema: MESSAGE_DETAILS,
+
       order: [{ field: { entity_field: "date" }, desc: true }],
       limit,
       offset,
     });
-    const items = win.items.map(({ entity, data }) => buildListItem(entity, (data ?? {}) as Data));
+    const items = win.items.map(({ entity }) =>
+      buildListItem(entity, ((entity as { properties?: unknown }).properties ?? {}) as Data),
+    );
     return { items, total: win.total, limit, offset };
   }
 
@@ -164,21 +161,15 @@ export class EmailModule {
 
   /// Detail fetch shared by get/batch. Returns null for a missing or
   /// non-email entity (get throws on null; batch skips it). At most TWO fixed
-  /// crossings: get_entity_full (entity + facets + link edges) and, only
+  /// crossings: get_entity_full (entity + link edges) and, only
   /// when the entity has links, ONE get_entities batch to resolve the
   /// neighbours' names — no per-link N+1.
   private async getDetail(id: string): Promise<MessageDetailView | null> {
     const detail = await this.graph.get_entity_full(id, { links: true });
     if (detail?.entity.schema_id !== MESSAGE_SCHEMA) return null;
-    const { entity, facets, links } = detail;
-    const d = (facets.find((f) => f.schema_id === MESSAGE_DETAILS)?.data as Data | undefined) ?? {};
-    const facetSummaries: FacetSummary[] = facets.map((f) => ({
-      id: f.id,
-      schema_id: f.schema_id,
-      source: f.source,
-      observed_at: f.observed_at,
-      data: f.data,
-    }));
+    const { entity, links } = detail;
+    // S5: the message DICT is the record.
+    const d = ((entity as { properties?: unknown }).properties ?? {}) as Data;
 
     // Resolve link neighbours (attachments, address hub, …) for the Context
     // panel. Link edges carry ids + kind only; one batch get_entities
@@ -198,7 +189,10 @@ export class EmailModule {
           schema_id: t.schema_id,
           link_kind: l.kind,
           created_at: t.created_at ?? "",
-          data: null,
+          // S5: a neighbour carries its own dictionary — the attachment row
+          // renders its size from the file node, not from a copy the message
+          // used to keep.
+          data: t.properties ?? null,
         });
       }
     }
@@ -213,7 +207,6 @@ export class EmailModule {
       channel: "email",
       timestamp: str(d, "sent_at") ?? created,
       canonical: {},
-      facets: facetSummaries,
       linked_entities,
       created_at: created,
       metadata: d,
@@ -231,7 +224,7 @@ export class EmailModule {
   @syncHandler("email")
   async ingest(params: {
     envelopes?: SyncEnvelope[];
-  }): Promise<{ ok: boolean; dropped_remote_ids: string[]; trigger_checks: EmailTriggerCheck[] }> {
+  }): Promise<{ dropped_remote_ids: string[]; trigger_checks: EmailTriggerCheck[] }> {
     const envelopes = Array.isArray(params.envelopes) ? params.envelopes : [];
     const dropped: string[] = [];
     const triggers: EmailTriggerCheck[] = [];
@@ -285,13 +278,15 @@ export class EmailModule {
     }
     await flush();
 
-    return { ok: dropped.length === 0, dropped_remote_ids: dropped, trigger_checks: triggers };
+    return { dropped_remote_ids: dropped, trigger_checks: triggers };
   }
 
   /// Delete envelope: resolve the email by its source external_id and remove it.
   private async ingestDelete(env: SyncEnvelope): Promise<void> {
     if (!env.remote_id) return;
-    const id = await this.graph.find_by_external_id(env.remote_id);
+    // S5: the remote id IS the node's anchor — resolution goes through the
+    // one chokepoint.
+    const id = await this.graph.find_by_anchor(env.remote_id);
     if (id) await this.graph.delete_entity(id);
   }
 
@@ -316,18 +311,24 @@ export class EmailModule {
           schema_id: ADDRESS_SCHEMA,
           name: lower,
           idx: lower,
-          facets: [
-            { schema_id: ADDRESS_DETAILS, data, external_id: `email:address:${lower}`, confidence: 100 },
-          ],
+          anchor: `email:address:${lower}`,
+          properties: data,
+          confidence: 100,
         });
         addrSeen.add(key);
       }
       return key;
     };
-    const addLink = (from_key: string, to_key: string, kind: string): void => {
+    const addLink = (
+      from_key: string,
+      to_key: string,
+      kind: string,
+      declared_by: string,
+      metadata?: Record<string, unknown>,
+    ): void => {
       const k = `${from_key} ${to_key} ${kind}`;
       if (!linkSeen.has(k)) {
-        links.push({ from_key, to_key, kind });
+        links.push({ from_key, to_key, kind, declared_by, ...(metadata ? { metadata } : {}) });
         linkSeen.add(k);
       }
     };
@@ -336,18 +337,33 @@ export class EmailModule {
       const remoteId = env.remote_id;
       if (!remoteId) continue;
       const p = env.payload as Data;
+      // S5 (plan §7): the message DICT is the record, minus what the edges
+      // now represent — the attachments array and the three joined recipient
+      // strings. The from/to addresses stay as edges to shared address nodes.
+      const dict: Data = { ...p };
+      delete dict.attachments;
+      delete dict.to_addresses;
+      delete dict.cc_addresses;
+      delete dict.bcc_addresses;
       entities.push({
         key: remoteId,
         schema_id: MESSAGE_SCHEMA,
         name: str(p, "subject") ?? "",
         idx: str(p, "thread_id") ?? undefined,
         date: str(p, "sent_at") ?? undefined,
-        facets: [{ schema_id: MESSAGE_DETAILS, data: p, external_id: remoteId, confidence: 90 }],
+        anchor: remoteId,
+        properties: dict,
+        // The provider is the observer of a message it delivered; the module's
+        // own certainty in the dictionary it just wrote is 90, as the record it
+        // replaced carried.
+        confidence: 90,
       });
       const from = lowerAddr(str(p, "from_address"));
-      if (from) addLink(remoteId, addAddress(from, str(p, "from_name")), "sent_from");
-      for (const r of recipientsOf(p)) {
-        addLink(remoteId, addAddress(r, null), "sent_to");
+      // S5: authorship is `authored_by` — the relation, not a channel-shaped
+      // kind. `sent_from` retires with this writer.
+      if (from) addLink(remoteId, addAddress(from, str(p, "from_name")), "authored_by", remoteId);
+      for (const r of recipientsWithRoles(p)) {
+        addLink(remoteId, addAddress(r.addr, null), "sent_to", remoteId, { role: r.role });
       }
     }
 
@@ -370,7 +386,7 @@ export class EmailModule {
         await this.graph.file_register({
           external_id: `file:gmail:${env.account_id}:${remoteId}:${attId}`,
           parent_external_id: remoteId,
-          link_kind: "attachment",
+          link_kind: "file.attachment",
           name: filename,
           mime_type: str(att, "mime_type") ?? "application/octet-stream",
           size_bytes: typeof att.size === "number" ? (att.size) : undefined,
@@ -391,11 +407,13 @@ export class EmailModule {
       }
 
       if (env.kind === "live") {
+        // @tested-by: tst_be_emailingest_trigger_006
+        // @invariant: INV-9 — only the SENDER is a trigger candidate. Listing
+        // recipients too meant a trigger watching the user's own address fired
+        // on the user's own traffic: the RFQ we had just sent counted as "a
+        // reply arrived". A trigger watches who it hears FROM, not who was
+        // copied.
         const touched = [entityId];
-        for (const r of recipientsOf(p)) {
-          const aid = result.ids[`addr:${r}`];
-          if (aid) touched.push(aid);
-        }
         const from = lowerAddr(str(p, "from_address"));
         if (from) {
           const sid = result.ids[`addr:${from}`];
@@ -413,6 +431,10 @@ export class EmailModule {
             from_address: str(p, "from_address"),
             from_name: str(p, "from_name"),
             subject: str(p, "subject"),
+            // @invariant: INV-10 — without the event's own timestamp the
+            // engine cannot tell a delayed backfill from a fresh arrival, so
+            // it fired on history. The engine fails closed when this is absent.
+            occurred_at: str(p, "sent_at"),
           },
         });
       }
@@ -474,7 +496,7 @@ export class EmailModule {
     if (detail?.entity.schema_id !== MESSAGE_SCHEMA) {
       throw new Error(`Email not found: ${params.email_id}`);
     }
-    const od = (detail.facets.find((f) => f.schema_id === MESSAGE_DETAILS)?.data as Data | undefined) ?? {};
+    const od = ((detail.entity as { properties?: unknown }).properties ?? {}) as Data;
     const sender = str(od, "from_address");
     if (!sender) {
       throw new Error("Cannot determine recipient: email has no sender address");
@@ -486,7 +508,7 @@ export class EmailModule {
     const inReplyTo = str(od, "message_id");
 
     // Attachment ownership + file-ness (user-scoped) — fail if the caller
-    // doesn't own a file, or the id isn't a real file (no file.details facet).
+    // doesn't own a file, or the id isn't a real file (empty dictionary).
     await this.resolveOwnedFileNames(attachmentIds);
 
     // Route the reply (native parity: FATAL on source failure).
@@ -503,9 +525,23 @@ export class EmailModule {
       },
     });
 
+    // @tested-by: tst_module_email_reply_004
+    // @invariant: INV-5 — the same receipt rule as `send`. `reply` reported
+    // `status: "sent"` for whatever the connector returned, including a success
+    // with nothing in it, and it did so while writing attachment links to the
+    // ORIGINAL email — so a reply that never left still mutated the graph.
+    // Checked BEFORE those links, so a refusal leaves no trace.
+    if (!str(result, "message_id")) {
+      throw new Error(
+        "email.reply: the source accepted the reply but returned no provider id — " +
+          "treating this as NOT sent. Check the connector's own logs; a silent " +
+          "success here means the mail never reached the provider.",
+      );
+    }
+
     // Link attachments to the ORIGINAL email (native parity).
     for (const fid of attachmentIds) {
-      await this.graph.add_link({ from_id: params.email_id, to_id: fid, kind: "attachment" });
+      await this.graph.add_link({ from_id: params.email_id, to_id: fid, kind: "file.attachment" });
     }
 
     return {
@@ -550,15 +586,26 @@ export class EmailModule {
     if (messages.length === 0 || messages.length > 50) {
       throw new Error(`batch size must be 1..=50, got ${String(messages.length)}`);
     }
+    // @tested-by: tst_module_email_send_003
+    // @invariant: INV-7 — validate EVERY recipient before sending ANY of them.
+    // Validating lazily would leave earlier messages already delivered when a
+    // later address turns out to be malformed, and an outgoing mail cannot be
+    // recalled.
     messages.forEach((m, i) => {
       if (!m.to) throw new Error(`message[${String(i)}]: missing to`);
       if (!m.subject) throw new Error(`message[${String(i)}]: missing subject`);
       if (!m.body_text) throw new Error(`message[${String(i)}]: missing body_text`);
+      try {
+        normalizeRecipient(m.to);
+      } catch (error) {
+        throw new Error(`message[${String(i)}]: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+      }
     });
     const excluded = new Set(params.excluded_indices ?? []);
 
     const results: Record<string, unknown>[] = [];
     let sent = 0;
+    let failed = 0;
     let excludedCount = 0;
     for (const [i, m] of messages.entries()) {
       if (excluded.has(i)) {
@@ -566,11 +613,28 @@ export class EmailModule {
         results.push({ id: null, to: m.to, subject: m.subject, status: "excluded", attachment_count: 0 });
         continue;
       }
-      const r = await this.sendSingle(m.to, m.subject, m.body_text, m.attachment_ids ?? []);
-      sent++;
-      results.push({ id: r.id, to: m.to, subject: m.subject, status: "sent", attachment_count: r.attachment_count });
+      // @tested-by: tst_module_email_send_007
+      // @invariant: INV-8 — a refusal on message N must not discard the outcome
+      // of messages 1..N-1: those are already delivered and un-recallable, so
+      // dropping their results loses the only record the caller gets. Report
+      // every message and keep going.
+      try {
+        const r = await this.sendSingle(m.to, m.subject, m.body_text, m.attachment_ids ?? []);
+        sent++;
+        results.push({ id: r.id, to: m.to, subject: m.subject, status: "sent", attachment_count: r.attachment_count });
+      } catch (sendError) {
+        failed++;
+        results.push({
+          id: null,
+          to: m.to,
+          subject: m.subject,
+          status: "failed",
+          attachment_count: 0,
+          error: sendError instanceof Error ? sendError.message : String(sendError),
+        });
+      }
     }
-    return { results, total: messages.length, sent, excluded: excludedCount };
+    return { results, total: messages.length, sent, failed, excluded: excludedCount };
   }
 
   // ── set_trigger (@writeTool) ──────────────────────────────────
@@ -613,9 +677,8 @@ export class EmailModule {
         schema_id: ADDRESS_SCHEMA,
         name: a,
         idx: a,
-        facets: [
-          { schema_id: ADDRESS_DETAILS, data: { address: a }, external_id: `email:address:${a}`, confidence: 100 },
-        ],
+        anchor: `email:address:${a}`,
+        properties: { address: a },
       })),
       refs: [],
       links: [],
@@ -675,32 +738,78 @@ export class EmailModule {
     },
   })
   async ensureAddress(params: { address: string; display_name?: string | null }): Promise<{ id: string }> {
-    const lower = params.address.trim().toLowerCase();
-    if (lower.length === 0) {
+    const ids = await this.ensureAddressBatch([params]);
+    const id = ids[0];
+    if (!id) throw new Error(`email.ensure_address: failed to resolve ${params.address}`);
+    return { id };
+  }
+
+  // ── ensure_addresses (batched, S3) ─────────────────────────────
+  // The address owner mints (plan §7): contacts hands over every address a
+  // sync page observed in ONE call; each get-or-creates by the
+  // `email:address:<lower>` ANCHOR through the chokepoint, so callers can
+  // also reference the node by that anchor with no id wired back.
+  @rpc("ensure_addresses", {
+    description: "Get-or-create email.address entities for many addresses (batched).",
+    params: {
+      type: "object",
+      properties: {
+        items: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              address: { type: "string" },
+              display_name: { type: "string" },
+            },
+            required: ["address"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["items"],
+      additionalProperties: false,
+    },
+  })
+  async ensureAddresses(params: {
+    items: { address: string; display_name?: string | null }[];
+  }): Promise<{ ids: string[] }> {
+    return { ids: await this.ensureAddressBatch(params.items) };
+  }
+
+  private async ensureAddressBatch(
+    items: { address: string; display_name?: string | null }[],
+  ): Promise<string[]> {
+    const lowers = items.map((p) => p.address.trim().toLowerCase());
+    if (lowers.some((l) => l.length === 0)) {
       throw new Error("email.ensure_address: 'address' is required");
     }
-    const data: Record<string, unknown> = { address: lower };
-    if (params.display_name) data.display_name = params.display_name;
-    // apply_batch resolves-or-creates by the facet external_id (the same hub key
-    // ingest/send use), so this converges on one entity per address per user.
-    const r = await this.graph.apply_batch({
-      entities: [
-        {
-          key: "addr",
-          schema_id: ADDRESS_SCHEMA,
-          name: lower,
-          idx: lower,
-          facets: [
-            { schema_id: ADDRESS_DETAILS, data, external_id: `email:address:${lower}`, confidence: 100 },
-          ],
-        },
-      ],
-      refs: [],
-      links: [],
+    const entities = [];
+    const seen = new Set<string>();
+    for (const [i, lower] of lowers.entries()) {
+      if (seen.has(lower)) continue;
+      seen.add(lower);
+      const item = items[i];
+      const data: Record<string, unknown> = { address: lower };
+      if (item?.display_name) data.display_name = item.display_name;
+      entities.push({
+        key: lower,
+        schema_id: ADDRESS_SCHEMA,
+        name: lower,
+        idx: lower,
+        // S3: the anchor is THE resolver — claimed through the chokepoint on
+        // create, so re-ensures and anchor-refs converge on one node.
+        // S5: the address DICT is the record.
+        anchor: `email:address:${lower}`,
+        properties: data,
+      });
+    }
+    const r = await this.graph.apply_batch({ entities, refs: [], links: [] });
+    return lowers.map((lower) => {
+      const id = r.ids[lower];
+      if (!id) throw new Error(`email.ensure_address: failed to resolve ${lower}`);
+      return id;
     });
-    const id = r.ids.addr;
-    if (!id) throw new Error(`email.ensure_address: failed to resolve ${lower}`);
-    return { id };
   }
 
   // ── reply composer (RPC) ──────────────────────────────────────
@@ -763,17 +872,18 @@ export class EmailModule {
 
   /// Resolve each attachment id to its filename, enforcing native parity: the
   /// entity must be owned by the caller (user-scoped get_entity_full → not null)
-  /// AND carry a `file.details` facet. A non-file or detail-less entity is
-  /// rejected (NO fallback name) so only real files can be attached/linked.
+  /// AND be a `file.object` whose dictionary names it. A non-file or
+  /// nameless entity is rejected (NO fallback name) so only real files can be
+  /// attached/linked.
   /// Returns the per-file display names in input order.
   private async resolveOwnedFileNames(fileIds: string[]): Promise<string[]> {
     const names: string[] = [];
     for (const fid of fileIds) {
       const det = await this.graph.get_entity_full(fid, { links: false });
       if (!det) throw new Error(`file ${fid} not found`);
-      const fd = det.facets.find((f) => f.schema_id === "file.details")?.data as Data | undefined;
-      if (!fd) throw new Error(`file ${fid} not found`);
-      names.push(typeof fd.name === "string" ? (fd.name) : "attachment");
+      if (det.entity.schema_id !== "file.object") throw new Error(`file ${fid} not found`);
+      const fd = ((det.entity as { properties?: unknown }).properties ?? {}) as Data;
+      names.push(typeof fd.name === "string" ? fd.name : "attachment");
     }
     return names;
   }
@@ -786,76 +896,131 @@ export class EmailModule {
     bodyText: string,
     attachmentIds: string[],
   ): Promise<Record<string, unknown>> {
-    // Attachment ownership + names (native put attachment_names on the facet;
-    // it required a file.details facet — rejected otherwise, no fallback name).
-    const attachmentNames = await this.resolveOwnedFileNames(attachmentIds);
+    // @tested-by: tst_module_email_send_002
+    // @invariant: INV-7 — reject a malformed recipient BEFORE any read, write
+    // or provider call. `to.trim().toLowerCase()` accepted anything, including
+    // the JSON text of an array, and let Gmail refuse it downstream.
+    const toLower = normalizeRecipient(to);
 
-    const toLower = to.trim().toLowerCase();
+    // Attachment ownership + names (native put attachment_names on the record;
+    // it required a file dictionary — rejected otherwise, no fallback name).
+    const attachmentNames = await this.resolveOwnedFileNames(attachmentIds);
     const now = new Date().toISOString();
-    const facetData: Record<string, unknown> = {
+    // @tested-by: tst_module_email_send_004, tst_module_email_send_006
+    // @invariant: INV-5 — route BEFORE persisting. A refusal must leave no
+    // trace: the demo's failure was a stored "outgoing" message for mail Gmail
+    // had rejected. No ledger is needed to make this safe — see the write
+    // below for why the tool never throws once the provider has accepted.
+    const routed = await this.graph.source_command({
+      action: "send_message",
+      draft: {
+        to: [{ address: toLower }],
+        cc: [],
+        bcc: [],
+        subject,
+        body_text: bodyText,
+        body_html: null,
+        in_reply_to: null,
+      },
+    });
+    const providerMessageId = str(routed, "message_id");
+    const providerThreadId = str(routed, "thread_id");
+    // @tested-by: tst_module_email_send_008
+    // @invariant: INV-5 — a provider that accepted a message returns its id.
+    // A success WITHOUT one is not proof of delivery, and treating it as one is
+    // how a send that never reached Gmail was reported as sent: the plugin had
+    // stopped swallowing the error, but the CONNECTOR returned ok having done
+    // nothing. No id, no send — and nothing is persisted, because this throws
+    // before the graph write below.
+    if (!providerMessageId) {
+      throw new Error(
+        "email.send: the source accepted the message but returned no provider id — " +
+          "treating this as NOT sent. Check the connector's own logs; a silent " +
+          "success here means the mail never reached the provider.",
+      );
+    }
+
+    const messageDict: Record<string, unknown> = {
       from_address: OUTGOING_FROM,
       to_addresses: to,
       subject,
       body_text: bodyText,
       sent_at: now,
       is_outgoing: true,
+      provider_message_id: providerMessageId,
       has_attachments: attachmentIds.length > 0,
       attachment_names: attachmentNames,
     };
-    // Outgoing message has no stable external_id → always created fresh; the
-    // recipient address resolves-or-creates by its external_id (the hub).
-    const msgKey = "out";
-    const addrKey = `addr:${toLower}`;
-    const result = await this.graph.apply_batch({
-      entities: [
-        {
-          key: msgKey,
-          schema_id: MESSAGE_SCHEMA,
-          name: subject,
-          date: now,
-          facets: [{ schema_id: MESSAGE_DETAILS, data: facetData, confidence: 100 }],
-        },
-        {
-          key: addrKey,
-          schema_id: ADDRESS_SCHEMA,
-          name: toLower,
-          idx: toLower,
-          facets: [
-            { schema_id: ADDRESS_DETAILS, data: { address: toLower }, external_id: `email:address:${toLower}`, confidence: 100 },
-          ],
-        },
-      ],
-      refs: [],
-      links: [{ from_key: msgKey, to_key: addrKey, kind: "sent_to" }],
-    });
-    const entityId = result.ids[msgKey];
-    if (entityId === undefined) throw new Error(`email.send: missing entity id for ${msgKey}`);
-
-    for (const fid of attachmentIds) {
-      await this.graph.add_link({ from_id: entityId, to_id: fid, kind: "attachment" });
-    }
-
-    // Best-effort source route — the created entity survives a source failure.
+    // @tested-by: tst_module_email_send_006
+    // @invariant: INV-27 — the provider has ACCEPTED by this point, so the mail
+    // is gone and cannot be recalled. Throwing here would report a failed send
+    // and invite a retry, which would deliver the message a SECOND time. The
+    // graph write is an optimistic view, not the record: Gmail's Sent folder is
+    // ingested with no label filter, so the next sync creates this message
+    // properly on its own. A failure is therefore logged and surfaced, never
+    // thrown.
+    let entityId: string | null = null;
+    let graphWriteFailed = false;
     try {
-      await this.graph.source_command({
-        action: "send_message",
-        draft: {
-          to: [{ address: to }],
-          cc: [],
-          bcc: [],
-          subject,
-          body_text: bodyText,
-          body_html: null,
-          in_reply_to: null,
-        },
+      // Outgoing message has no stable external_id → always created fresh; the
+      // recipient address resolves-or-creates by its external_id (the hub).
+      const msgKey = "out";
+      const addrKey = `addr:${toLower}`;
+      const result = await this.graph.apply_batch({
+        entities: [
+          {
+            key: msgKey,
+            schema_id: MESSAGE_SCHEMA,
+            name: subject,
+            // @tested-by: tst_module_email_send_005
+            // @invariant: INV-6 — Gmail returns the id it will later hand back as
+            // `remote_id` when sync ingests our own Sent folder, and ingest
+            // matches on the anchor and nothing else. Carrying it
+            // here is what makes the copy arriving from Sent UPDATE this entity
+            // instead of creating a second one. Without it every sent email
+            // exists in the graph twice.
+            idx: providerThreadId ?? undefined,
+            date: now,
+            // S5: the sent copy is a node with a DICT under the provider's own
+            // id as its anchor — that anchor is what makes the copy arriving
+            // from Sent update THIS node instead of creating a second one.
+            anchor: providerMessageId,
+            properties: messageDict,
+          },
+          {
+            key: addrKey,
+            schema_id: ADDRESS_SCHEMA,
+            name: toLower,
+            idx: toLower,
+            anchor: `email:address:${toLower}`,
+            properties: { address: toLower },
+          },
+        ],
+        refs: [],
+        links: [{ from_key: msgKey, to_key: addrKey, kind: "sent_to" }],
       });
-    } catch {
-      // non-fatal: the email.message entity is already persisted.
+      const messageEntityId = result.ids[msgKey];
+      if (messageEntityId === undefined) throw new Error(`email.send: missing entity id for ${msgKey}`);
+
+      for (const fid of attachmentIds) {
+        await this.graph.add_link({ from_id: messageEntityId, to_id: fid, kind: "file.attachment" });
+      }
+
+      entityId = messageEntityId;
+    } catch (writeError) {
+      graphWriteFailed = true;
+      await this.log.log("warn", "outgoing email persisted only in the mailbox", {
+        provider_message_id: providerMessageId,
+        to: toLower,
+        reason: writeError instanceof Error ? writeError.message : String(writeError),
+      });
     }
 
     return {
       schema_id: MESSAGE_SCHEMA,
       id: entityId,
+      provider_message_id: providerMessageId,
+      graph_write_failed: graphWriteFailed,
       subject,
       to,
       body_text: bodyText,

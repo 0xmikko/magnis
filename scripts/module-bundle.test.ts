@@ -5,6 +5,7 @@
 // passes a different target than deno_ast's legacy decorators, the registry is
 // empty → no tools → every plugin breaks in prod. `__decorate` is plain
 // engine-agnostic JS (no reflect-metadata), so verifying in Bun is sufficient.
+import type { PluginModuleShape } from "@magnis/plugin-sdk";
 import { test, expect, beforeAll } from "bun:test";
 import { buildPlugin, buildAll, discoverPlugins } from "./build-plugins.ts";
 import { existsSync, readFileSync } from "fs";
@@ -18,11 +19,11 @@ interface ToolDef {
   description: string;
   requires_approval: boolean;
 }
-interface ModuleShape {
-  init: (graph: unknown, ctx: unknown, util: unknown, rpc: unknown) => Promise<void>;
-  rpcHandlers: Record<string, unknown>;
-  toolDefinitions: ToolDef[];
-}
+// The shape is NOT re-declared here. A local copy is exactly how this gate
+// drifted from the SDK: it kept a 4-argument `init` after the contract grew a
+// required logger, so the bundle gate happily constructed modules with
+// `log: undefined` — the "run blind" state the contract forbids.
+type ModuleShape = Omit<PluginModuleShape, "toolDefinitions"> & { toolDefinitions: ToolDef[] };
 
 let mod: ModuleShape;
 
@@ -48,7 +49,7 @@ test("tst_module_decorators_001: bundled module decorators register the plugin's
   expect(mod).toBeTruthy();
   // toolDefinitions are empty until init() reads the decorator registry.
   const ctx = { extension_id: "file", user_id: "system", extension_kind: "module" };
-  await mod.init({}, ctx, {}, { execute: async () => undefined });
+  await mod.init({}, ctx, {}, { execute: async () => undefined }, { log: async () => undefined });
 
   const names = mod.toolDefinitions.map((t) => t.name).sort();
   expect(names).toContain("file.list");
@@ -77,6 +78,31 @@ test("tst_module_decorators_002: no module bundle emits TC39 decorators", async 
     if (!bundle.module) continue;
     const js = readFileSync(join(DIST, "modules", id, "module", "dist", bundle.module.dist), "utf8");
     if (js.includes("__decorateElement(")) offenders.push(id);
+  }
+  expect(offenders).toEqual([]);
+});
+
+// All-plugin guard: a module DECLARES its entities in entities.ts, which is a
+// build-time leaf importing zod. Nothing the isolate loads may reach it — one
+// `import "../entities.ts"` from module/ code would put a schema library
+// inside a bare V8 isolate that has no business running one. The declaration's
+// own marker keyword is checked too, because it is what would arrive first.
+test("tst_module_decorators_003: no module bundle reaches its declaration", () => {
+  const pluginsDir = join(REPO, "plugins");
+  const declaring = discoverPlugins(pluginsDir)
+    .filter((id) => existsSync(join(pluginsDir, "modules", id, "entities.ts")));
+  // A guard over an empty set is green about nothing: this must run on real
+  // declarations, so it fails while no module has one.
+  expect(declaring.length).toBeGreaterThan(0);
+
+  const offenders: string[] = [];
+  for (const id of declaring) {
+    const bundlePath = join(DIST, "modules", id, "bundle.json");
+    if (!existsSync(bundlePath)) continue;
+    const bundle = JSON.parse(readFileSync(bundlePath, "utf8")) as { module?: { dist: string } };
+    if (!bundle.module) continue;
+    const js = readFileSync(join(DIST, "modules", id, "module", "dist", bundle.module.dist), "utf8");
+    if (js.includes("ZodType") || js.includes("x-magnis-entity")) offenders.push(id);
   }
   expect(offenders).toEqual([]);
 });

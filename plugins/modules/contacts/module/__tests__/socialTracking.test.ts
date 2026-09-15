@@ -1,70 +1,61 @@
-// contacts.person.social opt-in. set_social_tracking writes the facet;
-// get_social_tracking reads it back. RED invariant: toggle tracked => handle
-// in the opt-in state; untoggle => out. Per-platform merge: toggling X never
-// clears LinkedIn. Handles are stored bare (no leading @).
-//
-// Exercised through @magnis/testkit/module (mockGraph + mountModule). Unlike the
-// read tests, these need a STATEFUL graph — a write must be visible to the next
-// read — so the mockGraph overrides close over an in-memory facet log. CRITICAL
-// runtime property mirrored here (tst_be_contacts_social_003 root cause): the
-// backend returns facets NEWEST-FIRST (`ORDER BY observed_at DESC` —
-// pg_facet.rs:88), so readers must NOT assume append order.
+// Social-tracking opt-in on the HUB DICTIONARY (S3): set_social_tracking
+// writes `properties.tracking[]` via update_properties; the readers page the
+// entity rows and read the dictionary — no dictionary reads anywhere.
+// RED invariant: toggle tracked => handle in the opt-in state; untoggle =>
+// out. Per-platform merge: toggling X never clears LinkedIn. Handles are
+// stored bare (no leading @).
 
 import { describe, expect, it, vi } from "vitest";
-import type { FacetRecord, RawEntity } from "@magnis/plugin-sdk";
+import type { RawEntity } from "@magnis/plugin-sdk";
 import { mockGraph, mountModule, type GraphOverrides, type MockGraph } from "@magnis/testkit/module";
 import { ContactsModule } from "../service.ts";
 import { CONTACT } from "../../schema.ts";
-import type { ContactCanonical, ContactFacets } from "../../types.ts";
+import type { ContactCanonical } from "../../types.ts";
 
 const SCHEMA = CONTACT;
-type G = MockGraph<ContactFacets, ContactCanonical>;
-type Overrides = GraphOverrides<ContactFacets, ContactCanonical>;
+type G = MockGraph;
+type Overrides = GraphOverrides;
 
-let facetClock = 0;
-function isoAt(step: number): string {
-  return new Date(Date.UTC(2026, 0, 1, 0, 0, step)).toISOString();
-}
+type Mutable = RawEntity & { properties?: Record<string, unknown> };
 
-function makeGraph(entity: RawEntity | null): { graph: G; facets: FacetRecord[] } {
-  const facets: FacetRecord[] = [];
-  const newestFirst = (list: FacetRecord[]): FacetRecord[] =>
-    [...list].sort((a, b) => (a.observed_at < b.observed_at ? 1 : -1));
-  const overrides = {
-    get_entity: async (_id: string) => entity,
-    list_facets_for_entity: async (entityId: string) =>
-      newestFirst(facets.filter((f) => f.entity_id === entityId)),
-    attach_facet: async (input: { entity_id: string; schema_id: string; data: unknown }) => {
-      facets.push({
-        entity_id: input.entity_id,
-        id: `f-${facets.length}`,
-        schema_id: input.schema_id,
-        source: "manual",
-        observed_at: isoAt(facetClock++),
-        data: input.data,
-      });
-      return { id: `f-${facets.length - 1}` };
+function dictOverrides(persons: Mutable[]): {
+  get_entity: unknown;
+  update_properties: unknown;
+} {
+  return {
+    get_entity: async (id: string) => persons.find((p) => p.id === id) ?? null,
+    // The runtime op merges top-level keys into the dictionary.
+    update_properties: async (input: {
+      entity_id: string;
+      properties: Record<string, unknown>;
+    }) => {
+      const e = persons.find((p) => p.id === input.entity_id);
+      if (!e) throw new Error(`no entity ${input.entity_id}`);
+      e.properties = { ...(e.properties ?? {}), ...input.properties };
     },
-  } as unknown as Overrides;
-  return { graph: mockGraph<ContactFacets, ContactCanonical>(overrides), facets };
+  };
 }
 
-// Graph with MANY persons + the batch read APIs the by-handle lookup uses,
-// plus create/rename so the social-identity tools (track/ensure/rename) are testable.
-// Same NEWEST-FIRST ordering contract as makeGraph (matches the runtime).
-function makeMultiGraph(persons: RawEntity[]): { graph: G; facets: FacetRecord[]; renames: [string, string][] } {
-  const facets: FacetRecord[] = [];
+function makeGraph(entity: RawEntity | null): { graph: G } {
+  const persons: Mutable[] = entity ? [entity as Mutable] : [];
+  const overrides = dictOverrides(persons) as unknown as Overrides;
+  return { graph: mockGraph(overrides) };
+}
+
+// Graph with MANY persons + the paged list the by-handle lookup uses, plus
+// create/rename so the social-identity tools (track/ensure/rename) are
+// testable. Every read is off the entity rows' dictionaries.
+function makeMultiGraph(persons: RawEntity[]): { graph: G; renames: [string, string][] } {
   const renames: [string, string][] = [];
   let created = 0;
-  const newestFirst = (list: FacetRecord[]): FacetRecord[] =>
-    [...list].sort((a, b) => (a.observed_at < b.observed_at ? 1 : -1));
   const overrides = {
-    get_entity: async (id: string) => persons.find((p) => p.id === id) ?? null,
+    ...dictOverrides(persons as Mutable[]),
     create_entity: async (input: { schema_id: string; name: string; client_id?: string }) => {
       const e = {
         id: input.client_id ?? `created-${created++}`,
         schema_id: input.schema_id,
         name: input.name,
+        properties: {},
       } as unknown as RawEntity;
       persons.push(e);
       return e;
@@ -75,27 +66,25 @@ function makeMultiGraph(persons: RawEntity[]): { graph: G; facets: FacetRecord[]
       if (e) (e as { name: string }).name = name;
     },
     get_canonical: async () => ({}),
+    list_links_for_entities: async () => [],
     list_entities: async ({ offset = 0, limit = 500 }: { offset?: number; limit?: number }) => ({
       items: persons.slice(offset, offset + limit),
       total: persons.length,
     }),
-    list_facets_for_entity: async (entityId: string) =>
-      newestFirst(facets.filter((f) => f.entity_id === entityId)),
-    list_facets_for_entities: async (ids: string[]) =>
-      newestFirst(facets.filter((f) => f.entity_id && ids.includes(f.entity_id))),
-    attach_facet: async (input: { entity_id: string; schema_id: string; data: unknown }) => {
-      facets.push({
-        entity_id: input.entity_id,
-        id: `f-${facets.length}`,
-        schema_id: input.schema_id,
-        source: "manual",
-        observed_at: isoAt(facetClock++),
-        data: input.data,
-      });
-      return { id: `f-${facets.length - 1}` };
+    // Stage First: the tracked-hub walk goes through the FILTERED window —
+    // the fixture applies the same `tracking exists` narrowing the host does.
+    list_entities_window: async ({ offset = 0, limit = 500 }: { offset?: number; limit?: number }) => {
+      const tracked = persons.filter((e) => (e.properties as Record<string, unknown> | undefined)?.tracking !== undefined);
+      return {
+        items: tracked.slice(offset, offset + limit).map((entity) => ({ entity, data: null })),
+        total: tracked.length,
+      };
     },
+    // contacts.create still writes its profile record until the S3 card
+    // cutover — the social tools themselves never touch records.
+    attach_facet: async () => ({ id: "f-0" }),
   } as unknown as Overrides;
-  return { graph: mockGraph<ContactFacets, ContactCanonical>(overrides), facets, renames };
+  return { graph: mockGraph(overrides), renames };
 }
 
 function makeModule(graph: G): ContactsModule {
@@ -169,7 +158,7 @@ describe("contacts social tracking (tst_be_contacts_social_001)", () => {
 // tst_be_contacts_social_002 — resolve the
 // owning contact + tracked state from a platform handle. Case-insensitive —
 // stored handles are user-typed while profile handles carry the API's
-// canonical casing. Latest facet wins; null when no contact matches.
+// canonical casing. Latest record wins; null when no contact matches.
 describe("contacts get_social_tracking_by_handle (tst_be_contacts_social_002)", () => {
   it("finds the contact by handle, case-insensitively, with tracked state", async () => {
     const { graph } = makeMultiGraph([person("p1"), person("p2")]);
@@ -329,12 +318,11 @@ describe("contacts.rename_if_placeholder (tst_rename_cas)", () => {
   });
 });
 
-// tst_be_contacts_social_003 (LIVE BUG 2026-07-02): the runtime returns facets
-// NEWEST-FIRST, but readSocialTracking picked the LAST list element — i.e. the
-// OLDEST facet. Every toggle then merged onto a stale base and resurrected
-// tracked=true, so Untrack never stopped the scheduler from fetching (burning
-// real API credits). The reader must pick the facet with max observed_at.
-describe("social tracking survives runtime facet ordering (tst_be_contacts_social_003)", () => {
+// tst_be_contacts_social_003 (LIVE BUG 2026-07-02, kept as a regression
+// scenario): toggles must always merge onto the CURRENT state. The dictionary
+// makes the stale-base failure structurally impossible — update_properties
+// replaces the tracking key wholesale — but the toggle sequences stay.
+describe("social tracking toggle sequences (tst_be_contacts_social_003)", () => {
   it("track x → track li → untrack x → untrack li ⇒ fully untracked, handles kept", async () => {
     const { graph } = makeGraph(person("p1"));
     const mod = makeModule(graph);
@@ -366,7 +354,7 @@ describe("social tracking survives runtime facet ordering (tst_be_contacts_socia
     expect(rows[0]).toMatchObject({ contact_id: "p1", handle: "sgershuni" });
     expect(typeof rows[0]!.name).toBe("string");
 
-    // Untracking removes the row (newest facet wins).
+    // Untracking removes the row (newest record wins).
     await mod.set_social_tracking({ id: "p1", platform: "linkedin", tracked: false });
     expect(await mod.list_social_tracking({ platform: "linkedin" })).toHaveLength(0);
   });

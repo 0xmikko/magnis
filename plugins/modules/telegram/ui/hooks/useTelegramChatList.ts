@@ -33,6 +33,7 @@ function mapChatItems(items: readonly TelegramChatListItem[], baseUrl: string): 
     return {
       id: c.entity_id,
       chatId: c.chat_id,
+      accountId: c.account_id,
       name,
       initials: initialsFromName(name),
       avatarColor: pickAvatarColor(name),
@@ -203,6 +204,7 @@ export function useTelegramChatList(): UseTelegramChatListResult {
         const entry: TelegramChat = {
           id: selectedChatId,
           chatId: selectedChatId, // fallback — may not have native chat_id
+          accountId: null,
           name,
           initials: initialsFromName(name),
           avatarColor: pickAvatarColor(name),

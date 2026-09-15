@@ -6,15 +6,10 @@
  * Each module can wrap this with module-specific header content.
  */
 import type { JSX } from "react";
-import type { LinkedEntitySummary, FacetSummary } from "./sharedTypes";
+import type { LinkedEntitySummary } from "./sharedTypes";
 export interface EntityDetailTabsProps {
     readonly entityId: string;
     readonly linkedEntities: readonly LinkedEntitySummary[];
-    readonly facets: readonly FacetSummary[];
-    /** Facet schema ID for description (e.g. "contacts.person.description") */
-    readonly descriptionSchemaId: string;
-    /** Facet schema ID for memory (e.g. "contacts.person.memory") */
-    readonly memorySchemaId: string;
     /** Max visible tabs before overflow "..." (default 7) */
     readonly maxVisibleTabs?: number;
     /** Enable search mode in tabs */
@@ -26,4 +21,4 @@ export interface EntityDetailTabsProps {
      *  use this for the Google-Contacts-style contact-info column. */
     readonly detailsContent?: React.ReactNode;
 }
-export declare function EntityDetailTabs({ entityId, linkedEntities, facets: _facets, descriptionSchemaId, memorySchemaId, maxVisibleTabs, searchable, headerContent, detailsContent, }: EntityDetailTabsProps): JSX.Element;
+export declare function EntityDetailTabs({ entityId, linkedEntities, maxVisibleTabs, searchable, headerContent, detailsContent, }: EntityDetailTabsProps): JSX.Element;

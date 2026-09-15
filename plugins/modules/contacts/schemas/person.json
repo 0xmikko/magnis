@@ -1,5 +1,0 @@
-{
-  "name": "Person",
-  "description": "A person / contact entity owned by the contacts plugin.",
-  "mergeable": true
-}

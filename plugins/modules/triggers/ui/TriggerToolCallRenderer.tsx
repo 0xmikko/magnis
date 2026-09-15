@@ -55,6 +55,7 @@ export function TriggerToolCallRenderer({
     payload;
   const args = tc.args as Record<string, unknown>;
   const result = toolResult?.result as Record<string, unknown> | undefined;
+  const isUpdate = tc.name === "triggers.update" || tc.name === "triggers_update";
 
   const [expanded, setExpanded] = useState(false);
 
@@ -64,6 +65,16 @@ export function TriggerToolCallRenderer({
   const watchIds = args.watch_entity_ids as readonly string[] | undefined;
   const watchedNames = result?.watched_entity_names as readonly string[] | undefined;
   const watchedEntities = useResolvedEntities(watchIds, runtime);
+  // INV-UI-1 (plan Stage 5): a cron trigger being created must show its
+  // schedule on the approval card. The result echoes the persisted spec;
+  // before the call runs only the args are available.
+  const schedule = (result?.schedule ?? args.schedule) as
+    | { cron?: unknown; timezone?: unknown }
+    | null
+    | undefined;
+  const scheduleCron = schedule && typeof schedule.cron === "string" ? schedule.cron : null;
+  const scheduleTz =
+    schedule && typeof schedule.timezone === "string" ? schedule.timezone : null;
 
   return (
     <BaseToolCallCard
@@ -74,9 +85,9 @@ export function TriggerToolCallRenderer({
       toolResult={toolResult}
       superseded={superseded}
       isAllowlisted={isAllowlisted}
-      primaryLabel="Create"
+      primaryLabel={isUpdate ? "Update" : "Create"}
       primaryIcon="zap"
-      doneLabel="Created"
+      doneLabel={isUpdate ? "Updated" : "Created"}
       onApprove={onApprove}
       onDeny={onDeny}
       onAllowlistToggle={onAllowlistToggle}
@@ -113,6 +124,17 @@ export function TriggerToolCallRenderer({
           <span className="text-agent-text">{watchedNames.join(", ")}</span>
         </div>
       ) : null}
+
+      {/* Schedule */}
+      {scheduleCron && (
+        <div className="mb-1.5 text-[12px]">
+          <span className="text-agent-text font-semibold">Schedule: </span>
+          <span className="text-agent-text">
+            {scheduleCron}
+            {scheduleTz ? ` (${scheduleTz})` : ""}
+          </span>
+        </div>
+      )}
 
       {/* Gate prompt */}
       {gatePrompt && (

@@ -1,4 +1,4 @@
-import type { AvatarColor, FacetSummary, LinkedEntitySummary, SidebarData } from "@magnis/host/base";
+import type { AvatarColor, LinkedEntitySummary, SidebarData } from "@magnis/host/base";
 
 export interface CompanyListItem {
   readonly id: string;
@@ -14,7 +14,6 @@ export interface CompanyListItem {
 
 export interface CompanyDetailView extends CompanyListItem {
   readonly canonical: Record<string, unknown>;
-  readonly facets: readonly FacetSummary[];
   readonly linked_entities: readonly LinkedEntitySummary[];
 }
 

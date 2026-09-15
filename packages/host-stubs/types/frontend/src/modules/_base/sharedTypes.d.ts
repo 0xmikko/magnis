@@ -1,10 +1,3 @@
-export interface FacetSummary {
-    readonly id: string;
-    readonly schema_id: string;
-    readonly source: string;
-    readonly observed_at: string;
-    readonly data: unknown;
-}
 export interface LinkedEntitySummary {
     readonly id: string;
     readonly name: string | null;

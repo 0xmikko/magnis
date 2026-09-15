@@ -7,31 +7,31 @@
 // (raw `add_link` is NOT user-scoped). `list` relies on the host's
 // already user-scoped `list_entities_window` / `list_entities_by_facet_field`.
 
-import { tool, writeTool, type GraphService, type PluginDeps } from "@magnis/plugin-sdk";
+import {
+  tool,
+  writeTool,
+  type GraphService,
+  type PluginDeps,
+  type RawEntity,
+} from "@magnis/plugin-sdk";
 import type { WindowPage } from "@magnis/plugin-sdk";
 import type {
   FileAttachParams,
   FileAttachResult,
-  FileCanonical,
   FileDetails,
-  FileFacets,
   FileGetParams,
   FileItem,
   FileListParams,
   FileListResponse,
 } from "../types.ts";
-import { facetData, hasContent, itemFromDetails } from "./helpers.ts";
+import { hasContent, itemFromDetails } from "./helpers.ts";
 import {
-  FILE_AUDIO,
-  FILE_DETAILS,
-  FILE_IMAGE,
   FILE_OBJECT,
-  FILE_VIDEO,
 } from "../schema.ts";
 
 export class FileModule {
-  private readonly graph: GraphService<FileFacets, FileCanonical>;
-  constructor(deps: PluginDeps<FileFacets, FileCanonical>) {
+  private readonly graph: GraphService;
+  constructor(deps: PluginDeps) {
     this.graph = deps.graph;
   }
 
@@ -63,15 +63,17 @@ export class FileModule {
     // Candidate page (host-side user-scoped) + the exact total.
     let entityIds: string[];
     let total: number;
+    let pageEntities: RawEntity[];
     if (params.source_module) {
-      const page = await this.graph.list_entities_by_facet_field({
+      // S1: the dictionary is the state — filter by the properties key.
+      const page = await this.graph.list_entities_by_property_field({
         entity_schema: FILE_OBJECT,
-        facet_schema: FILE_DETAILS,
-        field_path: "$.source_module",
-        field_value: params.source_module,
+        key: "source_module",
+        value: params.source_module,
         limit,
         offset,
       });
+      pageEntities = page.items;
       entityIds = page.items.map((e) => e.id);
       total = page.total;
     } else {
@@ -81,19 +83,17 @@ export class FileModule {
         limit,
         offset,
       });
+      pageEntities = win.items.map((r) => r.entity);
       entityIds = win.items.map((r) => r.entity.id);
       total = win.total;
     }
 
     if (entityIds.length === 0) return { items: [], total, limit, offset };
 
-    const facets = await this.graph.list_facets_for_entities(entityIds);
+    // S1: the dictionary rides the entity — the page-wide record batch is gone.
     const detailsById = new Map<string, FileDetails>();
-    for (const f of facets) {
-      // list_facets_for_entities (batch) always stamps entity_id.
-      if (f.schema_id === FILE_DETAILS && f.entity_id !== undefined) {
-        detailsById.set(f.entity_id, f.data as FileDetails);
-      }
+    for (const e of pageEntities) {
+      detailsById.set(e.id, (e.properties ?? {}) as unknown as FileDetails);
     }
 
     const items: FileItem[] = [];
@@ -102,7 +102,7 @@ export class FileModule {
       if (!details) continue;
 
       // parent_id: keep only files linked from the given parent (a links
-      // query, not a facet filter).
+      // query, not a record filter).
       if (params.parent_id) {
         const links = await this.graph.list_links_for_entity(id);
         if (!(links).some((l) => l.from_id === params.parent_id)) continue;
@@ -134,13 +134,15 @@ export class FileModule {
     if (detail?.entity.schema_id !== FILE_OBJECT) {
       throw new Error(`file not found: ${params.id}`);
     }
-    const details = facetData(detail, FILE_DETAILS) as FileDetails | undefined;
-    if (!details) throw new Error(`file not found: ${params.id}`);
+    // S1: the dictionary is the state.
+    const details = (detail.entity.properties ?? {}) as unknown as FileDetails;
 
     const base = itemFromDetails(params.id, details) as unknown as Record<string, unknown>;
-    const image = facetData(detail, FILE_IMAGE);
-    const audio = facetData(detail, FILE_AUDIO);
-    const video = facetData(detail, FILE_VIDEO);
+    // S1: the typed extras are dictionary keys.
+    const props = (detail.entity.properties ?? {});
+    const image = props.image;
+    const audio = props.audio;
+    const video = props.video;
     if (image) base.image = image;
     if (audio) base.audio = audio;
     if (video) base.video = video;
@@ -148,22 +150,22 @@ export class FileModule {
   }
 
   @writeTool("attach", {
-    description: "Attach a file entity to a target entity via an 'attachment' link.",
+    description: "Attach a file entity to a target entity via a 'file.attachment' link.",
     params: {
       type: "object",
       properties: {
         file_id: { type: "string", format: "uuid" },
         target_id: { type: "string", format: "uuid" },
-        kind: { type: "string", enum: ["attachment"] },
+        kind: { type: "string", enum: ["file.attachment"] },
       },
       required: ["file_id", "target_id"],
       additionalProperties: false,
     },
   })
   async attach(params: FileAttachParams): Promise<FileAttachResult> {
-    const kind = params.kind ?? "attachment";
-    // Only the "attachment" kind is supported (the sole kind any caller uses).
-    if (kind !== "attachment") throw new Error(`unsupported attach kind: ${kind}`);
+    const kind = params.kind ?? "file.attachment";
+    // Only the "file.attachment" kind is supported (the sole kind any caller uses).
+    if (kind !== "file.attachment") throw new Error(`unsupported attach kind: ${kind}`);
 
     // Own-check both (raw add_link is not user-scoped) and file_id must be
     // a file.object — cross-user/invalid ids surface as not-found, no link.

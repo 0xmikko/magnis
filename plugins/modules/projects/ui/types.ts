@@ -1,4 +1,4 @@
-import type { AvatarColor, FacetSummary, LinkedEntitySummary } from "@magnis/host/base";
+import type { AvatarColor, LinkedEntitySummary } from "@magnis/host/base";
 
 export interface ProjectListItem {
   readonly id: string;
@@ -11,7 +11,6 @@ export interface ProjectListItem {
 
 export interface ProjectDetailView extends ProjectListItem {
   readonly canonical: Record<string, unknown>;
-  readonly facets: readonly FacetSummary[];
   readonly linked_entities: readonly LinkedEntitySummary[];
 }
 

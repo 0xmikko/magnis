@@ -1,14 +1,15 @@
 // Shared schema→type maps for the email plugin (single source of truth for
-// module/service.ts + ui/). Facet schema_id → payload type; canonical key → value.
+// module/service.ts + ui/). Record schema_id → payload type; canonical key → value.
 
+/** One stored message record — the provider's dictionary MINUS what edges
+ * carry: the recipients are `sent_to`, the sender's address is `authored_by`,
+ * the attachments are `file.attachment`. `entities.ts` declares exactly this
+ * and the build proves the two are one type. */
 export interface EmailMessageDetails {
   message_id?: string;
   subject?: string | null;
   from_address?: string | null;
   from_name?: string | null;
-  to_addresses?: string | null;
-  cc_addresses?: string | null;
-  bcc_addresses?: string | null;
   snippet?: string | null;
   body_text?: string | null;
   body_html?: string | null;
@@ -21,7 +22,6 @@ export interface EmailMessageDetails {
   is_important?: boolean;
   has_attachments?: boolean;
   thread_id?: string;
-  attachments?: { filename: string; mime_type: string; size: number; path: string }[];
 }
 
 export interface EmailAddressDetails {
@@ -29,11 +29,7 @@ export interface EmailAddressDetails {
   display_name?: string | null;
 }
 
-/** Facet schema_id → payload type (parameterizes GraphService). */
-export interface EmailFacets {
-  "email.message.details": EmailMessageDetails;
-  "email.address.details": EmailAddressDetails;
-}
+/** Record schema_id → payload type (parameterizes GraphService). */
 
 /** Canonical key → value (parameterizes GraphService). */
 export interface EmailCanonical {
@@ -50,13 +46,6 @@ export interface EmailCanonical {
 // copies). These cross the RPC boundary, so they must stay structurally
 // identical to both sides.
 
-export interface FacetSummary {
-  id: string;
-  schema_id: string;
-  source: string;
-  observed_at: string;
-  data: unknown;
-}
 
 export interface LinkedEntitySummary {
   id: string;
@@ -88,7 +77,6 @@ export interface MessageDetailView {
   channel: string;
   timestamp: string;
   canonical: Record<string, unknown>;
-  facets: FacetSummary[];
   linked_entities: LinkedEntitySummary[];
   created_at: string;
   metadata?: Record<string, unknown> | null;
@@ -161,5 +149,13 @@ export interface EmailTriggerCheck {
   phase: "live";
   touched_entity_ids: string[];
   user_id: string;
-  context: { from_address: string | null; from_name: string | null; subject: string | null };
+  context: {
+    from_address: string | null;
+    from_name: string | null;
+    subject: string | null;
+    /** When the message itself happened (RFC3339). The trigger engine compares
+     *  it against the trigger's creation time so a delayed backfill cannot fire
+     *  a trigger that did not exist yet; absent means the engine fails closed. */
+    occurred_at: string | null;
+  };
 }

@@ -21,18 +21,27 @@ export type HeaderRow =
   | { type: "text"; label: string; value: string | null }
   | { type: "chips"; label: string; items: string[] };
 
+export interface CompanyLinkedEntity {
+  id: string;
+  name: string;
+  schema_id: string;
+  /** Incoming edges use the shared `~kind` convention. */
+  link_kind: string;
+}
+
 export interface CompanyDetailView extends CompanyListItem {
-  canonical: Partial<CompanyCanonical>;
-  facets: unknown[];
-  linked_entities: unknown[];
+  linked_entities: CompanyLinkedEntity[];
   members: string[];
   header_rows: HeaderRow[];
 }
 
 // ── schema → type maps that parameterise GraphService ──────────────
-// facet schema_id → payload shape
+// record schema_id → payload shape
+/** The company hub's DICTIONARY (S5). Named for the record it replaced; the
+ *  keys are the same, plus the curated collections the hub now owns. */
 export interface CompanyDetailsFacet {
   name?: string | null;
+  phones?: { phone: string; type: string | null; is_primary: boolean }[];
   description?: string | null;
   industry?: string | null;
   domain?: string | null;
@@ -44,21 +53,11 @@ export interface CompanyDetailsFacet {
   headcount?: number | null;
   funding_total?: string | null;
 }
-export interface CompanyFacets {
-  "companies.company.details": CompanyDetailsFacet;
-  "companies.company.email": { email: string; type?: string; is_primary?: boolean };
-  "companies.company.phone": { phone: string; type?: string; is_primary?: boolean };
-  "companies.company.external_link": {
-    source_type: string;
-    external_id: string;
-    external_url?: string;
-    external_name?: string;
-  };
-}
 
 // canonical key → value
 export interface CompanyCanonical {
   "companies.name": string;
+  "companies.description": string | null;
   "companies.website": string | null;
   "companies.industry": string | null;
   "companies.size": string | null;
@@ -85,7 +84,7 @@ export interface CreateParams {
 }
 
 /** Full enrichment patch for companies.update. Each undefined field is
- *  left untouched; provided fields are layered on as fresh facet
+ *  left untouched; provided fields are layered on as fresh record
  *  versions (single-aligned details / collection email+phone). */
 export interface UpdateParams {
   id: string;

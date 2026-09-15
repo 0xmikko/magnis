@@ -1,6 +1,6 @@
 import type { AvatarColor } from "../shared/types";
-import type { AgentMessage as CoreAgentMessage } from "@magnis/agent-core";
-export type { ChatMessageAttachment, EntityMention, EntitySearchResult, ChatMessage, ReplyToContext, UIContext, ToolCallEvent, ToolResultEvent, PendingToolCall, CompletedToolResult, ContentBlock, EpisodeState, AskUserOption, AskUserQuestion, AskUserTab, AskUserPayload, EpisodeListItem, EpisodeMessage, LinkedEntitySummary, EpisodeDetailView, AgentMessage, } from "@magnis/agent-core";
+import type { AgentMessage as CoreAgentMessage } from "@magnis/client-core";
+export type { ChatMessageAttachment, EntityMention, EntitySearchResult, ChatMessage, ReplyToContext, UIContext, ToolCallEvent, ToolResultEvent, PendingToolCall, CompletedToolResult, ContentBlock, AgentFailure, EpisodeState, AskUserOption, AskUserQuestion, AskUserTab, AskUserPayload, EpisodeListItem, EpisodeMessage, LinkedEntitySummary, EpisodeDetailView, AgentMessage, } from "@magnis/client-core";
 export interface AgentChat {
     readonly id: string;
     readonly title: string;
@@ -10,6 +10,8 @@ export interface AgentChat {
     readonly color?: AvatarColor;
     readonly icon?: string;
     readonly status?: string;
+    /** Separate from `status`, which now survives archiving. */
+    readonly isArchived?: boolean;
 }
 export interface AgentModuleData {
     readonly listTitle: string;

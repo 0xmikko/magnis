@@ -15,7 +15,7 @@
 # creds arrive per-call via `_meta`.)
 
 id = "telegram"
-version = "1.0.0"
+version = "1.0.1"
 title = "Telegram"
 summary = "Sync chats, groups, and contacts from Telegram."
 publisher = "ai.magnis"
@@ -39,3 +39,30 @@ minted = ["session"]
 
 [sync]
 mode = "push"
+
+[certification]
+disposition = "admissible"
+protocol = "magnis.source/1"
+authority = "module_sync"
+release_tier = "production"
+delivery = "push"
+server_info_version = "1.0.1"
+server_info_name = "magnis-telegram"
+runtime_kind = "custom"
+runtime_version = "1.0.1"
+advertised_tools = []
+callable_operations = ["initialize", "listen_start", "listen_stop", "magnis.auth.begin", "magnis.auth.revoke", "magnis.auth.step", "magnis.execute", "magnis.sync.fetch", "magnis.sync.listen", "tools/list"]
+scenario_ids = ["tst_cat_tg_gap_001", "tst_cat_tg_gap_002", "tst_cat_tg_gap_003", "tst_tgts_auth_001", "tst_tgts_auth_004", "tst_tgts_auth_012", "tst_tgts_boot_001", "tst_tgts_exec_001", "tst_tgts_flood_wire_002", "tst_tgts_fx_001", "tst_tgts_wire_004", "tst_tgts_wire_005", "tst_tgts_wire_012"]
+
+[certification.account_compatibility]
+auth = "phone_code"
+identity_rule = "verified_telegram_user_id"
+credential_keys = ["api_hash", "api_id", "session"]
+minted_credential_keys = ["session"]
+migrates_from = []
+
+[[certification.account_compatibility.surfaces]]
+name = "telegram"
+cursor_terminal_null = "retain"
+progress = { target = "per_identity_history", continuation = "opaque_cursor", forward_checkpoint = "opaque_cursor", coverage = "per_identity_range", live_fence = "subscription_ack" }
+receiver_interface_hash = "sha256:04cd915af1a9017a9becd9a3c947187cbdd8c1479d02e60cc6dbfa10d7b8359c"

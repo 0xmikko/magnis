@@ -42,6 +42,7 @@ const FAILED_PRECONDITION_BODY = JSON.stringify({
 function fullPerson(): GpeoplePerson {
   return {
     resourceName: "people/c12345",
+    etag: "%EgU0Aj0BNw==",
     names: [
       {
         displayName: "Mikhail Lazarev",
@@ -91,6 +92,17 @@ describe("people → contact conversion", () => {
     expect(stableContactId("people/c12345")).toBe(expected);
     // Deterministic across calls.
     expect(gpeoplePersonToContact(fullPerson())!.id).toBe(c.id);
+    // S3: resourceName + etag ride the payload VERBATIM — the replica's
+    // dictionary and the write-back base are built from them; the hashed id
+    // stays (the legacy probe reproduces old anchors from it).
+    expect(c.resource_name).toBe("people/c12345");
+    expect(c.etag).toBe("%EgU0Aj0BNw==");
+  });
+
+  test("tst_gts_gp_001b a person without an etag carries null, never a fake", () => {
+    const p = fullPerson();
+    delete (p as { etag?: string }).etag;
+    expect(gpeoplePersonToContact(p)!.etag).toBeNull();
   });
 
   test("tst_gts_gp_002 display_name falls back to given/family combos", () => {

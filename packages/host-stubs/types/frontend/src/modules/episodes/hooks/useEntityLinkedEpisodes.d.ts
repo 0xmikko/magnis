@@ -8,6 +8,7 @@ export interface EpisodeLinkSummary {
     readonly episode_id: string;
     readonly title: string;
     readonly status: string;
+    readonly is_archived: boolean;
     readonly link_kinds: readonly string[];
     readonly updated_at: string;
     readonly is_empty: boolean;

@@ -23,7 +23,7 @@ things, because they run in different places for different reasons.
 ### Module — a V8 isolate inside the backend
 
 A module owns a slice of the graph: it registers schemas, reads and writes
-entities/facets, and draws UI. The host loads its bundled code into a
+entities and their dictionaries, and draws UI. The host loads its bundled code into a
 **restricted V8 isolate in-process**. The isolate has **no ambient I/O** — no
 sockets, no filesystem, no stdio. Every graph operation goes through the host by
 RPC. That restriction is the point: a module cannot touch the outside world, so
@@ -104,7 +104,7 @@ To create a conforming module, produce exactly this. Each step is a MUST unless
 marked optional.
 
 1. **`manifest.toml`** — declare the contract: `entry.module = "module/index.ts"`,
-   `entry.ui` (optional), `[schemas]` (every entity + facet the module owns),
+   `entry.ui` (optional), `[schemas]` (every entity the module owns),
    capabilities, surfaces. The manifest is the source of truth for registration.
 2. **`types.ts`** (root) — the module's shared shapes. One predictable address;
    no `types/index.ts` single-file folder.
@@ -136,7 +136,7 @@ synthesizes it.
 
 A `lifecycle/` folder appears only for:
 1. **Partial registration** — enable a subset of manifest schemas
-   (`ctx.register({ facets: [...] })`).
+   (`ctx.register({ entities: [...] })`).
 2. **A data migration** — a new version changed the schema and rows already in
    the graph must be transformed (`defineMigration` / a `MigrationStep`).
 

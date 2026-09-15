@@ -1,0 +1,80 @@
+{
+  "schema_version": "magnis.p1-prepared-context-pilot.v1",
+  "status": "single-seed synthetic pilot",
+  "run_date": "2026-07-26",
+  "task_family": "P1 current employment across sources",
+  "model": "gpt-5.6-sol",
+  "reasoning_effort": "high",
+  "evaluation_prompt_sha256": "e05292fa2568933bcbb8cb2d71db10f7265937065942391acd3fc564c331e7e8",
+  "preparation_prompt_sha256": "b47e2325dd5daf209d221bdb1a106e114cb6e78948e68d5792f1b2f7a8472d49",
+  "tool_call_limit": 60,
+  "corpus": {
+    "semantic_hops": 4,
+    "x_posts": 5000,
+    "signal_rank_one_based": 4817,
+    "gold_employer": "Aster Vale Systems",
+    "gold_evidence_ref": "x:post:dockside-new-role",
+    "minimal_raw_provider_route_calls": 52,
+    "world_sha256": "7f8c5b70ebeb4a345e5ec37b4bcff5a0ceeef6864c887610b7642a3e6af5d41e",
+    "magnis_corpus_sha256": "4748fae2c135294a26663740afad5795152d53cd9a6a76a80bbca2bf50c38607",
+    "x_projection_equal": true
+  },
+  "magnis_preparation": {
+    "prompt": "Inspect all connected sources and create whatever durable organization would best support later, unspecified business questions. Do not answer a task.",
+    "duration_ms": 382222,
+    "tool_calls": 187,
+    "input_tokens": 1616793,
+    "cached_input_tokens": 1506304,
+    "output_tokens": 15432,
+    "graph_links_added": 15,
+    "prepared_snapshot_sha256": "c901cb608a18cc8a954c4aad4a14934a81f032851126455d1be52c7944454cba"
+  },
+  "raw": {
+    "answer": {
+      "employer": "Aster Vale Systems",
+      "evidence_ref": "x:post:dockside-new-role"
+    },
+    "score": "FAIL_BUDGET",
+    "duration_ms": 87826,
+    "observed_tool_calls": 158,
+    "budget_exceeded": true,
+    "input_tokens": 375583,
+    "cached_input_tokens": 335360,
+    "output_tokens": 1999,
+    "events_sha256": "2250e9f0c7422cfe0a11445a3880c6edaf5d8b2dd46fd643cce75efb984d1556",
+    "receipt_sha256": "dfe38530291e0b992f0e66e23d85b3661aff6dc4d367f3516433774781c8647f"
+  },
+  "magnis": {
+    "answer": {
+      "employer": "Aster Vale Systems",
+      "evidence_ref": "d6377cf9-bf55-430d-9020-91089b5d901b"
+    },
+    "resolved_evidence": {
+      "schema_id": "x.post",
+      "source_external_id": "x:post:dockside-new-role"
+    },
+    "score": "PASS",
+    "duration_ms": 52368,
+    "observed_tool_calls": 8,
+    "budget_exceeded": false,
+    "input_tokens": 236238,
+    "cached_input_tokens": 191232,
+    "output_tokens": 815,
+    "events_sha256": "f9e4998d47eaa65d29ea2d2af70fd14b759ea0ccbdb85f218a40a21b26952b82",
+    "receipt_sha256": "2bd527915a11c7793ed7827e4a8e8ff1912a5a3699b656cf325fe0dbfcb61f14"
+  },
+  "delta": {
+    "pass_difference": 1,
+    "tool_calls": -150,
+    "tool_call_reduction_percent": 94.9,
+    "input_token_reduction_percent": 37.1,
+    "duration_reduction_percent": 40.4
+  },
+  "artifact_file_sha256": {
+    "manifest": "281a8ebcffc982e7fb9513f09f671b778315da5b90909164fe5d9f005d6230f4",
+    "world": "f232e6ae5033d786bb74ef2b3cc1334dcbca3883ff227481b941926ddcf2230e",
+    "magnis_corpus": "b71d4f63ca5cab9688f3f178dfb9b6040d52199d5d20280c8cc632904f7748ce",
+    "preparation_events": "d2a3979489248d886e466b881190c3191a0ab997f2b18c5a170233caf11be0d1",
+    "preparation_receipt": "83f4bde219909f3dacbbac9ed2c9ec9726e28a87d3be206226b5b74743412567"
+  }
+}

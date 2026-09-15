@@ -3,8 +3,6 @@
 // byte-identical to the real `telegram` connector. Ported 1:1 from the Rust
 // `build_chat` / `build_message`.
 
-import { readItems, SURFACE } from "./store";
-
 type Json = Record<string, unknown>;
 
 function int(v: unknown): number | undefined {
@@ -37,7 +35,7 @@ export function buildChat(req: Json): { payload: Json; remoteId: string } | null
     entity_type: "telegram_chat",
     chat_id: chatId,
     title: rawTitle === "" ? `Chat ${String(chatId)}` : rawTitle,
-    type: str(req.type) ?? "private",
+    type: str(req.chat_type) ?? "private",
     is_pinned: bool(req.is_pinned, false),
     // Rust reads pin_order as u64 (negatives fall back to 0), the rest as i64.
     pin_order: typeof req.pin_order === "number" && Number.isInteger(req.pin_order) && req.pin_order >= 0 ? req.pin_order : 0,
@@ -63,7 +61,8 @@ export function buildChat(req: Json): { payload: Json; remoteId: string } | null
 export function buildMessage(req: Json): { payload: Json; remoteId: string } | null {
   const chatId = int(req.chat_id);
   if (chatId === undefined) return null;
-  const messageId = int(req.message_id) ?? readItems(SURFACE).length + 1;
+  const messageId = int(req.message_id);
+  if (messageId === undefined) return null;
   const payload: Json = {
     message_id: messageId,
     chat_id: chatId,
@@ -77,7 +76,7 @@ export function buildMessage(req: Json): { payload: Json; remoteId: string } | n
   if (senderName !== undefined) payload.sender_name = senderName;
   const senderId = int(req.sender_id);
   if (senderId !== undefined) payload.sender_id = senderId;
-  const replyTo = int(req.reply_to_msg_id);
+  const replyTo = int(req.reply_to_message_id);
   if (replyTo !== undefined) payload.reply_to_msg_id = replyTo;
   return { payload, remoteId: messageRemoteId(chatId, messageId) };
 }

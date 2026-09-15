@@ -1,5 +1,6 @@
 import { Icon } from "@magnis/host/ui";
 import { defineModule } from "@magnis/host/base";
+import type { AppRuntime } from "@magnis/host/runtime";
 import { ContactCard, contactHasMore } from "./EntityCards";
 import { ContactBatchCreateRenderer } from "./ContactBatchCreateRenderer";
 import { ContactCreateRenderer } from "./ContactCreateRenderer";
@@ -13,6 +14,18 @@ export const MOCK_TAGS: readonly string[] = [
   "Berlin Tech",
 ];
 
+export async function createContactFromHeader(
+  runtime: AppRuntime,
+  onCreated: (id: string) => void,
+): Promise<void> {
+  // @tested-by: tst_fe_contacts_browser_001
+  const result = await runtime.transport.rpc<{ id: string }>("contacts.create", {
+    name: "New Contact",
+    client_id: crypto.randomUUID(),
+  });
+  onCreated(result.id);
+}
+
 export const ContactsModule = defineModule({
   id: "contacts",
   title: "Contacts",
@@ -24,6 +37,10 @@ export const ContactsModule = defineModule({
   entityLabels: { person: { icon: "user", label: "Contact" } },
   rpc: { update: "contacts.update" },
   enableListRename: true,
+  headerActionIcon: "plus",
+  onHeaderAction: (runtime, onCreated) => {
+    void createContactFromHeader(runtime, onCreated);
+  },
   EntityCard: ContactCard,
   hasMore: contactHasMore,
   DetailsTabContent: ContactOverview,
@@ -46,6 +63,35 @@ export const ContactsModule = defineModule({
       Render: ContactMergePreviewSilent as never,
     },
   ],
+  extractAllowlistTarget: (toolCall) => {
+    const aliases: Readonly<Record<string, string>> = {
+      "contacts.create": "contacts.create",
+      contacts_create: "contacts.create",
+      "contact.create": "contacts.create",
+      contact_create: "contacts.create",
+      "contacts.batch_create": "contacts.batch_create",
+      contacts_batch_create: "contacts.batch_create",
+      "contact.batch_create": "contacts.batch_create",
+      contact_batch_create: "contacts.batch_create",
+      "contacts.merge": "contacts.merge",
+      contacts_merge: "contacts.merge",
+      "contact.merge": "contacts.merge",
+      contact_merge: "contacts.merge",
+    };
+    const action = aliases[toolCall.name];
+    if (!action) return null;
+    const labels: Readonly<Record<string, string>> = {
+      "contacts.create": "Create contact",
+      "contacts.batch_create": "Create contacts",
+      "contacts.merge": "Merge contacts",
+    };
+    return {
+      action,
+      targetType: "tool_action",
+      targetId: action,
+      targetLabel: labels[action],
+    };
+  },
   groupBy: "letter",
   getGroupLetter: (item) => item.name?.[0]?.toUpperCase() ?? "#",
   mapListItem: (raw) => ({

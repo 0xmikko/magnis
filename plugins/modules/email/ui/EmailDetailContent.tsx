@@ -8,12 +8,10 @@ import {
   Text,
 } from "@magnis/host/ui";
 import type { EmailDetailData } from "./types";
-import type { LinkedEntitySummary } from "@magnis/host/base";
 import { formatFileSize } from "@magnis/host/utils";
 
 export interface EmailDetailContentProps {
   readonly detail: EmailDetailData | undefined;
-  readonly linkedEntities?: readonly LinkedEntitySummary[];
 }
 
 /** Returns true when the HTML is a rich/designed email (tables, inline styles, multiple divs).
@@ -106,7 +104,7 @@ function HtmlEmailFrame({ html, dark }: { html: string; dark: boolean }): JSX.El
   );
 }
 
-export function EmailDetailContent({ detail, linkedEntities }: EmailDetailContentProps): JSX.Element {
+export function EmailDetailContent({ detail }: EmailDetailContentProps): JSX.Element {
   const hasHtml = !!detail?.bodyHtml;
   const rich = hasHtml && detail.bodyHtml ? isRichHtml(detail.bodyHtml) : false;
 
@@ -132,17 +130,14 @@ export function EmailDetailContent({ detail, linkedEntities }: EmailDetailConten
                 Attachments ({detail.attachments.length})
               </Text>
               {detail.attachments.map((att) => {
-                const linkedFile = linkedEntities?.find(
-                  (le) => le.link_kind === "attachment" && le.name === att.filename,
-                );
-                const href = linkedFile
-                  ? `/#/file/object/${linkedFile.id}`
-                  : att.path;
+                // S5: the attachment IS the edge's file node — the row links to
+                // it directly instead of matching a copied filename.
+                const href = att.id ? `/#/file/object/${att.id}` : att.path;
                 return (
                   <a
-                    key={att.path || att.filename}
+                    key={att.id ?? att.filename}
                     href={href}
-                    {...(linkedFile ? {} : { target: "_blank", rel: "noopener noreferrer" })}
+                    {...(att.id ? {} : { target: "_blank", rel: "noopener noreferrer" })}
                     className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors no-underline cursor-pointer"
                     data-testid={`attachment-link-${att.filename}`}
                   >

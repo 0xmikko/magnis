@@ -214,3 +214,90 @@ describe("S1.4 magnis.execute", () => {
     expect((bad as any).error.code).toBe(-32601);
   });
 });
+
+describe("dataset actions", () => {
+  it("tst_sdk_dataset_001 dispatches opaque invocation metadata and returns live envelopes", async () => {
+    const cfg = base({
+      datasetActions: {
+        emit_message: async (args) => ({
+          envelopes: [
+            {
+              surface: "fx",
+              remote_id: `dataset:${args.invocation_id}:0`,
+              kind: "live",
+              payload: {
+                ...args.payload,
+                mailbox: args.settings.mailbox,
+                action_time: args.action_time,
+              },
+            },
+          ],
+        }),
+      },
+    });
+    const reply = await handleMessage(
+      {
+        id: 30,
+        method: "tools/call",
+        params: {
+          name: "magnis.dataset.invoke",
+          arguments: {
+            action: "emit_message",
+            invocation_id: "inv-1",
+            action_time: "2026-08-05T10:00:00Z",
+            settings: { mailbox: "primary" },
+            payload: { text: "hello" },
+          },
+        },
+      },
+      cfg,
+    );
+    expect(reply).toMatchObject({
+      result: {
+        envelopes: [
+          {
+            surface: "fx",
+            remote_id: "dataset:inv-1:0",
+            kind: "live",
+            payload: {
+              text: "hello",
+              mailbox: "primary",
+              action_time: "2026-08-05T10:00:00Z",
+            },
+          },
+        ],
+      },
+    });
+  });
+
+  it("tst_sdk_dataset_002 rejects undeclared and malformed invocations", async () => {
+    const cfg = base({ datasetActions: { known: async () => ({ envelopes: [] }) } });
+    const unknown = await handleMessage(
+      {
+        id: 31,
+        method: "tools/call",
+        params: {
+          name: "magnis.dataset.invoke",
+          arguments: {
+            action: "missing",
+            invocation_id: "i",
+            action_time: "t",
+            settings: {},
+            payload: {},
+          },
+        },
+      },
+      cfg,
+    );
+    expect(unknown).toMatchObject({ error: { code: -32601 } });
+    const malformed = await handleMessage(
+      {
+        id: 32,
+        method: "tools/call",
+        params: { name: "magnis.dataset.invoke", arguments: { action: "known" } },
+      },
+      cfg,
+    );
+    expect(malformed).toMatchObject({ error: { code: -32602 } });
+  });
+});

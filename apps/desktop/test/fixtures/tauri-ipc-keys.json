@@ -1,0 +1,5 @@
+{
+  "_why": "The desktop IPC boundary is unchecked across the Rust/TypeScript wire. This public fixture freezes the keys the public shell emits.",
+  "BackendConfig": ["baseUrl"],
+  "WorkspaceSeed": ["id", "url", "source"]
+}

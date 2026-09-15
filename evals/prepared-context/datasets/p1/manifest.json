@@ -1,0 +1,13 @@
+{
+  "schema_version": "magnis.p1-depth-manifest.v1",
+  "semantic_hops": 4,
+  "x_post_count": 5000,
+  "signal_index_zero_based": 4816,
+  "signal_rank_one_based": 4817,
+  "evidence_ref": "x:post:dockside-new-role",
+  "minimal_provider_calls": 52,
+  "evaluation_tool_call_limit": 60,
+  "world_sha256": "7f8c5b70ebeb4a345e5ec37b4bcff5a0ceeef6864c887610b7642a3e6af5d41e",
+  "magnis_corpus_sha256": "4748fae2c135294a26663740afad5795152d53cd9a6a76a80bbca2bf50c38607",
+  "x_projection_equal": true
+}

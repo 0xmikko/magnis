@@ -5,7 +5,7 @@ stays generic — it knows nothing about "contacts" or "email"; every domain shi
 as a plugin that declares its schemas, exposes tools, and (for a module) draws
 its own UI. There are two kinds:
 
-- **Module** — owns a slice of the graph: it registers entity/facet schemas,
+- **Module** — owns a slice of the graph: it registers entity schemas,
   reads and writes them, exposes tools to the agent and UI, and draws the
   frontend. → [module.md](./module.md)
 - **Source** — connects to an external service (Gmail, X, Telegram) and streams

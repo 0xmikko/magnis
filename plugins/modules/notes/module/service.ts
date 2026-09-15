@@ -5,7 +5,8 @@
 // NOT user-scoped); `list`/`search` rely instead on the host's already
 // user-scoped `list_entities_window` / `search_entities_by_name` ops.
 
-import { tool, writeTool, type GraphService, type PluginDeps } from "@magnis/plugin-sdk";
+import { tool, writeTool, type GraphService, errText,
+  type PluginDeps, type PluginLogger } from "@magnis/plugin-sdk";
 import type { EntityDetail, PaginatedResponse, RawEntity, WindowRow } from "@magnis/plugin-sdk";
 import type {
   ContentData,
@@ -15,20 +16,38 @@ import type {
   LinkedEntitySummary,
   NoteCanonical,
   NoteDetailView,
-  NoteFacets,
   NoteListItem,
   NoteSnapshot,
   NotesListParams,
   TemplateApplyParams,
   UpdateParams,
 } from "../types.ts";
-import { NOTE, NOTE_CONTENT } from "../schema.ts";
+import { NOTE } from "../schema.ts";
 import { isValidUuid, previewFromBody, renderTemplate } from "./helpers.ts";
+import { BODY_ONE_OF, resolveBody, resolveUpdateBody } from "../ui/toolArgs.ts";
 
 export class NotesModule {
-  private readonly graph: GraphService<NoteFacets, NoteCanonical>;
-  constructor(deps: PluginDeps<NoteFacets, NoteCanonical>) {
+  private readonly graph: GraphService;
+  private readonly log: PluginLogger;
+  constructor(deps: PluginDeps) {
     this.graph = deps.graph;
+    this.log = deps.log;
+  }
+
+  /// DEC-7/INV-22: a compensated write is an operational branch, so it reports
+  /// itself. Kept per-module rather than shared — see the note in the triggers
+  /// module; the earlier "crosses a repo boundary" justification was wrong.
+  private async logFailure(
+    decision: string,
+    entityId: string,
+    reason: unknown,
+    rollbackReason?: unknown,
+  ): Promise<void> {
+    await this.log.log("warn", decision, {
+      entity_id: entityId,
+      reason: errText(reason),
+      ...(rollbackReason === undefined ? {} : { rollback_reason: errText(rollbackReason) }),
+    });
   }
 
   @tool("list", {
@@ -50,7 +69,7 @@ export class NotesModule {
 
     if (search) {
       // Search path: name match returns ids only; hydrate ONLY the page in TWO
-      // batch reads — facets (preview/body) AND canonical (pinned/updated_at/
+      // batch reads — records (preview/body) AND canonical (pinned/updated_at/
       // title), so the item stays byte-identical to the old per-row build while
       // dropping the 2N+1 N+1.
       const all = await this.graph.search_entities_by_name({
@@ -60,36 +79,22 @@ export class NotesModule {
       });
       const total = all.length;
       const page = all.slice(offset, offset + limit);
-      const ids = page.map((e) => e.id);
-      const facets = await this.graph.list_facets_for_entities(ids);
-      const canon = await this.graph.list_canonical_for_entities(ids);
-      const dataById = new Map<string, ContentData>();
-      for (const f of facets) {
-        if (f.schema_id === NOTE_CONTENT && f.entity_id && !dataById.has(f.entity_id)) {
-          dataById.set(f.entity_id, (f.data ?? {}));
-        }
-      }
-      const canonById = new Map<string, Partial<NoteCanonical>>();
-      for (const c of canon) {
-        if (!c.entity_id) continue;
-        const m = (canonById.get(c.entity_id) ?? {}) as Record<string, unknown>;
-        m[c.key] = c.value;
-        canonById.set(c.entity_id, m);
-      }
+      // S1: the dictionary rides the entity — the record and canonical batch
+      // reads (two round-trips per page) are gone.
       const items = page.map((e) =>
-        this.listItemFromParts(e, dataById.get(e.id) ?? {}, canonById.get(e.id) ?? {}),
+        this.listItemFromParts(e, (e.properties ?? {}) as ContentData, {}),
       );
       return { items, total, limit, offset };
     }
 
-    // No search: windowed list ordered by the content facet's `updated_at`
-    // (most-recently-edited first), with the body facet inline for the preview
-    // and the exact total — one statement. This also stands in for the dropped
-    // native `update_entity_date` recency (no such SDK op).
+    // No search: windowed list ordered by the dictionary's `updated_at`
+    // (most-recently-edited first) — S1 moved note state into
+    // `entity.properties`, and an order key on the frozen record would never
+    // see an edit again. Preview renders from the same dictionary; no record
+    // is read.
     const win = await this.graph.list_entities_window({
       schema: NOTE,
-      facet_schema: NOTE_CONTENT,
-      order: [{ field: { facet_schema: NOTE_CONTENT, facet_path: "updated_at" }, desc: true }],
+      order: [{ field: { property_path: "updated_at" }, desc: true }],
       limit,
       offset,
     });
@@ -116,8 +121,11 @@ export class NotesModule {
     }
     const e = detail.entity;
     const data = this.contentOf(detail);
-    const canonical = await this.graph.get_canonical(e.id, [NOTE]);
-    const pinned = (canonical["note.pinned"] as boolean | null) ?? data.pinned ?? false;
+    // S6: the note's dictionary is the record — nothing resolves into
+    // canonical any more, and the DTO keeps the field only until the wire
+    // shape drops it.
+    const canonical = {};
+    const pinned = data.pinned ?? false;
 
     // Resolve link neighbours via ONE get_entities batch (user-scoped →
     // drops non-owned targets, same visibility rule as the old per-link
@@ -147,14 +155,13 @@ export class NotesModule {
     return {
       id: e.id,
       schema_id: e.schema_id,
-      title: this.titleOf(e, data, canonical),
+      title: this.titleOf(e, data),
       body: data.body ?? null,
       pinned,
       canonical,
-      facets: detail.facets,
       linked_entities: linked,
       created_at: e.created_at ?? new Date(0).toISOString(),
-      updated_at: data.updated_at ?? (canonical["note.updated_at"] as string | null) ?? null,
+      updated_at: data.updated_at ?? null,
     };
   }
 
@@ -165,13 +172,18 @@ export class NotesModule {
       properties: {
         title: { type: "string", description: "Note title" },
         body: { type: "string", description: "Markdown content" },
+        content: {
+          type: "string",
+          description: "Markdown content — MCP-compatible alias for `body`. Supply one, not both.",
+        },
         client_id: {
           type: "string",
           format: "uuid",
           description: "Client-generated UUID for optimistic / idempotent create",
         },
       },
-      required: ["title", "body"],
+      required: ["title"],
+      oneOf: BODY_ONE_OF,
       additionalProperties: false,
     },
   })
@@ -185,24 +197,52 @@ export class NotesModule {
       // Idempotent only against an existing NOTE. A client_id colliding with a
       // non-note entity is not a note hit — fall through; create_entity will
       // Conflict on the id rather than return a fake note snapshot.
-      const existing = await this.graph.get_entity_full(params.client_id, { links: false });
-      if (existing?.entity.schema_id === NOTE) {
+      // @tested-by: tst_module_notes_identity_001
+      const existingEntity = await this.graph.get_entity(params.client_id);
+      if (existingEntity?.schema_id === NOTE) {
+        const existing = await this.graph.get_entity_full(params.client_id, { links: false });
+        if (!existing) {
+          throw new Error(`existing note ${params.client_id} has no detail snapshot`);
+        }
         return this.snapshotFromDetail(existing);
       }
     }
 
+    // @tested-by: tst_module_notes_write_001
+    // @invariant: INV-1 — exactly one of `body`/`content`, non-blank. Resolved
+    // AFTER the client_id short-circuit above: an idempotent retry returns the
+    // EXISTING note and must not be forced to resend the body it already stored.
+    const body = resolveBody(params);
     const now = new Date().toISOString();
     // Store the body verbatim. We deliberately do NOT inject a `# ${title}`
     // heading for empty notes (the native file-era default): the title lives in
     // its own field, so a body heading only duplicates it and goes stale on
     // rename (old title left visible in the body).
-    const body = params.body;
     const entity = await this.graph.create_entity({
       schema_id: NOTE,
       name: params.title,
       client_id: params.client_id,
     });
-    await this.writeContent(entity.id, params.title, body, now);
+    // @tested-by: tst_module_notes_write_001
+    // @invariant: INV-2 — create is externally atomic. A failed content write
+    // must not leave a title-only note in the user's graph; that orphan is what
+    // rendered as "an empty note appeared and everything broke".
+    try {
+      await this.writeContent(entity.id, params.title, body, now);
+    } catch (writeError) {
+      try {
+        await this.graph.delete_entity(entity.id);
+      } catch (rollbackError) {
+        await this.logFailure("note create rollback failed", entity.id, writeError, rollbackError);
+        throw new Error(
+          `note content write and rollback both failed for ${entity.id}: ` +
+            `write=${errText(writeError)}; rollback=${errText(rollbackError)}`,
+          { cause: rollbackError },
+        );
+      }
+      await this.logFailure("note create rolled back", entity.id, writeError);
+      throw writeError;
+    }
 
     return { id: entity.id, schema_id: NOTE, title: params.title, body, updated_at: now };
   }
@@ -216,6 +256,10 @@ export class NotesModule {
         id: { type: "string", format: "uuid", description: "Entity ID of the note" },
         title: { type: "string", description: "New title (optional)" },
         body: { type: "string", description: "New markdown body (optional)" },
+        content: {
+          type: "string",
+          description: "New markdown body — MCP alias for `body`. Supply one, not both.",
+        },
       },
       required: ["id"],
       additionalProperties: false,
@@ -228,15 +272,45 @@ export class NotesModule {
     }
     const e = detail.entity;
     const data = this.contentOf(detail);
-    const currentTitle = this.titleOf(e, data, {});
+    const currentTitle = this.titleOf(e, data);
     const newTitle = params.title ?? currentTitle;
-    const newBody = params.body ?? data.body ?? "";
+    const newBody = resolveUpdateBody(params) ?? data.body ?? "";
     const now = new Date().toISOString();
+    // @tested-by: tst_module_notes_write_004
+    // @invariant: INV-25 — the compensation must restore the note as it WAS,
+    // including its timestamp. Rewriting it with `now` changed `updated_at`,
+    // which reorders the note in the list (ordered by that very field), so a
+    // failed update still moved it.
+    const previousUpdatedAt = data.updated_at ?? now;
 
-    if (params.title !== undefined && newTitle !== currentTitle) {
-      await this.graph.update_entity_name(params.id, newTitle);
-    }
+    // @tested-by: tst_module_notes_write_002
+    // @invariant: INV-25 — content first, then the rename. The old order left a
+    // note renamed for content it never received when the record write failed.
+    // If the rename then fails, the prior content is restored so neither half
+    // is applied alone.
     await this.writeContent(params.id, newTitle, newBody, now);
+    if (params.title !== undefined && newTitle !== currentTitle) {
+      try {
+        await this.graph.update_entity_name(params.id, newTitle);
+      } catch (renameError) {
+        try {
+          await this.writeContent(params.id, currentTitle, data.body ?? "", previousUpdatedAt);
+        } catch (rollbackError) {
+          // The host serialises a thrown error as `String(e.stack)`
+          // (magnis-app backend/src/plugin_runtime/lifecycle.rs) and a stack
+          // carries neither `.errors` nor `.cause`, so an AggregateError here
+          // reached the operator naming NEITHER failure.
+          await this.logFailure("note rename rollback failed", params.id, renameError, rollbackError);
+          throw new Error(
+            `note rename and content rollback both failed for ${params.id}: ` +
+              `rename=${errText(renameError)}; rollback=${errText(rollbackError)}`,
+            { cause: rollbackError },
+          );
+        }
+        await this.logFailure("note rename rolled back", params.id, renameError);
+        throw renameError;
+      }
+    }
 
     // Full snapshot so the chat surface renders without a lazy fetch.
     return { id: params.id, schema_id: NOTE, title: newTitle, body: newBody, updated_at: now };
@@ -285,7 +359,7 @@ export class NotesModule {
 
   // ── private helpers ──────────────────────────────────────────────
 
-  /// Attach a fresh `notes.note.content` facet and re-derive canonicals.
+  /// Attach a fresh `notes.note.content` record and re-derive canonicals.
   /// `pinned` is always written false (native parity — pinning is a separate
   /// `graph.entity.pin` op, not part of the note body write).
   private async writeContent(
@@ -294,35 +368,38 @@ export class NotesModule {
     body: string,
     updatedAt: string,
   ): Promise<void> {
-    await this.graph.attach_facet({
+    // S1 (canonical-graph-structure): the note's state is the node's
+    // dictionary. One write, no canonical resolution pass, and an edit stops
+    // being an accidental collection (the record path appended a row per save).
+    await this.graph.update_properties({
       entity_id: entityId,
-      schema_id: NOTE_CONTENT,
-      data: { title, body, pinned: false, updated_at: updatedAt },
+      properties: { title, body, pinned: false, updated_at: updatedAt },
     });
-    await this.graph.resolve_canonical(entityId);
   }
 
   private contentOf(detail: EntityDetail): ContentData {
-    const content = detail.facets.find((f) => f.schema_id === NOTE_CONTENT);
-    return (content?.data ?? {});
+    // S1: the dictionary IS the state; the frozen retired archive is not read.
+    return (detail.entity.properties ?? {});
   }
 
-  private titleOf(e: RawEntity, data: ContentData, canonical: Partial<NoteCanonical>): string {
+  private titleOf(e: RawEntity, data: ContentData): string {
     if (e.name && e.name.length > 0) return e.name;
     if (data.title && data.title.length > 0) return data.title;
-    const ct = canonical["note.title"];
-    if (typeof ct === "string" && ct.length > 0) return ct;
     return "Untitled";
   }
 
   private listItemFromWindow(row: WindowRow): NoteListItem {
-    // No-search path: the window inlines the latest content facet only; canonical
-    // is not consulted (its keys are latest-wins from this same facet).
-    return this.listItemFromParts(row.entity, (row.data ?? {}), {});
+    // S1: the dictionary rides the window's entity; the inlined render record
+    // is the frozen archive and is not read.
+    return this.listItemFromParts(
+      row.entity,
+      ((row.entity).properties ?? {}),
+      {},
+    );
   }
 
-  // Pure list-item shaping from an entity + its content facet data + its
-  // canonical map. The search path passes batch-fetched facets + canonical so it
+  // Pure list-item shaping from an entity + its content record data + its
+  // canonical map. The search path passes batch-fetched records + canonical so it
   // stays byte-identical to the old per-row build; the window path passes `{}`
   // canonical. No graph access.
   private listItemFromParts(
@@ -333,11 +410,11 @@ export class NotesModule {
     return {
       id: e.id,
       schema_id: e.schema_id,
-      title: this.titleOf(e, data, canonical),
+      title: this.titleOf(e, data),
       preview: previewFromBody(data.body ?? ""),
       pinned: (canonical["note.pinned"] as boolean | null) ?? data.pinned ?? false,
       created_at: e.created_at ?? new Date(0).toISOString(),
-      updated_at: data.updated_at ?? (canonical["note.updated_at"] as string | null) ?? null,
+      updated_at: data.updated_at ?? null,
       is_pinned: e.is_pinned ?? null,
     };
   }
@@ -348,7 +425,7 @@ export class NotesModule {
     return {
       id: e.id,
       schema_id: NOTE,
-      title: this.titleOf(e, data, {}),
+      title: this.titleOf(e, data),
       body: data.body ?? "",
       updated_at: data.updated_at ?? e.created_at ?? new Date(0).toISOString(),
     };

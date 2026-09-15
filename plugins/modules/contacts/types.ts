@@ -2,7 +2,6 @@
 // consumes. Mirrors the legacy Rust contacts ContactListItem /
 // ContactDetailView 1:1.
 
-import type { FacetRecord } from "@magnis/plugin-sdk";
 
 export interface ContactListItem {
   id: string;
@@ -41,28 +40,26 @@ export interface ContactDetailView {
   avatar_color: string;
   initials: string;
   canonical: Partial<ContactCanonical>;
-  facets: FacetRecord[];
   linked_entities: LinkedEntitySummary[];
   created_at: string;
+  /** S3 (§5.1): the composed card — the hub's curated dictionary. */
+  curated: Record<string, unknown>;
+  /** Composed emails: the shared email.address nodes one identity hop away. */
+  emails: { id: string; address: string }[];
+  /** Composed phones: hub phones[] ∪ replica phones, deduped by normalised
+   * value, labeled by origin ("curated" | source id). */
+  phones: { phone: string; type?: string | null; origin: string }[];
+  /** Source claims: the replica dictionaries one identity hop away, each
+   * labeled by its schema (contacts.google_contact, …). */
+  replicas: { id: string; schema_id: string; name: string | null; properties: Record<string, unknown> }[];
 }
 
 // ── schema → type maps that parameterise GraphService ──────────────
 // Payloads mirror the native contacts handler exactly
 // (contacts/controller.rs:99,114,130 + schemas.rs).
-export interface ContactFacets {
-  "contacts.person.profile": {
-    first_name?: string;
-    last_name?: string;
-    username?: string;
-    relevance_tier?: string;
-  };
-  "contacts.person.email": { email: string; is_primary?: boolean; type?: string };
-  "contacts.person.phone": { phone: string; is_primary?: boolean; type?: string };
-  "contacts.person.social": SocialTracking;
-}
 
-// contacts.person.social facet: per-person opt-in for social tracking.
-// `contacts` OWNS this facet; the `social` plugin soft-reads it, and the sync
+// contacts.person.social record: per-person opt-in for social tracking.
+// `contacts` OWNS this record; the `social` plugin soft-reads it, and the sync
 // scheduler builds the tracked-handle set from it. One handle per
 // platform per person; handles are stored bare (no leading `@`).
 export interface SocialTracking {
@@ -179,7 +176,7 @@ export interface MergePreviewParams {
 export interface MergeParams {
   survivor_id: string;
   retired_id: string;
-  overrides?: { canonical_key: string; value: unknown }[];
+  overrides?: { key: string; value: unknown }[];
   reason?: string;
 }
 
@@ -251,6 +248,36 @@ export interface ContactsSyncEnvelope {
   timestamp?: string;
 }
 
+/** One stored hub record — the curated claims the module writes onto a person,
+ * plus the name parts its merge path reads back out of the dictionary.
+ * `entities.ts` declares exactly this and the build proves the two are one
+ * type. Profile facts are NOT here: they live on the replicas the hub reaches
+ * over `identity`. */
+export interface PersonDetails {
+  description?: string | null;
+  role?: string | null;
+  company?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  phones?: { phone: string; type: string | null; is_primary: boolean }[];
+  tracking?: { platform: "x" | "linkedin"; handle?: string | null; enabled: boolean }[];
+}
+
+/** One stored replica record — exactly what `replicaDict` writes. The payload
+ * type above it is the connector's INPUT; this is what lands in the graph. */
+export interface GoogleContactRecord {
+  resource_name?: string;
+  etag?: string;
+  display_name?: string;
+  given_name?: string;
+  family_name?: string;
+  emails?: GoogleContactEmail[];
+  phones?: GoogleContactPhone[];
+  organizations?: { name?: string | null; title?: string | null; is_current?: boolean }[];
+  photo_url?: string;
+  external_url?: string;
+}
+
 export interface GoogleContactEmail {
   address?: string;
   label?: string | null;
@@ -263,10 +290,16 @@ export interface GoogleContactPhone {
 }
 export interface GoogleContactPayload {
   id?: string;
+  /** S3: verbatim People API identity — the replica's write-back base. */
+  resource_name?: string | null;
+  /** S3: verbatim optimistic-concurrency tag. */
+  etag?: string | null;
   display_name?: string | null;
   given_name?: string | null;
   family_name?: string | null;
   emails?: GoogleContactEmail[];
   phones?: GoogleContactPhone[];
+  organizations?: { name?: string | null; title?: string | null; is_current?: boolean }[];
+  photo_url?: string | null;
   external_url?: string | null;
 }

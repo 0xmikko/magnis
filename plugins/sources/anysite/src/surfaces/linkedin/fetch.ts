@@ -21,6 +21,9 @@ function profileEnvelope(handle: string, p: KolProfile): Envelope {
     payload: {
       entity_type: "profile",
       platform: PLATFORM,
+      // The urn is the profile's identity — the module anchors on it and
+      // rejects a profile without one (a handle is renameable).
+      urn: p.urn || null,
       handle,
       display_name: p.name,
       url: p.url || null,

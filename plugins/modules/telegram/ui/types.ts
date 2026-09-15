@@ -13,6 +13,7 @@ export interface TelegramMessageListItem {
 export interface TelegramChatListItem {
   readonly entity_id: string;
   readonly chat_id: string;
+  readonly account_id: string | null;
   readonly chat_title: string | null;
   readonly last_message: string | null;
   readonly last_message_time: string | null;
@@ -29,6 +30,8 @@ export interface TelegramChat {
   readonly id: string;
   /** Telegram native chat_id — used for send/backfill RPCs */
   readonly chatId: string;
+  /** Exact Source account used for commands against this observed chat. */
+  readonly accountId: string | null;
   readonly name: string;
   readonly initials: string;
   readonly avatarColor: string;

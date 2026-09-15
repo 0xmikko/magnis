@@ -2,7 +2,7 @@
 // URL extraction, media→MIME mapping, and ingest tuning constants. Extracted
 // from module/service.ts so the class body stays handler-only.
 
-/// A loosely-typed facet/payload object (the connector snapshot / details facet).
+/// A loosely-typed record/payload object (the connector snapshot / details record).
 export type Data = Record<string, unknown>;
 
 // PGlite is single-connection, so a sync page (the telegram dialog list is ONE

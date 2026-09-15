@@ -1,0 +1,9 @@
+# Cargo configuration for the public desktop shell.
+#
+# `postgresql_embedded` embeds this exact Theseus archive at compile time. A
+# version range resolves latest during a build and defeats the shell's offline
+# preseed step. Keep the pin here, at the public repository root, so it applies
+# both to `cargo --manifest-path apps/desktop/src-tauri/Cargo.toml …` and to
+# Tauri's own Cargo invocation.
+[env]
+POSTGRESQL_VERSION = "=16.13.0"

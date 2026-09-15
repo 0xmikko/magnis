@@ -2,24 +2,41 @@
 // Byte-compatible TS port of the native `backend/src/modules/triggers/types.rs`
 // structs the engine reads/writes. The processing engine stays native; this
 // plugin only owns the DEFINITION CRUD, so these mirror the graph contract:
-// `triggers.trigger` entity + `triggers.trigger.config` facet + `watches` /
+// `triggers.trigger` entity + `triggers.trigger.config` record + `watches` /
 // `belongs_to` links.
 
-/// Facet schema_id → payload, used to parameterise GraphService<TriggerFacets, …>.
 /// `config` is written by the plugin (create/update) AND by the native engine
 /// (firing_count / last_fired_at); `execution` is written by the engine and
 /// read by the plugin's `fire_history`.
-export interface TriggerFacets {
-  "triggers.trigger.config": TriggerConfigData;
-  "triggers.trigger.execution": TriggerExecutionData;
+
+/// Mirrors native `ScheduleSpec` (docs/plans/cron-triggers.md). The plugin
+/// never constructs one itself — it persists VERBATIM what the native
+/// `triggers.validate_schedule` seam returns (engine-stamped `activated_at`,
+/// materialized timezone).
+export interface TriggerScheduleSpec {
+  cron: string;
+  timezone: string;
+  activated_at: string;
+}
+
+/// What the caller may pass to create/update. `activated_at` is deliberately
+/// absent — it is stamped by the engine's clock, never by the caller.
+export interface ScheduleParam {
+  cron: string;
+  timezone?: string;
 }
 
 /// Mirrors native `TriggerConfig` (serde with skip-if-none optionals).
+/** The four states the module's own `list` tool documents and filters on. It
+ * was `string`, so `update` wrote whatever a caller sent and the graph kept
+ * it; the declaration in `entities.ts` now refuses the rest. */
+export type TriggerStatus = "active" | "paused" | "disabled" | "expired";
+
 export interface TriggerConfigData {
   name: string;
   gate_prompt: string;
   action_prompt: string;
-  status: string;
+  status: TriggerStatus;
   event_kinds: string[];
   schema_filter?: string;
   expires_at?: string;
@@ -28,9 +45,10 @@ export interface TriggerConfigData {
   max_firings?: number;
   firing_count: number;
   last_fired_at?: string;
+  schedule?: TriggerScheduleSpec;
 }
 
-/// Mirrors native `TriggerExecution` (the `.execution` facet the engine writes).
+/// Mirrors native `TriggerExecution` (the `.execution` record the engine writes).
 export interface TriggerExecutionData {
   fired_at: string;
   event_entity_id: string;
@@ -50,6 +68,7 @@ export interface TriggerListItem {
   firing_count: number;
   last_fired_at?: string | null;
   watched_entity_names: string[];
+  schedule?: TriggerScheduleSpec | null;
 }
 
 /// Mirrors native `WatchedEntity`.
@@ -76,6 +95,7 @@ export interface TriggerDetailView {
   watched_entities: WatchedEntity[];
   parent_episode_id?: string | null;
   parent_episode_name?: string | null;
+  schedule?: TriggerScheduleSpec | null;
 }
 
 /// The create response shape (native `service.create` JSON).
@@ -90,13 +110,16 @@ export interface TriggerCreated {
   schema_id: string;
   created_at: string;
   episode_id: string | null;
+  /// The persisted schedule, echoed so the tool-call card can render it.
+  schedule?: TriggerScheduleSpec | null;
 }
 
 // ── tool params ──────────────────────────────────────────────────
 
 export interface CreateTriggerParams {
   name: string;
-  gate_prompt?: string;
+  /** Required: a trigger with no condition fires on everything it watches. */
+  gate_prompt: string;
   action_prompt: string;
   event_kinds?: string[];
   watch_entity_ids?: string[];
@@ -106,6 +129,9 @@ export interface CreateTriggerParams {
   debounce_seconds?: number;
   max_wait_seconds?: number;
   max_firings?: number;
+  /** Optional cron schedule; `null` is tolerated at the untyped agent
+   *  boundary and means the same as omitting it. */
+  schedule?: ScheduleParam | null;
 }
 export interface GetTriggerParams {
   id: string;
@@ -118,13 +144,15 @@ export interface UpdateTriggerParams {
   name?: string;
   gate_prompt?: string;
   action_prompt?: string;
-  status?: string;
+  status?: TriggerStatus;
   event_kinds?: string[];
   schema_filter?: string;
   expires_at?: string;
   debounce_seconds?: number;
   max_wait_seconds?: number;
   max_firings?: number;
+  /** Set (re-normalized through the seam) or clear (`null`) the schedule. */
+  schedule?: ScheduleParam | null;
 }
 export interface DeleteTriggerParams {
   id: string;

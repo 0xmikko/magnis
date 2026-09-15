@@ -2,7 +2,6 @@
 // consumes. Mirrors the legacy Rust projects ProjectListItem /
 // ProjectDetailView 1:1.
 
-import type { FacetRecord } from "@magnis/plugin-sdk";
 
 export interface ProjectListItem {
   id: string;
@@ -28,10 +27,14 @@ export interface ProjectDetailView {
   name: string;
   status: string | null;
   canonical: Partial<ProjectCanonical>;
-  facets: FacetRecord[];
   linked_entities: LinkedEntitySummary[];
   created_at: string;
 }
+
+/** One stored project record — the node's dictionary, as `create` writes it
+ * and `update` rewrites it. `entities.ts` declares exactly this and the build
+ * proves the two are one type. */
+
 
 // ── schema → type maps that parameterise GraphService ──────────────
 export interface ChecklistItem {
@@ -42,19 +45,17 @@ export interface ChecklistItem {
   updated_at?: string;
 }
 
-export interface ProjectFacets {
-  // The primary facet shares the entity schema id (native attaches
-  // schema_id == "projects.project" carrying name/status).
-  "projects.project": {
-    name?: string;
-    status?: string;
-    created_at?: string;
-    updated_at?: string;
-  };
-  "projects.project.checklist": { items: ChecklistItem[] };
-  // Markdown description facet (parity with native projects.update).
-  "projects.description": { body: string };
+export interface ProjectDetails {
+  name?: string;
+  status?: string;
+  description?: string;
+  created_at?: string;
+  updated_at?: string;
+  /** The operational checklist `checklist.update` writes into this same
+   * dictionary — one key, replaced whole. */
+  checklist?: ChecklistItem[];
 }
+
 
 export interface ProjectCanonical {
   "project.name": string | null;

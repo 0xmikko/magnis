@@ -43,3 +43,7 @@ enabled = true
 # No `include` filter: the server's tool names are its own contract and every
 # bridged tool already requires approval. Curate an include list once
 # the surface stabilizes.
+
+[certification]
+disposition = "inadmissible"
+reason = "spawn uses unpinned npx network execution and the artifact has no root-local dependency-closed implementation"

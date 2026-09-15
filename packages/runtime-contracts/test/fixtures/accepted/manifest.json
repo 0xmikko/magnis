@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "runtimeVersion": "0.1.0",
+  "protocolVersion": "magnis-runtime/v1",
+  "target": "x86_64-unknown-linux-gnu",
+  "executable": "bin/magnis-server-x86_64-unknown-linux-gnu",
+  "runtimeRoot": "runtime",
+  "webRoot": "runtime/web",
+  "migrationsDigest": "a0b1c2d3e4f5061728394a5b6c7d8e9f00112233445566778899aabbccddeeff",
+  "files": {
+    "bin/magnis-server-x86_64-unknown-linux-gnu": "cf7e3fdfd1f82cfa32ea2b0a706d2aacfc3f2285cf9e6ad5b6c568148bf30152",
+    "runtime/data/openapi.json": "a6d4d6b45d5569863472f1adf3693cce2f12f4afc1ed9704974c5245ac9aa82e",
+    "runtime/migrations/0000_initial.sql": "a3f7e0b0c9c7633def166b00e05ae37c53623e95c9f3423a7d0b7a696ca4bb20",
+    "runtime/web/index.html": "3968d6b5723ab17015d7da9c82760d27491a20ef5a7bd48b7a76aa44a6b486a4"
+  }
+}

@@ -1,6 +1,6 @@
 /**
  * tst_fe_contacts_expand_001 — contactHasMore false for bare name/email.
- * tst_fe_contacts_expand_002 — contactHasMore true when a facet-bearing field is present.
+ * tst_fe_contacts_expand_002 — contactHasMore true when a record-bearing field is present.
  * tst_fe_contacts_expand_003 — ContactCard expanded layout renders rows.
  * tst_fe_contacts_expand_004 — Chevron flips the same ContactCard via context.
  */

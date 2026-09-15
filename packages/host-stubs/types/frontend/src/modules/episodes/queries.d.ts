@@ -5,7 +5,9 @@ export declare const episodeKeys: {
     detail: (id: string) => readonly ["episodes", "detail", string];
 };
 export declare function useEpisodeDetailQuery(episodeId: string | undefined): import("@tanstack/react-query").UseQueryResult<EpisodeDetailView, Error>;
-export declare function useEpisodesListQuery(): import("@tanstack/react-query").UseQueryResult<readonly EpisodeListItem[], Error>;
+export declare function useEpisodesListQuery(options?: {
+    readonly enabled?: boolean;
+}): import("@tanstack/react-query").UseQueryResult<readonly EpisodeListItem[], Error>;
 interface CreateEpisodeParams {
     readonly title: string;
     readonly client_id: string;

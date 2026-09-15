@@ -21,11 +21,9 @@ export interface AgentPanelHeaderTitleProps {
     readonly sourceColorClassName?: string;
 }
 export declare function AgentPanelHeaderTitle({ title, sourceIconName, sourceColorClassName, }: AgentPanelHeaderTitleProps): JSX.Element;
-export interface ExtractEntitiesOptions {
-    readonly toolName?: string;
-    readonly defaultSchemaId?: string;
-}
-export declare function extractEntities(result: unknown, opts?: ExtractEntitiesOptions): readonly Readonly<Record<string, unknown>>[];
+import { extractEntities } from "@magnis/client-core";
+export { extractEntities };
+export type { ExtractEntitiesOptions } from "@magnis/client-core";
 export interface ToolResultEntityCardsProps {
     readonly toolName: string;
     readonly result: unknown;

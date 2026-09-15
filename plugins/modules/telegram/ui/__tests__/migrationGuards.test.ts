@@ -14,6 +14,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { telegramKeys } from "../queries";
 
 const UI_ROOT = resolve(import.meta.dirname, "..");
 
@@ -50,6 +51,23 @@ describe("Query migration: Telegram", () => {
 
   it("fetchMessages(chatId, 0, false) invalidates query cache for refresh", () => {
     expect(readSource("hooks/useTelegramMessages.ts")).toContain("telegramKeys.messages(chatId)");
+  });
+
+  /**
+   * @test-id: tst_plg_tgui_query_key_001
+   * @scenario: scn_telegram_send_001
+   * @covers: plugins/modules/telegram/ui/queries.ts::telegramKeys.messages
+   * @deterministic: yes
+   * @fixtures: none
+   */
+  it("tst_plg_tgui_query_key_001 message root is a prefix of paged keys", () => {
+    expect(telegramKeys.messages("chat-1")).toEqual(["telegram", "messages", "chat-1"]);
+    expect(telegramKeys.messages("chat-1", { limit: 50, offset: 0 })).toEqual([
+      "telegram",
+      "messages",
+      "chat-1",
+      { limit: 50, offset: 0 },
+    ]);
   });
 });
 

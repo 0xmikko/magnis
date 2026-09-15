@@ -2,7 +2,7 @@ import { useContext, useState, type JSX } from "react";
 import type { EntityRendererProps } from "@magnis/host/runtime";
 import { BaseEntityCard } from "@magnis/host/base";
 import { ActionPrefix } from "@magnis/host/base";
-import { ExpansionContext } from "@magnis/host/agent";
+import { ExpansionContext, MarkdownText } from "@magnis/host/agent";
 
 /**
  * SINGLE canonical note card. Per `docs/frontend/module-standard.md`
@@ -71,10 +71,11 @@ export function NoteCard(props: EntityRendererProps): JSX.Element {
         )}
         {expanded && visible !== undefined && (
           <div className="mt-1">
-            <div className="whitespace-pre-wrap break-words text-[11px] text-content">
-              {visible}
-              {clamped && "…"}
-            </div>
+            {/* @tested-by: tst_fe_notes_markdown_001 */}
+            <MarkdownText
+              text={`${visible}${clamped ? "\n\n…" : ""}`}
+              className="break-words text-[11px] text-content"
+            />
             {lines.length > CLAMP_LINES && (
               <button
                 type="button"

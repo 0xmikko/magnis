@@ -25,12 +25,11 @@ describe("defineLifecycle", () => {
   it("tst_plugin_sdk_lifecycle_002 explicit registration is published verbatim", () => {
     defineLifecycle({
       install(ctx) {
-        ctx.register({ entities: ["notes.note"], facets: [] });
+        ctx.register({ entities: ["notes.note"] });
       },
     });
     expect((globalThis as Record<string, unknown>)[GLOBAL_KEY]).toEqual({
       entities: ["notes.note"],
-      facets: [],
     });
   });
 

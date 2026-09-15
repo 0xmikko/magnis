@@ -15,9 +15,15 @@ export function ProjectCreateRenderer({
     onAllowlistToggle,
   } = payload;
   const args = tc.args as Record<string, unknown>;
+  const isUpdate = tc.name === "projects.update" ||
+    tc.name === "projects_update" ||
+    tc.name === "project.update" ||
+    tc.name === "project_update";
   const name = typeof args.name === "string" && args.name.length > 0
     ? args.name
-    : "Untitled project";
+    : isUpdate
+      ? ""
+      : "Untitled project";
   const status = typeof args.status === "string" && args.status.length > 0
     ? args.status
     : "";
@@ -35,15 +41,15 @@ export function ProjectCreateRenderer({
   return (
     <BaseToolCallCard
       icon="briefcase"
-      title={`Create project: ${name}`}
+      title={isUpdate ? "Update project" : `Create project: ${name}`}
       variant="sky"
       status={tc.status}
       toolResult={toolResult}
       superseded={superseded}
       isAllowlisted={isAllowlisted}
-      primaryLabel="Create"
+      primaryLabel={isUpdate ? "Update" : "Create"}
       primaryIcon="check"
-      doneLabel="Created"
+      doneLabel={isUpdate ? "Updated" : "Created"}
       onApprove={onApprove}
       onDeny={onDeny}
       onAllowlistToggle={onAllowlistToggle}

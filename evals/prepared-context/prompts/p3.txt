@@ -1,0 +1,6 @@
+Use the configured MCP tools and prepared workspace. Do not use web, prior knowledge, or guesses.
+
+Between 2026-04-01T00:00:00Z and 2026-05-01T00:00:00Z, which humans wrote to any connected authorized team account and received no reply from any connected team owner on any channel by the end of that window?
+Resolve cross-channel and multiple-account identities at the human level. Do not treat two accounts of one human as two people. The answer cardinality is not given. Return each human's exact provider account identifiers and exact supporting source refs.
+
+Return only JSON matching the requested schema.

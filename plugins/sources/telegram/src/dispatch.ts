@@ -141,7 +141,7 @@ export interface JsonRpcMessage {
 }
 
 const SERVER_NAME = "magnis-telegram";
-const SERVER_VERSION = "1.0.0";
+const SERVER_VERSION = "1.0.1";
 
 /** `magnis.sync.fetch`. Fixture mode short-circuits BEFORE any cred parsing (it
  * needs no `_meta` at all). */
@@ -170,6 +170,7 @@ async function executeTool(
   const { ops, accountId } = await resolve(args);
   return await commands.execute(ops, accountId, args, {
     sleep: deps.sleep ?? commands.realSleep,
+    demoDryRun: process.env.MAGNIS_TELEGRAM_DEMO_DRY_RUN === "1",
   });
 }
 

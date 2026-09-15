@@ -19,24 +19,29 @@ export const ProjectsModule = defineModule({
   HeaderComponent: ProjectHeader,
   toolCallRenderers: [
     {
-      actions: ["create"],
+      actions: ["create", "update"],
       Render: ProjectCreateRenderer as never,
     },
   ],
   extractAllowlistTarget: (tc) => {
-    const n = tc.name;
-    if (n !== "projects.create" && n !== "projects_create" && n !== "project.create" && n !== "project_create") {
-      return null;
-    }
-    const args = tc.args as Record<string, unknown>;
-    const name = typeof args.name === "string" && args.name.length > 0
-      ? args.name
-      : "project";
+    const aliases: Readonly<Record<string, "projects.create" | "projects.update">> = {
+      "projects.create": "projects.create",
+      projects_create: "projects.create",
+      "project.create": "projects.create",
+      project_create: "projects.create",
+      "projects.update": "projects.update",
+      projects_update: "projects.update",
+      "project.update": "projects.update",
+      project_update: "projects.update",
+    };
+    const action = aliases[tc.name];
+    if (!action) return null;
+    const isUpdate = action === "projects.update";
     return {
-      action: tc.name,
-      targetType: "project",
-      targetId: name,
-      targetLabel: name,
+      action,
+      targetType: "tool_action",
+      targetId: action,
+      targetLabel: isUpdate ? "Update project" : "Create project",
     };
   },
   headerActionIcon: "plus",

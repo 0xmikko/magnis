@@ -26,7 +26,6 @@ test("tst_build_plugin_new_001: scaffold produces a contract-satisfying v3 skele
     "manifest.toml",
     "README.md",
     "schemas/item.json",
-    "schemas/item.details.json",
     "module/index.ts",
     "module/service.ts",
     "module/__tests__/acme_crmRead.test.ts",
@@ -71,11 +70,10 @@ test("tst_build_plugin_new_001: scaffold produces a contract-satisfying v3 skele
   expect("version" in entity).toBe(false);
   expect(typeof entity.name).toBe("string");
   expect(typeof entity.description).toBe("string");
-  const facet = JSON.parse(
-    readFileSync(join(dir, "schemas", "item.details.json"), "utf8"),
-  ) as Record<string, unknown>;
-  expect(facet.version).toBe(1);
-  expect(facet.type).toBe("object");
+  // A scaffold emits ONE schema per entity and no block contract: the
+  // property graph keeps what a module knows in the node's dictionary, so
+  // there is nothing for a second, versioned file to describe.
+  expect(existsSync(join(dir, "schemas", "item.details.json"))).toBe(false);
 
   // README.md is real markdown (the catalog detail page).
   expect(readFileSync(join(dir, "README.md"), "utf8").startsWith("# ")).toBe(true);

@@ -28,7 +28,7 @@ through a typed API.
 ```mermaid
 graph TD
     subgraph Host["Rust backend — single source of truth"]
-        G[("The graph<br/>entities · facets · canonical · links")]
+        G[("The graph<br/>entities + dictionaries · links + dictionaries")]
     end
     M["Modules<br/>own a slice of the graph"] -->|read / write| G
     S["Sources<br/>bring external data"] -->|emit envelopes| M
@@ -40,38 +40,43 @@ graph TD
 
 ## 2. The graph — what every plugin works with
 
-Five concepts. Learn these and the rest follows.
+Four concepts. Learn these and the rest follows.
 
 - **Entity** — a generic base object: a person, company, project, meeting,
-  message. It has an id and a type, and little else on its own.
-- **Facet** — a typed, versioned block of data attached to an entity, *with
-  provenance*: "according to Gmail, on this date, this person's name is X." Many
-  facets can describe the same field from different sources.
-- **Canonical property** — the single derived truth for a field, merged from
-  conflicting facets by a deterministic rule (e.g. highest-confidence, then most
-  recent). The canonical name is what the UI shows; the facets are the evidence
-  behind it.
+  message. It carries an id, a type, an **anchor** (its identity — an issuer key
+  like `tg:user:501`, else `local:<id>`), a host-stamped **source** saying who
+  observed it, and a **dictionary**: a flat JSON map of what the owning module
+  knows about it.
+- **One node, one writer.** Two sources never contend for one dictionary —
+  each owns its node, and a hub reaches them over `identity`. The sync lane
+  (`apply_batch`) REPLACES a dictionary so a re-sync cannot leave it
+  half-updated; a curated edit (`update_properties`) MERGES the keys it sends
+  and removes one by sending `null`.
 - **Link** — a typed relationship between two entities ("authored_by",
-  "attended", "works_at"). Links make the graph a graph.
+  "in_chat", "works_at"). Links make the graph a graph, and each carries a
+  dictionary of its own for the facts that belong to neither endpoint. Its
+  domain keys are refreshed by a sync and left untouched by `add_link`; only
+  the host-stamped `sources[]` accumulates across observers.
 - **Event** — an immutable, append-only record of every mutation: the log of
   what happened.
 
 ```mermaid
 graph LR
-    P(["Person entity"])
-    F1["name = 'Sam'<br/>from Gmail, conf .9"]
-    F2["name = 'Samuel'<br/>from LinkedIn, conf .6"]
-    C["canonical name = 'Sam'<br/>merge: confidence then recency"]
+    P(["Person entity<br/>anchor tg:user:501<br/>dictionary { name: 'Sam' }"])
+    A(["Telegram account<br/>anchor tg:account:501"])
     Co(["Company entity"])
-    F1 --> P
-    F2 --> P
-    P -.resolves to.-> C
+    P -->|identity| A
     P -->|works_at| Co
 ```
 
-A **module** decides which entities and facets exist for its domain and how
-their facets merge into canonical truth. A **source** produces the raw facts (as
-*envelopes*) that become those facets.
+Two sources disagreeing about a name is not a merge problem any more: each owns
+its own node, and the hub reaches them over `identity`. What the UI shows is the
+hub's dictionary; what a replica observed stays on the replica, with its own
+provenance.
+
+A **module** decides which entities exist for its domain, what their
+dictionaries hold, and which keys are searchable. A **source** produces the raw
+facts (as *envelopes*) that become those writes.
 
 ---
 
@@ -83,7 +88,7 @@ jobs, different runtimes.
 | | **Module** | **Source** |
 |---|---|---|
 | Job | Own a slice of the graph | Bring data in from an external service |
-| Owns | Entity/facet **schemas**, the read/write logic, the UI | Nothing in the graph |
+| Owns | Entity **schemas** + the search declaration, the read/write logic, the UI | Nothing in the graph |
 | Produces | Tools (for the agent + UI), canonical truth | **Envelopes** on named surfaces |
 | Examples | contacts, email, meetings, companies | google, x, telegram |
 | Runs as | a sandboxed **in-process** component | a separate **external process** (MCP) |
@@ -115,9 +120,9 @@ sequenceDiagram
 
     Ext->>Src: fetch (paginated)
     Src->>Mod: envelopes on a surface<br/>snapshot / live / delete
-    Mod->>Graph: attach facets, resolve canonical, add links
+    Mod->>Graph: write dictionaries, add links
     UI->>Mod: call a tool (contacts.list)
-    Mod->>Graph: read canonical + facets
+    Mod->>Graph: read entities + their dictionaries
     Mod-->>UI: typed result
 ```
 
@@ -125,8 +130,8 @@ sequenceDiagram
    a `{ surface, remote_id, kind, payload }` fact — on one of its named
    *surfaces*.
 2. The **module** that owns that surface receives the envelopes in its sync
-   handler and writes them into the graph: it attaches facets (with the source
-   as provenance) and re-resolves canonical truth.
+   handler and writes them into the graph: it writes dictionaries (the host
+   stamps the provenance) and the links between them.
 3. The **UI and the agent** call the module's tools to read that truth and act
    on it.
 
@@ -146,7 +151,7 @@ host-provided API (`deps.graph`). It has **no network, no filesystem, no
 sockets** — that restriction is the point: a graph-owner can't leak to, or be
 attacked from, the outside. Anything needing the outside world is a source's
 job. (A module also ships **no database migrations** — "registering a schema"
-just declares your entities and facets to the graph; storage is the host's.)
+just declares your entities to the graph; storage is the host's.)
 
 **A source runs as a separate process the host spawns**, speaking a small
 JSON-RPC protocol over stdin/stdout. Because it is its own process it *can* do
@@ -180,7 +185,7 @@ one bundling step for module UI. Commands and the conformance checklist are in
 ## 6. Where to go next
 
 - **[module.md](./module.md)** — build a module end to end: the class, the graph
-  API, schemas, the canonical-vs-facet rule, tests.
+  API, schemas, the replace-not-merge write rule, tests.
 - **[source.md](./source.md)** — build a source end to end: surfaces,
   authentication, secrets, the wire contract, tests.
 - **[structure.md](./structure.md)** — the file-structure standard both kinds

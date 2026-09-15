@@ -91,7 +91,7 @@ export interface MessageLike {
   out?: boolean;
   pinned?: boolean;
   media?: MediaLike | null;
-  replyTo?: { replyToMsgId?: number } | null;
+  replyTo?: { replyToMsgId?: number | null } | null;
   chat?: EntityLike | null;
   sender?: EntityLike | null;
 }
@@ -524,7 +524,10 @@ export function messageToIntermediate(
     ...(chatName === "" ? {} : { chat_title: chatName }),
     ...(senderName === undefined ? {} : { sender_name: senderName }),
     ...(senderId === undefined ? {} : { sender_id: senderId }),
-    ...(replyTo === undefined ? {} : { reply_to_msg_id: replyTo }),
+    // @tested-by: tst_src_tg_024
+    // gramjs represents an absent reply id as null; optional chaining only
+    // removes a null parent, so normalize the leaf before schema validation.
+    ...(replyTo === null || replyTo === undefined ? {} : { reply_to_msg_id: replyTo }),
     ...(media.media_type === undefined ? {} : { media_type: media.media_type }),
     has_media: media.has_media,
     ...(media.file_name === undefined ? {} : { file_name: media.file_name }),

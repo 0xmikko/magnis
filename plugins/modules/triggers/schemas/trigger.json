@@ -1,4 +1,0 @@
-{
-  "name": "Trigger",
-  "description": "An automation trigger entity. Its definition CRUD is owned by the triggers plugin; the native engine reads it to evaluate + fire."
-}

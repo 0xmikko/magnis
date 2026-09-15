@@ -6,7 +6,7 @@
 
 /** Calendar-event entity schema (the list/get read surface). */
 export const CAL = "meetings.calendar_event";
-/** Single-aligned calendar-event details facet (starts_at/ends_at/location/…). */
+/** Single-aligned calendar-event details record (starts_at/ends_at/location/…). */
 export const CAL_DETAILS = "meetings.calendar_event.details";
 /** Legacy `meetings.event` schema — the native search quirk searches over it. */
 export const EVENT = "meetings.event";

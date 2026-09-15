@@ -81,14 +81,39 @@ export function TelegramMessageCard(props: EntityRendererProps): JSX.Element {
 
   const metadata = resolved.metadata as Record<string, unknown> | undefined;
   const senderName = metadata?.sender_name as string | undefined;
-  const displaySender = senderName ?? (resolved.sender as string | undefined) ?? "Unknown";
+  // The generic context card carries the author as the `authored_by` EDGE —
+  // the sender name stopped being a copy on the message dictionary in S4.
+  const authoredBy = ((): string | undefined => {
+    const raw: unknown = resolved.neighbours;
+    if (!Array.isArray(raw)) return undefined;
+    for (const n of raw as readonly unknown[]) {
+      if (n === null || typeof n !== "object" || Array.isArray(n)) continue;
+      const rec = n as Record<string, unknown>;
+      if (rec.kind === "authored_by" && typeof rec.name === "string" && rec.name.length > 0) {
+        return rec.name;
+      }
+    }
+    return undefined;
+  })();
+  const displaySender =
+    senderName ??
+    (resolved.sender as string | undefined) ??
+    (resolved.sender_name as string | undefined) ??
+    authoredBy ??
+    "Unknown";
   const displayText =
-    (resolved.preview as string | undefined) ?? (resolved.subject as string | undefined) ?? "";
+    (resolved.preview as string | undefined) ??
+    (resolved.subject as string | undefined) ??
+    (resolved.text as string | undefined) ??
+    "";
   const fullText =
     (resolved.preview as string | undefined) ??
     (resolved.subject as string | undefined) ??
     (resolved.text as string | undefined);
-  const rawTime = (resolved.timestamp as string | undefined) ?? "";
+  const rawTime =
+    (resolved.timestamp as string | undefined) ??
+    (resolved.sent_at as string | undefined) ??
+    "";
   const timeStr = rawTime
     ? (rawTime.includes("T") || rawTime.length > 10 ? formatMessageTime(rawTime) : rawTime)
     : "";

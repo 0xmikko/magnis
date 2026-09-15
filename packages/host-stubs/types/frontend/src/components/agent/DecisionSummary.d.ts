@@ -1,5 +1,5 @@
 import { type JSX } from "react";
-import type { ResolvedDecision } from "@magnis/agent-core";
+import type { ResolvedDecision } from "@magnis/client-core";
 import type { AppRuntime } from "../../runtime/contracts/runtime";
 export interface DecisionSummaryProps {
     readonly decision: ResolvedDecision;

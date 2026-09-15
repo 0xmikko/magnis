@@ -49,11 +49,26 @@ function splitRecipients(csv: string | null): string[] {
 /// LIVE trigger's touched ids, so a trigger watching a Cc'd/Bcc'd address (e.g.
 /// "watch my inbox") fires and the recipient's contact surfaces the message.
 export function recipientsOf(p: Data): string[] {
-  const set = new Set<string>();
-  for (const field of ["to_addresses", "cc_addresses", "bcc_addresses"]) {
-    for (const r of splitRecipients(str(p, field))) set.add(r);
+  return recipientsWithRoles(p).map((r) => r.addr);
+}
+
+/// Recipients with their ROLE — To/Cc/Bcc is a per-pair fact that rides the
+/// `sent_to` edge dictionary (S5 review): once the joined strings leave the
+/// message dict, the edge is the only place the distinction can survive.
+/// An address listed under several headers keeps the strongest role
+/// (to > cc > bcc — the same order the fields are scanned).
+export function recipientsWithRoles(p: Data): { addr: string; role: string }[] {
+  const seen = new Map<string, string>();
+  for (const [field, role] of [
+    ["to_addresses", "to"],
+    ["cc_addresses", "cc"],
+    ["bcc_addresses", "bcc"],
+  ] as const) {
+    for (const addr of splitRecipients(str(p, field))) {
+      if (!seen.has(addr)) seen.set(addr, role);
+    }
   }
-  return [...set];
+  return [...seen.entries()].map(([addr, role]) => ({ addr, role }));
 }
 
 /// Every unique address (sender + all recipients) a message contributes — used
@@ -103,4 +118,31 @@ export function buildListItem(entity: RawEntity, d: Data): MessageListItem {
     created_at: created,
     metadata: stripBodyHtml(d),
   };
+}
+
+/// One syntactically valid recipient, lower-cased — or a thrown error.
+///
+/// The demo failure this closes: the agent passed the JSON TEXT of an array,
+/// `'["Mikhail.trash2@gmail.com"]'`. Nothing rejected it, Gmail refused the
+/// header, the plugin swallowed the refusal and reported the mail as sent.
+/// Validation lives HERE, in the handler path, not only in the tool schema:
+/// declared params are not enforced at dispatch (the host forwards raw
+/// `params`), so a schema `format` alone would change nothing.
+///
+/// Deliberately strict rather than clever — one address, no display name, no
+/// comma list, no brackets. A caller wanting several recipients uses
+/// `batch_send`, which is per-message and reports each outcome.
+// @tested-by: tst_module_email_send_002
+export function normalizeRecipient(raw: string): string {
+  const value = raw.trim();
+  if (!value) throw new Error("email recipient is required");
+  // Exactly one local@domain with a dotted TLD, and nothing else around it.
+  const ONE_ADDRESS = /^[^\s@,<>"[\]]+@[^\s@,<>"[\]]+\.[A-Za-z]{2,}$/;
+  if (!ONE_ADDRESS.test(value)) {
+    throw new Error(
+      `email recipient is not a single valid address: ${JSON.stringify(raw)}. ` +
+        "Pass one bare address (name@example.com); use batch_send for several.",
+    );
+  }
+  return value.toLowerCase();
 }

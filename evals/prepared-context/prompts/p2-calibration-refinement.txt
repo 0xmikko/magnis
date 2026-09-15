@@ -1,0 +1,5 @@
+Continue the generic preparation for later, unspecified business questions.
+
+The initial source census treated X mostly at profile level. Complete the census by paginating every record on every connected X timeline. Organize durable, provenance-bearing state for company renames, current affiliations, person-to-handle identities, and their exact provider refs. Link that state to the existing companies, people, projects, notes, and memories where supported. Preserve uncertainty and do not infer a relationship without evidence.
+
+Do not answer a business task.

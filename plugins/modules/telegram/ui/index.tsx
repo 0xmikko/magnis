@@ -242,17 +242,18 @@ export const TelegramModule = defineModule({
       let telegramMsgId = (data.metadata as Record<string, unknown> | undefined)?.message_id as number | undefined;
       let chatEntityId: string | undefined;
       try {
-        const links = await runtime.transport.rpc<{
+        // P4: one call, to the module that owns the message. It answers with
+        // its links and its metadata, so the generic `graph.entity.get` read
+        // that used to stand in for the module's own answer is gone.
+        const detail = await runtime.transport.rpc<{
+          metadata?: Record<string, unknown>;
           linked_entities?: readonly { id: string; schema_id: string }[];
-        }>("graph.entity.get", { id: entityId });
-        const chatLink = links.linked_entities?.find((e) => e.schema_id === "telegram.chat");
+        }>("telegram.messages.get", { id: entityId });
+        const chatLink = detail.linked_entities?.find((e) => e.schema_id === "telegram.chat");
         chatEntityId = chatLink?.id;
-        if (!telegramMsgId) {
-          const detail = await runtime.transport.rpc<{
-            metadata?: Record<string, unknown>;
-          }>("telegram.messages.get", { id: entityId });
-          telegramMsgId = detail.metadata?.message_id as number | undefined;
-        }
+        // `??=`, so a message id already on the card data wins. Telegram ids
+        // start at 1, so treating 0 as present rather than missing is moot.
+        telegramMsgId ??= detail.metadata?.message_id as number | undefined;
       } catch { /* navigate without chat selection */ }
       if (chatEntityId) actions.setSelectedChatId(chatEntityId);
       actions.setPendingMessageId(entityId, telegramMsgId);

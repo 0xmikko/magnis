@@ -1,0 +1,26 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["task", "currency", "total", "rows", "evidence_refs"],
+  "properties": {
+    "task": { "type": "string", "const": "p2" },
+    "currency": { "type": "string" },
+    "total": { "type": "number" },
+    "rows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ref", "amount"],
+        "properties": {
+          "ref": { "type": "string", "minLength": 1 },
+          "amount": { "type": "number" }
+        }
+      }
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    }
+  }
+}

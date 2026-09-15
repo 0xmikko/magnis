@@ -1,0 +1,23 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "task",
+    "person",
+    "company",
+    "relationship",
+    "relationship_owner",
+    "evidence_refs"
+  ],
+  "properties": {
+    "task": { "type": "string", "const": "p5" },
+    "person": { "type": "string", "minLength": 1 },
+    "company": { "type": "string", "minLength": 1 },
+    "relationship": { "type": "string", "minLength": 1 },
+    "relationship_owner": { "type": "string", "minLength": 1 },
+    "evidence_refs": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    }
+  }
+}

@@ -40,6 +40,47 @@ function attendeesToDisplayList(value: unknown): string[] {
   });
 }
 
+/** The generic context card carries attendees as `attendee` EDGES — email is
+ * the address node's name, the invite's display name rides the edge
+ * dictionary. Presentation-layer read of the neighbour list. */
+function attendeesFromNeighbours(data: Readonly<Record<string, unknown>>): string[] {
+  const raw: unknown = data.neighbours;
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  for (const n of raw as readonly unknown[]) {
+    if (n === null || typeof n !== "object" || Array.isArray(n)) continue;
+    const rec = n as Record<string, unknown>;
+    if (rec.kind !== "attendee") continue;
+    const meta = rec.metadata;
+    const display =
+      meta !== null && typeof meta === "object" && !Array.isArray(meta)
+        ? (meta as Record<string, unknown>).display_name
+        : undefined;
+    if (typeof display === "string" && display.length > 0) out.push(display);
+    else if (typeof rec.name === "string" && rec.name.length > 0) out.push(rec.name);
+  }
+  return out;
+}
+
+function allAttendees(data: Readonly<Record<string, unknown>>): string[] {
+  const fromArray = attendeesToDisplayList(data.attendees);
+  return fromArray.length > 0 ? fromArray : attendeesFromNeighbours(data);
+}
+
+/** `starts_at` is the dictionary's ISO timestamp; date/time split is view
+ * work (the old backend card did this — it is the client's job now). */
+function splitStartsAt(data: Readonly<Record<string, unknown>>): {
+  date: string | undefined;
+  time: string | undefined;
+} {
+  const raw = data.starts_at;
+  if (typeof raw !== "string" || raw.length === 0) return { date: undefined, time: undefined };
+  const t = raw.indexOf("T");
+  if (t === -1) return { date: raw, time: undefined };
+  const timePart = raw.slice(t + 1).split(/[+Z.]/)[0];
+  return { date: raw.slice(0, t), time: timePart };
+}
+
 function description(data: Readonly<Record<string, unknown>>): string | undefined {
   const d = data.description;
   return typeof d === "string" && d.length > 0 ? d : undefined;
@@ -58,7 +99,7 @@ export function meetingHasMore(data: Readonly<Record<string, unknown>>): boolean
   return (
     description(data) !== undefined ||
     agenda(data) !== undefined ||
-    attendeesToDisplayList(data.attendees).length > 0
+    allAttendees(data).length > 0
   );
 }
 
@@ -73,11 +114,13 @@ function Row({ label, value }: { label: string; value: string }): JSX.Element {
 
 export function MeetingCard(props: EntityRendererProps): JSX.Element {
   const { data, action } = props;
-  const title = data.title as string | undefined;
-  const date = data.date as string | undefined;
-  const time = data.time as string | undefined;
+  const title =
+    (data.title as string | undefined) ?? (data.name as string | undefined);
+  const fromDict = splitStartsAt(data);
+  const date = (data.date as string | undefined) ?? fromDict.date;
+  const time = (data.time as string | undefined) ?? fromDict.time;
   const location = data.location as string | undefined;
-  const attendees = attendeesToDisplayList(data.attendees);
+  const attendees = allAttendees(data);
   const { expanded } = useContext(ExpansionContext);
 
   const dateTime = [date, time].filter(Boolean).join(" · ");

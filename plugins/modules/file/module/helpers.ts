@@ -1,11 +1,9 @@
 import type { EntityDetail } from "@magnis/plugin-sdk";
 import type { FileDetails } from "../types.ts";
 
-/// Extract a facet's data payload by schema_id from an EntityDetail (or
-/// undefined when the entity carries no facet of that schema).
-export function facetData(detail: EntityDetail, schemaId: string): Record<string, unknown> | undefined {
-  const f = detail.facets.find((x) => x.schema_id === schemaId);
-  return f?.data as Record<string, unknown> | undefined;
+/// The node's own dictionary — where the file's details live since the fold.
+export function detailDict(detail: EntityDetail): Record<string, unknown> {
+  return (detail.entity as { properties?: Record<string, unknown> }).properties ?? {};
 }
 
 /// Route-correct serving URL: local content serves via
@@ -31,7 +29,7 @@ export function hasContent(details: FileDetails): boolean {
   );
 }
 
-/// Build a list/get item from the file.details facet data + the entity id.
+/// Build a list/get item from the file.details record data + the entity id.
 export function itemFromDetails(
   entityId: string,
   details: FileDetails,

@@ -1,5 +1,5 @@
 /**
- * @test-id: tst_plg_tgui_header_total_001..002
+ * @test-id: tst_plg_tgui_header_total_001..003
  * @scenario: scn_telegram_chat_header_total
  * @covers: plugins/modules/telegram/ui/hooks/useTelegramMessages.ts,
  *          plugins/modules/telegram/ui/TelegramChatView.tsx
@@ -25,6 +25,7 @@
 import { render, renderHook, screen, waitFor, act } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
+import type { TelegramChat } from "../types";
 import type { TelegramConversation } from "../types";
 import type { TelegramMessageListItem } from "../types";
 
@@ -38,9 +39,8 @@ const queryState = vi.hoisted(() => ({
   isLoading: false,
 }));
 
-vi.mock("@magnis/host/runtime", () => ({
-  // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
-  useAppRuntime: () => ({
+vi.mock("@magnis/host/runtime", () => {
+  const runtime = {
     transport: {
       baseUrl: "http://test",
       rpc: rpcMock,
@@ -48,8 +48,12 @@ vi.mock("@magnis/host/runtime", () => ({
     },
     queryClient: { invalidateQueries: (): void => undefined },
     agent: { setReplyTo: (): void => undefined },
-  }),
-}));
+  };
+  return {
+    // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
+    useAppRuntime: () => runtime,
+  };
+});
 
 vi.mock("../queries", () => ({
   telegramKeys: {
@@ -237,5 +241,42 @@ describe("telegram chat header total (graph total, never page length)", () => {
 
     expect(screen.getByTestId("top-bar-header").textContent).toBe("250 messages");
     expect(screen.queryByText("3 messages")).toBeNull();
+  });
+
+  it("tst_plg_tgui_header_total_003 send observes a chat id resolved after mount", async () => {
+    queryState.data = page(1, 1, 0);
+    queryState.isLoading = false;
+    rpcMock.mockReset();
+    rpcMock.mockResolvedValue({ message_id: 101 });
+    const { useTelegramMessages } = await import("../hooks/useTelegramMessages");
+    const chat: TelegramChat = {
+      id: "chat-entity-1",
+      chatId: "4242",
+      accountId: "source-account-1",
+      name: "Magnis Builders",
+      initials: "MB",
+      avatarColor: "#333",
+      lastMessage: "Ready",
+      time: "12:00",
+    };
+
+    const { result, rerender } = renderHook(
+      ({ chats }: { chats: readonly TelegramChat[] }) =>
+        useTelegramMessages("chat-entity-1", chats),
+      { initialProps: { chats: [] as readonly TelegramChat[] } },
+    );
+    expect(result.current.canSend).toBe(false);
+    rerender({ chats: [chat] });
+    expect(result.current.canSend).toBe(true);
+    act(() => result.current.handleSendMessage("Ship it"));
+
+    await waitFor(() => {
+      expect(rpcMock).toHaveBeenCalledWith("telegram.messages.send", {
+        chat_id: 4242,
+        account_id: "source-account-1",
+        text: "Ship it",
+        reply_to_message_id: null,
+      });
+    });
   });
 });

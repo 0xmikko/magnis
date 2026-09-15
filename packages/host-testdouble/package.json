@@ -1,0 +1,6 @@
+{
+  "name": "@magnis/host-testdouble",
+  "version": "0.1.0",
+  "description": "Dev-only RUNTIME doubles for the @magnis/host/* modules. Never bundled — the UI test lane resolves @magnis/host/* here.",
+  "private": true
+}

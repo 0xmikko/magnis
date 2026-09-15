@@ -51,3 +51,43 @@ minted = ["refresh_token"]
 
 [sync]
 mode = "poll"
+
+[certification]
+disposition = "admissible"
+protocol = "magnis.source/1"
+authority = "module_sync"
+release_tier = "production"
+delivery = "poll"
+poll_interval_secs = 30
+server_info_version = "1.0.0"
+server_info_name = "magnis-google"
+runtime_kind = "connector_sdk"
+runtime_version = "0.1.0"
+advertised_tools = ["magnis.sync.fetch"]
+callable_operations = ["initialize", "magnis.auth.exchange", "magnis.auth.revoke", "magnis.execute:download_file", "magnis.execute:send_message", "magnis.sync.fetch", "tools/list"]
+scenario_ids = ["tst_gts_email_009", "tst_gts_fx_001", "tst_gts_fx_003", "tst_gts_gcal_005", "tst_gts_gp_005", "tst_gts_gp_006", "tst_gts_hist_008b", "tst_gts_oidc_004", "tst_gts_oidc_007", "tst_gts_wire_006"]
+
+[certification.account_compatibility]
+auth = "oauth2"
+identity_rule = "verified_google_subject"
+credential_keys = ["client_id", "client_secret", "refresh_token"]
+minted_credential_keys = ["refresh_token"]
+migrates_from = []
+
+[[certification.account_compatibility.surfaces]]
+name = "contacts"
+cursor_terminal_null = "clear"
+progress = { target = "full_snapshot", continuation = "opaque_cursor", forward_checkpoint = "opaque_cursor", coverage = "snapshot", live_fence = "none" }
+receiver_interface_hash = "sha256:eaf8d476b7dfb12ceb729da8a36bbd52d3ec3fdc684837d06e4a81586a8acdcb"
+
+[[certification.account_compatibility.surfaces]]
+name = "email"
+cursor_terminal_null = "retain"
+progress = { target = "forward_and_backfill", continuation = "opaque_cursor", forward_checkpoint = "opaque_cursor", coverage = "range", live_fence = "none" }
+receiver_interface_hash = "sha256:0d6480cd0a2d5bd3960e1ec902c825a73203e76aa0ef576a37836759acc9c193"
+
+[[certification.account_compatibility.surfaces]]
+name = "meetings"
+cursor_terminal_null = "clear"
+progress = { target = "bounded_window", continuation = "opaque_cursor", forward_checkpoint = "opaque_cursor", coverage = "range", live_fence = "none" }
+receiver_interface_hash = "sha256:ee62dc20e251dd38db87444858ca3dd1a1cd376af9a1cf8640684aa482984d2b"

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["post_id", "handle", "text", "posted_at"],
+  "properties": {
+    "post_id": { "type": "string", "minLength": 1 },
+    "handle": { "type": "string", "minLength": 1 },
+    "text": { "type": "string" },
+    "posted_at": {
+      "type": "string",
+      "format": "date-time",
+      "x-magnis-time": "dataset_relative"
+    },
+    "post_type": { "type": "string", "enum": ["post", "reply", "long_form", "article"] },
+    "conversation_id": { "type": "string", "minLength": 1 }
+  },
+  "additionalProperties": false
+}

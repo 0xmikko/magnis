@@ -134,11 +134,13 @@ export function useUpdateNoteMutation(): UseMutationResult<unknown, Error, Updat
 export function useDeleteNoteMutation(): UseMutationResult<unknown, Error, DeleteNoteParams> {
   const runtime = useAppRuntime();
   const queryClient = useQueryClient();
+  const hostQueryClient = runtime.queryClient;
 
   return useMutation<unknown, Error, DeleteNoteParams>({
     mutationFn: (params) =>
       runtime.transport.rpc("notes.delete", { ...params }),
     onSuccess: () => {
+      void hostQueryClient.invalidateQueries({ queryKey: noteKeys.all });
       void queryClient.invalidateQueries({ queryKey: noteKeys.all });
     },
   });
