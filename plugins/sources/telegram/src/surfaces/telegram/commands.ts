@@ -14,11 +14,8 @@ import type {
   RawDialogLike,
 } from "../../client";
 import {
-  buildDialogMeta,
-  chatToIntermediate,
   messageToIntermediate,
   sendWithFloodRetry,
-  toNum,
 } from "../../client";
 import { chatEnvelope, messageEnvelope, toRfc3339Utc } from "./envelope";
 
@@ -26,7 +23,10 @@ import { chatEnvelope, messageEnvelope, toRfc3339Utc } from "./envelope";
  * batch enumerates up to BOOTSTRAP_BATCH_DIALOGS dialogs, then checkpoints the
  * offset and yields hasMore=true so the host can resume. */
 export const BOOTSTRAP_BATCH_DIALOGS = 50;
+export const CATCHUP_BATCH_DIALOGS = 100;
 export const CATCHUP_MESSAGES_PER_CHAT = 20;
+const CATCHUP_HISTORY_REQUESTS = 5;
+const CATCHUP_READ_BUDGET_MS = 20_000;
 
 /** One dialog as the catch-up walk sees it. `peer` is an opaque handle the ops
  * impl hands back to `getMessages` (a gramjs entity / InputPeer). */
@@ -40,13 +40,14 @@ export interface CatchupDialog {
 /** The client operations the commands need. The live impl wraps gramjs
  * (`live.ts`); tests inject a fake. */
 export interface TgOps {
-  /** Walk ALL dialogs from the top (catch-up). */
+  /** Legacy full dialog enumeration; not used by bounded CatchUp. */
   listDialogs(): Promise<CatchupDialog[]>;
   /** Resolve a chat id to an opaque peer handle. */
   resolvePeer(chatId: number): Promise<unknown>;
   getMessages(
     peer: unknown,
     params: { limit?: number; offsetId?: number; ids?: number[] },
+    timeoutMs?: number,
   ): Promise<MessageLike[]>;
   sendMessage(
     peer: unknown,
@@ -75,7 +76,7 @@ export async function fetch(
   cursor: unknown,
 ): Promise<Record<string, unknown>> {
   return direction === "forward"
-    ? await runCatchup(ops, accountId, cursor)
+    ? await runCatchup(ops, accountId, cursor, pager)
     : await runBootstrap(cursor, pager);
 }
 
@@ -196,7 +197,26 @@ function hasPendingCatchup(value: unknown): boolean {
   return progress.targetLastMessageId !== undefined;
 }
 
-/** CatchUp: walk ALL dialogs from the top and emit only messages newer than each
+function catchupDialogOffset(value: unknown): DialogOffset | null {
+  if (value === undefined) return null;
+  const offset = asObject(value);
+  const peer = asObject(offset?.offset_peer);
+  if (
+    typeof offset?.offset_date !== "number" || !Number.isSafeInteger(offset.offset_date) || offset.offset_date < 0 ||
+    typeof offset.offset_id !== "number" || !Number.isSafeInteger(offset.offset_id) || offset.offset_id < 0 ||
+    typeof peer?.id !== "number" || !Number.isSafeInteger(peer.id) || peer.id <= 0 ||
+    (peer.ty !== "user" && peer.ty !== "chat" && peer.ty !== "channel") ||
+    (peer.access_hash !== undefined && (typeof peer.access_hash !== "number" || !Number.isInteger(peer.access_hash)))
+  ) throw new Error("telegram CatchUp cursor has invalid dialog offset");
+  return {
+    offset_date: offset.offset_date,
+    offset_id: offset.offset_id,
+    offset_peer: { ty: peer.ty, id: peer.id,
+      ...(peer.access_hash !== undefined ? { access_hash: peer.access_hash } : {}) },
+  };
+}
+
+/** CatchUp: resume one metadata page and emit only messages newer than each
  * chat's committed watermark. A gap larger than one provider page remains an
  * opaque per-chat continuation: `last_msg_id` stays committed while
  * `target_last_msg_id` fences the newest edge and `before_message_id` walks
@@ -210,7 +230,9 @@ export async function runCatchup(
   ops: TgOps,
   accountId: string,
   cursor: unknown,
+  pager: DialogPager,
 ): Promise<Record<string, unknown>> {
+  const deadline = Date.now() + CATCHUP_READ_BUDGET_MS;
   const c = asObject(cursor);
   const inChats = asObject(c?.chats) ?? {};
 
@@ -219,56 +241,99 @@ export async function runCatchup(
   // provider walk. Dropping one would turn a later reappearance into a fresh
   // account and replay its entire history.
   const newCursorChats: Record<string, unknown> = { ...inChats };
-  // pinned_order restarts at 0 on every catch-up pass (the walk starts at the top).
-  let pinnedOrder = 0;
-
-  const dialogs = await ops.listDialogs();
-  const listedChatKeys = new Set(dialogs.map((dialog) => String(toNum(dialog.entity.id))));
-  // A pending chat cannot be silently treated as complete when Telegram omits
-  // it from the current snapshot. Reject the page so the host retains the old
-  // cursor and applies its typed failure backoff instead of spinning hasMore or
-  // promoting an unobserved target.
-  //
-  // @tested-by: tst_cat_tg_gap_003
-  for (const [chatKey, progress] of Object.entries(inChats)) {
-    if (hasPendingCatchup(progress) && !listedChatKeys.has(chatKey)) {
-      throw new Error(
-        `telegram CatchUp pending chat '${chatKey}' is absent from the dialog snapshot`,
-      );
-    }
+  // Validate every saved gap before admitting any provider read.
+  const pendingKeys = Object.keys(inChats).filter((key) => hasPendingCatchup(inChats[key]));
+  const startOffset = catchupDialogOffset(c?.catchup_dialog_offset);
+  const rawSeen = c?.catchup_seen_pending;
+  if (rawSeen !== undefined && (!Array.isArray(rawSeen) || rawSeen.some((key) => typeof key !== "string"))) {
+    throw new Error("telegram CatchUp cursor has invalid pending observations");
+  }
+  const seenPending = new Set<string>(rawSeen as string[] | undefined);
+  const rawOrder = c?.catchup_pending_order;
+  if (rawOrder !== undefined && (
+    !Array.isArray(rawOrder) || rawOrder.some((key) => typeof key !== "string") ||
+    new Set(rawOrder).size !== rawOrder.length || rawOrder.length !== pendingKeys.length ||
+    pendingKeys.some((key) => !rawOrder.includes(key))
+  )) throw new Error("telegram CatchUp cursor has invalid pending order");
+  const pendingOrder = rawOrder === undefined ? pendingKeys : [...rawOrder as string[]];
+  if (c?.catchup_draining !== undefined && typeof c.catchup_draining !== "boolean") {
+    throw new Error("telegram CatchUp cursor has invalid draining flag");
+  }
+  const draining = c?.catchup_draining === true;
+  const rawPinned = c?.catchup_pinned_count;
+  if (rawPinned !== undefined && (typeof rawPinned !== "number" || !Number.isSafeInteger(rawPinned) || rawPinned < 0)) {
+    throw new Error("telegram CatchUp cursor has invalid pinned count");
   }
 
-  for (const dialog of dialogs) {
-    const chatId = toNum(dialog.entity.id);
-    const isPinned = dialog.pinned;
-    let pinOrder = 0;
-    if (isPinned) {
-      pinOrder = pinnedOrder;
-      pinnedOrder += 1;
-    }
-    const meta = buildDialogMeta(dialog.raw, isPinned, pinOrder);
-    // The chat envelope is emitted ALWAYS, even when its history is skipped.
-    envelopes.push(chatEnvelope(chatToIntermediate(dialog.entity, meta)));
+  // @tested-by: tst_tgts_catch_008
+  // @invariant: one metadata request and at most five history requests share a
+  // read deadline below the host's 30s timeout. A raced timeout does not cancel
+  // an already-issued MTProto request; errors abort this page without retries.
+  const rawCatchupOffset = c?.catchup_offset;
+  let skipRemaining = typeof rawCatchupOffset === "number" &&
+      Number.isInteger(rawCatchupOffset) && rawCatchupOffset >= 0
+    ? rawCatchupOffset
+    : 0;
+  let pinnedOrder = rawPinned ?? 0;
+  const page = await pager.dialogPage(startOffset, CATCHUP_BATCH_DIALOGS, {
+    hydrateMessages: false,
+    timeoutMs: deadline - Date.now(),
+  });
+  let historyRequests = 0;
+  const histories: { chatId: number; chatKey: string; peer: unknown; committed: number; target: number; before: number }[] = [];
 
+  // Consume the ENTIRE response: Telegram may return all pins beyond `limit`.
+  // Legacy catchup_offset is a processed prefix, not a Telegram offset. Walk it
+  // in bounded metadata pages, carrying the remaining skip with the real offset.
+  for (const dialog of page.dialogs) {
+    const chat = { ...dialog.chat, pin_order: dialog.chat.is_pinned ? pinnedOrder++ : 0 };
+    const chatId = chat.chat_id;
     const chatKey = String(chatId);
     const saved = catchupProgress(inChats[chatKey]);
+    if (saved.targetLastMessageId !== undefined) seenPending.add(chatKey);
+    if (skipRemaining > 0) {
+      skipRemaining -= 1;
+      continue;
+    }
+    envelopes.push(chatEnvelope(chat));
     const committed = saved.lastMessageId;
-    if (saved.targetLastMessageId === undefined && meta.top_message <= committed) {
+    if (saved.targetLastMessageId === undefined && (draining || chat.top_message <= committed)) {
       // Nothing new in this chat — carry the watermark, skip the history call.
       if (committed > 0) newCursorChats[chatKey] = { last_msg_id: committed };
       continue;
     }
 
-    const target = saved.targetLastMessageId ?? meta.top_message;
+    const target = saved.targetLastMessageId ?? chat.top_message;
     if (target <= committed) {
       if (committed > 0) newCursorChats[chatKey] = { last_msg_id: committed };
       continue;
     }
     const before = saved.beforeMessageId ?? target + 1;
-    const messages = await ops.getMessages(dialog.peer, {
+    // Freeze even deferred targets; enumeration must never promote unread heads.
+    newCursorChats[chatKey] = {
+      last_msg_id: committed,
+      target_last_msg_id: target,
+      before_message_id: before,
+    };
+    seenPending.add(chatKey);
+    if (!pendingOrder.includes(chatKey)) pendingOrder.push(chatKey);
+    histories.push({ chatId, chatKey, peer: dialog.peer, committed, target, before });
+  }
+
+  // Durable round-robin: a long gap moves behind waiting peers after each read.
+  // New targets join once; a drain sweep never follows newly moving heads.
+  histories.sort((left, right) => pendingOrder.indexOf(left.chatKey) - pendingOrder.indexOf(right.chatKey));
+  for (const { chatId, chatKey, peer, committed, target, before } of histories) {
+    const remainingMs = deadline - Date.now();
+    if (historyRequests >= CATCHUP_HISTORY_REQUESTS || remainingMs <= 0) break;
+    if (peer === undefined || peer === null) {
+      throw new Error("telegram CatchUp metadata is missing its provider peer");
+    }
+    historyRequests += 1;
+    const messages = await ops.getMessages(peer, {
       limit: CATCHUP_MESSAGES_PER_CHAT,
       offsetId: before,
-    });
+    }, remainingMs);
     let oldest: number | undefined;
     let reachedCommitted = false;
     for (const msg of messages) {
@@ -290,6 +355,7 @@ export async function runCatchup(
 
     if (reachedCommitted || messages.length === 0) {
       newCursorChats[chatKey] = { last_msg_id: target };
+      pendingOrder.splice(pendingOrder.indexOf(chatKey), 1);
       continue;
     }
     if (oldest === undefined || oldest >= before) {
@@ -300,13 +366,38 @@ export async function runCatchup(
       target_last_msg_id: target,
       before_message_id: oldest,
     };
+    pendingOrder.splice(pendingOrder.indexOf(chatKey), 1);
+    pendingOrder.push(chatKey);
   }
 
-  const hasMore = Object.values(newCursorChats).some(hasPendingCatchup);
+  const hasMoreDialogs = page.next_offset !== null;
+  // Absence is meaningful only after actual enumeration, never a partial page.
+  // @tested-by: tst_cat_tg_gap_003
+  if (!hasMoreDialogs) {
+    for (const [chatKey, progress] of Object.entries(newCursorChats)) {
+      if (hasPendingCatchup(progress) && !seenPending.has(chatKey)) {
+        throw new Error(`telegram CatchUp pending chat '${chatKey}' is absent from the dialog snapshot`);
+      }
+    }
+  }
+  const hasMore = hasMoreDialogs || Object.values(newCursorChats).some(hasPendingCatchup);
   const nextCursor =
-    Object.keys(newCursorChats).length === 0
+    Object.keys(newCursorChats).length === 0 && !hasMoreDialogs
       ? null
-      : { date: toRfc3339Utc(new Date()), chats: newCursorChats };
+      : {
+          date: toRfc3339Utc(new Date()),
+          chats: newCursorChats,
+          ...(hasMore ? {
+            catchup_pending_order: pendingOrder,
+            catchup_draining: draining || !hasMoreDialogs,
+          } : {}),
+          ...(hasMoreDialogs ? {
+            catchup_dialog_offset: page.next_offset,
+            catchup_pinned_count: pinnedOrder,
+            catchup_seen_pending: [...seenPending],
+            ...(skipRemaining > 0 ? { catchup_offset: skipRemaining } : {}),
+          } : {}),
+        };
 
   return { envelopes, nextCursor, hasMore };
 }
@@ -457,6 +548,7 @@ async function backfillChat(
 ): Promise<Record<string, unknown>> {
   const peer = await ops.resolvePeer(chatId);
   const messages = await ops.getMessages(peer, { offsetId: beforeMessageId, limit });
+  const providerTotal = (messages as MessageLike[] & { readonly total?: number }).total;
 
   const envelopes: Record<string, unknown>[] = [];
   let oldest: number | null = null;
@@ -477,5 +569,6 @@ async function backfillChat(
     envelopes,
     has_more: backfillHasMore(envelopes.length),
     oldest_message_id: oldest,
+    total: providerTotal ?? null,
   };
 }

@@ -18,7 +18,7 @@ import { credsFromMeta, accountIdFromMeta, type MessageLike } from "./client";
 import { messagePayload } from "./surfaces/telegram/envelope";
 import { messageRemoteId } from "./surfaces/telegram/schema";
 import { livePushes, fixturePath } from "./surfaces/telegram/fixture";
-import { messageToIntermediate, toNum } from "./client";
+import { messageToIntermediate, peerIdentity } from "./client";
 // `import type` ONLY: the gramjs stack is loaded LAZILY (live mode alone needs
 // it) so fixture-mode runs and the unit tests never load the MTProto stack.
 import type { TgClient } from "./live";
@@ -55,15 +55,15 @@ export function notificationLine(
   });
 }
 
-/** Convert one live update into push `(payload, remote_id)`. Live updates carry a
- * full chat, so `msg.chat.id` IS authoritative here (unlike the bootstrap path,
- * where the caller-supplied dialog id wins over a possible "min" peer id). */
+/** Convert one live update using its raw wire peer, independent of optional
+ * hydrated chat metadata. Missing identity is an error, never a chat-zero push. */
 export function liveUpdatePushes(
   message: MessageLike,
   accountId: string,
 ): { payload: Record<string, unknown>; remote_id: string }[] {
-  const chatId = message.chat === null || message.chat === undefined ? 0 : toNum(message.chat.id);
-  const m = messageToIntermediate(message, accountId, chatId);
+  const peer = peerIdentity(message.peerId);
+  if (peer === undefined) throw new Error("live update requires a valid Telegram peer identity");
+  const m = messageToIntermediate(message, accountId, peer.id);
   return [{ payload: messagePayload(m), remote_id: messageRemoteId(m.chat_id, m.message_id) }];
 }
 

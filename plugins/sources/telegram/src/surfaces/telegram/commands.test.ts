@@ -1,7 +1,8 @@
 // Bootstrap / catch-up parity tests — the TS mirror of the Rust
 // plugins/sources/telegram/src/commands.rs `mod tests` (FakePager harness).
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
+import { FloodWaitError } from "telegram/errors";
 import type {
   DialogOffset,
   DialogPage,
@@ -14,6 +15,7 @@ import { resolveHydratedMessages } from "../../client";
 import type { TgChat, TgMessage } from "./envelope";
 import {
   BOOTSTRAP_BATCH_DIALOGS,
+  CATCHUP_BATCH_DIALOGS,
   runBootstrap,
   runCatchup,
   type CatchupDialog,
@@ -416,9 +418,28 @@ function liveMsg(id: number): MessageLike {
 /** Minimal TgOps fake: a dialog list + a per-chat newest-first message list. */
 function fakeOps(
   dialogs: { chatId: number; topMessage: number; pinned?: boolean; messages: number[] }[],
-  calls: { getMessages: number[] } = { getMessages: [] },
-): TgOps {
+  calls: { getMessages: number[]; metadata?: (DialogOffset | null)[]; timeouts?: (number | undefined)[] } = { getMessages: [] },
+  options: { firstPageSize?: number; onMetadata?: () => void; onHistory?: () => void } = {},
+): TgOps & DialogPager {
   return {
+    async dialogPage(offset, limit, readOptions) {
+      calls.metadata?.push(offset);
+      options.onMetadata?.();
+      expect(readOptions?.hydrateMessages).toBe(false);
+      const start = offset?.offset_id ?? 0;
+      const end = Math.min(start + (start === 0 ? options.firstPageSize ?? limit : limit), dialogs.length);
+      return {
+        dialogs: dialogs.slice(start, end).map((d) => ({
+          chat: { ...fakeChat(d.chatId, d.pinned === true), top_message: d.topMessage },
+          messages: [],
+          peer: d.chatId,
+        })),
+        next_offset: end < dialogs.length
+          ? { offset_date: 1767225600, offset_id: end, offset_peer: { ty: "user", id: end } }
+          : null,
+        total: dialogs.length,
+      };
+    },
     async listDialogs(): Promise<CatchupDialog[]> {
       return dialogs.map((d) => ({
         entity: entity(d.chatId),
@@ -430,11 +451,14 @@ function fakeOps(
     async resolvePeer(chatId) {
       return chatId;
     },
-    async getMessages(peer) {
+    async getMessages(peer, params, timeoutMs?: number) {
       calls.getMessages.push(peer as number);
+      calls.timeouts?.push(timeoutMs);
+      options.onHistory?.();
       const d = dialogs.find((x) => x.chatId === peer);
       // Newest-first, as gramjs returns.
-      return (d?.messages ?? []).slice().sort((a, b) => b - a).map(liveMsg);
+      return (d?.messages ?? []).filter((id) => params.offsetId === undefined || id < params.offsetId)
+        .sort((a, b) => b - a).slice(0, params.limit).map(liveMsg);
     },
     async sendMessage() {
       throw new Error("not used");
@@ -446,9 +470,142 @@ function fakeOps(
 }
 
 describe("catch-up", () => {
+  /**
+   * @test-id: tst_tgts_catch_008
+   * @scenario: scn_telegram_large_account_catchup_001
+   * @covers: plugins/sources/telegram/src/surfaces/telegram/commands.ts::runCatchup
+   * @deterministic: yes
+   * @fixtures: 2630-dialog metadata pages, legacy continuation 100, pinned overflow and virtual read clock
+   *
+   * Test environment: Telegram source command loop
+   * Clients: direct calls
+   * Mocks: deterministic TgOps and DialogPager with real limit/offset semantics
+   * Data: preserved watermarks, deferred multi-chat gaps and unchanged dialogs
+   */
+  test("tst_tgts_catch_008 bounds metadata and history without losing legacy or deferred progress", async () => {
+    const changed = new Set([...Array.from({ length: 12 }, (_, i) => i + 101),
+      ...Array.from({ length: 12 }, (_, i) => i + 201)]);
+    const dialogs = Array.from({ length: 2_630 }, (_, index) => {
+      const chatId = index + 1;
+      return { chatId, pinned: chatId <= 150,
+        topMessage: chatId === 1 ? 100 : changed.has(chatId) ? 12 : chatId > 2627 ? 0 : 10,
+        messages: chatId === 1 ? Array.from({ length: 100 }, (_, i) => i + 1) : [12, 11, 10] };
+    });
+    const savedChats = Object.fromEntries(dialogs.map((d) => [String(d.chatId),
+      d.chatId === 1 ? { last_msg_id: 10, target_last_msg_id: 100, before_message_id: 91 }
+        : { last_msg_id: d.chatId > 2627 ? 0 : 10 }]));
+    let cursor: unknown = { chats: savedChats, catchup_offset: 100 };
+    let complete = false;
+    const emitted = new Set<string>();
+    const original = JSON.stringify(cursor);
+    for (let turn = 0; turn < 200 && !complete; turn += 1) {
+      const calls = { getMessages: [] as number[], metadata: [] as (DialogOffset | null)[] };
+      // A new provider facade each turn proves no process-local cursor is needed.
+      const ops = fakeOps(dialogs, calls, { firstPageSize: 150 });
+      ops.listDialogs = async () => { throw new Error("unbounded dialog enumeration"); };
+      const page = await runCatchup(ops, "acct", cursor, ops);
+      expect(calls.metadata).toHaveLength(1);
+      expect(calls.getMessages.length).toBeLessThanOrEqual(5);
+      const next = page.nextCursor as Record<string, unknown>;
+      const chats = next.chats as Record<string, unknown>;
+      expect(Object.keys(chats)).toHaveLength(2630);
+      if (turn === 0) {
+        expect(JSON.stringify(cursor)).toBe(original);
+        expect(calls.getMessages).toEqual([101, 102, 103, 104, 105]);
+        expect(next.catchup_dialog_offset).toMatchObject({ offset_id: 150 });
+        expect(chats["1"]).toEqual(savedChats["1"]);
+        expect(chats["106"]).toEqual({ last_msg_id: 10, target_last_msg_id: 12, before_message_id: 13 });
+        const chatRows = (page.envelopes as Record<string, unknown>[]).filter((e) => String(e.remote_id).startsWith("tg:chat:"));
+        expect(chatRows).toHaveLength(50);
+        expect((chatRows.at(-1)?.payload as Record<string, unknown>).pin_order).toBe(149);
+      }
+      for (const envelope of page.envelopes as Record<string, unknown>[]) {
+        const id = String(envelope.remote_id);
+        if (id.startsWith("tg:msg:")) {
+          expect(emitted.has(id)).toBe(false);
+          emitted.add(id);
+        }
+      }
+      cursor = next;
+      complete = page.hasMore === false;
+    }
+    expect(complete).toBe(true);
+    const finalChats = (cursor as Record<string, unknown>).chats as Record<string, unknown>;
+    expect(finalChats["1"]).toEqual({ last_msg_id: 100 });
+    for (const d of dialogs.slice(1)) {
+      expect(finalChats[String(d.chatId)]).toEqual({ last_msg_id: changed.has(d.chatId) ? 12 : d.chatId > 2627 ? 0 : 10 });
+    }
+    expect(emitted).toEqual(new Set([
+      ...Array.from({ length: 80 }, (_, i) => `tg:msg:1:${i + 11}`),
+      ...[...changed].flatMap((id) => [`tg:msg:${id}:11`, `tg:msg:${id}:12`]),
+    ]));
+    expect(CATCHUP_BATCH_DIALOGS).toBe(100);
+
+    // Eleven long, hot gaps must rotate even before any target completes.
+    // Moving heads cannot extend the frozen CatchUp cycle indefinitely.
+    let hotCursor: unknown = { chats: Object.fromEntries(Array.from({ length: 11 }, (_, i) => [String(i + 1), { last_msg_id: 10 }])) };
+    const served: number[] = [];
+    let hotComplete = false;
+    for (let turn = 0; turn < 30 && !hotComplete; turn += 1) {
+      const calls = { getMessages: [] as number[] };
+      const ops = fakeOps(Array.from({ length: 11 }, (_, i) => ({ chatId: i + 1,
+        topMessage: 100 + turn * 2, messages: Array.from({ length: 100 + turn * 2 }, (_, id) => id + 1) })), calls);
+      const page = await runCatchup(ops, "acct", hotCursor, ops);
+      served.push(...calls.getMessages);
+      if (turn === 2) expect(served.slice(0, 11)).toEqual(Array.from({ length: 11 }, (_, i) => i + 1));
+      hotCursor = page.nextCursor;
+      hotComplete = page.hasMore === false;
+    }
+    expect(hotComplete).toBe(true);
+    expect((hotCursor as { chats: unknown }).chats).toEqual(Object.fromEntries(
+      Array.from({ length: 11 }, (_, i) => [String(i + 1), { last_msg_id: 100 }]),
+    ));
+    expect(Object.keys(hotCursor as object).sort()).toEqual(["chats", "date"]);
+    const nextCycleOps = fakeOps([{ chatId: 1, topMessage: 102, messages: [102, 101, 100] }]);
+    const nextCycle = await runCatchup(nextCycleOps, "acct", hotCursor, nextCycleOps);
+    expect((nextCycle.nextCursor as { chats: Record<string, unknown> }).chats["1"]).toEqual({ last_msg_id: 102 });
+
+    const flood = new FloodWaitError({ capture: 25 });
+    let attempted = 0;
+    const floodOps = fakeOps([1, 2].map((chatId) => ({ chatId, topMessage: 12, messages: [12, 11, 10] })));
+    floodOps.getMessages = async () => { attempted += 1; throw flood; };
+    const floodCursor = { chats: { "1": { last_msg_id: 10 }, "2": { last_msg_id: 10 } } };
+    const beforeFlood = JSON.stringify(floodCursor);
+    await expect(runCatchup(floodOps, "acct", floodCursor, floodOps)).rejects.toBe(flood);
+    expect(attempted).toBe(1);
+    expect(JSON.stringify(floodCursor)).toBe(beforeFlood);
+
+    let now = 0;
+    const clock = spyOn(Date, "now").mockImplementation(() => now);
+    try {
+      const calls = { getMessages: [] as number[], timeouts: [] as (number | undefined)[] };
+      const ops = fakeOps([
+        { chatId: 1, topMessage: 12, messages: [12, 11, 10] },
+        { chatId: 2, topMessage: 12, messages: [12, 11, 10] },
+      ], calls, { onMetadata: () => { now = 19_000; }, onHistory: () => { now = 20_001; } });
+      const page = await runCatchup(ops, "acct", { chats: { "1": { last_msg_id: 10 }, "2": { last_msg_id: 10 } } }, ops);
+      expect(calls.getMessages).toEqual([1]);
+      expect(calls.timeouts).toEqual([1_000]);
+      expect(page.hasMore).toBe(true);
+      expect((page.nextCursor as { chats: unknown }).chats).toEqual({
+        "1": { last_msg_id: 12 },
+        "2": { last_msg_id: 10, target_last_msg_id: 12, before_message_id: 13 },
+      });
+      now = 0;
+      const expiredCalls = { getMessages: [] as number[] };
+      const expiredOps = fakeOps([{ chatId: 1, topMessage: 12, messages: [12, 11, 10] }],
+        expiredCalls, { onMetadata: () => { now = 20_001; } });
+      const expired = await runCatchup(expiredOps, "acct", { chats: { "1": { last_msg_id: 10 } } }, expiredOps);
+      expect(expiredCalls.getMessages).toEqual([]);
+      expect((expired.nextCursor as { chats: unknown }).chats).toEqual({
+        "1": { last_msg_id: 10, target_last_msg_id: 12, before_message_id: 13 },
+      });
+    } finally { clock.mockRestore(); }
+  });
+
   test("tst_tgts_catch_001 emits only messages ABOVE the watermark; no total/discovered", async () => {
     const ops = fakeOps([{ chatId: 5, topMessage: 20, messages: [10, 20] }]);
-    const out = await runCatchup(ops, "acct", { chats: { "5": { last_msg_id: 10 } } });
+    const out = await runCatchup(ops, "acct", { chats: { "5": { last_msg_id: 10 } } }, ops);
 
     expect((out.envelopes as Record<string, unknown>[]).map((e) => e.remote_id)).toEqual([
       "tg:chat:5",
@@ -463,7 +620,7 @@ describe("catch-up", () => {
   test("tst_tgts_catch_002 skips the history call when top_message <= watermark", async () => {
     const calls = { getMessages: [] as number[] };
     const ops = fakeOps([{ chatId: 5, topMessage: 10, messages: [10] }], calls);
-    const out = await runCatchup(ops, "acct", { chats: { "5": { last_msg_id: 10 } } });
+    const out = await runCatchup(ops, "acct", { chats: { "5": { last_msg_id: 10 } } }, ops);
 
     // The chat envelope is emitted ALWAYS, but no history was fetched…
     expect((out.envelopes as Record<string, unknown>[]).map((e) => e.remote_id)).toEqual([
@@ -478,7 +635,7 @@ describe("catch-up", () => {
   test("tst_tgts_catch_003 breaks the walk at the first message <= watermark", async () => {
     // Newest-first [30, 20, 10] with watermark 10 → 30 and 20 emitted, then break.
     const ops = fakeOps([{ chatId: 5, topMessage: 30, messages: [10, 20, 30] }]);
-    const out = await runCatchup(ops, "acct", { chats: { "5": { last_msg_id: 10 } } });
+    const out = await runCatchup(ops, "acct", { chats: { "5": { last_msg_id: 10 } } }, ops);
     expect((out.envelopes as Record<string, unknown>[]).map((e) => e.remote_id)).toEqual([
       "tg:chat:5",
       "tg:msg:5:30",
@@ -490,14 +647,14 @@ describe("catch-up", () => {
 
   test("tst_tgts_catch_004 no cursor → every message flows (offset 0 disables the break)", async () => {
     const ops = fakeOps([{ chatId: 5, topMessage: 30, messages: [10, 20, 30] }]);
-    const out = await runCatchup(ops, "acct", null);
+    const out = await runCatchup(ops, "acct", null, ops);
     expect(out.envelopes).toHaveLength(4); // chat + 3 messages
   });
 
   test("tst_tgts_catch_005 a 0-message chat with no watermark is NOT recorded", async () => {
     // new_last = max(undefined ?? 0, 0) = 0 → insert only if > 0.
     const ops = fakeOps([{ chatId: 5, topMessage: 0, messages: [] }]);
-    const out = await runCatchup(ops, "acct", null);
+    const out = await runCatchup(ops, "acct", null, ops);
     expect(out.nextCursor).toBeNull(); // no chats recorded → null cursor
     expect(out.envelopes).toHaveLength(1); // the chat envelope still emitted
   });
@@ -508,7 +665,7 @@ describe("catch-up", () => {
       { chatId: 2, topMessage: 0, pinned: false, messages: [] },
       { chatId: 3, topMessage: 0, pinned: true, messages: [] },
     ]);
-    const out = await runCatchup(ops, "acct", null);
+    const out = await runCatchup(ops, "acct", null, ops);
     expect(
       (out.envelopes as Record<string, unknown>[]).map(
         (e) => (e.payload as Record<string, unknown>).pin_order,
@@ -518,7 +675,7 @@ describe("catch-up", () => {
 
   test("tst_tgts_catch_007 the account_id reaches the message payloads", async () => {
     const ops = fakeOps([{ chatId: 5, topMessage: 1, messages: [1] }]);
-    const out = await runCatchup(ops, "conn-abc", null);
+    const out = await runCatchup(ops, "conn-abc", null, ops);
     const msg = (out.envelopes as Record<string, unknown>[])[1]!;
     // No media here, so source_ref is absent — but the intermediate carries the
     // account id, which media messages stamp into source_ref.account_id.

@@ -7,8 +7,10 @@
 // plugins/sources/telegram/src/client.rs but is exercised only against real
 // Telegram.
 
+import { createWriteStream } from "node:fs";
 import { mkdir, stat } from "node:fs/promises";
 import { dirname } from "node:path";
+import { finished } from "node:stream/promises";
 import bigInt from "big-integer";
 import { Api, TelegramClient } from "telegram";
 import { StringSession } from "telegram/sessions";
@@ -17,6 +19,7 @@ import { NewMessage } from "telegram/events/NewMessage";
 import type {
   DialogOffset,
   DialogPage,
+  DialogPageOptions,
   DialogPager,
   EntityLike,
   MessageLike,
@@ -30,7 +33,9 @@ import {
   chatToIntermediate,
   messageToIntermediate,
   MTPROTO_REQUEST_TIMEOUT_MS,
+  MtprotoTimeoutError,
   offsetPeerFromEntity,
+  peerIdentity,
   resolveHydratedMessages,
   toNum,
   withTimeout,
@@ -58,12 +63,8 @@ const INIT_PARAMS = {
  * - `retryDelay: 1000`     ms between reconnect attempts.
  * - `autoReconnect: true`  reconnect the transport on drop instead of dying
  *                          silently mid-run (gramjs default, pinned explicit).
- * - `floodSleepThreshold`  floods <= 30s are auto-slept by gramjs (fine); a
- *                          LONGER flood is THROWN as FloodWaitError so the
- *                          connector surfaces it as a typed -32002 rate-limit
- *                          (see dispatch.classifyToolError) instead of the host
- *                          silently blocking for minutes. Matches
- *                          FLOOD_WAIT_RETRY_MAX. */
+ * - `floodSleepThreshold`  never sleep inside provider reads: surface the typed
+ *                          FloodWaitError to the host for durable retry. */
 const CLIENT_OPTIONS = {
   ...INIT_PARAMS,
   timeout: 60,
@@ -71,7 +72,7 @@ const CLIENT_OPTIONS = {
   connectionRetries: 5,
   retryDelay: 1000,
   autoReconnect: true,
-  floodSleepThreshold: 30,
+  floodSleepThreshold: 0,
 } as const;
 
 // ── auth-flow seams (auth.ts) ──────────────────────────────────────────────
@@ -200,12 +201,21 @@ export class TgClient implements TgOps {
   async resolvePeer(chatId: number): Promise<unknown> {
     const cached = this.peerCache.get(chatId);
     if (cached !== undefined) return cached;
-    const dialogs = await withTimeout(
-      this.client.getDialogs({}),
-      MTPROTO_REQUEST_TIMEOUT_MS,
-      "getDialogs(resolvePeer)",
-    );
-    for (const dialog of dialogs) {
+    // @tested-by: tst_src_tg_026, tst_src_tg_027, tst_src_tg_028
+    // Stop at the target instead of collecting every dialog. Bound each next()
+    // so a timed-out lookup cannot keep paginating in an abandoned async loop.
+    const dialogs = this.client.iterDialogs({})[Symbol.asyncIterator]();
+    const deadline = Date.now() + MTPROTO_REQUEST_TIMEOUT_MS;
+    for (;;) {
+      const remainingMs = deadline - Date.now();
+      if (remainingMs <= 0) throw new MtprotoTimeoutError("getDialogs(resolvePeer)", MTPROTO_REQUEST_TIMEOUT_MS);
+      const next = await withTimeout(
+        dialogs.next(),
+        remainingMs,
+        "getDialogs(resolvePeer)",
+      );
+      if (next.done) break;
+      const dialog = next.value;
       const entity = dialog.entity as EntityLike | undefined;
       if (entity === undefined) continue;
       const id = toNum(entity.id);
@@ -239,10 +249,12 @@ export class TgClient implements TgOps {
   async getMessages(
     peer: unknown,
     params: { limit?: number; offsetId?: number; ids?: number[] },
+    timeoutMs = MTPROTO_REQUEST_TIMEOUT_MS,
   ): Promise<MessageLike[]> {
+    if (timeoutMs <= 0) throw new MtprotoTimeoutError("getMessages", timeoutMs);
     const msgs = await withTimeout(
       this.client.getMessages(peer as never, params),
-      MTPROTO_REQUEST_TIMEOUT_MS,
+      timeoutMs,
       "getMessages",
     );
     return msgs as unknown as MessageLike[];
@@ -268,11 +280,29 @@ export class TgClient implements TgOps {
     // CLIENT_OPTIONS, and downloads are host-scheduled discrete ops (a stall
     // fails that one file, not the sync). See the report's caveat.
     await mkdir(dirname(dest), { recursive: true });
-    const out = await this.client.downloadMedia(message as never, { outputFile: dest });
-    if (out === undefined) {
-      throw new Error(`download_file: no downloadable media in message ${String(message.id)}`);
+    // @tested-by: tst_src_tg_029, tst_src_tg_030, tst_src_tg_031
+    // GramJS closes its writer without awaiting flushed bytes. Observe both
+    // promises immediately so a stream error cannot escape during provider I/O.
+    const output = createWriteStream(dest);
+    const completed = finished(output, { cleanup: true });
+    try {
+      await Promise.all([
+        completed,
+        this.client.downloadMedia(message as never, { outputFile: output }).then((out) => {
+          if (out === undefined) {
+            throw new Error(`download_file: no downloadable media in message ${String(message.id)}`);
+          }
+        }),
+      ]);
+      return (await stat(dest)).size;
+    } catch (error: unknown) {
+      output.destroy();
+      // Drain stream teardown without replacing the original provider/write error.
+      await completed.catch(() => {
+        // The original provider/write failure remains the command's error.
+      });
+      throw error;
     }
-    return (await stat(dest)).size;
   }
 
   /** Stream live updates as `(payload, remote_id)` pairs via `onMessage`. v1
@@ -292,22 +322,8 @@ export class TgClient implements TgOps {
 
 /** Stable key for a TL Peer, used to join dialogs to their entity. */
 function peerKey(peer: unknown): string | undefined {
-  const p = peer as {
-    className?: string;
-    userId?: unknown;
-    chatId?: unknown;
-    channelId?: unknown;
-  } | null;
-  switch (p?.className) {
-    case "PeerUser":
-      return `user:${String(toNum(p.userId))}`;
-    case "PeerChat":
-      return `chat:${String(toNum(p.chatId))}`;
-    case "PeerChannel":
-      return `channel:${String(toNum(p.channelId))}`;
-    default:
-      return undefined;
-  }
+  const identity = peerIdentity(peer);
+  return identity === undefined ? undefined : `${identity.kind}:${String(identity.id)}`;
 }
 
 /** Key an entity the same way, so `peerKey(dialog.peer)` finds it. */
@@ -346,7 +362,9 @@ export class LiveDialogPager implements DialogPager {
     private readonly accountId: string,
   ) {}
 
-  async dialogPage(offset: DialogOffset | null, limit: number): Promise<DialogPage> {
+  async dialogPage(offset: DialogOffset | null, limit: number, options: DialogPageOptions = {}): Promise<DialogPage> {
+    const timeoutMs = options.timeoutMs ?? MTPROTO_REQUEST_TIMEOUT_MS;
+    if (timeoutMs <= 0) throw new MtprotoTimeoutError("messages.getDialogs", timeoutMs);
     // Pinned dialogs are returned at the head of the FIRST page only;
     // excludePinned after page 1 prevents Telegram re-returning them on every
     // page (dup chats / count).
@@ -362,7 +380,7 @@ export class LiveDialogPager implements DialogPager {
 
     const res = await withTimeout(
       this.tg.client.invoke(request),
-      MTPROTO_REQUEST_TIMEOUT_MS,
+      timeoutMs,
       "messages.getDialogs",
     );
 
@@ -370,7 +388,7 @@ export class LiveDialogPager implements DialogPager {
     // (messages.dialogsSlice.count); the complete (non-slice) Dialogs variant has
     // no count, so the full set IS its own total.
     let rawDialogs: RawDialogLike[];
-    let rawMessages: { id?: number; date?: number }[];
+    let rawMessages: { id?: number; date?: number; peerId?: unknown }[];
     let users: EntityLike[];
     let chats: EntityLike[];
     let isSlice: boolean;
@@ -397,10 +415,13 @@ export class LiveDialogPager implements DialogPager {
     const chatMap = new Map<string, EntityLike>();
     for (const e of [...users, ...chats]) chatMap.set(entityKey(e), e);
 
-    // (message id → date) for advancing the offset the way Telegram expects.
-    const msgDate = new Map<number, number>();
+    // Channel-local message IDs can collide; dates belong to a peer AND ID.
+    const msgDate = new Map<string, number>();
     for (const m of rawMessages) {
-      if (typeof m.id === "number" && typeof m.date === "number") msgDate.set(m.id, m.date);
+      const key = peerKey(m.peerId);
+      if (key !== undefined && typeof m.id === "number" && typeof m.date === "number") {
+        msgDate.set(`${key}:${String(m.id)}`, m.date);
+      }
     }
 
     const dialogs: PagedDialog[] = [];
@@ -413,6 +434,10 @@ export class LiveDialogPager implements DialogPager {
 
       const meta = buildDialogMeta(raw, raw.pinned === true, 0);
       const tgChat = chatToIntermediate(entity, meta);
+      if (options.hydrateMessages === false) {
+        dialogs.push({ chat: tgChat, messages: [], peer: entity });
+        continue;
+      }
 
       // Hydrate the chat's newest messages — GetDialogs carries only each
       // dialog's single top message, not the snapshot depth. A single chat's
@@ -433,36 +458,30 @@ export class LiveDialogPager implements DialogPager {
         fetched = { ok: false, error };
       }
       const messages = resolveHydratedMessages(chatId, fetched);
-      dialogs.push({ chat: tgChat, messages });
+      dialogs.push({ chat: tgChat, messages, peer: entity });
     }
 
-    // Exhausted when Telegram returned the complete (non-slice) set or a short
-    // final page; otherwise advance the offset triple from the last dialogs.
+    // Exhausted when Telegram returned the complete (non-slice) set. A Slice
+    // may be short even while its authoritative count proves that more dialogs
+    // remain, so advance from the last dialog that has a resolvable peer.
     let nextOffset: DialogOffset | null = null;
-    if (isSlice && rawDialogs.length >= limit) {
-      let offsetDate = 0;
-      let offsetId = 0;
+    if (isSlice && (sliceCount > rawDialogs.length || rawDialogs.length >= limit)) {
+      // @tested-by: tst_src_tg_025
+      // @invariant: an unresolved/folder tail must not terminate a partial slice.
       for (let i = rawDialogs.length - 1; i >= 0; i -= 1) {
         const d = rawDialogs[i];
         if (d === undefined || d.className === "DialogFolder") continue;
-        const top = d.topMessage;
-        const date = top === undefined ? undefined : msgDate.get(top);
-        if (date !== undefined && top !== undefined) {
-          offsetDate = date;
-          offsetId = top;
-          break;
-        }
-      }
-      const last = rawDialogs[rawDialogs.length - 1];
-      if (last === undefined) throw new Error("telegram.live: empty dialog slice");
-      const lastKey = peerKey(last.peer);
-      const lastEntity = lastKey === undefined ? undefined : chatMap.get(lastKey);
-      if (lastEntity !== undefined) {
+        const key = peerKey(d.peer);
+        if (key === undefined) continue;
+        const entity = chatMap.get(key);
+        if (entity === undefined) continue;
+        const top = d.topMessage ?? 0;
         nextOffset = {
-          offset_date: offsetDate,
-          offset_id: offsetId,
-          offset_peer: offsetPeerFromEntity(lastEntity),
+          offset_date: msgDate.get(`${key}:${String(top)}`) ?? 0,
+          offset_id: top,
+          offset_peer: offsetPeerFromEntity(entity),
         };
+        break;
       }
     }
 

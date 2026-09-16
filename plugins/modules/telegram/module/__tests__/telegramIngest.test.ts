@@ -25,6 +25,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { entity, mockGraph, mountModule } from "@magnis/testkit/module";
+import type { GraphBatchInput } from "@magnis/plugin-sdk";
 import { CHAT, MESSAGE, TELEGRAM_ACCOUNT } from "../../schema.ts";
 import type { SyncEnvelope } from "../../types.ts";
 import { TelegramModule } from "../service.ts";
@@ -188,6 +189,140 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
       parent_entity_id: "id:tg:msg:42:7",
       link_kind: "references",
     });
+  });
+
+  /**
+   * @test-id: tst_module_telegram_005
+   * @scenario: scn_telegram_unicode_title_001
+   * @covers: TelegramModule.ingestMessageBatch
+   * @deterministic: yes
+   * @fixtures: odd ASCII prefix with emoji, emoji-only, and ASCII message bodies
+   */
+  it("tst_module_telegram_005 truncates titles at complete code points without changing message bodies", async () => {
+    const graph = mockGraph({
+      find_by_anchor: () => Promise.resolve(null),
+      apply_batch: (fragment) =>
+        Promise.resolve({
+          ids: Object.fromEntries(fragment.entities.map((item) => [item.key, `id:${item.key}`])),
+          created: fragment.entities.length,
+          updated: 0,
+          links_added: fragment.links?.length ?? 0,
+          dropped_keys: [],
+        }),
+    });
+    const module = mountModule(TelegramModule, { graph }).module;
+    const variants = [
+      { text: `${"x".repeat(79)}😀 suffix`, name: `${"x".repeat(79)}😀` },
+      { text: "😀".repeat(81), name: "😀".repeat(80) },
+      { text: "x".repeat(81), name: "x".repeat(80) },
+    ];
+    const envelopes = variants.map(({ text }, index) => {
+      const envelope = messageEnvelope();
+      const messageId = index + 7;
+      return {
+        ...envelope,
+        remote_id: `tg:msg:42:${String(messageId)}`,
+        payload: { ...envelope.payload, message_id: messageId, text },
+      };
+    });
+
+    await expect(module.ingest({ envelopes })).resolves.toEqual({ dropped_remote_ids: [], trigger_checks: [] });
+
+    const applyBatch = graph.spies.apply_batch;
+    if (applyBatch === undefined) throw new Error("telegram ingest: apply_batch spy missing");
+    expect(applyBatch).toHaveBeenCalledTimes(1);
+    const fragment = applyBatch.mock.calls[0]?.[0] as GraphBatchInput | undefined;
+    expect(fragment?.entities.filter(({ schema_id }) => schema_id === MESSAGE).map(({ name, properties }) => ({
+      name,
+      text: properties?.text,
+    }))).toEqual(variants);
+    expect(envelopes.map(({ payload }) => payload.text)).toEqual(variants.map(({ text }) => text));
+  });
+
+  /**
+   * @test-id: tst_module_telegram_004
+   * @scenario: scn_telegram_backfill_throughput_001
+   * @covers: TelegramModule.ingest
+   * @deterministic: yes
+   * @fixtures: bounded 500-message and oversized 1001-message pages
+   */
+  it.each([
+    { messageCount: 500, expectedBatchCount: 1 },
+    { messageCount: 1_001, expectedBatchCount: 3 },
+  ])("tst_module_telegram_004 chunks $messageCount messages into $expectedBatchCount graph batches", async ({
+    messageCount,
+    expectedBatchCount,
+  }) => {
+    const graph = mockGraph({
+      find_by_anchor: () => Promise.resolve("chat-entity"),
+      get_entity: () =>
+        Promise.resolve(entity("chat-entity", "Chat", {
+          schema_id: CHAT,
+          properties: { chat_id: 42, type: "private" },
+        })),
+      apply_batch: (fragment) =>
+        Promise.resolve({
+          ids: Object.fromEntries(fragment.entities.map((item) => [item.key, `id:${item.key}`])),
+          created: fragment.entities.length,
+          updated: 0,
+          links_added: fragment.links?.length ?? 0,
+          dropped_keys: [],
+        }),
+      update_properties: () => Promise.resolve(undefined),
+    });
+    const module = mountModule(TelegramModule, { graph }).module;
+    const envelopes = Array.from({ length: messageCount }, (_, index) => {
+      const envelope = messageEnvelope();
+      const messageId = index + 1;
+      return {
+        ...envelope,
+        remote_id: `tg:msg:42:${String(messageId)}`,
+        payload: { ...envelope.payload, message_id: messageId, text: "plain text" },
+      };
+    });
+
+    await module.ingest({ envelopes });
+
+    expect(graph.spies.find_by_anchor).toHaveBeenCalledTimes(expectedBatchCount);
+    expect(graph.spies.get_entity).toHaveBeenCalledTimes(expectedBatchCount);
+    expect(graph.spies.apply_batch).toHaveBeenCalledTimes(expectedBatchCount);
+    expect(graph.spies.update_properties).toHaveBeenCalledTimes(expectedBatchCount);
+  });
+
+  it("preserves the provider-verified self marker when an outgoing sender replica converges", async () => {
+    const outgoing = messageEnvelope();
+    outgoing.payload.sender_id = 9001;
+    outgoing.payload.sender_name = "Operator";
+    const graph = mockGraph({
+      find_by_anchor: () => Promise.resolve("chat-entity"),
+      get_entity: () =>
+        Promise.resolve(entity("chat-entity", "Chat", {
+          schema_id: CHAT,
+          properties: { chat_id: 42, type: "private" },
+        })),
+      apply_batch: (fragment) =>
+        Promise.resolve({
+          ids: Object.fromEntries(fragment.entities.map((item) => [item.key, `id:${item.key}`])),
+          created: fragment.entities.length,
+          updated: 0,
+          links_added: fragment.links?.length ?? 0,
+          dropped_keys: [],
+        }),
+      web_register: () => Promise.resolve("web-id"),
+      update_properties: () => Promise.resolve(undefined),
+    });
+    const module = mountModule(TelegramModule, { graph }).module;
+
+    await module.ingest({ envelopes: [outgoing] });
+
+    const applyBatch = graph.spies.apply_batch;
+    if (applyBatch === undefined) throw new Error("telegram ingest: apply_batch spy missing");
+    const fragment = applyBatch.mock.calls[0]?.[0];
+    expect(fragment?.entities).toContainEqual(expect.objectContaining({
+      key: "acct:9001",
+      anchor: "tg:account:9001",
+      properties: expect.objectContaining({ telegram_user_id: 9001, is_self: true }),
+    }));
   });
 
   it("drops identity-less messages within a valid page and emits checks only for live messages", async () => {

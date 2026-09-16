@@ -8,6 +8,7 @@
     "plugins/sources/*"
   ],
   "scripts": {
+    "agent:test:backend": "vitest run",
     "check": "bun run typecheck && bun run lint && bun run test && bun run test:runtime-contracts && bun run test:ui && bun run test:connectors && bun run test:scripts && bun run build:plugins",
     "typecheck": "bash scripts/typecheck-all.sh",
     "lint": "eslint \"plugins/**/*.{ts,tsx}\" \"packages/**/*.{ts,tsx}\" \"scripts/**/*.ts\" \"apps/desktop/build/**/*.ts\" --max-warnings 0",

@@ -317,6 +317,20 @@ describe("backfill_chat", () => {
     expect(sourceRef.account_id).toBe("conn-xyz");
     expect(sourceRef.dest_subpath).toBe("telegram/photos/tg_100_7.jpg");
   });
+
+  test("tst_tgts_exec_016 backfill exposes the provider message total", async () => {
+    const messages = Object.assign([{ id: 7, date: 0 }], { total: 137 });
+    const { ops } = fakeOps({ messages });
+
+    const out = await execute(
+      ops,
+      "conn-xyz",
+      { action: "backfill_chat", chat_id: 100 },
+      noSleep,
+    );
+
+    expect(out.total).toBe(137);
+  });
 });
 
 // ── download_file ───────────────────────────────────────────────────────────

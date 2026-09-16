@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
-import type { EntityLike, MessageLike, RawDialogLike } from "../../client";
+import type { DialogPager, EntityLike, MessageLike, RawDialogLike } from "../../client";
+import { buildDialogMeta, chatToIntermediate } from "../../client";
 import { runCatchup, type CatchupDialog, type TgOps } from "./commands";
 
 interface HistoryCall {
@@ -31,12 +32,22 @@ function range(first: number, last: number): number[] {
   return Array.from({ length: last - first + 1 }, (_, index) => first + index);
 }
 
-function gapOps(calls: HistoryCall[]): TgOps {
+function gapOps(calls: HistoryCall[]): TgOps & DialogPager {
   const histories = new Map<number, readonly number[]>([
     [1, range(1, 42)],
     [2, range(83, 102)],
   ]);
   return {
+    async dialogPage(offset) {
+      const index = offset?.offset_id ?? 0;
+      const next = [dialog(1, 42), dialog(2, 102)][index];
+      if (next === undefined) throw new Error("unexpected metadata offset");
+      return {
+        dialogs: [{ chat: chatToIntermediate(next.entity, buildDialogMeta(next.raw, false, 0)), messages: [], peer: next.peer }],
+        next_offset: index === 0 ? { offset_date: 1767225600, offset_id: 1, offset_peer: { ty: "user", id: 1 } } : null,
+        total: 2,
+      };
+    },
     async listDialogs(): Promise<CatchupDialog[]> {
       return [dialog(1, 42), dialog(2, 102)];
     },
@@ -101,19 +112,18 @@ describe("tst_cat_tg_gap_001 Telegram crash-safe CatchUp", () => {
       },
     };
 
-    const first = await runCatchup(ops, "account-1", legacyCursor);
+    const first = await runCatchup(ops, "account-1", legacyCursor, ops);
     expect(first.hasMore).toBe(true);
     expect(messageIds(first, 1)).toEqual(range(23, 42).reverse());
-    expect(messageIds(first, 2)).toEqual(range(91, 102).reverse());
+    expect(messageIds(first, 2)).toEqual([]);
     expect(chats(first)).toMatchObject({
       "1": { last_msg_id: 7, target_last_msg_id: 42, before_message_id: 23 },
-      "2": { last_msg_id: 102 },
+      "2": { last_msg_id: 90 },
       "3": { last_msg_id: 55 },
     });
     expect(chats(first)["1"]).not.toHaveProperty("last_msg_id", 42);
     expect(calls).toEqual([
       { chatId: 1, limit: 20, offsetId: 43 },
-      { chatId: 2, limit: 20, offsetId: 103 },
     ]);
 
     const firstMessage = (first.envelopes as Record<string, unknown>[]).find(
@@ -124,7 +134,8 @@ describe("tst_cat_tg_gap_001 Telegram crash-safe CatchUp", () => {
     // A crash before the host commits the intermediate cursor replays the exact
     // stable remote ids. Graph admission is therefore idempotent and no item is
     // skipped even though the provider page is requested again.
-    const replay = await runCatchup(gapOps([]), "account-1", legacyCursor);
+    const replayOps = gapOps([]);
+    const replay = await runCatchup(replayOps, "account-1", legacyCursor, replayOps);
     expect(
       (replay.envelopes as Record<string, unknown>[]).map((envelope) => envelope.remote_id),
     ).toEqual(
@@ -132,22 +143,32 @@ describe("tst_cat_tg_gap_001 Telegram crash-safe CatchUp", () => {
     );
     expect(chats(replay)).toEqual(chats(first));
 
-    // A crash after committing the opaque intermediate cursor resumes below 23.
-    // Chat 2 is already complete and is not fetched again; chat 1 promotes only
-    // after this page crosses its old committed watermark at message 7.
+    // Recreation resumes real metadata enumeration before starting another sweep.
     calls.length = 0;
-    const terminal = await runCatchup(ops, "account-1", first.nextCursor);
+    const resumedOps = gapOps(calls);
+    const second = await runCatchup(resumedOps, "account-1", first.nextCursor, resumedOps);
+    expect(second.hasMore).toBe(true);
+    expect(messageIds(second, 1)).toEqual([]);
+    expect(messageIds(second, 2)).toEqual(range(91, 102).reverse());
+    expect(calls).toEqual([{ chatId: 2, limit: 20, offsetId: 103 }]);
+    expect(chats(second)["1"]).toEqual(chats(first)["1"]);
+    calls.length = 0;
+    const third = await runCatchup(resumedOps, "account-1", second.nextCursor, resumedOps);
+    expect(third.hasMore).toBe(true);
+    expect(messageIds(third, 1)).toEqual(range(8, 22).reverse());
+    expect(calls).toEqual([{ chatId: 1, limit: 20, offsetId: 23 }]);
+    calls.length = 0;
+    const terminal = await runCatchup(resumedOps, "account-1", third.nextCursor, resumedOps);
     expect(terminal.hasMore).toBe(false);
-    expect(messageIds(terminal, 1)).toEqual(range(8, 22).reverse());
     expect(messageIds(terminal, 2)).toEqual([]);
     expect(chats(terminal)).toEqual({
       "1": { last_msg_id: 42 },
       "2": { last_msg_id: 102 },
       "3": { last_msg_id: 55 },
     });
-    expect(calls).toEqual([{ chatId: 1, limit: 20, offsetId: 23 }]);
+    expect(calls).toEqual([]);
 
-    const uniqueGapIds = new Set([...messageIds(first, 1), ...messageIds(terminal, 1)]);
+    const uniqueGapIds = new Set([...messageIds(first, 1), ...messageIds(third, 1)]);
     expect([...uniqueGapIds].sort((left, right) => left - right)).toEqual(range(8, 42));
   });
 
@@ -172,10 +193,26 @@ describe("tst_cat_tg_gap_001 Telegram crash-safe CatchUp", () => {
         },
       };
 
-      await expect(runCatchup(gapOps(calls), "account-1", malformedCursor)).rejects.toThrow(
+      const ops = gapOps(calls);
+      await expect(runCatchup(ops, "account-1", malformedCursor, ops)).rejects.toThrow(
         "telegram CatchUp cursor continuation is outside its committed gap",
       );
       expect(calls).toEqual([]);
+    }
+    for (const invalid of [
+      { catchup_dialog_offset: null }, { catchup_dialog_offset: {} },
+      { catchup_dialog_offset: { offset_date: 1, offset_id: 1, offset_peer: { ty: "invalid", id: 1 } } },
+      { catchup_pinned_count: -1 }, { catchup_draining: "yes" },
+      { catchup_pending_order: null }, { catchup_pending_order: [] },
+      { catchup_pending_order: ["1", "1"] }, { catchup_pending_order: ["2"] },
+      { catchup_seen_pending: [1] },
+    ]) {
+      const ops = gapOps([]);
+      ops.dialogPage = async () => { throw new Error("unexpected metadata request"); };
+      await expect(runCatchup(ops, "account-1", {
+        chats: { "1": { last_msg_id: 7, target_last_msg_id: 42, before_message_id: 23 } },
+        ...invalid,
+      }, ops)).rejects.toThrow("telegram CatchUp cursor");
     }
   });
 
@@ -196,7 +233,11 @@ describe("tst_cat_tg_gap_001 Telegram crash-safe CatchUp", () => {
       },
     };
 
-    await expect(runCatchup(gapOps(calls), "account-1", cursor)).rejects.toThrow(
+    const ops = gapOps(calls);
+    const first = await runCatchup(ops, "account-1", cursor, ops);
+    expect(first.hasMore).toBe(true);
+    expect(chats(first)["3"]).toEqual(cursor.chats["3"]);
+    await expect(runCatchup(ops, "account-1", first.nextCursor, ops)).rejects.toThrow(
       "telegram CatchUp pending chat '3' is absent from the dialog snapshot",
     );
     expect(calls).toEqual([]);
