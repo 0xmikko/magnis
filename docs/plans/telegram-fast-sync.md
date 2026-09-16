@@ -444,19 +444,20 @@ Commit. fix(telegram): stamp occurred_at on live message triggers — the backen
 
 ##### Tasks
 
-- [ ] TGFAST_014 — Add occurred_at (the message date) to the new_message trigger context in service.ts; telegramIngest.test.ts expects it on the live trigger check. (10 min)
+- [x] TGFAST_014 — Add occurred_at (the message date) to the new_message trigger context in service.ts; telegramIngest.test.ts expects it on the live trigger check. (10 min) — b505f617d22de615e9eca7503d71e0428a4a36ab
 <!-- plan:task-meta:{"writes": ["plugins/modules/telegram/module/service.ts", "plugins/modules/telegram/module/__tests__/telegramIngest.test.ts"], "predictedActiveMinutes": 10, "predictedCredits": 1, "how": "Update plugins/modules/telegram/module/service.ts: the trigger.check context for a live message gains occurred_at from the payload's date. Update plugins/modules/telegram/module/__tests__/telegramIngest.test.ts: the live ingest expectation includes context.occurred_at. Rebuild the catalog archives and index after the change.", "red": "bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/telegramIngest.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/telegramIngest.test.ts` exits 0 — live trigger checks say when the message happened
-- [ ] Commit
+- [x] `bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/telegramIngest.test.ts` exits 0 — live trigger checks say when the message happened — b505f617d22de615e9eca7503d71e0428a4a36ab
+- [x] Commit — b505f617d22de615e9eca7503d71e0428a4a36ab
 
 ##### Results
 
 <!-- plan:results:D1-S7:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| TGFAST_014 | b505f617d22de615e9eca7503d71e0428a4a36ab | 2026-09-16T18:30:17.109Z–2026-09-16T18:36:40.000Z | 4 / 6.38 min | unavailable: Runner exposes no per-stage credit meter or separate active-time measurement; active time is an elapsed upper-bound proxy | RED 18:31Z: the live trigger check's context had no occurred_at. GREEN 18:33Z: context carries the message date; archives and index rebuilt, module__telegram.tgz sha 1653d232. |
 <!-- plan:results:D1-S7:end -->
 <!-- plan:stage:D1-S7:end -->
 
@@ -537,4 +538,8 @@ Commit. fix(telegram): stamp occurred_at on live message triggers — the backen
 - close D1-S6 closed commit:672daad1413740e30614d90517cd4a2214f66e35
 
 - amend implementation owner:2026-09-16 owner signed in on the smoke stand and ordered clean synchronization before any merge; the live account showed every module trigger refused for a missing occurred_at; repaired in its own Stage; no SPEC change sha256:023396194b036855555bfda9495970e7c4d3281e4ea6213cabc9736fb90b6573
+
+- record-result D1-S7 commit:b505f617d22de615e9eca7503d71e0428a4a36ab
+
+- close D1-S7 closed commit:b505f617d22de615e9eca7503d71e0428a4a36ab
 <!-- plan:execution:end -->
