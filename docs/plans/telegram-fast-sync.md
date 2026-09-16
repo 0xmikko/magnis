@@ -364,22 +364,24 @@ Commit. fix(telegram): declare the chat index flag the module already writes —
 
 ##### Tasks
 
-- [ ] TGFAST_012 — Declare is_indexed on the chat entity in entities.ts and types.ts and prove it in entities.test.ts. (12 min)
+- [x] TGFAST_012 — Declare is_indexed on the chat entity in entities.ts and types.ts and prove it in entities.test.ts. (12 min) — 6ddc51ca5060b8d86045d0369099c716d20d023a
 <!-- plan:task-meta:{"writes": ["plugins/modules/telegram/entities.ts", "plugins/modules/telegram/entities.test.ts", "plugins/modules/telegram/types.ts"], "predictedActiveMinutes": 12, "predictedCredits": 1, "how": "Update plugins/modules/telegram/entities.ts; Update plugins/modules/telegram/entities.test.ts. The chat declaration gains is_indexed as an optional nullable boolean, matching ChatDetails in types.ts, the shouldIndex gate and the telegram.chats.set_indexed RPC that writes it through update_properties. RED first in entities.test.ts: the derived chat descriptor must accept an is_indexed property; today it is undeclared and the host's declaration validation rejects any chat dictionary carrying it.", "red": "bun run agent:test:backend -- plugins/modules/telegram/entities.test.ts -t tst_module_telegram_entities_003"} -->
 
-- [ ] TGFAST_012B — Admit module declaration tests to the backend adapter lane in test-connectors.sh and prove it in tst_scripts_tgflood_001.test.ts. (8 min)
+- [x] TGFAST_012B — Admit module declaration tests to the backend adapter lane in test-connectors.sh and prove it in tst_scripts_tgflood_001.test.ts. (8 min) — 6ddc51ca5060b8d86045d0369099c716d20d023a
 <!-- plan:task-meta:{"writes": ["scripts/test-connectors.sh", "scripts/tst_scripts_tgflood_001.test.ts"], "predictedActiveMinutes": 8, "predictedCredits": 1, "how": "Update scripts/test-connectors.sh; Update scripts/tst_scripts_tgflood_001.test.ts. The --agent lane admits plugins/modules/*/entities.test.ts as a vitest target, exactly the path vitest.config.ts already includes, so a module's declaration test can be a Stage's RED command. RED first: tst_scripts_tgflood_002 asks the adapter to run a declaration test and expects the vitest engine instead of the unsupported-lane refusal.", "red": "bun run agent:test:backend -- scripts/tst_scripts_tgflood_001.test.ts -t tst_scripts_tgflood_002"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- plugins/modules/telegram/entities.test.ts` exits 0 — the chat declaration accepts is_indexed and still rejects unknown keys
-- [ ] Commit
+- [x] `bun run agent:test:backend -- plugins/modules/telegram/entities.test.ts` exits 0 — the chat declaration accepts is_indexed and still rejects unknown keys — 6ddc51ca5060b8d86045d0369099c716d20d023a
+- [x] Commit — 6ddc51ca5060b8d86045d0369099c716d20d023a
 
 ##### Results
 
 <!-- plan:results:D1-S5:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| TGFAST_012 | 6ddc51ca5060b8d86045d0369099c716d20d023a | 2026-09-16T09:44:06.120Z–2026-09-16T09:47:39.000Z | 3.55 / 3.55 min | unavailable: Runner exposes no per-stage credit meter or separate active-time measurement; active time is an elapsed upper-bound proxy | RED 09:44Z: the chat declaration rejected is_indexed with unrecognized_keys; RED 09:45Z: the adapter refused the declaration test with exit 64. GREEN: is_indexed declared as an optional boolean on the chat entity and mirrored in ChatDetails; the adapter routes plugins/modules/*/entities.test.ts to vitest; the declaration round-trip test regained its find_by_anchors double after S4 had left this lane unrun. tsconfig.declarations and module tsc clean, eslint clean, adapter suite 2 tests, declaration suite 4 tests. No Source or host change, no push. |
+| TGFAST_012B | 6ddc51ca5060b8d86045d0369099c716d20d023a | 2026-09-16T09:44:06.120Z–2026-09-16T09:47:39.000Z | 3.55 / 3.55 min | unavailable: Runner exposes no per-stage credit meter or separate active-time measurement; active time is an elapsed upper-bound proxy | RED 09:44Z: the chat declaration rejected is_indexed with unrecognized_keys; RED 09:45Z: the adapter refused the declaration test with exit 64. GREEN: is_indexed declared as an optional boolean on the chat entity and mirrored in ChatDetails; the adapter routes plugins/modules/*/entities.test.ts to vitest; the declaration round-trip test regained its find_by_anchors double after S4 had left this lane unrun. tsconfig.declarations and module tsc clean, eslint clean, adapter suite 2 tests, declaration suite 4 tests. No Source or host change, no push. |
 <!-- plan:results:D1-S5:end -->
 <!-- plan:stage:D1-S5:end -->
 
@@ -444,4 +446,12 @@ Commit. fix(telegram): declare the chat index flag the module already writes —
 - amend implementation owner:2026-09-16 owner ordered finishing Telegram; the backend proof's Unicode regression rejects chat dictionaries carrying the is_indexed flag the module already reads and writes, so the declaration is completed in its own Stage; no SPEC change sha256:37ef468906a21eda508685036ac504ca3992fba0146c12f6dbba9913f9302d71
 
 - amend implementation owner:2026-09-16 owner ordered finishing Telegram; the chat details type must mirror the declaration, and the backend adapter must admit declaration tests so the Stage RED can run through it; no SPEC change sha256:888e5f8afd11e6f78e4480cbc279769bdfd2acfe8c7af61ca8eb450570f92aa5
+
+- record-result D1-S5 commit:6ddc51ca5060b8d86045d0369099c716d20d023a
+
+- deviation D1-S5: Task TGFAST_012B start (09:45:24Z) is later than the combined receipt start; the receipt uses the earliest start.
+
+- deviation D1-S5: The declaration round-trip test in entities.test.ts had not run under S4 because the adapter refused its lane; S5 admits the lane and retargets that double, so the S4 result understates the tests touched.
+
+- close D1-S5 closed commit:6ddc51ca5060b8d86045d0369099c716d20d023a
 <!-- plan:execution:end -->
