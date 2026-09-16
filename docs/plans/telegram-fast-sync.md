@@ -2,7 +2,7 @@
 
 Status: APPROVED  
 Spec lock: sha256:0804a6ac650ba5737a8e6f4be287b8e29740481b24a253322bd7a888c1031f54 owner:2026-09-15: ИСПРАВОЯЙ ПОКА НЕ БУДЕТ РАБОТАТЬ БЫСТРО  
-Implementation lock: sha256:ccf2e8119b6fbe055892da4dae387f05255fd10dd62a89ff33ec9e2a765dd84b owner:2026-09-16 owner: the exact per-chat count must be known for every chat; small chats answered without a count field were left uncounted; repaired in its own Stage; no SPEC change  
+Implementation lock: sha256:3a5e2375b0e4a9fc04cf67fa1f49c75d306bc4121fad32a162bbcc42e205a4d6 owner:2026-09-16 owner: every chat's exact count must be known and shown; CatchUp erased it and a missed chat had none; repaired in its own Stage; no SPEC change  
 Active Delivery: D1  
 Unattended decisions: allowed  
 
@@ -180,9 +180,9 @@ Each journey runs through the real production logic. Extend existing tests rathe
 
 Branch: `feat/telegram-fast-sync`; Depends: none; Gate: backend.
 
-Stage graph: `D1-S1 -> D1-S3; D1-S2 -> D1-S3; D1-S4 -> D1-S5; D1-S5 -> D1-S6; D1-S6 -> D1-S7; D1-S7 -> D1-S8; D1-S8 -> D1-S9; D1-S9 -> D1-S10`.
+Stage graph: `D1-S1 -> D1-S3; D1-S2 -> D1-S3; D1-S4 -> D1-S5; D1-S5 -> D1-S6; D1-S6 -> D1-S7; D1-S7 -> D1-S8; D1-S8 -> D1-S9; D1-S9 -> D1-S10; D1-S10 -> D1-S11`.
 
-Forecast: 267 active min / 30 credits across 10 Stages; longest dependency path 79 active min; external waits 0 min.
+Forecast: 285 active min / 32 credits across 11 Stages; longest dependency path 79 active min; external waits 0 min.
 
 Telegram uses an available account request slot immediately instead of invented three-second spacing and twenty-per-minute throttling. A real FLOOD_WAIT stops new transmissions for precisely the provider duration.
 
@@ -579,6 +579,43 @@ Commit. fix(telegram): a complete first page states the chat's count — message
 <!-- plan:results:D1-S10:end -->
 <!-- plan:stage:D1-S10:end -->
 
+
+<!-- plan:stage:D1-S11:start -->
+<!-- plan:stage-meta:{"deliveryId": "D1", "depends": ["D1-S10"], "parallelWith": [], "writes": ["plugins/sources/telegram/src/surfaces/telegram/commands.ts", "plugins/sources/telegram/src/surfaces/telegram/commands.test.ts"], "tempRoot": ".tmp/code-production/telegram-fast-sync/D1-S11", "verifyActiveMinutes": 6, "verifyCredits": 1} -->
+#### Stage D1-S11 — CatchUp keeps and refreshes every chat's count
+
+- Owner: root; Profile: strong; Depends: D1-S10; Parallel with: none.
+- Writes: `plugins/sources/telegram/src/surfaces/telegram/commands.ts`, `plugins/sources/telegram/src/surfaces/telegram/commands.test.ts`.
+- Temp root: `.tmp/code-production/telegram-fast-sync/D1-S11` (must be absent at handoff).
+- Predict: 18 active min / 2 credits.
+- Of which verification: 6 active min / 1 credits.
+
+What this Stage solves. CatchUp rewrites every per-chat cursor entry with the watermark alone, so the counts the bootstrap recorded vanish after the first forward walk and the account total is lost; a chat the bootstrap missed (one moved to the top while the dialog list was being paged) enters the roster through CatchUp without a count at all. On the live stand one such chat keeps the total unknown.
+
+What is built. CatchUp carries each entry's message_count forward and replaces it with the count Telegram states in the page it reads; a chat it adds gets its count from that first read.
+
+How it is proven. tst_src_tgfast_003 seeds counts in the cursor, has Telegram state 31 for the pages it reads, and expects every final entry to carry the count: RED (entries lose it), GREEN.
+
+Commit. fix(telegram): CatchUp keeps and refreshes the per-chat count — the total survives every forward walk.
+
+##### Tasks
+
+- [ ] TGFAST_019 — Every cursor entry runCatchup in commands.ts writes carries message_count, kept from the entry or refreshed from the page's count; commands.test.ts proves it across four CatchUp pages. (12 min)
+<!-- plan:task-meta:{"writes": ["plugins/sources/telegram/src/surfaces/telegram/commands.ts", "plugins/sources/telegram/src/surfaces/telegram/commands.test.ts"], "predictedActiveMinutes": 12, "predictedCredits": 1, "how": "1. In plugins/sources/telegram/src/surfaces/telegram/commands.ts read message_count in catchupProgress and write it back in every newCursorChats assignment, replaced by messages.total when the read states one. 2. Extend tst_src_tgfast_003 in plugins/sources/telegram/src/surfaces/telegram/commands.test.ts.", "red": "bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts"} -->
+
+##### Acceptance criteria
+
+- [ ] `bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts` exits 0 — CatchUp entries carry the count
+- [ ] Commit
+
+##### Results
+
+<!-- plan:results:D1-S11:start -->
+| Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
+|---|---|---|---:|---|---|
+<!-- plan:results:D1-S11:end -->
+<!-- plan:stage:D1-S11:end -->
+
 <!-- plan:delivery:D1:end -->
 <!-- plan:implementation:end -->
 
@@ -678,4 +715,6 @@ Commit. fix(telegram): a complete first page states the chat's count — message
 - record-result D1-S10 commit:15c782f333160d36b912d86ccbdb25ff3f16afe5
 
 - close D1-S10 closed commit:15c782f333160d36b912d86ccbdb25ff3f16afe5
+
+- amend implementation owner:2026-09-16 owner: every chat's exact count must be known and shown; CatchUp erased it and a missed chat had none; repaired in its own Stage; no SPEC change sha256:3a5e2375b0e4a9fc04cf67fa1f49c75d306bc4121fad32a162bbcc42e205a4d6
 <!-- plan:execution:end -->

@@ -167,6 +167,9 @@ interface CatchupProgress {
   readonly lastMessageId: number;
   readonly targetLastMessageId: number | undefined;
   readonly beforeMessageId: number | undefined;
+  /** The exact count Telegram last stated for the chat, carried through
+   * every forward walk; absent when no read ever stated one. */
+  readonly messageCount: number | undefined;
 }
 
 function catchupProgress(value: unknown): CatchupProgress {
@@ -183,6 +186,10 @@ function catchupProgress(value: unknown): CatchupProgress {
     typeof entry?.before_message_id === "number" && entry.before_message_id > 0
       ? entry.before_message_id
       : undefined;
+  const messageCount =
+    typeof entry?.message_count === "number" && Number.isSafeInteger(entry.message_count) && entry.message_count >= 0
+      ? entry.message_count
+      : undefined;
 
   if ((targetLastMessageId === undefined) !== (beforeMessageId === undefined)) {
     throw new Error("telegram CatchUp cursor has incomplete per-chat progress");
@@ -197,7 +204,7 @@ function catchupProgress(value: unknown): CatchupProgress {
   ) {
     throw new Error("telegram CatchUp cursor continuation is outside its committed gap");
   }
-  return { lastMessageId, targetLastMessageId, beforeMessageId };
+  return { lastMessageId, targetLastMessageId, beforeMessageId, messageCount };
 }
 
 function hasPendingCatchup(value: unknown): boolean {
@@ -275,15 +282,20 @@ export async function runCatchup(
     const chatKey = String(chatId);
     const saved = catchupProgress(inChats[chatKey]);
     const committed = saved.lastMessageId;
+    // The count rides on every entry this walk writes: kept from the entry,
+    // replaced by the count Telegram states in a page this walk reads.
+    let messageCount = saved.messageCount;
+    const counted = (entry: Record<string, unknown>): Record<string, unknown> =>
+      messageCount === undefined ? entry : { ...entry, message_count: messageCount };
     if (saved.targetLastMessageId === undefined && dialog.chat.top_message <= committed) {
       // Nothing new in this chat — carry the watermark, skip the history call.
-      if (committed > 0) newCursorChats[chatKey] = { last_msg_id: committed };
+      if (committed > 0) newCursorChats[chatKey] = counted({ last_msg_id: committed });
       continue;
     }
 
     const target = saved.targetLastMessageId ?? dialog.chat.top_message;
     if (target <= committed) {
-      if (committed > 0) newCursorChats[chatKey] = { last_msg_id: committed };
+      if (committed > 0) newCursorChats[chatKey] = counted({ last_msg_id: committed });
       continue;
     }
     const before = saved.beforeMessageId ?? target + 1;
@@ -292,6 +304,7 @@ export async function runCatchup(
       limit: CATCHUP_MESSAGES_PER_CHAT,
       offsetId: before,
     }, remainingPageBudget(deadline));
+    if (messages.total !== undefined) messageCount = messages.total;
     let oldest: number | undefined;
     let reachedCommitted = false;
     for (const msg of messages) {
@@ -312,17 +325,17 @@ export async function runCatchup(
     }
 
     if (reachedCommitted || messages.length === 0) {
-      newCursorChats[chatKey] = { last_msg_id: target };
+      newCursorChats[chatKey] = counted({ last_msg_id: target });
       continue;
     }
     if (oldest === undefined || oldest >= before) {
       throw new Error("telegram CatchUp page did not advance its per-chat continuation");
     }
-    newCursorChats[chatKey] = {
+    newCursorChats[chatKey] = counted({
       last_msg_id: committed,
       target_last_msg_id: target,
       before_message_id: oldest,
-    };
+    });
     deferred.push(dialog);
   }
 

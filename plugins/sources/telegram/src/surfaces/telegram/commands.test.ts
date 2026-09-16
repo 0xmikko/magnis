@@ -135,7 +135,9 @@ test("tst_src_tgfast_003 catchup resumes round-robin without skipping committed 
   const f = await createTransport(clock);
   try {
     const ids = Array.from({ length: 7 }, (_, i) => 2000 + i);
-    let cursor: unknown = { chats: Object.fromEntries(ids.map((id) => [id, { last_msg_id: 10 }])) };
+    // The bootstrap recorded a count per chat; CatchUp must keep it and refresh it
+    // from the count Telegram states in every page it reads (31 below).
+    let cursor: unknown = { chats: Object.fromEntries(ids.map((id) => [id, { last_msg_id: 10, message_count: 10 }])) };
     let wireIndex = 0;
     const received: string[] = [];
     const orders = [[2000, 2001], [2002, 2003, 2004, 2005, 2006], [2000, 2001, 2002, 2003, 2004], [2005, 2006]];
@@ -184,7 +186,7 @@ test("tst_src_tgfast_003 catchup resumes round-robin without skipping committed 
     }
     expect(received).toHaveLength(147);
     expect(new Set(received).size).toBe(147);
-    expect((cursor as { chats: unknown }).chats).toEqual(Object.fromEntries(ids.map((id) => [id, { last_msg_id: 31 }])));
+    expect((cursor as { chats: unknown }).chats).toEqual(Object.fromEntries(ids.map((id) => [id, { last_msg_id: 31, message_count: 31 }])));
     expect(f.writes.filter((sent) => sent.method === "messages.GetDialogs")).toHaveLength(1);
   } finally { await f.close(); now.mockRestore(); }
 });
