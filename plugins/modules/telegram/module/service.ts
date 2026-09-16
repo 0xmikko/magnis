@@ -197,7 +197,7 @@ export class TelegramModule {
       last_message_time: typeof d.last_message_date === "string" ? (d.last_message_date) : null,
       last_message_sender: str(d, "last_sender_name"),
       is_outgoing: null,
-      message_count: null,
+      message_count: num(d, "message_count"),
       avatar_url: avatar,
       is_pinned: boolFlag(d, "is_pinned") ?? false,
       pin_order: num(d, "pin_order"),

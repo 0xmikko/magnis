@@ -2,7 +2,7 @@
 
 Status: APPROVED  
 Spec lock: sha256:0804a6ac650ba5737a8e6f4be287b8e29740481b24a253322bd7a888c1031f54 owner:2026-09-15: ИСПРАВОЯЙ ПОКА НЕ БУДЕТ РАБОТАТЬ БЫСТРО  
-Implementation lock: sha256:023396194b036855555bfda9495970e7c4d3281e4ea6213cabc9736fb90b6573 owner:2026-09-16 owner signed in on the smoke stand and ordered clean synchronization before any merge; the live account showed every module trigger refused for a missing occurred_at; repaired in its own Stage; no SPEC change  
+Implementation lock: sha256:0c278318f332ebe6f87503b86f6e3806a48cd80d87b6f858e86de4de2342b1b4 owner:2026-09-16 owner: without the number of messages to download the sync cannot be planned; an estimate is unacceptable; the exact per-chat count Telegram reports must be kept and shown; no SPEC change  
 Active Delivery: D1  
 Unattended decisions: allowed  
 
@@ -180,9 +180,9 @@ Each journey runs through the real production logic. Extend existing tests rathe
 
 Branch: `feat/telegram-fast-sync`; Depends: none; Gate: backend.
 
-Stage graph: `D1-S1 -> D1-S3; D1-S2 -> D1-S3; D1-S4 -> D1-S5; D1-S5 -> D1-S6; D1-S6 -> D1-S7`.
+Stage graph: `D1-S1 -> D1-S3; D1-S2 -> D1-S3; D1-S4 -> D1-S5; D1-S5 -> D1-S6; D1-S6 -> D1-S7; D1-S7 -> D1-S8`.
 
-Forecast: 200 active min / 23 credits across 7 Stages; longest dependency path 79 active min; external waits 0 min.
+Forecast: 232 active min / 26 credits across 8 Stages; longest dependency path 79 active min; external waits 0 min.
 
 Telegram uses an available account request slot immediately instead of invented three-second spacing and twenty-per-minute throttling. A real FLOOD_WAIT stops new transmissions for precisely the provider duration.
 
@@ -461,6 +461,46 @@ Commit. fix(telegram): stamp occurred_at on live message triggers — the backen
 <!-- plan:results:D1-S7:end -->
 <!-- plan:stage:D1-S7:end -->
 
+
+<!-- plan:stage:D1-S8:start -->
+<!-- plan:stage-meta:{"deliveryId": "D1", "depends": ["D1-S7"], "parallelWith": [], "writes": ["plugins/sources/telegram/src/live.ts", "plugins/sources/telegram/src/surfaces/telegram/envelope.ts", "plugins/sources/telegram/src/surfaces/telegram/commands.ts", "plugins/sources/telegram/src/surfaces/telegram/commands.test.ts", "plugins/modules/telegram/entities.ts", "plugins/modules/telegram/types.ts", "plugins/modules/telegram/module/service.ts", "plugins/modules/telegram/module/__tests__/telegramRead.test.ts"], "tempRoot": ".tmp/code-production/telegram-fast-sync/D1-S8", "verifyActiveMinutes": 7, "verifyCredits": 1} -->
+#### Stage D1-S8 — Every chat carries the exact message count Telegram reports
+
+- Owner: root; Profile: strong; Depends: D1-S7; Parallel with: none.
+- Writes: `plugins/sources/telegram/src/live.ts`, `plugins/sources/telegram/src/surfaces/telegram/envelope.ts`, `plugins/sources/telegram/src/surfaces/telegram/commands.ts`, `plugins/sources/telegram/src/surfaces/telegram/commands.test.ts`, `plugins/modules/telegram/entities.ts`, `plugins/modules/telegram/types.ts`, `plugins/modules/telegram/module/service.ts`, `plugins/modules/telegram/module/__tests__/telegramRead.test.ts`.
+- Temp root: `.tmp/code-production/telegram-fast-sync/D1-S8` (must be absent at handoff).
+- Predict: 32 active min / 3 credits.
+- Of which verification: 7 active min / 1 credits.
+
+What this Stage solves. The owner cannot plan a sync without knowing how many messages it has to download. Telegram states the exact count of every chat in each messages.getHistory answer; the Source reads it during bootstrap hydration (messages.total) and throws it away, so the chat record, the cursor and the module's chat list all carry no count and the product can only say how many messages it saved.
+
+What is built. The Source keeps the count: on the chat record (message_count), on the chat envelope payload and in the bootstrap cursor's per-chat entry next to last_msg_id. The module declares message_count on telegram.chat, stores it with the other chat details and returns it from chats.list instead of a hard-coded null.
+
+How it is proven. tst_src_tgfast_002 expects message_count 50 on every chat envelope and in the cursor: RED before, GREEN after. tst_module_telegram_read_001 expects message_count from the chat's details: RED on the hard-coded null, GREEN after. Archives and index rebuilt; the backend pins the new build.
+
+Commit. feat(telegram): carry the exact per-chat message count from Telegram — the count the product needs to plan a sync.
+
+##### Tasks
+
+- [ ] TGFAST_015 — Every chat envelope from live.ts, envelope.ts and commands.ts carries message_count equal to Telegram's GetHistory count, and so does its cursor entry; commands.test.ts proves it. (15 min)
+<!-- plan:task-meta:{"writes": ["plugins/sources/telegram/src/live.ts", "plugins/sources/telegram/src/surfaces/telegram/envelope.ts", "plugins/sources/telegram/src/surfaces/telegram/commands.ts", "plugins/sources/telegram/src/surfaces/telegram/commands.test.ts"], "predictedActiveMinutes": 15, "predictedCredits": 1, "how": "1. In plugins/sources/telegram/src/live.ts the hydration sets chat.message_count from the page's total. 2. In plugins/sources/telegram/src/surfaces/telegram/envelope.ts TgChat gains message_count and chatPayload emits it when present. 3. In plugins/sources/telegram/src/surfaces/telegram/commands.ts each cursorChats entry gains message_count. 4. Extend tst_src_tgfast_002 in plugins/sources/telegram/src/surfaces/telegram/commands.test.ts.", "red": "bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts"} -->
+- [ ] TGFAST_016 — chats.list in service.ts returns message_count from the chat details declared in entities.ts and types.ts, null only when Telegram never reported one; telegramRead.test.ts proves it. (10 min)
+<!-- plan:task-meta:{"writes": ["plugins/modules/telegram/entities.ts", "plugins/modules/telegram/types.ts", "plugins/modules/telegram/module/service.ts", "plugins/modules/telegram/module/__tests__/telegramRead.test.ts"], "predictedActiveMinutes": 10, "predictedCredits": 1, "how": "1. In plugins/modules/telegram/entities.ts and plugins/modules/telegram/types.ts declare message_count as an optional non-negative integer on the chat. 2. In plugins/modules/telegram/module/service.ts the chat list row reads message_count from the details. 3. Extend tst_module_telegram_read_001 in plugins/modules/telegram/module/__tests__/telegramRead.test.ts.", "red": "bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/telegramRead.test.ts"} -->
+
+##### Acceptance criteria
+
+- [ ] `bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts` exits 0 — the Source keeps the count
+- [ ] `bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/telegramRead.test.ts` exits 0 — the module lists it
+- [ ] Commit
+
+##### Results
+
+<!-- plan:results:D1-S8:start -->
+| Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
+|---|---|---|---:|---|---|
+<!-- plan:results:D1-S8:end -->
+<!-- plan:stage:D1-S8:end -->
+
 <!-- plan:delivery:D1:end -->
 <!-- plan:implementation:end -->
 
@@ -542,4 +582,6 @@ Commit. fix(telegram): stamp occurred_at on live message triggers — the backen
 - record-result D1-S7 commit:b505f617d22de615e9eca7503d71e0428a4a36ab
 
 - close D1-S7 closed commit:b505f617d22de615e9eca7503d71e0428a4a36ab
+
+- amend implementation owner:2026-09-16 owner: without the number of messages to download the sync cannot be planned; an estimate is unacceptable; the exact per-chat count Telegram reports must be kept and shown; no SPEC change sha256:0c278318f332ebe6f87503b86f6e3806a48cd80d87b6f858e86de4de2342b1b4
 <!-- plan:execution:end -->

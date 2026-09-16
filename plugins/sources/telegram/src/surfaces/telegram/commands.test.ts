@@ -113,6 +113,13 @@ test("tst_src_tgfast_002 fifty dialogs retain bounded hydrated pages and pinned 
     expect(new Set(all.map((envelope) => envelope.remote_id)).size).toBe(2550);
     const pinned = all.filter((envelope) => (envelope.payload as Record<string, unknown>).is_pinned === true);
     expect(pinned.map((envelope) => (envelope.payload as Record<string, unknown>).pin_order)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+    // Telegram states each chat's exact message count in the GetHistory answer
+    // (MessagesSlice.count = 50 above): the chat envelope and the cursor keep it.
+    const chatEnvelopes = all.filter((envelope) => (envelope.payload as Record<string, unknown>).entity_type === "telegram_chat");
+    expect(chatEnvelopes).toHaveLength(50);
+    expect(chatEnvelopes.every((envelope) => (envelope.payload as Record<string, unknown>).message_count === 50)).toBe(true);
+    const finalChats = (cursor as { chats: Record<string, { last_msg_id: number; message_count?: number }> }).chats;
+    expect(Object.values(finalChats).every((chat) => chat.message_count === 50)).toBe(true);
   } finally { await f.close(); now.mockRestore(); }
 });
 

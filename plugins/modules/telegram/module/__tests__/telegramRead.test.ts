@@ -26,6 +26,7 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
       properties: {
         chat_id: 42,
         title: "Investor chat",
+        message_count: 1234,
         last_message_preview: "See you tomorrow",
         last_message_date: "2026-08-12T08:00:00Z",
         is_pinned: true,
@@ -53,7 +54,10 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
       is_pinned: true,
       pin_order: 0,
       account_id: "account-1",
+      // The exact count Telegram reported for the chat, never a hard-coded null.
+      message_count: 1234,
     });
+    expect(result.items[1]?.message_count).toBeNull();
     expect(graph.spies.list_entities_window).toHaveBeenCalledWith({
       schema: CHAT,
       order: [

@@ -17,6 +17,8 @@ export interface TelegramChatDetails {
   avatar_url?: string;
   /** The operator's choice to index this chat's media; absent until set. */
   is_indexed?: boolean;
+  /** The exact message count Telegram reported for the chat when it was last read. */
+  message_count?: number;
   member_count?: number;
   read_inbox_max_id?: number;
   read_outbox_max_id?: number;

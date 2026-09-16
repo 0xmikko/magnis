@@ -131,8 +131,12 @@ export async function runBootstrap(
       envelopes.push(messageEnvelope(m, "snapshot"));
     }
     // Record EVERY enumerated chat (incl. 0-message → last_msg_id 0) so CatchUp
-    // later fills it; with offset paging it is enumerated exactly once.
-    cursorChats[String(paged.chat.chat_id)] = { last_msg_id: highest };
+    // later fills it; with offset paging it is enumerated exactly once. The
+    // exact count Telegram reported rides next to the watermark: the host sums
+    // these into the number of messages the account has to download.
+    cursorChats[String(paged.chat.chat_id)] = paged.chat.message_count === undefined
+      ? { last_msg_id: highest }
+      : { last_msg_id: highest, message_count: paged.chat.message_count };
   }
 
   const hasMore = page.next_offset !== null;
