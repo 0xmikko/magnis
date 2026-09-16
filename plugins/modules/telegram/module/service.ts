@@ -53,7 +53,6 @@ import {
   mediaTypeToMime,
   num,
   str,
-  CHAT_BATCH_THRESHOLD,
   INDEXING_THRESHOLD,
   INGEST_CHUNK,
   type Data,
@@ -767,9 +766,8 @@ export class TelegramModule {
       }
     }
 
-    // Chats: a big page (the bootstrap dialog list) is batched + CHUNKED so it never
-    // monopolizes the single PGlite connection; a small page (re-sync) keeps the
-    // per-envelope path that merges last_message_* into chat.details.
+    // Chats: the page's existing chats are read in two Graph calls, then written
+    // batched + CHUNKED so the write never monopolizes the single connection.
     let pageChatState = new Map<string, IngestedChatState>();
     if (chats.length > 0) {
       pageChatState = await this.ingestChatBatch(chats, identityKey, newestMessageByChat);
@@ -784,6 +782,26 @@ export class TelegramModule {
     }
 
     return { dropped_remote_ids: dropped, trigger_checks: triggers };
+  }
+
+  /** One packet's existing chats in two Graph calls: anchors → ids, ids → dictionaries. */
+  private async readChatsByAnchor(chatIds: readonly string[]): Promise<Map<string, IngestedChatState>> {
+    const known = new Map<string, IngestedChatState>();
+    const unique = [...new Set(chatIds)];
+    if (unique.length === 0) return known;
+    const ids = await this.graph.find_by_anchors(unique.map((chatId) => chatAnchor(chatId)));
+    const found: { chatId: string; entityId: string }[] = [];
+    unique.forEach((chatId, index) => {
+      const entityId = ids[index];
+      if (entityId) found.push({ chatId, entityId });
+    });
+    if (found.length === 0) return known;
+    const entities = await this.graph.get_entities(found.map((item) => item.entityId));
+    const byId = new Map(entities.map((item) => [item.id, item]));
+    for (const { chatId, entityId } of found) {
+      known.set(chatId, { entityId, details: byId.get(entityId)?.properties ?? {} });
+    }
+    return known;
   }
 
   // Bulk chat ingest for the bootstrap dialog list (one huge page). Batches chat
@@ -803,29 +821,17 @@ export class TelegramModule {
     // @tested-by: tst_mod_tg_ingest_001
     // @invariant: repeated bootstrap snapshots never erase chat list previews,
     // recency, sender names, or locally resolved avatar URLs.
+    // @tested-by: tst_module_telegram_006
+    // @invariant: a packet reads its own chats in two Graph calls — anchors,
+    // then entities — never one lookup per chat and never the whole account.
     const existingByChatId = new Map<string, Data>();
-    if (chats.length > CHAT_BATCH_THRESHOLD) {
-      const current = await this.graph.list_entities_window({
-        schema: CHAT,
-        limit: 1_000_000,
-        offset: 0,
-      });
-      for (const { entity } of current.items) {
-        const details = ((entity as { properties?: unknown }).properties ?? {}) as Data;
-        const chatId = chatIdOrNull(details);
-        if (chatId !== null) existingByChatId.set(chatId, details);
-      }
-    } else {
-      // A live page touches a handful of chats — read exactly those.
-      for (const { payload } of chats) {
-        const chatId = chatIdOrNull(payload);
-        if (chatId === null || existingByChatId.has(chatId)) continue;
-        const eid = await this.graph.find_by_anchor(chatAnchor(chatId));
-        if (!eid) continue;
-        const e = await this.graph.get_entity(eid);
-        const props = ((e as { properties?: unknown } | null)?.properties ?? {}) as Data;
-        existingByChatId.set(chatId, props);
-      }
+    const packetChatIds: string[] = [];
+    for (const { payload } of chats) {
+      const chatId = chatIdOrNull(payload);
+      if (chatId !== null) packetChatIds.push(chatId);
+    }
+    for (const [chatId, known] of await this.readChatsByAnchor(packetChatIds)) {
+      existingByChatId.set(chatId, known.details);
     }
 
     // Per-account chat STATE (unread counts, pins) rides the observed_in
@@ -943,25 +949,24 @@ export class TelegramModule {
     // 1. Read each unique chat's entity id + details ONCE (shouldIndex gate + denorm base).
     const chatEntityId = new Map<string, string | null>();
     const chatDetails = new Map<string, Data | null>();
+    const unresolved: string[] = [];
     for (const { payload } of messages) {
       const cid = chatIdOrNull(payload);
-      if (cid === null) continue;
-      const key = cid;
-      if (chatEntityId.has(key)) continue;
-      const ingestedChat = pageChatState.get(key);
+      if (cid === null || chatEntityId.has(cid)) continue;
+      const ingestedChat = pageChatState.get(cid);
       if (ingestedChat !== undefined) {
-        chatEntityId.set(key, ingestedChat.entityId);
-        chatDetails.set(key, ingestedChat.details);
+        chatEntityId.set(cid, ingestedChat.entityId);
+        chatDetails.set(cid, ingestedChat.details);
         continue;
       }
-      const eid = await this.graph.find_by_anchor(chatAnchor(key));
-      chatEntityId.set(key, eid);
-      if (eid) {
-        const e = await this.graph.get_entity(eid);
-        chatDetails.set(key, ((e as { properties?: unknown } | null)?.properties ?? null) as Data | null);
-      } else {
-        chatDetails.set(key, null);
-      }
+      chatEntityId.set(cid, null);
+      chatDetails.set(cid, null);
+      unresolved.push(cid);
+    }
+    // @tested-by: tst_module_telegram_006 — chats outside this page cost two reads, not two per chat.
+    for (const [cid, known] of await this.readChatsByAnchor(unresolved)) {
+      chatEntityId.set(cid, known.entityId);
+      chatDetails.set(cid, known.details);
     }
     // 2+3. Build the fragment (S4, plan §7): the message DICT is the record
     // (minus chat_id / sender_id / sender_name — edges are the

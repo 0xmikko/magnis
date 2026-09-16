@@ -2,7 +2,7 @@
 
 Status: APPROVED  
 Spec lock: sha256:0804a6ac650ba5737a8e6f4be287b8e29740481b24a253322bd7a888c1031f54 owner:2026-09-15: ИСПРАВОЯЙ ПОКА НЕ БУДЕТ РАБОТАТЬ БЫСТРО  
-Implementation lock: sha256:82e09c98f44c9214214c4799613c9b04c04f41e302bca9a7a1051b40033ed08d owner:2026-09-16 owner merged PR 253 and ordered: сделай Pull и доеди телеграм до конца; switch the module to the batched Graph anchor read the backend already exposes; no SPEC change  
+Implementation lock: sha256:c23580e144f33003af96757ab4ea5459bbcb2babe3d9e13eeb55026206ddcae9 owner:2026-09-16 owner ordered finishing Telegram; the strict graph doubles in chatBatchSnapshotMerge.test.ts and mediaSourceRouting.test.ts describe the replaced per-chat and whole-account reads and are retargeted in the same Stage as their own Task; no SPEC change  
 Active Delivery: D1  
 Unattended decisions: allowed  
 
@@ -303,13 +303,13 @@ Commit. fix(telegram): verified integrated source throughput and provider-wait r
 <!-- plan:stage:D1-S3:end -->
 
 <!-- plan:stage:D1-S4:start -->
-<!-- plan:stage-meta:{"deliveryId": "D1", "depends": [], "parallelWith": [], "writes": ["packages/plugin-sdk/contract/module.ts", "plugins/modules/telegram/module/service.ts", "plugins/modules/telegram/module/helpers.ts", "plugins/modules/telegram/module/__tests__/telegramIngest.test.ts"], "tempRoot": ".tmp/code-production/telegram-fast-sync/D1-S4", "verifyActiveMinutes": 5, "verifyCredits": 1} -->
+<!-- plan:stage-meta:{"deliveryId": "D1", "depends": [], "parallelWith": [], "writes": ["packages/plugin-sdk/contract/module.ts", "plugins/modules/telegram/module/service.ts", "plugins/modules/telegram/module/helpers.ts", "plugins/modules/telegram/module/__tests__/telegramIngest.test.ts", "plugins/modules/telegram/module/__tests__/chatBatchSnapshotMerge.test.ts", "plugins/modules/telegram/module/__tests__/mediaSourceRouting.test.ts"], "tempRoot": ".tmp/code-production/telegram-fast-sync/D1-S4", "verifyActiveMinutes": 5, "verifyCredits": 1} -->
 #### Stage D1-S4 — Resolved packet chats through two Graph reads
 
 - Owner: root; Profile: strong; Depends: none; Parallel with: none.
-- Writes: `packages/plugin-sdk/contract/module.ts`, `plugins/modules/telegram/module/service.ts`, `plugins/modules/telegram/module/helpers.ts`, `plugins/modules/telegram/module/__tests__/telegramIngest.test.ts`.
+- Writes: `packages/plugin-sdk/contract/module.ts`, `plugins/modules/telegram/module/service.ts`, `plugins/modules/telegram/module/helpers.ts`, `plugins/modules/telegram/module/__tests__/telegramIngest.test.ts`, `plugins/modules/telegram/module/__tests__/chatBatchSnapshotMerge.test.ts`, `plugins/modules/telegram/module/__tests__/mediaSourceRouting.test.ts`.
 - Temp root: `.tmp/code-production/telegram-fast-sync/D1-S4` (must be absent at handoff).
-- Predict: 45 active min / 4 credits.
+- Predict: 50 active min / 5 credits.
 - Of which verification: 5 active min / 1 credits.
 
 What this Stage solves. The bootstrap dialog packet carries at most fifty chats, and the module's whole-account read only started above fifty, so every existing chat cost one find_by_anchor and one get_entity: one hundred serialized host round trips per packet before a single write. The backend proof measured this as the timeout in restarted catch-up.
@@ -324,6 +324,9 @@ Commit. fix(telegram): resolve packet chats through two Graph reads — the modu
 
 - [ ] TGFAST_009 — Resolve packet chats with find_by_anchors and get_entities in service.ts and helpers.ts; declare the plural read in contract/module.ts; prove it in telegramIngest.test.ts. (40 min)
 <!-- plan:task-meta:{"writes": ["packages/plugin-sdk/contract/module.ts", "plugins/modules/telegram/module/service.ts", "plugins/modules/telegram/module/helpers.ts", "plugins/modules/telegram/module/__tests__/telegramIngest.test.ts"], "predictedActiveMinutes": 40, "predictedCredits": 3, "how": "Update packages/plugin-sdk/contract/module.ts; Update plugins/modules/telegram/module/service.ts; Update plugins/modules/telegram/module/helpers.ts; Update plugins/modules/telegram/module/__tests__/telegramIngest.test.ts. Declare find_by_anchors(anchors: string[]): Promise<(string | null)[]> beside find_by_anchor on the SDK GraphService, matching the host op the backend already dispatches. In ingestChatBatch and ingestMessageBatch resolve the packet's unique chat ids with one find_by_anchors call and read the found entities with one get_entities call, through one shared private helper; delete the CHAT_BATCH_THRESHOLD whole-account list_entities_window branch and the per-chat find_by_anchor/get_entity loop. Preserve the existing field carry-over, observer edge, denorm and shouldIndex behavior. RED first in telegramIngest.test.ts: a 50-chat packet with existing chats performs exactly one find_by_anchors and one get_entities, zero find_by_anchor and zero list_entities_window, and still carries last_message_* forward; a message page across several chats reads them the same way.", "red": "bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/telegramIngest.test.ts -t tst_module_telegram_006"} -->
+
+- [ ] TGFAST_009B — Retarget the strict graph doubles in chatBatchSnapshotMerge.test.ts and mediaSourceRouting.test.ts to the batched anchor and entity reads. (5 min)
+<!-- plan:task-meta:{"writes": ["plugins/modules/telegram/module/__tests__/chatBatchSnapshotMerge.test.ts", "plugins/modules/telegram/module/__tests__/mediaSourceRouting.test.ts"], "predictedActiveMinutes": 5, "predictedCredits": 1, "how": "Update plugins/modules/telegram/module/__tests__/chatBatchSnapshotMerge.test.ts; Update plugins/modules/telegram/module/__tests__/mediaSourceRouting.test.ts. tst_mod_tg_ingest_001 and tst_mod_tg_ingest_002 script list_entities_window as the whole-account read and forbid the scalar lookup; script find_by_anchors and get_entities with the same chat dictionaries instead, forbid list_entities_window, and assert one anchor batch plus one entity batch per page while every preserved-field and reuse assertion stays. The media routing double gains find_by_anchors beside its existing scalar lookup.", "red": "bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/chatBatchSnapshotMerge.test.ts plugins/modules/telegram/module/__tests__/mediaSourceRouting.test.ts"} -->
 
 ##### Acceptance criteria
 
@@ -387,4 +390,6 @@ Commit. fix(telegram): resolve packet chats through two Graph reads — the modu
 - close D1-S3 closed commit:17a99fc218a30d23944847d33a5d224929c8465b
 
 - amend implementation owner:2026-09-16 owner merged PR 253 and ordered: сделай Pull и доеди телеграм до конца; switch the module to the batched Graph anchor read the backend already exposes; no SPEC change sha256:82e09c98f44c9214214c4799613c9b04c04f41e302bca9a7a1051b40033ed08d
+
+- amend implementation owner:2026-09-16 owner ordered finishing Telegram; the strict graph doubles in chatBatchSnapshotMerge.test.ts and mediaSourceRouting.test.ts describe the replaced per-chat and whole-account reads and are retargeted in the same Stage as their own Task; no SPEC change sha256:c23580e144f33003af96757ab4ea5459bbcb2babe3d9e13eeb55026206ddcae9
 <!-- plan:execution:end -->

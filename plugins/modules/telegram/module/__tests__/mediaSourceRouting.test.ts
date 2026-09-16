@@ -40,6 +40,7 @@ function ingestGraph(): G {
       }),
     web_register: () => Promise.resolve("web-id"),
     find_by_anchor: () => Promise.resolve(null),
+    find_by_anchors: (anchors) => Promise.resolve(anchors.map(() => null)),
     file_register: () => Promise.resolve("file-id"),
     create_entity: () => Promise.resolve(entity("created-id", "")),
     delete_entity: () => Promise.resolve(),

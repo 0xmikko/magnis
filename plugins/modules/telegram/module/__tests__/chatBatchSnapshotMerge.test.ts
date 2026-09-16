@@ -65,30 +65,29 @@ function messageEnvelope(chatId: number): SyncEnvelope {
 describe("telegram chat batch ingest", () => {
   it("tst_mod_tg_ingest_001 preserves derived preview and avatar fields during a repeated bootstrap", async () => {
     const graph = mockGraph({
-      list_entities_window: () =>
-        Promise.resolve({
-          items: [
-            {
-              entity: {
-                ...entity("chat-entity-1", "Pinned chat", {
-                  schema_id: "telegram.chat",
-                }),
-                // S4: the chat DICT is the record — the window's entity row
-                // carries it; the render record is dead.
-                properties: {
-                  chat_id: 1,
-                  title: "Pinned chat",
-                  last_message_date: "2026-07-26T19:00:00Z",
-                  last_message_preview: "Existing last message",
-                  last_sender_name: "Mikko",
-                  avatar_url: "/media/avatars/tg_chat_1.jpg",
-                },
-              },
-              data: null,
+      // The page asks for its own anchors once and reads the found entities once;
+      // the whole-account window is never consulted.
+      find_by_anchors: (anchors) =>
+        Promise.resolve(anchors.map((anchor) => (anchor === "tg:chat:1" ? "chat-entity-1" : null))),
+      get_entities: () =>
+        Promise.resolve([
+          {
+            ...entity("chat-entity-1", "Pinned chat", {
+              schema_id: "telegram.chat",
+            }),
+            // S4: the chat DICT is the record — the entity row carries it; the
+            // render record is dead.
+            properties: {
+              chat_id: 1,
+              title: "Pinned chat",
+              last_message_date: "2026-07-26T19:00:00Z",
+              last_message_preview: "Existing last message",
+              last_sender_name: "Mikko",
+              avatar_url: "/media/avatars/tg_chat_1.jpg",
             },
-          ],
-          total: 1,
-        }),
+          },
+        ]),
+      list_entities_window: () => Promise.reject(new Error("whole-account chat scan is forbidden")),
       apply_batch: (fragment) =>
         Promise.resolve({
           ids: Object.fromEntries(fragment.entities.map((item) => [item.key, item.key])),
@@ -147,28 +146,23 @@ describe("telegram chat batch ingest", () => {
    */
   it("tst_mod_tg_ingest_002 reuses chat state within one sync page instead of issuing per-chat reads and updates", async () => {
     const graph = mockGraph({
-      list_entities_window: () =>
-        Promise.resolve({
-          items: Array.from({ length: 51 }, (_, index) => {
-            const chatId = index + 1;
-            return {
-              entity: {
-                ...entity(`chat-entity-${String(chatId)}`, `Chat ${String(chatId)}`, {
-                  schema_id: "telegram.chat",
-                }),
-                properties: {
-                  chat_id: chatId,
-                  title: `Chat ${String(chatId)}`,
-                  last_message_date: "2026-07-26T19:00:00Z",
-                  last_message_preview: "Previous message",
-                  last_sender_name: "Previous sender",
-                },
-              },
-              data: null,
-            };
-          }),
-          total: 51,
-        }),
+      find_by_anchors: (anchors) =>
+        Promise.resolve(anchors.map((anchor) => `chat-entity-${anchor.slice("tg:chat:".length)}`)),
+      get_entities: (ids) =>
+        Promise.resolve(ids.map((id) => {
+          const chatId = Number(id.slice("chat-entity-".length));
+          return {
+            ...entity(id, `Chat ${String(chatId)}`, { schema_id: "telegram.chat" }),
+            properties: {
+              chat_id: chatId,
+              title: `Chat ${String(chatId)}`,
+              last_message_date: "2026-07-26T19:00:00Z",
+              last_message_preview: "Previous message",
+              last_sender_name: "Previous sender",
+            },
+          };
+        })),
+      list_entities_window: () => Promise.reject(new Error("whole-account chat scan is forbidden")),
       find_by_anchor: () => Promise.reject(new Error("per-chat anchor lookup is forbidden")),
       get_entity: () => Promise.reject(new Error("per-chat entity lookup is forbidden")),
       update_properties: () => Promise.reject(new Error("per-chat denormalization update is forbidden")),
@@ -191,7 +185,9 @@ describe("telegram chat batch ingest", () => {
       envelopes: chatIds.flatMap((chatId) => [chatEnvelope(chatId), messageEnvelope(chatId)]),
     })).resolves.toEqual({ dropped_remote_ids: [], trigger_checks: [] });
 
-    expect(graph.spies.list_entities_window).toHaveBeenCalledTimes(1);
+    expect(graph.spies.find_by_anchors).toHaveBeenCalledTimes(1);
+    expect(graph.spies.get_entities).toHaveBeenCalledTimes(1);
+    expect(graph.spies.list_entities_window).not.toHaveBeenCalled();
     expect(graph.spies.find_by_anchor).not.toHaveBeenCalled();
     expect(graph.spies.get_entity).not.toHaveBeenCalled();
     expect(graph.spies.update_properties).not.toHaveBeenCalled();
