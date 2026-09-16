@@ -35,6 +35,7 @@ async function written(): Promise<GraphBatchInput["entities"]> {
   const batches: GraphBatchInput[] = [];
   const graph = mockGraph({
     find_by_anchor: () => Promise.resolve(null),
+    find_by_anchors: (anchors) => Promise.resolve(anchors.map(() => null)),
     apply_batch: (fragment: GraphBatchInput) => {
       batches.push(fragment);
       return Promise.resolve({
@@ -91,6 +92,20 @@ describe("telegram declares what it writes", () => {
       expect(declared, `${e.schema_id} is written but not declared`).toBeDefined();
       expect(declared.safeParse(e.properties ?? {}).error?.issues ?? []).toEqual([]);
     }
+  });
+
+  /**
+   * @test-id: tst_module_telegram_entities_003
+   * @scenario: scn_telegram_chat_index_flag_001
+   * @covers: plugins/modules/telegram/entities.ts::chat
+   * @deterministic: yes
+   * @fixtures: inline chat dictionaries with and without the operator's index flag
+   */
+  it("tst_module_telegram_entities_003 the chat declaration carries the index flag the module reads and sets", () => {
+    expect(chat.safeParse({ chat_id: 42, title: "Magnis Builders", is_indexed: true }).error?.issues ?? []).toEqual([]);
+    expect(chat.safeParse({ chat_id: 42, is_indexed: false }).success).toBe(true);
+    expect(chat.safeParse({ chat_id: 42, is_indexed: "yes" }).success).toBe(false);
+    expect(chat.safeParse({ chat_id: 42, indexed: true }).success).toBe(false);
   });
 
   it("what one account observes is not what the chat is", () => {

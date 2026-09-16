@@ -61,3 +61,33 @@ exit "$FLOOD_RUNNER_EXIT"
     expect(invoke([], 23).status).toBe(23);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+/**
+ * @test-id: tst_scripts_tgflood_002
+ * @scenario: scn_tgflood_008
+ * @covers: scripts/test-connectors.sh --agent
+ * @deterministic: yes
+ * @fixtures: test-owned Bun/Vitest command recorders; a module's declaration test beside module/
+ */
+test("tst_scripts_tgflood_002 routes a module declaration test to the vitest lane", () => {
+  const dir = mkdtempSync(join(tmpdir(), "telegram-test-runner-"));
+  const calls = join(dir, "calls");
+  try {
+    for (const executable of ["bun", "bunx"]) {
+      writeFileSync(join(dir, executable), `#!/bin/sh
+printf '%s\\n' '${executable}' "$@" >> "$FLOOD_RUNNER_CALLS"
+exit 0
+`, { mode: 0o755 });
+    }
+    writeFileSync(calls, "");
+    const declarationTest = "plugins/modules/telegram/entities.test.ts";
+    const result = spawnSync("bash", [join(root, "scripts/test-connectors.sh"), "--agent", declarationTest, "-t", "carries the index flag"], {
+      cwd: root, encoding: "utf8", timeout: 10_000,
+      env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, FLOOD_RUNNER_CALLS: calls },
+    });
+    if (result.error) throw result.error;
+    expect(result.status).toBe(0);
+    expect(readFileSync(calls, "utf8").trim().split("\n").filter(Boolean))
+      .toEqual(["bunx", "vitest", "run", declarationTest, "-t", "carries the index flag"]);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});

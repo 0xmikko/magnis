@@ -15,6 +15,8 @@ export interface TelegramChatDetails {
   type?: string;
   username?: string;
   avatar_url?: string;
+  /** The operator's choice to index this chat's media; absent until set. */
+  is_indexed?: boolean;
   member_count?: number;
   read_inbox_max_id?: number;
   read_outbox_max_id?: number;

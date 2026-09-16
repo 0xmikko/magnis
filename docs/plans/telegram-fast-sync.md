@@ -2,7 +2,7 @@
 
 Status: APPROVED  
 Spec lock: sha256:0804a6ac650ba5737a8e6f4be287b8e29740481b24a253322bd7a888c1031f54 owner:2026-09-15: ИСПРАВОЯЙ ПОКА НЕ БУДЕТ РАБОТАТЬ БЫСТРО  
-Implementation lock: sha256:c23580e144f33003af96757ab4ea5459bbcb2babe3d9e13eeb55026206ddcae9 owner:2026-09-16 owner ordered finishing Telegram; the strict graph doubles in chatBatchSnapshotMerge.test.ts and mediaSourceRouting.test.ts describe the replaced per-chat and whole-account reads and are retargeted in the same Stage as their own Task; no SPEC change  
+Implementation lock: sha256:888e5f8afd11e6f78e4480cbc279769bdfd2acfe8c7af61ca8eb450570f92aa5 owner:2026-09-16 owner ordered finishing Telegram; the chat details type must mirror the declaration, and the backend adapter must admit declaration tests so the Stage RED can run through it; no SPEC change  
 Active Delivery: D1  
 Unattended decisions: allowed  
 
@@ -180,9 +180,9 @@ Each journey runs through the real production logic. Extend existing tests rathe
 
 Branch: `feat/telegram-fast-sync`; Depends: none; Gate: backend.
 
-Stage graph: `D1-S1 -> D1-S3; D1-S2 -> D1-S3; D1-S4`.
+Stage graph: `D1-S1 -> D1-S3; D1-S2 -> D1-S3; D1-S4 -> D1-S5`.
 
-Forecast: 162 active min / 17 credits across 4 Stages; longest dependency path 79 active min; external waits 0 min.
+Forecast: 177 active min / 19 credits across 5 Stages; longest dependency path 79 active min; external waits 0 min.
 
 Telegram uses an available account request slot immediately instead of invented three-second spacing and twenty-per-minute throttling. A real FLOOD_WAIT stops new transmissions for precisely the provider duration.
 
@@ -343,6 +343,46 @@ Commit. fix(telegram): resolve packet chats through two Graph reads — the modu
 <!-- plan:results:D1-S4:end -->
 <!-- plan:stage:D1-S4:end -->
 
+
+<!-- plan:stage:D1-S5:start -->
+<!-- plan:stage-meta:{"deliveryId": "D1", "depends": ["D1-S4"], "parallelWith": [], "writes": ["plugins/modules/telegram/entities.ts", "plugins/modules/telegram/entities.test.ts", "plugins/modules/telegram/types.ts", "scripts/test-connectors.sh", "scripts/tst_scripts_tgflood_001.test.ts"], "tempRoot": ".tmp/code-production/telegram-fast-sync/D1-S5", "verifyActiveMinutes": 3, "verifyCredits": 1} -->
+#### Stage D1-S5 — Declared the chat index flag the module already writes
+
+- Owner: root; Profile: strong; Depends: D1-S4; Parallel with: none.
+- Writes: `plugins/modules/telegram/entities.ts`, `plugins/modules/telegram/entities.test.ts`, `plugins/modules/telegram/types.ts`, `scripts/test-connectors.sh`, `scripts/tst_scripts_tgflood_001.test.ts`.
+- Temp root: `.tmp/code-production/telegram-fast-sync/D1-S5` (must be absent at handoff).
+- Predict: 23 active min / 3 credits.
+- Of which verification: 3 active min / 1 credits.
+
+What this Stage solves. The module reads is_indexed from a chat's dictionary to gate media downloads and writes it through telegram.chats.set_indexed, and its ChatDetails type carries it, but the entity declaration that now replaces schemas/chat.json never listed it. The host validates every dictionary against the declaration, so a chat carrying is_indexed is rejected at apply_batch; the backend proof's Unicode regression hit this with the rebuilt archive.
+
+What is built. The chat declaration in entities.ts adds is_indexed as an optional nullable boolean. No module logic, Source or host change.
+
+How it is proven. tst_module_telegram_entities_003 in entities.test.ts derives the chat descriptor and asserts a dictionary with is_indexed validates and one with an unknown key still does not.
+
+Commit. fix(telegram): declare the chat index flag the module already writes — the declaration matches the dictionary the module reads and sets.
+
+##### Tasks
+
+- [ ] TGFAST_012 — Declare is_indexed on the chat entity in entities.ts and types.ts and prove it in entities.test.ts. (12 min)
+<!-- plan:task-meta:{"writes": ["plugins/modules/telegram/entities.ts", "plugins/modules/telegram/entities.test.ts", "plugins/modules/telegram/types.ts"], "predictedActiveMinutes": 12, "predictedCredits": 1, "how": "Update plugins/modules/telegram/entities.ts; Update plugins/modules/telegram/entities.test.ts. The chat declaration gains is_indexed as an optional nullable boolean, matching ChatDetails in types.ts, the shouldIndex gate and the telegram.chats.set_indexed RPC that writes it through update_properties. RED first in entities.test.ts: the derived chat descriptor must accept an is_indexed property; today it is undeclared and the host's declaration validation rejects any chat dictionary carrying it.", "red": "bun run agent:test:backend -- plugins/modules/telegram/entities.test.ts -t tst_module_telegram_entities_003"} -->
+
+- [ ] TGFAST_012B — Admit module declaration tests to the backend adapter lane in test-connectors.sh and prove it in tst_scripts_tgflood_001.test.ts. (8 min)
+<!-- plan:task-meta:{"writes": ["scripts/test-connectors.sh", "scripts/tst_scripts_tgflood_001.test.ts"], "predictedActiveMinutes": 8, "predictedCredits": 1, "how": "Update scripts/test-connectors.sh; Update scripts/tst_scripts_tgflood_001.test.ts. The --agent lane admits plugins/modules/*/entities.test.ts as a vitest target, exactly the path vitest.config.ts already includes, so a module's declaration test can be a Stage's RED command. RED first: tst_scripts_tgflood_002 asks the adapter to run a declaration test and expects the vitest engine instead of the unsupported-lane refusal.", "red": "bun run agent:test:backend -- scripts/tst_scripts_tgflood_001.test.ts -t tst_scripts_tgflood_002"} -->
+
+##### Acceptance criteria
+
+- [ ] `bun run agent:test:backend -- plugins/modules/telegram/entities.test.ts` exits 0 — the chat declaration accepts is_indexed and still rejects unknown keys
+- [ ] Commit
+
+##### Results
+
+<!-- plan:results:D1-S5:start -->
+| Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
+|---|---|---|---:|---|---|
+<!-- plan:results:D1-S5:end -->
+<!-- plan:stage:D1-S5:end -->
+
 <!-- plan:delivery:D1:end -->
 <!-- plan:implementation:end -->
 
@@ -400,4 +440,8 @@ Commit. fix(telegram): resolve packet chats through two Graph reads — the modu
 - deviation D1-S4: Task TGFAST_009B start (09:34:55Z) is later than the combined receipt start; the receipt uses the earliest start.
 
 - close D1-S4 closed commit:bfd0c8b6f57184fab40947224e60f11e2b8e6804
+
+- amend implementation owner:2026-09-16 owner ordered finishing Telegram; the backend proof's Unicode regression rejects chat dictionaries carrying the is_indexed flag the module already reads and writes, so the declaration is completed in its own Stage; no SPEC change sha256:37ef468906a21eda508685036ac504ca3992fba0146c12f6dbba9913f9302d71
+
+- amend implementation owner:2026-09-16 owner ordered finishing Telegram; the chat details type must mirror the declaration, and the backend adapter must admit declaration tests so the Stage RED can run through it; no SPEC change sha256:888e5f8afd11e6f78e4480cbc279769bdfd2acfe8c7af61ca8eb450570f92aa5
 <!-- plan:execution:end -->
