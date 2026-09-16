@@ -2,7 +2,7 @@
 
 Status: APPROVED  
 Spec lock: sha256:0804a6ac650ba5737a8e6f4be287b8e29740481b24a253322bd7a888c1031f54 owner:2026-09-15: ИСПРАВОЯЙ ПОКА НЕ БУДЕТ РАБОТАТЬ БЫСТРО  
-Implementation lock: sha256:0c278318f332ebe6f87503b86f6e3806a48cd80d87b6f858e86de4de2342b1b4 owner:2026-09-16 owner: without the number of messages to download the sync cannot be planned; an estimate is unacceptable; the exact per-chat count Telegram reports must be kept and shown; no SPEC change  
+Implementation lock: sha256:30f4b809076bb46ed57f6629b1028b4e83be88b6f94341877c1e85f8f3837843 owner:2026-09-16 owner ordered clean live synchronization; the stand stalled behind media downloads twice; repaired in its own Stage; no SPEC change  
 Active Delivery: D1  
 Unattended decisions: allowed  
 
@@ -180,9 +180,9 @@ Each journey runs through the real production logic. Extend existing tests rathe
 
 Branch: `feat/telegram-fast-sync`; Depends: none; Gate: backend.
 
-Stage graph: `D1-S1 -> D1-S3; D1-S2 -> D1-S3; D1-S4 -> D1-S5; D1-S5 -> D1-S6; D1-S6 -> D1-S7; D1-S7 -> D1-S8`.
+Stage graph: `D1-S1 -> D1-S3; D1-S2 -> D1-S3; D1-S4 -> D1-S5; D1-S5 -> D1-S6; D1-S6 -> D1-S7; D1-S7 -> D1-S8; D1-S8 -> D1-S9`.
 
-Forecast: 232 active min / 26 credits across 8 Stages; longest dependency path 79 active min; external waits 0 min.
+Forecast: 252 active min / 28 credits across 9 Stages; longest dependency path 79 active min; external waits 0 min.
 
 Telegram uses an available account request slot immediately instead of invented three-second spacing and twenty-per-minute throttling. A real FLOOD_WAIT stops new transmissions for precisely the provider duration.
 
@@ -503,6 +503,43 @@ Commit. feat(telegram): carry the exact per-chat message count from Telegram —
 <!-- plan:results:D1-S8:end -->
 <!-- plan:stage:D1-S8:end -->
 
+
+<!-- plan:stage:D1-S9:start -->
+<!-- plan:stage-meta:{"deliveryId": "D1", "depends": ["D1-S8"], "parallelWith": [], "writes": ["plugins/sources/telegram/src/dispatch.ts", "plugins/sources/telegram/src/dispatch.test.ts"], "tempRoot": ".tmp/code-production/telegram-fast-sync/D1-S9", "verifyActiveMinutes": 6, "verifyCredits": 1} -->
+#### Stage D1-S9 — History pages never wait behind media downloads
+
+- Owner: root; Profile: strong; Depends: D1-S8; Parallel with: none.
+- Writes: `plugins/sources/telegram/src/dispatch.ts`, `plugins/sources/telegram/src/dispatch.test.ts`.
+- Temp root: `.tmp/code-production/telegram-fast-sync/D1-S9` (must be absent at handoff).
+- Predict: 20 active min / 2 credits.
+- Of which verification: 6 active min / 1 credits.
+
+What this Stage solves. On the live stand the bootstrap stalled twice for ten minutes: the Source admits eight tool calls at once, the host abandons a download_file after its 30 s deadline while the child keeps streaming the video, the host's retries open more, the eight slots fill with downloads and the next magnis.sync.fetch waits behind them until its own deadline fires and the sync reports an error.
+
+What is built. download_file has its own small pool inside the Source's command loop; the shared eight slots serve sync fetches, listeners and actions, so a page of history is dispatched whatever the downloads are doing.
+
+How it is proven. tst_src_tgdispatch_001 drives the real stdio loop with a resolver whose downloads never finish: eight downloads in flight, then a sync fetch; RED the fetch never answers, GREEN it answers while the downloads still run.
+
+Commit. fix(telegram): give media downloads their own pool — a history page never waits behind a video.
+
+##### Tasks
+
+- [ ] TGFAST_017 — download_file calls in dispatch.ts take permits from their own pool, never from the eight shared slots; dispatch.test.ts proves a sync fetch answers while eight downloads run. (14 min)
+<!-- plan:task-meta:{"writes": ["plugins/sources/telegram/src/dispatch.ts", "plugins/sources/telegram/src/dispatch.test.ts"], "predictedActiveMinutes": 14, "predictedCredits": 1, "how": "1. In plugins/sources/telegram/src/dispatch.ts add a second semaphore for magnis.execute calls whose action is download_file and route them to it. 2. Add plugins/sources/telegram/src/dispatch.test.ts driving runMcpStdio with a fake resolver.", "red": "bun run agent:test:backend -- plugins/sources/telegram/src/dispatch.test.ts"} -->
+
+##### Acceptance criteria
+
+- [ ] `bun run agent:test:backend -- plugins/sources/telegram/src/dispatch.test.ts` exits 0 — a sync fetch answers while eight downloads run
+- [ ] Commit
+
+##### Results
+
+<!-- plan:results:D1-S9:start -->
+| Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
+|---|---|---|---:|---|---|
+<!-- plan:results:D1-S9:end -->
+<!-- plan:stage:D1-S9:end -->
+
 <!-- plan:delivery:D1:end -->
 <!-- plan:implementation:end -->
 
@@ -590,4 +627,6 @@ Commit. feat(telegram): carry the exact per-chat message count from Telegram —
 - record-result D1-S8 commit:98438abfdf01562f039082258b1205561763b264
 
 - close D1-S8 closed commit:98438abfdf01562f039082258b1205561763b264
+
+- amend implementation owner:2026-09-16 owner ordered clean live synchronization; the stand stalled behind media downloads twice; repaired in its own Stage; no SPEC change sha256:30f4b809076bb46ed57f6629b1028b4e83be88b6f94341877c1e85f8f3837843
 <!-- plan:execution:end -->

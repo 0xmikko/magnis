@@ -351,6 +351,18 @@ export async function handleMessage(
  * MAX_INFLIGHT_TOOL_CALLS + its semaphore. */
 const MAX_INFLIGHT_TOOL_CALLS = 8;
 
+/** Media downloads own a pool of their own. The host abandons a
+ * `download_file` after its deadline while this process keeps streaming the
+ * file, and its retries open more; sharing the eight slots let those fill
+ * them and starve the next history page until its own deadline fired. The
+ * bound matches the host's download worker, which runs two at a time. */
+const MAX_INFLIGHT_DOWNLOADS = 2;
+
+function isDownload(msg: JsonRpcMessage): boolean {
+  return msg.method === "tools/call" && msg.params?.name === "magnis.execute"
+    && msg.params.arguments?.action === "download_file";
+}
+
 /** Minimal counting semaphore (the Rust binary uses tokio's). */
 class Semaphore {
   private available: number;
@@ -377,6 +389,7 @@ class Semaphore {
 
 export async function runMcpStdio(input: NodeJS.ReadableStream, deps: DispatchDeps): Promise<void> {
   const sem = new Semaphore(MAX_INFLIGHT_TOOL_CALLS);
+  const downloads = new Semaphore(MAX_INFLIGHT_DOWNLOADS);
   const pending = new Set<Promise<void>>();
 
   const rl = createInterface({ input });
@@ -398,15 +411,17 @@ export async function runMcpStdio(input: NodeJS.ReadableStream, deps: DispatchDe
     // waits), but the (bound+1)th task waits for a permit before it dispatches.
     // @tested-by: tst_src_tgflood_005 — stopping a subscription issues no RPC.
     const control = msg.method === "tools/call" && msg.params?.name === "listen_stop";
+    // @tested-by: tst_src_tgdispatch_001 — a sync fetch answers while eight downloads run.
+    const pool = control ? null : isDownload(msg) ? downloads : sem;
     const work = (async (): Promise<void> => {
-      if (!control) await sem.acquire();
+      if (pool !== null) await pool.acquire();
       try {
         const reply = await handleMessage(msg, deps);
         if (reply !== null) deps.write(JSON.stringify(reply));
       } catch (e) {
         console.error(`magnis-telegram: dispatch panic: ${String(e)}`);
       } finally {
-        if (!control) sem.release();
+        if (pool !== null) pool.release();
       }
     })();
     pending.add(work);
