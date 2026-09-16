@@ -2,7 +2,7 @@
 
 Status: APPROVED  
 Spec lock: sha256:0804a6ac650ba5737a8e6f4be287b8e29740481b24a253322bd7a888c1031f54 owner:2026-09-15: ИСПРАВОЯЙ ПОКА НЕ БУДЕТ РАБОТАТЬ БЫСТРО  
-Implementation lock: sha256:30f4b809076bb46ed57f6629b1028b4e83be88b6f94341877c1e85f8f3837843 owner:2026-09-16 owner ordered clean live synchronization; the stand stalled behind media downloads twice; repaired in its own Stage; no SPEC change  
+Implementation lock: sha256:ccf2e8119b6fbe055892da4dae387f05255fd10dd62a89ff33ec9e2a765dd84b owner:2026-09-16 owner: the exact per-chat count must be known for every chat; small chats answered without a count field were left uncounted; repaired in its own Stage; no SPEC change  
 Active Delivery: D1  
 Unattended decisions: allowed  
 
@@ -180,9 +180,9 @@ Each journey runs through the real production logic. Extend existing tests rathe
 
 Branch: `feat/telegram-fast-sync`; Depends: none; Gate: backend.
 
-Stage graph: `D1-S1 -> D1-S3; D1-S2 -> D1-S3; D1-S4 -> D1-S5; D1-S5 -> D1-S6; D1-S6 -> D1-S7; D1-S7 -> D1-S8; D1-S8 -> D1-S9`.
+Stage graph: `D1-S1 -> D1-S3; D1-S2 -> D1-S3; D1-S4 -> D1-S5; D1-S5 -> D1-S6; D1-S6 -> D1-S7; D1-S7 -> D1-S8; D1-S8 -> D1-S9; D1-S9 -> D1-S10`.
 
-Forecast: 252 active min / 28 credits across 9 Stages; longest dependency path 79 active min; external waits 0 min.
+Forecast: 267 active min / 30 credits across 10 Stages; longest dependency path 79 active min; external waits 0 min.
 
 Telegram uses an available account request slot immediately instead of invented three-second spacing and twenty-per-minute throttling. A real FLOOD_WAIT stops new transmissions for precisely the provider duration.
 
@@ -541,6 +541,43 @@ Commit. fix(telegram): give media downloads their own pool — a history page ne
 <!-- plan:results:D1-S9:end -->
 <!-- plan:stage:D1-S9:end -->
 
+
+<!-- plan:stage:D1-S10:start -->
+<!-- plan:stage-meta:{"deliveryId": "D1", "depends": ["D1-S9"], "parallelWith": [], "writes": ["plugins/sources/telegram/src/live.ts", "plugins/sources/telegram/src/surfaces/telegram/commands.test.ts"], "tempRoot": ".tmp/code-production/telegram-fast-sync/D1-S10", "verifyActiveMinutes": 5, "verifyCredits": 1} -->
+#### Stage D1-S10 — A complete first page states the chat's count too
+
+- Owner: root; Profile: strong; Depends: D1-S9; Parallel with: none.
+- Writes: `plugins/sources/telegram/src/live.ts`, `plugins/sources/telegram/src/surfaces/telegram/commands.test.ts`.
+- Temp root: `.tmp/code-production/telegram-fast-sync/D1-S10` (must be absent at handoff).
+- Predict: 15 active min / 2 credits.
+- Of which verification: 5 active min / 1 credits.
+
+What this Stage solves. On the live stand 1694 of 2636 chats carry no message_count after bootstrap: Telegram answers a chat whose whole history fits the first page with messages.Messages, which has no count field, and the Source recorded a count only from MessagesSlice or ChannelMessages. For such a chat the answer IS the whole history, so its length is the exact count; without it the account total stays unknown.
+
+What is built. getMessages sets total to the answer's length when Telegram returns messages.Messages for a first page (no offset); a count-less answer for an offset page still carries no total.
+
+How it is proven. tst_src_tgfast_005: a first-page messages.Messages answer of three messages yields total 3, the same answer for an offset page yields no total (tst_src_tgfast_004 keeps its count-absent backfill case): RED, GREEN.
+
+Commit. fix(telegram): a complete first page states the chat's count — messages.Messages is the whole history.
+
+##### Tasks
+
+- [ ] TGFAST_018 — getMessages in live.ts reports total = length for a first-page messages.Messages answer and no total for an offset page; commands.test.ts proves both. (10 min)
+<!-- plan:task-meta:{"writes": ["plugins/sources/telegram/src/live.ts", "plugins/sources/telegram/src/surfaces/telegram/commands.test.ts"], "predictedActiveMinutes": 10, "predictedCredits": 1, "how": "1. In plugins/sources/telegram/src/live.ts, after the count check, set total to result.messages.length when the answer is messages.Messages and no offset was requested. 2. Add tst_src_tgfast_005 to plugins/sources/telegram/src/surfaces/telegram/commands.test.ts.", "red": "bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts"} -->
+
+##### Acceptance criteria
+
+- [ ] `bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts` exits 0 — a complete first page states the count, an offset page does not
+- [ ] Commit
+
+##### Results
+
+<!-- plan:results:D1-S10:start -->
+| Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
+|---|---|---|---:|---|---|
+<!-- plan:results:D1-S10:end -->
+<!-- plan:stage:D1-S10:end -->
+
 <!-- plan:delivery:D1:end -->
 <!-- plan:implementation:end -->
 
@@ -634,4 +671,6 @@ Commit. fix(telegram): give media downloads their own pool — a history page ne
 - record-result D1-S9 commit:2f8024a898eaeeb63eae8e57816834885c637f84
 
 - close D1-S9 closed commit:2f8024a898eaeeb63eae8e57816834885c637f84
+
+- amend implementation owner:2026-09-16 owner: the exact per-chat count must be known for every chat; small chats answered without a count field were left uncounted; repaired in its own Stage; no SPEC change sha256:ccf2e8119b6fbe055892da4dae387f05255fd10dd62a89ff33ec9e2a765dd84b
 <!-- plan:execution:end -->

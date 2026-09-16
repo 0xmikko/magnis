@@ -303,6 +303,12 @@ export class TgClient implements TgOps {
         }
       }
       if ("count" in result) messages.total = result.count;
+      // @tested-by: tst_src_tgfast_005 — messages.Messages carries no count because
+      // the answer IS the whole history; for a first page its length is the exact
+      // count. For an offset page it is only the rest, so no count is invented.
+      else if (result instanceof Api.messages.Messages && (params.offsetId ?? 0) === 0) {
+        messages.total = result.messages.length;
+      }
       return messages;
     };
     return await withTimeout(read(), Math.min(timeoutMs, MTPROTO_REQUEST_TIMEOUT_MS), "getMessages");

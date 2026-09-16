@@ -189,6 +189,35 @@ test("tst_src_tgfast_003 catchup resumes round-robin without skipping committed 
   } finally { await f.close(); now.mockRestore(); }
 });
 
+/** @test-id: tst_src_tgfast_005
+ * @scenario: scn_tg_sync_003
+ * @covers: TgClient.getMessages count provenance for a complete first page
+ * @deterministic: yes
+ * @fixtures: real Source/GramJS fake wire; messages.Messages answers with and without an offset
+ */
+test("tst_src_tgfast_005 a complete first page states the chat's count; an offset page without a count stays uncounted", async () => {
+  const clock = new VirtualClock();
+  const now = spyOn(performance, "now").mockImplementation(() => clock.now());
+  const f = await createTransport(clock);
+  try {
+    f.tg.cachePeer(42, wireChat(42));
+    const peer = await f.tg.resolvePeer(42);
+    // Telegram answers a chat whose whole history fits the page with
+    // messages.Messages: no count field, because the answer IS the history.
+    const first = f.tg.getMessages(peer, { limit: 50 }, 60_000);
+    clock.advance(3000);
+    await f.reply(await f.application(0), new Api.messages.Messages({
+      messages: [wireMessage(42, 3), wireMessage(42, 2), wireMessage(42, 1)], chats: [], users: [] }));
+    expect((await first).total).toBe(3);
+    // The same answer for an OFFSET page is only the rest of the history.
+    const rest = f.tg.getMessages(peer, { limit: 50, offsetId: 10 }, 60_000);
+    clock.advance(3000);
+    await f.reply(await f.application(1), new Api.messages.Messages({
+      messages: [wireMessage(42, 9)], chats: [], users: [] }));
+    expect((await rest).total).toBeUndefined();
+  } finally { await f.close(); now.mockRestore(); }
+});
+
 /** @test-id: tst_src_tgfast_004
  * @scenario: scn_tg_sync_003
  * @covers: TgClient.getMessages and execute backfill_chat
