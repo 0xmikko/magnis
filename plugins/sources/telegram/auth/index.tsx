@@ -14,20 +14,51 @@
  * (resolves to `{ status }` = `code_sent` | `password` | `connected`). Uses only
  * plain elements + Tailwind (no `@magnis/host/ui` dependency).
  */
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
+
+/** What the host draws in its footer for this screen: the bottom-right
+ * corner, where a person looks for the action, reachable by Enter. A screen
+ * that publishes one does not draw its own. */
+export interface SourceAuthPrimary {
+  label: string;
+  disabled: boolean;
+  run: () => void;
+}
 
 export interface SourceAuthScreenProps {
   sourceId: string;
   submit: (step: "phone" | "code" | "password", value: string) => Promise<void>;
   exec: (op: "begin" | "step") => Promise<{ status: string }>;
   onConnected?: () => void;
+  onPrimary?: (action: SourceAuthPrimary | null) => void;
 }
 
 type Phase = "phone" | "code" | "password" | "connected";
 
+/** Where the ceremony stands after a code, read in the HOST's words.
+ *
+ * The host publishes its own vocabulary, not the connector's: this
+ * connector's `password` state reaches the browser as `password_required`,
+ * and reading the connector's spelling here left the screen sitting on the
+ * code boxes while the ceremony had already moved on — every later submit
+ * was answered `409: auth ceremony expected password`, which is what the
+ * person saw instead of the password field.
+ *
+ * A status nobody planned is an error, not a no-op: a screen that quietly
+ * stays put is exactly the failure that took an hour to find.
+ */
+export function phaseAfterCode(status: string): Phase {
+  if (status === "password_required") return "password";
+  if (status === "connected") return "connected";
+  throw new Error(`unexpected sign-in status: ${status}`);
+}
+
 /** Telegram login codes are 5 digits. */
 const CODE_LEN = 5;
+/** A country code and at least seven more digits — the shortest national
+ * numbers in use. Spaces, dashes and brackets are how people type them. */
+const PHONE = /^\+\d[\d\s().-]{7,}$/;
 
 /**
  * Segmented one-time-code input: `length` single-digit cells, digits only,
@@ -127,6 +158,7 @@ export default function TelegramAuthScreen({
   submit,
   exec,
   onConnected,
+  onPrimary,
 }: SourceAuthScreenProps): JSX.Element {
   const [phase, setPhase] = useState<Phase>("phone");
   const [value, setValue] = useState("");
@@ -151,11 +183,9 @@ export default function TelegramAuthScreen({
       } else if (phase !== "connected") {
         await submit(phase, current);
         const { status } = await exec("step");
-        if (status === "password_required") setPhase("password");
-        else if (status === "connected") {
-          setPhase("connected");
-          onConnected?.();
-        }
+        const next = phaseAfterCode(status);
+        setPhase(next);
+        if (next === "connected") onConnected?.();
       }
       setValue("");
     } catch (e) {
@@ -178,8 +208,34 @@ export default function TelegramAuthScreen({
         : "Two-factor password";
 
   const isCode = phase === "code";
-  // The code phase requires all CODE_LEN digits; other phases just non-empty.
-  const canSubmit = !busy && (isCode ? value.length === CODE_LEN : value.length > 0);
+  // The submit is this screen's primary action, so it stays disabled until the
+  // value could actually be accepted: the code needs all CODE_LEN digits, and
+  // a phone number needs a country code and enough digits to be one. A button
+  // that is live on "+" invites a round trip whose only answer is a refusal.
+  const canSubmit = !busy && (
+    isCode
+      ? value.length === CODE_LEN
+      : phase === "phone"
+        ? PHONE.test(value)
+        : value.length > 0
+  );
+  const actionLabel = phase === "phone" ? "Send code" : "Continue";
+  // The host draws this in its footer. `advance` is the same call Enter makes
+  // through the form below, so both routes are one action — but it is rebuilt
+  // on every render, so it travels by ref and stays OUT of the dependencies:
+  // an effect that runs on every render publishes on every render, and a host
+  // that holds what it is given then re-renders this screen for it, forever.
+  const latest = useRef(advance);
+  latest.current = advance;
+  useEffect(() => {
+    onPrimary?.({
+      label: actionLabel,
+      disabled: !canSubmit,
+      run: () => { void latest.current(); },
+    });
+    return (): void => { onPrimary?.(null); };
+  }, [actionLabel, canSubmit, onPrimary]);
+
   return (
     // A real form so Enter in the field submits (the default action), not just
     // a mouse click on the button.
@@ -214,13 +270,16 @@ export default function TelegramAuthScreen({
         />
       )}
       {error ? <p className="text-sm text-red-400">{error}</p> : null}
-      <button
-        type="submit"
-        disabled={!canSubmit}
-        className="w-full rounded-lg bg-[#2AABEE] px-4 py-2.5 text-sm font-medium text-white cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border-none"
-      >
-        {phase === "phone" ? "Send code" : "Continue"}
-      </button>
+      {onPrimary === undefined && (
+        // Only for a host that does not draw it. One button, never two.
+        <button
+          type="submit"
+          disabled={!canSubmit}
+          className="w-full rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border-none"
+        >
+          {actionLabel}
+        </button>
+      )}
     </form>
   );
 }

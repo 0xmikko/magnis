@@ -15,6 +15,11 @@ export default defineConfig({
     environment: "node",
     include: [
       "plugins/modules/**/module/**/*.test.ts",
+      // A source's auth SCREEN is React, and its DOM belongs to the closed
+      // frontend's lane — but the pure decisions it makes (which the host's
+      // ceremony vocabulary drives) are logic, and they belong here, beside
+      // the package that gets them wrong.
+      "plugins/sources/**/auth/**/*.test.ts",
       // A module's declaration is tested beside it, OUTSIDE module/: the module's
       // own tsconfig must never see zod.
       "plugins/modules/*/entities.test.ts",
