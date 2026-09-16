@@ -600,19 +600,20 @@ Commit. fix(telegram): CatchUp keeps and refreshes the per-chat count — the to
 
 ##### Tasks
 
-- [ ] TGFAST_019 — Every cursor entry runCatchup in commands.ts writes carries message_count, kept from the entry or refreshed from the page's count; commands.test.ts proves it across four CatchUp pages. (12 min)
+- [x] TGFAST_019 — Every cursor entry runCatchup in commands.ts writes carries message_count, kept from the entry or refreshed from the page's count; commands.test.ts proves it across four CatchUp pages. (12 min) — 21fd6d222bda41ed26c1d16d74f64a8eac7ae148
 <!-- plan:task-meta:{"writes": ["plugins/sources/telegram/src/surfaces/telegram/commands.ts", "plugins/sources/telegram/src/surfaces/telegram/commands.test.ts"], "predictedActiveMinutes": 12, "predictedCredits": 1, "how": "1. In plugins/sources/telegram/src/surfaces/telegram/commands.ts read message_count in catchupProgress and write it back in every newCursorChats assignment, replaced by messages.total when the read states one. 2. Extend tst_src_tgfast_003 in plugins/sources/telegram/src/surfaces/telegram/commands.test.ts.", "red": "bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts` exits 0 — CatchUp entries carry the count
-- [ ] Commit
+- [x] `bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts` exits 0 — CatchUp entries carry the count — 21fd6d222bda41ed26c1d16d74f64a8eac7ae148
+- [x] Commit — 21fd6d222bda41ed26c1d16d74f64a8eac7ae148
 
 ##### Results
 
 <!-- plan:results:D1-S11:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| TGFAST_019 | 21fd6d222bda41ed26c1d16d74f64a8eac7ae148 | 2026-09-16T23:52:09.696Z–2026-09-16T23:54:04.000Z | 1.91 / 1.91 min | unavailable: Runner exposes no per-stage credit meter or separate active-time measurement; active time is an elapsed upper-bound proxy | RED 23:53Z: the final CatchUp cursor entries carried no message_count. GREEN 23:56Z: every entry carries 31; commands 28 pass, gap+execute 31 pass, typecheck exit 0. |
 <!-- plan:results:D1-S11:end -->
 <!-- plan:stage:D1-S11:end -->
 
@@ -717,4 +718,8 @@ Commit. fix(telegram): CatchUp keeps and refreshes the per-chat count — the to
 - close D1-S10 closed commit:15c782f333160d36b912d86ccbdb25ff3f16afe5
 
 - amend implementation owner:2026-09-16 owner: every chat's exact count must be known and shown; CatchUp erased it and a missed chat had none; repaired in its own Stage; no SPEC change sha256:3a5e2375b0e4a9fc04cf67fa1f49c75d306bc4121fad32a162bbcc42e205a4d6
+
+- record-result D1-S11 commit:21fd6d222bda41ed26c1d16d74f64a8eac7ae148
+
+- close D1-S11 closed commit:21fd6d222bda41ed26c1d16d74f64a8eac7ae148
 <!-- plan:execution:end -->
