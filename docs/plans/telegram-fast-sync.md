@@ -562,19 +562,20 @@ Commit. fix(telegram): a complete first page states the chat's count — message
 
 ##### Tasks
 
-- [ ] TGFAST_018 — getMessages in live.ts reports total = length for a first-page messages.Messages answer and no total for an offset page; commands.test.ts proves both. (10 min)
+- [x] TGFAST_018 — getMessages in live.ts reports total = length for a first-page messages.Messages answer and no total for an offset page; commands.test.ts proves both. (10 min) — 15c782f333160d36b912d86ccbdb25ff3f16afe5
 <!-- plan:task-meta:{"writes": ["plugins/sources/telegram/src/live.ts", "plugins/sources/telegram/src/surfaces/telegram/commands.test.ts"], "predictedActiveMinutes": 10, "predictedCredits": 1, "how": "1. In plugins/sources/telegram/src/live.ts, after the count check, set total to result.messages.length when the answer is messages.Messages and no offset was requested. 2. Add tst_src_tgfast_005 to plugins/sources/telegram/src/surfaces/telegram/commands.test.ts.", "red": "bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts` exits 0 — a complete first page states the count, an offset page does not
-- [ ] Commit
+- [x] `bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts` exits 0 — a complete first page states the count, an offset page does not — 15c782f333160d36b912d86ccbdb25ff3f16afe5
+- [x] Commit — 15c782f333160d36b912d86ccbdb25ff3f16afe5
 
 ##### Results
 
 <!-- plan:results:D1-S10:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| TGFAST_018 | 15c782f333160d36b912d86ccbdb25ff3f16afe5 | 2026-09-16T22:23:47.862Z–2026-09-16T22:24:37.000Z | 0.82 / 0.82 min | unavailable: Runner exposes no per-stage credit meter or separate active-time measurement; active time is an elapsed upper-bound proxy | RED 22:24Z: a first-page messages.Messages answer carried no total. GREEN 22:26Z: total 3 for the complete page, none for the offset page; commands 28 pass, live/client/execute 68 pass. |
 <!-- plan:results:D1-S10:end -->
 <!-- plan:stage:D1-S10:end -->
 
@@ -673,4 +674,8 @@ Commit. fix(telegram): a complete first page states the chat's count — message
 - close D1-S9 closed commit:2f8024a898eaeeb63eae8e57816834885c637f84
 
 - amend implementation owner:2026-09-16 owner: the exact per-chat count must be known for every chat; small chats answered without a count field were left uncounted; repaired in its own Stage; no SPEC change sha256:ccf2e8119b6fbe055892da4dae387f05255fd10dd62a89ff33ec9e2a765dd84b
+
+- record-result D1-S10 commit:15c782f333160d36b912d86ccbdb25ff3f16afe5
+
+- close D1-S10 closed commit:15c782f333160d36b912d86ccbdb25ff3f16afe5
 <!-- plan:execution:end -->
