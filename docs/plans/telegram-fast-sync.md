@@ -524,19 +524,20 @@ Commit. fix(telegram): give media downloads their own pool — a history page ne
 
 ##### Tasks
 
-- [ ] TGFAST_017 — download_file calls in dispatch.ts take permits from their own pool, never from the eight shared slots; dispatch.test.ts proves a sync fetch answers while eight downloads run. (14 min)
+- [x] TGFAST_017 — download_file calls in dispatch.ts take permits from their own pool, never from the eight shared slots; dispatch.test.ts proves a sync fetch answers while eight downloads run. (14 min) — 2f8024a898eaeeb63eae8e57816834885c637f84
 <!-- plan:task-meta:{"writes": ["plugins/sources/telegram/src/dispatch.ts", "plugins/sources/telegram/src/dispatch.test.ts"], "predictedActiveMinutes": 14, "predictedCredits": 1, "how": "1. In plugins/sources/telegram/src/dispatch.ts add a second semaphore for magnis.execute calls whose action is download_file and route them to it. 2. Add plugins/sources/telegram/src/dispatch.test.ts driving runMcpStdio with a fake resolver.", "red": "bun run agent:test:backend -- plugins/sources/telegram/src/dispatch.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- plugins/sources/telegram/src/dispatch.test.ts` exits 0 — a sync fetch answers while eight downloads run
-- [ ] Commit
+- [x] `bun run agent:test:backend -- plugins/sources/telegram/src/dispatch.test.ts` exits 0 — a sync fetch answers while eight downloads run — 2f8024a898eaeeb63eae8e57816834885c637f84
+- [x] Commit — 2f8024a898eaeeb63eae8e57816834885c637f84
 
 ##### Results
 
 <!-- plan:results:D1-S9:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| TGFAST_017 | 2f8024a898eaeeb63eae8e57816834885c637f84 | 2026-09-16T21:05:15.009Z–2026-09-16T21:18:51.000Z | 10 / 13.6 min | unavailable: Runner exposes no per-stage credit meter or separate active-time measurement; active time is an elapsed upper-bound proxy | RED 21:06Z: with eight downloads in flight the sync fetch starved. GREEN 21:14Z: the fetch answers with two downloads running and six queued in their pool; flood suite 7 pass; typecheck exit 0. |
 <!-- plan:results:D1-S9:end -->
 <!-- plan:stage:D1-S9:end -->
 
@@ -629,4 +630,8 @@ Commit. fix(telegram): give media downloads their own pool — a history page ne
 - close D1-S8 closed commit:98438abfdf01562f039082258b1205561763b264
 
 - amend implementation owner:2026-09-16 owner ordered clean live synchronization; the stand stalled behind media downloads twice; repaired in its own Stage; no SPEC change sha256:30f4b809076bb46ed57f6629b1028b4e83be88b6f94341877c1e85f8f3837843
+
+- record-result D1-S9 commit:2f8024a898eaeeb63eae8e57816834885c637f84
+
+- close D1-S9 closed commit:2f8024a898eaeeb63eae8e57816834885c637f84
 <!-- plan:execution:end -->
