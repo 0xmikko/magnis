@@ -2,7 +2,7 @@
 
 Status: APPROVED  
 Spec lock: sha256:0804a6ac650ba5737a8e6f4be287b8e29740481b24a253322bd7a888c1031f54 owner:2026-09-15: ИСПРАВОЯЙ ПОКА НЕ БУДЕТ РАБОТАТЬ БЫСТРО  
-Implementation lock: sha256:888e5f8afd11e6f78e4480cbc279769bdfd2acfe8c7af61ca8eb450570f92aa5 owner:2026-09-16 owner ordered finishing Telegram; the chat details type must mirror the declaration, and the backend adapter must admit declaration tests so the Stage RED can run through it; no SPEC change  
+Implementation lock: sha256:0df242c6e2aa8647543706c40d4dba615b78fc936d19163a6431f26ede4cf8ea owner:2026-09-16 owner ordered finishing Telegram; the complete catalog gate fails on a strict double that predates the merged batched author-link read, retargeted in its own Stage; no SPEC change  
 Active Delivery: D1  
 Unattended decisions: allowed  
 
@@ -180,9 +180,9 @@ Each journey runs through the real production logic. Extend existing tests rathe
 
 Branch: `feat/telegram-fast-sync`; Depends: none; Gate: backend.
 
-Stage graph: `D1-S1 -> D1-S3; D1-S2 -> D1-S3; D1-S4 -> D1-S5`.
+Stage graph: `D1-S1 -> D1-S3; D1-S2 -> D1-S3; D1-S4 -> D1-S5; D1-S5 -> D1-S6`.
 
-Forecast: 177 active min / 19 credits across 5 Stages; longest dependency path 79 active min; external waits 0 min.
+Forecast: 185 active min / 21 credits across 6 Stages; longest dependency path 79 active min; external waits 0 min.
 
 Telegram uses an available account request slot immediately instead of invented three-second spacing and twenty-per-minute throttling. A real FLOOD_WAIT stops new transmissions for precisely the provider duration.
 
@@ -385,6 +385,43 @@ Commit. fix(telegram): declare the chat index flag the module already writes —
 <!-- plan:results:D1-S5:end -->
 <!-- plan:stage:D1-S5:end -->
 
+
+<!-- plan:stage:D1-S6:start -->
+<!-- plan:stage-meta:{"deliveryId": "D1", "depends": ["D1-S5"], "parallelWith": [], "writes": ["plugins/modules/telegram/module/__tests__/messagesGetLinks.test.ts"], "tempRoot": ".tmp/code-production/telegram-fast-sync/D1-S6", "verifyActiveMinutes": 2, "verifyCredits": 1} -->
+#### Stage D1-S6 — Retargeted the message links double to the batched author read
+
+- Owner: root; Profile: strong; Depends: D1-S5; Parallel with: none.
+- Writes: `plugins/modules/telegram/module/__tests__/messagesGetLinks.test.ts`.
+- Temp root: `.tmp/code-production/telegram-fast-sync/D1-S6` (must be absent at handoff).
+- Predict: 8 active min / 2 credits.
+- Of which verification: 2 active min / 1 credits.
+
+What this Stage solves. The complete gate on this branch fails in tst_mod_tg_001: the merged module reads a page's author links with one list_links_for_entities call, and the older strict double in messagesGetLinks.test.ts still scripts only the singular op, so the read throws before any assertion runs.
+
+What is built. The double scripts list_links_for_entities with the same edges; no module code changes.
+
+How it is proven. tst_mod_tg_001 passes again with its outgoing and incoming assertions unchanged, and the complete catalog gate is green on the head.
+
+Commit. test(telegram): script the batched author-link read in the message links double — the strict double follows the read the module makes.
+
+##### Tasks
+
+- [ ] TGFAST_013 — Script list_links_for_entities in messagesGetLinks.test.ts so tst_mod_tg_001 follows the batched author read. (6 min)
+<!-- plan:task-meta:{"writes": ["plugins/modules/telegram/module/__tests__/messagesGetLinks.test.ts"], "predictedActiveMinutes": 6, "predictedCredits": 1, "how": "Update plugins/modules/telegram/module/__tests__/messagesGetLinks.test.ts. senderNamesFor now reads a page's author links with one list_links_for_entities call (the smoke-stand correction certified by tst_module_telegram_read_005), but this older strict double still scripts the singular list_links_for_entity and throws on the plural op under the complete gate. Script list_links_for_entities with the same edges and keep every outgoing/incoming assertion.", "red": "bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/messagesGetLinks.test.ts"} -->
+
+##### Acceptance criteria
+
+- [ ] `bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/messagesGetLinks.test.ts` exits 0 — the message links double follows the batched author read
+- [ ] Commit
+
+##### Results
+
+<!-- plan:results:D1-S6:start -->
+| Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
+|---|---|---|---:|---|---|
+<!-- plan:results:D1-S6:end -->
+<!-- plan:stage:D1-S6:end -->
+
 <!-- plan:delivery:D1:end -->
 <!-- plan:implementation:end -->
 
@@ -454,4 +491,6 @@ Commit. fix(telegram): declare the chat index flag the module already writes —
 - deviation D1-S5: The declaration round-trip test in entities.test.ts had not run under S4 because the adapter refused its lane; S5 admits the lane and retargets that double, so the S4 result understates the tests touched.
 
 - close D1-S5 closed commit:6ddc51ca5060b8d86045d0369099c716d20d023a
+
+- amend implementation owner:2026-09-16 owner ordered finishing Telegram; the complete catalog gate fails on a strict double that predates the merged batched author-link read, retargeted in its own Stage; no SPEC change sha256:0df242c6e2aa8647543706c40d4dba615b78fc936d19163a6431f26ede4cf8ea
 <!-- plan:execution:end -->
