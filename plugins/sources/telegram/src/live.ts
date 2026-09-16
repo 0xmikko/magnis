@@ -1,8 +1,10 @@
 // GramJS Source glue. Integration fixtures keep these SDK/client paths real
 // and replace only MTProto transport, synthetic session data and clock I/O.
 
+import { createWriteStream } from "node:fs";
 import { mkdir, stat } from "node:fs/promises";
 import { dirname } from "node:path";
+import { finished } from "node:stream/promises";
 import bigInt from "big-integer";
 import { Api, TelegramClient, utils } from "telegram";
 import { StringSession } from "telegram/sessions";
@@ -326,11 +328,29 @@ export class TgClient implements TgOps {
     // CLIENT_OPTIONS, and downloads are host-scheduled discrete ops (a stall
     // fails that one file, not the sync). See the report's caveat.
     await mkdir(dirname(dest), { recursive: true });
-    const out = await this.client.downloadMedia(message as never, { outputFile: dest });
-    if (out === undefined) {
-      throw new Error(`download_file: no downloadable media in message ${String(message.id)}`);
+    // @tested-by: tst_src_tg_029, tst_src_tg_030, tst_src_tg_031
+    // GramJS closes its writer without awaiting flushed bytes. Observe both
+    // promises immediately so a stream error cannot escape during provider I/O.
+    const output = createWriteStream(dest);
+    const completed = finished(output, { cleanup: true });
+    try {
+      await Promise.all([
+        completed,
+        this.client.downloadMedia(message as never, { outputFile: output }).then((out) => {
+          if (out === undefined) {
+            throw new Error(`download_file: no downloadable media in message ${String(message.id)}`);
+          }
+        }),
+      ]);
+      return (await stat(dest)).size;
+    } catch (error: unknown) {
+      output.destroy();
+      // Drain stream teardown without replacing the original provider/write error.
+      await completed.catch(() => {
+        // The original provider/write failure remains the command's error.
+      });
+      throw error;
     }
-    return (await stat(dest)).size;
   }
 
   /** Stream live updates as `(payload, remote_id)` pairs via `onMessage`. v1

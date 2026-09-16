@@ -91,6 +91,8 @@ export interface MediaLike {
 /** gramjs message (Api.Message / CustomMessage), narrowed. */
 export interface MessageLike {
   id: number;
+  /** Raw wire peer of a live update; present even when `chat` is not hydrated. */
+  peerId?: unknown;
   message?: string;
   /** unix SECONDS (Telegram wire format). */
   date?: number;
@@ -111,6 +113,37 @@ export function toNum(v: unknown): number {
     return Number((v as { toString(): string }).toString());
   }
   return 0;
+}
+
+/** Raw dialog identity shared by history peer joins and live notifications. */
+export interface PeerIdentity {
+  kind: "user" | "chat" | "channel";
+  id: number;
+}
+
+/** Normalize only canonical TL peers; absent, malformed or marked IDs stay missing. */
+export function peerIdentity(peer: unknown): PeerIdentity | undefined {
+  if (peer === null || typeof peer !== "object" || !("className" in peer)) return undefined;
+  let kind: PeerIdentity["kind"];
+  let rawId: unknown;
+  switch (peer.className) {
+    case "PeerUser":
+      kind = "user";
+      rawId = "userId" in peer ? peer.userId : undefined;
+      break;
+    case "PeerChat":
+      kind = "chat";
+      rawId = "chatId" in peer ? peer.chatId : undefined;
+      break;
+    case "PeerChannel":
+      kind = "channel";
+      rawId = "channelId" in peer ? peer.channelId : undefined;
+      break;
+    default:
+      return undefined;
+  }
+  const id = toNum(rawId);
+  return Number.isSafeInteger(id) && id > 0 ? { kind, id } : undefined;
 }
 
 /** Coerce an unknown thrown value into the RPC-error shape we classify on. */

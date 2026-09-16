@@ -36,6 +36,15 @@ function typeConfig(path: string): string {
   throw new Error(`No TypeScript owner for ${path}; declare its scoped check before committing.`);
 }
 
+/** The backend adapter runs one engine per call: bun:test targets first, then vitest targets. */
+export function backendLanes(paths: readonly string[], source: (path: string) => string): string[][] {
+  // @tested-by: tst_scripts_agent_stack_003
+  const bun: string[] = [];
+  const vitest: string[] = [];
+  for (const path of paths) (/["']bun:test["']/.test(source(path)) ? bun : vitest).push(path);
+  return [bun, vitest].filter((lane) => lane.length > 0);
+}
+
 function commit(): void {
   // @tested-by: tst_scripts_agent_stack_001
   const branch = git("rev-parse", "--abbrev-ref", "HEAD").trim();
@@ -73,13 +82,17 @@ function commit(): void {
   // Reuse the public test adapters; runner ownership lives in test-connectors.sh.
   const frontend = [...tests].filter((path) => path.includes("/ui/") && !path.endsWith("sourceStatusAdapter.test.ts"));
   const backend = [...tests].filter((path) => !frontend.includes(path));
-  if (backend.length) run("run", "agent:test:backend", "--", ...backend);
+  for (const lane of backendLanes(backend, (path) => readFileSync(join(root, path), "utf8"))) {
+    run("run", "agent:test:backend", "--", ...lane);
+  }
   if (frontend.length) run("run", "agent:test:frontend", "--", ...frontend);
   console.log(`Scoped verification passed (${String(paths.length)} staged paths). Complete coverage remains agent:verify:pr.`);
 }
 
-switch (process.argv[2]) {
-  case "docs": docs(); break;
-  case "commit": commit(); break;
-  default: throw new Error("Expected commit or docs verification mode.");
+if (import.meta.main) {
+  switch (process.argv[2]) {
+    case "docs": docs(); break;
+    case "commit": commit(); break;
+    default: throw new Error("Expected commit or docs verification mode.");
+  }
 }

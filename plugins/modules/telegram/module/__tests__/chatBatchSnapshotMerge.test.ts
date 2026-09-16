@@ -40,6 +40,28 @@ function chatEnvelope(chatId: number): SyncEnvelope {
   };
 }
 
+function messageEnvelope(chatId: number): SyncEnvelope {
+  return {
+    source_id: "telegram",
+    surface: "telegram",
+    account_id: "acct-1",
+    user_id: "u1",
+    kind: "snapshot",
+    identity_key: "9001",
+    remote_id: `tg:msg:${String(chatId)}:7`,
+    payload: {
+      entity_type: "message",
+      message_id: 7,
+      chat_id: chatId,
+      sender_id: 5000 + chatId,
+      sender_name: `Sender ${String(chatId)}`,
+      text: `Latest message ${String(chatId)}`,
+      date: "2026-07-26T20:00:00Z",
+    },
+    timestamp: "2026-07-26T20:00:01Z",
+  };
+}
+
 describe("telegram chat batch ingest", () => {
   it("tst_mod_tg_ingest_001 preserves derived preview and avatar fields during a repeated bootstrap", async () => {
     const graph = mockGraph({
@@ -109,5 +131,77 @@ describe("telegram chat batch ingest", () => {
     expect(stateLink?.from_key).toBe("self");
     expect(stateLink?.metadata).toMatchObject({ is_pinned: true, pin_order: 0 });
     expect(firstBatch.entities.find((entity) => entity.key === "self")?.anchor).toBe("tg:account:9001");
+  });
+
+  /**
+   * @test-id: tst_mod_tg_ingest_002
+   * @scenario: scn_tg_sync_002
+   * @covers: plugins/modules/telegram/module/service.ts::ingest,ingestChatBatch,ingestMessageBatch
+   * @deterministic: yes
+   * @fixtures: inline catch-up page with 51 chat snapshots and one message per chat
+   *
+   * Test environment: TelegramModule with a strict GraphService double.
+   * Clients: direct calls.
+   * Mocks: GraphService only; no live Telegram session.
+   * Data: one bounded source page containing chats before their messages.
+   */
+  it("tst_mod_tg_ingest_002 reuses chat state within one sync page instead of issuing per-chat reads and updates", async () => {
+    const graph = mockGraph({
+      list_entities_window: () =>
+        Promise.resolve({
+          items: Array.from({ length: 51 }, (_, index) => {
+            const chatId = index + 1;
+            return {
+              entity: {
+                ...entity(`chat-entity-${String(chatId)}`, `Chat ${String(chatId)}`, {
+                  schema_id: "telegram.chat",
+                }),
+                properties: {
+                  chat_id: chatId,
+                  title: `Chat ${String(chatId)}`,
+                  last_message_date: "2026-07-26T19:00:00Z",
+                  last_message_preview: "Previous message",
+                  last_sender_name: "Previous sender",
+                },
+              },
+              data: null,
+            };
+          }),
+          total: 51,
+        }),
+      find_by_anchor: () => Promise.reject(new Error("per-chat anchor lookup is forbidden")),
+      get_entity: () => Promise.reject(new Error("per-chat entity lookup is forbidden")),
+      update_properties: () => Promise.reject(new Error("per-chat denormalization update is forbidden")),
+      apply_batch: (fragment) =>
+        Promise.resolve({
+          ids: Object.fromEntries(fragment.entities.map((item) => [item.key, `id:${item.key}`])),
+          created: 0,
+          updated: fragment.entities.length,
+          links_added: fragment.links?.length ?? 0,
+          dropped_keys: [],
+        }),
+    });
+    const module = mountModule(TelegramModule, {
+      graph,
+      ctx: { extension_id: "telegram" },
+    }).module;
+    const chatIds = Array.from({ length: 51 }, (_, index) => index + 1);
+
+    await expect(module.ingest({
+      envelopes: chatIds.flatMap((chatId) => [chatEnvelope(chatId), messageEnvelope(chatId)]),
+    })).resolves.toEqual({ dropped_remote_ids: [], trigger_checks: [] });
+
+    expect(graph.spies.list_entities_window).toHaveBeenCalledTimes(1);
+    expect(graph.spies.find_by_anchor).not.toHaveBeenCalled();
+    expect(graph.spies.get_entity).not.toHaveBeenCalled();
+    expect(graph.spies.update_properties).not.toHaveBeenCalled();
+    const applyBatch = graph.spies.apply_batch;
+    if (applyBatch === undefined) throw new Error("chat page reuse: missing apply_batch spy");
+    const firstBatch = applyBatch.mock.calls[0]?.[0] as GraphBatchInput | undefined;
+    expect(firstBatch?.entities.find((item) => item.key === "tg:chat:1")?.properties).toMatchObject({
+      last_message_date: "2026-07-26T20:00:00Z",
+      last_message_preview: "Latest message 1",
+      last_sender_name: "Sender 1",
+    });
   });
 });

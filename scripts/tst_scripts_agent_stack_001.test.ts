@@ -5,6 +5,8 @@ import { join, resolve } from "node:path";
 
 import { expect, test } from "bun:test";
 
+import { backendLanes } from "./agent-verify.ts";
+
 const root = resolve(import.meta.dir, "..");
 const head = "a".repeat(40);
 
@@ -97,4 +99,26 @@ test("tst_scripts_agent_stack_002 refuses every main ref even when a complete ga
     expect(accepted.output).toContain("reusing complete gate receipt");
     expect(accepted.calls).toEqual([]);
   } finally { f.close(); }
+});
+
+/**
+ * @test-id: tst_scripts_agent_stack_003
+ * @scenario: scn_tgflood_prep_003
+ * @covers: scripts/agent-verify.ts::backendLanes
+ * @deterministic: yes
+ * @fixtures: in-memory test sources; no repository writes or adapter execution
+ */
+test("tst_scripts_agent_stack_003 dispatches mixed bun and vitest targets as separate backend lanes", () => {
+  const sources: Record<string, string> = {
+    "plugins/sources/telegram/src/client.test.ts": 'import { test } from "bun:test";',
+    "plugins/modules/telegram/module/__tests__/telegramIngest.test.ts": 'import { it } from "vitest";',
+    "scripts/build-catalog-index.test.ts": "import { test } from 'bun:test';",
+  };
+  expect(backendLanes(Object.keys(sources), (path) => sources[path] ?? "")).toEqual([
+    ["plugins/sources/telegram/src/client.test.ts", "scripts/build-catalog-index.test.ts"],
+    ["plugins/modules/telegram/module/__tests__/telegramIngest.test.ts"],
+  ]);
+  expect(backendLanes(["plugins/sources/telegram/src/client.test.ts"], () => 'from "bun:test"')).toEqual([
+    ["plugins/sources/telegram/src/client.test.ts"],
+  ]);
 });

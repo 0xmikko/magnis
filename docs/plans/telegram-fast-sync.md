@@ -2,7 +2,7 @@
 
 Status: APPROVED  
 Spec lock: sha256:0804a6ac650ba5737a8e6f4be287b8e29740481b24a253322bd7a888c1031f54 owner:2026-09-15: ИСПРАВОЯЙ ПОКА НЕ БУДЕТ РАБОТАТЬ БЫСТРО  
-Implementation lock: sha256:31b81b23c470583c4d59bdff0f26fec6f5e27ad0bc944753454ae586c4e1bf29 owner:Owner orders continuing until fast and complete: ИСПРАВОЯЙ ПОКА НЕ БУДЕТ РАБОТАТЬ БЫСТРО. Add the discovered peer-scoped dialog-date correction within the existing live.ts and real-wire test scope; no SPEC changes.  
+Implementation lock: sha256:82e09c98f44c9214214c4799613c9b04c04f41e302bca9a7a1051b40033ed08d owner:2026-09-16 owner merged PR 253 and ordered: сделай Pull и доеди телеграм до конца; switch the module to the batched Graph anchor read the backend already exposes; no SPEC change  
 Active Delivery: D1  
 Unattended decisions: allowed  
 
@@ -180,9 +180,9 @@ Each journey runs through the real production logic. Extend existing tests rathe
 
 Branch: `feat/telegram-fast-sync`; Depends: none; Gate: backend.
 
-Stage graph: `D1-S1 -> D1-S3; D1-S2 -> D1-S3`.
+Stage graph: `D1-S1 -> D1-S3; D1-S2 -> D1-S3; D1-S4`.
 
-Forecast: 117 active min / 13 credits across 3 Stages; longest dependency path 79 active min; external waits 0 min.
+Forecast: 162 active min / 17 credits across 4 Stages; longest dependency path 79 active min; external waits 0 min.
 
 Telegram uses an available account request slot immediately instead of invented three-second spacing and twenty-per-minute throttling. A real FLOOD_WAIT stops new transmissions for precisely the provider duration.
 
@@ -301,6 +301,43 @@ Commit. fix(telegram): verified integrated source throughput and provider-wait r
 | TGFAST_003B | 17a99fc218a30d23944847d33a5d224929c8465b | 2026-09-15T15:02:50.729Z–2026-09-15T15:33:06.000Z | 31 / 31 min | unavailable: Runner exposes no per-stage token or credit measurement; active time conservatively includes tool waits | RED15:04:05Z integrated timeout fixture still expected obsolete60second timer. RED after TGFAST_003B start15:22:02.531Z: real Channel collision returned offsetdate100 instead of200. GREEN15:24:43Z sevenjourneys1029assertions; explicit typecheck/lint/scoped gate15:30:33Z and normal commit hook15:33:05Z eighttests1050assertions. Peer-scoped date key corrected in live.ts(+9/-5productionlines). Tests+140/-2; fixture+1/-1; SDKpatchunchanged. Fifty dialogs, sevenpins,195history+2liveIDs,10bounded bootstrap responses, round-robinbackfill, one discovery scan. With synthetic100ms/providerresponse: requested50=>58wirecalls/5800ms/16Sourcecommands;100=>57/5700ms/15;200=>57/5700ms/15 because actualproviderpagecapped100. MaximumSourcecall600ms, maxframe41383bytes, deliberatewait0ms. No live-speed or x10claim. Existing late-FLOOD/replay/crypto/queue/zero guards remainGREEN. |
 <!-- plan:results:D1-S3:end -->
 <!-- plan:stage:D1-S3:end -->
+
+<!-- plan:stage:D1-S4:start -->
+<!-- plan:stage-meta:{"deliveryId": "D1", "depends": [], "parallelWith": [], "writes": ["packages/plugin-sdk/contract/module.ts", "plugins/modules/telegram/module/service.ts", "plugins/modules/telegram/module/helpers.ts", "plugins/modules/telegram/module/__tests__/telegramIngest.test.ts"], "tempRoot": ".tmp/code-production/telegram-fast-sync/D1-S4", "verifyActiveMinutes": 5, "verifyCredits": 1} -->
+#### Stage D1-S4 — Resolved packet chats through two Graph reads
+
+- Owner: root; Profile: strong; Depends: none; Parallel with: none.
+- Writes: `packages/plugin-sdk/contract/module.ts`, `plugins/modules/telegram/module/service.ts`, `plugins/modules/telegram/module/helpers.ts`, `plugins/modules/telegram/module/__tests__/telegramIngest.test.ts`.
+- Temp root: `.tmp/code-production/telegram-fast-sync/D1-S4` (must be absent at handoff).
+- Predict: 45 active min / 4 credits.
+- Of which verification: 5 active min / 1 credits.
+
+What this Stage solves. The bootstrap dialog packet carries at most fifty chats, and the module's whole-account read only started above fifty, so every existing chat cost one find_by_anchor and one get_entity: one hundred serialized host round trips per packet before a single write. The backend proof measured this as the timeout in restarted catch-up.
+
+What is built. The SDK GraphService declares the plural find_by_anchors the backend already dispatches. The Telegram module resolves a packet's unique chat anchors with one find_by_anchors and reads the found entities with one get_entities, for chat packets and message pages alike, through one shared helper; the fifty-chat threshold and the whole-account list_entities_window scan are deleted. Field carry-over, observer edges, denorm and shouldIndex gating are unchanged.
+
+How it is proven. tst_module_telegram_006 in telegramIngest.test.ts ingests a fifty-chat packet with existing chats and a message page across several chats and asserts exactly one find_by_anchors and one get_entities per packet, no scalar lookup, no whole-account scan and preserved previews.
+
+Commit. fix(telegram): resolve packet chats through two Graph reads — the module asks the host for a packet's anchors once and its entities once, instead of one lookup and one read per chat.
+
+##### Tasks
+
+- [ ] TGFAST_009 — Resolve packet chats with find_by_anchors and get_entities in service.ts and helpers.ts; declare the plural read in contract/module.ts; prove it in telegramIngest.test.ts. (40 min)
+<!-- plan:task-meta:{"writes": ["packages/plugin-sdk/contract/module.ts", "plugins/modules/telegram/module/service.ts", "plugins/modules/telegram/module/helpers.ts", "plugins/modules/telegram/module/__tests__/telegramIngest.test.ts"], "predictedActiveMinutes": 40, "predictedCredits": 3, "how": "Update packages/plugin-sdk/contract/module.ts; Update plugins/modules/telegram/module/service.ts; Update plugins/modules/telegram/module/helpers.ts; Update plugins/modules/telegram/module/__tests__/telegramIngest.test.ts. Declare find_by_anchors(anchors: string[]): Promise<(string | null)[]> beside find_by_anchor on the SDK GraphService, matching the host op the backend already dispatches. In ingestChatBatch and ingestMessageBatch resolve the packet's unique chat ids with one find_by_anchors call and read the found entities with one get_entities call, through one shared private helper; delete the CHAT_BATCH_THRESHOLD whole-account list_entities_window branch and the per-chat find_by_anchor/get_entity loop. Preserve the existing field carry-over, observer edge, denorm and shouldIndex behavior. RED first in telegramIngest.test.ts: a 50-chat packet with existing chats performs exactly one find_by_anchors and one get_entities, zero find_by_anchor and zero list_entities_window, and still carries last_message_* forward; a message page across several chats reads them the same way.", "red": "bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/telegramIngest.test.ts -t tst_module_telegram_006"} -->
+
+##### Acceptance criteria
+
+- [ ] `bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/telegramIngest.test.ts` exits 0 — a packet's chats resolve through two Graph reads with no per-chat lookup or whole-account scan
+- [ ] Commit
+
+##### Results
+
+<!-- plan:results:D1-S4:start -->
+| Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
+|---|---|---|---:|---|---|
+<!-- plan:results:D1-S4:end -->
+<!-- plan:stage:D1-S4:end -->
+
 <!-- plan:delivery:D1:end -->
 <!-- plan:implementation:end -->
 
@@ -348,4 +385,6 @@ Commit. fix(telegram): verified integrated source throughput and provider-wait r
 - deviation D1-S3: Native Graph transactions and durable messages/second are measured in the separate app proof, not at this Source boundary. Active31minutes is a conservative elapsed-time allocation including orchestration/tool waits, not a metered CPU figure.
 
 - close D1-S3 closed commit:17a99fc218a30d23944847d33a5d224929c8465b
+
+- amend implementation owner:2026-09-16 owner merged PR 253 and ordered: сделай Pull и доеди телеграм до конца; switch the module to the batched Graph anchor read the backend already exposes; no SPEC change sha256:82e09c98f44c9214214c4799613c9b04c04f41e302bca9a7a1051b40033ed08d
 <!-- plan:execution:end -->
