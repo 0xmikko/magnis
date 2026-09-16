@@ -1128,6 +1128,9 @@ export class TelegramModule {
           const pk = result.ids[`acct:${String(sid)}`];
           if (pk) touched.push(pk);
         }
+        // The backend fires a watch only for an event that says when it
+        // happened (INV-10, fail closed); the message's own date is that.
+        const occurredAt = str(payload, "date");
         triggers.push({
           type: "trigger.check",
           event_kind: "new_message",
@@ -1136,7 +1139,11 @@ export class TelegramModule {
           phase: "live",
           touched_entity_ids: touched,
           user_id: env.user_id,
-          context: { text: str(payload, "text") ?? "", sender_name: str(payload, "sender_name") ?? "" },
+          context: {
+            text: str(payload, "text") ?? "",
+            sender_name: str(payload, "sender_name") ?? "",
+            ...(occurredAt === null ? {} : { occurred_at: occurredAt }),
+          },
         });
       }
     }

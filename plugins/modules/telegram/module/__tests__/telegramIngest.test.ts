@@ -352,7 +352,12 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
         phase: "live",
         entity_id: "id:tg:msg:42:7",
         user_id: "u1",
-        context: { text: "Read https://example.test/demo", sender_name: "Alice" },
+        context: {
+          text: "Read https://example.test/demo",
+          sender_name: "Alice",
+          // The backend fires only for events that say when they happened (INV-10).
+          occurred_at: "2026-08-12T08:00:00Z",
+        },
       })],
     });
   });

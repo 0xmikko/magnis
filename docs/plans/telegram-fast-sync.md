@@ -2,7 +2,7 @@
 
 Status: APPROVED  
 Spec lock: sha256:0804a6ac650ba5737a8e6f4be287b8e29740481b24a253322bd7a888c1031f54 owner:2026-09-15: ИСПРАВОЯЙ ПОКА НЕ БУДЕТ РАБОТАТЬ БЫСТРО  
-Implementation lock: sha256:0df242c6e2aa8647543706c40d4dba615b78fc936d19163a6431f26ede4cf8ea owner:2026-09-16 owner ordered finishing Telegram; the complete catalog gate fails on a strict double that predates the merged batched author-link read, retargeted in its own Stage; no SPEC change  
+Implementation lock: sha256:023396194b036855555bfda9495970e7c4d3281e4ea6213cabc9736fb90b6573 owner:2026-09-16 owner signed in on the smoke stand and ordered clean synchronization before any merge; the live account showed every module trigger refused for a missing occurred_at; repaired in its own Stage; no SPEC change  
 Active Delivery: D1  
 Unattended decisions: allowed  
 
@@ -180,9 +180,9 @@ Each journey runs through the real production logic. Extend existing tests rathe
 
 Branch: `feat/telegram-fast-sync`; Depends: none; Gate: backend.
 
-Stage graph: `D1-S1 -> D1-S3; D1-S2 -> D1-S3; D1-S4 -> D1-S5; D1-S5 -> D1-S6`.
+Stage graph: `D1-S1 -> D1-S3; D1-S2 -> D1-S3; D1-S4 -> D1-S5; D1-S5 -> D1-S6; D1-S6 -> D1-S7`.
 
-Forecast: 185 active min / 21 credits across 6 Stages; longest dependency path 79 active min; external waits 0 min.
+Forecast: 200 active min / 23 credits across 7 Stages; longest dependency path 79 active min; external waits 0 min.
 
 Telegram uses an available account request slot immediately instead of invented three-second spacing and twenty-per-minute throttling. A real FLOOD_WAIT stops new transmissions for precisely the provider duration.
 
@@ -423,6 +423,43 @@ Commit. test(telegram): script the batched author-link read in the message links
 <!-- plan:results:D1-S6:end -->
 <!-- plan:stage:D1-S6:end -->
 
+
+<!-- plan:stage:D1-S7:start -->
+<!-- plan:stage-meta:{"deliveryId": "D1", "depends": ["D1-S6"], "parallelWith": [], "writes": ["plugins/modules/telegram/module/service.ts", "plugins/modules/telegram/module/__tests__/telegramIngest.test.ts"], "tempRoot": ".tmp/code-production/telegram-fast-sync/D1-S7", "verifyActiveMinutes": 5, "verifyCredits": 1} -->
+#### Stage D1-S7 — Live message triggers carry when the message happened
+
+- Owner: root; Profile: strong; Depends: D1-S6; Parallel with: none.
+- Writes: `plugins/modules/telegram/module/service.ts`, `plugins/modules/telegram/module/__tests__/telegramIngest.test.ts`.
+- Temp root: `.tmp/code-production/telegram-fast-sync/D1-S7` (must be absent at handoff).
+- Predict: 15 active min / 2 credits.
+- Of which verification: 5 active min / 1 credits.
+
+What this Stage solves. On the live smoke stand every new_message trigger check the module returns is refused by the backend: 'trigger event has no occurred_at — refusing to fire (the emitter must send it)'. The backend fails closed on purpose (INV-10: a watch is future-only), so no Telegram trigger can ever fire.
+
+What is built. The live trigger check's context carries occurred_at, the message's own date the Source already stamps in RFC 3339.
+
+How it is proven. The live ingest test expects occurred_at in the trigger check's context: RED before, GREEN after; the rebuilt archive is pinned by the backend stand.
+
+Commit. fix(telegram): stamp occurred_at on live message triggers — the backend fires only for events that say when they happened.
+
+##### Tasks
+
+- [ ] TGFAST_014 — Add occurred_at (the message date) to the new_message trigger context in service.ts; telegramIngest.test.ts expects it on the live trigger check. (10 min)
+<!-- plan:task-meta:{"writes": ["plugins/modules/telegram/module/service.ts", "plugins/modules/telegram/module/__tests__/telegramIngest.test.ts"], "predictedActiveMinutes": 10, "predictedCredits": 1, "how": "Update plugins/modules/telegram/module/service.ts: the trigger.check context for a live message gains occurred_at from the payload's date. Update plugins/modules/telegram/module/__tests__/telegramIngest.test.ts: the live ingest expectation includes context.occurred_at. Rebuild the catalog archives and index after the change.", "red": "bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/telegramIngest.test.ts"} -->
+
+##### Acceptance criteria
+
+- [ ] `bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/telegramIngest.test.ts` exits 0 — live trigger checks say when the message happened
+- [ ] Commit
+
+##### Results
+
+<!-- plan:results:D1-S7:start -->
+| Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
+|---|---|---|---:|---|---|
+<!-- plan:results:D1-S7:end -->
+<!-- plan:stage:D1-S7:end -->
+
 <!-- plan:delivery:D1:end -->
 <!-- plan:implementation:end -->
 
@@ -498,4 +535,6 @@ Commit. test(telegram): script the batched author-link read in the message links
 - record-result D1-S6 commit:672daad1413740e30614d90517cd4a2214f66e35
 
 - close D1-S6 closed commit:672daad1413740e30614d90517cd4a2214f66e35
+
+- amend implementation owner:2026-09-16 owner signed in on the smoke stand and ordered clean synchronization before any merge; the live account showed every module trigger refused for a missing occurred_at; repaired in its own Stage; no SPEC change sha256:023396194b036855555bfda9495970e7c4d3281e4ea6213cabc9736fb90b6573
 <!-- plan:execution:end -->
