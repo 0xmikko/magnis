@@ -570,7 +570,7 @@ export class LiveDialogPager implements DialogPager {
       try {
         const msgs = await this.tg.getMessages(item.peer, { limit: BOOTSTRAP_MESSAGES_PER_CHAT }, remainingPageBudget(deadline));
         // The same answer states the chat's exact message count; the chat keeps it.
-        if (msgs.total !== undefined && msgs.total !== null) chat.message_count = msgs.total;
+        if (msgs.total !== undefined) chat.message_count = msgs.total;
         fetched = { ok: true, messages: msgs.map((m) => messageToIntermediate(m, this.accountId, chatId)) };
       } catch (error) {
         if (error instanceof MtprotoTimeoutError) throw error;

@@ -482,22 +482,24 @@ Commit. feat(telegram): carry the exact per-chat message count from Telegram —
 
 ##### Tasks
 
-- [ ] TGFAST_015 — Every chat envelope from live.ts, envelope.ts and commands.ts carries message_count equal to Telegram's GetHistory count, and so does its cursor entry; commands.test.ts proves it. (15 min)
+- [x] TGFAST_015 — Every chat envelope from live.ts, envelope.ts and commands.ts carries message_count equal to Telegram's GetHistory count, and so does its cursor entry; commands.test.ts proves it. (15 min) — 98438abfdf01562f039082258b1205561763b264
 <!-- plan:task-meta:{"writes": ["plugins/sources/telegram/src/live.ts", "plugins/sources/telegram/src/surfaces/telegram/envelope.ts", "plugins/sources/telegram/src/surfaces/telegram/commands.ts", "plugins/sources/telegram/src/surfaces/telegram/commands.test.ts"], "predictedActiveMinutes": 15, "predictedCredits": 1, "how": "1. In plugins/sources/telegram/src/live.ts the hydration sets chat.message_count from the page's total. 2. In plugins/sources/telegram/src/surfaces/telegram/envelope.ts TgChat gains message_count and chatPayload emits it when present. 3. In plugins/sources/telegram/src/surfaces/telegram/commands.ts each cursorChats entry gains message_count. 4. Extend tst_src_tgfast_002 in plugins/sources/telegram/src/surfaces/telegram/commands.test.ts.", "red": "bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts"} -->
-- [ ] TGFAST_016 — chats.list in service.ts returns message_count from the chat details declared in entities.ts and types.ts, null only when Telegram never reported one; telegramRead.test.ts proves it. (10 min)
+- [x] TGFAST_016 — chats.list in service.ts returns message_count from the chat details declared in entities.ts and types.ts, null only when Telegram never reported one; telegramRead.test.ts proves it. (10 min) — 98438abfdf01562f039082258b1205561763b264
 <!-- plan:task-meta:{"writes": ["plugins/modules/telegram/entities.ts", "plugins/modules/telegram/types.ts", "plugins/modules/telegram/module/service.ts", "plugins/modules/telegram/module/__tests__/telegramRead.test.ts"], "predictedActiveMinutes": 10, "predictedCredits": 1, "how": "1. In plugins/modules/telegram/entities.ts and plugins/modules/telegram/types.ts declare message_count as an optional non-negative integer on the chat. 2. In plugins/modules/telegram/module/service.ts the chat list row reads message_count from the details. 3. Extend tst_module_telegram_read_001 in plugins/modules/telegram/module/__tests__/telegramRead.test.ts.", "red": "bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/telegramRead.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts` exits 0 — the Source keeps the count
-- [ ] `bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/telegramRead.test.ts` exits 0 — the module lists it
-- [ ] Commit
+- [x] `bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts` exits 0 — the Source keeps the count — 98438abfdf01562f039082258b1205561763b264
+- [x] `bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/telegramRead.test.ts` exits 0 — the module lists it — 98438abfdf01562f039082258b1205561763b264
+- [x] Commit — 98438abfdf01562f039082258b1205561763b264
 
 ##### Results
 
 <!-- plan:results:D1-S8:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| TGFAST_015 | 98438abfdf01562f039082258b1205561763b264 | 2026-09-16T20:02:58.705Z–2026-09-16T20:08:57.000Z | 5.97 / 5.97 min | unavailable: Runner exposes no per-stage credit meter or separate active-time measurement; active time is an elapsed upper-bound proxy | RED 20:02Z: chat envelopes and cursor entries carried no message_count; chats.list returned a hard-coded null. GREEN 20:06Z: Source 27 pass, live/client/envelope/execute 82 pass, module 34 pass across 8 files, entities lane 4 pass, typecheck exit 0; archives and index rebuilt. |
+| TGFAST_016 | 98438abfdf01562f039082258b1205561763b264 | 2026-09-16T20:02:58.705Z–2026-09-16T20:08:57.000Z | 5.97 / 5.97 min | unavailable: Runner exposes no per-stage credit meter or separate active-time measurement; active time is an elapsed upper-bound proxy | RED 20:02Z: chat envelopes and cursor entries carried no message_count; chats.list returned a hard-coded null. GREEN 20:06Z: Source 27 pass, live/client/envelope/execute 82 pass, module 34 pass across 8 files, entities lane 4 pass, typecheck exit 0; archives and index rebuilt. |
 <!-- plan:results:D1-S8:end -->
 <!-- plan:stage:D1-S8:end -->
 
@@ -584,4 +586,8 @@ Commit. feat(telegram): carry the exact per-chat message count from Telegram —
 - close D1-S7 closed commit:b505f617d22de615e9eca7503d71e0428a4a36ab
 
 - amend implementation owner:2026-09-16 owner: without the number of messages to download the sync cannot be planned; an estimate is unacceptable; the exact per-chat count Telegram reports must be kept and shown; no SPEC change sha256:0c278318f332ebe6f87503b86f6e3806a48cd80d87b6f858e86de4de2342b1b4
+
+- record-result D1-S8 commit:98438abfdf01562f039082258b1205561763b264
+
+- close D1-S8 closed commit:98438abfdf01562f039082258b1205561763b264
 <!-- plan:execution:end -->
