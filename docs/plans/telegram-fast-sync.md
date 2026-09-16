@@ -406,19 +406,20 @@ Commit. test(telegram): script the batched author-link read in the message links
 
 ##### Tasks
 
-- [ ] TGFAST_013 — Script list_links_for_entities in messagesGetLinks.test.ts so tst_mod_tg_001 follows the batched author read. (6 min)
+- [x] TGFAST_013 — Script list_links_for_entities in messagesGetLinks.test.ts so tst_mod_tg_001 follows the batched author read. (6 min) — 672daad1413740e30614d90517cd4a2214f66e35
 <!-- plan:task-meta:{"writes": ["plugins/modules/telegram/module/__tests__/messagesGetLinks.test.ts"], "predictedActiveMinutes": 6, "predictedCredits": 1, "how": "Update plugins/modules/telegram/module/__tests__/messagesGetLinks.test.ts. senderNamesFor now reads a page's author links with one list_links_for_entities call (the smoke-stand correction certified by tst_module_telegram_read_005), but this older strict double still scripts the singular list_links_for_entity and throws on the plural op under the complete gate. Script list_links_for_entities with the same edges and keep every outgoing/incoming assertion.", "red": "bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/messagesGetLinks.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/messagesGetLinks.test.ts` exits 0 — the message links double follows the batched author read
-- [ ] Commit
+- [x] `bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/messagesGetLinks.test.ts` exits 0 — the message links double follows the batched author read — 672daad1413740e30614d90517cd4a2214f66e35
+- [x] Commit — 672daad1413740e30614d90517cd4a2214f66e35
 
 ##### Results
 
 <!-- plan:results:D1-S6:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| TGFAST_013 | 672daad1413740e30614d90517cd4a2214f66e35 | 2026-09-16T09:53:46.843Z–2026-09-16T09:54:19.000Z | 0.54 / 0.54 min | unavailable: Runner exposes no per-stage credit meter or separate active-time measurement; active time is an elapsed upper-bound proxy | RED 09:53Z under the complete gate and standalone: unexpected graph op list_links_for_entities. GREEN: the double scripts the plural read beside the singular one; outgoing and incoming assertions unchanged. Test-only change. |
 <!-- plan:results:D1-S6:end -->
 <!-- plan:stage:D1-S6:end -->
 
@@ -493,4 +494,8 @@ Commit. test(telegram): script the batched author-link read in the message links
 - close D1-S5 closed commit:6ddc51ca5060b8d86045d0369099c716d20d023a
 
 - amend implementation owner:2026-09-16 owner ordered finishing Telegram; the complete catalog gate fails on a strict double that predates the merged batched author-link read, retargeted in its own Stage; no SPEC change sha256:0df242c6e2aa8647543706c40d4dba615b78fc936d19163a6431f26ede4cf8ea
+
+- record-result D1-S6 commit:672daad1413740e30614d90517cd4a2214f66e35
+
+- close D1-S6 closed commit:672daad1413740e30614d90517cd4a2214f66e35
 <!-- plan:execution:end -->
