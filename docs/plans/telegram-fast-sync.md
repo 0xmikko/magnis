@@ -322,22 +322,24 @@ Commit. fix(telegram): resolve packet chats through two Graph reads — the modu
 
 ##### Tasks
 
-- [ ] TGFAST_009 — Resolve packet chats with find_by_anchors and get_entities in service.ts and helpers.ts; declare the plural read in contract/module.ts; prove it in telegramIngest.test.ts. (40 min)
+- [x] TGFAST_009 — Resolve packet chats with find_by_anchors and get_entities in service.ts and helpers.ts; declare the plural read in contract/module.ts; prove it in telegramIngest.test.ts. (40 min) — bfd0c8b6f57184fab40947224e60f11e2b8e6804
 <!-- plan:task-meta:{"writes": ["packages/plugin-sdk/contract/module.ts", "plugins/modules/telegram/module/service.ts", "plugins/modules/telegram/module/helpers.ts", "plugins/modules/telegram/module/__tests__/telegramIngest.test.ts"], "predictedActiveMinutes": 40, "predictedCredits": 3, "how": "Update packages/plugin-sdk/contract/module.ts; Update plugins/modules/telegram/module/service.ts; Update plugins/modules/telegram/module/helpers.ts; Update plugins/modules/telegram/module/__tests__/telegramIngest.test.ts. Declare find_by_anchors(anchors: string[]): Promise<(string | null)[]> beside find_by_anchor on the SDK GraphService, matching the host op the backend already dispatches. In ingestChatBatch and ingestMessageBatch resolve the packet's unique chat ids with one find_by_anchors call and read the found entities with one get_entities call, through one shared private helper; delete the CHAT_BATCH_THRESHOLD whole-account list_entities_window branch and the per-chat find_by_anchor/get_entity loop. Preserve the existing field carry-over, observer edge, denorm and shouldIndex behavior. RED first in telegramIngest.test.ts: a 50-chat packet with existing chats performs exactly one find_by_anchors and one get_entities, zero find_by_anchor and zero list_entities_window, and still carries last_message_* forward; a message page across several chats reads them the same way.", "red": "bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/telegramIngest.test.ts -t tst_module_telegram_006"} -->
 
-- [ ] TGFAST_009B — Retarget the strict graph doubles in chatBatchSnapshotMerge.test.ts and mediaSourceRouting.test.ts to the batched anchor and entity reads. (5 min)
+- [x] TGFAST_009B — Retarget the strict graph doubles in chatBatchSnapshotMerge.test.ts and mediaSourceRouting.test.ts to the batched anchor and entity reads. (5 min) — bfd0c8b6f57184fab40947224e60f11e2b8e6804
 <!-- plan:task-meta:{"writes": ["plugins/modules/telegram/module/__tests__/chatBatchSnapshotMerge.test.ts", "plugins/modules/telegram/module/__tests__/mediaSourceRouting.test.ts"], "predictedActiveMinutes": 5, "predictedCredits": 1, "how": "Update plugins/modules/telegram/module/__tests__/chatBatchSnapshotMerge.test.ts; Update plugins/modules/telegram/module/__tests__/mediaSourceRouting.test.ts. tst_mod_tg_ingest_001 and tst_mod_tg_ingest_002 script list_entities_window as the whole-account read and forbid the scalar lookup; script find_by_anchors and get_entities with the same chat dictionaries instead, forbid list_entities_window, and assert one anchor batch plus one entity batch per page while every preserved-field and reuse assertion stays. The media routing double gains find_by_anchors beside its existing scalar lookup.", "red": "bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/chatBatchSnapshotMerge.test.ts plugins/modules/telegram/module/__tests__/mediaSourceRouting.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/telegramIngest.test.ts` exits 0 — a packet's chats resolve through two Graph reads with no per-chat lookup or whole-account scan
-- [ ] Commit
+- [x] `bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/telegramIngest.test.ts` exits 0 — a packet's chats resolve through two Graph reads with no per-chat lookup or whole-account scan — bfd0c8b6f57184fab40947224e60f11e2b8e6804
+- [x] Commit — bfd0c8b6f57184fab40947224e60f11e2b8e6804
 
 ##### Results
 
 <!-- plan:results:D1-S4:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| TGFAST_009 | bfd0c8b6f57184fab40947224e60f11e2b8e6804 | 2026-09-16T09:20:37.121Z–2026-09-16T09:36:50.000Z | 16 / 16.21 min | unavailable: Runner exposes no per-stage credit meter or separate active-time measurement; active time is an elapsed upper-bound proxy | RED 09:2xZ: tst_module_telegram_006 rejected with the forbidden per-chat find_by_anchor. GREEN after the shared readChatsByAnchor helper: one find_by_anchors and one get_entities per chat packet and per message page, no scalar lookup, no list_entities_window scan; the fifty-chat threshold is deleted and the SDK declares find_by_anchors. Eleven strict doubles across three test files retargeted to the batched reads; the module lane passed 28 tests in 5 files, eslint and tsc clean. No Source change, no provider traffic, no push. |
+| TGFAST_009B | bfd0c8b6f57184fab40947224e60f11e2b8e6804 | 2026-09-16T09:20:37.121Z–2026-09-16T09:36:50.000Z | 16 / 16.21 min | unavailable: Runner exposes no per-stage credit meter or separate active-time measurement; active time is an elapsed upper-bound proxy | RED 09:2xZ: tst_module_telegram_006 rejected with the forbidden per-chat find_by_anchor. GREEN after the shared readChatsByAnchor helper: one find_by_anchors and one get_entities per chat packet and per message page, no scalar lookup, no list_entities_window scan; the fifty-chat threshold is deleted and the SDK declares find_by_anchors. Eleven strict doubles across three test files retargeted to the batched reads; the module lane passed 28 tests in 5 files, eslint and tsc clean. No Source change, no provider traffic, no push. |
 <!-- plan:results:D1-S4:end -->
 <!-- plan:stage:D1-S4:end -->
 
@@ -392,4 +394,10 @@ Commit. fix(telegram): resolve packet chats through two Graph reads — the modu
 - amend implementation owner:2026-09-16 owner merged PR 253 and ordered: сделай Pull и доеди телеграм до конца; switch the module to the batched Graph anchor read the backend already exposes; no SPEC change sha256:82e09c98f44c9214214c4799613c9b04c04f41e302bca9a7a1051b40033ed08d
 
 - amend implementation owner:2026-09-16 owner ordered finishing Telegram; the strict graph doubles in chatBatchSnapshotMerge.test.ts and mediaSourceRouting.test.ts describe the replaced per-chat and whole-account reads and are retargeted in the same Stage as their own Task; no SPEC change sha256:c23580e144f33003af96757ab4ea5459bbcb2babe3d9e13eeb55026206ddcae9
+
+- record-result D1-S4 commit:bfd0c8b6f57184fab40947224e60f11e2b8e6804
+
+- deviation D1-S4: Task TGFAST_009B start (09:34:55Z) is later than the combined receipt start; the receipt uses the earliest start.
+
+- close D1-S4 closed commit:bfd0c8b6f57184fab40947224e60f11e2b8e6804
 <!-- plan:execution:end -->
