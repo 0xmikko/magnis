@@ -60,9 +60,11 @@ describe("tst_module_telegram_command_001 — Telegram command mapping", () => {
     });
     const graph = mockGraph({
       list_entities_by_property_field: () => Promise.resolve({ items: [operator], total: 1 }),
-      list_entities_window: (spec) => spec.filter_op === "eq"
-        ? Promise.resolve({ items: [windowRow(rows[2] as ReturnType<typeof entity>)], total: 1 })
-        : Promise.resolve({ items: rows.map(windowRow), total: rows.length }),
+      list_entities_window: (spec) => {
+        if (spec.filter_op === "eq") return Promise.resolve({ items: [windowRow(rows[2] as ReturnType<typeof entity>)], total: 1 });
+        if (spec.limit > 500) return Promise.reject(new Error("chat window wider than the host frame allows"));
+        return Promise.resolve({ items: rows.slice(spec.offset, spec.offset + spec.limit).map(windowRow), total: rows.length });
+      },
       list_linked: () => Promise.reject(new Error("the priority must not traverse observed_in per chat")),
     });
     const module = mountModule(TelegramModule, { graph }).module;

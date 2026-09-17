@@ -156,6 +156,25 @@ export class TelegramModule {
     return { pinnedChats, pinnedTotal };
   }
 
+  /// Every chat with its details, five hundred at a time: the host frames an
+  /// answer at one mebibyte, so a roster of thousands never comes in one
+  /// window. A window that ends before its declared total is refused.
+  /// @tested-by: tst_module_telegram_plan_001, tst_module_telegram_command_001
+  private async chatsWindow(): Promise<RawEntity[]> {
+    const chats: RawEntity[] = [];
+    const pageSize = 500;
+    let total: number;
+    do {
+      const page = await this.graph.list_entities_window({ schema: CHAT, limit: pageSize, offset: chats.length });
+      total = page.total;
+      chats.push(...page.items.map(({ entity }) => entity));
+      if (page.items.length === 0 && chats.length < total) {
+        throw new Error("Telegram chat window ended before its declared total");
+      }
+    } while (chats.length < total);
+    return chats;
+  }
+
   /// The ids of the chats the operator pinned; empty before the operator's
   /// account exists. The plan and the backfill priority read pins here, so
   /// an ask costs one chat window and one pinned window, whatever the roster.
@@ -1237,22 +1256,18 @@ export class TelegramModule {
   private async backfillPriority(chatIds: string[]): Promise<{ priority: string[] }> {
     if (chatIds.length === 0) return { priority: [] };
     const want = new Set(chatIds);
-    // ONE host hop: pull every chat + its details (same windowed query chats.list
-    // uses), then classify — instead of a find_by_external_id + detailsFacet N+1
-    // per chat (which cost ~56s for 100 chats on the single PGlite connection).
-    const page = await this.graph.list_entities_window({
-      schema: CHAT,
-      limit: 1_000_000,
-      offset: 0,
-    });
+    // A few host hops: every chat with its details through the paged window
+    // (the same query chats.list uses), then classify — instead of a
+    // find_by_external_id + detailsFacet N+1 per chat.
+    const chats = await this.chatsWindow();
     // S4: pins are the OPERATOR's observed state (edge), the rest is the dict.
-    const wanted = page.items.filter(({ entity }) => {
+    const wanted = chats.filter((entity) => {
       const cid = chatIdStr(((entity as { properties?: unknown }).properties ?? {}) as Data);
       return want.has(cid);
     });
     const pinned = await this.pinnedChatIds();
     const priority: string[] = [];
-    for (const { entity } of wanted) {
+    for (const entity of wanted) {
       const d = ((entity as { properties?: unknown }).properties ?? {}) as Data;
       const cid = chatIdStr(d);
       if (!cid) continue;
@@ -1268,13 +1283,13 @@ export class TelegramModule {
    * guessed. `excluded_items` is the history the plan leaves out.
    * @tested-by: tst_module_telegram_plan_001 */
   private async syncPlan(): Promise<SyncPlan> {
-    const page = await this.graph.list_entities_window({ schema: CHAT, limit: 1_000_000, offset: 0 });
+    const chats = await this.chatsWindow();
     const pinned = await this.pinnedChatIds();
     let planned = 0;
     let excludedScopes = 0;
     let excludedItems = 0;
     let uncountedScopes = 0;
-    for (const { entity } of page.items) {
+    for (const entity of chats) {
       const d = ((entity as { properties?: unknown }).properties ?? {}) as Data;
       const count = num(d, "message_count");
       if (count === null) {

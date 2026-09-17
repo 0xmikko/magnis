@@ -2,7 +2,7 @@
 
 Status: APPROVED  
 Spec lock: sha256:0804a6ac650ba5737a8e6f4be287b8e29740481b24a253322bd7a888c1031f54 owner:2026-09-15: ИСПРАВОЯЙ ПОКА НЕ БУДЕТ РАБОТАТЬ БЫСТРО  
-Implementation lock: sha256:1a4f4141748a0a24a24585e7ae5e96dfbda0bd36b4516d94f13eae8b3fdb8674 owner:2026-09-17 owner: ИСПРАВОЯЙ ПОКА НЕ БУДЕТ РАБОТАТЬ БЫСТРО; the plan ask must not cost a traversal per chat; no SPEC change  
+Implementation lock: sha256:a02e9fb07b3efc5b585bb1b1ed60fe9e17e2883cd8a75d39d7eb98d12d78be92 owner:2026-09-17 owner: ИСПРАВОЯЙ ПОКА НЕ БУДЕТ РАБОТАТЬ БЫСТРО; the live stand refused the plan answer as wider than the host frame; no SPEC change  
 Active Delivery: D1  
 Unattended decisions: allowed  
 
@@ -180,9 +180,9 @@ Each journey runs through the real production logic. Extend existing tests rathe
 
 Branch: `feat/telegram-fast-sync`; Depends: none; Gate: backend.
 
-Stage graph: `D1-S1 -> D1-S3; D1-S2 -> D1-S3; D1-S4 -> D1-S5; D1-S5 -> D1-S6; D1-S6 -> D1-S7; D1-S7 -> D1-S8; D1-S8 -> D1-S9; D1-S9 -> D1-S10; D1-S10 -> D1-S11; D1-S11 -> D1-S12; D1-S12 -> D1-S13; D1-S13 -> D1-S14`.
+Stage graph: `D1-S1 -> D1-S3; D1-S2 -> D1-S3; D1-S4 -> D1-S5; D1-S5 -> D1-S6; D1-S6 -> D1-S7; D1-S7 -> D1-S8; D1-S8 -> D1-S9; D1-S9 -> D1-S10; D1-S10 -> D1-S11; D1-S11 -> D1-S12; D1-S12 -> D1-S13; D1-S13 -> D1-S14; D1-S14 -> D1-S15`.
 
-Forecast: 363 active min / 40 credits across 14 Stages; longest dependency path 79 active min; external waits 0 min.
+Forecast: 377 active min / 42 credits across 15 Stages; longest dependency path 79 active min; external waits 0 min.
 
 Telegram uses an available account request slot immediately instead of invented three-second spacing and twenty-per-minute throttling. A real FLOOD_WAIT stops new transmissions for precisely the provider duration.
 
@@ -740,6 +740,44 @@ Commit. perf(telegram): the plan and the priority read pins in one window — no
 <!-- plan:results:D1-S14:end -->
 <!-- plan:stage:D1-S14:end -->
 
+
+<!-- plan:stage:D1-S15:start -->
+<!-- plan:stage-meta:{"deliveryId": "D1", "depends": ["D1-S14"], "parallelWith": [], "writes": ["plugins/modules/telegram/module/service.ts", "plugins/modules/telegram/module/__tests__/syncPlan.test.ts", "plugins/modules/telegram/module/__tests__/telegramCommand.test.ts"], "tempRoot": ".tmp/code-production/telegram-fast-sync/D1-S15", "verifyActiveMinutes": 5, "verifyCredits": 1} -->
+#### Stage D1-S15 — The plan and the priority page the chat window
+
+- Owner: root; Profile: strong; Depends: D1-S14; Parallel with: none.
+- Writes: `plugins/modules/telegram/module/service.ts`, `plugins/modules/telegram/module/__tests__/syncPlan.test.ts`, `plugins/modules/telegram/module/__tests__/telegramCommand.test.ts`.
+- Temp root: `.tmp/code-production/telegram-fast-sync/D1-S15` (must be absent at handoff).
+- Predict: 14 active min / 2 credits.
+- Of which verification: 5 active min / 1 credits.
+
+What this Stage solves. On the owner's 2 636-chat stand the first plan ask after the update failed the catch-up run with 'plugin host frame exceeds 1048576 bytes': syncPlan and backfillPriorityChats read every chat in one window of a million, and the answer no longer fits the host's one-mebibyte frame. The priority ask had been failing the same way, silently, behind the host's fallback.
+
+What is built. A chatsWindow helper pages the chat window five hundred at a time and refuses a window that ends before its declared total; the plan and the priority read through it.
+
+How it is proven. tst_module_telegram_plan_001 and the priority case in tst_module_telegram_command_001: the double refuses any chat window wider than five hundred and serves offsets, and both asks still answer exactly (RED: limit 1 000 000 refused).
+
+Commit. fix(telegram): the plan and the priority page the chat window — no answer wider than the host's frame.
+
+##### Tasks
+
+- [ ] TGFAST_025 — service.ts gains chatsWindow paging chats 500 at a time for syncPlan and backfillPriorityChats; syncPlan.test.ts and telegramCommand.test.ts refuse wider windows. (9 min)
+<!-- plan:task-meta:{"writes": ["plugins/modules/telegram/module/service.ts", "plugins/modules/telegram/module/__tests__/syncPlan.test.ts", "plugins/modules/telegram/module/__tests__/telegramCommand.test.ts"], "predictedActiveMinutes": 9, "predictedCredits": 1, "how": "1. In plugins/modules/telegram/module/service.ts add chatsWindow() paging list_entities_window(CHAT) at 500 with the declared-total check, and use it in syncPlan and backfillPriorityChats. 2. In both test files make the unfiltered window double reject limit > 500 and slice by offset.", "red": "bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/syncPlan.test.ts"} -->
+
+##### Acceptance criteria
+
+- [ ] `bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/syncPlan.test.ts` exits 0 — the plan pages
+- [ ] `bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/telegramCommand.test.ts` exits 0 — the priority pages
+- [ ] Commit
+
+##### Results
+
+<!-- plan:results:D1-S15:start -->
+| Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
+|---|---|---|---:|---|---|
+<!-- plan:results:D1-S15:end -->
+<!-- plan:stage:D1-S15:end -->
+
 <!-- plan:delivery:D1:end -->
 <!-- plan:implementation:end -->
 
@@ -867,4 +905,6 @@ Commit. perf(telegram): the plan and the priority read pins in one window — no
 - record-result D1-S14 commit:8d6d370044a01aae77d4bec69c8e61d9e22f9080
 
 - close D1-S14 closed commit:8d6d370044a01aae77d4bec69c8e61d9e22f9080
+
+- amend implementation owner:2026-09-17 owner: ИСПРАВОЯЙ ПОКА НЕ БУДЕТ РАБОТАТЬ БЫСТРО; the live stand refused the plan answer as wider than the host frame; no SPEC change sha256:a02e9fb07b3efc5b585bb1b1ed60fe9e17e2883cd8a75d39d7eb98d12d78be92
 <!-- plan:execution:end -->

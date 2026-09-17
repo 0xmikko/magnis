@@ -49,7 +49,10 @@ describe("tst_module_telegram_plan_001 — the module states its sync plan", () 
           if (pinned === undefined) throw new Error("fixture");
           return Promise.resolve({ items: [windowRow(pinned)], total: 1 });
         }
-        return Promise.resolve({ items: rows.map(windowRow), total: rows.length });
+        // The host frames an answer at one mebibyte: a roster of thousands
+        // must come in pages, never in one window of a million.
+        if (spec.limit > 500) return Promise.reject(new Error("chat window wider than the host frame allows"));
+        return Promise.resolve({ items: rows.slice(spec.offset, spec.offset + spec.limit).map(windowRow), total: rows.length });
       },
       list_linked: () => Promise.reject(new Error("the plan must not traverse observed_in per chat")),
     });
