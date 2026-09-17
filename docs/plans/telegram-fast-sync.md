@@ -2,7 +2,7 @@
 
 Status: APPROVED  
 Spec lock: sha256:0804a6ac650ba5737a8e6f4be287b8e29740481b24a253322bd7a888c1031f54 owner:2026-09-15: ИСПРАВОЯЙ ПОКА НЕ БУДЕТ РАБОТАТЬ БЫСТРО  
-Implementation lock: sha256:95b92827227649dd51b1d50e891bae6ae882129102ededa93af20b73f421d662 owner:2026-09-17 owner: показывать количество только того что запланировано; the plan shape lives in types.ts and the first-page size in helpers.ts, both written by this Stage; no SPEC change  
+Implementation lock: sha256:f16fdd5d68f8f925c89c039b42e21750d94fb4bd0f39b9e3624549c1589af2d6 owner:2026-09-17 owner: если какое-то сообщение приходит … тоже был счетчик; the backend stand showed CatchUp re-asserting an older count; no SPEC change  
 Active Delivery: D1  
 Unattended decisions: allowed  
 
@@ -180,9 +180,9 @@ Each journey runs through the real production logic. Extend existing tests rathe
 
 Branch: `feat/telegram-fast-sync`; Depends: none; Gate: backend.
 
-Stage graph: `D1-S1 -> D1-S3; D1-S2 -> D1-S3; D1-S4 -> D1-S5; D1-S5 -> D1-S6; D1-S6 -> D1-S7; D1-S7 -> D1-S8; D1-S8 -> D1-S9; D1-S9 -> D1-S10; D1-S10 -> D1-S11; D1-S11 -> D1-S12`.
+Stage graph: `D1-S1 -> D1-S3; D1-S2 -> D1-S3; D1-S4 -> D1-S5; D1-S5 -> D1-S6; D1-S6 -> D1-S7; D1-S7 -> D1-S8; D1-S8 -> D1-S9; D1-S9 -> D1-S10; D1-S10 -> D1-S11; D1-S11 -> D1-S12; D1-S12 -> D1-S13`.
 
-Forecast: 333 active min / 36 credits across 12 Stages; longest dependency path 79 active min; external waits 0 min.
+Forecast: 345 active min / 38 credits across 13 Stages; longest dependency path 79 active min; external waits 0 min.
 
 Telegram uses an available account request slot immediately instead of invented three-second spacing and twenty-per-minute throttling. A real FLOOD_WAIT stops new transmissions for precisely the provider duration.
 
@@ -663,6 +663,43 @@ Commit. feat(telegram): the module states its sync plan — planned messages, ex
 <!-- plan:results:D1-S12:end -->
 <!-- plan:stage:D1-S12:end -->
 
+
+<!-- plan:stage:D1-S13:start -->
+<!-- plan:stage-meta:{"deliveryId": "D1", "depends": ["D1-S12"], "parallelWith": [], "writes": ["plugins/sources/telegram/src/surfaces/telegram/commands.ts", "plugins/sources/telegram/src/surfaces/telegram/commands.test.ts"], "tempRoot": ".tmp/code-production/telegram-fast-sync/D1-S13", "verifyActiveMinutes": 4, "verifyCredits": 1} -->
+#### Stage D1-S13 — CatchUp states the count of the page it read
+
+- Owner: root; Profile: strong; Depends: D1-S12; Parallel with: none.
+- Writes: `plugins/sources/telegram/src/surfaces/telegram/commands.ts`, `plugins/sources/telegram/src/surfaces/telegram/commands.test.ts`.
+- Temp root: `.tmp/code-production/telegram-fast-sync/D1-S13` (must be absent at handoff).
+- Predict: 12 active min / 2 credits.
+- Of which verification: 4 active min / 1 credits.
+
+What this Stage solves. On the backend's real stand the module's chat count fell back after a restart: CatchUp emitted every chat envelope with the count its cursor entry held (the bootstrap's), before reading the chat's new history whose answer stated the fresh count. The module took the older count over the one its live deliveries had raised, so the account's plan showed 195 against 197 saved.
+
+What is built. When CatchUp reads a chat's history, the chat envelope it already placed carries the count that answer states; a chat it does not read keeps its entry's count.
+
+How it is proven. tst_src_tgfast_003: every chat envelope the walk emits carries 31, the count of the page read for it (RED: the first page's two chats carried 10).
+
+Commit. fix(telegram): CatchUp states the count of the page it read — a re-asserted chat never carries an older count than its own answer.
+
+##### Tasks
+
+- [ ] TGFAST_023 — runCatchup in commands.ts restates a read chat's envelope with the count its history answer states; tst_src_tgfast_003 in commands.test.ts expects 31 on every chat envelope. (8 min)
+<!-- plan:task-meta:{"writes": ["plugins/sources/telegram/src/surfaces/telegram/commands.ts", "plugins/sources/telegram/src/surfaces/telegram/commands.test.ts"], "predictedActiveMinutes": 8, "predictedCredits": 1, "how": "1. In plugins/sources/telegram/src/surfaces/telegram/commands.ts remember the chat envelope's index and replace it with chatEnvelope(dialog.chat) after messages.total arrives. 2. Tighten tst_src_tgfast_003 in plugins/sources/telegram/src/surfaces/telegram/commands.test.ts to expect 31 only.", "red": "bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts"} -->
+
+##### Acceptance criteria
+
+- [ ] `bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts` exits 0 — a read chat carries its page's count
+- [ ] Commit
+
+##### Results
+
+<!-- plan:results:D1-S13:start -->
+| Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
+|---|---|---|---:|---|---|
+<!-- plan:results:D1-S13:end -->
+<!-- plan:stage:D1-S13:end -->
+
 <!-- plan:delivery:D1:end -->
 <!-- plan:implementation:end -->
 
@@ -778,4 +815,6 @@ Commit. feat(telegram): the module states its sync plan — planned messages, ex
 - deviation D1-S12: scope: plugins/modules/telegram/module/helpers.ts (BOOTSTRAP_MESSAGES_PER_CHAT) and plugins/modules/telegram/types.ts (SyncPlan) were needed for the plan shape; the Stage writes were amended to name them before this result was recorded.
 
 - close D1-S12 closed commit:e43bfae07bab2d9a2b2397c04a9cdf347337700b
+
+- amend implementation owner:2026-09-17 owner: если какое-то сообщение приходит … тоже был счетчик; the backend stand showed CatchUp re-asserting an older count; no SPEC change sha256:f16fdd5d68f8f925c89c039b42e21750d94fb4bd0f39b9e3624549c1589af2d6
 <!-- plan:execution:end -->

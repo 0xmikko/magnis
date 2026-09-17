@@ -189,10 +189,11 @@ test("tst_src_tgfast_003 catchup resumes round-robin without skipping committed 
     expect(received).toHaveLength(147);
     expect(new Set(received).size).toBe(147);
     expect((cursor as { chats: unknown }).chats).toEqual(Object.fromEntries(ids.map((id) => [id, { last_msg_id: 31, message_count: 31 }])));
-    // Every chat envelope the walk emits carries the count its entry holds, so
-    // a re-asserted chat never reaches the module without it.
+    // Every chat envelope the walk emits carries the count of the page it read
+    // for that chat (31), never the entry's older count (10): a re-asserted
+    // chat cannot take the module's count backwards.
     expect(chatEnvelopesSeen.length).toBeGreaterThan(0);
-    expect(chatEnvelopesSeen.every((count) => count === 10 || count === 31)).toBe(true);
+    expect(chatEnvelopesSeen.every((count) => count === 31)).toBe(true);
     expect(f.writes.filter((sent) => sent.method === "messages.GetDialogs")).toHaveLength(1);
   } finally { await f.close(); now.mockRestore(); }
 });

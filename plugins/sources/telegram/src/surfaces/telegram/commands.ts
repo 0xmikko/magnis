@@ -280,8 +280,10 @@ export async function runCatchup(
     const chatKey = String(chatId);
     const saved = catchupProgress(inChats[chatKey]);
     // The chat envelope carries the count its entry holds, so a re-asserted
-    // chat never reaches the module without it.
+    // chat never reaches the module without it; a history answer read below
+    // restates it with the count of that answer.
     if (saved.messageCount !== undefined) dialog.chat.message_count = saved.messageCount;
+    const chatEnvelopeIndex = envelopes.length;
     envelopes.push(chatEnvelope(dialog.chat));
 
     const committed = saved.lastMessageId;
@@ -307,7 +309,14 @@ export async function runCatchup(
       limit: CATCHUP_MESSAGES_PER_CHAT,
       offsetId: before,
     }, remainingPageBudget(deadline));
-    if (messages.total !== undefined) messageCount = messages.total;
+    if (messages.total !== undefined) {
+      messageCount = messages.total;
+      // @tested-by: tst_src_tgfast_003 — the module's count moved with live
+      // deliveries since the entry was written; the answer, not the entry,
+      // is the count this chat reaches the module with.
+      dialog.chat.message_count = messages.total;
+      envelopes[chatEnvelopeIndex] = chatEnvelope(dialog.chat);
+    }
     let oldest: number | undefined;
     let reachedCommitted = false;
     for (const msg of messages) {
