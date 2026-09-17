@@ -84,6 +84,9 @@ describe("telegram chat batch ingest", () => {
               last_message_preview: "Existing last message",
               last_sender_name: "Mikko",
               avatar_url: "/media/avatars/tg_chat_1.jpg",
+              // Telegram's exact count from an earlier read: a snapshot that
+              // omits it (CatchUp, a live page) must not erase it.
+              message_count: 4321,
             },
           },
         ]),
@@ -122,6 +125,7 @@ describe("telegram chat batch ingest", () => {
       last_message_preview: "Existing last message",
       last_sender_name: "Mikko",
       avatar_url: "/media/avatars/tg_chat_1.jpg",
+      message_count: 4321,
     });
     expect(pinnedChat?.properties?.is_pinned).toBeUndefined();
     const stateLink = firstBatch.links?.find(

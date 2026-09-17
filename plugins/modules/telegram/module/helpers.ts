@@ -13,6 +13,8 @@ export type Data = Record<string, unknown>;
 export const INGEST_CHUNK = 200;
 // Groups above this member count don't auto-create contacts (native default).
 export const INDEXING_THRESHOLD = 100;
+/** Messages the bootstrap reads per chat; what the plan counts for a chat it does not backfill. */
+export const BOOTSTRAP_MESSAGES_PER_CHAT = 50;
 
 /** First non-empty string value at `k`, else null. */
 export const str = (d: Data, k: string): string | null => {

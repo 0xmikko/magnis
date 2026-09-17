@@ -21,7 +21,7 @@ import type {
   RawEntity,
   RpcExecutor,
 } from "@magnis/plugin-sdk";
-import type {
+import type { SyncPlan,
   BackfillParams,
   BatchSendParams,
   ChatsListParams,
@@ -54,6 +54,7 @@ import {
   num,
   str,
   INDEXING_THRESHOLD,
+  BOOTSTRAP_MESSAGES_PER_CHAT,
   INGEST_CHUNK,
   type Data,
 } from "./helpers.ts";
@@ -694,16 +695,26 @@ export class TelegramModule {
 
   @syncHandler("telegram")
   async ingest(
-    params: { envelopes?: SyncEnvelope[]; backfill_priority?: { chat_ids?: string[] } },
+    params: {
+      envelopes?: SyncEnvelope[];
+      backfill_priority?: { chat_ids?: string[] };
+      sync_plan?: Record<string, never>;
+    },
   ): Promise<
     | { dropped_remote_ids: string[]; trigger_checks: TriggerCheck[] }
     | { priority: string[] }
+    | { plan: SyncPlan }
   > {
     // The scheduler reuses this reserved sync method to ask which chats are
     // high-priority for backfill (pinned/indexed) — it can't see chat metadata
     // itself. Branch out before the ingest path.
     if (params.backfill_priority) {
       return this.backfillPriority(params.backfill_priority.chat_ids ?? []);
+    }
+    // The host asks the same way what the sync PLANS to download: the module
+    // decides admission, so the module states the plan.
+    if (params.sync_plan) {
+      return { plan: await this.syncPlan() };
     }
     // Stage 3: the host bridge dispatches a WHOLE page of envelopes in one call.
     // Chat snapshots + deletes stay per-envelope (few, field-merge / cascade); the
@@ -865,6 +876,9 @@ export class TelegramModule {
             "last_sender_name",
             "avatar_url",
             "photo_url",
+            // Telegram's exact count from an earlier read: a snapshot that
+            // omits it (CatchUp, a live page) must not erase it.
+            "message_count",
           ]) {
             if (
               existing[key] !== null &&
@@ -1066,6 +1080,9 @@ export class TelegramModule {
     // 5. Post-apply (needs the resolved message id): URLs, media, live triggers, and
     //    track the newest message per chat for the denorm.
     const newestPerChat = new Map<string, Data>();
+    // Live messages per chat: each raises the chat's Telegram count by one so
+    // the plan and the saved count move together (tst_module_telegram_plan_001).
+    const liveByChat = new Map<string, number>();
     for (const { env, payload } of messages) {
       const remoteId = env.remote_id;
       if (!remoteId) continue;
@@ -1118,6 +1135,7 @@ export class TelegramModule {
       }
 
       if (env.kind === "live") {
+        if (cid !== null) liveByChat.set(cid, (liveByChat.get(cid) ?? 0) + 1);
         const touched = [entityId];
         if (cid !== null) {
           const ck = result.ids[`chat:${cid}`];
@@ -1162,14 +1180,27 @@ export class TelegramModule {
       if (!msgDate) continue;
       const curDate = str(base, "last_message_date") ?? "";
       if (curDate && msgDate < curDate) continue;
+      const live = liveByChat.get(key) ?? 0;
+      const count = num(base, "message_count");
       await this.graph.update_properties({
         entity_id: eid,
         properties: {
           last_message_date: msgDate,
           last_message_preview: str(msg, "text") ?? "",
           last_sender_name: str(msg, "sender_name") ?? "",
+          ...(live > 0 && count !== null ? { message_count: count + live } : {}),
         },
       });
+      liveByChat.delete(key);
+    }
+    // A live message older than the chat's newest still happened: its chat's
+    // count moves by one even when the preview does not.
+    for (const [key, live] of liveByChat) {
+      const base = chatDetails.get(key);
+      const eid = chatEntityId.get(key);
+      const count = base ? num(base, "message_count") : null;
+      if (!eid || count === null) continue;
+      await this.graph.update_properties({ entity_id: eid, properties: { message_count: count + live } });
     }
   }
 
@@ -1213,6 +1244,41 @@ export class TelegramModule {
       if (boolFlag(d, "is_pinned") === true || this.shouldIndex(d)) priority.push(cid);
     }
     return { priority };
+  }
+
+  /** What the sync plans to download, so the account's two numbers meet like a
+   * log after backfill: an admitted chat (private, small group, the operator's
+   * is_indexed choice, a pin) counts in full; every other chat its first
+   * BOOTSTRAP page; a chat Telegram has not counted yet is reported, never
+   * guessed. `excluded_items` is the history the plan leaves out.
+   * @tested-by: tst_module_telegram_plan_001 */
+  private async syncPlan(): Promise<SyncPlan> {
+    const page = await this.graph.list_entities_window({ schema: CHAT, limit: 1_000_000, offset: 0 });
+    const state = await this.observedStateFor(page.items.map(({ entity }) => entity.id));
+    let planned = 0;
+    let excludedScopes = 0;
+    let excludedItems = 0;
+    let uncountedScopes = 0;
+    for (const { entity } of page.items) {
+      const d = {
+        ...(((entity as { properties?: unknown }).properties ?? {}) as Data),
+        ...(state.get(entity.id) ?? {}),
+      };
+      const count = num(d, "message_count");
+      if (count === null) {
+        uncountedScopes += 1;
+        continue;
+      }
+      if (boolFlag(d, "is_pinned") === true || this.shouldIndex(d)) {
+        planned += count;
+        continue;
+      }
+      const firstPage = Math.min(count, BOOTSTRAP_MESSAGES_PER_CHAT);
+      planned += firstPage;
+      excludedScopes += 1;
+      excludedItems += count - firstPage;
+    }
+    return { unit: "messages", planned, excluded_scopes: excludedScopes, excluded_items: excludedItems, uncounted_scopes: uncountedScopes };
   }
 
   private shouldIndex(chatDetails: Data | null): boolean {

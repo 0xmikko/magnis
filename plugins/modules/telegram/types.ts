@@ -237,6 +237,16 @@ export interface TelegramCanonical {
 /// A trigger.check event the host PluginModuleController bridge forwards to the
 /// event_bus for LIVE messages (mirrors native ingest.rs). The trigger
 /// evaluator consumes it; bulk Snapshot/backfill ingests never emit one.
+/** What the sync plans to download, stated by the module (it decides admission).
+ * `planned` and the host's saved count meet like a log once history is done. */
+export interface SyncPlan {
+  unit: "messages";
+  planned: number;
+  excluded_scopes: number;
+  excluded_items: number;
+  uncounted_scopes: number;
+}
+
 export interface TriggerCheck {
   type: "trigger.check";
   event_kind: "new_message";

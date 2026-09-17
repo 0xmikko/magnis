@@ -331,7 +331,8 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
     delete invalid.payload.message_id;
     const live = messageEnvelope("live");
     const graph = mockGraph({
-      find_by_anchors: (anchors) => Promise.resolve(anchors.map(() => null)),
+      // The live message's chat is already known to the graph.
+      find_by_anchors: (anchors) => Promise.resolve(anchors.map((anchor) => (anchor === "tg:chat:42" ? "chat-entity-42" : null))),
       apply_batch: (fragment) =>
         Promise.resolve({
           ids: Object.fromEntries(fragment.entities.map((item) => [item.key, `id:${item.key}`])),
@@ -341,10 +342,20 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
           dropped_keys: [],
         }),
       web_register: () => Promise.resolve("web-id"),
+      // The live message's chat is known with Telegram's count; the message
+      // raises it by one so the plan and the saved count move together.
+      get_entities: (ids) => Promise.resolve(ids.map((id) => ({
+        ...entity(id, "Chat 42", { schema_id: CHAT }),
+        properties: { chat_id: 42, title: "Chat 42", type: "private", message_count: 99 },
+      }))),
+      update_properties: () => Promise.resolve(),
     });
     const module = mountModule(TelegramModule, { graph }).module;
 
     const result = await module.ingest({ envelopes: [invalid, live] });
+    expect(graph.spies.update_properties).toHaveBeenCalledWith(expect.objectContaining({
+      properties: expect.objectContaining({ message_count: 100 }),
+    }));
     expect(result).toEqual({
       dropped_remote_ids: ["tg:msg:42:missing"],
       trigger_checks: [expect.objectContaining({

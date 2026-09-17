@@ -140,6 +140,7 @@ test("tst_src_tgfast_003 catchup resumes round-robin without skipping committed 
     let cursor: unknown = { chats: Object.fromEntries(ids.map((id) => [id, { last_msg_id: 10, message_count: 10 }])) };
     let wireIndex = 0;
     const received: string[] = [];
+    const chatEnvelopesSeen: (number | undefined)[] = [];
     const orders = [[2000, 2001], [2002, 2003, 2004, 2005, 2006], [2000, 2001, 2002, 2003, 2004], [2005, 2006]];
     for (const [page, order] of orders.entries()) {
       const tg = new TgClient(f.client);
@@ -179,14 +180,19 @@ test("tst_src_tgfast_003 catchup resumes round-robin without skipping committed 
         expect(next.chats["2000"]?.target_last_msg_id).toBe(31);
         expect(next.chats["2005"]?.target_last_msg_id).toBeUndefined();
       }
-      for (const envelope of out.envelopes as { remote_id: string }[]) {
+      for (const envelope of out.envelopes as { remote_id: string; payload: Record<string, unknown> }[]) {
         if (envelope.remote_id.startsWith("tg:msg:")) received.push(envelope.remote_id);
+        if (envelope.remote_id.startsWith("tg:chat:")) chatEnvelopesSeen.push(envelope.payload.message_count as number | undefined);
       }
       cursor = JSON.parse(JSON.stringify(out.nextCursor)) as unknown;
     }
     expect(received).toHaveLength(147);
     expect(new Set(received).size).toBe(147);
     expect((cursor as { chats: unknown }).chats).toEqual(Object.fromEntries(ids.map((id) => [id, { last_msg_id: 31, message_count: 31 }])));
+    // Every chat envelope the walk emits carries the count its entry holds, so
+    // a re-asserted chat never reaches the module without it.
+    expect(chatEnvelopesSeen.length).toBeGreaterThan(0);
+    expect(chatEnvelopesSeen.every((count) => count === 10 || count === 31)).toBe(true);
     expect(f.writes.filter((sent) => sent.method === "messages.GetDialogs")).toHaveLength(1);
   } finally { await f.close(); now.mockRestore(); }
 });

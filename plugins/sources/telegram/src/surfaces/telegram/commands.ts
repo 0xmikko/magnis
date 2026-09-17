@@ -277,10 +277,13 @@ export async function runCatchup(
     if (reads >= SOURCE_PAGE_HISTORY_LIMIT || (processed > 0 && performance.now() >= deadline)) break;
     processed += 1;
     const chatId = dialog.chat.chat_id;
-    envelopes.push(chatEnvelope(dialog.chat));
-
     const chatKey = String(chatId);
     const saved = catchupProgress(inChats[chatKey]);
+    // The chat envelope carries the count its entry holds, so a re-asserted
+    // chat never reaches the module without it.
+    if (saved.messageCount !== undefined) dialog.chat.message_count = saved.messageCount;
+    envelopes.push(chatEnvelope(dialog.chat));
+
     const committed = saved.lastMessageId;
     // The count rides on every entry this walk writes: kept from the entry,
     // replaced by the count Telegram states in a page this walk reads.
