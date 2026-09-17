@@ -2,7 +2,7 @@
 
 Status: APPROVED  
 Spec lock: sha256:0804a6ac650ba5737a8e6f4be287b8e29740481b24a253322bd7a888c1031f54 owner:2026-09-15: ИСПРАВОЯЙ ПОКА НЕ БУДЕТ РАБОТАТЬ БЫСТРО  
-Implementation lock: sha256:9c854f83ccda56a5bd823b7d234d404d8fa5960c8304c12783a51d828542196b owner:2026-09-17 owner: the second number is what the sync plans to download so the two numbers meet like a log after backfill; live messages count; the module decides admission and states the plan; no SPEC change  
+Implementation lock: sha256:95b92827227649dd51b1d50e891bae6ae882129102ededa93af20b73f421d662 owner:2026-09-17 owner: показывать количество только того что запланировано; the plan shape lives in types.ts and the first-page size in helpers.ts, both written by this Stage; no SPEC change  
 Active Delivery: D1  
 Unattended decisions: allowed  
 
@@ -619,11 +619,11 @@ Commit. fix(telegram): CatchUp keeps and refreshes the per-chat count — the to
 
 
 <!-- plan:stage:D1-S12:start -->
-<!-- plan:stage-meta:{"deliveryId": "D1", "depends": ["D1-S11"], "parallelWith": [], "writes": ["plugins/modules/telegram/module/service.ts", "plugins/modules/telegram/module/__tests__/chatBatchSnapshotMerge.test.ts", "plugins/modules/telegram/module/__tests__/telegramIngest.test.ts", "plugins/modules/telegram/module/__tests__/syncPlan.test.ts", "plugins/sources/telegram/src/surfaces/telegram/commands.ts", "plugins/sources/telegram/src/surfaces/telegram/commands.test.ts"], "tempRoot": ".tmp/code-production/telegram-fast-sync/D1-S12", "verifyActiveMinutes": 8, "verifyCredits": 1} -->
+<!-- plan:stage-meta:{"deliveryId": "D1", "depends": ["D1-S11"], "parallelWith": [], "writes": ["plugins/modules/telegram/module/service.ts", "plugins/modules/telegram/module/helpers.ts", "plugins/modules/telegram/types.ts", "plugins/modules/telegram/module/__tests__/chatBatchSnapshotMerge.test.ts", "plugins/modules/telegram/module/__tests__/telegramIngest.test.ts", "plugins/modules/telegram/module/__tests__/syncPlan.test.ts", "plugins/sources/telegram/src/surfaces/telegram/commands.ts", "plugins/sources/telegram/src/surfaces/telegram/commands.test.ts"], "tempRoot": ".tmp/code-production/telegram-fast-sync/D1-S12", "verifyActiveMinutes": 8, "verifyCredits": 1} -->
 #### Stage D1-S12 — The module owns the sync plan
 
 - Owner: root; Profile: strong; Depends: D1-S11; Parallel with: none.
-- Writes: `plugins/modules/telegram/module/service.ts`, `plugins/modules/telegram/module/__tests__/chatBatchSnapshotMerge.test.ts`, `plugins/modules/telegram/module/__tests__/telegramIngest.test.ts`, `plugins/modules/telegram/module/__tests__/syncPlan.test.ts`, `plugins/sources/telegram/src/surfaces/telegram/commands.ts`, `plugins/sources/telegram/src/surfaces/telegram/commands.test.ts`.
+- Writes: `plugins/modules/telegram/module/service.ts`, `plugins/modules/telegram/module/helpers.ts`, `plugins/modules/telegram/types.ts`, `plugins/modules/telegram/module/__tests__/chatBatchSnapshotMerge.test.ts`, `plugins/modules/telegram/module/__tests__/telegramIngest.test.ts`, `plugins/modules/telegram/module/__tests__/syncPlan.test.ts`, `plugins/sources/telegram/src/surfaces/telegram/commands.ts`, `plugins/sources/telegram/src/surfaces/telegram/commands.test.ts`.
 - Temp root: `.tmp/code-production/telegram-fast-sync/D1-S12` (must be absent at handoff).
 - Predict: 48 active min / 4 credits.
 - Of which verification: 8 active min / 1 credits.
@@ -638,25 +638,28 @@ Commit. feat(telegram): the module states its sync plan — planned messages, ex
 
 ##### Tasks
 
-- [ ] TGFAST_020 — The sync method in service.ts answers sync_plan with planned, excluded_scopes, excluded_items and uncounted_scopes from the chats' counts and admission; syncPlan.test.ts proves it on six chats. (20 min)
-<!-- plan:task-meta:{"writes": ["plugins/modules/telegram/module/service.ts", "plugins/modules/telegram/module/__tests__/syncPlan.test.ts"], "predictedActiveMinutes": 20, "predictedCredits": 1, "how": "1. In plugins/modules/telegram/module/service.ts add the sync_plan branch to ingest(): one chat window read, observed state, shouldIndex or pinned \u2192 full count, else min(50, count); no count \u2192 uncounted. 2. New plugins/modules/telegram/module/__tests__/syncPlan.test.ts with a strict graph double.", "red": "bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/syncPlan.test.ts"} -->
-- [ ] TGFAST_021 — ingestChatBatch in service.ts keeps message_count when a re-assert omits it and a live message raises the chat's count by one; chatBatchSnapshotMerge.test.ts and telegramIngest.test.ts prove both. (12 min)
+- [x] TGFAST_020 — The sync method in service.ts answers sync_plan (SyncPlan in types.ts; first page size in helpers.ts) with planned, excluded and uncounted counts by admission; syncPlan.test.ts proves it on six chats. (20 min) — e43bfae07bab2d9a2b2397c04a9cdf347337700b
+<!-- plan:task-meta:{"writes": ["plugins/modules/telegram/module/service.ts", "plugins/modules/telegram/module/helpers.ts", "plugins/modules/telegram/types.ts", "plugins/modules/telegram/module/__tests__/syncPlan.test.ts"], "predictedActiveMinutes": 20, "predictedCredits": 1, "how": "0. Declare SyncPlan in plugins/modules/telegram/types.ts and BOOTSTRAP_MESSAGES_PER_CHAT in plugins/modules/telegram/module/helpers.ts. 1. In plugins/modules/telegram/module/service.ts add the sync_plan branch to ingest(): one chat window read, observed state, shouldIndex or pinned \u2192 full count, else min(50, count); no count \u2192 uncounted. 2. New plugins/modules/telegram/module/__tests__/syncPlan.test.ts with a strict graph double.", "red": "bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/syncPlan.test.ts"} -->
+- [x] TGFAST_021 — ingestChatBatch in service.ts keeps message_count when a re-assert omits it and a live message raises the chat's count by one; chatBatchSnapshotMerge.test.ts and telegramIngest.test.ts prove both. (12 min) — e43bfae07bab2d9a2b2397c04a9cdf347337700b
 <!-- plan:task-meta:{"writes": ["plugins/modules/telegram/module/service.ts", "plugins/modules/telegram/module/__tests__/chatBatchSnapshotMerge.test.ts", "plugins/modules/telegram/module/__tests__/telegramIngest.test.ts"], "predictedActiveMinutes": 12, "predictedCredits": 1, "how": "1. In plugins/modules/telegram/module/service.ts add message_count to the carried-forward keys and, in the live branch of ingestMessageBatch, raise the chat's message_count by one. 2. Extend tst_mod_tg_ingest_001 in plugins/modules/telegram/module/__tests__/chatBatchSnapshotMerge.test.ts and the live-envelope test in plugins/modules/telegram/module/__tests__/telegramIngest.test.ts.", "red": "bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/chatBatchSnapshotMerge.test.ts"} -->
-- [ ] TGFAST_022 — Every chat envelope runCatchup in commands.ts emits carries the entry's message_count; tst_src_tgfast_003 in commands.test.ts proves it. (8 min)
+- [x] TGFAST_022 — Every chat envelope runCatchup in commands.ts emits carries the entry's message_count; tst_src_tgfast_003 in commands.test.ts proves it. (8 min) — e43bfae07bab2d9a2b2397c04a9cdf347337700b
 <!-- plan:task-meta:{"writes": ["plugins/sources/telegram/src/surfaces/telegram/commands.ts", "plugins/sources/telegram/src/surfaces/telegram/commands.test.ts"], "predictedActiveMinutes": 8, "predictedCredits": 1, "how": "1. In plugins/sources/telegram/src/surfaces/telegram/commands.ts set dialog.chat.message_count from the cursor entry before the chat envelope is pushed. 2. Extend tst_src_tgfast_003 in plugins/sources/telegram/src/surfaces/telegram/commands.test.ts.", "red": "bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/syncPlan.test.ts` exits 0 — the module states its plan
-- [ ] `bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/chatBatchSnapshotMerge.test.ts` exits 0 — counts survive a re-assert
-- [ ] `bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts` exits 0 — CatchUp envelopes carry the count
-- [ ] Commit
+- [x] `bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/syncPlan.test.ts` exits 0 — the module states its plan — e43bfae07bab2d9a2b2397c04a9cdf347337700b
+- [x] `bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/chatBatchSnapshotMerge.test.ts` exits 0 — counts survive a re-assert — e43bfae07bab2d9a2b2397c04a9cdf347337700b
+- [x] `bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts` exits 0 — CatchUp envelopes carry the count — e43bfae07bab2d9a2b2397c04a9cdf347337700b
+- [x] Commit — e43bfae07bab2d9a2b2397c04a9cdf347337700b
 
 ##### Results
 
 <!-- plan:results:D1-S12:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| TGFAST_020 | e43bfae07bab2d9a2b2397c04a9cdf347337700b | 2026-09-17T06:55:23.841Z–2026-09-17T07:05:23.000Z | 10.01 / 10.01 min | unavailable: Runner exposes no per-stage credit meter or separate active-time measurement; active time is an elapsed upper-bound proxy | RED 06:57Z: no sync_plan branch (ingest returned undefined), message_count dropped by the chat batch, live message left the count at 99, CatchUp envelopes carried no count. GREEN 07:04Z: plan {planned 8570, excluded 2 chats / 886237 msgs, uncounted 1}; count kept and raised to 100; CatchUp envelopes carry 31. syncPlan 1, chatBatchSnapshotMerge 2, telegramIngest 12, commands 28 pass; module suites green; typecheck exit 0; eslint clean. |
+| TGFAST_021 | e43bfae07bab2d9a2b2397c04a9cdf347337700b | 2026-09-17T06:55:23.841Z–2026-09-17T07:05:23.000Z | 10.01 / 10.01 min | unavailable: Runner exposes no per-stage credit meter or separate active-time measurement; active time is an elapsed upper-bound proxy | RED 06:57Z: no sync_plan branch (ingest returned undefined), message_count dropped by the chat batch, live message left the count at 99, CatchUp envelopes carried no count. GREEN 07:04Z: plan {planned 8570, excluded 2 chats / 886237 msgs, uncounted 1}; count kept and raised to 100; CatchUp envelopes carry 31. syncPlan 1, chatBatchSnapshotMerge 2, telegramIngest 12, commands 28 pass; module suites green; typecheck exit 0; eslint clean. |
+| TGFAST_022 | e43bfae07bab2d9a2b2397c04a9cdf347337700b | 2026-09-17T06:55:23.841Z–2026-09-17T07:05:23.000Z | 10.01 / 10.01 min | unavailable: Runner exposes no per-stage credit meter or separate active-time measurement; active time is an elapsed upper-bound proxy | RED 06:57Z: no sync_plan branch (ingest returned undefined), message_count dropped by the chat batch, live message left the count at 99, CatchUp envelopes carried no count. GREEN 07:04Z: plan {planned 8570, excluded 2 chats / 886237 msgs, uncounted 1}; count kept and raised to 100; CatchUp envelopes carry 31. syncPlan 1, chatBatchSnapshotMerge 2, telegramIngest 12, commands 28 pass; module suites green; typecheck exit 0; eslint clean. |
 <!-- plan:results:D1-S12:end -->
 <!-- plan:stage:D1-S12:end -->
 
@@ -767,4 +770,12 @@ Commit. feat(telegram): the module states its sync plan — planned messages, ex
 - close D1-S11 closed commit:21fd6d222bda41ed26c1d16d74f64a8eac7ae148
 
 - amend implementation owner:2026-09-17 owner: the second number is what the sync plans to download so the two numbers meet like a log after backfill; live messages count; the module decides admission and states the plan; no SPEC change sha256:9c854f83ccda56a5bd823b7d234d404d8fa5960c8304c12783a51d828542196b
+
+- amend implementation owner:2026-09-17 owner: показывать количество только того что запланировано; the plan shape lives in types.ts and the first-page size in helpers.ts, both written by this Stage; no SPEC change sha256:95b92827227649dd51b1d50e891bae6ae882129102ededa93af20b73f421d662
+
+- record-result D1-S12 commit:e43bfae07bab2d9a2b2397c04a9cdf347337700b
+
+- deviation D1-S12: scope: plugins/modules/telegram/module/helpers.ts (BOOTSTRAP_MESSAGES_PER_CHAT) and plugins/modules/telegram/types.ts (SyncPlan) were needed for the plan shape; the Stage writes were amended to name them before this result was recorded.
+
+- close D1-S12 closed commit:e43bfae07bab2d9a2b2397c04a9cdf347337700b
 <!-- plan:execution:end -->
