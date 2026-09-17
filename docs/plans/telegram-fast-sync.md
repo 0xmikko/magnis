@@ -684,19 +684,20 @@ Commit. fix(telegram): CatchUp states the count of the page it read — a re-ass
 
 ##### Tasks
 
-- [ ] TGFAST_023 — runCatchup in commands.ts restates a read chat's envelope with the count its history answer states; tst_src_tgfast_003 in commands.test.ts expects 31 on every chat envelope. (8 min)
+- [x] TGFAST_023 — runCatchup in commands.ts restates a read chat's envelope with the count its history answer states; tst_src_tgfast_003 in commands.test.ts expects 31 on every chat envelope. (8 min) — e9682e53faeefe11fe351968223c326b22a61da2
 <!-- plan:task-meta:{"writes": ["plugins/sources/telegram/src/surfaces/telegram/commands.ts", "plugins/sources/telegram/src/surfaces/telegram/commands.test.ts"], "predictedActiveMinutes": 8, "predictedCredits": 1, "how": "1. In plugins/sources/telegram/src/surfaces/telegram/commands.ts remember the chat envelope's index and replace it with chatEnvelope(dialog.chat) after messages.total arrives. 2. Tighten tst_src_tgfast_003 in plugins/sources/telegram/src/surfaces/telegram/commands.test.ts to expect 31 only.", "red": "bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts` exits 0 — a read chat carries its page's count
-- [ ] Commit
+- [x] `bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts` exits 0 — a read chat carries its page's count — e9682e53faeefe11fe351968223c326b22a61da2
+- [x] Commit — e9682e53faeefe11fe351968223c326b22a61da2
 
 ##### Results
 
 <!-- plan:results:D1-S13:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| TGFAST_023 | e9682e53faeefe11fe351968223c326b22a61da2 | 2026-09-17T07:45:31.663Z–2026-09-17T07:47:15.000Z | 1.74 / 1.74 min | unavailable: Runner exposes no per-stage credit meter or separate active-time measurement; active time is an elapsed upper-bound proxy | RED 07:46Z: the first page's two chat envelopes carried the entry's 10. GREEN 07:47Z: every chat envelope carries 31; commands 28, gap and execute 31 pass; typecheck exit 0; eslint clean. |
 <!-- plan:results:D1-S13:end -->
 <!-- plan:stage:D1-S13:end -->
 
@@ -817,4 +818,8 @@ Commit. fix(telegram): CatchUp states the count of the page it read — a re-ass
 - close D1-S12 closed commit:e43bfae07bab2d9a2b2397c04a9cdf347337700b
 
 - amend implementation owner:2026-09-17 owner: если какое-то сообщение приходит … тоже был счетчик; the backend stand showed CatchUp re-asserting an older count; no SPEC change sha256:f16fdd5d68f8f925c89c039b42e21750d94fb4bd0f39b9e3624549c1589af2d6
+
+- record-result D1-S13 commit:e9682e53faeefe11fe351968223c326b22a61da2
+
+- close D1-S13 closed commit:e9682e53faeefe11fe351968223c326b22a61da2
 <!-- plan:execution:end -->
