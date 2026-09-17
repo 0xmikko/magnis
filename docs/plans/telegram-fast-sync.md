@@ -761,20 +761,21 @@ Commit. fix(telegram): the plan and the priority page the chat window — no ans
 
 ##### Tasks
 
-- [ ] TGFAST_025 — service.ts gains chatsWindow paging chats 500 at a time for syncPlan and backfillPriorityChats; syncPlan.test.ts and telegramCommand.test.ts refuse wider windows. (9 min)
+- [x] TGFAST_025 — service.ts gains chatsWindow paging chats 500 at a time for syncPlan and backfillPriorityChats; syncPlan.test.ts and telegramCommand.test.ts refuse wider windows. (9 min) — 8fe7b7731005d98be676bb63eaf8ff4b86c481b6
 <!-- plan:task-meta:{"writes": ["plugins/modules/telegram/module/service.ts", "plugins/modules/telegram/module/__tests__/syncPlan.test.ts", "plugins/modules/telegram/module/__tests__/telegramCommand.test.ts"], "predictedActiveMinutes": 9, "predictedCredits": 1, "how": "1. In plugins/modules/telegram/module/service.ts add chatsWindow() paging list_entities_window(CHAT) at 500 with the declared-total check, and use it in syncPlan and backfillPriorityChats. 2. In both test files make the unfiltered window double reject limit > 500 and slice by offset.", "red": "bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/syncPlan.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/syncPlan.test.ts` exits 0 — the plan pages
-- [ ] `bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/telegramCommand.test.ts` exits 0 — the priority pages
-- [ ] Commit
+- [x] `bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/syncPlan.test.ts` exits 0 — the plan pages — 8fe7b7731005d98be676bb63eaf8ff4b86c481b6
+- [x] `bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/telegramCommand.test.ts` exits 0 — the priority pages — 8fe7b7731005d98be676bb63eaf8ff4b86c481b6
+- [x] Commit — 8fe7b7731005d98be676bb63eaf8ff4b86c481b6
 
 ##### Results
 
 <!-- plan:results:D1-S15:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| TGFAST_025 | 8fe7b7731005d98be676bb63eaf8ff4b86c481b6 | 2026-09-17T08:26:49.962Z–2026-09-17T08:28:30.000Z | 1.69 / 1.69 min | unavailable: Runner exposes no per-stage credit meter or separate active-time measurement; active time is an elapsed upper-bound proxy | RED 08:27Z: both doubles refused the million-wide window. GREEN 08:29Z: both asks page at 500 and answer exactly; module lane 40 pass; typecheck exit 0; eslint clean. |
 <!-- plan:results:D1-S15:end -->
 <!-- plan:stage:D1-S15:end -->
 
@@ -907,4 +908,8 @@ Commit. fix(telegram): the plan and the priority page the chat window — no ans
 - close D1-S14 closed commit:8d6d370044a01aae77d4bec69c8e61d9e22f9080
 
 - amend implementation owner:2026-09-17 owner: ИСПРАВОЯЙ ПОКА НЕ БУДЕТ РАБОТАТЬ БЫСТРО; the live stand refused the plan answer as wider than the host frame; no SPEC change sha256:a02e9fb07b3efc5b585bb1b1ed60fe9e17e2883cd8a75d39d7eb98d12d78be92
+
+- record-result D1-S15 commit:8fe7b7731005d98be676bb63eaf8ff4b86c481b6
+
+- close D1-S15 closed commit:8fe7b7731005d98be676bb63eaf8ff4b86c481b6
 <!-- plan:execution:end -->
