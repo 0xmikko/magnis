@@ -27,82 +27,11 @@
 // answers an empty list. The `magnis.test.sleep` concurrency seam is likewise
 // not part of this connector.
 
-import { createInterface } from "node:readline";
-import { handleMessage, type DispatchDeps, type JsonRpcMessage } from "./dispatch";
+import { runMcpStdio } from "./dispatch";
 import { SubscriptionRegistry } from "./subscriptions";
 
-/** Bound on concurrently-dispatched `tools/call`s. The read loop dispatches each
- * call WITHOUT awaiting it, so an interactive send is never starved behind a
- * long-running bootstrap fetch; this caps the in-flight count so a misbehaving
- * caller cannot fork-bomb the connector. Twin of the Rust
- * MAX_INFLIGHT_TOOL_CALLS + its semaphore. */
-const MAX_INFLIGHT_TOOL_CALLS = 8;
-
-/** Minimal counting semaphore (the Rust binary uses tokio's). */
-class Semaphore {
-  private available: number;
-  private readonly waiters: (() => void)[] = [];
-
-  constructor(permits: number) {
-    this.available = permits;
-  }
-
-  async acquire(): Promise<void> {
-    if (this.available > 0) {
-      this.available -= 1;
-      return;
-    }
-    await new Promise<void>((resolve) => this.waiters.push(resolve));
-  }
-
-  release(): void {
-    const next = this.waiters.shift();
-    if (next !== undefined) next();
-    else this.available += 1;
-  }
-}
-
-/** Serialize writes so request replies and push notifications never interleave
- * on the wire (twin of the Rust `SharedOut` mutex — Node's stdout writes are
- * already atomic per call, so one line per write is sufficient). */
-function writeLine(line: string): void {
-  process.stdout.write(line + "\n");
-}
-
-async function runMcpStdio(): Promise<void> {
-  const registry = new SubscriptionRegistry();
-  // Mode-spawn gating: an --auth-mode spawn exposes ONLY magnis.auth.*; a sync
-  // spawn refuses them. Defense in depth.
-  const authMode = process.argv.includes("--auth-mode");
-  const deps: DispatchDeps = { authMode, registry, write: writeLine };
-  const sem = new Semaphore(MAX_INFLIGHT_TOOL_CALLS);
-
-  const rl = createInterface({ input: process.stdin });
-  for await (const line of rl) {
-    const trimmed = line.trim();
-    if (trimmed === "") continue;
-    let msg: JsonRpcMessage;
-    try {
-      msg = JSON.parse(trimmed) as JsonRpcMessage;
-    } catch {
-      continue;
-    }
-
-    // Dispatch WITHOUT awaiting so the read loop never blocks on a long-running
-    // call. The permit is acquired INSIDE the task (so the loop itself never
-    // waits), but the (bound+1)th task waits for a permit before it dispatches.
-    void (async (): Promise<void> => {
-      await sem.acquire();
-      try {
-        const reply = await handleMessage(msg, deps);
-        if (reply !== null) writeLine(JSON.stringify(reply));
-      } catch (e) {
-        console.error(`magnis-telegram: dispatch panic: ${String(e)}`);
-      } finally {
-        sem.release();
-      }
-    })();
-  }
-}
-
-await runMcpStdio();
+await runMcpStdio(process.stdin, {
+  authMode: process.argv.includes("--auth-mode"),
+  registry: new SubscriptionRegistry(),
+  write: (line): void => { process.stdout.write(line + "\n"); },
+});

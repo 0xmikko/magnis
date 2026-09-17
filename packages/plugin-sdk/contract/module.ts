@@ -332,6 +332,8 @@ export interface GraphService {
   search_entities_by_name(p: SearchEntitiesParams): Promise<RawEntity[]>;
   /** S1/S4: resolve a node by its identity ANCHOR through the chokepoint. */
   find_by_anchor(anchor: string): Promise<string | null>;
+  /** Plural anchor resolution in one host call: input order kept, null where absent. */
+  find_by_anchors(anchors: string[]): Promise<(string | null)[]>;
   // register a web link (web.link entity + dictionary + bg preview fetch),
   // optionally linked to a parent entity. Returns the web.link entity id.
   web_register(p: { url: string; parent_entity_id?: string; link_kind?: string }): Promise<string>;
