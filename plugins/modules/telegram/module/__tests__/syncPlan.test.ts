@@ -15,7 +15,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { entity, mockGraph, mountModule, windowRow } from "@magnis/testkit/module";
-import { CHAT } from "../../schema.ts";
+import { CHAT, TELEGRAM_ACCOUNT } from "../../schema.ts";
 import { TelegramModule } from "../service.ts";
 
 function chat(id: number, title: string, props: Record<string, unknown>): ReturnType<typeof entity> {
@@ -23,7 +23,7 @@ function chat(id: number, title: string, props: Record<string, unknown>): Return
 }
 
 describe("tst_module_telegram_plan_001 — the module states its sync plan", () => {
-  it("counts admitted chats in full, the first fifty of the rest, and reports uncounted chats", async () => {
+  it("counts admitted and pinned chats in full, the first fifty of the rest, and reports uncounted chats, without a traversal per chat", async () => {
     const rows = [
       chat(1, "Private", { type: "private", message_count: 1200 }),
       chat(2, "Small group", { type: "group", member_count: 40, message_count: 300 }),
@@ -31,11 +31,27 @@ describe("tst_module_telegram_plan_001 — the module states its sync plan", () 
       chat(4, "Large but forced on", { type: "supergroup", member_count: 900, message_count: 7000, is_indexed: true }),
       chat(5, "Private but forced off", { type: "private", message_count: 20, is_indexed: false }),
       chat(6, "Never counted", { type: "group", member_count: 10 }),
+      chat(7, "Pinned large channel", { type: "supergroup", member_count: 3000, message_count: 100 }),
     ];
+    const operator = entity("operator", "Me", {
+      schema_id: TELEGRAM_ACCOUNT, anchor: "tg:account:9001", properties: { telegram_user_id: 9001, is_self: true },
+    });
+    const windows: string[] = [];
     const graph = mockGraph({
-      list_entities_window: () => Promise.resolve({ items: rows.map(windowRow), total: rows.length }),
-      list_entities_by_property_field: () => Promise.resolve({ items: [], total: 0 }),
-      list_linked: () => Promise.resolve({ items: [], total: 0 }),
+      list_entities_by_property_field: () => Promise.resolve({ items: [operator], total: 1 }),
+      // Pins are the operator's observed state: one edge-filtered window,
+      // proportional to the pinned set, answers them for every chat at once.
+      list_entities_window: (spec) => {
+        windows.push(spec.filter_op === "eq" ? "pinned" : "all");
+        if (spec.filter_op === "eq") {
+          expect(spec.filter_field).toEqual({ edge_kind: "observed_in", observer_anchor: "tg:account:9001", edge_path: "is_pinned" });
+          const pinned = rows[6];
+          if (pinned === undefined) throw new Error("fixture");
+          return Promise.resolve({ items: [windowRow(pinned)], total: 1 });
+        }
+        return Promise.resolve({ items: rows.map(windowRow), total: rows.length });
+      },
+      list_linked: () => Promise.reject(new Error("the plan must not traverse observed_in per chat")),
     });
     const module = mountModule(TelegramModule, { graph }).module;
 
@@ -44,13 +60,14 @@ describe("tst_module_telegram_plan_001 — the module states its sync plan", () 
     expect(result).toEqual({
       plan: {
         unit: "messages",
-        // 1200 + 300 + 7000 in full; 50 of the large channel; 20 of the forced-off chat.
-        planned: 8570,
+        // 1200 + 300 + 7000 + the pinned 100 in full; 50 of the large channel; 20 of the forced-off chat.
+        planned: 8670,
         // The large channel and the forced-off chat: what their history holds beyond the plan.
         excluded_scopes: 2,
         excluded_items: 886237,
         uncounted_scopes: 1,
       },
     });
+    expect(windows.sort()).toEqual(["all", "pinned"]);
   });
 });

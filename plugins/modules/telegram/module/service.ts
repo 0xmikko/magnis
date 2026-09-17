@@ -104,33 +104,10 @@ export class TelegramModule {
   } | null> {
     const self = await this.operatorAccount();
     if (!self) return null;
-    if (!self.anchor) throw new Error("Telegram operator account is missing its anchor");
+    const { anchor } = self;
+    if (!anchor) throw new Error("Telegram operator account is missing its anchor");
 
-    // @tested-by: tst_module_telegram_read_004, tst_bts_prt_ops_030
-    const pinnedChats: RawEntity[] = [];
-    const pageSize = 500;
-    let pinnedTotal: number;
-    do {
-      const page = await this.graph.list_entities_window({
-        schema: CHAT,
-        filter_field: {
-          edge_kind: "observed_in",
-          observer_anchor: self.anchor,
-          edge_path: "is_pinned",
-        },
-        filter_op: "eq",
-        filter_eq: "true",
-        order: [{ field: { property_path: "last_message_date" }, desc: true }],
-        limit: pageSize,
-        offset: pinnedChats.length,
-      });
-      pinnedTotal = page.total;
-      pinnedChats.push(...page.items.map(({ entity }) => entity));
-      if (page.items.length === 0 && pinnedChats.length < pinnedTotal) {
-        throw new Error("Pinned Telegram chat window ended before its declared total");
-      }
-    } while (pinnedChats.length < pinnedTotal);
-
+    const { pinnedChats, pinnedTotal } = await this.pinnedChatsWindow(anchor);
     const byChatId = await this.observedStateFor(pinnedChats.map(({ id }) => id), self.id);
     const orderedChats = pinnedChats
       .sort((left, right) => {
@@ -146,7 +123,48 @@ export class TelegramModule {
         );
         return recency !== 0 ? recency : left.id.localeCompare(right.id);
       });
-    return { byChatId, orderedChats, total: pinnedTotal, observerAnchor: self.anchor };
+    return { byChatId, orderedChats, total: pinnedTotal, observerAnchor: anchor };
+  }
+
+  /// The operator's pinned chats through the edge-filtered chat window:
+  /// proportional to the pinned set, never a traversal per chat.
+  /// @tested-by: tst_module_telegram_read_004, tst_bts_prt_ops_030, tst_module_telegram_plan_001
+  private async pinnedChatsWindow(observerAnchor: string): Promise<{ pinnedChats: RawEntity[]; pinnedTotal: number }> {
+    const pinnedChats: RawEntity[] = [];
+    const pageSize = 500;
+    let pinnedTotal: number;
+    do {
+      const page = await this.graph.list_entities_window({
+        schema: CHAT,
+        filter_field: {
+          edge_kind: "observed_in",
+          observer_anchor: observerAnchor,
+          edge_path: "is_pinned",
+        },
+        filter_op: "eq",
+        filter_eq: "true",
+        order: [{ field: { property_path: "last_message_date" }, desc: true }],
+        limit: pageSize,
+        offset: pinnedChats.length,
+      });
+      pinnedTotal = page.total;
+      pinnedChats.push(...page.items.map(({ entity }) => entity));
+      if (page.items.length === 0 && pinnedChats.length < pinnedTotal) {
+        throw new Error("Pinned Telegram chat window ended before its declared total");
+      }
+    } while (pinnedChats.length < pinnedTotal);
+    return { pinnedChats, pinnedTotal };
+  }
+
+  /// The ids of the chats the operator pinned; empty before the operator's
+  /// account exists. The plan and the backfill priority read pins here, so
+  /// an ask costs one chat window and one pinned window, whatever the roster.
+  private async pinnedChatIds(): Promise<Set<string>> {
+    const self = await this.operatorAccount();
+    if (!self) return new Set();
+    const { anchor } = self;
+    if (!anchor) throw new Error("Telegram operator account is missing its anchor");
+    return new Set((await this.pinnedChatsWindow(anchor)).pinnedChats.map(({ id }) => id));
   }
 
   /// Per-chat state the OPERATOR observes, from the observed_in edges.
@@ -1232,16 +1250,13 @@ export class TelegramModule {
       const cid = chatIdStr(((entity as { properties?: unknown }).properties ?? {}) as Data);
       return want.has(cid);
     });
-    const state = await this.observedStateFor(wanted.map(({ entity }) => entity.id));
+    const pinned = await this.pinnedChatIds();
     const priority: string[] = [];
     for (const { entity } of wanted) {
-      const d = {
-        ...(((entity as { properties?: unknown }).properties ?? {}) as Data),
-        ...(state.get(entity.id) ?? {}),
-      };
+      const d = ((entity as { properties?: unknown }).properties ?? {}) as Data;
       const cid = chatIdStr(d);
       if (!cid) continue;
-      if (boolFlag(d, "is_pinned") === true || this.shouldIndex(d)) priority.push(cid);
+      if (pinned.has(entity.id) || this.shouldIndex(d)) priority.push(cid);
     }
     return { priority };
   }
@@ -1254,22 +1269,19 @@ export class TelegramModule {
    * @tested-by: tst_module_telegram_plan_001 */
   private async syncPlan(): Promise<SyncPlan> {
     const page = await this.graph.list_entities_window({ schema: CHAT, limit: 1_000_000, offset: 0 });
-    const state = await this.observedStateFor(page.items.map(({ entity }) => entity.id));
+    const pinned = await this.pinnedChatIds();
     let planned = 0;
     let excludedScopes = 0;
     let excludedItems = 0;
     let uncountedScopes = 0;
     for (const { entity } of page.items) {
-      const d = {
-        ...(((entity as { properties?: unknown }).properties ?? {}) as Data),
-        ...(state.get(entity.id) ?? {}),
-      };
+      const d = ((entity as { properties?: unknown }).properties ?? {}) as Data;
       const count = num(d, "message_count");
       if (count === null) {
         uncountedScopes += 1;
         continue;
       }
-      if (boolFlag(d, "is_pinned") === true || this.shouldIndex(d)) {
+      if (pinned.has(entity.id) || this.shouldIndex(d)) {
         planned += count;
         continue;
       }

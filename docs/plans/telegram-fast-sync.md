@@ -2,7 +2,7 @@
 
 Status: APPROVED  
 Spec lock: sha256:0804a6ac650ba5737a8e6f4be287b8e29740481b24a253322bd7a888c1031f54 owner:2026-09-15: ИСПРАВОЯЙ ПОКА НЕ БУДЕТ РАБОТАТЬ БЫСТРО  
-Implementation lock: sha256:f16fdd5d68f8f925c89c039b42e21750d94fb4bd0f39b9e3624549c1589af2d6 owner:2026-09-17 owner: если какое-то сообщение приходит … тоже был счетчик; the backend stand showed CatchUp re-asserting an older count; no SPEC change  
+Implementation lock: sha256:1a4f4141748a0a24a24585e7ae5e96dfbda0bd36b4516d94f13eae8b3fdb8674 owner:2026-09-17 owner: ИСПРАВОЯЙ ПОКА НЕ БУДЕТ РАБОТАТЬ БЫСТРО; the plan ask must not cost a traversal per chat; no SPEC change  
 Active Delivery: D1  
 Unattended decisions: allowed  
 
@@ -180,9 +180,9 @@ Each journey runs through the real production logic. Extend existing tests rathe
 
 Branch: `feat/telegram-fast-sync`; Depends: none; Gate: backend.
 
-Stage graph: `D1-S1 -> D1-S3; D1-S2 -> D1-S3; D1-S4 -> D1-S5; D1-S5 -> D1-S6; D1-S6 -> D1-S7; D1-S7 -> D1-S8; D1-S8 -> D1-S9; D1-S9 -> D1-S10; D1-S10 -> D1-S11; D1-S11 -> D1-S12; D1-S12 -> D1-S13`.
+Stage graph: `D1-S1 -> D1-S3; D1-S2 -> D1-S3; D1-S4 -> D1-S5; D1-S5 -> D1-S6; D1-S6 -> D1-S7; D1-S7 -> D1-S8; D1-S8 -> D1-S9; D1-S9 -> D1-S10; D1-S10 -> D1-S11; D1-S11 -> D1-S12; D1-S12 -> D1-S13; D1-S13 -> D1-S14`.
 
-Forecast: 345 active min / 38 credits across 13 Stages; longest dependency path 79 active min; external waits 0 min.
+Forecast: 363 active min / 40 credits across 14 Stages; longest dependency path 79 active min; external waits 0 min.
 
 Telegram uses an available account request slot immediately instead of invented three-second spacing and twenty-per-minute throttling. A real FLOOD_WAIT stops new transmissions for precisely the provider duration.
 
@@ -701,6 +701,44 @@ Commit. fix(telegram): CatchUp states the count of the page it read — a re-ass
 <!-- plan:results:D1-S13:end -->
 <!-- plan:stage:D1-S13:end -->
 
+
+<!-- plan:stage:D1-S14:start -->
+<!-- plan:stage-meta:{"deliveryId": "D1", "depends": ["D1-S13"], "parallelWith": [], "writes": ["plugins/modules/telegram/module/service.ts", "plugins/modules/telegram/module/__tests__/syncPlan.test.ts", "plugins/modules/telegram/module/__tests__/telegramCommand.test.ts"], "tempRoot": ".tmp/code-production/telegram-fast-sync/D1-S14", "verifyActiveMinutes": 6, "verifyCredits": 1} -->
+#### Stage D1-S14 — The plan and the priority read pins in one window
+
+- Owner: root; Profile: strong; Depends: D1-S13; Parallel with: none.
+- Writes: `plugins/modules/telegram/module/service.ts`, `plugins/modules/telegram/module/__tests__/syncPlan.test.ts`, `plugins/modules/telegram/module/__tests__/telegramCommand.test.ts`.
+- Temp root: `.tmp/code-production/telegram-fast-sync/D1-S14` (must be absent at handoff).
+- Predict: 18 active min / 2 credits.
+- Of which verification: 6 active min / 1 credits.
+
+What this Stage solves. syncPlan and backfillPriorityChats read the operator's observed state one chat at a time (a list_linked traversal per chat) only to learn which chats are pinned. The host asks for both at every backfill work selection, so on the owner's 2 636-chat account each page pays thousands of graph round trips, and inside the backend's complete gate the 50-chat stand's plan asks (140-280 ms each) pushed the journeys past their 20 s windows.
+
+What is built. A pinnedChatIds helper pages the operator's pinned chats through the existing edge-filtered chat window (proportional to the pinned set) and both the plan and the priority use it; neither traverses observed_in per chat any more.
+
+How it is proven. tst_module_telegram_plan_001: with an operator account and a pinned large channel the plan counts it in full while list_linked is never called (RED: the double throws on list_linked). tst_module_telegram_cmd_priority: backfill_priority admits the pinned chat without list_linked (RED: same).
+
+Commit. perf(telegram): the plan and the priority read pins in one window — no observer traversal per chat.
+
+##### Tasks
+
+- [ ] TGFAST_024 — service.ts gains pinnedChatIds over the edge-filtered chat window; syncPlan and backfillPriorityChats use it; syncPlan.test.ts and telegramCommand.test.ts forbid list_linked. (12 min)
+<!-- plan:task-meta:{"writes": ["plugins/modules/telegram/module/service.ts", "plugins/modules/telegram/module/__tests__/syncPlan.test.ts", "plugins/modules/telegram/module/__tests__/telegramCommand.test.ts"], "predictedActiveMinutes": 12, "predictedCredits": 1, "how": "1. In plugins/modules/telegram/module/service.ts factor the pinned window loop of operatorObservedState into pinnedChatIds and call it from syncPlan and backfillPriorityChats instead of observedStateFor. 2. In syncPlan.test.ts mount an operator and a pinned chat, make list_linked throw. 3. In telegramCommand.test.ts do the same for backfill_priority.", "red": "bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/syncPlan.test.ts"} -->
+
+##### Acceptance criteria
+
+- [ ] `bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/syncPlan.test.ts` exits 0 — the plan needs no per-chat traversal
+- [ ] `bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/telegramCommand.test.ts` exits 0 — nor does the priority
+- [ ] Commit
+
+##### Results
+
+<!-- plan:results:D1-S14:start -->
+| Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
+|---|---|---|---:|---|---|
+<!-- plan:results:D1-S14:end -->
+<!-- plan:stage:D1-S14:end -->
+
 <!-- plan:delivery:D1:end -->
 <!-- plan:implementation:end -->
 
@@ -822,4 +860,6 @@ Commit. fix(telegram): CatchUp states the count of the page it read — a re-ass
 - record-result D1-S13 commit:e9682e53faeefe11fe351968223c326b22a61da2
 
 - close D1-S13 closed commit:e9682e53faeefe11fe351968223c326b22a61da2
+
+- amend implementation owner:2026-09-17 owner: ИСПРАВОЯЙ ПОКА НЕ БУДЕТ РАБОТАТЬ БЫСТРО; the plan ask must not cost a traversal per chat; no SPEC change sha256:1a4f4141748a0a24a24585e7ae5e96dfbda0bd36b4516d94f13eae8b3fdb8674
 <!-- plan:execution:end -->
