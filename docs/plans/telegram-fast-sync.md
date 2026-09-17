@@ -722,20 +722,21 @@ Commit. perf(telegram): the plan and the priority read pins in one window — no
 
 ##### Tasks
 
-- [ ] TGFAST_024 — service.ts gains pinnedChatIds over the edge-filtered chat window; syncPlan and backfillPriorityChats use it; syncPlan.test.ts and telegramCommand.test.ts forbid list_linked. (12 min)
+- [x] TGFAST_024 — service.ts gains pinnedChatIds over the edge-filtered chat window; syncPlan and backfillPriorityChats use it; syncPlan.test.ts and telegramCommand.test.ts forbid list_linked. (12 min) — 8d6d370044a01aae77d4bec69c8e61d9e22f9080
 <!-- plan:task-meta:{"writes": ["plugins/modules/telegram/module/service.ts", "plugins/modules/telegram/module/__tests__/syncPlan.test.ts", "plugins/modules/telegram/module/__tests__/telegramCommand.test.ts"], "predictedActiveMinutes": 12, "predictedCredits": 1, "how": "1. In plugins/modules/telegram/module/service.ts factor the pinned window loop of operatorObservedState into pinnedChatIds and call it from syncPlan and backfillPriorityChats instead of observedStateFor. 2. In syncPlan.test.ts mount an operator and a pinned chat, make list_linked throw. 3. In telegramCommand.test.ts do the same for backfill_priority.", "red": "bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/syncPlan.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/syncPlan.test.ts` exits 0 — the plan needs no per-chat traversal
-- [ ] `bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/telegramCommand.test.ts` exits 0 — nor does the priority
-- [ ] Commit
+- [x] `bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/syncPlan.test.ts` exits 0 — the plan needs no per-chat traversal — 8d6d370044a01aae77d4bec69c8e61d9e22f9080
+- [x] `bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/telegramCommand.test.ts` exits 0 — nor does the priority — 8d6d370044a01aae77d4bec69c8e61d9e22f9080
+- [x] Commit — 8d6d370044a01aae77d4bec69c8e61d9e22f9080
 
 ##### Results
 
 <!-- plan:results:D1-S14:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| TGFAST_024 | 8d6d370044a01aae77d4bec69c8e61d9e22f9080 | 2026-09-17T08:09:08.249Z–2026-09-17T08:13:14.000Z | 4.1 / 4.1 min | unavailable: Runner exposes no per-stage credit meter or separate active-time measurement; active time is an elapsed upper-bound proxy | RED 08:10Z: both doubles rejected list_linked (the plan and the priority traversed observed_in per chat). GREEN 08:12Z: plan 8670 with the pinned channel in full through one pinned window; priority [1,3,4]; the module lane 40 pass; typecheck exit 0; eslint clean. |
 <!-- plan:results:D1-S14:end -->
 <!-- plan:stage:D1-S14:end -->
 
@@ -862,4 +863,8 @@ Commit. perf(telegram): the plan and the priority read pins in one window — no
 - close D1-S13 closed commit:e9682e53faeefe11fe351968223c326b22a61da2
 
 - amend implementation owner:2026-09-17 owner: ИСПРАВОЯЙ ПОКА НЕ БУДЕТ РАБОТАТЬ БЫСТРО; the plan ask must not cost a traversal per chat; no SPEC change sha256:1a4f4141748a0a24a24585e7ae5e96dfbda0bd36b4516d94f13eae8b3fdb8674
+
+- record-result D1-S14 commit:8d6d370044a01aae77d4bec69c8e61d9e22f9080
+
+- close D1-S14 closed commit:8d6d370044a01aae77d4bec69c8e61d9e22f9080
 <!-- plan:execution:end -->
