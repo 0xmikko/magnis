@@ -83,12 +83,7 @@ export function buildConnectorConfig(
         // People API has no delta token — every page is a snapshot;
         // direction is ignored (Bootstrap and CatchUp page identically).
         const r = await fetchContactsPage(token, cursor, fetchFn);
-        return {
-          envelopes: r.envelopes,
-          nextCursor: r.nextCursor,
-          hasMore: r.nextCursor !== null,
-          discovered: r.discovered,
-        };
+        return { envelopes: r.envelopes, nextCursor: r.nextCursor, hasMore: r.nextCursor !== null };
       }
       default:
         throw new Error(`unknown surface '${surface}'`);

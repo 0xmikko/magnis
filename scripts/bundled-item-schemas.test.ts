@@ -94,6 +94,7 @@ describe("tst_pub_item_schemas_001", () => {
   const progress: readonly (readonly [string, string, Record<string, string>])[] = [
     ["telegram", "telegram", { "telegram.chat": "chats", "telegram.message": "messages" }],
     ["email", "email", { "email.message": "messages" }],
+    ["contacts", "contacts", { "contacts.person": "contacts" }],
   ];
 
   for (const [moduleId, surface, names] of progress) {

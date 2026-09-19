@@ -164,7 +164,13 @@ describe("people → contact conversion", () => {
 });
 
 describe("contacts fetch", () => {
-  test("tst_gts_gp_005 envelopes + cursor null on last page + skip counted out", async () => {
+  /** @test-id: tst_gts_gp_005
+   * @scenario: scn_google_sync_001
+   * @covers: fetchContactsPage list envelope, skipped persons and cursor
+   * @deterministic: yes
+   * @fixtures: two connection pages of a list the People API counts at 3, one identity-less person
+   */
+  test("tst_gts_gp_005 the list states its count first on the first page and the persons a page leaves out; cursor null on the last page", async () => {
     const calls: string[] = [];
     const fetchFn: FetchLike = async (url) => {
       calls.push(url);
@@ -174,21 +180,22 @@ describe("contacts fetch", () => {
             { ...fullPerson(), resourceName: "people/c2" },
             { resourceName: "people/cEmpty" }, // skipped: no identity
           ],
+          totalPeople: 3,
         });
       }
-      return ok({ connections: [fullPerson()], nextPageToken: "p2" });
+      return ok({ connections: [fullPerson()], nextPageToken: "p2", totalPeople: 3 });
     };
 
     const p1 = await fetchContactsPage("tok", undefined, fetchFn);
-    expect(p1.envelopes).toHaveLength(1);
-    const env0 = p1.envelopes[0];
-    if (env0 === undefined) throw new Error("contacts page: missing envelope 0");
+    // The list envelope precedes the persons: what the People API counts.
+    expect(p1.envelopes.map((e) => e.remote_id)).toEqual(["list", `gpeople:${stableContactId("people/c12345")}`]);
+    expect(p1.envelopes[0]).toEqual({ surface: "contacts", kind: "snapshot", remote_id: "list", payload: { entity_type: "list", total_people: 3 } });
+    const env0 = p1.envelopes[1];
+    if (env0 === undefined) throw new Error("contacts page: missing envelope 1");
     expect(env0.surface).toBe("contacts");
     expect(env0.kind).toBe("snapshot");
-    expect(env0.remote_id).toBe(
-      `gpeople:${stableContactId("people/c12345")}`,
-    );
-    expect(p1.nextCursor).toEqual({ page_token: "p2", discovered: 1 });
+    expect(p1.nextCursor).toEqual({ page_token: "p2" });
+    expect("discovered" in p1).toBe(false);
 
     const call0 = calls[0];
     if (call0 === undefined) throw new Error("contacts fetch: missing call 0");
@@ -200,9 +207,12 @@ describe("contacts fetch", () => {
     expect(url.searchParams.get("pageSize")).toBe("100");
 
     const p2 = await fetchContactsPage("tok", p1.nextCursor, fetchFn);
-    expect(p2.envelopes).toHaveLength(1); // identity-less person skipped
+    // A later page states no count again, but names the persons it left out
+    // (no identity) so the plan's skipped meets the total.
+    expect(p2.envelopes.map((e) => e.remote_id)).toEqual(["list", `gpeople:${stableContactId("people/c2")}`]);
+    expect(p2.envelopes[0]?.payload).toEqual({ entity_type: "list", skipped: 1 });
     expect(p2.nextCursor).toBeNull(); // last page
-    expect(p2.discovered).toBe(2); // cumulative, counts KEPT envelopes only
+    expect("discovered" in p2).toBe(false);
   });
 });
 

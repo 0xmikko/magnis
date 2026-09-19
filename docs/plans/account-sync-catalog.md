@@ -2,7 +2,7 @@
 
 Status: APPROVED  
 Spec lock: sha256:68e0aebc008e04c12bc42733e0c7e3e5f4a1c6c0cbeb772f3957078e3c598cf2 owner:approved  
-Implementation lock: sha256:da39d34a6487ba6b70f4bc47b5e6c32a3cb7d0fb89d39b3da57e6a79d6e4630a owner:не спрашивай меня про такие мелки дефекты  
+Implementation lock: sha256:a5e1dd48512213d823861922107d0cc9f1f626984eace91be6e71fc8887afbca owner:не спрашивай меня про такие мелки дефекты  
 Active Delivery: D1  
 Unattended decisions: allowed  
 
@@ -154,7 +154,7 @@ Branch: `feat/account-sync-catalog`; Depends: none; Gate: backend.
 
 Stage graph: `D1-S1 -> D1-S2 -> D1-S3 -> D1-S4 -> D1-S5 -> D1-S6 -> D1-S7 -> D1-S8 -> D1-S9`.
 
-Forecast: 537 active min / 127 credits across 9 Stages; longest dependency path 537 active min; external waits 240 min.
+Forecast: 541 active min / 128 credits across 9 Stages; longest dependency path 541 active min; external waits 240 min.
 
 What changed for people. The Accounts panel prints every account's sync from what its worker holds: for Telegram, chats 50/50 and messages 197/197 with the skipped history named; for Gmail, contacts, meetings and X the planned count on the first page; the Telegram history behind the first page is backfilled because the Source says what each page read.
 
@@ -334,13 +334,13 @@ Commit. feat(google,email): the mailbox states its count on the first page and t
 <!-- plan:stage:D1-S4:end -->
 
 <!-- plan:stage:D1-S5:start -->
-<!-- plan:stage-meta:{"deliveryId":"D1","depends":["D1-S4"],"parallelWith":[],"writes":["plugins/sources/google/src/surfaces/contacts/contacts.ts","plugins/sources/google/src/surfaces/contacts/contacts.test.ts","plugins/modules/contacts/module/service.ts","plugins/modules/contacts/module/__tests__/contactsIngest.test.ts","plugins/modules/contacts/manifest.toml","scripts/bundled-item-schemas.test.ts"],"tempRoot":".tmp/code-production/account-sync-catalog/D1-S5","verifyActiveMinutes":8,"verifyCredits":2} -->
+<!-- plan:stage-meta:{"deliveryId":"D1","depends":["D1-S4"],"parallelWith":[],"writes":["plugins/sources/google/src/surfaces/contacts/contacts.ts","plugins/sources/google/src/surfaces/contacts/contacts.test.ts","plugins/modules/contacts/module/service.ts","plugins/modules/contacts/module/__tests__/contactsIngest.test.ts","plugins/modules/contacts/manifest.toml","scripts/bundled-item-schemas.test.ts","plugins/sources/google/src/connector.ts","plugins/sources/google/src/__tests__/googleContract.test.ts"],"tempRoot":".tmp/code-production/account-sync-catalog/D1-S5","verifyActiveMinutes":8,"verifyCredits":2} -->
 #### Stage D1-S5 — Google contacts carries totalPeople on its first page and the contacts module states the plan
 
 - Owner: agent-1; Profile: fast; Depends: D1-S4; Parallel with: none.
-- Writes: `plugins/sources/google/src/surfaces/contacts/contacts.ts`, `plugins/sources/google/src/surfaces/contacts/contacts.test.ts`, `plugins/modules/contacts/module/service.ts`, `plugins/modules/contacts/module/__tests__/contactsIngest.test.ts`, `plugins/modules/contacts/manifest.toml`, `scripts/bundled-item-schemas.test.ts`.
+- Writes: `plugins/sources/google/src/surfaces/contacts/contacts.ts`, `plugins/sources/google/src/surfaces/contacts/contacts.test.ts`, `plugins/modules/contacts/module/service.ts`, `plugins/modules/contacts/module/__tests__/contactsIngest.test.ts`, `plugins/modules/contacts/manifest.toml`, `scripts/bundled-item-schemas.test.ts`, `plugins/sources/google/src/connector.ts`, `plugins/sources/google/src/__tests__/googleContract.test.ts`.
 - Temp root: `.tmp/code-production/account-sync-catalog/D1-S5` (must be absent at handoff).
-- Predict: 53 active min / 13 credits.
+- Predict: 57 active min / 14 credits.
 - Of which verification: 8 active min / 2 credits.
 
 What this Stage solves. The People API states totalPeople on every connections page; the Source drops it and the contacts module states nothing.
@@ -357,6 +357,8 @@ Commit. feat(google,contacts): the connections list states its count on the firs
 <!-- plan:task-meta:{"writes":["plugins/sources/google/src/surfaces/contacts/contacts.ts","plugins/sources/google/src/surfaces/contacts/contacts.test.ts"],"predictedActiveMinutes":20,"predictedCredits":5,"how":"read totalPeople from the connections response on the first page; the list envelope precedes the people; WindowFetchResult loses discovered","red":"bun run agent:test:backend -- plugins/sources/google/src/surfaces/contacts/contacts.test.ts"} -->
 - [ ] ACS_010 — State contacts in full on the list envelope and +created after in contacts service.ts; declare contacts in contacts manifest.toml; cover in contactsIngest.test.ts, bundled-item-schemas.test.ts. (25 min)
 <!-- plan:task-meta:{"writes":["plugins/modules/contacts/module/service.ts","plugins/modules/contacts/module/__tests__/contactsIngest.test.ts","plugins/modules/contacts/manifest.toml","scripts/bundled-item-schemas.test.ts"],"predictedActiveMinutes":25,"predictedCredits":6,"how":"ingest reads generation; the list envelope states { \"contacts.person\": { total: total_people, skipped: 0 } }; later pages state +created; without generation nothing","red":"bun run agent:test:backend -- plugins/modules/contacts/module/__tests__/contactsIngest.test.ts"} -->
+- [ ] ACS_019 — Drop the contacts counter from google connector.ts; expect the list envelope in googleContract.test.ts. (4 min)
+<!-- plan:task-meta:{"writes":["plugins/sources/google/src/connector.ts","plugins/sources/google/src/__tests__/googleContract.test.ts"],"predictedActiveMinutes":4,"predictedCredits":1,"how":"the contacts case of fetchHandler returns {envelopes, nextCursor, hasMore}; the contract expects three contacts envelopes and no counters","red":"bun run agent:test:backend -- plugins/sources/google/src/__tests__/googleContract.test.ts"} -->
 
 ##### Acceptance criteria
 
@@ -584,4 +586,8 @@ Commit. docs(plugins): counts on the scope envelope, traversed ranges on the pag
 - deviation D1-S4: the catalog pins bun 1.3.13 and its certification receipts hash the bundle the running bun produced: after the host move the default bun is 1.4.2, so the suites and the receipts run under mise exec bun@1.3.13; the re-minted telegram and google source receipts ride the closure commit
 
 - close D1-S4 closed commit:28bc3f959e2d9ef59da51a2e67faeee1a912ee5d
+
+- amend implementation owner:не спрашивай меня про такие мелки дефекты sha256:b3eda3aa8f50461ddd7b5274d66f3dda56c66f46117fb857747eb14edbb7c697
+
+- amend implementation owner:не спрашивай меня про такие мелки дефекты sha256:a5e1dd48512213d823861922107d0cc9f1f626984eace91be6e71fc8887afbca
 <!-- plan:execution:end -->

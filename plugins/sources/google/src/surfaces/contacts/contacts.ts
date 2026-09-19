@@ -12,11 +12,6 @@ import {
   fetchWithRetry,
   type FetchLike,
 } from "../../http";
-import {
-  mergeProgress,
-  progressCursor,
-  type WindowFetchResult,
-} from "../../progress";
 import { contactRemoteId } from "./schema";
 import {
   asObject,
@@ -24,6 +19,7 @@ import {
   defaultObjectArray,
   defaultBool,
   optBool,
+  optNumber,
   optString,
   reqString,
 } from "../../validate";
@@ -70,6 +66,15 @@ export interface GpeoplePerson {
 interface GpeopleConnectionsResponse {
   connections?: GpeoplePerson[] | null;
   nextPageToken?: string | null;
+  /** The People API's exact count of the list, on every page. */
+  totalPeople?: number | null;
+}
+
+/** One page of the contacts list: the list's count first on the first page,
+ * the persons the page left out when it did, then the persons. */
+export interface ContactsFetchResult {
+  envelopes: Envelope[];
+  nextCursor: Record<string, unknown> | null;
 }
 
 // ── Response parser (serde parity — see validate.ts) ──────────
@@ -132,6 +137,7 @@ function parseGpeopleConnectionsResponse(
   return {
     connections,
     nextPageToken: optString(o, "nextPageToken", ctx),
+    totalPeople: optNumber(o, "totalPeople", ctx),
   };
 }
 
@@ -298,8 +304,11 @@ async function listConnectionsPage(
   return parseGpeopleConnectionsResponse(await resp.json());
 }
 
-/** Bootstrap/catch-up contacts fetch. Cumulative `discovered` only;
- * `nextCursor` is null on the last page.
+/** Bootstrap/catch-up contacts fetch. The first page opens with the list
+ * envelope carrying `totalPeople`, the People API's exact count; any page
+ * that leaves persons out (no identity) states how many, so the plan's
+ * skipped meets the total. `nextCursor` is null on the last page.
+ * @tested-by: tst_gts_gp_005
  *
  * NOTE: the People API DOES have a delta token — `requestSyncToken=true` on a
  * full sync returns a `nextSyncToken` (valid 7 days) that lists only changes.
@@ -310,7 +319,7 @@ export async function fetchContactsPage(
   token: string,
   cursor: unknown,
   fetchFn: FetchLike,
-): Promise<WindowFetchResult> {
+): Promise<ContactsFetchResult> {
   const c =
     cursor !== null && typeof cursor === "object"
       ? (cursor as Record<string, unknown>)
@@ -320,9 +329,10 @@ export async function fetchContactsPage(
   const page = await listConnectionsPage(token, pageToken, fetchFn);
 
   const envelopes: Envelope[] = [];
+  let skipped = 0;
   for (const person of page.connections ?? []) {
     const contact = gpeoplePersonToContact(person);
-    if (contact === null) continue; // no useful identity → dropped
+    if (contact === null) { skipped += 1; continue; } // no useful identity → dropped
     envelopes.push({
       surface: "contacts",
       payload: contact as unknown as Record<string, unknown>,
@@ -330,14 +340,15 @@ export async function fetchContactsPage(
       kind: "snapshot",
     });
   }
-
-  const progress = progressCursor(cursor, envelopes.length, undefined);
-
-  let nextCursor: Record<string, unknown> | null = null;
-  if (typeof page.nextPageToken === "string") {
-    nextCursor = { page_token: page.nextPageToken };
-    mergeProgress(nextCursor, progress);
+  const list: Record<string, unknown> = { entity_type: "list" };
+  if (pageToken === undefined && typeof page.totalPeople === "number") list.total_people = page.totalPeople;
+  if (skipped > 0) list.skipped = skipped;
+  if (Object.keys(list).length > 1) {
+    envelopes.unshift({ surface: "contacts", kind: "snapshot", remote_id: "list", payload: list });
   }
 
-  return { envelopes, nextCursor, discovered: progress.discovered };
+  const nextCursor: Record<string, unknown> | null =
+    typeof page.nextPageToken === "string" ? { page_token: page.nextPageToken } : null;
+
+  return { envelopes, nextCursor };
 }
