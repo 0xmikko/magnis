@@ -18,10 +18,14 @@ publisher = "ai.magnis"
 
 # Sync surface this module consumes (fed by the matching source connector).
 [surfaces.telegram]
-reconciliation = { mode = "none" }
-# The surface's primary-item schema — its user-scoped graph count IS the
-# "items synced" badge (host source.status.list reads this).
+# The host reconciles membership at the end of every pass: the module stamps
+# the pass on each chat's observed_in edge and decays the edges it did not.
+reconciliation = { mode = "full_snapshot" }
+# The surface's primary-item schema.
 item = "telegram.message"
+# The schemas the surface reports progress on, with the names the Accounts
+# panel prints; the host counts them and reads the plan from page receipts.
+progress = { "telegram.chat" = "chats", "telegram.message" = "messages" }
 
 # Foreign asks beyond the implicit own namespace: writes to `telegram.` records,
 # own:own links, and reads of own schemas need no declaration.
