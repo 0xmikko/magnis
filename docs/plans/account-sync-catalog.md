@@ -559,19 +559,20 @@ Commit. fix(telegram): reconcile through one distinct window — the host requir
 
 ##### Tasks
 
-- [ ] ACS_022 — Reconcile through one distinct window over sync_pass in plugins/modules/telegram/module/service.ts; model IS DISTINCT FROM in syncPlan.test.ts and telegramIngest.test.ts. (10 min)
+- [x] ACS_022 — Reconcile through one distinct window over sync_pass in plugins/modules/telegram/module/service.ts; model IS DISTINCT FROM in syncPlan.test.ts and telegramIngest.test.ts. (10 min) — 2d09e60c0fd8e92676750ad0ede561e661b93fbf
 <!-- plan:task-meta:{"writes":["plugins/modules/telegram/module/service.ts","plugins/modules/telegram/module/__tests__/syncPlan.test.ts","plugins/modules/telegram/module/__tests__/telegramIngest.test.ts"],"predictedActiveMinutes":10,"predictedCredits":3,"how":"observedChatsWindow takes op eq|distinct with filter_eq; onSyncComplete reads one window {edge_path: sync_pass, filter_op: distinct, filter_eq: generation}, decays every edge found, gives a statement back only where sync_pass was stamped; the two tests' window doubles model IS DISTINCT FROM","red":"bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/syncPlan.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/syncPlan.test.ts plugins/modules/telegram/module/__tests__/telegramIngest.test.ts` exits 0
-- [ ] Commit
+- [x] `bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/syncPlan.test.ts plugins/modules/telegram/module/__tests__/telegramIngest.test.ts` exits 0 — 2d09e60c0fd8e92676750ad0ede561e661b93fbf
+- [x] Commit — 2d09e60c0fd8e92676750ad0ede561e661b93fbf
 
 ##### Results
 
 <!-- plan:results:D1-S10:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| ACS_022 | 2d09e60c0fd8e92676750ad0ede561e661b93fbf | 2026-09-19T21:07:07.382Z–2026-09-19T21:08:55.000Z | 1 / 1 min | unavailable: runner did not expose usage | onSyncComplete reads one window {edge_path sync_pass, filter_op distinct, filter_eq generation}, decays every edge found and gives back only stamped statements; the stand's three Telegram journeys pass against the archive built from this commit (magnis-app D1-S7). Module 41/41; typecheck and lint clean. |
 <!-- plan:results:D1-S10:end -->
 <!-- plan:stage:D1-S10:end -->
 <!-- plan:delivery:D1:end -->
@@ -679,4 +680,8 @@ Commit. fix(telegram): reconcile through one distinct window — the host requir
 - amend implementation owner:не спрашивай меня про такие мелки дефекты sha256:e525c9af1fb51e21ff34a982275e9254f919b08c8bf2e8aee78f3a4d9c4d1d69
 
 - amend implementation owner:не спрашивай меня про такие мелки дефекты sha256:6d8c567a165d3130861e1f8b96ac2f4252c61ed26b89b8f539f3f6a68a1303ef
+
+- record-result D1-S10 commit:2d09e60c0fd8e92676750ad0ede561e661b93fbf
+
+- close D1-S10 closed commit:2d09e60c0fd8e92676750ad0ede561e661b93fbf
 <!-- plan:execution:end -->
