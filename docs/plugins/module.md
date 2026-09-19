@@ -335,8 +335,10 @@ implements `@syncComplete`, the reserved `<plugin_id>.__sync_complete__` hook
 the host calls at the end of a pass with `{ user_id, source_id, account_id,
 identity_key, generation }`. It answers `{ departed: [scopeId], plan }`: the
 scopes whose last statement carries another pass's stamp have left — Telegram
-decays their `observed_in` edge and gives their statement back as negative
-deltas. A scope reported again later is restored and stated in full.
+decays their `observed_in` edge. Their statement was made in that other pass,
+whose plan the host zeroed when this one began, so the `plan` answered is
+empty: a delta that would take the host's plan below zero is refused. A scope
+reported again later is restored and stated in full.
 
 ---
 

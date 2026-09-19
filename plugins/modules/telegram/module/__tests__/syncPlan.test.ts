@@ -165,14 +165,15 @@ describe("tst_module_telegram_plan_001 — the module states its plan from the p
       excluded: ["3", "5"],
     });
 
-    // The end of the pass: the chat it did not see left, with the negative of its statement.
+    // The end of the pass: the chat it did not see left. Its statement was the first pass's,
+    // which this pass's plan never held: nothing is given back.
     await expect(module.onSyncComplete({ user_id: "u1", source_id: "telegram-ts", account_id: "account-1", identity_key: "9001", generation: SECOND })).resolves.toEqual({
-      departed: ["6"], plan: { [CHAT]: { total: -1, skipped: 0 }, [MESSAGE]: { total: -40, skipped: 0 } },
+      departed: ["6"], plan: {},
     });
     expect(store.statuses).toEqual([["edge:id:tg:chat:6", "decayed"]]);
     expect(store.windows).toEqual(["distinct"]);
     // Asked again, nothing more has left.
-    await expect(module.onSyncComplete({ user_id: "u1", source_id: "telegram-ts", account_id: "account-1", identity_key: "9001", generation: SECOND })).resolves.toEqual({ departed: [], plan: zero });
+    await expect(module.onSyncComplete({ user_id: "u1", source_id: "telegram-ts", account_id: "account-1", identity_key: "9001", generation: SECOND })).resolves.toEqual({ departed: [], plan: {} });
 
     // A chat re-reported after leaving is restored and stated in full.
     await expect(module.ingest({ generation: SECOND, envelopes: [chatEnvelope(sixth, { message_count: 40 })] })).resolves.toEqual({

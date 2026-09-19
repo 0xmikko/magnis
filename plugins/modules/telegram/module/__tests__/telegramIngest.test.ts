@@ -402,7 +402,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
     });
   });
 
-  it("decays the memberships the pass did not stamp and gives their statement back", async () => {
+  it("decays the memberships the pass did not stamp; their older statements give nothing back", async () => {
     const chat = (id: number, pass: string, status: string, total: number): { entity: ReturnType<typeof entity>; edge: Record<string, unknown> } => ({
       entity: entity(`chat-${String(id)}`, `Chat ${String(id)}`, { schema_id: CHAT, properties: { chat_id: id } }),
       edge: { id: `edge-${String(id)}`, from_id: "self-id", to_id: `chat-${String(id)}`, kind: "observed_in", status, metadata: { sync_pass: pass, sync_total: total, sync_skipped: 0 } },
@@ -428,21 +428,21 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
     });
     const module = mountModule(TelegramModule, { graph }).module;
 
-    // Chat 1 was stated in the previous pass and not seen in this one: it left, and gives its
-    // statement back. Chat 4 was never stated: it left too, with nothing to give back. Chat 3 left before.
+    // Chat 1 was stated in the previous pass and not seen in this one: it left; its statement
+    // belongs to that pass, not this one's plan. Chat 4 was never stated: it left too. Chat 3 left before.
     await expect(module.onSyncComplete({
       user_id: "u1",
       source_id: "telegram-ts",
       account_id: "a1",
       identity_key: "9001",
       generation: "initial:r:2",
-    })).resolves.toEqual({ departed: ["1", "4"], plan: { [CHAT]: { total: -1, skipped: 0 }, [MESSAGE]: { total: -30, skipped: 0 } } });
+    })).resolves.toEqual({ departed: ["1", "4"], plan: {} });
     const setLinkStatus = graph.spies.set_link_status;
     if (setLinkStatus === undefined) throw new Error("sync complete: set_link_status spy missing");
     expect(setLinkStatus.mock.calls.map(([id, status]) => [id, status])).toEqual([["edge-1", "decayed"], ["edge-4", "decayed"]]);
     // Without the pass or the identity nothing is decided.
     await expect(module.onSyncComplete({ user_id: "u1", source_id: "telegram-ts", account_id: "a1", identity_key: "9001" }))
-      .resolves.toEqual({ departed: [], plan: { [CHAT]: { total: 0, skipped: 0 }, [MESSAGE]: { total: 0, skipped: 0 } } });
+      .resolves.toEqual({ departed: [], plan: {} });
   });
   /**
    * @test-id: tst_module_telegram_006

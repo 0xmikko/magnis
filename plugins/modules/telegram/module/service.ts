@@ -722,10 +722,12 @@ export class TelegramModule {
   /// The end of a pass: the host stamped the pass on every ingest call and
   /// asks which chats it did not see. A chat whose observed_in edge carries
   /// another pass's stamp has been LEFT: its edge decays (the chat node and
-  /// its history stay — leaving is not deleting), the plan gives back what
-  /// was stated for it, and the worker drops its gaps. A rejoin is the next
-  /// page reporting the chat again, which restores the edge and states it in
-  /// full. Idempotent: a second run over the same pass answers nothing.
+  /// its history stay — leaving is not deleting) and the worker drops its
+  /// gaps. Its statement was made in that other pass, whose plan the host
+  /// zeroed when this one began, so there is nothing to give back: the plan
+  /// answered here is empty. A rejoin is the next page reporting the chat
+  /// again, which restores the edge and states it in full. Idempotent: a
+  /// second run over the same pass answers nothing.
   @syncComplete()
   async onSyncComplete(params: {
     user_id: string;
@@ -734,13 +736,12 @@ export class TelegramModule {
     identity_key?: string | null;
     generation?: string;
   }): Promise<{ departed: string[]; plan: Record<string, PlanDelta> }> {
-    const statement = emptyStatement();
     const identityKey = params.identity_key;
     const generation = params.generation;
-    if (!identityKey || !generation) return { departed: [], plan: planOf(statement) };
+    if (!identityKey || !generation) return { departed: [], plan: {} };
     const observerAnchor = accountAnchor(identityKey);
     const selfId = await this.graph.find_by_anchor(observerAnchor);
-    if (selfId === null) return { departed: [], plan: planOf(statement) };
+    if (selfId === null) return { departed: [], plan: {} };
     // Every chat whose edge was not stamped with this pass — stated in an
     // earlier pass, or never: one edge-filtered window ("distinct" keeps the
     // unstamped edges, and a chat without an edge from this observer at all,
@@ -754,16 +755,9 @@ export class TelegramModule {
       const chatId = chatIdOrNull(((chat as { properties?: unknown }).properties ?? {}) as Data);
       if (chatId === null) continue;
       await this.graph.set_link_status(edge.id, "decayed");
-      const metadata = edge.metadata ?? {};
-      // Only a chat the plan stated gives a statement back.
-      if (typeof metadata.sync_pass === "string") {
-        statement.chats.total -= 1;
-        statement.messages.total -= num(metadata, "sync_total") ?? 0;
-        statement.messages.skipped -= num(metadata, "sync_skipped") ?? 0;
-      }
       departed.push(chatId);
     }
-    return { departed, plan: planOf(statement) };
+    return { departed, plan: {} };
   }
 
   @syncHandler("telegram")
