@@ -29,6 +29,10 @@ to = "contacts.person"
 # Sync surface this module consumes (fed by the matching source connector).
 [surfaces.linkedin]
 reconciliation = { mode = "none" }
+# The schemas the surface reports progress on, with the names the Accounts
+# panel prints; the host counts them and reads the plan from page receipts.
+# Posts stay unplanned: anysite lists a profile's posts without a total.
+progress = { "linkedin.profile" = "profiles", "linkedin.post" = "posts" }
 
 # Foreign asks beyond the implicit own namespace: writes to `linkedin.` records,
 # own:own links, and reads of own schemas need no declaration.

@@ -441,24 +441,27 @@ Commit. feat(x): the profile states its planned window and the x module states t
 
 ##### Tasks
 
-- [ ] ACS_013 — Carry posts_total and posts_skipped on the X profile envelope in fetch.ts; cover in fetch.test.ts. (15 min)
+- [x] ACS_013 — Carry posts_total and posts_skipped on the X profile envelope in fetch.ts; cover in fetch.test.ts. (15 min) — eb6667ca7e46002a52c5626a344ef6a566fc8876
 <!-- plan:task-meta:{"writes":["plugins/sources/x/src/surfaces/x/fetch.ts","plugins/sources/x/src/surfaces/x/fetch.test.ts"],"predictedActiveMinutes":15,"predictedCredits":4,"how":"tweet_count from public_metrics on the user lookup; posts_total = min(tweet_count, RECENT_TWEETS), posts_skipped the rest; absent metrics carry no fields","red":"bun run agent:test:backend -- plugins/sources/x/src/surfaces/x/fetch.test.ts"} -->
-- [ ] ACS_014 — State profiles and posts on a new pass and +created after in x service.ts; declare posts and profiles in x manifest.toml; cover in xIngest.test.ts, bundled-item-schemas.test.ts. (30 min)
+- [x] ACS_014 — State profiles and posts on a new pass and +created after in x service.ts; declare posts and profiles in x manifest.toml; cover in xIngest.test.ts, bundled-item-schemas.test.ts. (30 min) — eb6667ca7e46002a52c5626a344ef6a566fc8876
 <!-- plan:task-meta:{"writes":["plugins/modules/x/module/service.ts","plugins/modules/x/module/__tests__/xIngest.test.ts","plugins/modules/x/manifest.toml","scripts/bundled-item-schemas.test.ts"],"predictedActiveMinutes":30,"predictedCredits":7,"how":"ingest reads generation; the existing profile entity's sync_pass decides full or +created; the batch writes sync_pass with the profile's properties","red":"bun run agent:test:backend -- plugins/modules/x/module/__tests__/xIngest.test.ts"} -->
-- [ ] ACS_021 — Read tweet_count from the user's public_metrics in plugins/sources/x/src/api.ts. (2 min)
+- [x] ACS_021 — Read tweet_count from the user's public_metrics in plugins/sources/x/src/api.ts. (2 min) — eb6667ca7e46002a52c5626a344ef6a566fc8876
 <!-- plan:task-meta:{"writes":["plugins/sources/x/src/api.ts"],"predictedActiveMinutes":2,"predictedCredits":1,"how":"XUser.public_metrics gains tweet_count; the user fields already request public_metrics","red":"bun run agent:test:backend -- plugins/sources/x/src/surfaces/x/fetch.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- plugins/sources/x/src/surfaces/x/fetch.test.ts` exits 0
-- [ ] `bun run agent:test:backend -- plugins/modules/x/module/__tests__/xIngest.test.ts` exits 0
-- [ ] Commit
+- [x] `bun run agent:test:backend -- plugins/sources/x/src/surfaces/x/fetch.test.ts` exits 0 — eb6667ca7e46002a52c5626a344ef6a566fc8876
+- [x] `bun run agent:test:backend -- plugins/modules/x/module/__tests__/xIngest.test.ts` exits 0 — eb6667ca7e46002a52c5626a344ef6a566fc8876
+- [x] Commit — eb6667ca7e46002a52c5626a344ef6a566fc8876
 
 ##### Results
 
 <!-- plan:results:D1-S7:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| ACS_013 | eb6667ca7e46002a52c5626a344ef6a566fc8876 | 2026-09-19T20:35:44.778Z–2026-09-19T20:40:43.000Z | 5 / 5 min | unavailable: runner did not expose usage | profileEnvelope carries posts_total = min(tweet_count, 10) and posts_skipped = the rest when X counts the account; the x module reads the page's anchors in two Graph calls, states profiles +1 and the posts window on a profile whose sync_pass is not this pass (stamping it in the batch), +1 per post the graph did not hold in the same pass, nothing without generation; manifest declares posts and profiles. X Source 11/11 (fetch) and module 16/16; typecheck and lint clean; the x certification receipt is re-minted in the closure commit. |
+| ACS_014 | eb6667ca7e46002a52c5626a344ef6a566fc8876 | 2026-09-19T20:35:44.778Z–2026-09-19T20:40:43.000Z | 5 / 5 min | unavailable: runner did not expose usage | profileEnvelope carries posts_total = min(tweet_count, 10) and posts_skipped = the rest when X counts the account; the x module reads the page's anchors in two Graph calls, states profiles +1 and the posts window on a profile whose sync_pass is not this pass (stamping it in the batch), +1 per post the graph did not hold in the same pass, nothing without generation; manifest declares posts and profiles. X Source 11/11 (fetch) and module 16/16; typecheck and lint clean; the x certification receipt is re-minted in the closure commit. |
+| ACS_021 | eb6667ca7e46002a52c5626a344ef6a566fc8876 | 2026-09-19T20:35:44.778Z–2026-09-19T20:40:43.000Z | 5 / 5 min | unavailable: runner did not expose usage | profileEnvelope carries posts_total = min(tweet_count, 10) and posts_skipped = the rest when X counts the account; the x module reads the page's anchors in two Graph calls, states profiles +1 and the posts window on a profile whose sync_pass is not this pass (stamping it in the batch), +1 per post the graph did not hold in the same pass, nothing without generation; manifest declares posts and profiles. X Source 11/11 (fetch) and module 16/16; typecheck and lint clean; the x certification receipt is re-minted in the closure commit. |
 <!-- plan:results:D1-S7:end -->
 <!-- plan:stage:D1-S7:end -->
 
@@ -620,4 +623,8 @@ Commit. docs(plugins): counts on the scope envelope, traversed ranges on the pag
 - amend implementation owner:не спрашивай меня про такие мелки дефекты sha256:cd1b34a184fbf5b632781529b918339d37e72aa17a0521d48d327757a68f1d8b
 
 - amend implementation owner:не спрашивай меня про такие мелки дефекты sha256:b807f211e636bbfb29f08a3212199753c6a60c7b86e4f874ac3afc0718152a2e
+
+- record-result D1-S7 commit:eb6667ca7e46002a52c5626a344ef6a566fc8876
+
+- close D1-S7 closed commit:eb6667ca7e46002a52c5626a344ef6a566fc8876
 <!-- plan:execution:end -->
