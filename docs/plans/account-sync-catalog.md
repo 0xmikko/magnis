@@ -522,19 +522,20 @@ Commit. docs(plugins): counts on the scope envelope, traversed ranges on the pag
 
 ##### Tasks
 
-- [ ] ACS_016 — Describe the fetch result, the scope count and the live position in docs/plugins/source.md; the receipt and reconcile answer in module.md; the progress line in manifest.md. (25 min)
+- [x] ACS_016 — Describe the fetch result, the scope count and the live position in docs/plugins/source.md; the receipt and reconcile answer in module.md; the progress line in manifest.md. (25 min) — 7aabf0ab09299080140eb94489585d7234ffa748
 <!-- plan:task-meta:{"writes":["docs/plugins/source.md","docs/plugins/module.md","docs/plugins/manifest.md"],"predictedActiveMinutes":25,"predictedCredits":6,"how":"replace the FetchResult line; add the receipt and generation paragraphs; add the progress line beside item","red":"bun run agent:test:backend -- scripts/bundled-item-schemas.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:verify:docs` exits 0
-- [ ] Commit
+- [x] `bun run agent:verify:docs` exits 0 — 7aabf0ab09299080140eb94489585d7234ffa748
+- [x] Commit — 7aabf0ab09299080140eb94489585d7234ffa748
 
 ##### Results
 
 <!-- plan:results:D1-S9:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| ACS_016 | 7aabf0ab09299080140eb94489585d7234ffa748 | 2026-09-19T20:45:09.557Z–2026-09-19T20:46:28.000Z | 2 / 2 min | unavailable: runner did not expose usage | source.md: the fetch result {envelopes, nextCursor, hasMore, traversed}, the scope counts per Source, the skipped statement, the live position; module.md: generation on the page, the receipt's plan (relative to the last statement) and excluded, the __sync_complete__ answer; manifest.md: the [surfaces.<surface>] progress line and the reconciliation modes. agent:verify:docs passes. |
 <!-- plan:results:D1-S9:end -->
 <!-- plan:stage:D1-S9:end -->
 <!-- plan:delivery:D1:end -->
@@ -632,4 +633,8 @@ Commit. docs(plugins): counts on the scope envelope, traversed ranges on the pag
 - record-result D1-S8 commit:ecdee3260a1413661986fd9400f41ddd3dcf4e70
 
 - close D1-S8 closed commit:ecdee3260a1413661986fd9400f41ddd3dcf4e70
+
+- record-result D1-S9 commit:7aabf0ab09299080140eb94489585d7234ffa748
+
+- close D1-S9 closed commit:7aabf0ab09299080140eb94489585d7234ffa748
 <!-- plan:execution:end -->
