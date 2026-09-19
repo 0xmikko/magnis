@@ -14,8 +14,7 @@
  * @legacy-id: tst_be_tgtrigger_013_set_trigger_creates_trigger
  */
 import { describe, expect, it, vi } from "vitest";
-import { entity, mockGraph, mountModule, windowRow } from "@magnis/testkit/module";
-import { CHAT, TELEGRAM_ACCOUNT } from "../../schema.ts";
+import { mockGraph, mountModule } from "@magnis/testkit/module";
 import { TelegramModule } from "../service.ts";
 
 interface TelegramCommandInternals {
@@ -44,34 +43,6 @@ describe("tst_module_telegram_command_001 — Telegram command mapping", () => {
     await expect(module.composerAppendText({ thread_key: "chat:42", text: " world" })).resolves.toEqual({
       args: ["append_text", "chat:42", " world"],
     });
-  });
-
-  it("ranks backfill priority from admission and pins without a traversal per chat", async () => {
-    const chat = (id: number, props: Record<string, unknown>): ReturnType<typeof entity> =>
-      entity(`chat-${String(id)}`, `Chat ${String(id)}`, { schema_id: CHAT, properties: { chat_id: id, ...props } });
-    const rows = [
-      chat(1, { type: "private" }),
-      chat(2, { type: "supergroup", member_count: 5000 }),
-      chat(3, { type: "supergroup", member_count: 4000 }),
-      chat(4, { type: "group", member_count: 12 }),
-    ];
-    const operator = entity("operator", "Me", {
-      schema_id: TELEGRAM_ACCOUNT, anchor: "tg:account:9001", properties: { telegram_user_id: 9001, is_self: true },
-    });
-    const graph = mockGraph({
-      list_entities_by_property_field: () => Promise.resolve({ items: [operator], total: 1 }),
-      list_entities_window: (spec) => {
-        if (spec.filter_op === "eq") return Promise.resolve({ items: [windowRow(rows[2] as ReturnType<typeof entity>)], total: 1 });
-        if (spec.limit > 500) return Promise.reject(new Error("chat window wider than the host frame allows"));
-        return Promise.resolve({ items: rows.slice(spec.offset, spec.offset + spec.limit).map(windowRow), total: rows.length });
-      },
-      list_linked: () => Promise.reject(new Error("the priority must not traverse observed_in per chat")),
-    });
-    const module = mountModule(TelegramModule, { graph }).module;
-
-    // The private chat, the pinned large channel and the small group are admitted; the large channel is not.
-    await expect(module.ingest({ backfill_priority: { chat_ids: ["1", "2", "3", "4", "9"] } }))
-      .resolves.toEqual({ priority: ["1", "3", "4"] });
   });
 
   it("requests asynchronous backfill with exact source arguments", async () => {

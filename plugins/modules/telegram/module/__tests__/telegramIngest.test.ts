@@ -402,33 +402,42 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
     });
   });
 
-  it("decays missing memberships and restores reported memberships", async () => {
+  it("decays the memberships the pass did not stamp and gives their statement back", async () => {
+    const chat = (id: number, pass: string, status: string, total: number): { entity: ReturnType<typeof entity>; edge: Record<string, unknown> } => ({
+      entity: entity(`chat-${String(id)}`, `Chat ${String(id)}`, { schema_id: CHAT, properties: { chat_id: id } }),
+      edge: { id: `edge-${String(id)}`, from_id: "self-id", to_id: `chat-${String(id)}`, kind: "observed_in", status, metadata: { sync_pass: pass, sync_total: total, sync_skipped: 0 } },
+    });
+    const rows = [chat(1, "initial:r:1", "canonical", 30), chat(2, "initial:r:2", "canonical", 5), chat(3, "initial:r:1", "decayed", 8)];
     const graph = mockGraph({
-      find_by_anchor: () => Promise.resolve("self-id"),
-      list_links_for_entity: () =>
-        Promise.resolve([
-          { id: "leave", from_id: "self-id", to_id: "chat-1", kind: "observed_in", status: "canonical" },
-          { id: "rejoin", from_id: "self-id", to_id: "chat-2", kind: "observed_in", status: "decayed" },
-        ]),
-      get_entity: (id: string) =>
-        Promise.resolve(entity(id, id, { schema_id: CHAT, properties: { chat_id: id === "chat-1" ? 1 : 2 } })),
+      find_by_anchor: (anchor) => Promise.resolve(anchor === "tg:account:9001" ? "self-id" : null),
+      list_entities_window: (spec) => {
+        expect(spec.filter_field).toEqual({ edge_kind: "observed_in", observer_anchor: "tg:account:9001", edge_path: "sync_pass" });
+        const items = rows.filter(({ edge }) => spec.filter_op === "exists" || (edge.metadata as { sync_pass: string }).sync_pass === spec.filter_eq);
+        return Promise.resolve({ items: items.map(({ entity }) => ({ entity })), total: items.length });
+      },
+      list_linked: (spec) => {
+        const row = rows.find(({ entity }) => entity.id === spec.parent_id);
+        if (row === undefined) throw new Error("fixture");
+        return Promise.resolve({ items: [{ entity: entity("self-id", "Me"), link: row.edge as never }], total: 1 });
+      },
       set_link_status: () => Promise.resolve(undefined),
     });
     const module = mountModule(TelegramModule, { graph }).module;
 
+    // Chat 1 was stated in the previous pass and not seen in this one: it left. Chat 3 left before.
     await expect(module.onSyncComplete({
       user_id: "u1",
       source_id: "telegram-ts",
       account_id: "a1",
       identity_key: "9001",
-      observed_remote_ids: ["tg:chat:2"],
-    })).resolves.toEqual({ decayed: 1, restored: 1 });
+      generation: "initial:r:2",
+    })).resolves.toEqual({ departed: ["1"], plan: { [CHAT]: { total: -1, skipped: 0 }, [MESSAGE]: { total: -30, skipped: 0 } } });
     const setLinkStatus = graph.spies.set_link_status;
     if (setLinkStatus === undefined) throw new Error("sync complete: set_link_status spy missing");
-    expect(setLinkStatus.mock.calls.map(([id, status]) => [id, status])).toEqual([
-      ["leave", "decayed"],
-      ["rejoin", "canonical"],
-    ]);
+    expect(setLinkStatus.mock.calls.map(([id, status]) => [id, status])).toEqual([["edge-1", "decayed"]]);
+    // Without the pass or the identity nothing is decided.
+    await expect(module.onSyncComplete({ user_id: "u1", source_id: "telegram-ts", account_id: "a1", identity_key: "9001" }))
+      .resolves.toEqual({ departed: [], plan: { [CHAT]: { total: 0, skipped: 0 }, [MESSAGE]: { total: 0, skipped: 0 } } });
   });
   /**
    * @test-id: tst_module_telegram_006
@@ -450,7 +459,10 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
         ...entity(id, String(stored[id]?.title ?? ""), { schema_id: CHAT }),
         properties: stored[id] ?? {},
       }))),
-      find_by_anchor: () => Promise.reject(new Error("per-chat anchor lookup is forbidden")),
+      find_by_anchor: (anchor) => anchor === "tg:account:9001"
+        ? Promise.resolve("self-id")
+        : Promise.reject(new Error("per-chat anchor lookup is forbidden")),
+      list_linked: () => Promise.resolve({ items: [], total: 0 }),
       get_entity: () => Promise.reject(new Error("per-chat entity lookup is forbidden")),
       list_entities_window: () => Promise.reject(new Error("whole-account chat scan is forbidden")),
       update_properties: () => Promise.resolve(),
@@ -481,7 +493,10 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
 
     expect(graph.spies.find_by_anchors?.mock.calls).toEqual([[["tg:chat:1", "tg:chat:2", "tg:chat:3"]], [["tg:chat:4"]]]);
     expect(graph.spies.get_entities?.mock.calls).toEqual([[["chat-1", "chat-2"]], [["chat-4"]]]);
-    expect(graph.spies.find_by_anchor).not.toHaveBeenCalled();
+    // One operator lookup per page; the operator's edge to each of the two
+    // existing chats is read once, kind-filtered, before it is written again.
+    expect(graph.spies.find_by_anchor?.mock.calls).toEqual([["tg:account:9001"]]);
+    expect(graph.spies.list_linked?.mock.calls.map(([spec]) => (spec as { parent_id: string }).parent_id)).toEqual(["chat-1", "chat-2"]);
     expect(graph.spies.get_entity).not.toHaveBeenCalled();
     expect(graph.spies.list_entities_window).not.toHaveBeenCalled();
     const firstBatch = graph.spies.apply_batch?.mock.calls[0]?.[0] as GraphBatchInput | undefined;

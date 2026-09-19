@@ -17,11 +17,12 @@ import type {
   BatchEntityInput,
   BatchLinkInput,
   BatchRefInput,
+  LinkSummary,
   PaginatedResponse,
   RawEntity,
   RpcExecutor,
 } from "@magnis/plugin-sdk";
-import type { SyncPlan,
+import type {
   BackfillParams,
   BatchSendParams,
   ChatsListParams,
@@ -71,6 +72,34 @@ const MESSAGE_INGEST_CHUNK = 500;
 interface IngestedChatState {
   readonly entityId: string;
   readonly details: Data;
+}
+
+/** What one page states for the worker's plan: per schema, the count
+ * relative to the statement the operator's observed_in edges held before the
+ * page; and every chat the page touched whose history the plan leaves out. */
+interface PlanDelta { total: number; skipped: number }
+interface PageStatement {
+  readonly chats: PlanDelta;
+  readonly messages: PlanDelta;
+  readonly excluded: Set<string>;
+}
+
+function emptyStatement(): PageStatement {
+  return { chats: { total: 0, skipped: 0 }, messages: { total: 0, skipped: 0 }, excluded: new Set() };
+}
+
+/** The statement as the host reads it: per schema the surface reports on. */
+function planOf(statement: PageStatement): Record<string, PlanDelta> {
+  return { [CHAT]: { ...statement.chats }, [MESSAGE]: { ...statement.messages } };
+}
+
+/** The operator's observed_in edge to one chat, and what it holds. */
+interface MembershipEdge {
+  readonly edge: LinkSummary | undefined;
+  readonly metadata: Data;
+  /** The messages the plan stated for the chat in this pass, or null when
+   * the edge was stated in another pass (or never). */
+  readonly stated: PlanDelta | null;
 }
 
 export class TelegramModule {
@@ -130,42 +159,35 @@ export class TelegramModule {
   /// proportional to the pinned set, never a traversal per chat.
   /// @tested-by: tst_module_telegram_read_004, tst_bts_prt_ops_030, tst_module_telegram_plan_001
   private async pinnedChatsWindow(observerAnchor: string): Promise<{ pinnedChats: RawEntity[]; pinnedTotal: number }> {
-    const pinnedChats: RawEntity[] = [];
-    const pageSize = 500;
-    let pinnedTotal: number;
-    do {
-      const page = await this.graph.list_entities_window({
-        schema: CHAT,
-        filter_field: {
-          edge_kind: "observed_in",
-          observer_anchor: observerAnchor,
-          edge_path: "is_pinned",
-        },
-        filter_op: "eq",
-        filter_eq: "true",
-        order: [{ field: { property_path: "last_message_date" }, desc: true }],
-        limit: pageSize,
-        offset: pinnedChats.length,
-      });
-      pinnedTotal = page.total;
-      pinnedChats.push(...page.items.map(({ entity }) => entity));
-      if (page.items.length === 0 && pinnedChats.length < pinnedTotal) {
-        throw new Error("Pinned Telegram chat window ended before its declared total");
-      }
-    } while (pinnedChats.length < pinnedTotal);
-    return { pinnedChats, pinnedTotal };
+    const pinned = await this.observedChatsWindow(observerAnchor, {
+      edgePath: "is_pinned", op: "eq", eq: "true",
+      order: [{ field: { property_path: "last_message_date" }, desc: true }],
+    });
+    return { pinnedChats: pinned, pinnedTotal: pinned.length };
   }
 
-  /// Every chat with its details, five hundred at a time: the host frames an
-  /// answer at one mebibyte, so a roster of thousands never comes in one
-  /// window. A window that ends before its declared total is refused.
-  /// @tested-by: tst_module_telegram_plan_001, tst_module_telegram_command_001
-  private async chatsWindow(): Promise<RawEntity[]> {
+  /// The chats one observed_in edge key selects, five hundred at a time: the
+  /// host frames an answer at one mebibyte, so a roster of thousands never
+  /// comes in one window. A window that ends before its declared total is
+  /// refused.
+  /// @tested-by: tst_module_telegram_read_004, tst_module_telegram_plan_001
+  private async observedChatsWindow(
+    observerAnchor: string,
+    filter: { edgePath: string; op: "eq" | "exists"; eq?: string; order?: { field: { property_path: string }; desc: boolean }[] },
+  ): Promise<RawEntity[]> {
     const chats: RawEntity[] = [];
     const pageSize = 500;
     let total: number;
     do {
-      const page = await this.graph.list_entities_window({ schema: CHAT, limit: pageSize, offset: chats.length });
+      const page = await this.graph.list_entities_window({
+        schema: CHAT,
+        filter_field: { edge_kind: "observed_in", observer_anchor: observerAnchor, edge_path: filter.edgePath },
+        filter_op: filter.op,
+        ...(filter.eq === undefined ? {} : { filter_eq: filter.eq }),
+        ...(filter.order === undefined ? {} : { order: filter.order }),
+        limit: pageSize,
+        offset: chats.length,
+      });
       total = page.total;
       chats.push(...page.items.map(({ entity }) => entity));
       if (page.items.length === 0 && chats.length < total) {
@@ -175,23 +197,9 @@ export class TelegramModule {
     return chats;
   }
 
-  /// The ids of the chats the operator pinned; empty before the operator's
-  /// account exists. The plan and the backfill priority read pins here, so
-  /// an ask costs one chat window and one pinned window, whatever the roster.
-  private async pinnedChatIds(): Promise<Set<string>> {
-    const self = await this.operatorAccount();
-    if (!self) return new Set();
-    const { anchor } = self;
-    if (!anchor) throw new Error("Telegram operator account is missing its anchor");
-    return new Set((await this.pinnedChatsWindow(anchor)).pinnedChats.map(({ id }) => id));
-  }
-
-  /// Per-chat state the OPERATOR observes, from the observed_in edges.
-  private async observedStateFor(chatIds: string[], observerId?: string): Promise<Map<string, Data>> {
-    const out = new Map<string, Data>();
-    if (chatIds.length === 0) return out;
-    const currentObserver = observerId ?? (await this.operatorAccount())?.id;
-    if (currentObserver === undefined) return out;
+  /// The operator's observed_in edge to each chat, whatever its status.
+  private async observedEdgesFor(chatIds: readonly string[], observerId: string): Promise<Map<string, LinkSummary>> {
+    const out = new Map<string, LinkSummary>();
     for (const chatId of chatIds) {
       // @tested-by: tst_module_telegram_read_004
       // Filter before Graph traversal: a dense chat's in_chat edges are not observer state.
@@ -206,12 +214,44 @@ export class TelegramModule {
         throw new Error("Telegram observer window ended before its declared total");
       }
       const edge = page.items.find(({ link }) =>
-        link.kind === "observed_in" && link.from_id === currentObserver && link.to_id === chatId &&
-        (link.status === undefined || link.status === "canonical")
+        link.kind === "observed_in" && link.from_id === observerId && link.to_id === chatId
       )?.link;
-      if (edge?.metadata) out.set(chatId, edge.metadata);
+      if (edge !== undefined) out.set(chatId, edge);
     }
     return out;
+  }
+
+  /// Per-chat state the OPERATOR observes, from its canonical observed_in edges.
+  private async observedStateFor(chatIds: string[], observerId?: string): Promise<Map<string, Data>> {
+    const out = new Map<string, Data>();
+    if (chatIds.length === 0) return out;
+    const currentObserver = observerId ?? (await this.operatorAccount())?.id;
+    if (currentObserver === undefined) return out;
+    for (const [chatId, edge] of await this.observedEdgesFor(chatIds, currentObserver)) {
+      if ((edge.status === undefined || edge.status === "canonical") && edge.metadata) out.set(chatId, edge.metadata);
+    }
+    return out;
+  }
+
+  /// The operator's edges to the chats a worker's page touches, with what each
+  /// holds of the plan: the statement counts only when it was made in this pass.
+  private async membershipEdges(
+    identityKey: string,
+    generation: string | null,
+    chatEntityIds: readonly string[],
+  ): Promise<{ selfId: string | null; edges: Map<string, MembershipEdge> }> {
+    const edges = new Map<string, MembershipEdge>();
+    if (chatEntityIds.length === 0) return { selfId: null, edges };
+    const selfId = await this.graph.find_by_anchor(accountAnchor(identityKey));
+    if (selfId === null) return { selfId, edges };
+    for (const [chatId, edge] of await this.observedEdgesFor(chatEntityIds, selfId)) {
+      const metadata = edge.metadata ?? {};
+      const samePass = generation !== null && metadata.sync_pass === generation;
+      const total = num(metadata, "sync_total");
+      const stated = samePass && total !== null ? { total, skipped: num(metadata, "sync_skipped") ?? 0 } : null;
+      edges.set(chatId, { edge, metadata, stated });
+    }
+    return { selfId, edges };
   }
 
   // ── chats.list ────────────────────────────────────────────────
@@ -679,80 +719,65 @@ export class TelegramModule {
     return { ok: true };
   }
 
-  /// S4 (plan §8): the drain terminated — the reported set is COMPLETE.
-  /// A chat the operator's account still observes but the connector no
-  /// longer reports has been LEFT: its observed_in edge decays (the chat
-  /// node and its history stay — leaving is not deleting). A rejoin is the
-  /// next drain reporting it again, which restores the edge to canonical.
-  /// Idempotent: a second run over the same set changes nothing.
+  /// The end of a pass: the host stamped the pass on every ingest call and
+  /// asks which chats it did not see. A chat whose observed_in edge carries
+  /// another pass's stamp has been LEFT: its edge decays (the chat node and
+  /// its history stay — leaving is not deleting), the plan gives back what
+  /// was stated for it, and the worker drops its gaps. A rejoin is the next
+  /// page reporting the chat again, which restores the edge and states it in
+  /// full. Idempotent: a second run over the same pass answers nothing.
   @syncComplete()
   async onSyncComplete(params: {
     user_id: string;
     source_id: string;
     account_id: string;
     identity_key?: string | null;
-    observed_remote_ids?: string[];
-  }): Promise<{ decayed: number; restored: number }> {
+    generation?: string;
+  }): Promise<{ departed: string[]; plan: Record<string, PlanDelta> }> {
+    const statement = emptyStatement();
     const identityKey = params.identity_key;
-    if (!identityKey) return { decayed: 0, restored: 0 };
-    const selfId = await this.graph.find_by_anchor(accountAnchor(identityKey));
-    if (!selfId) return { decayed: 0, restored: 0 };
-
-    // The chat ids the drain reported (its envelopes are `tg:chat:<id>`).
-    const reported = new Set(
-      (params.observed_remote_ids ?? [])
-        .filter((id) => id.startsWith("tg:chat:"))
-        .map((id) => id.slice("tg:chat:".length)),
-    );
-    // A drain that reported no chats at all says nothing about membership —
-    // refuse to decay the whole set off an empty page (NO FALLBACKS).
-    if (reported.size === 0) return { decayed: 0, restored: 0 };
-
-    let decayed = 0;
-    let restored = 0;
-    const links = await this.graph.list_links_for_entity(selfId, true);
-    for (const link of links) {
-      if (link.kind !== "observed_in" || link.from_id !== selfId) continue;
-      const chat = await this.graph.get_entity(link.to_id);
-      const props = ((chat as { properties?: unknown } | null)?.properties ?? {}) as Data;
-      const chatId = chatIdOrNull(props);
+    const generation = params.generation;
+    if (!identityKey || !generation) return { departed: [], plan: planOf(statement) };
+    const observerAnchor = accountAnchor(identityKey);
+    const selfId = await this.graph.find_by_anchor(observerAnchor);
+    if (selfId === null) return { departed: [], plan: planOf(statement) };
+    // Every chat this account ever stated, minus the ones stated in this pass.
+    const stamped = await this.observedChatsWindow(observerAnchor, { edgePath: "sync_pass", op: "exists" });
+    const current = new Set((await this.observedChatsWindow(observerAnchor, { edgePath: "sync_pass", op: "eq", eq: generation })).map(({ id }) => id));
+    const left = stamped.filter(({ id }) => !current.has(id));
+    const edges = await this.observedEdgesFor(left.map(({ id }) => id), selfId);
+    const departed: string[] = [];
+    for (const chat of left) {
+      const edge = edges.get(chat.id);
+      if (edge === undefined || edge.status === "decayed") continue; // stated as departed before
+      const chatId = chatIdOrNull(((chat as { properties?: unknown }).properties ?? {}) as Data);
       if (chatId === null) continue;
-      const isReported = reported.has(chatId);
-      const isDecayed = link.status === "decayed";
-      if (!isReported && !isDecayed) {
-        await this.graph.set_link_status(link.id, "decayed");
-        decayed += 1;
-      } else if (isReported && isDecayed) {
-        await this.graph.set_link_status(link.id, "canonical");
-        restored += 1;
-      }
+      await this.graph.set_link_status(edge.id, "decayed");
+      const metadata = edge.metadata ?? {};
+      statement.chats.total -= 1;
+      statement.messages.total -= num(metadata, "sync_total") ?? 0;
+      statement.messages.skipped -= num(metadata, "sync_skipped") ?? 0;
+      departed.push(chatId);
     }
-    return { decayed, restored };
+    return { departed, plan: planOf(statement) };
   }
 
   @syncHandler("telegram")
   async ingest(
     params: {
       envelopes?: SyncEnvelope[];
-      backfill_priority?: { chat_ids?: string[] };
-      sync_plan?: Record<string, never>;
+      /** The pass the worker is in (`initial:<row>:<lease>`); absent for a
+       * Source effect outside a worker, which states nothing. */
+      generation?: string;
     },
-  ): Promise<
-    | { dropped_remote_ids: string[]; trigger_checks: TriggerCheck[] }
-    | { priority: string[] }
-    | { plan: SyncPlan }
-  > {
-    // The scheduler reuses this reserved sync method to ask which chats are
-    // high-priority for backfill (pinned/indexed) — it can't see chat metadata
-    // itself. Branch out before the ingest path.
-    if (params.backfill_priority) {
-      return this.backfillPriority(params.backfill_priority.chat_ids ?? []);
-    }
-    // The host asks the same way what the sync PLANS to download: the module
-    // decides admission, so the module states the plan.
-    if (params.sync_plan) {
-      return { plan: await this.syncPlan() };
-    }
+  ): Promise<{
+    dropped_remote_ids: string[];
+    trigger_checks: TriggerCheck[];
+    plan?: Record<string, PlanDelta>;
+    excluded?: string[];
+  }> {
+    const generation = typeof params.generation === "string" && params.generation !== "" ? params.generation : null;
+    const statement = emptyStatement();
     // Stage 3: the host bridge dispatches a WHOLE page of envelopes in one call.
     // Chat snapshots + deletes stay per-envelope (few, field-merge / cascade); the
     // message bulk collapses to ONE graph.apply_batch (the native per-message
@@ -818,18 +843,20 @@ export class TelegramModule {
     // batched + CHUNKED so the write never monopolizes the single connection.
     let pageChatState = new Map<string, IngestedChatState>();
     if (chats.length > 0) {
-      pageChatState = await this.ingestChatBatch(chats, identityKey, newestMessageByChat);
+      pageChatState = await this.ingestChatBatch(chats, identityKey, newestMessageByChat, generation, statement);
     }
 
     // Bootstrap/catch-up pages can exceed the source's 500-message backfill page.
     // @tested-by: tst_module_telegram_004
     for (let i = 0; i < messages.length; i += MESSAGE_INGEST_CHUNK) {
       await this.ingestMessageBatch(
-        messages.slice(i, i + MESSAGE_INGEST_CHUNK), triggers, identityKey, pageChatState,
+        messages.slice(i, i + MESSAGE_INGEST_CHUNK), triggers, identityKey, pageChatState, generation, statement,
       );
     }
 
-    return { dropped_remote_ids: dropped, trigger_checks: triggers };
+    // @tested-by: tst_module_telegram_plan_001 — a page outside a worker states nothing.
+    if (generation === null) return { dropped_remote_ids: dropped, trigger_checks: triggers };
+    return { dropped_remote_ids: dropped, trigger_checks: triggers, plan: planOf(statement), excluded: [...statement.excluded] };
   }
 
   /** One packet's existing chats in two Graph calls: anchors → ids, ids → dictionaries. */
@@ -859,6 +886,8 @@ export class TelegramModule {
     chats: { env: SyncEnvelope; payload: Data }[],
     identityKey: string | undefined,
     newestMessageByChat: ReadonlyMap<string, Data>,
+    generation: string | null,
+    statement: PageStatement,
   ): Promise<Map<string, IngestedChatState>> {
     // A connector restart can emit another bootstrap-sized dialog snapshot for
     // chats that already exist. Those snapshots intentionally omit fields that
@@ -873,6 +902,7 @@ export class TelegramModule {
     // @invariant: a packet reads its own chats in two Graph calls — anchors,
     // then entities — never one lookup per chat and never the whole account.
     const existingByChatId = new Map<string, Data>();
+    const existingEntityByChatId = new Map<string, string>();
     const packetChatIds: string[] = [];
     for (const { payload } of chats) {
       const chatId = chatIdOrNull(payload);
@@ -880,7 +910,17 @@ export class TelegramModule {
     }
     for (const [chatId, known] of await this.readChatsByAnchor(packetChatIds)) {
       existingByChatId.set(chatId, known.details);
+      existingEntityByChatId.set(chatId, known.entityId);
     }
+    // The operator's edge to each existing chat is read before it is written
+    // again: the page's observed state joins what the edge holds, and the plan
+    // is stated against the edge's statement — a chat first seen has no edge
+    // and is stated in full.
+    // @tested-by: tst_module_telegram_plan_001
+    const membership = identityKey
+      ? await this.membershipEdges(identityKey, generation, [...existingEntityByChatId.values()])
+      : { selfId: null, edges: new Map<string, MembershipEdge>() };
+    const restored: string[] = [];
 
     // Per-account chat STATE (unread counts, pins) rides the observed_in
     // edge from the OPERATOR's account — the fields are what one account
@@ -947,7 +987,16 @@ export class TelegramModule {
         if (chatId !== null) stateByRemoteId.set(remoteId, { chatId, details });
         // The edge IS the membership fact — a reported chat always gets it,
         // with the observed state as its dictionary when the page carries
-        // any. (The complete-set reconciliation decays exactly these.)
+        // any, and — inside a worker's pass — the statement the plan makes
+        // for the chat. (The reconcile at the end of the pass decays the
+        // edges the pass did not stamp.)
+        const held = chatId === null ? undefined : membership.edges.get(existingEntityByChatId.get(chatId) ?? "");
+        const metadata: Data = {
+          ...(held?.metadata ?? {}),
+          ...state,
+          ...(generation === null ? {} : this.stateChat(chatId, details, state, held, generation, statement)),
+        };
+        if (held?.edge?.status === "decayed") restored.push(held.edge.id);
         if (identityKey) {
           // @tested-by: tst_module_telegram_003, tst_e2e_tg_001_chat_list_renders
           // @invariant: the observer and its membership edge are one atomic
@@ -967,7 +1016,7 @@ export class TelegramModule {
             to_key: remoteId,
             kind: "observed_in",
             declared_by: remoteId,
-            metadata: state,
+            metadata,
           });
         }
       }
@@ -982,7 +1031,42 @@ export class TelegramModule {
       }
       await Promise.resolve(); // yield between chunks so waiting RPCs get the connection
     }
+    // A chat reported again after it left: the rejoin restores its membership.
+    for (const edgeId of restored) await this.graph.set_link_status(edgeId, "canonical");
     return ingestedByChatId;
+  }
+
+  /** What the plan states for one chat on a page, relative to the statement
+   * its edge holds: an admitted chat's whole count, an excluded chat's first
+   * page with the rest skipped, and the chat itself once per pass; a chat
+   * without a count moves nothing but is still counted. The keys returned
+   * ride the edge so the next page states against them.
+   * @tested-by: tst_module_telegram_plan_001 */
+  private stateChat(
+    chatId: string | null,
+    details: Data,
+    state: Data,
+    held: MembershipEdge | undefined,
+    generation: string,
+    statement: PageStatement,
+  ): Data {
+    const samePass = held?.metadata.sync_pass === generation;
+    if (!samePass) statement.chats.total += 1;
+    const pinned = boolFlag(state, "is_pinned") ?? (held === undefined ? null : boolFlag(held.metadata, "is_pinned")) ?? false;
+    const admitted = pinned || this.shouldIndex(details);
+    if (!admitted && chatId !== null) statement.excluded.add(chatId);
+    const count = num(details, "message_count");
+    if (count === null) {
+      return held?.stated === null || held === undefined
+        ? { sync_pass: generation }
+        : { sync_pass: generation, sync_total: held.stated.total, sync_skipped: held.stated.skipped };
+    }
+    const planned = admitted ? count : Math.min(count, BOOTSTRAP_MESSAGES_PER_CHAT);
+    const skipped = count - planned;
+    const stated = held?.stated ?? { total: 0, skipped: 0 };
+    statement.messages.total += planned - stated.total;
+    statement.messages.skipped += skipped - stated.skipped;
+    return { sync_pass: generation, sync_total: planned, sync_skipped: skipped };
   }
 
   // Bulk message ingest: the whole page becomes ONE graph.apply_batch (message
@@ -996,6 +1080,8 @@ export class TelegramModule {
     triggers: TriggerCheck[],
     identityKey: string | undefined,
     pageChatState: ReadonlyMap<string, IngestedChatState> = new Map(),
+    generation: string | null = null,
+    statement: PageStatement = emptyStatement(),
   ): Promise<void> {
     // 1. Read each unique chat's entity id + details ONCE (shouldIndex gate + denorm base).
     const chatEntityId = new Map<string, string | null>();
@@ -1108,6 +1194,34 @@ export class TelegramModule {
         }
         addLink(remoteId, accountKey, "authored_by", remoteId);
         if (chatKey) addLink(accountKey, chatKey, "observed_participant", remoteId);
+      }
+    }
+
+    // A live message on a chat the plan admitted, stated in this pass, moves
+    // the plan by one and the edge's statement with it — in the same batch.
+    // On an excluded chat it moves nothing: its history is not planned.
+    // @tested-by: tst_module_telegram_plan_001
+    if (generation !== null && identityKey) {
+      const liveByChatId = new Map<string, number>();
+      for (const { env, payload } of messages) {
+        const cid = chatIdOrNull(payload);
+        if (env.kind === "live" && cid !== null && env.remote_id) liveByChatId.set(cid, (liveByChatId.get(cid) ?? 0) + 1);
+      }
+      const liveEntityIds = [...liveByChatId.keys()].flatMap((cid) => { const id = chatEntityId.get(cid); return id ? [id] : []; });
+      const { edges } = await this.membershipEdges(identityKey, generation, liveEntityIds);
+      for (const [cid, live] of liveByChatId) {
+        const details = chatDetails.get(cid) ?? null;
+        const held = edges.get(chatEntityId.get(cid) ?? "");
+        const pinned = held === undefined ? false : boolFlag(held.metadata, "is_pinned") ?? false;
+        if (!(pinned || this.shouldIndex(details))) { statement.excluded.add(cid); continue; }
+        if (held?.stated === null || held?.stated === undefined) continue; // the chat's own page states it
+        statement.messages.total += live;
+        if (!refs.some((ref) => ref.key === "self")) refs.push({ key: "self", anchor: accountAnchor(identityKey) });
+        addChatRef(`chat:${cid}`, cid);
+        links.push({
+          from_key: "self", to_key: `chat:${cid}`, kind: "observed_in", declared_by: `chat:${cid}`,
+          metadata: { ...held.metadata, sync_total: held.stated.total + live },
+        });
       }
     }
 
@@ -1251,61 +1365,6 @@ export class TelegramModule {
     // anchor form.
     const entityId = await this.graph.find_by_anchor(remoteId);
     if (entityId) await this.graph.delete_entity(entityId);
-  }
-
-  private async backfillPriority(chatIds: string[]): Promise<{ priority: string[] }> {
-    if (chatIds.length === 0) return { priority: [] };
-    const want = new Set(chatIds);
-    // A few host hops: every chat with its details through the paged window
-    // (the same query chats.list uses), then classify — instead of a
-    // find_by_external_id + detailsFacet N+1 per chat.
-    const chats = await this.chatsWindow();
-    // S4: pins are the OPERATOR's observed state (edge), the rest is the dict.
-    const wanted = chats.filter((entity) => {
-      const cid = chatIdStr(((entity as { properties?: unknown }).properties ?? {}) as Data);
-      return want.has(cid);
-    });
-    const pinned = await this.pinnedChatIds();
-    const priority: string[] = [];
-    for (const entity of wanted) {
-      const d = ((entity as { properties?: unknown }).properties ?? {}) as Data;
-      const cid = chatIdStr(d);
-      if (!cid) continue;
-      if (pinned.has(entity.id) || this.shouldIndex(d)) priority.push(cid);
-    }
-    return { priority };
-  }
-
-  /** What the sync plans to download, so the account's two numbers meet like a
-   * log after backfill: an admitted chat (private, small group, the operator's
-   * is_indexed choice, a pin) counts in full; every other chat its first
-   * BOOTSTRAP page; a chat Telegram has not counted yet is reported, never
-   * guessed. `excluded_items` is the history the plan leaves out.
-   * @tested-by: tst_module_telegram_plan_001 */
-  private async syncPlan(): Promise<SyncPlan> {
-    const chats = await this.chatsWindow();
-    const pinned = await this.pinnedChatIds();
-    let planned = 0;
-    let excludedScopes = 0;
-    let excludedItems = 0;
-    let uncountedScopes = 0;
-    for (const entity of chats) {
-      const d = ((entity as { properties?: unknown }).properties ?? {}) as Data;
-      const count = num(d, "message_count");
-      if (count === null) {
-        uncountedScopes += 1;
-        continue;
-      }
-      if (pinned.has(entity.id) || this.shouldIndex(d)) {
-        planned += count;
-        continue;
-      }
-      const firstPage = Math.min(count, BOOTSTRAP_MESSAGES_PER_CHAT);
-      planned += firstPage;
-      excludedScopes += 1;
-      excludedItems += count - firstPage;
-    }
-    return { unit: "messages", planned, excluded_scopes: excludedScopes, excluded_items: excludedItems, uncounted_scopes: uncountedScopes };
   }
 
   private shouldIndex(chatDetails: Data | null): boolean {

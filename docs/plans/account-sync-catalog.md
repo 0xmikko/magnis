@@ -184,19 +184,20 @@ Commit. feat(telegram): the manifest declares chats and messages as the surface'
 
 ##### Tasks
 
-- [ ] ACS_001 — Declare progress names and full_snapshot reconciliation in plugins/modules/telegram/manifest.toml; assert them in scripts/bundled-item-schemas.test.ts. (7 min)
+- [x] ACS_001 — Declare progress names and full_snapshot reconciliation in plugins/modules/telegram/manifest.toml; assert them in scripts/bundled-item-schemas.test.ts. (7 min) — d09c5f6d4d7378484420aa7bde57a888f897f722
 <!-- plan:task-meta:{"writes":["plugins/modules/telegram/manifest.toml","scripts/bundled-item-schemas.test.ts"],"predictedActiveMinutes":7,"predictedCredits":2,"how":"add the progress line and change the reconciliation mode under [surfaces.telegram]; the test gains a progress-names table (telegram only until the other Stages) and expects telegram's mode full_snapshot, the others none","red":"bun run agent:test:backend -- scripts/bundled-item-schemas.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- scripts/bundled-item-schemas.test.ts` exits 0
-- [ ] Commit
+- [x] `bun run agent:test:backend -- scripts/bundled-item-schemas.test.ts` exits 0 — d09c5f6d4d7378484420aa7bde57a888f897f722
+- [x] Commit — d09c5f6d4d7378484420aa7bde57a888f897f722
 
 ##### Results
 
 <!-- plan:results:D1-S1:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| ACS_001 | d09c5f6d4d7378484420aa7bde57a888f897f722 | 2026-09-19T19:39:25.925Z–2026-09-19T19:41:25.925Z | 2 / 2 min | unavailable: runner did not expose usage | manifest.toml declares progress {telegram.chat: chats, telegram.message: messages} and reconciliation full_snapshot; bundled-item-schemas.test.ts asserts the names (tst_pub_item_schemas_002) and the mode per module (7/7); build-catalog-index test 13/13. Recorded again after the host move lost the worktree's uncommitted receipt. |
 <!-- plan:results:D1-S1:end -->
 <!-- plan:stage:D1-S1:end -->
 
@@ -536,4 +537,10 @@ Commit. docs(plugins): counts on the scope envelope, traversed ranges on the pag
 - put-stage D1-S9
 
 - approve sha256:d671787593a64da7f8977a4fba5bffa325695fa7b5a5a5926b76ab1c481a1b14 owner:approved
+
+- record-result D1-S1 commit:d09c5f6d4d7378484420aa7bde57a888f897f722
+
+- deviation D1-S1: the host moved (/home/marketing → /mnt/movies/dev/home) between the commit and its receipt; the worktree and its start receipt were lost, the receipt is imported anew over the same commit
+
+- close D1-S1 closed commit:d09c5f6d4d7378484420aa7bde57a888f897f722
 <!-- plan:execution:end -->

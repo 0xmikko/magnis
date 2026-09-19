@@ -91,6 +91,10 @@ describe("telegram chat batch ingest", () => {
           },
         ]),
       list_entities_window: () => Promise.reject(new Error("whole-account chat scan is forbidden")),
+      // The operator's edge to the existing chat is read once (kind-filtered)
+      // before it is written again: the page's state joins what it holds.
+      find_by_anchor: (anchor) => Promise.resolve(anchor === "tg:account:9001" ? "self-id" : null),
+      list_linked: () => Promise.resolve({ items: [], total: 0 }),
       apply_batch: (fragment) =>
         Promise.resolve({
           ids: Object.fromEntries(fragment.entities.map((item) => [item.key, item.key])),
@@ -167,7 +171,15 @@ describe("telegram chat batch ingest", () => {
           };
         })),
       list_entities_window: () => Promise.reject(new Error("whole-account chat scan is forbidden")),
-      find_by_anchor: () => Promise.reject(new Error("per-chat anchor lookup is forbidden")),
+      // One operator lookup per page, one kind-filtered edge read per existing
+      // chat: never an anchor or entity lookup per chat.
+      find_by_anchor: (anchor) => anchor === "tg:account:9001"
+        ? Promise.resolve("self-id")
+        : Promise.reject(new Error("per-chat anchor lookup is forbidden")),
+      list_linked: (spec) => {
+        expect(spec).toMatchObject({ link_kind: "observed_in", direction: "in" });
+        return Promise.resolve({ items: [], total: 0 });
+      },
       get_entity: () => Promise.reject(new Error("per-chat entity lookup is forbidden")),
       update_properties: () => Promise.reject(new Error("per-chat denormalization update is forbidden")),
       apply_batch: (fragment) =>
@@ -192,7 +204,8 @@ describe("telegram chat batch ingest", () => {
     expect(graph.spies.find_by_anchors).toHaveBeenCalledTimes(1);
     expect(graph.spies.get_entities).toHaveBeenCalledTimes(1);
     expect(graph.spies.list_entities_window).not.toHaveBeenCalled();
-    expect(graph.spies.find_by_anchor).not.toHaveBeenCalled();
+    expect(graph.spies.find_by_anchor).toHaveBeenCalledTimes(1);
+    expect(graph.spies.list_linked).toHaveBeenCalledTimes(51);
     expect(graph.spies.get_entity).not.toHaveBeenCalled();
     expect(graph.spies.update_properties).not.toHaveBeenCalled();
     const applyBatch = graph.spies.apply_batch;
