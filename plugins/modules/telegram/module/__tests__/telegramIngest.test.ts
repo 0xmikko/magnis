@@ -408,11 +408,15 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
       edge: { id: `edge-${String(id)}`, from_id: "self-id", to_id: `chat-${String(id)}`, kind: "observed_in", status, metadata: { sync_pass: pass, sync_total: total, sync_skipped: 0 } },
     });
     const rows = [chat(1, "initial:r:1", "canonical", 30), chat(2, "initial:r:2", "canonical", 5), chat(3, "initial:r:1", "decayed", 8)];
+    // A chat observed before the plan ever stated it: no stamp on its edge.
+    rows.push({ entity: entity("chat-4", "Chat 4", { schema_id: CHAT, properties: { chat_id: 4 } }),
+      edge: { id: "edge-4", from_id: "self-id", to_id: "chat-4", kind: "observed_in", status: "canonical", metadata: { is_pinned: false } } });
     const graph = mockGraph({
       find_by_anchor: (anchor) => Promise.resolve(anchor === "tg:account:9001" ? "self-id" : null),
       list_entities_window: (spec) => {
         expect(spec.filter_field).toEqual({ edge_kind: "observed_in", observer_anchor: "tg:account:9001", edge_path: "sync_pass" });
-        const items = rows.filter(({ edge }) => spec.filter_op === "exists" || (edge.metadata as { sync_pass: string }).sync_pass === spec.filter_eq);
+        expect(spec.filter_op).toBe("distinct");
+        const items = rows.filter(({ edge }) => (edge.metadata as { sync_pass?: string }).sync_pass !== spec.filter_eq);
         return Promise.resolve({ items: items.map(({ entity }) => ({ entity })), total: items.length });
       },
       list_linked: (spec) => {
@@ -424,17 +428,18 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
     });
     const module = mountModule(TelegramModule, { graph }).module;
 
-    // Chat 1 was stated in the previous pass and not seen in this one: it left. Chat 3 left before.
+    // Chat 1 was stated in the previous pass and not seen in this one: it left, and gives its
+    // statement back. Chat 4 was never stated: it left too, with nothing to give back. Chat 3 left before.
     await expect(module.onSyncComplete({
       user_id: "u1",
       source_id: "telegram-ts",
       account_id: "a1",
       identity_key: "9001",
       generation: "initial:r:2",
-    })).resolves.toEqual({ departed: ["1"], plan: { [CHAT]: { total: -1, skipped: 0 }, [MESSAGE]: { total: -30, skipped: 0 } } });
+    })).resolves.toEqual({ departed: ["1", "4"], plan: { [CHAT]: { total: -1, skipped: 0 }, [MESSAGE]: { total: -30, skipped: 0 } } });
     const setLinkStatus = graph.spies.set_link_status;
     if (setLinkStatus === undefined) throw new Error("sync complete: set_link_status spy missing");
-    expect(setLinkStatus.mock.calls.map(([id, status]) => [id, status])).toEqual([["edge-1", "decayed"]]);
+    expect(setLinkStatus.mock.calls.map(([id, status]) => [id, status])).toEqual([["edge-1", "decayed"], ["edge-4", "decayed"]]);
     // Without the pass or the identity nothing is decided.
     await expect(module.onSyncComplete({ user_id: "u1", source_id: "telegram-ts", account_id: "a1", identity_key: "9001" }))
       .resolves.toEqual({ departed: [], plan: { [CHAT]: { total: 0, skipped: 0 }, [MESSAGE]: { total: 0, skipped: 0 } } });

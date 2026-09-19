@@ -173,7 +173,7 @@ export class TelegramModule {
   /// @tested-by: tst_module_telegram_read_004, tst_module_telegram_plan_001
   private async observedChatsWindow(
     observerAnchor: string,
-    filter: { edgePath: string; op: "eq" | "exists"; eq?: string; order?: { field: { property_path: string }; desc: boolean }[] },
+    filter: { edgePath: string; op: "eq" | "distinct"; eq: string; order?: { field: { property_path: string }; desc: boolean }[] },
   ): Promise<RawEntity[]> {
     const chats: RawEntity[] = [];
     const pageSize = 500;
@@ -183,7 +183,7 @@ export class TelegramModule {
         schema: CHAT,
         filter_field: { edge_kind: "observed_in", observer_anchor: observerAnchor, edge_path: filter.edgePath },
         filter_op: filter.op,
-        ...(filter.eq === undefined ? {} : { filter_eq: filter.eq }),
+        filter_eq: filter.eq,
         ...(filter.order === undefined ? {} : { order: filter.order }),
         limit: pageSize,
         offset: chats.length,
@@ -741,10 +741,11 @@ export class TelegramModule {
     const observerAnchor = accountAnchor(identityKey);
     const selfId = await this.graph.find_by_anchor(observerAnchor);
     if (selfId === null) return { departed: [], plan: planOf(statement) };
-    // Every chat this account ever stated, minus the ones stated in this pass.
-    const stamped = await this.observedChatsWindow(observerAnchor, { edgePath: "sync_pass", op: "exists" });
-    const current = new Set((await this.observedChatsWindow(observerAnchor, { edgePath: "sync_pass", op: "eq", eq: generation })).map(({ id }) => id));
-    const left = stamped.filter(({ id }) => !current.has(id));
+    // Every chat whose edge was not stamped with this pass — stated in an
+    // earlier pass, or never: one edge-filtered window ("distinct" keeps the
+    // unstamped edges, and a chat without an edge from this observer at all,
+    // which the edge read below leaves alone).
+    const left = await this.observedChatsWindow(observerAnchor, { edgePath: "sync_pass", op: "distinct", eq: generation });
     const edges = await this.observedEdgesFor(left.map(({ id }) => id), selfId);
     const departed: string[] = [];
     for (const chat of left) {
@@ -754,9 +755,12 @@ export class TelegramModule {
       if (chatId === null) continue;
       await this.graph.set_link_status(edge.id, "decayed");
       const metadata = edge.metadata ?? {};
-      statement.chats.total -= 1;
-      statement.messages.total -= num(metadata, "sync_total") ?? 0;
-      statement.messages.skipped -= num(metadata, "sync_skipped") ?? 0;
+      // Only a chat the plan stated gives a statement back.
+      if (typeof metadata.sync_pass === "string") {
+        statement.chats.total -= 1;
+        statement.messages.total -= num(metadata, "sync_total") ?? 0;
+        statement.messages.skipped -= num(metadata, "sync_skipped") ?? 0;
+      }
       departed.push(chatId);
     }
     return { departed, plan: planOf(statement) };

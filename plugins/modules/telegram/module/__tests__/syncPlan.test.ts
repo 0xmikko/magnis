@@ -103,10 +103,11 @@ class Store {
         expect(spec.limit).toBeLessThanOrEqual(500);
         expect(spec.filter_field).toEqual({ edge_kind: "observed_in", observer_anchor: SELF, edge_path: "sync_pass" });
         this.windows.push(spec.filter_op ?? "eq");
-        const rows = [...this.edgesByChat.entries()].filter(([, edge]) => {
-          const pass = edge.metadata?.["sync_pass"];
-          return spec.filter_op === "exists" ? pass !== undefined : pass === spec.filter_eq;
-        }).flatMap(([chatId]) => { const chat = this.chatOf(chatId); return chat === undefined ? [] : [windowRow(chat)]; });
+        // "distinct" is IS DISTINCT FROM: an unstamped edge, or no edge at all, is kept.
+        const rows = [...this.chatsByAnchor.values()].filter((chat) => {
+          const pass = this.edgesByChat.get(chat.id)?.metadata?.["sync_pass"];
+          return spec.filter_op === "distinct" ? pass !== spec.filter_eq : pass === spec.filter_eq;
+        }).map(windowRow);
         return Promise.resolve({ items: rows.slice(spec.offset, spec.offset + spec.limit), total: rows.length });
       },
     });
@@ -169,7 +170,7 @@ describe("tst_module_telegram_plan_001 — the module states its plan from the p
       departed: ["6"], plan: { [CHAT]: { total: -1, skipped: 0 }, [MESSAGE]: { total: -40, skipped: 0 } },
     });
     expect(store.statuses).toEqual([["edge:id:tg:chat:6", "decayed"]]);
-    expect(store.windows).toEqual(["exists", "eq"]);
+    expect(store.windows).toEqual(["distinct"]);
     // Asked again, nothing more has left.
     await expect(module.onSyncComplete({ user_id: "u1", source_id: "telegram-ts", account_id: "account-1", identity_key: "9001", generation: SECOND })).resolves.toEqual({ departed: [], plan: zero });
 

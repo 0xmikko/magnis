@@ -2,7 +2,7 @@
 
 Status: APPROVED  
 Spec lock: sha256:68e0aebc008e04c12bc42733e0c7e3e5f4a1c6c0cbeb772f3957078e3c598cf2 owner:approved  
-Implementation lock: sha256:b807f211e636bbfb29f08a3212199753c6a60c7b86e4f874ac3afc0718152a2e owner:не спрашивай меня про такие мелки дефекты  
+Implementation lock: sha256:6d8c567a165d3130861e1f8b96ac2f4252c61ed26b89b8f539f3f6a68a1303ef owner:не спрашивай меня про такие мелки дефекты  
 Active Delivery: D1  
 Unattended decisions: allowed  
 
@@ -152,9 +152,9 @@ interface FetchResult {
 
 Branch: `feat/account-sync-catalog`; Depends: none; Gate: backend.
 
-Stage graph: `D1-S1 -> D1-S2 -> D1-S3 -> D1-S4 -> D1-S5 -> D1-S6 -> D1-S7 -> D1-S8 -> D1-S9`.
+Stage graph: `D1-S1 -> D1-S2 -> D1-S3 -> D1-S4 -> D1-S5 -> D1-S6 -> D1-S7 -> D1-S8 -> D1-S9 -> D1-S10`.
 
-Forecast: 549 active min / 130 credits across 9 Stages; longest dependency path 549 active min; external waits 240 min.
+Forecast: 564 active min / 134 credits across 10 Stages; longest dependency path 564 active min; external waits 240 min.
 
 What changed for people. The Accounts panel prints every account's sync from what its worker holds: for Telegram, chats 50/50 and messages 197/197 with the skipped history named; for Gmail, contacts, meetings and X the planned count on the first page; the Telegram history behind the first page is backfilled because the Source says what each page read.
 
@@ -538,6 +538,42 @@ Commit. docs(plugins): counts on the scope envelope, traversed ranges on the pag
 | ACS_016 | 7aabf0ab09299080140eb94489585d7234ffa748 | 2026-09-19T20:45:09.557Z–2026-09-19T20:46:28.000Z | 2 / 2 min | unavailable: runner did not expose usage | source.md: the fetch result {envelopes, nextCursor, hasMore, traversed}, the scope counts per Source, the skipped statement, the live position; module.md: generation on the page, the receipt's plan (relative to the last statement) and excluded, the __sync_complete__ answer; manifest.md: the [surfaces.<surface>] progress line and the reconciliation modes. agent:verify:docs passes. |
 <!-- plan:results:D1-S9:end -->
 <!-- plan:stage:D1-S9:end -->
+
+<!-- plan:stage:D1-S10:start -->
+<!-- plan:stage-meta:{"deliveryId":"D1","depends":["D1-S9"],"parallelWith":[],"writes":["plugins/modules/telegram/module/service.ts","plugins/modules/telegram/module/__tests__/syncPlan.test.ts","plugins/modules/telegram/module/__tests__/telegramIngest.test.ts"],"tempRoot":".tmp/code-production/account-sync-catalog/D1-S10","verifyActiveMinutes":5,"verifyCredits":1} -->
+#### Stage D1-S10 — The Telegram module's reconcile passes the host's window contract
+
+- Owner: agent-1; Profile: fast; Depends: D1-S9; Parallel with: none.
+- Writes: `plugins/modules/telegram/module/service.ts`, `plugins/modules/telegram/module/__tests__/syncPlan.test.ts`, `plugins/modules/telegram/module/__tests__/telegramIngest.test.ts`.
+- Temp root: `.tmp/code-production/account-sync-catalog/D1-S10` (must be absent at handoff).
+- Predict: 15 active min / 4 credits.
+- Of which verification: 5 active min / 1 credits.
+
+What this Stage solves. magnis-app's Telegram stand refused the reconcile of D1-S2: the host's list_entities_window requires filter_eq with every filter_field, so the `exists` window over sync_pass never ran (plugin hook telegram.__sync_complete__: filter needs both filter_field and filter_eq).
+
+What is built. onSyncComplete reads one edge-filtered window — `filter_op: "distinct", filter_eq: generation` (IS DISTINCT FROM, which keeps the edges never stamped as well as those stamped in another pass) — decays every edge it finds that is not decayed already, answers every such chat as departed, and gives a statement back only for the chats a pass stated (sync_pass present). syncPlan.test.ts and telegramIngest.test.ts model the window as IS DISTINCT FROM and expect a never-stated chat to leave without a statement.
+
+How it is proven. tst_module_telegram_plan_001 runs the reconcile through one distinct window; tst_module_telegram_ingest_002 decays the stamped and the never-stamped chat and gives back only the stamped one's statement; magnis-app's tst_src_int_telegram_sync_001..003 pass on the stand against the archive built from this commit.
+
+Commit. fix(telegram): reconcile through one distinct window — the host requires filter_eq with every filter_field; a never-stated chat leaves without a statement.
+
+##### Tasks
+
+- [ ] ACS_022 — Reconcile through one distinct window over sync_pass in plugins/modules/telegram/module/service.ts; model IS DISTINCT FROM in syncPlan.test.ts and telegramIngest.test.ts. (10 min)
+<!-- plan:task-meta:{"writes":["plugins/modules/telegram/module/service.ts","plugins/modules/telegram/module/__tests__/syncPlan.test.ts","plugins/modules/telegram/module/__tests__/telegramIngest.test.ts"],"predictedActiveMinutes":10,"predictedCredits":3,"how":"observedChatsWindow takes op eq|distinct with filter_eq; onSyncComplete reads one window {edge_path: sync_pass, filter_op: distinct, filter_eq: generation}, decays every edge found, gives a statement back only where sync_pass was stamped; the two tests' window doubles model IS DISTINCT FROM","red":"bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/syncPlan.test.ts"} -->
+
+##### Acceptance criteria
+
+- [ ] `bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/syncPlan.test.ts plugins/modules/telegram/module/__tests__/telegramIngest.test.ts` exits 0
+- [ ] Commit
+
+##### Results
+
+<!-- plan:results:D1-S10:start -->
+| Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
+|---|---|---|---:|---|---|
+<!-- plan:results:D1-S10:end -->
+<!-- plan:stage:D1-S10:end -->
 <!-- plan:delivery:D1:end -->
 <!-- plan:implementation:end -->
 
@@ -637,4 +673,10 @@ Commit. docs(plugins): counts on the scope envelope, traversed ranges on the pag
 - record-result D1-S9 commit:7aabf0ab09299080140eb94489585d7234ffa748
 
 - close D1-S9 closed commit:7aabf0ab09299080140eb94489585d7234ffa748
+
+- amend implementation owner:не спрашивай меня про такие мелки дефекты sha256:c31d367acd5ed5112c3d5f2a2a941e404ac5b5255c8518d9dd5880c25a39db5e
+
+- amend implementation owner:не спрашивай меня про такие мелки дефекты sha256:e525c9af1fb51e21ff34a982275e9254f919b08c8bf2e8aee78f3a4d9c4d1d69
+
+- amend implementation owner:не спрашивай меня про такие мелки дефекты sha256:6d8c567a165d3130861e1f8b96ac2f4252c61ed26b89b8f539f3f6a68a1303ef
 <!-- plan:execution:end -->
