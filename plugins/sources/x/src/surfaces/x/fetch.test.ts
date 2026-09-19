@@ -16,7 +16,7 @@ function fakeApi() {
         name: "Jack",
         description: "ceo",
         verified: true,
-        public_metrics: { followers_count: 99 },
+        public_metrics: { followers_count: 99, tweet_count: 1200 },
       });
     }
     if (url.includes("/2/users/12/tweets")) {
@@ -49,6 +49,10 @@ describe("x connector fetch", () => {
     expect(profile.payload.platform).toBe("x");
     expect(profile.payload.handle).toBe("jack");
     expect(profile.payload.follower_count).toBe(99);
+    // The window this pass plans: the recent ten of what the account counts.
+    // @tested-by: tst_x_011
+    expect(profile.payload.posts_total).toBe(10);
+    expect(profile.payload.posts_skipped).toBe(1190);
     expect(profile.remote_id).toBe("x:profile:12");
     expect(post.payload.author_handle).toBe("jack");
     expect(post.payload.text).toBe("hello");
@@ -208,6 +212,28 @@ describe("x connector fetch", () => {
     const p1 = envelopes.find((e) => e.remote_id === "x:post:t1")!.payload;
     expect("media" in p1).toBe(false);
     expect("urls" in p1).toBe(false);
+  });
+
+  /** @test-id: tst_x_011
+   * @scenario: scn_x_sync_001
+   * @covers: profileEnvelope planned window
+   * @deterministic: yes
+   * @fixtures: a profile of 1,200 posts, one of 4, one without metrics
+   */
+  test("tst_x_011 the profile states its planned window: the recent ten of its count, the rest skipped; no count without metrics", async () => {
+    const fetchFn: FetchLike = async (url) => {
+      const ok = (data: unknown) => ({ ok: true, status: 200, json: async () => ({ data }) });
+      if (url.includes("/2/users/by/username/few")) return ok({ id: "2", username: "few", name: "Few", public_metrics: { tweet_count: 4 } });
+      if (url.includes("/2/users/by/username/mute")) return ok({ id: "3", username: "mute", name: "Mute" });
+      if (url.includes("/tweets")) return ok([]);
+      return { ok: false, status: 404, json: async () => ({ detail: "not found" }) };
+    };
+    const { envelopes } = await fetchX({ surface: "x", tracked_handles: ["few", "mute"], ...META }, fetchFn);
+    const few = envelopes.find((e) => e.remote_id === "x:profile:2")!;
+    const mute = envelopes.find((e) => e.remote_id === "x:profile:3")!;
+    expect(few.payload).toMatchObject({ posts_total: 4, posts_skipped: 0 });
+    expect("posts_total" in mute.payload).toBe(false);
+    expect("posts_skipped" in mute.payload).toBe(false);
   });
 
   test("tst_x_006 re-poll is idempotent — identical remote_ids", async () => {

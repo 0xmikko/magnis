@@ -96,6 +96,7 @@ describe("tst_pub_item_schemas_001", () => {
     ["email", "email", { "email.message": "messages" }],
     ["contacts", "contacts", { "contacts.person": "contacts" }],
     ["meetings", "meetings", { "meetings.calendar_event": "events" }],
+    ["x", "x", { "x.post": "posts", "x.profile": "profiles" }],
   ];
 
   for (const [moduleId, surface, names] of progress) {

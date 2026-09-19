@@ -2,7 +2,7 @@
 
 Status: APPROVED  
 Spec lock: sha256:68e0aebc008e04c12bc42733e0c7e3e5f4a1c6c0cbeb772f3957078e3c598cf2 owner:approved  
-Implementation lock: sha256:1349ea6377a1616c56156344b7f42841b620ddeeb3342b68e13f29555fa1caab owner:не спрашивай меня про такие мелки дефекты  
+Implementation lock: sha256:b807f211e636bbfb29f08a3212199753c6a60c7b86e4f874ac3afc0718152a2e owner:не спрашивай меня про такие мелки дефекты  
 Active Delivery: D1  
 Unattended decisions: allowed  
 
@@ -154,7 +154,7 @@ Branch: `feat/account-sync-catalog`; Depends: none; Gate: backend.
 
 Stage graph: `D1-S1 -> D1-S2 -> D1-S3 -> D1-S4 -> D1-S5 -> D1-S6 -> D1-S7 -> D1-S8 -> D1-S9`.
 
-Forecast: 547 active min / 129 credits across 9 Stages; longest dependency path 547 active min; external waits 240 min.
+Forecast: 549 active min / 130 credits across 9 Stages; longest dependency path 549 active min; external waits 240 min.
 
 What changed for people. The Accounts panel prints every account's sync from what its worker holds: for Telegram, chats 50/50 and messages 197/197 with the skipped history named; for Gmail, contacts, meetings and X the planned count on the first page; the Telegram history behind the first page is backfilled because the Source says what each page read.
 
@@ -422,13 +422,13 @@ Commit. feat(google,meetings): the calendar window states its count from an ids-
 <!-- plan:stage:D1-S6:end -->
 
 <!-- plan:stage:D1-S7:start -->
-<!-- plan:stage-meta:{"deliveryId":"D1","depends":["D1-S6"],"parallelWith":[],"writes":["plugins/sources/x/src/surfaces/x/fetch.ts","plugins/sources/x/src/surfaces/x/fetch.test.ts","plugins/modules/x/module/service.ts","plugins/modules/x/module/__tests__/xIngest.test.ts","plugins/modules/x/manifest.toml","scripts/bundled-item-schemas.test.ts"],"tempRoot":".tmp/code-production/account-sync-catalog/D1-S7","verifyActiveMinutes":8,"verifyCredits":2} -->
+<!-- plan:stage-meta:{"deliveryId":"D1","depends":["D1-S6"],"parallelWith":[],"writes":["plugins/sources/x/src/surfaces/x/fetch.ts","plugins/sources/x/src/surfaces/x/fetch.test.ts","plugins/modules/x/module/service.ts","plugins/modules/x/module/__tests__/xIngest.test.ts","plugins/modules/x/manifest.toml","scripts/bundled-item-schemas.test.ts","plugins/sources/x/src/api.ts"],"tempRoot":".tmp/code-production/account-sync-catalog/D1-S7","verifyActiveMinutes":8,"verifyCredits":2} -->
 #### Stage D1-S7 — The X profile states its planned window and the x module states the plan
 
 - Owner: agent-1; Profile: fast; Depends: D1-S6; Parallel with: none.
-- Writes: `plugins/sources/x/src/surfaces/x/fetch.ts`, `plugins/sources/x/src/surfaces/x/fetch.test.ts`, `plugins/modules/x/module/service.ts`, `plugins/modules/x/module/__tests__/xIngest.test.ts`, `plugins/modules/x/manifest.toml`, `scripts/bundled-item-schemas.test.ts`.
+- Writes: `plugins/sources/x/src/surfaces/x/fetch.ts`, `plugins/sources/x/src/surfaces/x/fetch.test.ts`, `plugins/modules/x/module/service.ts`, `plugins/modules/x/module/__tests__/xIngest.test.ts`, `plugins/modules/x/manifest.toml`, `scripts/bundled-item-schemas.test.ts`, `plugins/sources/x/src/api.ts`.
 - Temp root: `.tmp/code-production/account-sync-catalog/D1-S7` (must be absent at handoff).
-- Predict: 53 active min / 13 credits.
+- Predict: 55 active min / 14 credits.
 - Of which verification: 8 active min / 2 credits.
 
 What this Stage solves. The X Source reads the recent ten posts of every tracked profile and states no count; the x module states nothing.
@@ -445,6 +445,8 @@ Commit. feat(x): the profile states its planned window and the x module states t
 <!-- plan:task-meta:{"writes":["plugins/sources/x/src/surfaces/x/fetch.ts","plugins/sources/x/src/surfaces/x/fetch.test.ts"],"predictedActiveMinutes":15,"predictedCredits":4,"how":"tweet_count from public_metrics on the user lookup; posts_total = min(tweet_count, RECENT_TWEETS), posts_skipped the rest; absent metrics carry no fields","red":"bun run agent:test:backend -- plugins/sources/x/src/surfaces/x/fetch.test.ts"} -->
 - [ ] ACS_014 — State profiles and posts on a new pass and +created after in x service.ts; declare posts and profiles in x manifest.toml; cover in xIngest.test.ts, bundled-item-schemas.test.ts. (30 min)
 <!-- plan:task-meta:{"writes":["plugins/modules/x/module/service.ts","plugins/modules/x/module/__tests__/xIngest.test.ts","plugins/modules/x/manifest.toml","scripts/bundled-item-schemas.test.ts"],"predictedActiveMinutes":30,"predictedCredits":7,"how":"ingest reads generation; the existing profile entity's sync_pass decides full or +created; the batch writes sync_pass with the profile's properties","red":"bun run agent:test:backend -- plugins/modules/x/module/__tests__/xIngest.test.ts"} -->
+- [ ] ACS_021 — Read tweet_count from the user's public_metrics in plugins/sources/x/src/api.ts. (2 min)
+<!-- plan:task-meta:{"writes":["plugins/sources/x/src/api.ts"],"predictedActiveMinutes":2,"predictedCredits":1,"how":"XUser.public_metrics gains tweet_count; the user fields already request public_metrics","red":"bun run agent:test:backend -- plugins/sources/x/src/surfaces/x/fetch.test.ts"} -->
 
 ##### Acceptance criteria
 
@@ -614,4 +616,8 @@ Commit. docs(plugins): counts on the scope envelope, traversed ranges on the pag
 - deviation D1-S6: the SPEC's table said +created on later pages; a page states the events it left out instead — the ids-only count is exact, so what stays out of the graph is what the plan skips
 
 - close D1-S6 closed commit:16fab453a4692953a97e6f8574d2f9c4df9ece8b
+
+- amend implementation owner:не спрашивай меня про такие мелки дефекты sha256:cd1b34a184fbf5b632781529b918339d37e72aa17a0521d48d327757a68f1d8b
+
+- amend implementation owner:не спрашивай меня про такие мелки дефекты sha256:b807f211e636bbfb29f08a3212199753c6a60c7b86e4f874ac3afc0718152a2e
 <!-- plan:execution:end -->

@@ -43,9 +43,22 @@ export class XModule {
   @syncHandler("x")
   async ingest(params: {
     envelopes?: SyncEnvelope[];
-  }): Promise<{ dropped_remote_ids: string[]; trigger_checks: [] }> {
+    /** The pass the worker is in; absent for a Source effect outside a
+     * worker, which states nothing. */
+    generation?: string;
+  }): Promise<{ dropped_remote_ids: string[]; trigger_checks: []; plan?: Record<string, { total: number; skipped: number }> }> {
     const envelopes = Array.isArray(params.envelopes) ? params.envelopes : [];
     const dropped: string[] = [];
+    // What the page states for the plan: a profile once per pass, with the
+    // window of posts it plans (the Source's recent ten of what X counts),
+    // and one more post per post the graph did not hold yet in the same
+    // pass. The pass is stamped on the profile's dictionary so a later poll
+    // knows the profile was stated.
+    // @tested-by: tst_plugin_x_plan_001
+    const generation = typeof params.generation === "string" && params.generation !== "" ? params.generation : null;
+    const plan = { profiles: { total: 0, skipped: 0 }, posts: { total: 0, skipped: 0 } };
+    const known = generation === null ? new Map<string, Record<string, unknown> | null>() : await this.knownByAnchor(envelopes);
+    const restatedProfiles = new Set<string>();
 
     const entities: BatchEntityInput[] = [];
     const links: BatchLinkInput[] = [];
@@ -62,6 +75,19 @@ export class XModule {
       }
       if (entityType === "profile") {
         const identity = payload as unknown as ProfileIdentity;
+        let properties = payload;
+        if (generation !== null) {
+          const held = known.get(remoteId);
+          if (held?.sync_pass !== generation) {
+            plan.profiles.total += 1;
+            const total = payload.posts_total;
+            const skipped = payload.posts_skipped;
+            if (typeof total === "number") plan.posts.total += total;
+            if (typeof skipped === "number") plan.posts.skipped += skipped;
+            restatedProfiles.add(identity.handle.toLowerCase());
+          }
+          properties = { ...payload, sync_pass: generation };
+        }
         // `x:profile:<numeric id>` — X renames handles, never account ids, so
         // the remote id is the identity-grade key (plan §4).
         const profileAnchor = remoteId;
@@ -71,12 +97,17 @@ export class XModule {
           name: identity.display_name ?? identity.handle,
           // S5: the profile DICT is the record, under the issuer's own key.
           anchor: profileAnchor,
-          properties: payload,
+          properties,
           confidence: 100,
         });
         if (identity.handle) profileKeyByHandle.set(identity.handle.toLowerCase(), remoteId);
       } else if (entityType === "post") {
         const content = payload as unknown as PostContent;
+        // A post the graph did not hold, on a profile stated in an earlier
+        // page of this pass, is one more than that statement planned.
+        if (generation !== null && !known.has(remoteId) && !restatedProfiles.has((str(payload, "author_handle") ?? "").toLowerCase())) {
+          plan.posts.total += 1;
+        }
         // S5: content AND metrics are one dictionary — the metrics arrive
         // inside the same payload and were only ever split to fit two records.
         entities.push({
@@ -119,7 +150,30 @@ export class XModule {
       // repairs the link (self-healing).
       await this.linkProfilesToContacts(envelopes, applied.ids);
     }
-    return { dropped_remote_ids: dropped, trigger_checks: [] };
+    if (generation === null) return { dropped_remote_ids: dropped, trigger_checks: [] };
+    return { dropped_remote_ids: dropped, trigger_checks: [], plan: { [PROFILE]: plan.profiles, [POST]: plan.posts } };
+  }
+
+  /** The page's profiles and posts the graph already holds, by anchor: the
+   * profiles with their dictionaries (the pass stamp), the posts by presence.
+   * Two Graph calls for the whole page, never one per envelope. */
+  private async knownByAnchor(envelopes: SyncEnvelope[]): Promise<Map<string, Record<string, unknown> | null>> {
+    const known = new Map<string, Record<string, unknown> | null>();
+    const anchors = [...new Set(envelopes.flatMap((env) => (env.remote_id && env.kind !== "delete" ? [env.remote_id] : [])))];
+    if (anchors.length === 0) return known;
+    const ids = await this.graph.find_by_anchors(anchors);
+    const profileIds: { anchor: string; id: string }[] = [];
+    anchors.forEach((anchor, index) => {
+      const id = ids[index];
+      if (!id) return;
+      known.set(anchor, null);
+      if (anchor.startsWith("x:profile:")) profileIds.push({ anchor, id });
+    });
+    if (profileIds.length === 0) return known;
+    const profiles = await this.graph.get_entities(profileIds.map(({ id }) => id));
+    const byId = new Map(profiles.map((item) => [item.id, item]));
+    for (const { anchor, id } of profileIds) known.set(anchor, byId.get(id)?.properties ?? {});
+    return known;
   }
 
   // ── X friend import = a bootstrap TRIGGER ───────────────────────────────
