@@ -93,6 +93,7 @@ describe("tst_pub_item_schemas_001", () => {
   // this table in the Stage that makes it state its plan.
   const progress: readonly (readonly [string, string, Record<string, string>])[] = [
     ["telegram", "telegram", { "telegram.chat": "chats", "telegram.message": "messages" }],
+    ["email", "email", { "email.message": "messages" }],
   ];
 
   for (const [moduleId, surface, names] of progress) {

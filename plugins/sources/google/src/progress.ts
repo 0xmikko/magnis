@@ -1,4 +1,7 @@
 // Pure sync-progress cursor helper — twin of plugins/sources/google/src/progress.rs.
+// Gmail no longer threads counters: its mailbox states its count on the first
+// page. The window-paged surfaces (meetings, contacts) still carry `discovered`
+// until their own Stages state a count on a scope envelope.
 //
 // Contract:
 // - `discovered` is CUMULATIVE: prior `discovered` (read from the incoming
@@ -19,7 +22,7 @@ export interface WindowFetchResult {
   discovered: number;
 }
 
-export interface Progress {
+interface Progress {
   /** Cumulative count of primary items enumerated so far (prior + this page). */
   discovered: number;
   /** Best-effort total estimate, threaded forward (absent → indeterminate). */

@@ -23,7 +23,6 @@ import {
   type GmailPayload,
 } from "./mime";
 import { formatUtc } from "../../helpers";
-import { mergeProgress, progressCursor, type Progress } from "../../progress";
 import {
   asObject,
   defaultObjectArray,
@@ -160,7 +159,7 @@ function parseGmailMessage(v: unknown): GmailMessage {
 }
 
 /** `GmailProfile` (gmail.rs:94) — `historyId` required; `messagesTotal` is
- * `#[serde(default)] Option<u64>` (absent → indeterminate total). */
+ * `#[serde(default)] Option<u64>` (absent → the mailbox states no count). */
 function parseGmailProfile(v: unknown): GmailProfile {
   const ctx = "GmailProfile";
   const o = asObject(v, ctx);
@@ -168,6 +167,15 @@ function parseGmailProfile(v: unknown): GmailProfile {
     historyId: reqString(o, "historyId", ctx),
     messagesTotal: optNumber(o, "messagesTotal", ctx),
   };
+}
+
+/** A label as `users.labels.get` serves it: only its message count is read. */
+function parseLabelMessagesTotal(v: unknown): number {
+  const ctx = "GmailLabel";
+  const o = asObject(v, ctx);
+  const total = optNumber(o, "messagesTotal", ctx);
+  if (total === null) throw new Error(`${ctx}: missing messagesTotal`);
+  return total;
 }
 
 /** `ListMessagesResponse` (gmail.rs:32) — both fields `Option<_>`, but each
@@ -612,6 +620,25 @@ async function getProfile(
   return parseGmailProfile(await resp.json());
 }
 
+/** The message count of one system label — SPAM and TRASH, the two the
+ * message list leaves out, so the mailbox can say what the plan skips. */
+async function labelMessagesTotal(
+  token: string,
+  labelId: string,
+  fetchFn: FetchLike,
+): Promise<number> {
+  const resp = await fetchWithRetry(
+    fetchFn,
+    `https://gmail.googleapis.com/gmail/v1/users/me/labels/${labelId}`,
+    { headers: { authorization: `Bearer ${token}` } },
+  );
+  checkRateLimit(resp);
+  if (!resp.ok) {
+    throw new Error(`Gmail get label ${labelId} failed: ${await resp.text()}`);
+  }
+  return parseLabelMessagesTotal(await resp.json());
+}
+
 async function listMessagesPage(
   token: string,
   pageToken: string | undefined,
@@ -825,8 +852,6 @@ export interface EmailFetchResult {
   envelopes: Envelope[];
   nextCursor: Record<string, unknown>;
   hasMore: boolean;
-  total: number | null;
-  discovered: number;
 }
 
 function cursorObj(cursor: unknown): Record<string, unknown> | undefined {
@@ -836,9 +861,13 @@ function cursorObj(cursor: unknown): Record<string, unknown> | undefined {
 }
 
 /** Bootstrap/backward page fetch. Page 1 (no cursor.page_token) captures the
- * catchup watermark `historyId` + the bootstrap `total` (messagesTotal) via
- * the profile BEFORE pagination; pages 2+ thread both forward in the cursor.
- * The next cursor is ALWAYS an object (even on the last page). */
+ * catchup watermark `historyId` via the profile BEFORE pagination and, when
+ * the profile counts the mailbox, states that count first on the page — the
+ * mailbox envelope: the whole mailbox, and the SPAM and TRASH messages the
+ * list leaves out as what the plan skips. Pages 2+ thread the watermark
+ * forward in the cursor. The next cursor is ALWAYS an object (even on the
+ * last page).
+ * @tested-by: tst_gts_email_009 */
 export async function fetchMessagePage(
   token: string,
   cursor: unknown,
@@ -848,39 +877,40 @@ export async function fetchMessagePage(
   const pageToken = typeof c?.page_token === "string" ? c.page_token : undefined;
 
   let historyId: string | undefined;
-  let freshTotal: number | undefined;
+  const envelopes: Envelope[] = [];
   if (pageToken === undefined) {
     const profile = await getProfile(token, fetchFn);
     historyId = profile.historyId;
-    freshTotal = typeof profile.messagesTotal === "number" ? profile.messagesTotal : undefined;
+    if (typeof profile.messagesTotal === "number") {
+      const skipped = (await labelMessagesTotal(token, "SPAM", fetchFn)) + (await labelMessagesTotal(token, "TRASH", fetchFn));
+      envelopes.push({
+        surface: "email",
+        kind: "snapshot",
+        remote_id: "mailbox",
+        payload: { entity_type: "mailbox", messages_total: profile.messagesTotal, skipped },
+      });
+    }
   } else {
     historyId = typeof c?.history_id === "string" ? c.history_id : undefined;
   }
 
   const page = await listMessagesPage(token, pageToken, fetchFn);
   const ids = (page.messages ?? []).map((m) => m.id);
-  const envelopes = await fetchSnapshotEnvelopes(token, ids, fetchFn);
-
-  const progress: Progress = progressCursor(cursor, ids.length, freshTotal);
+  envelopes.push(...(await fetchSnapshotEnvelopes(token, ids, fetchFn)));
 
   const hasMore = typeof page.nextPageToken === "string";
   const nextCursor: Record<string, unknown> = {};
   if (hasMore) nextCursor.page_token = page.nextPageToken;
   if (historyId !== undefined) nextCursor.history_id = historyId;
-  mergeProgress(nextCursor, progress);
 
-  return {
-    envelopes,
-    nextCursor,
-    hasMore,
-    total: progress.total ?? null,
-    discovered: progress.discovered,
-  };
+  return { envelopes, nextCursor, hasMore };
 }
 
 /** CatchUp/forward incremental fetch via the History API. A missing
  * `history_id` in the cursor is a HistoryExpired error, never a silent
- * re-bootstrap. Carries bootstrap `discovered`/`total` FORWARD. */
+ * re-bootstrap. New mail arrives as `live`, label changes as `snapshot`,
+ * removals as `delete`: the email module states the mailbox's count from
+ * them. */
 export async function fetchHistoryChanges(
   token: string,
   cursor: unknown,
@@ -916,20 +946,10 @@ export async function fetchHistoryChanges(
     }));
   envelopes.push(...(await fetchEnvelopes(token, fetchRequests, fetchFn)));
 
-  // Carry bootstrap progress FORWARD (page_len 0 → no increment).
-  const progress = progressCursor(cursor, 0, undefined);
-
   const hasMore = typeof resp.nextPageToken === "string";
   const nextCursor: Record<string, unknown> = hasMore
     ? { history_id: historyId, history_page_token: resp.nextPageToken }
     : { history_id: resp.historyId };
-  mergeProgress(nextCursor, progress);
 
-  return {
-    envelopes,
-    nextCursor,
-    hasMore,
-    total: progress.total ?? null,
-    discovered: progress.discovered,
-  };
+  return { envelopes, nextCursor, hasMore };
 }

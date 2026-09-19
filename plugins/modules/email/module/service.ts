@@ -224,17 +224,27 @@ export class EmailModule {
   @syncHandler("email")
   async ingest(params: {
     envelopes?: SyncEnvelope[];
-  }): Promise<{ dropped_remote_ids: string[]; trigger_checks: EmailTriggerCheck[] }> {
+    /** The pass the worker is in; absent for a Source effect outside a
+     * worker, which states nothing. */
+    generation?: string;
+  }): Promise<{ dropped_remote_ids: string[]; trigger_checks: EmailTriggerCheck[]; plan?: Record<string, { total: number; skipped: number }> }> {
     const envelopes = Array.isArray(params.envelopes) ? params.envelopes : [];
     const dropped: string[] = [];
     const triggers: EmailTriggerCheck[] = [];
     const messages: SyncEnvelope[] = [];
+    // What the page states for the plan, as the Source counted the mailbox:
+    // the whole of it on the mailbox envelope that opens a pass, one more per
+    // new mail (history delivers it live) and one less per removal.
+    // @tested-by: tst_module_email_plan_001
+    const stated = typeof params.generation === "string" && params.generation !== "";
+    const plan = { total: 0, skipped: 0 };
 
     for (const env of envelopes) {
       // Native parity: an envelope with no owning user is skipped (warn) — the
       // dispatcher couldn't resolve user_id, so we cannot user-scope the write.
       if (!env.user_id) continue;
       if (env.kind === "delete") {
+        plan.total -= 1;
         try {
           await this.ingestDelete(env);
         } catch {
@@ -244,6 +254,17 @@ export class EmailModule {
       }
       if (env.kind !== "snapshot" && env.kind !== "live") continue;
       if (!env.remote_id) continue;
+      if (env.payload.entity_type === "mailbox") {
+        const total = env.payload.messages_total;
+        const skipped = env.payload.skipped;
+        if (typeof total !== "number" || typeof skipped !== "number") {
+          throw new Error("email ingest refused: a mailbox envelope must carry messages_total and skipped");
+        }
+        plan.total += total;
+        plan.skipped += skipped;
+        continue;
+      }
+      if (env.kind === "live") plan.total += 1;
       messages.push(env);
     }
 
@@ -278,7 +299,8 @@ export class EmailModule {
     }
     await flush();
 
-    return { dropped_remote_ids: dropped, trigger_checks: triggers };
+    if (!stated) return { dropped_remote_ids: dropped, trigger_checks: triggers };
+    return { dropped_remote_ids: dropped, trigger_checks: triggers, plan: { [MESSAGE_SCHEMA]: plan } };
   }
 
   /// Delete envelope: resolve the email by its source external_id and remove it.

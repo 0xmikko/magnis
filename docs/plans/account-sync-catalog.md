@@ -2,7 +2,7 @@
 
 Status: APPROVED  
 Spec lock: sha256:68e0aebc008e04c12bc42733e0c7e3e5f4a1c6c0cbeb772f3957078e3c598cf2 owner:approved  
-Implementation lock: sha256:120817defdedbfd31f4270d6378c345b58862fdc082a2616632b7917ffc08cb9 owner:не спрашивай меня про такие мелки дефекты  
+Implementation lock: sha256:da39d34a6487ba6b70f4bc47b5e6c32a3cb7d0fb89d39b3da57e6a79d6e4630a owner:не спрашивай меня про такие мелки дефекты  
 Active Delivery: D1  
 Unattended decisions: allowed  
 
@@ -154,7 +154,7 @@ Branch: `feat/account-sync-catalog`; Depends: none; Gate: backend.
 
 Stage graph: `D1-S1 -> D1-S2 -> D1-S3 -> D1-S4 -> D1-S5 -> D1-S6 -> D1-S7 -> D1-S8 -> D1-S9`.
 
-Forecast: 529 active min / 125 credits across 9 Stages; longest dependency path 529 active min; external waits 240 min.
+Forecast: 537 active min / 127 credits across 9 Stages; longest dependency path 537 active min; external waits 240 min.
 
 What changed for people. The Accounts panel prints every account's sync from what its worker holds: for Telegram, chats 50/50 and messages 197/197 with the skipped history named; for Gmail, contacts, meetings and X the planned count on the first page; the Telegram history behind the first page is backfilled because the Source says what each page read.
 
@@ -265,35 +265,38 @@ Commit. feat(telegram): the Source states what each page traversed and where a l
 
 ##### Tasks
 
-- [ ] ACS_004 — State traversed ranges on bootstrap and catch-up pages in commands.ts and drop total/discovered; cover in commands.test.ts. (45 min)
+- [x] ACS_004 — State traversed ranges on bootstrap and catch-up pages in commands.ts and drop total/discovered; cover in commands.test.ts. (45 min) — f6623d26be50bf0c61ff8c1a7d9e4753cece2a3a
 <!-- plan:task-meta:{"writes":["plugins/sources/telegram/src/surfaces/telegram/commands.ts","plugins/sources/telegram/src/surfaces/telegram/commands.test.ts"],"predictedActiveMinutes":45,"predictedCredits":10,"how":"runBootstrap computes the range from paged.messages and paged.chat (top_message, message_count); runCatchup computes it from committed, target, before and the oldest id read; the result is {envelopes, nextCursor, hasMore, traversed}","red":"bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts"} -->
-- [ ] ACS_005 — Carry position on live notifications in subscriptions.ts (live.test.ts); state traversed for fixture pages in fixture.ts (fixture.test.ts). (25 min)
+- [x] ACS_005 — Carry position on live notifications in subscriptions.ts (live.test.ts); state traversed for fixture pages in fixture.ts (fixture.test.ts). (25 min) — f6623d26be50bf0c61ff8c1a7d9e4753cece2a3a
 <!-- plan:task-meta:{"writes":["plugins/sources/telegram/src/subscriptions.ts","plugins/sources/telegram/src/live.test.ts","plugins/sources/telegram/src/surfaces/telegram/fixture.ts","plugins/sources/telegram/src/fixture.test.ts"],"predictedActiveMinutes":25,"predictedCredits":6,"how":"notificationLine and livePushes add position {scope_id: String(chat_id), id: message_id} to the params; fixture.fetchResult states traversed per chat from the recorded messages and drops nothing else","red":"bun run agent:test:backend -- plugins/sources/telegram/src/live.test.ts"} -->
-- [ ] ACS_006 — Drop the total/discovered assertions from tst_src_tgflood_001.test.ts and dispatch.test.ts; assert traversed where a page is read. (15 min)
+- [x] ACS_006 — Drop the total/discovered assertions from tst_src_tgflood_001.test.ts and dispatch.test.ts; assert traversed where a page is read. (15 min) — f6623d26be50bf0c61ff8c1a7d9e4753cece2a3a
 <!-- plan:task-meta:{"writes":["plugins/sources/telegram/src/tst_src_tgflood_001.test.ts","plugins/sources/telegram/src/dispatch.test.ts"],"predictedActiveMinutes":15,"predictedCredits":3,"how":"the journeys assert hasMore and the traversed ranges of the pages they drive instead of the counters","red":"bun run agent:test:backend -- plugins/sources/telegram/src/tst_src_tgflood_001.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts plugins/sources/telegram/src/live.test.ts plugins/sources/telegram/src/fixture.test.ts` exits 0
+- [x] `bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts plugins/sources/telegram/src/live.test.ts plugins/sources/telegram/src/fixture.test.ts` exits 0 — f6623d26be50bf0c61ff8c1a7d9e4753cece2a3a
 - [ ] `git grep -l 'discovered' -- plugins/sources/telegram/src/surfaces/telegram/commands.ts plugins/sources/telegram/src/surfaces/telegram/fixture.ts` prints nothing
-- [ ] Commit
+- [x] Commit — f6623d26be50bf0c61ff8c1a7d9e4753cece2a3a
 
 ##### Results
 
 <!-- plan:results:D1-S3:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| ACS_004 | f6623d26be50bf0c61ff8c1a7d9e4753cece2a3a | 2026-09-19T19:47:36.921Z–2026-09-19T20:10:26.000Z | 23 / 23 min | unavailable: runner did not expose usage | runBootstrap states [oldest, max(top, newest)] per hydrated chat, [1, top] for a whole history, nothing for an empty chat or a failed read; runCatchup states [oldest, before-1] while a gap continues and [committed+1, target] once the read crosses the watermark; total/discovered leave the results; notificationLine and liveUpdatePushes carry position {scope_id, id}; the fixture Source states traversed for its pages. Source suite 163/163; typecheck and lint clean; hook 66/66. |
+| ACS_005 | f6623d26be50bf0c61ff8c1a7d9e4753cece2a3a | 2026-09-19T19:47:36.921Z–2026-09-19T20:10:26.000Z | 23 / 23 min | unavailable: runner did not expose usage | runBootstrap states [oldest, max(top, newest)] per hydrated chat, [1, top] for a whole history, nothing for an empty chat or a failed read; runCatchup states [oldest, before-1] while a gap continues and [committed+1, target] once the read crosses the watermark; total/discovered leave the results; notificationLine and liveUpdatePushes carry position {scope_id, id}; the fixture Source states traversed for its pages. Source suite 163/163; typecheck and lint clean; hook 66/66. |
+| ACS_006 | f6623d26be50bf0c61ff8c1a7d9e4753cece2a3a | 2026-09-19T19:47:36.921Z–2026-09-19T20:10:26.000Z | 23 / 23 min | unavailable: runner did not expose usage | runBootstrap states [oldest, max(top, newest)] per hydrated chat, [1, top] for a whole history, nothing for an empty chat or a failed read; runCatchup states [oldest, before-1] while a gap continues and [committed+1, target] once the read crosses the watermark; total/discovered leave the results; notificationLine and liveUpdatePushes carry position {scope_id, id}; the fixture Source states traversed for its pages. Source suite 163/163; typecheck and lint clean; hook 66/66. |
 <!-- plan:results:D1-S3:end -->
 <!-- plan:stage:D1-S3:end -->
 
 <!-- plan:stage:D1-S4:start -->
-<!-- plan:stage-meta:{"deliveryId":"D1","depends":["D1-S3"],"parallelWith":[],"writes":["plugins/sources/google/src/surfaces/email/gmail.ts","plugins/sources/google/src/surfaces/email/gmail.test.ts","plugins/sources/google/src/progress.ts","plugins/modules/email/module/service.ts","plugins/modules/email/module/__tests__/emailIngest.test.ts","plugins/modules/email/manifest.toml","scripts/bundled-item-schemas.test.ts"],"tempRoot":".tmp/code-production/account-sync-catalog/D1-S4","verifyActiveMinutes":10,"verifyCredits":3} -->
+<!-- plan:stage-meta:{"deliveryId":"D1","depends":["D1-S3"],"parallelWith":[],"writes":["plugins/sources/google/src/surfaces/email/gmail.ts","plugins/sources/google/src/surfaces/email/gmail.test.ts","plugins/sources/google/src/progress.ts","plugins/modules/email/module/service.ts","plugins/modules/email/module/__tests__/emailIngest.test.ts","plugins/modules/email/manifest.toml","scripts/bundled-item-schemas.test.ts","plugins/sources/google/src/connector.ts","plugins/sources/google/src/__tests__/serde-parity.test.ts","plugins/sources/google/src/__tests__/googleContract.test.ts"],"tempRoot":".tmp/code-production/account-sync-catalog/D1-S4","verifyActiveMinutes":10,"verifyCredits":3} -->
 #### Stage D1-S4 — Gmail carries the mailbox count on its first page and the email module states the plan
 
 - Owner: agent-1; Profile: fast; Depends: D1-S3; Parallel with: none.
-- Writes: `plugins/sources/google/src/surfaces/email/gmail.ts`, `plugins/sources/google/src/surfaces/email/gmail.test.ts`, `plugins/sources/google/src/progress.ts`, `plugins/modules/email/module/service.ts`, `plugins/modules/email/module/__tests__/emailIngest.test.ts`, `plugins/modules/email/manifest.toml`, `scripts/bundled-item-schemas.test.ts`.
+- Writes: `plugins/sources/google/src/surfaces/email/gmail.ts`, `plugins/sources/google/src/surfaces/email/gmail.test.ts`, `plugins/sources/google/src/progress.ts`, `plugins/modules/email/module/service.ts`, `plugins/modules/email/module/__tests__/emailIngest.test.ts`, `plugins/modules/email/manifest.toml`, `scripts/bundled-item-schemas.test.ts`, `plugins/sources/google/src/connector.ts`, `plugins/sources/google/src/__tests__/serde-parity.test.ts`, `plugins/sources/google/src/__tests__/googleContract.test.ts`.
 - Temp root: `.tmp/code-production/account-sync-catalog/D1-S4` (must be absent at handoff).
-- Predict: 80 active min / 19 credits.
+- Predict: 88 active min / 21 credits.
 - Of which verification: 10 active min / 3 credits.
 
 What this Stage solves. The Gmail Source threads messagesTotal through its cursor as a total the backend no longer reads; the email module states nothing, so a Google account prints messages alone.
@@ -310,6 +313,8 @@ Commit. feat(google,email): the mailbox states its count on the first page and t
 <!-- plan:task-meta:{"writes":["plugins/sources/google/src/surfaces/email/gmail.ts","plugins/sources/google/src/surfaces/email/gmail.test.ts","plugins/sources/google/src/progress.ts"],"predictedActiveMinutes":35,"predictedCredits":8,"how":"on page one (no page_token) getProfile plus labels/SPAM and labels/TRASH give the counts; the mailbox envelope precedes the messages; progressCursor/mergeProgress and the cursor keys go","red":"bun run agent:test:backend -- plugins/sources/google/src/surfaces/email/gmail.test.ts"} -->
 - [ ] ACS_008 — State the plan on the mailbox envelope and +created/−deleted after in email service.ts; declare messages in email manifest.toml; cover in emailIngest.test.ts, bundled-item-schemas.test.ts. (35 min)
 <!-- plan:task-meta:{"writes":["plugins/modules/email/module/service.ts","plugins/modules/email/module/__tests__/emailIngest.test.ts","plugins/modules/email/manifest.toml","scripts/bundled-item-schemas.test.ts"],"predictedActiveMinutes":35,"predictedCredits":8,"how":"ingest reads generation; a mailbox envelope states { \"email.message\": { total: messages_total, skipped } } and is not ingested; other pages state total +created (from the batch result) −deleted; without generation nothing","red":"bun run agent:test:backend -- plugins/modules/email/module/__tests__/emailIngest.test.ts"} -->
+- [ ] ACS_018 — Drop the email counters from google connector.ts; route labels/SPAM and labels/TRASH in serde-parity.test.ts and googleContract.test.ts and expect the mailbox envelope. (8 min)
+<!-- plan:task-meta:{"writes":["plugins/sources/google/src/connector.ts","plugins/sources/google/src/__tests__/serde-parity.test.ts","plugins/sources/google/src/__tests__/googleContract.test.ts"],"predictedActiveMinutes":8,"predictedCredits":2,"how":"the email case of fetchHandler returns {envelopes, nextCursor, hasMore}; the two shared route fakes answer the label reads; the contract expects two email envelopes and no counters","red":"bun run agent:test:backend -- plugins/sources/google/src/__tests__/serde-parity.test.ts"} -->
 
 ##### Acceptance criteria
 
@@ -562,4 +567,12 @@ Commit. docs(plugins): counts on the scope envelope, traversed ranges on the pag
 - amend implementation owner:не спрашивай меня про такие мелки дефекты sha256:9c3528e81a4850b9280bc90cce1c1af89f9b694fdc82af05d38efa224d05aabb
 
 - amend implementation owner:не спрашивай меня про такие мелки дефекты sha256:120817defdedbfd31f4270d6378c345b58862fdc082a2616632b7917ffc08cb9
+
+- record-result D1-S3 commit:f6623d26be50bf0c61ff8c1a7d9e4753cece2a3a
+
+- close D1-S3 partial commit:f6623d26be50bf0c61ff8c1a7d9e4753cece2a3a
+
+- amend implementation owner:не спрашивай меня про такие мелки дефекты sha256:3dabe7cc9eab9f7ede444adbaefc18858e828201525e665852375a404bb03d6c
+
+- amend implementation owner:не спрашивай меня про такие мелки дефекты sha256:da39d34a6487ba6b70f4bc47b5e6c32a3cb7d0fb89d39b3da57e6a79d6e4630a
 <!-- plan:execution:end -->

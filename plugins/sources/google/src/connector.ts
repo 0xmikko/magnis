@@ -58,13 +58,7 @@ export function buildConnectorConfig(
           direction === "forward"
             ? await fetchHistoryChanges(token, cursor, fetchFn)
             : await fetchMessagePage(token, cursor, fetchFn);
-        return {
-          envelopes: r.envelopes,
-          nextCursor: r.nextCursor,
-          hasMore: r.hasMore,
-          total: r.total,
-          discovered: r.discovered,
-        };
+        return { envelopes: r.envelopes, nextCursor: r.nextCursor, hasMore: r.hasMore };
       }
       case "meetings": {
         // Calendar is window-based: Bootstrap and CatchUp page the same time

@@ -9,6 +9,7 @@
 // The connector's OWN unit + serde tests (gmail/calendar/contacts.test.ts,
 // serde-parity.test.ts) pin the per-fetcher conversion; the fixture.test.ts pins
 // replay mode. This file adds ONLY the reusable wire-contract layer.
+import { describe } from "bun:test";
 import { mockFetch, runSourceContract, type CannedResponse } from "@magnis/testkit/source";
 import { buildConnectorConfig } from "../connector";
 
@@ -37,6 +38,8 @@ function happyRoutes() {
   return [
     { match: "oauth2.googleapis.com/token", response: TOKEN },
     { match: "/users/me/profile", response: { body: { historyId: "555", messagesTotal: 1 } } },
+    { match: "/users/me/labels/SPAM", response: { body: { id: "SPAM", messagesTotal: 0 } } },
+    { match: "/users/me/labels/TRASH", response: { body: { id: "TRASH", messagesTotal: 0 } } },
     { match: "/messages/send", response: { body: { id: "sent1", threadId: "t1" } } },
     { match: "/messages/m1?format=full", response: { body: fullMessage } },
     { match: "/users/me/messages?", response: { body: { messages: [{ id: "m1" }] } } },
@@ -79,9 +82,12 @@ function happyRoutes() {
   ];
 }
 
-runSourceContract(buildConnectorConfig(mockFetch(happyRoutes())), {
+// The contract runs on bun:test (the testkit's own runner); the describe
+// names the lane for the scoped pre-commit verification.
+describe("google", () => runSourceContract(buildConnectorConfig(mockFetch(happyRoutes())), {
   fetch: {
-    email: { meta: META, minEnvelopes: 1, expectCounters: ["total", "discovered"] },
+    // The mailbox envelope precedes the one message: two envelopes, no counters.
+    email: { meta: META, minEnvelopes: 2 },
     meetings: { meta: META, minEnvelopes: 1, expectCounters: "discovered" },
     contacts: { meta: META, minEnvelopes: 2, expectCounters: "discovered" },
   },
@@ -109,4 +115,4 @@ runSourceContract(buildConnectorConfig(mockFetch(happyRoutes())), {
     meta: META,
     retryAfter: 30,
   },
-});
+}));
