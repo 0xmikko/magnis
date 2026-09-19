@@ -71,13 +71,7 @@ export function buildConnectorConfig(
           time_max: rawStr(args.raw, "time_max"),
         };
         const r = await fetchEventsPage(token, cursor, window, fetchFn);
-        // No cheap total estimate → indeterminate "N synced…".
-        return {
-          envelopes: r.envelopes,
-          nextCursor: r.nextCursor,
-          hasMore: r.nextCursor !== null,
-          discovered: r.discovered,
-        };
+        return { envelopes: r.envelopes, nextCursor: r.nextCursor, hasMore: r.nextCursor !== null };
       }
       case "contacts": {
         // People API has no delta token — every page is a snapshot;

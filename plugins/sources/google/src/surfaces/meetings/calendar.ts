@@ -7,11 +7,6 @@
 import type { Envelope } from "@magnis/connector-sdk";
 import { checkRateLimit, fetchWithRetry, type FetchLike } from "../../http";
 import { formatUtc } from "../../helpers";
-import {
-  mergeProgress,
-  progressCursor,
-  type WindowFetchResult,
-} from "../../progress";
 import { calendarRemoteId } from "./schema";
 import {
   asObject,
@@ -43,6 +38,32 @@ export interface GcalEvent {
 interface GcalEventsResponse {
   items?: GcalEvent[] | null;
   nextPageToken?: string | null;
+}
+
+/** One page of the calendar window: the window's count first on the first
+ * page, the events the page left out when it did, then the events. */
+export interface EventsFetchResult {
+  envelopes: Envelope[];
+  nextCursor: Record<string, unknown> | null;
+}
+
+/** One page of the ids-only pass: ids and statuses, nothing else. */
+interface GcalEventIdsResponse {
+  items: { id: string; status: string | null }[];
+  nextPageToken: string | null;
+}
+
+function parseGcalEventIdsResponse(v: unknown): GcalEventIdsResponse {
+  const ctx = "GcalEventIdsResponse";
+  const o = asObject(v, ctx);
+  const items = optObjectArray(o, "items", ctx) ?? [];
+  return {
+    items: items.map((ev, i) => {
+      const c = `${ctx}.items[${String(i)}]`;
+      return { id: reqString(ev, "id", c), status: optString(ev, "status", c) };
+    }),
+    nextPageToken: optString(o, "nextPageToken", ctx),
+  };
 }
 
 // ── Response parser (serde parity — see validate.ts) ──────────
@@ -188,6 +209,39 @@ async function listEventsPage(
   return parseGcalEventsResponse(await resp.json());
 }
 
+/** The ids-only pass over the window: one request per 2,500 events, ids and
+ * statuses only, so the calendar can state its count before the first page
+ * of events. Cancelled events are not counted — the pages leave them out. */
+async function countEvents(
+  token: string,
+  timeMin: string,
+  timeMax: string,
+  fetchFn: FetchLike,
+): Promise<number> {
+  let total = 0;
+  let pageToken: string | undefined;
+  do {
+    const params = new URLSearchParams({
+      timeMin,
+      timeMax,
+      singleEvents: "true",
+      maxResults: "2500",
+      fields: "nextPageToken,items(id,status)",
+    });
+    if (pageToken !== undefined) params.set("pageToken", pageToken);
+    const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?${params}`;
+    const resp = await fetchWithRetry(fetchFn, url, { headers: { authorization: `Bearer ${token}` } });
+    checkRateLimit(resp);
+    if (!resp.ok) {
+      throw new Error(`Calendar count events failed: ${await resp.text()}`);
+    }
+    const page = parseGcalEventIdsResponse(await resp.json());
+    total += page.items.filter((item) => item.status !== "cancelled").length;
+    pageToken = page.nextPageToken ?? undefined;
+  } while (pageToken !== undefined);
+  return total;
+}
+
 export interface EventsWindow {
   time_min?: string;
   time_max?: string;
@@ -196,15 +250,19 @@ export interface EventsWindow {
 const DAY_MS = 86_400_000;
 
 /** Bootstrap/catch-up events fetch. Window defaults to now-30d..now+90d,
- * overridable via `window.time_min` / `window.time_max`. Cancelled events are
- * skipped. No cheap total estimate → cumulative `discovered` only;
- * `nextCursor` is null on the last page. */
+ * overridable via `window.time_min` / `window.time_max`. The first page of a
+ * pass opens with the calendar envelope: the window's count from one ids-only
+ * pass, an enumeration always worth its cost. Cancelled events are skipped
+ * and not counted; an event that fails to convert is left out and the page
+ * says so, so the plan's skipped meets the total. `nextCursor` is null on
+ * the last page.
+ * @tested-by: tst_gts_gcal_004, tst_gts_gcal_005 */
 export async function fetchEventsPage(
   token: string,
   cursor: unknown,
   window: EventsWindow,
   fetchFn: FetchLike,
-): Promise<WindowFetchResult> {
+): Promise<EventsFetchResult> {
   const timeMin =
     window.time_min ?? new Date(Date.now() - 30 * DAY_MS).toISOString();
   const timeMax =
@@ -216,9 +274,12 @@ export async function fetchEventsPage(
       : undefined;
   const pageToken = typeof c?.page_token === "string" ? c.page_token : undefined;
 
+  const calendar: Record<string, unknown> = { entity_type: "calendar" };
+  if (pageToken === undefined) calendar.events_total = await countEvents(token, timeMin, timeMax, fetchFn);
   const page = await listEventsPage(token, timeMin, timeMax, pageToken, fetchFn);
 
   const envelopes: Envelope[] = [];
+  let skipped = 0;
   for (const ev of page.items ?? []) {
     if (ev.status === "cancelled") continue;
     let calEvent: CalendarEvent;
@@ -228,6 +289,7 @@ export async function fetchEventsPage(
       console.error(
         `magnis-google: failed to convert calendar event ${ev.id}: ${e instanceof Error ? e.message : String(e)}`,
       );
+      skipped += 1;
       continue;
     }
     envelopes.push({
@@ -237,14 +299,13 @@ export async function fetchEventsPage(
       kind: "snapshot",
     });
   }
-
-  const progress = progressCursor(cursor, envelopes.length, undefined);
-
-  let nextCursor: Record<string, unknown> | null = null;
-  if (typeof page.nextPageToken === "string") {
-    nextCursor = { page_token: page.nextPageToken };
-    mergeProgress(nextCursor, progress);
+  if (skipped > 0) calendar.skipped = skipped;
+  if (Object.keys(calendar).length > 1) {
+    envelopes.unshift({ surface: "meetings", kind: "snapshot", remote_id: "calendar", payload: calendar });
   }
 
-  return { envelopes, nextCursor, discovered: progress.discovered };
+  const nextCursor: Record<string, unknown> | null =
+    typeof page.nextPageToken === "string" ? { page_token: page.nextPageToken } : null;
+
+  return { envelopes, nextCursor };
 }

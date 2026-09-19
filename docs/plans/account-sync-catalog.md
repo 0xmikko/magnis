@@ -2,7 +2,7 @@
 
 Status: APPROVED  
 Spec lock: sha256:68e0aebc008e04c12bc42733e0c7e3e5f4a1c6c0cbeb772f3957078e3c598cf2 owner:approved  
-Implementation lock: sha256:a5e1dd48512213d823861922107d0cc9f1f626984eace91be6e71fc8887afbca owner:не спрашивай меня про такие мелки дефекты  
+Implementation lock: sha256:1349ea6377a1616c56156344b7f42841b620ddeeb3342b68e13f29555fa1caab owner:не спрашивай меня про такие мелки дефекты  
 Active Delivery: D1  
 Unattended decisions: allowed  
 
@@ -154,7 +154,7 @@ Branch: `feat/account-sync-catalog`; Depends: none; Gate: backend.
 
 Stage graph: `D1-S1 -> D1-S2 -> D1-S3 -> D1-S4 -> D1-S5 -> D1-S6 -> D1-S7 -> D1-S8 -> D1-S9`.
 
-Forecast: 541 active min / 128 credits across 9 Stages; longest dependency path 541 active min; external waits 240 min.
+Forecast: 547 active min / 129 credits across 9 Stages; longest dependency path 547 active min; external waits 240 min.
 
 What changed for people. The Accounts panel prints every account's sync from what its worker holds: for Telegram, chats 50/50 and messages 197/197 with the skipped history named; for Gmail, contacts, meetings and X the planned count on the first page; the Telegram history behind the first page is backfilled because the Source says what each page read.
 
@@ -353,35 +353,38 @@ Commit. feat(google,contacts): the connections list states its count on the firs
 
 ##### Tasks
 
-- [ ] ACS_009 — Emit the list envelope with total_people on the first contacts page in contacts.ts and drop discovered; cover in contacts.test.ts. (20 min)
+- [x] ACS_009 — Emit the list envelope with total_people on the first contacts page in contacts.ts and drop discovered; cover in contacts.test.ts. (20 min) — 263a0bbe06c3702f9172a8bbc68a12473856c90d
 <!-- plan:task-meta:{"writes":["plugins/sources/google/src/surfaces/contacts/contacts.ts","plugins/sources/google/src/surfaces/contacts/contacts.test.ts"],"predictedActiveMinutes":20,"predictedCredits":5,"how":"read totalPeople from the connections response on the first page; the list envelope precedes the people; WindowFetchResult loses discovered","red":"bun run agent:test:backend -- plugins/sources/google/src/surfaces/contacts/contacts.test.ts"} -->
-- [ ] ACS_010 — State contacts in full on the list envelope and +created after in contacts service.ts; declare contacts in contacts manifest.toml; cover in contactsIngest.test.ts, bundled-item-schemas.test.ts. (25 min)
+- [x] ACS_010 — State contacts in full on the list envelope and +created after in contacts service.ts; declare contacts in contacts manifest.toml; cover in contactsIngest.test.ts, bundled-item-schemas.test.ts. (25 min) — 263a0bbe06c3702f9172a8bbc68a12473856c90d
 <!-- plan:task-meta:{"writes":["plugins/modules/contacts/module/service.ts","plugins/modules/contacts/module/__tests__/contactsIngest.test.ts","plugins/modules/contacts/manifest.toml","scripts/bundled-item-schemas.test.ts"],"predictedActiveMinutes":25,"predictedCredits":6,"how":"ingest reads generation; the list envelope states { \"contacts.person\": { total: total_people, skipped: 0 } }; later pages state +created; without generation nothing","red":"bun run agent:test:backend -- plugins/modules/contacts/module/__tests__/contactsIngest.test.ts"} -->
-- [ ] ACS_019 — Drop the contacts counter from google connector.ts; expect the list envelope in googleContract.test.ts. (4 min)
+- [x] ACS_019 — Drop the contacts counter from google connector.ts; expect the list envelope in googleContract.test.ts. (4 min) — 263a0bbe06c3702f9172a8bbc68a12473856c90d
 <!-- plan:task-meta:{"writes":["plugins/sources/google/src/connector.ts","plugins/sources/google/src/__tests__/googleContract.test.ts"],"predictedActiveMinutes":4,"predictedCredits":1,"how":"the contacts case of fetchHandler returns {envelopes, nextCursor, hasMore}; the contract expects three contacts envelopes and no counters","red":"bun run agent:test:backend -- plugins/sources/google/src/__tests__/googleContract.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- plugins/sources/google/src/surfaces/contacts/contacts.test.ts` exits 0
-- [ ] `bun run agent:test:backend -- plugins/modules/contacts/module/__tests__/contactsIngest.test.ts` exits 0
-- [ ] Commit
+- [x] `bun run agent:test:backend -- plugins/sources/google/src/surfaces/contacts/contacts.test.ts` exits 0 — 263a0bbe06c3702f9172a8bbc68a12473856c90d
+- [x] `bun run agent:test:backend -- plugins/modules/contacts/module/__tests__/contactsIngest.test.ts` exits 0 — 263a0bbe06c3702f9172a8bbc68a12473856c90d
+- [x] Commit — 263a0bbe06c3702f9172a8bbc68a12473856c90d
 
 ##### Results
 
 <!-- plan:results:D1-S5:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| ACS_009 | 263a0bbe06c3702f9172a8bbc68a12473856c90d | 2026-09-19T20:25:35.098Z–2026-09-19T20:30:05.000Z | 5 / 5 min | unavailable: runner did not expose usage | fetchContactsPage opens page one with the list envelope {entity_type list, total_people} and any page that drops identity-less persons with {entity_type list, skipped}; the cursor carries no counter; the contacts module states total_people in full, skipped per page and nothing without generation; manifest declares contacts. Contacts 9/9 (Source) and 73/73 (module), Google suite green under bun 1.3.13, typecheck and lint clean. |
+| ACS_010 | 263a0bbe06c3702f9172a8bbc68a12473856c90d | 2026-09-19T20:25:35.098Z–2026-09-19T20:30:05.000Z | 5 / 5 min | unavailable: runner did not expose usage | fetchContactsPage opens page one with the list envelope {entity_type list, total_people} and any page that drops identity-less persons with {entity_type list, skipped}; the cursor carries no counter; the contacts module states total_people in full, skipped per page and nothing without generation; manifest declares contacts. Contacts 9/9 (Source) and 73/73 (module), Google suite green under bun 1.3.13, typecheck and lint clean. |
+| ACS_019 | 263a0bbe06c3702f9172a8bbc68a12473856c90d | 2026-09-19T20:25:35.098Z–2026-09-19T20:30:05.000Z | 5 / 5 min | unavailable: runner did not expose usage | fetchContactsPage opens page one with the list envelope {entity_type list, total_people} and any page that drops identity-less persons with {entity_type list, skipped}; the cursor carries no counter; the contacts module states total_people in full, skipped per page and nothing without generation; manifest declares contacts. Contacts 9/9 (Source) and 73/73 (module), Google suite green under bun 1.3.13, typecheck and lint clean. |
 <!-- plan:results:D1-S5:end -->
 <!-- plan:stage:D1-S5:end -->
 
 <!-- plan:stage:D1-S6:start -->
-<!-- plan:stage-meta:{"deliveryId":"D1","depends":["D1-S5"],"parallelWith":[],"writes":["plugins/sources/google/src/surfaces/meetings/calendar.ts","plugins/sources/google/src/surfaces/meetings/calendar.test.ts","plugins/modules/meetings/module/service.ts","plugins/modules/meetings/module/__tests__/meetingsSync.test.ts","plugins/modules/meetings/manifest.toml","scripts/bundled-item-schemas.test.ts"],"tempRoot":".tmp/code-production/account-sync-catalog/D1-S6","verifyActiveMinutes":8,"verifyCredits":2} -->
+<!-- plan:stage-meta:{"deliveryId":"D1","depends":["D1-S5"],"parallelWith":[],"writes":["plugins/sources/google/src/surfaces/meetings/calendar.ts","plugins/sources/google/src/surfaces/meetings/calendar.test.ts","plugins/modules/meetings/module/service.ts","plugins/modules/meetings/module/__tests__/meetingsSync.test.ts","plugins/modules/meetings/manifest.toml","scripts/bundled-item-schemas.test.ts","plugins/sources/google/src/connector.ts","plugins/sources/google/src/progress.ts","plugins/sources/google/src/__tests__/serde-parity.test.ts","plugins/sources/google/src/__tests__/googleContract.test.ts"],"tempRoot":".tmp/code-production/account-sync-catalog/D1-S6","verifyActiveMinutes":8,"verifyCredits":2} -->
 #### Stage D1-S6 — Google Calendar counts its window with an ids-only pass and the meetings module states the plan
 
 - Owner: agent-1; Profile: fast; Depends: D1-S5; Parallel with: none.
-- Writes: `plugins/sources/google/src/surfaces/meetings/calendar.ts`, `plugins/sources/google/src/surfaces/meetings/calendar.test.ts`, `plugins/modules/meetings/module/service.ts`, `plugins/modules/meetings/module/__tests__/meetingsSync.test.ts`, `plugins/modules/meetings/manifest.toml`, `scripts/bundled-item-schemas.test.ts`.
+- Writes: `plugins/sources/google/src/surfaces/meetings/calendar.ts`, `plugins/sources/google/src/surfaces/meetings/calendar.test.ts`, `plugins/modules/meetings/module/service.ts`, `plugins/modules/meetings/module/__tests__/meetingsSync.test.ts`, `plugins/modules/meetings/manifest.toml`, `scripts/bundled-item-schemas.test.ts`, `plugins/sources/google/src/connector.ts`, `plugins/sources/google/src/progress.ts`, `plugins/sources/google/src/__tests__/serde-parity.test.ts`, `plugins/sources/google/src/__tests__/googleContract.test.ts`.
 - Temp root: `.tmp/code-production/account-sync-catalog/D1-S6` (must be absent at handoff).
-- Predict: 58 active min / 14 credits.
+- Predict: 64 active min / 15 credits.
 - Of which verification: 8 active min / 2 credits.
 
 What this Stage solves. The Calendar API states no total for a window; the Source reports cumulative discovered only, and the meetings module states nothing.
@@ -398,6 +401,8 @@ Commit. feat(google,meetings): the calendar window states its count from an ids-
 <!-- plan:task-meta:{"writes":["plugins/sources/google/src/surfaces/meetings/calendar.ts","plugins/sources/google/src/surfaces/meetings/calendar.test.ts"],"predictedActiveMinutes":25,"predictedCredits":6,"how":"listEventIds pages fields=nextPageToken,items/id at 2500 over the same window; the count rides the calendar envelope first in page one","red":"bun run agent:test:backend -- plugins/sources/google/src/surfaces/meetings/calendar.test.ts"} -->
 - [ ] ACS_012 — State events in full on the calendar envelope and +created after in meetings service.ts; declare events in meetings manifest.toml; cover in meetingsSync.test.ts, bundled-item-schemas.test.ts. (25 min)
 <!-- plan:task-meta:{"writes":["plugins/modules/meetings/module/service.ts","plugins/modules/meetings/module/__tests__/meetingsSync.test.ts","plugins/modules/meetings/manifest.toml","scripts/bundled-item-schemas.test.ts"],"predictedActiveMinutes":25,"predictedCredits":6,"how":"ingest reads generation; the calendar envelope states { \"meetings.calendar_event\": { total: events_total, skipped: 0 } }; later pages state +created; without generation nothing","red":"bun run agent:test:backend -- plugins/modules/meetings/module/__tests__/meetingsSync.test.ts"} -->
+- [ ] ACS_020 — Drop the meetings counter from google connector.ts and delete progress.ts (its last reader); expect the calendar envelope in serde-parity.test.ts and googleContract.test.ts. (6 min)
+<!-- plan:task-meta:{"writes":["plugins/sources/google/src/connector.ts","plugins/sources/google/src/progress.ts","plugins/sources/google/src/__tests__/serde-parity.test.ts","plugins/sources/google/src/__tests__/googleContract.test.ts"],"predictedActiveMinutes":6,"predictedCredits":1,"how":"the meetings case of fetchHandler returns {envelopes, nextCursor, hasMore}; git rm progress.ts once calendar.ts stops importing it; the two shared tests expect the calendar envelope first and no counters","red":"bun run agent:test:backend -- plugins/sources/google/src/__tests__/serde-parity.test.ts"} -->
 
 ##### Acceptance criteria
 
@@ -590,4 +595,14 @@ Commit. docs(plugins): counts on the scope envelope, traversed ranges on the pag
 - amend implementation owner:не спрашивай меня про такие мелки дефекты sha256:b3eda3aa8f50461ddd7b5274d66f3dda56c66f46117fb857747eb14edbb7c697
 
 - amend implementation owner:не спрашивай меня про такие мелки дефекты sha256:a5e1dd48512213d823861922107d0cc9f1f626984eace91be6e71fc8887afbca
+
+- record-result D1-S5 commit:263a0bbe06c3702f9172a8bbc68a12473856c90d
+
+- deviation D1-S5: the SPEC's table said +created on later pages; a page states the persons it left out instead — the count the People API states is exact, so what stays out of the graph is what the plan skips
+
+- close D1-S5 closed commit:263a0bbe06c3702f9172a8bbc68a12473856c90d
+
+- amend implementation owner:не спрашивай меня про такие мелки дефекты sha256:10b33776337675bef661155c50d95e3461e62ee88d45281ae5bce34f7e2d0c76
+
+- amend implementation owner:не спрашивай меня про такие мелки дефекты sha256:1349ea6377a1616c56156344b7f42841b620ddeeb3342b68e13f29555fa1caab
 <!-- plan:execution:end -->

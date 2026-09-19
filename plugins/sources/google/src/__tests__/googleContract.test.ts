@@ -88,7 +88,8 @@ describe("google", () => runSourceContract(buildConnectorConfig(mockFetch(happyR
   fetch: {
     // The mailbox envelope precedes the one message: two envelopes, no counters.
     email: { meta: META, minEnvelopes: 2 },
-    meetings: { meta: META, minEnvelopes: 1, expectCounters: "discovered" },
+    // The calendar envelope precedes the one event: two envelopes, no counters.
+    meetings: { meta: META, minEnvelopes: 2 },
     // The list envelope precedes the two persons: three envelopes, no counters.
     contacts: { meta: META, minEnvelopes: 3 },
   },

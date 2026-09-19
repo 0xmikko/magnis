@@ -315,15 +315,19 @@ describe("serde parity — optional/default fields stay tolerant", () => {
   // GcalEvent: everything but `id` is Option<_> (calendar.rs:28); GcalDateTime
   // and GcalAttendee are all-Option. A bare event still converts.
   test("tst_gts_serde_014 calendar tolerates a bare event + absent items", async () => {
+    // The same answer serves the ids-only pass and the page: the calendar
+    // envelope counts one event, then the bare event follows.
     const bare: FetchLike = async () => ok({ items: [{ id: "evt_1" }] });
     const r = await fetchEventsPage("tok", undefined, {}, bare);
-    expect(r.envelopes).toHaveLength(1);
-    const env = r.envelopes[0];
-    if (env === undefined) throw new Error("calendar page: missing envelope 0");
+    expect(r.envelopes.map((e) => e.remote_id)).toEqual(["calendar", "gcal:evt_1"]);
+    const env = r.envelopes[1];
+    if (env === undefined) throw new Error("calendar page: missing envelope 1");
     expect(env.payload.title).toBe("Untitled Event");
 
     const empty: FetchLike = async () => ok({});
-    expect((await fetchEventsPage("tok", undefined, {}, empty)).envelopes).toHaveLength(0);
+    expect((await fetchEventsPage("tok", undefined, {}, empty)).envelopes).toEqual([
+      { surface: "meetings", kind: "snapshot", remote_id: "calendar", payload: { entity_type: "calendar", events_total: 0 } },
+    ]);
   });
 
   // GpeopleConnectionsResponse.connections + every GpeoplePerson sub-list are

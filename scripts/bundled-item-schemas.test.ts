@@ -95,6 +95,7 @@ describe("tst_pub_item_schemas_001", () => {
     ["telegram", "telegram", { "telegram.chat": "chats", "telegram.message": "messages" }],
     ["email", "email", { "email.message": "messages" }],
     ["contacts", "contacts", { "contacts.person": "contacts" }],
+    ["meetings", "meetings", { "meetings.calendar_event": "events" }],
   ];
 
   for (const [moduleId, surface, names] of progress) {
