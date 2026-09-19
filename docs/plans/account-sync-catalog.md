@@ -485,19 +485,20 @@ Commit. feat(linkedin): the module declares profiles and posts and states the pr
 
 ##### Tasks
 
-- [ ] ACS_015 — State profiles +1 per pass in linkedin service.ts; declare profiles and posts in linkedin manifest.toml; cover in linkedinIngest.test.ts and bundled-item-schemas.test.ts. (20 min)
+- [x] ACS_015 — State profiles +1 per pass in linkedin service.ts; declare profiles and posts in linkedin manifest.toml; cover in linkedinIngest.test.ts and bundled-item-schemas.test.ts. (20 min) — ecdee3260a1413661986fd9400f41ddd3dcf4e70
 <!-- plan:task-meta:{"writes":["plugins/modules/linkedin/module/service.ts","plugins/modules/linkedin/module/__tests__/linkedinIngest.test.ts","plugins/modules/linkedin/manifest.toml","scripts/bundled-item-schemas.test.ts"],"predictedActiveMinutes":20,"predictedCredits":5,"how":"ingest reads generation; sync_pass on the profile entity decides the +1; posts state nothing","red":"bun run agent:test:backend -- plugins/modules/linkedin/module/__tests__/linkedinIngest.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- plugins/modules/linkedin/module/__tests__/linkedinIngest.test.ts` exits 0
-- [ ] Commit
+- [x] `bun run agent:test:backend -- plugins/modules/linkedin/module/__tests__/linkedinIngest.test.ts` exits 0 — ecdee3260a1413661986fd9400f41ddd3dcf4e70
+- [x] Commit — ecdee3260a1413661986fd9400f41ddd3dcf4e70
 
 ##### Results
 
 <!-- plan:results:D1-S8:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| ACS_015 | ecdee3260a1413661986fd9400f41ddd3dcf4e70 | 2026-09-19T20:40:44.762Z–2026-09-19T20:45:08.000Z | 4 / 4 min | unavailable: runner did not expose usage | the linkedin manifest declares profiles and posts; ingest reads the page's profile anchors in two Graph calls, states profiles +1 on a profile whose sync_pass is not this pass (stamping it in the batch), never states posts, nothing without generation. Module 14/14; typecheck and lint clean; hook 12+8. |
 <!-- plan:results:D1-S8:end -->
 <!-- plan:stage:D1-S8:end -->
 
@@ -627,4 +628,8 @@ Commit. docs(plugins): counts on the scope envelope, traversed ranges on the pag
 - record-result D1-S7 commit:eb6667ca7e46002a52c5626a344ef6a566fc8876
 
 - close D1-S7 closed commit:eb6667ca7e46002a52c5626a344ef6a566fc8876
+
+- record-result D1-S8 commit:ecdee3260a1413661986fd9400f41ddd3dcf4e70
+
+- close D1-S8 closed commit:ecdee3260a1413661986fd9400f41ddd3dcf4e70
 <!-- plan:execution:end -->
