@@ -309,24 +309,27 @@ Commit. feat(google,email): the mailbox states its count on the first page and t
 
 ##### Tasks
 
-- [ ] ACS_007 — Emit the mailbox envelope with messages_total and the SPAM/TRASH skipped on Gmail's first page in gmail.ts; drop discovered/total from progress.ts; cover in gmail.test.ts. (35 min)
+- [x] ACS_007 — Emit the mailbox envelope with messages_total and the SPAM/TRASH skipped on Gmail's first page in gmail.ts; drop discovered/total from progress.ts; cover in gmail.test.ts. (35 min) — 28bc3f959e2d9ef59da51a2e67faeee1a912ee5d
 <!-- plan:task-meta:{"writes":["plugins/sources/google/src/surfaces/email/gmail.ts","plugins/sources/google/src/surfaces/email/gmail.test.ts","plugins/sources/google/src/progress.ts"],"predictedActiveMinutes":35,"predictedCredits":8,"how":"on page one (no page_token) getProfile plus labels/SPAM and labels/TRASH give the counts; the mailbox envelope precedes the messages; progressCursor/mergeProgress and the cursor keys go","red":"bun run agent:test:backend -- plugins/sources/google/src/surfaces/email/gmail.test.ts"} -->
-- [ ] ACS_008 — State the plan on the mailbox envelope and +created/−deleted after in email service.ts; declare messages in email manifest.toml; cover in emailIngest.test.ts, bundled-item-schemas.test.ts. (35 min)
+- [x] ACS_008 — State the plan on the mailbox envelope and +created/−deleted after in email service.ts; declare messages in email manifest.toml; cover in emailIngest.test.ts, bundled-item-schemas.test.ts. (35 min) — 28bc3f959e2d9ef59da51a2e67faeee1a912ee5d
 <!-- plan:task-meta:{"writes":["plugins/modules/email/module/service.ts","plugins/modules/email/module/__tests__/emailIngest.test.ts","plugins/modules/email/manifest.toml","scripts/bundled-item-schemas.test.ts"],"predictedActiveMinutes":35,"predictedCredits":8,"how":"ingest reads generation; a mailbox envelope states { \"email.message\": { total: messages_total, skipped } } and is not ingested; other pages state total +created (from the batch result) −deleted; without generation nothing","red":"bun run agent:test:backend -- plugins/modules/email/module/__tests__/emailIngest.test.ts"} -->
-- [ ] ACS_018 — Drop the email counters from google connector.ts; route labels/SPAM and labels/TRASH in serde-parity.test.ts and googleContract.test.ts and expect the mailbox envelope. (8 min)
+- [x] ACS_018 — Drop the email counters from google connector.ts; route labels/SPAM and labels/TRASH in serde-parity.test.ts and googleContract.test.ts and expect the mailbox envelope. (8 min) — 28bc3f959e2d9ef59da51a2e67faeee1a912ee5d
 <!-- plan:task-meta:{"writes":["plugins/sources/google/src/connector.ts","plugins/sources/google/src/__tests__/serde-parity.test.ts","plugins/sources/google/src/__tests__/googleContract.test.ts"],"predictedActiveMinutes":8,"predictedCredits":2,"how":"the email case of fetchHandler returns {envelopes, nextCursor, hasMore}; the two shared route fakes answer the label reads; the contract expects two email envelopes and no counters","red":"bun run agent:test:backend -- plugins/sources/google/src/__tests__/serde-parity.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- plugins/sources/google/src/surfaces/email/gmail.test.ts` exits 0
-- [ ] `bun run agent:test:backend -- plugins/modules/email/module/__tests__/emailIngest.test.ts` exits 0
-- [ ] Commit
+- [x] `bun run agent:test:backend -- plugins/sources/google/src/surfaces/email/gmail.test.ts` exits 0 — 28bc3f959e2d9ef59da51a2e67faeee1a912ee5d
+- [x] `bun run agent:test:backend -- plugins/modules/email/module/__tests__/emailIngest.test.ts` exits 0 — 28bc3f959e2d9ef59da51a2e67faeee1a912ee5d
+- [x] Commit — 28bc3f959e2d9ef59da51a2e67faeee1a912ee5d
 
 ##### Results
 
 <!-- plan:results:D1-S4:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| ACS_007 | 28bc3f959e2d9ef59da51a2e67faeee1a912ee5d | 2026-09-19T20:10:33.755Z–2026-09-19T20:24:52.000Z | 15 / 15 min | unavailable: runner did not expose usage | fetchMessagePage opens page one with the mailbox envelope {entity_type mailbox, messages_total, skipped = SPAM + TRASH messagesTotal} when the profile counts, and the page and cursor carry no counters; fetchHistoryChanges likewise; the email module states the mailbox in full, +1 per live mail and -1 per delete, nothing without generation; email manifest declares messages. Gmail 17/17, email module 64/64, Google suite 71/71 under bun 1.3.13 (the pinned version; the certification receipts are minted with it), typecheck and lint clean; hook 47+15. |
+| ACS_008 | 28bc3f959e2d9ef59da51a2e67faeee1a912ee5d | 2026-09-19T20:10:33.755Z–2026-09-19T20:24:52.000Z | 15 / 15 min | unavailable: runner did not expose usage | fetchMessagePage opens page one with the mailbox envelope {entity_type mailbox, messages_total, skipped = SPAM + TRASH messagesTotal} when the profile counts, and the page and cursor carry no counters; fetchHistoryChanges likewise; the email module states the mailbox in full, +1 per live mail and -1 per delete, nothing without generation; email manifest declares messages. Gmail 17/17, email module 64/64, Google suite 71/71 under bun 1.3.13 (the pinned version; the certification receipts are minted with it), typecheck and lint clean; hook 47+15. |
+| ACS_018 | 28bc3f959e2d9ef59da51a2e67faeee1a912ee5d | 2026-09-19T20:10:33.755Z–2026-09-19T20:24:52.000Z | 15 / 15 min | unavailable: runner did not expose usage | fetchMessagePage opens page one with the mailbox envelope {entity_type mailbox, messages_total, skipped = SPAM + TRASH messagesTotal} when the profile counts, and the page and cursor carry no counters; fetchHistoryChanges likewise; the email module states the mailbox in full, +1 per live mail and -1 per delete, nothing without generation; email manifest declares messages. Gmail 17/17, email module 64/64, Google suite 71/71 under bun 1.3.13 (the pinned version; the certification receipts are minted with it), typecheck and lint clean; hook 47+15. |
 <!-- plan:results:D1-S4:end -->
 <!-- plan:stage:D1-S4:end -->
 
@@ -575,4 +578,10 @@ Commit. docs(plugins): counts on the scope envelope, traversed ranges on the pag
 - amend implementation owner:не спрашивай меня про такие мелки дефекты sha256:3dabe7cc9eab9f7ede444adbaefc18858e828201525e665852375a404bb03d6c
 
 - amend implementation owner:не спрашивай меня про такие мелки дефекты sha256:da39d34a6487ba6b70f4bc47b5e6c32a3cb7d0fb89d39b3da57e6a79d6e4630a
+
+- record-result D1-S4 commit:28bc3f959e2d9ef59da51a2e67faeee1a912ee5d
+
+- deviation D1-S4: the catalog pins bun 1.3.13 and its certification receipts hash the bundle the running bun produced: after the host move the default bun is 1.4.2, so the suites and the receipts run under mise exec bun@1.3.13; the re-minted telegram and google source receipts ride the closure commit
+
+- close D1-S4 closed commit:28bc3f959e2d9ef59da51a2e67faeee1a912ee5d
 <!-- plan:execution:end -->
