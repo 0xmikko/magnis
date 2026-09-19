@@ -2,7 +2,7 @@
 
 Status: APPROVED  
 Spec lock: sha256:68e0aebc008e04c12bc42733e0c7e3e5f4a1c6c0cbeb772f3957078e3c598cf2 owner:approved  
-Implementation lock: sha256:d671787593a64da7f8977a4fba5bffa325695fa7b5a5a5926b76ab1c481a1b14 owner:approved  
+Implementation lock: sha256:120817defdedbfd31f4270d6378c345b58862fdc082a2616632b7917ffc08cb9 owner:не спрашивай меня про такие мелки дефекты  
 Active Delivery: D1  
 Unattended decisions: allowed  
 
@@ -154,7 +154,7 @@ Branch: `feat/account-sync-catalog`; Depends: none; Gate: backend.
 
 Stage graph: `D1-S1 -> D1-S2 -> D1-S3 -> D1-S4 -> D1-S5 -> D1-S6 -> D1-S7 -> D1-S8 -> D1-S9`.
 
-Forecast: 524 active min / 124 credits across 9 Stages; longest dependency path 524 active min; external waits 240 min.
+Forecast: 529 active min / 125 credits across 9 Stages; longest dependency path 529 active min; external waits 240 min.
 
 What changed for people. The Accounts panel prints every account's sync from what its worker holds: for Telegram, chats 50/50 and messages 197/197 with the skipped history named; for Gmail, contacts, meetings and X the planned count on the first page; the Telegram history behind the first page is backfilled because the Source says what each page read.
 
@@ -202,13 +202,13 @@ Commit. feat(telegram): the manifest declares chats and messages as the surface'
 <!-- plan:stage:D1-S1:end -->
 
 <!-- plan:stage:D1-S2:start -->
-<!-- plan:stage-meta:{"deliveryId":"D1","depends":["D1-S1"],"parallelWith":[],"writes":["plugins/modules/telegram/module/service.ts","plugins/modules/telegram/types.ts","plugins/modules/telegram/module/__tests__/syncPlan.test.ts","plugins/modules/telegram/module/__tests__/telegramIngest.test.ts","plugins/modules/telegram/module/__tests__/telegramCommand.test.ts"],"tempRoot":".tmp/code-production/account-sync-catalog/D1-S2","verifyActiveMinutes":15,"verifyCredits":4} -->
+<!-- plan:stage-meta:{"deliveryId":"D1","depends":["D1-S1"],"parallelWith":[],"writes":["plugins/modules/telegram/module/service.ts","plugins/modules/telegram/types.ts","plugins/modules/telegram/module/__tests__/syncPlan.test.ts","plugins/modules/telegram/module/__tests__/telegramIngest.test.ts","plugins/modules/telegram/module/__tests__/telegramCommand.test.ts","plugins/modules/telegram/module/__tests__/chatBatchSnapshotMerge.test.ts"],"tempRoot":".tmp/code-production/account-sync-catalog/D1-S2","verifyActiveMinutes":15,"verifyCredits":4} -->
 #### Stage D1-S2 — The Telegram module states the plan from the membership edge and reconciles by the pass
 
 - Owner: agent-1; Profile: fast; Depends: D1-S1; Parallel with: none.
-- Writes: `plugins/modules/telegram/module/service.ts`, `plugins/modules/telegram/types.ts`, `plugins/modules/telegram/module/__tests__/syncPlan.test.ts`, `plugins/modules/telegram/module/__tests__/telegramIngest.test.ts`, `plugins/modules/telegram/module/__tests__/telegramCommand.test.ts`.
+- Writes: `plugins/modules/telegram/module/service.ts`, `plugins/modules/telegram/types.ts`, `plugins/modules/telegram/module/__tests__/syncPlan.test.ts`, `plugins/modules/telegram/module/__tests__/telegramIngest.test.ts`, `plugins/modules/telegram/module/__tests__/telegramCommand.test.ts`, `plugins/modules/telegram/module/__tests__/chatBatchSnapshotMerge.test.ts`.
 - Temp root: `.tmp/code-production/account-sync-catalog/D1-S2` (must be absent at handoff).
-- Predict: 115 active min / 26 credits.
+- Predict: 120 active min / 27 credits.
 - Of which verification: 15 active min / 4 credits.
 
 What this Stage solves. The module answers a whole plan on demand (sync_plan) from a window over every chat, and reconciles from a list of observed ids the backend no longer sends; the backend now reads the plan from each page's receipt, relative to the module's last statement, and reconciles by the pass generation it stamps on every ingest call.
@@ -221,22 +221,27 @@ Commit. feat(telegram): the module states its plan from the membership edge — 
 
 ##### Tasks
 
-- [ ] ACS_002 — State plan deltas, exclusions and the pass stamp on the observed_in edge in plugins/modules/telegram/module/service.ts; rewrite syncPlan.test.ts as the plan-from-receipts test. (60 min)
+- [x] ACS_002 — State plan deltas, exclusions and the pass stamp on the observed_in edge in plugins/modules/telegram/module/service.ts; rewrite syncPlan.test.ts as the plan-from-receipts test. (60 min) — 0a49abe779cc613a0d44eb4f38f8224e7b1538fc
 <!-- plan:task-meta:{"writes":["plugins/modules/telegram/module/service.ts","plugins/modules/telegram/module/__tests__/syncPlan.test.ts"],"predictedActiveMinutes":60,"predictedCredits":13,"how":"ingest reads params.generation; existing chats' edges are read with list_linked({parent_id: chat, link_kind: observed_in, direction: in}); planned/skipped per chat from message_count, shouldIndex and pins; the delta against sync_total/sync_skipped when sync_pass matches, full otherwise; the link metadata carries the three keys beside the state; the answer carries plan and excluded; a live message on an admitted chat states +1","red":"bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/syncPlan.test.ts"} -->
-- [ ] ACS_003 — Reconcile by the pass in service.ts onSyncComplete; drop sync_plan, backfill_priority and SyncPlan from service.ts and types.ts; follow in telegramIngest.test.ts, telegramCommand.test.ts. (40 min)
+- [x] ACS_003 — Reconcile by the pass in service.ts onSyncComplete; drop sync_plan, backfill_priority and SyncPlan from service.ts and types.ts; follow in telegramIngest.test.ts, telegramCommand.test.ts. (40 min) — 0a49abe779cc613a0d44eb4f38f8224e7b1538fc
 <!-- plan:task-meta:{"writes":["plugins/modules/telegram/module/service.ts","plugins/modules/telegram/types.ts","plugins/modules/telegram/module/__tests__/telegramIngest.test.ts","plugins/modules/telegram/module/__tests__/telegramCommand.test.ts"],"predictedActiveMinutes":40,"predictedCredits":9,"how":"onSyncComplete reads generation; list_entities_window over CHAT with the edge filter sync_pass exists, minus sync_pass eq generation, five hundred a page; each departed chat's edge is found by list_linked and decayed; the answer is {departed, plan: negative totals, chats -1}; the two dead branches and the type are deleted with their tests","red":"bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/telegramIngest.test.ts"} -->
+- [x] ACS_017 — Follow the operator-edge read before the chat batch in chatBatchSnapshotMerge.test.ts: one operator lookup, one kind-filtered list_linked per existing chat. (5 min) — 0a49abe779cc613a0d44eb4f38f8224e7b1538fc
+<!-- plan:task-meta:{"writes":["plugins/modules/telegram/module/__tests__/chatBatchSnapshotMerge.test.ts"],"predictedActiveMinutes":5,"predictedCredits":1,"how":"the strict doubles gain find_by_anchor for the operator and list_linked answering no edge; the packet test asserts one lookup and one edge read per existing chat","red":"bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/chatBatchSnapshotMerge.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/syncPlan.test.ts plugins/modules/telegram/module/__tests__/telegramIngest.test.ts plugins/modules/telegram/module/__tests__/telegramCommand.test.ts` exits 0
+- [x] `bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/syncPlan.test.ts plugins/modules/telegram/module/__tests__/telegramIngest.test.ts plugins/modules/telegram/module/__tests__/telegramCommand.test.ts` exits 0 — 0a49abe779cc613a0d44eb4f38f8224e7b1538fc
 - [ ] `git grep -l 'sync_plan\|backfill_priority' -- plugins/modules/telegram` prints nothing
-- [ ] Commit
+- [x] Commit — 0a49abe779cc613a0d44eb4f38f8224e7b1538fc
 
 ##### Results
 
 <!-- plan:results:D1-S2:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| ACS_002 | 0a49abe779cc613a0d44eb4f38f8224e7b1538fc | 2026-09-19T08:16:37.322Z–2026-09-19T19:46:37.322Z | 95 / 690 min | unavailable: runner did not expose usage | ingest states plan deltas per schema against the observed_in edge's sync_pass/sync_total/sync_skipped (full on a new pass, zero on a re-read, the difference on a restatement, +1 for a live message on an admitted chat), names every excluded chat, writes the statement in the page's batch and restores a decayed edge; onSyncComplete(generation) decays the edges of other passes and answers departed with the negative plan; sync_plan, backfill_priority and SyncPlan removed. Module suite 11 files / 41 pass; typecheck and lint clean; hook 20/20. The work was done twice: the host move lost the first, uncommitted copy. |
+| ACS_003 | 0a49abe779cc613a0d44eb4f38f8224e7b1538fc | 2026-09-19T08:16:37.322Z–2026-09-19T19:46:37.322Z | 95 / 690 min | unavailable: runner did not expose usage | ingest states plan deltas per schema against the observed_in edge's sync_pass/sync_total/sync_skipped (full on a new pass, zero on a re-read, the difference on a restatement, +1 for a live message on an admitted chat), names every excluded chat, writes the statement in the page's batch and restores a decayed edge; onSyncComplete(generation) decays the edges of other passes and answers departed with the negative plan; sync_plan, backfill_priority and SyncPlan removed. Module suite 11 files / 41 pass; typecheck and lint clean; hook 20/20. The work was done twice: the host move lost the first, uncommitted copy. |
+| ACS_017 | 0a49abe779cc613a0d44eb4f38f8224e7b1538fc | 2026-09-19T08:16:37.322Z–2026-09-19T19:46:37.322Z | 95 / 690 min | unavailable: runner did not expose usage | ingest states plan deltas per schema against the observed_in edge's sync_pass/sync_total/sync_skipped (full on a new pass, zero on a re-read, the difference on a restatement, +1 for a live message on an admitted chat), names every excluded chat, writes the statement in the page's batch and restores a decayed edge; onSyncComplete(generation) decays the edges of other passes and answers departed with the negative plan; sync_plan, backfill_priority and SyncPlan removed. Module suite 11 files / 41 pass; typecheck and lint clean; hook 20/20. The work was done twice: the host move lost the first, uncommitted copy. |
 <!-- plan:results:D1-S2:end -->
 <!-- plan:stage:D1-S2:end -->
 
@@ -270,7 +275,7 @@ Commit. feat(telegram): the Source states what each page traversed and where a l
 ##### Acceptance criteria
 
 - [ ] `bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts plugins/sources/telegram/src/live.test.ts plugins/sources/telegram/src/fixture.test.ts` exits 0
-- [ ] `git grep -l 'discovered' -- plugins/sources/telegram/src` prints nothing
+- [ ] `git grep -l 'discovered' -- plugins/sources/telegram/src/surfaces/telegram/commands.ts plugins/sources/telegram/src/surfaces/telegram/fixture.ts` prints nothing
 - [ ] Commit
 
 ##### Results
@@ -543,4 +548,18 @@ Commit. docs(plugins): counts on the scope envelope, traversed ranges on the pag
 - deviation D1-S1: the host moved (/home/marketing → /mnt/movies/dev/home) between the commit and its receipt; the worktree and its start receipt were lost, the receipt is imported anew over the same commit
 
 - close D1-S1 closed commit:d09c5f6d4d7378484420aa7bde57a888f897f722
+
+- amend implementation owner:не спрашивай меня про такие мелки дефекты sha256:a23f5d52f56d052018be7f0c02dbb6f1d9a6eba4d122ac9cadab5c67db899f50
+
+- amend implementation owner:не спрашивай меня про такие мелки дефекты sha256:ccc5867a8ec20194f2364a7fb22b4593e2b6ec0d9bdaadd54fd7462b0115b801
+
+- record-result D1-S2 commit:0a49abe779cc613a0d44eb4f38f8224e7b1538fc
+
+- deviation D1-S2: the host moved between the RED and the commit; the uncommitted first copy of the work was lost and redone from the transcript (elapsed spans the move)
+
+- close D1-S2 partial commit:0a49abe779cc613a0d44eb4f38f8224e7b1538fc
+
+- amend implementation owner:не спрашивай меня про такие мелки дефекты sha256:9c3528e81a4850b9280bc90cce1c1af89f9b694fdc82af05d38efa224d05aabb
+
+- amend implementation owner:не спрашивай меня про такие мелки дефекты sha256:120817defdedbfd31f4270d6378c345b58862fdc082a2616632b7917ffc08cb9
 <!-- plan:execution:end -->

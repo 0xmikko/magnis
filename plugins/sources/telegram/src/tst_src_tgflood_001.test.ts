@@ -186,7 +186,9 @@ test("tst_src_tgflood_005 the Source command loop preserves runtime flood replie
     for (let i = 0; i < 4; i++) await answer();
     const result = (await io.reply(id++)).result as Record<string, unknown>;
     const emitted = envelopes(result);
-    expect(result).toMatchObject({ hasMore: false, discovered: 3, total: 3 });
+    // The page states what it read of each chat: the 120- and 70-message chats
+    // down to their first page's oldest, the 5-message chat whole.
+    expect(result).toMatchObject({ hasMore: false, traversed: { "101": [71, 120], "102": [21, 70], "103": [1, 5] } });
     const before = new Map([[101, 71], [102, 21], [103, 1]]);
     while (before.size) for (const [chat, offset] of [...before]) {
       io.send(id, "magnis.execute", { action: "backfill_chat", chat_id: chat, before_message_id: offset, limit: 50, _meta: meta });
@@ -504,7 +506,7 @@ test("tst_src_tgflood_001 healthy requests use a free application slot without d
     expect(emitted.filter((item) => typeof item.remote_id === "string" && item.remote_id.startsWith("tg:chat:"))).toMatchObject([
       { payload: { is_pinned: true, pin_order: 0 } }, { payload: { is_pinned: true, pin_order: 1 } }, { payload: { is_pinned: false, pin_order: 0 } },
     ]);
-    expect(boot).toMatchObject({ discovered: 3, total: 3, hasMore: false });
+    expect(boot).toMatchObject({ hasMore: false, traversed: { "101": [71, 120], "102": [21, 70], "103": [1, 5] } });
     const before = new Map([[101, 71], [102, 21], [103, 1]]);
     while (before.size > 0) for (const [chat, offset] of [...before]) {
       const filling = execute(f.tg, "fixture-A", { action: "backfill_chat", chat_id: chat, before_message_id: offset, limit: 50 }, { sleep: async () => { throw new Error("Unexpected independent sleep"); } });
@@ -682,7 +684,8 @@ test("tst_src_tgfast_005 measures complete round-robin history without local pac
         latencies.push(clock.now() - started);
         frameBytes.push(Buffer.byteLength(JSON.stringify(result)));
         emitted.push(...envelopes(result));
-        expect(result).toMatchObject({ discovered: (page + 1) * 5, total: 50, hasMore: page < 9 });
+        // Only the three chats with a history state what the page read of them; the empty ones state nothing.
+        expect(result).toMatchObject({ hasMore: page < 9, traversed: page === 0 ? { "101": [71, 120], "102": [21, 70], "103": [1, 5] } : {} });
         cursor = JSON.parse(JSON.stringify(result.nextCursor)) as unknown;
         if (page === 0) {
           await f.incoming(new Api.Updates({ users: [user], chats: [fixtureChat(101)], date: 1700000122, seq: 1,

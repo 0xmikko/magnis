@@ -303,7 +303,10 @@ test("tst_src_tg_032 unhydrated live peers preserve history identity and refuse 
         id: message.id, date: message.date, message: message.message,
         media: { className: message.media.className },
       }, "account-1", chatId);
-      expected.push({ payload: messagePayload(history), remote_id: messageRemoteId(chatId, message.id) });
+      // The push names where the item sits in its chat: the host trims the
+      // chat's open range by it, as a page states the ranges it read.
+      // @tested-by: tst_tglive_position_001
+      expected.push({ payload: messagePayload(history), remote_id: messageRemoteId(chatId, message.id), position: { scope_id: String(chatId), id: message.id } });
     }
   }
   const refused = [

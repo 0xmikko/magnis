@@ -61,7 +61,7 @@ test("tst_src_tgdispatch_001 a sync fetch answers while eight downloads are in f
       new Promise<"starved">((resolve) => { setTimeout(() => { resolve("starved"); }, 500); }),
     ]);
     expect(answered).toBe("answered");
-    expect(replies.get(100)).toMatchObject({ id: 100, result: { hasMore: false, discovered: 0 } });
+    expect(replies.get(100)).toMatchObject({ id: 100, result: { hasMore: false, traversed: {} } });
     // The downloads are still running or still queued: none of them answered.
     expect(replies.size).toBe(1);
     expect(downloadsStarted).toBeLessThanOrEqual(8);

@@ -83,9 +83,11 @@ describe("fixture fetch", () => {
     // Interleaved: each chat, then ITS messages. The `live` message is EXCLUDED.
     expect(envIds(r)).toEqual(["tg:chat:5", "tg:msg:5:10", "tg:msg:5:20", "tg:chat:6", "tg:msg:6:30"]);
     expect(result.hasMore).toBe(false);
-    // A fixture page carries NO total/discovered keys (Rust parity).
+    // A fixture page carries NO total/discovered keys (Rust parity); it states
+    // what it read of each chat — the whole history, the fixture being complete.
     expect("total" in result).toBe(false);
     expect("discovered" in result).toBe(false);
+    expect(result.traversed).toEqual({ "5": [1, 20], "6": [1, 30] });
     // The cursor is the per-chat watermark.
     expect((result.nextCursor as Record<string, unknown>).chats).toEqual({
       "5": { last_msg_id: 20 },
@@ -107,6 +109,8 @@ describe("fixture fetch", () => {
     });
     // Chat 5 keeps only message 20; chat 6 (no cursor entry) keeps everything.
     expect(envIds(r)).toEqual(["tg:chat:5", "tg:msg:5:20", "tg:chat:6", "tg:msg:6:30"]);
+    // A forward page states the gap above the watermark it read.
+    expect((r.result as Record<string, unknown>).traversed).toEqual({ "5": [11, 20], "6": [1, 30] });
   });
 
   test("tst_tgts_fx_004 fixture mode needs NO _meta at all (checked before creds)", async () => {
@@ -224,29 +228,32 @@ describe("fixture listener", () => {
     expect(lines).toHaveLength(1); // ONLY the live:true message
     const msg = JSON.parse(lines[0]!) as Record<string, unknown>;
     expect(msg.method).toBe("notifications/magnis/envelope");
-    // EXACT param shape: NO surface, NO kind, NO cursor.
+    // EXACT param shape: NO surface, NO kind, NO cursor; the position names
+    // where the item sits in its chat.
     const params = msg.params as Record<string, unknown>;
     expect(Object.keys(params).sort()).toEqual([
       "account_id",
       "payload",
+      "position",
       "remote_id",
       "subscription_id",
     ]);
     expect(params.subscription_id).toBe("sub:1");
     expect(params.account_id).toBe("acct-1");
     expect(params.remote_id).toBe("tg:msg:5:99");
+    expect(params.position).toEqual({ scope_id: "5", id: 99 });
     expect((params.payload as Record<string, unknown>).text).toBe("live!");
   });
 
-  test("tst_tgts_fx_011 the notification line is a bare payload+remote_id envelope", () => {
-    const line = JSON.parse(notificationLine("s1", "a1", { k: 1 }, "tg:msg:1:2")) as Record<
+  test("tst_tgts_fx_011 the notification line is a bare payload+remote_id+position envelope", () => {
+    const line = JSON.parse(notificationLine("s1", "a1", { k: 1 }, "tg:msg:1:2", { scope_id: "1", id: 2 })) as Record<
       string,
       unknown
     >;
     expect(line).toEqual({
       jsonrpc: "2.0",
       method: "notifications/magnis/envelope",
-      params: { subscription_id: "s1", account_id: "a1", payload: { k: 1 }, remote_id: "tg:msg:1:2" },
+      params: { subscription_id: "s1", account_id: "a1", payload: { k: 1 }, remote_id: "tg:msg:1:2", position: { scope_id: "1", id: 2 } },
     });
   });
 });

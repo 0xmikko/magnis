@@ -95,8 +95,11 @@ test("tst_src_tgfast_002 fifty dialogs retain bounded hydrated pages and pinned 
       const envelopes = out.envelopes as Record<string, unknown>[];
       expect(envelopes).toHaveLength(255);
       expect(out.hasMore).toBe(page < 9);
-      expect(out.discovered).toBe((page + 1) * 5);
-      expect(out.total).toBe(50);
+      // Every hydrated chat answered its whole fifty-message history: the page
+      // states it read each from one; the counters that used to ride here are gone.
+      expect(out.traversed).toEqual(Object.fromEntries(ids.slice(page * 5, page * 5 + 5).map((id) => [String(id), [1, 50]])));
+      expect("total" in out).toBe(false);
+      expect("discovered" in out).toBe(false);
       if (page === 0) {
         const hydrationOffset = (out.nextCursor as { dialog_offset: DialogOffset }).dialog_offset;
         const pendingChats = await new LiveDialogPager(new TgClient(f.client), "fixture-fast")
@@ -357,6 +360,10 @@ interface FakeDialog {
   chat_id: number;
   is_pinned: boolean;
   msg_ids: number[];
+  /** The dialog's newest message id as GetDialogs states it (0 = empty). */
+  top_message?: number;
+  /** The exact count Telegram states with the history answer. */
+  message_count?: number;
   /** When set, this chat's history hydration fails with the given RPC error —
    * routed through the SAME resolveHydratedMessages seam the live pager uses. */
   history_rpc_err?: [number, string];
@@ -393,7 +400,11 @@ class FakePager implements DialogPager {
           ? { ok: false, error: rpcErr(fd.history_rpc_err[0], fd.history_rpc_err[1]) }
           : { ok: true, messages: fd.msg_ids.map((m) => fakeMsg(fd.chat_id, m)) };
       const messages = resolveHydratedMessages(fd.chat_id, fetched);
-      dialogs.push({ chat: fakeChat(fd.chat_id, fd.is_pinned), messages });
+      const chat = fakeChat(fd.chat_id, fd.is_pinned);
+      if (fd.top_message !== undefined) chat.top_message = fd.top_message;
+      // The count rides the answer: a failed read states none.
+      if (fd.message_count !== undefined && fetched.ok) chat.message_count = fd.message_count;
+      dialogs.push({ chat, messages });
     }
 
     const nextOffset: DialogOffset | null =
@@ -546,29 +557,18 @@ describe("bootstrap", () => {
     expect((resumed.nextCursor as Record<string, unknown>).pinned_count).toBe(8);
   });
 
-  // Twin of tst_src_tg_bootstrap_total_001.
-  test("tst_tgts_boot_009 total passes through; discovered is CUMULATIVE", async () => {
+  // The host reads no counters from a page: what it counts is what the
+  // Graph stamped, what it plans is what the module states.
+  test("tst_tgts_boot_009 a page carries no total and no discovered, whatever the pager knows", async () => {
     const pager = new FakePager(simpleDialogs(130), 50, 130);
-
-    const first = await runBootstrap(null, pager);
-    expect(first.total).toBe(130);
-    expect(first.discovered).toBe(50);
-
-    let cursor = first.nextCursor;
-    let lastDiscovered = first.discovered as number;
+    let cursor: unknown = null;
     for (let i = 0; i < 10; i += 1) {
       const out = await runBootstrap(cursor, pager);
-      expect(out.total).toBe(130);
-      lastDiscovered = out.discovered as number;
+      expect("total" in out).toBe(false);
+      expect("discovered" in out).toBe(false);
       cursor = out.nextCursor;
       if (!(out.hasMore as boolean)) break;
     }
-    expect(lastDiscovered).toBe(130);
-  });
-
-  test("tst_tgts_boot_010 total is null when the pager omits it", async () => {
-    const out = await runBootstrap(null, new FakePager(simpleDialogs(3), 50));
-    expect(out.total).toBeNull();
   });
 
   test("tst_tgts_boot_011 nextCursor is null IFF no chats AND no next offset", async () => {
@@ -635,6 +635,29 @@ describe("bootstrap", () => {
     expect(pager.requests[0]).toBeNull(); // no dialog_offset → resume from the top
     expect(new Set(emitted).size).toBe(120);
     expect(hasMores.at(-1)).toBe(false);
+  });
+
+  /** @test-id: tst_tgts_boot_014
+   * @scenario: scn_tg_sync_003
+   * @covers: runBootstrap traversed ranges
+   * @deterministic: yes
+   * @fixtures: a 120-, a 70- and a 5-message chat, an empty one, a failed read and a chat that grew since GetDialogs
+   */
+  test("tst_tgts_boot_014 the page states the id range it read per chat, a whole history from one, nothing for an empty or failed chat", async () => {
+    const newestFirst = (top: number, count: number): number[] => Array.from({ length: count }, (_, i) => top - i);
+    const pager = new FakePager([
+      { chat_id: 1, is_pinned: false, msg_ids: newestFirst(120, 50), top_message: 120, message_count: 120 },
+      { chat_id: 2, is_pinned: false, msg_ids: newestFirst(70, 50), top_message: 70, message_count: 70 },
+      { chat_id: 3, is_pinned: false, msg_ids: newestFirst(5, 5), top_message: 5, message_count: 5 },
+      { chat_id: 4, is_pinned: false, msg_ids: [], top_message: 0 },
+      { chat_id: 5, is_pinned: false, msg_ids: newestFirst(40, 40), top_message: 40, message_count: 40, history_rpc_err: [500, "RPC_CALL_FAIL"] },
+      // A message arrived between GetDialogs and the history read: the page read past the dialog's top.
+      { chat_id: 6, is_pinned: false, msg_ids: newestFirst(130, 50), top_message: 120, message_count: 130 },
+    ], 50);
+    const out = await runBootstrap(null, pager);
+    expect(out.traversed).toEqual({ "1": [71, 120], "2": [21, 70], "3": [1, 5], "6": [81, 130] });
+    expect("total" in out).toBe(false);
+    expect("discovered" in out).toBe(false);
   });
 });
 
@@ -704,6 +727,10 @@ function rawDialog(topMessage: number, pinned = false): RawDialogLike {
 
 function liveMsg(id: number): MessageLike {
   return { id, message: "", date: 1767225600, out: false };
+}
+
+function range(first: number, last: number): number[] {
+  return Array.from({ length: last - first + 1 }, (_, index) => first + index);
 }
 
 /** Minimal TgOps fake: a dialog list + a per-chat newest-first message list. */
@@ -817,5 +844,44 @@ describe("catch-up", () => {
     // account id, which media messages stamp into source_ref.account_id.
     expect((msg.payload as Record<string, unknown>).message_id).toBe(1);
     expect(msg.remote_id).toBe("tg:msg:5:1");
+  });
+
+  /** @test-id: tst_tgts_catch_008
+   * @scenario: scn_tg_sync_003
+   * @covers: runCatchup traversed ranges
+   * @deterministic: yes
+   * @fixtures: a chat read in one page, a chat with a two-page gap, a chat with nothing new
+   */
+  test("tst_tgts_catch_008 the walk states the range it read per chat: the whole gap once reached, the page's own range while it continues", async () => {
+    const histories = new Map<number, number[]>([[5, range(1, 130)], [6, range(1, 160)], [7, range(1, 10)]]);
+    const ops: TgOps = {
+      async listDialogs() {
+        return [[5, 130], [6, 160], [7, 10]].map(([chatId, top]) => ({
+          entity: entity(chatId as number), raw: rawDialog(top as number), pinned: false, peer: chatId,
+        }));
+      },
+      async resolvePeer(chatId) { return chatId; },
+      async getMessages(peer, params) {
+        const before = params.offsetId ?? 0;
+        return (histories.get(peer as number) ?? []).filter((id) => before === 0 || id < before)
+          .sort((a, b) => b - a).slice(0, params.limit ?? 20).map(liveMsg);
+      },
+      async sendMessage() { throw new Error("not used"); },
+      async downloadMedia() { throw new Error("not used"); },
+    };
+    const first = await runCatchup(ops, "acct", { chats: { "5": { last_msg_id: 120 }, "6": { last_msg_id: 100 }, "7": { last_msg_id: 10 } } });
+    // Chat 5's gap fit one page; chat 6's did not — its page states what it read, and the walk continues.
+    expect(first.traversed).toEqual({ "5": [121, 130], "6": [141, 160] });
+    expect(first.hasMore).toBe(true);
+    const second = await runCatchup(ops, "acct", first.nextCursor);
+    expect(second.traversed).toEqual({ "6": [121, 140] });
+    const third = await runCatchup(ops, "acct", second.nextCursor);
+    expect(third.traversed).toEqual({ "6": [101, 120] });
+    expect(third.hasMore).toBe(true);
+    // The read that crosses the committed watermark proves the gap closed: the whole of it is stated.
+    const fourth = await runCatchup(ops, "acct", third.nextCursor);
+    expect(fourth.traversed).toEqual({ "6": [101, 160] });
+    expect(fourth.hasMore).toBe(false);
+    expect("total" in fourth).toBe(false);
   });
 });
