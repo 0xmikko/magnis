@@ -397,24 +397,27 @@ Commit. feat(google,meetings): the calendar window states its count from an ids-
 
 ##### Tasks
 
-- [ ] ACS_011 — Count the window with an ids-only pass and emit the calendar envelope on the first meetings page in calendar.ts; drop discovered; cover in calendar.test.ts. (25 min)
+- [x] ACS_011 — Count the window with an ids-only pass and emit the calendar envelope on the first meetings page in calendar.ts; drop discovered; cover in calendar.test.ts. (25 min) — 16fab453a4692953a97e6f8574d2f9c4df9ece8b
 <!-- plan:task-meta:{"writes":["plugins/sources/google/src/surfaces/meetings/calendar.ts","plugins/sources/google/src/surfaces/meetings/calendar.test.ts"],"predictedActiveMinutes":25,"predictedCredits":6,"how":"listEventIds pages fields=nextPageToken,items/id at 2500 over the same window; the count rides the calendar envelope first in page one","red":"bun run agent:test:backend -- plugins/sources/google/src/surfaces/meetings/calendar.test.ts"} -->
-- [ ] ACS_012 — State events in full on the calendar envelope and +created after in meetings service.ts; declare events in meetings manifest.toml; cover in meetingsSync.test.ts, bundled-item-schemas.test.ts. (25 min)
+- [x] ACS_012 — State events in full on the calendar envelope and +created after in meetings service.ts; declare events in meetings manifest.toml; cover in meetingsSync.test.ts, bundled-item-schemas.test.ts. (25 min) — 16fab453a4692953a97e6f8574d2f9c4df9ece8b
 <!-- plan:task-meta:{"writes":["plugins/modules/meetings/module/service.ts","plugins/modules/meetings/module/__tests__/meetingsSync.test.ts","plugins/modules/meetings/manifest.toml","scripts/bundled-item-schemas.test.ts"],"predictedActiveMinutes":25,"predictedCredits":6,"how":"ingest reads generation; the calendar envelope states { \"meetings.calendar_event\": { total: events_total, skipped: 0 } }; later pages state +created; without generation nothing","red":"bun run agent:test:backend -- plugins/modules/meetings/module/__tests__/meetingsSync.test.ts"} -->
-- [ ] ACS_020 — Drop the meetings counter from google connector.ts and delete progress.ts (its last reader); expect the calendar envelope in serde-parity.test.ts and googleContract.test.ts. (6 min)
+- [x] ACS_020 — Drop the meetings counter from google connector.ts and delete progress.ts (its last reader); expect the calendar envelope in serde-parity.test.ts and googleContract.test.ts. (6 min) — 16fab453a4692953a97e6f8574d2f9c4df9ece8b
 <!-- plan:task-meta:{"writes":["plugins/sources/google/src/connector.ts","plugins/sources/google/src/progress.ts","plugins/sources/google/src/__tests__/serde-parity.test.ts","plugins/sources/google/src/__tests__/googleContract.test.ts"],"predictedActiveMinutes":6,"predictedCredits":1,"how":"the meetings case of fetchHandler returns {envelopes, nextCursor, hasMore}; git rm progress.ts once calendar.ts stops importing it; the two shared tests expect the calendar envelope first and no counters","red":"bun run agent:test:backend -- plugins/sources/google/src/__tests__/serde-parity.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- plugins/sources/google/src/surfaces/meetings/calendar.test.ts` exits 0
-- [ ] `bun run agent:test:backend -- plugins/modules/meetings/module/__tests__/meetingsSync.test.ts` exits 0
-- [ ] Commit
+- [x] `bun run agent:test:backend -- plugins/sources/google/src/surfaces/meetings/calendar.test.ts` exits 0 — 16fab453a4692953a97e6f8574d2f9c4df9ece8b
+- [x] `bun run agent:test:backend -- plugins/modules/meetings/module/__tests__/meetingsSync.test.ts` exits 0 — 16fab453a4692953a97e6f8574d2f9c4df9ece8b
+- [x] Commit — 16fab453a4692953a97e6f8574d2f9c4df9ece8b
 
 ##### Results
 
 <!-- plan:results:D1-S6:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| ACS_011 | 16fab453a4692953a97e6f8574d2f9c4df9ece8b | 2026-09-19T20:30:07.253Z–2026-09-19T20:35:26.000Z | 5 / 5 min | unavailable: runner did not expose usage | fetchEventsPage counts the window with an ids-only pass (fields=nextPageToken,items(id,status), 2500 a request, cancelled not counted) and opens page one with {entity_type calendar, events_total}; a page whose event fails to convert states {skipped}; the cursor carries no counter; progress.ts deleted with its last reader; the meetings module states events_total in full, skipped per page, nothing without generation; manifest declares events. Calendar 5/5, meetings module 26/26; typecheck and lint clean; hook 37+10. The Google receipt is re-minted in the closure commit for S5 and S6 together. |
+| ACS_012 | 16fab453a4692953a97e6f8574d2f9c4df9ece8b | 2026-09-19T20:30:07.253Z–2026-09-19T20:35:26.000Z | 5 / 5 min | unavailable: runner did not expose usage | fetchEventsPage counts the window with an ids-only pass (fields=nextPageToken,items(id,status), 2500 a request, cancelled not counted) and opens page one with {entity_type calendar, events_total}; a page whose event fails to convert states {skipped}; the cursor carries no counter; progress.ts deleted with its last reader; the meetings module states events_total in full, skipped per page, nothing without generation; manifest declares events. Calendar 5/5, meetings module 26/26; typecheck and lint clean; hook 37+10. The Google receipt is re-minted in the closure commit for S5 and S6 together. |
+| ACS_020 | 16fab453a4692953a97e6f8574d2f9c4df9ece8b | 2026-09-19T20:30:07.253Z–2026-09-19T20:35:26.000Z | 5 / 5 min | unavailable: runner did not expose usage | fetchEventsPage counts the window with an ids-only pass (fields=nextPageToken,items(id,status), 2500 a request, cancelled not counted) and opens page one with {entity_type calendar, events_total}; a page whose event fails to convert states {skipped}; the cursor carries no counter; progress.ts deleted with its last reader; the meetings module states events_total in full, skipped per page, nothing without generation; manifest declares events. Calendar 5/5, meetings module 26/26; typecheck and lint clean; hook 37+10. The Google receipt is re-minted in the closure commit for S5 and S6 together. |
 <!-- plan:results:D1-S6:end -->
 <!-- plan:stage:D1-S6:end -->
 
@@ -605,4 +608,10 @@ Commit. docs(plugins): counts on the scope envelope, traversed ranges on the pag
 - amend implementation owner:не спрашивай меня про такие мелки дефекты sha256:10b33776337675bef661155c50d95e3461e62ee88d45281ae5bce34f7e2d0c76
 
 - amend implementation owner:не спрашивай меня про такие мелки дефекты sha256:1349ea6377a1616c56156344b7f42841b620ddeeb3342b68e13f29555fa1caab
+
+- record-result D1-S6 commit:16fab453a4692953a97e6f8574d2f9c4df9ece8b
+
+- deviation D1-S6: the SPEC's table said +created on later pages; a page states the events it left out instead — the ids-only count is exact, so what stays out of the graph is what the plan skips
+
+- close D1-S6 closed commit:16fab453a4692953a97e6f8574d2f9c4df9ece8b
 <!-- plan:execution:end -->
