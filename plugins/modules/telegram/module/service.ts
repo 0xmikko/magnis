@@ -74,6 +74,46 @@ interface IngestedChatState {
   readonly details: Data;
 }
 
+/** One message envelope of a page with everything derived from it read once:
+ * the ids a payload carries are parsed here, not in each loop that needs them. */
+interface PageMessage {
+  readonly env: SyncEnvelope;
+  readonly payload: Data;
+  readonly remoteId: string;
+  readonly chatId: string | null;
+  readonly senderId: number | null;
+  readonly isLive: boolean;
+}
+
+/** What the page knows about one chat: its node, when the graph holds one, and
+ * the dictionary that node carries. A chat the page never resolved is absent. */
+interface ChatEntry {
+  readonly entityId: string | null;
+  readonly details: Data | null;
+}
+type ChatContext = ReadonlyMap<string, ChatEntry>;
+
+/** The one transaction a page writes. Entities, refs and links are keyed, so
+ * the fragment itself is the deduplication — no Set rides beside it. */
+interface Fragment {
+  readonly entities: Map<string, BatchEntityInput>;
+  readonly refs: Map<string, BatchRefInput>;
+  readonly links: Map<string, BatchLinkInput>;
+}
+
+/** What the page produces once its fragment holds resolved ids: the host calls
+ * it still owes, gathered so they leave in as few calls as the host allows. */
+interface PageEffects {
+  readonly webLinks: WebLinkInput[];
+  readonly files: FileRegisterInput[];
+  readonly chatUpdates: ChatUpdate[];
+  readonly triggers: TriggerCheck[];
+}
+
+type WebLinkInput = Parameters<GraphService["web_register"]>[0];
+type FileRegisterInput = Parameters<GraphService["file_register"]>[0];
+type ChatUpdate = Parameters<GraphService["update_properties"]>[0];
+
 /** What one page states for the worker's plan: per schema, the count
  * relative to the statement the operator's observed_in edges held before the
  * page; and every chat the page touched whose history the plan leaves out. */
@@ -82,6 +122,235 @@ interface PageStatement {
   readonly chats: PlanDelta;
   readonly messages: PlanDelta;
   readonly excluded: Set<string>;
+}
+
+/** One envelope, read once: the ids a payload carries are parsed here so no
+ * later step parses them again. */
+function pageMessageOf({ env, payload }: { env: SyncEnvelope; payload: Data }): PageMessage {
+  const senderId = payload.sender_id;
+  return {
+    env,
+    payload,
+    remoteId: env.remote_id ?? "",
+    chatId: chatIdOrNull(payload),
+    senderId: typeof senderId === "number" ? senderId : null,
+    isLive: env.kind === "live",
+  };
+}
+
+/** How many live messages each chat gained on this page. */
+function countLiveByChat(page: readonly PageMessage[]): Map<string, number> {
+  const live = new Map<string, number>();
+  for (const message of page) {
+    if (!message.isLive || message.chatId === null) continue;
+    live.set(message.chatId, (live.get(message.chatId) ?? 0) + 1);
+  }
+  return live;
+}
+
+/** The message's dictionary: the payload minus what the edges represent. */
+function messageDictionary(payload: Data): Data {
+  const { entity_type: _entityType, chat_id: _chatId, sender_id: _senderId, sender_name: _senderName, ...rest } = payload;
+  return rest;
+}
+
+/** The sender's replica node, discovered on sight; anchored, so re-ingest converges. */
+function senderEntity(message: PageMessage, identityKey: string | undefined): BatchEntityInput | null {
+  if (message.senderId === null) return null;
+  const displayName = str(message.payload, "sender_name");
+  const info = message.payload.sender_info && typeof message.payload.sender_info === "object"
+    ? (message.payload.sender_info as Data)
+    : {};
+  const properties: Data = { telegram_user_id: message.senderId };
+  if (String(message.senderId) === identityKey) properties.is_self = true;
+  if (displayName) properties.display_name = displayName;
+  for (const key of ["first_name", "last_name", "username", "phone"] as const) {
+    const value = str(info, key);
+    if (value) properties[key] = value;
+  }
+  return {
+    key: `acct:${String(message.senderId)}`,
+    schema_id: TELEGRAM_ACCOUNT,
+    name: displayName ?? "",
+    anchor: accountAnchor(message.senderId),
+    properties,
+  };
+}
+
+/** The page as one fragment: the message dictionaries, the senders they
+ * discovered, and the edges that carry the structure — authored_by (message →
+ * account), in_chat (message → chat), observed_participant (account → chat).
+ * Keyed maps ARE the deduplication. Pure: no graph, no await.
+ * @tested-by: tst_module_telegram_004 */
+function buildFragment(page: readonly PageMessage[], identityKey: string | undefined): Fragment {
+  const fragment: Fragment = { entities: new Map(), refs: new Map(), links: new Map() };
+  const link = (from_key: string, to_key: string, kind: string, declared_by: string): void => {
+    fragment.links.set(`${from_key} ${to_key} ${kind}`, { from_key, to_key, kind, declared_by });
+  };
+  for (const message of page) {
+    const text = str(message.payload, "text") ?? "";
+    const chatKey = message.chatId === null ? null : `chat:${message.chatId}`;
+    fragment.entities.set(message.remoteId, {
+      key: message.remoteId,
+      schema_id: MESSAGE,
+      name: Array.from(text).slice(0, 80).join(""),
+      idx: message.chatId ?? undefined,
+      date: str(message.payload, "date") ?? undefined,
+      anchor: message.remoteId,
+      properties: messageDictionary(message.payload),
+      confidence: 90,
+    });
+    if (message.chatId !== null && chatKey !== null) {
+      fragment.refs.set(chatKey, { key: chatKey, anchor: chatAnchor(message.chatId) });
+      link(message.remoteId, chatKey, "in_chat", message.remoteId);
+    }
+    const sender = senderEntity(message, identityKey);
+    if (sender === null) continue;
+    if (!fragment.entities.has(sender.key)) fragment.entities.set(sender.key, sender);
+    link(message.remoteId, sender.key, "authored_by", message.remoteId);
+    if (chatKey !== null) link(sender.key, chatKey, "observed_participant", message.remoteId);
+  }
+  return fragment;
+}
+
+/** The attachment a message carries, or nothing. `is_indexed` gates the byte
+ * fetch, not the entity: a non-indexed chat still registers the file.object —
+ * the bytes are pulled on demand when the user opens it. */
+function attachmentOf(
+  message: PageMessage,
+  chats: ChatContext,
+  shouldDownload: (details: Data | null) => boolean,
+): FileRegisterInput[] {
+  const mediaType = str(message.payload, "media_type");
+  const messageId = num(message.payload, "message_id");
+  const sourceRef = message.payload.source_ref;
+  if (!mediaType || message.chatId === null || messageId === null || sourceRef === null || sourceRef === undefined) return [];
+  return [{
+    external_id: `file:telegram:${message.chatId}:${String(messageId)}`,
+    parent_external_id: message.remoteId,
+    link_kind: "file.attachment",
+    name: str(message.payload, "file_name") ?? undefined,
+    mime_type: mediaTypeToMime(mediaType),
+    source_ref: sourceRef as Record<string, unknown>,
+    // The host file worker routes download_file by (source_module,
+    // source_surface) — stamp the envelope's ACTUAL source_id, never a
+    // hardcoded name: the surface may be served by a differently-named
+    // connector (telegram-ts), and "telegram" would route to a runtime that
+    // doesn't exist ("no source runtime for (telegram, telegram)").
+    source_module: message.env.source_id,
+    source_surface: "telegram",
+    download: shouldDownload(chats.get(message.chatId)?.details ?? null),
+  }];
+}
+
+/** The trigger check a live message raises: the backend fires a watch only for
+ * an event that says when it happened (INV-10, fail closed) — the message's
+ * own date is that. */
+function triggerOf(message: PageMessage, entityId: string, ids: Record<string, string>): TriggerCheck {
+  const touched = [entityId];
+  const chatEntityId = message.chatId === null ? undefined : ids[`chat:${message.chatId}`];
+  if (chatEntityId) touched.push(chatEntityId);
+  const senderEntityId = message.senderId === null ? undefined : ids[`acct:${String(message.senderId)}`];
+  if (senderEntityId) touched.push(senderEntityId);
+  const occurredAt = str(message.payload, "date");
+  return {
+    type: "trigger.check",
+    event_kind: "new_message",
+    schema_id: MESSAGE,
+    entity_id: entityId,
+    phase: "live",
+    touched_entity_ids: touched,
+    user_id: message.env.user_id,
+    context: {
+      text: str(message.payload, "text") ?? "",
+      sender_name: str(message.payload, "sender_name") ?? "",
+      ...(occurredAt === null ? {} : { occurred_at: occurredAt }),
+    },
+  };
+}
+
+/** Each chat's newest message on this page. Present-to-past sync ingests
+ * newest-first, so the first one wins ties. */
+function newestByChat(page: readonly PageMessage[]): Map<string, Data> {
+  const newest = new Map<string, Data>();
+  for (const message of page) {
+    if (message.chatId === null) continue;
+    const current = newest.get(message.chatId);
+    if (!current || (str(message.payload, "date") ?? "") >= (str(current, "date") ?? "")) {
+      newest.set(message.chatId, message.payload);
+    }
+  }
+  return newest;
+}
+
+/** The chat's denorm after this page: its newest message's fields, and the live
+ * messages it gained. A chat the page's own chat batch already folded is
+ * skipped; a live message older than the newest still moves the count.
+ * @tested-by: tst_mod_tg_ingest_002 */
+function chatUpdatesOf(
+  page: readonly PageMessage[],
+  chats: ChatContext,
+  pageChatState: ReadonlyMap<string, IngestedChatState>,
+): ChatUpdate[] {
+  const live = countLiveByChat(page);
+  const updates: ChatUpdate[] = [];
+  for (const [chatId, message] of newestByChat(page)) {
+    if (pageChatState.has(chatId)) continue;
+    const entry = chats.get(chatId);
+    const entityId = entry?.entityId ?? null;
+    const details = entry?.details ?? null;
+    if (entityId === null || details === null) continue;
+    const date = str(message, "date") ?? "";
+    const held = str(details, "last_message_date") ?? "";
+    if (!date || (held && date < held)) continue;
+    const gained = live.get(chatId) ?? 0;
+    const count = num(details, "message_count");
+    updates.push({
+      entity_id: entityId,
+      properties: {
+        last_message_date: date,
+        last_message_preview: str(message, "text") ?? "",
+        last_sender_name: str(message, "sender_name") ?? "",
+        ...(gained > 0 && count !== null ? { message_count: count + gained } : {}),
+      },
+    });
+    live.delete(chatId);
+  }
+  // A live message older than its chat's newest still happened: the count moves
+  // even when the preview does not.
+  for (const [chatId, gained] of live) {
+    const entry = chats.get(chatId);
+    const count = entry?.details ? num(entry.details, "message_count") : null;
+    if (entry?.entityId === null || entry?.entityId === undefined || count === null) continue;
+    updates.push({ entity_id: entry.entityId, properties: { message_count: count + gained } });
+  }
+  return updates;
+}
+
+/** Everything the committed page still owes the host, gathered in one pass per
+ * concern. Pure: the ids are in hand, nothing here talks to the graph. */
+function buildEffects(
+  page: readonly PageMessage[],
+  ids: Record<string, string>,
+  chats: ChatContext,
+  pageChatState: ReadonlyMap<string, IngestedChatState>,
+  shouldDownload: (details: Data | null) => boolean,
+): PageEffects {
+  const written = page.flatMap((message) => {
+    const entityId = ids[message.remoteId];
+    return entityId === undefined ? [] : [{ message, entityId }];
+  });
+  return {
+    webLinks: written.flatMap(({ message, entityId }) =>
+      extractUrls(str(message.payload, "text") ?? "").map((url) => ({
+        url,
+        parent_entity_id: entityId,
+        link_kind: "references",
+      }))),
+    files: written.flatMap(({ message }) => attachmentOf(message, chats, shouldDownload)),
+    chatUpdates: chatUpdatesOf(page, chats, pageChatState),
+    triggers: written.flatMap(({ message, entityId }) => (message.isLive ? [triggerOf(message, entityId, ids)] : [])),
+  };
 }
 
 function emptyStatement(): PageStatement {
@@ -1073,286 +1342,112 @@ export class TelegramModule {
   // list_links scan — links now dedup via the batch's ON CONFLICT), F2 (per-message
   // chat/sender reads), and F3 (op-per-op). Web/file registration + the chat
   // last-message denorm run after apply (they need the resolved entity id).
+  /** One page of messages: read its chats, build one fragment, write it, then
+   * flush what the resolved ids made possible. Every step is named and every
+   * step but the two writes is pure, so a page can be reasoned about — and
+   * tested — without a graph.
+   * @tested-by: tst_module_telegram_004, tst_module_telegram_plan_001 */
   private async ingestMessageBatch(
-    messages: { env: SyncEnvelope; payload: Data }[],
+    messages: readonly { env: SyncEnvelope; payload: Data }[],
     triggers: TriggerCheck[],
     identityKey: string | undefined,
     pageChatState: ReadonlyMap<string, IngestedChatState> = new Map(),
     generation: string | null = null,
     statement: PageStatement = emptyStatement(),
   ): Promise<void> {
-    // 1. Read each unique chat's entity id + details ONCE (shouldIndex gate + denorm base).
-    const chatEntityId = new Map<string, string | null>();
-    const chatDetails = new Map<string, Data | null>();
+    const page = messages.map(pageMessageOf).filter((message) => message.remoteId !== "");
+    if (page.length === 0) return;
+
+    const chats = await this.resolveChats(page, pageChatState);
+    const fragment = buildFragment(page, identityKey);
+    await this.stateLiveMessages(page, chats, fragment, identityKey, generation, statement);
+
+    const result = await this.graph.apply_batch({
+      entities: [...fragment.entities.values()],
+      refs: [...fragment.refs.values()],
+      links: [...fragment.links.values()],
+    });
+
+    const effects = buildEffects(page, result.ids, chats, pageChatState, (details) => this.shouldIndex(details));
+    triggers.push(...effects.triggers);
+    await this.flush(effects);
+  }
+
+  /** The page's chats, each read once: those its own chat envelopes already
+   * ingested come from the page, the rest from two Graph calls.
+   * @tested-by: tst_module_telegram_006 */
+  private async resolveChats(
+    page: readonly PageMessage[],
+    pageChatState: ReadonlyMap<string, IngestedChatState>,
+  ): Promise<ChatContext> {
+    const wanted = new Set(page.flatMap((message) => (message.chatId === null ? [] : [message.chatId])));
+    const chats = new Map<string, ChatEntry>();
     const unresolved: string[] = [];
-    for (const { payload } of messages) {
-      const cid = chatIdOrNull(payload);
-      if (cid === null || chatEntityId.has(cid)) continue;
-      const ingestedChat = pageChatState.get(cid);
-      if (ingestedChat !== undefined) {
-        chatEntityId.set(cid, ingestedChat.entityId);
-        chatDetails.set(cid, ingestedChat.details);
+    for (const chatId of wanted) {
+      const ingested = pageChatState.get(chatId);
+      if (ingested === undefined) unresolved.push(chatId);
+      else chats.set(chatId, ingested);
+    }
+    const read = await this.readChatsByAnchor(unresolved);
+    for (const [chatId, entry] of read) chats.set(chatId, entry);
+    return chats;
+  }
+
+  /** A live message on an admitted chat moves the plan by one and the edge's
+   * statement with it, in the page's own fragment; on an excluded chat it moves
+   * nothing. The edges are the one read this step needs.
+   * @tested-by: tst_module_telegram_plan_001 */
+  private async stateLiveMessages(
+    page: readonly PageMessage[],
+    chats: ChatContext,
+    fragment: Fragment,
+    identityKey: string | undefined,
+    generation: string | null,
+    statement: PageStatement,
+  ): Promise<void> {
+    if (generation === null || !identityKey) return;
+    const liveByChat = countLiveByChat(page);
+    if (liveByChat.size === 0) return;
+
+    const chatEntityIds = [...liveByChat.keys()].flatMap((chatId) => {
+      const entityId = chats.get(chatId)?.entityId;
+      return entityId === null || entityId === undefined ? [] : [entityId];
+    });
+    const { edges } = await this.membershipEdges(identityKey, generation, chatEntityIds);
+
+    for (const [chatId, live] of liveByChat) {
+      const entry = chats.get(chatId);
+      const held = entry?.entityId === null || entry?.entityId === undefined ? undefined : edges.get(entry.entityId);
+      const pinned = held === undefined ? false : boolFlag(held.metadata, "is_pinned") ?? false;
+      if (!(pinned || this.shouldIndex(entry?.details ?? null))) {
+        statement.excluded.add(chatId);
         continue;
       }
-      chatEntityId.set(cid, null);
-      chatDetails.set(cid, null);
-      unresolved.push(cid);
-    }
-    // @tested-by: tst_module_telegram_006 — chats outside this page cost two reads, not two per chat.
-    for (const [cid, known] of await this.readChatsByAnchor(unresolved)) {
-      chatEntityId.set(cid, known.entityId);
-      chatDetails.set(cid, known.details);
-    }
-    // 2+3. Build the fragment (S4, plan §7): the message DICT is the record
-    // (minus chat_id / sender_id / sender_name — edges are the
-    // representation), the sender becomes a telegram.account replica node
-    // discovered on sight (anchored, so re-ingest converges), and the edges
-    // carry the structure: authored_by (message → account), in_chat
-    // (message → chat), observed_participant (account → chat). The
-    // contacts.person minting is GONE — hubs attach through identity, never
-    // through a sync writer.
-    const entities: BatchEntityInput[] = [];
-    const refs: BatchRefInput[] = [];
-    const links: BatchLinkInput[] = [];
-    const accountKeys = new Set<string>();
-    const linkSeen = new Set<string>();
-    const chatRefKeys = new Set<string>();
-    const addChatRef = (key: string, cid: string): void => {
-      if (!chatRefKeys.has(key)) {
-        refs.push({ key, anchor: chatAnchor(cid) });
-        chatRefKeys.add(key);
-      }
-    };
-    const addLink = (
-      from_key: string,
-      to_key: string,
-      kind: string,
-      declared_by: string,
-    ): void => {
-      const k = `${from_key} ${to_key} ${kind}`;
-      if (!linkSeen.has(k)) {
-        links.push({ from_key, to_key, kind, declared_by });
-        linkSeen.add(k);
-      }
-    };
-
-    for (const { env, payload } of messages) {
-      const remoteId = env.remote_id;
-      if (!remoteId) continue;
-      const text = str(payload, "text") ?? "";
-      const cid = chatIdOrNull(payload);
-      const chatKey = cid !== null ? `chat:${cid}` : null;
-
-      const dict: Data = { ...payload };
-      delete dict.entity_type;
-      delete dict.chat_id;
-      delete dict.sender_id;
-      delete dict.sender_name;
-
-      entities.push({
-        key: remoteId,
-        schema_id: MESSAGE,
-        name: Array.from(text).slice(0, 80).join(""),
-        idx: cid ?? undefined,
-        date: str(payload, "date") ?? undefined,
-        anchor: remoteId,
-        properties: dict,
-        confidence: 90,
+      if (held?.stated === null || held?.stated === undefined) continue; // the chat's own page states it
+      statement.messages.total += live;
+      fragment.refs.set("self", { key: "self", anchor: accountAnchor(identityKey) });
+      fragment.refs.set(`chat:${chatId}`, { key: `chat:${chatId}`, anchor: chatAnchor(chatId) });
+      fragment.links.set(`self observed_in chat:${chatId}`, {
+        from_key: "self",
+        to_key: `chat:${chatId}`,
+        kind: "observed_in",
+        declared_by: `chat:${chatId}`,
+        metadata: { ...held.metadata, sync_total: held.stated.total + live },
       });
-
-      if (cid !== null && chatKey) {
-        addChatRef(chatKey, cid);
-        addLink(remoteId, chatKey, "in_chat", remoteId);
-      }
-
-      const sid = payload.sender_id;
-      if (typeof sid === "number") {
-        const accountKey = `acct:${String(sid)}`;
-        if (!accountKeys.has(accountKey)) {
-          const props: Data = { telegram_user_id: sid };
-          if (String(sid) === identityKey) props.is_self = true;
-          const displayName = str(payload, "sender_name");
-          if (displayName) props.display_name = displayName;
-          const info =
-            payload.sender_info && typeof payload.sender_info === "object"
-              ? (payload.sender_info as Data)
-              : {};
-          for (const key of ["first_name", "last_name", "username", "phone"]) {
-            const v = str(info, key);
-            if (v) props[key] = v;
-          }
-          entities.push({
-            key: accountKey,
-            schema_id: TELEGRAM_ACCOUNT,
-            name: displayName ?? "",
-            anchor: accountAnchor(sid),
-            properties: props,
-          });
-          accountKeys.add(accountKey);
-        }
-        addLink(remoteId, accountKey, "authored_by", remoteId);
-        if (chatKey) addLink(accountKey, chatKey, "observed_participant", remoteId);
-      }
-    }
-
-    // A live message on a chat the plan admitted, stated in this pass, moves
-    // the plan by one and the edge's statement with it — in the same batch.
-    // On an excluded chat it moves nothing: its history is not planned.
-    // @tested-by: tst_module_telegram_plan_001
-    if (generation !== null && identityKey) {
-      const liveByChatId = new Map<string, number>();
-      for (const { env, payload } of messages) {
-        const cid = chatIdOrNull(payload);
-        if (env.kind === "live" && cid !== null && env.remote_id) liveByChatId.set(cid, (liveByChatId.get(cid) ?? 0) + 1);
-      }
-      const liveEntityIds = [...liveByChatId.keys()].flatMap((cid) => { const id = chatEntityId.get(cid); return id ? [id] : []; });
-      const { edges } = await this.membershipEdges(identityKey, generation, liveEntityIds);
-      for (const [cid, live] of liveByChatId) {
-        const details = chatDetails.get(cid) ?? null;
-        const held = edges.get(chatEntityId.get(cid) ?? "");
-        const pinned = held === undefined ? false : boolFlag(held.metadata, "is_pinned") ?? false;
-        if (!(pinned || this.shouldIndex(details))) { statement.excluded.add(cid); continue; }
-        if (held?.stated === null || held?.stated === undefined) continue; // the chat's own page states it
-        statement.messages.total += live;
-        if (!refs.some((ref) => ref.key === "self")) refs.push({ key: "self", anchor: accountAnchor(identityKey) });
-        addChatRef(`chat:${cid}`, cid);
-        links.push({
-          from_key: "self", to_key: `chat:${cid}`, kind: "observed_in", declared_by: `chat:${cid}`,
-          metadata: { ...held.metadata, sync_total: held.stated.total + live },
-        });
-      }
-    }
-
-    // 4. Apply the whole page in one transaction (throws → page retried by the host).
-    const result = await this.graph.apply_batch({ entities, refs, links });
-
-    // 5. Post-apply (needs the resolved message id): URLs, media, live triggers, and
-    //    track the newest message per chat for the denorm.
-    const newestPerChat = new Map<string, Data>();
-    // Live messages per chat: each raises the chat's Telegram count by one so
-    // the plan and the saved count move together (tst_module_telegram_plan_001).
-    const liveByChat = new Map<string, number>();
-    for (const { env, payload } of messages) {
-      const remoteId = env.remote_id;
-      if (!remoteId) continue;
-      const entityId = result.ids[remoteId];
-      if (!entityId) continue;
-
-      const msgText = str(payload, "text") ?? "";
-      for (const url of extractUrls(msgText)) {
-        await this.graph.web_register({ url, parent_entity_id: entityId, link_kind: "references" });
-      }
-      const mediaType = str(payload, "media_type");
-      const mChatId = num(payload, "chat_id");
-      const mMessageId = num(payload, "message_id");
-      if (
-        mediaType &&
-        payload.source_ref !== null &&
-        payload.source_ref !== undefined &&
-        mChatId !== null &&
-        mMessageId !== null
-      ) {
-        // is_indexed gates the byte fetch, not the entity: a non-indexed chat
-        // still registers the file.object (the message keeps its attachment) but
-        // skips the download — it is pulled on demand when the user opens it.
-        const fileChatDetails = chatDetails.get(String(mChatId)) ?? null;
-        await this.graph.file_register({
-          external_id: `file:telegram:${String(mChatId)}:${String(mMessageId)}`,
-          parent_external_id: remoteId,
-          link_kind: "file.attachment",
-          name: str(payload, "file_name") ?? undefined,
-          mime_type: mediaTypeToMime(mediaType),
-          source_ref: payload.source_ref as Record<string, unknown>,
-          // The host file worker routes download_file by (source_module,
-          // source_surface) — stamp the envelope's ACTUAL source_id, never a
-          // hardcoded name: the surface may be served by a differently-named
-          // connector (telegram-ts), and "telegram" would route to a runtime
-          // that doesn't exist ("no source runtime for (telegram, telegram)").
-          source_module: env.source_id,
-          source_surface: "telegram",
-          download: this.shouldIndex(fileChatDetails),
-        });
-      }
-
-      const cid = chatIdOrNull(payload);
-      if (cid !== null) {
-        const key = cid;
-        const cur = newestPerChat.get(key);
-        if (!cur || (str(payload, "date") ?? "") >= (str(cur, "date") ?? "")) {
-          newestPerChat.set(key, payload);
-        }
-      }
-
-      if (env.kind === "live") {
-        if (cid !== null) liveByChat.set(cid, (liveByChat.get(cid) ?? 0) + 1);
-        const touched = [entityId];
-        if (cid !== null) {
-          const ck = result.ids[`chat:${cid}`];
-          if (ck) touched.push(ck);
-        }
-        const sid = payload.sender_id;
-        if (typeof sid === "number") {
-          const pk = result.ids[`acct:${String(sid)}`];
-          if (pk) touched.push(pk);
-        }
-        // The backend fires a watch only for an event that says when it
-        // happened (INV-10, fail closed); the message's own date is that.
-        const occurredAt = str(payload, "date");
-        triggers.push({
-          type: "trigger.check",
-          event_kind: "new_message",
-          schema_id: MESSAGE,
-          entity_id: entityId,
-          phase: "live",
-          touched_entity_ids: touched,
-          user_id: env.user_id,
-          context: {
-            text: str(payload, "text") ?? "",
-            sender_name: str(payload, "sender_name") ?? "",
-            ...(occurredAt === null ? {} : { occurred_at: occurredAt }),
-          },
-        });
-      }
-    }
-
-    // 6. Denorm each unique chat's last-message fields onto its full details (so the
-    //    title etc. survive). Present-to-past sync ingests newest-first → newest wins.
-    for (const [key, msg] of newestPerChat) {
-      // @tested-by: tst_mod_tg_ingest_002
-      // @invariant: a source page that carries the chat before its messages
-      // folds the preview into that chat batch and never re-reads/re-writes it.
-      if (pageChatState.has(key)) continue;
-      const base = chatDetails.get(key);
-      const eid = chatEntityId.get(key);
-      if (!base || !eid) continue;
-      const msgDate = str(msg, "date") ?? "";
-      if (!msgDate) continue;
-      const curDate = str(base, "last_message_date") ?? "";
-      if (curDate && msgDate < curDate) continue;
-      const live = liveByChat.get(key) ?? 0;
-      const count = num(base, "message_count");
-      await this.graph.update_properties({
-        entity_id: eid,
-        properties: {
-          last_message_date: msgDate,
-          last_message_preview: str(msg, "text") ?? "",
-          last_sender_name: str(msg, "sender_name") ?? "",
-          ...(live > 0 && count !== null ? { message_count: count + live } : {}),
-        },
-      });
-      liveByChat.delete(key);
-    }
-    // A live message older than the chat's newest still happened: its chat's
-    // count moves by one even when the preview does not.
-    for (const [key, live] of liveByChat) {
-      const base = chatDetails.get(key);
-      const eid = chatEntityId.get(key);
-      const count = base ? num(base, "message_count") : null;
-      if (!eid || count === null) continue;
-      await this.graph.update_properties({ entity_id: eid, properties: { message_count: count + live } });
     }
   }
 
+  /** The host calls a committed page still owes: links, attachments and the
+   * chat denorm. One call each today; the host's batch twins replace the loops
+   * without touching what is collected. */
+  /** The only place a page still talks to the host after its body. Each kind
+   * of write leaves in ONE call, so what a page costs is set by the kinds it
+   * carries, not by how many items it carries. */
+  private async flush(effects: PageEffects): Promise<void> {
+    if (effects.webLinks.length > 0) await this.graph.web_register_batch(effects.webLinks);
+    if (effects.files.length > 0) await this.graph.file_register_batch(effects.files);
+    if (effects.chatUpdates.length > 0) await this.graph.update_properties_batch(effects.chatUpdates);
+  }
 
   // Delete the entity behind a remote_id (user-scoped). Mirrors native
   // ingest_delete; delete_entity cascades the entity's links.

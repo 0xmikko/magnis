@@ -336,6 +336,7 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
     const graph = mockGraph({
       find_by_anchor: () => Promise.resolve(CHAT_ID),
       update_properties: () => Promise.resolve(undefined),
+      update_properties_batch: () => Promise.resolve(undefined),
     });
     const module = mountModule(TelegramModule, { graph }).module;
 

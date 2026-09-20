@@ -182,6 +182,7 @@ describe("telegram chat batch ingest", () => {
       },
       get_entity: () => Promise.reject(new Error("per-chat entity lookup is forbidden")),
       update_properties: () => Promise.reject(new Error("per-chat denormalization update is forbidden")),
+      update_properties_batch: () => Promise.reject(new Error("per-chat denormalization update is forbidden")),
       apply_batch: (fragment) =>
         Promise.resolve({
           ids: Object.fromEntries(fragment.entities.map((item) => [item.key, `id:${item.key}`])),
@@ -207,7 +208,7 @@ describe("telegram chat batch ingest", () => {
     expect(graph.spies.find_by_anchor).toHaveBeenCalledTimes(1);
     expect(graph.spies.list_linked).toHaveBeenCalledTimes(51);
     expect(graph.spies.get_entity).not.toHaveBeenCalled();
-    expect(graph.spies.update_properties).not.toHaveBeenCalled();
+    expect(graph.spies.update_properties_batch).not.toHaveBeenCalled();
     const applyBatch = graph.spies.apply_batch;
     if (applyBatch === undefined) throw new Error("chat page reuse: missing apply_batch spy");
     const firstBatch = applyBatch.mock.calls[0]?.[0] as GraphBatchInput | undefined;

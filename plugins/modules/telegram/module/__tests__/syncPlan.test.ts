@@ -94,6 +94,7 @@ class Store {
         return Promise.resolve({ ids, created: fragment.entities.length, updated: 0, links_added: fragment.links?.length ?? 0, dropped_keys: [] });
       },
       update_properties: () => Promise.resolve(),
+      update_properties_batch: () => Promise.resolve(),
       set_link_status: (id, status) => {
         this.statuses.push([id, status]);
         for (const edge of this.edgesByChat.values()) if (edge.id === id) edge.status = status;

@@ -24,8 +24,8 @@ import { toRfc3339Utc } from "./surfaces/telegram/envelope";
 /** Per-chat message hydration depth during bootstrap. Each enumerated dialog's
  * newest N messages are fetched (GetDialogs carries only each chat's single top
  * message), preserving the snapshot the in-backend bootstrap produced. */
-export const BOOTSTRAP_MESSAGES_PER_CHAT = 50;
-export const SOURCE_PAGE_HISTORY_LIMIT = 5;
+export const BOOTSTRAP_MESSAGES_PER_CHAT = 100;
+export const SOURCE_PAGE_HISTORY_LIMIT = 25;
 export const SOURCE_PAGE_BUDGET_MS = 20_000;
 
 /** @tested-by: tst_src_tgfast_003 — TGFAST_002 bounds each remaining read. */

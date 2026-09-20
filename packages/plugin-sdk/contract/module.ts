@@ -310,6 +310,25 @@ export interface GraphBatchResult {
 /// Not parameterised: a node's dictionary is a plain JSON map, and a module
 /// types it with its own interface at the call sites that care. The `Canon`
 /// type parameter went with the canonical layer it existed to type.
+/** What one file registration carries. One shape, two arities — `file_register`
+ * and `file_register_batch` take exactly this. */
+export interface FileRegisterParams {
+  external_id: string;
+  parent_external_id: string;
+  link_kind: string;
+  name?: string;
+  mime_type: string;
+  size_bytes?: number;
+  local_path?: string;
+  cloud_url?: string;
+  source_ref?: Record<string, unknown>;
+  source_module: string;
+  source_surface: string;
+  /** Enqueue the background byte download now. Defaults to `true` host-side;
+   *  pass `false` to register the entity without fetching (non-indexed chats). */
+  download?: boolean;
+}
+
 export interface GraphService {
   // entities — rows are always {id, schema_id, name}, no map needed.
   // All reads are user-scoped backend-side.
@@ -341,22 +360,28 @@ export interface GraphService {
   // parent link + background download). mime_type is
   // computed plugin-side so the op stays source-agnostic. Returns the
   // file.object entity id.
-  file_register(p: {
-    external_id: string;
-    parent_external_id: string;
-    link_kind: string;
-    name?: string;
-    mime_type: string;
-    size_bytes?: number;
-    local_path?: string;
-    cloud_url?: string;
-    source_ref?: Record<string, unknown>;
-    source_module: string;
-    source_surface: string;
-    /** Enqueue the background byte download now. Defaults to `true` host-side;
-     *  pass `false` to register the entity without fetching (non-indexed chats). */
-    download?: boolean;
-  }): Promise<string>;
+  file_register(p: FileRegisterParams): Promise<string>;
+  /** Batch: every URL a page carries, in ONE host call. Input order is kept;
+   *  each position holds that URL's `web.link` entity id, or `""` where the
+   *  host could not normalize the URL — one bad URL costs its own row and
+   *  never aborts the page. Capability is checked once, before any write. */
+  web_register_batch(
+    links: { url: string; parent_entity_id?: string; link_kind?: string }[],
+  ): Promise<string[]>;
+  /** Batch: every attachment a page carries, in ONE host call. Input order is
+   *  kept; each position holds that file's `file.object` entity id. There is
+   *  no empty sentinel: a row the host did not write is an error. One row
+   *  whose `link_kind` is not `file.attachment`, or whose `source_ref` does
+   *  not match the admitted worker, refuses the WHOLE call. The same
+   *  attachment twice in one page accumulates, as two calls would. */
+  file_register_batch(files: FileRegisterParams[]): Promise<string[]>;
+  /** Batch: merge a dictionary patch into each node, in ONE host call. Each
+   *  patch MERGES — a field it does not name keeps its value — and the same
+   *  node twice accumulates. The capability for every row's schema is checked
+   *  before any row is written; one refused row refuses the whole call. */
+  update_properties_batch(
+    updates: { entity_id: string; properties: Record<string, unknown> }[],
+  ): Promise<void>;
   // route an Execute SourceCommand to this plugin's source (send/reply/backfill)
   // via the host SyncRouter. Returns the source runtime's JSON result.
   source_command(payload: Record<string, unknown>, account_id?: string): Promise<Record<string, unknown>>;

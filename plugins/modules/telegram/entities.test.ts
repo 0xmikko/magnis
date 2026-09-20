@@ -51,7 +51,9 @@ async function written(): Promise<GraphBatchInput["entities"]> {
     // The message carries a link and a photo: a link becomes a web entity of
     // its own, and downloadable media becomes a file entity.
     web_register: () => Promise.resolve("web-1"),
+    web_register_batch: (links: readonly unknown[]) => Promise.resolve(links.map(() => "web-1")),
     file_register: () => Promise.resolve("file-1"),
+    file_register_batch: (files: readonly unknown[]) => Promise.resolve(files.map(() => "file-1")),
   });
   const mod = mountModule(TelegramModule, { graph }).module;
   await mod.ingest({

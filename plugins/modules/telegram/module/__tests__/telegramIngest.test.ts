@@ -154,7 +154,9 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
           dropped_keys: [],
         }),
       web_register: () => Promise.resolve("web-id"),
+      web_register_batch: (links: readonly unknown[]) => Promise.resolve(links.map(() => "web-id")),
       update_properties: () => Promise.resolve(undefined),
+      update_properties_batch: () => Promise.resolve(undefined),
     });
     const module = mountModule(TelegramModule, { graph }).module;
 
@@ -184,11 +186,11 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
       "tg:msg:42:7:authored_by:acct:501",
       "acct:501:observed_participant:chat:42",
     ]);
-    expect(graph.spies.web_register).toHaveBeenCalledWith({
+    expect(graph.spies.web_register_batch).toHaveBeenCalledWith([expect.objectContaining({
       url: "https://example.test/demo",
       parent_entity_id: "id:tg:msg:42:7",
       link_kind: "references",
-    });
+    })]);
   });
 
   /**
@@ -269,6 +271,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
           dropped_keys: [],
         }),
       update_properties: () => Promise.resolve(undefined),
+      update_properties_batch: () => Promise.resolve(undefined),
     });
     const module = mountModule(TelegramModule, { graph }).module;
     const envelopes = Array.from({ length: messageCount }, (_, index) => {
@@ -286,7 +289,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
     expect(graph.spies.find_by_anchors).toHaveBeenCalledTimes(expectedBatchCount);
     expect(graph.spies.get_entities).toHaveBeenCalledTimes(expectedBatchCount);
     expect(graph.spies.apply_batch).toHaveBeenCalledTimes(expectedBatchCount);
-    expect(graph.spies.update_properties).toHaveBeenCalledTimes(expectedBatchCount);
+    expect(graph.spies.update_properties_batch).toHaveBeenCalledTimes(expectedBatchCount);
   });
 
   it("preserves the provider-verified self marker when an outgoing sender replica converges", async () => {
@@ -309,7 +312,9 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
           dropped_keys: [],
         }),
       web_register: () => Promise.resolve("web-id"),
+      web_register_batch: (links: readonly unknown[]) => Promise.resolve(links.map(() => "web-id")),
       update_properties: () => Promise.resolve(undefined),
+      update_properties_batch: () => Promise.resolve(undefined),
     });
     const module = mountModule(TelegramModule, { graph }).module;
 
@@ -342,6 +347,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
           dropped_keys: [],
         }),
       web_register: () => Promise.resolve("web-id"),
+      web_register_batch: (links: readonly unknown[]) => Promise.resolve(links.map(() => "web-id")),
       // The live message's chat is known with Telegram's count; the message
       // raises it by one so the plan and the saved count move together.
       get_entities: (ids) => Promise.resolve(ids.map((id) => ({
@@ -349,13 +355,14 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
         properties: { chat_id: 42, title: "Chat 42", type: "private", message_count: 99 },
       }))),
       update_properties: () => Promise.resolve(),
+      update_properties_batch: () => Promise.resolve(),
     });
     const module = mountModule(TelegramModule, { graph }).module;
 
     const result = await module.ingest({ envelopes: [invalid, live] });
-    expect(graph.spies.update_properties).toHaveBeenCalledWith(expect.objectContaining({
+    expect(graph.spies.update_properties_batch).toHaveBeenCalledWith([expect.objectContaining({
       properties: expect.objectContaining({ message_count: 100 }),
-    }));
+    })]);
     expect(result).toEqual({
       dropped_remote_ids: ["tg:msg:42:missing"],
       trigger_checks: [expect.objectContaining({
@@ -471,6 +478,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
       get_entity: () => Promise.reject(new Error("per-chat entity lookup is forbidden")),
       list_entities_window: () => Promise.reject(new Error("whole-account chat scan is forbidden")),
       update_properties: () => Promise.resolve(),
+      update_properties_batch: () => Promise.resolve(),
       apply_batch: (fragment) =>
         Promise.resolve({
           ids: Object.fromEntries(fragment.entities.map((item) => [item.key, `id:${item.key}`])),
@@ -511,6 +519,6 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
     });
     expect(firstBatch?.entities.find((item) => item.key === "tg:chat:1")?.properties).toMatchObject({ avatar_url: "/a/1.jpg" });
     expect(firstBatch?.entities.find((item) => item.key === "tg:chat:3")?.properties).toEqual({ chat_id: 3, title: "Chat 3" });
-    expect(graph.spies.update_properties).toHaveBeenCalledTimes(1);
+    expect(graph.spies.update_properties_batch).toHaveBeenCalledTimes(1);
   });
 });
