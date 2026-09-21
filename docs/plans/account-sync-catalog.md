@@ -2,7 +2,7 @@
 
 Status: APPROVED  
 Spec lock: sha256:68e0aebc008e04c12bc42733e0c7e3e5f4a1c6c0cbeb772f3957078e3c598cf2 owner:approved  
-Implementation lock: sha256:02c2be3b35e49aaba5268473c8dec1a3dafb81a477bec0a863205e6af06e104e owner:Implement the plan.  
+Implementation lock: sha256:e9f339b6e670f85ac199e103e288b17fc04c6244c235c2171170187c034cd7d4 owner:Перенеси туда обязательно. Дальше доводи вот эту фигню, которая есть с Лингендом.  
 Active Delivery: D1  
 Unattended decisions: allowed  
 
@@ -152,9 +152,9 @@ interface FetchResult {
 
 Branch: `feat/account-sync-catalog`; Depends: none; Gate: backend.
 
-Stage graph: `D1-S1 -> D1-S2 -> D1-S3 -> D1-S4 -> D1-S5 -> D1-S6 -> D1-S7 -> D1-S8 -> D1-S9 -> D1-S10 -> D1-S11`.
+Stage graph: `D1-S1 -> D1-S2 -> D1-S3 -> D1-S4 -> D1-S5 -> D1-S6 -> D1-S7 -> D1-S8 -> D1-S9 -> D1-S10 -> D1-S11 -> D1-S12`.
 
-Forecast: 609 active min / 145 credits across 11 Stages; longest dependency path 609 active min; external waits 240 min.
+Forecast: 669 active min / 159 credits across 12 Stages; longest dependency path 669 active min; external waits 240 min.
 
 What changed for people. The Accounts panel prints every account's sync from what its worker holds: for Telegram, chats 50/50 and messages 197/197 with the skipped history named; for Gmail, contacts, meetings and X the planned count on the first page; the Telegram history behind the first page is backfilled because the Source says what each page read.
 
@@ -617,6 +617,46 @@ Commit. fix(telegram): end membership at Telegram's departure time — forward d
 | ACS_024 | 1b45e26e063a6f4f2193336d03c472efb4c33b06 | 2026-09-21T14:21:04.607Z–2026-09-21T14:33:19.000Z | 10 / 12 min | unavailable: runner did not expose usage | Telegram chat and channel participant departures retain the provider date; the module ends only the stamped identity's active observed_in edge and sync completion never invents a timestamp. |
 <!-- plan:results:D1-S11:end -->
 <!-- plan:stage:D1-S11:end -->
+
+<!-- plan:stage:D1-S12:start -->
+<!-- plan:stage-meta:{"deliveryId":"D1","depends":["D1-S11"],"parallelWith":[],"writes":["acceptance/telegram-performance/README.md","acceptance/telegram-performance/run.ts","acceptance/telegram-performance/run.test.ts","acceptance/telegram-performance/app/backend/test/tst_src_int_telegram_sync_001.manual.ts","acceptance/telegram-performance/app/backend/test/tst_src_int_telegram_graph_001.manual.ts","acceptance/telegram-performance/app/backend/test/harness/telegram-source-sync.ts","acceptance/telegram-performance/app/backend/test/harness/telegram-source-provider.ts","acceptance/telegram-performance/app/backend/test/harness/source-sync-postgres.ts","plugins/sources/telegram/src/live.ts","plugins/sources/telegram/src/live.test.ts"],"tempRoot":".tmp/code-production/account-sync-catalog/D1-S12","verifyActiveMinutes":15,"verifyCredits":3} -->
+#### Stage D1-S12 — Catalog owns the manual Telegram performance stand and every channel departure
+
+- Owner: agent-1; Profile: strong; Depends: D1-S11; Parallel with: none.
+- Writes: `acceptance/telegram-performance/README.md`, `acceptance/telegram-performance/run.ts`, `acceptance/telegram-performance/run.test.ts`, `acceptance/telegram-performance/app/backend/test/tst_src_int_telegram_sync_001.manual.ts`, `acceptance/telegram-performance/app/backend/test/tst_src_int_telegram_graph_001.manual.ts`, `acceptance/telegram-performance/app/backend/test/harness/telegram-source-sync.ts`, `acceptance/telegram-performance/app/backend/test/harness/telegram-source-provider.ts`, `acceptance/telegram-performance/app/backend/test/harness/source-sync-postgres.ts`, `plugins/sources/telegram/src/live.ts`, `plugins/sources/telegram/src/live.test.ts`.
+- Temp root: `.tmp/code-production/account-sync-catalog/D1-S12` (must be absent at handoff).
+- Predict: 60 active min / 14 credits.
+- Of which verification: 15 active min / 3 credits.
+
+What this Stage solves. The Source-to-Graph performance proof currently lives under the app's ordinary test discovery even though it needs this catalog checkout, built Telegram packages and a separately provisioned native PostgreSQL server. The channel departure detector also mistakes a banned participant with viewMessages denied and left false for a current member.
+
+What is built. Retain the existing Telegram sync and Graph proof sources under a catalog-owned manual acceptance directory whose files do not match normal test discovery. One explicit launcher takes an app worktree and native PostgreSQL URL, builds the current catalog, injects only the stand files into paths that must be absent, runs the app's canonical scoped backend command, and removes exactly what it injected. It generates pins and the Telegram module fixture from the current catalog build; it never edits app production code or joins catalog CI. Treat ChannelParticipantBanned with either left true or viewMessages true as no membership while preserving restricted members who can still view messages.
+
+How it is proven. The launcher contract first fails because no manual runner exists, then validates the explicit app boundary without PostgreSQL or executing the performance scenarios; the real command remains manual and prints its performance evidence. tst_src_tg_033 is RED for left false plus viewMessages true, then proves that kick emits the provider timestamp while a viewable restricted participant emits nothing.
+
+Commit. fix(telegram): own the manual performance stand and detect channel kicks — keep provisioned proof out of CI and preserve provider-time link ends.
+
+##### Tasks
+
+- [ ] ACS_025 — Move the provisioned Source-to-Graph proof into a catalog-owned explicit launcher. (35 min)
+<!-- plan:task-meta:{"writes":["acceptance/telegram-performance/README.md","acceptance/telegram-performance/run.ts","acceptance/telegram-performance/run.test.ts","acceptance/telegram-performance/app/backend/test/tst_src_int_telegram_sync_001.manual.ts","acceptance/telegram-performance/app/backend/test/tst_src_int_telegram_graph_001.manual.ts","acceptance/telegram-performance/app/backend/test/harness/telegram-source-sync.ts","acceptance/telegram-performance/app/backend/test/harness/telegram-source-provider.ts","acceptance/telegram-performance/app/backend/test/harness/source-sync-postgres.ts"],"predictedActiveMinutes":35,"predictedCredits":7,"how":"retain the existing provisioned test sources outside normal discovery; add one explicit runner that validates an app worktree and database URL, builds this checkout, generates exact commit/SDK/module pins, injects into absent app test paths, calls the app agent:test:backend command for only the two acceptance files, and cleans up exact injected paths","red":"bun run agent:test:backend -- acceptance/telegram-performance/run.test.ts"} -->
+- [ ] ACS_026 — End membership when Telegram denies a banned channel participant message visibility. (10 min)
+<!-- plan:task-meta:{"writes":["plugins/sources/telegram/src/live.ts","plugins/sources/telegram/src/live.test.ts"],"predictedActiveMinutes":10,"predictedCredits":4,"how":"extend tst_src_tg_033 with ChannelParticipantBanned left false and bannedRights.viewMessages true as a departure and left false plus viewMessages false as retained membership; make channelParticipantIsMember express that Telegram membership rule","red":"bun run agent:test:backend -- plugins/sources/telegram/src/live.test.ts -t tst_src_tg_033"} -->
+
+##### Acceptance criteria
+
+- [ ] `bun run agent:test:backend -- acceptance/telegram-performance/run.test.ts` exits 0 — the manual stand has one explicit safe app boundary and is absent from normal catalog discovery
+- [ ] `bun run agent:test:backend -- plugins/sources/telegram/src/live.test.ts` exits 0 — channel kicks and retained restrictions are distinguished at the provider timestamp
+- [ ] `bun run agent:verify:commit` exits 0 — changed catalog scope is type-correct, lint-clean and green
+- [ ] Commit
+
+##### Results
+
+<!-- plan:results:D1-S12:start -->
+| Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
+|---|---|---|---:|---|---|
+<!-- plan:results:D1-S12:end -->
+<!-- plan:stage:D1-S12:end -->
 <!-- plan:delivery:D1:end -->
 <!-- plan:implementation:end -->
 
@@ -738,4 +778,10 @@ Commit. fix(telegram): end membership at Telegram's departure time — forward d
 - close D1-S11 closed commit:1b45e26e063a6f4f2193336d03c472efb4c33b06
 
 - deviation D1-S11: post-implementation review found that the Source's established Telegram RFC3339 form is +00:00, not the new .000Z dialect, and that a no-op full-snapshot hook still advertised reconciliation the module must not perform; 3985126 reuses the existing formatter, declares reconciliation none, removes the hook, aligns the public docs and strengthens the boundary tests
+
+- amend implementation owner:Перенеси туда обязательно. Дальше доводи вот эту фигню, которая есть с Лингендом. sha256:0c619e07b1c84973f1822ee453b692dae5f57fad7250ea24b6f1061790e4e9fb
+
+- amend implementation owner:Перенеси туда обязательно. Дальше доводи вот эту фигню, которая есть с Лингендом. sha256:ae5e72f4c70f63ae1934ac946a076cf32c783f555e5c8de6b7c268e7b3ee915f
+
+- amend implementation owner:Перенеси туда обязательно. Дальше доводи вот эту фигню, которая есть с Лингендом. sha256:e9f339b6e670f85ac199e103e288b17fc04c6244c235c2171170187c034cd7d4
 <!-- plan:execution:end -->
