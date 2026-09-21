@@ -123,14 +123,14 @@ describe("tst_module_telegram_plan_001 — the module states its plan from the p
     const module = mountModule(TelegramModule, { graph: store.graph(), ctx: { extension_id: "telegram" } }).module;
     const page = chats.map((chat) => chatEnvelope(chat));
 
-    // A new pass: every chat in full; the excluded ones' first fifty, the rest skipped.
+    // A new pass: every chat in full; the excluded ones' first hundred, the rest skipped.
     await expect(module.ingest({ generation: FIRST, envelopes: page })).resolves.toEqual({
       dropped_remote_ids: [], trigger_checks: [],
-      plan: { [CHAT]: { total: 7, skipped: 0 }, [MESSAGE]: { total: 1200 + 300 + 50 + 7000 + 20 + 100, skipped: 886237 } },
+      plan: { [CHAT]: { total: 7, skipped: 0 }, [MESSAGE]: { total: 1200 + 300 + 100 + 7000 + 20 + 100, skipped: 886187 } },
       excluded: ["3", "5"],
     });
     expect(store.edgesByChat.get("id:tg:chat:7")?.metadata).toMatchObject({ is_pinned: true, sync_pass: FIRST, sync_total: 100, sync_skipped: 0 });
-    expect(store.edgesByChat.get("id:tg:chat:3")?.metadata).toMatchObject({ sync_pass: FIRST, sync_total: 50, sync_skipped: 886237 });
+    expect(store.edgesByChat.get("id:tg:chat:3")?.metadata).toMatchObject({ sync_pass: FIRST, sync_total: 100, sync_skipped: 886187 });
     expect(store.edgesByChat.get("id:tg:chat:6")?.metadata).toMatchObject({ sync_pass: FIRST });
     expect(store.edgesByChat.get("id:tg:chat:6")?.metadata).not.toHaveProperty("sync_total");
 
@@ -162,7 +162,7 @@ describe("tst_module_telegram_plan_001 — the module states its plan from the p
     const secondPage = chats.filter((chat) => chat.id !== 6).map((chat) => chatEnvelope(chat, chat.id === 1 ? { message_count: 1206 } : {}));
     await expect(module.ingest({ generation: SECOND, envelopes: secondPage })).resolves.toEqual({
       dropped_remote_ids: [], trigger_checks: [],
-      plan: { [CHAT]: { total: 6, skipped: 0 }, [MESSAGE]: { total: 1206 + 300 + 50 + 7000 + 20 + 100, skipped: 886237 } },
+      plan: { [CHAT]: { total: 6, skipped: 0 }, [MESSAGE]: { total: 1206 + 300 + 100 + 7000 + 20 + 100, skipped: 886187 } },
       excluded: ["3", "5"],
     });
 
