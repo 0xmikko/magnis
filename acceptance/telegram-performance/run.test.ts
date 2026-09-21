@@ -6,13 +6,14 @@
  * @fixtures: one temporary minimal app worktree
  */
 import { expect, test } from "bun:test";
-import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
   appIdentity,
   RESET_SQL,
+  runCommand,
   summarizeSyncTurns,
   validateAppRoot,
 } from "./run";
@@ -65,7 +66,9 @@ test("tst_cat_tg_performance_runner_001 records the selected app branch and comm
  * @fixtures: none
  */
 test("tst_cat_tg_performance_runner_002 reset clears sync results without touching authentication", () => {
-  expect(RESET_SQL).toContain("sync_state");
+  expect(RESET_SQL).toContain("UPDATE sync_state");
+  expect(RESET_SQL).toContain("lease_generation = lease_generation + 1");
+  expect(RESET_SQL).not.toMatch(/TRUNCATE TABLE[^;]*\bsync_state\b/i);
   expect(RESET_SQL).toContain("entities");
   for (const preserved of ["secrets", "source_credentials", "source_connections", "source_accounts"]) {
     expect(RESET_SQL).not.toMatch(new RegExp(`(?:TRUNCATE|DELETE\\s+FROM)[^;]*\\b${preserved}\\b`, "i"));
@@ -100,4 +103,37 @@ test("tst_cat_tg_performance_runner_003 reports only real Telegram turns after t
     firstTurnAt: "2026-09-21T10:00:02.000Z",
     lastTurnAt: "2026-09-21T10:00:04.000Z",
   });
+});
+
+/**
+ * @test-id: tst_cat_tg_performance_runner_004
+ * @scenario: scn_tg_performance_stop_001
+ * @covers: acceptance/telegram-performance/run.ts::runCommand
+ * @deterministic: yes
+ * @fixtures: one child process with an explicit SIGINT cleanup receipt
+ */
+test("tst_cat_tg_performance_runner_004 waits for child cleanup after SIGINT", async () => {
+  const root = mkdtempSync(join(tmpdir(), "magnis-telegram-performance-stop-"));
+  const marker = join(root, "clean");
+  try {
+    const child = `
+      import { writeFileSync } from "node:fs";
+      process.once("SIGINT", () => {
+        writeFileSync(process.env.RUN_COMMAND_MARKER, "clean");
+        process.exit(0);
+      });
+      setTimeout(() => {
+        process.kill(process.ppid, "SIGINT");
+        process.kill(process.pid, "SIGINT");
+      }, 10);
+      await new Promise(() => undefined);
+    `;
+    await runCommand(["bun", "-e", child], root, {
+      ...process.env,
+      RUN_COMMAND_MARKER: marker,
+    });
+    expect(readFileSync(marker, "utf8")).toBe("clean");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

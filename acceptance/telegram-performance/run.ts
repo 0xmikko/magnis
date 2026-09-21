@@ -77,6 +77,8 @@ DECLARE
   credentials_before text;
   connections_before text;
   accounts_before text;
+  sync_bindings_before text;
+  sync_rows_before integer;
 BEGIN
   SELECT md5(coalesce(string_agg(to_jsonb(row_value)::text, '' ORDER BY to_jsonb(row_value)::text), ''))
     INTO secrets_before FROM secrets AS row_value;
@@ -86,11 +88,19 @@ BEGIN
     INTO connections_before FROM source_connections AS row_value;
   SELECT md5(coalesce(string_agg(to_jsonb(row_value)::text, '' ORDER BY to_jsonb(row_value)::text), ''))
     INTO accounts_before FROM source_accounts AS row_value;
+  SELECT count(*), md5(coalesce(string_agg(
+      jsonb_build_array(user_id, module_id, source_id, account_id, account_generation)::text,
+      '' ORDER BY jsonb_build_array(user_id, module_id, source_id, account_id, account_generation)::text
+    ), ''))
+    INTO sync_rows_before, sync_bindings_before
+    FROM sync_state;
+  IF sync_rows_before = 0 THEN
+    RAISE EXCEPTION 'Telegram performance reset requires an existing sync_state row';
+  END IF;
 
   TRUNCATE TABLE
     sync_cursors,
     sync_jobs,
-    sync_state,
     graph_discard,
     embedding_index,
     embedding_fts,
@@ -100,6 +110,18 @@ BEGIN
     entities,
     events
   RESTART IDENTITY CASCADE;
+
+  UPDATE sync_state
+  SET id = gen_random_uuid()::text,
+      status = '{"kind":"bootstrap","estimatedAt":"unknown"}'::jsonb,
+      hold = NULL,
+      estimation = '{}'::jsonb,
+      cursor = NULL,
+      forward_checkpoint = NULL,
+      gaps = '[]'::jsonb,
+      pass = NULL,
+      lease_generation = lease_generation + 1,
+      updated_at = to_char(clock_timestamp() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"+00:00"');
 
   IF secrets_before IS DISTINCT FROM (
       SELECT md5(coalesce(string_agg(to_jsonb(row_value)::text, '' ORDER BY to_jsonb(row_value)::text), ''))
@@ -113,8 +135,15 @@ BEGIN
     ) OR accounts_before IS DISTINCT FROM (
       SELECT md5(coalesce(string_agg(to_jsonb(row_value)::text, '' ORDER BY to_jsonb(row_value)::text), ''))
       FROM source_accounts AS row_value
+    ) OR sync_rows_before IS DISTINCT FROM (
+      SELECT count(*) FROM sync_state
+    ) OR sync_bindings_before IS DISTINCT FROM (
+      SELECT md5(coalesce(string_agg(
+        jsonb_build_array(user_id, module_id, source_id, account_id, account_generation)::text,
+        '' ORDER BY jsonb_build_array(user_id, module_id, source_id, account_id, account_generation)::text
+      ), '')) FROM sync_state
     ) THEN
-    RAISE EXCEPTION 'Telegram performance reset changed authentication state';
+    RAISE EXCEPTION 'Telegram performance reset changed authentication or account binding state';
   END IF;
 END
 $telegram_performance_reset$;
@@ -285,15 +314,21 @@ export function summarizeSyncTurns(log: string, since: string): SyncSummary {
   };
 }
 
-async function run(command: readonly string[], root: string, env: Record<string, string | undefined> = process.env): Promise<void> {
-  const child = Bun.spawn([...command], { cwd: root, env, stdin: "inherit", stdout: "inherit", stderr: "inherit" });
-  const exitCode = await child.exited;
-  if (exitCode !== 0) throw new Error(`${command.join(" ")} exited with ${String(exitCode)}`);
+export async function runCommand(command: readonly string[], root: string, env: Record<string, string | undefined> = process.env): Promise<void> {
+  const waitForChild = (): void => undefined;
+  process.once("SIGINT", waitForChild);
+  try {
+    const child = Bun.spawn([...command], { cwd: root, env, stdin: "inherit", stdout: "inherit", stderr: "inherit" });
+    const exitCode = await child.exited;
+    if (exitCode !== 0) throw new Error(`${command.join(" ")} exited with ${String(exitCode)}`);
+  } finally {
+    process.off("SIGINT", waitForChild);
+  }
 }
 
 async function buildCatalog(channelRoot: string, revision: string): Promise<void> {
   mkdirSync(channelRoot, { recursive: true });
-  await run(["bun", "scripts/build-catalog-index.ts"], CATALOG_ROOT, {
+  await runCommand(["bun", "scripts/build-catalog-index.ts"], CATALOG_ROOT, {
     ...process.env,
     CATALOG_OUT: channelRoot,
     GITHUB_SHA: revision,
@@ -338,7 +373,7 @@ async function start(options: Options): Promise<void> {
     "--data-root",
     options.dataRoot,
   ];
-  await run(bunArgs, app.root, {
+  await runCommand(bunArgs, app.root, {
     ...process.env,
     MAGNIS_CATALOG_URL: pathToFileURL(channelRoot).href,
   });
@@ -362,7 +397,7 @@ async function databaseUp(appRoot: string, dataRoot: string): Promise<string> {
   const url = stdout.trimEnd().split("\n").at(-1);
   if (exitCode !== 0 || url?.startsWith("DATABASE_URL=") !== true) {
     if (existsSync(record)) {
-      await run(["bun", "scripts/db/postgres.ts", "down", "--data-root", dataRoot], appRoot);
+      await runCommand(["bun", "scripts/db/postgres.ts", "down", "--data-root", dataRoot], appRoot);
     }
     throw new Error(`PostgreSQL start exited with ${String(exitCode)} without DATABASE_URL`);
   }
@@ -389,7 +424,7 @@ async function reset(options: Options): Promise<void> {
     }
     console.log("telegram-performance: sync data reset; Telegram secrets and account binding preserved");
   } finally {
-    await run(["bun", "scripts/db/postgres.ts", "down", "--data-root", options.dataRoot], app.root);
+    await runCommand(["bun", "scripts/db/postgres.ts", "down", "--data-root", options.dataRoot], app.root);
   }
 }
 
