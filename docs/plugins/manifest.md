@@ -83,7 +83,7 @@ unforgeable by construction rather than by validation.
 
 ```toml
 [surfaces.telegram]
-reconciliation = { mode = "full_snapshot" }   # or { mode = "none" }
+reconciliation = { mode = "none" }            # or { mode = "full_snapshot" }
 item = "telegram.message"                      # the surface's primary-item schema
 progress = { "telegram.chat" = "chats", "telegram.message" = "messages" }
 ```

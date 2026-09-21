@@ -18,9 +18,9 @@ publisher = "ai.magnis"
 
 # Sync surface this module consumes (fed by the matching source connector).
 [surfaces.telegram]
-# The host reconciles membership at the end of every pass: the module stamps
-# the pass on each chat's observed_in edge and decays the edges it did not.
-reconciliation = { mode = "full_snapshot" }
+# A missing chat says neither that membership ended nor when. Only a dated
+# participant update may close observed_in, so the host runs no snapshot decay.
+reconciliation = { mode = "none" }
 # The surface's primary-item schema.
 item = "telegram.message"
 # The schemas the surface reports progress on, with the names the Accounts

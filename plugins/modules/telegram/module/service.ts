@@ -12,7 +12,7 @@
 //     Stage 1 uses the record's avatar_url / photo_url.
 //   - message-detail canonical map + linked_entities (Context panel).
 
-import { connectionReady, reachedEndpoints, rpc, syncComplete, syncHandler, tool, writeTool, type GraphService, type PluginDeps } from "@magnis/plugin-sdk";
+import { connectionReady, reachedEndpoints, rpc, syncHandler, tool, writeTool, type GraphService, type PluginDeps } from "@magnis/plugin-sdk";
 import type {
   BatchEntityInput,
   BatchLinkInput,
@@ -988,23 +988,6 @@ export class TelegramModule {
     return { ok: true };
   }
 
-  /**
-   * A completed snapshot cannot say when an omitted membership ended. Exact
-   * provider-dated live evidence owns end_link; completion therefore invents
-   * neither a departure nor a timestamp.
-   * @tested-by: tst_module_telegram_plan_001
-  */
-  @syncComplete()
-  onSyncComplete(_params: {
-    user_id: string;
-    source_id: string;
-    account_id: string;
-    identity_key?: string | null;
-    generation?: string;
-  }): Promise<{ departed: string[]; plan: Record<string, PlanDelta> }> {
-    return Promise.resolve({ departed: [], plan: {} });
-  }
-
   /** End the stamped operator's active membership at Telegram's own time. */
   private async endMembership(payload: Data, identityKey: string | undefined): Promise<void> {
     if (identityKey === undefined) throw new Error("telegram membership end requires identity_key");
@@ -1018,9 +1001,9 @@ export class TelegramModule {
     if (chatId === null) throw new Error("telegram membership end requires chat_id");
     const validUntil = str(payload, "valid_until");
     if (validUntil === null) throw new Error("telegram membership end requires valid_until");
-    const parsed = new Date(validUntil);
-    if (Number.isNaN(parsed.getTime()) || parsed.toISOString() !== validUntil) {
-      throw new Error("telegram membership end requires an exact ISO valid_until");
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/.test(validUntil)
+      || Number.isNaN(Date.parse(validUntil))) {
+      throw new Error("telegram membership end requires an exact RFC3339 valid_until");
     }
 
     const selfId = await this.graph.find_by_anchor(accountAnchor(identityKey));
@@ -1263,8 +1246,8 @@ export class TelegramModule {
         // The edge IS the membership fact — a reported chat always gets it,
         // with the observed state as its dictionary when the page carries
         // any, and — inside a worker's pass — the statement the plan makes
-        // for the chat. (The reconcile at the end of the pass decays the
-        // edges the pass did not stamp.)
+        // for the chat. Snapshot omission does not change this membership;
+        // only a provider-dated participant update may end it.
         const held = chatId === null ? undefined : membership.edges.get(existingEntityByChatId.get(chatId) ?? "");
         const metadata: Data = {
           ...(held?.metadata ?? {}),

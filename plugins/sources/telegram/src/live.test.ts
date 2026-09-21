@@ -364,11 +364,26 @@ test("tst_src_tg_033 dated membership ends retain Telegram's server time", () =>
     newParticipant: new Api.ChannelParticipantLeft({ peer: new Api.PeerUser({ userId: bigInt(9001) }) }),
     qts: 2,
   }));
+  raw[1](new Api.UpdateChannelParticipant({
+    channelId: bigInt(506), date: 1_700_000_090, actorId: bigInt(9),
+    userId: bigInt(9001),
+    prevParticipant: new Api.ChannelParticipantSelf({
+      userId: bigInt(9001), inviterId: bigInt(7), date: 1_690_000_000,
+    }),
+    newParticipant: new Api.ChannelParticipantBanned({
+      left: true,
+      peer: new Api.PeerUser({ userId: bigInt(9001) }),
+      kickedBy: bigInt(9),
+      date: 1_700_000_090,
+      bannedRights: new Api.ChatBannedRights({ untilDate: 0 }),
+    }),
+    qts: 3,
+  }));
 
   // Join and role changes keep membership true and emit no end.
   raw[1](new Api.UpdateChatParticipant({
     chatId: bigInt(606), date: 1_700_000_120, actorId: bigInt(7), userId: bigInt(9001),
-    newParticipant: participant, qts: 3,
+    newParticipant: participant, qts: 4,
   }));
   raw[1](new Api.UpdateChatParticipant({
     chatId: bigInt(707), date: 1_700_000_180, actorId: bigInt(7), userId: bigInt(9001),
@@ -376,14 +391,22 @@ test("tst_src_tg_033 dated membership ends retain Telegram's server time", () =>
     newParticipant: new Api.ChatParticipantAdmin({
       userId: bigInt(9001), inviterId: bigInt(7), date: 1_690_000_000,
     }),
-    qts: 4,
+    qts: 5,
   }));
+
+  const invalid = (chatId: number, userId: number, date: number) => new Api.UpdateChatParticipant({
+    chatId: bigInt(chatId), date, actorId: bigInt(7), userId: bigInt(userId),
+    prevParticipant: participant, qts: 6,
+  });
+  expect(() => raw[1](invalid(0, 9001, 1_700_000_240))).toThrow("chat_id");
+  expect(() => raw[1](invalid(808, 0, 1_700_000_240))).toThrow("user_id");
+  expect(() => raw[1](invalid(808, 9001, 0))).toThrow("date");
 
   expect(pushes).toEqual([
     {
       payload: {
         entity_type: "telegram_chat", chat_id: 404, top_message: 0,
-        telegram_user_id: 9001, valid_until: "2023-11-14T22:13:20.000Z",
+        telegram_user_id: 9001, valid_until: "2023-11-14T22:13:20+00:00",
       },
       remote_id: "tg:chat:404",
       position: { scope_id: "404", id: 0 },
@@ -391,10 +414,18 @@ test("tst_src_tg_033 dated membership ends retain Telegram's server time", () =>
     {
       payload: {
         entity_type: "telegram_chat", chat_id: 505, top_message: 0,
-        telegram_user_id: 9001, valid_until: "2023-11-14T22:14:20.000Z",
+        telegram_user_id: 9001, valid_until: "2023-11-14T22:14:20+00:00",
       },
       remote_id: "tg:chat:505",
       position: { scope_id: "505", id: 0 },
+    },
+    {
+      payload: {
+        entity_type: "telegram_chat", chat_id: 506, top_message: 0,
+        telegram_user_id: 9001, valid_until: "2023-11-14T22:14:50+00:00",
+      },
+      remote_id: "tg:chat:506",
+      position: { scope_id: "506", id: 0 },
     },
   ]);
 });

@@ -2,16 +2,15 @@
  * @layer: module
  * @test-id: tst_module_telegram_plan_001
  * @scenario: scn_telegram_sync_plan_001
- * @covers: plugins/modules/telegram/module/service.ts::ingest (plan, excluded), onSyncComplete (departed, plan)
+ * @covers: plugins/modules/telegram/module/service.ts::ingest (plan, excluded)
  * @deterministic: yes
  * @fixtures: seven chats with fixed counts, pins and indexing choices; an in-memory graph double
  *
  * The plan grows out of the pages: for every chat a page carries, the module
  * states that chat's count relative to the statement it keeps on the
  * operator's observed_in edge — in full on a new pass, zero for a re-read,
- * the difference for a restatement, one for a live message — names the chats
- * it leaves out of history, and at the end of the pass answers the chats it
- * did not see with the negative of what it stated for them.
+ * the difference for a restatement, one for a live message — and names the
+ * chats it leaves out of history. Snapshot omission does not end membership.
  */
 import { describe, expect, it } from "vitest";
 import type { GraphBatchInput, LinkSummary, RawEntity, WindowSpec } from "@magnis/plugin-sdk";
@@ -167,13 +166,9 @@ describe("tst_module_telegram_plan_001 — the module states its plan from the p
     });
 
     // Snapshot omission contains no provider departure time, so it cannot end
-    // the missing chat's membership or give back its earlier statement.
-    await expect(module.onSyncComplete({ user_id: "u1", source_id: "telegram-ts", account_id: "account-1", identity_key: "9001", generation: SECOND })).resolves.toEqual({
-      departed: [], plan: {},
-    });
+    // the missing chat's membership.
     expect(store.endedAt).toEqual([]);
     expect(store.windows).toEqual([]);
-    await expect(module.onSyncComplete({ user_id: "u1", source_id: "telegram-ts", account_id: "account-1", identity_key: "9001", generation: SECOND })).resolves.toEqual({ departed: [], plan: {} });
 
     // A chat re-reported after snapshot omission remains on its active edge.
     await expect(module.ingest({ generation: SECOND, envelopes: [chatEnvelope(sixth, { message_count: 40 })] })).resolves.toEqual({

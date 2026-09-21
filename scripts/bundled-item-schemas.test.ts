@@ -68,11 +68,10 @@ describe("tst_pub_item_schemas_001", () => {
     }
   });
 
-  // The reconciliation the host runs at the end of a pass: telegram
-  // reconciles membership by the pass the host stamps on every ingest
-  // call (full_snapshot); the others walk their whole set every pass.
+  // Snapshot omission is not provider evidence that a membership ended, so
+  // every syncing module leaves host reconciliation disabled.
   const reconciliation: Readonly<Record<string, { mode: string }>> = {
-    telegram: { mode: "full_snapshot" },
+    telegram: { mode: "none" },
     email: { mode: "none" },
     meetings: { mode: "none" },
     contacts: { mode: "none" },

@@ -2,7 +2,7 @@
  * @layer: module
  * @test-id: tst_module_telegram_ingest_002
  * @scenario: scn_telegram_ingest_001
- * @covers: plugins/modules/telegram/module/service.ts::onConnectionReady,ingest,onSyncComplete
+ * @covers: plugins/modules/telegram/module/service.ts::onConnectionReady,ingest
  * @deterministic: yes
  * @fixtures: fixed source envelopes and strict graph doubles
  * @legacy-id: tst_be_tgingest_003_plugin_ingests_chat_and_message
@@ -422,12 +422,17 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
    */
   it("tst_module_telegram_007 ends only the stamped identity's active edge at the provider time", async () => {
     let validUntil: string | null = null;
+    let selfExists = true;
+    let chatExists = true;
+    let edgeExists = true;
+    let endError: Error | null = null;
     const graph = mockGraph({
-      find_by_anchor: (anchor) => Promise.resolve({
-        "tg:account:9001": "self-id",
-        "tg:chat:42": "chat-id",
-      }[anchor] ?? null),
-      list_linked: () => Promise.resolve({
+      find_by_anchor: (anchor) => {
+        if (anchor === "tg:account:9001") return Promise.resolve(selfExists ? "self-id" : null);
+        if (anchor === "tg:chat:42") return Promise.resolve(chatExists ? "chat-id" : null);
+        return Promise.resolve(null);
+      },
+      list_linked: () => Promise.resolve(edgeExists ? {
         items: [{
           entity: entity("self-id", "Me"),
           link: {
@@ -436,8 +441,9 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
           },
         }],
         total: 1,
-      }),
+      } : { items: [], total: 0 }),
       end_link: (_id, endedAt) => {
+        if (endError !== null) return Promise.reject(endError);
         validUntil = endedAt;
         return Promise.resolve(undefined);
       },
@@ -454,7 +460,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
         chat_id: 42,
         top_message: 0,
         telegram_user_id: 9001,
-        valid_until: "2026-09-20T11:22:33.000Z",
+        valid_until: "2026-09-20T11:22:33+00:00",
       },
     };
 
@@ -462,34 +468,46 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
       dropped_remote_ids: [], trigger_checks: [],
     });
     expect(graph.spies.end_link).toHaveBeenCalledTimes(1);
-    expect(graph.spies.end_link).toHaveBeenCalledWith("edge-42", "2026-09-20T11:22:33.000Z");
+    expect(graph.spies.end_link).toHaveBeenCalledWith("edge-42", "2026-09-20T11:22:33+00:00");
     expect(graph.spies.apply_batch).not.toHaveBeenCalled();
 
     await module.ingest({ envelopes: [departure] });
+    validUntil = null;
     await module.ingest({
       envelopes: [{ ...departure, payload: { ...departure.payload, telegram_user_id: 7002 } }],
     });
     expect(graph.spies.end_link).toHaveBeenCalledTimes(1);
 
+    for (const field of ["telegram_user_id", "chat_id", "valid_until"] as const) {
+      const payload = { ...departure.payload };
+      delete payload[field];
+      await expect(module.ingest({
+        envelopes: [{ ...departure, payload }],
+      })).rejects.toThrow(field);
+    }
     await expect(module.ingest({
       envelopes: [{ ...departure, payload: { ...departure.payload, valid_until: "not-a-date" } }],
     })).rejects.toThrow("valid_until");
-  });
+    await expect(module.ingest({
+      envelopes: [{ ...departure, payload: { ...departure.payload, valid_until: "2026-09-20T11:22:33" } }],
+    })).rejects.toThrow("valid_until");
 
-  it("does not invent a membership end from a chat omitted by a completed pass", async () => {
-    const graph = mockGraph({
-      end_link: () => Promise.resolve(undefined),
-    });
-    const module = mountModule(TelegramModule, { graph }).module;
+    selfExists = false;
+    await module.ingest({ envelopes: [departure] });
+    selfExists = true;
+    chatExists = false;
+    await module.ingest({ envelopes: [departure] });
+    chatExists = true;
+    validUntil = "2026-09-20T11:22:33+00:00";
+    await module.ingest({ envelopes: [departure] });
+    validUntil = null;
+    edgeExists = false;
+    await module.ingest({ envelopes: [departure] });
+    edgeExists = true;
+    expect(graph.spies.end_link).toHaveBeenCalledTimes(1);
 
-    await expect(module.onSyncComplete({
-      user_id: "u1",
-      source_id: "telegram-ts",
-      account_id: "a1",
-      identity_key: "9001",
-      generation: "initial:r:2",
-    })).resolves.toEqual({ departed: [], plan: {} });
-    expect(graph.spies.end_link).not.toHaveBeenCalled();
+    endError = new Error("graph write failed");
+    await expect(module.ingest({ envelopes: [departure] })).rejects.toThrow("graph write failed");
   });
   /**
    * @test-id: tst_module_telegram_006

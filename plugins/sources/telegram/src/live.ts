@@ -44,6 +44,7 @@ import {
 } from "./client";
 import type { CatchupDialog, TgOps } from "./surfaces/telegram/commands";
 import { BOOTSTRAP_BATCH_DIALOGS } from "./surfaces/telegram/commands";
+import { toRfc3339Utc } from "./surfaces/telegram/envelope";
 
 /** Client init params — byte-identical to the Rust `InitParams`. */
 const INIT_PARAMS = {
@@ -214,11 +215,11 @@ function positiveTelegramId(value: unknown, field: string): number {
   return id;
 }
 
-function providerDate(value: unknown): string {
+function telegramDate(value: unknown): Date {
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
     throw new Error("Telegram participant update requires a valid date");
   }
-  return new Date(value * 1000).toISOString();
+  return new Date(value * 1000);
 }
 
 function channelParticipantIsMember(participant: Api.TypeChannelParticipant | undefined): boolean {
@@ -235,7 +236,7 @@ function membershipEndOf(update: Api.UpdateChatParticipant | Api.UpdateChannelPa
       kind: "membership_end",
       chatId: positiveTelegramId(update.chatId, "chat_id"),
       telegramUserId: positiveTelegramId(update.userId, "user_id"),
-      validUntil: providerDate(update.date),
+      validUntil: toRfc3339Utc(telegramDate(update.date)),
     };
   }
   if (!channelParticipantIsMember(update.prevParticipant) || channelParticipantIsMember(update.newParticipant)) {
@@ -245,7 +246,7 @@ function membershipEndOf(update: Api.UpdateChatParticipant | Api.UpdateChannelPa
     kind: "membership_end",
     chatId: positiveTelegramId(update.channelId, "channel_id"),
     telegramUserId: positiveTelegramId(update.userId, "user_id"),
-    validUntil: providerDate(update.date),
+    validUntil: toRfc3339Utc(telegramDate(update.date)),
   };
 }
 

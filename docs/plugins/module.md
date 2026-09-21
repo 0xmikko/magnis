@@ -333,12 +333,9 @@ for it. The answer is `{ dropped_remote_ids, trigger_checks, plan?, excluded? }`
 A module whose surface declares `reconciliation = { mode = "full_snapshot" }`
 implements `@syncComplete`, the reserved `<plugin_id>.__sync_complete__` hook
 the host calls at the end of a pass with `{ user_id, source_id, account_id,
-identity_key, generation }`. It answers `{ departed: [scopeId], plan }`: the
-scopes whose last statement carries another pass's stamp have left — Telegram
-decays their `observed_in` edge. Their statement was made in that other pass,
-whose plan the host zeroed when this one began, so the `plan` answered is
-empty: a delta that would take the host's plan below zero is refused. A scope
-reported again later is restored and stated in full.
+identity_key, generation }`. Telegram instead declares `mode = "none"`:
+snapshot omission says neither that a membership ended nor when it ended. Its
+`observed_in` edge closes only from a dated Telegram participant update.
 
 ---
 
