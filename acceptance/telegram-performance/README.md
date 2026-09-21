@@ -1,29 +1,70 @@
-# Telegram performance acceptance
+# Live Telegram performance stand
 
-This directory owns the provisioned Telegram Source-to-Graph acceptance stand.
-It is deliberately outside every catalog and app test discovery pattern: the
-run requires this catalog checkout, an explicit `magnis-app` worktree and a
-native PostgreSQL server supplied by the caller.
+This is a manual stand for measuring the real Telegram-to-Graph path. It lives
+in `magnis`, starts an explicitly selected clean `magnis-app` worktree, and is
+outside every catalog and app CI discovery pattern. It never enables a fixture
+Telegram transport.
 
-Check that the selected app worktree has the expected boundary and no files
-that the runner would overwrite:
+The persistent data root owns PostgreSQL and the encrypted Telegram session.
+Authenticate once in the UI. Later runs may reset synchronized data and sync
+progress while retaining `secrets`, `source_credentials`,
+`source_connections`, and `source_accounts`.
+
+## Select the app branch
+
+Checkout the app branch in its own normal worktree, then verify the exact
+branch and commit that the stand will run:
 
 ```bash
-bun acceptance/telegram-performance/run.ts \
-  --check \
+bun acceptance/telegram-performance/run.ts check \
   --app-root /absolute/path/to/magnis-app-worktree
 ```
 
-Run and print the two scenarios' timing evidence:
+The selected app worktree must be clean. The app dev launcher runs the backend
+from that worktree's source. The runner also builds the current clean `magnis`
+checkout into the stand's private catalog channel.
+
+## First run and authentication
 
 ```bash
-bun acceptance/telegram-performance/run.ts \
+bun acceptance/telegram-performance/run.ts start \
   --app-root /absolute/path/to/magnis-app-worktree \
-  --database-url 'postgresql://postgres@localhost/postgres'
+  --data-root /absolute/path/to/telegram-performance-data \
+  --port 3261 \
+  --env-file /absolute/path/to/magnis-app.env
 ```
 
-The runner builds the current catalog, generates exact commit/SDK/module pins,
-temporarily injects only the acceptance sources and Telegram module fixture,
-calls the app's `agent:test:backend` adapter for the two named files, and removes
-every injected file in `finally`. It refuses an app worktree where any target
-already exists. Nothing here is part of normal CI.
+`--env-file` is optional when the required deployment values are already in
+the environment. Open the printed frontend URL and connect Telegram. Stop the
+stand with Ctrl-C; PostgreSQL stops but its data and encrypted session remain.
+
+The runner refuses `TELEGRAM_FIXTURE_FILE`: measurements must use the real
+provider. Stop immediately on a Telegram FLOOD/auth error; this is not a load
+generator or a way to probe provider limits.
+
+## Measure another clean synchronization
+
+First print the current run while its marker still identifies the selected
+commit:
+
+```bash
+bun acceptance/telegram-performance/run.ts report \
+  --data-root /absolute/path/to/telegram-performance-data
+```
+
+The report sums the backend's production `sync turn` records after this start:
+turns, envelopes, inserted/removed rows, provider fetch time, Graph admission
+time, overlap, observed wall time, and envelopes per second. It does not infer
+speedup; compare two reports from equivalent live runs.
+
+Stop the stand, then clear only sync output and progress:
+
+```bash
+bun acceptance/telegram-performance/run.ts reset \
+  --app-root /absolute/path/to/magnis-app-worktree \
+  --data-root /absolute/path/to/telegram-performance-data
+```
+
+Start again with the same data root. Telegram authentication is reused. To
+measure another app branch, pass that branch's clean worktree as `--app-root`;
+no test or live provider call is added to CI.
