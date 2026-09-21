@@ -315,14 +315,23 @@ export function summarizeSyncTurns(log: string, since: string): SyncSummary {
 }
 
 export async function runCommand(command: readonly string[], root: string, env: Record<string, string | undefined> = process.env): Promise<void> {
-  const waitForChild = (): void => undefined;
-  process.once("SIGINT", waitForChild);
+  const child = Bun.spawn([...command], {
+    cwd: root,
+    env,
+    stdin: "inherit",
+    stdout: "inherit",
+    stderr: "inherit",
+    detached: true,
+  });
+  const stopChild = (): void => {
+    child.kill("SIGINT");
+  };
+  process.once("SIGINT", stopChild);
   try {
-    const child = Bun.spawn([...command], { cwd: root, env, stdin: "inherit", stdout: "inherit", stderr: "inherit" });
     const exitCode = await child.exited;
     if (exitCode !== 0) throw new Error(`${command.join(" ")} exited with ${String(exitCode)}`);
   } finally {
-    process.off("SIGINT", waitForChild);
+    process.off("SIGINT", stopChild);
   }
 }
 

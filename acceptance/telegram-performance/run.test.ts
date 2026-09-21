@@ -122,10 +122,8 @@ test("tst_cat_tg_performance_runner_004 waits for child cleanup after SIGINT", a
         writeFileSync(process.env.RUN_COMMAND_MARKER, "clean");
         process.exit(0);
       });
-      setTimeout(() => {
-        process.kill(process.ppid, "SIGINT");
-        process.kill(process.pid, "SIGINT");
-      }, 10);
+      setTimeout(() => process.kill(process.ppid, "SIGINT"), 10);
+      setTimeout(() => process.exit(2), 1_000);
       await new Promise(() => undefined);
     `;
     await runCommand(["bun", "-e", child], root, {
