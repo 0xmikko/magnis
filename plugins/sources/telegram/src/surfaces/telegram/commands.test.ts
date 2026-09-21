@@ -58,7 +58,7 @@ test("tst_src_tgfast_002 fifty dialogs retain bounded hydrated pages and pinned 
     let cursor: unknown = null;
     let wireIndex = 0;
     const all: Record<string, unknown>[] = [];
-    for (let page = 0; page < 10; page++) {
+    for (let page = 0; page < 2; page++) {
       // Recreate the Source wrapper: continuation must not depend on its peer cache.
       const pending = settled(runBootstrap(cursor, new LiveDialogPager(new TgClient(f.client), "fixture-fast")));
       if (page === 0) {
@@ -76,12 +76,12 @@ test("tst_src_tgfast_002 fifty dialogs retain bounded hydrated pages and pinned 
           messages: ids.map((id) => wireMessage(id, 50, peerFor(id))),
         }));
       }
-      for (const chatId of ids.slice(page * 5, page * 5 + 5)) {
-        clock.advance(3000);
+      for (const chatId of ids.slice(page * 25, page * 25 + 25)) {
+        clock.advance(700);
         const sent = await f.application(wireIndex++);
         expect(sent.method).toBe("messages.GetHistory");
         const request = sent.state.request as Api.messages.GetHistory;
-        expect(request.limit).toBe(50);
+        expect(request.limit).toBe(100);
         if (chatId === 1006) expect(request.peer).toBeInstanceOf(Api.InputPeerSelf);
         else if (chatId === 1007) expect(request.peer).toMatchObject({ channelId: bigInt(chatId), accessHash: bigInt(channelHash) });
         else expect(request.peer).toMatchObject({ chatId: bigInt(chatId) });
@@ -93,21 +93,21 @@ test("tst_src_tgfast_002 fifty dialogs retain bounded hydrated pages and pinned 
       expect(result.kind).toBe("resolved");
       const out = result.value as Record<string, unknown>;
       const envelopes = out.envelopes as Record<string, unknown>[];
-      expect(envelopes).toHaveLength(255);
-      expect(out.hasMore).toBe(page < 9);
+      expect(envelopes).toHaveLength(1275);
+      expect(out.hasMore).toBe(page < 1);
       // Every hydrated chat answered its whole fifty-message history: the page
       // states it read each from one; the counters that used to ride here are gone.
-      expect(out.traversed).toEqual(Object.fromEntries(ids.slice(page * 5, page * 5 + 5).map((id) => [String(id), [1, 50]])));
+      expect(out.traversed).toEqual(Object.fromEntries(ids.slice(page * 25, page * 25 + 25).map((id) => [String(id), [1, 50]])));
       expect("total" in out).toBe(false);
       expect("discovered" in out).toBe(false);
       if (page === 0) {
         const hydrationOffset = (out.nextCursor as { dialog_offset: DialogOffset }).dialog_offset;
         const pendingChats = await new LiveDialogPager(new TgClient(f.client), "fixture-fast")
           .dialogPage(hydrationOffset, 50, { hydrate: false });
-        expect(pendingChats.dialogs).toHaveLength(45);
+        expect(pendingChats.dialogs).toHaveLength(25);
         expect(pendingChats.next_offset).toBeNull();
-        expect(pendingChats.dialogs[0]?.chat.chat_id).toBe(1005);
-        expect(f.writes).toHaveLength(6);
+        expect(pendingChats.dialogs[0]?.chat.chat_id).toBe(1025);
+        expect(f.writes).toHaveLength(26);
       }
       all.push(...envelopes);
       cursor = JSON.parse(JSON.stringify(out.nextCursor)) as unknown;
@@ -144,7 +144,7 @@ test("tst_src_tgfast_003 catchup resumes round-robin without skipping committed 
     let wireIndex = 0;
     const received: string[] = [];
     const chatEnvelopesSeen: (number | undefined)[] = [];
-    const orders = [[2000, 2001], [2002, 2003, 2004, 2005, 2006], [2000, 2001, 2002, 2003, 2004], [2005, 2006]];
+    const orders = [[2000, 2001], [2002, 2003, 2004, 2005, 2006, 2000, 2001], [2002, 2003, 2004, 2005, 2006]];
     for (const [page, order] of orders.entries()) {
       const tg = new TgClient(f.client);
       const pending = settled(runCatchup(tg, "fixture-fast", cursor, new LiveDialogPager(tg, "fixture-fast")));
@@ -166,7 +166,7 @@ test("tst_src_tgfast_003 catchup resumes round-robin without skipping committed 
         expect(request.limit).toBe(20);
         const first = request.offsetId - 1;
         // Slow provider replies consume the page budget: yield after two reads,
-        // even though the fixed five-chat ceiling has not yet been reached.
+        // even though the page's read ceiling has not yet been reached.
         if (page === 0) clock.advance(10_000);
         await f.reply(sent, new Api.messages.MessagesSlice({ count: 31,
           messages: Array.from({ length: Math.min(20, first) }, (_, i) => wireMessage(chatId, first - i)),
@@ -176,7 +176,7 @@ test("tst_src_tgfast_003 catchup resumes round-robin without skipping committed 
       const result = await Promise.race([pending, Promise.resolve({ kind: "unbounded", value: null })]);
       expect(result.kind).toBe("resolved");
       const out = result.value as Record<string, unknown>;
-      expect(out.hasMore).toBe(page < 3);
+      expect(out.hasMore).toBe(page < 2);
       const next = out.nextCursor as { chats: Record<string, { last_msg_id: number; target_last_msg_id?: number }> };
       if (page === 0) {
         expect(Object.values(next.chats).every((chat) => chat.last_msg_id === 10)).toBe(true);
