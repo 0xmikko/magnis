@@ -195,10 +195,14 @@ export interface LinkSummary {
   from_id: string;
   to_id: string;
   kind: string;
+  /** The edge's fact is true from `validFrom` until `validUntil`; a null
+   * `validUntil` is an open edge, a dated one an ended edge the row keeps.
+   * Always emitted by the host link serializer; optional in the type because
+   * not every consumer needs it (as `RawEntity.created_at`). */
+  validFrom?: string | null;
+  validUntil?: string | null;
   /** S4: the edge dictionary — per-observer state (unread, pins). */
   metadata?: Record<string, unknown> | null;
-  /** S4: canonical | candidate | rejected | decayed. */
-  status?: string;
 }
 /// `list_entities` returns the page + exact user-scoped total,
 /// mirroring native list_entities_for_user + count_entities_for_user.
@@ -423,12 +427,12 @@ export interface GraphService {
   // links — LinkSummary carries the link `id` for targeted deletion.
   add_link(p: AddLinkParams): Promise<void>;
   delete_link(id: string): Promise<void>;
-  /** S4: decay an edge the source no longer reports, or restore it on a
-   * rejoin (canonical | candidate | rejected | decayed). */
-  set_link_status(id: string, status: string): Promise<void>;
-  /** Canonical edges by default; `include_all_statuses` also returns
-   * candidate / decayed rows (S4's reconciliation restores a rejoin). */
-  list_links_for_entity(entity_id: string, include_all_statuses?: boolean): Promise<LinkSummary[]>;
+  /** The link's fact stopped being true at `valid_until`; the row stays, and
+   * reads that keep history still see it. One-way — there is no reopen. */
+  end_link(id: string, valid_until: string): Promise<void>;
+  /** The entity's edges, ended ones included — an open edge reads
+   * `validUntil === null`. */
+  list_links_for_entity(entity_id: string): Promise<LinkSummary[]>;
   /** S6 batch: every canonical edge of MANY entities in ONE round-trip. Each
    * row carries `from_id`/`to_id`, so the caller groups. A page whose cards
    * read their neighbours off the edges uses this, never a per-row read. */

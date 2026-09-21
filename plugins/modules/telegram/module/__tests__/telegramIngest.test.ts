@@ -409,15 +409,18 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
     });
   });
 
-  it("decays the memberships the pass did not stamp; their older statements give nothing back", async () => {
-    const chat = (id: number, pass: string, status: string, total: number): { entity: ReturnType<typeof entity>; edge: Record<string, unknown> } => ({
+  it("ends the memberships the pass did not stamp; their older statements give nothing back", async () => {
+    const chat = (id: number, pass: string, total: number): { entity: ReturnType<typeof entity>; edge: Record<string, unknown> } => ({
       entity: entity(`chat-${String(id)}`, `Chat ${String(id)}`, { schema_id: CHAT, properties: { chat_id: id } }),
-      edge: { id: `edge-${String(id)}`, from_id: "self-id", to_id: `chat-${String(id)}`, kind: "observed_in", status, metadata: { sync_pass: pass, sync_total: total, sync_skipped: 0 } },
+      edge: { id: `edge-${String(id)}`, from_id: "self-id", to_id: `chat-${String(id)}`, kind: "observed_in", validFrom: null, validUntil: null, metadata: { sync_pass: pass, sync_total: total, sync_skipped: 0 } },
     });
-    const rows = [chat(1, "initial:r:1", "canonical", 30), chat(2, "initial:r:2", "canonical", 5), chat(3, "initial:r:1", "decayed", 8)];
+    const rows = [chat(1, "initial:r:1", 30), chat(2, "initial:r:2", 5)];
+    // A chat that left an earlier pass: its edge is already ended.
+    rows.push({ entity: entity("chat-3", "Chat 3", { schema_id: CHAT, properties: { chat_id: 3 } }),
+      edge: { id: "edge-3", from_id: "self-id", to_id: "chat-3", kind: "observed_in", validFrom: null, validUntil: "2026-09-01T00:00:00Z", metadata: { sync_pass: "initial:r:1", sync_total: 8, sync_skipped: 0 } } });
     // A chat observed before the plan ever stated it: no stamp on its edge.
     rows.push({ entity: entity("chat-4", "Chat 4", { schema_id: CHAT, properties: { chat_id: 4 } }),
-      edge: { id: "edge-4", from_id: "self-id", to_id: "chat-4", kind: "observed_in", status: "canonical", metadata: { is_pinned: false } } });
+      edge: { id: "edge-4", from_id: "self-id", to_id: "chat-4", kind: "observed_in", validFrom: null, validUntil: null, metadata: { is_pinned: false } } });
     const graph = mockGraph({
       find_by_anchor: (anchor) => Promise.resolve(anchor === "tg:account:9001" ? "self-id" : null),
       list_entities_window: (spec) => {
@@ -431,7 +434,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
         if (row === undefined) throw new Error("fixture");
         return Promise.resolve({ items: [{ entity: entity("self-id", "Me"), link: row.edge as never }], total: 1 });
       },
-      set_link_status: () => Promise.resolve(undefined),
+      end_link: () => Promise.resolve(undefined),
     });
     const module = mountModule(TelegramModule, { graph }).module;
 
@@ -444,9 +447,9 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
       identity_key: "9001",
       generation: "initial:r:2",
     })).resolves.toEqual({ departed: ["1", "4"], plan: {} });
-    const setLinkStatus = graph.spies.set_link_status;
-    if (setLinkStatus === undefined) throw new Error("sync complete: set_link_status spy missing");
-    expect(setLinkStatus.mock.calls.map(([id, status]) => [id, status])).toEqual([["edge-1", "decayed"], ["edge-4", "decayed"]]);
+    const endLink = graph.spies.end_link;
+    if (endLink === undefined) throw new Error("sync complete: end_link spy missing");
+    expect(endLink.mock.calls.map(([id]) => [id])).toEqual([["edge-1"], ["edge-4"]]);
     // Without the pass or the identity nothing is decided.
     await expect(module.onSyncComplete({ user_id: "u1", source_id: "telegram-ts", account_id: "a1", identity_key: "9001" }))
       .resolves.toEqual({ departed: [], plan: {} });

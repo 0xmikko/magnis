@@ -497,7 +497,7 @@ export class TelegramModule {
     const currentObserver = observerId ?? (await this.operatorAccount())?.id;
     if (currentObserver === undefined) return out;
     for (const [chatId, edge] of await this.observedEdgesFor(chatIds, currentObserver)) {
-      if ((edge.status === undefined || edge.status === "canonical") && edge.metadata) out.set(chatId, edge.metadata);
+      if (edge.validUntil === null && edge.metadata) out.set(chatId, edge.metadata);
     }
     return out;
   }
@@ -990,12 +990,13 @@ export class TelegramModule {
 
   /// The end of a pass: the host stamped the pass on every ingest call and
   /// asks which chats it did not see. A chat whose observed_in edge carries
-  /// another pass's stamp has been LEFT: its edge decays (the chat node and
+  /// another pass's stamp has been LEFT: its edge ends (the chat node and
   /// its history stay — leaving is not deleting) and the worker drops its
   /// gaps. Its statement was made in that other pass, whose plan the host
   /// zeroed when this one began, so there is nothing to give back: the plan
   /// answered here is empty. A rejoin is the next page reporting the chat
-  /// again, which restores the edge and states it in full. Idempotent: a
+  /// again, which states it in full on the ended edge's row; reopening the
+  /// edge is the host's to learn. Idempotent: a
   /// second run over the same pass answers nothing.
   @syncComplete()
   async onSyncComplete(params: {
@@ -1020,10 +1021,10 @@ export class TelegramModule {
     const departed: string[] = [];
     for (const chat of left) {
       const edge = edges.get(chat.id);
-      if (edge === undefined || edge.status === "decayed") continue; // stated as departed before
+      if (edge?.validUntil !== null) continue; // absent, or stated as departed before
       const chatId = chatIdOrNull(((chat as { properties?: unknown }).properties ?? {}) as Data);
       if (chatId === null) continue;
-      await this.graph.set_link_status(edge.id, "decayed");
+      await this.graph.end_link(edge.id, new Date().toISOString());
       departed.push(chatId);
     }
     return { departed, plan: {} };
@@ -1187,7 +1188,6 @@ export class TelegramModule {
     const membership = identityKey
       ? await this.membershipEdges(identityKey, generation, [...existingEntityByChatId.values()])
       : { selfId: null, edges: new Map<string, MembershipEdge>() };
-    const restored: string[] = [];
 
     // Per-account chat STATE (unread counts, pins) rides the observed_in
     // edge from the OPERATOR's account — the fields are what one account
@@ -1263,7 +1263,6 @@ export class TelegramModule {
           ...state,
           ...(generation === null ? {} : this.stateChat(chatId, details, state, held, generation, statement)),
         };
-        if (held?.edge?.status === "decayed") restored.push(held.edge.id);
         if (identityKey) {
           // @tested-by: tst_module_telegram_003, tst_e2e_tg_001_chat_list_renders
           // @invariant: the observer and its membership edge are one atomic
@@ -1298,8 +1297,6 @@ export class TelegramModule {
       }
       await Promise.resolve(); // yield between chunks so waiting RPCs get the connection
     }
-    // A chat reported again after it left: the rejoin restores its membership.
-    for (const edgeId of restored) await this.graph.set_link_status(edgeId, "canonical");
     return ingestedByChatId;
   }
 

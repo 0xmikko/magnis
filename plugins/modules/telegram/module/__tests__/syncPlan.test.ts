@@ -55,7 +55,7 @@ function liveMessage(chatId: number, messageId: number): SyncEnvelope {
 class Store {
   readonly chatsByAnchor = new Map<string, RawEntity>();
   readonly edgesByChat = new Map<string, LinkSummary>();
-  readonly statuses: [string, string][] = [];
+  readonly endedAt: [string, string][] = [];
   windows: string[] = [];
 
   chatOf(id: string): RawEntity | undefined {
@@ -89,15 +89,15 @@ class Store {
           const chatId = ids[link.to_key] ?? (refAnchor === undefined ? undefined : this.chatsByAnchor.get(refAnchor)?.id);
           if (chatId === undefined) throw new Error(`observed_in link to unknown chat ${link.to_key}`);
           const known = this.edgesByChat.get(chatId);
-          this.edgesByChat.set(chatId, { id: `edge:${chatId}`, from_id: "self-id", to_id: chatId, kind: "observed_in", status: known?.status ?? "canonical", metadata: link.metadata ?? null });
+          this.edgesByChat.set(chatId, { id: `edge:${chatId}`, from_id: "self-id", to_id: chatId, kind: "observed_in", validFrom: known?.validFrom ?? null, validUntil: known?.validUntil ?? null, metadata: link.metadata ?? null });
         }
         return Promise.resolve({ ids, created: fragment.entities.length, updated: 0, links_added: fragment.links?.length ?? 0, dropped_keys: [] });
       },
       update_properties: () => Promise.resolve(),
       update_properties_batch: () => Promise.resolve(),
-      set_link_status: (id, status) => {
-        this.statuses.push([id, status]);
-        for (const edge of this.edgesByChat.values()) if (edge.id === id) edge.status = status;
+      end_link: (id, validUntil) => {
+        this.endedAt.push([id, validUntil]);
+        for (const edge of this.edgesByChat.values()) if (edge.id === id) edge.validUntil = validUntil;
         return Promise.resolve();
       },
       list_entities_window: (spec: WindowSpec) => {
@@ -171,15 +171,17 @@ describe("tst_module_telegram_plan_001 — the module states its plan from the p
     await expect(module.onSyncComplete({ user_id: "u1", source_id: "telegram-ts", account_id: "account-1", identity_key: "9001", generation: SECOND })).resolves.toEqual({
       departed: ["6"], plan: {},
     });
-    expect(store.statuses).toEqual([["edge:id:tg:chat:6", "decayed"]]);
+    expect(store.endedAt).toEqual([["edge:id:tg:chat:6", expect.any(String)]]);
     expect(store.windows).toEqual(["distinct"]);
     // Asked again, nothing more has left.
     await expect(module.onSyncComplete({ user_id: "u1", source_id: "telegram-ts", account_id: "account-1", identity_key: "9001", generation: SECOND })).resolves.toEqual({ departed: [], plan: {} });
 
-    // A chat re-reported after leaving is restored and stated in full.
+    // A chat re-reported after leaving is stated in full on its ended edge; the
+    // edge itself stays ended — reopening it is the host's to learn.
     await expect(module.ingest({ generation: SECOND, envelopes: [chatEnvelope(sixth, { message_count: 40 })] })).resolves.toEqual({
       dropped_remote_ids: [], trigger_checks: [], plan: { [CHAT]: { total: 1, skipped: 0 }, [MESSAGE]: { total: 40, skipped: 0 } }, excluded: [],
     });
-    expect(store.statuses).toEqual([["edge:id:tg:chat:6", "decayed"], ["edge:id:tg:chat:6", "canonical"]]);
+    expect(store.endedAt).toEqual([["edge:id:tg:chat:6", expect.any(String)]]);
+    expect(store.edgesByChat.get("id:tg:chat:6")?.validUntil).not.toBeNull();
   });
 });

@@ -118,11 +118,11 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
       list_linked: (spec) => Promise.resolve({
         items: [
           linkedRow(foreign, {
-            from_id: foreign.id, to_id: spec.parent_id, kind: "observed_in", status: "canonical",
+            from_id: foreign.id, to_id: spec.parent_id, kind: "observed_in",
             metadata: { is_pinned: true, pin_order: -1, sources: [{ account: "foreign-account" }] },
           }),
           linkedRow(operator, {
-            from_id: ACCOUNT_ID, to_id: spec.parent_id, kind: "observed_in", status: "canonical",
+            from_id: ACCOUNT_ID, to_id: spec.parent_id, kind: "observed_in",
             metadata: {
               is_pinned: true, pin_order: spec.parent_id === CHAT_ID ? 2 : 10,
               sources: [{ account: "account-1" }],
