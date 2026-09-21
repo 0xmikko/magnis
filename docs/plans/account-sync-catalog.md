@@ -608,8 +608,6 @@ Commit. fix(telegram): end membership at Telegram's departure time — forward d
 - [x] `bun run agent:verify:commit` exits 0 — changed catalog scope is type-correct, lint-clean and green — 1b45e26e063a6f4f2193336d03c472efb4c33b06
 - [x] Commit — 1b45e26e063a6f4f2193336d03c472efb4c33b06
 
-- deviation D1-S11: post-implementation review found that the Source's established Telegram RFC3339 form is `+00:00`, not the new `.000Z` dialect, and that a no-op full-snapshot hook still advertised reconciliation the module must not perform; 3985126 reuses the existing formatter, declares reconciliation none, removes the hook, aligns the public docs and strengthens the boundary tests
-
 ##### Results
 
 <!-- plan:results:D1-S11:start -->
