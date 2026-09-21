@@ -2,7 +2,7 @@
 
 Status: APPROVED  
 Spec lock: sha256:68e0aebc008e04c12bc42733e0c7e3e5f4a1c6c0cbeb772f3957078e3c598cf2 owner:approved  
-Implementation lock: sha256:6d8c567a165d3130861e1f8b96ac2f4252c61ed26b89b8f539f3f6a68a1303ef owner:не спрашивай меня про такие мелки дефекты  
+Implementation lock: sha256:02c2be3b35e49aaba5268473c8dec1a3dafb81a477bec0a863205e6af06e104e owner:Implement the plan.  
 Active Delivery: D1  
 Unattended decisions: allowed  
 
@@ -152,9 +152,9 @@ interface FetchResult {
 
 Branch: `feat/account-sync-catalog`; Depends: none; Gate: backend.
 
-Stage graph: `D1-S1 -> D1-S2 -> D1-S3 -> D1-S4 -> D1-S5 -> D1-S6 -> D1-S7 -> D1-S8 -> D1-S9 -> D1-S10`.
+Stage graph: `D1-S1 -> D1-S2 -> D1-S3 -> D1-S4 -> D1-S5 -> D1-S6 -> D1-S7 -> D1-S8 -> D1-S9 -> D1-S10 -> D1-S11`.
 
-Forecast: 564 active min / 134 credits across 10 Stages; longest dependency path 564 active min; external waits 240 min.
+Forecast: 609 active min / 145 credits across 11 Stages; longest dependency path 609 active min; external waits 240 min.
 
 What changed for people. The Accounts panel prints every account's sync from what its worker holds: for Telegram, chats 50/50 and messages 197/197 with the skipped history named; for Gmail, contacts, meetings and X the planned count on the first page; the Telegram history behind the first page is backfilled because the Source says what each page read.
 
@@ -575,6 +575,46 @@ Commit. fix(telegram): reconcile through one distinct window — the host requir
 | ACS_022 | 2d09e60c0fd8e92676750ad0ede561e661b93fbf | 2026-09-19T21:07:07.382Z–2026-09-19T21:08:55.000Z | 1 / 1 min | unavailable: runner did not expose usage | onSyncComplete reads one window {edge_path sync_pass, filter_op distinct, filter_eq generation}, decays every edge found and gives back only stamped statements; the stand's three Telegram journeys pass against the archive built from this commit (magnis-app D1-S7). Module 41/41; typecheck and lint clean. |
 <!-- plan:results:D1-S10:end -->
 <!-- plan:stage:D1-S10:end -->
+
+<!-- plan:stage:D1-S11:start -->
+<!-- plan:stage-meta:{"deliveryId":"D1","depends":["D1-S10"],"parallelWith":[],"writes":["plugins/sources/telegram/src/live.ts","plugins/sources/telegram/src/subscriptions.ts","plugins/sources/telegram/src/live.test.ts","plugins/modules/telegram/module/service.ts","plugins/modules/telegram/module/__tests__/telegramIngest.test.ts","plugins/modules/telegram/module/__tests__/syncPlan.test.ts"],"tempRoot":".tmp/code-production/account-sync-catalog/D1-S11","verifyActiveMinutes":10,"verifyCredits":2} -->
+#### Stage D1-S11 — Telegram ends membership at the provider's departure time
+
+- Owner: agent-1; Profile: fast; Depends: D1-S10; Parallel with: none.
+- Writes: `plugins/sources/telegram/src/live.ts`, `plugins/sources/telegram/src/subscriptions.ts`, `plugins/sources/telegram/src/live.test.ts`, `plugins/modules/telegram/module/service.ts`, `plugins/modules/telegram/module/__tests__/telegramIngest.test.ts`, `plugins/modules/telegram/module/__tests__/syncPlan.test.ts`.
+- Temp root: `.tmp/code-production/account-sync-catalog/D1-S11` (must be absent at handoff).
+- Predict: 45 active min / 11 credits.
+- Of which verification: 10 active min / 2 credits.
+
+What this Stage solves. The current reconcile closes an observed_in edge with the worker's wall clock, so valid_until says when Magnis noticed an absent chat rather than when Telegram ended the membership.
+
+What is built. The live Telegram client recognizes the current dated chat and channel participant updates and forwards a membership-end chat envelope carrying telegram_user_id and valid_until derived only from Telegram's date. The module accepts that envelope only for the host-stamped identity, ends the active observed_in edge with the supplied time, and no longer infers an end from a chat missing at sync completion. Existing page buffering and batch calls do not change.
+
+How it is proven. tst_src_tg_033 covers chat and channel departure transitions and ignores joins, role changes and other participant updates. tst_module_telegram_007 proves the exact provider timestamp reaches end_link and that malformed, repeated and foreign events cannot invent another end. tst_module_telegram_plan_001 proves a missing snapshot chat no longer closes an edge.
+
+Commit. fix(telegram): end membership at Telegram's departure time — forward dated participant updates, consume them for the stamped identity, and remove wall-clock reconciliation.
+
+##### Tasks
+
+- [ ] ACS_023 — Forward dated Telegram chat and channel membership ends without changing live-message delivery. (25 min)
+<!-- plan:task-meta:{"writes":["plugins/sources/telegram/src/live.ts","plugins/sources/telegram/src/subscriptions.ts","plugins/sources/telegram/src/live.test.ts"],"predictedActiveMinutes":25,"predictedCredits":5,"how":"extend TgClient's live handlers in plugins/sources/telegram/src/live.ts for dated UpdateChatParticipant and UpdateChannelParticipant transitions; map them in plugins/sources/telegram/src/subscriptions.ts to a telegram_chat payload carrying chat_id, top_message zero, telegram_user_id and provider-derived valid_until; add tst_src_tg_033 to plugins/sources/telegram/src/live.test.ts","red":"bun run agent:test:backend -- plugins/sources/telegram/src/live.test.ts -t tst_src_tg_033"} -->
+- [ ] ACS_024 — End only the stamped identity's active observed_in edge at the envelope's valid_until and remove snapshot-time inference. (10 min)
+<!-- plan:task-meta:{"writes":["plugins/modules/telegram/module/service.ts","plugins/modules/telegram/module/__tests__/telegramIngest.test.ts","plugins/modules/telegram/module/__tests__/syncPlan.test.ts"],"predictedActiveMinutes":10,"predictedCredits":4,"how":"handle live telegram_chat envelopes carrying telegram_user_id and valid_until in plugins/modules/telegram/module/service.ts before ordinary chat batching; require a valid exact timestamp and matching identity_key, resolve the active observed_in edge and call end_link once; delete onSyncComplete wall-clock inference; cover exact time, malformed/foreign/repeated events in telegramIngest.test.ts and absence-without-end in syncPlan.test.ts","red":"bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/telegramIngest.test.ts -t tst_module_telegram_007"} -->
+
+##### Acceptance criteria
+
+- [ ] `bun run agent:test:backend -- plugins/sources/telegram/src/live.test.ts` exits 0 — dated membership updates preserve Telegram time and existing messages are unchanged
+- [ ] `bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/telegramIngest.test.ts plugins/modules/telegram/module/__tests__/syncPlan.test.ts` exits 0 — only exact provider evidence ends an active membership
+- [ ] `bun run agent:verify:commit` exits 0 — changed catalog scope is type-correct, lint-clean and green
+- [ ] Commit
+
+##### Results
+
+<!-- plan:results:D1-S11:start -->
+| Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
+|---|---|---|---:|---|---|
+<!-- plan:results:D1-S11:end -->
+<!-- plan:stage:D1-S11:end -->
 <!-- plan:delivery:D1:end -->
 <!-- plan:implementation:end -->
 
@@ -684,4 +724,10 @@ Commit. fix(telegram): reconcile through one distinct window — the host requir
 - record-result D1-S10 commit:2d09e60c0fd8e92676750ad0ede561e661b93fbf
 
 - close D1-S10 closed commit:2d09e60c0fd8e92676750ad0ede561e661b93fbf
+
+- amend implementation owner:Implement the plan. sha256:2a7bccaaf4f4383dfb348a4a8b91570fc093bab2fbc8885836ea522269017e2f
+
+- amend implementation owner:Implement the plan. sha256:22e6ea401bc1b408f9ad4c09a9cce418aacd257ed0e016b4a7442a53d6c643fe
+
+- amend implementation owner:Implement the plan. sha256:02c2be3b35e49aaba5268473c8dec1a3dafb81a477bec0a863205e6af06e104e
 <!-- plan:execution:end -->
