@@ -376,7 +376,7 @@ async function reset(options: Options): Promise<void> {
   const app = appIdentity(options.appRoot);
   const databaseUrl = await databaseUp(app.root, options.dataRoot);
   try {
-    const database = new SQL(databaseUrl);
+    const database = new SQL(databaseUrl, { max: 1 });
     try {
       const result: unknown = await database.unsafe("SELECT count(*)::int AS count FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid()");
       const first: unknown = Array.isArray(result) ? (result as unknown[])[0] : undefined;
