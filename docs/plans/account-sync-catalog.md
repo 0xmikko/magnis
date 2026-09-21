@@ -596,23 +596,25 @@ Commit. fix(telegram): end membership at Telegram's departure time — forward d
 
 ##### Tasks
 
-- [ ] ACS_023 — Forward dated Telegram chat and channel membership ends without changing live-message delivery. (25 min)
+- [x] ACS_023 — Forward dated Telegram chat and channel membership ends without changing live-message delivery. (25 min) — 1b45e26e063a6f4f2193336d03c472efb4c33b06
 <!-- plan:task-meta:{"writes":["plugins/sources/telegram/src/live.ts","plugins/sources/telegram/src/subscriptions.ts","plugins/sources/telegram/src/live.test.ts"],"predictedActiveMinutes":25,"predictedCredits":5,"how":"extend TgClient's live handlers in plugins/sources/telegram/src/live.ts for dated UpdateChatParticipant and UpdateChannelParticipant transitions; map them in plugins/sources/telegram/src/subscriptions.ts to a telegram_chat payload carrying chat_id, top_message zero, telegram_user_id and provider-derived valid_until; add tst_src_tg_033 to plugins/sources/telegram/src/live.test.ts","red":"bun run agent:test:backend -- plugins/sources/telegram/src/live.test.ts -t tst_src_tg_033"} -->
-- [ ] ACS_024 — End only the stamped identity's active observed_in edge at the envelope's valid_until and remove snapshot-time inference. (10 min)
+- [x] ACS_024 — End only the stamped identity's active observed_in edge at the envelope's valid_until and remove snapshot-time inference. (10 min) — 1b45e26e063a6f4f2193336d03c472efb4c33b06
 <!-- plan:task-meta:{"writes":["plugins/modules/telegram/module/service.ts","plugins/modules/telegram/module/__tests__/telegramIngest.test.ts","plugins/modules/telegram/module/__tests__/syncPlan.test.ts"],"predictedActiveMinutes":10,"predictedCredits":4,"how":"handle live telegram_chat envelopes carrying telegram_user_id and valid_until in plugins/modules/telegram/module/service.ts before ordinary chat batching; require a valid exact timestamp and matching identity_key, resolve the active observed_in edge and call end_link once; delete onSyncComplete wall-clock inference; cover exact time, malformed/foreign/repeated events in telegramIngest.test.ts and absence-without-end in syncPlan.test.ts","red":"bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/telegramIngest.test.ts -t tst_module_telegram_007"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- plugins/sources/telegram/src/live.test.ts` exits 0 — dated membership updates preserve Telegram time and existing messages are unchanged
-- [ ] `bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/telegramIngest.test.ts plugins/modules/telegram/module/__tests__/syncPlan.test.ts` exits 0 — only exact provider evidence ends an active membership
-- [ ] `bun run agent:verify:commit` exits 0 — changed catalog scope is type-correct, lint-clean and green
-- [ ] Commit
+- [x] `bun run agent:test:backend -- plugins/sources/telegram/src/live.test.ts` exits 0 — dated membership updates preserve Telegram time and existing messages are unchanged — 1b45e26e063a6f4f2193336d03c472efb4c33b06
+- [x] `bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/telegramIngest.test.ts plugins/modules/telegram/module/__tests__/syncPlan.test.ts` exits 0 — only exact provider evidence ends an active membership — 1b45e26e063a6f4f2193336d03c472efb4c33b06
+- [x] `bun run agent:verify:commit` exits 0 — changed catalog scope is type-correct, lint-clean and green — 1b45e26e063a6f4f2193336d03c472efb4c33b06
+- [x] Commit — 1b45e26e063a6f4f2193336d03c472efb4c33b06
 
 ##### Results
 
 <!-- plan:results:D1-S11:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| ACS_023 | 1b45e26e063a6f4f2193336d03c472efb4c33b06 | 2026-09-21T14:21:04.607Z–2026-09-21T14:33:19.000Z | 10 / 12 min | unavailable: runner did not expose usage | Telegram chat and channel participant departures retain the provider date; the module ends only the stamped identity's active observed_in edge and sync completion never invents a timestamp. |
+| ACS_024 | 1b45e26e063a6f4f2193336d03c472efb4c33b06 | 2026-09-21T14:21:04.607Z–2026-09-21T14:33:19.000Z | 10 / 12 min | unavailable: runner did not expose usage | Telegram chat and channel participant departures retain the provider date; the module ends only the stamped identity's active observed_in edge and sync completion never invents a timestamp. |
 <!-- plan:results:D1-S11:end -->
 <!-- plan:stage:D1-S11:end -->
 <!-- plan:delivery:D1:end -->
@@ -730,4 +732,8 @@ Commit. fix(telegram): end membership at Telegram's departure time — forward d
 - amend implementation owner:Implement the plan. sha256:22e6ea401bc1b408f9ad4c09a9cce418aacd257ed0e016b4a7442a53d6c643fe
 
 - amend implementation owner:Implement the plan. sha256:02c2be3b35e49aaba5268473c8dec1a3dafb81a477bec0a863205e6af06e104e
+
+- record-result D1-S11 commit:1b45e26e063a6f4f2193336d03c472efb4c33b06
+
+- close D1-S11 closed commit:1b45e26e063a6f4f2193336d03c472efb4c33b06
 <!-- plan:execution:end -->
