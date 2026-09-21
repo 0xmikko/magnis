@@ -96,7 +96,6 @@ BEGIN
     embedding_fts,
     embedding_vectors,
     property_index,
-    entity_anchors,
     links,
     entities,
     events
