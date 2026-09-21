@@ -10,6 +10,7 @@ import { Api, TelegramClient, utils } from "telegram";
 import { StringSession } from "telegram/sessions";
 import { EditedMessage } from "telegram/events/EditedMessage";
 import { NewMessage } from "telegram/events/NewMessage";
+import { Raw } from "telegram/events/Raw";
 import type { TelegramClientParams } from "telegram/client/telegramBaseClient";
 import { AccountAdmission } from "./request-admission";
 import type { AdmissionClock, AdmissionEvent } from "./request-admission";
@@ -195,6 +196,59 @@ export const defaultAuthClientFactory: AuthClientFactory = createAuthClientFacto
 
 // ── live client (fetch / execute / listen) ─────────────────────────────────
 
+/** A provider-dated transition from membership to no membership. */
+export interface MembershipEndUpdate {
+  readonly kind: "membership_end";
+  readonly chatId: number;
+  readonly telegramUserId: number;
+  readonly validUntil: string;
+}
+
+export type LiveUpdate = MessageLike | MembershipEndUpdate;
+
+function positiveTelegramId(value: unknown, field: string): number {
+  const id = toNum(value);
+  if (!Number.isSafeInteger(id) || id <= 0) {
+    throw new Error(`Telegram participant update requires a positive ${field}`);
+  }
+  return id;
+}
+
+function providerDate(value: unknown): string {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
+    throw new Error("Telegram participant update requires a valid date");
+  }
+  return new Date(value * 1000).toISOString();
+}
+
+function channelParticipantIsMember(participant: Api.TypeChannelParticipant | undefined): boolean {
+  if (participant === undefined || participant instanceof Api.ChannelParticipantLeft) return false;
+  if (participant instanceof Api.ChannelParticipantBanned) return participant.left !== true;
+  return true;
+}
+
+/** @tested-by: tst_src_tg_033 */
+function membershipEndOf(update: Api.UpdateChatParticipant | Api.UpdateChannelParticipant): MembershipEndUpdate | null {
+  if (update instanceof Api.UpdateChatParticipant) {
+    if (update.prevParticipant === undefined || update.newParticipant !== undefined) return null;
+    return {
+      kind: "membership_end",
+      chatId: positiveTelegramId(update.chatId, "chat_id"),
+      telegramUserId: positiveTelegramId(update.userId, "user_id"),
+      validUntil: providerDate(update.date),
+    };
+  }
+  if (!channelParticipantIsMember(update.prevParticipant) || channelParticipantIsMember(update.newParticipant)) {
+    return null;
+  }
+  return {
+    kind: "membership_end",
+    chatId: positiveTelegramId(update.channelId, "channel_id"),
+    telegramUserId: positiveTelegramId(update.userId, "user_id"),
+    validUntil: providerDate(update.date),
+  };
+}
+
 /** A connected gramjs client + a peer cache for resolving chat ids. */
 export class TgClient implements TgOps {
   private readonly peerCache = new Map<number, EntityLike>();
@@ -359,10 +413,8 @@ export class TgClient implements TgOps {
     }
   }
 
-  /** Stream live updates as `(payload, remote_id)` pairs via `onMessage`. v1
-   * handles NEW + EDITED messages (both → the same message payload + `tg:msg:`
-   * remote_id); other update kinds are dropped. */
-  addLiveHandler(handler: (message: MessageLike) => void | Promise<void>): void {
+  /** Stream live messages and provider-dated membership ends. */
+  addLiveHandler(handler: (update: LiveUpdate) => void | Promise<void>): void {
     const cb = (event: { message?: unknown }): void => {
       const msg = event.message as MessageLike | undefined;
       if (msg !== undefined) {
@@ -372,6 +424,11 @@ export class TgClient implements TgOps {
     };
     this.client.addEventHandler(cb, new NewMessage({}));
     this.client.addEventHandler(cb, new EditedMessage({}));
+    this.client.addEventHandler((update: Api.TypeUpdate): void => {
+      if (!(update instanceof Api.UpdateChatParticipant) && !(update instanceof Api.UpdateChannelParticipant)) return;
+      const ended = membershipEndOf(update);
+      if (ended !== null) void handler(ended);
+    }, new Raw({ types: [Api.UpdateChatParticipant, Api.UpdateChannelParticipant] }));
   }
 }
 

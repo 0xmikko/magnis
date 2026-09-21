@@ -166,22 +166,20 @@ describe("tst_module_telegram_plan_001 — the module states its plan from the p
       excluded: ["3", "5"],
     });
 
-    // The end of the pass: the chat it did not see left. Its statement was the first pass's,
-    // which this pass's plan never held: nothing is given back.
+    // Snapshot omission contains no provider departure time, so it cannot end
+    // the missing chat's membership or give back its earlier statement.
     await expect(module.onSyncComplete({ user_id: "u1", source_id: "telegram-ts", account_id: "account-1", identity_key: "9001", generation: SECOND })).resolves.toEqual({
-      departed: ["6"], plan: {},
+      departed: [], plan: {},
     });
-    expect(store.endedAt).toEqual([["edge:id:tg:chat:6", expect.any(String)]]);
-    expect(store.windows).toEqual(["distinct"]);
-    // Asked again, nothing more has left.
+    expect(store.endedAt).toEqual([]);
+    expect(store.windows).toEqual([]);
     await expect(module.onSyncComplete({ user_id: "u1", source_id: "telegram-ts", account_id: "account-1", identity_key: "9001", generation: SECOND })).resolves.toEqual({ departed: [], plan: {} });
 
-    // A chat re-reported after leaving is stated in full on its ended edge; the
-    // edge itself stays ended — reopening it is the host's to learn.
+    // A chat re-reported after snapshot omission remains on its active edge.
     await expect(module.ingest({ generation: SECOND, envelopes: [chatEnvelope(sixth, { message_count: 40 })] })).resolves.toEqual({
       dropped_remote_ids: [], trigger_checks: [], plan: { [CHAT]: { total: 1, skipped: 0 }, [MESSAGE]: { total: 40, skipped: 0 } }, excluded: [],
     });
-    expect(store.endedAt).toEqual([["edge:id:tg:chat:6", expect.any(String)]]);
-    expect(store.edgesByChat.get("id:tg:chat:6")?.validUntil).not.toBeNull();
+    expect(store.endedAt).toEqual([]);
+    expect(store.edgesByChat.get("id:tg:chat:6")?.validUntil).toBeNull();
   });
 });

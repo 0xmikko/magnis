@@ -988,46 +988,50 @@ export class TelegramModule {
     return { ok: true };
   }
 
-  /// The end of a pass: the host stamped the pass on every ingest call and
-  /// asks which chats it did not see. A chat whose observed_in edge carries
-  /// another pass's stamp has been LEFT: its edge ends (the chat node and
-  /// its history stay — leaving is not deleting) and the worker drops its
-  /// gaps. Its statement was made in that other pass, whose plan the host
-  /// zeroed when this one began, so there is nothing to give back: the plan
-  /// answered here is empty. A rejoin is the next page reporting the chat
-  /// again, which states it in full on the ended edge's row; reopening the
-  /// edge is the host's to learn. Idempotent: a
-  /// second run over the same pass answers nothing.
+  /**
+   * A completed snapshot cannot say when an omitted membership ended. Exact
+   * provider-dated live evidence owns end_link; completion therefore invents
+   * neither a departure nor a timestamp.
+   * @tested-by: tst_module_telegram_plan_001
+  */
   @syncComplete()
-  async onSyncComplete(params: {
+  onSyncComplete(_params: {
     user_id: string;
     source_id: string;
     account_id: string;
     identity_key?: string | null;
     generation?: string;
   }): Promise<{ departed: string[]; plan: Record<string, PlanDelta> }> {
-    const identityKey = params.identity_key;
-    const generation = params.generation;
-    if (!identityKey || !generation) return { departed: [], plan: {} };
-    const observerAnchor = accountAnchor(identityKey);
-    const selfId = await this.graph.find_by_anchor(observerAnchor);
-    if (selfId === null) return { departed: [], plan: {} };
-    // Every chat whose edge was not stamped with this pass — stated in an
-    // earlier pass, or never: one edge-filtered window ("distinct" keeps the
-    // unstamped edges, and a chat without an edge from this observer at all,
-    // which the edge read below leaves alone).
-    const left = await this.observedChatsWindow(observerAnchor, { edgePath: "sync_pass", op: "distinct", eq: generation });
-    const edges = await this.observedEdgesFor(left.map(({ id }) => id), selfId);
-    const departed: string[] = [];
-    for (const chat of left) {
-      const edge = edges.get(chat.id);
-      if (edge?.validUntil !== null) continue; // absent, or stated as departed before
-      const chatId = chatIdOrNull(((chat as { properties?: unknown }).properties ?? {}) as Data);
-      if (chatId === null) continue;
-      await this.graph.end_link(edge.id, new Date().toISOString());
-      departed.push(chatId);
+    return Promise.resolve({ departed: [], plan: {} });
+  }
+
+  /** End the stamped operator's active membership at Telegram's own time. */
+  private async endMembership(payload: Data, identityKey: string | undefined): Promise<void> {
+    if (identityKey === undefined) throw new Error("telegram membership end requires identity_key");
+    const telegramUserId = num(payload, "telegram_user_id");
+    if (telegramUserId === null || !Number.isSafeInteger(telegramUserId) || telegramUserId <= 0) {
+      throw new Error("telegram membership end requires telegram_user_id");
     }
-    return { departed, plan: {} };
+    if (String(telegramUserId) !== identityKey) return;
+
+    const chatId = chatIdOrNull(payload);
+    if (chatId === null) throw new Error("telegram membership end requires chat_id");
+    const validUntil = str(payload, "valid_until");
+    if (validUntil === null) throw new Error("telegram membership end requires valid_until");
+    const parsed = new Date(validUntil);
+    if (Number.isNaN(parsed.getTime()) || parsed.toISOString() !== validUntil) {
+      throw new Error("telegram membership end requires an exact ISO valid_until");
+    }
+
+    const selfId = await this.graph.find_by_anchor(accountAnchor(identityKey));
+    if (selfId === null) return;
+    const chatEntityId = await this.graph.find_by_anchor(chatAnchor(chatId));
+    if (chatEntityId === null) return;
+    const edge = (await this.observedEdgesFor([chatEntityId], selfId)).get(chatEntityId);
+    if (edge?.validUntil !== null) return;
+    // @tested-by: tst_module_telegram_007
+    // @invariant: valid_until is provider evidence, never Magnis wall time.
+    await this.graph.end_link(edge.id, validUntil);
   }
 
   @syncHandler("telegram")
@@ -1082,6 +1086,10 @@ export class TelegramModule {
       const payload = env.payload;
       const entityType = typeof payload.entity_type === "string" ? payload.entity_type : "message";
       if (entityType === "chat" || entityType === "telegram_chat") {
+        if (kind === "live" && ("valid_until" in payload || "telegram_user_id" in payload)) {
+          await this.endMembership(payload, identityKey);
+          continue;
+        }
         chats.push({ env, payload });
         continue;
       }

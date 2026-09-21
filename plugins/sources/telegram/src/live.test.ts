@@ -324,3 +324,77 @@ test("tst_src_tg_032 unhydrated live peers preserve history identity and refuse 
   expect(pushes).toEqual(expected);
   expect(refused).toEqual(refused.map(() => true));
 });
+
+/**
+ * @test-id: tst_src_tg_033
+ * @scenario: scn_tg_membership_001
+ * @covers: plugins/sources/telegram/src/live.ts::TgClient.addLiveHandler
+ * @covers: plugins/sources/telegram/src/subscriptions.ts::liveUpdatePushes
+ * @deterministic: yes
+ * @fixtures: dated GramJS UpdateChatParticipant and UpdateChannelParticipant values
+ * Test environment: disconnected TelegramClient and actual event callbacks
+ * Clients: TgClient.addLiveHandler and liveUpdatePushes
+ * Mocks: none; no provider calls
+ * Data: fixed participant, chat, channel and Telegram server timestamps
+ */
+test("tst_src_tg_033 dated membership ends retain Telegram's server time", () => {
+  const client = new TelegramClient(new StringSession(""), 1, "hash", {});
+  const pushes: ReturnType<typeof liveUpdatePushes> = [];
+  new TgClient(client).addLiveHandler((update) => {
+    pushes.push(...liveUpdatePushes(update, "account-1"));
+  });
+  const handlers = client.listEventHandlers();
+  const raw = handlers[2];
+  expect(raw).toBeDefined();
+  if (raw === undefined) throw new Error("missing participant update handler");
+
+  const participant = new Api.ChatParticipant({
+    userId: bigInt(9001), inviterId: bigInt(7), date: 1_690_000_000,
+  });
+  raw[1](new Api.UpdateChatParticipant({
+    chatId: bigInt(404), date: 1_700_000_000, actorId: bigInt(9001),
+    userId: bigInt(9001), prevParticipant: participant, qts: 1,
+  }));
+  raw[1](new Api.UpdateChannelParticipant({
+    channelId: bigInt(505), date: 1_700_000_060, actorId: bigInt(9),
+    userId: bigInt(9001),
+    prevParticipant: new Api.ChannelParticipantSelf({
+      userId: bigInt(9001), inviterId: bigInt(7), date: 1_690_000_000,
+    }),
+    newParticipant: new Api.ChannelParticipantLeft({ peer: new Api.PeerUser({ userId: bigInt(9001) }) }),
+    qts: 2,
+  }));
+
+  // Join and role changes keep membership true and emit no end.
+  raw[1](new Api.UpdateChatParticipant({
+    chatId: bigInt(606), date: 1_700_000_120, actorId: bigInt(7), userId: bigInt(9001),
+    newParticipant: participant, qts: 3,
+  }));
+  raw[1](new Api.UpdateChatParticipant({
+    chatId: bigInt(707), date: 1_700_000_180, actorId: bigInt(7), userId: bigInt(9001),
+    prevParticipant: participant,
+    newParticipant: new Api.ChatParticipantAdmin({
+      userId: bigInt(9001), inviterId: bigInt(7), date: 1_690_000_000,
+    }),
+    qts: 4,
+  }));
+
+  expect(pushes).toEqual([
+    {
+      payload: {
+        entity_type: "telegram_chat", chat_id: 404, top_message: 0,
+        telegram_user_id: 9001, valid_until: "2023-11-14T22:13:20.000Z",
+      },
+      remote_id: "tg:chat:404",
+      position: { scope_id: "404", id: 0 },
+    },
+    {
+      payload: {
+        entity_type: "telegram_chat", chat_id: 505, top_message: 0,
+        telegram_user_id: 9001, valid_until: "2023-11-14T22:14:20.000Z",
+      },
+      remote_id: "tg:chat:505",
+      position: { scope_id: "505", id: 0 },
+    },
+  ]);
+});

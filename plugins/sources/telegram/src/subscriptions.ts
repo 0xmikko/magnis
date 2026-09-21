@@ -17,12 +17,12 @@
 
 import { credsFromMeta, accountIdFromMeta, type MessageLike } from "./client";
 import { messagePayload } from "./surfaces/telegram/envelope";
-import { messageRemoteId } from "./surfaces/telegram/schema";
+import { chatRemoteId, messageRemoteId } from "./surfaces/telegram/schema";
 import { livePushes, fixturePath } from "./surfaces/telegram/fixture";
 import { messageToIntermediate, peerIdentity } from "./client";
 // `import type` ONLY: the gramjs stack is loaded LAZILY (live mode alone needs
 // it) so fixture-mode runs and the unit tests never load the MTProto stack.
-import type { TgClient } from "./live";
+import type { LiveUpdate, MembershipEndUpdate, TgClient } from "./live";
 
 /** Listener mode — explicit (not read from env) so unit tests can drive the
  * registry without mutating process-global state. */
@@ -72,10 +72,30 @@ export function notificationLine(
   });
 }
 
-/** Convert one live update using its raw wire peer, independent of optional
- * hydrated chat metadata. Missing identity is an error, never a chat-zero push.
- * @tested-by: tst_src_tg_032 */
-export function liveUpdatePushes(message: MessageLike, accountId: string): LivePush[] {
+/** Convert a live message or dated membership end to the v1 push dialect.
+ * Missing message identity is an error, never a chat-zero push.
+ * @tested-by: tst_src_tg_032, tst_src_tg_033 */
+function isMembershipEnd(update: LiveUpdate): update is MembershipEndUpdate {
+  return "kind" in update;
+}
+
+export function liveUpdatePushes(update: LiveUpdate, accountId: string): LivePush[] {
+  if (isMembershipEnd(update)) {
+    return [{
+      payload: {
+        entity_type: "telegram_chat",
+        chat_id: update.chatId,
+        top_message: 0,
+        telegram_user_id: update.telegramUserId,
+        valid_until: update.validUntil,
+      },
+      remote_id: chatRemoteId(update.chatId),
+      // The v1 notification shape requires a position. A membership fact is
+      // not message coverage, so zero states no Telegram message position.
+      position: { scope_id: String(update.chatId), id: 0 },
+    }];
+  }
+  const message: MessageLike = update;
   const peer = peerIdentity(message.peerId);
   if (peer === undefined) throw new Error("live update requires a valid Telegram peer identity");
   const m = messageToIntermediate(message, accountId, peer.id);

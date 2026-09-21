@@ -409,50 +409,87 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
     });
   });
 
-  it("ends the memberships the pass did not stamp; their older statements give nothing back", async () => {
-    const chat = (id: number, pass: string, total: number): { entity: ReturnType<typeof entity>; edge: Record<string, unknown> } => ({
-      entity: entity(`chat-${String(id)}`, `Chat ${String(id)}`, { schema_id: CHAT, properties: { chat_id: id } }),
-      edge: { id: `edge-${String(id)}`, from_id: "self-id", to_id: `chat-${String(id)}`, kind: "observed_in", validFrom: null, validUntil: null, metadata: { sync_pass: pass, sync_total: total, sync_skipped: 0 } },
-    });
-    const rows = [chat(1, "initial:r:1", 30), chat(2, "initial:r:2", 5)];
-    // A chat that left an earlier pass: its edge is already ended.
-    rows.push({ entity: entity("chat-3", "Chat 3", { schema_id: CHAT, properties: { chat_id: 3 } }),
-      edge: { id: "edge-3", from_id: "self-id", to_id: "chat-3", kind: "observed_in", validFrom: null, validUntil: "2026-09-01T00:00:00Z", metadata: { sync_pass: "initial:r:1", sync_total: 8, sync_skipped: 0 } } });
-    // A chat observed before the plan ever stated it: no stamp on its edge.
-    rows.push({ entity: entity("chat-4", "Chat 4", { schema_id: CHAT, properties: { chat_id: 4 } }),
-      edge: { id: "edge-4", from_id: "self-id", to_id: "chat-4", kind: "observed_in", validFrom: null, validUntil: null, metadata: { is_pinned: false } } });
+  /**
+   * @test-id: tst_module_telegram_007
+   * @scenario: scn_tg_membership_001
+   * @covers: TelegramModule.ingest membership-end branch
+   * @deterministic: yes
+   * @fixtures: one active observed_in edge and fixed live membership envelopes
+   * Test environment: mounted Telegram module with a strict graph double
+   * Clients: direct module calls
+   * Mocks: GraphService only
+   * Data: provider identity 9001, chat 42, fixed Telegram server timestamp
+   */
+  it("tst_module_telegram_007 ends only the stamped identity's active edge at the provider time", async () => {
+    let validUntil: string | null = null;
     const graph = mockGraph({
-      find_by_anchor: (anchor) => Promise.resolve(anchor === "tg:account:9001" ? "self-id" : null),
-      list_entities_window: (spec) => {
-        expect(spec.filter_field).toEqual({ edge_kind: "observed_in", observer_anchor: "tg:account:9001", edge_path: "sync_pass" });
-        expect(spec.filter_op).toBe("distinct");
-        const items = rows.filter(({ edge }) => (edge.metadata as { sync_pass?: string }).sync_pass !== spec.filter_eq);
-        return Promise.resolve({ items: items.map(({ entity }) => ({ entity })), total: items.length });
+      find_by_anchor: (anchor) => Promise.resolve({
+        "tg:account:9001": "self-id",
+        "tg:chat:42": "chat-id",
+      }[anchor] ?? null),
+      list_linked: () => Promise.resolve({
+        items: [{
+          entity: entity("self-id", "Me"),
+          link: {
+            id: "edge-42", from_id: "self-id", to_id: "chat-id", kind: "observed_in",
+            validFrom: null, validUntil, metadata: null,
+          },
+        }],
+        total: 1,
+      }),
+      end_link: (_id, endedAt) => {
+        validUntil = endedAt;
+        return Promise.resolve(undefined);
       },
-      list_linked: (spec) => {
-        const row = rows.find(({ entity }) => entity.id === spec.parent_id);
-        if (row === undefined) throw new Error("fixture");
-        return Promise.resolve({ items: [{ entity: entity("self-id", "Me"), link: row.edge as never }], total: 1 });
+      apply_batch: () => Promise.resolve({
+        ids: {}, created: 0, updated: 0, links_added: 0, dropped_keys: [],
+      }),
+    });
+    const module = mountModule(TelegramModule, { graph }).module;
+    const departure: SyncEnvelope = {
+      ...messageEnvelope("live"),
+      remote_id: "tg:chat:42",
+      payload: {
+        entity_type: "telegram_chat",
+        chat_id: 42,
+        top_message: 0,
+        telegram_user_id: 9001,
+        valid_until: "2026-09-20T11:22:33.000Z",
       },
+    };
+
+    await expect(module.ingest({ envelopes: [departure] })).resolves.toMatchObject({
+      dropped_remote_ids: [], trigger_checks: [],
+    });
+    expect(graph.spies.end_link).toHaveBeenCalledTimes(1);
+    expect(graph.spies.end_link).toHaveBeenCalledWith("edge-42", "2026-09-20T11:22:33.000Z");
+    expect(graph.spies.apply_batch).not.toHaveBeenCalled();
+
+    await module.ingest({ envelopes: [departure] });
+    await module.ingest({
+      envelopes: [{ ...departure, payload: { ...departure.payload, telegram_user_id: 7002 } }],
+    });
+    expect(graph.spies.end_link).toHaveBeenCalledTimes(1);
+
+    await expect(module.ingest({
+      envelopes: [{ ...departure, payload: { ...departure.payload, valid_until: "not-a-date" } }],
+    })).rejects.toThrow("valid_until");
+  });
+
+  it("does not invent a membership end from a chat omitted by a completed pass", async () => {
+    const graph = mockGraph({
       end_link: () => Promise.resolve(undefined),
     });
     const module = mountModule(TelegramModule, { graph }).module;
 
-    // Chat 1 was stated in the previous pass and not seen in this one: it left; its statement
-    // belongs to that pass, not this one's plan. Chat 4 was never stated: it left too. Chat 3 left before.
     await expect(module.onSyncComplete({
       user_id: "u1",
       source_id: "telegram-ts",
       account_id: "a1",
       identity_key: "9001",
       generation: "initial:r:2",
-    })).resolves.toEqual({ departed: ["1", "4"], plan: {} });
-    const endLink = graph.spies.end_link;
-    if (endLink === undefined) throw new Error("sync complete: end_link spy missing");
-    expect(endLink.mock.calls.map(([id]) => [id])).toEqual([["edge-1"], ["edge-4"]]);
-    // Without the pass or the identity nothing is decided.
-    await expect(module.onSyncComplete({ user_id: "u1", source_id: "telegram-ts", account_id: "a1", identity_key: "9001" }))
-      .resolves.toEqual({ departed: [], plan: {} });
+    })).resolves.toEqual({ departed: [], plan: {} });
+    expect(graph.spies.end_link).not.toHaveBeenCalled();
   });
   /**
    * @test-id: tst_module_telegram_006
