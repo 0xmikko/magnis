@@ -5,8 +5,10 @@ import {
   mkdirSync,
   readFileSync,
   realpathSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
+import { createConnection } from "node:net";
 import { isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -209,6 +211,36 @@ function readJson(path: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+function loopbackPortListening(port: number): Promise<boolean> {
+  return new Promise((resolveListening) => {
+    const socket = createConnection({ host: "127.0.0.1", port });
+    let settled = false;
+    const finish = (listening: boolean): void => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolveListening(listening);
+    };
+    socket.once("connect", () => { finish(true); });
+    socket.once("error", () => { finish(false); });
+    socket.setTimeout(500, () => { finish(false); });
+  });
+}
+
+/** Remove only the control record of a database whose loopback port is closed. */
+export async function clearStoppedDatabaseRecord(dataRoot: string): Promise<void> {
+  const record = join(dataRoot, "run", "postgres.json");
+  if (!existsSync(record)) return;
+  const port = readJson(record).port;
+  if (typeof port !== "number" || !Number.isInteger(port) || port < 1 || port > 65_535) {
+    throw new Error(`PostgreSQL record has an invalid port: ${record}`);
+  }
+  if (await loopbackPortListening(port)) {
+    throw new Error(`PostgreSQL recorded at ${record} is still listening on 127.0.0.1:${String(port)}`);
+  }
+  rmSync(record);
+}
+
 /** Validate the selected checkout without modifying it. */
 export function validateAppRoot(configured: string): string {
   const appRoot = realpathSync(configured);
@@ -365,6 +397,7 @@ async function start(options: Options): Promise<void> {
   const catalog = catalogIdentity();
   const envFile = options.envFile === null ? null : realpathSync(options.envFile);
   assertLiveTelegram(app.root, envFile);
+  await clearStoppedDatabaseRecord(options.dataRoot);
   const channelRoot = join(options.dataRoot, "catalog");
   await buildCatalog(channelRoot, catalog.commit);
   mkdirSync(options.dataRoot, { recursive: true });
@@ -390,9 +423,7 @@ async function start(options: Options): Promise<void> {
 
 async function databaseUp(appRoot: string, dataRoot: string): Promise<string> {
   const record = join(dataRoot, "run", "postgres.json");
-  if (existsSync(record)) {
-    throw new Error(`PostgreSQL is already recorded at ${record}; stop the stand before reset`);
-  }
+  await clearStoppedDatabaseRecord(dataRoot);
   const child = Bun.spawn(["bun", "scripts/db/postgres.ts", "up", "--data-root", dataRoot], {
     cwd: appRoot,
     env: process.env,

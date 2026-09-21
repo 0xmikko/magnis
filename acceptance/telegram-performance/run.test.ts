@@ -6,12 +6,13 @@
  * @fixtures: one temporary minimal app worktree
  */
 import { expect, test } from "bun:test";
-import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
   appIdentity,
+  clearStoppedDatabaseRecord,
   RESET_SQL,
   runCommand,
   summarizeSyncTurns,
@@ -132,6 +133,33 @@ test("tst_cat_tg_performance_runner_004 waits for child cleanup after SIGINT", a
     });
     expect(readFileSync(marker, "utf8")).toBe("clean");
   } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+/**
+ * @test-id: tst_cat_tg_performance_runner_005
+ * @scenario: scn_tg_performance_reuse_001
+ * @covers: acceptance/telegram-performance/run.ts::clearStoppedDatabaseRecord
+ * @deterministic: yes
+ * @fixtures: one stopped and one listening loopback database record
+ */
+test("tst_cat_tg_performance_runner_005 clears only a stopped database record", async () => {
+  const root = mkdtempSync(join(tmpdir(), "magnis-telegram-performance-record-"));
+  const runRoot = join(root, "run");
+  const record = join(runRoot, "postgres.json");
+  mkdirSync(runRoot);
+  const listener = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
+  try {
+    writeFileSync(record, JSON.stringify({ port: listener.port }));
+    await expect(clearStoppedDatabaseRecord(root)).rejects.toThrow("is still listening");
+    expect(existsSync(record)).toBe(true);
+
+    listener.stop(true);
+    await clearStoppedDatabaseRecord(root);
+    expect(existsSync(record)).toBe(false);
+  } finally {
+    listener.stop(true);
     rmSync(root, { recursive: true, force: true });
   }
 });
