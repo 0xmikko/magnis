@@ -379,6 +379,38 @@ test("tst_src_tg_033 dated membership ends retain Telegram's server time", () =>
     }),
     qts: 3,
   }));
+  raw[1](new Api.UpdateChannelParticipant({
+    channelId: bigInt(507), date: 1_700_000_100, actorId: bigInt(9),
+    userId: bigInt(9001),
+    prevParticipant: new Api.ChannelParticipantSelf({
+      userId: bigInt(9001), inviterId: bigInt(7), date: 1_690_000_000,
+    }),
+    newParticipant: new Api.ChannelParticipantBanned({
+      left: false,
+      peer: new Api.PeerUser({ userId: bigInt(9001) }),
+      kickedBy: bigInt(9),
+      date: 1_700_000_100,
+      bannedRights: new Api.ChatBannedRights({ viewMessages: true, untilDate: 0 }),
+    }),
+    qts: 4,
+  }));
+
+  // A restriction that still permits reading the channel retains membership.
+  raw[1](new Api.UpdateChannelParticipant({
+    channelId: bigInt(508), date: 1_700_000_110, actorId: bigInt(9),
+    userId: bigInt(9001),
+    prevParticipant: new Api.ChannelParticipantSelf({
+      userId: bigInt(9001), inviterId: bigInt(7), date: 1_690_000_000,
+    }),
+    newParticipant: new Api.ChannelParticipantBanned({
+      left: false,
+      peer: new Api.PeerUser({ userId: bigInt(9001) }),
+      kickedBy: bigInt(9),
+      date: 1_700_000_110,
+      bannedRights: new Api.ChatBannedRights({ viewMessages: false, untilDate: 0 }),
+    }),
+    qts: 5,
+  }));
 
   // Join and role changes keep membership true and emit no end.
   raw[1](new Api.UpdateChatParticipant({
@@ -426,6 +458,14 @@ test("tst_src_tg_033 dated membership ends retain Telegram's server time", () =>
       },
       remote_id: "tg:chat:506",
       position: { scope_id: "506", id: 0 },
+    },
+    {
+      payload: {
+        entity_type: "telegram_chat", chat_id: 507, top_message: 0,
+        telegram_user_id: 9001, valid_until: "2023-11-14T22:15:00+00:00",
+      },
+      remote_id: "tg:chat:507",
+      position: { scope_id: "507", id: 0 },
     },
   ]);
 });

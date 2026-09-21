@@ -1,0 +1,221 @@
+import { afterEach, expect, test } from "bun:test";
+
+import type { SourceWorkerState } from "../src/core/sync-state.js";
+import { bootTelegramSync, type TelegramSyncStand } from "./harness/telegram-source-sync.js";
+
+let active: Promise<TelegramSyncStand> | undefined;
+const openStand = (): Promise<TelegramSyncStand> => {
+  active = bootTelegramSync();
+  return active;
+};
+afterEach(async () => {
+  try { await (await active)?.close(); } finally { active = undefined; }
+});
+
+/** The three journeys are written for the sync process as it now is — one
+ * stage list, gaps as the coverage, counts from receipts — against the
+ * Telegram Source that states traversed ranges on its pages and the module
+ * that states its plan (the catalog commit pins.json names). */
+const stageOf = (row: SourceWorkerState): string => row.state.stage.kind;
+const holdOf = (row: SourceWorkerState) => row.state.hold;
+const messagesSynced = async (stand: TelegramSyncStand): Promise<number> =>
+  (await stand.sync())?.progress["telegram.message"]?.synced ?? 0;
+
+/**
+ * @test-id: tst_src_int_telegram_sync_001
+ * @scenario: scn_telegram_fast_graph_001
+ * @covers: real runMcpStdio, McpSourceRuntime, Nest SyncService, Telegram module, Graph
+ * @deterministic: yes; synthetic MTProto replies and manually advanced time
+ * @fixtures: telegram-fast-sync/pins.json; 50 dialogs and independent 120/70/5 histories
+ * Boundaries: fake Connection, in-process stdio instead of OS spawn, synthetic credentials.
+ * Not covered: auth ceremony, package certification, live Telegram, OS process isolation.
+ */
+test.skipIf(process.env["MAGNIS_SYNC_TEST_DATABASE_URL"] === undefined || process.env["MAGNIS_TELEGRAM_SOURCE_ROOT"] === undefined)("tst_src_int_telegram_sync_001 commits complete history and live updates without false early progress", async () => {
+  const stand = await openStand();
+  try {
+    stand.provider.holdNextHistory();
+    await stand.start();
+    await stand.waitFor("first provider history request", () => stand.provider.requests.some((request) => request.method === "messages.GetHistory"));
+    await stand.provider.historyHeld();
+    expect(await stand.messages()).toEqual([]);
+    expect(await messagesSynced(stand)).toBe(0);
+    expect(stageOf(await stand.state())).toBe("bootstrap");
+    const releaseGraph = await stand.blockGraph();
+    stand.provider.releaseHistory();
+    await stand.waitFor("received page waits for native Graph transaction", () => stand.graphBlocked());
+    expect(await stand.messages()).toEqual([]);
+    expect(await messagesSynced(stand)).toBe(0);
+    expect(stageOf(await stand.state())).toBe("bootstrap");
+    stand.provider.holdNextHistory(50);
+    await releaseGraph();
+    await stand.waitFor("unfinished backfill in flight", () => stand.provider.requests.filter((request) => request.method === "messages.GetHistory").length > 50);
+    await stand.provider.historyHeld();
+    const unfinished = await stand.state();
+    expect(stageOf(unfinished)).toBe("backfill");
+    // The doubled page reads chat 101 down to 21 and chats 102/103 whole.
+    expect(await stand.messages()).toHaveLength(175);
+    await stand.provider.publishLive(101);
+    await stand.provider.publishLive(102);
+    // The doubled page leaves one backfill ([1,20] of chat 101) and it is the
+    // last. Its answer frees the wire for the live pushes above; the Graph
+    // block keeps the page uncommitted, so the restart below still has real
+    // catch-up work: the reopened history commits them, not final catch-up.
+    const releaseCommit = await stand.blockGraph();
+    stand.provider.releaseHistory();
+    await stand.waitFor("live notifications during unfinished history", () => stand.provider.wire.filter((frame) => frame["method"] === "notifications/magnis/envelope").length >= 2);
+    const restarting = stand.restart();
+    await releaseCommit();
+    await restarting;
+    expect(stand.ownership()).toMatchObject({ workers: 1, sourcePresent: true, receiverPresent: true });
+    await stand.waitFor("reopened history including live updates", async (row) => {
+      const hold = holdOf(row);
+      if (hold !== null) throw new Error(`restarted catch-up held: ${JSON.stringify({ hold, execution: await stand.diagnostics() })}`);
+      return stageOf(row) === "live" && (await stand.messages()).length === 197;
+    });
+    const liveDuringHistory = await stand.messages();
+    expect(liveDuringHistory).toContain("tg:msg:101:121");
+    expect(liveDuringHistory).toContain("tg:msg:102:71");
+    expect(await stand.messages()).toEqual(stand.provider.expected());
+    expect(await stand.messages()).toHaveLength(197);
+    expect(stand.provider.requests.filter((request) => request.method === "messages.GetHistory").every((request) => request.limit <= 100)).toBe(true);
+    const shortPage = stand.provider.calls.find(({ name, response }) => {
+      const result = response?.["result"];
+      return name === "magnis.execute" && typeof result === "object" && result !== null &&
+        "envelopes" in result && Array.isArray(result.envelopes) && result.envelopes.length === 20;
+    });
+    expect(shortPage?.response).toMatchObject({ result: { has_more: true } });
+    // The plan from the receipts alone: the module stated every chat and its
+    // count on the first pass, and each live message moved the plan by one;
+    // synced meets it when history is done. No sync_plan on the wire.
+    const sync = await stand.sync();
+    expect(sync?.status).toEqual({ kind: "live" });
+    expect(sync?.progress).toEqual({
+      "telegram.chat": { name: "chats", synced: 50, estimation: { total: 50, skipped: 0 } },
+      "telegram.message": { name: "messages", synced: 197, estimation: { total: 197, skipped: 0 } },
+    });
+    expect(stand.provider.wire.some((frame) => JSON.stringify(frame).includes("sync_plan"))).toBe(false);
+    expect(stand.provider.errors).toEqual([]);
+    const evidence = await stand.evidence();
+    expect(evidence).toMatchObject({ chats: 50, pinned: 2, synced: 197 });
+    console.log(JSON.stringify({ test: "tst_src_int_telegram_sync_001", ...evidence }));
+    const execution = await stand.diagnostics();
+    console.log(JSON.stringify({ test: "tst_src_int_telegram_sync_001", execution }));
+    expect(execution).toHaveProperty("dispatches.0.requestId");
+    expect(execution).toHaveProperty("transactions.0.callbackEnded");
+    expect(execution).toHaveProperty("recentOperations.0.name");
+    let cleanupFinished = false;
+    const closing = stand.close().then(() => { cleanupFinished = true; });
+    try {
+      await stand.close();
+      expect(cleanupFinished).toBe(true);
+    } finally { await closing; }
+  } finally { await stand.close(); }
+}, 60_000);
+
+/** @test-id: tst_src_int_telegram_sync_002
+ * @scenario: scn_telegram_fast_graph_002
+ * @covers: MTProto420 → real JSON-RPC → durable host wait → continuation
+ * @deterministic: yes; virtual deadline and serialized RPCResult
+ * @fixtures: same real Source/SDK/native-PG stand, one FLOOD_WAIT_120
+ */
+test.skipIf(process.env["MAGNIS_SYNC_TEST_DATABASE_URL"] === undefined || process.env["MAGNIS_TELEGRAM_SOURCE_ROOT"] === undefined)("tst_src_int_telegram_sync_002 respects provider wait and resumes the committed position", async () => {
+  const stand = await openStand();
+  try {
+    stand.provider.holdNextHistory(50);
+    await stand.start();
+    await stand.waitFor("backfill before FLOOD", () => stand.provider.requests.filter((request) => request.method === "messages.GetHistory").length > 50);
+    await stand.provider.historyHeld();
+    const committed = await stand.state();
+    const failedRequest = stand.provider.requests.at(-1);
+    stand.provider.floodNextHistory(120);
+    stand.provider.releaseHistory();
+    const limited = await stand.waitFor("provider wait", (row) => holdOf(row)?.kind === "rateLimited");
+    expect(stageOf(limited)).toBe("backfill");
+    expect(limited.state.forwardCheckpoint).toEqual(committed.state.forwardCheckpoint);
+    expect([...limited.state.gaps]).toEqual([...committed.state.gaps]);
+    expect(stand.provider.wire.find((frame) => frame["error"] !== undefined && JSON.stringify(frame["error"]).includes('"code":-32002'))).toMatchObject({ error: { code: -32002, data: { retry_after: 120 } } });
+    const count = stand.provider.requests.length;
+    const hold = holdOf(limited);
+    if (hold?.kind !== "rateLimited") throw new Error("the provider wait is not a rateLimited hold");
+    const deadline = Date.parse(hold.retryAt);
+    expect(deadline).toBe(stand.provider.clock.now() + 120_000);
+    expect(await stand.provider.probeHeldAdmission()).toMatchObject({ code: 420, seconds: 120 });
+    expect(stand.provider.admission().holdUntil).toBe(deadline);
+    expect(stand.provider.admission().remoteFloods).toBe(1);
+    await stand.provider.publishLive(101);
+    await stand.provider.publishLive(102);
+    await stand.waitFor("live updates during FLOOD", () => stand.provider.wire.filter((frame) => frame["method"] === "notifications/magnis/envelope").length >= 2);
+    await stand.waitFor("live messages committed before provider deadline", async () => (await stand.messages()).length === 177);
+    const liveDuringFlood = await stand.messages();
+    expect(liveDuringFlood).toHaveLength(177);
+    expect(liveDuringFlood).toContain("tg:msg:101:121");
+    expect(liveDuringFlood).toContain("tg:msg:102:71");
+    // A live item never lifts the hold.
+    expect(holdOf(await stand.state())).toEqual(hold);
+    const repair = await stand.failGraph();
+    await stand.provider.publishLive(101);
+    const graphFailure = await stand.waitFor("Graph failure retains provider deadline", (row) => holdOf(row)?.kind === "interrupted");
+    const interrupted = holdOf(graphFailure);
+    if (interrupted?.kind !== "interrupted") throw new Error("the Graph failure is not an interrupted hold");
+    expect(Date.parse(interrupted.retryAt)).toBe(deadline);
+    expect(graphFailure.state.forwardCheckpoint).toEqual(committed.state.forwardCheckpoint);
+    expect(await stand.messages()).toHaveLength(177);
+    await repair();
+    stand.provider.advance(119_999);
+    await new Promise<void>((resolve) => { setImmediate(resolve); });
+    expect(stand.provider.requests).toHaveLength(count);
+    stand.provider.advance(1);
+    await stand.waitFor("provider recovery", async (row) => stageOf(row) === "live" && holdOf(row) === null && (await stand.messages()).length === 198);
+    expect(stand.provider.requests.slice(count).some((request) => request.chat === failedRequest?.chat && request.offset === failedRequest.offset)).toBe(true);
+    expect(await stand.messages()).toEqual(stand.provider.expected());
+    expect(stand.provider.admission().remoteFloods).toBe(1);
+    console.log(JSON.stringify({ test: "tst_src_int_telegram_sync_002", ...await stand.evidence() }));
+  } finally { await stand.close(); }
+}, 60_000);
+
+/** @test-id: tst_src_int_telegram_sync_003
+ * @scenario: scn_telegram_fast_graph_003
+ * @covers: real Source timeout, Graph storage failure, durable retry, no false EOF
+ * @deterministic: yes; real timeout callback, native trigger failure, virtual scheduler time
+ * @fixtures: real Graph transaction rejected by a test-owned native PG trigger
+ */
+test.skipIf(process.env["MAGNIS_SYNC_TEST_DATABASE_URL"] === undefined || process.env["MAGNIS_TELEGRAM_SOURCE_ROOT"] === undefined)("tst_src_int_telegram_sync_003 retries failed Graph admission without fabricating completion", async () => {
+  const stand = await openStand();
+  try {
+    stand.provider.holdNextHistory();
+    await stand.start();
+    await stand.waitFor("history timeout armed", () => stand.provider.requests.some((request) => request.method === "messages.GetHistory"));
+    await stand.provider.historyHeld();
+    stand.provider.advance(20_000);
+    stand.provider.expireHistoryTimeout();
+    const timeout = await stand.waitFor("real Source timeout", (row) => {
+      const hold = holdOf(row);
+      return hold?.kind === "interrupted" && hold.message.includes("timed out");
+    });
+    expect(stageOf(timeout)).toBe("bootstrap");
+    expect(timeout.state.forwardCheckpoint).toBeNull();
+    expect(await stand.messages()).toEqual([]);
+    const first = holdOf(timeout);
+    if (first?.kind !== "interrupted") throw new Error("the timeout is not an interrupted hold");
+    expect(Date.parse(first.retryAt)).toBe(stand.provider.clock.now() + 30_000);
+    stand.provider.releaseHistory();
+    const repair = await stand.failGraph();
+    stand.provider.advance(30_000);
+    const failed = await stand.waitFor("Graph failure", (row) => {
+      const hold = holdOf(row);
+      return hold?.kind === "interrupted" && hold.message.includes("synthetic Graph storage failure");
+    });
+    expect(stageOf(failed)).toBe("bootstrap");
+    expect(failed.state.forwardCheckpoint).toBeNull();
+    expect(await stand.messages()).toEqual([]);
+    const second = holdOf(failed);
+    if (second?.kind !== "interrupted") throw new Error("the Graph failure is not an interrupted hold");
+    expect(Date.parse(second.retryAt)).toBe(stand.provider.clock.now() + 60_000);
+    expect(stand.provider.admission().remoteFloods).toBe(0);
+    await repair();
+    stand.provider.advance(60_000);
+    await stand.waitFor("Graph recovery", (row) => stageOf(row) === "live" && holdOf(row) === null);
+    expect(await stand.messages()).toEqual(stand.provider.expected());
+    console.log(JSON.stringify({ test: "tst_src_int_telegram_sync_003", ...await stand.evidence() }));
+  } finally { await stand.close(); }
+}, 60_000);

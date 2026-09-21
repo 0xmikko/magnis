@@ -224,7 +224,9 @@ function telegramDate(value: unknown): Date {
 
 function channelParticipantIsMember(participant: Api.TypeChannelParticipant | undefined): boolean {
   if (participant === undefined || participant instanceof Api.ChannelParticipantLeft) return false;
-  if (participant instanceof Api.ChannelParticipantBanned) return participant.left !== true;
+  if (participant instanceof Api.ChannelParticipantBanned) {
+    return participant.left !== true && participant.bannedRights.viewMessages !== true;
+  }
   return true;
 }
 
