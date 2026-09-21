@@ -24,7 +24,7 @@ const GIT_PROCESS_VARIABLES = new Set([
 ]);
 const USAGE = `usage:
   bun acceptance/telegram-performance/run.ts check  --app-root ABS
-  bun acceptance/telegram-performance/run.ts start  --app-root ABS --data-root ABS --port N [--env-file ABS]
+  bun acceptance/telegram-performance/run.ts start  --app-root ABS --data-root ABS --port N --indexer on|off [--env-file ABS]
   bun acceptance/telegram-performance/run.ts reset  --app-root ABS --data-root ABS
   bun acceptance/telegram-performance/run.ts report --data-root ABS`;
 
@@ -36,6 +36,7 @@ interface Options {
   readonly dataRoot: string | null;
   readonly port: number | null;
   readonly envFile: string | null;
+  readonly indexer: "on" | "off" | null;
 }
 
 export interface AppIdentity {
@@ -60,6 +61,7 @@ export interface SyncSummary {
 
 interface RunMarker {
   readonly startedAt: string;
+  readonly indexer: "on" | "off";
   readonly app: AppIdentity;
   readonly catalog: Omit<AppIdentity, "root">;
 }
@@ -160,7 +162,7 @@ function absolutePath(flag: string, value: string): string {
   return value;
 }
 
-function parseOptions(args: readonly string[]): Options {
+export function parseOptions(args: readonly string[]): Options {
   const [rawCommand, ...rest] = args;
   if (rawCommand !== "check" && rawCommand !== "start" && rawCommand !== "reset" && rawCommand !== "report") {
     fail("Expected check, start, reset or report");
@@ -169,6 +171,7 @@ function parseOptions(args: readonly string[]): Options {
   let dataRoot: string | null = null;
   let port: number | null = null;
   let envFile: string | null = null;
+  let indexer: "on" | "off" | null = null;
   for (let index = 0; index < rest.length; index += 1) {
     const flag = rest[index];
     const value = rest[index + 1];
@@ -182,6 +185,10 @@ function parseOptions(args: readonly string[]): Options {
         break;
       case "--env-file":
         envFile = absolutePath(flag, value);
+        break;
+      case "--indexer":
+        if (value !== "on" && value !== "off") fail("--indexer must be on or off");
+        indexer = value;
         break;
       case "--port":
         if (!/^\d+$/.test(value) || Number(value) + 2000 > 65_535) {
@@ -197,10 +204,11 @@ function parseOptions(args: readonly string[]): Options {
   if (rawCommand !== "report" && appRoot === null) fail("Pass --app-root <magnis-app-worktree>");
   if (rawCommand !== "check" && dataRoot === null) fail("Pass --data-root <persistent-stand-directory>");
   if (rawCommand === "start" && port === null) fail("Pass --port <backend-port>");
-  if (rawCommand !== "start" && (port !== null || envFile !== null)) {
-    fail("--port and --env-file belong only to start");
+  if (rawCommand === "start" && indexer === null) fail("Pass --indexer <on|off>");
+  if (rawCommand !== "start" && (port !== null || envFile !== null || indexer !== null)) {
+    fail("--port, --env-file and --indexer belong only to start");
   }
-  return { command: rawCommand, appRoot, dataRoot, port, envFile };
+  return { command: rawCommand, appRoot, dataRoot, port, envFile, indexer };
 }
 
 function readJson(path: string): Record<string, unknown> {
@@ -392,7 +400,9 @@ function assertLiveTelegram(appRoot: string, envFile: string | null): void {
 }
 
 async function start(options: Options): Promise<void> {
-  if (options.appRoot === null || options.dataRoot === null || options.port === null) throw new Error("Invalid start options");
+  if (options.appRoot === null || options.dataRoot === null || options.port === null || options.indexer === null) {
+    throw new Error("Invalid start options");
+  }
   const app = appIdentity(options.appRoot);
   const catalog = catalogIdentity();
   const envFile = options.envFile === null ? null : realpathSync(options.envFile);
@@ -401,10 +411,11 @@ async function start(options: Options): Promise<void> {
   const channelRoot = join(options.dataRoot, "catalog");
   await buildCatalog(channelRoot, catalog.commit);
   mkdirSync(options.dataRoot, { recursive: true });
-  const marker: RunMarker = { startedAt: new Date().toISOString(), app, catalog };
+  const marker: RunMarker = { startedAt: new Date().toISOString(), indexer: options.indexer, app, catalog };
   writeFileSync(join(options.dataRoot, RUN_MARKER), `${JSON.stringify(marker, null, 2)}\n`);
   console.log(`telegram-performance: app ${app.branch}@${app.commit}`);
   console.log(`telegram-performance: catalog ${catalog.branch}@${catalog.commit}`);
+  console.log(`telegram-performance: indexer ${options.indexer}`);
   console.log(`telegram-performance: data ${options.dataRoot}`);
   const bunArgs = [
     "bun",
@@ -418,6 +429,7 @@ async function start(options: Options): Promise<void> {
   await runCommand(bunArgs, app.root, {
     ...process.env,
     MAGNIS_CATALOG_URL: pathToFileURL(channelRoot).href,
+    MAGNIS_DISABLE_INDEXER: options.indexer === "off" ? "1" : "0",
   });
 }
 

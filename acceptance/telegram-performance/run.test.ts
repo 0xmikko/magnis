@@ -13,6 +13,7 @@ import { join } from "node:path";
 import {
   appIdentity,
   clearStoppedDatabaseRecord,
+  parseOptions,
   RESET_SQL,
   runCommand,
   summarizeSyncTurns,
@@ -162,4 +163,24 @@ test("tst_cat_tg_performance_runner_005 clears only a stopped database record", 
     listener.stop(true);
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+/**
+ * @test-id: tst_cat_tg_performance_runner_006
+ * @scenario: scn_tg_performance_indexer_001
+ * @covers: acceptance/telegram-performance/run.ts::parseOptions
+ * @deterministic: yes
+ * @fixtures: none
+ */
+test("tst_cat_tg_performance_runner_006 requires an explicit indexer mode", () => {
+  const start = [
+    "start",
+    "--app-root", "/tmp/magnis-app",
+    "--data-root", "/tmp/magnis-telegram-performance",
+    "--port", "3261",
+  ];
+  expect(parseOptions([...start, "--indexer", "on"]).indexer).toBe("on");
+  expect(parseOptions([...start, "--indexer", "off"]).indexer).toBe("off");
+  expect(() => parseOptions(start)).toThrow("Pass --indexer <on|off>");
+  expect(() => parseOptions([...start, "--indexer", "auto"])).toThrow("--indexer must be on or off");
 });

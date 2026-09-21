@@ -31,6 +31,7 @@ bun acceptance/telegram-performance/run.ts start \
   --app-root /absolute/path/to/magnis-app-worktree \
   --data-root /absolute/path/to/telegram-performance-data \
   --port 3261 \
+  --indexer off \
   --env-file /absolute/path/to/magnis-app.env
 ```
 
@@ -68,3 +69,7 @@ bun acceptance/telegram-performance/run.ts reset \
 Start again with the same data root. Telegram authentication is reused. To
 measure another app branch, pass that branch's clean worktree as `--app-root`;
 no test or live provider call is added to CI.
+
+`--indexer on|off` is required for every start. It sets the backend's existing
+`MAGNIS_DISABLE_INDEXER` switch explicitly and records the chosen mode in the
+run marker, so reports from the two modes cannot be mistaken for each other.
