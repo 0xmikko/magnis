@@ -91,7 +91,6 @@ BEGIN
     sync_cursors,
     sync_jobs,
     sync_state,
-    telegram_sync_progress,
     graph_discard,
     embedding_index,
     embedding_fts,
