@@ -44,7 +44,7 @@ export function remainingPageBudget(deadline: number): number {
 export type MessagePage = MessageLike[] & { total?: number };
 
 /** Sentinel prefix carried up the error channel for a FLOOD_WAIT.
- * `dispatch.ts::classifyToolError` recognizes it → JSON-RPC
+ * The shared connector error mapping recognizes it → JSON-RPC
  * -32002 + `data: { retry_after: secs }`; the host maps that to
  * `SourceError::RateLimit`. Twin of the Rust `RATE_LIMITED_PREFIX`. */
 export const RATE_LIMITED_PREFIX = "RATE_LIMITED:";
@@ -158,19 +158,20 @@ function asRpcError(e: unknown): RpcErrorLike | undefined {
   return e;
 }
 
-/** If `err` is a Telegram FLOOD_WAIT, return its valid rounded-up wait in seconds. gramjs
- * surfaces a flood-wait as a `FloodWaitError` (code 420, `.seconds` set) whose
- * `errorMessage` is `FLOOD_WAIT`.
- * @tested-by: tst_tgts_flood_001 — TGFLOOD_005 never guesses an invalid wait. */
+/** Return an exact valid Telegram provider hold in seconds. GramJS turns known
+ * FLOOD_WAIT variants into code 420 plus `.seconds`; Takeout delays currently
+ * remain raw RPC errors, so their exact numeric suffix is parsed here too.
+ * @tested-by: tst_tgts_flood_001, tst_src_tgflood_007 */
 export function floodWaitSecs(err: unknown): number | undefined {
   const rpc = asRpcError(err);
   if (rpc === undefined) return undefined;
-  const isFlood =
-    rpc.code === 420 || (rpc.errorMessage ?? "").startsWith("FLOOD_WAIT");
-  if (!isFlood) return undefined;
   const seconds = rpc.seconds;
-  return typeof seconds === "number" && seconds >= 0 && Number.isFinite(seconds) &&
-    Number.isSafeInteger(Math.ceil(seconds * 1000)) ? Math.ceil(seconds) : undefined;
+  if (rpc.code === 420 && typeof seconds === "number" && seconds >= 0 && Number.isFinite(seconds) &&
+      Number.isSafeInteger(Math.ceil(seconds * 1000))) return Math.ceil(seconds);
+  const match = rpc.errorMessage?.match(/^(?:FLOOD_WAIT|FLOOD_PREMIUM_WAIT|TAKEOUT_INIT_DELAY)_(\d+)$/);
+  if (match === null || match === undefined) return undefined;
+  const parsed = Number(match[1]);
+  return Number.isSafeInteger(parsed) ? parsed : undefined;
 }
 
 /** Send once; the account admission guard owns waits and subsequent admission.
@@ -426,11 +427,29 @@ export interface DialogPage {
   total: number | null;
 }
 
+/** JSON-safe Telegram Takeout split range and the active export that owns it. */
+export interface TakeoutRange {
+  min_id: number;
+  max_id: number;
+}
+
+export interface TakeoutContext {
+  id: string;
+  range: TakeoutRange;
+}
+
 /** Fetches one page of dialogs starting at `offset` (null = from the top). The
  * LIVE impl talks to Telegram; the test fake serves an in-memory list. */
 export interface DialogPager {
   dialogPage(offset: DialogOffset | null, limit: number,
-    options?: { hydrate?: boolean; timeoutMs?: number }): Promise<DialogPage>;
+    options?: { hydrate?: boolean; timeoutMs?: number; takeout?: TakeoutContext }): Promise<DialogPage>;
+}
+
+/** The existing dialog owner also owns the one Telegram Takeout lifecycle. */
+export interface TakeoutPager extends DialogPager {
+  initTakeout(): Promise<string>;
+  takeoutRanges(id: string): Promise<TakeoutRange[]>;
+  finishTakeout(id: string): Promise<void>;
 }
 
 // ── gramjs → canonical intermediate conversion ─────────────────────────────

@@ -9,11 +9,11 @@ import { buildConnectorConfig, type ConnectorDeps } from "./connector";
 import { resetAuthFlow } from "./auth";
 import { SubscriptionRegistry } from "./subscriptions";
 import { LiveDialogPager } from "./live";
-import { MTPROTO_REQUEST_TIMEOUT_MS, SOURCE_PAGE_BUDGET_MS, MtprotoTimeoutError } from "./client";
+import { MTPROTO_REQUEST_TIMEOUT_MS, SOURCE_PAGE_BUDGET_MS, MtprotoTimeoutError, floodWaitSecs } from "./client";
 import { AccountAdmission, type AdmissionEvent } from "./request-admission";
 import { fetch, runBootstrap } from "./surfaces/telegram/commands";
 import { liveUpdatePushes } from "./subscriptions";
-import { caseEvidence, createTransport, setupConfig, VirtualClock } from "./testing/mtproto-transport";
+import { caseEvidence, createTransport, setupConfig, VirtualClock, type Transmission } from "./testing/mtproto-transport";
 
 function outcome(promise: Promise<unknown>): Promise<{ kind: "resolved" | "rejected"; value: unknown }> {
   return promise.then((value) => ({ kind: "resolved", value }), (value: unknown) => ({ kind: "rejected", value }));
@@ -75,13 +75,29 @@ function commandStream(overrides: ConnectorDeps & { authMode?: boolean } = {}) {
 }
 
 const unusedPager = { dialogPage: async () => ({ dialogs: [], next_offset: null, total: null }) };
-const gapArgs = (chatId: number, start: number, end: number, cursor?: number) => ({
+const gapArgs = (chatId: number, start: number, end: number, total = end) => ({
   surface: "telegram",
   direction: "backward" as const,
   scope_id: String(chatId),
   target: { kind: "gap" as const, start, end },
-  ...(cursor === undefined ? {} : { cursor }),
+  forward_checkpoint: {
+    takeout: { id: "1", phase: "download", ranges: [{ min_id: start, max_id: end }],
+      range_index: 1, range_started: false, dialog_offset: null, pinned_count: 0,
+      publish_index: 1, download_index: 1 },
+    chats: { [String(chatId)]: { chat: { chat_id: chatId, title: `Chat ${String(chatId)}`, chat_type: "private",
+      is_pinned: false, pin_order: 0, unread_count: 0, unread_mark: false,
+      read_inbox_max_id: 0, read_outbox_max_id: 0, unread_mentions_count: 0,
+      top_message: end, message_count: end }, peer: { ty: "chat", id: chatId },
+      message_count: total, ranges: [0], last_msg_id: end } },
+  },
 });
+
+function providerRequest(sent: Transmission): unknown {
+  let request: unknown = sent.state.request;
+  if (request instanceof Api.InvokeWithTakeout) request = request.query;
+  if (request instanceof Api.InvokeWithMessagesRange) request = request.query;
+  return request;
+}
 
 function flushCommands(): Promise<void> {
   return new Promise((resolve) => { setImmediate(resolve); });
@@ -158,12 +174,10 @@ test("tst_src_tgflood_005 the Source command loop preserves runtime flood replie
     await self;
     let index = 2;
     let id = 20;
-    let paced = false;
     const counts = new Map([[101, 120], [102, 70], [103, 5]]);
     const answer = async (): Promise<void> => {
-      if (paced) runningClock.advance(4000);
       const sent = await actual.application(index++);
-      const request: unknown = sent.state.request;
+      const request = providerRequest(sent);
       if (request instanceof Api.messages.GetDialogs) {
         const dialogs = [...counts].map(([chat, count], i) => new Api.Dialog({ pinned: i < 2,
           peer: new Api.PeerChat({ chatId: bigInt(chat) }), topMessage: count, readInboxMaxId: 0,
@@ -177,14 +191,13 @@ test("tst_src_tgflood_005 the Source command loop preserves runtime flood replie
         // The bootstrap hydration and bounded fetch both use provider pages.
         expect(request.limit).toBeLessThanOrEqual(100);
         const messages = Array.from({ length: count }, (_, i) => fixtureMessage(chat, count - i))
-          .filter((message) => request.offsetId === 0 || message.id < request.offsetId).slice(0, 50);
+          .filter((message) => request.offsetId === 0 || message.id < request.offsetId).slice(0, request.limit);
         await actual.reply(sent, new Api.messages.MessagesSlice({ count, messages, chats: [fixtureChat(chat)], users: [] }));
       } else throw new Error(`Unexpected Source request ${sent.method}`);
     };
-    io.send(id, "magnis.sync.fetch", { _meta: meta });
-    await answer();
+    io.send(id, "magnis.sync.fetch", { ...gapArgs(101, 1, 70), _meta: meta });
     const failed = await actual.application(index++);
-    expect(failed.method).toBe("messages.GetHistory");
+    expect(providerRequest(failed)).toBeInstanceOf(Api.messages.GetHistory);
     await actual.reply(failed, new Api.RpcError({ errorCode: 420, errorMessage: "FLOOD_WAIT_4" }));
     expect(await io.reply(id++)).toMatchObject({ error: { code: -32002, data: { retry_after: 4 } } });
     expect(io.replies.get(20)).not.toHaveProperty("result");
@@ -204,23 +217,15 @@ test("tst_src_tgflood_005 the Source command loop preserves runtime flood replie
     expect(actual.writes).toHaveLength(heldAt);
     expect(runningGuard.remoteFloods).toBe(1);
     runningClock.advance(4000);
-    paced = true;
-    io.send(id, "magnis.sync.fetch", { _meta: meta });
-    for (let i = 0; i < 4; i++) await answer();
-    const result = (await io.reply(id++)).result as Record<string, unknown>;
-    const emitted = envelopes(result);
-    // The page states what it read of each chat: the 120- and 70-message chats
-    // down to their first page's oldest, the 5-message chat whole.
-    expect(result).toMatchObject({ hasMore: false, traversed: { "101": [71, 120], "102": [21, 70], "103": [1, 5] } });
-    const gaps = new Map([[101, 70], [102, 20]]);
-    for (const [chat, end] of gaps) {
-      io.send(id, "magnis.sync.fetch", { ...gapArgs(chat, 1, end), _meta: meta });
-      const providerPages = Math.ceil(end / 50);
+    const emitted: Record<string, unknown>[] = [];
+    for (const [chat, count] of counts) {
+      io.send(id, "magnis.sync.fetch", { ...gapArgs(chat, 1, count), _meta: meta });
+      const providerPages = Math.ceil(count / 100);
       for (let page = 0; page < providerPages; page++) await answer();
       const page = (await io.reply(id++)).result as Record<string, unknown>;
       emitted.push(...envelopes(page));
-      expect(page.hasMore).toBe(false);
-      expect(page.traversed).toEqual({ [String(chat)]: [1, end] });
+      expect(page.progress).toMatchObject({ kind: "completeTarget" });
+      expect(page.traversed).toEqual({ [String(chat)]: [1, count] });
     }
     const identities = new Set(emitted.map((item) => item.remote_id).filter((value): value is string => typeof value === "string" && value.startsWith("tg:msg:")));
     for (const push of pushes) identities.add(String((push.params as Record<string, unknown>).remote_id));
@@ -246,8 +251,8 @@ test("tst_src_tgflood_005 the Source command loop preserves runtime flood replie
     const captured = JSON.stringify(diagnostics);
     expect(diagnostics.length).toBeGreaterThan(0);
     for (const secret of [String(meta.session), "fixture-only", "fixture-101-121", "fixture-phone"]) expect(captured).not.toContain(secret);
-    expect(actual.writes).toHaveLength(12);
-    evidence(actual, runningClock, { expectedTransmissions: 12, expectedMessages: 197, actualMessages: identities.size,
+    expect(actual.writes).toHaveLength(8);
+    evidence(actual, runningClock, { expectedTransmissions: 8, expectedMessages: 197, actualMessages: identities.size,
       identities: ["101:1..122", "102:1..70", "103:1..5"], failedFetchResults: 0, stoppedWithOccupiedSlots: 8 });
   } finally {
     io.registry.stop("active");
@@ -449,7 +454,7 @@ test("tst_src_tgflood_003 peer misses share a continuation through floods and ca
       let before = count + 1;
       for (;;) {
         const sent = await f.application(wireIndex++);
-        const request: unknown = sent.state.request;
+        const request = providerRequest(sent);
         if (!(request instanceof Api.messages.GetHistory)) throw new Error("Cached peer caused another discovery scan");
         expect(request.offsetId).toBe(before);
         expect(request.limit).toBe(100);
@@ -464,7 +469,7 @@ test("tst_src_tgflood_003 peer misses share a continuation through floods and ca
       const batch = envelopes(page);
       emitted.push(...batch.map((item) => String(item.remote_id)));
       expect(batch).toHaveLength(count);
-      expect(page.hasMore).toBe(false);
+      expect(page.progress).toMatchObject({ kind: "completeTarget" });
       expect(page.traversed).toEqual({ [String(chat)]: [1, count] });
     }
     expect(emitted).toHaveLength(195);
@@ -513,7 +518,7 @@ test("tst_src_tgflood_001 healthy requests use a free application slot without d
     let wireIndex = f.writes.length;
     const answer = async (): Promise<void> => {
       const sent = await f.application(wireIndex++);
-      const request: unknown = sent.state.request;
+      const request = providerRequest(sent);
       if (request instanceof Api.messages.GetDialogs) {
         const dialogs = [...counts].map(([chat, count], i) => new Api.Dialog({ pinned: i < 2,
           peer: new Api.PeerChat({ chatId: bigInt(chat) }), topMessage: count, readInboxMaxId: 0,
@@ -538,12 +543,15 @@ test("tst_src_tgflood_001 healthy requests use a free application slot without d
       { payload: { is_pinned: true, pin_order: 0 } }, { payload: { is_pinned: true, pin_order: 1 } }, { payload: { is_pinned: false, pin_order: 0 } },
     ]);
     expect(boot).toMatchObject({ hasMore: false, traversed: { "101": [21, 120], "102": [1, 70], "103": [1, 5] } });
-    const filling = fetch(f.tg, unusedPager, "fixture-A", gapArgs(101, 1, 20));
+    const filling = fetch(f.tg, unusedPager, "fixture-A", gapArgs(101, 1, 20, 120));
     await answer();
     const page = await filling;
     const batch = envelopes(page);
     expect(batch.length).toBeLessThanOrEqual(50);
-    expect(page).toMatchObject({ hasMore: false, traversed: { "101": [1, 20] } });
+    expect(page).toMatchObject({
+      traversed: { "101": [1, 20] },
+      progress: { kind: "completeTarget", forwardCheckpoint: { kind: "replace" } },
+    });
     emitted.push(...batch);
     const actual = emitted.map((envelope) => envelope.remote_id).filter((id): id is string => typeof id === "string" && id.startsWith("tg:msg:"));
     const expected = [...histories].flatMap(([chat, history]) => history.map((message) => `tg:msg:${String(chat)}:${String(message.id)}`));
@@ -594,7 +602,7 @@ test("tst_src_tgflood_001 healthy requests use a free application slot without d
         expect((await overlappingHistory).length).toBe(50);
         chunk = await f.application(wireIndex++);
       }
-      const request: unknown = chunk.state.request;
+      const request = providerRequest(chunk);
       expect(request).toBeInstanceOf(Api.upload.GetFile);
       if (!(request instanceof Api.upload.GetFile)) throw new Error("Expected media request");
       expect(request.offset.toJSNumber()).toBe(offset);
@@ -670,9 +678,8 @@ test("tst_src_tgfast_005 measures complete round-robin history without local pac
       await me;
       f.tg.addLiveHandler((message) => { liveIds.push(...liveUpdatePushes(message, "fixture-A").map((push) => push.remote_id)); });
       const answer = async (): Promise<void> => {
-        const request = (await f.application(index++)).state.request;
-        const wire = f.writes[index - 1];
-        if (!wire) throw new Error("Missing benchmark transmission");
+        const wire = await f.application(index++);
+        const request = providerRequest(wire);
         // This is provider work, never a configured Source inter-request sleep.
         clock.advance(100);
         if (request instanceof Api.messages.GetDialogs) {
@@ -718,13 +725,16 @@ test("tst_src_tgfast_005 measures complete round-robin history without local pac
       const visits: number[] = [];
       visits.push(101);
       const started = clock.now();
-      const reading = fetch(f.tg, unusedPager, "fixture-A", gapArgs(101, 1, 20));
+      const reading = fetch(f.tg, unusedPager, "fixture-A", gapArgs(101, 1, 20, 120));
       await answer();
       const page = await reading;
       latencies.push(clock.now() - started);
       frameBytes.push(Buffer.byteLength(JSON.stringify(page)));
       expect(page.total).toBe(counts.get(101));
-      expect(page).toMatchObject({ hasMore: false, traversed: { "101": [1, 20] } });
+      expect(page).toMatchObject({
+        traversed: { "101": [1, 20] },
+        progress: { kind: "completeTarget", forwardCheckpoint: { kind: "replace" } },
+      });
       emitted.push(...envelopes(page));
       expect(visits).toEqual([101]);
       const ids = emitted.map((item) => item.remote_id).filter((id): id is string => typeof id === "string" && id.startsWith("tg:msg:"));
@@ -940,6 +950,84 @@ test("tst_src_tgflood_004 an in-flight request bounds the shared waiting queue",
   }
 });
 
+/** @test-id: tst_src_tgflood_007
+ * @scenario: scn_tgflood_009
+ * @covers: exact provider holds without learned request spacing
+ * @deterministic: yes
+ * @fixtures: actual GramJS sender with in-memory replies and a monotonic clock
+ */
+test("tst_src_tgflood_007 successful bursts add no delay around exact provider holds", async () => {
+  for (const [message, seconds] of [
+    ["FLOOD_WAIT_4", 4],
+    ["FLOOD_PREMIUM_WAIT_5", 5],
+    ["TAKEOUT_INIT_DELAY_6", 6],
+  ] as const) {
+    expect(floodWaitSecs({ code: 420, errorMessage: message })).toBe(seconds);
+  }
+  for (const message of ["FLOOD_WAIT", "FLOOD_WAIT_-1", "TAKEOUT_INIT_DELAY_bad", "FLOOD_PREMIUM_WAIT_1x"]) {
+    expect(floodWaitSecs({ code: 420, errorMessage: message })).toBeUndefined();
+  }
+
+  const clock = new VirtualClock();
+  const f = await createTransport(clock);
+  try {
+    for (let index = 0; index < 3; index++) {
+      const pending = outcome(f.client.invoke(new Api.updates.GetState()));
+      const sent = await f.application(index);
+      expect(sent.at).toBe(0);
+      await f.reply(sent, stateResponse());
+      expect((await pending).kind).toBe("resolved");
+    }
+
+    const flooded = outcome(f.client.invoke(new Api.updates.GetState()));
+    await f.reply(await f.application(3), new Api.RpcError({ errorCode: 420, errorMessage: "TAKEOUT_INIT_DELAY_4" }));
+    expect((await flooded).kind).toBe("rejected");
+    expect(f.admission.holdUntil).toBe(4000);
+
+    clock.advance(3999);
+    expect((await outcome(f.client.invoke(new Api.updates.GetState()))).kind).toBe("rejected");
+    expect(f.writes).toHaveLength(4);
+    clock.advance(1);
+
+    const first = outcome(f.client.invoke(new Api.updates.GetState()));
+    const second = outcome(f.client.invoke(new Api.updates.GetState()));
+    const firstSent = await f.application(4);
+    expect(firstSent.at).toBe(4000);
+    await f.reply(firstSent, stateResponse());
+    expect((await first).kind).toBe("resolved");
+    await flushCommands();
+    expect(f.writes).toHaveLength(6);
+    const secondSent = await f.application(5);
+    expect(secondSent.at).toBe(4000);
+    await f.reply(secondSent, stateResponse());
+    expect((await second).kind).toBe("resolved");
+
+    const floodedAgain = outcome(f.client.invoke(new Api.updates.GetState()));
+    await f.reply(await f.application(6), new Api.RpcError({ errorCode: 420, errorMessage: "FLOOD_PREMIUM_WAIT_2" }));
+    expect((await floodedAgain).kind).toBe("rejected");
+    expect(f.admission.holdUntil).toBe(6000);
+    clock.advance(1999);
+    expect((await outcome(f.client.invoke(new Api.updates.GetState()))).kind).toBe("rejected");
+    clock.advance(1);
+    const resumed = outcome(f.client.invoke(new Api.updates.GetState()));
+    const resumedSent = await f.application(7);
+    expect(resumedSent.at).toBe(6000);
+    await f.reply(resumedSent, stateResponse());
+    expect((await resumed).kind).toBe("resolved");
+  } finally { await f.close(); }
+
+  const malformed = await createTransport(new VirtualClock());
+  try {
+    const pending = outcome(malformed.client.invoke(new Api.updates.GetState()));
+    await malformed.reply(await malformed.application(0),
+      new Api.RpcError({ errorCode: 420, errorMessage: "TAKEOUT_INIT_DELAY_bad" }));
+    expect((await pending).kind).toBe("rejected");
+    expect(malformed.admission.holdUntil).toBeNull();
+    expect((await outcome(malformed.client.invoke(new Api.updates.GetState()))).kind).toBe("rejected");
+    expect(malformed.writes).toHaveLength(1);
+  } finally { await malformed.close(); }
+});
+
 /**
  * @test-id: tst_src_tgflood_002
  * @scenario: scn_tgflood_002
@@ -1126,7 +1214,7 @@ test("tst_src_tgflood_002 the first remote flood prevents the next actual SDK tr
  * @deterministic: yes
  * @fixtures: actual GramJS sender with in-memory replies and a monotonic clock
  */
-test("tst_src_tgflood_006 a provider flood paces the resumed burst", async () => {
+test("tst_src_tgflood_006 a provider flood releases the resumed burst at its deadline", async () => {
   const clock = new VirtualClock();
   const f = await createTransport(clock);
   try {
@@ -1157,15 +1245,10 @@ test("tst_src_tgflood_006 a provider flood paces the resumed burst", async () =>
     await f.reply(resumed, stateResponse());
     expect((await first).kind).toBe("resolved");
     await flushCommands();
-    expect(f.writes).toHaveLength(6);
-
-    clock.advance(899);
-    await flushCommands();
-    expect(f.writes).toHaveLength(6);
-    clock.advance(1);
-    const paced = await f.application(6);
-    expect(paced.at).toBe(5400);
-    await f.reply(paced, stateResponse());
+    expect(f.writes).toHaveLength(7);
+    const following = await f.application(6);
+    expect(following.at).toBe(4500);
+    await f.reply(following, stateResponse());
     expect((await second).kind).toBe("resolved");
   } finally { await f.close(); }
 });

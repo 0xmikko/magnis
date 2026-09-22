@@ -2,7 +2,6 @@
 // plugins/sources/telegram/src/commands.rs `mod tests` (FakePager harness).
 
 import { describe, expect, spyOn, test } from "bun:test";
-import { setTimeout as nativeTimeout } from "node:timers";
 import bigInt from "big-integer";
 import { Api } from "telegram";
 import type {
@@ -30,12 +29,25 @@ const unusedPager: DialogPager = {
   dialogPage: async () => ({ dialogs: [], next_offset: null, total: null }),
 };
 
-const gapArgs = (scopeId: string, start: number, end: number) => ({
-  surface: "telegram",
-  direction: "backward" as const,
-  scope_id: scopeId,
-  target: { kind: "gap" as const, start, end },
-});
+const gapArgs = (scopeId: string, start: number, end: number, messageCount = end) => {
+  const chatId = Number(scopeId);
+  return {
+    surface: "telegram",
+    direction: "backward" as const,
+    scope_id: scopeId,
+    target: { kind: "gap" as const, start, end },
+    forward_checkpoint: {
+      takeout: { id: "1", phase: "download", ranges: [{ min_id: start, max_id: end }],
+        range_index: 1, range_started: false, dialog_offset: null, pinned_count: 0,
+        publish_index: 1, download_index: 1 },
+      chats: { [scopeId]: { chat: { chat_id: chatId, title: `Chat ${scopeId}`, chat_type: "private",
+        is_pinned: false, pin_order: 0, unread_count: 0, unread_mark: false,
+        read_inbox_max_id: 0, read_outbox_max_id: 0, unread_mentions_count: 0,
+        top_message: end, message_count: messageCount }, peer: { ty: "chat", id: chatId },
+        message_count: messageCount, ranges: [0], last_msg_id: end } },
+    },
+  };
+};
 
 function wireChat(id: number): Api.Chat {
   return new Api.Chat({ id: bigInt(id), title: `Chat ${String(id)}`, photo: new Api.ChatPhotoEmpty(),
@@ -50,6 +62,212 @@ function wireMessage(chatId: number, id: number, peer = new Api.PeerChat({ chatI
 function settled(promise: Promise<Record<string, unknown>>): Promise<{ kind: "resolved" | "rejected"; value: unknown }> {
   return promise.then((value) => ({ kind: "resolved", value }), (value: unknown) => ({ kind: "rejected", value }));
 }
+
+function wireVector(items: { getBytes(): Buffer }[]): { getBytes(): Buffer } {
+  return { getBytes: (): Buffer => {
+    const header = Buffer.alloc(8);
+    header.writeUInt32LE(0x1cb5c415);
+    header.writeInt32LE(items.length, 4);
+    return Buffer.concat([header, ...items.map((item) => item.getBytes())]);
+  } };
+}
+
+/** @test-id: tst_src_tg_takeout_plan_001
+ * @scenario: scn_tg_takeout_001
+ * @covers: exact Takeout estimation, publication ordering and seeded history
+ * @deterministic: yes
+ * @fixtures: actual GramJS sender with in-memory Takeout, range, dialog and history replies
+ */
+test("tst_src_tg_takeout_plan_001 publishes every exact chat total before Takeout history", async () => {
+  const clock = new VirtualClock();
+  const now = spyOn(performance, "now").mockImplementation(() => clock.now());
+  const f = await createTransport(clock);
+  const pager = new LiveDialogPager(f.tg, "fixture-takeout");
+  const args = { surface: "telegram", direction: "backward" as const };
+  const takeoutId = bigInt("9223372036854775001");
+  const ranges = [new Api.MessageRange({ minId: 1, maxId: 100 }), new Api.MessageRange({ minId: 101, maxId: 200 })];
+  let wireIndex = 0;
+  const takeoutQuery = (sent: Awaited<ReturnType<typeof f.application>>, range?: Api.MessageRange): unknown => {
+    expect(sent.state.request).toBeInstanceOf(Api.InvokeWithTakeout);
+    const outer = sent.state.request as Api.InvokeWithTakeout;
+    expect(outer.takeoutId.toString()).toBe(takeoutId.toString());
+    if (range === undefined) return outer.query;
+    expect(outer.query).toBeInstanceOf(Api.InvokeWithMessagesRange);
+    const ranged = outer.query as Api.InvokeWithMessagesRange;
+    expect(ranged.range).toMatchObject({ minId: range.minId, maxId: range.maxId });
+    return ranged.query;
+  };
+  const dialog = (chatId: number, topMessage: number): Api.Dialog => new Api.Dialog({
+    peer: new Api.PeerChat({ chatId: bigInt(chatId) }), topMessage,
+    readInboxMaxId: 0, readOutboxMaxId: 0, unreadCount: 0,
+    unreadMentionsCount: 0, unreadReactionsCount: 0, notifySettings: new Api.PeerNotifySettings({}),
+  });
+  try {
+    const estimating = fetch(f.tg, pager, "fixture-takeout", args);
+    let sent = await f.application(wireIndex++);
+    expect(sent.state.request).toBeInstanceOf(Api.account.InitTakeoutSession);
+    expect(sent.state.request).toMatchObject({ messageUsers: true, messageChats: true,
+      messageMegagroups: true, messageChannels: true, files: false });
+    await f.reply(sent, new Api.account.Takeout({ id: takeoutId }));
+
+    sent = await f.application(wireIndex++);
+    expect(takeoutQuery(sent)).toBeInstanceOf(Api.messages.GetSplitRanges);
+    await f.reply(sent, wireVector(ranges));
+
+    sent = await f.application(wireIndex++);
+    expect(takeoutQuery(sent, ranges[0])).toMatchObject({ className: "messages.GetDialogs", limit: 1 });
+    await f.reply(sent, new Api.messages.DialogsSlice({ count: 2,
+      dialogs: [dialog(1, 120)], chats: [wireChat(1)], users: [], messages: [wireMessage(1, 120)] }));
+    sent = await f.application(wireIndex++);
+    expect(takeoutQuery(sent, ranges[0])).toMatchObject({ className: "messages.GetHistory", limit: 1 });
+    await f.reply(sent, new Api.messages.MessagesSlice({ count: 100,
+      messages: [wireMessage(1, 100)], chats: [wireChat(1)], users: [] }));
+    sent = await f.application(wireIndex++);
+    expect(takeoutQuery(sent, ranges[0])).toMatchObject({ className: "messages.GetDialogs", limit: 50 });
+    await f.reply(sent, new Api.messages.Dialogs({
+      dialogs: [dialog(2, 50)], chats: [wireChat(2)], users: [], messages: [wireMessage(2, 50)] }));
+    sent = await f.application(wireIndex++);
+    expect(takeoutQuery(sent, ranges[0])).toMatchObject({ className: "messages.GetHistory", limit: 1 });
+    await f.reply(sent, new Api.messages.MessagesSlice({ count: 50,
+      messages: [wireMessage(2, 50)], chats: [wireChat(2)], users: [] }));
+
+    sent = await f.application(wireIndex++);
+    expect(takeoutQuery(sent, ranges[1])).toMatchObject({ className: "messages.GetDialogs", limit: 1 });
+    await f.reply(sent, new Api.messages.Dialogs({
+      dialogs: [dialog(1, 120)], chats: [wireChat(1)], users: [], messages: [wireMessage(1, 120)] }));
+    sent = await f.application(wireIndex++);
+    expect(takeoutQuery(sent, ranges[1])).toMatchObject({ className: "messages.GetHistory", limit: 1 });
+    await f.reply(sent, new Api.messages.MessagesSlice({ count: 20,
+      messages: [wireMessage(1, 120)], chats: [wireChat(1)], users: [] }));
+
+    const estimate = await estimating;
+    expect(estimate.envelopes).toEqual([]);
+    expect(estimate.hasMore).toBe(true);
+    expect(estimate.nextCursor).toMatchObject({ takeout: { id: takeoutId.toString(), phase: "publish" },
+      chats: { "1": { message_count: 120, ranges: [0, 1] }, "2": { message_count: 50, ranges: [0] } } });
+
+    const published = await fetch(f.tg, pager, "fixture-takeout", { ...args, cursor: estimate.nextCursor });
+    const publishedEnvelopes = published.envelopes as { remote_id: string; payload: Record<string, unknown> }[];
+    expect(publishedEnvelopes.map((envelope) => envelope.remote_id)).toEqual(["tg:chat:1", "tg:chat:2"]);
+    expect(publishedEnvelopes.map((envelope) => envelope.payload.message_count)).toEqual([120, 50]);
+    expect(publishedEnvelopes.some((envelope) => envelope.remote_id.startsWith("tg:msg:"))).toBe(false);
+    expect(f.writes).toHaveLength(wireIndex);
+
+    const seeding = fetch(f.tg, pager, "fixture-takeout", { ...args, cursor: published.nextCursor });
+    sent = await f.application(wireIndex++);
+    expect(takeoutQuery(sent, ranges[1])).toMatchObject({ className: "messages.GetHistory", limit: 100 });
+    await f.reply(sent, new Api.messages.MessagesSlice({ count: 20,
+      messages: Array.from({ length: 20 }, (_, index) => wireMessage(1, 120 - index)), chats: [wireChat(1)], users: [] }));
+    sent = await f.application(wireIndex++);
+    expect(takeoutQuery(sent, ranges[0])).toMatchObject({ className: "messages.GetHistory", limit: 100 });
+    await f.reply(sent, new Api.messages.MessagesSlice({ count: 50,
+      messages: Array.from({ length: 50 }, (_, index) => wireMessage(2, 50 - index)), chats: [wireChat(2)], users: [] }));
+    const seeded = await seeding;
+    const seededIds = (seeded.envelopes as { remote_id: string }[]).map((envelope) => envelope.remote_id);
+    expect(seededIds.filter((id) => id.startsWith("tg:chat:"))).toEqual(["tg:chat:1", "tg:chat:2"]);
+    expect(seededIds.filter((id) => id.startsWith("tg:msg:"))).toHaveLength(70);
+    expect(seeded.traversed).toEqual({ "1": [101, 120], "2": [1, 50] });
+    expect(seeded.hasMore).toBe(false);
+  } finally { await f.close(); now.mockRestore(); }
+});
+
+/** @test-id: tst_src_tg_takeout_resume_002
+ * @scenario: scn_tg_takeout_002
+ * @covers: target cursor resume, terminal checkpoint promotion and finish handshake
+ * @deterministic: yes
+ * @fixtures: actual GramJS sender with in-memory ranged history and finish replies
+ */
+test("tst_src_tg_takeout_resume_002 resumes bounded Takeout history and finishes after persisted intent", async () => {
+  const clock = new VirtualClock();
+  const now = spyOn(performance, "now").mockImplementation(() => clock.now());
+  const f = await createTransport(clock);
+  const takeoutId = "9223372036854775001";
+  const lowerRange = { min_id: 1, max_id: 100 };
+  const upperRange = { min_id: 101, max_id: 250 };
+  const rangeValues = [lowerRange, upperRange];
+  const checkpoint = {
+    takeout: { id: takeoutId, phase: "download", ranges: rangeValues,
+      range_index: 2, range_started: false, dialog_offset: null, pinned_count: 0,
+      publish_index: 1, download_index: 1 },
+    chats: { "1": { chat: { ...fakeChat(1, false), top_message: 250, message_count: 250 },
+      peer: { ty: "chat", id: 1 }, message_count: 250, ranges: [0, 1], last_msg_id: 250 } },
+  };
+  const target = { surface: "telegram", direction: "backward" as const, scope_id: "1",
+    target: { kind: "gap" as const, start: 1, end: 200 }, forward_checkpoint: checkpoint };
+  const rangedHistory = (sent: Awaited<ReturnType<typeof f.application>>, range: { min_id: number; max_id: number }): Api.messages.GetHistory => {
+    expect(sent.state.request).toBeInstanceOf(Api.InvokeWithTakeout);
+    const outer = sent.state.request as Api.InvokeWithTakeout;
+    expect(outer.takeoutId.toString()).toBe(takeoutId);
+    expect(outer.query).toBeInstanceOf(Api.InvokeWithMessagesRange);
+    const ranged = outer.query as Api.InvokeWithMessagesRange;
+    expect(ranged.range).toMatchObject({ minId: range.min_id, maxId: range.max_id });
+    expect(ranged.query).toBeInstanceOf(Api.messages.GetHistory);
+    return ranged.query as Api.messages.GetHistory;
+  };
+  const boolTrue = { getBytes: (): Buffer => {
+    const bytes = Buffer.alloc(4);
+    bytes.writeUInt32LE(0x997275b5);
+    return bytes;
+  } };
+  try {
+    const firstPage = fetch(f.tg, new LiveDialogPager(f.tg, "fixture-takeout"), "fixture-takeout", target);
+    let sent = await f.application(0);
+    expect(rangedHistory(sent, upperRange)).toMatchObject({ offsetId: 201, limit: 100 });
+    clock.advance(20_000);
+    await f.reply(sent, new Api.messages.MessagesSlice({ count: 150,
+      messages: Array.from({ length: 100 }, (_, index) => wireMessage(1, 200 - index)), chats: [wireChat(1)], users: [] }));
+    const continued = await firstPage;
+    expect(continued.traversed).toEqual({ "1": [101, 200] });
+    expect(continued.progress).toMatchObject({ kind: "continueTarget" });
+    expect(continued).not.toHaveProperty("nextCursor");
+
+    const continuationToken = JSON.parse(JSON.stringify(
+      (continued.progress as { continuationToken: unknown }).continuationToken,
+    )) as unknown;
+    const resumedPage = fetch(f.tg, new LiveDialogPager(f.tg, "fixture-takeout"), "fixture-takeout",
+      { ...target, cursor: continuationToken });
+    sent = await f.application(1);
+    expect(rangedHistory(sent, lowerRange)).toMatchObject({ offsetId: 101, limit: 100 });
+    await f.reply(sent, new Api.messages.MessagesSlice({ count: 100,
+      messages: Array.from({ length: 100 }, (_, index) => wireMessage(1, 100 - index)), chats: [wireChat(1)], users: [] }));
+    const completed = await resumedPage;
+    expect(completed.traversed).toEqual({ "1": [1, 100] });
+    expect(completed.progress).toMatchObject({ kind: "completeTarget", forwardCheckpoint: { kind: "replace" } });
+    expect(f.writes.filter((write) => write.method === "messages.GetDialogs")).toHaveLength(0);
+
+    const promoted = (completed.progress as {
+      forwardCheckpoint: { value: unknown };
+    }).forwardCheckpoint.value;
+    const intent = await fetch(f.tg, new LiveDialogPager(f.tg, "fixture-takeout"), "fixture-takeout",
+      { surface: "telegram", direction: "forward", cursor: promoted });
+    expect(intent.envelopes).toEqual([]);
+    expect(intent.nextCursor).toMatchObject({ takeout: { phase: "finish" } });
+    expect(f.writes).toHaveLength(2);
+
+    const finishing = fetch(f.tg, new LiveDialogPager(f.tg, "fixture-takeout"), "fixture-takeout",
+      { surface: "telegram", direction: "forward", cursor: intent.nextCursor });
+    sent = await f.application(2);
+    expect(sent.state.request).toBeInstanceOf(Api.InvokeWithTakeout);
+    const outer = sent.state.request as Api.InvokeWithTakeout;
+    expect(outer.query).toBeInstanceOf(Api.account.FinishTakeoutSession);
+    expect(outer.query).toMatchObject({ success: true });
+    await f.reply(sent, boolTrue);
+    const finished = await finishing;
+    expect(finished.nextCursor).not.toHaveProperty("takeout");
+    expect(finished.nextCursor).toMatchObject({ chats: { "1": { last_msg_id: 250, message_count: 250 } } });
+
+    const alreadyFinished = fetch(f.tg, new LiveDialogPager(f.tg, "fixture-takeout"), "fixture-takeout",
+      { surface: "telegram", direction: "forward", cursor: intent.nextCursor });
+    sent = await f.application(3);
+    await f.reply(sent, new Api.RpcError({ errorCode: 400, errorMessage: "TAKEOUT_INVALID" }));
+    expect((await alreadyFinished).nextCursor).not.toHaveProperty("takeout");
+
+    const expired = await settled(fetch(f.tg, new LiveDialogPager(f.tg, "fixture-takeout"), "fixture-takeout",
+      { ...target, cursor: undefined, forward_checkpoint: { chats: {} } }));
+    expect(expired.value).toMatchObject({ name: "CursorExpiredError" });
+    expect(f.writes).toHaveLength(4);
+  } finally { await f.close(); now.mockRestore(); }
+});
 
 /** @test-id: tst_src_tgfast_002
  * @scenario: scn_tg_sync_003
@@ -247,78 +465,28 @@ test("tst_src_tgfast_005 a complete first page states the chat's count; an offse
  * @deterministic: yes
  * @fixtures: real Source/GramJS fake-wire count-bearing and count-absent history responses
  */
-test("tst_src_tgfast_004 bounded fetch preserves provider totals without inventing missing counts", async () => {
+test("tst_src_tgfast_004 bounded fetch preserves the committed Takeout total", async () => {
   const clock = new VirtualClock();
   const now = spyOn(performance, "now").mockImplementation(() => clock.now());
   const f = await createTransport(clock);
   try {
-    f.tg.cachePeer(42, wireChat(42));
     for (const [index, total] of [78, 1, null].entries()) {
-      const pending = fetch(f.tg, unusedPager, "fixture-fast", gapArgs("42", 9, 9));
+      const pending = fetch(f.tg, unusedPager, "fixture-fast", gapArgs("42", 9, 9, 137));
       clock.advance(3000);
       const sent = await f.application(index);
+      expect(sent.state.request).toBeInstanceOf(Api.InvokeWithTakeout);
+      const outer = sent.state.request as Api.InvokeWithTakeout;
+      expect(outer.query).toBeInstanceOf(Api.InvokeWithMessagesRange);
+      const ranged = outer.query as Api.InvokeWithMessagesRange;
+      expect(ranged.query).toMatchObject({ className: "messages.GetHistory", offsetId: 10, limit: 100 });
       const messages = [wireMessage(42, 9)];
       await f.reply(sent, total === null ? new Api.messages.Messages({ messages, chats: [], users: [] })
         : new Api.messages.MessagesSlice({ count: total, messages, chats: [], users: [] }));
       const result = await pending;
-      expect(result.total).toBe(total);
-      expect(result.hasMore).toBe(false);
-      expect(result.nextCursor).toBeNull();
+      expect(result.total).toBe(137);
+      expect(result.progress).toMatchObject({ kind: "completeTarget" });
     }
-    // The existing ops seam represents a provider adapter with no count at all.
-    const missing = await fetch(fakeOps([]), unusedPager, "fixture-fast", gapArgs("42", 1, 1));
-    expect(missing.total).toBeNull();
-
-    // A cold peer lookup spends the same deadline, not a separate 60-second
-    // allowance followed by another history timeout after the host has left.
-    const pending = settled(fetch(new TgClient(f.client), unusedPager, "fixture-fast", gapArgs("43", 1, 1)));
-    const sent = await f.application(3);
-    expect(sent.method).toBe("messages.GetDialogs");
-    clock.advance(20_000);
-    await f.reply(sent, new Api.messages.Dialogs({
-      dialogs: [new Api.Dialog({ peer: new Api.PeerChat({ chatId: bigInt(43) }),
-        topMessage: 9, readInboxMaxId: 0, readOutboxMaxId: 0, unreadCount: 0,
-        unreadMentionsCount: 0, unreadReactionsCount: 0, notifySettings: new Api.PeerNotifySettings({}) })],
-      chats: [wireChat(43)], users: [], messages: [wireMessage(43, 9)],
-    }));
-    const timedOut = await pending;
-    expect(timedOut.kind).toBe("rejected");
-    expect(timedOut.value).toMatchObject({ name: "MtprotoTimeoutError" });
-    expect(f.writes).toHaveLength(4);
-
-    let expirePeer: (() => void) | undefined;
-    const timerHost: { setTimeout(callback: (...args: unknown[]) => void, delay?: number, ...args: unknown[]): ReturnType<typeof setTimeout> } = globalThis;
-    const timer = spyOn(timerHost, "setTimeout").mockImplementation((callback, delay, ...args) => {
-      const handle = nativeTimeout(callback, delay, ...args);
-      if (delay === 20_000) { clearTimeout(handle); expirePeer = () => callback(...args); }
-      return handle;
-    });
-    try {
-      const lookup = settled(fetch(new TgClient(f.client), unusedPager, "fixture-fast", gapArgs("9999", 1, 1)));
-      const discovery = await f.application(4);
-      if (!expirePeer) throw new Error("Gap fetch deadline was not armed");
-      expirePeer();
-      expect((await lookup).value).toMatchObject({ name: "MtprotoTimeoutError" });
-      const ids = Array.from({ length: 50 }, (_, i) => 3000 + i);
-      await f.reply(discovery, new Api.messages.DialogsSlice({ count: 100,
-        dialogs: ids.map((id) => new Api.Dialog({ peer: new Api.PeerChat({ chatId: bigInt(id) }),
-          topMessage: 9, readInboxMaxId: 0, readOutboxMaxId: 0, unreadCount: 0,
-          unreadMentionsCount: 0, unreadReactionsCount: 0, notifySettings: new Api.PeerNotifySettings({}) })),
-        chats: ids.map(wireChat), users: [], messages: ids.map((id) => wireMessage(id, 9)),
-      }));
-      await new Promise<void>((resolve) => { setImmediate(resolve); });
-      expect(f.writes).toHaveLength(5);
-    } finally { timer.mockRestore(); }
-    for (const [index, invalid] of [
-      new Api.messages.MessagesNotModified({ count: 78 }),
-      new Api.messages.MessagesSlice({ count: -1, messages: [], chats: [], users: [] }),
-    ].entries()) {
-      const reading = settled(fetch(f.tg, unusedPager, "fixture-fast", gapArgs("42", 1, 1)));
-      await f.reply(await f.application(5 + index), invalid);
-      const failed = await reading;
-      expect(failed.kind).toBe("rejected");
-      expect(failed.value).not.toHaveProperty("envelopes");
-    }
+    expect(f.writes.filter((sent) => sent.state.request instanceof Api.messages.GetDialogs)).toHaveLength(0);
   } finally { await f.close(); now.mockRestore(); }
 });
 

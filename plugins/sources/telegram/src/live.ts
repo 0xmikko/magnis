@@ -17,13 +17,15 @@ import type { AdmissionClock, AdmissionEvent } from "./request-admission";
 import type {
   DialogOffset,
   DialogPage,
-  DialogPager,
   EntityLike,
   MessageLike,
   MessagePage,
   PendingDialog,
   PagedDialog,
   RawDialogLike,
+  TakeoutContext,
+  TakeoutPager,
+  TakeoutRange,
   TgCreds,
 } from "./client";
 import {
@@ -253,6 +255,19 @@ function membershipEndOf(update: Api.UpdateChatParticipant | Api.UpdateChannelPa
   };
 }
 
+function takeoutId(value: string): bigInt.BigInteger {
+  if (!/^\d+$/.test(value)) throw new Error("Telegram Takeout id must be a decimal string");
+  return bigInt(value);
+}
+
+function messageRange(range: TakeoutRange): Api.MessageRange {
+  if (!Number.isSafeInteger(range.min_id) || !Number.isSafeInteger(range.max_id) ||
+      range.min_id < 0 || range.max_id < range.min_id) {
+    throw new Error("Telegram Takeout range is invalid");
+  }
+  return new Api.MessageRange({ minId: range.min_id, maxId: range.max_id });
+}
+
 /** A connected gramjs client + a peer cache for resolving chat ids. */
 export class TgClient implements TgOps {
   private readonly peerCache = new Map<number, EntityLike>();
@@ -261,6 +276,51 @@ export class TgClient implements TgOps {
   private discoveryPage: Promise<void> | undefined;
 
   constructor(readonly client: TelegramClient) {}
+
+  async initTakeout(): Promise<string> {
+    const result = await withTimeout(this.client.invoke(new Api.account.InitTakeoutSession({
+      messageUsers: true,
+      messageChats: true,
+      messageMegagroups: true,
+      messageChannels: true,
+      files: false,
+    })), MTPROTO_REQUEST_TIMEOUT_MS, "account.initTakeoutSession");
+    if (!(result instanceof Api.account.Takeout)) throw new Error("Telegram returned an invalid Takeout session");
+    return result.id.toString();
+  }
+
+  async takeoutRanges(id: string): Promise<TakeoutRange[]> {
+    const result = await withTimeout(this.client.invoke(new Api.InvokeWithTakeout({
+      takeoutId: takeoutId(id),
+      query: new Api.messages.GetSplitRanges(),
+    })), MTPROTO_REQUEST_TIMEOUT_MS, "messages.getSplitRanges");
+    if (!Array.isArray(result)) throw new Error("Telegram returned invalid Takeout split ranges");
+    return result.map((range) => {
+      if (!(range instanceof Api.MessageRange) || !Number.isSafeInteger(range.minId) ||
+          !Number.isSafeInteger(range.maxId) || range.minId < 0 || range.maxId < range.minId) {
+        throw new Error("Telegram returned an invalid Takeout split range");
+      }
+      return { min_id: range.minId, max_id: range.maxId };
+    });
+  }
+
+  async finishTakeout(id: string): Promise<void> {
+    await withTimeout(this.client.invoke(new Api.InvokeWithTakeout({
+      takeoutId: takeoutId(id),
+      query: new Api.account.FinishTakeoutSession({ success: true }),
+    })), MTPROTO_REQUEST_TIMEOUT_MS, "account.finishTakeoutSession");
+  }
+
+  async takeoutDialogs(
+    request: Api.messages.GetDialogs,
+    takeout: TakeoutContext,
+    timeoutMs: number,
+  ): Promise<Api.messages.TypeDialogs> {
+    return await withTimeout(this.client.invoke(new Api.InvokeWithTakeout({
+      takeoutId: takeoutId(takeout.id),
+      query: new Api.InvokeWithMessagesRange({ range: messageRange(takeout.range), query: request }),
+    })) as Promise<Api.messages.TypeDialogs>, Math.min(timeoutMs, MTPROTO_REQUEST_TIMEOUT_MS), "messages.getDialogs(takeout)");
+  }
 
   /** Connect from the injected credentials. The session must already be
    * authorized (a gramjs StringSession minted by `magnis.auth.*`). */
@@ -336,19 +396,25 @@ export class TgClient implements TgOps {
 
   async getMessages(
     peer: unknown,
-    params: { limit?: number; offsetId?: number; ids?: number[] },
+    params: { limit?: number; offsetId?: number; ids?: number[]; takeout?: TakeoutContext },
     timeoutMs = MTPROTO_REQUEST_TIMEOUT_MS,
   ): Promise<MessagePage> {
     if (timeoutMs <= 0) throw new MtprotoTimeoutError("getMessages", timeoutMs);
     const read = async (): Promise<MessagePage> => {
       const input = peer !== null && typeof peer === "object" && "ty" in peer
         ? toInputPeer(peer as DialogOffset["offset_peer"]) : await this.client.getInputEntity(peer as never);
-      if (params.ids !== undefined) return await this.client.getMessages(input, params) as unknown as MessagePage;
+      if (params.ids !== undefined) return await this.client.getMessages(input, { ids: params.ids }) as unknown as MessagePage;
       // @tested-by: tst_src_tgfast_004 — TGFAST_002 reads one provider page and
       // preserves count provenance; SDK iterMessages invents total=page.length.
-      const result = await this.client.invoke(new Api.messages.GetHistory({ peer: input,
+      const request = new Api.messages.GetHistory({ peer: input,
         offsetId: params.offsetId ?? 0, offsetDate: 0, addOffset: 0,
-        limit: Math.min(params.limit ?? BOOTSTRAP_MESSAGES_PER_CHAT, TELEGRAM_HISTORY_PAGE_SIZE), maxId: 0, minId: 0, hash: bigInt(0) }));
+        limit: Math.min(params.limit ?? BOOTSTRAP_MESSAGES_PER_CHAT, TELEGRAM_HISTORY_PAGE_SIZE), maxId: 0, minId: 0, hash: bigInt(0) });
+      const result = (params.takeout === undefined
+        ? await this.client.invoke(request)
+        : await this.client.invoke(new Api.InvokeWithTakeout({
+            takeoutId: takeoutId(params.takeout.id),
+            query: new Api.InvokeWithMessagesRange({ range: messageRange(params.takeout.range), query: request }),
+          }))) as Api.messages.TypeMessages;
       if (result instanceof Api.messages.MessagesNotModified) throw new Error("GetHistory returned NotModified with hash=0");
       if ("count" in result && (!Number.isSafeInteger(result.count) || result.count < 0)) {
         throw new Error("GetHistory returned an invalid message count");
@@ -490,15 +556,27 @@ function toInputPeer(peer: DialogOffset["offset_peer"]): Api.TypeInputPeer {
 
 /** Live `DialogPager` over a connected gramjs client. Resumes
  * `messages.getDialogs` from the persisted offset. */
-export class LiveDialogPager implements DialogPager {
+export class LiveDialogPager implements TakeoutPager {
   constructor(
     private readonly tg: TgClient,
     private readonly accountId: string,
   ) {}
 
+  async initTakeout(): Promise<string> {
+    return await this.tg.initTakeout();
+  }
+
+  async takeoutRanges(id: string): Promise<TakeoutRange[]> {
+    return await this.tg.takeoutRanges(id);
+  }
+
+  async finishTakeout(id: string): Promise<void> {
+    await this.tg.finishTakeout(id);
+  }
+
   /** Shared discovery decoder; peer lookups do not need history hydration. */
   static async discoverPage(tg: TgClient, offset: DialogOffset | null, limit: number,
-    timeoutMs = MTPROTO_REQUEST_TIMEOUT_MS): Promise<{
+    timeoutMs = MTPROTO_REQUEST_TIMEOUT_MS, takeout?: TakeoutContext): Promise<{
     dialogs: CatchupDialog[];
     next_offset: DialogOffset | null;
     total: number;
@@ -516,11 +594,9 @@ export class LiveDialogPager implements DialogPager {
       hash: bigInt(0),
     });
 
-    const res = await withTimeout(
-      tg.client.invoke(request),
-      Math.min(timeoutMs, MTPROTO_REQUEST_TIMEOUT_MS),
-      "messages.getDialogs",
-    );
+    const res = takeout === undefined
+      ? await withTimeout(tg.client.invoke(request), Math.min(timeoutMs, MTPROTO_REQUEST_TIMEOUT_MS), "messages.getDialogs")
+      : await tg.takeoutDialogs(request, takeout, timeoutMs);
 
     // `total`: only the Slice variant carries an authoritative server-side count
     // (messages.dialogsSlice.count); the complete (non-slice) Dialogs variant has
@@ -607,12 +683,14 @@ export class LiveDialogPager implements DialogPager {
   }
 
   async dialogPage(offset: DialogOffset | null, limit: number,
-    options: { hydrate?: boolean; timeoutMs?: number } = {}): Promise<DialogPage> {
+    options: { hydrate?: boolean; timeoutMs?: number; takeout?: TakeoutContext } = {}): Promise<DialogPage> {
     const deadline = performance.now() + Math.min(options.timeoutMs ?? SOURCE_PAGE_BUDGET_MS, SOURCE_PAGE_BUDGET_MS);
     remainingPageBudget(deadline);
     let continuation = offset?.hydration;
     if (continuation === undefined) {
-      const page = await LiveDialogPager.discoverPage(this.tg, offset, limit, remainingPageBudget(deadline));
+      const page = await LiveDialogPager.discoverPage(
+        this.tg, offset, limit, remainingPageBudget(deadline), options.takeout,
+      );
       continuation = { next_offset: page.next_offset, total: page.total,
         pending: page.dialogs.map(({ entity, raw, pinned }): PendingDialog => ({
           chat: chatToIntermediate(entity, buildDialogMeta(raw, pinned, 0)), peer: offsetPeerFromEntity(entity),
@@ -635,7 +713,10 @@ export class LiveDialogPager implements DialogPager {
       // snapshot cannot certify a successful page or advance its cursor.
       let fetched: { ok: true; messages: ReturnType<typeof messageToIntermediate>[] } | { ok: false; error: unknown };
       try {
-        const msgs = await this.tg.getMessages(item.peer, { limit: BOOTSTRAP_MESSAGES_PER_CHAT });
+        const msgs = await this.tg.getMessages(item.peer, {
+          limit: BOOTSTRAP_MESSAGES_PER_CHAT,
+          ...(options.takeout === undefined ? {} : { takeout: options.takeout }),
+        });
         // The same answer states the chat's exact message count; the chat keeps it.
         if (msgs.total !== undefined) chat.message_count = msgs.total;
         fetched = { ok: true, messages: msgs.map((m) => messageToIntermediate(m, this.accountId, chatId)) };

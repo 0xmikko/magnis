@@ -12,9 +12,13 @@ import type {
   EntityLike,
   MessageLike,
   MessagePage,
+  OffsetPeer,
   RawDialogLike,
+  TakeoutContext,
+  TakeoutPager,
+  TakeoutRange,
 } from "../../client";
-import type { FetchArgs } from "@magnis/connector-sdk";
+import { CursorExpiredError, type FetchArgs } from "@magnis/connector-sdk";
 import {
   buildDialogMeta,
   MtprotoTimeoutError,
@@ -26,7 +30,6 @@ import {
   chatToIntermediate,
   messageToIntermediate,
   sendWithFloodRetry,
-  withTimeout,
 } from "../../client";
 import { chatEnvelope, messageEnvelope, toRfc3339Utc, type TgChat } from "./envelope";
 
@@ -54,7 +57,7 @@ export interface TgOps {
   resolvePeer(chatId: number, signal?: AbortSignal): Promise<unknown>;
   getMessages(
     peer: unknown,
-    params: { limit?: number; offsetId?: number; ids?: number[] },
+    params: { limit?: number; offsetId?: number; ids?: number[]; takeout?: TakeoutContext },
     timeoutMs?: number,
   ): Promise<MessagePage>;
   sendMessage(
@@ -64,6 +67,86 @@ export interface TgOps {
   /** Download the message's media to `dest`; returns the bytes written. Throws
    * when the message carries no downloadable media. */
   downloadMedia(message: MessageLike, dest: string): Promise<number>;
+}
+
+interface TakeoutChatCheckpoint {
+  chat: TgChat;
+  peer: OffsetPeer;
+  message_count: number;
+  ranges: number[];
+  last_msg_id: number;
+}
+
+interface TakeoutCheckpoint {
+  id: string;
+  phase: "estimate" | "publish" | "download" | "finish";
+  ranges: TakeoutRange[];
+  range_index: number;
+  range_started: boolean;
+  dialog_offset: DialogOffset | null;
+  pinned_count: number;
+  publish_index: number;
+  download_index: number;
+}
+
+interface TelegramCheckpoint {
+  takeout: TakeoutCheckpoint;
+  chats: Record<string, TakeoutChatCheckpoint>;
+}
+
+interface TakeoutTargetCursor {
+  checkpoint: TelegramCheckpoint;
+  target: {
+    scope_id: string;
+    start: number;
+    end: number;
+    range_index: number;
+    before_message_id: number;
+  };
+}
+
+function takeoutPager(pager: DialogPager): TakeoutPager {
+  const candidate = pager as Partial<TakeoutPager>;
+  if (typeof candidate.initTakeout !== "function" || typeof candidate.takeoutRanges !== "function" ||
+      typeof candidate.finishTakeout !== "function") {
+    throw new Error("Telegram bootstrap requires a Takeout-capable dialog pager");
+  }
+  return candidate as TakeoutPager;
+}
+
+function checkpoint(value: unknown): TelegramCheckpoint | undefined {
+  const root = asObject(value);
+  const rawTakeout = asObject(root?.takeout);
+  if (root === undefined || rawTakeout === undefined) return undefined;
+  const copy = structuredClone(root);
+  const takeout = asObject(copy.takeout);
+  const chats = asObject(copy.chats);
+  if (takeout === undefined || chats === undefined || typeof takeout.id !== "string" || !/^\d+$/.test(takeout.id) ||
+      !["estimate", "publish", "download", "finish"].includes(String(takeout.phase)) ||
+      !Array.isArray(takeout.ranges) || !Number.isSafeInteger(takeout.range_index) ||
+      typeof takeout.range_started !== "boolean" || !Number.isSafeInteger(takeout.pinned_count) ||
+      !Number.isSafeInteger(takeout.publish_index) || !Number.isSafeInteger(takeout.download_index)) {
+    throw new Error("Telegram Takeout checkpoint is invalid");
+  }
+  for (const range of takeout.ranges) {
+    const item = asObject(range);
+    if (item === undefined || !Number.isSafeInteger(item.min_id) || !Number.isSafeInteger(item.max_id) ||
+        (item.min_id as number) < 0 || (item.max_id as number) < (item.min_id as number)) {
+      throw new Error("Telegram Takeout checkpoint range is invalid");
+    }
+  }
+  return copy as unknown as TelegramCheckpoint;
+}
+
+function takeoutContext(state: TelegramCheckpoint, rangeIndex: number): TakeoutContext {
+  const range = state.takeout.ranges[rangeIndex];
+  if (range === undefined) throw new Error("Telegram Takeout checkpoint range is missing");
+  return { id: state.takeout.id, range };
+}
+
+function envelopeBytes(envelopes: Record<string, unknown>[]): number {
+  return envelopes.reduce((total, envelope, index) =>
+    total + new TextEncoder().encode(JSON.stringify(envelope)).byteLength + (index === 0 ? 0 : 1), 0);
 }
 
 /** Cursor shape helpers — the cursor is arbitrary host-round-tripped JSON. */
@@ -87,11 +170,185 @@ export async function fetch(
   args: FetchArgs,
 ): Promise<Record<string, unknown>> {
   if (args.target?.kind === "gap") {
-    return await fetchGap(ops, accountId, args.scope_id, args.target, args.cursor);
+    return await fetchGap(ops, accountId, args.scope_id, args.target, args.cursor, args.forward_checkpoint);
   }
-  return args.direction === "forward"
-    ? await runCatchup(ops, accountId, args.cursor, pager)
-    : await runBootstrap(args.cursor, pager);
+  if (args.direction === "forward") {
+    const state = checkpoint(args.cursor);
+    if (state === undefined) return await runCatchup(ops, accountId, args.cursor, pager);
+    if (state.takeout.phase === "download") {
+      if (state.takeout.download_index !== Object.keys(state.chats).length) {
+        throw new CursorExpiredError("Telegram Takeout seed is incomplete");
+      }
+      state.takeout.phase = "finish";
+      return { envelopes: [], nextCursor: state, hasMore: true };
+    }
+    if (state.takeout.phase !== "finish") {
+      throw new CursorExpiredError("Telegram Takeout bootstrap is incomplete");
+    }
+    try {
+      await takeoutPager(pager).finishTakeout(state.takeout.id);
+    } catch (error) {
+      if (!takeoutInvalid(error)) throw error;
+    }
+    return {
+      envelopes: [],
+      nextCursor: {
+        chats: Object.fromEntries(Object.entries(state.chats).map(([scopeId, chat]) =>
+          [scopeId, { last_msg_id: chat.last_msg_id, message_count: chat.message_count }])),
+      },
+      hasMore: true,
+    };
+  }
+  return await runTakeoutBootstrap(ops, takeoutPager(pager), accountId, args.cursor);
+}
+
+function takeoutInvalid(error: unknown): boolean {
+  const seen = new Set<unknown>();
+  for (let current = error; current !== undefined && !seen.has(current);) {
+    seen.add(current);
+    if (current !== null && typeof current === "object" &&
+        "errorMessage" in current && current.errorMessage === "TAKEOUT_INVALID") return true;
+    current = current instanceof Error ? current.cause : undefined;
+  }
+  return false;
+}
+
+/** Exact initial history: estimate every range, publish fixed chat totals, then
+ * seed newest messages. Each phase is a committed Source page boundary. */
+export async function runTakeoutBootstrap(
+  ops: TgOps,
+  pager: TakeoutPager,
+  accountId: string,
+  cursor: unknown,
+): Promise<Record<string, unknown>> {
+  let state = checkpoint(cursor);
+  if (state === undefined) {
+    const id = await pager.initTakeout();
+    const ranges = await pager.takeoutRanges(id);
+    state = {
+      takeout: {
+        id,
+        phase: "estimate",
+        ranges,
+        range_index: 0,
+        range_started: false,
+        dialog_offset: null,
+        pinned_count: 0,
+        publish_index: 0,
+        download_index: 0,
+      },
+      chats: {},
+    };
+  }
+
+  if (state.takeout.phase === "estimate") {
+    const deadline = performance.now() + SOURCE_PAGE_BUDGET_MS;
+    while (state.takeout.range_index < state.takeout.ranges.length) {
+      const rangeIndex = state.takeout.range_index;
+      const firstPage = !state.takeout.range_started;
+      const page = await pager.dialogPage(firstPage ? null : state.takeout.dialog_offset,
+        firstPage ? 1 : BOOTSTRAP_BATCH_DIALOGS, {
+          hydrate: false,
+          timeoutMs: remainingPageBudget(deadline),
+          takeout: takeoutContext(state, rangeIndex),
+        });
+      state.takeout.range_started = true;
+      state.takeout.dialog_offset = page.next_offset;
+      for (const dialog of page.dialogs) {
+        if (dialog.peer === undefined) throw new Error("Telegram Takeout dialog is missing its peer");
+        const key = String(dialog.chat.chat_id);
+        let chat = state.chats[key];
+        if (chat === undefined) {
+          const snapshot = { ...dialog.chat };
+          if (snapshot.is_pinned) snapshot.pin_order = state.takeout.pinned_count++;
+          chat = { chat: snapshot, peer: dialog.peer, message_count: 0, ranges: [], last_msg_id: 0 };
+          state.chats[key] = chat;
+        }
+        if (!chat.ranges.includes(rangeIndex)) {
+          const counted = await ops.getMessages(dialog.peer, {
+            limit: 1,
+            takeout: takeoutContext(state, rangeIndex),
+          }, remainingPageBudget(deadline));
+          if (counted.total === undefined) throw new Error("Telegram Takeout history count is missing");
+          chat.message_count += counted.total;
+          chat.ranges.push(rangeIndex);
+          chat.chat = { ...dialog.chat, pin_order: chat.chat.pin_order, message_count: chat.message_count };
+        }
+      }
+      if (page.next_offset === null) {
+        state.takeout.range_index += 1;
+        state.takeout.range_started = false;
+        state.takeout.dialog_offset = null;
+      }
+      if (performance.now() >= deadline && state.takeout.range_index < state.takeout.ranges.length) {
+        return { envelopes: [], nextCursor: state, hasMore: true };
+      }
+    }
+    state.takeout.phase = "publish";
+    state.takeout.publish_index = 0;
+    return { envelopes: [], nextCursor: state, hasMore: true };
+  }
+
+  const keys = Object.keys(state.chats);
+  if (state.takeout.phase === "publish") {
+    const envelopes: Record<string, unknown>[] = [];
+    while (state.takeout.publish_index < keys.length) {
+      const chat = state.chats[keys[state.takeout.publish_index] ?? ""];
+      if (chat === undefined) throw new Error("Telegram Takeout publish checkpoint is invalid");
+      const envelope = chatEnvelope({ ...chat.chat, message_count: chat.message_count });
+      const bytes = envelopeBytes([...envelopes, envelope]);
+      if (bytes > SOURCE_PAGE_BUDGET_BYTES) {
+        if (envelopes.length === 0) throw new Error("Telegram chat envelope exceeds the Source page budget");
+        break;
+      }
+      envelopes.push(envelope);
+      state.takeout.publish_index += 1;
+    }
+    if (state.takeout.publish_index === keys.length) {
+      state.takeout.phase = "download";
+      state.takeout.download_index = 0;
+    }
+    return { envelopes, nextCursor: state, hasMore: true };
+  }
+
+  if (state.takeout.phase !== "download") {
+    throw new Error("Telegram Takeout finish checkpoint cannot bootstrap");
+  }
+
+  const deadline = performance.now() + SOURCE_PAGE_BUDGET_MS;
+  const envelopes: Record<string, unknown>[] = [];
+  const traversed: TraversedRanges = {};
+  while (state.takeout.download_index < keys.length) {
+    const key = keys[state.takeout.download_index];
+    if (key === undefined) throw new Error("Telegram Takeout download checkpoint is invalid");
+    const chat = state.chats[key];
+    if (chat === undefined) throw new Error("Telegram Takeout download checkpoint is invalid");
+    const rangeIndex = [...chat.ranges].sort((left, right) =>
+      (state.takeout.ranges[right]?.max_id ?? -1) - (state.takeout.ranges[left]?.max_id ?? -1))[0];
+    if (rangeIndex === undefined) throw new Error("Telegram Takeout chat has no recorded range");
+    const messages = await ops.getMessages(chat.peer, {
+      limit: TELEGRAM_HISTORY_PAGE_SIZE,
+      takeout: takeoutContext(state, rangeIndex),
+    }, remainingPageBudget(deadline));
+    const page = [chatEnvelope({ ...chat.chat, message_count: chat.message_count }),
+      ...messages.map((message) => messageEnvelope(messageToIntermediate(message, accountId, chat.chat.chat_id), "snapshot"))];
+    if (envelopeBytes([...envelopes, ...page]) > SOURCE_PAGE_BUDGET_BYTES) {
+      if (envelopes.length === 0) throw new Error("Telegram seed page exceeds the Source page budget");
+      break;
+    }
+    envelopes.push(...page);
+    if (messages.length > 0) {
+      const ids = messages.map((message) => message.id);
+      const oldest = Math.min(...ids);
+      const newest = Math.max(...ids);
+      traversed[key] = [oldest, newest];
+      chat.last_msg_id = newest;
+    }
+    state.takeout.download_index += 1;
+    if (performance.now() >= deadline) break;
+  }
+  const hasMore = state.takeout.download_index < keys.length;
+  return { envelopes, nextCursor: state, hasMore, traversed };
 }
 
 /** Pure offset-resumed bootstrap loop. Reads the dialog-offset + the per-chat
@@ -512,6 +769,7 @@ async function fetchGap(
   scopeId: string | undefined,
   target: { kind: "gap"; start: number; end: number },
   cursor: unknown,
+  forwardCheckpoint: unknown,
 ): Promise<Record<string, unknown>> {
   if (scopeId === undefined || !/^-?\d+$/.test(scopeId)) throw new Error("gap fetch requires numeric scope_id");
   const chatId = Number(scopeId);
@@ -524,86 +782,149 @@ async function fetchGap(
   ) {
     throw new Error("gap fetch requires a positive ordered target");
   }
-  const continuation = argI64({ cursor }, "cursor");
-  if (cursor !== undefined && continuation === undefined) throw new Error("gap fetch requires a numeric cursor");
-  const beforeMessageId = continuation ?? target.end + 1;
-  if (beforeMessageId <= target.start || beforeMessageId > target.end + 1) {
-    throw new Error("gap cursor is outside its target");
+  let continuation: TakeoutTargetCursor;
+  if (cursor === undefined) {
+    const state = checkpoint(forwardCheckpoint);
+    if (state === undefined) throw new CursorExpiredError("Telegram bounded history requires a Takeout checkpoint");
+    const chat = state.chats[scopeId];
+    if (state.takeout.phase !== "download" || chat === undefined) {
+      throw new CursorExpiredError("Telegram bounded history checkpoint is stale");
+    }
+    const ranges = targetRanges(state, chat, target);
+    const rangeIndex = ranges[0];
+    if (rangeIndex === undefined) {
+      return {
+        envelopes: [],
+        traversed: { [scopeId]: [target.start, target.end] },
+        progress: { kind: "completeTarget", forwardCheckpoint: { kind: "replace", value: state } },
+        total: chat.message_count,
+      };
+    }
+    const range = state.takeout.ranges[rangeIndex];
+    if (range === undefined) throw new Error("Telegram Takeout target range is missing");
+    continuation = { checkpoint: state, target: { scope_id: scopeId, start: target.start, end: target.end,
+      range_index: rangeIndex, before_message_id: Math.min(target.end, range.max_id) + 1 } };
+  } else {
+    const raw = asObject(cursor);
+    const state = checkpoint(raw?.checkpoint);
+    const progress = asObject(raw?.target);
+    if (state === undefined || progress?.scope_id !== scopeId ||
+        progress.start !== target.start || progress.end !== target.end ||
+        !Number.isSafeInteger(progress.range_index) || !Number.isSafeInteger(progress.before_message_id)) {
+      throw new Error("Telegram Takeout target cursor is invalid");
+    }
+    continuation = { checkpoint: state, target: progress as unknown as TakeoutTargetCursor["target"] };
   }
-  const lowerMessageId = target.start;
-  const upperMessageId = beforeMessageId - 1;
+  const state = continuation.checkpoint;
+  const chat = state.chats[scopeId];
+  if (state.takeout.phase !== "download" || chat === undefined) {
+    throw new CursorExpiredError("Telegram bounded history checkpoint is stale");
+  }
+  const ranges = targetRanges(state, chat, target);
+  let rangePosition = ranges.indexOf(continuation.target.range_index);
+  if (rangePosition < 0) throw new Error("Telegram Takeout target cursor range is invalid");
+  let before = continuation.target.before_message_id;
+  const invocationUpper = before - 1;
+  if (before <= target.start || before > target.end + 1) throw new Error("Telegram Takeout target cursor is outside its gap");
   const deadline = performance.now() + SOURCE_PAGE_BUDGET_MS;
-  const controller = new AbortController();
-  let peer: unknown;
-  try {
-    peer = await withTimeout(ops.resolvePeer(chatId, controller.signal),
-      remainingPageBudget(deadline), "backfill peer discovery");
-  } finally {
-    controller.abort();
-  }
   const envelopes: Record<string, unknown>[] = [];
   let oldest: number | null = null;
-  let total: number | null = null;
   let envelopeBytes = 0;
-  let before = beforeMessageId;
   let complete = false;
-  // Stamp the connection's account_id into every backfilled message's source_ref.
-  // Previously hardcoded "" — which the host did NOT re-stamp for the external
-  // connector, so backfilled media records carried account_id="" and the
-  // file-download worker resolved the session for account '' and never
-  // downloaded the attachment.
   providerPages: for (;;) {
+    const rangeIndex = ranges[rangePosition];
+    if (rangeIndex === undefined) {
+      complete = true;
+      break;
+    }
+    const range = state.takeout.ranges[rangeIndex];
+    if (range === undefined) {
+      complete = true;
+      break;
+    }
+    const rangeLower = Math.max(target.start, range.min_id);
+    const rangeUpper = Math.min(target.end, range.max_id);
+    if (before <= rangeLower || before > rangeUpper + 1) {
+      throw new Error("Telegram Takeout target cursor is outside its range");
+    }
     let messages: MessagePage;
     try {
       messages = await ops.getMessages(
-        peer,
-        { offsetId: before, limit: TELEGRAM_HISTORY_PAGE_SIZE },
+        chat.peer,
+        { offsetId: before, limit: TELEGRAM_HISTORY_PAGE_SIZE,
+          takeout: takeoutContext(state, rangeIndex) },
         remainingPageBudget(deadline),
       );
     } catch (error) {
       if (envelopes.length > 0 && error instanceof MtprotoTimeoutError) break;
       throw error;
     }
-    total ??= messages.total ?? null;
-    if (messages.length === 0) {
-      complete = true;
-      break;
-    }
     let providerOldest: number | null = null;
+    let acceptedOldest: number | null = null;
     for (const msg of messages) {
       providerOldest = providerOldest === null ? msg.id : Math.min(providerOldest, msg.id);
-      if (msg.id < lowerMessageId) {
-        complete = true;
-        break providerPages;
-      }
-      if (msg.id > target.end) throw new Error("Telegram history escaped its requested gap");
+      if (msg.id < rangeLower || msg.id > rangeUpper) throw new Error("Telegram history escaped its Takeout range");
       const envelope = messageEnvelope(messageToIntermediate(msg, accountId, chatId), "snapshot");
       const bytes = new TextEncoder().encode(JSON.stringify(envelope)).byteLength + (envelopes.length === 0 ? 0 : 1);
       if (envelopeBytes + bytes > SOURCE_PAGE_BUDGET_BYTES) {
         if (envelopes.length === 0) throw new Error("Telegram history envelope exceeds the Source page budget");
+        if (acceptedOldest !== null) before = acceptedOldest;
         break providerPages;
       }
       envelopes.push(envelope);
       envelopeBytes += bytes;
       oldest = oldest === null ? msg.id : Math.min(oldest, msg.id);
-      if (msg.id === lowerMessageId) {
-        complete = true;
-        break providerPages;
-      }
+      acceptedOldest = acceptedOldest === null ? msg.id : Math.min(acceptedOldest, msg.id);
     }
-    if (providerOldest === null || (before !== 0 && providerOldest >= before)) {
+    if (providerOldest !== null && providerOldest >= before) {
       throw new Error("Telegram history did not advance");
     }
-    before = providerOldest;
+    const rangeComplete = providerOldest === null || providerOldest <= rangeLower ||
+      messages.length < TELEGRAM_HISTORY_PAGE_SIZE;
+    if (rangeComplete) {
+      rangePosition += 1;
+      const nextRangeIndex = ranges[rangePosition];
+      const nextRange = nextRangeIndex === undefined ? undefined : state.takeout.ranges[nextRangeIndex];
+      if (nextRange === undefined) {
+        complete = true;
+        break;
+      }
+      before = Math.min(target.end, nextRange.max_id) + 1;
+    } else if (providerOldest !== null) {
+      before = providerOldest;
+    }
     if (performance.now() >= deadline) break;
   }
   if (!complete && oldest === null) throw new Error("Telegram history did not advance");
-  const traversedFrom = complete ? lowerMessageId : oldest;
+  const traversedFrom = complete ? target.start : oldest;
+  if (traversedFrom === null) throw new Error("Telegram history did not state target coverage");
+  const progress = complete
+    ? { kind: "completeTarget", forwardCheckpoint: { kind: "replace", value: state } }
+    : { kind: "continueTarget", continuationToken: {
+        checkpoint: state,
+        target: { scope_id: scopeId, start: target.start, end: target.end,
+          range_index: ranges[rangePosition], before_message_id: before },
+      } };
   return {
     envelopes,
-    nextCursor: complete ? null : oldest,
-    hasMore: !complete,
-    traversed: traversedFrom === null ? {} : { [scopeId]: [traversedFrom, upperMessageId] },
-    total,
+    traversed: { [scopeId]: [traversedFrom, invocationUpper] },
+    progress,
+    total: chat.message_count,
   };
+}
+
+function targetRanges(
+  state: TelegramCheckpoint,
+  chat: TakeoutChatCheckpoint,
+  target: { start: number; end: number },
+): number[] {
+  return chat.ranges.filter((index) => {
+    const range = state.takeout.ranges[index];
+    return range !== undefined && range.max_id >= target.start && range.min_id <= target.end;
+  }).sort((left, right) => {
+    const leftRange = state.takeout.ranges[left];
+    const rightRange = state.takeout.ranges[right];
+    if (leftRange === undefined || rightRange === undefined) throw new Error("Telegram Takeout chat range is missing");
+    return rightRange.max_id - leftRange.max_id;
+  });
 }

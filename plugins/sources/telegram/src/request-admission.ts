@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import type { RpcAdmissionHooks, RpcAdmissionState } from "telegram/client/telegramBaseClient";
+import { floodWaitSecs } from "./client";
 
 export interface AdmissionClock {
   now(): number;
@@ -65,10 +66,6 @@ export class AccountAdmission implements RpcAdmissionHooks {
   private closed: Error | undefined;
   private cancelTimer: (() => void) | undefined;
   private attempt = 0;
-  private completedCount = 0;
-  private completedStartedAt = 0;
-  private lastSentAt = -Infinity;
-  private requestIntervalMs = 0;
   remoteFloods = 0;
   localRefusals = 0;
 
@@ -118,10 +115,6 @@ export class AccountAdmission implements RpcAdmissionHooks {
       entry.wake();
       if (entry.phase !== "sent") due = Math.min(due, entry.deadline);
     }
-    const nextSendAt = this.lastSentAt + this.requestIntervalMs;
-    if (this.active?.phase !== "sent" && this.pending.size > 0 && nextSendAt > now) {
-      due = Math.min(due, nextSendAt);
-    }
     if (Number.isFinite(due)) this.cancelTimer = this.time.schedule((): void => {
       this.cancelTimer = undefined;
       for (const entry of [...this.pending]) {
@@ -162,11 +155,7 @@ export class AccountAdmission implements RpcAdmissionHooks {
     this.records.set(state, entry);
     this.pending.add(entry);
     // Application Promise.race timeouts do not settle this transport promise.
-    void entry.promise.then(() => {
-      if (this.completedCount === 0) this.completedStartedAt = entry.sentAt;
-      this.completedCount++;
-      this.finish(entry);
-    }, () => { this.finish(entry); });
+    void entry.promise.then(() => { this.finish(entry); }, () => { this.finish(entry); });
     this.wake();
     return true;
   }
@@ -181,9 +170,6 @@ export class AccountAdmission implements RpcAdmissionHooks {
     if (this.active && this.active !== entry) return "wait";
     const first = [...this.pending].find((candidate) => candidate.phase !== "done");
     if (first !== entry) return "wait";
-    // @tested-by: tst_src_tgflood_006
-    // @invariant: provider feedback paces the next burst after its exact hold.
-    if (this.time.now() < this.lastSentAt + this.requestIntervalMs) return "wait";
     this.active = entry;
     entry.phase = "reserved";
     return "ready";
@@ -199,7 +185,6 @@ export class AccountAdmission implements RpcAdmissionHooks {
     entry.phase = "sent";
     this.attempt++;
     entry.sentAt = this.time.now();
-    this.lastSentAt = entry.sentAt;
     this.report("send", entry.method);
     this.wake();
   }
@@ -211,18 +196,13 @@ export class AccountAdmission implements RpcAdmissionHooks {
     if (!flood) return error;
     this.remoteFloods++;
     this.remoteCause = error;
-    const seconds = "seconds" in error ? error.seconds : undefined;
+    const seconds = floodWaitSecs(error);
     const observedAt = this.time.now();
     const deadline = typeof seconds === "number" ? observedAt + seconds * 1000 : NaN;
     if (typeof seconds !== "number" || seconds < 0 || !Number.isFinite(seconds) || !Number.isSafeInteger(Math.ceil(deadline))) {
       this.closed = new Error("Telegram flood duration is invalid; account admission is closed", { cause: error });
     } else {
       this.until = Math.max(this.until, deadline);
-      if (this.completedCount > 1) {
-        const interval = Math.ceil((observedAt - this.completedStartedAt + seconds * 1000) / (this.completedCount + 1));
-        this.requestIntervalMs = Math.max(this.requestIntervalMs, interval);
-      }
-      this.completedCount = 0;
     }
     this.report("remoteFlood", state ? method(state) : "UnmatchedRpcResult");
     // A valid zero wait is still an error for this operation, never an SDK

@@ -2,7 +2,7 @@
 
 Status: APPROVED  
 Spec lock: sha256:fddbcc2b66e31efe9b35adea4e8cd96715fd2996b95f6baa8094e848cb3e7ffd owner:давай стадии  
-Implementation lock: sha256:6e7a3cfc25ec72c7a4197b6dca45501c1102bef5b00c4dd9b6bc2f872fbcf55f owner:approved  
+Implementation lock: sha256:ac69e0d9bd7da53eede11dff375e6ac288627ab84285147148d1adae43abafba owner:да  
 Active Delivery: D2  
 Unattended decisions: allowed  
 
@@ -311,11 +311,11 @@ How it was proven. Deterministic SDK and fake-MTProto tests cover concurrency, m
 Not in this PR. No frontend, database schema, new runner, parallel main Telegram session, ordinary-history fallback or CI Telegram/PostgreSQL test. Provider holds are reported separately from local throughput.
 
 <!-- plan:stage:D2-S1:start -->
-<!-- plan:stage-meta:{"deliveryId":"D2","depends":[],"parallelWith":[],"writes":["packages/connector-sdk/contract/source.ts","packages/connector-sdk/index.ts","packages/connector-sdk/index.test.ts","packages/connector-sdk/contract-v2.test.ts","plugins/sources/telegram/src/connector.ts","plugins/sources/telegram/src/dispatch.ts","plugins/sources/telegram/src/dispatch.test.ts","plugins/sources/telegram/src/main.ts","plugins/sources/telegram/src/subscriptions.ts","plugins/sources/telegram/src/surfaces/telegram/fixture.ts","plugins/sources/telegram/src/fixture.test.ts","plugins/sources/telegram/src/live.ts","plugins/sources/telegram/src/live.test.ts","plugins/sources/telegram/src/surfaces/telegram/commands.ts","plugins/sources/telegram/src/surfaces/telegram/commands.test.ts","plugins/sources/telegram/src/surfaces/telegram/execute.test.ts","plugins/sources/telegram/src/tst_src_tgflood_001.test.ts","plugins/sources/telegram/manifest.toml"],"tempRoot":".tmp/code-production/telegram-takeout-sync/D2-S1","predictedActiveMinutes":90,"predictedCredits":9,"verifyActiveMinutes":15,"verifyCredits":2} -->
+<!-- plan:stage-meta:{"deliveryId":"D2","depends":[],"parallelWith":[],"writes":["packages/connector-sdk/contract/source.ts","packages/connector-sdk/index.ts","packages/connector-sdk/index.test.ts","packages/connector-sdk/contract-v2.test.ts","plugins/sources/telegram/src/connector.ts","plugins/sources/telegram/src/dispatch.ts","plugins/sources/telegram/src/dispatch.test.ts","plugins/sources/telegram/src/main.ts","plugins/sources/telegram/src/subscriptions.ts","plugins/sources/telegram/src/surfaces/telegram/fixture.ts","plugins/sources/telegram/src/fixture.test.ts","plugins/sources/telegram/src/live.ts","plugins/sources/telegram/src/live.test.ts","plugins/sources/telegram/src/surfaces/telegram/commands.ts","plugins/sources/telegram/src/surfaces/telegram/commands.test.ts","plugins/sources/telegram/src/surfaces/telegram/execute.test.ts","plugins/sources/telegram/src/tst_src_tgflood_001.test.ts","plugins/sources/telegram/src/testing/mtproto-transport.ts","plugins/sources/telegram/manifest.toml"],"tempRoot":".tmp/code-production/telegram-takeout-sync/D2-S1","predictedActiveMinutes":90,"predictedCredits":9,"verifyActiveMinutes":15,"verifyCredits":2} -->
 #### Stage D2-S1 — Telegram runs as an ordinary Connector SDK Source
 
 - Owner: root; Profile: strong; Depends: none; Parallel with: none.
-- Writes: `packages/connector-sdk/contract/source.ts`, `packages/connector-sdk/index.ts`, `packages/connector-sdk/index.test.ts`, `packages/connector-sdk/contract-v2.test.ts`, `plugins/sources/telegram/src/connector.ts`, `plugins/sources/telegram/src/dispatch.ts`, `plugins/sources/telegram/src/dispatch.test.ts`, `plugins/sources/telegram/src/main.ts`, `plugins/sources/telegram/src/subscriptions.ts`, `plugins/sources/telegram/src/surfaces/telegram/fixture.ts`, `plugins/sources/telegram/src/fixture.test.ts`, `plugins/sources/telegram/src/live.ts`, `plugins/sources/telegram/src/live.test.ts`, `plugins/sources/telegram/src/surfaces/telegram/commands.ts`, `plugins/sources/telegram/src/surfaces/telegram/commands.test.ts`, `plugins/sources/telegram/src/surfaces/telegram/execute.test.ts`, `plugins/sources/telegram/src/tst_src_tgflood_001.test.ts`, `plugins/sources/telegram/manifest.toml`.
+- Writes: `packages/connector-sdk/contract/source.ts`, `packages/connector-sdk/index.ts`, `packages/connector-sdk/index.test.ts`, `packages/connector-sdk/contract-v2.test.ts`, `plugins/sources/telegram/src/connector.ts`, `plugins/sources/telegram/src/dispatch.ts`, `plugins/sources/telegram/src/dispatch.test.ts`, `plugins/sources/telegram/src/main.ts`, `plugins/sources/telegram/src/subscriptions.ts`, `plugins/sources/telegram/src/surfaces/telegram/fixture.ts`, `plugins/sources/telegram/src/fixture.test.ts`, `plugins/sources/telegram/src/live.ts`, `plugins/sources/telegram/src/live.test.ts`, `plugins/sources/telegram/src/surfaces/telegram/commands.ts`, `plugins/sources/telegram/src/surfaces/telegram/commands.test.ts`, `plugins/sources/telegram/src/surfaces/telegram/execute.test.ts`, `plugins/sources/telegram/src/tst_src_tgflood_001.test.ts`, `plugins/sources/telegram/src/testing/mtproto-transport.ts`, `plugins/sources/telegram/manifest.toml`.
 - Temp root: `.tmp/code-production/telegram-takeout-sync/D2-S1` (must be absent at handoff).
 - Of which verification: 15 active min / 2 credits.
 
@@ -329,24 +329,26 @@ Commit. refactor(telegram): use the shared Source program — delete custom disp
 
 ##### Tasks
 
-- [ ] SOURCEPROGRAM_001 — Make runConnector own the standard fetch fields, concurrent dispatch, auth mode, strict subscriptions, push positions and typed errors for every Source. (35 min)
+- [x] SOURCEPROGRAM_001 — Make runConnector own the standard fetch fields, concurrent dispatch, auth mode, strict subscriptions, push positions and typed errors for every Source. (35 min) — 4a35e8719f90dd97ff82d9adc35a33b600126a13
 <!-- plan:task-meta:{"writes":["packages/connector-sdk/contract/source.ts","packages/connector-sdk/index.ts","packages/connector-sdk/index.test.ts","packages/connector-sdk/contract-v2.test.ts"],"predictedActiveMinutes":35,"predictedCredits":3,"how":"Extend the existing FetchArgs, FetchResult and Envelope shapes in packages/connector-sdk/contract/source.ts with the standard fields already named by the host. In packages/connector-sdk/index.ts extend runConnector itself with the one shared bounded dispatcher, separate download capacity, --auth-mode gate, required subscription_id, optional envelope position, push capability without interval_secs, and existing error classes. Update packages/connector-sdk/index.test.ts with metadata-backed tst_src_sdk_runtime_001 and adjust packages/connector-sdk/contract-v2.test.ts fixtures to the same contract.","red":"bun run agent:test:backend -- packages/connector-sdk/index.test.ts -t tst_src_sdk_runtime_001"} -->
-- [ ] SOURCEPROGRAM_002 — Replace Telegram's dispatcher with buildConnectorConfig plus runConnector and keep link_end time without claiming message coverage. (40 min)
-<!-- plan:task-meta:{"writes":["plugins/sources/telegram/src/connector.ts","plugins/sources/telegram/src/dispatch.ts","plugins/sources/telegram/src/dispatch.test.ts","plugins/sources/telegram/src/main.ts","plugins/sources/telegram/src/subscriptions.ts","plugins/sources/telegram/src/surfaces/telegram/fixture.ts","plugins/sources/telegram/src/fixture.test.ts","plugins/sources/telegram/src/live.ts","plugins/sources/telegram/src/live.test.ts","plugins/sources/telegram/src/surfaces/telegram/commands.ts","plugins/sources/telegram/src/surfaces/telegram/commands.test.ts","plugins/sources/telegram/src/surfaces/telegram/execute.test.ts","plugins/sources/telegram/src/tst_src_tgflood_001.test.ts","plugins/sources/telegram/manifest.toml"],"predictedActiveMinutes":40,"predictedCredits":4,"how":"Create plugins/sources/telegram/src/connector.ts as the ordinary ConnectorConfig owner and make plugins/sources/telegram/src/main.ts call runConnector. Delete plugins/sources/telegram/src/dispatch.ts and its test, reduce subscriptions.ts to provider listener ownership that emits SDK Envelopes, and adapt fixture.ts. Move the existing bounded-history handler in commands.ts from backfill_chat execute arguments to standard scope_id, target, cursor and forward_checkpoint fetch arguments; update commands.test.ts, execute.test.ts and tst_src_tgflood_001.test.ts to call fetch and remove every backfill_chat case. Set runtime_kind to connector_sdk in manifest.toml. Add tst_src_tg_runtime_001 metadata in fixture.test.ts; update live.ts and live.test.ts so messages have positive positions and link_end retains its date with no position.","red":"bun run agent:test:backend -- plugins/sources/telegram/src/fixture.test.ts -t tst_src_tg_runtime_001"} -->
+- [x] SOURCEPROGRAM_002 — Replace Telegram's dispatcher with buildConnectorConfig plus runConnector and keep link_end time without claiming message coverage. (40 min) — 4a35e8719f90dd97ff82d9adc35a33b600126a13
+<!-- plan:task-meta:{"writes":["plugins/sources/telegram/src/connector.ts","plugins/sources/telegram/src/dispatch.ts","plugins/sources/telegram/src/dispatch.test.ts","plugins/sources/telegram/src/main.ts","plugins/sources/telegram/src/subscriptions.ts","plugins/sources/telegram/src/surfaces/telegram/fixture.ts","plugins/sources/telegram/src/fixture.test.ts","plugins/sources/telegram/src/live.ts","plugins/sources/telegram/src/live.test.ts","plugins/sources/telegram/src/surfaces/telegram/commands.ts","plugins/sources/telegram/src/surfaces/telegram/commands.test.ts","plugins/sources/telegram/src/surfaces/telegram/execute.test.ts","plugins/sources/telegram/src/tst_src_tgflood_001.test.ts","plugins/sources/telegram/src/testing/mtproto-transport.ts","plugins/sources/telegram/manifest.toml"],"predictedActiveMinutes":40,"predictedCredits":4,"how":"Create plugins/sources/telegram/src/connector.ts as the ordinary ConnectorConfig owner and make plugins/sources/telegram/src/main.ts call runConnector. Delete plugins/sources/telegram/src/dispatch.ts and its test, reduce subscriptions.ts to provider listener ownership that emits SDK Envelopes, and adapt fixture.ts. Move the existing bounded-history handler in commands.ts from backfill_chat execute arguments to standard scope_id, target, cursor and forward_checkpoint fetch arguments; update commands.test.ts, execute.test.ts and tst_src_tgflood_001.test.ts to call fetch and remove every backfill_chat case. Set runtime_kind to connector_sdk in manifest.toml. Add tst_src_tg_runtime_001 metadata in fixture.test.ts; update live.ts and live.test.ts so messages have positive positions and link_end retains its date with no position.","red":"bun run agent:test:backend -- plugins/sources/telegram/src/fixture.test.ts -t tst_src_tg_runtime_001"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- packages/connector-sdk/index.test.ts` exits 0 — one shared dispatcher keeps fetch, downloads, actions and control responsive within their declared bounds
-- [ ] `bun run agent:test:backend -- plugins/sources/telegram/src/fixture.test.ts` exits 0 — Telegram exposes the standard Connector SDK tools and no execute backfill
+- [x] `bun run agent:test:backend -- packages/connector-sdk/index.test.ts` exits 0 — one shared dispatcher keeps fetch, downloads, actions and control responsive within their declared bounds — 4a35e8719f90dd97ff82d9adc35a33b600126a13
+- [x] `bun run agent:test:backend -- plugins/sources/telegram/src/fixture.test.ts` exits 0 — Telegram exposes the standard Connector SDK tools and no execute backfill — 4a35e8719f90dd97ff82d9adc35a33b600126a13
 - [ ] The shared SDK and Telegram Source contain no custom dispatcher, magnis.sync.listen alias, sub:legacy fallback or current runtime_kind=custom declaration
 - [ ] A live message carries a positive position; dated link_end carries no message position
-- [ ] Commit
+- [x] Commit — 4a35e8719f90dd97ff82d9adc35a33b600126a13
 
 ##### Results
 
 <!-- plan:results:D2-S1:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| SOURCEPROGRAM_001 | 4a35e8719f90dd97ff82d9adc35a33b600126a13 | 2026-09-22T17:59:01.379Z–2026-09-22T18:45:44.000Z | 44 / 47 min | unavailable: runner did not expose usage | Telegram now runs through the shared Connector SDK with standard fetch, strict subscriptions, shared errors and SDK-owned push serialization; the copied dispatcher and execute-based history read are gone. |
+| SOURCEPROGRAM_002 | 4a35e8719f90dd97ff82d9adc35a33b600126a13 | 2026-09-22T17:59:01.379Z–2026-09-22T18:45:44.000Z | 44 / 47 min | unavailable: runner did not expose usage | Telegram now runs through the shared Connector SDK with standard fetch, strict subscriptions, shared errors and SDK-owned push serialization; the copied dispatcher and execute-based history read are gone. |
 <!-- plan:results:D2-S1:end -->
 <!-- plan:stage:D2-S1:end -->
 
@@ -473,4 +475,14 @@ Commit. chore(catalog): certify the unified Source runtime — remove the last l
 - deviation D2-S1: Preflight agent-stack check reports the vendored plan runtime, vocabulary, retro register and pre-push hook stale against the global installer. Those process files are outside this Telegram Stage, so the verified vendored planctl and repository hooks remain unchanged; frozen install succeeded with an explicit writable Bun temp directory.
 
 - deviation D2-S1: The Telegram evidence hash enumerator hard-coded the dispatcher file that this Stage deletes; update plugins/sources/telegram/src/testing/mtproto-transport.ts to hash connector.ts instead so the existing deterministic evidence suite still runs.
+
+- amend implementation owner:да sha256:ac69e0d9bd7da53eede11dff375e6ac288627ab84285147148d1adae43abafba
+
+- record-result D2-S1 commit:4a35e8719f90dd97ff82d9adc35a33b600126a13
+
+- deviation D2-S1: The vendored process stack is stale against the global installer; it is outside this Stage and remained unchanged.
+
+- deviation D2-S1: The existing evidence hash enumerator had to replace the deleted dispatcher path with connector.ts so deterministic evidence could still run.
+
+- close D2-S1 partial commit:4a35e8719f90dd97ff82d9adc35a33b600126a13
 <!-- plan:execution:end -->

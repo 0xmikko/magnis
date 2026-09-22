@@ -96,14 +96,24 @@ async function fetchGapPage(
   scopeId: string,
   start: number,
   end: number,
-  cursor?: number,
+  messageCount = end,
 ): Promise<Record<string, unknown>> {
+  const chatId = Number(scopeId);
   return await fetch(ops, emptyPager, accountId, {
     surface: "telegram",
     direction: "backward",
     scope_id: scopeId,
     target: { kind: "gap", start, end },
-    ...(cursor === undefined ? {} : { cursor }),
+    forward_checkpoint: {
+      takeout: { id: "1", phase: "download", ranges: [{ min_id: start, max_id: end }],
+        range_index: 1, range_started: false, dialog_offset: null, pinned_count: 0,
+        publish_index: 1, download_index: 1 },
+      chats: { [scopeId]: { chat: { chat_id: chatId, title: `Chat ${scopeId}`, chat_type: "private",
+        is_pinned: false, pin_order: 0, unread_count: 0, unread_mark: false,
+        read_inbox_max_id: 0, read_outbox_max_id: 0, unread_mentions_count: 0,
+        top_message: end, message_count: messageCount }, peer: { ty: "chat", id: chatId },
+        message_count: messageCount, ranges: [0], last_msg_id: end } },
+    },
   });
 }
 
@@ -283,8 +293,8 @@ describe("bounded gap fetch", () => {
       },
     };
     const out = await fetchGapPage(ops, "acct", "5", 1, 39);
-    expect(out.hasMore).toBe(false);
-    expect(calls).toHaveLength(2);
+    expect(out.progress).toMatchObject({ kind: "completeTarget" });
+    expect(calls).toHaveLength(1);
     expect(out.traversed).toEqual({ "5": [1, 39] });
   });
 
@@ -292,25 +302,25 @@ describe("bounded gap fetch", () => {
     const msgs: MessageLike[] = [{ id: 30, date: 0 }, { id: 20, date: 0 }, { id: 10, date: 0 }];
     const { ops, calls } = fakeOps({ messages: msgs });
     const out = await fetchGapPage(ops, "conn-1", "5", 10, 39);
-    expect(out.hasMore).toBe(false);
-    expect(out.nextCursor).toBeNull();
+    expect(out.progress).toMatchObject({ kind: "completeTarget" });
+    expect(out).not.toHaveProperty("nextCursor");
     expect(out.traversed).toEqual({ "5": [10, 39] });
     expect((out.envelopes as unknown[]).length).toBe(3);
-    expect(calls.getMessages[0]!.params).toEqual({ offsetId: 40, limit: 100 });
+    expect(calls.getMessages[0]!.params).toMatchObject({ offsetId: 40, limit: 100 });
   });
 
   test("tst_tgts_exec_007 reaching the requested lower message completes the target", async () => {
     const { ops } = fakeOps({ messages: [{ id: 1, date: 0 }] });
     const out = await fetchGapPage(ops, "a", "5", 1, 1);
-    expect(out.hasMore).toBe(false);
+    expect(out.progress).toMatchObject({ kind: "completeTarget" });
     expect(out.traversed).toEqual({ "5": [1, 1] });
   });
 
   test("tst_tgts_exec_008 an empty page completes the whole asked gap", async () => {
     const { ops } = fakeOps({ messages: [] });
     const out = await fetchGapPage(ops, "a", "5", 1, 99);
-    expect(out.hasMore).toBe(false);
-    expect(out.nextCursor).toBeNull();
+    expect(out.progress).toMatchObject({ kind: "completeTarget" });
+    expect(out).not.toHaveProperty("nextCursor");
     expect(out.envelopes).toEqual([]);
     expect(out.traversed).toEqual({ "5": [1, 99] });
   });
@@ -318,7 +328,7 @@ describe("bounded gap fetch", () => {
   test("tst_tgts_exec_009 starts immediately above the asked gap", async () => {
     const { ops, calls } = fakeOps();
     await fetchGapPage(ops, "a", "5", 1, 99);
-    expect(calls.getMessages[0]!.params).toEqual({ offsetId: 100, limit: 100 });
+    expect(calls.getMessages[0]!.params).toMatchObject({ offsetId: 100, limit: 100 });
   });
 
   /**
@@ -354,7 +364,7 @@ describe("bounded gap fetch", () => {
     try {
       const out = await fetchGapPage(ops, "a", "5", 1, 250);
       expect((out.envelopes as unknown[]).length).toBe(250);
-      expect(out.hasMore).toBe(false);
+      expect(out.progress).toMatchObject({ kind: "completeTarget" });
       expect(out.traversed).toEqual({ "5": [1, 250] });
       expect(calls.map((call) => call.offsetId)).toEqual([251, 151, 51]);
       expect(calls.every((call) => call.limit === 100)).toBe(true);
@@ -384,7 +394,7 @@ describe("bounded gap fetch", () => {
     const messages = Object.assign([{ id: 7, date: 0 }], { total: 137 });
     const { ops } = fakeOps({ messages });
 
-    const out = await fetchGapPage(ops, "conn-xyz", "100", 7, 7);
+    const out = await fetchGapPage(ops, "conn-xyz", "100", 7, 7, 137);
 
     expect(out.total).toBe(137);
   });

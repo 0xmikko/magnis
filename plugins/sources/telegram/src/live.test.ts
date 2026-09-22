@@ -11,13 +11,82 @@ import { FloodWaitError } from "telegram/errors";
 import { EditedMessageEvent } from "telegram/events/EditedMessage";
 import { NewMessageEvent } from "telegram/events/NewMessage";
 
-import { createAuthClientFactory, SessionPool, TgClient } from "./live";
+import { createAuthClientFactory, LiveDialogPager, SessionPool, TgClient } from "./live";
 import { messageToIntermediate } from "./client";
 import { AccountAdmission } from "./request-admission";
 import { liveUpdatePushes } from "./subscriptions";
 import { messagePayload } from "./surfaces/telegram/envelope";
 import { messageRemoteId } from "./surfaces/telegram/schema";
 import { createTransport, setupConfig, VirtualClock } from "./testing/mtproto-transport";
+
+/** @test-id: tst_src_tg_takeout_wire_001
+ * @scenario: scn_tg_takeout_001
+ * @covers: TgClient Takeout lifecycle and ranged history/dialog wire wrappers
+ * @deterministic: yes
+ * @fixtures: actual GramJS sender with in-memory MTProto replies
+ */
+test("tst_src_tg_takeout_wire_001 sends every Takeout read through the persisted session and range", async () => {
+  const f = await createTransport(new VirtualClock());
+  const id = bigInt("9223372036854775001");
+  const range = { min_id: 10, max_id: 99 };
+  let index = 0;
+  const ranged = (sent: Awaited<ReturnType<typeof f.application>>): unknown => {
+    expect(sent.state.request).toBeInstanceOf(Api.InvokeWithTakeout);
+    const takeout = sent.state.request as Api.InvokeWithTakeout;
+    expect(takeout.takeoutId.toString()).toBe(id.toString());
+    expect(takeout.query).toBeInstanceOf(Api.InvokeWithMessagesRange);
+    const messages = takeout.query as Api.InvokeWithMessagesRange;
+    expect(messages.range).toMatchObject({ minId: range.min_id, maxId: range.max_id });
+    return messages.query;
+  };
+  try {
+    const opening = f.tg.initTakeout();
+    let sent = await f.application(index++);
+    expect(sent.state.request).toMatchObject({ className: "account.InitTakeoutSession",
+      messageUsers: true, messageChats: true, messageMegagroups: true, messageChannels: true, files: false });
+    await f.reply(sent, new Api.account.Takeout({ id }));
+    expect(await opening).toBe(id.toString());
+
+    const splitting = f.tg.takeoutRanges(id.toString());
+    sent = await f.application(index++);
+    expect(sent.state.request).toBeInstanceOf(Api.InvokeWithTakeout);
+    const split = sent.state.request as Api.InvokeWithTakeout;
+    expect(split.query).toBeInstanceOf(Api.messages.GetSplitRanges);
+    const vector = Buffer.alloc(8);
+    vector.writeUInt32LE(0x1cb5c415);
+    vector.writeInt32LE(1, 4);
+    await f.reply(sent, { getBytes: () => Buffer.concat([
+      vector, new Api.MessageRange({ minId: range.min_id, maxId: range.max_id }).getBytes(),
+    ]) });
+    expect(await splitting).toEqual([range]);
+
+    const context = { id: id.toString(), range };
+    const history = f.tg.getMessages({ ty: "chat", id: 42 }, { limit: 100, takeout: context });
+    sent = await f.application(index++);
+    expect(ranged(sent)).toMatchObject({ className: "messages.GetHistory", limit: 100 });
+    await f.reply(sent, new Api.messages.Messages({ messages: [], chats: [], users: [] }));
+    expect(await history).toHaveLength(0);
+
+    const dialogs = LiveDialogPager.discoverPage(f.tg, null, 1, 60_000, context);
+    sent = await f.application(index++);
+    expect(ranged(sent)).toMatchObject({ className: "messages.GetDialogs", limit: 1 });
+    await f.reply(sent, new Api.messages.Dialogs({ dialogs: [], messages: [], chats: [], users: [] }));
+    expect((await dialogs).dialogs).toEqual([]);
+
+    const finishing = f.tg.finishTakeout(id.toString());
+    sent = await f.application(index++);
+    expect(sent.state.request).toBeInstanceOf(Api.InvokeWithTakeout);
+    const finish = sent.state.request as Api.InvokeWithTakeout;
+    expect(finish.query).toMatchObject({ className: "account.FinishTakeoutSession", success: true });
+    await f.reply(sent, { getBytes: () => {
+      const bytes = Buffer.alloc(4);
+      bytes.writeUInt32LE(0x997275b5);
+      return bytes;
+    } });
+    await finishing;
+    expect(f.writes).toHaveLength(5);
+  } finally { await f.close(); }
+});
 
 /** @test-id: tst_src_tgflood_006
  * @scenario: scn_tgflood_006
