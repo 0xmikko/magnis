@@ -28,6 +28,7 @@ import type {
 } from "./client";
 import {
   BOOTSTRAP_MESSAGES_PER_CHAT,
+  TELEGRAM_HISTORY_PAGE_SIZE,
   SOURCE_PAGE_HISTORY_LIMIT,
   SOURCE_PAGE_BUDGET_MS,
   remainingPageBudget,
@@ -347,7 +348,7 @@ export class TgClient implements TgOps {
       // preserves count provenance; SDK iterMessages invents total=page.length.
       const result = await this.client.invoke(new Api.messages.GetHistory({ peer: input,
         offsetId: params.offsetId ?? 0, offsetDate: 0, addOffset: 0,
-        limit: Math.min(params.limit ?? BOOTSTRAP_MESSAGES_PER_CHAT, 100), maxId: 0, minId: 0, hash: bigInt(0) }));
+        limit: Math.min(params.limit ?? BOOTSTRAP_MESSAGES_PER_CHAT, TELEGRAM_HISTORY_PAGE_SIZE), maxId: 0, minId: 0, hash: bigInt(0) }));
       if (result instanceof Api.messages.MessagesNotModified) throw new Error("GetHistory returned NotModified with hash=0");
       if ("count" in result && (!Number.isSafeInteger(result.count) || result.count < 0)) {
         throw new Error("GetHistory returned an invalid message count");

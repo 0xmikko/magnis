@@ -170,7 +170,7 @@ test("tst_src_tgflood_005 the Source command loop preserves runtime flood replie
     expect(await io.reply(id++)).toMatchObject({ error: { code: -32002, data: { retry_after: 4 } } });
     expect(io.replies.get(20)).not.toHaveProperty("result");
     const heldAt = actual.writes.length;
-    io.send(id, "magnis.execute", { action: "backfill_chat", chat_id: 101, _meta: meta });
+    io.send(id, "magnis.execute", { action: "backfill_chat", chat_id: 101, lower_message_id: 1, _meta: meta });
     expect(await io.reply(id++)).toMatchObject({ error: { code: -32002 } });
     io.send(id, "magnis.execute", { action: "download_file", source_ref: { chat_id: 101, message_id: 1 },
       dest: ".tmp/code-production/telegram-flood-safety/D1-S5/never-written.bin", _meta: meta });
@@ -194,8 +194,9 @@ test("tst_src_tgflood_005 the Source command loop preserves runtime flood replie
     expect(result).toMatchObject({ hasMore: false, traversed: { "101": [71, 120], "102": [21, 70], "103": [1, 5] } });
     const before = new Map([[101, 71], [102, 21], [103, 1]]);
     while (before.size) for (const [chat, offset] of [...before]) {
-      io.send(id, "magnis.execute", { action: "backfill_chat", chat_id: chat, before_message_id: offset, limit: 50, _meta: meta });
-      await answer();
+      io.send(id, "magnis.execute", { action: "backfill_chat", chat_id: chat, before_message_id: offset, lower_message_id: 1, _meta: meta });
+      const providerPages = Math.max(1, Math.ceil((offset - 1) / 50));
+      for (let page = 0; page < providerPages; page++) await answer();
       const page = (await io.reply(id++)).result as Record<string, unknown>;
       emitted.push(...envelopes(page));
       if (page.has_more === false) before.delete(chat);
@@ -210,7 +211,7 @@ test("tst_src_tgflood_005 the Source command loop preserves runtime flood replie
     expect([...identities].sort()).toEqual([...expected, "tg:msg:101:121", "tg:msg:101:122"].sort());
     expect(identities.size).toBe(197);
     const start = id;
-    for (let i = 0; i < 8; i++) io.send(id++, "magnis.execute", { action: "backfill_chat", chat_id: 101, limit: 50, _meta: meta });
+    for (let i = 0; i < 8; i++) io.send(id++, "magnis.execute", { action: "backfill_chat", chat_id: 101, lower_message_id: 1, _meta: meta });
     const blocked = await actual.application(index++);
     await flushCommands();
     expect(runningGuard.queued).toBe(7);
@@ -225,8 +226,8 @@ test("tst_src_tgflood_005 the Source command loop preserves runtime flood replie
     const captured = JSON.stringify(diagnostics);
     expect(diagnostics.length).toBeGreaterThan(0);
     for (const secret of [String(meta.session), "fixture-only", "fixture-101-121", "fixture-phone"]) expect(captured).not.toContain(secret);
-    expect(actual.writes).toHaveLength(15);
-    evidence(actual, runningClock, { expectedTransmissions: 15, expectedMessages: 197, actualMessages: identities.size,
+    expect(actual.writes).toHaveLength(13);
+    evidence(actual, runningClock, { expectedTransmissions: 13, expectedMessages: 197, actualMessages: identities.size,
       identities: ["101:1..122", "102:1..70", "103:1..5"], failedFetchResults: 0, stoppedWithOccupiedSlots: 8 });
   } finally {
     io.registry.stop("active");
@@ -390,7 +391,7 @@ test("tst_src_tgflood_003 peer misses share a continuation through floods and ca
       return handle;
     });
     try {
-      const timedOut = outcome(execute(f.tg, "fixture-A", { action: "backfill_chat", chat_id: 201, before_message_id: 0, limit: 50 }, deps));
+      const timedOut = outcome(execute(f.tg, "fixture-A", { action: "backfill_chat", chat_id: 201, before_message_id: 0, lower_message_id: 1 }, deps));
       const uncertain = await f.application(wireIndex++);
       if (!expireHistory) throw new Error("History timeout was not armed");
       expireHistory();
@@ -419,26 +420,31 @@ test("tst_src_tgflood_003 peer misses share a continuation through floods and ca
     const counts = new Map([[201, 120], [202, 70], [103, 5]]);
     const emitted: string[] = [];
     for (const [chat, count] of counts) {
+      const reading = execute(f.tg, "fixture-A", {
+        action: "backfill_chat",
+        chat_id: chat,
+        before_message_id: 0,
+        lower_message_id: 1,
+      }, deps);
       let before = 0;
       for (;;) {
-        const reading = execute(f.tg, "fixture-A", { action: "backfill_chat", chat_id: chat, before_message_id: before, limit: 50 }, deps);
         const sent = await f.application(wireIndex++);
         const request: unknown = sent.state.request;
         if (!(request instanceof Api.messages.GetHistory)) throw new Error("Cached peer caused another discovery scan");
         expect(request.offsetId).toBe(before);
-        expect(request.limit).toBe(50);
+        expect(request.limit).toBe(100);
         const messages = Array.from({ length: count }, (_, index) => count - index)
-          .filter((id) => before === 0 || id < before).slice(0, 50).map((id) => fixtureMessage(chat, id));
+          .filter((id) => before === 0 || id < before).slice(0, 100).map((id) => fixtureMessage(chat, id));
         await f.reply(sent, new Api.messages.MessagesSlice({ count, messages, chats: [fixtureChat(chat)], users: [] }));
-        const page = await reading;
-        const batch = envelopes(page);
-        emitted.push(...batch.map((item) => String(item.remote_id)));
-        expect(batch.length).toBeLessThanOrEqual(50);
-        if (page.has_more === false) { expect(batch).toHaveLength(0); break; }
-        expect(page.has_more).toBe(true);
-        if (typeof page.oldest_message_id !== "number") throw new Error("Missing recovered history continuation");
-        before = page.oldest_message_id;
+        const last = messages.at(-1);
+        if (last === undefined || last.id === 1) break;
+        before = last.id;
       }
+      const page = await reading;
+      const batch = envelopes(page);
+      emitted.push(...batch.map((item) => String(item.remote_id)));
+      expect(batch).toHaveLength(count);
+      expect(page.has_more).toBe(false);
     }
     expect(emitted).toHaveLength(195);
     expect(new Set(emitted)).toEqual(new Set([...counts].flatMap(([chat, count]) =>
@@ -446,8 +452,8 @@ test("tst_src_tgflood_003 peer misses share a continuation through floods and ca
     // Three discovery requests plus the independently requested snapshot page.
     expect(f.writes.filter((sent) => sent.method === "messages.GetDialogs")).toHaveLength(4);
     expect(f.maximumInFlight()).toBe(1);
-    expect(f.writes).toHaveLength(16);
-    evidence(f, clock, { expectedTransmissions: 16, expectedMessages: 195, actualMessages: emitted.length,
+    expect(f.writes).toHaveLength(11);
+    evidence(f, clock, { expectedTransmissions: 11, expectedMessages: 195, actualMessages: emitted.length,
       identities: ["201:1..120", "202:1..70", "103:1..5"], timeoutResults: 0, discoveryStartPages: 1 });
   } finally { await f.close(); }
 });
@@ -514,14 +520,13 @@ test("tst_src_tgflood_001 healthy requests use a free application slot without d
     expect(boot).toMatchObject({ hasMore: false, traversed: { "101": [21, 120], "102": [1, 70], "103": [1, 5] } });
     const before = new Map([[101, 21]]);
     while (before.size > 0) for (const [chat, offset] of [...before]) {
-      const filling = execute(f.tg, "fixture-A", { action: "backfill_chat", chat_id: chat, before_message_id: offset, limit: 50 }, { sleep: async () => { throw new Error("Unexpected independent sleep"); } });
+      const filling = execute(f.tg, "fixture-A", { action: "backfill_chat", chat_id: chat, before_message_id: offset, lower_message_id: 1 }, { sleep: async () => { throw new Error("Unexpected independent sleep"); } });
       await answer();
       const page = await filling;
       const batch = envelopes(page);
       expect(batch.length).toBeLessThanOrEqual(50);
       emitted.push(...batch);
       if (page.has_more === false) {
-        expect(batch).toHaveLength(0);
         before.delete(chat);
       } else {
         if (typeof page.oldest_message_id !== "number") throw new Error("Missing history continuation");
@@ -617,9 +622,9 @@ test("tst_src_tgflood_001 healthy requests use a free application slot without d
       if (!a || !b) throw new Error("Missing transmission");
       expect(b.at - a.at).toBe(0);
     }
-    expect(f.writes).toHaveLength(41);
-    evidence(f, clock, { expectedTransmissions: 41, expectedMessages: 197, actualMessages: actual.length + liveIds.length,
-      identities: ["101:1..122", "102:1..70", "103:1..5"], mediaChunks: 3, mediaBytes: 262151, deliberateWaitMs: clock.now(), sameTimestampRequests: 41 });
+    expect(f.writes).toHaveLength(40);
+    evidence(f, clock, { expectedTransmissions: 40, expectedMessages: 197, actualMessages: actual.length + liveIds.length,
+      identities: ["101:1..122", "102:1..70", "103:1..5"], mediaChunks: 3, mediaBytes: 262151, deliberateWaitMs: clock.now(), sameTimestampRequests: 40 });
   } finally { await f.close(); }
 });
 
@@ -630,11 +635,10 @@ test("tst_src_tgflood_001 healthy requests use a free application slot without d
  * @fixtures: 50 dialogs, independent 120/70/5 histories, two live messages
  */
 test("tst_src_tgfast_005 measures complete round-robin history without local pacing", async () => {
-  for (const batchSize of [50, 100, 200]) {
     const clock = new VirtualClock();
     const f = await createTransport(clock);
     const now = spyOn(performance, "now").mockImplementation(() => clock.now());
-    const evidence = caseEvidence("tst_src_tgfast_005", `batch-${String(batchSize)}`);
+    const evidence = caseEvidence("tst_src_tgfast_005", "budgeted-page");
     const counts = new Map(Array.from({ length: 50 }, (_, index) => [101 + index, index === 0 ? 120 : index === 1 ? 70 : index === 2 ? 5 : 0]));
     const expected = [...counts].flatMap(([chat, count]) => Array.from({ length: count }, (_, index) => `tg:msg:${String(chat)}:${String(index + 1)}`));
     const emitted: Record<string, unknown>[] = [];
@@ -704,7 +708,7 @@ test("tst_src_tgfast_005 measures complete round-robin history without local pac
       while (before.size > 0) for (const [chat, offset] of [...before]) {
         visits.push(chat);
         const started = clock.now();
-        const reading = execute(f.tg, "fixture-A", { action: "backfill_chat", chat_id: chat, before_message_id: offset, limit: batchSize },
+        const reading = execute(f.tg, "fixture-A", { action: "backfill_chat", chat_id: chat, before_message_id: offset, lower_message_id: 1 },
           { sleep: async () => { throw new Error("Unexpected Source sleep"); } });
         await answer();
         const page = await reading;
@@ -713,14 +717,14 @@ test("tst_src_tgfast_005 measures complete round-robin history without local pac
         const messages = envelopes(page);
         expect(page.total).toBe(counts.get(chat));
         emitted.push(...messages);
-        if (page.has_more === false) { expect(messages).toHaveLength(0); before.delete(chat); }
+        if (page.has_more === false) before.delete(chat);
         else {
           if (typeof page.oldest_message_id !== "number") throw new Error("Missing exclusive history continuation");
           expect(page.oldest_message_id).toBeLessThan(offset);
           before.set(chat, page.oldest_message_id);
         }
       }
-      expect(visits).toEqual([101, 101]);
+      expect(visits).toEqual([101]);
       const ids = emitted.map((item) => item.remote_id).filter((id): id is string => typeof id === "string" && id.startsWith("tg:msg:"));
       expect(ids.sort()).toEqual(expected.sort());
       expect(new Set([...ids, ...liveIds]).size).toBe(197);
@@ -728,15 +732,14 @@ test("tst_src_tgfast_005 measures complete round-robin history without local pac
         .map((item) => (item.payload as Record<string, unknown>).pin_order)).toEqual([0, 1, 2, 3, 4, 5, 6]);
       expect(Math.max(...latencies)).toBe(2600);
       expect(f.writes.filter((wire) => wire.method === "messages.GetDialogs")).toHaveLength(1);
-      expect(f.writes).toHaveLength(54);
+      expect(f.writes).toHaveLength(53);
       expect(clock.now()).toBe(f.writes.length * 100);
       expect(f.maximumInFlight()).toBe(1);
-      evidence(f, clock, { requestedBatchSize: batchSize, providerTimeMs: clock.now(), deliberateWaitMs: 0,
+      evidence(f, clock, { sourcePagePolicy: "time-and-bytes", providerTimeMs: clock.now(), deliberateWaitMs: 0,
         sourceCommands: latencies.length, maxSourceLatencyMs: Math.max(...latencies), maxFrameBytes: Math.max(...frameBytes),
         expectedMessages: 197, actualMessages: ids.length + liveIds.length, dialogScans: 1,
         databaseTransactions: "not measured at Source boundary" });
     } finally { now.mockRestore(); await f.close(); }
-  }
 });
 
 /** @test-id: tst_src_tgfast_006

@@ -243,7 +243,7 @@ test("tst_src_tgfast_004 backfill preserves provider totals without inventing mi
   try {
     f.tg.cachePeer(42, wireChat(42));
     for (const [index, total] of [78, 1, null].entries()) {
-      const pending = execute(f.tg, "fixture-fast", { action: "backfill_chat", chat_id: 42, before_message_id: 10, limit: 1 },
+      const pending = execute(f.tg, "fixture-fast", { action: "backfill_chat", chat_id: 42, before_message_id: 10, lower_message_id: 9 },
         { sleep: async () => undefined });
       clock.advance(3000);
       const sent = await f.application(index);
@@ -252,18 +252,18 @@ test("tst_src_tgfast_004 backfill preserves provider totals without inventing mi
         : new Api.messages.MessagesSlice({ count: total, messages, chats: [], users: [] }));
       const result = await pending;
       expect(result.total).toBe(total);
-      expect(result.has_more).toBe(true);
+      expect(result.has_more).toBe(false);
       expect(result.oldest_message_id).toBe(9);
     }
     // The existing ops seam represents a provider adapter with no count at all.
     const missing = await execute(fakeOps([]), "fixture-fast",
-      { action: "backfill_chat", chat_id: 42 }, { sleep: async () => undefined });
+      { action: "backfill_chat", chat_id: 42, lower_message_id: 1 }, { sleep: async () => undefined });
     expect(missing.total).toBeNull();
 
     // A cold peer lookup spends the same deadline, not a separate 60-second
     // allowance followed by another history timeout after the host has left.
     const pending = settled(execute(new TgClient(f.client), "fixture-fast",
-      { action: "backfill_chat", chat_id: 43 }, { sleep: async () => undefined }));
+      { action: "backfill_chat", chat_id: 43, lower_message_id: 1 }, { sleep: async () => undefined }));
     const sent = await f.application(3);
     expect(sent.method).toBe("messages.GetDialogs");
     clock.advance(20_000);
@@ -287,7 +287,7 @@ test("tst_src_tgfast_004 backfill preserves provider totals without inventing mi
     });
     try {
       const lookup = settled(execute(new TgClient(f.client), "fixture-fast",
-        { action: "backfill_chat", chat_id: 9999 }, { sleep: async () => undefined }));
+        { action: "backfill_chat", chat_id: 9999, lower_message_id: 1 }, { sleep: async () => undefined }));
       const discovery = await f.application(4);
       if (!expirePeer) throw new Error("Backfill deadline was not armed");
       expirePeer();
@@ -306,7 +306,7 @@ test("tst_src_tgfast_004 backfill preserves provider totals without inventing mi
       new Api.messages.MessagesNotModified({ count: 78 }),
       new Api.messages.MessagesSlice({ count: -1, messages: [], chats: [], users: [] }),
     ].entries()) {
-      const reading = settled(execute(f.tg, "fixture-fast", { action: "backfill_chat", chat_id: 42 },
+      const reading = settled(execute(f.tg, "fixture-fast", { action: "backfill_chat", chat_id: 42, lower_message_id: 1 },
         { sleep: async () => undefined }));
       await f.reply(await f.application(5 + index), invalid);
       const failed = await reading;

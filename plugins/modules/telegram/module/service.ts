@@ -1596,7 +1596,6 @@ export class TelegramModule {
       properties: {
         chat_id: { type: ["integer", "string"] },
         before_message_id: { type: "integer" },
-        limit: { type: "integer", minimum: 1, maximum: 200 },
         account_id: { type: "string" },
       },
       required: ["chat_id"],
@@ -1610,7 +1609,6 @@ export class TelegramModule {
       action: "backfill_chat",
       chat_id: params.chat_id,
       before_message_id: params.before_message_id ?? 0,
-      limit: params.limit ?? 50,
     };
     // FIRE-AND-FORGET. The connector fetch is network-bound (the Telegram server
     // can take tens of seconds) and the plugin runs ALL its ops on ONE worker

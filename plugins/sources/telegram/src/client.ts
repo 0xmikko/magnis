@@ -25,8 +25,14 @@ import { toRfc3339Utc } from "./surfaces/telegram/envelope";
  * newest N messages are fetched (GetDialogs carries only each chat's single top
  * message), preserving the snapshot the in-backend bootstrap produced. */
 export const BOOTSTRAP_MESSAGES_PER_CHAT = 100;
+/** Telegram's provider-sized messages.getHistory request. Larger Source pages
+ * are assembled from as many of these requests as fit the page budgets. */
+export const TELEGRAM_HISTORY_PAGE_SIZE = 100;
 export const SOURCE_PAGE_HISTORY_LIMIT = 25;
 export const SOURCE_PAGE_BUDGET_MS = 20_000;
+/** The source/1 host accepts a four-megabyte line. Keep the envelope body at
+ * three so the JSON-RPC result and immutable fields stamped by the host fit. */
+export const SOURCE_PAGE_BUDGET_BYTES = 3 * 1024 * 1024;
 
 /** @tested-by: tst_src_tgfast_003 — TGFAST_002 bounds each remaining read. */
 export function remainingPageBudget(deadline: number): number {

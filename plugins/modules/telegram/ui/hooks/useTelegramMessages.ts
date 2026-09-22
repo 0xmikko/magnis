@@ -273,7 +273,6 @@ export function useTelegramMessages(
         chat_id: Number(nativeChatId),
         account_id: sourceAccountId,
         before_message_id: oldestMsgId,
-        limit: PAGE_SIZE,
       })
       .catch((err: unknown) => {
         console.error("Backfill request failed:", err);

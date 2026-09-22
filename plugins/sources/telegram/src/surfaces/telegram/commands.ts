@@ -16,8 +16,11 @@ import type {
 } from "../../client";
 import {
   buildDialogMeta,
+  MtprotoTimeoutError,
+  SOURCE_PAGE_BUDGET_BYTES,
   SOURCE_PAGE_HISTORY_LIMIT,
   SOURCE_PAGE_BUDGET_MS,
+  TELEGRAM_HISTORY_PAGE_SIZE,
   remainingPageBudget,
   chatToIntermediate,
   messageToIntermediate,
@@ -437,8 +440,10 @@ export async function execute(
       const chatId = argI64(args, "chat_id");
       if (chatId === undefined) throw new Error("missing chat_id");
       const beforeMessageId = argI64(args, "before_message_id") ?? 0;
-      const limit = typeof args.limit === "number" ? Math.trunc(args.limit) : 50;
-      return await backfillChat(ops, accountId, chatId, beforeMessageId, limit);
+      const lowerMessageId = argI64(args, "lower_message_id");
+      if (lowerMessageId === undefined) throw new Error("missing lower_message_id");
+      if (lowerMessageId <= 0) throw new Error("lower_message_id must be positive");
+      return await backfillChat(ops, accountId, chatId, beforeMessageId, lowerMessageId);
     }
     case "download_file": {
       const sourceRef = asObject(args.source_ref);
@@ -525,7 +530,7 @@ async function backfillChat(
   accountId: string,
   chatId: number,
   beforeMessageId: number,
-  limit: number,
+  lowerMessageId: number,
 ): Promise<Record<string, unknown>> {
   const deadline = performance.now() + SOURCE_PAGE_BUDGET_MS;
   const controller = new AbortController();
@@ -536,27 +541,67 @@ async function backfillChat(
   } finally {
     controller.abort();
   }
-  const messages = await ops.getMessages(peer, { offsetId: beforeMessageId, limit }, remainingPageBudget(deadline));
-
   const envelopes: Record<string, unknown>[] = [];
   let oldest: number | null = null;
+  let total: number | null = null;
+  let envelopeBytes = 0;
+  let before = beforeMessageId;
+  let hasMore = true;
   // Stamp the connection's account_id into every backfilled message's source_ref.
   // Previously hardcoded "" — which the host did NOT re-stamp for the external
   // connector, so backfilled media records carried account_id="" and the
   // file-download worker resolved the session for account '' and never
   // downloaded the attachment.
-  for (const msg of messages) {
-    oldest = oldest === null ? msg.id : Math.min(oldest, msg.id);
-    envelopes.push(
-      messageEnvelope(messageToIntermediate(msg, accountId, chatId), "snapshot"),
-    );
+  providerPages: for (;;) {
+    let messages: MessagePage;
+    try {
+      messages = await ops.getMessages(
+        peer,
+        { offsetId: before, limit: TELEGRAM_HISTORY_PAGE_SIZE },
+        remainingPageBudget(deadline),
+      );
+    } catch (error) {
+      if (envelopes.length > 0 && error instanceof MtprotoTimeoutError) break;
+      throw error;
+    }
+    total ??= messages.total ?? null;
+    if (messages.length === 0) {
+      hasMore = false;
+      break;
+    }
+    let providerOldest: number | null = null;
+    for (const msg of messages) {
+      providerOldest = providerOldest === null ? msg.id : Math.min(providerOldest, msg.id);
+      if (msg.id < lowerMessageId) {
+        hasMore = false;
+        break providerPages;
+      }
+      const envelope = messageEnvelope(messageToIntermediate(msg, accountId, chatId), "snapshot");
+      const bytes = new TextEncoder().encode(JSON.stringify(envelope)).byteLength + (envelopes.length === 0 ? 0 : 1);
+      if (envelopeBytes + bytes > SOURCE_PAGE_BUDGET_BYTES) {
+        if (envelopes.length === 0) throw new Error("Telegram history envelope exceeds the Source page budget");
+        break providerPages;
+      }
+      envelopes.push(envelope);
+      envelopeBytes += bytes;
+      oldest = oldest === null ? msg.id : Math.min(oldest, msg.id);
+      if (msg.id === lowerMessageId) {
+        hasMore = false;
+        break providerPages;
+      }
+    }
+    if (providerOldest === null || (before !== 0 && providerOldest >= before)) {
+      throw new Error("Telegram history did not advance");
+    }
+    before = providerOldest;
+    if (performance.now() >= deadline) break;
   }
   // Keys are read RAW by the host's run_backfill (the Execute path is not
   // FetchResult-shaped), so they are snake_case.
   return {
     envelopes,
-    has_more: backfillHasMore(envelopes.length),
+    has_more: hasMore && backfillHasMore(envelopes.length),
     oldest_message_id: oldest,
-    total: messages.total ?? null,
+    total,
   };
 }

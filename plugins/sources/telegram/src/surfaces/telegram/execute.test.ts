@@ -2,7 +2,7 @@
 // plugins/sources/telegram/src/commands.rs execute/backfill/arg_i64 tests, plus
 // the FLOOD_WAIT → -32002 wire mapping from main.rs.
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { argI64, backfillHasMore, execute, type TgOps } from "./commands";
 import type { MessageLike } from "../../client";
 import {
@@ -255,44 +255,90 @@ describe("backfill_chat", () => {
   });
 
   test("tst_tgts_exec_006 backfill returns SNAKE_CASE keys + the oldest id", async () => {
-    const msgs: MessageLike[] = [{ id: 30, date: 0 }, { id: 10, date: 0 }, { id: 20, date: 0 }];
+    const msgs: MessageLike[] = [{ id: 30, date: 0 }, { id: 20, date: 0 }, { id: 10, date: 0 }];
     const { ops, calls } = fakeOps({ messages: msgs });
     const out = await execute(
       ops,
       "conn-1",
-      { action: "backfill_chat", chat_id: 5, before_message_id: 40, limit: 3 },
+      { action: "backfill_chat", chat_id: 5, before_message_id: 40, lower_message_id: 10 },
       noSleep,
     );
-    expect(out.has_more).toBe(true);
+    expect(out.has_more).toBe(false);
     expect(out.oldest_message_id).toBe(10); // the MIN id of the page
     expect((out.envelopes as unknown[]).length).toBe(3);
     // The page is anchored on before_message_id (exclusive) with the given limit.
-    expect(calls.getMessages[0]!.params).toEqual({ offsetId: 40, limit: 3 });
+    expect(calls.getMessages[0]!.params).toEqual({ offsetId: 40, limit: 100 });
   });
 
-  test("tst_tgts_exec_007 a short non-empty page still reports has_more=true", async () => {
+  test("tst_tgts_exec_007 reaching the requested lower message ends the page", async () => {
     const { ops } = fakeOps({ messages: [{ id: 1, date: 0 }] });
     const out = await execute(
       ops,
       "a",
-      { action: "backfill_chat", chat_id: 5, limit: 50 },
+      { action: "backfill_chat", chat_id: 5, lower_message_id: 1 },
       noSleep,
     );
-    expect(out.has_more).toBe(true);
+    expect(out.has_more).toBe(false);
   });
 
   test("tst_tgts_exec_008 an empty page ends backfill, with a null oldest id", async () => {
     const { ops } = fakeOps({ messages: [] });
-    const out = await execute(ops, "a", { action: "backfill_chat", chat_id: 5 }, noSleep);
+    const out = await execute(ops, "a", { action: "backfill_chat", chat_id: 5, lower_message_id: 1 }, noSleep);
     expect(out.has_more).toBe(false);
     expect(out.oldest_message_id).toBeNull();
     expect(out.envelopes).toEqual([]);
   });
 
-  test("tst_tgts_exec_009 defaults: before_message_id=0, limit=50", async () => {
+  test("tst_tgts_exec_009 defaults before_message_id to zero and uses provider-sized reads", async () => {
     const { ops, calls } = fakeOps();
-    await execute(ops, "a", { action: "backfill_chat", chat_id: 5 }, noSleep);
-    expect(calls.getMessages[0]!.params).toEqual({ offsetId: 0, limit: 50 });
+    await execute(ops, "a", { action: "backfill_chat", chat_id: 5, lower_message_id: 1 }, noSleep);
+    expect(calls.getMessages[0]!.params).toEqual({ offsetId: 0, limit: 100 });
+  });
+
+  /**
+   * @test-id: tst_src_tgfast_007
+   * @scenario: scn_tg_backfill_budget_001
+   * @covers: plugins/sources/telegram/src/surfaces/telegram/commands.ts::backfillChat
+   * @deterministic: yes; performance clock is fixed and Telegram pages are scripted
+   * @fixtures: three in-memory provider pages of 100, 100, and 50 messages
+   *
+   * Test environment: Telegram Source command handler
+   * Clients: direct calls
+   * Mocks: scripted TgOps
+   * Data: message ids 250 through 1
+   */
+  test("tst_src_tgfast_007 backfill joins provider pages without a message count limit", async () => {
+    const calls: Record<string, unknown>[] = [];
+    const base = fakeOps().ops;
+    const ops: TgOps = {
+      ...base,
+      async getMessages(_peer, params) {
+        calls.push(params as Record<string, unknown>);
+        const before = params.offsetId ?? 0;
+        const upper = before === 0 ? 250 : before - 1;
+        const messages = Array.from(
+          { length: Math.min(100, upper) },
+          (_, index): MessageLike => ({ id: upper - index, date: 0 }),
+        ) as MessageLike[] & { total?: number };
+        messages.total = 250;
+        return messages;
+      },
+    };
+    const now = spyOn(performance, "now").mockReturnValue(0);
+    try {
+      const out = await execute(ops, "a", {
+        action: "backfill_chat",
+        chat_id: 5,
+        before_message_id: 0,
+        lower_message_id: 1,
+      }, noSleep);
+      expect((out.envelopes as unknown[]).length).toBe(250);
+      expect(out.oldest_message_id).toBe(1);
+      expect(calls.map((call) => call.offsetId)).toEqual([0, 151, 51]);
+      expect(calls.every((call) => call.limit === 100)).toBe(true);
+    } finally {
+      now.mockRestore();
+    }
   });
 
   // The Bug-2 regression: backfilled media MUST carry the real account_id.
@@ -306,7 +352,7 @@ describe("backfill_chat", () => {
     const out = await execute(
       ops,
       "conn-xyz",
-      { action: "backfill_chat", chat_id: 100 },
+      { action: "backfill_chat", chat_id: 100, lower_message_id: 7 },
       noSleep,
     );
     const env = (out.envelopes as Record<string, unknown>[])[0]!;
@@ -325,7 +371,7 @@ describe("backfill_chat", () => {
     const out = await execute(
       ops,
       "conn-xyz",
-      { action: "backfill_chat", chat_id: 100 },
+      { action: "backfill_chat", chat_id: 100, lower_message_id: 7 },
       noSleep,
     );
 

@@ -402,6 +402,9 @@ describe("telegram chat header total (graph total, never page length)", () => {
     expect(
       rpcMock.mock.calls.filter(([method]) => method === "telegram.messages.backfill"),
     ).toHaveLength(1);
+    expect(
+      rpcMock.mock.calls.find(([method]) => method === "telegram.messages.backfill")?.[1],
+    ).not.toHaveProperty("limit");
     unmount();
   });
 });

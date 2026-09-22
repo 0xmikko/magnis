@@ -214,7 +214,6 @@ export interface BatchSendParams {
 export interface BackfillParams {
   chat_id: number | string;
   before_message_id?: number;
-  limit?: number;
   account_id?: string;
 }
 
