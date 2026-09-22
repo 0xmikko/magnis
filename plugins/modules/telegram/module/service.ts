@@ -67,7 +67,6 @@ import { runBatchSend } from "./batchSend.ts";
  * what this module says a message is.
  */
 const EXPOSED_OUTGOING = new Set(["in_chat", "authored_by"]);
-const MESSAGE_INGEST_CHUNK = 500;
 
 interface IngestedChatState {
   readonly entityId: string;
@@ -1105,13 +1104,8 @@ export class TelegramModule {
       pageChatState = await this.ingestChatBatch(chats, identityKey, newestMessageByChat, generation, statement);
     }
 
-    // Bootstrap/catch-up pages can exceed the source's 500-message backfill page.
     // @tested-by: tst_module_telegram_004
-    for (let i = 0; i < messages.length; i += MESSAGE_INGEST_CHUNK) {
-      await this.ingestMessageBatch(
-        messages.slice(i, i + MESSAGE_INGEST_CHUNK), triggers, identityKey, pageChatState, generation, statement,
-      );
-    }
+    await this.ingestMessageBatch(messages, triggers, identityKey, pageChatState, generation, statement);
 
     // @tested-by: tst_module_telegram_plan_001 — a page outside a worker states nothing.
     if (generation === null) return { dropped_remote_ids: dropped, trigger_checks: triggers };

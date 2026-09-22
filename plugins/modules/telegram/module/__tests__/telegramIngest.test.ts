@@ -246,15 +246,10 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
    * @scenario: scn_telegram_backfill_throughput_001
    * @covers: TelegramModule.ingest
    * @deterministic: yes
-   * @fixtures: bounded 500-message and oversized 1001-message pages
+   * @fixtures: one 1001-message page
    */
-  it.each([
-    { messageCount: 500, expectedBatchCount: 1 },
-    { messageCount: 1_001, expectedBatchCount: 3 },
-  ])("tst_module_telegram_004 chunks $messageCount messages into $expectedBatchCount graph batches", async ({
-    messageCount,
-    expectedBatchCount,
-  }) => {
+  it("tst_module_telegram_004 admits a 1001-message page in one graph batch", async () => {
+    const messageCount = 1_001;
     const graph = mockGraph({
       find_by_anchors: (anchors) => Promise.resolve(anchors.map(() => "chat-entity")),
       get_entities: (ids) =>
@@ -286,10 +281,10 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
 
     await module.ingest({ envelopes });
 
-    expect(graph.spies.find_by_anchors).toHaveBeenCalledTimes(expectedBatchCount);
-    expect(graph.spies.get_entities).toHaveBeenCalledTimes(expectedBatchCount);
-    expect(graph.spies.apply_batch).toHaveBeenCalledTimes(expectedBatchCount);
-    expect(graph.spies.update_properties_batch).toHaveBeenCalledTimes(expectedBatchCount);
+    expect(graph.spies.find_by_anchors).toHaveBeenCalledTimes(1);
+    expect(graph.spies.get_entities).toHaveBeenCalledTimes(1);
+    expect(graph.spies.apply_batch).toHaveBeenCalledTimes(1);
+    expect(graph.spies.update_properties_batch).toHaveBeenCalledTimes(1);
   });
 
   it("preserves the provider-verified self marker when an outgoing sender replica converges", async () => {
