@@ -1,16 +1,17 @@
 import { PassThrough } from "node:stream";
 import { expect, spyOn, test } from "bun:test";
+import { runConnector } from "@magnis/connector-sdk";
 import bigInt from "big-integer";
 import { Api } from "telegram";
 
 import * as live from "./live";
-import { runMcpStdio, type DispatchDeps } from "./dispatch";
+import { buildConnectorConfig, type ConnectorDeps } from "./connector";
 import { resetAuthFlow } from "./auth";
 import { SubscriptionRegistry } from "./subscriptions";
 import { LiveDialogPager } from "./live";
 import { MTPROTO_REQUEST_TIMEOUT_MS, SOURCE_PAGE_BUDGET_MS, MtprotoTimeoutError } from "./client";
 import { AccountAdmission, type AdmissionEvent } from "./request-admission";
-import { execute, runBootstrap } from "./surfaces/telegram/commands";
+import { fetch, runBootstrap } from "./surfaces/telegram/commands";
 import { liveUpdatePushes } from "./subscriptions";
 import { caseEvidence, createTransport, setupConfig, VirtualClock } from "./testing/mtproto-transport";
 
@@ -35,7 +36,7 @@ function fixtureMessage(chatId: number, id: number): Api.Message {
   return new Api.Message({ id, peerId: new Api.PeerChat({ chatId: bigInt(chatId) }), date: 1700000000 + id, message: `fixture-${String(chatId)}-${String(id)}`, out: false, pinned: id === 1 });
 }
 
-function commandStream(overrides: Partial<DispatchDeps> = {}) {
+function commandStream(overrides: ConnectorDeps & { authMode?: boolean } = {}) {
   const input = new PassThrough();
   const records: Record<string, unknown>[] = [];
   const replies = new Map<number, Record<string, unknown>>();
@@ -50,7 +51,12 @@ function commandStream(overrides: Partial<DispatchDeps> = {}) {
       waiting.delete(record.id);
     }
   };
-  const running = runMcpStdio(input, { authMode: false, registry, ...overrides, write });
+  const authModeArg = overrides.authMode === true ? process.argv.push("--auth-mode") - 1 : -1;
+  const running = runConnector(
+    { ...buildConnectorConfig({ ...overrides, registry }), onNotification: write },
+    input,
+    write,
+  );
   return {
     input, records, replies, registry,
     send: (id: number, name: string, args: Record<string, unknown>): void => {
@@ -60,9 +66,22 @@ function commandStream(overrides: Partial<DispatchDeps> = {}) {
       const existing = replies.get(id);
       return existing ? Promise.resolve(existing) : new Promise((resolve) => { waiting.set(id, resolve); });
     },
-    finish: async (): Promise<void> => { input.end(); await running; },
+    finish: async (): Promise<void> => {
+      input.end();
+      try { await running; }
+      finally { if (authModeArg >= 0) process.argv.splice(authModeArg, 1); }
+    },
   };
 }
+
+const unusedPager = { dialogPage: async () => ({ dialogs: [], next_offset: null, total: null }) };
+const gapArgs = (chatId: number, start: number, end: number, cursor?: number) => ({
+  surface: "telegram",
+  direction: "backward" as const,
+  scope_id: String(chatId),
+  target: { kind: "gap" as const, start, end },
+  ...(cursor === undefined ? {} : { cursor }),
+});
 
 function flushCommands(): Promise<void> {
   return new Promise((resolve) => { setImmediate(resolve); });
@@ -155,9 +174,7 @@ test("tst_src_tgflood_005 the Source command loop preserves runtime flood replie
         const chat = request.peer.chatId.toJSNumber();
         const count = counts.get(chat);
         if (count === undefined) throw new Error("Unexpected Source history peer");
-        // The bootstrap's hydration asks the doubled depth; a backfill asks what
-        // its command says. The provider short-pages below either (Telegram
-        // does): the page's tail stays for backfill, as it always has here.
+        // The bootstrap hydration and bounded fetch both use provider pages.
         expect(request.limit).toBeLessThanOrEqual(100);
         const messages = Array.from({ length: count }, (_, i) => fixtureMessage(chat, count - i))
           .filter((message) => request.offsetId === 0 || message.id < request.offsetId).slice(0, 50);
@@ -172,7 +189,7 @@ test("tst_src_tgflood_005 the Source command loop preserves runtime flood replie
     expect(await io.reply(id++)).toMatchObject({ error: { code: -32002, data: { retry_after: 4 } } });
     expect(io.replies.get(20)).not.toHaveProperty("result");
     const heldAt = actual.writes.length;
-    io.send(id, "magnis.execute", { action: "backfill_chat", chat_id: 101, lower_message_id: 1, _meta: meta });
+    io.send(id, "magnis.sync.fetch", { ...gapArgs(101, 1, 70), _meta: meta });
     expect(await io.reply(id++)).toMatchObject({ error: { code: -32002 } });
     io.send(id, "magnis.execute", { action: "download_file", source_ref: { chat_id: 101, message_id: 1 },
       dest: ".tmp/code-production/telegram-flood-safety/D1-S5/never-written.bin", _meta: meta });
@@ -195,18 +212,15 @@ test("tst_src_tgflood_005 the Source command loop preserves runtime flood replie
     // The page states what it read of each chat: the 120- and 70-message chats
     // down to their first page's oldest, the 5-message chat whole.
     expect(result).toMatchObject({ hasMore: false, traversed: { "101": [71, 120], "102": [21, 70], "103": [1, 5] } });
-    const before = new Map([[101, 71], [102, 21], [103, 1]]);
-    while (before.size) for (const [chat, offset] of [...before]) {
-      io.send(id, "magnis.execute", { action: "backfill_chat", chat_id: chat, before_message_id: offset, lower_message_id: 1, _meta: meta });
-      const providerPages = Math.max(1, Math.ceil((offset - 1) / 50));
+    const gaps = new Map([[101, 70], [102, 20]]);
+    for (const [chat, end] of gaps) {
+      io.send(id, "magnis.sync.fetch", { ...gapArgs(chat, 1, end), _meta: meta });
+      const providerPages = Math.ceil(end / 50);
       for (let page = 0; page < providerPages; page++) await answer();
       const page = (await io.reply(id++)).result as Record<string, unknown>;
       emitted.push(...envelopes(page));
-      if (page.has_more === false) before.delete(chat);
-      else {
-        expect(typeof page.oldest_message_id).toBe("number");
-        before.set(chat, Number(page.oldest_message_id));
-      }
+      expect(page.hasMore).toBe(false);
+      expect(page.traversed).toEqual({ [String(chat)]: [1, end] });
     }
     const identities = new Set(emitted.map((item) => item.remote_id).filter((value): value is string => typeof value === "string" && value.startsWith("tg:msg:")));
     for (const push of pushes) identities.add(String((push.params as Record<string, unknown>).remote_id));
@@ -214,7 +228,9 @@ test("tst_src_tgflood_005 the Source command loop preserves runtime flood replie
     expect([...identities].sort()).toEqual([...expected, "tg:msg:101:121", "tg:msg:101:122"].sort());
     expect(identities.size).toBe(197);
     const start = id;
-    for (let i = 0; i < 8; i++) io.send(id++, "magnis.execute", { action: "backfill_chat", chat_id: 101, lower_message_id: 1, _meta: meta });
+    for (let i = 0; i < 8; i++) {
+      io.send(id++, "magnis.sync.fetch", { ...gapArgs(101, 1, 70), _meta: meta });
+    }
     runningClock.advance(4000);
     const blocked = await actual.application(index++);
     await flushCommands();
@@ -222,7 +238,7 @@ test("tst_src_tgflood_005 the Source command loop preserves runtime flood replie
     io.send(id, "listen_stop", { subscription_id: "active" });
     await flushCommands();
     // Stop must have replied while all eight work commands still own their slots.
-    expect(io.replies.get(id++)).toMatchObject({ result: { ok: true, cancelled: true } });
+    expect(io.replies.get(id++)).toMatchObject({ result: { ok: true } });
     expect(io.replies.has(start)).toBe(false);
     await actual.reply(blocked, new Api.RpcError({ errorCode: 420, errorMessage: "FLOOD_WAIT_4" }));
     for (let i = 0; i < 8; i++) expect(await io.reply(start + i)).toMatchObject({ error: { code: -32002 } });
@@ -230,8 +246,8 @@ test("tst_src_tgflood_005 the Source command loop preserves runtime flood replie
     const captured = JSON.stringify(diagnostics);
     expect(diagnostics.length).toBeGreaterThan(0);
     for (const secret of [String(meta.session), "fixture-only", "fixture-101-121", "fixture-phone"]) expect(captured).not.toContain(secret);
-    expect(actual.writes).toHaveLength(15);
-    evidence(actual, runningClock, { expectedTransmissions: 15, expectedMessages: 197, actualMessages: identities.size,
+    expect(actual.writes).toHaveLength(12);
+    evidence(actual, runningClock, { expectedTransmissions: 12, expectedMessages: 197, actualMessages: identities.size,
       identities: ["101:1..122", "102:1..70", "103:1..5"], failedFetchResults: 0, stoppedWithOccupiedSlots: 8 });
   } finally {
     io.registry.stop("active");
@@ -320,7 +336,6 @@ test("tst_src_tgflood_003 peer misses share a continuation through floods and ca
   const nativeTimeout = globalThis.setTimeout;
   const clock = new VirtualClock();
   const f = await createTransport(clock);
-  const deps = { sleep: async (): Promise<void> => { throw new Error("Unexpected independent retry sleep"); } };
   let wireIndex = 0;
   const dialogResponse = (ids: number[], slice: boolean): Api.messages.Dialogs | Api.messages.DialogsSlice => {
     const data = { dialogs: ids.map((id) => new Api.Dialog({ pinned: id <= 2,
@@ -398,14 +413,14 @@ test("tst_src_tgflood_003 peer misses share a continuation through floods and ca
       return handle;
     });
     try {
-      const timedOut = outcome(execute(f.tg, "fixture-A", { action: "backfill_chat", chat_id: 201, before_message_id: 0, lower_message_id: 1 }, deps));
+      const timedOut = outcome(fetch(f.tg, unusedPager, "fixture-A", gapArgs(201, 1, 120)));
       const uncertain = await f.application(wireIndex++);
       expect(historyTimeoutMs).toBe(SOURCE_PAGE_BUDGET_MS);
       if (!expireHistory) throw new Error("History timeout was not armed");
       expireHistory();
       expect((await timedOut).value).toBeInstanceOf(MtprotoTimeoutError);
       expect((await timedOut).value).not.toHaveProperty("envelopes");
-      expect((await timedOut).value).not.toHaveProperty("has_more");
+      expect((await timedOut).value).not.toHaveProperty("hasMore");
       // A late SDK success settles its slot, never the failed Source receipt.
       await f.reply(uncertain, new Api.messages.Messages({ messages: [fixtureMessage(201, 120)], chats: [fixtureChat(201)], users: [] }));
 
@@ -430,13 +445,8 @@ test("tst_src_tgflood_003 peer misses share a continuation through floods and ca
     const counts = new Map([[201, 120], [202, 70], [103, 5]]);
     const emitted: string[] = [];
     for (const [chat, count] of counts) {
-      const reading = execute(f.tg, "fixture-A", {
-        action: "backfill_chat",
-        chat_id: chat,
-        before_message_id: 0,
-        lower_message_id: 1,
-      }, deps);
-      let before = 0;
+      const reading = fetch(f.tg, unusedPager, "fixture-A", gapArgs(chat, 1, count));
+      let before = count + 1;
       for (;;) {
         const sent = await f.application(wireIndex++);
         const request: unknown = sent.state.request;
@@ -454,7 +464,8 @@ test("tst_src_tgflood_003 peer misses share a continuation through floods and ca
       const batch = envelopes(page);
       emitted.push(...batch.map((item) => String(item.remote_id)));
       expect(batch).toHaveLength(count);
-      expect(page.has_more).toBe(true);
+      expect(page.hasMore).toBe(false);
+      expect(page.traversed).toEqual({ [String(chat)]: [1, count] });
     }
     expect(emitted).toHaveLength(195);
     expect(new Set(emitted)).toEqual(new Set([...counts].flatMap(([chat, count]) =>
@@ -513,8 +524,7 @@ test("tst_src_tgflood_001 healthy requests use a free application slot without d
         const history = histories.get(id);
         const count = counts.get(id);
         if (!history || count === undefined) throw new Error("Unexpected history peer");
-        // The bootstrap's hydration asks the doubled depth; a backfill asks what
-        // its command says — both are served in full up to what each asked.
+        // Bootstrap hydration and bounded fetch are both served up to the request.
         expect(request.limit).toBeLessThanOrEqual(100);
         const page = history.filter((message) => request.offsetId === 0 || message.id < request.offsetId).slice(0, request.limit);
         await f.reply(sent, new Api.messages.MessagesSlice({ count, messages: page, chats: [fixtureChat(id)], users: [] }));
@@ -528,21 +538,13 @@ test("tst_src_tgflood_001 healthy requests use a free application slot without d
       { payload: { is_pinned: true, pin_order: 0 } }, { payload: { is_pinned: true, pin_order: 1 } }, { payload: { is_pinned: false, pin_order: 0 } },
     ]);
     expect(boot).toMatchObject({ hasMore: false, traversed: { "101": [21, 120], "102": [1, 70], "103": [1, 5] } });
-    const before = new Map([[101, 21]]);
-    while (before.size > 0) for (const [chat, offset] of [...before]) {
-      const filling = execute(f.tg, "fixture-A", { action: "backfill_chat", chat_id: chat, before_message_id: offset, lower_message_id: 1 }, { sleep: async () => { throw new Error("Unexpected independent sleep"); } });
-      await answer();
-      const page = await filling;
-      const batch = envelopes(page);
-      expect(batch.length).toBeLessThanOrEqual(50);
-      emitted.push(...batch);
-      if (page.has_more === false) {
-        before.delete(chat);
-      } else {
-        if (typeof page.oldest_message_id !== "number") throw new Error("Missing history continuation");
-        before.set(chat, page.oldest_message_id);
-      }
-    }
+    const filling = fetch(f.tg, unusedPager, "fixture-A", gapArgs(101, 1, 20));
+    await answer();
+    const page = await filling;
+    const batch = envelopes(page);
+    expect(batch.length).toBeLessThanOrEqual(50);
+    expect(page).toMatchObject({ hasMore: false, traversed: { "101": [1, 20] } });
+    emitted.push(...batch);
     const actual = emitted.map((envelope) => envelope.remote_id).filter((id): id is string => typeof id === "string" && id.startsWith("tg:msg:"));
     const expected = [...histories].flatMap(([chat, history]) => history.map((message) => `tg:msg:${String(chat)}:${String(message.id)}`));
     expect(actual.length).toBe(195);
@@ -632,9 +634,9 @@ test("tst_src_tgflood_001 healthy requests use a free application slot without d
       if (!a || !b) throw new Error("Missing transmission");
       expect(b.at - a.at).toBe(0);
     }
-    expect(f.writes).toHaveLength(41);
-    evidence(f, clock, { expectedTransmissions: 41, expectedMessages: 197, actualMessages: actual.length + liveIds.length,
-      identities: ["101:1..122", "102:1..70", "103:1..5"], mediaChunks: 3, mediaBytes: 262151, deliberateWaitMs: clock.now(), sameTimestampRequests: 41 });
+    expect(f.writes).toHaveLength(40);
+    evidence(f, clock, { expectedTransmissions: 40, expectedMessages: 197, actualMessages: actual.length + liveIds.length,
+      identities: ["101:1..122", "102:1..70", "103:1..5"], mediaChunks: 3, mediaBytes: 262151, deliberateWaitMs: clock.now(), sameTimestampRequests: 40 });
   } finally { await f.close(); }
 });
 
@@ -713,28 +715,18 @@ test("tst_src_tgfast_005 measures complete round-robin history without local pac
           expect(liveIds).toEqual(["tg:msg:101:121", "tg:msg:101:122"]);
         }
       }
-      const before = new Map([[101, 21]]);
       const visits: number[] = [];
-      while (before.size > 0) for (const [chat, offset] of [...before]) {
-        visits.push(chat);
-        const started = clock.now();
-        const reading = execute(f.tg, "fixture-A", { action: "backfill_chat", chat_id: chat, before_message_id: offset, lower_message_id: 1 },
-          { sleep: async () => { throw new Error("Unexpected Source sleep"); } });
-        await answer();
-        const page = await reading;
-        latencies.push(clock.now() - started);
-        frameBytes.push(Buffer.byteLength(JSON.stringify(page)));
-        const messages = envelopes(page);
-        expect(page.total).toBe(counts.get(chat));
-        emitted.push(...messages);
-        if (page.has_more === false) before.delete(chat);
-        else {
-          if (typeof page.oldest_message_id !== "number") throw new Error("Missing exclusive history continuation");
-          expect(page.oldest_message_id).toBeLessThan(offset);
-          before.set(chat, page.oldest_message_id);
-        }
-      }
-      expect(visits).toEqual([101, 101]);
+      visits.push(101);
+      const started = clock.now();
+      const reading = fetch(f.tg, unusedPager, "fixture-A", gapArgs(101, 1, 20));
+      await answer();
+      const page = await reading;
+      latencies.push(clock.now() - started);
+      frameBytes.push(Buffer.byteLength(JSON.stringify(page)));
+      expect(page.total).toBe(counts.get(101));
+      expect(page).toMatchObject({ hasMore: false, traversed: { "101": [1, 20] } });
+      emitted.push(...envelopes(page));
+      expect(visits).toEqual([101]);
       const ids = emitted.map((item) => item.remote_id).filter((id): id is string => typeof id === "string" && id.startsWith("tg:msg:"));
       expect(ids.sort()).toEqual(expected.sort());
       expect(new Set([...ids, ...liveIds]).size).toBe(197);
@@ -742,7 +734,7 @@ test("tst_src_tgfast_005 measures complete round-robin history without local pac
         .map((item) => (item.payload as Record<string, unknown>).pin_order)).toEqual([0, 1, 2, 3, 4, 5, 6]);
       expect(Math.max(...latencies)).toBe(2600);
       expect(f.writes.filter((wire) => wire.method === "messages.GetDialogs")).toHaveLength(1);
-      expect(f.writes).toHaveLength(54);
+      expect(f.writes).toHaveLength(53);
       expect(clock.now()).toBe(f.writes.length * 100);
       expect(f.maximumInFlight()).toBe(1);
       evidence(f, clock, { sourcePagePolicy: "time-and-bytes", providerTimeMs: clock.now(), deliberateWaitMs: 0,

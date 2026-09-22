@@ -1,9 +1,5 @@
-// S1 (sources-typescript-port): the SDK carries the FULL Magnis Sync Profile
-// the host speaks — JSON cursors/direction/total/discovered, push
-// (listen_start/stop + stamped envelope notifications + the legacy
-// magnis.sync.listen alias), auth flows (begin/step/exchange/revoke) and
-// magnis.execute. Wire shapes mirror backend/src/sources/mcp/runtime.rs and
-// the Rust telegram connector EXACTLY (INV-TS-1).
+// The SDK carries the complete Magnis Sync Profile spoken by the host:
+// targets/checkpoints/progress, push sessions, auth flows and actions.
 import { describe, expect, it } from "bun:test";
 import { handleMessage, type ConnectorConfig } from "./index";
 
@@ -45,23 +41,51 @@ describe("S1.1 fetch contract", () => {
     expect((reply as any).result.nextCursor).toEqual({ page: "abc", ts: 42 });
   });
 
-  it("tst_sdk_cursor_002: direction + total/discovered pass through", async () => {
-    let dir: unknown;
+  it("tst_sdk_cursor_002: standard target, checkpoint and progress pass through", async () => {
+    let seen: Record<string, unknown> | undefined;
     const cfg = base({
       fetch: async (args) => {
-        dir = args.direction;
-        return { envelopes: [], nextCursor: null, hasMore: false, total: 7, discovered: 3 };
+        seen = args as unknown as Record<string, unknown>;
+        return {
+          envelopes: [],
+          progress: {
+            kind: "completeTarget" as const,
+            forwardCheckpoint: { kind: "replace" as const, value: 91 },
+          },
+          traversed: { "chat-7": [42, 91] as [number, number] },
+          total: 7,
+          discovered: 3,
+        };
       },
     });
     const reply = await handleMessage(
       {
         id: 2,
         method: "tools/call",
-        params: { name: "magnis.sync.fetch", arguments: { surface: "fx", direction: "backward" } },
+        params: {
+          name: "magnis.sync.fetch",
+          arguments: {
+            surface: "fx",
+            direction: "backward",
+            scope_id: "chat-7",
+            target: { kind: "gap", start: 42, end: 91 },
+            forward_checkpoint: 41,
+          },
+        },
       },
       cfg,
     );
-    expect(dir).toBe("backward");
+    expect(seen).toMatchObject({
+      direction: "backward",
+      scope_id: "chat-7",
+      target: { kind: "gap", start: 42, end: 91 },
+      forward_checkpoint: 41,
+    });
+    expect((reply as any).result.progress).toEqual({
+      kind: "completeTarget",
+      forwardCheckpoint: { kind: "replace", value: 91 },
+    });
+    expect((reply as any).result.traversed).toEqual({ "chat-7": [42, 91] });
     expect((reply as any).result.total).toBe(7);
     expect((reply as any).result.discovered).toBe(3);
   });
@@ -73,7 +97,13 @@ describe("S1.2 push contract", () => {
     const cfg = base({
       mode: "push",
       listenStart: async (args, emit) => {
-        emit({ surface: "fx", remote_id: "m1", kind: "live", payload: { hello: 1 } });
+        emit({
+          surface: "fx",
+          remote_id: "m1",
+          kind: "live",
+          payload: { hello: 1 },
+          position: { scope_id: "chat-7", id: 9 },
+        });
         void args;
       },
       onNotification: (line) => out.push(line),
@@ -82,6 +112,9 @@ describe("S1.2 push contract", () => {
     expect(
       (init as any).result.capabilities.experimental.magnis.sync.mode,
     ).toBe("push");
+    expect(
+      (init as any).result.capabilities.experimental.magnis.sync.interval_secs,
+    ).toBeUndefined();
 
     const ack = await handleMessage(
       {
@@ -100,6 +133,7 @@ describe("S1.2 push contract", () => {
     expect(notif.params.subscription_id).toBe("sub:fx:default");
     expect(notif.params.remote_id).toBe("m1");
     expect(notif.params.payload).toEqual({ hello: 1 });
+    expect(notif.params.position).toEqual({ scope_id: "chat-7", id: 9 });
     expect(notif.id).toBeUndefined(); // notification: no id, no reply expected
   });
 
@@ -131,21 +165,41 @@ describe("S1.2 push contract", () => {
     expect(out.length).toBe(0);
   });
 
-  it("tst_sdk_push_003: legacy magnis.sync.listen alias acks like the Rust telegram bin", async () => {
+  it("tst_sdk_push_003: subscriptions require ids and the legacy alias is absent", async () => {
     const cfg = base({
       mode: "push",
       listenStart: async () => {},
+      listenStop: async () => {},
     });
-    const reply = await handleMessage(
+    const missingStart = await handleMessage(
       {
         id: 3,
+        method: "tools/call",
+        params: { name: "listen_start", arguments: {} },
+      },
+      cfg,
+    );
+    expect((missingStart as any).error.code).toBe(-32602);
+
+    const missingStop = await handleMessage(
+      {
+        id: 4,
+        method: "tools/call",
+        params: { name: "listen_stop", arguments: {} },
+      },
+      cfg,
+    );
+    expect((missingStop as any).error.code).toBe(-32602);
+
+    const legacy = await handleMessage(
+      {
+        id: 5,
         method: "tools/call",
         params: { name: "magnis.sync.listen", arguments: { _meta: { account_id: "acc7" } } },
       },
       cfg,
     );
-    expect((reply as any).result.ok).toBe(true);
-    expect((reply as any).result.subscription_id).toBe("sub:acc7");
+    expect((legacy as any).error.code).toBe(-32601);
   });
 });
 
@@ -161,28 +215,33 @@ describe("S1.3 auth flows", () => {
         exchange: async () => ({ minted: { access_token: "t" } }),
       },
     });
-    const b = await handleMessage(
-      {
-        id: 1,
-        method: "tools/call",
-        params: { name: "magnis.auth.begin", arguments: { flow: "oauth", _meta: { k: "v" } } },
-      },
-      cfg,
-    );
-    expect((b as any).result.url).toBe("https://auth");
-    expect(calls).toEqual(["begin:oauth:v"]);
+    const authModeArg = process.argv.push("--auth-mode") - 1;
+    try {
+      const b = await handleMessage(
+        {
+          id: 1,
+          method: "tools/call",
+          params: { name: "magnis.auth.begin", arguments: { flow: "oauth", _meta: { k: "v" } } },
+        },
+        cfg,
+      );
+      expect((b as any).result.url).toBe("https://auth");
+      expect(calls).toEqual(["begin:oauth:v"]);
 
-    const x = await handleMessage(
-      { id: 2, method: "tools/call", params: { name: "magnis.auth.exchange", arguments: {} } },
-      cfg,
-    );
-    expect((x as any).result.minted.access_token).toBe("t");
+      const x = await handleMessage(
+        { id: 2, method: "tools/call", params: { name: "magnis.auth.exchange", arguments: {} } },
+        cfg,
+      );
+      expect((x as any).result.minted.access_token).toBe("t");
 
-    const s = await handleMessage(
-      { id: 3, method: "tools/call", params: { name: "magnis.auth.step", arguments: {} } },
-      cfg,
-    );
-    expect((s as any).error.code).toBe(-32601); // step not provided by this connector
+      const s = await handleMessage(
+        { id: 3, method: "tools/call", params: { name: "magnis.auth.step", arguments: {} } },
+        cfg,
+      );
+      expect((s as any).error.code).toBe(-32601); // step not provided by this connector
+    } finally {
+      process.argv.splice(authModeArg, 1);
+    }
   });
 });
 

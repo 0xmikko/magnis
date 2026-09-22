@@ -1,14 +1,15 @@
-// Fixture-mode + wire end-to-end tests — the TS mirror of the Rust
-// plugins/sources/telegram/src/fixture.rs `mod tests` plus the main.rs wire
-// (mode gate, listen_start/listen_stop, capabilities). Everything is driven
-// through the REAL dispatcher; no network, no gramjs.
+// Fixture-mode + wire end-to-end tests through the shared Connector SDK.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { handleMessage, type DispatchDeps } from "./dispatch";
-import { SubscriptionRegistry, notificationLine } from "./subscriptions";
+import {
+  handleMessage as handleSdkMessage,
+  type ConnectorConfig,
+} from "@magnis/connector-sdk";
+import { buildConnectorConfig, type ConnectorDeps } from "./connector";
+import { SubscriptionRegistry } from "./subscriptions";
 
 const FIXTURE_DOC = {
   chats: [
@@ -36,34 +37,124 @@ afterEach(() => {
   delete process.env.TELEGRAM_FIXTURE_FILE;
 });
 
-function deps(over: Partial<DispatchDeps> = {}): DispatchDeps {
+interface TestConnector {
+  authMode: boolean;
+  config: ConnectorConfig;
+  registry: SubscriptionRegistry;
+}
+
+function deps(
+  over: ConnectorDeps & { authMode?: boolean; onNotification?: (line: string) => void } = {},
+): TestConnector {
+  const registry = over.registry ?? new SubscriptionRegistry();
   return {
-    authMode: false,
-    registry: new SubscriptionRegistry(),
-    write: () => {},
-    resolveClient: async () => {
-      throw new Error("fixture mode must not resolve a live client");
+    authMode: over.authMode ?? false,
+    registry,
+    config: {
+      ...buildConnectorConfig({ ...over, registry }),
+      ...(over.onNotification === undefined ? {} : { onNotification: over.onNotification }),
     },
-    ...over,
   };
 }
 
 async function call(
   name: string,
   args: Record<string, unknown>,
-  d: DispatchDeps = deps(),
+  d: TestConnector = deps(),
 ): Promise<Record<string, unknown>> {
-  const reply = await handleMessage(
-    { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } },
-    d,
-  );
-  return reply as Record<string, unknown>;
+  const authModeArg = d.authMode ? process.argv.push("--auth-mode") - 1 : -1;
+  try {
+    const reply = await handleSdkMessage(
+      { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } },
+      d.config,
+    );
+    return reply as Record<string, unknown>;
+  } finally {
+    if (authModeArg >= 0) process.argv.splice(authModeArg, 1);
+  }
 }
 
 const envIds = (r: Record<string, unknown>): unknown[] =>
   ((r.result as Record<string, unknown>).envelopes as Record<string, unknown>[]).map(
     (e) => e.remote_id,
   );
+
+/**
+ * @test-id: tst_src_tg_runtime_001
+ * @scenario: scn_telegram_shared_source_runtime_001
+ * @covers: plugins/sources/telegram/src/connector.ts::buildConnectorConfig
+ * @deterministic: yes; fixture file and in-memory handlers only
+ * @fixtures: FIXTURE_DOC
+ *
+ * Test environment: Telegram fixture mode through the shared Connector SDK.
+ * Clients: direct JSON-RPC calls.
+ * Mocks: live client resolver is forbidden.
+ * Data: bootstrap, bounded gap, action, live message and removed legacy read.
+ */
+test("tst_src_tg_runtime_001 uses the standard Source program for every operation", async () => {
+  withFixture(FIXTURE_DOC);
+  const notifications: string[] = [];
+  const config = {
+    ...buildConnectorConfig({
+      registry: new SubscriptionRegistry(),
+      resolveClient: async () => {
+        throw new Error("fixture mode must not resolve a live client");
+      },
+    }),
+    onNotification: (line: string): void => { notifications.push(line); },
+  };
+  const sdkCall = async (id: number, name: string, args: Record<string, unknown>): Promise<Record<string, unknown>> =>
+    await handleSdkMessage(
+      { jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: args } },
+      config,
+    ) as Record<string, unknown>;
+
+  const tools = await handleSdkMessage({ jsonrpc: "2.0", id: 1, method: "tools/list" }, config);
+  expect((tools?.result as { tools: Array<{ name: string }> }).tools.map((tool) => tool.name)).toEqual([
+    "magnis.sync.fetch",
+  ]);
+
+  const bootstrap = await sdkCall(2, "magnis.sync.fetch", { surface: "telegram", direction: "backward" });
+  expect(envIds(bootstrap)).toEqual([
+    "tg:chat:5",
+    "tg:msg:5:10",
+    "tg:msg:5:20",
+    "tg:chat:6",
+    "tg:msg:6:30",
+  ]);
+
+  const bounded = await sdkCall(3, "magnis.sync.fetch", {
+    surface: "telegram",
+    direction: "backward",
+    scope_id: "5",
+    target: { kind: "gap", start: 10, end: 20 },
+  });
+  expect(envIds(bounded)).toEqual(["tg:msg:5:10", "tg:msg:5:20"]);
+  expect((bounded.result as Record<string, unknown>).traversed).toEqual({ "5": [10, 20] });
+
+  expect((await sdkCall(4, "magnis.execute", {
+    action: "send_message", chat_id: 5, text: "hi",
+  })).result).toMatchObject({ action: "send_message", recorded: true });
+  expect(Object.keys(config.execute ?? {}).sort()).toEqual(["download_file", "reply", "send_message"]);
+  expect((await sdkCall(5, "magnis.sync.listen", {})).error).toMatchObject({ code: -32601 });
+
+  await sdkCall(6, "listen_start", {
+    subscription_id: "fixture-sub",
+    _meta: { account_id: "fixture-account" },
+  });
+  await new Promise<void>((resolve) => { setImmediate(resolve); });
+  expect(notifications).toHaveLength(1);
+  expect(JSON.parse(notifications[0] ?? "null")).toMatchObject({
+    method: "notifications/magnis/envelope",
+    params: {
+      subscription_id: "fixture-sub",
+      surface: "telegram",
+      kind: "live",
+      remote_id: "tg:msg:5:99",
+      position: { scope_id: "5", id: 99 },
+    },
+  });
+});
 
 // ── fixture fetch ───────────────────────────────────────────────────────────
 
@@ -195,20 +286,12 @@ describe("fixture execute", () => {
     expect(out.message_id).toBeLessThan(0);
   });
 
-  test("tst_tgts_fx_009 backfill / download / unknown actions are recorded", async () => {
+  test("tst_tgts_fx_009 download is recorded and unknown actions are rejected", async () => {
     withFixture(FIXTURE_DOC);
-    expect((await call("magnis.execute", { action: "backfill_chat", chat_id: 5 })).result).toEqual({
-      envelopes: [],
-      recorded: true,
-      action: "backfill_chat",
-    });
     expect(
       (await call("magnis.execute", { action: "download_file", dest: "/tmp/never.bin" })).result,
     ).toEqual({ local_path: "/tmp/never.bin", size_bytes: 0, recorded: true, action: "download_file" });
-    expect((await call("magnis.execute", { action: "weird_thing" })).result).toEqual({
-      recorded: true,
-      action: "weird_thing",
-    });
+    expect((await call("magnis.execute", { action: "weird_thing" })).error).toMatchObject({ code: -32601 });
   });
 });
 
@@ -218,7 +301,7 @@ describe("fixture listener", () => {
   test("tst_tgts_fx_010 listen_start replays live messages with the EXACT push params", async () => {
     withFixture(FIXTURE_DOC);
     const lines: string[] = [];
-    const d = deps({ write: (l) => lines.push(l) });
+    const d = deps({ onNotification: (line) => { lines.push(line); } });
 
     const ack = await call("listen_start", { subscription_id: "sub:1", _meta: { account_id: "acct-1" } }, d);
     expect(ack.result).toEqual({ ok: true, subscription_id: "sub:1" });
@@ -228,34 +311,24 @@ describe("fixture listener", () => {
     expect(lines).toHaveLength(1); // ONLY the live:true message
     const msg = JSON.parse(lines[0]!) as Record<string, unknown>;
     expect(msg.method).toBe("notifications/magnis/envelope");
-    // EXACT param shape: NO surface, NO kind, NO cursor; the position names
-    // where the item sits in its chat.
+    // The shared SDK stamps the standard surface and kind fields.
     const params = msg.params as Record<string, unknown>;
     expect(Object.keys(params).sort()).toEqual([
-      "account_id",
+      "kind",
       "payload",
       "position",
       "remote_id",
       "subscription_id",
+      "surface",
     ]);
     expect(params.subscription_id).toBe("sub:1");
-    expect(params.account_id).toBe("acct-1");
+    expect(params.surface).toBe("telegram");
+    expect(params.kind).toBe("live");
     expect(params.remote_id).toBe("tg:msg:5:99");
     expect(params.position).toEqual({ scope_id: "5", id: 99 });
     expect((params.payload as Record<string, unknown>).text).toBe("live!");
   });
 
-  test("tst_tgts_fx_011 the notification line is a bare payload+remote_id+position envelope", () => {
-    const line = JSON.parse(notificationLine("s1", "a1", { k: 1 }, "tg:msg:1:2", { scope_id: "1", id: 2 })) as Record<
-      string,
-      unknown
-    >;
-    expect(line).toEqual({
-      jsonrpc: "2.0",
-      method: "notifications/magnis/envelope",
-      params: { subscription_id: "s1", account_id: "a1", payload: { k: 1 }, remote_id: "tg:msg:1:2", position: { scope_id: "1", id: 2 } },
-    });
-  });
 });
 
 // ── wire: listen_start / listen_stop ────────────────────────────────────────
@@ -291,10 +364,10 @@ describe("wire: subscriptions", () => {
   test("tst_tgts_wire_012 fixture listener pushes only AFTER the listen ack", async () => {
     withFixture(FIXTURE_DOC);
     const frames: string[] = [];
-    const d = deps({ write: () => frames.push("push") });
+    const d = deps({ onNotification: () => { frames.push("push"); } });
 
     const reply = await call("listen_start", { subscription_id: "s1", _meta: { account_id: "a" } }, d);
-    // At the moment the dispatcher hands the ack back, NOTHING may be on the wire.
+    // At the moment the SDK hands the ack back, NOTHING may be on the wire.
     expect(frames).toEqual([]);
     frames.push("ack");
     expect(reply.result).toEqual({ ok: true, subscription_id: "s1" });
@@ -313,44 +386,24 @@ describe("wire: subscriptions", () => {
     expect(d.registry.size()).toBe(1); // a duplicate start must NOT spawn twice
   });
 
-  test("tst_tgts_wire_004 listen_stop ALWAYS oks, reporting cancelled", async () => {
+  test("tst_tgts_wire_004 listen_stop requires an id and leaves siblings running", async () => {
     withFixture(FIXTURE_DOC);
     const d = deps();
     await call("listen_start", { subscription_id: "s1", _meta: { account_id: "a" } }, d);
     await call("listen_start", { subscription_id: "s2", _meta: { account_id: "a" } }, d);
 
-    expect((await call("listen_stop", { subscription_id: "s1" }, d)).result).toEqual({
-      ok: true,
-      subscription_id: "s1",
-      cancelled: true,
-    });
+    expect((await call("listen_stop", { subscription_id: "s1" }, d)).result).toEqual({ ok: true });
     // s2 is UNAFFECTED by s1's stop.
     expect(d.registry.size()).toBe(1);
 
-    // An unknown / empty id never errors — it reports cancelled:false.
-    expect((await call("listen_stop", { subscription_id: "never" }, d)).result).toEqual({
-      ok: true,
-      subscription_id: "never",
-      cancelled: false,
-    });
-    expect((await call("listen_stop", {}, d)).result).toEqual({
-      ok: true,
-      subscription_id: "",
-      cancelled: false,
-    });
+    expect((await call("listen_stop", { subscription_id: "never" }, d)).result).toEqual({ ok: true });
+    expect((await call("listen_stop", {}, d)).error).toMatchObject({ code: -32602 });
   });
 
-  test("tst_tgts_wire_005 legacy magnis.sync.listen derives sub:{account_id}", async () => {
+  test("tst_tgts_wire_005 legacy magnis.sync.listen is rejected", async () => {
     withFixture(FIXTURE_DOC);
-    expect((await call("magnis.sync.listen", { _meta: { account_id: "acct-9" } })).result).toEqual({
-      ok: true,
-      subscription_id: "sub:acct-9",
-    });
-    // With no usable account_id it falls back to the legacy id.
-    const d = deps();
-    const r = await call("magnis.sync.listen", {}, d);
-    // …but the registry still requires account_id, so the build fails as -32602.
-    expect((r.error as Record<string, unknown>).code).toBe(-32602);
+    expect((await call("magnis.sync.listen", { _meta: { account_id: "acct-9" } })).error)
+      .toMatchObject({ code: -32601 });
   });
 });
 
@@ -358,10 +411,10 @@ describe("wire: subscriptions", () => {
 
 describe("wire: mode gate", () => {
   test("tst_tgts_wire_006 a SYNC spawn refuses magnis.auth.*", async () => {
-    const r = await call("magnis.auth.begin", {}, deps({ authMode: false }));
+    const r = await call("magnis.auth.begin", {});
     expect(r.error).toEqual({
       code: -32601,
-      message: "tool 'magnis.auth.begin' is not available in sync mode",
+      message: "tool 'magnis.auth.begin' is not available in source mode",
     });
   });
 
@@ -390,9 +443,10 @@ describe("wire: mode gate", () => {
 
 describe("wire: initialize / tools/list", () => {
   test("tst_tgts_wire_009 initialize advertises the push surface with NO interval_secs", async () => {
-    const reply = (await handleMessage(
+    const d = deps();
+    const reply = (await handleSdkMessage(
       { jsonrpc: "2.0", id: 1, method: "initialize" },
-      deps(),
+      d.config,
     )) as Record<string, unknown>;
     const result = reply.result as Record<string, unknown>;
     expect(result.protocolVersion).toBe("2025-06-18");
@@ -410,33 +464,32 @@ describe("wire: initialize / tools/list", () => {
   });
 
   test("tst_tgts_wire_010 a message with no id gets NO reply (notification)", async () => {
-    expect(await handleMessage({ jsonrpc: "2.0", method: "notifications/initialized" }, deps())).toBeNull();
-    expect(await handleMessage({ jsonrpc: "2.0", method: "initialize" }, deps())).toBeNull();
+    const d = deps();
+    expect(await handleSdkMessage({ jsonrpc: "2.0", method: "notifications/initialized" }, d.config)).toBeNull();
+    expect(await handleSdkMessage({ jsonrpc: "2.0", method: "initialize" }, d.config)).toBeNull();
   });
 
-  test("tst_tgts_wire_011 tools/list advertises no opinionated tools (skipped)", async () => {
-    const reply = (await handleMessage(
+  test("tst_tgts_wire_011 tools/list advertises only the standard fetch tool", async () => {
+    const d = deps();
+    const reply = (await handleSdkMessage(
       { jsonrpc: "2.0", id: 1, method: "tools/list" },
-      deps(),
+      d.config,
     )) as Record<string, unknown>;
-    expect(reply.result).toEqual({ tools: [] });
+    expect(((reply.result as { tools: Array<{ name: string }> }).tools).map((tool) => tool.name))
+      .toEqual(["magnis.sync.fetch"]);
   });
 });
 
 // ── wire: live-mode credential errors ───────────────────────────────────────
 
 describe("wire: live-mode credential errors (no fixture)", () => {
-  test("tst_tgts_wire_012 missing _meta / credentials surface as -32601 with exact text", async () => {
+  test("tst_tgts_wire_012 missing _meta / credentials surface through the SDK error", async () => {
     // NO fixture set → the live path parses credentials.
-    const d: DispatchDeps = {
-      authMode: false,
-      registry: new SubscriptionRegistry(),
-      write: () => {},
-    };
+    const d = deps();
     const noMeta = await call("magnis.sync.fetch", {}, d);
     expect(noMeta.error).toEqual({
-      code: -32601,
-      message: "missing _meta with Telegram credentials",
+      code: -32000,
+      message: "missing required _meta.account_id",
     });
 
     const partial = await call(
@@ -445,7 +498,7 @@ describe("wire: live-mode credential errors (no fixture)", () => {
       d,
     );
     expect(partial.error).toEqual({
-      code: -32601,
+      code: -32000,
       message: "missing credential 'session' in _meta",
     });
 
@@ -454,6 +507,6 @@ describe("wire: live-mode credential errors (no fixture)", () => {
       { _meta: { api_id: 1, api_hash: "h", session: "s" } },
       d,
     );
-    expect(noAccount.error).toEqual({ code: -32601, message: "missing required _meta.account_id" });
+    expect(noAccount.error).toEqual({ code: -32000, message: "missing required _meta.account_id" });
   });
 });

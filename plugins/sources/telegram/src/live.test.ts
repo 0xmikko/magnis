@@ -306,7 +306,13 @@ test("tst_src_tg_032 unhydrated live peers preserve history identity and refuse 
       // The push names where the item sits in its chat: the host trims the
       // chat's open range by it, as a page states the ranges it read.
       // @tested-by: tst_tglive_position_001
-      expected.push({ payload: messagePayload(history), remote_id: messageRemoteId(chatId, message.id), position: { scope_id: String(chatId), id: message.id } });
+      expected.push({
+        surface: "telegram",
+        kind: "live",
+        payload: messagePayload(history),
+        remote_id: messageRemoteId(chatId, message.id),
+        position: { scope_id: String(chatId), id: message.id },
+      });
     }
   }
   const refused = [
@@ -436,36 +442,40 @@ test("tst_src_tg_033 dated membership ends retain Telegram's server time", () =>
 
   expect(pushes).toEqual([
     {
+      surface: "telegram",
+      kind: "live",
       payload: {
         entity_type: "telegram_chat", chat_id: 404, top_message: 0,
         telegram_user_id: 9001, valid_until: "2023-11-14T22:13:20+00:00",
       },
       remote_id: "tg:chat:404",
-      position: { scope_id: "404", id: 0 },
     },
     {
+      surface: "telegram",
+      kind: "live",
       payload: {
         entity_type: "telegram_chat", chat_id: 505, top_message: 0,
         telegram_user_id: 9001, valid_until: "2023-11-14T22:14:20+00:00",
       },
       remote_id: "tg:chat:505",
-      position: { scope_id: "505", id: 0 },
     },
     {
+      surface: "telegram",
+      kind: "live",
       payload: {
         entity_type: "telegram_chat", chat_id: 506, top_message: 0,
         telegram_user_id: 9001, valid_until: "2023-11-14T22:14:50+00:00",
       },
       remote_id: "tg:chat:506",
-      position: { scope_id: "506", id: 0 },
     },
     {
+      surface: "telegram",
+      kind: "live",
       payload: {
         entity_type: "telegram_chat", chat_id: 507, top_message: 0,
         telegram_user_id: 9001, valid_until: "2023-11-14T22:15:00+00:00",
       },
       remote_id: "tg:chat:507",
-      position: { scope_id: "507", id: 0 },
     },
   ]);
 });

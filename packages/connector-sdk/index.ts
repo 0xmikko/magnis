@@ -19,7 +19,7 @@ export * from "./contract/source";
 export * from "./codec";
 export * from "./server";
 
-import type { ConnectorConfig, DatasetActionArgs, Envelope } from "./contract/source";
+import type { ConnectorConfig, DatasetActionArgs, Envelope, SyncTarget } from "./contract/source";
 
 /** JSON-RPC error codes shared with the host runtime.
  * RATE_LIMIT carries `retry_after=<secs>` in the message so the host backs off
@@ -32,6 +32,9 @@ export const RATE_LIMIT_CODE = -32002;
 // stays a hard failure.
 export const CURSOR_EXPIRED_CODE = -32003;
 const GENERIC_FETCH_ERROR_CODE = -32000;
+const INVALID_PARAMS_CODE = -32602;
+const MAX_INFLIGHT_TOOL_CALLS = 8;
+const MAX_INFLIGHT_DOWNLOADS = 2;
 
 /** Throw this from a connector `fetch` on an upstream 429 so the host backs off
  * for `retryAfterSecs` rather than treating it as a hard failure. */
@@ -127,6 +130,7 @@ function makeEmitter(
           remote_id: envelope.remote_id,
           kind: envelope.kind,
           payload: envelope.payload,
+          ...(envelope.position === undefined ? {} : { position: envelope.position }),
         },
       }),
     );
@@ -141,14 +145,15 @@ interface JsonRpc {
 }
 
 function capabilities(config: ConnectorConfig): Record<string, unknown> {
+  const mode = config.mode ?? "poll";
   return {
     tools: {},
     experimental: {
       magnis: {
         sync: {
           surfaces: config.surfaces,
-          mode: config.mode ?? "poll",
-          interval_secs: config.intervalSecs ?? 300,
+          mode,
+          ...(mode === "push" ? {} : { interval_secs: config.intervalSecs ?? 300 }),
         },
       },
     },
@@ -179,7 +184,15 @@ export async function handleMessage(
 
   if (method === "tools/call") {
     const name = msg.params?.name ?? "";
-if (name === "magnis.auth.probe" && config.probeAuth) {
+    const authMode = process.argv.includes("--auth-mode");
+    if (name.startsWith("magnis.auth.") !== authMode) {
+      return {
+        jsonrpc: "2.0",
+        id,
+        error: { code: -32601, message: `tool '${name}' is not available in ${authMode ? "auth" : "source"} mode` },
+      };
+    }
+    if (name === "magnis.auth.probe" && config.probeAuth) {
       const args = (msg.params?.arguments ?? {});
       const meta =
         args._meta && typeof args._meta === "object"
@@ -202,10 +215,14 @@ if (name === "magnis.auth.probe" && config.probeAuth) {
 
     // ── push sessions ───────────────────────────────────────────────────────
     if (name === "listen_start" && config.listenStart) {
-      const subscriptionId =
-        typeof rawArgs.subscription_id === "string" && rawArgs.subscription_id
-          ? rawArgs.subscription_id
-          : "sub:legacy";
+      if (typeof rawArgs.subscription_id !== "string" || rawArgs.subscription_id === "") {
+        return {
+          jsonrpc: "2.0",
+          id,
+          error: { code: INVALID_PARAMS_CODE, message: "missing required arg 'subscription_id'" },
+        };
+      }
+      const subscriptionId = rawArgs.subscription_id;
       liveSubscriptions.add(subscriptionId);
       try {
         await config.listenStart(
@@ -215,38 +232,24 @@ if (name === "magnis.auth.probe" && config.probeAuth) {
         return { jsonrpc: "2.0", id, result: { ok: true, subscription_id: subscriptionId } };
       } catch (e) {
         liveSubscriptions.delete(subscriptionId);
-        const message = e instanceof Error ? e.message : String(e);
-        return { jsonrpc: "2.0", id, error: { code: GENERIC_FETCH_ERROR_CODE, message } };
+        return errorReply(id, e);
       }
     }
     if (name === "listen_stop" && config.listenStop) {
-      const subscriptionId =
-        typeof rawArgs.subscription_id === "string" ? rawArgs.subscription_id : "sub:legacy";
+      if (typeof rawArgs.subscription_id !== "string" || rawArgs.subscription_id === "") {
+        return {
+          jsonrpc: "2.0",
+          id,
+          error: { code: INVALID_PARAMS_CODE, message: "missing required arg 'subscription_id'" },
+        };
+      }
+      const subscriptionId = rawArgs.subscription_id;
       liveSubscriptions.delete(subscriptionId);
       try {
         await config.listenStop({ subscription_id: subscriptionId });
         return { jsonrpc: "2.0", id, result: { ok: true } };
       } catch (e) {
-        const message = e instanceof Error ? e.message : String(e);
-        return { jsonrpc: "2.0", id, error: { code: GENERIC_FETCH_ERROR_CODE, message } };
-      }
-    }
-    // Legacy alias, kept EXACTLY as the Rust telegram bin serves it: derive
-    // the subscription id from `_meta.account_id` and ack `{ ok, subscription_id }`.
-    if (name === "magnis.sync.listen" && config.listenStart) {
-      const account = metaArg && typeof metaArg.account_id === "string" ? metaArg.account_id : undefined;
-      const subscriptionId = account ? `sub:${account}` : "sub:legacy";
-      liveSubscriptions.add(subscriptionId);
-      try {
-        await config.listenStart(
-          { subscription_id: subscriptionId, meta: metaArg },
-          makeEmitter(config, subscriptionId),
-        );
-        return { jsonrpc: "2.0", id, result: { ok: true, subscription_id: subscriptionId } };
-      } catch (e) {
-        liveSubscriptions.delete(subscriptionId);
-        const message = e instanceof Error ? e.message : String(e);
-        return { jsonrpc: "2.0", id, error: { code: GENERIC_FETCH_ERROR_CODE, message } };
+        return errorReply(id, e);
       }
     }
 
@@ -261,12 +264,7 @@ if (name === "magnis.auth.probe" && config.probeAuth) {
         const result = await handler(rawArgs, metaArg);
         return { jsonrpc: "2.0", id, result };
       } catch (e) {
-        const message = e instanceof Error ? e.message : String(e);
-        return {
-          jsonrpc: "2.0",
-          id,
-          error: { code: GENERIC_FETCH_ERROR_CODE, message, data: { kind: "auth", message } },
-        };
+        return errorReply(id, e);
       }
     }
 
@@ -354,6 +352,11 @@ if (name === "magnis.auth.probe" && config.probeAuth) {
       ? (args.tracked_handles.filter((h) => typeof h === "string"))
       : undefined;
     const limit = typeof args.limit === "number" ? args.limit : undefined;
+    const scopeId = typeof args.scope_id === "string" ? args.scope_id : undefined;
+    const target = args.target !== null && typeof args.target === "object" && !Array.isArray(args.target)
+      ? args.target as SyncTarget
+      : undefined;
+    const forwardCheckpoint = args.forward_checkpoint;
     const meta = metaArg;
     // A fetch failure must NOT crash the connector — return a JSON-RPC error so
     // the host degrades the surface (and backs off on a rate limit, S6).
@@ -362,6 +365,9 @@ if (name === "magnis.auth.probe" && config.probeAuth) {
         surface,
         cursor,
         direction,
+        scope_id: scopeId,
+        target,
+        forward_checkpoint: forwardCheckpoint,
         tracked_handles: tracked,
         limit,
         meta,
@@ -385,6 +391,9 @@ if (name === "magnis.auth.probe" && config.probeAuth) {
           properties: {
             surface: { type: "string" },
             cursor: {},
+            scope_id: { type: "string" },
+            target: { type: "object" },
+            forward_checkpoint: {},
             tracked_handles: { type: "array", items: { type: "string" } },
             limit: { type: "integer" },
           },
@@ -419,21 +428,77 @@ if (name === "magnis.auth.probe" && config.probeAuth) {
   return { jsonrpc: "2.0", id, error: { code: -32601, message: `unknown method ${method}` } };
 }
 
+class Semaphore {
+  private available: number;
+  private readonly waiters: (() => void)[] = [];
+
+  constructor(permits: number) {
+    this.available = permits;
+  }
+
+  async acquire(): Promise<void> {
+    if (this.available > 0) {
+      this.available -= 1;
+      return;
+    }
+    await new Promise<void>((resolve) => this.waiters.push(resolve));
+  }
+
+  release(): void {
+    const next = this.waiters.shift();
+    if (next === undefined) this.available += 1;
+    else next();
+  }
+}
+
+function isDownload(msg: JsonRpc): boolean {
+  return msg.method === "tools/call" && msg.params?.name === "magnis.execute"
+    && msg.params.arguments?.action === "download_file";
+}
+
+function isControl(msg: JsonRpc): boolean {
+  return msg.method === "tools/call" && msg.params?.name === "listen_stop";
+}
+
 /** Run the connector: line-delimited JSON-RPC on stdin → replies on stdout.
- * Runtime entry — the pure logic lives in `handleMessage` (unit-tested). */
-export async function runConnector(config: ConnectorConfig): Promise<void> {
+ * @tested-by: tst_src_sdk_runtime_001
+ * @invariant: one slow provider call or the bounded download pool cannot block
+ * unrelated Source work or listener shutdown. */
+export async function runConnector(
+  config: ConnectorConfig,
+  input: NodeJS.ReadableStream = process.stdin,
+  write: (line: string) => void = (line) => { process.stdout.write(line + "\n"); },
+): Promise<void> {
   const { createInterface } = await import("node:readline");
-  const rl = createInterface({ input: process.stdin });
+  const calls = new Semaphore(MAX_INFLIGHT_TOOL_CALLS);
+  const downloads = new Semaphore(MAX_INFLIGHT_DOWNLOADS);
+  const pending = new Set<Promise<void>>();
+  const rl = createInterface({ input });
   for await (const line of rl) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-    let msg: JsonRpc;
+    let parsed: unknown;
     try {
-      msg = JSON.parse(trimmed) as JsonRpc;
+      parsed = JSON.parse(trimmed) as unknown;
     } catch {
       continue;
     }
-    const reply = await handleMessage(msg, config);
-    if (reply) process.stdout.write(JSON.stringify(reply) + "\n");
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) continue;
+    const msg = parsed as JsonRpc;
+    const pool = isControl(msg) ? null : isDownload(msg) ? downloads : calls;
+    const work = (async (): Promise<void> => {
+      if (pool !== null) await pool.acquire();
+      try {
+        const reply = await handleMessage(msg, config);
+        if (reply !== null) write(JSON.stringify(reply));
+      } catch (error: unknown) {
+        process.stderr.write(`connector dispatch failed: ${String(error)}\n`);
+      } finally {
+        pool?.release();
+      }
+    })();
+    pending.add(work);
+    void work.then(() => { pending.delete(work); });
   }
+  await Promise.all(pending);
 }

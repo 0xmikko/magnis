@@ -19,12 +19,23 @@ import { createTransport, VirtualClock } from "../../testing/mtproto-transport";
 import type { TgChat, TgMessage } from "./envelope";
 import {
   BOOTSTRAP_BATCH_DIALOGS,
-  execute,
+  fetch,
   runBootstrap,
   runCatchup,
   type CatchupDialog,
   type TgOps,
 } from "./commands";
+
+const unusedPager: DialogPager = {
+  dialogPage: async () => ({ dialogs: [], next_offset: null, total: null }),
+};
+
+const gapArgs = (scopeId: string, start: number, end: number) => ({
+  surface: "telegram",
+  direction: "backward" as const,
+  scope_id: scopeId,
+  target: { kind: "gap" as const, start, end },
+});
 
 function wireChat(id: number): Api.Chat {
   return new Api.Chat({ id: bigInt(id), title: `Chat ${String(id)}`, photo: new Api.ChatPhotoEmpty(),
@@ -232,19 +243,18 @@ test("tst_src_tgfast_005 a complete first page states the chat's count; an offse
 
 /** @test-id: tst_src_tgfast_004
  * @scenario: scn_tg_sync_003
- * @covers: TgClient.getMessages and execute backfill_chat
+ * @covers: TgClient.getMessages and standard bounded fetch
  * @deterministic: yes
  * @fixtures: real Source/GramJS fake-wire count-bearing and count-absent history responses
  */
-test("tst_src_tgfast_004 backfill preserves provider totals without inventing missing counts", async () => {
+test("tst_src_tgfast_004 bounded fetch preserves provider totals without inventing missing counts", async () => {
   const clock = new VirtualClock();
   const now = spyOn(performance, "now").mockImplementation(() => clock.now());
   const f = await createTransport(clock);
   try {
     f.tg.cachePeer(42, wireChat(42));
     for (const [index, total] of [78, 1, null].entries()) {
-      const pending = execute(f.tg, "fixture-fast", { action: "backfill_chat", chat_id: 42, before_message_id: 10, lower_message_id: 9 },
-        { sleep: async () => undefined });
+      const pending = fetch(f.tg, unusedPager, "fixture-fast", gapArgs("42", 9, 9));
       clock.advance(3000);
       const sent = await f.application(index);
       const messages = [wireMessage(42, 9)];
@@ -252,18 +262,16 @@ test("tst_src_tgfast_004 backfill preserves provider totals without inventing mi
         : new Api.messages.MessagesSlice({ count: total, messages, chats: [], users: [] }));
       const result = await pending;
       expect(result.total).toBe(total);
-      expect(result.has_more).toBe(true);
-      expect(result.oldest_message_id).toBe(9);
+      expect(result.hasMore).toBe(false);
+      expect(result.nextCursor).toBeNull();
     }
     // The existing ops seam represents a provider adapter with no count at all.
-    const missing = await execute(fakeOps([]), "fixture-fast",
-      { action: "backfill_chat", chat_id: 42, lower_message_id: 1 }, { sleep: async () => undefined });
+    const missing = await fetch(fakeOps([]), unusedPager, "fixture-fast", gapArgs("42", 1, 1));
     expect(missing.total).toBeNull();
 
     // A cold peer lookup spends the same deadline, not a separate 60-second
     // allowance followed by another history timeout after the host has left.
-    const pending = settled(execute(new TgClient(f.client), "fixture-fast",
-      { action: "backfill_chat", chat_id: 43, lower_message_id: 1 }, { sleep: async () => undefined }));
+    const pending = settled(fetch(new TgClient(f.client), unusedPager, "fixture-fast", gapArgs("43", 1, 1)));
     const sent = await f.application(3);
     expect(sent.method).toBe("messages.GetDialogs");
     clock.advance(20_000);
@@ -286,10 +294,9 @@ test("tst_src_tgfast_004 backfill preserves provider totals without inventing mi
       return handle;
     });
     try {
-      const lookup = settled(execute(new TgClient(f.client), "fixture-fast",
-        { action: "backfill_chat", chat_id: 9999, lower_message_id: 1 }, { sleep: async () => undefined }));
+      const lookup = settled(fetch(new TgClient(f.client), unusedPager, "fixture-fast", gapArgs("9999", 1, 1)));
       const discovery = await f.application(4);
-      if (!expirePeer) throw new Error("Backfill deadline was not armed");
+      if (!expirePeer) throw new Error("Gap fetch deadline was not armed");
       expirePeer();
       expect((await lookup).value).toMatchObject({ name: "MtprotoTimeoutError" });
       const ids = Array.from({ length: 50 }, (_, i) => 3000 + i);
@@ -306,8 +313,7 @@ test("tst_src_tgfast_004 backfill preserves provider totals without inventing mi
       new Api.messages.MessagesNotModified({ count: 78 }),
       new Api.messages.MessagesSlice({ count: -1, messages: [], chats: [], users: [] }),
     ].entries()) {
-      const reading = settled(execute(f.tg, "fixture-fast", { action: "backfill_chat", chat_id: 42, lower_message_id: 1 },
-        { sleep: async () => undefined }));
+      const reading = settled(fetch(f.tg, unusedPager, "fixture-fast", gapArgs("42", 1, 1)));
       await f.reply(await f.application(5 + index), invalid);
       const failed = await reading;
       expect(failed.kind).toBe("rejected");

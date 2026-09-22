@@ -69,7 +69,7 @@ export function caseEvidence(test: string, parameter: string): (
 ) => void {
   const startedAt = new Date().toISOString();
   if (!artifactDigests) {
-    const local = ["client.ts", "live.ts", "request-admission.ts", "dispatch.ts", "main.ts", "auth.ts",
+    const local = ["client.ts", "live.ts", "request-admission.ts", "connector.ts", "main.ts", "auth.ts",
       "subscriptions.ts", "surfaces/telegram/commands.ts", "surfaces/telegram/envelope.ts",
       "tst_src_tgflood_001.test.ts", "testing/mtproto-transport.ts"];
     const files: [string, URL][] = local.map((path) => [path, new URL(`../${path}`, import.meta.url)]);

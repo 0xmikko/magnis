@@ -14,6 +14,7 @@ import type {
   MessagePage,
   RawDialogLike,
 } from "../../client";
+import type { FetchArgs } from "@magnis/connector-sdk";
 import {
   buildDialogMeta,
   MtprotoTimeoutError,
@@ -83,12 +84,14 @@ export async function fetch(
   ops: TgOps,
   pager: DialogPager,
   accountId: string,
-  direction: string,
-  cursor: unknown,
+  args: FetchArgs,
 ): Promise<Record<string, unknown>> {
-  return direction === "forward"
-    ? await runCatchup(ops, accountId, cursor, pager)
-    : await runBootstrap(cursor, pager);
+  if (args.target?.kind === "gap") {
+    return await fetchGap(ops, accountId, args.scope_id, args.target, args.cursor);
+  }
+  return args.direction === "forward"
+    ? await runCatchup(ops, accountId, args.cursor, pager)
+    : await runBootstrap(args.cursor, pager);
 }
 
 /** Pure offset-resumed bootstrap loop. Reads the dialog-offset + the per-chat
@@ -404,21 +407,8 @@ export function argI64(args: Record<string, unknown>, key: string): number | und
   return undefined;
 }
 
-/** Whether backfill should fetch another page after one that returned
- * `returned` messages.
- *
- * Telegram's getHistory returns SHORT pages (fewer than the requested limit)
- * even when older history still remains — auto-deleted messages, service
- * messages, and server-side chunking all shrink a page below the limit. So
- * "fewer than limit" is NOT a reliable end-of-history signal: a page that
- * returned ANY messages may have more behind it, and only an EMPTY page reliably
- * means the history is exhausted. */
-export function backfillHasMore(returned: number): boolean {
-  return returned > 0;
-}
-
-/** Live `magnis.execute`. Ports the send_message / reply / backfill_chat /
- * download_file actions. Auth actions are not part of this contract. */
+/** Live `magnis.execute`. Ports send_message, reply and download_file.
+ * Provider reads belong exclusively to `magnis.sync.fetch`. */
 export async function execute(
   ops: TgOps,
   accountId: string,
@@ -435,15 +425,6 @@ export async function execute(
       if (typeof text !== "string") throw new Error("missing text");
       const replyTo = argI64(args, "reply_to_message_id");
       return await sendMessage(ops, chatId, text, replyTo, deps);
-    }
-    case "backfill_chat": {
-      const chatId = argI64(args, "chat_id");
-      if (chatId === undefined) throw new Error("missing chat_id");
-      const beforeMessageId = argI64(args, "before_message_id") ?? 0;
-      const lowerMessageId = argI64(args, "lower_message_id");
-      if (lowerMessageId === undefined) throw new Error("missing lower_message_id");
-      if (lowerMessageId <= 0) throw new Error("lower_message_id must be positive");
-      return await backfillChat(ops, accountId, chatId, beforeMessageId, lowerMessageId);
     }
     case "download_file": {
       const sourceRef = asObject(args.source_ref);
@@ -525,13 +506,32 @@ async function sendMessage(
   }, deps.sleep);
 }
 
-async function backfillChat(
+async function fetchGap(
   ops: TgOps,
   accountId: string,
-  chatId: number,
-  beforeMessageId: number,
-  lowerMessageId: number,
+  scopeId: string | undefined,
+  target: { kind: "gap"; start: number; end: number },
+  cursor: unknown,
 ): Promise<Record<string, unknown>> {
+  if (scopeId === undefined || !/^-?\d+$/.test(scopeId)) throw new Error("gap fetch requires numeric scope_id");
+  const chatId = Number(scopeId);
+  if (!Number.isSafeInteger(chatId) || chatId === 0 || String(chatId) !== scopeId) {
+    throw new Error("gap fetch requires numeric scope_id");
+  }
+  if (
+    !Number.isSafeInteger(target.start) || target.start <= 0 ||
+    !Number.isSafeInteger(target.end) || target.end < target.start
+  ) {
+    throw new Error("gap fetch requires a positive ordered target");
+  }
+  const continuation = argI64({ cursor }, "cursor");
+  if (cursor !== undefined && continuation === undefined) throw new Error("gap fetch requires a numeric cursor");
+  const beforeMessageId = continuation ?? target.end + 1;
+  if (beforeMessageId <= target.start || beforeMessageId > target.end + 1) {
+    throw new Error("gap cursor is outside its target");
+  }
+  const lowerMessageId = target.start;
+  const upperMessageId = beforeMessageId - 1;
   const deadline = performance.now() + SOURCE_PAGE_BUDGET_MS;
   const controller = new AbortController();
   let peer: unknown;
@@ -546,6 +546,7 @@ async function backfillChat(
   let total: number | null = null;
   let envelopeBytes = 0;
   let before = beforeMessageId;
+  let complete = false;
   // Stamp the connection's account_id into every backfilled message's source_ref.
   // Previously hardcoded "" — which the host did NOT re-stamp for the external
   // connector, so backfilled media records carried account_id="" and the
@@ -565,14 +566,17 @@ async function backfillChat(
     }
     total ??= messages.total ?? null;
     if (messages.length === 0) {
+      complete = true;
       break;
     }
     let providerOldest: number | null = null;
     for (const msg of messages) {
       providerOldest = providerOldest === null ? msg.id : Math.min(providerOldest, msg.id);
       if (msg.id < lowerMessageId) {
+        complete = true;
         break providerPages;
       }
+      if (msg.id > target.end) throw new Error("Telegram history escaped its requested gap");
       const envelope = messageEnvelope(messageToIntermediate(msg, accountId, chatId), "snapshot");
       const bytes = new TextEncoder().encode(JSON.stringify(envelope)).byteLength + (envelopes.length === 0 ? 0 : 1);
       if (envelopeBytes + bytes > SOURCE_PAGE_BUDGET_BYTES) {
@@ -583,6 +587,7 @@ async function backfillChat(
       envelopeBytes += bytes;
       oldest = oldest === null ? msg.id : Math.min(oldest, msg.id);
       if (msg.id === lowerMessageId) {
+        complete = true;
         break providerPages;
       }
     }
@@ -592,12 +597,13 @@ async function backfillChat(
     before = providerOldest;
     if (performance.now() >= deadline) break;
   }
-  // Keys are read RAW by the host's run_backfill (the Execute path is not
-  // FetchResult-shaped), so they are snake_case.
+  if (!complete && oldest === null) throw new Error("Telegram history did not advance");
+  const traversedFrom = complete ? lowerMessageId : oldest;
   return {
     envelopes,
-    has_more: backfillHasMore(envelopes.length),
-    oldest_message_id: oldest,
+    nextCursor: complete ? null : oldest,
+    hasMore: !complete,
+    traversed: traversedFrom === null ? {} : { [scopeId]: [traversedFrom, upperMessageId] },
     total,
   };
 }

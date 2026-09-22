@@ -469,4 +469,8 @@ Commit. chore(catalog): certify the unified Source runtime — remove the last l
 - replace-delivery D2
 
 - approve sha256:6e7a3cfc25ec72c7a4197b6dca45501c1102bef5b00c4dd9b6bc2f872fbcf55f owner:approved
+
+- deviation D2-S1: Preflight agent-stack check reports the vendored plan runtime, vocabulary, retro register and pre-push hook stale against the global installer. Those process files are outside this Telegram Stage, so the verified vendored planctl and repository hooks remain unchanged; frozen install succeeded with an explicit writable Bun temp directory.
+
+- deviation D2-S1: The Telegram evidence hash enumerator hard-coded the dispatcher file that this Stage deletes; update plugins/sources/telegram/src/testing/mtproto-transport.ts to hash connector.ts instead so the existing deterministic evidence suite still runs.
 <!-- plan:execution:end -->
