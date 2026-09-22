@@ -25,7 +25,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { GraphBatchInput } from "@magnis/plugin-sdk";
-import { entity, mockGraph, mountModule } from "@magnis/testkit/module";
+import { entity, linkedRow, mockGraph, mountModule, windowRow } from "@magnis/testkit/module";
 import { CHAT, MESSAGE, TELEGRAM_ACCOUNT } from "../../schema.ts";
 import type { SyncEnvelope } from "../../types.ts";
 import { TelegramModule } from "../service.ts";
@@ -75,6 +75,76 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
     const messages = batches.flatMap((batch) => batch.entities).filter((item) => item.schema_id === MESSAGE);
     expect(messages.map((item) => item.name)).toEqual(texts.map((text) => Array.from(text).slice(0, 80).join("")));
     expect(messages.map((item) => item.properties?.text)).toEqual(texts);
+  });
+
+  it("tst_module_telegram_plan_001 states counted, excluded and uncounted history through the reserved sync method", async () => {
+    const rows = [
+      { type: "private", message_count: 1200 },
+      { type: "group", member_count: 40, message_count: 300 },
+      { type: "supergroup", member_count: 5000, message_count: 886287 },
+      { type: "supergroup", member_count: 900, message_count: 7000, is_indexed: true },
+      { type: "private", message_count: 20, is_indexed: false },
+      { type: "group", member_count: 10 },
+      { type: "supergroup", member_count: 3000, message_count: 100 },
+      ...Array.from({ length: 494 }, () => ({ type: "private", message_count: 0 })),
+    ].map((properties, index) => entity(`chat-${index}`, "Chat", { schema_id: CHAT, properties }));
+    const offsets: number[] = [];
+    const graph = mockGraph({
+      list_entities_window: (spec) => {
+        expect(spec.limit).toBeLessThanOrEqual(500);
+        offsets.push(spec.offset);
+        return Promise.resolve({ items: rows.slice(spec.offset, spec.offset + spec.limit).map(windowRow), total: rows.length });
+      },
+      list_linked: ({ parent_id }) => Promise.resolve({
+        items: parent_id === "chat-6" ? [linkedRow(entity("self", "Self"), {
+          from_id: "self", to_id: parent_id, kind: "observed_in", metadata: { is_pinned: true },
+        })] : [], total: parent_id === "chat-6" ? 1 : 0,
+      }),
+    });
+    const module = mountModule(TelegramModule, { graph }).module;
+    const request = { sync_plan: {}, envelopes: [] };
+    await expect(module.ingest(request)).resolves.toEqual({ plan: {
+      unit: "messages", planned: 8670, excluded_scopes: 2, excluded_items: 886237, uncounted_scopes: 1,
+    } });
+    expect(offsets).toEqual([0, 500]);
+  });
+
+  it.each(["2026-08-11T08:00:00Z", "2026-08-13T08:00:00Z"])("counts a new live message once across edits and replay, preserving newer previews (%s)", async (lastMessageDate) => {
+    let count = 196;
+    const anchors = new Set<string>();
+    const graph = mockGraph({
+      find_by_anchor: (anchor) => Promise.resolve(anchor === "tg:chat:42" ? "chat-entity" : anchors.has(anchor) ? `id:${anchor}` : null),
+      get_entity: () => Promise.resolve(entity("chat-entity", "Chat", {
+        schema_id: CHAT, properties: { chat_id: 42, type: "private", message_count: count, last_message_date: lastMessageDate },
+      })),
+      apply_batch: (fragment) => {
+        for (const item of fragment.entities) if (item.anchor) anchors.add(item.anchor);
+        return Promise.resolve({
+          ids: Object.fromEntries(fragment.entities.map((item) => [item.key, `id:${item.key}`])),
+          created: fragment.entities.length, updated: 0, links_added: 0, dropped_keys: [],
+        });
+      },
+      web_register: () => Promise.resolve("web-id"),
+      update_properties: ({ properties }) => {
+        if (typeof properties.message_count === "number") count = properties.message_count;
+        return Promise.resolve(undefined);
+      },
+    });
+    const module = mountModule(TelegramModule, { graph }).module;
+    const live = messageEnvelope("live");
+    await module.ingest({ envelopes: [live] });
+    expect(count).toBe(197);
+    const edited = { ...live, payload: { ...live.payload, text: "Edited message" } };
+    await module.ingest({ envelopes: [edited] });
+    expect(count).toBe(197);
+    await module.ingest({ envelopes: [edited] });
+    expect(count).toBe(197);
+    expect(graph.spies.update_properties).toHaveBeenCalledWith({
+      entity_id: "chat-entity", properties: lastMessageDate > "2026-08-12T08:00:00Z" ? { message_count: 197 } : {
+        message_count: 197, last_message_date: "2026-08-12T08:00:00Z",
+        last_message_preview: "Read https://example.test/demo", last_sender_name: "Alice",
+      },
+    });
   });
 
   it("mints the provider-verified self account on connection ready", async () => {

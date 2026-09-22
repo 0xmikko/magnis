@@ -55,6 +55,7 @@ describe("telegram chat batch ingest", () => {
                 // carries it; the render record is dead.
                 properties: {
                   chat_id: 1,
+                  message_count: 197,
                   title: "Pinned chat",
                   last_message_date: "2026-07-26T19:00:00Z",
                   last_message_preview: "Existing last message",
@@ -97,6 +98,7 @@ describe("telegram chat batch ingest", () => {
     // the observed_in edge from the operator's account.
     expect(pinnedChat?.anchor).toBe("tg:chat:1");
     expect(pinnedChat?.properties).toMatchObject({
+      message_count: 197,
       last_message_date: "2026-07-26T19:00:00Z",
       last_message_preview: "Existing last message",
       last_sender_name: "Mikko",

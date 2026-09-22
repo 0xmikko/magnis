@@ -245,3 +245,12 @@ export interface TriggerCheck {
   user_id: string;
   context: { text: string; sender_name: string };
 }
+
+/** The module's download plan, reported through the reserved sync method. */
+export interface SyncPlan {
+  unit: "messages";
+  planned: number;
+  excluded_scopes: number;
+  excluded_items: number;
+  uncounted_scopes: number;
+}

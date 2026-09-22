@@ -35,6 +35,7 @@ import type {
   SetIndexedParams,
   SetTriggerParams,
   SyncEnvelope,
+  SyncPlan,
   TelegramChatListItem,
   TriggerCheck,
 } from "../types.ts";
@@ -55,6 +56,7 @@ import {
   str,
   CHAT_BATCH_THRESHOLD,
   INDEXING_THRESHOLD,
+  BOOTSTRAP_MESSAGES_PER_CHAT,
   INGEST_CHUNK,
   type Data,
 } from "./helpers.ts";
@@ -652,10 +654,11 @@ export class TelegramModule {
 
   @syncHandler("telegram")
   async ingest(
-    params: { envelopes?: SyncEnvelope[]; backfill_priority?: { chat_ids?: string[] } },
+    params: { envelopes?: SyncEnvelope[]; backfill_priority?: { chat_ids?: string[] }; sync_plan?: Record<string, never> },
   ): Promise<
     | { dropped_remote_ids: string[]; trigger_checks: TriggerCheck[] }
     | { priority: string[] }
+    | { plan: SyncPlan }
   > {
     // The scheduler reuses this reserved sync method to ask which chats are
     // high-priority for backfill (pinned/indexed) — it can't see chat metadata
@@ -663,6 +666,7 @@ export class TelegramModule {
     if (params.backfill_priority) {
       return this.backfillPriority(params.backfill_priority.chat_ids ?? []);
     }
+    if (params.sync_plan) return { plan: await this.syncPlan() };
     // Stage 3: the host bridge dispatches a WHOLE page of envelopes in one call.
     // Chat snapshots + deletes stay per-envelope (few, field-merge / cascade); the
     // message bulk collapses to ONE graph.apply_batch (the native per-message
@@ -801,6 +805,7 @@ export class TelegramModule {
             "last_sender_name",
             "avatar_url",
             "photo_url",
+            "message_count",
           ]) {
             if (
               existing[key] !== null &&
@@ -970,12 +975,21 @@ export class TelegramModule {
       }
     }
 
+    // Live edits and retries keep their anchor; only a newly seen message advances the count.
+    const newLiveMessages = new Set<string>();
+    for (const { env } of messages) {
+      if (env.kind === "live" && env.remote_id && !newLiveMessages.has(env.remote_id) &&
+          await this.graph.find_by_anchor(env.remote_id) === null) {
+        newLiveMessages.add(env.remote_id);
+      }
+    }
     // 4. Apply the whole page in one transaction (throws → page retried by the host).
     const result = await this.graph.apply_batch({ entities, refs, links });
 
     // 5. Post-apply (needs the resolved message id): URLs, media, live triggers, and
     //    track the newest message per chat for the denorm.
     const newestPerChat = new Map<string, Data>();
+    const liveByChat = new Map<string, number>();
     for (const { env, payload } of messages) {
       const remoteId = env.remote_id;
       if (!remoteId) continue;
@@ -1028,6 +1042,7 @@ export class TelegramModule {
       }
 
       if (env.kind === "live") {
+        if (cid !== null && newLiveMessages.delete(remoteId)) liveByChat.set(cid, (liveByChat.get(cid) ?? 0) + 1);
         const touched = [entityId];
         if (cid !== null) {
           const ck = result.ids[`chat:${cid}`];
@@ -1061,14 +1076,26 @@ export class TelegramModule {
       if (!msgDate) continue;
       const curDate = str(base, "last_message_date") ?? "";
       if (curDate && msgDate < curDate) continue;
+      const live = liveByChat.get(key) ?? 0;
+      const count = num(base, "message_count");
       await this.graph.update_properties({
         entity_id: eid,
         properties: {
           last_message_date: msgDate,
           last_message_preview: str(msg, "text") ?? "",
           last_sender_name: str(msg, "sender_name") ?? "",
+          ...(live > 0 && count !== null ? { message_count: count + live } : {}),
         },
       });
+      liveByChat.delete(key);
+    }
+    // Older live messages still advance history even when the preview stays newer.
+    for (const [key, live] of liveByChat) {
+      const base = chatDetails.get(key);
+      const eid = chatEntityId.get(key);
+      const count = base ? num(base, "message_count") : null;
+      if (!eid || count === null) continue;
+      await this.graph.update_properties({ entity_id: eid, properties: { message_count: count + live } });
     }
   }
 
@@ -1112,6 +1139,35 @@ export class TelegramModule {
       if (boolFlag(d, "is_pinned") === true || this.shouldIndex(d)) priority.push(cid);
     }
     return { priority };
+  }
+
+  /** Same admission as backfill: full admitted histories, first page of excluded chats. */
+  private async syncPlan(): Promise<SyncPlan> {
+    const plan: SyncPlan = { unit: "messages", planned: 0, excluded_scopes: 0, excluded_items: 0, uncounted_scopes: 0 };
+    let offset = 0;
+    let total: number;
+    do {
+      const page = await this.graph.list_entities_window({ schema: CHAT, limit: 500, offset });
+      total = page.total;
+      if (page.items.length === 0 && offset < total) throw new Error("Telegram chat window ended before its declared total");
+      const state = await this.observedStateFor(page.items.map(({ entity }) => entity.id));
+      for (const { entity } of page.items) {
+        const details = { ...entity.properties, ...state.get(entity.id) };
+        const count = num(details, "message_count");
+        if (count === null) {
+          plan.uncounted_scopes += 1;
+        } else if (boolFlag(details, "is_pinned") === true || this.shouldIndex(details)) {
+          plan.planned += count;
+        } else {
+          const firstPage = Math.min(count, BOOTSTRAP_MESSAGES_PER_CHAT);
+          plan.planned += firstPage;
+          plan.excluded_scopes += 1;
+          plan.excluded_items += count - firstPage;
+        }
+      }
+      offset += page.items.length;
+    } while (offset < total);
+    return plan;
   }
 
   private shouldIndex(chatDetails: Data | null): boolean {

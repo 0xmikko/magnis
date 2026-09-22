@@ -17,6 +17,8 @@ export const INGEST_CHUNK = 200;
 export const CHAT_BATCH_THRESHOLD = 50;
 // Groups above this member count don't auto-create contacts (native default).
 export const INDEXING_THRESHOLD = 100;
+/** The bootstrap page retained for a chat whose full history is not admitted. */
+export const BOOTSTRAP_MESSAGES_PER_CHAT = 50;
 
 /** First non-empty string value at `k`, else null. */
 export const str = (d: Data, k: string): string | null => {
