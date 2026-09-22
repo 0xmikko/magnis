@@ -36,7 +36,7 @@ export type VerifiedAuth = {
     readonly subject: string;
 } | {
     readonly kind: "api_key";
-    readonly key_from: "vault" | "env";
+    readonly keyFrom: "vault" | "env";
     readonly subject: string;
 } | {
     readonly kind: "shared_provider";
@@ -58,7 +58,7 @@ export type RepairAction = "reconnect_oauth" | "relogin_phone" | "enter_key" | "
 export type SurfaceSync = {
     readonly state: "never_synced";
     readonly surface: string;
-    readonly provisioned_at: string;
+    readonly provisionedAt: string;
 } | {
     readonly state: "bootstrapping";
     readonly surface: string;
@@ -83,13 +83,13 @@ export type SurfaceSync = {
 } | {
     readonly state: "rate_limited";
     readonly surface: string;
-    readonly retry_at: string;
+    readonly retryAt: string;
     readonly history: PriorSuccess;
 } | {
     readonly state: "failed";
     readonly surface: string;
     readonly error: SyncError;
-    readonly failed_at: string;
+    readonly failedAt: string;
     readonly attempts: number;
     readonly history: PriorSuccess;
 };
@@ -129,7 +129,7 @@ export interface SyncRun {
     readonly ingested: number;
     readonly discovered: number;
     readonly total: TotalEstimate;
-    readonly last_report_at: string;
+    readonly lastReportAt: string;
 }
 export type Cursor = {
     readonly state: "start";
@@ -154,7 +154,7 @@ export interface SyncReport {
     readonly finished_at: string;
     readonly fetched: number;
     readonly ingested: number;
-    readonly cursor_after: Cursor;
+    readonly cursorAfter: Cursor;
 }
 export type SyncError = {
     readonly kind: "auth";

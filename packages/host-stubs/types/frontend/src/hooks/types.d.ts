@@ -1,10 +1,1 @@
-export interface PaginatedResponse<T> {
-    readonly items: readonly T[];
-    readonly total: number;
-    readonly limit: number;
-    readonly offset: number;
-}
-export interface PaginationParams {
-    readonly limit?: number;
-    readonly offset?: number;
-}
+export type { PaginatedResponse, PaginationParams, } from "@magnis/sdk/core/pagination";

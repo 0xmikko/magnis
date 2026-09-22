@@ -53,9 +53,23 @@ function fieldLabel(key: string): string {
   return last.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+function parseResult(raw: unknown): Record<string, unknown> | null {
+  if (typeof raw === "string") {
+    try { return parseResult(JSON.parse(raw)); } catch { return null; }
+  }
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
+  if ("content" in raw && Array.isArray(raw.content)) {
+    const first: unknown = raw.content[0];
+    if (first !== null && typeof first === "object" && "text" in first && typeof first.text === "string") {
+      return parseResult(first.text);
+    }
+  }
+  return { ...raw };
+}
+
 export function extractPreview(raw: unknown): MergePreviewData | null {
-  if (!raw || typeof raw !== "object") return null;
-  const obj = raw as Record<string, unknown>;
+  const obj = parseResult(raw);
+  if (obj === null) return null;
   const candidate = (obj.preview ?? obj) as Record<string, unknown>;
   if ("survivor" in candidate && "retired" in candidate && "fields" in candidate) {
     return candidate as unknown as MergePreviewData;
@@ -64,8 +78,8 @@ export function extractPreview(raw: unknown): MergePreviewData | null {
 }
 
 function extractMergeResult(raw: unknown): MergeResult | null {
-  if (!raw || typeof raw !== "object") return null;
-  const obj = raw as Record<string, unknown>;
+  const obj = parseResult(raw);
+  if (obj === null) return null;
   const candidate = (obj.result ?? obj) as Record<string, unknown>;
   if ("survivor_id" in candidate && "links_repointed" in candidate) {
     return candidate as unknown as MergeResult;
@@ -140,6 +154,7 @@ export function ContactMergeRenderer({
   const survivorId = args.survivor_id as string | undefined;
   const retiredId = args.retired_id as string | undefined;
   const reason = args.reason as string | undefined;
+  const isPreview = args.preview === true;
 
   const [preview, setPreview] = useState<MergePreviewData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -149,7 +164,7 @@ export function ContactMergeRenderer({
 
   // Fetch preview only when NOT done (retired entity is deleted after merge)
   useEffect(() => {
-    if (!survivorId || !retiredId || preview || isDone) return;
+    if (isPreview || !survivorId || !retiredId || preview || isDone) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- show the spinner before the async merge-preview fetch below; the resolve/reject set state asynchronously.
     setLoading(true);
     runtime.transport
@@ -157,46 +172,37 @@ export function ContactMergeRenderer({
       .then((result: unknown) => { setPreview(extractPreview(result)); })
       .catch((err: unknown) => { setError(err instanceof Error ? err.message : String(err)); })
       .finally(() => { setLoading(false); });
-  }, [survivorId, retiredId, preview, isDone, runtime.transport]);
+  }, [survivorId, retiredId, preview, isDone, isPreview, runtime.transport]);
 
   const handleApprove = useCallback(async (): Promise<void> => {
     await onApprove();
   }, [onApprove]);
 
-  const mergeResult: MergeResult | null = isDone
-    ? ((): MergeResult | null => {
-        const raw = toolResult.result;
-        if (!raw) return null;
-        const parsed = typeof raw === "string"
-          ? ((): unknown => { try { return JSON.parse(raw) as unknown; } catch { return null; } })()
-          : raw;
-        return extractMergeResult(parsed);
-      })()
-    : null;
-
-  const fieldCount = preview ? Object.keys(preview.fields).length : 0;
-  const conflictCount = preview
-    ? Object.values(preview.fields).filter((f) => f.conflict === true).length
-    : 0;
-  const doneLabel = mergeResult
-    ? `Merged (${String(mergeResult.links_repointed)} links)`
-    : "Merged";
+  const completedResult = isDone ? toolResult.result : null;
+  const mergeResult = isPreview ? null : extractMergeResult(completedResult);
+  const visiblePreview = isPreview ? extractPreview(completedResult) : preview;
+  const fieldCount = visiblePreview ? Object.keys(visiblePreview.fields).length : 0;
+  const conflictCount = visiblePreview
+    ? Object.values(visiblePreview.fields).filter((field) => field.conflict === true).length : 0;
+  const doneLabel = isPreview ? "Preview" : mergeResult
+    ? `Merged (${String(mergeResult.links_repointed)} links)` : "Merged";
 
   return (
     <BaseToolCallCard
       icon="users"
-      title="Merge contacts"
+      title={isPreview ? "Preview contact merge" : "Merge contacts"}
       variant="teal"
       status={tc.status}
       toolResult={toolResult}
       superseded={superseded}
       isAllowlisted={isAllowlisted}
-      primaryLabel="Confirm Merge"
+      primaryLabel={isPreview ? "Preview" : "Confirm Merge"}
+      customActions={isPreview ? <></> : undefined}
       primaryIcon="users"
       doneLabel={doneLabel}
       onApprove={handleApprove}
       onDeny={onDeny}
-      onAllowlistToggle={onAllowlistToggle}
+      onAllowlistToggle={isPreview ? undefined : onAllowlistToggle}
     >
       {loading && (
         <div className="flex items-center gap-2 text-[11px] text-agent-text-muted">
@@ -207,10 +213,10 @@ export function ContactMergeRenderer({
 
       {error && <div className="text-[11px] text-red-400">Preview error: {error}</div>}
 
-      {preview && !isDone && (
+      {visiblePreview && (isPreview || !isDone) && (
         <div className="space-y-2">
           {reason && <div className="text-[11px] text-agent-text-muted italic">{reason}</div>}
-          <MergeTable preview={preview} />
+          <MergeTable preview={visiblePreview} />
           <div className="flex gap-3 text-[10px] text-agent-text-muted">
             <span>{String(fieldCount - conflictCount)} fields resolved</span>
             {conflictCount > 0 && (
@@ -218,7 +224,7 @@ export function ContactMergeRenderer({
                 {String(conflictCount)} need an answer — the merge will refuse until then
               </span>
             )}
-            <span>{String(preview.links_to_repoint)} links to transfer</span>
+            <span>{String(visiblePreview.links_to_repoint)} links to transfer</span>
           </div>
         </div>
       )}

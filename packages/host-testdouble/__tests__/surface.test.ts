@@ -15,7 +15,9 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
+import { defineModule } from "@magnis/host/base";
+import { AgentContributionRegistry } from "@/runtime/agent/contributions";
 
 const ROOT = join(import.meta.dirname, "..", "..", "..");
 const SHIMS = join(ROOT, "packages/host-stubs/types/frontend/src/runtime/plugins/hostShims");
@@ -113,4 +115,52 @@ describe("tst_pub_double_surface_001", () => {
       expect(mod.size, `${name} exports nothing`).toBeGreaterThan(0);
     }
   });
+});
+
+/** @test-id: tst_pub_double_pairs_001
+ * @scenario: scn_tools_rendering
+ * @covers: packages/host-testdouble/base.tsx::defineModule
+ * @covers: packages/host-testdouble/agent-contributions.ts::resolveHistoryRenderer
+ * @deterministic: yes — two local renderer registrations
+ */
+test("tst_pub_double_pairs_001 the host double resolves exact pairs and isolates legacy history", () => {
+  const Message = (): null => null;
+  const Address = (): null => null;
+  const module = defineModule({ id: "email", title: "Email", icon: null, iconName: "mail", themeColor: "blue", entityTypes: ["message", "address"], primaryEntityType: "message", toolCallRenderers: [
+    { entity: "email.message", actions: ["create"], Render: Message },
+    { entity: "email.address", actions: ["create"], Render: Address },
+  ] });
+  if (module.agent === undefined) throw new Error("Missing module contribution");
+  const legacy = { id: "email-legacy", moduleId: "email", match: () => true, Render: (): null => null, priority: 100 };
+  const registry = new AgentContributionRegistry();
+  registry.register("email", { ...module.agent, historyRenderers: [...(module.agent.historyRenderers ?? []), legacy] });
+  const block = { id: "call", kind: "tool_call" as const, toolName: "email.send", payload: {} };
+  expect(registry.resolveHistoryRenderer({ ...block, toolBinding: { entity: "email.message", operation: "create" } })?.Render).toBe(Message);
+  expect(registry.resolveHistoryRenderer({ ...block, toolBinding: { entity: "email.address", operation: "create" } })?.Render).toBe(Address);
+  expect(registry.resolveHistoryRenderer({ ...block, toolBinding: { entity: "email.message", operation: "delete" } })).toBeNull();
+  expect(registry.resolveHistoryRenderer(block)).toBe(legacy);
+});
+
+/** @test-id: tst_pub_double_pairs_002
+ * @scenario: scn_tools_rendering
+ * @covers: packages/host-testdouble/agent-contributions.ts::register
+ * @covers: packages/host-testdouble/agent-contributions.ts::resolveAllowlistTarget
+ * @deterministic: yes — in-memory candidate replacement and recipient callbacks
+ */
+test("tst_pub_double_pairs_002 rejects foreign and duplicate candidates atomically and routes only to the owner", () => {
+  const registry = new AgentContributionRegistry();
+  const binding = { entity: "email.message", operation: "create" };
+  const renderer = { id: "email-create", moduleId: "email", binding, match: () => true, Render: (): null => null };
+  const target = { action: "create", targetType: "email.address", targetId: "morgan@example.test" };
+  const wrongOwner = vi.fn(() => ({ ...target, targetId: "wrong" }));
+  const owner = vi.fn(() => target);
+  registry.register("telegram", { extractAllowlistTarget: wrongOwner });
+  registry.register("email", { historyRenderers: [renderer], extractAllowlistTarget: owner });
+  expect(() => registry.register("telegram", { historyRenderers: [{ ...renderer, moduleId: "telegram" }] })).toThrow("owner");
+  expect(() => registry.register("email", { historyRenderers: [renderer, { ...renderer, id: "duplicate" }] })).toThrow("duplicate");
+  expect(registry.resolveHistoryRenderer({ id: "call", kind: "tool_call", toolBinding: binding, payload: {} })).toBe(renderer);
+  const call = { name: "create", args: { to: target.targetId }, toolBinding: binding };
+  expect(registry.resolveAllowlistTarget(call)).toEqual(target);
+  expect(wrongOwner).not.toHaveBeenCalled();
+  expect(owner).toHaveBeenCalledWith(call);
 });

@@ -54,7 +54,9 @@ describe("tst_module_projects_checklist_001 — checklist lifecycle", () => {
       project_id: PROJECT_ID,
     });
     expect(await module.checklistGet({ project_id: PROJECT_ID })).toEqual({ items: ITEMS });
-    expect(writes).toEqual([{ status: "active", checklist: ITEMS }]);
+    await module.checklistUpdate({ project_id: PROJECT_ID, items: [ITEMS[0]!] });
+    expect(await module.checklistGet({ project_id: PROJECT_ID })).toEqual({ items: [ITEMS[0]] });
+    expect(writes).toEqual([{ status: "active", checklist: ITEMS }, { status: "active", checklist: [ITEMS[0]] }]);
   });
 
   it("rejects missing, foreign, and non-project ids before writing", async () => {
@@ -82,8 +84,8 @@ describe("tst_module_projects_checklist_001 — checklist lifecycle", () => {
       mode: "dispatch",
       ctx: { extension_id: "projects" },
     });
-    const get = tools.find((tool) => tool.name === "projects.checklist.get");
-    const update = tools.find((tool) => tool.name === "projects.checklist.update");
+    const get = tools.find((tool) => tool.binding?.entity === "projects.project.checklist" && tool.binding.operation === "get");
+    const update = tools.find((tool) => tool.binding?.entity === "projects.project.checklist" && tool.binding.operation === "update");
 
     expect(get).toMatchObject({ requires_approval: false });
     expect(update).toMatchObject({ requires_approval: true });

@@ -1,7 +1,11 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "module": "ESNext",
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
@@ -16,16 +20,42 @@
     "allowImportingTsExtensions": true,
     "useDefineForClassFields": false,
     "paths": {
-      "@magnis/plugin-sdk": ["./packages/plugin-sdk/index.ts"],
-      "@magnis/declare": ["./packages/declare/index.ts"],
-      "@magnis/declare/derive": ["./packages/declare/derive.ts"],
-      "@magnis/connector-sdk": ["./packages/connector-sdk/index.ts"],
-      "@magnis/testkit/module": ["./packages/testkit/module.ts"],
-      "@magnis/testkit/source": ["./packages/testkit/source.ts"],
-      "@magnis/host/ui": ["./packages/host-stubs/types/frontend/src/components/ui/index.d.ts"],
-      "@magnis/host/*": ["./packages/host-stubs/types/frontend/src/runtime/plugins/hostShims/*"],
-      "@/*": ["./packages/host-stubs/types/frontend/src/*"],
-      "@magnis/client-core": ["./packages/host-stubs/types/packages/client-core/src/index.d.ts"]
+      "@magnis/plugin-sdk": [
+        "./packages/plugin-sdk/index.ts"
+      ],
+      "@magnis/declare": [
+        "./packages/declare/index.ts"
+      ],
+      "@magnis/declare/derive": [
+        "./packages/declare/derive.ts"
+      ],
+      "@magnis/connector-sdk": [
+        "./packages/connector-sdk/index.ts"
+      ],
+      "@magnis/testkit/module": [
+        "./packages/testkit/module.ts"
+      ],
+      "@magnis/testkit/source": [
+        "./packages/testkit/source.ts"
+      ],
+      "@magnis/host/ui": [
+        "./packages/host-stubs/types/frontend/src/components/ui/index.d.ts"
+      ],
+      "@magnis/host/*": [
+        "./packages/host-stubs/types/frontend/src/runtime/plugins/hostShims/*"
+      ],
+      "@/*": [
+        "./packages/host-stubs/types/frontend/src/*"
+      ],
+      "@magnis/client-core": [
+        "./packages/host-stubs/types/packages/client-core/src/index.d.ts"
+      ],
+      "@magnis/sdk": [
+        "./packages/host-stubs/types/packages/sdk/index.d.ts"
+      ],
+      "@magnis/sdk/*": [
+        "./packages/host-stubs/types/packages/sdk/*"
+      ]
     }
   }
 }

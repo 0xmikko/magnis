@@ -38,10 +38,6 @@ item = "x.post"
 [permissions]
 read = [ "contacts.person" ]
 links = [ "authored_by", "identity" ]
-# `source.sync.bootstrap` (the import_following tool's host call) is NOT listed here:
-# the host's dependency rule reads every `call` namespace as a module the x module
-# needs enabled first, and no module named `source` exists, so the entry made the
-# x module impossible to enable. The host RPC's own authorization is the host's.
 call = [ "contacts.get_social_tracking_by_handle", "contacts.rename_if_placeholder" ]
 host = [ "external_id_reads" ]
 

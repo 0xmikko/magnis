@@ -470,3 +470,43 @@ describe("tst_module_triggers_crud_001 — trigger definition commands", () => {
     expect(existing.spies.delete_entity).toHaveBeenCalledWith(TRIGGER_ID);
   });
 });
+
+/** @test-id: tst_module_triggers_forms_001
+ * @scenario: scn_tools_trigger_forms
+ * @covers: plugins/modules/triggers/module/service.ts::TriggersModule.create
+ * @deterministic: yes — owner RPC and graph doubles
+ */
+it("tst_module_triggers_forms_001 validates raw email form before owner lookup and creates one trigger", async () => {
+  const graph = createGraph({ get_entity_full: () => Promise.resolve(null) });
+  const execute = vi.fn(async (method: string) => method === "email.ensure_addresses" ? { ids: ["address-1"] } : null);
+  const { module } = mountModule(TriggersModule, { graph, rpc: { execute } });
+  await expect(module.create({ from_addresses: ["Morgan@Example.test"], gate_prompt: "receipt", action_prompt: "notify", episode_id: "foreign" })).rejects.toThrow("episode");
+  expect(execute).not.toHaveBeenCalled();
+  await expect(module.create({ from_addresses: ["Morgan@Example.test"], chat_id: 12, gate_prompt: "receipt", action_prompt: "notify" })).rejects.toThrow("form");
+  expect(execute).not.toHaveBeenCalled();
+  const result = await module.create({ from_addresses: ["Morgan@Example.test"], gate_prompt: "receipt", action_prompt: "notify", debounce_seconds: 12 });
+  expect(execute).toHaveBeenCalledWith("email.ensure_addresses", { items: [{ address: "morgan@example.test" }] });
+  expect(graph.spies.create_entity).toHaveBeenCalledTimes(1);
+  expect(graph.spies.add_link).toHaveBeenCalledWith({ from_id: TRIGGER_ID, to_id: "address-1", kind: "watches" });
+  expect(graph.spies.update_properties).toHaveBeenCalledWith(expect.objectContaining({ properties: expect.objectContaining({ debounce_seconds: 12, schema_filter: "email" }) }));
+  expect(result.name).toBe("Email trigger: morgan@example.test");
+});
+
+/** @test-id: tst_module_triggers_forms_002
+ * @scenario: scn_tools_trigger_forms
+ * @covers: plugins/modules/triggers/module/service.ts::TriggersModule.create
+ * @deterministic: yes — owner chat lookup and exact graph write assertions
+ */
+it("tst_module_triggers_forms_002 resolves a raw Telegram chat once and preserves trigger settings", async () => {
+  const graph = createGraph();
+  const execute = vi.fn(async (method: string) => method === "telegram.chats.get" ? { entity_id: "chat-entity" } : null);
+  const module = mountModule(TriggersModule, { graph, rpc: { execute } }).module;
+  await expect(module.create({ chat_id: 42, gate_prompt: "reply", action_prompt: "notify", debounce_seconds: -1 })).rejects.toThrow("debounce");
+  expect(execute).not.toHaveBeenCalled();
+  const result = await module.create({ chat_id: 42, gate_prompt: "reply", action_prompt: "notify", debounce_seconds: 30 });
+  expect(result.name).toBe("Telegram trigger: chat 42");
+  expect(execute).toHaveBeenCalledWith("telegram.chats.get", { chat_id: 42 });
+  expect(graph.spies.add_link).toHaveBeenCalledWith({ from_id: TRIGGER_ID, to_id: "chat-entity", kind: "watches" });
+  expect(graph.spies.create_entity).toHaveBeenCalledTimes(1);
+  expect(graph.spies.update_properties).toHaveBeenCalledWith(expect.objectContaining({ properties: expect.objectContaining({ debounce_seconds: 30, schema_filter: "telegram" }) }));
+});

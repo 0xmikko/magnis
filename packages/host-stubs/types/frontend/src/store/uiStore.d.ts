@@ -1,5 +1,11 @@
 type ThemeMode = "dark" | "light" | "system";
+interface EpisodeFocus {
+    readonly rootEpisodeId: string;
+    readonly episodeId: string;
+}
 interface UiState {
+    readonly pendingEpisodeFocus: EpisodeFocus | null;
+    setPendingEpisodeFocus: (focus: EpisodeFocus | null) => void;
     readonly agentPanelVisible: boolean;
     readonly statusBarVisible: boolean;
     readonly backendReady: boolean;

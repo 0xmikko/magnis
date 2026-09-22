@@ -67,6 +67,64 @@ import { runBatchSend } from "./batchSend.ts";
  */
 const EXPOSED_OUTGOING = new Set(["in_chat", "authored_by"]);
 
+const SEND_PARAMS = {
+      type: "object",
+      properties: {
+        chat_id: { type: ["integer", "string"] },
+        text: { type: "string" },
+        reply_to_message_id: { type: "integer" },
+        account_id: { type: "string" },
+      },
+      required: ["chat_id", "text"],
+      additionalProperties: false,
+    };
+const REPLY_PARAMS = {
+      type: "object",
+      properties: {
+        chat_id: { type: ["integer", "string"] },
+        reply_to_message_id: { type: "integer" },
+        text: { type: "string" },
+        account_id: { type: "string" },
+      },
+      required: ["chat_id", "reply_to_message_id", "text"],
+      additionalProperties: false,
+    };
+const BATCH_SEND_PARAMS = {
+      type: "object",
+      properties: {
+        messages: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              chat_id: { type: ["integer", "string"] },
+              text: { type: "string" },
+              reply_to_message_id: { type: "integer" },
+              chat_name: { type: "string" },
+            },
+            required: ["chat_id", "text"],
+            additionalProperties: false,
+          },
+          minItems: 1,
+          maxItems: 50,
+        },
+        account_id: { type: "string" },
+        excluded_indices: { type: "array", items: { type: "integer", minimum: 0 } },
+      },
+      required: ["messages"],
+      additionalProperties: false,
+    };
+const CHAT_GET_PARAMS = { oneOf: [
+  { type: "object", properties: { entity_id: { type: "string" } }, required: ["entity_id"], additionalProperties: false },
+  { type: "object", properties: { chat_id: { type: ["integer", "string"] } }, required: ["chat_id"], additionalProperties: false },
+] };
+const MESSAGE_GET_PARAMS = {
+      type: "object",
+      properties: { id: { type: "string", format: "uuid" } },
+      required: ["id"],
+      additionalProperties: false,
+    };
+
 export class TelegramModule {
   private readonly graph: GraphService;
   private readonly rpc: RpcExecutor;
@@ -133,7 +191,7 @@ export class TelegramModule {
     };
   }
 
-  @tool("chats.list", {
+  @rpc("chats.list", {
     description: "List telegram chats (pinned first, then by last-message time desc). Optional name search.",
     params: {
       type: "object",
@@ -193,19 +251,17 @@ export class TelegramModule {
     return { items, total: page.total, limit, offset };
   }
 
+  @tool("get", { entity: "telegram.chat", description: "Get a Telegram chat by entity_id or raw chat_id.", params: CHAT_GET_PARAMS })
   @rpc("chats.get", {
     description: "Resolve one Telegram chat and its exact actionable Source account.",
-    params: {
-      type: "object",
-      properties: { entity_id: { type: "string" } },
-      required: ["entity_id"],
-      additionalProperties: false,
-    },
+    params: CHAT_GET_PARAMS,
   })
-  async chatsGet(params: { entity_id: string }): Promise<TelegramChatListItem> {
-    const entity = await this.graph.get_entity(params.entity_id);
+  async chatsGet(params: { entity_id: string } | { chat_id: number | string }): Promise<TelegramChatListItem> {
+    if ("entity_id" in params && "chat_id" in params) throw new Error("Choose one chat get form");
+    const entityId = "entity_id" in params ? params.entity_id : await this.chatEntityId(params.chat_id);
+    const entity = await this.graph.get_entity(entityId);
     if (entity?.schema_id !== CHAT) {
-      throw new Error(`${CHAT} ${params.entity_id} not found`);
+      throw new Error(`${CHAT} ${entityId} not found`);
     }
     const state = await this.observedStateFor([entity.id]);
     return this.buildChatItem(entity, {
@@ -245,7 +301,7 @@ export class TelegramModule {
   }
 
   // ── messages.list ─────────────────────────────────────────────
-  @tool("messages.list", {
+  @rpc("messages.list", {
     description: "List telegram messages, newest first. Filter by chat_id (or entity_id of the chat); omit to list all.",
     params: {
       type: "object",
@@ -357,14 +413,10 @@ export class TelegramModule {
   }
 
   // ── messages.get ──────────────────────────────────────────────
-  @tool("messages.get", {
+  @tool("get", { entity: "telegram.message", description: "Get a Telegram message by id.", params: MESSAGE_GET_PARAMS })
+  @rpc("messages.get", {
     description: "Get a single telegram message detail by entity id.",
-    params: {
-      type: "object",
-      properties: { id: { type: "string", format: "uuid" } },
-      required: ["id"],
-      additionalProperties: false,
-    },
+    params: MESSAGE_GET_PARAMS,
   })
   async messagesGet(params: GetParams): Promise<MessageDetailView> {
     // P1 (graph-read-api §4): the entity in ONE fetch, user-scoped.
@@ -1067,69 +1119,40 @@ export class TelegramModule {
     return memberCount !== null && memberCount <= INDEXING_THRESHOLD;
   }
 
-  @writeTool("messages.send", {
+  @writeTool("create", {
+    entity: "telegram.message",
+    description: "Create a Telegram message {chat_id,text,reply_to_message_id?,account_id?} or batch {messages:[{chat_id,text,reply_to_message_id?,chat_name?}],account_id?,excluded_indices?}.",
+    params: { oneOf: [SEND_PARAMS, BATCH_SEND_PARAMS] },
+    allowlist_gate: { target_type: "telegram_chat", target_arg: "chat_id", batch_arg: "messages" },
+  })
+  async create(params: SendParams | BatchSendParams): Promise<Record<string, unknown>> {
+    if ("messages" in params) {
+      if ("chat_id" in params || "text" in params || "reply_to_message_id" in params) throw new Error("Choose one Telegram create form: single or messages");
+      return this.messagesBatchSend(params);
+    }
+    return this.messagesSend(params);
+  }
+
+  @rpc("messages.send", {
     description: "Send a Telegram message to a chat. May require approval before execution.",
-    params: {
-      type: "object",
-      properties: {
-        chat_id: { type: ["integer", "string"] },
-        text: { type: "string" },
-        reply_to_message_id: { type: "integer" },
-        account_id: { type: "string" },
-      },
-      required: ["chat_id", "text"],
-      additionalProperties: false,
-    },
+    params: SEND_PARAMS,
   })
   async messagesSend(params: SendParams): Promise<Record<string, unknown>> {
     return this.sendMessage(params.chat_id, params.text, params.reply_to_message_id, params.account_id);
   }
 
-  @writeTool("messages.reply", {
+  @rpc("messages.reply", {
     description: "Reply to a specific Telegram message in a chat. May require approval before execution.",
-    params: {
-      type: "object",
-      properties: {
-        chat_id: { type: ["integer", "string"] },
-        reply_to_message_id: { type: "integer" },
-        text: { type: "string" },
-        account_id: { type: "string" },
-      },
-      required: ["chat_id", "reply_to_message_id", "text"],
-      additionalProperties: false,
-    },
+    params: REPLY_PARAMS,
   })
   async messagesReply(params: ReplyParams): Promise<Record<string, unknown>> {
     return this.sendMessage(params.chat_id, params.text, params.reply_to_message_id, params.account_id);
   }
 
-  @writeTool("batch_send", {
+  @rpc("batch_send", {
     description:
       "Send Telegram messages to multiple recipients in one batch (1..50). Each message needs chat_id and text; reply_to_message_id is optional. ALWAYS include chat_name — the recipient's human display name (e.g. \"Dylan Dewdney\") — so the approval card shows who each message goes to instead of a raw chat_id. Use this for multi-recipient outreach so the user reviews ONE approval instead of N separate sends. Returns per-recipient results.",
-    params: {
-      type: "object",
-      properties: {
-        messages: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              chat_id: { type: ["integer", "string"] },
-              text: { type: "string" },
-              reply_to_message_id: { type: "integer" },
-              chat_name: { type: "string" },
-            },
-            required: ["chat_id", "text"],
-            additionalProperties: false,
-          },
-          minItems: 1,
-          maxItems: 50,
-        },
-        account_id: { type: "string" },
-      },
-      required: ["messages"],
-      additionalProperties: false,
-    },
+    params: BATCH_SEND_PARAMS,
   })
   async messagesBatchSend(params: BatchSendParams): Promise<Record<string, unknown>> {
     const all = params.messages;
@@ -1237,7 +1260,7 @@ export class TelegramModule {
   }
 
   // ── triggers ──────────────────────────────────────────────────
-  @writeTool("set_trigger", {
+  @rpc("set_trigger", {
     description:
       "Set up an automated reaction to incoming Telegram messages in a chat. When a matching message arrives, the action executes automatically.",
     params: {
@@ -1254,10 +1277,13 @@ export class TelegramModule {
     },
   })
   async setTrigger(params: SetTriggerParams): Promise<unknown> {
-    const chatEntityId = await this.graph.find_by_anchor(chatAnchor(String(params.chat_id)));
-    if (!chatEntityId) {
-      throw new Error(`Telegram chat ${String(params.chat_id)} not found. Sync messages first.`);
+    if (!params.gate_prompt.trim() || !params.action_prompt.trim()) throw new Error("gate_prompt and action_prompt are required");
+    if (params.debounce_seconds !== undefined && (!Number.isInteger(params.debounce_seconds) || params.debounce_seconds < 0)) throw new Error("invalid debounce_seconds");
+    if (params.episode_id !== undefined) {
+      const parent = await this.graph.get_entity_full(params.episode_id, { links: false });
+      if (parent?.entity.schema_id !== "episodes.episode") throw new Error(`episode not found: ${params.episode_id}`);
     }
+    const chatEntityId = await this.chatEntityId(params.chat_id);
     // Delegate to the triggers module via the cross-module hub (rpc_calls).
     return this.rpc.execute("triggers.create", {
       name: `Telegram trigger: chat ${String(params.chat_id)}`,
@@ -1266,8 +1292,14 @@ export class TelegramModule {
       action_prompt: params.action_prompt,
       schema_filter: "telegram",
       debounce_seconds: params.debounce_seconds ?? 0,
-      episode_id: params.episode_id ?? null,
+      ...(params.episode_id === undefined ? {} : { episode_id: params.episode_id }),
     });
+  }
+
+  private async chatEntityId(chatId: number | string): Promise<string> {
+    const id = await this.graph.find_by_anchor(chatAnchor(String(chatId)));
+    if (!id) throw new Error(`Telegram chat ${String(chatId)} not found. Sync messages first.`);
+    return id;
   }
 
   // Build a SyncEnvelope for re-ingesting a message produced by a source

@@ -51,7 +51,7 @@ export function TelegramChatItemContent({
   const runtime = useAppRuntime();
   const initials = (item.metadata?.initials as string | undefined) ?? "?";
   const avatarColor = (item.metadata?.avatarColor as string | undefined) ?? "#4A90D9";
-  const avatarUrl = resolveAvatarUrl(runtime.transport.baseUrl, item.avatar_url ?? null);
+  const avatarUrl = resolveAvatarUrl(runtime.transport.baseUrl, item.avatarUrl ?? null);
   const muted = item.metadata?.muted as boolean | undefined;
   const unreadCount = item.unread_count;
   const isIndexed = item.metadata?.isIndexed as boolean | undefined;

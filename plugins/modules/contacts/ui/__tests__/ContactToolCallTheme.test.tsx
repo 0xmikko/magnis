@@ -1,6 +1,5 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { ContactBatchCreateRenderer } from "../ContactBatchCreateRenderer";
 import { ContactCreateRenderer } from "../ContactCreateRenderer";
 import type {
   AgentRendererProps,
@@ -23,13 +22,9 @@ function makeRuntime(): AppRuntime {
 function makeAgent(): AgentRuntime {
   return {
     store: {} as AgentRuntime["store"],
-    chat: {} as AgentRuntime["chat"],
     registerContribution: () => () => undefined,
     setActiveContext: () => undefined,
     setReplyTo: () => undefined,
-    send: () => Promise.resolve(),
-    approveToolCall: () => Promise.resolve(),
-    denyToolCall: () => Promise.resolve(),
     requestDraft: () => undefined,
     resolveEntityRenderer: () => null,
     navigateToEntity: () => false,
@@ -89,7 +84,7 @@ function renderBatchCard(
 
   return render(
     <div data-theme="light">
-      <ContactBatchCreateRenderer {...props} />
+      <ContactCreateRenderer {...props} />
     </div>,
   );
 }
@@ -130,7 +125,8 @@ describe("contact tool call cards", () => {
       }, {
         toolCall: {
           id: "tc-2",
-          name: "contacts.batch_create",
+          name: "create",
+          toolBinding: { entity: "contacts.person", operation: "create" },
           args: {
             contacts: [
               {

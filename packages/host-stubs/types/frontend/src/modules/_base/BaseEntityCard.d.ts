@@ -1,4 +1,4 @@
-import { type ReactNode, type JSX } from "react";
+import { type ReactNode, type MouseEventHandler, type JSX } from "react";
 import type { EntityRendererProps } from "../../runtime/contracts/agent";
 /**
  * Standard entity card shell — ALL entity cards MUST use this.
@@ -10,6 +10,8 @@ import type { EntityRendererProps } from "../../runtime/contracts/agent";
  *
  * If no children, renders entity name.
  */
-export declare function BaseEntityCard({ schemaId, data, runtime, action, children, }: EntityRendererProps & {
+export declare function BaseEntityCard({ schemaId, data, runtime, action, children, hrefOverride, onNavigate, }: EntityRendererProps & {
     readonly children?: ReactNode;
+    readonly hrefOverride?: string;
+    readonly onNavigate?: MouseEventHandler<HTMLAnchorElement | HTMLSpanElement>;
 }): JSX.Element;

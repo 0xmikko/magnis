@@ -153,6 +153,8 @@ export function num(o: Record<string, unknown>, k: string): number | null {
 // registry record — an implementation detail of this runtime, not contract.
 interface ToolMeta {
   suffix: string;
+  entity: string | null;
+  gate: ToolSpecInput["allowlist_gate"];
   description: string;
   params: Record<string, unknown>;
   write: boolean;
@@ -179,20 +181,14 @@ function registerMethod(
     registry.set(target, [meta]);
     return;
   }
-  const exactRegistration = list.some(
-    (entry) =>
-      entry.methodName === meta.methodName &&
-      entry.suffix === meta.suffix &&
-      entry.description === meta.description &&
-      entry.params === meta.params &&
-      entry.write === meta.write &&
-      entry.isTool === meta.isTool,
-  );
-  if (exactRegistration) return;
-  if (list.some((entry) => entry.suffix === meta.suffix)) {
-    throw new TypeError(`duplicate plugin decorator suffix ${JSON.stringify(meta.suffix)}`);
+  if (list.some((entry) => methodIdentity(entry) === methodIdentity(meta))) {
+    throw new TypeError(`duplicate plugin operation ${JSON.stringify(methodIdentity(meta))}`);
   }
   list.push(meta);
+}
+
+function methodIdentity(meta: ToolMeta): string {
+  return meta.entity === null ? meta.suffix : `${meta.entity}.${meta.suffix}`;
 }
 
 function collectMethodMetadata(prototype: object): ToolMeta[] {
@@ -230,17 +226,17 @@ function collectMethodMetadata(prototype: object): ToolMeta[] {
       if (!visitedLegacy.has(meta)) ownerMetas.push(meta);
     }
     for (const meta of ownerMetas) {
-      if (suffixes.has(meta.suffix)) {
-        throw new TypeError(`duplicate inherited plugin decorator suffix ${JSON.stringify(meta.suffix)}`);
+      if (suffixes.has(methodIdentity(meta))) {
+        throw new TypeError(`duplicate inherited plugin operation ${JSON.stringify(methodIdentity(meta))}`);
       }
-      suffixes.add(meta.suffix);
+      suffixes.add(methodIdentity(meta));
       collected.push(meta);
     }
   }
   return collected;
 }
 
-function record(suffix: string, spec: ToolSpecInput, write: boolean, isTool: boolean): MethodRecorder {
+function record(suffix: string, spec: Omit<ToolSpecInput, "entity">, write: boolean, isTool: boolean, entity: string | null): MethodRecorder {
   function decorate(
     targetOrMethod: object,
     methodNameOrContext: string | symbol | StandardMethodDecoratorContext,
@@ -248,6 +244,8 @@ function record(suffix: string, spec: ToolSpecInput, write: boolean, isTool: boo
   ): void {
     const common = {
       suffix,
+      entity,
+      gate: spec.allowlist_gate,
       description: spec.description,
       params: spec.params,
       write,
@@ -281,20 +279,20 @@ function record(suffix: string, spec: ToolSpecInput, write: boolean, isTool: boo
 /// Declare a read tool. `suffix` is the method name only — the backend
 /// glues the `<plugin_id>.` prefix at init.
 export function tool(suffix: string, spec: ToolSpecInput): MethodRecorder {
-  return record(suffix, spec, false, true);
+  return record(suffix, spec, false, true, spec.entity);
 }
 /// Declare a write tool (→ `requires_approval: true` on the agent
 /// tool definition).
 export function writeTool(suffix: string, spec: ToolSpecInput): MethodRecorder {
-  return record(suffix, spec, true, true);
+  return record(suffix, spec, true, true, spec.entity);
 }
 /// Declare an RPC-only handler: reachable via RPC (frontend / other
 /// modules over the hub) but NOT exposed to the agent as a tool. Use for
 /// internal/UI operations (e.g. add_member, list_for_entity) that the
 /// agent shouldn't call directly. Mirrors a native module's
 /// `rpc_methods()` that aren't in `tools()`.
-export function rpc(suffix: string, spec: ToolSpecInput = { description: "", params: {} }): MethodRecorder {
-  return record(suffix, spec, false, false);
+export function rpc(suffix: string, spec: Omit<ToolSpecInput, "entity"> = { description: "", params: {} }): MethodRecorder {
+  return record(suffix, spec, false, false, null);
 }
 
 /// Declare the plugin's sync ingest handler. The host `PluginModuleController`
@@ -305,7 +303,7 @@ export function rpc(suffix: string, spec: ToolSpecInput = { description: "", par
 /// dispatches internally by `envelope.kind` / payload `entity_type`. NOT an
 /// agent tool. One handler per plugin.
 export function syncHandler(_surface?: string): MethodRecorder {
-  return record("__sync__", { description: "sync ingest handler", params: {} }, false, false);
+  return record("__sync__", { description: "sync ingest handler", params: {} }, false, false, null);
 }
 
 /// S4: the terminal sync marker. Invoked once when a bootstrap drain
@@ -319,6 +317,7 @@ export function syncComplete(): MethodRecorder {
     { description: "sync complete hook", params: {} },
     false,
     false,
+    null,
   );
 }
 
@@ -334,6 +333,7 @@ export function connectionReady(): MethodRecorder {
     { description: "connection ready hook", params: {} },
     false,
     false,
+    null,
   );
 }
 
@@ -360,11 +360,10 @@ export function definePlugin(
     rpc: RpcExecutor,
     log: PluginLogger,
   ): Promise<void> {
-    // Re-init is a replacement, not accumulation. Clear the published surface
-    // first so any constructor/metadata failure leaves no stale callable API.
-    // @tested-by: tst_testkit_mount_dispatch_004
-    shape.rpcHandlers = {};
-    shape.toolDefinitions = [];
+    // Validate a complete candidate before replacing the active surface.
+    // @tested-by: tst_testkit_entity_operations_002
+    const rpcHandlers: PluginModuleShape["rpcHandlers"] = {};
+    const toolDefinitions: PluginModuleShape["toolDefinitions"] = [];
     // The host boundary is Rust/V8 and passes these positionally, so TypeScript
     // cannot enforce arity there. Without this guard a host that has not caught
     // up leaves `log` undefined, every handler registers, and the plugin runs
@@ -393,23 +392,31 @@ export function definePlugin(
     // @tested-by: tst_testkit_mount_dispatch_005
     const metas = collectMethodMetadata((ModuleClass as { prototype: object }).prototype);
     for (const m of metas) {
-      const rpcName = `${prefix}.${m.suffix}`;
+      if (m.isTool && (typeof m.entity !== "string" || !m.entity.startsWith(`${prefix}.`) || !/^[a-z][a-z0-9_]*$/.test(m.suffix))) {
+        throw new TypeError(`plugin ${prefix} cannot register ${methodIdentity(m)}`);
+      }
+      const rpcName = m.isTool ? methodIdentity(m) : `${prefix}.${m.suffix}`;
+      if (Object.hasOwn(rpcHandlers, rpcName)) throw new TypeError(`duplicate plugin handler ${rpcName}`);
       const method = instance[m.methodName];
       if (typeof method !== "function") {
         throw new Error(`plugin: decorated method "${String(m.methodName)}" is not a function`);
       }
-      shape.rpcHandlers[rpcName] = (params: unknown): unknown => method.call(instance, params);
+      rpcHandlers[rpcName] = (params: unknown): unknown => method.call(instance, params);
       // RPC-only handlers (rpc()) register the handler but are NOT harvested
       // as agent tools.
-      if (m.isTool) {
-        shape.toolDefinitions.push({
+      if (m.isTool && m.entity !== null) {
+        toolDefinitions.push({
           name: rpcName,
+          binding: { entity: m.entity, operation: m.suffix },
+          ...(m.gate === undefined ? {} : { allowlist_gate: m.gate }),
           description: m.description,
           inputSchema: m.params,
           requires_approval: m.write,
         });
       }
     }
+    shape.rpcHandlers = rpcHandlers;
+    shape.toolDefinitions = toolDefinitions;
   }
 
   const shape: PluginModuleShape = {

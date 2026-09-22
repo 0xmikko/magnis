@@ -62,6 +62,72 @@ import {
   MESSAGE_SCHEMA,
 } from "../schema.ts";
 
+const SEND_PARAMS = {
+      type: "object",
+      properties: {
+        to: { type: "string", description: "Recipient email address" },
+        subject: { type: "string" },
+        body_text: { type: "string" },
+        attachment_ids: {
+          type: "array",
+          items: { type: "string", format: "uuid" },
+          description: "File entity IDs to attach",
+        },
+      },
+      required: ["to", "subject", "body_text"],
+      additionalProperties: false,
+    };
+const REPLY_PARAMS = {
+      type: "object",
+      properties: {
+        email_id: { type: "string", format: "uuid", description: "Entity ID of the email to reply to" },
+        body_text: { type: "string", description: "Plain text body of the reply" },
+        attachment_ids: {
+          type: "array",
+          items: { type: "string", format: "uuid" },
+          description: "File entity IDs to attach",
+        },
+      },
+      required: ["email_id", "body_text"],
+      additionalProperties: false,
+    };
+const BATCH_SEND_PARAMS = {
+      type: "object",
+      properties: {
+        messages: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              to: { type: "string" },
+              subject: { type: "string" },
+              body_text: { type: "string" },
+              attachment_ids: { type: "array", items: { type: "string", format: "uuid" } },
+            },
+            required: ["to", "subject", "body_text"],
+            additionalProperties: false,
+          },
+          minItems: 1,
+          maxItems: 50,
+        },
+        excluded_indices: { type: "array", items: { type: "integer", minimum: 0 } },
+      },
+      required: ["messages"],
+      additionalProperties: false,
+    };
+const GET_PARAMS = {
+      type: "object",
+      properties: { id: { type: "string", format: "uuid" } },
+      required: ["id"],
+      additionalProperties: false,
+    };
+const BATCH_PARAMS = {
+      type: "object",
+      properties: { ids: { type: "array", items: { type: "string", format: "uuid" } } },
+      required: ["ids"],
+      additionalProperties: false,
+    };
+
 export class EmailModule {
   private readonly graph: GraphService;
   private readonly rpc: RpcExecutor;
@@ -72,8 +138,30 @@ export class EmailModule {
     this.log = deps.log;
   }
 
+  @tool("get", { entity: "email.message", description: "Get an email by id or multiple emails by ids.", params: { oneOf: [GET_PARAMS, BATCH_PARAMS] } })
+  async get(params: GetParams | BatchParams): Promise<MessageDetailView | MessageDetailView[]> {
+    if ("id" in params && "ids" in params) throw new Error("Choose one get form: id or ids");
+    return "ids" in params ? this.emailBatch(params) : this.emailGet(params);
+  }
+
+  @writeTool("create", {
+    entity: "email.message",
+    description: "Create an email: {to,subject,body_text}, reply {email_id,body_text}, or batch {messages:[{to,subject,body_text}],excluded_indices?}; attachment_ids supported.",
+    params: { oneOf: [SEND_PARAMS, REPLY_PARAMS, BATCH_SEND_PARAMS] },
+    allowlist_gate: { target_type: "email_address", target_arg: "to", batch_arg: "messages" },
+  })
+  async create(params: SendParams | ReplyParams | BatchSendParams): Promise<Record<string, unknown>> {
+    // @tested-by: tst_module_email_create_001
+    if (["to", "email_id", "messages"].filter((key) => key in params).length !== 1) {
+      throw new Error("Choose one email create form: to, email_id or messages");
+    }
+    if ("messages" in params) return this.emailBatchSend(params);
+    if ("email_id" in params) return this.emailReply(params);
+    return this.emailSend(params);
+  }
+
   // ── email.list ────────────────────────────────────────────────
-  @tool("list", {
+  @rpc("list", {
     description: "List email messages, newest first. Optional name search.",
     params: {
       type: "object",
@@ -123,14 +211,9 @@ export class EmailModule {
   }
 
   // ── email.get ─────────────────────────────────────────────────
-  @tool("get", {
+  @rpc("get", {
     description: "Get a single email message detail view by entity id.",
-    params: {
-      type: "object",
-      properties: { id: { type: "string", format: "uuid" } },
-      required: ["id"],
-      additionalProperties: false,
-    },
+    params: GET_PARAMS,
   })
   async emailGet(params: GetParams): Promise<MessageDetailView> {
     const view = await this.getDetail(params.id);
@@ -139,14 +222,9 @@ export class EmailModule {
   }
 
   // ── email.batch ───────────────────────────────────────────────
-  @tool("batch", {
+  @rpc("batch", {
     description: "Get multiple email message detail views by entity ids.",
-    params: {
-      type: "object",
-      properties: { ids: { type: "array", items: { type: "string", format: "uuid" } } },
-      required: ["ids"],
-      additionalProperties: false,
-    },
+    params: BATCH_PARAMS,
   })
   async emailBatch(params: BatchParams): Promise<MessageDetailView[]> {
     const views: MessageDetailView[] = [];
@@ -448,46 +526,19 @@ export class EmailModule {
   // created entity — non-fatal). Reply additionally threads in_reply_to from the
   // original and links attachments to the ORIGINAL email.
 
-  @writeTool("send", {
+  @rpc("send", {
     description:
       "Send a new email to a recipient. Subject and body required. Optionally attach files by entity ID.",
-    params: {
-      type: "object",
-      properties: {
-        to: { type: "string", description: "Recipient email address" },
-        subject: { type: "string" },
-        body_text: { type: "string" },
-        attachment_ids: {
-          type: "array",
-          items: { type: "string", format: "uuid" },
-          description: "File entity IDs to attach",
-        },
-      },
-      required: ["to", "subject", "body_text"],
-      additionalProperties: false,
-    },
+    params: SEND_PARAMS,
   })
   async emailSend(params: SendParams): Promise<Record<string, unknown>> {
     return this.sendSingle(params.to, params.subject, params.body_text, params.attachment_ids ?? []);
   }
 
-  @writeTool("reply", {
+  @rpc("reply", {
     description:
       "Reply to an email. Reads the original, threads the reply (In-Reply-To), and routes it for sending. Optionally attach files by entity ID.",
-    params: {
-      type: "object",
-      properties: {
-        email_id: { type: "string", format: "uuid", description: "Entity ID of the email to reply to" },
-        body_text: { type: "string", description: "Plain text body of the reply" },
-        attachment_ids: {
-          type: "array",
-          items: { type: "string", format: "uuid" },
-          description: "File entity IDs to attach",
-        },
-      },
-      required: ["email_id", "body_text"],
-      additionalProperties: false,
-    },
+    params: REPLY_PARAMS,
   })
   async emailReply(params: ReplyParams): Promise<Record<string, unknown>> {
     const attachmentIds = params.attachment_ids ?? [];
@@ -553,33 +604,10 @@ export class EmailModule {
     };
   }
 
-  @writeTool("batch_send", {
+  @rpc("batch_send", {
     description:
       "Send multiple emails in one batch (1..50). Each message needs to, subject, body_text. excluded_indices skip specific messages. Returns per-message results.",
-    params: {
-      type: "object",
-      properties: {
-        messages: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              to: { type: "string" },
-              subject: { type: "string" },
-              body_text: { type: "string" },
-              attachment_ids: { type: "array", items: { type: "string", format: "uuid" } },
-            },
-            required: ["to", "subject", "body_text"],
-            additionalProperties: false,
-          },
-          minItems: 1,
-          maxItems: 50,
-        },
-        excluded_indices: { type: "array", items: { type: "integer", minimum: 0 } },
-      },
-      required: ["messages"],
-      additionalProperties: false,
-    },
+    params: BATCH_SEND_PARAMS,
   })
   async emailBatchSend(params: BatchSendParams): Promise<Record<string, unknown>> {
     const messages = params.messages;
@@ -638,7 +666,7 @@ export class EmailModule {
   }
 
   // ── set_trigger (@writeTool) ──────────────────────────────────
-  @writeTool("set_trigger", {
+  @rpc("set_trigger", {
     description:
       "Set up an automated reaction to incoming emails. Watches one or more email addresses (OR-matching). When any watched address receives an email matching the gate, the action runs.",
     params: {
@@ -655,11 +683,19 @@ export class EmailModule {
         debounce_seconds: { type: "integer", description: "0=immediate (default for email), >0=batch" },
         episode_id: { type: "string", format: "uuid", description: "Parent episode for context" },
       },
-      required: ["from_addresses", "gate_prompt", "action_prompt"],
+      required: ["gate_prompt", "action_prompt"],
+      anyOf: [{ required: ["from_addresses"] }, { required: ["from_address"] }],
       additionalProperties: false,
     },
   })
   async setTrigger(params: SetTriggerParams): Promise<unknown> {
+    // @tested-by: tst_module_email_trigger_validation_001
+    if (!params.gate_prompt.trim() || !params.action_prompt.trim()) throw new Error("gate_prompt and action_prompt are required");
+    if (params.debounce_seconds !== undefined && (!Number.isInteger(params.debounce_seconds) || params.debounce_seconds < 0)) throw new Error("invalid debounce_seconds");
+    if (params.episode_id !== undefined) {
+      const parent = await this.graph.get_entity_full(params.episode_id, { links: false });
+      if (parent?.entity.schema_id !== "episodes.episode") throw new Error(`episode not found: ${params.episode_id}`);
+    }
     // Normalize watched addresses: lowercase, dedup, sort (native parity).
     const raw = [...(params.from_addresses ?? [])];
     if (params.from_address) raw.push(params.from_address);
@@ -671,19 +707,7 @@ export class EmailModule {
     // Resolve each address to its email.address entity id. The plugin OWNS
     // email.address, so one apply_batch resolves-or-creates them all and returns
     // the ids — no per-address ensure_address RPC.
-    const result = await this.graph.apply_batch({
-      entities: addresses.map((a) => ({
-        key: `addr:${a}`,
-        schema_id: ADDRESS_SCHEMA,
-        name: a,
-        idx: a,
-        anchor: `email:address:${a}`,
-        properties: { address: a },
-      })),
-      refs: [],
-      links: [],
-    });
-    const watchIds = addresses.map((a) => result.ids[`addr:${a}`]).filter((id): id is string => Boolean(id));
+    const watchIds = await this.ensureAddressBatch(addresses.map((address) => ({ address })));
 
     const name =
       addresses.length <= 3
@@ -698,7 +722,7 @@ export class EmailModule {
       action_prompt: params.action_prompt,
       schema_filter: "email",
       debounce_seconds: params.debounce_seconds ?? 0,
-      episode_id: params.episode_id ?? null,
+      ...(params.episode_id === undefined ? {} : { episode_id: params.episode_id }),
     });
   }
 

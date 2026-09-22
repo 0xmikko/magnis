@@ -1,3 +1,4 @@
+import { rpc } from "@magnis/plugin-sdk";
 // X plugin — backend module (V8 isolate). Read-only ingest of X profiles +
 // posts via the `x` surface, plus read tools. Per-platform module (telegram-
 // shaped): a WRITE seam (DM / compose / reply) belongs HERE later — add write
@@ -8,7 +9,7 @@
 // Idempotent: records carry external_id = the source remote_id (re-poll upserts).
 // Provenance is stamped host-side from the calling plugin + envelope.
 
-import { searchEntitiesPage, syncHandler, tool, writeTool, type GraphService, type PluginDeps } from "@magnis/plugin-sdk";
+import { searchEntitiesPage, syncHandler, tool, type GraphService, type PluginDeps } from "@magnis/plugin-sdk";
 import type {
   BatchEntityInput,
   BatchLinkInput,
@@ -122,44 +123,6 @@ export class XModule {
     return { dropped_remote_ids: dropped, trigger_checks: [] };
   }
 
-  // ── X friend import = a bootstrap TRIGGER ───────────────────────────────
-  // The following list flows through the ONE canonical ingest path: the host
-  // seeds the x source's `contacts` surface with the import spec (cursor),
-  // the connector emits social_contact envelopes, and the contacts module's
-  // @syncHandler mints untracked contacts via apply_batch. This tool writes
-  // NOTHING itself — it only schedules the bootstrap.
-  @writeTool("import_following", {
-    description:
-      "Import the accounts an X user follows as contacts. Schedules a sync " +
-      "bootstrap of the x source's contacts surface — the import itself runs " +
-      "through the standard sync pipeline. Imported friends are NOT tracked; " +
-      "tracking their tweets stays a per-person opt-in. Re-running refreshes " +
-      "the list idempotently.",
-    params: {
-      type: "object",
-      properties: {
-        handle: { type: "string" },
-        limit: { type: "integer", minimum: 1, maximum: 5000 },
-      },
-      required: ["handle"],
-      additionalProperties: false,
-    },
-  })
-  async import_following(params: {
-    handle: string;
-    limit?: number;
-  }): Promise<{ scheduled: boolean; surface: string }> {
-    await this.rpc.execute("source.sync.bootstrap", {
-      source_id: "x",
-      surface: "contacts",
-      params: {
-        handle: params.handle,
-        ...(params.limit !== undefined ? { limit: params.limit } : {}),
-      },
-    });
-    return { scheduled: true, surface: "contacts" };
-  }
-
   private async linkProfilesToContacts(
     envelopes: SyncEnvelope[],
     ids: Record<string, string>,
@@ -199,7 +162,7 @@ export class XModule {
     }
   }
 
-  @tool("posts.list", {
+  @rpc("posts.list", {
     description: "List ingested x posts (most recent first), optional platform filter.",
     params: {
       type: "object",
@@ -227,7 +190,9 @@ export class XModule {
     return { items, total: win.total, limit, offset };
   }
 
-  @tool("posts.get", {
+  @rpc("posts.get")
+  @tool("get", {
+    entity: "x.post",
     description: "Get a x post by entity id.",
     params: {
       type: "object",
@@ -255,7 +220,9 @@ export class XModule {
     };
   }
 
-  @tool("profiles.get", {
+  @rpc("profiles.get")
+  @tool("get", {
+    entity: "x.profile",
     description: "Get a tracked x profile by entity id (name, handle, followers, bio, url).",
     params: {
       type: "object",
@@ -283,7 +250,7 @@ export class XModule {
     };
   }
 
-  @tool("profiles.list", {
+  @rpc("profiles.list", {
     description:
       "List tracked x profiles, optional platform filter and name search.",
     params: {

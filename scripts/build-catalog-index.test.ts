@@ -207,8 +207,14 @@ describe("tst_pub_catalog_index_001", () => {
     const curation = JSON.parse(
       readFileSync(join(first.out, "onboarding.json"), "utf8"),
     ) as Curation;
-    // `contacts` calls `email.ensure_address`, so it hard-depends on email.
+    // Explicit schema requirements survive even though RPC grants are optional.
     expect(curation.hard_deps["contacts"]).toContain("email");
+    expect(curation.hard_deps["companies"]).toContain("email");
+    expect(curation.hard_deps["meetings"]).toContain("email");
+    expect(curation.hard_deps["linkedin"]).toContain("contacts");
+    expect(curation.hard_deps["triggers"] ?? []).not.toContain("email");
+    expect(curation.hard_deps["triggers"] ?? []).not.toContain("telegram");
+    expect(curation.hard_deps["email"] ?? []).not.toContain("triggers");
     // It only READS `companies.company`, which never blocks enabling — a
     // soft edge, and the hand-written table this replaced had them merged.
     expect(curation.hard_deps["contacts"] ?? []).not.toContain("companies");

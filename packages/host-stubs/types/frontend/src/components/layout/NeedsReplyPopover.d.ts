@@ -1,8 +1,9 @@
 import type { JSX } from "react";
 import type { NeedsReplyEpisode } from "../../modules/episodes/helpers";
 interface NeedsReplyPopoverProps {
+    readonly error?: string;
     readonly items: readonly NeedsReplyEpisode[];
-    /** Jump straight to this episode in Chats. */
+    /** Focus this Episode within its root conversation. */
     readonly onSelect: (episodeId: string) => void;
     readonly onClose: () => void;
 }
@@ -14,5 +15,5 @@ interface NeedsReplyPopoverProps {
  * The close check measures from the ANCHOR wrapper (parentElement) so
  * a mousedown on the bell toggle itself does not close-then-reopen.
  */
-export declare function NeedsReplyPopover({ items, onSelect, onClose, }: NeedsReplyPopoverProps): JSX.Element;
+export declare function NeedsReplyPopover({ items, error, onSelect, onClose, }: NeedsReplyPopoverProps): JSX.Element;
 export {};

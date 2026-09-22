@@ -1,16 +1,19 @@
 /**
- * WebSocketClient — standalone WebSocket transport with JSON-RPC
- * and event subscription support.
+ * WebSocketClient — standalone WebSocket transport for the gateway's RPC
+ * and event frames.
  *
  * Pure TypeScript, no React dependency. Owns:
- *   - socket lifecycle (connect / reconnect / backoff / heartbeat)
- *   - JSON-RPC request/response tracking (rpc / rpcStream)
+ *   - socket lifecycle (connect / auth frame / reconnect / backoff)
+ *   - rpc request tracking (rpc → rpc.result / rpc.error)
  *   - server-push event dispatch (onSchemaEvent / onEventType)
  *   - connection status with external listeners (subscribeStatus)
  */
+import type { HttpContractLike, HttpInputFor, HttpOutputFor } from "@magnis/sdk";
+import type { FetchImplementation, WebSocketFactory, WebSocketLike } from "../platform.ts";
+export declare function adaptWebSocket(socket: WebSocket): WebSocketLike;
 export interface Rpc {
+    http<Contract extends HttpContractLike>(contract: Contract, input: HttpInputFor<Contract>): Promise<HttpOutputFor<Contract>>;
     rpc<T = unknown>(method: string, params?: Record<string, unknown>): Promise<T>;
-    rpcStream(method: string, params: Record<string, unknown>, onChunk: (data: unknown) => void): Promise<unknown>;
     readonly baseUrl: string;
 }
 export interface StreamEvent {
@@ -22,13 +25,16 @@ export interface ConnectionStatus {
     readonly connected: boolean;
     readonly label: string;
 }
+export interface WebSocketClientOptions {
+    readonly fetch: FetchImplementation;
+    readonly createWebSocket: WebSocketFactory;
+}
 type VoidHandler = () => void;
 type StatusListener = (status: ConnectionStatus) => void;
 export declare class WebSocketClient {
     readonly baseUrl: string;
     private ws;
     private reconnectTimer;
-    private heartbeatTimer;
     private backoff;
     private intentionalClose;
     /** True between scheduling a reconnect and the next successful auth. While
@@ -43,8 +49,8 @@ export declare class WebSocketClient {
     private authed;
     /** Set when THIS attempt sent a NON-empty token. If the server then rejects
      *  it (auth-fail close), the token is stale — we clear it via `onAuthReject`
-     *  so the next attempt goes token-less (Open-mode backends admit that as the
-     *  default user, instead of wedging forever re-sending a dead token). */
+     *  so the owning login gate can return to authentication instead of wedging
+     *  forever re-sending a dead token. */
     private tokenPresentedThisAttempt;
     /** Reason captured from the last upgrade error / close, surfaced in the
      *  status label so the UI can show *why* a connection dropped. */
@@ -57,20 +63,22 @@ export declare class WebSocketClient {
      */
     private readonly getAuthToken;
     /** Called when a presented token is REJECTED by the server (stale/invalid).
-     *  The integration clears the stored token so the retry reconnects
-     *  token-less. Without this a bad token wedges the app in "Connecting…". */
+     *  The integration clears the stored pair token and returns to login.
+     *  Without this a bad token wedges the app in "Connecting…". */
     private readonly onAuthReject;
+    private readonly fetchImplementation;
+    private readonly createWebSocket;
     private readonly pending;
     private readonly messageHandlers;
     private readonly connectHandlers;
     private readonly disconnectHandlers;
     private readonly statusListeners;
     private currentStatus;
-    constructor(baseUrl: string, getAuthToken?: () => string | null | Promise<string | null>, onAuthReject?: () => void);
+    constructor(baseUrl: string, getAuthToken: (() => string | null | Promise<string | null>) | undefined, onAuthReject: (() => void) | undefined, options: WebSocketClientOptions);
     connect(): void;
     disconnect(): void;
+    http<Contract extends HttpContractLike>(contract: Contract, input: HttpInputFor<Contract>): Promise<HttpOutputFor<Contract>>;
     rpc<T = unknown>(method: string, params?: Record<string, unknown>): Promise<T>;
-    rpcStream(method: string, params: Record<string, unknown>, onChunk: (d: unknown) => void): Promise<unknown>;
     onSchemaEvent(schemaIds: readonly string[], handler: (e: StreamEvent) => void): () => void;
     onEventType(types: readonly string[], handler: (e: StreamEvent) => void): () => void;
     getStatus(): ConnectionStatus;
@@ -79,20 +87,11 @@ export declare class WebSocketClient {
     onDisconnect(h: VoidHandler): () => void;
     private onMessage;
     private setStatus;
-    private send;
-    private stopHeartbeat;
-    private startHeartbeat;
     private rejectAllPending;
     private handleMessage;
+    /** Remove and return the pending call an rpc.result or rpc.error answers. */
+    private takePending;
     private cleanup;
-    /**
-     * Origin to present on the `/ws` upgrade in a non-browser runtime.
-     * `MAGNIS_CLI_ORIGIN` overrides; otherwise the origin is derived from
-     * `baseUrl`. Browsers never call this — they set Origin themselves.
-     * `process` is read defensively so the shared browser bundle (no node
-     * types) still type-checks.
-     */
-    private cliOrigin;
     private createConnection;
     private performAuthHandshake;
     private waitForConnection;

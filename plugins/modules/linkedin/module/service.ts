@@ -1,3 +1,4 @@
+import { rpc } from "@magnis/plugin-sdk";
 // LinkedIn plugin — backend module (V8 isolate). Read-only ingest of LinkedIn
 // profiles + posts via the `linkedin` surface, plus read tools. Per-platform
 // module (telegram-shaped): a WRITE seam (message / compose) belongs HERE later —
@@ -168,7 +169,7 @@ export class LinkedinModule {
     }
   }
 
-  @tool("posts.list", {
+  @rpc("posts.list", {
     description:
       "List ingested linkedin posts (most recent first). Filter by author_handle " +
       "to get one tracked person's feed.",
@@ -198,7 +199,9 @@ export class LinkedinModule {
     return { items, total: win.total, limit, offset };
   }
 
-  @tool("posts.get", {
+  @rpc("posts.get")
+  @tool("get", {
+    entity: "linkedin.post",
     description: "Get a linkedin post by entity id.",
     params: {
       type: "object",
@@ -224,7 +227,9 @@ export class LinkedinModule {
     };
   }
 
-  @tool("profiles.get", {
+  @rpc("profiles.get")
+  @tool("get", {
+    entity: "linkedin.profile",
     description: "Get a tracked linkedin profile by entity id (name, handle, followers, bio, url).",
     params: {
       type: "object",
@@ -281,7 +286,7 @@ export class LinkedinModule {
     };
   }
 
-  @tool("profiles.list", {
+  @rpc("profiles.list", {
     description:
       "List tracked linkedin profiles, optional platform filter and name search.",
     params: {

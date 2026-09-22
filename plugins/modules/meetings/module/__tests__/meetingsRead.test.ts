@@ -213,21 +213,12 @@ describe("meetings.search", () => {
    * @deterministic: yes
    * @fixtures: decorated meetings module tool definition
    */
-  it("tst_plugin_meetings_search_002 identifies context as an optional entity UUID", async () => {
+  it("tst_plugin_meetings_search_002 leaves graph search to the declared entity", async () => {
     const { tools } = await mountModule(MeetingsModule, {
       mode: "dispatch",
       ctx: { extension_id: "meetings" },
     });
-    const search = tools.find((candidate) => candidate.name === "meetings.search");
-    const properties = search?.inputSchema.properties as
-      | Record<string, Record<string, unknown>>
-      | undefined;
-
-    expect(properties?.context).toMatchObject({
-      type: "string",
-      format: "uuid",
-      description: expect.stringContaining("entity UUID"),
-    });
+    expect(tools.some((candidate) => candidate.name === "meetings.search")).toBe(false);
   });
 
   it("searches the meetings.event schema, not calendar_event", async () => {

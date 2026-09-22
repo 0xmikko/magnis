@@ -69,15 +69,6 @@ export interface SocialTracking {
   linkedin_handle?: string;
 }
 
-// contacts.set_social_tracking — opt a contact in/out of tracking on one
-// platform, optionally setting/updating the handle.
-export interface SetSocialTrackingParams {
-  id: string;
-  platform: "x" | "linkedin";
-  tracked: boolean;
-  handle?: string;
-}
-
 // contacts.get_social_tracking_by_handle:
 // resolve the owning contact + tracked state from a platform handle. Handles
 // compare case-insensitively (stored = user-typed, profile = API-canonical).
@@ -89,41 +80,6 @@ export interface SocialTrackingByHandle {
   contact_id: string;
   tracked: boolean;
   handle: string;
-}
-
-// contacts.track_social_profile: "+"/agent
-// entry — URL or handle in, tracked contact out (find-or-create).
-export interface TrackSocialProfileParams {
-  platform: "x" | "linkedin";
-  url_or_handle: string;
-  name?: string;
-}
-export interface TrackSocialProfileResult {
-  contact_id: string;
-  handle: string;
-  created: boolean;
-}
-
-// contacts.batch_track_social: agent batch — a pasted URL list in,
-// tracked contacts out. Per-row isolation + client_id idempotency.
-export interface BatchTrackSocialParams {
-  platform: "x" | "linkedin";
-  profiles: { url_or_handle: string; name?: string }[];
-  client_id?: string;
-  excluded_indices?: number[];
-}
-export type BatchTrackSocialStatus = "tracked" | "created" | "invalid_url" | "excluded";
-export interface BatchTrackSocialRow {
-  contact_id: string | null;
-  handle: string | null;
-  url_or_handle: string;
-  status: BatchTrackSocialStatus;
-}
-export interface BatchTrackSocialResult {
-  results: BatchTrackSocialRow[];
-  total: number;
-  created: number;
-  excluded: number;
 }
 
 // contacts.rename_if_placeholder: compare-and-set rename.

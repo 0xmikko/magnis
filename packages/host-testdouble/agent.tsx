@@ -241,3 +241,11 @@ export function extractEntities(
 }
 
 export type { ReactNode };
+
+/** Mirrors the host's canonical legacy tool-name comparison. */
+export function toolNamesEquivalent(persistedCallName: string, canonicalToolName: string): boolean {
+  return persistedCallName === canonicalToolName
+    || persistedCallName.replaceAll("__", ".") === canonicalToolName
+    || (!persistedCallName.includes(".") && persistedCallName.replace("_", ".") === canonicalToolName)
+    || canonicalToolName.replaceAll(".", "_") === persistedCallName;
+}

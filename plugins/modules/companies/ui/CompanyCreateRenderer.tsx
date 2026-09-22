@@ -16,7 +16,7 @@ export function CompanyCreateRenderer({
   const { toolCall: tc, toolResult, isAllowlisted, superseded, onApprove, onDeny, onAllowlistToggle } = payload;
   const args = tc.args as Record<string, unknown>;
 
-  const isUpdate = tc.name === "companies.update" ||
+  const isUpdate = tc.toolBinding?.operation === "update" || tc.name === "companies.update" ||
     tc.name === "companies_update" ||
     tc.name === "company.update" ||
     tc.name === "company_update";

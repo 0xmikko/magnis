@@ -146,7 +146,7 @@ describe("email set_trigger", () => {
     expect(execute).toHaveBeenCalledTimes(1);
     const [method, params] = execute.mock.calls[0] as [string, Record<string, unknown>];
     expect(method).toBe("triggers.create");
-    expect(params.watch_entity_ids).toEqual(["id-addr:a@x.com", "id-addr:b@x.com", "id-addr:c@x.com"]);
+    expect(params.watch_entity_ids).toEqual(["id-a@x.com", "id-b@x.com", "id-c@x.com"]);
     expect(params.schema_filter).toBe("email");
     expect(params.gate_prompt).toBe("is it urgent");
     expect(params.debounce_seconds).toBe(0);
@@ -158,4 +158,19 @@ describe("email set_trigger", () => {
       mod.setTrigger({ from_addresses: [], gate_prompt: "g", action_prompt: "a" }),
     ).rejects.toThrow(/missing from_addresses/);
   });
+});
+
+/** @test-id: tst_module_email_trigger_validation_001
+ * @scenario: scn_tools_trigger_forms
+ * @covers: plugins/modules/email/module/service.ts::EmailModule.setTrigger
+ * @deterministic: yes — rejected parent before owner writes
+ */
+it("tst_module_email_trigger_validation_001 compatibility trigger refuses invalid settings and foreign parent before addresses", async () => {
+  const apply_batch = vi.fn();
+  const execute = vi.fn();
+  const module = makeModule({ apply_batch, get_entity_full: vi.fn().mockResolvedValue(null) }, { execute });
+  await expect(module.setTrigger({ from_addresses: ["morgan@example.test"], gate_prompt: "reply", action_prompt: "notify", debounce_seconds: -1 })).rejects.toThrow("debounce");
+  await expect(module.setTrigger({ from_addresses: ["morgan@example.test"], gate_prompt: "reply", action_prompt: "notify", episode_id: "foreign" })).rejects.toThrow("episode");
+  expect(apply_batch).not.toHaveBeenCalled();
+  expect(execute).not.toHaveBeenCalled();
 });

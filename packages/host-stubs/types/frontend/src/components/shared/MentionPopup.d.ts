@@ -3,7 +3,8 @@
  *
  * Two placement strategies:
  *   - anchor-bottom: absolute-positioned above its parent (agent composer,
- *     command bar). Default.
+ *     default).
+ *   - anchor-below: absolute-positioned below its parent (command bar).
  *   - caret-rect: portaled to document.body with fixed positioning anchored
  *     to a live caret rect (notes editor).
  */
@@ -11,6 +12,8 @@ import type { JSX } from "react";
 import type { EntitySearchResult } from "../../modules/episodes/types";
 export type MentionPopupPlacement = {
     readonly mode: "anchor-bottom";
+} | {
+    readonly mode: "anchor-below";
 } | {
     readonly mode: "caret-rect";
     readonly rect: DOMRect;

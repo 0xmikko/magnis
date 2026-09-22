@@ -1,3 +1,4 @@
+import type { HttpContractLike, HttpInputFor, HttpOutputFor } from "@magnis/sdk";
 export interface RuntimeEvent {
     readonly type: string;
     readonly payload?: unknown;
@@ -7,7 +8,7 @@ export interface RuntimeEvent {
 export interface RpcErrorData {
     readonly kind: string;
     readonly retryable: boolean;
-    readonly display_message: string;
+    readonly displayMessage: string;
 }
 /** JSON-RPC failure that preserves the backend status and validated safe data. */
 export declare class RpcError extends Error {
@@ -18,8 +19,8 @@ export declare class RpcError extends Error {
 }
 export interface AppTransport {
     readonly baseUrl: string;
+    http<Contract extends HttpContractLike>(contract: Contract, input: HttpInputFor<Contract>): Promise<HttpOutputFor<Contract>>;
     rpc<T>(method: string, params?: Record<string, unknown>): Promise<T>;
-    rpcStream(method: string, params: Record<string, unknown>, onChunk: (chunk: unknown) => void): Promise<unknown>;
     onSchemaEvent(schemaIds: readonly string[], handler: (event: RuntimeEvent) => void): () => void;
     onEventType(eventTypes: readonly string[], handler: (event: RuntimeEvent) => void): () => void;
 }

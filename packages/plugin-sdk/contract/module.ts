@@ -440,8 +440,7 @@ export interface PluginUtil {
 
 /// Cross-module RPC hub. `execute` calls another module's RPC
 /// method over the host router. Allowed targets are declared in the
-/// manifest `[permissions]` `call` list; v0 supports native-module targets
-/// only (plugin→plugin is rejected host-side).
+/// manifest `[permissions]` `call` list, including calls to other plugins.
 export interface RpcExecutor {
   execute<T = unknown>(method: string, params?: unknown): Promise<T>;
 }
@@ -477,6 +476,8 @@ export interface PluginDeps {
 /// The spec object each `@tool/@writeTool/@rpc` decorator takes: the agent-facing
 /// description + the JSON-schema `params` for the tool's input.
 export interface ToolSpecInput {
+  entity: string;
+  allowlist_gate?: { target_type: string; target_arg: string; batch_arg?: string };
   description: string;
   params: Record<string, unknown>;
 }
@@ -508,6 +509,8 @@ export interface MethodRecorder {
 /// deserializes straight into it.
 export interface ToolDefinitionWire {
   name: string;
+  binding: { readonly entity: string; readonly operation: string };
+  allowlist_gate?: { target_type: string; target_arg: string; batch_arg?: string };
   description: string;
   inputSchema: Record<string, unknown>;
   requires_approval: boolean;

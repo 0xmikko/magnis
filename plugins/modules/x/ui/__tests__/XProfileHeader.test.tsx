@@ -1,10 +1,6 @@
-// tst_fe_x_header_001 — the profile header
-// shows a Tracked badge when the handle is tracked (via
-// contacts.get_social_tracking_by_handle) and the three-dots menu offers
-// Untrack, which round-trips contacts.set_social_tracking with the resolved
-// contact id.
+// Existing profile facts remain read-only after tracking controls retire.
 import { describe, it, expect, vi } from "vitest";
-import { fireEvent, render, waitFor } from "@testing-library/react";
+import { fireEvent, render } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { XProfileHeader } from "../ProfileHeader";
 import type { AppRuntime } from "@magnis/host/runtime";
@@ -28,9 +24,7 @@ function rpcMock() {
     if (method === "contacts.get_social_tracking_by_handle") {
       return { contact_id: "c1", tracked: true, handle: "jack" };
     }
-    if (method === "contacts.set_social_tracking") {
-      return { tracked_x: false, x_handle: "jack" };
-    }
+
     throw new Error(`unexpected rpc ${method}`);
   });
 }
@@ -56,20 +50,15 @@ describe("XProfileHeader tracking control", () => {
     expect(await findByText("Tracked")).toBeTruthy();
   });
 
-  it("three-dots → Untrack calls contacts.set_social_tracking for the contact", async () => {
+  it("profile actions offer only the existing external profile link", async () => {
     const rpc = rpcMock();
-    const { findByText, findByLabelText } = renderHeader(rpc);
+    const { findByText, findByLabelText, queryByText } = renderHeader(rpc);
     await findByText("Tracked");
 
     fireEvent.click(await findByLabelText("Profile actions"));
-    fireEvent.click(await findByText("Untrack on X"));
-
-    await waitFor(() =>
-      expect(rpc).toHaveBeenCalledWith("contacts.set_social_tracking", {
-        id: "c1",
-        platform: "x",
-        tracked: false,
-      }),
-    );
+    expect(await findByText("Open profile")).toBeTruthy();
+    expect(queryByText("Untrack on X")).toBeNull();
+    expect(queryByText("Track on X")).toBeNull();
+    expect(rpc.mock.calls.every(([method]) => method === "x.profiles.get" || method === "contacts.get_social_tracking_by_handle")).toBe(true);
   });
 });

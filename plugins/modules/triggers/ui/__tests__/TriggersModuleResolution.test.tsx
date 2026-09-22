@@ -103,3 +103,20 @@ describe("tst_fe_agent_triggers_001 — trigger update renderer and module surfa
     });
   });
 });
+
+/** @test-id: tst_fe_trigger_create_card_001
+ * @scenario: scn_tools_rendering
+ * @covers: plugins/modules/triggers/ui/index.tsx::TriggersModule
+ * @covers: plugins/modules/triggers/ui/TriggerToolCallRenderer.tsx::TriggerToolCallRenderer
+ * @deterministic: yes — actual owner contribution and raw-address parameters
+ */
+it("tst_fe_trigger_create_card_001 owns raw email trigger creation and shows the watched address", () => {
+  const registry = new AgentContributionRegistry();
+  registry.register("triggers", TriggersModule.agent);
+  const binding = { entity: "triggers.trigger", operation: "create" };
+  expect(registry.resolveHistoryRenderer({ id: "trigger-call", kind: "tool_call", toolName: "create", toolBinding: binding, payload: {} })?.Render).toBe(TriggerToolCallRenderer);
+  const props = propsFor("create");
+  render(<TriggerToolCallRenderer {...props} payload={{ ...props.payload, toolCall: { ...props.payload.toolCall, toolBinding: binding, args: { from_addresses: ["morgan@example.test"], gate_prompt: "receipt", action_prompt: "notify" } } }} />);
+  expect(screen.getByText("Watches: morgan@example.test")).toBeTruthy();
+  expect(screen.getByRole("button", { name: /^Create$/ })).toBeTruthy();
+});

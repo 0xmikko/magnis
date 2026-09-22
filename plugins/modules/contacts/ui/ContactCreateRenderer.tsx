@@ -4,11 +4,14 @@
 
 import type { JSX } from "react";
 import type { AgentRendererProps, ToolCallRendererPayload } from "@magnis/host/runtime";
+import { ContactBatchCreateRenderer } from "./ContactBatchCreateRenderer";
 import { BaseToolCallCard } from "@magnis/host/base";
 
-export function ContactCreateRenderer({
-  payload,
-}: AgentRendererProps<ToolCallRendererPayload>): JSX.Element {
+export function ContactCreateRenderer(props: AgentRendererProps<ToolCallRendererPayload>): JSX.Element {
+  const { payload } = props;
+  if (typeof payload.toolCall.args === "object" && payload.toolCall.args !== null && "contacts" in payload.toolCall.args) {
+    return <ContactBatchCreateRenderer {...props} />;
+  }
   const { toolCall: tc, toolResult, isAllowlisted, superseded, onApprove, onDeny, onAllowlistToggle } = payload;
   const args = tc.args as Record<string, unknown>;
 
