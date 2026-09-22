@@ -65,7 +65,6 @@ export class AccountAdmission implements RpcAdmissionHooks {
   private closed: Error | undefined;
   private cancelTimer: (() => void) | undefined;
   private attempt = 0;
-  private completedMethod: string | undefined;
   private completedCount = 0;
   private completedStartedAt = 0;
   private lastSentAt = -Infinity;
@@ -164,8 +163,8 @@ export class AccountAdmission implements RpcAdmissionHooks {
     this.pending.add(entry);
     // Application Promise.race timeouts do not settle this transport promise.
     void entry.promise.then(() => {
-      if (this.completedMethod === entry.method) this.completedCount++;
-      else { this.completedMethod = entry.method; this.completedCount = 1; this.completedStartedAt = entry.sentAt; }
+      if (this.completedCount === 0) this.completedStartedAt = entry.sentAt;
+      this.completedCount++;
       this.finish(entry);
     }, () => { this.finish(entry); });
     this.wake();
@@ -219,12 +218,10 @@ export class AccountAdmission implements RpcAdmissionHooks {
       this.closed = new Error("Telegram flood duration is invalid; account admission is closed", { cause: error });
     } else {
       this.until = Math.max(this.until, deadline);
-      const floodedMethod = state ? method(state) : undefined;
-      if (floodedMethod === this.completedMethod && this.completedCount > 1) {
+      if (this.completedCount > 1) {
         const interval = Math.ceil((observedAt - this.completedStartedAt + seconds * 1000) / (this.completedCount + 1));
         this.requestIntervalMs = Math.max(this.requestIntervalMs, interval);
       }
-      this.completedMethod = undefined;
       this.completedCount = 0;
     }
     this.report("remoteFlood", state ? method(state) : "UnmatchedRpcResult");

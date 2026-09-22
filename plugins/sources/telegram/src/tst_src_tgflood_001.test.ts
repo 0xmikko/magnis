@@ -139,8 +139,10 @@ test("tst_src_tgflood_005 the Source command loop preserves runtime flood replie
     await self;
     let index = 2;
     let id = 20;
+    let paced = false;
     const counts = new Map([[101, 120], [102, 70], [103, 5]]);
     const answer = async (): Promise<void> => {
+      if (paced) runningClock.advance(4000);
       const sent = await actual.application(index++);
       const request: unknown = sent.state.request;
       if (request instanceof Api.messages.GetDialogs) {
@@ -185,6 +187,7 @@ test("tst_src_tgflood_005 the Source command loop preserves runtime flood replie
     expect(actual.writes).toHaveLength(heldAt);
     expect(runningGuard.remoteFloods).toBe(1);
     runningClock.advance(4000);
+    paced = true;
     io.send(id, "magnis.sync.fetch", { _meta: meta });
     for (let i = 0; i < 4; i++) await answer();
     const result = (await io.reply(id++)).result as Record<string, unknown>;
@@ -212,6 +215,7 @@ test("tst_src_tgflood_005 the Source command loop preserves runtime flood replie
     expect(identities.size).toBe(197);
     const start = id;
     for (let i = 0; i < 8; i++) io.send(id++, "magnis.execute", { action: "backfill_chat", chat_id: 101, lower_message_id: 1, _meta: meta });
+    runningClock.advance(4000);
     const blocked = await actual.application(index++);
     await flushCommands();
     expect(runningGuard.queued).toBe(7);
@@ -1135,10 +1139,16 @@ test("tst_src_tgflood_006 a provider flood paces the resumed burst", async () =>
   const f = await createTransport(clock);
   try {
     for (let index = 0; index < 4; index++) {
-      const request = outcome(f.client.invoke(new Api.updates.GetState()));
+      const history = index % 2 === 1;
+      const request = outcome(f.client.invoke(history
+        ? new Api.messages.GetHistory({ peer: new Api.InputPeerChat({ chatId: bigInt(1) }), offsetId: 0,
+            offsetDate: 0, addOffset: 0, limit: 1, maxId: 0, minId: 0, hash: bigInt.zero })
+        : new Api.updates.GetState()));
       const sent = await f.application(index);
       clock.advance(100);
-      await f.reply(sent, stateResponse());
+      await f.reply(sent, history
+        ? new Api.messages.Messages({ messages: [], chats: [], users: [] })
+        : stateResponse());
       expect((await request).kind).toBe("resolved");
     }
     const flooded = outcome(f.client.invoke(new Api.updates.GetState()));
