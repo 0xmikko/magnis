@@ -252,7 +252,7 @@ test("tst_src_tgfast_004 backfill preserves provider totals without inventing mi
         : new Api.messages.MessagesSlice({ count: total, messages, chats: [], users: [] }));
       const result = await pending;
       expect(result.total).toBe(total);
-      expect(result.has_more).toBe(false);
+      expect(result.has_more).toBe(true);
       expect(result.oldest_message_id).toBe(9);
     }
     // The existing ops seam represents a provider adapter with no count at all.

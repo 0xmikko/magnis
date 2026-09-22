@@ -546,7 +546,6 @@ async function backfillChat(
   let total: number | null = null;
   let envelopeBytes = 0;
   let before = beforeMessageId;
-  let hasMore = true;
   // Stamp the connection's account_id into every backfilled message's source_ref.
   // Previously hardcoded "" — which the host did NOT re-stamp for the external
   // connector, so backfilled media records carried account_id="" and the
@@ -566,14 +565,12 @@ async function backfillChat(
     }
     total ??= messages.total ?? null;
     if (messages.length === 0) {
-      hasMore = false;
       break;
     }
     let providerOldest: number | null = null;
     for (const msg of messages) {
       providerOldest = providerOldest === null ? msg.id : Math.min(providerOldest, msg.id);
       if (msg.id < lowerMessageId) {
-        hasMore = false;
         break providerPages;
       }
       const envelope = messageEnvelope(messageToIntermediate(msg, accountId, chatId), "snapshot");
@@ -586,7 +583,6 @@ async function backfillChat(
       envelopeBytes += bytes;
       oldest = oldest === null ? msg.id : Math.min(oldest, msg.id);
       if (msg.id === lowerMessageId) {
-        hasMore = false;
         break providerPages;
       }
     }
@@ -600,7 +596,7 @@ async function backfillChat(
   // FetchResult-shaped), so they are snake_case.
   return {
     envelopes,
-    has_more: hasMore && backfillHasMore(envelopes.length),
+    has_more: backfillHasMore(envelopes.length),
     oldest_message_id: oldest,
     total,
   };

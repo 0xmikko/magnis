@@ -263,14 +263,14 @@ describe("backfill_chat", () => {
       { action: "backfill_chat", chat_id: 5, before_message_id: 40, lower_message_id: 10 },
       noSleep,
     );
-    expect(out.has_more).toBe(false);
+    expect(out.has_more).toBe(true);
     expect(out.oldest_message_id).toBe(10); // the MIN id of the page
     expect((out.envelopes as unknown[]).length).toBe(3);
     // The page is anchored on before_message_id (exclusive) with the given limit.
     expect(calls.getMessages[0]!.params).toEqual({ offsetId: 40, limit: 100 });
   });
 
-  test("tst_tgts_exec_007 reaching the requested lower message ends the page", async () => {
+  test("tst_tgts_exec_007 reaching the requested lower message leaves completion to the host", async () => {
     const { ops } = fakeOps({ messages: [{ id: 1, date: 0 }] });
     const out = await execute(
       ops,
@@ -278,7 +278,7 @@ describe("backfill_chat", () => {
       { action: "backfill_chat", chat_id: 5, lower_message_id: 1 },
       noSleep,
     );
-    expect(out.has_more).toBe(false);
+    expect(out.has_more).toBe(true);
   });
 
   test("tst_tgts_exec_008 an empty page ends backfill, with a null oldest id", async () => {
@@ -333,6 +333,7 @@ describe("backfill_chat", () => {
         lower_message_id: 1,
       }, noSleep);
       expect((out.envelopes as unknown[]).length).toBe(250);
+      expect(out.has_more).toBe(true);
       expect(out.oldest_message_id).toBe(1);
       expect(calls.map((call) => call.offsetId)).toEqual([0, 151, 51]);
       expect(calls.every((call) => call.limit === 100)).toBe(true);
