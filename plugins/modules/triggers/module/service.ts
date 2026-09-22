@@ -48,13 +48,7 @@ import type {
 } from "../types.ts";
 import { BELONGS_TO, TRIGGER, WATCHES } from "../schema.ts";
 
-const CREATE_PARAMS = {
-      type: "object",
-      properties: {
-        name: { type: "string", minLength: 1, description: "Trigger name for explicit watch IDs or scheduled triggers" },
-        from_addresses: { type: "array", items: { type: "string", minLength: 1 }, minItems: 1 },
-        from_address: { type: "string", minLength: 1 },
-        chat_id: { type: ["integer", "string"] },
+const CREATE_SETTINGS = {
         gate_prompt: {
           type: "string",
           description: "Prompt for gate evaluation (is this event relevant?)",
@@ -67,11 +61,6 @@ const CREATE_PARAMS = {
           type: "array",
           items: { type: "string" },
           description: "Event kinds to listen for",
-        },
-        watch_entity_ids: {
-          type: "array",
-          items: { type: "string", format: "uuid" },
-          description: "Entity IDs to watch",
         },
         episode_id: {
           type: "string",
@@ -101,15 +90,43 @@ const CREATE_PARAMS = {
           required: ["cron"],
           additionalProperties: false,
         },
+};
+const CREATE_PARAMS = {
+  oneOf: [
+    {
+      type: "object",
+      properties: {
+        ...CREATE_SETTINGS,
+        name: { type: "string", minLength: 1, description: "Trigger name for explicit watch IDs or scheduled triggers" },
+        watch_entity_ids: { type: "array", items: { type: "string", format: "uuid" }, description: "Entity IDs to watch" },
       },
-      required: ["gate_prompt", "action_prompt"],
-      oneOf: [
-        { required: ["name"], not: { anyOf: [{ required: ["from_address"] }, { required: ["from_addresses"] }, { required: ["chat_id"] }] } },
-        { anyOf: [{ required: ["from_address"] }, { required: ["from_addresses"] }], not: { anyOf: [{ required: ["chat_id"] }, { required: ["watch_entity_ids"] }, { required: ["name"] }] } },
-        { required: ["chat_id"], not: { anyOf: [{ required: ["from_address"] }, { required: ["from_addresses"] }, { required: ["watch_entity_ids"] }, { required: ["name"] }] } },
-      ],
+      required: ["gate_prompt", "action_prompt", "name"],
       additionalProperties: false,
-    };
+    },
+    {
+      type: "object",
+      properties: { ...CREATE_SETTINGS, from_address: { type: "string", minLength: 1 } },
+      required: ["gate_prompt", "action_prompt", "from_address"],
+      additionalProperties: false,
+    },
+    {
+      type: "object",
+      properties: {
+        ...CREATE_SETTINGS,
+        from_address: { type: "string", minLength: 1 },
+        from_addresses: { type: "array", items: { type: "string", minLength: 1 }, minItems: 1 },
+      },
+      required: ["gate_prompt", "action_prompt", "from_addresses"],
+      additionalProperties: false,
+    },
+    {
+      type: "object",
+      properties: { ...CREATE_SETTINGS, chat_id: { type: ["integer", "string"] } },
+      required: ["gate_prompt", "action_prompt", "chat_id"],
+      additionalProperties: false,
+    },
+  ],
+};
 const GET_PARAMS = {
       type: "object",
       properties: { id: { type: "string", format: "uuid" } },
