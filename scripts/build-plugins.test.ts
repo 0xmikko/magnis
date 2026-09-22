@@ -3,7 +3,7 @@
 // runtime (no jsxDEV / no vite dep paths). Run: `bun test scripts/`.
 import { test, expect, beforeAll } from "bun:test";
 import { buildPlugin } from "./build-plugins.ts";
-import { readFileSync, readdirSync } from "fs";
+import { readFileSync, readdirSync, writeFileSync, rmSync } from "fs";
 import { join } from "path";
 
 const REPO = join(import.meta.dir, "..");
@@ -17,6 +17,26 @@ beforeAll(async () => {
     distDir: DIST,
   });
   bundleRel = res.bundleFile; // e.g. "index.<hash>.js"
+});
+
+/**
+ * @test-id: tst_build_schemas_001
+ * @scenario: scn_compact_artifact_install_001
+ * @covers: scripts/build-plugins.ts::buildPlugin
+ * @deterministic: yes
+ * @fixtures: existing file module build with an obsolete generated descriptor
+ */
+test("tst_build_schemas_001 rebuilding removes retired entity descriptors", async () => {
+  const schemas = join(DIST, "modules", "file", "schemas");
+  const retired = join(schemas, "retired.json");
+  writeFileSync(retired, JSON.stringify({ version: 1, name: "Retired" }));
+  try {
+    await buildPlugin("file", { pluginsDir: join(REPO, "plugins"), distDir: DIST });
+    expect(readdirSync(schemas)).toEqual(["object.json"]);
+    expect(JSON.parse(readFileSync(join(schemas, "object.json"), "utf8"))).toHaveProperty("json_schema");
+  } finally {
+    rmSync(retired, { force: true });
+  }
 });
 
 // tst_build_icon_001 (manifest v3): a plugin shipping icon.svg at the package

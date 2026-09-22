@@ -341,8 +341,11 @@ export async function buildPlugin(pluginId: string, opts: BuildOpts = {}): Promi
   // that has not still ships the hand-written schemas/ it always had.
   const entitiesPath = join(pluginsDir, "modules", pluginId, "entities.ts");
   const schemasDir = join(pluginsDir, "modules", pluginId, "schemas");
+  const dstSchemas = join(pkgDir, "schemas");
+  // The current declarations replace the generated schema set on every build.
+  // @tested-by: tst_build_schemas_001
+  rmSync(dstSchemas, { recursive: true, force: true });
   if (existsSync(entitiesPath)) {
-    const dstSchemas = join(pkgDir, "schemas");
     mkdirSync(dstSchemas, { recursive: true });
     const declared = (await import(entitiesPath)) as Record<string, unknown>;
     const written: string[] = [];
@@ -356,7 +359,6 @@ export async function buildPlugin(pluginId: string, opts: BuildOpts = {}): Promi
       throw new Error(`${pluginId}: entities.ts exports no declared entity`);
     }
   } else if (existsSync(schemasDir)) {
-    const dstSchemas = join(pkgDir, "schemas");
     mkdirSync(dstSchemas, { recursive: true });
     for (const f of readdirSync(schemasDir)) {
       if (f.endsWith(".json")) writeFileSync(join(dstSchemas, f), readFileSync(join(schemasDir, f)));
