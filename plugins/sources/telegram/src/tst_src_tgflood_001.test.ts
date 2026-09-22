@@ -226,8 +226,8 @@ test("tst_src_tgflood_005 the Source command loop preserves runtime flood replie
     const captured = JSON.stringify(diagnostics);
     expect(diagnostics.length).toBeGreaterThan(0);
     for (const secret of [String(meta.session), "fixture-only", "fixture-101-121", "fixture-phone"]) expect(captured).not.toContain(secret);
-    expect(actual.writes).toHaveLength(13);
-    evidence(actual, runningClock, { expectedTransmissions: 13, expectedMessages: 197, actualMessages: identities.size,
+    expect(actual.writes).toHaveLength(15);
+    evidence(actual, runningClock, { expectedTransmissions: 15, expectedMessages: 197, actualMessages: identities.size,
       identities: ["101:1..122", "102:1..70", "103:1..5"], failedFetchResults: 0, stoppedWithOccupiedSlots: 8 });
   } finally {
     io.registry.stop("active");
@@ -444,7 +444,7 @@ test("tst_src_tgflood_003 peer misses share a continuation through floods and ca
       const batch = envelopes(page);
       emitted.push(...batch.map((item) => String(item.remote_id)));
       expect(batch).toHaveLength(count);
-      expect(page.has_more).toBe(false);
+      expect(page.has_more).toBe(true);
     }
     expect(emitted).toHaveLength(195);
     expect(new Set(emitted)).toEqual(new Set([...counts].flatMap(([chat, count]) =>
@@ -622,9 +622,9 @@ test("tst_src_tgflood_001 healthy requests use a free application slot without d
       if (!a || !b) throw new Error("Missing transmission");
       expect(b.at - a.at).toBe(0);
     }
-    expect(f.writes).toHaveLength(40);
-    evidence(f, clock, { expectedTransmissions: 40, expectedMessages: 197, actualMessages: actual.length + liveIds.length,
-      identities: ["101:1..122", "102:1..70", "103:1..5"], mediaChunks: 3, mediaBytes: 262151, deliberateWaitMs: clock.now(), sameTimestampRequests: 40 });
+    expect(f.writes).toHaveLength(41);
+    evidence(f, clock, { expectedTransmissions: 41, expectedMessages: 197, actualMessages: actual.length + liveIds.length,
+      identities: ["101:1..122", "102:1..70", "103:1..5"], mediaChunks: 3, mediaBytes: 262151, deliberateWaitMs: clock.now(), sameTimestampRequests: 41 });
   } finally { await f.close(); }
 });
 
@@ -724,7 +724,7 @@ test("tst_src_tgfast_005 measures complete round-robin history without local pac
           before.set(chat, page.oldest_message_id);
         }
       }
-      expect(visits).toEqual([101]);
+      expect(visits).toEqual([101, 101]);
       const ids = emitted.map((item) => item.remote_id).filter((id): id is string => typeof id === "string" && id.startsWith("tg:msg:"));
       expect(ids.sort()).toEqual(expected.sort());
       expect(new Set([...ids, ...liveIds]).size).toBe(197);
@@ -732,7 +732,7 @@ test("tst_src_tgfast_005 measures complete round-robin history without local pac
         .map((item) => (item.payload as Record<string, unknown>).pin_order)).toEqual([0, 1, 2, 3, 4, 5, 6]);
       expect(Math.max(...latencies)).toBe(2600);
       expect(f.writes.filter((wire) => wire.method === "messages.GetDialogs")).toHaveLength(1);
-      expect(f.writes).toHaveLength(53);
+      expect(f.writes).toHaveLength(54);
       expect(clock.now()).toBe(f.writes.length * 100);
       expect(f.maximumInFlight()).toBe(1);
       evidence(f, clock, { sourcePagePolicy: "time-and-bytes", providerTimeMs: clock.now(), deliberateWaitMs: 0,
@@ -1115,4 +1115,45 @@ test("tst_src_tgflood_002 the first remote flood prevents the next actual SDK tr
     expect(delayed.writes).toHaveLength(3);
     delayedEvidence(delayed, delayedClock, { expectedTransmissions: 3, transmissionsDuringHold: 0, remainingAfterLateSuccess: 7200 });
   } finally { await delayed.close(); }
+});
+
+/**
+ * @test-id: tst_src_tgflood_006
+ * @scenario: scn_tgflood_008
+ * @covers: account-wide admission after a provider flood window
+ * @deterministic: yes
+ * @fixtures: actual GramJS sender with in-memory replies and a monotonic clock
+ */
+test("tst_src_tgflood_006 a provider flood paces the resumed burst", async () => {
+  const clock = new VirtualClock();
+  const f = await createTransport(clock);
+  try {
+    for (let index = 0; index < 4; index++) {
+      const request = outcome(f.client.invoke(new Api.updates.GetState()));
+      await f.reply(await f.application(index), stateResponse());
+      expect((await request).kind).toBe("resolved");
+    }
+    const flooded = outcome(f.client.invoke(new Api.updates.GetState()));
+    await f.reply(await f.application(4), new Api.RpcError({ errorCode: 420, errorMessage: "FLOOD_WAIT_4" }));
+    expect((await flooded).kind).toBe("rejected");
+
+    clock.advance(4000);
+    const first = outcome(f.client.invoke(new Api.updates.GetState()));
+    const second = outcome(f.client.invoke(new Api.updates.GetState()));
+    const resumed = await f.application(5);
+    expect(resumed.at).toBe(4000);
+    await f.reply(resumed, stateResponse());
+    expect((await first).kind).toBe("resolved");
+    await flushCommands();
+    expect(f.writes).toHaveLength(6);
+
+    clock.advance(799);
+    await flushCommands();
+    expect(f.writes).toHaveLength(6);
+    clock.advance(1);
+    const paced = await f.application(6);
+    expect(paced.at).toBe(4800);
+    await f.reply(paced, stateResponse());
+    expect((await second).kind).toBe("resolved");
+  } finally { await f.close(); }
 });

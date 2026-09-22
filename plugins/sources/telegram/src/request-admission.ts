@@ -64,6 +64,10 @@ export class AccountAdmission implements RpcAdmissionHooks {
   private closed: Error | undefined;
   private cancelTimer: (() => void) | undefined;
   private attempt = 0;
+  private completedMethod: string | undefined;
+  private completedCount = 0;
+  private lastSentAt = -Infinity;
+  private requestIntervalMs = 0;
   remoteFloods = 0;
   localRefusals = 0;
 
@@ -113,6 +117,10 @@ export class AccountAdmission implements RpcAdmissionHooks {
       entry.wake();
       if (entry.phase !== "sent") due = Math.min(due, entry.deadline);
     }
+    const nextSendAt = this.lastSentAt + this.requestIntervalMs;
+    if (this.active?.phase !== "sent" && this.pending.size > 0 && nextSendAt > now) {
+      due = Math.min(due, nextSendAt);
+    }
     if (Number.isFinite(due)) this.cancelTimer = this.time.schedule((): void => {
       this.cancelTimer = undefined;
       for (const entry of [...this.pending]) {
@@ -153,7 +161,11 @@ export class AccountAdmission implements RpcAdmissionHooks {
     this.records.set(state, entry);
     this.pending.add(entry);
     // Application Promise.race timeouts do not settle this transport promise.
-    void entry.promise.then(() => { this.finish(entry); }, () => { this.finish(entry); });
+    void entry.promise.then(() => {
+      if (this.completedMethod === entry.method) this.completedCount++;
+      else { this.completedMethod = entry.method; this.completedCount = 1; }
+      this.finish(entry);
+    }, () => { this.finish(entry); });
     this.wake();
     return true;
   }
@@ -168,6 +180,9 @@ export class AccountAdmission implements RpcAdmissionHooks {
     if (this.active && this.active !== entry) return "wait";
     const first = [...this.pending].find((candidate) => candidate.phase !== "done");
     if (first !== entry) return "wait";
+    // @tested-by: tst_src_tgflood_006
+    // @invariant: provider feedback paces the next burst after its exact hold.
+    if (this.time.now() < this.lastSentAt + this.requestIntervalMs) return "wait";
     this.active = entry;
     entry.phase = "reserved";
     return "ready";
@@ -182,6 +197,7 @@ export class AccountAdmission implements RpcAdmissionHooks {
     if (denied) throw denied;
     entry.phase = "sent";
     this.attempt++;
+    this.lastSentAt = this.time.now();
     this.report("send", entry.method);
     this.wake();
   }
@@ -197,7 +213,15 @@ export class AccountAdmission implements RpcAdmissionHooks {
     const deadline = typeof seconds === "number" ? this.time.now() + seconds * 1000 : NaN;
     if (typeof seconds !== "number" || seconds < 0 || !Number.isFinite(seconds) || !Number.isSafeInteger(Math.ceil(deadline))) {
       this.closed = new Error("Telegram flood duration is invalid; account admission is closed", { cause: error });
-    } else this.until = Math.max(this.until, deadline);
+    } else {
+      this.until = Math.max(this.until, deadline);
+      const floodedMethod = state ? method(state) : undefined;
+      if (floodedMethod === this.completedMethod && this.completedCount > 1) {
+        this.requestIntervalMs = Math.max(this.requestIntervalMs, Math.ceil(seconds * 1000 / (this.completedCount + 1)));
+      }
+      this.completedMethod = undefined;
+      this.completedCount = 0;
+    }
     this.report("remoteFlood", state ? method(state) : "UnmatchedRpcResult");
     // A valid zero wait is still an error for this operation, never an SDK
     // sleep/retry loop or an invented cooldown for the next caller.
