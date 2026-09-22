@@ -185,7 +185,8 @@ export async function handleMessage(
   if (method === "tools/call") {
     const name = msg.params?.name ?? "";
     const authMode = process.argv.includes("--auth-mode");
-    if (name.startsWith("magnis.auth.") !== authMode) {
+    const authOperation = name.startsWith("magnis.auth.") && name !== "magnis.auth.probe";
+    if (authOperation !== authMode) {
       return {
         jsonrpc: "2.0",
         id,

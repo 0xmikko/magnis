@@ -111,6 +111,7 @@ describe("connector SDK dispatch", () => {
         send_message: async () => ({ sent: true }),
       },
       auth: { begin: async () => ({ phase: "code" }) },
+      probeAuth: async () => ({ subject: "verified-source" }),
       onNotification: (line) => { notifications.push(JSON.parse(line) as Record<string, unknown>); },
     };
     const running = runConnector(config, input, (line) => {
@@ -153,20 +154,25 @@ describe("connector SDK dispatch", () => {
     expect(downloadsStarted).toBe(3);
     expect(replies.size).toBe(7);
 
+    const sourceProbe = await handleMessage(
+      { id: 108, method: "tools/call", params: { name: "magnis.auth.probe", arguments: {} } },
+      config,
+    );
+    expect(sourceProbe).toMatchObject({ result: { subject: "verified-source" } });
     const sourceAuth = await handleMessage(
-      { id: 108, method: "tools/call", params: { name: "magnis.auth.begin", arguments: {} } },
+      { id: 109, method: "tools/call", params: { name: "magnis.auth.begin", arguments: {} } },
       config,
     );
     expect(sourceAuth).toMatchObject({ error: { code: -32601 } });
     process.argv.push("--auth-mode");
     try {
       const authFetch = await handleMessage(
-        { id: 109, method: "tools/call", params: { name: "magnis.sync.fetch", arguments: { surface: "social" } } },
+        { id: 110, method: "tools/call", params: { name: "magnis.sync.fetch", arguments: { surface: "social" } } },
         config,
       );
       expect(authFetch).toMatchObject({ error: { code: -32601 } });
       const authBegin = await handleMessage(
-        { id: 110, method: "tools/call", params: { name: "magnis.auth.begin", arguments: {} } },
+        { id: 111, method: "tools/call", params: { name: "magnis.auth.begin", arguments: {} } },
         config,
       );
       expect(authBegin).toMatchObject({ result: { phase: "code" } });
