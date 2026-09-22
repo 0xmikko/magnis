@@ -197,8 +197,8 @@ describe("tst_module_contacts_write_001 — contact commands", () => {
       get_entity: (id: string) => Promise.resolve(id === foreignId
         ? entity(id, "Company", { schema_id: "companies.company" })
         : contact(id, "Contact")),
-      merge_preview: () => Promise.resolve({}),
-      merge_execute: () => Promise.resolve({}),
+      merge_preview: () => Promise.reject(new Error("Preview must not run")),
+      merge_execute: () => Promise.reject(new Error("Merge must not run")),
     });
     const module = mountModule(ContactsModule, { graph }).module;
 
