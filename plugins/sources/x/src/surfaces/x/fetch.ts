@@ -7,8 +7,15 @@ import { postRemoteId, profileRemoteId } from "./schema";
 const RECENT_TWEETS = 10;
 
 // Map an X user → a x.profile envelope (entity_type "profile" — the x
-// module ingest discriminator). remote_id = idempotency key.
+// module ingest discriminator). remote_id = idempotency key. The profile
+// states the window this pass plans — the recent RECENT_TWEETS of what the
+// account counts, the rest skipped — when X counts the account at all.
+// @tested-by: tst_x_011
 function profileEnvelope(user: XUser): Envelope {
+  const tweetCount = user.public_metrics?.tweet_count;
+  const window = typeof tweetCount === "number"
+    ? { posts_total: Math.min(tweetCount, RECENT_TWEETS), posts_skipped: tweetCount - Math.min(tweetCount, RECENT_TWEETS) }
+    : {};
   return {
     surface: SURFACE_X,
     remote_id: profileRemoteId(user.id),
@@ -23,6 +30,7 @@ function profileEnvelope(user: XUser): Envelope {
       bio: user.description ?? null,
       verified: user.verified ?? null,
       follower_count: user.public_metrics?.followers_count ?? null,
+      ...window,
     },
   };
 }

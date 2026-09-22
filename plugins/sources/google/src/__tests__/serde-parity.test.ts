@@ -64,6 +64,8 @@ function gmailRoutes(opts: {
     if (url.includes("/users/me/profile")) {
       return ok(opts.profile ?? { historyId: "555", messagesTotal: 10 });
     }
+    // The two labels the mailbox count skips; read only when the profile counts.
+    if (url.includes("/users/me/labels/")) return ok({ id: "SPAM", messagesTotal: 0 });
     if (url.includes("/users/me/messages?")) {
       return ok(opts.list ?? { messages: [{ id: "msg_1" }] });
     }
@@ -193,10 +195,8 @@ describe("serde parity — gmail messages.get skips one message", () => {
       },
     });
     const r = await fetchMessagePage("tok", undefined, fetchFn);
-    expect(r.envelopes).toHaveLength(1);
-    const env = r.envelopes[0];
-    if (env === undefined) throw new Error("gmail page: missing envelope 0");
-    expect(env.remote_id).toBe("good");
+    // The mailbox envelope first (the default profile counts), then the one message that survived.
+    expect(r.envelopes.map((e) => e.remote_id)).toEqual(["mailbox", "good"]);
   });
 
   // GmailHeader.name/value: String (gmail.rs:64-65) — both required. A header
@@ -210,10 +210,8 @@ describe("serde parity — gmail messages.get skips one message", () => {
       messages: { bad, good: fullMessage("good") },
     });
     const r = await fetchMessagePage("tok", undefined, fetchFn);
-    expect(r.envelopes).toHaveLength(1);
-    const env = r.envelopes[0];
-    if (env === undefined) throw new Error("gmail page: missing envelope 0");
-    expect(env.remote_id).toBe("good");
+    // The mailbox envelope first (the default profile counts), then the one message that survived.
+    expect(r.envelopes.map((e) => e.remote_id)).toEqual(["mailbox", "good"]);
   });
 });
 
@@ -257,8 +255,9 @@ describe("serde parity — optional/default fields stay tolerant", () => {
       messages: { bare: { id: "bare", payload: {} } }, // id + payload only
     });
     const r = await fetchMessagePage("tok", undefined, fetchFn);
-    expect(r.total).toBeNull(); // indeterminate, not an error
+    // No count in the profile: no mailbox envelope, not an error.
     expect(r.envelopes).toHaveLength(1);
+    expect(r.envelopes[0]?.remote_id).toBe("bare");
     expect(r.hasMore).toBe(false);
     expect(r.nextCursor.history_id).toBe("555");
   });
@@ -281,7 +280,7 @@ describe("serde parity — optional/default fields stay tolerant", () => {
     };
     const r = await fetchHistoryChanges("tok", { history_id: "100" }, fetchFn);
     expect(r.envelopes).toHaveLength(0);
-    expect(r.nextCursor).toEqual({ history_id: "999", discovered: 0 });
+    expect(r.nextCursor).toEqual({ history_id: "999" });
   });
 
   // Only `HistoryLabelEvent` declares `label_ids` (gmail.rs:136);
@@ -316,15 +315,19 @@ describe("serde parity — optional/default fields stay tolerant", () => {
   // GcalEvent: everything but `id` is Option<_> (calendar.rs:28); GcalDateTime
   // and GcalAttendee are all-Option. A bare event still converts.
   test("tst_gts_serde_014 calendar tolerates a bare event + absent items", async () => {
+    // The same answer serves the ids-only pass and the page: the calendar
+    // envelope counts one event, then the bare event follows.
     const bare: FetchLike = async () => ok({ items: [{ id: "evt_1" }] });
     const r = await fetchEventsPage("tok", undefined, {}, bare);
-    expect(r.envelopes).toHaveLength(1);
-    const env = r.envelopes[0];
-    if (env === undefined) throw new Error("calendar page: missing envelope 0");
+    expect(r.envelopes.map((e) => e.remote_id)).toEqual(["calendar", "gcal:evt_1"]);
+    const env = r.envelopes[1];
+    if (env === undefined) throw new Error("calendar page: missing envelope 1");
     expect(env.payload.title).toBe("Untitled Event");
 
     const empty: FetchLike = async () => ok({});
-    expect((await fetchEventsPage("tok", undefined, {}, empty)).envelopes).toHaveLength(0);
+    expect((await fetchEventsPage("tok", undefined, {}, empty)).envelopes).toEqual([
+      { surface: "meetings", kind: "snapshot", remote_id: "calendar", payload: { entity_type: "calendar", events_total: 0 } },
+    ]);
   });
 
   // GpeopleConnectionsResponse.connections + every GpeoplePerson sub-list are

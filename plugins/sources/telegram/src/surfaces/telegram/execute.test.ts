@@ -2,7 +2,7 @@
 // plugins/sources/telegram/src/commands.rs execute/backfill/arg_i64 tests, plus
 // the FLOOD_WAIT → -32002 wire mapping from main.rs.
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { argI64, backfillHasMore, execute, type TgOps } from "./commands";
 import type { MessageLike } from "../../client";
 import {
@@ -255,27 +255,27 @@ describe("backfill_chat", () => {
   });
 
   test("tst_tgts_exec_006 backfill returns SNAKE_CASE keys + the oldest id", async () => {
-    const msgs: MessageLike[] = [{ id: 30, date: 0 }, { id: 10, date: 0 }, { id: 20, date: 0 }];
+    const msgs: MessageLike[] = [{ id: 30, date: 0 }, { id: 20, date: 0 }, { id: 10, date: 0 }];
     const { ops, calls } = fakeOps({ messages: msgs });
     const out = await execute(
       ops,
       "conn-1",
-      { action: "backfill_chat", chat_id: 5, before_message_id: 40, limit: 3 },
+      { action: "backfill_chat", chat_id: 5, before_message_id: 40, lower_message_id: 10 },
       noSleep,
     );
     expect(out.has_more).toBe(true);
     expect(out.oldest_message_id).toBe(10); // the MIN id of the page
     expect((out.envelopes as unknown[]).length).toBe(3);
     // The page is anchored on before_message_id (exclusive) with the given limit.
-    expect(calls.getMessages[0]!.params).toEqual({ offsetId: 40, limit: 3 });
+    expect(calls.getMessages[0]!.params).toEqual({ offsetId: 40, limit: 100 });
   });
 
-  test("tst_tgts_exec_007 a short non-empty page still reports has_more=true", async () => {
+  test("tst_tgts_exec_007 reaching the requested lower message leaves completion to the host", async () => {
     const { ops } = fakeOps({ messages: [{ id: 1, date: 0 }] });
     const out = await execute(
       ops,
       "a",
-      { action: "backfill_chat", chat_id: 5, limit: 50 },
+      { action: "backfill_chat", chat_id: 5, lower_message_id: 1 },
       noSleep,
     );
     expect(out.has_more).toBe(true);
@@ -283,16 +283,63 @@ describe("backfill_chat", () => {
 
   test("tst_tgts_exec_008 an empty page ends backfill, with a null oldest id", async () => {
     const { ops } = fakeOps({ messages: [] });
-    const out = await execute(ops, "a", { action: "backfill_chat", chat_id: 5 }, noSleep);
+    const out = await execute(ops, "a", { action: "backfill_chat", chat_id: 5, lower_message_id: 1 }, noSleep);
     expect(out.has_more).toBe(false);
     expect(out.oldest_message_id).toBeNull();
     expect(out.envelopes).toEqual([]);
   });
 
-  test("tst_tgts_exec_009 defaults: before_message_id=0, limit=50", async () => {
+  test("tst_tgts_exec_009 defaults before_message_id to zero and uses provider-sized reads", async () => {
     const { ops, calls } = fakeOps();
-    await execute(ops, "a", { action: "backfill_chat", chat_id: 5 }, noSleep);
-    expect(calls.getMessages[0]!.params).toEqual({ offsetId: 0, limit: 50 });
+    await execute(ops, "a", { action: "backfill_chat", chat_id: 5, lower_message_id: 1 }, noSleep);
+    expect(calls.getMessages[0]!.params).toEqual({ offsetId: 0, limit: 100 });
+  });
+
+  /**
+   * @test-id: tst_src_tgfast_007
+   * @scenario: scn_tg_backfill_budget_001
+   * @covers: plugins/sources/telegram/src/surfaces/telegram/commands.ts::backfillChat
+   * @deterministic: yes; performance clock is fixed and Telegram pages are scripted
+   * @fixtures: three in-memory provider pages of 100, 100, and 50 messages
+   *
+   * Test environment: Telegram Source command handler
+   * Clients: direct calls
+   * Mocks: scripted TgOps
+   * Data: message ids 250 through 1
+   */
+  test("tst_src_tgfast_007 backfill joins provider pages without a message count limit", async () => {
+    const calls: Record<string, unknown>[] = [];
+    const base = fakeOps().ops;
+    const ops: TgOps = {
+      ...base,
+      async getMessages(_peer, params) {
+        calls.push(params as Record<string, unknown>);
+        const before = params.offsetId ?? 0;
+        const upper = before === 0 ? 250 : before - 1;
+        const messages = Array.from(
+          { length: Math.min(100, upper) },
+          (_, index): MessageLike => ({ id: upper - index, date: 0 }),
+        ) as MessageLike[] & { total?: number };
+        messages.total = 250;
+        return messages;
+      },
+    };
+    const now = spyOn(performance, "now").mockReturnValue(0);
+    try {
+      const out = await execute(ops, "a", {
+        action: "backfill_chat",
+        chat_id: 5,
+        before_message_id: 0,
+        lower_message_id: 1,
+      }, noSleep);
+      expect((out.envelopes as unknown[]).length).toBe(250);
+      expect(out.has_more).toBe(true);
+      expect(out.oldest_message_id).toBe(1);
+      expect(calls.map((call) => call.offsetId)).toEqual([0, 151, 51]);
+      expect(calls.every((call) => call.limit === 100)).toBe(true);
+    } finally {
+      now.mockRestore();
+    }
   });
 
   // The Bug-2 regression: backfilled media MUST carry the real account_id.
@@ -306,7 +353,7 @@ describe("backfill_chat", () => {
     const out = await execute(
       ops,
       "conn-xyz",
-      { action: "backfill_chat", chat_id: 100 },
+      { action: "backfill_chat", chat_id: 100, lower_message_id: 7 },
       noSleep,
     );
     const env = (out.envelopes as Record<string, unknown>[])[0]!;
@@ -316,6 +363,20 @@ describe("backfill_chat", () => {
     >;
     expect(sourceRef.account_id).toBe("conn-xyz");
     expect(sourceRef.dest_subpath).toBe("telegram/photos/tg_100_7.jpg");
+  });
+
+  test("tst_tgts_exec_016 backfill exposes the provider message total", async () => {
+    const messages = Object.assign([{ id: 7, date: 0 }], { total: 137 });
+    const { ops } = fakeOps({ messages });
+
+    const out = await execute(
+      ops,
+      "conn-xyz",
+      { action: "backfill_chat", chat_id: 100, lower_message_id: 7 },
+      noSleep,
+    );
+
+    expect(out.total).toBe(137);
   });
 });
 
@@ -410,7 +471,13 @@ describe("unknown action", () => {
 // ── FLOOD_WAIT → the wire ───────────────────────────────────────────────────
 
 describe("FLOOD_WAIT on the send path", () => {
-  test("tst_tgts_flood_wire_001 a SHORT FloodWait retries once and the send succeeds", async () => {
+  /** @test-id: tst_tgts_flood_wire_001
+   * @scenario: scn_tgflood_002
+   * @covers: TGFLOOD_005; public execute does not resend a flooded action
+   * @deterministic: yes
+   * @fixtures: existing fakeOps with synthetic provider failure
+   */
+  test("tst_tgts_flood_wire_001 a SHORT FloodWait fails without sleeping or resending", async () => {
     let attempts = 0;
     const slept: number[] = [];
     const { ops } = fakeOps({
@@ -420,49 +487,51 @@ describe("FLOOD_WAIT on the send path", () => {
         return { id: 900 };
       },
     });
-    const out = await execute(ops, "a", { chat_id: 1, text: "x" }, {
+    await expect(execute(ops, "a", { chat_id: 1, text: "x" }, {
       sleep: async (s) => {
         slept.push(s);
       },
-    });
-    expect(out.message_id).toBe(900);
-    expect(attempts).toBe(2);
-    expect(slept).toEqual([5]);
+    })).rejects.toThrow("RATE_LIMITED:5");
+    expect(attempts).toBe(1);
+    expect(slept).toEqual([]);
   });
 
-  test("tst_tgts_flood_wire_002 a LONG FloodWait → -32002 with data.retry_after", async () => {
-    const { ops } = fakeOps({
-      sendMessage: async () => {
-        throw floodErr(120);
-      },
-    });
-    const reply = (await handleMessage(
-      {
-        jsonrpc: "2.0",
-        id: 1,
-        method: "tools/call",
-        params: {
-          name: "magnis.execute",
-          arguments: { action: "send_message", chat_id: 1, text: "x" },
+  test("tst_tgts_flood_wire_002 short and long send/reply waits → -32002 with data.retry_after", async () => {
+    for (const seconds of [4, 120, 3600]) for (const action of ["send_message", "reply"]) {
+      const { ops, calls } = fakeOps({
+        sendMessage: async () => {
+          throw floodErr(seconds);
         },
-      },
-      {
-        authMode: false,
-        registry: new SubscriptionRegistry(),
-        write: () => {},
-        resolveClient: async () => ({ ops, pager: { dialogPage: async () => ({ dialogs: [], next_offset: null, total: null }) }, accountId: "a" }),
-        sleep: async () => {
-          throw new Error("a long FloodWait must NOT sleep");
+      });
+      const reply = (await handleMessage(
+        {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: {
+            name: "magnis.execute",
+            arguments: { action, chat_id: 1, text: "x", reply_to_message_id: 77 },
+          },
         },
-      },
-    )) as Record<string, unknown>;
+        {
+          authMode: false,
+          registry: new SubscriptionRegistry(),
+          write: () => {},
+          resolveClient: async () => ({ ops, pager: { dialogPage: async () => ({ dialogs: [], next_offset: null, total: null }) }, accountId: "a" }),
+          sleep: async () => {
+            throw new Error("a FloodWait must NOT sleep");
+          },
+        },
+      )) as Record<string, unknown>;
 
-    const error = reply.error as Record<string, unknown>;
-    expect(error.code).toBe(RATE_LIMITED_CODE);
-    expect(error.code).toBe(-32002);
-    // The host reads the TYPED retry_after, not the message text.
-    expect(error.data).toEqual({ retry_after: 120 });
-    expect(error.message).toBe("rate limited; retry after 120s");
+      const error = reply.error as Record<string, unknown>;
+      expect(error.code).toBe(RATE_LIMITED_CODE);
+      expect(error.code).toBe(-32002);
+      // The host reads the TYPED retry_after, not the message text.
+      expect(error.data).toEqual({ retry_after: seconds });
+      expect(error.message).toBe(`rate limited; retry after ${String(seconds)}s`);
+      expect(calls.sendMessage).toHaveLength(1);
+    }
   });
 });
 

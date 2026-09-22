@@ -154,6 +154,49 @@ describe("x ingest", () => {
 // tst_ingest_link:
 // a tracked-handle profile gets exactly one person→profile identity edge and
 // the placeholder-name CAS upgrade; an untracked handle gets neither.
+/**
+ * @test-id: tst_plugin_x_plan_001
+ * @scenario: scn_x_sync_001
+ * @covers: XModule.ingest (plan)
+ * @deterministic: yes
+ * @fixtures: a profile envelope with a planned window of 10; two posts, one already in the graph
+ */
+describe("x ingest — the plan from the pages", () => {
+  const profile = (over: Record<string, unknown> = {}): SyncEnvelope => env("x:profile:12", {
+    entity_type: "profile", platform: "x", handle: "jack", display_name: "Jack", posts_total: 10, posts_skipped: 1190, ...over,
+  });
+  const post = (id: string): SyncEnvelope => ({ ...env(`x:post:${id}`, { entity_type: "post", platform: "x", post_id: id, author_handle: "jack", text: `post ${id}`, created_at: "2026-06-01T00:00:00Z", metrics: {} }), kind: "live" });
+  function planGraph(known: Record<string, Record<string, unknown>>): G {
+    return mockGraph({
+      find_by_anchors: (anchors: string[]) => Promise.resolve(anchors.map((anchor) => (anchor in known ? `id:${anchor}` : null))),
+      get_entities: (ids: string[]) => Promise.resolve(ids.map((id) => ({ ...entity(id, "", { schema_id: "x.profile" }), properties: known[id.slice("id:".length)] ?? {} }))),
+      apply_batch: () => Promise.resolve({ ids: {}, created: 0, updated: 0, links_added: 0, dropped_keys: [] }),
+    });
+  }
+
+  it("states profiles and the posts window on a new pass, stamps the pass, and one per new post afterwards", async () => {
+    // The profile is unknown: a new pass.
+    const fresh = planGraph({});
+    const first = await mountX(fresh).ingest({ generation: "initial:r:1", envelopes: [profile(), post("1"), post("2")] });
+    expect(first).toEqual({ dropped_remote_ids: [], trigger_checks: [], plan: { "x.profile": { total: 1, skipped: 0 }, "x.post": { total: 10, skipped: 1190 } } });
+    const batch = fresh.spies.apply_batch?.mock.calls[0]?.[0] as GraphBatchInput;
+    expect(batch.entities.find((item) => item.schema_id === "x.profile")?.properties).toMatchObject({ handle: "jack", sync_pass: "initial:r:1" });
+
+    // The same pass, a later poll: the profile is stamped; post 1 is known, post 3 is new.
+    const stamped = planGraph({ "x:profile:12": { handle: "jack", sync_pass: "initial:r:1" }, "x:post:1": {} });
+    const later = await mountX(stamped).ingest({ generation: "initial:r:1", envelopes: [profile(), post("1"), post("3")] });
+    expect(later.plan).toEqual({ "x.profile": { total: 0, skipped: 0 }, "x.post": { total: 1, skipped: 0 } });
+
+    // A new pass states the profile and its window in full again.
+    const next = await mountX(stamped).ingest({ generation: "initial:r:2", envelopes: [profile(), post("1")] });
+    expect(next.plan).toEqual({ "x.profile": { total: 1, skipped: 0 }, "x.post": { total: 10, skipped: 1190 } });
+
+    // Outside a worker's pass nothing is read and nothing is stated.
+    const outside = await mountX(ingestGraph()).ingest({ envelopes: [profile(), post("1")] });
+    expect(outside).toEqual({ dropped_remote_ids: [], trigger_checks: [] });
+  });
+});
+
 describe("x ingest identity link (tst_ingest_link)", () => {
   function linkGraph(): G {
     return mockGraph({

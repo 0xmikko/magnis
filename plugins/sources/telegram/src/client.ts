@@ -24,16 +24,27 @@ import { toRfc3339Utc } from "./surfaces/telegram/envelope";
 /** Per-chat message hydration depth during bootstrap. Each enumerated dialog's
  * newest N messages are fetched (GetDialogs carries only each chat's single top
  * message), preserving the snapshot the in-backend bootstrap produced. */
-export const BOOTSTRAP_MESSAGES_PER_CHAT = 50;
+export const BOOTSTRAP_MESSAGES_PER_CHAT = 100;
+/** Telegram's provider-sized messages.getHistory request. Larger Source pages
+ * are assembled from as many of these requests as fit the page budgets. */
+export const TELEGRAM_HISTORY_PAGE_SIZE = 100;
+export const SOURCE_PAGE_HISTORY_LIMIT = 25;
+export const SOURCE_PAGE_BUDGET_MS = 20_000;
+/** The source/1 host accepts a four-megabyte line. Keep the envelope body at
+ * three so the JSON-RPC result and immutable fields stamped by the host fit. */
+export const SOURCE_PAGE_BUDGET_BYTES = 3 * 1024 * 1024;
 
-/** Upper bound (seconds) on a FLOOD_WAIT the send path absorbs inline via
- * wait+retry. At or below this the connector sleeps and retries once (the
- * message still goes out); a longer one surfaces as a typed rate-limit so the
- * HOST schedules the backoff rather than the connector blocking for minutes. */
-export const FLOOD_WAIT_RETRY_MAX = 30;
+/** @tested-by: tst_src_tgfast_003 — TGFAST_002 bounds each remaining read. */
+export function remainingPageBudget(deadline: number): number {
+  const remaining = Math.ceil(deadline - performance.now());
+  if (remaining <= 0) throw new MtprotoTimeoutError("source page", SOURCE_PAGE_BUDGET_MS);
+  return remaining;
+}
 
-/** Sentinel prefix carried up the error channel for a FLOOD_WAIT longer than
- * FLOOD_WAIT_RETRY_MAX. `dispatch.ts::classifyToolError` recognizes it → JSON-RPC
+export type MessagePage = MessageLike[] & { total?: number };
+
+/** Sentinel prefix carried up the error channel for a FLOOD_WAIT.
+ * `dispatch.ts::classifyToolError` recognizes it → JSON-RPC
  * -32002 + `data: { retry_after: secs }`; the host maps that to
  * `SourceError::RateLimit`. Twin of the Rust `RATE_LIMITED_PREFIX`. */
 export const RATE_LIMITED_PREFIX = "RATE_LIMITED:";
@@ -70,6 +81,7 @@ export interface EntityLike {
   gigagroup?: boolean;
   broadcast?: boolean;
   bot?: boolean;
+  self?: boolean;
 }
 
 /** gramjs media (Api.MessageMediaPhoto | …Document | …), narrowed. */
@@ -85,6 +97,8 @@ export interface MediaLike {
 /** gramjs message (Api.Message / CustomMessage), narrowed. */
 export interface MessageLike {
   id: number;
+  /** Raw wire peer of a live update; present even when `chat` is not hydrated. */
+  peerId?: unknown;
   message?: string;
   /** unix SECONDS (Telegram wire format). */
   date?: number;
@@ -107,48 +121,75 @@ export function toNum(v: unknown): number {
   return 0;
 }
 
+/** Raw dialog identity shared by history peer joins and live notifications. */
+export interface PeerIdentity {
+  kind: "user" | "chat" | "channel";
+  id: number;
+}
+
+/** Normalize only canonical TL peers; absent, malformed or marked IDs stay missing. */
+export function peerIdentity(peer: unknown): PeerIdentity | undefined {
+  if (peer === null || typeof peer !== "object" || !("className" in peer)) return undefined;
+  let kind: PeerIdentity["kind"];
+  let rawId: unknown;
+  switch (peer.className) {
+    case "PeerUser":
+      kind = "user";
+      rawId = "userId" in peer ? peer.userId : undefined;
+      break;
+    case "PeerChat":
+      kind = "chat";
+      rawId = "chatId" in peer ? peer.chatId : undefined;
+      break;
+    case "PeerChannel":
+      kind = "channel";
+      rawId = "channelId" in peer ? peer.channelId : undefined;
+      break;
+    default:
+      return undefined;
+  }
+  const id = toNum(rawId);
+  return Number.isSafeInteger(id) && id > 0 ? { kind, id } : undefined;
+}
+
 /** Coerce an unknown thrown value into the RPC-error shape we classify on. */
 function asRpcError(e: unknown): RpcErrorLike | undefined {
   if (e === null || typeof e !== "object") return undefined;
   return e;
 }
 
-/** If `err` is a Telegram FLOOD_WAIT, return its wait in seconds. gramjs
+/** If `err` is a Telegram FLOOD_WAIT, return its valid rounded-up wait in seconds. gramjs
  * surfaces a flood-wait as a `FloodWaitError` (code 420, `.seconds` set) whose
- * `errorMessage` is `FLOOD_WAIT`. Twin of the Rust `flood_wait_secs`. */
+ * `errorMessage` is `FLOOD_WAIT`.
+ * @tested-by: tst_tgts_flood_001 — TGFLOOD_005 never guesses an invalid wait. */
 export function floodWaitSecs(err: unknown): number | undefined {
   const rpc = asRpcError(err);
   if (rpc === undefined) return undefined;
   const isFlood =
     rpc.code === 420 || (rpc.errorMessage ?? "").startsWith("FLOOD_WAIT");
   if (!isFlood) return undefined;
-  return typeof rpc.seconds === "number" ? rpc.seconds : undefined;
+  const seconds = rpc.seconds;
+  return typeof seconds === "number" && seconds >= 0 && Number.isFinite(seconds) &&
+    Number.isSafeInteger(Math.ceil(seconds * 1000)) ? Math.ceil(seconds) : undefined;
 }
 
-/** FLOOD_WAIT-aware send wrapper. Generic over the send (so the live gramjs call
- * and a test fake share ONE policy) and over the sleeper (so tests don't wait
- * real seconds). Twin of the Rust `send_with_flood_retry`:
- *
- * - send succeeds → return the result.
- * - FLOOD_WAIT of `secs <= FLOOD_WAIT_RETRY_MAX` → sleep(secs), retry ONCE and
- *   return that retry's outcome (success OR error).
- * - FLOOD_WAIT of `secs > FLOOD_WAIT_RETRY_MAX` → throw `RATE_LIMITED:{secs}`
- *   IMMEDIATELY (no sleep, connector never blocks).
- * - any other error → propagated unchanged.
+/** Send once; the account admission guard owns waits and subsequent admission.
+ * Keep the legacy name/sleeper argument for existing command callers, but never
+ * sleep or resend here. Already-normalized local refusals retain their cause
+ * and remaining wait without creating a deadline or another remote observation.
+ * @tested-by: tst_tgts_flood_002, tst_tgts_flood_005, tst_tgts_flood_wire_001
+ * @invariant: TGFLOOD_005 — one helper invocation makes at most one send attempt.
  */
 export async function sendWithFloodRetry<T>(
   send: () => Promise<T>,
-  sleep: (secs: number) => Promise<void>,
+  _sleep: (secs: number) => Promise<void>,
 ): Promise<T> {
   try {
     return await send();
   } catch (err) {
     const secs = floodWaitSecs(err);
     if (secs === undefined) throw err;
-    if (secs <= FLOOD_WAIT_RETRY_MAX) {
-      await sleep(secs);
-      return await send();
-    }
+    if (err instanceof Error && err.message === `${RATE_LIMITED_PREFIX}${String(secs)}`) throw err;
     throw new Error(`${RATE_LIMITED_PREFIX}${String(secs)}`, { cause: err });
   }
 }
@@ -308,14 +349,20 @@ export interface DialogOffset {
   offset_date: number;
   offset_id: number;
   offset_peer: OffsetPeer;
+  hydration?: {
+    pending: PendingDialog[];
+    next_offset: DialogOffset | null;
+    total: number | null;
+  };
 }
 
 export interface OffsetPeer {
   /** `"user"` | `"chat"` | `"channel"` — the InputPeer category. */
   ty: string;
   id: number;
+  self?: boolean;
   /** Omitted entirely when null (basic groups / `min` peers have no hash). */
-  access_hash?: number;
+  access_hash?: number | string;
 }
 
 /** gramjs entity className → the persisted `OffsetPeer.ty`. Twin of the Rust
@@ -341,9 +388,13 @@ export function offsetPeerFromEntity(entity: EntityLike): OffsetPeer {
   const peer: OffsetPeer = {
     ty: offsetPeerTyFromEntity(entity),
     id: toNum(entity.id),
+    ...(entity.self === true ? { self: true } : {}),
   };
   if (entity.accessHash !== null && entity.accessHash !== undefined) {
-    peer.access_hash = toNum(entity.accessHash);
+    const text = (entity.accessHash as { toString(): string }).toString();
+    if (!/^-?\d+$/.test(text)) throw new Error("Telegram peer returned an invalid access hash");
+    const number = Number(text);
+    peer.access_hash = Number.isSafeInteger(number) ? number : text;
   }
   return peer;
 }
@@ -354,6 +405,13 @@ export function offsetPeerFromEntity(entity: EntityLike): OffsetPeer {
 export interface PagedDialog {
   chat: TgChat;
   messages: TgMessage[];
+  peer?: OffsetPeer;
+}
+
+/** JSON-only continuation; never persist a GramJS entity or an access-hash float. */
+export interface PendingDialog {
+  chat: TgChat;
+  peer?: OffsetPeer;
 }
 
 /** One page of the dialog list. `next_offset === null` means the walk is
@@ -371,7 +429,8 @@ export interface DialogPage {
 /** Fetches one page of dialogs starting at `offset` (null = from the top). The
  * LIVE impl talks to Telegram; the test fake serves an in-memory list. */
 export interface DialogPager {
-  dialogPage(offset: DialogOffset | null, limit: number): Promise<DialogPage>;
+  dialogPage(offset: DialogOffset | null, limit: number,
+    options?: { hydrate?: boolean; timeoutMs?: number }): Promise<DialogPage>;
 }
 
 // ── gramjs → canonical intermediate conversion ─────────────────────────────

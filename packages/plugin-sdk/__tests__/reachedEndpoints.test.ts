@@ -15,7 +15,7 @@ import { describe, expect, it } from "vitest";
 import { reachedEndpoints, type LinkSummary } from "../index.ts";
 
 function link(from_id: string, to_id: string, kind: string): LinkSummary {
-  return { id: `${from_id}-${to_id}-${kind}`, from_id, to_id, kind };
+  return { id: `${from_id}-${to_id}-${kind}`, from_id, to_id, kind, validFrom: null, validUntil: null };
 }
 
 describe("tst_pkg_sdk_endpoints_001 — reachedEndpoints", () => {

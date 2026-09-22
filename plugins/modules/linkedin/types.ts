@@ -79,6 +79,7 @@ export interface LinkedinCanonical {
 /** Envelope payload shapes (discriminated by `entity_type`). */
 export interface ProfilePayload extends ProfileIdentity {
   entity_type: "profile";
+  sync_pass?: string;
 }
 export interface PostPayload extends PostContent {
   entity_type: "post";

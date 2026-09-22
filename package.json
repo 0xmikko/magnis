@@ -8,6 +8,13 @@
     "plugins/sources/*"
   ],
   "scripts": {
+    "agent:install": "bun install --frozen-lockfile",
+    "agent:test:backend": "bash scripts/test-connectors.sh --agent",
+    "agent:test:frontend": "vitest run --config vitest.ui.config.ts",
+    "agent:test:e2e": "echo 'N/A: catalog has no separate deployed E2E lane; Source journeys run in agent:test:backend'",
+    "agent:verify:commit": "bun scripts/agent-verify.ts commit",
+    "agent:verify:pr": "bun run check",
+    "agent:verify:docs": "bun scripts/agent-verify.ts docs",
     "check": "bun run typecheck && bun run lint && bun run test && bun run test:runtime-contracts && bun run test:ui && bun run test:connectors && bun run test:scripts && bun run build:plugins",
     "typecheck": "bash scripts/typecheck-all.sh",
     "lint": "eslint \"plugins/**/*.{ts,tsx}\" \"packages/**/*.{ts,tsx}\" \"scripts/**/*.ts\" \"apps/desktop/build/**/*.ts\" --max-warnings 0",
@@ -21,12 +28,17 @@
     "agent:test:modules": "vitest run",
     "agent:test:ui": "bun run test:ui",
     "agent:build": "bun run build:plugins",
-    "agent:verify:pr": "bun run check",
     "agent:typecheck": "bun run typecheck",
-    "agent:install": "bun install --frozen-lockfile",
     "agent:test:scripts": "bun test",
     "agent:build:catalog": "bun scripts/build-catalog-index.ts",
     "agent:test:connectors": "bun run test:connectors"
+  },
+  "agentStack": {
+    "ci": "external",
+    "ciWorkflow": ".github/workflows/ci.yml"
+  },
+  "patchedDependencies": {
+    "telegram@2.26.22": "patches/telegram@2.26.22.patch"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

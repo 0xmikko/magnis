@@ -325,6 +325,51 @@ describe("email ingest — trigger / delete / empty-user parity", () => {
   });
 });
 
+/**
+ * @test-id: tst_module_email_plan_001
+ * @scenario: scn_google_sync_001
+ * @covers: EmailModule.ingest (plan)
+ * @deterministic: yes
+ * @fixtures: a mailbox envelope of 100 messages with 10 skipped; a history page with one new mail and one removal
+ *
+ * The module states the mailbox's count as the Source counted it: in full on
+ * the mailbox envelope that opens a pass, one more per new mail and one less
+ * per removal on a history page, and nothing outside a worker's pass.
+ */
+describe("email ingest — the plan from the pages", () => {
+  let graph: G;
+  let mod: EmailModule;
+  beforeEach(() => {
+    graph = ingestGraph();
+    mod = mountModule(EmailModule, { graph, ctx: { extension_id: "email" } }).module;
+  });
+  const mailbox = env({ remote_id: "mailbox", payload: { entity_type: "mailbox", messages_total: 100, skipped: 10 } });
+
+  it("states the mailbox in full and never ingests it as a message", async () => {
+    const r = await mod.ingest({ generation: "initial:r:1", envelopes: [mailbox, env({ remote_id: "m1", payload: msgPayload() })] });
+    expect(r).toEqual({ dropped_remote_ids: [], trigger_checks: [], plan: { "email.message": { total: 100, skipped: 10 } } });
+    const batch = spy(graph, "apply_batch").mock.calls[0]?.[0] as GraphBatchInput | undefined;
+    expect(batch?.entities.map((item) => item.key)).not.toContain("mailbox");
+    expect(batch?.entities.some((item) => item.key === "m1")).toBe(true);
+  });
+
+  it("moves the count by one per new mail and per removal on a history page", async () => {
+    const r = await mod.ingest({ generation: "initial:r:1", envelopes: [
+      env({ kind: "live", remote_id: "m-new", payload: msgPayload({ message_id: "m-new" }) }),
+      env({ kind: "snapshot", remote_id: "m-relabelled", payload: msgPayload({ message_id: "m-relabelled" }) }),
+      env({ kind: "delete", remote_id: "m-gone", payload: {} }),
+      env({ kind: "delete", remote_id: "m-gone-too", payload: {} }),
+    ] });
+    expect(r.plan).toEqual({ "email.message": { total: -1, skipped: 0 } });
+  });
+
+  it("states nothing outside a worker's pass", async () => {
+    const r = await mod.ingest({ envelopes: [mailbox, env({ kind: "live", remote_id: "m-new", payload: msgPayload() })] });
+    expect(r).toEqual({ dropped_remote_ids: [], trigger_checks: expect.any(Array) as never });
+    expect("plan" in r).toBe(false);
+  });
+});
+
 describe("email ingest — DB-access guarantees (tst_be_emaildb_005 / INV-DB-3)", () => {
   let graph: G;
   let mod: EmailModule;

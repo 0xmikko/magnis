@@ -52,14 +52,12 @@ describe("tst_module_telegram_command_001 — Telegram command mapping", () => {
     await expect(module.messagesBackfill({
       chat_id: 42,
       before_message_id: 100,
-      limit: 75,
       account_id: "account-1",
     })).resolves.toEqual({ count: 0, skipped: 0, pending: true });
     expect(graph.spies.request_backfill).toHaveBeenCalledWith({
       action: "backfill_chat",
       chat_id: 42,
       before_message_id: 100,
-      limit: 75,
     }, "account-1");
   });
 

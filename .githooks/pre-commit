@@ -1,23 +1,34 @@
 #!/usr/bin/env bash
-# Magnis plugin catalog — pre-commit gate.
-# Enable once per clone:  git config core.hooksPath .githooks
+# Managed by 0_agents code-production. Do not edit in the consumer repository.
 set -euo pipefail
 
-branch="$(git rev-parse --abbrev-ref HEAD)"
-if [[ "$branch" == "main" || "$branch" == "staging" ]]; then
-  echo "✗ direct commits to '$branch' are not allowed."
-  echo "  Work on a feature branch and merge it in:  git switch -c fix/<topic> $branch"
-  exit 1
+ROOT="$(git rev-parse --show-toplevel)"
+PLANCTL="$ROOT/.agents/code-production/runtime/planctl.ts"
+GATE="$ROOT/.agents/code-production/runtime/plan-gate.ts"
+
+PLANS="$(git diff --cached --name-only --diff-filter=ACMR -- 'docs/plans/*.md')"
+if [ -n "$PLANS" ]; then
+  # Canonical plan names are kebab-case and contain no whitespace.
+  # shellcheck disable=SC2086
+  bun "$GATE" --freeze $PLANS
+  while IFS= read -r plan; do
+    [ -n "$plan" ] || continue
+    # Marker plans are written exclusively through planctl and therefore
+    # require its mutation journal. Older approved plans predate that format;
+    # plan-gate above still freezes them and requires a same-commit Amendment,
+    # but inventing a journal for their historical bytes would make migration
+    # impossible.
+    if git show ":$plan" | grep -Fq '<!-- plan:spec:start -->'; then
+      state="$(git show ":$plan" | sed -n 's/^Status: //p' | head -1)"
+      if [ "$state" != "SPEC_DRAFT" ]; then
+        bun "$PLANCTL" verify-staged "$plan"
+        bun "$PLANCTL" verify "$plan"
+      fi
+    fi
+  done <<EOF
+$PLANS
+EOF
 fi
 
-echo "→ gate: typecheck"
-bun run typecheck
-echo "→ gate: lint"
-bun run lint
-echo "→ gate: vitest"
-bun run test
-echo "→ gate: connector suites"
-bun run test:connectors
-echo "→ gate: tooling"
-bun run test:scripts
-echo "✓ gate green"
+bun run agent:verify:docs
+bun run agent:verify:commit

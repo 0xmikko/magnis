@@ -299,4 +299,24 @@ describe("contacts ingest — the replica model (tst_be_contactsingest_001)", ()
     expect(world.graph.spies.apply_batch).toHaveBeenCalledTimes(0);
     expect(r).toEqual({ dropped_remote_ids: [], trigger_checks: [] });
   });
+
+  /**
+   * @test-id: tst_module_contacts_plan_001
+   * @scenario: scn_google_sync_001
+   * @covers: ContactsModule.ingest (plan)
+   * @deterministic: yes
+   * @fixtures: a list envelope counting 3 people; a later page leaving one out
+   */
+  it("states the list's count in full, the persons a page leaves out as skipped, and nothing outside a worker's pass", async () => {
+    const world = ingestWorld();
+    const mod = mountWorld(world);
+    const list = env({ remote_id: "list", payload: { entity_type: "list", total_people: 3 } });
+    const first = await mod.ingest({ generation: "initial:r:1", envelopes: [list, env({ payload: contactPayload() })] });
+    expect(first).toEqual({ dropped_remote_ids: [], trigger_checks: [], plan: { "contacts.person": { total: 3, skipped: 0 } } });
+    expect(lastBatch(world.graph).entities.map((item) => item.key)).not.toContain("list");
+    const later = await mod.ingest({ generation: "initial:r:1", envelopes: [env({ remote_id: "list", payload: { entity_type: "list", skipped: 1 } }), env({ remote_id: "gpeople:c2", payload: contactPayload({ id: "c2" }) })] });
+    expect(later.plan).toEqual({ "contacts.person": { total: 0, skipped: 1 } });
+    const outside = await mod.ingest({ envelopes: [list] });
+    expect(outside).toEqual({ dropped_remote_ids: [], trigger_checks: [] });
+  });
 });

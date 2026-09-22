@@ -89,6 +89,7 @@ export function useTelegramMessages(
   // Keyed by chatId so a chat switch can never surface a stale total.
   const [fetchedTotal, setFetchedTotal] = useState<{ chatId: string; total: number } | null>(null);
   const offsetRef = useRef(0);
+  const pageInFlightRef = useRef(false);
 
   // Derive initial messages from query
   const initialMessages = useMemo(() => {
@@ -183,6 +184,9 @@ export function useTelegramMessages(
         });
         return;
       }
+      // @tested-by: tst_plg_tgui_header_total_005
+      if (pageInFlightRef.current) return;
+      pageInFlightRef.current = true;
       setLoading(true);
       try {
         const result = await runtime.transport.rpc<PaginatedResponse<TelegramMessageListItem>>(
@@ -198,12 +202,14 @@ export function useTelegramMessages(
         } else {
           setExtraMessages(newMessages);
         }
+        offsetRef.current = offset;
         setHasMore(offset + result.items.length < result.total);
         // Advance the chat's displayed total from the newest page's report.
         setFetchedTotal({ chatId, total: result.total });
       } catch {
         // Keep current conversation on error
       } finally {
+        pageInFlightRef.current = false;
         setLoading(false);
       }
     },
@@ -214,7 +220,6 @@ export function useTelegramMessages(
   const handleLoadMore = useCallback(() => {
     if (!selectedChatId || loading || queryLoading || !hasMore) return;
     const newOffset = offsetRef.current + PAGE_SIZE;
-    offsetRef.current = newOffset;
     void fetchMessages(selectedChatId, newOffset, true);
   }, [selectedChatId, loading, queryLoading, hasMore, fetchMessages]);
 
@@ -268,7 +273,6 @@ export function useTelegramMessages(
         chat_id: Number(nativeChatId),
         account_id: sourceAccountId,
         before_message_id: oldestMsgId,
-        limit: PAGE_SIZE,
       })
       .catch((err: unknown) => {
         console.error("Backfill request failed:", err);
@@ -293,18 +297,16 @@ export function useTelegramMessages(
         setHasMoreOnServer(false);
       } else if (selectedChatId) {
         const newOffset = offsetRef.current + PAGE_SIZE;
-        offsetRef.current = newOffset;
         void fetchMessages(selectedChatId, newOffset, true);
       }
     });
     return off;
   }, [runtime, nativeChatId, selectedChatId, fetchMessages, clearBackfillWait]);
 
-  // Operational sync: opening a chat eagerly walks a few pages of its older
-  // history (prioritising the chat the user clicked over the background full
-  // download), so it fills well past the bootstrap's 50 without the user having
-  // to scroll. The rest still arrives via scroll + the background backfill.
-  const OP_SYNC_PAGES = 4;
+  // Operational sync: one request prioritises the selected chat. The host owns
+  // the durable pagination loop and drains it to Telegram's terminal page; a
+  // second UI request would fence that traversal and restart the spinner.
+  const OP_SYNC_PAGES = 1;
   const opSyncChatRef = useRef<string | undefined>(undefined);
   const opSyncPagesRef = useRef(0);
   useEffect(() => {

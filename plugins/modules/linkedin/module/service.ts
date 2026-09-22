@@ -44,9 +44,19 @@ export class LinkedinModule {
   @syncHandler("linkedin")
   async ingest(params: {
     envelopes?: SyncEnvelope[];
-  }): Promise<{ dropped_remote_ids: string[]; trigger_checks: [] }> {
+    /** The pass the worker is in; absent for a Source effect outside a
+     * worker, which states nothing. */
+    generation?: string;
+  }): Promise<{ dropped_remote_ids: string[]; trigger_checks: []; plan?: Record<string, { total: number; skipped: number }> }> {
     const envelopes = Array.isArray(params.envelopes) ? params.envelopes : [];
     const dropped: string[] = [];
+    // What the page states for the plan: a profile once per pass, stamped on
+    // its dictionary so a later poll knows. Posts stay unplanned — anysite
+    // lists a profile's posts without a total.
+    // @tested-by: tst_plugin_linkedin_plan_001
+    const generation = typeof params.generation === "string" && params.generation !== "" ? params.generation : null;
+    const profiles = { total: 0, skipped: 0 };
+    const stamps = generation === null ? new Map<string, string | null>() : await this.profilePassByAnchor(envelopes);
 
     const entities: BatchEntityInput[] = [];
     const links: BatchLinkInput[] = [];
@@ -73,13 +83,18 @@ export class LinkedinModule {
           continue;
         }
         const profileAnchor = `linkedin:${urn}`;
+        let properties = payload;
+        if (generation !== null) {
+          if (stamps.get(profileAnchor) !== generation) profiles.total += 1;
+          properties = { ...payload, sync_pass: generation };
+        }
         entities.push({
           key: remoteId,
           schema_id: PROFILE,
           name: identity.display_name ?? identity.handle,
           // S5: the profile DICT is the record, under the issuer's own key.
           anchor: profileAnchor,
-          properties: payload,
+          properties,
           confidence: 100,
         });
         if (identity.handle) profileKeyByHandle.set(identity.handle.toLowerCase(), remoteId);
@@ -127,7 +142,26 @@ export class LinkedinModule {
       // repairs the link (self-healing).
       await this.linkProfilesToContacts(envelopes, applied.ids);
     }
-    return { dropped_remote_ids: dropped, trigger_checks: [] };
+    if (generation === null) return { dropped_remote_ids: dropped, trigger_checks: [] };
+    return { dropped_remote_ids: dropped, trigger_checks: [], plan: { [PROFILE]: profiles } };
+  }
+
+  /** The pass each of the page's profiles was last stated in, by anchor: two
+   * Graph calls for the whole page, never one per envelope. */
+  private async profilePassByAnchor(envelopes: SyncEnvelope[]): Promise<Map<string, string | null>> {
+    const stamps = new Map<string, string | null>();
+    const anchors = [...new Set(envelopes.flatMap((env) => {
+      const urn = str(env.payload, "entity_type") === "profile" ? str(env.payload, "urn") : null;
+      return urn ? [`linkedin:${urn}`] : [];
+    }))];
+    if (anchors.length === 0) return stamps;
+    const ids = await this.graph.find_by_anchors(anchors);
+    const found: { anchor: string; id: string }[] = [];
+    anchors.forEach((anchor, index) => { const id = ids[index]; if (id) found.push({ anchor, id }); });
+    if (found.length === 0) return stamps;
+    const byId = new Map((await this.graph.get_entities(found.map(({ id }) => id))).map((item) => [item.id, item]));
+    for (const { anchor, id } of found) stamps.set(anchor, str(byId.get(id)?.properties ?? {}, "sync_pass") ?? null);
+    return stamps;
   }
 
   private async linkProfilesToContacts(

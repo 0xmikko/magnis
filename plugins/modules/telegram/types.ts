@@ -15,9 +15,11 @@ export interface TelegramChatDetails {
   type?: string;
   username?: string;
   avatar_url?: string;
-  member_count?: number;
-  message_count?: number;
+  /** The operator's choice to index this chat's media; absent until set. */
   is_indexed?: boolean;
+  /** The exact message count Telegram reported for the chat when it was last read. */
+  message_count?: number;
+  member_count?: number;
   read_inbox_max_id?: number;
   read_outbox_max_id?: number;
   unread_mentions_count?: number;
@@ -212,7 +214,6 @@ export interface BatchSendParams {
 export interface BackfillParams {
   chat_id: number | string;
   before_message_id?: number;
-  limit?: number;
   account_id?: string;
 }
 
@@ -244,13 +245,4 @@ export interface TriggerCheck {
   touched_entity_ids: string[];
   user_id: string;
   context: { text: string; sender_name: string };
-}
-
-/** The module's download plan, reported through the reserved sync method. */
-export interface SyncPlan {
-  unit: "messages";
-  planned: number;
-  excluded_scopes: number;
-  excluded_items: number;
-  uncounted_scopes: number;
 }

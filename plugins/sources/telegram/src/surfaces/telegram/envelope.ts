@@ -81,6 +81,10 @@ export interface TgChat {
   member_count?: number;
   username?: string;
   avatar_url?: string;
+  /** The exact message count Telegram reported for the chat in the
+   * `messages.getHistory` answer that hydrated it; absent when no such
+   * answer was received. The number the product plans a sync with. */
+  message_count?: number;
 }
 
 /** Format a Date as the Rust connector does. chrono's `to_rfc3339()` on a
@@ -223,6 +227,7 @@ export function chatPayload(c: TgChat): Record<string, unknown> {
   if (c.member_count !== undefined) payload.member_count = c.member_count;
   if (c.username !== undefined) payload.username = c.username;
   if (c.avatar_url !== undefined) payload.avatar_url = c.avatar_url;
+  if (c.message_count !== undefined) payload.message_count = c.message_count;
 
   return payload;
 }

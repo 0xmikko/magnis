@@ -301,12 +301,41 @@ two stores that created it.
 ## 9. Sync ingest — receiving from a source
 
 A module that owns a surface implements `@syncHandler`, which registers the
-reserved `<plugin_id>.__sync__` method. The host invokes it with a
-`SourceEnvelope` (the thing a [source](./source.md) emitted), and the method
+reserved `<plugin_id>.__sync__` method. The host invokes it with a page of
+`SourceEnvelope`s (the things a [source](./source.md) emitted), and the method
 dispatches internally on `envelope.kind` and a `payload` discriminator (e.g.
 `entity_type`). This is where external data becomes graph writes — typically via
 `apply_batch` for bulk fragments. The source produces envelopes; the module's
 sync handler decides how they land in the graph it owns.
+
+**The pass and the receipt.** A page a sync worker admits carries
+`generation` (`initial:<row>:<lease>`), the pass the worker is in; a page
+outside a worker (a Source effect) carries none, and the module states nothing
+for it. The answer is `{ dropped_remote_ids, trigger_checks, plan?, excluded? }`:
+
+- `plan` — per schema the manifest declares under `progress`, `{ total,
+  skipped }` **relative to the module's last statement** for the scopes on the
+  page. The module decides admission, so the module states the plan: an
+  admitted Telegram chat's whole `message_count`, an excluded chat's first fifty
+  with the rest skipped, the chat itself once per pass; the same page again
+  states zero, a restated count states the difference, a live message on an
+  admitted chat states one. Gmail states the mailbox in full on the mailbox
+  envelope, one more per new mail and one less per removal; contacts, meetings
+  and X state their scope envelope in full and what a page left out as skipped.
+  The module keeps its last statement where the fact lives — Telegram on the
+  operator's `observed_in` edge (`sync_pass`, `sync_total`, `sync_skipped`), X
+  and LinkedIn as `sync_pass` on the profile's dictionary — written in the same
+  batch as the fact, so the statement and the fact commit together.
+- `excluded` — every scope the module leaves out of history that this page
+  touched, each time (the host drops such a scope's gaps and never backfills
+  it).
+
+A module whose surface declares `reconciliation = { mode = "full_snapshot" }`
+implements `@syncComplete`, the reserved `<plugin_id>.__sync_complete__` hook
+the host calls at the end of a pass with `{ user_id, source_id, account_id,
+identity_key, generation }`. Telegram instead declares `mode = "none"`:
+snapshot omission says neither that a membership ended nor when it ended. Its
+`observed_in` edge closes only from a dated Telegram participant update.
 
 ---
 

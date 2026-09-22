@@ -195,10 +195,14 @@ export interface LinkSummary {
   from_id: string;
   to_id: string;
   kind: string;
+  /** The edge's fact is true from `validFrom` until `validUntil`; a null
+   * `validUntil` is an open edge, a dated one an ended edge the row keeps.
+   * Always emitted by the host link serializer; optional in the type because
+   * not every consumer needs it (as `RawEntity.created_at`). */
+  validFrom?: string | null;
+  validUntil?: string | null;
   /** S4: the edge dictionary — per-observer state (unread, pins). */
   metadata?: Record<string, unknown> | null;
-  /** S4: canonical | candidate | rejected | decayed. */
-  status?: string;
 }
 /// `list_entities` returns the page + exact user-scoped total,
 /// mirroring native list_entities_for_user + count_entities_for_user.
@@ -310,6 +314,25 @@ export interface GraphBatchResult {
 /// Not parameterised: a node's dictionary is a plain JSON map, and a module
 /// types it with its own interface at the call sites that care. The `Canon`
 /// type parameter went with the canonical layer it existed to type.
+/** What one file registration carries. One shape, two arities — `file_register`
+ * and `file_register_batch` take exactly this. */
+export interface FileRegisterParams {
+  external_id: string;
+  parent_external_id: string;
+  link_kind: string;
+  name?: string;
+  mime_type: string;
+  size_bytes?: number;
+  local_path?: string;
+  cloud_url?: string;
+  source_ref?: Record<string, unknown>;
+  source_module: string;
+  source_surface: string;
+  /** Enqueue the background byte download now. Defaults to `true` host-side;
+   *  pass `false` to register the entity without fetching (non-indexed chats). */
+  download?: boolean;
+}
+
 export interface GraphService {
   // entities — rows are always {id, schema_id, name}, no map needed.
   // All reads are user-scoped backend-side.
@@ -332,6 +355,8 @@ export interface GraphService {
   search_entities_by_name(p: SearchEntitiesParams): Promise<RawEntity[]>;
   /** S1/S4: resolve a node by its identity ANCHOR through the chokepoint. */
   find_by_anchor(anchor: string): Promise<string | null>;
+  /** Plural anchor resolution in one host call: input order kept, null where absent. */
+  find_by_anchors(anchors: string[]): Promise<(string | null)[]>;
   // register a web link (web.link entity + dictionary + bg preview fetch),
   // optionally linked to a parent entity. Returns the web.link entity id.
   web_register(p: { url: string; parent_entity_id?: string; link_kind?: string }): Promise<string>;
@@ -339,22 +364,28 @@ export interface GraphService {
   // parent link + background download). mime_type is
   // computed plugin-side so the op stays source-agnostic. Returns the
   // file.object entity id.
-  file_register(p: {
-    external_id: string;
-    parent_external_id: string;
-    link_kind: string;
-    name?: string;
-    mime_type: string;
-    size_bytes?: number;
-    local_path?: string;
-    cloud_url?: string;
-    source_ref?: Record<string, unknown>;
-    source_module: string;
-    source_surface: string;
-    /** Enqueue the background byte download now. Defaults to `true` host-side;
-     *  pass `false` to register the entity without fetching (non-indexed chats). */
-    download?: boolean;
-  }): Promise<string>;
+  file_register(p: FileRegisterParams): Promise<string>;
+  /** Batch: every URL a page carries, in ONE host call. Input order is kept;
+   *  each position holds that URL's `web.link` entity id, or `""` where the
+   *  host could not normalize the URL — one bad URL costs its own row and
+   *  never aborts the page. Capability is checked once, before any write. */
+  web_register_batch(
+    links: { url: string; parent_entity_id?: string; link_kind?: string }[],
+  ): Promise<string[]>;
+  /** Batch: every attachment a page carries, in ONE host call. Input order is
+   *  kept; each position holds that file's `file.object` entity id. There is
+   *  no empty sentinel: a row the host did not write is an error. One row
+   *  whose `link_kind` is not `file.attachment`, or whose `source_ref` does
+   *  not match the admitted worker, refuses the WHOLE call. The same
+   *  attachment twice in one page accumulates, as two calls would. */
+  file_register_batch(files: FileRegisterParams[]): Promise<string[]>;
+  /** Batch: merge a dictionary patch into each node, in ONE host call. Each
+   *  patch MERGES — a field it does not name keeps its value — and the same
+   *  node twice accumulates. The capability for every row's schema is checked
+   *  before any row is written; one refused row refuses the whole call. */
+  update_properties_batch(
+    updates: { entity_id: string; properties: Record<string, unknown> }[],
+  ): Promise<void>;
   // route an Execute SourceCommand to this plugin's source (send/reply/backfill)
   // via the host SyncRouter. Returns the source runtime's JSON result.
   source_command(payload: Record<string, unknown>, account_id?: string): Promise<Record<string, unknown>>;
@@ -396,12 +427,12 @@ export interface GraphService {
   // links — LinkSummary carries the link `id` for targeted deletion.
   add_link(p: AddLinkParams): Promise<void>;
   delete_link(id: string): Promise<void>;
-  /** S4: decay an edge the source no longer reports, or restore it on a
-   * rejoin (canonical | candidate | rejected | decayed). */
-  set_link_status(id: string, status: string): Promise<void>;
-  /** Canonical edges by default; `include_all_statuses` also returns
-   * candidate / decayed rows (S4's reconciliation restores a rejoin). */
-  list_links_for_entity(entity_id: string, include_all_statuses?: boolean): Promise<LinkSummary[]>;
+  /** The link's fact stopped being true at `valid_until`; the row stays, and
+   * reads that keep history still see it. One-way — there is no reopen. */
+  end_link(id: string, valid_until: string): Promise<void>;
+  /** The entity's edges, ended ones included — an open edge reads
+   * `validUntil === null`. */
+  list_links_for_entity(entity_id: string): Promise<LinkSummary[]>;
   /** S6 batch: every canonical edge of MANY entities in ONE round-trip. Each
    * row carries `from_id`/`to_id`, so the caller groups. A page whose cards
    * read their neighbours off the edges uses this, never a per-row read. */

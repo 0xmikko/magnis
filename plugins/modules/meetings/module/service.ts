@@ -348,8 +348,17 @@ export class MeetingsModule {
   @syncHandler("meetings")
   async ingest(params: {
     envelopes?: SyncEnvelope[];
-  }): Promise<{ dropped_remote_ids: string[]; trigger_checks: MeetingTriggerCheck[] }> {
+    /** The pass the worker is in; absent for a Source effect outside a
+     * worker, which states nothing. */
+    generation?: string;
+  }): Promise<{ dropped_remote_ids: string[]; trigger_checks: MeetingTriggerCheck[]; plan?: Record<string, { total: number; skipped: number }> }> {
     const envelopes = Array.isArray(params.envelopes) ? params.envelopes : [];
+    // What the page states for the plan, as the Source counted the window:
+    // the whole of it on the calendar envelope that opens a pass, and the
+    // events a page left out as skipped.
+    // @tested-by: tst_module_meetings_plan_001
+    const stated = typeof params.generation === "string" && params.generation !== "";
+    const plan = { total: 0, skipped: 0 };
 
     // Validate ALL user_ids before any write so a bad envelope writes
     // nothing (native bails on empty user_id; no "" attribution).
@@ -374,10 +383,18 @@ export class MeetingsModule {
       }
       if (env.kind !== "snapshot" && env.kind !== "live") continue;
       if (!env.remote_id) continue;
+      if (env.payload.entity_type === "calendar") {
+        const total = env.payload.events_total;
+        const skipped = env.payload.skipped;
+        if (typeof total === "number") plan.total += total;
+        if (typeof skipped === "number") plan.skipped += skipped;
+        continue;
+      }
       await this.ingestUpsert(env, triggers);
     }
 
-    return { dropped_remote_ids: dropped, trigger_checks: triggers };
+    if (!stated) return { dropped_remote_ids: dropped, trigger_checks: triggers };
+    return { dropped_remote_ids: dropped, trigger_checks: triggers, plan: { [CAL]: plan } };
   }
 
   /// Delete envelope: resolve the meeting by its source external_id and remove
