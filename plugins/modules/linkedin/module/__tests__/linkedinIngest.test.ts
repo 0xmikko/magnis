@@ -3,6 +3,7 @@
 // URN, a post on its remote id) and read tools map window rows. Doubles from @magnis/testkit/module (mockGraph = throwing
 // Proxy, so any op a test does not arrange fails loudly).
 import { describe, expect, it, vi } from "vitest";
+import type { GraphBatchInput } from "@magnis/plugin-sdk";
 import { entity, mockGraph, mountModule, windowRow, type MockGraph } from "@magnis/testkit/module";
 import { LinkedinModule } from "../service.ts";
 import { AUTHORED_BY, IDENTITY, POST, PROFILE } from "../../schema.ts";
@@ -139,6 +140,43 @@ describe("linkedin ingest", () => {
 // tst_ingest_link — social-contact identity link:
 // a tracked-handle profile gets exactly one person→profile identity edge and
 // the placeholder-name CAS upgrade; an untracked handle gets neither.
+/**
+ * @test-id: tst_plugin_linkedin_plan_001
+ * @scenario: scn_linkedin_sync_001
+ * @covers: LinkedinModule.ingest (plan)
+ * @deterministic: yes
+ * @fixtures: a profile envelope with its urn and a post; the profile known with a pass stamp
+ */
+describe("linkedin ingest — the plan from the pages", () => {
+  const profile = (): SyncEnvelope => env("linkedin:profile:jane", { entity_type: "profile", platform: "linkedin", handle: "jane", urn: "urn:li:person:1", display_name: "Jane" });
+  const post = (): SyncEnvelope => env("linkedin:post:1", { entity_type: "post", platform: "linkedin", post_id: "1", author_handle: "jane", text: "hello", created_at: "2026-06-01T00:00:00Z", metrics: {} });
+  function planGraph(known: Record<string, Record<string, unknown>>): G {
+    return mockGraph({
+      find_by_anchors: (anchors: string[]) => Promise.resolve(anchors.map((anchor) => (anchor in known ? `id:${anchor}` : null))),
+      get_entities: (ids: string[]) => Promise.resolve(ids.map((id) => ({ ...entity(id, "", { schema_id: PROFILE }), properties: known[id.slice("id:".length)] ?? {} }))),
+      apply_batch: () => Promise.resolve(emptyBatch),
+    });
+  }
+
+  it("states a profile once per pass, stamps the pass, and states nothing for posts", async () => {
+    const fresh = planGraph({});
+    const first = await mountModule(LinkedinModule, { graph: fresh, ctx: { extension_id: "linkedin" }, rpc: { execute: vi.fn() } }).module
+      .ingest({ generation: "initial:r:1", envelopes: [profile(), post()] });
+    expect(first).toEqual({ dropped_remote_ids: [], trigger_checks: [], plan: { [PROFILE]: { total: 1, skipped: 0 } } });
+    const batch = fresh.spies.apply_batch?.mock.calls[0]?.[0] as GraphBatchInput;
+    expect(batch.entities.find((item) => item.schema_id === PROFILE)?.properties).toMatchObject({ urn: "urn:li:person:1", sync_pass: "initial:r:1" });
+
+    const stamped = planGraph({ "linkedin:urn:li:person:1": { handle: "jane", sync_pass: "initial:r:1" } });
+    const later = await mountModule(LinkedinModule, { graph: stamped, ctx: { extension_id: "linkedin" }, rpc: { execute: vi.fn() } }).module
+      .ingest({ generation: "initial:r:1", envelopes: [profile(), post()] });
+    expect(later.plan).toEqual({ [PROFILE]: { total: 0, skipped: 0 } });
+
+    const outside = await mountModule(LinkedinModule, { graph: mockGraph({ apply_batch: () => Promise.resolve(emptyBatch) }), ctx: { extension_id: "linkedin" }, rpc: { execute: vi.fn() } }).module
+      .ingest({ envelopes: [profile(), post()] });
+    expect(outside).toEqual({ dropped_remote_ids: [], trigger_checks: [] });
+  });
+});
+
 describe("linkedin ingest identity link (tst_ingest_link)", () => {
   function linkGraph(): G {
     return mockGraph({

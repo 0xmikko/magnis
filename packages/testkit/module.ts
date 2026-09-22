@@ -212,10 +212,11 @@ export function windowRow(ent: RawEntity): WindowRow {
   return { entity: ent };
 }
 
-/** A `LinkedRow` — a neighbor entity + the edge that reached it. */
+/** A `LinkedRow` — a neighbor entity + the edge that reached it. The edge
+ * defaults open (`validUntil: null`); an ended one overrides the pair. */
 export function linkedRow(ent: RawEntity, link: Partial<LinkSummary> = {}): LinkedRow {
   return {
     entity: ent,
-    link: { id: "l1", from_id: ent.id, to_id: "to", kind: "link", ...link },
+    link: { id: "l1", from_id: ent.id, to_id: "to", kind: "link", validFrom: null, validUntil: null, ...link },
   };
 }

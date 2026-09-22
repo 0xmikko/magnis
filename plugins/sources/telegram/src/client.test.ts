@@ -2,6 +2,7 @@
 // plugins/sources/telegram/src/client.rs `mod tests`.
 
 import { describe, expect, test } from "bun:test";
+import { AccountAdmission } from "./request-admission";
 import {
   accountIdFromMeta,
   buildDialogMeta,
@@ -417,6 +418,12 @@ describe("floodWaitSecs", () => {
   // Twin of tst_src_tg_023.
   test("tst_tgts_flood_001 reads .seconds off a FloodWait; other errors → undefined", () => {
     expect(floodWaitSecs(floodErr(31))).toBe(31);
+    expect(floodWaitSecs(floodErr(0))).toBe(0);
+    expect(floodWaitSecs(floodErr(0.5))).toBe(1);
+    for (const seconds of [-1, NaN, Infinity, Number.MAX_SAFE_INTEGER]) {
+      expect(floodWaitSecs(floodErr(seconds))).toBeUndefined();
+    }
+    expect(floodWaitSecs(rpcErr(420, "FLOOD_WAIT"))).toBeUndefined();
     expect(floodWaitSecs(rpcErr(401, "AUTH_KEY_UNREGISTERED"))).toBeUndefined();
     expect(floodWaitSecs(rpcErr(500, "RPC_CALL_FAIL"))).toBeUndefined();
     expect(floodWaitSecs(new Error("plain error"))).toBeUndefined();
@@ -424,45 +431,48 @@ describe("floodWaitSecs", () => {
 });
 
 describe("sendWithFloodRetry", () => {
-  // Twin of tst_src_tg_021.
-  test("tst_tgts_flood_002 a SHORT FloodWait (<= 30s) sleeps then retries ONCE", async () => {
+  /** @test-id: tst_tgts_flood_002
+   * @scenario: scn_tgflood_002
+   * @covers: TGFLOOD_005; short action waits never independently resend
+   * @deterministic: yes
+   * @fixtures: synthetic send failure and recording sleeper
+   */
+  test("tst_tgts_flood_002 a SHORT FloodWait rejects once without sleeping or resending", async () => {
     let attempts = 0;
     const slept: number[] = [];
+    const remote = floodErr(5);
     const result = await sendWithFloodRetry(
       async () => {
         attempts += 1;
-        if (attempts === 1) throw floodErr(5);
+        if (attempts === 1) throw remote;
         return { message_id: 99 };
       },
       async (secs) => {
         slept.push(secs);
       },
-    );
-    expect(result).toEqual({ message_id: 99 });
-    expect(attempts).toBe(2); // initial + exactly one retry
-    expect(slept).toEqual([5]); // slept for the FloodWait seconds
+    ).catch((error: unknown): unknown => error);
+    expect(result).toBeInstanceOf(Error);
+    expect(result instanceof Error ? result.message : undefined).toBe("RATE_LIMITED:5");
+    expect(result instanceof Error ? result.cause : undefined).toBe(remote);
+    expect(attempts).toBe(1);
+    expect(slept).toEqual([]);
   });
 
-  test("tst_tgts_flood_003 the boundary 30s retries; 31s does not", async () => {
-    let attempts = 0;
-    await sendWithFloodRetry(
-      async () => {
-        attempts += 1;
-        if (attempts === 1) throw floodErr(30);
-        return "ok";
-      },
-      async () => {},
-    );
-    expect(attempts).toBe(2); // 30 is INCLUSIVE (<= FLOOD_WAIT_RETRY_MAX)
-
-    await expect(
-      sendWithFloodRetry(
+  test("tst_tgts_flood_003 the former 30s boundary never grants a helper retry", async () => {
+    for (const seconds of [30, 31]) {
+      let attempts = 0;
+      const slept: number[] = [];
+      await expect(sendWithFloodRetry(
         async () => {
-          throw floodErr(31);
+          attempts += 1;
+          if (attempts === 1) throw floodErr(seconds);
+          return "unexpected resend";
         },
-        async () => {},
-      ),
-    ).rejects.toThrow(`${RATE_LIMITED_PREFIX}31`);
+        async (seconds): Promise<void> => { slept.push(seconds); },
+      )).rejects.toThrow(`${RATE_LIMITED_PREFIX}${String(seconds)}`);
+      expect(attempts).toBe(1);
+      expect(slept).toEqual([]);
+    }
   });
 
   // Twin of tst_src_tg_022.
@@ -484,18 +494,41 @@ describe("sendWithFloodRetry", () => {
     expect(slept).toBe(false); // must NOT sleep in the connector
   });
 
-  test("tst_tgts_flood_005 a failing retry surfaces the retry's error; non-flood propagates", async () => {
-    // The retry's own error is what the caller sees.
-    let n = 0;
-    await expect(
-      sendWithFloodRetry(
-        async () => {
-          n += 1;
-          throw n === 1 ? floodErr(5) : rpcErr(401, "AUTH_KEY_UNREGISTERED");
-        },
-        async () => {},
-      ),
-    ).rejects.toThrow("AUTH_KEY_UNREGISTERED");
+  /** @test-id: tst_tgts_flood_005
+   * @scenario: scn_tgflood_002
+   * @covers: TGFLOOD_005; normalized refusals preserve cause, hold and remaining wait
+   * @deterministic: yes
+   * @fixtures: real account admission, synthetic remote error and monotonic clock
+   */
+  test("tst_tgts_flood_005 local waits retain their original cause and deadline; non-flood propagates", async () => {
+    let now = 0;
+    const guard = new AccountAdmission("action-test", {
+      now: (): number => now,
+      schedule: (): (() => void) => { throw new Error("No queued timer expected during a hold"); },
+    }, (): void => {});
+    const remote = floodErr(4);
+    const first = guard.observe(undefined, remote);
+    const slept: number[] = [];
+    const preserved = await sendWithFloodRetry(async (): Promise<never> => { throw first; },
+      async (seconds): Promise<void> => { slept.push(seconds); },
+    ).catch((error: unknown): unknown => error);
+    expect(preserved).toBe(first);
+    for (const elapsed of [1000, 3000, 3999]) {
+      now = elapsed;
+      let attempts = 0;
+      const result = await sendWithFloodRetry(async (): Promise<void> => {
+        attempts++;
+        guard.enqueue({ request: { className: "messages.SendMessage" }, reject: (): void => {} }, (): void => {});
+      }, async (seconds): Promise<void> => { slept.push(seconds); }).catch((error: unknown): unknown => error);
+      expect(attempts).toBe(1);
+      expect(result instanceof Error ? result.cause : undefined).toBe(remote);
+      expect(floodWaitSecs(result)).toBe(Math.ceil((4000 - elapsed) / 1000));
+      expect(guard.holdUntil).toBe(4000);
+      expect(guard.remoteFloods).toBe(1);
+    }
+    expect(guard.localRefusals).toBe(3);
+    expect(slept).toEqual([]);
+    guard.stop();
 
     // A non-flood error is propagated unchanged, with no retry.
     let calls = 0;

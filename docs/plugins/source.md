@@ -129,7 +129,35 @@ throwing on an unknown surface.
   `meta` carries host-injected credentials (see the Secrets section); `raw` is the verbatim call
   arguments for surface-specific extras (e.g. a calendar's `time_min`/`time_max`);
   `cursor` is whatever you returned last time.
-- `FetchResult` = `{ envelopes, nextCursor, hasMore, total?, discovered? }`.
+- `FetchResult` = `{ envelopes, nextCursor, hasMore, traversed? }`. The page carries
+  no counters: the host counts what the Graph stamped and reads the plan from the
+  module's receipt.
+
+**What a page states about progress.** The host keeps, per scope (a Telegram
+chat, a mailbox, a calendar window), the id ranges it still lacks. A source
+whose item ids are integers states, in `traversed: { "<scopeId>": [from, to] }`,
+the inclusive range each page read of each scope — Telegram's bootstrap page
+states the newest fifty of a chat as `[oldest, top]`, or `[1, top]` when the
+answer was the whole history; an empty or failed read states nothing, so the
+host keeps asking. A source whose ids are not integers (Gmail, contacts,
+events, posts) states nothing: its bootstrap walks the whole set.
+
+A scope envelope carries the count of its items where the provider counts
+them — a Telegram chat's `message_count`, and a first-page envelope for the
+whole scope where the provider counts only that: Gmail's
+`{ entity_type: "mailbox", messages_total, skipped }` (SPAM and TRASH are what
+the list leaves out), contacts' `{ entity_type: "list", total_people }`, the
+calendar's `{ entity_type: "calendar", events_total }` from one ids-only pass
+over the window, an X profile's `posts_total`/`posts_skipped` (the recent ten of
+what X counts). A page that leaves items out (no identity, a failed conversion)
+states how many on the same envelope (`skipped`), so what the plan skips meets
+the total. A source states a count wherever the provider gives one — an
+enumeration pass to state it is always worth its cost — and nothing where it
+does not.
+
+A live push (`notifications/magnis/envelope`) carries `position:
+{ scope_id, id }` beside `payload` and `remote_id`: where the item sits in its
+scope, so the host trims that scope's open range by it.
 
 **The envelope** is the unit you emit:
 

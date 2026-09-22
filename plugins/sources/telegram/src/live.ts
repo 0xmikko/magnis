@@ -1,41 +1,51 @@
-// Live gramjs glue — the ONLY module that imports `telegram` (gramjs). Everything
-// else in this connector is pure and unit-tested with in-memory fakes, mirroring
-// the Rust split where `commands.rs` is generic over the `DialogPager` seam.
-//
-// Live mode is BEST-EFFORT (as the Rust connector states): the fully-tested paths
-// are fixture mode + the injected seams. The gramjs wiring here mirrors
-// plugins/sources/telegram/src/client.rs but is exercised only against real
-// Telegram.
+// GramJS Source glue. Integration fixtures keep these SDK/client paths real
+// and replace only MTProto transport, synthetic session data and clock I/O.
 
+import { createWriteStream } from "node:fs";
 import { mkdir, stat } from "node:fs/promises";
 import { dirname } from "node:path";
+import { finished } from "node:stream/promises";
 import bigInt from "big-integer";
-import { Api, TelegramClient } from "telegram";
+import { Api, TelegramClient, utils } from "telegram";
 import { StringSession } from "telegram/sessions";
 import { EditedMessage } from "telegram/events/EditedMessage";
 import { NewMessage } from "telegram/events/NewMessage";
+import { Raw } from "telegram/events/Raw";
+import type { TelegramClientParams } from "telegram/client/telegramBaseClient";
+import { AccountAdmission } from "./request-admission";
+import type { AdmissionClock, AdmissionEvent } from "./request-admission";
 import type {
   DialogOffset,
   DialogPage,
   DialogPager,
   EntityLike,
   MessageLike,
+  MessagePage,
+  PendingDialog,
   PagedDialog,
   RawDialogLike,
   TgCreds,
 } from "./client";
 import {
   BOOTSTRAP_MESSAGES_PER_CHAT,
+  TELEGRAM_HISTORY_PAGE_SIZE,
+  SOURCE_PAGE_HISTORY_LIMIT,
+  SOURCE_PAGE_BUDGET_MS,
+  remainingPageBudget,
+  floodWaitSecs,
   buildDialogMeta,
   chatToIntermediate,
   messageToIntermediate,
   MTPROTO_REQUEST_TIMEOUT_MS,
+  MtprotoTimeoutError,
   offsetPeerFromEntity,
   resolveHydratedMessages,
   toNum,
   withTimeout,
 } from "./client";
 import type { CatchupDialog, TgOps } from "./surfaces/telegram/commands";
+import { BOOTSTRAP_BATCH_DIALOGS } from "./surfaces/telegram/commands";
+import { toRfc3339Utc } from "./surfaces/telegram/envelope";
 
 /** Client init params — byte-identical to the Rust `InitParams`. */
 const INIT_PARAMS = {
@@ -58,12 +68,8 @@ const INIT_PARAMS = {
  * - `retryDelay: 1000`     ms between reconnect attempts.
  * - `autoReconnect: true`  reconnect the transport on drop instead of dying
  *                          silently mid-run (gramjs default, pinned explicit).
- * - `floodSleepThreshold`  floods <= 30s are auto-slept by gramjs (fine); a
- *                          LONGER flood is THROWN as FloodWaitError so the
- *                          connector surfaces it as a typed -32002 rate-limit
- *                          (see dispatch.classifyToolError) instead of the host
- *                          silently blocking for minutes. Matches
- *                          FLOOD_WAIT_RETRY_MAX. */
+ * - `floodSleepThreshold`  zero: the shared account fence owns every wait,
+ *                          including short waits and SDK retries. */
 const CLIENT_OPTIONS = {
   ...INIT_PARAMS,
   timeout: 60,
@@ -71,8 +77,22 @@ const CLIENT_OPTIONS = {
   connectionRetries: 5,
   retryDelay: 1000,
   autoReconnect: true,
-  floodSleepThreshold: 30,
+  floodSleepThreshold: 0,
 } as const;
+
+type ClientTransportOptions = Pick<TelegramClientParams, "connection" | "networkSocket" | "baseLogger">;
+
+/** @tested-by: tst_src_tgflood_002 — install admission before any SDK connect. */
+export function createTelegramClient(session: StringSession, apiId: number, apiHash: string,
+  admission: AccountAdmission, transport: ClientTransportOptions = {}): TelegramClient {
+  const client = new TelegramClient(session, apiId, apiHash, { ...CLIENT_OPTIONS, ...transport, rpcAdmission: admission });
+  if (client.rpcAdmissionRevision !== 1 || client._rpcAdmission !== admission) {
+    throw new Error("Telegram SDK admission hook revision 1 is required before connecting");
+  }
+  return client;
+}
+
+const authAdmission = new AccountAdmission("auth-process");
 
 // ── auth-flow seams (auth.ts) ──────────────────────────────────────────────
 
@@ -150,44 +170,106 @@ function wrapAuthClient(client: TelegramClient): AuthClientLike {
   };
 }
 
-/** Production factory: builds + connects a real gramjs client. */
-export const defaultAuthClientFactory: AuthClientFactory = {
-  async connectFresh(apiId, apiHash) {
-    const client = new TelegramClient(new StringSession(""), apiId, apiHash, {
-      ...CLIENT_OPTIONS,
-    });
-    await client.connect();
+async function connectClient(client: TelegramClient): Promise<void> {
+  try { await client.connect(); }
+  catch (error) {
+    await client.destroy();
+    throw error;
+  }
+}
+
+/** Builds real clients; an auth process retains one provisional owner. */
+export function createAuthClientFactory(admission: AccountAdmission, transport: ClientTransportOptions = {}): AuthClientFactory {
+  return {
+  async connectFresh(apiId, apiHash): Promise<AuthClientLike> {
+    const client = createTelegramClient(new StringSession(""), apiId, apiHash, admission, transport);
+    await connectClient(client);
     return wrapAuthClient(client);
   },
-  async connectWithSession(apiId, apiHash, session) {
-    const client = new TelegramClient(new StringSession(session), apiId, apiHash, {
-      ...CLIENT_OPTIONS,
-    });
-    await client.connect();
+  async connectWithSession(apiId, apiHash, session): Promise<AuthClientLike> {
+    const client = createTelegramClient(new StringSession(session), apiId, apiHash, admission, transport);
+    await connectClient(client);
     return wrapAuthClient(client);
   },
-};
+  };
+}
+
+export const defaultAuthClientFactory: AuthClientFactory = createAuthClientFactory(authAdmission);
 
 // ── live client (fetch / execute / listen) ─────────────────────────────────
+
+/** A provider-dated transition from membership to no membership. */
+export interface MembershipEndUpdate {
+  readonly kind: "membership_end";
+  readonly chatId: number;
+  readonly telegramUserId: number;
+  readonly validUntil: string;
+}
+
+export type LiveUpdate = MessageLike | MembershipEndUpdate;
+
+function positiveTelegramId(value: unknown, field: string): number {
+  const id = toNum(value);
+  if (!Number.isSafeInteger(id) || id <= 0) {
+    throw new Error(`Telegram participant update requires a positive ${field}`);
+  }
+  return id;
+}
+
+function telegramDate(value: unknown): Date {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
+    throw new Error("Telegram participant update requires a valid date");
+  }
+  return new Date(value * 1000);
+}
+
+function channelParticipantIsMember(participant: Api.TypeChannelParticipant | undefined): boolean {
+  if (participant === undefined || participant instanceof Api.ChannelParticipantLeft) return false;
+  if (participant instanceof Api.ChannelParticipantBanned) {
+    return participant.left !== true && participant.bannedRights.viewMessages !== true;
+  }
+  return true;
+}
+
+/** @tested-by: tst_src_tg_033 */
+function membershipEndOf(update: Api.UpdateChatParticipant | Api.UpdateChannelParticipant): MembershipEndUpdate | null {
+  if (update instanceof Api.UpdateChatParticipant) {
+    if (update.prevParticipant === undefined || update.newParticipant !== undefined) return null;
+    return {
+      kind: "membership_end",
+      chatId: positiveTelegramId(update.chatId, "chat_id"),
+      telegramUserId: positiveTelegramId(update.userId, "user_id"),
+      validUntil: toRfc3339Utc(telegramDate(update.date)),
+    };
+  }
+  if (!channelParticipantIsMember(update.prevParticipant) || channelParticipantIsMember(update.newParticipant)) {
+    return null;
+  }
+  return {
+    kind: "membership_end",
+    chatId: positiveTelegramId(update.channelId, "channel_id"),
+    telegramUserId: positiveTelegramId(update.userId, "user_id"),
+    validUntil: toRfc3339Utc(telegramDate(update.date)),
+  };
+}
 
 /** A connected gramjs client + a peer cache for resolving chat ids. */
 export class TgClient implements TgOps {
   private readonly peerCache = new Map<number, EntityLike>();
+  private discoveryOffset: DialogOffset | null = null;
+  private discoveryFinished = false;
+  private discoveryPage: Promise<void> | undefined;
 
   constructor(readonly client: TelegramClient) {}
 
   /** Connect from the injected credentials. The session must already be
    * authorized (a gramjs StringSession minted by `magnis.auth.*`). */
-  static async connect(creds: TgCreds): Promise<TgClient> {
-    const client = new TelegramClient(
-      new StringSession(creds.session),
-      creds.api_id,
-      creds.api_hash,
-      { ...CLIENT_OPTIONS },
-    );
+  static async connect(creds: TgCreds, admission: AccountAdmission, transport: ClientTransportOptions = {}): Promise<TgClient> {
+    const client = createTelegramClient(new StringSession(creds.session), creds.api_id, creds.api_hash, admission, transport);
     try {
-      await client.connect();
+      await connectClient(client);
     } catch (e) {
+      if (floodWaitSecs(e) !== undefined) throw e;
       throw new Error(`failed to connect to Telegram: ${String(e)}`, { cause: e });
     }
     return new TgClient(client);
@@ -197,22 +279,38 @@ export class TgClient implements TgOps {
     this.peerCache.set(chatId, entity);
   }
 
-  async resolvePeer(chatId: number): Promise<unknown> {
-    const cached = this.peerCache.get(chatId);
-    if (cached !== undefined) return cached;
-    const dialogs = await withTimeout(
-      this.client.getDialogs({}),
-      MTPROTO_REQUEST_TIMEOUT_MS,
-      "getDialogs(resolvePeer)",
-    );
-    for (const dialog of dialogs) {
-      const entity = dialog.entity as EntityLike | undefined;
-      if (entity === undefined) continue;
-      const id = toNum(entity.id);
-      this.peerCache.set(id, entity);
-      if (id === chatId) return entity;
+  /** One advancing page belongs to the client, not to an individual waiter. */
+  private advanceDiscovery(): Promise<void> {
+    this.discoveryPage ??= LiveDialogPager.discoverPage(this, this.discoveryOffset, BOOTSTRAP_BATCH_DIALOGS)
+      .then((page): void => {
+        this.discoveryOffset = page.next_offset;
+        this.discoveryFinished = page.next_offset === null;
+      }).finally((): void => { this.discoveryPage = undefined; });
+    return this.discoveryPage;
+  }
+
+  // @tested-by: tst_src_tgflood_003
+  async resolvePeer(chatId: number, signal?: AbortSignal): Promise<unknown> {
+    for (;;) {
+      signal?.throwIfAborted();
+      const cached = this.peerCache.get(chatId);
+      if (cached !== undefined) return cached;
+      if (this.discoveryFinished) throw new Error(`chat ${String(chatId)} not found in any dialog`);
+      const page = this.advanceDiscovery();
+      if (!signal) { await page; continue; }
+      await new Promise<void>((resolve, reject) => {
+        const aborted = (): void => {
+          const reason: unknown = signal.reason;
+          reject(reason instanceof Error ? reason : new Error("Peer discovery cancelled", { cause: reason }));
+        };
+        signal.addEventListener("abort", aborted, { once: true });
+        void page.then(() => { signal.removeEventListener("abort", aborted); resolve(); },
+          (error: unknown) => {
+            signal.removeEventListener("abort", aborted);
+            reject(error instanceof Error ? error : new Error("Peer discovery failed", { cause: error }));
+          });
+      });
     }
-    throw new Error(`chat ${String(chatId)} not found in any dialog`);
   }
 
   async listDialogs(): Promise<CatchupDialog[]> {
@@ -239,13 +337,39 @@ export class TgClient implements TgOps {
   async getMessages(
     peer: unknown,
     params: { limit?: number; offsetId?: number; ids?: number[] },
-  ): Promise<MessageLike[]> {
-    const msgs = await withTimeout(
-      this.client.getMessages(peer as never, params),
-      MTPROTO_REQUEST_TIMEOUT_MS,
-      "getMessages",
-    );
-    return msgs as unknown as MessageLike[];
+    timeoutMs = MTPROTO_REQUEST_TIMEOUT_MS,
+  ): Promise<MessagePage> {
+    if (timeoutMs <= 0) throw new MtprotoTimeoutError("getMessages", timeoutMs);
+    const read = async (): Promise<MessagePage> => {
+      const input = peer !== null && typeof peer === "object" && "ty" in peer
+        ? toInputPeer(peer as DialogOffset["offset_peer"]) : await this.client.getInputEntity(peer as never);
+      if (params.ids !== undefined) return await this.client.getMessages(input, params) as unknown as MessagePage;
+      // @tested-by: tst_src_tgfast_004 — TGFAST_002 reads one provider page and
+      // preserves count provenance; SDK iterMessages invents total=page.length.
+      const result = await this.client.invoke(new Api.messages.GetHistory({ peer: input,
+        offsetId: params.offsetId ?? 0, offsetDate: 0, addOffset: 0,
+        limit: Math.min(params.limit ?? BOOTSTRAP_MESSAGES_PER_CHAT, TELEGRAM_HISTORY_PAGE_SIZE), maxId: 0, minId: 0, hash: bigInt(0) }));
+      if (result instanceof Api.messages.MessagesNotModified) throw new Error("GetHistory returned NotModified with hash=0");
+      if ("count" in result && (!Number.isSafeInteger(result.count) || result.count < 0)) {
+        throw new Error("GetHistory returned an invalid message count");
+      }
+      const entities = new Map([...result.users, ...result.chats].map((entity) => [utils.getPeerId(entity), entity]));
+      const messages = result.messages as unknown as MessagePage;
+      for (const message of result.messages) {
+        if (message instanceof Api.Message || message instanceof Api.MessageService) {
+          message._finishInit(this.client, entities, input);
+        }
+      }
+      if ("count" in result) messages.total = result.count;
+      // @tested-by: tst_src_tgfast_005 — messages.Messages carries no count because
+      // the answer IS the whole history; for a first page its length is the exact
+      // count. For an offset page it is only the rest, so no count is invented.
+      else if (result instanceof Api.messages.Messages && (params.offsetId ?? 0) === 0) {
+        messages.total = result.messages.length;
+      }
+      return messages;
+    };
+    return await withTimeout(read(), Math.min(timeoutMs, MTPROTO_REQUEST_TIMEOUT_MS), "getMessages");
   }
 
   async sendMessage(
@@ -268,23 +392,47 @@ export class TgClient implements TgOps {
     // CLIENT_OPTIONS, and downloads are host-scheduled discrete ops (a stall
     // fails that one file, not the sync). See the report's caveat.
     await mkdir(dirname(dest), { recursive: true });
-    const out = await this.client.downloadMedia(message as never, { outputFile: dest });
-    if (out === undefined) {
-      throw new Error(`download_file: no downloadable media in message ${String(message.id)}`);
+    // @tested-by: tst_src_tg_029, tst_src_tg_030, tst_src_tg_031
+    // GramJS closes its writer without awaiting flushed bytes. Observe both
+    // promises immediately so a stream error cannot escape during provider I/O.
+    const output = createWriteStream(dest);
+    const completed = finished(output, { cleanup: true });
+    try {
+      await Promise.all([
+        completed,
+        this.client.downloadMedia(message as never, { outputFile: output }).then((out) => {
+          if (out === undefined) {
+            throw new Error(`download_file: no downloadable media in message ${String(message.id)}`);
+          }
+        }),
+      ]);
+      return (await stat(dest)).size;
+    } catch (error: unknown) {
+      output.destroy();
+      // Drain stream teardown without replacing the original provider/write error.
+      await completed.catch(() => {
+        // The original provider/write failure remains the command's error.
+      });
+      throw error;
     }
-    return (await stat(dest)).size;
   }
 
-  /** Stream live updates as `(payload, remote_id)` pairs via `onMessage`. v1
-   * handles NEW + EDITED messages (both → the same message payload + `tg:msg:`
-   * remote_id); other update kinds are dropped. */
-  addLiveHandler(handler: (message: MessageLike) => void | Promise<void>): void {
+  /** Stream live messages and provider-dated membership ends. */
+  addLiveHandler(handler: (update: LiveUpdate) => void | Promise<void>): void {
     const cb = (event: { message?: unknown }): void => {
       const msg = event.message as MessageLike | undefined;
-      if (msg !== undefined) void handler(msg);
+      if (msg !== undefined) {
+        if (msg.chat) this.cachePeer(toNum(msg.chat.id), msg.chat);
+        void handler(msg);
+      }
     };
     this.client.addEventHandler(cb, new NewMessage({}));
     this.client.addEventHandler(cb, new EditedMessage({}));
+    this.client.addEventHandler((update: Api.TypeUpdate): void => {
+      if (!(update instanceof Api.UpdateChatParticipant) && !(update instanceof Api.UpdateChannelParticipant)) return;
+      const ended = membershipEndOf(update);
+      if (ended !== null) void handler(ended);
+    }, new Raw({ types: [Api.UpdateChatParticipant, Api.UpdateChannelParticipant] }));
   }
 }
 
@@ -327,7 +475,9 @@ function entityKey(entity: EntityLike): string {
  * Twin of the Rust `OffsetPeer::to_input_peer` (which reconstructs a PackedChat):
  * "user"→InputPeerUser, "channel"→InputPeerChannel (Broadcast), _→InputPeerChat. */
 function toInputPeer(peer: DialogOffset["offset_peer"]): Api.TypeInputPeer {
-  const hash = bigInt(peer.access_hash ?? 0);
+  // @tested-by: tst_src_tgfast_002 — TGFAST_002 preserves Saved Messages in JSON.
+  if (peer.ty === "user" && peer.self === true) return new Api.InputPeerSelf();
+  const hash = bigInt(String(peer.access_hash ?? 0));
   switch (peer.ty) {
     case "user":
       return new Api.InputPeerUser({ userId: bigInt(peer.id), accessHash: hash });
@@ -346,7 +496,13 @@ export class LiveDialogPager implements DialogPager {
     private readonly accountId: string,
   ) {}
 
-  async dialogPage(offset: DialogOffset | null, limit: number): Promise<DialogPage> {
+  /** Shared discovery decoder; peer lookups do not need history hydration. */
+  static async discoverPage(tg: TgClient, offset: DialogOffset | null, limit: number,
+    timeoutMs = MTPROTO_REQUEST_TIMEOUT_MS): Promise<{
+    dialogs: CatchupDialog[];
+    next_offset: DialogOffset | null;
+    total: number;
+  }> {
     // Pinned dialogs are returned at the head of the FIRST page only;
     // excludePinned after page 1 prevents Telegram re-returning them on every
     // page (dup chats / count).
@@ -361,8 +517,8 @@ export class LiveDialogPager implements DialogPager {
     });
 
     const res = await withTimeout(
-      this.tg.client.invoke(request),
-      MTPROTO_REQUEST_TIMEOUT_MS,
+      tg.client.invoke(request),
+      Math.min(timeoutMs, MTPROTO_REQUEST_TIMEOUT_MS),
       "messages.getDialogs",
     );
 
@@ -370,7 +526,7 @@ export class LiveDialogPager implements DialogPager {
     // (messages.dialogsSlice.count); the complete (non-slice) Dialogs variant has
     // no count, so the full set IS its own total.
     let rawDialogs: RawDialogLike[];
-    let rawMessages: { id?: number; date?: number }[];
+    let rawMessages: { id?: number; date?: number; peerId?: unknown }[];
     let users: EntityLike[];
     let chats: EntityLike[];
     let isSlice: boolean;
@@ -397,43 +553,23 @@ export class LiveDialogPager implements DialogPager {
     const chatMap = new Map<string, EntityLike>();
     for (const e of [...users, ...chats]) chatMap.set(entityKey(e), e);
 
-    // (message id → date) for advancing the offset the way Telegram expects.
-    const msgDate = new Map<number, number>();
+    // @tested-by: tst_src_tgfast_006 — channel message IDs are only peer-local.
+    const msgDate = new Map<string, number>();
     for (const m of rawMessages) {
-      if (typeof m.id === "number" && typeof m.date === "number") msgDate.set(m.id, m.date);
+      const key = peerKey(m.peerId);
+      if (key !== undefined && typeof m.id === "number" && typeof m.date === "number") {
+        msgDate.set(`${key}:${String(m.id)}`, m.date);
+      }
     }
 
-    const dialogs: PagedDialog[] = [];
+    const dialogs: CatchupDialog[] = [];
     for (const raw of rawDialogs) {
       const key = peerKey(raw.peer);
       const entity = key === undefined ? undefined : chatMap.get(key);
       if (entity === undefined) continue;
       const chatId = toNum(entity.id);
-      this.tg.cachePeer(chatId, entity);
-
-      const meta = buildDialogMeta(raw, raw.pinned === true, 0);
-      const tgChat = chatToIntermediate(entity, meta);
-
-      // Hydrate the chat's newest messages — GetDialogs carries only each
-      // dialog's single top message, not the snapshot depth. A single chat's
-      // getHistory failure (e.g. server RPC_CALL_FAIL / 500) must NOT abort the
-      // whole bootstrap: fetch into a settled result, then let
-      // resolveHydratedMessages skip transient failures (chat still discovered)
-      // and propagate only fatal (auth / flood-wait) ones.
-      let fetched: { ok: true; messages: ReturnType<typeof messageToIntermediate>[] } | { ok: false; error: unknown };
-      try {
-        const msgs = await this.tg.getMessages(entity, {
-          limit: BOOTSTRAP_MESSAGES_PER_CHAT,
-        });
-        fetched = {
-          ok: true,
-          messages: msgs.map((m) => messageToIntermediate(m, this.accountId, chatId)),
-        };
-      } catch (error) {
-        fetched = { ok: false, error };
-      }
-      const messages = resolveHydratedMessages(chatId, fetched);
-      dialogs.push({ chat: tgChat, messages });
+      tg.cachePeer(chatId, entity);
+      dialogs.push({ entity, raw, pinned: raw.pinned === true, peer: entity });
     }
 
     // Exhausted when Telegram returned the complete (non-slice) set or a short
@@ -446,7 +582,8 @@ export class LiveDialogPager implements DialogPager {
         const d = rawDialogs[i];
         if (d === undefined || d.className === "DialogFolder") continue;
         const top = d.topMessage;
-        const date = top === undefined ? undefined : msgDate.get(top);
+        const key = peerKey(d.peer);
+        const date = top === undefined || key === undefined ? undefined : msgDate.get(`${key}:${String(top)}`);
         if (date !== undefined && top !== undefined) {
           offsetDate = date;
           offsetId = top;
@@ -468,6 +605,58 @@ export class LiveDialogPager implements DialogPager {
 
     return { dialogs, next_offset: nextOffset, total: sliceCount };
   }
+
+  async dialogPage(offset: DialogOffset | null, limit: number,
+    options: { hydrate?: boolean; timeoutMs?: number } = {}): Promise<DialogPage> {
+    const deadline = performance.now() + Math.min(options.timeoutMs ?? SOURCE_PAGE_BUDGET_MS, SOURCE_PAGE_BUDGET_MS);
+    remainingPageBudget(deadline);
+    let continuation = offset?.hydration;
+    if (continuation === undefined) {
+      const page = await LiveDialogPager.discoverPage(this.tg, offset, limit, remainingPageBudget(deadline));
+      continuation = { next_offset: page.next_offset, total: page.total,
+        pending: page.dialogs.map(({ entity, raw, pinned }): PendingDialog => ({
+          chat: chatToIntermediate(entity, buildDialogMeta(raw, pinned, 0)), peer: offsetPeerFromEntity(entity),
+        })) };
+    }
+    if (!Array.isArray(continuation.pending) || continuation.pending.some((item) => !item.peer)) {
+      throw new Error("Telegram hydration continuation requires pending chats and peers");
+    }
+    if (options.hydrate === false) return {
+      dialogs: continuation.pending.map((item) => ({ ...item, chat: { ...item.chat }, messages: [] })),
+      next_offset: continuation.next_offset, total: continuation.total,
+    };
+    const dialogs: PagedDialog[] = [];
+    // @tested-by: tst_src_tgfast_002 — TGFAST_002 retains unhydrated pins and peers.
+    for (const item of continuation.pending) {
+      if (dialogs.length >= SOURCE_PAGE_HISTORY_LIMIT || (dialogs.length > 0 && performance.now() >= deadline)) break;
+      const chat = { ...item.chat };
+      const chatId = chat.chat_id;
+      // GetDialogs carries only the top message. An uncertain timed-out
+      // snapshot cannot certify a successful page or advance its cursor.
+      let fetched: { ok: true; messages: ReturnType<typeof messageToIntermediate>[] } | { ok: false; error: unknown };
+      try {
+        const msgs = await this.tg.getMessages(item.peer, { limit: BOOTSTRAP_MESSAGES_PER_CHAT });
+        // The same answer states the chat's exact message count; the chat keeps it.
+        if (msgs.total !== undefined) chat.message_count = msgs.total;
+        fetched = { ok: true, messages: msgs.map((m) => messageToIntermediate(m, this.accountId, chatId)) };
+      } catch (error) {
+        if (error instanceof MtprotoTimeoutError) throw error;
+        fetched = { ok: false, error };
+      }
+      dialogs.push({ chat, messages: resolveHydratedMessages(chatId, fetched) });
+    }
+    const pending = continuation.pending.slice(dialogs.length);
+    const firstPeer = pending[0]?.peer;
+    if (pending.length > 0 && firstPeer === undefined) throw new Error("Telegram pending hydration is missing its peer");
+    const next_offset: DialogOffset | null = firstPeer === undefined ? continuation.next_offset : {
+      offset_date: offset?.offset_date ?? 0, offset_id: offset?.offset_id ?? 0,
+      // This wrapper is never a provider offset: hydration retains the actual
+      // next_offset separately, including null for a completely discovered page.
+      offset_peer: offset?.offset_peer ?? firstPeer,
+      hydration: { ...continuation, pending },
+    };
+    return { dialogs, next_offset, total: continuation.total };
+  }
 }
 
 // ── session pool ───────────────────────────────────────────────────────────
@@ -485,6 +674,23 @@ export class LiveDialogPager implements DialogPager {
  * scale (10s of accounts per process). */
 export class SessionPool {
   private readonly sessions = new Map<string, TgClient>();
+  private readonly admissions = new Map<string, AccountAdmission>();
+  constructor(private readonly options: {
+    clock?: AdmissionClock;
+    diagnostics?: (event: AdmissionEvent) => void;
+    transport?: ClientTransportOptions;
+  } = {}) {}
+
+  /** Retained on eviction: a new client is not a new account budget. */
+  admissionFor(accountId: string): AccountAdmission {
+    if (accountId === "") throw new Error("Missing account admission owner");
+    let admission = this.admissions.get(accountId);
+    if (!admission) {
+      admission = new AccountAdmission(accountId, this.options.clock, this.options.diagnostics);
+      this.admissions.set(accountId, admission);
+    }
+    return admission;
+  }
   /** Promise chain acting as an async mutex over `sessions`. */
   private lock: Promise<unknown> = Promise.resolve();
 
@@ -507,8 +713,9 @@ export class SessionPool {
       if (existing !== undefined) return existing;
       let client: TgClient;
       try {
-        client = await TgClient.connect(creds);
+        client = await TgClient.connect(creds, this.admissionFor(accountId), this.options.transport);
       } catch (e) {
+        if (floodWaitSecs(e) !== undefined) throw e;
         throw new Error(`connect telegram session '${accountId}': ${String(e)}`, { cause: e });
       }
       this.sessions.set(accountId, client);
@@ -517,7 +724,12 @@ export class SessionPool {
   }
 
   evict(accountId: string): Promise<boolean> {
-    return this.withLock(() => Promise.resolve(this.sessions.delete(accountId)));
+    return this.withLock(async () => {
+      const client = this.sessions.get(accountId);
+      if (!client) return false;
+      await client.client.destroy();
+      return this.sessions.delete(accountId);
+    });
   }
 
   size(): number {

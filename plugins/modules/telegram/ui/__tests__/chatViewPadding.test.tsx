@@ -14,29 +14,50 @@ import { describe, expect, it, vi } from "vitest";
 import type { TelegramConversation } from "../types";
 
 // ── Mocks ────────────────────────────────────────────────────────
+const virtualCallbacks = vi.hoisted<{
+  atTop: ((atTop: boolean) => void) | undefined;
+  onChange: (() => unknown) | undefined;
+}>(() => ({ atTop: undefined, onChange: undefined }));
 
 // Mock react-virtuoso: render items inline so we can inspect DOM
-vi.mock("react-virtuoso", () => ({
+vi.mock("react-virtuoso", async () => {
+  const { forwardRef } = await vi.importActual<typeof import("react")>("react");
+  return {
   // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
-  Virtuoso: ({
+  Virtuoso: forwardRef(function MockVirtuoso({
     data,
     itemContent,
     className,
+    firstItemIndex,
+    computeItemKey,
+    atTopStateChange,
+    scrollIntoViewOnChange,
   }: {
     data: readonly unknown[];
     itemContent: (index: number, item: unknown) => React.ReactNode;
     className?: string;
-  }) => (
+    firstItemIndex?: number;
+    computeItemKey?: (index: number, item: unknown) => React.Key;
+    atTopStateChange?: (atTop: boolean) => void;
+    scrollIntoViewOnChange?: () => unknown;
+  }, _ref) {
+    virtualCallbacks.atTop = atTopStateChange;
+    virtualCallbacks.onChange = scrollIntoViewOnChange;
+    return (
     <div data-testid="virtuoso-scroller" className={className}>
       {data.map((item, i) => (
         // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-        <div key={i} data-testid={`virtuoso-item-${i}`}>
+        <div key={i} data-testid={`virtuoso-item-${i}`}
+          data-absolute-index={firstItemIndex === undefined ? undefined : firstItemIndex + i}
+          data-item-key={computeItemKey?.(i, item)}>
           {itemContent(i, item)}
         </div>
       ))}
     </div>
-  ),
-}));
+    );
+  }),
+  };
+});
 
 // Mock telegram store
 vi.mock("../store", () => ({
@@ -125,6 +146,59 @@ const CONVERSATION: TelegramConversation = {
 // ── Test ─────────────────────────────────────────────────────────
 
 describe("TelegramChatView message padding", () => {
+  /**
+   * @test-id: tst_plg_tgui_scroll_anchor_001
+   * @scenario: scn_telegram_prepend_anchor_001
+   * @covers: TelegramChatView Virtuoso item identity and inverse paging
+   * @deterministic: yes; fixed messages and synchronous rerenders
+   * @fixtures: existing Virtuoso prop double, fifty older/current messages
+   */
+  it("tst_plg_tgui_scroll_anchor_001 retains absolute message identity across prepend plus live append and chat switches", async () => {
+    const { TelegramChatView } = await import("../TelegramChatView");
+    const messages = (from: number, count: number): TelegramConversation["messages"] =>
+      Array.from({ length: count }, (_, index) => ({
+        id: `message-${String(from + index)}`, direction: "in", text: "Fixed message",
+        time: "12:00", date: "2026-04-10",
+      }));
+    const current = messages(50, 50);
+    const renderChat = (items: TelegramConversation["messages"], chatId = "chat-1"): React.ReactNode => (
+      <TelegramChatView conversation={{ ...CONVERSATION, chatId, messages: items }} inputPlaceholder="Message..." hasMore onLoadMore={() => undefined} />
+    );
+    const view = render(renderChat(current));
+    const identity = (id: string): { index: number; key: string | undefined } => {
+      const item = view.container.querySelector(`#tg-msg-${id}`)?.parentElement;
+      if (!item) throw new Error("Expected rendered message fixture");
+      return { index: Number(item.dataset.absoluteIndex), key: item.dataset.itemKey };
+    };
+    const before = identity("message-50");
+    expect(before.index).toBeGreaterThan(50);
+    expect(before.key).toBe("message-50");
+    virtualCallbacks.atTop?.(true);
+    const prepended = [...messages(0, 50), ...current, ...messages(100, 1)];
+    view.rerender(renderChat(prepended));
+    expect(virtualCallbacks.onChange?.()).toMatchObject({ index: 50, align: "start", behavior: "auto" });
+    expect(virtualCallbacks.onChange?.()).toBe(false);
+    expect(identity("message-50")).toEqual(before);
+    expect(virtualCallbacks.onChange?.()).toBe(false);
+    const oldest = identity("message-0");
+    expect(oldest.index).toBe(before.index - 50);
+    view.rerender(renderChat([...prepended, ...messages(101, 1)]));
+    expect(identity("message-0")).toEqual(oldest);
+    expect(identity("message-50")).toEqual(before);
+    expect(virtualCallbacks.onChange?.()).toBe(false);
+    virtualCallbacks.atTop?.(true);
+    virtualCallbacks.atTop?.(false);
+    view.rerender(renderChat([...messages(-50, 50), ...prepended, ...messages(101, 1)]));
+    expect(virtualCallbacks.onChange?.()).toBe(false);
+    const oldScroller = view.getByTestId("virtuoso-scroller");
+    virtualCallbacks.atTop?.(true);
+    view.rerender(renderChat(current, "chat-2"));
+    expect(virtualCallbacks.onChange?.()).toBe(false);
+    expect(view.getByTestId("virtuoso-scroller")).not.toBe(oldScroller);
+    expect(identity("message-50")).toEqual(before);
+    view.unmount();
+  });
+
   it("applies horizontal padding to each message item, not the scroller", async () => {
     // Dynamic import to ensure mocks are in place
     const { TelegramChatView } = await import("../TelegramChatView");
@@ -151,6 +225,9 @@ describe("TelegramChatView message padding", () => {
       const messageWrapper = item.firstElementChild as HTMLElement;
       expect(messageWrapper).toBeTruthy();
       expect(messageWrapper.className).toMatch(/\bpx-4\b/);
+      // Virtuoso measures each row's border box. Bubble margins must stay
+      // inside that box or every prepended row adds unmeasured scroll space.
+      expect(messageWrapper.className).toMatch(/\bflow-root\b/);
     }
   });
 });

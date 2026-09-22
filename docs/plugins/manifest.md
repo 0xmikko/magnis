@@ -79,6 +79,24 @@ Together they mean a package can only ever claim ids inside its own namespace:
 the id comes from the plugin id plus one file-name segment, so a foreign id is
 unforgeable by construction rather than by validation.
 
+### `[surfaces.<surface>]` — what the module ingests and reports
+
+```toml
+[surfaces.telegram]
+reconciliation = { mode = "none" }            # or { mode = "full_snapshot" }
+item = "telegram.message"                      # the surface's primary-item schema
+progress = { "telegram.chat" = "chats", "telegram.message" = "messages" }
+```
+
+`progress` names the schemas the surface reports progress on, with the names
+the Accounts panel prints, in the order it prints them. The host counts each
+declared schema in the Graph when it builds the surface's sync worker and reads
+the plan for it from the module's page receipts (see
+[module.md](./module.md) §9); a schema the module fills but does not declare is
+never printed. `reconciliation` is what the host runs at the end of a pass:
+`full_snapshot` calls the module's `__sync_complete__` with the pass so it can
+decay the scopes the pass did not restate; `none` runs nothing.
+
 ```jsonc
 // schemas/company.json — the only kind of schema file
 { "name": "Company",

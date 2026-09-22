@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Managed by 0_agents code-production. Do not edit in the consumer repository.
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+JOURNAL="$(git rev-parse --path-format=absolute --git-path plan-update-journal.json)"
+[ -f "$JOURNAL" ] || exit 0
+
+PLAN="$(bun -e 'const j = await Bun.file(process.argv[1]).json(); if (typeof j.plan !== "string") process.exit(2); console.log(j.plan)' "$JOURNAL")"
+bun "$ROOT/.agents/code-production/runtime/planctl.ts" clear-transaction "$PLAN" --commit HEAD

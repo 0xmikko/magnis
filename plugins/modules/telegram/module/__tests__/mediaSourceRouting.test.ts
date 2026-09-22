@@ -39,8 +39,11 @@ function ingestGraph(): G {
         dropped_keys: [],
       }),
     web_register: () => Promise.resolve("web-id"),
+    web_register_batch: (links: readonly unknown[]) => Promise.resolve(links.map(() => "web-id")),
     find_by_anchor: () => Promise.resolve(null),
+    find_by_anchors: (anchors) => Promise.resolve(anchors.map(() => null)),
     file_register: () => Promise.resolve("file-id"),
+    file_register_batch: (files: readonly unknown[]) => Promise.resolve(files.map(() => "file-id")),
     create_entity: () => Promise.resolve(entity("created-id", "")),
     delete_entity: () => Promise.resolve(),
   });
@@ -76,12 +79,15 @@ describe("tst_fe_tg_media_source_routing_001 — file.object source_module = env
 
     await mod.ingest({ envelopes: [mediaEnvelope("telegram-ts")] });
 
-    const fileRegister = graph.spies.file_register;
-    if (fileRegister === undefined) throw new Error("batch ingest: missing file_register spy");
+    const fileRegister = graph.spies.file_register_batch;
+    if (fileRegister === undefined) throw new Error("batch ingest: missing file_register_batch spy");
     expect(fileRegister).toHaveBeenCalledTimes(1);
     const callArgs = fileRegister.mock.calls[0];
     if (callArgs === undefined) throw new Error("batch ingest: no file_register call recorded");
-    const call = callArgs[0] as Record<string, unknown>;
+    // One call now carries the page's whole attachment list.
+    const batch = callArgs[0] as Record<string, unknown>[];
+    expect(batch).toHaveLength(1);
+    const call = batch[0] as Record<string, unknown>;
     expect(call.external_id).toBe("file:telegram:42:7");
     expect(call.source_module).toBe("telegram-ts");
     expect(call.source_surface).toBe("telegram");

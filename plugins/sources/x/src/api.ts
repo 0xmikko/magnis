@@ -34,7 +34,7 @@ export interface XUser {
   profile_image_url?: string;
   description?: string;
   verified?: boolean;
-  public_metrics?: { followers_count?: number };
+  public_metrics?: { followers_count?: number; tweet_count?: number };
 }
 
 export interface XTweet {

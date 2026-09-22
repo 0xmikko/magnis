@@ -15,6 +15,10 @@ export interface TelegramChatDetails {
   type?: string;
   username?: string;
   avatar_url?: string;
+  /** The operator's choice to index this chat's media; absent until set. */
+  is_indexed?: boolean;
+  /** The exact message count Telegram reported for the chat when it was last read. */
+  message_count?: number;
   member_count?: number;
   read_inbox_max_id?: number;
   read_outbox_max_id?: number;
@@ -210,7 +214,6 @@ export interface BatchSendParams {
 export interface BackfillParams {
   chat_id: number | string;
   before_message_id?: number;
-  limit?: number;
   account_id?: string;
 }
 

@@ -11,16 +11,23 @@ import type {
   DialogPager,
   EntityLike,
   MessageLike,
+  MessagePage,
   RawDialogLike,
 } from "../../client";
 import {
   buildDialogMeta,
+  MtprotoTimeoutError,
+  SOURCE_PAGE_BUDGET_BYTES,
+  SOURCE_PAGE_HISTORY_LIMIT,
+  SOURCE_PAGE_BUDGET_MS,
+  TELEGRAM_HISTORY_PAGE_SIZE,
+  remainingPageBudget,
   chatToIntermediate,
   messageToIntermediate,
   sendWithFloodRetry,
-  toNum,
+  withTimeout,
 } from "../../client";
-import { chatEnvelope, messageEnvelope, toRfc3339Utc } from "./envelope";
+import { chatEnvelope, messageEnvelope, toRfc3339Utc, type TgChat } from "./envelope";
 
 /** Page sizes, mirroring the Rust bootstrap/catch-up constants. One bootstrap
  * batch enumerates up to BOOTSTRAP_BATCH_DIALOGS dialogs, then checkpoints the
@@ -43,11 +50,12 @@ export interface TgOps {
   /** Walk ALL dialogs from the top (catch-up). */
   listDialogs(): Promise<CatchupDialog[]>;
   /** Resolve a chat id to an opaque peer handle. */
-  resolvePeer(chatId: number): Promise<unknown>;
+  resolvePeer(chatId: number, signal?: AbortSignal): Promise<unknown>;
   getMessages(
     peer: unknown,
     params: { limit?: number; offsetId?: number; ids?: number[] },
-  ): Promise<MessageLike[]>;
+    timeoutMs?: number,
+  ): Promise<MessagePage>;
   sendMessage(
     peer: unknown,
     params: { message: string; replyTo?: number },
@@ -64,9 +72,13 @@ function asObject(v: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
+/** Per chat, the inclusive id range one page read: what the host cuts out of
+ * the chat's gaps. A chat the page did not read states nothing. */
+export type TraversedRanges = Record<string, [number, number]>;
+
 /** Live `magnis.sync.fetch`. `direction = "backward"` (default) → Bootstrap
  * (present-to-past dialog walk); `"forward"` → CatchUp (messages newer than the
- * per-chat cursor). */
+ * per-chat cursor). The answer is `{ envelopes, nextCursor, hasMore, traversed }`. */
 export async function fetch(
   ops: TgOps,
   pager: DialogPager,
@@ -75,7 +87,7 @@ export async function fetch(
   cursor: unknown,
 ): Promise<Record<string, unknown>> {
   return direction === "forward"
-    ? await runCatchup(ops, accountId, cursor)
+    ? await runCatchup(ops, accountId, cursor, pager)
     : await runBootstrap(cursor, pager);
 }
 
@@ -108,6 +120,7 @@ export async function runBootstrap(
   const page = await pager.dialogPage(startOffset, BOOTSTRAP_BATCH_DIALOGS);
 
   const envelopes: Record<string, unknown>[] = [];
+  const traversed: TraversedRanges = {};
   for (const paged of page.dialogs) {
     // The LOOP owns pinned ordering so it stays monotonic across batch
     // boundaries (the pager leaves `pin_order` as a 0 placeholder).
@@ -121,20 +134,32 @@ export async function runBootstrap(
     envelopes.push(chatEnvelope(paged.chat));
 
     let highest = 0;
+    let oldest = 0;
     for (const m of paged.messages) {
       highest = Math.max(highest, m.message_id);
+      oldest = oldest === 0 ? m.message_id : Math.min(oldest, m.message_id);
       envelopes.push(messageEnvelope(m, "snapshot"));
     }
+    // What the page read of this chat: its newest messages down to the oldest
+    // of the page, and up to the dialog's top or past it when the chat grew
+    // since GetDialogs; the whole history from one when the answer was all of
+    // it (the count equals the page). An empty chat and a failed read state
+    // nothing — the host keeps asking for them.
+    // @tested-by: tst_tgts_boot_014
+    if (paged.messages.length > 0) {
+      const top = Math.max(paged.chat.top_message, highest);
+      traversed[String(paged.chat.chat_id)] = paged.chat.message_count === paged.messages.length ? [1, top] : [oldest, top];
+    }
     // Record EVERY enumerated chat (incl. 0-message → last_msg_id 0) so CatchUp
-    // later fills it; with offset paging it is enumerated exactly once.
-    cursorChats[String(paged.chat.chat_id)] = { last_msg_id: highest };
+    // later fills it; with offset paging it is enumerated exactly once. The
+    // exact count Telegram reported rides next to the watermark so a later
+    // walk restates the chat with it.
+    cursorChats[String(paged.chat.chat_id)] = paged.chat.message_count === undefined
+      ? { last_msg_id: highest }
+      : { last_msg_id: highest, message_count: paged.chat.message_count };
   }
 
   const hasMore = page.next_offset !== null;
-  // Progress: `total` is the server-side dialog count (passthrough); `discovered`
-  // is the CUMULATIVE count of enumerated dialogs = size of the cursor `chats`
-  // map AFTER this batch's inserts.
-  const discovered = Object.keys(cursorChats).length;
   const nextCursor =
     Object.keys(cursorChats).length === 0 && page.next_offset === null
       ? null
@@ -145,19 +170,16 @@ export async function runBootstrap(
           dialog_offset: page.next_offset,
         };
 
-  return {
-    envelopes,
-    nextCursor,
-    hasMore,
-    total: page.total,
-    discovered,
-  };
+  return { envelopes, nextCursor, hasMore, traversed };
 }
 
 interface CatchupProgress {
   readonly lastMessageId: number;
   readonly targetLastMessageId: number | undefined;
   readonly beforeMessageId: number | undefined;
+  /** The exact count Telegram last stated for the chat, carried through
+   * every forward walk; absent when no read ever stated one. */
+  readonly messageCount: number | undefined;
 }
 
 function catchupProgress(value: unknown): CatchupProgress {
@@ -174,6 +196,10 @@ function catchupProgress(value: unknown): CatchupProgress {
     typeof entry?.before_message_id === "number" && entry.before_message_id > 0
       ? entry.before_message_id
       : undefined;
+  const messageCount =
+    typeof entry?.message_count === "number" && Number.isSafeInteger(entry.message_count) && entry.message_count >= 0
+      ? entry.message_count
+      : undefined;
 
   if ((targetLastMessageId === undefined) !== (beforeMessageId === undefined)) {
     throw new Error("telegram CatchUp cursor has incomplete per-chat progress");
@@ -188,7 +214,7 @@ function catchupProgress(value: unknown): CatchupProgress {
   ) {
     throw new Error("telegram CatchUp cursor continuation is outside its committed gap");
   }
-  return { lastMessageId, targetLastMessageId, beforeMessageId };
+  return { lastMessageId, targetLastMessageId, beforeMessageId, messageCount };
 }
 
 function hasPendingCatchup(value: unknown): boolean {
@@ -196,79 +222,113 @@ function hasPendingCatchup(value: unknown): boolean {
   return progress.targetLastMessageId !== undefined;
 }
 
-/** CatchUp: walk ALL dialogs from the top and emit only messages newer than each
+interface CatchupPage {
+  pending: { chat: TgChat; peer: unknown }[];
+  next_offset: DialogOffset | null;
+  pinned_count: number;
+}
+
+/** CatchUp: walk dialogs from the top and emit only messages newer than each
  * chat's committed watermark. A gap larger than one provider page remains an
  * opaque per-chat continuation: `last_msg_id` stays committed while
  * `target_last_msg_id` fences the newest edge and `before_message_id` walks
- * toward the old watermark. Result carries NO `total` / `discovered`
- * (bootstrap-only progress counters).
+ * toward the old watermark. The result states, per chat it read, the id range
+ * the page covered: the page's own range while the gap continues, the whole
+ * gap once the read reached the committed watermark.
  *
- * @tested-by: tst_cat_tg_gap_001
+ * @tested-by: tst_cat_tg_gap_001, tst_tgts_catch_008
  * @invariant: a chat promotes its forward watermark only after CatchUp crosses
  * the old watermark or proves that no older provider page exists. */
 export async function runCatchup(
   ops: TgOps,
   accountId: string,
   cursor: unknown,
+  pager?: DialogPager,
 ): Promise<Record<string, unknown>> {
+  const deadline = performance.now() + SOURCE_PAGE_BUDGET_MS;
   const c = asObject(cursor);
   const inChats = asObject(c?.chats) ?? {};
 
   const envelopes: Record<string, unknown>[] = [];
+  const traversed: TraversedRanges = {};
   // Preserve checkpoints for dialogs that are temporarily absent from the
   // provider walk. Dropping one would turn a later reappearance into a fresh
   // account and replay its entire history.
   const newCursorChats: Record<string, unknown> = { ...inChats };
-  // pinned_order restarts at 0 on every catch-up pass (the walk starts at the top).
-  let pinnedOrder = 0;
-
-  const dialogs = await ops.listDialogs();
-  const listedChatKeys = new Set(dialogs.map((dialog) => String(toNum(dialog.entity.id))));
-  // A pending chat cannot be silently treated as complete when Telegram omits
-  // it from the current snapshot. Reject the page so the host retains the old
-  // cursor and applies its typed failure backoff instead of spinning hasMore or
-  // promoting an unobserved target.
-  //
-  // @tested-by: tst_cat_tg_gap_003
-  for (const [chatKey, progress] of Object.entries(inChats)) {
-    if (hasPendingCatchup(progress) && !listedChatKeys.has(chatKey)) {
-      throw new Error(
-        `telegram CatchUp pending chat '${chatKey}' is absent from the dialog snapshot`,
-      );
+  let page = asObject(c?.catchup_page) as unknown as CatchupPage | undefined;
+  if (page !== undefined && (!Array.isArray(page.pending) ||
+    page.pending.some((item) => item.peer === undefined))) {
+    throw new Error("Telegram CatchUp continuation requires pending chats and peers");
+  }
+  if (page === undefined || page.pending.length === 0) {
+    let pinnedOrder = page?.pinned_count ?? 0;
+    if (pager !== undefined) {
+      const listed = await pager.dialogPage(page?.next_offset ?? null, BOOTSTRAP_BATCH_DIALOGS,
+        { hydrate: false, timeoutMs: remainingPageBudget(deadline) });
+      page = { pending: listed.dialogs.map((dialog) => {
+        if (dialog.peer === undefined) throw new Error("Telegram CatchUp discovery requires a peer");
+        const chat = { ...dialog.chat, pin_order: dialog.chat.is_pinned ? pinnedOrder++ : 0 };
+        return { chat, peer: dialog.peer };
+      }), next_offset: listed.next_offset, pinned_count: pinnedOrder };
+    } else {
+      // Existing injectable ops seam; production always uses the bounded pager.
+      const dialogs = await ops.listDialogs();
+      page = { pending: dialogs.map((dialog) => ({ peer: dialog.peer,
+        chat: chatToIntermediate(dialog.entity,
+          buildDialogMeta(dialog.raw, dialog.pinned, dialog.pinned ? pinnedOrder++ : 0)),
+      })), next_offset: null, pinned_count: pinnedOrder };
     }
   }
 
-  for (const dialog of dialogs) {
-    const chatId = toNum(dialog.entity.id);
-    const isPinned = dialog.pinned;
-    let pinOrder = 0;
-    if (isPinned) {
-      pinOrder = pinnedOrder;
-      pinnedOrder += 1;
-    }
-    const meta = buildDialogMeta(dialog.raw, isPinned, pinOrder);
-    // The chat envelope is emitted ALWAYS, even when its history is skipped.
-    envelopes.push(chatEnvelope(chatToIntermediate(dialog.entity, meta)));
-
+  let processed = 0;
+  let reads = 0;
+  const deferred: CatchupPage["pending"] = [];
+  // @tested-by: tst_src_tgfast_003 — TGFAST_002 yields before a sixth history read
+  // and round-robins unfinished gaps without promoting their committed edge.
+  for (const dialog of page.pending) {
+    if (reads >= SOURCE_PAGE_HISTORY_LIMIT || (processed > 0 && performance.now() >= deadline)) break;
+    processed += 1;
+    const chatId = dialog.chat.chat_id;
     const chatKey = String(chatId);
     const saved = catchupProgress(inChats[chatKey]);
+    // The chat envelope carries the count its entry holds, so a re-asserted
+    // chat never reaches the module without it; a history answer read below
+    // restates it with the count of that answer.
+    if (saved.messageCount !== undefined) dialog.chat.message_count = saved.messageCount;
+    const chatEnvelopeIndex = envelopes.length;
+    envelopes.push(chatEnvelope(dialog.chat));
+
     const committed = saved.lastMessageId;
-    if (saved.targetLastMessageId === undefined && meta.top_message <= committed) {
+    // The count rides on every entry this walk writes: kept from the entry,
+    // replaced by the count Telegram states in a page this walk reads.
+    let messageCount = saved.messageCount;
+    const counted = (entry: Record<string, unknown>): Record<string, unknown> =>
+      messageCount === undefined ? entry : { ...entry, message_count: messageCount };
+    if (saved.targetLastMessageId === undefined && dialog.chat.top_message <= committed) {
       // Nothing new in this chat — carry the watermark, skip the history call.
-      if (committed > 0) newCursorChats[chatKey] = { last_msg_id: committed };
+      if (committed > 0) newCursorChats[chatKey] = counted({ last_msg_id: committed });
       continue;
     }
 
-    const target = saved.targetLastMessageId ?? meta.top_message;
+    const target = saved.targetLastMessageId ?? dialog.chat.top_message;
     if (target <= committed) {
-      if (committed > 0) newCursorChats[chatKey] = { last_msg_id: committed };
+      if (committed > 0) newCursorChats[chatKey] = counted({ last_msg_id: committed });
       continue;
     }
     const before = saved.beforeMessageId ?? target + 1;
+    reads += 1;
     const messages = await ops.getMessages(dialog.peer, {
       limit: CATCHUP_MESSAGES_PER_CHAT,
       offsetId: before,
-    });
+    }, remainingPageBudget(deadline));
+    if (messages.total !== undefined) {
+      messageCount = messages.total;
+      // @tested-by: tst_src_tgfast_003 — the module's count moved with live
+      // deliveries since the entry was written; the answer, not the entry,
+      // is the count this chat reaches the module with.
+      dialog.chat.message_count = messages.total;
+      envelopes[chatEnvelopeIndex] = chatEnvelope(dialog.chat);
+    }
     let oldest: number | undefined;
     let reachedCommitted = false;
     for (const msg of messages) {
@@ -289,26 +349,41 @@ export async function runCatchup(
     }
 
     if (reachedCommitted || messages.length === 0) {
-      newCursorChats[chatKey] = { last_msg_id: target };
+      newCursorChats[chatKey] = counted({ last_msg_id: target });
+      traversed[chatKey] = [committed + 1, target];
       continue;
     }
     if (oldest === undefined || oldest >= before) {
       throw new Error("telegram CatchUp page did not advance its per-chat continuation");
     }
-    newCursorChats[chatKey] = {
+    traversed[chatKey] = [oldest, before - 1];
+    newCursorChats[chatKey] = counted({
       last_msg_id: committed,
       target_last_msg_id: target,
       before_message_id: oldest,
-    };
+    });
+    deferred.push(dialog);
   }
 
-  const hasMore = Object.values(newCursorChats).some(hasPendingCatchup);
+  const pending = [...page.pending.slice(processed), ...deferred];
+  // @tested-by: tst_cat_tg_gap_003 — terminal discovery cannot hide a missing gap.
+  if (page.next_offset === null) {
+    const listedChatKeys = new Set(pending.map((dialog) => String(dialog.chat.chat_id)));
+    for (const [chatKey, progress] of Object.entries(newCursorChats)) {
+      if (hasPendingCatchup(progress) && !listedChatKeys.has(chatKey)) {
+        throw new Error(`telegram CatchUp pending chat '${chatKey}' is absent from the dialog snapshot`);
+      }
+    }
+  }
+  const hasMore = pending.length > 0 || page.next_offset !== null;
   const nextCursor =
-    Object.keys(newCursorChats).length === 0
+    Object.keys(newCursorChats).length === 0 && !hasMore
       ? null
-      : { date: toRfc3339Utc(new Date()), chats: newCursorChats };
+      : { date: toRfc3339Utc(new Date()), chats: newCursorChats,
+          ...(hasMore ? { catchup_page: { ...page, pending } } : {}),
+        };
 
-  return { envelopes, nextCursor, hasMore };
+  return { envelopes, nextCursor, hasMore, traversed };
 }
 
 /** Extract an integer argument tolerant of how the host's V8 `source_command`
@@ -365,8 +440,10 @@ export async function execute(
       const chatId = argI64(args, "chat_id");
       if (chatId === undefined) throw new Error("missing chat_id");
       const beforeMessageId = argI64(args, "before_message_id") ?? 0;
-      const limit = typeof args.limit === "number" ? Math.trunc(args.limit) : 50;
-      return await backfillChat(ops, accountId, chatId, beforeMessageId, limit);
+      const lowerMessageId = argI64(args, "lower_message_id");
+      if (lowerMessageId === undefined) throw new Error("missing lower_message_id");
+      if (lowerMessageId <= 0) throw new Error("lower_message_id must be positive");
+      return await backfillChat(ops, accountId, chatId, beforeMessageId, lowerMessageId);
     }
     case "download_file": {
       const sourceRef = asObject(args.source_ref);
@@ -453,23 +530,67 @@ async function backfillChat(
   accountId: string,
   chatId: number,
   beforeMessageId: number,
-  limit: number,
+  lowerMessageId: number,
 ): Promise<Record<string, unknown>> {
-  const peer = await ops.resolvePeer(chatId);
-  const messages = await ops.getMessages(peer, { offsetId: beforeMessageId, limit });
-
+  const deadline = performance.now() + SOURCE_PAGE_BUDGET_MS;
+  const controller = new AbortController();
+  let peer: unknown;
+  try {
+    peer = await withTimeout(ops.resolvePeer(chatId, controller.signal),
+      remainingPageBudget(deadline), "backfill peer discovery");
+  } finally {
+    controller.abort();
+  }
   const envelopes: Record<string, unknown>[] = [];
   let oldest: number | null = null;
+  let total: number | null = null;
+  let envelopeBytes = 0;
+  let before = beforeMessageId;
   // Stamp the connection's account_id into every backfilled message's source_ref.
   // Previously hardcoded "" — which the host did NOT re-stamp for the external
   // connector, so backfilled media records carried account_id="" and the
   // file-download worker resolved the session for account '' and never
   // downloaded the attachment.
-  for (const msg of messages) {
-    oldest = oldest === null ? msg.id : Math.min(oldest, msg.id);
-    envelopes.push(
-      messageEnvelope(messageToIntermediate(msg, accountId, chatId), "snapshot"),
-    );
+  providerPages: for (;;) {
+    let messages: MessagePage;
+    try {
+      messages = await ops.getMessages(
+        peer,
+        { offsetId: before, limit: TELEGRAM_HISTORY_PAGE_SIZE },
+        remainingPageBudget(deadline),
+      );
+    } catch (error) {
+      if (envelopes.length > 0 && error instanceof MtprotoTimeoutError) break;
+      throw error;
+    }
+    total ??= messages.total ?? null;
+    if (messages.length === 0) {
+      break;
+    }
+    let providerOldest: number | null = null;
+    for (const msg of messages) {
+      providerOldest = providerOldest === null ? msg.id : Math.min(providerOldest, msg.id);
+      if (msg.id < lowerMessageId) {
+        break providerPages;
+      }
+      const envelope = messageEnvelope(messageToIntermediate(msg, accountId, chatId), "snapshot");
+      const bytes = new TextEncoder().encode(JSON.stringify(envelope)).byteLength + (envelopes.length === 0 ? 0 : 1);
+      if (envelopeBytes + bytes > SOURCE_PAGE_BUDGET_BYTES) {
+        if (envelopes.length === 0) throw new Error("Telegram history envelope exceeds the Source page budget");
+        break providerPages;
+      }
+      envelopes.push(envelope);
+      envelopeBytes += bytes;
+      oldest = oldest === null ? msg.id : Math.min(oldest, msg.id);
+      if (msg.id === lowerMessageId) {
+        break providerPages;
+      }
+    }
+    if (providerOldest === null || (before !== 0 && providerOldest >= before)) {
+      throw new Error("Telegram history did not advance");
+    }
+    before = providerOldest;
+    if (performance.now() >= deadline) break;
   }
   // Keys are read RAW by the host's run_backfill (the Execute path is not
   // FetchResult-shaped), so they are snake_case.
@@ -477,5 +598,6 @@ async function backfillChat(
     envelopes,
     has_more: backfillHasMore(envelopes.length),
     oldest_message_id: oldest,
+    total,
   };
 }

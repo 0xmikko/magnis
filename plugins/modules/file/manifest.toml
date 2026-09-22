@@ -9,6 +9,9 @@ id = "file"
 version = "0.1.0"
 # SDK contract version this manifest targets (host accepts 0.x).
 magnis_api_version = "0.1.0"
+# FileService is a host primitive used by attachment-capable modules, so its
+# schema owner must exist before optional modules can ingest attachments.
+tier = "system"
 title = "Files"
 summary = "Documents and attachments from your sources, in one place."
 # Reverse-domain publisher identity.

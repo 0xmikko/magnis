@@ -668,12 +668,24 @@ export class ContactsModule {
   // upserts on that key — no duplicate entity (apply_batch resolves-or-creates
   // by anchor, like email's message ingest).
   @syncHandler("contacts")
-  async ingest(params: { envelopes?: ContactsSyncEnvelope[] }): Promise<{
+  async ingest(params: {
+    envelopes?: ContactsSyncEnvelope[];
+    /** The pass the worker is in; absent for a Source effect outside a
+     * worker, which states nothing. */
+    generation?: string;
+  }): Promise<{
     dropped_remote_ids: string[];
     trigger_checks: [];
+    plan?: Record<string, { total: number; skipped: number }>;
   }> {
     const envelopes = Array.isArray(params.envelopes) ? params.envelopes : [];
     const dropped: string[] = [];
+    // What the page states for the plan, as the People API counts the list:
+    // the whole of it on the list envelope that opens a pass, and the persons
+    // a page left out as skipped.
+    // @tested-by: tst_module_contacts_plan_001
+    const stated = typeof params.generation === "string" && params.generation !== "";
+    const plan = { total: 0, skipped: 0 };
 
     // Fold by remote_id so two envelopes for the same resourceName collapse to
     // ONE entity in the batch (last-write-wins on payload). Native parity: an
@@ -684,6 +696,13 @@ export class ContactsModule {
       if (!env.user_id) continue;
       if (env.kind !== "snapshot" && env.kind !== "live") continue;
       if (!env.remote_id) continue;
+      if (env.payload?.entity_type === "list") {
+        const total = env.payload.total_people;
+        const skipped = env.payload.skipped;
+        if (typeof total === "number") plan.total += total;
+        if (typeof skipped === "number") plan.skipped += skipped;
+        continue;
+      }
       byRemoteId.set(env.remote_id, env);
     }
 
@@ -701,7 +720,8 @@ export class ContactsModule {
     }
     await flush();
 
-    return { dropped_remote_ids: dropped, trigger_checks: [] };
+    if (!stated) return { dropped_remote_ids: dropped, trigger_checks: [] };
+    return { dropped_remote_ids: dropped, trigger_checks: [], plan: { [CONTACT]: plan } };
   }
 
   /// One chunk → one apply_batch. Each contact becomes a contacts.person entity

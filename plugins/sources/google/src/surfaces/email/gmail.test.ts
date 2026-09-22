@@ -225,7 +225,7 @@ describe("history action resolution", () => {
     expect(sortedActions(actions).map(([id]) => id)).toEqual(["m3", "m4"]);
   });
 
-  test("tst_gts_hist_007 forward fetch: delete envelope shape + counters carried", async () => {
+  test("tst_gts_hist_007 forward fetch: delete envelope shape, no counters on the page or the cursor", async () => {
     const fetchFn: FetchLike = async (url) => {
       if (url.includes("/history?startHistoryId=100")) {
         return ok({
@@ -239,11 +239,7 @@ describe("history action resolution", () => {
       throw new Error(`unexpected url ${url}`);
     };
 
-    const r = await fetchHistoryChanges(
-      "tok",
-      { history_id: "100", discovered: 200, total: 500 },
-      fetchFn,
-    );
+    const r = await fetchHistoryChanges("tok", { history_id: "100" }, fetchFn);
     // Deletes first (BTreeMap order within kind), then hydrated live messages.
     expect(r.envelopes[0]).toEqual({
       surface: "email",
@@ -255,11 +251,12 @@ describe("history action resolution", () => {
     if (env1 === undefined) throw new Error("email page: missing envelope 1");
     expect(env1.kind).toBe("live");
     expect(env1.remote_id).toBe("mA");
-    // Counters carried FORWARD, never reset; watermark advances.
+    // The watermark advances; the page carries no counters — the host counts
+    // what the Graph stamped and reads the plan from the module's receipt.
     expect(r.hasMore).toBe(false);
-    expect(r.nextCursor).toEqual({ history_id: "999", discovered: 200, total: 500 });
-    expect(r.total).toBe(500);
-    expect(r.discovered).toBe(200);
+    expect(r.nextCursor).toEqual({ history_id: "999" });
+    expect("total" in r).toBe(false);
+    expect("discovered" in r).toBe(false);
   });
 
   /**
@@ -363,6 +360,9 @@ describe("email bootstrap cursor", () => {
       if (url.endsWith("/users/me/profile")) {
         return ok({ historyId: "h1", messagesTotal: 100 });
       }
+      // The two labels the list leaves out: what the plan skips.
+      if (url.endsWith("/users/me/labels/SPAM")) return ok({ id: "SPAM", messagesTotal: 7 });
+      if (url.endsWith("/users/me/labels/TRASH")) return ok({ id: "TRASH", messagesTotal: 3 });
       if (url.includes("/users/me/messages?maxResults=50")) {
         if (url.includes("pageToken=p2")) {
           return ok({ messages: [{ id: "m3" }] }); // last page
@@ -381,22 +381,31 @@ describe("email bootstrap cursor", () => {
     return { fetchFn, calls };
   }
 
-  test("tst_gts_email_009 cursor ALWAYS present; total/discovered threaded", async () => {
+  /** @test-id: tst_gts_email_009
+   * @scenario: scn_google_sync_001
+   * @covers: fetchMessagePage mailbox envelope and cursor
+   * @deterministic: yes
+   * @fixtures: a profile of 100 messages, 7 in SPAM and 3 in TRASH, two list pages
+   */
+  test("tst_gts_email_009 cursor ALWAYS present; the mailbox states its count first on the first page only", async () => {
     const { fetchFn, calls } = pagedApi();
 
     const p1 = await fetchMessagePage("tok", undefined, fetchFn);
     expect(p1.hasMore).toBe(true);
-    expect(p1.nextCursor).toEqual({
-      page_token: "p2",
-      history_id: "h1",
-      discovered: 2,
-      total: 100,
+    expect(p1.nextCursor).toEqual({ page_token: "p2", history_id: "h1" });
+    expect("total" in p1).toBe(false);
+    expect("discovered" in p1).toBe(false);
+    // The mailbox envelope precedes the messages: the whole mailbox as the
+    // profile counts it, and the SPAM and TRASH messages the list leaves out.
+    expect(p1.envelopes[0]).toEqual({
+      surface: "email",
+      kind: "snapshot",
+      remote_id: "mailbox",
+      payload: { entity_type: "mailbox", messages_total: 100, skipped: 10 },
     });
-    expect(p1.total).toBe(100);
-    expect(p1.discovered).toBe(2);
-    expect(p1.envelopes.map((e) => e.remote_id)).toEqual(["m1", "m2"]);
-    const env0 = p1.envelopes[0];
-    if (env0 === undefined) throw new Error("email page: missing envelope 0");
+    expect(p1.envelopes.slice(1).map((e) => e.remote_id)).toEqual(["m1", "m2"]);
+    const env0 = p1.envelopes[1];
+    if (env0 === undefined) throw new Error("email page: missing envelope 1");
     expect(env0.kind).toBe("snapshot");
     expect(env0.surface).toBe("email");
     // Payload is FLATTENED (from_name/from_address, joined *_addresses).
@@ -406,20 +415,21 @@ describe("email bootstrap cursor", () => {
     );
     expect("from" in env0.payload).toBe(false);
 
-    const profileCalls = calls.filter((u) => u.endsWith("/profile")).length;
+    const profileCalls = calls.filter((u) => u.endsWith("/profile") || u.includes("/labels/")).length;
+    expect(profileCalls).toBe(3);
     const p2 = await fetchMessagePage("tok", p1.nextCursor, fetchFn);
-    // Page 2+ never re-hits the profile (history_id read from cursor).
-    expect(calls.filter((u) => u.endsWith("/profile")).length).toBe(profileCalls);
+    // Page 2+ never re-hits the profile or the labels (history_id read from cursor).
+    expect(calls.filter((u) => u.endsWith("/profile") || u.includes("/labels/")).length).toBe(profileCalls);
     expect(p2.hasMore).toBe(false);
+    expect(p2.envelopes.map((e) => e.remote_id)).toEqual(["m3"]);
     // Last page STILL returns a cursor (email cursor is never null).
-    expect(p2.nextCursor).toEqual({ history_id: "h1", discovered: 3, total: 100 });
-    expect(p2.discovered).toBe(3);
-    expect(p2.total).toBe(100);
+    expect(p2.nextCursor).toEqual({ history_id: "h1" });
   });
 
   test("tst_gts_email_010 hydration keeps order; non-fatal skips, 429 aborts", async () => {
     const fetchFn: FetchLike = async (url) => {
       if (url.endsWith("/users/me/profile")) return ok({ historyId: "h1" });
+      if (url.includes("/labels/")) return ok({ id: "SPAM", messagesTotal: 0 });
       if (url.includes("/users/me/messages?maxResults=50")) {
         return ok({ messages: [{ id: "a" }, { id: "b" }, { id: "c" }] });
       }
@@ -431,12 +441,10 @@ describe("email bootstrap cursor", () => {
       return ok({ ...fullGmailMessage(), id });
     };
     const r = await fetchMessagePage("tok", undefined, fetchFn);
+    // No messagesTotal in the profile: the mailbox states no count, and the
+    // cursor carries none.
     expect(r.envelopes.map((e) => e.remote_id)).toEqual(["a", "c"]);
-    // discovered counts ENUMERATED ids (page length), not surviving envelopes.
-    expect(r.discovered).toBe(3);
-    // No messagesTotal in profile → total null, key omitted from cursor.
-    expect(r.total).toBeNull();
-    expect("total" in r.nextCursor).toBe(false);
+    expect(r.nextCursor).toEqual({ history_id: "h1" });
 
     // Fatal: a 429 during hydration aborts the whole batch, typed.
     const rateLimited: FetchLike = async (url) => {

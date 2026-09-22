@@ -26,6 +26,7 @@ interface SurfaceDecl {
   reconciliation?: {
     mode?: string;
   };
+  progress?: Record<string, string>;
 }
 
 interface ModuleManifest {
@@ -67,12 +68,40 @@ describe("tst_pub_item_schemas_001", () => {
     }
   });
 
+  // Snapshot omission is not provider evidence that a membership ended, so
+  // every syncing module leaves host reconciliation disabled.
+  const reconciliation: Readonly<Record<string, { mode: string }>> = {
+    telegram: { mode: "none" },
+    email: { mode: "none" },
+    meetings: { mode: "none" },
+    contacts: { mode: "none" },
+  };
+
   test("every syncing surface declares its host reconciliation policy", () => {
     for (const [moduleId] of expected) {
       const surfaces = manifest(moduleId).surfaces ?? {};
       for (const [name, decl] of Object.entries(surfaces)) {
-        expect(decl.reconciliation, `${moduleId}: surface '${name}'`).toEqual({ mode: "none" });
+        expect(decl.reconciliation, `${moduleId}: surface '${name}'`).toEqual(reconciliation[moduleId]);
       }
     }
   });
+
+  // The schemas a surface reports progress on, with the names the
+  // Accounts panel prints, declared once in the manifest: the host
+  // counts them, the module never repeats the names. A module joins
+  // this table in the Stage that makes it state its plan.
+  const progress: readonly (readonly [string, string, Record<string, string>])[] = [
+    ["telegram", "telegram", { "telegram.chat": "chats", "telegram.message": "messages" }],
+    ["email", "email", { "email.message": "messages" }],
+    ["contacts", "contacts", { "contacts.person": "contacts" }],
+    ["meetings", "meetings", { "meetings.calendar_event": "events" }],
+    ["x", "x", { "x.post": "posts", "x.profile": "profiles" }],
+    ["linkedin", "linkedin", { "linkedin.profile": "profiles", "linkedin.post": "posts" }],
+  ];
+
+  for (const [moduleId, surface, names] of progress) {
+    test(`tst_pub_item_schemas_002 ${moduleId} declares the progress names of ${surface}`, () => {
+      expect(manifest(moduleId).surfaces?.[surface]?.progress).toEqual(names);
+    });
+  }
 });

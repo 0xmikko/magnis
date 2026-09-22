@@ -57,8 +57,9 @@ function messageGraph(): G {
         }),
         links: LINKS,
       }),
-    // The sender-name resolution reads the message's edges too.
+    // The sender-name resolution reads the page's author edges in one batch.
     list_links_for_entity: () => Promise.resolve(LINKS),
+    list_links_for_entities: () => Promise.resolve(LINKS),
     get_entities: () => Promise.resolve(NEIGHBOURS),
   });
 }

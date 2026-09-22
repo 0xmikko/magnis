@@ -131,7 +131,9 @@ function asObject(v: unknown): Record<string, unknown> | undefined {
 }
 
 /** Build the `magnis.sync.fetch` result from the fixture — the Sync-Profile
- * shape `{ envelopes, nextCursor, hasMore }` with NO total/discovered.
+ * shape `{ envelopes, nextCursor, hasMore, traversed }` with no counters.
+ * The fixture is a chat's whole history, so a backward page states it read
+ * each chat from one; a forward page states the gap above the watermark.
  *
  * `direction = "forward"` (CatchUp) drops messages at/below the per-chat cursor
  * `last_msg_id`; `"backward"` (or absent) is a Bootstrap page returning
@@ -148,6 +150,7 @@ export function fetchResult(direction: string, cursor: unknown): Record<string, 
 
   const envelopes: Record<string, unknown>[] = [];
   const nextChats: Record<string, unknown> = {};
+  const traversed: Record<string, [number, number]> = {};
 
   // Interleave: each chat's envelope, then its (filtered) messages — the same
   // ordering the in-backend bootstrap/catch-up emit.
@@ -156,14 +159,17 @@ export function fetchResult(direction: string, cursor: unknown): Record<string, 
 
     const offset = direction === "forward" ? offsetFor(chat.chat_id) : 0;
     let highest = offset;
+    let served = 0;
     for (const m of fx.messages) {
       if (m.chat_id !== chat.chat_id) continue;
       if (m.live) continue; // live arrivals are pushed via listen, not fetched
       if (direction === "forward" && offset > 0 && m.message_id <= offset) continue;
       envelopes.push(messageEnvelope(m, "snapshot"));
+      served += 1;
       if (m.message_id > highest) highest = m.message_id;
     }
     if (highest > 0) nextChats[String(chat.chat_id)] = { last_msg_id: highest };
+    if (served > 0) traversed[String(chat.chat_id)] = [offset + 1, highest];
   }
 
   // Messages whose chat has no fixture entry: still serve them (cursor too) so a
@@ -182,6 +188,8 @@ export function fetchResult(direction: string, cursor: unknown): Record<string, 
   }
   for (const [chatId, high] of orphanHigh) {
     if (high > 0) nextChats[String(chatId)] = { last_msg_id: high };
+    const offset = direction === "forward" ? offsetFor(chatId) : 0;
+    if (high > offset) traversed[String(chatId)] = [offset + 1, high];
   }
 
   const nextCursor =
@@ -189,18 +197,19 @@ export function fetchResult(direction: string, cursor: unknown): Record<string, 
       ? null
       : { date: toRfc3339Utc(new Date()), chats: nextChats };
 
-  return { envelopes, nextCursor, hasMore: false };
+  return { envelopes, nextCursor, hasMore: false, traversed };
 }
 
 /** Live messages (`"live": true`) to replay as `notifications/magnis/envelope`
- * after a listen ack. Each is `(payload, remote_id)` — the exact shape the host's
- * `parse_push_params` reads. */
-export function livePushes(): { payload: Record<string, unknown>; remote_id: string }[] {
+ * after a listen ack. Each is `(payload, remote_id, position)` — the exact
+ * shape the host's `parse_push_params` reads. */
+export function livePushes(): { payload: Record<string, unknown>; remote_id: string; position: { scope_id: string; id: number } }[] {
   return load()
     .messages.filter((m) => m.live)
     .map((m) => ({
       payload: messagePayload(m),
       remote_id: messageRemoteId(m.chat_id, m.message_id),
+      position: { scope_id: String(m.chat_id), id: m.message_id },
     }));
 }
 

@@ -58,6 +58,10 @@ export const chat = entity(
     type: z.string().optional(),
     username: z.string().optional(),
     avatar_url: z.string().optional(),
+    /** The operator's choice to index a chat's media; set through telegram.chats.set_indexed. */
+    is_indexed: z.boolean().optional(),
+    /** The exact message count Telegram reported for the chat when it was last read. */
+    message_count: z.number().int().nonnegative().optional(),
     member_count: z.number().optional(),
     read_inbox_max_id: z.number().optional(),
     read_outbox_max_id: z.number().optional(),

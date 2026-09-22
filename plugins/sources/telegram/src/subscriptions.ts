@@ -7,8 +7,9 @@
 // connector process can hold N subscriptions for N account_ids concurrently.
 //
 // Notifications stamp `subscription_id` and `account_id` into the params
-// alongside `{ payload, remote_id }` so the host can route by subscription and
-// validate the account.
+// alongside `{ payload, remote_id, position }` so the host can route by
+// subscription, validate the account and trim the chat's open range by the
+// item's position.
 //
 // !! WIRE NOTE: these params carry NO `surface` and NO `kind` — unlike the
 // @magnis/connector-sdk default emitter, which always stamps both. That is why
@@ -16,12 +17,12 @@
 
 import { credsFromMeta, accountIdFromMeta, type MessageLike } from "./client";
 import { messagePayload } from "./surfaces/telegram/envelope";
-import { messageRemoteId } from "./surfaces/telegram/schema";
+import { chatRemoteId, messageRemoteId } from "./surfaces/telegram/schema";
 import { livePushes, fixturePath } from "./surfaces/telegram/fixture";
-import { messageToIntermediate, toNum } from "./client";
+import { messageToIntermediate, peerIdentity } from "./client";
 // `import type` ONLY: the gramjs stack is loaded LAZILY (live mode alone needs
 // it) so fixture-mode runs and the unit tests never load the MTProto stack.
-import type { TgClient } from "./live";
+import type { LiveUpdate, MembershipEndUpdate, TgClient } from "./live";
 
 /** Listener mode — explicit (not read from env) so unit tests can drive the
  * registry without mutating process-global state. */
@@ -35,13 +36,28 @@ interface ListenerHandle {
   cancel: () => void;
 }
 
+/** Where a live item sits in its chat: the host trims the chat's open range
+ * by it, as a page states the ranges it read. */
+export interface LivePosition {
+  scope_id: string;
+  id: number;
+}
+
+/** One live push: the exact shape the host's `parse_push_params` reads. */
+export interface LivePush {
+  payload: Record<string, unknown>;
+  remote_id: string;
+  position: LivePosition;
+}
+
 /** Build the push notification params. EXACT Rust shape — no surface, no kind,
- * no cursor. */
+ * no cursor — plus the item's position in its chat. */
 export function notificationLine(
   subscriptionId: string,
   accountId: string,
   payload: Record<string, unknown>,
   remoteId: string,
+  position: LivePosition,
 ): string {
   return JSON.stringify({
     jsonrpc: "2.0",
@@ -51,20 +67,43 @@ export function notificationLine(
       account_id: accountId,
       payload,
       remote_id: remoteId,
+      position,
     },
   });
 }
 
-/** Convert one live update into push `(payload, remote_id)`. Live updates carry a
- * full chat, so `msg.chat.id` IS authoritative here (unlike the bootstrap path,
- * where the caller-supplied dialog id wins over a possible "min" peer id). */
-export function liveUpdatePushes(
-  message: MessageLike,
-  accountId: string,
-): { payload: Record<string, unknown>; remote_id: string }[] {
-  const chatId = message.chat === null || message.chat === undefined ? 0 : toNum(message.chat.id);
-  const m = messageToIntermediate(message, accountId, chatId);
-  return [{ payload: messagePayload(m), remote_id: messageRemoteId(m.chat_id, m.message_id) }];
+/** Convert a live message or dated membership end to the v1 push dialect.
+ * Missing message identity is an error, never a chat-zero push.
+ * @tested-by: tst_src_tg_032, tst_src_tg_033 */
+function isMembershipEnd(update: LiveUpdate): update is MembershipEndUpdate {
+  return "kind" in update;
+}
+
+export function liveUpdatePushes(update: LiveUpdate, accountId: string): LivePush[] {
+  if (isMembershipEnd(update)) {
+    return [{
+      payload: {
+        entity_type: "telegram_chat",
+        chat_id: update.chatId,
+        top_message: 0,
+        telegram_user_id: update.telegramUserId,
+        valid_until: update.validUntil,
+      },
+      remote_id: chatRemoteId(update.chatId),
+      // The v1 notification shape requires a position. A membership fact is
+      // not message coverage, so zero states no Telegram message position.
+      position: { scope_id: String(update.chatId), id: 0 },
+    }];
+  }
+  const message: MessageLike = update;
+  const peer = peerIdentity(message.peerId);
+  if (peer === undefined) throw new Error("live update requires a valid Telegram peer identity");
+  const m = messageToIntermediate(message, accountId, peer.id);
+  return [{
+    payload: messagePayload(m),
+    remote_id: messageRemoteId(m.chat_id, m.message_id),
+    position: { scope_id: String(m.chat_id), id: m.message_id },
+  }];
 }
 
 /** Per-connector subscription registry. Lives for the process lifetime. */
@@ -169,9 +208,9 @@ function spawnFixtureListener(
   // subscription_id). `setImmediate` defers past the pending microtasks the ack
   // path awaits, restoring the Rust frame order (ack → push).
   const replay = async (): Promise<void> => {
-    for (const { payload, remote_id } of livePushes()) {
+    for (const { payload, remote_id, position } of livePushes()) {
       if (cancelled) return;
-      write(notificationLine(subscriptionId, accountId, payload, remote_id));
+      write(notificationLine(subscriptionId, accountId, payload, remote_id, position));
       // Yield so a concurrent stop can interrupt the replay.
       await Promise.resolve();
     }
@@ -200,8 +239,8 @@ function spawnLiveListener(
   client.addLiveHandler((message) => {
     if (cancelled) return;
     try {
-      for (const { payload, remote_id } of liveUpdatePushes(message, accountId)) {
-        write(notificationLine(subscriptionId, accountId, payload, remote_id));
+      for (const { payload, remote_id, position } of liveUpdatePushes(message, accountId)) {
+        write(notificationLine(subscriptionId, accountId, payload, remote_id, position));
       }
     } catch (e) {
       console.error(`magnis-telegram: live update error: ${String(e)}`);

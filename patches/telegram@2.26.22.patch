@@ -1,0 +1,387 @@
+diff --git a/client/telegramBaseClient.d.ts b/client/telegramBaseClient.d.ts
+index f3926df..cdc9631 100644
+--- a/client/telegramBaseClient.d.ts
++++ b/client/telegramBaseClient.d.ts
+@@ -12,11 +12,25 @@ import { Semaphore } from "async-mutex";
+ import { LogLevel } from "../extensions/Logger";
+ import Deferred from "../extensions/Deferred";
+ import Timeout = NodeJS.Timeout;
++/** Optional application-RPC admission shared by all senders of this client. */
++export interface RpcAdmissionState {
++    readonly request: unknown;
++    readonly promise?: Promise<unknown>;
++    reject(reason?: unknown): void;
++}
++export interface RpcAdmissionHooks {
++    enqueue(state: RpcAdmissionState, wake: () => void): boolean;
++    select(state: RpcAdmissionState): "ready" | "wait" | "discard";
++    sent(state: RpcAdmissionState): void;
++    observe(state: RpcAdmissionState | undefined, error: unknown): unknown;
++    cancel(states: readonly RpcAdmissionState[], reason: unknown): void;
++}
+ /**
+  * Interface for creating a new client.
+  * All of these have a default value and you should only change those if you know what you are doing.
+  */
+ export interface TelegramClientParams {
++    rpcAdmission?: RpcAdmissionHooks;
+     /** The connection instance to be used when creating a new connection to the servers. It must be a type.<br/>
+      * Defaults to {@link ConnectionTCPFull} on Node and {@link ConnectionTCPObfuscated} on browsers.
+      */
+@@ -113,6 +127,8 @@ export interface TelegramClientParams {
+     networkSocket?: typeof PromisedNetSockets | typeof PromisedWebSockets;
+ }
+ export declare abstract class TelegramBaseClient {
++    readonly rpcAdmissionRevision: number;
++    readonly _rpcAdmission?: RpcAdmissionHooks;
+     /** The current gramJS version. */
+     __version__: string;
+     /** @hidden */
+diff --git a/client/telegramBaseClient.js b/client/telegramBaseClient.js
+index d9af669..8efd839 100644
+--- a/client/telegramBaseClient.js
++++ b/client/telegramBaseClient.js
+@@ -50,6 +50,8 @@ class TelegramBaseClient {
+     constructor(session, apiId, apiHash, clientParams) {
+         /** The current gramJS version. */
+         this.__version__ = __1.version;
++        this.rpcAdmissionRevision = 1;
++        this._rpcAdmission = clientParams && clientParams.rpcAdmission;
+         /** @hidden */
+         this._ALBUMS = new Map();
+         /** @hidden */
+diff --git a/extensions/MessagePacker.d.ts b/extensions/MessagePacker.d.ts
+index 8d449a2..55f2d97 100644
+--- a/extensions/MessagePacker.d.ts
++++ b/extensions/MessagePacker.d.ts
+@@ -1,5 +1,6 @@
+ import type { MTProtoState } from "../network/MTProtoState";
+ import type { RequestState } from "../network/RequestState";
++import type { RpcAdmissionHooks } from "../client/telegramBaseClient";
+ export declare class MessagePacker {
+     private _state;
+     _pendingStates: RequestState[];
+@@ -7,7 +8,8 @@ export declare class MessagePacker {
+     private _ready;
+     private setReady;
+     private _log;
+-    constructor(state: MTProtoState, logger: any);
++    constructor(state: MTProtoState, logger: unknown, admission?: RpcAdmissionHooks);
++    wake(): void;
+     values(): any[];
+     append(state?: RequestState, setReady?: boolean, atStart?: boolean): void;
+     prepend(states: RequestState[]): void;
+diff --git a/extensions/MessagePacker.js b/extensions/MessagePacker.js
+index c3b880b..2db78dc 100644
+--- a/extensions/MessagePacker.js
++++ b/extensions/MessagePacker.js
+@@ -12,7 +12,10 @@ const USE_INVOKE_AFTER_WITH = new Set([
+     "messages.SendInlineBotResult",
+ ]);
+ class MessagePacker {
+-    constructor(state, logger) {
++    constructor(state, logger, admission) {
++        this._admission = admission;
++        this._blocked = false;
++        this._wake = this.wake.bind(this);
+         this._state = state;
+         this._queue = [];
+         this._pendingStates = [];
+@@ -24,8 +27,21 @@ class MessagePacker {
+     values() {
+         return this._queue;
+     }
++    wake() {
++        this._blocked = false;
++        if (this.setReady) this.setReady(true);
++    }
+     append(state, setReady = true, atStart = false) {
+         var _a, _b;
++        if (state && this._admission) {
++            try {
++                if (!this._admission.enqueue(state, this._wake)) return;
++            } catch (error) {
++                state.reject(error);
++                return;
++            }
++            if (this._queue.includes(state)) return;
++        }
+         // We need to check if there is already a `USE_INVOKE_AFTER_WITH` request
+         if (state && USE_INVOKE_AFTER_WITH.has(state.request.className)) {
+             if (atStart) {
+@@ -54,16 +70,19 @@ class MessagePacker {
+             this._queue.push(state);
+         }
+         if (setReady && this.setReady) {
+-            this.setReady(true);
++            this.wake();
+         }
+         // 1658238041=MsgsAck, we don't care about MsgsAck here because they never resolve anyway.
+         if (state && state.request.CONSTRUCTOR_ID !== 1658238041) {
++            const generation = state.promise;
+             this._pendingStates.push(state);
+             state
+                 .promise // Using finally causes triggering `unhandledrejection` event
+                 .catch((err) => { })
+                 .finally(() => {
+-                this._pendingStates = this._pendingStates.filter((s) => s !== state);
++                if (!this._admission || state.promise === generation) {
++                    this._pendingStates = this._pendingStates.filter((s) => s !== state);
++                }
+             });
+         }
+     }
+@@ -72,7 +91,7 @@ class MessagePacker {
+             this.append(state, false, true);
+         });
+         if (this.setReady) {
+-            this.setReady(true);
++            this.wake();
+         }
+     }
+     extend(states) {
+@@ -80,7 +99,7 @@ class MessagePacker {
+             this.append(state, false);
+         });
+         if (this.setReady) {
+-            this.setReady(true);
++            this.wake();
+         }
+     }
+     clear() {
+@@ -88,7 +107,7 @@ class MessagePacker {
+         this.append(undefined);
+     }
+     async wait() {
+-        if (!this._queue.length) {
++        if (!this._queue.length || this._blocked) {
+             this._ready = new Promise((resolve) => {
+                 this.setReady = resolve;
+             });
+@@ -104,12 +123,21 @@ class MessagePacker {
+         let buffer = new BinaryWriter_1.BinaryWriter(Buffer.alloc(0));
+         const batch = [];
+         let size = 0;
+-        while (this._queue.length &&
++        let remaining = this._queue.length;
++        while (remaining-- > 0 && this._queue.length &&
+             batch.length <= core_1.MessageContainer.MAXIMUM_LENGTH) {
+             const state = this._queue.shift();
+             if (!state) {
+                 continue;
+             }
++            if (this._admission) {
++                const decision = this._admission.select(state);
++                if (decision === "discard") continue;
++                if (decision === "wait") {
++                    this._queue.push(state);
++                    continue;
++                }
++            }
+             size += state.data.length + core_2.TLMessage.SIZE_OVERHEAD;
+             if (size <= core_1.MessageContainer.MAXIMUM_SIZE) {
+                 let afterId;
+@@ -119,7 +147,13 @@ class MessagePacker {
+                 if (state.after) {
+                     afterId = state.after.msgId;
+                 }
+-                state.msgId = await this._state.writeDataAsMessage(buffer, state.data, state.request.classType === "request", afterId);
++                try {
++                    state.msgId = await this._state.writeDataAsMessage(buffer, state.data, state.request.classType === "request", afterId);
++                } catch (error) {
++                    if (!this._admission) throw error;
++                    this._admission.cancel([...batch, state], error);
++                    return null;
++                }
+                 this._log.debug(`Assigned msgId = ${state.msgId} to ${state.request.className ||
+                     state.request.constructor.name}`);
+                 batch.push(state);
+@@ -130,10 +164,12 @@ class MessagePacker {
+                 break;
+             }
+             this._log.warn(`Message payload for ${state.request.className || state.request.constructor.name} is too long ${state.data.length} and cannot be sent`);
+-            state.promise.reject("Request Payload is too big");
++            if (this._admission) this._admission.cancel([state], new Error("Request Payload is too big"));
++            else state.promise.reject("Request Payload is too big");
+             size = 0;
+         }
+         if (!batch.length) {
++            this._blocked = this._queue.length > 0;
+             return null;
+         }
+         if (batch.length > 1) {
+@@ -142,7 +178,14 @@ class MessagePacker {
+             b.writeInt32LE(batch.length, 4);
+             data = Buffer.concat([b, buffer.getValue()]);
+             buffer = new BinaryWriter_1.BinaryWriter(Buffer.alloc(0));
+-            const containerId = await this._state.writeDataAsMessage(buffer, data, false);
++            let containerId;
++            try {
++                containerId = await this._state.writeDataAsMessage(buffer, data, false);
++            } catch (error) {
++                if (!this._admission) throw error;
++                this._admission.cancel(batch, error);
++                return null;
++            }
+             for (const s of batch) {
+                 s.containerId = containerId;
+             }
+diff --git a/network/MTProtoSender.js b/network/MTProtoSender.js
+index d7791fe..0ea20c2 100644
+--- a/network/MTProtoSender.js
++++ b/network/MTProtoSender.js
+@@ -58,6 +58,8 @@ class MTProtoSender {
+         this._isMainSender = args.isMainSender;
+         this._senderCallback = args.senderCallback;
+         this._client = args.client;
++        this._rpcAdmission = this._client && this._client._rpcAdmission;
++        this._rpcEpoch = 0;
+         this._onConnectionBreak = args.onConnectionBreak;
+         this._securityChecks = args.securityChecks;
+         this._connectMutex = new async_mutex_1.Mutex();
+@@ -92,7 +94,7 @@ class MTProtoSender {
+          * Outgoing messages are put in a queue and sent in a batch.
+          * Note that here we're also storing their ``_RequestState``.
+          */
+-        this._sendQueue = new extensions_1.MessagePacker(this._state, this._log);
++        this._sendQueue = new extensions_1.MessagePacker(this._state, this._log, this._rpcAdmission);
+         /**
+          * Sent states are remembered until a response is received.
+          */
+@@ -268,6 +270,11 @@ class MTProtoSender {
+         this._log.info("Connection to %s complete!".replace("%s", connection.toString()));
+     }
+     async _disconnect() {
++        this._rpcEpoch++;
++        if (this._rpcAdmission && (this.userDisconnected || !this.isReconnecting)) {
++            this._rpcAdmission.cancel([...this._pendingState.values(), ...this._sendQueue._pendingStates], new Error("MTProto sender disconnected"));
++        }
++        this._sendQueue.wake();
+         const connection = this._connection;
+         if (this._updateCallback) {
+             this._updateCallback(this._client, new _1.UpdateConnectionState(_1.UpdateConnectionState.disconnected));
+@@ -293,10 +300,11 @@ class MTProtoSender {
+      * @private
+      */
+     async _sendLoop() {
++        const epoch = this._rpcEpoch;
+         // Retry previous pending requests
+         this._sendQueue.prepend(this._pendingState.values());
+         this._pendingState.clear();
+-        while (this._userConnected && !this.isReconnecting) {
++        while (this._userConnected && !this.isReconnecting && epoch === this._rpcEpoch) {
+             const appendAcks = () => {
+                 if (this._pendingAck.size) {
+                     const ack = new RequestState_1.RequestState(new MsgsAck({ msgIds: Array(...this._pendingAck) }));
+@@ -319,6 +327,7 @@ class MTProtoSender {
+             const res = await this._sendQueue.get();
+             this._log.debug(`Got ${res === null || res === void 0 ? void 0 : res.batch.length} message(s) to send`);
+             if (this.isReconnecting) {
++                if (res && this._rpcAdmission) this._sendQueue.prepend(res.batch);
+                 this._log.debug("Reconnecting");
+                 this._sendLoopHandle = undefined;
+                 return;
+@@ -330,7 +339,20 @@ class MTProtoSender {
+             const { batch } = res;
+             this._log.debug(`Encrypting ${batch.length} message(s) in ${data.length} bytes for sending`);
+             this._log.debug(`Sending   ${batch.map((m) => m.request.className)}`);
+-            data = await this._state.encryptMessageData(data);
++            const connection = this._connection;
++            try {
++                data = await this._state.encryptMessageData(data);
++            } catch (error) {
++                if (!this._rpcAdmission) throw error;
++                this._rpcAdmission.cancel(batch, error);
++                continue;
++            }
++            // No await is allowed between this fence and connection.send.
++            if (this._rpcAdmission && (!this._userConnected || this.isReconnecting || epoch !== this._rpcEpoch || connection !== this._connection || batch.some((state) => this._rpcAdmission.select(state) !== "ready"))) {
++                this._sendQueue.prepend(batch);
++                continue;
++            }
++            if (this._rpcAdmission) batch.forEach((state) => this._rpcAdmission.sent(state));
+             for (const state of batch) {
+                 if (!Array.isArray(state)) {
+                     if (state.request.classType === "request") {
+@@ -346,7 +368,7 @@ class MTProtoSender {
+                 }
+             }
+             try {
+-                await this._connection.send(data);
++                await connection.send(data);
+             }
+             catch (e) {
+                 /** when the server disconnects us we want to reconnect */
+@@ -537,6 +559,10 @@ class MTProtoSender {
+         const state = this._pendingState.getAndDelete(result.reqMsgId);
+         this._log.debug(`Handling RPC result for message ${result.reqMsgId}`);
+         if (!state) {
++            if (result.error && this._rpcAdmission) {
++                this._rpcAdmission.observe(undefined, (0, errors_1.RPCMessageToError)(result.error));
++                return;
++            }
+             // TODO We should not get responses to things we never sent
+             // However receiving a File() with empty bytes is "common".
+             // See #658, #759 and #958. They seem to happen in a container
+@@ -559,8 +585,10 @@ class MTProtoSender {
+         if (result.error) {
+             // eslint-disable-next-line new-cap
+             const error = (0, errors_1.RPCMessageToError)(result.error, state.request);
++            // Close shared admission before rejecting, releasing or retrying.
++            const exposed = this._rpcAdmission ? this._rpcAdmission.observe(state, error) : error;
+             this._sendQueue.append(new RequestState_1.RequestState(new MsgsAck({ msgIds: [state.msgId] })));
+-            state.reject(error);
++            state.reject(exposed);
+             throw error;
+         }
+         else {
+@@ -787,13 +815,17 @@ class MTProtoSender {
+             }
+             // we want to wait a second between each reconnect try to not flood the server with reconnects
+             // in case of internal server issues.
++            const epoch = this._rpcEpoch;
+             (0, Helpers_1.sleep)(1000).then(() => {
++                if (this._rpcAdmission && (this.userDisconnected || this._client._destroyed || epoch !== this._rpcEpoch)) return;
+                 this._log.info("Started reconnecting");
+                 this._reconnect();
+             });
+         }
+     }
+     async _reconnect() {
++        if (this._rpcAdmission && (this.userDisconnected || this._client._destroyed)) return;
++        const sending = this._sendLoopHandle;
+         try {
+             this._log.warn("[Reconnect] Closing current connection...");
+             await this._disconnect();
+@@ -807,13 +839,18 @@ class MTProtoSender {
+                 console.error(err);
+             }
+         }
++        // Retire the old packer before it can overwrite replayed state IDs or
++        // clear the replacement loop's handle after asynchronous encryption.
++        if (this._rpcAdmission && sending) await sending;
+         this._log.debug(`Adding ${this._sendQueue._pendingStates.length} old request to resend`);
++        const waiting = this._rpcAdmission ? this._sendQueue._pendingStates.filter((state) => state.msgId === undefined) : [];
+         for (let i = 0; i < this._sendQueue._pendingStates.length; i++) {
+             if (this._sendQueue._pendingStates[i].msgId != undefined) {
+                 this._pendingState.set(this._sendQueue._pendingStates[i].msgId, this._sendQueue._pendingStates[i]);
+             }
+         }
+         this._sendQueue.clear();
++        this._sendQueue.extend(waiting);
+         this._state.reset();
+         const connection = this._connection;
+         // For some reason reusing existing connection caused stuck requests
+@@ -827,7 +864,12 @@ class MTProtoSender {
+             testServers: connection._testServers,
+             socket: this._client.networkSocket,
+         });
++        if (this._rpcAdmission && (this.userDisconnected || this._client._destroyed)) return;
+         await this.connect(newConnection, true);
++        if (this._rpcAdmission && (this.userDisconnected || this._client._destroyed)) {
++            await this._disconnect();
++            return;
++        }
+         this.isReconnecting = false;
+         this._sendQueue.prepend(this._pendingState.values());
+         this._pendingState.clear();

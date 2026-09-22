@@ -58,13 +58,7 @@ export function buildConnectorConfig(
           direction === "forward"
             ? await fetchHistoryChanges(token, cursor, fetchFn)
             : await fetchMessagePage(token, cursor, fetchFn);
-        return {
-          envelopes: r.envelopes,
-          nextCursor: r.nextCursor,
-          hasMore: r.hasMore,
-          total: r.total,
-          discovered: r.discovered,
-        };
+        return { envelopes: r.envelopes, nextCursor: r.nextCursor, hasMore: r.hasMore };
       }
       case "meetings": {
         // Calendar is window-based: Bootstrap and CatchUp page the same time
@@ -77,24 +71,13 @@ export function buildConnectorConfig(
           time_max: rawStr(args.raw, "time_max"),
         };
         const r = await fetchEventsPage(token, cursor, window, fetchFn);
-        // No cheap total estimate → indeterminate "N synced…".
-        return {
-          envelopes: r.envelopes,
-          nextCursor: r.nextCursor,
-          hasMore: r.nextCursor !== null,
-          discovered: r.discovered,
-        };
+        return { envelopes: r.envelopes, nextCursor: r.nextCursor, hasMore: r.nextCursor !== null };
       }
       case "contacts": {
         // People API has no delta token — every page is a snapshot;
         // direction is ignored (Bootstrap and CatchUp page identically).
         const r = await fetchContactsPage(token, cursor, fetchFn);
-        return {
-          envelopes: r.envelopes,
-          nextCursor: r.nextCursor,
-          hasMore: r.nextCursor !== null,
-          discovered: r.discovered,
-        };
+        return { envelopes: r.envelopes, nextCursor: r.nextCursor, hasMore: r.nextCursor !== null };
       }
       default:
         throw new Error(`unknown surface '${surface}'`);

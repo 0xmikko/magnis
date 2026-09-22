@@ -1,13 +1,41 @@
 #!/usr/bin/env bash
-# Magnis plugin catalog — block direct pushes to main.
-# Enable once per clone:  git config core.hooksPath .githooks
-# (GitHub branch protection enforces the same rule server-side.)
+# Managed by 0_agents code-production. Do not edit in the consumer repository.
 set -euo pipefail
 
+# Owner-authorized catalog extension; @tested-by: tst_scripts_agent_stack_002.
+# Reject every forbidden ref before the managed cached-receipt early return.
 while read -r _local_ref _local_sha remote_ref _remote_sha; do
   if [[ "$remote_ref" == "refs/heads/main" ]]; then
-    echo "✗ direct push to main is not allowed — main moves only via a reviewed PR from staging."
+    echo "direct push to main is not allowed — main moves only via a reviewed PR from staging." >&2
     exit 1
   fi
 done
-exit 0
+
+ROOT="$(git rev-parse --show-toplevel)"
+PLANCTL="$ROOT/.agents/code-production/runtime/planctl.ts"
+
+while IFS= read -r plan; do
+  [ -n "$plan" ] || continue
+  bun "$PLANCTL" verify "$plan"
+done < <(git -C "$ROOT" ls-files 'docs/plans/*.md' | grep -v 'docs/plans/README.md$' || true)
+
+if ! git -C "$ROOT" diff --quiet || ! git -C "$ROOT" diff --cached --quiet; then
+  echo "pre-push: tracked worktree changes exist; commit them before verifying the published SHA" >&2
+  exit 1
+fi
+
+HEAD_SHA="$(git -C "$ROOT" rev-parse HEAD)"
+RECEIPT="$(git -C "$ROOT" rev-parse --path-format=absolute --git-path code-production/verify-pr.sha)"
+if [ -f "$RECEIPT" ] && [ "$(sed -n '1p' "$RECEIPT")" = "$HEAD_SHA" ]; then
+  echo "pre-push: reusing complete gate receipt for $HEAD_SHA"
+  exit 0
+fi
+
+cd "$ROOT"
+bun run agent:verify:docs
+bun run agent:verify:pr
+
+mkdir -p "$(dirname "$RECEIPT")"
+RECEIPT_TMP="${RECEIPT}.tmp.$$"
+printf '%s\n' "$HEAD_SHA" > "$RECEIPT_TMP"
+mv "$RECEIPT_TMP" "$RECEIPT"

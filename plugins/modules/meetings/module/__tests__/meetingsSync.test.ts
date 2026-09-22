@@ -223,6 +223,29 @@ describe("meetings @syncHandler — delete", () => {
   });
 });
 
+/**
+ * @test-id: tst_module_meetings_plan_001
+ * @scenario: scn_google_sync_001
+ * @covers: MeetingsModule.ingest (plan)
+ * @deterministic: yes
+ * @fixtures: a calendar envelope counting 3 events with one skipped; a later page leaving one out
+ */
+describe("meetings @syncHandler — the plan from the pages", () => {
+  it("states the calendar's count in full, the events a page leaves out as skipped, and nothing outside a worker's pass", async () => {
+    const apply_batch = vi.fn().mockResolvedValue({ ids: { r1: "id-r1" }, created: 1, updated: 0, links_added: 0, dropped_keys: [] });
+    const { mod } = makeModule(makeGraph({ apply_batch }));
+    const calendar = env({ remote_id: "calendar", payload: { entity_type: "calendar", events_total: 3, skipped: 1 } });
+    const first = await mod.ingest({ generation: "initial:r:1", envelopes: [calendar, env({ payload: { title: "Standup", start_at: "2026-02-01T10:00:00Z", end_at: "2026-02-01T10:15:00Z" } })] });
+    expect(first).toEqual({ dropped_remote_ids: [], trigger_checks: [], plan: { "meetings.calendar_event": { total: 3, skipped: 1 } } });
+    expect(apply_batch).toHaveBeenCalledTimes(1);
+    expect((apply_batch.mock.calls[0]?.[0] as GraphBatchInput).entities.map((item) => item.key)).not.toContain("calendar");
+    const later = await mod.ingest({ generation: "initial:r:1", envelopes: [env({ remote_id: "calendar", payload: { entity_type: "calendar", skipped: 1 } })] });
+    expect(later.plan).toEqual({ "meetings.calendar_event": { total: 0, skipped: 1 } });
+    const outside = await mod.ingest({ envelopes: [calendar] });
+    expect(outside).toEqual({ dropped_remote_ids: [], trigger_checks: [] });
+  });
+});
+
 describe("meetings @syncHandler — empty user_id is a hard error", () => {
   it("throws and writes nothing", async () => {
     const apply_batch = vi.fn();

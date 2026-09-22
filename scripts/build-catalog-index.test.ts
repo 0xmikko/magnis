@@ -188,19 +188,22 @@ describe("tst_pub_catalog_index_001", () => {
   });
 
   test("the always-installed set is DERIVED from tier, not restated", () => {
-    // `triggers/manifest.toml` says `tier = "system"`. The application used
-    // to carry `ALWAYS = ["triggers"]` as a literal — a copy of a fact the
+    // `triggers` and `file` manifests say `tier = "system"`. The application used
+    // to carry an `ALWAYS` literal — a copy of a fact the
     // package already stated, which is exactly the duplicate this document
     // exists to delete rather than relocate.
     const curation = JSON.parse(
       readFileSync(join(first.out, "onboarding.json"), "utf8"),
     ) as Curation;
     expect(curation.always).toContain("triggers");
-    const declaresSystem = readFileSync(
-      join(ROOT, "plugins", "modules", "triggers", "manifest.toml"),
-      "utf8",
-    ).includes('tier = "system"');
-    expect(declaresSystem).toBe(true);
+    expect(curation.always).toContain("file");
+    for (const id of ["triggers", "file"]) {
+      const declaresSystem = readFileSync(
+        join(ROOT, "plugins", "modules", id, "manifest.toml"),
+        "utf8",
+      ).includes('tier = "system"');
+      expect(declaresSystem, `${id} must declare its system lifecycle`).toBe(true);
+    }
   });
 
   test("hard dependencies come from the manifests and name only modules", () => {

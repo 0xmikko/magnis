@@ -11,12 +11,10 @@ export type Data = Record<string, unknown>;
 // freed between batches. Without this, one dispatch monopolizes the connection and
 // every other RPC (frontend polls, search indexer) times out.
 export const INGEST_CHUNK = 200;
-// Above this many chats in a page = a bootstrap dialog list → batch + chunk them.
-// At/below = a re-sync; keep the per-envelope path that merges last_message_* into
-// chat.details (the connector snapshot doesn't carry those fields).
-export const CHAT_BATCH_THRESHOLD = 50;
 // Groups above this member count don't auto-create contacts (native default).
 export const INDEXING_THRESHOLD = 100;
+/** Messages the bootstrap reads per chat; what the plan counts for a chat it does not backfill. */
+export const BOOTSTRAP_MESSAGES_PER_CHAT = 100;
 
 /** First non-empty string value at `k`, else null. */
 export const str = (d: Data, k: string): string | null => {

@@ -1,7 +1,10 @@
 // Bootstrap / catch-up parity tests — the TS mirror of the Rust
 // plugins/sources/telegram/src/commands.rs `mod tests` (FakePager harness).
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
+import { setTimeout as nativeTimeout } from "node:timers";
+import bigInt from "big-integer";
+import { Api } from "telegram";
 import type {
   DialogOffset,
   DialogPage,
@@ -11,14 +14,307 @@ import type {
   RawDialogLike,
 } from "../../client";
 import { resolveHydratedMessages } from "../../client";
+import { LiveDialogPager, TgClient } from "../../live";
+import { createTransport, VirtualClock } from "../../testing/mtproto-transport";
 import type { TgChat, TgMessage } from "./envelope";
 import {
   BOOTSTRAP_BATCH_DIALOGS,
+  execute,
   runBootstrap,
   runCatchup,
   type CatchupDialog,
   type TgOps,
 } from "./commands";
+
+function wireChat(id: number): Api.Chat {
+  return new Api.Chat({ id: bigInt(id), title: `Chat ${String(id)}`, photo: new Api.ChatPhotoEmpty(),
+    participantsCount: 2, date: 1, version: 1 });
+}
+
+function wireMessage(chatId: number, id: number, peer = new Api.PeerChat({ chatId: bigInt(chatId) }) as Api.TypePeer): Api.Message {
+  return new Api.Message({ id, peerId: peer,
+    date: 1767225600 + id, message: `Message ${String(id)}` });
+}
+
+function settled(promise: Promise<Record<string, unknown>>): Promise<{ kind: "resolved" | "rejected"; value: unknown }> {
+  return promise.then((value) => ({ kind: "resolved", value }), (value: unknown) => ({ kind: "rejected", value }));
+}
+
+/** @test-id: tst_src_tgfast_002
+ * @scenario: scn_tg_sync_003
+ * @covers: LiveDialogPager.dialogPage and runBootstrap
+ * @deterministic: yes
+ * @fixtures: real Source/GramJS with existing fake wire; 50 dialogs, 7 pinned, 50 messages each
+ */
+test("tst_src_tgfast_002 fifty dialogs retain bounded hydrated pages and pinned continuation", async () => {
+  const clock = new VirtualClock();
+  const now = spyOn(performance, "now").mockImplementation(() => clock.now());
+  const f = await createTransport(clock);
+  try {
+    const ids = Array.from({ length: 50 }, (_, i) => 1000 + i);
+    const peerFor = (id: number): Api.TypePeer => id === 1006 ? new Api.PeerUser({ userId: bigInt(id) })
+      : id === 1007 ? new Api.PeerChannel({ channelId: bigInt(id) }) : new Api.PeerChat({ chatId: bigInt(id) });
+    const channelHash = "9223372036854775001";
+    let cursor: unknown = null;
+    let wireIndex = 0;
+    const all: Record<string, unknown>[] = [];
+    for (let page = 0; page < 2; page++) {
+      // Recreate the Source wrapper: continuation must not depend on its peer cache.
+      const pending = settled(runBootstrap(cursor, new LiveDialogPager(new TgClient(f.client), "fixture-fast")));
+      if (page === 0) {
+        const sent = await f.application(wireIndex++);
+        expect(sent.method).toBe("messages.GetDialogs");
+        expect(sent.state.request).toMatchObject({ limit: 50 });
+        await f.reply(sent, new Api.messages.Dialogs({
+          dialogs: ids.map((id, i) => new Api.Dialog({ peer: peerFor(id),
+            pinned: i < 7, topMessage: 50, readInboxMaxId: 0, readOutboxMaxId: 0, unreadCount: 0,
+            unreadMentionsCount: 0, unreadReactionsCount: 0, notifySettings: new Api.PeerNotifySettings({}) })),
+          chats: [...ids.filter((id) => id !== 1006 && id !== 1007).map(wireChat),
+            new Api.Channel({ id: bigInt(1007), accessHash: bigInt(channelHash), title: "Channel 1007",
+              photo: new Api.ChatPhotoEmpty(), date: 1, megagroup: true })],
+          users: [new Api.User({ id: bigInt(1006), self: true, firstName: "Saved Messages" })],
+          messages: ids.map((id) => wireMessage(id, 50, peerFor(id))),
+        }));
+      }
+      for (const chatId of ids.slice(page * 25, page * 25 + 25)) {
+        clock.advance(700);
+        const sent = await f.application(wireIndex++);
+        expect(sent.method).toBe("messages.GetHistory");
+        const request = sent.state.request as Api.messages.GetHistory;
+        expect(request.limit).toBe(100);
+        if (chatId === 1006) expect(request.peer).toBeInstanceOf(Api.InputPeerSelf);
+        else if (chatId === 1007) expect(request.peer).toMatchObject({ channelId: bigInt(chatId), accessHash: bigInt(channelHash) });
+        else expect(request.peer).toMatchObject({ chatId: bigInt(chatId) });
+        await f.reply(sent, new Api.messages.MessagesSlice({ count: 50,
+          messages: Array.from({ length: 50 }, (_, i) => wireMessage(chatId, 50 - i, peerFor(chatId))), chats: [], users: [] }));
+      }
+      await new Promise<void>((resolve) => { setImmediate(resolve); });
+      const result = await Promise.race([pending, Promise.resolve({ kind: "unbounded", value: null })]);
+      expect(result.kind).toBe("resolved");
+      const out = result.value as Record<string, unknown>;
+      const envelopes = out.envelopes as Record<string, unknown>[];
+      expect(envelopes).toHaveLength(1275);
+      expect(out.hasMore).toBe(page < 1);
+      // Every hydrated chat answered its whole fifty-message history: the page
+      // states it read each from one; the counters that used to ride here are gone.
+      expect(out.traversed).toEqual(Object.fromEntries(ids.slice(page * 25, page * 25 + 25).map((id) => [String(id), [1, 50]])));
+      expect("total" in out).toBe(false);
+      expect("discovered" in out).toBe(false);
+      if (page === 0) {
+        const hydrationOffset = (out.nextCursor as { dialog_offset: DialogOffset }).dialog_offset;
+        const pendingChats = await new LiveDialogPager(new TgClient(f.client), "fixture-fast")
+          .dialogPage(hydrationOffset, 50, { hydrate: false });
+        expect(pendingChats.dialogs).toHaveLength(25);
+        expect(pendingChats.next_offset).toBeNull();
+        expect(pendingChats.dialogs[0]?.chat.chat_id).toBe(1025);
+        expect(f.writes).toHaveLength(26);
+      }
+      all.push(...envelopes);
+      cursor = JSON.parse(JSON.stringify(out.nextCursor)) as unknown;
+    }
+    expect(f.writes.filter((sent) => sent.method === "messages.GetDialogs")).toHaveLength(1);
+    expect(new Set(all.map((envelope) => envelope.remote_id)).size).toBe(2550);
+    const pinned = all.filter((envelope) => (envelope.payload as Record<string, unknown>).is_pinned === true);
+    expect(pinned.map((envelope) => (envelope.payload as Record<string, unknown>).pin_order)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+    // Telegram states each chat's exact message count in the GetHistory answer
+    // (MessagesSlice.count = 50 above): the chat envelope and the cursor keep it.
+    const chatEnvelopes = all.filter((envelope) => (envelope.payload as Record<string, unknown>).entity_type === "telegram_chat");
+    expect(chatEnvelopes).toHaveLength(50);
+    expect(chatEnvelopes.every((envelope) => (envelope.payload as Record<string, unknown>).message_count === 50)).toBe(true);
+    const finalChats = (cursor as { chats: Record<string, { last_msg_id: number; message_count?: number }> }).chats;
+    expect(Object.values(finalChats).every((chat) => chat.message_count === 50)).toBe(true);
+  } finally { await f.close(); now.mockRestore(); }
+});
+
+/** @test-id: tst_src_tgfast_003
+ * @scenario: scn_tg_sync_003
+ * @covers: runCatchup bounded peer continuation and committed gap watermarks
+ * @deterministic: yes
+ * @fixtures: real Source/GramJS fake wire; seven 21-message gaps, 20-message pages
+ */
+test("tst_src_tgfast_003 catchup resumes round-robin without skipping committed gaps", async () => {
+  const clock = new VirtualClock();
+  const now = spyOn(performance, "now").mockImplementation(() => clock.now());
+  const f = await createTransport(clock);
+  try {
+    const ids = Array.from({ length: 7 }, (_, i) => 2000 + i);
+    // The bootstrap recorded a count per chat; CatchUp must keep it and refresh it
+    // from the count Telegram states in every page it reads (31 below).
+    let cursor: unknown = { chats: Object.fromEntries(ids.map((id) => [id, { last_msg_id: 10, message_count: 10 }])) };
+    let wireIndex = 0;
+    const received: string[] = [];
+    const chatEnvelopesSeen: (number | undefined)[] = [];
+    const orders = [[2000, 2001], [2002, 2003, 2004, 2005, 2006, 2000, 2001], [2002, 2003, 2004, 2005, 2006]];
+    for (const [page, order] of orders.entries()) {
+      const tg = new TgClient(f.client);
+      const pending = settled(runCatchup(tg, "fixture-fast", cursor, new LiveDialogPager(tg, "fixture-fast")));
+      if (page === 0) {
+        const sent = await f.application(wireIndex++);
+        expect(sent.method).toBe("messages.GetDialogs");
+        await f.reply(sent, new Api.messages.Dialogs({
+          dialogs: ids.map((id) => new Api.Dialog({ peer: new Api.PeerChat({ chatId: bigInt(id) }),
+            topMessage: 31, readInboxMaxId: 0, readOutboxMaxId: 0, unreadCount: 0,
+            unreadMentionsCount: 0, unreadReactionsCount: 0, notifySettings: new Api.PeerNotifySettings({}) })),
+          chats: ids.map(wireChat), users: [], messages: ids.map((id) => wireMessage(id, 31)),
+        }));
+      }
+      for (const chatId of order) {
+        const sent = await f.application(wireIndex++);
+        expect(sent.method).toBe("messages.GetHistory");
+        const request = sent.state.request as Api.messages.GetHistory;
+        expect(request.peer).toMatchObject({ chatId: bigInt(chatId) });
+        expect(request.limit).toBe(20);
+        const first = request.offsetId - 1;
+        // Slow provider replies consume the page budget: yield after two reads,
+        // even though the page's read ceiling has not yet been reached.
+        if (page === 0) clock.advance(10_000);
+        await f.reply(sent, new Api.messages.MessagesSlice({ count: 31,
+          messages: Array.from({ length: Math.min(20, first) }, (_, i) => wireMessage(chatId, first - i)),
+          chats: [], users: [] }));
+      }
+      await new Promise<void>((resolve) => { setImmediate(resolve); });
+      const result = await Promise.race([pending, Promise.resolve({ kind: "unbounded", value: null })]);
+      expect(result.kind).toBe("resolved");
+      const out = result.value as Record<string, unknown>;
+      expect(out.hasMore).toBe(page < 2);
+      const next = out.nextCursor as { chats: Record<string, { last_msg_id: number; target_last_msg_id?: number }> };
+      if (page === 0) {
+        expect(Object.values(next.chats).every((chat) => chat.last_msg_id === 10)).toBe(true);
+        expect(next.chats["2000"]?.target_last_msg_id).toBe(31);
+        expect(next.chats["2005"]?.target_last_msg_id).toBeUndefined();
+      }
+      for (const envelope of out.envelopes as { remote_id: string; payload: Record<string, unknown> }[]) {
+        if (envelope.remote_id.startsWith("tg:msg:")) received.push(envelope.remote_id);
+        if (envelope.remote_id.startsWith("tg:chat:")) chatEnvelopesSeen.push(envelope.payload.message_count as number | undefined);
+      }
+      cursor = JSON.parse(JSON.stringify(out.nextCursor)) as unknown;
+    }
+    expect(received).toHaveLength(147);
+    expect(new Set(received).size).toBe(147);
+    expect((cursor as { chats: unknown }).chats).toEqual(Object.fromEntries(ids.map((id) => [id, { last_msg_id: 31, message_count: 31 }])));
+    // Every chat envelope the walk emits carries the count of the page it read
+    // for that chat (31), never the entry's older count (10): a re-asserted
+    // chat cannot take the module's count backwards.
+    expect(chatEnvelopesSeen.length).toBeGreaterThan(0);
+    expect(chatEnvelopesSeen.every((count) => count === 31)).toBe(true);
+    expect(f.writes.filter((sent) => sent.method === "messages.GetDialogs")).toHaveLength(1);
+  } finally { await f.close(); now.mockRestore(); }
+});
+
+/** @test-id: tst_src_tgfast_005
+ * @scenario: scn_tg_sync_003
+ * @covers: TgClient.getMessages count provenance for a complete first page
+ * @deterministic: yes
+ * @fixtures: real Source/GramJS fake wire; messages.Messages answers with and without an offset
+ */
+test("tst_src_tgfast_005 a complete first page states the chat's count; an offset page without a count stays uncounted", async () => {
+  const clock = new VirtualClock();
+  const now = spyOn(performance, "now").mockImplementation(() => clock.now());
+  const f = await createTransport(clock);
+  try {
+    f.tg.cachePeer(42, wireChat(42));
+    const peer = await f.tg.resolvePeer(42);
+    // Telegram answers a chat whose whole history fits the page with
+    // messages.Messages: no count field, because the answer IS the history.
+    const first = f.tg.getMessages(peer, { limit: 50 }, 60_000);
+    clock.advance(3000);
+    await f.reply(await f.application(0), new Api.messages.Messages({
+      messages: [wireMessage(42, 3), wireMessage(42, 2), wireMessage(42, 1)], chats: [], users: [] }));
+    expect((await first).total).toBe(3);
+    // The same answer for an OFFSET page is only the rest of the history.
+    const rest = f.tg.getMessages(peer, { limit: 50, offsetId: 10 }, 60_000);
+    clock.advance(3000);
+    await f.reply(await f.application(1), new Api.messages.Messages({
+      messages: [wireMessage(42, 9)], chats: [], users: [] }));
+    expect((await rest).total).toBeUndefined();
+  } finally { await f.close(); now.mockRestore(); }
+});
+
+/** @test-id: tst_src_tgfast_004
+ * @scenario: scn_tg_sync_003
+ * @covers: TgClient.getMessages and execute backfill_chat
+ * @deterministic: yes
+ * @fixtures: real Source/GramJS fake-wire count-bearing and count-absent history responses
+ */
+test("tst_src_tgfast_004 backfill preserves provider totals without inventing missing counts", async () => {
+  const clock = new VirtualClock();
+  const now = spyOn(performance, "now").mockImplementation(() => clock.now());
+  const f = await createTransport(clock);
+  try {
+    f.tg.cachePeer(42, wireChat(42));
+    for (const [index, total] of [78, 1, null].entries()) {
+      const pending = execute(f.tg, "fixture-fast", { action: "backfill_chat", chat_id: 42, before_message_id: 10, lower_message_id: 9 },
+        { sleep: async () => undefined });
+      clock.advance(3000);
+      const sent = await f.application(index);
+      const messages = [wireMessage(42, 9)];
+      await f.reply(sent, total === null ? new Api.messages.Messages({ messages, chats: [], users: [] })
+        : new Api.messages.MessagesSlice({ count: total, messages, chats: [], users: [] }));
+      const result = await pending;
+      expect(result.total).toBe(total);
+      expect(result.has_more).toBe(true);
+      expect(result.oldest_message_id).toBe(9);
+    }
+    // The existing ops seam represents a provider adapter with no count at all.
+    const missing = await execute(fakeOps([]), "fixture-fast",
+      { action: "backfill_chat", chat_id: 42, lower_message_id: 1 }, { sleep: async () => undefined });
+    expect(missing.total).toBeNull();
+
+    // A cold peer lookup spends the same deadline, not a separate 60-second
+    // allowance followed by another history timeout after the host has left.
+    const pending = settled(execute(new TgClient(f.client), "fixture-fast",
+      { action: "backfill_chat", chat_id: 43, lower_message_id: 1 }, { sleep: async () => undefined }));
+    const sent = await f.application(3);
+    expect(sent.method).toBe("messages.GetDialogs");
+    clock.advance(20_000);
+    await f.reply(sent, new Api.messages.Dialogs({
+      dialogs: [new Api.Dialog({ peer: new Api.PeerChat({ chatId: bigInt(43) }),
+        topMessage: 9, readInboxMaxId: 0, readOutboxMaxId: 0, unreadCount: 0,
+        unreadMentionsCount: 0, unreadReactionsCount: 0, notifySettings: new Api.PeerNotifySettings({}) })],
+      chats: [wireChat(43)], users: [], messages: [wireMessage(43, 9)],
+    }));
+    const timedOut = await pending;
+    expect(timedOut.kind).toBe("rejected");
+    expect(timedOut.value).toMatchObject({ name: "MtprotoTimeoutError" });
+    expect(f.writes).toHaveLength(4);
+
+    let expirePeer: (() => void) | undefined;
+    const timerHost: { setTimeout(callback: (...args: unknown[]) => void, delay?: number, ...args: unknown[]): ReturnType<typeof setTimeout> } = globalThis;
+    const timer = spyOn(timerHost, "setTimeout").mockImplementation((callback, delay, ...args) => {
+      const handle = nativeTimeout(callback, delay, ...args);
+      if (delay === 20_000) { clearTimeout(handle); expirePeer = () => callback(...args); }
+      return handle;
+    });
+    try {
+      const lookup = settled(execute(new TgClient(f.client), "fixture-fast",
+        { action: "backfill_chat", chat_id: 9999, lower_message_id: 1 }, { sleep: async () => undefined }));
+      const discovery = await f.application(4);
+      if (!expirePeer) throw new Error("Backfill deadline was not armed");
+      expirePeer();
+      expect((await lookup).value).toMatchObject({ name: "MtprotoTimeoutError" });
+      const ids = Array.from({ length: 50 }, (_, i) => 3000 + i);
+      await f.reply(discovery, new Api.messages.DialogsSlice({ count: 100,
+        dialogs: ids.map((id) => new Api.Dialog({ peer: new Api.PeerChat({ chatId: bigInt(id) }),
+          topMessage: 9, readInboxMaxId: 0, readOutboxMaxId: 0, unreadCount: 0,
+          unreadMentionsCount: 0, unreadReactionsCount: 0, notifySettings: new Api.PeerNotifySettings({}) })),
+        chats: ids.map(wireChat), users: [], messages: ids.map((id) => wireMessage(id, 9)),
+      }));
+      await new Promise<void>((resolve) => { setImmediate(resolve); });
+      expect(f.writes).toHaveLength(5);
+    } finally { timer.mockRestore(); }
+    for (const [index, invalid] of [
+      new Api.messages.MessagesNotModified({ count: 78 }),
+      new Api.messages.MessagesSlice({ count: -1, messages: [], chats: [], users: [] }),
+    ].entries()) {
+      const reading = settled(execute(f.tg, "fixture-fast", { action: "backfill_chat", chat_id: 42, lower_message_id: 1 },
+        { sleep: async () => undefined }));
+      await f.reply(await f.application(5 + index), invalid);
+      const failed = await reading;
+      expect(failed.kind).toBe("rejected");
+      expect(failed.value).not.toHaveProperty("envelopes");
+    }
+  } finally { await f.close(); now.mockRestore(); }
+});
 
 // ── fakes ───────────────────────────────────────────────────────────────────
 
@@ -64,6 +360,10 @@ interface FakeDialog {
   chat_id: number;
   is_pinned: boolean;
   msg_ids: number[];
+  /** The dialog's newest message id as GetDialogs states it (0 = empty). */
+  top_message?: number;
+  /** The exact count Telegram states with the history answer. */
+  message_count?: number;
   /** When set, this chat's history hydration fails with the given RPC error —
    * routed through the SAME resolveHydratedMessages seam the live pager uses. */
   history_rpc_err?: [number, string];
@@ -100,7 +400,11 @@ class FakePager implements DialogPager {
           ? { ok: false, error: rpcErr(fd.history_rpc_err[0], fd.history_rpc_err[1]) }
           : { ok: true, messages: fd.msg_ids.map((m) => fakeMsg(fd.chat_id, m)) };
       const messages = resolveHydratedMessages(fd.chat_id, fetched);
-      dialogs.push({ chat: fakeChat(fd.chat_id, fd.is_pinned), messages });
+      const chat = fakeChat(fd.chat_id, fd.is_pinned);
+      if (fd.top_message !== undefined) chat.top_message = fd.top_message;
+      // The count rides the answer: a failed read states none.
+      if (fd.message_count !== undefined && fetched.ok) chat.message_count = fd.message_count;
+      dialogs.push({ chat, messages });
     }
 
     const nextOffset: DialogOffset | null =
@@ -253,29 +557,18 @@ describe("bootstrap", () => {
     expect((resumed.nextCursor as Record<string, unknown>).pinned_count).toBe(8);
   });
 
-  // Twin of tst_src_tg_bootstrap_total_001.
-  test("tst_tgts_boot_009 total passes through; discovered is CUMULATIVE", async () => {
+  // The host reads no counters from a page: what it counts is what the
+  // Graph stamped, what it plans is what the module states.
+  test("tst_tgts_boot_009 a page carries no total and no discovered, whatever the pager knows", async () => {
     const pager = new FakePager(simpleDialogs(130), 50, 130);
-
-    const first = await runBootstrap(null, pager);
-    expect(first.total).toBe(130);
-    expect(first.discovered).toBe(50);
-
-    let cursor = first.nextCursor;
-    let lastDiscovered = first.discovered as number;
+    let cursor: unknown = null;
     for (let i = 0; i < 10; i += 1) {
       const out = await runBootstrap(cursor, pager);
-      expect(out.total).toBe(130);
-      lastDiscovered = out.discovered as number;
+      expect("total" in out).toBe(false);
+      expect("discovered" in out).toBe(false);
       cursor = out.nextCursor;
       if (!(out.hasMore as boolean)) break;
     }
-    expect(lastDiscovered).toBe(130);
-  });
-
-  test("tst_tgts_boot_010 total is null when the pager omits it", async () => {
-    const out = await runBootstrap(null, new FakePager(simpleDialogs(3), 50));
-    expect(out.total).toBeNull();
   });
 
   test("tst_tgts_boot_011 nextCursor is null IFF no chats AND no next offset", async () => {
@@ -342,6 +635,29 @@ describe("bootstrap", () => {
     expect(pager.requests[0]).toBeNull(); // no dialog_offset → resume from the top
     expect(new Set(emitted).size).toBe(120);
     expect(hasMores.at(-1)).toBe(false);
+  });
+
+  /** @test-id: tst_tgts_boot_014
+   * @scenario: scn_tg_sync_003
+   * @covers: runBootstrap traversed ranges
+   * @deterministic: yes
+   * @fixtures: a 120-, a 70- and a 5-message chat, an empty one, a failed read and a chat that grew since GetDialogs
+   */
+  test("tst_tgts_boot_014 the page states the id range it read per chat, a whole history from one, nothing for an empty or failed chat", async () => {
+    const newestFirst = (top: number, count: number): number[] => Array.from({ length: count }, (_, i) => top - i);
+    const pager = new FakePager([
+      { chat_id: 1, is_pinned: false, msg_ids: newestFirst(120, 50), top_message: 120, message_count: 120 },
+      { chat_id: 2, is_pinned: false, msg_ids: newestFirst(70, 50), top_message: 70, message_count: 70 },
+      { chat_id: 3, is_pinned: false, msg_ids: newestFirst(5, 5), top_message: 5, message_count: 5 },
+      { chat_id: 4, is_pinned: false, msg_ids: [], top_message: 0 },
+      { chat_id: 5, is_pinned: false, msg_ids: newestFirst(40, 40), top_message: 40, message_count: 40, history_rpc_err: [500, "RPC_CALL_FAIL"] },
+      // A message arrived between GetDialogs and the history read: the page read past the dialog's top.
+      { chat_id: 6, is_pinned: false, msg_ids: newestFirst(130, 50), top_message: 120, message_count: 130 },
+    ], 50);
+    const out = await runBootstrap(null, pager);
+    expect(out.traversed).toEqual({ "1": [71, 120], "2": [21, 70], "3": [1, 5], "6": [81, 130] });
+    expect("total" in out).toBe(false);
+    expect("discovered" in out).toBe(false);
   });
 });
 
@@ -411,6 +727,10 @@ function rawDialog(topMessage: number, pinned = false): RawDialogLike {
 
 function liveMsg(id: number): MessageLike {
   return { id, message: "", date: 1767225600, out: false };
+}
+
+function range(first: number, last: number): number[] {
+  return Array.from({ length: last - first + 1 }, (_, index) => first + index);
 }
 
 /** Minimal TgOps fake: a dialog list + a per-chat newest-first message list. */
@@ -524,5 +844,44 @@ describe("catch-up", () => {
     // account id, which media messages stamp into source_ref.account_id.
     expect((msg.payload as Record<string, unknown>).message_id).toBe(1);
     expect(msg.remote_id).toBe("tg:msg:5:1");
+  });
+
+  /** @test-id: tst_tgts_catch_008
+   * @scenario: scn_tg_sync_003
+   * @covers: runCatchup traversed ranges
+   * @deterministic: yes
+   * @fixtures: a chat read in one page, a chat with a two-page gap, a chat with nothing new
+   */
+  test("tst_tgts_catch_008 the walk states the range it read per chat: the whole gap once reached, the page's own range while it continues", async () => {
+    const histories = new Map<number, number[]>([[5, range(1, 130)], [6, range(1, 160)], [7, range(1, 10)]]);
+    const ops: TgOps = {
+      async listDialogs() {
+        return [[5, 130], [6, 160], [7, 10]].map(([chatId, top]) => ({
+          entity: entity(chatId as number), raw: rawDialog(top as number), pinned: false, peer: chatId,
+        }));
+      },
+      async resolvePeer(chatId) { return chatId; },
+      async getMessages(peer, params) {
+        const before = params.offsetId ?? 0;
+        return (histories.get(peer as number) ?? []).filter((id) => before === 0 || id < before)
+          .sort((a, b) => b - a).slice(0, params.limit ?? 20).map(liveMsg);
+      },
+      async sendMessage() { throw new Error("not used"); },
+      async downloadMedia() { throw new Error("not used"); },
+    };
+    const first = await runCatchup(ops, "acct", { chats: { "5": { last_msg_id: 120 }, "6": { last_msg_id: 100 }, "7": { last_msg_id: 10 } } });
+    // Chat 5's gap fit one page; chat 6's did not — its page states what it read, and the walk continues.
+    expect(first.traversed).toEqual({ "5": [121, 130], "6": [141, 160] });
+    expect(first.hasMore).toBe(true);
+    const second = await runCatchup(ops, "acct", first.nextCursor);
+    expect(second.traversed).toEqual({ "6": [121, 140] });
+    const third = await runCatchup(ops, "acct", second.nextCursor);
+    expect(third.traversed).toEqual({ "6": [101, 120] });
+    expect(third.hasMore).toBe(true);
+    // The read that crosses the committed watermark proves the gap closed: the whole of it is stated.
+    const fourth = await runCatchup(ops, "acct", third.nextCursor);
+    expect(fourth.traversed).toEqual({ "6": [101, 160] });
+    expect(fourth.hasMore).toBe(false);
+    expect("total" in fourth).toBe(false);
   });
 });

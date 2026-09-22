@@ -1,5 +1,5 @@
 /**
- * @test-id: tst_plg_tgui_header_total_001..003
+ * @test-id: tst_plg_tgui_header_total_001..004
  * @scenario: scn_telegram_chat_header_total
  * @covers: plugins/modules/telegram/ui/hooks/useTelegramMessages.ts,
  *          plugins/modules/telegram/ui/TelegramChatView.tsx
@@ -32,6 +32,9 @@ import type { TelegramMessageListItem } from "../types";
 // ── Mocks ────────────────────────────────────────────────────────
 
 const rpcMock = vi.hoisted(() => vi.fn());
+const eventState = vi.hoisted(() => ({
+  handler: null as null | ((event: { payload?: unknown }) => void),
+}));
 // Initial-page query state, programmable per test (replaces TanStack Query so
 // the test needs no QueryClientProvider — and no second React copy).
 const queryState = vi.hoisted(() => ({
@@ -44,7 +47,15 @@ vi.mock("@magnis/host/runtime", () => {
     transport: {
       baseUrl: "http://test",
       rpc: rpcMock,
-      onEventType: (): (() => void) => (): void => undefined,
+      onEventType: (
+        _types: readonly string[],
+        handler: (event: { payload?: unknown }) => void,
+      ): (() => void) => {
+        eventState.handler = handler;
+        return (): void => {
+          if (eventState.handler === handler) eventState.handler = null;
+        };
+      },
     },
     queryClient: { invalidateQueries: (): void => undefined },
     agent: { setReplyTo: (): void => undefined },
@@ -184,6 +195,67 @@ function page(count: number, total: number, offset: number): {
 // ── Tests ────────────────────────────────────────────────────────
 
 describe("telegram chat header total (graph total, never page length)", () => {
+  /**
+   * @test-id: tst_plg_tgui_header_total_005
+   * @scenario: scn_telegram_page_retry_001
+   * @covers: useTelegramMessages older-page offset commitment and single flight
+   * @deterministic: yes; explicit rejection and completion gate, no provider
+   * @fixtures: existing query/transport doubles; three disjoint fifty-message pages
+   */
+  it("tst_plg_tgui_header_total_005 retries a failed page before advancing and coalesces overlapping reads", async () => {
+    queryState.data = undefined;
+    queryState.isLoading = false;
+    rpcMock.mockReset();
+    eventState.handler = null;
+    const offsets: number[] = [];
+    let finishLastPage: (() => void) | undefined;
+    const lastPage = new Promise<ReturnType<typeof page>>((resolve) => {
+      finishLastPage = () => resolve(page(50, 150, 100));
+    });
+    rpcMock.mockImplementation((method: string, params: Record<string, unknown>) => {
+      if (method === "telegram.messages.backfill") return Promise.resolve({ pending: true });
+      if (method !== "telegram.messages.list") return Promise.reject(new Error(`unexpected rpc ${method}`));
+      if (typeof params.offset !== "number") throw new Error("Expected an explicit page offset");
+      offsets.push(params.offset);
+      if (offsets.length === 1) return Promise.reject(new Error("scripted page failure"));
+      return offsets.length === 2 ? Promise.resolve(page(50, 150, params.offset)) : lastPage;
+    });
+    const chat: TelegramChat = {
+      id: "chat-entity-1", chatId: "4242", accountId: "source-account-1",
+      name: "Fixture chat", initials: "FC", avatarColor: "#333", lastMessage: "Fixture", time: "12:00",
+    };
+    const { useTelegramMessages } = await import("../hooks/useTelegramMessages");
+    const { result, rerender, unmount } = renderHook(() => useTelegramMessages(chat.id, [chat]));
+    try {
+      queryState.data = page(50, 150, 0);
+      rerender();
+      await waitFor(() => expect(result.current.hasMore).toBe(true));
+      act(() => eventState.handler?.({ payload: { chat_id: 4242, ingested: 0 } }));
+      await act(async () => { result.current.handleLoadMore(); });
+      expect(offsets).toEqual([50]);
+      expect(result.current.conversation?.messages).toHaveLength(50);
+      expect(result.current.conversation?.messageTotal).toBe(150);
+      expect(result.current.loading).toBe(false);
+      await act(async () => { result.current.handleLoadMore(); });
+      expect(offsets).toEqual([50, 50]);
+      expect(result.current.conversation?.messages).toHaveLength(100);
+      act(() => {
+        result.current.handleLoadMore();
+        result.current.handleLoadMore();
+      });
+      expect(offsets).toEqual([50, 50, 100]);
+      if (finishLastPage === undefined) throw new Error("Completion gate was not initialized");
+      await act(async () => { finishLastPage?.(); await lastPage; });
+      expect(result.current.conversation?.messages).toHaveLength(150);
+      expect(new Set(result.current.conversation?.messages.map(message => message.id)).size).toBe(150);
+      expect(result.current.conversation?.messageTotal).toBe(150);
+      expect(result.current.hasMore).toBe(false);
+    } finally {
+      finishLastPage?.();
+      unmount();
+    }
+  });
+
   // The conversation model must report the chat's REAL graph total from the
   // NEWEST list response — after a backfill lands more history and a later
   // page reports total=250, the model must say 250, not the first page's 50
@@ -278,5 +350,61 @@ describe("telegram chat header total (graph total, never page length)", () => {
         reply_to_message_id: null,
       });
     });
+  });
+
+  /**
+   * @test-id: tst_plg_tgui_header_total_004
+   * @scenario: scn_telegram_backfill_single_wake_001
+   * @covers: plugins/modules/telegram/ui/hooks/useTelegramMessages.ts
+   * @deterministic: yes
+   * @fixtures: one selected chat, one accepted backfill event, one refreshed graph page
+   */
+  it("tst_plg_tgui_header_total_004 opens a chat with one server-drained backfill request", async () => {
+    queryState.data = page(1, 1, 10);
+    queryState.isLoading = false;
+    eventState.handler = null;
+    rpcMock.mockReset();
+    rpcMock.mockImplementation((method: string, params: Record<string, unknown>) => {
+      if (method === "telegram.messages.backfill") return Promise.resolve({ pending: true });
+      if (method === "telegram.messages.list") {
+        return Promise.resolve(page(1, 2, (params.offset as number | undefined) ?? 0));
+      }
+      return Promise.reject(new Error(`unexpected rpc ${method}`));
+    });
+    const chat: TelegramChat = {
+      id: "chat-entity-1",
+      chatId: "4242",
+      accountId: "source-account-1",
+      name: "Magnis Builders",
+      initials: "MB",
+      avatarColor: "#333",
+      lastMessage: "Ready",
+      time: "12:00",
+    };
+    const { useTelegramMessages } = await import("../hooks/useTelegramMessages");
+    const { unmount } = renderHook(() => useTelegramMessages("chat-entity-1", [chat]));
+
+    await waitFor(() => {
+      expect(
+        rpcMock.mock.calls.filter(([method]) => method === "telegram.messages.backfill"),
+      ).toHaveLength(1);
+    });
+    await act(async () => {
+      eventState.handler?.({ payload: { chat_id: 4242, ingested: 1 } });
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(
+        rpcMock.mock.calls.filter(([method]) => method === "telegram.messages.list"),
+      ).toHaveLength(1);
+    });
+
+    expect(
+      rpcMock.mock.calls.filter(([method]) => method === "telegram.messages.backfill"),
+    ).toHaveLength(1);
+    expect(
+      rpcMock.mock.calls.find(([method]) => method === "telegram.messages.backfill")?.[1],
+    ).not.toHaveProperty("limit");
+    unmount();
   });
 });
