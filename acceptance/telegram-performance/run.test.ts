@@ -6,12 +6,13 @@
  * @fixtures: one temporary minimal app worktree
  */
 import { expect, test } from "bun:test";
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
   appIdentity,
+  buildCatalog,
   clearStoppedDatabaseRecord,
   parseOptions,
   RESET_SQL,
@@ -183,4 +184,37 @@ test("tst_cat_tg_performance_runner_006 requires an explicit indexer mode", () =
   expect(parseOptions([...start, "--indexer", "off"]).indexer).toBe("off");
   expect(() => parseOptions(start)).toThrow("Pass --indexer <on|off>");
   expect(() => parseOptions([...start, "--indexer", "auto"])).toThrow("--indexer must be on or off");
+});
+
+/**
+ * @test-id: tst_cat_tg_performance_runner_007
+ * @scenario: scn_tg_performance_current_plugin_001
+ * @covers: acceptance/telegram-performance/run.ts::buildCatalog
+ * @deterministic: yes
+ * @fixtures: one temporary command recorder
+ */
+test("tst_cat_tg_performance_runner_007 builds current plugins before the catalog", async () => {
+  const root = mkdtempSync(join(tmpdir(), "magnis-telegram-performance-build-"));
+  const bin = join(root, "bin");
+  const log = join(root, "commands.log");
+  const originalPath = process.env.PATH;
+  const originalLog = process.env.CATALOG_BUILD_LOG;
+  mkdirSync(bin);
+  writeFileSync(join(bin, "bun"), "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$CATALOG_BUILD_LOG\"\n");
+  chmodSync(join(bin, "bun"), 0o755);
+  process.env.PATH = `${bin}:${originalPath ?? ""}`;
+  process.env.CATALOG_BUILD_LOG = log;
+  try {
+    await buildCatalog(join(root, "catalog"), "fixture-revision");
+    expect(readFileSync(log, "utf8").trim().split("\n")).toEqual([
+      "scripts/build-plugins.ts",
+      "scripts/build-catalog-index.ts",
+    ]);
+  } finally {
+    if (originalPath === undefined) delete process.env.PATH;
+    else process.env.PATH = originalPath;
+    if (originalLog === undefined) delete process.env.CATALOG_BUILD_LOG;
+    else process.env.CATALOG_BUILD_LOG = originalLog;
+    rmSync(root, { recursive: true, force: true });
+  }
 });

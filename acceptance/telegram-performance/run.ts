@@ -375,8 +375,9 @@ export async function runCommand(command: readonly string[], root: string, env: 
   }
 }
 
-async function buildCatalog(channelRoot: string, revision: string): Promise<void> {
+export async function buildCatalog(channelRoot: string, revision: string): Promise<void> {
   mkdirSync(channelRoot, { recursive: true });
+  await runCommand(["bun", "scripts/build-plugins.ts"], CATALOG_ROOT);
   await runCommand(["bun", "scripts/build-catalog-index.ts"], CATALOG_ROOT, {
     ...process.env,
     CATALOG_OUT: channelRoot,
