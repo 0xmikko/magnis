@@ -91,7 +91,7 @@ export function buildConnectorConfig(deps: ConnectorDeps = {}): ConnectorConfig 
 
   return {
     name: "magnis-telegram",
-    version: "1.1.0",
+    version: "1.0.1",
     surfaces: [SURFACE_TELEGRAM],
     mode: "push",
     fetch: async (args): Promise<FetchResult> => await providerCall(async () => {

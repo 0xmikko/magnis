@@ -442,7 +442,7 @@ describe("wire: mode gate", () => {
 });
 
 describe("wire: initialize / tools/list", () => {
-  test("tst_tgts_wire_009 initialize advertises the push surface with NO interval_secs", async () => {
+  test("tst_tgts_wire_009 initialize preserves its server version and advertises push without interval_secs", async () => {
     const d = deps();
     const reply = (await handleSdkMessage(
       { jsonrpc: "2.0", id: 1, method: "initialize" },
