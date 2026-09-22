@@ -8,7 +8,7 @@ import { runMcpStdio, type DispatchDeps } from "./dispatch";
 import { resetAuthFlow } from "./auth";
 import { SubscriptionRegistry } from "./subscriptions";
 import { LiveDialogPager } from "./live";
-import { SOURCE_PAGE_BUDGET_MS, MtprotoTimeoutError } from "./client";
+import { MTPROTO_REQUEST_TIMEOUT_MS, SOURCE_PAGE_BUDGET_MS, MtprotoTimeoutError } from "./client";
 import { AccountAdmission, type AdmissionEvent } from "./request-admission";
 import { execute, runBootstrap } from "./surfaces/telegram/commands";
 import { liveUpdatePushes } from "./subscriptions";
@@ -382,17 +382,21 @@ test("tst_src_tgflood_003 peer misses share a continuation through floods and ca
     expect(f.writes).toHaveLength(wireIndex);
 
     let expireHistory: (() => void) | undefined;
+    let historyTimeoutMs = 0;
     const timeoutHost: { setTimeout(callback: (...args: unknown[]) => void, delay?: number, ...args: unknown[]): ReturnType<typeof setTimeout> } = globalThis;
     const timer = spyOn(timeoutHost, "setTimeout").mockImplementation((callback, delay, ...args) => {
       const handle = nativeTimeout(callback, delay, ...args);
-      if (delay !== undefined && delay > 0 && delay <= SOURCE_PAGE_BUDGET_MS) {
-        clearTimeout(handle); expireHistory = () => callback(...args);
+      if (delay !== undefined && delay > 0 && delay <= MTPROTO_REQUEST_TIMEOUT_MS) {
+        clearTimeout(handle);
+        historyTimeoutMs = delay;
+        expireHistory = () => callback(...args);
       }
       return handle;
     });
     try {
       const timedOut = outcome(execute(f.tg, "fixture-A", { action: "backfill_chat", chat_id: 201, before_message_id: 0, lower_message_id: 1 }, deps));
       const uncertain = await f.application(wireIndex++);
+      expect(historyTimeoutMs).toBe(SOURCE_PAGE_BUDGET_MS);
       if (!expireHistory) throw new Error("History timeout was not armed");
       expireHistory();
       expect((await timedOut).value).toBeInstanceOf(MtprotoTimeoutError);
@@ -402,10 +406,12 @@ test("tst_src_tgflood_003 peer misses share a continuation through floods and ca
       await f.reply(uncertain, new Api.messages.Messages({ messages: [fixtureMessage(201, 120)], chats: [fixtureChat(201)], users: [] }));
 
       const cursor = { chats: { "1": { last_msg_id: 7 } }, pinned_count: 2 };
+      historyTimeoutMs = 0;
       const hydration = outcome(runBootstrap(cursor, new LiveDialogPager(f.tg, "fixture-A")));
       await f.reply(await f.application(wireIndex++), dialogResponse([201], false));
       const snapshot = await f.application(wireIndex++);
       expect(snapshot.method).toBe("messages.GetHistory");
+      expect(historyTimeoutMs).toBe(MTPROTO_REQUEST_TIMEOUT_MS);
       if (!expireHistory) throw new Error("Hydration timeout was not armed");
       expireHistory();
       const failedSnapshot = await hydration;

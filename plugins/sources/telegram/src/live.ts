@@ -635,7 +635,7 @@ export class LiveDialogPager implements DialogPager {
       // snapshot cannot certify a successful page or advance its cursor.
       let fetched: { ok: true; messages: ReturnType<typeof messageToIntermediate>[] } | { ok: false; error: unknown };
       try {
-        const msgs = await this.tg.getMessages(item.peer, { limit: BOOTSTRAP_MESSAGES_PER_CHAT }, remainingPageBudget(deadline));
+        const msgs = await this.tg.getMessages(item.peer, { limit: BOOTSTRAP_MESSAGES_PER_CHAT });
         // The same answer states the chat's exact message count; the chat keeps it.
         if (msgs.total !== undefined) chat.message_count = msgs.total;
         fetched = { ok: true, messages: msgs.map((m) => messageToIntermediate(m, this.accountId, chatId)) };
