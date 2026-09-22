@@ -380,9 +380,10 @@ classes and their codes:
 | plain `Error` | `-32000` | untyped generic failure |
 
 On an upstream **HTTP 429**, throw `RateLimitError(retryAfter)` parsed from the
-`Retry-After` header. Telegram's `FLOOD_WAIT` maps the same way (short waits are
-absorbed inline with one retry; long ones surface). The contract test asserts an
-upstream 429 surfaces as `-32002` with a numeric `data.retry_after`.
+`Retry-After` header. Telegram's provider-declared holds map the same way: the
+account pauses until the exact deadline and successful calls add no learned
+spacing. The contract test asserts an upstream 429 surfaces as `-32002` with a
+numeric `data.retry_after`.
 
 ---
 
@@ -417,15 +418,13 @@ Pipe successive JSON-RPC lines (`tools/call` for `magnis.sync.fetch`, with a
 
 ---
 
-## 10. When to deviate — the Telegram exception
+## 10. One runtime
 
-The SDK path (`runConnector` / `handleMessage`) is **canonical**: every source
-should use it. Telegram is the one deliberate exception — it ships its own
-dispatcher because it needs two things the SDK has no hook for: (1) an
-`--auth-mode` spawn that serves **only** `magnis.auth.*` (and a sync spawn that
-refuses them), and (2) keeping a live client alive across `begin → step`. If you
-think you need to deviate, you almost certainly do not — reach for the SDK path
-first, and treat a custom dispatcher as a last resort with a documented reason.
+Every current Source uses the SDK path: a `ConnectorConfig` passed to
+`runConnector`, with `handleMessage` owning the same JSON-RPC operation set in
+tests. Push Sources use `listen_start` and `listen_stop`; there is no separate
+`magnis.sync.listen` fallback. Certification rejects a current custom runtime
+or legacy operation instead of maintaining provider-specific dispatch paths.
 
 ---
 

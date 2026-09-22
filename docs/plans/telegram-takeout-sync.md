@@ -371,27 +371,30 @@ Commit. feat(telegram): sync history through resumable Takeout — exact totals 
 
 ##### Tasks
 
-- [ ] TELEGRAMHOLD_001 — Remove learned request spacing and release one queued Telegram request at the exact provider deadline. (20 min)
+- [x] TELEGRAMHOLD_001 — Remove learned request spacing and release one queued Telegram request at the exact provider deadline. (20 min) — 66b11c8
 <!-- plan:task-meta:{"writes":["plugins/sources/telegram/src/request-admission.ts","plugins/sources/telegram/src/client.ts","plugins/sources/telegram/src/tst_src_tgflood_001.test.ts"],"predictedActiveMinutes":20,"predictedCredits":2,"how":"Delete completedCount, completedStartedAt, lastSentAt, requestIntervalMs and derived wake/select spacing from plugins/sources/telegram/src/request-admission.ts. In plugins/sources/telegram/src/client.ts parse exact non-negative suffixes for FLOOD_WAIT, FLOOD_PREMIUM_WAIT and TAKEOUT_INIT_DELAY and leave an invalid 420 closed. Add metadata-backed tst_src_tgflood_007 to plugins/sources/telegram/src/tst_src_tgflood_001.test.ts with a fake clock covering successful bursts, deadline-minus-one, exact expiry, a second hold and malformed input.","red":"bun run agent:test:backend -- plugins/sources/telegram/src/tst_src_tgflood_001.test.ts -t tst_src_tgflood_007"} -->
-- [ ] TELEGRAMTAKEOUT_001 — Count every Takeout dialog history before emitting messages, then publish fixed chat totals and seed bounded gaps. (55 min)
+- [x] TELEGRAMTAKEOUT_001 — Count every Takeout dialog history before emitting messages, then publish fixed chat totals and seed bounded gaps. (55 min) — 66b11c8
 <!-- plan:task-meta:{"writes":["plugins/sources/telegram/src/connector.ts","plugins/sources/telegram/src/client.ts","plugins/sources/telegram/src/live.ts","plugins/sources/telegram/src/surfaces/telegram/commands.ts","plugins/sources/telegram/src/live.test.ts","plugins/sources/telegram/src/surfaces/telegram/commands.test.ts"],"predictedActiveMinutes":55,"predictedCredits":4,"how":"Add the generated GramJS Takeout, split-range, InvokeWithMessagesRange and InvokeWithTakeout calls to the existing TgClient owner in plugins/sources/telegram/src/client.ts and pass them through LiveDialogPager in live.ts. In commands.ts advance the existing checkpoint through estimate and publish, store decimal Takeout id plus recorded peers/ranges/counts/offsets, emit every final chat before any message, then seed each chat within the existing time and byte budgets. Wire the standard FetchArgs in connector.ts. Add metadata-backed tst_src_tg_takeout_plan_001 to commands.test.ts using the existing fake transport and update live.test.ts for the exact nested calls.","red":"bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts -t tst_src_tg_takeout_plan_001"} -->
-- [ ] TELEGRAMTAKEOUT_002 — Resume selected Takeout gaps from opaque cursors, promote terminal checkpoints and finish the export exactly once after persisted intent. (50 min)
+- [x] TELEGRAMTAKEOUT_002 — Resume selected Takeout gaps from opaque cursors, promote terminal checkpoints and finish the export exactly once after persisted intent. (50 min) — 66b11c8
 <!-- plan:task-meta:{"writes":["plugins/sources/telegram/src/connector.ts","plugins/sources/telegram/src/client.ts","plugins/sources/telegram/src/live.ts","plugins/sources/telegram/src/surfaces/telegram/commands.ts","plugins/sources/telegram/src/live.test.ts","plugins/sources/telegram/src/surfaces/telegram/commands.test.ts","plugins/sources/telegram/src/surfaces/telegram/execute.test.ts"],"predictedActiveMinutes":50,"predictedCredits":5,"how":"In commands.ts interpret scope_id, gap target, target cursor and forward_checkpoint only inside Telegram fetch; reconstruct the recorded peer, select its recorded ranges and return exact traversed plus continueTarget or completeTarget progress. Preserve updated Takeout state in each cursor and promote it only on terminal success. Add the two-step finish phase and accept TAKEOUT_INVALID only after persisted finish intent; throw CursorExpiredError for unfinished old checkpoints and keep old steady catch-up valid. Update connector.ts, client.ts and live.ts only for those existing owner calls. Add metadata-backed tst_src_tg_takeout_resume_002 to commands.test.ts and update live.test.ts and execute.test.ts for resume, finish and absence of backfill action.","red":"bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts -t tst_src_tg_takeout_resume_002"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- plugins/sources/telegram/src/tst_src_tgflood_001.test.ts` exits 0 — successful calls create no spacing and every real provider hold ends at its exact deadline
-- [ ] `bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts` exits 0 — exact totals precede history and Takeout gaps resume, complete and finish through standard fetch
-- [ ] `bun run agent:test:backend -- plugins/sources/telegram/src/live.test.ts` exits 0 — every historical provider call is wrapped in its recorded Takeout range
+- [x] `bun run agent:test:backend -- plugins/sources/telegram/src/tst_src_tgflood_001.test.ts` exits 0 — successful calls create no spacing and every real provider hold ends at its exact deadline — 66b11c88fc07ca4564d58bcd232179b90773e1cd
+- [x] `bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts` exits 0 — exact totals precede history and Takeout gaps resume, complete and finish through standard fetch — 66b11c88fc07ca4564d58bcd232179b90773e1cd
+- [x] `bun run agent:test:backend -- plugins/sources/telegram/src/live.test.ts` exits 0 — every historical provider call is wrapped in its recorded Takeout range — 66b11c88fc07ca4564d58bcd232179b90773e1cd
 - [ ] An unparseable 420, unknown Takeout failure or unfinished old checkpoint remains an explicit error; no guessed delay or ordinary-history fallback exists
 - [ ] Every successful page is resumable from its committed opaque cursor or forward checkpoint and a failed provider call advances neither coverage nor checkpoint
-- [ ] Commit
+- [x] Commit — 66b11c88fc07ca4564d58bcd232179b90773e1cd
 
 ##### Results
 
 <!-- plan:results:D2-S2:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| TELEGRAMHOLD_001 | 66b11c8 | 2026-09-22T19:39:19.382Z–2026-09-22T20:18:25.000Z | 39 / 39 min | unavailable: runner did not expose usage | Telegram now estimates exact Takeout totals, publishes them before ranged history, resumes selected gaps from opaque checkpoints, finishes from persisted intent, and waits only for exact provider holds. |
+| TELEGRAMTAKEOUT_001 | 66b11c8 | 2026-09-22T19:39:19.382Z–2026-09-22T20:18:25.000Z | 39 / 39 min | unavailable: runner did not expose usage | Telegram now estimates exact Takeout totals, publishes them before ranged history, resumes selected gaps from opaque checkpoints, finishes from persisted intent, and waits only for exact provider holds. |
+| TELEGRAMTAKEOUT_002 | 66b11c8 | 2026-09-22T19:39:19.382Z–2026-09-22T20:18:25.000Z | 39 / 39 min | unavailable: runner did not expose usage | Telegram now estimates exact Takeout totals, publishes them before ranged history, resumes selected gaps from opaque checkpoints, finishes from persisted intent, and waits only for exact provider holds. |
 <!-- plan:results:D2-S2:end -->
 <!-- plan:stage:D2-S2:end -->
 
@@ -485,4 +488,14 @@ Commit. chore(catalog): certify the unified Source runtime — remove the last l
 - deviation D2-S1: The existing evidence hash enumerator had to replace the deleted dispatcher path with connector.ts so deterministic evidence could still run.
 
 - close D2-S1 partial commit:4a35e8719f90dd97ff82d9adc35a33b600126a13
+
+- record-result D2-S2 commit:66b11c8
+
+- close D2-S2 partial commit:66b11c88fc07ca4564d58bcd232179b90773e1cd
+
+- deviation D2-S3: Exact catalog execution exposed credential probe as an ordinary source operation; the shared SDK and host evidence driver were corrected together before certification.
+
+- deviation D2-S3: Exact OAuth artifact execution exposed its wrapper dropping the host's auth-mode flag and a stale TypeScript-screen assertion; the wrapper now preserves auth mode and certification asserts the compiled screen.
+
+- deviation D2-S3: Catalog regeneration exposed an unintended Telegram server-version change; the certified 1.0.1 identity was restored before publishing receipts.
 <!-- plan:execution:end -->

@@ -75,7 +75,6 @@ function probeArguments(
     return { subscription_id: "certification-probe", _meta: { account_id: "certification" } };
   }
   if (operation === "listen_stop") return { subscription_id: "certification-probe" };
-  if (operation === "magnis.sync.listen") return { _meta: { account_id: "certification" } };
   const separator = operation.indexOf(":");
   if (separator >= 0) return { action: operation.slice(separator + 1), _certification_probe: true };
   return { _certification_probe: true };
@@ -232,8 +231,10 @@ export async function collectSourceHostEvidence(
   const operationArguments = options.operationArguments ?? {};
   const fixtureEnvironment = options.fixtureEnvironment ?? {};
   const operations = [...new Set(callableOperations)].sort();
-  const authOperations = operations.filter((operation) => operation.startsWith("magnis.auth."));
-  const syncOperations = operations.filter((operation) => !operation.startsWith("magnis.auth."));
+  const authOperations = operations.filter((operation) =>
+    operation.startsWith("magnis.auth.") && operation !== "magnis.auth.probe",
+  );
+  const syncOperations = operations.filter((operation) => !authOperations.includes(operation));
   const syncEvidence = await collectSourceHostProcessEvidence(
     artifactRoot,
     syncOperations,

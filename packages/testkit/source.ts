@@ -11,11 +11,7 @@
 // ad-hoc "drain every page" loop. Those drift and each connector proves the
 // wire contract slightly differently. This kit provides ONE conformant driver.
 //
-// SCOPE (Codex SHOULD-7): SDK connectors (google / x / linkedin) drive through
-// `@magnis/connector-sdk`'s `handleMessage` — the default `drive`. Telegram is
-// OUT of scope: it owns a custom `dispatch.ts`, not `handleMessage`, so
-// `runSourceContract` exposes an optional `drive` injection for non-SDK
-// connectors, but the telegram path is NOT built here.
+// Every Source drives the same `@magnis/connector-sdk` `handleMessage` path.
 
 import { expect, describe, test } from "bun:test";
 import { handleMessage, type ConnectorConfig, type Envelope, type FetchResult } from "@magnis/connector-sdk";
@@ -111,16 +107,6 @@ export function mockFetch(routes: Route[]): MockFetch {
 }
 
 // ──────────────────────────── driveMessage ───────────────────────────
-/** The seam that turns one inbound JSON-RPC message into a reply. Default is the
- *  SDK `handleMessage`; a non-SDK connector (telegram's `dispatch.ts`) injects
- *  its own. */
-export type Drive = (
-  config: ConnectorConfig,
-  msg: Record<string, unknown>,
-) => Promise<Record<string, unknown> | null>;
-
-const sdkDrive: Drive = (config, msg) => handleMessage(msg, config);
-
 let msgId = 0;
 function toolCall(name: string, args: Record<string, unknown>): Record<string, unknown> {
   return { jsonrpc: "2.0", id: ++msgId, method: "tools/call", params: { name, arguments: args } };
@@ -131,9 +117,8 @@ function toolCall(name: string, args: Record<string, unknown>): Record<string, u
 export async function driveMessage(
   config: ConnectorConfig,
   msg: Record<string, unknown>,
-  drive: Drive = sdkDrive,
 ): Promise<Record<string, unknown>> {
-  const reply = await drive(config, msg);
+  const reply = await handleMessage(msg, config);
   if (reply === null) {
     throw new Error(`no reply for ${JSON.stringify(msg)}`);
   }
@@ -188,8 +173,6 @@ export interface SourceContractFixtures {
   execute?: ExecuteFixture[];
   /** Rate-limit `-32002` signalling fixture. */
   rateLimit?: RateLimitFixture;
-  /** Non-SDK drive injection (telegram). Default: SDK `handleMessage`. */
-  drive?: Drive;
 }
 
 function assertEnvelope(e: Envelope, surface: string): void {
@@ -225,7 +208,6 @@ function unwrap(reply: Record<string, unknown>): FetchResult {
  * and push (`listen_start`) delivery are the connector's OWN unit tests' job.
  */
 export function runSourceContract(config: ConnectorConfig, fixtures: SourceContractFixtures): void {
-  const drive = fixtures.drive ?? sdkDrive;
   const expectedSurfaces = fixtures.surfaces ?? config.surfaces;
   const expectedMode = fixtures.mode ?? config.mode ?? "poll";
 
@@ -234,7 +216,6 @@ export function runSourceContract(config: ConnectorConfig, fixtures: SourceContr
       const reply = await driveMessage(
         config,
         { jsonrpc: "2.0", id: ++msgId, method: "initialize", params: {} },
-        drive,
       );
       const result = reply.result as Record<string, unknown>;
       const caps = result.capabilities as Record<string, unknown>;
@@ -260,7 +241,7 @@ export function runSourceContract(config: ConnectorConfig, fixtures: SourceContr
           const args: Record<string, unknown> = { surface, ...fx.args };
           if (cursor !== undefined) args.cursor = cursor;
           if (fx.meta) args._meta = fx.meta;
-          const result = unwrap(await driveMessage(config, toolCall("magnis.sync.fetch", args), drive));
+          const result = unwrap(await driveMessage(config, toolCall("magnis.sync.fetch", args)));
 
           for (const e of result.envelopes) assertEnvelope(e, surface);
           all.push(...result.envelopes);
@@ -292,7 +273,7 @@ export function runSourceContract(config: ConnectorConfig, fixtures: SourceContr
         test(`execute dispatches '${ex.action}'`, async () => {
           const args: Record<string, unknown> = { action: ex.action, ...ex.args };
           if (ex.meta) args._meta = ex.meta;
-          const reply = await driveMessage(config, toolCall("magnis.execute", args), drive);
+          const reply = await driveMessage(config, toolCall("magnis.execute", args));
           expect(reply.error).toBeUndefined();
           if (ex.assert) ex.assert(reply.result as Record<string, unknown>);
         });
@@ -304,7 +285,7 @@ export function runSourceContract(config: ConnectorConfig, fixtures: SourceContr
       test("upstream 429 signals as typed -32002 + retry_after", async () => {
         const args: Record<string, unknown> = { surface: rl.surface, ...rl.args };
         if (rl.meta) args._meta = rl.meta;
-        const reply = await driveMessage(rl.config, toolCall("magnis.sync.fetch", args), drive);
+        const reply = await driveMessage(rl.config, toolCall("magnis.sync.fetch", args));
         const error = reply.error as Record<string, unknown> | undefined;
         expect(error).toBeDefined();
         expect(error?.code).toBe(-32002);
