@@ -59,6 +59,7 @@ export const chat = entity(
     username: z.string().optional(),
     avatar_url: z.string().optional(),
     member_count: z.number().optional(),
+    is_indexed: z.boolean().optional(),
     read_inbox_max_id: z.number().optional(),
     read_outbox_max_id: z.number().optional(),
     unread_mentions_count: z.number().optional(),

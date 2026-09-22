@@ -59,7 +59,7 @@ async function written(): Promise<GraphBatchInput["entities"]> {
         remote_id: "tg:chat:42",
         payload: {
           entity_type: "chat", chat_id: 42, title: "Magnis Builders", type: "group",
-          username: "builders", member_count: 12, unread_count: 3, is_pinned: true,
+          username: "builders", member_count: 12, unread_count: 3, is_pinned: true, is_indexed: true,
           read_inbox_max_id: 6, read_outbox_max_id: 5, unread_mentions_count: 0, top_message: 7,
         },
       }),

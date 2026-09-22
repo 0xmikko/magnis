@@ -16,6 +16,7 @@ export interface TelegramChatDetails {
   username?: string;
   avatar_url?: string;
   member_count?: number;
+  is_indexed?: boolean;
   read_inbox_max_id?: number;
   read_outbox_max_id?: number;
   unread_mentions_count?: number;
