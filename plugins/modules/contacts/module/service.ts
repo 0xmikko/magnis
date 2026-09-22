@@ -22,14 +22,8 @@ import type {
   MergePreviewParams,
   SearchParams,
   SearchResultItem,
-  SetSocialTrackingParams,
   GetSocialTrackingByHandleParams,
   SocialTrackingByHandle,
-  TrackSocialProfileParams,
-  TrackSocialProfileResult,
-  BatchTrackSocialParams,
-  BatchTrackSocialResult,
-  BatchTrackSocialRow,
   RenameIfPlaceholderParams,
   SocialTracking,
   ToolResult,
@@ -42,12 +36,9 @@ import {
   computeInitials,
   INGEST_CHUNK,
   composeChannels,
-  normalizeHandle,
   pickAvatarColor,
   replicaDict,
 } from "./helpers.ts";
-import { parseSocialUrl } from "./socialUrl.ts";
-import type { SocialPlatform } from "./socialUrl.ts";
 import {
   CONTACT,
   GOOGLE_CONTACT,
@@ -60,6 +51,45 @@ import {
  */
 const MESSAGE_SCHEMAS = new Set(["email.message", "telegram.message"]);
 
+const CONTACT_CREATE_PARAMS = {
+  type: "object",
+  properties: {
+    name: { type: "string" },
+    email: { type: "string" },
+    phone: { type: "string" },
+    company: { type: "string" },
+    role: { type: "string" },
+  },
+  required: ["name"],
+  additionalProperties: false,
+};
+
+const CONTACT_MERGE_PARAMS = {
+      type: "object",
+      properties: {
+        survivor_id: { type: "string", format: "uuid" },
+        retired_id: { type: "string", format: "uuid" },
+        overrides: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              key: { type: "string" },
+              // Canonical override values are scalars (name, email, phone…).
+              // An explicit type union is REQUIRED: an empty `{}` schema is
+              // rejected by OpenAI strict function-calling and 400s the whole
+              // turn for every subscription/OpenAI-backed builtin chat.
+              value: { type: ["string", "number", "boolean", "null"] },
+            },
+            required: ["key", "value"],
+          },
+        },
+        reason: { type: "string" },
+      },
+      required: ["survivor_id", "retired_id"],
+      additionalProperties: false,
+    };
+
 export class ContactsModule {
   private readonly graph: GraphService;
   private readonly util: PluginUtil;
@@ -70,7 +100,7 @@ export class ContactsModule {
     this.rpc = deps.rpc;
   }
 
-  @tool("list", {
+  @rpc("list", {
     description: "List contacts with pagination and optional name search.",
     params: {
       type: "object",
@@ -129,7 +159,9 @@ export class ContactsModule {
     return { items, total, limit, offset };
   }
 
+  @rpc("get")
   @tool("get", {
+    entity: "contacts.person",
     description: "Get a full contact detail view (dictionary, links) by id.",
     params: {
       type: "object",
@@ -344,27 +376,37 @@ export class ContactsModule {
   // itself. `params` is agent-facing: it omits `client_id` so the
   // agent never invents an id; the handler still accepts it from the
   // frontend WS path via CreateParams.
+  async create(params: CreateParams): Promise<ContactListItem & { fields: Record<string, unknown> }>;
+  async create(params: BatchCreateParams): Promise<BatchCreateResult>;
+  @rpc("create")
   @writeTool("create", {
+    entity: "contacts.person",
     description:
-      "Create a new contact (person). Returns the created entity with id. " +
-      "Pass client_id (UUID) as an idempotency key — if a contact already " +
-      "exists with that id, the existing one is returned instead of a duplicate.",
-    params: {
+      "Create one contact or a batch of contacts.",
+    params: { oneOf: [CONTACT_CREATE_PARAMS, {
       type: "object",
       properties: {
-        name: { type: "string" },
-        email: { type: "string" },
-        phone: { type: "string" },
-        company: { type: "string" },
-        role: { type: "string" },
+        contacts: {
+          type: "array",
+          items: CONTACT_CREATE_PARAMS,
+          minItems: 1,
+          maxItems: 50,
+        },
+        excluded_indices: { type: "array", items: { type: "integer", minimum: 0 } },
       },
-      required: ["name"],
+      required: ["contacts"],
       additionalProperties: false,
-    },
+    }] },
   })
-  async create(
-    params: CreateParams,
-  ): Promise<ContactListItem & { fields: Record<string, unknown> }> {
+  async create(params: CreateParams | BatchCreateParams): Promise<(ContactListItem & { fields: Record<string, unknown> }) | BatchCreateResult> {
+    if ("contacts" in params) {
+      if ("name" in params) throw new Error("Supply a contact or contacts, not both");
+      return this.batch_create(params);
+    }
+    return this.createSingle(params);
+  }
+
+  private async createSingle(params: CreateParams): Promise<ContactListItem & { fields: Record<string, unknown> }> {
     // Idempotency: an existing client_id returns the existing contact,
     // no re-write (native controller.rs:67 find_entity_for_user).
     if (params.client_id) {
@@ -432,36 +474,7 @@ export class ContactsModule {
   // as the native handler (controller.rs:531). Each row delegates to
   // create(), inheriting the same dictionary writes AND the email.address +
   // has_email hub path when a row carries an email.
-  @writeTool("batch_create", {
-    description:
-      "Create multiple contacts at once. Each requires a name, with optional " +
-      "email, phone, company, role. Pass client_id (UUID) as a batch idempotency key.",
-    params: {
-      type: "object",
-      properties: {
-        contacts: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              name: { type: "string" },
-              email: { type: "string" },
-              phone: { type: "string" },
-              company: { type: "string" },
-              role: { type: "string" },
-            },
-            required: ["name"],
-            additionalProperties: false,
-          },
-          minItems: 1,
-          maxItems: 50,
-        },
-        excluded_indices: { type: "array", items: { type: "integer", minimum: 0 } },
-      },
-      required: ["contacts"],
-      additionalProperties: false,
-    },
-  })
+  @rpc("batch_create")
   async batch_create(params: BatchCreateParams): Promise<BatchCreateResult> {
     const contacts = params.contacts;
     if (contacts.length < 1 || contacts.length > 50) {
@@ -487,7 +500,7 @@ export class ContactsModule {
       const rowClientId = params.client_id
         ? await this.util.uuid_v5(params.client_id, `contacts.batch_create:${String(i)}`)
         : undefined;
-      const item = await this.create({
+      const item = await this.createSingle({
         name: c.name,
         email: c.email,
         phone: c.phone,
@@ -505,7 +518,9 @@ export class ContactsModule {
   // Mirrors native contacts.update (controller.rs:562) — name only:
   // rename the entity and rewrite first_name on the replica. The
   // update_entity_name op is ownership-checked.
+  @rpc("update")
   @writeTool("update", {
+    entity: "contacts.person",
     description: "Update a contact's name.",
     params: {
       type: "object",
@@ -532,7 +547,7 @@ export class ContactsModule {
 
   // Read-only merge preview (controller.rs:631). Ownership is enforced
   // backend-side in the op.
-  @tool("merge_preview", {
+  @rpc("merge_preview", {
     description: "Preview merging two contacts: which links move and which dictionary keys conflict.",
     params: {
       type: "object",
@@ -555,36 +570,25 @@ export class ContactsModule {
   // retired to survivor, delete retired, then re-derive the survivor's
   // name/idx from the resolved canonicals (first_name [+ last_name]).
   @writeTool("merge", {
+    entity: "contacts.person",
+    description: "Preview or merge contacts, preserving the resolved name.",
+    params: { ...CONTACT_MERGE_PARAMS,
+      properties: { ...CONTACT_MERGE_PARAMS.properties, preview: { type: "boolean" } },
+      required: [...CONTACT_MERGE_PARAMS.required, "preview"],
+    },
+  })
+  @rpc("merge", {
     description:
       "Merge two contacts into one. Transfers all links and history from " +
       "retired to survivor, then deletes retired.",
-    params: {
-      type: "object",
-      properties: {
-        survivor_id: { type: "string", format: "uuid" },
-        retired_id: { type: "string", format: "uuid" },
-        overrides: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              key: { type: "string" },
-              // Canonical override values are scalars (name, email, phone…).
-              // An explicit type union is REQUIRED: an empty `{}` schema is
-              // rejected by OpenAI strict function-calling and 400s the whole
-              // turn for every subscription/OpenAI-backed builtin chat.
-              value: { type: ["string", "number", "boolean", "null"] },
-            },
-            required: ["key", "value"],
-          },
-        },
-        reason: { type: "string" },
-      },
-      required: ["survivor_id", "retired_id"],
-      additionalProperties: false,
-    },
+    params: CONTACT_MERGE_PARAMS,
   })
-  async merge(params: MergeParams): Promise<MergeResult> {
+  async merge(params: MergeParams & { preview?: boolean }): Promise<MergeResult | MergePreview> {
+    for (const id of [params.survivor_id, params.retired_id]) {
+      const entity = await this.graph.get_entity(id);
+      if (entity?.schema_id !== CONTACT) throw new Error(`contact not found: ${id}`);
+    }
+    if (params.preview === true) return this.merge_preview(params);
     const result = await this.graph.merge_execute({
       survivor_id: params.survivor_id,
       retired_id: params.retired_id,
@@ -612,7 +616,7 @@ export class ContactsModule {
   // user's contacts (optionally within a context) whose name contains
   // the query, sorted by (name, id), truncated to limit. Returns an MCP
   // ToolResult whose text is the pretty-printed SearchResultItem[].
-  @tool("search", {
+  @rpc("search", {
     description: "Search contacts by name.",
     params: {
       type: "object",
@@ -882,207 +886,6 @@ export class ContactsModule {
     }
   }
 
-  // ── social tracking ──────────────────────────────────────────────
-  // contacts OWNS the `tracking` key of its hub dictionary. Opting a contact in on a
-  // platform places its handle in the sync scheduler's tracked set;
-  // opting out removes it → that handle is no longer fetched. One handle
-  // per platform per person; the dictionary merges across platforms (latest wins).
-  @writeTool("set_social_tracking", {
-    description:
-      "Opt a contact in or out of social tracking on X or LinkedIn. Only tracked " +
-      "handles are fetched by the social source connectors. Optionally set the handle.",
-    params: {
-      type: "object",
-      properties: {
-        id: { type: "string", format: "uuid" },
-        platform: { type: "string", enum: ["x", "linkedin"] },
-        tracked: { type: "boolean" },
-        handle: { type: "string" },
-      },
-      required: ["id", "platform", "tracked"],
-      additionalProperties: false,
-    },
-  })
-  async set_social_tracking(params: SetSocialTrackingParams): Promise<SocialTracking> {
-    const existing = await this.graph.get_entity(params.id);
-    if (existing?.schema_id !== CONTACT) {
-      throw new Error(`contact not found: ${params.id}`);
-    }
-    // S3: the opt-in lives in the hub dictionary — `tracking[]`, one
-    // {platform, handle, enabled} entry per platform. Merge onto the current
-    // entries so toggling one platform never clears the other's opt-in.
-    const next: SocialTracking = { ...trackingView(existing) };
-    if (params.platform === "x") {
-      next.tracked_x = params.tracked;
-      if (params.handle !== undefined) next.x_handle = normalizeHandle(params.handle);
-    } else {
-      next.tracked_linkedin = params.tracked;
-      if (params.handle !== undefined) next.linkedin_handle = normalizeHandle(params.handle);
-    }
-    await this.graph.update_properties({
-      entity_id: params.id,
-      properties: { tracking: trackingEntries(next) },
-    });
-    return next;
-  }
-
-  // ── social-contact identity ───────────────────────────────────────
-  @writeTool("track_social_profile", {
-    description:
-      "Track a person's X or LinkedIn profile from a URL or handle. Finds the contact " +
-      "that already owns the handle (or creates one) and turns tracking ON. NOTE: every " +
-      "tracked handle costs paid API calls on each sync cycle.",
-    params: {
-      type: "object",
-      properties: {
-        platform: { type: "string", enum: ["x", "linkedin"] },
-        url_or_handle: { type: "string" },
-        name: { type: "string" },
-      },
-      required: ["platform", "url_or_handle"],
-      additionalProperties: false,
-    },
-  })
-  async track_social_profile(
-    params: TrackSocialProfileParams,
-  ): Promise<TrackSocialProfileResult> {
-    const parsed = parseSocialUrl(params.platform, params.url_or_handle);
-    if (!parsed.ok) {
-      throw new Error(`invalid_url: not a ${params.platform} profile: ${params.url_or_handle}`);
-    }
-    const existing = await this.get_social_tracking_by_handle({
-      platform: params.platform,
-      handle: parsed.handle,
-    });
-    if (existing) {
-      if (!existing.tracked) {
-        await this.set_social_tracking({
-          id: existing.contact_id,
-          platform: params.platform,
-          tracked: true,
-        });
-      }
-      return { contact_id: existing.contact_id, handle: existing.handle, created: false };
-    }
-    const contact = await this.create({ name: params.name ?? parsed.handle });
-    await this.set_social_tracking({
-      id: contact.id,
-      platform: params.platform,
-      tracked: true,
-      handle: parsed.handle,
-    });
-    return { contact_id: contact.id, handle: parsed.handle, created: true };
-  }
-
-  // Batch entry for a pasted URL list. Per-row isolation — an invalid
-  // URL marks its row and never aborts the rest; a retried batch (same
-  // client_id) resolves creates to the same uuid_v5 ids.
-  @writeTool("batch_track_social", {
-    description:
-      "Track MANY X or LinkedIn profiles at once from pasted URLs/handles (1-50). Each " +
-      "becomes a contact (found or created) with tracking ON. COST WARNING: every tracked " +
-      "handle is fetched on every sync cycle and costs paid API credits — confirm large " +
-      "batches with the operator first.",
-    params: {
-      type: "object",
-      properties: {
-        platform: { type: "string", enum: ["x", "linkedin"] },
-        profiles: {
-          type: "array",
-          minItems: 1,
-          maxItems: 50,
-          items: {
-            type: "object",
-            properties: {
-              url_or_handle: { type: "string" },
-              name: { type: "string" },
-            },
-            required: ["url_or_handle"],
-            additionalProperties: false,
-          },
-        },
-        excluded_indices: { type: "array", items: { type: "integer", minimum: 0 } },
-      },
-      required: ["platform", "profiles"],
-      additionalProperties: false,
-    },
-  })
-  async batch_track_social(params: BatchTrackSocialParams): Promise<BatchTrackSocialResult> {
-    const profiles = params.profiles;
-    if (profiles.length < 1 || profiles.length > 50) {
-      throw new Error(`batch size must be 1..=50, got ${String(profiles.length)}`);
-    }
-    const excluded = new Set(params.excluded_indices ?? []);
-    const results: BatchTrackSocialRow[] = [];
-    let created = 0;
-    let excludedCount = 0;
-
-    for (const [i, row] of profiles.entries()) {
-      if (excluded.has(i)) {
-        excludedCount += 1;
-        results.push({
-          contact_id: null,
-          handle: null,
-          url_or_handle: row.url_or_handle,
-          status: "excluded",
-        });
-        continue;
-      }
-      const parsed = parseSocialUrl(params.platform, row.url_or_handle);
-      if (!parsed.ok) {
-        results.push({
-          contact_id: null,
-          handle: null,
-          url_or_handle: row.url_or_handle,
-          status: "invalid_url",
-        });
-        continue;
-      }
-      const existing = await this.get_social_tracking_by_handle({
-        platform: params.platform,
-        handle: parsed.handle,
-      });
-      if (existing) {
-        if (!existing.tracked) {
-          await this.set_social_tracking({
-            id: existing.contact_id,
-            platform: params.platform,
-            tracked: true,
-          });
-        }
-        results.push({
-          contact_id: existing.contact_id,
-          handle: existing.handle,
-          url_or_handle: row.url_or_handle,
-          status: "tracked",
-        });
-        continue;
-      }
-      const rowClientId = params.client_id
-        ? await this.util.uuid_v5(params.client_id, `contacts.batch_track_social:${String(i)}`)
-        : undefined;
-      const contact = await this.create({
-        name: row.name ?? parsed.handle,
-        client_id: rowClientId,
-      });
-      await this.set_social_tracking({
-        id: contact.id,
-        platform: params.platform,
-        tracked: true,
-        handle: parsed.handle,
-      });
-      created += 1;
-      results.push({
-        contact_id: contact.id,
-        handle: parsed.handle,
-        url_or_handle: row.url_or_handle,
-        status: "created",
-      });
-    }
-
-    return { results, total: profiles.length, created, excluded: excludedCount };
-  }
-
   // Compare-and-set rename — a contact auto-created from a URL
   // carries its handle as a placeholder name; the first profile ingest upgrades
   // it to the real display name ONLY while the placeholder is still in place.
@@ -1120,7 +923,7 @@ export class ContactsModule {
     return out;
   }
 
-  @tool("get_social_tracking_by_handle", {
+  @rpc("get_social_tracking_by_handle", {
     description:
       "Resolve which contact tracks a given X / LinkedIn handle and whether tracking " +
       "is currently on. Case-insensitive. Returns null when no contact has the handle.",
@@ -1151,7 +954,7 @@ export class ContactsModule {
     return null;
   }
 
-  @tool("list_social_tracking", {
+  @rpc("list_social_tracking", {
     description:
       "List every contact with social tracking ON for a platform (X / LinkedIn): " +
       "contact id, name and tracked handle. Feeds pending 'Syncing' rows in the " +
@@ -1164,7 +967,7 @@ export class ContactsModule {
     },
   })
   async list_social_tracking(params: {
-    platform: SocialPlatform;
+    platform: GetSocialTrackingByHandleParams["platform"];
   }): Promise<{ contact_id: string; name: string; handle: string }[]> {
     const out: { contact_id: string; name: string; handle: string }[] = [];
     for (const e of await this.trackedHubs()) {
@@ -1177,7 +980,7 @@ export class ContactsModule {
     return out;
   }
 
-  @tool("get_social_tracking", {
+  @rpc("get_social_tracking", {
     description: "Get a contact's social-tracking opt-in state (X / LinkedIn) and handles.",
     params: {
       type: "object",
@@ -1230,22 +1033,4 @@ function trackingView(e: { properties?: unknown }): SocialTracking {
     }
   }
   return view;
-}
-
-/** The dictionary entries a wire view stores as. Entries with neither a
- * handle nor an opt-in are dropped — the dictionary holds claims, not
- * placeholders. */
-function trackingEntries(v: SocialTracking): TrackingEntry[] {
-  const out: TrackingEntry[] = [];
-  if (v.x_handle || v.tracked_x) {
-    out.push({ platform: "x", handle: v.x_handle ?? null, enabled: v.tracked_x === true });
-  }
-  if (v.linkedin_handle || v.tracked_linkedin) {
-    out.push({
-      platform: "linkedin",
-      handle: v.linkedin_handle ?? null,
-      enabled: v.tracked_linkedin === true,
-    });
-  }
-  return out;
 }

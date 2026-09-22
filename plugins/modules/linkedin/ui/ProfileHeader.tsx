@@ -1,5 +1,5 @@
 import { useCallback, useRef, type JSX } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
   Avatar,
   ContextMenu,
@@ -63,7 +63,6 @@ export function LinkedInProfileHeader({
   runtime,
   onRename,
 }: HeaderComponentProps): JSX.Element {
-  const queryClient = useQueryClient();
   const menu = useContextMenu<null>();
   const menuBtnRef = useRef<HTMLDivElement>(null);
 
@@ -104,30 +103,7 @@ export function LinkedInProfileHeader({
     enabled: !!handle,
   });
 
-  const setTracking = useMutation({
-    mutationFn: (tracked: boolean) => {
-      if (!tracking) throw new Error("cannot toggle tracking before it resolves");
-      return runtime.transport.rpc("contacts.set_social_tracking", {
-        id: tracking.contact_id,
-        platform: PLATFORM,
-        tracked,
-      });
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: trackingKey });
-    },
-  });
-
-  // Track/Untrack only when the owning contact resolved (no contact = nothing
-  // to toggle — the record lives on the contact).
   const menuItems: ContextMenuEntry[] = [
-    ...(tracking
-      ? [
-          tracking.tracked
-            ? ({ id: "untrack", label: "Untrack on LinkedIn", variant: "danger" } as const)
-            : ({ id: "track", label: "Track on LinkedIn" } as const),
-        ]
-      : []),
     ...(profile?.url ? [{ id: "open", label: "Open profile" }] : []),
   ];
 
@@ -172,8 +148,6 @@ export function LinkedInProfileHeader({
           items={menuItems}
           position={menu.state.position}
           onSelect={(itemId) => {
-            if (itemId === "untrack") setTracking.mutate(false);
-            if (itemId === "track") setTracking.mutate(true);
             if (itemId === "open" && profile?.url) window.open(profile.url, "_blank", "noopener");
             menu.close();
           }}

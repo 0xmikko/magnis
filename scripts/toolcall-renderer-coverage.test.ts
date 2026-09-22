@@ -3,9 +3,8 @@
 // reason.
 //
 // Why this gate exists. `defineModule` (frontend/src/modules/_base/defineModule.ts)
-// expands `toolCallRenderers[].actions` into an EXACT `toolName` match —
-// `["messages.send"]` becomes {telegram.messages.send, telegram_messages_send}
-// and nothing else. A write tool that is absent from that hand-written list
+// binds `toolCallRenderers[].entity` and `actions` to exact operation pairs.
+// A renderer for email.address/create does not cover email.message/create. A write tool that is absent from that hand-written list
 // does not warn, throw, or fail to build: it silently degrades to the generic
 // "Agent wants to: telegram messages reply" card with raw key/value args.
 //
@@ -20,6 +19,7 @@
 import { test, expect } from "bun:test";
 import { readFileSync, readdirSync, existsSync } from "fs";
 import { join } from "path";
+import ts from "typescript";
 
 const REPO = join(import.meta.dir, "..");
 const MODULES_DIR = join(REPO, "plugins", "modules");
@@ -44,20 +44,12 @@ const NO_CARD: Record<string, Record<string, string>> = {};
  * coverage is complete — it is the reference for what the rest should become.
  */
 const KNOWN_GAP: readonly string[] = [
-  "contacts.batch_track_social",
-  "contacts.set_social_tracking",
-  "contacts.track_social_profile",
-  "contacts.update",
-  "file.attach",
-  "meetings.create",
-  "notes.delete",
-  "notes.template.apply",
-  "projects.checklist.update",
-  "projects.delete",
-  "triggers.delete",
-  "triggers.link",
-  "triggers.unlink",
-  "x.import_following",
+  "contacts.person.update",
+  "file.object.create",
+  "meetings.calendar_event.create",
+  "notes.note.delete",
+  "projects.project.checklist.update",
+  "projects.project.delete",
 ];
 
 /** `@writeTool("<action>"` declarations in a module's service. */
@@ -65,45 +57,84 @@ function declaredWriteTools(moduleId: string): string[] {
   const service = join(MODULES_DIR, moduleId, "module", "service.ts");
   if (!existsSync(service)) return [];
   const src = readFileSync(service, "utf8");
-  return [...src.matchAll(/@writeTool\(\s*"([a-zA-Z_.]+)"/g)].map((m) => m[1]!);
+  return writeToolPairs(src);
+}
+
+function propertyValue(object: ts.ObjectLiteralExpression, name: string): ts.Expression {
+  for (const property of object.properties) {
+    if (ts.isPropertyAssignment(property)
+      && (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name))
+      && property.name.text === name) return property.initializer;
+  }
+  throw new Error(`Missing '${name}' in tool declaration`);
+}
+
+// @tested-by: tst_plug_renderercov_005
+function writeToolPairs(src: string): string[] {
+  const pairs: string[] = [];
+  const source = ts.createSourceFile("service.ts", src, ts.ScriptTarget.Latest, true);
+  function visit(node: ts.Node): void {
+    if (ts.isDecorator(node) && ts.isCallExpression(node.expression)
+      && ts.isIdentifier(node.expression.expression) && node.expression.expression.text === "writeTool") {
+      const [operation, spec] = node.expression.arguments;
+      if (operation === undefined || !ts.isStringLiteral(operation) || spec === undefined || !ts.isObjectLiteralExpression(spec)) {
+        throw new Error("Write tools must declare a literal operation and specification");
+      }
+      const entity = propertyValue(spec, "entity");
+      if (!ts.isStringLiteral(entity)) throw new Error("Write tool entity must be a string literal");
+      pairs.push(`${entity.text}.${operation.text}`);
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(source);
+  return pairs;
 }
 
 /**
- * Actions registered in the module UI's `toolCallRenderers`. Parsed with a
- * bracket-balanced scan rather than a line regex: the array spans many lines
- * and a naive match silently under-reports, which would make this gate lie in
- * the safe-looking direction.
+ * Entity/operation pairs registered in `toolCallRenderers`; legacy
+ * history predicates are deliberately outside active operation coverage.
  */
 function renderedActions(moduleId: string): string[] {
   const ui = join(MODULES_DIR, moduleId, "ui", "index.tsx");
   if (!existsSync(ui)) return [];
   const src = readFileSync(ui, "utf8");
-  const key = src.indexOf("toolCallRenderers");
-  if (key < 0) return [];
-  const start = src.indexOf("[", key);
-  if (start < 0) return [];
-  let depth = 0;
-  let end = start;
-  for (; end < src.length; end++) {
-    if (src[end] === "[") depth++;
-    else if (src[end] === "]" && --depth === 0) break;
+  return rendererPairs(src);
+}
+
+// @tested-by: tst_plug_renderercov_005
+function rendererPairs(src: string): string[] {
+  const pairs: string[] = [];
+  const source = ts.createSourceFile("index.tsx", src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  function visit(node: ts.Node): void {
+    if (ts.isPropertyAssignment(node) && ts.isIdentifier(node.name) && node.name.text === "toolCallRenderers") {
+      if (!ts.isArrayLiteralExpression(node.initializer)) throw new Error("Tool renderers must be an explicit array");
+      for (const registration of node.initializer.elements) {
+        if (!ts.isObjectLiteralExpression(registration)) throw new Error("Tool renderer must be an explicit object");
+        const entity = propertyValue(registration, "entity");
+        const actions = propertyValue(registration, "actions");
+        if (!ts.isStringLiteral(entity) || !ts.isArrayLiteralExpression(actions)) throw new Error("Tool renderer needs a literal entity and operations");
+        for (const operation of actions.elements) {
+          if (!ts.isStringLiteral(operation)) throw new Error("Tool renderer operation must be a string literal");
+          pairs.push(`${entity.text}.${operation.text}`);
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
   }
-  const block = src.slice(start, end + 1);
-  return [...block.matchAll(/actions:\s*\[([^\]]*)\]/g)].flatMap((m) =>
-    [...m[1]!.matchAll(/"([a-zA-Z_.]+)"/g)].map((a) => a[1]!),
-  );
+  visit(source);
+  return pairs;
 }
 
 const moduleIds = readdirSync(MODULES_DIR).filter((d) =>
   existsSync(join(MODULES_DIR, d, "module", "service.ts")),
 );
 
-/** Every declared write tool as `<module>.<action>`, paired with coverage. */
+/** Every declared entity operation, paired with coverage. */
 function writeToolCoverage(): { id: string; covered: boolean }[] {
   return moduleIds.flatMap((moduleId) => {
     const rendered = new Set(renderedActions(moduleId));
     return declaredWriteTools(moduleId).map((action) => ({
-      id: `${moduleId}.${action}`,
+      id: action,
       covered: rendered.has(action) || action in (NO_CARD[moduleId] ?? {}),
     }));
   });
@@ -129,7 +160,7 @@ test("tst_plug_renderercov_002 no NO_CARD exemption outlives the tool it excuses
   for (const [moduleId, actions] of Object.entries(NO_CARD)) {
     const declared = new Set(declaredWriteTools(moduleId));
     for (const action of Object.keys(actions)) {
-      if (!declared.has(action)) stale.push(`${moduleId}.${action}`);
+      if (!declared.has(action)) stale.push(action);
     }
   }
   expect(stale.sort()).toEqual([]);
@@ -148,7 +179,7 @@ test("tst_plug_renderercov_004 the known-gap list only shrinks", () => {
 });
 
 test("tst_plug_renderercov_003 the gate can actually see tools and renderers", () => {
-  // Guards the gate itself. Both parsers are regex/scan based; if either
+  // Guards the gate itself. Both parsers read literal declarations; if either
   // silently returns nothing (a refactor moves the decorators, the registry is
   // renamed), the coverage test above would pass vacuously and this whole file
   // would become decorative. `email` is the reference module — it is the one
@@ -156,4 +187,29 @@ test("tst_plug_renderercov_003 the gate can actually see tools and renderers", (
   expect(declaredWriteTools("email").length).toBeGreaterThan(0);
   expect(renderedActions("email").length).toBeGreaterThan(0);
   expect(moduleIds.length).toBeGreaterThan(5);
+});
+
+/** @test-id: tst_plug_renderercov_005
+ * @scenario: scn_tools_rendering
+ * @covers: scripts/toolcall-renderer-coverage.test.ts::writeToolPairs
+ * @covers: scripts/toolcall-renderer-coverage.test.ts::rendererPairs
+ * @deterministic: yes — inline declaration and renderer fixtures
+ */
+test("tst_plug_renderercov_005 coverage requires the same entity and operation and ignores legacy history", () => {
+  const declarations = `class Service {
+    @rpc("send")
+    @writeTool("create", { description: "Create", entity: "email.message", params: { to: { type: "string" } } })
+    create() {}
+    @writeTool("create", { entity: "email.address", description: "Create", params: {} })
+    address() {}
+  }`;
+  const ui = `defineModule({ toolCallRenderers: [
+    { actions: ["create"], entity: "email.address", Render: Address },
+    { entity: "email.message", actions: ["update"], Render: Message },
+  ] });
+  const historyRenderers = [{ entity: "email.message", actions: ["create"], match: () => true }];`;
+  expect(writeToolPairs(declarations)).toEqual(["email.message.create", "email.address.create"]);
+  const rendered = new Set(rendererPairs(ui));
+  expect(rendered).toEqual(new Set(["email.address.create", "email.message.update"]));
+  expect(writeToolPairs(declarations).filter((pair) => !rendered.has(pair))).toEqual(["email.message.create"]);
 });

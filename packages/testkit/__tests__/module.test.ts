@@ -6,6 +6,7 @@ import {
   definePlugin,
   rpc,
   tool,
+  writeTool,
   type GraphService,
   type PluginDeps,
   type PluginModuleShape,
@@ -26,7 +27,7 @@ class FixtureModule {
     this.graph = deps.graph;
   }
 
-  @tool("ping", { description: "ping", params: { type: "object", properties: { n: { type: "integer" } } } })
+  @tool("ping", { entity: "fixture.resource", description: "ping", params: { type: "object", properties: { n: { type: "integer" } } } })
   async ping(params: { n: number }): Promise<{ pong: number }> {
     return Promise.resolve({ pong: params.n + 1 });
   }
@@ -111,15 +112,15 @@ describe("mountModule — direct", () => {
 describe("mountModule — dispatch", () => {
   it("tst_testkit_mount_dispatch_001 harvests decorated tool names, excludes rpc-only", async () => {
     const { tools } = await mountModule(FixtureModule, { mode: "dispatch", ctx: { extension_id: "fixture" } });
-    expect(tools.map((t) => t.name)).toEqual(["fixture.ping"]);
+    expect(tools.map((t) => t.name)).toEqual(["fixture.resource.ping"]);
     expect(tools[0]).toMatchObject({ description: "ping", requires_approval: false });
   });
 
   it("tst_testkit_mount_dispatch_002 routes by full name and by bare suffix", async () => {
     const { rpc: call, tools } = await mountModule(FixtureModule, { mode: "dispatch", ctx: { extension_id: "fixture" } });
-    expect(tools.map((toolDefinition) => toolDefinition.name)).toEqual(["fixture.ping"]);
-    expect(await call("fixture.ping", { n: 4 })).toEqual({ pong: 5 });
-    expect(await call("ping", { n: 9 })).toEqual({ pong: 10 });
+    expect(tools.map((toolDefinition) => toolDefinition.name)).toEqual(["fixture.resource.ping"]);
+    expect(await call("fixture.resource.ping", { n: 4 })).toEqual({ pong: 5 });
+    expect(await call("resource.ping", { n: 9 })).toEqual({ pong: 10 });
     // rpc-only handler is reachable via dispatch though absent from `tools`.
     expect(await call("fixture.secret")).toBe("shh");
   });
@@ -141,8 +142,8 @@ describe("mountModule — dispatch", () => {
     const shape = publishedShape();
     await initializeShape(shape, "fixture");
     await initializeShape(shape, "fixture");
-    expect(shape.toolDefinitions.map((definition) => definition.name)).toEqual(["fixture.ping"]);
-    expect(Object.keys(shape.rpcHandlers).sort()).toEqual(["fixture.ping", "fixture.secret"]);
+    expect(shape.toolDefinitions.map((definition) => definition.name)).toEqual(["fixture.resource.ping"]);
+    expect(Object.keys(shape.rpcHandlers).sort()).toEqual(["fixture.resource.ping", "fixture.secret"]);
   });
 
   /**
@@ -156,12 +157,12 @@ describe("mountModule — dispatch", () => {
     class DecoratedBase {
       constructor(_deps: PluginDeps) {}
 
-      @tool("base", { description: "base", params: {} })
+      @tool("base", { entity: "real.resource", description: "base", params: {} })
       base(): string { return "base"; }
     }
 
     class DecoratedDerived extends DecoratedBase {
-      @tool("derived", { description: "derived", params: {} })
+      @tool("derived", { entity: "real.resource", description: "derived", params: {} })
       derived(): string { return "derived"; }
     }
 
@@ -170,11 +171,11 @@ describe("mountModule — dispatch", () => {
     await initializeShape(shape, "real");
 
     expect(shape.toolDefinitions.map((definition) => definition.name)).toEqual([
-      "real.base",
-      "real.derived",
+      "real.resource.base",
+      "real.resource.derived",
     ]);
-    expect(shape.rpcHandlers["real.base"]?.({})).toBe("base");
-    expect(shape.rpcHandlers["real.derived"]?.({})).toBe("derived");
+    expect(shape.rpcHandlers["real.resource.base"]?.({})).toBe("base");
+    expect(shape.rpcHandlers["real.resource.derived"]?.({})).toBe("derived");
   });
 
   /**
@@ -188,19 +189,19 @@ describe("mountModule — dispatch", () => {
     class DuplicateBase {
       constructor(_deps: PluginDeps) {}
 
-      @tool("duplicate", { description: "base", params: {} })
+      @tool("duplicate", { entity: "real.resource", description: "base", params: {} })
       base(): string { return "base"; }
     }
 
     class DuplicateDerived extends DuplicateBase {
-      @tool("duplicate", { description: "derived", params: {} })
+      @tool("duplicate", { entity: "real.resource", description: "derived", params: {} })
       derived(): string { return "derived"; }
     }
 
     definePlugin(DuplicateDerived);
     const shape = publishedShape();
-    await expect(initializeShape(shape, "duplicate")).rejects.toThrow(
-      'duplicate inherited plugin decorator suffix "duplicate"',
+    await expect(initializeShape(shape, "real")).rejects.toThrow(
+      'duplicate inherited plugin operation "real.resource.duplicate"',
     );
     expect(shape.toolDefinitions).toEqual([]);
     expect(shape.rpcHandlers).toEqual({});
@@ -220,11 +221,11 @@ describe("mountModule — dispatch", () => {
     const descriptor = Object.getOwnPropertyDescriptor(LegacyStatic, "ping");
     if (descriptor === undefined) throw new Error("missing static method descriptor");
     expect(() =>
-      tool("ping", { description: "ping", params: {} })(LegacyStatic, "ping", descriptor)
+      tool("ping", { entity: "fixture.resource", description: "ping", params: {} })(LegacyStatic, "ping", descriptor)
     ).toThrow("plugin decorators require a public instance method");
 
     expect(() =>
-      tool("ping", { description: "ping", params: {} })(LegacyStatic.ping, {
+      tool("ping", { entity: "fixture.resource", description: "ping", params: {} })(LegacyStatic.ping, {
         kind: "method",
         name: "ping",
         static: true,
@@ -247,4 +248,70 @@ describe("builders", () => {
       kind: "authored_by",
     });
   });
+});
+
+/**
+ * @test-id: tst_testkit_entity_operations_001
+ * @covers: packages/plugin-sdk/index.ts::definePlugin
+ * @deterministic: yes
+ */
+it("tst_testkit_entity_operations_001 dispatches the same operation for distinct owned entities", async () => {
+  class Messages {
+    @writeTool("create", { entity: "mail.message", description: "Create message", params: {}, allowlist_gate: { target_type: "email_address", target_arg: "to", batch_arg: "messages" } })
+    message(): string { return "message"; }
+    @writeTool("create", { entity: "mail.address", description: "Create address", params: {} })
+    address(): string { return "address"; }
+  }
+  definePlugin(Messages);
+  const shape = publishedShape();
+  await initializeShape(shape, "mail");
+  expect(shape.toolDefinitions.map(({ name, binding }) => ({ name, binding }))).toEqual([
+    { name: "mail.message.create", binding: { entity: "mail.message", operation: "create" } },
+    { name: "mail.address.create", binding: { entity: "mail.address", operation: "create" } },
+  ]);
+  expect(shape.toolDefinitions[0]?.allowlist_gate).toEqual({ target_type: "email_address", target_arg: "to", batch_arg: "messages" });
+  expect(shape.rpcHandlers["mail.message.create"]?.({})).toBe("message");
+  expect(shape.rpcHandlers["mail.address.create"]?.({})).toBe("address");
+  expect(shape.rpcHandlers["mail.create"]).toBeUndefined();
+});
+
+/**
+ * @test-id: tst_testkit_entity_operations_002
+ * @covers: packages/plugin-sdk/index.ts::definePlugin
+ * @deterministic: yes
+ */
+it("tst_testkit_entity_operations_002 refuses foreign ownership without clearing the active module", async () => {
+  class Owned {
+    @tool("get", { entity: "mail.message", description: "Get", params: {} })
+    get(): string { return "active"; }
+  }
+  definePlugin(Owned);
+  const shape = publishedShape();
+  await initializeShape(shape, "mail");
+  const definitions = shape.toolDefinitions;
+  const handlers = shape.rpcHandlers;
+  await expect(initializeShape(shape, "telegram")).rejects.toThrow();
+  expect(shape.toolDefinitions).toBe(definitions);
+  expect(shape.rpcHandlers).toBe(handlers);
+  expect(shape.rpcHandlers["mail.message.get"]?.({})).toBe("active");
+});
+
+/**
+ * @test-id: tst_testkit_entity_operations_003
+ * @covers: packages/plugin-sdk/index.ts::record
+ * @deterministic: yes
+ */
+it("tst_testkit_entity_operations_003 standard decorators preserve pair identity and reject duplicate registrations", async () => {
+  class Standard {
+    create(): string { return "standard"; }
+  }
+  const context = { kind: "method" as const, name: "create", static: false, private: false, addInitializer(): void {} };
+  const spec = { entity: "mail.message", description: "Create", params: {} };
+  writeTool("create", spec)(Standard.prototype.create, context);
+  definePlugin(Standard);
+  const shape = publishedShape();
+  await initializeShape(shape, "mail");
+  expect(shape.toolDefinitions[0]).toMatchObject({ name: "mail.message.create", binding: { entity: "mail.message", operation: "create" }, requires_approval: true });
+  expect(shape.rpcHandlers["mail.message.create"]?.({})).toBe("standard");
+  expect(() => writeTool("create", spec)(Standard.prototype.create, context)).toThrow("duplicate");
 });

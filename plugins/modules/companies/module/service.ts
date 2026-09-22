@@ -1,3 +1,4 @@
+import { rpc } from "@magnis/plugin-sdk";
 // Companies plugin — backend module. Runs inside the deno_core V8
 // isolate. Decorated class: each @tool co-locates the agent tool
 // contract with its RPC handler; definePlugin (index.ts) wires them.
@@ -29,7 +30,7 @@ export class CompaniesModule {
     this.rpc = deps.rpc;
   }
 
-  @tool("list", {
+  @rpc("list", {
     description: "List companies with pagination and optional name search.",
     params: {
       type: "object",
@@ -78,7 +79,9 @@ export class CompaniesModule {
     return { items, total, limit, offset };
   }
 
+  @rpc("get")
   @tool("get", {
+    entity: "companies.company",
     description: "Get a full company detail view by entity id.",
     params: {
       type: "object",
@@ -144,7 +147,9 @@ export class CompaniesModule {
   // frontend-only optimistic-create UUID). The handler still accepts
   // it via CreateParams; the WS RPC path is not validated against this
   // schema.
+  @rpc("create")
   @writeTool("create", {
+    entity: "companies.company",
     description:
       "Create a company. Idempotent by name (case-insensitive, trimmed): if a " +
       "company with the same name already exists it is returned instead of " +
@@ -214,7 +219,9 @@ export class CompaniesModule {
   // Full-field enrichment (parity with staging "field parity" build). Each
   // provided field is layered on as a fresh record version; single-aligned
   // details = latest wins, email/phone = collection (one record per item).
+  @rpc("update")
   @writeTool("update", {
+    entity: "companies.company",
     description:
       "Update / enrich a company. Provided fields are layered on; omitted " +
       "fields stay untouched. `domain` derives the website; `summary` replaces " +

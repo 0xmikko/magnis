@@ -31,7 +31,7 @@ export interface UseSyncStatusResult {
 }
 /**
  * The status bar's live feed: `sync.progress` (per-cycle, same-unit pair)
- * and `app.index_progress` (the search indexer). Push-based over the
+ * and `app.indexProgress` (the search indexer). Push-based over the
  * WebSocket event stream — no RPC, no polling. (The application-log half
  * that used to live beside this — `logs.recent`, `app.error`, `app.status`
  * — was deleted with the user-facing log feature: the process log is read

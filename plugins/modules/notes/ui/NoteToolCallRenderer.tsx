@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { JSX } from "react";
-import { MarkdownText } from "@magnis/host/agent";
+import { MarkdownText, toolNamesEquivalent } from "@magnis/host/agent";
 import { useQueryClient } from "@tanstack/react-query";
 import type {
   AgentRendererProps,
@@ -30,13 +30,15 @@ export function NoteToolCallRenderer({
   const rt = runtime;
   const router = useRouterContext();
   const args = tc.args as Record<string, unknown>;
-  const isCreate = tc.name === "notes.create" || tc.name === "notes_create";
+  const isCreate = tc.toolBinding === undefined
+    ? toolNamesEquivalent(tc.name, "notes.create") || toolNamesEquivalent(tc.name, "notes.template.apply")
+    : tc.toolBinding.operation === "create";
   const title = args.title as string | undefined;
   // @tested-by: tst_module_notes_write_003
   // @invariant: INV-3 — the card renders the body under EVERY wire name the
   // tool accepts. The list lives beside the tool schema so the two cannot
   // drift; keeping it here is why a `content` call rendered a blank card.
-  const body = bodyFromToolArgs(args);
+  const body = typeof args.template === "string" ? `Template: ${args.template}` : bodyFromToolArgs(args);
 
   const [noteId, setNoteId] = useState<string | undefined>(
     args.id as string | undefined,

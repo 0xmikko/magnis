@@ -5,7 +5,6 @@ import { proxiedMediaUrl } from "./PostCard";
 import { LinkedInPostCard, LinkedInProfileCard } from "./EntityCards";
 import { LinkedInProfileFeed } from "./ProfileFeed";
 import { LinkedInProfileHeader } from "./ProfileHeader";
-import { AddProfileAction } from "./AddProfileAction";
 
 // Brand glyph shipped IN the plugin (plugins/linkedin/icon.svg, package root)
 // and served by the backend from the plugin store — no external hosting
@@ -54,7 +53,6 @@ export const LinkedinModule = defineModule({
   // profile link in its `extra` slot, like email's To/Reply-To rows) and the
   // panel is only the BODY (posts). NEVER detailType:"custom" for headers.
   // "+" add-profile input: LinkedIn only — X friends come from the API.
-  HeaderActions: AddProfileAction,
   HeaderComponent: LinkedInProfileHeader,
   DetailPanel: LinkedInProfileFeed,
   // Kept for agent-context rendering of individual posts.

@@ -21,7 +21,7 @@ export declare function extractArgSummary(args: unknown): string | undefined;
 /** Extract a result count from a tool result object. */
 export declare function extractResultCount(result: unknown): number | null;
 /**
- * Display label for the result-count badge. For a BOUNDED window
+ * Display label for the result-count badge. For a BOUNDED result span
  * ({items, total} where total exceeds the returned items) shows
  * "<returned> of <total>" — e.g. "50 of 27859" — so a capped retrieval reads as
  * what reached the agent vs. what exists, instead of the bare total, which

@@ -17,13 +17,15 @@ title = "Triggers"
 summary = "Automations that watch your graph and act on changes."
 # Reverse-domain publisher identity.
 publisher = "ai.magnis"
+resources = [ "triggers.trigger.history" ]
 
 # Foreign asks beyond the implicit own namespace: writes to `triggers.` records,
 # own:own links, and reads of own schemas need no declaration.
 [permissions]
+read = [ "episodes.episode" ]
 # triggers.belongs_to is own-prefixed — implicit (S2).
 links = [ "watches" ]
-call = [ "triggers.validate_watch", "triggers.resolve_watchable", "triggers.invalidate_cache", "triggers.fire_history", "triggers.validate_schedule" ]
+call = [ "triggers.validate_watch", "triggers.resolve_watchable", "triggers.invalidate_cache", "triggers.fire_history", "triggers.validate_schedule", "triggers.fire_now", "email.ensure_addresses", "telegram.chats.get" ]
 
 # The kind this module OWNS (S2): a trigger belongs to a parent episode.
 [[links]]

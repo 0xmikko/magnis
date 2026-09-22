@@ -19,6 +19,10 @@ export interface ClickableEntity {
     readonly schemaId: string;
 }
 export interface ContextPanelProps {
+    readonly currentEpisodeId?: string;
+    readonly parentEpisodeId?: string | null;
+    readonly loadMore?: () => void;
+    readonly loadingMore?: boolean;
     readonly primaryEntity?: ContextPanelEntity;
     readonly replyToEntity?: ContextPanelEntity;
     readonly infoItems: readonly ContextInfoItem[];
@@ -40,5 +44,5 @@ export interface ContextPanelProps {
      */
     readonly headerSlot?: ReactNode;
 }
-export declare function ContextPanel({ primaryEntity, replyToEntity, infoItems: _infoItems, connectedEntities, runtime, hideHeader, bottomSlot, headerSlot, }: ContextPanelProps): JSX.Element;
+export declare function ContextPanel({ currentEpisodeId, parentEpisodeId, loadMore, loadingMore, primaryEntity, replyToEntity, infoItems: _infoItems, connectedEntities, runtime, hideHeader, bottomSlot, headerSlot, }: ContextPanelProps): JSX.Element;
 export {};

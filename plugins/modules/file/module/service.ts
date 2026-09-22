@@ -1,3 +1,4 @@
+import { rpc } from "@magnis/plugin-sdk";
 // File plugin — backend module (V8). Decorated class owning the read/manage
 // surface (formerly the native files-module controller): `file.list`,
 // `file.get`, `file.attach`. Bytes/storage/upload stay in core `FileService`;
@@ -35,7 +36,7 @@ export class FileModule {
     this.graph = deps.graph;
   }
 
-  @tool("list", {
+  @rpc("list", {
     description:
       "List files with optional filters by source_module, mime_prefix, or parent_id.",
     params: {
@@ -119,7 +120,9 @@ export class FileModule {
     return { items, total, limit, offset };
   }
 
+  @rpc("get")
   @tool("get", {
+    entity: "file.object",
     description: "Get a file by entity id, with its details + a serving URL.",
     params: {
       type: "object",
@@ -149,7 +152,9 @@ export class FileModule {
     return base;
   }
 
-  @writeTool("attach", {
+  @rpc("attach")
+  @writeTool("create", {
+    entity: "file.object",
     description: "Attach a file entity to a target entity via a 'file.attachment' link.",
     params: {
       type: "object",

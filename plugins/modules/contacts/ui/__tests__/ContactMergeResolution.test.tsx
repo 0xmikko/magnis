@@ -17,11 +17,12 @@
  * actually broke: the preview resolves to a renderer, and that renderer draws
  * nothing.
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render } from "@testing-library/react";
 import { AgentContributionRegistry } from "@/runtime/agent/contributions";
 import type { AgentHistoryBlock } from "@/runtime/contracts";
 import { ContactsModule } from "../index";
+import type { AgentRuntime, AppRuntime, ToolCallRendererPayload } from "@magnis/host/runtime";
 import { ContactMergeRenderer } from "../ContactMergeRenderer";
 import { ContactMergePreviewSilent } from "../ContactMergeRenderer";
 
@@ -56,4 +57,34 @@ describe("tst_fe_agent_010 — contacts merge blocks resolve correctly", () => {
     expect(container.textContent).toBe("");
     expect(container.firstChild).toBeNull();
   });
+});
+
+/** @test-id: tst_fe_contact_merge_preview_001
+ * @scenario: scn_compact_merge_preview_001
+ * @covers: plugins/modules/contacts/ui/ContactMergeRenderer.tsx
+ * @deterministic: yes
+ * @fixtures: completed read-only merge result
+ */
+it.each([false, true])("renders compact merge preview without claiming or approving a merge (MCP %s)", (enveloped) => {
+  const rpc = vi.fn();
+  const onApprove = vi.fn();
+  const payload: ToolCallRendererPayload = {
+    toolCall: { id: "preview", name: "merge", toolBinding: { entity: "contacts.person", operation: "merge" },
+      args: { survivor_id: "a", retired_id: "b", preview: true }, status: "approved" },
+    toolResult: { id: "preview", result: {
+      survivor: { id: "a", name: "Ada", property_count: 1 }, retired: { id: "b", name: "Grace", property_count: 1 },
+      fields: { name: { key: "name", survivor_value: "Ada", retired_value: "Grace", auto_resolved: "Ada" } },
+      links_to_repoint: 2, duplicate_links_to_remove: 0,
+    } }, isAllowlisted: false, onApprove, onDeny: vi.fn(), onEdit: vi.fn(), onAllowlistToggle: vi.fn(),
+  };
+  const result = payload.toolResult;
+  if (result === undefined) throw new Error("preview result missing");
+  const renderedPayload = enveloped ? { ...payload, toolResult: { ...result, result: { content: [{ type: "text", text: JSON.stringify(result.result) }] } } } : payload;
+  const view = render(<ContactMergeRenderer payload={renderedPayload} runtime={{ transport: { rpc } } as unknown as AppRuntime} agent={{} as AgentRuntime} />);
+  expect(view.getByText("Grace")).toBeTruthy();
+  expect(view.queryByText("Merged", { exact: true })).toBeNull();
+  expect(view.queryByRole("button", { name: "Confirm Merge" })).toBeNull();
+  expect(view.queryByText("Contacts merged successfully")).toBeNull();
+  expect(rpc).not.toHaveBeenCalled();
+  expect(onApprove).not.toHaveBeenCalled();
 });

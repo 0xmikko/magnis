@@ -4,13 +4,17 @@
  *
  * Plan item #5 (docs/plans/context-panel-from-graph.md).
  */
-export interface EpisodeLinkSummary {
-    readonly episode_id: string;
-    readonly title: string;
-    readonly status: string;
-    readonly is_archived: boolean;
-    readonly link_kinds: readonly string[];
-    readonly updated_at: string;
-    readonly is_empty: boolean;
+export type { EpisodeLinkSummary } from "@magnis/sdk";
+interface EpisodeIdentity {
+    readonly episodeId: string;
 }
-export declare function useEntityLinkedEpisodes(entityId: string | undefined): import("@tanstack/react-query").UseQueryResult<readonly EpisodeLinkSummary[], Error>;
+export declare function selectEntityLinkedEpisodeRows<T extends EpisodeIdentity>(rows: readonly T[], currentEpisodeId: string, currentEntityId: string | undefined): T[];
+export declare function useEntityLinkedEpisodes(entityId: string | undefined): import("@tanstack/react-query").UseQueryResult<{
+    episodeId: string;
+    title: string;
+    status: string;
+    isArchived: boolean;
+    linkKinds: string[];
+    updatedAt: string;
+    isEmpty: boolean;
+}[], Error>;

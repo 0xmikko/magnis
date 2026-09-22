@@ -1,9 +1,10 @@
 import type { ComponentType } from "react";
+import type { EntityOperationBinding } from "@magnis/sdk/core/approval";
 import type { StoreApi } from "zustand/vanilla";
 import type { AppRuntime } from "./runtime";
 import type { ReplyToContext } from "../../modules/episodes/types";
-export type { AgentContextDescriptor, AgentInvocationInput, AgentDraftRequest, AgentHistoryBlock, AgentTodoItem, AllowlistTarget, AgentRuntimeState, AgentChatStoreApi, } from "@magnis/client-core";
-import type { AgentContextDescriptor, AgentHistoryBlock, AgentTodoItem, AllowlistTarget, AgentRuntimeState, AgentChatStoreApi, AgentInvocationInput, AgentDraftRequest } from "@magnis/client-core";
+export type { AgentContextDescriptor, AgentInvocationInput, AgentDraftRequest, AgentHistoryBlock, AgentTodoItem, AllowlistTarget, AgentRuntimeState, } from "@magnis/client-core";
+import type { AgentContextDescriptor, AgentHistoryBlock, AgentTodoItem, AllowlistTarget, AgentRuntimeState, AgentDraftRequest } from "@magnis/client-core";
 export interface AgentRendererProps<TPayload = unknown> {
     readonly payload: TPayload;
     readonly runtime: AppRuntime;
@@ -12,6 +13,7 @@ export interface AgentRendererProps<TPayload = unknown> {
 export interface AgentHistoryRendererRegistration<TPayload = unknown> {
     readonly id: string;
     readonly moduleId: string;
+    readonly binding?: EntityOperationBinding;
     readonly match: (block: AgentHistoryBlock) => boolean;
     readonly Render: ComponentType<AgentRendererProps<TPayload>>;
     readonly priority?: number;
@@ -82,6 +84,7 @@ export interface ModuleAgentContribution {
     readonly extractAllowlistTarget?: (toolCall: {
         name: string;
         args: unknown;
+        toolBinding?: EntityOperationBinding;
     }) => AllowlistTarget | null;
 }
 export type AllowlistScope = "dialog" | "always";
@@ -91,6 +94,7 @@ export interface ToolCallRendererPayload {
         readonly id: string;
         readonly name: string;
         readonly args: unknown;
+        readonly toolBinding?: EntityOperationBinding;
         readonly status: "pending" | "approved" | "denied";
         readonly chatName?: string;
     };
@@ -143,13 +147,9 @@ export interface ComposerRuntimeSurface {
 }
 export interface AgentRuntime {
     readonly store: StoreApi<AgentRuntimeState>;
-    readonly chat: AgentChatStoreApi;
     registerContribution(moduleId: string, contribution: ModuleAgentContribution): () => void;
     setActiveContext(context: AgentContextDescriptor | null): void;
     setReplyTo(replyTo: ReplyToContext | null): void;
-    send(input: AgentInvocationInput): Promise<void>;
-    approveToolCall(contextKey: string, toolCallId: string, argumentsOverride?: unknown): Promise<void>;
-    denyToolCall(contextKey: string, toolCallId: string): Promise<void>;
     requestDraft(request: AgentDraftRequest): void;
     resolveEntityRenderer(schemaId: string): EntityRendererRegistration | null;
     navigateToEntity(schemaId: string, entityId: string, data: Readonly<Record<string, unknown>>, runtime: AppRuntime, navigate: (moduleId: string, entityType?: string, entityId?: string) => void): boolean;
@@ -158,6 +158,7 @@ export interface AgentRuntime {
     resolveAllowlistTarget(toolCall: {
         name: string;
         args: unknown;
+        toolBinding?: EntityOperationBinding;
     }): AllowlistTarget | null;
     resolveSystemPrompt(moduleId: string): string | undefined;
     dispatchContextAction(moduleId: string, actionId: string, payload?: unknown): void;

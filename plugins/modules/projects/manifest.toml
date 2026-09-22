@@ -8,6 +8,7 @@
 
 id = "projects"
 version = "0.1.0"
+resources = ["projects.project.checklist"]
 # SDK contract version this manifest targets (host accepts 0.x).
 magnis_api_version = "0.1.0"
 title = "Projects"

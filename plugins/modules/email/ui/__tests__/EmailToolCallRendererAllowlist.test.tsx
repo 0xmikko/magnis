@@ -75,3 +75,16 @@ describe("EmailToolCallRenderer historical allowlist control", () => {
     expect(onRevoke).toHaveBeenCalledTimes(1);
   });
 });
+
+/** @test-id: tst_fe_email_create_card_001
+ * @scenario: scn_tools_rendering
+ * @covers: plugins/modules/email/ui/EmailToolCallRenderer.tsx::EmailToolCallRenderer
+ * @deterministic: yes — bound reply parameters and local context response
+ */
+it("tst_fe_email_create_card_001 labels a bound create reply from its parameters", () => {
+  const props = makeProps(vi.fn());
+  const view = render(<EmailToolCallRenderer {...props} payload={{ ...props.payload, toolResult: undefined,
+    toolCall: { id: "reply-call", name: "create", toolBinding: { entity: "email.message", operation: "create" }, args: { email_id: "email-1", body_text: "Confirmed." }, status: "pending" },
+  }} />);
+  expect(view.getByRole("button", { name: /^Reply$/ })).toBeTruthy();
+});

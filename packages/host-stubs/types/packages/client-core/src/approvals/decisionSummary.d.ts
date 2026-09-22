@@ -3,7 +3,7 @@ import { type ApprovalReadState } from "./queue.ts";
 /**
  * Derive a ResolvedDecision for a given tool call from the already-persisted
  * episode state. The approval summary is status-only (the backend does not
- * persist executed-result messages — see chat.rs and AgentChatStore
+ * persist executed-result messages — see the websocket chat controller and AgentChatStore
  * reconstruction). The ask_user summary pairs the originating tool_call with
  * its per-id answering user_message block, so interleaved multi-turn
  * conversations resolve independently.

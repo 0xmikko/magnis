@@ -65,3 +65,16 @@ describe("tst_fe_agent_006 — telegram set_trigger/batch_send blocks resolve to
     expect(registry.resolveHistoryRenderer(blockFor("telegram.capabilities"))).toBeNull();
   });
 });
+
+/** @test-id: tst_fe_telegram_create_card_001
+ * @scenario: scn_tools_rendering
+ * @covers: plugins/modules/telegram/ui/index.tsx::TelegramModule
+ * @deterministic: yes — actual module contribution and validated pairs
+ */
+it("tst_fe_telegram_create_card_001 routes create to the message card and refuses foreign trigger ownership", () => {
+  const registry = new AgentContributionRegistry();
+  registry.register("telegram", TelegramModule.agent);
+  const block: AgentHistoryBlock = { id: "call", kind: "tool_call", toolName: "create", toolBinding: { entity: "telegram.message", operation: "create" }, payload: { args: { messages: [{ chat_id: 42, text: "Hello" }] } } };
+  expect(registry.resolveHistoryRenderer(block)?.Render).toBe(TelegramToolCallRenderer);
+  expect(registry.resolveHistoryRenderer({ ...block, toolName: "telegram.set_trigger", toolBinding: { entity: "triggers.trigger", operation: "create" } })).toBeNull();
+});

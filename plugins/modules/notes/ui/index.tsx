@@ -1,3 +1,5 @@
+import { toolNamesEquivalent } from "@magnis/host/agent";
+import type { AgentHistoryRendererRegistration } from "@magnis/host/runtime";
 import { Icon } from "@magnis/host/ui";
 import { defineModule } from "@magnis/host/base";
 import type { AppRuntime } from "@magnis/host/runtime";
@@ -27,7 +29,7 @@ export async function createNoteFromHeader(
   onCreated(result.id);
 }
 
-export const NotesModule = defineModule({
+const moduleDefinition = defineModule({
   id: "notes",
   title: "Notes",
   icon: <Icon name="notebook-pen" size={26} />,
@@ -46,28 +48,23 @@ export const NotesModule = defineModule({
   onHeaderAction: (runtime, onCreated) => {
     void createNoteFromHeader(runtime, onCreated);
   },
-  toolCallRenderers: [
-    {
-      actions: ["update", "create"],
-      Render: NoteToolCallRenderer as never,
-    },
-  ],
-  extractAllowlistTarget: (tc) => {
-    const n = tc.name;
-    if (
-      n !== "notes.update" &&
-      n !== "notes.create" &&
-      n !== "notes_update" &&
-      n !== "notes_create"
-    )
-      return null;
-    const args = tc.args as Record<string, unknown>;
-    const title = typeof args.title === "string" ? args.title : "note";
-    return {
-      action: tc.name,
-      targetType: "note",
-      targetId: title,
-      targetLabel: title,
-    };
-  },
-});
+  toolCallRenderers: [{ entity: "notes.note", actions: ["create", "update"], Render: NoteToolCallRenderer as never }],
+  extractAllowlistTarget: (call) => {
+    const binding = call.toolBinding;
+    if (binding?.entity !== "notes.note" || !["create", "update"].includes(binding.operation)) return null;
+    const action = `${binding.entity}.${binding.operation}`;
+    return { action, targetType: "tool_action", targetId: action, targetLabel: `${binding.operation === "create" ? "Create" : binding.operation === "merge" ? "Merge" : "Update"} note` };
+  },});
+
+const legacyRenderers: readonly AgentHistoryRendererRegistration[] = [
+  { id: "notes-legacy-create", moduleId: "notes", match: (block) => typeof block.toolName === "string" && (toolNamesEquivalent(block.toolName, "notes.create")), Render: NoteToolCallRenderer as never },
+  { id: "notes-legacy-update", moduleId: "notes", match: (block) => typeof block.toolName === "string" && (toolNamesEquivalent(block.toolName, "notes.update")), Render: NoteToolCallRenderer as never },
+  { id: "notes-legacy-template.apply", moduleId: "notes", match: (block) => typeof block.toolName === "string" && (toolNamesEquivalent(block.toolName, "notes.template.apply")), Render: NoteToolCallRenderer as never },
+];
+
+if (!moduleDefinition.agent?.historyRenderers) throw new Error("notes tool renderers missing");
+
+export const NotesModule = {
+  ...moduleDefinition,
+  agent: { ...moduleDefinition.agent, historyRenderers: [...moduleDefinition.agent.historyRenderers, ...legacyRenderers] },
+};

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { EmailBatchSendRenderer } from "./EmailBatchSendRenderer";
 import type { JSX } from "react";
 import { Icon } from "@magnis/host/ui";
 import type { AgentRendererProps, AppRuntime, ToolCallRendererPayload } from "@magnis/host/runtime";
@@ -122,10 +123,11 @@ export function EmailPreviewContent({
 export function EmailToolCallRenderer({
   payload,
   runtime,
+  agent,
 }: AgentRendererProps<ToolCallRendererPayload>): JSX.Element {
   const { toolCall: tc, toolResult, isAllowlisted, superseded, onApprove, onDeny, onEdit, onAllowlistToggle } = payload;
   const args = tc.args as Record<string, unknown>;
-  const isReply = tc.name.includes("reply");
+  const isReply = typeof args.email_id === "string";
   const verb = isReply ? "Reply" : "Send";
 
   const emailId = args.email_id as string | undefined;
@@ -153,6 +155,8 @@ export function EmailToolCallRenderer({
           ? args.text
           : "";
   const attachmentNames = useAttachmentNames(args.attachment_ids as readonly string[] | undefined, runtime);
+
+  if (Array.isArray(args.messages)) return <EmailBatchSendRenderer payload={payload} runtime={runtime} agent={agent} />;
 
   const recipientLabel = toName ?? to ?? "recipient";
 
@@ -191,9 +195,9 @@ export function EmailToolCallRenderer({
       toolResult={toolResult}
       superseded={superseded}
       isAllowlisted={isAllowlisted}
-      primaryLabel="Send"
+      primaryLabel={verb}
       primaryIcon="send"
-      doneLabel="Sent"
+      doneLabel={isReply ? "Replied" : "Sent"}
       onApprove={onApprove}
       onDeny={onDeny}
       onEdit={onEdit}

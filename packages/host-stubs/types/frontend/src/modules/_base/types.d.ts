@@ -2,7 +2,7 @@ import type { ComponentType, ReactNode } from "react";
 import type { StoreApi } from "zustand/vanilla";
 import type { IconName } from "../../components/ui/Icon";
 import type { AvatarColor, LinkedEntitySummary } from "./sharedTypes";
-import type { AgentRendererProps, AllowlistTarget, EntityRendererProps, ModuleAgentContribution, ToolCallRendererPayload } from "../../runtime/contracts/agent";
+import type { AgentRendererProps, EntityRendererProps, ModuleAgentContribution, ToolCallRendererPayload } from "../../runtime/contracts/agent";
 import type { AppRuntime } from "../../runtime/contracts/runtime";
 import type { EntityLinkContribution } from "../../runtime/contracts/module";
 export interface ListItem {
@@ -11,7 +11,7 @@ export interface ListItem {
     readonly schema_id: string;
     readonly preview?: string | null;
     readonly timestamp?: string | null;
-    readonly avatar_url?: string | null;
+    readonly avatarUrl?: string | null;
     readonly is_pinned?: boolean;
     readonly is_archived?: boolean;
     readonly unread_count?: number;
@@ -23,8 +23,9 @@ export interface ModuleQueryKeys {
     detail(id: string): readonly unknown[];
 }
 export interface ToolCallRendererRegistration {
-    /** Action suffixes — module prefix added automatically.
-     *  e.g. in notes module: ["create", "update"] → "notes.create", "notes.update" */
+    /** Owned entity or explicitly declared resource. */
+    readonly entity: string;
+    /** Operation names on this entity, e.g. ["create", "update"]. */
     readonly actions: readonly string[];
     readonly Render: ComponentType<AgentRendererProps<ToolCallRendererPayload>>;
 }
@@ -145,7 +146,7 @@ export interface ModuleConfig {
     /** Icon-only header action button (replaces HeaderActions component) */
     readonly headerActionIcon?: IconName;
     /** Callback for icon-only header action button */
-    readonly onHeaderAction?: (runtime: AppRuntime, onCreated: (id: string) => void) => void;
+    readonly onHeaderAction?: (runtime: AppRuntime, onCreated: (id: string) => void) => void | Promise<void>;
     /** Custom right pane component (replaces AgentPanel when visible) */
     readonly RightPaneComponent?: ComponentType<RightPaneProps>;
     /** Agent draft request handler */
@@ -165,10 +166,7 @@ export interface ModuleConfig {
     /** Agent tool call renderers */
     readonly toolCallRenderers?: readonly ToolCallRendererRegistration[];
     /** Allowlist target extractor for agent tool approval */
-    readonly extractAllowlistTarget?: (toolCall: {
-        name: string;
-        args: unknown;
-    }) => AllowlistTarget | null;
+    readonly extractAllowlistTarget?: ModuleAgentContribution["extractAllowlistTarget"];
     /** How each entity type appears in other modules' linked entity tabs */
     readonly linkedEntityDisplay?: Record<string, LinkedEntityDisplayConfig>;
     /** Group list items by date or first letter. Renders separators between groups. */

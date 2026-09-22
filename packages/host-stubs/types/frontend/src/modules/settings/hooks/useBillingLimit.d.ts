@@ -3,17 +3,8 @@
  * caller's credit limit, lifetime spend and entitlement status, plus the
  * admin write. Same WS-RPC + react-query pattern as useSourceAppConfig.
  */
-export interface BillingLimitInfo {
-    readonly user_id: string;
-    /** Lifetime credit limit in micro-dollars; null = no limit configured. */
-    readonly credit_limit_micros: number | null;
-    readonly spent_micros: number;
-    readonly reserved_micros: number;
-    /** Remaining live capacity after committed spend and active reservations. */
-    readonly available_micros: number | null;
-    /** Mirrors the turn gate: false = next turn would be refused. */
-    readonly entitled: boolean;
-}
+import { type BillingLimitInfo } from "@magnis/sdk";
+export type { BillingLimitInfo } from "@magnis/sdk";
 export interface UseBillingLimitResult {
     readonly limit: BillingLimitInfo | undefined;
     readonly loading: boolean;

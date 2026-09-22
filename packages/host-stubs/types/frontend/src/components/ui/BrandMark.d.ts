@@ -9,4 +9,3 @@ export interface BrandMarkProps {
  * Settings → Add Account picker. Extend by adding a new case below.
  */
 export declare function BrandMark({ brand, size }: BrandMarkProps): JSX.Element;
-export declare function resolveBrand(id: string): BrandKey | undefined;

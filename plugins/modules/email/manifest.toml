@@ -37,6 +37,7 @@ progress = { "email.message" = "messages" }
 # Foreign asks beyond the implicit own namespace: writes to `email.` records,
 # own:own links, and reads of own schemas need no declaration.
 [permissions]
+read = [ "episodes.episode" ]
 links = [ "authored_by", "sent_to", "file.attachment" ]
 call = [ "triggers.create" ]
 host = [ "file_register", "external_id_reads", "source_commands", "sync_state", "composer" ]

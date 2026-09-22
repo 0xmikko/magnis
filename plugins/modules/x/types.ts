@@ -75,6 +75,9 @@ export interface XCanonical {
 /** Envelope payload shapes (discriminated by `entity_type`). */
 export interface ProfilePayload extends ProfileIdentity {
   entity_type: "profile";
+  posts_total?: number;
+  posts_skipped?: number;
+  sync_pass?: string;
 }
 export interface PostPayload extends PostContent {
   entity_type: "post";

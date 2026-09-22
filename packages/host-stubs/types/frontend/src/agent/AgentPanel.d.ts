@@ -1,6 +1,8 @@
 import type { JSX } from "react";
 export interface AgentPanelProps {
     readonly moduleName: string;
+    readonly forceDraft?: boolean;
+    readonly onEpisodeCreated?: (episodeId: string) => void;
     readonly conversationKey?: string;
     readonly selectedItemId?: string;
     readonly selectedItemTitle?: string;
@@ -17,4 +19,4 @@ export interface AgentPanelProps {
      */
     readonly presetEpisodeId?: string;
 }
-export declare function AgentPanel({ moduleName, conversationKey, selectedItemId, selectedChatId, selectedChatName, archived, presetEpisodeId, }: AgentPanelProps): JSX.Element;
+export declare function AgentPanel(props: AgentPanelProps): JSX.Element;

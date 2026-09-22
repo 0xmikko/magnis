@@ -88,7 +88,7 @@ describe("tst_module_telegram_command_001 — Telegram command mapping", () => {
   });
 
   it("resolves the chat anchor and delegates trigger definition ownership", async () => {
-    const graph = mockGraph({ find_by_anchor: () => Promise.resolve("chat-entity") });
+    const graph = mockGraph({ find_by_anchor: () => Promise.resolve("chat-entity"), get_entity_full: () => Promise.resolve({ entity: { id: "episode-1", name: "Parent", schema_id: "episodes.episode", created_at: "" }, links: [] }) });
     const execute = vi.fn(() => Promise.resolve({ id: "trigger-1" }));
     const module = mountModule(TelegramModule, { graph, rpc: { execute } }).module;
 
@@ -119,15 +119,31 @@ describe("tst_module_telegram_command_001 — Telegram command mapping", () => {
     })).rejects.toThrow("Telegram chat 42 not found");
   });
 
-  it("publishes send/reply/batch/trigger as approval-required tools", async () => {
+  it("publishes one create operation while retaining old names only as client RPCs", async () => {
     const { tools } = await mountModule(TelegramModule, {
       mode: "dispatch",
       ctx: { extension_id: "telegram" },
     });
     const byName = new Map(tools.map((tool) => [tool.name, tool]));
-    for (const name of ["telegram.messages.send", "telegram.messages.reply", "telegram.batch_send", "telegram.set_trigger"]) {
-      expect(byName.get(name)?.requires_approval).toBe(true);
-    }
+    expect(byName.get("telegram.message.create")).toMatchObject({ requires_approval: true, binding: { entity: "telegram.message", operation: "create" } });
+    for (const name of ["telegram.messages.send", "telegram.messages.reply", "telegram.batch_send", "telegram.set_trigger"]) expect(byName.has(name)).toBe(false);
     expect(byName.has("telegram.messages.backfill")).toBe(false);
   });
+});
+
+/** @test-id: tst_module_telegram_create_001
+ * @scenario: scn_tools_entity_registration
+ * @covers: plugins/modules/telegram/module/service.ts::TelegramModule.create
+ * @deterministic: yes — provider double, local ingest is independently covered
+ */
+it("tst_module_telegram_create_001 preserves replies and one batch while rejecting mixed forms", async () => {
+  const source_command = vi.fn().mockResolvedValue({ message_id: 10 });
+  const module = mountModule(TelegramModule, { graph: mockGraph({ source_command }) }).module;
+  await module.create({ chat_id: 42, reply_to_message_id: 7, text: "Confirmed." });
+  expect(source_command).toHaveBeenCalledWith({ action: "send_message", chat_id: 42, reply_to_message_id: 7, text: "Confirmed." }, undefined);
+  const result = await module.create({ messages: [{ chat_id: 43, text: "First" }, { chat_id: 44, text: "Skip" }], excluded_indices: [1] });
+  expect(result).toMatchObject({ total: 1, sent: 1, failed: 0 });
+  expect(source_command).toHaveBeenCalledTimes(2);
+  await expect(module.create({ chat_id: 42, text: "Mixed", messages: [{ chat_id: 44, text: "Bad" }] })).rejects.toThrow("form");
+  expect(source_command).toHaveBeenCalledTimes(2);
 });

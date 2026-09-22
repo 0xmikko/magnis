@@ -34,6 +34,9 @@ export const profile = entity(
     bio: z.string().nullish(),
     verified: z.boolean().nullish(),
     follower_count: z.number().nullish(),
+    posts_total: z.number().optional(),
+    posts_skipped: z.number().optional(),
+    sync_pass: z.string().optional(),
   },
   { order: ["handle", "asc"], title: "display_name", body: "bio" },
 ) satisfies z.ZodType<ProfilePayload>;

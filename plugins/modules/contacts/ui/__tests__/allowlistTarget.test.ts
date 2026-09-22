@@ -1,50 +1,24 @@
-/** The allowlist target this module canonicalises.
- *
- * Moved here from the host (`frontend/src/agent/__tests__/moduleAllowlistTargets.test.ts`),
- * which asserted all four modules at once by importing their UIs through a
- * submodule checkout. The rule is per-module and changes when the module
- * changes: create, batch_create and merge are SEPARATE grants — allowing one
- * must not silently allow the others.
- *
- * The host keeps what is the host's — that `AgentContributionRegistry` asks
- * every contribution in turn and takes the first answer.
- *
+/**
+ * @test-id: tst_fe_allowlist_target_002
  * @scenario: scn_agent_allowlist_002
+ * @covers: plugins/modules/contacts/ui/index.tsx
  * @deterministic: yes
+ * @fixtures: validated local and foreign bindings
  */
 import { describe, expect, it } from "vitest";
-
 import { ContactsModule } from "../index";
 
-interface AllowlistTargetLike {
-  readonly action: string;
-  readonly targetType: string;
-  readonly targetId: string;
-  readonly targetLabel: string;
-}
-
-function target(name: string): AllowlistTargetLike | null {
-  const contribution = ContactsModule.agent as
-    | {
-        extractAllowlistTarget?: (call: {
-          name: string;
-          args: unknown;
-        }) => AllowlistTargetLike | null;
-      }
-    | undefined;
-  return contribution?.extractAllowlistTarget?.({ name, args: {} }) ?? null;
-}
-
-describe("contacts allowlist target", () => {
-  it("tst_fe_allowlist_target_002 canonicalizes contact write aliases separately", () => {
-    /** @test-id: tst_fe_allowlist_target_002
-     *  @covers: plugins/modules/contacts/ui/index.tsx */
-    expect(target("contacts_create")?.action).toBe("contacts.create");
-    expect(target("contact.create")?.targetId).toBe("contacts.create");
-    // Distinct grants: approving one contact create is not approving a batch,
-    // and neither is approving a merge — which destroys a record.
-    expect(target("contacts.batch_create")?.action).toBe("contacts.batch_create");
-    expect(target("contacts_merge")?.action).toBe("contacts.merge");
-    expect(target("contacts.list")).toBeNull();
+describe("contacts allowlist identity", () => {
+  const extract = ContactsModule.agent.extractAllowlistTarget;
+  if (!extract) throw new Error("allowlist extractor missing");
+  it("grants only supported validated pairs", () => {
+    for (const operation of ["create", "merge"]) {
+      const action = `contacts.person.${operation}`;
+      expect(extract({ name: operation, args: {}, toolBinding: { entity: "contacts.person", operation } })).toEqual({ action, targetType: "tool_action", targetId: action, targetLabel: `${operation === "create" ? "Create" : operation === "merge" ? "Merge" : "Update"} contact` });
+      expect(extract({ name: operation, args: {}, toolBinding: { entity: "other.entity", operation } })).toBeNull();
+    }
+    expect(extract({ name: "contacts.create", args: {} })).toBeNull();
+    expect(extract({ name: "merge", args: { preview: true }, toolBinding: { entity: "contacts.person", operation: "merge" } })).toBeNull();
+    expect(extract({ name: "get", args: {}, toolBinding: { entity: "contacts.person", operation: "get" } })).toBeNull();
   });
 });

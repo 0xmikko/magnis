@@ -15,6 +15,7 @@ title = "Companies"
 summary = "Track companies you interact with across email, meetings, and notes."
 # Reverse-domain publisher identity.
 publisher = "ai.magnis"
+requires_schemas = [ "email.address" ]
 
 # Foreign asks beyond the implicit own namespace: writes to `companies.` records,
 # own:own links, and reads of own schemas need no declaration.

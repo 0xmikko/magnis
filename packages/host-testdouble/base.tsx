@@ -2,8 +2,8 @@
  *
  * `defineModule` is the one place where a double must reproduce host LOGIC
  * rather than host chrome: a module hands it a config and gets back the
- * registration the host will act on — renderer ids, the tool-name spellings
- * a history renderer matches, the agent contribution. Every one of those is
+ * registration the host will act on — renderer ids, validated operation pairs
+ * and the agent contribution. Every one of those is
  * the plugin's own wiring, so the wiring rules are reimplemented here.
  *
  * What is NOT reproduced is the host's list/detail shell (`Component`): a
@@ -11,6 +11,7 @@
  */
 import { createElement, useState, type ComponentType, type JSX, type ReactNode } from "react";
 import { createStore } from "zustand/vanilla";
+import type { AgentHistoryBlock } from "@magnis/client-core";
 
 import { AllowlistDropdown } from "./agent";
 import { BaseEntityCard, registerSchemaVisuals } from "./internal/entity-card";
@@ -321,6 +322,7 @@ export function useEntityProperty(
 /* ── defineModule ───────────────────────────────────────────── */
 
 interface ToolCallRendererReg {
+  readonly entity: string;
   readonly actions: readonly string[];
   readonly Render: unknown;
 }
@@ -402,27 +404,19 @@ export function defineModule(config: ModuleConfigLike): Record<string, unknown> 
 
   const historyRenderers: Record<string, unknown>[] = [];
   for (const reg of config.toolCallRenderers ?? []) {
-    // The agent emits a tool name in several spellings; a renderer that
-    // matches only one silently falls through to the generic card.
-    const variants: string[] = [config.id];
-    if (config.id.endsWith("s")) variants.push(config.id.slice(0, -1));
-    const fullActions = new Set(
-      variants.flatMap((prefix) =>
-        reg.actions.flatMap((a) => [
-          `${prefix}.${a}`,
-          `${prefix}_${a}`,
-          `${prefix}_${a.replace(/\./g, "_")}`,
-        ]),
-      ),
-    );
-    historyRenderers.push({
-      id: `${config.id}-tool-${reg.actions[0] ?? ""}`,
-      moduleId: config.id,
-      match: (block: { toolName?: string | null }) =>
-        typeof block.toolName === "string" && fullActions.has(block.toolName),
-      Render: reg.Render,
-      priority: 10,
-    });
+    // @tested-by: tst_pub_double_pairs_001
+    for (const operation of reg.actions) {
+      const binding = { entity: reg.entity, operation };
+      historyRenderers.push({
+        id: `${reg.entity}-tool-${operation}`,
+        moduleId: config.id,
+        binding,
+        match: (block: AgentHistoryBlock) =>
+          block.toolBinding?.entity === binding.entity && block.toolBinding.operation === binding.operation,
+        Render: reg.Render,
+        priority: 10,
+      });
+    }
   }
 
   return {

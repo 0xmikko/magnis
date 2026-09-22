@@ -48,6 +48,155 @@ import type {
 } from "../types.ts";
 import { BELONGS_TO, TRIGGER, WATCHES } from "../schema.ts";
 
+const CREATE_SETTINGS = {
+        gate_prompt: {
+          type: "string",
+          description: "Prompt for gate evaluation (is this event relevant?)",
+        },
+        action_prompt: {
+          type: "string",
+          description: "Prompt for action execution (what to do if relevant)",
+        },
+        event_kinds: {
+          type: "array",
+          items: { type: "string" },
+          description: "Event kinds to listen for",
+        },
+        episode_id: {
+          type: "string",
+          format: "uuid",
+          description: "Parent episode ID — creates a triggers.belongs_to link",
+        },
+        schema_filter: { type: "string", description: "Only trigger for events with this schema" },
+        expires_at: { type: "string", format: "date-time" },
+        debounce_seconds: {
+          type: "integer",
+          description: "0=immediate fire (default), >0=minimum seconds between firings",
+        },
+        max_firings: { type: "integer", minimum: 1, description: "Maximum total firings before auto-expire" },
+        max_wait_seconds: { type: "integer", minimum: 0 },
+        schedule: {
+          type: "object",
+          description:
+            "Cron schedule — fires the trigger on a clock instead of (or in addition to) " +
+            "watched events. Minimum interval: 5 minutes.",
+          properties: {
+            cron: {
+              type: "string",
+              description: "Standard 5-field cron expression, e.g. '0 9 * * MON-FRI'",
+            },
+            timezone: { type: "string", description: "IANA timezone name (default: UTC)" },
+          },
+          required: ["cron"],
+          additionalProperties: false,
+        },
+};
+const CREATE_PARAMS = {
+  oneOf: [
+    {
+      type: "object",
+      properties: {
+        ...CREATE_SETTINGS,
+        name: { type: "string", minLength: 1, description: "Trigger name for explicit watch IDs or scheduled triggers" },
+        watch_entity_ids: { type: "array", items: { type: "string", format: "uuid" }, description: "Entity IDs to watch" },
+      },
+      required: ["gate_prompt", "action_prompt", "name"],
+      additionalProperties: false,
+    },
+    {
+      type: "object",
+      properties: { ...CREATE_SETTINGS, from_address: { type: "string", minLength: 1 } },
+      required: ["gate_prompt", "action_prompt", "from_address"],
+      additionalProperties: false,
+    },
+    {
+      type: "object",
+      properties: {
+        ...CREATE_SETTINGS,
+        from_address: { type: "string", minLength: 1 },
+        from_addresses: { type: "array", items: { type: "string", minLength: 1 }, minItems: 1 },
+      },
+      required: ["gate_prompt", "action_prompt", "from_addresses"],
+      additionalProperties: false,
+    },
+    {
+      type: "object",
+      properties: { ...CREATE_SETTINGS, chat_id: { type: ["integer", "string"] } },
+      required: ["gate_prompt", "action_prompt", "chat_id"],
+      additionalProperties: false,
+    },
+  ],
+};
+const GET_PARAMS = {
+      type: "object",
+      properties: { id: { type: "string", format: "uuid" } },
+      required: ["id"],
+      additionalProperties: false,
+    };
+const LIST_FOR_ENTITY_PARAMS = {
+      type: "object",
+      properties: { entity_id: { type: "string", format: "uuid" } },
+      required: ["entity_id"],
+      additionalProperties: false,
+    };
+const UPDATE_PARAMS = {
+      type: "object",
+      properties: {
+        id: { type: "string", format: "uuid" },
+        name: { type: "string" },
+        gate_prompt: { type: "string" },
+        action_prompt: { type: "string" },
+        status: { type: "string", enum: ["active", "paused", "disabled", "expired"] },
+        event_kinds: { type: "array", items: { type: "string" } },
+        schema_filter: { type: "string" },
+        expires_at: { type: "string", format: "date-time" },
+        debounce_seconds: { type: "integer" },
+        max_firings: { type: "integer" },
+        schedule: {
+          description:
+            "Set a cron schedule (object with cron + optional timezone) or clear it (null).",
+          anyOf: [
+            { type: "null" },
+            {
+              type: "object",
+              properties: {
+                cron: { type: "string" },
+                timezone: { type: "string" },
+              },
+              required: ["cron"],
+              additionalProperties: false,
+            },
+          ],
+        },
+      },
+      required: ["id"],
+      additionalProperties: false,
+    };
+const DELETE_PARAMS = {
+      type: "object",
+      properties: { id: { type: "string", format: "uuid" } },
+      required: ["id"],
+      additionalProperties: false,
+    };
+const LINK_PARAMS = {
+      type: "object",
+      properties: {
+        trigger_id: { type: "string", format: "uuid" },
+        entity_id: { type: "string", format: "uuid" },
+      },
+      required: ["trigger_id", "entity_id"],
+      additionalProperties: false,
+    };
+const UNLINK_PARAMS = {
+      type: "object",
+      properties: {
+        trigger_id: { type: "string", format: "uuid" },
+        entity_id: { type: "string", format: "uuid" },
+      },
+      required: ["trigger_id", "entity_id"],
+      additionalProperties: false,
+    };
+
 export class TriggersModule {
   private readonly graph: GraphService;
   private readonly rpc: RpcExecutor;
@@ -79,66 +228,33 @@ export class TriggersModule {
     });
   }
 
+  @rpc("create", { description: "Create a trigger.", params: CREATE_PARAMS })
   @writeTool("create", {
+    entity: "triggers.trigger",
     description:
       "Create a new trigger with gate and action prompts. Optionally link to watched entities.",
-    params: {
-      type: "object",
-      properties: {
-        name: { type: "string", description: "Trigger name" },
-        gate_prompt: {
-          type: "string",
-          description: "Prompt for gate evaluation (is this event relevant?)",
-        },
-        action_prompt: {
-          type: "string",
-          description: "Prompt for action execution (what to do if relevant)",
-        },
-        event_kinds: {
-          type: "array",
-          items: { type: "string" },
-          description: "Event kinds to listen for",
-        },
-        watch_entity_ids: {
-          type: "array",
-          items: { type: "string", format: "uuid" },
-          description: "Entity IDs to watch",
-        },
-        episode_id: {
-          type: "string",
-          format: "uuid",
-          description: "Parent episode ID — creates a triggers.belongs_to link",
-        },
-        schema_filter: { type: "string", description: "Only trigger for events with this schema" },
-        expires_at: { type: "string", format: "date-time" },
-        debounce_seconds: {
-          type: "integer",
-          description: "0=immediate fire (default), >0=minimum seconds between firings",
-        },
-        max_firings: { type: "integer", description: "Maximum total firings before auto-expire" },
-        schedule: {
-          type: "object",
-          description:
-            "Cron schedule — fires the trigger on a clock instead of (or in addition to) " +
-            "watched events. Minimum interval: 5 minutes.",
-          properties: {
-            cron: {
-              type: "string",
-              description: "Standard 5-field cron expression, e.g. '0 9 * * MON-FRI'",
-            },
-            timezone: { type: "string", description: "IANA timezone name (default: UTC)" },
-          },
-          required: ["cron"],
-          additionalProperties: false,
-        },
-      },
-      required: ["name", "gate_prompt", "action_prompt"],
-      additionalProperties: false,
-    },
+    params: CREATE_PARAMS,
   })
   async create(params: CreateTriggerParams): Promise<TriggerCreated | Record<string, unknown>> {
-    const name = params.name.trim();
+    // @tested-by: tst_module_triggers_forms_001
+    const emailForm = params.from_addresses !== undefined || params.from_address !== undefined;
+    const telegramForm = params.chat_id !== undefined;
+    if ((emailForm && telegramForm) || ((emailForm || telegramForm) && (params.watch_entity_ids !== undefined || params.name !== undefined))) {
+      throw new Error("Choose one trigger form: email addresses, Telegram chat_id, or named watch_entity_ids");
+    }
+    const addresses = emailForm
+      ? [...new Set([...(params.from_addresses ?? []), ...(params.from_address === undefined ? [] : [params.from_address])].map((address) => address.trim().toLowerCase()).filter(Boolean))].sort()
+      : [];
+    if (emailForm && addresses.length === 0) throw new Error("missing from_addresses or from_address");
+    const name = emailForm
+      ? (addresses.length <= 3 ? `Email trigger: ${addresses.join(", ")}` : `Email trigger: ${addresses.slice(0, 3).join(", ")} +${String(addresses.length - 3)} more`)
+      : telegramForm ? `Telegram trigger: chat ${String(params.chat_id)}` : params.name?.trim();
     if (!name) throw new Error("missing or empty required param: name");
+    for (const key of ["debounce_seconds", "max_wait_seconds", "max_firings"] as const) {
+      const value = params[key];
+      if (value !== undefined && (!Number.isInteger(value) || value < (key === "max_firings" ? 1 : 0))) throw new Error(`invalid ${key}`);
+    }
+    if (params.expires_at !== undefined && !Number.isFinite(Date.parse(params.expires_at))) throw new Error("invalid expires_at");
     const action_prompt = params.action_prompt.trim();
     if (!action_prompt) throw new Error("missing or empty required param: action_prompt");
 
@@ -154,7 +270,7 @@ export class TriggersModule {
     if (!gate_prompt) throw new Error("missing or empty required param: gate_prompt");
     const event_kinds =
       params.event_kinds && params.event_kinds.length > 0 ? params.event_kinds : ["sync_ingested"];
-    const watch_entity_ids = params.watch_entity_ids ?? [];
+    let watch_entity_ids = params.watch_entity_ids ?? [];
     const debounce_seconds = params.debounce_seconds ?? 0;
 
     // @tested-by: tst_module_triggers_sched_001, tst_module_triggers_sched_002
@@ -163,6 +279,26 @@ export class TriggersModule {
     let schedule: TriggerScheduleSpec | undefined;
     if (params.schedule !== undefined && params.schedule !== null) {
       schedule = await this.normalizeSchedule(params.schedule);
+    }
+
+    // Ownership: a foreign / unknown parent episode is rejected BEFORE any row is
+    // written (native parity: the pre-split create validated episode_id ownership
+    // first). `get_entity_full` is user-scoped → null for a non-owned id. Without
+    // this a caller could `belongs_to`-link a foreign episode, leaking its name
+    // via `get` and child-linking it in the native `fire_trigger`.
+    if (params.episode_id) {
+      const episode = await this.graph.get_entity_full(params.episode_id, { links: false });
+      if (episode?.entity.schema_id !== "episodes.episode") throw new Error(`episode not found: ${params.episode_id}`);
+    }
+
+    if (emailForm) {
+      const resolved = await this.rpc.execute<{ ids: string[] }>("email.ensure_addresses", { items: addresses.map((address) => ({ address })) });
+      if (!Array.isArray(resolved.ids) || resolved.ids.length !== addresses.length || resolved.ids.some((id) => typeof id !== "string" || id.length === 0)) throw new Error("Email owner did not resolve every watched address");
+      watch_entity_ids = resolved.ids;
+    } else if (telegramForm) {
+      const resolved = await this.rpc.execute<{ entity_id: string }>("telegram.chats.get", { chat_id: params.chat_id });
+      if (typeof resolved.entity_id !== "string" || resolved.entity_id.length === 0) throw new Error("Telegram owner did not resolve the watched chat");
+      watch_entity_ids = [resolved.entity_id];
     }
 
     // Validate watch targets are triggerable. The schema `triggerable` flag is
@@ -179,16 +315,6 @@ export class TriggersModule {
       }
     }
 
-    // Ownership: a foreign / unknown parent episode is rejected BEFORE any row is
-    // written (native parity: the pre-split create validated episode_id ownership
-    // first). `get_entity_full` is user-scoped → null for a non-owned id. Without
-    // this a caller could `belongs_to`-link a foreign episode, leaking its name
-    // via `get` and child-linking it in the native `fire_trigger`.
-    if (params.episode_id) {
-      const episode = await this.graph.get_entity_full(params.episode_id, { links: false });
-      if (!episode) throw new Error(`episode not found: ${params.episode_id}`);
-    }
-
     const entity = await this.graph.create_entity({ schema_id: TRIGGER, name });
 
     const config: TriggerConfigData = {
@@ -200,7 +326,8 @@ export class TriggersModule {
       debounce_seconds,
       firing_count: 0,
     };
-    if (params.schema_filter !== undefined) config.schema_filter = params.schema_filter;
+    if (emailForm || telegramForm) config.schema_filter = emailForm ? "email" : "telegram";
+    else if (params.schema_filter !== undefined) config.schema_filter = params.schema_filter;
     if (params.expires_at !== undefined) config.expires_at = params.expires_at;
     if (params.max_wait_seconds !== undefined) config.max_wait_seconds = params.max_wait_seconds;
     if (params.max_firings !== undefined) config.max_firings = params.max_firings;
@@ -256,21 +383,33 @@ export class TriggersModule {
     };
   }
 
-  @tool("get", {
+  @tool("get", { entity: "triggers.trigger", description: "Get a trigger by id or triggers watching entity_id.", params: { oneOf: [GET_PARAMS, LIST_FOR_ENTITY_PARAMS] } })
+  async getOperation(params: GetTriggerParams | ListForEntityParams): Promise<TriggerDetailView | TriggerListItem[]> {
+    if ("id" in params && "entity_id" in params) throw new Error("Choose one trigger get form");
+    return "entity_id" in params ? this.list_for_entity(params) : this.get(params);
+  }
+
+  @writeTool("fire_now", { entity: "triggers.trigger", description: "Fire a trigger now.", params: { type: "object", properties: { trigger_id: { type: "string", format: "uuid" }, event_entity_id: { type: "string", format: "uuid" }, context: { type: "object" } }, required: ["trigger_id"], additionalProperties: false } })
+  async fireNow(params: { trigger_id: string; event_entity_id?: string; context?: Record<string, unknown> }): Promise<unknown> {
+    await this.requireTrigger(params.trigger_id);
+    return this.rpc.execute("triggers.fire_now", params);
+  }
+
+  @tool("resolve_watchable", { entity: "triggers.trigger", description: "Find linked entities that a trigger can watch.", params: { type: "object", properties: { entity_id: { type: "string" } }, required: ["entity_id"], additionalProperties: false } })
+  async resolveWatchable(params: { entity_id: string }): Promise<ResolveWatchableResult> {
+    return this.rpc.execute("triggers.resolve_watchable", params);
+  }
+
+  @rpc("get", {
     description: "Get a trigger detail view by ID.",
-    params: {
-      type: "object",
-      properties: { id: { type: "string", format: "uuid" } },
-      required: ["id"],
-      additionalProperties: false,
-    },
+    params: GET_PARAMS,
   })
   async get(params: GetTriggerParams): Promise<TriggerDetailView> {
     const detail = await this.requireTrigger(params.id);
     return this.detailView(detail);
   }
 
-  @tool("list", {
+  @rpc("list", {
     description: "List triggers with optional status filter.",
     params: {
       type: "object",
@@ -378,41 +517,11 @@ export class TriggersModule {
     };
   }
 
+  @rpc("update", { description: "update a trigger.", params: UPDATE_PARAMS })
   @writeTool("update", {
+    entity: "triggers.trigger",
     description: "Update trigger fields (partial update).",
-    params: {
-      type: "object",
-      properties: {
-        id: { type: "string", format: "uuid" },
-        name: { type: "string" },
-        gate_prompt: { type: "string" },
-        action_prompt: { type: "string" },
-        status: { type: "string", enum: ["active", "paused", "disabled", "expired"] },
-        event_kinds: { type: "array", items: { type: "string" } },
-        schema_filter: { type: "string" },
-        expires_at: { type: "string", format: "date-time" },
-        debounce_seconds: { type: "integer" },
-        max_firings: { type: "integer" },
-        schedule: {
-          description:
-            "Set a cron schedule (object with cron + optional timezone) or clear it (null).",
-          anyOf: [
-            { type: "null" },
-            {
-              type: "object",
-              properties: {
-                cron: { type: "string" },
-                timezone: { type: "string" },
-              },
-              required: ["cron"],
-              additionalProperties: false,
-            },
-          ],
-        },
-      },
-      required: ["id"],
-      additionalProperties: false,
-    },
+    params: UPDATE_PARAMS,
   })
   async update(params: UpdateTriggerParams): Promise<TriggerDetailView> {
     const detail = await this.requireTrigger(params.id);
@@ -497,14 +606,11 @@ export class TriggersModule {
     return this.detailView(fresh);
   }
 
+  @rpc("delete", { description: "delete a trigger.", params: DELETE_PARAMS })
   @writeTool("delete", {
+    entity: "triggers.trigger",
     description: "Delete a trigger by ID.",
-    params: {
-      type: "object",
-      properties: { id: { type: "string", format: "uuid" } },
-      required: ["id"],
-      additionalProperties: false,
-    },
+    params: DELETE_PARAMS,
   })
   async delete(params: DeleteTriggerParams): Promise<{ deleted: boolean }> {
     await this.requireTrigger(params.id);
@@ -513,17 +619,11 @@ export class TriggersModule {
     return { deleted: true };
   }
 
+  @rpc("link", { description: "link a trigger.", params: LINK_PARAMS })
   @writeTool("link", {
+    entity: "triggers.trigger",
     description: "Link a trigger to watch an entity.",
-    params: {
-      type: "object",
-      properties: {
-        trigger_id: { type: "string", format: "uuid" },
-        entity_id: { type: "string", format: "uuid" },
-      },
-      required: ["trigger_id", "entity_id"],
-      additionalProperties: false,
-    },
+    params: LINK_PARAMS,
   })
   async link(params: LinkTriggerParams): Promise<{ linked: boolean }> {
     await this.requireTrigger(params.trigger_id);
@@ -534,17 +634,11 @@ export class TriggersModule {
     return { linked: true };
   }
 
+  @rpc("unlink", { description: "unlink a trigger.", params: UNLINK_PARAMS })
   @writeTool("unlink", {
+    entity: "triggers.trigger",
     description: "Unlink a trigger from a watched entity.",
-    params: {
-      type: "object",
-      properties: {
-        trigger_id: { type: "string", format: "uuid" },
-        entity_id: { type: "string", format: "uuid" },
-      },
-      required: ["trigger_id", "entity_id"],
-      additionalProperties: false,
-    },
+    params: UNLINK_PARAMS,
   })
   async unlink(params: LinkTriggerParams): Promise<{ unlinked: boolean }> {
     await this.requireTrigger(params.trigger_id);
@@ -558,14 +652,9 @@ export class TriggersModule {
     return { unlinked: true };
   }
 
-  @tool("list_for_entity", {
+  @rpc("list_for_entity", {
     description: "List triggers that watch a given entity.",
-    params: {
-      type: "object",
-      properties: { entity_id: { type: "string", format: "uuid" } },
-      required: ["entity_id"],
-      additionalProperties: false,
-    },
+    params: LIST_FOR_ENTITY_PARAMS,
   })
   async list_for_entity(params: ListForEntityParams): Promise<TriggerListItem[]> {
     // Ownership: unknown / non-owned anchor → empty (no link-metadata leak).
@@ -604,7 +693,9 @@ export class TriggersModule {
     return items;
   }
 
-  @tool("fire_history", {
+  @rpc("fire_history", { description: "Read trigger fire history.", params: { type: "object", properties: { trigger_id: { type: "string" }, limit: { type: "integer" } }, required: ["trigger_id"], additionalProperties: false } })
+  @tool("list", {
+    entity: "triggers.trigger.history",
     description: "List trigger execution history sorted by fired_at desc.",
     params: {
       type: "object",

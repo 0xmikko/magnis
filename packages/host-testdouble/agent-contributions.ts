@@ -4,17 +4,22 @@
  * `ContactMergeResolution`) exist because component tests over hand-built
  * props do NOT prove that a real tool-call block RESOLVES to the module's
  * renderer. Resolution is the subject, so the resolution rules are
- * reimplemented here rather than stubbed: priority order across modules,
- * the schema-id normalisation pass, and first-match-wins for allowlist
- * targets. A stub that returned the only registered renderer would make
+ * reimplemented here rather than stubbed: validated operation ownership,
+ * legacy history priority, schema-id normalisation and owner-specific
+ * allowlist targets. A stub that returned the only registered renderer would make
  * every one of those tests pass no matter what the module registered.
  */
 
+import type { AgentHistoryBlock } from "@magnis/client-core";
+
 interface HistoryBlockLike {
+  readonly toolBinding?: AgentHistoryBlock["toolBinding"];
   readonly toolName?: string | null;
 }
 
 interface HistoryRendererLike {
+  readonly moduleId: string;
+  readonly binding?: AgentHistoryBlock["toolBinding"];
   readonly match: (block: HistoryBlockLike) => boolean;
   readonly priority?: number;
 }
@@ -42,7 +47,7 @@ interface ContributionLike {
     runtime: unknown,
     navigate: (moduleId: string, entityType?: string, entityId?: string) => void,
   ) => void;
-  readonly extractAllowlistTarget?: (toolCall: { name: string; args: unknown }) => unknown;
+  readonly extractAllowlistTarget?: (toolCall: { name: string; args: unknown; toolBinding?: AgentHistoryBlock["toolBinding"] }) => unknown;
   readonly onDraftRequest?: (payload: unknown, runtime: unknown) => void;
 }
 
@@ -64,9 +69,21 @@ export class AgentContributionRegistry {
   private readonly contributions = new Map<string, ContributionLike>();
 
   register(moduleId: string, contribution: ContributionLike): () => void {
+    // @tested-by: tst_pub_double_pairs_002
+    const pairs = new Set<string>();
+    for (const renderer of contribution.historyRenderers ?? []) {
+      if (renderer.moduleId !== moduleId) throw new Error(`Renderer owner must be '${moduleId}'`);
+      const binding = renderer.binding;
+      if (binding === undefined) continue;
+      if (!binding.entity.startsWith(`${moduleId}.`)) throw new Error(`Renderer entity '${binding.entity}' has a different owner`);
+      if (!/^[a-z][a-z0-9_]*$/.test(binding.operation)) throw new Error(`Invalid renderer operation '${binding.operation}'`);
+      const pair = `${binding.entity}.${binding.operation}`;
+      if (pairs.has(pair)) throw new Error(`duplicate renderer pair '${pair}'`);
+      pairs.add(pair);
+    }
     this.contributions.set(moduleId, contribution);
     return () => {
-      this.contributions.delete(moduleId);
+      if (this.contributions.get(moduleId) === contribution) this.contributions.delete(moduleId);
     };
   }
 
@@ -75,6 +92,11 @@ export class AgentContributionRegistry {
     let bestPriority = -Infinity;
     for (const [, contribution] of this.contributions) {
       for (const renderer of contribution.historyRenderers ?? []) {
+        // @tested-by: tst_pub_double_pairs_001
+        const binding = renderer.binding;
+        const callBinding = block.toolBinding;
+        if (callBinding === undefined ? binding !== undefined
+          : binding?.entity !== callBinding.entity || binding.operation !== callBinding.operation) continue;
         if (renderer.match(block)) {
           const priority = renderer.priority ?? 0;
           if (priority > bestPriority) {
@@ -145,7 +167,13 @@ export class AgentContributionRegistry {
     return true;
   }
 
-  resolveAllowlistTarget(toolCall: { name: string; args: unknown }): unknown {
+  resolveAllowlistTarget(toolCall: { name: string; args: unknown; toolBinding?: AgentHistoryBlock["toolBinding"] }): unknown {
+    // @tested-by: tst_pub_double_pairs_002
+    if (toolCall.toolBinding !== undefined) {
+      const owner = toolCall.toolBinding.entity.split(".")[0];
+      if (owner === undefined) return null;
+      return this.contributions.get(owner)?.extractAllowlistTarget?.(toolCall) ?? null;
+    }
     for (const [, contribution] of this.contributions) {
       const result = contribution.extractAllowlistTarget?.(toolCall);
       if (result) return result;

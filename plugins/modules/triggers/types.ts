@@ -117,7 +117,10 @@ export interface TriggerCreated {
 // ── tool params ──────────────────────────────────────────────────
 
 export interface CreateTriggerParams {
-  name: string;
+  name?: string;
+  from_addresses?: string[];
+  from_address?: string;
+  chat_id?: number | string;
   /** Required: a trigger with no condition fires on everything it watches. */
   gate_prompt: string;
   action_prompt: string;

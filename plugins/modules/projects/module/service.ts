@@ -47,7 +47,7 @@ export class ProjectsModule {
     this.graph = deps.graph;
   }
 
-  @tool("list", {
+  @rpc("list", {
     description: "List projects with pagination and optional search.",
     params: {
       type: "object",
@@ -91,7 +91,9 @@ export class ProjectsModule {
     return { items, total, limit, offset };
   }
 
+  @rpc("get")
   @tool("get", {
+    entity: "projects.project",
     description: "Get a project detail view by entity id.",
     params: {
       type: "object",
@@ -139,7 +141,9 @@ export class ProjectsModule {
     };
   }
 
+  @rpc("create")
   @writeTool("create", {
+    entity: "projects.project",
     description: "Create a new project.",
     params: {
       type: "object",
@@ -191,7 +195,9 @@ export class ProjectsModule {
     return { id: entity.id, name: params.name, status: statusVal, schema_id: PROJECT, created_at: entityCreatedAt(entity) };
   }
 
+  @rpc("update")
   @writeTool("update", {
+    entity: "projects.project",
     description:
       "Update a project's name, status, and/or description. The `description` " +
       "field is a markdown body stored in the `projects.description` facet — it " +
@@ -233,7 +239,9 @@ export class ProjectsModule {
     return this.get({ id: params.id });
   }
 
+  @rpc("delete")
   @writeTool("delete", {
+    entity: "projects.project",
     description: "Delete a project by entity id.",
     params: {
       type: "object",
@@ -249,7 +257,9 @@ export class ProjectsModule {
     return { deleted: true };
   }
 
-  @tool("checklist.get", {
+  @rpc("checklist.get")
+  @tool("get", {
+    entity: "projects.project.checklist",
     description: "Read the operational checklist for a project. Returns items array (empty if no checklist yet).",
     params: {
       type: "object",
@@ -265,7 +275,9 @@ export class ProjectsModule {
     return { items: items ?? [] };
   }
 
-  @writeTool("checklist.update", {
+  @rpc("checklist.update")
+  @writeTool("update", {
+    entity: "projects.project.checklist",
     description: "Create or replace the operational checklist for a project.",
     params: {
       type: "object",
