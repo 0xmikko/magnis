@@ -2,7 +2,7 @@
 
 Status: APPROVED  
 Spec lock: sha256:fddbcc2b66e31efe9b35adea4e8cd96715fd2996b95f6baa8094e848cb3e7ffd owner:давай стадии  
-Implementation lock: sha256:ac69e0d9bd7da53eede11dff375e6ac288627ab84285147148d1adae43abafba owner:да  
+Implementation lock: sha256:a35748ee6575bb9c259af1864fdd828cc1085a9e2f2ede0577351fb28a5fe2f5 owner:approved  
 Active Delivery: D2  
 Unattended decisions: allowed  
 
@@ -399,7 +399,7 @@ Commit. feat(telegram): sync history through resumable Takeout — exact totals 
 <!-- plan:stage:D2-S2:end -->
 
 <!-- plan:stage:D2-S3:start -->
-<!-- plan:stage-meta:{"deliveryId":"D2","depends":["D2-S2"],"parallelWith":[],"writes":["packages/testkit/source.ts","packages/testkit/host-driver.ts","packages/testkit/__tests__/tst_cat_src_parity_001.test.ts","plugins/sources/mock-statemachine-phone/manifest.toml","plugins/sources/mock-statemachine-phone/src/certification.test.ts","plugins/modules/telegram/module/service.ts","plugins/modules/telegram/module/__tests__/telegramCommand.test.ts","scripts/certify-sources.ts","scripts/certify-sources.test.ts","docs/plugins/source.md","dist/receipts/*.json"],"tempRoot":".tmp/code-production/telegram-takeout-sync/D2-S3","predictedActiveMinutes":60,"predictedCredits":6,"verifyActiveMinutes":20,"verifyCredits":2} -->
+<!-- plan:stage-meta:{"deliveryId":"D2","depends":["D2-S2"],"parallelWith":[],"writes":["packages/testkit/source.ts","packages/testkit/host-driver.ts","packages/testkit/__tests__/tst_cat_src_parity_001.test.ts","plugins/sources/mock-statemachine-phone/manifest.toml","plugins/sources/mock-statemachine-phone/src/certification.test.ts","plugins/modules/telegram/module/service.ts","plugins/modules/telegram/module/__tests__/telegramCommand.test.ts","scripts/certify-sources.ts","scripts/certify-sources.test.ts","docs/plugins/source.md","dist/receipts/sha256:06a1684477780b3928ae8362a97789c678bce4cb9d24e8ebca42ab26d20bd1d3.json","dist/receipts/sha256:2730537b4b51876b5770fe1287055dee2bbc529d9d22802e5f3d84df68c3d238.json","dist/receipts/sha256:4673b4ad6441eb169a28d843174cf1a616b9fe746e4be22ee43db7b6e8b89ded.json","dist/receipts/sha256:47cb2d8eb601b667157ce051a518ff48a83f33c799a08f5e8789a1575b11af69.json","dist/receipts/sha256:482cc4a3d4eced98b3d905831a5bf44283a843c9ac1135a0de85eb48e9d8166f.json","dist/receipts/sha256:488e26361d759688a32d0e9d06f857f22fe262066aabb75b776d2dc640866495.json","dist/receipts/sha256:4ce51937d2e7e8d3ba7cac3cbbe425feecc5d0e92e0f78aec94cd05f60ab66fa.json","dist/receipts/sha256:587d745d713940a168cdda38e5338d4eebb648a2cf6fd7233a5121cd35887b0f.json","dist/receipts/sha256:7314a7943415ddae335353cc1249503b3223dce197998747d7fb76a08729d786.json","dist/receipts/sha256:8f0ba7c29c94ebd313660cd223fdccbbfbc8a0df50934e8f523b719c1741ed3e.json","dist/receipts/sha256:91b0ea2a16015c218b759c543eb7e0e8e2c1c575c7d8eef8e1b12c427f6a0c38.json","dist/receipts/sha256:b044a0eafc3f822dacef644d5bde8e355de3320a520445a97586510ec55fc22e.json","dist/receipts/sha256:f625887998205b7badd705bf3e5592225eb19e48fa601b9f30820227739f29a8.json","dist/receipts/sha256:f7f6b8431f64f09e6260b2b9af332723c9686e94c6f012c24a25c7ed025ae2e8.json"],"tempRoot":".tmp/code-production/telegram-takeout-sync/D2-S3","predictedActiveMinutes":60,"predictedCredits":6,"verifyActiveMinutes":20,"verifyCredits":2} -->
 #### Stage D2-S3 — The published Source set proves one runtime and the live stand proves throughput
 
 - Owner: root; Profile: strong; Depends: D2-S2; Parallel with: none.
@@ -417,28 +417,30 @@ Commit. chore(catalog): certify the unified Source runtime — remove the last l
 
 ##### Tasks
 
-- [ ] SOURCEPROGRAM_003 — Keep graph.request_backfill as a generic wake while removing Telegram's backfill_chat payload from the module. (10 min)
+- [x] SOURCEPROGRAM_003 — Keep graph.request_backfill as a generic wake while removing Telegram's backfill_chat payload from the module. (10 min) — a93297cf3377c16f39e57a1bea8d98c2f8cbd43c
 <!-- plan:task-meta:{"writes":["plugins/modules/telegram/module/service.ts","plugins/modules/telegram/module/__tests__/telegramCommand.test.ts"],"predictedActiveMinutes":10,"predictedCredits":1,"how":"Change plugins/modules/telegram/module/service.ts so the existing graph.request_backfill call sends only its generic empty payload and never names backfill_chat or a chat id. Add metadata-backed tst_mod_tg_backfill_wake_001 to plugins/modules/telegram/module/__tests__/telegramCommand.test.ts and keep the selected chat only as module state.","red":"bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/telegramCommand.test.ts -t tst_mod_tg_backfill_wake_001"} -->
-- [ ] SOURCECERT_001 — Reject every current in-repository Source that does not use the Connector SDK or still advertises a legacy operation, then refresh exact receipts. (30 min)
-<!-- plan:task-meta:{"writes":["packages/testkit/source.ts","packages/testkit/host-driver.ts","packages/testkit/__tests__/tst_cat_src_parity_001.test.ts","plugins/sources/mock-statemachine-phone/manifest.toml","plugins/sources/mock-statemachine-phone/src/certification.test.ts","scripts/certify-sources.ts","scripts/certify-sources.test.ts","docs/plugins/source.md","dist/receipts/*.json"],"predictedActiveMinutes":30,"predictedCredits":3,"how":"Remove the current-runtime Telegram exception and legacy operation inputs from packages/testkit/source.ts, packages/testkit/host-driver.ts and packages/testkit/__tests__/tst_cat_src_parity_001.test.ts while retaining immutable historical selected-channel evidence. Remove magnis.sync.listen from plugins/sources/mock-statemachine-phone/manifest.toml and its certification.test.ts. In scripts/certify-sources.ts require connector_sdk and the standard operation set for every current in-repository Source; add metadata-backed tst_cat_src_cert_003 in scripts/certify-sources.test.ts. Update docs/plugins/source.md. Run the existing catalog build so dist/receipts/*.json matches the finished inlined bundles and no stale current receipt remains.","red":"bun run agent:test:backend -- scripts/certify-sources.test.ts -t tst_cat_src_cert_003"} -->
+- [x] SOURCECERT_001 — Reject every current in-repository Source that does not use the Connector SDK or still advertises a legacy operation, then refresh exact receipts. (30 min) — a93297cf3377c16f39e57a1bea8d98c2f8cbd43c
+<!-- plan:task-meta:{"writes":["packages/testkit/source.ts","packages/testkit/host-driver.ts","packages/testkit/__tests__/tst_cat_src_parity_001.test.ts","plugins/sources/mock-statemachine-phone/manifest.toml","plugins/sources/mock-statemachine-phone/src/certification.test.ts","scripts/certify-sources.ts","scripts/certify-sources.test.ts","docs/plugins/source.md","dist/receipts/sha256:06a1684477780b3928ae8362a97789c678bce4cb9d24e8ebca42ab26d20bd1d3.json","dist/receipts/sha256:2730537b4b51876b5770fe1287055dee2bbc529d9d22802e5f3d84df68c3d238.json","dist/receipts/sha256:4673b4ad6441eb169a28d843174cf1a616b9fe746e4be22ee43db7b6e8b89ded.json","dist/receipts/sha256:47cb2d8eb601b667157ce051a518ff48a83f33c799a08f5e8789a1575b11af69.json","dist/receipts/sha256:482cc4a3d4eced98b3d905831a5bf44283a843c9ac1135a0de85eb48e9d8166f.json","dist/receipts/sha256:488e26361d759688a32d0e9d06f857f22fe262066aabb75b776d2dc640866495.json","dist/receipts/sha256:4ce51937d2e7e8d3ba7cac3cbbe425feecc5d0e92e0f78aec94cd05f60ab66fa.json","dist/receipts/sha256:587d745d713940a168cdda38e5338d4eebb648a2cf6fd7233a5121cd35887b0f.json","dist/receipts/sha256:7314a7943415ddae335353cc1249503b3223dce197998747d7fb76a08729d786.json","dist/receipts/sha256:8f0ba7c29c94ebd313660cd223fdccbbfbc8a0df50934e8f523b719c1741ed3e.json","dist/receipts/sha256:91b0ea2a16015c218b759c543eb7e0e8e2c1c575c7d8eef8e1b12c427f6a0c38.json","dist/receipts/sha256:b044a0eafc3f822dacef644d5bde8e355de3320a520445a97586510ec55fc22e.json","dist/receipts/sha256:f625887998205b7badd705bf3e5592225eb19e48fa601b9f30820227739f29a8.json","dist/receipts/sha256:f7f6b8431f64f09e6260b2b9af332723c9686e94c6f012c24a25c7ed025ae2e8.json"],"predictedActiveMinutes":30,"predictedCredits":3,"how":"Remove the current-runtime Telegram exception and legacy operation inputs from packages/testkit/source.ts, packages/testkit/host-driver.ts and packages/testkit/__tests__/tst_cat_src_parity_001.test.ts while retaining immutable historical selected-channel evidence. Remove magnis.sync.listen from plugins/sources/mock-statemachine-phone/manifest.toml and its certification.test.ts. In scripts/certify-sources.ts require connector_sdk and the standard operation set for every current in-repository Source; add metadata-backed tst_cat_src_cert_003 in scripts/certify-sources.test.ts. Update docs/plugins/source.md. Run the existing catalog build so dist/receipts/*.json matches the finished inlined bundles and no stale current receipt remains.","red":"bun run agent:test:backend -- scripts/certify-sources.test.ts -t tst_cat_src_cert_003"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- scripts/certify-sources.test.ts` exits 0 — certification rejects current custom runtimes and legacy Source operations
-- [ ] `bun run agent:test:backend -- packages/testkit/__tests__/tst_cat_src_parity_001.test.ts` exits 0 — every current Source runs through the same SDK contract
-- [ ] `bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/telegramCommand.test.ts` exits 0 — graph.request_backfill carries no provider payload
-- [ ] `bun run agent:verify:pr` exits 0 — the complete catalog gate builds and verifies the final Delivery once
+- [x] `bun run agent:test:backend -- scripts/certify-sources.test.ts` exits 0 — certification rejects current custom runtimes and legacy Source operations — a93297cf3377c16f39e57a1bea8d98c2f8cbd43c
+- [x] `bun run agent:test:backend -- packages/testkit/__tests__/tst_cat_src_parity_001.test.ts` exits 0 — every current Source runs through the same SDK contract — a93297cf3377c16f39e57a1bea8d98c2f8cbd43c
+- [x] `bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/telegramCommand.test.ts` exits 0 — graph.request_backfill carries no provider payload — a93297cf3377c16f39e57a1bea8d98c2f8cbd43c
+- [x] `bun run agent:verify:pr` exits 0 — the complete catalog gate builds and verifies the final Delivery once — a93297cf3377c16f39e57a1bea8d98c2f8cbd43c
 - [ ] The existing manual Telegram performance stand preserves secrets, uses the final clean app/catalog commits and runs outside CI
 - [ ] With indexer off and no provider hold, at least 10,000 admitted envelopes sustain at least 150 envelopes/second by wall time; fetch, Graph admission and overlap are attached to the PR
 - [ ] If Telegram returns a provider hold, its exact duration is reported and that run makes no local-throughput claim
 - [ ] No frontend file, workflow, runner or live-provider automated test changed
-- [ ] Commit
+- [x] Commit — a93297cf3377c16f39e57a1bea8d98c2f8cbd43c
 
 ##### Results
 
 <!-- plan:results:D2-S3:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| SOURCEPROGRAM_003 | a93297cf3377c16f39e57a1bea8d98c2f8cbd43c | 2026-09-22T20:19:39.955Z–2026-09-22T21:09:39.955Z | 49 / 50 min | unavailable: runner did not expose usage | All current Sources use the shared Connector SDK contract, Telegram backfill is a generic wake, and exact catalog receipts were rebuilt. |
+| SOURCECERT_001 | a93297cf3377c16f39e57a1bea8d98c2f8cbd43c | 2026-09-22T20:19:39.955Z–2026-09-22T21:09:39.955Z | 49 / 50 min | unavailable: runner did not expose usage | All current Sources use the shared Connector SDK contract, Telegram backfill is a generic wake, and exact catalog receipts were rebuilt. |
 <!-- plan:results:D2-S3:end -->
 <!-- plan:stage:D2-S3:end -->
 <!-- plan:delivery:D2:end -->
@@ -498,4 +500,14 @@ Commit. chore(catalog): certify the unified Source runtime — remove the last l
 - deviation D2-S3: Exact OAuth artifact execution exposed its wrapper dropping the host's auth-mode flag and a stale TypeScript-screen assertion; the wrapper now preserves auth mode and certification asserts the compiled screen.
 
 - deviation D2-S3: Catalog regeneration exposed an unintended Telegram server-version change; the certified 1.0.1 identity was restored before publishing receipts.
+
+- amend implementation owner:approved sha256:3155ac619419891f9e7b38266ffc790e3ab0b355a5ebec6a0fb148adf7fc4a8c
+
+- amend implementation owner:approved sha256:6fe3720ab3fd9b4f6067eda176b7cc65058086f26bdb3bc0b5c40366a8af6c8a
+
+- amend implementation owner:approved sha256:a35748ee6575bb9c259af1864fdd828cc1085a9e2f2ede0577351fb28a5fe2f5
+
+- record-result D2-S3 commit:a93297cf3377c16f39e57a1bea8d98c2f8cbd43c
+
+- close D2-S3 partial commit:a93297cf3377c16f39e57a1bea8d98c2f8cbd43c
 <!-- plan:execution:end -->
