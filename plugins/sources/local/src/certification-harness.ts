@@ -1,15 +1,14 @@
-import { readFileSync, rmSync } from "node:fs";
+import { rmSync } from "node:fs";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { collectSourceHostEvidence } from "../../../../packages/testkit/host-driver";
 import {
-  decodeSourceCertificationReceipt,
   sourceArtifactPackageHash,
 } from "../../../../packages/testkit/receipt";
 import { stageBundledSourcePackage } from "../../../../scripts/build-catalog-index";
-import { discoverSourceReleaseManifests } from "../../../../scripts/certify-sources";
+import { discoverSourceReleaseManifests, discoverStagedCatalog, mintSourceCertificationReceipt } from "../../../../scripts/certify-sources";
 
 import type { SourceHostEvidenceOptions } from "../../../../packages/testkit/host-driver";
 
@@ -18,7 +17,7 @@ const repoRoot = join(import.meta.dir, "../../../..");
 export interface CertifiedFixtureArtifact {
   readonly root: string;
   readonly packageHash: string;
-  readonly receipt: ReturnType<typeof decodeSourceCertificationReceipt>;
+  readonly receipt: Awaited<ReturnType<typeof mintSourceCertificationReceipt>>;
   readonly evidence: Awaited<ReturnType<typeof collectSourceHostEvidence>>;
 }
 
@@ -36,14 +35,13 @@ export async function withCertifiedFixtureArtifact<T>(
     throw new Error(`${sourceId} must be an admissible Source release`);
   }
   const temporaryRoot = mkdtempSync(join(tmpdir(), `magnis-${sourceId}-cert-`));
-  const artifactRoot = join(temporaryRoot, "artifact");
+  const artifactRoot = join(temporaryRoot, "packages", "source", sourceId);
   try {
     stageBundledSourcePackage(release, artifactRoot);
     const packageHash = sourceArtifactPackageHash(artifactRoot);
-    const receipt = decodeSourceCertificationReceipt(
-      readFileSync(join(repoRoot, "dist", "receipts", `${packageHash}.json`), "utf8"),
-      { packageHash },
-    );
+    const staged = discoverStagedCatalog(temporaryRoot).find((candidate) => candidate.id === sourceId);
+    if (staged === undefined) throw new Error(`staged ${sourceId} artifact is missing`);
+    const receipt = await mintSourceCertificationReceipt(staged);
     const evidence = await collectSourceHostEvidence(
       artifactRoot,
       release.declaration.callableOperations,
