@@ -17,7 +17,7 @@ describe("OAuth state-machine exact-artifact certification", () => {
    * @deterministic: yes
    * @fixtures: fixed OAuth code, client id, identity and refresh token
    */
-  test("tst_statemock_oauth_cert_001 fixes every OAuth poll surface inside the artifact", async () => {
+  test("tst_statemock_oauth_cert_001 preserves auth mode and fixes every OAuth poll surface inside the artifact", async () => {
     await withCertifiedFixtureArtifact(
       "mock-statemachine-oauth",
       {
@@ -54,7 +54,7 @@ describe("OAuth state-machine exact-artifact certification", () => {
         expect(readFileSync(`${root}/manifest.toml`, "utf8")).toContain(
           'auth_url = "https://provider.example/authorize"',
         );
-        expect(existsSync(`${root}/auth/index.tsx`)).toBe(true);
+        expect(existsSync(`${root}/auth/screen.js`)).toBe(true);
         expect(successfulOperation(evidence, "magnis.sync.fetch")).toEqual({
           envelopes: [], nextCursor: null, hasMore: false,
         });
