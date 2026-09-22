@@ -32,6 +32,7 @@ interface Entry {
   readonly method: string;
   readonly wake: () => void;
   readonly reject: (error: unknown) => void;
+  sentAt: number;
   deadline: number;
   phase: "queued" | "reserved" | "sent" | "replay" | "done";
 }
@@ -66,6 +67,7 @@ export class AccountAdmission implements RpcAdmissionHooks {
   private attempt = 0;
   private completedMethod: string | undefined;
   private completedCount = 0;
+  private completedStartedAt = 0;
   private lastSentAt = -Infinity;
   private requestIntervalMs = 0;
   remoteFloods = 0;
@@ -157,13 +159,13 @@ export class AccountAdmission implements RpcAdmissionHooks {
     if (!state.promise) throw new Error("Application RPC has no completion promise");
     if (prior) this.finish(prior);
     const entry: Entry = { state, promise: state.promise, method: name, wake,
-      reject: state.reject.bind(state), deadline: this.time.now() + 20_000, phase: "queued" };
+      reject: state.reject.bind(state), sentAt: 0, deadline: this.time.now() + 20_000, phase: "queued" };
     this.records.set(state, entry);
     this.pending.add(entry);
     // Application Promise.race timeouts do not settle this transport promise.
     void entry.promise.then(() => {
       if (this.completedMethod === entry.method) this.completedCount++;
-      else { this.completedMethod = entry.method; this.completedCount = 1; }
+      else { this.completedMethod = entry.method; this.completedCount = 1; this.completedStartedAt = entry.sentAt; }
       this.finish(entry);
     }, () => { this.finish(entry); });
     this.wake();
@@ -197,7 +199,8 @@ export class AccountAdmission implements RpcAdmissionHooks {
     if (denied) throw denied;
     entry.phase = "sent";
     this.attempt++;
-    this.lastSentAt = this.time.now();
+    entry.sentAt = this.time.now();
+    this.lastSentAt = entry.sentAt;
     this.report("send", entry.method);
     this.wake();
   }
@@ -210,14 +213,16 @@ export class AccountAdmission implements RpcAdmissionHooks {
     this.remoteFloods++;
     this.remoteCause = error;
     const seconds = "seconds" in error ? error.seconds : undefined;
-    const deadline = typeof seconds === "number" ? this.time.now() + seconds * 1000 : NaN;
+    const observedAt = this.time.now();
+    const deadline = typeof seconds === "number" ? observedAt + seconds * 1000 : NaN;
     if (typeof seconds !== "number" || seconds < 0 || !Number.isFinite(seconds) || !Number.isSafeInteger(Math.ceil(deadline))) {
       this.closed = new Error("Telegram flood duration is invalid; account admission is closed", { cause: error });
     } else {
       this.until = Math.max(this.until, deadline);
       const floodedMethod = state ? method(state) : undefined;
       if (floodedMethod === this.completedMethod && this.completedCount > 1) {
-        this.requestIntervalMs = Math.max(this.requestIntervalMs, Math.ceil(seconds * 1000 / (this.completedCount + 1)));
+        const interval = Math.ceil((observedAt - this.completedStartedAt + seconds * 1000) / (this.completedCount + 1));
+        this.requestIntervalMs = Math.max(this.requestIntervalMs, interval);
       }
       this.completedMethod = undefined;
       this.completedCount = 0;

@@ -1130,29 +1130,33 @@ test("tst_src_tgflood_006 a provider flood paces the resumed burst", async () =>
   try {
     for (let index = 0; index < 4; index++) {
       const request = outcome(f.client.invoke(new Api.updates.GetState()));
-      await f.reply(await f.application(index), stateResponse());
+      const sent = await f.application(index);
+      clock.advance(100);
+      await f.reply(sent, stateResponse());
       expect((await request).kind).toBe("resolved");
     }
     const flooded = outcome(f.client.invoke(new Api.updates.GetState()));
-    await f.reply(await f.application(4), new Api.RpcError({ errorCode: 420, errorMessage: "FLOOD_WAIT_4" }));
+    const failed = await f.application(4);
+    clock.advance(100);
+    await f.reply(failed, new Api.RpcError({ errorCode: 420, errorMessage: "FLOOD_WAIT_4" }));
     expect((await flooded).kind).toBe("rejected");
 
     clock.advance(4000);
     const first = outcome(f.client.invoke(new Api.updates.GetState()));
     const second = outcome(f.client.invoke(new Api.updates.GetState()));
     const resumed = await f.application(5);
-    expect(resumed.at).toBe(4000);
+    expect(resumed.at).toBe(4500);
     await f.reply(resumed, stateResponse());
     expect((await first).kind).toBe("resolved");
     await flushCommands();
     expect(f.writes).toHaveLength(6);
 
-    clock.advance(799);
+    clock.advance(899);
     await flushCommands();
     expect(f.writes).toHaveLength(6);
     clock.advance(1);
     const paced = await f.application(6);
-    expect(paced.at).toBe(4800);
+    expect(paced.at).toBe(5400);
     await f.reply(paced, stateResponse());
     expect((await second).kind).toBe("resolved");
   } finally { await f.close(); }
