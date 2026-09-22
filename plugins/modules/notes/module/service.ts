@@ -172,7 +172,8 @@ export class NotesModule {
   @writeTool("create", {
     entity: "notes.note",
     description: "Create a note from markdown or a named template.",
-    params: { oneOf: [{
+    // @tested-by: tst_module_notes_forms_001
+    params: { oneOf: [...BODY_ONE_OF.map(({ required }) => ({
       type: "object",
       properties: {
         title: { type: "string", description: "Note title" },
@@ -187,10 +188,9 @@ export class NotesModule {
           description: "Client-generated UUID for optimistic / idempotent create",
         },
       },
-      required: ["title"],
-      oneOf: BODY_ONE_OF,
+      required: ["title", ...required],
       additionalProperties: false,
-    }, {
+    })), {
       type: "object",
       properties: {
         template: { type: "string", description: "Template name" },
