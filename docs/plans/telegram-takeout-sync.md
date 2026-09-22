@@ -1,8 +1,8 @@
 # Telegram takeout sync
 
-Status: SPEC_LOCKED  
+Status: APPROVED  
 Spec lock: sha256:fddbcc2b66e31efe9b35adea4e8cd96715fd2996b95f6baa8094e848cb3e7ffd owner:давай стадии  
-Implementation lock: unlocked  
+Implementation lock: sha256:6e7a3cfc25ec72c7a4197b6dca45501c1102bef5b00c4dd9b6bc2f872fbcf55f owner:approved  
 Active Delivery: D2  
 Unattended decisions: allowed  
 
@@ -467,4 +467,6 @@ Commit. chore(catalog): certify the unified Source runtime — remove the last l
 - replace-delivery D1
 
 - replace-delivery D2
+
+- approve sha256:6e7a3cfc25ec72c7a4197b6dca45501c1102bef5b00c4dd9b6bc2f872fbcf55f owner:approved
 <!-- plan:execution:end -->
