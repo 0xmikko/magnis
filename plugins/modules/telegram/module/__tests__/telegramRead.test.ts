@@ -11,7 +11,7 @@
  * @legacy-id: tst_be_tgchatmeta_001_chats_list_last_message_and_order
  */
 import { describe, expect, it } from "vitest";
-import { entity, mockGraph, mountModule, windowRow } from "@magnis/testkit/module";
+import { entity, linkedRow, mockGraph, mountModule, windowRow } from "@magnis/testkit/module";
 import { CHAT, MESSAGE, TELEGRAM_ACCOUNT } from "../../schema.ts";
 import { TelegramModule } from "../service.ts";
 
@@ -38,27 +38,26 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
     const graph = mockGraph({
       list_entities_by_property_field: () => Promise.resolve({ items: [], total: 0 }),
       list_entities_window: () => Promise.resolve({ items: [windowRow(pinned), windowRow(recent)], total: 2 }),
-      list_links_for_entity: (id: string) =>
-        Promise.resolve(
-          id === CHAT_ID
-            ? [{
-                id: "observed",
-                from_id: ACCOUNT_ID,
-                to_id: CHAT_ID,
-                kind: "observed_in",
-                metadata: {
-                  is_pinned: true,
-                  pin_order: 0,
-                  sources: [{ source: "mock-telegram", account: "account-1", surface: "messages" }],
-                },
-              }]
-            : [],
-        ),
+      list_links_for_entity: () => Promise.reject(new Error("traversal exceeds maxEdges")),
+      list_linked: ({ parent_id }) => Promise.resolve({
+        items: parent_id === CHAT_ID ? [linkedRow(entity(ACCOUNT_ID, "Self"), {
+          id: "observed", from_id: ACCOUNT_ID, to_id: CHAT_ID, kind: "observed_in",
+          metadata: {
+            is_pinned: true, pin_order: 0,
+            sources: [{ source: "mock-telegram", account: "account-1", surface: "messages" }],
+          },
+        })] : [],
+        total: parent_id === CHAT_ID ? 1 : 0,
+      }),
     });
     const module = mountModule(TelegramModule, { graph }).module;
 
     const result = await module.chatsList({ limit: 20, offset: 0 });
 
+    expect(graph.spies.list_linked).toHaveBeenCalledWith({
+      parent_id: CHAT_ID, link_kind: "observed_in", direction: "in", limit: 1000, offset: 0,
+    });
+    expect(graph.spies.list_links_for_entity).not.toHaveBeenCalled();
     expect(result.items.map((item) => item.chat_id)).toEqual(["42", "77"]);
     expect(result.items[0]).toMatchObject({
       chat_title: "Investor chat",
@@ -78,6 +77,15 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
       limit: 20,
       offset: 0,
     });
+  });
+
+  it("rejects an incomplete observer page rather than silently losing state", async () => {
+    const graph = mockGraph({
+      get_entity: () => Promise.resolve(entity(CHAT_ID, "Chat", { schema_id: CHAT, properties: { chat_id: 42 } })),
+      list_linked: () => Promise.resolve({ items: [], total: 1001 }),
+    });
+    const module = mountModule(TelegramModule, { graph }).module;
+    await expect(module.chatsGet({ entity_id: CHAT_ID })).rejects.toThrow("Telegram observer window ended before its declared total");
   });
 
   it("maps a chat-scoped message page and resolves sender accounts", async () => {
@@ -119,7 +127,7 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
     const graph = mockGraph({
       get_entity: () =>
         Promise.resolve(entity(CHAT_ID, "Chat", { schema_id: CHAT, properties: { chat_id: -10042 } })),
-      list_links_for_entity: () => Promise.resolve([]),
+      list_linked: () => Promise.resolve({ items: [], total: 0 }),
       list_entities_window: () => Promise.resolve({ items: [], total: 0 }),
     });
     const module = mountModule(TelegramModule, { graph }).module;
@@ -138,15 +146,10 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
     const graph = mockGraph({
       find_by_anchor: () => Promise.resolve(CHAT_ID),
       get_entity: () => Promise.resolve(chat),
-      list_links_for_entity: () => Promise.resolve([{
-        id: "observed",
-        from_id: ACCOUNT_ID,
-        to_id: CHAT_ID,
-        kind: "observed_in",
-        metadata: {
-          sources: [{ source: "mock-telegram", account: "account-1", surface: "messages" }],
-        },
-      }]),
+      list_linked: () => Promise.resolve({ items: [linkedRow(entity(ACCOUNT_ID, "Self"), {
+        id: "observed", from_id: ACCOUNT_ID, to_id: CHAT_ID, kind: "observed_in",
+        metadata: { sources: [{ source: "mock-telegram", account: "account-1", surface: "messages" }] },
+      })], total: 1 }),
     });
     const module = mountModule(TelegramModule, { graph }).module;
 

@@ -155,8 +155,13 @@ export class TelegramModule {
     const out = new Map<string, Data>();
     if (chatIds.length === 0) return out;
     for (const chatId of chatIds) {
-      const links = await this.graph.list_links_for_entity(chatId);
-      const edge = links.find((l) => l.kind === "observed_in" && l.to_id === chatId);
+      const page = await this.graph.list_linked({
+        parent_id: chatId, link_kind: "observed_in", direction: "in", limit: 1000, offset: 0,
+      });
+      if (page.items.length !== page.total) {
+        throw new Error("Telegram observer window ended before its declared total");
+      }
+      const edge = page.items.find(({ link }) => link.kind === "observed_in" && link.to_id === chatId)?.link;
       if (edge?.metadata) out.set(chatId, edge.metadata);
     }
     return out;
@@ -923,7 +928,7 @@ export class TelegramModule {
       entities.push({
         key: remoteId,
         schema_id: MESSAGE,
-        name: text.slice(0, 80),
+        name: Array.from(text).slice(0, 80).join(""),
         idx: cid ?? undefined,
         date: str(payload, "date") ?? undefined,
         anchor: remoteId,

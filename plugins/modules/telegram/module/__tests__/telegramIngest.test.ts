@@ -24,6 +24,7 @@
  * @legacy-id: tst_be_tgiso_008_delete_scoped_by_user
  */
 import { describe, expect, it } from "vitest";
+import type { GraphBatchInput } from "@magnis/plugin-sdk";
 import { entity, mockGraph, mountModule } from "@magnis/testkit/module";
 import { CHAT, MESSAGE, TELEGRAM_ACCOUNT } from "../../schema.ts";
 import type { SyncEnvelope } from "../../types.ts";
@@ -52,6 +53,30 @@ function messageEnvelope(kind: "snapshot" | "live" = "snapshot"): SyncEnvelope {
 }
 
 describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
+  it("keeps 80 Unicode codepoints in message titles and preserves the full body", async () => {
+    const batches: GraphBatchInput[] = [];
+    const texts = ["x".repeat(79) + "😀tail", "😀".repeat(80) + "tail", "a".repeat(80) + "tail", "Short message"];
+    const graph = mockGraph({
+      find_by_anchor: () => Promise.resolve(null),
+      apply_batch: (fragment) => {
+        batches.push(fragment);
+        return Promise.resolve({
+          ids: Object.fromEntries(fragment.entities.map((item) => [item.key, `id:${item.key}`])),
+          created: fragment.entities.length, updated: 0,
+          links_added: fragment.links?.length ?? 0, dropped_keys: [],
+        });
+      },
+    });
+    const module = mountModule(TelegramModule, { graph }).module;
+    await module.ingest({ envelopes: texts.map((text, index) => ({
+      ...messageEnvelope(), remote_id: `tg:msg:42:${index + 7}`,
+      payload: { ...messageEnvelope().payload, message_id: index + 7, text },
+    })) });
+    const messages = batches.flatMap((batch) => batch.entities).filter((item) => item.schema_id === MESSAGE);
+    expect(messages.map((item) => item.name)).toEqual(texts.map((text) => Array.from(text).slice(0, 80).join("")));
+    expect(messages.map((item) => item.properties?.text)).toEqual(texts);
+  });
+
   it("mints the provider-verified self account on connection ready", async () => {
     const graph = mockGraph({
       apply_batch: () =>
