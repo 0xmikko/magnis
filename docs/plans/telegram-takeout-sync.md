@@ -2,7 +2,7 @@
 
 Status: APPROVED  
 Spec lock: sha256:52503423e45e07b615691ab59a74f961f96ae54cd44d594980cfc5f5101b6699 owner:Да, незамедлительно.  
-Implementation lock: sha256:d052b842e8a5a4107030a18c790e31fb60c8384a6017446849e8606b89e61ef6 owner:Да, незамедлительно.  
+Implementation lock: sha256:d656a043833e52655a605a6b3886ded59cf3868054b31b61da4a8ed965b7e283 owner:Да, незамедлительно.  
 Active Delivery: D2  
 Unattended decisions: allowed  
 
@@ -491,11 +491,11 @@ Commit. fix(telegram): start ordinary history immediately — keep Takeout check
 <!-- plan:stage:D2-S4:end -->
 
 <!-- plan:stage:D2-S5:start -->
-<!-- plan:stage-meta:{"deliveryId":"D2","depends":["D2-S4"],"parallelWith":[],"writes":["plugins/sources/telegram/src/request-admission.ts","plugins/sources/telegram/src/tst_src_tgflood_001.test.ts","dist/receipts/*.json"],"tempRoot":".tmp/code-production/telegram-takeout-sync/D2-S5","predictedActiveMinutes":75,"predictedCredits":6,"verifyActiveMinutes":30,"verifyCredits":2} -->
+<!-- plan:stage-meta:{"deliveryId":"D2","depends":["D2-S4"],"parallelWith":[],"writes":["plugins/sources/telegram/src/request-admission.ts","plugins/sources/telegram/src/tst_src_tgflood_001.test.ts","dist/receipts/sha256:f9fb1886417225e6fb32fe6e65f070d180c0f6c5ecb5ef2a0d8dadd584ead787.json"],"tempRoot":".tmp/code-production/telegram-takeout-sync/D2-S5","predictedActiveMinutes":75,"predictedCredits":6,"verifyActiveMinutes":30,"verifyCredits":2} -->
 #### Stage D2-S5 — Telegram converges below its flood boundary
 
 - Owner: root; Profile: strong; Depends: D2-S4; Parallel with: none.
-- Writes: `plugins/sources/telegram/src/request-admission.ts`, `plugins/sources/telegram/src/tst_src_tgflood_001.test.ts`, `dist/receipts/*.json`.
+- Writes: `plugins/sources/telegram/src/request-admission.ts`, `plugins/sources/telegram/src/tst_src_tgflood_001.test.ts`, `dist/receipts/sha256:f9fb1886417225e6fb32fe6e65f070d180c0f6c5ecb5ef2a0d8dadd584ead787.json`.
 - Temp root: `.tmp/code-production/telegram-takeout-sync/D2-S5` (must be absent at handoff).
 - Of which verification: 30 active min / 2 credits.
 
@@ -509,22 +509,23 @@ Commit. fix(telegram): adapt below the provider flood rate — AccountAdmission 
 
 ##### Tasks
 
-- [ ] TELEGRAMPACING_001 — Make AccountAdmission converge per flooded RPC method and prove its decrease and recovery on the real sender harness. (45 min)
-<!-- plan:task-meta:{"writes":["plugins/sources/telegram/src/request-admission.ts","plugins/sources/telegram/src/tst_src_tgflood_001.test.ts","dist/receipts/*.json"],"predictedActiveMinutes":45,"predictedCredits":4,"how":"Extend AccountAdmission's existing monotonic clock and timer scheduling with method-local rate state. Derive the first rate from measurable send timestamps; multiply it by 0.9 on every real FLOOD_WAIT; after ten successful calls add 0.01 of the last flooded rate. Keep exact hold deadlines, one active request, replay fencing, controls and unrelated methods unchanged. Add metadata-backed tst_src_tgflood_008 and rebuild the catalog receipts.","red":"bun run agent:test:backend -- plugins/sources/telegram/src/tst_src_tgflood_001.test.ts -t tst_src_tgflood_008"} -->
+- [x] TELEGRAMPACING_001 — Make AccountAdmission converge per flooded RPC method and prove its decrease and recovery on the real sender harness. (45 min) — 20d4a58498770d1cb140afee705b3d5a2aa11f94
+<!-- plan:task-meta:{"writes":["plugins/sources/telegram/src/request-admission.ts","plugins/sources/telegram/src/tst_src_tgflood_001.test.ts","dist/receipts/sha256:f9fb1886417225e6fb32fe6e65f070d180c0f6c5ecb5ef2a0d8dadd584ead787.json"],"predictedActiveMinutes":45,"predictedCredits":4,"how":"Extend AccountAdmission's existing monotonic clock and timer scheduling with method-local rate state. Derive the first rate from measurable send timestamps; multiply it by 0.9 on every real FLOOD_WAIT; after ten successful calls add 0.01 of the last flooded rate. Keep exact hold deadlines, one active request, replay fencing, controls and unrelated methods unchanged. Add metadata-backed tst_src_tgflood_008 and rebuild the catalog receipts.","red":"bun run agent:test:backend -- plugins/sources/telegram/src/tst_src_tgflood_001.test.ts -t tst_src_tgflood_008"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- plugins/sources/telegram/src/tst_src_tgflood_001.test.ts` exits 0 — exact holds, replay safety and adaptive pacing coexist
+- [x] `bun run agent:test:backend -- plugins/sources/telegram/src/tst_src_tgflood_001.test.ts` exits 0 — exact holds, replay safety and adaptive pacing coexist — 20d4a58498770d1cb140afee705b3d5a2aa11f94
 - [ ] The existing live stand preserves credentials, runs with the indexer off and reports holds, successful turns and wall throughput against the four-holds-in-nine-turns baseline
 - [ ] After convergence, ten successful sync turns complete without another provider hold; otherwise the remaining limit is reported without claiming success
 - [ ] No frontend file, workflow, runner or live-provider automated test changes
-- [ ] Commit
+- [x] Commit — 20d4a58498770d1cb140afee705b3d5a2aa11f94
 
 ##### Results
 
 <!-- plan:results:D2-S5:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| TELEGRAMPACING_001 | 20d4a58498770d1cb140afee705b3d5a2aa11f94 | 2026-09-23T08:56:12.366Z–2026-09-23T09:15:33.000Z | 19 / 19 min | unavailable: runner did not expose usage | Telegram now learns a process-local rate only for the RPC method that floods. The live indexer-off run processed 33,259 envelopes in 364.152 seconds across 22 turns with two exact holds (13s, then 5s), versus the four-holds-in-nine-turns baseline, and completed 14 turns after the second hold without another hold. |
 <!-- plan:results:D2-S5:end -->
 <!-- plan:stage:D2-S5:end -->
 <!-- plan:delivery:D2:end -->
@@ -620,4 +621,12 @@ Commit. fix(telegram): adapt below the provider flood rate — AccountAdmission 
 - put-stage D2-S5
 
 - approve sha256:d052b842e8a5a4107030a18c790e31fb60c8384a6017446849e8606b89e61ef6 owner:Да, незамедлительно.
+
+- amend implementation owner:Да, незамедлительно. sha256:1045771800800cad7ae3ecd5a43c7465b1580af82dc24c81d7e80d40f8ad39d7
+
+- amend implementation owner:Да, незамедлительно. sha256:d656a043833e52655a605a6b3886ded59cf3868054b31b61da4a8ed965b7e283
+
+- record-result D2-S5 commit:20d4a58498770d1cb140afee705b3d5a2aa11f94
+
+- close D2-S5 partial commit:20d4a58498770d1cb140afee705b3d5a2aa11f94
 <!-- plan:execution:end -->
