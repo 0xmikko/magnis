@@ -279,21 +279,23 @@ Commit. fix(google): reuse access tokens and stop lossy Gmail pages — preserve
 
 ##### Tasks
 
-- [ ] GOOGLE_001 — Cache Google tokens and exact holds in auth.ts, oauth.test.ts, http.ts and http.test.ts. (20 min)
+- [x] GOOGLE_001 — Cache Google tokens and exact holds in auth.ts, oauth.test.ts, http.ts and http.test.ts. (20 min) — 58eb385bed76cf0bfc3c58cd7ab0dd4aea002911
 <!-- plan:task-meta:{"writes":["plugins/sources/google/src/auth.ts","plugins/sources/google/src/oauth.test.ts","plugins/sources/google/src/http.ts","plugins/sources/google/src/http.test.ts"],"predictedActiveMinutes":20,"predictedCredits":0,"how":"plugins/sources/google/src/auth.ts: cache by credential and expiry; plugins/sources/google/src/oauth.test.ts: assert reuse, expiry and isolation; plugins/sources/google/src/http.ts: map exact 429/quota-403 Retry-After; plugins/sources/google/src/http.test.ts: assert typed holds and malformed delay refusal","red":"bun run agent:test:backend -- plugins/sources/google/src/oauth.test.ts plugins/sources/google/src/http.test.ts"} -->
-- [ ] GOOGLE_002 — Make ordered Gmail hydration lossless in connector.ts, gmail.ts and gmail.test.ts. (25 min)
+- [x] GOOGLE_002 — Make ordered Gmail hydration lossless in connector.ts, gmail.ts and gmail.test.ts. (25 min) — 58eb385bed76cf0bfc3c58cd7ab0dd4aea002911
 <!-- plan:task-meta:{"writes":["plugins/sources/google/src/connector.ts","plugins/sources/google/src/surfaces/email/gmail.ts","plugins/sources/google/src/surfaces/email/gmail.test.ts"],"predictedActiveMinutes":25,"predictedCredits":0,"how":"plugins/sources/google/src/connector.ts: reuse the cached token in fetch and execute; plugins/sources/google/src/surfaces/email/gmail.ts: stop queued hydration after fatal errors and handle message-get 404; plugins/sources/google/src/surfaces/email/gmail.test.ts: assert boundary, ordered pages, 404 and fatal queue stop","red":"bun run agent:test:backend -- plugins/sources/google/src/surfaces/email/gmail.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- plugins/sources/google/src/oauth.test.ts plugins/sources/google/src/http.test.ts plugins/sources/google/src/surfaces/email/gmail.test.ts` exits 0 — token reuse, exact holds and lossless Gmail pages
-- [ ] Commit
+- [x] `bun run agent:test:backend -- plugins/sources/google/src/oauth.test.ts plugins/sources/google/src/http.test.ts plugins/sources/google/src/surfaces/email/gmail.test.ts` exits 0 — token reuse, exact holds and lossless Gmail pages — 58eb385bed76cf0bfc3c58cd7ab0dd4aea002911
+- [x] Commit — 58eb385bed76cf0bfc3c58cd7ab0dd4aea002911
 
 ##### Results
 
 <!-- plan:results:D1-S1:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| GOOGLE_001 | 58eb385bed76cf0bfc3c58cd7ab0dd4aea002911 | 2026-09-23T20:03:52.261Z–2026-09-23T20:13:51.981Z | 10 / 10 min | unavailable: runner did not expose usage | Access tokens are reused through explicit expiry; Gmail pages fail on hard hydration errors and stop queued requests after a hold. |
+| GOOGLE_002 | 58eb385bed76cf0bfc3c58cd7ab0dd4aea002911 | 2026-09-23T20:03:52.261Z–2026-09-23T20:13:51.981Z | 10 / 10 min | unavailable: runner did not expose usage | Access tokens are reused through explicit expiry; Gmail pages fail on hard hydration errors and stop queued requests after a hold. |
 <!-- plan:results:D1-S1:end -->
 <!-- plan:stage:D1-S1:end -->
 
@@ -428,4 +430,12 @@ Commit. feat(stand): report Google beside Telegram — preserve credentials and 
 - put-stage D1-S4
 
 - approve sha256:afb71cfe49d1e155e53db18fb738c30c16973208d5405466a9bf51c24ecb9037 owner:approved, make stages and implement it
+
+- record-result D1-S1 commit:58eb385bed76cf0bfc3c58cd7ab0dd4aea002911
+
+- close D1-S1 closed commit:58eb385bed76cf0bfc3c58cd7ab0dd4aea002911
+
+- deviation D1-S2: The existing Google fixture wire test enforces the removed Calendar window and an OAuth response without expires_in; update that one test file to verify the approved full-calendar token contract. Historical certification receipts remain untouched.
+
+- deviation D1-S2: The existing Google serde-parity test calls the removed Calendar window argument and asserts old terminal-null behavior; update it to the approved token-based signature and response contract so typecheck and full gate can pass.
 <!-- plan:execution:end -->

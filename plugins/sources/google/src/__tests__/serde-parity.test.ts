@@ -1,5 +1,5 @@
-// Serde-parity: the TS connector must reject EXACTLY what the Rust twin's
-// serde rejects, and accept exactly what it accepts.
+// Provider response validation: retain required-field checks from the Rust
+// connector, but fail a whole page when a message cannot be hydrated.
 //
 // The Rust connector (plugins/sources/google/src/{gmail,calendar,contacts}.rs)
 // deserializes every provider response into a struct. A field typed `T` is
@@ -7,10 +7,8 @@
 // which becomes `GoogleSyncError::Other(..)`. Where that error surfaces is
 // NOT uniform, and this file pins both halves:
 //
-//   * `messages.get` (fetch_message) → `Other` is caught by
-//     `snapshot_envelopes_from_fetched` and SKIPS that one message.
-//   * every other call (profile / list / history / calendar / people) →
-//     `Other` propagates out of the fetch and FAILS THE WHOLE SURFACE.
+//   * `messages.get` errors now fail the page so its cursor cannot advance.
+//   * profile / list / history / calendar / people errors also fail the page.
 //
 // The mirror-image risk is over-tightening: a field that is `Option<T>` or
 // `#[serde(default)]` in Rust MUST stay tolerant here, or we would error
@@ -179,14 +177,11 @@ describe("serde parity — gmail required fields", () => {
   });
 });
 
-// ── Gmail: per-message skip (NOT a whole-fetch failure) ─────────────────────
+// ── Gmail: malformed messages fail the page ──────────────────────────────────
 
-describe("serde parity — gmail messages.get skips one message", () => {
-  // GmailMessage.id: String (gmail.rs:45) — required. A malformed
-  // `messages.get` body is `Other` inside `fetch_snapshot_envelopes`, which
-  // `snapshot_envelopes_from_fetched` SKIPS (gmail.rs:544) — the page still
-  // succeeds with the remaining messages.
-  test("tst_gts_serde_007 messages.get without id skips that message only", async () => {
+describe("provider validation — gmail messages.get fails the page", () => {
+  // GmailMessage.id is required; a malformed body must not advance the cursor.
+  test("tst_gts_serde_007 messages.get without id fails the page", async () => {
     const fetchFn = gmailRoutes({
       list: { messages: [{ id: "bad" }, { id: "good" }] },
       messages: {
@@ -194,24 +189,19 @@ describe("serde parity — gmail messages.get skips one message", () => {
         good: fullMessage("good"),
       },
     });
-    const r = await fetchMessagePage("tok", undefined, fetchFn);
-    // The mailbox envelope first (the default profile counts), then the one message that survived.
-    expect(r.envelopes.map((e) => e.remote_id)).toEqual(["mailbox", "good"]);
+    await expect(fetchMessagePage("tok", undefined, fetchFn)).rejects.toThrow(/missing field `id`/);
   });
 
   // GmailHeader.name/value: String (gmail.rs:64-65) — both required. A header
-  // object missing `value` fails the messages.get deserialize in Rust → that
-  // one message is skipped (NOT silently converted with an empty subject).
-  test("tst_gts_serde_008 header without value skips that message only", async () => {
+  // object missing `value` must fail the page, not silently lose mail.
+  test("tst_gts_serde_008 header without value fails the page", async () => {
     const bad = fullMessage("bad");
     (bad.payload as Record<string, unknown>).headers = [{ name: "Subject" }];
     const fetchFn = gmailRoutes({
       list: { messages: [{ id: "bad" }, { id: "good" }] },
       messages: { bad, good: fullMessage("good") },
     });
-    const r = await fetchMessagePage("tok", undefined, fetchFn);
-    // The mailbox envelope first (the default profile counts), then the one message that survived.
-    expect(r.envelopes.map((e) => e.remote_id)).toEqual(["mailbox", "good"]);
+    await expect(fetchMessagePage("tok", undefined, fetchFn)).rejects.toThrow(/missing field `value`/);
   });
 });
 
@@ -224,7 +214,7 @@ describe("serde parity — calendar + contacts required fields", () => {
   test("tst_gts_serde_009 calendar item without id fails the fetch", async () => {
     const fetchFn: FetchLike = async () =>
       ok({ items: [{ summary: "No id here" }] });
-    await expect(fetchEventsPage("tok", undefined, {}, fetchFn)).rejects.toThrow(
+    await expect(fetchEventsPage("tok", undefined, fetchFn)).rejects.toThrow(
       /missing field `id`/,
     );
   });
@@ -312,20 +302,13 @@ describe("serde parity — optional/default fields stay tolerant", () => {
     ).rejects.toThrow(/invalid type for `labelIds`/);
   });
 
-  // GcalEvent: everything but `id` is Option<_> (calendar.rs:28); GcalDateTime
-  // and GcalAttendee are all-Option. A bare event still converts.
-  test("tst_gts_serde_014 calendar tolerates a bare event + absent items", async () => {
-    // The same answer serves the ids-only pass and the page: the calendar
-    // envelope counts one event, then the bare event follows.
-    const bare: FetchLike = async () => ok({ items: [{ id: "evt_1" }] });
-    const r = await fetchEventsPage("tok", undefined, {}, bare);
-    expect(r.envelopes.map((e) => e.remote_id)).toEqual(["calendar", "gcal:evt_1"]);
-    const env = r.envelopes[1];
-    if (env === undefined) throw new Error("calendar page: missing envelope 1");
-    expect(env.payload.title).toBe("Untitled Event");
+  // A bare non-cancelled event has no valid times and must fail the page.
+  test("tst_gts_serde_014 calendar rejects a bare event but accepts absent items", async () => {
+    const bare: FetchLike = async () => ok({ items: [{ id: "evt_1" }], nextSyncToken: "s" });
+    await expect(fetchEventsPage("tok", undefined, bare)).rejects.toThrow("missing start or end datetime");
 
-    const empty: FetchLike = async () => ok({});
-    expect((await fetchEventsPage("tok", undefined, {}, empty)).envelopes).toEqual([
+    const empty: FetchLike = async () => ok({ nextSyncToken: "s" });
+    expect((await fetchEventsPage("tok", undefined, empty)).envelopes).toEqual([
       { surface: "meetings", kind: "snapshot", remote_id: "calendar", payload: { entity_type: "calendar", events_total: 0 } },
     ]);
   });
@@ -340,6 +323,7 @@ describe("serde parity — optional/default fields stay tolerant", () => {
         connections: [
           { resourceName: "people/c1", emailAddresses: [{ value: "a@b.c" }] },
         ],
+        nextSyncToken: "s",
       });
     const r = await fetchContactsPage("tok", undefined, fetchFn);
     expect(r.envelopes).toHaveLength(1);
@@ -348,7 +332,7 @@ describe("serde parity — optional/default fields stay tolerant", () => {
     expect(env.payload.display_name).toBeNull();
     expect((env.payload.emails as unknown[])).toHaveLength(1);
 
-    const empty: FetchLike = async () => ok({});
+    const empty: FetchLike = async () => ok({ nextSyncToken: "s" });
     expect((await fetchContactsPage("tok", undefined, empty)).envelopes).toHaveLength(0);
   });
 });

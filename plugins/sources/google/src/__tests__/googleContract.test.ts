@@ -9,14 +9,14 @@
 // The connector's OWN unit + serde tests (gmail/calendar/contacts.test.ts,
 // serde-parity.test.ts) pin the per-fetcher conversion; the fixture.test.ts pins
 // replay mode. This file adds ONLY the reusable wire-contract layer.
-import { describe } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { mockFetch, runSourceContract, type CannedResponse } from "@magnis/testkit/source";
 import { buildConnectorConfig } from "../connector";
 
 const META = { refresh_token: "r", client_id: "c", client_secret: "s" };
 const b64url = (s: string) => Buffer.from(s, "utf-8").toString("base64url");
 
-const TOKEN: CannedResponse = { body: { access_token: "at" } };
+const TOKEN: CannedResponse = { body: { access_token: "at", expires_in: 3600 } };
 
 /** A well-formed Gmail `messages.get` body (mirrors serde-parity's fullMessage). */
 const fullMessage = {
@@ -56,6 +56,7 @@ function happyRoutes() {
               end: { dateTime: "2026-05-20T10:15:00Z" },
             },
           ],
+          nextSyncToken: "calendar-sync-1",
         },
       },
     },
@@ -68,13 +69,14 @@ function happyRoutes() {
           body: {
             connections: [{ resourceName: "people/c1", emailAddresses: [{ value: "a@b.c" }] }],
             nextPageToken: "pg2",
-            totalPeople: 2,
+            totalItems: 2,
           },
         },
         {
           body: {
             connections: [{ resourceName: "people/c2", emailAddresses: [{ value: "b@b.c" }] }],
-            totalPeople: 2,
+            totalItems: 2,
+            nextSyncToken: "people-sync-1",
           },
         },
       ],
@@ -118,3 +120,17 @@ describe("google", () => runSourceContract(buildConnectorConfig(mockFetch(happyR
     retryAfter: 30,
   },
 }));
+
+/**
+ * @test-id: tst_src_iso_google_012
+ * @scenario: scn_google_pull_002
+ * @covers: plugins/sources/google/src/connector.ts::buildConnectorConfig
+ * @deterministic: yes
+ * @fixtures: scripted terminal Calendar page with a retained provider token
+ */
+test("tst_src_iso_google_012 terminal Calendar token does not mean another page", async () => {
+  const source = buildConnectorConfig(mockFetch(happyRoutes()));
+  const result = await source.fetch({ surface: "meetings", meta: META });
+  expect(result.nextCursor).toEqual({ sync_token: "calendar-sync-1" });
+  expect(result.hasMore).toBe(false);
+});

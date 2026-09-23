@@ -5,6 +5,7 @@ import {
   type GcalEvent,
 } from "./calendar";
 import type { FetchLike, HttpResponse } from "../../http";
+import { CursorExpiredError } from "@magnis/connector-sdk";
 
 function ok(data: unknown): HttpResponse {
   return {
@@ -74,95 +75,67 @@ describe("gcal event conversion", () => {
 });
 
 describe("meetings fetch", () => {
-  test("tst_gts_gcal_004 cancelled skipped; envelope shape; window params", async () => {
+  /**
+   * @test-id: tst_src_iso_google_005
+   * @scenario: scn_google_pull_002
+   * @covers: plugins/sources/google/src/surfaces/meetings/calendar.ts::fetchEventsPage
+   * @deterministic: yes
+   * @fixtures: two Calendar pages with one cancelled event and terminal sync token
+   */
+  test("tst_src_iso_google_005 full Calendar pass counts once and retains its terminal token", async () => {
     const calls: string[] = [];
     const fetchFn: FetchLike = async (url) => {
       calls.push(url);
-      return ok({
-        items: [
-          basicEvent(),
-          { ...basicEvent(), id: "evt_x", status: "cancelled" },
-        ],
-      });
+      return url.includes("pageToken=p2")
+        ? ok({ items: [{ ...basicEvent(), id: "evt_2" }], nextSyncToken: "sync-1" })
+        : ok({ items: [basicEvent(), { id: "evt_x", status: "cancelled" }], nextPageToken: "p2" });
     };
-    const r = await fetchEventsPage("tok", undefined, {}, fetchFn);
-    // The calendar envelope first (the ids-only pass counted one confirmed
-    // event), then the one event; the cancelled one is dropped and not counted.
-    expect(r.envelopes.map((e) => e.remote_id)).toEqual(["calendar", "gcal:evt_1"]);
-    expect(r.envelopes[0]?.payload).toEqual({ entity_type: "calendar", events_total: 1 });
-    const env0 = r.envelopes[1];
-    if (env0 === undefined) throw new Error("meetings page: missing envelope 1");
-    expect(env0.surface).toBe("meetings");
-    expect(env0.kind).toBe("snapshot");
-    expect(env0.remote_id).toBe("gcal:evt_1");
-    expect(env0.payload.title).toBe("Team standup");
-
-    // The ids-only pass over the same window comes first, then the page.
-    const call0 = calls[0];
-    if (call0 === undefined) throw new Error("meetings fetch: missing call 0");
-    const ids = new URL(call0);
-    expect(ids.pathname).toBe("/calendar/v3/calendars/primary/events");
-    expect(ids.searchParams.get("fields")).toBe("nextPageToken,items(id,status)");
-    expect(ids.searchParams.get("maxResults")).toBe("2500");
-    expect(ids.searchParams.get("singleEvents")).toBe("true");
-    const call1 = calls[1];
-    if (call1 === undefined) throw new Error("meetings fetch: missing call 1");
-    const url = new URL(call1);
-    expect(url.pathname).toBe("/calendar/v3/calendars/primary/events");
-    expect(url.searchParams.get("singleEvents")).toBe("true");
-    expect(url.searchParams.get("orderBy")).toBe("startTime");
-    expect(url.searchParams.get("maxResults")).toBe("250");
-    expect(url.searchParams.get("timeMin")).toBe(ids.searchParams.get("timeMin"));
-    expect(url.searchParams.get("timeMax")).toBe(ids.searchParams.get("timeMax"));
-    // Default window: ~now-30d .. now+90d.
-    const timeMin = Date.parse(url.searchParams.get("timeMin")!);
-    const timeMax = Date.parse(url.searchParams.get("timeMax")!);
-    expect(Math.abs(timeMin - (Date.now() - 30 * 86_400_000))).toBeLessThan(60_000);
-    expect(Math.abs(timeMax - (Date.now() + 90 * 86_400_000))).toBeLessThan(60_000);
-    // Explicit window override is honored.
-    await fetchEventsPage(
-      "tok",
-      undefined,
-      { time_min: "2026-01-01T00:00:00Z", time_max: "2026-02-01T00:00:00Z" },
-      fetchFn,
-    );
-    const call2 = calls[2];
-    if (call2 === undefined) throw new Error("meetings fetch: missing call 2");
-    expect(new URL(call2).searchParams.get("timeMin")).toBe("2026-01-01T00:00:00Z");
+    const p1 = await fetchEventsPage("tok", undefined, fetchFn);
+    expect(p1.envelopes.map((e) => e.remote_id)).toEqual(["gcal:evt_1", "gcal:evt_x"]);
+    expect(p1.envelopes[1]?.kind).toBe("delete");
+    expect(p1.nextCursor).toEqual({ page_token: "p2", events_total: 1 });
+    expect(p1.hasMore).toBe(true);
+    const p2 = await fetchEventsPage("tok", p1.nextCursor, fetchFn);
+    expect(p2.envelopes.map((e) => e.remote_id)).toEqual(["calendar", "gcal:evt_2"]);
+    expect(p2.envelopes[0]?.payload).toEqual({ entity_type: "calendar", events_total: 2 });
+    expect(p2.nextCursor).toEqual({ sync_token: "sync-1" });
+    expect(p2.hasMore).toBe(false);
+    expect(calls).toHaveLength(2);
+    for (const call of calls) {
+      const params = new URL(call).searchParams;
+      expect(params.get("singleEvents")).toBe("true");
+      expect(params.get("showDeleted")).toBe("true");
+      expect(params.has("timeMin")).toBe(false);
+      expect(params.has("timeMax")).toBe(false);
+      expect(params.has("orderBy")).toBe(false);
+      expect(params.has("fields")).toBe(false);
+    }
   });
 
-  /** @test-id: tst_gts_gcal_005
-   * @scenario: scn_google_sync_001
-   * @covers: fetchEventsPage ids-only count, calendar envelope, cursor
+  /**
+   * @test-id: tst_src_iso_google_006
+   * @scenario: scn_google_pull_002
+   * @covers: plugins/sources/google/src/surfaces/meetings/calendar.ts::fetchEventsPage
    * @deterministic: yes
-   * @fixtures: an ids-only pass of two pages counting three events, one cancelled; two event pages, one event that fails to convert
+   * @fixtures: token poll, expired token, and missing terminal token
    */
-  test("tst_gts_gcal_005 the calendar states its count from one ids-only pass on the first page; cursor null on the last page; no counters", async () => {
-    const calls: string[] = [];
+  test("tst_src_iso_google_006 token poll returns only changes and 410 expires the cursor", async () => {
+    let requested = "";
     const fetchFn: FetchLike = async (url) => {
-      calls.push(url);
-      if (url.includes("fields=")) {
-        return url.includes("pageToken=ids2")
-          ? ok({ items: [{ id: "evt_2", status: "confirmed" }, { id: "evt_x", status: "cancelled" }] })
-          : ok({ items: [{ id: "evt_1", status: "confirmed" }, { id: "evt_bad" }], nextPageToken: "ids2" });
-      }
-      return url.includes("pageToken=p2")
-        ? ok({ items: [{ ...basicEvent(), id: "evt_2" }] })
-        : ok({ items: [basicEvent(), { id: "evt_bad", start: { dateTime: "not a moment" } }], nextPageToken: "p2" }); // evt_bad fails to convert
+      requested = url;
+      return ok({ items: [basicEvent(), { id: "gone", status: "cancelled" }], nextSyncToken: "sync-2" });
     };
-
-    const p1 = await fetchEventsPage("tok", undefined, {}, fetchFn);
-    expect(p1.envelopes.map((e) => e.remote_id)).toEqual(["calendar", "gcal:evt_1"]);
-    // Three ids answered the pass, one cancelled: two events; the page left one out.
-    expect(p1.envelopes[0]?.payload).toEqual({ entity_type: "calendar", events_total: 3, skipped: 1 });
-    expect(p1.nextCursor).toEqual({ page_token: "p2" });
-    expect("discovered" in p1).toBe(false);
-    expect(calls.filter((u) => u.includes("fields=")).length).toBe(2);
-
-    const p2 = await fetchEventsPage("tok", p1.nextCursor, {}, fetchFn);
-    // A later page counts nothing again.
-    expect(calls.filter((u) => u.includes("fields=")).length).toBe(2);
-    expect(p2.envelopes.map((e) => e.remote_id)).toEqual(["gcal:evt_2"]);
-    expect(p2.nextCursor).toBeNull(); // last page → null (unlike email)
+    const result = await fetchEventsPage("tok", { sync_token: "sync-1" }, fetchFn);
+    expect(new URL(requested).searchParams.get("syncToken")).toBe("sync-1");
+    expect(result.envelopes.map((e) => e.kind)).toEqual(["snapshot", "delete"]);
+    expect(result.nextCursor).toEqual({ sync_token: "sync-2" });
+    expect(result.hasMore).toBe(false);
+    await expect(fetchEventsPage("tok", { sync_token: "expired" }, async () => ({
+      ok: false, status: 410, headers: { get: () => null }, text: async () => "gone", json: async () => ({}),
+    }))).rejects.toBeInstanceOf(CursorExpiredError);
+    await expect(fetchEventsPage("tok", undefined, async () => ok({ items: [] })))
+      .rejects.toThrow("nextSyncToken");
+    await expect(fetchEventsPage("tok", undefined, async () => ok({ items: [{ ...basicEvent(), start: { dateTime: "invalid" } }], nextSyncToken: "s" })))
+      .rejects.toThrow("bad datetime");
   });
 });

@@ -5,7 +5,7 @@
 // `remote_id` is `gpeople:{stable_hash}` (dedup survives display-name change).
 
 import { createHash } from "node:crypto";
-import type { Envelope } from "@magnis/connector-sdk";
+import { CursorExpiredError, type Envelope } from "@magnis/connector-sdk";
 import {
   ContactsCursorExpiredError,
   checkRateLimit,
@@ -28,6 +28,7 @@ import {
 
 interface GpeopleMetadata {
   primary?: boolean | null;
+  deleted?: boolean | null;
 }
 
 interface GpeopleName {
@@ -55,6 +56,7 @@ export interface GpeoplePerson {
   resourceName: string;
   /** Write-back base (S3): the People API's optimistic-concurrency tag. */
   etag?: string | null;
+  metadata?: GpeopleMetadata | null;
   names?: GpeopleName[] | null;
   emailAddresses?: GpeopleEmail[] | null;
   phoneNumbers?: GpeoplePhone[] | null;
@@ -66,15 +68,17 @@ export interface GpeoplePerson {
 interface GpeopleConnectionsResponse {
   connections?: GpeoplePerson[] | null;
   nextPageToken?: string | null;
+  nextSyncToken?: string | null;
   /** The People API's exact count of the list, on every page. */
-  totalPeople?: number | null;
+  totalItems?: number | null;
 }
 
 /** One page of the contacts list: the list's count first on the first page,
  * the persons the page left out when it did, then the persons. */
 export interface ContactsFetchResult {
   envelopes: Envelope[];
-  nextCursor: Record<string, unknown> | null;
+  nextCursor: Record<string, unknown>;
+  hasMore: boolean;
 }
 
 // ── Response parser (serde parity — see validate.ts) ──────────
@@ -102,6 +106,7 @@ function parseGpeopleConnectionsResponse(
     return {
       resourceName: reqString(p, "resourceName", c),
       etag: optString(p, "etag", c),
+      metadata: { deleted: defaultBool(defaultObject(p, "metadata", c), "deleted", `${c}.metadata`) },
       names: defaultObjectArray(p, "names", c).map((n, j) => ({
         displayName: optString(n, "displayName", `${c}.names[${String(j)}]`),
         givenName: optString(n, "givenName", `${c}.names[${String(j)}]`),
@@ -137,7 +142,8 @@ function parseGpeopleConnectionsResponse(
   return {
     connections,
     nextPageToken: optString(o, "nextPageToken", ctx),
-    totalPeople: optNumber(o, "totalPeople", ctx),
+    nextSyncToken: optString(o, "nextSyncToken", ctx),
+    totalItems: optNumber(o, "totalItems", ctx),
   };
 }
 
@@ -266,13 +272,16 @@ function isFailedPrecondition(body: string): boolean {
 
 async function listConnectionsPage(
   token: string,
+  syncToken: string | undefined,
   pageToken: string | undefined,
   fetchFn: FetchLike,
 ): Promise<GpeopleConnectionsResponse> {
   const params = new URLSearchParams({
     personFields: "names,emailAddresses,phoneNumbers,organizations,photos,urls",
-    pageSize: "100",
+    pageSize: "1000",
   });
+  if (syncToken !== undefined) params.set("syncToken", syncToken);
+  else params.set("requestSyncToken", "true");
   if (pageToken !== undefined) params.set("pageToken", pageToken);
   const url = `https://people.googleapis.com/v1/people/me/connections?${params}`;
 
@@ -292,10 +301,11 @@ async function listConnectionsPage(
     // must match the first call" — is unreachable here.
     if (
       resp.status === 400 &&
-      pageToken !== undefined &&
       isFailedPrecondition(body)
     ) {
-      throw new ContactsCursorExpiredError();
+      // @tested-by: tst_src_iso_google_008, tst_gts_gp_006, tst_gts_gp_007
+      if (syncToken !== undefined) throw new CursorExpiredError("Google contacts syncToken expired (400 FAILED_PRECONDITION)");
+      if (pageToken !== undefined) throw new ContactsCursorExpiredError();
     }
     throw new Error(
       `People API list_connections failed: HTTP ${String(resp.status)} — ${body}`,
@@ -304,17 +314,8 @@ async function listConnectionsPage(
   return parseGpeopleConnectionsResponse(await resp.json());
 }
 
-/** Bootstrap/catch-up contacts fetch. The first page opens with the list
- * envelope carrying `totalPeople`, the People API's exact count; any page
- * that leaves persons out (no identity) states how many, so the plan's
- * skipped meets the total. `nextCursor` is null on the last page.
- * @tested-by: tst_gts_gp_005
- *
- * NOTE: the People API DOES have a delta token — `requestSyncToken=true` on a
- * full sync returns a `nextSyncToken` (valid 7 days) that lists only changes.
- * This connector does not use it: it persists the ephemeral `pageToken` as its
- * cursor, so there is no incremental contacts sync and every completed run
- * re-lists all connections from scratch. Documented, not fixed here. */
+/** Full pages request a terminal sync token; later polls return only changes.
+ * @tested-by: tst_src_iso_google_007, tst_src_iso_google_008 */
 export async function fetchContactsPage(
   token: string,
   cursor: unknown,
@@ -325,14 +326,24 @@ export async function fetchContactsPage(
       ? (cursor as Record<string, unknown>)
       : undefined;
   const pageToken = typeof c?.page_token === "string" ? c.page_token : undefined;
+  const syncToken = typeof c?.sync_token === "string" ? c.sync_token : undefined;
 
-  const page = await listConnectionsPage(token, pageToken, fetchFn);
+  const page = await listConnectionsPage(token, syncToken, pageToken, fetchFn);
 
   const envelopes: Envelope[] = [];
   let skipped = 0;
   for (const person of page.connections ?? []) {
+    const remoteId = contactRemoteId(stableContactId(person.resourceName));
+    if (person.metadata?.deleted === true) {
+      envelopes.push({ surface: "contacts", payload: {}, remote_id: remoteId, kind: "delete" });
+      continue;
+    }
     const contact = gpeoplePersonToContact(person);
-    if (contact === null) { skipped += 1; continue; } // no useful identity → dropped
+    if (contact === null) {
+      if (syncToken !== undefined) envelopes.push({ surface: "contacts", payload: {}, remote_id: remoteId, kind: "delete" });
+      else skipped += 1;
+      continue;
+    }
     envelopes.push({
       surface: "contacts",
       payload: contact as unknown as Record<string, unknown>,
@@ -341,14 +352,20 @@ export async function fetchContactsPage(
     });
   }
   const list: Record<string, unknown> = { entity_type: "list" };
-  if (pageToken === undefined && typeof page.totalPeople === "number") list.total_people = page.totalPeople;
+  if (syncToken === undefined && pageToken === undefined && typeof page.totalItems === "number") list.total_people = page.totalItems;
   if (skipped > 0) list.skipped = skipped;
   if (Object.keys(list).length > 1) {
     envelopes.unshift({ surface: "contacts", kind: "snapshot", remote_id: "list", payload: list });
   }
 
-  const nextCursor: Record<string, unknown> | null =
-    typeof page.nextPageToken === "string" ? { page_token: page.nextPageToken } : null;
-
-  return { envelopes, nextCursor };
+  const hasMore = typeof page.nextPageToken === "string";
+  if (hasMore) {
+    const nextCursor: Record<string, unknown> = { page_token: page.nextPageToken };
+    if (syncToken !== undefined) nextCursor.sync_token = syncToken;
+    return { envelopes, nextCursor, hasMore };
+  }
+  if (page.nextSyncToken === null || page.nextSyncToken === undefined || page.nextSyncToken === "") {
+    throw new Error("People API terminal page missing nextSyncToken");
+  }
+  return { envelopes, nextCursor: { sync_token: page.nextSyncToken }, hasMore };
 }

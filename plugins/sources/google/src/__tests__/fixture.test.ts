@@ -173,13 +173,16 @@ describe("fixture mode end-to-end", () => {
         "tst_gts_email_009",
         "tst_gts_fx_001",
         "tst_gts_fx_003",
-        "tst_gts_gcal_005",
-        "tst_gts_gp_005",
         "tst_gts_gp_006",
         "tst_gts_hist_008b",
         "tst_gts_oidc_004",
         "tst_gts_oidc_007",
         "tst_gts_wire_006",
+        "tst_src_iso_google_005",
+        "tst_src_iso_google_006",
+        "tst_src_iso_google_007",
+        "tst_src_iso_google_008",
+        "tst_src_iso_google_012",
       ]);
 
       for (const surface of ["email", "meetings", "contacts"] as const) {
@@ -299,7 +302,7 @@ describe("live-mode wire errors (no fixture)", () => {
           status: 200,
           headers: { get: () => null },
           text: async () => "{}",
-          json: async () => ({ access_token: "at" }),
+          json: async () => ({ access_token: "at", expires_in: 3600 }),
         };
       }
       throw new Error(`unexpected url ${url}`);
@@ -337,7 +340,7 @@ describe("live-mode wire errors (no fixture)", () => {
           status: 200,
           headers: { get: () => null },
           text: async () => "{}",
-          json: async () => ({ access_token: "at" }),
+          json: async () => ({ access_token: "at", expires_in: 3600 }),
         };
       }
       return {
@@ -369,12 +372,14 @@ describe("live-mode wire errors (no fixture)", () => {
     expect(error.message).toBe("Google rate limited: retry after 45s");
   });
 
-  // The Rust twin passes the FULL tools/call args to `fetch_events_page`
-  // (main.rs:206), which reads `time_min`/`time_max` off them
-  // (calendar.rs:125-135) to override the default now-30d..now+90d window.
-  // The host does not send a window today, so this is dormant — but a silently
-  // ignored window would activate as a real divergence the day it does.
-  test("tst_gts_wire_007 calendar time_min/time_max window reaches the API", async () => {
+  /**
+   * @test-id: tst_gts_wire_007
+   * @scenario: scn_google_pull_002
+   * @covers: plugins/sources/google/src/connector.ts::buildConnectorConfig
+   * @deterministic: yes
+   * @fixtures: a terminal full Calendar page with a sync token
+   */
+  test("tst_gts_wire_007 Calendar fetch uses full-calendar compatible parameters", async () => {
     let calendarUrl = "";
     const capture: FetchLike = async (url) => {
       if (url === "https://oauth2.googleapis.com/token") {
@@ -383,7 +388,7 @@ describe("live-mode wire errors (no fixture)", () => {
           status: 200,
           headers: { get: () => null },
           text: async () => "{}",
-          json: async () => ({ access_token: "at" }),
+          json: async () => ({ access_token: "at", expires_in: 3600 }),
         };
       }
       calendarUrl = url;
@@ -392,7 +397,7 @@ describe("live-mode wire errors (no fixture)", () => {
         status: 200,
         headers: { get: () => null },
         text: async () => "{}",
-        json: async () => ({ items: [] }),
+        json: async () => ({ items: [], nextSyncToken: "calendar-sync-1" }),
       };
     };
 
@@ -414,10 +419,13 @@ describe("live-mode wire errors (no fixture)", () => {
       },
       buildConnectorConfig(capture),
     );
-    expect(calendarUrl).toContain("timeMin=2026-01-01T00%3A00%3A00Z");
-    expect(calendarUrl).toContain("timeMax=2026-02-01T00%3A00%3A00Z");
+    const params = new URL(calendarUrl).searchParams;
+    expect(params.has("timeMin")).toBe(false);
+    expect(params.has("timeMax")).toBe(false);
+    expect(params.get("singleEvents")).toBe("true");
+    expect(params.get("showDeleted")).toBe("true");
 
-    // No window sent → the default window still applies (Rust: unwrap_or_else).
+    // A retained token, not a moving window, drives subsequent polls.
     calendarUrl = "";
     await handleMessage(
       {
@@ -426,12 +434,11 @@ describe("live-mode wire errors (no fixture)", () => {
         method: "tools/call",
         params: {
           name: "magnis.sync.fetch",
-          arguments: { surface: "meetings", _meta: meta },
+          arguments: { surface: "meetings", cursor: { sync_token: "calendar-sync-1" }, _meta: meta },
         },
       },
       buildConnectorConfig(capture),
     );
-    expect(calendarUrl).toContain("timeMin=");
-    expect(calendarUrl).toContain("timeMax=");
+    expect(new URL(calendarUrl).searchParams.get("syncToken")).toBe("calendar-sync-1");
   });
 });

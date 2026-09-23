@@ -8,7 +8,7 @@
 #
 # The connector does OAuth itself: the host injects
 # `_meta = { refresh_token, client_id, client_secret }` on every tool call, the
-# connector refreshes an access token and calls the Gmail / Calendar REST API.
+# connector reuses an unexpired access token and calls Google REST APIs.
 # Account discovery is host-side; no static accounts.
 #
 # For isolated e2e (no live Google), set GOOGLE_FIXTURE_FILE to a JSON fixture;
@@ -65,7 +65,7 @@ runtime_kind = "connector_sdk"
 runtime_version = "0.1.0"
 advertised_tools = ["magnis.sync.fetch"]
 callable_operations = ["initialize", "magnis.auth.exchange", "magnis.auth.revoke", "magnis.execute:download_file", "magnis.execute:send_message", "magnis.sync.fetch", "tools/list"]
-scenario_ids = ["tst_gts_email_009", "tst_gts_fx_001", "tst_gts_fx_003", "tst_gts_gcal_005", "tst_gts_gp_005", "tst_gts_gp_006", "tst_gts_hist_008b", "tst_gts_oidc_004", "tst_gts_oidc_007", "tst_gts_wire_006"]
+scenario_ids = ["tst_gts_email_009", "tst_gts_fx_001", "tst_gts_fx_003", "tst_gts_gp_006", "tst_gts_hist_008b", "tst_gts_oidc_004", "tst_gts_oidc_007", "tst_gts_wire_006", "tst_src_iso_google_005", "tst_src_iso_google_006", "tst_src_iso_google_007", "tst_src_iso_google_008", "tst_src_iso_google_012"]
 
 [certification.account_compatibility]
 auth = "oauth2"
@@ -76,7 +76,7 @@ migrates_from = []
 
 [[certification.account_compatibility.surfaces]]
 name = "contacts"
-cursor_terminal_null = "clear"
+cursor_terminal_null = "retain"
 progress = { target = "full_snapshot", continuation = "opaque_cursor", forward_checkpoint = "opaque_cursor", coverage = "snapshot", live_fence = "none" }
 receiver_interface_hash = "sha256:eaf8d476b7dfb12ceb729da8a36bbd52d3ec3fdc684837d06e4a81586a8acdcb"
 
@@ -88,6 +88,6 @@ receiver_interface_hash = "sha256:0d6480cd0a2d5bd3960e1ec902c825a73203e76aa0ef57
 
 [[certification.account_compatibility.surfaces]]
 name = "meetings"
-cursor_terminal_null = "clear"
-progress = { target = "bounded_window", continuation = "opaque_cursor", forward_checkpoint = "opaque_cursor", coverage = "range", live_fence = "none" }
+cursor_terminal_null = "retain"
+progress = { target = "full_snapshot", continuation = "opaque_cursor", forward_checkpoint = "opaque_cursor", coverage = "snapshot", live_fence = "none" }
 receiver_interface_hash = "sha256:ee62dc20e251dd38db87444858ca3dd1a1cd376af9a1cf8640684aa482984d2b"

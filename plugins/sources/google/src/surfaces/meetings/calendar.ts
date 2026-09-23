@@ -4,7 +4,7 @@
 // Each meetings envelope's `payload` is a full CalendarEvent serialization
 // (NOT flattened) and `remote_id` is `gcal:{event_id}`.
 
-import type { Envelope } from "@magnis/connector-sdk";
+import { CursorExpiredError, type Envelope } from "@magnis/connector-sdk";
 import { checkRateLimit, fetchWithRetry, type FetchLike } from "../../http";
 import { formatUtc } from "../../helpers";
 import { calendarRemoteId } from "./schema";
@@ -38,32 +38,14 @@ export interface GcalEvent {
 interface GcalEventsResponse {
   items?: GcalEvent[] | null;
   nextPageToken?: string | null;
+  nextSyncToken?: string | null;
 }
 
-/** One page of the calendar window: the window's count first on the first
- * page, the events the page left out when it did, then the events. */
+/** One page of a full Calendar pass or a token-based change poll. */
 export interface EventsFetchResult {
   envelopes: Envelope[];
-  nextCursor: Record<string, unknown> | null;
-}
-
-/** One page of the ids-only pass: ids and statuses, nothing else. */
-interface GcalEventIdsResponse {
-  items: { id: string; status: string | null }[];
-  nextPageToken: string | null;
-}
-
-function parseGcalEventIdsResponse(v: unknown): GcalEventIdsResponse {
-  const ctx = "GcalEventIdsResponse";
-  const o = asObject(v, ctx);
-  const items = optObjectArray(o, "items", ctx) ?? [];
-  return {
-    items: items.map((ev, i) => {
-      const c = `${ctx}.items[${String(i)}]`;
-      return { id: reqString(ev, "id", c), status: optString(ev, "status", c) };
-    }),
-    nextPageToken: optString(o, "nextPageToken", ctx),
-  };
+  nextCursor: Record<string, unknown>;
+  hasMore: boolean;
 }
 
 // ── Response parser (serde parity — see validate.ts) ──────────
@@ -120,6 +102,7 @@ function parseGcalEventsResponse(v: unknown): GcalEventsResponse {
             };
           }),
     nextPageToken: optString(o, "nextPageToken", ctx),
+    nextSyncToken: optString(o, "nextSyncToken", ctx),
   };
 }
 
@@ -155,7 +138,7 @@ function resolveDatetime(
     if (Number.isNaN(t)) throw new Error(`bad date '${dt.date}'`);
     return [formatUtc(new Date(t)), true];
   }
-  return [formatUtc(new Date()), false];
+  throw new Error("Calendar event missing start or end datetime");
 }
 
 export function gcalEventToCalendarEvent(ev: GcalEvent): CalendarEvent {
@@ -184,18 +167,16 @@ export function gcalEventToCalendarEvent(ev: GcalEvent): CalendarEvent {
 
 async function listEventsPage(
   token: string,
-  timeMin: string,
-  timeMax: string,
+  syncToken: string | undefined,
   pageToken: string | undefined,
   fetchFn: FetchLike,
 ): Promise<GcalEventsResponse> {
   const params = new URLSearchParams({
-    timeMin,
-    timeMax,
     singleEvents: "true",
-    orderBy: "startTime",
+    showDeleted: "true",
     maxResults: "250",
   });
+  if (syncToken !== undefined) params.set("syncToken", syncToken);
   if (pageToken !== undefined) params.set("pageToken", pageToken);
   const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?${params}`;
 
@@ -203,95 +184,39 @@ async function listEventsPage(
     headers: { authorization: `Bearer ${token}` },
   });
   checkRateLimit(resp);
+  if (resp.status === 410) throw new CursorExpiredError("Calendar syncToken expired (410)");
   if (!resp.ok) {
     throw new Error(`Calendar list events failed: ${await resp.text()}`);
   }
   return parseGcalEventsResponse(await resp.json());
 }
 
-/** The ids-only pass over the window: one request per 2,500 events, ids and
- * statuses only, so the calendar can state its count before the first page
- * of events. Cancelled events are not counted — the pages leave them out. */
-async function countEvents(
-  token: string,
-  timeMin: string,
-  timeMax: string,
-  fetchFn: FetchLike,
-): Promise<number> {
-  let total = 0;
-  let pageToken: string | undefined;
-  do {
-    const params = new URLSearchParams({
-      timeMin,
-      timeMax,
-      singleEvents: "true",
-      maxResults: "2500",
-      fields: "nextPageToken,items(id,status)",
-    });
-    if (pageToken !== undefined) params.set("pageToken", pageToken);
-    const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?${params}`;
-    const resp = await fetchWithRetry(fetchFn, url, { headers: { authorization: `Bearer ${token}` } });
-    checkRateLimit(resp);
-    if (!resp.ok) {
-      throw new Error(`Calendar count events failed: ${await resp.text()}`);
-    }
-    const page = parseGcalEventIdsResponse(await resp.json());
-    total += page.items.filter((item) => item.status !== "cancelled").length;
-    pageToken = page.nextPageToken ?? undefined;
-  } while (pageToken !== undefined);
-  return total;
-}
-
-export interface EventsWindow {
-  time_min?: string;
-  time_max?: string;
-}
-
-const DAY_MS = 86_400_000;
-
-/** Bootstrap/catch-up events fetch. Window defaults to now-30d..now+90d,
- * overridable via `window.time_min` / `window.time_max`. The first page of a
- * pass opens with the calendar envelope: the window's count from one ids-only
- * pass, an enumeration always worth its cost. Cancelled events are skipped
- * and not counted; an event that fails to convert is left out and the page
- * says so, so the plan's skipped meets the total. `nextCursor` is null on
- * the last page.
- * @tested-by: tst_gts_gcal_004, tst_gts_gcal_005 */
+/** A full pass counts non-cancelled events while paging, then states the exact
+ * total at its terminal syncToken. Later polls pass only the retained token.
+ * @tested-by: tst_src_iso_google_005, tst_src_iso_google_006 */
 export async function fetchEventsPage(
   token: string,
   cursor: unknown,
-  window: EventsWindow,
   fetchFn: FetchLike,
 ): Promise<EventsFetchResult> {
-  const timeMin =
-    window.time_min ?? new Date(Date.now() - 30 * DAY_MS).toISOString();
-  const timeMax =
-    window.time_max ?? new Date(Date.now() + 90 * DAY_MS).toISOString();
-
   const c =
     cursor !== null && typeof cursor === "object"
       ? (cursor as Record<string, unknown>)
       : undefined;
   const pageToken = typeof c?.page_token === "string" ? c.page_token : undefined;
-
-  const calendar: Record<string, unknown> = { entity_type: "calendar" };
-  if (pageToken === undefined) calendar.events_total = await countEvents(token, timeMin, timeMax, fetchFn);
-  const page = await listEventsPage(token, timeMin, timeMax, pageToken, fetchFn);
+  const syncToken = typeof c?.sync_token === "string" ? c.sync_token : undefined;
+  const previousTotal = typeof c?.events_total === "number" ? c.events_total : 0;
+  const page = await listEventsPage(token, syncToken, pageToken, fetchFn);
 
   const envelopes: Envelope[] = [];
-  let skipped = 0;
+  let total = previousTotal;
   for (const ev of page.items ?? []) {
-    if (ev.status === "cancelled") continue;
-    let calEvent: CalendarEvent;
-    try {
-      calEvent = gcalEventToCalendarEvent(ev);
-    } catch (e) {
-      console.error(
-        `magnis-google: failed to convert calendar event ${ev.id}: ${e instanceof Error ? e.message : String(e)}`,
-      );
-      skipped += 1;
+    if (ev.status === "cancelled") {
+      envelopes.push({ surface: "meetings", payload: {}, remote_id: calendarRemoteId(ev.id), kind: "delete" });
       continue;
     }
+    const calEvent = gcalEventToCalendarEvent(ev);
+    if (syncToken === undefined) total += 1;
     envelopes.push({
       surface: "meetings",
       payload: calEvent as unknown as Record<string, unknown>,
@@ -299,13 +224,19 @@ export async function fetchEventsPage(
       kind: "snapshot",
     });
   }
-  if (skipped > 0) calendar.skipped = skipped;
-  if (Object.keys(calendar).length > 1) {
-    envelopes.unshift({ surface: "meetings", kind: "snapshot", remote_id: "calendar", payload: calendar });
+  // @tested-by: tst_src_iso_google_005, tst_src_iso_google_006
+  const hasMore = typeof page.nextPageToken === "string";
+  if (hasMore) {
+    const nextCursor: Record<string, unknown> = { page_token: page.nextPageToken };
+    if (syncToken !== undefined) nextCursor.sync_token = syncToken;
+    else nextCursor.events_total = total;
+    return { envelopes, nextCursor, hasMore };
   }
-
-  const nextCursor: Record<string, unknown> | null =
-    typeof page.nextPageToken === "string" ? { page_token: page.nextPageToken } : null;
-
-  return { envelopes, nextCursor };
+  if (page.nextSyncToken === null || page.nextSyncToken === undefined || page.nextSyncToken === "") {
+    throw new Error("Calendar terminal page missing nextSyncToken");
+  }
+  if (syncToken === undefined) {
+    envelopes.unshift({ surface: "meetings", kind: "snapshot", remote_id: "calendar", payload: { entity_type: "calendar", events_total: total } });
+  }
+  return { envelopes, nextCursor: { sync_token: page.nextSyncToken }, hasMore };
 }

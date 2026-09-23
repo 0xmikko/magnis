@@ -164,13 +164,13 @@ describe("people → contact conversion", () => {
 });
 
 describe("contacts fetch", () => {
-  /** @test-id: tst_gts_gp_005
-   * @scenario: scn_google_sync_001
-   * @covers: fetchContactsPage list envelope, skipped persons and cursor
+  /** @test-id: tst_src_iso_google_007
+   * @scenario: scn_google_pull_003
+   * @covers: plugins/sources/google/src/surfaces/contacts/contacts.ts::fetchContactsPage
    * @deterministic: yes
-   * @fixtures: two connection pages of a list the People API counts at 3, one identity-less person
+   * @fixtures: two connection pages, totalItems 3, one identity-less person, terminal sync token
    */
-  test("tst_gts_gp_005 the list states its count first on the first page and the persons a page leaves out; cursor null on the last page", async () => {
+  test("tst_src_iso_google_007 full People pass retains a token and states totalItems", async () => {
     const calls: string[] = [];
     const fetchFn: FetchLike = async (url) => {
       calls.push(url);
@@ -180,10 +180,11 @@ describe("contacts fetch", () => {
             { ...fullPerson(), resourceName: "people/c2" },
             { resourceName: "people/cEmpty" }, // skipped: no identity
           ],
-          totalPeople: 3,
+          totalItems: 3,
+          nextSyncToken: "people-sync-1",
         });
       }
-      return ok({ connections: [fullPerson()], nextPageToken: "p2", totalPeople: 3 });
+      return ok({ connections: [fullPerson()], nextPageToken: "p2", totalItems: 3 });
     };
 
     const p1 = await fetchContactsPage("tok", undefined, fetchFn);
@@ -195,6 +196,7 @@ describe("contacts fetch", () => {
     expect(env0.surface).toBe("contacts");
     expect(env0.kind).toBe("snapshot");
     expect(p1.nextCursor).toEqual({ page_token: "p2" });
+    expect(p1.hasMore).toBe(true);
     expect("discovered" in p1).toBe(false);
 
     const call0 = calls[0];
@@ -204,15 +206,52 @@ describe("contacts fetch", () => {
     expect(url.searchParams.get("personFields")).toBe(
       "names,emailAddresses,phoneNumbers,organizations,photos,urls",
     );
-    expect(url.searchParams.get("pageSize")).toBe("100");
+    expect(url.searchParams.get("pageSize")).toBe("1000");
+    expect(url.searchParams.get("requestSyncToken")).toBe("true");
 
     const p2 = await fetchContactsPage("tok", p1.nextCursor, fetchFn);
     // A later page states no count again, but names the persons it left out
     // (no identity) so the plan's skipped meets the total.
     expect(p2.envelopes.map((e) => e.remote_id)).toEqual(["list", `gpeople:${stableContactId("people/c2")}`]);
     expect(p2.envelopes[0]?.payload).toEqual({ entity_type: "list", skipped: 1 });
-    expect(p2.nextCursor).toBeNull(); // last page
+    expect(p2.nextCursor).toEqual({ sync_token: "people-sync-1" });
+    expect(p2.hasMore).toBe(false);
     expect("discovered" in p2).toBe(false);
+    await expect(fetchContactsPage("tok", undefined, async () => ok({ connections: [] })))
+      .rejects.toThrow("nextSyncToken");
+  });
+
+  /**
+   * @test-id: tst_src_iso_google_008
+   * @scenario: scn_google_pull_003
+   * @covers: plugins/sources/google/src/surfaces/contacts/contacts.ts::fetchContactsPage
+   * @deterministic: yes
+   * @fixtures: token poll with provider deletion and identity-less update, then expired token
+   */
+  test("tst_src_iso_google_008 People delta deletes anchored replicas and expires the token", async () => {
+    let requested = "";
+    const result = await fetchContactsPage("tok", { sync_token: "people-sync-1" }, async (url) => {
+      requested = url;
+      return ok({
+        connections: [
+          { resourceName: "people/deleted", metadata: { deleted: true } },
+          { resourceName: "people/identity-lost" },
+          fullPerson(),
+        ],
+        nextSyncToken: "people-sync-2",
+      });
+    });
+    expect(new URL(requested).searchParams.get("syncToken")).toBe("people-sync-1");
+    expect(new URL(requested).searchParams.has("requestSyncToken")).toBe(false);
+    expect(result.envelopes.map((e) => [e.kind, e.remote_id])).toEqual([
+      ["delete", `gpeople:${stableContactId("people/deleted")}`],
+      ["delete", `gpeople:${stableContactId("people/identity-lost")}`],
+      ["snapshot", `gpeople:${stableContactId("people/c12345")}`],
+    ]);
+    expect(result.nextCursor).toEqual({ sync_token: "people-sync-2" });
+    expect(result.hasMore).toBe(false);
+    await expect(fetchContactsPage("tok", { sync_token: "expired" }, async () => status(400, FAILED_PRECONDITION_BODY)))
+      .rejects.toThrow("syncToken expired");
   });
 });
 

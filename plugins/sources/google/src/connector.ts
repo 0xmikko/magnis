@@ -11,7 +11,7 @@ import type {
   FetchResult,
 } from "@magnis/connector-sdk";
 import { credsFromMeta, refreshAccessToken } from "./auth";
-import { fetchEventsPage, type EventsWindow } from "./surfaces/meetings/calendar";
+import { fetchEventsPage } from "./surfaces/meetings/calendar";
 import { fetchContactsPage } from "./surfaces/contacts/contacts";
 import { fixtureExecuteResult, fixtureFetchResult, fixturePath } from "./fixture";
 import {
@@ -21,7 +21,6 @@ import {
   parseMailDraft,
   sendMessage,
 } from "./surfaces/email/gmail";
-import { rawStr } from "./helpers";
 import type { FetchLike } from "./http";
 import { exchange, revoke } from "./oauth";
 import { SURFACES } from "./schema";
@@ -60,23 +59,12 @@ export function buildConnectorConfig(
         return { envelopes: r.envelopes, nextCursor: r.nextCursor, hasMore: r.hasMore };
       }
       case "meetings": {
-        // Calendar is window-based: Bootstrap and CatchUp page the same time
-        // window. The Rust twin passes the full action payload down and reads
-        // optional `time_min`/`time_max` off it (calendar.rs:125-135), falling
-        // back to now-30d..now+90d when absent OR not a string — mirrored here
-        // via the SDK's verbatim `raw` args.
-        const window: EventsWindow = {
-          time_min: rawStr(args.raw, "time_min"),
-          time_max: rawStr(args.raw, "time_max"),
-        };
-        const r = await fetchEventsPage(token, cursor, window, fetchFn);
-        return { envelopes: r.envelopes, nextCursor: r.nextCursor, hasMore: r.nextCursor !== null };
+        const r = await fetchEventsPage(token, cursor, fetchFn);
+        return { envelopes: r.envelopes, nextCursor: r.nextCursor, hasMore: r.hasMore };
       }
       case "contacts": {
-        // People API has no delta token — every page is a snapshot;
-        // direction is ignored (Bootstrap and CatchUp page identically).
         const r = await fetchContactsPage(token, cursor, fetchFn);
-        return { envelopes: r.envelopes, nextCursor: r.nextCursor, hasMore: r.nextCursor !== null };
+        return { envelopes: r.envelopes, nextCursor: r.nextCursor, hasMore: r.hasMore };
       }
       default:
         throw new Error(`unknown surface '${surface}'`);
