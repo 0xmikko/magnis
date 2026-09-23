@@ -20,6 +20,7 @@ const env = (remote_id: string, payload: Record<string, unknown>) => ({
 async function written(): Promise<GraphBatchInput["entities"]> {
   const batches: GraphBatchInput[] = [];
   const graph = mockGraph({
+    find_by_anchors: (anchors) => Promise.resolve(anchors.map(() => null)),
     apply_batch: (frag: GraphBatchInput) => {
       batches.push(frag);
       return Promise.resolve({ ids: {}, created: 0, updated: 0, links_added: 0, dropped_keys: [] });
@@ -31,6 +32,7 @@ async function written(): Promise<GraphBatchInput["entities"]> {
     graph, ctx: { extension_id: "linkedin" }, rpc: { execute: vi.fn() },
   }).module;
   await mod.ingest({
+    generation: "initial:r:1",
     envelopes: [
       env("linkedin:profile:ACoAAB123", {
         entity_type: "profile", platform: "linkedin", urn: "ACoAAB123", handle: "jack",

@@ -15,7 +15,7 @@ export function ProjectCreateRenderer({
     onAllowlistToggle,
   } = payload;
   const args = tc.args as Record<string, unknown>;
-  const isUpdate = tc.name === "projects.update" ||
+  const isUpdate = tc.toolBinding?.operation === "update" || tc.name === "projects.update" ||
     tc.name === "projects_update" ||
     tc.name === "project.update" ||
     tc.name === "project_update";

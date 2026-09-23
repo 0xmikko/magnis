@@ -1,60 +1,23 @@
-/** The allowlist target this module canonicalises.
- *
- * Moved here from the host (`frontend/src/agent/__tests__/moduleAllowlistTargets.test.ts`),
- * which asserted all four modules at once by importing their UIs through a
- * submodule checkout. The rule is per-module and changes when the module
- * changes: create and update are each action-wide grants, and they are not
- * the same grant.
- *
- * The host keeps what is the host's — that `AgentContributionRegistry` asks
- * every contribution in turn and takes the first answer.
- *
+/**
+ * @test-id: tst_fe_allowlist_target_004
  * @scenario: scn_agent_allowlist_002
+ * @covers: plugins/modules/projects/ui/index.tsx
  * @deterministic: yes
+ * @fixtures: validated local and foreign bindings
  */
 import { describe, expect, it } from "vitest";
-
 import { ProjectsModule } from "../index";
 
-interface AllowlistTargetLike {
-  readonly action: string;
-  readonly targetType: string;
-  readonly targetId: string;
-  readonly targetLabel: string;
-}
-
-function target(name: string): AllowlistTargetLike | null {
-  const contribution = ProjectsModule.agent as
-    | {
-        extractAllowlistTarget?: (call: {
-          name: string;
-          args: unknown;
-        }) => AllowlistTargetLike | null;
-      }
-    | undefined;
-  return contribution?.extractAllowlistTarget?.({ name, args: {} }) ?? null;
-}
-
-describe("projects allowlist target", () => {
-  it("tst_fe_allowlist_target_004 canonicalizes project creates and updates as action-wide grants", () => {
-    /** @test-id: tst_fe_allowlist_target_004
-     *  @covers: plugins/modules/projects/ui/index.tsx */
-    for (const name of ["projects.create", "projects_create", "project.create", "project_create"]) {
-      expect(target(name), name).toEqual({
-        action: "projects.create",
-        targetType: "tool_action",
-        targetId: "projects.create",
-        targetLabel: "Create project",
-      });
+describe("projects allowlist identity", () => {
+  const extract = ProjectsModule.agent.extractAllowlistTarget;
+  if (!extract) throw new Error("allowlist extractor missing");
+  it("grants only supported validated pairs", () => {
+    for (const operation of ["create", "update"]) {
+      const action = `projects.project.${operation}`;
+      expect(extract({ name: operation, args: {}, toolBinding: { entity: "projects.project", operation } })).toEqual({ action, targetType: "tool_action", targetId: action, targetLabel: `${operation === "create" ? "Create" : operation === "merge" ? "Merge" : "Update"} project` });
+      expect(extract({ name: operation, args: {}, toolBinding: { entity: "other.entity", operation } })).toBeNull();
     }
-    for (const name of ["projects.update", "projects_update", "project.update", "project_update"]) {
-      expect(target(name), name).toEqual({
-        action: "projects.update",
-        targetType: "tool_action",
-        targetId: "projects.update",
-        targetLabel: "Update project",
-      });
-    }
-    expect(target("projects.list")).toBeNull();
+    expect(extract({ name: "projects.create", args: {} })).toBeNull();
+    expect(extract({ name: "get", args: {}, toolBinding: { entity: "projects.project", operation: "get" } })).toBeNull();
   });
 });

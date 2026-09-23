@@ -5,6 +5,7 @@
  * tsconfig must never see zod.
  */
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import { entity as graphEntity, mockGraph, mountModule } from "@magnis/testkit/module";
 
 import { NotesModule } from "./module/service.ts";
@@ -29,6 +30,26 @@ async function writtenProperties(): Promise<Record<string, unknown>[]> {
 }
 
 describe("notes declares what it writes", () => {
+  /**
+   * @test-id: tst_module_notes_forms_001
+   * @scenario: scn_tools_notes_create
+   * @covers: notes create declaration and BODY_ONE_OF
+   * @deterministic: yes
+   * @fixtures: actual harvested tool schema
+   */
+  it("tst_module_notes_forms_001 accepts exactly one markdown body through the published schema", async () => {
+    const { tools } = await mountModule(NotesModule, { mode: "dispatch", ctx: { extension_id: "notes" } });
+    const definition = tools.find(({ name }) => name === "notes.note.create");
+    if (definition === undefined) throw new Error("note create definition missing");
+    const schema = z.fromJSONSchema(definition.inputSchema);
+    for (const params of [{ title: "Live", body: "Text" }, { title: "Live", content: "Text" }, { title: "Live", template: "meeting_prep" }]) {
+      expect(schema.safeParse(params).success).toBe(true);
+    }
+    for (const params of [{ title: "Live" }, { title: "Live", body: "A", content: "B" }, { title: "Live", body: 42 }, { title: "Live", template: "meeting_prep", body: "A" }]) {
+      expect(schema.safeParse(params).success, JSON.stringify(params)).toBe(false);
+    }
+  });
+
   it("every record the module writes today passes its own declaration", async () => {
     const records = await writtenProperties();
     expect(records.length).toBeGreaterThan(0);

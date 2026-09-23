@@ -6,26 +6,27 @@ import { join } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 
 import { collectSourceHostEvidence } from "../../../../../packages/testkit/host-driver";
-import {
-  decodeSourceCertificationReceipt,
-  sourceArtifactPackageHash,
-} from "../../../../../packages/testkit/receipt";
+import { sourceArtifactPackageHash } from "../../../../../packages/testkit/receipt";
 import { stageBundledSourcePackage } from "../../../../../scripts/build-catalog-index";
-import { discoverSourceReleaseManifests } from "../../../../../scripts/certify-sources";
+import {
+  discoverSourceReleaseManifests,
+  discoverStagedCatalog,
+  mintSourceCertificationReceipt,
+} from "../../../../../scripts/certify-sources";
 
 const repoRoot = join(import.meta.dir, "../../../../..");
 const temporaryDirectories: string[] = [];
 
-function stageExactXArtifact(): {
+async function stageExactXArtifact(): Promise<{
   readonly root: string;
   readonly fixtureRoot: string;
   readonly packageHash: string;
   readonly callableOperations: readonly string[];
-  readonly receipt: ReturnType<typeof decodeSourceCertificationReceipt>;
-} {
+  readonly receipt: Awaited<ReturnType<typeof mintSourceCertificationReceipt>>;
+}> {
   const temporaryRoot = mkdtempSync(join(tmpdir(), "magnis-x-cert-"));
   temporaryDirectories.push(temporaryRoot);
-  const artifactRoot = join(temporaryRoot, "artifact");
+  const artifactRoot = join(temporaryRoot, "packages", "source", "x");
   const release = discoverSourceReleaseManifests(join(repoRoot, "plugins", "sources"))
     .find((candidate) => candidate.id === "x");
   if (release === undefined || release.disposition !== "admissible") {
@@ -33,10 +34,10 @@ function stageExactXArtifact(): {
   }
   stageBundledSourcePackage(release, artifactRoot);
   const packageHash = sourceArtifactPackageHash(artifactRoot);
-  const receipt = decodeSourceCertificationReceipt(
-    readFileSync(join(repoRoot, "dist", "receipts", `${packageHash}.json`), "utf8"),
-    { packageHash },
-  );
+  const staged = discoverStagedCatalog(temporaryRoot).find((candidate) => candidate.id === "x");
+  if (staged === undefined) throw new Error("staged X artifact is missing");
+  // Certify these exact bytes: another Bun version may produce a different bundle.
+  const receipt = await mintSourceCertificationReceipt(staged);
   return {
     root: artifactRoot,
     fixtureRoot: temporaryRoot,
@@ -82,7 +83,7 @@ describe("X exact-artifact certification", () => {
    * Data: one tracked profile, one post and numeric cursor 41.
    */
   test("tst_x_cert_001 exact v1 artifact proves Add/Repair identity and tracked-handle progress", async () => {
-    const artifact = stageExactXArtifact();
+    const artifact = await stageExactXArtifact();
     const fixtureFile = join(artifact.fixtureRoot, "x-certification-fixture.json");
     writeFileSync(
       fixtureFile,
@@ -186,7 +187,7 @@ describe("X exact-artifact certification", () => {
    * Data: tracked handle jack is rate limited for exactly 37 seconds.
    */
   test("tst_x_cert_002 exact v1 artifact preserves typed rate-limit recovery data", async () => {
-    const artifact = stageExactXArtifact();
+    const artifact = await stageExactXArtifact();
     const fixtureFile = join(artifact.fixtureRoot, "x-rate-limit-fixture.json");
     writeFileSync(
       fixtureFile,
@@ -237,7 +238,7 @@ describe("X exact-artifact certification", () => {
    * Data: one absent file and one invalid JSON document.
    */
   test("tst_x_cert_003 selected missing or malformed fixtures fail closed", async () => {
-    const artifact = stageExactXArtifact();
+    const artifact = await stageExactXArtifact();
     const malformedFixture = join(artifact.fixtureRoot, "x-malformed-fixture.json");
     writeFileSync(malformedFixture, "{\"users\":");
 

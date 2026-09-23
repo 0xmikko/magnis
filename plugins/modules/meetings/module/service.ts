@@ -65,7 +65,7 @@ export class MeetingsModule {
   }
 
   // ── meetings.list ─────────────────────────────────────────────
-  @tool("list", {
+  @rpc("list", {
     description: "List meetings with pagination and optional search.",
     params: {
       type: "object",
@@ -122,7 +122,9 @@ export class MeetingsModule {
   }
 
   // ── meetings.get ──────────────────────────────────────────────
+  @rpc("get")
   @tool("get", {
+    entity: "meetings.calendar_event",
     description: "Get a full meeting detail view by entity id.",
     params: {
       type: "object",
@@ -193,7 +195,7 @@ export class MeetingsModule {
   // ── meetings.search (agent search — native quirk: meetings.EVENT) ─
   // Native controller routes meetings.search to shared::search_entities over the
   // "meetings.event" schema (NOT calendar_event). Preserved verbatim.
-  @tool("search", {
+  @rpc("search", {
     description: "Search events by title.",
     params: {
       type: "object",
@@ -244,7 +246,9 @@ export class MeetingsModule {
   // agent-side "created" link (ToolDefinition.with_link_kind) is not expressible
   // through the @writeTool decorator and is dropped — consistent with the
   // contacts plugin precedent.
+  @rpc("create")
   @writeTool("create", {
+    entity: "meetings.calendar_event",
     description:
       "Create a new meeting (calendar event) with title, start/end times, and optional attendees.",
     params: {

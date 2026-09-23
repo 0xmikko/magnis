@@ -69,11 +69,16 @@ export interface ModuleRegistry {
     list(): readonly ModuleDefinition[];
     get(moduleId: string): ModuleDefinition | undefined;
     register(definition: ModuleDefinition): void;
+    replaceExtension(definition: ModuleDefinition): Promise<void>;
+    removeExtension(moduleId: string): Promise<void>;
+    revision(): number;
+    subscribe(listener: () => void): () => void;
 }
 export interface ModuleStoreRegistry {
     register<TStore extends StoreApi<unknown>>(moduleId: string, store: TStore): void;
     get<TStore extends StoreApi<unknown>>(moduleId: string): TStore | undefined;
     has(moduleId: string): boolean;
+    remove(moduleId: string, expected?: StoreApi<unknown>): void;
 }
 export type ModuleStoreFactory<TState> = (runtime: AppRuntime) => StoreApi<TState>;
 export declare function registerModuleStore<TState>(runtime: AppRuntime, moduleId: string, create: ModuleStoreFactory<TState>): StoreApi<TState>;

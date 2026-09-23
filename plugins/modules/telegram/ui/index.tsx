@@ -1,5 +1,6 @@
+import { toolNamesEquivalent } from "@magnis/host/agent";
 import type { ContextMenuEntry } from "@magnis/host/ui";
-import type { ModuleAgentContribution } from "@magnis/host/runtime";
+import type { AgentHistoryBlock, ModuleAgentContribution } from "@magnis/host/runtime";
 import { TelegramIcon } from "./TelegramIcon";
 import { defineModule } from "@magnis/host/base";
 import { TelegramToolCallRenderer } from "./TelegramToolCallRenderer";
@@ -104,7 +105,7 @@ function mapTelegramChatToListItem(raw: Record<string, unknown>): ListItem {
     schema_id: "telegram.chat",
     preview: c.last_message ?? null,
     timestamp: time,
-    avatar_url: c.avatar_url ?? null,
+    avatarUrl: c.avatar_url ?? null,
     is_pinned: c.is_pinned === true,
     unread_count: undefined, // Backend doesn't provide unread count in list yet
     metadata: {
@@ -118,51 +119,7 @@ function mapTelegramChatToListItem(raw: Record<string, unknown>): ListItem {
 }
 
 export const telegramAgentContribution: Omit<ModuleAgentContribution, "entityRenderers"> = {
-  systemPrompt:
-    "You are a helpful personal assistant integrated into a relational agent system. " +
-    "You help users manage their contacts, tasks, emails, and communications. " +
-    "Be concise and proactive.\n\n" +
-    "ABSOLUTE RULES (violating these is a critical failure):\n" +
-    "1. NEVER list options, choices, or alternatives as numbered/bold text. ALWAYS use the ask_user tool instead.\n" +
-    "2. When asked to compose a reply or suggest message variants, use ask_user with each variant as a select_one option. " +
-    "Put the short label (2-5 words) as the option label. Put the FULL message text as the option id. " +
-    "After the user picks one, send it via telegram.messages.send.\n" +
-    "3. On your FIRST turn, you MUST call episodes.set_title.\n" +
-    "4. ask_user MUST be the very last tool call — call set_title BEFORE it, never after.\n" +
-    "5. After calling ask_user, produce NO text output — stop completely.\n\n" +
-    "LANGUAGE RULES (CRITICAL — follow strictly):\n" +
-    "1. YOUR responses to the user: Always in the user's language. User writes Russian → you reply Russian.\n" +
-    "2. OUTGOING MESSAGES (telegram.messages.send text): Always in the RECIPIENT's language. " +
-    "Before composing, check chat history via telegram.messages.list to detect what language the recipient uses. " +
-    "The 'text' argument you pass to telegram.messages.send MUST match the recipient's language.\n" +
-    "If no chat history is available, default to the user's language.\n\n" +
-    "CRITICAL: You receive a CURRENT UI CONTEXT block with every request. " +
-    "This tells you exactly what the user is looking at right now. " +
-    "When the user says 'this chat', 'read the messages', 'this person', etc., " +
-    "ALWAYS use the IDs from the context block — do NOT search or guess.\n\n" +
-    "Tool usage rules:\n" +
-    "- If context includes a chat_id, use telegram.messages.list with that exact chat_id.\n" +
-    "- If context includes an entity ID, use contacts.get with that exact ID.\n" +
-    "- Only use contacts.list or telegram.chats.list when the user asks about something NOT in their current context.\n" +
-    "- When asked to send a message, use the send tool directly without asking for confirmation — the system has a built-in approval UI.\n" +
-    "- To message MANY contacts at once (outreach/follow-ups), use telegram.batch_send with ALL recipients in ONE call so it is ONE approval to review — do NOT fan out N telegram.messages.send calls, and do NOT set one trigger per contact, unless the user explicitly asks for per-contact handling.\n\n" +
-    "IMPORTANT — Pending approval responses:\n" +
-    "When telegram.messages.send returns 'pending_approval: true', " +
-    "this means the message is queued for user approval, NOT an error. " +
-    "Say you have drafted the message and it is ready for review.\n\n" +
-    "EPISODE TITLE (MANDATORY):\n" +
-    "On your FIRST response, you MUST call episodes.set_title with the episode_id from context. " +
-    "Call it BEFORE ask_user if both are needed in the same turn. " +
-    "Title should be in the user's language and describe the topic.\n\n" +
-    "ASKING QUESTIONS (MANDATORY):\n" +
-    "NEVER ask questions or present choices as plain text. " +
-    "When you need user input — clarification, choosing between alternatives, " +
-    "confirming an approach, or suggesting options — you MUST use the ask_user tool. " +
-    "ask_user MUST be the very last tool call in a turn — nothing after it. " +
-    "After calling ask_user, STOP immediately and output nothing else.\n" +
-    "When the user responds with '[User selected from ask_user options]', " +
-    "this is their answer to your ask_user question. Proceed immediately with the selected option " +
-    "(e.g. send the message with the chosen tone). NEVER re-ask or re-present the options.",
+  systemPrompt: "Read the conversation before composing. Use the recipient's language. Use create(\"telegram.message\", {messages:[...]}) for multiple recipients in ONE approval; do not fan out individual calls. Single messages and replies use the same create operation. A pending approval is a draft awaiting review.",
   historyRenderers: [
     {
       id: "telegram-send",
@@ -176,13 +133,15 @@ export const telegramAgentContribution: Omit<ModuleAgentContribution, "entityRen
     },
   ],
   extractAllowlistTarget: (tc) => {
-    if (tc.name !== "send_telegram_message" && tc.name !== "telegram_messages_send" && tc.name !== "telegram.messages.send") return null;
+    const bound = tc.toolBinding;
+    if (bound !== undefined && (bound.entity !== "telegram.message" || bound.operation !== "create")) return null;
+    if (bound === undefined && tc.name !== "send_telegram_message" && !toolNamesEquivalent(tc.name, "telegram.messages.send") && !toolNamesEquivalent(tc.name, "telegram.messages.reply")) return null;
     const args = tc.args as Record<string, unknown>;
     const chatId =
       typeof args.chat_id === "string" || typeof args.chat_id === "number" ? String(args.chat_id) : null;
     if (!chatId) return null;
     return {
-      action: "send_telegram_message",
+      action: bound === undefined ? "send_telegram_message" : "telegram.message.create",
       targetType: "telegram_chat",
       targetId: chatId,
       targetLabel: args.chat_name as string | undefined,
@@ -205,7 +164,7 @@ export const telegramAgentContribution: Omit<ModuleAgentContribution, "entityRen
   },
 };
 
-export const TelegramModule = defineModule({
+const telegramModule = defineModule({
   id: "telegram",
   title: "Telegram",
   icon: <TelegramIcon size={26} />,
@@ -282,24 +241,7 @@ export const TelegramModule = defineModule({
       hasMore: telegramChatHasMore,
     },
   },
-  toolCallRenderers: [
-    {
-      // Both write tools that put one message into one chat. `messages.reply`
-      // was added to the module without being registered here, so every reply
-      // approval fell through to the generic card. See the coverage gate in
-      // scripts/toolcall-renderer-coverage.test.ts.
-      actions: ["messages.send", "messages.reply"],
-      Render: TelegramToolCallRenderer as never,
-    },
-    {
-      actions: ["batch_send"],
-      Render: TelegramBatchSendRenderer as never,
-    },
-    {
-      actions: ["set_trigger"],
-      Render: TelegramSetTriggerRenderer as never,
-    },
-  ],
+  toolCallRenderers: [{ entity: "telegram.message", actions: ["create"], Render: TelegramToolCallRenderer as never }],
   extraSetup: (runtime) => {
     const unsub2 = setupEventInvalidation(
       runtime.transport,
@@ -310,3 +252,22 @@ export const TelegramModule = defineModule({
     return (): void => { unsub2(); };
   },
 });
+
+export const TelegramModule = {
+  ...telegramModule,
+  agent: {
+    ...telegramModule.agent,
+    historyRenderers: [
+      ...(telegramModule.agent?.historyRenderers ?? []),
+      { id: "telegram-send-history", moduleId: "telegram", priority: 10,
+        match: (block: AgentHistoryBlock): boolean => block.toolBinding === undefined && block.toolName !== undefined && ["telegram.messages.send", "telegram.messages.reply", "send_telegram_message"].some((name) => toolNamesEquivalent(block.toolName ?? "", name)),
+        Render: TelegramToolCallRenderer as never },
+      { id: "telegram-batch-history", moduleId: "telegram", priority: 10,
+        match: (block: AgentHistoryBlock): boolean => block.toolBinding === undefined && block.toolName !== undefined && ["telegram.batch_send"].some((name) => toolNamesEquivalent(block.toolName ?? "", name)),
+        Render: TelegramBatchSendRenderer as never },
+      { id: "telegram-trigger-history", moduleId: "telegram", priority: 10,
+        match: (block: AgentHistoryBlock): boolean => block.toolBinding === undefined && block.toolName !== undefined && ["telegram.set_trigger"].some((name) => toolNamesEquivalent(block.toolName ?? "", name)),
+        Render: TelegramSetTriggerRenderer as never },
+    ],
+  },
+};

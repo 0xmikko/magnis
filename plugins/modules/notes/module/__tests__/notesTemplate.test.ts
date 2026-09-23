@@ -42,7 +42,7 @@ describe("tst_module_notes_template_001 — note templates", () => {
     const graph = templateGraph();
     const module = mountModule(NotesModule, { graph }).module;
 
-    const result = await module.template_apply({ template, title: "Demo" });
+    const result = await module.create({ template, title: "Demo" });
 
     expect(result.body).toContain(marker);
     expect(graph.spies.update_properties).toHaveBeenCalledWith({
@@ -84,14 +84,14 @@ describe("tst_module_notes_template_001 — note templates", () => {
     ).rejects.toThrow("missing required param: title");
   });
 
-  it("advertises template.apply as an approval-required write tool", async () => {
+  it("advertises a single create with template and content forms", async () => {
     const { tools } = await mountModule(NotesModule, {
       mode: "dispatch",
       ctx: { extension_id: "notes" },
     });
-    const template = tools.find((tool) => tool.name === "notes.template.apply");
+    const template = tools.find((tool) => tool.binding?.entity === "notes.note" && tool.binding.operation === "create");
 
     expect(template).toMatchObject({ requires_approval: true });
-    expect(template?.inputSchema).toMatchObject({ required: ["template", "title"] });
+    expect(template?.inputSchema).toMatchObject({ oneOf: expect.arrayContaining([expect.objectContaining({ required: ["template", "title"] })]) });
   });
 });

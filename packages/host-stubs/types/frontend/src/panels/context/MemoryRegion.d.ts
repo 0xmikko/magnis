@@ -4,7 +4,7 @@
  * Plan: docs/plans/episode-agent-parity.md S9; layout in
  * docs/backend/episodes.md ("[Target] The context panel").
  *
- * Scoped to the episode. Without `source_episode_id` the read would hand back
+ * Scoped to the episode. Without `sourceEpisodeId` the read would hand back
  * the user's whole memory store, which is a different thing wearing the same
  * label — "what this chat produced" is the question the region answers.
  *
@@ -14,12 +14,6 @@
  */
 import { type JSX } from "react";
 import type { AppRuntime } from "../../runtime/contracts/runtime";
-export interface EpisodeMemory {
-    readonly id: string;
-    readonly memory_type: string;
-    readonly title: string;
-    readonly confidence: number;
-}
 export declare function MemoryRegion({ runtime, episodeId, }: {
     readonly runtime: AppRuntime;
     readonly episodeId: string | null;

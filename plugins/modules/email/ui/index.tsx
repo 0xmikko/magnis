@@ -1,3 +1,5 @@
+import type { AgentHistoryBlock } from "@magnis/host/runtime";
+import { toolNamesEquivalent } from "@magnis/host/agent";
 import { Icon } from "@magnis/host/ui";
 import { defineModule } from "@magnis/host/base";
 
@@ -42,13 +44,13 @@ function mapEmailListItem(raw: Record<string, unknown>): ListItem {
     schema_id: (raw.schema_id as string | undefined) ?? "",
     preview: subject ? decodeHtmlEntities(subject) : (preview ? decodeHtmlEntities(preview) : null),
     timestamp: sentAt ?? null,
-    avatar_url: null,
+    avatarUrl: null,
     is_pinned: (raw.is_pinned as boolean | undefined) ?? undefined,
     is_archived: (raw.is_archived as boolean | undefined) ?? undefined,
   };
 }
 
-export const EmailsModule = defineModule({
+const emailModule = defineModule({
   id: "email",
   title: "Emails",
   icon: <Icon name="mail" size={26} />,
@@ -69,28 +71,16 @@ export const EmailsModule = defineModule({
   DetailPanel: EmailDetailPanel,
   detailType: "custom",
   EntityCard: EmailCard,
-  toolCallRenderers: [
-    {
-      actions: ["send", "reply"],
-      Render: EmailToolCallRenderer as never,
-    },
-    {
-      actions: ["batch_send"],
-      Render: EmailBatchSendRenderer as never,
-    },
-    {
-      actions: ["set_trigger"],
-      Render: TriggerToolCallRenderer as never,
-    },
-  ],
+  toolCallRenderers: [{ entity: "email.message", actions: ["create"], Render: EmailToolCallRenderer as never }],
   extractAllowlistTarget: (tc) => {
-    if (!isEmailTool(tc.name)) return null;
-    // Batch tools: allowlist handled server-side
-    if (tc.name.includes("batch")) return null;
+    const bound = tc.toolBinding;
+    if (bound !== undefined && (bound.entity !== "email.message" || bound.operation !== "create")) return null;
+    if (bound === undefined && !isEmailTool(tc.name)) return null;
     const args = tc.args as Record<string, unknown>;
+    if (Array.isArray(args.messages)) return null;
     const to = typeof args.to === "string" ? args.to : null;
     if (!to) return null;
-    return { action: tc.name, targetType: "email_address", targetId: to, targetLabel: to };
+    return { action: bound === undefined ? tc.name : "email.message.create", targetType: "email_address", targetId: to, targetLabel: to };
   },
   extraSetup: (runtime) => {
     const unsub = setupEventInvalidation(
@@ -106,3 +96,22 @@ export const EmailsModule = defineModule({
     "address": { hidden: true },
   },
 });
+
+export const EmailsModule = {
+  ...emailModule,
+  agent: {
+    ...emailModule.agent,
+    historyRenderers: [
+      ...(emailModule.agent?.historyRenderers ?? []),
+      { id: "email-send-history", moduleId: "email", priority: 10,
+        match: (block: AgentHistoryBlock): boolean => block.toolBinding === undefined && block.toolName !== undefined && ["email.send", "email.reply", "emails.send", "emails.reply"].some((name) => toolNamesEquivalent(block.toolName ?? "", name)),
+        Render: EmailToolCallRenderer as never },
+      { id: "email-batch-history", moduleId: "email", priority: 10,
+        match: (block: AgentHistoryBlock): boolean => block.toolBinding === undefined && block.toolName !== undefined && ["email.batch_send", "emails.batch_send"].some((name) => toolNamesEquivalent(block.toolName ?? "", name)),
+        Render: EmailBatchSendRenderer as never },
+      { id: "email-trigger-history", moduleId: "email", priority: 10,
+        match: (block: AgentHistoryBlock): boolean => block.toolBinding === undefined && block.toolName !== undefined && ["email.set_trigger", "emails.set_trigger"].some((name) => toolNamesEquivalent(block.toolName ?? "", name)),
+        Render: TriggerToolCallRenderer as never },
+    ],
+  },
+};

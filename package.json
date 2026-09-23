@@ -24,7 +24,14 @@
     "test:scripts": "bun test scripts/",
     "test:desktop-runtime": "bun test apps/desktop/build/",
     "build:plugins": "bun scripts/build-plugins.ts",
-    "test:ui": "vitest run --config vitest.ui.config.ts"
+    "test:ui": "vitest run --config vitest.ui.config.ts",
+    "agent:test:modules": "vitest run",
+    "agent:test:ui": "bun run test:ui",
+    "agent:build": "bun run build:plugins",
+    "agent:typecheck": "bun run typecheck",
+    "agent:test:scripts": "bun test",
+    "agent:build:catalog": "bun scripts/build-catalog-index.ts",
+    "agent:test:connectors": "bun run test:connectors"
   },
   "agentStack": {
     "ci": "external",

@@ -9,7 +9,6 @@ export interface AnalyticsVersions {
 }
 export interface RuntimeAnalyticsConfig {
     readonly mode: AnalyticsMode;
-    readonly runtimeSurface: string;
     readonly deploymentId: string;
     readonly versions: AnalyticsVersions;
     readonly internalEventSchemaVersion?: number;
@@ -37,7 +36,6 @@ export interface AnalyticsFlowContext {
 }
 export interface AnalyticsClient {
     readonly mode: AnalyticsMode;
-    readonly runtimeSurface: string;
     readonly deploymentId: string;
     readonly analyticsFlowId: string;
     readonly clientInstanceId: string;

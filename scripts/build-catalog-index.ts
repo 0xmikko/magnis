@@ -224,14 +224,10 @@ interface CapabilityDecl {
 /** What a module manifest says about its place in the graph.
  *
  * The rule is the backend's, not a second one invented here
- * (`services/extensions/deps.ts`): a HARD dependency is a `permissions.call`
- * (rpc) or `permissions.create` (cross-owner write), because those are what
- * leave an unmet requirement when the owner is missing. `permissions.read`
- * is SOFT — it never blocks enabling — but it still says "that module's
- * records should exist first", so it counts for ORDER and not for the
- * closure. Keeping the two apart is the whole reason this is derived rather
- * than transcribed: the frontend's hand-written table merged them, and so
- * pulled in packages nothing actually required. */
+ * (`services/extensions/deps.ts`): required schemas (authored or foreign
+ * link endpoints) and cross-owner creates are HARD. RPC and read permissions
+ * are SOFT ordering preferences: optional operation forms do not require
+ * installing every module they may call. */
 interface ModuleFacts {
   system: boolean;
   hard: string[];
@@ -246,6 +242,8 @@ function ownerNs(reference: string): string {
 
 interface ManifestFacts {
   tier?: string;
+  requires_schemas?: string[];
+  links?: { from?: string; to?: string }[];
   permissions?: Record<string, unknown>;
 }
 
@@ -257,10 +255,12 @@ function moduleFacts(id: string, raw: ManifestFacts): ModuleFacts {
   };
   const owners = (refs: string[]): string[] =>
     [...new Set(refs.map(ownerNs))].filter((owner) => owner !== id).sort();
+  const requiredSchemas = [...(raw.requires_schemas ?? []), ...(raw.links ?? []).flatMap((link) =>
+    [link.from, link.to].filter((endpoint): endpoint is string => typeof endpoint === "string" && endpoint.includes(".")))];
   return {
     system: raw.tier === "system",
-    hard: owners([...list("call"), ...list("create")]),
-    soft: owners(list("read")),
+    hard: owners([...requiredSchemas, ...list("create")]),
+    soft: owners([...list("call"), ...list("read")]),
   };
 }
 

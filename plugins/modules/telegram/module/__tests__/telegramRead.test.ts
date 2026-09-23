@@ -280,6 +280,7 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
       properties: { chat_id: 42, title: "Investor chat" },
     });
     const graph = mockGraph({
+      find_by_anchor: () => Promise.resolve(CHAT_ID),
       get_entity: () => Promise.resolve(chat),
       list_entities_by_property_field: () => Promise.resolve({
         items: [entity(ACCOUNT_ID, "Operator", { schema_id: TELEGRAM_ACCOUNT, properties: { is_self: true } })],
@@ -302,6 +303,8 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
       chat_id: "42",
       account_id: "account-1",
     });
+    await expect(module.chatsGet({ chat_id: 42 })).resolves.toMatchObject({ entity_id: CHAT_ID, chat_id: "42", account_id: "account-1" });
+    expect(graph.spies.find_by_anchor).toHaveBeenCalledWith("tg:chat:42");
   });
 
   it("returns exact message detail and rejects missing or foreign schemas", async () => {

@@ -7,26 +7,25 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import { collectSourceHostEvidence } from "../../../../../packages/testkit/host-driver";
 import {
-  decodeSourceCertificationReceipt,
   sourceArtifactPackageHash,
 } from "../../../../../packages/testkit/receipt";
 import { stageBundledSourcePackage } from "../../../../../scripts/build-catalog-index";
-import { discoverSourceReleaseManifests } from "../../../../../scripts/certify-sources";
+import { discoverSourceReleaseManifests, discoverStagedCatalog, mintSourceCertificationReceipt } from "../../../../../scripts/certify-sources";
 
 const repoRoot = join(import.meta.dir, "../../../../..");
 const temporaryDirectories: string[] = [];
 const linkedInEffectsScenarioId = ["tst", "li", "005"].join("_");
 
-function stageExactAnysiteArtifact(): {
+async function stageExactAnysiteArtifact(): Promise<{
   readonly root: string;
   readonly fixtureRoot: string;
   readonly packageHash: string;
   readonly callableOperations: readonly string[];
-  readonly receipt: ReturnType<typeof decodeSourceCertificationReceipt>;
-} {
+  readonly receipt: Awaited<ReturnType<typeof mintSourceCertificationReceipt>>;
+}> {
   const temporaryRoot = mkdtempSync(join(tmpdir(), "magnis-anysite-cert-"));
   temporaryDirectories.push(temporaryRoot);
-  const artifactRoot = join(temporaryRoot, "artifact");
+  const artifactRoot = join(temporaryRoot, "packages", "source", "anysite");
   const release = discoverSourceReleaseManifests(join(repoRoot, "plugins", "sources"))
     .find((candidate) => candidate.id === "anysite");
   if (release === undefined || release.disposition !== "admissible") {
@@ -34,10 +33,9 @@ function stageExactAnysiteArtifact(): {
   }
   stageBundledSourcePackage(release, artifactRoot);
   const packageHash = sourceArtifactPackageHash(artifactRoot);
-  const receipt = decodeSourceCertificationReceipt(
-    readFileSync(join(repoRoot, "dist", "receipts", `${packageHash}.json`), "utf8"),
-    { packageHash },
-  );
+  const staged = discoverStagedCatalog(temporaryRoot).find((candidate) => candidate.id === "anysite");
+  if (staged === undefined) throw new Error("staged Anysite artifact is missing");
+  const receipt = await mintSourceCertificationReceipt(staged);
   return {
     root: artifactRoot,
     fixtureRoot: temporaryRoot,
@@ -83,7 +81,7 @@ describe("Anysite exact-artifact certification", () => {
    * Data: one tracked LinkedIn profile, two posts and numeric cursor 41.
    */
   test("tst_anysite_cert_001 exact v1 artifact proves shared-key Add/Repair and numeric progress", async () => {
-    const artifact = stageExactAnysiteArtifact();
+    const artifact = await stageExactAnysiteArtifact();
     const fixtureFile = join(artifact.fixtureRoot, "anysite-certification-fixture.json");
     writeFileSync(
       fixtureFile,
@@ -381,7 +379,7 @@ describe("Anysite exact-artifact certification", () => {
    * Data: valid shared key, empty tracked-handle scope and numeric cursor 87.
    */
   test("tst_anysite_empty_001 empty tracked scope advances its numeric cursor with zero provider calls", async () => {
-    const artifact = stageExactAnysiteArtifact();
+    const artifact = await stageExactAnysiteArtifact();
     const absentFixture = join(artifact.fixtureRoot, "must-not-be-read.json");
     const evidence = await collectSourceHostEvidence(
       artifact.root,

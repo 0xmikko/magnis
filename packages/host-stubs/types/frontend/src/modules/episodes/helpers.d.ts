@@ -3,7 +3,10 @@
  * and context panel building.
  */
 import type { IconName } from "../../components/ui/Icon";
-import type { AgentModuleData, LinkedEntitySummary } from "./types";
+import type { EpisodeListRow } from "@magnis/client-core";
+import type { LinkedEntitySummary } from "@magnis/sdk";
+import type { EpisodeSubtreeItem } from "@magnis/sdk/core/episode";
+import type { AgentModuleData } from "./types";
 import type { AvatarColor } from "../shared/types";
 import type { ContextPanelProps } from "../../panels";
 export interface TimelineItem {
@@ -39,22 +42,28 @@ export declare function isNeedsReplyStatus(status: string | undefined): boolean;
 export declare function filterChatTimeline(items: readonly TimelineItem[], filter: ChatListFilter): readonly TimelineItem[];
 /** One dropdown/badge item for the global command-bar bell. */
 export interface NeedsReplyEpisode {
+    readonly rootEpisodeId: string;
+    readonly rootTitle: string;
     readonly id: string;
     readonly title: string;
     readonly activityAt: string;
 }
 interface NeedsReplySource {
+    readonly rootEpisodeId: string;
+    readonly rootTitle: string;
     readonly id: string;
     readonly title: string;
     readonly status?: string;
-    readonly is_archived?: boolean;
-    readonly created_at: string;
-    readonly updated_at: string;
+    readonly isArchived?: boolean;
+    readonly updatedAt: string;
     readonly date?: string;
-    readonly last_message_at?: string;
+    readonly lastMessageAt?: string;
 }
 export declare function selectNeedsReplyEpisodes(episodes: readonly NeedsReplySource[]): readonly NeedsReplyEpisode[];
 export declare function buildEpisodesTimeline(data: AgentModuleData): readonly TimelineItem[];
+/** Frontend-only visual projection over the renderer-neutral list. */
+export declare function buildSharedEpisodesTimeline(episodes: readonly EpisodeListRow[]): readonly TimelineItem[];
 export declare function getTimelineItemById(timeline: readonly TimelineItem[], id: string): TimelineItem | undefined;
+export declare function buildEpisodeTreeContextEntities(items: readonly EpisodeSubtreeItem[], parentEpisodeId: string | null, parentTitle: string | null, rootEpisodeId: string | null): ContextPanelProps["connectedEntities"];
 export declare function buildContextPanelProps(item: TimelineItem, linkedEntities?: readonly LinkedEntitySummary[]): Omit<ContextPanelProps, "runtime" | "onEntityClick">;
 export {};

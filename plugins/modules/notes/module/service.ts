@@ -1,3 +1,4 @@
+import { rpc } from "@magnis/plugin-sdk";
 // Notes plugin — backend module (V8). Decorated class; graph-only port of the
 // native `backend/src/modules/notes` service (no on-disk `.md` mirror, no sync
 // ingest). Ownership: single-entity reads + every mutation enforce it via the
@@ -50,7 +51,7 @@ export class NotesModule {
     });
   }
 
-  @tool("list", {
+  @rpc("list", {
     description: "List notes with pagination and optional search by title.",
     params: {
       type: "object",
@@ -102,7 +103,9 @@ export class NotesModule {
     return { items, total: win.total, limit, offset };
   }
 
+  @rpc("get")
   @tool("get", {
+    entity: "notes.note",
     description: "Get a full note detail view by entity id.",
     params: {
       type: "object",
@@ -165,9 +168,12 @@ export class NotesModule {
     };
   }
 
+  @rpc("create")
   @writeTool("create", {
-    description: "Create a new note with title and markdown body.",
-    params: {
+    entity: "notes.note",
+    description: "Create a note from markdown or a named template.",
+    // @tested-by: tst_module_notes_forms_001
+    params: { oneOf: [...BODY_ONE_OF.map(({ required }) => ({
       type: "object",
       properties: {
         title: { type: "string", description: "Note title" },
@@ -182,12 +188,24 @@ export class NotesModule {
           description: "Client-generated UUID for optimistic / idempotent create",
         },
       },
-      required: ["title"],
-      oneOf: BODY_ONE_OF,
+      required: ["title", ...required],
       additionalProperties: false,
-    },
+    })), {
+      type: "object",
+      properties: {
+        template: { type: "string", description: "Template name" },
+        title: { type: "string", description: "Note title" },
+        variables: { type: "object", description: "Optional variables for template interpolation" },
+      },
+      required: ["template", "title"],
+      additionalProperties: false,
+    }] },
   })
-  async create(params: CreateParams): Promise<NoteSnapshot> {
+  async create(params: CreateParams | TemplateApplyParams): Promise<NoteSnapshot> {
+    if ("template" in params) {
+      if ("body" in params || "content" in params) throw new Error("Supply content or a template, not both");
+      return this.template_apply(params);
+    }
     if (params.client_id !== undefined && !isValidUuid(params.client_id)) {
       throw new Error("client_id must be a valid UUID");
     }
@@ -247,7 +265,9 @@ export class NotesModule {
     return { id: entity.id, schema_id: NOTE, title: params.title, body, updated_at: now };
   }
 
+  @rpc("update")
   @writeTool("update", {
+    entity: "notes.note",
     description:
       "Update an existing note's title and/or body. Both are optional — only provided fields are updated.",
     params: {
@@ -316,7 +336,9 @@ export class NotesModule {
     return { id: params.id, schema_id: NOTE, title: newTitle, body: newBody, updated_at: now };
   }
 
+  @rpc("delete")
   @writeTool("delete", {
+    entity: "notes.note",
     description: "Delete a note by entity id.",
     params: {
       type: "object",
@@ -334,20 +356,7 @@ export class NotesModule {
     return { deleted: true };
   }
 
-  @writeTool("template.apply", {
-    description:
-      "Create a new note from a template. Templates: outreach_tracker, comparison_table, meeting_prep, follow_up_plan.",
-    params: {
-      type: "object",
-      properties: {
-        template: { type: "string", description: "Template name" },
-        title: { type: "string", description: "Note title" },
-        variables: { type: "object", description: "Optional variables for template interpolation" },
-      },
-      required: ["template", "title"],
-      additionalProperties: false,
-    },
-  })
+  @rpc("template.apply")
   async template_apply(params: TemplateApplyParams): Promise<NoteSnapshot> {
     // Native parity (controller.rs:188-191): required params are validated with
     // explicit messages before rendering.

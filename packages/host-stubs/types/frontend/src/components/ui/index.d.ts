@@ -14,7 +14,7 @@ export { PanelShell, PanelHeader, IconRoundBadge, IconActionButton } from "./Pan
 export type { PanelShellProps, PanelHeaderProps, IconRoundBadgeProps, IconActionButtonProps, } from "./PanelPrimitives";
 export { Avatar } from "./Avatar";
 export type { AvatarProps } from "./Avatar";
-export { BrandMark, resolveBrand } from "./BrandMark";
+export { BrandMark } from "./BrandMark";
 export type { BrandMarkProps, BrandKey } from "./BrandMark";
 export { Icon, isIconName } from "./Icon";
 export type { IconProps, IconName } from "./Icon";

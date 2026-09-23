@@ -6,11 +6,44 @@
 // written one by one with nothing undone when a later step failed.
 
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import { entity, mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { TriggersModule } from "../service.ts";
 import { TRIGGER, TRIGGER_CONFIG } from "../../schema.ts";
 
 const TRIGGER_ID = "22222222-2222-4222-8222-222222222222";
+
+/**
+ * @test-id: tst_module_triggers_forms_003
+ * @scenario: scn_tools_trigger_forms
+ * @covers: plugins/modules/triggers/module/service.ts
+ * @deterministic: yes
+ * @fixtures: actual harvested create schema, explicit watches and raw email/chat inputs
+ */
+it("tst_module_triggers_forms_003 compiles portable mutually exclusive create forms", async () => {
+  const { tools } = await mountModule(TriggersModule, { mode: "dispatch", ctx: { extension_id: "triggers" } });
+  const definition = tools.find(({ name }) => name === "triggers.trigger.create");
+  if (definition === undefined) throw new Error("trigger create definition missing");
+  const schema = z.fromJSONSchema(definition.inputSchema);
+  const prompts = { gate_prompt: "reply", action_prompt: "notify" };
+  for (const form of [
+    { name: "Watch", watch_entity_ids: [TRIGGER_ID] },
+    { name: "Clock", schedule: { cron: "0 9 * * *" } },
+    { from_address: "morgan@example.test" },
+    { from_addresses: ["morgan@example.test"] },
+    { from_address: "ada@example.test", from_addresses: ["morgan@example.test"] },
+    { chat_id: 42 },
+  ]) expect(schema.safeParse({ ...prompts, ...form }).success).toBe(true);
+  for (const form of [
+    {},
+    { name: "Mixed", from_address: "morgan@example.test" },
+    { chat_id: 42, from_addresses: ["morgan@example.test"] },
+    { from_addresses: ["morgan@example.test"], watch_entity_ids: [TRIGGER_ID] },
+    { chat_id: 42, watch_entity_ids: [TRIGGER_ID] },
+    { from_addresses: [] },
+  ]) expect(schema.safeParse({ ...prompts, ...form }).success).toBe(false);
+  expect(schema.safeParse({ chat_id: 42 }).success).toBe(false);
+});
 
 type G = MockGraph;
 
@@ -469,4 +502,44 @@ describe("tst_module_triggers_crud_001 — trigger definition commands", () => {
     await expect(deletable.delete({ id: TRIGGER_ID })).resolves.toEqual({ deleted: true });
     expect(existing.spies.delete_entity).toHaveBeenCalledWith(TRIGGER_ID);
   });
+});
+
+/** @test-id: tst_module_triggers_forms_001
+ * @scenario: scn_tools_trigger_forms
+ * @covers: plugins/modules/triggers/module/service.ts::TriggersModule.create
+ * @deterministic: yes — owner RPC and graph doubles
+ */
+it("tst_module_triggers_forms_001 validates raw email form before owner lookup and creates one trigger", async () => {
+  const graph = createGraph({ get_entity_full: () => Promise.resolve(null) });
+  const execute = vi.fn(async (method: string) => method === "email.ensure_addresses" ? { ids: ["address-1"] } : null);
+  const { module } = mountModule(TriggersModule, { graph, rpc: { execute } });
+  await expect(module.create({ from_addresses: ["Morgan@Example.test"], gate_prompt: "receipt", action_prompt: "notify", episode_id: "foreign" })).rejects.toThrow("episode");
+  expect(execute).not.toHaveBeenCalled();
+  await expect(module.create({ from_addresses: ["Morgan@Example.test"], chat_id: 12, gate_prompt: "receipt", action_prompt: "notify" })).rejects.toThrow("form");
+  expect(execute).not.toHaveBeenCalled();
+  const result = await module.create({ from_addresses: ["Morgan@Example.test"], gate_prompt: "receipt", action_prompt: "notify", debounce_seconds: 12 });
+  expect(execute).toHaveBeenCalledWith("email.ensure_addresses", { items: [{ address: "morgan@example.test" }] });
+  expect(graph.spies.create_entity).toHaveBeenCalledTimes(1);
+  expect(graph.spies.add_link).toHaveBeenCalledWith({ from_id: TRIGGER_ID, to_id: "address-1", kind: "watches" });
+  expect(graph.spies.update_properties).toHaveBeenCalledWith(expect.objectContaining({ properties: expect.objectContaining({ debounce_seconds: 12, schema_filter: "email" }) }));
+  expect(result.name).toBe("Email trigger: morgan@example.test");
+});
+
+/** @test-id: tst_module_triggers_forms_002
+ * @scenario: scn_tools_trigger_forms
+ * @covers: plugins/modules/triggers/module/service.ts::TriggersModule.create
+ * @deterministic: yes — owner chat lookup and exact graph write assertions
+ */
+it("tst_module_triggers_forms_002 resolves a raw Telegram chat once and preserves trigger settings", async () => {
+  const graph = createGraph();
+  const execute = vi.fn(async (method: string) => method === "telegram.chats.get" ? { entity_id: "chat-entity" } : null);
+  const module = mountModule(TriggersModule, { graph, rpc: { execute } }).module;
+  await expect(module.create({ chat_id: 42, gate_prompt: "reply", action_prompt: "notify", debounce_seconds: -1 })).rejects.toThrow("debounce");
+  expect(execute).not.toHaveBeenCalled();
+  const result = await module.create({ chat_id: 42, gate_prompt: "reply", action_prompt: "notify", debounce_seconds: 30 });
+  expect(result.name).toBe("Telegram trigger: chat 42");
+  expect(execute).toHaveBeenCalledWith("telegram.chats.get", { chat_id: 42 });
+  expect(graph.spies.add_link).toHaveBeenCalledWith({ from_id: TRIGGER_ID, to_id: "chat-entity", kind: "watches" });
+  expect(graph.spies.create_entity).toHaveBeenCalledTimes(1);
+  expect(graph.spies.update_properties).toHaveBeenCalledWith(expect.objectContaining({ properties: expect.objectContaining({ debounce_seconds: 30, schema_filter: "telegram" }) }));
 });

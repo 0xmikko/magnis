@@ -30,7 +30,7 @@ progress = { "telegram.chat" = "chats", "telegram.message" = "messages" }
 # Foreign asks beyond the implicit own namespace: writes to `telegram.` records,
 # own:own links, and reads of own schemas need no declaration.
 [permissions]
-read = [ "contacts.person" ]
+read = [ "contacts.person", "episodes.episode" ]
 # S4: the module writes REGISTRY relations now (authored_by / in_chat /
 # observed_in / observed_participant) between its own nodes; the colon
 # pairs retire with the migration.

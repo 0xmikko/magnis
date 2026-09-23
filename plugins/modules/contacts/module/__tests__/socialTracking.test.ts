@@ -1,371 +1,40 @@
-// Social-tracking opt-in on the HUB DICTIONARY (S3): set_social_tracking
-// writes `properties.tracking[]` via update_properties; the readers page the
-// entity rows and read the dictionary — no dictionary reads anywhere.
-// RED invariant: toggle tracked => handle in the opt-in state; untoggle =>
-// out. Per-platform merge: toggling X never clears LinkedIn. Handles are
-// stored bare (no leading @).
-
-import { describe, expect, it, vi } from "vitest";
-import type { RawEntity } from "@magnis/plugin-sdk";
-import { mockGraph, mountModule, type GraphOverrides, type MockGraph } from "@magnis/testkit/module";
+/**
+ * @layer: module
+ * @test-id: tst_module_contacts_tracking_read_001
+ * @scenario: scn_compact_removed_workflows_001
+ * @covers: plugins/modules/contacts/module/service.ts::get_social_tracking_by_handle,list_social_tracking,rename_if_placeholder
+ * @deterministic: yes
+ * @fixtures: stored tracked and untracked contacts
+ */
+import { describe, expect, it } from "vitest";
+import { entity, mockGraph, mountModule } from "@magnis/testkit/module";
 import { ContactsModule } from "../service.ts";
-import { CONTACT } from "../../schema.ts";
-import type { ContactCanonical } from "../../types.ts";
 
-const SCHEMA = CONTACT;
-type G = MockGraph;
-type Overrides = GraphOverrides;
-
-type Mutable = RawEntity & { properties?: Record<string, unknown> };
-
-function dictOverrides(persons: Mutable[]): {
-  get_entity: unknown;
-  update_properties: unknown;
-} {
-  return {
-    get_entity: async (id: string) => persons.find((p) => p.id === id) ?? null,
-    // The runtime op merges top-level keys into the dictionary.
-    update_properties: async (input: {
-      entity_id: string;
-      properties: Record<string, unknown>;
-    }) => {
-      const e = persons.find((p) => p.id === input.entity_id);
-      if (!e) throw new Error(`no entity ${input.entity_id}`);
-      e.properties = { ...(e.properties ?? {}), ...input.properties };
-    },
-  };
-}
-
-function makeGraph(entity: RawEntity | null): { graph: G } {
-  const persons: Mutable[] = entity ? [entity as Mutable] : [];
-  const overrides = dictOverrides(persons) as unknown as Overrides;
-  return { graph: mockGraph(overrides) };
-}
-
-// Graph with MANY persons + the paged list the by-handle lookup uses, plus
-// create/rename so the social-identity tools (track/ensure/rename) are
-// testable. Every read is off the entity rows' dictionaries.
-function makeMultiGraph(persons: RawEntity[]): { graph: G; renames: [string, string][] } {
-  const renames: [string, string][] = [];
-  let created = 0;
-  const overrides = {
-    ...dictOverrides(persons as Mutable[]),
-    create_entity: async (input: { schema_id: string; name: string; client_id?: string }) => {
-      const e = {
-        id: input.client_id ?? `created-${created++}`,
-        schema_id: input.schema_id,
-        name: input.name,
-        properties: {},
-      } as unknown as RawEntity;
-      persons.push(e);
-      return e;
-    },
-    update_entity_name: async (id: string, name: string) => {
-      renames.push([id, name]);
-      const e = persons.find((p) => p.id === id);
-      if (e) (e as { name: string }).name = name;
-    },
-    get_canonical: async () => ({}),
-    list_links_for_entities: async () => [],
-    list_entities: async ({ offset = 0, limit = 500 }: { offset?: number; limit?: number }) => ({
-      items: persons.slice(offset, offset + limit),
-      total: persons.length,
-    }),
-    // Stage First: the tracked-hub walk goes through the FILTERED window —
-    // the fixture applies the same `tracking exists` narrowing the host does.
-    list_entities_window: async ({ offset = 0, limit = 500 }: { offset?: number; limit?: number }) => {
-      const tracked = persons.filter((e) => (e.properties as Record<string, unknown> | undefined)?.tracking !== undefined);
-      return {
-        items: tracked.slice(offset, offset + limit).map((entity) => ({ entity, data: null })),
-        total: tracked.length,
-      };
-    },
-    // contacts.create still writes its profile record until the S3 card
-    // cutover — the social tools themselves never touch records.
-    attach_facet: async () => ({ id: "f-0" }),
-  } as unknown as Overrides;
-  return { graph: mockGraph(overrides), renames };
-}
-
-function makeModule(graph: G): ContactsModule {
-  return mountModule(ContactsModule, {
-    graph,
-    ctx: { extension_id: "contacts" },
-    // Deterministic uuid_v5 fake: stable per (namespace, name) → batch retries
-    // resolve to the same ids, mirroring the runtime op.
-    util: { uuid_v5: vi.fn(async (ns: string, name: string) => `v5-${ns}-${name}`) },
-  }).module;
-}
-
-const person = (id: string, name = "Acme"): RawEntity =>
-  ({ id, schema_id: SCHEMA, name }) as unknown as RawEntity;
-
-describe("contacts social tracking (tst_be_contacts_social_001)", () => {
-  it("toggle tracked → handle in opt-in state; untoggle → out", async () => {
-    const { graph } = makeGraph(person("p1"));
-    const mod = makeModule(graph);
-
-    // Track on X with a handle (stored bare, leading @ stripped).
-    const on = await mod.set_social_tracking({
-      id: "p1",
-      platform: "x",
-      tracked: true,
-      handle: "@Acme",
+describe("retained social ingestion reads", () => {
+  const tracked = entity("p1", "jack", { schema_id: "contacts.person", properties: {
+    tracking: [{ platform: "x", handle: "Jack", enabled: true }],
+  }});
+  const untracked = entity("p2", "Ann", { schema_id: "contacts.person", properties: {
+    tracking: [{ platform: "linkedin", handle: "ann", enabled: false }],
+  }});
+  it("reads existing tracking without exposing write workflows", async () => {
+    const graph = mockGraph({
+      get_entity: async () => tracked,
+      list_entities_window: async () => ({ items: [tracked, untracked].map(entity => ({ entity, data: null })), total: 2 }),
     });
-    expect(on.tracked_x).toBe(true);
-    expect(on.x_handle).toBe("Acme");
-    expect(await mod.get_social_tracking({ id: "p1" })).toMatchObject({
-      tracked_x: true,
-      x_handle: "Acme",
-    });
-
-    // Untoggle → tracked_x false; the handle stays on record but it's no longer
-    // tracked (the scheduler will exclude it).
-    const off = await mod.set_social_tracking({ id: "p1", platform: "x", tracked: false });
-    expect(off.tracked_x).toBe(false);
-    expect((await mod.get_social_tracking({ id: "p1" })).tracked_x).toBe(false);
+    const { module } = mountModule(ContactsModule, { graph });
+    for (const name of ["set_social_tracking", "track_social_profile", "batch_track_social"]) expect(name in module).toBe(false);
+    expect(await module.get_social_tracking_by_handle({ platform: "x", handle: "jack" })).toMatchObject({ contact_id: "p1", tracked: true });
+    expect(await module.get_social_tracking_by_handle({ platform: "linkedin", handle: "ann" })).toMatchObject({ contact_id: "p2", tracked: false });
+    expect(await module.get_social_tracking_by_handle({ platform: "x", handle: "missing" })).toBeNull();
+    expect(await module.list_social_tracking({ platform: "x" })).toMatchObject([{ contact_id: "p1", handle: "Jack" }]);
+    expect(await module.list_social_tracking({ platform: "linkedin" })).toEqual([]);
   });
-
-  it("per-platform merge: toggling X does not clear LinkedIn", async () => {
-    const { graph } = makeGraph(person("p2"));
-    const mod = makeModule(graph);
-
-    await mod.set_social_tracking({ id: "p2", platform: "linkedin", tracked: true, handle: "in/acme" });
-    const after = await mod.set_social_tracking({ id: "p2", platform: "x", tracked: true, handle: "acme" });
-    expect(after).toMatchObject({
-      tracked_linkedin: true,
-      linkedin_handle: "in/acme",
-      tracked_x: true,
-      x_handle: "acme",
-    });
-  });
-
-  it("unknown / wrong-schema contact rejects", async () => {
-    const { graph } = makeGraph(null);
-    const mod = makeModule(graph);
-    await expect(
-      mod.set_social_tracking({ id: "nope", platform: "x", tracked: true }),
-    ).rejects.toThrow(/not found/);
-  });
-
-  it("never-tracked contact reads as empty", async () => {
-    const { graph } = makeGraph(person("p3"));
-    const mod = makeModule(graph);
-    expect(await mod.get_social_tracking({ id: "p3" })).toEqual({});
-  });
-});
-
-// tst_be_contacts_social_002 — resolve the
-// owning contact + tracked state from a platform handle. Case-insensitive —
-// stored handles are user-typed while profile handles carry the API's
-// canonical casing. Latest record wins; null when no contact matches.
-describe("contacts get_social_tracking_by_handle (tst_be_contacts_social_002)", () => {
-  it("finds the contact by handle, case-insensitively, with tracked state", async () => {
-    const { graph } = makeMultiGraph([person("p1"), person("p2")]);
-    const mod = makeModule(graph);
-    await mod.set_social_tracking({ id: "p2", platform: "x", tracked: true, handle: "AcmeInc" });
-
-    const hit = await mod.get_social_tracking_by_handle({ platform: "x", handle: "acmeinc" });
-    expect(hit).toMatchObject({ contact_id: "p2", tracked: true, handle: "AcmeInc" });
-  });
-
-  it("platform mismatch → null; untracked-but-stored handle → tracked:false", async () => {
-    const { graph } = makeMultiGraph([person("p1")]);
-    const mod = makeModule(graph);
-    await mod.set_social_tracking({ id: "p1", platform: "x", tracked: true, handle: "acme" });
-
-    expect(
-      await mod.get_social_tracking_by_handle({ platform: "linkedin", handle: "acme" }),
-    ).toBeNull();
-
-    await mod.set_social_tracking({ id: "p1", platform: "x", tracked: false });
-    expect(
-      await mod.get_social_tracking_by_handle({ platform: "x", handle: "acme" }),
-    ).toMatchObject({ contact_id: "p1", tracked: false });
-  });
-
-  it("no matching contact → null", async () => {
-    const { graph } = makeMultiGraph([person("p1")]);
-    const mod = makeModule(graph);
-    expect(
-      await mod.get_social_tracking_by_handle({ platform: "x", handle: "ghost" }),
-    ).toBeNull();
-  });
-});
-
-// ── social-contact identity (tst_track_one / tst_rename_cas / ensure) ────
-
-describe("contacts.track_social_profile (tst_track_one)", () => {
-  it("(a) unknown handle from URL → contact created + tracked (created:true)", async () => {
-    const { graph } = makeMultiGraph([]);
-    const mod = makeModule(graph);
-    const r = await mod.track_social_profile({
-      platform: "linkedin",
-      url_or_handle: "https://www.linkedin.com/in/i20h/",
-    });
-    expect(r).toMatchObject({ handle: "i20h", created: true });
-    expect(
-      await mod.get_social_tracking_by_handle({ platform: "linkedin", handle: "i20h" }),
-    ).toMatchObject({ contact_id: r.contact_id, tracked: true });
-  });
-
-  it("(b) repeat call → same contact, created:false (idempotent)", async () => {
-    const persons: RawEntity[] = [];
-    const { graph } = makeMultiGraph(persons);
-    const mod = makeModule(graph);
-    const first = await mod.track_social_profile({ platform: "x", url_or_handle: "@jack" });
-    const again = await mod.track_social_profile({ platform: "x", url_or_handle: "jack" });
-    expect(again).toMatchObject({ contact_id: first.contact_id, created: false });
-  });
-
-  it("(c) existing untracked contact with the handle → flips tracked, no create", async () => {
-    const { graph } = makeMultiGraph([person("p1")]);
-    const mod = makeModule(graph);
-    await mod.set_social_tracking({ id: "p1", platform: "x", tracked: false, handle: "jack" });
-    const r = await mod.track_social_profile({ platform: "x", url_or_handle: "jack" });
-    expect(r).toMatchObject({ contact_id: "p1", created: false });
-    expect((await mod.get_social_tracking({ id: "p1" })).tracked_x).toBe(true);
-  });
-
-  it("invalid input → typed invalid_url error", async () => {
-    const { graph } = makeMultiGraph([]);
-    const mod = makeModule(graph);
-    await expect(
-      mod.track_social_profile({ platform: "x", url_or_handle: "https://x.com/home" }),
-    ).rejects.toThrow(/invalid_url/);
-  });
-});
-
-describe("contacts.batch_track_social (tst_batch)", () => {
-  const rows = [
-    { url_or_handle: "@jack" }, // existing tracked contact
-    { url_or_handle: "https://x.com/naval", name: "Naval" }, // new
-    { url_or_handle: "https://x.com/home" }, // reserved → invalid_url
-    { url_or_handle: "@zed" }, // excluded
-  ];
-
-  async function setup(): Promise<{ mod: ContactsModule; persons: RawEntity[] }> {
-    const persons: RawEntity[] = [person("p1", "Jack")];
-    const { graph } = makeMultiGraph(persons);
-    const mod = makeModule(graph);
-    await mod.set_social_tracking({ id: "p1", platform: "x", tracked: true, handle: "jack" });
-    return { mod, persons };
-  }
-
-  it("mixed rows → per-row statuses; invalid row never aborts others", async () => {
-    const { mod, persons } = await setup();
-    const r = await mod.batch_track_social({
-      platform: "x",
-      profiles: rows,
-      client_id: "b1",
-      excluded_indices: [3],
-    });
-    expect(r.results.map((x) => x.status)).toEqual([
-      "tracked",
-      "created",
-      "invalid_url",
-      "excluded",
-    ]);
-    expect(r.created).toBe(1);
-    expect(r.results[0]!.contact_id).toBe("p1");
-    // Only Naval was created.
-    expect(persons).toHaveLength(2);
-  });
-
-  it("retry with the same client_id → zero new contacts, identical ids", async () => {
-    const { mod, persons } = await setup();
-    const first = await mod.batch_track_social({
-      platform: "x",
-      profiles: rows,
-      client_id: "b1",
-      excluded_indices: [3],
-    });
-    const second = await mod.batch_track_social({
-      platform: "x",
-      profiles: rows,
-      client_id: "b1",
-      excluded_indices: [3],
-    });
-    expect(persons).toHaveLength(2);
-    expect(second.results[1]!.contact_id).toBe(first.results[1]!.contact_id);
-    expect(second.created).toBe(0);
-  });
-});
-
-describe("contacts.rename_if_placeholder (tst_rename_cas)", () => {
-  it("renames only when current name equals expected_name", async () => {
-    const { graph, renames } = makeMultiGraph([person("p1", "i20h")]);
-    const mod = makeModule(graph);
-    const r = await mod.rename_if_placeholder({
-      id: "p1",
-      expected_name: "i20h",
-      new_name: "Ismael Hishon-Rezaizadeh",
-    });
-    expect(r.renamed).toBe(true);
-    expect(renames).toEqual([["p1", "Ismael Hishon-Rezaizadeh"]]);
-  });
-
-  it("does NOT rename a user-named contact (CAS miss → no-op)", async () => {
-    const { graph, renames } = makeMultiGraph([person("p1", "Mike")]);
-    const mod = makeModule(graph);
-    const r = await mod.rename_if_placeholder({
-      id: "p1",
-      expected_name: "i20h",
-      new_name: "Ismael",
-    });
-    expect(r.renamed).toBe(false);
-    expect(renames).toEqual([]);
-  });
-});
-
-// tst_be_contacts_social_003 (LIVE BUG 2026-07-02, kept as a regression
-// scenario): toggles must always merge onto the CURRENT state. The dictionary
-// makes the stale-base failure structurally impossible — update_properties
-// replaces the tracking key wholesale — but the toggle sequences stay.
-describe("social tracking toggle sequences (tst_be_contacts_social_003)", () => {
-  it("track x → track li → untrack x → untrack li ⇒ fully untracked, handles kept", async () => {
-    const { graph } = makeGraph(person("p1"));
-    const mod = makeModule(graph);
-    await mod.set_social_tracking({ id: "p1", platform: "x", tracked: true, handle: "jack" });
-    await mod.set_social_tracking({ id: "p1", platform: "linkedin", tracked: true, handle: "anndoe" });
-    await mod.set_social_tracking({ id: "p1", platform: "x", tracked: false });
-    await mod.set_social_tracking({ id: "p1", platform: "linkedin", tracked: false });
-
-    expect(await mod.get_social_tracking({ id: "p1" })).toMatchObject({
-      tracked_x: false,
-      x_handle: "jack",
-      tracked_linkedin: false,
-      linkedin_handle: "anndoe",
-    });
-  });
-
-  // List every tracked handle for a platform in one
-  // call — feeds the linkedin "Syncing…" pending rows (tracked-but-not-yet-
-  // synced placeholders in profiles.list).
-  it("list_social_tracking returns tracked handles for the platform only", async () => {
-    const { graph } = makeMultiGraph([person("p1"), person("p2"), person("p3")]);
-    const mod = makeModule(graph);
-    await mod.set_social_tracking({ id: "p1", platform: "linkedin", tracked: true, handle: "sgershuni" });
-    await mod.set_social_tracking({ id: "p2", platform: "linkedin", tracked: false, handle: "olduntracked" });
-    await mod.set_social_tracking({ id: "p3", platform: "x", tracked: true, handle: "jack" });
-
-    const rows = await mod.list_social_tracking({ platform: "linkedin" });
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ contact_id: "p1", handle: "sgershuni" });
-    expect(typeof rows[0]!.name).toBe("string");
-
-    // Untracking removes the row (newest record wins).
-    await mod.set_social_tracking({ id: "p1", platform: "linkedin", tracked: false });
-    expect(await mod.list_social_tracking({ platform: "linkedin" })).toHaveLength(0);
-  });
-
-  it("by-handle lookup reads the NEWEST facet, not the oldest", async () => {
-    const { graph } = makeMultiGraph([person("p1")]);
-    const mod = makeModule(graph);
-    await mod.set_social_tracking({ id: "p1", platform: "x", tracked: true, handle: "jack" });
-    await mod.set_social_tracking({ id: "p1", platform: "x", tracked: false });
-    expect(
-      await mod.get_social_tracking_by_handle({ platform: "x", handle: "jack" }),
-    ).toMatchObject({ contact_id: "p1", tracked: false });
+  it("renames only an unchanged placeholder during profile ingestion", async () => {
+    const graph = mockGraph({ get_entity: async () => tracked, update_entity_name: async () => undefined });
+    const { module } = mountModule(ContactsModule, { graph });
+    expect(await module.rename_if_placeholder({ id: "p1", expected_name: "jack", new_name: "Jack Smith" })).toEqual({ renamed: true });
+    expect(await module.rename_if_placeholder({ id: "p1", expected_name: "other", new_name: "Wrong" })).toEqual({ renamed: false });
+    expect(graph.spies.update_entity_name).toHaveBeenCalledExactlyOnceWith("p1", "Jack Smith");
   });
 });

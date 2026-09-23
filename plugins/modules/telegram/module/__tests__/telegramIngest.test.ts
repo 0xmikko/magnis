@@ -53,6 +53,44 @@ function messageEnvelope(kind: "snapshot" | "live" = "snapshot"): SyncEnvelope {
 }
 
 describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
+  it.each(["2026-08-11T08:00:00Z", "2026-08-13T08:00:00Z"])("counts a new live message once across edits and replay, preserving newer previews (%s)", async (lastMessageDate) => {
+    let count = 196;
+    const anchors = new Set<string>();
+    const graph = mockGraph({
+      find_by_anchors: (requested) => Promise.resolve(requested.map((anchor) => anchor === "tg:chat:42" ? "chat-entity" : anchors.has(anchor) ? `id:${anchor}` : null)),
+      get_entities: () => Promise.resolve([entity("chat-entity", "Chat", {
+        schema_id: CHAT, properties: { chat_id: 42, type: "private", message_count: count, last_message_date: lastMessageDate },
+      })]),
+      apply_batch: (fragment) => {
+        for (const item of fragment.entities) if (item.anchor) anchors.add(item.anchor);
+        return Promise.resolve({
+          ids: Object.fromEntries(fragment.entities.map((item) => [item.key, `id:${item.key}`])),
+          created: fragment.entities.length, updated: 0, links_added: 0, dropped_keys: [],
+        });
+      },
+      web_register_batch: (links) => Promise.resolve(links.map(() => "web-id")),
+      update_properties_batch: (updates) => {
+        for (const { properties } of updates) if (typeof properties.message_count === "number") count = properties.message_count;
+        return Promise.resolve(undefined);
+      },
+    });
+    const module = mountModule(TelegramModule, { graph }).module;
+    const live = messageEnvelope("live");
+    await module.ingest({ envelopes: [live] });
+    expect(count).toBe(197);
+    const edited = { ...live, payload: { ...live.payload, text: "Edited message" } };
+    await module.ingest({ envelopes: [edited] });
+    expect(count).toBe(197);
+    await module.ingest({ envelopes: [edited] });
+    expect(count).toBe(197);
+    expect(graph.spies.update_properties_batch).toHaveBeenCalledWith([{
+      entity_id: "chat-entity", properties: lastMessageDate > "2026-08-12T08:00:00Z" ? { message_count: 197 } : {
+        message_count: 197, last_message_date: "2026-08-12T08:00:00Z",
+        last_message_preview: "Read https://example.test/demo", last_sender_name: "Alice",
+      },
+    }]);
+  });
+
   it("mints the provider-verified self account on connection ready", async () => {
     const graph = mockGraph({
       apply_batch: () =>

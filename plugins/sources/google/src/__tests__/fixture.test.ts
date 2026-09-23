@@ -9,11 +9,10 @@ import { handleMessage, type FetchResult } from "@magnis/connector-sdk";
 import { collectSourceHostEvidence } from "@magnis/testkit/host-driver";
 
 import {
-  decodeSourceCertificationReceipt,
   sourceArtifactPackageHash,
 } from "../../../../../packages/testkit/receipt";
 import { stageBundledSourcePackage } from "../../../../../scripts/build-catalog-index";
-import { discoverSourceReleaseManifests } from "../../../../../scripts/certify-sources";
+import { discoverSourceReleaseManifests, discoverStagedCatalog, mintSourceCertificationReceipt } from "../../../../../scripts/certify-sources";
 
 import { buildConnectorConfig } from "../connector";
 import { stableContactId } from "../surfaces/contacts/contacts";
@@ -153,7 +152,8 @@ describe("fixture mode end-to-end", () => {
     if (release === undefined || release.disposition !== "admissible") {
       throw new Error("google is not an admissible Source release");
     }
-    const stageRoot = mkdtempSync(join(tmpdir(), "gts-certified-artifact-"));
+    const temporaryRoot = mkdtempSync(join(tmpdir(), "gts-certified-artifact-"));
+    const stageRoot = join(temporaryRoot, "packages", "source", "google");
     try {
       stageBundledSourcePackage(release, stageRoot);
 
@@ -161,10 +161,9 @@ describe("fixture mode end-to-end", () => {
         .update(readFileSync(join(stageRoot, "dist", "main.js")))
         .digest("hex")}`;
       const packageHash = sourceArtifactPackageHash(stageRoot);
-      const receipt = decodeSourceCertificationReceipt(
-        readFileSync(join(repoRoot, "dist", "receipts", `${packageHash}.json`), "utf8"),
-        { packageHash },
-      );
+      const staged = discoverStagedCatalog(temporaryRoot).find((candidate) => candidate.id === "google");
+      if (staged === undefined) throw new Error("staged Google artifact is missing");
+      const receipt = await mintSourceCertificationReceipt(staged);
       expect(receipt.packageHash).toBe(packageHash);
       expect(receipt.runtime.implementationHash).toBe(implementationHash);
       expect(receipt.protocol).toBe("magnis.source/1");
@@ -202,7 +201,7 @@ describe("fixture mode end-to-end", () => {
         expect(result.nextCursor).toBeNull();
       }
     } finally {
-      rmSync(stageRoot, { recursive: true, force: true });
+      rmSync(temporaryRoot, { recursive: true, force: true });
     }
 
     // Fixture mode is certification evidence, so missing or malformed bytes

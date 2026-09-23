@@ -54,6 +54,7 @@ function liveMessage(chatId: number, messageId: number): SyncEnvelope {
 class Store {
   readonly chatsByAnchor = new Map<string, RawEntity>();
   readonly edgesByChat = new Map<string, LinkSummary>();
+  readonly messagesByAnchor = new Map<string, string>();
   readonly endedAt: [string, string][] = [];
   windows: string[] = [];
 
@@ -64,7 +65,7 @@ class Store {
   graph(): ReturnType<typeof mockGraph> {
     return mockGraph({
       find_by_anchor: (anchor) => Promise.resolve(anchor === SELF ? "self-id" : this.chatsByAnchor.get(anchor)?.id ?? null),
-      find_by_anchors: (anchors) => Promise.resolve(anchors.map((anchor) => this.chatsByAnchor.get(anchor)?.id ?? null)),
+      find_by_anchors: (anchors) => Promise.resolve(anchors.map((anchor) => this.chatsByAnchor.get(anchor)?.id ?? this.messagesByAnchor.get(anchor) ?? null)),
       get_entities: (ids) => Promise.resolve(ids.flatMap((id) => { const chat = this.chatOf(id); return chat === undefined ? [] : [chat]; })),
       list_linked: (spec) => {
         expect(spec).toMatchObject({ link_kind: "observed_in", direction: "in" });
@@ -77,6 +78,7 @@ class Store {
         for (const item of fragment.entities) {
           const id = item.key === "self" ? "self-id" : `id:${item.key}`;
           ids[item.key] = id;
+          if (item.schema_id === MESSAGE && item.anchor !== undefined) this.messagesByAnchor.set(item.anchor, id);
           if (item.schema_id === CHAT && item.anchor !== undefined) {
             const known = this.chatsByAnchor.get(item.anchor);
             this.chatsByAnchor.set(item.anchor, { ...entity(id, item.name ?? "", { schema_id: CHAT, anchor: item.anchor }), properties: { ...(known?.properties ?? {}), ...item.properties } });
@@ -150,6 +152,13 @@ describe("tst_module_telegram_plan_001 — the module states its plan from the p
       plan: { [CHAT]: { total: 0, skipped: 0 }, [MESSAGE]: { total: 1, skipped: 0 } }, excluded: [],
     });
     expect(store.edgesByChat.get("id:tg:chat:1")?.metadata).toMatchObject({ sync_pass: FIRST, sync_total: 1206 });
+    // The Source uses the same live identity for edits and retries; neither grows the plan.
+    const edited = liveMessage(1, 1206);
+    edited.payload.text = "Edited message";
+    for (const envelope of [edited, edited]) {
+      await expect(module.ingest({ generation: FIRST, envelopes: [envelope] })).resolves.toMatchObject({ plan: zero });
+      expect(store.edgesByChat.get("id:tg:chat:1")?.metadata).toMatchObject({ sync_total: 1206 });
+    }
     await expect(module.ingest({ generation: FIRST, envelopes: [liveMessage(3, 900000)] })).resolves.toMatchObject({ plan: zero, excluded: ["3"] });
 
     // A page outside a worker states nothing and stamps nothing.

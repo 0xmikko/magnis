@@ -505,3 +505,19 @@ describe("a source success without a provider id is not a send", () => {
     expect(spy(graph, "apply_batch")).not.toHaveBeenCalled();
   });
 });
+
+/** @test-id: tst_module_email_create_001
+ * @scenario: scn_tools_entity_registration
+ * @covers: plugins/modules/email/module/service.ts::EmailModule.create
+ * @deterministic: yes — local provider and graph doubles
+ */
+it("tst_module_email_create_001 one create operation sends or batches and rejects mixed forms before delivery", async () => {
+  const graph = makeGraph();
+  const module = makeModule(graph);
+  await module.create({ to: "morgan@example.test", subject: "September", body_text: "Confirm receipt." });
+  expect(spy(graph, "source_command")).toHaveBeenCalledTimes(1);
+  await module.create({ messages: [{ to: "morgan@example.test", subject: "September", body_text: "Confirm receipt." }] });
+  expect(spy(graph, "source_command")).toHaveBeenCalledTimes(2);
+  await expect(module.create({ to: "morgan@example.test", email_id: "original", subject: "September", body_text: "mixed" })).rejects.toThrow("form");
+  expect(spy(graph, "source_command")).toHaveBeenCalledTimes(2);
+});

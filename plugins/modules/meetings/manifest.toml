@@ -14,6 +14,7 @@ title = "Meetings"
 summary = "Schedule, track, and recap meetings across calendars."
 # Reverse-domain publisher identity.
 publisher = "ai.magnis"
+requires_schemas = [ "email.address" ]
 
 [[links]]
 kind = "mentions"

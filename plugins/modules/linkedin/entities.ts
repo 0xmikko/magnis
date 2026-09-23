@@ -33,6 +33,7 @@ export const profile = entity(
     bio: z.string().nullish(),
     verified: z.boolean().nullish(),
     follower_count: z.number().nullish(),
+    sync_pass: z.string().optional(),
   },
   { order: ["handle", "asc"], title: "display_name", body: "bio" },
 ) satisfies z.ZodType<ProfilePayload>;

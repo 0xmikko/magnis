@@ -37,6 +37,10 @@ export interface EntityContextMenuConfig<T> {
     readonly onDelete?: (data: T) => void;
     /** Called on archive action. If omitted, archive item is hidden. */
     readonly onArchive?: (data: T) => void;
+    /** Read archived state to choose Archive or Unarchive. */
+    readonly isArchived?: (data: T) => boolean;
+    /** Called on unarchive action. If omitted, unarchive item is hidden. */
+    readonly onUnarchive?: (data: T) => void;
     /** Called on rename action. If omitted, rename item is hidden. */
     readonly onRename?: (data: T) => void;
 }

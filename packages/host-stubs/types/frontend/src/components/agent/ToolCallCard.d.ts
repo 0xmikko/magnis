@@ -10,5 +10,6 @@ export interface ToolCallCardProps {
     readonly result?: unknown;
     readonly status: "pending" | "complete" | "error";
     readonly runtime?: AppRuntime;
+    readonly onFocus?: () => void;
 }
-export declare function ToolCallCard({ name, args, result, status, runtime, }: ToolCallCardProps): JSX.Element;
+export declare function ToolCallCard({ name, args, result, status, runtime, onFocus, }: ToolCallCardProps): JSX.Element;

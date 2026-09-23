@@ -20,6 +20,7 @@ const env = (remote_id: string, payload: Record<string, unknown>) => ({
 async function written(): Promise<GraphBatchInput["entities"]> {
   const batches: GraphBatchInput[] = [];
   const graph = mockGraph({
+    find_by_anchors: (anchors) => Promise.resolve(anchors.map(() => null)),
     apply_batch: (frag: GraphBatchInput) => {
       batches.push(frag);
       return Promise.resolve({ ids: {}, created: 0, updated: 0, links_added: 0, dropped_keys: [] });
@@ -31,11 +32,13 @@ async function written(): Promise<GraphBatchInput["entities"]> {
     graph, ctx: { extension_id: "x" }, rpc: { execute: vi.fn() },
   }).module;
   await mod.ingest({
+    generation: "initial:r:1",
     envelopes: [
       env("x:profile:jack", {
         entity_type: "profile", platform: "x", handle: "jack",
         display_name: "Jack", bio: "here", verified: true, follower_count: 100,
         url: "https://x.com/jack", avatar_url: "https://x.com/jack.jpg",
+        posts_total: 10, posts_skipped: 1190,
       }),
       env("x:post:1", {
         entity_type: "post", platform: "x", post_id: "1", author_handle: "jack",

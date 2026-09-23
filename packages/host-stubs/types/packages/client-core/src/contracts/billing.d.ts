@@ -1,5 +1,5 @@
 /**
- * Canonical per-call token breakdown — mirror of Rust `core::billing::TokenBreakdown`.
+ * Canonical per-call token breakdown for client usage displays.
  * Keys are authoritative for WS `usage.cumulative` payloads (INV-BILL-3).
  * Missing dimensions default to 0 (e.g. a `step_error` frame carries no
  * tokens); a missing top-level `cumulative` object is handled by the parser.

@@ -55,7 +55,14 @@ export function TriggerToolCallRenderer({
     payload;
   const args = tc.args as Record<string, unknown>;
   const result = toolResult?.result as Record<string, unknown> | undefined;
-  const isUpdate = tc.name === "triggers.update" || tc.name === "triggers_update";
+  const operation = tc.toolBinding?.operation ?? (tc.name === "triggers.update" || tc.name === "triggers_update" ? "update" : "create");
+  const labels: Record<string, { action: string; done: string }> = {
+    create: { action: "Create", done: "Created" }, update: { action: "Update", done: "Updated" },
+    delete: { action: "Delete", done: "Deleted" }, link: { action: "Link", done: "Linked" },
+    unlink: { action: "Unlink", done: "Unlinked" }, fire_now: { action: "Fire now", done: "Fired" },
+  };
+  const label = labels[operation];
+  if (label === undefined) throw new Error(`Unsupported trigger card operation '${operation}'`);
 
   const [expanded, setExpanded] = useState(false);
 
@@ -64,6 +71,10 @@ export function TriggerToolCallRenderer({
   const actionPrompt = (result?.action_prompt ?? args.action_prompt) as string | undefined;
   const watchIds = args.watch_entity_ids as readonly string[] | undefined;
   const watchedNames = result?.watched_entity_names as readonly string[] | undefined;
+  const rawAddresses = Array.isArray(args.from_addresses) ? args.from_addresses.filter((value): value is string => typeof value === "string") : [];
+  if (typeof args.from_address === "string") rawAddresses.push(args.from_address);
+  const rawTarget = rawAddresses.length > 0 ? rawAddresses.join(", ")
+    : typeof args.chat_id === "string" || typeof args.chat_id === "number" ? `Telegram chat ${String(args.chat_id)}` : null;
   const watchedEntities = useResolvedEntities(watchIds, runtime);
   // INV-UI-1 (plan Stage 5): a cron trigger being created must show its
   // schedule on the approval card. The result echoes the persisted spec;
@@ -85,9 +96,9 @@ export function TriggerToolCallRenderer({
       toolResult={toolResult}
       superseded={superseded}
       isAllowlisted={isAllowlisted}
-      primaryLabel={isUpdate ? "Update" : "Create"}
+      primaryLabel={label.action}
       primaryIcon="zap"
-      doneLabel={isUpdate ? "Updated" : "Created"}
+      doneLabel={label.done}
       onApprove={onApprove}
       onDeny={onDeny}
       onAllowlistToggle={onAllowlistToggle}
@@ -105,6 +116,7 @@ export function TriggerToolCallRenderer({
         </button>
       </div>
 
+      {rawTarget && <div className="mb-2 text-[12px]">Watches: {rawTarget}</div>}
       {/* Watched entities */}
       {watchedEntities.length > 0 ? (
         <div className="mb-2 space-y-1">

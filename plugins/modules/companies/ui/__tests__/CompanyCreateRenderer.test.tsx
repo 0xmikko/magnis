@@ -14,7 +14,8 @@ function makeUpdateProps(): AgentRendererProps<ToolCallRendererPayload> {
     payload: {
       toolCall: {
         id: "tc-company-update",
-        name: "companies_update",
+        name: "update",
+        toolBinding: { entity: "companies.company", operation: "update" },
         args: {
           id: "company-acme",
           summary: "Data platform and strategic partner",
@@ -65,13 +66,14 @@ describe("company tool call cards", () => {
 
     expect(
       agent.extractAllowlistTarget?.({
-        name: "companies_update",
+        name: "update",
+        toolBinding: { entity: "companies.company", operation: "update" },
         args: { id: "company-acme" },
       }),
     ).toEqual({
-      action: "companies.update",
+      action: "companies.company.update",
       targetType: "tool_action",
-      targetId: "companies.update",
+      targetId: "companies.company.update",
       targetLabel: "Update company",
     });
 

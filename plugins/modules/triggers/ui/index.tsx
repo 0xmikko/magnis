@@ -1,3 +1,5 @@
+import type { AgentHistoryBlock } from "@magnis/host/runtime";
+import { toolNamesEquivalent } from "@magnis/host/agent";
 import { Icon } from "@magnis/host/ui";
 import { defineModule } from "@magnis/host/base";
 import type { ListItem } from "@magnis/host/base";
@@ -28,7 +30,7 @@ export function mapTriggerListItem(raw: Record<string, unknown>): ListItem {
   };
 }
 
-export const TriggersModule = defineModule({
+const triggersModule = defineModule({
   id: "triggers",
   title: "Triggers",
   icon: <Icon name="zap" size={26} />,
@@ -50,27 +52,29 @@ export const TriggersModule = defineModule({
   DetailPanel: TriggerDetailPanel,
   EntityCard: TriggerCard,
   hasMore: (data) => typeof data.id === "string" && data.id.length > 0,
-  toolCallRenderers: [
-    {
-      actions: ["create", "update"],
-      Render: TriggerToolCallRenderer as never,
-    },
-  ],
+  toolCallRenderers: [{ entity: "triggers.trigger", actions: ["create", "update", "delete", "link", "unlink", "fire_now"], Render: TriggerToolCallRenderer as never }],
   extractAllowlistTarget: (toolCall) => {
-    const isUpdate =
-      toolCall.name === "triggers.update" ||
-      toolCall.name === "triggers_update";
-    const isCreate =
-      toolCall.name === "triggers.create" ||
-      toolCall.name === "triggers_create";
-    if (!isCreate && !isUpdate) return null;
-
-    const action = isUpdate ? "triggers.update" : "triggers.create";
-    return {
-      action,
-      targetType: "tool_action",
-      targetId: action,
-      targetLabel: isUpdate ? "Update trigger" : "Create trigger",
-    };
+    const bound = toolCall.toolBinding;
+    if (bound !== undefined && (bound.entity !== "triggers.trigger" || !["create", "update", "delete", "link", "unlink", "fire_now"].includes(bound.operation))) return null;
+    const isUpdate = bound === undefined ? toolNamesEquivalent(toolCall.name, "triggers.update") : bound.operation === "update";
+    const isCreate = bound === undefined ? toolNamesEquivalent(toolCall.name, "triggers.create") : bound.operation === "create";
+    if (bound === undefined && !isCreate && !isUpdate) return null;
+    const operation = bound?.operation ?? (isUpdate ? "update" : "create");
+    const action = bound === undefined ? `triggers.${operation}` : `triggers.trigger.${operation}`;
+    return { action, targetType: "tool_action", targetId: action,
+      targetLabel: `${operation.charAt(0).toUpperCase()}${operation.slice(1).replaceAll("_", " ")} trigger` };
   },
 });
+
+export const TriggersModule = {
+  ...triggersModule,
+  agent: {
+    ...triggersModule.agent,
+    historyRenderers: [
+      ...(triggersModule.agent?.historyRenderers ?? []),
+      { id: "triggers-write-history", moduleId: "triggers", priority: 10,
+        match: (block: AgentHistoryBlock): boolean => block.toolBinding === undefined && block.toolName !== undefined && ["triggers.create", "triggers.update"].some((name) => toolNamesEquivalent(block.toolName ?? "", name)),
+        Render: TriggerToolCallRenderer as never },
+    ],
+  },
+};

@@ -101,8 +101,8 @@ describe("tst_module_contacts_write_001 — contact commands", () => {
       excluded_indices: [2],
     };
 
-    const first = await module.batch_create(params);
-    const retry = await module.batch_create(params);
+    const first = await module.create(params);
+    const retry = await module.create(params);
 
     expect(first).toEqual({
       results: [
@@ -175,13 +175,37 @@ describe("tst_module_contacts_write_001 — contact commands", () => {
     const module = mountModule(ContactsModule, { graph }).module;
 
     await expect(
-      module.merge_preview({ survivor_id: CONTACT_ID, retired_id: "retired" }),
+      module.merge({ survivor_id: CONTACT_ID, retired_id: "retired", preview: true }),
     ).resolves.toBe(preview);
+    expect(graph.spies.merge_execute).not.toHaveBeenCalled();
+    expect(graph.spies.update_entity_name).not.toHaveBeenCalled();
     await expect(
-      module.merge({ survivor_id: CONTACT_ID, retired_id: "retired", reason: "duplicate" }),
+      module.merge({ survivor_id: CONTACT_ID, retired_id: "retired", preview: false, reason: "duplicate", overrides: [{ key: "first_name", value: "Ann" }] }),
     ).resolves.toBe(merged);
+    expect(graph.spies.merge_execute).toHaveBeenCalledExactlyOnceWith({ survivor_id: CONTACT_ID, retired_id: "retired", reason: "duplicate", overrides: [{ key: "first_name", value: "Ann" }] });
     expect(graph.spies.update_entity_name).toHaveBeenCalledWith(CONTACT_ID, "Ann Lee");
     expect(graph.spies.update_entity_idx).toHaveBeenCalledWith(CONTACT_ID, "ann lee");
+  });
+
+  it.each([
+    { preview: true, foreignId: CONTACT_ID },
+    { preview: false, foreignId: CONTACT_ID },
+    { preview: true, foreignId: "retired" },
+    { preview: false, foreignId: "retired" },
+  ])("rejects non-contact $foreignId before merge (preview=$preview)", async ({ preview, foreignId }) => {
+    const graph = mockGraph({
+      get_entity: (id: string) => Promise.resolve(id === foreignId
+        ? entity(id, "Company", { schema_id: "companies.company" })
+        : contact(id, "Contact")),
+      merge_preview: () => Promise.reject(new Error("Preview must not run")),
+      merge_execute: () => Promise.reject(new Error("Merge must not run")),
+    });
+    const module = mountModule(ContactsModule, { graph }).module;
+
+    await expect(module.merge({ survivor_id: CONTACT_ID, retired_id: "retired", preview }))
+      .rejects.toThrow(`contact not found: ${foreignId}`);
+    expect(graph.spies.merge_preview).not.toHaveBeenCalled();
+    expect(graph.spies.merge_execute).not.toHaveBeenCalled();
   });
 
   it("bounds host search, then sorts the returned ToolResult by name and id", async () => {

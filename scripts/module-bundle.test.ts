@@ -14,16 +14,11 @@ import { join } from "path";
 const REPO = join(import.meta.dir, "..");
 const DIST = join(REPO, "plugins_dist");
 
-interface ToolDef {
-  name: string;
-  description: string;
-  requires_approval: boolean;
-}
 // The shape is NOT re-declared here. A local copy is exactly how this gate
 // drifted from the SDK: it kept a 4-argument `init` after the contract grew a
 // required logger, so the bundle gate happily constructed modules with
 // `log: undefined` — the "run blind" state the contract forbids.
-type ModuleShape = Omit<PluginModuleShape, "toolDefinitions"> & { toolDefinitions: ToolDef[] };
+type ModuleShape = PluginModuleShape;
 
 let mod: ModuleShape;
 
@@ -52,15 +47,18 @@ test("tst_module_decorators_001: bundled module decorators register the plugin's
   await mod.init({}, ctx, {}, { execute: async () => undefined }, { log: async () => undefined });
 
   const names = mod.toolDefinitions.map((t) => t.name).sort();
-  expect(names).toContain("file.list");
-  expect(names).toContain("file.get");
-  expect(names).toContain("file.attach");
+  expect(names).not.toContain("file.list");
+  expect(names).toContain("file.object.get");
+  expect(names).toContain("file.object.create");
 
-  // file.attach is a @writeTool → requires_approval true (decorator carried the flag)
-  const attach = mod.toolDefinitions.find((t) => t.name === "file.attach");
+  // file.object.create is a @writeTool → requires_approval true (decorator carried the flag)
+  const attach = mod.toolDefinitions.find((t) => t.name === "file.object.create");
   expect(attach?.requires_approval).toBe(true);
-  // file.get is a read @tool → requires_approval false
-  const get = mod.toolDefinitions.find((t) => t.name === "file.get");
+  expect(attach?.binding).toEqual({ entity: "file.object", operation: "create" });
+  expect(typeof mod.rpcHandlers["file.attach"]).toBe("function");
+  expect(typeof mod.rpcHandlers["file.list"]).toBe("function");
+  // file.object.get is a read @tool → requires_approval false
+  const get = mod.toolDefinitions.find((t) => t.name === "file.object.get");
   expect(get?.requires_approval).toBe(false);
 });
 

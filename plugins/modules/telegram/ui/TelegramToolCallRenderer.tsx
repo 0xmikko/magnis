@@ -1,12 +1,16 @@
 import type { JSX } from "react";
+import { TelegramBatchSendRenderer } from "./TelegramBatchSendRenderer";
 import type { AgentRendererProps, ToolCallRendererPayload } from "@magnis/host/runtime";
 import { BaseToolCallCard } from "@magnis/host/base";
 
 export function TelegramToolCallRenderer({
   payload,
+  runtime,
+  agent,
 }: AgentRendererProps<ToolCallRendererPayload>): JSX.Element {
   const { toolCall: tc, toolResult, isAllowlisted, superseded, selectedChatName, onApprove, onDeny, onEdit, onAllowlistToggle } = payload;
   const args = tc.args as Record<string, unknown>;
+  if (Array.isArray(args.messages)) return <TelegramBatchSendRenderer payload={payload} runtime={runtime} agent={agent} />;
   const chatIdLabel =
     typeof args.chat_id === "string" || typeof args.chat_id === "number"
       ? `Chat ${String(args.chat_id)}`
