@@ -57,7 +57,7 @@ The first People API pass requests a sync token and uses a page size measured to
 
 The Contacts module deletes only the Google replica resolved by that anchor. A locally curated person hub survives removal of its Google replica. Successful Graph creates and deletes provide incremental plan deltas; updates do not inflate the count.
 
-Calendar and Contacts use the host's existing full-snapshot completion hook only after a completed bootstrap or token-expiry rescan. Their modules stamp admitted replicas with the pass generation and Source/account ownership, then remove only owned replicas left unstamped at completion; cancelled/deleted envelopes still remove immediately. A failed or interrupted pass never removes unseen replicas. Existing Google replicas without ownership cannot safely be assigned to an account; the hook leaves them untouched and reports them as a legacy reconciliation limitation rather than guessing. The manual stand starts from a clean Graph, so its convergence receipt covers account-owned records; legacy-data migration is not claimed by this Delivery.
+Calendar and Contacts use the host's existing full-snapshot completion hook only after a completed bootstrap or token-expiry rescan. Their modules stamp admitted replicas with the pass generation and Source/account ownership, then remove only owned replicas left unstamped at completion; cancelled/deleted envelopes still remove immediately. A failed or interrupted pass never removes unseen replicas. The owner confirmed there are no previously connected Google accounts or Google Graph replicas to migrate; every Google replica covered by this Delivery is created with the ownership stamp.
 
 ### OAuth and provider holds
 
@@ -98,7 +98,7 @@ interface ContactsCursor {
 }
 ```
 
-During pagination the cursor retains the committed `history_id` or `sync_token` and adds only the current `page_token`. A terminal response removes the page token, sets `hasMore=false`, and replaces the provider checkpoint with a required `nextSyncToken`; a missing terminal token fails before admission. Calendar and Contacts certification change from terminal-clear snapshots to retained forward checkpoints; no Source-specific field is added to the host command.
+During pagination the cursor retains the committed `history_id` or `sync_token` and adds only the current `page_token`. A terminal response removes the page token, sets `hasMore=false`, and replaces the provider checkpoint with a required `nextSyncToken`; a missing terminal token fails before admission. Calendar and Contacts certification change from terminal-clear snapshots to retained forward checkpoints. Because no Google account is bound to the old contract, new connections bind the new certification directly; no account migration or Source-specific host field is needed.
 
 ### Proposed file tree
 
@@ -205,6 +205,7 @@ Every new automated test has its canonical ID, scenario, covered function and de
 
 - No Gmail Push, Pub/Sub, IMAP IDLE, Calendar webhook, public relay, `listen_start`, new app protocol or app repository change.
 - No new scheduler, cursor database, generic retry abstraction, second performance runner or CI workflow.
+- No previously connected Google account or Google Graph data exists in the target deployment. If this owner-provided premise proves false before rollout, migration needs a separate owner decision; this plan does not silently rebind an old account.
 - No real provider credentials in source, tests, logs, commits or CI. Automated tests use injected HTTP responses and synthetic logs only.
 - The live stand is manual and opt-in. It stops and reports on a provider hold; it does not search for quota limits or repeatedly reconnect accounts.
 - Gmail continues to exclude Spam and Trash from ingestion and reports them as skipped. Attachments remain lazy downloads. Google Drive and Tasks are outside the three declared surfaces.
