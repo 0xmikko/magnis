@@ -14,7 +14,7 @@ Keep the Google Source on its existing 30-second Pull schedule and make that Pul
 The currency is provider requests, repeated data and measured wall time:
 
 - A first connection downloads email, meetings and contacts through the existing Source and module pipeline, with independent progress for each surface.
-- Gmail keeps its existing `historyId` catch-up. Calendar and Contacts finish their first complete read with the provider's `syncToken`; later polls retrieve only changes. An unchanged poll must not enumerate the full calendar or contact list again.
+- Gmail keeps its existing `historyId` catch-up. Calendar and Contacts finish their first complete read with the provider's `syncToken`; later polls retrieve only changes. An unchanged poll must not enumerate the full calendar or contact list again. After token expiry, a completed full pass removes owned replicas that the provider no longer lists.
 - The connector refreshes an OAuth access token once per credential and token lifetime, not once per sync page. Concurrent calls share the same in-flight refresh.
 - A Google quota response with an exact `Retry-After` becomes the existing typed rate-limit result. After one hydration worker observes it, no worker starts another request in that page; requests already sent cannot be recalled. The host remains the only owner of the durable hold and retry time.
 - Progress is honest: Gmail states mailbox total and Spam/Trash skipped; Calendar states its exact event total when the full pass finishes because Google provides no pre-count; Contacts states total items and identity-less skipped. Incremental module receipts apply each admitted addition or deletion once; updates and replays do not inflate the totals.
@@ -43,19 +43,21 @@ No surface gets a second scheduler, database, checkpoint store or bespoke transp
 
 Bootstrap captures `historyId` before listing messages, hydrates each listed message with the existing bounded concurrency and commits the captured history boundary only after the terminal page. Compare 50, 100 and 200 IDs per page against the app's existing 30-second Source fetch deadline and the same-account live report; select only a size that finishes inside that deadline. The selected page size and hydration concurrency are printed in the receipt.
 
-Catch-up continues to use `history.list(startHistoryId)`: additions are `live`, label-only changes are `snapshot`, and removals are `delete`. A history-list 404 remains `CursorExpiredError` and restarts only the email surface. Failed message hydration or conversion, including a message that disappeared after listing, fails the page without advancing its cursor. The retry repeats the provider page, and the captured `historyId` later reconciles the concurrent change. A persistent failure remains visible rather than claiming completion.
+Catch-up continues to use `history.list(startHistoryId)`: additions are `live`, label-only changes are `snapshot`, and removals are `delete`. A history-list 404 remains `CursorExpiredError` and restarts only the email surface. A message-get 404 after listing is an explicit concurrent disappearance: omit only that message, emit a diagnostic and let history from the captured boundary reconcile its deletion. Other hydration or conversion failures fail the whole page without advancing its cursor; a persistent failure remains visible rather than claiming completion.
 
 ### Calendar
 
-The current moving `now-30d..now+90d` window is removed: it cannot be combined correctly with Calendar `syncToken` and excludes events outside that window. The initial pass reads the primary calendar through bounded provider pages, includes cancelled events as deletion evidence, counts non-cancelled events while processing those pages, and receives `nextSyncToken` on its terminal page. The accumulated count is stated on that terminal page; the separate IDs-only counting sweep is removed. Google does not supply a full-calendar total before enumeration.
+The current moving `now-30d..now+90d` window and `orderBy=startTime` are removed: neither can be combined with Calendar `syncToken`, and the window excludes events outside it. The initial pass reads the primary calendar through bounded provider pages with `singleEvents=true` and `showDeleted=true`, counts non-cancelled events while processing those pages, and requires `nextSyncToken` on its terminal page. The accumulated count is stated on that terminal page; the separate IDs-only counting sweep is removed. Google does not supply a full-calendar total before enumeration.
 
-Subsequent polls pass that token and return only changed or cancelled events. Non-cancelled changes are `snapshot`; cancelled events are `delete`. A provider `410 GONE` is `CursorExpiredError` and causes a new full Calendar pass. Page tokens continue one pass; the new sync token replaces the previous committed token only on the terminal page.
+Subsequent polls pass that token and return only changed or cancelled events using the same compatible request parameters. Non-cancelled changes are `snapshot`; cancelled events are `delete`. A provider `410 GONE` is `CursorExpiredError` and causes a new full Calendar pass. Page tokens continue one pass; the new sync token replaces the previous committed token only on the terminal page. `hasMore` is true only when Google returned `nextPageToken`, never merely because `nextCursor` contains a sync token.
 
 ### Contacts
 
-The first People API pass requests a sync token and uses a page size measured to fit the app's 30-second Source fetch deadline (Google permits up to 1000, versus the current 100). `totalItems` is mapped to the existing `total_people` envelope field. Its terminal `nextSyncToken` becomes the committed cursor. Later polls use `syncToken`; `Person.metadata.deleted` becomes a `delete` envelope anchored by the existing resource-name hash. An expired sync token becomes `CursorExpiredError` and restarts only Contacts.
+The first People API pass requests a sync token and uses a page size measured to fit the app's 30-second Source fetch deadline (Google permits up to 1000, versus the current 100). `totalItems` is mapped to the existing `total_people` envelope field. Its terminal `nextSyncToken` is required and becomes the committed cursor. Later polls use `syncToken`; `Person.metadata.deleted`, or an updated person losing all name/email/phone identity, becomes a `delete` envelope anchored by the existing resource-name hash. An expired sync token becomes `CursorExpiredError` and restarts only Contacts. As with Calendar, `hasMore` reflects `nextPageToken`, not the retained sync token.
 
 The Contacts module deletes only the Google replica resolved by that anchor. A locally curated person hub survives removal of its Google replica. Successful Graph creates and deletes provide incremental plan deltas; updates do not inflate the count.
+
+Calendar and Contacts use the host's existing full-snapshot completion hook only after a completed bootstrap or token-expiry rescan. Their modules stamp admitted replicas with the pass generation and Source/account ownership, then remove only owned replicas left unstamped at completion; cancelled/deleted envelopes still remove immediately. A failed or interrupted pass never removes unseen replicas. Existing Google replicas without ownership cannot safely be assigned to an account; the hook leaves them untouched and reports them as a legacy reconciliation limitation rather than guessing. The manual stand starts from a clean Graph, so its convergence receipt covers account-owned records; legacy-data migration is not claimed by this Delivery.
 
 ### OAuth and provider holds
 
@@ -67,7 +69,7 @@ Within Gmail's concurrent hydration, the first typed fatal error closes scheduli
 
 ### Progress and performance report
 
-The three modules continue to state progress in their existing schema names. Gmail and Contacts state their provider totals on page one; Calendar states the accumulated exact count on the terminal full-sync page. Page conversion failures state `skipped`. Gmail counts distinct admitted provider additions/deletions; Calendar and Contacts use actual created/deleted replicas. Updates and replays are zero-delta. A page with no provider statement does not fabricate a total.
+The three modules continue to state progress in their existing schema names. Gmail and Contacts state their provider totals on page one; Calendar states the accumulated exact count on the terminal full-sync page. Identity-less contacts state `skipped`; malformed Calendar/Gmail payloads fail the page instead of silently changing the total. The initial provider total is stated once, not added to per-item creates in the same full pass. Later Gmail history changes and Calendar/Contacts Graph creates/deletes adjust that baseline once; updates and replays are zero-delta. A page with no provider statement does not fabricate a total.
 
 The current `acceptance/telegram-performance` mechanism is extended in place. One persistent data root can hold both Telegram and Google credentials. `reset` clears Graph output and sync progress while fingerprinting the existing secret, credential, connection and account tables in the same transaction. `report` groups production `sync turn` records by `sourceId` and `surface`, including turns, pages, envelopes, bytes, inserted/removed rows, fetch/admission/overlap/wall time and envelopes per second.
 
@@ -96,7 +98,7 @@ interface ContactsCursor {
 }
 ```
 
-During pagination the cursor retains the committed `history_id` or `sync_token` and adds only the current `page_token`. A terminal response removes the page token and replaces the provider checkpoint. Calendar and Contacts certification change from terminal-clear snapshots to retained forward checkpoints; no Source-specific field is added to the host command.
+During pagination the cursor retains the committed `history_id` or `sync_token` and adds only the current `page_token`. A terminal response removes the page token, sets `hasMore=false`, and replaces the provider checkpoint with a required `nextSyncToken`; a missing terminal token fails before admission. Calendar and Contacts certification change from terminal-clear snapshots to retained forward checkpoints; no Source-specific field is added to the host command.
 
 ### Proposed file tree
 
@@ -107,6 +109,8 @@ MODIFY plugins/sources/google/src/auth.ts
        Reuse one unexpired access token per credential and coalesce refresh.
 MODIFY plugins/sources/google/src/oauth.test.ts
        Prove reuse, expiry, concurrent refresh and credential isolation.
+MODIFY plugins/sources/google/src/__tests__/googleContract.test.ts
+       Assert connector-level terminal `hasMore=false` with a retained sync token.
 MODIFY plugins/sources/google/src/http.ts
 MODIFY plugins/sources/google/src/http.test.ts
        Preserve exact Google quota waits and stop inventing a missing delay.
@@ -123,23 +127,28 @@ MODIFY plugins/sources/google/src/surfaces/contacts/contacts.test.ts
        Add People syncToken, deletion envelopes and expired-token recovery.
 MODIFY plugins/modules/meetings/module/service.ts
 MODIFY plugins/modules/meetings/module/__tests__/meetingsSync.test.ts
-       State created/deleted Calendar deltas from actual Graph outcomes.
+MODIFY plugins/modules/meetings/manifest.toml
+       State created/deleted Calendar deltas and reconcile owned replicas after a full pass.
 MODIFY plugins/modules/email/module/service.ts
 MODIFY plugins/modules/email/module/__tests__/emailIngest.test.ts
        Count distinct admitted Gmail additions/deletions once.
 MODIFY plugins/modules/contacts/module/service.ts
 MODIFY plugins/modules/contacts/module/__tests__/contactsIngest.test.ts
-       Delete Google replicas and state created/deleted Contacts deltas.
+MODIFY plugins/modules/contacts/manifest.toml
+       Delete Google replicas, state deltas and reconcile owned replicas after a full pass.
 MODIFY plugins/sources/google/manifest.toml
-MODIFY scripts/certify-sources.ts
-       Retain Calendar/Contacts checkpoints and update certified scenarios.
+       Declare the Calendar/Contacts checkpoint behavior and scenario evidence; do not rewrite immutable historical receipts.
+MODIFY packages/testkit/__tests__/tst_cat_src_parity_001.test.ts
+       Match the current Google declaration without changing the pinned historical contract.
+MODIFY scripts/bundled-item-schemas.test.ts
+       Assert the existing full-snapshot declarations for Meetings and Contacts.
 MODIFY acceptance/telegram-performance/run.ts
 MODIFY acceptance/telegram-performance/run.test.ts
 MODIFY acceptance/telegram-performance/README.md
        Run and report real Telegram plus Google without entering CI.
 ```
 
-The existing Google OAuth test is extended for access-token reuse. The stand keeps its existing directory and command path. Generated catalog artifacts are rebuilt by their existing script and are not hand-authored.
+No product file is created: the Source, each existing receiving module and the single stand each have one owning file and its existing tests. The Google OAuth test is extended for access-token reuse. The two module manifest edits enable an existing host hook, not a new reconciliation runner; their existing ingest tests cover that hook. The stand keeps its existing directory and command path. Generated catalog artifacts are rebuilt by their existing script and are not hand-authored.
 
 ## Today, measured against that
 
@@ -164,14 +173,33 @@ Pinned catalog base: `origin/staging` at `2f9dfe03125603953902d79764d8934558eba8
 
 ## Invariants
 
-- `tst_gts_pull_001`: Gmail bootstrap captures one history boundary, reuses one valid access token across pages, preserves message order, refuses a silently skipped hydration failure and stops scheduling after a typed fatal result.
-- `tst_gts_pull_002`: Calendar full pagination counts each non-cancelled event once without a second enumeration, commits only its terminal sync token; the next poll sends that token, emits changed/deleted events, and maps 410 to cursor expiry.
-- `tst_gts_pull_003`: Contacts full pagination commits only its terminal sync token; the next poll sends that token, emits changed/deleted replicas, and maps an expired token to cursor expiry.
-- `tst_gts_pull_004`: exact 429/quota-403 `Retry-After` reaches the existing wire error unchanged; missing/malformed delay is never fabricated; network timeout remains distinct.
-- `tst_module_google_delta_001`: Email, Meetings and Contacts count admitted additions/deletions once; updates and replays are zero-delta, and local contact hubs survive replica deletion.
-- `tst_cat_src_performance_runner_001`: one runner preserves credentials, refuses fixtures/dirty revisions and reports Telegram plus each Google surface separately from production log records.
+### `scn_google_pull_001` — Gmail pages and OAuth
 
-Every behavior test is written RED first and is deterministic. Removing token retention, restoring full-list polling, allowing one queued Gmail request after a rate limit, or deleting a curated contact hub must make its owning test fail.
+- Step 1 → Verify: scripted profile and two message-list pages capture one `historyId`; one credential refresh serves both pages in source order, while another credential gets its own token (`tst_src_iso_google_001` in `gmail.test.ts`; `tst_src_iso_google_002` in `oauth.test.ts`).
+- Step 2 → Verify: a listed message-get 404 is explicitly diagnosed and omitted, then a later history deletion reconciles it; a non-404 hydration/conversion error returns no page or cursor (`tst_src_iso_google_003` in `gmail.test.ts`).
+- Step 3 → Verify: with several scripted hydration workers, the first typed rate limit prevents every not-yet-started request; already-started requests may finish, but no partial page commits (`tst_src_iso_google_004` in `gmail.test.ts`).
+
+### `scn_google_pull_002` — Calendar checkpoint and recovery
+
+- Step 1 → Verify: two full Calendar pages use no time bounds or ordering, emit non-cancelled events and a cancelled deletion, state the exact total once, and only the terminal page returns `hasMore=false` with its required sync token (`tst_src_iso_google_005` in `calendar.test.ts` and the existing connector contract test).
+- Step 2 → Verify: the next poll sends that token without full enumeration; changed/cancelled events produce update/delete receipts, and a 410 starts a new full pass. An interrupted replacement pass deletes nothing; only its completed pass removes stale account-owned events (`tst_src_iso_google_006` in `calendar.test.ts`, `tst_module_google_001` in `meetingsSync.test.ts`).
+
+### `scn_google_pull_003` — Contacts checkpoint and recovery
+
+- Step 1 → Verify: full People pages request and retain the terminal sync token, state `totalItems` once, and account for identity-less contacts as skipped; a missing terminal token fails the page (`tst_src_iso_google_007` in `contacts.test.ts`).
+- Step 2 → Verify: a token poll fetches only changes; deleted or newly identity-less people remove their anchored Google replicas, not curated hubs. Token expiry starts a full pass and only completed, account-owned reconciliation removes unseen replicas (`tst_src_iso_google_008` in `contacts.test.ts`, `tst_module_google_002` in `contactsIngest.test.ts`).
+
+### `scn_google_pull_004` — holds and progress
+
+- Step 1 → Verify: scripted 429 and quota-403 responses with an exact `Retry-After` reach the existing wire `-32002` unchanged; missing/malformed delay and network timeout remain distinct errors (`tst_src_iso_google_009` in `http.test.ts`).
+- Step 2 → Verify: initial provider statements set totals once; later distinct additions/deletions adjust only the intended schema; unchanged snapshots and retried pages do not inflate totals (`tst_module_google_003` in `emailIngest.test.ts`, `tst_module_google_004` in `meetingsSync.test.ts`, `tst_module_google_005` in `contactsIngest.test.ts`).
+
+### `scn_google_pull_005` — one manual stand
+
+- Step 1 → Verify: synthetic production `sync turn` records report Telegram, Gmail, Calendar and Contacts in separate Source/surface groups; the runner refuses dirty revisions and provider fixture variables (`tst_cert_google_001` in `run.test.ts`).
+- Step 2 → Verify: a reset fixture demonstrates that Graph/progress rows are cleared while credential, secret, connection and account fingerprints remain identical; module manifests certify full-snapshot completion only for Meetings and Contacts (`tst_cert_google_002` in `run.test.ts`, `tst_cert_google_003` in `bundled-item-schemas.test.ts`).
+
+Every new automated test has its canonical ID, scenario, covered function and deterministic fixture metadata beside the test; code branches link back with `@tested-by`. Tests are written RED first and use only scripted HTTP/Graph responses or synthetic logs through scoped `agent:test:backend` targets. The manual live run is marked manual and is not an automated correctness signal. Removing token retention, restoring full-list polling, allowing one queued Gmail request after a rate limit, or deleting a curated contact hub must make its owning test fail.
 
 ## Constraints and exclusions
 
