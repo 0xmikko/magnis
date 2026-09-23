@@ -1,9 +1,9 @@
 # Google Pull Sync
 
-Status: SPEC_DRAFT  
-Spec lock: unlocked  
+Status: SPEC_LOCKED  
+Spec lock: sha256:adc572be12b4f99e429fe2563819b3b685b4d4378efb57a983ca4a2c3e2f71bf owner:approved, make stages and implement it  
 Implementation lock: unlocked  
-Active Delivery: none  
+Active Delivery: D1  
 Unattended decisions: allowed  
 
 <!-- plan:spec:start -->
@@ -241,8 +241,189 @@ After this SPEC is approved, one PR Delivery with commit-sized Stages will be re
 
 <!-- plan:implementation:start -->
 ## Implementation contract
+
+<!-- plan:delivery:D1:start -->
+<!-- plan:delivery-meta:{"active":true,"depends":[],"predictedExternalWaitMinutes":30} -->
+### PR Delivery D1 — Google Pull sync and one manual performance stand
+
+Branch: `feat/google-pull-sync`; Depends: none; Gate: catalog.
+
+Stage graph: `D1-S1 -> D1-S2 -> D1-S3 -> D1-S4`.
+
+Forecast: 253 active min / 0 credits across 4 Stages; longest dependency path 253 active min; external waits 30 min.
+
+What changes for people. One new Google connection initially reads Gmail, Calendar and Contacts, then polls provider changes with honest per-surface progress and exact quota holds. The same manual stand reports Google beside Telegram.
+
+What changes in the code. The existing Google Source gains token reuse and incremental Calendar/Contacts cursors; existing modules reconcile owned replicas and count actual changes; the existing stand reports both Sources. No app protocol or CI live-provider job changes.
+
+How it is proven. Scripted Source and module tests cover cursors, deletions, rate limits and progress; stand tests cover reset safety and grouped production logs. One manual real-account receipt records exact SHAs, counts and timings. The catalog PR gate runs once after the last Stage.
+
+Not in this PR. Push/PubSub, old Google-account migration, additional calendars and any new runner.
+
+<!-- plan:stage:D1-S1:start -->
+<!-- plan:stage-meta:{"deliveryId":"D1","depends":[],"parallelWith":[],"writes":["plugins/sources/google/src/auth.ts","plugins/sources/google/src/oauth.test.ts","plugins/sources/google/src/http.ts","plugins/sources/google/src/http.test.ts","plugins/sources/google/src/connector.ts","plugins/sources/google/src/surfaces/email/gmail.ts","plugins/sources/google/src/surfaces/email/gmail.test.ts"],"tempRoot":".tmp/code-production/google-pull-sync/D1-S1","predictedActiveMinutes":50,"predictedCredits":0,"verifyActiveMinutes":5,"verifyCredits":0} -->
+#### Stage D1-S1 — Reuse Google tokens and make Gmail pages lossless
+
+- Owner: codex; Profile: strong; Depends: none; Parallel with: none.
+- Writes: `plugins/sources/google/src/auth.ts`, `plugins/sources/google/src/oauth.test.ts`, `plugins/sources/google/src/http.ts`, `plugins/sources/google/src/http.test.ts`, `plugins/sources/google/src/connector.ts`, `plugins/sources/google/src/surfaces/email/gmail.ts`, `plugins/sources/google/src/surfaces/email/gmail.test.ts`.
+- Temp root: `.tmp/code-production/google-pull-sync/D1-S1` (must be absent at handoff).
+- Of which verification: 5 active min / 0 credits.
+
+What this Stage solves. A Google token is refreshed for every page, Gmail silently skips failed hydration and queued requests continue after a hold.
+
+What is built. auth.ts caches one unexpired token per credential; http.ts preserves exact quota waits; gmail.ts keeps bounded ordered hydration and closes its work queue on a fatal result; connector.ts reuses the token owner.
+
+How it is proven. tst_src_iso_google_001 through 004 exercise reuse, two credentials, a disappearing message, a hard failure and queued work after a hold. Existing HTTP and OAuth cases remain green.
+
+Commit. fix(google): reuse access tokens and stop lossy Gmail pages — preserve provider errors and exact holds.
+
+##### Tasks
+
+- [ ] GOOGLE_001 — Cache Google tokens and exact holds in auth.ts, oauth.test.ts, http.ts and http.test.ts. (20 min)
+<!-- plan:task-meta:{"writes":["plugins/sources/google/src/auth.ts","plugins/sources/google/src/oauth.test.ts","plugins/sources/google/src/http.ts","plugins/sources/google/src/http.test.ts"],"predictedActiveMinutes":20,"predictedCredits":0,"how":"plugins/sources/google/src/auth.ts: cache by credential and expiry; plugins/sources/google/src/oauth.test.ts: assert reuse, expiry and isolation; plugins/sources/google/src/http.ts: map exact 429/quota-403 Retry-After; plugins/sources/google/src/http.test.ts: assert typed holds and malformed delay refusal","red":"bun run agent:test:backend -- plugins/sources/google/src/oauth.test.ts plugins/sources/google/src/http.test.ts"} -->
+- [ ] GOOGLE_002 — Make ordered Gmail hydration lossless in connector.ts, gmail.ts and gmail.test.ts. (25 min)
+<!-- plan:task-meta:{"writes":["plugins/sources/google/src/connector.ts","plugins/sources/google/src/surfaces/email/gmail.ts","plugins/sources/google/src/surfaces/email/gmail.test.ts"],"predictedActiveMinutes":25,"predictedCredits":0,"how":"plugins/sources/google/src/connector.ts: reuse the cached token in fetch and execute; plugins/sources/google/src/surfaces/email/gmail.ts: stop queued hydration after fatal errors and handle message-get 404; plugins/sources/google/src/surfaces/email/gmail.test.ts: assert boundary, ordered pages, 404 and fatal queue stop","red":"bun run agent:test:backend -- plugins/sources/google/src/surfaces/email/gmail.test.ts"} -->
+
+##### Acceptance criteria
+
+- [ ] `bun run agent:test:backend -- plugins/sources/google/src/oauth.test.ts plugins/sources/google/src/http.test.ts plugins/sources/google/src/surfaces/email/gmail.test.ts` exits 0 — token reuse, exact holds and lossless Gmail pages
+- [ ] Commit
+
+##### Results
+
+<!-- plan:results:D1-S1:start -->
+| Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
+|---|---|---|---:|---|---|
+<!-- plan:results:D1-S1:end -->
+<!-- plan:stage:D1-S1:end -->
+
+<!-- plan:stage:D1-S2:start -->
+<!-- plan:stage-meta:{"deliveryId":"D1","depends":["D1-S1"],"parallelWith":[],"writes":["plugins/sources/google/src/connector.ts","plugins/sources/google/src/surfaces/meetings/calendar.ts","plugins/sources/google/src/surfaces/meetings/calendar.test.ts","plugins/sources/google/src/__tests__/googleContract.test.ts","plugins/sources/google/src/surfaces/contacts/contacts.ts","plugins/sources/google/src/surfaces/contacts/contacts.test.ts","plugins/sources/google/manifest.toml","packages/testkit/__tests__/tst_cat_src_parity_001.test.ts"],"tempRoot":".tmp/code-production/google-pull-sync/D1-S2","predictedActiveMinutes":68,"predictedCredits":0,"verifyActiveMinutes":8,"verifyCredits":0} -->
+#### Stage D1-S2 — Keep Calendar and Contacts provider checkpoints
+
+- Owner: codex; Profile: strong; Depends: D1-S1; Parallel with: none.
+- Writes: `plugins/sources/google/src/connector.ts`, `plugins/sources/google/src/surfaces/meetings/calendar.ts`, `plugins/sources/google/src/surfaces/meetings/calendar.test.ts`, `plugins/sources/google/src/__tests__/googleContract.test.ts`, `plugins/sources/google/src/surfaces/contacts/contacts.ts`, `plugins/sources/google/src/surfaces/contacts/contacts.test.ts`, `plugins/sources/google/manifest.toml`, `packages/testkit/__tests__/tst_cat_src_parity_001.test.ts`.
+- Temp root: `.tmp/code-production/google-pull-sync/D1-S2` (must be absent at handoff).
+- Of which verification: 8 active min / 0 credits.
+
+What this Stage solves. Calendar counts one moving window twice and Contacts re-lists everything after each poll; neither retains a provider sync token.
+
+What is built. calendar.ts and contacts.ts page full reads, return required terminal sync tokens, and fetch only changes on subsequent polls. connector.ts treats only a page token as hasMore. The current Google certification and parity test describe the new forward checkpoint; immutable historical receipts stay unchanged.
+
+How it is proven. tst_src_iso_google_005 through 008 and the connector contract test assert full/delta pagination, deleted records, token expiry and terminal hasMore=false.
+
+Commit. feat(google): retain Calendar and Contacts sync tokens — unchanged polls no longer enumerate all records.
+
+##### Tasks
+
+- [ ] GOOGLE_003 — Retain Calendar pages in connector.ts, calendar.ts, calendar.test.ts and googleContract.test.ts. (30 min)
+<!-- plan:task-meta:{"writes":["plugins/sources/google/src/connector.ts","plugins/sources/google/src/surfaces/meetings/calendar.ts","plugins/sources/google/src/surfaces/meetings/calendar.test.ts","plugins/sources/google/src/__tests__/googleContract.test.ts"],"predictedActiveMinutes":30,"predictedCredits":0,"how":"plugins/sources/google/src/connector.ts: dispatch explicit hasMore from pageToken; plugins/sources/google/src/surfaces/meetings/calendar.ts: remove time window/count sweep and retain syncToken; plugins/sources/google/src/surfaces/meetings/calendar.test.ts: assert full/delta/410 and exact total; plugins/sources/google/src/__tests__/googleContract.test.ts: assert terminal retained cursor with hasMore false","red":"bun run agent:test:backend -- plugins/sources/google/src/surfaces/meetings/calendar.test.ts plugins/sources/google/src/__tests__/googleContract.test.ts"} -->
+- [ ] GOOGLE_004 — Retain People pages in contacts.ts, contacts.test.ts, manifest.toml and tst_cat_src_parity_001.test.ts. (30 min)
+<!-- plan:task-meta:{"writes":["plugins/sources/google/src/surfaces/contacts/contacts.ts","plugins/sources/google/src/surfaces/contacts/contacts.test.ts","plugins/sources/google/manifest.toml","packages/testkit/__tests__/tst_cat_src_parity_001.test.ts"],"predictedActiveMinutes":30,"predictedCredits":0,"how":"plugins/sources/google/src/surfaces/contacts/contacts.ts: request and retain syncToken; emit deletes; plugins/sources/google/src/surfaces/contacts/contacts.test.ts: assert full/delta/expiry and skipped contacts; plugins/sources/google/manifest.toml: declare current forward checkpoint contract; packages/testkit/__tests__/tst_cat_src_parity_001.test.ts: assert current contract while keeping historical receipts","red":"bun run agent:test:backend -- plugins/sources/google/src/surfaces/contacts/contacts.test.ts packages/testkit/__tests__/tst_cat_src_parity_001.test.ts"} -->
+
+##### Acceptance criteria
+
+- [ ] `bun run agent:test:backend -- plugins/sources/google/src/surfaces/meetings/calendar.test.ts plugins/sources/google/src/surfaces/contacts/contacts.test.ts plugins/sources/google/src/__tests__/googleContract.test.ts packages/testkit/__tests__/tst_cat_src_parity_001.test.ts` exits 0 — all three Google surfaces retain the correct checkpoint
+- [ ] Commit
+
+##### Results
+
+<!-- plan:results:D1-S2:start -->
+| Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
+|---|---|---|---:|---|---|
+<!-- plan:results:D1-S2:end -->
+<!-- plan:stage:D1-S2:end -->
+
+<!-- plan:stage:D1-S3:start -->
+<!-- plan:stage-meta:{"deliveryId":"D1","depends":["D1-S2"],"parallelWith":[],"writes":["plugins/modules/email/module/service.ts","plugins/modules/email/module/__tests__/emailIngest.test.ts","plugins/modules/meetings/module/service.ts","plugins/modules/meetings/module/__tests__/meetingsSync.test.ts","plugins/modules/meetings/manifest.toml","scripts/bundled-item-schemas.test.ts","plugins/modules/contacts/module/service.ts","plugins/modules/contacts/module/__tests__/contactsIngest.test.ts","plugins/modules/contacts/manifest.toml"],"tempRoot":".tmp/code-production/google-pull-sync/D1-S3","predictedActiveMinutes":95,"predictedCredits":0,"verifyActiveMinutes":10,"verifyCredits":0} -->
+#### Stage D1-S3 — Make module progress and expired-token recovery truthful
+
+- Owner: codex; Profile: strong; Depends: D1-S2; Parallel with: none.
+- Writes: `plugins/modules/email/module/service.ts`, `plugins/modules/email/module/__tests__/emailIngest.test.ts`, `plugins/modules/meetings/module/service.ts`, `plugins/modules/meetings/module/__tests__/meetingsSync.test.ts`, `plugins/modules/meetings/manifest.toml`, `scripts/bundled-item-schemas.test.ts`, `plugins/modules/contacts/module/service.ts`, `plugins/modules/contacts/module/__tests__/contactsIngest.test.ts`, `plugins/modules/contacts/manifest.toml`.
+- Temp root: `.tmp/code-production/google-pull-sync/D1-S3` (must be absent at handoff).
+- Of which verification: 10 active min / 0 credits.
+
+What this Stage solves. Email counts replayed envelopes; Meetings and Contacts do not count admitted deltas or remove stale owned replicas after a completed replacement pass.
+
+What is built. Existing Email, Meetings and Contacts module handlers state one baseline and actual later changes. Meetings and Contacts stamp source/account ownership and use the host's existing full-snapshot completion hook; Contacts deletes only its Google replica. Module manifests enable the existing hook.
+
+How it is proven. tst_module_google_001 through 005 cover create/update/delete, retries, interrupted passes and curated hub survival. The bundled manifest test covers completion declarations.
+
+Commit. fix(google): reconcile owned replicas and count admitted changes — no replay inflation or stale records after token expiry.
+
+##### Tasks
+
+- [ ] GOOGLE_005 — Count Gmail receipts once in email service.ts and emailIngest.test.ts. (25 min)
+<!-- plan:task-meta:{"writes":["plugins/modules/email/module/service.ts","plugins/modules/email/module/__tests__/emailIngest.test.ts"],"predictedActiveMinutes":25,"predictedCredits":0,"how":"plugins/modules/email/module/service.ts: count distinct admitted history additions/deletions without replay inflation; plugins/modules/email/module/__tests__/emailIngest.test.ts: assert full baseline, live, delete, update and retry receipts","red":"bun run agent:test:backend -- plugins/modules/email/module/__tests__/emailIngest.test.ts"} -->
+- [ ] GOOGLE_006 — Reconcile Calendar in meetings service.ts, meetingsSync.test.ts, manifest.toml and bundled-item-schemas.test.ts. (30 min)
+<!-- plan:task-meta:{"writes":["plugins/modules/meetings/module/service.ts","plugins/modules/meetings/module/__tests__/meetingsSync.test.ts","plugins/modules/meetings/manifest.toml","scripts/bundled-item-schemas.test.ts"],"predictedActiveMinutes":30,"predictedCredits":0,"how":"plugins/modules/meetings/module/service.ts: stamp owned events and delete unseen events only on completed bootstrap; plugins/modules/meetings/module/__tests__/meetingsSync.test.ts: assert delta counts and completed versus interrupted reconciliation; plugins/modules/meetings/manifest.toml: enable existing full_snapshot completion hook; scripts/bundled-item-schemas.test.ts: assert Meetings reconciliation declaration","red":"bun run agent:test:backend -- plugins/modules/meetings/module/__tests__/meetingsSync.test.ts scripts/bundled-item-schemas.test.ts"} -->
+- [ ] GOOGLE_007 — Reconcile People in contacts service.ts, contactsIngest.test.ts and manifest.toml. (30 min)
+<!-- plan:task-meta:{"writes":["plugins/modules/contacts/module/service.ts","plugins/modules/contacts/module/__tests__/contactsIngest.test.ts","plugins/modules/contacts/manifest.toml"],"predictedActiveMinutes":30,"predictedCredits":0,"how":"plugins/modules/contacts/module/service.ts: delete only Google replicas and reconcile owned unseen replicas; plugins/modules/contacts/module/__tests__/contactsIngest.test.ts: assert delta counts, expiry recovery and curated hub survival; plugins/modules/contacts/manifest.toml: enable existing full_snapshot completion hook","red":"bun run agent:test:backend -- plugins/modules/contacts/module/__tests__/contactsIngest.test.ts"} -->
+
+##### Acceptance criteria
+
+- [ ] `bun run agent:test:backend -- plugins/modules/email/module/__tests__/emailIngest.test.ts plugins/modules/meetings/module/__tests__/meetingsSync.test.ts plugins/modules/contacts/module/__tests__/contactsIngest.test.ts` exits 0 — module progress is idempotent and account-owned reconciliation is safe
+- [ ] `bun run agent:test:backend -- scripts/bundled-item-schemas.test.ts` exits 0 — existing hook declarations are certified
+- [ ] Commit
+
+##### Results
+
+<!-- plan:results:D1-S3:start -->
+| Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
+|---|---|---|---:|---|---|
+<!-- plan:results:D1-S3:end -->
+<!-- plan:stage:D1-S3:end -->
+
+<!-- plan:stage:D1-S4:start -->
+<!-- plan:stage-meta:{"deliveryId":"D1","depends":["D1-S3"],"parallelWith":[],"writes":["acceptance/telegram-performance/run.ts","acceptance/telegram-performance/run.test.ts","acceptance/telegram-performance/README.md"],"tempRoot":".tmp/code-production/google-pull-sync/D1-S4","predictedActiveMinutes":40,"predictedCredits":0,"verifyActiveMinutes":10,"verifyCredits":0} -->
+#### Stage D1-S4 — Measure Telegram and Google with the one manual stand
+
+- Owner: codex; Profile: strong; Depends: D1-S3; Parallel with: none.
+- Writes: `acceptance/telegram-performance/run.ts`, `acceptance/telegram-performance/run.test.ts`, `acceptance/telegram-performance/README.md`.
+- Temp root: `.tmp/code-production/google-pull-sync/D1-S4` (must be absent at handoff).
+- Of which verification: 10 active min / 0 credits.
+
+What this Stage solves. The existing manual stand reports only Telegram, so Google fetch/admission bottlenecks cannot be compared while retaining saved credentials.
+
+What is built. run.ts groups production sync-turn records by Source and surface, protects all credential tables during reset and refuses real-provider fixture variables; run.test.ts covers those boundaries; README.md documents the one opt-in live run on selected clean app/catalog worktrees.
+
+How it is proven. tst_cert_google_001 and 002 use synthetic logs and reset fixtures. A live receipt records exact app/catalog SHAs, page settings, counts, holds and timings; no real provider or PostgreSQL run is added to CI. The full catalog publication gate runs once after this Stage.
+
+Commit. feat(stand): report Google beside Telegram — preserve credentials and show per-surface timings.
+
+##### Tasks
+
+- [ ] GOOGLE_008 — Report both Sources in run.ts, run.test.ts and README.md without CI live runs. (30 min)
+<!-- plan:task-meta:{"writes":["acceptance/telegram-performance/run.ts","acceptance/telegram-performance/run.test.ts","acceptance/telegram-performance/README.md"],"predictedActiveMinutes":30,"predictedCredits":0,"how":"acceptance/telegram-performance/run.ts: group sync turns by Source/surface and protect credentials on reset; acceptance/telegram-performance/run.test.ts: assert grouping, clean revisions and reset fingerprints; acceptance/telegram-performance/README.md: document opt-in real-account run and branch selection","red":"bun run agent:test:backend -- acceptance/telegram-performance/run.test.ts"} -->
+
+##### Acceptance criteria
+
+- [ ] `bun run agent:test:backend -- acceptance/telegram-performance/run.test.ts` exits 0 — one stand reports both Sources and preserves credentials
+- [ ] One manual receipt records exact revisions, per-surface counts and fetch/admission/wall time without claiming unmeasured speedup
+- [ ] Commit
+
+##### Results
+
+<!-- plan:results:D1-S4:start -->
+| Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
+|---|---|---|---:|---|---|
+<!-- plan:results:D1-S4:end -->
+<!-- plan:stage:D1-S4:end -->
+<!-- plan:delivery:D1:end -->
 <!-- plan:implementation:end -->
 
 <!-- plan:execution:start -->
 ## Execution log
+
+- lock-spec sha256:adc572be12b4f99e429fe2563819b3b685b4d4378efb57a983ca4a2c3e2f71bf owner:approved, make stages and implement it
+
+- put-delivery D1
+
+- put-stage D1-S1
+
+- put-stage D1-S2
+
+- put-stage D1-S3
+
+- put-stage D1-S4
 <!-- plan:execution:end -->
