@@ -199,7 +199,12 @@ export async function fetch(
       hasMore: true,
     };
   }
-  return await runTakeoutBootstrap(ops, takeoutPager(pager), accountId, args.cursor);
+  // @tested-by: tst_src_tg_history_default_003
+  // @invariant: a new account starts ordinary history immediately; only a
+  // persisted Takeout checkpoint enters the Takeout state machine.
+  return checkpoint(args.cursor) === undefined
+    ? await runBootstrap(args.cursor, pager)
+    : await runTakeoutBootstrap(ops, takeoutPager(pager), accountId, args.cursor);
 }
 
 function takeoutInvalid(error: unknown): boolean {

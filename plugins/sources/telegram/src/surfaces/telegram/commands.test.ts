@@ -21,6 +21,7 @@ import {
   fetch,
   runBootstrap,
   runCatchup,
+  runTakeoutBootstrap,
   type CatchupDialog,
   type TgOps,
 } from "./commands";
@@ -83,7 +84,6 @@ test("tst_src_tg_takeout_plan_001 publishes every exact chat total before Takeou
   const now = spyOn(performance, "now").mockImplementation(() => clock.now());
   const f = await createTransport(clock);
   const pager = new LiveDialogPager(f.tg, "fixture-takeout");
-  const args = { surface: "telegram", direction: "backward" as const };
   const takeoutId = bigInt("9223372036854775001");
   const ranges = [new Api.MessageRange({ minId: 1, maxId: 100 }), new Api.MessageRange({ minId: 101, maxId: 200 })];
   let wireIndex = 0;
@@ -103,7 +103,7 @@ test("tst_src_tg_takeout_plan_001 publishes every exact chat total before Takeou
     unreadMentionsCount: 0, unreadReactionsCount: 0, notifySettings: new Api.PeerNotifySettings({}),
   });
   try {
-    const estimating = fetch(f.tg, pager, "fixture-takeout", args);
+    const estimating = runTakeoutBootstrap(f.tg, pager, "fixture-takeout", undefined);
     let sent = await f.application(wireIndex++);
     expect(sent.state.request).toBeInstanceOf(Api.account.InitTakeoutSession);
     expect(sent.state.request).toMatchObject({ messageUsers: true, messageChats: true,
@@ -146,14 +146,14 @@ test("tst_src_tg_takeout_plan_001 publishes every exact chat total before Takeou
     expect(estimate.nextCursor).toMatchObject({ takeout: { id: takeoutId.toString(), phase: "publish" },
       chats: { "1": { message_count: 120, ranges: [0, 1] }, "2": { message_count: 50, ranges: [0] } } });
 
-    const published = await fetch(f.tg, pager, "fixture-takeout", { ...args, cursor: estimate.nextCursor });
+    const published = await runTakeoutBootstrap(f.tg, pager, "fixture-takeout", estimate.nextCursor);
     const publishedEnvelopes = published.envelopes as { remote_id: string; payload: Record<string, unknown> }[];
     expect(publishedEnvelopes.map((envelope) => envelope.remote_id)).toEqual(["tg:chat:1", "tg:chat:2"]);
     expect(publishedEnvelopes.map((envelope) => envelope.payload.message_count)).toEqual([120, 50]);
     expect(publishedEnvelopes.some((envelope) => envelope.remote_id.startsWith("tg:msg:"))).toBe(false);
     expect(f.writes).toHaveLength(wireIndex);
 
-    const seeding = fetch(f.tg, pager, "fixture-takeout", { ...args, cursor: published.nextCursor });
+    const seeding = runTakeoutBootstrap(f.tg, pager, "fixture-takeout", published.nextCursor);
     sent = await f.application(wireIndex++);
     expect(takeoutQuery(sent, ranges[1])).toMatchObject({ className: "messages.GetHistory", limit: 100 });
     await f.reply(sent, new Api.messages.MessagesSlice({ count: 20,
@@ -267,6 +267,53 @@ test("tst_src_tg_takeout_resume_002 resumes bounded Takeout history and finishes
     expect(expired.value).toMatchObject({ name: "CursorExpiredError" });
     expect(f.writes).toHaveLength(4);
   } finally { await f.close(); now.mockRestore(); }
+});
+
+/** @test-id: tst_src_tg_history_default_003
+ * @scenario: scn_tg_history_003
+ * @covers: commands.ts::fetch
+ * @deterministic: yes
+ * @fixtures: in-memory ordinary dialog page and persisted Takeout checkpoint
+ *
+ * Test environment: Telegram Source command handler
+ * Clients: direct calls
+ * Mocks: deterministic DialogPager
+ * Data: one ordinary chat and one persisted Takeout chat
+ */
+test("tst_src_tg_history_default_003 starts ordinary history and only resumes persisted Takeout", async () => {
+  const ordinary = await fetch({} as TgOps, new FakePager(simpleDialogs(1), 50), "fixture-history", {
+    surface: "telegram",
+    direction: "backward",
+  });
+  expect((ordinary.envelopes as { remote_id: string }[]).map((envelope) => envelope.remote_id)).toEqual([
+    "tg:chat:1000",
+    "tg:msg:1000:1",
+    "tg:msg:1000:2",
+  ]);
+
+  let initTakeoutCalls = 0;
+  const reservePager = {
+    dialogPage: async (): Promise<DialogPage> => ({ dialogs: [], next_offset: null, total: null }),
+    initTakeout: async (): Promise<string> => {
+      initTakeoutCalls += 1;
+      return "8";
+    },
+    takeoutRanges: async (): Promise<never[]> => [],
+    finishTakeout: async (): Promise<void> => undefined,
+  } as DialogPager;
+  const resumed = await fetch({} as TgOps, reservePager, "fixture-history", {
+    surface: "telegram",
+    direction: "backward",
+    cursor: {
+      takeout: { id: "7", phase: "publish", ranges: [], range_index: 0,
+        range_started: false, dialog_offset: null, pinned_count: 0,
+        publish_index: 0, download_index: 0 },
+      chats: { "7": { chat: { ...fakeChat(7, false), message_count: 2 },
+        peer: { ty: "chat", id: 7 }, message_count: 2, ranges: [], last_msg_id: 2 } },
+    },
+  });
+  expect((resumed.envelopes as { remote_id: string }[]).map((envelope) => envelope.remote_id)).toEqual(["tg:chat:7"]);
+  expect(initTakeoutCalls).toBe(0);
 });
 
 /** @test-id: tst_src_tgfast_002

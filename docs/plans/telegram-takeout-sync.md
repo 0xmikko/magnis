@@ -2,7 +2,7 @@
 
 Status: APPROVED  
 Spec lock: sha256:fddbcc2b66e31efe9b35adea4e8cd96715fd2996b95f6baa8094e848cb3e7ffd owner:давай стадии  
-Implementation lock: sha256:a35748ee6575bb9c259af1864fdd828cc1085a9e2f2ede0577351fb28a5fe2f5 owner:approved  
+Implementation lock: sha256:30de713aed9002f18be222ffbec16db9cbac3e9c38381cee31658b89cb141eda owner:Да  
 Active Delivery: D2  
 Unattended decisions: allowed  
 
@@ -298,17 +298,17 @@ Not in this PR. This completed prerequisite is recorded here only to explain the
 
 Branch: `feat/telegram-takeout-sync`; Depends: none; Gate: backend, docs, catalog.
 
-Stage graph: `D2-S1 -> D2-S2 -> D2-S3`.
+Stage graph: `D2-S1 -> D2-S2 -> D2-S3 -> D2-S4`.
 
-Forecast: 300 active min / 29 credits across 3 Stages; longest dependency path 300 active min; external waits 60 min.
+Forecast: 375 active min / 35 credits across 4 Stages; longest dependency path 375 active min; external waits 60 min.
 
-What changed for people. Telegram first publishes stable exact chat/message totals, then downloads selected history as fast as Telegram accepts requests. A real provider hold lasts only until its stated deadline, and link_end keeps the provider event time.
+What changed for people. Telegram starts ordinary history immediately and downloads it as fast as Telegram accepts requests. A real provider hold lasts only until its stated deadline, and link_end keeps the provider event time.
 
-What changed in the code. Telegram becomes an ordinary runConnector config. The shared connector SDK owns dispatch, auth mode, subscriptions, push serialization and errors. Telegram fetch owns the official Takeout estimate, publish, download and finish phases through standard fetch args and results; no custom dispatcher, execute backfill or permanent learned interval remains.
+What changed in the code. Telegram becomes an ordinary runConnector config. The shared connector SDK owns dispatch, auth mode, subscriptions, push serialization and errors. Telegram fetch uses ordinary history for new accounts and retains the official Takeout estimate, publish, download and finish phases only for persisted Takeout checkpoints; no custom dispatcher, execute backfill or permanent learned interval remains.
 
-How it was proven. Deterministic SDK and fake-MTProto tests cover concurrency, mode gates, exact waits, Takeout wrappers, totals-before-history, crash resume, bounded gaps and finish. Certification rejects any current in-repository Source outside runConnector. The existing manual stand measures at least 10,000 unheld envelopes with indexer off.
+How it was proven. Deterministic SDK and fake-MTProto tests cover concurrency, mode gates, exact waits, immediate ordinary history, Takeout checkpoint resume, bounded gaps and finish. Certification rejects any current in-repository Source outside runConnector. The existing manual stand measures at least 10,000 unheld envelopes with indexer off.
 
-Not in this PR. No frontend, database schema, new runner, parallel main Telegram session, ordinary-history fallback or CI Telegram/PostgreSQL test. Provider holds are reported separately from local throughput.
+Not in this PR. No frontend, database schema, new runner, parallel main Telegram session or CI Telegram/PostgreSQL test. Provider holds are reported separately from local throughput.
 
 <!-- plan:stage:D2-S1:start -->
 <!-- plan:stage-meta:{"deliveryId":"D2","depends":[],"parallelWith":[],"writes":["packages/connector-sdk/contract/source.ts","packages/connector-sdk/index.ts","packages/connector-sdk/index.test.ts","packages/connector-sdk/contract-v2.test.ts","plugins/sources/telegram/src/connector.ts","plugins/sources/telegram/src/dispatch.ts","plugins/sources/telegram/src/dispatch.test.ts","plugins/sources/telegram/src/main.ts","plugins/sources/telegram/src/subscriptions.ts","plugins/sources/telegram/src/surfaces/telegram/fixture.ts","plugins/sources/telegram/src/fixture.test.ts","plugins/sources/telegram/src/live.ts","plugins/sources/telegram/src/live.test.ts","plugins/sources/telegram/src/surfaces/telegram/commands.ts","plugins/sources/telegram/src/surfaces/telegram/commands.test.ts","plugins/sources/telegram/src/surfaces/telegram/execute.test.ts","plugins/sources/telegram/src/tst_src_tgflood_001.test.ts","plugins/sources/telegram/src/testing/mtproto-transport.ts","plugins/sources/telegram/manifest.toml"],"tempRoot":".tmp/code-production/telegram-takeout-sync/D2-S1","predictedActiveMinutes":90,"predictedCredits":9,"verifyActiveMinutes":15,"verifyCredits":2} -->
@@ -443,6 +443,45 @@ Commit. chore(catalog): certify the unified Source runtime — remove the last l
 | SOURCECERT_001 | a93297cf3377c16f39e57a1bea8d98c2f8cbd43c | 2026-09-22T20:19:39.955Z–2026-09-22T21:09:39.955Z | 49 / 50 min | unavailable: runner did not expose usage | All current Sources use the shared Connector SDK contract, Telegram backfill is a generic wake, and exact catalog receipts were rebuilt. |
 <!-- plan:results:D2-S3:end -->
 <!-- plan:stage:D2-S3:end -->
+
+<!-- plan:stage:D2-S4:start -->
+<!-- plan:stage-meta:{"deliveryId":"D2","depends":["D2-S3"],"parallelWith":[],"writes":["plugins/sources/telegram/src/surfaces/telegram/commands.ts","plugins/sources/telegram/src/surfaces/telegram/commands.test.ts","dist/receipts/sha256:0f51577144d4c903e8c183f116ae2ef451ffd6fc98d70b2bcb79a6cc8f77a6ed.json","dist/receipts/sha256:279b00b97351eafb3ef3c53ea45d51b298ace7edb81a2307723c29e27df54b0a.json","dist/receipts/sha256:47cb2d8eb601b667157ce051a518ff48a83f33c799a08f5e8789a1575b11af69.json","dist/receipts/sha256:706827cd5106049522f8e263cad61bd57b4dc1554571a42d780b771f5c51bfe7.json","dist/receipts/sha256:953bc2749d638df9f6e0696430b0d1322e7d8199d374ddd78b84a72200a69b86.json"],"tempRoot":".tmp/code-production/telegram-takeout-sync/D2-S4","predictedActiveMinutes":75,"predictedCredits":6,"verifyActiveMinutes":30,"verifyCredits":2} -->
+#### Stage D2-S4 — Telegram starts ordinary history immediately
+
+- Owner: root; Profile: strong; Depends: D2-S3; Parallel with: none.
+- Writes: `plugins/sources/telegram/src/surfaces/telegram/commands.ts`, `plugins/sources/telegram/src/surfaces/telegram/commands.test.ts`, `dist/receipts/*.json`.
+- Temp root: `.tmp/code-production/telegram-takeout-sync/D2-S4` (must be absent at handoff).
+- Of which verification: 30 active min / 2 credits.
+
+What this Stage solves. Starting an official Takeout export can impose a 24-hour security delay even though ordinary Telegram history can begin immediately and finish within that window.
+
+What is built. A backward fetch without a persisted Takeout checkpoint uses the existing optimized runBootstrap history path. A persisted Takeout checkpoint still resumes and finishes through the existing Takeout code, but no new account initiates Takeout automatically. The existing manual stand clears sync data without credentials, measures at least 10,000 envelopes with indexer off and profiles Source fetch, Graph admission, overlap and wall time.
+
+How it is proven. tst_src_tg_history_default_003 sees a new account emit ordinary dialog history without initTakeout and sees an existing Takeout checkpoint resume unchanged. The catalog build refreshes the exact Telegram receipt. The live stand identifies the largest remaining bottleneck before any further parameter change.
+
+Commit. fix(telegram): start ordinary history immediately — keep Takeout checkpoint compatibility without delaying new accounts.
+
+##### Tasks
+
+- [ ] TELEGRAMHISTORY_001 — commands.ts defaults to ordinary history, commands.test.ts proves Takeout resume, and dist/receipts/*.json republishes Telegram. (45 min)
+<!-- plan:task-meta:{"writes":["plugins/sources/telegram/src/surfaces/telegram/commands.ts","plugins/sources/telegram/src/surfaces/telegram/commands.test.ts","dist/receipts/sha256:0f51577144d4c903e8c183f116ae2ef451ffd6fc98d70b2bcb79a6cc8f77a6ed.json","dist/receipts/sha256:279b00b97351eafb3ef3c53ea45d51b298ace7edb81a2307723c29e27df54b0a.json","dist/receipts/sha256:47cb2d8eb601b667157ce051a518ff48a83f33c799a08f5e8789a1575b11af69.json","dist/receipts/sha256:706827cd5106049522f8e263cad61bd57b4dc1554571a42d780b771f5c51bfe7.json","dist/receipts/sha256:953bc2749d638df9f6e0696430b0d1322e7d8199d374ddd78b84a72200a69b86.json"],"predictedActiveMinutes":45,"predictedCredits":4,"how":"Change plugins/sources/telegram/src/surfaces/telegram/commands.ts so a backward fetch without a Takeout checkpoint calls the existing runBootstrap while a persisted Takeout checkpoint calls runTakeoutBootstrap. Add metadata-backed tst_src_tg_history_default_003 to plugins/sources/telegram/src/surfaces/telegram/commands.test.ts proving both branches and no automatic initTakeout. Run the existing catalog build so dist/receipts/*.json matches the final Telegram bundle.","red":"bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts -t tst_src_tg_history_default_003"} -->
+
+##### Acceptance criteria
+
+- [ ] `bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts` exits 0 — new accounts start ordinary history and persisted Takeout checkpoints still resume
+- [ ] A new account emits its first history envelopes without account.initTakeoutSession
+- [ ] The existing manual stand preserves credentials, disables the indexer and records at least 10,000 envelopes or an exact provider hold
+- [ ] The profile records Source fetch, Graph admission, overlap and wall time before any further optimization
+- [ ] No frontend file, workflow, runner or live-provider automated test changes
+- [ ] Commit
+
+##### Results
+
+<!-- plan:results:D2-S4:start -->
+| Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
+|---|---|---|---:|---|---|
+<!-- plan:results:D2-S4:end -->
+<!-- plan:stage:D2-S4:end -->
 <!-- plan:delivery:D2:end -->
 <!-- plan:implementation:end -->
 
@@ -510,4 +549,18 @@ Commit. chore(catalog): certify the unified Source runtime — remove the last l
 - record-result D2-S3 commit:a93297cf3377c16f39e57a1bea8d98c2f8cbd43c
 
 - close D2-S3 partial commit:a93297cf3377c16f39e57a1bea8d98c2f8cbd43c
+
+- amend implementation owner:Да sha256:06e169d35369e687b02ebb5514cead499a66b3d3b00151ec7445e048e38e869e
+
+- amend implementation owner:Да sha256:3175185c05c527d6b26a598b20bedeab2b51b721b2cb5f967b87e3db61d95160
+
+- amend implementation owner:Да sha256:53465f55b58f94772f53478bcdd6857e4a8a4990ad82bdf26bcb99b39e387c71
+
+- amend implementation owner:Да sha256:add18aca89bb30294493469d44d008cd4255a1c89720c6ef634a69738544c54f
+
+- amend implementation owner:Да sha256:c252d4ed981faaf93085d160d2e3a7a91864443b6bdcceba1e4851c264131803
+
+- amend implementation owner:Да sha256:521f541d2d00c325772c1ba3b136e2e9c66a98749e296e22f50b9eb588df8954
+
+- amend implementation owner:Да sha256:30de713aed9002f18be222ffbec16db9cbac3e9c38381cee31658b89cb141eda
 <!-- plan:execution:end -->
