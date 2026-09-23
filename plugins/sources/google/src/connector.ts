@@ -36,8 +36,7 @@ type ExecuteHandler = (
 export function buildConnectorConfig(
   fetchFn: FetchLike = fetch,
 ): ConnectorConfig {
-  /** Mint an access token from the per-call `_meta` credentials (no caching —
-   * every fetch/execute call refreshes, matching the Rust connector). */
+  /** Reuse the token owned by auth.ts for each `_meta` credential tuple. */
   const accessToken = (meta: Record<string, unknown> | undefined): Promise<string> =>
     refreshAccessToken(credsFromMeta(meta), fetchFn);
 

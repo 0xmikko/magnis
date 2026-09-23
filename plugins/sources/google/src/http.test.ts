@@ -3,11 +3,60 @@
 
 import { describe, expect, test } from "bun:test";
 import {
+  checkRateLimit,
   fetchWithTimeout,
+  GoogleRateLimitError,
   HttpTimeoutError,
   HTTP_REQUEST_TIMEOUT_MS,
   type FetchLike,
 } from "./http";
+
+function response(status: number, retryAfter: string | null): Awaited<ReturnType<FetchLike>> {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: { get: (name) => name.toLowerCase() === "retry-after" ? retryAfter : null },
+    text: async () => "",
+    json: async () => ({}),
+  };
+}
+
+/**
+ * @test-id: tst_src_iso_google_009
+ * @scenario: scn_google_pull_004
+ * @covers: plugins/sources/google/src/http.ts::checkRateLimit
+ * @deterministic: yes
+ * @fixtures: scripted 429 and 403 responses
+ */
+test("tst_src_iso_google_009 preserves exact Google 429 and quota-403 waits", () => {
+  for (const status of [429, 403]) {
+    try {
+      checkRateLimit(response(status, "17"));
+      throw new Error("expected typed rate limit");
+    } catch (error) {
+      expect(error).toBeInstanceOf(GoogleRateLimitError);
+      expect((error as GoogleRateLimitError).retryAfterSecs).toBe(17);
+    }
+  }
+});
+
+/**
+ * @test-id: tst_src_iso_google_011
+ * @scenario: scn_google_pull_004
+ * @covers: plugins/sources/google/src/http.ts::checkRateLimit
+ * @deterministic: yes
+ * @fixtures: missing and malformed Retry-After
+ */
+test("tst_src_iso_google_011 never invents a missing or malformed delay", () => {
+  for (const retryAfter of [null, "", "17seconds", "-2"]) {
+    expect(() => checkRateLimit(response(429, retryAfter))).toThrow();
+    try {
+      checkRateLimit(response(429, retryAfter));
+    } catch (error) {
+      expect(error).not.toBeInstanceOf(GoogleRateLimitError);
+    }
+  }
+});
 
 describe("fetchWithTimeout", () => {
   // A hanging fetch that honors the injected AbortSignal exactly like the real

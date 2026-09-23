@@ -26,6 +26,7 @@ import {
   type FetchLike,
   type HttpResponse,
 } from "../../http";
+import { buildConnectorConfig } from "../../connector";
 
 // ── Shared fakes ────────────────────────────────────────────────────────────
 
@@ -187,7 +188,7 @@ describe("gmail message conversion", () => {
     expect("to" in payload).toBe(false);
   });
 
-  test("tst_gts_gmail_005 no payload → convert error (skipped upstream)", () => {
+  test("tst_gts_gmail_005 no payload → convert error", () => {
     expect(() => gmailMessageToMailMessage({ id: "np" })).toThrow(
       "message np has no payload",
     );
@@ -381,6 +382,36 @@ describe("email bootstrap cursor", () => {
     return { fetchFn, calls };
   }
 
+  /**
+   * @test-id: tst_src_iso_google_001
+   * @scenario: scn_google_pull_001
+   * @covers: plugins/sources/google/src/connector.ts::buildConnectorConfig
+   * @deterministic: yes
+   * @fixtures: two Gmail pages and two distinct credential tuples
+   */
+  test("tst_src_iso_google_001 one token serves two ordered pages per credential", async () => {
+    const { fetchFn: gmailApi } = pagedApi();
+    const tokenCalls: string[] = [];
+    const fetchFn: FetchLike = async (url, init) => {
+      if (url.includes("oauth2.googleapis.com/token")) {
+        const refreshToken = new URLSearchParams(String(init?.body)).get("refresh_token");
+        if (refreshToken === null) throw new Error("missing refresh token");
+        tokenCalls.push(refreshToken);
+        return ok({ access_token: `access-${refreshToken}`, expires_in: 3600 });
+      }
+      return gmailApi(url, init);
+    };
+    const source = buildConnectorConfig(fetchFn);
+    const meta = { client_id: "gmail-pages-client", client_secret: "secret", refresh_token: "gmail-pages-a" };
+    const first = await source.fetch({ surface: "email", meta });
+    const second = await source.fetch({ surface: "email", cursor: first.nextCursor, meta });
+    expect(first.envelopes.map((e) => e.remote_id)).toEqual(["mailbox", "m1", "m2"]);
+    expect(second.envelopes.map((e) => e.remote_id)).toEqual(["m3"]);
+    expect(tokenCalls).toEqual(["gmail-pages-a"]);
+    await source.fetch({ surface: "email", meta: { ...meta, refresh_token: "gmail-pages-b" } });
+    expect(tokenCalls).toEqual(["gmail-pages-a", "gmail-pages-b"]);
+  });
+
   /** @test-id: tst_gts_email_009
    * @scenario: scn_google_sync_001
    * @covers: fetchMessagePage mailbox envelope and cursor
@@ -426,14 +457,21 @@ describe("email bootstrap cursor", () => {
     expect(p2.nextCursor).toEqual({ history_id: "h1" });
   });
 
-  test("tst_gts_email_010 hydration keeps order; non-fatal skips, 429 aborts", async () => {
+  /**
+   * @test-id: tst_src_iso_google_003
+   * @scenario: scn_google_pull_001
+   * @covers: plugins/sources/google/src/surfaces/email/gmail.ts::fetchMessagePage
+   * @deterministic: yes
+   * @fixtures: scripted message-get 404, 500, and malformed message
+   */
+  test("tst_src_iso_google_003 only a concurrent 404 may be omitted", async () => {
     const fetchFn: FetchLike = async (url) => {
       if (url.endsWith("/users/me/profile")) return ok({ historyId: "h1" });
       if (url.includes("/labels/")) return ok({ id: "SPAM", messagesTotal: 0 });
       if (url.includes("/users/me/messages?maxResults=50")) {
         return ok({ messages: [{ id: "a" }, { id: "b" }, { id: "c" }] });
       }
-      if (url.includes("/messages/b?")) return status(500, "boom");
+      if (url.includes("/messages/b?")) return status(404, "gone");
       const seg = url.split("/messages/")[1];
       if (seg === undefined)
         throw new Error("gmail url: missing message segment");
@@ -446,6 +484,18 @@ describe("email bootstrap cursor", () => {
     expect(r.envelopes.map((e) => e.remote_id)).toEqual(["a", "c"]);
     expect(r.nextCursor).toEqual({ history_id: "h1" });
 
+    const hardFailure: FetchLike = async (url) => {
+      if (url.includes("/messages/b?")) return status(500, "boom");
+      return fetchFn(url);
+    };
+    await expect(fetchMessagePage("tok", undefined, hardFailure)).rejects.toThrow("boom");
+
+    const malformed: FetchLike = async (url) => {
+      if (url.includes("/messages/b?")) return ok({ id: "b", payload: { headers: [{ name: "Subject" }] } });
+      return fetchFn(url);
+    };
+    await expect(fetchMessagePage("tok", undefined, malformed)).rejects.toThrow();
+
     // Fatal: a 429 during hydration aborts the whole batch, typed.
     const rateLimited: FetchLike = async (url) => {
       if (url.endsWith("/users/me/profile")) return ok({ historyId: "h1" });
@@ -457,6 +507,35 @@ describe("email bootstrap cursor", () => {
     expect(err).toBeInstanceOf(RateLimitError);
     expect(err.retryAfterSecs).toBe(30);
     expect(err.message).toBe("Google rate limited: retry after 30s");
+  });
+
+  /**
+   * @test-id: tst_src_iso_google_004
+   * @scenario: scn_google_pull_001
+   * @covers: plugins/sources/google/src/surfaces/email/gmail.ts::fetchEnvelopes
+   * @deterministic: yes
+   * @fixtures: first of twelve hydration requests is rate limited; seven are deferred
+   */
+  test("tst_src_iso_google_004 stops queued hydration after the first hold", async () => {
+    const started: string[] = [];
+    const releases: ((response: HttpResponse) => void)[] = [];
+    const fetchFn: FetchLike = async (url) => {
+      if (url.endsWith("/users/me/profile")) return ok({ historyId: "h1" });
+      if (url.includes("maxResults=50")) {
+        return ok({ messages: Array.from({ length: 12 }, (_, i) => ({ id: `m${i}` })) });
+      }
+      const id = url.split("/messages/")[1]?.split("?")[0];
+      if (id === undefined) throw new Error("missing message id");
+      started.push(id);
+      if (id === "m0") return status(429, "quota", "17");
+      if (Number(id.slice(1)) >= 8) return ok({ ...fullGmailMessage(), id });
+      return new Promise<HttpResponse>((resolve) => { releases.push(resolve); });
+    };
+    const page = fetchMessagePage("tok", undefined, fetchFn);
+    for (let i = 0; i < 10; i += 1) await Promise.resolve();
+    for (const release of releases) release(ok({ ...fullGmailMessage(), id: "m1" }));
+    await expect(page).rejects.toBeInstanceOf(GoogleRateLimitError);
+    expect(started).toEqual(Array.from({ length: 8 }, (_, i) => `m${i}`));
   });
 });
 

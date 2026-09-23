@@ -147,11 +147,20 @@ export async function fetchWithRetry(
   }
 }
 
-/** Throw on HTTP 429 — must run on EVERY Google API response before reading
- * the body. `Retry-After` parsed as integer seconds, default 60. */
+/** Preserve an exact provider wait when Google supplies one. A missing or
+ * malformed 429 delay is an error, never an invented host hold. */
 export function checkRateLimit(resp: HttpResponse): void {
-  if (resp.status !== 429) return;
-  const retryAfter =
-    Number.parseInt(resp.headers.get("retry-after") ?? "", 10) || 60;
-  throw new GoogleRateLimitError(retryAfter);
+  // @tested-by: tst_src_iso_google_009, tst_src_iso_google_011
+  if (resp.status !== 429 && resp.status !== 403) return;
+  const header = resp.headers.get("retry-after");
+  let seconds: number | undefined;
+  if (header !== null && /^\d+$/.test(header)) {
+    const parsed = Number(header);
+    if (Number.isSafeInteger(parsed)) seconds = parsed;
+  } else if (header !== null && /^[A-Za-z]{3}, \d{2} [A-Za-z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT$/.test(header)) {
+    const date = Date.parse(header);
+    if (Number.isFinite(date)) seconds = Math.max(0, Math.ceil((date - Date.now()) / 1000));
+  }
+  if (seconds !== undefined) throw new GoogleRateLimitError(seconds);
+  if (resp.status === 429) throw new Error("Google rate limit response missing valid Retry-After");
 }

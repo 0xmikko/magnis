@@ -1,17 +1,18 @@
-// Per-call credentials + access-token refresh — twin of the Rust
-// `creds_from_meta` (main.rs) and `refresh_access_token` (auth.rs).
+// Per-call credentials + access-token refresh.
 //
 // The host injects `_meta = { refresh_token, client_id, client_secret }` on
-// each fetch/execute call; the connector mints a short-lived access token
-// before every Google REST call (no caching, matching the Rust connector).
+// each fetch/execute call; the connector reuses a token until its explicit expiry.
 
-import { AuthExpiredError, fetchWithRetry, type FetchLike } from "./http";
+import { AuthExpiredError, checkRateLimit, fetchWithRetry, type FetchLike } from "./http";
 
 export interface Creds {
   refresh_token: string;
   client_id: string;
   client_secret: string;
 }
+
+const tokens = new Map<string, { value: string; expiresAt: number }>();
+const refreshes = new Map<string, Promise<string>>();
 
 /** Pull `{ refresh_token, client_id, client_secret }` out of the tool-call
  * `_meta`. All three are required — a missing key is an error (NO FALLBACK). */
@@ -39,6 +40,32 @@ export async function refreshAccessToken(
   creds: Creds,
   fetchFn: FetchLike,
 ): Promise<string> {
+  const key = JSON.stringify([creds.client_id, creds.client_secret, creds.refresh_token]);
+  const cached = tokens.get(key);
+  // @tested-by: tst_src_iso_google_001, tst_src_iso_google_002, tst_src_iso_google_010
+  if (cached !== undefined && Date.now() < cached.expiresAt) return cached.value;
+  const pending = refreshes.get(key);
+  if (pending !== undefined) return pending;
+
+  const refresh = refreshToken(creds, fetchFn).then(({ value, expiresIn }) => {
+    tokens.set(key, {
+      value,
+      expiresAt: Date.now() + Math.max(0, expiresIn - 60) * 1000,
+    });
+    return value;
+  });
+  refreshes.set(key, refresh);
+  try {
+    return await refresh;
+  } finally {
+    refreshes.delete(key);
+  }
+}
+
+async function refreshToken(
+  creds: Creds,
+  fetchFn: FetchLike,
+): Promise<{ value: string; expiresIn: number }> {
   const body = new URLSearchParams({
     client_id: creds.client_id,
     client_secret: creds.client_secret,
@@ -52,15 +79,20 @@ export async function refreshAccessToken(
     body,
   });
 
+  checkRateLimit(resp);
+
   if (!resp.ok) {
     const text = await resp.text();
     if (text.includes("invalid_grant")) throw new AuthExpiredError(text);
     throw new Error(`Token refresh failed: ${text}`);
   }
 
-  const json = (await resp.json()) as { access_token?: string };
-  if (typeof json.access_token !== "string") {
+  const json = (await resp.json()) as { access_token?: string; expires_in?: number };
+  if (typeof json.access_token !== "string" || json.access_token === "") {
     throw new Error("Token refresh failed: response missing access_token");
   }
-  return json.access_token;
+  if (!Number.isInteger(json.expires_in) || json.expires_in === undefined || json.expires_in <= 0) {
+    throw new Error("Token refresh failed: response missing valid expires_in");
+  }
+  return { value: json.access_token, expiresIn: json.expires_in };
 }

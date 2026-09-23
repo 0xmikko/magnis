@@ -10,7 +10,6 @@ import {
   checkRateLimit,
   fetchWithRetry,
   HistoryExpiredError,
-  isFatal,
   type FetchLike,
 } from "../../http";
 import {
@@ -77,10 +76,8 @@ interface HistoryListResponse {
 // ── Response parsers (serde parity — see validate.ts) ─────────
 //
 // One parser per Rust response struct, field-for-field. Required fields throw;
-// `Option<T>` / `#[serde(default)]` fields stay tolerant. The throw is a plain
-// Error (≡ `GoogleSyncError::Other`), so fatality is decided by the caller
-// exactly as in Rust: a bad `messages.get` body skips ONE message, everything
-// else fails the whole fetch.
+// `Option<T>` / `#[serde(default)]` fields stay tolerant. A malformed
+// `messages.get` body fails the page so its cursor cannot advance.
 
 /** `GmailHeader` (gmail.rs:63) — `name` and `value` are BOTH required. */
 function parseHeaders(
@@ -660,12 +657,17 @@ async function fetchMessage(
   token: string,
   gmailMsgId: string,
   fetchFn: FetchLike,
-): Promise<GmailMessage> {
+): Promise<GmailMessage | null> {
   const url = `https://gmail.googleapis.com/gmail/v1/users/me/messages/${gmailMsgId}?format=full`;
   const resp = await fetchWithRetry(fetchFn, url, {
     headers: { authorization: `Bearer ${token}` },
   });
   checkRateLimit(resp);
+  // @tested-by: tst_src_iso_google_003
+  if (resp.status === 404) {
+    console.error(`magnis-google: message ${gmailMsgId} disappeared after listing (404)`);
+    return null;
+  }
   if (!resp.ok) {
     throw new Error(
       `GET message ${gmailMsgId} failed (${String(resp.status)}): ${await resp.text()}`,
@@ -755,8 +757,7 @@ type MessageEnvelopeKind = "snapshot" | "live";
 interface Fetched {
   id: string;
   kind: MessageEnvelopeKind;
-  msg?: GmailMessage;
-  err?: unknown;
+  msg: GmailMessage | null;
 }
 
 async function mapConcurrent<T, R>(
@@ -766,51 +767,45 @@ async function mapConcurrent<T, R>(
 ): Promise<R[]> {
   const results = new Array<R>(items.length);
   let next = 0;
+  let failed = false;
+  let failure: unknown;
   const workers = Array.from(
     { length: Math.min(limit, items.length) },
     async () => {
       for (;;) {
+        if (failed) return;
         const i = next++;
         if (i >= items.length) return;
         const item = items[i];
         if (item === undefined) throw new Error("mapLimit: item index out of range");
-        results[i] = await fn(item);
+        try {
+          results[i] = await fn(item);
+        } catch (error) {
+          if (!failed) {
+            failed = true;
+            failure = error;
+          }
+          return;
+        }
       }
     },
   );
   await Promise.all(workers);
+  // @tested-by: tst_src_iso_google_004
+  // A failed worker closes the queue; in-flight requests settle before rejection.
+  if (failed) throw failure;
   return results;
 }
 
-/** Turn (id, kind, fetch-result) tuples into envelopes IN ORDER. A
- * non-fatal fetch error or a conversion failure SKIPS that message (logged);
- * a fatal error (rate-limit / auth / history-expired) aborts the batch. */
-function errText(e: unknown): string {
-  return e instanceof Error ? e.message : String(e);
-}
-
+/** Turn fetched messages into envelopes in the original list order. */
 export function snapshotEnvelopesFromFetched(fetched: Fetched[]): Envelope[] {
   const envelopes: Envelope[] = [];
-  for (const { id, kind, msg, err } of fetched) {
-    if (err !== undefined) {
-      // eslint-disable-next-line @typescript-eslint/only-throw-error -- rethrow the original caught value (unknown) to abort the batch; isFatal already classified it and wrapping would lose the original error identity.
-      if (isFatal(err)) throw err;
-      console.error(
-        `magnis-google: skipping message ${id} (fetch failed: ${errText(err)})`,
-      );
-      continue;
-    }
-    if (msg === undefined) continue;
-    try {
-      const mail = gmailMessageToMailMessage(msg);
-      const payload = { ...mail } as unknown as Record<string, unknown>;
-      flattenMailPayload(payload);
-      envelopes.push({ surface: "email", payload, remote_id: id, kind });
-    } catch (e) {
-      console.error(
-        `magnis-google: skipping message ${id} (convert failed: ${errText(e)})`,
-      );
-    }
+  for (const { id, kind, msg } of fetched) {
+    if (msg === null) continue;
+    const mail = gmailMessageToMailMessage(msg);
+    const payload = { ...mail } as unknown as Record<string, unknown>;
+    flattenMailPayload(payload);
+    envelopes.push({ surface: "email", payload, remote_id: id, kind });
   }
   return envelopes;
 }
@@ -835,13 +830,7 @@ async function fetchEnvelopes(
   const fetched = await mapConcurrent(
     requests,
     GMAIL_FETCH_CONCURRENCY,
-    async ({ id, kind }): Promise<Fetched> => {
-      try {
-        return { id, kind, msg: await fetchMessage(token, id, fetchFn) };
-      } catch (err) {
-        return { id, kind, err };
-      }
-    },
+    async ({ id, kind }): Promise<Fetched> => ({ id, kind, msg: await fetchMessage(token, id, fetchFn) }),
   );
   return snapshotEnvelopesFromFetched(fetched);
 }

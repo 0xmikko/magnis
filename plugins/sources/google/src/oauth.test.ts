@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
+import { refreshAccessToken } from "./auth";
 import { exchange, revoke, validateIdTokenClaims } from "./oauth";
 import type { FetchLike, HttpResponse } from "./http";
 
@@ -234,5 +235,65 @@ describe("magnis.auth.revoke", () => {
     await expect(revoke({}, okFn)).rejects.toThrow(
       "magnis.auth.exchange: missing _meta.refresh_token",
     );
+  });
+});
+
+describe("Google access token reuse", () => {
+  /**
+   * @test-id: tst_src_iso_google_002
+   * @scenario: scn_google_pull_001
+   * @covers: plugins/sources/google/src/auth.ts::refreshAccessToken
+   * @deterministic: yes
+   * @fixtures: scripted token responses and a fixed clock
+   */
+  test("tst_src_iso_google_002 reuses a valid token, expires it, and isolates credentials", async () => {
+    const now = spyOn(Date, "now").mockReturnValue(1_000_000);
+    const calls: string[] = [];
+    const fetchFn: FetchLike = async (_url, init) => {
+      const form = new URLSearchParams(String(init?.body));
+      const refreshToken = form.get("refresh_token");
+      if (refreshToken === null) throw new Error("missing refresh token");
+      calls.push(refreshToken);
+      return ok({ access_token: `token-${calls.length}`, expires_in: 3600 });
+    };
+    const first = { client_id: "client-a", client_secret: "secret-a", refresh_token: "refresh-a" };
+    const second = { client_id: "client-b", client_secret: "secret-b", refresh_token: "refresh-b" };
+    try {
+      expect(await refreshAccessToken(first, fetchFn)).toBe("token-1");
+      expect(await refreshAccessToken(first, fetchFn)).toBe("token-1");
+      expect(await refreshAccessToken(second, fetchFn)).toBe("token-2");
+      now.mockReturnValue(4_601_000);
+      expect(await refreshAccessToken(first, fetchFn)).toBe("token-3");
+      expect(calls).toEqual(["refresh-a", "refresh-b", "refresh-a"]);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  /**
+   * @test-id: tst_src_iso_google_010
+   * @scenario: scn_google_pull_001
+   * @covers: plugins/sources/google/src/auth.ts::refreshAccessToken
+   * @deterministic: yes
+   * @fixtures: one deferred token response, no network
+   */
+  test("tst_src_iso_google_010 concurrent requests share one refresh and require an expiry", async () => {
+    let calls = 0;
+    const releases: ((response: HttpResponse) => void)[] = [];
+    const fetchFn: FetchLike = async () => {
+      calls += 1;
+      return new Promise<HttpResponse>((resolve) => { releases.push(resolve); });
+    };
+    const creds = { client_id: "client-concurrent", client_secret: "secret", refresh_token: "refresh-concurrent" };
+    const first = refreshAccessToken(creds, fetchFn);
+    const second = refreshAccessToken(creds, fetchFn);
+    const observedCalls = calls;
+    for (const release of releases) release(ok({ access_token: "shared", expires_in: 3600 }));
+    expect(await Promise.all([first, second])).toEqual(["shared", "shared"]);
+    expect(observedCalls).toBe(1);
+
+    const missingExpiry = { ...creds, refresh_token: "refresh-no-expiry" };
+    await expect(refreshAccessToken(missingExpiry, async () => ok({ access_token: "bad" })))
+      .rejects.toThrow("expires_in");
   });
 });
