@@ -1638,18 +1638,9 @@ export class TelegramModule {
   async messagesBackfill(
     params: BackfillParams,
   ): Promise<{ count: number; skipped: number; pending: boolean }> {
-    const payload: Data = {
-      action: "backfill_chat",
-      chat_id: params.chat_id,
-      before_message_id: params.before_message_id ?? 0,
-    };
-    // FIRE-AND-FORGET. The connector fetch is network-bound (the Telegram server
-    // can take tens of seconds) and the plugin runs ALL its ops on ONE worker
-    // channel (dispatcher.rs), so awaiting the fetch here would freeze every
-    // other telegram read (`messages.list`/`chats.list`) behind it. Instead the
-    // host runs fetch + ingest as a detached task and emits `sync.backfill` when
-    // the page lands; the UI reloads on that event. We return immediately.
-    await this.graph.request_backfill(payload, params.account_id);
+    // The selected chat remains module state. The graph owns target selection
+    // and wakes the standard Source fetch without a provider-specific command.
+    await this.graph.request_backfill({}, params.account_id);
     return { count: 0, skipped: 0, pending: true };
   }
 

@@ -106,9 +106,6 @@ describe("Phone state-machine exact-artifact certification", () => {
           ok: true, subscription_id: "certification-probe",
         });
         expect(successfulOperation(evidence, "listen_stop")).toEqual({ ok: true });
-        expect(successfulOperation(evidence, "magnis.sync.listen")).toEqual({
-          ok: true, subscription_id: "sub:certification",
-        });
         expect(successfulOperation(evidence, "magnis.sync.fetch")).toEqual({
           envelopes: [], nextCursor: null, hasMore: false,
         });
@@ -119,13 +116,13 @@ describe("Phone state-machine exact-artifact certification", () => {
           state: "code_sent",
         });
         expect(successfulOperation(evidence, "magnis.auth.step")).toEqual({
-          state: "password_required",
+          state: "password",
         });
         expect(successfulOperation(evidence, "magnis.auth.revoke")).toEqual({ revoked: true });
 
         const ceremony = await runExactPhoneCeremony(root);
         expect(exactResult(ceremony, 1)).toEqual({ state: "code_sent" });
-        expect(exactResult(ceremony, 2)).toEqual({ state: "password_required" });
+        expect(exactResult(ceremony, 2)).toEqual({ state: "password" });
         expect(exactResult(ceremony, 3)).toEqual({
           credential: FIXTURE_PHONE_SESSION,
           identity: {

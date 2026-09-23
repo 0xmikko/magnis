@@ -1,20 +1,14 @@
 // Subscription protocol — TS twin of plugins/sources/telegram/src/subscriptions.rs.
 // `listen_start{subscription_id, _meta}` + `listen_stop{subscription_id}`.
 //
-// Replaces the implicit "one listener per process" assumption of the legacy
-// `magnis.sync.listen` tool with a named subscription registry. Each subscription
+// Named subscriptions replace the implicit "one listener per process" model. Each subscription
 // owns its own cancel flag; stopping one doesn't affect others. The same
 // connector process can hold N subscriptions for N account_ids concurrently.
 //
-// Notifications stamp `subscription_id` and `account_id` into the params
-// alongside `{ payload, remote_id, position }` so the host can route by
-// subscription, validate the account and trim the chat's open range by the
-// item's position.
-//
-// !! WIRE NOTE: these params carry NO `surface` and NO `kind` — unlike the
-// @magnis/connector-sdk default emitter, which always stamps both. That is why
-// this connector does NOT route push through the SDK (see dispatch.ts).
+// The registry owns Telegram listeners only. The shared Connector SDK owns
+// notification serialization and subscription routing.
 
+import type { Envelope } from "@magnis/connector-sdk";
 import { credsFromMeta, accountIdFromMeta, type MessageLike } from "./client";
 import { messagePayload } from "./surfaces/telegram/envelope";
 import { chatRemoteId, messageRemoteId } from "./surfaces/telegram/schema";
@@ -28,60 +22,23 @@ import type { LiveUpdate, MembershipEndUpdate, TgClient } from "./live";
  * registry without mutating process-global state. */
 export type ListenerMode = "fixture" | "live";
 
-/** Writes one line to the host (stdout in production; a sink in tests). */
-export type LineWriter = (line: string) => void;
-
 /** One active subscription's runtime handle. */
 interface ListenerHandle {
   cancel: () => void;
 }
 
-/** Where a live item sits in its chat: the host trims the chat's open range
- * by it, as a page states the ranges it read. */
-export interface LivePosition {
-  scope_id: string;
-  id: number;
-}
-
-/** One live push: the exact shape the host's `parse_push_params` reads. */
-export interface LivePush {
-  payload: Record<string, unknown>;
-  remote_id: string;
-  position: LivePosition;
-}
-
-/** Build the push notification params. EXACT Rust shape — no surface, no kind,
- * no cursor — plus the item's position in its chat. */
-export function notificationLine(
-  subscriptionId: string,
-  accountId: string,
-  payload: Record<string, unknown>,
-  remoteId: string,
-  position: LivePosition,
-): string {
-  return JSON.stringify({
-    jsonrpc: "2.0",
-    method: "notifications/magnis/envelope",
-    params: {
-      subscription_id: subscriptionId,
-      account_id: accountId,
-      payload,
-      remote_id: remoteId,
-      position,
-    },
-  });
-}
-
-/** Convert a live message or dated membership end to the v1 push dialect.
- * Missing message identity is an error, never a chat-zero push.
+/** Convert a live message or dated membership end to a standard SDK envelope.
+ * Missing message identity is an error. Membership is not message coverage.
  * @tested-by: tst_src_tg_032, tst_src_tg_033 */
 function isMembershipEnd(update: LiveUpdate): update is MembershipEndUpdate {
   return "kind" in update;
 }
 
-export function liveUpdatePushes(update: LiveUpdate, accountId: string): LivePush[] {
+export function liveUpdatePushes(update: LiveUpdate, accountId: string): Envelope[] {
   if (isMembershipEnd(update)) {
     return [{
+      surface: "telegram",
+      kind: "live",
       payload: {
         entity_type: "telegram_chat",
         chat_id: update.chatId,
@@ -90,9 +47,6 @@ export function liveUpdatePushes(update: LiveUpdate, accountId: string): LivePus
         valid_until: update.validUntil,
       },
       remote_id: chatRemoteId(update.chatId),
-      // The v1 notification shape requires a position. A membership fact is
-      // not message coverage, so zero states no Telegram message position.
-      position: { scope_id: String(update.chatId), id: 0 },
     }];
   }
   const message: MessageLike = update;
@@ -100,6 +54,8 @@ export function liveUpdatePushes(update: LiveUpdate, accountId: string): LivePus
   if (peer === undefined) throw new Error("live update requires a valid Telegram peer identity");
   const m = messageToIntermediate(message, accountId, peer.id);
   return [{
+    surface: "telegram",
+    kind: "live",
     payload: messagePayload(m),
     remote_id: messageRemoteId(m.chat_id, m.message_id),
     position: { scope_id: String(m.chat_id), id: m.message_id },
@@ -127,7 +83,7 @@ export class SubscriptionRegistry {
     subscriptionId: string,
     mode: ListenerMode,
     args: Record<string, unknown>,
-    write: LineWriter,
+    emit: (envelope: Envelope) => void,
   ): Promise<void> {
     // Atomic claim: "already running" OR "already starting" → no-op.
     if (this.running.has(subscriptionId) || this.starting.has(subscriptionId)) return;
@@ -136,41 +92,39 @@ export class SubscriptionRegistry {
     // Build OUTSIDE the claim so a live MTProto connect never blocks other
     // subscriptions. The claim is released on BOTH the ok and err paths.
     try {
-      const handle = await this.buildListener(subscriptionId, mode, args, write);
+      const handle = await this.buildListener(mode, args, emit);
       this.running.set(subscriptionId, handle);
     } finally {
       this.starting.delete(subscriptionId);
     }
   }
 
-  /** Convenience: choose the mode from TELEGRAM_FIXTURE_FILE. Used by the
-   * dispatcher so production paths stay one-call; tests pass mode explicitly. */
+  /** Choose the mode from TELEGRAM_FIXTURE_FILE. */
   async startFromEnv(
     subscriptionId: string,
     args: Record<string, unknown>,
-    write: LineWriter,
+    emit: (envelope: Envelope) => void,
   ): Promise<void> {
     const mode: ListenerMode = fixturePath() !== undefined ? "fixture" : "live";
-    await this.start(subscriptionId, mode, args, write);
+    await this.start(subscriptionId, mode, args, emit);
   }
 
   private async buildListener(
-    subscriptionId: string,
     mode: ListenerMode,
     args: Record<string, unknown>,
-    write: LineWriter,
+    emit: (envelope: Envelope) => void,
   ): Promise<ListenerHandle> {
     // NO FALLBACKS: account_id is required for SessionPool routing AND for
     // notification stamping. Missing → error, the caller fixes their _meta.
     const accountId = accountIdFromMeta(args);
 
     if (mode === "fixture") {
-      return spawnFixtureListener(subscriptionId, accountId, write);
+      return spawnFixtureListener(emit);
     }
     const creds = credsFromMeta(args);
     const { pool } = await import("./live");
     const client = await pool().getOrCreate(accountId, creds);
-    return spawnLiveListener(subscriptionId, accountId, client, write);
+    return spawnLiveListener(accountId, client, emit);
   }
 
   /** Cancel the named listener. Returns whether one was found and cancelled.
@@ -192,9 +146,7 @@ export class SubscriptionRegistry {
 /** Fixture mode: emit the file's pre-recorded live pushes, then EXIT (the
  * fixture is finite). Cancelling interrupts mid-replay. */
 function spawnFixtureListener(
-  subscriptionId: string,
-  accountId: string,
-  write: LineWriter,
+  emit: (envelope: Envelope) => void,
 ): ListenerHandle {
   let cancelled = false;
   // WIRE PARITY (Rust-vs-TS parity diff): the replay MUST NOT start until the
@@ -208,9 +160,9 @@ function spawnFixtureListener(
   // subscription_id). `setImmediate` defers past the pending microtasks the ack
   // path awaits, restoring the Rust frame order (ack → push).
   const replay = async (): Promise<void> => {
-    for (const { payload, remote_id, position } of livePushes()) {
+    for (const envelope of livePushes()) {
       if (cancelled) return;
-      write(notificationLine(subscriptionId, accountId, payload, remote_id, position));
+      emit(envelope);
       // Yield so a concurrent stop can interrupt the replay.
       await Promise.resolve();
     }
@@ -230,18 +182,15 @@ function spawnFixtureListener(
  * notifications. Best-effort: a handler error logs to stderr and terminates the
  * loop (no reconnect), matching the Rust listener. */
 function spawnLiveListener(
-  subscriptionId: string,
   accountId: string,
   client: TgClient,
-  write: LineWriter,
+  emit: (envelope: Envelope) => void,
 ): ListenerHandle {
   let cancelled = false;
   client.addLiveHandler((message) => {
     if (cancelled) return;
     try {
-      for (const { payload, remote_id, position } of liveUpdatePushes(message, accountId)) {
-        write(notificationLine(subscriptionId, accountId, payload, remote_id, position));
-      }
+      for (const envelope of liveUpdatePushes(message, accountId)) emit(envelope);
     } catch (e) {
       console.error(`magnis-telegram: live update error: ${String(e)}`);
       cancelled = true;

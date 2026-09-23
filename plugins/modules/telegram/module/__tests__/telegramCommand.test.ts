@@ -45,7 +45,13 @@ describe("tst_module_telegram_command_001 — Telegram command mapping", () => {
     });
   });
 
-  it("requests asynchronous backfill with exact source arguments", async () => {
+  /** @test-id: tst_mod_tg_backfill_wake_001
+   * @scenario: scn_telegram_command_001
+   * @covers: TelegramModule.messagesBackfill generic graph wake
+   * @deterministic: yes
+   * @fixtures: strict graph double; no connector process
+   */
+  it("tst_mod_tg_backfill_wake_001 requests asynchronous backfill without provider payload", async () => {
     const graph = mockGraph({ request_backfill: () => Promise.resolve({ pending: true }) });
     const module = mountModule(TelegramModule, { graph }).module;
 
@@ -54,11 +60,7 @@ describe("tst_module_telegram_command_001 — Telegram command mapping", () => {
       before_message_id: 100,
       account_id: "account-1",
     })).resolves.toEqual({ count: 0, skipped: 0, pending: true });
-    expect(graph.spies.request_backfill).toHaveBeenCalledWith({
-      action: "backfill_chat",
-      chat_id: 42,
-      before_message_id: 100,
-    }, "account-1");
+    expect(graph.spies.request_backfill).toHaveBeenCalledWith({}, "account-1");
   });
 
   it("validates batch input before sending and honors excluded recipients", async () => {

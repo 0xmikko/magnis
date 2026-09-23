@@ -299,7 +299,6 @@ const CURRENT_OPERATION_EVIDENCE: Readonly<
     "magnis.auth.revoke": { id: "tst_statemock_phone_auth_001", path: "plugins/sources/mock-statemachine-phone/src/auth.test.ts" },
     "magnis.auth.step": { id: "tst_statemock_phone_auth_001", path: "plugins/sources/mock-statemachine-phone/src/auth.test.ts" },
     "magnis.sync.fetch": { id: "tst_conn_statemock_ts_004", path: "packages/source-statemachine/src/index.test.ts" },
-    "magnis.sync.listen": { id: "tst_cat_src_phone_001", path: "packages/testkit/__tests__/tst_cat_src_parity_001.test.ts" },
   },
   "mock-telegram": {
     "magnis.dataset.invoke:emit_chat": { id: "tst_conn_mocktelegram_dataset_001", path: "plugins/sources/mock-telegram/src/dataset.test.ts" },
@@ -319,9 +318,10 @@ const CURRENT_OPERATION_EVIDENCE: Readonly<
     "magnis.auth.begin": { id: "tst_tgts_auth_001", path: "plugins/sources/telegram/src/auth.test.ts" },
     "magnis.auth.revoke": { id: "tst_tgts_auth_012", path: "plugins/sources/telegram/src/auth.test.ts" },
     "magnis.auth.step": { id: "tst_tgts_auth_004", path: "plugins/sources/telegram/src/auth.test.ts" },
-    "magnis.execute": { id: "tst_tgts_exec_001", path: "plugins/sources/telegram/src/surfaces/telegram/execute.test.ts" },
+    "magnis.execute:download_file": { id: "tst_tgts_exec_001", path: "plugins/sources/telegram/src/surfaces/telegram/execute.test.ts" },
+    "magnis.execute:reply": { id: "tst_tgts_exec_001", path: "plugins/sources/telegram/src/surfaces/telegram/execute.test.ts" },
+    "magnis.execute:send_message": { id: "tst_tgts_exec_001", path: "plugins/sources/telegram/src/surfaces/telegram/execute.test.ts" },
     "magnis.sync.fetch": { id: "tst_tgts_fx_001", path: "plugins/sources/telegram/src/fixture.test.ts" },
-    "magnis.sync.listen": { id: "tst_tgts_wire_005", path: "plugins/sources/telegram/src/fixture.test.ts" },
   },
   x: {
     "magnis.auth.probe": { id: "tst_x_probe", path: "plugins/sources/x/src/probe.test.ts" },
@@ -475,7 +475,6 @@ const GOLDEN_PROVIDERS: readonly GoldenProvider[] = [
       "magnis.auth.probe",
       "magnis.auth.revoke",
       "magnis.auth.step",
-      "magnis.sync.listen",
     ],
     identityRule: "fixture_phone_subject",
     credentialKeys: ["session"],
@@ -530,18 +529,17 @@ const GOLDEN_PROVIDERS: readonly GoldenProvider[] = [
     auth: "phone_code",
     delivery: "push",
     pollIntervalSecs: null,
-    advertisedTools: [],
+    advertisedTools: SDK_TOOLS,
     callableOperations: [
-      "initialize",
+      ...SDK_OPERATIONS,
       "listen_start",
       "listen_stop",
       "magnis.auth.begin",
       "magnis.auth.revoke",
       "magnis.auth.step",
-      "magnis.execute",
-      "magnis.sync.fetch",
-      "magnis.sync.listen",
-      "tools/list",
+      "magnis.execute:download_file",
+      "magnis.execute:reply",
+      "magnis.execute:send_message",
     ],
     identityRule: "verified_telegram_user_id",
     credentialKeys: ["api_hash", "api_id", "session"],
@@ -908,7 +906,7 @@ describe("tst_cat_src_parity_001 current v1 golden matrix", () => {
         capabilities: {
           tools: {},
           experimental: {
-            magnis: { sync: { surfaces: ["golden"], mode: "push", interval_secs: 17 } },
+            magnis: { sync: { surfaces: ["golden"], mode: "push" } },
           },
         },
         serverInfo: { name: "golden-sdk", version: "1.2.3" },
@@ -924,6 +922,9 @@ describe("tst_cat_src_parity_001 current v1 golden matrix", () => {
           properties: {
             surface: { type: "string" },
             cursor: {},
+            scope_id: { type: "string" },
+            target: { type: "object" },
+            forward_checkpoint: {},
             tracked_handles: { type: "array", items: { type: "string" } },
             limit: { type: "integer" },
           },
@@ -945,10 +946,15 @@ describe("tst_cat_src_parity_001 current v1 golden matrix", () => {
       total: 3,
       discovered: 1,
     });
-    expect((await sdkCall(config, 4, "magnis.auth.exchange", {
-      code: "oauth-code",
-      _meta: { verifier: "pkce" },
-    })).result).toEqual({ code: "oauth-code", verifier: "pkce" });
+    process.argv.push("--auth-mode");
+    try {
+      expect((await sdkCall(config, 4, "magnis.auth.exchange", {
+        code: "oauth-code",
+        _meta: { verifier: "pkce" },
+      })).result).toEqual({ code: "oauth-code", verifier: "pkce" });
+    } finally {
+      process.argv.splice(process.argv.lastIndexOf("--auth-mode"), 1);
+    }
     expect((await sdkCall(config, 5, "magnis.execute", { action: "send", body: "hello" })).result).toEqual({
       providerEffect: { sent: "hello", remoteId: "out-1" },
     });
@@ -988,25 +994,23 @@ describe("tst_cat_src_parity_001 current v1 golden matrix", () => {
     });
   });
 
-  test("custom Telegram declaration pins its intentionally different v1 Push dialect", () => {
-    // Provider-local typed execution pins the same wire at tst_tgts_wire_001,
-    // tst_tgts_wire_004 and tst_tgts_wire_009. The catalog matrix owns only
-    // the authored certification declaration, so testkit never imports the
-    // provider's GramJS-backed runtime closure.
+  test("Telegram declaration uses the shared SDK Push dialect", () => {
     const authored = certification(manifest("telegram"), "telegram");
     expect(authored.delivery).toBe("push");
     expect("poll_interval_secs" in authored).toBe(false);
     expect(authored.server_info_name).toBe("magnis-telegram");
     expect(authored.server_info_version).toBe("1.0.1");
-    expect(authored.advertised_tools).toEqual([]);
+    expect(authored.advertised_tools).toEqual(["magnis.sync.fetch"]);
     expect(stringArray(authored.callable_operations, "telegram.callable_operations")).toEqual(
       expect.arrayContaining([
         "listen_start",
         "listen_stop",
+        "magnis.execute:send_message",
         "magnis.sync.fetch",
-        "magnis.sync.listen",
       ]),
     );
+    expect(stringArray(authored.callable_operations, "telegram.callable_operations"))
+      .not.toContain("magnis.sync.listen");
   });
 
   test("deterministic mocks pin provider effects, terminal pages and item identity", async () => {
@@ -1129,7 +1133,6 @@ describe("tst_cat_src_parity_001 current v1 golden matrix", () => {
         "magnis.auth.revoke",
         "magnis.auth.step",
         "magnis.sync.fetch",
-        "magnis.sync.listen",
         "tools/list",
       ]);
       expect(replyResult(evidence, "listen_start")).toEqual({
@@ -1137,10 +1140,6 @@ describe("tst_cat_src_parity_001 current v1 golden matrix", () => {
         subscription_id: "certification-probe",
       });
       expect(replyResult(evidence, "listen_stop")).toEqual({ ok: true });
-      expect(replyResult(evidence, "magnis.sync.listen")).toEqual({
-        ok: true,
-        subscription_id: "sub:certification",
-      });
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

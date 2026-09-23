@@ -591,6 +591,28 @@ export function decodeSourceCertificationDeclaration(
     `source '${sourceId}' certification.callable_operations`,
     false,
   );
+  if (runtimeKind !== "connector_sdk") {
+    throw new Error(`source '${sourceId}' certification.runtime_kind must be connector_sdk`);
+  }
+  for (const operation of ["initialize", "tools/list"]) {
+    if (!callableOperations.includes(operation)) {
+      throw new Error(`source '${sourceId}' certification.callable_operations must include ${operation}`);
+    }
+  }
+  if (authority === "module_sync" && !callableOperations.includes("magnis.sync.fetch")) {
+    throw new Error(`source '${sourceId}' certification.callable_operations must include magnis.sync.fetch`);
+  }
+  if (callableOperations.includes("magnis.sync.listen")) {
+    throw new Error(`source '${sourceId}' certification.callable_operations contains legacy magnis.sync.listen`);
+  }
+  const hasListenStart = callableOperations.includes("listen_start");
+  const hasListenStop = callableOperations.includes("listen_stop");
+  if (delivery === "push" && (!hasListenStart || !hasListenStop)) {
+    throw new Error(`source '${sourceId}' push delivery requires listen_start and listen_stop`);
+  }
+  if (delivery !== "push" && (hasListenStart || hasListenStop)) {
+    throw new Error(`source '${sourceId}' non-push delivery forbids listen_start and listen_stop`);
+  }
   const scenarioIds = sortedStrings(
     raw.scenario_ids,
     `source '${sourceId}' certification.scenario_ids`,

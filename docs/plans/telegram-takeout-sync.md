@@ -1,9 +1,9 @@
 # Telegram takeout sync
 
-Status: SPEC_DRAFT  
-Spec lock: unlocked  
-Implementation lock: unlocked  
-Active Delivery: none  
+Status: APPROVED  
+Spec lock: sha256:52503423e45e07b615691ab59a74f961f96ae54cd44d594980cfc5f5101b6699 owner:Да, незамедлительно.  
+Implementation lock: sha256:d656a043833e52655a605a6b3886ded59cf3868054b31b61da4a8ed965b7e283 owner:Да, незамедлительно.  
+Active Delivery: D2  
 Unattended decisions: allowed  
 
 <!-- plan:spec:start -->
@@ -11,21 +11,26 @@ Unattended decisions: allowed
 
 Telegram first states the exact account plan, then downloads the selected history at the fastest rate the provider accepts. A provider hold pauses requests only until its stated deadline; it never becomes a permanent delay between later requests.
 
+The work also removes Telegram's two Source exceptions. Every in-repository Source runs through `@magnis/connector-sdk`, and every scheduled read—including bounded per-identity history—uses `magnis.sync.fetch`. `magnis.execute` remains only for interactive actions such as send, reply and media download. The backend contains no Telegram command, payload or result adapter.
+
 Success means:
 
 - Before the first historical message envelope, every discovered chat has been emitted once with the exact `message_count` returned by Telegram. The existing module therefore fixes the `chats` and `messages` totals before message ingestion begins. Those totals may move later only for a real live message or membership change.
 - Full-history reads use Telegram's official Takeout flow: `account.initTakeoutSession`, `messages.getSplitRanges`, and `messages.getDialogs`/`messages.getHistory` wrapped in both `invokeWithMessagesRange` and `invokeWithTakeout`.
 - `FLOOD_WAIT_X` and `TAKEOUT_INIT_DELAY_X` pause the account for exactly `X` seconds. On expiry one waiting request may run immediately. No completed-request average or permanent `requestIntervalMs` survives the hold.
+- Telegram uses the same `runConnector` program, Sync Profile requests, push envelopes, error mapping and bounded concurrent dispatcher as every other Source. Its manifest says `runtime_kind = "connector_sdk"`; `plugins/sources/telegram/src/dispatch.ts` is gone.
 - The same real-account, indexer-off stand sustains at least 150 admitted envelopes/second by wall time over a run of at least 10,000 envelopes when Telegram returns no provider hold. If a provider hold occurs, the run reports it separately and makes no local-throughput claim.
-- The live performance stand remains only in the `magnis` repository and outside CI. No credential, Telegram network call, PostgreSQL installation, or provisioned-source test enters either repository's CI.
+- The live performance stand remains only in the `magnis` repository and outside CI. No credential, Telegram network call, PostgreSQL installation or provisioned-source test enters either repository's CI.
 
 ## Why now
 
 The latest real stand regressed from 175.141 envelopes/second (`magnis` `60c24bb`, app `2226442`) to 10.116 envelopes/second (`magnis` `ba40f88`, app `6b2cf303`). In the slow run, Source fetch used 3,403,571 ms and Graph admission 59,889 ms: 98.2% of measured turn time was Telegram fetch, not Graph or PostgreSQL.
 
-The regression is in `AccountAdmission.observe()`. After a remote 420 it derives `requestIntervalMs` from all completed calls and the wait, then applies that interval forever in `select()`. Telegram's documentation says `FLOOD_WAIT_X` is the delay before repeating the action; it does not advertise a continuing request rate. The code turned one temporary provider refusal into permanent throttling.
+The regression is in `AccountAdmission.observe()`. After a remote 420 it derives `requestIntervalMs` from completed calls and the wait, then applies that interval forever in `select()`. Telegram documents `FLOOD_WAIT_X` as the delay before repeating the action, not a continuing request rate. One temporary provider refusal became permanent throttling.
 
-The current bootstrap also interleaves chat discovery with up to 100 messages per chat. The module cannot know its final plan until the last chat arrives, so both denominators move while messages are already being written. Telegram's Takeout documentation prescribes the missing ordering: count dialogs and each dialog's messages first, then export the histories through split ranges.
+The current bootstrap interleaves chat discovery with messages, so the plan denominators move during ingestion. Telegram's Takeout documentation prescribes the missing ordering: count dialogs and each dialog's messages first, then export histories through split ranges.
+
+The current Source path also has exactly the exception this plan must not extend. Telegram alone owns a custom stdio dispatcher, and the backend converts a generic `SourceCommand` into `magnis.execute { action: "backfill_chat", ... }`. This is a read disguised as an action and makes the backend know Telegram fields. Adding another Telegram field would deepen that defect.
 
 Official sources, read 2026-09-22:
 
@@ -40,6 +45,14 @@ GramJS 2.26.22 already contains `Api.account.InitTakeoutSession`, `Api.account.F
 
 ```mermaid
 flowchart LR
+  W[generic Sync worker] --> F[magnis.sync.fetch]
+  F --> T[Telegram through runConnector]
+  T --> P[standard page: envelopes progress traversed]
+  P --> W
+```
+
+```mermaid
+flowchart LR
   I[init takeout] --> R[get split ranges]
   R --> E[count dialogs and histories]
   E --> C[emit every counted chat]
@@ -50,41 +63,62 @@ flowchart LR
   F --> U[normal catch-up and live updates]
 ```
 
-### One checkpoint, four phases
+### One Source program
 
-The existing Source checkpoint remains the only durable provider state. Existing functions advance it through four literal phases; there is no new service or storage:
+`@magnis/connector-sdk` remains the one Source executable framework. Its existing `ConnectorConfig` continues to own fetch, auth, listen and execute handlers. The shared implementation gains the behavior for which Telegram had copied a dispatcher:
 
-| Phase | Owner and provider work | Source answer |
-|---|---|---|
-| `estimate` | `runBootstrap`: initialize Takeout; read split ranges; in every range call `getDialogs(limit=1)` for its count, paginate those dialogs, then call `getHistory(limit=1)` for every dialog/range and sum exact counts | no envelopes; checkpoint the Takeout id, ranges, per-chat range membership, serializable peer, count, top message and current provider offsets |
-| `publish` | `runBootstrap`: revisit recorded dialogs only as needed to rebuild their current chat payload | chat envelopes with final `message_count`; never a message envelope |
-| `download` | `runBootstrap` first re-emits each chat with its newest provider page and traversed range; then `backfillChat` serves the bounded older gaps selected by the host through that chat's recorded ranges and peer | newest messages for every chat, then older messages only for gaps retained by the module; existing time and byte budgets apply |
-| `finish` | `runCatchup`: the first forward fetch after the gaps are closed finishes Takeout | remove Takeout state, then continue through the existing CatchUp path |
+- `runConnector` dispatches tool calls concurrently under one fixed SDK bound, so a long fetch cannot starve an interactive action. The existing `download_file` action uses the SDK's separate bounded download capacity; `listen_stop` remains an unblocked control call. These rules are Source-independent and serve both Telegram and Google media operations.
+- `--auth-mode` is enforced by `runConnector` for every auth-capable Source: that process serves only `magnis.auth.*`; a normal Source process refuses auth calls. Handler state remains alive in the process across begin and step.
+- `listen_start` and `listen_stop` require the host's `subscription_id`; there is no `sub:legacy` default and no `magnis.sync.listen` alias. The SDK emitter carries the existing optional envelope `position`. Telegram messages state their positive message position; a dated `link_end` omits `position` because membership is not message coverage.
+- Push capabilities omit a polling interval. All tool failures use the SDK's existing `ConnectorError`, `RateLimitError` and `CursorExpiredError` mapping.
+- `tools/list` advertises the standard `magnis.sync.fetch` tool. Current catalog certification accepts only `runtime_kind = "connector_sdk"`; the historical selected-channel declaration may still describe the old immutable Telegram artifact as `custom`.
 
-The checkpoint stores the Takeout id as a decimal string because JSON cannot round-trip Telegram's `long`. Per chat it reuses the existing serializable `OffsetPeer` shape and stores count, range membership, top/watermark ids and resumable offsets; it does not store message bodies. The existing `chats` map already scales once per chat, so this adds no second account-sized collection.
+Telegram supplies an ordinary `ConnectorConfig` and calls `runConnector` from `main.ts`, like the other Sources. Its execute table contains only `send_message`, `reply` and `download_file`. Its custom dispatcher, custom notification serialization, `backfill_chat` execute handler and their exceptions in testkit/docs are deleted.
 
-Dialog and history pagination remain provider-sized. `messages.getHistory` requests at most Telegram's 100-message page. A Source answer joins as many provider pages as fit the existing 20-second and 3 MiB budgets; it is not split by an arbitrary message count.
+### One standard fetch request
 
-The `publish` phase may need more than one Source page to stay under the byte budget. The UI can show chat/message totals growing while the status is still bootstrap, but `messages` completed remains zero. Only after the last counted chat page is committed does `download` begin.
+The existing generic `SourceCommand` remains the internal command. It gains only the two values the worker already owns but could not express at the Source boundary: the current `scopeId` and `forwardCheckpoint`. Its existing `cursor` remains the continuation inside the current target, and its existing `target` remains the Magnis-owned durable target.
 
-The first `download` page for a chat carries that chat envelope again plus its newest messages. Repeating the same counted chat in the same generation gives a zero plan delta; its traversed range bounds the open Graph gap, and its newest id becomes the CatchUp watermark. Excluded chats still receive their current planned first 100 messages and return in `excluded`, so their gaps stay deleted. Admitted histories longer than the seed page leave one bounded older gap for the existing backfill rotation.
-
-### The existing backfill receives its bootstrap checkpoint
-
-The backend already owns both the per-gap continuation and the opaque `forwardCheckpoint`. It passes that checkpoint unchanged as `forward_checkpoint` in the existing Telegram `backfill_chat` payload. The runtime does not parse Takeout fields.
+`callNativeFetch` handles bootstrap, catch-up and backfill. It sends one standard `magnis.sync.fetch` request; backfill is no longer a separate call path:
 
 ```ts
-// Existing Telegram-specific v1 backfill payload, extended by one existing value.
-interface TelegramBackfillPayload {
-  action: "backfill_chat";
-  chat_id: number;
-  before_message_id: number;
-  lower_message_id: number;
-  forward_checkpoint: JsonValue;
+interface FetchArgs {
+  surface: string;
+  direction: "backward" | "forward";
+  cursor?: JsonValue;
+  scope_id?: string;
+  target?: { kind: "gap"; start: number; end: number };
+  forward_checkpoint?: JsonValue;
+  tracked_handles?: string[];
 }
 ```
 
-The Telegram Source reads its own checkpoint, reconstructs the peer from the recorded `OffsetPeer`, selects the split ranges recorded for that chat and wraps each `GetHistory`. Backfill never restarts dialog discovery. A checkpoint created by the previous Source version has no Takeout state. If such a checkpoint still has bounded gaps, the Source throws the existing `CursorExpiredError`; the worker starts one new bootstrap pass. It never silently falls back to the slow ordinary-history path. An old checkpoint already in steady CatchUp remains valid because it has no unfinished export.
+The fields are generic Sync concepts already present in the backend. A bootstrap or catch-up omits the fields it does not own. A backfill request uses `direction: "backward"`, the selected gap's `scope_id` and `target`, its target-bound `cursor`, and the account's opaque `forward_checkpoint`. The runtime serializes them and never inspects provider checkpoint contents.
+
+The standard `FetchResult` admits the page fields the host already decodes: `envelopes`, either legacy cursor fields or explicit `progress`, and `traversed`. Telegram itself states the ranges it actually read. The backend no longer computes Telegram coverage from message payloads or validates Telegram message ids; the normal strict page decoder validates the generic result.
+
+On the first page of a selected gap, Telegram starts from `forward_checkpoint`. While that target continues, its opaque continuation token contains the updated Takeout state and provider offset. The worker commits that token as its normal `cursor`. On the terminal page, Telegram returns `completeTarget` with `forwardCheckpoint: { kind: "replace", value: ... }`, promoting the updated account checkpoint. Thus every successful page is resumable without teaching the host Takeout fields or adding a second checkpoint column.
+
+### One checkpoint, four phases
+
+The existing Source checkpoint remains the only durable provider state. Existing Telegram functions advance it through four literal phases; there is no new service or storage:
+
+| Phase | Owner and provider work | Standard fetch answer |
+|---|---|---|
+| `estimate` | `runBootstrap`: initialize Takeout; read split ranges; in every range call `getDialogs(limit=1)` for its count, paginate those dialogs, then call `getHistory(limit=1)` for every dialog/range and sum exact counts | no envelopes; checkpoint the Takeout id, ranges, per-chat range membership, serializable peer, count, top message and provider offsets |
+| `publish` | `runBootstrap`: revisit recorded dialogs only as needed to rebuild their current chat payload | chat envelopes with final `message_count`; never a message envelope |
+| `download` | `runBootstrap` first re-emits each chat with its newest provider page; later backward fetches serve the bounded older gaps selected by the host | newest messages for every chat, then older messages only for retained gaps; each answer states `progress` and `traversed` |
+| `finish` | `runCatchup`: the first forward fetch after the gaps are closed finishes Takeout | remove Takeout state, then continue through existing catch-up |
+
+The checkpoint stores the Takeout id as a decimal string because JSON cannot round-trip Telegram's `long`. Per chat it reuses the existing serializable `OffsetPeer` and stores count, range membership, top/watermark ids and resumable offsets; it does not store message bodies. The existing `chats` map already scales once per chat, so this adds no second account-sized collection.
+
+Dialog and history pagination remain provider-sized. `messages.getHistory` requests at most Telegram's 100-message page. A Source answer joins as many provider pages as fit the existing 20-second and 3 MiB budgets; it is not split by an arbitrary message count.
+
+The `publish` phase may need more than one Source page to stay under the byte budget. The UI can show chat/message totals growing while status is bootstrap, but `messages` completed remains zero. Only after the last counted chat page is committed does `download` begin.
+
+The first `download` page for a chat carries that chat envelope again plus its newest messages. Repeating the counted chat in the same generation gives a zero plan delta; its `traversed` range bounds the open Graph gap, and its newest id becomes the catch-up watermark. Excluded chats still receive their planned first 100 messages and return in `excluded`, so their gaps stay deleted. Admitted histories longer than the seed page leave one bounded older gap for the existing backfill selection.
+
+The Telegram fetch handler reconstructs the peer from the checkpoint's `OffsetPeer`, selects only the recorded split ranges for `scope_id`, and wraps each `GetHistory`. It never restarts dialog discovery. An unfinished old checkpoint has no Takeout state, so a bounded fetch throws the existing `CursorExpiredError` and the worker starts one new bootstrap pass. It never falls back to ordinary history. An old steady catch-up cursor remains valid.
 
 ### Exact temporary holds, no learned throttle
 
@@ -92,63 +126,74 @@ The Telegram Source reads its own checkpoint, reconstructs the peer from the rec
 
 The 420 parser accepts the exact numeric suffix of `FLOOD_WAIT_X`, `FLOOD_PREMIUM_WAIT_X`, and `TAKEOUT_INIT_DELAY_X` when GramJS does not populate `.seconds`. A 420 without a valid non-negative duration still closes admission rather than guessing. A valid wait sets the shared deadline; expiry releases one request immediately. A second real 420 may set a new exact deadline, but successful requests never manufacture a delay.
 
-One main MTProto session remains. This plan does not add parallel main sessions because the running client does not prove `tmp_sessions > 1` with the required PFS setup. Media downloads keep their existing separate GramJS path.
+One main MTProto session remains. This plan does not add parallel main sessions because the running client does not prove `tmp_sessions > 1` with the required PFS setup. Media downloads keep their separate GramJS path behind the shared SDK dispatcher.
 
 ### Crash and finish behavior
 
-Each Source page checkpoints all successful provider work in that page before the host asks for the next page. A process replacement may repeat the uncommitted page, but resumes from the last committed Takeout id and offsets; repeated requests are idempotent and counts are keyed by chat/range before addition.
+Each Source page checkpoints all successful provider work before the host asks for the next page. A process replacement may repeat an uncommitted page, but resumes from the last committed forward checkpoint or target cursor; repeated requests are idempotent and counts are keyed by chat/range before addition.
 
 Finishing uses an explicit checkpoint handshake:
 
 1. the first forward page after backfill writes `phase: "finish"` without finishing remotely;
 2. the next page calls `account.finishTakeoutSession(success=true)` through `invokeWithTakeout`;
-3. success removes Takeout state; `TAKEOUT_INVALID` is accepted as already finished only while the persisted phase is `finish`, covering a lost host acknowledgement after a successful remote finish.
+3. success removes Takeout state; `TAKEOUT_INVALID` is accepted as already finished only while persisted phase is `finish`, covering a lost host acknowledgement after a successful remote finish.
 
 Any other Takeout error remains visible. There is no ordinary-history fallback, guessed id or automatic re-authentication.
 
 ### What people see
 
-The existing Telegram account card and existing module progress plan are reused. During estimate/publication, chats appear and `messages` has a growing denominator with zero historical completion. Then the denominator stops changing and completed messages advance quickly. A real provider delay continues to show `Rate limit (repeat in …)` and clears after its deadline through the already fixed status refresh.
+The existing Telegram account card and module progress plan are reused. During estimate/publication, chats appear and `messages` has a growing denominator with zero historical completion. Then the denominator stops changing and completed messages advance quickly. A real provider delay continues to show `Rate limit (repeat in …)` and clears after its deadline through the existing status refresh.
 
 No frontend component, new progress field or second counter is introduced.
 
 ## Interfaces and ownership
 
-- `LiveDialogPager` continues to own Telegram dialog decoding and peer reconstruction. It gains wrapper arguments rather than a parallel pager.
-- `TgClient` continues to own raw GramJS calls and timeouts. It invokes the already generated Takeout request classes.
-- `runBootstrap`, `runCatchup`, and `backfillChat` continue to own Source checkpoint and page assembly.
-- `AccountAdmission` continues to own account-wide request admission; it enforces temporary provider deadlines only.
-- The backend continues to own gap choice and opaque checkpoint transport. It never interprets Takeout state.
-- The Telegram module continues to own admission/exclusion and plan totals. It is unchanged.
+- `@magnis/connector-sdk` owns the only in-repository Source stdio program: capabilities, auth-mode gating, tool dispatch, concurrency, push serialization and error replies.
+- `SourceCommand` and `magnis.sync.fetch` own all scheduled read requests. The backend owns target selection; the Source owns provider interpretation and reports its own traversed ranges.
+- `graph.request_backfill` remains the existing generic request to wake a stopped bounded-history worker. Telegram passes an empty generic payload; no module fabricates a provider action for it, and the value never crosses the Source boundary.
+- `LiveDialogPager` continues to own Telegram dialog decoding and peer reconstruction. It gains Takeout/range wrapper inputs rather than a parallel pager.
+- `TgClient` continues to own raw GramJS calls and timeouts. It invokes the generated Takeout request classes.
+- `runBootstrap`, `runCatchup`, and the Telegram fetch handler continue to own checkpoint and page assembly. There is no execute-based backfill handler.
+- `AccountAdmission` continues to own account-wide request admission and enforces temporary provider deadlines only.
+- The Telegram module continues to own admission/exclusion and plan totals; only its obsolete `backfill_chat` wake payload is removed.
 
 ## Exact change zones
 
 `magnis-app`, one prerequisite PR into `staging`:
 
-- MODIFY `backend/src/services/sources/sync/sync.page-admission.ts` — include the row's existing `forwardCheckpoint` in a Telegram backfill command.
-- MODIFY `backend/src/services/sources/runtime/source-runtime.ts` — pass the opaque value to the v1 `backfill_chat` call.
-- MODIFY `backend/test/tst_bts_sync_worker_001.test.ts` and `backend/test/tst_bts_mcp_runtime.test.ts` — prove the exact value crosses both boundaries unchanged.
+- MODIFY `backend/src/services/sources/runtime/source-protocol.adapter.ts`, `backend/src/services/sources/runtime/source-host.client.ts`, `backend/src/services/sources/runtime/source-runtime.ts`, `backend/src/services/sources/runtime/source-sync-page.codec.ts`, and `backend/src/services/sources/sync/sync.page-admission.ts` — express scope, target and checkpoint in the common fetch request; route every read through `callNativeFetch`; delete the Telegram request/result adapter and provider payload inspection.
+- MODIFY `backend/test/tst_bts_mcp_runtime.test.ts`, `backend/test/tst_bts_sync_worker_001.test.ts`, and `backend/test/tst_bts_src_module_adapter_001.test.ts` — prove the exact generic request/result and forbid provider literals or `magnis.execute` in the sync runtime.
+- MODIFY `docs/backend/sync.md` and `docs/source-mcp-bridge.md` — document one fetch path and remove `backfill_chat`.
 
-`magnis`, one Telegram PR into `staging` after the app prerequisite:
+`magnis`, one catalog PR into `staging` after the app prerequisite:
 
-- MODIFY `plugins/sources/telegram/src/request-admission.ts` — remove learned permanent pacing and parse exact Takeout/Flood durations.
-- MODIFY `plugins/sources/telegram/src/client.ts` and `plugins/sources/telegram/src/live.ts` — use the existing GramJS Takeout/range requests through the current client and pager.
-- MODIFY `plugins/sources/telegram/src/surfaces/telegram/commands.ts` — implement estimate, publish, seed, range-aware backfill and finish in the existing checkpoint flow.
-- MODIFY `plugins/sources/telegram/src/tst_src_tgflood_001.test.ts`, `plugins/sources/telegram/src/live.test.ts`, `plugins/sources/telegram/src/surfaces/telegram/commands.test.ts`, and `plugins/sources/telegram/src/surfaces/telegram/execute.test.ts` — deterministic RED/GREEN behavior at the existing seams.
-- REPLACE the hash-addressed Telegram receipt and MODIFY the generated catalog index outputs selected by the normal publication command; their exact paths are frozen after the new package hash exists.
+- MODIFY `packages/connector-sdk/contract/source.ts`, `packages/connector-sdk/index.ts`, `packages/connector-sdk/index.test.ts`, and `packages/connector-sdk/contract-v2.test.ts` — type the standard target/checkpoint/traversed/position fields; enforce auth mode, strict subscriptions, standard push, bounded concurrent dispatch and shared error mapping without connector-specific hooks.
+- CREATE `plugins/sources/telegram/src/connector.ts`; DELETE `plugins/sources/telegram/src/dispatch.ts` and `plugins/sources/telegram/src/dispatch.test.ts`; MODIFY `plugins/sources/telegram/src/main.ts`, `plugins/sources/telegram/src/subscriptions.ts`, `plugins/sources/telegram/src/surfaces/telegram/fixture.ts`, `plugins/sources/telegram/src/fixture.test.ts`, and `plugins/sources/telegram/manifest.toml` — use `buildConnectorConfig` + `runConnector`, standard notifications and execute actions; remove `backfill_chat`; declare `runtime_kind = "connector_sdk"`.
+- MODIFY `plugins/modules/telegram/module/service.ts` and `plugins/modules/telegram/module/__tests__/telegramCommand.test.ts` — remove the obsolete provider action from the existing generic `graph.request_backfill` wake call; the user-selected chat remains UI state and never becomes a Source command.
+- MODIFY `plugins/sources/telegram/src/request-admission.ts`, `plugins/sources/telegram/src/client.ts`, `plugins/sources/telegram/src/live.ts`, `plugins/sources/telegram/src/surfaces/telegram/commands.ts`, `plugins/sources/telegram/src/tst_src_tgflood_001.test.ts`, `plugins/sources/telegram/src/live.test.ts`, `plugins/sources/telegram/src/surfaces/telegram/commands.test.ts`, and `plugins/sources/telegram/src/surfaces/telegram/execute.test.ts` — implement exact temporary holds and Takeout through the standard fetch handler; prove messages have positive positions and `link_end` has none.
+- MODIFY `packages/testkit/source.ts`, `packages/testkit/__tests__/tst_cat_src_parity_001.test.ts`, `scripts/certify-sources.ts`, `scripts/certify-sources.test.ts`, and `docs/plugins/source.md` — remove the Telegram custom-runtime exception and reject any current in-repository Source not using the connector SDK.
+- REPLACE every hash-addressed receipt affected by the shared SDK bundle and MODIFY the generated catalog indexes selected by the normal publication command; exact generated paths are frozen only after the new package hashes exist.
 
-This is four authored app files and eight authored catalog files. The catalog build adds only its normal hash-addressed generated outputs. No new production, test, runner or stand file is planned. `acceptance/telegram-performance/` is reused unchanged and never joins CI.
+No runner, performance stand or frontend file is added. `acceptance/telegram-performance/` is reused unchanged and never joins CI.
 
 ## Verification journeys
 
-All automated tests use the existing fake MTProto transport and project `agent:*` commands. No test owns a real Telegram credential or PostgreSQL service.
+All automated tests use existing fake provider transports and project `agent:*` commands. No test owns a real Telegram credential or PostgreSQL service.
+
+### One Source program
+
+1. **Step 1 → Verify:** the packaged Telegram entry calls `runConnector`; certification reports `runtime_kind = "connector_sdk"`, advertises `magnis.sync.fetch`, and has no custom-runtime exception.
+2. **Step 2 → Verify:** hold a fake fetch open, then issue an interactive execute call; the shared SDK returns the execute answer before fetch completes and never exceeds its common bound. Fill the download capacity; a fetch and `listen_stop` still complete.
+3. **Step 3 → Verify:** start the packaged Source with `--auth-mode`; sync/listen/execute calls are refused and begin→step retains handler state. In normal mode auth calls are refused.
+4. **Step 4 → Verify:** a standard live message carries a positive `position`; a dated `link_end` carries none; missing `subscription_id` is an error, and no `sub:legacy` or `magnis.sync.listen` path exists.
+5. **Step 5 → Verify:** the module's wake request contains no provider action, and repository guards find no `backfill_chat`, `legacyTelegram`, Telegram provider literal in backend production sync code, custom Telegram dispatcher or current `runtime_kind = "custom"`.
 
 ### Temporary provider hold
 
 1. **Step 1 → Verify:** complete several fake application requests at one clock instant; the next free slot sends immediately, with no minimum interval.
 2. **Step 2 → Verify:** inject `FLOOD_WAIT_4`; deadline-minus-one sends nothing and reports one second remaining.
 3. **Step 3 → Verify:** advance to the exact deadline; one request sends immediately, and later successful requests never introduce spacing.
-4. **Step 4 → Verify:** inject `TAKEOUT_INIT_DELAY_123` without `.seconds`; the wire answer is an exact 123-second typed rate limit. An unparseable 420 still closes admission.
+4. **Step 4 → Verify:** inject `TAKEOUT_INIT_DELAY_123` without `.seconds`; the standard SDK reply is an exact 123-second typed rate limit. An unparseable 420 still closes admission.
 
 ### Exact plan before history
 
@@ -156,74 +201,432 @@ All automated tests use the existing fake MTProto transport and project `agent:*
 2. **Step 2 → Verify:** each range starts with `GetDialogs(limit=1)`; return one chat in both ranges and another in one. Every dialog/history count call is nested in `InvokeWithMessagesRange` and `InvokeWithTakeout` using the recorded range.
 3. **Step 3 → Verify:** stop after a page and resume its checkpoint; no committed chat/range count is added twice and no range is skipped.
 4. **Step 4 → Verify:** finish estimation; both chats are emitted with summed exact counts and recorded peers, and zero message envelopes have been emitted.
-5. **Step 5 → Verify:** resume after the last chat page; each seed page repeats the counted chat, emits its newest messages, states the traversed range and fixes its watermark. The existing module test proves the repeat changes plan by zero and still excludes the same chat; the worker test proves an admitted 120-message chat leaves a bounded older gap while an excluded chat leaves none.
+5. **Step 5 → Verify:** resume after the last chat page; each seed page repeats the counted chat, emits its newest messages, states `traversed` and fixes its watermark. The module test proves the repeat changes plan by zero and still excludes the same chat; the worker test proves an admitted 120-message chat leaves a bounded older gap while an excluded chat leaves none.
 
-### Selected history and finish
+### Standard bounded history and finish
 
-1. **Step 1 → Verify:** the app builds a bounded backfill command; the exact opaque `forwardCheckpoint` appears unchanged in the Source tool arguments.
-2. **Step 2 → Verify:** after a fake process replacement, the Source reconstructs the peer without `GetDialogs`, selects only that chat's recorded ranges, respects the asked gap and page budgets, and reports exactly the ids it traversed.
-3. **Step 3 → Verify:** pass a legacy unfinished checkpoint; `CursorExpiredError` starts a new bootstrap instead of ordinary history. Pass an old steady checkpoint to CatchUp; it remains valid.
-4. **Step 4 → Verify:** close all fake gaps; one forward page persists `phase: "finish"` without a finish RPC, and the resumed page then calls FinishTakeout.
-5. **Step 5 → Verify:** success clears Takeout state; `TAKEOUT_INVALID` clears it only from persisted `finish`; every other error remains visible.
+1. **Step 1 → Verify:** the app asks `magnis.sync.fetch` with exact `scope_id`, gap `target`, target `cursor` and opaque `forward_checkpoint`; no execute call occurs.
+2. **Step 2 → Verify:** a continuing answer atomically persists its updated Takeout state in the opaque target cursor and reports exact `traversed`; the terminal answer promotes the updated forward checkpoint.
+3. **Step 3 → Verify:** after a fake process replacement, Telegram reconstructs the peer without `GetDialogs`, selects only the recorded ranges, respects the asked gap and page budgets, and resumes from the committed cursor.
+4. **Step 4 → Verify:** an unfinished old checkpoint causes `CursorExpiredError` and a new bootstrap; an old steady catch-up cursor remains valid.
+5. **Step 5 → Verify:** after all fake gaps close, one forward page persists `phase: "finish"` without a finish RPC and the resumed page calls FinishTakeout. Success clears state; `TAKEOUT_INVALID` clears it only from persisted `finish`; every other error remains visible.
 
-Regression commands cover current auth, live `link_end`, catch-up, media, queue, replay, cursor, plan and package certification. Run `bun run agent:verify:pr` in both `magnis` and `magnis-app`.
+Regression commands cover every Connector SDK Source contract, auth, live `link_end`, catch-up, media, queue, replay, cursor, module plan and package certification. Run `bun run agent:verify:pr` in both repositories.
 
 After both artifacts are connected, run the existing manual stand with clean app sync data but the preserved Telegram secret, indexer off, and at least 10,000 admitted envelopes. Report Source fetch, Graph admission, wall time and wall envelope rate. The target is at least 150 envelopes/second when no provider hold occurs. Repeat once with indexer on only after the indexer-off target is met.
 
-The live stand result is evidence attached to the PR, not a CI acceptance test. If Telegram returns `TAKEOUT_INIT_DELAY_X` or `FLOOD_WAIT_X`, record the exact hold and resume after expiry; do not reinterpret the held run as local performance.
+The live result is evidence attached to the PR, not a CI acceptance test. If Telegram returns `TAKEOUT_INIT_DELAY_X` or `FLOOD_WAIT_X`, record the exact hold and resume after expiry; do not reinterpret the held run as local performance.
 
 ## Invariants
 
-1. A provider wait changes only the shared deadline, never a permanent request interval. Covered by the temporary-hold journey.
-2. At most one account application request is active; control traffic and incoming updates remain responsive. Covered by the existing wire journey.
-3. Every historical message request in a new bootstrap uses the checkpoint's Takeout id and one of that chat's recorded ranges. Covered by the exact-plan journey.
-4. No historical message envelope precedes the last counted chat envelope. Covered by the exact-plan journey.
-5. A seed page bounds an admitted chat's open gap, keeps its count unchanged and removes an excluded chat's gap. Covered by the exact-plan journey.
-6. The backend transports the Source checkpoint byte-for-byte and does not know its schema. Covered by the selected-history journey on both backend boundaries.
-7. A committed Source page is the only advancement point. A failed provider call publishes neither a new checkpoint nor traversed coverage. Covered by the resumed fake page.
-8. Existing exclusion remains authoritative: only gaps retained by the module reach Takeout backfill. The Source does not duplicate `shouldIndex`.
-9. Live `link_end` keeps the provider event's date and is untouched by this work.
+1. Every current in-repository Source executes through `runConnector`; connector-specific dispatchers and current custom-runtime certification are forbidden.
+2. Every scheduled Source read uses `magnis.sync.fetch`; `magnis.execute` is never a sync or backfill boundary.
+3. The backend's production sync code contains no provider name, provider action or provider payload decoder.
+4. A provider wait changes only the shared deadline, never a permanent request interval.
+5. At most one Telegram account application request is active; shared SDK concurrency keeps control, interactive actions and incoming updates responsive.
+6. Every historical message request in a new bootstrap uses the checkpoint's Takeout id and one of that chat's recorded ranges.
+7. No historical message envelope precedes the last counted chat envelope.
+8. A seed page bounds an admitted chat's open gap, keeps its count unchanged and removes an excluded chat's gap.
+9. The backend transports Source cursors and checkpoints byte-for-byte and never knows their schema.
+10. A committed Source page is the only advancement point. A failed provider call publishes neither cursor/checkpoint advancement nor traversed coverage.
+11. Existing exclusion remains authoritative: only gaps retained by the module reach Takeout history. The Source does not duplicate `shouldIndex`.
+12. Live `link_end` keeps the provider event's date through the standard SDK push envelope and states no message position.
 
 ## Constraints and non-goals
 
-- No direct push or merge to `staging`; the owner merges both PRs.
+- No direct push or merge to `staging`; the owner merges implementation PRs.
 - No new runner, worktree helper, Source protocol version, UI state, database table, secret, Graph operation, module rule, background service or SDK fork.
+- No connector-specific SDK option or callback. Shared behavior changes apply to every Source; Telegram supplies only ordinary handlers.
 - No parallel main Telegram sessions, speculative request rate, randomized delay, exponential delay for 420, or ordinary-history fallback.
-- No media export through Takeout in this change; existing on-demand media download remains as-is.
+- No media export through Takeout; existing on-demand media download remains an interactive execute action.
 - No attempt to make a live account test deterministic or suitable for CI.
-- No rewrite of CatchUp. Once Takeout is finished, existing forward sync and live updates continue unchanged.
+- No rewrite of normal catch-up semantics beyond carrying Takeout's finish phase through the standard fetch contract.
+
+## Adaptive request-rate amendment
+
+This owner amendment supersedes the earlier statements that successful requests never affect spacing and that no learned interval exists. Exact provider holds remain authoritative, but after a real FLOOD_WAIT the existing AccountAdmission may retain process-local pacing for the RPC method that flooded. The first flood derives that method's observed transmission rate and lowers it by 10%; every later flood lowers the current rate by another 10%. Ten consecutive successful calls of that method add 1% of its last flooded rate, so the controller probes upward slowly and converges around the provider boundary instead of retaining one permanent slowdown. Control messages still bypass admission, other RPC methods are not slowed by a history flood, and no rate state is persisted or added to the Source protocol.
+
+The existing live stand is the only provider verification. Its baseline is four holds over nine successful sync turns. The adaptive run must report every exact hold, wall throughput and successful turns between holds; regular two-to-three-turn floods are not accepted as convergence. No live provider test enters CI.
 
 ## Dependencies and delivery boundary
 
-- The plan PR is stacked on `magnis` PR #39, which contains the current Telegram integration and the manual performance stand.
+- The plan PR is stacked on `magnis` PR #39, which contains the current Telegram integration and manual performance stand.
 - The backend Delivery starts from `magnis-app` PR #278 after the owner merges it into `staging`.
-- The catalog Delivery starts from `magnis` PR #39 after merge and depends on the backend Delivery because its new backfill requires `forward_checkpoint`.
-- Exactly two implementation PRs exist because code lives in two repositories. There is no child plan.
+- The catalog Delivery starts from `magnis` PR #39 after merge and depends on the backend Delivery because the new standard fetch fields must be accepted before the new Source artifact is selected.
+- Code lives in two repositories, so integration still requires one PR per repository. There is one architecture and no child plan.
 
 ## Reuse map
 
-Reuse `AccountAdmission`, `SessionPool`, `TgClient`, `LiveDialogPager`, `DialogOffset`, `OffsetPeer`, `TgOps`, `runBootstrap`, `runCatchup`, `backfillChat`, `CursorExpiredError`, the existing checkpoint `chats` map, page time/byte budgets, Graph gaps, module `message_count` planning, current account card, fake MTProto transport, and `acceptance/telegram-performance`.
+Reuse `SourceCommand`, `callNativeFetch`, `magnis.sync.fetch`, `ConnectorConfig`, `runConnector`, `ConnectorError`, `RateLimitError`, `CursorExpiredError`, `AccountAdmission`, `SessionPool`, `TgClient`, `LiveDialogPager`, `DialogOffset`, `OffsetPeer`, `runBootstrap`, `runCatchup`, `SubscriptionRegistry`, the existing checkpoint `chats` map, page time/byte budgets, Graph gaps, module `message_count` planning, current account card, fake MTProto transport, and `acceptance/telegram-performance`.
 
 ## Names introduced
 
 | Name | Reason |
 |---|---|
-| `takeout` | Telegram's official API name for a bulk account export and the exact word used by GramJS classes |
+| `takeout` | Telegram's official API name for bulk account export and the exact word used by GramJS classes |
 | `estimate`, `publish`, `download`, `finish` | literal durable phases needed to order exact counts, chat publication, selected history and remote completion |
-| `forward_checkpoint` | wire spelling of the backend's existing `forwardCheckpoint`; it keeps the Source checkpoint opaque |
+
+`scopeId`, `target`, `cursor`, `forwardCheckpoint`, `scope_id`, `forward_checkpoint`, `position`, `progress` and `traversed` are existing repository names reused at their current internal or wire boundaries. No `TelegramBackfillPayload` or equivalent name is introduced.
 
 ## Pre-approval screen
 
-- Result: exact totals first, selected history second, temporary provider holds only, at least 150 envelopes/second on a clean unheld real run.
-- Smallest system change: one opaque backend field, existing Telegram classes and checkpoint, existing module/UI/stand.
+- Result: one Source program and one read protocol; exact totals first; selected Takeout history second; temporary provider holds only; at least 150 envelopes/second on a clean unheld real run.
+- Removed, not extended: custom Telegram dispatch, execute-based backfill, backend Telegram adapter, legacy listen alias and subscription-id fallback.
 - Not claimed yet: implementation, a live Takeout authorization, or the target speed on the owner's account.
-- After SPEC approval, one Stage graph will be written for the two unavoidable repository PRs. No implementation starts before the second approval.
+- After SPEC approval, one Stage graph will be written for the two repository PRs. No implementation starts before the second approval.
 <!-- plan:spec:end -->
 
 <!-- plan:implementation:start -->
 ## Implementation contract
+
+<!-- plan:delivery:D1:start -->
+<!-- plan:delivery-meta:{"active":false,"depends":[],"predictedExternalWaitMinutes":0} -->
+### PR Delivery D1 — Backend fetch prerequisite merged in magnis-app PR 280
+
+Branch: `feat/source-fetch-contract`; Depends: none; Gate: backend, docs.
+
+Stage graph: `merged prerequisite`.
+
+Forecast: 0 active min / 0 credits across 0 Stages; longest dependency path 0 active min; external waits 0 min.
+
+What changed for people. Bounded history now behaves like every other scheduled Source read.
+
+What changed in the code. magnis-app PR #280 carries scope, target, cursor and forward checkpoint through magnis.sync.fetch and removes the Telegram backfill adapter.
+
+How it was proven. The merged PR passed its backend and documentation gates on exact SHA 6e9f38dd1.
+
+Not in this PR. This completed prerequisite is recorded here only to explain the catalog dependency; no app task remains in this plan.
+<!-- plan:delivery:D1:end -->
+
+<!-- plan:delivery:D2:start -->
+<!-- plan:delivery-meta:{"active":true,"depends":[],"predictedExternalWaitMinutes":60} -->
+### PR Delivery D2 — Telegram uses the shared Source program with adaptive high-rate sync
+
+Branch: `feat/telegram-takeout-sync`; Depends: none; Gate: backend, docs, catalog.
+
+Stage graph: `D2-S1 -> D2-S2 -> D2-S3 -> D2-S4 -> D2-S5`.
+
+Forecast: 450 active min / 41 credits across 5 Stages; longest dependency path 450 active min; external waits 60 min.
+
+What changed for people. Telegram starts ordinary history immediately, adapts to the fastest request rate the provider accepts, and keeps link_end at the provider event time. Exact provider holds still last only until their stated deadline.
+
+What changed in the code. Telegram is an ordinary runConnector config. The shared connector SDK owns dispatch, auth mode, subscriptions, push serialization and errors. The existing AccountAdmission retains one active application request and learns a process-local rate only for an RPC method that actually floods; new accounts use ordinary history while persisted Takeout checkpoints can still resume.
+
+How it was proven. Deterministic SDK and fake-MTProto tests cover concurrency, mode gates, exact waits, adaptive pacing, immediate ordinary history, Takeout checkpoint resume, bounded gaps and finish. The existing manual stand compares live hold frequency and throughput with the recorded four-holds-in-nine-turns baseline.
+
+Not in this PR. No frontend, database schema, new runner, parallel main Telegram session, persisted rate state or CI Telegram/PostgreSQL test.
+
+<!-- plan:stage:D2-S1:start -->
+<!-- plan:stage-meta:{"deliveryId":"D2","depends":[],"parallelWith":[],"writes":["packages/connector-sdk/contract/source.ts","packages/connector-sdk/index.ts","packages/connector-sdk/index.test.ts","packages/connector-sdk/contract-v2.test.ts","plugins/sources/telegram/src/connector.ts","plugins/sources/telegram/src/dispatch.ts","plugins/sources/telegram/src/dispatch.test.ts","plugins/sources/telegram/src/main.ts","plugins/sources/telegram/src/subscriptions.ts","plugins/sources/telegram/src/surfaces/telegram/fixture.ts","plugins/sources/telegram/src/fixture.test.ts","plugins/sources/telegram/src/live.ts","plugins/sources/telegram/src/live.test.ts","plugins/sources/telegram/src/surfaces/telegram/commands.ts","plugins/sources/telegram/src/surfaces/telegram/commands.test.ts","plugins/sources/telegram/src/surfaces/telegram/execute.test.ts","plugins/sources/telegram/src/tst_src_tgflood_001.test.ts","plugins/sources/telegram/src/testing/mtproto-transport.ts","plugins/sources/telegram/manifest.toml"],"tempRoot":".tmp/code-production/telegram-takeout-sync/D2-S1","predictedActiveMinutes":90,"predictedCredits":9,"verifyActiveMinutes":15,"verifyCredits":2} -->
+#### Stage D2-S1 — Telegram runs as an ordinary Connector SDK Source
+
+- Owner: root; Profile: strong; Depends: none; Parallel with: none.
+- Writes: `packages/connector-sdk/contract/source.ts`, `packages/connector-sdk/index.ts`, `packages/connector-sdk/index.test.ts`, `packages/connector-sdk/contract-v2.test.ts`, `plugins/sources/telegram/src/connector.ts`, `plugins/sources/telegram/src/dispatch.ts`, `plugins/sources/telegram/src/dispatch.test.ts`, `plugins/sources/telegram/src/main.ts`, `plugins/sources/telegram/src/subscriptions.ts`, `plugins/sources/telegram/src/surfaces/telegram/fixture.ts`, `plugins/sources/telegram/src/fixture.test.ts`, `plugins/sources/telegram/src/live.ts`, `plugins/sources/telegram/src/live.test.ts`, `plugins/sources/telegram/src/surfaces/telegram/commands.ts`, `plugins/sources/telegram/src/surfaces/telegram/commands.test.ts`, `plugins/sources/telegram/src/surfaces/telegram/execute.test.ts`, `plugins/sources/telegram/src/tst_src_tgflood_001.test.ts`, `plugins/sources/telegram/src/testing/mtproto-transport.ts`, `plugins/sources/telegram/manifest.toml`.
+- Temp root: `.tmp/code-production/telegram-takeout-sync/D2-S1` (must be absent at handoff).
+- Of which verification: 15 active min / 2 credits.
+
+What this Stage solves. Telegram is the only current Source with a copied stdio dispatcher, an execute action for reads, a legacy subscription fallback and custom notification serialization.
+
+What is built. The connector SDK accepts the existing standard target, checkpoint, progress, traversed and optional position fields; runConnector owns bounded concurrent calls, separate download capacity, auth-mode gating, strict subscription ids, push serialization and typed errors for every Source. Telegram supplies buildConnectorConfig in connector.ts and main.ts calls runConnector. The custom dispatcher and execute backfill are deleted; the existing bounded-history behavior moves intact behind standard fetch until the next Stage replaces its provider calls with Takeout. Messages keep positive positions and link_end omits message position while retaining its date.
+
+How it is proven. tst_src_sdk_runtime_001 holds fetch and download calls while control and interactive calls complete within the shared bounds. tst_src_tg_runtime_001 runs bootstrap, bounded history, actions and live delivery through the Telegram config and observes only standard tools and envelopes. Existing queue and command suites use fetch instead of backfill_chat.
+
+Commit. refactor(telegram): use the shared Source program — delete custom dispatch and execute-based reads.
+
+##### Tasks
+
+- [x] SOURCEPROGRAM_001 — Make runConnector own the standard fetch fields, concurrent dispatch, auth mode, strict subscriptions, push positions and typed errors for every Source. (35 min) — 4a35e8719f90dd97ff82d9adc35a33b600126a13
+<!-- plan:task-meta:{"writes":["packages/connector-sdk/contract/source.ts","packages/connector-sdk/index.ts","packages/connector-sdk/index.test.ts","packages/connector-sdk/contract-v2.test.ts"],"predictedActiveMinutes":35,"predictedCredits":3,"how":"Extend the existing FetchArgs, FetchResult and Envelope shapes in packages/connector-sdk/contract/source.ts with the standard fields already named by the host. In packages/connector-sdk/index.ts extend runConnector itself with the one shared bounded dispatcher, separate download capacity, --auth-mode gate, required subscription_id, optional envelope position, push capability without interval_secs, and existing error classes. Update packages/connector-sdk/index.test.ts with metadata-backed tst_src_sdk_runtime_001 and adjust packages/connector-sdk/contract-v2.test.ts fixtures to the same contract.","red":"bun run agent:test:backend -- packages/connector-sdk/index.test.ts -t tst_src_sdk_runtime_001"} -->
+- [x] SOURCEPROGRAM_002 — Replace Telegram's dispatcher with buildConnectorConfig plus runConnector and keep link_end time without claiming message coverage. (40 min) — 4a35e8719f90dd97ff82d9adc35a33b600126a13
+<!-- plan:task-meta:{"writes":["plugins/sources/telegram/src/connector.ts","plugins/sources/telegram/src/dispatch.ts","plugins/sources/telegram/src/dispatch.test.ts","plugins/sources/telegram/src/main.ts","plugins/sources/telegram/src/subscriptions.ts","plugins/sources/telegram/src/surfaces/telegram/fixture.ts","plugins/sources/telegram/src/fixture.test.ts","plugins/sources/telegram/src/live.ts","plugins/sources/telegram/src/live.test.ts","plugins/sources/telegram/src/surfaces/telegram/commands.ts","plugins/sources/telegram/src/surfaces/telegram/commands.test.ts","plugins/sources/telegram/src/surfaces/telegram/execute.test.ts","plugins/sources/telegram/src/tst_src_tgflood_001.test.ts","plugins/sources/telegram/src/testing/mtproto-transport.ts","plugins/sources/telegram/manifest.toml"],"predictedActiveMinutes":40,"predictedCredits":4,"how":"Create plugins/sources/telegram/src/connector.ts as the ordinary ConnectorConfig owner and make plugins/sources/telegram/src/main.ts call runConnector. Delete plugins/sources/telegram/src/dispatch.ts and its test, reduce subscriptions.ts to provider listener ownership that emits SDK Envelopes, and adapt fixture.ts. Move the existing bounded-history handler in commands.ts from backfill_chat execute arguments to standard scope_id, target, cursor and forward_checkpoint fetch arguments; update commands.test.ts, execute.test.ts and tst_src_tgflood_001.test.ts to call fetch and remove every backfill_chat case. Set runtime_kind to connector_sdk in manifest.toml. Add tst_src_tg_runtime_001 metadata in fixture.test.ts; update live.ts and live.test.ts so messages have positive positions and link_end retains its date with no position.","red":"bun run agent:test:backend -- plugins/sources/telegram/src/fixture.test.ts -t tst_src_tg_runtime_001"} -->
+
+##### Acceptance criteria
+
+- [x] `bun run agent:test:backend -- packages/connector-sdk/index.test.ts` exits 0 — one shared dispatcher keeps fetch, downloads, actions and control responsive within their declared bounds — 4a35e8719f90dd97ff82d9adc35a33b600126a13
+- [x] `bun run agent:test:backend -- plugins/sources/telegram/src/fixture.test.ts` exits 0 — Telegram exposes the standard Connector SDK tools and no execute backfill — 4a35e8719f90dd97ff82d9adc35a33b600126a13
+- [ ] The shared SDK and Telegram Source contain no custom dispatcher, magnis.sync.listen alias, sub:legacy fallback or current runtime_kind=custom declaration
+- [ ] A live message carries a positive position; dated link_end carries no message position
+- [x] Commit — 4a35e8719f90dd97ff82d9adc35a33b600126a13
+
+##### Results
+
+<!-- plan:results:D2-S1:start -->
+| Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
+|---|---|---|---:|---|---|
+| SOURCEPROGRAM_001 | 4a35e8719f90dd97ff82d9adc35a33b600126a13 | 2026-09-22T17:59:01.379Z–2026-09-22T18:45:44.000Z | 44 / 47 min | unavailable: runner did not expose usage | Telegram now runs through the shared Connector SDK with standard fetch, strict subscriptions, shared errors and SDK-owned push serialization; the copied dispatcher and execute-based history read are gone. |
+| SOURCEPROGRAM_002 | 4a35e8719f90dd97ff82d9adc35a33b600126a13 | 2026-09-22T17:59:01.379Z–2026-09-22T18:45:44.000Z | 44 / 47 min | unavailable: runner did not expose usage | Telegram now runs through the shared Connector SDK with standard fetch, strict subscriptions, shared errors and SDK-owned push serialization; the copied dispatcher and execute-based history read are gone. |
+<!-- plan:results:D2-S1:end -->
+<!-- plan:stage:D2-S1:end -->
+
+<!-- plan:stage:D2-S2:start -->
+<!-- plan:stage-meta:{"deliveryId":"D2","depends":["D2-S1"],"parallelWith":[],"writes":["plugins/sources/telegram/src/connector.ts","plugins/sources/telegram/src/request-admission.ts","plugins/sources/telegram/src/client.ts","plugins/sources/telegram/src/live.ts","plugins/sources/telegram/src/surfaces/telegram/commands.ts","plugins/sources/telegram/src/tst_src_tgflood_001.test.ts","plugins/sources/telegram/src/live.test.ts","plugins/sources/telegram/src/surfaces/telegram/commands.test.ts","plugins/sources/telegram/src/surfaces/telegram/execute.test.ts"],"tempRoot":".tmp/code-production/telegram-takeout-sync/D2-S2","predictedActiveMinutes":150,"predictedCredits":14,"verifyActiveMinutes":25,"verifyCredits":3} -->
+#### Stage D2-S2 — Telegram fetch completes exact resumable Takeout history at provider speed
+
+- Owner: root; Profile: strong; Depends: D2-S1; Parallel with: none.
+- Writes: `plugins/sources/telegram/src/connector.ts`, `plugins/sources/telegram/src/request-admission.ts`, `plugins/sources/telegram/src/client.ts`, `plugins/sources/telegram/src/live.ts`, `plugins/sources/telegram/src/surfaces/telegram/commands.ts`, `plugins/sources/telegram/src/tst_src_tgflood_001.test.ts`, `plugins/sources/telegram/src/live.test.ts`, `plugins/sources/telegram/src/surfaces/telegram/commands.test.ts`, `plugins/sources/telegram/src/surfaces/telegram/execute.test.ts`.
+- Temp root: `.tmp/code-production/telegram-takeout-sync/D2-S2` (must be absent at handoff).
+- Of which verification: 25 active min / 3 credits.
+
+What this Stage solves. AccountAdmission turns one remote 420 into permanent spacing, while bootstrap interleaves changing totals and messages and bounded history cannot resume an official Takeout export.
+
+What is built. AccountAdmission retains its one-active-request queue and exact shared deadline but removes every learned interval. The Telegram client exposes GramJS Takeout, split-range, wrapped dialog/history and finish calls. The fetch checkpoint advances through estimate, publish, download and finish: it counts each recorded chat/range before emitting history, publishes final chat totals, seeds bounded gaps, serves selected gaps from opaque target cursors, promotes the terminal forward checkpoint and finishes Takeout with the persisted handshake. No ordinary-history fallback exists.
+
+How it is proven. tst_src_tgflood_007 covers exact numeric holds, malformed 420 refusal and immediate post-deadline admission. tst_src_tg_takeout_plan_001 proves wrapped ranges and all totals before messages. tst_src_tg_takeout_resume_002 proves crash resume, bounded traversal, terminal checkpoint promotion and finish recovery.
+
+Commit. feat(telegram): sync history through resumable Takeout — exact totals first, selected gaps next, temporary provider holds only.
+
+##### Tasks
+
+- [x] TELEGRAMHOLD_001 — Remove learned request spacing and release one queued Telegram request at the exact provider deadline. (20 min) — 66b11c8
+<!-- plan:task-meta:{"writes":["plugins/sources/telegram/src/request-admission.ts","plugins/sources/telegram/src/client.ts","plugins/sources/telegram/src/tst_src_tgflood_001.test.ts"],"predictedActiveMinutes":20,"predictedCredits":2,"how":"Delete completedCount, completedStartedAt, lastSentAt, requestIntervalMs and derived wake/select spacing from plugins/sources/telegram/src/request-admission.ts. In plugins/sources/telegram/src/client.ts parse exact non-negative suffixes for FLOOD_WAIT, FLOOD_PREMIUM_WAIT and TAKEOUT_INIT_DELAY and leave an invalid 420 closed. Add metadata-backed tst_src_tgflood_007 to plugins/sources/telegram/src/tst_src_tgflood_001.test.ts with a fake clock covering successful bursts, deadline-minus-one, exact expiry, a second hold and malformed input.","red":"bun run agent:test:backend -- plugins/sources/telegram/src/tst_src_tgflood_001.test.ts -t tst_src_tgflood_007"} -->
+- [x] TELEGRAMTAKEOUT_001 — Count every Takeout dialog history before emitting messages, then publish fixed chat totals and seed bounded gaps. (55 min) — 66b11c8
+<!-- plan:task-meta:{"writes":["plugins/sources/telegram/src/connector.ts","plugins/sources/telegram/src/client.ts","plugins/sources/telegram/src/live.ts","plugins/sources/telegram/src/surfaces/telegram/commands.ts","plugins/sources/telegram/src/live.test.ts","plugins/sources/telegram/src/surfaces/telegram/commands.test.ts"],"predictedActiveMinutes":55,"predictedCredits":4,"how":"Add the generated GramJS Takeout, split-range, InvokeWithMessagesRange and InvokeWithTakeout calls to the existing TgClient owner in plugins/sources/telegram/src/client.ts and pass them through LiveDialogPager in live.ts. In commands.ts advance the existing checkpoint through estimate and publish, store decimal Takeout id plus recorded peers/ranges/counts/offsets, emit every final chat before any message, then seed each chat within the existing time and byte budgets. Wire the standard FetchArgs in connector.ts. Add metadata-backed tst_src_tg_takeout_plan_001 to commands.test.ts using the existing fake transport and update live.test.ts for the exact nested calls.","red":"bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts -t tst_src_tg_takeout_plan_001"} -->
+- [x] TELEGRAMTAKEOUT_002 — Resume selected Takeout gaps from opaque cursors, promote terminal checkpoints and finish the export exactly once after persisted intent. (50 min) — 66b11c8
+<!-- plan:task-meta:{"writes":["plugins/sources/telegram/src/connector.ts","plugins/sources/telegram/src/client.ts","plugins/sources/telegram/src/live.ts","plugins/sources/telegram/src/surfaces/telegram/commands.ts","plugins/sources/telegram/src/live.test.ts","plugins/sources/telegram/src/surfaces/telegram/commands.test.ts","plugins/sources/telegram/src/surfaces/telegram/execute.test.ts"],"predictedActiveMinutes":50,"predictedCredits":5,"how":"In commands.ts interpret scope_id, gap target, target cursor and forward_checkpoint only inside Telegram fetch; reconstruct the recorded peer, select its recorded ranges and return exact traversed plus continueTarget or completeTarget progress. Preserve updated Takeout state in each cursor and promote it only on terminal success. Add the two-step finish phase and accept TAKEOUT_INVALID only after persisted finish intent; throw CursorExpiredError for unfinished old checkpoints and keep old steady catch-up valid. Update connector.ts, client.ts and live.ts only for those existing owner calls. Add metadata-backed tst_src_tg_takeout_resume_002 to commands.test.ts and update live.test.ts and execute.test.ts for resume, finish and absence of backfill action.","red":"bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts -t tst_src_tg_takeout_resume_002"} -->
+
+##### Acceptance criteria
+
+- [x] `bun run agent:test:backend -- plugins/sources/telegram/src/tst_src_tgflood_001.test.ts` exits 0 — successful calls create no spacing and every real provider hold ends at its exact deadline — 66b11c88fc07ca4564d58bcd232179b90773e1cd
+- [x] `bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts` exits 0 — exact totals precede history and Takeout gaps resume, complete and finish through standard fetch — 66b11c88fc07ca4564d58bcd232179b90773e1cd
+- [x] `bun run agent:test:backend -- plugins/sources/telegram/src/live.test.ts` exits 0 — every historical provider call is wrapped in its recorded Takeout range — 66b11c88fc07ca4564d58bcd232179b90773e1cd
+- [ ] An unparseable 420, unknown Takeout failure or unfinished old checkpoint remains an explicit error; no guessed delay or ordinary-history fallback exists
+- [ ] Every successful page is resumable from its committed opaque cursor or forward checkpoint and a failed provider call advances neither coverage nor checkpoint
+- [x] Commit — 66b11c88fc07ca4564d58bcd232179b90773e1cd
+
+##### Results
+
+<!-- plan:results:D2-S2:start -->
+| Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
+|---|---|---|---:|---|---|
+| TELEGRAMHOLD_001 | 66b11c8 | 2026-09-22T19:39:19.382Z–2026-09-22T20:18:25.000Z | 39 / 39 min | unavailable: runner did not expose usage | Telegram now estimates exact Takeout totals, publishes them before ranged history, resumes selected gaps from opaque checkpoints, finishes from persisted intent, and waits only for exact provider holds. |
+| TELEGRAMTAKEOUT_001 | 66b11c8 | 2026-09-22T19:39:19.382Z–2026-09-22T20:18:25.000Z | 39 / 39 min | unavailable: runner did not expose usage | Telegram now estimates exact Takeout totals, publishes them before ranged history, resumes selected gaps from opaque checkpoints, finishes from persisted intent, and waits only for exact provider holds. |
+| TELEGRAMTAKEOUT_002 | 66b11c8 | 2026-09-22T19:39:19.382Z–2026-09-22T20:18:25.000Z | 39 / 39 min | unavailable: runner did not expose usage | Telegram now estimates exact Takeout totals, publishes them before ranged history, resumes selected gaps from opaque checkpoints, finishes from persisted intent, and waits only for exact provider holds. |
+<!-- plan:results:D2-S2:end -->
+<!-- plan:stage:D2-S2:end -->
+
+<!-- plan:stage:D2-S3:start -->
+<!-- plan:stage-meta:{"deliveryId":"D2","depends":["D2-S2"],"parallelWith":[],"writes":["packages/testkit/source.ts","packages/testkit/host-driver.ts","packages/testkit/__tests__/tst_cat_src_parity_001.test.ts","plugins/sources/mock-statemachine-phone/manifest.toml","plugins/sources/mock-statemachine-phone/src/certification.test.ts","plugins/modules/telegram/module/service.ts","plugins/modules/telegram/module/__tests__/telegramCommand.test.ts","scripts/certify-sources.ts","scripts/certify-sources.test.ts","docs/plugins/source.md","dist/receipts/sha256:06a1684477780b3928ae8362a97789c678bce4cb9d24e8ebca42ab26d20bd1d3.json","dist/receipts/sha256:2730537b4b51876b5770fe1287055dee2bbc529d9d22802e5f3d84df68c3d238.json","dist/receipts/sha256:4673b4ad6441eb169a28d843174cf1a616b9fe746e4be22ee43db7b6e8b89ded.json","dist/receipts/sha256:47cb2d8eb601b667157ce051a518ff48a83f33c799a08f5e8789a1575b11af69.json","dist/receipts/sha256:482cc4a3d4eced98b3d905831a5bf44283a843c9ac1135a0de85eb48e9d8166f.json","dist/receipts/sha256:488e26361d759688a32d0e9d06f857f22fe262066aabb75b776d2dc640866495.json","dist/receipts/sha256:4ce51937d2e7e8d3ba7cac3cbbe425feecc5d0e92e0f78aec94cd05f60ab66fa.json","dist/receipts/sha256:587d745d713940a168cdda38e5338d4eebb648a2cf6fd7233a5121cd35887b0f.json","dist/receipts/sha256:7314a7943415ddae335353cc1249503b3223dce197998747d7fb76a08729d786.json","dist/receipts/sha256:8f0ba7c29c94ebd313660cd223fdccbbfbc8a0df50934e8f523b719c1741ed3e.json","dist/receipts/sha256:91b0ea2a16015c218b759c543eb7e0e8e2c1c575c7d8eef8e1b12c427f6a0c38.json","dist/receipts/sha256:b044a0eafc3f822dacef644d5bde8e355de3320a520445a97586510ec55fc22e.json","dist/receipts/sha256:f625887998205b7badd705bf3e5592225eb19e48fa601b9f30820227739f29a8.json","dist/receipts/sha256:f7f6b8431f64f09e6260b2b9af332723c9686e94c6f012c24a25c7ed025ae2e8.json"],"tempRoot":".tmp/code-production/telegram-takeout-sync/D2-S3","predictedActiveMinutes":60,"predictedCredits":6,"verifyActiveMinutes":20,"verifyCredits":2} -->
+#### Stage D2-S3 — The published Source set proves one runtime and the live stand proves throughput
+
+- Owner: root; Profile: strong; Depends: D2-S2; Parallel with: none.
+- Writes: `packages/testkit/source.ts`, `packages/testkit/host-driver.ts`, `packages/testkit/__tests__/tst_cat_src_parity_001.test.ts`, `plugins/sources/mock-statemachine-phone/manifest.toml`, `plugins/sources/mock-statemachine-phone/src/certification.test.ts`, `plugins/modules/telegram/module/service.ts`, `plugins/modules/telegram/module/__tests__/telegramCommand.test.ts`, `scripts/certify-sources.ts`, `scripts/certify-sources.test.ts`, `docs/plugins/source.md`, `dist/receipts/*.json`.
+- Temp root: `.tmp/code-production/telegram-takeout-sync/D2-S3` (must be absent at handoff).
+- Of which verification: 20 active min / 2 credits.
+
+What this Stage solves. Current certification still permits Telegram's custom runtime and one current mock Source still advertises the legacy listen operation. The module also still fabricates a dead Telegram backfill action, and changed inlined SDK bytes invalidate hash-addressed Source receipts. Correct fake-provider behavior alone does not establish real-account throughput.
+
+What is built. The module keeps graph.request_backfill as an empty generic wake. Testkit, current Source manifests and catalog certification require connector_sdk plus the standard operation set and reject the legacy listen operation, subscription fallback, custom Telegram dispatcher and execute backfill. The normal catalog build regenerates only the affected hash-addressed receipts and indexes from the finished bundles. Documentation states one Source program. The existing manual stand resets sync data without secrets and measures the final app/catalog commits with indexer off.
+
+How it is proven. tst_mod_tg_backfill_wake_001 sees no provider payload. tst_cat_src_parity_001 exercises every current Source through the shared program; tst_cat_src_cert_003 rejects a current custom runtime and legacy operation. The complete catalog gate builds all packages. A real unheld run of at least 10,000 admitted envelopes records Source fetch, Graph admission, overlap, wall time and at least 150 envelopes per second.
+
+Commit. chore(catalog): certify the unified Source runtime — remove the last legacy declarations and refresh exact receipts after the shared SDK and Telegram bundles pass.
+
+##### Tasks
+
+- [x] SOURCEPROGRAM_003 — Keep graph.request_backfill as a generic wake while removing Telegram's backfill_chat payload from the module. (10 min) — a93297cf3377c16f39e57a1bea8d98c2f8cbd43c
+<!-- plan:task-meta:{"writes":["plugins/modules/telegram/module/service.ts","plugins/modules/telegram/module/__tests__/telegramCommand.test.ts"],"predictedActiveMinutes":10,"predictedCredits":1,"how":"Change plugins/modules/telegram/module/service.ts so the existing graph.request_backfill call sends only its generic empty payload and never names backfill_chat or a chat id. Add metadata-backed tst_mod_tg_backfill_wake_001 to plugins/modules/telegram/module/__tests__/telegramCommand.test.ts and keep the selected chat only as module state.","red":"bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/telegramCommand.test.ts -t tst_mod_tg_backfill_wake_001"} -->
+- [x] SOURCECERT_001 — Reject every current in-repository Source that does not use the Connector SDK or still advertises a legacy operation, then refresh exact receipts. (30 min) — a93297cf3377c16f39e57a1bea8d98c2f8cbd43c
+<!-- plan:task-meta:{"writes":["packages/testkit/source.ts","packages/testkit/host-driver.ts","packages/testkit/__tests__/tst_cat_src_parity_001.test.ts","plugins/sources/mock-statemachine-phone/manifest.toml","plugins/sources/mock-statemachine-phone/src/certification.test.ts","scripts/certify-sources.ts","scripts/certify-sources.test.ts","docs/plugins/source.md","dist/receipts/sha256:06a1684477780b3928ae8362a97789c678bce4cb9d24e8ebca42ab26d20bd1d3.json","dist/receipts/sha256:2730537b4b51876b5770fe1287055dee2bbc529d9d22802e5f3d84df68c3d238.json","dist/receipts/sha256:4673b4ad6441eb169a28d843174cf1a616b9fe746e4be22ee43db7b6e8b89ded.json","dist/receipts/sha256:47cb2d8eb601b667157ce051a518ff48a83f33c799a08f5e8789a1575b11af69.json","dist/receipts/sha256:482cc4a3d4eced98b3d905831a5bf44283a843c9ac1135a0de85eb48e9d8166f.json","dist/receipts/sha256:488e26361d759688a32d0e9d06f857f22fe262066aabb75b776d2dc640866495.json","dist/receipts/sha256:4ce51937d2e7e8d3ba7cac3cbbe425feecc5d0e92e0f78aec94cd05f60ab66fa.json","dist/receipts/sha256:587d745d713940a168cdda38e5338d4eebb648a2cf6fd7233a5121cd35887b0f.json","dist/receipts/sha256:7314a7943415ddae335353cc1249503b3223dce197998747d7fb76a08729d786.json","dist/receipts/sha256:8f0ba7c29c94ebd313660cd223fdccbbfbc8a0df50934e8f523b719c1741ed3e.json","dist/receipts/sha256:91b0ea2a16015c218b759c543eb7e0e8e2c1c575c7d8eef8e1b12c427f6a0c38.json","dist/receipts/sha256:b044a0eafc3f822dacef644d5bde8e355de3320a520445a97586510ec55fc22e.json","dist/receipts/sha256:f625887998205b7badd705bf3e5592225eb19e48fa601b9f30820227739f29a8.json","dist/receipts/sha256:f7f6b8431f64f09e6260b2b9af332723c9686e94c6f012c24a25c7ed025ae2e8.json"],"predictedActiveMinutes":30,"predictedCredits":3,"how":"Remove the current-runtime Telegram exception and legacy operation inputs from packages/testkit/source.ts, packages/testkit/host-driver.ts and packages/testkit/__tests__/tst_cat_src_parity_001.test.ts while retaining immutable historical selected-channel evidence. Remove magnis.sync.listen from plugins/sources/mock-statemachine-phone/manifest.toml and its certification.test.ts. In scripts/certify-sources.ts require connector_sdk and the standard operation set for every current in-repository Source; add metadata-backed tst_cat_src_cert_003 in scripts/certify-sources.test.ts. Update docs/plugins/source.md. Run the existing catalog build so dist/receipts/*.json matches the finished inlined bundles and no stale current receipt remains.","red":"bun run agent:test:backend -- scripts/certify-sources.test.ts -t tst_cat_src_cert_003"} -->
+
+##### Acceptance criteria
+
+- [x] `bun run agent:test:backend -- scripts/certify-sources.test.ts` exits 0 — certification rejects current custom runtimes and legacy Source operations — a93297cf3377c16f39e57a1bea8d98c2f8cbd43c
+- [x] `bun run agent:test:backend -- packages/testkit/__tests__/tst_cat_src_parity_001.test.ts` exits 0 — every current Source runs through the same SDK contract — a93297cf3377c16f39e57a1bea8d98c2f8cbd43c
+- [x] `bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/telegramCommand.test.ts` exits 0 — graph.request_backfill carries no provider payload — a93297cf3377c16f39e57a1bea8d98c2f8cbd43c
+- [x] `bun run agent:verify:pr` exits 0 — the complete catalog gate builds and verifies the final Delivery once — a93297cf3377c16f39e57a1bea8d98c2f8cbd43c
+- [ ] The existing manual Telegram performance stand preserves secrets, uses the final clean app/catalog commits and runs outside CI
+- [ ] With indexer off and no provider hold, at least 10,000 admitted envelopes sustain at least 150 envelopes/second by wall time; fetch, Graph admission and overlap are attached to the PR
+- [ ] If Telegram returns a provider hold, its exact duration is reported and that run makes no local-throughput claim
+- [ ] No frontend file, workflow, runner or live-provider automated test changed
+- [x] Commit — a93297cf3377c16f39e57a1bea8d98c2f8cbd43c
+
+##### Results
+
+<!-- plan:results:D2-S3:start -->
+| Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
+|---|---|---|---:|---|---|
+| SOURCEPROGRAM_003 | a93297cf3377c16f39e57a1bea8d98c2f8cbd43c | 2026-09-22T20:19:39.955Z–2026-09-22T21:09:39.955Z | 49 / 50 min | unavailable: runner did not expose usage | All current Sources use the shared Connector SDK contract, Telegram backfill is a generic wake, and exact catalog receipts were rebuilt. |
+| SOURCECERT_001 | a93297cf3377c16f39e57a1bea8d98c2f8cbd43c | 2026-09-22T20:19:39.955Z–2026-09-22T21:09:39.955Z | 49 / 50 min | unavailable: runner did not expose usage | All current Sources use the shared Connector SDK contract, Telegram backfill is a generic wake, and exact catalog receipts were rebuilt. |
+<!-- plan:results:D2-S3:end -->
+<!-- plan:stage:D2-S3:end -->
+
+<!-- plan:stage:D2-S4:start -->
+<!-- plan:stage-meta:{"deliveryId":"D2","depends":["D2-S3"],"parallelWith":[],"writes":["plugins/sources/telegram/src/surfaces/telegram/commands.ts","plugins/sources/telegram/src/surfaces/telegram/commands.test.ts","dist/receipts/sha256:0f51577144d4c903e8c183f116ae2ef451ffd6fc98d70b2bcb79a6cc8f77a6ed.json","dist/receipts/sha256:279b00b97351eafb3ef3c53ea45d51b298ace7edb81a2307723c29e27df54b0a.json","dist/receipts/sha256:47cb2d8eb601b667157ce051a518ff48a83f33c799a08f5e8789a1575b11af69.json","dist/receipts/sha256:706827cd5106049522f8e263cad61bd57b4dc1554571a42d780b771f5c51bfe7.json","dist/receipts/sha256:953bc2749d638df9f6e0696430b0d1322e7d8199d374ddd78b84a72200a69b86.json"],"tempRoot":".tmp/code-production/telegram-takeout-sync/D2-S4","predictedActiveMinutes":75,"predictedCredits":6,"verifyActiveMinutes":30,"verifyCredits":2} -->
+#### Stage D2-S4 — Telegram starts ordinary history immediately
+
+- Owner: root; Profile: strong; Depends: D2-S3; Parallel with: none.
+- Writes: `plugins/sources/telegram/src/surfaces/telegram/commands.ts`, `plugins/sources/telegram/src/surfaces/telegram/commands.test.ts`, `dist/receipts/*.json`.
+- Temp root: `.tmp/code-production/telegram-takeout-sync/D2-S4` (must be absent at handoff).
+- Of which verification: 30 active min / 2 credits.
+
+What this Stage solves. Starting an official Takeout export can impose a 24-hour security delay even though ordinary Telegram history can begin immediately and finish within that window.
+
+What is built. A backward fetch without a persisted Takeout checkpoint uses the existing optimized runBootstrap history path. A persisted Takeout checkpoint still resumes and finishes through the existing Takeout code, but no new account initiates Takeout automatically. The existing manual stand clears sync data without credentials, measures at least 10,000 envelopes with indexer off and profiles Source fetch, Graph admission, overlap and wall time.
+
+How it is proven. tst_src_tg_history_default_003 sees a new account emit ordinary dialog history without initTakeout and sees an existing Takeout checkpoint resume unchanged. The catalog build refreshes the exact Telegram receipt. The live stand identifies the largest remaining bottleneck before any further parameter change.
+
+Commit. fix(telegram): start ordinary history immediately — keep Takeout checkpoint compatibility without delaying new accounts.
+
+##### Tasks
+
+- [x] TELEGRAMHISTORY_001 — commands.ts defaults to ordinary history, commands.test.ts proves Takeout resume, and dist/receipts/*.json republishes Telegram. (45 min) — a5986ead945bb7c92a146f44fd7cb47b34c55256
+<!-- plan:task-meta:{"writes":["plugins/sources/telegram/src/surfaces/telegram/commands.ts","plugins/sources/telegram/src/surfaces/telegram/commands.test.ts","dist/receipts/sha256:0f51577144d4c903e8c183f116ae2ef451ffd6fc98d70b2bcb79a6cc8f77a6ed.json","dist/receipts/sha256:279b00b97351eafb3ef3c53ea45d51b298ace7edb81a2307723c29e27df54b0a.json","dist/receipts/sha256:47cb2d8eb601b667157ce051a518ff48a83f33c799a08f5e8789a1575b11af69.json","dist/receipts/sha256:706827cd5106049522f8e263cad61bd57b4dc1554571a42d780b771f5c51bfe7.json","dist/receipts/sha256:953bc2749d638df9f6e0696430b0d1322e7d8199d374ddd78b84a72200a69b86.json"],"predictedActiveMinutes":45,"predictedCredits":4,"how":"Change plugins/sources/telegram/src/surfaces/telegram/commands.ts so a backward fetch without a Takeout checkpoint calls the existing runBootstrap while a persisted Takeout checkpoint calls runTakeoutBootstrap. Add metadata-backed tst_src_tg_history_default_003 to plugins/sources/telegram/src/surfaces/telegram/commands.test.ts proving both branches and no automatic initTakeout. Run the existing catalog build so dist/receipts/*.json matches the final Telegram bundle.","red":"bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts -t tst_src_tg_history_default_003"} -->
+
+##### Acceptance criteria
+
+- [x] `bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts` exits 0 — new accounts start ordinary history and persisted Takeout checkpoints still resume — a5986ead945bb7c92a146f44fd7cb47b34c55256
+- [ ] A new account emits its first history envelopes without account.initTakeoutSession
+- [ ] The existing manual stand preserves credentials, disables the indexer and records at least 10,000 envelopes or an exact provider hold
+- [ ] The profile records Source fetch, Graph admission, overlap and wall time before any further optimization
+- [ ] No frontend file, workflow, runner or live-provider automated test changes
+- [x] Commit — a5986ead945bb7c92a146f44fd7cb47b34c55256
+
+##### Results
+
+<!-- plan:results:D2-S4:start -->
+| Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
+|---|---|---|---:|---|---|
+| TELEGRAMHISTORY_001 | a5986ead945bb7c92a146f44fd7cb47b34c55256 | 2026-09-23T07:57:18.560Z–2026-09-23T08:10:35.089Z | 13 / 13 min | unavailable: runner did not expose usage | New accounts start ordinary Telegram history immediately; persisted Takeout checkpoints still resume. The live indexer-off stand admitted 17,720 envelopes in 109.994 seconds wall time, including an 11-second provider hold; active time was dominated by Telegram fetch (49.859 seconds) over Graph admission (21.987 seconds). |
+<!-- plan:results:D2-S4:end -->
+<!-- plan:stage:D2-S4:end -->
+
+<!-- plan:stage:D2-S5:start -->
+<!-- plan:stage-meta:{"deliveryId":"D2","depends":["D2-S4"],"parallelWith":[],"writes":["plugins/sources/telegram/src/request-admission.ts","plugins/sources/telegram/src/tst_src_tgflood_001.test.ts","dist/receipts/sha256:f9fb1886417225e6fb32fe6e65f070d180c0f6c5ecb5ef2a0d8dadd584ead787.json"],"tempRoot":".tmp/code-production/telegram-takeout-sync/D2-S5","predictedActiveMinutes":75,"predictedCredits":6,"verifyActiveMinutes":30,"verifyCredits":2} -->
+#### Stage D2-S5 — Telegram converges below its flood boundary
+
+- Owner: root; Profile: strong; Depends: D2-S4; Parallel with: none.
+- Writes: `plugins/sources/telegram/src/request-admission.ts`, `plugins/sources/telegram/src/tst_src_tgflood_001.test.ts`, `dist/receipts/sha256:f9fb1886417225e6fb32fe6e65f070d180c0f6c5ecb5ef2a0d8dadd584ead787.json`.
+- Temp root: `.tmp/code-production/telegram-takeout-sync/D2-S5` (must be absent at handoff).
+- Of which verification: 30 active min / 2 credits.
+
+What this Stage solves. The exact hold fix removed permanent throttling, but the live ordinary-history run then hit four provider floods in nine successful turns because every hold resumed at the same unlimited request rate.
+
+What is built. AccountAdmission keeps one method-local process-lifetime rate controller beside its existing exact account hold. A first measurable flood sets the method to 90% of its observed transmission rate, each later flood reduces it by another 10%, and ten consecutive successes add 1% of the last flooded rate. Existing admission timers schedule the next eligible send; controls and unrelated methods remain unpaced.
+
+How it is proven. tst_src_tgflood_008 drives the real GramJS sender with a virtual clock, observes the first 10% backoff, the small success probe and a second 10% backoff while exact holds and one-in-flight ownership remain intact. The existing manual stand reuses its saved credential, disables the indexer and compares exact holds, turns and throughput with the four-in-nine baseline.
+
+Commit. fix(telegram): adapt below the provider flood rate — AccountAdmission converges per flooded method while exact holds remain authoritative.
+
+##### Tasks
+
+- [x] TELEGRAMPACING_001 — Make AccountAdmission converge per flooded RPC method and prove its decrease and recovery on the real sender harness. (45 min) — 20d4a58498770d1cb140afee705b3d5a2aa11f94
+<!-- plan:task-meta:{"writes":["plugins/sources/telegram/src/request-admission.ts","plugins/sources/telegram/src/tst_src_tgflood_001.test.ts","dist/receipts/sha256:f9fb1886417225e6fb32fe6e65f070d180c0f6c5ecb5ef2a0d8dadd584ead787.json"],"predictedActiveMinutes":45,"predictedCredits":4,"how":"Extend AccountAdmission's existing monotonic clock and timer scheduling with method-local rate state. Derive the first rate from measurable send timestamps; multiply it by 0.9 on every real FLOOD_WAIT; after ten successful calls add 0.01 of the last flooded rate. Keep exact hold deadlines, one active request, replay fencing, controls and unrelated methods unchanged. Add metadata-backed tst_src_tgflood_008 and rebuild the catalog receipts.","red":"bun run agent:test:backend -- plugins/sources/telegram/src/tst_src_tgflood_001.test.ts -t tst_src_tgflood_008"} -->
+
+##### Acceptance criteria
+
+- [x] `bun run agent:test:backend -- plugins/sources/telegram/src/tst_src_tgflood_001.test.ts` exits 0 — exact holds, replay safety and adaptive pacing coexist — 20d4a58498770d1cb140afee705b3d5a2aa11f94
+- [ ] The existing live stand preserves credentials, runs with the indexer off and reports holds, successful turns and wall throughput against the four-holds-in-nine-turns baseline
+- [ ] After convergence, ten successful sync turns complete without another provider hold; otherwise the remaining limit is reported without claiming success
+- [ ] No frontend file, workflow, runner or live-provider automated test changes
+- [x] Commit — 20d4a58498770d1cb140afee705b3d5a2aa11f94
+
+##### Results
+
+<!-- plan:results:D2-S5:start -->
+| Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
+|---|---|---|---:|---|---|
+| TELEGRAMPACING_001 | 20d4a58498770d1cb140afee705b3d5a2aa11f94 | 2026-09-23T08:56:12.366Z–2026-09-23T09:15:33.000Z | 19 / 19 min | unavailable: runner did not expose usage | Telegram now learns a process-local rate only for the RPC method that floods. The live indexer-off run processed 33,259 envelopes in 364.152 seconds across 22 turns with two exact holds (13s, then 5s), versus the four-holds-in-nine-turns baseline, and completed 14 turns after the second hold without another hold. |
+<!-- plan:results:D2-S5:end -->
+<!-- plan:stage:D2-S5:end -->
+<!-- plan:delivery:D2:end -->
 <!-- plan:implementation:end -->
 
 <!-- plan:execution:start -->
 ## Execution log
+
+- lock-spec sha256:fddbcc2b66e31efe9b35adea4e8cd96715fd2996b95f6baa8094e848cb3e7ffd owner:давай стадии
+
+- put-delivery D1
+
+- put-stage D1-S1
+
+- put-delivery D2
+
+- put-stage D2-S1
+
+- put-stage D2-S2
+
+- put-stage D2-S3
+
+- replace-stage D2-S1
+
+- replace-stage D2-S3
+
+- replace-stage D2-S1
+
+- drop D1-S1
+
+- replace-delivery D1
+
+- replace-delivery D2
+
+- approve sha256:6e7a3cfc25ec72c7a4197b6dca45501c1102bef5b00c4dd9b6bc2f872fbcf55f owner:approved
+
+- deviation D2-S1: Preflight agent-stack check reports the vendored plan runtime, vocabulary, retro register and pre-push hook stale against the global installer. Those process files are outside this Telegram Stage, so the verified vendored planctl and repository hooks remain unchanged; frozen install succeeded with an explicit writable Bun temp directory.
+
+- deviation D2-S1: The Telegram evidence hash enumerator hard-coded the dispatcher file that this Stage deletes; update plugins/sources/telegram/src/testing/mtproto-transport.ts to hash connector.ts instead so the existing deterministic evidence suite still runs.
+
+- amend implementation owner:да sha256:ac69e0d9bd7da53eede11dff375e6ac288627ab84285147148d1adae43abafba
+
+- record-result D2-S1 commit:4a35e8719f90dd97ff82d9adc35a33b600126a13
+
+- deviation D2-S1: The vendored process stack is stale against the global installer; it is outside this Stage and remained unchanged.
+
+- deviation D2-S1: The existing evidence hash enumerator had to replace the deleted dispatcher path with connector.ts so deterministic evidence could still run.
+
+- close D2-S1 partial commit:4a35e8719f90dd97ff82d9adc35a33b600126a13
+
+- record-result D2-S2 commit:66b11c8
+
+- close D2-S2 partial commit:66b11c88fc07ca4564d58bcd232179b90773e1cd
+
+- deviation D2-S3: Exact catalog execution exposed credential probe as an ordinary source operation; the shared SDK and host evidence driver were corrected together before certification.
+
+- deviation D2-S3: Exact OAuth artifact execution exposed its wrapper dropping the host's auth-mode flag and a stale TypeScript-screen assertion; the wrapper now preserves auth mode and certification asserts the compiled screen.
+
+- deviation D2-S3: Catalog regeneration exposed an unintended Telegram server-version change; the certified 1.0.1 identity was restored before publishing receipts.
+
+- amend implementation owner:approved sha256:3155ac619419891f9e7b38266ffc790e3ab0b355a5ebec6a0fb148adf7fc4a8c
+
+- amend implementation owner:approved sha256:6fe3720ab3fd9b4f6067eda176b7cc65058086f26bdb3bc0b5c40366a8af6c8a
+
+- amend implementation owner:approved sha256:a35748ee6575bb9c259af1864fdd828cc1085a9e2f2ede0577351fb28a5fe2f5
+
+- record-result D2-S3 commit:a93297cf3377c16f39e57a1bea8d98c2f8cbd43c
+
+- close D2-S3 partial commit:a93297cf3377c16f39e57a1bea8d98c2f8cbd43c
+
+- amend implementation owner:Да sha256:06e169d35369e687b02ebb5514cead499a66b3d3b00151ec7445e048e38e869e
+
+- amend implementation owner:Да sha256:3175185c05c527d6b26a598b20bedeab2b51b721b2cb5f967b87e3db61d95160
+
+- amend implementation owner:Да sha256:53465f55b58f94772f53478bcdd6857e4a8a4990ad82bdf26bcb99b39e387c71
+
+- amend implementation owner:Да sha256:add18aca89bb30294493469d44d008cd4255a1c89720c6ef634a69738544c54f
+
+- amend implementation owner:Да sha256:c252d4ed981faaf93085d160d2e3a7a91864443b6bdcceba1e4851c264131803
+
+- amend implementation owner:Да sha256:521f541d2d00c325772c1ba3b136e2e9c66a98749e296e22f50b9eb588df8954
+
+- amend implementation owner:Да sha256:30de713aed9002f18be222ffbec16db9cbac3e9c38381cee31658b89cb141eda
+
+- record-result D2-S4 commit:a5986ead945bb7c92a146f44fd7cb47b34c55256
+
+- close D2-S4 partial commit:a5986ead945bb7c92a146f44fd7cb47b34c55256
+
+- amend spec owner:Да, незамедлительно. sha256:52503423e45e07b615691ab59a74f961f96ae54cd44d594980cfc5f5101b6699
+
+- replace-delivery D2
+
+- put-stage D2-S5
+
+- approve sha256:d052b842e8a5a4107030a18c790e31fb60c8384a6017446849e8606b89e61ef6 owner:Да, незамедлительно.
+
+- amend implementation owner:Да, незамедлительно. sha256:1045771800800cad7ae3ecd5a43c7465b1580af82dc24c81d7e80d40f8ad39d7
+
+- amend implementation owner:Да, незамедлительно. sha256:d656a043833e52655a605a6b3886ded59cf3868054b31b61da4a8ed965b7e283
+
+- record-result D2-S5 commit:20d4a58498770d1cb140afee705b3d5a2aa11f94
+
+- close D2-S5 partial commit:20d4a58498770d1cb140afee705b3d5a2aa11f94
 <!-- plan:execution:end -->

@@ -22,7 +22,28 @@ export interface Envelope {
   remote_id: string;
   kind: "snapshot" | "live" | "delete";
   payload: Record<string, unknown>;
+  position?: {
+    scope_id: string;
+    id: number;
+  };
 }
+
+export type SyncTarget =
+  | { kind: "forward" }
+  | { kind: "gap"; start: number; end: number }
+  | { kind: "seededInitialHistory"; params: unknown }
+  | { kind: "snapshot"; generation: string }
+  | { kind: "timeWindow"; from: string; to: string }
+  | { kind: "trackedIdentities"; identities: string[] };
+
+export type ForwardCheckpointEffect =
+  | { kind: "retain" }
+  | { kind: "replace"; value: unknown }
+  | { kind: "clear" };
+
+export type SyncProgressReceipt =
+  | { kind: "continueTarget"; continuationToken: unknown }
+  | { kind: "completeTarget"; forwardCheckpoint: ForwardCheckpointEffect };
 
 export interface FetchArgs {
   surface: string;
@@ -31,6 +52,12 @@ export interface FetchArgs {
   cursor?: unknown;
   /** Present-to-past by default; the host may ask "forward" on catch-up. */
   direction?: "backward" | "forward";
+  /** Source-owned identity inside a generic bounded target. */
+  scope_id?: string;
+  /** Magnis-owned target; provider continuation remains in `cursor`. */
+  target?: SyncTarget;
+  /** Last committed forward edge, separate from target continuation. */
+  forward_checkpoint?: unknown;
   /** Tracked handles for this platform — the host passes the opt-in set. */
   tracked_handles?: string[];
   limit?: number;
@@ -46,8 +73,10 @@ export interface FetchArgs {
 
 export interface FetchResult {
   envelopes: Envelope[];
-  nextCursor: unknown;
-  hasMore: boolean;
+  nextCursor?: unknown;
+  hasMore?: boolean;
+  progress?: SyncProgressReceipt;
+  traversed?: Record<string, [number, number]>;
   /** Optional sync-progress counters (profile.rs: bootstrap bar). */
   total?: number | null;
   discovered?: number | null;
@@ -115,9 +144,8 @@ export type FetchHandler = (args: FetchArgs) => Promise<FetchResult>;
  * the real provider with the injected key and return the verified subject. */
 export type ProbeAuthHandler = (meta: Record<string, unknown> | undefined) => Promise<{ subject: string }>;
 
-/** Push session open: called on `listen_start` (and the legacy
- * `magnis.sync.listen` alias). `emit` stamps + writes one envelope notification
- * for THIS subscription; after `listen_stop` it no-ops. */
+/** Push session open: called on `listen_start`. `emit` stamps + writes one
+ * envelope notification for THIS subscription; after `listen_stop` it no-ops. */
 export type ListenStartHandler = (
   args: { subscription_id: string; meta?: Record<string, unknown> },
   emit: (envelope: Envelope) => void,
@@ -176,9 +204,8 @@ export interface ConnectorConfig {
   /** "push" advertises live delivery: the host opens `listen_start`
    * subscriptions and consumes `notifications/magnis/envelope`. */
   mode?: "poll" | "push";
-  /** Push session open: called on `listen_start` (and the legacy
-   * `magnis.sync.listen` alias). `emit` stamps + writes one envelope
-   * notification for THIS subscription; after `listen_stop` it no-ops. */
+  /** Push session open: called on `listen_start`. `emit` stamps + writes one
+   * envelope notification for THIS subscription; after `listen_stop` it no-ops. */
   listenStart?: ListenStartHandler;
   /** Push session close: called on `listen_stop`. */
   listenStop?: ListenStopHandler;

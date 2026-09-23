@@ -435,6 +435,36 @@ describe("tst_cat_src_cert_001 staged Source certification", () => {
     );
   });
 
+  /** @test-id: tst_cat_src_cert_003
+   * @scenario: scn_src_certification_001
+   * @covers: scripts/certify-sources.ts::decodeSourceCertificationDeclaration
+   * @deterministic: yes
+   * @fixtures: current Source manifests with a custom runtime or legacy operation
+   */
+  test("tst_cat_src_cert_003 rejects a current custom runtime and legacy operation", () => {
+    const customRoot = temporaryRoot();
+    const customSource = join(customRoot, "sources", "alpha");
+    mkdirSync(customSource, { recursive: true });
+    writeFileSync(join(customSource, "manifest.toml"), sourceManifest("alpha").replace(
+      'runtime_kind = "connector_sdk"',
+      'runtime_kind = "custom"',
+    ));
+    expect(() => discoverSourceReleaseManifests(join(customRoot, "sources"))).toThrow(
+      "source 'alpha' certification.runtime_kind must be connector_sdk",
+    );
+
+    const legacyRoot = temporaryRoot();
+    const legacySource = join(legacyRoot, "sources", "alpha");
+    mkdirSync(legacySource, { recursive: true });
+    writeFileSync(join(legacySource, "manifest.toml"), sourceManifest("alpha").replace(
+      '"magnis.sync.fetch", "tools/list"',
+      '"magnis.sync.fetch", "magnis.sync.listen", "tools/list"',
+    ));
+    expect(() => discoverSourceReleaseManifests(join(legacyRoot, "sources"))).toThrow(
+      "source 'alpha' certification.callable_operations contains legacy magnis.sync.listen",
+    );
+  });
+
   test("bounds Source host shutdown when a child ignores SIGTERM", async () => {
     const child = Bun.spawn(
       [

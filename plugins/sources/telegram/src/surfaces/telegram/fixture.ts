@@ -23,6 +23,7 @@
 // them as push notifications.
 
 import { readFileSync } from "node:fs";
+import type { Envelope, FetchArgs } from "@magnis/connector-sdk";
 import type { TgChat, TgMessage } from "./envelope";
 import { chatEnvelope, messageEnvelope, messagePayload, toRfc3339Utc } from "./envelope";
 import { messageRemoteId } from "./schema";
@@ -200,13 +201,40 @@ export function fetchResult(direction: string, cursor: unknown): Record<string, 
   return { envelopes, nextCursor, hasMore: false, traversed };
 }
 
+/** A fixture is complete provider history, so a bounded gap is answered in one
+ * standard fetch page and the exact asked range is traversed. */
+export function fetchGapResult(args: FetchArgs): Record<string, unknown> {
+  const target = args.target;
+  const scopeId = args.scope_id;
+  if (target?.kind !== "gap" || scopeId === undefined) {
+    throw new Error("fixture gap fetch requires scope_id and gap target");
+  }
+  const chatId = Number(scopeId);
+  if (!Number.isSafeInteger(chatId) || String(chatId) !== scopeId) {
+    throw new Error("fixture gap fetch requires numeric scope_id");
+  }
+  const envelopes = load().messages
+    .filter((message) =>
+      !message.live && message.chat_id === chatId &&
+      message.message_id >= target.start && message.message_id <= target.end)
+    .map((message) => messageEnvelope(message, "snapshot"));
+  return {
+    envelopes,
+    nextCursor: null,
+    hasMore: false,
+    traversed: { [scopeId]: [target.start, target.end] },
+  };
+}
+
 /** Live messages (`"live": true`) to replay as `notifications/magnis/envelope`
  * after a listen ack. Each is `(payload, remote_id, position)` — the exact
  * shape the host's `parse_push_params` reads. */
-export function livePushes(): { payload: Record<string, unknown>; remote_id: string; position: { scope_id: string; id: number } }[] {
+export function livePushes(): Envelope[] {
   return load()
     .messages.filter((m) => m.live)
     .map((m) => ({
+      surface: "telegram",
+      kind: "live" as const,
       payload: messagePayload(m),
       remote_id: messageRemoteId(m.chat_id, m.message_id),
       position: { scope_id: String(m.chat_id), id: m.message_id },
@@ -219,8 +247,7 @@ export function fixtureMessageId(): number {
   return -(Math.abs(Date.now()) % 1_000_000_000);
 }
 
-/** Fixture-mode `magnis.execute`: no live send — echo the action back so a
- * caller can assert the connector accepted and routed it. */
+/** Fixture-mode `magnis.execute`: no live send — echo supported actions. */
 export function executeResult(args: Record<string, unknown>): Record<string, unknown> {
   const action = typeof args.action === "string" ? args.action : "";
   switch (action) {
@@ -234,8 +261,6 @@ export function executeResult(args: Record<string, unknown>): Record<string, unk
         recorded: true,
         action,
       };
-    case "backfill_chat":
-      return { envelopes: [], recorded: true, action: "backfill_chat" };
     case "download_file":
       return {
         local_path: args.dest ?? null,
@@ -244,6 +269,6 @@ export function executeResult(args: Record<string, unknown>): Record<string, unk
         action: "download_file",
       };
     default:
-      return { recorded: true, action };
+      throw new Error(`unsupported telegram execute action '${action}'`);
   }
 }

@@ -6,8 +6,10 @@ import { exchangeFixtureOAuth, revokeFixtureOAuth } from "./auth";
 
 const stateDirIndex = process.argv.indexOf("--state-dir");
 const stateDir = stateDirIndex >= 0 ? process.argv[stateDirIndex + 1] : undefined;
+const authMode = process.argv.includes("--auth-mode");
 process.argv = [
   ...process.argv.slice(0, 2),
+  ...(authMode ? ["--auth-mode"] : []),
   "--surfaces",
   "email",
   "--mode",
