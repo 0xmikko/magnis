@@ -38,6 +38,15 @@ interface Entry {
   phase: "queued" | "reserved" | "sent" | "replay" | "done";
 }
 
+interface MethodPacing {
+  firstSentAt: number;
+  lastSentAt: number;
+  sentCount: number;
+  successes: number;
+  ratePerMs: number | undefined;
+  increasePerMs: number | undefined;
+}
+
 class LocalFloodWait extends Error {
   readonly code = 420;
   readonly errorMessage = "FLOOD_WAIT";
@@ -47,6 +56,9 @@ class LocalFloodWait extends Error {
 }
 
 const CONTROLS = new Set(["MsgsAck", "MsgsStateInfo", "Ping", "PingDelayDisconnect"]);
+const FLOOD_RATE_FACTOR = 0.9;
+const SUCCESS_PROBE_CALLS = 10;
+const SUCCESS_RATE_INCREMENT = 0.01;
 
 function method(state: RpcAdmissionState): string {
   const request = state.request;
@@ -60,6 +72,7 @@ export class AccountAdmission implements RpcAdmissionHooks {
   private readonly owner: string;
   private readonly records = new WeakMap<RpcAdmissionState, Entry>();
   private readonly pending = new Set<Entry>();
+  private readonly pacing = new Map<string, MethodPacing>();
   private active: Entry | undefined;
   private until = 0;
   private remoteCause: unknown;
@@ -92,6 +105,63 @@ export class AccountAdmission implements RpcAdmissionHooks {
       remaining: this.closed ? null : Math.max(0, Math.ceil((this.until - this.time.now()) / 1000)), queued: this.queued });
   }
 
+  private nextSendAt(name: string): number {
+    const pacing = this.pacing.get(name);
+    return pacing?.ratePerMs === undefined ? -Infinity : pacing.lastSentAt + 1 / pacing.ratePerMs;
+  }
+
+  private sentMethod(name: string, at: number): void {
+    let pacing = this.pacing.get(name);
+    if (pacing === undefined) {
+      pacing = { firstSentAt: at, lastSentAt: at, sentCount: 0, successes: 0,
+        ratePerMs: undefined, increasePerMs: undefined };
+      this.pacing.set(name, pacing);
+    }
+    if (pacing.sentCount === 0) pacing.firstSentAt = at;
+    pacing.sentCount++;
+    pacing.lastSentAt = at;
+  }
+
+  private succeeded(entry: Entry): void {
+    if (entry.phase === "done") return;
+    const pacing = this.pacing.get(entry.method);
+    if (pacing?.ratePerMs !== undefined && pacing.increasePerMs !== undefined) {
+      pacing.successes++;
+      if (pacing.successes === SUCCESS_PROBE_CALLS) {
+        pacing.ratePerMs += pacing.increasePerMs;
+        pacing.successes = 0;
+      }
+    }
+    this.finish(entry);
+  }
+
+  private failed(entry: Entry): void {
+    if (entry.phase === "done") return;
+    const pacing = this.pacing.get(entry.method);
+    if (pacing !== undefined) pacing.successes = 0;
+    this.finish(entry);
+  }
+
+  // @tested-by: tst_src_tgflood_008
+  // @invariant: only the RPC method that reached a measurable provider boundary is paced.
+  private reduceMethodRate(name: string): void {
+    const pacing = this.pacing.get(name);
+    if (pacing === undefined) return;
+    if (pacing.ratePerMs === undefined) {
+      const elapsed = pacing.lastSentAt - pacing.firstSentAt;
+      if (pacing.sentCount > 1 && elapsed > 0) {
+        const floodedRate = (pacing.sentCount - 1) / elapsed;
+        pacing.ratePerMs = floodedRate * FLOOD_RATE_FACTOR;
+        pacing.increasePerMs = floodedRate * SUCCESS_RATE_INCREMENT;
+      }
+    } else {
+      pacing.increasePerMs = pacing.ratePerMs * SUCCESS_RATE_INCREMENT;
+      pacing.ratePerMs *= FLOOD_RATE_FACTOR;
+    }
+    pacing.sentCount = 0;
+    pacing.successes = 0;
+  }
+
   private finish(entry: Entry): void {
     if (entry.phase === "done") return;
     entry.phase = "done";
@@ -113,7 +183,11 @@ export class AccountAdmission implements RpcAdmissionHooks {
     const now = this.time.now();
     for (const entry of this.pending) {
       entry.wake();
-      if (entry.phase !== "sent") due = Math.min(due, entry.deadline);
+      if (entry.phase !== "sent") {
+        due = Math.min(due, entry.deadline);
+        const nextSendAt = this.nextSendAt(entry.method);
+        if (nextSendAt > now) due = Math.min(due, nextSendAt);
+      }
     }
     if (Number.isFinite(due)) this.cancelTimer = this.time.schedule((): void => {
       this.cancelTimer = undefined;
@@ -155,7 +229,7 @@ export class AccountAdmission implements RpcAdmissionHooks {
     this.records.set(state, entry);
     this.pending.add(entry);
     // Application Promise.race timeouts do not settle this transport promise.
-    void entry.promise.then(() => { this.finish(entry); }, () => { this.finish(entry); });
+    void entry.promise.then(() => { this.succeeded(entry); }, () => { this.failed(entry); });
     this.wake();
     return true;
   }
@@ -168,8 +242,10 @@ export class AccountAdmission implements RpcAdmissionHooks {
     if (denied) { this.reject(entry, denied); return "discard"; }
     if (entry.phase === "reserved") return "ready";
     if (this.active && this.active !== entry) return "wait";
-    const first = [...this.pending].find((candidate) => candidate.phase !== "done");
+    const first = [...this.pending].find((candidate) => candidate.phase !== "done" &&
+      this.time.now() >= this.nextSendAt(candidate.method));
     if (first !== entry) return "wait";
+    if (this.time.now() < this.nextSendAt(entry.method)) return "wait";
     this.active = entry;
     entry.phase = "reserved";
     return "ready";
@@ -185,6 +261,7 @@ export class AccountAdmission implements RpcAdmissionHooks {
     entry.phase = "sent";
     this.attempt++;
     entry.sentAt = this.time.now();
+    this.sentMethod(entry.method, entry.sentAt);
     this.report("send", entry.method);
     this.wake();
   }
@@ -203,6 +280,7 @@ export class AccountAdmission implements RpcAdmissionHooks {
       this.closed = new Error("Telegram flood duration is invalid; account admission is closed", { cause: error });
     } else {
       this.until = Math.max(this.until, deadline);
+      if (state !== undefined) this.reduceMethodRate(method(state));
     }
     this.report("remoteFlood", state ? method(state) : "UnmatchedRpcResult");
     // A valid zero wait is still an error for this operation, never an SDK

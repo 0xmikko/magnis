@@ -1,8 +1,8 @@
 # Telegram takeout sync
 
 Status: APPROVED  
-Spec lock: sha256:fddbcc2b66e31efe9b35adea4e8cd96715fd2996b95f6baa8094e848cb3e7ffd owner:давай стадии  
-Implementation lock: sha256:30de713aed9002f18be222ffbec16db9cbac3e9c38381cee31658b89cb141eda owner:Да  
+Spec lock: sha256:52503423e45e07b615691ab59a74f961f96ae54cd44d594980cfc5f5101b6699 owner:Да, незамедлительно.  
+Implementation lock: sha256:d052b842e8a5a4107030a18c790e31fb60c8384a6017446849e8606b89e61ef6 owner:Да, незамедлительно.  
 Active Delivery: D2  
 Unattended decisions: allowed  
 
@@ -242,6 +242,12 @@ The live result is evidence attached to the PR, not a CI acceptance test. If Tel
 - No attempt to make a live account test deterministic or suitable for CI.
 - No rewrite of normal catch-up semantics beyond carrying Takeout's finish phase through the standard fetch contract.
 
+## Adaptive request-rate amendment
+
+This owner amendment supersedes the earlier statements that successful requests never affect spacing and that no learned interval exists. Exact provider holds remain authoritative, but after a real FLOOD_WAIT the existing AccountAdmission may retain process-local pacing for the RPC method that flooded. The first flood derives that method's observed transmission rate and lowers it by 10%; every later flood lowers the current rate by another 10%. Ten consecutive successful calls of that method add 1% of its last flooded rate, so the controller probes upward slowly and converges around the provider boundary instead of retaining one permanent slowdown. Control messages still bypass admission, other RPC methods are not slowed by a history flood, and no rate state is persisted or added to the Source protocol.
+
+The existing live stand is the only provider verification. Its baseline is four holds over nine successful sync turns. The adaptive run must report every exact hold, wall throughput and successful turns between holds; regular two-to-three-turn floods are not accepted as convergence. No live provider test enters CI.
+
 ## Dependencies and delivery boundary
 
 - The plan PR is stacked on `magnis` PR #39, which contains the current Telegram integration and manual performance stand.
@@ -294,21 +300,21 @@ Not in this PR. This completed prerequisite is recorded here only to explain the
 
 <!-- plan:delivery:D2:start -->
 <!-- plan:delivery-meta:{"active":true,"depends":[],"predictedExternalWaitMinutes":60} -->
-### PR Delivery D2 — Telegram uses the shared Source program for exact high-rate Takeout sync
+### PR Delivery D2 — Telegram uses the shared Source program with adaptive high-rate sync
 
 Branch: `feat/telegram-takeout-sync`; Depends: none; Gate: backend, docs, catalog.
 
-Stage graph: `D2-S1 -> D2-S2 -> D2-S3 -> D2-S4`.
+Stage graph: `D2-S1 -> D2-S2 -> D2-S3 -> D2-S4 -> D2-S5`.
 
-Forecast: 375 active min / 35 credits across 4 Stages; longest dependency path 375 active min; external waits 60 min.
+Forecast: 450 active min / 41 credits across 5 Stages; longest dependency path 450 active min; external waits 60 min.
 
-What changed for people. Telegram starts ordinary history immediately and downloads it as fast as Telegram accepts requests. A real provider hold lasts only until its stated deadline, and link_end keeps the provider event time.
+What changed for people. Telegram starts ordinary history immediately, adapts to the fastest request rate the provider accepts, and keeps link_end at the provider event time. Exact provider holds still last only until their stated deadline.
 
-What changed in the code. Telegram becomes an ordinary runConnector config. The shared connector SDK owns dispatch, auth mode, subscriptions, push serialization and errors. Telegram fetch uses ordinary history for new accounts and retains the official Takeout estimate, publish, download and finish phases only for persisted Takeout checkpoints; no custom dispatcher, execute backfill or permanent learned interval remains.
+What changed in the code. Telegram is an ordinary runConnector config. The shared connector SDK owns dispatch, auth mode, subscriptions, push serialization and errors. The existing AccountAdmission retains one active application request and learns a process-local rate only for an RPC method that actually floods; new accounts use ordinary history while persisted Takeout checkpoints can still resume.
 
-How it was proven. Deterministic SDK and fake-MTProto tests cover concurrency, mode gates, exact waits, immediate ordinary history, Takeout checkpoint resume, bounded gaps and finish. Certification rejects any current in-repository Source outside runConnector. The existing manual stand measures at least 10,000 unheld envelopes with indexer off.
+How it was proven. Deterministic SDK and fake-MTProto tests cover concurrency, mode gates, exact waits, adaptive pacing, immediate ordinary history, Takeout checkpoint resume, bounded gaps and finish. The existing manual stand compares live hold frequency and throughput with the recorded four-holds-in-nine-turns baseline.
 
-Not in this PR. No frontend, database schema, new runner, parallel main Telegram session or CI Telegram/PostgreSQL test. Provider holds are reported separately from local throughput.
+Not in this PR. No frontend, database schema, new runner, parallel main Telegram session, persisted rate state or CI Telegram/PostgreSQL test.
 
 <!-- plan:stage:D2-S1:start -->
 <!-- plan:stage-meta:{"deliveryId":"D2","depends":[],"parallelWith":[],"writes":["packages/connector-sdk/contract/source.ts","packages/connector-sdk/index.ts","packages/connector-sdk/index.test.ts","packages/connector-sdk/contract-v2.test.ts","plugins/sources/telegram/src/connector.ts","plugins/sources/telegram/src/dispatch.ts","plugins/sources/telegram/src/dispatch.test.ts","plugins/sources/telegram/src/main.ts","plugins/sources/telegram/src/subscriptions.ts","plugins/sources/telegram/src/surfaces/telegram/fixture.ts","plugins/sources/telegram/src/fixture.test.ts","plugins/sources/telegram/src/live.ts","plugins/sources/telegram/src/live.test.ts","plugins/sources/telegram/src/surfaces/telegram/commands.ts","plugins/sources/telegram/src/surfaces/telegram/commands.test.ts","plugins/sources/telegram/src/surfaces/telegram/execute.test.ts","plugins/sources/telegram/src/tst_src_tgflood_001.test.ts","plugins/sources/telegram/src/testing/mtproto-transport.ts","plugins/sources/telegram/manifest.toml"],"tempRoot":".tmp/code-production/telegram-takeout-sync/D2-S1","predictedActiveMinutes":90,"predictedCredits":9,"verifyActiveMinutes":15,"verifyCredits":2} -->
@@ -483,6 +489,44 @@ Commit. fix(telegram): start ordinary history immediately — keep Takeout check
 | TELEGRAMHISTORY_001 | a5986ead945bb7c92a146f44fd7cb47b34c55256 | 2026-09-23T07:57:18.560Z–2026-09-23T08:10:35.089Z | 13 / 13 min | unavailable: runner did not expose usage | New accounts start ordinary Telegram history immediately; persisted Takeout checkpoints still resume. The live indexer-off stand admitted 17,720 envelopes in 109.994 seconds wall time, including an 11-second provider hold; active time was dominated by Telegram fetch (49.859 seconds) over Graph admission (21.987 seconds). |
 <!-- plan:results:D2-S4:end -->
 <!-- plan:stage:D2-S4:end -->
+
+<!-- plan:stage:D2-S5:start -->
+<!-- plan:stage-meta:{"deliveryId":"D2","depends":["D2-S4"],"parallelWith":[],"writes":["plugins/sources/telegram/src/request-admission.ts","plugins/sources/telegram/src/tst_src_tgflood_001.test.ts","dist/receipts/*.json"],"tempRoot":".tmp/code-production/telegram-takeout-sync/D2-S5","predictedActiveMinutes":75,"predictedCredits":6,"verifyActiveMinutes":30,"verifyCredits":2} -->
+#### Stage D2-S5 — Telegram converges below its flood boundary
+
+- Owner: root; Profile: strong; Depends: D2-S4; Parallel with: none.
+- Writes: `plugins/sources/telegram/src/request-admission.ts`, `plugins/sources/telegram/src/tst_src_tgflood_001.test.ts`, `dist/receipts/*.json`.
+- Temp root: `.tmp/code-production/telegram-takeout-sync/D2-S5` (must be absent at handoff).
+- Of which verification: 30 active min / 2 credits.
+
+What this Stage solves. The exact hold fix removed permanent throttling, but the live ordinary-history run then hit four provider floods in nine successful turns because every hold resumed at the same unlimited request rate.
+
+What is built. AccountAdmission keeps one method-local process-lifetime rate controller beside its existing exact account hold. A first measurable flood sets the method to 90% of its observed transmission rate, each later flood reduces it by another 10%, and ten consecutive successes add 1% of the last flooded rate. Existing admission timers schedule the next eligible send; controls and unrelated methods remain unpaced.
+
+How it is proven. tst_src_tgflood_008 drives the real GramJS sender with a virtual clock, observes the first 10% backoff, the small success probe and a second 10% backoff while exact holds and one-in-flight ownership remain intact. The existing manual stand reuses its saved credential, disables the indexer and compares exact holds, turns and throughput with the four-in-nine baseline.
+
+Commit. fix(telegram): adapt below the provider flood rate — AccountAdmission converges per flooded method while exact holds remain authoritative.
+
+##### Tasks
+
+- [ ] TELEGRAMPACING_001 — Make AccountAdmission converge per flooded RPC method and prove its decrease and recovery on the real sender harness. (45 min)
+<!-- plan:task-meta:{"writes":["plugins/sources/telegram/src/request-admission.ts","plugins/sources/telegram/src/tst_src_tgflood_001.test.ts","dist/receipts/*.json"],"predictedActiveMinutes":45,"predictedCredits":4,"how":"Extend AccountAdmission's existing monotonic clock and timer scheduling with method-local rate state. Derive the first rate from measurable send timestamps; multiply it by 0.9 on every real FLOOD_WAIT; after ten successful calls add 0.01 of the last flooded rate. Keep exact hold deadlines, one active request, replay fencing, controls and unrelated methods unchanged. Add metadata-backed tst_src_tgflood_008 and rebuild the catalog receipts.","red":"bun run agent:test:backend -- plugins/sources/telegram/src/tst_src_tgflood_001.test.ts -t tst_src_tgflood_008"} -->
+
+##### Acceptance criteria
+
+- [ ] `bun run agent:test:backend -- plugins/sources/telegram/src/tst_src_tgflood_001.test.ts` exits 0 — exact holds, replay safety and adaptive pacing coexist
+- [ ] The existing live stand preserves credentials, runs with the indexer off and reports holds, successful turns and wall throughput against the four-holds-in-nine-turns baseline
+- [ ] After convergence, ten successful sync turns complete without another provider hold; otherwise the remaining limit is reported without claiming success
+- [ ] No frontend file, workflow, runner or live-provider automated test changes
+- [ ] Commit
+
+##### Results
+
+<!-- plan:results:D2-S5:start -->
+| Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
+|---|---|---|---:|---|---|
+<!-- plan:results:D2-S5:end -->
+<!-- plan:stage:D2-S5:end -->
 <!-- plan:delivery:D2:end -->
 <!-- plan:implementation:end -->
 
@@ -568,4 +612,12 @@ Commit. fix(telegram): start ordinary history immediately — keep Takeout check
 - record-result D2-S4 commit:a5986ead945bb7c92a146f44fd7cb47b34c55256
 
 - close D2-S4 partial commit:a5986ead945bb7c92a146f44fd7cb47b34c55256
+
+- amend spec owner:Да, незамедлительно. sha256:52503423e45e07b615691ab59a74f961f96ae54cd44d594980cfc5f5101b6699
+
+- replace-delivery D2
+
+- put-stage D2-S5
+
+- approve sha256:d052b842e8a5a4107030a18c790e31fb60c8384a6017446849e8606b89e61ef6 owner:Да, незамедлительно.
 <!-- plan:execution:end -->

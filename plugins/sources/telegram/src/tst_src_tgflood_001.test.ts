@@ -1210,11 +1210,11 @@ test("tst_src_tgflood_002 the first remote flood prevents the next actual SDK tr
 /**
  * @test-id: tst_src_tgflood_006
  * @scenario: scn_tgflood_008
- * @covers: account-wide admission after a provider flood window
+ * @covers: account-wide admission and learned method pacing after a provider flood window
  * @deterministic: yes
  * @fixtures: actual GramJS sender with in-memory replies and a monotonic clock
  */
-test("tst_src_tgflood_006 a provider flood releases the resumed burst at its deadline", async () => {
+test("tst_src_tgflood_006 a provider flood paces the resumed burst after its deadline", async () => {
   const clock = new VirtualClock();
   const f = await createTransport(clock);
   try {
@@ -1245,10 +1245,109 @@ test("tst_src_tgflood_006 a provider flood releases the resumed burst at its dea
     await f.reply(resumed, stateResponse());
     expect((await first).kind).toBe("resolved");
     await flushCommands();
-    expect(f.writes).toHaveLength(7);
+    expect(f.writes).toHaveLength(6);
+    clock.advance(222);
+    await f.ping();
+    expect(f.writes).toHaveLength(6);
+    clock.advance(1);
     const following = await f.application(6);
-    expect(following.at).toBe(4500);
+    expect(following.at).toBe(4723);
     await f.reply(following, stateResponse());
     expect((await second).kind).toBe("resolved");
+  } finally { await f.close(); }
+});
+
+/**
+ * @test-id: tst_src_tgflood_008
+ * @scenario: scn_tgflood_010
+ * @covers: method-local adaptive pacing after repeated provider floods
+ * @deterministic: yes
+ * @fixtures: actual GramJS sender with in-memory replies and a monotonic clock
+ */
+test("tst_src_tgflood_008 converges below a flooded method rate", async () => {
+  const clock = new VirtualClock();
+  const f = await createTransport(clock);
+  const getState = (): Promise<{ kind: "resolved" | "rejected"; value: unknown }> =>
+    outcome(f.client.invoke(new Api.updates.GetState()));
+  try {
+    for (let index = 0; index < 4; index++) {
+      const pending = getState();
+      const sent = await f.application(index);
+      clock.advance(100);
+      await f.reply(sent, stateResponse());
+      expect((await pending).kind).toBe("resolved");
+    }
+
+    const flooded = getState();
+    const failed = await f.application(4);
+    expect(failed.at).toBe(400);
+    await f.reply(failed, new Api.RpcError({ errorCode: 420, errorMessage: "FLOOD_WAIT_4" }));
+    expect((await flooded).kind).toBe("rejected");
+    expect(f.admission.holdUntil).toBe(4400);
+
+    clock.advance(4000);
+    const resumed = getState();
+    const resumedSend = await f.application(5);
+    expect(resumedSend.at).toBe(4400);
+    await f.reply(resumedSend, stateResponse());
+    expect((await resumed).kind).toBe("resolved");
+
+    const paced = getState();
+    const unrelated = outcome(f.client.invoke(new Api.messages.GetHistory({
+      peer: new Api.InputPeerChat({ chatId: bigInt(1) }), offsetId: 0, offsetDate: 0,
+      addOffset: 0, limit: 1, maxId: 0, minId: 0, hash: bigInt.zero,
+    })));
+    await f.ping();
+    expect(f.writes).toHaveLength(7);
+    const unrelatedSend = await f.application(6);
+    expect(unrelatedSend.at).toBe(4400);
+    await f.reply(unrelatedSend, new Api.messages.Messages({ messages: [], chats: [], users: [] }));
+    expect((await unrelated).kind).toBe("resolved");
+
+    await f.ping();
+    expect(f.writes).toHaveLength(7);
+    clock.advance(111);
+    await f.ping();
+    expect(f.writes).toHaveLength(7);
+    clock.advance(1);
+    const pacedSend = await f.application(7);
+    expect(pacedSend.at).toBe(4512);
+    await f.reply(pacedSend, stateResponse());
+    expect((await paced).kind).toBe("resolved");
+
+    let nextTransmission = 8;
+    for (let success = 2; success < 10; success++) {
+      const pending = getState();
+      clock.advance(112);
+      const sent = await f.application(nextTransmission++);
+      await f.reply(sent, stateResponse());
+      expect((await pending).kind).toBe("resolved");
+    }
+
+    const probe = getState();
+    clock.advance(109);
+    await f.ping();
+    expect(f.writes).toHaveLength(nextTransmission);
+    clock.advance(1);
+    const probeSend = await f.application(nextTransmission++);
+    expect(probeSend.at).toBe(5518);
+    await f.reply(probeSend, new Api.RpcError({ errorCode: 420, errorMessage: "FLOOD_WAIT_4" }));
+    expect((await probe).kind).toBe("rejected");
+
+    clock.advance(4000);
+    const backedOff = getState();
+    const backedOffSend = await f.application(nextTransmission++);
+    await f.reply(backedOffSend, stateResponse());
+    expect((await backedOff).kind).toBe("resolved");
+    const behind = getState();
+    clock.advance(122);
+    await f.ping();
+    expect(f.writes).toHaveLength(nextTransmission);
+    clock.advance(1);
+    const behindSend = await f.application(nextTransmission);
+    expect(behindSend.at - backedOffSend.at).toBe(123);
+    await f.reply(behindSend, stateResponse());
+    expect((await behind).kind).toBe("resolved");
+    expect(f.maximumInFlight()).toBe(1);
   } finally { await f.close(); }
 });
