@@ -463,23 +463,24 @@ Commit. fix(telegram): start ordinary history immediately — keep Takeout check
 
 ##### Tasks
 
-- [ ] TELEGRAMHISTORY_001 — commands.ts defaults to ordinary history, commands.test.ts proves Takeout resume, and dist/receipts/*.json republishes Telegram. (45 min)
+- [x] TELEGRAMHISTORY_001 — commands.ts defaults to ordinary history, commands.test.ts proves Takeout resume, and dist/receipts/*.json republishes Telegram. (45 min) — a5986ead945bb7c92a146f44fd7cb47b34c55256
 <!-- plan:task-meta:{"writes":["plugins/sources/telegram/src/surfaces/telegram/commands.ts","plugins/sources/telegram/src/surfaces/telegram/commands.test.ts","dist/receipts/sha256:0f51577144d4c903e8c183f116ae2ef451ffd6fc98d70b2bcb79a6cc8f77a6ed.json","dist/receipts/sha256:279b00b97351eafb3ef3c53ea45d51b298ace7edb81a2307723c29e27df54b0a.json","dist/receipts/sha256:47cb2d8eb601b667157ce051a518ff48a83f33c799a08f5e8789a1575b11af69.json","dist/receipts/sha256:706827cd5106049522f8e263cad61bd57b4dc1554571a42d780b771f5c51bfe7.json","dist/receipts/sha256:953bc2749d638df9f6e0696430b0d1322e7d8199d374ddd78b84a72200a69b86.json"],"predictedActiveMinutes":45,"predictedCredits":4,"how":"Change plugins/sources/telegram/src/surfaces/telegram/commands.ts so a backward fetch without a Takeout checkpoint calls the existing runBootstrap while a persisted Takeout checkpoint calls runTakeoutBootstrap. Add metadata-backed tst_src_tg_history_default_003 to plugins/sources/telegram/src/surfaces/telegram/commands.test.ts proving both branches and no automatic initTakeout. Run the existing catalog build so dist/receipts/*.json matches the final Telegram bundle.","red":"bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts -t tst_src_tg_history_default_003"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts` exits 0 — new accounts start ordinary history and persisted Takeout checkpoints still resume
+- [x] `bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts` exits 0 — new accounts start ordinary history and persisted Takeout checkpoints still resume — a5986ead945bb7c92a146f44fd7cb47b34c55256
 - [ ] A new account emits its first history envelopes without account.initTakeoutSession
 - [ ] The existing manual stand preserves credentials, disables the indexer and records at least 10,000 envelopes or an exact provider hold
 - [ ] The profile records Source fetch, Graph admission, overlap and wall time before any further optimization
 - [ ] No frontend file, workflow, runner or live-provider automated test changes
-- [ ] Commit
+- [x] Commit — a5986ead945bb7c92a146f44fd7cb47b34c55256
 
 ##### Results
 
 <!-- plan:results:D2-S4:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| TELEGRAMHISTORY_001 | a5986ead945bb7c92a146f44fd7cb47b34c55256 | 2026-09-23T07:57:18.560Z–2026-09-23T08:10:35.089Z | 13 / 13 min | unavailable: runner did not expose usage | New accounts start ordinary Telegram history immediately; persisted Takeout checkpoints still resume. The live indexer-off stand admitted 17,720 envelopes in 109.994 seconds wall time, including an 11-second provider hold; active time was dominated by Telegram fetch (49.859 seconds) over Graph admission (21.987 seconds). |
 <!-- plan:results:D2-S4:end -->
 <!-- plan:stage:D2-S4:end -->
 <!-- plan:delivery:D2:end -->
@@ -563,4 +564,8 @@ Commit. fix(telegram): start ordinary history immediately — keep Takeout check
 - amend implementation owner:Да sha256:521f541d2d00c325772c1ba3b136e2e9c66a98749e296e22f50b9eb588df8954
 
 - amend implementation owner:Да sha256:30de713aed9002f18be222ffbec16db9cbac3e9c38381cee31658b89cb141eda
+
+- record-result D2-S4 commit:a5986ead945bb7c92a146f44fd7cb47b34c55256
+
+- close D2-S4 partial commit:a5986ead945bb7c92a146f44fd7cb47b34c55256
 <!-- plan:execution:end -->
