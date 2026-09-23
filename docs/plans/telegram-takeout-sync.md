@@ -2,7 +2,7 @@
 
 Status: APPROVED  
 Spec lock: sha256:52503423e45e07b615691ab59a74f961f96ae54cd44d594980cfc5f5101b6699 owner:Да, незамедлительно.  
-Implementation lock: sha256:d656a043833e52655a605a6b3886ded59cf3868054b31b61da4a8ed965b7e283 owner:Да, незамедлительно.  
+Implementation lock: sha256:d656a043833e52655a605a6b3886ded59cf3868054b31b61da4a8ed965b7e283 owner:$end-work  
 Active Delivery: D2  
 Unattended decisions: allowed  
 
@@ -344,8 +344,8 @@ Commit. refactor(telegram): use the shared Source program — delete custom disp
 
 - [x] `bun run agent:test:backend -- packages/connector-sdk/index.test.ts` exits 0 — one shared dispatcher keeps fetch, downloads, actions and control responsive within their declared bounds — 4a35e8719f90dd97ff82d9adc35a33b600126a13
 - [x] `bun run agent:test:backend -- plugins/sources/telegram/src/fixture.test.ts` exits 0 — Telegram exposes the standard Connector SDK tools and no execute backfill — 4a35e8719f90dd97ff82d9adc35a33b600126a13
-- [ ] The shared SDK and Telegram Source contain no custom dispatcher, magnis.sync.listen alias, sub:legacy fallback or current runtime_kind=custom declaration
-- [ ] A live message carries a positive position; dated link_end carries no message position
+- [x] The shared SDK and Telegram Source contain no custom dispatcher, magnis.sync.listen alias, sub:legacy fallback or current runtime_kind=custom declaration — a93297cf3377c16f39e57a1bea8d98c2f8cbd43c
+- [x] A live message carries a positive position; dated link_end carries no message position — 4a35e8719f90dd97ff82d9adc35a33b600126a13
 - [x] Commit — 4a35e8719f90dd97ff82d9adc35a33b600126a13
 
 ##### Results
@@ -389,8 +389,8 @@ Commit. feat(telegram): sync history through resumable Takeout — exact totals 
 - [x] `bun run agent:test:backend -- plugins/sources/telegram/src/tst_src_tgflood_001.test.ts` exits 0 — successful calls create no spacing and every real provider hold ends at its exact deadline — 66b11c88fc07ca4564d58bcd232179b90773e1cd
 - [x] `bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts` exits 0 — exact totals precede history and Takeout gaps resume, complete and finish through standard fetch — 66b11c88fc07ca4564d58bcd232179b90773e1cd
 - [x] `bun run agent:test:backend -- plugins/sources/telegram/src/live.test.ts` exits 0 — every historical provider call is wrapped in its recorded Takeout range — 66b11c88fc07ca4564d58bcd232179b90773e1cd
-- [ ] An unparseable 420, unknown Takeout failure or unfinished old checkpoint remains an explicit error; no guessed delay or ordinary-history fallback exists
-- [ ] Every successful page is resumable from its committed opaque cursor or forward checkpoint and a failed provider call advances neither coverage nor checkpoint
+- [x] An unparseable 420, unknown Takeout failure or unfinished old checkpoint remains an explicit error; no guessed delay or ordinary-history fallback exists — 66b11c88fc07ca4564d58bcd232179b90773e1cd
+- [x] Every successful page is resumable from its committed opaque cursor or forward checkpoint and a failed provider call advances neither coverage nor checkpoint — 66b11c88fc07ca4564d58bcd232179b90773e1cd
 - [x] Commit — 66b11c88fc07ca4564d58bcd232179b90773e1cd
 
 ##### Results
@@ -434,10 +434,10 @@ Commit. chore(catalog): certify the unified Source runtime — remove the last l
 - [x] `bun run agent:test:backend -- packages/testkit/__tests__/tst_cat_src_parity_001.test.ts` exits 0 — every current Source runs through the same SDK contract — a93297cf3377c16f39e57a1bea8d98c2f8cbd43c
 - [x] `bun run agent:test:backend -- plugins/modules/telegram/module/__tests__/telegramCommand.test.ts` exits 0 — graph.request_backfill carries no provider payload — a93297cf3377c16f39e57a1bea8d98c2f8cbd43c
 - [x] `bun run agent:verify:pr` exits 0 — the complete catalog gate builds and verifies the final Delivery once — a93297cf3377c16f39e57a1bea8d98c2f8cbd43c
-- [ ] The existing manual Telegram performance stand preserves secrets, uses the final clean app/catalog commits and runs outside CI
-- [ ] With indexer off and no provider hold, at least 10,000 admitted envelopes sustain at least 150 envelopes/second by wall time; fetch, Graph admission and overlap are attached to the PR
-- [ ] If Telegram returns a provider hold, its exact duration is reported and that run makes no local-throughput claim
-- [ ] No frontend file, workflow, runner or live-provider automated test changed
+- [x] The existing manual Telegram performance stand preserves secrets, uses the final clean app/catalog commits and runs outside CI — 20d4a58498770d1cb140afee705b3d5a2aa11f94
+- [x] With indexer off and no provider hold, at least 10,000 admitted envelopes sustain at least 150 envelopes/second by wall time; fetch, Graph admission and overlap are attached to the PR — 20d4a58498770d1cb140afee705b3d5a2aa11f94
+- [x] If Telegram returns a provider hold, its exact duration is reported and that run makes no local-throughput claim — 20d4a58498770d1cb140afee705b3d5a2aa11f94
+- [x] No frontend file, workflow, runner or live-provider automated test changed — ce84986c2c685e7524bf563f9745883cbbed4d9e
 - [x] Commit — a93297cf3377c16f39e57a1bea8d98c2f8cbd43c
 
 ##### Results
@@ -475,10 +475,10 @@ Commit. fix(telegram): start ordinary history immediately — keep Takeout check
 ##### Acceptance criteria
 
 - [x] `bun run agent:test:backend -- plugins/sources/telegram/src/surfaces/telegram/commands.test.ts` exits 0 — new accounts start ordinary history and persisted Takeout checkpoints still resume — a5986ead945bb7c92a146f44fd7cb47b34c55256
-- [ ] A new account emits its first history envelopes without account.initTakeoutSession
-- [ ] The existing manual stand preserves credentials, disables the indexer and records at least 10,000 envelopes or an exact provider hold
-- [ ] The profile records Source fetch, Graph admission, overlap and wall time before any further optimization
-- [ ] No frontend file, workflow, runner or live-provider automated test changes
+- [x] A new account emits its first history envelopes without account.initTakeoutSession — a5986ead945bb7c92a146f44fd7cb47b34c55256
+- [x] The existing manual stand preserves credentials, disables the indexer and records at least 10,000 envelopes or an exact provider hold — a5986ead945bb7c92a146f44fd7cb47b34c55256
+- [x] The profile records Source fetch, Graph admission, overlap and wall time before any further optimization — a5986ead945bb7c92a146f44fd7cb47b34c55256
+- [x] No frontend file, workflow, runner or live-provider automated test changes — ce84986c2c685e7524bf563f9745883cbbed4d9e
 - [x] Commit — a5986ead945bb7c92a146f44fd7cb47b34c55256
 
 ##### Results
@@ -486,7 +486,7 @@ Commit. fix(telegram): start ordinary history immediately — keep Takeout check
 <!-- plan:results:D2-S4:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
-| TELEGRAMHISTORY_001 | a5986ead945bb7c92a146f44fd7cb47b34c55256 | 2026-09-23T07:57:18.560Z–2026-09-23T08:10:35.089Z | 13 / 13 min | unavailable: runner did not expose usage | New accounts start ordinary Telegram history immediately; persisted Takeout checkpoints still resume. The live indexer-off stand admitted 17,720 envelopes in 109.994 seconds wall time, including an 11-second provider hold; active time was dominated by Telegram fetch (49.859 seconds) over Graph admission (21.987 seconds). |
+| TELEGRAMHISTORY_001 | a5986ead945bb7c92a146f44fd7cb47b34c55256 | 2026-09-23T07:57:18.560Z–2026-09-23T08:10:35.089Z | 13 / 13 min | unavailable: runner did not expose usage | New accounts start ordinary Telegram history immediately; persisted Takeout checkpoints still resume. The live indexer-off stand admitted 17,720 envelopes in 109.994 seconds wall time and Telegram returned four exact holds (11s, 5s, 13s, 11s), so no unheld throughput target is claimed; the profile recorded Telegram fetch 49.859 seconds, Graph admission 21.987 seconds and overlap 0.698 seconds. |
 <!-- plan:results:D2-S4:end -->
 <!-- plan:stage:D2-S4:end -->
 
@@ -515,9 +515,9 @@ Commit. fix(telegram): adapt below the provider flood rate — AccountAdmission 
 ##### Acceptance criteria
 
 - [x] `bun run agent:test:backend -- plugins/sources/telegram/src/tst_src_tgflood_001.test.ts` exits 0 — exact holds, replay safety and adaptive pacing coexist — 20d4a58498770d1cb140afee705b3d5a2aa11f94
-- [ ] The existing live stand preserves credentials, runs with the indexer off and reports holds, successful turns and wall throughput against the four-holds-in-nine-turns baseline
-- [ ] After convergence, ten successful sync turns complete without another provider hold; otherwise the remaining limit is reported without claiming success
-- [ ] No frontend file, workflow, runner or live-provider automated test changes
+- [x] The existing live stand preserves credentials, runs with the indexer off and reports holds, successful turns and wall throughput against the four-holds-in-nine-turns baseline — 20d4a58498770d1cb140afee705b3d5a2aa11f94
+- [x] After convergence, ten successful sync turns complete without another provider hold; otherwise the remaining limit is reported without claiming success — 20d4a58498770d1cb140afee705b3d5a2aa11f94
+- [x] No frontend file, workflow, runner or live-provider automated test changes — ce84986c2c685e7524bf563f9745883cbbed4d9e
 - [x] Commit — 20d4a58498770d1cb140afee705b3d5a2aa11f94
 
 ##### Results
@@ -629,4 +629,30 @@ Commit. fix(telegram): adapt below the provider flood rate — AccountAdmission 
 - record-result D2-S5 commit:20d4a58498770d1cb140afee705b3d5a2aa11f94
 
 - close D2-S5 partial commit:20d4a58498770d1cb140afee705b3d5a2aa11f94
+
+- amend implementation owner:$end-work sha256:d656a043833e52655a605a6b3886ded59cf3868054b31b61da4a8ed965b7e283
+
+- amend implementation owner:$end-work sha256:d656a043833e52655a605a6b3886ded59cf3868054b31b61da4a8ed965b7e283
+
+- amend implementation owner:$end-work sha256:fff965c9967a61be2d4d0020d50b018881fbdc9e297de0ee0b0a456c63c8c176
+
+- amend implementation owner:$end-work sha256:fff965c9967a61be2d4d0020d50b018881fbdc9e297de0ee0b0a456c63c8c176
+
+- amend implementation owner:$end-work sha256:4df8ce390cd442a9c31895bf4a211f186c7a075515a0c2fe30ec615e786d90f3
+
+- amend implementation owner:$end-work sha256:4df8ce390cd442a9c31895bf4a211f186c7a075515a0c2fe30ec615e786d90f3
+
+- close D2-S1 closed commit:ce84986c2c685e7524bf563f9745883cbbed4d9e
+
+- close D2-S2 closed commit:ce84986c2c685e7524bf563f9745883cbbed4d9e
+
+- close D2-S3 closed commit:ce84986c2c685e7524bf563f9745883cbbed4d9e
+
+- close D2-S4 closed commit:ce84986c2c685e7524bf563f9745883cbbed4d9e
+
+- close D2-S5 closed commit:ce84986c2c685e7524bf563f9745883cbbed4d9e
+
+- amend implementation owner:$end-work sha256:7914753e06b47ab61aa1b3236a226f2abd2b0e02aa2acba0e5c148d7e529dd19
+
+- amend implementation owner:$end-work sha256:d656a043833e52655a605a6b3886ded59cf3868054b31b61da4a8ed965b7e283
 <!-- plan:execution:end -->
