@@ -1,4 +1,4 @@
-# Gmail Push Sync
+# Google Pull Sync
 
 Status: SPEC_DRAFT  
 Spec lock: unlocked  
