@@ -8,6 +8,7 @@ import {
   GoogleRateLimitError,
   HttpTimeoutError,
   HTTP_REQUEST_TIMEOUT_MS,
+  throwGoogleResponseError,
   type FetchLike,
 } from "./http";
 
@@ -56,6 +57,25 @@ test("tst_src_iso_google_011 never invents a missing or malformed delay", () => 
       expect(error).not.toBeInstanceOf(GoogleRateLimitError);
     }
   }
+});
+
+/**
+ * @test-id: tst_src_iso_google_012
+ * @scenario: scn_google_pull_004
+ * @covers: sources/google/src/http.ts::throwGoogleResponseError
+ * @deterministic: yes
+ * @fixtures: Gmail quota 403 without Retry-After, with an exact minute window start
+ */
+test("tst_src_iso_google_012 uses Google's quota window for a typed retry", async () => {
+  const windowStart = Date.parse("2026-09-24T16:52:05Z") / 1000;
+  const quota = JSON.stringify({ error: { details: [{
+    reason: "RATE_LIMIT_EXCEEDED",
+    metadata: { quota_unit: "1/min/{project}/{user}", window_start_time: String(windowStart) },
+  }] } });
+  const resp = { ...response(403, null), text: async () => quota };
+  const error = await throwGoogleResponseError(resp, "Gmail list messages failed", (windowStart + 18) * 1000).catch((e: unknown) => e);
+  expect(error).toBeInstanceOf(GoogleRateLimitError);
+  expect((error as GoogleRateLimitError).retryAfterSecs).toBe(42);
 });
 
 describe("fetchWithTimeout", () => {

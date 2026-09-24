@@ -586,4 +586,6 @@ Commit. feat(stand): report Google beside Telegram — retain secrets and expose
 - deviation D1-S5: Live Google acceptance exposed forbidden cross-module RPC in Contacts and Meetings sync and Gmail fields outside the email.message schema. Three deterministic regressions failed before the atomic address write and message normalization fix; real-account timing remains pending a successful retry.
 
 - deviation D1-S5: Live Google acceptance found that Contacts and Meetings atomic address writes lacked manifest create permission for email.address. The manifest regression failed RED, then passed after declaring the existing schema; real-account verification remains pending package refresh.
+
+- deviation D1-S5: Live acceptance then exposed direct Contacts add_link fields that the host does not accept, plus Gmail quota-403 without Retry-After. Scoped regressions failed RED; direct links now use accepted fields and Gmail list/get preserve the provider minute-window hold. Real-account confirmation follows on the persistent smoke stand.
 <!-- plan:execution:end -->

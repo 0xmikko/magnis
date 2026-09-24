@@ -168,6 +168,24 @@ function lastBatch(graph: G): GraphBatchInput {
 
 describe("contacts ingest — the replica model (tst_be_contactsingest_001)", () => {
   /**
+   * @test-id: tst_module_contacts_ingest_003
+   * @scenario: scn_google_pull_001
+   * @covers: ContactsModule.ingest
+   * @deterministic: yes
+   * @fixtures: one Google contact; the direct Graph link op accepts no batch-only fields
+   */
+  it("tst_module_contacts_ingest_003 sends only direct-link fields to the host", async () => {
+    const world = ingestWorld({ graphOverrides: {
+      add_link: (link: Record<string, unknown>) => {
+        if ("declared_by" in link || "status" in link) throw new Error("link: unknown fields declared_by or status");
+        return Promise.resolve();
+      },
+    } });
+    await expect(mountWorld(world).ingest({ envelopes: [env({ payload: contactPayload() })] }))
+      .resolves.toBeDefined();
+  });
+
+  /**
    * @test-id: tst_module_contacts_ingest_002
    * @scenario: scn_google_pull_001
    * @covers: ContactsModule.ingest
@@ -217,8 +235,8 @@ describe("contacts ingest — the replica model (tst_be_contactsingest_001)", ()
 
     expect(world.minted).toEqual([{ schema_id: "contacts.person", name: "Mikhail Lazarev" }]);
     expect(world.links).toEqual([
-      { from_id: "hub-0", to_id: "id-gpeople:abc123", kind: "identity", declared_by: "gpeople:abc123" },
-      { from_id: "hub-0", to_id: "addr-mikhail@example.com", kind: "identity", declared_by: "gpeople:abc123" },
+      { from_id: "hub-0", to_id: "id-gpeople:abc123", kind: "identity" },
+      { from_id: "hub-0", to_id: "addr-mikhail@example.com", kind: "identity" },
     ]);
   });
 
@@ -236,12 +254,11 @@ describe("contacts ingest — the replica model (tst_be_contactsingest_001)", ()
 
     expect(world.minted).toEqual([]);
     expect(world.links).toEqual([
-      { from_id: "hub-X", to_id: "id-gpeople:abc123", kind: "identity", declared_by: "gpeople:abc123" },
+      { from_id: "hub-X", to_id: "id-gpeople:abc123", kind: "identity" },
       {
         from_id: "hub-X",
         to_id: "addr-mikhail@example.com",
         kind: "identity",
-        declared_by: "gpeople:abc123",
       },
     ]);
   });
@@ -265,7 +282,6 @@ describe("contacts ingest — the replica model (tst_be_contactsingest_001)", ()
     expect(world.minted).toHaveLength(1);
     const candidates = world.links.filter((l) => l.kind === "same_as");
     expect(candidates.map((l) => l.to_id).sort()).toEqual(["hub-A", "hub-B"]);
-    expect(candidates.every((l) => l.status === "candidate")).toBe(true);
   });
 
   // The legacy-fleet probe retired with the archive it read: a pre-anchor hub
@@ -285,7 +301,7 @@ describe("contacts ingest — the replica model (tst_be_contactsingest_001)", ()
 
     expect(world.minted).toEqual([{ schema_id: "contacts.person", name: "Mikhail Lazarev" }]);
     expect(world.links).toEqual([
-      { from_id: "hub-0", to_id: "id-gpeople:abc123", kind: "identity", declared_by: "gpeople:abc123" },
+      { from_id: "hub-0", to_id: "id-gpeople:abc123", kind: "identity" },
     ]);
   });
 

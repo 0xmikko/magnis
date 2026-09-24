@@ -164,3 +164,35 @@ export function checkRateLimit(resp: HttpResponse): void {
   if (seconds !== undefined) throw new GoogleRateLimitError(seconds);
   if (resp.status === 429) throw new Error("Google rate limit response missing valid Retry-After");
 }
+
+/** Gmail's quota 403 omits Retry-After but reports the exact one-minute
+ * window start. Preserve that provider wait; unrelated 403s stay errors. */
+export async function throwGoogleResponseError(
+  resp: HttpResponse,
+  context: string,
+  nowMs: number,
+): Promise<never> {
+  const body = await resp.text();
+  if (resp.status === 403) {
+    let payload: unknown;
+    try { payload = JSON.parse(body); } catch { /* Keep the original error body. */ }
+    const error = payload && typeof payload === "object" ? (payload as Record<string, unknown>).error : null;
+    const details = error && typeof error === "object" ? (error as Record<string, unknown>).details : null;
+    if (Array.isArray(details)) {
+      for (const detail of details) {
+        if (!detail || typeof detail !== "object") continue;
+        const record = detail as Record<string, unknown>;
+        const metadata = record.metadata;
+        if (record.reason !== "RATE_LIMIT_EXCEEDED" || !metadata || typeof metadata !== "object") continue;
+        const fields = metadata as Record<string, unknown>;
+        const start = fields.window_start_time;
+        if (fields.quota_unit !== "1/min/{project}/{user}" || typeof start !== "string" || !/^\d+$/.test(start)) continue;
+        const seconds = Number(start);
+        if (!Number.isSafeInteger(seconds)) continue;
+        // @tested-by: tst_src_iso_google_012
+        throw new GoogleRateLimitError(Math.max(0, Math.ceil((seconds * 1000 + 60_000 - nowMs) / 1000)));
+      }
+    }
+  }
+  throw new Error(`${context}: ${body}`);
+}

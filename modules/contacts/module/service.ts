@@ -828,7 +828,7 @@ export class ContactsModule {
       const addrIds = row.addresses
         .map((a) => addressId.get(a))
         .filter((id): id is string => typeof id === "string");
-      await this.attachReplica(replicaId, row.remoteId, row.p, addrIds);
+      await this.attachReplica(replicaId, row.p, addrIds);
     }
     return created;
   }
@@ -841,7 +841,6 @@ export class ContactsModule {
   /// ambiguity is a human decision, not a guess.
   private async attachReplica(
     replicaId: string,
-    remoteId: string,
     p: GoogleContactPayload,
     addrIds: string[],
   ): Promise<void> {
@@ -898,8 +897,6 @@ export class ContactsModule {
           from_id: hubId,
           to_id: other,
           kind: "same_as",
-          status: "candidate",
-          declared_by: remoteId,
         });
       }
     }
@@ -910,14 +907,12 @@ export class ContactsModule {
       from_id: hubId,
       to_id: replicaId,
       kind: "identity",
-      declared_by: remoteId,
     });
     for (const addrId of addrIds) {
       await this.graph.add_link({
         from_id: hubId,
         to_id: addrId,
         kind: "identity",
-        declared_by: remoteId,
       });
     }
   }

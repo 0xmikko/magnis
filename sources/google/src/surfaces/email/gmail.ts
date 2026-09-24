@@ -10,6 +10,7 @@ import {
   checkRateLimit,
   fetchWithRetry,
   HistoryExpiredError,
+  throwGoogleResponseError,
   type FetchLike,
 } from "../../http";
 import {
@@ -648,7 +649,7 @@ async function listMessagesPage(
   });
   checkRateLimit(resp);
   if (!resp.ok) {
-    throw new Error(`Gmail list messages failed: ${await resp.text()}`);
+    await throwGoogleResponseError(resp, "Gmail list messages failed", Date.now());
   }
   return parseListMessagesResponse(await resp.json());
 }
@@ -669,9 +670,7 @@ async function fetchMessage(
     return null;
   }
   if (!resp.ok) {
-    throw new Error(
-      `GET message ${gmailMsgId} failed (${String(resp.status)}): ${await resp.text()}`,
-    );
+    await throwGoogleResponseError(resp, `GET message ${gmailMsgId} failed (${String(resp.status)})`, Date.now());
   }
   return parseGmailMessage(await resp.json());
 }

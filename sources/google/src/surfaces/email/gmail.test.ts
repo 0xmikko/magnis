@@ -537,6 +537,33 @@ describe("email bootstrap cursor", () => {
     await expect(page).rejects.toBeInstanceOf(GoogleRateLimitError);
     expect(started).toEqual(Array.from({ length: 8 }, (_, i) => `m${i}`));
   });
+
+  /**
+   * @test-id: tst_src_iso_google_013
+   * @scenario: scn_google_pull_004
+   * @covers: sources/google/src/surfaces/email/gmail.ts::fetchMessagePage
+   * @deterministic: yes
+   * @fixtures: Gmail list and get return quota 403 without Retry-After
+   */
+  test("tst_src_iso_google_013 list and get propagate quota 403 as a typed hold", async () => {
+    const quota = JSON.stringify({ error: { details: [{
+      reason: "RATE_LIMIT_EXCEEDED",
+      metadata: { quota_unit: "1/min/{project}/{user}", window_start_time: "1" },
+    }] } });
+    for (const failingRequest of ["list", "get"]) {
+      const fetchFn: FetchLike = async (url) => {
+        if (url.endsWith("/users/me/profile")) return ok({ historyId: "h1" });
+        if (url.includes("/labels/")) return ok({ id: "SPAM", messagesTotal: 0 });
+        if (url.includes("maxResults=50")) {
+          return failingRequest === "list" ? status(403, quota) : ok({ messages: [{ id: "m1" }] });
+        }
+        if (url.includes("/messages/m1?")) return status(403, quota);
+        throw new Error(`unexpected Gmail URL: ${url}`);
+      };
+      await expect(fetchMessagePage("tok", { history_id: "h1" }, fetchFn))
+        .rejects.toBeInstanceOf(GoogleRateLimitError);
+    }
+  });
 });
 
 // ── MIME build + send (spec test 6) ─────────────────────────────────────────
