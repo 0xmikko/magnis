@@ -25,6 +25,10 @@ bun acceptance/telegram-performance/run.ts check \
 The selected app worktree must be clean. The app dev launcher runs the backend
 from that worktree's source. The runner also builds the current clean `magnis`
 checkout into the stand's private catalog channel.
+For an account connected on an earlier run, refresh the catalog and update its
+installed Source in the app before measuring; rebuilding the catalog does not
+replace an already installed package. Check the installed package digest, not
+just the run marker.
 
 ## First run and authentication
 
@@ -83,3 +87,20 @@ reused. To measure another app branch, pass that branch's clean worktree as
 `--indexer on|off` is required for every start. It sets the backend's existing
 `MAGNIS_DISABLE_INDEXER` switch explicitly and records the chosen mode in the
 run marker, so reports from the two modes cannot be mistaken for each other.
+
+## Live receipt: Google continuation, 2026-09-24
+
+The real-account run resumed an existing Gmail bootstrap; it was not a clean
+start-to-finish timing. App `81de7cdf0e44a7b3ab4bdea1ef38615c8f2fc9ca`,
+catalog `5cf77ede6b19f2ca35c8007aeccfa7b977a2e4cf`, installed Google Source
+`sha256:b809c338c697c456c9b63de93b34709a74a8c38a193172805e5dc82cb921a5ec`;
+indexer off, Gmail 50 IDs/page, 8 concurrent reads with starts spaced 250 ms.
+From 20:38:14 to 21:20:26 UTC the stand recorded 3,728 email envelopes in
+2,529,453 ms wall time (1.47/s): 703,276 ms provider fetch and 59,954 ms Graph
+admission. Contacts and meetings had no new envelopes in that window. The
+completed counts were 18,318 Gmail messages, 214 contacts, and 7,129 meetings;
+the next history poll added 8 Gmail messages, reaching 18,326/18,326 without
+restarting bootstrap. Host logs contained hold notifications in 41 separate
+minute buckets and no error-level entries. Those notifications are shared
+across surfaces, not a count of distinct Google 403 responses. Regular holds
+still dominate wall time; this run does not establish a speedup.
