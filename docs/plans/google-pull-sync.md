@@ -437,20 +437,21 @@ Commit. refactor(catalog): move Modules and Sources to root — preserve package
 
 ##### Tasks
 
-- [ ] GOOGLE_008 — Build and certify the same catalog packages after moving Modules and Sources to repository roots. (100 min)
+- [x] GOOGLE_008 — Build and certify the same catalog packages after moving Modules and Sources to repository roots. (100 min) — de4ae9d8d451dcaa22101341027a6318cfea8698
 <!-- plan:task-meta:{"writes":["plugins/modules/","modules/","plugins/sources/","sources/","package.json","bun.lock","scripts/build-plugins.ts","scripts/build-catalog-index.ts","scripts/build-plugins.test.ts","scripts/build-catalog-index.test.ts","scripts/plugin-new.ts","scripts/test-connectors.sh","scripts/typecheck-all.sh","vitest.config.ts","vitest.ui.config.ts","tsconfig.declarations.json","eslint.config.mjs","docs/plugins/","packages/host-testdouble/README.md","scripts/bundled-item-schemas.test.ts","packages/testkit/__tests__/tst_cat_src_parity_001.test.ts"],"predictedActiveMinutes":100,"predictedCredits":0,"how":"plugins/modules/ and modules/: move existing Module packages, changing only depth-dependent imports/config; plugins/sources/ and sources/: move existing Source packages the same way; package.json and bun.lock: update workspace paths; scripts/build-plugins.ts, scripts/build-catalog-index.ts, scripts/build-plugins.test.ts and scripts/build-catalog-index.test.ts: discover and verify the root packages without a fixed inventory; scripts/plugin-new.ts: create packages at the root; scripts/test-connectors.sh and scripts/typecheck-all.sh: select root packages; vitest.config.ts, vitest.ui.config.ts, tsconfig.declarations.json and eslint.config.mjs: select moved tests/types/UI; docs/plugins/ and packages/host-testdouble/README.md: replace stale path examples; scripts/bundled-item-schemas.test.ts and packages/testkit/__tests__/tst_cat_src_parity_001.test.ts: update only moved-path expectations","red":"bun run agent:test:backend -- scripts/build-plugins.test.ts scripts/build-catalog-index.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- scripts/build-plugins.test.ts scripts/build-catalog-index.test.ts scripts/bundled-item-schemas.test.ts packages/testkit/__tests__/tst_cat_src_parity_001.test.ts` exits 0 — root discovery builds the same package identities
+- [x] `bun run agent:test:backend -- scripts/build-plugins.test.ts scripts/build-catalog-index.test.ts scripts/bundled-item-schemas.test.ts packages/testkit/__tests__/tst_cat_src_parity_001.test.ts` exits 0 — root discovery builds the same package identities — de4ae9d8d451dcaa22101341027a6318cfea8698
 - [ ] A one-shot before/after comparison records all published package IDs and the catalog index schema unchanged; no permanent fixed-count test is added
-- [ ] Commit
+- [x] Commit — de4ae9d8d451dcaa22101341027a6318cfea8698
 
 ##### Results
 
 <!-- plan:results:D1-S4:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| GOOGLE_008 | de4ae9d8d451dcaa22101341027a6318cfea8698 | 2026-09-24T11:35:08.897Z–2026-09-24T13:30:39Z | 90 / 116 min | unavailable: runner did not expose token usage | Moved all 11 Modules and 13 Sources to root. The rebuilt catalog keeps the same 23 published package IDs and index schema. Root builder tests (40), Modules (355), UI (226), Source suites, lint, typecheck and pre-commit checks passed. Generated agent-stack files and build receipts remain unpublished. — beyond writes: scripts/agent-verify.ts, scripts/certify-sources.test.ts, scripts/module-bundle.test.ts, scripts/query-migration.test.ts, scripts/tool-call-renderers.test.ts, scripts/toolcall-renderer-coverage.test.ts, scripts/tsconfig.json, scripts/tst_scripts_agent_stack_001.test.ts, scripts/tst_scripts_tgflood_001.test.ts |
 <!-- plan:results:D1-S4:end -->
 <!-- plan:stage:D1-S4:end -->
 
@@ -564,4 +565,12 @@ Commit. feat(stand): report Google beside Telegram — retain secrets and expose
 - deviation D1-S3: GOOGLE_007 start-task was recorded after its RED test; the RED failures and subsequent GREEN run are preserved in the session.
 
 - close D1-S3 partial commit:69f9304c04f0607d938556237b24caef09296acc
+
+- record-result D1-S4 commit:de4ae9d8d451dcaa22101341027a6318cfea8698
+
+- deviation D1-S4: Path-only migration required existing Source, Module and script test path updates beyond the literal Task file list; the receipt records every committed path.
+
+- deviation D1-S4: Module suite exposed missing declared source/account/sync-pass fields in Contacts and Meetings; declarations now match the already-approved Google ownership stamps.
+
+- close D1-S4 partial commit:de4ae9d8d451dcaa22101341027a6318cfea8698
 <!-- plan:execution:end -->

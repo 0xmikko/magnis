@@ -1,13 +1,15 @@
-# Live Telegram performance stand
+# Live Telegram and Google performance stand
 
-This is a manual stand for measuring the real Telegram-to-Graph path. It lives
-in `magnis`, starts an explicitly selected clean `magnis-app` worktree, and is
-outside every catalog and app CI discovery pattern. It never enables a fixture
-Telegram transport.
+This is a manual stand for measuring the real Telegram- and Google-to-Graph
+paths. It lives in `magnis`, starts an explicitly selected clean `magnis-app`
+worktree, and is outside every catalog and app CI discovery pattern. It never
+enables a fixture
+provider transport. The existing `telegram-performance` path and command remain
+the single stand for both Sources.
 
-The persistent data root owns PostgreSQL and the encrypted Telegram session.
-Authenticate once in the UI. Later runs may reset synchronized data and sync
-progress while retaining `secrets`, `source_credentials`,
+The persistent data root owns PostgreSQL and encrypted provider credentials.
+Connect Telegram and Google once in the UI. Later runs may reset synchronized
+data and sync progress while retaining `secrets`, `source_credentials`,
 `source_connections`, and `source_accounts`.
 
 ## Select the app branch
@@ -36,12 +38,14 @@ bun acceptance/telegram-performance/run.ts start \
 ```
 
 `--env-file` is optional when the required deployment values are already in
-the environment. Open the printed frontend URL and connect Telegram. Stop the
-stand with Ctrl-C; PostgreSQL stops but its data and encrypted session remain.
+the environment. Open the printed frontend URL and connect Telegram and Google.
+Stop the stand with Ctrl-C; PostgreSQL stops but its data and encrypted
+credentials remain.
 
-The runner refuses `TELEGRAM_FIXTURE_FILE`: measurements must use the real
-provider. Stop immediately on a Telegram FLOOD/auth error; this is not a load
-generator or a way to probe provider limits.
+The runner refuses `TELEGRAM_FIXTURE_FILE` and `GOOGLE_FIXTURE_FILE` in the
+process environment, selected env file, or app `.env`: measurements must use
+real providers. Stop on a provider hold or authentication error; this is not a
+load generator or a way to probe provider limits.
 
 ## Measure another clean synchronization
 
@@ -53,10 +57,16 @@ bun acceptance/telegram-performance/run.ts report \
   --data-root /absolute/path/to/telegram-performance-data
 ```
 
-The report sums the backend's production `sync turn` records after this start:
-turns, envelopes, inserted/removed rows, provider fetch time, Graph admission
-time, overlap, observed wall time, and envelopes per second. It does not infer
-speedup; compare two reports from equivalent live runs.
+The report groups the backend's production `sync turn` records after this start
+by Source and surface. Telegram has its own group; Google's email, meetings,
+and contacts have separate groups. Each has turns, pages, bytes, envelopes,
+inserted/removed rows, provider fetch time, Graph admission time, overlap,
+observed wall time, and envelopes per second. The marker includes the exact app
+and catalog branches and commit SHAs. Save the report as the manual receipt,
+and note the observed provider holds and page settings alongside it. An absent
+group means no recorded turn for that surface, not zero provider data. Compare
+only equivalent live runs on the same account; the report does not infer a
+speedup.
 
 Stop the stand, then clear only sync output and progress:
 
@@ -66,9 +76,9 @@ bun acceptance/telegram-performance/run.ts reset \
   --data-root /absolute/path/to/telegram-performance-data
 ```
 
-Start again with the same data root. Telegram authentication is reused. To
-measure another app branch, pass that branch's clean worktree as `--app-root`;
-no test or live provider call is added to CI.
+Start again with the same data root. Telegram and Google authentication is
+reused. To measure another app branch, pass that branch's clean worktree as
+`--app-root`; no test or live provider call is added to CI.
 
 `--indexer on|off` is required for every start. It sets the backend's existing
 `MAGNIS_DISABLE_INDEXER` switch explicitly and records the chosen mode in the
