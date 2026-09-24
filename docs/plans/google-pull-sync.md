@@ -584,4 +584,6 @@ Commit. feat(stand): report Google beside Telegram — retain secrets and expose
 - deviation D1-S5: The CI typecheck on the published catalog SHA exposed a Vite 8 type error in an obsolete esbuild.jsx option of vitest.ui.config.ts. Remove that ignored option so the existing UI lane remains valid; no test behavior or runner changes.
 
 - deviation D1-S5: Live Google acceptance exposed forbidden cross-module RPC in Contacts and Meetings sync and Gmail fields outside the email.message schema. Three deterministic regressions failed before the atomic address write and message normalization fix; real-account timing remains pending a successful retry.
+
+- deviation D1-S5: Live Google acceptance found that Contacts and Meetings atomic address writes lacked manifest create permission for email.address. The manifest regression failed RED, then passed after declaring the existing schema; real-account verification remains pending package refresh.
 <!-- plan:execution:end -->

@@ -3,8 +3,8 @@
 # Owns the `contacts.*` namespace: the person entity and its profile / email /
 # phone / social / telegram-identity / description / memory records — the core
 # people directory. Ingests the `contacts` sync surface, links people to companies
-# (reads companies.company), and reaches the email module over RPC to resolve
-# addresses. Sandboxed V8 isolate; bundled with the app and installed
+# (reads companies.company), and creates shared email addresses during sync.
+# Sandboxed V8 isolate; bundled with the app and installed
 # automatically at boot.
 
 id = "contacts"
@@ -30,6 +30,7 @@ progress = { "contacts.google_contact" = "contacts" }
 # own:own links, and reads of own schemas need no declaration.
 [permissions]
 read = [ "companies.company" ]
+create = [ "email.address" ]
 # identity joins the hub to its replicas and addresses; same_as (candidate)
 # records a merge-candidate when several hubs claim one address (plan §5.2).
 links = [ "identity", "same_as" ]

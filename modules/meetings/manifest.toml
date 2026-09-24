@@ -2,7 +2,7 @@
 #
 # Owns `meetings.*`: calendar_event + event entities and their dictionaries.
 # Ingests the `meetings` sync surface (calendar), writes `attendee` edges to the
-# email module's shared address nodes (resolving them over RPC), and reads
+# email module's shared address nodes (creating them during sync), and reads
 # contacts.person to name the guest behind an address.
 # Sandboxed V8 isolate; bundled with the app and installed automatically at boot.
 
@@ -44,6 +44,7 @@ progress = { "meetings.calendar_event" = "events" }
 # own:own links, and reads of own schemas need no declaration.
 [permissions]
 read = [ "contacts.person" ]
+create = [ "email.address" ]
 links = [ "attendee" ]
 call = [ "email.ensure_address", "email.ensure_addresses" ]
 host = [ "external_id_reads", "sync_state" ]

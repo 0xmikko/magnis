@@ -5,9 +5,26 @@ import { test, expect, beforeAll } from "bun:test";
 import { buildPlugin } from "./build-plugins.ts";
 import { readFileSync, readdirSync, writeFileSync, rmSync } from "fs";
 import { join } from "path";
+import { parse as parseToml } from "smol-toml";
 
 const REPO = join(import.meta.dir, "..");
 const DIST = join(REPO, "plugins_dist");
+
+/**
+ * @test-id: tst_cat_manifest_001
+ * @scenario: scn_google_pull_001
+ * @covers: modules/contacts/manifest.toml, modules/meetings/manifest.toml
+ * @deterministic: yes
+ * @fixtures: checked-in module manifests
+ */
+test("tst_cat_manifest_001 Google sync modules may create shared email addresses", () => {
+  for (const moduleId of ["contacts", "meetings"]) {
+    const manifest = parseToml(readFileSync(join(REPO, "modules", moduleId, "manifest.toml"), "utf8")) as {
+      permissions?: { create?: string[] };
+    };
+    expect(manifest.permissions?.create).toContain("email.address");
+  }
+});
 
 let bundleRel: string;
 
