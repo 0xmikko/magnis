@@ -24,7 +24,6 @@ import {
 import type {
   BatchEntityInput,
   BatchLinkInput,
-  BatchRefInput,
   RawEntity,
   RpcExecutor,
 } from "@magnis/plugin-sdk";
@@ -54,6 +53,7 @@ import {
   type Data,
 } from "./helpers.ts";
 import { CAL, EVENT, MEETING } from "../schema.ts";
+import { addressBatchEntity } from "../../email/schema.ts";
 
 /// The node dictionary (S5): the record every read path renders from.
 const dictOf = (e: RawEntity): Data => e.properties ?? {};
@@ -463,14 +463,17 @@ export class MeetingsModule {
       properties: dict,
       confidence: 90,
     };
-    const addressIds = await this.ensureAddresses(attendees);
-    const refs: BatchRefInput[] = [];
+    // @tested-by: tst_module_meetings_sync_002
+    // Address nodes and attendee edges belong to the same sync transaction.
+    const addresses: BatchEntityInput[] = [];
+    const seenAddresses = new Set<string>();
     const links: BatchLinkInput[] = [];
     for (const a of attendees) {
       const lower = a.email.trim().toLowerCase();
       const key = `addr:${lower}`;
-      if (!refs.some((r) => r.key === key)) {
-        refs.push({ key, anchor: `email:address:${lower}` });
+      if (!seenAddresses.has(key)) {
+        addresses.push(addressBatchEntity(key, lower, a.name ?? null));
+        seenAddresses.add(key);
       }
       links.push({
         from_key: remoteId,
@@ -480,9 +483,14 @@ export class MeetingsModule {
         ...(a.name === undefined ? {} : { metadata: { display_name: a.name } }),
       });
     }
-    const result = await this.graph.apply_batch({ entities: [entity], refs, links });
+    const result = await this.graph.apply_batch({ entities: [entity, ...addresses], refs: [], links });
     const entityId = result.ids[remoteId];
     if (!entityId) return false;
+    const addressIds = attendees.map((attendee) => {
+      const id = result.ids[`addr:${attendee.email.trim().toLowerCase()}`];
+      if (!id) throw new Error(`meetings ingest: attendee address ${attendee.email} was not resolved`);
+      return id;
+    });
 
     // Reconcile: the invite's CURRENT list is complete for this event, so an
     // attendee the provider no longer reports leaves — the earlier design got this

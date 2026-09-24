@@ -58,8 +58,8 @@ import {
   type Data,
 } from "./helpers.ts";
 import {
-  ADDRESS_SCHEMA,
   MESSAGE_SCHEMA,
+  addressBatchEntity,
 } from "../schema.ts";
 
 const SEND_PARAMS = {
@@ -405,17 +405,7 @@ export class EmailModule {
     const addAddress = (lower: string, displayName: string | null): string => {
       const key = `addr:${lower}`;
       if (!addrSeen.has(key)) {
-        const data: Record<string, unknown> = { address: lower };
-        if (displayName) data.display_name = displayName;
-        entities.push({
-          key,
-          schema_id: ADDRESS_SCHEMA,
-          name: lower,
-          idx: lower,
-          anchor: `email:address:${lower}`,
-          properties: data,
-          confidence: 100,
-        });
+        entities.push({ ...addressBatchEntity(key, lower, displayName), confidence: 100 });
         addrSeen.add(key);
       }
       return key;
@@ -442,6 +432,10 @@ export class EmailModule {
       // now represent — the attachments array and the three joined recipient
       // strings. The from/to addresses stay as edges to shared address nodes.
       const dict: Data = { ...p };
+      delete dict.id;
+      if (typeof dict.message_id_header === "string") dict.message_id = dict.message_id_header;
+      delete dict.message_id_header;
+      if (dict.thread_id === null) delete dict.thread_id;
       delete dict.attachments;
       delete dict.to_addresses;
       delete dict.cc_addresses;
@@ -848,19 +842,7 @@ export class EmailModule {
       if (seen.has(lower)) continue;
       seen.add(lower);
       const item = items[i];
-      const data: Record<string, unknown> = { address: lower };
-      if (item?.display_name) data.display_name = item.display_name;
-      entities.push({
-        key: lower,
-        schema_id: ADDRESS_SCHEMA,
-        name: lower,
-        idx: lower,
-        // S3: the anchor is THE resolver — claimed through the chokepoint on
-        // create, so re-ensures and anchor-refs converge on one node.
-        // S5: the address DICT is the record.
-        anchor: `email:address:${lower}`,
-        properties: data,
-      });
+      entities.push(addressBatchEntity(lower, lower, item?.display_name ?? null));
     }
     const r = await this.graph.apply_batch({ entities, refs: [], links: [] });
     return lowers.map((lower) => {
@@ -1045,14 +1027,7 @@ export class EmailModule {
             anchor: providerMessageId,
             properties: messageDict,
           },
-          {
-            key: addrKey,
-            schema_id: ADDRESS_SCHEMA,
-            name: toLower,
-            idx: toLower,
-            anchor: `email:address:${toLower}`,
-            properties: { address: toLower },
-          },
+          addressBatchEntity(addrKey, toLower, null),
         ],
         refs: [],
         links: [{ from_key: msgKey, to_key: addrKey, kind: "sent_to" }],

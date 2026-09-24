@@ -43,6 +43,7 @@ import {
   CONTACT,
   GOOGLE_CONTACT,
 } from "../schema.ts";
+import { addressBatchEntity } from "../../email/schema.ts";
 
 /**
  * Bulk message records. A contact's replicas sit on one edge per message ever
@@ -792,24 +793,15 @@ export class ContactsModule {
     const known = deltaAnchors.length > 0 ? await this.graph.find_by_anchors(deltaAnchors) : [];
     const existing = new Set(deltaAnchors.filter((_, index) => known[index]));
 
-    // 2. The address owner mints (plan §7): one batched RPC for the whole
-    // chunk; the email module get-or-creates by the email:address anchor.
+    // 2. Address nodes and contact replicas share the sync transaction.
+    // @tested-by: tst_module_contacts_ingest_002
     const allAddresses = [...new Set(rows.flatMap((r) => r.addresses))];
-    const addressId = new Map<string, string>();
-    if (allAddresses.length > 0) {
-      const r = await this.rpc.execute<{ ids: string[] }>("email.ensure_addresses", {
-        items: allAddresses.map((address) => ({ address })),
-      });
-      allAddresses.forEach((a, i) => {
-        const id = r.ids[i];
-        if (id) addressId.set(a, id);
-      });
-    }
+    const addressEntities = allAddresses.map((address) => addressBatchEntity(`addr:${address}`, address, null));
 
     // 3. Replica nodes (plan §5): fields-as-last-synced dictionaries,
     // anchored by the stable remote_id — ONE batch, and the sync
     // never writes the hub again.
-    const entities: BatchEntityInput[] = rows.map(({ remoteId, p, sourceId, accountId }) => {
+    const entities: BatchEntityInput[] = [...addressEntities, ...rows.map(({ remoteId, p, sourceId, accountId }) => {
       const name = typeof p.display_name === "string" ? p.display_name : "";
       return {
         key: remoteId,
@@ -819,8 +811,13 @@ export class ContactsModule {
         anchor: remoteId,
         properties: { ...replicaDict(p), source_id: sourceId, account_id: accountId, ...(generation ? { sync_pass: generation } : {}) },
       };
-    });
+    })];
     const batch = await this.graph.apply_batch({ entities, refs: [], links: [] });
+    const addressId = new Map(allAddresses.map((address) => {
+      const id = batch.ids[`addr:${address}`];
+      if (!id) throw new Error(`contacts ingest: address ${address} was not resolved`);
+      return [address, id] as const;
+    }));
     const created = deltaAnchors.filter((anchor) => !existing.has(anchor) && batch.ids[anchor]).length;
 
     // 4. Auto-attach (plan §5.2): attach / mint / merge-candidate, on

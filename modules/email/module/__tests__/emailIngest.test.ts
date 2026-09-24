@@ -24,6 +24,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { BatchEntityInput, BatchLinkInput, GraphBatchInput } from "@magnis/plugin-sdk";
 import { mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { EmailModule } from "../service.ts";
+import { message } from "../../entities.ts";
 import type { EmailCanonical, SyncEnvelope } from "../../types.ts";
 
 type G = MockGraph;
@@ -86,6 +87,23 @@ describe("email ingest — apply_batch shape (tst_be_emailingest_001)", () => {
   beforeEach(() => {
     graph = ingestGraph();
     mod = mountModule(EmailModule, { graph, ctx: { extension_id: "email" } }).module;
+  });
+
+  /**
+   * @test-id: tst_module_email_ingest_002
+   * @scenario: scn_google_pull_001
+   * @covers: EmailModule.ingest
+   * @deterministic: yes
+   * @fixtures: flattened Gmail message with provider id, Message-ID header, null thread
+   */
+  it("tst_module_email_ingest_002 stores a Gmail payload in the declared message schema", async () => {
+    await mod.ingest({ envelopes: [env({ payload: msgPayload({
+      id: "gmail-1", message_id: undefined, message_id_header: "<m1@example.com>", thread_id: null,
+    }) })] });
+    const batch = spy(graph, "apply_batch").mock.calls[0]?.[0] as GraphBatchInput | undefined;
+    const stored = batch?.entities.find((entity) => entity.schema_id === "email.message");
+    expect(message.safeParse(stored?.properties).success).toBe(true);
+    expect(stored?.properties?.message_id).toBe("<m1@example.com>");
   });
 
   it("folds messages + unique addresses + sent_from/sent_to links into one batch", async () => {

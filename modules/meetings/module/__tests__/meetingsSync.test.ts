@@ -106,9 +106,33 @@ describe("meetings @syncHandler — upsert", () => {
 });
 
 describe("meetings @syncHandler — live envelopes emit a trigger.check", () => {
+  /**
+   * @test-id: tst_module_meetings_sync_002
+   * @scenario: scn_google_pull_001
+   * @covers: MeetingsModule.ingest
+   * @deterministic: yes
+   * @fixtures: one Google meeting with an attendee; sync RPC is forbidden
+   */
+  it("tst_module_meetings_sync_002 writes attendee addresses without cross-module RPC in sync", async () => {
+    const graph = makeGraph();
+    const execute = vi.fn(() => Promise.reject(new Error("op_plugin_rpc_call forbidden in sync")));
+    const { mod } = makeModule(graph, execute);
+    await expect(mod.ingest({ envelopes: [env({ payload: {
+      title: "Standup", starts_at: "2026-07-28T09:00:00Z", attendees: [{ email: "a@x" }],
+    } })] })).resolves.toBeDefined();
+    expect(execute).not.toHaveBeenCalled();
+    expect(graph.spies.apply_batch?.mock.calls[0]?.[0].entities).toContainEqual(expect.objectContaining({
+      schema_id: "email.address",
+      anchor: "email:address:a@x",
+    }));
+  });
+
   it("ensures attendee addresses via email.ensure_address and returns the full payload", async () => {
-    const apply_batch = vi.fn(async (_frag: GraphBatchInput) => ({
-      ids: { r5: "m-r5" },
+    const apply_batch = vi.fn(async (frag: GraphBatchInput) => ({
+      ids: Object.fromEntries(frag.entities.map((entity) => [
+        entity.key,
+        entity.key === "r5" ? "m-r5" : `addr-${entity.key.slice("addr:".length)}`,
+      ])),
       created: 1,
       updated: 0,
       links_added: 0,
@@ -125,9 +149,7 @@ describe("meetings @syncHandler — live envelopes emit a trigger.check", () => 
       envelopes: [env({ kind: "live", remote_id: "r5", payload })],
     });
 
-    expect(execute).toHaveBeenCalledWith("email.ensure_addresses", {
-      items: [{ address: "a@x", display_name: "Alice" }, { address: "b@x", display_name: null }],
-    });
+    expect(execute).not.toHaveBeenCalled();
     // The attendees are EDGES to the shared address nodes, and the invite's
     // per-event display name rides the edge dictionary.
     const frag = apply_batch.mock.calls[0]![0] as GraphBatchInput;
@@ -137,9 +159,9 @@ describe("meetings @syncHandler — live envelopes emit a trigger.check", () => 
       source_id: "google",
       account_id: "acct-1",
     });
-    expect(frag.refs).toEqual([
-      { key: "addr:a@x", anchor: "email:address:a@x" },
-      { key: "addr:b@x", anchor: "email:address:b@x" },
+    expect(frag.refs).toEqual([]);
+    expect(frag.entities.slice(1).map((entity) => entity.anchor)).toEqual([
+      "email:address:a@x", "email:address:b@x",
     ]);
     // declared_by names the EMITTING batch item — the host resolves the edge
     // stamp's observed_at through it on the sync dispatch.
@@ -180,7 +202,7 @@ describe("meetings @syncHandler — attendee edge reconcile", () => {
     const list_links_for_entity = vi.fn(() =>
       Promise.resolve([
         { id: "l-stale", from_id: "id-r6", to_id: "addr-old@x", kind: "attendee" },
-        { id: "l-keep", from_id: "id-r6", to_id: "addr-ann@x", kind: "attendee" },
+        { id: "l-keep", from_id: "id-r6", to_id: "id-addr:ann@x", kind: "attendee" },
         { id: "l-proj", from_id: "id-r6", to_id: "proj-1", kind: "created_by" },
         { id: "l-inbound", from_id: "other", to_id: "id-r6", kind: "attendee" },
       ]),

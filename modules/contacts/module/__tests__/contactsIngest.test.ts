@@ -79,7 +79,10 @@ function ingestWorld(over: Partial<World> = {}): World {
   world.graph = mockGraph({
     apply_batch: (frag: GraphBatchInput) =>
       Promise.resolve({
-        ids: Object.fromEntries(frag.entities.map((e: BatchEntityInput) => [e.key, `id-${e.key}`])),
+        ids: Object.fromEntries(frag.entities.map((e: BatchEntityInput) => [
+          e.key,
+          e.schema_id === "email.address" ? `addr-${e.key.slice("addr:".length)}` : `id-${e.key}`,
+        ])),
         created: frag.entities.length,
         updated: 0,
         links_added: frag.links?.length ?? 0,
@@ -164,6 +167,27 @@ function lastBatch(graph: G): GraphBatchInput {
 }
 
 describe("contacts ingest — the replica model (tst_be_contactsingest_001)", () => {
+  /**
+   * @test-id: tst_module_contacts_ingest_002
+   * @scenario: scn_google_pull_001
+   * @covers: ContactsModule.ingest
+   * @deterministic: yes
+   * @fixtures: one Google contact with an email address; sync RPC is forbidden
+   */
+  it("tst_module_contacts_ingest_002 writes address nodes without cross-module RPC in sync", async () => {
+    const world = ingestWorld();
+    const mod = mountModule(ContactsModule, {
+      graph: world.graph,
+      ctx: { extension_id: "contacts" },
+      rpc: { execute: () => Promise.reject(new Error("op_plugin_rpc_call forbidden in sync")) } as never,
+    }).module;
+    await expect(mod.ingest({ envelopes: [env({ payload: contactPayload() })] })).resolves.toBeDefined();
+    expect(lastBatch(world.graph).entities).toContainEqual(expect.objectContaining({
+      schema_id: "email.address",
+      anchor: "email:address:mikhail@example.com",
+    }));
+  });
+
   it("one envelope → ONE replica node: anchored, dictionary as last synced, zero facets, zero hub writes in the batch", async () => {
     const world = ingestWorld();
     const mod = mountWorld(world);
@@ -171,7 +195,7 @@ describe("contacts ingest — the replica model (tst_be_contactsingest_001)", ()
 
     expect(world.graph.spies.apply_batch).toHaveBeenCalledTimes(1);
     const frag = lastBatch(world.graph);
-    expect(frag.entities.map((e) => e.schema_id)).toEqual(["contacts.google_contact"]);
+    expect(frag.entities.map((e) => e.schema_id)).toEqual(["email.address", "contacts.google_contact"]);
 
     const replica = personOf(frag, "gpeople:abc123");
     expect(replica.anchor).toBe("gpeople:abc123");
@@ -183,8 +207,7 @@ describe("contacts ingest — the replica model (tst_be_contactsingest_001)", ()
     expect(Array.isArray(props.emails)).toBe(true);
     expect(Array.isArray(props.phones)).toBe(true);
 
-    // The address owner minted; contacts only asked.
-    expect(world.rpcCalls.map((c) => c.method)).toEqual(["email.ensure_addresses"]);
+    expect(world.rpcCalls).toEqual([]);
   });
 
   it("no hub anywhere → mint (name vouch) + identity edges to replica and address", async () => {
@@ -291,7 +314,7 @@ describe("contacts ingest — the replica model (tst_be_contactsingest_001)", ()
       ],
     });
     const frag = lastBatch(world.graph);
-    expect(frag.entities).toHaveLength(1);
+    expect(frag.entities.filter((entity) => entity.schema_id === "contacts.google_contact")).toHaveLength(1);
   });
 
   it("empty envelopes → no apply_batch", async () => {
