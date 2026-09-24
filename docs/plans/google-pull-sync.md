@@ -1,7 +1,7 @@
 # Google Pull Sync
 
 Status: SPEC_LOCKED  
-Spec lock: sha256:e11c8fe905e9bee4d6fbc4c47a1dabce80cd4431848cefdc501a6b5429bbd5af owner:Да, давай это внесем  
+Spec lock: sha256:1197ce227cb093757dc6be758825862f5875ea8673c8bf701ae461c27df73085 owner:Тогда дополни, соответственно, стадии и приступай к исполнению  
 Implementation lock: stale  
 Active Delivery: D1  
 Unattended decisions: allowed  
@@ -101,7 +101,7 @@ During pagination the cursor retains the committed `history_id` or `sync_token` 
 
 ### Proposed file tree
 
-The generic page-context and completion-accounting changes belong to the app host; Google behavior and the package layout belong to the catalog. They are separate PRs because they are separate repositories. The catalog PR is tested against the exact app-host PR revision.
+The generic page-context and completion-accounting changes belong to the app host; Google behavior and the package layout belong to the catalog. They are separate PRs because they are separate repositories. The host change is one direct TDD fix in the app repository, not a second catalog Task or a duplicate plan. The catalog module work is tested against that host PR's exact revision; the owner merges each PR.
 
 ```text
 MODIFY backend/src/services/sources/sync/sync.worker.ts
@@ -156,12 +156,14 @@ MODIFY acceptance/telegram-performance/README.md
        Run and report real Telegram plus Google without entering CI.
 MOVE plugins/modules/* -> modules/*
 MOVE plugins/sources/* -> sources/*
-MODIFY package.json, scripts/build-plugins.ts, scripts/build-catalog-index.ts
-MODIFY scripts/test-connectors.sh, scripts/typecheck-all.sh, vitest.config.ts, vitest.ui.config.ts
-MODIFY tsconfig.declarations.json, eslint.config.mjs
-       Discover and build packages from the two root directories; keep package IDs and published index shape.
+MODIFY package.json, bun.lock, scripts/build-plugins.ts, scripts/build-catalog-index.ts
+MODIFY scripts/build-plugins.test.ts, scripts/build-catalog-index.test.ts
+MODIFY scripts/plugin-new.ts, scripts/test-connectors.sh, scripts/typecheck-all.sh
+MODIFY vitest.config.ts, vitest.ui.config.ts, tsconfig.declarations.json, eslint.config.mjs
+       Discover, generate, test and build packages from the two root directories; keep package IDs and published index shape.
+MODIFY docs/plugins/*.md, packages/host-testdouble/README.md and existing path assertions only where they mention the old roots.
 MODIFY module/source package tsconfig and relative imports only where the moved path requires it.
-       No unrelated module logic change.
+       No unrelated module logic change; no fixed package inventory test is added.
 ```
 
 No new sync runner or product UI is created: existing host, Source, receiving modules, build scripts and the single stand each keep ownership. The Google OAuth test is extended for access-token reuse. The two module manifest edits enable the existing completion hook. Directory moves preserve module/source contents except mechanical relative paths and package configuration. The stand keeps its directory and command path. Generated catalog artifacts are rebuilt, never hand-authored.
@@ -278,22 +280,22 @@ After this revised SPEC is approved, the two completed Google Source stages stay
 ## Implementation contract
 
 <!-- plan:delivery:D1:start -->
-<!-- plan:delivery-meta:{"active":true,"depends":[],"predictedExternalWaitMinutes":30} -->
+<!-- plan:delivery-meta:{"active":true,"depends":[],"predictedExternalWaitMinutes":60} -->
 ### PR Delivery D1 — Google Pull sync and one manual performance stand
 
 Branch: `feat/google-pull-sync`; Depends: none; Gate: catalog.
 
-Stage graph: `D1-S1 -> D1-S2 -> D1-S3 -> D1-S4`.
+Stage graph: `D1-S1 -> D1-S2 -> D1-S3 -> D1-S4 -> D1-S5`.
 
-Forecast: 253 active min / 0 credits across 4 Stages; longest dependency path 253 active min; external waits 30 min.
+Forecast: 398 active min / 0 credits across 5 Stages; longest dependency path 398 active min; external waits 60 min.
 
-What changes for people. One new Google connection initially reads Gmail, Calendar and Contacts, then polls provider changes with honest per-surface progress and exact quota holds. The same manual stand reports Google beside Telegram.
+What changes for people. One Google connection initially reads Gmail, Calendar and Contacts, then polls provider changes with honest per-surface progress and exact quota holds. The same manual stand reports Google beside Telegram. Catalog Modules and Sources live at repository roots without changing package identities.
 
-What changes in the code. The existing Google Source gains token reuse and incremental Calendar/Contacts cursors; existing modules reconcile owned replicas and count actual changes; the existing stand reports both Sources. No app protocol or CI live-provider job changes.
+What changes in the code. The existing Google Source gains token reuse and incremental Calendar/Contacts cursors; existing modules reconcile owned replicas and count actual changes; the package build reads root modules/ and sources/; the existing stand reports both Sources. The generic app-host page context and completion accounting are one direct TDD fix in a separate app PR, tested at an exact SHA before catalog module acceptance.
 
-How it is proven. Scripted Source and module tests cover cursors, deletions, rate limits and progress; stand tests cover reset safety and grouped production logs. One manual real-account receipt records exact SHAs, counts and timings. The catalog PR gate runs once after the last Stage.
+How it is proven. Scripted Source and module tests cover cursors, deletions, rate limits and progress; builder tests cover root discovery and unchanged package identity; stand tests cover reset safety and grouped production logs. One manual real-account receipt records exact app and catalog SHAs, counts and timings. The catalog PR gate runs once after the last Stage.
 
-Not in this PR. Push/PubSub, old Google-account migration, additional calendars and any new runner.
+Not in this PR. App-host code, Push/PubSub, old Google-account migration, additional calendars and any new runner.
 
 <!-- plan:stage:D1-S1:start -->
 <!-- plan:stage-meta:{"deliveryId":"D1","depends":[],"parallelWith":[],"writes":["plugins/sources/google/src/auth.ts","plugins/sources/google/src/oauth.test.ts","plugins/sources/google/src/http.ts","plugins/sources/google/src/http.test.ts","plugins/sources/google/src/connector.ts","plugins/sources/google/src/surfaces/email/gmail.ts","plugins/sources/google/src/surfaces/email/gmail.test.ts"],"tempRoot":".tmp/code-production/google-pull-sync/D1-S1","predictedActiveMinutes":50,"predictedCredits":0,"verifyActiveMinutes":5,"verifyCredits":0} -->
@@ -374,35 +376,35 @@ Commit. feat(google): retain Calendar and Contacts sync tokens — unchanged pol
 <!-- plan:stage:D1-S2:end -->
 
 <!-- plan:stage:D1-S3:start -->
-<!-- plan:stage-meta:{"deliveryId":"D1","depends":["D1-S2"],"parallelWith":[],"writes":["plugins/modules/email/module/service.ts","plugins/modules/email/module/__tests__/emailIngest.test.ts","plugins/modules/meetings/module/service.ts","plugins/modules/meetings/module/__tests__/meetingsSync.test.ts","plugins/modules/meetings/manifest.toml","scripts/bundled-item-schemas.test.ts","plugins/modules/contacts/module/service.ts","plugins/modules/contacts/module/__tests__/contactsIngest.test.ts","plugins/modules/contacts/manifest.toml"],"tempRoot":".tmp/code-production/google-pull-sync/D1-S3","predictedActiveMinutes":95,"predictedCredits":0,"verifyActiveMinutes":10,"verifyCredits":0} -->
-#### Stage D1-S3 — Make module progress and expired-token recovery truthful
+<!-- plan:stage-meta:{"deliveryId":"D1","depends":["D1-S2"],"parallelWith":[],"writes":["plugins/modules/email/module/service.ts","plugins/modules/email/module/__tests__/emailIngest.test.ts","packages/plugin-sdk/index.ts","plugins/modules/meetings/module/service.ts","plugins/modules/meetings/module/__tests__/meetingsSync.test.ts","plugins/modules/meetings/manifest.toml","plugins/modules/contacts/module/service.ts","plugins/modules/contacts/module/__tests__/contactsIngest.test.ts","plugins/modules/contacts/manifest.toml","scripts/bundled-item-schemas.test.ts"],"tempRoot":".tmp/code-production/google-pull-sync/D1-S3","predictedActiveMinutes":120,"predictedCredits":0,"verifyActiveMinutes":15,"verifyCredits":0} -->
+#### Stage D1-S3 — Count Google module changes and reconcile owned replicas
 
 - Owner: codex; Profile: strong; Depends: D1-S2; Parallel with: none.
-- Writes: `plugins/modules/email/module/service.ts`, `plugins/modules/email/module/__tests__/emailIngest.test.ts`, `plugins/modules/meetings/module/service.ts`, `plugins/modules/meetings/module/__tests__/meetingsSync.test.ts`, `plugins/modules/meetings/manifest.toml`, `scripts/bundled-item-schemas.test.ts`, `plugins/modules/contacts/module/service.ts`, `plugins/modules/contacts/module/__tests__/contactsIngest.test.ts`, `plugins/modules/contacts/manifest.toml`.
+- Writes: `plugins/modules/email/module/service.ts`, `plugins/modules/email/module/__tests__/emailIngest.test.ts`, `packages/plugin-sdk/index.ts`, `plugins/modules/meetings/module/service.ts`, `plugins/modules/meetings/module/__tests__/meetingsSync.test.ts`, `plugins/modules/meetings/manifest.toml`, `plugins/modules/contacts/module/service.ts`, `plugins/modules/contacts/module/__tests__/contactsIngest.test.ts`, `plugins/modules/contacts/manifest.toml`, `scripts/bundled-item-schemas.test.ts`.
 - Temp root: `.tmp/code-production/google-pull-sync/D1-S3` (must be absent at handoff).
-- Of which verification: 10 active min / 0 credits.
+- Of which verification: 15 active min / 0 credits.
 
-What this Stage solves. Email counts replayed envelopes; Meetings and Contacts do not count admitted deltas or remove stale owned replicas after a completed replacement pass.
+What this Stage solves. The module draft reads sync status twice, requires a Google full_snapshot field that the Source never emits, and duplicates the owned-replica sweep. Email counts replayed history as new work.
 
-What is built. Existing Email, Meetings and Contacts module handlers state one baseline and actual later changes. Meetings and Contacts stamp source/account ownership and use the host's existing full-snapshot completion hook; Contacts deletes only its Google replica. Module manifests enable the existing hook.
+What is built. Email counts actual additions and deletions. Meetings and Contacts use the existing host page command and generation, state each full total once, count later Graph changes and share one SDK sweep for account-owned replicas. Contacts keeps curated hubs. The manifests opt into the existing completion hook. No module reads currentPlan or requires a provider event flag.
 
-How it is proven. tst_module_google_001 through 005 cover create/update/delete, retries, interrupted passes and curated hub survival. The bundled manifest test covers completion declarations.
+How it is proven. tst_module_google_001 through 005 cover bootstrap versus catch-up, replay, completed versus interrupted passes and curated hubs. The catalog module tests run against the exact app-host PR revision, recorded in Results.
 
-Commit. fix(google): reconcile owned replicas and count admitted changes — no replay inflation or stale records after token expiry.
+Commit. fix(google): count actual module changes and reconcile owned replicas — one shared sweep, no event flag or duplicate status reader.
 
 ##### Tasks
 
-- [ ] GOOGLE_005 — Count Gmail receipts once in email service.ts and emailIngest.test.ts. (25 min)
-<!-- plan:task-meta:{"writes":["plugins/modules/email/module/service.ts","plugins/modules/email/module/__tests__/emailIngest.test.ts"],"predictedActiveMinutes":25,"predictedCredits":0,"how":"plugins/modules/email/module/service.ts: count distinct admitted history additions/deletions without replay inflation; plugins/modules/email/module/__tests__/emailIngest.test.ts: assert full baseline, live, delete, update and retry receipts","red":"bun run agent:test:backend -- plugins/modules/email/module/__tests__/emailIngest.test.ts"} -->
-- [ ] GOOGLE_006 — Reconcile Calendar in meetings service.ts, meetingsSync.test.ts, manifest.toml and bundled-item-schemas.test.ts. (30 min)
-<!-- plan:task-meta:{"writes":["plugins/modules/meetings/module/service.ts","plugins/modules/meetings/module/__tests__/meetingsSync.test.ts","plugins/modules/meetings/manifest.toml","scripts/bundled-item-schemas.test.ts"],"predictedActiveMinutes":30,"predictedCredits":0,"how":"plugins/modules/meetings/module/service.ts: stamp owned events and delete unseen events only on completed bootstrap; plugins/modules/meetings/module/__tests__/meetingsSync.test.ts: assert delta counts and completed versus interrupted reconciliation; plugins/modules/meetings/manifest.toml: enable existing full_snapshot completion hook; scripts/bundled-item-schemas.test.ts: assert Meetings reconciliation declaration","red":"bun run agent:test:backend -- plugins/modules/meetings/module/__tests__/meetingsSync.test.ts scripts/bundled-item-schemas.test.ts"} -->
-- [ ] GOOGLE_007 — Reconcile People in contacts service.ts, contactsIngest.test.ts and manifest.toml. (30 min)
-<!-- plan:task-meta:{"writes":["plugins/modules/contacts/module/service.ts","plugins/modules/contacts/module/__tests__/contactsIngest.test.ts","plugins/modules/contacts/manifest.toml"],"predictedActiveMinutes":30,"predictedCredits":0,"how":"plugins/modules/contacts/module/service.ts: delete only Google replicas and reconcile owned unseen replicas; plugins/modules/contacts/module/__tests__/contactsIngest.test.ts: assert delta counts, expiry recovery and curated hub survival; plugins/modules/contacts/manifest.toml: enable existing full_snapshot completion hook","red":"bun run agent:test:backend -- plugins/modules/contacts/module/__tests__/contactsIngest.test.ts"} -->
+- [ ] GOOGLE_005 — Count distinct Gmail additions and deletions once without inflating progress on replay or updates. (25 min)
+<!-- plan:task-meta:{"writes":["plugins/modules/email/module/service.ts","plugins/modules/email/module/__tests__/emailIngest.test.ts"],"predictedActiveMinutes":25,"predictedCredits":0,"how":"plugins/modules/email/module/service.ts: use actual Graph create/delete results for plan deltas; plugins/modules/email/module/__tests__/emailIngest.test.ts: prove full baseline, replay, update, addition and repeated deletion behavior","red":"bun run agent:test:backend -- plugins/modules/email/module/__tests__/emailIngest.test.ts -t tst_module_google_003"} -->
+- [ ] GOOGLE_006 — State one Calendar baseline and reconcile only unseen account-owned events after completed bootstrap. (35 min)
+<!-- plan:task-meta:{"writes":["packages/plugin-sdk/index.ts","plugins/modules/meetings/module/service.ts","plugins/modules/meetings/module/__tests__/meetingsSync.test.ts","plugins/modules/meetings/manifest.toml","scripts/bundled-item-schemas.test.ts"],"predictedActiveMinutes":35,"predictedCredits":0,"how":"packages/plugin-sdk/index.ts: share the account-owned Graph sweep for two modules; plugins/modules/meetings/module/service.ts: stamp admitted events, count actual deltas and use the shared sweep only on completion; plugins/modules/meetings/module/__tests__/meetingsSync.test.ts: prove bootstrap, catch-up, replay and interrupted-pass safety without full_snapshot payload; plugins/modules/meetings/manifest.toml: declare the existing full_snapshot completion hook; scripts/bundled-item-schemas.test.ts: assert that declaration","red":"bun run agent:test:backend -- plugins/modules/meetings/module/__tests__/meetingsSync.test.ts -t tst_module_google_001"} -->
+- [ ] GOOGLE_007 — Count Google contact replicas and remove stale replicas without deleting curated person hubs. (45 min)
+<!-- plan:task-meta:{"writes":["plugins/modules/contacts/module/service.ts","plugins/modules/contacts/module/__tests__/contactsIngest.test.ts","plugins/modules/contacts/manifest.toml"],"predictedActiveMinutes":45,"predictedCredits":0,"how":"plugins/modules/contacts/module/service.ts: state one baseline, count actual replica deltas, delete anchored Google replicas and reuse the SDK account-owned completion sweep; plugins/modules/contacts/module/__tests__/contactsIngest.test.ts: prove replay, token-expiry rescan, other-account isolation and curated-hub survival without full_snapshot payload; plugins/modules/contacts/manifest.toml: report contacts.google_contact and declare the existing full_snapshot completion hook","red":"bun run agent:test:backend -- plugins/modules/contacts/module/__tests__/contactsIngest.test.ts -t tst_module_google_002"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- plugins/modules/email/module/__tests__/emailIngest.test.ts plugins/modules/meetings/module/__tests__/meetingsSync.test.ts plugins/modules/contacts/module/__tests__/contactsIngest.test.ts` exits 0 — module progress is idempotent and account-owned reconciliation is safe
-- [ ] `bun run agent:test:backend -- scripts/bundled-item-schemas.test.ts` exits 0 — existing hook declarations are certified
+- [ ] `bun run agent:test:backend -- plugins/modules/email/module/__tests__/emailIngest.test.ts plugins/modules/meetings/module/__tests__/meetingsSync.test.ts plugins/modules/contacts/module/__tests__/contactsIngest.test.ts scripts/bundled-item-schemas.test.ts` exits 0 — full baselines, incremental deltas and completed-only reconciliation are proven without event flags
+- [ ] The exact app-host PR SHA used for module admission and completion tests is recorded in Results
 - [ ] Commit
 
 ##### Results
@@ -414,31 +416,31 @@ Commit. fix(google): reconcile owned replicas and count admitted changes — no 
 <!-- plan:stage:D1-S3:end -->
 
 <!-- plan:stage:D1-S4:start -->
-<!-- plan:stage-meta:{"deliveryId":"D1","depends":["D1-S3"],"parallelWith":[],"writes":["acceptance/telegram-performance/run.ts","acceptance/telegram-performance/run.test.ts","acceptance/telegram-performance/README.md"],"tempRoot":".tmp/code-production/google-pull-sync/D1-S4","predictedActiveMinutes":40,"predictedCredits":0,"verifyActiveMinutes":10,"verifyCredits":0} -->
-#### Stage D1-S4 — Measure Telegram and Google with the one manual stand
+<!-- plan:stage-meta:{"deliveryId":"D1","depends":["D1-S3"],"parallelWith":[],"writes":["plugins/modules/","modules/","plugins/sources/","sources/","package.json","bun.lock","scripts/build-plugins.ts","scripts/build-catalog-index.ts","scripts/build-plugins.test.ts","scripts/build-catalog-index.test.ts","scripts/plugin-new.ts","scripts/test-connectors.sh","scripts/typecheck-all.sh","vitest.config.ts","vitest.ui.config.ts","tsconfig.declarations.json","eslint.config.mjs","docs/plugins/","packages/host-testdouble/README.md","scripts/bundled-item-schemas.test.ts","packages/testkit/__tests__/tst_cat_src_parity_001.test.ts"],"tempRoot":".tmp/code-production/google-pull-sync/D1-S4","predictedActiveMinutes":115,"predictedCredits":0,"verifyActiveMinutes":15,"verifyCredits":0} -->
+#### Stage D1-S4 — Move catalog Modules and Sources to root directories
 
 - Owner: codex; Profile: strong; Depends: D1-S3; Parallel with: none.
-- Writes: `acceptance/telegram-performance/run.ts`, `acceptance/telegram-performance/run.test.ts`, `acceptance/telegram-performance/README.md`.
+- Writes: `plugins/modules/`, `modules/`, `plugins/sources/`, `sources/`, `package.json`, `bun.lock`, `scripts/build-plugins.ts`, `scripts/build-catalog-index.ts`, `scripts/build-plugins.test.ts`, `scripts/build-catalog-index.test.ts`, `scripts/plugin-new.ts`, `scripts/test-connectors.sh`, `scripts/typecheck-all.sh`, `vitest.config.ts`, `vitest.ui.config.ts`, `tsconfig.declarations.json`, `eslint.config.mjs`, `docs/plugins/`, `packages/host-testdouble/README.md`, `scripts/bundled-item-schemas.test.ts`, `packages/testkit/__tests__/tst_cat_src_parity_001.test.ts`.
 - Temp root: `.tmp/code-production/google-pull-sync/D1-S4` (must be absent at handoff).
-- Of which verification: 10 active min / 0 credits.
+- Of which verification: 15 active min / 0 credits.
 
-What this Stage solves. The existing manual stand reports only Telegram, so Google fetch/admission bottlenecks cannot be compared while retaining saved credentials.
+What this Stage solves. Catalog packages are still nested under plugins/modules and plugins/sources although Modules and Sources are top-level resources.
 
-What is built. run.ts groups production sync-turn records by Source and surface, protects all credential tables during reset and refuses real-provider fixture variables; run.test.ts covers those boundaries; README.md documents the one opt-in live run on selected clean app/catalog worktrees.
+What is built. Move the existing 11 Modules and 13 Sources to modules/ and sources/ without changing package IDs or runtime behavior. Extend the existing builders, generator, workspace and test/typecheck discovery; update only relative imports, package configuration, path assertions and documentation that the move invalidates. plugins/onboarding.toml stays put.
 
-How it is proven. tst_cert_google_001 and 002 use synthetic logs and reset fixtures. A live receipt records exact app/catalog SHAs, page settings, counts, holds and timings; no real provider or PostgreSQL run is added to CI. The full catalog publication gate runs once after this Stage.
+How it is proven. tst_cat_layout_001 and 002 exercise the existing builders against the new roots without a fixed inventory; a one-shot comparison records unchanged published package IDs and index schema. Existing module and Source suites still run from their moved paths.
 
-Commit. feat(stand): report Google beside Telegram — preserve credentials and show per-surface timings.
+Commit. refactor(catalog): move Modules and Sources to root — preserve package IDs and behavior.
 
 ##### Tasks
 
-- [ ] GOOGLE_008 — Report both Sources in run.ts, run.test.ts and README.md without CI live runs. (30 min)
-<!-- plan:task-meta:{"writes":["acceptance/telegram-performance/run.ts","acceptance/telegram-performance/run.test.ts","acceptance/telegram-performance/README.md"],"predictedActiveMinutes":30,"predictedCredits":0,"how":"acceptance/telegram-performance/run.ts: group sync turns by Source/surface and protect credentials on reset; acceptance/telegram-performance/run.test.ts: assert grouping, clean revisions and reset fingerprints; acceptance/telegram-performance/README.md: document opt-in real-account run and branch selection","red":"bun run agent:test:backend -- acceptance/telegram-performance/run.test.ts"} -->
+- [ ] GOOGLE_008 — Build and certify the same catalog packages after moving Modules and Sources to repository roots. (100 min)
+<!-- plan:task-meta:{"writes":["plugins/modules/","modules/","plugins/sources/","sources/","package.json","bun.lock","scripts/build-plugins.ts","scripts/build-catalog-index.ts","scripts/build-plugins.test.ts","scripts/build-catalog-index.test.ts","scripts/plugin-new.ts","scripts/test-connectors.sh","scripts/typecheck-all.sh","vitest.config.ts","vitest.ui.config.ts","tsconfig.declarations.json","eslint.config.mjs","docs/plugins/","packages/host-testdouble/README.md","scripts/bundled-item-schemas.test.ts","packages/testkit/__tests__/tst_cat_src_parity_001.test.ts"],"predictedActiveMinutes":100,"predictedCredits":0,"how":"plugins/modules/ and modules/: move existing Module packages, changing only depth-dependent imports/config; plugins/sources/ and sources/: move existing Source packages the same way; package.json and bun.lock: update workspace paths; scripts/build-plugins.ts, scripts/build-catalog-index.ts, scripts/build-plugins.test.ts and scripts/build-catalog-index.test.ts: discover and verify the root packages without a fixed inventory; scripts/plugin-new.ts: create packages at the root; scripts/test-connectors.sh and scripts/typecheck-all.sh: select root packages; vitest.config.ts, vitest.ui.config.ts, tsconfig.declarations.json and eslint.config.mjs: select moved tests/types/UI; docs/plugins/ and packages/host-testdouble/README.md: replace stale path examples; scripts/bundled-item-schemas.test.ts and packages/testkit/__tests__/tst_cat_src_parity_001.test.ts: update only moved-path expectations","red":"bun run agent:test:backend -- scripts/build-plugins.test.ts scripts/build-catalog-index.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- acceptance/telegram-performance/run.test.ts` exits 0 — one stand reports both Sources and preserves credentials
-- [ ] One manual receipt records exact revisions, per-surface counts and fetch/admission/wall time without claiming unmeasured speedup
+- [ ] `bun run agent:test:backend -- scripts/build-plugins.test.ts scripts/build-catalog-index.test.ts scripts/bundled-item-schemas.test.ts packages/testkit/__tests__/tst_cat_src_parity_001.test.ts` exits 0 — root discovery builds the same package identities
+- [ ] A one-shot before/after comparison records all published package IDs and the catalog index schema unchanged; no permanent fixed-count test is added
 - [ ] Commit
 
 ##### Results
@@ -448,6 +450,42 @@ Commit. feat(stand): report Google beside Telegram — preserve credentials and 
 |---|---|---|---:|---|---|
 <!-- plan:results:D1-S4:end -->
 <!-- plan:stage:D1-S4:end -->
+
+<!-- plan:stage:D1-S5:start -->
+<!-- plan:stage-meta:{"deliveryId":"D1","depends":["D1-S4"],"parallelWith":[],"writes":["acceptance/telegram-performance/run.ts","acceptance/telegram-performance/run.test.ts","acceptance/telegram-performance/README.md"],"tempRoot":".tmp/code-production/google-pull-sync/D1-S5","predictedActiveMinutes":45,"predictedCredits":0,"verifyActiveMinutes":10,"verifyCredits":0} -->
+#### Stage D1-S5 — Report Telegram and Google in the one manual stand
+
+- Owner: codex; Profile: strong; Depends: D1-S4; Parallel with: none.
+- Writes: `acceptance/telegram-performance/run.ts`, `acceptance/telegram-performance/run.test.ts`, `acceptance/telegram-performance/README.md`.
+- Temp root: `.tmp/code-production/google-pull-sync/D1-S5` (must be absent at handoff).
+- Of which verification: 10 active min / 0 credits.
+
+What this Stage solves. The manual stand measures only Telegram, so the three Google surfaces and Graph admission cannot be compared using saved credentials.
+
+What is built. Extend the existing runner and report by Source and surface; keep its one data root and credential-preserving reset. The ordinary app dev launcher remains the only launcher. No live provider or PostgreSQL job enters CI.
+
+How it is proven. tst_cert_google_001 and 002 use synthetic production logs and reset fixtures. A manual real-account receipt names app/catalog SHAs, page settings, surface counts, provider holds and fetch/admission/wall time. Run the catalog publication gate once after this Stage.
+
+Commit. feat(stand): report Google beside Telegram — retain secrets and expose per-surface timing.
+
+##### Tasks
+
+- [ ] GOOGLE_009 — Report Google and Telegram sync timing by surface while reset preserves saved credentials. (35 min)
+<!-- plan:task-meta:{"writes":["acceptance/telegram-performance/run.ts","acceptance/telegram-performance/run.test.ts","acceptance/telegram-performance/README.md"],"predictedActiveMinutes":35,"predictedCredits":0,"how":"acceptance/telegram-performance/run.ts: group production sync-turn records by Source/surface and retain credential fingerprints during reset; acceptance/telegram-performance/run.test.ts: prove grouping, clean revision selection and secret-preserving reset with fixtures; acceptance/telegram-performance/README.md: document the opt-in real-account run against exact app/catalog branches","red":"bun run agent:test:backend -- acceptance/telegram-performance/run.test.ts -t tst_cert_google_001"} -->
+
+##### Acceptance criteria
+
+- [ ] `bun run agent:test:backend -- acceptance/telegram-performance/run.test.ts` exits 0 — one stand reports both Sources and preserves credentials
+- [ ] A manual receipt records exact app/catalog revisions, per-surface counts and fetch/admission/wall time without claiming unmeasured speedup
+- [ ] Commit
+
+##### Results
+
+<!-- plan:results:D1-S5:start -->
+| Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
+|---|---|---|---:|---|---|
+<!-- plan:results:D1-S5:end -->
+<!-- plan:stage:D1-S5:end -->
 <!-- plan:delivery:D1:end -->
 <!-- plan:implementation:end -->
 
@@ -503,4 +541,16 @@ Commit. feat(stand): report Google beside Telegram — preserve credentials and 
 - amend spec owner:Да, давай это внесем sha256:72465c0b678b7ec43e9e4a9bcf6335fe70dfba1a4af64e61f35330a86ccfa1b7
 
 - amend spec owner:Да, давай это внесем sha256:e11c8fe905e9bee4d6fbc4c47a1dabce80cd4431848cefdc501a6b5429bbd5af
+
+- amend spec owner:Тогда дополни, соответственно, стадии и приступай к исполнению sha256:a6102a91a18c5e59b949e43be6900da68de3a6c7ebc64fc2a42255df537a9449
+
+- amend spec owner:Тогда дополни, соответственно, стадии и приступай к исполнению sha256:1197ce227cb093757dc6be758825862f5875ea8673c8bf701ae461c27df73085
+
+- replace-stage D1-S3
+
+- replace-stage D1-S4
+
+- put-stage D1-S5
+
+- replace-delivery D1
 <!-- plan:execution:end -->
