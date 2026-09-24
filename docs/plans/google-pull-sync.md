@@ -592,4 +592,8 @@ Commit. feat(stand): report Google beside Telegram — retain secrets and expose
 - deviation D1-S5: Live Gmail acceptance exposed eager historical attachment downloads competing for the per-user quota and long opaque attachment IDs exceeding filesystem component limits; keep historical file metadata with on-demand bytes, retain eager live downloads, and segment local paths. Contacts also exceeded the generic Graph traversal cap on high-degree email addresses; request identity links through the existing filtered link read. Each behavior has a deterministic RED/GREEN regression.
 
 - deviation D1-S5: A real Gmail per-user minute-quota 403 omitted both Retry-After and window_start_time. Preserve its typed rate-limit state with a conservative full-minute hold derived from the supplied quota_unit; a deterministic regression failed RED before the fix.
+
+- deviation D1-S5: Live Gmail acceptance measured 1.23 messages/s because 50 concurrent full-message reads repeatedly exhausted the 6,000-unit minute quota and a failed page discarded successful reads. Owner requested the sync defect fixed and a full repeat test; pace existing hydration at four starts/s within the current Source, prove with a deterministic RED/GREEN test, then compare on the persistent stand.
+
+- deviation D1-S5: Correction to the preceding receipt: each page contains 50 message IDs, but the existing hydration concurrency is 8, not 50. The measured 1.23 messages/s and quota exhaustion remain unchanged.
 <!-- plan:execution:end -->

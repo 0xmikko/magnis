@@ -39,6 +39,10 @@ import {
 /** How many `messages.get` calls to run concurrently when hydrating a page —
  * same fan-out as the Rust GMAIL_FETCH_CONCURRENCY. */
 const GMAIL_FETCH_CONCURRENCY = 8;
+// A full messages.get costs 20 of Gmail's 6,000 per-user minute units.
+// Four starts per second leave room for list/profile calls and other clients.
+const GMAIL_MESSAGE_START_INTERVAL_MS = 250;
+const nextMessageStart = new WeakMap<FetchLike, number>();
 
 // ── Raw Gmail API shapes (camelCase, as served) ───────────────
 
@@ -764,6 +768,7 @@ interface Fetched {
 async function mapConcurrent<T, R>(
   items: T[],
   limit: number,
+  fetchFn: FetchLike,
   fn: (item: T) => Promise<R>,
 ): Promise<R[]> {
   const results = new Array<R>(items.length);
@@ -779,6 +784,14 @@ async function mapConcurrent<T, R>(
         const item = items[i];
         if (item === undefined) throw new Error("mapLimit: item index out of range");
         try {
+          // @tested-by: tst_src_iso_google_016
+          // Reserve starts synchronously so all workers and later pages share
+          // the same quota pace. Recheck the failure fence after waiting.
+          const now = Date.now();
+          const startAt = Math.max(now, nextMessageStart.get(fetchFn) ?? now);
+          nextMessageStart.set(fetchFn, startAt + GMAIL_MESSAGE_START_INTERVAL_MS);
+          if (startAt > now) await new Promise((resolve) => setTimeout(resolve, startAt - now));
+          if (failures.length > 0) return;
           results[i] = await fn(item);
         } catch (error) {
           failures.push(error);
@@ -827,6 +840,7 @@ async function fetchEnvelopes(
   const fetched = await mapConcurrent(
     requests,
     GMAIL_FETCH_CONCURRENCY,
+    fetchFn,
     async ({ id, kind }): Promise<Fetched> => ({ id, kind, msg: await fetchMessage(token, id, fetchFn) }),
   );
   return snapshotEnvelopesFromFetched(fetched);

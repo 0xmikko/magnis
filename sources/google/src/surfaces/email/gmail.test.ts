@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, jest, test } from "bun:test";
 import {
   CURSOR_EXPIRED_CODE,
   CursorExpiredError,
@@ -515,11 +515,10 @@ describe("email bootstrap cursor", () => {
    * @scenario: scn_google_pull_001
    * @covers: sources/google/src/surfaces/email/gmail.ts::fetchEnvelopes
    * @deterministic: yes
-   * @fixtures: first of twelve hydration requests is rate limited; seven are deferred
+   * @fixtures: first of twelve hydration requests is rate limited; the rest stay queued
    */
   test("tst_src_iso_google_004 stops queued hydration after the first hold", async () => {
     const started: string[] = [];
-    const releases: ((response: HttpResponse) => void)[] = [];
     const fetchFn: FetchLike = async (url) => {
       if (url.endsWith("/users/me/profile")) return ok({ historyId: "h1" });
       if (url.includes("maxResults=50")) {
@@ -529,14 +528,60 @@ describe("email bootstrap cursor", () => {
       if (id === undefined) throw new Error("missing message id");
       started.push(id);
       if (id === "m0") return status(429, "quota", "17");
-      if (Number(id.slice(1)) >= 8) return ok({ ...fullGmailMessage(), id });
-      return new Promise<HttpResponse>((resolve) => { releases.push(resolve); });
+      return ok({ ...fullGmailMessage(), id });
     };
     const page = fetchMessagePage("tok", undefined, fetchFn);
-    for (let i = 0; i < 10; i += 1) await Promise.resolve();
-    for (const release of releases) release(ok({ ...fullGmailMessage(), id: "m1" }));
     await expect(page).rejects.toBeInstanceOf(GoogleRateLimitError);
-    expect(started).toEqual(Array.from({ length: 8 }, (_, i) => `m${i}`));
+    expect(started).toEqual(["m0"]);
+  });
+
+  /**
+   * @test-id: tst_src_iso_google_016
+   * @scenario: scn_google_pull_004
+   * @covers: sources/google/src/surfaces/email/gmail.ts::fetchEnvelopes
+   * @deterministic: yes
+   * @fixtures: two scripted eight-message pages and a simulated clock
+   */
+  test("tst_src_iso_google_016 spaces full-message requests across pages", async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date("2026-09-24T00:00:00Z"));
+    try {
+      const starts: number[] = [];
+      const fetchFn: FetchLike = async (url) => {
+        if (url.endsWith("/users/me/profile")) return ok({ historyId: "h1" });
+        if (url.includes("/labels/")) return ok({ messagesTotal: 0 });
+        if (url.includes("maxResults=50")) {
+          const second = url.includes("pageToken=next");
+          return ok({
+            messages: Array.from({ length: 8 }, (_, i) => ({ id: `m${second ? i + 8 : i}` })),
+            nextPageToken: second ? undefined : "next",
+          });
+        }
+        if (url.includes("?format=full")) {
+          starts.push(Date.now());
+          return ok(fullGmailMessage());
+        }
+        throw new Error(`unexpected Gmail URL: ${url}`);
+      };
+      const advanceUntil = async (count: number): Promise<void> => {
+        for (let i = 0; i < 40; i += 1) {
+          for (let j = 0; j < 8; j += 1) await Promise.resolve();
+          if (starts.length >= count) return;
+          jest.advanceTimersByTime(250);
+        }
+        throw new Error(`only ${starts.length} of ${count} Gmail requests started`);
+      };
+      const first = fetchMessagePage("tok", undefined, fetchFn);
+      await advanceUntil(8);
+      const firstPage = await first;
+      const second = fetchMessagePage("tok", firstPage.nextCursor, fetchFn);
+      await advanceUntil(16);
+      await second;
+      expect(starts).toHaveLength(16);
+      expect(starts.every((start, i) => i === 0 || start - starts[i - 1]! >= 250)).toBe(true);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   /**
