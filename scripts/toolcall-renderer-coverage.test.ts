@@ -22,7 +22,7 @@ import { join } from "path";
 import ts from "typescript";
 
 const REPO = join(import.meta.dir, "..");
-const MODULES_DIR = join(REPO, "plugins", "modules");
+const MODULES_DIR = join(REPO, "modules");
 
 /**
  * Write tools that intentionally have no approval card, with the reason.

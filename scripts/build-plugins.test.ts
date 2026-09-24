@@ -11,9 +11,21 @@ const DIST = join(REPO, "plugins_dist");
 
 let bundleRel: string;
 
+/**
+ * @test-id: tst_cat_layout_001
+ * @scenario: scn_google_pull_007
+ * @covers: scripts/build-plugins.ts::buildPlugin
+ * @deterministic: yes
+ * @fixtures: the checked-in file module at the repository root
+ */
+test("tst_cat_layout_001 builds a root-level Module with the existing builder", async () => {
+  const result = await buildPlugin("file", { pluginsDir: REPO, distDir: DIST });
+  expect(result.pluginId).toBe("file");
+});
+
 beforeAll(async () => {
   const res = await buildPlugin("file", {
-    pluginsDir: join(REPO, "plugins"),
+    pluginsDir: REPO,
     distDir: DIST,
   });
   bundleRel = res.bundleFile; // e.g. "index.<hash>.js"
@@ -31,7 +43,7 @@ test("tst_build_schemas_001 rebuilding removes retired entity descriptors", asyn
   const retired = join(schemas, "retired.json");
   writeFileSync(retired, JSON.stringify({ version: 1, name: "Retired" }));
   try {
-    await buildPlugin("file", { pluginsDir: join(REPO, "plugins"), distDir: DIST });
+    await buildPlugin("file", { pluginsDir: REPO, distDir: DIST });
     expect(readdirSync(schemas)).toEqual(["object.json"]);
     expect(JSON.parse(readFileSync(join(schemas, "object.json"), "utf8"))).toHaveProperty("json_schema");
   } finally {
@@ -44,7 +56,7 @@ test("tst_build_schemas_001 rebuilding removes retired entity descriptors", asyn
 // bundle.json.assets with a content hash.
 test("tst_build_icon_001: icon.svg → dist copy + bundle.json.assets", async () => {
   // x ships plugins/x/icon.svg (the brand glyph, package root).
-  await buildPlugin("x", { pluginsDir: join(REPO, "plugins"), distDir: DIST });
+  await buildPlugin("x", { pluginsDir: REPO, distDir: DIST });
   const svg = readFileSync(join(DIST, "modules", "x", "icon.svg"), "utf8");
   expect(svg).toContain("<svg");
   const bj = JSON.parse(readFileSync(join(DIST, "modules", "x", "bundle.json"), "utf8"));
@@ -108,7 +120,7 @@ test("tst_build_bundle_001: file ui → one bundle, externals→shim, relatives 
 //     per plugin. Measured while planning this: the naive form emits 7.5 KB
 //     with a `@layer base`, the correct one 441 bytes with none.
 test("tst_build_styles_001: the bundle carries the package's own utilities, and no reset", async () => {
-  await buildPlugin("companies", { pluginsDir: join(REPO, "plugins"), distDir: DIST });
+  await buildPlugin("companies", { pluginsDir: REPO, distDir: DIST });
   const uiDir = join(DIST, "modules", "companies", "ui");
   const file = readdirSync(uiDir).find((f) => f.endsWith(".js"));
   expect(file, "companies ui bundle").toBeDefined();

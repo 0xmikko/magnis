@@ -19,7 +19,7 @@ import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import { parse as parseToml } from "smol-toml";
 
-const MODULES = join(import.meta.dir, "..", "plugins", "modules");
+const MODULES = join(import.meta.dir, "..", "modules");
 
 interface SurfaceDecl {
   item?: string;
@@ -80,7 +80,7 @@ describe("tst_pub_item_schemas_001", () => {
   /**
    * @test-id: tst_cert_google_003
    * @scenario: scn_google_pull_005
-   * @covers: plugins/modules/meetings/manifest.toml, plugins/modules/contacts/manifest.toml
+   * @covers: modules/meetings/manifest.toml, modules/contacts/manifest.toml
    * @deterministic: yes
    * @fixtures: bundled module manifests only
    */

@@ -25,7 +25,7 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./packages/host-testdouble/vitest.setup.ts"],
     include: [
-      "plugins/modules/**/ui/__tests__/**/*.test.{ts,tsx}",
+      "modules/**/ui/__tests__/**/*.test.{ts,tsx}",
       // The doubles' own suites run in this lane because they resolve through
       // the same aliases the plugins do.
       "packages/host-testdouble/__tests__/**/*.test.{ts,tsx}",

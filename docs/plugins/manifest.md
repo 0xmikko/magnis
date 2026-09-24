@@ -25,7 +25,7 @@ ingests, and its foreign permission asks. Everything else is discovered by
 convention inside the package:
 
 ```
-plugins/modules/<id>/
+modules/<id>/
   manifest.toml    identity + [surfaces] + [permissions]
   README.md        catalog description (markdown detail page)
   icon.svg|png     catalog icon, at the package ROOT
@@ -138,7 +138,7 @@ installs it the standard way, and finds the auth screen at `auth/index.tsx`.
 Examples below are the real `x` (api_key) and `google` (oauth2) manifests.
 
 ```
-plugins/sources/<id>/
+sources/<id>/
   manifest.toml    identity + [auth] + [credentials] + [sync]
   README.md        catalog description (markdown detail page)
   icon.svg|png     catalog icon, at the package ROOT (optional)

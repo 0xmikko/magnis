@@ -234,14 +234,14 @@ vitest kit; `@magnis/testkit/source` is a Bun kit.
 Run one plugin's tests:
 
 ```bash
-bun run test plugins/modules/<name>            # vitest path filter (module)
-bun test plugins/sources/<name>/src            # bun test (source)
+bun run test modules/<name>            # vitest path filter (module)
+bun test sources/<name>/src            # bun test (source)
 ```
 
 Run a source standalone (no host) — it is a plain stdio MCP server:
 
 ```bash
-cd plugins/sources/<name>
+cd sources/<name>
 echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' | bun run src/main.ts
 ```
 

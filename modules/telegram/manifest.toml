@@ -1,0 +1,44 @@
+# telegram — Telegram Messages domain module (V8 plugin).
+#
+# Owns the `telegram.*` graph namespace: account / chat / message entities and
+# their records. Ingests the surface fed by the Telegram SOURCE connector (see
+# sources/telegram) — this module is the graph-side half; the source is
+# the connector half. Also creates `contacts.person` entities for chat members
+# (cross-module create, see [permissions]). Runs as a sandboxed V8 isolate;
+# bundled with the app and installed automatically at boot.
+
+id = "telegram"
+version = "0.1.0"
+# SDK contract version this manifest targets (host accepts 0.x).
+magnis_api_version = "0.1.0"
+title = "Telegram Messages"
+summary = "Threaded Telegram chats indexed alongside the rest of your graph."
+# Reverse-domain publisher identity.
+publisher = "ai.magnis"
+
+# Sync surface this module consumes (fed by the matching source connector).
+[surfaces.telegram]
+# A missing chat says neither that membership ended nor when. Only a dated
+# participant update may close observed_in, so the host runs no snapshot decay.
+reconciliation = { mode = "none" }
+# The surface's primary-item schema.
+item = "telegram.message"
+# The schemas the surface reports progress on, with the names the Accounts
+# panel prints; the host counts them and reads the plan from page receipts.
+progress = { "telegram.chat" = "chats", "telegram.message" = "messages" }
+
+# Foreign asks beyond the implicit own namespace: writes to `telegram.` records,
+# own:own links, and reads of own schemas need no declaration.
+[permissions]
+read = [ "contacts.person", "episodes.episode" ]
+# S4: the module writes REGISTRY relations now (authored_by / in_chat /
+# observed_in / observed_participant) between its own nodes; the colon
+# pairs retire with the migration.
+links = [ "authored_by", "in_chat", "observed_in", "observed_participant" ]
+call = [ "triggers.create" ]
+host = [ "source_commands", "sync_state", "composer", "file_register", "web_register", "external_id_reads" ]
+
+# Extra bare import specifiers the UI bundle may reference beyond the host-shim
+# defaults — rewritten to host-shim URLs at build/transpile time.
+[ui]
+extra_bare_imports = [ "react-virtuoso", "zustand", "zustand/vanilla" ]

@@ -34,6 +34,50 @@
         "zustand": "^5.0.11",
       },
     },
+    "modules/companies": {
+      "name": "@magnis/plugin-companies",
+      "version": "0.1.0",
+    },
+    "modules/contacts": {
+      "name": "@magnis/plugin-contacts",
+      "version": "0.1.0",
+    },
+    "modules/email": {
+      "name": "@magnis/plugin-email",
+      "version": "0.1.0",
+    },
+    "modules/file": {
+      "name": "@magnis/plugin-file",
+      "version": "0.1.0",
+    },
+    "modules/linkedin": {
+      "name": "@magnis/plugin-linkedin",
+      "version": "0.1.0",
+    },
+    "modules/meetings": {
+      "name": "@magnis/plugin-meetings",
+      "version": "0.1.0",
+    },
+    "modules/notes": {
+      "name": "@magnis/plugin-notes",
+      "version": "0.1.0",
+    },
+    "modules/projects": {
+      "name": "@magnis/plugin-projects",
+      "version": "0.1.0",
+    },
+    "modules/telegram": {
+      "name": "@magnis/plugin-telegram",
+      "version": "0.1.0",
+    },
+    "modules/triggers": {
+      "name": "@magnis/plugin-triggers",
+      "version": "0.1.0",
+    },
+    "modules/x": {
+      "name": "@magnis/plugin-x",
+      "version": "0.1.0",
+    },
     "packages/connector-sdk": {
       "name": "@magnis/connector-sdk",
       "version": "0.1.0",
@@ -68,57 +112,13 @@
       "name": "@magnis/testkit",
       "version": "0.1.0",
     },
-    "plugins/modules/companies": {
-      "name": "@magnis/plugin-companies",
-      "version": "0.1.0",
-    },
-    "plugins/modules/contacts": {
-      "name": "@magnis/plugin-contacts",
-      "version": "0.1.0",
-    },
-    "plugins/modules/email": {
-      "name": "@magnis/plugin-email",
-      "version": "0.1.0",
-    },
-    "plugins/modules/file": {
-      "name": "@magnis/plugin-file",
-      "version": "0.1.0",
-    },
-    "plugins/modules/linkedin": {
-      "name": "@magnis/plugin-linkedin",
-      "version": "0.1.0",
-    },
-    "plugins/modules/meetings": {
-      "name": "@magnis/plugin-meetings",
-      "version": "0.1.0",
-    },
-    "plugins/modules/notes": {
-      "name": "@magnis/plugin-notes",
-      "version": "0.1.0",
-    },
-    "plugins/modules/projects": {
-      "name": "@magnis/plugin-projects",
-      "version": "0.1.0",
-    },
-    "plugins/modules/telegram": {
-      "name": "@magnis/plugin-telegram",
-      "version": "0.1.0",
-    },
-    "plugins/modules/triggers": {
-      "name": "@magnis/plugin-triggers",
-      "version": "0.1.0",
-    },
-    "plugins/modules/x": {
-      "name": "@magnis/plugin-x",
-      "version": "0.1.0",
-    },
-    "plugins/sources/anysite": {
+    "sources/anysite": {
       "name": "@magnis/source-anysite",
       "dependencies": {
         "@magnis/connector-sdk": "workspace:*",
       },
     },
-    "plugins/sources/google": {
+    "sources/google": {
       "name": "@magnis/source-google",
       "dependencies": {
         "@magnis/connector-sdk": "workspace:*",
@@ -127,55 +127,55 @@
         "@magnis/testkit": "workspace:*",
       },
     },
-    "plugins/sources/local": {
+    "sources/local": {
       "name": "@magnis/source-local",
       "dependencies": {
         "@magnis/connector-sdk": "workspace:*",
       },
     },
-    "plugins/sources/mock-gmail": {
+    "sources/mock-gmail": {
       "name": "@magnis/source-mock-gmail",
       "dependencies": {
         "@magnis/connector-sdk": "workspace:*",
       },
     },
-    "plugins/sources/mock-linkedin": {
+    "sources/mock-linkedin": {
       "name": "@magnis/source-mock-linkedin",
       "dependencies": {
         "@magnis/connector-sdk": "workspace:*",
       },
     },
-    "plugins/sources/mock-statemachine-key": {
+    "sources/mock-statemachine-key": {
       "name": "@magnis/source-mock-statemachine-key",
       "dependencies": {
         "@magnis/source-statemachine": "workspace:*",
       },
     },
-    "plugins/sources/mock-statemachine-oauth": {
+    "sources/mock-statemachine-oauth": {
       "name": "@magnis/source-mock-statemachine-oauth",
       "dependencies": {
         "@magnis/source-statemachine": "workspace:*",
       },
     },
-    "plugins/sources/mock-statemachine-phone": {
+    "sources/mock-statemachine-phone": {
       "name": "@magnis/source-mock-statemachine-phone",
       "dependencies": {
         "@magnis/source-statemachine": "workspace:*",
       },
     },
-    "plugins/sources/mock-telegram": {
+    "sources/mock-telegram": {
       "name": "@magnis/source-mock-telegram",
       "dependencies": {
         "@magnis/connector-sdk": "workspace:*",
       },
     },
-    "plugins/sources/mock-x": {
+    "sources/mock-x": {
       "name": "@magnis/source-mock-x",
       "dependencies": {
         "@magnis/connector-sdk": "workspace:*",
       },
     },
-    "plugins/sources/telegram": {
+    "sources/telegram": {
       "name": "@magnis/source-telegram",
       "dependencies": {
         "@magnis/connector-sdk": "workspace:*",
@@ -183,7 +183,7 @@
         "telegram": "2.26.22",
       },
     },
-    "plugins/sources/x": {
+    "sources/x": {
       "name": "@magnis/source-x",
       "dependencies": {
         "@magnis/connector-sdk": "workspace:*",
@@ -279,57 +279,57 @@
 
     "@magnis/host-testdouble": ["@magnis/host-testdouble@workspace:packages/host-testdouble"],
 
-    "@magnis/plugin-companies": ["@magnis/plugin-companies@workspace:plugins/modules/companies"],
+    "@magnis/plugin-companies": ["@magnis/plugin-companies@workspace:modules/companies"],
 
-    "@magnis/plugin-contacts": ["@magnis/plugin-contacts@workspace:plugins/modules/contacts"],
+    "@magnis/plugin-contacts": ["@magnis/plugin-contacts@workspace:modules/contacts"],
 
-    "@magnis/plugin-email": ["@magnis/plugin-email@workspace:plugins/modules/email"],
+    "@magnis/plugin-email": ["@magnis/plugin-email@workspace:modules/email"],
 
-    "@magnis/plugin-file": ["@magnis/plugin-file@workspace:plugins/modules/file"],
+    "@magnis/plugin-file": ["@magnis/plugin-file@workspace:modules/file"],
 
-    "@magnis/plugin-linkedin": ["@magnis/plugin-linkedin@workspace:plugins/modules/linkedin"],
+    "@magnis/plugin-linkedin": ["@magnis/plugin-linkedin@workspace:modules/linkedin"],
 
-    "@magnis/plugin-meetings": ["@magnis/plugin-meetings@workspace:plugins/modules/meetings"],
+    "@magnis/plugin-meetings": ["@magnis/plugin-meetings@workspace:modules/meetings"],
 
-    "@magnis/plugin-notes": ["@magnis/plugin-notes@workspace:plugins/modules/notes"],
+    "@magnis/plugin-notes": ["@magnis/plugin-notes@workspace:modules/notes"],
 
-    "@magnis/plugin-projects": ["@magnis/plugin-projects@workspace:plugins/modules/projects"],
+    "@magnis/plugin-projects": ["@magnis/plugin-projects@workspace:modules/projects"],
 
     "@magnis/plugin-sdk": ["@magnis/plugin-sdk@workspace:packages/plugin-sdk"],
 
-    "@magnis/plugin-telegram": ["@magnis/plugin-telegram@workspace:plugins/modules/telegram"],
+    "@magnis/plugin-telegram": ["@magnis/plugin-telegram@workspace:modules/telegram"],
 
-    "@magnis/plugin-triggers": ["@magnis/plugin-triggers@workspace:plugins/modules/triggers"],
+    "@magnis/plugin-triggers": ["@magnis/plugin-triggers@workspace:modules/triggers"],
 
-    "@magnis/plugin-x": ["@magnis/plugin-x@workspace:plugins/modules/x"],
+    "@magnis/plugin-x": ["@magnis/plugin-x@workspace:modules/x"],
 
     "@magnis/runtime-contracts": ["@magnis/runtime-contracts@workspace:packages/runtime-contracts"],
 
-    "@magnis/source-anysite": ["@magnis/source-anysite@workspace:plugins/sources/anysite"],
+    "@magnis/source-anysite": ["@magnis/source-anysite@workspace:sources/anysite"],
 
-    "@magnis/source-google": ["@magnis/source-google@workspace:plugins/sources/google"],
+    "@magnis/source-google": ["@magnis/source-google@workspace:sources/google"],
 
-    "@magnis/source-local": ["@magnis/source-local@workspace:plugins/sources/local"],
+    "@magnis/source-local": ["@magnis/source-local@workspace:sources/local"],
 
-    "@magnis/source-mock-gmail": ["@magnis/source-mock-gmail@workspace:plugins/sources/mock-gmail"],
+    "@magnis/source-mock-gmail": ["@magnis/source-mock-gmail@workspace:sources/mock-gmail"],
 
-    "@magnis/source-mock-linkedin": ["@magnis/source-mock-linkedin@workspace:plugins/sources/mock-linkedin"],
+    "@magnis/source-mock-linkedin": ["@magnis/source-mock-linkedin@workspace:sources/mock-linkedin"],
 
-    "@magnis/source-mock-statemachine-key": ["@magnis/source-mock-statemachine-key@workspace:plugins/sources/mock-statemachine-key"],
+    "@magnis/source-mock-statemachine-key": ["@magnis/source-mock-statemachine-key@workspace:sources/mock-statemachine-key"],
 
-    "@magnis/source-mock-statemachine-oauth": ["@magnis/source-mock-statemachine-oauth@workspace:plugins/sources/mock-statemachine-oauth"],
+    "@magnis/source-mock-statemachine-oauth": ["@magnis/source-mock-statemachine-oauth@workspace:sources/mock-statemachine-oauth"],
 
-    "@magnis/source-mock-statemachine-phone": ["@magnis/source-mock-statemachine-phone@workspace:plugins/sources/mock-statemachine-phone"],
+    "@magnis/source-mock-statemachine-phone": ["@magnis/source-mock-statemachine-phone@workspace:sources/mock-statemachine-phone"],
 
-    "@magnis/source-mock-telegram": ["@magnis/source-mock-telegram@workspace:plugins/sources/mock-telegram"],
+    "@magnis/source-mock-telegram": ["@magnis/source-mock-telegram@workspace:sources/mock-telegram"],
 
-    "@magnis/source-mock-x": ["@magnis/source-mock-x@workspace:plugins/sources/mock-x"],
+    "@magnis/source-mock-x": ["@magnis/source-mock-x@workspace:sources/mock-x"],
 
     "@magnis/source-statemachine": ["@magnis/source-statemachine@workspace:packages/source-statemachine"],
 
-    "@magnis/source-telegram": ["@magnis/source-telegram@workspace:plugins/sources/telegram"],
+    "@magnis/source-telegram": ["@magnis/source-telegram@workspace:sources/telegram"],
 
-    "@magnis/source-x": ["@magnis/source-x@workspace:plugins/sources/x"],
+    "@magnis/source-x": ["@magnis/source-x@workspace:sources/x"],
 
     "@magnis/testkit": ["@magnis/testkit@workspace:packages/testkit"],
 

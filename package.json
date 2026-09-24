@@ -4,8 +4,8 @@
   "packageManager": "bun@1.3.13",
   "workspaces": [
     "packages/*",
-    "plugins/modules/*",
-    "plugins/sources/*"
+    "modules/*",
+    "sources/*"
   ],
   "scripts": {
     "agent:install": "bun install --frozen-lockfile",
@@ -17,7 +17,7 @@
     "agent:verify:docs": "bun scripts/agent-verify.ts docs",
     "check": "bun run typecheck && bun run lint && bun run test && bun run test:runtime-contracts && bun run test:ui && bun run test:connectors && bun run test:scripts && bun run build:plugins",
     "typecheck": "bash scripts/typecheck-all.sh",
-    "lint": "eslint \"plugins/**/*.{ts,tsx}\" \"packages/**/*.{ts,tsx}\" \"scripts/**/*.ts\" \"apps/desktop/build/**/*.ts\" --max-warnings 0",
+    "lint": "eslint \"modules/**/*.{ts,tsx}\" \"sources/**/*.{ts,tsx}\" \"packages/**/*.{ts,tsx}\" \"scripts/**/*.ts\" \"apps/desktop/build/**/*.ts\" --max-warnings 0",
     "test": "vitest run && bun test apps/desktop/build/",
     "test:runtime-contracts": "bun test packages/runtime-contracts/test/",
     "test:connectors": "bash scripts/test-connectors.sh",

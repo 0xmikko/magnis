@@ -198,9 +198,9 @@ function cardLinks(
   src: string,
 ): { icon_url?: string; details_url?: string } {
   const icon = ["icon.svg", "icon.png"].find((file) => existsSync(join(src, file)));
-  const iconUrl = icon === undefined ? undefined : repoFileUrl(`plugins/${half}/${id}/${icon}`, true);
+  const iconUrl = icon === undefined ? undefined : repoFileUrl(`${half}/${id}/${icon}`, true);
   const detailsUrl = repoFileUrl(
-    `plugins/${half}/${id}/README.md`,
+    `${half}/${id}/README.md`,
     existsSync(join(src, "README.md")),
   );
   return {
@@ -522,7 +522,7 @@ if (!existsSync(distModules)) {
   process.exit(1);
 }
 for (const id of readdirSync(distModules).sort()) {
-  const src = join(ROOT, "plugins", "modules", id);
+  const src = join(ROOT, "modules", id);
   // Manifest v3: the catalog card (title/summary/publisher) lives top-level.
   const manifestRaw = parseToml(readFileSync(join(src, "manifest.toml"), "utf8")) as Card &
     ManifestFacts;
@@ -548,7 +548,7 @@ for (const id of readdirSync(distModules).sort()) {
 
 
 // ── sources ──────────────────────────────────────────────────────────────────
-const sourcesRoot = join(ROOT, "plugins", "sources");
+const sourcesRoot = join(ROOT, "sources");
 for (const release of discoverSourceReleaseManifests(sourcesRoot)) {
   if (release.disposition === "inadmissible") {
     console.warn(`catalog: source '${release.id}' inadmissible: ${release.reason}`);

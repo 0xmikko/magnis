@@ -23,7 +23,7 @@ type ModuleShape = PluginModuleShape;
 let mod: ModuleShape;
 
 beforeAll(async () => {
-  await buildPlugin("file", { pluginsDir: join(REPO, "plugins"), distDir: DIST });
+  await buildPlugin("file", { pluginsDir: REPO, distDir: DIST });
   const bundle = JSON.parse(readFileSync(join(DIST, "modules", "file", "bundle.json"), "utf8")) as {
     module?: { dist: string };
   };
@@ -66,7 +66,7 @@ test("tst_module_decorators_001: bundled module decorators register the plugin's
 // (`__decorateElement`). If it does, Bun's decorator lowering leaked past the
 // tsc onLoad hook and that plugin's tools would silently fail to register.
 test("tst_module_decorators_002: no module bundle emits TC39 decorators", async () => {
-  const pluginsDir = join(REPO, "plugins");
+  const pluginsDir = REPO;
   await buildAll({ pluginsDir, distDir: DIST });
   const offenders: string[] = [];
   for (const id of discoverPlugins(pluginsDir)) {
@@ -86,7 +86,7 @@ test("tst_module_decorators_002: no module bundle emits TC39 decorators", async 
 // inside a bare V8 isolate that has no business running one. The declaration's
 // own marker keyword is checked too, because it is what would arrive first.
 test("tst_module_decorators_003: no module bundle reaches its declaration", () => {
-  const pluginsDir = join(REPO, "plugins");
+  const pluginsDir = REPO;
   const declaring = discoverPlugins(pluginsDir)
     .filter((id) => existsSync(join(pluginsDir, "modules", id, "entities.ts")));
   // A guard over an empty set is green about nothing: this must run on real

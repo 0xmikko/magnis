@@ -9,8 +9,8 @@ fail=0
 # the ONLY project that sees entities.ts, because a module's own tsconfig
 # including its declaration would pull zod's types into the module and the UI
 # through the very check meant to keep them out.
-for t in plugins/modules/*/tsconfig.json \
-         plugins/sources/*/tsconfig.json \
+for t in modules/*/tsconfig.json \
+         sources/*/tsconfig.json \
          packages/*/tsconfig.json \
          apps/desktop/build/tsconfig.json \
          tsconfig.declarations.json \

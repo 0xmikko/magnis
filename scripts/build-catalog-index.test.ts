@@ -95,6 +95,22 @@ afterAll(() => {
 });
 
 describe("tst_pub_catalog_index_001", () => {
+  /**
+   * @test-id: tst_cat_layout_002
+   * @scenario: scn_google_pull_007
+   * @covers: scripts/build-catalog-index.ts
+   * @deterministic: yes
+   * @fixtures: root Module and Source manifests and a built catalog index
+   */
+  test("tst_cat_layout_002 publishes Module and Source identities from the root directories", () => {
+    expect(first.index.packages.some((entry) => entry.kind === "module")).toBe(true);
+    expect(first.index.packages.some((entry) => entry.kind === "source")).toBe(true);
+    for (const entry of first.index.packages) {
+      const directory = entry.kind === "module" ? "modules" : "sources";
+      expect(existsSync(join(ROOT, directory, entry.id, "manifest.toml"))).toBe(true);
+    }
+  });
+
   test("every package is ONE flat asset named after its kind and id", () => {
     expect(first.index.packages.length).toBeGreaterThan(0);
     for (const pkg of first.index.packages) {
@@ -109,12 +125,12 @@ describe("tst_pub_catalog_index_001", () => {
   /**
    * @test-id: tst_pub_catalog_index_002
    * @scenario: scn_catalog_module_install_001
-   * @covers: plugins/modules/<module>/manifest.toml sync-surface declarations
+   * @covers: modules/<module>/manifest.toml sync-surface declarations
    * @deterministic: yes
    * @fixtures: checked-in module manifests
    */
   test("tst_pub_catalog_index_002 every module surface declares reconciliation", () => {
-    const modulesRoot = join(ROOT, "plugins", "modules");
+    const modulesRoot = join(ROOT, "modules");
     for (const entry of readdirSync(modulesRoot, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
       const manifestPath = join(modulesRoot, entry.name, "manifest.toml");
@@ -199,7 +215,7 @@ describe("tst_pub_catalog_index_001", () => {
     expect(curation.always).toContain("file");
     for (const id of ["triggers", "file"]) {
       const declaresSystem = readFileSync(
-        join(ROOT, "plugins", "modules", id, "manifest.toml"),
+        join(ROOT, "modules", id, "manifest.toml"),
         "utf8",
       ).includes('tier = "system"');
       expect(declaresSystem, `${id} must declare its system lifecycle`).toBe(true);

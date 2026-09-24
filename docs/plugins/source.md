@@ -409,7 +409,7 @@ runSourceContract(buildConnectorConfig(mockFetch(routes)), fixtures);
 the host:
 
 ```bash
-cd plugins/sources/<name>
+cd sources/<name>
 echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' | bun run src/main.ts
 ```
 

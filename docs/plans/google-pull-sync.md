@@ -394,24 +394,27 @@ Commit. fix(google): count actual module changes and reconcile owned replicas �
 
 ##### Tasks
 
-- [ ] GOOGLE_005 — Count distinct Gmail additions and deletions once without inflating progress on replay or updates. (25 min)
+- [x] GOOGLE_005 — Count distinct Gmail additions and deletions once without inflating progress on replay or updates. (25 min) — 69f9304c04f0607d938556237b24caef09296acc
 <!-- plan:task-meta:{"writes":["plugins/modules/email/module/service.ts","plugins/modules/email/module/__tests__/emailIngest.test.ts"],"predictedActiveMinutes":25,"predictedCredits":0,"how":"plugins/modules/email/module/service.ts: use actual Graph create/delete results for plan deltas; plugins/modules/email/module/__tests__/emailIngest.test.ts: prove full baseline, replay, update, addition and repeated deletion behavior","red":"bun run agent:test:backend -- plugins/modules/email/module/__tests__/emailIngest.test.ts -t tst_module_google_003"} -->
-- [ ] GOOGLE_006 — State one Calendar baseline and reconcile only unseen account-owned events after completed bootstrap. (35 min)
+- [x] GOOGLE_006 — State one Calendar baseline and reconcile only unseen account-owned events after completed bootstrap. (35 min) — 69f9304c04f0607d938556237b24caef09296acc
 <!-- plan:task-meta:{"writes":["packages/plugin-sdk/index.ts","plugins/modules/meetings/module/service.ts","plugins/modules/meetings/module/__tests__/meetingsSync.test.ts","plugins/modules/meetings/manifest.toml","scripts/bundled-item-schemas.test.ts"],"predictedActiveMinutes":35,"predictedCredits":0,"how":"packages/plugin-sdk/index.ts: share the account-owned Graph sweep for two modules; plugins/modules/meetings/module/service.ts: stamp admitted events, count actual deltas and use the shared sweep only on completion; plugins/modules/meetings/module/__tests__/meetingsSync.test.ts: prove bootstrap, catch-up, replay and interrupted-pass safety without full_snapshot payload; plugins/modules/meetings/manifest.toml: declare the existing full_snapshot completion hook; scripts/bundled-item-schemas.test.ts: assert that declaration","red":"bun run agent:test:backend -- plugins/modules/meetings/module/__tests__/meetingsSync.test.ts -t tst_module_google_001"} -->
-- [ ] GOOGLE_007 — Count Google contact replicas and remove stale replicas without deleting curated person hubs. (45 min)
+- [x] GOOGLE_007 — Count Google contact replicas and remove stale replicas without deleting curated person hubs. (45 min) — 69f9304c04f0607d938556237b24caef09296acc
 <!-- plan:task-meta:{"writes":["plugins/modules/contacts/module/service.ts","plugins/modules/contacts/module/__tests__/contactsIngest.test.ts","plugins/modules/contacts/manifest.toml"],"predictedActiveMinutes":45,"predictedCredits":0,"how":"plugins/modules/contacts/module/service.ts: state one baseline, count actual replica deltas, delete anchored Google replicas and reuse the SDK account-owned completion sweep; plugins/modules/contacts/module/__tests__/contactsIngest.test.ts: prove replay, token-expiry rescan, other-account isolation and curated-hub survival without full_snapshot payload; plugins/modules/contacts/manifest.toml: report contacts.google_contact and declare the existing full_snapshot completion hook","red":"bun run agent:test:backend -- plugins/modules/contacts/module/__tests__/contactsIngest.test.ts -t tst_module_google_002"} -->
 
 ##### Acceptance criteria
 
 - [ ] `bun run agent:test:backend -- plugins/modules/email/module/__tests__/emailIngest.test.ts plugins/modules/meetings/module/__tests__/meetingsSync.test.ts plugins/modules/contacts/module/__tests__/contactsIngest.test.ts scripts/bundled-item-schemas.test.ts` exits 0 — full baselines, incremental deltas and completed-only reconciliation are proven without event flags
 - [ ] The exact app-host PR SHA used for module admission and completion tests is recorded in Results
-- [ ] Commit
+- [x] Commit — 69f9304c04f0607d938556237b24caef09296acc
 
 ##### Results
 
 <!-- plan:results:D1-S3:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| GOOGLE_005 | 69f9304c04f0607d938556237b24caef09296acc | 2026-09-24T05:15:29.534Z–2026-09-24T11:34:25.000Z | 90 / 379 min | unavailable: runner did not expose token usage | Email replay/update progress and Calendar/Contacts full-pass and incremental progress now follow actual Graph writes. Contacts reports Google replicas, not curated hubs. The module tests used app host PR #293 at 33453be0e909c8719eaac8e1d4d7239e8aafcec1; 40 module tests, 12 manifest tests and typecheck passed. Generated agent-stack files remain local and unpublished. |
+| GOOGLE_006 | 69f9304c04f0607d938556237b24caef09296acc | 2026-09-24T05:15:29.534Z–2026-09-24T11:34:25.000Z | 90 / 379 min | unavailable: runner did not expose token usage | Email replay/update progress and Calendar/Contacts full-pass and incremental progress now follow actual Graph writes. Contacts reports Google replicas, not curated hubs. The module tests used app host PR #293 at 33453be0e909c8719eaac8e1d4d7239e8aafcec1; 40 module tests, 12 manifest tests and typecheck passed. Generated agent-stack files remain local and unpublished. |
+| GOOGLE_007 | 69f9304c04f0607d938556237b24caef09296acc | 2026-09-24T05:15:29.534Z–2026-09-24T11:34:25.000Z | 90 / 379 min | unavailable: runner did not expose token usage | Email replay/update progress and Calendar/Contacts full-pass and incremental progress now follow actual Graph writes. Contacts reports Google replicas, not curated hubs. The module tests used app host PR #293 at 33453be0e909c8719eaac8e1d4d7239e8aafcec1; 40 module tests, 12 manifest tests and typecheck passed. Generated agent-stack files remain local and unpublished. |
 <!-- plan:results:D1-S3:end -->
 <!-- plan:stage:D1-S3:end -->
 
@@ -555,4 +558,10 @@ Commit. feat(stand): report Google beside Telegram — retain secrets and expose
 - replace-delivery D1
 
 - approve sha256:50714f0ff6d398839cf41ed82516b78e9f1bf4f2505224dc791c565a65b4dcc6 owner:approved
+
+- record-result D1-S3 commit:69f9304c04f0607d938556237b24caef09296acc
+
+- deviation D1-S3: GOOGLE_007 start-task was recorded after its RED test; the RED failures and subsequent GREEN run are preserved in the session.
+
+- close D1-S3 partial commit:69f9304c04f0607d938556237b24caef09296acc
 <!-- plan:execution:end -->
