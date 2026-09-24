@@ -474,20 +474,21 @@ Commit. feat(stand): report Google beside Telegram — retain secrets and expose
 
 ##### Tasks
 
-- [ ] GOOGLE_009 — Report Google and Telegram sync timing by surface while reset preserves saved credentials. (35 min)
+- [x] GOOGLE_009 — Report Google and Telegram sync timing by surface while reset preserves saved credentials. (35 min) — 0d63120904712a03afabbdd56cfa04dabc3ac53e
 <!-- plan:task-meta:{"writes":["acceptance/telegram-performance/run.ts","acceptance/telegram-performance/run.test.ts","acceptance/telegram-performance/README.md"],"predictedActiveMinutes":35,"predictedCredits":0,"how":"acceptance/telegram-performance/run.ts: group production sync-turn records by Source/surface and retain credential fingerprints during reset; acceptance/telegram-performance/run.test.ts: prove grouping, clean revision selection and secret-preserving reset with fixtures; acceptance/telegram-performance/README.md: document the opt-in real-account run against exact app/catalog branches","red":"bun run agent:test:backend -- acceptance/telegram-performance/run.test.ts -t tst_cert_google_001"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- acceptance/telegram-performance/run.test.ts` exits 0 — one stand reports both Sources and preserves credentials
+- [x] `bun run agent:test:backend -- acceptance/telegram-performance/run.test.ts` exits 0 — one stand reports both Sources and preserves credentials — 0d63120904712a03afabbdd56cfa04dabc3ac53e
 - [ ] A manual receipt records exact app/catalog revisions, per-surface counts and fetch/admission/wall time without claiming unmeasured speedup
-- [ ] Commit
+- [x] Commit — 0d63120904712a03afabbdd56cfa04dabc3ac53e
 
 ##### Results
 
 <!-- plan:results:D1-S5:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| GOOGLE_009 | 0d63120904712a03afabbdd56cfa04dabc3ac53e | 2026-09-24T13:31:13.914Z–2026-09-24T13:41:36.000Z | 10 / 11 min | unavailable: runner did not expose usage | The existing manual stand groups production sync turns by Source and surface; nine scoped tests, typecheck and lint passed. No live-account timing receipt exists yet. |
 <!-- plan:results:D1-S5:end -->
 <!-- plan:stage:D1-S5:end -->
 <!-- plan:delivery:D1:end -->
@@ -573,4 +574,10 @@ Commit. feat(stand): report Google beside Telegram — retain secrets and expose
 - deviation D1-S4: Module suite exposed missing declared source/account/sync-pass fields in Contacts and Meetings; declarations now match the already-approved Google ownership stamps.
 
 - close D1-S4 partial commit:de4ae9d8d451dcaa22101341027a6318cfea8698
+
+- record-result D1-S5 commit:0d63120904712a03afabbdd56cfa04dabc3ac53e
+
+- deviation D1-S5: The approved manual real-account timing receipt remains pending account connection; no speedup is claimed.
+
+- close D1-S5 partial commit:0d63120904712a03afabbdd56cfa04dabc3ac53e
 <!-- plan:execution:end -->
