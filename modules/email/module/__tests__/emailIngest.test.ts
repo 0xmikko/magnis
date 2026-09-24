@@ -24,6 +24,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { BatchEntityInput, BatchLinkInput, GraphBatchInput } from "@magnis/plugin-sdk";
 import { mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { EmailModule } from "../service.ts";
+import { destSubpath } from "../helpers.ts";
 import { message } from "../../entities.ts";
 import type { EmailCanonical, SyncEnvelope } from "../../types.ts";
 
@@ -276,6 +277,33 @@ describe("email ingest — apply_batch shape (tst_be_emailingest_001)", () => {
     expect(call.mime_type).toBe("image/jpeg");
     expect(call.source_module).toBe("google");
     expect(call.source_surface).toBe("email");
+  });
+
+  /**
+   * @test-id: tst_module_email_ingest_003
+   * @scenario: scn_google_pull_004
+   * @covers: EmailModule.ingest
+   * @deterministic: yes
+   * @fixtures: one historical message and one live message, each with an attachment
+   */
+  it("tst_module_email_ingest_003 defers historical attachment bytes but fetches new ones", async () => {
+    const payload = msgPayload({ attachments: [{ attachment_id: "att-1", filename: "photo.jpg" }] });
+    await mod.ingest({ envelopes: [env({ kind: "snapshot", payload })] });
+    expect(spy(graph, "file_register").mock.calls[0]?.[0].download).toBe(false);
+    await mod.ingest({ envelopes: [env({ kind: "live", remote_id: "m2", payload })] });
+    expect(spy(graph, "file_register").mock.calls[1]?.[0].download).toBe(true);
+  });
+
+  /**
+   * @test-id: tst_module_email_ingest_004
+   * @scenario: scn_google_pull_004
+   * @covers: modules/email/module/helpers.ts::destSubpath
+   * @deterministic: yes
+   * @fixtures: an opaque 400-character Gmail attachment ID
+   */
+  it("tst_module_email_ingest_004 keeps every attachment path segment within filesystem limits", () => {
+    const path = destSubpath("acct", "message", "A".repeat(400), "photo.jpg");
+    expect(path.split("/").every((segment) => segment.length <= 255)).toBe(true);
   });
 
   // tst_fe_email_media_source_routing_001: source_module must be the ENVELOPE's

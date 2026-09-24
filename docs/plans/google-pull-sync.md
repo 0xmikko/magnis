@@ -588,4 +588,6 @@ Commit. feat(stand): report Google beside Telegram — retain secrets and expose
 - deviation D1-S5: Live Google acceptance found that Contacts and Meetings atomic address writes lacked manifest create permission for email.address. The manifest regression failed RED, then passed after declaring the existing schema; real-account verification remains pending package refresh.
 
 - deviation D1-S5: Live acceptance then exposed direct Contacts add_link fields that the host does not accept, plus Gmail quota-403 without Retry-After. Scoped regressions failed RED; direct links now use accepted fields and Gmail list/get preserve the provider minute-window hold. Real-account confirmation follows on the persistent smoke stand.
+
+- deviation D1-S5: Live Gmail acceptance exposed eager historical attachment downloads competing for the per-user quota and long opaque attachment IDs exceeding filesystem component limits; keep historical file metadata with on-demand bytes, retain eager live downloads, and segment local paths. Contacts also exceeded the generic Graph traversal cap on high-degree email addresses; request identity links through the existing filtered link read. Each behavior has a deterministic RED/GREEN regression.
 <!-- plan:execution:end -->

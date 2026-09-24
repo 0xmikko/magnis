@@ -845,7 +845,7 @@ export class ContactsModule {
     addrIds: string[],
   ): Promise<void> {
     // Re-sync short-circuit: the replica already has its hub.
-    const replicaLinks = await this.graph.list_links_for_entity(replicaId);
+    const replicaLinks = await this.graph.list_links_for_entity(replicaId, "identity");
     if (replicaLinks.some((l) => l.kind === "identity" && l.to_id === replicaId)) {
       return;
     }
@@ -854,7 +854,7 @@ export class ContactsModule {
     // identity edges to addresses too — filter to persons.
     const candidates = new Set<string>();
     for (const addrId of addrIds) {
-      const links = await this.graph.list_links_for_entity(addrId);
+      const links = await this.graph.list_links_for_entity(addrId, "identity");
       for (const l of links) {
         if (l.kind === "identity" && l.to_id === addrId) candidates.add(l.from_id);
       }

@@ -432,7 +432,7 @@ export interface GraphService {
   end_link(id: string, valid_until: string): Promise<void>;
   /** The entity's edges, ended ones included — an open edge reads
    * `validUntil === null`. */
-  list_links_for_entity(entity_id: string): Promise<LinkSummary[]>;
+  list_links_for_entity(entity_id: string, linkKind?: string): Promise<LinkSummary[]>;
   /** S6 batch: every canonical edge of MANY entities in ONE round-trip. Each
    * row carries `from_id`/`to_id`, so the caller groups. A page whose cards
    * read their neighbours off the edges uses this, never a per-row read. */

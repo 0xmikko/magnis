@@ -183,6 +183,7 @@ describe("contacts ingest — the replica model (tst_be_contactsingest_001)", ()
     } });
     await expect(mountWorld(world).ingest({ envelopes: [env({ payload: contactPayload() })] }))
       .resolves.toBeDefined();
+    expect(spy(world.graph, "list_links_for_entity").mock.calls.every((call) => call[1] === "identity")).toBe(true);
   });
 
   /**

@@ -507,7 +507,10 @@ export class EmailModule {
           // differently-named connector (google-ts).
           source_module: env.source_id,
           source_surface: "email",
-          download: true,
+          // Historical bytes load on demand; eager backfill competes with
+          // message hydration for the same Gmail per-user quota.
+          // @tested-by: tst_module_email_ingest_003
+          download: env.kind === "live",
         });
       }
 

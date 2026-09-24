@@ -7,6 +7,7 @@ import {
 } from "@magnis/connector-sdk";
 import {
   buildRawMessage,
+  downloadAttachment,
   encodeBase64UrlNoPad,
   fetchHistoryChanges,
   fetchMessagePage,
@@ -563,6 +564,23 @@ describe("email bootstrap cursor", () => {
       await expect(fetchMessagePage("tok", { history_id: "h1" }, fetchFn))
         .rejects.toBeInstanceOf(GoogleRateLimitError);
     }
+  });
+
+  /**
+   * @test-id: tst_src_iso_google_014
+   * @scenario: scn_google_pull_004
+   * @covers: sources/google/src/surfaces/email/gmail.ts::downloadAttachment
+   * @deterministic: yes
+   * @fixtures: Gmail attachment endpoint returns quota 403 without Retry-After
+   */
+  test("tst_src_iso_google_014 attachment download preserves a quota hold", async () => {
+    const quota = JSON.stringify({ error: { details: [{
+      reason: "RATE_LIMIT_EXCEEDED",
+      metadata: { quota_unit: "1/min/{project}/{user}", window_start_time: "1" },
+    }] } });
+    const fetchFn: FetchLike = async () => status(403, quota);
+    await expect(downloadAttachment("tok", "m1", "att-1", fetchFn))
+      .rejects.toBeInstanceOf(GoogleRateLimitError);
   });
 });
 

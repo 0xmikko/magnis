@@ -84,7 +84,10 @@ export function addressesOf(p: Data): string[] {
 /// files_dir + this). Mirrors the native dest_subpath; each segment sanitized.
 export function destSubpath(account: string, remote: string, attId: string, filename: string): string {
   const san = (s: string): string => s.replace(/[^A-Za-z0-9._-]/g, "_");
-  return `gmail/${san(account)}/${san(remote)}/${san(attId)}_${san(filename)}`;
+  // @tested-by: tst_module_email_ingest_004
+  // Gmail attachment IDs can exceed a filesystem's 255-byte component limit.
+  const segments = (s: string): string => san(s).match(/.{1,120}/g)?.join("/") ?? "";
+  return `gmail/${segments(account)}/${segments(remote)}/${segments(attId)}/${san(filename).slice(0, 120)}`;
 }
 
 /// Display sender: the source's from_name, else the raw from_address

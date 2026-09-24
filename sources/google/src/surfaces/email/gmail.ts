@@ -738,7 +738,9 @@ export async function downloadAttachment(
     headers: { authorization: `Bearer ${token}` },
   });
   checkRateLimit(resp);
-  if (!resp.ok) throw new Error(`Attachment download failed: ${String(resp.status)}`);
+  if (!resp.ok) {
+    await throwGoogleResponseError(resp, `Attachment download failed (${String(resp.status)})`, Date.now());
+  }
   // `AttachmentResponse` (gmail.rs:88): `data: Option<String>` — absent is the
   // "No attachment data" error, a non-string is a shape error.
   const body = asObject(await resp.json(), "AttachmentResponse");
