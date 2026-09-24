@@ -72,6 +72,10 @@ export interface CreateEntityParams {
   // messages set it to the message date so the chat index
   // entities(schema_id, idx, date DESC) orders them; omit → backend defaults.
   date?: string;
+  // the entity's dictionary, validated against its schema in the same
+  // write; omit → the entity starts empty. A schema with required fields
+  // needs them here.
+  properties?: Record<string, unknown>;
 }
 export interface ListEntitiesParams {
   schema_id: string;

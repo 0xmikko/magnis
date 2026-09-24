@@ -67,13 +67,14 @@ function seamRpc() {
   };
 }
 
+/** The config the last write persisted: an update's properties, or — for a
+ * create, which writes the trigger whole — the create's. */
 function persistedConfig(graph: G): TriggerConfigData {
-  const updateProperties = graph.spies.update_properties;
-  if (!updateProperties) throw new Error("update_properties spy not mounted");
-  const calls = updateProperties.mock.calls as [
-    { entity_id: string; properties: TriggerConfigData },
-  ][];
-  expect(calls.length).toBeGreaterThan(0);
+  // An update test mounts no create_entity; a create test may mount no update.
+  const calls = [
+    ...((graph.spies.create_entity?.mock.calls ?? []) as [{ properties: TriggerConfigData }][]),
+    ...((graph.spies.update_properties?.mock.calls ?? []) as [{ properties: TriggerConfigData }][]),
+  ];
   const lastWrite = calls[calls.length - 1];
   if (!lastWrite) throw new Error("no config write recorded");
   return lastWrite[0].properties;
