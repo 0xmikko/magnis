@@ -590,4 +590,6 @@ Commit. feat(stand): report Google beside Telegram — retain secrets and expose
 - deviation D1-S5: Live acceptance then exposed direct Contacts add_link fields that the host does not accept, plus Gmail quota-403 without Retry-After. Scoped regressions failed RED; direct links now use accepted fields and Gmail list/get preserve the provider minute-window hold. Real-account confirmation follows on the persistent smoke stand.
 
 - deviation D1-S5: Live Gmail acceptance exposed eager historical attachment downloads competing for the per-user quota and long opaque attachment IDs exceeding filesystem component limits; keep historical file metadata with on-demand bytes, retain eager live downloads, and segment local paths. Contacts also exceeded the generic Graph traversal cap on high-degree email addresses; request identity links through the existing filtered link read. Each behavior has a deterministic RED/GREEN regression.
+
+- deviation D1-S5: A real Gmail per-user minute-quota 403 omitted both Retry-After and window_start_time. Preserve its typed rate-limit state with a conservative full-minute hold derived from the supplied quota_unit; a deterministic regression failed RED before the fix.
 <!-- plan:execution:end -->

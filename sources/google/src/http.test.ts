@@ -78,6 +78,24 @@ test("tst_src_iso_google_012 uses Google's quota window for a typed retry", asyn
   expect((error as GoogleRateLimitError).retryAfterSecs).toBe(42);
 });
 
+/**
+ * @test-id: tst_src_iso_google_015
+ * @scenario: scn_google_pull_004
+ * @covers: sources/google/src/http.ts::throwGoogleResponseError
+ * @deterministic: yes
+ * @fixtures: Gmail per-user minute quota 403 without a window_start_time
+ */
+test("tst_src_iso_google_015 holds a full minute when Google omits the quota window", async () => {
+  const quota = JSON.stringify({ error: { details: [{
+    reason: "RATE_LIMIT_EXCEEDED",
+    metadata: { quota_unit: "1/min/{project}/{user}" },
+  }] } });
+  const resp = { ...response(403, null), text: async () => quota };
+  const error = await throwGoogleResponseError(resp, "Gmail get message failed", 1_000).catch((e: unknown) => e);
+  expect(error).toBeInstanceOf(GoogleRateLimitError);
+  expect((error as GoogleRateLimitError).retryAfterSecs).toBe(60);
+});
+
 describe("fetchWithTimeout", () => {
   // A hanging fetch that honors the injected AbortSignal exactly like the real
   // fetch: it rejects when the signal aborts. The AbortController must fire at the
