@@ -30,7 +30,7 @@ export interface ScheduleParam {
 /** The four states the module's own `list` tool documents and filters on. It
  * was `string`, so `update` wrote whatever a caller sent and the graph kept
  * it; the declaration in `entities.ts` now refuses the rest. */
-export type TriggerStatus = "active" | "paused" | "disabled" | "expired";
+export type TriggerStatus = "active" | "stopped" | "paused" | "disabled" | "expired";
 
 export interface TriggerConfigData {
   name: string;

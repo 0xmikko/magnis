@@ -146,7 +146,7 @@ const UPDATE_PARAMS = {
         name: { type: "string" },
         gate_prompt: { type: "string" },
         action_prompt: { type: "string" },
-        status: { type: "string", enum: ["active", "paused", "disabled", "expired"] },
+        status: { type: "string", enum: ["active", "stopped", "paused", "disabled", "expired"] },
         event_kinds: { type: "array", items: { type: "string" } },
         schema_filter: { type: "string" },
         expires_at: { type: "string", format: "date-time" },
@@ -419,7 +419,7 @@ export class TriggersModule {
       properties: {
         status: {
           type: "string",
-          description: "Filter by status: active, paused, disabled, expired",
+          description: "Filter by status: active, stopped, paused, disabled, expired",
         },
       },
       additionalProperties: false,

@@ -48,6 +48,15 @@ describe("triggers declares what it writes", () => {
     }
   });
 
+  it("the stopped state the trigger page writes passes the declaration", () => {
+    // TriggerDetailPanel's stop button writes status "stopped".
+    const verdict = trigger.safeParse({
+      name: "n", gate_prompt: "g", action_prompt: "a", status: "stopped",
+      event_kinds: [], debounce_seconds: 0, firing_count: 0,
+    });
+    expect(verdict.error?.issues ?? []).toEqual([]);
+  });
+
   it("a field the module does not declare is refused, and the error names it", () => {
     const verdict = trigger.safeParse({
       name: "n", gate_prompt: "g", action_prompt: "a", status: "active",
