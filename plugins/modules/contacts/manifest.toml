@@ -19,12 +19,12 @@ requires_schemas = [ "email.address" ]
 
 # Sync surface this module consumes (fed by the matching source connector).
 [surfaces.contacts]
-reconciliation = { mode = "none" }
+reconciliation = { mode = "full_snapshot" }
 # The surface's primary-item schema.
-item = "contacts.person"
+item = "contacts.google_contact"
 # The schemas the surface reports progress on, with the names the Accounts
 # panel prints; the host counts them and reads the plan from page receipts.
-progress = { "contacts.person" = "contacts" }
+progress = { "contacts.google_contact" = "contacts" }
 
 # Foreign asks beyond the implicit own namespace: writes to `contacts.` records,
 # own:own links, and reads of own schemas need no declaration.

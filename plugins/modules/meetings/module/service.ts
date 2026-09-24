@@ -13,6 +13,8 @@
 
 import {
   rpc,
+  removeUnseenSourceReplicas,
+  syncComplete,
   syncHandler,
   tool,
   writeTool,
@@ -348,6 +350,7 @@ export class MeetingsModule {
   @syncHandler("meetings")
   async ingest(params: {
     envelopes?: SyncEnvelope[];
+    command?: "bootstrap" | "catch_up" | "backfill";
     /** The pass the worker is in; absent for a Source effect outside a
      * worker, which states nothing. */
     generation?: string;
@@ -358,6 +361,7 @@ export class MeetingsModule {
     // events a page left out as skipped.
     // @tested-by: tst_module_meetings_plan_001
     const stated = typeof params.generation === "string" && params.generation !== "";
+    const fullPass = params.command === "bootstrap";
     const plan = { total: 0, skipped: 0 };
 
     // Validate ALL user_ids before any write so a bad envelope writes
@@ -372,10 +376,14 @@ export class MeetingsModule {
 
     const dropped: string[] = [];
     const triggers: MeetingTriggerCheck[] = [];
+    const deltaAnchors = fullPass ? [] : [...new Set(envelopes.flatMap((env) => env.kind !== "delete" && env.payload.entity_type !== "calendar" && env.remote_id ? [env.remote_id] : []))];
+    const known = stated && deltaAnchors.length > 0 ? await this.graph.find_by_anchors(deltaAnchors) : [];
+    const existing = new Set(deltaAnchors.filter((_, i) => known[i]));
+    const added = new Set<string>();
     for (const env of envelopes) {
       if (env.kind === "delete") {
         try {
-          await this.ingestDelete(env);
+          if (await this.ingestDelete(env) && stated && !fullPass) plan.total -= 1;
         } catch {
           if (env.remote_id) dropped.push(env.remote_id);
         }
@@ -385,32 +393,54 @@ export class MeetingsModule {
       if (!env.remote_id) continue;
       if (env.payload.entity_type === "calendar") {
         const total = env.payload.events_total;
-        const skipped = env.payload.skipped;
-        if (typeof total === "number") plan.total += total;
-        if (typeof skipped === "number") plan.skipped += skipped;
+        if (typeof total === "number" && stated && fullPass) plan.total += total;
         continue;
       }
-      await this.ingestUpsert(env, triggers);
+      const written = await this.ingestUpsert(env, triggers, params.generation);
+      if (written && stated && !fullPass && !existing.has(env.remote_id) && !added.has(env.remote_id)) {
+        plan.total += 1;
+        added.add(env.remote_id);
+      }
     }
 
     if (!stated) return { dropped_remote_ids: dropped, trigger_checks: triggers };
     return { dropped_remote_ids: dropped, trigger_checks: triggers, plan: { [CAL]: plan } };
   }
 
+  /** A full Calendar pass is complete only when the host calls this hook.
+   * An interrupted pass never reaches it and cannot erase unseen meetings.
+   * @tested-by: tst_module_google_001 */
+  @syncComplete()
+  async onSyncComplete(params: { source_id: string; account_id: string; generation: string }): Promise<{
+    departed: string[];
+    plan: Record<string, { total: number; skipped: number }>;
+  }> {
+    if (!params.source_id || !params.account_id || !params.generation) {
+      throw new Error("meetings sync complete requires source, account and generation");
+    }
+    await removeUnseenSourceReplicas(this.graph, CAL, params.source_id, params.account_id, params.generation);
+    return { departed: [], plan: { [CAL]: { total: 0, skipped: 0 } } };
+  }
+
   /// Delete envelope: resolve the meeting by its source external_id and remove
   /// it. An unknown id is a silent no-op (native delete_by_remote_id parity).
-  private async ingestDelete(env: SyncEnvelope): Promise<void> {
-    if (!env.remote_id) return;
+  private async ingestDelete(env: SyncEnvelope): Promise<boolean> {
+    if (!env.remote_id) return false;
     // S5: the remote id IS the node's anchor — resolution goes through the
     // one chokepoint, not the retired record external id.
     const id = await this.graph.find_by_anchor(env.remote_id);
-    if (id) await this.graph.delete_entity(id);
+    if (!id) return false;
+    const entity = await this.graph.get_entity(id);
+    if (entity?.schema_id !== CAL || !entity.properties) return false;
+    if (entity.properties.source_id !== env.source_id || entity.properties.account_id !== env.account_id) return false;
+    await this.graph.delete_entity(id);
+    return true;
   }
 
   /// Upsert one calendar event as a NODE (idempotent on its anchor) plus the
   /// `attendee` edges its invite lists, then, for LIVE events, assemble the
   /// trigger.check with those attendees' address ids.
-  private async ingestUpsert(env: SyncEnvelope, triggers: MeetingTriggerCheck[]): Promise<void> {
+  private async ingestUpsert(env: SyncEnvelope, triggers: MeetingTriggerCheck[], generation?: string): Promise<boolean> {
     const remoteId = env.remote_id;
     if (!remoteId) throw new Error("meetings ingest: envelope missing remote_id");
     const payload = env.payload as Data;
@@ -421,6 +451,9 @@ export class MeetingsModule {
     const attendees = parseAttendees(payload, remoteId);
     const dict: Data = { ...payload };
     delete dict.attendees;
+    dict.source_id = env.source_id;
+    dict.account_id = env.account_id;
+    if (generation) dict.sync_pass = generation;
 
     const entity: BatchEntityInput = {
       key: remoteId,
@@ -449,7 +482,7 @@ export class MeetingsModule {
     }
     const result = await this.graph.apply_batch({ entities: [entity], refs, links });
     const entityId = result.ids[remoteId];
-    if (!entityId) return;
+    if (!entityId) return false;
 
     // Reconcile: the invite's CURRENT list is complete for this event, so an
     // attendee the provider no longer reports leaves — the earlier design got this
@@ -464,7 +497,7 @@ export class MeetingsModule {
       }
     }
 
-    if (env.kind !== "live") return;
+    if (env.kind !== "live") return true;
 
     triggers.push({
       type: "trigger.check",
@@ -486,6 +519,7 @@ export class MeetingsModule {
         occurred_at: str(payload, "starts_at") ?? null,
       },
     });
+    return true;
   }
 
   /// `email.address` is the email plugin's schema, so the nodes are minted by

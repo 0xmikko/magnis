@@ -33,7 +33,7 @@ to = "projects.project"
 
 # Sync surface this module consumes (fed by the matching source connector).
 [surfaces.meetings]
-reconciliation = { mode = "none" }
+reconciliation = { mode = "full_snapshot" }
 # The surface's primary-item schema.
 item = "meetings.calendar_event"
 # The schemas the surface reports progress on, with the names the Accounts

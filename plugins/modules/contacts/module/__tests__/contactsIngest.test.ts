@@ -23,7 +23,7 @@
  * @deterministic: yes
  */
 
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { BatchEntityInput, GraphBatchInput } from "@magnis/plugin-sdk";
 import { mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { ContactsModule } from "../service.ts";
@@ -64,6 +64,7 @@ interface World {
   linksFor?: Record<string, { from_id: string; to_id: string; kind: string }[]>;
   entities?: Record<string, { id: string; schema_id: string; name?: string }>;
   externalIds?: Record<string, string>;
+  graphOverrides?: Record<string, unknown>;
 }
 
 function ingestWorld(over: Partial<World> = {}): World {
@@ -101,6 +102,7 @@ function ingestWorld(over: Partial<World> = {}): World {
       return Promise.resolve();
     },
     list_entities: () => Promise.resolve({ items: [], total: 0 }),
+    ...world.graphOverrides,
   } as never);
   return world;
 }
@@ -311,12 +313,73 @@ describe("contacts ingest — the replica model (tst_be_contactsingest_001)", ()
     const world = ingestWorld();
     const mod = mountWorld(world);
     const list = env({ remote_id: "list", payload: { entity_type: "list", total_people: 3 } });
-    const first = await mod.ingest({ generation: "initial:r:1", envelopes: [list, env({ payload: contactPayload() })] });
-    expect(first).toEqual({ dropped_remote_ids: [], trigger_checks: [], plan: { "contacts.person": { total: 3, skipped: 0 } } });
+    const first = await mod.ingest({ command: "bootstrap", generation: "initial:r:1", envelopes: [list, env({ payload: contactPayload() })] });
+    expect(first).toEqual({ dropped_remote_ids: [], trigger_checks: [], plan: { "contacts.google_contact": { total: 3, skipped: 0 } } });
     expect(lastBatch(world.graph).entities.map((item) => item.key)).not.toContain("list");
-    const later = await mod.ingest({ generation: "initial:r:1", envelopes: [env({ remote_id: "list", payload: { entity_type: "list", skipped: 1 } }), env({ remote_id: "gpeople:c2", payload: contactPayload({ id: "c2" }) })] });
-    expect(later.plan).toEqual({ "contacts.person": { total: 0, skipped: 1 } });
+    const later = await mod.ingest({ command: "bootstrap", generation: "initial:r:1", envelopes: [env({ remote_id: "list", payload: { entity_type: "list", skipped: 1 } }), env({ remote_id: "gpeople:c2", payload: contactPayload({ id: "c2" }) })] });
+    expect(later.plan).toEqual({ "contacts.google_contact": { total: 0, skipped: 1 } });
     const outside = await mod.ingest({ envelopes: [list] });
     expect(outside).toEqual({ dropped_remote_ids: [], trigger_checks: [] });
+  });
+});
+
+/**
+ * @test-id: tst_module_google_002
+ * @scenario: scn_google_pull_003
+ * @covers: ContactsModule.ingest, ContactsModule.onSyncComplete
+ * @deterministic: yes
+ * @fixtures: one Google replica attached to a curated hub; an unseen replica after token expiry
+ */
+describe("Google contact removal", () => {
+  it("deletes the anchored replica on a People deletion and leaves its curated hub untouched", async () => {
+    const delete_entity = vi.fn().mockResolvedValue(undefined);
+    const get_entity = vi.fn().mockResolvedValue({ id: "replica", schema_id: "contacts.google_contact", properties: { source_id: "google", account_id: "acct-1" } });
+    const world = ingestWorld({ graphOverrides: {
+      find_by_anchor: vi.fn().mockResolvedValue("replica"), get_entity, delete_entity,
+    } });
+    const mod = mountWorld(world);
+    await mod.ingest({ command: "catch_up", generation: "initial:r:1", envelopes: [env({ kind: "delete", remote_id: "gpeople:abc123" })] });
+    expect(delete_entity).toHaveBeenCalledExactlyOnceWith("replica");
+    expect(world.minted).toEqual([]);
+  });
+
+  it("reconciles only unseen Google replicas after a complete pass", async () => {
+    const delete_entity = vi.fn().mockResolvedValue(undefined);
+    const list_entities_by_property_field = vi.fn().mockResolvedValue({ items: [
+      { id: "old", schema_id: "contacts.google_contact", properties: { source_id: "google", account_id: "acct-1", sync_pass: "initial:r:1" } },
+      { id: "seen", schema_id: "contacts.google_contact", properties: { source_id: "google", account_id: "acct-1", sync_pass: "initial:r:2" } },
+      { id: "other", schema_id: "contacts.google_contact", properties: { source_id: "google", account_id: "acct-2", sync_pass: "initial:r:1" } },
+    ], total: 3 });
+    const world = ingestWorld({ graphOverrides: { list_entities_by_property_field, delete_entity } });
+    const mod = mountWorld(world);
+    expect(delete_entity).not.toHaveBeenCalled();
+    expect(await mod.onSyncComplete({ source_id: "google", account_id: "acct-1", generation: "initial:r:2" })).toEqual({
+      departed: [], plan: { "contacts.google_contact": { total: 0, skipped: 0 } },
+    });
+    expect(delete_entity).toHaveBeenCalledExactlyOnceWith("old");
+  });
+});
+
+/**
+ * @test-id: tst_module_google_005
+ * @scenario: scn_google_pull_004
+ * @covers: ContactsModule.ingest (incremental plan)
+ * @deterministic: yes
+ * @fixtures: one new People replica, its replay and deletion during token-based Poll
+ */
+describe("People Poll progress", () => {
+  it("counts only the first admitted replica and its first deletion", async () => {
+    const find_by_anchors = vi.fn().mockResolvedValueOnce([null]).mockResolvedValueOnce(["replica"]);
+    const find_by_anchor = vi.fn().mockResolvedValueOnce("replica").mockResolvedValueOnce(null);
+    const get_entity = vi.fn().mockResolvedValue({ id: "replica", schema_id: "contacts.google_contact", properties: { source_id: "google", account_id: "acct-1" } });
+    const delete_entity = vi.fn().mockResolvedValue(undefined);
+    const world = ingestWorld({ graphOverrides: { find_by_anchors, find_by_anchor, get_entity, delete_entity } });
+    const mod = mountWorld(world);
+    const person = env({ payload: contactPayload() });
+    expect((await mod.ingest({ command: "catch_up", generation: "initial:r:1", envelopes: [person] })).plan?.["contacts.google_contact"]).toEqual({ total: 1, skipped: 0 });
+    expect((await mod.ingest({ command: "catch_up", generation: "initial:r:1", envelopes: [person] })).plan?.["contacts.google_contact"]).toEqual({ total: 0, skipped: 0 });
+    expect((await mod.ingest({ command: "catch_up", generation: "initial:r:1", envelopes: [env({ kind: "delete" })] })).plan?.["contacts.google_contact"]).toEqual({ total: -1, skipped: 0 });
+    expect((await mod.ingest({ command: "catch_up", generation: "initial:r:1", envelopes: [env({ kind: "delete" })] })).plan?.["contacts.google_contact"]).toEqual({ total: 0, skipped: 0 });
+    expect(delete_entity).toHaveBeenCalledExactlyOnceWith("replica");
   });
 });

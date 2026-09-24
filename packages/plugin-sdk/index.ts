@@ -111,6 +111,29 @@ export async function searchEntitiesPage(
   }
 }
 
+/** Remove only this account's source replicas left unseen by a completed pass. */
+export async function removeUnseenSourceReplicas(
+  graph: GraphService,
+  schemaId: string,
+  sourceId: string,
+  accountId: string,
+  generation: string,
+): Promise<void> {
+  const rows: RawEntity[] = [];
+  for (let offset = 0;; offset += 500) {
+    const page = await graph.list_entities_by_property_field({
+      entity_schema: schemaId, key: "account_id", value: accountId, limit: 500, offset,
+    });
+    rows.push(...page.items);
+    if (offset + page.items.length >= page.total) break;
+  }
+  for (const row of rows) {
+    if (row.schema_id !== schemaId || !row.properties) continue;
+    if (row.properties.source_id !== sourceId || row.properties.account_id !== accountId || row.properties.sync_pass === generation) continue;
+    await graph.delete_entity(row.id);
+  }
+}
+
 // ─────────────────── payload coercion helpers ──────────────────────────────
 // Domain-neutral readers for the opaque `Record<string, unknown>` maps every
 // plugin gets back from the graph (window-row `data`, `get_entity_full` record

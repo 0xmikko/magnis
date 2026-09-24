@@ -322,9 +322,8 @@ export class EmailModule {
       // dispatcher couldn't resolve user_id, so we cannot user-scope the write.
       if (!env.user_id) continue;
       if (env.kind === "delete") {
-        plan.total -= 1;
         try {
-          await this.ingestDelete(env);
+          if (await this.ingestDelete(env)) plan.total -= 1;
         } catch {
           if (env.remote_id) dropped.push(env.remote_id);
         }
@@ -342,7 +341,6 @@ export class EmailModule {
         plan.skipped += skipped;
         continue;
       }
-      if (env.kind === "live") plan.total += 1;
       messages.push(env);
     }
 
@@ -353,7 +351,7 @@ export class EmailModule {
     let chunkAddrs = new Set<string>();
     const flush = async (): Promise<void> => {
       if (chunk.length > 0) {
-        await this.ingestMessageBatch(chunk, triggers);
+        plan.total += await this.ingestMessageBatch(chunk, triggers, stated);
         await Promise.resolve(); // yield so waiting RPCs get the connection
       }
       chunk = [];
@@ -382,12 +380,14 @@ export class EmailModule {
   }
 
   /// Delete envelope: resolve the email by its source external_id and remove it.
-  private async ingestDelete(env: SyncEnvelope): Promise<void> {
-    if (!env.remote_id) return;
+  private async ingestDelete(env: SyncEnvelope): Promise<boolean> {
+    if (!env.remote_id) return false;
     // S5: the remote id IS the node's anchor — resolution goes through the
     // one chokepoint.
     const id = await this.graph.find_by_anchor(env.remote_id);
-    if (id) await this.graph.delete_entity(id);
+    if (!id) return false;
+    await this.graph.delete_entity(id);
+    return true;
   }
 
   /// One chunk → one apply_batch (messages + folded address entities + links),
@@ -395,7 +395,8 @@ export class EmailModule {
   private async ingestMessageBatch(
     messages: SyncEnvelope[],
     triggers: EmailTriggerCheck[],
-  ): Promise<void> {
+    countLive: boolean,
+  ): Promise<number> {
     const entities: BatchEntityInput[] = [];
     const links: BatchLinkInput[] = [];
     const addrSeen = new Set<string>();
@@ -467,8 +468,18 @@ export class EmailModule {
       }
     }
 
+    // @tested-by: tst_module_google_003
+    // Graph's batch totals include address nodes, so check only live message
+    // anchors before the atomic write and count keys that it actually admitted.
+    const liveIds = countLive
+      ? [...new Set(messages.filter((env) => env.kind === "live").map((env) => env.remote_id).filter((id): id is string => Boolean(id)))]
+      : [];
+    const existing = liveIds.length > 0 ? await this.graph.find_by_anchors(liveIds) : [];
+    if (existing.length !== liveIds.length) throw new Error("email ingest: anchor lookup length mismatch");
+
     // One atomic op (rolls back on failure; idempotent on external_id).
     const result = await this.graph.apply_batch({ entities, refs: [], links });
+    const createdLive = liveIds.filter((id, index) => existing[index] === null && result.ids[id] !== undefined).length;
 
     // Post-apply: needs the resolved message id.
     for (const env of messages) {
@@ -539,6 +550,7 @@ export class EmailModule {
         });
       }
     }
+    return createdLive;
   }
 
   // ── send / reply / batch_send (@writeTool) ────────────────────

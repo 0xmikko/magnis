@@ -41,6 +41,7 @@ function ingestGraph(): G {
       }),
     file_register: () => Promise.resolve("file-id"),
     find_by_anchor: () => Promise.resolve("existing-id"),
+    find_by_anchors: (anchors) => Promise.resolve(anchors.map(() => null)),
     delete_entity: () => Promise.resolve(undefined),
   });
 }
@@ -368,6 +369,42 @@ describe("email ingest — the plan from the pages", () => {
     expect(r).toEqual({ dropped_remote_ids: [], trigger_checks: expect.any(Array) as never });
     expect("plan" in r).toBe(false);
   });
+});
+
+/**
+ * @test-id: tst_module_google_003
+ * @scenario: scn_google_pull_004
+ * @covers: plugins/modules/email/module/service.ts::ingest
+ * @deterministic: yes
+ * @fixtures: one existing and one new live message, one present and one missing deletion, then a replay
+ */
+it("tst_module_google_003 counts only newly admitted Gmail messages and actual removals", async () => {
+  const graph = ingestGraph();
+  const mod = mountModule(EmailModule, { graph, ctx: { extension_id: "email" } }).module;
+  spy(graph, "find_by_anchors").mockImplementation((anchors: string[]) =>
+    Promise.resolve(anchors.map((anchor) => anchor === "m-existing" ? "id-existing" : null)));
+  spy(graph, "find_by_anchor").mockImplementation((anchor: string) =>
+    Promise.resolve(anchor === "m-gone" ? "id-gone" : null));
+
+  const first = await mod.ingest({ generation: "forward:r:1", envelopes: [
+    env({ kind: "live", remote_id: "m-existing", payload: msgPayload() }),
+    env({ kind: "live", remote_id: "m-new", payload: msgPayload() }),
+  ] });
+  expect(first.plan).toEqual({ "email.message": { total: 1, skipped: 0 } });
+
+  const deleted = await mod.ingest({ generation: "forward:r:1", envelopes: [
+    env({ kind: "delete", remote_id: "m-gone", payload: {} }),
+    env({ kind: "delete", remote_id: "m-missing", payload: {} }),
+  ] });
+  expect(deleted.plan).toEqual({ "email.message": { total: -1, skipped: 0 } });
+  expect(spy(graph, "delete_entity")).toHaveBeenCalledTimes(1);
+
+  spy(graph, "find_by_anchors").mockImplementation((anchors: string[]) =>
+    Promise.resolve(anchors.map(() => "id-existing")));
+  const replay = await mod.ingest({ generation: "forward:r:1", envelopes: [
+    env({ kind: "live", remote_id: "m-new", payload: msgPayload() }),
+  ] });
+  expect(replay.plan).toEqual({ "email.message": { total: 0, skipped: 0 } });
 });
 
 describe("email ingest — DB-access guarantees (tst_be_emaildb_005 / INV-DB-3)", () => {

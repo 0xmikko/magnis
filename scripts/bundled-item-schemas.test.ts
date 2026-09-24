@@ -47,7 +47,7 @@ describe("tst_pub_item_schemas_001", () => {
     ["telegram", "telegram", "telegram.message"],
     ["email", "email", "email.message"],
     ["meetings", "meetings", "meetings.calendar_event"],
-    ["contacts", "contacts", "contacts.person"],
+    ["contacts", "contacts", "contacts.google_contact"],
   ];
 
   for (const [moduleId, surface, schema] of expected) {
@@ -68,16 +68,23 @@ describe("tst_pub_item_schemas_001", () => {
     }
   });
 
-  // Snapshot omission is not provider evidence that a membership ended, so
-  // every syncing module leaves host reconciliation disabled.
+  // Only Calendar and People token-expiry passes provide a complete set;
+  // other surfaces must never infer deletion from snapshot omission.
   const reconciliation: Readonly<Record<string, { mode: string }>> = {
     telegram: { mode: "none" },
     email: { mode: "none" },
-    meetings: { mode: "none" },
-    contacts: { mode: "none" },
+    meetings: { mode: "full_snapshot" },
+    contacts: { mode: "full_snapshot" },
   };
 
-  test("every syncing surface declares its host reconciliation policy", () => {
+  /**
+   * @test-id: tst_cert_google_003
+   * @scenario: scn_google_pull_005
+   * @covers: plugins/modules/meetings/manifest.toml, plugins/modules/contacts/manifest.toml
+   * @deterministic: yes
+   * @fixtures: bundled module manifests only
+   */
+  test("tst_cert_google_003 every syncing surface declares its host reconciliation policy", () => {
     for (const [moduleId] of expected) {
       const surfaces = manifest(moduleId).surfaces ?? {};
       for (const [name, decl] of Object.entries(surfaces)) {
@@ -93,7 +100,7 @@ describe("tst_pub_item_schemas_001", () => {
   const progress: readonly (readonly [string, string, Record<string, string>])[] = [
     ["telegram", "telegram", { "telegram.chat": "chats", "telegram.message": "messages" }],
     ["email", "email", { "email.message": "messages" }],
-    ["contacts", "contacts", { "contacts.person": "contacts" }],
+    ["contacts", "contacts", { "contacts.google_contact": "contacts" }],
     ["meetings", "meetings", { "meetings.calendar_event": "events" }],
     ["x", "x", { "x.post": "posts", "x.profile": "profiles" }],
     ["linkedin", "linkedin", { "linkedin.profile": "profiles", "linkedin.post": "posts" }],

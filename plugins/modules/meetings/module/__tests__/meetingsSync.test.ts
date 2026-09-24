@@ -37,6 +37,8 @@ function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
         dropped_keys: [],
       }),
     find_by_anchor: (_id: string): Promise<string | null> => Promise.resolve(null),
+    get_entity: (_id: string) => Promise.resolve({ id: "m-del", schema_id: CAL, properties: { source_id: "google", account_id: "acct-1" } }),
+    find_by_anchors: (anchors: string[]): Promise<(string | null)[]> => Promise.resolve(anchors.map(() => null)),
     // The upsert reconciles the event's attendee edges against the invite's
     // CURRENT list — one edge read per upserted event.
     list_links_for_entity: (): Promise<never[]> => Promise.resolve([]),
@@ -94,7 +96,7 @@ describe("meetings @syncHandler — upsert", () => {
         schema_id: CAL,
         name: "Past meeting",
         anchor: "r2",
-        properties: payload,
+        properties: { ...payload, source_id: "google", account_id: "acct-1" },
         confidence: 90,
       },
     ]);
@@ -132,6 +134,8 @@ describe("meetings @syncHandler — live envelopes emit a trigger.check", () => 
     expect(frag.entities[0]?.properties).toEqual({
       title: "Standup",
       starts_at: "2026-07-28T09:00:00Z",
+      source_id: "google",
+      account_id: "acct-1",
     });
     expect(frag.refs).toEqual([
       { key: "addr:a@x", anchor: "email:address:a@x" },
@@ -224,25 +228,75 @@ describe("meetings @syncHandler — delete", () => {
 });
 
 /**
+ * @test-id: tst_module_google_001
+ * @scenario: scn_google_pull_002
+ * @covers: MeetingsModule.ingest, MeetingsModule.onSyncComplete
+ * @deterministic: yes
+ * @fixtures: two Google accounts, an unrelated source and a curated meeting
+ */
+describe("completed Calendar replacement pass", () => {
+  it("removes only unseen replicas owned by this Source/account after completion", async () => {
+    const stale = { id: "old", anchor: "gcal:old", schema_id: CAL, properties: { source_id: "google", account_id: "acct-1", sync_pass: "initial:r:1" } };
+    const seen = { id: "seen", anchor: "gcal:seen", schema_id: CAL, properties: { source_id: "google", account_id: "acct-1", sync_pass: "initial:r:2" } };
+    const otherAccount = { id: "other", anchor: "gcal:other", schema_id: CAL, properties: { source_id: "google", account_id: "acct-2", sync_pass: "initial:r:1" } };
+    const curated = { id: "curated", anchor: "local:curated", schema_id: CAL, properties: { account_id: "acct-1" } };
+    const list_entities_by_property_field = vi.fn().mockResolvedValue({ items: [stale, seen, otherAccount, curated], total: 4 });
+    const delete_entity = vi.fn().mockResolvedValue(undefined);
+    const { mod } = makeModule(makeGraph({ list_entities_by_property_field, delete_entity }));
+
+    expect(delete_entity).not.toHaveBeenCalled(); // an interrupted pass has no completion hook
+    expect(await mod.onSyncComplete({ source_id: "google", account_id: "acct-1", generation: "initial:r:2" })).toEqual({
+      departed: [], plan: { [CAL]: { total: 0, skipped: 0 } },
+    });
+    expect(list_entities_by_property_field).toHaveBeenCalledWith({ entity_schema: CAL, key: "account_id", value: "acct-1", limit: 500, offset: 0 });
+    expect(delete_entity).toHaveBeenCalledTimes(1);
+    expect(delete_entity).toHaveBeenCalledWith("old");
+  });
+});
+
+/**
  * @test-id: tst_module_meetings_plan_001
  * @scenario: scn_google_sync_001
  * @covers: MeetingsModule.ingest (plan)
  * @deterministic: yes
- * @fixtures: a calendar envelope counting 3 events with one skipped; a later page leaving one out
+ * @fixtures: terminal full Calendar count and a later catch-up page
  */
 describe("meetings @syncHandler — the plan from the pages", () => {
-  it("states the calendar's count in full, the events a page leaves out as skipped, and nothing outside a worker's pass", async () => {
+  it("states the completed full Calendar count once and nothing outside a worker's pass", async () => {
     const apply_batch = vi.fn().mockResolvedValue({ ids: { r1: "id-r1" }, created: 1, updated: 0, links_added: 0, dropped_keys: [] });
     const { mod } = makeModule(makeGraph({ apply_batch }));
-    const calendar = env({ remote_id: "calendar", payload: { entity_type: "calendar", events_total: 3, skipped: 1 } });
-    const first = await mod.ingest({ generation: "initial:r:1", envelopes: [calendar, env({ payload: { title: "Standup", start_at: "2026-02-01T10:00:00Z", end_at: "2026-02-01T10:15:00Z" } })] });
-    expect(first).toEqual({ dropped_remote_ids: [], trigger_checks: [], plan: { "meetings.calendar_event": { total: 3, skipped: 1 } } });
+    const calendar = env({ remote_id: "calendar", payload: { entity_type: "calendar", events_total: 3 } });
+    const first = await mod.ingest({ command: "bootstrap", generation: "initial:r:1", envelopes: [calendar, env({ payload: { title: "Standup", start_at: "2026-02-01T10:00:00Z", end_at: "2026-02-01T10:15:00Z" } })] });
+    expect(first).toEqual({ dropped_remote_ids: [], trigger_checks: [], plan: { "meetings.calendar_event": { total: 3, skipped: 0 } } });
     expect(apply_batch).toHaveBeenCalledTimes(1);
     expect((apply_batch.mock.calls[0]?.[0] as GraphBatchInput).entities.map((item) => item.key)).not.toContain("calendar");
-    const later = await mod.ingest({ generation: "initial:r:1", envelopes: [env({ remote_id: "calendar", payload: { entity_type: "calendar", skipped: 1 } })] });
-    expect(later.plan).toEqual({ "meetings.calendar_event": { total: 0, skipped: 1 } });
+    const later = await mod.ingest({ command: "catch_up", generation: "initial:r:1", envelopes: [env({ remote_id: "calendar", payload: { entity_type: "calendar", events_total: 3 } })] });
+    expect(later.plan).toEqual({ "meetings.calendar_event": { total: 0, skipped: 0 } });
     const outside = await mod.ingest({ envelopes: [calendar] });
     expect(outside).toEqual({ dropped_remote_ids: [], trigger_checks: [] });
+  });
+});
+
+/**
+ * @test-id: tst_module_google_004
+ * @scenario: scn_google_pull_004
+ * @covers: MeetingsModule.ingest (incremental plan)
+ * @deterministic: yes
+ * @fixtures: one new event, its replay and deletion during token-based Poll
+ */
+describe("Calendar Poll progress", () => {
+  it("counts only a Graph create and a real deletion, not a replay", async () => {
+    const find_by_anchors = vi.fn().mockResolvedValueOnce([null]).mockResolvedValueOnce(["id-r1"]);
+    const find_by_anchor = vi.fn().mockResolvedValueOnce("id-r1").mockResolvedValueOnce(null);
+    const get_entity = vi.fn().mockResolvedValue({ id: "id-r1", schema_id: CAL, properties: { source_id: "google", account_id: "acct-1" } });
+    const delete_entity = vi.fn().mockResolvedValue(undefined);
+    const { mod } = makeModule(makeGraph({ find_by_anchors, find_by_anchor, get_entity, delete_entity }));
+    const event = env({ payload: { title: "New event", starts_at: "2026-02-01T10:00:00Z" } });
+    expect((await mod.ingest({ command: "catch_up", generation: "initial:r:1", envelopes: [event] })).plan?.[CAL]).toEqual({ total: 1, skipped: 0 });
+    expect((await mod.ingest({ command: "catch_up", generation: "initial:r:1", envelopes: [event] })).plan?.[CAL]).toEqual({ total: 0, skipped: 0 });
+    expect((await mod.ingest({ command: "catch_up", generation: "initial:r:1", envelopes: [env({ kind: "delete" })] })).plan?.[CAL]).toEqual({ total: -1, skipped: 0 });
+    expect((await mod.ingest({ command: "catch_up", generation: "initial:r:1", envelopes: [env({ kind: "delete" })] })).plan?.[CAL]).toEqual({ total: 0, skipped: 0 });
+    expect(delete_entity).toHaveBeenCalledExactlyOnceWith("id-r1");
   });
 });
 
