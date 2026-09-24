@@ -1,8 +1,8 @@
 # Google Pull Sync
 
-Status: SPEC_LOCKED  
+Status: APPROVED  
 Spec lock: sha256:1197ce227cb093757dc6be758825862f5875ea8673c8bf701ae461c27df73085 owner:Тогда дополни, соответственно, стадии и приступай к исполнению  
-Implementation lock: stale  
+Implementation lock: sha256:50714f0ff6d398839cf41ed82516b78e9f1bf4f2505224dc791c565a65b4dcc6 owner:approved  
 Active Delivery: D1  
 Unattended decisions: allowed  
 
@@ -553,4 +553,6 @@ Commit. feat(stand): report Google beside Telegram — retain secrets and expose
 - put-stage D1-S5
 
 - replace-delivery D1
+
+- approve sha256:50714f0ff6d398839cf41ed82516b78e9f1bf4f2505224dc791c565a65b4dcc6 owner:approved
 <!-- plan:execution:end -->
