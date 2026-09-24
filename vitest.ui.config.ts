@@ -16,10 +16,6 @@ import { defineConfig } from "vitest/config";
 const double = (name: string): string => resolve(__dirname, `./packages/host-testdouble/${name}`);
 
 export default defineConfig({
-  // The plugin tree compiles with `jsx: react-jsx` (tsconfig.base.json), but
-  // vitest resolves tsconfig per package and several plugins have none — so
-  // state the transform here rather than relying on discovery.
-  esbuild: { jsx: "automatic" },
   test: {
     environment: "happy-dom",
     globals: true,
