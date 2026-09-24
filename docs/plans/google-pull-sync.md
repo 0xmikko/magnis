@@ -1,15 +1,15 @@
 # Google Pull Sync
 
-Status: APPROVED  
-Spec lock: sha256:adc572be12b4f99e429fe2563819b3b685b4d4378efb57a983ca4a2c3e2f71bf owner:approved, make stages and implement it  
-Implementation lock: sha256:afb71cfe49d1e155e53db18fb738c30c16973208d5405466a9bf51c24ecb9037 owner:approved, make stages and implement it  
+Status: SPEC_LOCKED  
+Spec lock: sha256:9f9e64406592be385e0ea7c58a98701fe885edad0f97e67df6acf5438b7b8bcc owner:да все так готовь спецификацию по процессу bluepruint  
+Implementation lock: stale  
 Active Delivery: D1  
 Unattended decisions: allowed  
 
 <!-- plan:spec:start -->
 ## The Goal
 
-Keep the Google Source on its existing 30-second Pull schedule and make that Pull correct, incremental and measurable across all three existing surfaces: Gmail, Google Calendar and Google Contacts. Push, Pub/Sub, IMAP IDLE and a new host protocol are not part of this Delivery.
+Keep the Google Source on its existing 30-second Pull schedule and make that Pull correct, incremental and measurable across Gmail, Google Calendar and Google Contacts. Complete the one host-owned Source-to-module path so full passes, incremental pages and reconciliation have honest progress; do not add provider-specific fields to each event. In the same catalog work, place Modules and Sources directly at the repository root without changing their behavior. Push, Pub/Sub, IMAP IDLE, a new Source protocol and the next integration are excluded.
 
 The currency is provider requests, repeated data and measured wall time:
 
@@ -20,24 +20,33 @@ The currency is provider requests, repeated data and measured wall time:
 - Progress is honest: Gmail states mailbox total and Spam/Trash skipped; Calendar states its exact event total when the full pass finishes because Google provides no pre-count; Contacts states total items and identity-less skipped. Incremental module receipts apply each admitted addition or deletion once; updates and replays do not inflate the totals.
 - One existing manual performance stand runs a selected clean app worktree with real Telegram and Google accounts, preserves credentials across data resets, and reports provider fetch time, module/Graph admission time and throughput by Source and surface. No live-provider or PostgreSQL run enters CI.
 - The live acceptance receipt records exact app/catalog SHAs, page settings, per-surface counts, holds and before/after timings. It makes no speedup claim unless two equivalent runs on the same accounts were measured.
+- The host passes its existing page command once to the receiving module. A completed replacement pass counts actual Graph removals in the same progress path as an admitted page; interrupted passes remove nothing. No Google envelope carries a `full_snapshot` flag.
+- All 11 existing Modules and 13 existing Sources move from `plugins/modules/` and `plugins/sources/` to root `modules/` and `sources/`. Published package IDs, index schema, module behavior and the app's package installation stay the same; `plugins/onboarding.toml` remains where it is.
 
 ## The target
 
-The one architectural decision is to extend the existing Pull path. Provider cursors remain opaque Source cursors, and the existing modules remain the only writers to Graph.
+The architectural decision is one host-owned sync path for every Source: the host supplies page context and accounts Graph changes, while provider cursors remain opaque and existing modules remain the only writers to Graph. Package directory layout does not create another runtime path.
 
 ```mermaid
 flowchart LR
     GOOGLE[Google APIs] --> SOURCE[One Google Source]
-    SOURCE --> EMAIL[Gmail historyId]
-    SOURCE --> MEETINGS[Calendar syncToken]
-    SOURCE --> CONTACTS[People syncToken]
-    EMAIL --> MODULES[Existing modules and Graph]
-    MEETINGS --> MODULES
-    CONTACTS --> MODULES
-    HOST[Existing host Poll and hold] --> SOURCE
+    HOST[Host Poll, page command and progress receipt] --> SOURCE
+    HOST --> MODULES[Existing receiving modules]
+    SOURCE --> MODULES
+    MODULES --> GRAPH[Graph]
 ```
 
-No surface gets a second scheduler, database, checkpoint store or bespoke transport. `magnis.sync.fetch`, standard envelopes, typed `RateLimitError`/`CursorExpiredError`, module plan receipts and the host's Poll loop are reused.
+No surface gets a second scheduler, database, checkpoint store or bespoke transport. `magnis.sync.fetch`, standard envelopes, typed `RateLimitError`/`CursorExpiredError`, module plan receipts and the host's Poll loop are reused. The host sends its existing `bootstrap`/`catch_up`/`backfill` command as page-level module context; live items are identified as live context. The `onSyncComplete` Graph removals contribute to the existing page progress receipt instead of a separate counter. A Source does not invent a full-pass flag on events.
+
+The runtime-visible module page input is the existing `generation` and `envelopes` plus this host-owned context, not a new Source payload:
+
+```typescript
+interface ModuleSyncPage {
+  generation: string;
+  command: "bootstrap" | "catch_up" | "backfill" | "live";
+  envelopes: SyncEnvelope[];
+}
+```
 
 ### Gmail
 
@@ -57,7 +66,7 @@ The first People API pass requests a sync token and uses a page size measured to
 
 The Contacts module deletes only the Google replica resolved by that anchor. A locally curated person hub survives removal of its Google replica. Successful Graph creates and deletes provide incremental plan deltas; updates do not inflate the count.
 
-Calendar and Contacts use the host's existing full-snapshot completion hook only after a completed bootstrap or token-expiry rescan. Their modules stamp admitted replicas with the pass generation and Source/account ownership, then remove only owned replicas left unstamped at completion; cancelled/deleted envelopes still remove immediately. A failed or interrupted pass never removes unseen replicas. The owner confirmed there are no previously connected Google accounts to migrate; every Google replica newly created by this Delivery has the ownership stamp.
+Calendar and Contacts use the host's existing full-snapshot completion hook only after a completed bootstrap or token-expiry rescan. Their modules stamp admitted replicas with the pass generation and Source/account ownership, then remove only owned replicas left unstamped at completion; cancelled/deleted envelopes still remove immediately. The host counts those successful completion removals through its existing Graph progress receipt before publishing the final synced count. A failed or interrupted pass never removes unseen replicas. The page-level `command`, never an event payload flag, distinguishes a full pass from later changes. The owner confirmed there are no previously connected Google accounts to migrate; every Google replica newly created by this work has the ownership stamp.
 
 ### OAuth and provider holds
 
@@ -69,7 +78,7 @@ Within Gmail's concurrent hydration, the first typed fatal error closes scheduli
 
 ### Progress and performance report
 
-The three modules continue to state progress in their existing schema names. Gmail and Contacts state their provider totals on page one; Calendar states the accumulated exact count on the terminal full-sync page. Identity-less contacts state `skipped`; malformed Calendar/Gmail payloads fail the page instead of silently changing the total. The initial provider total is stated once, not added to per-item creates in the same full pass. Later Gmail history changes and Calendar/Contacts Graph creates/deletes adjust that baseline once; updates and replays are zero-delta. A page with no provider statement does not fabricate a total.
+Gmail and Calendar retain progress on `email.message` and `meetings.calendar_event`. Contacts progress follows the provider-owned `contacts.google_contact` replicas, not the curated `contacts.person` hubs. Gmail and Contacts state their provider totals on page one; Calendar states the accumulated exact count on the terminal full-sync page. Identity-less contacts state `skipped`; malformed Calendar/Gmail payloads fail the page instead of silently changing the total. The initial provider total is stated once, not added to per-item creates in the same full pass. Later Gmail history changes and Calendar/Contacts Graph creates/deletes adjust that baseline once; updates and replays are zero-delta. Completed reconciliation adjusts the synced count by actual removed replicas. A page with no provider statement does not fabricate a total.
 
 The current `acceptance/telegram-performance` mechanism is extended in place. One persistent data root can hold both Telegram and Google credentials. `reset` clears Graph output and sync progress while fingerprinting the existing secret, credential, connection and account tables in the same transaction. `report` groups production `sync turn` records by `sourceId` and `surface`, including turns, pages, envelopes, bytes, inserted/removed rows, fetch/admission/overlap/wall time and envelopes per second.
 
@@ -102,9 +111,16 @@ During pagination the cursor retains the committed `history_id` or `sync_token` 
 
 ### Proposed file tree
 
-All product changes stay in the catalog repository. The app is selected and measured by the stand but is not modified.
+The generic page-context and completion-accounting changes belong to the app host; Google behavior and the package layout belong to the catalog. They are separate PRs because they are separate repositories. The catalog PR is tested against the exact app-host PR revision.
 
 ```text
+MODIFY backend/src/services/sources/sync/sync.worker.ts
+MODIFY backend/src/services/sources/sync/sync.router.ts
+MODIFY backend/src/services/sources/types.ts
+MODIFY backend/src/plugin-runtime/plugin-module-controller.ts
+MODIFY backend/test/tst_bts_sync_worker_001.test.ts
+MODIFY backend/test/tst_bts_src_module_adapter_001.test.ts
+       Pass one existing page command to modules and account completed Graph removals.
 MODIFY plugins/sources/google/src/auth.ts
        Reuse one unexpired access token per credential and coalesce refresh.
 MODIFY plugins/sources/google/src/oauth.test.ts
@@ -146,13 +162,21 @@ MODIFY acceptance/telegram-performance/run.ts
 MODIFY acceptance/telegram-performance/run.test.ts
 MODIFY acceptance/telegram-performance/README.md
        Run and report real Telegram plus Google without entering CI.
+MOVE plugins/modules/* -> modules/*
+MOVE plugins/sources/* -> sources/*
+MODIFY package.json, scripts/build-plugins.ts, scripts/build-catalog-index.ts
+MODIFY scripts/test-connectors.sh, scripts/typecheck-all.sh, vitest.config.ts, vitest.ui.config.ts
+MODIFY tsconfig.declarations.json, eslint.config.mjs
+       Discover and build packages from the two root directories; keep package IDs and published index shape.
+MODIFY module/source package tsconfig and relative imports only where the moved path requires it.
+       No unrelated module logic change.
 ```
 
-No product file is created: the Source, each existing receiving module and the single stand each have one owning file and its existing tests. The Google OAuth test is extended for access-token reuse. The two module manifest edits enable an existing host hook, not a new reconciliation runner; their existing ingest tests cover that hook. The stand keeps its existing directory and command path. Generated catalog artifacts are rebuilt by their existing script and are not hand-authored.
+No new sync runner or product UI is created: existing host, Source, receiving modules, build scripts and the single stand each keep ownership. The Google OAuth test is extended for access-token reuse. The two module manifest edits enable the existing completion hook. Directory moves preserve module/source contents except mechanical relative paths and package configuration. The stand keeps its directory and command path. Generated catalog artifacts are rebuilt, never hand-authored.
 
 ## Today, measured against that
 
-Pinned catalog base: `origin/staging` at `2f9dfe03125603953902d79764d8934558eba87d`.
+Pinned catalog base: `origin/staging` at `2f9dfe03125603953902d79764d8934558eba87d`; current Google worktree HEAD is `2d3dae6122b0d7862913e5c190bc3d2f9c551839` with two completed Source stages and an uncommitted module draft. Pinned app host inspection: `origin/staging` at `b478fd66f5d4e8bbf532e2cf71739e1f19f76efb`.
 
 - `plugins/sources/google/manifest.toml` declares one Poll Source at 30 seconds with `email`, `meetings` and `contacts`. This mode and the three existing modules are retained.
 - `connector.ts:39-42` refreshes an access token on every fetch or action. A large mailbox therefore pays an OAuth request for every 50-message page.
@@ -162,6 +186,9 @@ Pinned catalog base: `origin/staging` at `2f9dfe03125603953902d79764d8934558eba8
 - `http.ts:150-157` maps only HTTP 429 and invents 60 seconds when `Retry-After` is absent. Gmail hydration collects fatal errors but other workers may continue taking queued IDs before the batch rethrows.
 - The email module already states full mailbox progress but counts every `live` and `delete` envelope before checking whether it changed anything. Meetings and Contacts state full totals but not incremental create/delete deltas. The existing Graph result and anchored deletes provide the evidence for those two surfaces.
 - `acceptance/telegram-performance` already selects exact clean app/catalog revisions, starts the ordinary dev command, preserves all Source credential tables on reset and reads production `sync turn` logs. Its report deliberately filters to Telegram; it is the one stand to extend.
+- The host's `sync.worker.ts` knows `bootstrap` and `catch_up`, but `plugin-module-controller.ts` passes only `generation` and `envelopes` to modules. Its completion hook uses `page: null`; completion Graph deletes therefore do not contribute to `SyncPageReceipt.removed` or the worker's synced count.
+- The current uncommitted Meetings/Contacts draft requires `payload.full_snapshot`, while the Google Source emits no such field. Contacts declares `contacts.person` as its progress item even though its provider-owned Graph replica is `contacts.google_contact`.
+- The catalog has 11 module manifests and 13 source manifests under `plugins/`. `package.json`, the two build scripts and test/typecheck configuration read those directories. Their package-relative configuration and a few Source test imports depend on current directory depth.
 
 ### Reuse map
 
@@ -170,6 +197,8 @@ Pinned catalog base: `origin/staging` at `2f9dfe03125603953902d79764d8934558eba8
 - Reuse the email module's full-statement pattern in Meetings and Contacts; use their existing Graph results for replica deltas.
 - Reuse each module's existing anchor and Graph delete operation; do not query Source-specific tables from a module.
 - Reuse the existing performance runner, reset transaction, ordinary app launcher and production timing log; do not add a second runner or CI workflow.
+- Reuse host `SyncPageAdmission`/`SyncPageReceipt` for completion removals and the existing Source command for page context; do not put phase metadata into provider envelopes.
+- Reuse catalog package discovery and archive builders with new roots. Keep `plugins/onboarding.toml`, published package IDs, `plugins_dist` and index schema unchanged.
 
 ## Invariants
 
@@ -199,12 +228,23 @@ Pinned catalog base: `origin/staging` at `2f9dfe03125603953902d79764d8934558eba8
 - Step 1 → Verify: synthetic production `sync turn` records report Telegram, Gmail, Calendar and Contacts in separate Source/surface groups; the runner refuses dirty revisions and provider fixture variables (`tst_cert_google_001` in `run.test.ts`).
 - Step 2 → Verify: a reset fixture demonstrates that Graph/progress rows are cleared while credential, secret, connection and account fingerprints remain identical; module manifests certify full-snapshot completion only for Meetings and Contacts (`tst_cert_google_002` in `run.test.ts`, `tst_cert_google_003` in `bundled-item-schemas.test.ts`).
 
+### `scn_google_pull_006` — one host-owned pass context
+
+- Step 1 → Verify: a bootstrap page and later catch-up page reach the same module with distinct page-level commands while their provider envelopes remain unchanged; missing context is refused in the worker path (`tst_bts_src_module_adapter_004` in the existing adapter test).
+- Step 2 → Verify: a completed full pass reports successful account-owned Graph removals in the synced count once; an interrupted pass, other account and curated hub remove nothing (`tst_bts_sync_worker_032` in the existing worker test and the Meetings/Contacts ingest tests).
+
+### `scn_google_pull_007` — catalog roots without module rewrites
+
+- Step 1 → Verify: after the move, the existing builder discovers the same 11 Modules and 13 Sources under root `modules/` and `sources/`, emits the same package IDs and index schema, and the app installs those archives. A one-shot acceptance comparison records the IDs; no permanent inventory or file-layout test is added.
+- Step 2 → Verify: module behavior tests and Source certification tests still pass; only moved-path imports and package configuration change outside the three Google receiving modules.
+
 Every new automated test has its canonical ID, scenario, covered function and deterministic fixture metadata beside the test; code branches link back with `@tested-by`. Tests are written RED first and use only scripted HTTP/Graph responses or synthetic logs through scoped `agent:test:backend` targets. The manual live run is marked manual and is not an automated correctness signal. Removing token retention, restoring full-list polling, allowing one queued Gmail request after a rate limit, or deleting a curated contact hub must make its owning test fail.
 
 ## Constraints and exclusions
 
-- No Gmail Push, Pub/Sub, IMAP IDLE, Calendar webhook, public relay, `listen_start`, new app protocol or app repository change.
+- No Gmail Push, Pub/Sub, IMAP IDLE, Calendar webhook, public relay, `listen_start` or new Source protocol. The app change is restricted to the generic host page context and completion accounting; no app UI or provider-specific host path.
 - No new scheduler, cursor database, generic retry abstraction, second performance runner or CI workflow.
+- No behavior change in unrelated Modules or Sources. Directory moves allow only necessary relative imports, package configuration and documentation paths; `plugins/onboarding.toml`, published IDs and archive/index format stay.
 - No previously connected Google account exists in the target deployment. If that premise proves false before rollout, migration needs a separate owner decision; this plan does not silently rebind an old account or attribute any pre-existing Graph replica to it.
 - No real provider credentials in source, tests, logs, commits or CI. Automated tests use injected HTTP responses and synthetic logs only.
 - The live stand is manual and opt-in. It stops and reports on a provider hold; it does not search for quota limits or repeatedly reconnect accounts.
@@ -219,7 +259,8 @@ Every new automated test has its canonical ID, scenario, covered function and de
 - Google Source: token reuse, Gmail batch scheduling, Calendar/Contacts incremental cursors and exact quota errors.
 - Email, Meetings and Contacts modules: correct admitted create/delete progress; Contacts deletes only its Google replica.
 - Existing performance stand: reports Telegram, Gmail, Calendar and Contacts from the same persistent data root.
-- Main app: no code change.
+- App host: one generic page command to the module and completion removals in the normal synced count; no UI change.
+- Catalog layout: `modules/` and `sources/` become package roots; unrelated module logic is untouched.
 
 ### What the owner can observe after merge
 
@@ -228,15 +269,17 @@ Every new automated test has its canonical ID, scenario, covered function and de
 - Receive a real Google quota delay as a visible host hold; queued Gmail hydration stops launching new requests after the first observed hold.
 - Reset the manual stand without re-authenticating Telegram or Google, run another selected app/catalog branch, and compare per-surface fetch versus Graph time.
 - See the complete primary calendar; the former `now-30d..now+90d` product limit is gone.
+- Inspect first real email messages, calendar events and Google contact replicas in the test Graph; repeat polling and restart without duplicate counts, and see stale owned replicas disappear only after a completed replacement pass.
+- Build and install the same package IDs from top-level `modules/` and `sources/`; no other module behavior changes.
 
 ### Deliberately not verified here
 
 - Push latency is not tested because this Delivery remains Poll-only.
 - CI does not start PostgreSQL or contact real Telegram/Google accounts; the live receipt is manual.
 - No fixed messages-per-second SLA is promised before the first same-account baseline. The accepted evidence is exact request reduction, correct incremental behavior and reported live wall time.
-- Additional Google calendars, Drive, Tasks, Spam/Trash ingestion and attachment prefetch are unchanged.
+- Additional Google calendars, Drive, Tasks, Spam/Trash ingestion and attachment prefetch are unchanged. X, LinkedIn and every other next Source integration remain separate work.
 
-After this SPEC is approved, one PR Delivery with commit-sized Stages will be rendered separately. No implementation starts from this draft.
+After this revised SPEC is approved, the two completed Google Source stages stay intact. The remaining work is rendered as commit-sized Stages across the necessary app-host and catalog PRs; the layout move follows Google module correctness, and the live stand verifies their combined revisions. No new implementation starts from this SPEC draft.
 <!-- plan:spec:end -->
 
 <!-- plan:implementation:start -->
@@ -300,11 +343,11 @@ Commit. fix(google): reuse access tokens and stop lossy Gmail pages — preserve
 <!-- plan:stage:D1-S1:end -->
 
 <!-- plan:stage:D1-S2:start -->
-<!-- plan:stage-meta:{"deliveryId":"D1","depends":["D1-S1"],"parallelWith":[],"writes":["plugins/sources/google/src/connector.ts","plugins/sources/google/src/surfaces/meetings/calendar.ts","plugins/sources/google/src/surfaces/meetings/calendar.test.ts","plugins/sources/google/src/__tests__/googleContract.test.ts","plugins/sources/google/src/surfaces/contacts/contacts.ts","plugins/sources/google/src/surfaces/contacts/contacts.test.ts","plugins/sources/google/manifest.toml","packages/testkit/__tests__/tst_cat_src_parity_001.test.ts"],"tempRoot":".tmp/code-production/google-pull-sync/D1-S2","predictedActiveMinutes":68,"predictedCredits":0,"verifyActiveMinutes":8,"verifyCredits":0} -->
+<!-- plan:stage-meta:{"deliveryId":"D1","depends":["D1-S1"],"parallelWith":[],"writes":["plugins/sources/google/src/connector.ts","plugins/sources/google/src/surfaces/meetings/calendar.ts","plugins/sources/google/src/surfaces/meetings/calendar.test.ts","plugins/sources/google/src/__tests__/googleContract.test.ts","plugins/sources/google/src/surfaces/contacts/contacts.ts","plugins/sources/google/src/surfaces/contacts/contacts.test.ts","plugins/sources/google/manifest.toml","packages/testkit/__tests__/tst_cat_src_parity_001.test.ts","plugins/sources/google/src/__tests__/fixture.test.ts","plugins/sources/google/src/__tests__/serde-parity.test.ts"],"tempRoot":".tmp/code-production/google-pull-sync/D1-S2","predictedActiveMinutes":68,"predictedCredits":0,"verifyActiveMinutes":8,"verifyCredits":0} -->
 #### Stage D1-S2 — Keep Calendar and Contacts provider checkpoints
 
 - Owner: codex; Profile: strong; Depends: D1-S1; Parallel with: none.
-- Writes: `plugins/sources/google/src/connector.ts`, `plugins/sources/google/src/surfaces/meetings/calendar.ts`, `plugins/sources/google/src/surfaces/meetings/calendar.test.ts`, `plugins/sources/google/src/__tests__/googleContract.test.ts`, `plugins/sources/google/src/surfaces/contacts/contacts.ts`, `plugins/sources/google/src/surfaces/contacts/contacts.test.ts`, `plugins/sources/google/manifest.toml`, `packages/testkit/__tests__/tst_cat_src_parity_001.test.ts`.
+- Writes: `plugins/sources/google/src/connector.ts`, `plugins/sources/google/src/surfaces/meetings/calendar.ts`, `plugins/sources/google/src/surfaces/meetings/calendar.test.ts`, `plugins/sources/google/src/__tests__/googleContract.test.ts`, `plugins/sources/google/src/surfaces/contacts/contacts.ts`, `plugins/sources/google/src/surfaces/contacts/contacts.test.ts`, `plugins/sources/google/manifest.toml`, `packages/testkit/__tests__/tst_cat_src_parity_001.test.ts`, `plugins/sources/google/src/__tests__/fixture.test.ts`, `plugins/sources/google/src/__tests__/serde-parity.test.ts`.
 - Temp root: `.tmp/code-production/google-pull-sync/D1-S2` (must be absent at handoff).
 - Of which verification: 8 active min / 0 credits.
 
@@ -318,21 +361,23 @@ Commit. feat(google): retain Calendar and Contacts sync tokens — unchanged pol
 
 ##### Tasks
 
-- [ ] GOOGLE_003 — Retain Calendar pages in connector.ts, calendar.ts, calendar.test.ts and googleContract.test.ts. (30 min)
+- [x] GOOGLE_003 — Retain Calendar pages in connector.ts, calendar.ts, calendar.test.ts and googleContract.test.ts. (30 min) — 2d3dae6122b0d7862913e5c190bc3d2f9c551839
 <!-- plan:task-meta:{"writes":["plugins/sources/google/src/connector.ts","plugins/sources/google/src/surfaces/meetings/calendar.ts","plugins/sources/google/src/surfaces/meetings/calendar.test.ts","plugins/sources/google/src/__tests__/googleContract.test.ts"],"predictedActiveMinutes":30,"predictedCredits":0,"how":"plugins/sources/google/src/connector.ts: dispatch explicit hasMore from pageToken; plugins/sources/google/src/surfaces/meetings/calendar.ts: remove time window/count sweep and retain syncToken; plugins/sources/google/src/surfaces/meetings/calendar.test.ts: assert full/delta/410 and exact total; plugins/sources/google/src/__tests__/googleContract.test.ts: assert terminal retained cursor with hasMore false","red":"bun run agent:test:backend -- plugins/sources/google/src/surfaces/meetings/calendar.test.ts plugins/sources/google/src/__tests__/googleContract.test.ts"} -->
-- [ ] GOOGLE_004 — Retain People pages in contacts.ts, contacts.test.ts, manifest.toml and tst_cat_src_parity_001.test.ts. (30 min)
-<!-- plan:task-meta:{"writes":["plugins/sources/google/src/surfaces/contacts/contacts.ts","plugins/sources/google/src/surfaces/contacts/contacts.test.ts","plugins/sources/google/manifest.toml","packages/testkit/__tests__/tst_cat_src_parity_001.test.ts"],"predictedActiveMinutes":30,"predictedCredits":0,"how":"plugins/sources/google/src/surfaces/contacts/contacts.ts: request and retain syncToken; emit deletes; plugins/sources/google/src/surfaces/contacts/contacts.test.ts: assert full/delta/expiry and skipped contacts; plugins/sources/google/manifest.toml: declare current forward checkpoint contract; packages/testkit/__tests__/tst_cat_src_parity_001.test.ts: assert current contract while keeping historical receipts","red":"bun run agent:test:backend -- plugins/sources/google/src/surfaces/contacts/contacts.test.ts packages/testkit/__tests__/tst_cat_src_parity_001.test.ts"} -->
+- [x] GOOGLE_004 — Retain People pages in contacts.ts, contacts.test.ts, manifest.toml and tst_cat_src_parity_001.test.ts. (30 min) — 2d3dae6122b0d7862913e5c190bc3d2f9c551839
+<!-- plan:task-meta:{"writes":["plugins/sources/google/src/surfaces/contacts/contacts.ts","plugins/sources/google/src/surfaces/contacts/contacts.test.ts","plugins/sources/google/manifest.toml","packages/testkit/__tests__/tst_cat_src_parity_001.test.ts","plugins/sources/google/src/__tests__/fixture.test.ts","plugins/sources/google/src/__tests__/serde-parity.test.ts"],"predictedActiveMinutes":30,"predictedCredits":0,"how":"plugins/sources/google/src/surfaces/contacts/contacts.ts: request and retain syncToken; emit deletes; plugins/sources/google/src/surfaces/contacts/contacts.test.ts: assert full/delta/expiry and skipped contacts; plugins/sources/google/manifest.toml: declare current forward checkpoint contract; packages/testkit/__tests__/tst_cat_src_parity_001.test.ts: assert current contract while keeping historical receipts","red":"bun run agent:test:backend -- plugins/sources/google/src/surfaces/contacts/contacts.test.ts packages/testkit/__tests__/tst_cat_src_parity_001.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- plugins/sources/google/src/surfaces/meetings/calendar.test.ts plugins/sources/google/src/surfaces/contacts/contacts.test.ts plugins/sources/google/src/__tests__/googleContract.test.ts packages/testkit/__tests__/tst_cat_src_parity_001.test.ts` exits 0 — all three Google surfaces retain the correct checkpoint
-- [ ] Commit
+- [x] `bun run agent:test:backend -- plugins/sources/google/src/surfaces/meetings/calendar.test.ts plugins/sources/google/src/surfaces/contacts/contacts.test.ts plugins/sources/google/src/__tests__/googleContract.test.ts packages/testkit/__tests__/tst_cat_src_parity_001.test.ts` exits 0 — all three Google surfaces retain the correct checkpoint — 2d3dae6122b0d7862913e5c190bc3d2f9c551839
+- [x] Commit — 2d3dae6122b0d7862913e5c190bc3d2f9c551839
 
 ##### Results
 
 <!-- plan:results:D1-S2:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| GOOGLE_003 | 2d3dae6122b0d7862913e5c190bc3d2f9c551839 | 2026-09-23T20:14:19.497Z–2026-09-23T20:24:57.122Z | 11 / 11 min | unavailable: runner did not expose usage | Calendar and Contacts retain provider sync tokens and fetch only changes after complete passes. |
+| GOOGLE_004 | 2d3dae6122b0d7862913e5c190bc3d2f9c551839 | 2026-09-23T20:14:19.497Z–2026-09-23T20:24:57.122Z | 11 / 11 min | unavailable: runner did not expose usage | Calendar and Contacts retain provider sync tokens and fetch only changes after complete passes. |
 <!-- plan:results:D1-S2:end -->
 <!-- plan:stage:D1-S2:end -->
 
@@ -438,4 +483,16 @@ Commit. feat(stand): report Google beside Telegram — preserve credentials and 
 - deviation D1-S2: The existing Google fixture wire test enforces the removed Calendar window and an OAuth response without expires_in; update that one test file to verify the approved full-calendar token contract. Historical certification receipts remain untouched.
 
 - deviation D1-S2: The existing Google serde-parity test calls the removed Calendar window argument and asserts old terminal-null behavior; update it to the approved token-based signature and response contract so typecheck and full gate can pass.
+
+- amend implementation owner:разрешаю sha256:b7f4167ae93a8970948d63ff7f19e28682ae899eacbdfba1a750fb3ad00bdefc
+
+- record-result D1-S2 commit:2d3dae6122b0d7862913e5c190bc3d2f9c551839
+
+- deviation D1-S2: Existing fixture and serde-parity tests also had to change for the approved token and lossless-page contracts.
+
+- close D1-S2 closed commit:2d3dae6122b0d7862913e5c190bc3d2f9c551839
+
+- deviation D1-S3: GOOGLE_007 start-task was recorded after its RED tests due to an execution-order mistake; the tests failed against the old Contacts module before implementation and then passed.
+
+- amend spec owner:да все так готовь спецификацию по процессу bluepruint sha256:9f9e64406592be385e0ea7c58a98701fe885edad0f97e67df6acf5438b7b8bcc
 <!-- plan:execution:end -->
