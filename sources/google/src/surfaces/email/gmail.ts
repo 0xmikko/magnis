@@ -5,7 +5,7 @@
 // flattened MailMessage (see `flattenMailPayload`) and `remote_id` is the
 // Gmail message id.
 
-import type { Envelope } from "@magnis/connector-sdk";
+import { RateLimitError, type Envelope } from "@magnis/connector-sdk";
 import {
   checkRateLimit,
   fetchWithRetry,
@@ -43,6 +43,10 @@ const GMAIL_FETCH_CONCURRENCY = 8;
 // Four starts per second leave room for list/profile calls and other clients.
 const GMAIL_MESSAGE_START_INTERVAL_MS = 250;
 const nextMessageStart = new WeakMap<FetchLike, number>();
+const pendingMessagePage = new WeakMap<FetchLike, {
+  key: string;
+  messages: Map<string, GmailMessage | null>;
+}>();
 
 // ── Raw Gmail API shapes (camelCase, as served) ───────────────
 
@@ -837,13 +841,39 @@ async function fetchEnvelopes(
   requests: { id: string; kind: MessageEnvelopeKind }[],
   fetchFn: FetchLike,
 ): Promise<Envelope[]> {
-  const fetched = await mapConcurrent(
-    requests,
-    GMAIL_FETCH_CONCURRENCY,
-    fetchFn,
-    async ({ id, kind }): Promise<Fetched> => ({ id, kind, msg: await fetchMessage(token, id, fetchFn) }),
-  );
-  return snapshotEnvelopesFromFetched(fetched);
+  const key = JSON.stringify(requests);
+  let pending = pendingMessagePage.get(fetchFn);
+  if (pending?.key !== key) {
+    pending = { key, messages: new Map() };
+    pendingMessagePage.set(fetchFn, pending);
+  }
+  const page = pending;
+  try {
+    // @tested-by: tst_src_iso_google_017
+    // A quota hold rejects the page and leaves its cursor untouched, but a
+    // retry need only read the IDs that did not complete before the hold.
+    await mapConcurrent(
+      requests.filter(({ id }) => !page.messages.has(id)),
+      GMAIL_FETCH_CONCURRENCY,
+      fetchFn,
+      async ({ id }): Promise<void> => {
+        page.messages.set(id, await fetchMessage(token, id, fetchFn));
+      },
+    );
+    const fetched = requests.map(({ id, kind }): Fetched => {
+      const msg = page.messages.get(id);
+      if (msg === undefined) throw new Error(`Gmail message ${id} missing after hydration`);
+      return { id, kind, msg };
+    });
+    const envelopes = snapshotEnvelopesFromFetched(fetched);
+    if (pendingMessagePage.get(fetchFn) === page) pendingMessagePage.delete(fetchFn);
+    return envelopes;
+  } catch (error) {
+    if (!(error instanceof RateLimitError) && pendingMessagePage.get(fetchFn) === page) {
+      pendingMessagePage.delete(fetchFn);
+    }
+    throw error;
+  }
 }
 
 // ── Sync-Profile fetch logic ──────────────────────────────────

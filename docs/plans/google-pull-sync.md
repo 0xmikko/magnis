@@ -596,4 +596,6 @@ Commit. feat(stand): report Google beside Telegram — retain secrets and expose
 - deviation D1-S5: Live Gmail acceptance measured 1.23 messages/s because 50 concurrent full-message reads repeatedly exhausted the 6,000-unit minute quota and a failed page discarded successful reads. Owner requested the sync defect fixed and a full repeat test; pace existing hydration at four starts/s within the current Source, prove with a deterministic RED/GREEN test, then compare on the persistent stand.
 
 - deviation D1-S5: Correction to the preceding receipt: each page contains 50 message IDs, but the existing hydration concurrency is 8, not 50. The measured 1.23 messages/s and quota exhaustion remain unchanged.
+
+- deviation D1-S5: The live run with the new package still received a Gmail quota hold after roughly 100 successful full-message reads in a minute. The owner confirmed no intentional parallel client. Keep the hold visible, but retain successful reads from the failed page in the existing Source process so a retry spends quota only on unfinished IDs; deterministic test tst_src_iso_google_017 failed RED and passed GREEN.
 <!-- plan:execution:end -->

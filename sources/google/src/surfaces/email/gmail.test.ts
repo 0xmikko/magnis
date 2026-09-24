@@ -585,6 +585,38 @@ describe("email bootstrap cursor", () => {
   });
 
   /**
+   * @test-id: tst_src_iso_google_017
+   * @scenario: scn_google_pull_004
+   * @covers: sources/google/src/surfaces/email/gmail.ts::fetchEnvelopes
+   * @deterministic: yes
+   * @fixtures: twelve messages; one scripted quota hold on the ninth read
+   */
+  test("tst_src_iso_google_017 a quota retry reuses completed message reads", async () => {
+    const reads = new Map<string, number>();
+    let held = false;
+    const fetchFn: FetchLike = async (url) => {
+      if (url.endsWith("/users/me/profile")) return ok({ historyId: "h1" });
+      if (url.includes("/labels/")) return ok({ messagesTotal: 0 });
+      if (url.includes("maxResults=50")) {
+        return ok({ messages: Array.from({ length: 12 }, (_, i) => ({ id: `m${i}` })) });
+      }
+      const id = url.split("/messages/")[1]?.split("?")[0];
+      if (id === undefined) throw new Error(`unexpected Gmail URL: ${url}`);
+      reads.set(id, (reads.get(id) ?? 0) + 1);
+      if (id === "m8" && !held) {
+        held = true;
+        return status(429, "quota", "1");
+      }
+      return ok({ ...fullGmailMessage(), id });
+    };
+    await expect(fetchMessagePage("tok", undefined, fetchFn)).rejects.toBeInstanceOf(GoogleRateLimitError);
+    const completed = new Map([...reads].filter(([id]) => id !== "m8"));
+    const retried = await fetchMessagePage("tok", undefined, fetchFn);
+    expect(retried.envelopes.filter((envelope) => envelope.remote_id !== "mailbox")).toHaveLength(12);
+    for (const [id, count] of completed) expect(reads.get(id)).toBe(count);
+  }, 15_000);
+
+  /**
    * @test-id: tst_src_iso_google_013
    * @scenario: scn_google_pull_004
    * @covers: sources/google/src/surfaces/email/gmail.ts::fetchMessagePage
