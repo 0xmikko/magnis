@@ -215,6 +215,7 @@ describe("email reply (tst_be_emailreply_003)", () => {
         subject: "Quarterly",
         message_id: "gmail-orig-1",
       },
+      source: { source: "gmail", account: "account-1", externalId: "gmail:orig" },
     } as EntityDetail["entity"],
     links: [],
   });
@@ -240,6 +241,8 @@ describe("email reply (tst_be_emailreply_003)", () => {
     if (srcCall0 === undefined) throw new Error("reply: source_command not called");
     const draft = srcCall0[0] as Record<string, unknown>;
     const d = draft.draft as Record<string, unknown>;
+    // The reply leaves from the account the original arrived at.
+    expect(srcCall0[1]).toBe("account-1");
     expect(d.in_reply_to).toBe("gmail-orig-1");
     expect(d.subject).toBe("Re: Quarterly");
     expect(d.to).toEqual([{ address: "boss@corp.com" }]);

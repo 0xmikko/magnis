@@ -579,6 +579,12 @@ export class EmailModule {
       (detail.entity.name && detail.entity.name.length > 0 ? detail.entity.name : "(no subject)");
     const replySubject = subject.toLowerCase().startsWith("re:") ? subject : `Re: ${subject}`;
     const inReplyTo = str(od, "message_id");
+    // A reply leaves from the account the original arrived at: the host
+    // routes a Source command only to an account it is named.
+    const account = detail.entity.source?.account;
+    if (account === undefined) {
+      throw new Error(`Email ${params.email_id} has no Source account to reply from`);
+    }
 
     // Attachment ownership + file-ness (user-scoped) — fail if the caller
     // doesn't own a file, or the id isn't a real file (empty dictionary).
@@ -596,7 +602,7 @@ export class EmailModule {
         body_html: null,
         in_reply_to: inReplyTo,
       },
-    });
+    }, account);
 
     // @tested-by: tst_module_email_reply_004
     // @invariant: INV-5 — the same receipt rule as `send`. `reply` reported
