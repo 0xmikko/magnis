@@ -659,4 +659,8 @@ Commit. feat(google): bulk-import Gmail history over OAuth IMAP — keep the exi
 - deviation D1-S6: The existing Google wire contract test needed a scripted IMAP mailbox, so sources/google/src/__tests__/googleContract.test.ts is included beyond the literal Task writes.
 
 - close D1-S6 partial commit:bef50be4bc465ff3ae38ce0251840f039a5e6fbe
+
+- close D1-S5 partial commit:1c57d92d0fef33adc2413f7a1b1b69e43add15be
+
+- deviation D1-S6: The manual live receipt is committed in acceptance/telegram-performance/README.md. planctl close-stage cannot close non-machinable acceptance boxes, so they remain open despite the verified run; the later IMAP UID-count progress fix has only deterministic coverage on this clone.
 <!-- plan:execution:end -->
