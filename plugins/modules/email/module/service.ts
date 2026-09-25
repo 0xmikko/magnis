@@ -950,8 +950,6 @@ export class EmailModule {
     return names;
   }
 
-  /// Create one outgoing email (entity + recipient address + sent_to in one
-  /// apply_batch), link attachments, then best-effort source route (non-fatal).
   // @tested-by: tst_module_email_send_009
   // A new email has no original to inherit an account from (a reply uses its
   // original's): the caller names one, or the only connected one is meant.
@@ -966,6 +964,8 @@ export class EmailModule {
     return only.account_id;
   }
 
+  /// Create one outgoing email (entity + recipient address + sent_to in one
+  /// apply_batch), link attachments, then best-effort source route (non-fatal).
   private async sendSingle(
     account: string,
     to: string,
@@ -979,9 +979,9 @@ export class EmailModule {
     // the JSON text of an array, and let Gmail refuse it downstream.
     const toLower = normalizeRecipient(to);
 
-    // Attachment ownership + names (native put attachment_names on the record;
-    // it required a file dictionary — rejected otherwise, no fallback name).
-    const attachmentNames = await this.resolveOwnedFileNames(attachmentIds);
+    // Attachment ownership: each id must be the caller's file; the names ride
+    // the file.attachment edges, not the message record.
+    await this.resolveOwnedFileNames(attachmentIds);
     const now = new Date().toISOString();
     // @tested-by: tst_module_email_send_004, tst_module_email_send_006
     // @invariant: INV-5 — route BEFORE persisting. A refusal must leave no
@@ -1019,14 +1019,10 @@ export class EmailModule {
 
     const messageDict: Record<string, unknown> = {
       from_address: OUTGOING_FROM,
-      to_addresses: to,
       subject,
       body_text: bodyText,
       sent_at: now,
-      is_outgoing: true,
-      provider_message_id: providerMessageId,
       has_attachments: attachmentIds.length > 0,
-      attachment_names: attachmentNames,
     };
     // @tested-by: tst_module_email_send_006
     // @invariant: INV-27 — the provider has ACCEPTED by this point, so the mail

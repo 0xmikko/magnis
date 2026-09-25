@@ -85,7 +85,6 @@ describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
     // S5: nodes are dictionaries under their anchors.
     expect(addr.anchor).toBe("email:address:bob@example.com");
     expect(addr.properties?.address).toBe("bob@example.com");
-    expect(msg.properties?.is_outgoing).toBe(true);
     expect(frag.links).toEqual([{ from_key: "out", to_key: "addr:bob@example.com", kind: "sent_to" }]);
 
     // INV-5: the provider is called BEFORE the message is persisted, so a
@@ -93,7 +92,7 @@ describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
     expect(spy(graph, "source_command")).toHaveBeenCalledTimes(1);
     // INV-6: the provider's id rides on the stored message so a later ingest
     // of that same mail matches it instead of creating a duplicate.
-    expect(msg.properties?.provider_message_id).toBe("src-1");
+    expect(msg.anchor).toBe("src-1");
     expect(r.id).toBe("id-out");
     expect(r.schema_id).toBe("email.message");
     expect(r.attachment_count).toBe(0);

@@ -31,6 +31,8 @@ function ingestGraph() {
     file_register: () => Promise.resolve("file-id"),
     find_by_anchor: () => Promise.resolve("existing-id"),
     delete_entity: () => Promise.resolve(undefined),
+    source_command: () => Promise.resolve({ message_id: "sent-1" }),
+    sync_state: () => Promise.resolve({ accounts: [{ account_id: "acct-1", sync: {} }] }),
   });
 }
 
@@ -75,9 +77,10 @@ async function written(): Promise<GraphBatchInput["entities"]> {
   const graph = ingestGraph();
   const mod = mountModule(EmailModule, { graph, ctx: { extension_id: "email" } }).module;
   await mod.ingest({ envelopes: [env({ remote_id: "m1", payload: msgPayload() })] });
-  const call = graph.spies.apply_batch?.mock.calls[0];
-  if (call === undefined) throw new Error("ingest wrote nothing");
-  return (call[0] as GraphBatchInput).entities;
+  await mod.emailSend({ to: "ops@example.com", subject: "Report Q3", body_text: "see attached" });
+  const calls = graph.spies.apply_batch?.mock.calls ?? [];
+  if (calls.length !== 2) throw new Error("ingest and send must each write once");
+  return calls.flatMap((call) => (call[0] as GraphBatchInput).entities);
 }
 
 describe("email declares what it writes", () => {
