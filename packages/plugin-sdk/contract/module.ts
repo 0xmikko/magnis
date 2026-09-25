@@ -55,6 +55,9 @@ export interface RawEntity {
   properties?: Record<string, unknown>;
   /// S1: identity anchor (null until the family's backfill).
   anchor?: string | null;
+  /// A canonical record's source: the Source and the Source account that
+  /// delivered it, and its external id. Absent on an agent statement.
+  source?: { source: string; account: string; externalId: string };
 }
 
 export interface CreateEntityParams {

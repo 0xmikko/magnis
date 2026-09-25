@@ -31,8 +31,9 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
         last_message_date: "2026-08-12T08:00:00Z",
         is_pinned: true,
         pin_order: 0,
-        sources: [{ source: "mock-telegram", account: "account-1", surface: "messages" }],
       },
+      // The host's record source: the Source account that delivered it.
+      source: { source: "mock-telegram", account: "account-1", externalId: "tg:chat:42" },
     });
     const recent = entity("chat-2", "Team", {
       schema_id: CHAT,
@@ -86,6 +87,7 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
     const pinned = entity(CHAT_ID, "Pinned", {
       schema_id: CHAT,
       properties: { chat_id: 42, title: "Pinned", last_message_date: "2026-08-12T08:00:00Z" },
+      source: { source: "mock-telegram", account: "account-1", externalId: "tg:chat:42" },
     });
     const recent = entity("chat-2", "Recent", {
       schema_id: CHAT,
@@ -119,13 +121,12 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
         items: [
           linkedRow(foreign, {
             from_id: foreign.id, to_id: spec.parent_id, kind: "observed_in",
-            metadata: { is_pinned: true, pin_order: -1, sources: [{ account: "foreign-account" }] },
+            metadata: { is_pinned: true, pin_order: -1 },
           }),
           linkedRow(operator, {
             from_id: ACCOUNT_ID, to_id: spec.parent_id, kind: "observed_in",
             metadata: {
               is_pinned: true, pin_order: spec.parent_id === CHAT_ID ? 2 : 10,
-              sources: [{ account: "account-1" }],
             },
           }),
         ],
@@ -179,8 +180,10 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
     expect(graph.spies.list_linked).toHaveBeenCalledTimes(4);
 
     hasOperator = false;
+    // Pinning is the operator's observation; the delivering account is the
+    // chat record's own source and needs no operator.
     await expect(module.chatsGet({ entity_id: CHAT_ID })).resolves.toMatchObject({
-      is_pinned: false, pin_order: null, account_id: null,
+      is_pinned: false, pin_order: null, account_id: "account-1",
     });
     expect(graph.spies.list_linked).toHaveBeenCalledTimes(4);
     expect(graph.spies.list_links_for_entities).not.toHaveBeenCalled();
@@ -278,6 +281,7 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
     const chat = entity(CHAT_ID, "Investor chat", {
       schema_id: CHAT,
       properties: { chat_id: 42, title: "Investor chat" },
+      source: { source: "mock-telegram", account: "account-1", externalId: "tg:chat:42" },
     });
     const graph = mockGraph({
       find_by_anchor: () => Promise.resolve(CHAT_ID),
@@ -289,9 +293,7 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
       list_linked: () => Promise.resolve({
         items: [linkedRow(entity(ACCOUNT_ID, "Operator"), {
           id: "observed", from_id: ACCOUNT_ID, to_id: CHAT_ID, kind: "observed_in",
-          metadata: {
-            sources: [{ source: "mock-telegram", account: "account-1", surface: "messages" }],
-          },
+          metadata: {},
         })],
         total: 1,
       }),
