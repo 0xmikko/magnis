@@ -100,6 +100,13 @@ async function toGmailMessage(raw: ImapRawMessage, uidValidity: string): Promise
   const parsed = await PostalMime.parse(raw.source);
   const text = jsonbText(parsed.text ?? "");
   const html = jsonbText(parsed.html ?? "");
+  let snippet = "";
+  let snippetCharacters = 0;
+  for (const character of text) {
+    if (snippetCharacters === 120) break;
+    snippet += character;
+    snippetCharacters++;
+  }
   const parts = [
     ...(text ? [{ mimeType: "text/plain", body: { data: Buffer.from(text).toString("base64url") } }] : []),
     ...(html ? [{ mimeType: "text/html", body: { data: Buffer.from(html).toString("base64url") } }] : []),
@@ -119,7 +126,7 @@ async function toGmailMessage(raw: ImapRawMessage, uidValidity: string): Promise
     id: gmailHexId(raw.emailId),
     threadId: gmailHexId(raw.threadId),
     labelIds: labels,
-    snippet: text.slice(0, 120),
+    snippet,
     internalDate: String(raw.internalDate.getTime()),
     payload: {
       mimeType: "multipart/mixed",

@@ -113,3 +113,17 @@ test("tst_src_iso_google_023 IMAP repairs PostgreSQL-invalid Unicode in labels",
   expect(mail.labels).toContain("broken\uFFFDlabel");
   expect(JSON.stringify(mail)).not.toContain("\\udc00");
 });
+
+/**
+ * @test-id: tst_src_iso_google_024
+ * @scenario: scn_google_pull_001
+ * @covers: sources/google/src/surfaces/email/imap.ts::readImapPage
+ * @deterministic: yes
+ * @fixtures: an emoji split by the IMAP snippet boundary
+ */
+test("tst_src_iso_google_024 IMAP snippet keeps valid Unicode at its boundary", async () => {
+  const message = raw(10);
+  message.source = Buffer.from("Subject: Split\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n" + "a".repeat(119) + "😀");
+  const page = await readImapPage("user@example.com", "token", undefined, async () => mailbox([message]));
+  expect(page.messages[0]?.snippet).toBe("a".repeat(119) + "😀");
+});
