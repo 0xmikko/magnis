@@ -37,7 +37,6 @@ function useAttachmentNames(
 }
 
 interface EmailContext {
-  readonly from: string;
   readonly to: string;
   readonly toName?: string;
   readonly subject: string;
@@ -63,9 +62,7 @@ function useEmailContext(
         const metadata = r.metadata as Record<string, unknown> | undefined;
         const sender = (metadata?.from_address as string | undefined) ?? (r.sender as string | undefined) ?? "";
         const senderName = r.sender as string | undefined;
-        const myAddress = (metadata?.to_addresses as string | undefined) ?? "";
         setCtx({
-          from: myAddress,
           to: sender,
           toName: senderName,
           subject: (r.subject as string | undefined) ?? "",

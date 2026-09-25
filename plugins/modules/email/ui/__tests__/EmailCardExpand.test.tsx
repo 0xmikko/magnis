@@ -76,6 +76,31 @@ describe("tst_fe_emails_expand_003 — EmailCard expanded layout", () => {
   });
 });
 
+/** @test-id: tst_fe_emails_expand_006
+ * @covers: plugins/modules/email/ui/EntityCards.tsx::EmailCard
+ * @invariant: a stored message carries no recipient field; the card reads
+ * its recipient from the sent_to edge `email.get` returns.
+ * @deterministic: yes
+ */
+describe("tst_fe_emails_expand_006 — EmailCard recipient from the sent_to edge", () => {
+  it("shows the recipient of an email.get detail", () => {
+    const { getByText } = render(
+      <ExpansionContext.Provider value={{ bare: false, expanded: true }}>
+        <EmailCard
+          schemaId="email.message"
+          data={{
+            subject: "Report Q3",
+            metadata: { from_address: "me@example.com", body_text: "see attached" },
+            linked_entities: [{ link_kind: "sent_to", schema_id: "email.address", name: "ops@example.com" }],
+          }}
+          runtime={mockRuntime(null)}
+        />
+      </ExpansionContext.Provider>,
+    );
+    expect(getByText("ops@example.com")).toBeTruthy();
+  });
+});
+
 describe("tst_fe_emails_expand_004 — EmailCard compact layout (default)", () => {
   it("hides body/To/Attached when ExpansionContext.expanded=false (default)", () => {
     const runtime = mockRuntime(null);
