@@ -104,3 +104,30 @@ restarting bootstrap. Host logs contained hold notifications in 41 separate
 minute buckets and no error-level entries. Those notifications are shared
 across surfaces, not a count of distinct Google 403 responses. Regular holds
 still dominate wall time; this run does not establish a speedup.
+
+## Live receipt: Google IMAP bootstrap completion, 2026-09-25
+
+The credential-preserving clone completed Gmail history with app
+`07d34bf8cf8c71022cf761d0e81914f88f956439`, catalog
+`e0729b7a9560b6d124a5f96c3cfad5d6bac2e059`, installed Google Source
+`sha256:08351cd2263ae14d2a0dad0e9a2569ca594e5b930890a221272468d7726de5f5`,
+indexer off and 100 IMAP messages/page. This was a continuation with 14,200
+messages already stored, **not** a clean start-to-finish speed measurement.
+
+From the 11:16:07 UTC run marker, email recorded 42 turns, 3,997 envelopes,
+708,283 ms Source fetch, 70,060 ms Graph admission and 873,123 ms observed
+wall time (4.58 envelopes/s). Contacts and meetings each polled 31 times with
+no new envelopes. The final graph held 18,195 messages, 214 contacts, 7,129
+meetings and 4,832 email attachment metadata records. The last IMAP page
+contained 89 messages at 11:30:03 UTC. Gmail REST then handled eight history
+envelopes at 11:30:34 and an empty poll at 11:31:04; all three surfaces were
+`polling` with no active hold. There was no quota hold in this run. One IMAP
+page failed once because a message lacked required metadata, then succeeded on
+retry without losing its cursor.
+
+The stored Gmail profile estimate (18,347 total, 896 Spam/Trash skipped) was
+lower than the imported All Mail count. A subsequent catalog change
+`bf9aee6` uses the initial IMAP UID count for that estimate; its deterministic
+test passed, but this live run used the preceding Source package. The earlier
+REST continuation and this IMAP continuation are not equivalent runs, so no
+speedup factor is claimed.
