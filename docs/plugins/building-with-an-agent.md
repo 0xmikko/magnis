@@ -98,8 +98,8 @@ four configurations on the same task; the short version:
 
 ## What you get out
 
-Two normal packages — `plugins/sources/github/` and
-`plugins/modules/github/` — that pass the same gate every hand-written
+Two normal packages — `sources/github/` and
+`modules/github/` — that pass the same gate every hand-written
 plugin passes, plus the tests the agent wrote. You review a pull
 request, not a black box. The full authoring contract those packages
 satisfy is the rest of this directory; this guide only changes *who

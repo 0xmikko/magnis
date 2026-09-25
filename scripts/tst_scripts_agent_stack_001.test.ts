@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 
 import { expect, test } from "bun:test";
 
-import { backendLanes } from "./agent-verify.ts";
+import * as agentVerify from "./agent-verify.ts";
 
 const root = resolve(import.meta.dir, "..");
 const head = "a".repeat(40);
@@ -110,15 +110,32 @@ test("tst_scripts_agent_stack_002 refuses every main ref even when a complete ga
  */
 test("tst_scripts_agent_stack_003 dispatches mixed bun and vitest targets as separate backend lanes", () => {
   const sources: Record<string, string> = {
-    "plugins/sources/telegram/src/client.test.ts": 'import { test } from "bun:test";',
-    "plugins/modules/telegram/module/__tests__/telegramIngest.test.ts": 'import { it } from "vitest";',
+    "sources/telegram/src/client.test.ts": 'import { test } from "bun:test";',
+    "sources/x/src/__tests__/xContract.test.ts": "runSourceContract(config);",
+    "sources/mock-gmail/src/execute.test.ts": 'import { it } from "vitest";',
+    "modules/telegram/module/__tests__/telegramIngest.test.ts": 'import { it } from "vitest";',
     "scripts/build-catalog-index.test.ts": "import { test } from 'bun:test';",
   };
-  expect(backendLanes(Object.keys(sources), (path) => sources[path] ?? "")).toEqual([
-    ["plugins/sources/telegram/src/client.test.ts", "scripts/build-catalog-index.test.ts"],
-    ["plugins/modules/telegram/module/__tests__/telegramIngest.test.ts"],
+  expect(agentVerify.backendLanes(Object.keys(sources), (path) => sources[path] ?? "")).toEqual([
+    ["sources/telegram/src/client.test.ts", "sources/x/src/__tests__/xContract.test.ts", "scripts/build-catalog-index.test.ts"],
+    ["sources/mock-gmail/src/execute.test.ts", "modules/telegram/module/__tests__/telegramIngest.test.ts"],
   ]);
-  expect(backendLanes(["plugins/sources/telegram/src/client.test.ts"], () => 'from "bun:test"')).toEqual([
-    ["plugins/sources/telegram/src/client.test.ts"],
+  expect(agentVerify.backendLanes(["sources/telegram/src/client.test.ts"], () => 'from "bun:test"')).toEqual([
+    ["sources/telegram/src/client.test.ts"],
   ]);
+});
+
+/**
+ * @test-id: tst_scripts_agent_stack_004
+ * @scenario: scn_catalog_layout_001
+ * @covers: scripts/agent-verify.ts::typeConfig; scripts/tsconfig.json
+ * @deterministic: yes
+ * @fixtures: repository TypeScript project configuration; no provider calls
+ */
+test("tst_scripts_agent_stack_004 root Vitest configs have a scoped TypeScript owner", () => {
+  expect(agentVerify.typeConfig("vitest.config.ts")).toBe("scripts/tsconfig.json");
+  expect(agentVerify.typeConfig("vitest.ui.config.ts")).toBe("scripts/tsconfig.json");
+  const config = JSON.parse(readFileSync(join(root, "scripts", "tsconfig.json"), "utf8")) as { include: string[] };
+  expect(config.include).toContain("../vitest.config.ts");
+  expect(config.include).toContain("../vitest.ui.config.ts");
 });

@@ -1,0 +1,17 @@
+{
+  "name": "@magnis/source-google",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/main.ts",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@magnis/connector-sdk": "workspace:*",
+    "imapflow": "^2.0.6",
+    "postal-mime": "^3.0.1"
+  },
+  "devDependencies": {
+    "@magnis/testkit": "workspace:*"
+  }
+}

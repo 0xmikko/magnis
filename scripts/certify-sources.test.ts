@@ -615,7 +615,7 @@ describe("tst_cat_src_cert_001 staged Source certification", () => {
 
   test("stages Telegram without its build checkout and launches the exact bundle", async () => {
     const repoRoot = join(import.meta.dir, "..");
-    const release = discoverSourceReleaseManifests(join(repoRoot, "plugins", "sources"))
+    const release = discoverSourceReleaseManifests(join(repoRoot, "sources"))
       .find(({ id }) => id === "telegram");
     if (release === undefined || release.disposition !== "admissible") {
       throw new Error("Telegram must be an admissible Source release");

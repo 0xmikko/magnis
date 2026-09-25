@@ -17,7 +17,7 @@ import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
 
-const MODULES = join(import.meta.dir, "..", "plugins", "modules");
+const MODULES = join(import.meta.dir, "..", "modules");
 
 function read(relativePath: string): string {
   return readFileSync(join(MODULES, relativePath), "utf8");

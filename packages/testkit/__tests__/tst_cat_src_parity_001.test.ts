@@ -15,13 +15,13 @@ import {
   type ConnectorConfig,
   type Envelope,
 } from "@magnis/connector-sdk";
-import { emitMessage as emitGmailMessage } from "../../../plugins/sources/mock-gmail/src/dataset";
-import { sendMessage as sendMockGmailMessage } from "../../../plugins/sources/mock-gmail/src/execute";
-import { fetchMockGmail } from "../../../plugins/sources/mock-gmail/src/fetch";
-import { fetchMockLinkedIn } from "../../../plugins/sources/mock-linkedin/src/surfaces/linkedin/fetch";
-import { emitMessage as emitTelegramMessage } from "../../../plugins/sources/mock-telegram/src/dataset";
-import { fetchMockTelegram } from "../../../plugins/sources/mock-telegram/src/fetch";
-import { fetchMockX } from "../../../plugins/sources/mock-x/src/surfaces/x/fetch";
+import { emitMessage as emitGmailMessage } from "../../../sources/mock-gmail/src/dataset";
+import { sendMessage as sendMockGmailMessage } from "../../../sources/mock-gmail/src/execute";
+import { fetchMockGmail } from "../../../sources/mock-gmail/src/fetch";
+import { fetchMockLinkedIn } from "../../../sources/mock-linkedin/src/surfaces/linkedin/fetch";
+import { emitMessage as emitTelegramMessage } from "../../../sources/mock-telegram/src/dataset";
+import { fetchMockTelegram } from "../../../sources/mock-telegram/src/fetch";
+import { fetchMockX } from "../../../sources/mock-x/src/surfaces/x/fetch";
 import {
   accountCompatibilityHash,
   decodeSourceCertificationReceipt,
@@ -107,38 +107,41 @@ type ScenarioRegistry = Readonly<Record<string, readonly ScenarioBinding[]>>;
 
 const PROVIDER_SCENARIOS: ScenarioRegistry = {
   anysite: [
-    { id: "tst_li_001", path: "plugins/sources/anysite/src/surfaces/linkedin/fetch.test.ts" },
-    { id: "tst_li_004", path: "plugins/sources/anysite/src/surfaces/linkedin/fetch.test.ts" },
-    { id: "tst_linkedin_probe", path: "plugins/sources/anysite/src/probe.test.ts" },
+    { id: "tst_li_001", path: "sources/anysite/src/surfaces/linkedin/fetch.test.ts" },
+    { id: "tst_li_004", path: "sources/anysite/src/surfaces/linkedin/fetch.test.ts" },
+    { id: "tst_linkedin_probe", path: "sources/anysite/src/probe.test.ts" },
   ],
   google: [
-    { id: "tst_gts_email_009", path: "plugins/sources/google/src/surfaces/email/gmail.test.ts" },
-    { id: "tst_gts_fx_001", path: "plugins/sources/google/src/__tests__/fixture.test.ts" },
-    { id: "tst_gts_fx_003", path: "plugins/sources/google/src/__tests__/fixture.test.ts" },
-    { id: "tst_gts_gcal_005", path: "plugins/sources/google/src/surfaces/meetings/calendar.test.ts" },
-    { id: "tst_gts_gp_005", path: "plugins/sources/google/src/surfaces/contacts/contacts.test.ts" },
-    { id: "tst_gts_gp_006", path: "plugins/sources/google/src/surfaces/contacts/contacts.test.ts" },
-    { id: "tst_gts_hist_008b", path: "plugins/sources/google/src/surfaces/email/gmail.test.ts" },
-    { id: "tst_gts_oidc_004", path: "plugins/sources/google/src/oauth.test.ts" },
-    { id: "tst_gts_oidc_007", path: "plugins/sources/google/src/oauth.test.ts" },
-    { id: "tst_gts_wire_006", path: "plugins/sources/google/src/__tests__/fixture.test.ts" },
+    { id: "tst_gts_email_009", path: "sources/google/src/surfaces/email/gmail.test.ts" },
+    { id: "tst_gts_fx_001", path: "sources/google/src/__tests__/fixture.test.ts" },
+    { id: "tst_gts_fx_003", path: "sources/google/src/__tests__/fixture.test.ts" },
+    { id: "tst_gts_gp_006", path: "sources/google/src/surfaces/contacts/contacts.test.ts" },
+    { id: "tst_gts_hist_008b", path: "sources/google/src/surfaces/email/gmail.test.ts" },
+    { id: "tst_gts_oidc_004", path: "sources/google/src/oauth.test.ts" },
+    { id: "tst_gts_oidc_007", path: "sources/google/src/oauth.test.ts" },
+    { id: "tst_gts_wire_006", path: "sources/google/src/__tests__/fixture.test.ts" },
+    { id: "tst_src_iso_google_005", path: "sources/google/src/surfaces/meetings/calendar.test.ts" },
+    { id: "tst_src_iso_google_006", path: "sources/google/src/surfaces/meetings/calendar.test.ts" },
+    { id: "tst_src_iso_google_007", path: "sources/google/src/surfaces/contacts/contacts.test.ts" },
+    { id: "tst_src_iso_google_008", path: "sources/google/src/surfaces/contacts/contacts.test.ts" },
+    { id: "tst_src_iso_google_012", path: "sources/google/src/__tests__/googleContract.test.ts" },
   ],
   local: [
-    { id: "tst_conn_local_ts_001", path: "plugins/sources/local/src/surfaces/notes/fetch.test.ts" },
-    { id: "tst_conn_local_ts_005", path: "plugins/sources/local/src/surfaces/notes/fetch.test.ts" },
+    { id: "tst_conn_local_ts_001", path: "sources/local/src/surfaces/notes/fetch.test.ts" },
+    { id: "tst_conn_local_ts_005", path: "sources/local/src/surfaces/notes/fetch.test.ts" },
   ],
   "mock-gmail": [
-    { id: "tst_conn_mockgmail_dataset_001", path: "plugins/sources/mock-gmail/src/dataset.test.ts" },
-    { id: "tst_conn_mockgmail_dataset_003", path: "plugins/sources/mock-gmail/src/dataset.test.ts" },
-    { id: "tst_conn_mockgmail_dataset_004", path: "plugins/sources/mock-gmail/src/dataset.test.ts" },
-    { id: "tst_conn_mockgmail_dataset_005", path: "plugins/sources/mock-gmail/src/dataset.test.ts" },
-    { id: "tst_conn_mockgmail_ts_001", path: "plugins/sources/mock-gmail/src/fetch.test.ts" },
-    { id: "tst_source_mock_gmail_execute_001", path: "plugins/sources/mock-gmail/src/execute.test.ts" },
+    { id: "tst_conn_mockgmail_dataset_001", path: "sources/mock-gmail/src/dataset.test.ts" },
+    { id: "tst_conn_mockgmail_dataset_003", path: "sources/mock-gmail/src/dataset.test.ts" },
+    { id: "tst_conn_mockgmail_dataset_004", path: "sources/mock-gmail/src/dataset.test.ts" },
+    { id: "tst_conn_mockgmail_dataset_005", path: "sources/mock-gmail/src/dataset.test.ts" },
+    { id: "tst_conn_mockgmail_ts_001", path: "sources/mock-gmail/src/fetch.test.ts" },
+    { id: "tst_source_mock_gmail_execute_001", path: "sources/mock-gmail/src/execute.test.ts" },
   ],
   "mock-linkedin": [
     { id: "tst_cat_src_parity_001", path: "packages/testkit/__tests__/tst_cat_src_parity_001.test.ts" },
-    { id: "tst_mockli_001", path: "plugins/sources/mock-linkedin/src/surfaces/linkedin/fetch.test.ts" },
-    { id: "tst_mockli_003", path: "plugins/sources/mock-linkedin/src/surfaces/linkedin/fetch.test.ts" },
+    { id: "tst_mockli_001", path: "sources/mock-linkedin/src/surfaces/linkedin/fetch.test.ts" },
+    { id: "tst_mockli_003", path: "sources/mock-linkedin/src/surfaces/linkedin/fetch.test.ts" },
   ],
   "mock-statemachine-key": [
     { id: "tst_conn_statemock_ts_001", path: "packages/source-statemachine/src/index.test.ts" },
@@ -151,53 +154,53 @@ const PROVIDER_SCENARIOS: ScenarioRegistry = {
     { id: "tst_conn_statemock_ts_004", path: "packages/source-statemachine/src/index.test.ts" },
     { id: "tst_conn_statemock_ts_013", path: "packages/source-statemachine/src/index.test.ts" },
     { id: "tst_conn_statemock_ts_014", path: "packages/source-statemachine/src/index.test.ts" },
-    { id: "tst_statemock_oauth_auth_001", path: "plugins/sources/mock-statemachine-oauth/src/auth.test.ts" },
+    { id: "tst_statemock_oauth_auth_001", path: "sources/mock-statemachine-oauth/src/auth.test.ts" },
   ],
   "mock-statemachine-phone": [
     { id: "tst_cat_src_phone_001", path: "packages/testkit/__tests__/tst_cat_src_parity_001.test.ts" },
     { id: "tst_conn_statemock_ts_001", path: "packages/source-statemachine/src/index.test.ts" },
     { id: "tst_conn_statemock_ts_004", path: "packages/source-statemachine/src/index.test.ts" },
     { id: "tst_conn_statemock_ts_014", path: "packages/source-statemachine/src/index.test.ts" },
-    { id: "tst_statemock_phone_auth_001", path: "plugins/sources/mock-statemachine-phone/src/auth.test.ts" },
+    { id: "tst_statemock_phone_auth_001", path: "sources/mock-statemachine-phone/src/auth.test.ts" },
   ],
   "mock-telegram": [
-    { id: "tst_conn_mocktelegram_dataset_001", path: "plugins/sources/mock-telegram/src/dataset.test.ts" },
-    { id: "tst_conn_mocktelegram_dataset_002", path: "plugins/sources/mock-telegram/src/dataset.test.ts" },
-    { id: "tst_conn_mocktelegram_ts_001", path: "plugins/sources/mock-telegram/src/fetch.test.ts" },
-    { id: "tst_source_mock_telegram_execute_001", path: "plugins/sources/mock-telegram/src/execute.test.ts" },
+    { id: "tst_conn_mocktelegram_dataset_001", path: "sources/mock-telegram/src/dataset.test.ts" },
+    { id: "tst_conn_mocktelegram_dataset_002", path: "sources/mock-telegram/src/dataset.test.ts" },
+    { id: "tst_conn_mocktelegram_ts_001", path: "sources/mock-telegram/src/fetch.test.ts" },
+    { id: "tst_source_mock_telegram_execute_001", path: "sources/mock-telegram/src/execute.test.ts" },
   ],
   "mock-x": [
     { id: "tst_cat_src_parity_001", path: "packages/testkit/__tests__/tst_cat_src_parity_001.test.ts" },
-    { id: "tst_conn_mockx_dataset_001", path: "plugins/sources/mock-x/src/dataset.test.ts" },
-    { id: "tst_conn_mockx_dataset_002", path: "plugins/sources/mock-x/src/dataset.test.ts" },
-    { id: "tst_mockx_001", path: "plugins/sources/mock-x/src/surfaces/x/fetch.test.ts" },
-    { id: "tst_mockx_003", path: "plugins/sources/mock-x/src/surfaces/x/fetch.test.ts" },
+    { id: "tst_conn_mockx_dataset_001", path: "sources/mock-x/src/dataset.test.ts" },
+    { id: "tst_conn_mockx_dataset_002", path: "sources/mock-x/src/dataset.test.ts" },
+    { id: "tst_mockx_001", path: "sources/mock-x/src/surfaces/x/fetch.test.ts" },
+    { id: "tst_mockx_003", path: "sources/mock-x/src/surfaces/x/fetch.test.ts" },
   ],
   telegram: [
-    { id: "tst_cat_tg_gap_001", path: "plugins/sources/telegram/src/surfaces/telegram/tst_cat_tg_gap_001.test.ts" },
-    { id: "tst_cat_tg_gap_002", path: "plugins/sources/telegram/src/surfaces/telegram/tst_cat_tg_gap_001.test.ts" },
-    { id: "tst_cat_tg_gap_003", path: "plugins/sources/telegram/src/surfaces/telegram/tst_cat_tg_gap_001.test.ts" },
-    { id: "tst_tgts_auth_001", path: "plugins/sources/telegram/src/auth.test.ts" },
-    { id: "tst_tgts_auth_004", path: "plugins/sources/telegram/src/auth.test.ts" },
-    { id: "tst_tgts_auth_012", path: "plugins/sources/telegram/src/auth.test.ts" },
-    { id: "tst_tgts_boot_001", path: "plugins/sources/telegram/src/surfaces/telegram/commands.test.ts" },
-    { id: "tst_tgts_exec_001", path: "plugins/sources/telegram/src/surfaces/telegram/execute.test.ts" },
-    { id: "tst_tgts_flood_wire_002", path: "plugins/sources/telegram/src/surfaces/telegram/execute.test.ts" },
-    { id: "tst_tgts_fx_001", path: "plugins/sources/telegram/src/fixture.test.ts" },
-    { id: "tst_tgts_wire_004", path: "plugins/sources/telegram/src/fixture.test.ts" },
-    { id: "tst_tgts_wire_005", path: "plugins/sources/telegram/src/fixture.test.ts" },
-    { id: "tst_tgts_wire_012", path: "plugins/sources/telegram/src/fixture.test.ts" },
+    { id: "tst_cat_tg_gap_001", path: "sources/telegram/src/surfaces/telegram/tst_cat_tg_gap_001.test.ts" },
+    { id: "tst_cat_tg_gap_002", path: "sources/telegram/src/surfaces/telegram/tst_cat_tg_gap_001.test.ts" },
+    { id: "tst_cat_tg_gap_003", path: "sources/telegram/src/surfaces/telegram/tst_cat_tg_gap_001.test.ts" },
+    { id: "tst_tgts_auth_001", path: "sources/telegram/src/auth.test.ts" },
+    { id: "tst_tgts_auth_004", path: "sources/telegram/src/auth.test.ts" },
+    { id: "tst_tgts_auth_012", path: "sources/telegram/src/auth.test.ts" },
+    { id: "tst_tgts_boot_001", path: "sources/telegram/src/surfaces/telegram/commands.test.ts" },
+    { id: "tst_tgts_exec_001", path: "sources/telegram/src/surfaces/telegram/execute.test.ts" },
+    { id: "tst_tgts_flood_wire_002", path: "sources/telegram/src/surfaces/telegram/execute.test.ts" },
+    { id: "tst_tgts_fx_001", path: "sources/telegram/src/fixture.test.ts" },
+    { id: "tst_tgts_wire_004", path: "sources/telegram/src/fixture.test.ts" },
+    { id: "tst_tgts_wire_005", path: "sources/telegram/src/fixture.test.ts" },
+    { id: "tst_tgts_wire_012", path: "sources/telegram/src/fixture.test.ts" },
   ],
   x: [
-    { id: "tst_x_001", path: "plugins/sources/x/src/surfaces/x/fetch.test.ts" },
-    { id: "tst_x_005", path: "plugins/sources/x/src/surfaces/x/fetch.test.ts" },
-    { id: "tst_x_006", path: "plugins/sources/x/src/surfaces/x/fetch.test.ts" },
-    { id: "tst_x_probe", path: "plugins/sources/x/src/probe.test.ts" },
+    { id: "tst_x_001", path: "sources/x/src/surfaces/x/fetch.test.ts" },
+    { id: "tst_x_005", path: "sources/x/src/surfaces/x/fetch.test.ts" },
+    { id: "tst_x_006", path: "sources/x/src/surfaces/x/fetch.test.ts" },
+    { id: "tst_x_probe", path: "sources/x/src/probe.test.ts" },
   ],
 };
 
 function providerTestFiles(root: string, sourceId: string): readonly string[] {
-  const providerRoot = join(root, "plugins", "sources", sourceId);
+  const providerRoot = join(root, "sources", sourceId);
   if (!existsSync(providerRoot)) return [];
   const files: string[] = [];
   const visit = (directory: string): void => {
@@ -257,75 +260,75 @@ const CURRENT_OPERATION_EVIDENCE: Readonly<
   Record<string, Readonly<Record<string, { id: string; path: string }>>>
 > = {
   anysite: {
-    "magnis.auth.probe": { id: "tst_linkedin_probe", path: "plugins/sources/anysite/src/probe.test.ts" },
-    "magnis.sync.fetch": { id: "tst_li_001", path: "plugins/sources/anysite/src/surfaces/linkedin/fetch.test.ts" },
+    "magnis.auth.probe": { id: "tst_linkedin_probe", path: "sources/anysite/src/probe.test.ts" },
+    "magnis.sync.fetch": { id: "tst_li_001", path: "sources/anysite/src/surfaces/linkedin/fetch.test.ts" },
   },
   google: {
-    "magnis.auth.exchange": { id: "tst_gts_oidc_004", path: "plugins/sources/google/src/oauth.test.ts" },
-    "magnis.auth.revoke": { id: "tst_gts_oidc_007", path: "plugins/sources/google/src/oauth.test.ts" },
-    "magnis.execute:download_file": { id: "tst_gts_fx_003", path: "plugins/sources/google/src/__tests__/fixture.test.ts" },
-    "magnis.execute:send_message": { id: "tst_gts_fx_003", path: "plugins/sources/google/src/__tests__/fixture.test.ts" },
-    "magnis.sync.fetch": { id: "tst_gts_fx_001", path: "plugins/sources/google/src/__tests__/fixture.test.ts" },
+    "magnis.auth.exchange": { id: "tst_gts_oidc_004", path: "sources/google/src/oauth.test.ts" },
+    "magnis.auth.revoke": { id: "tst_gts_oidc_007", path: "sources/google/src/oauth.test.ts" },
+    "magnis.execute:download_file": { id: "tst_gts_fx_003", path: "sources/google/src/__tests__/fixture.test.ts" },
+    "magnis.execute:send_message": { id: "tst_gts_fx_003", path: "sources/google/src/__tests__/fixture.test.ts" },
+    "magnis.sync.fetch": { id: "tst_gts_fx_001", path: "sources/google/src/__tests__/fixture.test.ts" },
   },
   local: {
-    "magnis.sync.fetch": { id: "tst_conn_local_ts_001", path: "plugins/sources/local/src/surfaces/notes/fetch.test.ts" },
+    "magnis.sync.fetch": { id: "tst_conn_local_ts_001", path: "sources/local/src/surfaces/notes/fetch.test.ts" },
   },
   "mock-gmail": {
-    "magnis.dataset.invoke:emit_meeting": { id: "tst_conn_mockgmail_dataset_003", path: "plugins/sources/mock-gmail/src/dataset.test.ts" },
-    "magnis.dataset.invoke:emit_message": { id: "tst_conn_mockgmail_dataset_001", path: "plugins/sources/mock-gmail/src/dataset.test.ts" },
-    "magnis.dataset.invoke:rate_limit_next_fetch": { id: "tst_conn_mockgmail_dataset_004", path: "plugins/sources/mock-gmail/src/dataset.test.ts" },
-    "magnis.execute:send_message": { id: "tst_source_mock_gmail_execute_001", path: "plugins/sources/mock-gmail/src/execute.test.ts" },
-    "magnis.sync.fetch": { id: "tst_conn_mockgmail_ts_001", path: "plugins/sources/mock-gmail/src/fetch.test.ts" },
+    "magnis.dataset.invoke:emit_meeting": { id: "tst_conn_mockgmail_dataset_003", path: "sources/mock-gmail/src/dataset.test.ts" },
+    "magnis.dataset.invoke:emit_message": { id: "tst_conn_mockgmail_dataset_001", path: "sources/mock-gmail/src/dataset.test.ts" },
+    "magnis.dataset.invoke:rate_limit_next_fetch": { id: "tst_conn_mockgmail_dataset_004", path: "sources/mock-gmail/src/dataset.test.ts" },
+    "magnis.execute:send_message": { id: "tst_source_mock_gmail_execute_001", path: "sources/mock-gmail/src/execute.test.ts" },
+    "magnis.sync.fetch": { id: "tst_conn_mockgmail_ts_001", path: "sources/mock-gmail/src/fetch.test.ts" },
   },
   "mock-linkedin": {
     "magnis.auth.probe": { id: "tst_cat_src_parity_001", path: "packages/testkit/__tests__/tst_cat_src_parity_001.test.ts" },
-    "magnis.sync.fetch": { id: "tst_mockli_001", path: "plugins/sources/mock-linkedin/src/surfaces/linkedin/fetch.test.ts" },
+    "magnis.sync.fetch": { id: "tst_mockli_001", path: "sources/mock-linkedin/src/surfaces/linkedin/fetch.test.ts" },
   },
   "mock-statemachine-key": {
     "magnis.auth.probe": { id: "tst_conn_statemock_ts_014", path: "packages/source-statemachine/src/index.test.ts" },
     "magnis.sync.fetch": { id: "tst_conn_statemock_ts_004", path: "packages/source-statemachine/src/index.test.ts" },
   },
   "mock-statemachine-oauth": {
-    "magnis.auth.exchange": { id: "tst_statemock_oauth_auth_001", path: "plugins/sources/mock-statemachine-oauth/src/auth.test.ts" },
+    "magnis.auth.exchange": { id: "tst_statemock_oauth_auth_001", path: "sources/mock-statemachine-oauth/src/auth.test.ts" },
     "magnis.auth.probe": { id: "tst_conn_statemock_ts_014", path: "packages/source-statemachine/src/index.test.ts" },
-    "magnis.auth.revoke": { id: "tst_statemock_oauth_auth_001", path: "plugins/sources/mock-statemachine-oauth/src/auth.test.ts" },
+    "magnis.auth.revoke": { id: "tst_statemock_oauth_auth_001", path: "sources/mock-statemachine-oauth/src/auth.test.ts" },
     "magnis.sync.fetch": { id: "tst_conn_statemock_ts_004", path: "packages/source-statemachine/src/index.test.ts" },
   },
   "mock-statemachine-phone": {
     listen_start: { id: "tst_cat_src_phone_001", path: "packages/testkit/__tests__/tst_cat_src_parity_001.test.ts" },
     listen_stop: { id: "tst_cat_src_phone_001", path: "packages/testkit/__tests__/tst_cat_src_parity_001.test.ts" },
-    "magnis.auth.begin": { id: "tst_statemock_phone_auth_001", path: "plugins/sources/mock-statemachine-phone/src/auth.test.ts" },
+    "magnis.auth.begin": { id: "tst_statemock_phone_auth_001", path: "sources/mock-statemachine-phone/src/auth.test.ts" },
     "magnis.auth.probe": { id: "tst_conn_statemock_ts_014", path: "packages/source-statemachine/src/index.test.ts" },
-    "magnis.auth.revoke": { id: "tst_statemock_phone_auth_001", path: "plugins/sources/mock-statemachine-phone/src/auth.test.ts" },
-    "magnis.auth.step": { id: "tst_statemock_phone_auth_001", path: "plugins/sources/mock-statemachine-phone/src/auth.test.ts" },
+    "magnis.auth.revoke": { id: "tst_statemock_phone_auth_001", path: "sources/mock-statemachine-phone/src/auth.test.ts" },
+    "magnis.auth.step": { id: "tst_statemock_phone_auth_001", path: "sources/mock-statemachine-phone/src/auth.test.ts" },
     "magnis.sync.fetch": { id: "tst_conn_statemock_ts_004", path: "packages/source-statemachine/src/index.test.ts" },
   },
   "mock-telegram": {
-    "magnis.dataset.invoke:emit_chat": { id: "tst_conn_mocktelegram_dataset_001", path: "plugins/sources/mock-telegram/src/dataset.test.ts" },
-    "magnis.dataset.invoke:emit_message": { id: "tst_conn_mocktelegram_dataset_002", path: "plugins/sources/mock-telegram/src/dataset.test.ts" },
-    "magnis.execute:send_message": { id: "tst_source_mock_telegram_execute_001", path: "plugins/sources/mock-telegram/src/execute.test.ts" },
-    "magnis.sync.fetch": { id: "tst_conn_mocktelegram_ts_001", path: "plugins/sources/mock-telegram/src/fetch.test.ts" },
+    "magnis.dataset.invoke:emit_chat": { id: "tst_conn_mocktelegram_dataset_001", path: "sources/mock-telegram/src/dataset.test.ts" },
+    "magnis.dataset.invoke:emit_message": { id: "tst_conn_mocktelegram_dataset_002", path: "sources/mock-telegram/src/dataset.test.ts" },
+    "magnis.execute:send_message": { id: "tst_source_mock_telegram_execute_001", path: "sources/mock-telegram/src/execute.test.ts" },
+    "magnis.sync.fetch": { id: "tst_conn_mocktelegram_ts_001", path: "sources/mock-telegram/src/fetch.test.ts" },
   },
   "mock-x": {
     "magnis.auth.probe": { id: "tst_cat_src_parity_001", path: "packages/testkit/__tests__/tst_cat_src_parity_001.test.ts" },
-    "magnis.dataset.invoke:emit_post": { id: "tst_conn_mockx_dataset_002", path: "plugins/sources/mock-x/src/dataset.test.ts" },
-    "magnis.dataset.invoke:emit_profile": { id: "tst_conn_mockx_dataset_001", path: "plugins/sources/mock-x/src/dataset.test.ts" },
-    "magnis.sync.fetch": { id: "tst_mockx_001", path: "plugins/sources/mock-x/src/surfaces/x/fetch.test.ts" },
+    "magnis.dataset.invoke:emit_post": { id: "tst_conn_mockx_dataset_002", path: "sources/mock-x/src/dataset.test.ts" },
+    "magnis.dataset.invoke:emit_profile": { id: "tst_conn_mockx_dataset_001", path: "sources/mock-x/src/dataset.test.ts" },
+    "magnis.sync.fetch": { id: "tst_mockx_001", path: "sources/mock-x/src/surfaces/x/fetch.test.ts" },
   },
   telegram: {
-    listen_start: { id: "tst_tgts_wire_012", path: "plugins/sources/telegram/src/fixture.test.ts" },
-    listen_stop: { id: "tst_tgts_wire_004", path: "plugins/sources/telegram/src/fixture.test.ts" },
-    "magnis.auth.begin": { id: "tst_tgts_auth_001", path: "plugins/sources/telegram/src/auth.test.ts" },
-    "magnis.auth.revoke": { id: "tst_tgts_auth_012", path: "plugins/sources/telegram/src/auth.test.ts" },
-    "magnis.auth.step": { id: "tst_tgts_auth_004", path: "plugins/sources/telegram/src/auth.test.ts" },
-    "magnis.execute:download_file": { id: "tst_tgts_exec_001", path: "plugins/sources/telegram/src/surfaces/telegram/execute.test.ts" },
-    "magnis.execute:reply": { id: "tst_tgts_exec_001", path: "plugins/sources/telegram/src/surfaces/telegram/execute.test.ts" },
-    "magnis.execute:send_message": { id: "tst_tgts_exec_001", path: "plugins/sources/telegram/src/surfaces/telegram/execute.test.ts" },
-    "magnis.sync.fetch": { id: "tst_tgts_fx_001", path: "plugins/sources/telegram/src/fixture.test.ts" },
+    listen_start: { id: "tst_tgts_wire_012", path: "sources/telegram/src/fixture.test.ts" },
+    listen_stop: { id: "tst_tgts_wire_004", path: "sources/telegram/src/fixture.test.ts" },
+    "magnis.auth.begin": { id: "tst_tgts_auth_001", path: "sources/telegram/src/auth.test.ts" },
+    "magnis.auth.revoke": { id: "tst_tgts_auth_012", path: "sources/telegram/src/auth.test.ts" },
+    "magnis.auth.step": { id: "tst_tgts_auth_004", path: "sources/telegram/src/auth.test.ts" },
+    "magnis.execute:download_file": { id: "tst_tgts_exec_001", path: "sources/telegram/src/surfaces/telegram/execute.test.ts" },
+    "magnis.execute:reply": { id: "tst_tgts_exec_001", path: "sources/telegram/src/surfaces/telegram/execute.test.ts" },
+    "magnis.execute:send_message": { id: "tst_tgts_exec_001", path: "sources/telegram/src/surfaces/telegram/execute.test.ts" },
+    "magnis.sync.fetch": { id: "tst_tgts_fx_001", path: "sources/telegram/src/fixture.test.ts" },
   },
   x: {
-    "magnis.auth.probe": { id: "tst_x_probe", path: "plugins/sources/x/src/probe.test.ts" },
-    "magnis.sync.fetch": { id: "tst_x_001", path: "plugins/sources/x/src/surfaces/x/fetch.test.ts" },
+    "magnis.auth.probe": { id: "tst_x_probe", path: "sources/x/src/probe.test.ts" },
+    "magnis.sync.fetch": { id: "tst_x_001", path: "sources/x/src/surfaces/x/fetch.test.ts" },
   },
 };
 
@@ -365,9 +368,9 @@ const GOLDEN_PROVIDERS: readonly GoldenProvider[] = [
     mintedCredentialKeys: ["refresh_token"],
     migratesFrom: [],
     surfaces: [
-      surface("contacts", "clear", "full_snapshot", "snapshot"),
+      surface("contacts", "retain", "full_snapshot", "snapshot"),
       surface("email", "retain", "forward_and_backfill", "range"),
-      surface("meetings", "clear", "bounded_window", "range"),
+      surface("meetings", "retain", "full_snapshot", "snapshot"),
     ],
   },
   {
@@ -637,7 +640,7 @@ function stringArray(value: unknown, label: string): readonly string[] {
 
 function manifest(sourceId: string): Record<string, unknown> {
   const parsed = parseToml(
-    readFileSync(join(repoRoot, "plugins", "sources", sourceId, "manifest.toml"), "utf8"),
+    readFileSync(join(repoRoot, "sources", sourceId, "manifest.toml"), "utf8"),
   ) as unknown;
   if (!isRecord(parsed)) throw new Error(`${sourceId} manifest must be a table`);
   return parsed;
@@ -799,7 +802,7 @@ describe("tst_cat_src_parity_001 current v1 golden matrix", () => {
   test("provider-local authored scenarios need no shared provider registry row", () => {
     const root = mkdtempSync(join(tmpdir(), "magnis-provider-scenarios-"));
     try {
-      const providerRoot = join(root, "plugins", "sources", "sample", "src");
+      const providerRoot = join(root, "sources", "sample", "src");
       mkdirSync(providerRoot, { recursive: true });
       writeFileSync(
         join(providerRoot, "certification.test.ts"),
@@ -809,7 +812,7 @@ describe("tst_cat_src_parity_001 current v1 golden matrix", () => {
       expect(resolveProviderScenarios(root, "sample", ["tst_sample_cert_001"], {})).toEqual([
         {
           id: "tst_sample_cert_001",
-          path: "plugins/sources/sample/src/certification.test.ts",
+          path: "sources/sample/src/certification.test.ts",
         },
       ]);
 
@@ -1085,7 +1088,7 @@ describe("tst_cat_src_parity_001 current v1 golden matrix", () => {
         ["mock-linkedin", "mock-linkedin-key"],
         ["mock-x", "@mock_x_user"],
       ] as const) {
-        const release = discoverSourceReleaseManifests(join(repoRoot, "plugins", "sources"))
+        const release = discoverSourceReleaseManifests(join(repoRoot, "sources"))
           .find((entry) => entry.id === id);
         if (release === undefined || release.disposition !== "admissible") {
           throw new Error(`${id} is not an admissible release`);
@@ -1109,7 +1112,7 @@ describe("tst_cat_src_parity_001 current v1 golden matrix", () => {
   test("tst_cat_src_phone_001 staged phone wrapper serves its declared Push surface", async () => {
     const root = mkdtempSync(join(tmpdir(), "magnis-phone-certification-"));
     try {
-      const release = discoverSourceReleaseManifests(join(repoRoot, "plugins", "sources"))
+      const release = discoverSourceReleaseManifests(join(repoRoot, "sources"))
         .find((entry) => entry.id === "mock-statemachine-phone");
       if (release === undefined || release.disposition !== "admissible") {
         throw new Error("mock-statemachine-phone is not an admissible release");

@@ -5,6 +5,7 @@ import { dirname, join, resolve } from "node:path";
 const root = resolve(import.meta.dir, "..");
 const runtime = ".agents/code-production/runtime";
 const prepTest = "scripts/tst_scripts_agent_stack_001.test.ts";
+const vitestConfigs = new Set(["vitest.config.ts", "vitest.ui.config.ts"]);
 
 function git(...args: string[]): string {
   return execFileSync("git", args, { cwd: root, encoding: "utf8" });
@@ -26,7 +27,9 @@ function docs(): void {
   }
 }
 
-function typeConfig(path: string): string {
+export function typeConfig(path: string): string {
+  // @tested-by: tst_scripts_agent_stack_004
+  if (vitestConfigs.has(path)) return "scripts/tsconfig.json";
   let dir = dirname(path);
   while (dir !== ".") {
     const config = join(dir, "tsconfig.json");
@@ -41,7 +44,12 @@ export function backendLanes(paths: readonly string[], source: (path: string) =>
   // @tested-by: tst_scripts_agent_stack_003
   const bun: string[] = [];
   const vitest: string[] = [];
-  for (const path of paths) (/["']bun:test["']/.test(source(path)) ? bun : vitest).push(path);
+  for (const path of paths) {
+    const contents = source(path);
+    const isBun = /["']bun:test["']/.test(contents)
+      || (path.startsWith("sources/") && !/["']vitest["']/.test(contents));
+    (isBun ? bun : vitest).push(path);
+  }
   return [bun, vitest].filter((lane) => lane.length > 0);
 }
 
@@ -68,7 +76,7 @@ function commit(): void {
     else {
       const neighbor = path.replace(/\.(ts|tsx)$/, ".test.$1");
       if (existsSync(join(root, neighbor))) tests.add(neighbor);
-      if (!path.endsWith(".d.ts") && !path.includes("/__tests__/")) lint.push(path);
+      if (!path.endsWith(".d.ts") && !path.includes("/__tests__/") && !vitestConfigs.has(path)) lint.push(path);
     }
   }
   const productChanged = paths.some((path) => /^(plugins|packages)\/.*\.(ts|tsx)$/.test(path));

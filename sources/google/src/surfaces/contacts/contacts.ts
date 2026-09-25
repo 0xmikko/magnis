@@ -1,0 +1,371 @@
+// Contacts surface: Google People API client + canonical conversion —
+// twin of sources/google/src/contacts.rs.
+//
+// Each contacts envelope's `payload` is a full Contact serialization and
+// `remote_id` is `gpeople:{stable_hash}` (dedup survives display-name change).
+
+import { createHash } from "node:crypto";
+import { CursorExpiredError, type Envelope } from "@magnis/connector-sdk";
+import {
+  ContactsCursorExpiredError,
+  checkRateLimit,
+  fetchWithRetry,
+  type FetchLike,
+} from "../../http";
+import { contactRemoteId } from "./schema";
+import {
+  asObject,
+  defaultObject,
+  defaultObjectArray,
+  defaultBool,
+  optBool,
+  optNumber,
+  optString,
+  reqString,
+} from "../../validate";
+
+// ── Raw Google People API shapes (camelCase, as served) ───────
+
+interface GpeopleMetadata {
+  primary?: boolean | null;
+  deleted?: boolean | null;
+}
+
+interface GpeopleName {
+  displayName?: string | null;
+  givenName?: string | null;
+  familyName?: string | null;
+  metadata?: GpeopleMetadata | null;
+}
+
+interface GpeopleEmail {
+  value?: string | null;
+  type?: string | null;
+  metadata?: GpeopleMetadata | null;
+}
+
+interface GpeoplePhone {
+  value?: string | null;
+  canonicalForm?: string | null;
+  type?: string | null;
+  metadata?: GpeopleMetadata | null;
+}
+
+export interface GpeoplePerson {
+  /** Always present — looks like "people/c12345…". */
+  resourceName: string;
+  /** Write-back base (S3): the People API's optimistic-concurrency tag. */
+  etag?: string | null;
+  metadata?: GpeopleMetadata | null;
+  names?: GpeopleName[] | null;
+  emailAddresses?: GpeopleEmail[] | null;
+  phoneNumbers?: GpeoplePhone[] | null;
+  organizations?: { name?: string | null; title?: string | null; current?: boolean | null }[] | null;
+  photos?: { url?: string | null; metadata?: GpeopleMetadata | null }[] | null;
+  urls?: { value?: string | null; type?: string | null }[] | null;
+}
+
+interface GpeopleConnectionsResponse {
+  connections?: GpeoplePerson[] | null;
+  nextPageToken?: string | null;
+  nextSyncToken?: string | null;
+  /** The People API's exact count of the list, on every page. */
+  totalItems?: number | null;
+}
+
+/** One page of the contacts list: the list's count first on the first page,
+ * the persons the page left out when it did, then the persons. */
+export interface ContactsFetchResult {
+  envelopes: Envelope[];
+  nextCursor: Record<string, unknown>;
+  hasMore: boolean;
+}
+
+// ── Response parser (serde parity — see validate.ts) ──────────
+
+/** `GpeopleMetadata` (contacts.rs:103) — `#[serde(default)]` on the field, and
+ * `primary` is itself `#[serde(default)] bool` (absent → false). */
+function parseMetadata(
+  o: Record<string, unknown>,
+  ctx: string,
+): GpeopleMetadata {
+  const m = defaultObject(o, "metadata", ctx);
+  return { primary: defaultBool(m, "primary", `${ctx}.metadata`) };
+}
+
+/** `GpeopleConnectionsResponse` (contacts.rs:21) — `connections` is
+ * `#[serde(default)] Vec<_>`; each `GpeoplePerson.resource_name`
+ * (contacts.rs:31) is required and every sub-list is `#[serde(default)]`. */
+function parseGpeopleConnectionsResponse(
+  v: unknown,
+): GpeopleConnectionsResponse {
+  const ctx = "GpeopleConnectionsResponse";
+  const o = asObject(v, ctx);
+  const connections = defaultObjectArray(o, "connections", ctx).map((p, i) => {
+    const c = `${ctx}.connections[${String(i)}]`;
+    return {
+      resourceName: reqString(p, "resourceName", c),
+      etag: optString(p, "etag", c),
+      metadata: { deleted: defaultBool(defaultObject(p, "metadata", c), "deleted", `${c}.metadata`) },
+      names: defaultObjectArray(p, "names", c).map((n, j) => ({
+        displayName: optString(n, "displayName", `${c}.names[${String(j)}]`),
+        givenName: optString(n, "givenName", `${c}.names[${String(j)}]`),
+        familyName: optString(n, "familyName", `${c}.names[${String(j)}]`),
+        metadata: parseMetadata(n, `${c}.names[${String(j)}]`),
+      })),
+      emailAddresses: defaultObjectArray(p, "emailAddresses", c).map((e, j) => ({
+        value: optString(e, "value", `${c}.emailAddresses[${String(j)}]`),
+        type: optString(e, "type", `${c}.emailAddresses[${String(j)}]`),
+        metadata: parseMetadata(e, `${c}.emailAddresses[${String(j)}]`),
+      })),
+      phoneNumbers: defaultObjectArray(p, "phoneNumbers", c).map((ph, j) => ({
+        value: optString(ph, "value", `${c}.phoneNumbers[${String(j)}]`),
+        canonicalForm: optString(ph, "canonicalForm", `${c}.phoneNumbers[${String(j)}]`),
+        type: optString(ph, "type", `${c}.phoneNumbers[${String(j)}]`),
+        metadata: parseMetadata(ph, `${c}.phoneNumbers[${String(j)}]`),
+      })),
+      organizations: defaultObjectArray(p, "organizations", c).map((g, j) => ({
+        name: optString(g, "name", `${c}.organizations[${String(j)}]`),
+        title: optString(g, "title", `${c}.organizations[${String(j)}]`),
+        current: optBool(g, "current", `${c}.organizations[${String(j)}]`),
+      })),
+      photos: defaultObjectArray(p, "photos", c).map((ph, j) => ({
+        url: optString(ph, "url", `${c}.photos[${String(j)}]`),
+        metadata: parseMetadata(ph, `${c}.photos[${String(j)}]`),
+      })),
+      urls: defaultObjectArray(p, "urls", c).map((u, j) => ({
+        value: optString(u, "value", `${c}.urls[${String(j)}]`),
+        type: optString(u, "type", `${c}.urls[${String(j)}]`),
+      })),
+    };
+  });
+  return {
+    connections,
+    nextPageToken: optString(o, "nextPageToken", ctx),
+    nextSyncToken: optString(o, "nextSyncToken", ctx),
+    totalItems: optNumber(o, "totalItems", ctx),
+  };
+}
+
+// ── Canonical Contact shape ───────────────────────────────────
+
+export interface Contact {
+  id: string;
+  /** S3: verbatim People API identity — the replica's anchor base. */
+  resource_name: string;
+  /** S3: verbatim optimistic-concurrency tag — the write-back base. */
+  etag: string | null;
+  display_name: string | null;
+  given_name: string | null;
+  family_name: string | null;
+  emails: { address: string; label: string | null; is_primary: boolean }[];
+  phones: { number: string; label: string | null; is_primary: boolean }[];
+  organizations: { name: string | null; title: string | null; is_current: boolean }[];
+  photo_url: string | null;
+  external_url: string | null;
+}
+
+// ── GpeoplePerson → Contact conversion ────────────────────────
+
+function pickPrimary<T extends { metadata?: GpeopleMetadata | null }>(
+  items: T[],
+): T | undefined {
+  return items.find((x) => x.metadata?.primary === true) ?? items[0];
+}
+
+/** SHA-256 of the `people/{id}` resource name, hex, first 16 chars — stable
+ * across fetches and short enough for a graph external-link key. */
+export function stableContactId(resourceName: string): string {
+  return createHash("sha256").update(resourceName, "utf-8").digest("hex").slice(0, 16);
+}
+
+/** Convert a People API Person into a canonical Contact. Returns null when the
+ * person has no useful identity (no name, no email, no phone). */
+export function gpeoplePersonToContact(p: GpeoplePerson): Contact | null {
+  const primaryName = pickPrimary(p.names ?? []);
+  const displayName =
+    primaryName?.displayName ??
+    ((): string | null => {
+      const g = primaryName?.givenName ?? null;
+      const f = primaryName?.familyName ?? null;
+      if (g !== null && f !== null) return `${g} ${f}`;
+      return g ?? f ?? null;
+    })();
+
+  const emails = (p.emailAddresses ?? []).flatMap((e) =>
+    e.value !== null && e.value !== undefined
+      ? [
+          {
+            address: e.value,
+            label: e.type ?? null,
+            is_primary: e.metadata?.primary === true,
+          },
+        ]
+      : [],
+  );
+
+  const phones = (p.phoneNumbers ?? []).flatMap((ph) => {
+    const number = ph.canonicalForm ?? ph.value ?? null;
+    return number !== null
+      ? [
+          {
+            number,
+            label: ph.type ?? null,
+            is_primary: ph.metadata?.primary === true,
+          },
+        ]
+      : [];
+  });
+
+  // Identity filter: keep only contacts with at least ONE of {name, email, phone}.
+  if (displayName === null && emails.length === 0 && phones.length === 0) {
+    return null;
+  }
+
+  const organizations = (p.organizations ?? []).map((o) => ({
+    name: o.name ?? null,
+    title: o.title ?? null,
+    is_current: o.current ?? false,
+  }));
+
+  const photoUrl = pickPrimary(p.photos ?? [])?.url ?? null;
+
+  const profileUrl = (p.urls ?? []).find(
+    (u) => u.type?.toLowerCase() === "profile",
+  );
+  const externalUrl = profileUrl !== undefined ? (profileUrl.value ?? null) : null;
+
+  return {
+    id: stableContactId(p.resourceName),
+    resource_name: p.resourceName,
+    etag: p.etag ?? null,
+    display_name: displayName,
+    given_name: primaryName?.givenName ?? null,
+    family_name: primaryName?.familyName ?? null,
+    emails,
+    phones,
+    organizations,
+    photo_url: photoUrl,
+    external_url: externalUrl,
+  };
+}
+
+// ── REST client + fetch logic ─────────────────────────────────
+
+/** True ONLY for a Google JSON error body whose `error.status` is exactly
+ * `"FAILED_PRECONDITION"`. Anything else — a non-JSON body, a different
+ * status, a shape we don't recognise — returns false, so the caller raises the
+ * ordinary hard error. Deliberately narrow and failing-closed: a false
+ * positive here would silently wipe a cursor. */
+function isFailedPrecondition(body: string): boolean {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return false;
+  }
+  if (parsed === null || typeof parsed !== "object") return false;
+  const err = (parsed as Record<string, unknown>).error;
+  if (err === null || typeof err !== "object") return false;
+  return (err as Record<string, unknown>).status === "FAILED_PRECONDITION";
+}
+
+async function listConnectionsPage(
+  token: string,
+  syncToken: string | undefined,
+  pageToken: string | undefined,
+  fetchFn: FetchLike,
+): Promise<GpeopleConnectionsResponse> {
+  const params = new URLSearchParams({
+    personFields: "names,emailAddresses,phoneNumbers,organizations,photos,urls",
+    pageSize: "1000",
+  });
+  if (syncToken !== undefined) params.set("syncToken", syncToken);
+  else params.set("requestSyncToken", "true");
+  if (pageToken !== undefined) params.set("pageToken", pageToken);
+  const url = `https://people.googleapis.com/v1/people/me/connections?${params}`;
+
+  const resp = await fetchWithRetry(fetchFn, url, {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  checkRateLimit(resp);
+  if (!resp.ok) {
+    const body = await resp.text();
+    // A pageToken we SENT was rejected as a failed precondition → the token is
+    // no longer valid (they are ephemeral, and this one sat idle overnight).
+    // Gated on `pageToken !== undefined` on purpose: the same 400 on a first
+    // page means an identity/auth fault, and re-bootstrapping it would refetch
+    // page 1, fail identically, and loop forever. `personFields`/`pageSize` are
+    // hardcoded literals above, so the API's other documented
+    // FAILED_PRECONDITION-with-a-token cause — "all other request parameters
+    // must match the first call" — is unreachable here.
+    if (
+      resp.status === 400 &&
+      isFailedPrecondition(body)
+    ) {
+      // @tested-by: tst_src_iso_google_008, tst_gts_gp_006, tst_gts_gp_007
+      if (syncToken !== undefined) throw new CursorExpiredError("Google contacts syncToken expired (400 FAILED_PRECONDITION)");
+      if (pageToken !== undefined) throw new ContactsCursorExpiredError();
+    }
+    throw new Error(
+      `People API list_connections failed: HTTP ${String(resp.status)} — ${body}`,
+    );
+  }
+  return parseGpeopleConnectionsResponse(await resp.json());
+}
+
+/** Full pages request a terminal sync token; later polls return only changes.
+ * @tested-by: tst_src_iso_google_007, tst_src_iso_google_008 */
+export async function fetchContactsPage(
+  token: string,
+  cursor: unknown,
+  fetchFn: FetchLike,
+): Promise<ContactsFetchResult> {
+  const c =
+    cursor !== null && typeof cursor === "object"
+      ? (cursor as Record<string, unknown>)
+      : undefined;
+  const pageToken = typeof c?.page_token === "string" ? c.page_token : undefined;
+  const syncToken = typeof c?.sync_token === "string" ? c.sync_token : undefined;
+
+  const page = await listConnectionsPage(token, syncToken, pageToken, fetchFn);
+
+  const envelopes: Envelope[] = [];
+  let skipped = 0;
+  for (const person of page.connections ?? []) {
+    const remoteId = contactRemoteId(stableContactId(person.resourceName));
+    if (person.metadata?.deleted === true) {
+      envelopes.push({ surface: "contacts", payload: {}, remote_id: remoteId, kind: "delete" });
+      continue;
+    }
+    const contact = gpeoplePersonToContact(person);
+    if (contact === null) {
+      if (syncToken !== undefined) envelopes.push({ surface: "contacts", payload: {}, remote_id: remoteId, kind: "delete" });
+      else skipped += 1;
+      continue;
+    }
+    envelopes.push({
+      surface: "contacts",
+      payload: contact as unknown as Record<string, unknown>,
+      remote_id: contactRemoteId(contact.id),
+      kind: "snapshot",
+    });
+  }
+  const list: Record<string, unknown> = { entity_type: "list" };
+  if (syncToken === undefined && pageToken === undefined && typeof page.totalItems === "number") list.total_people = page.totalItems;
+  if (skipped > 0) list.skipped = skipped;
+  if (Object.keys(list).length > 1) {
+    envelopes.unshift({ surface: "contacts", kind: "snapshot", remote_id: "list", payload: list });
+  }
+
+  const hasMore = typeof page.nextPageToken === "string";
+  if (hasMore) {
+    const nextCursor: Record<string, unknown> = { page_token: page.nextPageToken };
+    if (syncToken !== undefined) nextCursor.sync_token = syncToken;
+    return { envelopes, nextCursor, hasMore };
+  }
+  if (page.nextSyncToken === null || page.nextSyncToken === undefined || page.nextSyncToken === "") {
+    throw new Error("People API terminal page missing nextSyncToken");
+  }
+  return { envelopes, nextCursor: { sync_token: page.nextSyncToken }, hasMore };
+}

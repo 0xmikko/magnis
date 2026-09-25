@@ -3,7 +3,7 @@
 //
 //   bun scripts/plugin-new.ts <id>
 //
-// Generates plugins/modules/<id>/ with the canonical manifest-v3 package layout:
+// Generates modules/<id>/ with the canonical manifest-v3 package layout:
 // manifest.toml (the folder name must equal the manifest id; tier community;
 // identity + permissions only — the module's namespace `<id>.*` is derived from
 // the id), schemas/ (convention-discovered entity JSON files), README.md
@@ -263,7 +263,7 @@ if (import.meta.main) {
     console.error("usage: bun scripts/plugin-new.ts <id>");
     process.exit(1);
   }
-  const root = join(import.meta.dir, "..", "plugins");
+  const root = join(import.meta.dir, "..");
   const dir = scaffoldPlugin(id, root);
   console.log(`scaffolded ${dir}
 
