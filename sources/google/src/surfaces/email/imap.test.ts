@@ -97,3 +97,19 @@ test("tst_src_iso_google_022 IMAP removes PostgreSQL-invalid NUL from MIME text"
   expect(mail.subject).toBe("AB");
   expect(mail.body_text?.trim()).toBe("Hithere");
 });
+
+/**
+ * @test-id: tst_src_iso_google_023
+ * @scenario: scn_google_pull_001
+ * @covers: sources/google/src/surfaces/email/imap.ts::readImapPage
+ * @deterministic: yes
+ * @fixtures: one IMAP label containing an unpaired low surrogate
+ */
+test("tst_src_iso_google_023 IMAP repairs PostgreSQL-invalid Unicode in labels", async () => {
+  const message = raw(9);
+  message.labels.add("broken\uDC00label");
+  const page = await readImapPage("user@example.com", "token", undefined, async () => mailbox([message]));
+  const mail = gmailMessageToMailMessage(page.messages[0]!);
+  expect(mail.labels).toContain("broken\uFFFDlabel");
+  expect(JSON.stringify(mail)).not.toContain("\\udc00");
+});

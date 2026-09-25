@@ -90,28 +90,29 @@ function gmailHexId(decimal: string): string {
   return BigInt(decimal).toString(16);
 }
 
-// PostgreSQL JSONB cannot store U+0000, which is legal in a MIME text part.
-function stripNul(value: string): string {
-  return value.replaceAll("\u0000", "");
+// PostgreSQL JSONB requires Unicode scalar text without U+0000.
+function jsonbText(value: string): string {
+  return value.replaceAll("\u0000", "")
+    .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "\uFFFD");
 }
 
 async function toGmailMessage(raw: ImapRawMessage, uidValidity: string): Promise<GmailMessage> {
   const parsed = await PostalMime.parse(raw.source);
-  const text = stripNul(parsed.text ?? "");
-  const html = stripNul(parsed.html ?? "");
+  const text = jsonbText(parsed.text ?? "");
+  const html = jsonbText(parsed.html ?? "");
   const parts = [
     ...(text ? [{ mimeType: "text/plain", body: { data: Buffer.from(text).toString("base64url") } }] : []),
     ...(html ? [{ mimeType: "text/html", body: { data: Buffer.from(html).toString("base64url") } }] : []),
     ...parsed.attachments.map((attachment, index) => ({
-      mimeType: stripNul(attachment.mimeType),
-      filename: stripNul(attachment.filename ?? ""),
+      mimeType: jsonbText(attachment.mimeType),
+      filename: jsonbText(attachment.filename ?? ""),
       body: {
         attachmentId: `imap:${uidValidity}:${String(raw.uid)}:${String(index)}`,
         size: typeof attachment.content === "string" ? Buffer.byteLength(attachment.content) : attachment.content.byteLength,
       },
     })),
   ];
-  const labels = [...raw.labels].map((label) => label === "\\Inbox" ? "INBOX" : label);
+  const labels = [...raw.labels].map((label) => jsonbText(label === "\\Inbox" ? "INBOX" : label));
   if (!raw.flags.has("\\Seen")) labels.push("UNREAD");
   if (raw.flags.has("\\Flagged")) labels.push("STARRED");
   return {
@@ -122,7 +123,7 @@ async function toGmailMessage(raw: ImapRawMessage, uidValidity: string): Promise
     internalDate: String(raw.internalDate.getTime()),
     payload: {
       mimeType: "multipart/mixed",
-      headers: parsed.headers.map((header) => ({ name: stripNul(header.originalKey), value: stripNul(header.value) })),
+      headers: parsed.headers.map((header) => ({ name: jsonbText(header.originalKey), value: jsonbText(header.value) })),
       parts,
     },
   };
