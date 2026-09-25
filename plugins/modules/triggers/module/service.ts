@@ -146,7 +146,7 @@ const UPDATE_PARAMS = {
         name: { type: "string" },
         gate_prompt: { type: "string" },
         action_prompt: { type: "string" },
-        status: { type: "string", enum: ["active", "paused", "disabled", "expired"] },
+        status: { type: "string", enum: ["active", "stopped", "paused", "disabled", "expired"] },
         event_kinds: { type: "array", items: { type: "string" } },
         schema_filter: { type: "string" },
         expires_at: { type: "string", format: "date-time" },
@@ -315,8 +315,6 @@ export class TriggersModule {
       }
     }
 
-    const entity = await this.graph.create_entity({ schema_id: TRIGGER, name });
-
     const config: TriggerConfigData = {
       name,
       gate_prompt,
@@ -333,14 +331,19 @@ export class TriggersModule {
     if (params.max_firings !== undefined) config.max_firings = params.max_firings;
     if (schedule !== undefined) config.schedule = schedule;
 
+    // S1: the config IS the node's dictionary, written with the node: the
+    // published schema requires its fields, so a bare node is refused.
     // @tested-by: tst_module_triggers_write_001
-    // @invariant: INV-25 — create is externally atomic. Config and watch links
-    // were written one by one with nothing undone on failure, so a half-built
-    // trigger could survive: an entity with no condition, or one that watches
-    // nothing. Any failure after the entity exists removes it again.
+    const entity = await this.graph.create_entity({
+      schema_id: TRIGGER,
+      name,
+      properties: config as unknown as Record<string, unknown>,
+    });
+
+    // @invariant: INV-25 — create is externally atomic. Watch links are
+    // written one by one, so a trigger that watches nothing could survive a
+    // failure; any failure after the entity exists removes it again.
     try {
-      // S1: the config IS the node's dictionary.
-      await this.graph.update_properties({ entity_id: entity.id, properties: config as unknown as Record<string, unknown> });
       for (const target of watch_entity_ids) {
         await this.graph.add_link({ from_id: entity.id, to_id: target, kind: WATCHES });
       }
@@ -416,7 +419,7 @@ export class TriggersModule {
       properties: {
         status: {
           type: "string",
-          description: "Filter by status: active, paused, disabled, expired",
+          description: "Filter by status: active, stopped, paused, disabled, expired",
         },
       },
       additionalProperties: false,

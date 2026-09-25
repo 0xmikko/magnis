@@ -586,19 +586,13 @@ export class TelegramModule {
   // ── chats.list ────────────────────────────────────────────────
   private buildChatItem(entity: RawEntity, d: Data): TelegramChatListItem {
     const avatar = str(d, "avatar_url") ?? str(d, "photo_url");
-    const sourceAccounts = Array.isArray(d.sources)
-      ? d.sources.flatMap((source) => {
-          if (source === null || typeof source !== "object" || Array.isArray(source)) return [];
-          const account = (source as Record<string, unknown>).account;
-          return typeof account === "string" && account !== "" ? [account] : [];
-        })
-      : [];
-    const exactAccounts = [...new Set(sourceAccounts)];
+    // The Source account that delivered the chat is the record's own source.
+    const account = entity.source?.account;
     return {
       schema_id: CHAT,
       entity_id: entity.id,
       chat_id: chatIdStr(d),
-      account_id: exactAccounts.length === 1 ? (exactAccounts[0] ?? null) : null,
+      account_id: account === undefined || account === "" ? null : account,
       chat_title: str(d, "title"),
       last_message: str(d, "last_message_preview"),
       last_message_time: typeof d.last_message_date === "string" ? (d.last_message_date) : null,

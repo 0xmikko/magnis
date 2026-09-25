@@ -55,6 +55,9 @@ export interface RawEntity {
   properties?: Record<string, unknown>;
   /// S1: identity anchor (null until the family's backfill).
   anchor?: string | null;
+  /// A canonical record's source: the Source and the Source account that
+  /// delivered it, and its external id. Absent on an agent statement.
+  source?: { source: string; account: string; externalId: string };
 }
 
 export interface CreateEntityParams {
@@ -72,6 +75,10 @@ export interface CreateEntityParams {
   // messages set it to the message date so the chat index
   // entities(schema_id, idx, date DESC) orders them; omit → backend defaults.
   date?: string;
+  // the entity's dictionary, validated against its schema in the same
+  // write; omit → the entity starts empty. A schema with required fields
+  // needs them here.
+  properties?: Record<string, unknown>;
 }
 export interface ListEntitiesParams {
   schema_id: string;

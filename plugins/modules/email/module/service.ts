@@ -73,6 +73,10 @@ const SEND_PARAMS = {
           items: { type: "string", format: "uuid" },
           description: "File entity IDs to attach",
         },
+        account_id: {
+          type: "string",
+          description: "Account to send from; required when more than one email account is connected",
+        },
       },
       required: ["to", "subject", "body_text"],
       additionalProperties: false,
@@ -111,6 +115,10 @@ const BATCH_SEND_PARAMS = {
           maxItems: 50,
         },
         excluded_indices: { type: "array", items: { type: "integer", minimum: 0 } },
+        account_id: {
+          type: "string",
+          description: "Account to send from; required when more than one email account is connected",
+        },
       },
       required: ["messages"],
       additionalProperties: false,
@@ -554,7 +562,8 @@ export class EmailModule {
     params: SEND_PARAMS,
   })
   async emailSend(params: SendParams): Promise<Record<string, unknown>> {
-    return this.sendSingle(params.to, params.subject, params.body_text, params.attachment_ids ?? []);
+    const account = await this.sendingAccount(params.account_id);
+    return this.sendSingle(account, params.to, params.subject, params.body_text, params.attachment_ids ?? []);
   }
 
   @rpc("reply", {
@@ -579,6 +588,12 @@ export class EmailModule {
       (detail.entity.name && detail.entity.name.length > 0 ? detail.entity.name : "(no subject)");
     const replySubject = subject.toLowerCase().startsWith("re:") ? subject : `Re: ${subject}`;
     const inReplyTo = str(od, "message_id");
+    // A reply leaves from the account the original arrived at: the host
+    // routes a Source command only to an account it is named.
+    const account = detail.entity.source?.account;
+    if (account === undefined) {
+      throw new Error(`Email ${params.email_id} has no Source account to reply from`);
+    }
 
     // Attachment ownership + file-ness (user-scoped) — fail if the caller
     // doesn't own a file, or the id isn't a real file (empty dictionary).
@@ -596,7 +611,7 @@ export class EmailModule {
         body_html: null,
         in_reply_to: inReplyTo,
       },
-    });
+    }, account);
 
     // @tested-by: tst_module_email_reply_004
     // @invariant: INV-5 — the same receipt rule as `send`. `reply` reported
@@ -651,6 +666,7 @@ export class EmailModule {
         throw new Error(`message[${String(i)}]: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
       }
     });
+    const account = await this.sendingAccount(params.account_id);
     const excluded = new Set(params.excluded_indices ?? []);
 
     const results: Record<string, unknown>[] = [];
@@ -669,7 +685,7 @@ export class EmailModule {
       // dropping their results loses the only record the caller gets. Report
       // every message and keep going.
       try {
-        const r = await this.sendSingle(m.to, m.subject, m.body_text, m.attachment_ids ?? []);
+        const r = await this.sendSingle(account, m.to, m.subject, m.body_text, m.attachment_ids ?? []);
         sent++;
         results.push({ id: r.id, to: m.to, subject: m.subject, status: "sent", attachment_count: r.attachment_count });
       } catch (sendError) {
@@ -934,9 +950,24 @@ export class EmailModule {
     return names;
   }
 
+  // @tested-by: tst_module_email_send_009
+  // A new email has no original to inherit an account from (a reply uses its
+  // original's): the caller names one, or the only connected one is meant.
+  private async sendingAccount(accountId: string | undefined): Promise<string> {
+    if (accountId !== undefined) return accountId;
+    const status = await this.graph.sync_state("status");
+    const accounts = status.accounts as { account_id: string }[];
+    const only = accounts[0];
+    if (accounts.length !== 1 || only === undefined) {
+      throw new Error(`${String(accounts.length)} email accounts are connected; name one with account_id`);
+    }
+    return only.account_id;
+  }
+
   /// Create one outgoing email (entity + recipient address + sent_to in one
   /// apply_batch), link attachments, then best-effort source route (non-fatal).
   private async sendSingle(
+    account: string,
     to: string,
     subject: string,
     bodyText: string,
@@ -948,9 +979,9 @@ export class EmailModule {
     // the JSON text of an array, and let Gmail refuse it downstream.
     const toLower = normalizeRecipient(to);
 
-    // Attachment ownership + names (native put attachment_names on the record;
-    // it required a file dictionary — rejected otherwise, no fallback name).
-    const attachmentNames = await this.resolveOwnedFileNames(attachmentIds);
+    // Attachment ownership: each id must be the caller's file; the names ride
+    // the file.attachment edges, not the message record.
+    await this.resolveOwnedFileNames(attachmentIds);
     const now = new Date().toISOString();
     // @tested-by: tst_module_email_send_004, tst_module_email_send_006
     // @invariant: INV-5 — route BEFORE persisting. A refusal must leave no
@@ -968,7 +999,7 @@ export class EmailModule {
         body_html: null,
         in_reply_to: null,
       },
-    });
+    }, account);
     const providerMessageId = str(routed, "message_id");
     const providerThreadId = str(routed, "thread_id");
     // @tested-by: tst_module_email_send_008
@@ -988,14 +1019,10 @@ export class EmailModule {
 
     const messageDict: Record<string, unknown> = {
       from_address: OUTGOING_FROM,
-      to_addresses: to,
       subject,
       body_text: bodyText,
       sent_at: now,
-      is_outgoing: true,
-      provider_message_id: providerMessageId,
       has_attachments: attachmentIds.length > 0,
-      attachment_names: attachmentNames,
     };
     // @tested-by: tst_module_email_send_006
     // @invariant: INV-27 — the provider has ACCEPTED by this point, so the mail

@@ -36,33 +36,6 @@ export function mapEmail(message: MessageListItem): EmailItem {
   };
 }
 
-export function mapEmailDetail(message: MessageListItem): EmailDetailData {
-  const fromName = getMetadataString(message.metadata, "from_name") ?? null;
-  const fromAddress =
-    getMetadataString(message.metadata, "from_address") ?? message.sender ?? null;
-  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- intentional falsy fallback: an empty-string field must fall through to the next candidate (?? would keep "").
-  const senderName = fromName || fromAddress || "Unknown";
-  const fromEmail = fromAddress ?? "Unknown";
-  const sentAt = getMetadataString(message.metadata, "sent_at") ?? message.timestamp;
-  const toAddresses = getMetadataString(message.metadata, "to_addresses") ?? undefined;
-  const replyTo = getMetadataString(message.metadata, "reply_to") ?? undefined;
-
-  return {
-    fromEmail,
-    senderName,
-    sentAt: formatEmailDate(sentAt),
-    toAddresses,
-    replyTo,
-    bodyParagraphs: [
-      decodeHtmlEntities(
-        // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- intentional falsy fallback: an empty-string field must fall through to the next candidate (?? would keep "").
-        (message.preview || "No message body available yet.").trim(),
-      ),
-    ],
-    actions: [],
-  };
-}
-
 export function mapEmailDetailFromDetailView(view: MessageDetailView): EmailDetailData {
   const fromName = getMetadataString(view.metadata, "from_name") ?? null;
   const fromAddress =

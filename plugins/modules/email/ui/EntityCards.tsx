@@ -68,7 +68,6 @@ function recipients(data: Readonly<Record<string, unknown>>): string[] {
   const single = typeof data.to === "string" && data.to.length > 0 ? [data.to] : [];
   return Array.from(new Set([
     ...single,
-    ...toStringList(data.to_addresses),
     ...toStringList(data.recipients),
     ...neighbourNames(data, "sent_to"),
   ]));
@@ -117,7 +116,6 @@ function flatten(row: Readonly<Record<string, unknown>>): Readonly<Record<string
   const linked = row.linked_entities;
   if (
     (flat.to === null || flat.to === undefined) &&
-    (flat.to_addresses === null || flat.to_addresses === undefined) &&
     Array.isArray(linked)
   ) {
     const recipient = (linked as Record<string, unknown>[]).find(
