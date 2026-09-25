@@ -90,14 +90,21 @@ function gmailHexId(decimal: string): string {
   return BigInt(decimal).toString(16);
 }
 
+// PostgreSQL JSONB cannot store U+0000, which is legal in a MIME text part.
+function stripNul(value: string): string {
+  return value.replaceAll("\u0000", "");
+}
+
 async function toGmailMessage(raw: ImapRawMessage, uidValidity: string): Promise<GmailMessage> {
   const parsed = await PostalMime.parse(raw.source);
+  const text = stripNul(parsed.text ?? "");
+  const html = stripNul(parsed.html ?? "");
   const parts = [
-    ...(parsed.text ? [{ mimeType: "text/plain", body: { data: Buffer.from(parsed.text).toString("base64url") } }] : []),
-    ...(parsed.html ? [{ mimeType: "text/html", body: { data: Buffer.from(parsed.html).toString("base64url") } }] : []),
+    ...(text ? [{ mimeType: "text/plain", body: { data: Buffer.from(text).toString("base64url") } }] : []),
+    ...(html ? [{ mimeType: "text/html", body: { data: Buffer.from(html).toString("base64url") } }] : []),
     ...parsed.attachments.map((attachment, index) => ({
-      mimeType: attachment.mimeType,
-      filename: attachment.filename ?? "",
+      mimeType: stripNul(attachment.mimeType),
+      filename: stripNul(attachment.filename ?? ""),
       body: {
         attachmentId: `imap:${uidValidity}:${String(raw.uid)}:${String(index)}`,
         size: typeof attachment.content === "string" ? Buffer.byteLength(attachment.content) : attachment.content.byteLength,
@@ -111,11 +118,11 @@ async function toGmailMessage(raw: ImapRawMessage, uidValidity: string): Promise
     id: gmailHexId(raw.emailId),
     threadId: gmailHexId(raw.threadId),
     labelIds: labels,
-    snippet: (parsed.text ?? "").slice(0, 120),
+    snippet: text.slice(0, 120),
     internalDate: String(raw.internalDate.getTime()),
     payload: {
       mimeType: "multipart/mixed",
-      headers: parsed.headers.map((header) => ({ name: header.originalKey, value: header.value })),
+      headers: parsed.headers.map((header) => ({ name: stripNul(header.originalKey), value: stripNul(header.value) })),
       parts,
     },
   };

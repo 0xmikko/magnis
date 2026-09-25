@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { downloadImapAttachment, readImapPage, type ImapMailbox, type ImapRawMessage } from "./imap";
+import { gmailMessageToMailMessage } from "./gmail";
 
 const raw = (uid: number): ImapRawMessage => ({
   uid,
@@ -79,4 +80,20 @@ test("tst_src_iso_google_020 IMAP attachment reads the exact message and mailbox
   expect(Buffer.from(await downloadImapAttachment("user@example.com", "token", page.messages[0]!.id, attachmentId!, open)).toString())
     .toBe("attachment");
   await expect(downloadImapAttachment("user@example.com", "token", "wrong-id", attachmentId!, open)).rejects.toThrow();
+});
+
+/**
+ * @test-id: tst_src_iso_google_022
+ * @scenario: scn_google_pull_001
+ * @covers: sources/google/src/surfaces/email/imap.ts::readImapPage
+ * @deterministic: yes
+ * @fixtures: one MIME message containing NUL in a header and body
+ */
+test("tst_src_iso_google_022 IMAP removes PostgreSQL-invalid NUL from MIME text", async () => {
+  const message = raw(8);
+  message.source = Buffer.from("Subject: A\u0000B\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nHi\u0000there");
+  const page = await readImapPage("user@example.com", "token", undefined, async () => mailbox([message]));
+  const mail = gmailMessageToMailMessage(page.messages[0]!);
+  expect(mail.subject).toBe("AB");
+  expect(mail.body_text?.trim()).toBe("Hithere");
 });
