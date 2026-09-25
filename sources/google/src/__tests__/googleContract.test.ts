@@ -12,6 +12,7 @@
 import { describe, expect, test } from "bun:test";
 import { mockFetch, runSourceContract, type CannedResponse } from "@magnis/testkit/source";
 import { buildConnectorConfig } from "../connector";
+import type { ImapMailbox } from "../surfaces/email/imap";
 
 const META = { refresh_token: "r", client_id: "c", client_secret: "s" };
 const b64url = (s: string) => Buffer.from(s, "utf-8").toString("base64url");
@@ -37,7 +38,7 @@ const fullMessage = {
 function happyRoutes() {
   return [
     { match: "oauth2.googleapis.com/token", response: TOKEN },
-    { match: "/users/me/profile", response: { body: { historyId: "555", messagesTotal: 1 } } },
+    { match: "/users/me/profile", response: { body: { emailAddress: "user@example.com", historyId: "555", messagesTotal: 1 } } },
     { match: "/users/me/labels/SPAM", response: { body: { id: "SPAM", messagesTotal: 0 } } },
     { match: "/users/me/labels/TRASH", response: { body: { id: "TRASH", messagesTotal: 0 } } },
     { match: "/messages/send", response: { body: { id: "sent1", threadId: "t1" } } },
@@ -84,9 +85,26 @@ function happyRoutes() {
   ];
 }
 
+const openImap = async (): Promise<ImapMailbox> => ({
+  uidValidity: "42",
+  searchBelow: async () => [9],
+  fetch: async function* () {
+    yield {
+      uid: 9,
+      emailId: "12345",
+      threadId: "54321",
+      flags: new Set<string>(),
+      labels: new Set<string>(),
+      internalDate: new Date("2026-09-24T10:00:00Z"),
+      source: Buffer.from("Subject: Hi\r\nContent-Type: text/plain\r\n\r\nHello"),
+    };
+  },
+  close: async () => {},
+});
+
 // The contract runs on bun:test (the testkit's own runner); the describe
 // names the lane for the scoped pre-commit verification.
-describe("google", () => runSourceContract(buildConnectorConfig(mockFetch(happyRoutes())), {
+describe("google", () => runSourceContract(buildConnectorConfig(mockFetch(happyRoutes()), openImap), {
   fetch: {
     // The mailbox envelope precedes the one message: two envelopes, no counters.
     email: { meta: META, minEnvelopes: 2 },

@@ -7,7 +7,9 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@magnis/connector-sdk": "workspace:*"
+    "@magnis/connector-sdk": "workspace:*",
+    "imapflow": "^2.0.6",
+    "postal-mime": "^3.0.1"
   },
   "devDependencies": {
     "@magnis/testkit": "workspace:*"

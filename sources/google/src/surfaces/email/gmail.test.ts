@@ -28,6 +28,7 @@ import {
   type HttpResponse,
 } from "../../http";
 import { buildConnectorConfig } from "../../connector";
+import type { ImapMailbox, ImapRawMessage } from "./imap";
 
 // ── Shared fakes ────────────────────────────────────────────────────────────
 
@@ -52,6 +53,53 @@ function status(code: number, body = "", retryAfter?: string): HttpResponse {
 }
 
 const b64url = (s: string) => Buffer.from(s, "utf-8").toString("base64url");
+
+/**
+ * @test-id: tst_src_iso_google_021
+ * @scenario: scn_google_pull_001
+ * @covers: sources/google/src/connector.ts::buildConnectorConfig
+ * @deterministic: yes
+ * @fixtures: one IMAP message and scripted Gmail profile/history
+ */
+test("tst_src_iso_google_021 new Gmail bootstrap uses IMAP and keeps REST history catch-up", async () => {
+  const urls: string[] = [];
+  const fetchFn: FetchLike = async (url) => {
+    urls.push(url);
+    if (url.includes("oauth2.googleapis.com/token")) return ok({ access_token: "at-imap", expires_in: 3600 });
+    if (url.endsWith("/profile")) return ok({ emailAddress: "user@example.com", historyId: "h1", messagesTotal: 1 });
+    if (url.includes("/labels/")) return ok({ messagesTotal: 0 });
+    if (url.includes("/history?")) return ok({ historyId: "h2", history: [] });
+    throw new Error(`unexpected REST request: ${url}`);
+  };
+  const raw: ImapRawMessage = {
+    uid: 9,
+    emailId: "12345",
+    threadId: "54321",
+    flags: new Set(["\\Seen"]),
+    labels: new Set(["\\Inbox"]),
+    internalDate: new Date("2026-09-24T10:00:00Z"),
+    source: Buffer.from("Subject: IMAP mail\r\nFrom: sender@example.com\r\nContent-Type: text/plain\r\n\r\nMessage body"),
+  };
+  const open = async (email: string, token: string): Promise<ImapMailbox> => {
+    expect([email, token]).toEqual(["user@example.com", "at-imap"]);
+    return {
+      uidValidity: "42",
+      searchBelow: async () => [9],
+      fetch: async function* () { yield raw; },
+      close: async () => {},
+    };
+  };
+  const source = buildConnectorConfig(fetchFn, open);
+  const meta = { client_id: "imap-client", client_secret: "secret", refresh_token: "refresh" };
+  const first = await source.fetch({ surface: "email", meta });
+  expect(first.envelopes.map((envelope) => envelope.remote_id)).toEqual(["mailbox", BigInt(12345).toString(16)]);
+  expect(String(first.envelopes[1]?.payload.body_text).trim()).toBe("Message body");
+  expect(first.nextCursor).toEqual({ history_id: "h1" });
+  expect(first.hasMore).toBe(false);
+  await source.fetch({ surface: "email", direction: "forward", cursor: first.nextCursor, meta });
+  expect(urls.some((url) => url.includes("/history?startHistoryId=h1"))).toBe(true);
+  expect(urls.some((url) => url.includes("/messages?"))).toBe(false);
+});
 
 function fullGmailMessage(): GmailMessage {
   return {
@@ -388,10 +436,9 @@ describe("email bootstrap cursor", () => {
    * @scenario: scn_google_pull_001
    * @covers: sources/google/src/connector.ts::buildConnectorConfig
    * @deterministic: yes
-   * @fixtures: two Gmail pages and two distinct credential tuples
+   * @fixtures: two IMAP pages and two distinct credential tuples
    */
   test("tst_src_iso_google_001 one token serves two ordered pages per credential", async () => {
-    const { fetchFn: gmailApi } = pagedApi();
     const tokenCalls: string[] = [];
     const fetchFn: FetchLike = async (url, init) => {
       if (url.includes("oauth2.googleapis.com/token")) {
@@ -400,14 +447,32 @@ describe("email bootstrap cursor", () => {
         tokenCalls.push(refreshToken);
         return ok({ access_token: `access-${refreshToken}`, expires_in: 3600 });
       }
-      return gmailApi(url, init);
+      if (url.endsWith("/profile")) return ok({ emailAddress: "user@example.com", historyId: "h1", messagesTotal: 101 });
+      if (url.includes("/labels/")) return ok({ messagesTotal: 0 });
+      throw new Error(`unexpected REST request: ${url}`);
     };
-    const source = buildConnectorConfig(fetchFn);
+    const messages = Array.from({ length: 101 }, (_, index): ImapRawMessage => ({
+      uid: index + 1,
+      emailId: String(10_000 + index + 1),
+      threadId: String(20_000 + index + 1),
+      flags: new Set(),
+      labels: new Set(),
+      internalDate: new Date("2026-09-24T10:00:00Z"),
+      source: Buffer.from(`Subject: Mail ${index + 1}\r\nContent-Type: text/plain\r\n\r\nBody`),
+    }));
+    const open = async (): Promise<ImapMailbox> => ({
+      uidValidity: "42",
+      searchBelow: async (before) => messages.map((message) => message.uid).filter((uid) => before === undefined || uid < before),
+      fetch: async function* (uids) { for (const message of messages.filter((item) => uids.includes(item.uid))) yield message; },
+      close: async () => {},
+    });
+    const source = buildConnectorConfig(fetchFn, open);
     const meta = { client_id: "gmail-pages-client", client_secret: "secret", refresh_token: "gmail-pages-a" };
     const first = await source.fetch({ surface: "email", meta });
     const second = await source.fetch({ surface: "email", cursor: first.nextCursor, meta });
-    expect(first.envelopes.map((e) => e.remote_id)).toEqual(["mailbox", "m1", "m2"]);
-    expect(second.envelopes.map((e) => e.remote_id)).toEqual(["m3"]);
+    expect(first.envelopes).toHaveLength(101);
+    expect(first.envelopes[1]?.remote_id).toBe(BigInt(10_101).toString(16));
+    expect(second.envelopes.map((e) => e.remote_id)).toEqual([BigInt(10_001).toString(16)]);
     expect(tokenCalls).toEqual(["gmail-pages-a"]);
     await source.fetch({ surface: "email", meta: { ...meta, refresh_token: "gmail-pages-b" } });
     expect(tokenCalls).toEqual(["gmail-pages-a", "gmail-pages-b"]);

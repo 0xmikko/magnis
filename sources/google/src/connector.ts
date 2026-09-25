@@ -17,10 +17,13 @@ import { fixtureExecuteResult, fixtureFetchResult, fixturePath } from "./fixture
 import {
   downloadAttachment,
   fetchHistoryChanges,
+  fetchImapMessagePage,
   fetchMessagePage,
+  getGmailEmailAddress,
   parseMailDraft,
   sendMessage,
 } from "./surfaces/email/gmail";
+import { downloadImapAttachment, openGoogleImapMailbox, type OpenImapMailbox } from "./surfaces/email/imap";
 import type { FetchLike } from "./http";
 import { exchange, revoke } from "./oauth";
 import { SURFACES } from "./schema";
@@ -34,6 +37,7 @@ type ExecuteHandler = (
  * uses the global fetch. */
 export function buildConnectorConfig(
   fetchFn: FetchLike = fetch,
+  openImapMailbox: OpenImapMailbox = openGoogleImapMailbox,
 ): ConnectorConfig {
   /** Reuse the token owned by auth.ts for each `_meta` credential tuple. */
   const accessToken = (meta: Record<string, unknown> | undefined): Promise<string> =>
@@ -52,10 +56,14 @@ export function buildConnectorConfig(
 
     switch (surface) {
       case "email": {
+        const oldRestPage = cursor !== null && typeof cursor === "object" &&
+          typeof (cursor as Record<string, unknown>).page_token === "string";
         const r =
           direction === "forward"
             ? await fetchHistoryChanges(token, cursor, fetchFn)
-            : await fetchMessagePage(token, cursor, fetchFn);
+            : oldRestPage
+              ? await fetchMessagePage(token, cursor, fetchFn)
+              : await fetchImapMessagePage(token, cursor, fetchFn, openImapMailbox);
         return { envelopes: r.envelopes, nextCursor: r.nextCursor, hasMore: r.hasMore };
       }
       case "meetings": {
@@ -101,7 +109,9 @@ export function buildConnectorConfig(
       throw new Error("download_file: missing attachment_id in source_ref");
     }
 
-    const bytes = await downloadAttachment(token, messageId, attachmentId, fetchFn);
+    const bytes = attachmentId.startsWith("imap:")
+      ? await downloadImapAttachment(await getGmailEmailAddress(token, fetchFn), token, messageId, attachmentId, openImapMailbox)
+      : await downloadAttachment(token, messageId, attachmentId, fetchFn);
     await mkdir(dirname(dest), { recursive: true });
     await writeFile(dest, bytes);
     return { local_path: dest, size_bytes: bytes.length };

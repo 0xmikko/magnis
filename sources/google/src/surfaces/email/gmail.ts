@@ -23,6 +23,7 @@ import {
   type GmailPayload,
 } from "./mime";
 import { formatUtc } from "../../helpers";
+import { readImapPage, type OpenImapMailbox } from "./imap";
 import {
   asObject,
   defaultObjectArray,
@@ -67,6 +68,7 @@ interface ListMessagesResponse {
 interface GmailProfile {
   historyId: string;
   messagesTotal?: number | null;
+  emailAddress?: string | null;
 }
 
 export interface HistoryEntry {
@@ -172,6 +174,7 @@ function parseGmailProfile(v: unknown): GmailProfile {
   return {
     historyId: reqString(o, "historyId", ctx),
     messagesTotal: optNumber(o, "messagesTotal", ctx),
+    emailAddress: optString(o, "emailAddress", ctx),
   };
 }
 
@@ -626,6 +629,12 @@ async function getProfile(
   return parseGmailProfile(await resp.json());
 }
 
+export async function getGmailEmailAddress(token: string, fetchFn: FetchLike): Promise<string> {
+  const email = (await getProfile(token, fetchFn)).emailAddress;
+  if (typeof email !== "string" || email === "") throw new Error("Gmail profile lacks emailAddress required for IMAP");
+  return email;
+}
+
 /** The message count of one system label — SPAM and TRASH, the two the
  * message list leaves out, so the mailbox can say what the plan skips. */
 async function labelMessagesTotal(
@@ -882,6 +891,65 @@ export interface EmailFetchResult {
   envelopes: Envelope[];
   nextCursor: Record<string, unknown>;
   hasMore: boolean;
+}
+
+/** Initial historical pages use IMAP, while their REST history watermark is
+ * captured before the first IMAP read. The host persists only this cursor. */
+export async function fetchImapMessagePage(
+  token: string,
+  cursor: unknown,
+  fetchFn: FetchLike,
+  openMailbox: OpenImapMailbox,
+): Promise<EmailFetchResult> {
+  const c = cursorObj(cursor);
+  const continuing = c?.imap_uid_validity !== undefined || c?.imap_before_uid !== undefined || c?.imap_email !== undefined;
+  let historyId: string;
+  let email: string;
+  let imapCursor: { uid_validity: string; before_uid: number } | undefined;
+  const envelopes: Envelope[] = [];
+  if (continuing) {
+    if (typeof c.history_id !== "string" || typeof c.imap_email !== "string" ||
+      typeof c.imap_uid_validity !== "string" || typeof c.imap_before_uid !== "number" ||
+      !Number.isSafeInteger(c.imap_before_uid) || c.imap_before_uid < 1) {
+      throw new Error("Invalid Gmail IMAP bootstrap cursor");
+    }
+    historyId = c.history_id;
+    email = c.imap_email;
+    imapCursor = { uid_validity: c.imap_uid_validity, before_uid: c.imap_before_uid };
+  } else {
+    const profile = await getProfile(token, fetchFn);
+    if (typeof profile.emailAddress !== "string" || profile.emailAddress === "") {
+      throw new Error("Gmail profile lacks emailAddress required for IMAP");
+    }
+    historyId = profile.historyId;
+    email = profile.emailAddress;
+    if (typeof profile.messagesTotal === "number") {
+      const skipped = (await labelMessagesTotal(token, "SPAM", fetchFn)) + (await labelMessagesTotal(token, "TRASH", fetchFn));
+      envelopes.push({
+        surface: "email",
+        kind: "snapshot",
+        remote_id: "mailbox",
+        payload: { entity_type: "mailbox", messages_total: profile.messagesTotal, skipped },
+      });
+    }
+  }
+
+  // @tested-by: tst_src_iso_google_021
+  // @invariant: IMAP pages carry the initial REST watermark until terminal admission.
+  const page = await readImapPage(email, token, imapCursor, openMailbox);
+  envelopes.push(...snapshotEnvelopesFromFetched(page.messages.map((msg) => ({ id: msg.id, kind: "snapshot", msg }))));
+  return {
+    envelopes,
+    hasMore: page.hasMore,
+    nextCursor: page.nextCursor === null
+      ? { history_id: historyId }
+      : {
+          history_id: historyId,
+          imap_email: email,
+          imap_uid_validity: page.nextCursor.uid_validity,
+          imap_before_uid: page.nextCursor.before_uid,
+        },
+  };
 }
 
 function cursorObj(cursor: unknown): Record<string, unknown> | undefined {
