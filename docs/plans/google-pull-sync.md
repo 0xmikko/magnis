@@ -511,23 +511,25 @@ Commit. feat(google): bulk-import Gmail history over OAuth IMAP — keep the exi
 
 ##### Tasks
 
-- [ ] GOOGLE_010 — Read ordered OAuth IMAP pages and attachments in imap.ts, prove them in imap.test.ts, and add dependencies in package.json and bun.lock. (100 min)
+- [x] GOOGLE_010 — Read ordered OAuth IMAP pages and attachments in imap.ts, prove them in imap.test.ts, and add dependencies in package.json and bun.lock. (100 min) — bef50be
 <!-- plan:task-meta:{"writes":["sources/google/src/surfaces/email/imap.ts","sources/google/src/surfaces/email/imap.test.ts","sources/google/package.json","bun.lock"],"predictedActiveMinutes":100,"predictedCredits":0,"how":"Implement OAuth XOAUTH2, mailbox discovery, UIDVALIDITY and ordered bulk reads in sources/google/src/surfaces/email/imap.ts; exercise scripted sessions in sources/google/src/surfaces/email/imap.test.ts; declare only required parser/client packages in sources/google/package.json and lock them in bun.lock.","red":"bun run agent:test:backend -- sources/google/src/surfaces/email/imap.test.ts"} -->
-- [ ] GOOGLE_011 — Use IMAP for Gmail bootstrap in gmail.ts and connector.ts, prove REST catch-up in gmail.test.ts, and declare OAuth scope in manifest.toml. (60 min)
+- [x] GOOGLE_011 — Use IMAP for Gmail bootstrap in gmail.ts and connector.ts, prove REST catch-up in gmail.test.ts, and declare OAuth scope in manifest.toml. (60 min) — bef50be
 <!-- plan:task-meta:{"writes":["sources/google/src/surfaces/email/gmail.ts","sources/google/src/surfaces/email/gmail.test.ts","sources/google/src/connector.ts","sources/google/manifest.toml"],"predictedActiveMinutes":60,"predictedCredits":0,"how":"Route only new historical bootstrap pages through IMAP in sources/google/src/surfaces/email/gmail.ts and sources/google/src/connector.ts, preserving the existing REST history/send path; prove cursor and error behavior in sources/google/src/surfaces/email/gmail.test.ts; keep the OAuth scope in sources/google/manifest.toml.","red":"bun run agent:test:backend -- sources/google/src/surfaces/email/gmail.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- sources/google/src/surfaces/email/imap.test.ts sources/google/src/surfaces/email/gmail.test.ts` exits 0 — restart-safe bootstrap and REST catch-up preserve IDs and content
+- [x] `bun run agent:test:backend -- sources/google/src/surfaces/email/imap.test.ts sources/google/src/surfaces/email/gmail.test.ts` exits 0 — restart-safe bootstrap and REST catch-up preserve IDs and content — bef50be4bc465ff3ae38ce0251840f039a5e6fbe
 - [ ] A manual real-account clone run records exact revisions, final counts, quota holds, provider fetch and Graph admission time; speed is compared only with the recorded REST continuation
 - [ ] No Google token, message content or live-provider test enters CI or repository fixtures
-- [ ] Commit
+- [x] Commit — bef50be4bc465ff3ae38ce0251840f039a5e6fbe
 
 ##### Results
 
 <!-- plan:results:D1-S6:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| GOOGLE_010 | bef50be | 2026-09-25T09:19:01.195Z–2026-09-25T09:36:05.000Z | 17 / 17 min | unavailable: runner did not expose usage | OAuth IMAP historical paging, MIME normalization and on-demand attachments are wired through the existing Google Source. REST history catch-up remains. Scoped 57 tests, typecheck, lint, module build and catalog build passed; real-account full bootstrap and speed remain unverified. — beyond writes: sources/google/src/__tests__/googleContract.test.ts |
+| GOOGLE_011 | bef50be | 2026-09-25T09:19:01.195Z–2026-09-25T09:36:05.000Z | 17 / 17 min | unavailable: runner did not expose usage | OAuth IMAP historical paging, MIME normalization and on-demand attachments are wired through the existing Google Source. REST history catch-up remains. Scoped 57 tests, typecheck, lint, module build and catalog build passed; real-account full bootstrap and speed remain unverified. — beyond writes: sources/google/src/__tests__/googleContract.test.ts |
 <!-- plan:results:D1-S6:end -->
 <!-- plan:stage:D1-S6:end -->
 <!-- plan:delivery:D1:end -->
@@ -651,4 +653,10 @@ Commit. feat(google): bulk-import Gmail history over OAuth IMAP — keep the exi
 - approve sha256:72758562797d2564a6592ca0c34df3050b80f563a67c06c65361768642af7f66 owner:Да, добавь IMAP для загрузки истории
 
 - amend implementation owner:Да, добавь IMAP для загрузки истории sha256:19fa5ac5453b937d0daa1cb2f17ccbb7b2c12398068e30081a849eefcad52520
+
+- record-result D1-S6 commit:bef50be
+
+- deviation D1-S6: The existing Google wire contract test needed a scripted IMAP mailbox, so sources/google/src/__tests__/googleContract.test.ts is included beyond the literal Task writes.
+
+- close D1-S6 partial commit:bef50be4bc465ff3ae38ce0251840f039a5e6fbe
 <!-- plan:execution:end -->
