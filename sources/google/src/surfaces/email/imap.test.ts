@@ -33,6 +33,7 @@ test("tst_src_iso_google_018 IMAP pages preserve Gmail IDs, MIME and cursor acro
   const open = async () => mailbox(messages);
   const first = await readImapPage("user@example.com", "token", undefined, open);
   expect(first.messages).toHaveLength(100);
+  expect(first.remaining).toBe(101);
   expect(first.messages[0]?.id).toBe(BigInt(10_101).toString(16));
   expect(first.messages[0]?.threadId).toBe(BigInt(20_101).toString(16));
   expect(first.messages[0]?.payload?.headers).toContainEqual({ name: "Subject", value: "Mail 101" });
@@ -41,6 +42,7 @@ test("tst_src_iso_google_018 IMAP pages preserve Gmail IDs, MIME and cursor acro
 
   const second = await readImapPage("user@example.com", "token", first.nextCursor!, open);
   expect(second.messages.map((message) => message.id)).toEqual([BigInt(10_001).toString(16)]);
+  expect(second.remaining).toBe(1);
   expect(second.messages[0]?.labelIds).toContain("UNREAD");
   expect(second.nextCursor).toBeNull();
   expect(second.hasMore).toBe(false);

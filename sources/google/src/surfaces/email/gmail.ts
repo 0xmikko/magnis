@@ -906,6 +906,7 @@ export async function fetchImapMessagePage(
   let historyId: string;
   let email: string;
   let imapCursor: { uid_validity: string; before_uid: number } | undefined;
+  let skipped: number | undefined;
   const envelopes: Envelope[] = [];
   if (continuing) {
     if (typeof c.history_id !== "string" || typeof c.imap_email !== "string" ||
@@ -923,20 +924,20 @@ export async function fetchImapMessagePage(
     }
     historyId = profile.historyId;
     email = profile.emailAddress;
-    if (typeof profile.messagesTotal === "number") {
-      const skipped = (await labelMessagesTotal(token, "SPAM", fetchFn)) + (await labelMessagesTotal(token, "TRASH", fetchFn));
-      envelopes.push({
-        surface: "email",
-        kind: "snapshot",
-        remote_id: "mailbox",
-        payload: { entity_type: "mailbox", messages_total: profile.messagesTotal, skipped },
-      });
-    }
+    skipped = (await labelMessagesTotal(token, "SPAM", fetchFn)) + (await labelMessagesTotal(token, "TRASH", fetchFn));
   }
 
   // @tested-by: tst_src_iso_google_021
   // @invariant: IMAP pages carry the initial REST watermark until terminal admission.
   const page = await readImapPage(email, token, imapCursor, openMailbox);
+  if (skipped !== undefined) {
+    envelopes.push({
+      surface: "email",
+      kind: "snapshot",
+      remote_id: "mailbox",
+      payload: { entity_type: "mailbox", messages_total: page.remaining + skipped, skipped },
+    });
+  }
   envelopes.push(...snapshotEnvelopesFromFetched(page.messages.map((msg) => ({ id: msg.id, kind: "snapshot", msg }))));
   return {
     envelopes,

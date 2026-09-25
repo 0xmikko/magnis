@@ -59,7 +59,7 @@ const b64url = (s: string) => Buffer.from(s, "utf-8").toString("base64url");
  * @scenario: scn_google_pull_001
  * @covers: sources/google/src/connector.ts::buildConnectorConfig
  * @deterministic: yes
- * @fixtures: one IMAP message and scripted Gmail profile/history
+ * @fixtures: one IMAP message and a stale Gmail profile count
  */
 test("tst_src_iso_google_021 new Gmail bootstrap uses IMAP and keeps REST history catch-up", async () => {
   const urls: string[] = [];
@@ -67,7 +67,8 @@ test("tst_src_iso_google_021 new Gmail bootstrap uses IMAP and keeps REST histor
     urls.push(url);
     if (url.includes("oauth2.googleapis.com/token")) return ok({ access_token: "at-imap", expires_in: 3600 });
     if (url.endsWith("/profile")) return ok({ emailAddress: "user@example.com", historyId: "h1", messagesTotal: 1 });
-    if (url.includes("/labels/")) return ok({ messagesTotal: 0 });
+    if (url.endsWith("/labels/SPAM")) return ok({ messagesTotal: 1 });
+    if (url.endsWith("/labels/TRASH")) return ok({ messagesTotal: 0 });
     if (url.includes("/history?")) return ok({ historyId: "h2", history: [] });
     throw new Error(`unexpected REST request: ${url}`);
   };
@@ -93,6 +94,7 @@ test("tst_src_iso_google_021 new Gmail bootstrap uses IMAP and keeps REST histor
   const meta = { client_id: "imap-client", client_secret: "secret", refresh_token: "refresh" };
   const first = await source.fetch({ surface: "email", meta });
   expect(first.envelopes.map((envelope) => envelope.remote_id)).toEqual(["mailbox", BigInt(12345).toString(16)]);
+  expect(first.envelopes[0]?.payload).toEqual({ entity_type: "mailbox", messages_total: 2, skipped: 1 });
   expect(String(first.envelopes[1]?.payload.body_text).trim()).toBe("Message body");
   expect(first.nextCursor).toEqual({ history_id: "h1" });
   expect(first.hasMore).toBe(false);

@@ -25,6 +25,7 @@ export type OpenImapMailbox = (email: string, accessToken: string) => Promise<Im
 
 export interface ImapPage {
   messages: GmailMessage[];
+  remaining: number;
   nextCursor: { uid_validity: string; before_uid: number } | null;
   hasMore: boolean;
 }
@@ -160,6 +161,7 @@ export async function readImapPage(
     const lastUid = selected.at(-1);
     return {
       messages,
+      remaining: uids.length,
       nextCursor: hasMore && lastUid !== undefined ? { uid_validity: mailbox.uidValidity, before_uid: lastUid } : null,
       hasMore,
     };
