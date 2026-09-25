@@ -1,15 +1,15 @@
 # Google Pull Sync
 
 Status: APPROVED  
-Spec lock: sha256:1197ce227cb093757dc6be758825862f5875ea8673c8bf701ae461c27df73085 owner:Тогда дополни, соответственно, стадии и приступай к исполнению  
-Implementation lock: sha256:50714f0ff6d398839cf41ed82516b78e9f1bf4f2505224dc791c565a65b4dcc6 owner:approved  
+Spec lock: sha256:d85c176129f50ef9f392b4c513008172ccd00c09b0185275d413438eaf66144b owner:Да, добавь IMAP для загрузки истории  
+Implementation lock: sha256:19fa5ac5453b937d0daa1cb2f17ccbb7b2c12398068e30081a849eefcad52520 owner:Да, добавь IMAP для загрузки истории  
 Active Delivery: D1  
 Unattended decisions: allowed  
 
 <!-- plan:spec:start -->
 ## The Goal
 
-Keep the Google Source on its existing 30-second Pull schedule and make that Pull correct, incremental and measurable across Gmail, Google Calendar and Google Contacts. Complete the one host-owned Source-to-module path so full passes, incremental pages and reconciliation have honest progress; do not add provider-specific fields to each event. In the same catalog work, place Modules and Sources directly at the repository root without changing their behavior. Push, Pub/Sub, IMAP IDLE, a new Source protocol and the next integration are excluded.
+Keep the Google Source on its existing 30-second Pull schedule and make that Pull correct, incremental and measurable across Gmail, Google Calendar and Google Contacts. Complete the one host-owned Source-to-module path so full passes, incremental pages and reconciliation have honest progress; do not add provider-specific fields to each event. In the same catalog work, place Modules and Sources directly at the repository root without changing their behavior. Push, Pub/Sub, IMAP IDLE, a new Source protocol and the next integration are excluded. OAuth-authenticated IMAP bulk read is allowed only for Gmail's initial historical import; Gmail REST remains the history checkpoint, catch-up and send path.
 
 The currency is provider requests, repeated data and measured wall time:
 
@@ -285,17 +285,17 @@ After this revised SPEC is approved, the two completed Google Source stages stay
 
 Branch: `feat/google-pull-sync`; Depends: none; Gate: catalog.
 
-Stage graph: `D1-S1 -> D1-S2 -> D1-S3 -> D1-S4 -> D1-S5`.
+Stage graph: `D1-S1 -> D1-S2 -> D1-S3 -> D1-S4 -> D1-S5 -> D1-S6`.
 
-Forecast: 398 active min / 0 credits across 5 Stages; longest dependency path 398 active min; external waits 60 min.
+Forecast: 583 active min / 0 credits across 6 Stages; longest dependency path 583 active min; external waits 60 min.
 
-What changes for people. One Google connection initially reads Gmail, Calendar and Contacts, then polls provider changes with honest per-surface progress and exact quota holds. The same manual stand reports Google beside Telegram. Catalog Modules and Sources live at repository roots without changing package identities.
+What changes for people. One Google connection initially reads Gmail, Calendar and Contacts, then polls provider changes with honest per-surface progress and exact quota holds. Gmail historical mail uses OAuth IMAP bulk pages to avoid one high-cost REST request per message; Gmail REST still owns history catch-up and sending. The same manual stand reports Google beside Telegram. Catalog Modules and Sources live at repository roots without changing package identities.
 
-What changes in the code. The existing Google Source gains token reuse and incremental Calendar/Contacts cursors; existing modules reconcile owned replicas and count actual changes; the package build reads root modules/ and sources/; the existing stand reports both Sources. The generic app-host page context and completion accounting are one direct TDD fix in a separate app PR, tested at an exact SHA before catalog module acceptance.
+What changes in the code. The existing Google Source gains token reuse, incremental Calendar/Contacts cursors and an IMAP-only Gmail bootstrap; existing modules reconcile owned replicas and count actual changes; the package build reads root modules/ and sources/; the existing stand reports both Sources. The generic app-host page context and completion accounting are one direct TDD fix in a separate app PR, tested at an exact SHA before catalog module acceptance.
 
-How it is proven. Scripted Source and module tests cover cursors, deletions, rate limits and progress; builder tests cover root discovery and unchanged package identity; stand tests cover reset safety and grouped production logs. One manual real-account receipt records exact app and catalog SHAs, counts and timings. The catalog PR gate runs once after the last Stage.
+How it is proven. Scripted Source and module tests cover cursors, deletions, rate limits, IMAP mailbox changes, MIME and progress; builder tests cover root discovery and unchanged package identity; stand tests cover reset safety and grouped production logs. One manual real-account receipt records exact app and catalog SHAs, counts and timings. The catalog PR gate runs once after the last Stage.
 
-Not in this PR. App-host code, Push/PubSub, old Google-account migration, additional calendars and any new runner.
+Not in this PR. App-host code, Push/PubSub, IMAP IDLE, old Google-account migration, additional calendars and any new runner.
 
 <!-- plan:stage:D1-S1:start -->
 <!-- plan:stage-meta:{"deliveryId":"D1","depends":[],"parallelWith":[],"writes":["plugins/sources/google/src/auth.ts","plugins/sources/google/src/oauth.test.ts","plugins/sources/google/src/http.ts","plugins/sources/google/src/http.test.ts","plugins/sources/google/src/connector.ts","plugins/sources/google/src/surfaces/email/gmail.ts","plugins/sources/google/src/surfaces/email/gmail.test.ts"],"tempRoot":".tmp/code-production/google-pull-sync/D1-S1","predictedActiveMinutes":50,"predictedCredits":0,"verifyActiveMinutes":5,"verifyCredits":0} -->
@@ -491,7 +491,50 @@ Commit. feat(stand): report Google beside Telegram — retain secrets and expose
 | GOOGLE_009 | 0d63120904712a03afabbdd56cfa04dabc3ac53e | 2026-09-24T13:31:13.914Z–2026-09-24T13:41:36.000Z | 10 / 11 min | unavailable: runner did not expose usage | The existing manual stand groups production sync turns by Source and surface; nine scoped tests, typecheck and lint passed. No live-account timing receipt exists yet. |
 <!-- plan:results:D1-S5:end -->
 <!-- plan:stage:D1-S5:end -->
+
+<!-- plan:stage:D1-S6:start -->
+<!-- plan:stage-meta:{"deliveryId":"D1","depends":["D1-S5"],"parallelWith":[],"writes":["sources/google/src/surfaces/email/imap.ts","sources/google/src/surfaces/email/imap.test.ts","sources/google/package.json","bun.lock","sources/google/src/surfaces/email/gmail.ts","sources/google/src/surfaces/email/gmail.test.ts","sources/google/src/connector.ts","sources/google/manifest.toml"],"tempRoot":".tmp/code-production/google-pull-sync/D1-S6","predictedActiveMinutes":185,"predictedCredits":0,"verifyActiveMinutes":25,"verifyCredits":0} -->
+#### Stage D1-S6 — Import Gmail history through OAuth IMAP
+
+- Owner: codex; Profile: strong; Depends: D1-S5; Parallel with: none.
+- Writes: `sources/google/src/surfaces/email/imap.ts`, `sources/google/src/surfaces/email/imap.test.ts`, `sources/google/package.json`, `bun.lock`, `sources/google/src/surfaces/email/gmail.ts`, `sources/google/src/surfaces/email/gmail.test.ts`, `sources/google/src/connector.ts`, `sources/google/manifest.toml`.
+- Temp root: `.tmp/code-production/google-pull-sync/D1-S6` (must be absent at handoff).
+- Of which verification: 25 active min / 0 credits.
+
+What this Stage solves. Full Gmail hydration sends one high-cost REST request per message and repeatedly reaches the user's minute quota, despite Calendar and Contacts already reaching stable incremental sync.
+
+What is built. The Google Source uses OAuth IMAP only for initial historical pages. It preserves Gmail message and thread IDs, MIME bodies, labels, attachments and a durable UID cursor; a changed UIDVALIDITY refuses stale pages. Gmail REST still captures the history watermark before the first page and remains the catch-up and send path. Existing in-flight REST page tokens can finish their original path.
+
+How it is proven. Deterministic IMAP transport and connector tests cover ordering, a reconnect between pages, mailbox mutation, MIME fields, attachment download and the unchanged REST catch-up. The manual stand compares exact app/catalog revisions, page timing and final counts on a credential-preserving database clone; no live account enters CI.
+
+Commit. feat(google): bulk-import Gmail history over OAuth IMAP — keep the existing Source and module contract while avoiding per-message REST quota holds.
+
+##### Tasks
+
+- [ ] GOOGLE_010 — Read ordered OAuth IMAP pages and attachments in imap.ts, prove them in imap.test.ts, and add dependencies in package.json and bun.lock. (100 min)
+<!-- plan:task-meta:{"writes":["sources/google/src/surfaces/email/imap.ts","sources/google/src/surfaces/email/imap.test.ts","sources/google/package.json","bun.lock"],"predictedActiveMinutes":100,"predictedCredits":0,"how":"Implement OAuth XOAUTH2, mailbox discovery, UIDVALIDITY and ordered bulk reads in sources/google/src/surfaces/email/imap.ts; exercise scripted sessions in sources/google/src/surfaces/email/imap.test.ts; declare only required parser/client packages in sources/google/package.json and lock them in bun.lock.","red":"bun run agent:test:backend -- sources/google/src/surfaces/email/imap.test.ts"} -->
+- [ ] GOOGLE_011 — Use IMAP for Gmail bootstrap in gmail.ts and connector.ts, prove REST catch-up in gmail.test.ts, and declare OAuth scope in manifest.toml. (60 min)
+<!-- plan:task-meta:{"writes":["sources/google/src/surfaces/email/gmail.ts","sources/google/src/surfaces/email/gmail.test.ts","sources/google/src/connector.ts","sources/google/manifest.toml"],"predictedActiveMinutes":60,"predictedCredits":0,"how":"Route only new historical bootstrap pages through IMAP in sources/google/src/surfaces/email/gmail.ts and sources/google/src/connector.ts, preserving the existing REST history/send path; prove cursor and error behavior in sources/google/src/surfaces/email/gmail.test.ts; keep the OAuth scope in sources/google/manifest.toml.","red":"bun run agent:test:backend -- sources/google/src/surfaces/email/gmail.test.ts"} -->
+
+##### Acceptance criteria
+
+- [ ] `bun run agent:test:backend -- sources/google/src/surfaces/email/imap.test.ts sources/google/src/surfaces/email/gmail.test.ts` exits 0 — restart-safe bootstrap and REST catch-up preserve IDs and content
+- [ ] A manual real-account clone run records exact revisions, final counts, quota holds, provider fetch and Graph admission time; speed is compared only with the recorded REST continuation
+- [ ] No Google token, message content or live-provider test enters CI or repository fixtures
+- [ ] Commit
+
+##### Results
+
+<!-- plan:results:D1-S6:start -->
+| Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
+|---|---|---|---:|---|---|
+<!-- plan:results:D1-S6:end -->
+<!-- plan:stage:D1-S6:end -->
 <!-- plan:delivery:D1:end -->
+
+## Amendments
+
+- 2026-09-25 — Owner: Да, добавь IMAP для загрузки истории. Gmail historical bootstrap may use OAuth IMAP; REST retains history catch-up and send.
 <!-- plan:implementation:end -->
 
 <!-- plan:execution:start -->
@@ -598,4 +641,14 @@ Commit. feat(stand): report Google beside Telegram — retain secrets and expose
 - deviation D1-S5: Correction to the preceding receipt: each page contains 50 message IDs, but the existing hydration concurrency is 8, not 50. The measured 1.23 messages/s and quota exhaustion remain unchanged.
 
 - deviation D1-S5: The live run with the new package still received a Gmail quota hold after roughly 100 successful full-message reads in a minute. The owner confirmed no intentional parallel client. Keep the hold visible, but retain successful reads from the failed page in the existing Source process so a retry spends quota only on unfinished IDs; deterministic test tst_src_iso_google_017 failed RED and passed GREEN.
+
+- amend spec owner:Да, добавь IMAP для загрузки истории sha256:d85c176129f50ef9f392b4c513008172ccd00c09b0185275d413438eaf66144b
+
+- put-stage D1-S6
+
+- replace-delivery D1
+
+- approve sha256:72758562797d2564a6592ca0c34df3050b80f563a67c06c65361768642af7f66 owner:Да, добавь IMAP для загрузки истории
+
+- amend implementation owner:Да, добавь IMAP для загрузки истории sha256:19fa5ac5453b937d0daa1cb2f17ccbb7b2c12398068e30081a849eefcad52520
 <!-- plan:execution:end -->
