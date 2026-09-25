@@ -44,6 +44,8 @@ function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
     add_link: () => Promise.resolve(undefined),
     // No prior send attempt unless a test arranges one.
     source_command: () => Promise.resolve({ message_id: "src-1" }),
+    // One connected mailbox unless a test arranges more.
+    sync_state: () => Promise.resolve({ accounts: [{ account_id: "acc-1", sync: {} }] }),
     get_entity_full: () => Promise.resolve(null),
     ...over,
   } as unknown as GraphOverrides;
@@ -523,4 +525,38 @@ it("tst_module_email_create_001 one create operation sends or batches and reject
   expect(spy(graph, "source_command")).toHaveBeenCalledTimes(2);
   await expect(module.create({ to: "morgan@example.test", email_id: "original", subject: "September", body_text: "mixed" })).rejects.toThrow("form");
   expect(spy(graph, "source_command")).toHaveBeenCalledTimes(2);
+});
+
+/**
+ * @test-id: tst_module_email_send_009
+ * @scenario: scn_backend_tests_006
+ * @covers: plugins/modules/email/module/service.ts::EmailModule.emailSend
+ * @invariant: a new email leaves through a named account — the only
+ * connected one, or the one the caller names; with several and none named
+ * the send is refused before the provider is called.
+ * @deterministic: yes
+ */
+describe("a new email names its account", () => {
+  const twoAccounts = () =>
+    Promise.resolve({ accounts: [{ account_id: "acc-1", sync: {} }, { account_id: "acc-2", sync: {} }] });
+
+  it("tst_module_email_send_009 sends through the only connected account", async () => {
+    const graph = makeGraph();
+    await makeModule(graph).emailSend({ to: "b@x.com", subject: "S", body_text: "B" });
+    expect(spy(graph, "source_command").mock.calls[0]?.[1]).toBe("acc-1");
+  });
+
+  it("tst_module_email_send_009 refuses several accounts without account_id", async () => {
+    const graph = makeGraph({ sync_state: twoAccounts });
+    await expect(
+      makeModule(graph).emailSend({ to: "b@x.com", subject: "S", body_text: "B" }),
+    ).rejects.toThrow(/account_id/);
+    expect(spy(graph, "source_command")).not.toHaveBeenCalled();
+  });
+
+  it("tst_module_email_send_009 sends through the named account", async () => {
+    const graph = makeGraph({ sync_state: twoAccounts });
+    await makeModule(graph).emailSend({ to: "b@x.com", subject: "S", body_text: "B", account_id: "acc-2" });
+    expect(spy(graph, "source_command").mock.calls[0]?.[1]).toBe("acc-2");
+  });
 });

@@ -73,6 +73,10 @@ const SEND_PARAMS = {
           items: { type: "string", format: "uuid" },
           description: "File entity IDs to attach",
         },
+        account_id: {
+          type: "string",
+          description: "Account to send from; required when more than one email account is connected",
+        },
       },
       required: ["to", "subject", "body_text"],
       additionalProperties: false,
@@ -111,6 +115,10 @@ const BATCH_SEND_PARAMS = {
           maxItems: 50,
         },
         excluded_indices: { type: "array", items: { type: "integer", minimum: 0 } },
+        account_id: {
+          type: "string",
+          description: "Account to send from; required when more than one email account is connected",
+        },
       },
       required: ["messages"],
       additionalProperties: false,
@@ -554,7 +562,8 @@ export class EmailModule {
     params: SEND_PARAMS,
   })
   async emailSend(params: SendParams): Promise<Record<string, unknown>> {
-    return this.sendSingle(params.to, params.subject, params.body_text, params.attachment_ids ?? []);
+    const account = await this.sendingAccount(params.account_id);
+    return this.sendSingle(account, params.to, params.subject, params.body_text, params.attachment_ids ?? []);
   }
 
   @rpc("reply", {
@@ -657,6 +666,7 @@ export class EmailModule {
         throw new Error(`message[${String(i)}]: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
       }
     });
+    const account = await this.sendingAccount(params.account_id);
     const excluded = new Set(params.excluded_indices ?? []);
 
     const results: Record<string, unknown>[] = [];
@@ -675,7 +685,7 @@ export class EmailModule {
       // dropping their results loses the only record the caller gets. Report
       // every message and keep going.
       try {
-        const r = await this.sendSingle(m.to, m.subject, m.body_text, m.attachment_ids ?? []);
+        const r = await this.sendSingle(account, m.to, m.subject, m.body_text, m.attachment_ids ?? []);
         sent++;
         results.push({ id: r.id, to: m.to, subject: m.subject, status: "sent", attachment_count: r.attachment_count });
       } catch (sendError) {
@@ -942,7 +952,22 @@ export class EmailModule {
 
   /// Create one outgoing email (entity + recipient address + sent_to in one
   /// apply_batch), link attachments, then best-effort source route (non-fatal).
+  // @tested-by: tst_module_email_send_009
+  // A new email has no original to inherit an account from (a reply uses its
+  // original's): the caller names one, or the only connected one is meant.
+  private async sendingAccount(accountId: string | undefined): Promise<string> {
+    if (accountId !== undefined) return accountId;
+    const status = await this.graph.sync_state("status");
+    const accounts = status.accounts as { account_id: string }[];
+    const only = accounts[0];
+    if (accounts.length !== 1 || only === undefined) {
+      throw new Error(`${String(accounts.length)} email accounts are connected; name one with account_id`);
+    }
+    return only.account_id;
+  }
+
   private async sendSingle(
+    account: string,
     to: string,
     subject: string,
     bodyText: string,
@@ -974,7 +999,7 @@ export class EmailModule {
         body_html: null,
         in_reply_to: null,
       },
-    });
+    }, account);
     const providerMessageId = str(routed, "message_id");
     const providerThreadId = str(routed, "thread_id");
     // @tested-by: tst_module_email_send_008
