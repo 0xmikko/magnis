@@ -6,18 +6,36 @@
 // didn't finish and decided it was fine" a red check instead of a review
 // finding (docs/development-process.md §Cadence).
 //
-//   bun planctl/src/core/plan-gate.ts <plan.md> [--closure] [--root <repo>]
+//   bun planctl/src/core/plan-gate.ts <plan.md> [--lint [--commit <sha>]] [--closure] [--root <repo>]
 
 import { readFileSync } from "node:fs";
-import { createHash } from "node:crypto";
 import { execSync, spawnSync } from "node:child_process";
-import { basename } from "node:path";
+import { basename, resolve } from "node:path";
+import type { Content, Root } from "mdast";
+import { stageInputs, stageResultCommitPaths, MACHINABLE, protocolSpecHash, protocolImplementationHash } from "./plan-update";
+export { MACHINABLE, protocolSpecHash, protocolImplementationHash } from "./plan-update";
 
+/** Which lint rule a finding comes from; gate findings (receipts, boxes) carry none. */
+type LintRule = "structure" | "mermaid" | "typescript" | "vocabulary" | "codes" | "sentence" | "story" | "goal" | "clarity";
+
+/** One finding an agent can act on: the rule, the line, the offending text
+ * and the replacement when one exists. Lint errors and gate refusals block;
+ * a model note at submission advises. */
 export interface GateViolation {
   kind: "missing-receipt" | "unknown-receipt" | "stray-receipt" | "criterion-failed" | "open-box"
     | "unapproved-plan" | "awaiting-owner" | "protocol-shape" | "lock-mismatch";
+  rule: LintRule | null;
+  blocking: boolean;
   line: number;
+  quote: string;
   text: string;
+  replacement: string | null;
+}
+
+type AddFinding = (line: number, text: string, rule: LintRule, quote?: string, replacement?: string | null) => void;
+
+function refusal(kind: GateViolation["kind"], line: number, text: string): GateViolation {
+  return { kind, rule: null, blocking: true, line, quote: "", text, replacement: null };
 }
 
 export interface GateReport {
@@ -39,40 +57,8 @@ export const RECEIPT = /—\s*([0-9a-f]{7,40})\s*$/;
 // plan-close's own ceiling for the same reason — two sessions, one measured
 // fact.
 const DEFAULT_CRITERION_TIMEOUT_MS = 12 * 60_000;
-// A criterion is machinable only when the command OPENS the item — prose
-// that quotes the form mid-sentence is not an instruction to execute it.
-export const MACHINABLE = /^`([^`]+)`\s+exits\s+(\d+)/;
-
 const PROTOCOL_SPEC_START = "<!-- plan:spec:start -->";
 const PROTOCOL_SPEC_END = "<!-- plan:spec:end -->";
-const PROTOCOL_IMPLEMENTATION_START = "<!-- plan:implementation:start -->";
-const PROTOCOL_IMPLEMENTATION_END = "<!-- plan:implementation:end -->";
-
-function protocolRegion(body: string, start: string, end: string): string {
-  const from = body.indexOf(start);
-  const to = body.indexOf(end);
-  if (from === -1 || to === -1 || to <= from) throw new Error(`missing ordered markers ${start} and ${end}`);
-  return body.slice(from, to + end.length);
-}
-
-function sha256(value: string): string {
-  return createHash("sha256").update(value).digest("hex");
-}
-
-export function protocolSpecHash(body: string): string {
-  return sha256(protocolRegion(body, PROTOCOL_SPEC_START, PROTOCOL_SPEC_END));
-}
-
-export function protocolImplementationHash(body: string): string {
-  const normalized = protocolRegion(body, PROTOCOL_IMPLEMENTATION_START, PROTOCOL_IMPLEMENTATION_END)
-    .replace(/^- \[[ x]\]/gm, "- [ ]")
-    .replace(/^(\s*- \[ \].*?) — [0-9a-f]{7,40}$/gm, "$1")
-    .replace(
-      /<!-- plan:results:(D[1-9]\d*-S[1-9]\d*):start -->[\s\S]*?<!-- plan:results:\1:end -->/g,
-      "<!-- plan:results:$1:start -->\n<!-- plan:results:$1:end -->",
-    );
-  return sha256(normalized);
-}
 
 export function protocolLockViolations(body: string): readonly string[] {
   if (!body.includes(PROTOCOL_SPEC_START)) return [];
@@ -124,8 +110,8 @@ export interface PlanItem {
 }
 
 const STAGE_HEADING = /^###\s+Stage\s+(\d+)/i;
-const TASKS_HEADING = /^####\s+Tasks\s*$/i;
-const CRITERIA_HEADING = /^####\s+Acceptance criteria\s*$/i;
+const TASKS_HEADING = /^#{4,5}\s+Tasks\s*$/i;
+const CRITERIA_HEADING = /^#{4,5}\s+Acceptance criteria\s*$/i;
 
 /** Every box in the document, in order — the one place box grammar lives:
  * the checkbox, the wrapped continuation, the normalized text. Both the gate
@@ -195,6 +181,277 @@ function collectItems(lines: string[], stage: number | null): PlanItem[] {
 }
 
 
+function markdownNodes(tree: Root | Content): (Root | Content)[] {
+  return [tree, ...("children" in tree ? tree.children.flatMap(markdownNodes) : [])];
+}
+
+function sourceLine(node: Root | Content): number {
+  if (node.position === undefined) throw new Error("Markdown parser returned a node without a source position");
+  return node.position.start.line;
+}
+
+function proseText(node: Root | Content): string {
+  if (node.type === "text") return node.value;
+  return "children" in node ? node.children.map(proseText).join("") : "";
+}
+
+function lintProse(
+  nodes: readonly (Root | Content)[],
+  matches: (text: string) => { word: string; term: string }[],
+  add: AddFinding,
+): void {
+  for (const node of nodes) {
+    if (node.type !== "paragraph" && node.type !== "heading") continue;
+    const text = proseText(node).replace(/^(?:Stage D\d+-S\d+|PR Delivery D\d+|\[[ x]\] [A-Z][A-Z0-9_-]*) — /, "");
+    // The writer owns these structural fields, including dependency IDs.
+    if (/^(?:\||Owner:|Writes:|Temp root:|Stage graph:|Branch:|Of which verification:)/.test(text.trimStart())) continue;
+    const code = text.match(/\b(?:D\d+-S\d+|INV-\d+)\b/);
+    if (code !== null) add(sourceLine(node), "plan code in prose", "codes", code[0]);
+    for (const match of matches(text)) add(sourceLine(node), `say ${match.term} instead of ${match.word}`, "vocabulary", match.word, match.term);
+    for (const sentence of new Intl.Segmenter("en", { granularity: "sentence" }).segment(text.replace(/\s+/g, " "))) {
+      const words = sentence.segment.trim();
+      if (words.split(/\s+/).length > 30) add(sourceLine(node), "sentence exceeds thirty words", "sentence", words);
+    }
+  }
+}
+
+function lintTypes(
+  nodes: readonly (Root | Content)[],
+  interfaces: { text: string; line: number } | null,
+  ts: typeof import("typescript"),
+  add: AddFinding,
+): Set<string> {
+  const types = new Set<string>();
+  for (const node of nodes) {
+    if (node.type !== "code" || !["ts", "tsx", "typescript"].includes(node.lang ?? "")) continue;
+    const source = ts.createSourceFile("plan.ts", node.value, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+    const parsed = ts.transpileModule(node.value, { reportDiagnostics: true });
+    for (const diagnostic of parsed.diagnostics ?? []) {
+      if (diagnostic.category !== ts.DiagnosticCategory.Error) continue;
+      const row = diagnostic.start === undefined ? 0 : source.getLineAndCharacterOfPosition(diagnostic.start).line;
+      add(sourceLine(node) + row + 1, `TypeScript: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, " ")}`, "typescript");
+    }
+    const visit = (syntax: import("typescript").Node): void => {
+      if (ts.isInterfaceDeclaration(syntax) || ts.isTypeAliasDeclaration(syntax)) {
+        if (interfaces !== null && sourceLine(node) > interfaces.line && sourceLine(node) <= interfaces.line + interfaces.text.split("\n").length) types.add(syntax.name.text);
+      }
+      if (ts.isInterfaceDeclaration(syntax) || ts.isTypeLiteralNode(syntax)) {
+        const seen = new Set<number>();
+        for (const member of syntax.members) {
+          const row = source.getLineAndCharacterOfPosition(member.getStart(source)).line;
+          if (seen.has(row)) add(sourceLine(node) + row + 1, "put each TypeScript field on its own line", "typescript");
+          seen.add(row);
+        }
+      }
+      ts.forEachChild(syntax, visit);
+    };
+    visit(source);
+  }
+  return types;
+}
+
+async function lintMermaid(nodes: readonly (Root | Content)[], add: AddFinding): Promise<void> {
+  const diagrams = nodes.filter((node) => node.type === "code" && node.lang === "mermaid");
+  if (diagrams.length === 0) return;
+  const { Window } = await import("happy-dom");
+  const original = Object.getOwnPropertyDescriptor(globalThis, "window");
+  const window = new Window();
+  Object.defineProperty(globalThis, "window", { value: window, configurable: true });
+  try {
+    const { default: mermaid } = await import("mermaid");
+    mermaid.initialize({ startOnLoad: false });
+    for (const node of diagrams) {
+      if (node.type !== "code") continue;
+      try { await mermaid.parse(node.value); }
+      catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        const row = Number(message.match(/line (\d+)/)?.[1] ?? 1);
+        add(sourceLine(node) + row, `mermaid: ${message.split("\n")[0]}`, "mermaid");
+      }
+    }
+  } finally {
+    if (original === undefined) Reflect.deleteProperty(globalThis, "window");
+    else Object.defineProperty(globalThis, "window", original);
+    await window.happyDOM.close();
+  }
+}
+
+function exportedTypes(text: string, path: string, ts: typeof import("typescript")): Map<string, string> {
+  const source = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true);
+  const result = new Map<string, string>();
+  for (const node of source.statements) {
+    if ((ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node)) && node.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword)) result.set(node.name.text, node.getText(source));
+  }
+  return result;
+}
+
+/** Exported types the commit adds or changes that the SPEC Interfaces do not name. */
+function undeclaredTypesOf(root: string, commit: string, types: ReadonlySet<string>, ts: typeof import("typescript")): readonly { path: string; name: string }[] {
+  const found: { path: string; name: string }[] = [];
+  for (const path of stageResultCommitPaths(commit, root).filter((path) => /\.tsx?$/.test(path))) {
+    const current = spawnSync("git", ["-C", root, "show", `${commit}:${path}`], { encoding: "utf8" });
+    if (current.status !== 0) continue; // deleted files introduce no types
+    const previous = spawnSync("git", ["-C", root, "show", `${commit}^1:${path}`], { encoding: "utf8" });
+    const before = exportedTypes(previous.status === 0 ? previous.stdout : "", path, ts);
+    for (const [name, text] of exportedTypes(current.stdout, path, ts)) {
+      if (before.get(name) !== text && !types.has(name)) found.push({ path, name });
+    }
+  }
+  return found;
+}
+
+function lintCommit(root: string, commit: string, types: ReadonlySet<string>, line: number, ts: typeof import("typescript"), add: AddFinding): void {
+  for (const { path, name } of undeclaredTypesOf(root, commit, types, ts)) {
+    add(line, `${path}: exported type ${name} is missing from SPEC Interfaces`, "typescript", name);
+  }
+}
+
+/** The SPEC region as lint reads it: every line outside the markers blanked, so line numbers survive. */
+function specView(body: string, fromMarkdown: (value: string) => Root): {
+  readonly specStart: number;
+  readonly specEnd: number;
+  readonly specLines: readonly string[];
+  readonly nodes: readonly (Root | Content)[];
+  readonly headings: readonly (Root | Content)[];
+  readonly section: (name: string) => { text: string; line: number } | null;
+} {
+  const lines = body.split("\n");
+  const specStart = lines.indexOf(PROTOCOL_SPEC_START);
+  const specEnd = lines.indexOf(PROTOCOL_SPEC_END);
+  const specLines = specStart < 0 ? lines : lines.map((line, index) => index > specStart && index < specEnd ? line : "");
+  const nodes = markdownNodes(fromMarkdown(specLines.join("\n")));
+  const headings = nodes.filter((node) => node.type === "heading");
+  const section = (name: string): { text: string; line: number } | null => {
+    const heading = headings.find((node) => proseText(node).toLowerCase() === name.toLowerCase());
+    if (heading === undefined) return null;
+    const start = sourceLine(heading);
+    const next = headings.find((node) => sourceLine(node) > start && node.depth <= heading.depth);
+    return { text: specLines.slice(start, next === undefined ? specLines.length : sourceLine(next) - 1).join("\n"), line: start };
+  };
+  return { specStart, specEnd, specLines, nodes, headings, section };
+}
+
+/** Exported TypeScript types a commit adds or changes that the plan's
+ * Interfaces section does not declare. Completion refuses them by name.
+ * @tested-by: tst_scripts_planupdate_025
+ */
+export async function undeclaredExportedTypes(root: string, commit: string, body: string): Promise<readonly { path: string; name: string }[]> {
+  const [{ fromMarkdown }, ts] = await Promise.all([import("mdast-util-from-markdown"), import("typescript")]);
+  const view = specView(body, fromMarkdown);
+  const types = lintTypes(view.nodes, view.section("Interfaces"), ts, () => {});
+  return undeclaredTypesOf(root, commit, types, ts);
+}
+
+/** The SPEC sections every plan carries, in the order the owner reads them. */
+export const REQUIRED_SECTIONS = ["The Goal", "Why now", "The target", "Target tree", "Invariants", "Reuse", "New names", "Not verified"] as const;
+
+/** What a Goal is: the rule the agent reads at init and the model checks at submission. */
+export const GOAL_RULE = "The Goal is one to four numbered outcomes the owner will see when the work is done. "
+  + "Each outcome names its measure: a number, a count, a time, or the exact observable state before and after. "
+  + "It promises only what the request asks: no vision, no how, no extra scope. Plain English, one sentence per outcome.";
+
+export interface AuthoringContract {
+  readonly sections: readonly string[];
+  readonly vocabulary: readonly { readonly word: string; readonly term: string }[];
+  readonly goalRule: string;
+}
+
+function vocabularyMap(root: string, synonyms: (root: string, file?: string) => Map<string, string>): Map<string, string> {
+  return new Map([
+    ...synonyms(resolve(import.meta.dir, "../../..")),
+    ...synonyms(root, "docs/graph.md"),
+  ]);
+}
+
+/** What an agent needs before writing a SPEC: the sections, the vocabulary pairs and the Goal rule.
+ * @tested-by: tst_scripts_planctl_011
+ */
+export async function authoringContract(root: string): Promise<AuthoringContract> {
+  const { synonyms } = await import("../../../shared/code-production/instruction-audit");
+  return {
+    sections: REQUIRED_SECTIONS,
+    vocabulary: [...vocabularyMap(root, synonyms)].map(([word, term]) => ({ word, term })),
+    goalRule: GOAL_RULE,
+  };
+}
+
+/** Check the authored plan without executing its criteria or changing its locks.
+ * @tested-by: tst_gate_lint_001, tst_gate_lint_002, tst_gate_lint_003
+ */
+export async function lint(body: string, root: string, commit?: string): Promise<{
+  violations: GateViolation[];
+  metrics: string[];
+}> {
+  // Lint parses Markdown, TypeScript and Mermaid with the source checkout's
+  // dependencies. The copy installed in a consumer has none: hooks and CI call
+  // it with --freeze and --no-exec only, and approval lints through the
+  // planctl launcher from the source checkout.
+  if (basename(import.meta.dir) !== "core") throw new Error("plan lint runs from the planctl source checkout; approve through the planctl launcher");
+  const [{ fromMarkdown }, ts, { synonyms, vocabularyMatches }] = await Promise.all([
+    import("mdast-util-from-markdown"),
+    import("typescript"),
+    import("../../../shared/code-production/instruction-audit"),
+  ]);
+  const violations: GateViolation[] = [];
+  const add: AddFinding = (line, text, rule, quote = "", replacement = null): void => {
+    violations.push({ kind: "protocol-shape", rule, blocking: true, line, quote, text, replacement });
+  };
+  const lines = body.split("\n");
+  const { specStart, specEnd, specLines, nodes, headings, section } = specView(body, fromMarkdown);
+  if ((specStart >= 0 || specEnd >= 0) && (specStart < 0 || specEnd <= specStart)) {
+    return { violations: [refusal("protocol-shape", 1, "missing ordered SPEC markers")], metrics: [] };
+  }
+  const required = REQUIRED_SECTIONS;
+  for (const name of required) {
+    if (!headings.some((node) => proseText(node).toLowerCase() === name.toLowerCase())) add(specStart + 2, `missing SPEC section: ${name}`, "structure", name);
+  }
+  for (const name of required) {
+    const block = section(name);
+    if (block !== null && (block.text.trim() === "" || /^<[^>]+>$/.test(block.text.trim()))) add(block.line, `empty SPEC section: ${name}`, "structure", name);
+  }
+  const names = section("New names");
+  if (names !== null && !/^\|\s*-{3,}\s*\|\s*-{3,}/m.test(names.text)) add(names.line, "New names needs a name/reason table", "structure");
+  const vocabulary = vocabularyMap(root, synonyms);
+  const fullNodes = markdownNodes(fromMarkdown(body));
+  const implementationEnd = lines.indexOf("<!-- plan:implementation:end -->");
+  const authored = fullNodes.filter((node) => specStart < 0 || (sourceLine(node) > specStart && (implementationEnd < 0 ? sourceLine(node) < specEnd : sourceLine(node) < implementationEnd)));
+  lintProse(authored, (text) => vocabularyMatches(text, vocabulary), add);
+  const interfaces = section("Interfaces");
+  const types = lintTypes(nodes, interfaces, ts, add);
+  const target = section("Target tree");
+  if (target !== null && /\.tsx?\b/.test(target.text) && types.size === 0) add(target.line, "Interfaces must show the TypeScript types changed by this plan", "structure");
+  await lintMermaid(authored, add);
+  // The common checkbox parser is also used by execution and closure.
+  const contentLines = [...lines];
+  for (const node of fullNodes) {
+    if ((node.type === "code" || node.type === "html") && node.position !== undefined) {
+      for (let row = node.position.start.line - 1; row < node.position.end.line; row++) contentLines[row] = "";
+    }
+  }
+  for (const item of allPlanItems(contentLines)) {
+    const text = item.text.replace(RECEIPT, "").trim();
+    if (item.section === "criteria" && text !== "Commit" && !MACHINABLE.test(text)) add(item.line + 1, "criterion must be a command with its exit code or Commit", "structure", text);
+  }
+  contentLines.forEach((line, index) => {
+    if (/^\s*(?:-\s+)?Predict:/.test(line)) add(index + 1, "Predict fields are not part of the plan", "structure", line.trim());
+  });
+  const stages = stageInputs(body);
+  for (const stage of stages) for (const task of stage.tasks) {
+    if (task.story.length > 200) add(lines.findIndex((line) => line.includes(`${task.id} — `)) + 1, "Task story exceeds 200 characters", "story", task.story);
+  }
+  const writes = [...new Set(stages.flatMap((stage) => stage.tasks.flatMap((task) => task.writes)))];
+  if (stages.length > 0 && writes.length <= 2 && writes.every((path) => /\.[a-z]+$/i.test(path) && !/[*?{}]/.test(path))) {
+    add(1, "two files or fewer: this is a commit, not a plan", "structure");
+  }
+  if (commit !== undefined) lintCommit(root, commit, types, interfaces?.line ?? 1, ts, add);
+  const metrics = [
+    `SPEC lines: ${specLines.join("\n").trim().split("\n").length}.`,
+    `Stages: ${stages.length}; longest description: ${Math.max(0, ...stages.map((stage) => stage.description.split("\n").length))} lines.`,
+    ...stages.map((stage) => `${stage.title}: ${stage.writes.length} writes, ${stage.tasks.length} Tasks.`),
+  ];
+  return { violations, metrics };
+}
+
 export function gatePlan(
   planPath: string,
   options: {
@@ -213,7 +470,7 @@ export function gatePlan(
   const report: GateReport = { openBoxes: 0, closedBoxes: 0, checkedCriteria: 0, violations: [] };
 
   for (const text of protocolLockViolations(body)) {
-    report.violations.push({ kind: text.includes("lock") ? "lock-mismatch" : "protocol-shape", line: 1, text });
+    report.violations.push(refusal(text.includes("lock") ? "lock-mismatch" : "protocol-shape", 1, text));
   }
 
   // --start: work must not begin on an unsettled plan. Approval comes from
@@ -222,11 +479,11 @@ export function gatePlan(
   if (options.start) {
     if (!/^status:\s*approved\s*$/im.test(lines.slice(0, 10).join("\n"))
       && !lines.some((line) => /^Status:\s*APPROVED/.test(line))) {
-      report.violations.push({ kind: "unapproved-plan", line: 1, text: "plan is not owner-approved" });
+      report.violations.push(refusal("unapproved-plan", 1, "plan is not owner-approved"));
     }
     lines.forEach((line, index) => {
       if (/await(s|ing)? the owner/i.test(line)) {
-        report.violations.push({ kind: "awaiting-owner", line: index + 1, text: line.trim() });
+        report.violations.push(refusal("awaiting-owner", index + 1, line.trim()));
       }
     });
   }
@@ -253,16 +510,16 @@ export function gatePlan(
     if (!item.closed) {
       report.openBoxes += 1;
       if (options.closure) {
-        report.violations.push({ kind: "open-box", line: number, text: sourceLine.trim() });
+        report.violations.push(refusal("open-box", number, sourceLine.trim()));
       }
       continue;
     }
     report.closedBoxes += 1;
 
     if (item.receipt === undefined) {
-      report.violations.push({ kind: "missing-receipt", line: number, text: sourceLine.trim() });
+      report.violations.push(refusal("missing-receipt", number, sourceLine.trim()));
     } else if (!shaKnownAndAncestor(options.root, item.receipt)) {
-      report.violations.push({ kind: "unknown-receipt", line: number, text: sourceLine.trim() });
+      report.violations.push(refusal("unknown-receipt", number, sourceLine.trim()));
     }
 
     const criterion = item.text.match(MACHINABLE);
@@ -283,7 +540,7 @@ export function gatePlan(
         env: { ...process.env, PLAN_GATE_NESTED: "1" },
       });
       if ((run.status ?? 1) !== Number(criterion[2])) {
-        report.violations.push({ kind: "criterion-failed", line: number, text: sourceLine.trim() });
+        report.violations.push(refusal("criterion-failed", number, sourceLine.trim()));
       }
     }
   }
@@ -627,6 +884,15 @@ if (import.meta.main && ["plan-gate.ts", "plan-gate.js"].includes(basename(impor
   if (!root) {
     console.error("usage: bun planctl/src/core/plan-gate.ts <plan.md> [--closure] [--start] [--no-exec] [--root <repo>]");
     process.exit(64);
+  }
+  if (args.includes("--lint")) {
+    const commitIndex = args.indexOf("--commit");
+    const commit = commitIndex < 0 ? undefined : args[commitIndex + 1];
+    if (commitIndex >= 0 && commit === undefined) throw new Error("--commit requires a Git revision");
+    const report = await lint(readFileSync(plan, "utf8"), root, commit);
+    for (const metric of report.metrics) console.log(metric);
+    for (const violation of report.violations) console.log(`VIOLATION [${violation.kind}] line ${violation.line}: ${violation.text}`);
+    process.exit(report.violations.length === 0 ? 0 : 1);
   }
   const report = gatePlan(plan, { root, closure, start, noExec });
   console.log(`boxes: ${report.closedBoxes} closed / ${report.openBoxes} open; machinable criteria re-run: ${report.checkedCriteria}`);
