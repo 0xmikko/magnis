@@ -1,11 +1,29 @@
 #!/usr/bin/env bun
 
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
-import { basename, resolve } from "node:path";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
+import type { OwnerWaitReceipt, TaskRun, TaskRunIdentity } from "./task-run";
+import type { ProgressView } from "./plan-progress";
 import { execFileSync, spawnSync } from "node:child_process";
 
-import { MACHINABLE, protocolImplementationHash, protocolSpecHash } from "./plan-gate";
+// Shared by the writer and the acceptance gate. The command opens the box.
+export const MACHINABLE = /^`([^`]+)`\s+exits\s+(\d+)/;
+
+export function protocolSpecHash(body: string): string {
+  return digest(region(body, SPEC_START, SPEC_END).text);
+}
+
+export function protocolImplementationHash(body: string): string {
+  const normalized = region(body, IMPLEMENTATION_START, IMPLEMENTATION_END).text
+    .replace(/^- \[[ x]\]/gm, "- [ ]")
+    .replace(/^(\s*- \[ \].*?) — [0-9a-f]{7,40}$/gm, "$1")
+    .replace(
+      /<!-- plan:results:(D[1-9]\d*-S[1-9]\d*):start -->[\s\S]*?<!-- plan:results:\1:end -->/g,
+      "<!-- plan:results:$1:start -->\n<!-- plan:results:$1:end -->",
+    );
+  return digest(normalized);
+}
 
 export type PlanState = "SPEC_DRAFT" | "SPEC_LOCKED" | "APPROVED";
 
@@ -103,6 +121,8 @@ export interface ParsedStageInput {
 export interface DeliveryMeta {
   readonly id: string;
   readonly active: boolean;
+  readonly depends: readonly string[];
+  readonly branch: string;
   readonly predictedExternalWaitMinutes: number;
 }
 
@@ -122,7 +142,7 @@ export interface StageResultReceipt {
   readonly tests: readonly { readonly id: string; readonly command: string }[];
   readonly result: string;
   readonly deviations: readonly string[];
-  readonly tempRoots: readonly { readonly path: string; readonly state: "absent" }[];
+  readonly tempRoots: readonly { readonly path: string; readonly state: "absent" | "present" }[];
 }
 
 export interface CompletedWorkSample {
@@ -165,6 +185,46 @@ interface StageResultOptions {
   readonly commitIsAncestor?: (commit: string) => boolean;
   readonly commitPaths?: (commit: string) => readonly string[];
   readonly pathExists?: (path: string) => boolean;
+}
+
+/** The four inputs of a completion; everything else is derived. */
+export interface CompleteTaskInput {
+  readonly plan: string;
+  readonly taskIds: readonly string[];
+  readonly commit: string;
+  readonly result: string;
+  readonly deviations?: readonly string[];
+}
+
+export interface CompletedTask {
+  readonly deliveryId: string;
+  readonly stageId: string;
+  readonly taskIds: readonly string[];
+  readonly commit: string;
+  readonly startedAt: string;
+  readonly endedAt: string;
+  readonly elapsedMinutes: number;
+  readonly activeMinutes: number;
+  readonly paths: readonly string[];
+  readonly beyondWrites: readonly string[];
+  readonly tests: readonly { readonly id: string; readonly command: string }[];
+  readonly tempRoot: { readonly path: string; readonly state: "absent" | "present" };
+}
+
+/** Paths whose change needs the Task to name them: hooks, workflows, agent rules. */
+const PROTECTED_PATHS = [".github/", ".githooks/", ".claude/", ".agents/", ".codex/", "CLAUDE.md", "AGENTS.md"];
+
+function isProtectedPath(path: string): boolean {
+  return PROTECTED_PATHS.some((prefix) => path === prefix || path.startsWith(prefix));
+}
+
+/** A test may live anywhere: it never counts as a file outside the Stage folders. */
+function isTestPath(path: string): boolean {
+  return /(^|\/)(test|tests|__tests__)\//.test(path) || /\.(test|spec)\.[cm]?[jt]sx?$/.test(path);
+}
+
+function beyondTaskWrites(declaredPaths: readonly string[], paths: readonly string[]): readonly string[] {
+  return paths.filter((path) => !coveredByWrites(declaredPaths, path)).sort();
 }
 
 export interface TaskExecutionBrief extends TaskInput {
@@ -260,7 +320,15 @@ function replaceRegion(body: string, start: string, end: string, replacement: st
 
 /** Markdown joins adjacent lines into one paragraph; the five header lines end with a hard break so a viewer shows them one per line. Idempotent. */
 function hardBreakHeader(body: string): string {
-  return body.replace(/^((?:Status|Spec lock|Implementation lock|Active Delivery|Unattended decisions):[^\n]*?)[ ]*$/gm, "$1  ");
+  return body.replace(/^((?:Status|Spec lock|Implementation lock|Active Delivery|Unattended decisions|Ledger):[^\n]*?)[ ]*$/gm, "$1  ");
+}
+
+/** The plan carries its own lifecycle: `Ledger: implemented` in the header
+ * when the last Stage of a Delivery closes. No PR number: the PR does not
+ * exist yet, and `progress` observes publication later. */
+function markLedgerImplemented(body: string): string {
+  if (/^Ledger:/m.test(body)) return replaceHeader(body, "Ledger", "implemented");
+  return body.replace(/^(Unattended decisions:[^\n]*\n)/m, "$1Ledger: implemented  \n");
 }
 
 function replaceHeader(body: string, name: string, value: string): string {
@@ -269,7 +337,7 @@ function replaceHeader(body: string, name: string, value: string): string {
   return body.replace(expression, `${name}: ${value}  `);
 }
 
-function planState(body: string): PlanState {
+export function planState(body: string): PlanState {
   const match = body.match(/^Status:\s*(SPEC_DRAFT|SPEC_LOCKED|APPROVED)\b/m);
   if (match?.[1] === "SPEC_DRAFT" || match?.[1] === "SPEC_LOCKED" || match?.[1] === "APPROVED") {
     return match[1];
@@ -347,60 +415,64 @@ export function howSteps(how: string | readonly string[]): readonly string[] {
   return typeof how === "string" ? [how] : [...how];
 }
 
-function assertTaskContract(task: TaskInput, stageWrites: readonly string[]): void {
-  if (!TASK_ID.test(task.id)) throw new Error(`invalid Task ID ${task.id}`);
+/** Every contract error of one Task, so a Stage refuses with all of them at
+ * once, the way a compiler reports. Unsafe characters still throw: they are
+ * not a wording error but an input the writer cannot carry.
+ * @tested-by: tst_scripts_planupdate_026
+ */
+function taskContractErrors(task: TaskInput, stageWrites: readonly string[]): readonly string[] {
+  const errors: string[] = [];
+  if (!TASK_ID.test(task.id)) errors.push(`invalid Task ID ${task.id}`);
   assertSafeInline(task.story, "Task story");
   const storyWords = task.story.trim().split(/\s+/);
   if (task.story.trim().length < 24 || storyWords.length < 4
     || /^(?:refactor|fix|improve|optimi[sz]e|update|cleanup|clean up)\b/i.test(task.story.trim())) {
-    throw new Error(`Task ${task.id} story must state a concrete observable outcome, not a vague activity`);
+    errors.push(`Task ${task.id} story must state a concrete observable outcome, not a vague activity`);
   }
   const steps = howSteps(task.how);
-  if (steps.length === 0) throw new Error(`Task ${task.id} how must have at least one step`);
+  if (steps.length === 0) errors.push(`Task ${task.id} how must have at least one step`);
   for (const step of steps) assertSafeInline(step, "Task how");
   assertSafeInline(task.red, "Task RED");
   if (task.red.includes("`")
     || !/^bun run agent:test:(?:backend|frontend|e2e)\s+--\s+\S+/.test(task.red)) {
-    throw new Error(
-      `Task ${task.id} RED must use bun run agent:test:<backend|frontend|e2e> -- <exact-target>`,
-    );
+    errors.push(`Task ${task.id} RED must use bun run agent:test:<backend|frontend|e2e> -- <exact-target>`);
   }
-  if (task.writes.length === 0) throw new Error(`Task ${task.id} must declare at least one write`);
+  if (task.writes.length === 0) errors.push(`Task ${task.id} must declare at least one write`);
   assertUnique(task.writes, `Task ${task.id} writes`);
   for (const path of task.writes) {
     assertSafeInline(path, `Task ${task.id} write`);
-    if (!stageWrites.includes(path)) throw new Error(`Task ${task.id} write ${path} is outside Stage writes`);
+    if (!coveredByWrites(stageWrites, path)) errors.push(`Task ${task.id} write ${path} is outside Stage writes`);
   }
   const format = "format" in task ? task.format : "modern";
   if (format !== "legacy") {
-    // @invariant: compact Tasks carry their whole change in the visible story.
-    // Legacy five-line Tasks keep their original contract so active approved
-    // plans remain amendable after adopting this renderer.
-    const storyNames = (path: string): boolean => {
-      const base = path.split("/").pop() ?? path;
-      return task.story.includes(path) || task.story.includes(base);
-    };
-    const unnamedWrites = task.writes.filter((path) => !storyNames(path));
-    if (unnamedWrites.length > 0) {
-      throw new Error(
-        `Task ${task.id} story must name every write path (full path or basename): ${unnamedWrites.join(", ")}`,
-      );
-    }
-    if (task.story.trim().length > 200) {
-      throw new Error(`Task ${task.id} story must fit two lines (max 200 characters)`);
-    }
+    // @invariant: the writes list is the contract; the story says what changes
+    // for the reader and stays short. Legacy five-line Tasks keep their
+    // original contract so active approved plans remain amendable.
+    if (task.story.trim().length > 200) errors.push(`Task ${task.id} story must fit two lines (max 200 characters)`);
     if (/\b(?:colleague|half-?landed|rename map|the new files|the old files|as discussed)\b/i.test(task.story)) {
-      throw new Error(
-        `Task ${task.id} story has an unresolved reference — name the exact paths and symbols instead`,
-      );
-    }
-    if (task.writes.length > 4) {
-      throw new Error(`Task ${task.id} declares too many writes — one task is one change (max 4 files)`);
+      errors.push(`Task ${task.id} story has an unresolved reference — name the exact paths and symbols instead`);
     }
   }
-  if (task.predictedActiveMinutes <= 0 || task.predictedCredits < 0) {
-    throw new Error(`Task ${task.id} predictions must be non-negative and active minutes must be positive`);
-  }
+  if (task.predictedActiveMinutes < 0 || task.predictedCredits < 0) errors.push(`Task ${task.id} predictions must be non-negative`);
+  return errors;
+}
+
+/** A write names a file, a directory (`dir/`) or a glob (`*` within one
+ * segment, `**` across segments); `path` is covered when one write matches. */
+export function coveredByWrites(writes: readonly string[], path: string): boolean {
+  return writes.some((write) => {
+    if (write === path) return true;
+    if (write.endsWith("/")) return path.startsWith(write);
+    if (!write.includes("*")) return false;
+    const pattern = write
+      .split("**").map((part) => part.split("*").map(escapeRegExp).join("[^/]*"))
+      .join(".*");
+    return new RegExp(`^${pattern}$`).test(path);
+  });
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function assertStageContract(input: StageInput): void {
@@ -412,7 +484,8 @@ function assertStageContract(input: StageInput): void {
   }
   for (const criterion of input.criteria) assertSafeInline(criterion, `Stage ${input.id} acceptance criterion`);
   if (!input.criteria.includes("Commit")) throw new Error(`Stage ${input.id} acceptance criteria must include Commit`);
-  for (const task of input.tasks) assertTaskContract(task, input.writes);
+  const taskErrors = input.tasks.flatMap((task) => taskContractErrors(task, input.writes));
+  if (taskErrors.length > 0) throw new Error(taskErrors.join("\n"));
   const taskActiveMinutes = input.tasks.reduce((sum, task) => sum + task.predictedActiveMinutes, 0);
   const taskCredits = input.tasks.reduce((sum, task) => sum + task.predictedCredits, 0);
   if (input.verifyActiveMinutes < 0 || input.verifyCredits < 0) {
@@ -431,19 +504,19 @@ function equalSets(left: readonly string[], right: readonly string[]): boolean {
   return left.length === right.length && left.every((value) => right.includes(value));
 }
 
-function deliveryStart(id: string): string {
+export function deliveryStart(id: string): string {
   return `<!-- plan:delivery:${id}:start -->`;
 }
 
-function deliveryEnd(id: string): string {
+export function deliveryEnd(id: string): string {
   return `<!-- plan:delivery:${id}:end -->`;
 }
 
-function stageStart(id: string): string {
+export function stageStart(id: string): string {
   return `<!-- plan:stage:${id}:start -->`;
 }
 
-function stageEnd(id: string): string {
+export function stageEnd(id: string): string {
   return `<!-- plan:stage:${id}:end -->`;
 }
 
@@ -546,8 +619,8 @@ function renderStage(input: StageInput): string {
   assertUnique(input.parallelWith, "Stage parallel set");
   assertUnique(input.writes, "Stage writes");
   assertUnique(input.tasks.map((task) => task.id), "Task IDs");
-  if (input.predictedActiveMinutes <= 0 || input.predictedCredits < 0) {
-    throw new Error("Stage predictions must be non-negative and active minutes must be positive");
+  if (input.predictedActiveMinutes < 0 || input.predictedCredits < 0) {
+    throw new Error("Stage predictions must be non-negative");
   }
   for (const path of input.writes) assertSafeInline(path, "Stage write");
   assertSafeInline(input.tempRoot, "Stage tempRoot");
@@ -559,6 +632,8 @@ function renderStage(input: StageInput): string {
     parallelWith: input.parallelWith,
     writes: input.writes,
     tempRoot: input.tempRoot,
+    predictedActiveMinutes: input.predictedActiveMinutes,
+    predictedCredits: input.predictedCredits,
     verifyActiveMinutes: input.verifyActiveMinutes,
     verifyCredits: input.verifyCredits,
   });
@@ -574,7 +649,7 @@ function renderStage(input: StageInput): string {
     });
     if (taskMeta.includes("-->")) throw new Error(`Task ${task.id} metadata must not contain "-->"`);
     return [
-      `- [ ] ${task.id} — ${task.story} (${task.predictedActiveMinutes} min)`,
+      `- [ ] ${task.id} — ${task.story}${task.predictedActiveMinutes > 0 ? ` (${task.predictedActiveMinutes} min)` : ""}`,
       `<!-- plan:task-meta:${taskMeta} -->`,
     ];
   });
@@ -588,7 +663,6 @@ function renderStage(input: StageInput): string {
       `Parallel with: ${input.parallelWith.length === 0 ? "none" : input.parallelWith.join(", ")}.`,
     `- Writes: ${input.writes.map((path) => `\`${path}\``).join(", ")}.`,
     `- Temp root: \`${input.tempRoot}\` (must be absent at handoff).`,
-    `- Predict: ${input.predictedActiveMinutes} active min / ${input.predictedCredits} credits.`,
     `- Of which verification: ${input.verifyActiveMinutes} active min / ${input.verifyCredits} credits.`,
     "",
     ...proseLines(input.description),
@@ -642,11 +716,21 @@ function capture(match: RegExpMatchArray, index: number, name: string): string {
 
 export function stageInputs(body: string): readonly ParsedStageInput[] {
   const inputs: ParsedStageInput[] = [];
-  const expression = /<!-- plan:stage:(D[1-9]\d*-S[1-9]\d*):start -->\n<!-- plan:stage-meta:(\{[^\n]*\}) -->[\s\S]*?Predict: (\d+(?:\.\d+)?) active min \/ (\d+(?:\.\d+)?) credits\.[\s\S]*?<!-- plan:stage:\1:end -->/g;
+  const expression = /<!-- plan:stage:(D[1-9]\d*-S[1-9]\d*):start -->\n<!-- plan:stage-meta:(\{[^\n]*\}) -->[\s\S]*?<!-- plan:stage:\1:end -->/g;
   for (const match of body.matchAll(expression)) {
     const block = capture(match, 0, "Stage block");
     const id = capture(match, 1, "Stage ID");
     const meta = parseMetaObject(`<!-- plan:stage-meta:${capture(match, 2, "Stage metadata")} -->`, "<!-- plan:stage-meta:");
+    // The old renderer stored these numbers in prose. New plans keep them
+    // in metadata; absence from both formats is an invalid Stage.
+    const legacyPrediction = block.match(/Predict: (\d+(?:\.\d+)?) active min \/ (\d+(?:\.\d+)?) credits\./);
+    const predictedActiveMinutes = typeof meta.predictedActiveMinutes === "number"
+      ? meta.predictedActiveMinutes : Number(legacyPrediction?.[1]);
+    const predictedCredits = typeof meta.predictedCredits === "number"
+      ? meta.predictedCredits : Number(legacyPrediction?.[2]);
+    if (!Number.isFinite(predictedActiveMinutes) || !Number.isFinite(predictedCredits)) {
+      throw new Error(`Stage ${id} is missing prediction metadata`);
+    }
     const heading = block.match(/^#### Stage [^\n]+ — (.+)$/m);
     const ownerLine = block.match(/^(?:- )?Owner: ([^;]+); Profile: (fast|strong);/m);
     if (heading === null || ownerLine === null) throw new Error(`Stage ${match[1]} has incomplete rendered metadata`);
@@ -718,17 +802,17 @@ export function stageInputs(body: string): readonly ParsedStageInput[] {
       parallelWith: stringArray(meta.parallelWith, "Stage parallel set"),
       writes: stringArray(meta.writes, "Stage writes"),
       tempRoot: typeof meta.tempRoot === "string" ? meta.tempRoot : "",
-      predictedActiveMinutes: Number(capture(match, 3, "Stage active minutes")),
-      predictedCredits: Number(capture(match, 4, "Stage credits")),
+      predictedActiveMinutes: predictedActiveMinutes,
+      predictedCredits: predictedCredits,
       // Legacy plans carry no verification share: it derives as the gap
       // between the stage forecast and the task sum, which is its meaning.
       verifyActiveMinutes: typeof meta.verifyActiveMinutes === "number"
         ? meta.verifyActiveMinutes
-        : Math.max(0, Number(capture(match, 3, "Stage active minutes"))
+        : Math.max(0, predictedActiveMinutes
           - taskMatches.reduce((sum, task) => sum + task.input.predictedActiveMinutes, 0)),
       verifyCredits: typeof meta.verifyCredits === "number"
         ? meta.verifyCredits
-        : Math.max(0, Number(capture(match, 4, "Stage credits"))
+        : Math.max(0, predictedCredits
           - taskMatches.reduce((sum, task) => sum + task.input.predictedCredits, 0)),
       description: descriptionBlock === null ? "" : capture(descriptionBlock, 1, "Stage description").trim(),
       tasks: taskMatches.map((task) => ({
@@ -795,6 +879,12 @@ export function completedStageSamples(body: string): readonly CompletedWorkSampl
     || left.sampleId.localeCompare(right.sampleId));
 }
 
+function activeDeliveryId(body: string): string | null {
+  const header = body.match(/^Active Delivery:\s*(\S+)/m);
+  const id = header === null ? "none" : capture(header, 1, "Active Delivery header");
+  return id === "none" ? null : id;
+}
+
 export function deliveryMetas(body: string): readonly DeliveryMeta[] {
 
   const values: DeliveryMeta[] = [];
@@ -805,7 +895,14 @@ export function deliveryMetas(body: string): readonly DeliveryMeta[] {
     if (typeof meta.active !== "boolean") throw new Error(`Delivery ${id} lacks active metadata`);
     // A plan rendered before the forecast existed carries no wait: it reads as 0.
     const wait = typeof meta.predictedExternalWaitMinutes === "number" ? meta.predictedExternalWaitMinutes : 0;
-    values.push({ id, active: meta.active, predictedExternalWaitMinutes: wait });
+    // A plan rendered before Deliveries depended on each other carries no depends: it reads as none.
+    const depends = Array.isArray(meta.depends) && meta.depends.every((entry) => typeof entry === "string") ? meta.depends : [];
+    const block = region(body, deliveryStart(id), deliveryEnd(id));
+    const branch = block.text.match(/^Branch: `([^`]+)`;/m);
+    if (branch === null) throw new Error(`Delivery ${id} lacks a Branch line`);
+    // The header says which Delivery is active: execution moves it without
+    // touching the frozen contract, whose metadata keeps the authored flag.
+    values.push({ id, active: activeDeliveryId(body) === id, depends, branch: capture(branch, 1, `Delivery ${id} branch`), predictedExternalWaitMinutes: wait });
   }
   return values;
 }
@@ -813,14 +910,16 @@ export function deliveryMetas(body: string): readonly DeliveryMeta[] {
 function assertParallelWrites(candidate: StageInput, existing: readonly StageInput[]): void {
   for (const other of existing) {
     if (!candidate.parallelWith.includes(other.id) && !other.parallelWith.includes(candidate.id)) continue;
-    const overlap = candidate.writes.filter((path) => other.writes.includes(path));
+    const overlap = candidate.writes.filter((path) =>
+      coveredByWrites(other.writes, path) || other.writes.some((write) => coveredByWrites([path], write)));
     if (overlap.length > 0) {
       throw new Error(`parallel write overlap between ${candidate.id} and ${other.id}: ${overlap.join(", ")}`);
     }
   }
 }
 
-function validateImplementation(body: string): void {
+/** Whole-plan checks approval runs: one active Delivery, unique Task IDs, known dependencies, no cycles. */
+export function validateImplementation(body: string): void {
   const deliveries = deliveryMetas(body);
   if (deliveries.length === 0) throw new Error("implementation has no Delivery");
   if (deliveries.filter((delivery) => delivery.active).length !== 1) {
@@ -857,6 +956,51 @@ function validateImplementation(body: string): void {
   for (const stage of stages) visit(stage.id);
 }
 
+/** A Stage is closed when no box in it is open: Tasks and criteria alike. */
+export function stageClosed(body: string, stageId: string): boolean {
+  return !/^- \[ \] /m.test(region(body, stageStart(stageId), stageEnd(stageId)).text);
+}
+
+/** The numbered outcomes under "## The Goal": what every brief starts with. */
+export function goalLines(body: string): readonly string[] {
+  const match = body.match(/^## The Goal\n([\s\S]*?)(?=^## |<!-- plan:spec:end -->)/m);
+  if (match === null) return [];
+  return capture(match, 1, "Goal section").split("\n").map((line) => line.trim()).filter((line) => line !== "");
+}
+
+/** The next open Task of the active Delivery in Stage-graph order, or what blocks it.
+ * @tested-by: tst_unit_planctl_progress_002
+ */
+export function nextOpenTask(body: string): { readonly taskId: string | null; readonly blockedBy: string | null } {
+  const active = deliveryMetas(body).find((delivery) => delivery.active);
+  if (active === undefined) return { taskId: null, blockedBy: null };
+  let blockedBy: string | null = null;
+  for (const stage of stageInputs(body).filter((entry) => entry.deliveryId === active.id)) {
+    const open = stage.tasks.find((task) => !task.completed);
+    if (open === undefined) continue;
+    const waiting = stage.depends.find((dependency) => !stageClosed(body, dependency));
+    if (waiting === undefined) return { taskId: open.id, blockedBy: null };
+    if (blockedBy === null) blockedBy = `${stage.id} depends on ${waiting}`;
+  }
+  return { taskId: null, blockedBy };
+}
+
+/** Every start record of this plan, decoded by the caller's reader. */
+export async function runningTaskRecords(
+  root: string,
+  plan: string,
+  decodeRun: (value: unknown) => TaskRun | Promise<TaskRun>,
+): Promise<readonly TaskRun[]> {
+  const directory = dirname(taskRunPath(root, plan, "X"));
+  if (!existsSync(directory)) return [];
+  const prefix = basename(taskRunPath(root, plan, "")).replace(/\.json$/, "");
+  const runs: TaskRun[] = [];
+  for (const name of readdirSync(directory).filter((entry) => entry.startsWith(prefix) && entry.endsWith(".json"))) {
+    runs.push(await decodeRun(JSON.parse(readFileSync(join(directory, name), "utf8")) as unknown));
+  }
+  return runs;
+}
+
 function hasOpenTasks(body: string, stageId: string): boolean {
   const stage = region(body, stageStart(stageId), stageEnd(stageId));
   const tasks = stage.text.match(/##### Tasks\n\n([\s\S]*?)\n\n##### Acceptance criteria/);
@@ -864,7 +1008,7 @@ function hasOpenTasks(body: string, stageId: string): boolean {
   return /^- \[ \] /m.test(capture(tasks, 1, `Stage ${stageId} Tasks`));
 }
 
-export function taskExecutionBrief(body: string, taskId: string): TaskExecutionBrief {
+export function taskExecutionBrief(body: string, taskId: string, options: { readonly repair?: boolean } = {}): TaskExecutionBrief {
   requireState(body, "APPROVED");
   const stages = stageInputs(body);
   const stage = stages.find((candidate) => candidate.tasks.some((task) => task.id === taskId));
@@ -876,7 +1020,7 @@ export function taskExecutionBrief(body: string, taskId: string): TaskExecutionB
   const block = region(body, stageStart(stage.id), stageEnd(stage.id));
   const status = block.text.match(new RegExp(`^- \\[([ x])\\] ${taskId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} — `, "m"));
   if (status === null) throw new Error(`Task ${taskId} text does not match its contract`);
-  if (status[1] === "x") throw new Error(`Task ${taskId} is already complete`);
+  if (status[1] === "x" && options.repair !== true) throw new Error(`Task ${taskId} is already complete`);
   const blockedBy = stage.depends.filter((dependency) => hasOpenTasks(body, dependency));
   if (blockedBy.length > 0) throw new Error(`Task ${taskId} is blocked by incomplete Stage(s): ${blockedBy.join(", ")}`);
   return {
@@ -920,7 +1064,6 @@ export function putDelivery(body: string, input: DeliveryInput): MutationResult 
     next = replaceHeader(next, "Active Delivery", input.active
       ? input.id
       : current.find((candidate) => candidate.id !== input.id && candidate.active)?.id ?? "none");
-    next = appendExecution(next, `replace-delivery ${input.id}`);
     return { body: next };
   }
   const implementation = region(body, IMPLEMENTATION_START, IMPLEMENTATION_END);
@@ -928,7 +1071,6 @@ export function putDelivery(body: string, input: DeliveryInput): MutationResult 
   const replacement = `${beforeEnd}\n\n${renderDelivery(input, stageInputs(body))}\n${IMPLEMENTATION_END}`;
   let next = replaceRegion(body, IMPLEMENTATION_START, IMPLEMENTATION_END, replacement);
   next = replaceHeader(next, "Active Delivery", input.active ? input.id : current.find((delivery) => delivery.active)?.id ?? "none");
-  next = appendExecution(next, `put-delivery ${input.id}`);
   return { body: next };
 }
 
@@ -945,7 +1087,6 @@ export function putStage(body: string, input: StageInput): MutationResult {
     const current = region(body, stageStart(input.id), stageEnd(input.id));
     let next = `${body.slice(0, current.from)}${renderStage(input)}${body.slice(current.to)}`;
     next = refreshDeliveryForecast(next, input.deliveryId);
-    next = appendExecution(next, `replace-stage ${input.id}`);
     return { body: next };
   }
   const delivery = region(body, deliveryStart(input.deliveryId), deliveryEnd(input.deliveryId));
@@ -953,7 +1094,6 @@ export function putStage(body: string, input: StageInput): MutationResult {
   const replacement = `${beforeEnd}\n\n${renderStage(input)}\n${deliveryEnd(input.deliveryId)}`;
   let next = replaceRegion(body, deliveryStart(input.deliveryId), deliveryEnd(input.deliveryId), replacement);
   next = refreshDeliveryForecast(next, input.deliveryId);
-  next = appendExecution(next, `put-stage ${input.id}`);
   return { body: next };
 }
 
@@ -963,7 +1103,6 @@ export function dropImplementationRecord(body: string, id: string): MutationResu
   const end = STAGE_ID.test(id) ? stageEnd(id) : deliveryEnd(id);
   const current = region(body, start, end);
   let next = `${body.slice(0, current.from)}${body.slice(current.to)}`.replace(/\n{3,}/g, "\n\n");
-  next = appendExecution(next, `drop ${id}`);
   return { body: next };
 }
 
@@ -987,7 +1126,7 @@ export function moveImplementationRecord(body: string, id: string, beforeId: str
   const target = without.indexOf(targetStart);
   if (target === -1) throw new Error(`move target ${beforeId} does not exist`);
   without = `${without.slice(0, target)}${source.text}\n\n${without.slice(target)}`.replace(/\n{3,}/g, "\n\n");
-  return { body: appendExecution(without, `move ${id} before ${beforeId}`) };
+  return { body: without };
 }
 
 export function approvePlan(body: string, ownerWord: string): MutationResult {
@@ -1083,7 +1222,15 @@ export function recordStageResult(
     throw new Error(`Stage ${receipt.stageId} result names an unknown Task`);
   }
   const declaredPaths = [...new Set(addressedTasks.flatMap((task) => task?.writes ?? []))];
-  if (!equalSets(receipt.paths, declaredPaths)) throw new Error(`Stage ${receipt.stageId} result paths differ from addressed Task writes`);
+  // @invariant: the writes list is a contract the reader can check, not a
+  // fence: files the commit touched beyond it are named in the result row.
+  const beyondWrites = beyondTaskWrites(declaredPaths, receipt.paths);
+  for (const path of receipt.paths) {
+    if (isProtectedPath(path) && !coveredByWrites(declaredPaths, path)) {
+      throw new Error(`protected path ${path} is not named by the Task writes`);
+    }
+    if (!isTestPath(path) && !coveredByWrites(stage.writes, path)) throw new Error(`file outside the Stage folders: ${path}`);
+  }
   const commitIsAncestor = options.commitIsAncestor ?? defaultCommitIsAncestor;
   if (!commitIsAncestor(receipt.commit)) throw new Error(`Stage result commit ${receipt.commit} is not ancestral to HEAD`);
   const commitPaths = options.commitPaths ?? defaultCommitPaths;
@@ -1093,22 +1240,39 @@ export function recordStageResult(
   if (receipt.tempRoots.length !== 1 || receipt.tempRoots[0]?.path !== stage.tempRoot) {
     throw new Error(`Stage ${receipt.stageId} result must prove its registered temp root absent: ${stage.tempRoot}`);
   }
-  for (const temp of receipt.tempRoots) {
-    if (temp.state !== "absent") throw new Error(`temp root ${temp.path} is not declared absent`);
-    if (pathExists(temp.path)) throw new Error(`temp root still exists: ${temp.path}`);
-  }
+  const presentRoots = receipt.tempRoots
+    .filter((temp) => temp.state === "present" || pathExists(temp.path))
+    .map((temp) => temp.path);
   const block = region(body, stageStart(receipt.stageId), stageEnd(receipt.stageId));
   if (block.text.includes(`| ${receipt.taskIds[0]} | ${receipt.commit}`)) throw new Error("Stage result already recorded");
   let changedBlock = block.text;
+  let superseding = false;
   for (const taskId of receipt.taskIds) {
-    const taskLine = new RegExp(`^- \\[ \\] (${taskId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} — [^\\n]+)$`, "m");
-    if (!taskLine.test(changedBlock)) throw new Error(`Task ${taskId} is not open or its text changed`);
-    changedBlock = changedBlock.replace(taskLine, `- [x] $1 — ${receipt.commit}`);
+    const escaped = taskId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const taskLine = new RegExp(`^- \\[([ x])\\] (${escaped} — .+?)(?: — [0-9a-f]{40})?$`, "m");
+    const found = changedBlock.match(taskLine);
+    if (found === null) throw new Error(`Task ${taskId} is not open or its text changed`);
+    if (found[1] === "x") superseding = true;
+    changedBlock = changedBlock.replace(taskLine, `- [x] $2 — ${receipt.commit}`);
+  }
+  if (superseding) {
+    // A repaired Task supersedes its result: the Stage's closed criteria open
+    // again so close_stage proves the changed implementation once more.
+    const criteria = changedBlock.match(/##### Acceptance criteria\n\n([\s\S]*?)\n\n##### Results/);
+    if (criteria !== null) {
+      const reopened = capture(criteria, 1, `Stage ${receipt.stageId} criteria`).replace(/^- \[x\] (.+?) — [0-9a-f]{7,40}$/gm, "- [ ] $1");
+      changedBlock = changedBlock.replace(capture(criteria, 1, `Stage ${receipt.stageId} criteria`), reopened);
+    }
   }
   const usage = receipt.usage.kind === "credits" ? `${receipt.usage.credits} credits` : `unavailable: ${receipt.usage.reason}`;
+  const resultText = [
+    receipt.result,
+    ...(beyondWrites.length === 0 ? [] : [`beyond writes: ${beyondWrites.join(", ")}`]),
+    ...(presentRoots.length === 0 ? [] : [`temp root present: ${presentRoots.join(", ")}`]),
+  ].join(" — ");
   const rows = receipt.taskIds.map((taskId) =>
     `| ${markdownCell(taskId)} | ${receipt.commit} | ${receipt.startedAt}–${receipt.endedAt} | ` +
-    `${receipt.activeMinutes} / ${receipt.elapsedMinutes} min | ${markdownCell(usage)} | ${markdownCell(receipt.result)} |`,
+    `${receipt.activeMinutes} / ${receipt.elapsedMinutes} min | ${markdownCell(usage)} | ${markdownCell(resultText)} |`,
   ).join("\n");
   const resultMarker = resultsEnd(receipt.stageId);
   changedBlock = changedBlock.replace(resultMarker, `${rows}\n${resultMarker}`);
@@ -1148,16 +1312,23 @@ function amendRegion(body: string, patch: ExactReplacement): string {
 }
 
 export function applyOwnerAmendment(body: string, ownerWord: string, patch: ExactReplacement): MutationResult {
-  if (planState(body) !== "APPROVED") throw new Error("owner amendment requires APPROVED plan");
+  const state = planState(body);
+  // @tested-by: tst_scripts_planupdate_020
+  if (state !== "APPROVED" && !(state === "SPEC_LOCKED" && patch.section === "spec")) {
+    throw new Error("owner amendment requires APPROVED plan or a SPEC amendment in SPEC_LOCKED");
+  }
   assertSafeInline(ownerWord, "owner word");
   let next = amendRegion(body, patch);
   if (patch.section === "spec") {
     const specHash = protocolSpecHash(next);
-    next = replaceHeader(next, "Status", "SPEC_LOCKED");
     next = replaceHeader(next, "Spec lock", `sha256:${specHash} owner:${ownerWord}`);
-    next = replaceHeader(next, "Implementation lock", "stale");
     next = appendExecution(next, `amend spec owner:${ownerWord} sha256:${specHash}`);
-    return { body: next, specHash };
+    if (state !== "APPROVED") return { body: replaceHeader(next, "Status", "SPEC_LOCKED"), specHash };
+    // The owner's word on a SPEC correction covers the unchanged contract:
+    // declaring a type must not cost a second approval.
+    const implementationHash = protocolImplementationHash(next);
+    next = replaceHeader(next, "Implementation lock", `sha256:${implementationHash} owner:${ownerWord}`);
+    return { body: next, specHash, implementationHash };
   }
   validateImplementation(next);
   const implementationHash = protocolImplementationHash(next);
@@ -1190,6 +1361,24 @@ export function recordDeviation(body: string, stageId: string, text: string): Mu
   if (!body.includes(stageStart(stageId))) throw new Error(`unknown Stage ${stageId}`);
   assertSafeInline(text, "deviation");
   return { body: appendExecution(body, `deviation ${stageId}: ${text}`) };
+}
+
+/** The owner's word on a Stage, as a journaled Execution-log line. A Stage
+ * criterion can require it through `stageApproved`, which reads only that
+ * line, so "the owner read this and said the word" is a machine check. */
+export function recordStageApproval(body: string, stageId: string, ownerWord: string): MutationResult {
+  requireState(body, "APPROVED");
+  if (!body.includes(stageStart(stageId))) throw new Error(`unknown Stage ${stageId}`);
+  assertNonEmpty(ownerWord, "owner word");
+  assertSafeInline(ownerWord, "owner word");
+  const date = new Date().toISOString().slice(0, 10);
+  return { body: appendExecution(body, `approve-stage ${stageId} owner:${ownerWord} — owner, ${date}`) };
+}
+
+export function stageApproved(body: string, stageId: string): boolean {
+  const execution = region(body, EXECUTION_START, EXECUTION_END).text;
+  const line = new RegExp(`^- approve-stage ${stageId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} owner:\\S`, "m");
+  return line.test(execution);
 }
 
 export function closePlanStage(
@@ -1227,6 +1416,13 @@ export function closePlanStage(
   const status = remaining === 0 ? "CLOSED" : "PARTIAL";
   let next = `${body.slice(0, stage.from)}${changedStage}${body.slice(stage.to)}`;
   next = appendExecution(next, `close ${stageId} ${status.toLowerCase()} commit:${options.head}`);
+  if (status === "CLOSED") {
+    const stages = stageInputs(next);
+    const deliveryId = stages.find((entry) => entry.id === stageId)?.deliveryId;
+    const open = stages.some((entry) => entry.deliveryId === deliveryId
+      && /^- \[ \] /m.test(region(next, stageStart(entry.id), stageEnd(entry.id)).text));
+    if (!open) next = markLedgerImplemented(next);
+  }
   return { body: next, closed, status };
 }
 
@@ -1276,8 +1472,412 @@ function readJournal(path: string): MutationJournal | null {
   return parseJournal(parsed);
 }
 
-function mutatePlanFile(planArg: string, operation: string, transform: (body: string) => MutationResult): void {
-  const root = git(process.cwd(), ["rev-parse", "--show-toplevel"]);
+/** Where a Task's start record lives: the Git common dir, keyed by plan and Task. */
+export function taskRunPath(root: string, plan: string, taskId: string): string {
+  const common = git(root, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+  const planKey = createHash("sha256").update(plan).digest("hex").slice(0, 12);
+  return join(common, "planctl", "task-runs", `${planKey}-${taskId}.json`);
+}
+
+/** Complete one or more Tasks of a Stage from four inputs. Paths come from
+ * the commit, times from the start records, planned tests from each Task's
+ * RED command; the temp root is reported, never refused. Active minutes is
+ * elapsed less the recorded owner waits: an estimate, carried as such.
+ * @tested-by: tst_scripts_planupdate_022, tst_scripts_planupdate_024
+ */
+export async function completeTask(
+  root: string,
+  input: CompleteTaskInput,
+  decodeRun: (value: unknown) => TaskRun | Promise<TaskRun>,
+): Promise<CompletedTask> {
+  const plan = resolve(root, input.plan).slice(root.length + 1);
+  if (input.taskIds.length === 0) throw new Error("complete-task needs at least one Task");
+  const body = readFileSync(resolve(root, plan), "utf8");
+  const stage = stageInputs(body).find((entry) => input.taskIds.every((id) => entry.tasks.some((task) => task.id === id)));
+  if (stage === undefined) throw new Error(`Tasks ${input.taskIds.join(", ")} do not belong to one Stage of ${plan}`);
+  const tasks = stage.tasks.filter((task) => input.taskIds.includes(task.id));
+  const runs = await Promise.all(input.taskIds.map(async (taskId) => {
+    const path = taskRunPath(root, plan, taskId);
+    if (!existsSync(path)) throw new Error(`Task ${taskId} has no start record; run planctl start-task first`);
+    const run = await decodeRun(JSON.parse(readFileSync(path, "utf8")) as unknown);
+    if (run.plan !== plan || run.taskId !== taskId) throw new Error(`Task ${taskId} start record belongs to another Task`);
+    if (spawnSync("git", ["-C", root, "merge-base", "--is-ancestor", run.baseHead, input.commit]).status !== 0) {
+      throw new Error(`Task ${taskId} result commit does not descend from its start base`);
+    }
+    return { path, run };
+  }));
+  const endedAt = new Date().toISOString();
+  const startedAt = runs.map(({ run }) => run.startedAt).sort()[0];
+  if (startedAt === undefined) throw new Error("complete-task needs at least one start record");
+  const elapsedMinutes = (Date.parse(endedAt) - Date.parse(startedAt)) / 60_000;
+  const waitSeconds = runs.reduce((sum, { run }) => {
+    if (run.version !== 2) return sum;
+    const open = run.ownerWait === null ? 0 : (Date.parse(endedAt) - Date.parse(run.ownerWait.startedAt)) / 1_000;
+    return sum + run.accumulatedOwnerWaitSeconds + open;
+  }, 0);
+  const activeMinutes = Math.max(0, elapsedMinutes - waitSeconds / 60);
+  const paths = stageResultCommitPaths(input.commit, root).filter((path) => path !== plan);
+  const tempRoot = {
+    path: stage.tempRoot,
+    state: existsSync(resolve(root, stage.tempRoot)) ? "present" : "absent",
+  } as const;
+  const tests = tasks.map((task) => ({ id: task.id, command: task.red }));
+  // An exported type the SPEC does not name is the one thing a commit may
+  // not change silently: the Interfaces section is the owner's contract.
+  const { undeclaredExportedTypes } = await import("./plan-gate");
+  const undeclared = await undeclaredExportedTypes(root, input.commit, body);
+  if (undeclared.length > 0) {
+    const names = undeclared.map((type) => `${type.name} in ${type.path}`).join(", ");
+    throw new Error(`exported type ${names} is missing from SPEC Interfaces; declare it there under the owner's word`);
+  }
+  const receipt: StageResultReceipt = {
+    version: 1,
+    plan,
+    deliveryId: stage.deliveryId,
+    stageId: stage.id,
+    taskIds: [...input.taskIds],
+    commit: input.commit,
+    startedAt,
+    endedAt,
+    activeMinutes,
+    elapsedMinutes,
+    usage: { kind: "unavailable", reason: "not measured by planctl" },
+    paths,
+    tests,
+    result: input.result,
+    deviations: [...(input.deviations ?? [])],
+    tempRoots: [tempRoot],
+  };
+  mutatePlanFile(root, plan, "record-result", (current) => recordStageResult(current, receipt, {
+    commitIsAncestor: (commit) => spawnSync("git", ["-C", root, "merge-base", "--is-ancestor", commit, "HEAD"]).status === 0,
+    commitPaths: (commit) => stageResultCommitPaths(commit, root),
+    pathExists: (path) => existsSync(resolve(root, path)),
+  }));
+  for (const { path } of runs) unlinkSync(path);
+  return {
+    deliveryId: stage.deliveryId,
+    stageId: stage.id,
+    taskIds: [...input.taskIds],
+    commit: input.commit,
+    startedAt,
+    endedAt,
+    elapsedMinutes,
+    activeMinutes,
+    paths,
+    beyondWrites: beyondTaskWrites(tasks.flatMap((task) => task.writes), paths),
+    tests,
+    tempRoot,
+  };
+}
+
+export interface InitPlanInput {
+  readonly title: string;
+  /** An explicit file; without it the name is derived from the branch. */
+  readonly plan?: string;
+}
+
+export interface InitializedPlan {
+  readonly plan: string;
+  readonly body: string;
+  readonly branch: string;
+  readonly base: string;
+}
+
+function planSlug(branch: string): string {
+  const slug = branch.slice(branch.lastIndexOf("/") + 1).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  if (slug === "") throw new Error(`branch ${branch} yields no plan name`);
+  return slug;
+}
+
+/** Create, stage and journal a SPEC_DRAFT plan named after the branch:
+ * docs/plans/<date>-<slug>.md. Refuses the integration branch itself and a
+ * missing code-production.base, naming the command that sets it.
+ * @tested-by: tst_scripts_planctl_011
+ */
+export function initPlan(root: string, input: InitPlanInput): InitializedPlan {
+  const branch = git(root, ["branch", "--show-current"]);
+  if (branch === "") throw new Error("init needs a branch; HEAD is detached");
+  const configured = spawnSync("git", ["-C", root, "config", "--get", "code-production.base"], { encoding: "utf8" });
+  const base = configured.status === 0 ? configured.stdout.trim() : "";
+  if (base === "") throw new Error("code-production.base is not set; run: git config code-production.base <branch>");
+  if (branch === base) throw new Error(`on the integration branch ${base}; create a feature branch first`);
+  const plan = input.plan === undefined
+    ? `docs/plans/${new Date().toISOString().slice(0, 10)}-${planSlug(branch)}.md`
+    : resolve(root, input.plan).slice(root.length + 1);
+  const absolute = resolve(root, plan);
+  if (existsSync(absolute)) throw new Error(`plan already exists: ${plan}`);
+  const body = createDraftPlan(input.title);
+  mkdirSync(dirname(absolute), { recursive: true });
+  writeFileSync(absolute, body);
+  git(root, ["add", "--", plan]);
+  journalCreatedPlan(root, plan, body);
+  return { plan, body, branch, base };
+}
+
+function gitCommonDir(root: string): string {
+  return git(root, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+}
+
+/** Write a start record atomically: a partial file never counts as a running Task. */
+export function writeTaskRun(path: string, run: TaskRun): void {
+  const parent = dirname(path);
+  mkdirSync(parent, { recursive: true });
+  const temporary = mkdtempSync(join(parent, ".task-run-"));
+  const candidate = join(temporary, "receipt.json");
+  try {
+    writeFileSync(candidate, `${JSON.stringify(run, null, 2)}\n`, { mode: 0o600 });
+    renameSync(candidate, path);
+  } finally {
+    rmSync(temporary, { recursive: true, force: true });
+  }
+}
+
+/** "What do I do now": the plan, the Goal, and one Task with its scope. */
+export interface TaskBrief {
+  readonly plan: string;
+  readonly goal: readonly string[];
+  readonly deliveryId: string;
+  readonly stageId: string;
+  readonly taskId: string;
+  readonly stageDescription: string;
+  readonly story: string;
+  readonly folders: readonly string[];
+  readonly how: readonly string[];
+  readonly red: string;
+  readonly startedAt: string;
+  readonly forecastMinutes: number;
+  readonly checkpoint: string | null;
+}
+
+export interface StartTaskInput {
+  readonly plan: string;
+  /** null: the running Task, or the next one in Stage-graph order. */
+  readonly taskId: string | null;
+  readonly checkpoint: string | null;
+  /** The observer identity when observer configuration exists; null in a plain clone. */
+  readonly identity: TaskRunIdentity | null;
+  /** What gh reports for a Delivery branch, to unlock a child Delivery or refuse a merged one. */
+  readonly publication: (branch: string) => ProgressView["publication"];
+  readonly decodeRun: (value: unknown) => TaskRun | Promise<TaskRun>;
+}
+
+/** The owner question: what this is about, the options with their consequences, the recommendation, the form of the answer. */
+export interface NeedsOwnerInput {
+  readonly plan: string;
+  readonly taskId: string;
+  readonly context: string;
+  readonly options: readonly { readonly label: string; readonly consequence: string }[];
+  readonly recommendation: string;
+  readonly answerForm: string;
+}
+
+function observed(publication: (branch: string) => ProgressView["publication"], branch: string): ProgressView["publication"] {
+  try {
+    return publication(branch);
+  } catch (error: unknown) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+/** Why a Delivery cannot start yet: a parent without a green PR on its current head. Null when every parent is green or merged. */
+function parentRefusal(root: string, deliveries: readonly DeliveryMeta[], delivery: DeliveryMeta, publication: StartTaskInput["publication"]): string | null {
+  for (const parentId of delivery.depends) {
+    const parent = deliveries.find((entry) => entry.id === parentId);
+    if (parent === undefined) return `Delivery ${delivery.id} depends on unknown Delivery ${parentId}`;
+    const state = observed(publication, parent.branch);
+    if (state === null) return `Delivery ${parent.id} has no PR yet`;
+    if ("error" in state) return `Delivery ${parent.id}: ${state.error}`;
+    if (state.merged) continue;
+    if (state.ci !== "green") return `Delivery ${parent.id} CI is ${state.ci}`;
+    const current = spawnSync("git", ["-C", root, "rev-parse", "--verify", `${parent.branch}^{commit}`], { encoding: "utf8" });
+    if (current.status !== 0) return `Delivery ${parent.id} branch ${parent.branch} is not known here`;
+    if (state.headSha !== current.stdout.trim()) {
+      return `Delivery ${parent.id} PR head ${state.headSha.slice(0, 7)} is not the current head ${current.stdout.trim().slice(0, 7)}`;
+    }
+  }
+  return null;
+}
+
+function taskRunOf(run: TaskRun): string | null {
+  return run.version === 1 ? null : run.worktree;
+}
+
+/** Start a Task, or return the one already running here, on one clock.
+ * Without a Task ID: the running Task, else the next open one in Stage-graph
+ * order, else the first Task of a child Delivery whose parents are green.
+ * A completed Task of an unmerged Delivery starts again for repair.
+ * @tested-by: tst_scripts_planupdate_027, tst_scripts_planupdate_028, tst_scripts_planupdate_029
+ */
+export async function startTask(root: string, input: StartTaskInput): Promise<TaskBrief> {
+  const plan = resolve(root, input.plan).slice(root.length + 1);
+  let body = readFileSync(resolve(root, plan), "utf8");
+  requireState(body, "APPROVED");
+  const runs = await runningTaskRecords(root, plan, input.decodeRun);
+  const mine = runs.filter((run) => taskRunOf(run) === null || taskRunOf(run) === root)
+    .sort((left, right) => right.startedAt.localeCompare(left.startedAt));
+  let taskId = input.taskId;
+  if (taskId === null) {
+    const running = mine[0];
+    if (running !== undefined) taskId = running.taskId;
+    else {
+      const next = nextOpenTask(body);
+      if (next.taskId !== null) taskId = next.taskId;
+      else {
+        const deliveries = deliveryMetas(body);
+        const child = deliveries.find((delivery) => !delivery.active
+          && stageInputs(body).some((stage) => stage.deliveryId === delivery.id && stage.tasks.some((task) => !task.completed))
+          && parentRefusal(root, deliveries, delivery, input.publication) === null);
+        const firstOpen = child === undefined ? undefined : stageInputs(body).filter((stage) => stage.deliveryId === child.id).flatMap((stage) => stage.tasks).find((task) => !task.completed);
+        if (firstOpen === undefined) throw new Error(`nothing to start: ${next.blockedBy ?? "every Task of the active Delivery is complete and no child Delivery is eligible"}`);
+        taskId = firstOpen.id;
+      }
+    }
+  }
+  const elsewhere = runs.find((run) => run.taskId === taskId && taskRunOf(run) !== null && taskRunOf(run) !== root);
+  if (elsewhere !== undefined) throw new Error(`Task ${taskId} is running in worktree ${taskRunOf(elsewhere)}`);
+  const stages = stageInputs(body);
+  const stage = stages.find((candidate) => candidate.tasks.some((task) => task.id === taskId));
+  if (stage === undefined) throw new Error(`unknown Task ${taskId}`);
+  const task = stage.tasks.find((candidate) => candidate.id === taskId);
+  if (task === undefined) throw new Error(`unknown Task ${taskId}`);
+  const deliveries = deliveryMetas(body);
+  const delivery = deliveries.find((entry) => entry.id === stage.deliveryId);
+  if (delivery === undefined) throw new Error(`Task ${taskId} belongs to unknown Delivery ${stage.deliveryId}`);
+  if (!delivery.active) {
+    const refusal = parentRefusal(root, deliveries, delivery, input.publication);
+    if (refusal !== null) throw new Error(`Task ${taskId} cannot start: ${refusal}`);
+    mutatePlanFile(root, plan, "activate-delivery", (current) => ({ body: replaceHeader(current, "Active Delivery", delivery.id) }));
+    body = readFileSync(resolve(root, plan), "utf8");
+  }
+  if (task.completed) {
+    const state = observed(input.publication, delivery.branch);
+    if (state !== null && "merged" in state && state.merged) throw new Error(`Task ${taskId} is complete and its Delivery ${delivery.id} is merged`);
+  }
+  const brief = taskExecutionBrief(body, taskId, { repair: task.completed });
+  const path = taskRunPath(root, plan, taskId);
+  const existing = mine.find((run) => run.taskId === taskId);
+  let run: TaskRun;
+  if (existing !== undefined) {
+    if (existing.plan !== plan || existing.stageId !== brief.stageId) throw new Error(`Task ${taskId} has a conflicting start record`);
+    if (spawnSync("git", ["-C", root, "merge-base", "--is-ancestor", existing.baseHead, "HEAD"]).status !== 0) {
+      throw new Error(`Task ${taskId} start base is not ancestral to HEAD`);
+    }
+    // A repeated start keeps the clock; it may add a checkpoint, and an
+    // observer identity that a plain-clone start could not know yet.
+    run = existing.version === 3
+      ? {
+          ...existing,
+          checkpoint: input.checkpoint ?? existing.checkpoint,
+          identity: existing.identity ?? input.identity,
+        }
+      : existing;
+    run = (await settleOwnerWait(root, plan, taskId, run)).run;
+    writeTaskRun(path, run);
+  } else {
+    run = {
+      version: 3,
+      plan,
+      deliveryId: brief.deliveryId,
+      stageId: brief.stageId,
+      taskId,
+      startedAt: new Date().toISOString(),
+      baseHead: git(root, ["rev-parse", "HEAD"]),
+      worktree: root,
+      branch: git(root, ["branch", "--show-current"]),
+      checkpoint: input.checkpoint,
+      identity: input.identity,
+      ownerWait: null,
+      accumulatedOwnerWaitSeconds: 0,
+      lastAccountedOwnerWaitStartedAt: null,
+    };
+    writeTaskRun(path, run);
+  }
+  return {
+    plan,
+    goal: goalLines(body),
+    deliveryId: brief.deliveryId,
+    stageId: brief.stageId,
+    taskId,
+    stageDescription: brief.stageDescription,
+    story: brief.story,
+    folders: stage.writes,
+    how: howSteps(brief.how),
+    red: brief.red,
+    startedAt: run.startedAt,
+    forecastMinutes: brief.predictedActiveMinutes,
+    checkpoint: run.version === 3 ? run.checkpoint : null,
+  };
+}
+
+/** Account and clear an open owner wait on a record; nothing to clear changes nothing. */
+async function settleOwnerWait(root: string, plan: string, taskId: string, run: TaskRun): Promise<{ readonly run: TaskRun; readonly marker: OwnerWaitReceipt | null }> {
+  const waits = await import("./task-run");
+  const path = waits.ownerWaitPath(gitCommonDir(root), plan, taskId);
+  const marker = waits.readOwnerWait(path);
+  if (marker === null) return { run, marker: null };
+  const updated = waits.accountOwnerWait(run, marker, new Date().toISOString());
+  writeTaskRun(taskRunPath(root, plan, taskId), updated);
+  waits.clearOwnerWait(path);
+  return { run: updated, marker };
+}
+
+/** Record that a started Task needs one owner answer, as a form the owner can act on.
+ * @tested-by: tst_scripts_planupdate_027
+ */
+export async function needsOwner(root: string, input: NeedsOwnerInput): Promise<OwnerWaitReceipt> {
+  const plan = resolve(root, input.plan).slice(root.length + 1);
+  const body = readFileSync(resolve(root, plan), "utf8");
+  taskExecutionBrief(body, input.taskId, { repair: true });
+  const path = taskRunPath(root, plan, input.taskId);
+  if (!existsSync(path)) throw new Error(`Task ${input.taskId} has no start record; run planctl start-task first`);
+  const waits = await import("./task-run");
+  return waits.markOwnerWait(waits.ownerWaitPath(gitCommonDir(root), plan, input.taskId), {
+    plan,
+    taskId: input.taskId,
+    reason: input.context,
+    startedAt: new Date().toISOString(),
+    context: input.context,
+    options: input.options,
+    recommendation: input.recommendation,
+    answerForm: input.answerForm,
+  });
+}
+
+/** Clear the Task's owner wait and account its duration; without a wait the record is returned unchanged.
+ * @tested-by: tst_scripts_planupdate_027
+ */
+export async function resumeTask(
+  root: string,
+  input: { readonly plan: string; readonly taskId: string; readonly decodeRun: (value: unknown) => TaskRun | Promise<TaskRun> },
+): Promise<{ readonly run: TaskRun; readonly marker: OwnerWaitReceipt | null }> {
+  const plan = resolve(root, input.plan).slice(root.length + 1);
+  const path = taskRunPath(root, plan, input.taskId);
+  if (!existsSync(path)) throw new Error(`Task ${input.taskId} has no start record; run planctl start-task first`);
+  const run = await input.decodeRun(JSON.parse(readFileSync(path, "utf8")) as unknown);
+  return settleOwnerWait(root, plan, input.taskId, run);
+}
+
+/** The journal for a plan planctl has just created: the init event from
+ * nothing to the draft's bytes, so the managed pre-commit's staged-plan guard
+ * accepts the first commit like every later journaled mutation. */
+export function journalCreatedPlan(root: string, planArg: string, body: string): void {
+  const absolute = resolve(root, planArg);
+  const plan = absolute.slice(root.length + 1);
+  const empty = digest("");
+  const candidateHash = digest(body);
+  const journal: MutationJournal = {
+    version: 1,
+    root,
+    plan,
+    baseHead: git(root, ["rev-parse", "HEAD"]),
+    initialHash: empty,
+    candidateHash,
+    events: [{ operation: "init", beforeHash: empty, afterHash: candidateHash }],
+  };
+  writeFileSync(journalPath(root), `${JSON.stringify(journal, null, 2)}\n`);
+}
+
+export function mutatePlanFile(root: string, planArg: string, operation: string, transform: (body: string) => MutationResult): void {
   const absolute = resolve(root, planArg);
   const plan = absolute.slice(root.length + 1);
   if (absolute === root || plan.startsWith("..")) throw new Error("plan must be inside the repository");
@@ -1285,7 +1885,17 @@ function mutatePlanFile(planArg: string, operation: string, transform: (body: st
   const body = readFileSync(absolute, "utf8");
   const head = git(root, ["rev-parse", "HEAD"]);
   const currentHash = digest(body);
-  const existing = readJournal(path);
+  let existing = readJournal(path);
+  // A journal whose candidate HEAD already carries was spent by that commit;
+  // a repository without the managed post-commit hook never cleared it. It is
+  // consumed here, so the next mutation starts a fresh transaction from HEAD.
+  if (existing !== null && existing.root === root && existing.plan === plan && existing.baseHead !== head) {
+    const committedNow = spawnSync("git", ["-C", root, "show", `HEAD:${plan}`], { encoding: "utf8" });
+    if (committedNow.status === 0 && digest(committedNow.stdout) === existing.candidateHash) {
+      unlinkSync(path);
+      existing = null;
+    }
+  }
   let initialHash: string;
   let events: readonly JournalEvent[];
   if (existing === null) {
@@ -1302,7 +1912,8 @@ function mutatePlanFile(planArg: string, operation: string, transform: (body: st
     initialHash = existing.initialHash;
     events = existing.events;
   }
-  const result = { ...transform(body), body: hardBreakHeader(transform(body).body) };
+  const transformed = transform(body);
+  const result = { ...transformed, body: hardBreakHeader(transformed.body) };
   const afterHash = digest(result.body);
   if (afterHash === currentHash) throw new Error(`${operation} produced no change`);
   writeFileSync(absolute, result.body);
@@ -1326,17 +1937,36 @@ function merging(root: string): boolean {
   }).status === 0;
 }
 
-export function verifyStagedPlan(planArg: string): void {
-  const root = git(process.cwd(), ["rev-parse", "--show-toplevel"]);
+/** What a merge carries for `plan`: one side's bytes, or what git itself
+ * auto-merges from the two sides (`merge-tree --write-tree`, git >= 2.38).
+ * A plan in the merge's conflicted set has no auto-merge to inherit. */
+function carriedByMerge(root: string, plan: string, staged: string): boolean {
+  const show = (rev: string): string | null => {
+    const out = spawnSync("git", ["-C", root, "show", `${rev}:${plan}`], { encoding: "utf8" });
+    return out.status === 0 ? out.stdout : null;
+  };
+  if (show("HEAD") === staged || show("MERGE_HEAD") === staged) return true;
+  const merged = spawnSync(
+    "git",
+    ["-C", root, "merge-tree", "--write-tree", "-z", "--name-only", "--no-messages", "HEAD", "MERGE_HEAD"],
+    { encoding: "utf8" },
+  );
+  const [tree, ...conflicted] = merged.stdout.split("\0");
+  if (tree === undefined || !/^[0-9a-f]{40}$/.test(tree.trim()) || conflicted.includes(plan)) return false;
+  return show(tree.trim()) === staged;
+}
+
+export function verifyStagedPlan(root: string, planArg: string): void {
+  const plan = resolve(root, planArg).slice(root.length + 1);
   // A MERGE authored none of these bytes here. The journal proves that a
   // locked plan reached its staged shape through planctl in THIS worktree,
   // and a plan arriving from another branch never did — demanding one made
-  // every merge that carried an approved plan uncommittable, which is a gate
-  // refusing honest work. `plan-gate --freeze` is the authority for a merge:
-  // it reads git's own auto-merged tree and refuses a hand edit that a
-  // resolution smuggled in. This stands aside and lets it answer.
-  if (merging(root)) return;
-  const plan = resolve(root, planArg).slice(root.length + 1);
+  // every merge that carried an approved plan uncommittable. The exemption is
+  // for what the merge CARRIES and nothing else: a side's bytes or git's own
+  // auto-merge of both sides. Edit that plan by hand while the merge is open
+  // and the guard bites again, or a merge would be a hole through which any
+  // plan could be rewritten unjournalled.
+  if (merging(root) && carriedByMerge(root, plan, gitRaw(root, ["show", `:${plan}`]))) return;
   const journal = readJournal(journalPath(root));
   if (journal === null) throw new Error("locked plan mutation has no journal");
   if (journal.plan !== plan || journal.root !== root || journal.baseHead !== git(root, ["rev-parse", "HEAD"])) {
@@ -1385,7 +2015,7 @@ function requiredNumber(record: Readonly<Record<string, unknown>>, key: string):
   return value;
 }
 
-function deliveryFrom(value: unknown): DeliveryInput {
+export function deliveryFrom(value: unknown): DeliveryInput {
   const record = object(value, "Delivery");
   if (typeof record.active !== "boolean") throw new Error("active must be boolean");
   return {
@@ -1413,7 +2043,7 @@ function tasksFrom(value: unknown): readonly TaskInput[] {
   });
 }
 
-function stageFrom(value: unknown): StageInput {
+export function stageFrom(value: unknown): StageInput {
   const record = object(value, "Stage");
   const profile = requiredString(record, "profile");
   if (profile !== "fast" && profile !== "strong") throw new Error("profile must be fast or strong");
@@ -1459,8 +2089,8 @@ function tempRootsFrom(value: unknown): StageResultReceipt["tempRoots"] {
   if (!Array.isArray(value)) throw new Error("tempRoots must be an array");
   return value.map((entry) => {
     const temp = object(entry, "Stage result temp root");
-    if (temp.state !== "absent") throw new Error("temp root state must be absent");
-    return { path: requiredString(temp, "path"), state: "absent" };
+    if (temp.state !== "absent" && temp.state !== "present") throw new Error("temp root state must be absent or present");
+    return { path: requiredString(temp, "path"), state: temp.state };
   });
 }
 
@@ -1503,7 +2133,7 @@ function decisionFrom(value: unknown): UnattendedDecisionReceipt {
   };
 }
 
-function patchFrom(value: unknown): ExactReplacement {
+export function patchFrom(value: unknown): ExactReplacement {
   const record = object(value, "patch");
   const section = requiredString(record, "section");
   if (section !== "spec" && section !== "implementation") throw new Error("patch section must be spec or implementation");
@@ -1522,7 +2152,7 @@ function requiredFlag(args: readonly string[], name: string): string {
 }
 
 function usage(): never {
-  console.error("usage: bun planctl/src/core/plan-update.ts <plan> <lock-spec|put-delivery|put-stage|remove-stage|drop|move|approve|record-result|close|deviate|amend|unattended-amend|verify-staged|clear-spent> [options]");
+  console.error("usage: bun planctl/src/core/plan-update.ts <plan> <lock-spec|put-delivery|put-stage|remove-stage|drop|move|approve|record-result|close|deviate|approve-stage|stage-approved|amend|unattended-amend|verify-staged|clear-spent> [options]");
   process.exit(64);
 }
 
@@ -1531,54 +2161,69 @@ if (import.meta.main && ["plan-update.ts", "plan-update.js"].includes(basename(i
   const plan = args[0];
   const command = args[1];
   if (plan === undefined || command === undefined) usage();
+  const root = git(process.cwd(), ["rev-parse", "--show-toplevel"]);
   try {
     switch (command) {
-      case "lock-spec":
-        mutatePlanFile(plan, command, (body) => lockPlanSpec(body, requiredFlag(args, "--owner-word")));
+      case "lock-spec": {
+        const gate = resolve(import.meta.dir, import.meta.path.endsWith(".js") ? "plan-gate.js" : "plan-gate.ts");
+        const checked = spawnSync("bun", [gate, plan, "--lint", "--root", process.cwd()], { encoding: "utf8", timeout: 30_000 });
+        if (checked.status !== 0) throw new Error(checked.error?.message ?? `${checked.stdout}${checked.stderr}`.trim());
+        process.stdout.write(checked.stdout);
+        mutatePlanFile(root, plan, command, (body) => lockPlanSpec(body, requiredFlag(args, "--owner-word")));
         break;
+      }
       case "put-delivery":
-        mutatePlanFile(plan, command, (body) => putDelivery(body, deliveryFrom(readJson(requiredFlag(args, "--from")))));
+        mutatePlanFile(root, plan, command, (body) => putDelivery(body, deliveryFrom(readJson(requiredFlag(args, "--from")))));
         break;
       case "put-stage":
-        mutatePlanFile(plan, command, (body) => putStage(body, stageFrom(readJson(requiredFlag(args, "--from")))));
+        mutatePlanFile(root, plan, command, (body) => putStage(body, stageFrom(readJson(requiredFlag(args, "--from")))));
         break;
       case "remove-stage":
-        mutatePlanFile(plan, command, (body) => removeDraftStage(body, requiredFlag(args, "--stage")));
+        mutatePlanFile(root, plan, command, (body) => removeDraftStage(body, requiredFlag(args, "--stage")));
         break;
       case "drop":
-        mutatePlanFile(plan, command, (body) => dropImplementationRecord(body, requiredFlag(args, "--id")));
+        mutatePlanFile(root, plan, command, (body) => dropImplementationRecord(body, requiredFlag(args, "--id")));
         break;
       case "move":
-        mutatePlanFile(plan, command, (body) => moveImplementationRecord(body, requiredFlag(args, "--id"), requiredFlag(args, "--before")));
+        mutatePlanFile(root, plan, command, (body) => moveImplementationRecord(body, requiredFlag(args, "--id"), requiredFlag(args, "--before")));
         break;
       case "approve":
-        mutatePlanFile(plan, command, (body) => approvePlan(body, requiredFlag(args, "--owner-word")));
+        mutatePlanFile(root, plan, command, (body) => approvePlan(body, requiredFlag(args, "--owner-word")));
         break;
       case "record-result":
-        mutatePlanFile(plan, command, (body) => recordStageResult(body, stageResultFrom(readJson(requiredFlag(args, "--from")))));
+        mutatePlanFile(root, plan, command, (body) => recordStageResult(body, stageResultFrom(readJson(requiredFlag(args, "--from")))));
         break;
       case "close": {
         const root = git(process.cwd(), ["rev-parse", "--show-toplevel"]);
         const head = git(root, ["rev-parse", "HEAD"]);
-        mutatePlanFile(plan, command, (body) => closePlanStage(body, requiredFlag(args, "--stage"), { root, head }));
+        mutatePlanFile(root, plan, command, (body) => closePlanStage(body, requiredFlag(args, "--stage"), { root, head }));
         break;
       }
       case "deviate":
-        mutatePlanFile(plan, command, (body) => recordDeviation(body, requiredFlag(args, "--stage"), requiredFlag(args, "--reason")));
+        mutatePlanFile(root, plan, command, (body) => recordDeviation(body, requiredFlag(args, "--stage"), requiredFlag(args, "--reason")));
         break;
+      case "approve-stage":
+        mutatePlanFile(root, plan, command, (body) => recordStageApproval(body, requiredFlag(args, "--stage"), requiredFlag(args, "--owner-word")));
+        break;
+      case "stage-approved": {
+        const approved = stageApproved(readFileSync(plan, "utf8"), requiredFlag(args, "--stage"));
+        console.log(approved ? `Stage ${requiredFlag(args, "--stage")} approved by the owner` : `Stage ${requiredFlag(args, "--stage")} has no owner approval line`);
+        process.exitCode = approved ? 0 : 1;
+        break;
+      }
       case "amend": {
         const patch = patchFrom(readJson(requiredFlag(args, "--patch")));
-        mutatePlanFile(plan, command, (body) => applyOwnerAmendment(body, requiredFlag(args, "--owner-word"), patch));
+        mutatePlanFile(root, plan, command, (body) => applyOwnerAmendment(body, requiredFlag(args, "--owner-word"), patch));
         break;
       }
       case "unattended-amend": {
         const patch = patchFrom(readJson(requiredFlag(args, "--patch")));
         const decision = decisionFrom(readJson(requiredFlag(args, "--from")));
-        mutatePlanFile(plan, command, (body) => applyUnattendedAmendment(body, decision, patch));
+        mutatePlanFile(root, plan, command, (body) => applyUnattendedAmendment(body, decision, patch));
         break;
       }
       case "verify-staged":
-        verifyStagedPlan(plan);
+        verifyStagedPlan(root, plan);
         break;
       case "clear-spent":
         clearSpentJournal(plan, requiredFlag(args, "--commit"));
@@ -1586,7 +2231,7 @@ if (import.meta.main && ["plan-update.ts", "plan-update.js"].includes(basename(i
       default:
         usage();
     }
-    if (command !== "verify-staged" && command !== "clear-spent") {
+    if (command !== "verify-staged" && command !== "clear-spent" && command !== "stage-approved") {
       console.log(`plan-update: ${command} staged with a bound mutation journal`);
     }
   } catch (error) {
