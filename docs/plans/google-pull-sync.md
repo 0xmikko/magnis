@@ -2,7 +2,7 @@
 
 Status: APPROVED  
 Spec lock: sha256:d85c176129f50ef9f392b4c513008172ccd00c09b0185275d413438eaf66144b owner:Да, добавь IMAP для загрузки истории  
-Implementation lock: sha256:19fa5ac5453b937d0daa1cb2f17ccbb7b2c12398068e30081a849eefcad52520 owner:Да, добавь IMAP для загрузки истории  
+Implementation lock: sha256:18a0109961a69aabb619b50e2451a1b385c160d87dc316cae075fcc676cb2ecd owner:давай закроем работу по формату Endwork; без приватной диагностики в публичном отчете  
 Active Delivery: D1  
 Unattended decisions: allowed  
 
@@ -323,7 +323,7 @@ Commit. fix(google): reuse access tokens and stop lossy Gmail pages — preserve
 
 ##### Acceptance criteria
 
-- [x] `bun run agent:test:backend -- plugins/sources/google/src/oauth.test.ts plugins/sources/google/src/http.test.ts plugins/sources/google/src/surfaces/email/gmail.test.ts` exits 0 — token reuse, exact holds and lossless Gmail pages — 58eb385bed76cf0bfc3c58cd7ab0dd4aea002911
+- [x] `bun run agent:test:backend -- sources/google/src/oauth.test.ts sources/google/src/http.test.ts sources/google/src/surfaces/email/gmail.test.ts` exits 0 — token reuse, exact holds and lossless Gmail pages — 58eb385bed76cf0bfc3c58cd7ab0dd4aea002911
 - [x] Commit — 58eb385bed76cf0bfc3c58cd7ab0dd4aea002911
 
 ##### Results
@@ -362,7 +362,7 @@ Commit. feat(google): retain Calendar and Contacts sync tokens — unchanged pol
 
 ##### Acceptance criteria
 
-- [x] `bun run agent:test:backend -- plugins/sources/google/src/surfaces/meetings/calendar.test.ts plugins/sources/google/src/surfaces/contacts/contacts.test.ts plugins/sources/google/src/__tests__/googleContract.test.ts packages/testkit/__tests__/tst_cat_src_parity_001.test.ts` exits 0 — all three Google surfaces retain the correct checkpoint — 2d3dae6122b0d7862913e5c190bc3d2f9c551839
+- [x] `bun run agent:test:backend -- sources/google/src/surfaces/meetings/calendar.test.ts sources/google/src/surfaces/contacts/contacts.test.ts sources/google/src/__tests__/googleContract.test.ts packages/testkit/__tests__/tst_cat_src_parity_001.test.ts` exits 0 — all three Google surfaces retain the correct checkpoint — 2d3dae6122b0d7862913e5c190bc3d2f9c551839
 - [x] Commit — 2d3dae6122b0d7862913e5c190bc3d2f9c551839
 
 ##### Results
@@ -403,8 +403,8 @@ Commit. fix(google): count actual module changes and reconcile owned replicas �
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- plugins/modules/email/module/__tests__/emailIngest.test.ts plugins/modules/meetings/module/__tests__/meetingsSync.test.ts plugins/modules/contacts/module/__tests__/contactsIngest.test.ts scripts/bundled-item-schemas.test.ts` exits 0 — full baselines, incremental deltas and completed-only reconciliation are proven without event flags
-- [ ] The exact app-host PR SHA used for module admission and completion tests is recorded in Results
+- [x] `bun run agent:test:modules -- modules/email/module/__tests__/emailIngest.test.ts modules/meetings/module/__tests__/meetingsSync.test.ts modules/contacts/module/__tests__/contactsIngest.test.ts && bun run agent:test:backend -- scripts/bundled-item-schemas.test.ts` exits 0 — full baselines, incremental deltas and completed-only reconciliation are proven without event flags — 5c5d79e011ee88b6d00c60293893d4901279d480
+- [x] The exact app-host PR SHA used for module admission and completion tests is recorded in Results — 5c5d79e011ee88b6d00c60293893d4901279d480
 - [x] Commit — 69f9304c04f0607d938556237b24caef09296acc
 
 ##### Results
@@ -415,6 +415,9 @@ Commit. fix(google): count actual module changes and reconcile owned replicas �
 | GOOGLE_005 | 69f9304c04f0607d938556237b24caef09296acc | 2026-09-24T05:15:29.534Z–2026-09-24T11:34:25.000Z | 90 / 379 min | unavailable: runner did not expose token usage | Email replay/update progress and Calendar/Contacts full-pass and incremental progress now follow actual Graph writes. Contacts reports Google replicas, not curated hubs. The module tests used app host PR #293 at 33453be0e909c8719eaac8e1d4d7239e8aafcec1; 40 module tests, 12 manifest tests and typecheck passed. Generated agent-stack files remain local and unpublished. |
 | GOOGLE_006 | 69f9304c04f0607d938556237b24caef09296acc | 2026-09-24T05:15:29.534Z–2026-09-24T11:34:25.000Z | 90 / 379 min | unavailable: runner did not expose token usage | Email replay/update progress and Calendar/Contacts full-pass and incremental progress now follow actual Graph writes. Contacts reports Google replicas, not curated hubs. The module tests used app host PR #293 at 33453be0e909c8719eaac8e1d4d7239e8aafcec1; 40 module tests, 12 manifest tests and typecheck passed. Generated agent-stack files remain local and unpublished. |
 | GOOGLE_007 | 69f9304c04f0607d938556237b24caef09296acc | 2026-09-24T05:15:29.534Z–2026-09-24T11:34:25.000Z | 90 / 379 min | unavailable: runner did not expose token usage | Email replay/update progress and Calendar/Contacts full-pass and incremental progress now follow actual Graph writes. Contacts reports Google replicas, not curated hubs. The module tests used app host PR #293 at 33453be0e909c8719eaac8e1d4d7239e8aafcec1; 40 module tests, 12 manifest tests and typecheck passed. Generated agent-stack files remain local and unpublished. |
+
+Post-merge closure: the app-host test revision is recorded above as 33453be0e909c8719eaac8e1d4d7239e8aafcec1. The final live host was 07d34bf8cf8c71022cf761d0e81914f88f956439, merged in app PR #293 as fe2e0174c92cf15ee22d45a0c220df143449e43c. Moved module tests and the manifest tests are checked through their separate existing agent lanes; the old mixed Bun/Vitest command was not runnable.
+
 <!-- plan:results:D1-S3:end -->
 <!-- plan:stage:D1-S3:end -->
 
@@ -443,7 +446,7 @@ Commit. refactor(catalog): move Modules and Sources to root — preserve package
 ##### Acceptance criteria
 
 - [x] `bun run agent:test:backend -- scripts/build-plugins.test.ts scripts/build-catalog-index.test.ts scripts/bundled-item-schemas.test.ts packages/testkit/__tests__/tst_cat_src_parity_001.test.ts` exits 0 — root discovery builds the same package identities — de4ae9d8d451dcaa22101341027a6318cfea8698
-- [ ] A one-shot before/after comparison records all published package IDs and the catalog index schema unchanged; no permanent fixed-count test is added
+- [x] A one-shot before/after comparison records all published package IDs and the catalog index schema unchanged; no permanent fixed-count test is added — 5c5d79e011ee88b6d00c60293893d4901279d480
 - [x] Commit — de4ae9d8d451dcaa22101341027a6318cfea8698
 
 ##### Results
@@ -452,6 +455,9 @@ Commit. refactor(catalog): move Modules and Sources to root — preserve package
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
 | GOOGLE_008 | de4ae9d8d451dcaa22101341027a6318cfea8698 | 2026-09-24T11:35:08.897Z–2026-09-24T13:30:39Z | 90 / 116 min | unavailable: runner did not expose token usage | Moved all 11 Modules and 13 Sources to root. The rebuilt catalog keeps the same 23 published package IDs and index schema. Root builder tests (40), Modules (355), UI (226), Source suites, lint, typecheck and pre-commit checks passed. Generated agent-stack files and build receipts remain unpublished. — beyond writes: scripts/agent-verify.ts, scripts/certify-sources.test.ts, scripts/module-bundle.test.ts, scripts/query-migration.test.ts, scripts/tool-call-renderers.test.ts, scripts/toolcall-renderer-coverage.test.ts, scripts/tsconfig.json, scripts/tst_scripts_agent_stack_001.test.ts, scripts/tst_scripts_tgflood_001.test.ts |
+
+One-shot closure comparison: git manifests at de4ae9d^ and de4ae9d retain the same 24 declared identities. The unchanged publication policy excludes source:x-mcp; the built catalog contains the same 23 published identities: module:companies, module:contacts, module:email, module:file, module:linkedin, module:meetings, module:notes, module:projects, module:telegram, module:triggers, module:x, source:anysite, source:google, source:local, source:mock-gmail, source:mock-linkedin, source:mock-statemachine-key, source:mock-statemachine-oauth, source:mock-statemachine-phone, source:mock-telegram, source:mock-x, source:telegram, source:x. Index schema_version is 1 and top-level keys are schema_version, generated_from, packages. The index builder diff consists only of root-path changes; certify-sources.ts is byte-identical across that move. This was an acceptance probe, not a permanent inventory test.
+
 <!-- plan:results:D1-S4:end -->
 <!-- plan:stage:D1-S4:end -->
 
@@ -480,7 +486,7 @@ Commit. feat(stand): report Google beside Telegram — retain secrets and expose
 ##### Acceptance criteria
 
 - [x] `bun run agent:test:backend -- acceptance/telegram-performance/run.test.ts` exits 0 — one stand reports both Sources and preserves credentials — 0d63120904712a03afabbdd56cfa04dabc3ac53e
-- [ ] A manual receipt records exact app/catalog revisions, per-surface counts and fetch/admission/wall time without claiming unmeasured speedup
+- [x] A manual receipt records exact app/catalog revisions, per-surface counts and fetch/admission/wall time without claiming unmeasured speedup — 5c5d79e011ee88b6d00c60293893d4901279d480
 - [x] Commit — 0d63120904712a03afabbdd56cfa04dabc3ac53e
 
 ##### Results
@@ -489,6 +495,9 @@ Commit. feat(stand): report Google beside Telegram — retain secrets and expose
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
 | GOOGLE_009 | 0d63120904712a03afabbdd56cfa04dabc3ac53e | 2026-09-24T13:31:13.914Z–2026-09-24T13:41:36.000Z | 10 / 11 min | unavailable: runner did not expose usage | The existing manual stand groups production sync turns by Source and surface; nine scoped tests, typecheck and lint passed. No live-account timing receipt exists yet. |
+
+The later committed manual receipts in [the existing stand README](../../acceptance/telegram-performance/README.md) supersede the early no-receipt statement above. They pin exact app/catalog and installed Source revisions, surface counts, fetch/admission/wall times and provider holds. The REST and IMAP continuation runs are not equivalent and establish no speedup factor.
+
 <!-- plan:results:D1-S5:end -->
 <!-- plan:stage:D1-S5:end -->
 
@@ -519,8 +528,8 @@ Commit. feat(google): bulk-import Gmail history over OAuth IMAP — keep the exi
 ##### Acceptance criteria
 
 - [x] `bun run agent:test:backend -- sources/google/src/surfaces/email/imap.test.ts sources/google/src/surfaces/email/gmail.test.ts` exits 0 — restart-safe bootstrap and REST catch-up preserve IDs and content — bef50be4bc465ff3ae38ce0251840f039a5e6fbe
-- [ ] A manual real-account clone run records exact revisions, final counts, quota holds, provider fetch and Graph admission time; speed is compared only with the recorded REST continuation
-- [ ] No Google token, message content or live-provider test enters CI or repository fixtures
+- [x] A manual real-account clone run records exact revisions, final counts, quota holds, provider fetch and Graph admission time; speed is compared only with the recorded REST continuation — 5c5d79e011ee88b6d00c60293893d4901279d480
+- [x] No Google token, message content or live-provider test enters CI or repository fixtures — 5c5d79e011ee88b6d00c60293893d4901279d480
 - [x] Commit — bef50be4bc465ff3ae38ce0251840f039a5e6fbe
 
 ##### Results
@@ -530,11 +539,20 @@ Commit. feat(google): bulk-import Gmail history over OAuth IMAP — keep the exi
 |---|---|---|---:|---|---|
 | GOOGLE_010 | bef50be | 2026-09-25T09:19:01.195Z–2026-09-25T09:36:05.000Z | 17 / 17 min | unavailable: runner did not expose usage | OAuth IMAP historical paging, MIME normalization and on-demand attachments are wired through the existing Google Source. REST history catch-up remains. Scoped 57 tests, typecheck, lint, module build and catalog build passed; real-account full bootstrap and speed remain unverified. — beyond writes: sources/google/src/__tests__/googleContract.test.ts |
 | GOOGLE_011 | bef50be | 2026-09-25T09:19:01.195Z–2026-09-25T09:36:05.000Z | 17 / 17 min | unavailable: runner did not expose usage | OAuth IMAP historical paging, MIME normalization and on-demand attachments are wired through the existing Google Source. REST history catch-up remains. Scoped 57 tests, typecheck, lint, module build and catalog build passed; real-account full bootstrap and speed remain unverified. — beyond writes: sources/google/src/__tests__/googleContract.test.ts |
+
+Post-merge live receipt: app 07d34bf8cf8c71022cf761d0e81914f88f956439, catalog e0729b7a9560b6d124a5f96c3cfad5d6bac2e059 and installed Google Source sha256:08351cd2263ae14d2a0dad0e9a2569ca594e5b930890a221272468d7726de5f5, indexer off, 100 IMAP messages/page. The credential-preserving clone reached 18,195 messages, 214 contacts, 7,129 events and 4,832 attachment records. From the recorded marker, 3,997 email envelopes took 708,283 ms provider fetch, 70,060 ms Graph admission and 873,123 ms wall time. IMAP completed, REST caught up eight envelopes and then polled empty; no quota hold occurred in that window. One metadata refusal succeeded on retry. This was a continuation with 14,200 messages already stored, not a clean speed comparison. See the committed stand README receipt (1c57d92). The later initial-progress fix bf9aee6 has deterministic coverage but no fresh live-bootstrap receipt. The Meetings list display defect is explicitly outside this closure and assigned by the owner to another agent.
+
+Repository/CI audit: neither merged PR changes workflows or adds deployment secrets or private message fixtures; live-account/PostgreSQL acceptance remains manual.
+
+Closure scorecard: forecast 583 active minutes and 60 external-wait minutes. Deduplicating the six Stage result commits gives 228 recorded active minutes and 544 recorded Stage elapsed minutes; later debug/rework was not timed, so complete actual active time and external wait are unavailable. The first recorded Task to owner merge spans about 44 h 41 min. Credits/tokens are unavailable; forecast zero credits was not a measured actual. Twelve catalog fix commits followed the original stand Stage. Review-round count and exact complete-gate count were not reliably metered; at least six local full-gate invocations across app/catalog are documented, including duplicated same-head manual and pre-push gates. Stages were serial; no parallelism benefit is established. All six registered Stage temp roots were absent at closure. Original mail data, backups and active stand worktrees are retained.
+
 <!-- plan:results:D1-S6:end -->
 <!-- plan:stage:D1-S6:end -->
 <!-- plan:delivery:D1:end -->
 
 ## Amendments
+
+- 2026-09-26 — Owner requested Endwork closure only and assigned Meetings display work to another agent. Correct acceptance paths after the approved catalog move, separate the existing test lanes, close manual criteria against recorded evidence, and append closure results; no product behavior is changed.
 
 - 2026-09-25 — Owner: Да, добавь IMAP для загрузки истории. Gmail historical bootstrap may use OAuth IMAP; REST retains history catch-up and send.
 <!-- plan:implementation:end -->
@@ -663,4 +681,12 @@ Commit. feat(google): bulk-import Gmail history over OAuth IMAP — keep the exi
 - close D1-S5 partial commit:1c57d92d0fef33adc2413f7a1b1b69e43add15be
 
 - deviation D1-S6: The manual live receipt is committed in acceptance/telegram-performance/README.md. planctl close-stage cannot close non-machinable acceptance boxes, so they remain open despite the verified run; the later IMAP UID-count progress fix has only deterministic coverage on this clone.
+
+- amend implementation owner:давай закроем работу по формату Endwork; Meetings другому агенту sha256:18a0109961a69aabb619b50e2451a1b385c160d87dc316cae075fcc676cb2ecd
+
+- close D1-S3 closed commit:5c5d79e011ee88b6d00c60293893d4901279d480
+
+- amend implementation owner:давай закроем работу по формату Endwork; оформление результатов sha256:18a0109961a69aabb619b50e2451a1b385c160d87dc316cae075fcc676cb2ecd
+
+- amend implementation owner:давай закроем работу по формату Endwork; без приватной диагностики в публичном отчете sha256:18a0109961a69aabb619b50e2451a1b385c160d87dc316cae075fcc676cb2ecd
 <!-- plan:execution:end -->
