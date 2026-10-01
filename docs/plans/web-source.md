@@ -51,6 +51,9 @@ interface WebSourcePage {
   size_bytes: number;
   firstGet: string;         // first network confirmation of this content
   lastGet: string;          // last network confirmation (200 or 304)
+  expires_at: string | null;    // freshness of that response; null = stale at once
+  etag: string | null;          // validators of that response
+  last_modified: string | null;
 }
 
 // search → { results: WebSearchResult[] }
@@ -65,6 +68,7 @@ interface WebSourcePage {
   - at most 4 redirects;
   - a private or reserved address is refused at every hop;
   - `Cache-Control: max-age` / `Expires` freshness, then `ETag` / `Last-Modified` revalidation;
+  - a response with no lifetime gets `expires_at = null` and is stale at once — no default lifetime is invented;
   - `force_refresh` skips both.
 - **Conversion:**
   - main content is extracted with `@mozilla/readability` over a `linkedom` document;
@@ -129,7 +133,7 @@ On catalog base `8f1e371`:
 2. A body over 5 MiB is `too_large`, and nothing is cached.
 3. A redirect to a private or reserved address is refused before it is followed.
 4. A request that does not answer within its bound fails with a typed timeout; a 429 is `-32002` with `retry_after`.
-5. A fresh cache entry answers with no request and the same `lastGet`. A stale one revalidates; a `304` returns the cached page with a newer `lastGet`.
+5. A fresh cache entry answers with no request and the same `lastGet`. A stale one revalidates; a `304` returns the cached page with a newer `lastGet`. A response without `max-age` or `Expires` carries `expires_at = null`.
 6. `cached` answers only from the cache: an evicted or unknown hash is `not_cached`, and no request is made.
 7. Search returns at most `limit` results, each with an unwrapped target URL.
 8. The certifier accepts `module_sync` with `delivery = none` and still refuses `tools_only` with any other delivery.
