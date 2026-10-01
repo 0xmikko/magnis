@@ -12,15 +12,18 @@ Unattended decisions: allowed
 Make Web an ordinary catalog module, and treat a saved web page as a document on the same footing as a Telegram message or an email. Three actions are separated:
 
 - **Register** a link found in a message.
-- **Read** a page without writing to the Graph.
-- **Save** exactly the content that was read, so evidence can cite it.
+- **Read** a link. A link already in the Graph keeps its own version history current; an unknown URL is read without writing and comes back with the nil UUID.
+- **Save** exactly the content that was read from an unknown URL, so evidence can cite it.
 
 `modules/web` owns the `web.*` schemas and their Graph writes. `sources/web` owns the network. The host provides a byte store addressed by SHA-256 and the few contracts listed under *What the host provides*. The host side has its own plan, the app repository's `docs/plans/web-source.md`.
 
 The currency is network work where none belongs, Graph writes on read, duplicate bytes, and host code that the catalog now owns:
 
 - **Registration:** ingesting a message with URLs makes zero HTTP requests. Today each new URL triggers a preview fetch after commit.
-- **Reading:** `search_global` and `open` write nothing to the Graph. Today `open` by `url` creates a `web.link` and merges the page text into its dictionary.
+- **Reading:**
+  - `search_global`, and `open` of a URL not in the Graph, write nothing;
+  - `open` of a link in the Graph answers from its history while fresh, and records a new version only when the content changed;
+  - today `open` by `url` creates a `web.link` and merges the page text into its dictionary, overwriting the previous text.
 - **Saving:** a bounded batch is one `apply_batch` and returns real page UUIDs. The same content at the same URL keeps its page UUID; different content creates a new page; evidence on the old page stays readable.
 - **Cache:** reopening a saved link within its HTTP freshness makes zero network requests.
 - **Host code:** the native Web module (13 files, about 1,500 lines) leaves the host.
@@ -99,20 +102,30 @@ No page, preview or image is fetched. A malformed URL is an error for the whole 
 |---|---|---|
 | generated `search`/`list`/`predicate` on `web.*` | saved entities and link conditions | no |
 | `search_global` on `web.link` | external search through the Source; links with the nil UUID and a snippet | no |
-| `get` on `web.link` | a saved link with its domain, its pages with `ContentsMetadata`, and inbound `references` | no |
-| `open` on `web.link` | read by `id` of a saved link or by `url` | no |
+| `get` on `web.link` | a saved link with its domain, its versions (pages with `ContentsMetadata`, by `firstGet`), and inbound `references` | no |
+| `open` on `web.link`, a link in the Graph (`id`, or a `url` that exists) | its current version, refreshed when stale; with `at`, the version current at that moment | yes, when a refresh confirms or changes the content |
+| `open` on `web.link`, a `url` not in the Graph | read through the Source; a page with the nil UUID | no |
 | `get` on `web.page` | a saved snapshot and a Markdown window from the byte store | no |
 | `save` on `web.page` | pins the bytes that were read and saves up to 20 pages | yes |
 | `save` on `web.link` | saves chosen search results as links (the `ensure` handling) | yes |
 
 **Unsaved results.** The nil UUID `00000000-0000-0000-0000-000000000000` means "no Graph ID assigned". `save` and `ensure` refuse it as input and as a link end. A temporary and a saved result use the same shape, `CanonicalEntity`. For a temporary one, `createdAt` and `date` are the time the Source answered, and `source` is `{source: "web", account: <user>, externalId: <anchor>}`.
 
-**`open`** checks ownership of the link before any network call, then takes one of two paths:
+**`open` of a link in the Graph** (by `id`, or by a `url` whose anchor exists) checks ownership before any network call. The current version is the page whose `contents` has the greatest `lastGet`. Then one of these happens:
 
-- **Fresh saved snapshot.** If the link has a saved page whose latest observation is fresh (`expires_at` later than now), that page comes from the byte store with its real UUID. There is no Source call.
-- **Otherwise, or with `force_refresh`.** The Source `read`s the URL. The same hash is the saved page; a different hash is a new unsaved page.
+- **No version yet**, for example a link that came from a message: the Source `read`s it. The module stores the bytes with `bytes_put` and writes the first `web.page` and its `contents`.
+- **The current version is fresh** (`expires_at` later than now) and there is no `force_refresh`: the current version comes from the byte store. There is no Source call and no write.
+- **Stale, or `force_refresh`:** the Source `read`s with the current version's `etag` and `last_modified`.
+  - **Not modified (304), or the same hash:** the current version's `contents` gets `lastGet = max` and the new freshness fields.
+  - **A hash this link had before:** that older page becomes current again. Its `contents` moves the same way, and no page is created.
+  - **A new hash:** `bytes_put`, then a new `web.page` and its `contents`; it is now the current version. Older versions stay as they are, with their UUIDs and bytes.
+- **With `at`:** there is no network call and no write. The answer is the version with the greatest `firstGet` not later than `at`; if there is none, the call fails with "no snapshot at or before `at`".
 
-Freshness is computed only by the Source, from the response headers; the module only compares `expires_at` with now. A response with no lifetime is stale at once, and no default lifetime is invented. `open` writes nothing, so only `save` persists a confirmation. Scheduled re-reading is a cron trigger that calls `open` and, when wanted, `save`.
+The agent is told none of this: it calls `open` and gets the current content. These writes run in one root transaction under the owner fence, with the same `min`/`max` rule as `save`.
+
+**`open` of a URL not in the Graph:** the Source `read`s it, and the answer is a page with the nil UUID. Nothing is written; the agent may `save` it.
+
+Freshness is computed only by the Source, from the response headers; the module only compares `expires_at` with now. A response with no lifetime is stale at once, and no default lifetime is invented. Scheduled re-reading of a saved link is a cron trigger that calls `open`.
 
 **Windows.** Text comes in windows of at most 50 KiB. Every response states the full `size_bytes`, its `offset` and a `next_offset`, which is `null` once the end is reached, so a window never passes for the whole document. The tool descriptions tell the agent that large content is read in parts by passing `next_offset` back as `offset`.
 
@@ -125,7 +138,7 @@ Freshness is computed only by the Source, from the response headers; the module 
 
 If the Source no longer holds the bytes, `save` says so and writes nothing. A re-fetch never substitutes for what was read. The bytes exist before the Graph refers to them; there is no distributed transaction, and unused bytes are not collected in this plan.
 
-`save`, `ensure` and repair share one handling path in the module.
+`save`, `ensure`, the versions recorded by `open`, and repair share one handling path in the module.
 
 ### The Web Source
 
@@ -144,7 +157,9 @@ interface WebSourcePage extends ContentsMetadata {
 }
 
 // search {query, limit 1..10}       → { results: WebSearchResult[] }   DuckDuckGo HTML, as the host does today
-// read   {url, force_refresh}       → WebSourcePage                    network or HTTP cache
+// read   {url, force_refresh, etag?, last_modified?}
+//        → { status: "modified", page: WebSourcePage }
+//        | { status: "not_modified", observation: ContentsMetadata }   only when validators were passed and the server answered 304
 // cached {url, content_hash}        → WebSourcePage                    cache only; ConnectorError "not_cached" otherwise
 ```
 
@@ -153,6 +168,7 @@ interface WebSourcePage extends ContentsMetadata {
   - a private or reserved address is refused at every hop;
   - `Cache-Control: max-age` / `Expires` freshness, then `ETag` / `Last-Modified` revalidation;
   - `force_refresh` skips both;
+  - validators passed by the module mean a conditional request: the module has already decided the version is stale, so the Source's own cache is not consulted;
   - a response with no lifetime gets `expires_at = null`.
 - **Conversion:**
   - `@mozilla/readability` over a `linkedom` document;
@@ -164,6 +180,7 @@ interface WebSourcePage extends ContentsMetadata {
   - every request is bounded at 20 s, under the host's 30 s action deadline;
   - a 429 becomes `RateLimitError` with `Retry-After`.
 - **Cache:**
+  - serves reads of URLs that are not in the Graph, and `cached`;
   - kept in process memory and bounded at 64 MiB, with least-recently-used eviction;
   - it keeps validators per URL and Markdown per content hash;
   - a cache hit never moves `lastGet`, while a `304` does.
@@ -264,18 +281,24 @@ On catalog `8f1e371` and app `fe2e0174c`:
 
 1. Ingesting a message with URLs writes `web.link`, `web.domain` and `child_of` in the page transaction with no HTTP request.
 2. Repeated and concurrent `ensure` of one URL returns the same UUID and creates no second link or domain. An existing link's dictionary is never rewritten by `ensure`. A malformed URL fails the whole call.
-3. `search_global` and `open` write nothing; unsaved results carry the nil UUID. `save` and `ensure` refuse the nil UUID.
+3. `search_global`, and `open` of a URL not in the Graph, write nothing and return the nil UUID. `save` and `ensure` refuse the nil UUID.
 4. `open` of a link the user does not own fails before any network call.
-5. `open` of a saved link whose latest page is fresh makes no Source call. A stale page, `force_refresh` or a response without a lifetime goes to the Source.
-6. Two saves of the same content at the same URL, sequential or concurrent, give one `web.page` and one `contents` link. `firstGet` is the minimum and `lastGet` the maximum; the freshness fields come from the latest observation.
-7. Changed content creates a new `web.page`. The old page, its bytes and evidence on it remain readable, and a repeated save retires no claim citing a page.
-8. `save` stores the bytes the agent read even if the site now serves something else. If they are gone, `save` fails and writes nothing. A host hash that differs from the claimed one fails the save.
-9. Every text window carries `size_bytes`, `offset` and `next_offset`. Reading by `next_offset` until it is `null` returns exactly the stored text.
-10. The Source returns Markdown that keeps headings, lists, a table, a code block and link URLs; the same HTML yields the same hash. A body over 4 MiB is `too_large` with nothing cached.
-11. A redirect to a private or reserved address is refused before it is followed. A request past its bound fails with a typed timeout; a 429 is `-32002` with `retry_after`.
-12. A fresh Source cache entry answers with no request and the same `lastGet`. A `304` returns the cached page with a newer `lastGet`. `cached` never makes a request.
-13. The certifier accepts `module_sync` with `delivery = none` and still refuses `tools_only` with any other delivery.
-14. `web.repair` keeps link UUIDs and inbound links, adds domains, and turns stored text into pages with dates only from `extracted_at`; a missing date fails. Running it again changes nothing.
+5. `open` of a link in the Graph:
+   - a fresh current version makes no Source call and no write;
+   - a stale one makes a conditional read, and 304 or the same hash keeps the page UUID and moves `lastGet`;
+   - a new hash creates a new current page and leaves older pages unchanged;
+   - a hash the link had before makes that page current again, with no new page;
+   - a link with no version yet gets its first version.
+6. `open` with `at` makes no Source call and no write. It returns the version with the greatest `firstGet` not later than `at`, or fails when there is none.
+7. Two recordings of the same content at the same URL, by `save` or by `open`, sequential or concurrent, give one `web.page` and one `contents` link. `firstGet` is the minimum and `lastGet` the maximum; the freshness fields come from the latest observation.
+8. Changed content creates a new `web.page`. The old page, its bytes and evidence on it remain readable, and recording an observation retires no claim citing a page.
+9. `save` stores the bytes the agent read from an unknown URL even if the site now serves something else. If they are gone, `save` fails and writes nothing. A host hash that differs from the claimed one fails the save.
+10. Every text window carries `size_bytes`, `offset` and `next_offset`. Reading by `next_offset` until it is `null` returns exactly the stored text.
+11. The Source returns Markdown that keeps headings, lists, a table, a code block and link URLs; the same HTML yields the same hash. A body over 4 MiB is `too_large` with nothing cached.
+12. A redirect to a private or reserved address is refused before it is followed. A request past its bound fails with a typed timeout; a 429 is `-32002` with `retry_after`.
+13. A fresh Source cache entry answers with no request and the same `lastGet`. A `304` returns the cached page with a newer `lastGet`; with validators from the module, a `304` returns `not_modified`. `cached` never makes a request.
+14. The certifier accepts `module_sync` with `delivery = none` and still refuses `tools_only` with any other delivery.
+15. `web.repair` keeps link UUIDs and inbound links, adds domains, and turns stored text into pages with dates only from `extracted_at`; a missing date fails. Running it again changes nothing.
 
 ## Owner decisions
 
@@ -286,6 +309,8 @@ Recorded on 2026-10-01:
 - **Registration builds on `ensure` now.** Telegram does not work until contact identity's `ensure` lands, and both merge into staging together.
 - **A page relates to its link through `contents`**, with `firstGet`/`lastGet` in the metadata. `contents` is a general link, not a Web-only one.
 - **Cache freshness is inherited from HTTP**, so a fresh saved page is not re-checked.
+- **Reading a link already in the Graph keeps its version history current automatically.** This departs from the task brief, where reading never writes to the Graph, for known links. A URL not in the Graph is still read without writing and comes back with the nil UUID, and the agent saves it explicitly.
+- **Versions are visible:** `get` lists a link's versions, and `open` with `at` returns a past one.
 - **No background re-checks or downloads.** Scheduled re-reading is a cron trigger.
 
 Proposed here and confirmed by approving this SPEC:
@@ -316,12 +341,13 @@ The catalog gains `modules/web` (model, tools, `ensure`, repair) and `sources/we
 ### Acceptance stories
 
 1. A Telegram message containing `https://example.com/a?b` syncs, and the message references a `web.link` for that URL, which is `child_of` the `web.domain` `example.com`. No network call happens.
-2. The agent searches "example", gets links with nil UUIDs, opens one and sees a title and Markdown; nothing appears in the Graph.
-3. The agent saves the page and gets its UUID. The site changes, and the agent opens and saves again: a second page appears, and the agent's statement citing the first page stays valid.
-4. When the site serves the old content again, saving returns the first page's UUID and moves its `lastGet`.
-5. Reopening the saved link while its page is fresh answers from storage without the network.
-6. Saving a page whose bytes the Source already evicted reports it and writes nothing.
-7. After the upgrade, `web.repair` turns every link with old text into a link, a domain and a page, keeping the link's UUID.
+2. The agent searches "example", gets links with nil UUIDs, opens one by URL and sees a title and Markdown; nothing appears in the Graph. It saves the page and gets its UUID.
+3. Later the agent opens that link after its freshness ran out, and the site has changed. The new content comes back as the current version, while the first page and the agent's statement citing it stay valid.
+4. When the site serves the old content again, opening the link makes the first page current again.
+5. Reopening the link while it is fresh answers from storage without the network.
+6. The agent asks for the link "as of last Monday" and gets the version current then; `get` lists every version with its dates.
+7. Saving a page whose bytes the Source already evicted reports it and writes nothing.
+8. After the upgrade, `web.repair` turns every link with old text into a link, a domain and a page, keeping the link's UUID.
 
 ### Deliberately not verified
 
