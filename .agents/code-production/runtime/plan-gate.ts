@@ -67,11 +67,13 @@ function languageLines(body: string): readonly { readonly line: number; readonly
   const lines = body.split("\n");
   const start = lines.indexOf(PROTOCOL_SPEC_START);
   const end = lines.indexOf(PROTOCOL_SPEC_END);
+  // A plan without the SPEC markers predates the rule: history, not a plan to write.
+  if (start < 0 || end < start) return [];
   const found: { line: number; quote: string }[] = [];
   let fenced = false;
   lines.forEach((text, index) => {
     const title = index === 0 && text.startsWith("# ");
-    const inside = start < 0 || (index > start && (end < 0 || index < end));
+    const inside = index > start && index < end;
     if (text.trimStart().startsWith("```")) { fenced = !fenced; return; }
     if (fenced || !(title || inside)) return;
     const spared = text.replace(/«[^»]*»/g, "").replace(/`[^`]*`/g, "");
