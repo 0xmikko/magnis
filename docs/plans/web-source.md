@@ -87,7 +87,27 @@ interface ContentsMetadata {
 
 The owner's `firstGet` is the period's `validFrom`; `lastGet` is in the metadata. A page's dictionary never changes after creation. Observations change only `contents` periods and metadata. A change to a link's metadata or period retires no claims, so evidence citing a page survives every later observation. `firstGet` and `lastGet` do not prove the site was unchanged in between.
 
-The current version of a link is the page whose `contents` period is open (`validUntil` null). A link has at most one open period.
+The current version of a link is the page whose `contents` period is open (`validUntil` null). A link has at most one open period. A module opens a period with an `apply_batch` link that carries `validFrom`; the host already decodes `validFrom` and `validUntil` on batch links (app `backend/src/plugin-runtime/ops/graph-mutation-ops.ts:32-41`), and only the SDK's `BatchLinkInput` type lacks them. A module ends a period with the existing `end_link`.
+
+What a read returns:
+
+```typescript
+interface ContentsPeriod extends ContentsMetadata {
+  validFrom: string;            // the owner's firstGet for this period
+  validUntil: string | null;
+}
+
+interface WebPageRead {
+  entity: CanonicalEntity;      // web.page; the nil UUID when unsaved
+  content: string;              // one Markdown window
+  offset: number;
+  next_offset: number | null;
+  size_bytes: number;
+  period: ContentsPeriod;       // the period that answered; an unsaved page carries the period it would open if saved
+}
+```
+
+`web.page` `get` returns a `WebPageRead` whose `period` is the page's latest period, plus `periods: ContentsPeriod[]`, every period of the page in time order. After A, B and A, page A has two periods, and each is listed with its own dates.
 
 **Recording an observation** of content X at time T on link L. Both `save` and `open` record observations, through the same module code, inside one root transaction under the owner fence:
 
@@ -118,6 +138,8 @@ Every flow runs in `modules/web` unless stated otherwise. The RED commands use t
 | F8 Source read | `sources/web` | `sources/web/src/{http.ts,cache.ts,markdown.ts,connector.ts}` | `magnis.execute` `read`/`cached` | `WebSourcePage` or `not_modified`; in-memory cache entry | `sources/web/src/http.test.ts -t tst_web_src_010`; `sources/web/src/markdown.test.ts -t tst_web_src_020`; `sources/web/src/cache.test.ts -t tst_web_src_030` |
 | F9 Repair existing links | `modules/web` `web.repair` | `modules/web/module/service.ts` | explicit RPC call, bounded by `limit` | domain, page and period per old link; dictionary `{url}` | `modules/web/module/__tests__/repair.test.ts -t tst_web_070` |
 | F10 File stores bytes by hash | `modules/file` declaration and helpers | `modules/file/entities.ts`, `modules/file/types.ts`, `modules/file/module/helpers.ts` | host writes `content_hash` on download, upload and repair | `file.object` validates with `content_hash`; availability by `content_hash` | `modules/file/entities.test.ts -t tst_file_hash_001`; `modules/file/module/__tests__/fileModule.test.ts -t tst_file_hash_002` |
+| F12 Read a saved link's details | `modules/web` `get` on `web.link` | `modules/web/module/service.ts` | agent `get {id}` | the link, its domain, its `contents` periods with pages, inbound `references`; nothing written | `modules/web/module/__tests__/get.test.ts -t tst_web_080` |
+| F13 Save search results as links | `modules/web` `save` on `web.link` | `modules/web/module/service.ts` | agent `save {urls}`, at most 20 | `{ids}` in input order through the `ensure` handling; links, domains and `child_of` | `modules/web/module/__tests__/save.test.ts -t tst_web_090` |
 | F11 On-demand Source certified | `scripts/certify-sources.ts`, `packages/testkit`, `packages/connector-sdk` | see Target tree | certification of `sources/web` | receipt with `module_sync`, `delivery = none`, no auth | `scripts/certify-sources.test.ts -t tst_cert_on_demand_001`; `packages/testkit/__tests__/tst_cat_src_cert_001.test.ts -t tst_cert_on_demand_002`; `sources/web/src/certification.test.ts -t tst_web_src_cert_001` |
 
 F1, register links from a message:
@@ -184,7 +206,64 @@ sequenceDiagram
     W-->>A: {ids:[pageId]}
 ```
 
-F7, F9, F10 and F11 are single calls whose implementation map is complete in the table.
+F7 and F13, search and save results as links:
+
+```mermaid
+sequenceDiagram
+    participant A as Agent
+    participant W as modules/web
+    participant S as sources/web
+    participant G as Graph
+    A->>W: search_global {query, limit}
+    W->>S: search {query, limit}
+    S-->>W: [{url, title, snippet}]
+    W-->>A: links with the nil UUID and snippets
+    A->>W: save {entity: web.link, urls}
+    W->>G: find_by_anchors, then apply_batch (the ensure handling)
+    W-->>A: {ids}
+```
+
+F9, repair of existing links:
+
+```mermaid
+sequenceDiagram
+    participant O as Operator RPC call
+    participant W as modules/web
+    participant G as Graph
+    participant B as Host byte store
+    O->>W: web.repair {limit}
+    W->>G: next links whose dictionary is not {url}
+    W->>B: bytes_put content.content_markdown
+    W->>G: apply_batch: domain, child_of, page, contents period from extracted_at; dictionary {url}
+    W-->>O: {repaired, remaining}
+```
+
+F10, File by hash (the host writes, the module declares and reads):
+
+```mermaid
+sequenceDiagram
+    participant H as Host FileService
+    participant G as Graph
+    participant F as modules/file
+    H->>G: file.object with content_hash, no local_path
+    G-->>H: validated against modules/file's declaration
+    F->>G: get_entity_full
+    F-->>F: available when content_hash or cloud_url is set
+```
+
+F11, certification of the on-demand Source:
+
+```mermaid
+sequenceDiagram
+    participant C as scripts/certify-sources.ts
+    participant S as sources/web bundle
+    C->>S: initialize
+    S-->>C: experimental.magnis.sync mode none, surface web
+    C->>S: magnis.execute probes: search, read, cached
+    C-->>C: receipt module_sync, delivery none, no auth, no cursor or progress contract
+```
+
+F12 is one read whose map is in the table.
 
 ### Registering a link from a message
 
@@ -210,9 +289,9 @@ No page, preview or image is fetched. A malformed URL is an error for the whole 
 | `open` on `web.link`, a `url` not in the Graph | read through the Source; a page with the nil UUID | no |
 | `get` on `web.page` | a saved snapshot and a Markdown window from the byte store | no |
 | `save` on `web.page` | pins the bytes read from unknown URLs and saves up to 20 pages | yes |
-| `save` on `web.link` | saves chosen search results as links (the `ensure` handling) | yes |
+| `save` on `web.link` | `{urls}`, at most 20: saves chosen search results as links through the `ensure` handling, returns `{ids}` in input order; a malformed URL fails the whole call | yes |
 
-**Unsaved results.** The nil UUID `00000000-0000-0000-0000-000000000000` means "no Graph ID assigned". `save` and `ensure` refuse it as input and as a link end. A temporary and a saved result use the same shape, `CanonicalEntity`. For a temporary one, `createdAt` and `date` are the time the Source answered, and `source` is `{source: "web", account: <user>, externalId: <anchor>}`.
+**Unsaved results.** The nil UUID `00000000-0000-0000-0000-000000000000` means "no Graph ID assigned". `save` and `ensure` refuse it as input and as a link end. A temporary and a saved result use the same shape, `CanonicalEntity`. For a temporary one, `createdAt` and `date` are the time the Source answered. Its `source` is the stamp the host would write when the module saves it outside a sync page: `{source: "web", account: <user id>, externalId: <anchor>}`. The host takes the source from the extension id and the account from the user (app `graph-mutation-ops.ts:200-204`, `graph.repository.ts:691-692`), and existing `web.link` rows carry the same stamp. The Source's own account `web` is a Source account and never appears in an entity stamp.
 
 **`open` of a link in the Graph** (by `id`, or by a `url` whose anchor exists) checks ownership before any network call. Then one of these happens:
 
@@ -301,13 +380,18 @@ interface WebSourcePage extends ContentsMetadata {
   - a cache hit never moves `lastGet`, while a `304` does.
 - **Connector:**
   - `sources/web` has no `fetch` handler;
-  - `connector-sdk` lets such a connector omit `fetch`, advertise no sync capability, and answer `magnis.sync.fetch` with method-not-found.
+  - `ConnectorConfig` stays unchanged, so `fetch` remains required for every existing Source;
+  - `runConnector` accepts a second config type, `OnDemandConnectorConfig`: name, version and `execute`, with no `fetch` and no `mode`;
+  - such a connector's `initialize` advertises `experimental.magnis.sync` with `mode: "none"` and its surface, and no interval;
+  - it answers `magnis.sync.fetch` with method-not-found.
 - **Certification:**
   - no `[auth]`;
   - `authority = module_sync`, `delivery = none`;
   - one surface `web`, received by `modules/web`;
   - callable `magnis.execute:search`, `:read` and `:cached`;
   - no `magnis.sync.fetch`.
+
+  The certifier's initialize evidence accepts `mode: "none"`. A `delivery = none` surface records no cursor or progress contract, because those describe fetched pages and the surface has none.
 
 ### What the host provides
 
@@ -318,7 +402,7 @@ The app plan delivers these; this plan only uses them:
   - `bytes_read({entity_id, offset, length}) → {text, offset, length, size_bytes}`, which reads only through an entity of the calling user that carries `content_hash`, with the window cut on a UTF-8 boundary;
   - `byte_objects`, the store's record of each object (hash, size, first-stored time), which supplies `size_bytes`;
   - the grant `host = ["bytes"]`.
-- **On-demand Sources.** `module_sync` with `delivery = none` is reached only through `magnis.execute`. Each user gets an account without credentials whose id is the Source id (`web`). A module may command such a surface that it declares in `[surfaces.web]`, with no sync handler.
+- **On-demand Sources.** `module_sync` with `delivery = none` is reached only through `magnis.execute`, and the host accepts its `initialize` with `mode: "none"`. Each user gets an account without credentials whose id is the Source id (`web`). A module may command such a surface that it declares in `[surfaces.web]`, with no sync handler.
 - **The `contents` host link kind** and its `ContentsMetadata` schema.
 - **The agent verbs `search_global` and `save`.**
 - **File bytes by hash:** `file.object` gains `content_hash` in place of `local_path` after download, upload and `file.repair`.
@@ -328,6 +412,7 @@ The app plan delivers these; this plan only uses them:
   - nested dispatch;
   - the root transaction for module RPC;
   - UUID batch refs (`BatchRefInput` with an `id`).
+- **Proof of concurrency on a real Graph.** The host plan runs the built `modules/web` from the E2E channel fixture against PostgreSQL. Concurrent `ensure` gives one link and one domain; concurrent `save` and `open` of one content give one page and one open period. The catalog's module tests use a mocked graph and prove the module's decisions, not database atomicity.
 
 ### Existing data
 
@@ -336,6 +421,8 @@ The app plan delivers these; this plan only uses them:
 - it adds the domain and `child_of`;
 - it stores `content.content_markdown` with `bytes_put`, creates the `web.page`, and records one observation at `content.extracted_at`;
 - it rewrites the dictionary to `{url}`, taking `url` from the anchor, because preview enrichment overwrote `properties.url` with the post-redirect address.
+
+Any `open` or `save` that touches a link which still has an old dictionary repairs that link first, in the same transaction. Its stored text is therefore always recorded before any newer observation, and the observation rule never refuses it. `ensure` does not touch existing links, so it needs no repair.
 
 Link UUIDs and inbound links do not change. Dates come only from the data: a link with text but no `extracted_at` fails repair explicitly, and the migration time is never substituted. Text cut by the old 50 KiB limit is kept as it is, marker `[content truncated]` included. The preview fields `description`, `favicon_url` and `og_image_url` are dropped; only Web tools read them.
 
@@ -357,6 +444,7 @@ CREATE modules/web/module/__tests__/window.test.ts   F5
 CREATE modules/web/module/__tests__/save.test.ts     F6
 CREATE modules/web/module/__tests__/search.test.ts   F7
 CREATE modules/web/module/__tests__/repair.test.ts   F9
+CREATE modules/web/module/__tests__/get.test.ts      F12
 CREATE modules/web/ui/index.tsx                      module definition and save result cards
 CREATE modules/web/package.json
 CREATE modules/web/tsconfig.json
@@ -378,8 +466,8 @@ CREATE sources/web/src/cache.test.ts                 F8 cache
 CREATE sources/web/src/search.test.ts                F7
 CREATE sources/web/src/certification.test.ts         F11 stdio certification of the real bundle
 MODIFY bun.lock                                      the four new dependencies
-MODIFY packages/connector-sdk/contract/source.ts     `fetch` optional for an on-demand connector
-MODIFY packages/connector-sdk/index.ts               no sync capability without `fetch`
+MODIFY packages/connector-sdk/contract/source.ts     OnDemandConnectorConfig beside the unchanged ConnectorConfig
+MODIFY packages/connector-sdk/index.ts               runConnector accepts it; initialize advertises mode none
 MODIFY packages/connector-sdk/index.test.ts          on-demand connector behaviour
 MODIFY packages/testkit/source.ts                    contract run without a fetch drain
 MODIFY packages/testkit/receipt.ts                   module_sync with delivery none, production without auth for it
@@ -399,7 +487,7 @@ MODIFY modules/file/types.ts                         content_hash in place of lo
 MODIFY modules/file/module/helpers.ts                availability and serving by content_hash
 MODIFY modules/file/entities.test.ts                 F10 declaration
 MODIFY modules/file/module/__tests__/fileModule.test.ts  F10 availability
-MODIFY packages/plugin-sdk/contract/module.ts        bytes_put, bytes_read; web_register and web_register_batch removed
+MODIFY packages/plugin-sdk/contract/module.ts        bytes_put, bytes_read; BatchLinkInput validFrom/validUntil; web_register and web_register_batch removed
 MODIFY packages/host-stubs/types/                    regenerated from the host SDK
 MODIFY plugins/onboarding.toml                       Web offered with the system modules
 MODIFY docs/plugins/source.md                        on-demand delivery
@@ -417,7 +505,7 @@ On catalog `8f1e371` and app `fe2e0174c`:
   - `packages/plugin-sdk/contract/module.ts:360-374` declares `web_register(_batch)` "with background preview fetch";
   - the module contract has no byte operation (`:336-456`);
   - `RpcExecutor` has only `execute` (`:475-477`);
-  - `BatchRefInput` accepts only an anchor (`:270-277`);
+  - `BatchRefInput` accepts only an anchor (`:270-277`), and `BatchLinkInput` has no `validFrom`/`validUntil` (`:280-293`), although the host decodes both;
   - `end_link` already lets a module end a link period (`:430-432`).
 - **No Source does generic HTTP.** No catalog Source fetches generic web pages or parses HTML. The lockfile has no readability, turndown, linkedom or cheerio.
 - **Sync is assumed everywhere:**
@@ -445,8 +533,10 @@ On catalog `8f1e371` and app `fe2e0174c`:
 | `web.domain`, `web.page` | Schemas of a domain and of saved content; `web.page` stops being a schema-less resource. |
 | `contents`, `ContentsMetadata` | General host link "entity → immutable snapshot"; its period is the version's validity, its metadata the observation. |
 | `search_global`, `save` | Agent verbs for external search and for saving results. |
-| `WebPageRead` | What `open` and `web.page.get` return: entity, Markdown window, `offset`, `next_offset`, `validFrom` as `firstGet`, `ContentsMetadata`. |
+| `WebPageRead` | What `open` and `web.page.get` return: entity, Markdown window, `offset`, `next_offset`, `size_bytes`, and the `ContentsPeriod` that answered. |
 | `next_offset` | Where the next window starts, or `null` at the end. |
+| `ContentsPeriod` | One `contents` period with its dates and observation, as tools return it. |
+| `OnDemandConnectorConfig` | The config of a connector without `fetch`, beside the unchanged `ConnectorConfig`. |
 | `WebSourcePage`, `fetched_at`, `search`, `read`, `cached`, `not_modified`, `not_cached`, `too_large` | The Source's result, observation time, actions, conditional answer and typed errors. |
 | `bytes_put`, `bytes_read` | Module operations on the host byte store. |
 | `web.repair` | Explicit bounded repair of existing links. |
@@ -460,8 +550,8 @@ Each invariant is a RED test named in the Flows table; the steps run against the
    - Verify: one `ensure` call carries both URLs; the batch has two `web.link`, two `web.domain`, two `child_of` and two `references`; the injected `fetch` was never called.
 2. **`ensure` is idempotent and leaves existing links alone.**
    - Step 1: `ensure` a URL.
-   - Step 2: `ensure` it again, and concurrently twice.
-   - Verify: one UUID every time; one link and one domain exist.
+   - Step 2: `ensure` it again.
+   - Verify: one `find_by_anchors` read and one anchor-keyed `apply_batch` per call; the second call writes the link as a ref and returns the same UUID. Concurrency on a real Graph is proven by the host plan's integration test.
    - Step 3: `ensure` a URL whose link has an old dictionary with `content`.
    - Verify: the dictionary is unchanged.
    - Step 4: `ensure` `["https://ok.example", "not a url"]`.
@@ -502,9 +592,9 @@ Each invariant is a RED test named in the Flows table; the steps run against the
    - Verify: the save fails with "the link has newer observations; open it again", and nothing is written.
    - Step 3: the same with content B fetched at t1.
    - Verify: B's page UUID is returned and nothing changes.
-10. **Concurrent recordings of one content make one page.**
-    - Step 1: two `save` of the same `{url, content_hash}` run concurrently.
-    - Verify: one `web.page` and one open period; `lastGet` is the later fetch time.
+10. **Repeated recordings of one content make one page.**
+    - Step 1: `save` `{url, content_hash}` fetched at t1, then the same content fetched at t2.
+    - Verify: the second call keys the page by the same anchor, opens no period and moves `lastGet` to t2. The host plan's integration test proves the same under real concurrency.
 11. **Evidence survives observations.**
     - Step 1: an agent statement with evidence on page A.
     - Step 2: record new content B, then A again.
@@ -564,6 +654,19 @@ Each invariant is a RED test named in the Flows table; the steps run against the
     - Verify: nothing changes.
     - Step 4: an old link with text but no `extracted_at`.
     - Verify: repair fails for it.
+    - Step 5: an old link with text A, not yet repaired; `open {id}` fetches new content B.
+    - Verify: in the same transaction, A is recorded from `extracted_at` first, then B opens a period after it; nothing is refused.
+
+20. **Saved link details and saved search results.**
+    - Step 1: `get {id}` of a link with versions A, B and A.
+    - Verify: its domain, three periods in time order (two for page A), and its inbound `references`; nothing is written.
+    - Step 2: `save {entity: web.link, urls: [u1, u2]}`.
+    - Verify: `{ids}` in input order, through the same `ensure` handling.
+    - Step 3: the same with a malformed URL.
+    - Verify: the whole call fails and nothing is written.
+21. **A page lists its periods.**
+    - Step 1: `web.page` `get {id}` of page A after A, B and A.
+    - Verify: `periods` holds both of A's periods with their own `validFrom`, `validUntil` and `lastGet`, and `period` is the latest.
 
 ## Owner decisions
 
