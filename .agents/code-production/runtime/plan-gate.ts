@@ -82,8 +82,10 @@ function languageLines(body: string): readonly { readonly line: number; readonly
   return found;
 }
 
-/** Portable: the hooks and `verify` refuse a plan in another language, draft or not, without a parser. */
+/** Portable: the hooks and `verify` refuse a draft in another language without a parser.
+ * A locked SPEC changes only through the tools, whose lint judges every amendment. */
 export function protocolLanguageViolations(body: string): readonly string[] {
+  if (!/^Status:\s*SPEC_DRAFT\b/m.test(body)) return [];
   return languageLines(body).map((found) => `line ${found.line}: ${LANGUAGE_RULE}: ${found.quote}`);
 }
 
