@@ -279,6 +279,12 @@ function assertSafeInline(value: string, name: string): void {
   }
 }
 
+/** The owner's word is the approval itself, one short line; a pasted message is refused by its length. */
+function assertOwnerWord(value: string): void {
+  assertSafeInline(value, "owner word");
+  if (value.length > 80) throw new Error(`owner word is ${value.length} characters; record the owner's approval word, not their message (at most 80)`);
+}
+
 export const DELIVERY_DESCRIPTION_HINT =
   "the pull request text as of the merge — what changed for people, what changed in the code, how it was proven, what is not in this PR; paragraphs separated by one blank line";
 export const DELIVERY_WAIT_HINT =
@@ -350,8 +356,23 @@ function requireState(body: string, expected: PlanState): void {
   if (actual !== expected) throw new Error(`operation requires ${expected}; plan is ${actual}`);
 }
 
-export function createDraftPlan(title: string): string {
+/** A plan is written in English, title included: a title in another script is refused at the door. */
+function assertPlanTitle(title: string): void {
   assertSafeInline(title, "plan title");
+  if (/[\u0400-\u04FF]/.test(title)) throw new Error("the plan is written in English, title included");
+}
+
+/** Rename a draft: the first line is the title, and submission carries it beside the SPEC. */
+export function replaceDraftTitle(body: string, title: string): MutationResult {
+  requireState(body, "SPEC_DRAFT");
+  assertPlanTitle(title);
+  const end = body.indexOf("\n");
+  if (end === -1 || !body.startsWith("# ")) throw new Error("the plan's first line is not its title");
+  return { body: `# ${title}${body.slice(end)}` };
+}
+
+export function createDraftPlan(title: string): string {
+  assertPlanTitle(title);
   return [
     `# ${title}`,
     "",
@@ -1037,7 +1058,7 @@ export function taskExecutionBrief(body: string, taskId: string, options: { read
 
 export function lockPlanSpec(body: string, ownerWord: string): MutationResult {
   requireState(body, "SPEC_DRAFT");
-  assertSafeInline(ownerWord, "owner word");
+  assertOwnerWord(ownerWord);
   const specHash = protocolSpecHash(body);
   let next = replaceHeader(body, "Status", "SPEC_LOCKED");
   next = replaceHeader(next, "Spec lock", `sha256:${specHash} owner:${ownerWord}`);
@@ -1131,7 +1152,7 @@ export function moveImplementationRecord(body: string, id: string, beforeId: str
 
 export function approvePlan(body: string, ownerWord: string): MutationResult {
   requireState(body, "SPEC_LOCKED");
-  assertSafeInline(ownerWord, "owner word");
+  assertOwnerWord(ownerWord);
   validateImplementation(body);
   // The forecast lines are the prediction the approval freezes: recomputed
   // once more here so no Stage change can leave a Delivery line behind.
@@ -1317,7 +1338,7 @@ export function applyOwnerAmendment(body: string, ownerWord: string, patch: Exac
   if (state !== "APPROVED" && !(state === "SPEC_LOCKED" && patch.section === "spec")) {
     throw new Error("owner amendment requires APPROVED plan or a SPEC amendment in SPEC_LOCKED");
   }
-  assertSafeInline(ownerWord, "owner word");
+  assertOwnerWord(ownerWord);
   let next = amendRegion(body, patch);
   if (patch.section === "spec") {
     const specHash = protocolSpecHash(next);
@@ -1369,8 +1390,7 @@ export function recordDeviation(body: string, stageId: string, text: string): Mu
 export function recordStageApproval(body: string, stageId: string, ownerWord: string): MutationResult {
   requireState(body, "APPROVED");
   if (!body.includes(stageStart(stageId))) throw new Error(`unknown Stage ${stageId}`);
-  assertNonEmpty(ownerWord, "owner word");
-  assertSafeInline(ownerWord, "owner word");
+  assertOwnerWord(ownerWord);
   const date = new Date().toISOString().slice(0, 10);
   return { body: appendExecution(body, `approve-stage ${stageId} owner:${ownerWord} — owner, ${date}`) };
 }
@@ -1434,8 +1454,10 @@ function git(root: string, args: readonly string[]): string {
   return gitRaw(root, args).trim();
 }
 
-function journalPath(root: string): string {
-  const value = git(root, ["rev-parse", "--git-path", "plan-update-journal.json"]);
+/** One journal per plan in the worktree's git dir: a second plan's transaction never replaces the first's. */
+export function planJournalPath(root: string, plan: string): string {
+  const key = createHash("sha256").update(plan).digest("hex").slice(0, 12);
+  const value = git(root, ["rev-parse", "--git-path", `plan-update-journal-${key}.json`]);
   return resolve(root, value);
 }
 
@@ -1874,14 +1896,14 @@ export function journalCreatedPlan(root: string, planArg: string, body: string):
     candidateHash,
     events: [{ operation: "init", beforeHash: empty, afterHash: candidateHash }],
   };
-  writeFileSync(journalPath(root), `${JSON.stringify(journal, null, 2)}\n`);
+  writeFileSync(planJournalPath(root, plan), `${JSON.stringify(journal, null, 2)}\n`);
 }
 
 export function mutatePlanFile(root: string, planArg: string, operation: string, transform: (body: string) => MutationResult): void {
   const absolute = resolve(root, planArg);
   const plan = absolute.slice(root.length + 1);
   if (absolute === root || plan.startsWith("..")) throw new Error("plan must be inside the repository");
-  const path = journalPath(root);
+  const path = planJournalPath(root, plan);
   const body = readFileSync(absolute, "utf8");
   const head = git(root, ["rev-parse", "HEAD"]);
   const currentHash = digest(body);
@@ -1967,7 +1989,7 @@ export function verifyStagedPlan(root: string, planArg: string): void {
   // and the guard bites again, or a merge would be a hole through which any
   // plan could be rewritten unjournalled.
   if (merging(root) && carriedByMerge(root, plan, gitRaw(root, ["show", `:${plan}`]))) return;
-  const journal = readJournal(journalPath(root));
+  const journal = readJournal(planJournalPath(root, plan));
   if (journal === null) throw new Error("locked plan mutation has no journal");
   if (journal.plan !== plan || journal.root !== root || journal.baseHead !== git(root, ["rev-parse", "HEAD"])) {
     throw new Error("mutation journal binding does not match this staged plan");
@@ -1985,7 +2007,7 @@ export function verifyStagedPlan(root: string, planArg: string): void {
 export function clearSpentJournal(planArg: string, commit: string): void {
   const root = git(process.cwd(), ["rev-parse", "--show-toplevel"]);
   const plan = resolve(root, planArg).slice(root.length + 1);
-  const path = journalPath(root);
+  const path = planJournalPath(root, plan);
   const journal = readJournal(path);
   if (journal === null) return;
   if (journal.plan !== plan) throw new Error("mutation journal belongs to another plan");

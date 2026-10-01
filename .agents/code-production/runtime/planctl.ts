@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, u
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 
-import type { AuthoringContract } from "../core/plan-gate";
+import type { AuthoringContract, GateViolation } from "../core/plan-gate";
 import type { TaskBrief } from "../core/plan-update";
 import type { OwnerWaitReceipt, TaskRun, TaskRunIdentity, TaskRunV1 } from "../core/task-run";
 import type { GitWorktreeIdentity } from "../machine/sessions/session-source";
@@ -26,12 +26,13 @@ const {
   mutatePlanFile,
   needsOwner: needsOwnerOperation,
   replaceDraftSpec,
+  replaceDraftTitle,
   resumeTask: resumeTaskOperation,
   startTask: startTaskOperation,
   taskRunPath,
   verifyStagedPlan,
 } = await import(PLAN_UPDATE_FILE);
-const { authoringContract, protocolImplementationHash, protocolLockViolations } = await import(portableRuntimeFile("plan-gate.ts"));
+const { authoringContract, protocolImplementationHash, protocolLanguageViolations, protocolLockViolations } = await import(portableRuntimeFile("plan-gate.ts"));
 
 const GENERAL_HELP = `Usage: planctl <command> [arguments]
 
@@ -41,7 +42,7 @@ edited directly.
 
 Authoring:
   init               Create and stage a SPEC_DRAFT plan
-  mcp                Serve the tools over stdio for Claude and Codex
+  mcp                Serve the tools over stdio for Claude and Codex; --tools lists their names
   stats              The five tables from ~/.local/share/planctl/events.jsonl
   set-spec           Replace and stage SPEC while it is still draft
   approve-spec       Lock SPEC after explicit owner approval
@@ -68,8 +69,9 @@ Execution:
   amend              Apply an explicit owner amendment
 
 Checks:
-  verify             Verify SPEC and implementation locks
+  verify             Verify SPEC and implementation locks, and that the plan is in English
   verify-staged      Verify the staged mutation journal
+  check-markdown     Exit 0 only if every mermaid block of a markdown file parses
 
 Run planctl <command> --help for exact syntax and JSON contracts.
 `;
@@ -80,11 +82,13 @@ const COMMAND_HELP: Readonly<Record<string, string>> = {
 Creates docs/plans/<date>-<slug>.md from the branch (or the named file),
 stages it, journals it, and prints the authoring contract: the sections,
 the vocabulary pairs and the Goal rule. Refuses the integration branch and
-a missing code-production.base. Commit the plan before locking SPEC.
+a missing code-production.base. The plan stays staged under one journal
+through authoring; it is committed once, after approve-plan.
 `,
-  "set-spec": `Usage: planctl set-spec <plan.md> --from <spec.md>
+  "set-spec": `Usage: planctl set-spec <plan.md> --from <spec.md> [--title <text>]
 
-Replaces only the marked SPEC in SPEC_DRAFT and stages the plan.
+Replaces only the marked SPEC in SPEC_DRAFT, and the title when given, and
+stages the plan. A title in another language is refused.
 `,
   "approve-spec": `Usage: planctl approve-spec <plan.md> --owner-word <receipt>
 
@@ -595,17 +599,19 @@ async function startTask(args: readonly string[]): Promise<void> {
 /** Serve the tools over stdio; diagnostics go to stderr, the protocol owns stdout. */
 async function mcp(args: readonly string[]): Promise<void> {
   dedicatedRuntime();
-  const { createPlanctlServer } = await import("../mcp/server");
+  const { createPlanctlServer, toolNames } = await import("../mcp/server");
+  if (args.includes("--tools")) {
+    console.log(toolNames().join("\n"));
+    return;
+  }
   const { commandPublisher } = await import("../mcp/publish");
   const { StdioServerTransport } = await import("@modelcontextprotocol/sdk/server/stdio.js");
   const { eventLogPath } = await import("../core/event-log");
-  const { claudeModelRunner } = await import("../core/spec-submission");
   const server = createPlanctlServer({
     cwd: process.cwd(),
     publication: readPublication,
     sourceCommit: git(dirname(import.meta.path), "rev-parse", "HEAD"),
     eventLog: eventLogPath(homedir()),
-    model: claudeModelRunner,
     publisher: commandPublisher(optionalFlag(args, "--publisher") ?? "mdurl"),
   });
   const transport = new StdioServerTransport();
@@ -784,10 +790,12 @@ async function init(args: readonly string[]): Promise<void> {
     `Sections: ${contract.sections.join(", ")}`,
     ...contract.vocabulary.map((pair) => `Vocabulary: ${pair.word} → ${pair.term}`),
     `Goal rule: ${contract.goalRule}`,
+    `Target rule: ${contract.targetRule}`,
+    `Example flow:\n${contract.example}`,
   ].join("\n"));
 }
 
-function setSpec(args: readonly string[]): void {
+async function setSpec(args: readonly string[]): Promise<void> {
   const plan = args[1];
   if (plan === undefined) throw new Error("plan path is required");
   const rootPath = root();
@@ -796,7 +804,32 @@ function setSpec(args: readonly string[]): void {
   // Through the journaled writer, like every other mutation: a SPEC written by
   // hand left no journal, and the managed pre-commit refuses a staged marker
   // plan that has none.
-  mutatePlanFile(rootPath, target.relative, "set-spec", (body: string) => replaceDraftSpec(body, spec));
+  const title = optionalFlag(args, "--title");
+  mutatePlanFile(rootPath, target.relative, "set-spec", (body: string) => {
+    const withSpec = replaceDraftSpec(body, spec).body;
+    return title === undefined ? { body: withSpec } : replaceDraftTitle(withSpec, title);
+  });
+  // The installed copy carries no lint; the launcher reports every error the saved SPEC has, like submit_spec.
+  if (basename(import.meta.dir) !== "cli") return;
+  const findings = await lintFindings(rootPath, target.relative);
+  console.log([`Checks: ${findings.length} errors`, ...findings].join("\n"));
+}
+
+/** Every lint error of a plan, one line each, as the tools print them. */
+async function lintFindings(rootPath: string, plan: string): Promise<readonly string[]> {
+  const { lint } = await import(portableRuntimeFile("plan-gate.ts"));
+  const report = await lint(readFileSync(resolve(rootPath, plan), "utf8"), rootPath);
+  return report.violations.map((violation: GateViolation) => `line ${violation.line}: ${violation.text}${violation.replacement === null ? "" : ` → ${violation.replacement}`}`);
+}
+
+/** Approval runs the same lint as submission on the same bytes; every error refuses, like the tools. */
+async function refuseLintErrors(args: readonly string[]): Promise<void> {
+  // The installed copy carries no lint: lint() itself says to approve through the launcher.
+  const plan = args[1];
+  if (plan === undefined) throw new Error("plan path is required");
+  const rootPath = root();
+  const findings = await lintFindings(rootPath, addressedPath(rootPath, plan).relative);
+  if (findings.length > 0) throw new Error(`lint has ${findings.length} error(s):\n${findings.join("\n")}`);
 }
 
 async function configCommand(args: readonly string[]): Promise<void> {
@@ -822,9 +855,20 @@ function verify(args: readonly string[]): void {
   const plan = args[1];
   if (plan === undefined) throw new Error("plan path is required");
   const body = readFileSync(resolve(root(), plan), "utf8");
-  const violations = protocolLockViolations(body);
-  if (violations.length > 0) throw new Error(violations.join("; "));
-  console.log("planctl: locks verified");
+  const violations = [...protocolLockViolations(body), ...protocolLanguageViolations(body)];
+  if (violations.length > 0) throw new Error(violations.join("\n"));
+  console.log("planctl: locks verified, the plan is in English");
+}
+
+/** For a publisher: every mermaid block of a markdown file must parse, or the file is not published. */
+async function checkMarkdown(args: readonly string[]): Promise<void> {
+  dedicatedRuntime();
+  const file = args[1];
+  if (file === undefined) throw new Error("markdown file is required");
+  const { markdownDiagramErrors } = await import("../core/plan-gate");
+  const errors = await markdownDiagramErrors(readFileSync(resolve(process.cwd(), file), "utf8"));
+  if (errors.length > 0) throw new Error(`${file}: ${errors.length} mermaid block(s) do not parse\n${errors.join("\n")}`);
+  console.log(`planctl: ${file}: every mermaid block parses`);
 }
 
 function runEngine(args: readonly string[], engineCommand: string): number {
@@ -854,15 +898,20 @@ async function run(args: readonly string[]): Promise<number> {
     return 0;
   }
   if (command === "set-spec") {
-    setSpec(args);
+    await setSpec(args);
     return 0;
   }
+  if (command === "approve-spec" || command === "approve-plan") await refuseLintErrors(args);
   if (command === "config") {
     await configCommand(args);
     return 0;
   }
   if (command === "verify") {
     verify(args);
+    return 0;
+  }
+  if (command === "check-markdown") {
+    await checkMarkdown(args);
     return 0;
   }
   if (command === "start-task") {

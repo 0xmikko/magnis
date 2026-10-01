@@ -16,7 +16,7 @@ import { stageInputs, stageResultCommitPaths, MACHINABLE, protocolSpecHash, prot
 export { MACHINABLE, protocolSpecHash, protocolImplementationHash } from "./plan-update";
 
 /** Which lint rule a finding comes from; gate findings (receipts, boxes) carry none. */
-type LintRule = "structure" | "mermaid" | "typescript" | "vocabulary" | "codes" | "sentence" | "story" | "goal" | "clarity";
+type LintRule = "structure" | "mermaid" | "typescript" | "vocabulary" | "codes" | "sentence" | "story" | "goal" | "clarity" | "language";
 
 /** One finding an agent can act on: the rule, the line, the offending text
  * and the replacement when one exists. Lint errors and gate refusals block;
@@ -59,6 +59,31 @@ export const RECEIPT = /—\s*([0-9a-f]{7,40})\s*$/;
 const DEFAULT_CRITERION_TIMEOUT_MS = 12 * 60_000;
 const PROTOCOL_SPEC_START = "<!-- plan:spec:start -->";
 const PROTOCOL_SPEC_END = "<!-- plan:spec:end -->";
+
+const LANGUAGE_RULE = "the plan is written in English; the owner's words may be quoted in «…»";
+
+/** The lines a plan is read in: its title and its SPEC, outside fenced code, with «…» and `…` spared. Cyrillic there is refused by line. */
+function languageLines(body: string): readonly { readonly line: number; readonly quote: string }[] {
+  const lines = body.split("\n");
+  const start = lines.indexOf(PROTOCOL_SPEC_START);
+  const end = lines.indexOf(PROTOCOL_SPEC_END);
+  const found: { line: number; quote: string }[] = [];
+  let fenced = false;
+  lines.forEach((text, index) => {
+    const title = index === 0 && text.startsWith("# ");
+    const inside = start < 0 || (index > start && (end < 0 || index < end));
+    if (text.trimStart().startsWith("```")) { fenced = !fenced; return; }
+    if (fenced || !(title || inside)) return;
+    const spared = text.replace(/«[^»]*»/g, "").replace(/`[^`]*`/g, "");
+    if (/[\u0400-\u04FF]/.test(spared)) found.push({ line: index + 1, quote: text.trim() });
+  });
+  return found;
+}
+
+/** Portable: the hooks and `verify` refuse a plan in another language, draft or not, without a parser. */
+export function protocolLanguageViolations(body: string): readonly string[] {
+  return languageLines(body).map((found) => `line ${found.line}: ${LANGUAGE_RULE}: ${found.quote}`);
+}
 
 export function protocolLockViolations(body: string): readonly string[] {
   if (!body.includes(PROTOCOL_SPEC_START)) return [];
@@ -223,7 +248,15 @@ function lintTypes(
 ): Set<string> {
   const types = new Set<string>();
   for (const node of nodes) {
-    if (node.type !== "code" || !["ts", "tsx", "typescript"].includes(node.lang ?? "")) continue;
+    if (node.type !== "code") continue;
+    if (!["ts", "tsx", "typescript"].includes(node.lang ?? "")) {
+      // Pseudocode in another language, or in none, carries no types: refused where it starts.
+      const code = /\b(function|const|let|return|class)\b|=>/.test(node.value);
+      if (code && (node.lang === null || node.lang === undefined || ["js", "javascript", "jsx", "pseudo", "pseudocode"].includes(node.lang))) {
+        add(sourceLine(node), `code block in \`${node.lang ?? "no language"}\`: pseudocode is TypeScript with types, in a \`\`\`typescript block`, "typescript");
+      }
+      continue;
+    }
     const source = ts.createSourceFile("plan.ts", node.value, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
     const parsed = ts.transpileModule(node.value, { reportDiagnostics: true });
     for (const diagnostic of parsed.diagnostics ?? []) {
@@ -234,6 +267,14 @@ function lintTypes(
     const visit = (syntax: import("typescript").Node): void => {
       if (ts.isInterfaceDeclaration(syntax) || ts.isTypeAliasDeclaration(syntax)) {
         if (interfaces !== null && sourceLine(node) > interfaces.line && sourceLine(node) <= interfaces.line + interfaces.text.split("\n").length) types.add(syntax.name.text);
+      }
+      if (ts.isFunctionLike(syntax)) {
+        for (const parameter of syntax.parameters) {
+          if (parameter.type !== undefined) continue;
+          const row = source.getLineAndCharacterOfPosition(parameter.getStart(source)).line;
+          const owner = "name" in syntax && syntax.name !== undefined && ts.isIdentifier(syntax.name) ? syntax.name.text : "a function";
+          add(sourceLine(node) + row + 1, `untyped parameter \`${parameter.name.getText(source)}\` in \`${owner}\`: pseudocode is TypeScript with types`, "typescript");
+        }
       }
       if (ts.isInterfaceDeclaration(syntax) || ts.isTypeLiteralNode(syntax)) {
         const seen = new Set<number>();
@@ -248,6 +289,14 @@ function lintTypes(
     visit(source);
   }
   return types;
+}
+
+/** Every mermaid block of a markdown document that does not parse, for a publisher that refuses it. */
+export async function markdownDiagramErrors(body: string): Promise<readonly string[]> {
+  const { fromMarkdown } = await import("mdast-util-from-markdown");
+  const errors: string[] = [];
+  await lintMermaid(markdownNodes(fromMarkdown(body)), (line, text) => { errors.push(`line ${line}: ${text}`); });
+  return errors;
 }
 
 async function lintMermaid(nodes: readonly (Root | Content)[], add: AddFinding): Promise<void> {
@@ -312,6 +361,7 @@ function specView(body: string, fromMarkdown: (value: string) => Root): {
   readonly specEnd: number;
   readonly specLines: readonly string[];
   readonly nodes: readonly (Root | Content)[];
+  readonly blocks: readonly Content[];
   readonly headings: readonly (Root | Content)[];
   readonly section: (name: string) => { text: string; line: number } | null;
 } {
@@ -319,7 +369,9 @@ function specView(body: string, fromMarkdown: (value: string) => Root): {
   const specStart = lines.indexOf(PROTOCOL_SPEC_START);
   const specEnd = lines.indexOf(PROTOCOL_SPEC_END);
   const specLines = specStart < 0 ? lines : lines.map((line, index) => index > specStart && index < specEnd ? line : "");
-  const nodes = markdownNodes(fromMarkdown(specLines.join("\n")));
+  const tree = fromMarkdown(specLines.join("\n"));
+  const nodes = markdownNodes(tree);
+  const blocks = tree.children;
   const headings = nodes.filter((node) => node.type === "heading");
   const section = (name: string): { text: string; line: number } | null => {
     const heading = headings.find((node) => proseText(node).toLowerCase() === name.toLowerCase());
@@ -328,7 +380,36 @@ function specView(body: string, fromMarkdown: (value: string) => Root): {
     const next = headings.find((node) => sourceLine(node) > start && node.depth <= heading.depth);
     return { text: specLines.slice(start, next === undefined ? specLines.length : sourceLine(next) - 1).join("\n"), line: start };
   };
-  return { specStart, specEnd, specLines, nodes, headings, section };
+  return { specStart, specEnd, specLines, nodes, blocks, headings, section };
+}
+
+/** The rows every implementation map carries. */
+const MAP_ROWS = ["Owner", "Target files", "Input / wake", "Output / durable state", "RED test"] as const;
+
+/** The flows of The target: every heading one level under it that is not a named section, each with its mermaid diagram and its implementation map. */
+function targetFlows(specLines: readonly string[], blocks: readonly Content[], headings: readonly (Root | Content)[]): { line: number; flows: readonly { name: string; line: number; diagram: boolean; map: boolean }[] } | null {
+  const target = headings.find((node) => node.type === "heading" && proseText(node).toLowerCase() === "the target");
+  if (target === undefined || target.type !== "heading") return null;
+  const start = sourceLine(target);
+  const after = headings.find((node) => node.type === "heading" && sourceLine(node) > start && node.depth <= target.depth);
+  const end = after === undefined ? Number.MAX_SAFE_INTEGER : sourceLine(after);
+  const named = new Set<string>([...REQUIRED_SECTIONS, "Interfaces", "What changes"].map((name) => name.toLowerCase()));
+  const inside = headings.flatMap((node) => node.type === "heading" && sourceLine(node) > start && sourceLine(node) < end && node.depth === target.depth + 1 ? [node] : []);
+  const flows = inside.filter((node) => !named.has(proseText(node).toLowerCase())).map((node) => {
+    const from = sourceLine(node);
+    const following = inside.find((other) => sourceLine(other) > from);
+    const to = following === undefined ? end : sourceLine(following);
+    const own = blocks.filter((block) => block.position !== undefined && block.position.start.line > from && block.position.start.line < to);
+    // The parser reads no GFM tables, so the map is found on the source lines, like the New names table.
+    const lines = specLines.slice(from, to === Number.MAX_SAFE_INTEGER ? specLines.length : to - 1);
+    return {
+      name: proseText(node),
+      line: from,
+      diagram: own.some((block) => block.type === "code" && block.lang === "mermaid"),
+      map: MAP_ROWS.every((row) => lines.some((line) => new RegExp(`^\\|\\s*${row}\\s*\\|`).test(line))),
+    };
+  });
+  return { line: start, flows };
 }
 
 /** Exported TypeScript types a commit adds or changes that the plan's
@@ -346,14 +427,25 @@ export async function undeclaredExportedTypes(root: string, commit: string, body
 export const REQUIRED_SECTIONS = ["The Goal", "Why now", "The target", "Target tree", "Invariants", "Reuse", "New names", "Not verified"] as const;
 
 /** What a Goal is: the rule the agent reads at init and the model checks at submission. */
-export const GOAL_RULE = "The Goal is one to four numbered outcomes the owner will see when the work is done. "
-  + "Each outcome names its measure: a number, a count, a time, or the exact observable state before and after. "
-  + "It promises only what the request asks: no vision, no how, no extra scope. Plain English, one sentence per outcome.";
+export const GOAL_RULE = "The Goal is one to six numbered outcomes the owner reads as a whole: what will be done, in what order, "
+  + "who calls whom and what results. A measure where one exists. It promises only what the request asks: no vision, no backstory, no extra scope. Plain English.";
+
+/** What The target is: the rule the agent reads at init and the lint measures at submission. */
+export const TARGET_RULE = "The target is flows. Each flow is one ### heading, one mermaid diagram of that flow, a few lines of explanation, "
+  + "and an implementation map table with the rows Owner, Target files, Input / wake, Output / durable state, RED test. "
+  + "The types a flow changes are declared in Interfaces. Nothing in The target is prose without its flow.";
+
+/** One flow in the shape every flow of The target takes, handed to the agent at init. */
+function flowExample(): string {
+  return readFileSync(resolve(import.meta.dir, "../../../shared/code-production/laws/flow-example.md"), "utf8").trim();
+}
 
 export interface AuthoringContract {
   readonly sections: readonly string[];
   readonly vocabulary: readonly { readonly word: string; readonly term: string }[];
   readonly goalRule: string;
+  readonly targetRule: string;
+  readonly example: string;
 }
 
 function vocabularyMap(root: string, synonyms: (root: string, file?: string) => Map<string, string>): Map<string, string> {
@@ -372,6 +464,8 @@ export async function authoringContract(root: string): Promise<AuthoringContract
     sections: REQUIRED_SECTIONS,
     vocabulary: [...vocabularyMap(root, synonyms)].map(([word, term]) => ({ word, term })),
     goalRule: GOAL_RULE,
+    targetRule: TARGET_RULE,
+    example: flowExample(),
   };
 }
 
@@ -397,7 +491,7 @@ export async function lint(body: string, root: string, commit?: string): Promise
     violations.push({ kind: "protocol-shape", rule, blocking: true, line, quote, text, replacement });
   };
   const lines = body.split("\n");
-  const { specStart, specEnd, specLines, nodes, headings, section } = specView(body, fromMarkdown);
+  const { specStart, specEnd, specLines, nodes, blocks, headings, section } = specView(body, fromMarkdown);
   if ((specStart >= 0 || specEnd >= 0) && (specStart < 0 || specEnd <= specStart)) {
     return { violations: [refusal("protocol-shape", 1, "missing ordered SPEC markers")], metrics: [] };
   }
@@ -411,11 +505,20 @@ export async function lint(body: string, root: string, commit?: string): Promise
   }
   const names = section("New names");
   if (names !== null && !/^\|\s*-{3,}\s*\|\s*-{3,}/m.test(names.text)) add(names.line, "New names needs a name/reason table", "structure");
+  const flows = targetFlows(specLines, blocks, headings);
+  if (flows !== null) {
+    if (flows.flows.length === 0) add(flows.line, "The target has no flow: one ### heading per flow, each with its mermaid diagram and its implementation map", "structure");
+    for (const flow of flows.flows) {
+      if (!flow.diagram) add(flow.line, `flow «${flow.name}» has no mermaid diagram`, "structure", flow.name);
+      if (!flow.map) add(flow.line, `flow «${flow.name}» has no implementation map: a table with the rows ${MAP_ROWS.join(", ")}`, "structure", flow.name);
+    }
+  }
   const vocabulary = vocabularyMap(root, synonyms);
   const fullNodes = markdownNodes(fromMarkdown(body));
   const implementationEnd = lines.indexOf("<!-- plan:implementation:end -->");
   const authored = fullNodes.filter((node) => specStart < 0 || (sourceLine(node) > specStart && (implementationEnd < 0 ? sourceLine(node) < specEnd : sourceLine(node) < implementationEnd)));
   lintProse(authored, (text) => vocabularyMatches(text, vocabulary), add);
+  for (const found of languageLines(body)) add(found.line, LANGUAGE_RULE, "language", found.quote);
   const interfaces = section("Interfaces");
   const types = lintTypes(nodes, interfaces, ts, add);
   const target = section("Target tree");

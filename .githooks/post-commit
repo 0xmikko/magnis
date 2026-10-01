@@ -3,8 +3,11 @@
 set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"
-JOURNAL="$(git rev-parse --path-format=absolute --git-path plan-update-journal.json)"
-[ -f "$JOURNAL" ] || exit 0
+GITDIR="$(git rev-parse --path-format=absolute --git-dir)"
 
-PLAN="$(bun -e 'const j = await Bun.file(process.argv[1]).json(); if (typeof j.plan !== "string") process.exit(2); console.log(j.plan)' "$JOURNAL")"
-bun "$ROOT/.agents/code-production/runtime/planctl.ts" clear-transaction "$PLAN" --commit HEAD
+# One journal per plan: the commit spends every journal whose candidate it carries.
+for JOURNAL in "$GITDIR"/plan-update-journal-*.json; do
+  [ -f "$JOURNAL" ] || continue
+  PLAN="$(bun -e 'const j = await Bun.file(process.argv[1]).json(); if (typeof j.plan !== "string") process.exit(2); console.log(j.plan)' "$JOURNAL")"
+  bun "$ROOT/.agents/code-production/runtime/planctl.ts" clear-transaction "$PLAN" --commit HEAD
+done

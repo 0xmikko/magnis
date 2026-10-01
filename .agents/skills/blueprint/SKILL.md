@@ -11,24 +11,38 @@ that reply to the owner verbatim.
 
 ## SPEC
 
-1. Create `feat/<slug>` from the repository's base branch in its own
-   worktree. Call `init` with `root` (the worktree) and a `title`. It creates
-   `docs/plans/<date>-<slug>.md`, stages and journals it, and returns the
-   required sections, the vocabulary and the Goal rule. Commit the plan.
+1. Call `progress` with `root`, the worktree you are in. When the branch
+   already has a plan, it names it: continue on that plan and never call
+   `init` again. Otherwise call `init` with the same `root` and a `title`:
+   it names the plan after the branch, `docs/plans/<date>-<slug>.md`, stages
+   and journals it, and returns the required sections, the vocabulary and
+   the Goal rule. Only when `init` refuses because the root is on the base
+   branch, create `feat/<slug>` from that branch in its own worktree and
+   call `init` there. Never create a branch or a worktree otherwise. Do not
+   commit: the plan stays staged under one journal until the owner approves
+   it, and every write publishes it for review.
 2. Explore existing code before proposing new mechanisms. Agree on the Goal,
    the flows, the measures, the constraints, the reuse and the testable
    invariants. The SPEC says what will be; the past appears only as one
    sentence "now X" where X is being fixed.
 3. Write the SPEC as one text with the returned sections, in the vocabulary,
-   and send it with `submit_spec`: the plan, the `baseRevision` from `init`,
-   the owner's request in their words, and the whole SPEC. The tool fixes
-   line endings and vocabulary itself, returns every lint error at once with
-   its line and replacement, and asks the model once about the changed lines.
-   Fix the errors and resubmit with the returned revision; unchanged text
-   calls nothing.
+   in English, title included; the owner's words may be quoted in «…».
+   The target is flows shaped like the example `init` returned: one `###`
+   heading per flow, its mermaid diagram, a few lines of explanation, its
+   implementation map (Owner, Target files, Input / wake, Output / durable
+   state, RED test), and its types in Interfaces. The tool refuses a flow
+   without its diagram or its map. Pseudocode is TypeScript with every
+   parameter typed, never another language. Send it with `submit_spec`: the
+   plan, the `baseRevision` that `init` or `progress` returned, the owner's
+   request in their words, the whole SPEC, and a `title` when the one from
+   `init` must change. The tool fixes line endings and vocabulary itself and
+   returns every lint error at once with its line and replacement; no model
+   reads the plan. Fix the errors and resubmit with the returned revision;
+   unchanged text changes nothing.
 4. Show the owner the reply and stop. This is the first hard stop: ask
    whether they approve the SPEC.
-5. After an explicit yes, call `approve_spec` with the owner's words.
+5. After an explicit yes, call `approve_spec` with the owner's word: the
+   approval itself, one short line, never their whole message.
 
 Bad Goal: "Make development faster."
 
@@ -61,8 +75,10 @@ locally and once on the published CI SHA."
    refuses an exported type the SPEC does not name.
 6. Show the owner the last reply and stop. This is the second hard stop: ask
    whether they approve the complete plan.
-7. After an explicit yes, call `approve_plan` with the owner's words. Approval
-   runs the same lint the puts ran and finds nothing new.
+7. After an explicit yes, call `approve_plan` with the owner's word. Approval
+   runs the same lint the puts ran and finds nothing new. Then commit the
+   plan once, `docs(plan): <title>`: the plan's only commit before the work
+   starts.
 
 Bad Stage: "Finish the colleague's branch: build fixes and Verify rewire."
 

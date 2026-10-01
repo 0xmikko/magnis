@@ -22,8 +22,9 @@ if [ -n "$PLANS" ]; then
       state="$(git show ":$plan" | sed -n 's/^Status: //p' | head -1)"
       if [ "$state" != "SPEC_DRAFT" ]; then
         bun "$PLANCTL" verify-staged "$plan"
-        bun "$PLANCTL" verify "$plan"
       fi
+      # Every plan, draft or not: locks and the language it is written in.
+      bun "$PLANCTL" verify "$plan"
     fi
   done <<EOF
 $PLANS
