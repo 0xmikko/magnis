@@ -60,7 +60,7 @@ Each entity is declared in `entities.ts` with `@magnis/declare`, like Telegram's
 - `web.page` declares `title` as its searched field, ordered by `date` (the first time the content was got).
 - `web.link` and `web.domain` declare their names.
 
-The generated `search`, `list` and `predicate` tools are therefore the Graph search over saved Web entities. The page body lives in the byte store, not in a property. Indexing stored bodies is a later host step and is not part of this plan.
+The generated `search`, `list` and `predicate` tools are therefore the Graph search over saved Web entities. The page body lives in the byte store, not in a property, so search finds pages by title and URL. Search over stored bodies is a separate later step, and so is a table of text descriptions keyed by content hash.
 
 Links:
 
@@ -114,7 +114,7 @@ No page, preview or image is fetched. A malformed URL is an error for the whole 
 
 Freshness is computed only by the Source, from the response headers; the module only compares `expires_at` with now. A response with no lifetime is stale at once, and no default lifetime is invented. `open` writes nothing, so only `save` persists a confirmation. Scheduled re-reading is a cron trigger that calls `open` and, when wanted, `save`.
 
-**Windows.** Text comes in windows of at most 50 KiB with an explicit `offset`. `entity.properties.size_bytes` is the full size, so a window never passes for the whole document.
+**Windows.** Text comes in windows of at most 50 KiB. Every response states the full `size_bytes`, its `offset` and a `next_offset`, which is `null` once the end is reached, so a window never passes for the whole document. The tool descriptions tell the agent that large content is read in parts by passing `next_offset` back as `offset`.
 
 **`save` on `web.page`** takes up to 20 `{url, content_hash}` and runs as one root transaction:
 
@@ -179,7 +179,8 @@ The app plan delivers these; this plan only uses them:
 
 - **Byte store operations:**
   - `bytes_put({text}) → {content_hash, size_bytes}`;
-  - `bytes_read({entity_id, offset, length}) → {text, offset, length}`, which reads only through an entity of the calling user that carries `content_hash`, with the window cut on a UTF-8 boundary;
+  - `bytes_read({entity_id, offset, length}) → {text, offset, length, size_bytes}`, which reads only through an entity of the calling user that carries `content_hash`, with the window cut on a UTF-8 boundary;
+  - `byte_objects`, the store's record of each object (hash, size, first-stored time), which supplies `size_bytes`;
   - the grant `host = ["bytes"]`.
 - **On-demand Sources.** `module_sync` with `delivery = none` is reached only through `magnis.execute`. Each user gets an account without credentials whose id is the Source id (`web`). A module may command such a surface that it declares in `[surfaces.web]`, with no sync handler.
 - **The `contents` host link kind** and its metadata schema.
@@ -253,7 +254,8 @@ On catalog `8f1e371` and app `fe2e0174c`:
 | `web.domain`, `web.page` | Schemas of a domain and of saved content; `web.page` stops being a schema-less resource. |
 | `contents`, `ContentsMetadata` | General host link "entity → immutable snapshot"; its metadata is the observation. |
 | `search_global`, `save` | Agent verbs for external search and for saving results. |
-| `WebPageRead` | What `open` and `web.page.get` return: entity, Markdown window, `offset`, `ContentsMetadata`. |
+| `WebPageRead` | What `open` and `web.page.get` return: entity, Markdown window, `offset`, `next_offset`, `ContentsMetadata`. |
+| `next_offset` | Where the next window starts, or `null` at the end. |
 | `WebSourcePage`, `search`, `read`, `cached`, `not_cached`, `too_large` | The Source's result, actions and typed errors. |
 | `bytes_put`, `bytes_read` | Module operations on the host byte store. |
 | `web.repair` | Explicit bounded repair of existing links. |
@@ -268,7 +270,7 @@ On catalog `8f1e371` and app `fe2e0174c`:
 6. Two saves of the same content at the same URL, sequential or concurrent, give one `web.page` and one `contents` link. `firstGet` is the minimum and `lastGet` the maximum; the freshness fields come from the latest observation.
 7. Changed content creates a new `web.page`. The old page, its bytes and evidence on it remain readable, and a repeated save retires no claim citing a page.
 8. `save` stores the bytes the agent read even if the site now serves something else. If they are gone, `save` fails and writes nothing. A host hash that differs from the claimed one fails the save.
-9. Text windows always carry `offset`, and `size_bytes` is the full size.
+9. Every text window carries `size_bytes`, `offset` and `next_offset`. Reading by `next_offset` until it is `null` returns exactly the stored text.
 10. The Source returns Markdown that keeps headings, lists, a table, a code block and link URLs; the same HTML yields the same hash. A body over 4 MiB is `too_large` with nothing cached.
 11. A redirect to a private or reserved address is refused before it is followed. A request past its bound fails with a typed timeout; a 429 is `-32002` with `retry_after`.
 12. A fresh Source cache entry answers with no request and the same `lastGet`. A `304` returns the cached page with a newer `lastGet`. `cached` never makes a request.
@@ -293,7 +295,7 @@ Proposed here and confirmed by approving this SPEC:
 - the 4 MiB page limit;
 - dropping the preview fields;
 - storing Markdown, not the raw HTTP response;
-- indexing stored page bodies is left for later.
+- search over stored page bodies, and descriptions of stored bytes, are left for later.
 
 ## Constraints and exclusions
 
@@ -325,7 +327,7 @@ The catalog gains `modules/web` (model, tools, `ensure`, repair) and `sources/we
 
 - **Live sites and DuckDuckGo:** the tests use an injected `fetch`.
 - **Telegram end to end before contact identity's `ensure` lands:** by the owner's decision.
-- **Full-text search over page bodies:** a later host step.
+- **Full-text search over page bodies:** a later step.
 <!-- plan:spec:end -->
 
 <!-- plan:implementation:start -->
