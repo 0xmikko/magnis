@@ -12,15 +12,14 @@
  * Data: one existing pinned chat and a bootstrap-sized dialog page.
  */
 import { describe, expect, it } from "vitest";
-import type { GraphBatchInput } from "@magnis/plugin-sdk";
+import type { GraphBatchInput, SourceEnvelope } from "@magnis/plugin-sdk";
 import { entity, mockGraph, mountModule } from "@magnis/testkit/module";
 import { TelegramModule } from "../service.ts";
 import type {
-  SyncEnvelope,
   TelegramCanonical,
 } from "../../types.ts";
 
-function chatEnvelope(chatId: number): SyncEnvelope {
+function chatEnvelope(chatId: number): SourceEnvelope {
   return {
     source_id: "telegram",
     surface: "telegram",
@@ -40,7 +39,7 @@ function chatEnvelope(chatId: number): SyncEnvelope {
   };
 }
 
-function messageEnvelope(chatId: number): SyncEnvelope {
+function messageEnvelope(chatId: number): SourceEnvelope {
   return {
     source_id: "telegram",
     surface: "telegram",

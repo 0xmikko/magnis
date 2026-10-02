@@ -4,18 +4,17 @@
  * Beside entities.ts and outside module/ on purpose.
  */
 import { describe, expect, it, vi } from "vitest";
-import type { GraphBatchInput } from "@magnis/plugin-sdk";
-import { mockGraph, mountModule } from "@magnis/testkit/module";
+import type { GraphBatchInput, SourceEnvelope } from "@magnis/plugin-sdk";
+import { mockGraph, mountModule, sourceEnvelope } from "@magnis/testkit/module";
 
 import { XModule } from "./module/service.ts";
 import { post, profile } from "./entities.ts";
 
 const DECLARED = { "x.profile": profile, "x.post": post } as const;
 
-const env = (remote_id: string, payload: Record<string, unknown>) => ({
-  source_id: "x", surface: "x", account_id: "a1", user_id: "u1",
-  kind: "snapshot", remote_id, payload, timestamp: "2026-06-26T00:00:00Z",
-});
+function env(remote_id: string, payload: Record<string, unknown>): SourceEnvelope {
+  return sourceEnvelope("x", payload, { source_id: "x", account_id: "a1", user_id: "u1", remote_id, timestamp: "2026-06-26T00:00:00Z" });
+}
 
 async function written(): Promise<GraphBatchInput["entities"]> {
   const batches: GraphBatchInput[] = [];

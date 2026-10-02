@@ -14,6 +14,7 @@ import type {
   BatchEntityInput,
   BatchLinkInput,
   PaginatedResponse,
+  SourceEnvelope,
   WindowRow,
 } from "@magnis/plugin-sdk";
 import type {
@@ -26,7 +27,6 @@ import type {
   ProfileDetail,
   ProfileListItem,
   ProfilesListParams,
-  SyncEnvelope,
 } from "../types.ts";
 import { AUTHORED_BY, IDENTITY, POST, PROFILE } from "../schema.ts";
 import { richPostFields, str } from "./helpers.ts";
@@ -43,7 +43,7 @@ export class XModule {
   /// LinkedIn connectors feed the same surface; `payload.entity_type` discriminates.
   @syncHandler("x")
   async ingest(params: {
-    envelopes?: SyncEnvelope[];
+    envelopes?: SourceEnvelope[];
     /** The pass the worker is in; absent for a Source effect outside a
      * worker, which states nothing. */
     generation?: string;
@@ -158,7 +158,7 @@ export class XModule {
   /** The page's profiles and posts the graph already holds, by anchor: the
    * profiles with their dictionaries (the pass stamp), the posts by presence.
    * Two Graph calls for the whole page, never one per envelope. */
-  private async knownByAnchor(envelopes: SyncEnvelope[]): Promise<Map<string, Record<string, unknown> | null>> {
+  private async knownByAnchor(envelopes: SourceEnvelope[]): Promise<Map<string, Record<string, unknown> | null>> {
     const known = new Map<string, Record<string, unknown> | null>();
     const anchors = [...new Set(envelopes.flatMap((env) => (env.remote_id && env.kind !== "delete" ? [env.remote_id] : [])))];
     if (anchors.length === 0) return known;
@@ -178,7 +178,7 @@ export class XModule {
   }
 
   private async linkProfilesToContacts(
-    envelopes: SyncEnvelope[],
+    envelopes: SourceEnvelope[],
     ids: Record<string, string>,
   ): Promise<void> {
     for (const env of envelopes) {

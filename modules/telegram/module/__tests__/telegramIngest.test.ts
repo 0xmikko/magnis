@@ -25,12 +25,11 @@
  */
 import { describe, expect, it } from "vitest";
 import { entity, mockGraph, mountModule } from "@magnis/testkit/module";
-import type { GraphBatchInput } from "@magnis/plugin-sdk";
+import type { GraphBatchInput, SourceEnvelope } from "@magnis/plugin-sdk";
 import { CHAT, MESSAGE, TELEGRAM_ACCOUNT } from "../../schema.ts";
-import type { SyncEnvelope } from "../../types.ts";
 import { TelegramModule } from "../service.ts";
 
-function messageEnvelope(kind: "snapshot" | "live" = "snapshot"): SyncEnvelope {
+function messageEnvelope(kind: "snapshot" | "live" = "snapshot"): SourceEnvelope {
   return {
     source_id: "telegram-ts",
     surface: "telegram",
@@ -144,7 +143,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
         }),
     });
     const module = mountModule(TelegramModule, { graph }).module;
-    const chat: SyncEnvelope = {
+    const chat: SourceEnvelope = {
       ...messageEnvelope(),
       remote_id: "tg:chat:42",
       payload: { entity_type: "chat", chat_id: 42, title: "Magnis Builders" },
@@ -414,7 +413,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
   });
 
   it("deletes by remote anchor and reports failed deletes instead of aborting the page", async () => {
-    const envelope: SyncEnvelope = {
+    const envelope: SourceEnvelope = {
       ...messageEnvelope(),
       kind: "delete",
       payload: {},
@@ -485,7 +484,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
       }),
     });
     const module = mountModule(TelegramModule, { graph }).module;
-    const departure: SyncEnvelope = {
+    const departure: SourceEnvelope = {
       ...messageEnvelope("live"),
       remote_id: "tg:chat:42",
       payload: {
@@ -580,12 +579,12 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
         }),
     });
     const module = mountModule(TelegramModule, { graph, ctx: { extension_id: "telegram" } }).module;
-    const chat = (chatId: number): SyncEnvelope => ({
+    const chat = (chatId: number): SourceEnvelope => ({
       ...messageEnvelope(),
       remote_id: `tg:chat:${String(chatId)}`,
       payload: { entity_type: "chat", chat_id: chatId, title: `Chat ${String(chatId)}` },
     });
-    const message = (chatId: number, id: number): SyncEnvelope => ({
+    const message = (chatId: number, id: number): SourceEnvelope => ({
       ...messageEnvelope(),
       remote_id: `tg:msg:${String(chatId)}:${String(id)}`,
       payload: { ...messageEnvelope().payload, message_id: id, chat_id: chatId, text: "plain text" },

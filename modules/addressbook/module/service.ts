@@ -2,8 +2,8 @@
 // `addressbook` surface: provider address book contacts become cards, and a
 // card finds the person it belongs to by its email addresses.
 
-import { syncComplete, syncHandler, unseenSourceReplicas, type BatchEntityInput, type GraphService, type PluginDeps } from "@magnis/plugin-sdk";
-import type { GoogleContactPayload, SyncEnvelope } from "../types.ts";
+import { type BatchEntityInput, type GraphService, type PluginDeps, type SourceEnvelope, syncComplete, syncHandler, unseenSourceReplicas } from "@magnis/plugin-sdk";
+import type { GoogleContactPayload } from "../types.ts";
 import { INGEST_CHUNK, replicaDict } from "./helpers.ts";
 import { CARD } from "../schema.ts";
 import { CONTACT } from "../../contacts/schema.ts";
@@ -31,7 +31,7 @@ export class AddressbookModule {
   // by anchor, like email's message ingest).
   @syncHandler("addressbook")
   async ingest(params: {
-    envelopes?: SyncEnvelope[];
+    envelopes?: SourceEnvelope[];
     command?: "bootstrap" | "catch_up" | "backfill";
     /** The pass the worker is in; absent for a Source effect outside a
      * worker, which states nothing. */
@@ -57,7 +57,7 @@ export class AddressbookModule {
     // ONE entity in the batch (last-write-wins on payload). Native parity: an
     // envelope with no owning user is skipped — the dispatcher couldn't resolve
     // user_id, so we cannot user-scope the write.
-    const byRemoteId = new Map<string, SyncEnvelope>();
+    const byRemoteId = new Map<string, SourceEnvelope>();
     for (const env of envelopes) {
       if (!env.user_id) continue;
       if (env.kind === "delete") {
@@ -66,7 +66,7 @@ export class AddressbookModule {
       }
       if (env.kind !== "snapshot" && env.kind !== "live") continue;
       if (!env.remote_id) continue;
-      if (env.payload?.entity_type === "list") {
+      if (env.payload.entity_type === "list") {
         const total = env.payload.total_people;
         const skipped = env.payload.skipped;
         if (typeof total === "number" && stated && fullPass) plan.total += total;
@@ -76,7 +76,7 @@ export class AddressbookModule {
       byRemoteId.set(env.remote_id, env);
     }
 
-    let chunk: SyncEnvelope[] = [];
+    let chunk: SourceEnvelope[] = [];
     const flush = async (): Promise<void> => {
       if (chunk.length > 0) {
         plan.total += await this.ingestContactBatch(chunk, params.generation, fullPass, at);
@@ -95,12 +95,12 @@ export class AddressbookModule {
   }
 
   /** @tested-by: tst_module_google_002, tst_module_addressbook_006 */
-  private async deleteGoogleReplica(env: SyncEnvelope, at: string): Promise<boolean> {
+  private async deleteGoogleReplica(env: SourceEnvelope, at: string): Promise<boolean> {
     if (!env.remote_id) return false;
     const id = await this.graph.find_by_anchor(env.remote_id);
     if (!id) return false;
     const replica = await this.graph.get_entity(id);
-    if (replica?.schema_id !== CARD || replica.properties?.source_id !== env.source_id || replica.properties?.account_id !== env.account_id) return false;
+    if (replica?.schema_id !== CARD || replica.properties?.source_id !== env.source_id || replica.properties.account_id !== env.account_id) return false;
     await this.archiveCard(id, at);
     return true;
   }
@@ -125,7 +125,7 @@ export class AddressbookModule {
 
   /// One chunk → one apply_batch. Each contact becomes a card anchored on its
   /// stable resourceName-derived remote_id.
-  private async ingestContactBatch(envelopes: SyncEnvelope[], generation: string | undefined, fullPass: boolean, at: string): Promise<number> {
+  private async ingestContactBatch(envelopes: SourceEnvelope[], generation: string | undefined, fullPass: boolean, at: string): Promise<number> {
     // 1. Fold envelopes into rows: payload + its lowercased addresses.
     interface Row {
       remoteId: string;
@@ -139,7 +139,7 @@ export class AddressbookModule {
       const remoteId = env.remote_id;
       if (!remoteId) continue;
       if (!env.source_id || !env.account_id) throw new Error("addressbook ingest requires source and account");
-      const p = (env.payload ?? {}) as GoogleContactPayload;
+      const p = env.payload as GoogleContactPayload;
       const addresses = cardAddresses(p);
       rows.push({ remoteId, p, addresses, sourceId: env.source_id, accountId: env.account_id });
     }

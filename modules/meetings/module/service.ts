@@ -26,6 +26,7 @@ import type {
   BatchLinkInput,
   RawEntity,
   RpcExecutor,
+  SourceEnvelope,
 } from "@magnis/plugin-sdk";
 import type {
   GetParams,
@@ -38,7 +39,6 @@ import type {
   NewMeetingParams,
   SearchParams,
   SearchResultItem,
-  SyncEnvelope,
   ToolResult,
 } from "../types.ts";
 import {
@@ -349,7 +349,7 @@ export class MeetingsModule {
   // entity. An empty envelope user_id is a HARD ERROR (no silent attribution).
   @syncHandler("meetings")
   async ingest(params: {
-    envelopes?: SyncEnvelope[];
+    envelopes?: SourceEnvelope[];
     command?: "bootstrap" | "catch_up" | "backfill";
     /** The pass the worker is in; absent for a Source effect outside a
      * worker, which states nothing. */
@@ -424,7 +424,7 @@ export class MeetingsModule {
 
   /// Delete envelope: resolve the meeting by its source external_id and remove
   /// it. An unknown id is a silent no-op (native delete_by_remote_id parity).
-  private async ingestDelete(env: SyncEnvelope): Promise<boolean> {
+  private async ingestDelete(env: SourceEnvelope): Promise<boolean> {
     if (!env.remote_id) return false;
     // S5: the remote id IS the node's anchor — resolution goes through the
     // one chokepoint, not the retired record external id.
@@ -440,7 +440,7 @@ export class MeetingsModule {
   /// Upsert one calendar event as a NODE (idempotent on its anchor) plus the
   /// `attendee` edges its invite lists, then, for LIVE events, assemble the
   /// trigger.check with those attendees' address ids.
-  private async ingestUpsert(env: SyncEnvelope, triggers: MeetingTriggerCheck[], generation?: string): Promise<boolean> {
+  private async ingestUpsert(env: SourceEnvelope, triggers: MeetingTriggerCheck[], generation?: string): Promise<boolean> {
     const remoteId = env.remote_id;
     if (!remoteId) throw new Error("meetings ingest: envelope missing remote_id");
     const payload = env.payload as Data;

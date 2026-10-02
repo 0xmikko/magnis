@@ -49,13 +49,16 @@ export interface BuildOpts {
   distDir?: string;
 }
 
+/** The UI bundle a module build produces. */
+export interface BuiltUi {
+  bundleFile: string; // hashed filename, e.g. "index.<hash>.js"
+  hash: string;
+}
+
 export interface BuildResult {
   pluginId: string;
   /** The UI bundle; null for a module without `ui/`. */
-  ui: {
-    bundleFile: string; // hashed filename, e.g. "index.<hash>.js"
-    hash: string;
-  } | null;
+  ui: BuiltUi | null;
 }
 
 /** Build the bare specifier → shim-URL map for one plugin (static + extras). */
@@ -200,7 +203,7 @@ export async function buildPlugin(pluginId: string, opts: BuildOpts = {}): Promi
     }
   }
   // @tested-by: tst_build_ui_less_001
-  let ui: BuildResult["ui"] = null;
+  let ui: BuiltUi | null = null;
   if (existsSync(uiSourceDir)) {
     const entryPath = join(uiSourceDir, entryUi);
     if (!existsSync(entryPath)) {

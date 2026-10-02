@@ -28,6 +28,7 @@ import type {
   PluginUtil,
   RawEntity,
   RpcExecutor,
+  SourceEnvelope,
   ToolDefinitionWire,
   WindowRow,
 } from "@magnis/plugin-sdk";
@@ -205,6 +206,26 @@ export function mountModule<T extends object>(
  *  (default a fixed timestamp), or any other column. */
 export function entity(id: string, name: string, over: Partial<RawEntity> = {}): RawEntity {
   return { id, name, schema_id: "", created_at: "2026-01-01T00:00:00Z", ...over };
+}
+
+/** A `SourceEnvelope` — one item on `surface`, as the host passes it to a
+ *  sync handler. `over` sets the source, account, kind, remote id or any
+ *  other field; the defaults are fixed so a test's bytes never change. */
+export function sourceEnvelope(
+  surface: string,
+  payload: Record<string, unknown>,
+  over: Partial<SourceEnvelope> = {},
+): SourceEnvelope {
+  return {
+    source_id: "fixture",
+    surface,
+    account_id: "account-1",
+    user_id: "user-1",
+    kind: "snapshot",
+    payload,
+    timestamp: "2026-01-01T00:00:00Z",
+    ...over,
+  };
 }
 
 /** A `WindowRow` — an entity; its dictionary rides on the entity itself. */

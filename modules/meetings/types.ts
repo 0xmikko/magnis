@@ -155,19 +155,6 @@ export interface ToolResult {
 
 // ── sync ────────────────────────────────────────────────────────
 
-/** A source envelope handed to the @syncHandler (mirrors Rust SourceEnvelope). */
-export interface SyncEnvelope {
-  source_id: string;
-  surface: string;
-  account_id: string;
-  user_id: string;
-  kind: string;
-  remote_id?: string;
-  cursor?: unknown;
-  payload: Record<string, unknown>;
-  timestamp: string;
-}
-
 /// A trigger.check the host bridge forwards to the event_bus for LIVE calendar
 /// events (mirrors native ingest's `new_meeting` event). Snapshot/delete emit
 /// none. `schema_id` keeps the native value "meetings.meeting" verbatim.

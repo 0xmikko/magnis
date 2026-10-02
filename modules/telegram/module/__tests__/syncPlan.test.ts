@@ -13,10 +13,9 @@
  * chats it leaves out of history. Snapshot omission does not end membership.
  */
 import { describe, expect, it } from "vitest";
-import type { GraphBatchInput, LinkSummary, RawEntity, WindowSpec } from "@magnis/plugin-sdk";
+import type { GraphBatchInput, LinkSummary, RawEntity, SourceEnvelope, WindowSpec } from "@magnis/plugin-sdk";
 import { entity, mockGraph, mountModule, windowRow } from "@magnis/testkit/module";
 import { CHAT, MESSAGE } from "../../schema.ts";
-import type { SyncEnvelope } from "../../types.ts";
 import { TelegramModule } from "../service.ts";
 
 const SELF = "tg:account:9001";
@@ -34,7 +33,7 @@ const chats: readonly ChatFixture[] = [
   { id: 7, title: "Pinned large channel", props: { type: "supergroup", member_count: 3000, message_count: 100, is_pinned: true } },
 ];
 
-function chatEnvelope(chat: ChatFixture, over: Record<string, unknown> = {}): SyncEnvelope {
+function chatEnvelope(chat: ChatFixture, over: Record<string, unknown> = {}): SourceEnvelope {
   return {
     source_id: "telegram-ts", surface: "telegram", account_id: "account-1", user_id: "u1", identity_key: "9001",
     kind: "snapshot", remote_id: `tg:chat:${String(chat.id)}`, timestamp: "2026-09-02T00:00:00Z",
@@ -42,7 +41,7 @@ function chatEnvelope(chat: ChatFixture, over: Record<string, unknown> = {}): Sy
   };
 }
 
-function liveMessage(chatId: number, messageId: number): SyncEnvelope {
+function liveMessage(chatId: number, messageId: number): SourceEnvelope {
   return {
     source_id: "telegram-ts", surface: "telegram", account_id: "account-1", user_id: "u1", identity_key: "9001",
     kind: "live", remote_id: `tg:msg:${String(chatId)}:${String(messageId)}`, timestamp: "2026-09-02T00:00:00Z",

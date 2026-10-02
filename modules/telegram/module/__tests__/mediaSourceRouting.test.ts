@@ -17,14 +17,15 @@
 import { describe, expect, it } from "vitest";
 import { entity, mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { TelegramModule } from "../service.ts";
-import type { SyncEnvelope, TelegramCanonical } from "../../types.ts";
+import type { TelegramCanonical } from "../../types.ts";
+import type { SourceEnvelope } from "@magnis/plugin-sdk";
 
 type G = MockGraph;
 
 // The private ingest helpers the test drives directly.
 interface TgInternals {
-  ingest(p: { envelopes?: SyncEnvelope[] }): Promise<unknown>;
-  ingestMessage(env: SyncEnvelope, payload: Record<string, unknown>): Promise<unknown>;
+  ingest(p: { envelopes?: SourceEnvelope[] }): Promise<unknown>;
+  ingestMessage(env: SourceEnvelope, payload: Record<string, unknown>): Promise<unknown>;
 }
 
 function ingestGraph(): G {
@@ -49,7 +50,7 @@ function ingestGraph(): G {
   });
 }
 
-const mediaEnvelope = (sourceId: string): SyncEnvelope => ({
+const mediaEnvelope = (sourceId: string): SourceEnvelope => ({
   source_id: sourceId,
   surface: "telegram",
   account_id: "acct-1",

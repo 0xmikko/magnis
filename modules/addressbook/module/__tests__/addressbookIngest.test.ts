@@ -26,10 +26,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AddLinkParams, BatchEntityInput, GraphBatchInput, GraphService, LinkSummary, RawEntity } from "@magnis/plugin-sdk";
-import { mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
+import type { AddLinkParams, BatchEntityInput, GraphBatchInput, GraphService, LinkSummary, RawEntity, SourceEnvelope } from "@magnis/plugin-sdk";
+import { mockGraph, mountModule, sourceEnvelope, type MockGraph } from "@magnis/testkit/module";
 import { AddressbookModule } from "../service.ts";
-import type { SyncEnvelope } from "../../types.ts";
 
 const T0 = "2026-03-14T09:00:00.000Z";
 const T1 = "2026-03-15T09:00:00.000Z";
@@ -186,17 +185,8 @@ const periodsOf = (world: World, from_id: string, to_id: string): { validFrom: s
     .filter((link) => link.from_id === from_id && link.to_id === to_id)
     .map(({ validFrom, validUntil }) => ({ validFrom, validUntil }));
 
-const env = (over: Partial<SyncEnvelope> & { payload?: Record<string, unknown> }): SyncEnvelope => ({
-  source_id: "google",
-  surface: "addressbook",
-  account_id: "acct-1",
-  user_id: "u1",
-  kind: "snapshot",
-  remote_id: "gpeople:abc123",
-  payload: {},
-  timestamp: "2026-03-14T09:00:00Z",
-  ...over,
-});
+const env = (over: Partial<SourceEnvelope>): SourceEnvelope =>
+  sourceEnvelope("addressbook", {}, { source_id: "google", account_id: "acct-1", user_id: "u1", remote_id: "gpeople:abc123", timestamp: "2026-03-14T09:00:00Z", ...over });
 
 // A Google connector `Contact` payload (sources/google/src/surfaces/addressbook/contacts.ts).
 const contactPayload = (over: Record<string, unknown> = {}) => ({
@@ -212,7 +202,7 @@ const contactPayload = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 /** A card listing exactly these addresses. */
-const card = (remoteId: string, addresses: string[]): SyncEnvelope =>
+const card = (remoteId: string, addresses: string[]): SourceEnvelope =>
   env({ remote_id: remoteId, payload: contactPayload({ id: remoteId, emails: addresses.map((value) => ({ address: value })) }) });
 
 const cardOf = (frag: GraphBatchInput, key: string): BatchEntityInput => {

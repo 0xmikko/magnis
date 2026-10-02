@@ -460,6 +460,30 @@ export interface GraphService {
   }): Promise<MergeResult>;
 }
 
+/** One item a source delivered, as the host passes it to a module's sync
+ * handler (`<module>.__sync__`). The host's `SourceEnvelope` on the wire: the
+ * keys are the host's, unchanged. Every module reads this one type. */
+export interface SourceEnvelope {
+  source_id: string;
+  surface: string;
+  account_id: string;
+  user_id: string;
+  kind: "snapshot" | "live" | "delete" | "ack" | "status" | "error";
+  /** Sent only when the source supplies one. */
+  identity_key?: string;
+  remote_id?: string | null;
+  cursor?: unknown;
+  /** Where the item sits in its scope. */
+  position?: SourcePosition;
+  payload: Record<string, unknown>;
+  timestamp: string;
+}
+
+export interface SourcePosition {
+  scope_id: string;
+  id: number;
+}
+
 export interface PluginContext {
   user_id: string;
   extension_kind: string;

@@ -9,12 +9,11 @@
  * declaration's test, and the module's own tsconfig must never see zod.
  */
 import { describe, expect, it } from "vitest";
-import type { GraphBatchInput } from "@magnis/plugin-sdk";
-import { mockGraph, mountModule } from "@magnis/testkit/module";
+import type { GraphBatchInput, SourceEnvelope } from "@magnis/plugin-sdk";
+import { mockGraph, mountModule, sourceEnvelope } from "@magnis/testkit/module";
 
 import { EmailModule } from "./module/service.ts";
 import { address, message } from "./entities.ts";
-import type { SyncEnvelope } from "./types.ts";
 
 const DECLARED = { "email.message": message, "email.address": address } as const;
 
@@ -34,17 +33,8 @@ function ingestGraph() {
   });
 }
 
-const env = (over: Partial<SyncEnvelope> & { payload?: Record<string, unknown> }): SyncEnvelope => ({
-  source_id: "google",
-  surface: "email",
-  account_id: "acct-1",
-  user_id: "u1",
-  kind: "snapshot",
-  remote_id: "m1",
-  payload: {},
-  timestamp: "2026-03-14T09:00:00Z",
-  ...over,
-});
+const env = (over: Partial<SourceEnvelope>): SourceEnvelope =>
+  sourceEnvelope("email", {}, { source_id: "google", account_id: "acct-1", user_id: "u1", remote_id: "m1", timestamp: "2026-03-14T09:00:00Z", ...over });
 
 /** A provider's message, with every key the module stores. */
 const msgPayload = (over: Record<string, unknown> = {}) => ({

@@ -16,6 +16,7 @@ import {
   linkedRow,
   mockGraph,
   mountModule,
+  sourceEnvelope,
   windowRow,
 } from "@magnis/testkit/module";
 
@@ -246,6 +247,31 @@ describe("builders", () => {
     expect(linkedRow(entity("a", "Acme"), { kind: "authored_by" }).link).toMatchObject({
       from_id: "a",
       kind: "authored_by",
+    });
+  });
+
+  /**
+   * @test-id: tst_testkit_source_envelope_001
+   * @covers: packages/testkit/module.ts::sourceEnvelope
+   * @deterministic: yes
+   * @invariant: a sync handler test builds the one envelope the host sends,
+   * typed by the plugin SDK, never a module's own copy of it.
+   */
+  it("tst_testkit_source_envelope_001 builds the host's sync envelope from a payload", () => {
+    expect(sourceEnvelope("email", { subject: "Hi" })).toEqual({
+      source_id: "fixture",
+      surface: "email",
+      account_id: "account-1",
+      user_id: "user-1",
+      kind: "snapshot",
+      payload: { subject: "Hi" },
+      timestamp: "2026-01-01T00:00:00Z",
+    });
+    expect(sourceEnvelope("telegram", {}, { kind: "delete", remote_id: "tg:1", identity_key: "+1555" })).toMatchObject({
+      surface: "telegram",
+      kind: "delete",
+      remote_id: "tg:1",
+      identity_key: "+1555",
     });
   });
 });

@@ -29,6 +29,7 @@ import type {
   BatchLinkInput,
   PaginatedResponse,
   RpcExecutor,
+  SourceEnvelope,
 } from "@magnis/plugin-sdk";
 import type {
   BatchParams,
@@ -42,7 +43,6 @@ import type {
   ReplyParams,
   SendParams,
   SetTriggerParams,
-  SyncEnvelope,
 } from "../types.ts";
 import {
   addressesOf,
@@ -301,7 +301,7 @@ export class EmailModule {
   // trigger_checks out to the event_bus.
   @syncHandler("email")
   async ingest(params: {
-    envelopes?: SyncEnvelope[];
+    envelopes?: SourceEnvelope[];
     /** The pass the worker is in; absent for a Source effect outside a
      * worker, which states nothing. */
     generation?: string;
@@ -309,7 +309,7 @@ export class EmailModule {
     const envelopes = Array.isArray(params.envelopes) ? params.envelopes : [];
     const dropped: string[] = [];
     const triggers: EmailTriggerCheck[] = [];
-    const messages: SyncEnvelope[] = [];
+    const messages: SourceEnvelope[] = [];
     // What the page states for the plan, as the Source counted the mailbox:
     // the whole of it on the mailbox envelope that opens a pass, one more per
     // new mail (history delivers it live) and one less per removal.
@@ -347,7 +347,7 @@ export class EmailModule {
     // Chunk by TOTAL batch entities (messages + unique addresses) so one
     // apply_batch never exceeds INGEST_CHUNK and the lone PGlite connection is
     // freed between chunks.
-    let chunk: SyncEnvelope[] = [];
+    let chunk: SourceEnvelope[] = [];
     let chunkAddrs = new Set<string>();
     const flush = async (): Promise<void> => {
       if (chunk.length > 0) {
@@ -380,7 +380,7 @@ export class EmailModule {
   }
 
   /// Delete envelope: resolve the email by its source external_id and remove it.
-  private async ingestDelete(env: SyncEnvelope): Promise<boolean> {
+  private async ingestDelete(env: SourceEnvelope): Promise<boolean> {
     if (!env.remote_id) return false;
     // S5: the remote id IS the node's anchor — resolution goes through the
     // one chokepoint.
@@ -393,7 +393,7 @@ export class EmailModule {
   /// One chunk → one apply_batch (messages + folded address entities + links),
   /// then post-apply attachment registration + LIVE trigger.check assembly.
   private async ingestMessageBatch(
-    messages: SyncEnvelope[],
+    messages: SourceEnvelope[],
     triggers: EmailTriggerCheck[],
     countLive: boolean,
   ): Promise<number> {

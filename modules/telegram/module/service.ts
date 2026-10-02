@@ -21,6 +21,7 @@ import type {
   PaginatedResponse,
   RawEntity,
   RpcExecutor,
+  SourceEnvelope,
 } from "@magnis/plugin-sdk";
 import type {
   BackfillParams,
@@ -35,7 +36,6 @@ import type {
   SendParams,
   SetIndexedParams,
   SetTriggerParams,
-  SyncEnvelope,
   TelegramChatListItem,
   TriggerCheck,
 } from "../types.ts";
@@ -134,7 +134,7 @@ interface IngestedChatState {
 /** One message envelope of a page with everything derived from it read once:
  * the ids a payload carries are parsed here, not in each loop that needs them. */
 interface PageMessage {
-  readonly env: SyncEnvelope;
+  readonly env: SourceEnvelope;
   readonly payload: Data;
   readonly remoteId: string;
   readonly chatId: string | null;
@@ -183,7 +183,7 @@ interface PageStatement {
 
 /** One envelope, read once: the ids a payload carries are parsed here so no
  * later step parses them again. */
-function pageMessageOf({ env, payload }: { env: SyncEnvelope; payload: Data }): PageMessage {
+function pageMessageOf({ env, payload }: { env: SourceEnvelope; payload: Data }): PageMessage {
   const senderId = payload.sender_id;
   return {
     env,
@@ -1074,7 +1074,7 @@ export class TelegramModule {
   @syncHandler("telegram")
   async ingest(
     params: {
-      envelopes?: SyncEnvelope[];
+      envelopes?: SourceEnvelope[];
       /** The pass the worker is in (`initial:<row>:<lease>`); absent for a
        * Source effect outside a worker, which states nothing. */
       generation?: string;
@@ -1106,8 +1106,8 @@ export class TelegramModule {
     }
     const dropped: string[] = [];
     const triggers: TriggerCheck[] = [];
-    const chats: { env: SyncEnvelope; payload: Data }[] = [];
-    const messages: { env: SyncEnvelope; payload: Data }[] = [];
+    const chats: { env: SourceEnvelope; payload: Data }[] = [];
+    const messages: { env: SourceEnvelope; payload: Data }[] = [];
 
     for (const env of envelopes) {
       const kind = env.kind;
@@ -1191,7 +1191,7 @@ export class TelegramModule {
   // entities + chat.details records in CHUNKS, freeing the single PGlite connection
   // between batches.
   private async ingestChatBatch(
-    chats: { env: SyncEnvelope; payload: Data }[],
+    chats: { env: SourceEnvelope; payload: Data }[],
     identityKey: string | undefined,
     newestMessageByChat: ReadonlyMap<string, Data>,
     generation: string | null,
@@ -1385,7 +1385,7 @@ export class TelegramModule {
    * tested — without a graph.
    * @tested-by: tst_module_telegram_004, tst_module_telegram_plan_001 */
   private async ingestMessageBatch(
-    messages: readonly { env: SyncEnvelope; payload: Data }[],
+    messages: readonly { env: SourceEnvelope; payload: Data }[],
     triggers: TriggerCheck[],
     identityKey: string | undefined,
     pageChatState: ReadonlyMap<string, IngestedChatState> = new Map(),
@@ -1495,7 +1495,7 @@ export class TelegramModule {
 
   // Delete the entity behind a remote_id (user-scoped). Mirrors native
   // ingest_delete; delete_entity cascades the entity's links.
-  private async ingestDelete(envelope: SyncEnvelope): Promise<void> {
+  private async ingestDelete(envelope: SourceEnvelope): Promise<void> {
     const remoteId = envelope.remote_id;
     if (!remoteId) return;
     // S4: messages and chats resolve by ANCHOR — their remote_id IS the
@@ -1687,10 +1687,10 @@ export class TelegramModule {
     return id;
   }
 
-  // Build a SyncEnvelope for re-ingesting a message produced by a source
+  // Build a SourceEnvelope for re-ingesting a message produced by a source
   // command (send result / backfill batch). user_id is empty here — the graph
   // ops are owner-scoped by the dispatch ModuleContext, not this field.
-  private syntheticEnvelope(remoteId: string, payload: Data, accountId: string | undefined): SyncEnvelope {
+  private syntheticEnvelope(remoteId: string, payload: Data, accountId: string | undefined): SourceEnvelope {
     return {
       source_id: "telegram",
       surface: "telegram",

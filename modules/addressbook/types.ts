@@ -2,21 +2,6 @@
 // to `addressbook.__sync__`, the Google connector payload it carries, and the
 // card record the ingest stores.
 
-/// A sync envelope routed to the addressbook surface by the host bridge.
-/// `payload` is a Google connector `Contact` (sources/google/src/surfaces/
-/// addressbook/contacts.ts): { id, display_name, given_name, family_name,
-/// emails[], phones[], organizations[], photo_url, external_url }.
-export interface SyncEnvelope {
-  source_id?: string;
-  surface?: string;
-  account_id?: string;
-  user_id?: string;
-  kind?: string;
-  remote_id?: string;
-  payload?: Record<string, unknown>;
-  timestamp?: string;
-}
-
 /** One stored card record — exactly what `replicaDict` writes. The payload
  * type below is the connector's INPUT; this is what lands in the graph.
  * `entities.ts` declares exactly this and the build proves the two are one
