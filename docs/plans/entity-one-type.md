@@ -1,7 +1,7 @@
 # One definition per shape: the catalog uses the SDK shapes at API 0.2.0
 
-Status: SPEC_DRAFT  
-Spec lock: unlocked  
+Status: SPEC_LOCKED  
+Spec lock: sha256:603412846ec3fd2933029df163b9218b8d3e68668ba91296c681c959c6ed474a owner:Check how we can optimise stages for more parallel jobs and does the plan cover all changes needed  
 Implementation lock: unlocked  
 Active Delivery: none  
 Unattended decisions: allowed  
@@ -121,4 +121,6 @@ The owner's approvals of 2026-10-02 are recorded in the app SPEC. Both PRs merge
 
 <!-- plan:execution:start -->
 ## Execution log
+
+- lock-spec sha256:603412846ec3fd2933029df163b9218b8d3e68668ba91296c681c959c6ed474a owner:Check how we can optimise stages for more parallel jobs and does the plan cover all changes needed
 <!-- plan:execution:end -->
