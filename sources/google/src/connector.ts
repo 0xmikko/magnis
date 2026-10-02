@@ -12,7 +12,7 @@ import type {
 } from "@magnis/connector-sdk";
 import { credsFromMeta, refreshAccessToken } from "./auth";
 import { fetchEventsPage } from "./surfaces/meetings/calendar";
-import { fetchContactsPage } from "./surfaces/contacts/contacts";
+import { fetchContactsPage } from "./surfaces/addressbook/contacts";
 import { fixtureExecuteResult, fixtureFetchResult, fixturePath } from "./fixture";
 import {
   downloadAttachment,
@@ -70,7 +70,7 @@ export function buildConnectorConfig(
         const r = await fetchEventsPage(token, cursor, fetchFn);
         return { envelopes: r.envelopes, nextCursor: r.nextCursor, hasMore: r.hasMore };
       }
-      case "contacts": {
+      case "addressbook": {
         const r = await fetchContactsPage(token, cursor, fetchFn);
         return { envelopes: r.envelopes, nextCursor: r.nextCursor, hasMore: r.hasMore };
       }

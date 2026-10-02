@@ -24,9 +24,9 @@ import {
 import {
   gpeoplePersonToContact,
   type GpeoplePerson,
-} from "./surfaces/contacts/contacts";
+} from "./surfaces/addressbook/contacts";
 import { calendarRemoteId } from "./surfaces/meetings/schema";
-import { contactRemoteId } from "./surfaces/contacts/schema";
+import { contactRemoteId } from "./surfaces/addressbook/schema";
 
 /** Path of the active fixture file, or undefined for live mode. */
 export function fixturePath(): string | undefined {
@@ -124,7 +124,7 @@ function connectionToEnvelope(raw: unknown): Envelope | null {
     const contact = gpeoplePersonToContact(raw as GpeoplePerson);
     if (contact === null) return null;
     return {
-      surface: "contacts",
+      surface: "addressbook",
       payload: contact as unknown as Record<string, unknown>,
       remote_id: contactRemoteId(contact.id),
       kind: "snapshot",
@@ -151,7 +151,7 @@ export function fixtureFetchResult(surface: string): FetchResult {
         .map(eventToEnvelope)
         .filter((e): e is Envelope => e !== null);
       break;
-    case "contacts":
+    case "addressbook":
       envelopes = fx.connections
         .map(connectionToEnvelope)
         .filter((e): e is Envelope => e !== null);

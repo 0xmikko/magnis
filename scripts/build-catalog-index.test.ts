@@ -227,7 +227,9 @@ describe("tst_pub_catalog_index_001", () => {
       readFileSync(join(first.out, "onboarding.json"), "utf8"),
     ) as Curation;
     // Explicit schema requirements survive even though RPC grants are optional.
-    expect(curation.hard_deps["contacts"]).toContain("email");
+    expect(curation.hard_deps["addressbook"]).toContain("email");
+    // The address book writes the addresses now; contacts only calls email.
+    expect(curation.hard_deps["contacts"] ?? []).not.toContain("email");
     expect(curation.hard_deps["companies"]).toContain("email");
     expect(curation.hard_deps["meetings"]).toContain("email");
     expect(curation.hard_deps["linkedin"]).toContain("contacts");

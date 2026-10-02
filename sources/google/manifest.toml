@@ -2,7 +2,7 @@
 #
 # Ported faithfully from the former Rust `google` connector (itself a
 # port of the in-backend `backend/src/sources/google` source). Feeds three
-# surfaces (email + meetings + contacts) with canonical envelopes the
+# surfaces (email + meetings + addressbook) with canonical envelopes the
 # corresponding modules ingest unchanged — wire parity with the Rust connector
 # is the invariant (the host must not tell the difference).
 #
@@ -21,7 +21,7 @@ version = "1.0.0"
 title = "Google"
 summary = "Sync Gmail and Google Calendar into your personal graph."
 publisher = "ai.magnis"
-surfaces = ["email", "meetings", "contacts"]
+surfaces = ["email", "meetings", "addressbook"]
 
 # OAuth2: the HOST owns the ceremony (state/PKCE-S256/nonce/consent URL) using
 # the scopes below + a fixed redirect `/auth/sources/google/callback`; the
@@ -76,10 +76,10 @@ minted_credential_keys = ["refresh_token"]
 migrates_from = []
 
 [[certification.account_compatibility.surfaces]]
-name = "contacts"
+name = "addressbook"
 cursor_terminal_null = "retain"
 progress = { target = "full_snapshot", continuation = "opaque_cursor", forward_checkpoint = "opaque_cursor", coverage = "snapshot", live_fence = "none" }
-receiver_interface_hash = "sha256:eaf8d476b7dfb12ceb729da8a36bbd52d3ec3fdc684837d06e4a81586a8acdcb"
+receiver_interface_hash = "sha256:13f075f718a28749e542cb8721c8cf7b214f9f8990622e7d3880527922df684f"
 
 [[certification.account_compatibility.surfaces]]
 name = "email"

@@ -7,11 +7,6 @@ import type { ContactListItem } from "../types.ts";
 
 const AVATAR_COLORS = ["orange", "blue", "green", "red", "purple", "pink"];
 
-/// Max contacts.person entities folded into one apply_batch (mirrors email's
-/// INGEST_CHUNK). A whole sync page is sliced into chunks so the lone PGlite
-/// connection is freed between transactions.
-export const INGEST_CHUNK = 200;
-
 // Handles are stored bare: no leading `@`, trimmed. The sync scheduler builds
 // the tracked-handle set from these; the connectors query the platform APIs by
 // bare handle.
@@ -96,35 +91,6 @@ export function buildListItem(
   };
 }
 
-/** The google replica's dictionary (S3, plan §5): the payload's fields as
- * last synced, verbatim — including resource_name + etag (the write-back
- * base). The hashed legacy id stays out (it is the node's anchor). */
-export function replicaDict(p: {
-  resource_name?: string | null;
-  etag?: string | null;
-  display_name?: string | null;
-  given_name?: string | null;
-  family_name?: string | null;
-  emails?: unknown[];
-  phones?: unknown[];
-  organizations?: unknown[];
-  photo_url?: string | null;
-  external_url?: string | null;
-}): Record<string, unknown> {
-  const d: Record<string, unknown> = {};
-  if (p.resource_name) d.resource_name = p.resource_name;
-  if (p.etag) d.etag = p.etag;
-  if (p.display_name) d.display_name = p.display_name;
-  if (p.given_name) d.given_name = p.given_name;
-  if (p.family_name) d.family_name = p.family_name;
-  if (p.emails && p.emails.length > 0) d.emails = p.emails;
-  if (p.phones && p.phones.length > 0) d.phones = p.phones;
-  if (p.organizations && p.organizations.length > 0) d.organizations = p.organizations;
-  if (p.photo_url) d.photo_url = p.photo_url;
-  if (p.external_url) d.external_url = p.external_url;
-  return d;
-}
-
 /** The card's channel badges, composed (S3 §5.1 / S6): an email channel when
  * an address node is linked, a phone channel from the composed phone section,
  * x / linkedin from the hub's tracking entries, and every replica the hub
@@ -139,7 +105,7 @@ export function composeChannels(
   if (hasEmail) channels.add("email");
   if (Array.isArray(curated.phones) && curated.phones.length > 0) channels.add("phone");
   for (const r of replicas) {
-    if (r.schema_id === "contacts.google_contact") channels.add("google");
+    if (r.schema_id === "addressbook.card") channels.add("google");
     else if (r.schema_id.startsWith("telegram.")) channels.add("telegram");
     else if (r.schema_id === "x.profile") channels.add("x");
     else if (r.schema_id === "linkedin.profile") channels.add("linkedin");

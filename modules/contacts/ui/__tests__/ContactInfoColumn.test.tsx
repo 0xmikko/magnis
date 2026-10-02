@@ -88,7 +88,7 @@ describe("tst_fe_contacts_info_005 — composed rows render", () => {
             display_name: "stepan",
             platform: "linkedin",
           }),
-          replica("contacts.google_contact", { birthday: "1981-06-12" }),
+          replica("addressbook.card", { birthday: "1981-06-12" }),
         ]}
       />,
     );
@@ -105,7 +105,7 @@ describe("tst_fe_contacts_info_006 — no duplicate telegram link", () => {
       <ContactInfoColumn
         replicas={[
           TG_STEPAN,
-          replica("contacts.google_contact", {
+          replica("addressbook.card", {
             external_url: "https://t.me/sgershuni",
             display_name: "stepan gershuni",
           }),

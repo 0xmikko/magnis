@@ -1,9 +1,8 @@
 // Contacts plugin — backend module (V8). Decorated class; the
 // read path (list/get) mirrors the legacy Rust ContactsModuleService.
 
-import { reachedEndpoints, removeUnseenSourceReplicas, rpc, searchEntitiesPage, syncComplete, syncHandler, tool, writeTool, type GraphService, type PluginDeps, type PluginUtil, type RawEntity, type RpcExecutor } from "@magnis/plugin-sdk";
+import { reachedEndpoints, rpc, searchEntitiesPage, tool, writeTool, type GraphService, type PluginDeps, type PluginUtil, type RawEntity, type RpcExecutor } from "@magnis/plugin-sdk";
 import type {
-  BatchEntityInput,
   GetParams,
   MergePreview,
   MergeResult,
@@ -28,22 +27,14 @@ import type {
   SocialTracking,
   ToolResult,
   UpdateParams,
-  ContactsSyncEnvelope,
-  GoogleContactPayload,
 } from "../types.ts";
 import {
   buildListItem,
   computeInitials,
-  INGEST_CHUNK,
   composeChannels,
   pickAvatarColor,
-  replicaDict,
 } from "./helpers.ts";
-import {
-  CONTACT,
-  GOOGLE_CONTACT,
-} from "../schema.ts";
-import { addressBatchEntity } from "../../email/schema.ts";
+import { CONTACT } from "../schema.ts";
 
 /**
  * Bulk message records. A contact's replicas sit on one edge per message ever
@@ -286,7 +277,7 @@ export class ContactsModule {
       }
     }
     for (const r of replicas) {
-      const source = r.schema_id === GOOGLE_CONTACT ? "google" : r.schema_id;
+      const source = r.schema_id === "addressbook.card" ? "google" : r.schema_id;
       if (Array.isArray(r.properties.phones)) {
         for (const p of r.properties.phones as { number?: unknown; label?: unknown }[]) {
           pushPhone(p.number, p.label, source);
@@ -659,262 +650,6 @@ export class ContactsModule {
     });
 
     return { content: [{ type: "text", text: JSON.stringify(results, null, 2) }] };
-  }
-
-  // ── sync ingest (@syncHandler) ────────────────────────────────
-  // Invoked by the host PluginModuleController bridge (`contacts.__sync__`) with
-  // a WHOLE page of `contacts` envelopes (Google People API snapshots). Mirrors
-  // the email ingest principle: a page's contacts fold into apply_batch chunks —
-  // one contacts.person entity per contact + its profile/email/phone/
-  // external_link replicas, all in ONE atomic graph.apply_batch per chunk.
-  //
-  // Idempotency: the entity key AND the anchors are the envelope
-  // `remote_id` (`gpeople:{stable_id}`), so re-ingesting the same contact
-  // upserts on that key — no duplicate entity (apply_batch resolves-or-creates
-  // by anchor, like email's message ingest).
-  @syncHandler("contacts")
-  async ingest(params: {
-    envelopes?: ContactsSyncEnvelope[];
-    command?: "bootstrap" | "catch_up" | "backfill";
-    /** The pass the worker is in; absent for a Source effect outside a
-     * worker, which states nothing. */
-    generation?: string;
-  }): Promise<{
-    dropped_remote_ids: string[];
-    trigger_checks: [];
-    plan?: Record<string, { total: number; skipped: number }>;
-  }> {
-    const envelopes = Array.isArray(params.envelopes) ? params.envelopes : [];
-    const dropped: string[] = [];
-    // What the page states for the plan, as the People API counts the list:
-    // the whole of it on the list envelope that opens a pass, and the persons
-    // a page left out as skipped.
-    // @tested-by: tst_module_contacts_plan_001
-    const stated = typeof params.generation === "string" && params.generation !== "";
-    const fullPass = params.command === "bootstrap";
-    const plan = { total: 0, skipped: 0 };
-
-    // Fold by remote_id so two envelopes for the same resourceName collapse to
-    // ONE entity in the batch (last-write-wins on payload). Native parity: an
-    // envelope with no owning user is skipped — the dispatcher couldn't resolve
-    // user_id, so we cannot user-scope the write.
-    const byRemoteId = new Map<string, ContactsSyncEnvelope>();
-    for (const env of envelopes) {
-      if (!env.user_id) continue;
-      if (env.kind === "delete") {
-        if (await this.deleteGoogleReplica(env) && stated && !fullPass) plan.total -= 1;
-        continue;
-      }
-      if (env.kind !== "snapshot" && env.kind !== "live") continue;
-      if (!env.remote_id) continue;
-      if (env.payload?.entity_type === "list") {
-        const total = env.payload.total_people;
-        const skipped = env.payload.skipped;
-        if (typeof total === "number" && stated && fullPass) plan.total += total;
-        if (typeof skipped === "number" && stated && fullPass) plan.skipped += skipped;
-        continue;
-      }
-      byRemoteId.set(env.remote_id, env);
-    }
-
-    let chunk: ContactsSyncEnvelope[] = [];
-    const flush = async (): Promise<void> => {
-      if (chunk.length > 0) {
-        plan.total += await this.ingestContactBatch(chunk, params.generation, fullPass);
-        await Promise.resolve(); // yield so waiting RPCs get the connection
-      }
-      chunk = [];
-    };
-    for (const env of byRemoteId.values()) {
-      if (chunk.length >= INGEST_CHUNK) await flush();
-      chunk.push(env);
-    }
-    await flush();
-
-    if (!stated) return { dropped_remote_ids: dropped, trigger_checks: [] };
-    return { dropped_remote_ids: dropped, trigger_checks: [], plan: { [GOOGLE_CONTACT]: plan } };
-  }
-
-  /** @tested-by: tst_module_google_002 */
-  private async deleteGoogleReplica(env: ContactsSyncEnvelope): Promise<boolean> {
-    if (!env.remote_id) return false;
-    const id = await this.graph.find_by_anchor(env.remote_id);
-    if (!id) return false;
-    const replica = await this.graph.get_entity(id);
-    if (replica?.schema_id !== GOOGLE_CONTACT || replica.properties?.source_id !== env.source_id || replica.properties?.account_id !== env.account_id) return false;
-    await this.graph.delete_entity(id);
-    return true;
-  }
-
-  /** The host calls this only after the complete replacement pass. Never
-   * delete a curated person hub; only this account's Google replicas depart.
-   * @tested-by: tst_module_google_002 */
-  @syncComplete()
-  async onSyncComplete(params: { source_id: string; account_id: string; generation: string }): Promise<{
-    departed: string[];
-    plan: Record<string, { total: number; skipped: number }>;
-  }> {
-    if (!params.source_id || !params.account_id || !params.generation) {
-      throw new Error("contacts sync complete requires source, account and generation");
-    }
-    await removeUnseenSourceReplicas(this.graph, GOOGLE_CONTACT, params.source_id, params.account_id, params.generation);
-    return { departed: [], plan: { [GOOGLE_CONTACT]: { total: 0, skipped: 0 } } };
-  }
-
-  /// One chunk → one apply_batch. Each contact becomes a Google replica
-  /// anchored on its stable resourceName-derived remote_id.
-  private async ingestContactBatch(envelopes: ContactsSyncEnvelope[], generation: string | undefined, fullPass: boolean): Promise<number> {
-    // 1. Fold envelopes into rows: payload + its lowercased addresses.
-    interface Row {
-      remoteId: string;
-      p: GoogleContactPayload;
-      addresses: string[];
-      sourceId: string;
-      accountId: string;
-    }
-    const rows: Row[] = [];
-    for (const env of envelopes) {
-      const remoteId = env.remote_id;
-      if (!remoteId) continue;
-      if (!env.source_id || !env.account_id) throw new Error("contacts ingest requires source and account");
-      const p = (env.payload ?? {}) as GoogleContactPayload;
-      const addresses = [
-        ...new Set(
-          (p.emails ?? [])
-            .map((e) => (typeof e.address === "string" ? e.address.trim().toLowerCase() : ""))
-            .filter((a) => a.length > 0),
-        ),
-      ];
-      rows.push({ remoteId, p, addresses, sourceId: env.source_id, accountId: env.account_id });
-    }
-    if (rows.length === 0) return 0;
-
-    const deltaAnchors = generation && !fullPass ? rows.map((row) => row.remoteId) : [];
-    const known = deltaAnchors.length > 0 ? await this.graph.find_by_anchors(deltaAnchors) : [];
-    const existing = new Set(deltaAnchors.filter((_, index) => known[index]));
-
-    // 2. Address nodes and contact replicas share the sync transaction.
-    // @tested-by: tst_module_contacts_ingest_002
-    const allAddresses = [...new Set(rows.flatMap((r) => r.addresses))];
-    const addressEntities = allAddresses.map((address) => addressBatchEntity(`addr:${address}`, address, null));
-
-    // 3. Replica nodes (plan §5): fields-as-last-synced dictionaries,
-    // anchored by the stable remote_id — ONE batch, and the sync
-    // never writes the hub again.
-    const entities: BatchEntityInput[] = [...addressEntities, ...rows.map(({ remoteId, p, sourceId, accountId }) => {
-      const name = typeof p.display_name === "string" ? p.display_name : "";
-      return {
-        key: remoteId,
-        schema_id: GOOGLE_CONTACT,
-        name,
-        idx: name.toLowerCase() || undefined,
-        anchor: remoteId,
-        properties: { ...replicaDict(p), source_id: sourceId, account_id: accountId, ...(generation ? { sync_pass: generation } : {}) },
-      };
-    })];
-    const batch = await this.graph.apply_batch({ entities, refs: [], links: [] });
-    const addressId = new Map(allAddresses.map((address) => {
-      const id = batch.ids[`addr:${address}`];
-      if (!id) throw new Error(`contacts ingest: address ${address} was not resolved`);
-      return [address, id] as const;
-    }));
-    const created = deltaAnchors.filter((anchor) => !existing.has(anchor) && batch.ids[anchor]).length;
-
-    // 4. Auto-attach (plan §5.2): attach / mint / merge-candidate, on
-    // identity-grade anchors only. Fuzzy name matching is never automatic.
-    for (const row of rows) {
-      const replicaId = batch.ids[row.remoteId];
-      if (!replicaId) continue;
-      const addrIds = row.addresses
-        .map((a) => addressId.get(a))
-        .filter((id): id is string => typeof id === "string");
-      await this.attachReplica(replicaId, row.p, addrIds);
-    }
-    return created;
-  }
-
-  /// The three outcomes, in order (plan §5.2 + the S3 legacy probe):
-  /// already-attached (re-sync) → done; exactly one hub holds identity to a
-  /// shared address → attach; none → probe the legacy fleet by the hashed
-  /// anchor, else mint a hub (name vouch, empty dictionary);
-  /// several → mint a separate hub and record merge-candidate rows —
-  /// ambiguity is a human decision, not a guess.
-  private async attachReplica(
-    replicaId: string,
-    p: GoogleContactPayload,
-    addrIds: string[],
-  ): Promise<void> {
-    // Re-sync short-circuit: the replica already has its hub.
-    const replicaLinks = await this.graph.list_links_for_entity(replicaId, "identity");
-    if (replicaLinks.some((l) => l.kind === "identity" && l.to_id === replicaId)) {
-      return;
-    }
-
-    // Hubs holding identity edges to any shared address. Companies hold
-    // identity edges to addresses too — filter to persons.
-    const candidates = new Set<string>();
-    for (const addrId of addrIds) {
-      const links = await this.graph.list_links_for_entity(addrId, "identity");
-      for (const l of links) {
-        if (l.kind === "identity" && l.to_id === addrId) candidates.add(l.from_id);
-      }
-    }
-    let hubs: string[] = [];
-    if (candidates.size > 0) {
-      const found = await this.graph.get_entities([...candidates]);
-      hubs = found.filter((e) => e.schema_id === CONTACT).map((e) => e.id);
-    }
-
-    let hubId: string | null = null;
-    let mergeCandidates: string[] = [];
-    if (hubs.length === 1) {
-      hubId = hubs[0] ?? null;
-    } else if (hubs.length > 1) {
-      mergeCandidates = hubs;
-    }
-
-    if (hubId === null) {
-      // Mint: the name vouch and an empty dictionary — the card composes
-      // everything else from the replica at read time.
-      const firstAddress = (p.emails ?? []).find(
-        (e) => typeof e.address === "string" && e.address.length > 0,
-      )?.address;
-      const name =
-        (typeof p.display_name === "string" && p.display_name.length > 0
-          ? p.display_name
-          : undefined) ??
-        firstAddress ??
-        "Contact";
-      const hub = await this.graph.create_entity({
-        schema_id: CONTACT,
-        name,
-        idx: name.toLowerCase(),
-      });
-      hubId = hub.id;
-      // Several hubs claimed one address: record the ambiguity for a human.
-      for (const other of mergeCandidates) {
-        await this.graph.add_link({
-          from_id: hubId,
-          to_id: other,
-          kind: "same_as",
-        });
-      }
-    }
-
-    // The edges: hub → replica, hub → each shared address. Idempotent at the
-    // graph layer (re-sync never duplicates an identity edge).
-    await this.graph.add_link({
-      from_id: hubId,
-      to_id: replicaId,
-      kind: "identity",
-    });
-    for (const addrId of addrIds) {
-      await this.graph.add_link({
-        from_id: hubId,
-        to_id: addrId,
-        kind: "identity",
-      });
-    }
   }
 
   // Compare-and-set rename — a contact auto-created from a URL

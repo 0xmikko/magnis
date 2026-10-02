@@ -181,6 +181,11 @@ export interface AddLinkParams {
    * neither endpoint (an invite's display name, an attendee's response). The
    * curated twin of `BatchLinkInput.metadata`. */
   metadata?: Record<string, unknown>;
+  /** The period the edge's fact holds, read back on `LinkSummary`. Both or
+   * neither: the host refuses one without the other. A dated `validFrom`
+   * opens a new period beside an ended edge of the same pair. */
+  validFrom?: string | null;
+  validUntil?: string | null;
   /** S3 (plan §5.2): "candidate" records a merge-candidate row, invisible to
    * canonical readers until promoted. Default: canonical. */
   status?: "canonical" | "candidate";

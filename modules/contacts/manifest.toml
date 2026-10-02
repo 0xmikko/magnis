@@ -2,8 +2,8 @@
 #
 # Owns the `contacts.*` namespace: the person entity and its profile / email /
 # phone / social / telegram-identity / description / memory records — the core
-# people directory. Ingests the `contacts` sync surface, links people to companies
-# (reads companies.company), and creates shared email addresses during sync.
+# people directory. Links people to companies (reads companies.company); the
+# address book cards a person reaches over `identity` show on its card.
 # Sandboxed V8 isolate; bundled with the app and installed
 # automatically at boot.
 
@@ -15,27 +15,11 @@ title = "Contacts"
 summary = "People from every source, merged into one identity."
 # Reverse-domain publisher identity.
 publisher = "ai.magnis"
-requires_schemas = [ "email.address" ]
-
-# Sync surface this module consumes (fed by the matching source connector).
-[surfaces.contacts]
-reconciliation = { mode = "full_snapshot" }
-# The surface's primary-item schema.
-item = "contacts.google_contact"
-# The schemas the surface reports progress on, with the names the Accounts
-# panel prints; the host counts them and reads the plan from page receipts.
-progress = { "contacts.google_contact" = "contacts" }
 
 # Foreign asks beyond the implicit own namespace: writes to `contacts.` records,
 # own:own links, and reads of own schemas need no declaration.
 [permissions]
 read = [ "companies.company" ]
-create = [ "email.address" ]
-# identity joins the hub to its replicas and addresses; same_as (candidate)
-# records a merge-candidate when several hubs claim one address (plan §5.2).
-links = [ "identity", "same_as" ]
+# identity joins the hub to the address its create asks email for.
+links = [ "identity" ]
 call = [ "email.ensure_address", "email.ensure_addresses" ]
-# The legacy-fleet probe (S3, dated removal): an old google-synced hub is
-# found by its hashed anchor so the first post-deploy sync
-# attaches instead of minting a duplicate.
-host = [ "external_id_reads" ]
