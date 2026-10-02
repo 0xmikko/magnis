@@ -93,7 +93,6 @@ export interface RenameIfPlaceholderParams {
 // create UUID — kept out of the agent-facing tool schema.
 export interface CreateParams {
   name: string;
-  email?: string;
   phone?: string;
   company?: string;
   role?: string;
@@ -139,7 +138,6 @@ export interface MergeParams {
 // contacts.batch_create — mirrors the native handler (controller.rs:469).
 export interface BatchCreateContact {
   name: string;
-  email?: string;
   phone?: string;
   company?: string;
   role?: string;
@@ -154,7 +152,6 @@ export interface BatchCreateParams {
 export interface BatchCreateRow {
   id: string | null;
   name: string;
-  email?: string | null;
   status: "created" | "excluded";
 }
 export interface BatchCreateResult {

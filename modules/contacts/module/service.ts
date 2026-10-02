@@ -43,11 +43,14 @@ import { CONTACT } from "../schema.ts";
  */
 const MESSAGE_SCHEMAS = new Set(["email.message", "telegram.message"]);
 
+/** Contacts sits above email: an address reaches a person from the module
+ * that syncs it, never through the hub's create. */
+const NO_EMAIL = "contacts.create takes no email: an address reaches a person from the module that syncs it";
+
 const CONTACT_CREATE_PARAMS = {
   type: "object",
   properties: {
     name: { type: "string" },
-    email: { type: "string" },
     phone: { type: "string" },
     company: { type: "string" },
     role: { type: "string" },
@@ -361,13 +364,11 @@ export class ContactsModule {
   }
 
   // Mirrors the native ContactsModuleController::create_single_contact
-  // graph writes (controller.rs:43-211). The `email.address` entity +
-  // `has_email` link are created via the cross-module RPC hub:
-  // contacts asks the `email` module to ensure the address entity, then
-  // links it — contacts never writes the foreign `email.address` schema
-  // itself. `params` is agent-facing: it omits `client_id` so the
-  // agent never invents an id; the handler still accepts it from the
-  // frontend WS path via CreateParams.
+  // graph writes (controller.rs:43-211): the person and its curated claims.
+  // Contacts sits above email in the dependency graph, so it never asks
+  // email for an address; an `email` argument is refused. `params` is
+  // agent-facing: it omits `client_id` so the agent never invents an id;
+  // the handler still accepts it from the frontend WS path via CreateParams.
   async create(params: CreateParams): Promise<ContactListItem & { fields: Record<string, unknown> }>;
   async create(params: BatchCreateParams): Promise<BatchCreateResult>;
   @rpc("create")
@@ -399,13 +400,14 @@ export class ContactsModule {
   }
 
   private async createSingle(params: CreateParams): Promise<ContactListItem & { fields: Record<string, unknown> }> {
+    if ("email" in params) throw new Error(NO_EMAIL);
     // Idempotency: an existing client_id returns the existing contact,
     // no re-write (native controller.rs:67 find_entity_for_user).
     if (params.client_id) {
       const existing = await this.graph.get_entity(params.client_id);
       if (existing) {
         const item = await this.listItemFor(existing);
-        return { ...item, fields: { name: item.name, email_address_entity_id: null } };
+        return { ...item, fields: { name: item.name } };
       }
     }
 
@@ -415,8 +417,7 @@ export class ContactsModule {
       client_id: params.client_id,
       idx: params.name.toLowerCase(),
     });
-    // S3: the hub dict takes the curated claims. The
-    // email becomes an identity edge to the shared address node below.
+    // S3: the hub dict takes the curated claims.
     const curated: Record<string, unknown> = {};
     if (params.phone) {
       curated.phones = [{ phone: params.phone, type: null, is_primary: true }];
@@ -427,33 +428,11 @@ export class ContactsModule {
       await this.graph.update_properties({ entity_id: entity.id, properties: curated });
     }
 
-    // Hub: ask the email module to ensure the email.address entity, then
-    // join them with an identity edge (S3: has_email retired — an address IS
-    // an identity channel of the person).
-    let email_address_entity_id: string | null = null;
-    if (params.email) {
-      try {
-        const addr = await this.rpc.execute<{ id: string }>("email.ensure_address", {
-          address: params.email,
-        });
-        email_address_entity_id = addr.id;
-        await this.graph.add_link({ from_id: entity.id, to_id: addr.id, kind: "identity" });
-      } catch {
-        // Parity with native controller.rs:167 — warn-and-continue. On the
-        // single-runtime path (no host AppState) the email hub is unavailable;
-        // the contact + its email node still persist, just without the
-        // email.address entity and has_email link.
-        email_address_entity_id = null;
-      }
-    }
-
     const item = await this.listItemFor(entity);
     return {
       ...item,
       fields: {
         name: params.name,
-        email_address_entity_id,
-        ...(params.email ? { email: params.email } : {}),
         ...(params.role ? { role: params.role } : {}),
         ...(params.company ? { company: params.company } : {}),
       },
@@ -464,8 +443,7 @@ export class ContactsModule {
   // ids derive as uuid_v5(batch client_id, "contacts.batch_create:{i}")
   // so a retried batch reuses the same entity ids (idempotent), exactly
   // as the native handler (controller.rs:531). Each row delegates to
-  // create(), inheriting the same dictionary writes AND the email.address +
-  // has_email hub path when a row carries an email.
+  // create(), inheriting the same dictionary writes.
   @rpc("batch_create")
   async batch_create(params: BatchCreateParams): Promise<BatchCreateResult> {
     const contacts = params.contacts;
@@ -476,6 +454,7 @@ export class ContactsModule {
       if (!c.name || c.name.trim().length === 0) {
         throw new Error(`contact[${String(i)}]: missing or empty name`);
       }
+      if ("email" in c) throw new Error(`contact[${String(i)}]: ${NO_EMAIL}`);
     });
 
     const excluded = new Set(params.excluded_indices ?? []);
@@ -494,14 +473,13 @@ export class ContactsModule {
         : undefined;
       const item = await this.createSingle({
         name: c.name,
-        email: c.email,
         phone: c.phone,
         company: c.company,
         role: c.role,
         client_id: rowClientId,
       });
       created += 1;
-      results.push({ id: item.id, name: c.name, email: c.email ?? null, status: "created" });
+      results.push({ id: item.id, name: c.name, status: "created" });
     }
 
     return { results, total: contacts.length, created, excluded: excludedCount };

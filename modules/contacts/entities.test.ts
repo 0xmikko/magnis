@@ -4,7 +4,7 @@
  *
  * Beside entities.ts and outside module/ on purpose.
  */
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { entity as graphEntity, mockGraph, mountModule } from "@magnis/testkit/module";
 
 import { ContactsModule } from "./module/service.ts";
@@ -28,13 +28,9 @@ async function hubClaimsWritten(): Promise<Record<string, unknown>[]> {
     list_links_for_entities: () => Promise.resolve([]),
     get_entities: () => Promise.resolve([]),
   } as never);
-  const mod = mountModule(ContactsModule, {
-    graph,
-    rpc: { execute: vi.fn(() => Promise.resolve({ id: "address-1" })) },
-  }).module;
+  const mod = mountModule(ContactsModule, { graph }).module;
   await mod.create({
     name: "Alice Smith",
-    email: "alice@example.test",
     phone: "+15551234567",
     role: "Founder",
     client_id: CONTACT_ID,

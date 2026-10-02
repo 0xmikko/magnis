@@ -7,6 +7,12 @@
  * @fixtures: fixed contacts and strict graph/RPC/util doubles
  * @legacy-id: tst_contacts_create_persists_dictionary_no_email_entity
  * @legacy-id: tst_contacts_batch_create_idempotent_rows_no_email_entity
+ *
+ * @test-id: tst_module_contacts_write_002
+ * @scenario: scn_contacts_write_001
+ * @covers: modules/contacts/module/service.ts::create,batch_create
+ * @deterministic: yes
+ * @fixtures: strict graph/RPC doubles
  * @legacy-id: tst_contacts_update_renames_entity_and_profile
  * @legacy-id: tst_contacts_merge_moves_the_dictionary_and_deletes_retired
  * @legacy-id: tst_contacts_search_returns_tool_result_sorted_and_limited
@@ -23,7 +29,7 @@ function contact(id: string, name: string, properties: Record<string, unknown> =
 }
 
 describe("tst_module_contacts_write_001 — contact commands", () => {
-  it("creates curated claims and delegates email identity ownership", async () => {
+  it("creates curated claims and nothing beside them", async () => {
     const created = contact(CONTACT_ID, "Alice Smith", {
       phones: [{ phone: "+15551234567", type: null, is_primary: true }],
       role: "Founder",
@@ -36,18 +42,13 @@ describe("tst_module_contacts_write_001 — contact commands", () => {
         return Promise.resolve(created);
       },
       update_properties: () => Promise.resolve(undefined),
-      add_link: () => Promise.resolve(undefined),
-      list_links_for_entities: () =>
-        Promise.resolve([{ id: "identity-1", from_id: CONTACT_ID, to_id: "address-1", kind: "identity" }]),
-      get_entities: () =>
-        Promise.resolve([entity("address-1", "alice@example.test", { schema_id: "email.address" })]),
+      list_links_for_entities: () => Promise.resolve([]),
     });
-    const execute = vi.fn(() => Promise.resolve({ id: "address-1" }));
+    const execute = vi.fn();
     const module = mountModule(ContactsModule, { graph, rpc: { execute } }).module;
 
     const result = await module.create({
       name: "Alice Smith",
-      email: "alice@example.test",
       phone: "+15551234567",
       role: "Founder",
       client_id: CONTACT_ID,
@@ -56,10 +57,9 @@ describe("tst_module_contacts_write_001 — contact commands", () => {
     expect(result).toMatchObject({
       id: CONTACT_ID,
       name: "Alice Smith",
-      email: "alice@example.test",
       phone: "+15551234567",
       role: "Founder",
-      fields: { email_address_entity_id: "address-1" },
+      fields: { name: "Alice Smith", role: "Founder" },
     });
     expect(graph.spies.create_entity).toHaveBeenCalledWith({
       schema_id: CONTACT,
@@ -67,9 +67,7 @@ describe("tst_module_contacts_write_001 — contact commands", () => {
       client_id: CONTACT_ID,
       idx: "alice smith",
     });
-    expect(execute).toHaveBeenCalledWith("email.ensure_address", {
-      address: "alice@example.test",
-    });
+    expect(execute).not.toHaveBeenCalled();
   });
 
   it("derives stable row ids, skips exclusions, and is idempotent on retry", async () => {
@@ -106,8 +104,8 @@ describe("tst_module_contacts_write_001 — contact commands", () => {
 
     expect(first).toEqual({
       results: [
-        { id: rows[0], name: "Ann", email: null, status: "created" },
-        { id: rows[1], name: "Bob", email: null, status: "created" },
+        { id: rows[0], name: "Ann", status: "created" },
+        { id: rows[1], name: "Bob", status: "created" },
         { id: null, name: "Excluded", status: "excluded" },
       ],
       total: 3,
@@ -230,5 +228,24 @@ describe("tst_module_contacts_write_001 — contact commands", () => {
       { id: "z", name: "Ann", schema_id: CONTACT, schema_version: 1 },
       { id: "b", name: "Bob", schema_id: CONTACT, schema_version: 1 },
     ]);
+  });
+});
+
+describe("tst_module_contacts_write_002 — the hub takes no email", () => {
+  it("tst_module_contacts_write_002 refuses an email on create and on a batch row, and calls nothing", async () => {
+    const graph = mockGraph();
+    const execute = vi.fn();
+    const module = mountModule(ContactsModule, { graph, rpc: { execute } }).module;
+
+    // @tested-by: tst_module_contacts_write_002
+    // @invariant: contacts sits above email, so creating a person never asks
+    // email for an address; an email argument is refused, never dropped.
+    await expect(
+      module.create({ name: "Alice Smith", email: "alice@example.test" } as never),
+    ).rejects.toThrow("contacts.create takes no email");
+    await expect(
+      module.batch_create({ contacts: [{ name: "Ann" }, { name: "Bob", email: "bob@example.test" } as never] }),
+    ).rejects.toThrow("contact[1]: contacts.create takes no email");
+    expect(execute).not.toHaveBeenCalled();
   });
 });

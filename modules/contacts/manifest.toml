@@ -20,6 +20,4 @@ publisher = "ai.magnis"
 # own:own links, and reads of own schemas need no declaration.
 [permissions]
 read = [ "companies.company" ]
-# identity joins the hub to the address its create asks email for.
 links = [ "identity" ]
-call = [ "email.ensure_address", "email.ensure_addresses" ]
