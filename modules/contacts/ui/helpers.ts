@@ -29,7 +29,6 @@ export function mapContact(c: ContactListItem): ContactProfile {
         ? "email"
         : "file",
     color: toAvatarColor(c.avatar_color),
-    isTeamMember: c.is_team_member ?? false,
   };
 }
 

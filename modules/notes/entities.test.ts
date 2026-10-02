@@ -17,14 +17,14 @@ const NOTE_ID = "11111111-1111-4111-8111-111111111111";
 async function writtenProperties(): Promise<Record<string, unknown>[]> {
   const written: Record<string, unknown>[] = [];
   const graph = mockGraph({
-    create_entity: () => Promise.resolve(graphEntity(NOTE_ID, "T", { schema_id: NOTE })),
+    create_entity: () => Promise.resolve(graphEntity(NOTE_ID, "T", { schemaId: NOTE })),
     update_properties: (input: { properties: Record<string, unknown> }) => {
       written.push(input.properties);
       return Promise.resolve(undefined);
     },
     delete_entity: () => Promise.resolve(undefined),
   } as never);
-  const mod = mountModule(NotesModule, { graph, ctx: { extension_id: "notes" } }).module;
+  const mod = mountModule(NotesModule, { graph, ctx: { extensionId: "notes" } }).module;
   await mod.create({ title: "Q3 plan", body: "ship the declaration" });
   return written;
 }
@@ -38,10 +38,10 @@ describe("notes declares what it writes", () => {
    * @fixtures: actual harvested tool schema
    */
   it("tst_module_notes_forms_001 accepts exactly one markdown body through the published schema", async () => {
-    const { tools } = await mountModule(NotesModule, { mode: "dispatch", ctx: { extension_id: "notes" } });
+    const { tools } = await mountModule(NotesModule, { mode: "dispatch", ctx: { extensionId: "notes" } });
     const definition = tools.find(({ name }) => name === "notes.note.create");
     if (definition === undefined) throw new Error("note create definition missing");
-    const schema = z.fromJSONSchema(definition.inputSchema);
+    const schema = z.fromJSONSchema(definition.inputSchema as Parameters<typeof z.fromJSONSchema>[0]);
     for (const params of [{ title: "Live", body: "Text" }, { title: "Live", content: "Text" }, { title: "Live", template: "meeting_prep" }]) {
       expect(schema.safeParse(params).success).toBe(true);
     }

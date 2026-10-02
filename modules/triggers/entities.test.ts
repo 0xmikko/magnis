@@ -3,6 +3,7 @@
  *
  * Beside entities.ts and outside module/ on purpose.
  */
+import type { PropertiesUpdate } from "@magnis/sdk";
 import { describe, expect, it, vi } from "vitest";
 import { entity as graphEntity, mockGraph, mountModule } from "@magnis/testkit/module";
 
@@ -15,9 +16,9 @@ const TRIGGER_ID = "33333333-3333-4333-8333-333333333333";
 async function writtenProperties(): Promise<Record<string, unknown>[]> {
   const written: Record<string, unknown>[] = [];
   const graph = mockGraph({
-    create_entity: () => Promise.resolve(graphEntity(TRIGGER_ID, "watch replies", { schema_id: TRIGGER })),
-    update_properties: (input: { properties: Record<string, unknown> }) => {
-      written.push(input.properties);
+    create_entity: () => Promise.resolve(graphEntity(TRIGGER_ID, "watch replies", { schemaId: TRIGGER })),
+    update_properties: (input: PropertiesUpdate) => {
+      written.push(input.properties as Record<string, unknown>);
       return Promise.resolve(undefined);
     },
     add_link: () => Promise.resolve(undefined),
@@ -26,7 +27,7 @@ async function writtenProperties(): Promise<Record<string, unknown>[]> {
   const { module } = mountModule(TriggersModule, {
     graph,
     rpc: { execute: vi.fn(() => Promise.resolve(null)) },
-    ctx: { extension_id: "triggers" },
+    ctx: { extensionId: "triggers" },
   });
   await module.create({
     name: "watch replies",

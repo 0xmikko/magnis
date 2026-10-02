@@ -1,7 +1,7 @@
 // Shared DTOs for the contacts plugin — wire shapes the host frontend
-// consumes. Mirrors the legacy Rust contacts ContactListItem /
-// ContactDetailView 1:1.
-
+// consumes, declared once for module/ and ui/. The SDK shapes inside them
+// (the linked summaries) are the SDK's.
+import type { LinkedEntitySummary } from "@magnis/sdk";
 
 export interface ContactListItem {
   id: string;
@@ -17,15 +17,6 @@ export interface ContactListItem {
   relevance_tier?: string | null;
   created_at: string;
   is_pinned?: boolean | null;
-}
-
-export interface LinkedEntitySummary {
-  id: string;
-  name: string | null;
-  schema_id: string;
-  link_kind: string;
-  created_at: string;
-  data: unknown;
 }
 
 export interface ContactDetailView {
@@ -106,34 +97,15 @@ export interface UpdateParams {
   name?: string;
 }
 
-// contacts.search — agent tool returning an MCP ToolResult of
-// SearchResultItem[] (shared::search_entities, shared.rs:447).
+// contacts.search — agent tool returning an MCP ToolResult of the SDK
+// EntitySearchHit[].
 export interface SearchParams {
   query?: string;
   context?: string;
   limit?: number;
 }
-export interface SearchResultItem {
-  id: string;
-  name: string | null;
-  schema_id: string;
-  schema_version: number;
-}
 export interface ToolResult {
   content: { type: "text"; text: string }[];
-}
-
-// contacts.merge / merge_preview — mirror the native handlers
-// (controller.rs:631,656).
-export interface MergePreviewParams {
-  survivor_id: string;
-  retired_id: string;
-}
-export interface MergeParams {
-  survivor_id: string;
-  retired_id: string;
-  overrides?: { key: string; value: unknown }[];
-  reason?: string;
 }
 
 // contacts.batch_create — mirrors the native handler (controller.rs:469).
@@ -185,25 +157,6 @@ export interface ContactsListParams {
   include_all?: boolean;
 }
 
-// ── sync-ingest envelope shapes (@syncHandler "contacts") ──────────
-// Internal to the ingest path; the host bridge routes Google People-API
-// snapshots to `contacts.__sync__` as these envelopes.
-
-/// A sync envelope routed to the contacts surface by the host bridge.
-/// `payload` is a Google connector `Contact` (sources/google/src/
-/// surfaces.rs): { id, display_name, given_name, family_name, emails[],
-/// phones[], organizations[], photo_url, external_url }.
-export interface ContactsSyncEnvelope {
-  source_id?: string;
-  surface?: string;
-  account_id?: string;
-  user_id?: string;
-  kind?: string;
-  remote_id?: string;
-  payload?: Record<string, unknown>;
-  timestamp?: string;
-}
-
 /** One stored hub record — the curated claims the module writes onto a person,
  * plus the name parts its merge path reads back out of the dictionary.
  * `entities.ts` declares exactly this and the build proves the two are one
@@ -247,6 +200,8 @@ export interface GoogleContactPhone {
   label?: string | null;
   is_primary?: boolean;
 }
+/** A contacts sync envelope's payload: a Google connector `Contact`
+ * (sources/google/src/surfaces.rs). */
 export interface GoogleContactPayload {
   id?: string;
   /** S3: verbatim People API identity — the replica's write-back base. */

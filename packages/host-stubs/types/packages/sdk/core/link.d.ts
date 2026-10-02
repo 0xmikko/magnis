@@ -1,35 +1,55 @@
 import { z } from "zod";
 import { type Id } from "./id.js";
-import { type JsonValue } from "./json.js";
-import type { EntityId, UserId } from "./entity.js";
-import { type AgentStatement, type DateTimeUtc } from "./statement.js";
 export type LinkId = Id;
 export type LinkType = string;
-interface LinkBase {
-    id: LinkId;
-    owner: UserId;
-    from: EntityId;
-    to: EntityId;
-    kind: string;
-    /** When we learned it. */
-    createdAt: DateTimeUtc;
-}
+export declare const LinkUnlinkRequestSchema: z.ZodObject<{
+    id: z.ZodGUID;
+}, z.core.$strip>;
+export declare const linkBaseSchema: z.ZodObject<{
+    id: z.ZodString;
+    owner: z.ZodString;
+    from: z.ZodString;
+    to: z.ZodString;
+    kind: z.ZodString;
+    createdAt: z.ZodISODateTime;
+}, z.core.$strict>;
+export type LinkBase = z.output<typeof linkBaseSchema>;
 /** A link a connector or a rule wrote. Its provenance is the connector's
  *  stamp — the kind's own keys; provenance is the from entity's source — which
  *  every one of the 4907 links already carries. */
-export interface CanonicalLink extends LinkBase {
-    origin: "canonical";
-    /** The kind's own properties, validated at write against the kind's
-     *  declaration — as Entity.properties is against the entity's. */
-    metadata: JsonValue;
-}
+export declare const canonicalLinkSchema: z.ZodObject<{
+    origin: z.ZodLiteral<"canonical">;
+    metadata: z.ZodType<import("./json.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("./json.js").JsonValue, unknown>>;
+    validFrom: z.ZodNullable<z.ZodISODateTime>;
+    validUntil: z.ZodNullable<z.ZodISODateTime>;
+    id: z.ZodString;
+    owner: z.ZodString;
+    from: z.ZodString;
+    to: z.ZodString;
+    kind: z.ZodString;
+    createdAt: z.ZodISODateTime;
+}, z.core.$strict>;
+export type CanonicalLink = z.output<typeof canonicalLinkSchema>;
 /** A link a model wrote. */
-export interface AgentLink extends LinkBase, AgentStatement {
-}
-export type Link = CanonicalLink | AgentLink;
+export declare const agentLinkSchema: z.ZodObject<{
+    origin: z.ZodLiteral<"agent">;
+    confidence: z.ZodNumber;
+    evidence: z.ZodTuple<[z.ZodString], z.ZodString>;
+    validFrom: z.ZodNullable<z.ZodISODateTime>;
+    validUntil: z.ZodNullable<z.ZodISODateTime>;
+    id: z.ZodString;
+    owner: z.ZodString;
+    from: z.ZodString;
+    to: z.ZodString;
+    kind: z.ZodString;
+    createdAt: z.ZodISODateTime;
+}, z.core.$strict>;
+export type AgentLink = z.output<typeof agentLinkSchema>;
 export declare const linkSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     origin: z.ZodLiteral<"canonical">;
-    metadata: z.ZodType<JsonValue, unknown, z.core.$ZodTypeInternals<JsonValue, unknown>>;
+    metadata: z.ZodType<import("./json.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("./json.js").JsonValue, unknown>>;
+    validFrom: z.ZodNullable<z.ZodISODateTime>;
+    validUntil: z.ZodNullable<z.ZodISODateTime>;
     id: z.ZodString;
     owner: z.ZodString;
     from: z.ZodString;
@@ -49,9 +69,12 @@ export declare const linkSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     kind: z.ZodString;
     createdAt: z.ZodISODateTime;
 }, z.core.$strict>], "origin">;
+export type Link = z.output<typeof linkSchema>;
 export declare const LinkSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     origin: z.ZodLiteral<"canonical">;
-    metadata: z.ZodType<JsonValue, unknown, z.core.$ZodTypeInternals<JsonValue, unknown>>;
+    metadata: z.ZodType<import("./json.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("./json.js").JsonValue, unknown>>;
+    validFrom: z.ZodNullable<z.ZodISODateTime>;
+    validUntil: z.ZodNullable<z.ZodISODateTime>;
     id: z.ZodString;
     owner: z.ZodString;
     from: z.ZodString;
@@ -88,5 +111,4 @@ export declare const LinkAddResultSchema: z.ZodObject<{
     created: z.ZodBoolean;
 }, z.core.$strip>;
 export type LinkAddResult = z.output<typeof LinkAddResultSchema>;
-export {};
 //# sourceMappingURL=link.d.ts.map

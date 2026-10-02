@@ -42,7 +42,7 @@ Example fields below are the real `companies` / `contacts` manifests.
 ```toml
 id = "companies"                 # plugin id == RPC prefix == route key == namespace
 version = "0.1.0"
-magnis_api_version = "0.1.0"     # host SDK contract this manifest targets
+magnis_api_version = "0.2.0"     # plugin API this manifest targets; the host accepts exactly 0.2.0
 title = "Companies"              # catalog card
 summary = "Track companies you interact with across email, meetings, and notes."
 publisher = "ai.magnis"          # reverse-domain publisher identity

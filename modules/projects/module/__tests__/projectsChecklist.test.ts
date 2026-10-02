@@ -18,6 +18,7 @@
  * @legacy-id: tst_int_plan_050_checklist_get_rejects_non_project_entity
  * @legacy-id: tst_int_plan_051_checklist_update_rejects_non_project_entity
  */
+import type { JsonObject, PropertiesUpdate } from "@magnis/sdk";
 import { describe, expect, it } from "vitest";
 import { entity, mockGraph, mountModule } from "@magnis/testkit/module";
 import { PROJECT } from "../../schema.ts";
@@ -30,19 +31,19 @@ const ITEMS: ChecklistItem[] = [
   { id: "follow-up", text: "Send metrics", status: "blocked", notes: "Await export" },
 ];
 
-function project(properties: Record<string, unknown> = {}) {
-  return entity(PROJECT_ID, "Raise", { schema_id: PROJECT, properties });
+function project(properties: JsonObject = {}) {
+  return entity(PROJECT_ID, "Raise", { schemaId: PROJECT, properties });
 }
 
 describe("tst_module_projects_checklist_001 — checklist lifecycle", () => {
   it("reads empty state and replaces the complete checklist dictionary key", async () => {
-    const writes: Record<string, unknown>[] = [];
+    const writes: PropertiesUpdate["properties"][] = [];
     let current = project({ status: "active" });
     const graph = mockGraph({
       get_entity: () => Promise.resolve(current),
-      update_properties: (params: { properties: Record<string, unknown> }) => {
+      update_properties: (params: PropertiesUpdate) => {
         writes.push(params.properties);
-        current = project(params.properties);
+        current = project(params.properties as JsonObject);
         return Promise.resolve(undefined);
       },
     });
@@ -71,7 +72,7 @@ describe("tst_module_projects_checklist_001 — checklist lifecycle", () => {
 
     const wrongGraph = mockGraph({
       get_entity: () =>
-        Promise.resolve(entity(PROJECT_ID, "Not a project", { schema_id: "notes.note" })),
+        Promise.resolve(entity(PROJECT_ID, "Not a project", { schemaId: "notes.note" })),
     });
     const wrong = mountModule(ProjectsModule, { graph: wrongGraph }).module;
     await expect(wrong.checklistUpdate({ project_id: PROJECT_ID, items: [] })).rejects.toThrow(
@@ -82,13 +83,13 @@ describe("tst_module_projects_checklist_001 — checklist lifecycle", () => {
   it("declares read/write tools with approval only on update", async () => {
     const { tools } = await mountModule(ProjectsModule, {
       mode: "dispatch",
-      ctx: { extension_id: "projects" },
+      ctx: { extensionId: "projects" },
     });
     const get = tools.find((tool) => tool.binding?.entity === "projects.project.checklist" && tool.binding.operation === "get");
     const update = tools.find((tool) => tool.binding?.entity === "projects.project.checklist" && tool.binding.operation === "update");
 
-    expect(get).toMatchObject({ requires_approval: false });
-    expect(update).toMatchObject({ requires_approval: true });
+    expect(get).toMatchObject({ requiresApproval: false });
+    expect(update).toMatchObject({ requiresApproval: true });
     expect(update?.inputSchema).toMatchObject({ required: ["project_id", "items"] });
   });
 });

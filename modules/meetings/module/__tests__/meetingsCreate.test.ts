@@ -18,8 +18,8 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
-import type { RawEntity } from "@magnis/plugin-sdk";
-import { mockGraph, mountModule, type GraphOverrides, type MockGraph } from "@magnis/testkit/module";
+import type { CreateEntityParams, Entity, PropertiesUpdate } from "@magnis/sdk";
+import { entity, mockGraph, mountModule, type GraphOverrides, type MockGraph } from "@magnis/testkit/module";
 import { MeetingsModule } from "../service.ts";
 import type { MeetingsCanonical } from "../../types.ts";
 
@@ -28,8 +28,8 @@ type G = MockGraph;
 
 function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
   return mockGraph({
-    create_entity: (p: { client_id?: string; name: string }) =>
-      Promise.resolve({ id: p.client_id ?? "new-id", schema_id: CAL, name: p.name }),
+    create_entity: (p: CreateEntityParams) =>
+      Promise.resolve(entity(p.clientId ?? "new-id", p.name, { schemaId: CAL })),
     update_properties: () => Promise.resolve(undefined),
     add_link: () => Promise.resolve(undefined),
     get_entity: () => Promise.resolve(null),
@@ -45,7 +45,7 @@ function makeModule(
 ): MeetingsModule {
   return mountModule(MeetingsModule, {
     graph,
-    ctx: { extension_id: "meetings" },
+    ctx: { extensionId: "meetings" },
     rpc: { execute },
   }).module;
 }
@@ -86,11 +86,8 @@ describe("meetings.create — validation (rejected input writes nothing)", () =>
 
 describe("meetings.create — happy path (returns the full meeting snapshot)", () => {
   it("creates the entity, writes its dictionary + attendee edges, returns the snapshot", async () => {
-    const create_entity = vi.fn(async (p: { name: string }) => ({
-      id: "m-new",
-      schema_id: CAL,
-      name: p.name,
-    } as RawEntity));
+    const create_entity = vi.fn(async (p: CreateEntityParams): Promise<Entity> =>
+      entity("m-new", p.name, { schemaId: CAL }));
     const update_properties = vi.fn().mockResolvedValue(undefined);
     const add_link = vi.fn().mockResolvedValue(undefined);
     const mod = makeModule(makeGraph({ create_entity, update_properties, add_link }));
@@ -103,14 +100,13 @@ describe("meetings.create — happy path (returns the full meeting snapshot)", (
     });
 
     expect(create_entity).toHaveBeenCalledTimes(1);
-    expect(create_entity.mock.calls[0]![0]).toMatchObject({ schema_id: CAL, name: "Sync" });
+    expect(create_entity.mock.calls[0]![0]).toMatchObject({ schemaId: CAL, name: "Sync" });
     // The dictionary is the record — and the attendees are NOT in it.
     expect(update_properties).toHaveBeenCalledTimes(1);
-    const dictCall = update_properties.mock.calls[0]![0] as {
-      entity_id: string;
+    const dictCall = update_properties.mock.calls[0]![0] as PropertiesUpdate & {
       properties: Record<string, unknown>;
     };
-    expect(dictCall.entity_id).toBe("m-new");
+    expect(dictCall.entityId).toBe("m-new");
     expect(dictCall.properties).toMatchObject({
       title: "Sync",
       starts_at: GOOD.starts_at,
@@ -121,8 +117,8 @@ describe("meetings.create — happy path (returns the full meeting snapshot)", (
     expect("attendees" in dictCall.properties).toBe(false);
     // …they are edges to the shared address node, name on the edge.
     expect(add_link).toHaveBeenCalledWith({
-      from_id: "m-new",
-      to_id: "addr-a@x",
+      from: "m-new",
+      to: "addr-a@x",
       kind: "attendee",
       metadata: { display_name: "Alice" },
     });
@@ -150,7 +146,7 @@ describe("meetings.create — happy path (returns the full meeting snapshot)", (
 
 describe("meetings.create — idempotency", () => {
   it("returns the existing entity for a repeat client_id without re-creating", async () => {
-    const existing: RawEntity = { id: "cid-1", schema_id: CAL, name: "Sync" } as RawEntity;
+    const existing = entity("cid-1", "Sync", { schemaId: CAL });
     const get_entity = vi.fn().mockResolvedValue(existing);
     const create_entity = vi.fn();
     const update_properties = vi.fn();

@@ -43,10 +43,10 @@ graph TD
 Four concepts. Learn these and the rest follows.
 
 - **Entity** — a generic base object: a person, company, project, meeting,
-  message. It carries an id, a type, an **anchor** (its identity — an issuer key
-  like `tg:user:501`, else `local:<id>`), a host-stamped **source** saying who
-  observed it, and a **dictionary**: a flat JSON map of what the owning module
-  knows about it.
+  message. It carries an id, a type, a host-stamped **source** saying who
+  observed it, whose **externalId** is its identity (an issuer key like
+  `tg:user:501`, else `local:<id>`), and a **dictionary**: a flat JSON map of
+  what the owning module knows about it.
 - **One node, one writer.** Two sources never contend for one dictionary —
   each owns its node, and a hub reaches them over `identity`. The sync lane
   (`apply_batch`) REPLACES a dictionary so a re-sync cannot leave it
@@ -62,8 +62,8 @@ Four concepts. Learn these and the rest follows.
 
 ```mermaid
 graph LR
-    P(["Person entity<br/>anchor tg:user:501<br/>dictionary { name: 'Sam' }"])
-    A(["Telegram account<br/>anchor tg:account:501"])
+    P(["Person entity<br/>externalId tg:user:501<br/>dictionary { name: 'Sam' }"])
+    A(["Telegram account<br/>externalId tg:account:501"])
     Co(["Company entity"])
     P -->|identity| A
     P -->|works_at| Co

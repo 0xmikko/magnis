@@ -21,7 +21,7 @@ import { CompaniesModule } from "../service.ts";
 const COMPANY_DESCRIPTION = "companies.description";
 
 function writeGraph() {
-  const company = entity("company-1", "Acme Labs", { schema_id: COMPANY });
+  const company = entity("company-1", "Acme Labs", { schemaId: COMPANY });
   return {
     company,
     graph: mockGraph({
@@ -59,7 +59,7 @@ describe("companies.update emails — the cross-module identity path", () => {
     });
     const module = mountModule(CompaniesModule, {
       graph,
-      ctx: { extension_id: "companies" },
+      ctx: { extensionId: "companies" },
       rpc: { execute },
     }).module;
 
@@ -74,8 +74,8 @@ describe("companies.update emails — the cross-module identity path", () => {
     const addLink = graph.spies.add_link;
     if (!addLink) throw new Error("add_link spy not mounted");
     expect(addLink.mock.calls.map(([p]) => p)).toEqual([
-      { from_id: company.id, to_id: "addr-1", kind: "identity" },
-      { from_id: company.id, to_id: "addr-2", kind: "identity" },
+      { from: company.id, to: "addr-1", kind: "identity" },
+      { from: company.id, to: "addr-2", kind: "identity" },
     ]);
   });
 
@@ -84,7 +84,7 @@ describe("companies.update emails — the cross-module identity path", () => {
     const execute = vi.fn(() => Promise.reject(new Error("email module down")));
     const module = mountModule(CompaniesModule, {
       graph,
-      ctx: { extension_id: "companies" },
+      ctx: { extensionId: "companies" },
       rpc: { execute },
     }).module;
 
@@ -100,7 +100,7 @@ describe("companies description write contract", () => {
     const { company, graph } = writeGraph();
     const module = mountModule(CompaniesModule, {
       graph,
-      ctx: { extension_id: "companies" },
+      ctx: { extensionId: "companies" },
     }).module;
 
     await module.update({
@@ -116,7 +116,7 @@ describe("companies description write contract", () => {
     }
     expect(updateProperties).toHaveBeenCalledTimes(1);
     expect(updateProperties).toHaveBeenCalledWith({
-      entity_id: company.id,
+      entityId: company.id,
       properties: { description: "Updated company description" },
     });
     expect(graph.spies.attach_facet).toBeUndefined();
@@ -138,11 +138,11 @@ describe("companies description write contract", () => {
     const { company, graph } = writeGraph();
     const module = mountModule(CompaniesModule, {
       graph,
-      ctx: { extension_id: "companies" },
+      ctx: { extensionId: "companies" },
     }).module;
 
     await module.create({
-      name: company.name,
+      name: "Acme Labs",
       summary: "Initial company description",
     });
 
@@ -151,8 +151,8 @@ describe("companies description write contract", () => {
       throw new Error("companies create: missing update_properties spy");
     }
     expect(updateProperties).toHaveBeenCalledWith({
-      entity_id: company.id,
-      properties: { name: company.name, description: "Initial company description" },
+      entityId: company.id,
+      properties: { name: "Acme Labs", description: "Initial company description" },
     });
     expect(graph.spies.attach_facet).toBeUndefined();
   });

@@ -4,8 +4,21 @@ import { type JsonValue } from "./json.js";
 import { type AgentStatement, type DateTimeUtc, type SourceRef } from "./statement.js";
 export type EntityId = Id;
 export type UserId = Id;
+/** A Source as the catalog names it: "telegram", "google". */
+export type SourceId = string;
+/** One account of a user on one Source, as the Source binding names it. */
+export type AccountId = string;
 export type SchemaId = string;
 export type SchemaVersion = number;
+export declare const EntityUpdateStateRequestSchema: z.ZodUnion<readonly [z.ZodObject<{
+    entity_id: z.ZodGUID;
+    pin_order: z.ZodNonOptional<z.ZodOptional<z.ZodNullable<z.ZodInt>>>;
+    archived: z.ZodOptional<z.ZodBoolean>;
+}, z.core.$strict>, z.ZodObject<{
+    entity_id: z.ZodGUID;
+    pin_order: z.ZodOptional<z.ZodNullable<z.ZodInt>>;
+    archived: z.ZodNonOptional<z.ZodOptional<z.ZodBoolean>>;
+}, z.core.$strict>]>;
 interface EntityBase<P extends JsonValue = JsonValue> {
     id: EntityId;
     owner: UserId;
@@ -120,6 +133,159 @@ export declare const EntitySchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     isArchived: z.ZodNullable<z.ZodBoolean>;
     properties: z.ZodType<JsonValue, unknown, z.core.$ZodTypeInternals<JsonValue, unknown>>;
 }, z.core.$strict>], "origin">;
+/** An entity with the links a plugin read asked for. */
+export declare const EntityWithLinksSchema: z.ZodObject<{
+    entity: z.ZodDiscriminatedUnion<[z.ZodObject<{
+        origin: z.ZodLiteral<"canonical">;
+        source: z.ZodObject<{
+            source: z.ZodString;
+            account: z.ZodString;
+            externalId: z.ZodString;
+        }, z.core.$strict>;
+        id: z.ZodString;
+        owner: z.ZodString;
+        schemaId: z.ZodString;
+        schemaVersion: z.ZodInt;
+        createdAt: z.ZodISODateTime;
+        name: z.ZodNullable<z.ZodString>;
+        indexed: z.ZodBoolean;
+        date: z.ZodISODateTime;
+        idx: z.ZodNullable<z.ZodString>;
+        isPinned: z.ZodNullable<z.ZodBoolean>;
+        pinOrder: z.ZodNullable<z.ZodNumber>;
+        isArchived: z.ZodNullable<z.ZodBoolean>;
+        properties: z.ZodType<JsonValue, unknown, z.core.$ZodTypeInternals<JsonValue, unknown>>;
+    }, z.core.$strict>, z.ZodObject<{
+        keys: z.ZodArray<z.ZodString>;
+        origin: z.ZodLiteral<"agent">;
+        confidence: z.ZodNumber;
+        evidence: z.ZodTuple<[z.ZodString], z.ZodString>;
+        validFrom: z.ZodNullable<z.ZodISODateTime>;
+        validUntil: z.ZodNullable<z.ZodISODateTime>;
+        id: z.ZodString;
+        owner: z.ZodString;
+        schemaId: z.ZodString;
+        schemaVersion: z.ZodInt;
+        createdAt: z.ZodISODateTime;
+        name: z.ZodNullable<z.ZodString>;
+        indexed: z.ZodBoolean;
+        date: z.ZodISODateTime;
+        idx: z.ZodNullable<z.ZodString>;
+        isPinned: z.ZodNullable<z.ZodBoolean>;
+        pinOrder: z.ZodNullable<z.ZodNumber>;
+        isArchived: z.ZodNullable<z.ZodBoolean>;
+        properties: z.ZodType<JsonValue, unknown, z.core.$ZodTypeInternals<JsonValue, unknown>>;
+    }, z.core.$strict>], "origin">;
+    links: z.ZodReadonly<z.ZodArray<z.ZodDiscriminatedUnion<[z.ZodObject<{
+        origin: z.ZodLiteral<"canonical">;
+        metadata: z.ZodType<JsonValue, unknown, z.core.$ZodTypeInternals<JsonValue, unknown>>;
+        validFrom: z.ZodNullable<z.ZodISODateTime>;
+        validUntil: z.ZodNullable<z.ZodISODateTime>;
+        id: z.ZodString;
+        owner: z.ZodString;
+        from: z.ZodString;
+        to: z.ZodString;
+        kind: z.ZodString;
+        createdAt: z.ZodISODateTime;
+    }, z.core.$strict>, z.ZodObject<{
+        origin: z.ZodLiteral<"agent">;
+        confidence: z.ZodNumber;
+        evidence: z.ZodTuple<[z.ZodString], z.ZodString>;
+        validFrom: z.ZodNullable<z.ZodISODateTime>;
+        validUntil: z.ZodNullable<z.ZodISODateTime>;
+        id: z.ZodString;
+        owner: z.ZodString;
+        from: z.ZodString;
+        to: z.ZodString;
+        kind: z.ZodString;
+        createdAt: z.ZodISODateTime;
+    }, z.core.$strict>], "origin">>>;
+}, z.core.$strict>;
+export type EntityWithLinks = z.output<typeof EntityWithLinksSchema>;
+/** One row of a plugin's linked window: the entity and the link that reached it. */
+export declare const LinkedEntitySchema: z.ZodObject<{
+    entity: z.ZodDiscriminatedUnion<[z.ZodObject<{
+        origin: z.ZodLiteral<"canonical">;
+        source: z.ZodObject<{
+            source: z.ZodString;
+            account: z.ZodString;
+            externalId: z.ZodString;
+        }, z.core.$strict>;
+        id: z.ZodString;
+        owner: z.ZodString;
+        schemaId: z.ZodString;
+        schemaVersion: z.ZodInt;
+        createdAt: z.ZodISODateTime;
+        name: z.ZodNullable<z.ZodString>;
+        indexed: z.ZodBoolean;
+        date: z.ZodISODateTime;
+        idx: z.ZodNullable<z.ZodString>;
+        isPinned: z.ZodNullable<z.ZodBoolean>;
+        pinOrder: z.ZodNullable<z.ZodNumber>;
+        isArchived: z.ZodNullable<z.ZodBoolean>;
+        properties: z.ZodType<JsonValue, unknown, z.core.$ZodTypeInternals<JsonValue, unknown>>;
+    }, z.core.$strict>, z.ZodObject<{
+        keys: z.ZodArray<z.ZodString>;
+        origin: z.ZodLiteral<"agent">;
+        confidence: z.ZodNumber;
+        evidence: z.ZodTuple<[z.ZodString], z.ZodString>;
+        validFrom: z.ZodNullable<z.ZodISODateTime>;
+        validUntil: z.ZodNullable<z.ZodISODateTime>;
+        id: z.ZodString;
+        owner: z.ZodString;
+        schemaId: z.ZodString;
+        schemaVersion: z.ZodInt;
+        createdAt: z.ZodISODateTime;
+        name: z.ZodNullable<z.ZodString>;
+        indexed: z.ZodBoolean;
+        date: z.ZodISODateTime;
+        idx: z.ZodNullable<z.ZodString>;
+        isPinned: z.ZodNullable<z.ZodBoolean>;
+        pinOrder: z.ZodNullable<z.ZodNumber>;
+        isArchived: z.ZodNullable<z.ZodBoolean>;
+        properties: z.ZodType<JsonValue, unknown, z.core.$ZodTypeInternals<JsonValue, unknown>>;
+    }, z.core.$strict>], "origin">;
+    link: z.ZodDiscriminatedUnion<[z.ZodObject<{
+        origin: z.ZodLiteral<"canonical">;
+        metadata: z.ZodType<JsonValue, unknown, z.core.$ZodTypeInternals<JsonValue, unknown>>;
+        validFrom: z.ZodNullable<z.ZodISODateTime>;
+        validUntil: z.ZodNullable<z.ZodISODateTime>;
+        id: z.ZodString;
+        owner: z.ZodString;
+        from: z.ZodString;
+        to: z.ZodString;
+        kind: z.ZodString;
+        createdAt: z.ZodISODateTime;
+    }, z.core.$strict>, z.ZodObject<{
+        origin: z.ZodLiteral<"agent">;
+        confidence: z.ZodNumber;
+        evidence: z.ZodTuple<[z.ZodString], z.ZodString>;
+        validFrom: z.ZodNullable<z.ZodISODateTime>;
+        validUntil: z.ZodNullable<z.ZodISODateTime>;
+        id: z.ZodString;
+        owner: z.ZodString;
+        from: z.ZodString;
+        to: z.ZodString;
+        kind: z.ZodString;
+        createdAt: z.ZodISODateTime;
+    }, z.core.$strict>], "origin">;
+}, z.core.$strict>;
+export type LinkedEntity = z.output<typeof LinkedEntitySchema>;
+/** The index-backed entity columns a filter or an order names. The words are
+ * values, not keys, and keep their spelling. */
+export declare const EntityColSchema: z.ZodEnum<{
+    name: "name";
+    date: "date";
+    idx: "idx";
+    origin: "origin";
+    confidence: "confidence";
+    pin_order: "pin_order";
+    created_at: "created_at";
+    is_pinned: "is_pinned";
+    valid_from: "valid_from";
+    valid_until: "valid_until";
+}>;
+export type EntityCol = z.output<typeof EntityColSchema>;
 /** Graph read projection with neighbouring entities. */
 export declare const EntityDetailSchema: z.ZodObject<{
     id: z.ZodString;
@@ -227,6 +393,7 @@ export declare const GraphEntityLinksSchema: z.ZodObject<{
             agent: "agent";
         }>;
         validUntil: z.ZodNullable<z.ZodISODateTime>;
+        id: z.ZodString;
     }, z.core.$strip>>;
     total: z.ZodNumber;
 }, z.core.$strip>;

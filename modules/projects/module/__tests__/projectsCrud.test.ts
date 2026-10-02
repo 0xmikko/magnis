@@ -22,8 +22,9 @@
  * @legacy-id: tst_int_optcreate_026_entity_created_with_client_id_persisted
  * @legacy-id: tst_int_optcreate_027_no_orphaned_entity_on_duplicate
  */
+import type { JsonObject } from "@magnis/sdk";
 import { describe, expect, it } from "vitest";
-import { entity, mockGraph, mountModule } from "@magnis/testkit/module";
+import { entity, link, mockGraph, mountModule } from "@magnis/testkit/module";
 import { PROJECT } from "../../schema.ts";
 import { ProjectsModule } from "../service.ts";
 
@@ -32,9 +33,9 @@ const CONTACT_ID = "22222222-2222-4222-8222-222222222222";
 
 function project(
   name = "Investor demo",
-  properties: Record<string, unknown> = { name, status: "active" },
+  properties: JsonObject = { name, status: "active" },
 ) {
-  return entity(PROJECT_ID, name, { schema_id: PROJECT, properties });
+  return entity(PROJECT_ID, name, { schemaId: PROJECT, properties });
 }
 
 describe("tst_module_projects_crud_001 — projects CRUD owns its domain contract", () => {
@@ -46,7 +47,7 @@ describe("tst_module_projects_crud_001 — projects CRUD owns its domain contrac
     });
     const { module } = mountModule(ProjectsModule, {
       graph,
-      ctx: { extension_id: "projects" },
+      ctx: { extensionId: "projects" },
     });
 
     const result = await module.create({
@@ -62,12 +63,12 @@ describe("tst_module_projects_crud_001 — projects CRUD owns its domain contrac
       schema_id: PROJECT,
     });
     expect(graph.spies.create_entity).toHaveBeenCalledWith({
-      schema_id: PROJECT,
+      schemaId: PROJECT,
       name: "Investor demo",
-      client_id: PROJECT_ID,
+      clientId: PROJECT_ID,
     });
     expect(graph.spies.update_properties).toHaveBeenCalledWith({
-      entity_id: PROJECT_ID,
+      entityId: PROJECT_ID,
       properties: expect.objectContaining({ name: "Investor demo", status: "blocked" }),
     });
   });
@@ -84,9 +85,8 @@ describe("tst_module_projects_crud_001 — projects CRUD owns its domain contrac
       name: "Host id",
     });
     expect(graph.spies.create_entity).toHaveBeenCalledWith({
-      schema_id: PROJECT,
+      schemaId: PROJECT,
       name: "Host id",
-      client_id: undefined,
     });
   });
 
@@ -118,7 +118,7 @@ describe("tst_module_projects_crud_001 — projects CRUD owns its domain contrac
 
   it("rehydrates linked detail with direction and dictionary values", async () => {
     const contact = entity(CONTACT_ID, "Ada", {
-      schema_id: "contacts.person",
+      schemaId: "contacts.person",
       properties: { email: "ada@example.test" },
     });
     const graph = mockGraph({
@@ -130,14 +130,7 @@ describe("tst_module_projects_crud_001 — projects CRUD owns its domain contrac
             description: "Investor walkthrough",
             agent_memory: "Lead with local-first",
           }),
-          links: [
-            {
-              id: "link-1",
-              from_id: CONTACT_ID,
-              to_id: PROJECT_ID,
-              kind: "projects.belongs_to",
-            },
-          ],
+          links: [link(CONTACT_ID, PROJECT_ID, "projects.belongs_to", { id: "link-1" })],
         }),
       get_entities: () => Promise.resolve([contact]),
     });
@@ -157,8 +150,11 @@ describe("tst_module_projects_crud_001 — projects CRUD owns its domain contrac
         expect.objectContaining({
           id: CONTACT_ID,
           name: "Ada",
-          schema_id: "contacts.person",
-          link_kind: "~projects.belongs_to",
+          schemaId: "contacts.person",
+          linkKind: "~projects.belongs_to",
+          origin: "canonical",
+          confidence: null,
+          validUntil: null,
         }),
       ],
     });
@@ -190,7 +186,7 @@ describe("tst_module_projects_crud_001 — projects CRUD owns its domain contrac
     expect(result).toMatchObject({ name: "Demo ready", status: "done" });
     expect(graph.spies.update_entity_name).toHaveBeenCalledWith(PROJECT_ID, "Demo ready");
     expect(graph.spies.update_properties).toHaveBeenCalledWith({
-      entity_id: PROJECT_ID,
+      entityId: PROJECT_ID,
       properties: expect.objectContaining({
         name: "Demo ready",
         status: "done",

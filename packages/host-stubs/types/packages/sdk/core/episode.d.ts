@@ -1,15 +1,32 @@
 import { z } from "zod";
 import { type LinkedEntitySummary } from "./linked-entity.js";
 import { type EpisodeMessage } from "./episode-message.js";
-import { JsonValueSchema } from "./json.js";
 export declare const episodeStatuses: readonly ["active", "needs_input", "idle", "completed"];
 export declare const EpisodeStatusSchema: z.ZodEnum<{
-    completed: "completed";
     active: "active";
+    completed: "completed";
     needs_input: "needs_input";
     idle: "idle";
 }>;
 export type EpisodeStatus = z.output<typeof EpisodeStatusSchema>;
+export declare const EpisodeUpdateRequestSchema: z.ZodObject<{
+    id: z.ZodString;
+    title: z.ZodOptional<z.ZodString>;
+    status: z.ZodOptional<z.ZodEnum<{
+        active: "active";
+        completed: "completed";
+        needs_input: "needs_input";
+        idle: "idle";
+    }>>;
+    archived: z.ZodOptional<z.ZodBoolean>;
+}, z.core.$strip>;
+export declare const EpisodeMemoryGetRequestSchema: z.ZodObject<{}, z.core.$strip>;
+export declare const EpisodeMemorySaveRequestSchema: z.ZodObject<{
+    body: z.ZodString;
+}, z.core.$strip>;
+export declare const EpisodeMemoryResultSchema: z.ZodObject<{
+    body: z.ZodNullable<z.ZodString>;
+}, z.core.$strip>;
 export declare const episodeLinkKindRanks: readonly ["started_with", "created", "triggered_by", "modified", "mentions", "reply_to"];
 export type RankedEpisodeLinkKind = (typeof episodeLinkKindRanks)[number];
 export declare const EpisodeListItemSchema: z.ZodObject<{
@@ -20,8 +37,8 @@ export declare const EpisodeListItemSchema: z.ZodObject<{
     rootTitle: z.ZodString;
     openDelegations: z.ZodInt;
     status: z.ZodUnion<[z.ZodEnum<{
-        completed: "completed";
         active: "active";
+        completed: "completed";
         needs_input: "needs_input";
         idle: "idle";
     }>, z.ZodString]>;
@@ -47,8 +64,8 @@ export declare const EpisodeSubtreeItemSchema: z.ZodObject<{
     rootEpisodeId: z.ZodString;
     title: z.ZodString;
     status: z.ZodEnum<{
-        completed: "completed";
         active: "active";
+        completed: "completed";
         needs_input: "needs_input";
         idle: "idle";
     }>;
@@ -62,8 +79,8 @@ export declare const EpisodeSubtreePageSchema: z.ZodObject<{
         rootEpisodeId: z.ZodString;
         title: z.ZodString;
         status: z.ZodEnum<{
-            completed: "completed";
             active: "active";
+            completed: "completed";
             needs_input: "needs_input";
             idle: "idle";
         }>;
@@ -132,9 +149,9 @@ export declare const EpisodeDetailViewSchema: z.ZodObject<{
     todos: z.ZodOptional<z.ZodArray<z.ZodObject<{
         content: z.ZodString;
         status: z.ZodEnum<{
+            pending: "pending";
             completed: "completed";
             cancelled: "cancelled";
-            pending: "pending";
             in_progress: "in_progress";
         }>;
         externalId: z.ZodDefault<z.ZodNullable<z.ZodString>>;
@@ -314,9 +331,9 @@ export declare const EpisodeWorkingMemorySchema: z.ZodObject<{
     todos: z.ZodArray<z.ZodObject<{
         content: z.ZodString;
         status: z.ZodEnum<{
+            pending: "pending";
             completed: "completed";
             cancelled: "cancelled";
-            pending: "pending";
             in_progress: "in_progress";
         }>;
         externalId: z.ZodDefault<z.ZodNullable<z.ZodString>>;
@@ -436,9 +453,9 @@ export declare const EpisodeAgentSnapshotSchema: z.ZodObject<{
         todos: z.ZodArray<z.ZodObject<{
             content: z.ZodString;
             status: z.ZodEnum<{
+                pending: "pending";
                 completed: "completed";
                 cancelled: "cancelled";
-                pending: "pending";
                 in_progress: "in_progress";
             }>;
             externalId: z.ZodDefault<z.ZodNullable<z.ZodString>>;
@@ -492,36 +509,33 @@ export declare const EpisodeInputAdmissionSchema: z.ZodDiscriminatedUnion<[z.Zod
     }>;
 }, z.core.$strict>], "kind">;
 export type EpisodeInputAdmission = z.output<typeof EpisodeInputAdmissionSchema>;
-export declare const ResolveAgentWaitRequestSchema: z.ZodObject<{
+/** One answer to an Episode wait: an approval decides, a question is
+ * answered. Each member is strict, so a decision and an answer exclude each
+ * other; only a tool approval may edit the call's arguments. `z.union`
+ * rather than `z.discriminatedUnion`, because an RPC input publishes its
+ * forms as `anyOf` (tst_sdk_native_registry_003). `exactOptional`: an absent
+ * key, never an undefined value, so the output is `argumentsOverride?: JsonValue`. */
+export declare const ResolveAgentWaitRequestSchema: z.ZodUnion<readonly [z.ZodObject<{
     kind: z.ZodEnum<{
         tool_approval: "tool_approval";
-        ask_user: "ask_user";
         native_approval: "native_approval";
     }>;
     episodeId: z.ZodString;
     waitId: z.ZodString;
     resolutionId: z.ZodString;
-    decision: z.ZodOptional<z.ZodEnum<{
+    decision: z.ZodEnum<{
         approved: "approved";
         denied: "denied";
-    }>>;
-    answer: z.ZodOptional<z.ZodType<import("./json.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("./json.js").JsonValue, unknown>>>;
-    argumentsOverride: z.ZodOptional<z.ZodType<import("./json.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("./json.js").JsonValue, unknown>>>;
-}, z.core.$strict>;
-export type ResolveAgentWaitRequest = {
-    readonly kind: "tool_approval" | "native_approval";
-    readonly episodeId: string;
-    readonly waitId: string;
-    readonly resolutionId: string;
-    readonly decision: "approved" | "denied";
-    readonly argumentsOverride?: z.output<typeof JsonValueSchema>;
-} | {
-    readonly kind: "ask_user";
-    readonly episodeId: string;
-    readonly waitId: string;
-    readonly resolutionId: string;
-    readonly answer: z.output<typeof JsonValueSchema>;
-};
+    }>;
+    argumentsOverride: z.ZodExactOptional<z.ZodType<import("./json.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("./json.js").JsonValue, unknown>>>;
+}, z.core.$strict>, z.ZodObject<{
+    kind: z.ZodLiteral<"ask_user">;
+    episodeId: z.ZodString;
+    waitId: z.ZodString;
+    resolutionId: z.ZodString;
+    answer: z.ZodType<import("./json.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("./json.js").JsonValue, unknown>>;
+}, z.core.$strict>]>;
+export type ResolveAgentWaitRequest = z.output<typeof ResolveAgentWaitRequestSchema>;
 export declare const AgentWaitResolutionReceiptSchema: z.ZodObject<{
     episodeId: z.ZodString;
     waitId: z.ZodString;

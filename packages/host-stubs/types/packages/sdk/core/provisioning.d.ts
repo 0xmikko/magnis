@@ -13,11 +13,6 @@ export declare const WorkspaceProvisioningPhaseSchema: z.ZodEnum<{
     resolvingTemplate: "resolvingTemplate";
     materializing: "materializing";
 }>;
-export interface WorkspaceProvisioningProgress {
-    readonly phase: WorkspaceProvisioningPhase;
-    readonly completedItems: number;
-    readonly totalItems: number | null;
-}
 export declare const WorkspaceProvisioningProgressSchema: z.ZodObject<{
     phase: z.ZodEnum<{
         complete: "complete";
@@ -27,4 +22,5 @@ export declare const WorkspaceProvisioningProgressSchema: z.ZodObject<{
     completedItems: z.ZodNumber;
     totalItems: z.ZodNullable<z.ZodNumber>;
 }, z.core.$strict>;
+export type WorkspaceProvisioningProgress = z.output<typeof WorkspaceProvisioningProgressSchema>;
 //# sourceMappingURL=provisioning.d.ts.map

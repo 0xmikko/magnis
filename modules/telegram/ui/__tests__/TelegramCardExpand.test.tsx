@@ -152,8 +152,8 @@ describe("tst_mod_tg_003 — links do not change how a message is drawn", () => 
     const with_ = markup({
       ...BASE,
       linked_entities: [
-        { id: "c1", name: "Ops chat", schema_id: "telegram.chat", link_kind: "in_chat" },
-        { id: "t1", name: "Watcher", schema_id: "triggers.trigger", link_kind: "~watches" },
+        { id: "c1", name: "Ops chat", schemaId: "telegram.chat", linkKind: "in_chat" },
+        { id: "t1", name: "Watcher", schemaId: "triggers.trigger", linkKind: "~watches" },
       ],
     });
     expect(with_).toBe(without);

@@ -3,10 +3,10 @@
 // shaping of source `Data` payloads into wire DTOs, mirroring the native module
 // (extract_sender / extract_preview / strip_body_html / MessageListItem).
 
-import type { RawEntity } from "@magnis/plugin-sdk";
+import type { Entity, JsonValue } from "@magnis/sdk";
 import type { MessageListItem } from "../types.ts";
 
-export type Data = Record<string, unknown>;
+export type Data = Record<string, JsonValue>;
 
 // PGlite is single-connection, so a sync page must be applied in CHUNKS — at
 // most this many TOTAL batch entities (messages + their unique addresses) per
@@ -17,7 +17,7 @@ export const INGEST_CHUNK = 200;
 // from-address is stamped by the connector when the message actually sends).
 export const OUTGOING_FROM = "user@magnis.local";
 
-export const str = (d: Data, k: string): string | null => {
+export const str = (d: Readonly<Record<string, unknown>>, k: string): string | null => {
   const v = d[k];
   return typeof v === "string" && v.length > 0 ? v : null;
 };
@@ -108,11 +108,11 @@ function stripBodyHtml(d: Data): Data {
   return rest;
 }
 
-export function buildListItem(entity: RawEntity, d: Data): MessageListItem {
-  const created = entity.created_at ?? "";
+export function buildListItem(entity: Entity, d: Data): MessageListItem {
+  const created = entity.createdAt;
   return {
     id: entity.id,
-    schema_id: entity.schema_id,
+    schema_id: entity.schemaId,
     sender: senderOf(d),
     subject: entity.name && entity.name.length > 0 ? entity.name : null,
     preview: previewOf(d),

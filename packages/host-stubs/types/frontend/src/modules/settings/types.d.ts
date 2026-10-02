@@ -60,18 +60,4 @@ export interface AllowlistCheckResult {
     readonly allowed: boolean;
     readonly entry?: AllowlistEntry;
 }
-export interface SourceListResponse {
-    readonly sources: readonly {
-        readonly source_id: string;
-        readonly display_name: string;
-        readonly surfaces: readonly string[];
-        readonly auth_type: string;
-        readonly package_hash: string;
-        /** INV-ST-10: false when the source cannot start (missing a required
-         *  operator app-cred). The connect catalog shows ONLY connectable ones. */
-        readonly connectable: boolean;
-        /** The signal: why it can't start (null when connectable). */
-        readonly unavailable_reason: string | null;
-    }[];
-}
 export type { EnumOption, ModuleSettingField, ModuleSettingFieldType, ModuleSettingsEntry, ModuleSettingsSchema, ModuleSettingValue, } from "@magnis/sdk";

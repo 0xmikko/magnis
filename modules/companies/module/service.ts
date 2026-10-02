@@ -1,4 +1,3 @@
-import { rpc } from "@magnis/plugin-sdk";
 // Companies plugin — backend module. Runs inside the deno_core V8
 // isolate. Decorated class: each @tool co-locates the agent tool
 // contract with its RPC handler; definePlugin (index.ts) wires them.
@@ -9,8 +8,8 @@ import { rpc } from "@magnis/plugin-sdk";
 // DICTIONARY, which rides the rows they already fetched — fixed,
 // N-independent crossings with no hydrate step at all.
 
-import { tool, writeTool, type GraphService, type PluginDeps, type RpcExecutor } from "@magnis/plugin-sdk";
-import type { GetParams, ListParams, PaginatedResponse } from "@magnis/plugin-sdk";
+import { linkedEntitySummary, rpc, tool, writeTool, type GetParams, type GraphService, type ListParams, type PluginDeps, type RpcExecutor } from "@magnis/plugin-sdk";
+import type { Entity, PaginatedResponse } from "@magnis/sdk";
 import type {
   CompanyDetailsFacet,
   CompanyDetailView,
@@ -21,6 +20,63 @@ import type {
 } from "../types.ts";
 import { COMPANY } from "../schema.ts";
 import { buildListItem } from "./helpers.ts";
+
+const COMPANY_GET_SPEC = {
+  description: "Get a full company detail view by entity id.",
+  params: {
+    type: "object",
+    properties: { id: { type: "string", format: "uuid" } },
+    required: ["id"],
+    additionalProperties: false,
+  },
+};
+
+const COMPANY_CREATE_DESCRIPTION =
+  "Create a company. Idempotent by name (case-insensitive, trimmed): if a " +
+  "company with the same name already exists it is returned instead of " +
+  "creating a duplicate. `domain` derives the website; `summary` becomes " +
+  "the markdown description. Follow up with companies.update for richer enrichment.";
+
+const COMPANY_CREATE_PARAMS = {
+  type: "object",
+  properties: {
+    name: { type: "string" },
+    domain: { type: "string" },
+    website: { type: "string" },
+    industry: { type: "string" },
+    summary: { type: "string" },
+  },
+  required: ["name"],
+  additionalProperties: false,
+};
+
+const COMPANY_UPDATE_SPEC = {
+  description:
+    "Update / enrich a company. Provided fields are layered on; omitted " +
+    "fields stay untouched. `domain` derives the website; `summary` replaces " +
+    "the description; `emails` become identity edges to shared address " +
+    "nodes and `phones` are multi-instance.",
+  params: {
+    type: "object",
+    properties: {
+      id: { type: "string", format: "uuid" },
+      name: { type: "string" },
+      domain: { type: "string" },
+      summary: { type: "string" },
+      industry: { type: "string" },
+      size: { type: "string" },
+      location: { type: "string" },
+      founded: { type: "string" },
+      stage: { type: "string" },
+      headcount: { type: "integer" },
+      funding_total: { type: "string" },
+      emails: { type: "array", items: { type: "string" } },
+      phones: { type: "array", items: { type: "string" } },
+    },
+    required: ["id"],
+    additionalProperties: false,
+  },
+};
 
 export class CompaniesModule {
   private readonly graph: GraphService;
@@ -47,17 +103,18 @@ export class CompaniesModule {
     const offset = params.offset ?? 0;
     const search = (params.search ?? "").trim();
 
-    let rows: { id: string; schema_id: string; name: string; created_at?: string }[];
+    let rows: Entity[];
     let total: number;
     if (search.length > 0) {
       const matched = await this.graph.search_entities_by_name({
         query: search,
-        schema_ids: [COMPANY],
+        schemaIds: [COMPANY],
         limit: limit + offset,
       });
       // Sort alphabetically by name (parity with staging, which sorted ALL
       // results; search_entities_by_name returns prefix/date order otherwise).
-      matched.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+      // A nameless company sorts first.
+      matched.sort((a, b) => (a.name ?? "").toLowerCase().localeCompare((b.name ?? "").toLowerCase()));
       total = matched.length;
       rows = matched.slice(offset, offset + limit);
     } else {
@@ -67,11 +124,11 @@ export class CompaniesModule {
       // sort which had no pinned priority.
       const win = await this.graph.list_entities_window({
         schema: COMPANY,
-        order: [{ field: { entity_field: "idx" }, desc: false }],
+        order: [{ field: { entityField: "idx" }, desc: false }],
         limit,
         offset,
       });
-      rows = win.items.map((r) => r.entity);
+      rows = win.items;
       total = win.total;
     }
 
@@ -79,30 +136,21 @@ export class CompaniesModule {
     return { items, total, limit, offset };
   }
 
-  @rpc("get")
-  @tool("get", {
-    entity: "companies.company",
-    description: "Get a full company detail view by entity id.",
-    params: {
-      type: "object",
-      properties: { id: { type: "string", format: "uuid" } },
-      required: ["id"],
-      additionalProperties: false,
-    },
-  })
+  @rpc("get", COMPANY_GET_SPEC)
+  @tool("get", { entity: "companies.company", ...COMPANY_GET_SPEC })
   async get(params: GetParams): Promise<CompanyDetailView> {
     // User-scoped entity (+ schema guard) and every edge, in one read. S5:
     // the hub's DICTIONARY is the record — one writer, nothing to arbitrate —
     // so the detail needs neither a canonical read nor a record list.
     const detail = await this.graph.get_entity_full(params.id, { links: true });
-    if (detail?.entity.schema_id !== COMPANY) {
+    if (detail?.entity.schemaId !== COMPANY) {
       throw new Error(`company not found: ${params.id}`);
     }
     const { entity } = detail;
     const base = buildListItem(entity);
     const endpointIds = [...new Set(detail.links.flatMap((link) => {
-      if (link.from_id === entity.id) return [link.to_id];
-      if (link.to_id === entity.id) return [link.from_id];
+      if (link.from === entity.id) return [link.to];
+      if (link.to === entity.id) return [link.from];
       return [];
     }))];
     const endpoints = endpointIds.length === 0
@@ -113,27 +161,21 @@ export class CompaniesModule {
     // @invariant: Companies preserve the shared `~kind` convention for
     // incoming edges so EntityDetailTabs can surface works_at contacts.
     const linked_entities = detail.links.flatMap((link) => {
-      const incoming = link.to_id === entity.id;
+      const incoming = link.to === entity.id;
       const endpointId = incoming
-        ? link.from_id
-        : link.from_id === entity.id
-          ? link.to_id
+        ? link.from
+        : link.from === entity.id
+          ? link.to
           : null;
       if (endpointId === null) return [];
       const endpoint = endpointsById.get(endpointId);
       if (endpoint === undefined) return [];
-      return [{
-        id: endpoint.id,
-        name: endpoint.name,
-        schema_id: endpoint.schema_id,
-        link_kind: incoming ? `~${link.kind}` : link.kind,
-      }];
+      return [linkedEntitySummary(endpoint, link, incoming ? `~${link.kind}` : link.kind)];
     });
-    const members = linked_entities
-      .filter((linked) =>
-        linked.schema_id === "contacts.person" &&
-        linked.link_kind === "~works_at")
-      .map((linked) => linked.name);
+    const members = linked_entities.flatMap((linked) =>
+      linked.schemaId === "contacts.person" && linked.linkKind === "~works_at" && linked.name !== null
+        ? [linked.name]
+        : []);
     const header_rows: HeaderRow[] = [
       { type: "text", label: "Website", value: base.website },
       { type: "text", label: "Industry", value: base.industry },
@@ -143,30 +185,20 @@ export class CompaniesModule {
     return { ...base, linked_entities, members, header_rows };
   }
 
-  // `params` is the AGENT-facing schema → omits `client_id` (the
-  // frontend-only optimistic-create UUID). The handler still accepts
-  // it via CreateParams; the WS RPC path is not validated against this
-  // schema.
-  @rpc("create")
+  // The tool's params are AGENT-facing → they omit `client_id` (the
+  // frontend-only optimistic-create UUID); the rpc() params, which the host
+  // parses the frontend's call with, carry it.
+  @rpc("create", {
+    description: COMPANY_CREATE_DESCRIPTION,
+    params: {
+      ...COMPANY_CREATE_PARAMS,
+      properties: { ...COMPANY_CREATE_PARAMS.properties, client_id: { type: "string", format: "uuid" } },
+    },
+  })
   @writeTool("create", {
     entity: "companies.company",
-    description:
-      "Create a company. Idempotent by name (case-insensitive, trimmed): if a " +
-      "company with the same name already exists it is returned instead of " +
-      "creating a duplicate. `domain` derives the website; `summary` becomes " +
-      "the markdown description. Follow up with companies.update for richer enrichment.",
-    params: {
-      type: "object",
-      properties: {
-        name: { type: "string" },
-        domain: { type: "string" },
-        website: { type: "string" },
-        industry: { type: "string" },
-        summary: { type: "string" },
-      },
-      required: ["name"],
-      additionalProperties: false,
-    },
+    description: COMPANY_CREATE_DESCRIPTION,
+    params: COMPANY_CREATE_PARAMS,
   })
   async create(params: CreateParams): Promise<CompanyListItem> {
     // Idempotent by name (parity with staging companies.create): return the
@@ -175,19 +207,19 @@ export class CompaniesModule {
     const needle = params.name.trim().toLowerCase();
     const existing = await this.graph.search_entities_by_name({
       query: needle,
-      schema_ids: [COMPANY],
+      schemaIds: [COMPANY],
       limit: 25,
     });
-    const match = existing.find((c) => c.name.trim().toLowerCase() === needle);
+    const match = existing.find((c) => c.name?.trim().toLowerCase() === needle);
     if (match) {
       // Idempotent return: the matched row already carries its dictionary.
       return buildListItem(match);
     }
 
     const e = await this.graph.create_entity({
-      schema_id: COMPANY,
+      schemaId: COMPANY,
       name: params.name,
-      client_id: params.client_id,
+      clientId: params.client_id,
       idx: params.name.toLowerCase(),
     });
 
@@ -203,7 +235,7 @@ export class CompaniesModule {
     // @invariant: The company Overview and agent writes share one description
     // key; structured details never own a second copy of it.
     if (params.summary) details.description = params.summary;
-    await this.graph.update_properties({ entity_id: e.id, properties: { ...details } });
+    await this.graph.update_properties({ entityId: e.id, properties: { ...details } });
     return this.listItemFor(e.id);
   }
 
@@ -219,35 +251,8 @@ export class CompaniesModule {
   // Full-field enrichment (parity with staging "field parity" build). Each
   // provided field is layered on as a fresh record version; single-aligned
   // details = latest wins, email/phone = collection (one record per item).
-  @rpc("update")
-  @writeTool("update", {
-    entity: "companies.company",
-    description:
-      "Update / enrich a company. Provided fields are layered on; omitted " +
-      "fields stay untouched. `domain` derives the website; `summary` replaces " +
-      "the description; `emails` become identity edges to shared address " +
-      "nodes and `phones` are multi-instance.",
-    params: {
-      type: "object",
-      properties: {
-        id: { type: "string", format: "uuid" },
-        name: { type: "string" },
-        domain: { type: "string" },
-        summary: { type: "string" },
-        industry: { type: "string" },
-        size: { type: "string" },
-        location: { type: "string" },
-        founded: { type: "string" },
-        stage: { type: "string" },
-        headcount: { type: "integer" },
-        funding_total: { type: "string" },
-        emails: { type: "array", items: { type: "string" } },
-        phones: { type: "array", items: { type: "string" } },
-      },
-      required: ["id"],
-      additionalProperties: false,
-    },
-  })
+  @rpc("update", COMPANY_UPDATE_SPEC)
+  @writeTool("update", { entity: "companies.company", ...COMPANY_UPDATE_SPEC })
   async update(params: UpdateParams): Promise<CompanyDetailView> {
     const e = await this.graph.get_entity(params.id);
     if (!e) throw new Error(`company not found: ${params.id}`);
@@ -284,7 +289,7 @@ export class CompaniesModule {
       }));
     }
     if (Object.keys(details).length > 0) {
-      await this.graph.update_properties({ entity_id: params.id, properties: { ...details } });
+      await this.graph.update_properties({ entityId: params.id, properties: { ...details } });
     }
 
     // An email is an identity CHANNEL, not a company field: the email module
@@ -293,8 +298,8 @@ export class CompaniesModule {
       const { ids } = await this.rpc.execute<{ ids: string[] }>("email.ensure_addresses", {
         items: params.emails.map((address) => ({ address })),
       });
-      for (const to_id of ids) {
-        await this.graph.add_link({ from_id: params.id, to_id, kind: "identity" });
+      for (const to of ids) {
+        await this.graph.add_link({ from: params.id, to, kind: "identity" });
       }
     }
 

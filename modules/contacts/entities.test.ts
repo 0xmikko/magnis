@@ -5,8 +5,8 @@
  * Beside entities.ts and outside module/ on purpose.
  */
 import { describe, expect, it, vi } from "vitest";
-import type { BatchEntityInput, GraphBatchInput } from "@magnis/plugin-sdk";
-import { entity as graphEntity, mockGraph, mountModule } from "@magnis/testkit/module";
+import type { BatchEntityInput, GraphBatchInput, JsonValue } from "@magnis/sdk";
+import { entity as graphEntity, mockGraph, mountModule, page } from "@magnis/testkit/module";
 
 import { ContactsModule } from "./module/service.ts";
 import { googleContact, person } from "./entities.ts";
@@ -37,21 +37,21 @@ async function replicasWritten(): Promise<BatchEntityInput[]> {
         ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
         created: frag.entities.length,
         updated: 0,
-        links_added: frag.links?.length ?? 0,
-        dropped_keys: [],
+        linksAdded: frag.links.length,
+        droppedKeys: [],
       });
     },
     list_links_for_entity: () => Promise.resolve([]),
     get_entities: () => Promise.resolve([]),
     get_entity: () => Promise.resolve(null),
-    create_entity: (input: { schema_id: string; name: string }) =>
-      Promise.resolve({ id: `hub-${mintSeq++}`, schema_id: input.schema_id, name: input.name }),
+    create_entity: (input: { schemaId: string; name: string }) =>
+      Promise.resolve(graphEntity(`hub-${mintSeq++}`, input.name, { schemaId: input.schemaId })),
     add_link: () => Promise.resolve(undefined),
-    list_entities: () => Promise.resolve({ items: [], total: 0 }),
+    list_entities: () => Promise.resolve(page([])),
   } as never);
   const mod = mountModule(ContactsModule, {
     graph,
-    ctx: { extension_id: "contacts" },
+    ctx: { extensionId: "contacts" },
     rpc: {
       execute: (method: string, params: unknown) =>
         method === "email.ensure_addresses"
@@ -65,22 +65,22 @@ async function replicasWritten(): Promise<BatchEntityInput[]> {
     command: "bootstrap",
     generation: "initial:r:1",
     envelopes: [{
-      source_id: "google", surface: "contacts", account_id: "acct-1", user_id: "u1",
-      kind: "snapshot", remote_id: "gpeople:abc123", payload: contactPayload,
+      sourceId: "google", surface: "contacts", accountId: "acct-1", userId: "u1",
+      kind: "snapshot", remoteId: "gpeople:abc123", payload: contactPayload,
       timestamp: "2026-03-14T09:00:00Z",
     }],
   });
   return batches.flatMap((b) => b.entities);
 }
 
-async function hubClaimsWritten(): Promise<Record<string, unknown>[]> {
-  const written: Record<string, unknown>[] = [];
-  const created = graphEntity(CONTACT_ID, "Alice Smith", { schema_id: CONTACT });
+async function hubClaimsWritten(): Promise<JsonValue[]> {
+  const written: JsonValue[] = [];
+  const created = graphEntity(CONTACT_ID, "Alice Smith", { schemaId: CONTACT });
   let exists = false;
   const graph = mockGraph({
     get_entity: () => Promise.resolve(exists ? created : null),
     create_entity: () => { exists = true; return Promise.resolve(created); },
-    update_properties: (input: { properties: Record<string, unknown> }) => {
+    update_properties: (input: { properties: JsonValue }) => {
       written.push(input.properties);
       return Promise.resolve(undefined);
     },
@@ -105,7 +105,7 @@ async function hubClaimsWritten(): Promise<Record<string, unknown>[]> {
 describe("contacts declares what it writes", () => {
   it("every replica the ingest writes passes the replica's declaration", async () => {
     const written = await replicasWritten();
-    const replicas = written.filter((e) => e.schema_id === "contacts.google_contact");
+    const replicas = written.filter((e) => e.schemaId === "contacts.google_contact");
     expect(replicas.length).toBeGreaterThan(0);
     for (const replica of replicas) {
       expect(googleContact.safeParse(replica.properties ?? {}).error?.issues ?? []).toEqual([]);

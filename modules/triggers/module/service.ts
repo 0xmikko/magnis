@@ -20,12 +20,8 @@
 
 import { rpc, tool, writeTool, type GraphService, errText,
   type PluginDeps, type PluginLogger, type RpcExecutor } from "@magnis/plugin-sdk";
-import type {
-  EntityDetail,
-  LinkSummary,
-  ListParams,
-  PaginatedResponse,
-} from "@magnis/plugin-sdk";
+import type { ListParams } from "@magnis/plugin-sdk";
+import type { Entity, EntityWithLinks, JsonObject, Link, PaginatedResponse } from "@magnis/sdk";
 import type {
   ClarificationResult,
   CreateTriggerParams,
@@ -139,7 +135,7 @@ const LIST_FOR_ENTITY_PARAMS = {
       required: ["entity_id"],
       additionalProperties: false,
     };
-const UPDATE_PARAMS = {
+const UPDATE_PARAMS: JsonObject = {
       type: "object",
       properties: {
         id: { type: "string", format: "uuid" },
@@ -288,7 +284,7 @@ export class TriggersModule {
     // via `get` and child-linking it in the native `fire_trigger`.
     if (params.episode_id) {
       const episode = await this.graph.get_entity_full(params.episode_id, { links: false });
-      if (episode?.entity.schema_id !== "episodes.episode") throw new Error(`episode not found: ${params.episode_id}`);
+      if (episode?.entity.schemaId !== "episodes.episode") throw new Error(`episode not found: ${params.episode_id}`);
     }
 
     if (emailForm) {
@@ -315,7 +311,7 @@ export class TriggersModule {
       }
     }
 
-    const entity = await this.graph.create_entity({ schema_id: TRIGGER, name });
+    const entity = await this.graph.create_entity({ schemaId: TRIGGER, name });
 
     const config: TriggerConfigData = {
       name,
@@ -340,14 +336,14 @@ export class TriggersModule {
     // nothing. Any failure after the entity exists removes it again.
     try {
       // S1: the config IS the node's dictionary.
-      await this.graph.update_properties({ entity_id: entity.id, properties: config as unknown as Record<string, unknown> });
+      await this.graph.update_properties({ entityId: entity.id, properties: config as unknown as JsonObject });
       for (const target of watch_entity_ids) {
-        await this.graph.add_link({ from_id: entity.id, to_id: target, kind: WATCHES });
+        await this.graph.add_link({ from: entity.id, to: target, kind: WATCHES });
       }
       if (params.episode_id) {
         await this.graph.add_link({
-          from_id: entity.id,
-          to_id: params.episode_id,
+          from: entity.id,
+          to: params.episode_id,
           kind: BELONGS_TO,
         });
       }
@@ -377,7 +373,7 @@ export class TriggersModule {
       firing_count: 0,
       last_fired_at: null,
       schema_id: TRIGGER,
-      created_at: entity.created_at ?? new Date().toISOString(),
+      created_at: entity.createdAt,
       episode_id: params.episode_id ?? null,
       schedule: schedule ?? null,
     };
@@ -423,11 +419,11 @@ export class TriggersModule {
     },
   })
   async list(params: ListTriggersParams): Promise<TriggerListItem[]> {
-    const page = await this.graph.list_entities({ schema_id: TRIGGER, order: "date", limit: 1000 });
+    const page = await this.graph.list_entities({ schemaId: TRIGGER, order: "date", limit: 1000 });
     const items: TriggerListItem[] = [];
     for (const entity of page.items) {
       const detail = await this.graph.get_entity_full(entity.id, { links: true });
-      if (detail?.entity.schema_id !== TRIGGER) continue;
+      if (detail?.entity.schemaId !== TRIGGER) continue;
       const config = this.configOf(detail);
       if (!config) continue;
       if (params.status && config.status !== params.status) continue;
@@ -453,13 +449,11 @@ export class TriggersModule {
     const offset = params.offset ?? 0;
     const query = (params.search ?? "").trim().toLowerCase();
 
-    const hydrate = async (
-      rows: readonly { entity: { id: string } }[],
-    ): Promise<TriggerListItem[]> => {
+    const hydrate = async (rows: readonly Entity[]): Promise<TriggerListItem[]> => {
       const items: TriggerListItem[] = [];
       for (const row of rows) {
-        const detail = await this.graph.get_entity_full(row.entity.id, { links: true });
-        if (detail?.entity.schema_id !== TRIGGER) continue;
+        const detail = await this.graph.get_entity_full(row.id, { links: true });
+        if (detail?.entity.schemaId !== TRIGGER) continue;
         const config = this.configOf(detail);
         if (!config) continue;
         items.push(await this.listItem(detail, config));
@@ -473,7 +467,7 @@ export class TriggersModule {
     if (query.length === 0) {
       const page = await this.graph.list_entities_window({
         schema: TRIGGER,
-        order: [{ field: { entity_field: "date" }, desc: true }],
+        order: [{ field: { entityField: "date" }, desc: true }],
         limit,
         offset,
       });
@@ -494,7 +488,7 @@ export class TriggersModule {
     for (;;) {
       const page = await this.graph.list_entities_window({
         schema: TRIGGER,
-        order: [{ field: { entity_field: "date" }, desc: true }],
+        order: [{ field: { entityField: "date" }, desc: true }],
         limit: scanLimit,
         offset: scanOffset,
       });
@@ -571,17 +565,17 @@ export class TriggersModule {
     // S1: the trigger config IS the node's dictionary — the record write died
     // with the fold, and a cleared schedule has to REMOVE the key, which a
     // merge does with an explicit null.
-    const next = { ...config } as unknown as Record<string, unknown>;
+    const next: Record<string, unknown> = { ...config };
     if (params.schedule === null) next.schedule = null;
-    await this.graph.update_properties({ entity_id: params.id, properties: next });
+    await this.graph.update_properties({ entityId: params.id, properties: next as JsonObject });
     if (params.name !== undefined && params.name !== detail.entity.name) {
       try {
         await this.graph.update_entity_name(params.id, params.name);
       } catch (renameError) {
         try {
           await this.graph.update_properties({
-            entity_id: params.id,
-            properties: previousConfig,
+            entityId: params.id,
+            properties: previousConfig as unknown as JsonObject,
           });
         } catch (rollbackError) {
           // The host serialises a thrown error as `String(e.stack)`
@@ -629,7 +623,7 @@ export class TriggersModule {
     await this.requireTrigger(params.trigger_id);
     const target = await this.graph.get_entity_full(params.entity_id, { links: false });
     if (!target) throw new Error(`entity not found: ${params.entity_id}`);
-    await this.graph.add_link({ from_id: params.trigger_id, to_id: params.entity_id, kind: WATCHES });
+    await this.graph.add_link({ from: params.trigger_id, to: params.entity_id, kind: WATCHES });
     await this.invalidateCache();
     return { linked: true };
   }
@@ -644,7 +638,7 @@ export class TriggersModule {
     await this.requireTrigger(params.trigger_id);
     const links = await this.graph.list_links_for_entity(params.trigger_id);
     for (const link of links) {
-      if (link.kind === WATCHES && link.from_id === params.trigger_id && link.to_id === params.entity_id) {
+      if (link.kind === WATCHES && link.from === params.trigger_id && link.to === params.entity_id) {
         await this.graph.delete_link(link.id);
       }
     }
@@ -678,13 +672,13 @@ export class TriggersModule {
     for (const anchor of anchors) {
       const links = await this.graph.list_links_for_entity(anchor);
       for (const link of links) {
-        if (link.to_id !== anchor) continue;
+        if (link.to !== anchor) continue;
         if (link.kind !== WATCHES && link.kind !== BELONGS_TO) continue;
-        const triggerId = link.from_id;
+        const triggerId = link.from;
         if (seen.has(triggerId)) continue;
         seen.add(triggerId);
         const detail = await this.graph.get_entity_full(triggerId, { links: true });
-        if (detail?.entity.schema_id !== TRIGGER) continue;
+        if (detail?.entity.schemaId !== TRIGGER) continue;
         const config = this.configOf(detail);
         if (!config) continue;
         items.push(await this.listItem(detail, config));
@@ -729,18 +723,18 @@ export class TriggersModule {
 
   /// User-scoped fetch that also rejects an id of a different schema — a
   /// triggers tool must never touch a foreign entity (NotFound parity).
-  private async requireTrigger(id: string): Promise<EntityDetail> {
+  private async requireTrigger(id: string): Promise<EntityWithLinks> {
     const detail = await this.graph.get_entity_full(id, { links: true });
-    if (detail?.entity.schema_id !== TRIGGER) {
+    if (detail?.entity.schemaId !== TRIGGER) {
       throw new Error(`trigger not found: ${id}`);
     }
     return detail;
   }
 
-  private configOf(detail: EntityDetail): TriggerConfigData | null {
+  private configOf(detail: EntityWithLinks): TriggerConfigData | null {
     // S1: the dictionary is the state. An empty dictionary means the trigger
     // was never configured — the same "no config" the missing record meant.
-    const props = detail.entity.properties ?? {};
+    const props = detail.entity.properties as JsonObject;
     if (Object.keys(props).length === 0) return null;
     return props as unknown as TriggerConfigData;
   }
@@ -762,20 +756,20 @@ export class TriggersModule {
     return spec;
   }
 
-  private watchesLinks(detail: EntityDetail): LinkSummary[] {
-    return detail.links.filter((l) => l.kind === WATCHES && l.from_id === detail.entity.id);
+  private watchesLinks(detail: EntityWithLinks): Link[] {
+    return detail.links.filter((l) => l.kind === WATCHES && l.from === detail.entity.id);
   }
 
-  private async listItem(detail: EntityDetail, config: TriggerConfigData): Promise<TriggerListItem> {
+  private async listItem(detail: EntityWithLinks, config: TriggerConfigData): Promise<TriggerListItem> {
     const names: string[] = [];
     for (const link of this.watchesLinks(detail)) {
       // User-scoped resolution (native guard): a poisoned `watches` link to a
       // foreign entity must NOT leak its name. `get_entity_full` returns null for
       // a non-owned target, so foreign names are dropped.
-      const target = await this.graph.get_entity_full(link.to_id, { links: false });
+      const target = await this.graph.get_entity_full(link.to, { links: false });
       if (target) {
         const e = target.entity;
-        names.push(e.name && e.name.length > 0 ? e.name : e.schema_id);
+        names.push(e.name && e.name.length > 0 ? e.name : e.schemaId);
       }
     }
     return {
@@ -792,26 +786,26 @@ export class TriggersModule {
     };
   }
 
-  private async detailView(detail: EntityDetail): Promise<TriggerDetailView> {
+  private async detailView(detail: EntityWithLinks): Promise<TriggerDetailView> {
     const config = this.configOf(detail);
     if (!config) throw new Error(`trigger config not found: ${detail.entity.id}`);
 
     const watched: WatchedEntity[] = [];
     for (const link of this.watchesLinks(detail)) {
       // User-scoped (native guard): foreign watched-entity names resolve to null.
-      const target = await this.graph.get_entity_full(link.to_id, { links: false });
-      watched.push({ id: link.to_id, name: target?.entity.name ?? null });
+      const target = await this.graph.get_entity_full(link.to, { links: false });
+      watched.push({ id: link.to, name: target?.entity.name ?? null });
     }
 
     const belongs = detail.links.find(
-      (l) => l.kind === BELONGS_TO && l.from_id === detail.entity.id,
+      (l) => l.kind === BELONGS_TO && l.from === detail.entity.id,
     );
     let parentEpisodeId: string | null = null;
     let parentEpisodeName: string | null = null;
     if (belongs) {
-      parentEpisodeId = belongs.to_id;
+      parentEpisodeId = belongs.to;
       // User-scoped (native guard): a foreign parent-episode name resolves to null.
-      const parent = await this.graph.get_entity_full(belongs.to_id, { links: false });
+      const parent = await this.graph.get_entity_full(belongs.to, { links: false });
       parentEpisodeName = parent?.entity.name ?? null;
     }
 

@@ -21,7 +21,7 @@
  * any op the read path takes without being arranged here fails the test.
  */
 import { describe, expect, it } from "vitest";
-import { entity, mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
+import { entity, link, mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { TelegramModule } from "../service.ts";
 import { MESSAGE } from "../../schema.ts";
 
@@ -32,19 +32,19 @@ const MESSAGE_ID = "m1";
 // m1 —in_chat→ c1, m1 —authored_by→ a1, t1 —watches→ m1, plus the two outgoing
 // edges a real message also carries and this module does NOT claim to expose.
 const LINKS = [
-  { id: "l1", from_id: MESSAGE_ID, to_id: "c1", kind: "in_chat" },
-  { id: "l2", from_id: MESSAGE_ID, to_id: "a1", kind: "authored_by" },
-  { id: "l3", from_id: "t1", to_id: MESSAGE_ID, kind: "watches" },
-  { id: "l4", from_id: MESSAGE_ID, to_id: "web-1", kind: "references" },
-  { id: "l5", from_id: MESSAGE_ID, to_id: "file-1", kind: "attachment" },
+  link(MESSAGE_ID, "c1", "in_chat", { id: "l1" }),
+  link(MESSAGE_ID, "a1", "authored_by", { id: "l2" }),
+  link("t1", MESSAGE_ID, "watches", { id: "l3" }),
+  link(MESSAGE_ID, "web-1", "references", { id: "l4" }),
+  link(MESSAGE_ID, "file-1", "attachment", { id: "l5" }),
 ];
 
 const NEIGHBOURS = [
-  entity("c1", "Ops chat", { schema_id: "telegram.chat" }),
-  entity("a1", "Alice", { schema_id: "telegram.account" }),
-  entity("t1", "Watch the thread", { schema_id: "triggers.trigger" }),
-  entity("web-1", "example.com", { schema_id: "web.link" }),
-  entity("file-1", "invoice.pdf", { schema_id: "file.object" }),
+  entity("c1", "Ops chat", { schemaId: "telegram.chat" }),
+  entity("a1", "Alice", { schemaId: "telegram.account" }),
+  entity("t1", "Watch the thread", { schemaId: "triggers.trigger" }),
+  entity("web-1", "example.com", { schemaId: "web.link" }),
+  entity("file-1", "invoice.pdf", { schemaId: "file.object" }),
 ];
 
 function messageGraph(): G {
@@ -52,7 +52,7 @@ function messageGraph(): G {
     get_entity_full: () =>
       Promise.resolve({
         entity: entity(MESSAGE_ID, "", {
-          schema_id: MESSAGE,
+          schemaId: MESSAGE,
           properties: { text: "hello", date: "2026-08-11T10:00:00Z" },
         }),
         links: LINKS,
@@ -69,7 +69,7 @@ describe("tst_mod_tg_001 — a message exposes its own links", () => {
     const graph = messageGraph();
     const mod = mountModule(TelegramModule, {
       graph,
-      ctx: { extension_id: "telegram" },
+      ctx: { extensionId: "telegram" },
     }).module;
 
     const view = await mod.messagesGet({ id: MESSAGE_ID });
@@ -77,11 +77,11 @@ describe("tst_mod_tg_001 — a message exposes its own links", () => {
 
     // Outgoing keeps the kind — an implementation that prefixed everything
     // with `~` would pass a weaker assertion than this one.
-    expect(byId.get("c1")?.link_kind).toBe("in_chat");
-    expect(byId.get("a1")?.link_kind).toBe("authored_by");
+    expect(byId.get("c1")?.linkKind).toBe("in_chat");
+    expect(byId.get("a1")?.linkKind).toBe("authored_by");
     // Incoming wears the tilde — anything that points AT the message is
     // returned whatever it is.
-    expect(byId.get("t1")?.link_kind).toBe("~watches");
+    expect(byId.get("t1")?.linkKind).toBe("~watches");
     // Outgoing is only what the module says a message exposes: the web link and
     // the attachment hang off this message too, and are not part of the answer.
     expect(byId.has("web-1")).toBe(false);

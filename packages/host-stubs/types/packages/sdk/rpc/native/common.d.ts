@@ -1,6 +1,4 @@
 import { type JsonValue } from "../../core/json.js";
-/** A closed, named field whose value is validated as JSON at the boundary. */
-export declare const nativeJsonField: import("zod").ZodType<JsonValue, unknown, import("zod/v4/core").$ZodTypeInternals<JsonValue, unknown>>;
 /** Explicit adapter for native controllers that still consume legacy wire
  * keys. Canonical SDK callers never see these names. Opaque JSON fields keep
  * their user/provider-owned keys unchanged. */

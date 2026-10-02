@@ -11,8 +11,8 @@
 // AND the `toHaveBeenCalledTimes(0)` assertions on those forbidden ops.
 
 import { beforeEach, describe, expect, it } from "vitest";
-import type { EntityDetail, RawEntity } from "@magnis/plugin-sdk";
-import { mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
+import type { CanonicalEntity, EntityWithLinks, JsonObject } from "@magnis/sdk";
+import { entity, link, mockGraph, mountModule, page, type MockGraph } from "@magnis/testkit/module";
 import { EmailModule } from "../service.ts";
 import type { EmailCanonical } from "../../types.ts";
 
@@ -22,7 +22,7 @@ type G = MockGraph;
 // defaults; everything else throws via the mockGraph Proxy.
 function readGraph(): G {
   return mockGraph({
-    list_entities_window: () => Promise.resolve({ items: [], total: 0 }),
+    list_entities_window: () => Promise.resolve(page([])),
     get_entity_full: () => Promise.resolve(null),
     get_entities: () => Promise.resolve([]),
     search_entities_by_name: () => Promise.resolve([]),
@@ -38,13 +38,11 @@ function spy(graph: G, op: string) {
   return s;
 }
 
-const ROW = (id: string, date: string, over: Record<string, unknown> = {}) => ({
-  // S5: the message DICT rides the entity row; `data` (the render record) is dead.
-  entity: {
-    id,
-    schema_id: "email.message",
-    name: "Subject " + id,
-    created_at: date,
+// S5: the message DICT rides the entity; `data` (the render record) is dead.
+const ROW = (id: string, date: string, over: JsonObject = {}): CanonicalEntity =>
+  entity(id, "Subject " + id, {
+    schemaId: "email.message",
+    createdAt: date,
     properties: {
       from_address: "alice@example.com",
       from_name: "Alice Johnson",
@@ -54,49 +52,27 @@ const ROW = (id: string, date: string, over: Record<string, unknown> = {}) => ({
       sent_at: date,
       ...over,
     },
-  },
-  data: null,
-});
+  });
 
-const DETAIL = (id: string, date: string): EntityDetail => ({
-  // S5: the detail reads the DICT; the frozen record stays as the archive the
-  // view still surfaces.
-  entity: {
-    id,
-    schema_id: "email.message",
-    name: "Subject " + id,
-    created_at: date,
-    properties: {
-      from_address: "alice@example.com",
-      from_name: "Alice Johnson",
-      snippet: "preview text " + id,
-      body_text: "full body " + id,
-      body_html: "<p>full body " + id + "</p>",
-      sent_at: date,
-    },
-  } as EntityDetail["entity"],
-  links: [],
-});
+// S5: the detail reads the DICT.
+const DETAIL = (id: string, date: string): EntityWithLinks => ({ entity: ROW(id, date), links: [] });
 
 describe("email read — shape parity (tst_be_emailread_001)", () => {
   let graph: G;
   let mod: EmailModule;
   beforeEach(() => {
     graph = readGraph();
-    mod = mountModule(EmailModule, { graph, ctx: { extension_id: "email" } }).module;
+    mod = mountModule(EmailModule, { graph, ctx: { extensionId: "email" } }).module;
   });
 
   it("list maps window rows to MessageListItem (sender fallback, snippet preview, body_html stripped)", async () => {
-    spy(graph, "list_entities_window").mockResolvedValue({
-      items: [ROW("b", "2026-06-02T10:00:00Z"), ROW("a", "2026-06-01T10:00:00Z")],
-      total: 2,
-    });
+    spy(graph, "list_entities_window").mockResolvedValue(page([ROW("b", "2026-06-02T10:00:00Z"), ROW("a", "2026-06-01T10:00:00Z")]));
 
-    const page = await mod.emailList({ limit: 50, offset: 0 });
+    const listed = await mod.emailList({ limit: 50, offset: 0 });
 
-    expect(page.total).toBe(2);
-    expect(page.items.map((i) => i.id)).toEqual(["b", "a"]); // DB date-desc order preserved
-    const first = page.items[0];
+    expect(listed.total).toBe(2);
+    expect(listed.items.map((i) => i.id)).toEqual(["b", "a"]); // DB date-desc order preserved
+    const first = listed.items[0];
     if (first === undefined) throw new Error("list: missing first item");
     expect(first.sender).toBe("Alice Johnson"); // from_name preferred over from_address
     expect(first.subject).toBe("Subject b");
@@ -109,12 +85,9 @@ describe("email read — shape parity (tst_be_emailread_001)", () => {
   });
 
   it("list falls back to from_address when from_name is absent", async () => {
-    spy(graph, "list_entities_window").mockResolvedValue({
-      items: [ROW("a", "2026-06-01T10:00:00Z", { from_name: "" })],
-      total: 1,
-    });
-    const page = await mod.emailList({});
-    const first = page.items[0];
+    spy(graph, "list_entities_window").mockResolvedValue(page([ROW("a", "2026-06-01T10:00:00Z", { from_name: "" })]));
+    const listed = await mod.emailList({});
+    const first = listed.items[0];
     if (first === undefined) throw new Error("list fallback: missing first item");
     expect(first.sender).toBe("alice@example.com");
   });
@@ -138,19 +111,19 @@ describe("email read — shape parity (tst_be_emailread_001)", () => {
     spy(graph, "get_entity_full").mockResolvedValue({
       ...base,
       links: [
-        { id: "l1", from_id: "x", to_id: "file-1", kind: "file.attachment" },
-        { id: "l2", from_id: "x", to_id: "file-2", kind: "file.attachment" },
+        link("x", "file-1", "file.attachment", { id: "l1" }),
+        link("x", "file-2", "file.attachment", { id: "l2" }),
       ],
     });
     spy(graph, "get_entities").mockResolvedValue([
-      { id: "file-1", schema_id: "file.object", name: "photo.jpg", created_at: "2026-06-03T09:00:00Z" },
-      { id: "file-2", schema_id: "file.object", name: "report.pdf", created_at: "2026-06-03T09:00:00Z" },
-    ] satisfies RawEntity[]);
+      entity("file-1", "photo.jpg", { schemaId: "file.object", createdAt: "2026-06-03T09:00:00Z" }),
+      entity("file-2", "report.pdf", { schemaId: "file.object", createdAt: "2026-06-03T09:00:00Z" }),
+    ]);
 
     const view = await mod.emailGet({ id: "x" });
     expect(view.linked_entities).toHaveLength(2);
     expect(view.linked_entities.map((l) => l.name)).toEqual(["photo.jpg", "report.pdf"]);
-    expect(view.linked_entities.every((l) => l.link_kind === "file.attachment")).toBe(true);
+    expect(view.linked_entities.every((l) => l.linkKind === "file.attachment")).toBe(true);
     expect(spy(graph, "get_entities")).toHaveBeenCalledTimes(1); // ONE batch, no per-link N+1
   });
 
@@ -171,22 +144,20 @@ describe("email read — shape parity (tst_be_emailread_001)", () => {
 
   it("search reads the dictionary off the matched rows", async () => {
     spy(graph, "search_entities_by_name").mockResolvedValue([
-      {
-        id: "a",
-        schema_id: "email.message",
-        name: "Subject a",
-        created_at: "2026-06-01T10:00:00Z",
+      entity("a", "Subject a", {
+        schemaId: "email.message",
+        createdAt: "2026-06-01T10:00:00Z",
         properties: {
           from_name: "Alice Johnson",
           snippet: "preview text a",
           sent_at: "2026-06-01T10:00:00Z",
         },
-      } as RawEntity,
+      }),
     ]);
 
-    const page = await mod.emailList({ search: "invoice" });
-    expect(page.items).toHaveLength(1);
-    const first = page.items[0];
+    const listed = await mod.emailList({ search: "invoice" });
+    expect(listed.items).toHaveLength(1);
+    const first = listed.items[0];
     if (first === undefined) throw new Error("search: missing first item");
     expect(first.sender).toBe("Alice Johnson");
     expect(first.preview).toBe("preview text a");
@@ -198,14 +169,11 @@ describe("email read — DB-access guarantees (tst_be_emaildb_003 / INV-DB-1,2,4
   let mod: EmailModule;
   beforeEach(() => {
     graph = readGraph();
-    mod = mountModule(EmailModule, { graph, ctx: { extension_id: "email" } }).module;
+    mod = mountModule(EmailModule, { graph, ctx: { extensionId: "email" } }).module;
   });
 
   it("list (no search) = exactly 1 list_entities_window, 0 facet/canonical reads (INV-DB-1)", async () => {
-    spy(graph, "list_entities_window").mockResolvedValue({
-      items: [ROW("a", "2026-06-01T10:00:00Z"), ROW("b", "2026-06-02T10:00:00Z")],
-      total: 2,
-    });
+    spy(graph, "list_entities_window").mockResolvedValue(page([ROW("a", "2026-06-01T10:00:00Z"), ROW("b", "2026-06-02T10:00:00Z")]));
     await mod.emailList({ limit: 50 });
     expect(spy(graph, "list_entities_window")).toHaveBeenCalledTimes(1);
     expect(spy(graph, "search_entities_by_name")).toHaveBeenCalledTimes(0);

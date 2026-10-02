@@ -4,32 +4,32 @@
  * Beside entities.ts and outside module/ on purpose.
  */
 import { describe, expect, it, vi } from "vitest";
-import type { GraphBatchInput } from "@magnis/plugin-sdk";
-import { mockGraph, mountModule } from "@magnis/testkit/module";
+import type { GraphBatchInput, JsonObject, SyncEnvelope } from "@magnis/sdk";
+import { mockGraph, mountModule, page } from "@magnis/testkit/module";
 
 import { XModule } from "./module/service.ts";
 import { post, profile } from "./entities.ts";
 
 const DECLARED = { "x.profile": profile, "x.post": post } as const;
 
-const env = (remote_id: string, payload: Record<string, unknown>) => ({
-  source_id: "x", surface: "x", account_id: "a1", user_id: "u1",
-  kind: "snapshot", remote_id, payload, timestamp: "2026-06-26T00:00:00Z",
+const env = (remoteId: string, payload: JsonObject): SyncEnvelope => ({
+  sourceId: "x", surface: "x", accountId: "a1", userId: "u1",
+  kind: "snapshot", remoteId, payload, timestamp: "2026-06-26T00:00:00Z",
 });
 
 async function written(): Promise<GraphBatchInput["entities"]> {
   const batches: GraphBatchInput[] = [];
   const graph = mockGraph({
-    find_by_anchors: (anchors) => Promise.resolve(anchors.map(() => null)),
+    find_by_external_ids: (externalIds) => Promise.resolve(externalIds.map(() => null)),
     apply_batch: (frag: GraphBatchInput) => {
       batches.push(frag);
-      return Promise.resolve({ ids: {}, created: 0, updated: 0, links_added: 0, dropped_keys: [] });
+      return Promise.resolve({ ids: {}, created: 0, updated: 0, linksAdded: 0, droppedKeys: [] });
     },
-    list_entities_window: () => Promise.resolve({ items: [], total: 0 }),
+    list_entities_window: () => Promise.resolve(page([])),
     get_entity_full: () => Promise.resolve(null),
   });
   const mod = mountModule<XModule>(XModule, {
-    graph, ctx: { extension_id: "x" }, rpc: { execute: vi.fn() },
+    graph, ctx: { extensionId: "x" }, rpc: { execute: vi.fn() },
   }).module;
   await mod.ingest({
     generation: "initial:r:1",
@@ -56,8 +56,8 @@ describe("x declares what it stores", () => {
     const entities = await written();
     expect(entities.length).toBeGreaterThan(1);
     for (const e of entities) {
-      const declared = DECLARED[e.schema_id as keyof typeof DECLARED];
-      expect(declared, `${e.schema_id} is written but not declared`).toBeDefined();
+      const declared = DECLARED[e.schemaId as keyof typeof DECLARED];
+      expect(declared, `${e.schemaId} is written but not declared`).toBeDefined();
       expect(declared.safeParse(e.properties ?? {}).error?.issues ?? []).toEqual([]);
     }
   });

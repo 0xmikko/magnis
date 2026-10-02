@@ -15,8 +15,10 @@ export interface RpcWireCodec {
     readonly decodeOutput?: (value: unknown) => unknown;
     readonly decodeChunk?: (value: unknown) => unknown;
 }
-type StrictInputSchema<InputSchema extends z.ZodObject> = z.ZodObject<InputSchema["shape"], z.core.$strict>;
-export interface RpcContract<Method extends string, InputSchema extends z.ZodObject, OutputSchema extends z.ZodType, Params extends RpcParamsMode = "required"> {
+/** RPC inputs are objects; common operations may select among closed object forms. */
+export type RpcInputSchema = z.ZodObject | z.ZodUnion<readonly z.ZodObject[]>;
+type StrictInputSchema<InputSchema extends RpcInputSchema> = InputSchema extends z.ZodObject ? z.ZodObject<InputSchema["shape"], z.core.$strict> : InputSchema;
+export interface RpcContract<Method extends string, InputSchema extends RpcInputSchema, OutputSchema extends z.ZodType, Params extends RpcParamsMode = "required"> {
     readonly method: Method;
     readonly input: StrictInputSchema<InputSchema>;
     readonly output: OutputSchema;
@@ -27,7 +29,9 @@ export interface RpcContract<Method extends string, InputSchema extends z.ZodObj
 export interface StreamContract<Method extends string, InputSchema extends z.ZodObject, ChunkSchema extends z.ZodType, OutputSchema extends z.ZodType, Params extends RpcParamsMode = "required"> extends RpcContract<Method, InputSchema, OutputSchema, Params> {
     readonly chunk: ChunkSchema;
 }
-export type RpcContractLike = RpcContract<string, z.ZodObject, z.ZodType, RpcParamsMode>;
+export type RpcContractLike = Omit<RpcContract<string, z.ZodObject, z.ZodType, RpcParamsMode>, "input"> & {
+    readonly input: RpcInputSchema & z.ZodType;
+};
 export type StreamContractLike = StreamContract<string, z.ZodObject, z.ZodType, z.ZodType, RpcParamsMode>;
 export type RpcInputFor<Contract extends RpcContractLike> = z.input<Contract["input"]>;
 export type RpcHandlerInputFor<Contract extends RpcContractLike> = z.output<Contract["input"]>;
@@ -62,20 +66,20 @@ export declare class ContractValidationError extends Error {
 /** Render validation details consistently for backend and client adapters. */
 export declare function renderContractIssues(method: string, boundary: ContractBoundary, issues: readonly ContractIssue[]): string;
 export declare function parseContractValue<Schema extends z.ZodType>(method: string, boundary: ContractBoundary, schema: Schema, value: unknown): z.output<Schema>;
-export declare function strictInputSchema<const Shape extends z.core.$ZodLooseShape>(input: z.ZodObject<Shape, z.core.$ZodObjectConfig>): z.ZodObject<Shape, z.core.$strict>;
+export declare function strictInputSchema<const Input extends RpcInputSchema>(input: Input): StrictInputSchema<Input>;
 /** Render a closed input schema for publication to clients and agents. */
-export declare function inputJsonSchema(input: z.ZodObject): Readonly<JsonObject>;
-interface RpcContractDefinition<Method extends string, InputSchema extends z.ZodObject, OutputSchema extends z.ZodType, Params extends RpcParamsMode> {
+export declare function inputJsonSchema(input: RpcInputSchema): Readonly<JsonObject>;
+interface RpcContractDefinition<Method extends string, InputSchema extends RpcInputSchema, OutputSchema extends z.ZodType, Params extends RpcParamsMode> {
     readonly method: Method;
     readonly input: InputSchema;
     readonly output: OutputSchema;
     readonly params?: Params;
     readonly wire?: RpcWireCodec;
 }
-export declare function defineRpcContract<const Method extends string, const InputSchema extends z.ZodObject, const OutputSchema extends z.ZodType>(definition: RpcContractDefinition<Method, InputSchema, OutputSchema, "optional"> & {
+export declare function defineRpcContract<const Method extends string, const InputSchema extends RpcInputSchema, const OutputSchema extends z.ZodType>(definition: RpcContractDefinition<Method, InputSchema, OutputSchema, "optional"> & {
     readonly params: "optional";
 }): RpcContract<Method, InputSchema, OutputSchema, "optional">;
-export declare function defineRpcContract<const Method extends string, const InputSchema extends z.ZodObject, const OutputSchema extends z.ZodType>(definition: RpcContractDefinition<Method, InputSchema, OutputSchema, "required">): RpcContract<Method, InputSchema, OutputSchema, "required">;
+export declare function defineRpcContract<const Method extends string, const InputSchema extends RpcInputSchema, const OutputSchema extends z.ZodType>(definition: RpcContractDefinition<Method, InputSchema, OutputSchema, "required">): RpcContract<Method, InputSchema, OutputSchema, "required">;
 interface StreamContractDefinition<Method extends string, InputSchema extends z.ZodObject, ChunkSchema extends z.ZodType, OutputSchema extends z.ZodType> {
     readonly method: Method;
     readonly input: InputSchema;

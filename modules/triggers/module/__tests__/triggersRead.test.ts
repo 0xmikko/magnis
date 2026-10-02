@@ -11,7 +11,7 @@
  * @legacy-id: tst_trig_plugin_108_not_found_paths_error
  */
 import { describe, expect, it, vi } from "vitest";
-import { entity, mockGraph, mountModule } from "@magnis/testkit/module";
+import { entity, link, mockGraph, mountModule, page } from "@magnis/testkit/module";
 import { TRIGGER } from "../../schema.ts";
 import { TriggersModule } from "../service.ts";
 
@@ -32,10 +32,10 @@ const CONFIG = {
 
 function triggerDetail() {
   return {
-    entity: entity(TRIGGER_ID, "Watch prices", { schema_id: TRIGGER, properties: CONFIG }),
+    entity: entity(TRIGGER_ID, "Watch prices", { schemaId: TRIGGER, properties: CONFIG }),
     links: [
-      { id: "watch", from_id: TRIGGER_ID, to_id: TARGET_ID, kind: "watches" },
-      { id: "parent", from_id: TRIGGER_ID, to_id: EPISODE_ID, kind: "triggers.belongs_to" },
+      link(TRIGGER_ID, TARGET_ID, "watches", { id: "watch" }),
+      link(TRIGGER_ID, EPISODE_ID, "triggers.belongs_to", { id: "parent" }),
     ],
   };
 }
@@ -65,14 +65,14 @@ describe("tst_module_triggers_read_001 — trigger definition reads", () => {
   it("filters list by config status and includes watched names", async () => {
     const paused = {
       entity: entity("paused", "Paused", {
-        schema_id: TRIGGER,
+        schemaId: TRIGGER,
         properties: { ...CONFIG, name: "Paused", status: "paused" },
       }),
       links: [],
     };
     const graph = mockGraph({
       list_entities: () =>
-        Promise.resolve({ items: [triggerDetail().entity, paused.entity], total: 2 }),
+        Promise.resolve(page([triggerDetail().entity, paused.entity])),
       get_entity_full: (id: string) => {
         if (id === TRIGGER_ID) return Promise.resolve(triggerDetail());
         if (id === "paused") return Promise.resolve(paused);
@@ -97,7 +97,7 @@ describe("tst_module_triggers_read_001 — trigger definition reads", () => {
         return Promise.resolve(null);
       },
       list_links_for_entity: () =>
-        Promise.resolve([{ id: "watch", from_id: TRIGGER_ID, to_id: TARGET_ID, kind: "watches" }]),
+        Promise.resolve([link(TRIGGER_ID, TARGET_ID, "watches", { id: "watch" })]),
     });
     const execute = vi.fn((method: string) => {
       if (method === "triggers.resolve_watchable") {

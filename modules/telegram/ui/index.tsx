@@ -23,6 +23,7 @@ import { initialsFromName } from "./utils/text";
 import { formatChatListTime, pickAvatarColor } from "./helpers";
 import type { ListItem } from "@magnis/host/base";
 import type { TelegramChatListItem } from "./types";
+import type { MessageDetailView } from "../types.ts";
 
 export const SEARCH_PLACEHOLDER = "Search chats...";
 export const INPUT_PLACEHOLDER = "Type a message...";
@@ -204,11 +205,8 @@ const telegramModule = defineModule({
         // P4: one call, to the module that owns the message. It answers with
         // its links and its metadata, so the generic `graph.entity.get` read
         // that used to stand in for the module's own answer is gone.
-        const detail = await runtime.transport.rpc<{
-          metadata?: Record<string, unknown>;
-          linked_entities?: readonly { id: string; schema_id: string }[];
-        }>("telegram.messages.get", { id: entityId });
-        const chatLink = detail.linked_entities?.find((e) => e.schema_id === "telegram.chat");
+        const detail = await runtime.transport.rpc<MessageDetailView>("telegram.messages.get", { id: entityId });
+        const chatLink = detail.linked_entities.find((e) => e.schemaId === "telegram.chat");
         chatEntityId = chatLink?.id;
         // `??=`, so a message id already on the card data wins. Telegram ids
         // start at 1, so treating 0 as present rather than missing is moot.

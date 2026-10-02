@@ -5,6 +5,7 @@ import type { MeetingListItem } from "../types";
 function makeMeeting(overrides: Partial<MeetingListItem> = {}): MeetingListItem {
   return {
     id: "m-1",
+    schema_id: "meetings.calendar_event",
     title: "Planning sync",
     date: "2026-02-20",
     time: "10:00",
@@ -14,8 +15,8 @@ function makeMeeting(overrides: Partial<MeetingListItem> = {}): MeetingListItem 
     description: null,
     conference_link: null,
     attendees: [
-      { name: "Alice Johnson", email: "alice@example.com" },
-      { name: "Bob Smith", email: "bob@example.com" },
+      { name: "Alice Johnson", email: "alice@example.com", contact_id: null },
+      { name: "Bob Smith", email: "bob@example.com", contact_id: null },
     ],
     created_at: "2026-02-19T12:00:00Z",
     ...overrides,
@@ -52,15 +53,15 @@ describe("mapMeetingFromApi", () => {
 
   /**
    * tst_fe_meetings_helpers_attendees_001 — helpers consume the
-   * canonical `CalendarAttendee` API shape and render `name ?? email`.
+   * module's attendee view and render `name ?? email`.
    * When `name` is null the email is the display string.
    */
   it("tst_fe_meetings_helpers_attendees_001 handles canonical attendee objects (name ?? email)", () => {
     const result = mapMeetingFromApi(
       makeMeeting({
         attendees: [
-          { name: "Alice", email: "alice@x.test" },
-          { name: null, email: "bob@x.test" },
+          { name: "Alice", email: "alice@x.test", contact_id: null },
+          { name: null, email: "bob@x.test", contact_id: null },
         ],
       }),
     );

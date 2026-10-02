@@ -5,8 +5,8 @@
  * Beside entities.ts and outside module/ on purpose.
  */
 import { describe, expect, it, vi } from "vitest";
-import type { GraphBatchInput, GraphBatchResult } from "@magnis/plugin-sdk";
-import { mockGraph, mountModule } from "@magnis/testkit/module";
+import type { GraphBatchInput, GraphBatchResult, PropertiesUpdate } from "@magnis/sdk";
+import { entity, mockGraph, mountModule } from "@magnis/testkit/module";
 
 import { MeetingsModule } from "./module/service.ts";
 import { calendarEvent } from "./entities.ts";
@@ -29,23 +29,23 @@ function graphRecording(written: Record<string, unknown>[]) {
   return mockGraph({
     apply_batch: (frag: GraphBatchInput): Promise<GraphBatchResult> => {
       for (const e of frag.entities) {
-        if (e.schema_id === CAL) written.push(e.properties ?? {});
+        if (e.schemaId === CAL) written.push(e.properties as Record<string, unknown>);
       }
       return Promise.resolve({
         ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
         created: frag.entities.length,
         updated: 0,
-        links_added: 0,
-        dropped_keys: [],
+        linksAdded: 0,
+        droppedKeys: [],
       });
     },
-    find_by_anchor: () => Promise.resolve(null),
+    find_by_external_id: () => Promise.resolve(null),
     list_links_for_entity: () => Promise.resolve([]),
     delete_entity: () => Promise.resolve(undefined),
     sync_state: () => Promise.resolve({ ok: true }),
-    create_entity: () => Promise.resolve({ id: "cal-1", schema_id: CAL, name: "Q3 review" }),
-    update_properties: (input: { properties: Record<string, unknown> }) => {
-      written.push(input.properties);
+    create_entity: () => Promise.resolve(entity("cal-1", "Q3 review", { schemaId: CAL })),
+    update_properties: (input: PropertiesUpdate) => {
+      written.push(input.properties as Record<string, unknown>);
       return Promise.resolve(undefined);
     },
     add_link: () => Promise.resolve(undefined),
@@ -58,7 +58,7 @@ async function writtenRecords(): Promise<Record<string, unknown>[]> {
   const written: Record<string, unknown>[] = [];
   const mod = mountModule(MeetingsModule, {
     graph: graphRecording(written),
-    ctx: { extension_id: "meetings" },
+    ctx: { extensionId: "meetings" },
     rpc: {
       execute: vi.fn((_m: string, p?: unknown) =>
         Promise.resolve({
@@ -70,8 +70,8 @@ async function writtenRecords(): Promise<Record<string, unknown>[]> {
     command: "bootstrap",
     generation: "initial:r:1",
     envelopes: [{
-      source_id: "google", surface: "meetings", account_id: "acct-1", user_id: "u1",
-      kind: "snapshot", remote_id: "evt-abc123", payload: invite,
+      sourceId: "google", surface: "meetings", accountId: "acct-1", userId: "u1",
+      kind: "snapshot", remoteId: "evt-abc123", payload: invite,
       timestamp: "2026-02-01T00:00:00Z",
     }],
   });

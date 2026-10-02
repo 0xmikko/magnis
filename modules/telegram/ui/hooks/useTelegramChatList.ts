@@ -1,5 +1,5 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import type { TelegramChat, TelegramChatListItem, TelegramMessageListItem } from "../types";
+import type { TelegramChat, TelegramChatListItem, MessageListItem } from "../types";
 import type { PaginationParams, PaginatedResponse } from "@magnis/host/runtime";
 import { normalizeTelegramChatTitle } from "../chatTitle";
 import { useRouterContext } from "@magnis/host/runtime";
@@ -193,7 +193,7 @@ export function useTelegramChatList(): UseTelegramChatListResult {
     let cancelled = false as boolean;
     void (async (): Promise<void> => {
       try {
-        const result = await runtime.transport.rpc<PaginatedResponse<TelegramMessageListItem>>(
+        const result = await runtime.transport.rpc<PaginatedResponse<MessageListItem>>(
           "telegram.messages.list",
           { entity_id: selectedChatId, limit: 1, offset: 0 },
         );

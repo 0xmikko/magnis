@@ -1,12 +1,9 @@
 import { z } from "zod";
-export interface EntityOperationBinding {
-    readonly entity: string;
-    readonly operation: string;
-}
 export declare const EntityOperationBindingSchema: z.ZodObject<{
     entity: z.ZodString;
     operation: z.ZodString;
 }, z.core.$strict>;
+export type EntityOperationBinding = z.output<typeof EntityOperationBindingSchema>;
 export declare const approvalStatuses: readonly ["pending", "approved", "denied"];
 export declare const ApprovalStatusSchema: z.ZodEnum<{
     pending: "pending";

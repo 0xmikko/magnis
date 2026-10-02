@@ -1,47 +1,49 @@
 // tst_plugin_x_ingest — sync ingest builds an idempotent apply_batch
-// (profiles + posts + authored_by link, each node anchored on its remote id)
-// and read tools map window rows. Doubles come from @magnis/testkit/module (throwing mockGraph
-// — a read/ingest path hitting an unarranged op fails loudly).
+// (profiles + posts + authored_by link, each node keyed by its remote id as
+// its externalId) and read tools map window entities. Doubles come from
+// @magnis/testkit/module (throwing mockGraph — a read/ingest path hitting an
+// unarranged op fails loudly).
 import { describe, expect, it, vi } from "vitest";
-import type { GraphBatchInput } from "@magnis/plugin-sdk";
-import { entity, mockGraph, mountModule, windowRow, type MockGraph } from "@magnis/testkit/module";
+import type { GraphBatchInput, JsonObject, SyncEnvelope } from "@magnis/sdk";
+import { entity, mockGraph, mountModule, page, type MockGraph } from "@magnis/testkit/module";
 import { XModule } from "../service.ts";
-import type { SyncEnvelope, XCanonical } from "../../types.ts";
 
 type G = MockGraph;
 
 function mountX(graph: G, execute: (method: string, params?: unknown) => unknown = vi.fn()): XModule {
   return mountModule<XModule>(XModule, {
     graph,
-    ctx: { extension_id: "x" },
+    ctx: { extensionId: "x" },
     rpc: { execute },
   }).module;
 }
 
-function env(remote_id: string, payload: Record<string, unknown>): SyncEnvelope {
+function env(remoteId: string, payload: JsonObject): SyncEnvelope {
   return {
-    source_id: "x",
+    sourceId: "x",
     surface: "x",
-    account_id: "a1",
-    user_id: "u1",
+    accountId: "a1",
+    userId: "u1",
     kind: "snapshot",
-    remote_id,
+    remoteId,
     payload,
     timestamp: "2026-06-26T00:00:00Z",
   };
 }
 
+const stated = { droppedRemoteIds: [], triggerChecks: [], plan: null, excluded: [] };
+
 function ingestGraph(): G {
   return mockGraph({
     apply_batch: () =>
-      Promise.resolve({ ids: {}, created: 0, updated: 0, links_added: 0, dropped_keys: [] }),
-    list_entities_window: () => Promise.resolve({ items: [], total: 0 }),
+      Promise.resolve({ ids: {}, created: 0, updated: 0, linksAdded: 0, droppedKeys: [] }),
+    list_entities_window: () => Promise.resolve(page([])),
     get_entity_full: () => Promise.resolve(null),
   });
 }
 
 describe("x ingest", () => {
-  it("tst_plugin_x_ingest_001 builds one apply_batch with profile+post+link, each node anchored", async () => {
+  it("tst_plugin_x_ingest_001 builds one apply_batch with profile+post+link, each node keyed by its externalId", async () => {
     const graph = ingestGraph();
     const mod = mountX(graph);
 
@@ -66,7 +68,7 @@ describe("x ingest", () => {
       ],
     });
 
-    expect(res).toEqual({ dropped_remote_ids: [], trigger_checks: [] });
+    expect(res).toEqual(stated);
     const applyBatch = graph.spies.apply_batch;
     if (applyBatch === undefined) throw new Error("x ingest 001: missing apply_batch spy");
     expect(applyBatch).toHaveBeenCalledTimes(1);
@@ -75,39 +77,43 @@ describe("x ingest", () => {
     const batch = batchCall[0] as GraphBatchInput;
     expect(batch.entities).toHaveLength(2);
 
-    const profile = batch.entities.find((e) => e.schema_id === "x.profile")!;
-    const post = batch.entities.find((e) => e.schema_id === "x.post")!;
+    const profile = batch.entities.find((e) => e.schemaId === "x.profile")!;
+    const post = batch.entities.find((e) => e.schemaId === "x.post")!;
     // The dictionary IS the record; X renames handles, never account ids, so
-    // the remote id is the anchor.
-    expect(profile.anchor).toBe("x:profile:jack");
+    // the remote id is the externalId.
+    expect(profile.externalId).toBe("x:profile:jack");
     expect(profile.properties).toMatchObject({ handle: "jack", follower_count: 100 });
-    expect(post.anchor).toBe("x:post:1");
+    expect(post.externalId).toBe("x:post:1");
     // content AND metrics in ONE dictionary.
     expect(post.properties).toMatchObject({ text: "hello world", metrics: { likes: 5 } });
     // authored_by link wired within the page (author_handle "Jack" → profile "jack").
     expect(batch.links).toEqual([
       {
-        from_key: "x:post:1",
-        to_key: "x:profile:jack",
+        fromKey: "x:post:1",
+        toKey: "x:profile:jack",
         kind: "authored_by",
-        declared_by: "x:post:1",
+        confidence: null,
+        metadata: null,
+        declaredBy: "x:post:1",
+        validFrom: null,
+        validUntil: null,
       },
     ]);
   });
 
-  it("tst_plugin_x_ingest_002 re-ingest keeps the same anchor (idempotent)", async () => {
+  it("tst_plugin_x_ingest_002 re-ingest keeps the same externalId (idempotent)", async () => {
     const graph = ingestGraph();
     const mod = mountX(graph);
-    const e = env("x:post:1", {
+    const payload = {
       entity_type: "post",
       platform: "x",
       post_id: "1",
       author_handle: "jack",
       text: "v1",
-    });
+    };
 
-    await mod.ingest({ envelopes: [e] });
-    await mod.ingest({ envelopes: [{ ...e, payload: { ...e.payload, text: "v2" } }] });
+    await mod.ingest({ envelopes: [env("x:post:1", payload)] });
+    await mod.ingest({ envelopes: [env("x:post:1", { ...payload, text: "v2" })] });
 
     const applyBatch = graph.spies.apply_batch;
     if (applyBatch === undefined) throw new Error("x ingest 002: missing apply_batch spy");
@@ -117,36 +123,31 @@ describe("x ingest", () => {
     const firstEntity = (firstCall[0] as GraphBatchInput).entities[0];
     const secondEntity = (secondCall[0] as GraphBatchInput).entities[0];
     if (firstEntity === undefined || secondEntity === undefined) throw new Error("x ingest 002: missing batch entity");
-    expect(firstEntity.anchor).toBe("x:post:1");
-    expect(secondEntity.anchor).toBe("x:post:1"); // same anchor → upsert, no duplicate
+    expect(firstEntity.externalId).toBe("x:post:1");
+    expect(secondEntity.externalId).toBe("x:post:1"); // same externalId → upsert, no duplicate
   });
 
-  it("tst_plugin_x_ingest_003 posts.list maps window rows", async () => {
+  it("tst_plugin_x_ingest_003 posts.list maps window entities", async () => {
     const graph = ingestGraph();
     const mod = mountX(graph);
     const listWindow = graph.spies.list_entities_window;
     if (listWindow === undefined) throw new Error("x ingest 003: missing list_entities_window spy");
-    listWindow.mockResolvedValue({
-      items: [
-        windowRow(
-          entity("p1", "hello", {
-            schema_id: "x.post",
-            properties: {
-              platform: "x",
-              author_handle: "jack",
-              text: "hello",
-              created_at: "t",
-              url: null,
-            },
-          }),
-        ),
-      ],
-      total: 1,
-    });
+    listWindow.mockResolvedValue(page([
+      entity("p1", "hello", {
+        schemaId: "x.post",
+        properties: {
+          platform: "x",
+          author_handle: "jack",
+          text: "hello",
+          created_at: "t",
+          url: null,
+        },
+      }),
+    ]));
 
-    const page = await mod.postsList({});
-    expect(page.total).toBe(1);
-    expect(page.items[0]).toMatchObject({ id: "p1", platform: "x", author_handle: "jack", text: "hello" });
+    const listed = await mod.postsList({});
+    expect(listed.total).toBe(1);
+    expect(listed.items[0]).toMatchObject({ id: "p1", platform: "x", author_handle: "jack", text: "hello" });
     expect(graph.spies.list_entities_window).toHaveBeenCalledTimes(1);
   });
 });
@@ -162,15 +163,15 @@ describe("x ingest", () => {
  * @fixtures: a profile envelope with a planned window of 10; two posts, one already in the graph
  */
 describe("x ingest — the plan from the pages", () => {
-  const profile = (over: Record<string, unknown> = {}): SyncEnvelope => env("x:profile:12", {
+  const profile = (over: JsonObject = {}): SyncEnvelope => env("x:profile:12", {
     entity_type: "profile", platform: "x", handle: "jack", display_name: "Jack", posts_total: 10, posts_skipped: 1190, ...over,
   });
   const post = (id: string): SyncEnvelope => ({ ...env(`x:post:${id}`, { entity_type: "post", platform: "x", post_id: id, author_handle: "jack", text: `post ${id}`, created_at: "2026-06-01T00:00:00Z", metrics: {} }), kind: "live" });
-  function planGraph(known: Record<string, Record<string, unknown>>): G {
+  function planGraph(known: Record<string, JsonObject>): G {
     return mockGraph({
-      find_by_anchors: (anchors: string[]) => Promise.resolve(anchors.map((anchor) => (anchor in known ? `id:${anchor}` : null))),
-      get_entities: (ids: string[]) => Promise.resolve(ids.map((id) => ({ ...entity(id, "", { schema_id: "x.profile" }), properties: known[id.slice("id:".length)] ?? {} }))),
-      apply_batch: () => Promise.resolve({ ids: {}, created: 0, updated: 0, links_added: 0, dropped_keys: [] }),
+      find_by_external_ids: (externalIds: string[]) => Promise.resolve(externalIds.map((externalId) => (externalId in known ? `id:${externalId}` : null))),
+      get_entities: (ids: string[]) => Promise.resolve(ids.map((id) => entity(id, "", { schemaId: "x.profile", properties: known[id.slice("id:".length)] ?? {} }))),
+      apply_batch: () => Promise.resolve({ ids: {}, created: 0, updated: 0, linksAdded: 0, droppedKeys: [] }),
     });
   }
 
@@ -178,9 +179,9 @@ describe("x ingest — the plan from the pages", () => {
     // The profile is unknown: a new pass.
     const fresh = planGraph({});
     const first = await mountX(fresh).ingest({ generation: "initial:r:1", envelopes: [profile(), post("1"), post("2")] });
-    expect(first).toEqual({ dropped_remote_ids: [], trigger_checks: [], plan: { "x.profile": { total: 1, skipped: 0 }, "x.post": { total: 10, skipped: 1190 } } });
+    expect(first).toEqual({ ...stated, plan: { "x.profile": { total: 1, skipped: 0 }, "x.post": { total: 10, skipped: 1190 } } });
     const batch = fresh.spies.apply_batch?.mock.calls[0]?.[0] as GraphBatchInput;
-    expect(batch.entities.find((item) => item.schema_id === "x.profile")?.properties).toMatchObject({ handle: "jack", sync_pass: "initial:r:1" });
+    expect(batch.entities.find((item) => item.schemaId === "x.profile")?.properties).toMatchObject({ handle: "jack", sync_pass: "initial:r:1" });
 
     // The same pass, a later poll: the profile is stamped; post 1 is known, post 3 is new.
     const stamped = planGraph({ "x:profile:12": { handle: "jack", sync_pass: "initial:r:1" }, "x:post:1": {} });
@@ -193,7 +194,7 @@ describe("x ingest — the plan from the pages", () => {
 
     // Outside a worker's pass nothing is read and nothing is stated.
     const outside = await mountX(ingestGraph()).ingest({ envelopes: [profile(), post("1")] });
-    expect(outside).toEqual({ dropped_remote_ids: [], trigger_checks: [] });
+    expect(outside).toEqual(stated);
   });
 });
 
@@ -205,8 +206,8 @@ describe("x ingest identity link (tst_ingest_link)", () => {
           ids: { "x:profile:12": "prof-1" },
           created: 1,
           updated: 0,
-          links_added: 0,
-          dropped_keys: [],
+          linksAdded: 0,
+          droppedKeys: [],
         }),
       add_link: () => Promise.resolve(),
     });
@@ -235,10 +236,9 @@ describe("x ingest identity link (tst_ingest_link)", () => {
     expect(graph.spies.add_link).toHaveBeenCalledTimes(1);
     // `identity` runs hub → channel: the contact is the FROM endpoint.
     expect(graph.spies.add_link).toHaveBeenCalledWith({
-      from_id: "c1",
-      to_id: "prof-1",
+      from: "c1",
+      to: "prof-1",
       kind: "identity",
-      declared_by: "x:profile:12",
     });
     expect(execute).toHaveBeenCalledWith("contacts.rename_if_placeholder", {
       id: "c1",
@@ -263,7 +263,7 @@ describe("x ingest identity link (tst_ingest_link)", () => {
       }),
     );
     const res = await mod.ingest({ envelopes: [profileEnv] });
-    expect(res).toEqual({ dropped_remote_ids: [], trigger_checks: [] });
+    expect(res).toEqual(stated);
     expect(graph.spies.add_link).not.toHaveBeenCalled();
   });
 });
@@ -278,11 +278,11 @@ describe("x profiles.list search", () => {
       search_entities_by_name: () =>
         Promise.resolve([
           entity("e2", "Bob Builder", {
-            schema_id: "x.profile",
+            schemaId: "x.profile",
             properties: { handle: "bob", follower_count: 7, avatar_url: null },
           }),
           entity("e1", "Ann Doe", {
-            schema_id: "x.profile",
+            schemaId: "x.profile",
             properties: { handle: "ann", follower_count: 5, avatar_url: "https://a/1.jpg" },
           }),
         ]),
@@ -291,7 +291,7 @@ describe("x profiles.list search", () => {
 
     const r = await mod.profilesList({ search: "o", limit: 10 });
     expect(graph.spies.search_entities_by_name).toHaveBeenCalledWith(
-      expect.objectContaining({ query: "o", schema_ids: ["x.profile"] }),
+      expect.objectContaining({ query: "o", schemaIds: ["x.profile"] }),
     );
     // Backend order (stable total order) is preserved — no client re-sort
     // (re-sorting broke pagination windows, live bug #3).
@@ -308,7 +308,7 @@ describe("x profiles.list search pagination", () => {
   function pagingGraph(dataset: { id: string; name: string }[]): G {
     return mockGraph({
       search_entities_by_name: (p) =>
-        Promise.resolve(dataset.slice(0, p.limit).map((d) => entity(d.id, d.name, { schema_id: "x.profile" }))),
+        Promise.resolve(dataset.slice(0, p.limit).map((d) => entity(d.id, d.name, { schemaId: "x.profile" }))),
     });
   }
   const dataset = [

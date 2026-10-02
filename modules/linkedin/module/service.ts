@@ -6,16 +6,20 @@ import { rpc } from "@magnis/plugin-sdk";
 // module, without touching x. v1 is read-only. (Split from the old shared
 // `social` module, see plan Revision.)
 // Writes ONLY `linkedin.*` (implicit own-namespace grant); soft-reads contacts.person.
-// Idempotent: records carry external_id = the source remote_id (re-poll
+// Idempotent: records carry externalId = the source remote id (re-poll
 // upserts). Provenance is stamped host-side from the calling plugin + envelope.
 
 import { searchEntitiesPage, str, syncHandler, tool, type GraphService, type PluginDeps } from "@magnis/plugin-sdk";
 import type {
   BatchEntityInput,
-  BatchLinkInput,
+  BatchLink,
+  Entity,
+  JsonObject,
   PaginatedResponse,
-  WindowRow,
-} from "@magnis/plugin-sdk";
+  SyncEnvelope,
+  SyncHandlerParams,
+  SyncReceipt,
+} from "@magnis/sdk";
 import type {
   GetParams,
   Platform,
@@ -26,10 +30,33 @@ import type {
   ProfileDetail,
   ProfileListItem,
   ProfilesListParams,
-  SyncEnvelope,
 } from "../types.ts";
 import { AUTHORED_BY, IDENTITY, POST, PROFILE } from "../schema.ts";
 import { richPostFields } from "./helpers.ts";
+
+/** `linkedin.posts.get`'s input, shared by the RPC method and the agent tool. */
+const POST_GET_SPEC = {
+  description: "Get a linkedin post by entity id.",
+  params: {
+    type: "object",
+    properties: { id: { type: "string", format: "uuid" } },
+    required: ["id"],
+    additionalProperties: false,
+  },
+};
+
+/** `linkedin.profiles.get`'s input, shared by the RPC method and the agent tool. */
+const PROFILE_GET_SPEC = {
+  description: "Get a tracked linkedin profile by entity id (name, handle, followers, bio, url).",
+  params: {
+    type: "object",
+    // Plain string, not uuid: pending placeholders use "pending:<handle>"
+    // ids and must pass schema validation.
+    properties: { id: { type: "string" } },
+    required: ["id"],
+    additionalProperties: false,
+  },
+};
 
 export class LinkedinModule {
   private readonly graph: GraphService;
@@ -41,31 +68,28 @@ export class LinkedinModule {
 
   /// Sync ingest — one page of canonical envelopes (profile + post). Both X and
   /// LinkedIn connectors feed the same surface; `payload.entity_type` discriminates.
+  /// `generation` is the pass the worker is in; it is absent for a Source
+  /// effect outside a worker, which states nothing.
   @syncHandler("linkedin")
-  async ingest(params: {
-    envelopes?: SyncEnvelope[];
-    /** The pass the worker is in; absent for a Source effect outside a
-     * worker, which states nothing. */
-    generation?: string;
-  }): Promise<{ dropped_remote_ids: string[]; trigger_checks: []; plan?: Record<string, { total: number; skipped: number }> }> {
-    const envelopes = Array.isArray(params.envelopes) ? params.envelopes : [];
+  async ingest(params: SyncHandlerParams): Promise<SyncReceipt> {
+    const envelopes = params.envelopes;
     const dropped: string[] = [];
     // What the page states for the plan: a profile once per pass, stamped on
     // its dictionary so a later poll knows. Posts stay unplanned — anysite
     // lists a profile's posts without a total.
     // @tested-by: tst_plugin_linkedin_plan_001
-    const generation = typeof params.generation === "string" && params.generation !== "" ? params.generation : null;
+    const generation = params.generation !== undefined && params.generation !== "" ? params.generation : null;
     const profiles = { total: 0, skipped: 0 };
-    const stamps = generation === null ? new Map<string, string | null>() : await this.profilePassByAnchor(envelopes);
+    const stamps = generation === null ? new Map<string, string | null>() : await this.profilePassByExternalId(envelopes);
 
     const entities: BatchEntityInput[] = [];
-    const links: BatchLinkInput[] = [];
+    const links: BatchLink[] = [];
     // handle → batch key of the profile entity (to wire authored_by within the page).
     const profileKeyByHandle = new Map<string, string>();
 
     for (const env of envelopes) {
-      const remoteId = env.remote_id;
-      const payload = env.payload;
+      const remoteId = env.remoteId;
+      const payload = env.payload as JsonObject;
       const entityType = str(payload, "entity_type");
       if (!remoteId || env.kind === "delete") {
         if (remoteId && env.kind === "delete") dropped.push(remoteId); // no delete path yet
@@ -74,7 +98,7 @@ export class LinkedinModule {
       if (entityType === "profile") {
         const identity = payload as unknown as ProfileIdentity;
         // Urn-only (plan §4): a LinkedIn handle is renameable, so it can never
-        // be an anchor. A profile that arrives without a urn is REJECTED —
+        // be an external id. A profile that arrives without a urn is REJECTED —
         // there is nothing stable to identify it by, and guessing would mint
         // a duplicate the day the handle changes.
         const urn = str(payload, "urn");
@@ -82,20 +106,21 @@ export class LinkedinModule {
           dropped.push(remoteId);
           continue;
         }
-        const profileAnchor = `linkedin:${urn}`;
+        const profileExternalId = `linkedin:${urn}`;
         let properties = payload;
         if (generation !== null) {
-          if (stamps.get(profileAnchor) !== generation) profiles.total += 1;
+          if (stamps.get(profileExternalId) !== generation) profiles.total += 1;
           properties = { ...payload, sync_pass: generation };
         }
         entities.push({
           key: remoteId,
-          schema_id: PROFILE,
+          schemaId: PROFILE,
           name: identity.display_name ?? identity.handle,
+          idx: null,
+          date: null,
           // S5: the profile DICT is the record, under the issuer's own key.
-          anchor: profileAnchor,
+          externalId: profileExternalId,
           properties,
-          confidence: 100,
         });
         if (identity.handle) profileKeyByHandle.set(identity.handle.toLowerCase(), remoteId);
       } else if (entityType === "post") {
@@ -104,12 +129,12 @@ export class LinkedinModule {
         // inside the same payload and were only ever split to fit two records.
         entities.push({
           key: remoteId,
-          schema_id: POST,
+          schemaId: POST,
           name: content.text.slice(0, 80),
-          date: content.created_at ?? undefined,
-          anchor: remoteId,
+          idx: null,
+          date: content.created_at ?? null,
+          externalId: remoteId,
           properties: payload,
-          confidence: 100,
         });
       } else {
         if (remoteId) dropped.push(remoteId);
@@ -118,23 +143,27 @@ export class LinkedinModule {
 
     // authored_by links: post → its author profile when present in THIS page.
     for (const env of envelopes) {
-      const payload = env.payload;
-      if (str(payload, "entity_type") !== "post" || !env.remote_id) continue;
+      const payload = env.payload as JsonObject;
+      if (str(payload, "entity_type") !== "post" || !env.remoteId) continue;
       const handle = str(payload, "author_handle");
       if (!handle) continue;
       const profileKey = profileKeyByHandle.get(handle.toLowerCase());
       if (profileKey) {
         links.push({
-          from_key: env.remote_id,
-          to_key: profileKey,
+          fromKey: env.remoteId,
+          toKey: profileKey,
           kind: AUTHORED_BY,
-          declared_by: env.remote_id,
+          confidence: null,
+          metadata: null,
+          declaredBy: env.remoteId,
+          validFrom: null,
+          validUntil: null,
         });
       }
     }
 
     if (entities.length > 0) {
-      const applied = await this.graph.apply_batch({ entities, links });
+      const applied = await this.graph.apply_batch({ entities, refs: [], links });
       // Identity link + placeholder-name upgrade. A profile is
       // only ever ingested because a contact tracks its handle — resolve the
       // owner and link profile→person (idempotent by (from,to,kind)). Any RPC
@@ -142,37 +171,42 @@ export class LinkedinModule {
       // repairs the link (self-healing).
       await this.linkProfilesToContacts(envelopes, applied.ids);
     }
-    if (generation === null) return { dropped_remote_ids: dropped, trigger_checks: [] };
-    return { dropped_remote_ids: dropped, trigger_checks: [], plan: { [PROFILE]: profiles } };
+    if (generation === null) return { droppedRemoteIds: dropped, triggerChecks: [], plan: null, excluded: [] };
+    return { droppedRemoteIds: dropped, triggerChecks: [], plan: { [PROFILE]: profiles }, excluded: [] };
   }
 
-  /** The pass each of the page's profiles was last stated in, by anchor: two
-   * Graph calls for the whole page, never one per envelope. */
-  private async profilePassByAnchor(envelopes: SyncEnvelope[]): Promise<Map<string, string | null>> {
+  /** The pass each of the page's profiles was last stated in, by external id:
+   * two Graph calls for the whole page, never one per envelope. A profile the
+   * graph holds but whose entity is gone from the read counts as unstated. */
+  private async profilePassByExternalId(envelopes: readonly SyncEnvelope[]): Promise<Map<string, string | null>> {
     const stamps = new Map<string, string | null>();
-    const anchors = [...new Set(envelopes.flatMap((env) => {
-      const urn = str(env.payload, "entity_type") === "profile" ? str(env.payload, "urn") : null;
+    const externalIds = [...new Set(envelopes.flatMap((env) => {
+      const payload = env.payload as JsonObject;
+      const urn = str(payload, "entity_type") === "profile" ? str(payload, "urn") : null;
       return urn ? [`linkedin:${urn}`] : [];
     }))];
-    if (anchors.length === 0) return stamps;
-    const ids = await this.graph.find_by_anchors(anchors);
-    const found: { anchor: string; id: string }[] = [];
-    anchors.forEach((anchor, index) => { const id = ids[index]; if (id) found.push({ anchor, id }); });
+    if (externalIds.length === 0) return stamps;
+    const ids = await this.graph.find_by_external_ids(externalIds);
+    const found: { externalId: string; id: string }[] = [];
+    externalIds.forEach((externalId, index) => { const id = ids[index]; if (id) found.push({ externalId, id }); });
     if (found.length === 0) return stamps;
     const byId = new Map((await this.graph.get_entities(found.map(({ id }) => id))).map((item) => [item.id, item]));
-    for (const { anchor, id } of found) stamps.set(anchor, str(byId.get(id)?.properties ?? {}, "sync_pass") ?? null);
+    for (const { externalId, id } of found) {
+      const held = byId.get(id);
+      stamps.set(externalId, held === undefined ? null : str(held.properties as JsonObject, "sync_pass") ?? null);
+    }
     return stamps;
   }
 
   private async linkProfilesToContacts(
-    envelopes: SyncEnvelope[],
-    ids: Record<string, string>,
+    envelopes: readonly SyncEnvelope[],
+    ids: Readonly<Record<string, string>>,
   ): Promise<void> {
     for (const env of envelopes) {
-      const payload = env.payload;
-      if (str(payload, "entity_type") !== "profile" || !env.remote_id) continue;
+      const payload = env.payload as JsonObject;
+      if (str(payload, "entity_type") !== "profile" || !env.remoteId) continue;
       const handle = str(payload, "handle");
-      const profileId = ids[env.remote_id];
+      const profileId = ids[env.remoteId];
       if (!handle || !profileId) continue;
       try {
         const owner = await this.rpc.execute<{ contact_id: string } | null>(
@@ -183,10 +217,9 @@ export class LinkedinModule {
         // S5: `identity` runs hub → channel, so the CONTACT is the from
         // endpoint — the same edge contacts writes to every other replica.
         await this.graph.add_link({
-          from_id: owner.contact_id,
-          to_id: profileId,
+          from: owner.contact_id,
+          to: profileId,
           kind: IDENTITY,
-          declared_by: env.remote_id,
         });
         // CAS rename — only upgrades a handle-placeholder name.
         const displayName = str(payload, "display_name");
@@ -223,33 +256,24 @@ export class LinkedinModule {
     const offset = params.offset ?? 0;
     const win = await this.graph.list_entities_window({
       schema: POST,
-      order: [{ field: { property_path: "created_at" }, desc: true }],
+      order: [{ field: { propertyPath: "created_at" }, desc: true }],
       limit,
       offset,
     });
-    let items = win.items.map((row) => this.postItem(row));
+    let items = win.items.map((e) => this.postItem(e));
     if (params.platform) items = items.filter((i) => i.platform === params.platform);
     if (params.author_handle) items = items.filter((i) => i.author_handle === params.author_handle);
     return { items, total: win.total, limit, offset };
   }
 
-  @rpc("posts.get")
-  @tool("get", {
-    entity: "linkedin.post",
-    description: "Get a linkedin post by entity id.",
-    params: {
-      type: "object",
-      properties: { id: { type: "string", format: "uuid" } },
-      required: ["id"],
-      additionalProperties: false,
-    },
-  })
+  @rpc("posts.get", POST_GET_SPEC)
+  @tool("get", { entity: "linkedin.post", ...POST_GET_SPEC })
   async postsGet(params: GetParams): Promise<PostListItem> {
     const detail = await this.graph.get_entity_full(params.id, { links: false });
-    if (detail?.entity.schema_id !== POST) {
+    if (detail?.entity.schemaId !== POST) {
       throw new Error(`linkedin post not found: ${params.id}`);
     }
-    const data = detail.entity.properties ?? {};
+    const data = detail.entity.properties as JsonObject;
     return {
       id: detail.entity.id,
       platform: (str(data, "platform") as Platform | undefined) ?? null,
@@ -261,19 +285,8 @@ export class LinkedinModule {
     };
   }
 
-  @rpc("profiles.get")
-  @tool("get", {
-    entity: "linkedin.profile",
-    description: "Get a tracked linkedin profile by entity id (name, handle, followers, bio, url).",
-    params: {
-      type: "object",
-      // Plain string, not uuid: pending placeholders use "pending:<handle>"
-      // ids and must pass schema validation.
-      properties: { id: { type: "string" } },
-      required: ["id"],
-      additionalProperties: false,
-    },
-  })
+  @rpc("profiles.get", PROFILE_GET_SPEC)
+  @tool("get", { entity: "linkedin.profile", ...PROFILE_GET_SPEC })
   async profilesGet(params: GetParams): Promise<ProfileDetail> {
     // A pending placeholder has no entity yet — synthesize the minimal
     // detail from the tracking record so the detail pane can render
@@ -303,10 +316,10 @@ export class LinkedinModule {
       };
     }
     const detail = await this.graph.get_entity_full(params.id, { links: false });
-    if (detail?.entity.schema_id !== PROFILE) {
+    if (detail?.entity.schemaId !== PROFILE) {
       throw new Error(`linkedin profile not found: ${params.id}`);
     }
-    const d = detail.entity.properties ?? {};
+    const d = detail.entity.properties as JsonObject;
     const fc = d.follower_count;
     return {
       id: detail.entity.id,
@@ -342,22 +355,22 @@ export class LinkedinModule {
       // Framework list-pane search: shared paging helper (overfetch+1 keeps
       // hasMore truthful — infinite scroll works in search mode), identity
       // records batch-hydrated.
-      const { entities: page, total } = await searchEntitiesPage(this.graph, {
+      const found = await searchEntitiesPage(this.graph, {
         query: search,
-        schema_id: PROFILE,
+        schemaId: PROFILE,
         limit,
         offset,
       });
       // S5: the matched rows carry their dictionaries — nothing to hydrate.
-      const items = page.map((e) => this.profileItem({ entity: e }));
-      return { items, total, limit, offset };
+      const items = found.items.map((e) => this.profileItem(e));
+      return { items, total: found.total, limit, offset };
     }
     const win = await this.graph.list_entities_window({
       schema: PROFILE,
       limit,
       offset,
     });
-    let items = win.items.map((row) => this.profileItem(row));
+    let items = win.items.map((e) => this.profileItem(e));
     if (params.platform) items = items.filter((i) => i.platform === params.platform);
     // Page 0 (no search) prepends tracked-but-not-yet-synced handles as
     // PENDING rows — the honest optimistic state right after "+": the row
@@ -396,8 +409,8 @@ export class LinkedinModule {
       limit: 1000,
       offset: 0,
     });
-    for (const row of win.items) {
-      const h = str(row.entity.properties ?? {}, "handle");
+    for (const e of win.items) {
+      const h = str(e.properties as JsonObject, "handle");
       if (h) known.add(h.toLowerCase());
     }
     return tracked
@@ -413,27 +426,28 @@ export class LinkedinModule {
       }));
   }
 
-  private postItem(row: WindowRow): PostListItem {
-    const d = row.entity.properties ?? {};
+  private postItem(e: Entity): PostListItem {
+    const d = e.properties as JsonObject;
     return {
-      id: row.entity.id,
+      id: e.id,
       platform: (str(d, "platform") as Platform | undefined) ?? null,
       author_handle: str(d, "author_handle") ?? null,
-      text: str(d, "text") ?? row.entity.name,
+      // A nameless entity reads as the empty text the host used to send for it.
+      text: str(d, "text") ?? e.name ?? "",
       created_at: str(d, "created_at") ?? null,
       url: str(d, "url") ?? null,
       ...richPostFields(d),
     };
   }
 
-  private profileItem(row: WindowRow): ProfileListItem {
-    const d = row.entity.properties ?? {};
+  private profileItem(e: Entity): ProfileListItem {
+    const d = e.properties as JsonObject;
     const fc = d.follower_count;
     return {
-      id: row.entity.id,
+      id: e.id,
       platform: (str(d, "platform") as Platform | undefined) ?? null,
       handle: str(d, "handle") ?? null,
-      display_name: str(d, "display_name") ?? row.entity.name,
+      display_name: str(d, "display_name") ?? e.name,
       follower_count: typeof fc === "number" ? fc : null,
       avatar_url: str(d, "avatar_url") ?? null,
     };

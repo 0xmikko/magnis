@@ -19,7 +19,8 @@
 import { describe, it, expect, vi } from "vitest";
 import { mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { TelegramModule } from "../service.ts";
-import type { SyncEnvelope, TelegramCanonical } from "../../types.ts";
+import type { SyncEnvelope } from "@magnis/sdk";
+import type { TelegramCanonical } from "../../types.ts";
 
 type G = MockGraph;
 
@@ -40,9 +41,9 @@ interface TgInternals {
 function makeModule(): { mod: TgInternals; graph: G } {
   const graph = mockGraph({
     source_command: () => Promise.resolve({ message_id: 777 }),
-    find_by_anchor: () => Promise.resolve("ent-1"),
+    find_by_external_id: () => Promise.resolve("ent-1"),
   });
-  const mod = mountModule(TelegramModule, { graph, ctx: { extension_id: "telegram" } })
+  const mod = mountModule(TelegramModule, { graph, ctx: { extensionId: "telegram" } })
     .module as unknown as TgInternals;
   return { mod, graph };
 }

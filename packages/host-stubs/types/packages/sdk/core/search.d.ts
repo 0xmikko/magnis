@@ -33,4 +33,71 @@ export declare const MemoryDiagnosticsSchema: z.ZodObject<{
     lastConsolidation: z.ZodNullable<z.ZodString>;
 }, z.core.$strip>;
 export type MemoryDiagnostics = z.output<typeof MemoryDiagnosticsSchema>;
+/** Ranked evidence attached only when a declared search used retrieval. */
+export declare const SearchExecutionEvidenceSchema: z.ZodObject<{
+    score: z.ZodNumber;
+    channel: z.ZodEnum<{
+        text: "text";
+        semantic: "semantic";
+        hybrid: "hybrid";
+    }>;
+    chunkIndex: z.ZodInt;
+    excerpt: z.ZodString;
+}, z.core.$strict>;
+export type SearchExecutionEvidence = z.output<typeof SearchExecutionEvidenceSchema>;
+/** One item of the agent search tool: the entity and why it ranked. */
+export declare const EntitySearchItemSchema: z.ZodObject<{
+    entity: z.ZodDiscriminatedUnion<[z.ZodObject<{
+        origin: z.ZodLiteral<"canonical">;
+        source: z.ZodObject<{
+            source: z.ZodString;
+            account: z.ZodString;
+            externalId: z.ZodString;
+        }, z.core.$strict>;
+        id: z.ZodString;
+        owner: z.ZodString;
+        schemaId: z.ZodString;
+        schemaVersion: z.ZodInt;
+        createdAt: z.ZodISODateTime;
+        name: z.ZodNullable<z.ZodString>;
+        indexed: z.ZodBoolean;
+        date: z.ZodISODateTime;
+        idx: z.ZodNullable<z.ZodString>;
+        isPinned: z.ZodNullable<z.ZodBoolean>;
+        pinOrder: z.ZodNullable<z.ZodNumber>;
+        isArchived: z.ZodNullable<z.ZodBoolean>;
+        properties: z.ZodType<import("./json.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("./json.js").JsonValue, unknown>>;
+    }, z.core.$strict>, z.ZodObject<{
+        keys: z.ZodArray<z.ZodString>;
+        origin: z.ZodLiteral<"agent">;
+        confidence: z.ZodNumber;
+        evidence: z.ZodTuple<[z.ZodString], z.ZodString>;
+        validFrom: z.ZodNullable<z.ZodISODateTime>;
+        validUntil: z.ZodNullable<z.ZodISODateTime>;
+        id: z.ZodString;
+        owner: z.ZodString;
+        schemaId: z.ZodString;
+        schemaVersion: z.ZodInt;
+        createdAt: z.ZodISODateTime;
+        name: z.ZodNullable<z.ZodString>;
+        indexed: z.ZodBoolean;
+        date: z.ZodISODateTime;
+        idx: z.ZodNullable<z.ZodString>;
+        isPinned: z.ZodNullable<z.ZodBoolean>;
+        pinOrder: z.ZodNullable<z.ZodNumber>;
+        isArchived: z.ZodNullable<z.ZodBoolean>;
+        properties: z.ZodType<import("./json.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("./json.js").JsonValue, unknown>>;
+    }, z.core.$strict>], "origin">;
+    relevance: z.ZodObject<{
+        score: z.ZodNumber;
+        channel: z.ZodEnum<{
+            text: "text";
+            semantic: "semantic";
+            hybrid: "hybrid";
+        }>;
+        chunkIndex: z.ZodInt;
+        excerpt: z.ZodString;
+    }, z.core.$strict>;
+}, z.core.$strict>;
+export type EntitySearchItem = z.output<typeof EntitySearchItemSchema>;
 //# sourceMappingURL=search.d.ts.map

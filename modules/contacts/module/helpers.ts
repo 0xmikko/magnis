@@ -2,7 +2,7 @@
 // (compute_initials, pick_avatar_color, detect_channels) so list/detail
 // output matches pre-migration.
 
-import type { RawEntity } from "@magnis/plugin-sdk";
+import type { Entity, JsonObject, JsonValue } from "@magnis/sdk";
 import type { ContactListItem } from "../types.ts";
 
 const AVATAR_COLORS = ["orange", "blue", "green", "red", "purple", "pink"];
@@ -47,13 +47,13 @@ function dictString(dict: Readonly<Record<string, unknown>>, key: string): strin
   return typeof v === "string" && v.length > 0 ? v : null;
 }
 
-export function channelsOf(identityNeighbours: readonly RawEntity[]): string[] {
+export function channelsOf(identityNeighbours: readonly Entity[]): string[] {
   const out = new Set<string>();
   for (const n of identityNeighbours) {
-    if (n.schema_id === "email.address") out.add("Email");
-    else if (n.schema_id.startsWith("telegram.")) out.add("Telegram");
-    else if (n.schema_id === "x.profile") out.add("X");
-    else if (n.schema_id === "linkedin.profile") out.add("LinkedIn");
+    if (n.schemaId === "email.address") out.add("Email");
+    else if (n.schemaId.startsWith("telegram.")) out.add("Telegram");
+    else if (n.schemaId === "x.profile") out.add("X");
+    else if (n.schemaId === "linkedin.profile") out.add("LinkedIn");
   }
   return [...out].sort();
 }
@@ -63,13 +63,13 @@ export function channelsOf(identityNeighbours: readonly RawEntity[]): string[] {
 // writer, nothing to arbitrate); the email is the address node an identity
 // edge reaches. The hot list path batches the edges — no per-row graph access.
 export function buildListItem(
-  entity: RawEntity & { created_at?: string; is_pinned?: boolean | null },
-  identityNeighbours: readonly RawEntity[],
+  entity: Entity,
+  identityNeighbours: readonly Entity[],
 ): ContactListItem {
-  const dict = entity.properties ?? {};
+  const dict = entity.properties as Record<string, unknown>;
   const name =
     entity.name && entity.name.length > 0 ? entity.name : (dictString(dict, "name") ?? "Unknown");
-  const address = identityNeighbours.find((n) => n.schema_id === "email.address");
+  const address = identityNeighbours.find((n) => n.schemaId === "email.address");
   const phones = dict.phones;
   const phone = Array.isArray(phones)
     ? (phones
@@ -78,9 +78,9 @@ export function buildListItem(
     : null;
   return {
     id: entity.id,
-    schema_id: entity.schema_id,
+    schema_id: entity.schemaId,
     name,
-    email: address ? (dictString(address.properties ?? {}, "address") ?? address.name) : null,
+    email: address ? (dictString(address.properties as Record<string, unknown>, "address") ?? address.name) : null,
     phone,
     role: dictString(dict, "role"),
     company: dictString(dict, "company"),
@@ -91,37 +91,36 @@ export function buildListItem(
     // fold moved every other card field into a dictionary and left the tier
     // without a destination, so nothing has written it since.
     relevance_tier: null,
-    created_at: entity.created_at ?? new Date(0).toISOString(),
-    is_pinned: entity.is_pinned ?? null,
+    created_at: entity.createdAt,
+    is_pinned: entity.isPinned,
   };
 }
 
+/** The keys of a Google payload a replica keeps. */
+const REPLICA_KEYS = [
+  "resource_name",
+  "etag",
+  "display_name",
+  "given_name",
+  "family_name",
+  "emails",
+  "phones",
+  "organizations",
+  "photo_url",
+  "external_url",
+] as const;
+
 /** The google replica's dictionary (S3, plan §5): the payload's fields as
  * last synced, verbatim — including resource_name + etag (the write-back
- * base). The hashed legacy id stays out (it is the node's anchor). */
-export function replicaDict(p: {
-  resource_name?: string | null;
-  etag?: string | null;
-  display_name?: string | null;
-  given_name?: string | null;
-  family_name?: string | null;
-  emails?: unknown[];
-  phones?: unknown[];
-  organizations?: unknown[];
-  photo_url?: string | null;
-  external_url?: string | null;
-}): Record<string, unknown> {
-  const d: Record<string, unknown> = {};
-  if (p.resource_name) d.resource_name = p.resource_name;
-  if (p.etag) d.etag = p.etag;
-  if (p.display_name) d.display_name = p.display_name;
-  if (p.given_name) d.given_name = p.given_name;
-  if (p.family_name) d.family_name = p.family_name;
-  if (p.emails && p.emails.length > 0) d.emails = p.emails;
-  if (p.phones && p.phones.length > 0) d.phones = p.phones;
-  if (p.organizations && p.organizations.length > 0) d.organizations = p.organizations;
-  if (p.photo_url) d.photo_url = p.photo_url;
-  if (p.external_url) d.external_url = p.external_url;
+ * base). Empty fields stay out, and so does the hashed legacy id (it is the
+ * node's external id). */
+export function replicaDict(payload: JsonObject): JsonObject {
+  const d: Record<string, JsonValue> = {};
+  for (const key of REPLICA_KEYS) {
+    const value = payload[key];
+    if (value === undefined) continue;
+    if (Array.isArray(value) ? value.length > 0 : Boolean(value)) d[key] = value;
+  }
   return d;
 }
 

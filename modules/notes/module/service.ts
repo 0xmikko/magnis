@@ -1,4 +1,3 @@
-import { rpc } from "@magnis/plugin-sdk";
 // Notes plugin — backend module (V8). Decorated class; graph-only port of the
 // native `backend/src/modules/notes` service (no on-disk `.md` mirror, no sync
 // ingest). Ownership: single-entity reads + every mutation enforce it via the
@@ -6,15 +5,14 @@ import { rpc } from "@magnis/plugin-sdk";
 // NOT user-scoped); `list`/`search` rely instead on the host's already
 // user-scoped `list_entities_window` / `search_entities_by_name` ops.
 
-import { tool, writeTool, type GraphService, errText,
+import { errText, linkedEntitySummary, rpc, tool, writeTool, type GraphService,
   type PluginDeps, type PluginLogger } from "@magnis/plugin-sdk";
-import type { EntityDetail, PaginatedResponse, RawEntity, WindowRow } from "@magnis/plugin-sdk";
+import type { Entity, EntityWithLinks, LinkedEntitySummary, PaginatedResponse } from "@magnis/sdk";
 import type {
   ContentData,
   CreateParams,
   DeleteParams,
   GetParams,
-  LinkedEntitySummary,
   NoteCanonical,
   NoteDetailView,
   NoteListItem,
@@ -26,6 +24,80 @@ import type {
 import { NOTE } from "../schema.ts";
 import { isValidUuid, previewFromBody, renderTemplate } from "./helpers.ts";
 import { BODY_ONE_OF, resolveBody, resolveUpdateBody } from "../ui/toolArgs.ts";
+
+// One spec per method: an rpc() stacked on a tool publishes the same input.
+const GET_SPEC = {
+  description: "Get a full note detail view by entity id.",
+  params: {
+    type: "object",
+    properties: { id: { type: "string", format: "uuid" } },
+    required: ["id"],
+    additionalProperties: false,
+  },
+};
+
+const TEMPLATE_APPLY_PARAMS = {
+  type: "object",
+  properties: {
+    template: { type: "string", description: "Template name" },
+    title: { type: "string", description: "Note title" },
+    variables: { type: "object", description: "Optional variables for template interpolation" },
+  },
+  required: ["template", "title"],
+  additionalProperties: false,
+};
+
+const CREATE_SPEC = {
+  description: "Create a note from markdown or a named template.",
+  // @tested-by: tst_module_notes_forms_001
+  params: { oneOf: [...BODY_ONE_OF.map(({ required }) => ({
+    type: "object",
+    properties: {
+      title: { type: "string", description: "Note title" },
+      body: { type: "string", description: "Markdown content" },
+      content: {
+        type: "string",
+        description: "Markdown content — MCP-compatible alias for `body`. Supply one, not both.",
+      },
+      client_id: {
+        type: "string",
+        format: "uuid",
+        description: "Client-generated UUID for optimistic / idempotent create",
+      },
+    },
+    required: ["title", ...required],
+    additionalProperties: false,
+  })), TEMPLATE_APPLY_PARAMS] },
+};
+
+const UPDATE_SPEC = {
+  description:
+    "Update an existing note's title and/or body. Both are optional — only provided fields are updated.",
+  params: {
+    type: "object",
+    properties: {
+      id: { type: "string", format: "uuid", description: "Entity ID of the note" },
+      title: { type: "string", description: "New title (optional)" },
+      body: { type: "string", description: "New markdown body (optional)" },
+      content: {
+        type: "string",
+        description: "New markdown body — MCP alias for `body`. Supply one, not both.",
+      },
+    },
+    required: ["id"],
+    additionalProperties: false,
+  },
+};
+
+const DELETE_SPEC = {
+  description: "Delete a note by entity id.",
+  params: {
+    type: "object",
+    properties: { id: { type: "string", format: "uuid" } },
+    required: ["id"],
+    additionalProperties: false,
+  },
+};
 
 export class NotesModule {
   private readonly graph: GraphService;
@@ -75,16 +147,14 @@ export class NotesModule {
       // dropping the 2N+1 N+1.
       const all = await this.graph.search_entities_by_name({
         query: search,
-        schema_ids: [NOTE],
+        schemaIds: [NOTE],
         limit: limit + offset,
       });
       const total = all.length;
       const page = all.slice(offset, offset + limit);
       // S1: the dictionary rides the entity — the record and canonical batch
       // reads (two round-trips per page) are gone.
-      const items = page.map((e) =>
-        this.listItemFromParts(e, (e.properties ?? {}) as ContentData, {}),
-      );
+      const items = page.map((e) => this.listItemFromParts(e, contentOf(e), {}));
       return { items, total, limit, offset };
     }
 
@@ -95,35 +165,28 @@ export class NotesModule {
     // is read.
     const win = await this.graph.list_entities_window({
       schema: NOTE,
-      order: [{ field: { property_path: "updated_at" }, desc: true }],
+      order: [{ field: { propertyPath: "updated_at" }, desc: true }],
       limit,
       offset,
     });
-    const items = win.items.map((row) => this.listItemFromWindow(row));
+    // S1: the dictionary rides the window's entity; the inlined render record
+    // is the frozen archive and is not read.
+    const items = win.items.map((e) => this.listItemFromParts(e, contentOf(e), {}));
     return { items, total: win.total, limit, offset };
   }
 
-  @rpc("get")
-  @tool("get", {
-    entity: "notes.note",
-    description: "Get a full note detail view by entity id.",
-    params: {
-      type: "object",
-      properties: { id: { type: "string", format: "uuid" } },
-      required: ["id"],
-      additionalProperties: false,
-    },
-  })
+  @rpc("get", GET_SPEC)
+  @tool("get", { entity: "notes.note", ...GET_SPEC })
   async get(params: GetParams): Promise<NoteDetailView> {
     const detail = await this.graph.get_entity_full(params.id, { links: true });
     // NotFound for a non-owned id (get_entity_full is user-scoped → null) AND for
     // an id that belongs to a different schema — a notes tool must never touch a
     // contact/project/etc. entity.
-    if (detail?.entity.schema_id !== NOTE) {
+    if (detail?.entity.schemaId !== NOTE) {
       throw new Error(`note not found: ${params.id}`);
     }
     const e = detail.entity;
-    const data = this.contentOf(detail);
+    const data = contentOf(e);
     // S6: the note's dictionary is the record — nothing resolves into
     // canonical any more, and the DTO keeps the field only until the wire
     // shape drops it.
@@ -135,8 +198,8 @@ export class NotesModule {
     // get_entity_full) — no per-link N+1.
     const linked: LinkedEntitySummary[] = [];
     if (detail.links.length > 0) {
-      const neighbourId = (l: { from_id: string; to_id: string }): string =>
-        l.from_id === e.id ? l.to_id : l.from_id;
+      const neighbourId = (l: { from: string; to: string }): string =>
+        l.from === e.id ? l.to : l.from;
       const targets = await this.graph.get_entities([
         ...new Set(detail.links.map(neighbourId)),
       ]);
@@ -144,63 +207,25 @@ export class NotesModule {
       for (const link of detail.links) {
         const t = byId.get(neighbourId(link));
         if (!t) continue;
-        linked.push({
-          id: t.id,
-          name: t.name,
-          schema_id: t.schema_id,
-          link_kind: link.kind,
-          created_at: t.created_at ?? new Date(0).toISOString(),
-          data: null,
-        });
+        linked.push(linkedEntitySummary(t, link, link.kind));
       }
     }
 
     return {
       id: e.id,
-      schema_id: e.schema_id,
+      schema_id: e.schemaId,
       title: this.titleOf(e, data),
       body: data.body ?? null,
       pinned,
       canonical,
       linked_entities: linked,
-      created_at: e.created_at ?? new Date(0).toISOString(),
+      created_at: e.createdAt,
       updated_at: data.updated_at ?? null,
     };
   }
 
-  @rpc("create")
-  @writeTool("create", {
-    entity: "notes.note",
-    description: "Create a note from markdown or a named template.",
-    // @tested-by: tst_module_notes_forms_001
-    params: { oneOf: [...BODY_ONE_OF.map(({ required }) => ({
-      type: "object",
-      properties: {
-        title: { type: "string", description: "Note title" },
-        body: { type: "string", description: "Markdown content" },
-        content: {
-          type: "string",
-          description: "Markdown content — MCP-compatible alias for `body`. Supply one, not both.",
-        },
-        client_id: {
-          type: "string",
-          format: "uuid",
-          description: "Client-generated UUID for optimistic / idempotent create",
-        },
-      },
-      required: ["title", ...required],
-      additionalProperties: false,
-    })), {
-      type: "object",
-      properties: {
-        template: { type: "string", description: "Template name" },
-        title: { type: "string", description: "Note title" },
-        variables: { type: "object", description: "Optional variables for template interpolation" },
-      },
-      required: ["template", "title"],
-      additionalProperties: false,
-    }] },
-  })
+  @rpc("create", CREATE_SPEC)
+  @writeTool("create", { entity: "notes.note", ...CREATE_SPEC })
   async create(params: CreateParams | TemplateApplyParams): Promise<NoteSnapshot> {
     if ("template" in params) {
       if ("body" in params || "content" in params) throw new Error("Supply content or a template, not both");
@@ -217,7 +242,7 @@ export class NotesModule {
       // Conflict on the id rather than return a fake note snapshot.
       // @tested-by: tst_module_notes_identity_001
       const existingEntity = await this.graph.get_entity(params.client_id);
-      if (existingEntity?.schema_id === NOTE) {
+      if (existingEntity?.schemaId === NOTE) {
         const existing = await this.graph.get_entity_full(params.client_id, { links: false });
         if (!existing) {
           throw new Error(`existing note ${params.client_id} has no detail snapshot`);
@@ -237,9 +262,9 @@ export class NotesModule {
     // its own field, so a body heading only duplicates it and goes stale on
     // rename (old title left visible in the body).
     const entity = await this.graph.create_entity({
-      schema_id: NOTE,
+      schemaId: NOTE,
       name: params.title,
-      client_id: params.client_id,
+      ...(params.client_id === undefined ? {} : { clientId: params.client_id }),
     });
     // @tested-by: tst_module_notes_write_001
     // @invariant: INV-2 — create is externally atomic. A failed content write
@@ -265,33 +290,15 @@ export class NotesModule {
     return { id: entity.id, schema_id: NOTE, title: params.title, body, updated_at: now };
   }
 
-  @rpc("update")
-  @writeTool("update", {
-    entity: "notes.note",
-    description:
-      "Update an existing note's title and/or body. Both are optional — only provided fields are updated.",
-    params: {
-      type: "object",
-      properties: {
-        id: { type: "string", format: "uuid", description: "Entity ID of the note" },
-        title: { type: "string", description: "New title (optional)" },
-        body: { type: "string", description: "New markdown body (optional)" },
-        content: {
-          type: "string",
-          description: "New markdown body — MCP alias for `body`. Supply one, not both.",
-        },
-      },
-      required: ["id"],
-      additionalProperties: false,
-    },
-  })
+  @rpc("update", UPDATE_SPEC)
+  @writeTool("update", { entity: "notes.note", ...UPDATE_SPEC })
   async update(params: UpdateParams): Promise<NoteSnapshot> {
     const detail = await this.graph.get_entity_full(params.id, { links: false });
-    if (detail?.entity.schema_id !== NOTE) {
+    if (detail?.entity.schemaId !== NOTE) {
       throw new Error(`note not found: ${params.id}`);
     }
     const e = detail.entity;
-    const data = this.contentOf(detail);
+    const data = contentOf(e);
     const currentTitle = this.titleOf(e, data);
     const newTitle = params.title ?? currentTitle;
     const newBody = resolveUpdateBody(params) ?? data.body ?? "";
@@ -336,27 +343,21 @@ export class NotesModule {
     return { id: params.id, schema_id: NOTE, title: newTitle, body: newBody, updated_at: now };
   }
 
-  @rpc("delete")
-  @writeTool("delete", {
-    entity: "notes.note",
-    description: "Delete a note by entity id.",
-    params: {
-      type: "object",
-      properties: { id: { type: "string", format: "uuid" } },
-      required: ["id"],
-      additionalProperties: false,
-    },
-  })
+  @rpc("delete", DELETE_SPEC)
+  @writeTool("delete", { entity: "notes.note", ...DELETE_SPEC })
   async delete(params: DeleteParams): Promise<{ deleted: boolean }> {
     const detail = await this.graph.get_entity_full(params.id, { links: false });
-    if (detail?.entity.schema_id !== NOTE) {
+    if (detail?.entity.schemaId !== NOTE) {
       throw new Error(`note not found: ${params.id}`);
     }
     await this.graph.delete_entity(params.id);
     return { deleted: true };
   }
 
-  @rpc("template.apply")
+  @rpc("template.apply", {
+    description: "Create a note from a named template.",
+    params: TEMPLATE_APPLY_PARAMS,
+  })
   async template_apply(params: TemplateApplyParams): Promise<NoteSnapshot> {
     // Native parity (controller.rs:188-191): required params are validated with
     // explicit messages before rendering.
@@ -381,30 +382,15 @@ export class NotesModule {
     // dictionary. One write, no canonical resolution pass, and an edit stops
     // being an accidental collection (the record path appended a row per save).
     await this.graph.update_properties({
-      entity_id: entityId,
+      entityId,
       properties: { title, body, pinned: false, updated_at: updatedAt },
     });
   }
 
-  private contentOf(detail: EntityDetail): ContentData {
-    // S1: the dictionary IS the state; the frozen retired archive is not read.
-    return (detail.entity.properties ?? {});
-  }
-
-  private titleOf(e: RawEntity, data: ContentData): string {
+  private titleOf(e: Entity, data: ContentData): string {
     if (e.name && e.name.length > 0) return e.name;
     if (data.title && data.title.length > 0) return data.title;
     return "Untitled";
-  }
-
-  private listItemFromWindow(row: WindowRow): NoteListItem {
-    // S1: the dictionary rides the window's entity; the inlined render record
-    // is the frozen archive and is not read.
-    return this.listItemFromParts(
-      row.entity,
-      ((row.entity).properties ?? {}),
-      {},
-    );
   }
 
   // Pure list-item shaping from an entity + its content record data + its
@@ -412,31 +398,37 @@ export class NotesModule {
   // stays byte-identical to the old per-row build; the window path passes `{}`
   // canonical. No graph access.
   private listItemFromParts(
-    e: RawEntity & { created_at?: string; is_pinned?: boolean | null },
+    e: Entity,
     data: ContentData,
     canonical: Partial<NoteCanonical>,
   ): NoteListItem {
     return {
       id: e.id,
-      schema_id: e.schema_id,
+      schema_id: e.schemaId,
       title: this.titleOf(e, data),
       preview: previewFromBody(data.body ?? ""),
       pinned: (canonical["note.pinned"] as boolean | null) ?? data.pinned ?? false,
-      created_at: e.created_at ?? new Date(0).toISOString(),
+      created_at: e.createdAt,
       updated_at: data.updated_at ?? null,
-      is_pinned: e.is_pinned ?? null,
+      is_pinned: e.isPinned,
     };
   }
 
-  private snapshotFromDetail(detail: EntityDetail): NoteSnapshot {
+  private snapshotFromDetail(detail: EntityWithLinks): NoteSnapshot {
     const e = detail.entity;
-    const data = this.contentOf(detail);
+    const data = contentOf(e);
     return {
       id: e.id,
       schema_id: NOTE,
       title: this.titleOf(e, data),
       body: data.body ?? "",
-      updated_at: data.updated_at ?? e.created_at ?? new Date(0).toISOString(),
+      updated_at: data.updated_at ?? e.createdAt,
     };
   }
+}
+
+/// S1: the note's dictionary IS its state; the frozen retired archive is not
+/// read. A note's dictionary is the `ContentData` this module writes.
+function contentOf(e: Entity): ContentData {
+  return e.properties as ContentData;
 }

@@ -27,7 +27,7 @@ import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { TelegramChat } from "../types";
 import type { TelegramConversation } from "../types";
-import type { TelegramMessageListItem } from "../types";
+import type { MessageListItem } from "../types";
 
 // ── Mocks ────────────────────────────────────────────────────────
 
@@ -164,7 +164,7 @@ vi.mock("@magnis/host/layout", () => ({
 
 // ── Helpers ──────────────────────────────────────────────────────
 
-function msgItem(i: number): TelegramMessageListItem {
+function msgItem(i: number): MessageListItem {
   return {
     id: `msg-${String(i)}`,
     schema_id: "telegram.message",
@@ -175,11 +175,11 @@ function msgItem(i: number): TelegramMessageListItem {
     timestamp: `2026-07-16T10:${String(i % 60).padStart(2, "0")}:00Z`,
     created_at: `2026-07-16T10:${String(i % 60).padStart(2, "0")}:00Z`,
     metadata: { message_id: i, chat_title: "Gearbox SC devs" },
-  } as unknown as TelegramMessageListItem;
+  } as unknown as MessageListItem;
 }
 
 function page(count: number, total: number, offset: number): {
-  items: TelegramMessageListItem[];
+  items: MessageListItem[];
   total: number;
   limit: number;
   offset: number;

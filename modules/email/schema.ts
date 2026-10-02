@@ -3,7 +3,7 @@
 // namespace string). The schemas/ files are the source of truth for REGISTRATION
 // (registered natively at install); these consts are for read/write
 // call sites only.
-import type { BatchEntityInput } from "@magnis/plugin-sdk";
+import type { BatchEntityInput } from "@magnis/sdk";
 
 /** Message entity schema. */
 export const MESSAGE_SCHEMA = "email.message";
@@ -15,10 +15,11 @@ export function addressBatchEntity(key: string, address: string, displayName: st
   const lower = address.trim().toLowerCase();
   return {
     key,
-    schema_id: ADDRESS_SCHEMA,
+    schemaId: ADDRESS_SCHEMA,
     name: lower,
     idx: lower,
-    anchor: `email:address:${lower}`,
+    date: null,
+    externalId: `email:address:${lower}`,
     properties: { address: lower, ...(displayName ? { display_name: displayName } : {}) },
   };
 }

@@ -27,8 +27,8 @@ function manifestToml(id: string, title: string): string {
 
 id = ${JSON.stringify(id)}
 version = "0.1.0"
-# SDK contract version this manifest targets (host accepts 0.x).
-magnis_api_version = "0.1.0"
+# Plugin API version this manifest targets; the host accepts exactly 0.2.0.
+magnis_api_version = "0.2.0"
 tier = "community"
 title = ${JSON.stringify(title)}
 summary = ${JSON.stringify(`Scaffolded ${id} module.`)}
@@ -93,7 +93,7 @@ export class ${cls} {
   })
   async list(params: ItemListParams): Promise<ItemListResponse> {
     const page = await this.graph.list_entities({
-      schema_id: ENTITY,
+      schemaId: ENTITY,
       limit: params.limit ?? 50,
       offset: params.offset ?? 0,
     });
@@ -116,8 +116,10 @@ import { ${cls} } from "../service.ts";
 function makeGraph() {
   return {
     list_entities: vi.fn().mockResolvedValue({
-      items: [{ id: "e1", schema_id: "${id}.item", name: "First" }],
+      items: [{ id: "e1", schemaId: "${id}.item", name: "First" }],
       total: 1,
+      limit: 50,
+      offset: 0,
     }),
   } as unknown as GraphService & Record<string, ReturnType<typeof vi.fn>>;
 }
@@ -125,7 +127,7 @@ function makeGraph() {
 function makeModule(graph: GraphService): ${cls} {
   const deps = {
     graph,
-    ctx: { extension_id: "${id}", user_id: "u1" },
+    ctx: { extensionId: "${id}", extensionKind: "module", userId: "u1" },
     util: {},
     rpc: { execute: vi.fn() },
     log: { log: vi.fn() },

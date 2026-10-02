@@ -23,9 +23,10 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   entity,
+  link,
   mockGraph,
   mountModule,
-  windowRow,
+  page,
   type MockGraph,
 } from "@magnis/testkit/module";
 import { NotesModule } from "../service.ts";
@@ -41,7 +42,7 @@ type G = MockGraph;
 // fails the test if the read path hits them.
 function readGraph(): G {
   return mockGraph({
-    list_entities_window: () => Promise.resolve({ items: [], total: 0 }),
+    list_entities_window: () => Promise.resolve(page([])),
     search_entities_by_name: () => Promise.resolve([]),
     get_entity_full: () => Promise.resolve(null),
     get_entities: () => Promise.resolve([]),
@@ -62,14 +63,14 @@ describe("notes read — shape parity (tst_be_notesread_001)", () => {
   let mod: NotesModule;
   beforeEach(() => {
     graph = readGraph();
-    mod = mountModule(NotesModule, { graph, ctx: { extension_id: "notes" } }).module;
+    mod = mountModule(NotesModule, { graph, ctx: { extensionId: "notes" } }).module;
   });
 
   it("F1 search reads the dictionary riding the entity (S1: no batch facets, no canonical)", async () => {
     spy(graph, "search_entities_by_name").mockResolvedValue([
       entity("n1", "", {
-        schema_id: NOTE,
-        created_at: "2026-01-01T00:00:00Z",
+        schemaId: NOTE,
+        createdAt: "2026-01-01T00:00:00Z",
         properties: {
           title: "Dict Title",
           body: "hello world",
@@ -91,15 +92,12 @@ describe("notes read — shape parity (tst_be_notesread_001)", () => {
 
   it("F2 get resolves link neighbours via ONE get_entities batch (no per-link fetch)", async () => {
     spy(graph, "get_entity_full").mockResolvedValue({
-      entity: entity("n1", "My Note", { schema_id: NOTE, properties: { body: "b" } }),
-      links: [
-        { id: "l1", from_id: "n1", to_id: "c1", kind: "mentions" },
-        { id: "l2", from_id: "n1", to_id: "c2", kind: "mentions" },
-      ],
+      entity: entity("n1", "My Note", { schemaId: NOTE, properties: { body: "b" } }),
+      links: [link("n1", "c1", "mentions"), link("n1", "c2", "mentions")],
     });
     spy(graph, "get_entities").mockResolvedValue([
-      entity("c1", "Alice", { schema_id: "contacts.person" }),
-      entity("c2", "Bob", { schema_id: "contacts.person" }),
+      entity("c1", "Alice", { schemaId: "contacts.person" }),
+      entity("c2", "Bob", { schemaId: "contacts.person" }),
     ]);
 
     const view = await mod.get({ id: "n1" });
@@ -114,18 +112,13 @@ describe("notes read — shape parity (tst_be_notesread_001)", () => {
   });
 
   it("F4 list (no search) maps window rows", async () => {
-    spy(graph, "list_entities_window").mockResolvedValue({
-      items: [
-        windowRow(
-          entity("n1", "Title", { schema_id: NOTE, properties: { body: "body", pinned: true } }),
-        ),
-      ],
-      total: 1,
-    });
-    const page = await mod.list({});
-    expect(page.items[0]).toMatchObject({ title: "Title", pinned: true });
+    spy(graph, "list_entities_window").mockResolvedValue(
+      page([entity("n1", "Title", { schemaId: NOTE, properties: { body: "body", pinned: true } })]),
+    );
+    const listed = await mod.list({});
+    expect(listed.items[0]).toMatchObject({ title: "Title", pinned: true });
     const call = spy(graph, "list_entities_window").mock.calls[0]?.[0];
-    expect(call?.order).toEqual([{ field: { property_path: "updated_at" }, desc: true }]);
+    expect(call?.order).toEqual([{ field: { propertyPath: "updated_at" }, desc: true }]);
   });
 
   /**
@@ -148,12 +141,12 @@ describe("notes read — DB-access guarantees (tst_be_notesdb_001)", () => {
   let mod: NotesModule;
   beforeEach(() => {
     graph = readGraph();
-    mod = mountModule(NotesModule, { graph, ctx: { extension_id: "notes" } }).module;
+    mod = mountModule(NotesModule, { graph, ctx: { extensionId: "notes" } }).module;
   });
 
   it("search = 1 search, 0 batch facets, 0 0 per-row reads, 0 window", async () => {
     spy(graph, "search_entities_by_name").mockResolvedValue([
-      entity("n1", "n", { schema_id: NOTE }),
+      entity("n1", "n", { schemaId: NOTE }),
     ]);
     await mod.list({ search: "x" });
     expect(graph.spies.search_entities_by_name).toHaveBeenCalledTimes(1);
@@ -163,11 +156,11 @@ describe("notes read — DB-access guarantees (tst_be_notesdb_001)", () => {
 
   it("get = 1 get_entity_full + 1 get_entities (links present), 0 0 per-link", async () => {
     spy(graph, "get_entity_full").mockResolvedValue({
-      entity: entity("n1", "N", { schema_id: NOTE }),
-      links: [{ id: "l1", from_id: "n1", to_id: "c1", kind: "mentions" }],
+      entity: entity("n1", "N", { schemaId: NOTE }),
+      links: [link("n1", "c1", "mentions")],
     });
     spy(graph, "get_entities").mockResolvedValue([
-      entity("c1", "Alice", { schema_id: "contacts.person" }),
+      entity("c1", "Alice", { schemaId: "contacts.person" }),
     ]);
     await mod.get({ id: "n1" });
     expect(graph.spies.get_entity_full).toHaveBeenCalledTimes(1);
@@ -176,10 +169,64 @@ describe("notes read — DB-access guarantees (tst_be_notesdb_001)", () => {
 
   it("get with no links makes 0 get_entities", async () => {
     spy(graph, "get_entity_full").mockResolvedValue({
-      entity: entity("n1", "N", { schema_id: NOTE }),
+      entity: entity("n1", "N", { schemaId: NOTE }),
       links: [],
     });
     await mod.get({ id: "n1" });
     expect(graph.spies.get_entities).toHaveBeenCalledTimes(0);
+  });
+});
+
+/**
+ * @test-id: tst_cat_entity_one_type_005
+ * @scenario: scn_notes_identity_001
+ * @covers: NotesModule.get
+ * @deterministic: yes
+ * @fixtures: strict graph read doubles
+ *
+ * A note's linked neighbour is the SDK `LinkedEntitySummary`: an agent's guess
+ * that the note mentions a person carries the agent statement — origin,
+ * confidence and when it stops — so the reader can tell a guess from a record.
+ */
+describe("tst_cat_entity_one_type_005 — a linked summary carries its statement", () => {
+  it("tst_cat_entity_one_type_005 lists an agent link's neighbour with origin, confidence and validUntil", async () => {
+    const graph = readGraph();
+    const mod = mountModule(NotesModule, { graph, ctx: { extensionId: "notes" } }).module;
+    spy(graph, "get_entity_full").mockResolvedValue({
+      entity: entity("n1", "My Note", { schemaId: NOTE, properties: { body: "b" } }),
+      links: [
+        {
+          id: "l1",
+          owner: "u1",
+          from: "n1",
+          to: "c1",
+          kind: "mentions",
+          createdAt: "2026-02-01T00:00:00Z",
+          origin: "agent",
+          confidence: 0.7,
+          evidence: ["episode-1"],
+          validFrom: null,
+          validUntil: "2027-01-01T00:00:00Z",
+        },
+      ],
+    });
+    spy(graph, "get_entities").mockResolvedValue([
+      entity("c1", "Alice", { schemaId: "contacts.person", createdAt: "2026-01-05T00:00:00Z" }),
+    ]);
+
+    const view = await mod.get({ id: "n1" });
+
+    expect(view.linked_entities).toEqual([
+      {
+        id: "c1",
+        name: "Alice",
+        schemaId: "contacts.person",
+        linkKind: "mentions",
+        createdAt: "2026-01-05T00:00:00Z",
+        origin: "agent",
+        confidence: 0.7,
+        validUntil: "2027-01-01T00:00:00Z",
+      },
+    ]);
   });
 });

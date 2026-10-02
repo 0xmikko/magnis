@@ -19,9 +19,9 @@ export const PERSON = "contacts.person";
 export const PERSON_CHAT_LINK = "person:telegram.chat";
 /** Account entity schema (S4): the telegram REPLICA — one node per distinct
  * telegram user id, the operator's own included (minted at connection-ready).
- * Anchored `tg:account:<telegram_user_id>`. */
+ * Its external id is `tg:account:<telegram_user_id>`. */
 export const TELEGRAM_ACCOUNT = "telegram.account";
-/** The account anchor form. */
-export const accountAnchor = (id: string | number): string => `tg:account:${String(id)}`;
-/** The chat anchor form (S4): chats resolve through the chokepoint. */
-export const chatAnchor = (id: string): string => `tg:chat:${id}`;
+/** The account's external id. */
+export const accountExternalId = (id: string | number): string => `tg:account:${String(id)}`;
+/** The chat's external id (S4): chats resolve through the chokepoint. */
+export const chatExternalId = (id: string): string => `tg:chat:${id}`;

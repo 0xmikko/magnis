@@ -24,7 +24,7 @@ import type {
 describe("projects.update runtime optional fields", () => {
   it("tst_mod_projects_update_001 treats null name/status as omitted during a description-only update", async () => {
     const project = entity("project-1", "Acme × ExampleCo", {
-      schema_id: PROJECT,
+      schemaId: PROJECT,
       properties: { name: "Acme × ExampleCo", status: "active" },
     });
     const graph = mockGraph({
@@ -40,7 +40,7 @@ describe("projects.update runtime optional fields", () => {
     });
     const module = mountModule(ProjectsModule, {
       graph,
-      ctx: { extension_id: "projects" },
+      ctx: { extensionId: "projects" },
     }).module;
 
     await module.update({
@@ -55,7 +55,7 @@ describe("projects.update runtime optional fields", () => {
     // the description riding the same write.
     expect(graph.spies.update_properties).toHaveBeenCalledWith(
       expect.objectContaining({
-        entity_id: project.id,
+        entityId: project.id,
         properties: expect.objectContaining({
           name: "Acme × ExampleCo",
           status: "active",

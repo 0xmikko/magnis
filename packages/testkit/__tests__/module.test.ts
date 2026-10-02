@@ -13,10 +13,11 @@ import {
 } from "@magnis/plugin-sdk";
 import {
   entity,
-  linkedRow,
+  link,
+  linkedEntity,
   mockGraph,
   mountModule,
-  windowRow,
+  page,
 } from "@magnis/testkit/module";
 
 // A minimal decorated module, exercised by the dispatch-mode tests. `ping` is a
@@ -32,15 +33,15 @@ class FixtureModule {
     return Promise.resolve({ pong: params.n + 1 });
   }
 
-  @rpc("secret")
+  @rpc("secret", { description: "secret", params: { type: "object", properties: {}, additionalProperties: false } })
   async secret(): Promise<string> {
     return Promise.resolve("shh");
   }
 
   // Reaches into the graph — used to prove an unconfigured op throws end-to-end.
   async count(): Promise<number> {
-    const page = await this.graph.list_entities({ schema_id: "x" });
-    return page.total;
+    const found = await this.graph.list_entities({ schemaId: "x" });
+    return found.total;
   }
 }
 
@@ -50,7 +51,7 @@ function publishedShape(): PluginModuleShape {
 }
 
 async function initializeShape(shape: PluginModuleShape, extensionId: string): Promise<void> {
-  const { deps } = mountModule(FixtureModule, { ctx: { extension_id: extensionId } });
+  const { deps } = mountModule(FixtureModule, { ctx: { extensionId } });
   await shape.init(deps.graph, deps.ctx, deps.util, deps.rpc, deps.log);
 }
 
@@ -83,7 +84,7 @@ describe("mountModule — direct", () => {
   it("tst_testkit_mount_direct_001 constructs the class with defaulted deps", async () => {
     const { module, graph, deps } = mountModule(FixtureModule);
     expect(await module.ping({ n: 1 })).toEqual({ pong: 2 });
-    expect(deps.ctx).toMatchObject({ user_id: "u1", extension_kind: "plugin", extension_id: "test" });
+    expect(deps.ctx).toEqual({ userId: "u1", extensionKind: "plugin", extensionId: "test" });
     // default rpc is a spy on `execute` (RpcExecutor contract), not `call`.
     expect(typeof deps.rpc.execute).toBe("function");
     // the default graph is a throwing mockGraph
@@ -96,14 +97,14 @@ describe("mountModule — direct", () => {
   });
 
   it("tst_testkit_mount_direct_003 opts override graph/ctx/rpc", () => {
-    const graph = mockGraph({ list_entities: () => Promise.resolve({ items: [], total: 7 }) });
+    const graph = mockGraph({ list_entities: () => Promise.resolve(page([], 7)) });
     const execute = vi.fn();
     const { module, deps } = mountModule(FixtureModule, {
       graph,
-      ctx: { extension_id: "fixture" },
+      ctx: { extensionId: "fixture" },
       rpc: { execute },
     });
-    expect(deps.ctx.extension_id).toBe("fixture");
+    expect(deps.ctx.extensionId).toBe("fixture");
     expect(deps.rpc.execute).toBe(execute);
     return expect(module.count()).resolves.toBe(7);
   });
@@ -111,23 +112,41 @@ describe("mountModule — direct", () => {
 
 describe("mountModule — dispatch", () => {
   it("tst_testkit_mount_dispatch_001 harvests decorated tool names, excludes rpc-only", async () => {
-    const { tools } = await mountModule(FixtureModule, { mode: "dispatch", ctx: { extension_id: "fixture" } });
+    const { tools } = await mountModule(FixtureModule, { mode: "dispatch", ctx: { extensionId: "fixture" } });
     expect(tools.map((t) => t.name)).toEqual(["fixture.resource.ping"]);
-    expect(tools[0]).toMatchObject({ description: "ping", requires_approval: false });
+    expect(tools[0]).toMatchObject({ description: "ping", requiresApproval: false });
+  });
+
+  /**
+   * @test-id: tst_cat_entity_one_type_001
+   * @covers packages/plugin-sdk/index.ts::definePlugin
+   *
+   * An rpc() method is published with its params schema beside the tools, so
+   * the host registers it with its input schema; a tool is not repeated there.
+   */
+  it("tst_cat_entity_one_type_001 publishes each rpc() method with its params schema", async () => {
+    await mountModule(FixtureModule, { mode: "dispatch", ctx: { extensionId: "fixture" } });
+    expect(publishedShape().rpcDeclarations).toEqual([
+      {
+        name: "fixture.secret",
+        description: "secret",
+        params: { type: "object", properties: {}, additionalProperties: false },
+      },
+    ]);
   });
 
   it("tst_testkit_mount_dispatch_002 routes by full name and by bare suffix", async () => {
-    const { rpc: call, tools } = await mountModule(FixtureModule, { mode: "dispatch", ctx: { extension_id: "fixture" } });
+    const { rpc: call, tools } = await mountModule(FixtureModule, { mode: "dispatch", ctx: { extensionId: "fixture" } });
     expect(tools.map((toolDefinition) => toolDefinition.name)).toEqual(["fixture.resource.ping"]);
     expect(await call("fixture.resource.ping", { n: 4 })).toEqual({ pong: 5 });
     expect(await call("resource.ping", { n: 9 })).toEqual({ pong: 10 });
     // rpc-only handler is reachable via dispatch though absent from `tools`.
-    expect(await call("fixture.secret")).toBe("shh");
+    expect(await call("fixture.secret", {})).toBe("shh");
   });
 
   it("tst_testkit_mount_dispatch_003 unknown handler throws", async () => {
-    const { rpc: call } = await mountModule(FixtureModule, { mode: "dispatch", ctx: { extension_id: "fixture" } });
-    expect(() => call("nope")).toThrow("no rpc handler: nope");
+    const { rpc: call } = await mountModule(FixtureModule, { mode: "dispatch", ctx: { extensionId: "fixture" } });
+    expect(() => call("nope", {})).toThrow("no rpc handler: nope");
   });
 
   /**
@@ -238,15 +257,14 @@ describe("mountModule — dispatch", () => {
 
 describe("builders", () => {
   it("tst_testkit_builders_001 produce the real DTO shapes", () => {
-    expect(entity("a", "Acme")).toMatchObject({ id: "a", name: "Acme", schema_id: "" });
-    expect(entity("a", "Acme", { schema_id: "companies.company" }).schema_id).toBe("companies.company");
-    expect(windowRow(entity("a", "Acme"))).toEqual({
-      entity: { id: "a", name: "Acme", schema_id: "", created_at: "2026-01-01T00:00:00Z" },
-    });
-    expect(linkedRow(entity("a", "Acme"), { kind: "authored_by" }).link).toMatchObject({
-      from_id: "a",
+    expect(entity("a", "Acme")).toMatchObject({ id: "a", name: "Acme", schemaId: "", origin: "canonical" });
+    expect(entity("a", "Acme", { schemaId: "companies.company" }).schemaId).toBe("companies.company");
+    expect(link("a", "b", "works_at")).toMatchObject({ from: "a", to: "b", kind: "works_at", validUntil: null });
+    expect(linkedEntity(entity("a", "Acme"), { kind: "authored_by" }).link).toMatchObject({
+      from: "a",
       kind: "authored_by",
     });
+    expect(page([entity("a", "Acme")])).toMatchObject({ total: 1, offset: 0 });
   });
 });
 
@@ -257,7 +275,7 @@ describe("builders", () => {
  */
 it("tst_testkit_entity_operations_001 dispatches the same operation for distinct owned entities", async () => {
   class Messages {
-    @writeTool("create", { entity: "mail.message", description: "Create message", params: {}, allowlist_gate: { target_type: "email_address", target_arg: "to", batch_arg: "messages" } })
+    @writeTool("create", { entity: "mail.message", description: "Create message", params: {}, allowlistGate: { targetType: "email_address", targetArg: "to", batchArg: "messages" } })
     message(): string { return "message"; }
     @writeTool("create", { entity: "mail.address", description: "Create address", params: {} })
     address(): string { return "address"; }
@@ -269,7 +287,7 @@ it("tst_testkit_entity_operations_001 dispatches the same operation for distinct
     { name: "mail.message.create", binding: { entity: "mail.message", operation: "create" } },
     { name: "mail.address.create", binding: { entity: "mail.address", operation: "create" } },
   ]);
-  expect(shape.toolDefinitions[0]?.allowlist_gate).toEqual({ target_type: "email_address", target_arg: "to", batch_arg: "messages" });
+  expect(shape.toolDefinitions[0]?.allowlistGate).toEqual({ targetType: "email_address", targetArg: "to", batchArg: "messages" });
   expect(shape.rpcHandlers["mail.message.create"]?.({})).toBe("message");
   expect(shape.rpcHandlers["mail.address.create"]?.({})).toBe("address");
   expect(shape.rpcHandlers["mail.create"]).toBeUndefined();
@@ -311,7 +329,7 @@ it("tst_testkit_entity_operations_003 standard decorators preserve pair identity
   definePlugin(Standard);
   const shape = publishedShape();
   await initializeShape(shape, "mail");
-  expect(shape.toolDefinitions[0]).toMatchObject({ name: "mail.message.create", binding: { entity: "mail.message", operation: "create" }, requires_approval: true });
+  expect(shape.toolDefinitions[0]).toMatchObject({ name: "mail.message.create", binding: { entity: "mail.message", operation: "create" }, requiresApproval: true });
   expect(shape.rpcHandlers["mail.message.create"]?.({})).toBe("standard");
   expect(() => writeTool("create", spec)(Standard.prototype.create, context)).toThrow("duplicate");
 });

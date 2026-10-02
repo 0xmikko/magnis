@@ -6,20 +6,13 @@
  * exactly that contract — a plugin test that needed real ProseMirror
  * behaviour would be testing the host.
  */
+import type { EntitySearchResult } from "@magnis/host/markdown";
 import { useMemo, useState, type JSX } from "react";
 
 import { useMentionSearch } from "@/modules/episodes/hooks/useMentionSearch";
 
-export interface EntitySearchResultLike {
-  readonly id: string;
-  // Nullable, as the host declares it: an entity in the graph can have no
-  // name, and a mention popup that assumed otherwise would crash on it.
-  readonly name: string | null;
-  readonly schema_id?: string;
-}
-
 export interface MentionSuggestionConfigLike {
-  readonly results: readonly EntitySearchResultLike[];
+  readonly results: readonly EntitySearchResult[];
   readonly isLoading: boolean;
   readonly onQueryChange: (query: string, active: boolean) => void;
 }

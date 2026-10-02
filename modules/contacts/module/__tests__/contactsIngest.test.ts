@@ -1,6 +1,6 @@
 // Contacts sync ingest (@syncHandler "contacts") — S3, the replica model
 // (plan §5): a page of Google contacts folds into ONE apply_batch of
-// contacts.google_contact REPLICA nodes (anchored by remote_id, dictionary =
+// contacts.google_contact REPLICA nodes (external id = remoteId, dictionary =
 // fields as last synced, zero records, zero hub entities), the addresses are
 // minted by their owner over email.ensure_addresses, and auto-attach then
 // wires identity edges — attach to the one hub sharing an address, mint a
@@ -24,8 +24,8 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { BatchEntityInput, GraphBatchInput } from "@magnis/plugin-sdk";
-import { mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
+import type { BatchEntityInput, CanonicalEntity, CanonicalLink, GraphBatchInput, JsonObject, SyncEnvelope } from "@magnis/sdk";
+import { entity, link, mockGraph, mountModule, page, type MockGraph } from "@magnis/testkit/module";
 import { ContactsModule } from "../service.ts";
 import type { ContactCanonical } from "../../types.ts";
 
@@ -40,17 +40,6 @@ function spy(g: G, name: string) {
   return s;
 }
 
-interface SyncEnvelope {
-  source_id: string;
-  surface: string;
-  account_id: string;
-  user_id: string;
-  kind: string;
-  remote_id?: string;
-  payload: Record<string, unknown>;
-  timestamp: string;
-}
-
 // The ingest-path world: apply_batch echoes each key → a deterministic id;
 // links/entity reads feed auto-attach (default: empty world → every replica
 // mints a hub); add_link records the identity edges; create_entity records
@@ -58,11 +47,11 @@ interface SyncEnvelope {
 interface World {
   graph: G;
   rpcCalls: { method: string; params: unknown }[];
-  links: { from_id: string; to_id: string; kind: string; status?: string }[];
-  minted: { schema_id: string; name: string }[];
+  links: { from: string; to: string; kind: string }[];
+  minted: { schemaId: string; name: string }[];
   /** identity edges pre-existing in the world: entity id → its links. */
-  linksFor?: Record<string, { from_id: string; to_id: string; kind: string }[]>;
-  entities?: Record<string, { id: string; schema_id: string; name?: string }>;
+  linksFor?: Record<string, CanonicalLink[]>;
+  entities?: Record<string, CanonicalEntity>;
   externalIds?: Record<string, string>;
   graphOverrides?: Record<string, unknown>;
 }
@@ -81,12 +70,12 @@ function ingestWorld(over: Partial<World> = {}): World {
       Promise.resolve({
         ids: Object.fromEntries(frag.entities.map((e: BatchEntityInput) => [
           e.key,
-          e.schema_id === "email.address" ? `addr-${e.key.slice("addr:".length)}` : `id-${e.key}`,
+          e.schemaId === "email.address" ? `addr-${e.key.slice("addr:".length)}` : `id-${e.key}`,
         ])),
         created: frag.entities.length,
         updated: 0,
-        links_added: frag.links?.length ?? 0,
-        dropped_keys: [],
+        linksAdded: frag.links.length,
+        droppedKeys: [],
       }),
     list_links_for_entity: (id: string) => Promise.resolve(world.linksFor?.[id] ?? []),
     get_entities: (ids: string[]) =>
@@ -96,15 +85,15 @@ function ingestWorld(over: Partial<World> = {}): World {
           .filter((e): e is NonNullable<typeof e> => e !== undefined),
       ),
     get_entity: (id: string) => Promise.resolve(world.entities?.[id] ?? null),
-    create_entity: (input: { schema_id: string; name: string }) => {
-      world.minted.push({ schema_id: input.schema_id, name: input.name });
-      return Promise.resolve({ id: `hub-${mintSeq++}`, schema_id: input.schema_id, name: input.name });
+    create_entity: (input: { schemaId: string; name: string }) => {
+      world.minted.push({ schemaId: input.schemaId, name: input.name });
+      return Promise.resolve(entity(`hub-${mintSeq++}`, input.name, { schemaId: input.schemaId }));
     },
-    add_link: (p: { from_id: string; to_id: string; kind: string; status?: string }) => {
+    add_link: (p: { from: string; to: string; kind: string }) => {
       world.links.push(p);
       return Promise.resolve();
     },
-    list_entities: () => Promise.resolve({ items: [], total: 0 }),
+    list_entities: () => Promise.resolve(page([])),
     ...world.graphOverrides,
   } as never);
   return world;
@@ -113,7 +102,7 @@ function ingestWorld(over: Partial<World> = {}): World {
 function mountWorld(world: World): ContactsModule {
   return mountModule(ContactsModule, {
     graph: world.graph,
-    ctx: { extension_id: "contacts" },
+    ctx: { extensionId: "contacts" },
     rpc: {
       execute: (method: string, params: unknown) => {
         world.rpcCalls.push({ method, params });
@@ -127,20 +116,20 @@ function mountWorld(world: World): ContactsModule {
   }).module;
 }
 
-const env = (over: Partial<SyncEnvelope> & { payload?: Record<string, unknown> }): SyncEnvelope => ({
-  source_id: "google",
+const env = (over: Partial<SyncEnvelope>): SyncEnvelope => ({
+  sourceId: "google",
   surface: "contacts",
-  account_id: "acct-1",
-  user_id: "u1",
+  accountId: "acct-1",
+  userId: "u1",
   kind: "snapshot",
-  remote_id: "gpeople:abc123",
+  remoteId: "gpeople:abc123",
   payload: {},
   timestamp: "2026-03-14T09:00:00Z",
   ...over,
 });
 
 // A Google connector `Contact` payload (sources/google/src/surfaces.rs).
-const contactPayload = (over: Record<string, unknown> = {}) => ({
+const contactPayload = (over: JsonObject = {}): JsonObject => ({
   id: "abc123",
   display_name: "Mikhail Lazarev",
   given_name: "Mikhail",
@@ -176,8 +165,8 @@ describe("contacts ingest — the replica model (tst_be_contactsingest_001)", ()
    */
   it("tst_module_contacts_ingest_003 sends only direct-link fields to the host", async () => {
     const world = ingestWorld({ graphOverrides: {
-      add_link: (link: Record<string, unknown>) => {
-        if ("declared_by" in link || "status" in link) throw new Error("link: unknown fields declared_by or status");
+      add_link: (added: Record<string, unknown>) => {
+        if ("declaredBy" in added || "status" in added) throw new Error("link: unknown fields declaredBy or status");
         return Promise.resolve();
       },
     } });
@@ -197,29 +186,29 @@ describe("contacts ingest — the replica model (tst_be_contactsingest_001)", ()
     const world = ingestWorld();
     const mod = mountModule(ContactsModule, {
       graph: world.graph,
-      ctx: { extension_id: "contacts" },
+      ctx: { extensionId: "contacts" },
       rpc: { execute: () => Promise.reject(new Error("op_plugin_rpc_call forbidden in sync")) } as never,
     }).module;
     await expect(mod.ingest({ envelopes: [env({ payload: contactPayload() })] })).resolves.toBeDefined();
     expect(lastBatch(world.graph).entities).toContainEqual(expect.objectContaining({
-      schema_id: "email.address",
-      anchor: "email:address:mikhail@example.com",
+      schemaId: "email.address",
+      externalId: "email:address:mikhail@example.com",
     }));
   });
 
-  it("one envelope → ONE replica node: anchored, dictionary as last synced, zero facets, zero hub writes in the batch", async () => {
+  it("one envelope → ONE replica node: its external id, dictionary as last synced, zero facets, zero hub writes in the batch", async () => {
     const world = ingestWorld();
     const mod = mountWorld(world);
-    await mod.ingest({ envelopes: [env({ remote_id: "gpeople:abc123", payload: contactPayload() })] });
+    await mod.ingest({ envelopes: [env({ remoteId: "gpeople:abc123", payload: contactPayload() })] });
 
     expect(world.graph.spies.apply_batch).toHaveBeenCalledTimes(1);
     const frag = lastBatch(world.graph);
-    expect(frag.entities.map((e) => e.schema_id)).toEqual(["email.address", "contacts.google_contact"]);
+    expect(frag.entities.map((e) => e.schemaId)).toEqual(["email.address", "contacts.google_contact"]);
 
     const replica = personOf(frag, "gpeople:abc123");
-    expect(replica.anchor).toBe("gpeople:abc123");
+    expect(replica.externalId).toBe("gpeople:abc123");
     expect(replica.name).toBe("Mikhail Lazarev");
-    const props = replica.properties ?? {};
+    const props = replica.properties as JsonObject;
     expect(props.given_name).toBe("Mikhail");
     expect(props.family_name).toBe("Lazarev");
     expect(props.photo_url).toBe("https://photos.example.com/a.jpg");
@@ -232,12 +221,12 @@ describe("contacts ingest — the replica model (tst_be_contactsingest_001)", ()
   it("no hub anywhere → mint (name vouch) + identity edges to replica and address", async () => {
     const world = ingestWorld();
     const mod = mountWorld(world);
-    await mod.ingest({ envelopes: [env({ remote_id: "gpeople:abc123", payload: contactPayload() })] });
+    await mod.ingest({ envelopes: [env({ remoteId: "gpeople:abc123", payload: contactPayload() })] });
 
-    expect(world.minted).toEqual([{ schema_id: "contacts.person", name: "Mikhail Lazarev" }]);
+    expect(world.minted).toEqual([{ schemaId: "contacts.person", name: "Mikhail Lazarev" }]);
     expect(world.links).toEqual([
-      { from_id: "hub-0", to_id: "id-gpeople:abc123", kind: "identity" },
-      { from_id: "hub-0", to_id: "addr-mikhail@example.com", kind: "identity" },
+      { from: "hub-0", to: "id-gpeople:abc123", kind: "identity" },
+      { from: "hub-0", to: "addr-mikhail@example.com", kind: "identity" },
     ]);
   });
 
@@ -245,20 +234,20 @@ describe("contacts ingest — the replica model (tst_be_contactsingest_001)", ()
     const world = ingestWorld({
       linksFor: {
         "addr-mikhail@example.com": [
-          { from_id: "hub-X", to_id: "addr-mikhail@example.com", kind: "identity" },
+          link("hub-X", "addr-mikhail@example.com", "identity"),
         ],
       },
-      entities: { "hub-X": { id: "hub-X", schema_id: "contacts.person", name: "Mika" } },
+      entities: { "hub-X": entity("hub-X", "Mika", { schemaId: "contacts.person" }) },
     });
     const mod = mountWorld(world);
-    await mod.ingest({ envelopes: [env({ remote_id: "gpeople:abc123", payload: contactPayload() })] });
+    await mod.ingest({ envelopes: [env({ remoteId: "gpeople:abc123", payload: contactPayload() })] });
 
     expect(world.minted).toEqual([]);
     expect(world.links).toEqual([
-      { from_id: "hub-X", to_id: "id-gpeople:abc123", kind: "identity" },
+      { from: "hub-X", to: "id-gpeople:abc123", kind: "identity" },
       {
-        from_id: "hub-X",
-        to_id: "addr-mikhail@example.com",
+        from: "hub-X",
+        to: "addr-mikhail@example.com",
         kind: "identity",
       },
     ]);
@@ -268,21 +257,21 @@ describe("contacts ingest — the replica model (tst_be_contactsingest_001)", ()
     const world = ingestWorld({
       linksFor: {
         "addr-mikhail@example.com": [
-          { from_id: "hub-A", to_id: "addr-mikhail@example.com", kind: "identity" },
-          { from_id: "hub-B", to_id: "addr-mikhail@example.com", kind: "identity" },
+          link("hub-A", "addr-mikhail@example.com", "identity"),
+          link("hub-B", "addr-mikhail@example.com", "identity"),
         ],
       },
       entities: {
-        "hub-A": { id: "hub-A", schema_id: "contacts.person" },
-        "hub-B": { id: "hub-B", schema_id: "contacts.person" },
+        "hub-A": entity("hub-A", "A", { schemaId: "contacts.person" }),
+        "hub-B": entity("hub-B", "B", { schemaId: "contacts.person" }),
       },
     });
     const mod = mountWorld(world);
-    await mod.ingest({ envelopes: [env({ remote_id: "gpeople:abc123", payload: contactPayload() })] });
+    await mod.ingest({ envelopes: [env({ remoteId: "gpeople:abc123", payload: contactPayload() })] });
 
     expect(world.minted).toHaveLength(1);
     const candidates = world.links.filter((l) => l.kind === "same_as");
-    expect(candidates.map((l) => l.to_id).sort()).toEqual(["hub-A", "hub-B"]);
+    expect(candidates.map((l) => l.to).sort()).toEqual(["hub-A", "hub-B"]);
   });
 
   // The legacy-fleet probe retired with the archive it read: a pre-anchor hub
@@ -293,16 +282,16 @@ describe("contacts ingest — the replica model (tst_be_contactsingest_001)", ()
   it("a pre-anchor hub is no longer recognised — ingest mints a fresh one", async () => {
     const world = ingestWorld({
       externalIds: { "gpeople:abc123": "old-hub" },
-      entities: { "old-hub": { id: "old-hub", schema_id: "contacts.person", name: "Old" } },
+      entities: { "old-hub": entity("old-hub", "Old", { schemaId: "contacts.person" }) },
     });
     const mod = mountWorld(world);
     await mod.ingest({
-      envelopes: [env({ remote_id: "gpeople:abc123", payload: contactPayload({ emails: [] }) })],
+      envelopes: [env({ remoteId: "gpeople:abc123", payload: contactPayload({ emails: [] }) })],
     });
 
-    expect(world.minted).toEqual([{ schema_id: "contacts.person", name: "Mikhail Lazarev" }]);
+    expect(world.minted).toEqual([{ schemaId: "contacts.person", name: "Mikhail Lazarev" }]);
     expect(world.links).toEqual([
-      { from_id: "hub-0", to_id: "id-gpeople:abc123", kind: "identity" },
+      { from: "hub-0", to: "id-gpeople:abc123", kind: "identity" },
     ]);
   });
 
@@ -310,12 +299,12 @@ describe("contacts ingest — the replica model (tst_be_contactsingest_001)", ()
     const world = ingestWorld({
       linksFor: {
         "id-gpeople:abc123": [
-          { from_id: "hub-X", to_id: "id-gpeople:abc123", kind: "identity" },
+          link("hub-X", "id-gpeople:abc123", "identity"),
         ],
       },
     });
     const mod = mountWorld(world);
-    await mod.ingest({ envelopes: [env({ remote_id: "gpeople:abc123", payload: contactPayload() })] });
+    await mod.ingest({ envelopes: [env({ remoteId: "gpeople:abc123", payload: contactPayload() })] });
 
     expect(world.minted).toEqual([]);
     expect(world.links).toEqual([]);
@@ -326,12 +315,12 @@ describe("contacts ingest — the replica model (tst_be_contactsingest_001)", ()
     const mod = mountWorld(world);
     await mod.ingest({
       envelopes: [
-        env({ remote_id: "gpeople:abc123", payload: contactPayload() }),
-        env({ remote_id: "gpeople:abc123", payload: contactPayload({ display_name: "Mikhail L." }) }),
+        env({ remoteId: "gpeople:abc123", payload: contactPayload() }),
+        env({ remoteId: "gpeople:abc123", payload: contactPayload({ display_name: "Mikhail L." }) }),
       ],
     });
     const frag = lastBatch(world.graph);
-    expect(frag.entities.filter((entity) => entity.schema_id === "contacts.google_contact")).toHaveLength(1);
+    expect(frag.entities.filter((item) => item.schemaId === "contacts.google_contact")).toHaveLength(1);
   });
 
   it("empty envelopes → no apply_batch", async () => {
@@ -339,7 +328,7 @@ describe("contacts ingest — the replica model (tst_be_contactsingest_001)", ()
     const mod = mountWorld(world);
     const r = await mod.ingest({ envelopes: [] });
     expect(world.graph.spies.apply_batch).toHaveBeenCalledTimes(0);
-    expect(r).toEqual({ dropped_remote_ids: [], trigger_checks: [] });
+    expect(r).toEqual({ droppedRemoteIds: [], triggerChecks: [], plan: null, excluded: [] });
   });
 
   /**
@@ -352,14 +341,14 @@ describe("contacts ingest — the replica model (tst_be_contactsingest_001)", ()
   it("states the list's count in full, the persons a page leaves out as skipped, and nothing outside a worker's pass", async () => {
     const world = ingestWorld();
     const mod = mountWorld(world);
-    const list = env({ remote_id: "list", payload: { entity_type: "list", total_people: 3 } });
+    const list = env({ remoteId: "list", payload: { entity_type: "list", total_people: 3 } });
     const first = await mod.ingest({ command: "bootstrap", generation: "initial:r:1", envelopes: [list, env({ payload: contactPayload() })] });
-    expect(first).toEqual({ dropped_remote_ids: [], trigger_checks: [], plan: { "contacts.google_contact": { total: 3, skipped: 0 } } });
+    expect(first).toEqual({ droppedRemoteIds: [], triggerChecks: [], plan: { "contacts.google_contact": { total: 3, skipped: 0 } }, excluded: [] });
     expect(lastBatch(world.graph).entities.map((item) => item.key)).not.toContain("list");
-    const later = await mod.ingest({ command: "bootstrap", generation: "initial:r:1", envelopes: [env({ remote_id: "list", payload: { entity_type: "list", skipped: 1 } }), env({ remote_id: "gpeople:c2", payload: contactPayload({ id: "c2" }) })] });
+    const later = await mod.ingest({ command: "bootstrap", generation: "initial:r:1", envelopes: [env({ remoteId: "list", payload: { entity_type: "list", skipped: 1 } }), env({ remoteId: "gpeople:c2", payload: contactPayload({ id: "c2" }) })] });
     expect(later.plan).toEqual({ "contacts.google_contact": { total: 0, skipped: 1 } });
     const outside = await mod.ingest({ envelopes: [list] });
-    expect(outside).toEqual({ dropped_remote_ids: [], trigger_checks: [] });
+    expect(outside).toEqual({ droppedRemoteIds: [], triggerChecks: [], plan: null, excluded: [] });
   });
 });
 
@@ -371,29 +360,29 @@ describe("contacts ingest — the replica model (tst_be_contactsingest_001)", ()
  * @fixtures: one Google replica attached to a curated hub; an unseen replica after token expiry
  */
 describe("Google contact removal", () => {
-  it("deletes the anchored replica on a People deletion and leaves its curated hub untouched", async () => {
+  it("deletes the replica its external id names on a People deletion and leaves its curated hub untouched", async () => {
     const delete_entity = vi.fn().mockResolvedValue(undefined);
-    const get_entity = vi.fn().mockResolvedValue({ id: "replica", schema_id: "contacts.google_contact", properties: { source_id: "google", account_id: "acct-1" } });
+    const get_entity = vi.fn().mockResolvedValue(entity("replica", "Replica", { schemaId: "contacts.google_contact", properties: { source_id: "google", account_id: "acct-1" } }));
     const world = ingestWorld({ graphOverrides: {
-      find_by_anchor: vi.fn().mockResolvedValue("replica"), get_entity, delete_entity,
+      find_by_external_id: vi.fn().mockResolvedValue("replica"), get_entity, delete_entity,
     } });
     const mod = mountWorld(world);
-    await mod.ingest({ command: "catch_up", generation: "initial:r:1", envelopes: [env({ kind: "delete", remote_id: "gpeople:abc123" })] });
+    await mod.ingest({ command: "catch_up", generation: "initial:r:1", envelopes: [env({ kind: "delete", remoteId: "gpeople:abc123" })] });
     expect(delete_entity).toHaveBeenCalledExactlyOnceWith("replica");
     expect(world.minted).toEqual([]);
   });
 
   it("reconciles only unseen Google replicas after a complete pass", async () => {
     const delete_entity = vi.fn().mockResolvedValue(undefined);
-    const list_entities_by_property_field = vi.fn().mockResolvedValue({ items: [
-      { id: "old", schema_id: "contacts.google_contact", properties: { source_id: "google", account_id: "acct-1", sync_pass: "initial:r:1" } },
-      { id: "seen", schema_id: "contacts.google_contact", properties: { source_id: "google", account_id: "acct-1", sync_pass: "initial:r:2" } },
-      { id: "other", schema_id: "contacts.google_contact", properties: { source_id: "google", account_id: "acct-2", sync_pass: "initial:r:1" } },
-    ], total: 3 });
+    const list_entities_by_property_field = vi.fn().mockResolvedValue(page([
+      entity("old", "Old", { schemaId: "contacts.google_contact", properties: { source_id: "google", account_id: "acct-1", sync_pass: "initial:r:1" } }),
+      entity("seen", "Seen", { schemaId: "contacts.google_contact", properties: { source_id: "google", account_id: "acct-1", sync_pass: "initial:r:2" } }),
+      entity("other", "Other", { schemaId: "contacts.google_contact", properties: { source_id: "google", account_id: "acct-2", sync_pass: "initial:r:1" } }),
+    ], 3));
     const world = ingestWorld({ graphOverrides: { list_entities_by_property_field, delete_entity } });
     const mod = mountWorld(world);
     expect(delete_entity).not.toHaveBeenCalled();
-    expect(await mod.onSyncComplete({ source_id: "google", account_id: "acct-1", generation: "initial:r:2" })).toEqual({
+    expect(await mod.onSyncComplete({ userId: "u1", sourceId: "google", accountId: "acct-1", identityKey: null, generation: "initial:r:2" })).toEqual({
       departed: [], plan: { "contacts.google_contact": { total: 0, skipped: 0 } },
     });
     expect(delete_entity).toHaveBeenCalledExactlyOnceWith("old");
@@ -409,11 +398,11 @@ describe("Google contact removal", () => {
  */
 describe("People Poll progress", () => {
   it("counts only the first admitted replica and its first deletion", async () => {
-    const find_by_anchors = vi.fn().mockResolvedValueOnce([null]).mockResolvedValueOnce(["replica"]);
-    const find_by_anchor = vi.fn().mockResolvedValueOnce("replica").mockResolvedValueOnce(null);
-    const get_entity = vi.fn().mockResolvedValue({ id: "replica", schema_id: "contacts.google_contact", properties: { source_id: "google", account_id: "acct-1" } });
+    const find_by_external_ids = vi.fn().mockResolvedValueOnce([null]).mockResolvedValueOnce(["replica"]);
+    const find_by_external_id = vi.fn().mockResolvedValueOnce("replica").mockResolvedValueOnce(null);
+    const get_entity = vi.fn().mockResolvedValue(entity("replica", "Replica", { schemaId: "contacts.google_contact", properties: { source_id: "google", account_id: "acct-1" } }));
     const delete_entity = vi.fn().mockResolvedValue(undefined);
-    const world = ingestWorld({ graphOverrides: { find_by_anchors, find_by_anchor, get_entity, delete_entity } });
+    const world = ingestWorld({ graphOverrides: { find_by_external_ids, find_by_external_id, get_entity, delete_entity } });
     const mod = mountWorld(world);
     const person = env({ payload: contactPayload() });
     expect((await mod.ingest({ command: "catch_up", generation: "initial:r:1", envelopes: [person] })).plan?.["contacts.google_contact"]).toEqual({ total: 1, skipped: 0 });

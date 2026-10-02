@@ -7,38 +7,12 @@
  * When done: shows result summary (no preview fetch — retired entity is deleted).
  */
 
+import type { MergePreview, MergeResult } from "@magnis/sdk";
 import { useCallback, useEffect, useState } from "react";
 import type { JSX } from "react";
 import { Icon } from "@magnis/host/ui";
 import type { AgentRendererProps, ToolCallRendererPayload } from "@magnis/host/runtime";
 import { BaseToolCallCard } from "@magnis/host/base";
-
-interface MergeField {
-  readonly key: string;
-  readonly survivor_value: unknown;
-  readonly retired_value: unknown;
-  /** What the merge will write. `null` when it will write nothing because
-   *  the key needs an answer — see `conflict`. */
-  readonly auto_resolved: unknown;
-  /** Both contacts claim this key with different values. The merge REFUSES
-   *  to run until the operator answers it. */
-  readonly conflict?: boolean;
-}
-
-export interface MergePreviewData {
-  readonly survivor: { readonly id: string; readonly name: string | null; readonly property_count: number };
-  readonly retired: { readonly id: string; readonly name: string | null; readonly property_count: number };
-  readonly fields: Record<string, MergeField>;
-  readonly links_to_repoint: number;
-  readonly duplicate_links_to_remove: number;
-}
-
-interface MergeResult {
-  readonly survivor_id: string;
-  readonly retired_id: string;
-  readonly links_repointed: number;
-  readonly links_deduplicated: number;
-}
 
 function fmtVal(value: unknown): string {
   if (value === null || value === undefined) return "—";
@@ -67,12 +41,12 @@ function parseResult(raw: unknown): Record<string, unknown> | null {
   return { ...raw };
 }
 
-export function extractPreview(raw: unknown): MergePreviewData | null {
+export function extractPreview(raw: unknown): MergePreview | null {
   const obj = parseResult(raw);
   if (obj === null) return null;
   const candidate = (obj.preview ?? obj) as Record<string, unknown>;
   if ("survivor" in candidate && "retired" in candidate && "fields" in candidate) {
-    return candidate as unknown as MergePreviewData;
+    return candidate as unknown as MergePreview;
   }
   return null;
 }
@@ -81,13 +55,13 @@ function extractMergeResult(raw: unknown): MergeResult | null {
   const obj = parseResult(raw);
   if (obj === null) return null;
   const candidate = (obj.result ?? obj) as Record<string, unknown>;
-  if ("survivor_id" in candidate && "links_repointed" in candidate) {
+  if ("survivorId" in candidate && "linksRepointed" in candidate) {
     return candidate as unknown as MergeResult;
   }
   return null;
 }
 
-export function MergeTable({ preview }: { readonly preview: MergePreviewData }): JSX.Element {
+export function MergeTable({ preview }: { readonly preview: MergePreview }): JSX.Element {
   const fields = Object.entries(preview.fields);
 
   return (
@@ -108,10 +82,10 @@ export function MergeTable({ preview }: { readonly preview: MergePreviewData }):
 
       {/* Field rows */}
       {fields.map(([key, field], rowIdx) => {
-        const sv = fmtVal(field.survivor_value);
-        const rv = fmtVal(field.retired_value);
-        const conflicted = field.conflict === true;
-        const mr = conflicted ? "needs your answer" : fmtVal(field.auto_resolved);
+        const sv = fmtVal(field.survivorValue);
+        const rv = fmtVal(field.retiredValue);
+        const conflicted = field.conflict;
+        const mr = conflicted ? "needs your answer" : fmtVal(field.autoResolved);
         const borderClass = rowIdx < fields.length - 1 ? "border-b border-agent-border/20" : "";
 
         return (
@@ -151,12 +125,12 @@ export function ContactMergeRenderer({
 }: AgentRendererProps<ToolCallRendererPayload>): JSX.Element {
   const { toolCall: tc, toolResult, isAllowlisted, superseded, onApprove, onDeny, onAllowlistToggle } = payload;
   const args = tc.args as Record<string, unknown>;
-  const survivorId = args.survivor_id as string | undefined;
-  const retiredId = args.retired_id as string | undefined;
+  const survivorId = args.survivorId as string | undefined;
+  const retiredId = args.retiredId as string | undefined;
   const reason = args.reason as string | undefined;
   const isPreview = args.preview === true;
 
-  const [preview, setPreview] = useState<MergePreviewData | null>(null);
+  const [preview, setPreview] = useState<MergePreview | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -168,7 +142,7 @@ export function ContactMergeRenderer({
     // eslint-disable-next-line react-hooks/set-state-in-effect -- show the spinner before the async merge-preview fetch below; the resolve/reject set state asynchronously.
     setLoading(true);
     runtime.transport
-      .rpc("contacts.merge_preview", { survivor_id: survivorId, retired_id: retiredId })
+      .rpc("contacts.merge_preview", { survivorId, retiredId })
       .then((result: unknown) => { setPreview(extractPreview(result)); })
       .catch((err: unknown) => { setError(err instanceof Error ? err.message : String(err)); })
       .finally(() => { setLoading(false); });
@@ -183,9 +157,9 @@ export function ContactMergeRenderer({
   const visiblePreview = isPreview ? extractPreview(completedResult) : preview;
   const fieldCount = visiblePreview ? Object.keys(visiblePreview.fields).length : 0;
   const conflictCount = visiblePreview
-    ? Object.values(visiblePreview.fields).filter((field) => field.conflict === true).length : 0;
+    ? Object.values(visiblePreview.fields).filter((field) => field.conflict).length : 0;
   const doneLabel = isPreview ? "Preview" : mergeResult
-    ? `Merged (${String(mergeResult.links_repointed)} links)` : "Merged";
+    ? `Merged (${String(mergeResult.linksRepointed)} links)` : "Merged";
 
   return (
     <BaseToolCallCard
@@ -224,7 +198,7 @@ export function ContactMergeRenderer({
                 {String(conflictCount)} need an answer — the merge will refuse until then
               </span>
             )}
-            <span>{String(visiblePreview.links_to_repoint)} links to transfer</span>
+            <span>{String(visiblePreview.linksToRepoint)} links to transfer</span>
           </div>
         </div>
       )}
@@ -236,8 +210,8 @@ export function ContactMergeRenderer({
             <span>Contacts merged successfully</span>
           </div>
           <div className="text-agent-text-muted">
-            {String(mergeResult.links_repointed)} links repointed
-            {mergeResult.links_deduplicated > 0 && `, ${String(mergeResult.links_deduplicated)} deduplicated`}
+            {String(mergeResult.linksRepointed)} links repointed
+            {mergeResult.linksDeduplicated > 0 && `, ${String(mergeResult.linksDeduplicated)} deduplicated`}
           </div>
         </div>
       )}

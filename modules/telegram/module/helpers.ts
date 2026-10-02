@@ -1,9 +1,20 @@
 // Telegram plugin — pure helpers (no graph/host access). Payload field readers,
 // URL extraction, media→MIME mapping, and ingest tuning constants. Extracted
 // from module/service.ts so the class body stays handler-only.
+import type { JsonValue } from "@magnis/sdk";
 
-/// A loosely-typed record/payload object (the connector snapshot / details record).
-export type Data = Record<string, unknown>;
+/// A JSON object this module reads or builds: an envelope payload, a node's
+/// dictionary, an edge's metadata.
+export type Data = Record<string, JsonValue>;
+
+/** The JSON object a payload, a dictionary or an edge's metadata holds; any
+ * other JSON is refused, naming what it was. */
+export function objectOf(value: JsonValue, what: string): Data {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`telegram: ${what} is not a JSON object`);
+  }
+  return value;
+}
 
 // PGlite is single-connection, so a sync page (the telegram dialog list is ONE
 // ~2400-chat page) must be applied in CHUNKS: at most this many entities per

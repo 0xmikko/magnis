@@ -8,8 +8,8 @@ export declare const ExtensionKindSchema: z.ZodEnum<{
 export type ExtensionKind = z.output<typeof ExtensionKindSchema>;
 export declare const extensionLifecycleStates: readonly ["available", "installed_disabled", "active", "activation_failed"];
 export declare const ExtensionLifecycleStateSchema: z.ZodEnum<{
-    available: "available";
     active: "active";
+    available: "available";
     installed_disabled: "installed_disabled";
     activation_failed: "activation_failed";
 }>;
@@ -37,8 +37,8 @@ export declare const ExtensionViewSchema: z.ZodObject<{
     docsUrl: z.ZodOptional<z.ZodString>;
     version: z.ZodString;
     state: z.ZodEnum<{
-        available: "available";
         active: "active";
+        available: "available";
         installed_disabled: "installed_disabled";
         activation_failed: "activation_failed";
     }>;
@@ -78,8 +78,8 @@ export declare const ExtensionListResultSchema: z.ZodObject<{
         docsUrl: z.ZodOptional<z.ZodString>;
         version: z.ZodString;
         state: z.ZodEnum<{
-            available: "available";
             active: "active";
+            available: "available";
             installed_disabled: "installed_disabled";
             activation_failed: "activation_failed";
         }>;

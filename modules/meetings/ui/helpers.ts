@@ -1,6 +1,6 @@
 import type {
-  CalendarAttendee,
   MeetingAttendee,
+  MeetingAttendeeView,
   MeetingCalendarEvent,
   MeetingDetailData,
   MeetingItem,
@@ -17,10 +17,10 @@ import {
 } from "./index";
 
 /**
- * Display string for one canonical `CalendarAttendee`: prefer `name`,
- * fall back to `email` so a name-less attendee still has something to show.
+ * Display string for one attendee: prefer `name`, fall back to `email` so a
+ * name-less attendee still has something to show.
  */
-export function attendeeDisplay(a: CalendarAttendee): string {
+export function attendeeDisplay(a: MeetingAttendeeView): string {
   return a.name ?? a.email;
 }
 

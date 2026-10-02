@@ -11,11 +11,23 @@
  * @covers packages/plugin-sdk/index.ts::reachedEndpoints
  * @deterministic pure function; no clock, no IO
  */
+import type { Entity, Link } from "@magnis/sdk";
 import { describe, expect, it } from "vitest";
-import { reachedEndpoints, type LinkSummary } from "../index.ts";
+import { linkedEntitySummary, reachedEndpoints } from "../index.ts";
 
-function link(from_id: string, to_id: string, kind: string): LinkSummary {
-  return { id: `${from_id}-${to_id}-${kind}`, from_id, to_id, kind, validFrom: null, validUntil: null };
+function link(from: string, to: string, kind: string, validUntil: string | null = null): Link {
+  return {
+    id: `${from}-${to}-${kind}`,
+    owner: "u1",
+    from,
+    to,
+    kind,
+    createdAt: "2026-01-01T00:00:00Z",
+    origin: "canonical",
+    metadata: {},
+    validFrom: null,
+    validUntil,
+  };
 }
 
 describe("tst_pkg_sdk_endpoints_001 — reachedEndpoints", () => {
@@ -30,8 +42,8 @@ describe("tst_pkg_sdk_endpoints_001 — reachedEndpoints", () => {
       new Set(["self"]),
     );
 
-    expect(reached.get("out")).toBe("in_chat");
-    expect(reached.get("watcher")).toBe("~watches");
+    expect(reached.get("out")?.linkKind).toBe("in_chat");
+    expect(reached.get("watcher")?.linkKind).toBe("~watches");
   });
 
   it("the FIRST pass to reach an endpoint supplies its label", () => {
@@ -46,7 +58,7 @@ describe("tst_pkg_sdk_endpoints_001 — reachedEndpoints", () => {
       new Set(["hub"]),
     );
 
-    expect(reached.get("shared")).toBe("works_at");
+    expect(reached.get("shared")?.linkKind).toBe("works_at");
     // Only the endpoint. `replica` is pass two's OWNER, never its own neighbour.
     expect([...reached.keys()]).toEqual(["shared"]);
   });
@@ -62,5 +74,79 @@ describe("tst_pkg_sdk_endpoints_001 — reachedEndpoints", () => {
     );
 
     expect([...reached.keys()]).toEqual(["addr"]);
+  });
+});
+
+/**
+ * @test-id: tst_cat_entity_one_type_001
+ * @scenario: scn_plugin_sdk_001
+ * @covers packages/plugin-sdk/index.ts::reachedEndpoints
+ * @covers packages/plugin-sdk/index.ts::linkedEntitySummary
+ * @deterministic pure functions; no clock, no IO
+ *
+ * A linked summary is the SDK `LinkedEntitySummary`: its statement fields come
+ * from the link that reached the endpoint, so an agent's guess reads as one.
+ */
+describe("tst_cat_entity_one_type_001 — linked summaries carry the reaching link's statement", () => {
+  const watcher: Entity = {
+    id: "watcher",
+    owner: "u1",
+    schemaId: "contacts.person",
+    schemaVersion: 1,
+    createdAt: "2026-01-02T00:00:00Z",
+    name: "Watcher",
+    indexed: false,
+    date: "2026-01-02T00:00:00Z",
+    idx: null,
+    isPinned: null,
+    pinOrder: null,
+    isArchived: null,
+    properties: {},
+    origin: "canonical",
+    source: { source: "google", account: "a1", externalId: "people/1" },
+  };
+
+  it("tst_cat_entity_one_type_001 an endpoint keeps the agent link that reached it, statement included", () => {
+    const guess: Link = {
+      id: "l-guess",
+      owner: "u1",
+      from: "watcher",
+      to: "self",
+      kind: "mentions",
+      createdAt: "2026-01-03T00:00:00Z",
+      origin: "agent",
+      confidence: 0.6,
+      evidence: ["episode-1"],
+      validFrom: null,
+      validUntil: "2027-01-01T00:00:00Z",
+    };
+    const reached = reachedEndpoints([{ links: [guess], ownerIds: new Set(["self"]) }], new Set(["self"]));
+
+    expect(reached.get("watcher")).toEqual({ link: guess, linkKind: "~mentions" });
+    expect(linkedEntitySummary(watcher, guess, "~mentions")).toEqual({
+      id: "watcher",
+      name: "Watcher",
+      schemaId: "contacts.person",
+      linkKind: "~mentions",
+      createdAt: "2026-01-02T00:00:00Z",
+      origin: "agent",
+      confidence: 0.6,
+      validUntil: "2027-01-01T00:00:00Z",
+    });
+  });
+
+  it("tst_cat_entity_one_type_001 a canonical link's summary has no confidence and keeps its end", () => {
+    const record = link("self", "watcher", "member_of", "2026-06-01T00:00:00Z");
+
+    expect(linkedEntitySummary(watcher, record, "member_of")).toEqual({
+      id: "watcher",
+      name: "Watcher",
+      schemaId: "contacts.person",
+      linkKind: "member_of",
+      createdAt: "2026-01-02T00:00:00Z",
+      origin: "canonical",
+      confidence: null,
+      validUntil: "2026-06-01T00:00:00Z",
+    });
   });
 });

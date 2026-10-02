@@ -21,7 +21,8 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
-import type { GraphBatchInput, RpcExecutor } from "@magnis/plugin-sdk";
+import type { RpcExecutor } from "@magnis/plugin-sdk";
+import type { GraphBatchInput } from "@magnis/sdk";
 import { mockGraph, mountModule, type GraphOverrides } from "@magnis/testkit/module";
 import { EmailModule } from "../service.ts";
 import type { EmailCanonical } from "../../types.ts";
@@ -34,7 +35,7 @@ function makeModule(
     graph: mockGraph(
       graph as unknown as GraphOverrides,
     ),
-    ctx: { extension_id: "email" },
+    ctx: { extensionId: "email" },
     rpc,
   }).module;
 }
@@ -83,30 +84,28 @@ describe("email reply composer", () => {
 
 describe("email ensure_address hub RPC (cross-module)", () => {
   it("resolves-or-creates email.address via apply_batch and returns the id", async () => {
-    const apply_batch = vi.fn(async (frag: { entities: { key: string; schema_id: string; facets: { external_id?: string }[] }[] }) => ({
+    const apply_batch = vi.fn(async (frag: GraphBatchInput) => ({
       ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
       created: 1,
       updated: 0,
-      links_added: 0,
-      dropped_keys: [],
+      linksAdded: 0,
+      droppedKeys: [],
     }));
     const mod = makeModule({ apply_batch });
     const out = await mod.ensureAddress({ address: "Alice@Example.com", display_name: "Alice" });
 
-    // S3: the batch key is the lowered address; the node is ANCHORED by the
-    // email:address chokepoint key.
+    // S3: the batch key is the lowered address; the node's external id is
+    // the email:address chokepoint key.
     expect(out).toEqual({ id: "id-alice@example.com" });
     const call0 = apply_batch.mock.calls[0];
     if (call0 === undefined) throw new Error("ensure_address: apply_batch not called");
     const frag = call0[0];
-    const addr = frag.entities[0] as
-      | { schema_id: string; anchor?: string; properties?: Record<string, unknown>; facets: unknown[] }
-      | undefined;
+    const addr = frag.entities[0];
     if (addr === undefined) throw new Error("ensure_address: missing address entity");
-    expect(addr.schema_id).toBe("email.address");
-    // S5: the address node is its DICTIONARY under the chokepoint anchor —
+    expect(addr.schemaId).toBe("email.address");
+    // S5: the address node is its DICTIONARY under the chokepoint external id —
     // the details record retired with the writer.
-    expect(addr.anchor).toBe("email:address:alice@example.com");
+    expect(addr.externalId).toBe("email:address:alice@example.com");
     expect(addr.properties).toMatchObject({ address: "alice@example.com" });
   });
 
@@ -122,8 +121,8 @@ describe("email set_trigger", () => {
       ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
       created: frag.entities.length,
       updated: 0,
-      links_added: 0,
-      dropped_keys: [],
+      linksAdded: 0,
+      droppedKeys: [],
     }));
     const execute = vi.fn().mockResolvedValue({ id: "trig-1" });
     const mod = makeModule({ apply_batch }, { execute });
@@ -140,7 +139,7 @@ describe("email set_trigger", () => {
     if (call0 === undefined) throw new Error("set_trigger: apply_batch not called");
     const frag = call0[0] as GraphBatchInput;
     expect(frag.entities.map((e) => e.idx)).toEqual(["a@x.com", "b@x.com", "c@x.com"]);
-    expect(frag.entities.every((e) => e.schema_id === "email.address")).toBe(true);
+    expect(frag.entities.every((e) => e.schemaId === "email.address")).toBe(true);
 
     // delegate to triggers.create with resolved watch ids + schema_filter "email"
     expect(execute).toHaveBeenCalledTimes(1);

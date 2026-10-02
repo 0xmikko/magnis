@@ -7,6 +7,7 @@
  * @fixtures: fixed company entities and strict graph/RPC doubles
  * @legacy-id: tst_companies_write_create_persists_and_reads_back
  */
+import type { JsonObject } from "@magnis/sdk";
 import { describe, expect, it, vi } from "vitest";
 import { entity, mockGraph, mountModule } from "@magnis/testkit/module";
 import { COMPANY } from "../../schema.ts";
@@ -14,8 +15,8 @@ import { CompaniesModule } from "../service.ts";
 
 const COMPANY_ID = "55555555-5555-4555-8555-555555555555";
 
-function company(name: string, properties: Record<string, unknown> = {}) {
-  return entity(COMPANY_ID, name, { schema_id: COMPANY, properties });
+function company(name: string, properties: JsonObject = {}) {
+  return entity(COMPANY_ID, name, { schemaId: COMPANY, properties });
 }
 
 describe("tst_module_companies_write_001 — company write contract", () => {
@@ -50,13 +51,13 @@ describe("tst_module_companies_write_001 — company write contract", () => {
       industry: "AI",
     });
     expect(graph.spies.create_entity).toHaveBeenCalledWith({
-      schema_id: COMPANY,
+      schemaId: COMPANY,
       name: "New Co",
-      client_id: COMPANY_ID,
+      clientId: COMPANY_ID,
       idx: "new co",
     });
     expect(graph.spies.update_properties).toHaveBeenCalledWith({
-      entity_id: COMPANY_ID,
+      entityId: COMPANY_ID,
       properties: {
         name: "New Co",
         domain: "new.example",
@@ -80,7 +81,7 @@ describe("tst_module_companies_write_001 — company write contract", () => {
     });
     expect(graph.spies.search_entities_by_name).toHaveBeenCalledWith({
       query: "acme",
-      schema_ids: [COMPANY],
+      schemaIds: [COMPANY],
       limit: 25,
     });
   });
@@ -114,7 +115,7 @@ describe("tst_module_companies_write_001 — company write contract", () => {
 
     expect(result).toMatchObject({ name: "New Co", website: "https://new.example" });
     expect(graph.spies.update_properties).toHaveBeenCalledWith({
-      entity_id: COMPANY_ID,
+      entityId: COMPANY_ID,
       properties: {
         name: "New Co",
         domain: "new.example",
@@ -123,8 +124,8 @@ describe("tst_module_companies_write_001 — company write contract", () => {
       },
     });
     expect(graph.spies.add_link).toHaveBeenCalledWith({
-      from_id: COMPANY_ID,
-      to_id: "address-1",
+      from: COMPANY_ID,
+      to: "address-1",
       kind: "identity",
     });
   });

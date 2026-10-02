@@ -12,7 +12,7 @@ import type {
 // ─── Mapping ─────────────────────────────────────────────────────────
 
 function getMetadataString(
-  metadata: Readonly<Record<string, unknown>> | undefined,
+  metadata: Readonly<Record<string, unknown>> | null | undefined,
   key: string,
 ): string | undefined {
   const value = metadata?.[key];
@@ -74,7 +74,7 @@ export function mapEmailDetailFromDetailView(view: MessageDetailView): EmailDeta
   // S5: the recipients are `sent_to` edges to shared address nodes, not a
   // joined string on the message.
   const recipients = view.linked_entities
-    .filter((le) => le.link_kind === "sent_to")
+    .filter((le) => le.linkKind === "sent_to")
     .map((le) => le.name)
     .filter((name): name is string => typeof name === "string" && name.length > 0);
   const toAddresses = recipients.length > 0 ? recipients.join(", ") : undefined;
@@ -96,9 +96,9 @@ export function mapEmailDetailFromDetailView(view: MessageDetailView): EmailDeta
     readonly size: number;
     readonly path: string;
   }[] = view.linked_entities
-    .filter((le) => le.link_kind === "file.attachment")
+    .filter((le) => le.linkKind === "file.attachment")
     .map((le) => {
-      const d = le.data ?? {};
+      const d = (le.data ?? {}) as Readonly<Record<string, unknown>>;
       const mime = d.mime_type;
       const size = d.size_bytes ?? d.size;
       return {

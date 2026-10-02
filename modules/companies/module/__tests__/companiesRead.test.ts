@@ -24,7 +24,7 @@
  */
 
 import { beforeEach, describe, expect, it } from "vitest";
-import { entity, mockGraph, mountModule, windowRow, type MockGraph } from "@magnis/testkit/module";
+import { entity, link, mockGraph, mountModule, page, type MockGraph } from "@magnis/testkit/module";
 import { CompaniesModule } from "../service.ts";
 import { COMPANY } from "../../schema.ts";
 import type { CompanyCanonical } from "../../types.ts";
@@ -37,7 +37,7 @@ type G = MockGraph;
 // unarranged, so the throwing Proxy fails the test if the read path hits them.
 function readGraph(): G {
   return mockGraph({
-    list_entities_window: () => Promise.resolve({ items: [], total: 0 }),
+    list_entities_window: () => Promise.resolve(page([])),
     search_entities_by_name: () => Promise.resolve([]),
     get_entity_full: () => Promise.resolve(null),
     get_entities: () => Promise.resolve([]),
@@ -58,54 +58,47 @@ describe("companies read — shape parity (tst_be_companiesread_001)", () => {
   let mod: CompaniesModule;
   beforeEach(() => {
     graph = readGraph();
-    mod = mountModule(CompaniesModule, { graph, ctx: { extension_id: "companies" } }).module;
+    mod = mountModule(CompaniesModule, { graph, ctx: { extensionId: "companies" } }).module;
   });
 
   it("F1 list (no search): fields from the dictionary, real created_at, name fallback, idx order", async () => {
-    spy(graph, "list_entities_window").mockResolvedValue({
-      items: [
-        windowRow(
-          entity("a", "", {
-            created_at: "2026-01-01T00:00:00Z",
-            properties: { name: "Acme" }, // entity.name empty → the dict names it
-          }),
-        ),
-        windowRow(
-          entity("z", "Zeta", {
-            created_at: "2026-02-02T00:00:00Z",
-            properties: {
-              website: "https://zeta.io",
-              industry: "Fintech",
-              size: "50",
-              location: "NYC",
-            },
-          }),
-        ),
-      ],
-      total: 2,
-    });
+    spy(graph, "list_entities_window").mockResolvedValue(page([
+      entity("a", "", {
+        createdAt: "2026-01-01T00:00:00Z",
+        properties: { name: "Acme" }, // entity.name empty → the dict names it
+      }),
+      entity("z", "Zeta", {
+        createdAt: "2026-02-02T00:00:00Z",
+        properties: {
+          website: "https://zeta.io",
+          industry: "Fintech",
+          size: "50",
+          location: "NYC",
+        },
+      }),
+    ]));
 
-    const page = await mod.list({ limit: 50, offset: 0 });
-    expect(page.total).toBe(2);
-    expect(page.items.map((i) => i.id)).toEqual(["a", "z"]); // window idx order preserved
-    const first = page.items[0];
+    const listed = await mod.list({ limit: 50, offset: 0 });
+    expect(listed.total).toBe(2);
+    expect(listed.items.map((i) => i.id)).toEqual(["a", "z"]); // window idx order preserved
+    const first = listed.items[0];
     if (first === undefined) throw new Error("F1: missing first item");
     expect(first.name).toBe("Acme");
     expect(first.created_at).toBe("2026-01-01T00:00:00Z"); // real, not Date(0)
-    const z = page.items[1];
+    const z = listed.items[1];
     expect(z).toMatchObject({ name: "Zeta", website: "https://zeta.io", industry: "Fintech", size: "50", location: "NYC" });
 
     const windowCall = spy(graph, "list_entities_window").mock.calls[0];
     if (windowCall === undefined) throw new Error("F1: no list_entities_window call recorded");
     const spec = windowCall[0];
-    expect(spec.order?.[0]?.field?.entity_field).toBe("idx");
+    expect(spec.order?.[0]?.field?.entityField).toBe("idx");
     expect(spec.facet_schema).toBeUndefined(); // no facet inline — the dict rides the row
   });
 
   it("F1b unknown when neither entity.name nor the dictionary names it", async () => {
-    spy(graph, "list_entities_window").mockResolvedValue({ items: [windowRow(entity("x", ""))], total: 1 });
-    const page = await mod.list({});
-    const first = page.items[0];
+    spy(graph, "list_entities_window").mockResolvedValue(page([entity("x", "")]));
+    const listed = await mod.list({});
+    const first = listed.items[0];
     if (first === undefined) throw new Error("F1b: missing first item");
     expect(first.name).toBe("Unknown");
   });
@@ -117,10 +110,10 @@ describe("companies read — shape parity (tst_be_companiesread_001)", () => {
       entity("m", "Mango"),
     ]); // backend returns NON-alphabetical (prefix/date) order
 
-    const page = await mod.list({ search: "x", limit: 10, offset: 0 });
-    expect(page.total).toBe(3);
-    expect(page.items.map((i) => i.name)).toEqual(["Acme", "Mango", "Zeta"]); // sorted
-    const first = page.items[0];
+    const listed = await mod.list({ search: "x", limit: 10, offset: 0 });
+    expect(listed.total).toBe(3);
+    expect(listed.items.map((i) => i.name)).toEqual(["Acme", "Mango", "Zeta"]); // sorted
+    const first = listed.items[0];
     if (first === undefined) throw new Error("F2: missing first item");
     expect(first.website).toBe("https://acme.com");
   });
@@ -128,7 +121,7 @@ describe("companies read — shape parity (tst_be_companiesread_001)", () => {
   it("F3 get: base/header from the dictionary, empty members/linked, ONE crossing", async () => {
     spy(graph, "get_entity_full").mockResolvedValue({
       entity: entity("c", "Acme", {
-        schema_id: COMPANY,
+        schemaId: COMPANY,
         properties: { website: "https://acme.com", industry: "SaaS" },
       }),
       links: [],
@@ -158,18 +151,11 @@ describe("companies read — shape parity (tst_be_companiesread_001)", () => {
    */
   it("tst_module_companies_002 returns incoming works_at contacts for the Contacts tab", async () => {
     spy(graph, "get_entity_full").mockResolvedValue({
-      entity: entity("company-1", "Acme Labs", { schema_id: COMPANY }),
-      links: [
-        {
-          id: "link-1",
-          from_id: "contact-1",
-          to_id: "company-1",
-          kind: "works_at",
-        },
-      ],
+      entity: entity("company-1", "Acme Labs", { schemaId: COMPANY }),
+      links: [link("contact-1", "company-1", "works_at", { id: "link-1" })],
     });
     spy(graph, "get_entities").mockResolvedValue([
-      entity("contact-1", "Mitchell Amador", { schema_id: "contacts.person" }),
+      entity("contact-1", "Mitchell Amador", { schemaId: "contacts.person" }),
     ]);
 
     const view = await mod.get({ id: "company-1" });
@@ -177,9 +163,13 @@ describe("companies read — shape parity (tst_be_companiesread_001)", () => {
     expect(view.linked_entities).toEqual([
       {
         id: "contact-1",
-        schema_id: "contacts.person",
+        schemaId: "contacts.person",
         name: "Mitchell Amador",
-        link_kind: "~works_at",
+        linkKind: "~works_at",
+        createdAt: "2026-01-01T00:00:00Z",
+        origin: "canonical",
+        confidence: null,
+        validUntil: null,
       },
     ]);
     expect(view.members).toEqual(["Mitchell Amador"]);
@@ -192,9 +182,9 @@ describe("companies read — shape parity (tst_be_companiesread_001)", () => {
   });
 
   it("F4 empty page → {items:[], total:0}", async () => {
-    spy(graph, "list_entities_window").mockResolvedValue({ items: [], total: 0 });
-    const page = await mod.list({});
-    expect(page).toMatchObject({ items: [], total: 0 });
+    spy(graph, "list_entities_window").mockResolvedValue(page([]));
+    const listed = await mod.list({});
+    expect(listed).toMatchObject({ items: [], total: 0 });
   });
 
   it("F5 get throws on missing / non-company entity", async () => {
@@ -208,7 +198,7 @@ describe("companies read — DB-access guarantees (tst_be_companiesdb_001)", () 
   let mod: CompaniesModule;
   beforeEach(() => {
     graph = readGraph();
-    mod = mountModule(CompaniesModule, { graph, ctx: { extension_id: "companies" } }).module;
+    mod = mountModule(CompaniesModule, { graph, ctx: { extensionId: "companies" } }).module;
   });
 
   it("list (no search) = 1 window, 0 search, 0 0 facet", async () => {
@@ -228,7 +218,7 @@ describe("companies read — DB-access guarantees (tst_be_companiesdb_001)", () 
 
   it("get = 1 get_entity_full, 0 facet read, 0 0 get_entities", async () => {
     spy(graph, "get_entity_full").mockResolvedValue({
-      entity: entity("c", "Acme", { schema_id: COMPANY }),
+      entity: entity("c", "Acme", { schemaId: COMPANY }),
       links: [],
     });
     await mod.get({ id: "c" });

@@ -6,7 +6,7 @@ export declare const sourceFixtureProvisionContract: import("./contract.js").Rpc
     fixtureId: z.ZodString;
     identityKey: z.ZodString;
     identityLabel: z.ZodString;
-}, z.core.$strip>, z.ZodObject<{
+}, z.core.$strict>, z.ZodObject<{
     ok: z.ZodLiteral<true>;
     accountId: z.ZodString;
     generation: z.ZodNumber;

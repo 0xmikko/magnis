@@ -21,19 +21,29 @@ export * from "./contract/module";
 export * from "./contract/lifecycle";
 
 import type {
-  GraphService,
-  LinkSummary,
-  MethodRecorder,
+  Entity,
+  JsonObject,
+  JsonValue,
+  Link,
+  LinkedEntitySummary,
+  PaginatedResponse,
   PluginContext,
+  SearchEntitiesParams,
+  SyncHandlerParams,
+  SyncHookParams,
+  SyncReceipt,
+  SyncReconcileAnswer,
+} from "@magnis/sdk";
+import type {
+  GraphService,
+  HookRecorder,
+  MethodRecorder,
   PluginDeps,
   PluginLogger,
   PluginModuleShape,
   PluginUtil,
-  RawEntity,
   RpcExecutor,
-  SearchEntitiesPage,
   SearchEntitiesPageParams,
-  SearchEntitiesParams,
   StandardMethodDecoratorContext,
   ToolSpecInput,
 } from "./contract/module";
@@ -49,31 +59,53 @@ import type { InstallContext, LifecycleHooks, MigrationStep } from "./contract/l
 // because that is the part that legitimately differs (a contact reads its
 // replicas' edges, a message reads its own).
 //
-// Direction: an edge whose `from_id` is one of `ownerIds` is outgoing and keeps
+// Direction: an edge whose `from` is one of `ownerIds` is outgoing and keeps
 // its kind; anything else is incoming and wears `~`. Passes are applied in
 // order and the FIRST relation to reach an endpoint supplies its label, so a
 // caller that reads its own edges before its replicas' gets its own labels.
 export interface LinkEndpointPass {
-  readonly links: readonly LinkSummary[];
-  /** The nodes these edges were read from — `from_id` here means outgoing. */
+  readonly links: readonly Link[];
+  /** The nodes these edges were read from — `from` here means outgoing. */
   readonly ownerIds: ReadonlySet<string>;
+}
+
+/** The link that first reached an endpoint, and the label it gives it. */
+export interface ReachedEndpoint {
+  readonly link: Link;
+  readonly linkKind: string;
 }
 
 export function reachedEndpoints(
   passes: readonly LinkEndpointPass[],
   excludeIds: ReadonlySet<string>,
-): Map<string, string> {
-  const reached = new Map<string, string>();
+): Map<string, ReachedEndpoint> {
+  const reached = new Map<string, ReachedEndpoint>();
   for (const pass of passes) {
     for (const link of pass.links) {
-      const outgoing = pass.ownerIds.has(link.from_id);
-      const endpoint = outgoing ? link.to_id : link.from_id;
+      const outgoing = pass.ownerIds.has(link.from);
+      const endpoint = outgoing ? link.to : link.from;
       if (excludeIds.has(endpoint)) continue;
       if (reached.has(endpoint)) continue;
-      reached.set(endpoint, outgoing ? link.kind : `~${link.kind}`);
+      reached.set(endpoint, { link, linkKind: outgoing ? link.kind : `~${link.kind}` });
     }
   }
   return reached;
+}
+
+/** One endpoint as a module's detail lists it: the endpoint entity, labelled
+ * `linkKind`, with the statement of the link that reached it — an agent link
+ * says how sure it is, and an ended one says when it ended. */
+export function linkedEntitySummary(entity: Entity, link: Link, linkKind: string): LinkedEntitySummary {
+  return {
+    id: entity.id,
+    name: entity.name,
+    schemaId: entity.schemaId,
+    linkKind,
+    createdAt: entity.createdAt,
+    origin: link.origin,
+    confidence: link.origin === "agent" ? link.confidence : null,
+    validUntil: link.validUntil,
+  };
 }
 
 // ── shared list-search paging (added 2026-07-03) ────────────────────────────
@@ -83,11 +115,11 @@ export function reachedEndpoints(
 // scroll (live bug: contacts pattern copied into x/linkedin). This helper is
 // the one correct implementation: overfetch by ONE row past the window so
 // `total` exceeds the shown page exactly while more matches exist.
-// (Param/response types: SearchEntitiesPageParams / SearchEntitiesPage in ./contract/module.)
+// (Param type: SearchEntitiesPageParams in ./contract/module.)
 export async function searchEntitiesPage(
-  graph: { search_entities_by_name(p: SearchEntitiesParams): Promise<RawEntity[]> },
+  graph: { search_entities_by_name(p: SearchEntitiesParams): Promise<Entity[]> },
   p: SearchEntitiesPageParams,
-): Promise<SearchEntitiesPage> {
+): Promise<PaginatedResponse<Entity>> {
   // NO client-side re-sort: the backend order is a stable TOTAL order
   // (prefix-match first, date DESC, id), so top-N windows are consistent
   // prefixes across pages. Re-sorting different overfetch windows makes pages
@@ -97,7 +129,7 @@ export async function searchEntitiesPage(
   for (;;) {
     const found = await graph.search_entities_by_name({
       query: p.query,
-      schema_ids: [p.schema_id],
+      schemaIds: [p.schemaId],
       limit: fetchLimit,
     });
     const kept = p.filter ? await p.filter(found) : found;
@@ -105,7 +137,7 @@ export async function searchEntitiesPage(
     // or the source is exhausted (returned fewer than asked). Otherwise the
     // filter ate rows — grow the window and refetch (≤log₂ rounds).
     if (kept.length >= needed || found.length < fetchLimit) {
-      return { entities: kept.slice(p.offset, p.offset + p.limit), total: kept.length };
+      return { items: kept.slice(p.offset, p.offset + p.limit), total: kept.length, limit: p.limit, offset: p.offset };
     }
     fetchLimit *= 2;
   }
@@ -119,17 +151,18 @@ export async function removeUnseenSourceReplicas(
   accountId: string,
   generation: string,
 ): Promise<void> {
-  const rows: RawEntity[] = [];
+  const rows: Entity[] = [];
   for (let offset = 0;; offset += 500) {
     const page = await graph.list_entities_by_property_field({
-      entity_schema: schemaId, key: "account_id", value: accountId, limit: 500, offset,
+      entitySchema: schemaId, key: "account_id", value: accountId, limit: 500, offset,
     });
     rows.push(...page.items);
     if (offset + page.items.length >= page.total) break;
   }
   for (const row of rows) {
-    if (row.schema_id !== schemaId || !row.properties) continue;
-    if (row.properties.source_id !== sourceId || row.properties.account_id !== accountId || row.properties.sync_pass === generation) continue;
+    const properties = row.properties;
+    if (row.schemaId !== schemaId || properties === null || typeof properties !== "object" || Array.isArray(properties)) continue;
+    if (properties.source_id !== sourceId || properties.account_id !== accountId || properties.sync_pass === generation) continue;
     await graph.delete_entity(row.id);
   }
 }
@@ -171,19 +204,20 @@ export function num(o: Record<string, unknown>, k: string): number | null {
 }
 
 // ─────────────────── tool metadata + decorators ───────────────────
-// The decorator SPEC types (ToolSpecInput, ToolDefinitionWire, MethodRecorder,
+// The decorator SPEC types (ToolSpecInput, MethodRecorder, HookRecorder,
 // PluginModuleShape) live in ./contract/module. ToolMeta is the internal
 // registry record — an implementation detail of this runtime, not contract.
 interface ToolMeta {
   suffix: string;
   entity: string | null;
-  gate: ToolSpecInput["allowlist_gate"];
+  gate: ToolSpecInput["allowlistGate"];
   description: string;
-  params: Record<string, unknown>;
+  params: JsonObject;
   write: boolean;
-  /// false = RPC-only handler (registered as an RPC method but NOT
-  /// harvested as an agent tool). See `rpc()`.
-  isTool: boolean;
+  /// "tool": an agent tool, also reachable over RPC. "rpc": an RPC-only
+  /// method, published as a plugin RPC declaration (see `rpc()`). "hook": a
+  /// method only the host invokes, such as `__sync__`.
+  kind: "tool" | "rpc" | "hook";
   methodName: string | symbol;
 }
 
@@ -259,7 +293,7 @@ function collectMethodMetadata(prototype: object): ToolMeta[] {
   return collected;
 }
 
-function record(suffix: string, spec: Omit<ToolSpecInput, "entity">, write: boolean, isTool: boolean, entity: string | null): MethodRecorder {
+function record(suffix: string, spec: Omit<ToolSpecInput, "entity">, write: boolean, kind: ToolMeta["kind"], entity: string | null): MethodRecorder {
   function decorate(
     targetOrMethod: object,
     methodNameOrContext: string | symbol | StandardMethodDecoratorContext,
@@ -268,11 +302,11 @@ function record(suffix: string, spec: Omit<ToolSpecInput, "entity">, write: bool
     const common = {
       suffix,
       entity,
-      gate: spec.allowlist_gate,
+      gate: spec.allowlistGate,
       description: spec.description,
       params: spec.params,
       write,
-      isTool,
+      kind,
     };
     if (
       typeof methodNameOrContext === "string" || typeof methodNameOrContext === "symbol"
@@ -302,60 +336,62 @@ function record(suffix: string, spec: Omit<ToolSpecInput, "entity">, write: bool
 /// Declare a read tool. `suffix` is the method name only — the backend
 /// glues the `<plugin_id>.` prefix at init.
 export function tool(suffix: string, spec: ToolSpecInput): MethodRecorder {
-  return record(suffix, spec, false, true, spec.entity);
+  return record(suffix, spec, false, "tool", spec.entity);
 }
-/// Declare a write tool (→ `requires_approval: true` on the agent
-/// tool definition).
+/// Declare a write tool (→ `requiresApproval: true` on the agent
+/// tool declaration).
 export function writeTool(suffix: string, spec: ToolSpecInput): MethodRecorder {
-  return record(suffix, spec, true, true, spec.entity);
+  return record(suffix, spec, true, "tool", spec.entity);
 }
 /// Declare an RPC-only handler: reachable via RPC (frontend / other
 /// modules over the hub) but NOT exposed to the agent as a tool. Use for
 /// internal/UI operations (e.g. add_member, list_for_entity) that the
-/// agent shouldn't call directly. Mirrors a native module's
-/// `rpc_methods()` that aren't in `tools()`.
-export function rpc(suffix: string, spec: Omit<ToolSpecInput, "entity"> = { description: "", params: {} }): MethodRecorder {
-  return record(suffix, spec, false, false, null);
+/// agent shouldn't call directly. Its `params` schema is published as a
+/// plugin RPC declaration, so the host parses the input before the handler
+/// runs.
+export function rpc(suffix: string, spec: Omit<ToolSpecInput, "entity">): MethodRecorder {
+  return record(suffix, spec, false, "rpc", null);
 }
 
 /// Declare the plugin's sync ingest handler. The host `PluginModuleController`
-/// bridge invokes it via the reserved `<plugin_id>.__sync__` method, passing
-/// the `SourceEnvelope` (source_id, surface, account_id, user_id, kind,
-/// remote_id, payload, …) as the single argument, whenever a sync envelope
-/// routes to one of the plugin's declared `surfaces.sync_handlers`. The method
-/// dispatches internally by `envelope.kind` / payload `entity_type`. NOT an
-/// agent tool. One handler per plugin.
-export function syncHandler(_surface?: string): MethodRecorder {
-  return record("__sync__", { description: "sync ingest handler", params: {} }, false, false, null);
+/// bridge invokes it via the reserved `<plugin_id>.__sync__` method with a
+/// `SyncHandlerParams` — a whole page of `SyncEnvelope`s — whenever a sync
+/// envelope routes to one of the plugin's declared `surfaces.sync_handlers`,
+/// and reads its `SyncReceipt`. The method dispatches internally by
+/// `envelope.kind` / payload `entity_type`. NOT an agent tool. One handler per
+/// plugin.
+export function syncHandler(_surface?: string): HookRecorder<SyncHandlerParams, SyncReceipt> {
+  return record("__sync__", { description: "sync ingest handler", params: {} }, false, "hook", null);
 }
 
-/// S4: the terminal sync marker. Invoked once when a bootstrap drain
-/// terminates — the page set the connector reported is COMPLETE, so an
-/// identity-scoped module can reconcile it: what the source no longer
-/// reports leaves the observed set. Payload: { user_id, source_id,
-/// account_id, identity_key, observed_remote_ids }. Opt-in.
-export function syncComplete(): MethodRecorder {
+/// S4: the terminal sync marker. Invoked once with a `SyncHookParams`, its
+/// `generation` set, when a bootstrap drain terminates — the page set the
+/// connector reported is COMPLETE, so an identity-scoped module can reconcile
+/// it: what the source no longer reports leaves the observed set. Answers a
+/// `SyncReconcileAnswer`. Opt-in.
+export function syncComplete(): HookRecorder<SyncHookParams, SyncReconcileAnswer> {
   return record(
     "__sync_complete__",
     { description: "sync complete hook", params: {} },
     false,
-    false,
+    "hook",
     null,
   );
 }
 
-/// S4: the connection-ready hook. Invoked by the host — user id from the
-/// CONNECT payload, never from an envelope — the moment a connection becomes
-/// provider-verified, BEFORE any envelope routes. The one place a module
-/// mints what identity-scoped ingest presumes (telegram: the operator's own
-/// account node). Payload: { user_id, source_id, account_id, identity_key }.
-/// NOT an agent tool. Opt-in — a module without it has nothing to prepare.
-export function connectionReady(): MethodRecorder {
+/// S4: the connection-ready hook. Invoked by the host with a `SyncHookParams`
+/// — user id from the CONNECT payload, never from an envelope, and no
+/// generation — the moment a connection becomes provider-verified, BEFORE any
+/// envelope routes. The one place a module mints what identity-scoped ingest
+/// presumes (telegram: the operator's own account node). The host reads no
+/// answer. NOT an agent tool. Opt-in — a module without it has nothing to
+/// prepare.
+export function connectionReady(): HookRecorder<SyncHookParams, void> {
   return record(
     "__connection_ready__",
     { description: "connection ready hook", params: {} },
     false,
-    false,
+    "hook",
     null,
   );
 }
@@ -364,8 +400,8 @@ export function connectionReady(): MethodRecorder {
 /// Single plugin entry point. Generic over the plugin's canonical map — `C`
 /// is inferred from the constructor, so `definePlugin(Foo)` needs no explicit
 /// type args and there is no `any` at the call site.
-/// (The wire shape it publishes — PluginModuleShape / ToolDefinitionWire — is
-/// declared in ./contract/module.)
+/// (The shape it publishes — PluginModuleShape — is declared in
+/// ./contract/module.)
 export function definePlugin(
   ModuleClass: new (deps: PluginDeps) => object,
 ): void {
@@ -387,6 +423,7 @@ export function definePlugin(
     // @tested-by: tst_testkit_entity_operations_002
     const rpcHandlers: PluginModuleShape["rpcHandlers"] = {};
     const toolDefinitions: PluginModuleShape["toolDefinitions"] = [];
+    const rpcDeclarations: PluginModuleShape["rpcDeclarations"] = [];
     // The host boundary is Rust/V8 and passes these positionally, so TypeScript
     // cannot enforce arity there. Without this guard a host that has not caught
     // up leaves `log` undefined, every handler registers, and the plugin runs
@@ -409,43 +446,48 @@ export function definePlugin(
     }) as Record<PropertyKey, unknown>;
     // Prefix = the plugin id the runtime injects (== the module name,
     // per the Rust convention). The decorator carries only the suffix.
-    const prefix = ctx.extension_id;
+    const prefix = ctx.extensionId;
     // Base handlers are inherited in declaration order. A repeated suffix is
     // ambiguous and fails rather than silently choosing an ABI or subclass.
     // @tested-by: tst_testkit_mount_dispatch_005
     const metas = collectMethodMetadata((ModuleClass as { prototype: object }).prototype);
     for (const m of metas) {
-      if (m.isTool && (typeof m.entity !== "string" || !m.entity.startsWith(`${prefix}.`) || !/^[a-z][a-z0-9_]*$/.test(m.suffix))) {
+      if (m.kind === "tool" && (typeof m.entity !== "string" || !m.entity.startsWith(`${prefix}.`) || !/^[a-z][a-z0-9_]*$/.test(m.suffix))) {
         throw new TypeError(`plugin ${prefix} cannot register ${methodIdentity(m)}`);
       }
-      const rpcName = m.isTool ? methodIdentity(m) : `${prefix}.${m.suffix}`;
+      const rpcName = m.kind === "tool" ? methodIdentity(m) : `${prefix}.${m.suffix}`;
       if (Object.hasOwn(rpcHandlers, rpcName)) throw new TypeError(`duplicate plugin handler ${rpcName}`);
       const method = instance[m.methodName];
       if (typeof method !== "function") {
         throw new Error(`plugin: decorated method "${String(m.methodName)}" is not a function`);
       }
-      rpcHandlers[rpcName] = (params: unknown): unknown => method.call(instance, params);
-      // RPC-only handlers (rpc()) register the handler but are NOT harvested
-      // as agent tools.
-      if (m.isTool && m.entity !== null) {
+      rpcHandlers[rpcName] = (params: JsonValue): unknown => method.call(instance, params);
+      // An agent tool is harvested as a tool declaration; an rpc() method is
+      // published with its params schema; a hook is neither.
+      if (m.kind === "tool" && m.entity !== null) {
         toolDefinitions.push({
           name: rpcName,
           binding: { entity: m.entity, operation: m.suffix },
-          ...(m.gate === undefined ? {} : { allowlist_gate: m.gate }),
+          ...(m.gate === undefined ? {} : { allowlistGate: m.gate }),
           description: m.description,
           inputSchema: m.params,
-          requires_approval: m.write,
+          requiresApproval: m.write,
         });
+      }
+      if (m.kind === "rpc") {
+        rpcDeclarations.push({ name: rpcName, description: m.description, params: m.params });
       }
     }
     shape.rpcHandlers = rpcHandlers;
     shape.toolDefinitions = toolDefinitions;
+    shape.rpcDeclarations = rpcDeclarations;
   }
 
   const shape: PluginModuleShape = {
     init,
     rpcHandlers: {},
     toolDefinitions: [],
+    rpcDeclarations: [],
   };
   (globalThis as unknown as { __magnis_plugin_module: PluginModuleShape }).__magnis_plugin_module = shape;
 }

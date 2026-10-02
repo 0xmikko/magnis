@@ -1,7 +1,7 @@
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { useAppRuntime } from "@magnis/host/runtime";
 import type { ContactListItem, ContactDetailView } from "./types";
-import type { PaginatedResponse } from "@magnis/plugin-sdk";
+import type { PaginatedResponse } from "@magnis/sdk";
 
 export const contactKeys = {
   all: ["contacts"] as const,

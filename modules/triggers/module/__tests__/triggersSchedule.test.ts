@@ -5,6 +5,7 @@
 // verbatim. A caller-supplied `activated_at` never reaches the config.
 
 import { describe, expect, it, vi } from "vitest";
+import type { JsonObject, PropertiesUpdate } from "@magnis/sdk";
 import { entity, mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { TriggersModule } from "../service.ts";
 import { TRIGGER, TRIGGER_CONFIG } from "../../schema.ts";
@@ -23,7 +24,7 @@ type G = MockGraph;
 
 function createGraph(overrides: Record<string, unknown> = {}): G {
   return mockGraph({
-    create_entity: () => Promise.resolve(entity(TRIGGER_ID, "T", { schema_id: TRIGGER })),
+    create_entity: () => Promise.resolve(entity(TRIGGER_ID, "T", { schemaId: TRIGGER })),
     update_properties: () => Promise.resolve(undefined),
     add_link: () => Promise.resolve(undefined),
     delete_entity: () => Promise.resolve(undefined),
@@ -31,13 +32,13 @@ function createGraph(overrides: Record<string, unknown> = {}): G {
   } as never);
 }
 
-function existingTrigger(configExtra: Partial<TriggerConfigData> = {}): G {
+function existingTrigger(configExtra: JsonObject = {}): G {
   return mockGraph({
     get_entity_full: () =>
       Promise.resolve({
         // S1: the trigger config IS the node's dictionary.
         entity: entity(TRIGGER_ID, "digest", {
-          schema_id: TRIGGER,
+          schemaId: TRIGGER,
           properties: {
             name: "digest",
             gate_prompt: "always",
@@ -70,13 +71,11 @@ function seamRpc() {
 function persistedConfig(graph: G): TriggerConfigData {
   const updateProperties = graph.spies.update_properties;
   if (!updateProperties) throw new Error("update_properties spy not mounted");
-  const calls = updateProperties.mock.calls as [
-    { entity_id: string; properties: TriggerConfigData },
-  ][];
+  const calls = updateProperties.mock.calls as [PropertiesUpdate][];
   expect(calls.length).toBeGreaterThan(0);
   const lastWrite = calls[calls.length - 1];
   if (!lastWrite) throw new Error("no config write recorded");
-  return lastWrite[0].properties;
+  return lastWrite[0].properties as unknown as TriggerConfigData;
 }
 
 /**

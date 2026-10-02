@@ -7,7 +7,8 @@
 
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { entity, mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
+import type { JsonObject, PropertiesUpdate } from "@magnis/sdk";
+import { entity, link, mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { TriggersModule } from "../service.ts";
 import { TRIGGER, TRIGGER_CONFIG } from "../../schema.ts";
 
@@ -21,10 +22,10 @@ const TRIGGER_ID = "22222222-2222-4222-8222-222222222222";
  * @fixtures: actual harvested create schema, explicit watches and raw email/chat inputs
  */
 it("tst_module_triggers_forms_003 compiles portable mutually exclusive create forms", async () => {
-  const { tools } = await mountModule(TriggersModule, { mode: "dispatch", ctx: { extension_id: "triggers" } });
+  const { tools } = await mountModule(TriggersModule, { mode: "dispatch", ctx: { extensionId: "triggers" } });
   const definition = tools.find(({ name }) => name === "triggers.trigger.create");
   if (definition === undefined) throw new Error("trigger create definition missing");
-  const schema = z.fromJSONSchema(definition.inputSchema);
+  const schema = z.fromJSONSchema(definition.inputSchema as Parameters<typeof z.fromJSONSchema>[0]);
   const prompts = { gate_prompt: "reply", action_prompt: "notify" };
   for (const form of [
     { name: "Watch", watch_entity_ids: [TRIGGER_ID] },
@@ -49,7 +50,7 @@ type G = MockGraph;
 
 function createGraph(overrides: Record<string, unknown> = {}): G {
   return mockGraph({
-    create_entity: () => Promise.resolve(entity(TRIGGER_ID, "T", { schema_id: TRIGGER })),
+    create_entity: () => Promise.resolve(entity(TRIGGER_ID, "T", { schemaId: TRIGGER })),
     update_properties: () => Promise.resolve(undefined),
     add_link: () => Promise.resolve(undefined),
     delete_entity: () => Promise.resolve(undefined),
@@ -62,7 +63,7 @@ function existingTrigger(): G {
     get_entity_full: () =>
       Promise.resolve({
         entity: entity(TRIGGER_ID, "watch replies", {
-          schema_id: TRIGGER,
+          schemaId: TRIGGER,
           properties: {
             name: "watch replies",
             gate_prompt: "a reply from the vendor arrived",
@@ -204,7 +205,7 @@ describe("triggers.update keeps the gate real and the write whole", () => {
       get_entity_full: () =>
         Promise.resolve({
           entity: entity(TRIGGER_ID, "old name", {
-            schema_id: TRIGGER,
+            schemaId: TRIGGER,
             properties: {
               name: "old name",
               gate_prompt: "g",
@@ -249,7 +250,7 @@ describe("triggers.update compensation restores EVERY field", () => {
       get_entity_full: () =>
         Promise.resolve({
           entity: entity(TRIGGER_ID, "old name", {
-            schema_id: TRIGGER,
+            schemaId: TRIGGER,
             properties: {
               name: "old name",
               gate_prompt: "OLD GATE",
@@ -262,8 +263,8 @@ describe("triggers.update compensation restores EVERY field", () => {
           }),
           links: [],
         }),
-      update_properties: (p: { properties: Record<string, unknown> }) => {
-        writes.push({ ...p.properties });
+      update_properties: (p: PropertiesUpdate) => {
+        writes.push({ ...(p.properties as JsonObject) });
         return Promise.resolve(undefined);
       },
       update_entity_name: () => Promise.reject(new Error("rename store unavailable")),
@@ -284,7 +285,7 @@ describe("triggers.update compensation restores EVERY field", () => {
       get_entity_full: () =>
         Promise.resolve({
           entity: entity(TRIGGER_ID, "old name", {
-            schema_id: TRIGGER,
+            schemaId: TRIGGER,
             properties: {
               name: "old name",
               gate_prompt: "OLD GATE",
@@ -334,7 +335,7 @@ describe("tst_module_triggers_crud_001 — trigger definition commands", () => {
     const episodeId = "44444444-4444-4444-8444-444444444444";
     const graph = createGraph({
       get_entity_full: () =>
-        Promise.resolve({ entity: entity(episodeId, "Parent", { schema_id: "episodes.episode" }), links: [] }),
+        Promise.resolve({ entity: entity(episodeId, "Parent", { schemaId: "episodes.episode" }), links: [] }),
     });
     const execute = vi.fn((method: string) => {
       if (method === "triggers.validate_watch") return Promise.resolve(null);
@@ -361,7 +362,7 @@ describe("tst_module_triggers_crud_001 — trigger definition commands", () => {
       episode_id: episodeId,
     });
     expect(graph.spies.update_properties).toHaveBeenCalledWith({
-      entity_id: TRIGGER_ID,
+      entityId: TRIGGER_ID,
       properties: expect.objectContaining({
         name: "Price tracker",
         gate_prompt: "price changed",
@@ -374,8 +375,8 @@ describe("tst_module_triggers_crud_001 — trigger definition commands", () => {
     const addLink = graph.spies.add_link;
     if (addLink === undefined) throw new Error("trigger create: add_link spy missing");
     expect(addLink.mock.calls.map(([value]) => value)).toEqual([
-      { from_id: TRIGGER_ID, to_id: targetId, kind: "watches" },
-      { from_id: TRIGGER_ID, to_id: episodeId, kind: "triggers.belongs_to" },
+      { from: TRIGGER_ID, to: targetId, kind: "watches" },
+      { from: TRIGGER_ID, to: episodeId, kind: "triggers.belongs_to" },
     ]);
     expect(execute).toHaveBeenLastCalledWith("triggers.invalidate_cache", {});
   });
@@ -394,13 +395,13 @@ describe("tst_module_triggers_crud_001 — trigger definition commands", () => {
       get_entity_full: () =>
         Promise.resolve({
           entity: entity(TRIGGER_ID, "watch replies", {
-            schema_id: TRIGGER,
+            schemaId: TRIGGER,
             properties,
           }),
           links: [],
         }),
-      update_properties: (params: { entity_id: string; properties: Record<string, unknown> }) => {
-        properties = { ...params.properties } as typeof properties;
+      update_properties: (params: PropertiesUpdate) => {
+        properties = { ...(params.properties as typeof properties) };
         return Promise.resolve(undefined);
       },
       update_entity_name: () => Promise.resolve(undefined),
@@ -423,7 +424,7 @@ describe("tst_module_triggers_crud_001 — trigger definition commands", () => {
     });
     expect(graph.spies.update_entity_name).not.toHaveBeenCalled();
     expect(graph.spies.update_properties).toHaveBeenCalledWith({
-      entity_id: TRIGGER_ID,
+      entityId: TRIGGER_ID,
       properties: expect.objectContaining({
         name: "watch replies",
         gate_prompt: "new condition",
@@ -437,7 +438,7 @@ describe("tst_module_triggers_crud_001 — trigger definition commands", () => {
     const keepId = "44444444-4444-4444-8444-444444444444";
     const triggerDetail = {
       entity: entity(TRIGGER_ID, "T", {
-        schema_id: TRIGGER,
+        schemaId: TRIGGER,
         properties: {
           name: "T",
           gate_prompt: "g",
@@ -456,9 +457,9 @@ describe("tst_module_triggers_crud_001 — trigger definition commands", () => {
       add_link: () => Promise.resolve(undefined),
       list_links_for_entity: () =>
         Promise.resolve([
-          { id: "drop", from_id: TRIGGER_ID, to_id: targetId, kind: "watches" },
-          { id: "keep", from_id: TRIGGER_ID, to_id: keepId, kind: "watches" },
-          { id: "other-kind", from_id: TRIGGER_ID, to_id: targetId, kind: "belongs_to" },
+          link(TRIGGER_ID, targetId, "watches", { id: "drop" }),
+          link(TRIGGER_ID, keepId, "watches", { id: "keep" }),
+          link(TRIGGER_ID, targetId, "belongs_to", { id: "other-kind" }),
         ]),
       delete_link: () => Promise.resolve(undefined),
     });
@@ -520,7 +521,7 @@ it("tst_module_triggers_forms_001 validates raw email form before owner lookup a
   const result = await module.create({ from_addresses: ["Morgan@Example.test"], gate_prompt: "receipt", action_prompt: "notify", debounce_seconds: 12 });
   expect(execute).toHaveBeenCalledWith("email.ensure_addresses", { items: [{ address: "morgan@example.test" }] });
   expect(graph.spies.create_entity).toHaveBeenCalledTimes(1);
-  expect(graph.spies.add_link).toHaveBeenCalledWith({ from_id: TRIGGER_ID, to_id: "address-1", kind: "watches" });
+  expect(graph.spies.add_link).toHaveBeenCalledWith({ from: TRIGGER_ID, to: "address-1", kind: "watches" });
   expect(graph.spies.update_properties).toHaveBeenCalledWith(expect.objectContaining({ properties: expect.objectContaining({ debounce_seconds: 12, schema_filter: "email" }) }));
   expect(result.name).toBe("Email trigger: morgan@example.test");
 });
@@ -539,7 +540,7 @@ it("tst_module_triggers_forms_002 resolves a raw Telegram chat once and preserve
   const result = await module.create({ chat_id: 42, gate_prompt: "reply", action_prompt: "notify", debounce_seconds: 30 });
   expect(result.name).toBe("Telegram trigger: chat 42");
   expect(execute).toHaveBeenCalledWith("telegram.chats.get", { chat_id: 42 });
-  expect(graph.spies.add_link).toHaveBeenCalledWith({ from_id: TRIGGER_ID, to_id: "chat-entity", kind: "watches" });
+  expect(graph.spies.add_link).toHaveBeenCalledWith({ from: TRIGGER_ID, to: "chat-entity", kind: "watches" });
   expect(graph.spies.create_entity).toHaveBeenCalledTimes(1);
   expect(graph.spies.update_properties).toHaveBeenCalledWith(expect.objectContaining({ properties: expect.objectContaining({ debounce_seconds: 30, schema_filter: "telegram" }) }));
 });

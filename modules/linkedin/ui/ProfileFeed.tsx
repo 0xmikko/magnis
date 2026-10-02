@@ -2,7 +2,7 @@ import { useState, type JSX } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Icon, Row, Scrollable, SearchableTabs, Stack, Text } from "@magnis/host/ui";
 import type { DetailPanelProps } from "@magnis/host/base";
-import type { PaginatedResponse } from "@magnis/plugin-sdk";
+import type { PaginatedResponse } from "@magnis/sdk";
 import { PostCard, type LinkedInRichPost } from "./PostCard";
 
 export interface ProfileDetail {

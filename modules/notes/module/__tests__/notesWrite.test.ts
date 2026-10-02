@@ -20,7 +20,7 @@ const NOTE_ID = "11111111-1111-4111-8111-111111111111";
 
 function writeGraph(overrides: Record<string, unknown> = {}): G {
   return mockGraph({
-    create_entity: () => Promise.resolve(entity(NOTE_ID, "T", { schema_id: NOTE })),
+    create_entity: () => Promise.resolve(entity(NOTE_ID, "T", { schemaId: NOTE })),
     update_properties: () => Promise.resolve(undefined),
     delete_entity: () => Promise.resolve(undefined),
     ...overrides,
@@ -151,18 +151,18 @@ describe("notes identity and schema boundaries", () => {
 
     expect(created.id).toBe(NOTE_ID);
     expect(freshGraph.spies.create_entity).toHaveBeenCalledWith({
-      schema_id: NOTE,
+      schemaId: NOTE,
       name: "Original",
-      client_id: NOTE_ID,
+      clientId: NOTE_ID,
     });
 
     const retryGraph = mockGraph({
       get_entity: () =>
-        Promise.resolve(entity(NOTE_ID, "Original", { schema_id: NOTE })),
+        Promise.resolve(entity(NOTE_ID, "Original", { schemaId: NOTE })),
       get_entity_full: () =>
         Promise.resolve({
           entity: entity(NOTE_ID, "Original", {
-            schema_id: NOTE,
+            schemaId: NOTE,
             properties: {
               title: "Original",
               body: "Body",
@@ -197,7 +197,7 @@ describe("notes identity and schema boundaries", () => {
   it("does not reinterpret a foreign-schema client-id collision as a note", async () => {
     const graph = mockGraph({
       get_entity: () =>
-        Promise.resolve(entity(NOTE_ID, "Project", { schema_id: "projects.project" })),
+        Promise.resolve(entity(NOTE_ID, "Project", { schemaId: "projects.project" })),
       create_entity: () => Promise.reject(new Error("entity already exists")),
     });
     const module = mountModule(NotesModule, { graph }).module;
@@ -210,7 +210,7 @@ describe("notes identity and schema boundaries", () => {
   it("deletes only an owned note entity", async () => {
     const graph = mockGraph({
       get_entity_full: () =>
-        Promise.resolve({ entity: entity(NOTE_ID, "Note", { schema_id: NOTE }), links: [] }),
+        Promise.resolve({ entity: entity(NOTE_ID, "Note", { schemaId: NOTE }), links: [] }),
       delete_entity: () => Promise.resolve(undefined),
     });
     const module = mountModule(NotesModule, { graph }).module;
@@ -220,7 +220,7 @@ describe("notes identity and schema boundaries", () => {
     const foreignGraph = mockGraph({
       get_entity_full: () =>
         Promise.resolve({
-          entity: entity(NOTE_ID, "Project", { schema_id: "projects.project" }),
+          entity: entity(NOTE_ID, "Project", { schemaId: "projects.project" }),
           links: [],
         }),
     });
@@ -274,7 +274,7 @@ describe("notes.update is atomic", () => {
       get_entity_full: () =>
         Promise.resolve({
           entity: entity(NOTE_ID, "old title", {
-            schema_id: NOTE,
+            schemaId: NOTE,
             properties: { body: "old body", updated_at: "2026-01-01T00:00:00Z" },
           }),
           links: [],
@@ -294,7 +294,7 @@ describe("notes.update is atomic", () => {
     const graph = mockGraph({
       get_entity_full: () =>
         Promise.resolve({
-          entity: entity(NOTE_ID, "old title", { schema_id: NOTE }),
+          entity: entity(NOTE_ID, "old title", { schemaId: NOTE }),
           links: [],
         }),
       update_properties: () => Promise.reject(new Error("facet store unavailable")),
@@ -329,7 +329,7 @@ describe("notes.update restores the note unchanged when the rename fails", () =>
       get_entity_full: () =>
         Promise.resolve({
           entity: entity(NOTE_ID, "old title", {
-            schema_id: NOTE,
+            schemaId: NOTE,
             properties: {
               title: "old title",
               body: "old body",

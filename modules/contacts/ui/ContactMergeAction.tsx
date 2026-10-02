@@ -1,9 +1,9 @@
+import type { MergeInput, MergePreview } from "@magnis/sdk";
 import { useState } from "react";
 import type { ChangeEvent, JSX } from "react";
 import { ActionButton, Icon } from "@magnis/host/ui";
 import type { AppRuntime } from "@magnis/host/runtime";
 import { MergeTable, extractPreview } from "./ContactMergeRenderer";
-import type { MergePreviewData } from "./ContactMergeRenderer";
 
 interface MergeCandidate {
   readonly id: string;
@@ -26,7 +26,7 @@ export function ContactMergeAction({
   const [open, setOpen] = useState(false);
   const [candidates, setCandidates] = useState<readonly MergeCandidate[]>([]);
   const [retiredId, setRetiredId] = useState("");
-  const [preview, setPreview] = useState<MergePreviewData | null>(null);
+  const [preview, setPreview] = useState<MergePreview | null>(null);
   const [loading, setLoading] = useState(false);
   const [merging, setMerging] = useState(false);
   const [merged, setMerged] = useState(false);
@@ -43,8 +43,8 @@ export function ContactMergeAction({
     setLoading(true);
     try {
       const raw = await runtime.transport.rpc("contacts.merge_preview", {
-        survivor_id: entityId,
-        retired_id: candidateId,
+        survivorId: entityId,
+        retiredId: candidateId,
       });
       const next = extractPreview(raw);
       if (!next) throw new Error("contacts.merge_preview returned an invalid preview");
@@ -85,11 +85,14 @@ export function ContactMergeAction({
     setError(null);
     try {
       // @tested-by: tst_fe_contacts_browser_002
-      await runtime.transport.rpc("contacts.merge", {
-        survivor_id: entityId,
-        retired_id: retiredId,
+      const merge: MergeInput = {
+        survivorId: entityId,
+        retiredId,
+        preview: false,
         overrides: [],
-      });
+        reason: null,
+      };
+      await runtime.transport.rpc("contacts.merge", merge);
       await runtime.queryClient.invalidateQueries({ queryKey: ["contacts"] });
       setMerged(true);
     } catch (reason) {

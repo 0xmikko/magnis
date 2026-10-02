@@ -14,7 +14,7 @@
  * @legacy-id: tst_be_tgtrigger_013_set_trigger_creates_trigger
  */
 import { describe, expect, it, vi } from "vitest";
-import { mockGraph, mountModule } from "@magnis/testkit/module";
+import { entity, mockGraph, mountModule } from "@magnis/testkit/module";
 import { TelegramModule } from "../service.ts";
 
 interface TelegramCommandInternals {
@@ -89,8 +89,8 @@ describe("tst_module_telegram_command_001 — Telegram command mapping", () => {
     expect(sendMessage).toHaveBeenCalledWith(1, "first", undefined, "account-1");
   });
 
-  it("resolves the chat anchor and delegates trigger definition ownership", async () => {
-    const graph = mockGraph({ find_by_anchor: () => Promise.resolve("chat-entity"), get_entity_full: () => Promise.resolve({ entity: { id: "episode-1", name: "Parent", schema_id: "episodes.episode", created_at: "" }, links: [] }) });
+  it("resolves the chat by its external id and delegates trigger definition ownership", async () => {
+    const graph = mockGraph({ find_by_external_id: () => Promise.resolve("chat-entity"), get_entity_full: () => Promise.resolve({ entity: entity("episode-1", "Parent", { schemaId: "episodes.episode" }), links: [] }) });
     const execute = vi.fn(() => Promise.resolve({ id: "trigger-1" }));
     const module = mountModule(TelegramModule, { graph, rpc: { execute } }).module;
 
@@ -112,7 +112,7 @@ describe("tst_module_telegram_command_001 — Telegram command mapping", () => {
     });
 
     const missing = mountModule(TelegramModule, {
-      graph: mockGraph({ find_by_anchor: () => Promise.resolve(null) }),
+      graph: mockGraph({ find_by_external_id: () => Promise.resolve(null) }),
     }).module;
     await expect(missing.setTrigger({
       chat_id: 42,
@@ -124,10 +124,10 @@ describe("tst_module_telegram_command_001 — Telegram command mapping", () => {
   it("publishes one create operation while retaining old names only as client RPCs", async () => {
     const { tools } = await mountModule(TelegramModule, {
       mode: "dispatch",
-      ctx: { extension_id: "telegram" },
+      ctx: { extensionId: "telegram" },
     });
     const byName = new Map(tools.map((tool) => [tool.name, tool]));
-    expect(byName.get("telegram.message.create")).toMatchObject({ requires_approval: true, binding: { entity: "telegram.message", operation: "create" } });
+    expect(byName.get("telegram.message.create")).toMatchObject({ requiresApproval: true, binding: { entity: "telegram.message", operation: "create" } });
     for (const name of ["telegram.messages.send", "telegram.messages.reply", "telegram.batch_send", "telegram.set_trigger"]) expect(byName.has(name)).toBe(false);
     expect(byName.has("telegram.messages.backfill")).toBe(false);
   });

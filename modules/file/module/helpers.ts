@@ -1,10 +1,4 @@
-import type { EntityDetail } from "@magnis/plugin-sdk";
 import type { FileDetails } from "../types.ts";
-
-/// The node's own dictionary — where the file's details live since the fold.
-export function detailDict(detail: EntityDetail): Record<string, unknown> {
-  return (detail.entity as { properties?: Record<string, unknown> }).properties ?? {};
-}
 
 /// Route-correct serving URL: local content serves via
 /// `/files/{entity_id}` (the actual `GET /files/:entity_id` route); otherwise the

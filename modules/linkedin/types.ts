@@ -1,26 +1,14 @@
-// Linkedin plugin — types. Mirrors the manifest schemas + the canonical source
-// envelope. X and LinkedIn connectors both feed these via the `linkedin` surface.
+// Linkedin plugin — types. Mirrors the manifest schemas; the source envelope is
+// the SDK `SyncEnvelope`. X and LinkedIn connectors both feed these via the
+// `linkedin` surface.
 
 export type Platform = "x" | "linkedin";
-
-/** Canonical source envelope (same shape every plugin sync handler receives). */
-export interface SyncEnvelope {
-  source_id: string;
-  surface: string;
-  account_id: string;
-  user_id: string;
-  kind: string; // "snapshot" | "live" | "delete"
-  remote_id?: string;
-  cursor?: unknown;
-  payload: Record<string, unknown>;
-  timestamp: string;
-}
 
 /** `linkedin.profile.identity` record data. */
 export interface ProfileIdentity {
   platform: Platform;
   /** The stable LinkedIn URN. A handle is renameable, so it can never be an
-   * anchor — a profile arriving without this is dropped by ingest, which is
+   * external id — a profile arriving without this is dropped by ingest, which is
    * why it is required rather than optional. */
   urn: string;
   handle: string;

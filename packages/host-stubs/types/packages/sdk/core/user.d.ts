@@ -1,33 +1,11 @@
 import { z } from "zod";
-import type { WorkspaceProvisioningProgress, WorkspaceProvisioningStatus } from "./provisioning.js";
-export interface GraphStatistics {
-    readonly entities: number;
-    readonly links: number;
-    readonly indexable: number;
-    readonly indexed: number;
-}
-export interface WorkspaceProvisioningView {
-    readonly status: WorkspaceProvisioningStatus;
-    readonly progress: WorkspaceProvisioningProgress | null;
-}
-export interface UserProfile {
-    readonly id: string;
-    readonly name: string;
-    readonly surname: string | null;
-    readonly email: string | null;
-    readonly isAdmin: boolean;
-    readonly statistics: {
-        readonly user: GraphStatistics;
-        readonly workspace: GraphStatistics;
-    };
-    readonly workspaceProvisioning?: WorkspaceProvisioningView | undefined;
-}
 export declare const GraphStatisticsSchema: z.ZodObject<{
     entities: z.ZodNumber;
     links: z.ZodNumber;
     indexable: z.ZodNumber;
     indexed: z.ZodNumber;
 }, z.core.$strict>;
+export type GraphStatistics = z.output<typeof GraphStatisticsSchema>;
 export declare const WorkspaceProvisioningViewSchema: z.ZodObject<{
     status: z.ZodEnum<{
         ready: "ready";
@@ -44,6 +22,7 @@ export declare const WorkspaceProvisioningViewSchema: z.ZodObject<{
         totalItems: z.ZodNullable<z.ZodNumber>;
     }, z.core.$strict>>;
 }, z.core.$strict>;
+export type WorkspaceProvisioningView = z.output<typeof WorkspaceProvisioningViewSchema>;
 export declare const UserProfileSchema: z.ZodObject<{
     id: z.ZodString;
     name: z.ZodString;
@@ -81,4 +60,5 @@ export declare const UserProfileSchema: z.ZodObject<{
         }, z.core.$strict>>;
     }, z.core.$strict>>;
 }, z.core.$strict>;
+export type UserProfile = z.output<typeof UserProfileSchema>;
 //# sourceMappingURL=user.d.ts.map

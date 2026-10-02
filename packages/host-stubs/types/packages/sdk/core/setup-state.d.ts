@@ -17,45 +17,10 @@ export declare const SetupStateSchema: z.ZodObject<{
 }, z.core.$strip>;
 export type SetupState = z.output<typeof SetupStateSchema>;
 /** One screen of a person's onboarding — the SDK half of
- * `backend/src/core/setup.ts::SetupStep`. Mirrored verbatim: the interface
- * is the contract and the schema decodes into it.
+ * `backend/src/core/setup.ts::SetupStep`.
  *
- * `connect` carries the Source it signs into, because a person with two
- * accounts walks two of these, one screen each. */
-export interface SetupStep {
-    readonly kind: "welcome" | "accounts" | "connect" | "agent" | "syncing" | "done";
-    /** Present only on `connect`: the Source this screen signs into. */
-    readonly source?: string;
-}
-/** What a step that is behind the person recorded. A skip is its own state,
- * never the absence of a record. */
-export interface SetupStepOutcome {
-    readonly state: "answered" | "skipped" | "refused";
-    /** Present only on `refused`: the exact reason the person is shown. */
-    readonly reason?: string;
-}
-export interface SetupStepRecord {
-    readonly step: SetupStep;
-    readonly outcome: SetupStepOutcome;
-    /** The ceremony the server already holds for a `connect` step, so
-     * re-entering it resumes instead of opening a second one. Null elsewhere.
-     *
-     * One word, like every field of these shapes: the contract codec rewrites
-     * multi-word keys in flight, and a single word is the same on both sides
-     * of it. */
-    readonly session: string | null;
-}
-/** The ordered screens the server derived for this person. The browser
- * renders what this names and computes no sequence of its own. */
-export interface SetupPlan {
-    readonly steps: readonly SetupStep[];
-}
-/** Where the person is, and what is behind them. */
-export interface SetupStage {
-    /** The step to render now; null once the plan is finished. */
-    readonly current: SetupStep | null;
-    readonly history: readonly SetupStepRecord[];
-}
+ * `connect` carries the Source it signs into (`source`), because a person
+ * with two accounts walks two of these, one screen each. */
 export declare const SetupStepSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     kind: z.ZodLiteral<"welcome">;
 }, z.core.$strict>, z.ZodObject<{
@@ -70,6 +35,10 @@ export declare const SetupStepSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
 }, z.core.$strict>, z.ZodObject<{
     kind: z.ZodLiteral<"done">;
 }, z.core.$strict>], "kind">;
+export type SetupStep = z.output<typeof SetupStepSchema>;
+/** What a step that is behind the person recorded. A skip is its own state,
+ * never the absence of a record. `reason`, only on `refused`, is the exact
+ * reason the person is shown. */
 export declare const SetupStepOutcomeSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     state: z.ZodLiteral<"answered">;
 }, z.core.$strict>, z.ZodObject<{
@@ -78,6 +47,35 @@ export declare const SetupStepOutcomeSchema: z.ZodDiscriminatedUnion<[z.ZodObjec
     state: z.ZodLiteral<"refused">;
     reason: z.ZodString;
 }, z.core.$strict>], "state">;
+export type SetupStepOutcome = z.output<typeof SetupStepOutcomeSchema>;
+declare const SetupStepRecordSchema: z.ZodObject<{
+    step: z.ZodDiscriminatedUnion<[z.ZodObject<{
+        kind: z.ZodLiteral<"welcome">;
+    }, z.core.$strict>, z.ZodObject<{
+        kind: z.ZodLiteral<"accounts">;
+    }, z.core.$strict>, z.ZodObject<{
+        kind: z.ZodLiteral<"connect">;
+        source: z.ZodString;
+    }, z.core.$strict>, z.ZodObject<{
+        kind: z.ZodLiteral<"agent">;
+    }, z.core.$strict>, z.ZodObject<{
+        kind: z.ZodLiteral<"syncing">;
+    }, z.core.$strict>, z.ZodObject<{
+        kind: z.ZodLiteral<"done">;
+    }, z.core.$strict>], "kind">;
+    outcome: z.ZodDiscriminatedUnion<[z.ZodObject<{
+        state: z.ZodLiteral<"answered">;
+    }, z.core.$strict>, z.ZodObject<{
+        state: z.ZodLiteral<"skipped">;
+    }, z.core.$strict>, z.ZodObject<{
+        state: z.ZodLiteral<"refused">;
+        reason: z.ZodString;
+    }, z.core.$strict>], "state">;
+    session: z.ZodNullable<z.ZodString>;
+}, z.core.$strict>;
+export type SetupStepRecord = z.output<typeof SetupStepRecordSchema>;
+/** The ordered screens the server derived for this person. The browser
+ * renders what this names and computes no sequence of its own. */
 export declare const SetupPlanSchema: z.ZodObject<{
     steps: z.ZodReadonly<z.ZodArray<z.ZodDiscriminatedUnion<[z.ZodObject<{
         kind: z.ZodLiteral<"welcome">;
@@ -94,6 +92,9 @@ export declare const SetupPlanSchema: z.ZodObject<{
         kind: z.ZodLiteral<"done">;
     }, z.core.$strict>], "kind">>>;
 }, z.core.$strict>;
+export type SetupPlan = z.output<typeof SetupPlanSchema>;
+/** Where the person is, and what is behind them. `current` is the step to
+ * render now; null once the plan is finished. */
 export declare const SetupStageSchema: z.ZodObject<{
     current: z.ZodNullable<z.ZodDiscriminatedUnion<[z.ZodObject<{
         kind: z.ZodLiteral<"welcome">;
@@ -135,21 +136,10 @@ export declare const SetupStageSchema: z.ZodObject<{
         session: z.ZodNullable<z.ZodString>;
     }, z.core.$strict>>>;
 }, z.core.$strict>;
+export type SetupStage = z.output<typeof SetupStageSchema>;
 /** What `setup.update` carries: exactly ONE step, what it recorded, the
  * ceremony session that step opened, and the document as that step leaves it
  * — null on a step that decides nothing. */
-export interface SetupStepAnswer {
-    readonly step: SetupStep;
-    readonly outcome: SetupStepOutcome;
-    readonly session: string | null;
-    readonly document: SetupState | null;
-}
-/** What `setup.get` and `setup.update` both answer. */
-export interface SetupView {
-    readonly document: SetupState;
-    readonly plan: SetupPlan;
-    readonly stage: SetupStage;
-}
 export declare const SetupStepAnswerSchema: z.ZodObject<{
     step: z.ZodDiscriminatedUnion<[z.ZodObject<{
         kind: z.ZodLiteral<"welcome">;
@@ -182,6 +172,8 @@ export declare const SetupStepAnswerSchema: z.ZodObject<{
         engine: z.ZodNullable<z.ZodString>;
     }, z.core.$strip>>;
 }, z.core.$strict>;
+export type SetupStepAnswer = z.output<typeof SetupStepAnswerSchema>;
+/** What `setup.get` and `setup.update` both answer. */
 export declare const SetupViewSchema: z.ZodObject<{
     document: z.ZodObject<{
         version: z.ZodNumber;
@@ -248,4 +240,6 @@ export declare const SetupViewSchema: z.ZodObject<{
         }, z.core.$strict>>>;
     }, z.core.$strict>;
 }, z.core.$strict>;
+export type SetupView = z.output<typeof SetupViewSchema>;
+export {};
 //# sourceMappingURL=setup-state.d.ts.map

@@ -11,7 +11,8 @@
  * @legacy-id: tst_be_tgchatmeta_001_chats_list_last_message_and_order
  */
 import { describe, expect, it } from "vitest";
-import { entity, linkedRow, mockGraph, mountModule, windowRow } from "@magnis/testkit/module";
+import type { AgentLink } from "@magnis/sdk";
+import { entity, link, linkedEntity, mockGraph, mountModule, page } from "@magnis/testkit/module";
 import { CHAT, MESSAGE, TELEGRAM_ACCOUNT } from "../../schema.ts";
 import { TelegramModule } from "../service.ts";
 
@@ -22,7 +23,7 @@ const ACCOUNT_ID = "33333333-aaaa-4333-8333-333333333333";
 describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
   it("preserves legacy dialog fields and host order when no operator account exists", async () => {
     const pinned = entity(CHAT_ID, "Investor chat", {
-      schema_id: CHAT,
+      schemaId: CHAT,
       properties: {
         chat_id: 42,
         title: "Investor chat",
@@ -35,12 +36,12 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
       },
     });
     const recent = entity("chat-2", "Team", {
-      schema_id: CHAT,
+      schemaId: CHAT,
       properties: { chat_id: 77, title: "Team", last_message_date: "2026-08-12T09:00:00Z" },
     });
     const graph = mockGraph({
-      list_entities_by_property_field: () => Promise.resolve({ items: [], total: 0 }),
-      list_entities_window: () => Promise.resolve({ items: [windowRow(pinned), windowRow(recent)], total: 2 }),
+      list_entities_by_property_field: () => Promise.resolve(page([])),
+      list_entities_window: () => Promise.resolve(page([pinned, recent])),
     });
     const module = mountModule(TelegramModule, { graph }).module;
 
@@ -61,9 +62,9 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
     expect(graph.spies.list_entities_window).toHaveBeenCalledWith({
       schema: CHAT,
       order: [
-        { field: { property_path: "is_pinned" }, desc: true },
-        { field: { property_path: "pin_order" }, desc: false },
-        { field: { property_path: "last_message_date" }, desc: true },
+        { field: { propertyPath: "is_pinned" }, desc: true },
+        { field: { propertyPath: "pin_order" }, desc: false },
+        { field: { propertyPath: "last_message_date" }, desc: true },
       ],
       limit: 20,
       offset: 0,
@@ -84,53 +85,49 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
    */
   it("tst_module_telegram_read_004 reads only the operator's incoming observations without traversing message history", async () => {
     const pinned = entity(CHAT_ID, "Pinned", {
-      schema_id: CHAT,
+      schemaId: CHAT,
       properties: { chat_id: 42, title: "Pinned", last_message_date: "2026-08-12T08:00:00Z" },
     });
     const recent = entity("chat-2", "Recent", {
-      schema_id: CHAT,
+      schemaId: CHAT,
       properties: { chat_id: 77, title: "Recent", last_message_date: "2026-08-12T09:00:00Z" },
     });
     const pinnedTen = entity("chat-10", "Pinned ten", {
-      schema_id: CHAT,
+      schemaId: CHAT,
       properties: { chat_id: 10, title: "Pinned ten", last_message_date: "2026-08-12T10:00:00Z" },
     });
     const operator = entity(ACCOUNT_ID, "Operator", {
-      schema_id: TELEGRAM_ACCOUNT,
-      anchor: "tg:account:9001",
+      schemaId: TELEGRAM_ACCOUNT,
+      source: { source: "mock-telegram", account: "account-1", externalId: "tg:account:9001" },
       properties: { telegram_user_id: 9001, is_self: true },
     });
-    const foreign = entity("other-account", "Other observer", { schema_id: TELEGRAM_ACCOUNT });
+    const foreign = entity("other-account", "Other observer", { schemaId: TELEGRAM_ACCOUNT });
     let hasOperator = true;
     const graph = mockGraph({
-      list_entities_by_property_field: () =>
-        Promise.resolve({ items: hasOperator ? [operator] : [], total: hasOperator ? 1 : 0 }),
+      list_entities_by_property_field: () => Promise.resolve(page(hasOperator ? [operator] : [])),
       get_entity: () => Promise.resolve(pinned),
       search_entities_by_name: () => Promise.resolve([pinned]),
       list_entities_window: (spec) => {
-        if (spec.filter_op === "eq") {
-          return Promise.resolve({ items: [windowRow(pinnedTen), windowRow(pinned)], total: 2 });
+        if (spec.filterOp === "eq") {
+          return Promise.resolve(page([pinnedTen, pinned]));
         }
-        return Promise.resolve({ items: [windowRow(recent)], total: 1 });
+        return Promise.resolve(page([recent]));
       },
       list_links_for_entities: () => Promise.reject(new Error("Invalid operation: traversal exceeds maxEdges")),
       list_links_for_entity: () => Promise.reject(new Error("Invalid operation: traversal exceeds maxEdges")),
-      list_linked: (spec) => Promise.resolve({
-        items: [
-          linkedRow(foreign, {
-            from_id: foreign.id, to_id: spec.parent_id, kind: "observed_in",
-            metadata: { is_pinned: true, pin_order: -1, sources: [{ account: "foreign-account" }] },
-          }),
-          linkedRow(operator, {
-            from_id: ACCOUNT_ID, to_id: spec.parent_id, kind: "observed_in",
-            metadata: {
-              is_pinned: true, pin_order: spec.parent_id === CHAT_ID ? 2 : 10,
-              sources: [{ account: "account-1" }],
-            },
-          }),
-        ],
-        total: 2,
-      }),
+      list_linked: (spec) => Promise.resolve(page([
+        linkedEntity(foreign, {
+          from: foreign.id, to: spec.parentId, kind: "observed_in",
+          metadata: { is_pinned: true, pin_order: -1, sources: [{ account: "foreign-account" }] },
+        }),
+        linkedEntity(operator, {
+          from: ACCOUNT_ID, to: spec.parentId, kind: "observed_in",
+          metadata: {
+            is_pinned: true, pin_order: spec.parentId === CHAT_ID ? 2 : 10,
+            sources: [{ account: "account-1" }],
+          },
+        }),
+      ])),
     });
     const module = mountModule(TelegramModule, { graph }).module;
 
@@ -141,33 +138,33 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
     expect(result.items[0]).toMatchObject({ is_pinned: true, pin_order: 2, account_id: "account-1" });
     expect(graph.spies.list_entities_window).toHaveBeenNthCalledWith(1, {
       schema: CHAT,
-      filter_field: {
-        edge_kind: "observed_in",
-        observer_anchor: "tg:account:9001",
-        edge_path: "is_pinned",
+      filterField: {
+        edgeKind: "observed_in",
+        observerExternalId: "tg:account:9001",
+        edgePath: "is_pinned",
       },
-      filter_op: "eq",
-      filter_eq: "true",
-      order: [{ field: { property_path: "last_message_date" }, desc: true }],
+      filterOp: "eq",
+      filterEq: "true",
+      order: [{ field: { propertyPath: "last_message_date" }, desc: true }],
       limit: 500,
       offset: 0,
     });
     expect(graph.spies.list_linked).toHaveBeenCalledTimes(2);
     for (const chat of [pinned, pinnedTen]) {
       expect(graph.spies.list_linked).toHaveBeenCalledWith({
-        parent_id: chat.id, link_kind: "observed_in", direction: "in", limit: 1000, offset: 0,
+        parentId: chat.id, linkKind: "observed_in", direction: "in", limit: 1000, offset: 0,
       });
     }
     expect(graph.spies.list_entities_window).toHaveBeenNthCalledWith(2, {
       schema: CHAT,
-      filter_field: {
-        edge_kind: "observed_in",
-        observer_anchor: "tg:account:9001",
-        edge_path: "is_pinned",
+      filterField: {
+        edgeKind: "observed_in",
+        observerExternalId: "tg:account:9001",
+        edgePath: "is_pinned",
       },
-      filter_op: "distinct",
-      filter_eq: "true",
-      order: [{ field: { property_path: "last_message_date" }, desc: true }],
+      filterOp: "distinct",
+      filterEq: "true",
+      order: [{ field: { propertyPath: "last_message_date" }, desc: true }],
       limit: 18,
       offset: 0,
     });
@@ -199,30 +196,29 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
     const secondAuthorId = "33333333-aaaa-4333-8333-444444444444";
     const messages = Array.from({ length: 50 }, (_, index) =>
       entity(`22222222-aaaa-4222-8222-${String(index + 1).padStart(12, "0")}`, `Message ${index}`, {
-        schema_id: MESSAGE,
-        created_at: "2026-08-12T08:00:01Z",
+        schemaId: MESSAGE,
+        createdAt: "2026-08-12T08:00:01Z",
         properties: { message_id: 100 - index, text: `Message ${index}`,
           date: "2026-08-12T08:00:00Z", sender_name: "Legacy sender" },
       }));
-    const links = messages.flatMap((message, index) => index % 3 === 2 ? [] : [{
-      id: `author-${index}`, from_id: message.id,
-      to_id: index % 3 === 0 ? ACCOUNT_ID : secondAuthorId, kind: "authored_by",
-    }]);
+    const links = messages.flatMap((message, index) => index % 3 === 2 ? [] : [
+      link(message.id, index % 3 === 0 ? ACCOUNT_ID : secondAuthorId, "authored_by", { id: `author-${index}` }),
+    ]);
     const firstMessage = messages[0];
     if (firstMessage === undefined) throw new Error("missing first message fixture");
     links.push(
-      { id: "second-author", from_id: firstMessage.id, to_id: secondAuthorId, kind: "authored_by" },
-      { id: "unrelated-kind", from_id: firstMessage.id, to_id: CHAT_ID, kind: "in_chat" },
-      { id: "incoming", from_id: CHAT_ID, to_id: firstMessage.id, kind: "authored_by" },
+      link(firstMessage.id, secondAuthorId, "authored_by", { id: "second-author" }),
+      link(firstMessage.id, CHAT_ID, "in_chat", { id: "unrelated-kind" }),
+      link(CHAT_ID, firstMessage.id, "authored_by", { id: "incoming" }),
     );
-    let rows = messages.map((message) => windowRow(message));
+    let rows = messages;
     const graph = mockGraph({
-      list_entities_window: () => Promise.resolve({ items: rows, total: 150 }),
-      list_links_for_entity: (id) => Promise.resolve(links.filter((link) => link.from_id === id || link.to_id === id)),
+      list_entities_window: () => Promise.resolve(page(rows, 150)),
+      list_links_for_entity: (id) => Promise.resolve(links.filter((l) => l.from === id || l.to === id)),
       list_links_for_entities: () => Promise.resolve(links),
       get_entities: () => Promise.resolve([
-        entity(ACCOUNT_ID, "Alice", { schema_id: TELEGRAM_ACCOUNT }),
-        entity(secondAuthorId, "Bob", { schema_id: TELEGRAM_ACCOUNT }),
+        entity(ACCOUNT_ID, "Alice", { schemaId: TELEGRAM_ACCOUNT }),
+        entity(secondAuthorId, "Bob", { schemaId: TELEGRAM_ACCOUNT }),
       ]),
     });
     const module = mountModule(TelegramModule, { graph }).module;
@@ -246,9 +242,9 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
     expect(graph.spies.get_entities).toHaveBeenCalledWith([ACCOUNT_ID, secondAuthorId]);
     expect(graph.spies.list_entities_window).toHaveBeenCalledWith({
       schema: MESSAGE,
-      filter_field: { entity_field: "idx" },
-      filter_eq: "42",
-      order: [{ field: { entity_field: "date" }, desc: true }],
+      filterField: { entityField: "idx" },
+      filterEq: "42",
+      order: [{ field: { entityField: "date" }, desc: true }],
       limit: 50,
       offset: 50,
     });
@@ -262,39 +258,35 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
   it("resolves an entity_id to chat_id before reading messages", async () => {
     const graph = mockGraph({
       get_entity: () =>
-        Promise.resolve(entity(CHAT_ID, "Chat", { schema_id: CHAT, properties: { chat_id: -10042 } })),
-      list_entities_by_property_field: () => Promise.resolve({ items: [], total: 0 }),
-      list_entities_window: () => Promise.resolve({ items: [], total: 0 }),
+        Promise.resolve(entity(CHAT_ID, "Chat", { schemaId: CHAT, properties: { chat_id: -10042 } })),
+      list_entities_by_property_field: () => Promise.resolve(page([])),
+      list_entities_window: () => Promise.resolve(page([])),
     });
     const module = mountModule(TelegramModule, { graph }).module;
 
     await module.messagesList({ entity_id: CHAT_ID });
     expect(graph.spies.list_entities_window).toHaveBeenCalledWith(
-      expect.objectContaining({ filter_eq: "-10042" }),
+      expect.objectContaining({ filterEq: "-10042" }),
     );
   });
 
   it("resolves a deep-linked chat with its exact Source account", async () => {
     const chat = entity(CHAT_ID, "Investor chat", {
-      schema_id: CHAT,
+      schemaId: CHAT,
       properties: { chat_id: 42, title: "Investor chat" },
     });
     const graph = mockGraph({
-      find_by_anchor: () => Promise.resolve(CHAT_ID),
+      find_by_external_id: () => Promise.resolve(CHAT_ID),
       get_entity: () => Promise.resolve(chat),
-      list_entities_by_property_field: () => Promise.resolve({
-        items: [entity(ACCOUNT_ID, "Operator", { schema_id: TELEGRAM_ACCOUNT, properties: { is_self: true } })],
-        total: 1,
-      }),
-      list_linked: () => Promise.resolve({
-        items: [linkedRow(entity(ACCOUNT_ID, "Operator"), {
-          id: "observed", from_id: ACCOUNT_ID, to_id: CHAT_ID, kind: "observed_in",
-          metadata: {
-            sources: [{ source: "mock-telegram", account: "account-1", surface: "messages" }],
-          },
-        })],
-        total: 1,
-      }),
+      list_entities_by_property_field: () => Promise.resolve(page([
+        entity(ACCOUNT_ID, "Operator", { schemaId: TELEGRAM_ACCOUNT, properties: { is_self: true } }),
+      ])),
+      list_linked: () => Promise.resolve(page([linkedEntity(entity(ACCOUNT_ID, "Operator"), {
+        id: "observed", from: ACCOUNT_ID, to: CHAT_ID, kind: "observed_in",
+        metadata: {
+          sources: [{ source: "mock-telegram", account: "account-1", surface: "messages" }],
+        },
+      })])),
     });
     const module = mountModule(TelegramModule, { graph }).module;
 
@@ -304,13 +296,13 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
       account_id: "account-1",
     });
     await expect(module.chatsGet({ chat_id: 42 })).resolves.toMatchObject({ entity_id: CHAT_ID, chat_id: "42", account_id: "account-1" });
-    expect(graph.spies.find_by_anchor).toHaveBeenCalledWith("tg:chat:42");
+    expect(graph.spies.find_by_external_id).toHaveBeenCalledWith("tg:chat:42");
   });
 
   it("returns exact message detail and rejects missing or foreign schemas", async () => {
     const message = entity(MESSAGE_ID, "Hello", {
-      schema_id: MESSAGE,
-      created_at: "2026-08-12T08:00:01Z",
+      schemaId: MESSAGE,
+      createdAt: "2026-08-12T08:00:01Z",
       properties: { text: "Full body", date: "2026-08-12T08:00:00Z", sender_name: "Fallback" },
     });
     const graph = mockGraph({
@@ -335,9 +327,9 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
     );
   });
 
-  it("updates the anchored chat dictionary and fails on an unknown chat", async () => {
+  it("updates the chat dictionary found by its external id and fails on an unknown chat", async () => {
     const graph = mockGraph({
-      find_by_anchor: () => Promise.resolve(CHAT_ID),
+      find_by_external_id: () => Promise.resolve(CHAT_ID),
       update_properties: () => Promise.resolve(undefined),
       update_properties_batch: () => Promise.resolve(undefined),
     });
@@ -346,17 +338,88 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
     await expect(module.chatsSetIndexed({ chat_id: 42, is_indexed: true })).resolves.toEqual({
       status: "ok",
     });
-    expect(graph.spies.find_by_anchor).toHaveBeenCalledWith("tg:chat:42");
+    expect(graph.spies.find_by_external_id).toHaveBeenCalledWith("tg:chat:42");
     expect(graph.spies.update_properties).toHaveBeenCalledWith({
-      entity_id: CHAT_ID,
+      entityId: CHAT_ID,
       properties: { is_indexed: true },
     });
 
     const missing = mountModule(TelegramModule, {
-      graph: mockGraph({ find_by_anchor: () => Promise.resolve(null) }),
+      graph: mockGraph({ find_by_external_id: () => Promise.resolve(null) }),
     }).module;
     await expect(missing.chatsSetIndexed({ chat_id: 42, is_indexed: false })).rejects.toThrow(
       "chat 42 not found",
     );
+  });
+});
+
+/**
+ * @test-id: tst_cat_entity_one_type_004
+ * @scenario: scn_telegram_read_001
+ * @covers: modules/telegram/module/service.ts::messagesGet
+ * @deterministic: yes
+ * @fixtures: one message, a canonical in_chat link and an agent link carrying confidence
+ *
+ * Test environment: Telegram module with strict Graph double
+ * Clients: direct calls
+ * Mocks: deterministic GraphService answering SDK `Link` rows
+ * Data: the links the host answers read `from`/`to`; each endpoint comes back
+ * as the SDK `LinkedEntitySummary`, carrying the statement of the link that
+ * reached it.
+ */
+describe("tst_cat_entity_one_type_004 — messages.get reads SDK links and answers SDK linked summaries", () => {
+  it("tst_cat_entity_one_type_004 lists the chat and an agent's watcher with their links' statements", async () => {
+    const watcherId = "44444444-aaaa-4444-8444-444444444444";
+    const guess: AgentLink = {
+      id: "guess",
+      owner: "u1",
+      from: watcherId,
+      to: MESSAGE_ID,
+      kind: "mentions",
+      createdAt: "2026-08-12T09:00:00Z",
+      origin: "agent",
+      confidence: 0.7,
+      evidence: ["episode-1"],
+      validFrom: null,
+      validUntil: "2027-01-01T00:00:00Z",
+    };
+    const message = entity(MESSAGE_ID, "Hello", {
+      schemaId: MESSAGE,
+      properties: { text: "Full body", date: "2026-08-12T08:00:00Z", sender_name: "Fallback" },
+    });
+    const graph = mockGraph({
+      get_entity_full: () => Promise.resolve({ entity: message, links: [link(MESSAGE_ID, CHAT_ID, "in_chat"), guess] }),
+      list_links_for_entities: () => Promise.resolve([]),
+      get_entities: () => Promise.resolve([
+        entity(CHAT_ID, "Ops chat", { schemaId: CHAT, createdAt: "2026-08-01T00:00:00Z" }),
+        entity(watcherId, "Watcher", { schemaId: "contacts.person", createdAt: "2026-08-02T00:00:00Z" }),
+      ]),
+    });
+    const module = mountModule(TelegramModule, { graph }).module;
+
+    const view = await module.messagesGet({ id: MESSAGE_ID });
+
+    expect(view.linked_entities).toEqual([
+      {
+        id: CHAT_ID,
+        name: "Ops chat",
+        schemaId: CHAT,
+        linkKind: "in_chat",
+        createdAt: "2026-08-01T00:00:00Z",
+        origin: "canonical",
+        confidence: null,
+        validUntil: null,
+      },
+      {
+        id: watcherId,
+        name: "Watcher",
+        schemaId: "contacts.person",
+        linkKind: "~mentions",
+        createdAt: "2026-08-02T00:00:00Z",
+        origin: "agent",
+        confidence: 0.7,
+        validUntil: "2027-01-01T00:00:00Z",
+      },
+    ]);
   });
 });
