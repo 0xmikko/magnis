@@ -150,3 +150,15 @@ export interface ProfileDetail extends ProfileListItem {
   bio: string | null;
   url: string | null;
 }
+
+export interface ResolveProfileParams {
+  handle: string;
+}
+
+export interface ResolvedXProfile {
+  providerId: string;
+  handle: string;
+  displayName: string;
+  bio: string | null;
+  avatarUrl: string | null;
+}

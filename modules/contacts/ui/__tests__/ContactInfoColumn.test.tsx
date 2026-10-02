@@ -141,3 +141,67 @@ describe("tst_fe_contacts_info_007 — designed empty state", () => {
     expect(getByText("No contact details yet")).toBeTruthy();
   });
 });
+
+// @test-id: tst_fe_contacts_sync_001
+// @scenario: scn_contacts_sync_001
+// @covers: ContactOverview
+// @deterministic: yes
+// @fixtures: current identity states and partial owner failures
+it("uses the approved contact operation and reloads saved identity states after partial failure", async () => {
+  const { fireEvent, screen, waitFor } = await import("@testing-library/react");
+  const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
+  const { vi } = await import("vitest");
+  const { setHostRuntime } = await import("../../../../packages/host-testdouble/runtime");
+  const { ContactOverview } = await import("../ContactOverview");
+  let enabled = true;
+  const rpc = vi.fn(async (method: string) => {
+    if (method === "contacts.get") return { emails: [], phones: [], replicas: [], syncTargets: [
+      { identityId: "mail", schemaId: "email.address", name: "Alice email", state: { kind: "ready", id: "mail", syncEnabled: enabled, syncRevision: "1" } },
+      { identityId: "x", schemaId: "x.profile", name: "Alice X", state: { kind: "ready", id: "x", syncEnabled: false, syncRevision: "0" } },
+      { identityId: "tg", schemaId: "telegram.account", name: "Alice Telegram", state: { kind: "unavailable", message: "No stored direct chat" } },
+    ] };
+    if (method !== "contacts.person.setSyncEnabled") throw new Error(`Unexpected RPC ${method}`);
+    enabled = false;
+    return { results: [
+      { identityId: "mail", targetId: "mail", kind: "saved", syncEnabled: false, syncRevision: "1", application: { kind: "pending" } },
+      { identityId: "x", targetId: "x", kind: "saved", syncEnabled: false, syncRevision: "0", application: { kind: "failed", message: "Worker unavailable" } },
+      { identityId: "tg", targetId: null, kind: "failed", message: "No stored direct chat" },
+    ] };
+  });
+  setHostRuntime({ transport: { baseUrl: "", rpc } });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const tree = <QueryClientProvider client={client}><ContactOverview entityId="contact" /></QueryClientProvider>;
+  const view = render(tree);
+  expect(await screen.findByText("Alice email: On")).not.toBeNull();
+  expect(screen.getByText("Alice X: Off")).not.toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Stop synchronization" }));
+  await waitFor(() => { expect(rpc).toHaveBeenCalledWith("contacts.person.setSyncEnabled", { id: "contact", syncEnabled: false }); });
+  expect(await screen.findByText("Alice email: Saved. Applying…")).not.toBeNull();
+  expect(screen.getByText("Alice X: Saved, but could not be applied: Worker unavailable")).not.toBeNull();
+  expect(screen.getByText("Alice Telegram: Not saved: No stored direct chat")).not.toBeNull();
+  expect(await screen.findByText("Alice email: Off")).not.toBeNull();
+  view.unmount(); client.clear();
+  const reload = render(tree);
+  expect(await screen.findByText("Alice email: Off")).not.toBeNull();
+  expect(screen.queryByText("Alice email: Saved. Applying…")).toBeNull();
+  reload.unmount(); client.clear();
+});
+
+it("reports denied contact approval and keeps saved choices visible", async () => {
+  const { fireEvent, screen } = await import("@testing-library/react");
+  const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
+  const { setHostRuntime } = await import("../../../../packages/host-testdouble/runtime");
+  const { ContactOverview } = await import("../ContactOverview");
+  setHostRuntime({ transport: { baseUrl: "", rpc: async (method: string) => {
+    if (method === "contacts.get") return { emails: [], phones: [], replicas: [], syncTargets: [
+      { identityId: "mail", schemaId: "email.address", name: "Alice email", state: { kind: "ready", id: "mail", syncEnabled: true, syncRevision: "0" } },
+    ] };
+    throw new Error("Approval denied");
+  } } });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = render(<QueryClientProvider client={client}><ContactOverview entityId="contact" /></QueryClientProvider>);
+  fireEvent.click(await screen.findByRole("button", { name: "Stop synchronization" }));
+  expect((await screen.findByRole("alert")).textContent).toBe("Approval denied");
+  expect(screen.getByText("Alice email: On")).not.toBeNull();
+  view.unmount(); client.clear();
+});

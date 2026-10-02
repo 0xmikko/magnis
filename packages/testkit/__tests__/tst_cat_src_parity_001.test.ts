@@ -327,6 +327,7 @@ const CURRENT_OPERATION_EVIDENCE: Readonly<
     "magnis.sync.fetch": { id: "tst_tgts_fx_001", path: "sources/telegram/src/fixture.test.ts" },
   },
   x: {
+    "magnis.execute:resolveProfile": { id: "tst_x_cert_001", path: "sources/x/src/__tests__/certification.test.ts" },
     "magnis.auth.probe": { id: "tst_x_probe", path: "sources/x/src/probe.test.ts" },
     "magnis.sync.fetch": { id: "tst_x_001", path: "sources/x/src/surfaces/x/fetch.test.ts" },
   },
@@ -553,12 +554,12 @@ const GOLDEN_PROVIDERS: readonly GoldenProvider[] = [
   {
     sourceId: "x",
     serverInfoName: "x",
-    serverInfoVersion: "0.1.0",
+    serverInfoVersion: "2.0.0",
     auth: "api_key",
     delivery: "poll",
     pollIntervalSecs: 300,
     advertisedTools: SDK_TOOLS,
-    callableOperations: [...SDK_OPERATIONS, "magnis.auth.probe"],
+    callableOperations: [...SDK_OPERATIONS, "magnis.auth.probe", "magnis.execute:resolveProfile"],
     identityRule: "verified_provider_subject",
     credentialKeys: ["bearer_token"],
     mintedCredentialKeys: [],

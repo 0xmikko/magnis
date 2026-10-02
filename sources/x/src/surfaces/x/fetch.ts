@@ -3,6 +3,7 @@ import { XClient, type FetchLike, type XMedia, type XTweet, type XUser } from ".
 import { fullText, postType } from "./helpers";
 import { PLATFORM, SURFACE_X } from "../../schema";
 import { postRemoteId, profileRemoteId } from "./schema";
+import type { ResolvedXProfile } from "../../../../../modules/x/types";
 
 const RECENT_TWEETS = 10;
 
@@ -96,12 +97,16 @@ export async function fetchX(args: FetchArgs, fetchFn: FetchLike): Promise<Fetch
   if (!bearer) {
     throw new Error("x: missing bearer_token (set SOURCE_X_BEARER_TOKEN)");
   }
-  const handles = args.tracked_handles ?? [];
+  const handles = args.tracked_handles;
+  const expected = args.expectedProfileIds;
+  if (handles === undefined || expected === undefined) throw new Error("x: explicit profile selection is required");
+  if (new Set(handles).size !== handles.length || Object.keys(expected).length !== handles.length
+    || handles.some((handle) => !/^[a-z0-9_]{1,15}$/.test(handle) || !/^\d+$/.test(expected[handle] ?? ""))) throw new Error("x: invalid profile selection");
   const client = new XClient(bearer, fetchFn);
   const envelopes: Envelope[] = [];
   for (const handle of handles) {
     const user = await client.userByUsername(handle);
-    if (!user) continue;
+    if (!user || user.id !== expected[handle] || user.username.toLowerCase() !== handle) throw new Error(`x: handle ${handle} does not match its saved profile identity`);
     envelopes.push(profileEnvelope(user));
     const page = await client.recentTweets(user.id, RECENT_TWEETS);
     const mediaByKey = new Map(page.media.map((x) => [x.media_key, x]));
@@ -112,4 +117,15 @@ export async function fetchX(args: FetchArgs, fetchFn: FetchLike): Promise<Fetch
   // Poll is snapshot-per-cycle; no server cursor in v1. hasMore=false.
   const cursor = typeof args.cursor === "number" ? args.cursor : 0;
   return { envelopes, nextCursor: cursor + 1, hasMore: false };
+}
+
+/** Resolve identity and display metadata without acquiring posts. */
+export async function resolveProfile(args: Record<string, unknown>, meta: Record<string, unknown> | undefined, fetchFn: FetchLike): Promise<ResolvedXProfile> {
+  if (typeof args.handle !== "string" || !/^[A-Za-z0-9_]{1,15}$/.test(args.handle)) throw new Error("x: resolveProfile requires a bare handle");
+  const bearer = meta?.bearer_token;
+  if (typeof bearer !== "string" || bearer === "") throw new Error("x: missing bearer_token");
+  const user = await new XClient(bearer, fetchFn).userByUsername(args.handle);
+  if (user === null || !/^\d+$/.test(user.id) || typeof user.username !== "string" || user.username.toLowerCase() !== args.handle.toLowerCase()
+    || typeof user.name !== "string") throw new Error("x: profile identity lookup failed");
+  return { providerId: user.id, handle: user.username, displayName: user.name, bio: user.description ?? null, avatarUrl: user.profile_image_url ?? null };
 }

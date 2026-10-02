@@ -1,3 +1,4 @@
+import type { RawSyncableEntity } from "@magnis/plugin-sdk";
 // Shared DTOs for the contacts plugin — wire shapes the host frontend
 // consumes. Mirrors the legacy Rust contacts ContactListItem /
 // ContactDetailView 1:1.
@@ -28,7 +29,17 @@ export interface LinkedEntitySummary {
   data: unknown;
 }
 
+export interface ContactSyncTarget {
+  identityId: string;
+  schemaId: string;
+  name: string;
+  state:
+    | ({ kind: "ready" } & Pick<RawSyncableEntity, "id" | "syncEnabled" | "syncRevision">)
+    | { kind: "unavailable"; message: string };
+}
+
 export interface ContactDetailView {
+  syncTargets: readonly ContactSyncTarget[];
   id: string;
   schema_id: string;
   name: string;
@@ -261,4 +272,11 @@ export interface GoogleContactPayload {
   organizations?: { name?: string | null; title?: string | null; is_current?: boolean }[];
   photo_url?: string | null;
   external_url?: string | null;
+}
+
+export interface CompleteXSyncMigrationParams {
+  contactId: string;
+  profileId: string;
+  handle: string;
+  enabled: boolean;
 }
