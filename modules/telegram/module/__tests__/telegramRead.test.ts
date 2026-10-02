@@ -12,6 +12,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { entity, linkedRow, mockGraph, mountModule, windowRow } from "@magnis/testkit/module";
+import type { RawSyncableEntity } from "@magnis/plugin-sdk";
 import { CHAT, MESSAGE, TELEGRAM_ACCOUNT } from "../../schema.ts";
 import { TelegramModule } from "../service.ts";
 
@@ -19,9 +20,13 @@ const CHAT_ID = "11111111-aaaa-4111-8111-111111111111";
 const MESSAGE_ID = "22222222-aaaa-4222-8222-222222222222";
 const ACCOUNT_ID = "33333333-aaaa-4333-8333-333333333333";
 
+function chatEntity(id: string, name: string, overrides: Parameters<typeof entity>[2]): RawSyncableEntity {
+  return { ...entity(id, name, overrides), syncEnabled: true, syncRevision: "0" };
+}
+
 describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
   it("preserves legacy dialog fields and host order when no operator account exists", async () => {
-    const pinned = entity(CHAT_ID, "Investor chat", {
+    const pinned = chatEntity(CHAT_ID, "Investor chat", {
       schema_id: CHAT,
       properties: {
         chat_id: 42,
@@ -34,7 +39,7 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
         sources: [{ source: "mock-telegram", account: "account-1", surface: "messages" }],
       },
     });
-    const recent = entity("chat-2", "Team", {
+    const recent = chatEntity("chat-2", "Team", {
       schema_id: CHAT,
       properties: { chat_id: 77, title: "Team", last_message_date: "2026-08-12T09:00:00Z" },
     });
@@ -83,15 +88,15 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
    * Data: pinned and recent chats with two observer-scoped observed_in edges
    */
   it("tst_module_telegram_read_004 reads only the operator's incoming observations without traversing message history", async () => {
-    const pinned = entity(CHAT_ID, "Pinned", {
+    const pinned = chatEntity(CHAT_ID, "Pinned", {
       schema_id: CHAT,
       properties: { chat_id: 42, title: "Pinned", last_message_date: "2026-08-12T08:00:00Z" },
     });
-    const recent = entity("chat-2", "Recent", {
+    const recent = chatEntity("chat-2", "Recent", {
       schema_id: CHAT,
       properties: { chat_id: 77, title: "Recent", last_message_date: "2026-08-12T09:00:00Z" },
     });
-    const pinnedTen = entity("chat-10", "Pinned ten", {
+    const pinnedTen = chatEntity("chat-10", "Pinned ten", {
       schema_id: CHAT,
       properties: { chat_id: 10, title: "Pinned ten", last_message_date: "2026-08-12T10:00:00Z" },
     });
@@ -262,7 +267,7 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
   it("resolves an entity_id to chat_id before reading messages", async () => {
     const graph = mockGraph({
       get_entity: () =>
-        Promise.resolve(entity(CHAT_ID, "Chat", { schema_id: CHAT, properties: { chat_id: -10042 } })),
+        Promise.resolve(chatEntity(CHAT_ID, "Chat", { schema_id: CHAT, properties: { chat_id: -10042 } })),
       list_entities_by_property_field: () => Promise.resolve({ items: [], total: 0 }),
       list_entities_window: () => Promise.resolve({ items: [], total: 0 }),
     });
@@ -275,7 +280,7 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
   });
 
   it("resolves a deep-linked chat with its exact Source account", async () => {
-    const chat = entity(CHAT_ID, "Investor chat", {
+    const chat = chatEntity(CHAT_ID, "Investor chat", {
       schema_id: CHAT,
       properties: { chat_id: 42, title: "Investor chat" },
     });

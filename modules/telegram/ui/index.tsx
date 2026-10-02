@@ -113,7 +113,8 @@ function mapTelegramChatToListItem(raw: Record<string, unknown>): ListItem {
       initials: initialsFromName(name),
       avatarColor: pickAvatarColor(name),
       muted: false,
-      isIndexed: c.is_indexed ?? undefined,
+      isIndexed: c.indexed,
+      syncEnabled: c.syncEnabled,
     },
   };
 }

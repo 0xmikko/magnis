@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { TelegramChatView } from "./TelegramChatView";
@@ -12,6 +12,7 @@ import { normalizeTelegramChatTitle } from "./chatTitle";
 import { initialsFromName } from "./utils/text";
 import { pickAvatarColor, resolveAvatarUrl } from "./helpers";
 import { useAppRuntime } from "@magnis/host/runtime";
+import type { SetSyncEnabledResult } from "@magnis/plugin-sdk";
 
 /**
  * Resolve a single Telegram chat with the Source account attached to the
@@ -45,18 +46,23 @@ function useTelegramChatFromDictionary(entityId: string): TelegramChat | undefin
       lastMessage: response.last_message ?? "",
       time: response.last_message_time ?? "",
       pinned: response.is_pinned ?? false,
-      isIndexed: response.is_indexed ?? undefined,
+      isIndexed: response.indexed,
+      syncEnabled: response.syncEnabled,
     };
   }, [response, entityId, baseUrl]);
 }
 
 export function TelegramDetailWrapper({
   entityId,
-}: DetailPanelProps): JSX.Element {
+}: Pick<DetailPanelProps, "entityId">): JSX.Element {
   const runtime = useAppRuntime();
   const queryClient = useQueryClient();
 
   const selectedChat = useTelegramChatFromDictionary(entityId);
+  const saving = useRef(false);
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [settingsStatus, setSettingsStatus] = useState<string>();
+  const [settingsError, setSettingsError] = useState<string>();
 
   // Build a single-element chats array for useTelegramMessages
   const chats = useMemo<readonly TelegramChat[]>(
@@ -72,16 +78,40 @@ export function TelegramDetailWrapper({
 
   useTelegramSync(refreshChats);
 
-  const handleToggleIndexing = useCallback(async () => {
-    if (!entityId) return;
-    const newValue = !(selectedChat?.isIndexed ?? true);
-    await runtime.transport.rpc("telegram.chats.set_indexed", {
-      chat_id: selectedChat?.chatId ?? entityId,
-      is_indexed: newValue,
-    });
-    void queryClient.invalidateQueries({ queryKey: telegramKeys.chats() });
-    void queryClient.invalidateQueries({ queryKey: telegramKeys.chatDetail(entityId) });
-  }, [entityId, selectedChat?.isIndexed, selectedChat?.chatId, runtime, queryClient]);
+  const changeSetting = useCallback(async (setting: "syncEnabled" | "indexed") => {
+    if (!selectedChat || saving.current) return;
+    saving.current = true;
+    setSavingSettings(true);
+    setSettingsError(undefined);
+    setSettingsStatus("Saving…");
+    try {
+      if (setting === "syncEnabled") {
+        const response = await runtime.transport.rpc<SetSyncEnabledResult>("telegram.chat.setSyncEnabled", {
+          id: entityId,
+          syncEnabled: !selectedChat.syncEnabled,
+        });
+        const result = response.results.find((item) => item.identityId === entityId);
+        if (!result) throw new Error("The synchronization change returned no result.");
+        if (result.kind === "failed") throw new Error(result.message);
+        setSettingsStatus(result.application.kind === "pending"
+          ? "Synchronization setting saved. Applying…"
+          : `Synchronization setting saved, but could not be applied: ${result.application.message}`);
+      } else {
+        await runtime.transport.rpc("graph.entity.update", { entity_id: entityId, indexed: !selectedChat.isIndexed });
+        setSettingsStatus("Indexing setting saved.");
+      }
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: telegramKeys.chats() }),
+        queryClient.invalidateQueries({ queryKey: telegramKeys.chatDetail(entityId) }),
+      ]);
+    } catch (error) {
+      setSettingsStatus(undefined);
+      setSettingsError(error instanceof Error ? error.message : String(error));
+    } finally {
+      saving.current = false;
+      setSavingSettings(false);
+    }
+  }, [entityId, selectedChat, runtime, queryClient]);
 
   return (
     <TelegramChatView
@@ -96,7 +126,12 @@ export function TelegramDetailWrapper({
       onSendMessage={messages.canSend ? messages.handleSendMessage : undefined}
       onReplyByAgent={messages.handleReplyByAgent}
       isIndexed={selectedChat?.isIndexed}
-      onToggleIndexing={() => { void handleToggleIndexing(); }}
+      onToggleIndexing={() => { void changeSetting("indexed"); }}
+      syncEnabled={selectedChat?.syncEnabled}
+      onToggleSync={() => { void changeSetting("syncEnabled"); }}
+      savingSettings={savingSettings}
+      settingsStatus={settingsStatus}
+      settingsError={settingsError}
     />
   );
 }
