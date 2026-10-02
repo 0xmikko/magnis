@@ -1,7 +1,7 @@
 # One entity type: the catalog speaks the SDK shapes at API 0.2.0
 
-Status: SPEC_DRAFT  
-Spec lock: unlocked  
+Status: SPEC_LOCKED  
+Spec lock: sha256:32d5032dfe63763557b770ec6d4b44ec8db9bd82fb2d84b5673f1cd54aa2ec3c owner:Все вот эти комментарии, убираем как можно пользу всех вещей. Упрощаем, убираем все эти кодеки. Это все как бы лишний код, который только раздражает. И запускаем еще один подробный раунд кодекса.  
 Implementation lock: unlocked  
 Active Delivery: none  
 Unattended decisions: allowed  
@@ -118,4 +118,6 @@ The owner's approvals of 2026-10-02 are recorded in the app SPEC. Both PRs merge
 
 <!-- plan:execution:start -->
 ## Execution log
+
+- lock-spec sha256:32d5032dfe63763557b770ec6d4b44ec8db9bd82fb2d84b5673f1cd54aa2ec3c owner:Все вот эти комментарии, убираем как можно пользу всех вещей. Упрощаем, убираем все эти кодеки. Это все как бы лишний код, который только раздражает. И запускаем еще один подробный раунд кодекса.
 <!-- plan:execution:end -->
