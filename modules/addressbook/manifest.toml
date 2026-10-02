@@ -14,6 +14,7 @@ title = "Address book"
 summary = "Address book contacts from your accounts, linked to the people they describe."
 # Reverse-domain publisher identity.
 publisher = "ai.magnis"
+dependsOn = [ "email" ]
 
 # Sync surface this module consumes (fed by the matching source connector).
 [surfaces.addressbook]

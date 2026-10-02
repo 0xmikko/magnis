@@ -20,6 +20,7 @@ title = "Telegram"
 summary = "Sync chats, groups, and contacts from Telegram."
 publisher = "ai.magnis"
 surfaces = ["telegram"]
+dependsOn = ["telegram"]
 
 # phone_code: a multi-step MTProto login driven over WS (no OAuth/callback).
 # The host stashes the user-typed phone / login code / 2FA password and injects

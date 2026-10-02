@@ -15,6 +15,7 @@ title = "X"
 summary = "X (Twitter) profiles and posts of the people you track, linked to contacts."
 # Reverse-domain publisher identity.
 publisher = "ai.magnis"
+dependsOn = [ "contacts" ]
 
 [[links]]
 kind = "x.post:x.profile"

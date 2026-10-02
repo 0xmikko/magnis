@@ -22,6 +22,7 @@ title = "Google"
 summary = "Sync Gmail and Google Calendar into your personal graph."
 publisher = "ai.magnis"
 surfaces = ["email", "meetings", "addressbook"]
+dependsOn = ["addressbook", "email", "meetings"]
 
 # OAuth2: the HOST owns the ceremony (state/PKCE-S256/nonce/consent URL) using
 # the scopes below + a fixed redirect `/auth/sources/google/callback`; the

@@ -16,6 +16,7 @@ summary = "Dataset-driven mock Telegram source for evals and e2e."
 publisher = "ai.magnis"
 dev = true
 surfaces = ["telegram"]
+dependsOn = ["telegram"]
 kind = "mock"
 account_mode = "single"
 accounts = ["eval"]

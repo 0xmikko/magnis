@@ -19,6 +19,7 @@ summary = "Local-filesystem markdown notes connector (retired sync; kept as refe
 publisher = "ai.magnis"
 dev = true
 surfaces = ["notes"]
+dependsOn = ["notes"]
 kind = "core"
 
 [certification]
