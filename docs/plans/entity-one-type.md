@@ -1,7 +1,7 @@
 # One entity type: the catalog imports the SDK Entity and Link
 
-Status: SPEC_DRAFT  
-Spec lock: unlocked  
+Status: SPEC_LOCKED  
+Spec lock: sha256:0c526caee41f55597e0e5bc6562578df3a8df0f25fde2d9a3892c6dd669edd82 owner:Утверждаю, приступаю прямо сейчас. Мы это сделаем отдельным комитом и сможем, чтобы можно было использовать другими.  
 Implementation lock: unlocked  
 Active Delivery: none  
 Unattended decisions: allowed  
@@ -86,4 +86,6 @@ The owner's approval of 2026-10-02 is recorded in the app SPEC. Both PRs merge t
 
 <!-- plan:execution:start -->
 ## Execution log
+
+- lock-spec sha256:0c526caee41f55597e0e5bc6562578df3a8df0f25fde2d9a3892c6dd669edd82 owner:Утверждаю, приступаю прямо сейчас. Мы это сделаем отдельным комитом и сможем, чтобы можно было использовать другими.
 <!-- plan:execution:end -->
