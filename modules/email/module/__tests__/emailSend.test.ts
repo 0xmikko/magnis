@@ -168,7 +168,7 @@ describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
     const graph = makeGraph({
       get_entity_full: () =>
         Promise.resolve({
-          entity: { id: "f1", schema_id: "file.object", name: "doc.pdf", created_at: "" },
+          entity: { id: "f1", schema_id: "file.object", name: "doc.pdf", indexed: true, created_at: "" },
           links: [],
         } satisfies EntityDetail),
     });
@@ -190,7 +190,7 @@ describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
     const graph = makeGraph({
       get_entity_full: () =>
         Promise.resolve({
-          entity: { id: "c1", schema_id: "company", name: "Acme", created_at: "" },
+          entity: { id: "c1", schema_id: "company", name: "Acme", indexed: true, created_at: "" },
           links: [],
         } satisfies EntityDetail),
     });
@@ -209,6 +209,7 @@ describe("email reply (tst_be_emailreply_003)", () => {
       id: "orig",
       schema_id: "email.message",
       name: "Quarterly",
+      indexed: true,
       created_at: "",
       properties: {
         from_address: "boss@corp.com",
@@ -227,7 +228,7 @@ describe("email reply (tst_be_emailreply_003)", () => {
           call += 1;
           if (call === 1) return Promise.resolve(original()); // reply reads the original
           return Promise.resolve({
-            entity: { id: "f1", schema_id: "file.object", name: "a", created_at: "" },
+            entity: { id: "f1", schema_id: "file.object", name: "a", indexed: true, created_at: "" },
             links: [],
           } satisfies EntityDetail);
         };
@@ -284,7 +285,7 @@ describe("email reply (tst_be_emailreply_003)", () => {
           call += 1;
           if (call === 1) return Promise.resolve(original());
           return Promise.resolve({
-            entity: { id: "f1", schema_id: "file.object", name: "a", created_at: "" },
+            entity: { id: "f1", schema_id: "file.object", name: "a", indexed: true, created_at: "" },
             links: [],
           } satisfies EntityDetail);
         };

@@ -569,7 +569,7 @@ export class MeetingsModule {
     params: { type: "object", properties: {}, additionalProperties: false },
   })
   async syncStatus(): Promise<Record<string, unknown>> {
-    return this.graph.sync_state("status");
+    return this.graph.syncState("status");
   }
 
   @rpc("sync.reset", {
@@ -578,6 +578,6 @@ export class MeetingsModule {
     params: { type: "object", properties: {}, additionalProperties: false },
   })
   async syncReset(): Promise<Record<string, unknown>> {
-    return this.graph.sync_state("reset", CAL);
+    return this.graph.syncState("reset", CAL);
   }
 }

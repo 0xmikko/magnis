@@ -29,13 +29,13 @@ interface TelegramCommandInternals {
 describe("tst_module_telegram_command_001 — Telegram command mapping", () => {
   it("delegates sync and composer commands without translating host responses", async () => {
     const graph = mockGraph({
-      sync_state: (...args: unknown[]) => Promise.resolve({ args }),
+      syncState: (...args: unknown[]) => Promise.resolve({ args, pending: true as const }),
       composer: (...args: unknown[]) => Promise.resolve({ args }),
     });
     const module = mountModule(TelegramModule, { graph }).module;
 
-    await expect(module.syncStatus()).resolves.toEqual({ args: ["status"] });
-    await expect(module.syncReset()).resolves.toEqual({ args: ["reset", "telegram.message"] });
+    await expect(module.syncStatus()).resolves.toEqual({ args: ["status"], pending: true });
+    await expect(module.syncReset()).resolves.toEqual({ args: ["reset", "telegram.message"], pending: true });
     await expect(module.composerRead()).resolves.toEqual({ args: ["read"] });
     await expect(module.composerSetText({ thread_key: "chat:42", text: "Hello" })).resolves.toEqual({
       args: ["set_text", "chat:42", "Hello"],
@@ -90,7 +90,7 @@ describe("tst_module_telegram_command_001 — Telegram command mapping", () => {
   });
 
   it("resolves the chat anchor and delegates trigger definition ownership", async () => {
-    const graph = mockGraph({ find_by_anchor: () => Promise.resolve("chat-entity"), get_entity_full: () => Promise.resolve({ entity: { id: "episode-1", name: "Parent", schema_id: "episodes.episode", created_at: "" }, links: [] }) });
+    const graph = mockGraph({ find_by_anchor: () => Promise.resolve("chat-entity"), get_entity_full: () => Promise.resolve({ entity: { id: "episode-1", name: "Parent", schema_id: "episodes.episode", indexed: true, created_at: "" }, links: [] }) });
     const execute = vi.fn(() => Promise.resolve({ id: "trigger-1" }));
     const module = mountModule(TelegramModule, { graph, rpc: { execute } }).module;
 

@@ -44,6 +44,7 @@ const ROW = (id: string, date: string, over: Record<string, unknown> = {}) => ({
     id,
     schema_id: "email.message",
     name: "Subject " + id,
+    indexed: true,
     created_at: date,
     properties: {
       from_address: "alice@example.com",
@@ -65,6 +66,7 @@ const DETAIL = (id: string, date: string): EntityDetail => ({
     id,
     schema_id: "email.message",
     name: "Subject " + id,
+    indexed: true,
     created_at: date,
     properties: {
       from_address: "alice@example.com",
@@ -143,8 +145,8 @@ describe("email read — shape parity (tst_be_emailread_001)", () => {
       ],
     });
     spy(graph, "get_entities").mockResolvedValue([
-      { id: "file-1", schema_id: "file.object", name: "photo.jpg", created_at: "2026-06-03T09:00:00Z" },
-      { id: "file-2", schema_id: "file.object", name: "report.pdf", created_at: "2026-06-03T09:00:00Z" },
+      { id: "file-1", schema_id: "file.object", name: "photo.jpg", indexed: true, created_at: "2026-06-03T09:00:00Z" },
+      { id: "file-2", schema_id: "file.object", name: "report.pdf", indexed: true, created_at: "2026-06-03T09:00:00Z" },
     ] satisfies RawEntity[]);
 
     const view = await mod.emailGet({ id: "x" });
@@ -175,6 +177,7 @@ describe("email read — shape parity (tst_be_emailread_001)", () => {
         id: "a",
         schema_id: "email.message",
         name: "Subject a",
+        indexed: true,
         created_at: "2026-06-01T10:00:00Z",
         properties: {
           from_name: "Alice Johnson",

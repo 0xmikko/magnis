@@ -5,6 +5,8 @@
  * Beside entities.ts and outside module/ on purpose.
  */
 import { describe, expect, it } from "vitest";
+import { entity } from "@magnis/declare";
+import { descriptorFrom } from "@magnis/declare/derive";
 import type { GraphBatchInput } from "@magnis/plugin-sdk";
 import { mockGraph, mountModule } from "@magnis/testkit/module";
 
@@ -85,6 +87,24 @@ async function written(): Promise<GraphBatchInput["entities"]> {
 }
 
 describe("telegram declares what it writes", () => {
+  it.each([true, false])("carries explicit syncable=%s without changing the properties schema", (syncable) => {
+    const identity = { id: "telegram.chat", name: "Chat" };
+    const ordinary = descriptorFrom(entity(identity, chat.shape, { order: ["chat_id", "asc"] })).descriptor;
+    const declared = descriptorFrom(entity({ ...identity, syncable }, chat.shape, { order: ["chat_id", "asc"] })).descriptor;
+    expect(declared).toHaveProperty("syncable", syncable);
+    expect(declared.json_schema).toEqual(ordinary.json_schema);
+    expect(ordinary).not.toHaveProperty("syncable");
+  });
+
+  it("declares synchronization on the chat descriptor, outside provider properties", () => {
+    const { descriptor } = descriptorFrom(chat);
+    expect(descriptor).toHaveProperty("syncable", true);
+    expect(descriptor.json_schema).not.toHaveProperty("properties.syncEnabled");
+    expect(descriptor.json_schema).not.toHaveProperty("properties.syncable");
+    expect(descriptorFrom(account).descriptor).not.toHaveProperty("syncable");
+    expect(descriptorFrom(message).descriptor).not.toHaveProperty("syncable");
+  });
+
   it("every record the module writes today passes its own declaration", async () => {
     const entities = await written();
     // An account, a chat and a message — a run that wrote fewer proves less.

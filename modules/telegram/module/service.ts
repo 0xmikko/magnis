@@ -960,7 +960,7 @@ export class TelegramModule {
     params: { type: "object", properties: {}, additionalProperties: false },
   })
   async syncStatus(): Promise<Record<string, unknown>> {
-    return this.graph.sync_state("status");
+    return this.graph.syncState("status");
   }
 
   @rpc("sync.reset", {
@@ -970,7 +970,7 @@ export class TelegramModule {
   async syncReset(): Promise<Record<string, unknown>> {
     // Pass our own message schema — op_sync_state clears it, scoped to the
     // telegram namespace (the op is generalised, no longer hard-coded).
-    return this.graph.sync_state("reset", MESSAGE);
+    return this.graph.syncState("reset", MESSAGE);
   }
 
   // ── reply composer (RPC) ──────────────────────────────────────

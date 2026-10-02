@@ -1,5 +1,5 @@
 // Sync control + reply composer. Thin @rpc wrappers that delegate
-// to the host graph ops (sync_state / composer), keyed by the calling module.
+// to the host graph ops (syncState / composer), keyed by the calling module.
 // Exercised through @magnis/testkit/module: the passed-in spies are wrapped by
 // mockGraph's Proxy (which forwards args to them), so `expect(spy).toHaveBeen…`
 // still observes the delegated call; any op NOT provided throws.
@@ -40,18 +40,18 @@ function makeModule(
 }
 
 describe("email sync control", () => {
-  it("sync.status delegates to graph.sync_state('status')", async () => {
-    const sync_state = vi.fn().mockResolvedValue({ accounts: [] });
-    const mod = makeModule({ sync_state });
+  it("sync.status delegates to graph.syncState('status')", async () => {
+    const syncState = vi.fn().mockResolvedValue({ accounts: [] });
+    const mod = makeModule({ syncState });
     await mod.syncStatus();
-    expect(sync_state).toHaveBeenCalledWith("status");
+    expect(syncState).toHaveBeenCalledWith("status");
   });
 
   it("sync.reset clears ONLY email.message (namespace-scoped)", async () => {
-    const sync_state = vi.fn().mockResolvedValue({ ok: true });
-    const mod = makeModule({ sync_state });
+    const syncState = vi.fn().mockResolvedValue({ ok: true });
+    const mod = makeModule({ syncState });
     await mod.syncReset();
-    expect(sync_state).toHaveBeenCalledWith("reset", "email.message");
+    expect(syncState).toHaveBeenCalledWith("reset", "email.message");
   });
 });
 

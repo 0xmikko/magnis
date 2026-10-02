@@ -9,6 +9,7 @@
  * declaration's test, and the module's own tsconfig must never see zod.
  */
 import { describe, expect, it } from "vitest";
+import { descriptorFrom } from "@magnis/declare/derive";
 import type { GraphBatchInput } from "@magnis/plugin-sdk";
 import { mockGraph, mountModule } from "@magnis/testkit/module";
 
@@ -81,6 +82,13 @@ async function written(): Promise<GraphBatchInput["entities"]> {
 }
 
 describe("email declares what it writes", () => {
+  it("declares sender synchronization outside the address properties", () => {
+    const { descriptor } = descriptorFrom(address);
+    expect(descriptor).toHaveProperty("syncable", true);
+    expect(descriptor.json_schema).not.toHaveProperty("properties.syncEnabled");
+    expect(descriptorFrom(message).descriptor).not.toHaveProperty("syncable");
+  });
+
   it("every record the module writes today passes its own declaration", async () => {
     const entities = await written();
     expect(entities.length).toBeGreaterThan(0);

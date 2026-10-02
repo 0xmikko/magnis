@@ -763,7 +763,7 @@ export class EmailModule {
     params: { type: "object", properties: {}, additionalProperties: false },
   })
   async syncStatus(): Promise<Record<string, unknown>> {
-    return this.graph.sync_state("status");
+    return this.graph.syncState("status");
   }
 
   @rpc("sync.reset", {
@@ -774,7 +774,7 @@ export class EmailModule {
   async syncReset(): Promise<Record<string, unknown>> {
     // Namespace-guarded by the host: reset only clears the caller's own
     // email.message entities — telegram.message and others are untouched.
-    return this.graph.sync_state("reset", MESSAGE_SCHEMA);
+    return this.graph.syncState("reset", MESSAGE_SCHEMA);
   }
 
   // ── ensure_address (cross-module hub RPC) ─────────────────────

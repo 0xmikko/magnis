@@ -64,7 +64,7 @@ export class ProjectsModule {
     const offset = params.offset ?? 0;
     const search = params.search?.trim();
 
-    let rows: { id: string; schema_id: string; name: string; created_at?: string; is_pinned?: boolean | null }[];
+    let rows: RawEntity[];
     let total: number;
     if (search) {
       // search returns up to limit+offset, then we page in memory (native parity).
@@ -86,7 +86,7 @@ export class ProjectsModule {
 
     // S1: the dictionary rides the entity — the page-wide canonical batch is gone.
     const items = rows.map((e) =>
-      buildProjectListItem(e, projectCanonFromProperties(e as RawEntity)),
+      buildProjectListItem(e, projectCanonFromProperties(e)),
     );
     return { items, total, limit, offset };
   }

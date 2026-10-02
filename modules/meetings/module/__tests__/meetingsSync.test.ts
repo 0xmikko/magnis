@@ -4,7 +4,7 @@
 // apply_batch (anchored on the remote id, attendees as `attendee` edges over
 // refs), the full live trigger.check payload with attendee email.address ids
 // resolved through email.ensure_addresses, delete, empty-user hard error,
-// and the sync_state control surface.
+// and the syncState control surface.
 
 /**
  * @test-id: tst_module_meetings_sync_001
@@ -43,7 +43,7 @@ function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
     // CURRENT list — one edge read per upserted event.
     list_links_for_entity: (): Promise<never[]> => Promise.resolve([]),
     delete_entity: (_id: string): Promise<void> => Promise.resolve(undefined),
-    sync_state: (): Promise<Record<string, unknown>> => Promise.resolve({ ok: true }),
+    syncState: (): Promise<Record<string, unknown>> => Promise.resolve({ ok: true }),
     ...over,
   } as unknown as GraphOverrides);
 }
@@ -334,18 +334,18 @@ describe("meetings @syncHandler — empty user_id is a hard error", () => {
 });
 
 describe("meetings sync control (@rpc)", () => {
-  it("sync.status reads sync_state('status')", async () => {
-    const sync_state = vi.fn().mockResolvedValue({ states: [] });
-    const { mod } = makeModule(makeGraph({ sync_state }));
+  it("sync.status reads syncState('status')", async () => {
+    const syncState = vi.fn().mockResolvedValue({ states: [] });
+    const { mod } = makeModule(makeGraph({ syncState }));
     await mod.syncStatus();
-    expect(sync_state).toHaveBeenCalledWith("status");
+    expect(syncState).toHaveBeenCalledWith("status");
   });
 
   it("sync.reset resets only the meetings.calendar_event namespace", async () => {
-    const sync_state = vi.fn().mockResolvedValue({ ok: true });
-    const { mod } = makeModule(makeGraph({ sync_state }));
+    const syncState = vi.fn().mockResolvedValue({ ok: true });
+    const { mod } = makeModule(makeGraph({ syncState }));
     await mod.syncReset();
-    expect(sync_state).toHaveBeenCalledWith("reset", CAL);
+    expect(syncState).toHaveBeenCalledWith("reset", CAL);
   });
 });
 

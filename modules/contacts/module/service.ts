@@ -121,7 +121,7 @@ export class ContactsModule {
     const offset = params.offset ?? 0;
     const search = (params.search ?? "").trim();
 
-    let rows: { id: string; schema_id: string; name: string; created_at?: string; is_pinned?: boolean | null }[];
+    let rows: RawEntity[];
     let total: number;
     if (search) {
       // Shared paging helper (2026-07-03): the old limit+offset fetch truncated
@@ -358,7 +358,7 @@ export class ContactsModule {
   // values) — the node it just wrote and its identity edges. Not the hot read
   // path (no N+1 loop).
   private async listItemFor(
-    entity: { id: string; schema_id: string; name: string; created_at?: string; is_pinned?: boolean | null },
+    entity: RawEntity,
   ): Promise<ContactListItem> {
     const fresh = await this.graph.get_entity(entity.id);
     const node = fresh ?? { ...entity, properties: {} };

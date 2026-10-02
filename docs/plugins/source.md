@@ -188,6 +188,28 @@ number). Return `nextCursor` + `hasMore`; the host feeds `nextCursor` back until
 (backward, page tokens) and a catch-up (forward, e.g. a history cursor) — see
 Gmail for the canonical two-path fetcher.
 
+### Entity selection inputs
+
+The owning module reads `syncEnabled` from Graph and returns its selection to
+the worker. The worker carries it through the existing fetch and listener calls:
+
+| Surface | Input | Meaning |
+| --- | --- | --- |
+| Telegram | `chatIds`, `headChatIds` | Enabled chats and the enabled subset requiring a fresh head read. `listen_start` also receives `chatIds`. |
+| Email | `senderSync: { choices, unknownSenderEnabled }` | Exact normalized sender choices and an explicit rule for unknown addresses, checked before body downloads. |
+| X | `tracked_handles`, `expectedProfileIds` | Selected handles and their stable provider IDs; resolve and verify an ID before requesting posts. |
+
+Empty selections remain explicit empty arrays/maps. Missing required inputs
+are errors in the affected Source; unrelated surfaces can omit these members.
+The SDK validates supplied shapes before dispatch. Bounded `scope_id`, `target`,
+opaque cursors, envelope fields and error codes retain their existing meanings.
+
+This is a deliberate input-contract change. Activate matching module, host and
+Source artifacts together; bump affected Source releases and regenerate their
+certification receipts. The required host implementation is app commit
+`299c01ba42a61e84c9311b2026ef4f961a45fe20`. This change retains `magnis.source/1`;
+the separate provider-operation architecture is `magnis.source/2`.
+
 ---
 
 ## 5. execute — outbound actions

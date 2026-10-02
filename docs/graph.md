@@ -30,6 +30,30 @@ Roles matter more than they look. After the accounts migration a chat's particip
 
 **Merging two nodes.** The merged truth is the dictionary UNION: the survivor's value wins, the retired value fills a gap, and a key both hubs claim with DIFFERENT values is a conflict the merge refuses to guess (`phones` is the one exemption — it unions mechanically) — it aborts, naming the keys, having written nothing. The operator answers with an override, which lands straight in the survivor's dictionary. The retired node's anchor survives as an alias of the survivor, so the next re-sync of the absorbed identity resolves to the right node.
 
+## Synchronization choices
+
+The `syncable` capability lives on the entity descriptor, outside its properties
+JSON Schema. `telegram.chat`, `email.address` and `x.profile` declare it. Their
+Graph rows carry required `syncEnabled` and `syncRevision`; every entity also
+has the independent, required `indexed` field.
+
+1. The owning module supplies the initial boolean. Repeated discovery preserves
+   the saved value. Legacy rows use the explicit migration projection until the
+   module resolves their initial choice.
+2. The module's approved `setSyncEnabled` tool saves through
+   `graph.updateEntitySyncEnabled`, then requests `graph.syncState("apply")`.
+   The worker reads the module's `sync.selection` callback and applies it to Source.
+3. The module resolves event ownership and calls `graph.admitSyncEntities`
+   before constructing content, attachments, links or triggers. Disabled entities
+   reject Source-driven changes; stored data and indexing rules remain intact.
+4. Graph increments the decimal-string revision only when the boolean changes.
+   Worker acknowledgement identifies that revision, so an older apply cannot
+   confirm a newer choice.
+
+Contacts store no synchronization policy. Their operation delegates once to
+currently linked supported identities; a later identity uses its module's
+creation rule.
+
 ## Declaring a slice of the graph
 
 A module declares its domain in two places: **entity schema files** (what nodes it owns) and **`search.toml`** (which keys of their dictionaries are searchable). There are no per-block schema files and no field-to-property mappings — a dictionary key is just a key.
