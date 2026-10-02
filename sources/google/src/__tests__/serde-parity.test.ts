@@ -24,6 +24,8 @@ import { fetchEventsPage } from "../surfaces/meetings/calendar";
 import { fetchContactsPage } from "../surfaces/contacts/contacts";
 import type { FetchLike, HttpResponse } from "../http";
 
+const allSenders = { choices: {}, unknownSenderEnabled: true };
+
 function ok(data: unknown): HttpResponse {
   return {
     ok: true,
@@ -46,7 +48,7 @@ function fullMessage(id = "msg_1"): Record<string, unknown> {
     internalDate: "1700000000000",
     payload: {
       mimeType: "text/plain",
-      headers: [{ name: "Subject", value: "Test subject" }],
+      headers: [{ name: "From", value: "sender@example.com" }, { name: "Subject", value: "Test subject" }],
       body: { size: 11, data: b64url("Hello world") },
     },
   };
@@ -67,7 +69,7 @@ function gmailRoutes(opts: {
     if (url.includes("/users/me/messages?")) {
       return ok(opts.list ?? { messages: [{ id: "msg_1" }] });
     }
-    const m = url.match(/\/messages\/([^?]+)\?format=full/);
+    const m = url.match(/\/messages\/([^?]+)\?format=(?:full|metadata)/);
     if (m) {
       const id = m[1];
       if (id === undefined)
@@ -93,7 +95,7 @@ describe("serde parity — gmail required fields", () => {
       profile: { emailAddress: "me@example.com", messagesTotal: 10 },
       messages: { msg_1: fullMessage() },
     });
-    await expect(fetchMessagePage("tok", undefined, fetchFn)).rejects.toThrow(
+    await expect(fetchMessagePage("tok", undefined, fetchFn, allSenders)).rejects.toThrow(
       /missing field `historyId`/,
     );
   });
@@ -106,7 +108,7 @@ describe("serde parity — gmail required fields", () => {
       list: { messages: [{ threadId: "t1" }] },
       messages: { msg_1: fullMessage() },
     });
-    await expect(fetchMessagePage("tok", undefined, fetchFn)).rejects.toThrow(
+    await expect(fetchMessagePage("tok", undefined, fetchFn, allSenders)).rejects.toThrow(
       /missing field `id`/,
     );
   });
@@ -119,7 +121,7 @@ describe("serde parity — gmail required fields", () => {
       throw new Error(`unexpected url ${url}`);
     };
     await expect(
-      fetchHistoryChanges("tok", { history_id: "100" }, fetchFn),
+      fetchHistoryChanges("tok", { history_id: "100" }, fetchFn, allSenders),
     ).rejects.toThrow(/missing field `historyId`/);
   });
 
@@ -137,7 +139,7 @@ describe("serde parity — gmail required fields", () => {
       throw new Error(`unexpected url ${url}`);
     };
     await expect(
-      fetchHistoryChanges("tok", { history_id: "100" }, fetchFn),
+      fetchHistoryChanges("tok", { history_id: "100" }, fetchFn, allSenders),
     ).rejects.toThrow(/missing field `id`/);
   });
 
@@ -150,7 +152,7 @@ describe("serde parity — gmail required fields", () => {
       throw new Error(`unexpected url ${url}`);
     };
     await expect(
-      fetchHistoryChanges("tok", { history_id: "100" }, fetchFn),
+      fetchHistoryChanges("tok", { history_id: "100" }, fetchFn, allSenders),
     ).rejects.toThrow(/missing field `message`/);
   });
 
@@ -189,7 +191,7 @@ describe("provider validation — gmail messages.get fails the page", () => {
         good: fullMessage("good"),
       },
     });
-    await expect(fetchMessagePage("tok", undefined, fetchFn)).rejects.toThrow(/missing field `id`/);
+    await expect(fetchMessagePage("tok", undefined, fetchFn, allSenders)).rejects.toThrow(/missing field `id`/);
   });
 
   // GmailHeader.name/value: String (gmail.rs:64-65) — both required. A header
@@ -201,7 +203,7 @@ describe("provider validation — gmail messages.get fails the page", () => {
       list: { messages: [{ id: "bad" }, { id: "good" }] },
       messages: { bad, good: fullMessage("good") },
     });
-    await expect(fetchMessagePage("tok", undefined, fetchFn)).rejects.toThrow(/missing field `value`/);
+    await expect(fetchMessagePage("tok", undefined, fetchFn, allSenders)).rejects.toThrow(/missing field `value`/);
   });
 });
 
@@ -238,13 +240,13 @@ describe("serde parity — optional/default fields stay tolerant", () => {
   // GmailProfile.messages_total: #[serde(default)] Option<u64> (gmail.rs:99).
   // ListMessagesResponse.messages / next_page_token: Option<_> (gmail.rs:33).
   // GmailMessage: everything but `id` is Option<_> (gmail.rs:44).
-  test("tst_gts_serde_011 gmail tolerates every optional field being absent", async () => {
+  test("tst_gts_serde_011 gmail requires From for selection while other optional fields may be absent", async () => {
     const fetchFn = gmailRoutes({
       profile: { historyId: "555" }, // no messagesTotal
       list: { messages: [{ id: "bare" }] }, // no nextPageToken
-      messages: { bare: { id: "bare", payload: {} } }, // id + payload only
+      messages: { bare: { id: "bare", payload: { headers: [{ name: "From", value: "sender@example.com" }] } } }, // sender is required for admission
     });
-    const r = await fetchMessagePage("tok", undefined, fetchFn);
+    const r = await fetchMessagePage("tok", undefined, fetchFn, allSenders);
     // No count in the profile: no mailbox envelope, not an error.
     expect(r.envelopes).toHaveLength(1);
     expect(r.envelopes[0]?.remote_id).toBe("bare");
@@ -256,7 +258,7 @@ describe("serde parity — optional/default fields stay tolerant", () => {
   // (Gmail omits `messages` on an empty mailbox) is not an error.
   test("tst_gts_serde_012 gmail tolerates a list page with no messages key", async () => {
     const fetchFn = gmailRoutes({ profile: { historyId: "1" }, list: {} });
-    const r = await fetchMessagePage("tok", undefined, fetchFn);
+    const r = await fetchMessagePage("tok", undefined, fetchFn, allSenders);
     expect(r.envelopes).toHaveLength(0);
   });
 
@@ -268,7 +270,7 @@ describe("serde parity — optional/default fields stay tolerant", () => {
       if (url.includes("/history?")) return ok({ historyId: "999" });
       throw new Error(`unexpected url ${url}`);
     };
-    const r = await fetchHistoryChanges("tok", { history_id: "100" }, fetchFn);
+    const r = await fetchHistoryChanges("tok", { history_id: "100" }, fetchFn, allSenders);
     expect(r.envelopes).toHaveLength(0);
     expect(r.nextCursor).toEqual({ history_id: "999" });
   });
@@ -280,7 +282,7 @@ describe("serde parity — optional/default fields stay tolerant", () => {
   test("tst_gts_serde_016 labelIds is ignored on messagesAdded, typed on labelsAdded", async () => {
     const withLabels = (entry: unknown): FetchLike => async (url) => {
       if (url.includes("/history?")) return ok({ history: [entry], historyId: "9" });
-      if (url.includes("/messages/mA?format=full")) return ok(fullMessage("mA"));
+      if (url.includes("/messages/mA?format=")) return ok(fullMessage("mA"));
       throw new Error(`unexpected url ${url}`);
     };
 
@@ -288,7 +290,7 @@ describe("serde parity — optional/default fields stay tolerant", () => {
     const r = await fetchHistoryChanges(
       "tok",
       { history_id: "100" },
-      withLabels({ messagesAdded: [{ message: { id: "mA" }, labelIds: null }] }),
+      withLabels({ messagesAdded: [{ message: { id: "mA" }, labelIds: null }] }), allSenders,
     );
     expect(r.envelopes).toHaveLength(1);
 
@@ -297,7 +299,7 @@ describe("serde parity — optional/default fields stay tolerant", () => {
       fetchHistoryChanges(
         "tok",
         { history_id: "100" },
-        withLabels({ labelsAdded: [{ message: { id: "mA" }, labelIds: "INBOX" }] }),
+        withLabels({ labelsAdded: [{ message: { id: "mA" }, labelIds: "INBOX" }] }), allSenders,
       ),
     ).rejects.toThrow(/invalid type for `labelIds`/);
   });

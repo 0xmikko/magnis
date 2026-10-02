@@ -8,14 +8,10 @@
 //     per-row hydrate.
 //   - list (search)    = ONE search_entities_by_name — the matched rows carry
 //     their own dictionaries, so there is no hydrate crossing at all.
-//   - get  = ONE get_entity_full. batch = K get_entity_full (one per id).
-//
-// Deferred (read-time enrichment, mirrors the telegram module; verified visually
-// in the frontend, NOT asserted here): link-resolved linked_entities and the
-// canonical map. get returns linked_entities: [] / canonical: {} so it stays a
-// single fixed-statement op.
+//   - get = one get_entity_full plus one batched neighbour read when linked.
 
 import {
+  connectionReady,
   rpc,
   syncHandler,
   tool,
@@ -27,6 +23,18 @@ import {
 import type {
   BatchEntityInput,
   BatchLinkInput,
+  BatchRefInput,
+  RawEntity,
+  RawSyncableEntity,
+  ResolveSyncMigrationParams,
+  SetSyncEnabledParams,
+  SetSyncEnabledResult,
+  SyncChoice,
+  SyncMigrationEntity,
+  SyncMigrationIssue,
+  SyncMigrationStatus,
+  SyncSelection,
+  SyncSelectionRequest,
   PaginatedResponse,
   RpcExecutor,
 } from "@magnis/plugin-sdk";
@@ -58,9 +66,29 @@ import {
   type Data,
 } from "./helpers.ts";
 import {
+  ADDRESS_SCHEMA,
   MESSAGE_SCHEMA,
   addressBatchEntity,
 } from "../schema.ts";
+
+interface AddressSyncState {
+  id: string;
+  syncEnabled: boolean;
+}
+
+function senderAddress(properties: Data): string {
+  const address = lowerAddr(str(properties, "address"));
+  if (address === null || !/^[^\s<>@]+@[^\s<>@]+$/.test(address)) throw new Error("Email sender has no exact address");
+  return address;
+}
+
+function savedAddress(entity: RawEntity): RawSyncableEntity {
+  if (entity.schema_id !== ADDRESS_SCHEMA || !("syncEnabled" in entity) || typeof entity.syncEnabled !== "boolean"
+    || !("syncRevision" in entity) || typeof entity.syncRevision !== "string" || !/^\d+$/.test(entity.syncRevision)) {
+    throw new Error(`Email address ${entity.id} has no valid saved synchronization choice`);
+  }
+  return { ...entity, syncEnabled: entity.syncEnabled, syncRevision: entity.syncRevision };
+}
 
 const SEND_PARAMS = {
       type: "object",
@@ -253,11 +281,21 @@ export class EmailModule {
     // panel. Link edges carry ids + kind only; one batch get_entities
     // (user-scoped → drops non-owned targets) hydrates names/schemas.
     const linked_entities: LinkedEntitySummary[] = [];
+    let senderSync: MessageDetailView["senderSync"] = null;
+    const authors = links.filter((link) => link.from_id === entity.id && link.kind === "authored_by" && link.validUntil === null);
+    if (authors.length > 1) throw new Error(`Email ${id} has conflicting sender links`);
     if (links.length > 0) {
       const neighbourId = (l: { from_id: string; to_id: string }): string =>
         l.from_id === entity.id ? l.to_id : l.from_id;
       const targets = await this.graph.get_entities([...new Set(links.map(neighbourId))]);
       const byId = new Map(targets.map((t) => [t.id, t]));
+      const author = authors[0];
+      if (author !== undefined) {
+        const target = byId.get(author.to_id);
+        if (target === undefined) throw new Error(`Email ${id} sender is missing`);
+        const saved = savedAddress(target);
+        senderSync = { id: saved.id, syncEnabled: saved.syncEnabled, syncRevision: saved.syncRevision };
+      }
       for (const l of links) {
         const t = byId.get(neighbourId(l));
         if (!t) continue;
@@ -286,12 +324,93 @@ export class EmailModule {
       timestamp: str(d, "sent_at") ?? created,
       canonical: {},
       linked_entities,
+      senderSync,
       created_at: created,
       metadata: d,
     };
   }
 
   // ── sync ingest (@syncHandler) ────────────────────────────────
+  private async readAddresses(addresses: readonly string[]): Promise<Map<string, AddressSyncState>> {
+    const unique = [...new Set(addresses)];
+    const known = new Map<string, AddressSyncState>();
+    if (unique.length === 0) return known;
+    const ids = await this.graph.find_by_anchors(unique.map((address) => `email:address:${address}`));
+    if (ids.length !== unique.length) throw new Error("Email address lookup length mismatch");
+    const found = ids.filter((id): id is string => id !== null);
+    if (found.length === 0) return known;
+    const rows = new Map((await this.graph.get_entities(found)).map((row) => [row.id, row]));
+    unique.forEach((address, index) => {
+      const id = ids[index];
+      if (id === null) return;
+      const row = id === undefined ? undefined : rows.get(id);
+      if (row === undefined) throw new Error("Email address lookup returned an incomplete result");
+      const saved = savedAddress(row);
+      if (senderAddress(saved.properties ?? {}) !== address) throw new Error("Email address anchor does not match its identity");
+      known.set(address, { id: saved.id, syncEnabled: saved.syncEnabled });
+    });
+    return known;
+  }
+
+  private async admitEnvelopes(incoming: readonly SyncEnvelope[]): Promise<{ envelopes: SyncEnvelope[]; addresses: Map<string, AddressSyncState>; deleteTargets: Map<string, string> }> {
+    const owned: { env: SyncEnvelope; address: string }[] = [];
+    const controls: SyncEnvelope[] = [];
+    const deleteTargets = new Map<string, string>();
+    for (const env of incoming) {
+      if (!env.user_id) continue;
+      if (!env.remote_id) throw new Error("Email event has no remote ID");
+      if (env.payload.entity_type === "mailbox") { controls.push(env); continue; }
+      const from = lowerAddr(str(env.payload, "from_address"));
+      if (from !== null) {
+        owned.push({ env, address: senderAddress({ address: from }) });
+        continue;
+      }
+      const id = await this.graph.find_by_anchor(env.remote_id);
+      if (id === null && env.kind === "delete") continue;
+      if (id === null) throw new Error("Email event has no sender or stored message ownership");
+      if (env.kind === "delete") deleteTargets.set(env.remote_id, id);
+      const stored = await this.graph.get_entity_full(id, { links: true });
+      if (stored?.entity.schema_id !== MESSAGE_SCHEMA) throw new Error("Email event does not refer to a stored message");
+      const authors = stored.links.filter((link) => link.from_id === id && link.kind === "authored_by" && link.validUntil === null);
+      const author = authors[0];
+      if (authors.length !== 1 || author === undefined) throw new Error("Email event has no unique stored sender");
+      const row = await this.graph.get_entity(author.to_id);
+      if (row === null) throw new Error("Email event refers to a missing sender");
+      const address = senderAddress(savedAddress(row).properties ?? {});
+      owned.push({ env: env.kind === "delete" ? env : { ...env, payload: { ...stored.entity.properties, ...env.payload, from_address: address } }, address });
+    }
+    const addresses = await this.readAddresses(owned.flatMap(({ env, address }) => [address, ...addressesOf(env.payload)]));
+    const discovered = new Map<string, string | null>();
+    for (const { env, address } of owned) {
+      if (addresses.has(address)) continue;
+      if (env.kind === "delete") throw new Error("Email deletion refers to an undiscovered sender");
+      discovered.set(address, str(env.payload, "from_name"));
+    }
+    if (discovered.size > 0) {
+      const syncEnabled = await this.syncCreationRule();
+      const entities = [...discovered].map(([address, name]) => addressBatchEntity(`addr:${address}`, address, name, syncEnabled));
+      const created = await this.graph.apply_batch({ entities, refs: [], links: [] });
+      for (const address of discovered.keys()) {
+        const id = created.ids[`addr:${address}`];
+        if (id === undefined) throw new Error(`Email sender discovery failed for ${address}`);
+        addresses.set(address, { id, syncEnabled });
+      }
+    }
+    const groups = new Map<string, Set<string>>();
+    for (const { env, address } of owned) {
+      const state = addresses.get(address);
+      if (state === undefined || env.remote_id === undefined) throw new Error("Email event has no sender identity");
+      let ids = groups.get(state.id);
+      if (ids === undefined) { ids = new Set(); groups.set(state.id, ids); }
+      ids.add(env.remote_id);
+    }
+    const allowed = new Set(await this.graph.admitSyncEntities([...groups].map(([entityId, ids]) => ({ entityId, remoteIds: [...ids] })), controls.map((env) => {
+      if (env.remote_id === undefined) throw new Error("Email control has no remote ID");
+      return env.remote_id;
+    })));
+    return { envelopes: [...controls, ...owned.flatMap(({ env }) => env.remote_id !== undefined && allowed.has(env.remote_id) && env.payload.entity_type !== "sender" ? [env] : [])], addresses, deleteTargets };
+  }
+
   // Invoked by the host PluginModuleController bridge (`email.__sync__`) with a
   // WHOLE page of envelopes. Ports the native ingest pipeline to the apply_batch
   // principle: a page's messages + their unique addresses + sent_from/sent_to
@@ -306,7 +425,9 @@ export class EmailModule {
      * worker, which states nothing. */
     generation?: string;
   }): Promise<{ dropped_remote_ids: string[]; trigger_checks: EmailTriggerCheck[]; plan?: Record<string, { total: number; skipped: number }> }> {
-    const envelopes = Array.isArray(params.envelopes) ? params.envelopes : [];
+    const incoming = Array.isArray(params.envelopes) ? params.envelopes : [];
+    if (incoming.length === 0) return { dropped_remote_ids: [], trigger_checks: [] };
+    const { envelopes, addresses, deleteTargets } = await this.admitEnvelopes(incoming);
     const dropped: string[] = [];
     const triggers: EmailTriggerCheck[] = [];
     const messages: SyncEnvelope[] = [];
@@ -323,7 +444,7 @@ export class EmailModule {
       if (!env.user_id) continue;
       if (env.kind === "delete") {
         try {
-          if (await this.ingestDelete(env)) plan.total -= 1;
+          if (await this.ingestDelete(env, env.remote_id === undefined ? undefined : deleteTargets.get(env.remote_id))) plan.total -= 1;
         } catch {
           if (env.remote_id) dropped.push(env.remote_id);
         }
@@ -351,7 +472,7 @@ export class EmailModule {
     let chunkAddrs = new Set<string>();
     const flush = async (): Promise<void> => {
       if (chunk.length > 0) {
-        plan.total += await this.ingestMessageBatch(chunk, triggers, stated);
+        plan.total += await this.ingestMessageBatch(chunk, triggers, stated, addresses);
         await Promise.resolve(); // yield so waiting RPCs get the connection
       }
       chunk = [];
@@ -380,11 +501,11 @@ export class EmailModule {
   }
 
   /// Delete envelope: resolve the email by its source external_id and remove it.
-  private async ingestDelete(env: SyncEnvelope): Promise<boolean> {
+  private async ingestDelete(env: SyncEnvelope, storedId?: string): Promise<boolean> {
     if (!env.remote_id) return false;
     // S5: the remote id IS the node's anchor — resolution goes through the
     // one chokepoint.
-    const id = await this.graph.find_by_anchor(env.remote_id);
+    const id = storedId ?? await this.graph.find_by_anchor(env.remote_id);
     if (!id) return false;
     await this.graph.delete_entity(id);
     return true;
@@ -396,16 +517,28 @@ export class EmailModule {
     messages: SyncEnvelope[],
     triggers: EmailTriggerCheck[],
     countLive: boolean,
+    addresses: Map<string, AddressSyncState>,
   ): Promise<number> {
     const entities: BatchEntityInput[] = [];
+    const refs: BatchRefInput[] = [];
     const links: BatchLinkInput[] = [];
     const addrSeen = new Set<string>();
+    const newAddresses = new Map<string, boolean>();
     const linkSeen = new Set<string>();
+    const hasNewAddresses = messages.some((env) => addressesOf(env.payload).some((address) => !addresses.has(address)));
+    const initialEnabled = hasNewAddresses ? await this.syncCreationRule() : null;
 
     const addAddress = (lower: string, displayName: string | null): string => {
       const key = `addr:${lower}`;
       if (!addrSeen.has(key)) {
-        entities.push({ ...addressBatchEntity(key, lower, displayName), confidence: 100 });
+        const known = addresses.get(lower);
+        if (known?.syncEnabled === false) refs.push({ key, anchor: `email:address:${lower}` });
+        else {
+          const syncEnabled = known?.syncEnabled ?? initialEnabled;
+          if (syncEnabled === null) throw new Error("Email address creation requires an explicit synchronization choice");
+          entities.push({ ...addressBatchEntity(key, lower, displayName, syncEnabled), confidence: 100 });
+          if (known === undefined) newAddresses.set(lower, syncEnabled);
+        }
         addrSeen.add(key);
       }
       return key;
@@ -472,7 +605,12 @@ export class EmailModule {
     if (existing.length !== liveIds.length) throw new Error("email ingest: anchor lookup length mismatch");
 
     // One atomic op (rolls back on failure; idempotent on external_id).
-    const result = await this.graph.apply_batch({ entities, refs: [], links });
+    const result = await this.graph.apply_batch({ entities, refs, links });
+    for (const [address, syncEnabled] of newAddresses) {
+      const id = result.ids[`addr:${address}`];
+      if (id === undefined) throw new Error(`Email recipient creation failed for ${address}`);
+      addresses.set(address, { id, syncEnabled });
+    }
     const createdLive = liveIds.filter((id, index) => existing[index] === null && result.ids[id] !== undefined).length;
 
     // Post-apply: needs the resolved message id.
@@ -758,6 +896,98 @@ export class EmailModule {
   }
 
   // ── sync control (RPC) ────────────────────────────────────────
+  private async syncEntities(): Promise<readonly SyncMigrationEntity[]> {
+    const rows: SyncMigrationEntity[] = [];
+    let after: string | null = null;
+    do {
+      const page = await this.graph.listSyncMigrationEntities({ schemaId: ADDRESS_SCHEMA, after, limit: 500 });
+      if (page.next !== null && (page.next === after || page.items.length === 0)) throw new Error("Email migration page did not advance");
+      rows.push(...page.items);
+      after = page.next;
+    } while (after !== null);
+    return rows;
+  }
+
+  @tool("syncMigration", { entity: "email.address", description: "Read unresolved email sender synchronization choices.", params: { type: "object", properties: {}, additionalProperties: false } })
+  async syncMigration(): Promise<SyncMigrationStatus> {
+    const issues: SyncMigrationIssue[] = [];
+    for (const row of await this.syncEntities()) {
+      if (row.syncEnabled !== null && row.syncRevision !== null) continue;
+      try {
+        senderAddress(row.properties);
+        issues.push({ target: { schemaId: ADDRESS_SCHEMA, key: row.id }, legacyIds: [row.id], accounts: [], message: "Synchronization choice has not been initialized" });
+      } catch (error) {
+        issues.push({ target: null, legacyIds: [row.id], accounts: [], message: error instanceof Error ? error.message : String(error) });
+      }
+    }
+    return { complete: issues.length === 0, issues };
+  }
+
+  @connectionReady()
+  async onConnectionReady(): Promise<{ ok: boolean }> {
+    for (const issue of (await this.syncMigration()).issues) {
+      if (issue.target !== null) await this.graph.updateEntitySyncEnabled({ id: issue.target.key, syncEnabled: true });
+    }
+    await this.graph.syncState("apply");
+    return { ok: true };
+  }
+
+  @writeTool("resolveSyncMigration", { entity: "email.address", description: "Choose synchronization for an unresolved sender address.", params: {
+    type: "object", properties: {
+      target: { type: "object", properties: { schemaId: { const: ADDRESS_SCHEMA }, key: { type: "string" } }, required: ["schemaId", "key"], additionalProperties: false },
+      syncEnabled: { type: "boolean" },
+    }, required: ["target", "syncEnabled"], additionalProperties: false,
+  } })
+  async resolveSyncMigration(params: ResolveSyncMigrationParams): Promise<SyncMigrationStatus> {
+    const issue = (await this.syncMigration()).issues.find((item) => item.target?.key === params.target.key);
+    if (params.target.schemaId !== ADDRESS_SCHEMA || issue === undefined) throw new Error("Email migration target is missing or already initialized");
+    await this.graph.updateEntitySyncEnabled({ id: params.target.key, syncEnabled: params.syncEnabled });
+    await this.graph.syncState("apply");
+    return this.syncMigration();
+  }
+
+  private async syncCreationRule(): Promise<boolean> {
+    const rule = (await this.graph.moduleSettings()).newSenderSyncEnabled;
+    if (rule !== "true" && rule !== "false") throw new Error("Email newSenderSyncEnabled setting is missing or invalid");
+    return rule === "true";
+  }
+
+  @rpc("sync.selection", { description: "Read saved exact-sender choices across email accounts.", params: {
+    type: "object", properties: { sourceId: { type: "string" }, accountId: { type: "string" }, accountGeneration: { type: "integer" } },
+    required: ["sourceId", "accountId", "accountGeneration"], additionalProperties: false,
+  } })
+  async syncSelection(_params: SyncSelectionRequest): Promise<SyncSelection> {
+    const choices: SyncChoice[] = [];
+    for (const row of await this.syncEntities()) {
+      if (row.syncEnabled === null || row.syncRevision === null) throw new Error("Email synchronization migration is incomplete");
+      if (!/^\d+$/.test(row.syncRevision)) throw new Error("Email sender has an invalid synchronization revision");
+      choices.push({ id: row.id, scopeId: senderAddress(row.properties), syncEnabled: row.syncEnabled, syncRevision: row.syncRevision });
+    }
+    return { surface: "email", choices, unknownSenderEnabled: await this.syncCreationRule() };
+  }
+
+  @writeTool("setSyncEnabled", { entity: "email.address", description: "Start or stop receiving mail from this exact sender across threads and accounts.", params: {
+    type: "object", properties: { id: { type: "string", format: "uuid" }, syncEnabled: { type: "boolean" } },
+    required: ["id", "syncEnabled"], additionalProperties: false,
+  } })
+  async setSyncEnabled(params: SetSyncEnabledParams): Promise<SetSyncEnabledResult> {
+    let syncRevision: string;
+    try {
+      const row = await this.graph.get_entity(params.id);
+      if (row?.schema_id !== ADDRESS_SCHEMA) throw new Error("Synchronization target is not an email address");
+      ({ syncRevision } = await this.graph.updateEntitySyncEnabled(params));
+    } catch (error) {
+      return { results: [{ identityId: params.id, targetId: params.id, kind: "failed", message: error instanceof Error ? error.message : String(error) }] };
+    }
+    const saved = { identityId: params.id, targetId: params.id, kind: "saved" as const, syncEnabled: params.syncEnabled, syncRevision };
+    try {
+      await this.graph.syncState("apply");
+      return { results: [{ ...saved, application: { kind: "pending" } }] };
+    } catch (error) {
+      return { results: [{ ...saved, application: { kind: "failed", message: error instanceof Error ? error.message : String(error) } }] };
+    }
+  }
+
   @rpc("sync.status", {
     description: "List the email sync state per connected account for the current user.",
     params: { type: "object", properties: {}, additionalProperties: false },
@@ -841,11 +1071,12 @@ export class EmailModule {
     }
     const entities = [];
     const seen = new Set<string>();
+    const syncEnabled = await this.syncCreationRule();
     for (const [i, lower] of lowers.entries()) {
       if (seen.has(lower)) continue;
       seen.add(lower);
       const item = items[i];
-      entities.push(addressBatchEntity(lower, lower, item?.display_name ?? null));
+      entities.push(addressBatchEntity(lower, lower, item?.display_name ?? null, syncEnabled));
     }
     const r = await this.graph.apply_batch({ entities, refs: [], links: [] });
     return lowers.map((lower) => {
@@ -948,6 +1179,7 @@ export class EmailModule {
     // Attachment ownership + names (native put attachment_names on the record;
     // it required a file dictionary — rejected otherwise, no fallback name).
     const attachmentNames = await this.resolveOwnedFileNames(attachmentIds);
+    const addressSyncEnabled = await this.syncCreationRule();
     const now = new Date().toISOString();
     // @tested-by: tst_module_email_send_004, tst_module_email_send_006
     // @invariant: INV-5 — route BEFORE persisting. A refusal must leave no
@@ -1030,7 +1262,7 @@ export class EmailModule {
             anchor: providerMessageId,
             properties: messageDict,
           },
-          addressBatchEntity(addrKey, toLower, null),
+          addressBatchEntity(addrKey, toLower, null, addressSyncEnabled),
         ],
         refs: [],
         links: [{ from_key: msgKey, to_key: addrKey, kind: "sent_to" }],

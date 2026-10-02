@@ -796,7 +796,16 @@ export class ContactsModule {
     // 2. Address nodes and contact replicas share the sync transaction.
     // @tested-by: tst_module_contacts_ingest_002
     const allAddresses = [...new Set(rows.flatMap((r) => r.addresses))];
-    const addressEntities = allAddresses.map((address) => addressBatchEntity(`addr:${address}`, address, null));
+    const addressIds = allAddresses.length === 0 ? [] : await this.graph.find_by_anchors(allAddresses.map((address) => `email:address:${address}`));
+    if (addressIds.length !== allAddresses.length) throw new Error("Contacts address lookup length mismatch");
+    const missing = allAddresses.filter((_, index) => addressIds[index] === null);
+    const addressEntities: BatchEntityInput[] = [];
+    if (missing.length > 0) {
+      const rule = (await this.graph.moduleSettings("email.address")).newSenderSyncEnabled;
+      if (rule !== "true" && rule !== "false") throw new Error("Email newSenderSyncEnabled setting is missing or invalid");
+      addressEntities.push(...missing.map((address) => addressBatchEntity(`addr:${address}`, address, null, rule === "true")));
+    }
+    const addressRefs = allAddresses.flatMap((address, index) => addressIds[index] === null ? [] : [{ key: `addr:${address}`, anchor: `email:address:${address}` }]);
 
     // 3. Replica nodes (plan §5): fields-as-last-synced dictionaries,
     // anchored by the stable remote_id — ONE batch, and the sync
@@ -812,7 +821,7 @@ export class ContactsModule {
         properties: { ...replicaDict(p), source_id: sourceId, account_id: accountId, ...(generation ? { sync_pass: generation } : {}) },
       };
     })];
-    const batch = await this.graph.apply_batch({ entities, refs: [], links: [] });
+    const batch = await this.graph.apply_batch({ entities, refs: addressRefs, links: [] });
     const addressId = new Map(allAddresses.map((address) => {
       const id = batch.ids[`addr:${address}`];
       if (!id) throw new Error(`contacts ingest: address ${address} was not resolved`);

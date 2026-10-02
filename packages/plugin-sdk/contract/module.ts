@@ -445,8 +445,8 @@ export interface FileRegisterParams {
 
 export interface GraphService {
   updateEntitySyncEnabled(params: SetSyncEnabledParams): Promise<{ syncRevision: string }>;
-  admitSyncEntities(subjects: readonly SyncAdmissionSubject[]): Promise<readonly string[]>;
-  moduleSettings(): Promise<Readonly<Record<string, string>>>;
+  admitSyncEntities(subjects: readonly SyncAdmissionSubject[], controlRemoteIds?: readonly string[]): Promise<readonly string[]>;
+  moduleSettings(forSchema?: string): Promise<Readonly<Record<string, string>>>;
   listSyncMigrationEntities(params: {
     schemaId: string;
     after: string | null;

@@ -156,6 +156,24 @@ describe("email read — shape parity (tst_be_emailread_001)", () => {
     expect(spy(graph, "get_entities")).toHaveBeenCalledTimes(1); // ONE batch, no per-link N+1
   });
 
+  it("returns the saved sender state from one active authored_by link without extra Graph reads", async () => {
+    const detail = DETAIL("x", "2026-10-02T12:00:00Z");
+    const link = { id: "author-link", from_id: "x", to_id: "sender-id", kind: "authored_by", validUntil: null };
+    spy(graph, "get_entity_full").mockResolvedValue({ ...detail, links: [link] });
+    spy(graph, "get_entities").mockResolvedValue([{ id: "sender-id", schema_id: "email.address", name: "Alice", indexed: false,
+      properties: { address: "alice@example.com" }, syncEnabled: false, syncRevision: "9007199254740993" }]);
+    expect(await mod.emailGet({ id: "x" })).toMatchObject({ body: "full body x",
+      senderSync: { id: "sender-id", syncEnabled: false, syncRevision: "9007199254740993" } });
+    expect(spy(graph, "get_entities")).toHaveBeenCalledTimes(1);
+    spy(graph, "get_entity_full").mockResolvedValue(detail);
+    expect(await mod.emailGet({ id: "x" })).toMatchObject({ senderSync: null });
+    spy(graph, "get_entity_full").mockResolvedValue({ ...detail, links: [link] });
+    spy(graph, "get_entities").mockResolvedValue([{ id: "sender-id", schema_id: "email.address", indexed: true, properties: { address: "alice@example.com" } }]);
+    await expect(mod.emailGet({ id: "x" })).rejects.toThrow();
+    spy(graph, "get_entity_full").mockResolvedValue({ ...detail, links: [link, { ...link, id: "other-link", to_id: "another-sender" }] });
+    await expect(mod.emailGet({ id: "x" })).rejects.toThrow();
+  });
+
   it("get throws on a non-email / missing entity", async () => {
     spy(graph, "get_entity_full").mockResolvedValue(null);
     await expect(mod.emailGet({ id: "nope" })).rejects.toThrow();

@@ -14,6 +14,8 @@ import type { GraphService, PluginDeps, SetSyncEnabledParams } from "../contract
 test("tst_pkg_sdk_graph_001 accepts a link kind in list_links_for_entity", () => {
   expectTypeOf<Parameters<GraphService["list_links_for_entity"]>[1]>()
     .toEqualTypeOf<string | undefined>();
+  expectTypeOf<Parameters<GraphService["admitSyncEntities"]>[1]>()
+    .toEqualTypeOf<readonly string[] | undefined>();
 });
 
 class SyncModule {

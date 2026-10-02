@@ -28,9 +28,10 @@ type G = MockGraph;
 
 function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
   return mockGraph({
+    moduleSettings: () => Promise.resolve({ newSenderSyncEnabled: "true" }),
     apply_batch: (frag: GraphBatchInput): Promise<GraphBatchResult> =>
       Promise.resolve({
-        ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
+        ids: Object.fromEntries([...frag.entities, ...(frag.refs ?? [])].map((e) => [e.key, `id-${e.key}`])),
         created: frag.entities.length,
         updated: 0,
         links_added: 0,
@@ -369,4 +370,28 @@ describe("meetings trigger.check carries the event's own time", () => {
 
     expect(res.trigger_checks[0]?.context).toHaveProperty("occurred_at", null);
   });
+});
+
+/**
+ * @test-id: tst_module_meetings_email_sync_001
+ * @scenario: scn_google_sync_001
+ * @covers: MeetingsModule.ingest
+ * @deterministic: yes
+ * @fixtures: an existing stopped attendee and a new address with owner default false
+ */
+it("tst_module_meetings_email_sync_001 reuses existing addresses and reads the owner's creation rule without RPC", async () => {
+  const graph = makeGraph({
+    find_by_anchors: (anchors: string[]) => Promise.resolve(anchors.map((anchor) => anchor === "email:address:old@example.com" ? "old-address" : null)),
+    moduleSettings: (schema: string) => {
+      expect(schema).toBe("email.address");
+      return Promise.resolve({ newSenderSyncEnabled: "false" });
+    },
+  });
+  const { mod, execute } = makeModule(graph);
+  await mod.ingest({ envelopes: [env({ payload: { title: "Meeting", attendees: [{ email: "old@example.com" }, { email: "new@example.com" }] } })] });
+  expect(graph.spies.apply_batch).toHaveBeenCalledWith(expect.objectContaining({
+    entities: expect.arrayContaining([expect.objectContaining({ anchor: "email:address:new@example.com", syncEnabled: false })]),
+    refs: [{ key: "addr:old@example.com", anchor: "email:address:old@example.com" }],
+  }));
+  expect(execute).not.toHaveBeenCalled();
 });

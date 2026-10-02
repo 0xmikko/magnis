@@ -351,7 +351,7 @@ const GOLDEN_PROVIDERS: readonly GoldenProvider[] = [
   {
     sourceId: "google",
     serverInfoName: "magnis-google",
-    serverInfoVersion: "1.0.0",
+    serverInfoVersion: "2.0.0",
     auth: "oauth2",
     delivery: "poll",
     pollIntervalSecs: 30,
@@ -1259,7 +1259,7 @@ describe("tst_cat_src_parity_001 current v1 golden matrix", () => {
         {
           fixtureEnvironment: { GOOGLE_FIXTURE_FILE: googleFixture },
           operationArguments: {
-            "magnis.sync.fetch": { surface: "email" },
+            "magnis.sync.fetch": { surface: "email", senderSync: { choices: {}, unknownSenderEnabled: true } },
             "magnis.execute:download_file": {
               action: "download_file",
               source_ref: { message_id: "m1", attachment_id: "a1" },

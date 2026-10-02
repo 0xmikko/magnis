@@ -34,6 +34,7 @@ type G = MockGraph;
 
 function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
   const overrides = {
+    moduleSettings: () => Promise.resolve({ newSenderSyncEnabled: "true" }),
     apply_batch: async (frag: GraphBatchInput) => ({
       ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
       created: frag.entities.length,
@@ -64,6 +65,12 @@ function spy(graph: G, op: string) {
 }
 
 describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
+  it("validates the address creation rule before sending mail", async () => {
+    const graph = makeGraph({ moduleSettings: () => Promise.resolve({}) });
+    await expect(makeModule(graph).emailSend({ to: "b@example.com", subject: "S", body_text: "B" })).rejects.toThrow(/setting/);
+    expect(graph.spies.source_command).not.toHaveBeenCalled();
+    expect(graph.spies.apply_batch).not.toHaveBeenCalled();
+  });
   it("creates the outgoing message + recipient address + sent_to link, then routes", async () => {
     const graph = makeGraph();
     const mod = makeModule(graph);

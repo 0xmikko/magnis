@@ -24,6 +24,7 @@ import {
 import type {
   BatchEntityInput,
   BatchLinkInput,
+  BatchRefInput,
   RawEntity,
   RpcExecutor,
 } from "@magnis/plugin-sdk";
@@ -466,13 +467,24 @@ export class MeetingsModule {
     // @tested-by: tst_module_meetings_sync_002
     // Address nodes and attendee edges belong to the same sync transaction.
     const addresses: BatchEntityInput[] = [];
+    const refs: BatchRefInput[] = [];
+    const uniqueAddresses = [...new Set(attendees.map((attendee) => attendee.email.trim().toLowerCase()))];
+    const addressLookup = uniqueAddresses.length === 0 ? [] : await this.graph.find_by_anchors(uniqueAddresses.map((address) => `email:address:${address}`));
+    if (addressLookup.length !== uniqueAddresses.length) throw new Error("Meetings address lookup length mismatch");
+    const existingAddresses = new Set(uniqueAddresses.filter((_, index) => addressLookup[index] !== null));
+    const rule = existingAddresses.size < uniqueAddresses.length ? (await this.graph.moduleSettings("email.address")).newSenderSyncEnabled : null;
+    if (rule !== null && rule !== "true" && rule !== "false") throw new Error("Email newSenderSyncEnabled setting is missing or invalid");
     const seenAddresses = new Set<string>();
     const links: BatchLinkInput[] = [];
     for (const a of attendees) {
       const lower = a.email.trim().toLowerCase();
       const key = `addr:${lower}`;
       if (!seenAddresses.has(key)) {
-        addresses.push(addressBatchEntity(key, lower, a.name ?? null));
+        if (existingAddresses.has(lower)) refs.push({ key, anchor: `email:address:${lower}` });
+        else {
+          if (rule === null) throw new Error("Email address creation requires an explicit synchronization choice");
+          addresses.push(addressBatchEntity(key, lower, a.name ?? null, rule === "true"));
+        }
         seenAddresses.add(key);
       }
       links.push({
@@ -483,7 +495,7 @@ export class MeetingsModule {
         ...(a.name === undefined ? {} : { metadata: { display_name: a.name } }),
       });
     }
-    const result = await this.graph.apply_batch({ entities: [entity, ...addresses], refs: [], links });
+    const result = await this.graph.apply_batch({ entities: [entity, ...addresses], refs, links });
     const entityId = result.ids[remoteId];
     if (!entityId) return false;
     const addressIds = attendees.map((attendee) => {
