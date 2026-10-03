@@ -12,7 +12,7 @@
 //     Stage 1 uses the record's avatar_url / photo_url.
 //   - message-detail canonical map + linked_entities (Context panel).
 
-import { connectionReady, reachedEndpoints, rpc, syncHandler, tool, writeTool, type GraphService, type PluginDeps } from "@magnis/plugin-sdk";
+import { connectionReady, pageLimitMax, reachedEndpoints, rpc, syncHandler, tool, writeTool, type GraphService, type PluginDeps } from "@magnis/plugin-sdk";
 import type {
   BatchEntityInput,
   BatchLinkInput,
@@ -22,6 +22,7 @@ import type {
   PaginatedResponse,
   RawEntity,
   RpcExecutor,
+  SourceEnvelope,
   SetSyncEnabledParams,
   SetSyncEnabledResult,
   SyncTargetResult,
@@ -46,7 +47,6 @@ import type {
   SendParams,
   SetIndexedParams,
   SetTriggerParams,
-  SyncEnvelope,
   TelegramChatListItem,
   TriggerCheck,
 } from "../types.ts";
@@ -151,7 +151,7 @@ interface IngestedChatState {
 /** One message envelope of a page with everything derived from it read once:
  * the ids a payload carries are parsed here, not in each loop that needs them. */
 interface PageMessage {
-  readonly env: SyncEnvelope;
+  readonly env: SourceEnvelope;
   readonly payload: Data;
   readonly remoteId: string;
   readonly chatId: string | null;
@@ -196,7 +196,7 @@ interface PageStatement {
 
 /** One envelope, read once: the ids a payload carries are parsed here so no
  * later step parses them again. */
-function pageMessageOf({ env, payload }: { env: SyncEnvelope; payload: Data }): PageMessage {
+function pageMessageOf({ env, payload }: { env: SourceEnvelope; payload: Data }): PageMessage {
   const senderId = payload.sender_id;
   return {
     env,
@@ -467,7 +467,7 @@ export class TelegramModule {
     const entities: SyncMigrationEntity[] = [];
     let after: string | null = null;
     do {
-      const page = await this.graph.listSyncMigrationEntities({ schemaId: CHAT, after, limit: 500 });
+      const page = await this.graph.listSyncMigrationEntities({ schemaId: CHAT, after, limit: pageLimitMax });
       if (page.next !== null && (page.next === after || page.items.length === 0)) throw new Error("Telegram migration page did not advance");
       entities.push(...page.items);
       after = page.next;
@@ -1265,7 +1265,7 @@ export class TelegramModule {
     return chat;
   }
 
-  private async envelopeChatId(envelope: SyncEnvelope, deleteTargets: Map<string, string>): Promise<string | null> {
+  private async envelopeChatId(envelope: SourceEnvelope, deleteTargets: Map<string, string>): Promise<string | null> {
     const chatId = chatIdOrNull(envelope.payload);
     if (chatId !== null) return chatId;
     if (envelope.kind !== "delete" || !envelope.remote_id) throw new Error("Telegram event has no controlling chat_id");
@@ -1313,17 +1313,17 @@ export class TelegramModule {
     }
   }
 
-  private async admitEnvelopes(envelopes: readonly SyncEnvelope[], identityKey: string | undefined): Promise<{ envelopes: SyncEnvelope[]; chats: Map<string, IngestedChatState>; deleteTargets: Map<string, string> }> {
+  private async admitEnvelopes(envelopes: readonly SourceEnvelope[], identityKey: string | undefined): Promise<{ envelopes: SourceEnvelope[]; chats: Map<string, IngestedChatState>; deleteTargets: Map<string, string> }> {
     const deleteTargets = new Map<string, string>();
     if (envelopes.length === 0) return { envelopes: [], chats: new Map(), deleteTargets };
-    const owned: { env: SyncEnvelope; chatId: string }[] = [];
+    const owned: { env: SourceEnvelope; chatId: string }[] = [];
     for (const env of envelopes) {
       if (!env.remote_id) throw new Error("Telegram event has no remote ID");
       const chatId = await this.envelopeChatId(env, deleteTargets);
       if (chatId !== null) owned.push({ env, chatId });
     }
     const chats = await this.readChatsByAnchor(owned.map((entry) => entry.chatId));
-    const discovered = new Map<string, { env: SyncEnvelope; payload: Data }>();
+    const discovered = new Map<string, { env: SourceEnvelope; payload: Data }>();
     for (const { env, chatId } of owned) {
       if (chats.has(chatId) || env.kind !== "snapshot" || !["chat", "telegram_chat"].includes(String(env.payload.entity_type))) continue;
       const payload = Object.fromEntries(Object.entries(env.payload).filter(([key]) => ["entity_type", "chat_id", "title", "type", "member_count", "is_indexed", "is_pinned", "pin_order"].includes(key)));
@@ -1342,17 +1342,17 @@ export class TelegramModule {
       if (chat === undefined) throw new Error(`Telegram event refers to undiscovered chat ${chatId}`);
       let remoteIds = groups.get(chat.entityId);
       if (remoteIds === undefined) { remoteIds = new Set(); groups.set(chat.entityId, remoteIds); }
-      if (env.remote_id === undefined) throw new Error("Telegram event has no remote ID");
+      if (typeof env.remote_id !== "string") throw new Error("Telegram event has no remote ID");
       remoteIds.add(env.remote_id);
     }
     const allowed = new Set(await this.graph.admitSyncEntities([...groups].map(([entityId, remoteIds]) => ({ entityId, remoteIds: [...remoteIds] }))));
-    return { envelopes: owned.flatMap(({ env }) => env.remote_id !== undefined && allowed.has(env.remote_id) ? [env] : []), chats, deleteTargets };
+    return { envelopes: owned.flatMap(({ env }) => typeof env.remote_id === "string" && allowed.has(env.remote_id) ? [env] : []), chats, deleteTargets };
   }
 
   @syncHandler("telegram")
   async ingest(
     params: {
-      envelopes?: SyncEnvelope[];
+      envelopes?: SourceEnvelope[];
       /** The pass the worker is in (`initial:<row>:<lease>`); absent for a
        * Source effect outside a worker, which states nothing. */
       generation?: string;
@@ -1386,14 +1386,14 @@ export class TelegramModule {
     const envelopes = admitted.envelopes;
     const dropped: string[] = [];
     const triggers: TriggerCheck[] = [];
-    const chats: { env: SyncEnvelope; payload: Data }[] = [];
-    const messages: { env: SyncEnvelope; payload: Data }[] = [];
+    const chats: { env: SourceEnvelope; payload: Data }[] = [];
+    const messages: { env: SourceEnvelope; payload: Data }[] = [];
 
     for (const env of envelopes) {
       const kind = env.kind;
       if (kind === "delete") {
         try {
-          await this.ingestDelete(env, env.remote_id === undefined ? undefined : admitted.deleteTargets.get(env.remote_id));
+          await this.ingestDelete(env, typeof env.remote_id !== "string" ? undefined : admitted.deleteTargets.get(env.remote_id));
         } catch {
           if (env.remote_id) dropped.push(env.remote_id);
         }
@@ -1473,7 +1473,7 @@ export class TelegramModule {
   // entities + chat.details records in CHUNKS, freeing the single PGlite connection
   // between batches.
   private async ingestChatBatch(
-    chats: { env: SyncEnvelope; payload: Data }[],
+    chats: { env: SourceEnvelope; payload: Data }[],
     identityKey: string | undefined,
     newestMessageByChat: ReadonlyMap<string, Data>,
     generation: string | null,
@@ -1673,7 +1673,7 @@ export class TelegramModule {
    * tested — without a graph.
    * @tested-by: tst_module_telegram_004, tst_module_telegram_plan_001 */
   private async ingestMessageBatch(
-    messages: readonly { env: SyncEnvelope; payload: Data }[],
+    messages: readonly { env: SourceEnvelope; payload: Data }[],
     triggers: TriggerCheck[],
     identityKey: string | undefined,
     pageChatState: ReadonlyMap<string, IngestedChatState> = new Map(),
@@ -1758,7 +1758,7 @@ export class TelegramModule {
 
   // Delete the entity behind a remote_id (user-scoped). Mirrors native
   // ingest_delete; delete_entity cascades the entity's links.
-  private async ingestDelete(envelope: SyncEnvelope, resolvedId: string | undefined): Promise<void> {
+  private async ingestDelete(envelope: SourceEnvelope, resolvedId: string | undefined): Promise<void> {
     const remoteId = envelope.remote_id;
     if (!remoteId) return;
     // S4: messages and chats resolve by ANCHOR — their remote_id IS the
@@ -1959,10 +1959,10 @@ export class TelegramModule {
     return id;
   }
 
-  // Build a SyncEnvelope for re-ingesting a message produced by a source
+  // Build a SourceEnvelope for re-ingesting a message produced by a source
   // command (send result / backfill batch). user_id is empty here — the graph
   // ops are owner-scoped by the dispatch ModuleContext, not this field.
-  private syntheticEnvelope(remoteId: string, payload: Data, accountId: string | undefined): SyncEnvelope {
+  private syntheticEnvelope(remoteId: string, payload: Data, accountId: string | undefined): SourceEnvelope {
     return {
       source_id: "telegram",
       surface: "telegram",

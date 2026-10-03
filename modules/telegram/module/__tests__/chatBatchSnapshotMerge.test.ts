@@ -12,54 +12,47 @@
  * Data: one existing pinned chat and a bootstrap-sized dialog page.
  */
 import { describe, expect, it } from "vitest";
-import type { GraphBatchInput } from "@magnis/plugin-sdk";
-import { entity, mockGraph, mountModule } from "@magnis/testkit/module";
+import type { GraphBatchInput, SourceEnvelope } from "@magnis/plugin-sdk";
+import { entity, mockGraph, mountModule, sourceEnvelope } from "@magnis/testkit/module";
 import { TelegramModule } from "../service.ts";
 import type {
-  SyncEnvelope,
   TelegramCanonical,
 } from "../../types.ts";
 
-function chatEnvelope(chatId: number): SyncEnvelope {
-  return {
+function chatEnvelope(chatId: number): SourceEnvelope {
+  return sourceEnvelope("telegram", {
+    entity_type: "telegram_chat",
+    chat_id: chatId,
+    title: chatId === 1 ? "Pinned chat" : `Chat ${String(chatId)}`,
+    is_pinned: chatId === 1,
+    pin_order: chatId - 1,
+  }, {
     source_id: "telegram",
-    surface: "telegram",
     account_id: "acct-1",
     user_id: "u1",
-    kind: "snapshot",
     identity_key: "9001",
     remote_id: `tg:chat:${String(chatId)}`,
-    payload: {
-      entity_type: "telegram_chat",
-      chat_id: chatId,
-      title: chatId === 1 ? "Pinned chat" : `Chat ${String(chatId)}`,
-      is_pinned: chatId === 1,
-      pin_order: chatId - 1,
-    },
     timestamp: "2026-07-26T19:30:00Z",
-  };
+  });
 }
 
-function messageEnvelope(chatId: number): SyncEnvelope {
-  return {
+function messageEnvelope(chatId: number): SourceEnvelope {
+  return sourceEnvelope("telegram", {
+    entity_type: "message",
+    message_id: 7,
+    chat_id: chatId,
+    sender_id: 5000 + chatId,
+    sender_name: `Sender ${String(chatId)}`,
+    text: `Latest message ${String(chatId)}`,
+    date: "2026-07-26T20:00:00Z",
+  }, {
     source_id: "telegram",
-    surface: "telegram",
     account_id: "acct-1",
     user_id: "u1",
-    kind: "snapshot",
     identity_key: "9001",
     remote_id: `tg:msg:${String(chatId)}:7`,
-    payload: {
-      entity_type: "message",
-      message_id: 7,
-      chat_id: chatId,
-      sender_id: 5000 + chatId,
-      sender_name: `Sender ${String(chatId)}`,
-      text: `Latest message ${String(chatId)}`,
-      date: "2026-07-26T20:00:00Z",
-    },
     timestamp: "2026-07-26T20:00:01Z",
-  };
+  });
 }
 
 describe("telegram chat batch ingest", () => {

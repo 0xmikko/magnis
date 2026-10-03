@@ -1,7 +1,7 @@
-// Contacts surface: Google People API client + canonical conversion —
+// Addressbook surface: Google People API client + canonical conversion —
 // twin of sources/google/src/contacts.rs.
 //
-// Each contacts envelope's `payload` is a full Contact serialization and
+// Each addressbook envelope's `payload` is a full Contact serialization and
 // `remote_id` is `gpeople:{stable_hash}` (dedup survives display-name change).
 
 import { createHash } from "node:crypto";
@@ -335,17 +335,17 @@ export async function fetchContactsPage(
   for (const person of page.connections ?? []) {
     const remoteId = contactRemoteId(stableContactId(person.resourceName));
     if (person.metadata?.deleted === true) {
-      envelopes.push({ surface: "contacts", payload: {}, remote_id: remoteId, kind: "delete" });
+      envelopes.push({ surface: "addressbook", payload: {}, remote_id: remoteId, kind: "delete" });
       continue;
     }
     const contact = gpeoplePersonToContact(person);
     if (contact === null) {
-      if (syncToken !== undefined) envelopes.push({ surface: "contacts", payload: {}, remote_id: remoteId, kind: "delete" });
+      if (syncToken !== undefined) envelopes.push({ surface: "addressbook", payload: {}, remote_id: remoteId, kind: "delete" });
       else skipped += 1;
       continue;
     }
     envelopes.push({
-      surface: "contacts",
+      surface: "addressbook",
       payload: contact as unknown as Record<string, unknown>,
       remote_id: contactRemoteId(contact.id),
       kind: "snapshot",
@@ -355,7 +355,7 @@ export async function fetchContactsPage(
   if (syncToken === undefined && pageToken === undefined && typeof page.totalItems === "number") list.total_people = page.totalItems;
   if (skipped > 0) list.skipped = skipped;
   if (Object.keys(list).length > 1) {
-    envelopes.unshift({ surface: "contacts", kind: "snapshot", remote_id: "list", payload: list });
+    envelopes.unshift({ surface: "addressbook", kind: "snapshot", remote_id: "list", payload: list });
   }
 
   const hasMore = typeof page.nextPageToken === "string";

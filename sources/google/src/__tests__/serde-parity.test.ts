@@ -21,7 +21,7 @@ import {
   sendMessage,
 } from "../surfaces/email/gmail";
 import { fetchEventsPage } from "../surfaces/meetings/calendar";
-import { fetchContactsPage } from "../surfaces/contacts/contacts";
+import { fetchContactsPage } from "../surfaces/addressbook/contacts";
 import type { FetchLike, HttpResponse } from "../http";
 
 const allSenders = { choices: {}, unknownSenderEnabled: true };

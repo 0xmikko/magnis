@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
-// build:plugins — bundle each plugin's `ui` surface into ONE ESM file.
+// build:plugins — bundle each plugin's `ui` surface into ONE ESM file. A
+// module without `ui/` has no UI of its own and ships no UI bundle.
 //
 // The JS build lives HERE (not in the Rust backend). Each plugin's own files
 // are inlined; the host bare specifiers (react, @magnis/host/*,
@@ -48,10 +49,16 @@ export interface BuildOpts {
   distDir?: string;
 }
 
-export interface BuildResult {
-  pluginId: string;
+/** The UI bundle a module build produces. */
+export interface BuiltUi {
   bundleFile: string; // hashed filename, e.g. "index.<hash>.js"
   hash: string;
+}
+
+export interface BuildResult {
+  pluginId: string;
+  /** The UI bundle; null for a module without `ui/`. */
+  ui: BuiltUi | null;
 }
 
 /** Build the bare specifier → shim-URL map for one plugin (static + extras). */
@@ -180,48 +187,55 @@ export async function buildPlugin(pluginId: string, opts: BuildOpts = {}): Promi
   const manifestPath = join(pluginsDir, "modules", pluginId, "manifest.toml");
   const manifest: Manifest = parseToml(readFileSync(manifestPath, "utf8"));
   // Entry is convention (manifest v3): ui/index.tsx — the entry key matches
-  // what the frontend loader requests (`/api/plugins/<id>/ui/index.tsx`).
+  // what the frontend loader requests (`/api/plugins/<id>/ui/index.tsx`). A
+  // module without ui/ has no UI of its own, and no UI bundle is built.
   const entryUi = "index.tsx";
-  const entryPath = join(pluginsDir, "modules", pluginId, "ui", entryUi);
-  if (!existsSync(entryPath)) {
-    throw new Error(`plugin ${pluginId}: ui entry not found at ${entryPath}`);
-  }
-
-  const externals = resolveExternals(manifest, host);
-
-  const result = await Bun.build({
-    entrypoints: [entryPath],
-    format: "esm",
-    target: "browser",
-    external: [...externals.keys()],
-    minify: false,
-    define: { "process.env.NODE_ENV": '"production"' },
-  });
-  if (!result.success) {
-    throw new Error(
-      `plugin ${pluginId}: bundle failed:\n${result.logs.map((l) => l.message).join("\n")}`,
-    );
-  }
-  const jsArtifact = result.outputs.find((o) => o.kind === "entry-point") ?? result.outputs[0];
-  if (jsArtifact === undefined) throw new Error(`plugin ${pluginId}: bundle produced no output`);
-  const raw = await jsArtifact.text();
-  const js = withStyles(pluginId, pluginsDir, rewriteBareImports(raw, externals));
-
-  const hash = createHash("sha256").update(js).digest("hex").slice(0, 16);
-  const bundleFile = `index.${hash}.js`;
+  const uiSourceDir = join(pluginsDir, "modules", pluginId, "ui");
 
   // Write the package into plugins_dist/modules/<id>/ — dist mirrors the
   // source tree; boot seeding flattens into the id-keyed store.
   const pkgDir = join(distDir, "modules", pluginId);
   const uiDir = join(pkgDir, "ui");
-  // Clear any prior ui/*.js so exactly one bundle remains.
+  // Clear any prior ui/*.js so exactly one bundle remains, or none.
   if (existsSync(uiDir)) {
     for (const f of readdirSync(uiDir)) {
       if (f.endsWith(".js")) rmSync(join(uiDir, f));
     }
   }
-  mkdirSync(uiDir, { recursive: true });
-  writeFileSync(join(uiDir, bundleFile), js);
+  // @tested-by: tst_build_ui_less_001
+  let ui: BuiltUi | null = null;
+  if (existsSync(uiSourceDir)) {
+    const entryPath = join(uiSourceDir, entryUi);
+    if (!existsSync(entryPath)) {
+      throw new Error(`plugin ${pluginId}: ui entry not found at ${entryPath}`);
+    }
+
+    const externals = resolveExternals(manifest, host);
+
+    const result = await Bun.build({
+      entrypoints: [entryPath],
+      format: "esm",
+      target: "browser",
+      external: [...externals.keys()],
+      minify: false,
+      define: { "process.env.NODE_ENV": '"production"' },
+    });
+    if (!result.success) {
+      throw new Error(
+        `plugin ${pluginId}: bundle failed:\n${result.logs.map((l) => l.message).join("\n")}`,
+      );
+    }
+    const jsArtifact = result.outputs.find((o) => o.kind === "entry-point") ?? result.outputs[0];
+    if (jsArtifact === undefined) throw new Error(`plugin ${pluginId}: bundle produced no output`);
+    const raw = await jsArtifact.text();
+    const js = withStyles(pluginId, pluginsDir, rewriteBareImports(raw, externals));
+
+    const hash = createHash("sha256").update(js).digest("hex").slice(0, 16);
+    const bundleFile = `index.${hash}.js`;
+    mkdirSync(uiDir, { recursive: true });
+    writeFileSync(join(uiDir, bundleFile), js);
+    ui = { bundleFile, hash };
+  }
 
   // ── module surface: bundle the V8 isolate entry too ───────────────────────
   // No externals — the SDK (@magnis/plugin-sdk, zero imports, globalThis-based)
@@ -369,8 +383,7 @@ export async function buildPlugin(pluginId: string, opts: BuildOpts = {}): Promi
     join(pkgDir, "bundle.json"),
     JSON.stringify(
       {
-        ui: { [entryUi]: bundleFile },
-        uiHash: hash,
+        ...(ui ? { ui: { [entryUi]: ui.bundleFile }, uiHash: ui.hash } : {}),
         ...(moduleFile ? { module: { dist: moduleFile }, moduleHash } : {}),
         ...(Object.keys(assets).length ? { assets } : {}),
       },
@@ -392,10 +405,11 @@ export async function buildPlugin(pluginId: string, opts: BuildOpts = {}): Promi
     rmSync(distSearch, { force: true });
   }
 
-  return { pluginId, bundleFile, hash };
+  return { pluginId, ui };
 }
 
-/** Discover plugin ids: dirs under modules/ with manifest.toml AND ui/. */
+/** Discover plugin ids: dirs under modules/ with a manifest.toml; ui/ is
+ * optional. */
 export function discoverPlugins(pluginsDir: string): string[] {
   const modulesDir = join(pluginsDir, "modules");
   return readdirSync(modulesDir)
@@ -404,8 +418,7 @@ export function discoverPlugins(pluginsDir: string): string[] {
       try {
         return (
           statSync(dir).isDirectory() &&
-          existsSync(join(dir, "manifest.toml")) &&
-          existsSync(join(dir, "ui"))
+          existsSync(join(dir, "manifest.toml"))
         );
       } catch {
         return false;
@@ -444,7 +457,7 @@ if (import.meta.main) {
 
   const buildOne = async (id: string): Promise<void> => {
     const r = await buildPlugin(id, { pluginsDir, distDir });
-    console.log(`  ✓ ${id} → ${distDir}/modules/${id}/ui/${r.bundleFile}`);
+    console.log(`  ✓ ${id} → ${distDir}/modules/${id}${r.ui === null ? "" : `/ui/${r.ui.bundleFile}`}`);
   };
   const buildSet = async (): Promise<void> => {
     const set = ids.length ? ids : discoverPlugins(pluginsDir);

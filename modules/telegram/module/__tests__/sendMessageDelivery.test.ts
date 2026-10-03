@@ -19,7 +19,8 @@
 import { describe, it, expect, vi } from "vitest";
 import { entity, mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { TelegramModule } from "../service.ts";
-import type { SyncEnvelope, TelegramCanonical } from "../../types.ts";
+import type { TelegramCanonical } from "../../types.ts";
+import type { SourceEnvelope } from "@magnis/plugin-sdk";
 
 type G = MockGraph;
 
@@ -32,7 +33,7 @@ interface TgInternals {
     accountId: string | undefined,
   ): Promise<Record<string, unknown>>;
   ingestMessageBatch(
-    messages: { env: SyncEnvelope; payload: Record<string, unknown> }[],
+    messages: { env: SourceEnvelope; payload: Record<string, unknown> }[],
     triggers: unknown[],
   ): Promise<unknown>;
 }

@@ -137,26 +137,6 @@ export interface PaginatedResponse<T> {
   offset: number;
 }
 
-/// A sync event from a source connector. Mirrors the Rust `SourceEnvelope`
-/// (serde snake_case; `kind` is "snapshot"|"live"|"delete"|…). `user_id` is
-/// injected host-side; the ingest handler's graph writes are owner-scoped by
-/// the dispatch context, not by this field.
-export interface SyncEnvelope {
-  source_id: string;
-  surface: string;
-  account_id: string;
-  user_id: string;
-  /** S4: the provider-verified identity that observed this envelope —
-   * stamped HOST-side from the account row's ProbeAuth subject. The
-   * telegram ingest refuses envelopes without it (identity-scoped data). */
-  identity_key?: string;
-  kind: string;
-  remote_id?: string;
-  cursor?: unknown;
-  payload: Record<string, unknown>;
-  timestamp: string;
-}
-
 // chat_id accepts the telegram numeric id (string|number) OR — for messages
 // list — an entity_id (chat entity UUID) resolved to chat_id via its record.
 export interface ChatsListParams {

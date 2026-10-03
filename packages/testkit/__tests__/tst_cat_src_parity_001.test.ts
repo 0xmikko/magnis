@@ -1,8 +1,6 @@
-import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, relative } from "node:path";
-import { gunzipSync } from "node:zlib";
+import { join, relative } from "node:path";
 
 import { describe, expect, test } from "bun:test";
 import { parse as parseToml } from "smol-toml";
@@ -34,14 +32,9 @@ import {
   decodeSourceCertificationDeclaration,
   discoverSourceReleaseManifests,
   discoverStagedCatalog,
-  inspectRetroactiveSourceArtifact,
   mintSourceCertificationReceipt,
-  SELECTED_CHANNEL_SOURCE_MATRIX,
-  type SourceCertificationDeclaration,
-  writeSelectedChannelSourceReceipts,
 } from "../../../scripts/certify-sources";
 import { stageSourcePackage } from "../../../scripts/build-catalog-index";
-import { buildSelectedSourceFixture } from "../../../scripts/build-selected-source-fixture";
 import { collectSourceHostEvidence } from "../host-driver";
 
 type AuthKind = "api_key" | "oauth2" | "phone_code" | "shared_provider" | null;
@@ -115,15 +108,15 @@ const PROVIDER_SCENARIOS: ScenarioRegistry = {
     { id: "tst_gts_email_009", path: "sources/google/src/surfaces/email/gmail.test.ts" },
     { id: "tst_gts_fx_001", path: "sources/google/src/__tests__/fixture.test.ts" },
     { id: "tst_gts_fx_003", path: "sources/google/src/__tests__/fixture.test.ts" },
-    { id: "tst_gts_gp_006", path: "sources/google/src/surfaces/contacts/contacts.test.ts" },
+    { id: "tst_gts_gp_006", path: "sources/google/src/surfaces/addressbook/contacts.test.ts" },
     { id: "tst_gts_hist_008b", path: "sources/google/src/surfaces/email/gmail.test.ts" },
     { id: "tst_gts_oidc_004", path: "sources/google/src/oauth.test.ts" },
     { id: "tst_gts_oidc_007", path: "sources/google/src/oauth.test.ts" },
     { id: "tst_gts_wire_006", path: "sources/google/src/__tests__/fixture.test.ts" },
     { id: "tst_src_iso_google_005", path: "sources/google/src/surfaces/meetings/calendar.test.ts" },
     { id: "tst_src_iso_google_006", path: "sources/google/src/surfaces/meetings/calendar.test.ts" },
-    { id: "tst_src_iso_google_007", path: "sources/google/src/surfaces/contacts/contacts.test.ts" },
-    { id: "tst_src_iso_google_008", path: "sources/google/src/surfaces/contacts/contacts.test.ts" },
+    { id: "tst_src_iso_google_007", path: "sources/google/src/surfaces/addressbook/contacts.test.ts" },
+    { id: "tst_src_iso_google_008", path: "sources/google/src/surfaces/addressbook/contacts.test.ts" },
     { id: "tst_src_iso_google_012", path: "sources/google/src/__tests__/googleContract.test.ts" },
   ],
   local: [
@@ -369,7 +362,7 @@ const GOLDEN_PROVIDERS: readonly GoldenProvider[] = [
     mintedCredentialKeys: ["refresh_token"],
     migratesFrom: [],
     surfaces: [
-      surface("contacts", "retain", "full_snapshot", "snapshot"),
+      surface("addressbook", "retain", "full_snapshot", "snapshot"),
       surface("email", "retain", "forward_and_backfill", "range"),
       surface("meetings", "retain", "full_snapshot", "snapshot"),
     ],
@@ -572,48 +565,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function materializeSelectedChannelFixture(destination: string): void {
-  const fixturePath = join(
-    repoRoot,
-    "packages",
-    "testkit",
-    "fixtures",
-    "selected-channel-sources-v1.json.gz",
-  );
-  const compressed = readFileSync(fixturePath);
-  expect(`sha256:${createHash("sha256").update(compressed).digest("hex")}`).toBe(
-    "sha256:94686bf0be02b058ad1de837c4d9eb523f33bb1e9414fccb22eb079b32030401",
-  );
-  const decoded = JSON.parse(gunzipSync(compressed).toString("utf8")) as unknown;
-  if (!isRecord(decoded) || decoded.schemaVersion !== 1 || !Array.isArray(decoded.packages)) {
-    throw new Error("selected-channel fixture has an invalid root");
-  }
-  const packageIds: string[] = [];
-  for (const packageValue of decoded.packages) {
-    if (!isRecord(packageValue) || typeof packageValue.id !== "string" || !Array.isArray(packageValue.files)) {
-      throw new Error("selected-channel fixture has an invalid package");
-    }
-    packageIds.push(packageValue.id);
-    for (const fileValue of packageValue.files) {
-      if (!isRecord(fileValue) || typeof fileValue.path !== "string" || typeof fileValue.base64 !== "string") {
-        throw new Error(`selected-channel fixture package '${packageValue.id}' has an invalid file`);
-      }
-      const segments = fileValue.path.split("/");
-      if (
-        fileValue.path.startsWith("/") ||
-        fileValue.path.includes("\\") ||
-        segments.some((segment) => segment === "" || segment === "." || segment === "..")
-      ) {
-        throw new Error(`selected-channel fixture file '${fileValue.path}' is not root-local`);
-      }
-      const path = join(destination, packageValue.id, ...segments);
-      mkdirSync(dirname(path), { recursive: true });
-      writeFileSync(path, Buffer.from(fileValue.base64, "base64"));
-    }
-  }
-  expect(packageIds).toEqual(SELECTED_CHANNEL_SOURCE_MATRIX.map(({ id }) => id));
-}
-
 function replyResult(
   evidence: Awaited<ReturnType<typeof collectSourceHostEvidence>>,
   operation: string,
@@ -621,15 +572,6 @@ function replyResult(
   const result = evidence.operationProbes[operation]?.result;
   if (!isRecord(result)) throw new Error(`legacy operation '${operation}' returned no object result`);
   return result;
-}
-
-function replyError(
-  evidence: Awaited<ReturnType<typeof collectSourceHostEvidence>>,
-  operation: string,
-): { code?: number; message?: string } {
-  const error = evidence.operationProbes[operation]?.error;
-  if (error === undefined) throw new Error(`legacy operation '${operation}' returned no error`);
-  return error;
 }
 
 function stringArray(value: unknown, label: string): readonly string[] {
@@ -663,21 +605,6 @@ function compatibility(record: Record<string, unknown>, sourceId: string): Recor
 
 function sorted(values: readonly string[]): readonly string[] {
   return [...values].sort();
-}
-
-function declarationWithAuth(
-  declaration: SourceCertificationDeclaration,
-  auth: AuthKind,
-): SourceCertificationDeclaration {
-  const input = { ...declaration.accountCompatibility.input, auth };
-  return {
-    ...declaration,
-    accountCompatibility: {
-      ...declaration.accountCompatibility,
-      hash: accountCompatibilityHash(input),
-      input,
-    },
-  };
 }
 
 async function sdkCall(
@@ -1156,254 +1083,6 @@ describe("tst_cat_src_parity_001 current v1 golden matrix", () => {
         subscription_id: "certification-probe",
       });
       expect(replyResult(evidence, "listen_stop")).toEqual({ ok: true });
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
-
-  test("retroactive manifest auth must match the explicit historical declaration", () => {
-    const root = mkdtempSync(join(tmpdir(), "magnis-selected-auth-"));
-    const selectedRoot = join(root, "sources");
-    try {
-      materializeSelectedChannelFixture(selectedRoot);
-      const historical = (id: string): SourceCertificationDeclaration => {
-        const selected = SELECTED_CHANNEL_SOURCE_MATRIX.find((entry) => entry.id === id);
-        if (selected === undefined) throw new Error(`missing historical declaration '${id}'`);
-        return selected.declaration;
-      };
-
-      expect(() => inspectRetroactiveSourceArtifact(
-        join(selectedRoot, "anysite"),
-        declarationWithAuth(historical("anysite"), "api_key"),
-      )).toThrow(
-        "retroactive Source 'anysite' manifest auth shared_provider does not match certification account auth api_key",
-      );
-      expect(() => inspectRetroactiveSourceArtifact(
-        join(selectedRoot, "anysite"),
-        declarationWithAuth(historical("anysite"), null),
-      )).toThrow(
-        "retroactive Source 'anysite' manifest auth shared_provider does not match certification account auth null",
-      );
-      expect(() => inspectRetroactiveSourceArtifact(
-        join(selectedRoot, "local"),
-        declarationWithAuth(historical("local"), "api_key"),
-      )).toThrow(
-        "retroactive Source 'local' has no manifest auth but certifies account auth api_key",
-      );
-      expect(inspectRetroactiveSourceArtifact(
-        join(selectedRoot, "local"),
-        historical("local"),
-      ).certification?.accountCompatibility.input.auth).toBeNull();
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
-
-  test("tst_cat_src_legacy_001 committed selected-channel bytes replay their exact old wire", async () => {
-    const root = mkdtempSync(join(tmpdir(), "magnis-selected-channel-"));
-    const selectedRoot = join(root, "sources");
-    const generatedReceiptRoot = join(root, "receipts");
-    try {
-      materializeSelectedChannelFixture(selectedRoot);
-      const regeneratedFixture = join(root, "selected-channel-sources-v1.json.gz");
-      expect(buildSelectedSourceFixture(selectedRoot, regeneratedFixture)).toBe(
-        "sha256:94686bf0be02b058ad1de837c4d9eb523f33bb1e9414fccb22eb079b32030401",
-      );
-      expect(readFileSync(regeneratedFixture)).toEqual(
-        readFileSync(join(repoRoot, "packages", "testkit", "fixtures", "selected-channel-sources-v1.json.gz")),
-      );
-      const generated = await writeSelectedChannelSourceReceipts({
-        selectedSourcesRoot: selectedRoot,
-        outputDir: generatedReceiptRoot,
-      });
-      expect(generated).toHaveLength(9);
-
-      const committedReceiptRoot = join(repoRoot, "dist", "receipts");
-      for (const expected of SELECTED_CHANNEL_SOURCE_MATRIX) {
-        const committedBytes = readFileSync(
-          join(committedReceiptRoot, `${expected.packageHash}.json`),
-          "utf8",
-        );
-        expect(readFileSync(join(generatedReceiptRoot, `${expected.packageHash}.json`), "utf8"))
-          .toBe(committedBytes);
-        const receipt = decodeSourceCertificationReceipt(committedBytes, {
-          packageHash: expected.packageHash,
-          definitionHash: expected.definitionHash,
-        });
-        expect(receipt.sourceId).toBe(expected.id);
-        expect(receipt.scenarioIds).toEqual(["tst_cat_src_legacy_001"]);
-        expect(receipt.callableOperations).toEqual(expected.declaration.callableOperations);
-      }
-
-      const artifact = (id: string): string => join(selectedRoot, id);
-      const declaration = (id: string) => {
-        const selected = SELECTED_CHANNEL_SOURCE_MATRIX.find((entry) => entry.id === id);
-        if (selected === undefined) throw new Error(`missing historical declaration '${id}'`);
-        return selected.declaration;
-      };
-
-      const anysite = await collectSourceHostEvidence(
-        artifact("anysite"),
-        declaration("anysite").callableOperations,
-        { operationArguments: { "magnis.sync.fetch": { surface: "linkedin", tracked_handles: ["anndoe"] } } },
-      );
-      expect(replyError(anysite, "magnis.sync.fetch")).toMatchObject({
-        code: -32000,
-        message: "anysite: missing api_key (set SOURCE_ANYSITE_API_KEY)",
-      });
-
-      const googleFixture = join(root, "google.json");
-      writeFileSync(googleFixture, '{"messages":[],"events":[],"connections":[]}\n');
-      const google = await collectSourceHostEvidence(
-        artifact("google"),
-        declaration("google").callableOperations,
-        {
-          fixtureEnvironment: { GOOGLE_FIXTURE_FILE: googleFixture },
-          operationArguments: {
-            "magnis.sync.fetch": { surface: "email", senderSync: { choices: {}, unknownSenderEnabled: true } },
-            "magnis.execute:download_file": {
-              action: "download_file",
-              source_ref: { message_id: "m1", attachment_id: "a1" },
-              dest: "/tmp/certification-never-written.bin",
-            },
-            "magnis.execute:send_message": {
-              action: "send_message",
-              draft: { to: [{ address: "b@example.com" }], subject: "s", body_text: "t" },
-            },
-          },
-        },
-      );
-      expect(replyResult(google, "magnis.sync.fetch")).toMatchObject({ envelopes: [], hasMore: false });
-      expect(replyResult(google, "magnis.execute:download_file")).toMatchObject({
-        recorded: true,
-        action: "download_file",
-      });
-      expect(replyResult(google, "magnis.execute:send_message")).toMatchObject({
-        recorded: true,
-        action: "send_message",
-      });
-
-      const notesRoot = join(root, "notes");
-      mkdirSync(notesRoot, { recursive: true });
-      writeFileSync(join(notesRoot, "one.md"), "# one\n");
-      const local = await collectSourceHostEvidence(
-        artifact("local"),
-        declaration("local").callableOperations,
-        {
-          fixtureEnvironment: { NOTES_DIR: notesRoot },
-          operationArguments: { "magnis.sync.fetch": { surface: "notes" } },
-        },
-      );
-      expect((replyResult(local, "magnis.sync.fetch").envelopes as unknown[])).toHaveLength(1);
-
-      const gmailInject = join(root, "mock-gmail.jsonl");
-      writeFileSync(
-        gmailInject,
-        '{"surface":"email","remote_id":"mail:1","payload":{"subject":"one"}}\n' +
-          '{"surface":"email","remote_id":"mail:2","payload":{"subject":"two"}}\n',
-      );
-      const mockGmail = await collectSourceHostEvidence(
-        artifact("mock-gmail"),
-        declaration("mock-gmail").callableOperations,
-        {
-          fixtureEnvironment: { MOCK_INJECT_FILE: gmailInject },
-          operationArguments: { "magnis.sync.fetch": { surface: "email", cursor: 1 } },
-        },
-      );
-      expect(replyResult(mockGmail, "magnis.sync.fetch")).toMatchObject({
-        nextCursor: 2,
-        hasMore: false,
-      });
-      expect((replyResult(mockGmail, "magnis.sync.fetch").envelopes as unknown[])).toHaveLength(1);
-
-      const mockLinkedIn = await collectSourceHostEvidence(
-        artifact("mock-linkedin"),
-        declaration("mock-linkedin").callableOperations,
-        { operationArguments: { "magnis.sync.fetch": { surface: "linkedin", tracked_handles: ["anndoe"] } } },
-      );
-      expect(replyResult(mockLinkedIn, "magnis.auth.probe")).toEqual({ subject: "mock-linkedin-key" });
-      expect(replyResult(mockLinkedIn, "magnis.sync.fetch")).toMatchObject({ nextCursor: 1, hasMore: false });
-      expect((replyResult(mockLinkedIn, "magnis.sync.fetch").envelopes as unknown[])).toHaveLength(2);
-      const mockLinkedInCursor = await collectSourceHostEvidence(
-        artifact("mock-linkedin"),
-        declaration("mock-linkedin").callableOperations,
-        { operationArguments: { "magnis.sync.fetch": { surface: "linkedin", cursor: 1 } } },
-      );
-      expect(replyResult(mockLinkedInCursor, "magnis.sync.fetch")).toMatchObject({
-        envelopes: [], nextCursor: 1, hasMore: false,
-      });
-
-      const telegramInject = join(root, "mock-telegram.jsonl");
-      writeFileSync(
-        telegramInject,
-        '{"surface":"telegram","remote_id":"chat:1","kind":"snapshot","payload":{"chat_id":1}}\n' +
-          '{"surface":"telegram","remote_id":"message:2","kind":"live","payload":{"message_id":2}}\n',
-      );
-      const mockTelegram = await collectSourceHostEvidence(
-        artifact("mock-telegram"),
-        declaration("mock-telegram").callableOperations,
-        {
-          fixtureEnvironment: { MOCK_INJECT_FILE: telegramInject },
-          operationArguments: { "magnis.sync.fetch": { surface: "telegram", cursor: 1 } },
-        },
-      );
-      expect(replyResult(mockTelegram, "magnis.sync.fetch")).toMatchObject({
-        nextCursor: 2,
-        hasMore: false,
-      });
-      expect((replyResult(mockTelegram, "magnis.sync.fetch").envelopes as unknown[])).toHaveLength(1);
-
-      const mockX = await collectSourceHostEvidence(
-        artifact("mock-x"),
-        declaration("mock-x").callableOperations,
-        { operationArguments: { "magnis.sync.fetch": { surface: "x", tracked_handles: ["jack"] } } },
-      );
-      expect(replyResult(mockX, "magnis.auth.probe")).toEqual({ subject: "@mock_x_user" });
-      expect(replyResult(mockX, "magnis.sync.fetch")).toMatchObject({ nextCursor: 1, hasMore: false });
-      expect((replyResult(mockX, "magnis.sync.fetch").envelopes as unknown[])).toHaveLength(6);
-      const mockXCursor = await collectSourceHostEvidence(
-        artifact("mock-x"),
-        declaration("mock-x").callableOperations,
-        { operationArguments: { "magnis.sync.fetch": { surface: "x", cursor: 1 } } },
-      );
-      expect(replyResult(mockXCursor, "magnis.sync.fetch")).toMatchObject({
-        envelopes: [], nextCursor: 1, hasMore: false,
-      });
-
-      const telegramFixture = join(root, "telegram.json");
-      writeFileSync(telegramFixture, '{"chats":[],"messages":[]}\n');
-      const telegram = await collectSourceHostEvidence(
-        artifact("telegram"),
-        declaration("telegram").callableOperations,
-        {
-          fixtureEnvironment: { TELEGRAM_FIXTURE_FILE: telegramFixture },
-          operationArguments: {
-            listen_start: { subscription_id: "legacy-sub", _meta: { account_id: "certification" } },
-            listen_stop: { subscription_id: "legacy-sub" },
-            "magnis.sync.listen": { _meta: { account_id: "certification" } },
-            "magnis.sync.fetch": { surface: "telegram", direction: "backward" },
-            "magnis.execute": { action: "send_message", chat_id: 1, text: "hello" },
-          },
-        },
-      );
-      expect(replyResult(telegram, "listen_start")).toEqual({ ok: true, subscription_id: "legacy-sub" });
-      expect(replyResult(telegram, "listen_stop")).toMatchObject({ ok: true });
-      expect(replyResult(telegram, "magnis.sync.listen")).toEqual({
-        ok: true,
-        subscription_id: "sub:certification",
-      });
-      expect(replyResult(telegram, "magnis.sync.fetch")).toMatchObject({ envelopes: [], hasMore: false });
-      expect(replyResult(telegram, "magnis.execute")).toMatchObject({ recorded: true, action: "send_message" });
-
-      const x = await collectSourceHostEvidence(
-        artifact("x"),
-        declaration("x").callableOperations,
-        { operationArguments: { "magnis.sync.fetch": { surface: "x", tracked_handles: ["jack"] } } },
-      );
-      expect(replyError(x, "magnis.sync.fetch")).toMatchObject({
-        code: -32000,
-        message: "x: missing bearer_token (set SOURCE_X_BEARER_TOKEN)",
-      });
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

@@ -15,6 +15,7 @@ title = "Telegram Messages"
 summary = "Threaded Telegram chats indexed alongside the rest of your graph."
 # Reverse-domain publisher identity.
 publisher = "ai.magnis"
+dependsOn = [ "contacts" ]
 
 [settings]
 moduleId = "telegram"

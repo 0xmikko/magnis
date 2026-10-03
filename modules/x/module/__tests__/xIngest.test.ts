@@ -3,11 +3,11 @@
 // and read tools map window rows. Doubles come from @magnis/testkit/module (throwing mockGraph
 // — a read/ingest path hitting an unarranged op fails loudly).
 import { describe, expect, it, vi } from "vitest";
-import type { GraphBatchInput, LinkSummary, RawEntity, SyncMigrationEntity } from "@magnis/plugin-sdk";
-import { entity, mockGraph, mountModule, windowRow, type MockGraph } from "@magnis/testkit/module";
+import type { GraphBatchInput, LinkSummary, RawEntity, SourceEnvelope, SyncMigrationEntity } from "@magnis/plugin-sdk";
+import { entity, mockGraph, mountModule, sourceEnvelope, windowRow, type MockGraph } from "@magnis/testkit/module";
 import { ContactsModule } from "../../../contacts/module/service.ts";
 import { XModule } from "../service.ts";
-import type { SyncEnvelope, XCanonical } from "../../types.ts";
+import type { XCanonical } from "../../types.ts";
 
 type G = MockGraph;
 
@@ -19,17 +19,8 @@ function mountX(graph: G, execute: (method: string, params?: unknown) => unknown
   }).module;
 }
 
-function env(remote_id: string, payload: Record<string, unknown>): SyncEnvelope {
-  return {
-    source_id: "x",
-    surface: "x",
-    account_id: "a1",
-    user_id: "u1",
-    kind: "snapshot",
-    remote_id,
-    payload,
-    timestamp: "2026-06-26T00:00:00Z",
-  };
+function env(remote_id: string, payload: Record<string, unknown>): SourceEnvelope {
+  return sourceEnvelope("x", payload, { source_id: "x", account_id: "a1", user_id: "u1", remote_id, timestamp: "2026-06-26T00:00:00Z" });
 }
 
 function ingestGraph(): G {
@@ -168,10 +159,10 @@ describe("x ingest", () => {
  * @fixtures: a profile envelope with a planned window of 10; two posts, one already in the graph
  */
 describe("x ingest — the plan from the pages", () => {
-  const profile = (over: Record<string, unknown> = {}): SyncEnvelope => env("x:profile:12", {
+  const profile = (over: Record<string, unknown> = {}): SourceEnvelope => env("x:profile:12", {
     entity_type: "profile", platform: "x", handle: "jack", display_name: "Jack", posts_total: 10, posts_skipped: 1190, ...over,
   });
-  const post = (id: string): SyncEnvelope => ({ ...env(`x:post:${id}`, { entity_type: "post", platform: "x", post_id: id, author_handle: "jack", text: `post ${id}`, created_at: "2026-06-01T00:00:00Z", metrics: {} }), kind: "live" });
+  const post = (id: string): SourceEnvelope => ({ ...env(`x:post:${id}`, { entity_type: "post", platform: "x", post_id: id, author_handle: "jack", text: `post ${id}`, created_at: "2026-06-01T00:00:00Z", metrics: {} }), kind: "live" });
   function planGraph(known: Record<string, Record<string, unknown>>): G {
     return mockGraph({
       admitSyncEntities: async (subjects) => subjects.flatMap(subject => [...subject.remoteIds]),

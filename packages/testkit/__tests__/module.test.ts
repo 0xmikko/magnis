@@ -4,6 +4,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   definePlugin,
+  pageLimitMax,
   rpc,
   tool,
   writeTool,
@@ -16,6 +17,7 @@ import {
   linkedRow,
   mockGraph,
   mountModule,
+  sourceEnvelope,
   windowRow,
 } from "@magnis/testkit/module";
 
@@ -76,6 +78,24 @@ describe("mockGraph", () => {
     getEntitySpy.mockResolvedValue(entity("z", "Zed"));
     const e = await graph.get_entity("z");
     expect(e?.name).toBe("Zed");
+  });
+  /**
+   * @test-id: tst_testkit_mockgraph_004
+   * @scenario: scn_x_sync_001
+   * @covers: packages/testkit/module.ts::mockGraph
+   * @deterministic: yes
+   * @fixtures: an overridden migration listing
+   */
+  it("tst_testkit_mockgraph_004 refuses a migration page larger than the host serves, ahead of the override", async () => {
+    const graph = mockGraph({ listSyncMigrationEntities: () => Promise.resolve({ items: [], next: null }) });
+
+    // @tested-by: tst_testkit_mockgraph_004
+    // @invariant: a module asking for more than pageLimitMax rows fails in its
+    // tests as the host refuses it, and a page within the limit reaches the override.
+    expect(() => graph.listSyncMigrationEntities({ schemaId: "x.profile", after: null, limit: pageLimitMax + 1 }))
+      .toThrow(`migration limit must be between 1 and ${String(pageLimitMax)}`);
+    await expect(graph.listSyncMigrationEntities({ schemaId: "x.profile", after: null, limit: pageLimitMax }))
+      .resolves.toEqual({ items: [], next: null });
   });
 });
 
@@ -246,6 +266,31 @@ describe("builders", () => {
     expect(linkedRow(entity("a", "Acme"), { kind: "authored_by" }).link).toMatchObject({
       from_id: "a",
       kind: "authored_by",
+    });
+  });
+
+  /**
+   * @test-id: tst_testkit_source_envelope_001
+   * @covers: packages/testkit/module.ts::sourceEnvelope
+   * @deterministic: yes
+   * @invariant: a sync handler test builds the one envelope the host sends,
+   * typed by the plugin SDK, never a module's own copy of it.
+   */
+  it("tst_testkit_source_envelope_001 builds the host's sync envelope from a payload", () => {
+    expect(sourceEnvelope("email", { subject: "Hi" })).toEqual({
+      source_id: "fixture",
+      surface: "email",
+      account_id: "account-1",
+      user_id: "user-1",
+      kind: "snapshot",
+      payload: { subject: "Hi" },
+      timestamp: "2026-01-01T00:00:00Z",
+    });
+    expect(sourceEnvelope("telegram", {}, { kind: "delete", remote_id: "tg:1", identity_key: "+1555" })).toMatchObject({
+      surface: "telegram",
+      kind: "delete",
+      remote_id: "tg:1",
+      identity_key: "+1555",
     });
   });
 });

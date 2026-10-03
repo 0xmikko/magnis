@@ -24,9 +24,9 @@ import {
 import type {
   BatchEntityInput,
   BatchLinkInput,
-  BatchRefInput,
   RawEntity,
   RpcExecutor,
+  SourceEnvelope,
 } from "@magnis/plugin-sdk";
 import type {
   GetParams,
@@ -39,7 +39,6 @@ import type {
   NewMeetingParams,
   SearchParams,
   SearchResultItem,
-  SyncEnvelope,
   ToolResult,
 } from "../types.ts";
 import {
@@ -54,7 +53,7 @@ import {
   type Data,
 } from "./helpers.ts";
 import { CAL, EVENT, MEETING } from "../schema.ts";
-import { addressBatchEntity } from "../../email/schema.ts";
+import { addressFragment } from "../../email/schema.ts";
 
 /// The node dictionary (S5): the record every read path renders from.
 const dictOf = (e: RawEntity): Data => e.properties ?? {};
@@ -350,7 +349,7 @@ export class MeetingsModule {
   // entity. An empty envelope user_id is a HARD ERROR (no silent attribution).
   @syncHandler("meetings")
   async ingest(params: {
-    envelopes?: SyncEnvelope[];
+    envelopes?: SourceEnvelope[];
     command?: "bootstrap" | "catch_up" | "backfill";
     /** The pass the worker is in; absent for a Source effect outside a
      * worker, which states nothing. */
@@ -425,7 +424,7 @@ export class MeetingsModule {
 
   /// Delete envelope: resolve the meeting by its source external_id and remove
   /// it. An unknown id is a silent no-op (native delete_by_remote_id parity).
-  private async ingestDelete(env: SyncEnvelope): Promise<boolean> {
+  private async ingestDelete(env: SourceEnvelope): Promise<boolean> {
     if (!env.remote_id) return false;
     // S5: the remote id IS the node's anchor — resolution goes through the
     // one chokepoint, not the retired record external id.
@@ -441,7 +440,7 @@ export class MeetingsModule {
   /// Upsert one calendar event as a NODE (idempotent on its anchor) plus the
   /// `attendee` edges its invite lists, then, for LIVE events, assemble the
   /// trigger.check with those attendees' address ids.
-  private async ingestUpsert(env: SyncEnvelope, triggers: MeetingTriggerCheck[], generation?: string): Promise<boolean> {
+  private async ingestUpsert(env: SourceEnvelope, triggers: MeetingTriggerCheck[], generation?: string): Promise<boolean> {
     const remoteId = env.remote_id;
     if (!remoteId) throw new Error("meetings ingest: envelope missing remote_id");
     const payload = env.payload as Data;
@@ -466,27 +465,15 @@ export class MeetingsModule {
     };
     // @tested-by: tst_module_meetings_sync_002
     // Address nodes and attendee edges belong to the same sync transaction.
-    const addresses: BatchEntityInput[] = [];
-    const refs: BatchRefInput[] = [];
-    const uniqueAddresses = [...new Set(attendees.map((attendee) => attendee.email.trim().toLowerCase()))];
-    const addressLookup = uniqueAddresses.length === 0 ? [] : await this.graph.find_by_anchors(uniqueAddresses.map((address) => `email:address:${address}`));
-    if (addressLookup.length !== uniqueAddresses.length) throw new Error("Meetings address lookup length mismatch");
-    const existingAddresses = new Set(uniqueAddresses.filter((_, index) => addressLookup[index] !== null));
-    const rule = existingAddresses.size < uniqueAddresses.length ? (await this.graph.moduleSettings("email.address")).newSenderSyncEnabled : null;
-    if (rule !== null && rule !== "true" && rule !== "false") throw new Error("Email newSenderSyncEnabled setting is missing or invalid");
-    const seenAddresses = new Set<string>();
-    const links: BatchLinkInput[] = [];
+    const named = new Map<string, string | null>();
     for (const a of attendees) {
       const lower = a.email.trim().toLowerCase();
-      const key = `addr:${lower}`;
-      if (!seenAddresses.has(key)) {
-        if (existingAddresses.has(lower)) refs.push({ key, anchor: `email:address:${lower}` });
-        else {
-          if (rule === null) throw new Error("Email address creation requires an explicit synchronization choice");
-          addresses.push(addressBatchEntity(key, lower, a.name ?? null, rule === "true"));
-        }
-        seenAddresses.add(key);
-      }
+      if (!named.has(lower)) named.set(lower, a.name ?? null);
+    }
+    const { entities: addresses, refs } = await addressFragment(this.graph, named);
+    const links: BatchLinkInput[] = [];
+    for (const a of attendees) {
+      const key = `addr:${a.email.trim().toLowerCase()}`;
       links.push({
         from_key: remoteId,
         to_key: key,

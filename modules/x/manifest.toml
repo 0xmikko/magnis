@@ -14,6 +14,7 @@ title = "X"
 summary = "X (Twitter) profiles and posts of the people you track, linked to contacts."
 # Reverse-domain publisher identity.
 publisher = "ai.magnis"
+dependsOn = [ "contacts" ]
 
 [[links]]
 kind = "x.post:x.profile"
@@ -46,8 +47,12 @@ host = [ "external_id_reads", "source_commands", "sync_state" ]
 # RELATIONS (backend/src/services/graph/link_kinds.rs), constrained by the
 # endpoint ROLES its own descriptors declare.
 
-[[settings]]
+[settings]
+moduleId = "x"
+label = "X"
+
+[[settings.fields]]
 key = "newProfileSyncEnabled"
 label = "Synchronize newly discovered profiles"
-type = "boolean"
 defaultValue = "false"
+fieldType = { type = "boolean" }

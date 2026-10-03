@@ -3,26 +3,16 @@
 // URN, a post on its remote id) and read tools map window rows. Doubles from @magnis/testkit/module (mockGraph = throwing
 // Proxy, so any op a test does not arrange fails loudly).
 import { describe, expect, it, vi } from "vitest";
-import type { GraphBatchInput } from "@magnis/plugin-sdk";
-import { entity, mockGraph, mountModule, windowRow, type MockGraph } from "@magnis/testkit/module";
+import type { GraphBatchInput, SourceEnvelope } from "@magnis/plugin-sdk";
+import { entity, mockGraph, mountModule, sourceEnvelope, windowRow, type MockGraph } from "@magnis/testkit/module";
 import { LinkedinModule } from "../service.ts";
 import { AUTHORED_BY, IDENTITY, POST, PROFILE } from "../../schema.ts";
-import type { LinkedinCanonical, SyncEnvelope } from "../../types.ts";
+import type { LinkedinCanonical } from "../../types.ts";
 
 type G = MockGraph;
 
-// SyncEnvelope is a module DTO (not an SDK type), so its builder stays local.
-function env(remote_id: string, payload: Record<string, unknown>): SyncEnvelope {
-  return {
-    source_id: "x",
-    surface: "linkedin",
-    account_id: "a1",
-    user_id: "u1",
-    kind: "snapshot",
-    remote_id,
-    payload,
-    timestamp: "2026-06-26T00:00:00Z",
-  };
+function env(remote_id: string, payload: Record<string, unknown>): SourceEnvelope {
+  return sourceEnvelope("linkedin", payload, { source_id: "x", account_id: "a1", user_id: "u1", remote_id, timestamp: "2026-06-26T00:00:00Z" });
 }
 
 const emptyBatch = { ids: {}, created: 0, updated: 0, links_added: 0, dropped_keys: [] };
@@ -148,8 +138,8 @@ describe("linkedin ingest", () => {
  * @fixtures: a profile envelope with its urn and a post; the profile known with a pass stamp
  */
 describe("linkedin ingest — the plan from the pages", () => {
-  const profile = (): SyncEnvelope => env("linkedin:profile:jane", { entity_type: "profile", platform: "linkedin", handle: "jane", urn: "urn:li:person:1", display_name: "Jane" });
-  const post = (): SyncEnvelope => env("linkedin:post:1", { entity_type: "post", platform: "linkedin", post_id: "1", author_handle: "jane", text: "hello", created_at: "2026-06-01T00:00:00Z", metrics: {} });
+  const profile = (): SourceEnvelope => env("linkedin:profile:jane", { entity_type: "profile", platform: "linkedin", handle: "jane", urn: "urn:li:person:1", display_name: "Jane" });
+  const post = (): SourceEnvelope => env("linkedin:post:1", { entity_type: "post", platform: "linkedin", post_id: "1", author_handle: "jane", text: "hello", created_at: "2026-06-01T00:00:00Z", metrics: {} });
   function planGraph(known: Record<string, Record<string, unknown>>): G {
     return mockGraph({
       find_by_anchors: (anchors: string[]) => Promise.resolve(anchors.map((anchor) => (anchor in known ? `id:${anchor}` : null))),

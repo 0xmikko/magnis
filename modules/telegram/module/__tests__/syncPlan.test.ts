@@ -13,10 +13,9 @@
  * chats it leaves out of history. Snapshot omission does not end membership.
  */
 import { describe, expect, it } from "vitest";
-import type { GraphBatchInput, LinkSummary, RawEntity, RawSyncableEntity, SyncMigrationEntity, WindowSpec } from "@magnis/plugin-sdk";
-import { entity, mockGraph, mountModule, windowRow } from "@magnis/testkit/module";
+import type { GraphBatchInput, LinkSummary, RawEntity, RawSyncableEntity, SourceEnvelope, SyncMigrationEntity, WindowSpec } from "@magnis/plugin-sdk";
+import { entity, mockGraph, mountModule, sourceEnvelope, windowRow } from "@magnis/testkit/module";
 import { CHAT, MESSAGE } from "../../schema.ts";
-import type { SyncEnvelope } from "../../types.ts";
 import { TelegramModule } from "../service.ts";
 
 const SELF = "tg:account:9001";
@@ -34,20 +33,20 @@ const chats: readonly ChatFixture[] = [
   { id: 7, title: "Pinned large channel", props: { type: "supergroup", member_count: 3000, message_count: 100, is_pinned: true } },
 ];
 
-function chatEnvelope(chat: ChatFixture, over: Record<string, unknown> = {}): SyncEnvelope {
-  return {
-    source_id: "telegram-ts", surface: "telegram", account_id: "account-1", user_id: "u1", identity_key: "9001",
-    kind: "snapshot", remote_id: `tg:chat:${String(chat.id)}`, timestamp: "2026-09-02T00:00:00Z",
-    payload: { entity_type: "chat", chat_id: chat.id, title: chat.title, ...chat.props, ...over },
-  };
+function chatEnvelope(chat: ChatFixture, over: Record<string, unknown> = {}): SourceEnvelope {
+  return sourceEnvelope(
+    "telegram",
+    { entity_type: "chat", chat_id: chat.id, title: chat.title, ...chat.props, ...over },
+    { source_id: "telegram-ts", user_id: "u1", identity_key: "9001", remote_id: `tg:chat:${String(chat.id)}`, timestamp: "2026-09-02T00:00:00Z" },
+  );
 }
 
-function liveMessage(chatId: number, messageId: number): SyncEnvelope {
-  return {
-    source_id: "telegram-ts", surface: "telegram", account_id: "account-1", user_id: "u1", identity_key: "9001",
-    kind: "live", remote_id: `tg:msg:${String(chatId)}:${String(messageId)}`, timestamp: "2026-09-02T00:00:00Z",
-    payload: { entity_type: "message", message_id: messageId, chat_id: chatId, sender_id: 501, sender_name: "Alice", text: "hi", date: "2026-09-02T00:00:00Z" },
-  };
+function liveMessage(chatId: number, messageId: number): SourceEnvelope {
+  return sourceEnvelope(
+    "telegram",
+    { entity_type: "message", message_id: messageId, chat_id: chatId, sender_id: 501, sender_name: "Alice", text: "hi", date: "2026-09-02T00:00:00Z" },
+    { source_id: "telegram-ts", user_id: "u1", identity_key: "9001", kind: "live", remote_id: `tg:msg:${String(chatId)}:${String(messageId)}`, timestamp: "2026-09-02T00:00:00Z" },
+  );
 }
 
 /** The Graph as the module leaves it: chats by anchor, the operator's edges by chat. */

@@ -5,4 +5,4 @@
 
 /** Surfaces this connector feeds — advertised in `initialize`, routed in the
  *  fetch switch. */
-export const SURFACES = ["email", "meetings", "contacts"];
+export const SURFACES = ["email", "meetings", "addressbook"];

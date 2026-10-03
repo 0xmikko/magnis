@@ -126,20 +126,6 @@ export interface SetTriggerParams {
   episode_id?: string;
 }
 
-/// One sync envelope as delivered by the host PluginModuleController bridge
-/// (1:1 with the Rust SourceEnvelope). `kind` is "snapshot" | "live" | "delete".
-export interface SyncEnvelope {
-  source_id: string;
-  surface: string;
-  account_id: string;
-  user_id: string;
-  kind: string;
-  remote_id?: string;
-  cursor?: unknown;
-  payload: Record<string, unknown>;
-  timestamp: string;
-}
-
 /// A trigger.check event the host bridge forwards to the event_bus for LIVE
 /// emails (mirrors native ingest's `new_email` event). Snapshot/backfill
 /// ingests emit none.

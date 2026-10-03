@@ -7,12 +7,11 @@
 import { describe, expect, it } from "vitest";
 import { entity } from "@magnis/declare";
 import { descriptorFrom } from "@magnis/declare/derive";
-import type { GraphBatchInput } from "@magnis/plugin-sdk";
-import { mockGraph, mountModule } from "@magnis/testkit/module";
+import type { GraphBatchInput, SourceEnvelope } from "@magnis/plugin-sdk";
+import { mockGraph, mountModule, sourceEnvelope } from "@magnis/testkit/module";
 
 import { TelegramModule } from "./module/service.ts";
 import { account, chat, message } from "./entities.ts";
-import type { SyncEnvelope } from "./types.ts";
 
 const DECLARED = {
   "telegram.account": account,
@@ -20,18 +19,8 @@ const DECLARED = {
   "telegram.message": message,
 } as const;
 
-const base = (over: Partial<SyncEnvelope>): SyncEnvelope => ({
-  source_id: "telegram-ts",
-  surface: "telegram",
-  account_id: "account-1",
-  user_id: "u1",
-  identity_key: "9001",
-  kind: "snapshot",
-  remote_id: "tg:msg:42:7",
-  payload: {},
-  timestamp: "2026-08-12T08:00:01Z",
-  ...over,
-});
+const base = (over: Partial<SourceEnvelope>): SourceEnvelope =>
+  sourceEnvelope("telegram", {}, { source_id: "telegram-ts", user_id: "u1", identity_key: "9001", remote_id: "tg:msg:42:7", timestamp: "2026-08-12T08:00:01Z", ...over });
 
 async function written(): Promise<GraphBatchInput["entities"]> {
   const batches: GraphBatchInput[] = [];

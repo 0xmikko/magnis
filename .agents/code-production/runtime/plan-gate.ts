@@ -82,12 +82,16 @@ export function protocolLockViolations(body: string): readonly string[] {
   return violations;
 }
 
+/** @tested-by: tst_scripts_agent_stack_005, tst_scripts_agent_stack_006 */
 export function shaKnownAndAncestor(root: string, sha: string): boolean {
   const env = repositoryEnvironment();
   const probe = spawnSync("git", ["-C", root, "cat-file", "-e", `${sha}^{commit}`], { env });
   if (probe.status !== 0) return false;
-  const ancestor = spawnSync("git", ["-C", root, "merge-base", "--is-ancestor", sha, "HEAD"], { env });
-  return ancestor.status === 0;
+  // A merge being committed takes MERGE_HEAD as its second parent, so a
+  // receipt that arrives with the merge is an ancestor of the commit made.
+  const merging = spawnSync("git", ["-C", root, "rev-parse", "-q", "--verify", "MERGE_HEAD"], { env }).status === 0;
+  return (merging ? ["HEAD", "MERGE_HEAD"] : ["HEAD"]).some((head) =>
+    spawnSync("git", ["-C", root, "merge-base", "--is-ancestor", sha, head], { env }).status === 0);
 }
 
 export const CONTINUATION = /^\s{2,}(?!-\s\[)\S/;

@@ -112,7 +112,7 @@ describe("google", () => runSourceContract(buildConnectorConfig(mockFetch(happyR
     // The calendar envelope precedes the one event: two envelopes, no counters.
     meetings: { meta: META, minEnvelopes: 2 },
     // The list envelope precedes the two persons: three envelopes, no counters.
-    contacts: { meta: META, minEnvelopes: 3 },
+    addressbook: { meta: META, minEnvelopes: 3 },
   },
   execute: [
     {
@@ -134,7 +134,7 @@ describe("google", () => runSourceContract(buildConnectorConfig(mockFetch(happyR
         },
       ]),
     ),
-    surface: "contacts",
+    surface: "addressbook",
     meta: META,
     retryAfter: 30,
   },

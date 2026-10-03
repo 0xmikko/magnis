@@ -9,6 +9,7 @@ summary = "Shared state-machine mock connector in a phone_code/push shape."
 publisher = "ai.magnis"
 dev = true
 surfaces = ["telegram"]
+dependsOn = ["telegram"]
 kind = "mock"
 account_mode = "single"
 

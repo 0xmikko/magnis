@@ -61,7 +61,7 @@ export interface ContactDetailView {
    * value, labeled by origin ("curated" | source id). */
   phones: { phone: string; type?: string | null; origin: string }[];
   /** Source claims: the replica dictionaries one identity hop away, each
-   * labeled by its schema (contacts.google_contact, …). */
+   * labeled by its schema (addressbook.card, …). */
   replicas: { id: string; schema_id: string; name: string | null; properties: Record<string, unknown> }[];
 }
 
@@ -104,7 +104,6 @@ export interface RenameIfPlaceholderParams {
 // create UUID — kept out of the agent-facing tool schema.
 export interface CreateParams {
   name: string;
-  email?: string;
   phone?: string;
   company?: string;
   role?: string;
@@ -150,7 +149,6 @@ export interface MergeParams {
 // contacts.batch_create — mirrors the native handler (controller.rs:469).
 export interface BatchCreateContact {
   name: string;
-  email?: string;
   phone?: string;
   company?: string;
   role?: string;
@@ -165,7 +163,6 @@ export interface BatchCreateParams {
 export interface BatchCreateRow {
   id: string | null;
   name: string;
-  email?: string | null;
   status: "created" | "excluded";
 }
 export interface BatchCreateResult {
@@ -196,25 +193,6 @@ export interface ContactsListParams {
   include_all?: boolean;
 }
 
-// ── sync-ingest envelope shapes (@syncHandler "contacts") ──────────
-// Internal to the ingest path; the host bridge routes Google People-API
-// snapshots to `contacts.__sync__` as these envelopes.
-
-/// A sync envelope routed to the contacts surface by the host bridge.
-/// `payload` is a Google connector `Contact` (sources/google/src/
-/// surfaces.rs): { id, display_name, given_name, family_name, emails[],
-/// phones[], organizations[], photo_url, external_url }.
-export interface ContactsSyncEnvelope {
-  source_id?: string;
-  surface?: string;
-  account_id?: string;
-  user_id?: string;
-  kind?: string;
-  remote_id?: string;
-  payload?: Record<string, unknown>;
-  timestamp?: string;
-}
-
 /** One stored hub record — the curated claims the module writes onto a person,
  * plus the name parts its merge path reads back out of the dictionary.
  * `entities.ts` declares exactly this and the build proves the two are one
@@ -228,50 +206,6 @@ export interface PersonDetails {
   last_name?: string | null;
   phones?: { phone: string; type: string | null; is_primary: boolean }[];
   tracking?: { platform: "x" | "linkedin"; handle?: string | null; enabled: boolean }[];
-}
-
-/** One stored replica record — exactly what `replicaDict` writes. The payload
- * type above it is the connector's INPUT; this is what lands in the graph. */
-export interface GoogleContactRecord {
-  source_id?: string;
-  account_id?: string;
-  sync_pass?: string;
-  resource_name?: string;
-  etag?: string;
-  display_name?: string;
-  given_name?: string;
-  family_name?: string;
-  emails?: GoogleContactEmail[];
-  phones?: GoogleContactPhone[];
-  organizations?: { name?: string | null; title?: string | null; is_current?: boolean }[];
-  photo_url?: string;
-  external_url?: string;
-}
-
-export interface GoogleContactEmail {
-  address?: string;
-  label?: string | null;
-  is_primary?: boolean;
-}
-export interface GoogleContactPhone {
-  number?: string;
-  label?: string | null;
-  is_primary?: boolean;
-}
-export interface GoogleContactPayload {
-  id?: string;
-  /** S3: verbatim People API identity — the replica's write-back base. */
-  resource_name?: string | null;
-  /** S3: verbatim optimistic-concurrency tag. */
-  etag?: string | null;
-  display_name?: string | null;
-  given_name?: string | null;
-  family_name?: string | null;
-  emails?: GoogleContactEmail[];
-  phones?: GoogleContactPhone[];
-  organizations?: { name?: string | null; title?: string | null; is_current?: boolean }[];
-  photo_url?: string | null;
-  external_url?: string | null;
 }
 
 export interface CompleteXSyncMigrationParams {

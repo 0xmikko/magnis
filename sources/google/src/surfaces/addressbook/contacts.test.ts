@@ -166,7 +166,7 @@ describe("people → contact conversion", () => {
 describe("contacts fetch", () => {
   /** @test-id: tst_src_iso_google_007
    * @scenario: scn_google_pull_003
-   * @covers: sources/google/src/surfaces/contacts/contacts.ts::fetchContactsPage
+   * @covers: sources/google/src/surfaces/addressbook/contacts.ts::fetchContactsPage
    * @deterministic: yes
    * @fixtures: two connection pages, totalItems 3, one identity-less person, terminal sync token
    */
@@ -190,10 +190,10 @@ describe("contacts fetch", () => {
     const p1 = await fetchContactsPage("tok", undefined, fetchFn);
     // The list envelope precedes the persons: what the People API counts.
     expect(p1.envelopes.map((e) => e.remote_id)).toEqual(["list", `gpeople:${stableContactId("people/c12345")}`]);
-    expect(p1.envelopes[0]).toEqual({ surface: "contacts", kind: "snapshot", remote_id: "list", payload: { entity_type: "list", total_people: 3 } });
+    expect(p1.envelopes[0]).toEqual({ surface: "addressbook", kind: "snapshot", remote_id: "list", payload: { entity_type: "list", total_people: 3 } });
     const env0 = p1.envelopes[1];
     if (env0 === undefined) throw new Error("contacts page: missing envelope 1");
-    expect(env0.surface).toBe("contacts");
+    expect(env0.surface).toBe("addressbook");
     expect(env0.kind).toBe("snapshot");
     expect(p1.nextCursor).toEqual({ page_token: "p2" });
     expect(p1.hasMore).toBe(true);
@@ -224,7 +224,7 @@ describe("contacts fetch", () => {
   /**
    * @test-id: tst_src_iso_google_008
    * @scenario: scn_google_pull_003
-   * @covers: sources/google/src/surfaces/contacts/contacts.ts::fetchContactsPage
+   * @covers: sources/google/src/surfaces/addressbook/contacts.ts::fetchContactsPage
    * @deterministic: yes
    * @fixtures: token poll with provider deletion and identity-less update, then expired token
    */
@@ -270,12 +270,12 @@ describe("contacts cursor expiry", () => {
       {
         id: 1,
         method: "tools/call",
-        params: { name: "magnis.sync.fetch", arguments: { surface: "contacts" } },
+        params: { name: "magnis.sync.fetch", arguments: { surface: "addressbook" } },
       },
       {
         name: "google",
         version: "0.0.1",
-        surfaces: ["contacts"],
+        surfaces: ["addressbook"],
         fetch: async () =>
           (await fetchContactsPage(
             "tok",
@@ -301,12 +301,12 @@ describe("contacts cursor expiry", () => {
       {
         id: 1,
         method: "tools/call",
-        params: { name: "magnis.sync.fetch", arguments: { surface: "contacts" } },
+        params: { name: "magnis.sync.fetch", arguments: { surface: "addressbook" } },
       },
       {
         name: "google",
         version: "0.0.1",
-        surfaces: ["contacts"],
+        surfaces: ["addressbook"],
         fetch: async () =>
           (await fetchContactsPage("tok", null, failed)) as never,
       },

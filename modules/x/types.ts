@@ -3,19 +3,6 @@
 
 export type Platform = "x" | "linkedin";
 
-/** Canonical source envelope (same shape every plugin sync handler receives). */
-export interface SyncEnvelope {
-  source_id: string;
-  surface: string;
-  account_id: string;
-  user_id: string;
-  kind: string; // "snapshot" | "live" | "delete"
-  remote_id?: string;
-  cursor?: unknown;
-  payload: Record<string, unknown>;
-  timestamp: string;
-}
-
 /** `x.profile.identity` record data. */
 export interface ProfileIdentity {
   platform: Platform;

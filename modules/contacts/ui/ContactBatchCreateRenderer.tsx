@@ -14,7 +14,6 @@ import { AllowlistDropdown } from "@magnis/host/agent";
 
 interface BatchContact {
   readonly name: string;
-  readonly email?: string;
   readonly phone?: string;
   readonly company?: string;
   readonly role?: string;
@@ -22,7 +21,6 @@ interface BatchContact {
 
 interface EditDraft {
   name: string;
-  email: string;
   phone: string;
   company: string;
   role: string;
@@ -39,7 +37,7 @@ export function ContactBatchCreateRenderer({
   const [excluded, setExcluded] = useState<Set<number>>(() => new Set());
   const [savedEdits, setSavedEdits] = useState<Map<number, EditDraft>>(() => new Map());
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
-  const [editDraft, setEditDraft] = useState<EditDraft>({ name: "", email: "", phone: "", company: "", role: "" });
+  const [editDraft, setEditDraft] = useState<EditDraft>({ name: "", phone: "", company: "", role: "" });
 
   const total = contacts.length;
   const activeCount = total - excluded.size;
@@ -64,7 +62,6 @@ export function ContactBatchCreateRenderer({
     const existing = savedEdits.get(currentIndex);
     setEditDraft({
       name: existing?.name ?? current.name,
-      email: existing?.email ?? current.email ?? "",
       phone: existing?.phone ?? current.phone ?? "",
       company: existing?.company ?? current.company ?? "",
       role: existing?.role ?? current.role ?? "",
@@ -89,7 +86,6 @@ export function ContactBatchCreateRenderer({
       const edits = savedEdits.get(i);
       if (!edits) return c;
       const result: Record<string, string> = { name: edits.name };
-      if (edits.email) result.email = edits.email;
       if (edits.phone) result.phone = edits.phone;
       if (edits.company) result.company = edits.company;
       if (edits.role) result.role = edits.role;
@@ -109,7 +105,6 @@ export function ContactBatchCreateRenderer({
   const saved = savedEdits.get(currentIndex);
   const d = {
     name: isEditing ? editDraft.name : (saved?.name ?? current.name),
-    email: isEditing ? editDraft.email : (saved?.email ?? current.email ?? ""),
     phone: isEditing ? editDraft.phone : (saved?.phone ?? current.phone ?? ""),
     company: isEditing ? editDraft.company : (saved?.company ?? current.company ?? ""),
     role: isEditing ? editDraft.role : (saved?.role ?? current.role ?? ""),
@@ -195,7 +190,6 @@ export function ContactBatchCreateRenderer({
       <div className={isExcluded && !isEditing ? "opacity-40" : ""}>
         {hasEdits && !isEditing && <span className="mb-1 inline-block text-[10px] text-[var(--color-agent-tool-amber-text)]">(edited)</span>}
         {field("Name", d.name, "name")}
-        {field("Email", d.email, "email")}
         {field("Phone", d.phone, "phone")}
         {field("Company", d.company, "company")}
         {field("Role", d.role, "role")}

@@ -15,7 +15,7 @@ import { stageBundledSourcePackage } from "../../../../scripts/build-catalog-ind
 import { discoverSourceReleaseManifests, discoverStagedCatalog, mintSourceCertificationReceipt } from "../../../../scripts/certify-sources";
 
 import { buildConnectorConfig } from "../connector";
-import { stableContactId } from "../surfaces/contacts/contacts";
+import { stableContactId } from "../surfaces/addressbook/contacts";
 
 import type { FetchLike } from "../http";
 
@@ -135,7 +135,7 @@ describe("fixture mode end-to-end", () => {
     expect(meeting.remote_id).toBe("gcal:e1");
     expect(meeting.payload.title).toBe("Standup");
 
-    const contacts = (await call("magnis.sync.fetch", { surface: "contacts" }))
+    const contacts = (await call("magnis.sync.fetch", { surface: "addressbook" }))
       .result as FetchResult;
     expect(contacts.envelopes).toHaveLength(1); // identity-less dropped
     const contact = contacts.envelopes[0];
@@ -170,7 +170,7 @@ describe("fixture mode end-to-end", () => {
       expect(receipt.runtime.implementationHash).toBe(implementationHash);
       expect(receipt.protocol).toBe("magnis.source/1");
       expect(receipt.auth).toBe("oauth2");
-      expect(receipt.surfaces).toEqual(["contacts", "email", "meetings"]);
+      expect(receipt.surfaces).toEqual(["addressbook", "email", "meetings"]);
       expect(receipt.scenarioIds).toEqual([
         "tst_gts_email_009",
         "tst_gts_fx_001",
@@ -187,7 +187,7 @@ describe("fixture mode end-to-end", () => {
         "tst_src_iso_google_012",
       ]);
 
-      for (const surface of ["email", "meetings", "contacts"] as const) {
+      for (const surface of ["email", "meetings", "addressbook"] as const) {
         const evidence = await collectSourceHostEvidence(
           stageRoot,
           ["initialize", "magnis.sync.fetch", "tools/list"],

@@ -12,6 +12,7 @@
 
 import {
   connectionReady,
+  pageLimitMax,
   rpc,
   syncHandler,
   tool,
@@ -37,6 +38,7 @@ import type {
   SyncSelectionRequest,
   PaginatedResponse,
   RpcExecutor,
+  SourceEnvelope,
 } from "@magnis/plugin-sdk";
 import type {
   BatchParams,
@@ -50,7 +52,6 @@ import type {
   ReplyParams,
   SendParams,
   SetTriggerParams,
-  SyncEnvelope,
 } from "../types.ts";
 import {
   addressesOf,
@@ -352,9 +353,9 @@ export class EmailModule {
     return known;
   }
 
-  private async admitEnvelopes(incoming: readonly SyncEnvelope[]): Promise<{ envelopes: SyncEnvelope[]; addresses: Map<string, AddressSyncState>; deleteTargets: Map<string, string> }> {
-    const owned: { env: SyncEnvelope; address: string }[] = [];
-    const controls: SyncEnvelope[] = [];
+  private async admitEnvelopes(incoming: readonly SourceEnvelope[]): Promise<{ envelopes: SourceEnvelope[]; addresses: Map<string, AddressSyncState>; deleteTargets: Map<string, string> }> {
+    const owned: { env: SourceEnvelope; address: string }[] = [];
+    const controls: SourceEnvelope[] = [];
     const deleteTargets = new Map<string, string>();
     for (const env of incoming) {
       if (!env.user_id) continue;
@@ -399,16 +400,16 @@ export class EmailModule {
     const groups = new Map<string, Set<string>>();
     for (const { env, address } of owned) {
       const state = addresses.get(address);
-      if (state === undefined || env.remote_id === undefined) throw new Error("Email event has no sender identity");
+      if (state === undefined || typeof env.remote_id !== "string") throw new Error("Email event has no sender identity");
       let ids = groups.get(state.id);
       if (ids === undefined) { ids = new Set(); groups.set(state.id, ids); }
       ids.add(env.remote_id);
     }
     const allowed = new Set(await this.graph.admitSyncEntities([...groups].map(([entityId, ids]) => ({ entityId, remoteIds: [...ids] })), controls.map((env) => {
-      if (env.remote_id === undefined) throw new Error("Email control has no remote ID");
+      if (typeof env.remote_id !== "string") throw new Error("Email control has no remote ID");
       return env.remote_id;
     })));
-    return { envelopes: [...controls, ...owned.flatMap(({ env }) => env.remote_id !== undefined && allowed.has(env.remote_id) && env.payload.entity_type !== "sender" ? [env] : [])], addresses, deleteTargets };
+    return { envelopes: [...controls, ...owned.flatMap(({ env }) => typeof env.remote_id === "string" && allowed.has(env.remote_id) && env.payload.entity_type !== "sender" ? [env] : [])], addresses, deleteTargets };
   }
 
   // Invoked by the host PluginModuleController bridge (`email.__sync__`) with a
@@ -420,7 +421,7 @@ export class EmailModule {
   // trigger_checks out to the event_bus.
   @syncHandler("email")
   async ingest(params: {
-    envelopes?: SyncEnvelope[];
+    envelopes?: SourceEnvelope[];
     /** The pass the worker is in; absent for a Source effect outside a
      * worker, which states nothing. */
     generation?: string;
@@ -430,7 +431,7 @@ export class EmailModule {
     const { envelopes, addresses, deleteTargets } = await this.admitEnvelopes(incoming);
     const dropped: string[] = [];
     const triggers: EmailTriggerCheck[] = [];
-    const messages: SyncEnvelope[] = [];
+    const messages: SourceEnvelope[] = [];
     // What the page states for the plan, as the Source counted the mailbox:
     // the whole of it on the mailbox envelope that opens a pass, one more per
     // new mail (history delivers it live) and one less per removal.
@@ -444,7 +445,7 @@ export class EmailModule {
       if (!env.user_id) continue;
       if (env.kind === "delete") {
         try {
-          if (await this.ingestDelete(env, env.remote_id === undefined ? undefined : deleteTargets.get(env.remote_id))) plan.total -= 1;
+          if (await this.ingestDelete(env, typeof env.remote_id !== "string" ? undefined : deleteTargets.get(env.remote_id))) plan.total -= 1;
         } catch {
           if (env.remote_id) dropped.push(env.remote_id);
         }
@@ -468,7 +469,7 @@ export class EmailModule {
     // Chunk by TOTAL batch entities (messages + unique addresses) so one
     // apply_batch never exceeds INGEST_CHUNK and the lone PGlite connection is
     // freed between chunks.
-    let chunk: SyncEnvelope[] = [];
+    let chunk: SourceEnvelope[] = [];
     let chunkAddrs = new Set<string>();
     const flush = async (): Promise<void> => {
       if (chunk.length > 0) {
@@ -501,7 +502,7 @@ export class EmailModule {
   }
 
   /// Delete envelope: resolve the email by its source external_id and remove it.
-  private async ingestDelete(env: SyncEnvelope, storedId?: string): Promise<boolean> {
+  private async ingestDelete(env: SourceEnvelope, storedId?: string): Promise<boolean> {
     if (!env.remote_id) return false;
     // S5: the remote id IS the node's anchor — resolution goes through the
     // one chokepoint.
@@ -514,7 +515,7 @@ export class EmailModule {
   /// One chunk → one apply_batch (messages + folded address entities + links),
   /// then post-apply attachment registration + LIVE trigger.check assembly.
   private async ingestMessageBatch(
-    messages: SyncEnvelope[],
+    messages: SourceEnvelope[],
     triggers: EmailTriggerCheck[],
     countLive: boolean,
     addresses: Map<string, AddressSyncState>,
@@ -900,7 +901,7 @@ export class EmailModule {
     const rows: SyncMigrationEntity[] = [];
     let after: string | null = null;
     do {
-      const page = await this.graph.listSyncMigrationEntities({ schemaId: ADDRESS_SCHEMA, after, limit: 500 });
+      const page = await this.graph.listSyncMigrationEntities({ schemaId: ADDRESS_SCHEMA, after, limit: pageLimitMax });
       if (page.next !== null && (page.next === after || page.items.length === 0)) throw new Error("Email migration page did not advance");
       rows.push(...page.items);
       after = page.next;

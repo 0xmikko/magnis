@@ -111,14 +111,14 @@ export async function searchEntitiesPage(
   }
 }
 
-/** Remove only this account's source replicas left unseen by a completed pass. */
-export async function removeUnseenSourceReplicas(
+/** Only this account's source replicas left unseen by a completed pass. */
+export async function unseenSourceReplicas(
   graph: GraphService,
   schemaId: string,
   sourceId: string,
   accountId: string,
   generation: string,
-): Promise<void> {
+): Promise<RawEntity[]> {
   const rows: RawEntity[] = [];
   for (let offset = 0;; offset += 500) {
     const page = await graph.list_entities_by_property_field({
@@ -127,9 +127,20 @@ export async function removeUnseenSourceReplicas(
     rows.push(...page.items);
     if (offset + page.items.length >= page.total) break;
   }
-  for (const row of rows) {
-    if (row.schema_id !== schemaId || !row.properties) continue;
-    if (row.properties.source_id !== sourceId || row.properties.account_id !== accountId || row.properties.sync_pass === generation) continue;
+  return rows.filter((row) =>
+    row.schema_id === schemaId && row.properties?.source_id === sourceId &&
+    row.properties.account_id === accountId && row.properties.sync_pass !== generation);
+}
+
+/** Remove only this account's source replicas left unseen by a completed pass. */
+export async function removeUnseenSourceReplicas(
+  graph: GraphService,
+  schemaId: string,
+  sourceId: string,
+  accountId: string,
+  generation: string,
+): Promise<void> {
+  for (const row of await unseenSourceReplicas(graph, schemaId, sourceId, accountId, generation)) {
     await graph.delete_entity(row.id);
   }
 }

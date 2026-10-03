@@ -18,10 +18,10 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
-import type { GraphBatchInput, GraphBatchResult } from "@magnis/plugin-sdk";
-import { mockGraph, mountModule, type GraphOverrides, type MockGraph } from "@magnis/testkit/module";
+import type { GraphBatchInput, GraphBatchResult, SourceEnvelope } from "@magnis/plugin-sdk";
+import { mockGraph, mountModule, sourceEnvelope, type GraphOverrides, type MockGraph } from "@magnis/testkit/module";
 import { MeetingsModule } from "../service.ts";
-import type { MeetingsCanonical, SyncEnvelope } from "../../types.ts";
+import type { MeetingsCanonical } from "../../types.ts";
 
 const CAL = "meetings.calendar_event";
 type G = MockGraph;
@@ -63,17 +63,8 @@ function makeModule(
   return { mod, execute };
 }
 
-const env = (over: Partial<SyncEnvelope>): SyncEnvelope => ({
-  source_id: "google",
-  surface: "meetings",
-  account_id: "acct-1",
-  user_id: "u1",
-  kind: "snapshot",
-  remote_id: "r1",
-  payload: {},
-  timestamp: "2026-02-01T00:00:00Z",
-  ...over,
-});
+const env = (over: Partial<SourceEnvelope>): SourceEnvelope =>
+  sourceEnvelope("meetings", {}, { source_id: "google", account_id: "acct-1", user_id: "u1", remote_id: "r1", timestamp: "2026-02-01T00:00:00Z", ...over });
 
 describe("meetings @syncHandler — upsert", () => {
   it("upserts a snapshot via apply_batch keyed on its anchor, no trigger", async () => {

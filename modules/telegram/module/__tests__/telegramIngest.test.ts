@@ -24,32 +24,28 @@
  * @legacy-id: tst_be_tgiso_008_delete_scoped_by_user
  */
 import { describe, expect, it } from "vitest";
-import { entity, mockGraph, mountModule, type GraphOverrides } from "@magnis/testkit/module";
-import type { GraphBatchInput } from "@magnis/plugin-sdk";
+import { entity, mockGraph, mountModule, sourceEnvelope, type GraphOverrides } from "@magnis/testkit/module";
+import type { GraphBatchInput, SourceEnvelope } from "@magnis/plugin-sdk";
 import { CHAT, MESSAGE, TELEGRAM_ACCOUNT } from "../../schema.ts";
-import type { SyncEnvelope } from "../../types.ts";
 import { TelegramModule } from "../service.ts";
 
-function messageEnvelope(kind: "snapshot" | "live" = "snapshot"): SyncEnvelope {
-  return {
+function messageEnvelope(kind: "snapshot" | "live" = "snapshot"): SourceEnvelope {
+  return sourceEnvelope("telegram", {
+    entity_type: "message",
+    message_id: 7,
+    chat_id: 42,
+    sender_id: 501,
+    sender_name: "Alice",
+    text: "Read https://example.test/demo",
+    date: "2026-08-12T08:00:00Z",
+  }, {
     source_id: "telegram-ts",
-    surface: "telegram",
-    account_id: "account-1",
     user_id: "u1",
     identity_key: "9001",
     kind,
     remote_id: "tg:msg:42:7",
-    payload: {
-      entity_type: "message",
-      message_id: 7,
-      chat_id: 42,
-      sender_id: 501,
-      sender_name: "Alice",
-      text: "Read https://example.test/demo",
-      date: "2026-08-12T08:00:00Z",
-    },
     timestamp: "2026-08-12T08:00:01Z",
-  };
+  });
 }
 
 // These fixtures model an account whose existing chats are enabled. Stop behavior overrides admission explicitly.
@@ -120,7 +116,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
     });
     const module = mountModule(TelegramModule, { graph }).module;
     const live = messageEnvelope("live");
-    const envelopes: SyncEnvelope[] = [
+    const envelopes: SourceEnvelope[] = [
       { ...live, remote_id: "tg:chat:42", payload: { entity_type: "chat", chat_id: 42, title: "Overwritten", type: "private", is_pinned: true } },
       { ...live, payload: { ...live.payload, media_type: "document", source_ref: { chat_id: 42, message_id: 7 } } },
       { ...live, remote_id: "tg:msg:42:8", payload: { ...live.payload, message_id: 8, text: "Edited" } },
@@ -231,7 +227,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
         }),
     });
     const module = mountModule(TelegramModule, { graph }).module;
-    const chat: SyncEnvelope = {
+    const chat: SourceEnvelope = {
       ...messageEnvelope(),
       remote_id: "tg:chat:42",
       payload: { entity_type: "chat", chat_id: 42, title: "Magnis Builders" },
@@ -508,7 +504,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
   });
 
   it("deletes by remote anchor and reports failed deletes instead of aborting the page", async () => {
-    const envelope: SyncEnvelope = {
+    const envelope: SourceEnvelope = {
       ...messageEnvelope(),
       kind: "delete",
       payload: {},
@@ -592,7 +588,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
       }),
     });
     const module = mountModule(TelegramModule, { graph }).module;
-    const departure: SyncEnvelope = {
+    const departure: SourceEnvelope = {
       ...messageEnvelope("live"),
       remote_id: "tg:chat:42",
       payload: {
@@ -688,12 +684,12 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
         }),
     });
     const module = mountModule(TelegramModule, { graph, ctx: { extension_id: "telegram" } }).module;
-    const chat = (chatId: number): SyncEnvelope => ({
+    const chat = (chatId: number): SourceEnvelope => ({
       ...messageEnvelope(),
       remote_id: `tg:chat:${String(chatId)}`,
       payload: { entity_type: "chat", chat_id: chatId, title: `Chat ${String(chatId)}` },
     });
-    const message = (chatId: number, id: number): SyncEnvelope => ({
+    const message = (chatId: number, id: number): SourceEnvelope => ({
       ...messageEnvelope(),
       remote_id: `tg:msg:${String(chatId)}:${String(id)}`,
       payload: { ...messageEnvelope().payload, message_id: id, chat_id: chatId, text: "plain text" },

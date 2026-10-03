@@ -14,6 +14,7 @@ import type {
   BatchEntityInput,
   BatchLinkInput,
   PaginatedResponse,
+  SourceEnvelope,
   WindowRow,
 } from "@magnis/plugin-sdk";
 import type {
@@ -26,7 +27,6 @@ import type {
   ProfileDetail,
   ProfileListItem,
   ProfilesListParams,
-  SyncEnvelope,
 } from "../types.ts";
 import { AUTHORED_BY, IDENTITY, POST, PROFILE } from "../schema.ts";
 import { richPostFields } from "./helpers.ts";
@@ -43,7 +43,7 @@ export class LinkedinModule {
   /// LinkedIn connectors feed the same surface; `payload.entity_type` discriminates.
   @syncHandler("linkedin")
   async ingest(params: {
-    envelopes?: SyncEnvelope[];
+    envelopes?: SourceEnvelope[];
     /** The pass the worker is in; absent for a Source effect outside a
      * worker, which states nothing. */
     generation?: string;
@@ -148,7 +148,7 @@ export class LinkedinModule {
 
   /** The pass each of the page's profiles was last stated in, by anchor: two
    * Graph calls for the whole page, never one per envelope. */
-  private async profilePassByAnchor(envelopes: SyncEnvelope[]): Promise<Map<string, string | null>> {
+  private async profilePassByAnchor(envelopes: SourceEnvelope[]): Promise<Map<string, string | null>> {
     const stamps = new Map<string, string | null>();
     const anchors = [...new Set(envelopes.flatMap((env) => {
       const urn = str(env.payload, "entity_type") === "profile" ? str(env.payload, "urn") : null;
@@ -165,7 +165,7 @@ export class LinkedinModule {
   }
 
   private async linkProfilesToContacts(
-    envelopes: SyncEnvelope[],
+    envelopes: SourceEnvelope[],
     ids: Record<string, string>,
   ): Promise<void> {
     for (const env of envelopes) {

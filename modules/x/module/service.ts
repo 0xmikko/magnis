@@ -1,4 +1,4 @@
-import { connectionReady, rpc, writeTool } from "@magnis/plugin-sdk";
+import { connectionReady, pageLimitMax, rpc, writeTool } from "@magnis/plugin-sdk";
 // X profiles own synchronization choices. The module migrates legacy Contacts
 // entries, supplies Source selection and admits provider events through Graph.
 // Sending posts and DMs remains outside this module's current contract.
@@ -18,6 +18,7 @@ import type {
   BatchEntityInput,
   BatchLinkInput,
   PaginatedResponse,
+  SourceEnvelope,
   WindowRow,
 } from "@magnis/plugin-sdk";
 import type {
@@ -31,7 +32,6 @@ import type {
   ProfileDetail,
   ProfileListItem,
   ProfilesListParams,
-  SyncEnvelope,
 } from "../types.ts";
 import type { CompleteXSyncMigrationParams } from "../../contacts/types.ts";
 import { AUTHORED_BY, IDENTITY, POST, PROFILE } from "../schema.ts";
@@ -95,7 +95,7 @@ export class XModule {
     const rows: SyncMigrationEntity[] = [];
     let after: string | null = null;
     do {
-      const page = await this.graph.listSyncMigrationEntities({ schemaId: PROFILE, after, limit: 500 });
+      const page = await this.graph.listSyncMigrationEntities({ schemaId: PROFILE, after, limit: pageLimitMax });
       if (page.next !== null && (page.next === after || page.items.length === 0)) throw new Error("X migration page did not advance");
       rows.push(...page.items);
       after = page.next;
@@ -289,10 +289,10 @@ export class XModule {
     }
   }
 
-  private async admitEnvelopes(incoming: readonly SyncEnvelope[]): Promise<{ envelopes: SyncEnvelope[]; owners: Map<string, RawSyncableEntity>; deletions: Map<string, string> }> {
+  private async admitEnvelopes(incoming: readonly SourceEnvelope[]): Promise<{ envelopes: SourceEnvelope[]; owners: Map<string, RawSyncableEntity>; deletions: Map<string, string> }> {
     const profileEvents = incoming.filter((env) => env.kind !== "delete" && env.payload.entity_type === "profile");
     const anchors = [...new Set(profileEvents.map((env) => {
-      if (env.remote_id === undefined || !/^x:profile:\d+$/.test(env.remote_id)) throw new Error("X profile event has no stable identity");
+      if (typeof env.remote_id !== "string" || !/^x:profile:\d+$/.test(env.remote_id)) throw new Error("X profile event has no stable identity");
       return env.remote_id;
     }))];
     const profileByAnchor = new Map<string, RawSyncableEntity>();
@@ -333,7 +333,7 @@ export class XModule {
     }
     const byHandle = new Map<string, RawSyncableEntity>();
     for (const env of profileEvents) {
-      if (env.remote_id === undefined) throw new Error("X profile event has no remote ID");
+      if (typeof env.remote_id !== "string") throw new Error("X profile event has no remote ID");
       const profile = profileByAnchor.get(env.remote_id);
       if (profile === undefined) throw new Error("X profile event has no owner");
       const handle = normalizedHandle(env.payload.handle);
@@ -346,7 +346,7 @@ export class XModule {
     const deletions = new Map<string, string>();
     for (const env of incoming) {
       const remoteId = env.remote_id;
-      if (remoteId === undefined) throw new Error("X event has no remote ID");
+      if (typeof remoteId !== "string") throw new Error("X event has no remote ID");
       if (env.kind === "delete") {
         const id = await this.graph.find_by_anchor(remoteId);
         if (id === null) continue;
@@ -390,14 +390,14 @@ export class XModule {
       groups.set(owner.id, ids);
     }
     const admitted = new Set(await this.graph.admitSyncEntities([...groups].map(([entityId, remoteIds]) => ({ entityId, remoteIds }))));
-    return { envelopes: incoming.filter((env) => env.remote_id !== undefined && admitted.has(env.remote_id)), owners, deletions };
+    return { envelopes: incoming.filter((env) => typeof env.remote_id === "string" && admitted.has(env.remote_id)), owners, deletions };
   }
 
   /// Sync ingest — one page of canonical envelopes (profile + post). Profile and
   /// post events use `payload.entity_type` to select the owned schema.
   @syncHandler("x")
   async ingest(params: {
-    envelopes?: SyncEnvelope[];
+    envelopes?: SourceEnvelope[];
     /** The pass the worker is in; absent for a Source effect outside a
      * worker, which states nothing. */
     generation?: string;
@@ -486,7 +486,7 @@ export class XModule {
 
     const refs: { key: string; anchor: string }[] = [];
     for (const env of envelopes) {
-      if (env.kind === "delete" || env.payload.entity_type !== "post" || env.remote_id === undefined) continue;
+      if (env.kind === "delete" || env.payload.entity_type !== "post" || typeof env.remote_id !== "string") continue;
       const owner = owners.get(env.remote_id);
       if (owner?.anchor === undefined || owner.anchor === null) throw new Error("X post author has no stable anchor");
       const key = owner.anchor;
@@ -501,7 +501,7 @@ export class XModule {
   /** The page's profiles and posts the graph already holds, by anchor: the
    * profiles with their dictionaries (the pass stamp), the posts by presence.
    * Two Graph calls for the whole page, never one per envelope. */
-  private async knownByAnchor(envelopes: SyncEnvelope[]): Promise<Map<string, Record<string, unknown> | null>> {
+  private async knownByAnchor(envelopes: SourceEnvelope[]): Promise<Map<string, Record<string, unknown> | null>> {
     const known = new Map<string, Record<string, unknown> | null>();
     const anchors = [...new Set(envelopes.flatMap((env) => (env.remote_id && env.kind !== "delete" ? [env.remote_id] : [])))];
     if (anchors.length === 0) return known;

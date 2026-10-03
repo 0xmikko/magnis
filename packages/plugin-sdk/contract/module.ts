@@ -290,6 +290,11 @@ export interface AddLinkParams {
    * neither endpoint (an invite's display name, an attendee's response). The
    * curated twin of `BatchLinkInput.metadata`. */
   metadata?: Record<string, unknown>;
+  /** The period the edge's fact holds, read back on `LinkSummary`. Both or
+   * neither: the host refuses one without the other. A dated `validFrom`
+   * opens a new period beside an ended edge of the same pair. */
+  validFrom?: string | null;
+  validUntil?: string | null;
   /** S3 (plan §5.2): "candidate" records a merge-candidate row, invisible to
    * canonical readers until promoted. Default: canonical. */
   status?: "canonical" | "candidate";
@@ -443,6 +448,9 @@ export interface FileRegisterParams {
   download?: boolean;
 }
 
+/** The largest page the host serves; a larger `limit` is refused. */
+export const pageLimitMax = 200;
+
 export interface GraphService {
   updateEntitySyncEnabled(params: SetSyncEnabledParams): Promise<{ syncRevision: string }>;
   admitSyncEntities(subjects: readonly SyncAdmissionSubject[], controlRemoteIds?: readonly string[]): Promise<readonly string[]>;
@@ -450,6 +458,7 @@ export interface GraphService {
   listSyncMigrationEntities(params: {
     schemaId: string;
     after: string | null;
+    /** 1 to `pageLimitMax`. */
     limit: number;
   }): Promise<{
     items: readonly SyncMigrationEntity[];
@@ -575,6 +584,30 @@ export interface GraphService {
     overrides?: { key: string; value: unknown }[];
     reason?: string;
   }): Promise<MergeResult>;
+}
+
+/** One item a source delivered, as the host passes it to a module's sync
+ * handler (`<module>.__sync__`). The host's `SourceEnvelope` on the wire: the
+ * keys are the host's, unchanged. Every module reads this one type. */
+export interface SourceEnvelope {
+  source_id: string;
+  surface: string;
+  account_id: string;
+  user_id: string;
+  kind: "snapshot" | "live" | "delete" | "ack" | "status" | "error";
+  /** Sent only when the source supplies one. */
+  identity_key?: string;
+  remote_id?: string | null;
+  cursor?: unknown;
+  /** Where the item sits in its scope. */
+  position?: SourcePosition;
+  payload: Record<string, unknown>;
+  timestamp: string;
+}
+
+export interface SourcePosition {
+  scope_id: string;
+  id: number;
 }
 
 export interface PluginContext {
