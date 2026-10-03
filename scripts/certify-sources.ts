@@ -101,16 +101,8 @@ export interface StagedCatalogPackage {
   certification: SourceCertificationDeclaration | null;
 }
 
-interface LegacyCatalogPackage {
-  kind: CatalogPackageKind;
-  id: string;
-  version: string;
-  title: string;
-  summary: string;
-  publisher: string;
-  dev: boolean;
-  files: readonly { path: string; sha256: string }[];
-}
+/** A module's tier: a `system` module runs in every workspace. */
+export type PluginTier = "system" | "community";
 
 /** The catalog channel's current flat-archive package shape. Certification
  * binds the extracted immutable tree (`package_hash`) while `archive.sha256`
@@ -131,13 +123,13 @@ export interface PublishedCatalogPackage {
    * `index.v3.json` only; `index.json` keeps its version 1 shape. */
   dependsOn: string[];
   /** A module's tier; a source has none. */
-  tier?: "system" | "community";
+  tier?: PluginTier;
 }
 
 interface CatalogIndexV1 {
   schema_version: 1;
   generated_from: string;
-  packages: readonly (LegacyCatalogPackage | Omit<PublishedCatalogPackage, "dependsOn" | "tier">)[];
+  packages: readonly Omit<PublishedCatalogPackage, "dependsOn" | "tier">[];
 }
 
 /** One `index.v3.json` entry: camelCase, without `kind`, because the list it
@@ -156,7 +148,7 @@ interface CatalogIndexV3Entry {
 }
 
 interface CatalogIndexV3Module extends CatalogIndexV3Entry {
-  tier: "system" | "community";
+  tier: PluginTier;
 }
 
 interface CatalogIndexV3Source extends CatalogIndexV3Entry {
@@ -179,7 +171,7 @@ export interface WriteCertifiedCatalogIndexesOptions {
   generatedFrom: string;
   receiptInputDir: string;
   discovered?: readonly StagedCatalogPackage[];
-  publishedPackages?: readonly PublishedCatalogPackage[];
+  publishedPackages: readonly PublishedCatalogPackage[];
 }
 
 export interface CertifiedCatalogResult {
@@ -1062,19 +1054,6 @@ export function reconcileSourceReceiptFixtures(
   }
 }
 
-function legacyPackage(entry: StagedCatalogPackage): LegacyCatalogPackage {
-  return {
-    kind: entry.kind,
-    id: entry.id,
-    version: entry.version,
-    title: entry.title,
-    summary: entry.summary,
-    publisher: entry.publisher,
-    dev: entry.dev,
-    files: entry.files,
-  };
-}
-
 function assertReceiptMatchesDeclaration(
   entry: StagedCatalogPackage,
   receipt: ReturnType<typeof decodeSourceCertificationReceipt>,
@@ -1164,45 +1143,26 @@ export async function writeCertifiedCatalogIndexes(
     discovered.map((entry) => [`${entry.kind}:${entry.id}`, entry] as const),
   );
   const published = options.publishedPackages;
-  let orderedEntries = discovered;
-  let legacyPackages: readonly (LegacyCatalogPackage | Omit<PublishedCatalogPackage, "dependsOn" | "tier">)[] =
-    discovered.map(legacyPackage);
-  let publishedByKey: ReadonlyMap<string, PublishedCatalogPackage> | null = null;
-  if (published !== undefined) {
-    publishedByKey = new Map(
-      published.map((entry) => [`${entry.kind}:${entry.id}`, entry] as const),
-    );
-    if (publishedByKey.size !== published.length) {
-      throw new Error("published catalog package keys must be unique");
-    }
-    orderedEntries = published.map((entry) => {
-      const key = `${entry.kind}:${entry.id}` as const;
-      const staged = discoveredByKey.get(key);
-      if (staged === undefined) {
-        throw new Error(`published package '${key}' has no exact staged tree`);
-      }
-      return staged;
-    });
-    if (orderedEntries.length !== discovered.length) {
-      throw new Error("published catalog package set does not match the staged package set");
-    }
-    // Version 1 keeps its shape: the graph is published in index.v3.json.
-    legacyPackages = published.map(({ dependsOn: _dependsOn, tier: _tier, ...card }) => card);
+  if (new Set(published.map((card) => `${card.kind}:${card.id}`)).size !== published.length) {
+    throw new Error("published catalog package keys must be unique");
   }
-  const publishedCard = (entry: StagedCatalogPackage): PublishedCatalogPackage => {
-    const card = publishedByKey?.get(`${entry.kind}:${entry.id}`);
-    if (card === undefined) {
-      throw new Error(`${entry.kind} '${entry.id}' has no published archive for index.v3.json`);
+  const ordered = published.map((card) => {
+    const key = `${card.kind}:${card.id}` as const;
+    const entry = discoveredByKey.get(key);
+    if (entry === undefined) {
+      throw new Error(`published package '${key}' has no exact staged tree`);
     }
-    return card;
-  };
+    return { card, entry };
+  });
+  if (ordered.length !== discovered.length) {
+    throw new Error("published catalog package set does not match the staged package set");
+  }
   const modules: CatalogIndexV3Module[] = [];
   const sources: CatalogIndexV3Source[] = [];
   const sidecars: { path: string; bytes: string }[] = [];
 
-  for (const entry of orderedEntries) {
+  for (const { card, entry } of ordered) {
     if (entry.kind === "module") {
-      const card = publishedCard(entry);
       if (card.tier === undefined) throw new Error(`module '${entry.id}' has no tier for index.v3.json`);
       modules.push({ ...indexV3Entry(card), tier: card.tier });
       continue;
@@ -1226,7 +1186,7 @@ export async function writeCertifiedCatalogIndexes(
     const bytes = encodeSourceCertificationReceipt(receipt);
     const reference = certificationReference(receipt);
     sources.push({
-      ...indexV3Entry(publishedCard(entry)),
+      ...indexV3Entry(card),
       packageHash: entry.packageHash,
       certification: reference,
     });
@@ -1236,7 +1196,8 @@ export async function writeCertifiedCatalogIndexes(
   const indexV1: CatalogIndexV1 = {
     schema_version: 1,
     generated_from: options.generatedFrom,
-    packages: legacyPackages,
+    // Version 1 keeps its shape: the graph is published in index.v3.json.
+    packages: published.map(({ dependsOn: _dependsOn, tier: _tier, ...card }) => card),
   };
   const indexV3: CatalogIndexV3 = {
     schemaVersion: 3,
@@ -1253,18 +1214,4 @@ export async function writeCertifiedCatalogIndexes(
   writeFileSync(join(options.catalogOut, "index.v3.json"), `${JSON.stringify(indexV3, null, 2)}\n`);
 
   return { discovered, indexV1, indexV3 };
-}
-
-if (import.meta.main) {
-  const repoRoot = join(import.meta.dir, "..");
-  const catalogOut = process.env.CATALOG_OUT ?? join(repoRoot, "catalog");
-  const receiptInputDir = process.env.SOURCE_RECEIPTS_IN ?? join(repoRoot, "dist", "receipts");
-  const result = await writeCertifiedCatalogIndexes({
-    catalogOut,
-    receiptInputDir,
-    generatedFrom: process.env.GITHUB_SHA ?? "local",
-  });
-  console.log(
-    `certified catalog: ${String(result.discovered.length)} packages -> ${catalogOut}`,
-  );
 }

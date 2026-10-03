@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { BatchEntityInput, GraphBatchInput } from "@magnis/plugin-sdk";
-import { mockGraph, mountModule } from "@magnis/testkit/module";
+import { mockGraph, mountModule, sourceEnvelope } from "@magnis/testkit/module";
 
 import { AddressbookModule } from "./module/service.ts";
 import { card } from "./entities.ts";
@@ -46,11 +46,10 @@ async function cardsWritten(): Promise<BatchEntityInput[]> {
   await mod.ingest({
     command: "bootstrap",
     generation: "initial:r:1",
-    envelopes: [{
-      source_id: "google", surface: "addressbook", account_id: "acct-1", user_id: "u1",
-      kind: "snapshot", remote_id: "gpeople:abc123", payload: contactPayload,
+    envelopes: [sourceEnvelope("addressbook", contactPayload, {
+      source_id: "google", account_id: "acct-1", user_id: "u1", remote_id: "gpeople:abc123",
       timestamp: "2026-03-14T09:00:00Z",
-    }],
+    })],
   });
   return batches.flatMap((b) => b.entities);
 }

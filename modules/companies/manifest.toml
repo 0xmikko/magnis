@@ -19,4 +19,3 @@ publisher = "ai.magnis"
 # own:own links, and reads of own schemas need no declaration.
 [permissions]
 read = [ "contacts.person" ]
-links = [ "identity" ]

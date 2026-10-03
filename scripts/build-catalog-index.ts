@@ -520,6 +520,12 @@ for (const id of readdirSync(distModules).sort()) {
     console.error(`module '${id}': manifest.toml has no version — refusing`);
     process.exit(1);
   }
+  // An absent tier is community, as the host's manifest parser reads it.
+  const tier = manifestRaw.tier ?? "community";
+  if (tier !== "system" && tier !== "community") {
+    console.error(`module '${id}': manifest.toml tier '${tier}' is neither system nor community — refusing`);
+    process.exit(1);
+  }
   const archive = stagePackage("module", id, (dst) => {
     cpSync(join(distModules, id), dst, { recursive: true });
   });
@@ -532,7 +538,7 @@ for (const id of readdirSync(distModules).sort()) {
     archive,
     ...cardLinks("modules", id, src),
     dependsOn: manifestRaw.dependsOn ?? [],
-    tier: manifestRaw.tier === "system" ? "system" : "community",
+    tier,
   });
 }
 

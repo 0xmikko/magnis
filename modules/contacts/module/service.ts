@@ -1,7 +1,7 @@
 // Contacts plugin — backend module (V8). Decorated class; the
 // read path (list/get) mirrors the legacy Rust ContactsModuleService.
 
-import { reachedEndpoints, rpc, searchEntitiesPage, tool, writeTool, type GraphService, type PluginDeps, type PluginUtil, type RawEntity, type RpcExecutor } from "@magnis/plugin-sdk";
+import { reachedEndpoints, rpc, searchEntitiesPage, tool, writeTool, type GraphService, type PluginDeps, type PluginUtil, type RawEntity } from "@magnis/plugin-sdk";
 import type {
   GetParams,
   MergePreview,
@@ -88,11 +88,9 @@ const CONTACT_MERGE_PARAMS = {
 export class ContactsModule {
   private readonly graph: GraphService;
   private readonly util: PluginUtil;
-  private readonly rpc: RpcExecutor;
   constructor(deps: PluginDeps) {
     this.graph = deps.graph;
     this.util = deps.util;
-    this.rpc = deps.rpc;
   }
 
   @rpc("list", {

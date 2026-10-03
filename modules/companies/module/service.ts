@@ -9,7 +9,7 @@ import { rpc } from "@magnis/plugin-sdk";
 // DICTIONARY, which rides the rows they already fetched — fixed,
 // N-independent crossings with no hydrate step at all.
 
-import { tool, writeTool, type GraphService, type PluginDeps, type RpcExecutor } from "@magnis/plugin-sdk";
+import { tool, writeTool, type GraphService, type PluginDeps } from "@magnis/plugin-sdk";
 import type { GetParams, ListParams, PaginatedResponse } from "@magnis/plugin-sdk";
 import type {
   CompanyDetailsFacet,
@@ -24,10 +24,8 @@ import { buildListItem } from "./helpers.ts";
 
 export class CompaniesModule {
   private readonly graph: GraphService;
-  private readonly rpc: RpcExecutor;
   constructor(deps: PluginDeps) {
     this.graph = deps.graph;
-    this.rpc = deps.rpc;
   }
 
   @rpc("list", {

@@ -15,7 +15,7 @@
  * per-envelope (`ingestMessage`) paths are exercised through the real module.
  */
 import { describe, expect, it } from "vitest";
-import { entity, mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
+import { entity, mockGraph, mountModule, sourceEnvelope, type MockGraph } from "@magnis/testkit/module";
 import { TelegramModule } from "../service.ts";
 import type { TelegramCanonical } from "../../types.ts";
 import type { SourceEnvelope } from "@magnis/plugin-sdk";
@@ -50,15 +50,8 @@ function ingestGraph(): G {
   });
 }
 
-const mediaEnvelope = (sourceId: string): SourceEnvelope => ({
-  source_id: sourceId,
-  surface: "telegram",
-  account_id: "acct-1",
-  user_id: "u1",
-  kind: "snapshot",
-  identity_key: "9001",
-  remote_id: "tg:msg:42:7",
-  payload: {
+const mediaEnvelope = (sourceId: string): SourceEnvelope =>
+  sourceEnvelope("telegram", {
     entity_type: "message",
     message_id: 7,
     chat_id: 42,
@@ -68,9 +61,14 @@ const mediaEnvelope = (sourceId: string): SourceEnvelope => ({
     has_media: true,
     file_name: "photo.jpg",
     source_ref: { chat_id: 42, message_id: 7, dest_subpath: "telegram/42/7/photo.jpg" },
-  },
-  timestamp: "2026-07-01T00:00:00Z",
-});
+  }, {
+    source_id: sourceId,
+    account_id: "acct-1",
+    user_id: "u1",
+    identity_key: "9001",
+    remote_id: "tg:msg:42:7",
+    timestamp: "2026-07-01T00:00:00Z",
+  });
 
 describe("tst_fe_tg_media_source_routing_001 — file.object source_module = envelope source_id", () => {
   it("batch ingest stamps the envelope's source_id (telegram-ts), never a hardcoded name", async () => {

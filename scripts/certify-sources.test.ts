@@ -29,6 +29,7 @@ import {
   reconcileSourceReceiptFixtures,
   writeCertifiedCatalogIndexes,
 } from "./certify-sources";
+import type { PublishedCatalogPackage, StagedCatalogPackage } from "./certify-sources";
 import { canonicalizeBundledSourceBuildRoot, stageSourcePackage } from "./build-catalog-index";
 import { collectSourceHostEvidence, terminateSourceHostProcess } from "../packages/testkit/host-driver";
 
@@ -190,6 +191,26 @@ function receipt(
   };
 }
 
+/** The published cards of `discovered`: a source depends on email, a module
+ * is community. */
+function published(discovered: readonly StagedCatalogPackage[]): PublishedCatalogPackage[] {
+  return discovered.map((entry) => ({
+    kind: entry.kind,
+    id: entry.id,
+    version: entry.version,
+    title: entry.title,
+    summary: entry.summary,
+    publisher: entry.publisher,
+    dev: entry.dev,
+    archive: {
+      name: `${entry.kind}__${entry.id}.tgz`,
+      sha256: createHash("sha256").update(`${entry.kind}:${entry.id}`).digest("hex"),
+    },
+    dependsOn: entry.kind === "source" ? ["email"] : [],
+    ...(entry.kind === "module" ? { tier: "community" as const } : {}),
+  }));
+}
+
 function writeReceiptInput(
   root: string,
   sourceId: string,
@@ -311,21 +332,7 @@ describe("tst_cat_src_cert_001 staged Source certification", () => {
       generatedFrom: "fixture-sha",
       receiptInputDir: join(root, "receipt-input"),
       discovered,
-      publishedPackages: discovered.map((entry) => ({
-        kind: entry.kind,
-        id: entry.id,
-        version: entry.version,
-        title: entry.title,
-        summary: entry.summary,
-        publisher: entry.publisher,
-        dev: entry.dev,
-        archive: {
-          name: `${entry.kind}__${entry.id}.tgz`,
-          sha256: createHash("sha256").update(`${entry.kind}:${entry.id}`).digest("hex"),
-        },
-        dependsOn: entry.kind === "source" ? ["email"] : [],
-        ...(entry.kind === "module" ? { tier: "community" as const } : {}),
-      })),
+      publishedPackages: published(discovered),
     });
     const legacy = JSON.parse(readFileSync(join(root, "index.json"), "utf8")) as {
       schema_version: number;
@@ -391,6 +398,7 @@ describe("tst_cat_src_cert_001 staged Source certification", () => {
         generatedFrom: "fixture-sha",
         receiptInputDir: join(root, "receipt-input"),
         discovered,
+        publishedPackages: published(discovered),
       }),
     ).rejects.toThrow("source 'alpha' has no receipt for staged package");
 
@@ -403,6 +411,7 @@ describe("tst_cat_src_cert_001 staged Source certification", () => {
         generatedFrom: "fixture-sha",
         receiptInputDir: join(root, "receipt-input"),
         discovered,
+        publishedPackages: published(discovered),
       }),
     ).rejects.toThrow("receipt definitionHash does not match staged definition");
   });

@@ -6,7 +6,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import type { GraphBatchInput, GraphBatchResult } from "@magnis/plugin-sdk";
-import { mockGraph, mountModule } from "@magnis/testkit/module";
+import { mockGraph, mountModule, sourceEnvelope } from "@magnis/testkit/module";
 
 import { MeetingsModule } from "./module/service.ts";
 import { calendarEvent } from "./entities.ts";
@@ -69,11 +69,10 @@ async function writtenRecords(): Promise<Record<string, unknown>[]> {
   await mod.ingest({
     command: "bootstrap",
     generation: "initial:r:1",
-    envelopes: [{
-      source_id: "google", surface: "meetings", account_id: "acct-1", user_id: "u1",
-      kind: "snapshot", remote_id: "evt-abc123", payload: invite,
+    envelopes: [sourceEnvelope("meetings", invite, {
+      source_id: "google", account_id: "acct-1", user_id: "u1", remote_id: "evt-abc123",
       timestamp: "2026-02-01T00:00:00Z",
-    }],
+    })],
   });
   return written;
 }

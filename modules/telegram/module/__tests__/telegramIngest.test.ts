@@ -24,31 +24,28 @@
  * @legacy-id: tst_be_tgiso_008_delete_scoped_by_user
  */
 import { describe, expect, it } from "vitest";
-import { entity, mockGraph, mountModule } from "@magnis/testkit/module";
+import { entity, mockGraph, mountModule, sourceEnvelope } from "@magnis/testkit/module";
 import type { GraphBatchInput, SourceEnvelope } from "@magnis/plugin-sdk";
 import { CHAT, MESSAGE, TELEGRAM_ACCOUNT } from "../../schema.ts";
 import { TelegramModule } from "../service.ts";
 
 function messageEnvelope(kind: "snapshot" | "live" = "snapshot"): SourceEnvelope {
-  return {
+  return sourceEnvelope("telegram", {
+    entity_type: "message",
+    message_id: 7,
+    chat_id: 42,
+    sender_id: 501,
+    sender_name: "Alice",
+    text: "Read https://example.test/demo",
+    date: "2026-08-12T08:00:00Z",
+  }, {
     source_id: "telegram-ts",
-    surface: "telegram",
-    account_id: "account-1",
     user_id: "u1",
     identity_key: "9001",
     kind,
     remote_id: "tg:msg:42:7",
-    payload: {
-      entity_type: "message",
-      message_id: 7,
-      chat_id: 42,
-      sender_id: 501,
-      sender_name: "Alice",
-      text: "Read https://example.test/demo",
-      date: "2026-08-12T08:00:00Z",
-    },
     timestamp: "2026-08-12T08:00:01Z",
-  };
+  });
 }
 
 describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
