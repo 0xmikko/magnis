@@ -15,7 +15,7 @@
 //     after every definition mutation (plugins cannot emit on the event bus).
 //
 // Ownership: every single-entity read + mutation goes through the user-scoped
-// `get_entity_full` precheck (raw `get_entity`/`attach_facet` are NOT user-scoped),
+// `getEntityFull` precheck (raw `getEntity`/`attach_facet` are NOT user-scoped),
 // matching the native guards.
 
 import { rpc, tool, writeTool, type GraphService, errText,
@@ -279,11 +279,11 @@ export class TriggersModule {
 
     // Ownership: a foreign / unknown parent episode is rejected BEFORE any row is
     // written (native parity: the pre-split create validated episode_id ownership
-    // first). `get_entity_full` is user-scoped → null for a non-owned id. Without
+    // first). `getEntityFull` is user-scoped → null for a non-owned id. Without
     // this a caller could `belongs_to`-link a foreign episode, leaking its name
     // via `get` and child-linking it in the native `fire_trigger`.
     if (params.episode_id) {
-      const episode = await this.graph.get_entity_full(params.episode_id, { links: false });
+      const episode = await this.graph.getEntityFull(params.episode_id, { links: false });
       if (episode?.entity.schemaId !== "episodes.episode") throw new Error(`episode not found: ${params.episode_id}`);
     }
 
@@ -311,7 +311,7 @@ export class TriggersModule {
       }
     }
 
-    const entity = await this.graph.create_entity({ schemaId: TRIGGER, name });
+    const entity = await this.graph.createEntity({ schemaId: TRIGGER, name });
 
     const config: TriggerConfigData = {
       name,
@@ -336,12 +336,12 @@ export class TriggersModule {
     // nothing. Any failure after the entity exists removes it again.
     try {
       // S1: the config IS the node's dictionary.
-      await this.graph.update_properties({ entityId: entity.id, properties: config as unknown as JsonObject });
+      await this.graph.updateProperties({ entityId: entity.id, properties: config as unknown as JsonObject });
       for (const target of watch_entity_ids) {
-        await this.graph.add_link({ from: entity.id, to: target, kind: WATCHES });
+        await this.graph.addLink({ from: entity.id, to: target, kind: WATCHES });
       }
       if (params.episode_id) {
-        await this.graph.add_link({
+        await this.graph.addLink({
           from: entity.id,
           to: params.episode_id,
           kind: BELONGS_TO,
@@ -349,7 +349,7 @@ export class TriggersModule {
       }
     } catch (writeError) {
       try {
-        await this.graph.delete_entity(entity.id);
+        await this.graph.deleteEntity(entity.id);
       } catch (rollbackError) {
         await this.logFailure("trigger create rollback failed", entity.id, writeError, rollbackError);
         throw new Error(
@@ -419,10 +419,10 @@ export class TriggersModule {
     },
   })
   async list(params: ListTriggersParams): Promise<TriggerListItem[]> {
-    const page = await this.graph.list_entities({ schemaId: TRIGGER, order: "date", limit: 1000 });
+    const page = await this.graph.listEntities({ schemaId: TRIGGER, order: "date", limit: 1000 });
     const items: TriggerListItem[] = [];
     for (const entity of page.items) {
-      const detail = await this.graph.get_entity_full(entity.id, { links: true });
+      const detail = await this.graph.getEntityFull(entity.id, { links: true });
       if (detail?.entity.schemaId !== TRIGGER) continue;
       const config = this.configOf(detail);
       if (!config) continue;
@@ -452,7 +452,7 @@ export class TriggersModule {
     const hydrate = async (rows: readonly Entity[]): Promise<TriggerListItem[]> => {
       const items: TriggerListItem[] = [];
       for (const row of rows) {
-        const detail = await this.graph.get_entity_full(row.id, { links: true });
+        const detail = await this.graph.getEntityFull(row.id, { links: true });
         if (detail?.entity.schemaId !== TRIGGER) continue;
         const config = this.configOf(detail);
         if (!config) continue;
@@ -465,7 +465,7 @@ export class TriggersModule {
     // @invariant: UI pagination reads the requested graph window directly and
     // never inherits the agent-facing list tool's intentional 1,000-row cap.
     if (query.length === 0) {
-      const page = await this.graph.list_entities_window({
+      const page = await this.graph.listEntitiesWindow({
         schema: TRIGGER,
         order: [{ field: { entityField: "date" }, desc: true }],
         limit,
@@ -486,7 +486,7 @@ export class TriggersModule {
     let scanOffset = 0;
     const filtered: TriggerListItem[] = [];
     for (;;) {
-      const page = await this.graph.list_entities_window({
+      const page = await this.graph.listEntitiesWindow({
         schema: TRIGGER,
         order: [{ field: { entityField: "date" }, desc: true }],
         limit: scanLimit,
@@ -567,13 +567,13 @@ export class TriggersModule {
     // merge does with an explicit null.
     const next: Record<string, unknown> = { ...config };
     if (params.schedule === null) next.schedule = null;
-    await this.graph.update_properties({ entityId: params.id, properties: next as JsonObject });
+    await this.graph.updateProperties({ entityId: params.id, properties: next as JsonObject });
     if (params.name !== undefined && params.name !== detail.entity.name) {
       try {
-        await this.graph.update_entity_name(params.id, params.name);
+        await this.graph.updateEntityName(params.id, params.name);
       } catch (renameError) {
         try {
-          await this.graph.update_properties({
+          await this.graph.updateProperties({
             entityId: params.id,
             properties: previousConfig as unknown as JsonObject,
           });
@@ -608,7 +608,7 @@ export class TriggersModule {
   })
   async delete(params: DeleteTriggerParams): Promise<{ deleted: boolean }> {
     await this.requireTrigger(params.id);
-    await this.graph.delete_entity(params.id);
+    await this.graph.deleteEntity(params.id);
     await this.invalidateCache();
     return { deleted: true };
   }
@@ -621,9 +621,9 @@ export class TriggersModule {
   })
   async link(params: LinkTriggerParams): Promise<{ linked: boolean }> {
     await this.requireTrigger(params.trigger_id);
-    const target = await this.graph.get_entity_full(params.entity_id, { links: false });
+    const target = await this.graph.getEntityFull(params.entity_id, { links: false });
     if (!target) throw new Error(`entity not found: ${params.entity_id}`);
-    await this.graph.add_link({ from: params.trigger_id, to: params.entity_id, kind: WATCHES });
+    await this.graph.addLink({ from: params.trigger_id, to: params.entity_id, kind: WATCHES });
     await this.invalidateCache();
     return { linked: true };
   }
@@ -636,10 +636,10 @@ export class TriggersModule {
   })
   async unlink(params: LinkTriggerParams): Promise<{ unlinked: boolean }> {
     await this.requireTrigger(params.trigger_id);
-    const links = await this.graph.list_links_for_entity(params.trigger_id);
+    const links = await this.graph.listLinksForEntity(params.trigger_id);
     for (const link of links) {
       if (link.kind === WATCHES && link.from === params.trigger_id && link.to === params.entity_id) {
-        await this.graph.delete_link(link.id);
+        await this.graph.deleteLink(link.id);
       }
     }
     await this.invalidateCache();
@@ -652,7 +652,7 @@ export class TriggersModule {
   })
   async list_for_entity(params: ListForEntityParams): Promise<TriggerListItem[]> {
     // Ownership: unknown / non-owned anchor → empty (no link-metadata leak).
-    const anchorOwned = await this.graph.get_entity_full(params.entity_id, { links: false });
+    const anchorOwned = await this.graph.getEntityFull(params.entity_id, { links: false });
     if (!anchorOwned) return [];
 
     // Anchor set: the entity itself + its 1-hop watchable neighbours. Email
@@ -670,14 +670,14 @@ export class TriggersModule {
     const seen = new Set<string>();
     const items: TriggerListItem[] = [];
     for (const anchor of anchors) {
-      const links = await this.graph.list_links_for_entity(anchor);
+      const links = await this.graph.listLinksForEntity(anchor);
       for (const link of links) {
         if (link.to !== anchor) continue;
         if (link.kind !== WATCHES && link.kind !== BELONGS_TO) continue;
         const triggerId = link.from;
         if (seen.has(triggerId)) continue;
         seen.add(triggerId);
-        const detail = await this.graph.get_entity_full(triggerId, { links: true });
+        const detail = await this.graph.getEntityFull(triggerId, { links: true });
         if (detail?.entity.schemaId !== TRIGGER) continue;
         const config = this.configOf(detail);
         if (!config) continue;
@@ -724,7 +724,7 @@ export class TriggersModule {
   /// User-scoped fetch that also rejects an id of a different schema — a
   /// triggers tool must never touch a foreign entity (NotFound parity).
   private async requireTrigger(id: string): Promise<EntityWithLinks> {
-    const detail = await this.graph.get_entity_full(id, { links: true });
+    const detail = await this.graph.getEntityFull(id, { links: true });
     if (detail?.entity.schemaId !== TRIGGER) {
       throw new Error(`trigger not found: ${id}`);
     }
@@ -764,9 +764,9 @@ export class TriggersModule {
     const names: string[] = [];
     for (const link of this.watchesLinks(detail)) {
       // User-scoped resolution (native guard): a poisoned `watches` link to a
-      // foreign entity must NOT leak its name. `get_entity_full` returns null for
+      // foreign entity must NOT leak its name. `getEntityFull` returns null for
       // a non-owned target, so foreign names are dropped.
-      const target = await this.graph.get_entity_full(link.to, { links: false });
+      const target = await this.graph.getEntityFull(link.to, { links: false });
       if (target) {
         const e = target.entity;
         names.push(e.name && e.name.length > 0 ? e.name : e.schemaId);
@@ -793,7 +793,7 @@ export class TriggersModule {
     const watched: WatchedEntity[] = [];
     for (const link of this.watchesLinks(detail)) {
       // User-scoped (native guard): foreign watched-entity names resolve to null.
-      const target = await this.graph.get_entity_full(link.to, { links: false });
+      const target = await this.graph.getEntityFull(link.to, { links: false });
       watched.push({ id: link.to, name: target?.entity.name ?? null });
     }
 
@@ -805,7 +805,7 @@ export class TriggersModule {
     if (belongs) {
       parentEpisodeId = belongs.to;
       // User-scoped (native guard): a foreign parent-episode name resolves to null.
-      const parent = await this.graph.get_entity_full(belongs.to, { links: false });
+      const parent = await this.graph.getEntityFull(belongs.to, { links: false });
       parentEpisodeName = parent?.entity.name ?? null;
     }
 

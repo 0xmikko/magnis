@@ -7,7 +7,7 @@
  *
  * Bug (live-verified, stack A): the chat header said "50 messages" while the
  * chat held far more in the graph. `messages.list` returns the chat's REAL
- * graph total (`page.total` via list_entities_window filter_eq chat_id), but
+ * graph total (`page.total` via listEntitiesWindow filter_eq chat_id), but
  * the conversation model froze the total of the FIRST cached page and never
  * advanced it as later pages / backfills reported a larger one — so the header
  * number degenerated to the loaded-page length.

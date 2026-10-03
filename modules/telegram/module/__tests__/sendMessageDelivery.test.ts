@@ -8,7 +8,7 @@
  * @deterministic: yes
  *
  * sendMessage delivers the message via
- * graph.source_command, THEN runs local enrichment (ingest + entity lookup). If
+ * graph.sourceCommand, THEN runs local enrichment (ingest + entity lookup). If
  * that local post-processing throws AFTER a successful delivery, the send must
  * still be reported as succeeded — otherwise a delivered message is recorded
  * "failed" (in a batch or single send) and a manual retry double-sends it. The
@@ -40,8 +40,8 @@ interface TgInternals {
 
 function makeModule(): { mod: TgInternals; graph: G } {
   const graph = mockGraph({
-    source_command: () => Promise.resolve({ message_id: 777 }),
-    find_by_external_id: () => Promise.resolve("ent-1"),
+    sourceCommand: () => Promise.resolve({ message_id: 777 }),
+    findByExternalId: () => Promise.resolve("ent-1"),
   });
   const mod = mountModule(TelegramModule, { graph, ctx: { extensionId: "telegram" } })
     .module as unknown as TgInternals;
@@ -55,7 +55,7 @@ describe("tst_fe_agent_007 — sendMessage: delivery success survives local enri
 
     const result = await mod.sendMessage(42, "hi", undefined, "acct");
 
-    expect(graph.spies.source_command).toHaveBeenCalledTimes(1); // the message WAS delivered
+    expect(graph.spies.sourceCommand).toHaveBeenCalledTimes(1); // the message WAS delivered
     expect(result).toEqual({ message_id: 777 }); // reported as sent, not failed
   });
 

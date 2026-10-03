@@ -40,7 +40,7 @@ class FixtureModule {
 
   // Reaches into the graph — used to prove an unconfigured op throws end-to-end.
   async count(): Promise<number> {
-    const found = await this.graph.list_entities({ schemaId: "x" });
+    const found = await this.graph.listEntities({ schemaId: "x" });
     return found.total;
   }
 }
@@ -58,24 +58,24 @@ async function initializeShape(shape: PluginModuleShape, extensionId: string): P
 describe("mockGraph", () => {
   it("tst_testkit_mockgraph_001 throws on an unconfigured op WHEN CALLED", () => {
     const graph = mockGraph();
-    expect(() => graph.delete_entity("x")).toThrow("unexpected graph op: delete_entity");
+    expect(() => graph.deleteEntity("x")).toThrow("unexpected graph op: deleteEntity");
   });
 
   it("tst_testkit_mockgraph_002 overridden op runs its impl and records a spy", async () => {
-    const graph = mockGraph({ get_entity: () => Promise.resolve(entity("a", "Acme")) });
-    const e = await graph.get_entity("a");
+    const graph = mockGraph({ getEntity: () => Promise.resolve(entity("a", "Acme")) });
+    const e = await graph.getEntity("a");
     expect(e?.name).toBe("Acme");
-    expect(graph.spies.get_entity).toHaveBeenCalledTimes(1);
-    expect(graph.spies.get_entity).toHaveBeenCalledWith("a");
+    expect(graph.spies.getEntity).toHaveBeenCalledTimes(1);
+    expect(graph.spies.getEntity).toHaveBeenCalledWith("a");
   });
 
   it("tst_testkit_mockgraph_003 the same op access returns a stable spy (re-arm works)", async () => {
-    const graph = mockGraph({ get_entity: () => Promise.resolve(null) });
-    const getEntitySpy = graph.spies.get_entity;
+    const graph = mockGraph({ getEntity: () => Promise.resolve(null) });
+    const getEntitySpy = graph.spies.getEntity;
     if (getEntitySpy === undefined)
-      throw new Error("mockGraph: missing get_entity spy");
+      throw new Error("mockGraph: missing getEntity spy");
     getEntitySpy.mockResolvedValue(entity("z", "Zed"));
-    const e = await graph.get_entity("z");
+    const e = await graph.getEntity("z");
     expect(e?.name).toBe("Zed");
   });
 });
@@ -88,16 +88,16 @@ describe("mountModule — direct", () => {
     // default rpc is a spy on `execute` (RpcExecutor contract), not `call`.
     expect(typeof deps.rpc.execute).toBe("function");
     // the default graph is a throwing mockGraph
-    expect(() => graph.get_entity("x")).toThrow("unexpected graph op: get_entity");
+    expect(() => graph.getEntity("x")).toThrow("unexpected graph op: getEntity");
   });
 
   it("tst_testkit_mount_direct_002 an unconfigured graph op surfaces through a module method", async () => {
     const { module } = mountModule(FixtureModule);
-    await expect(module.count()).rejects.toThrow("unexpected graph op: list_entities");
+    await expect(module.count()).rejects.toThrow("unexpected graph op: listEntities");
   });
 
   it("tst_testkit_mount_direct_003 opts override graph/ctx/rpc", () => {
-    const graph = mockGraph({ list_entities: () => Promise.resolve(page([], 7)) });
+    const graph = mockGraph({ listEntities: () => Promise.resolve(page([], 7)) });
     const execute = vi.fn();
     const { module, deps } = mountModule(FixtureModule, {
       graph,

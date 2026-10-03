@@ -4,9 +4,9 @@ import { rpc } from "@magnis/plugin-sdk";
 // `file.get`, `file.attach`. Bytes/storage/upload stay in core `FileService`;
 // this module only touches graph metadata + links.
 //
-// Ownership: `get`/`attach` precheck via the user-scoped `get_entity_full`
-// (raw `add_link` is NOT user-scoped). `list` relies on the host's
-// already user-scoped `list_entities_window` / `list_entities_by_facet_field`.
+// Ownership: `get`/`attach` precheck via the user-scoped `getEntityFull`
+// (raw `addLink` is NOT user-scoped). `list` relies on the host's
+// already user-scoped `listEntitiesWindow` / `list_entities_by_facet_field`.
 
 import {
   tool,
@@ -89,14 +89,14 @@ export class FileModule {
     // Candidate page (host-side user-scoped) + the exact total.
     const found: PaginatedResponse<Entity> = params.source_module
       // S1: the dictionary is the state — filter by the properties key.
-      ? await this.graph.list_entities_by_property_field({
+      ? await this.graph.listEntitiesByPropertyField({
         entitySchema: FILE_OBJECT,
         key: "source_module",
         value: params.source_module,
         limit,
         offset,
       })
-      : await this.graph.list_entities_window({
+      : await this.graph.listEntitiesWindow({
         schema: FILE_OBJECT,
         order: [{ field: { entityField: "date" }, desc: true }],
         limit,
@@ -115,7 +115,7 @@ export class FileModule {
       // parent_id: keep only files linked from the given parent (a links
       // query, not a record filter).
       if (params.parent_id) {
-        const links = await this.graph.list_links_for_entity(id);
+        const links = await this.graph.listLinksForEntity(id);
         if (!links.some((l) => l.from === params.parent_id)) continue;
       }
       // mime_prefix: prefix match, refined in-TS (window filter is exact).
@@ -134,7 +134,7 @@ export class FileModule {
   @tool("get", { entity: "file.object", ...GET_SPEC })
   async get(params: FileGetParams): Promise<Record<string, unknown>> {
     // user-scoped → null for a non-owned id; a wrong-schema id must never resolve.
-    const detail = await this.graph.get_entity_full(params.id, { links: false });
+    const detail = await this.graph.getEntityFull(params.id, { links: false });
     if (detail?.entity.schemaId !== FILE_OBJECT) {
       throw new Error(`file not found: ${params.id}`);
     }
@@ -150,18 +150,18 @@ export class FileModule {
     // Only the "file.attachment" kind is supported (the sole kind any caller uses).
     if (kind !== "file.attachment") throw new Error(`unsupported attach kind: ${kind}`);
 
-    // Own-check both (raw add_link is not user-scoped) and file_id must be
+    // Own-check both (raw addLink is not user-scoped) and file_id must be
     // a file.object — cross-user/invalid ids surface as not-found, no link.
-    const file = await this.graph.get_entity_full(params.file_id, { links: false });
+    const file = await this.graph.getEntityFull(params.file_id, { links: false });
     if (file?.entity.schemaId !== FILE_OBJECT) {
       throw new Error(`file not found: ${params.file_id}`);
     }
-    const target = await this.graph.get_entity_full(params.target_id, { links: false });
+    const target = await this.graph.getEntityFull(params.target_id, { links: false });
     if (!target) {
       throw new Error(`target not found: ${params.target_id}`);
     }
 
-    await this.graph.add_link({ from: params.target_id, to: params.file_id, kind });
+    await this.graph.addLink({ from: params.target_id, to: params.file_id, kind });
     return { status: "ok", file_id: params.file_id, target_id: params.target_id, kind };
   }
 }

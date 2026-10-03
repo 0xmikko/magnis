@@ -9,7 +9,7 @@
 import { expectTypeOf, test } from "vitest";
 import type { GraphService } from "../contract/module.ts";
 
-test("tst_pkg_sdk_graph_001 accepts a link kind in list_links_for_entity", () => {
-  expectTypeOf<Parameters<GraphService["list_links_for_entity"]>[1]>()
+test("tst_pkg_sdk_graph_001 accepts a link kind in listLinksForEntity", () => {
+  expectTypeOf<Parameters<GraphService["listLinksForEntity"]>[1]>()
     .toEqualTypeOf<string | undefined>();
 });

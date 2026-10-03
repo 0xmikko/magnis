@@ -28,15 +28,15 @@ describe("projects.update runtime optional fields", () => {
       properties: { name: "Acme × ExampleCo", status: "active" },
     });
     const graph = mockGraph({
-      get_entity: () => Promise.resolve(project),
-      update_entity_name: () => Promise.resolve(),
-      update_properties: () => Promise.resolve(),
-      get_entity_full: () =>
+      getEntity: () => Promise.resolve(project),
+      updateEntityName: () => Promise.resolve(),
+      updateProperties: () => Promise.resolve(),
+      getEntityFull: () =>
         Promise.resolve({
           entity: project,
           links: [],
         }),
-      get_entities: () => Promise.resolve([]),
+      getEntities: () => Promise.resolve([]),
     });
     const module = mountModule(ProjectsModule, {
       graph,
@@ -50,10 +50,10 @@ describe("projects.update runtime optional fields", () => {
       description: "Updated project summary",
     } as unknown as UpdateParams);
 
-    expect(graph.spies.update_entity_name).not.toHaveBeenCalled();
+    expect(graph.spies.updateEntityName).not.toHaveBeenCalled();
     // S1: one dictionary write — nulls omitted, existing values preserved,
     // the description riding the same write.
-    expect(graph.spies.update_properties).toHaveBeenCalledWith(
+    expect(graph.spies.updateProperties).toHaveBeenCalledWith(
       expect.objectContaining({
         entityId: project.id,
         properties: expect.objectContaining({

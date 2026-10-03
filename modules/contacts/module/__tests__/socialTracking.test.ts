@@ -19,8 +19,8 @@ describe("retained social ingestion reads", () => {
   }});
   it("reads existing tracking without exposing write workflows", async () => {
     const graph = mockGraph({
-      get_entity: async () => tracked,
-      list_entities_window: async () => page([tracked, untracked]),
+      getEntity: async () => tracked,
+      listEntitiesWindow: async () => page([tracked, untracked]),
     });
     const { module } = mountModule(ContactsModule, { graph });
     for (const name of ["set_social_tracking", "track_social_profile", "batch_track_social"]) expect(name in module).toBe(false);
@@ -31,10 +31,10 @@ describe("retained social ingestion reads", () => {
     expect(await module.list_social_tracking({ platform: "linkedin" })).toEqual([]);
   });
   it("renames only an unchanged placeholder during profile ingestion", async () => {
-    const graph = mockGraph({ get_entity: async () => tracked, update_entity_name: async () => undefined });
+    const graph = mockGraph({ getEntity: async () => tracked, updateEntityName: async () => undefined });
     const { module } = mountModule(ContactsModule, { graph });
     expect(await module.rename_if_placeholder({ id: "p1", expected_name: "jack", new_name: "Jack Smith" })).toEqual({ renamed: true });
     expect(await module.rename_if_placeholder({ id: "p1", expected_name: "other", new_name: "Wrong" })).toEqual({ renamed: false });
-    expect(graph.spies.update_entity_name).toHaveBeenCalledExactlyOnceWith("p1", "Jack Smith");
+    expect(graph.spies.updateEntityName).toHaveBeenCalledExactlyOnceWith("p1", "Jack Smith");
   });
 });

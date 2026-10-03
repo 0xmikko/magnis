@@ -190,7 +190,7 @@ export class ContactsModule {
       // held the tier: nothing has written `relevance_tier` since the fold,
       // so `include_all` no longer changes what the list shows. The
       // parameter stays on the wire until the clients drop it.
-      const page = await this.graph.list_entities({
+      const page = await this.graph.listEntities({
         schemaId: CONTACT,
         limit,
         offset,
@@ -214,8 +214,8 @@ export class ContactsModule {
   @tool("get", { entity: "contacts.person", ...CONTACT_GET_SPEC })
   async get(params: GetParams): Promise<ContactDetailView> {
     // Entity + link edges in ONE fetch (user-scoped → null for a non-owner
-    // or wrong schema); link neighbours resolved in ONE get_entities batch.
-    const detail = await this.graph.get_entity_full(params.id, { links: true });
+    // or wrong schema); link neighbours resolved in ONE getEntities batch.
+    const detail = await this.graph.getEntityFull(params.id, { links: true });
     if (detail?.entity.schemaId !== CONTACT) {
       throw new Error(`contact not found: ${params.id}`);
     }
@@ -237,7 +237,7 @@ export class ContactsModule {
     ];
     const replicaSet = new Set(identityIds);
     const replicaLinks =
-      identityIds.length === 0 ? [] : await this.graph.list_links_for_entities(identityIds);
+      identityIds.length === 0 ? [] : await this.graph.listLinksForEntities(identityIds);
 
     // The hub's own edges first, so its own labels win, then the replicas'.
     // Deduped by endpoint; the hub itself excluded.
@@ -253,7 +253,7 @@ export class ContactsModule {
     const neighbours = new Map<string, Entity>();
     const reachedIds = [...reached.keys()];
     if (reachedIds.length > 0) {
-      for (const t of await this.graph.get_entities(reachedIds)) neighbours.set(t.id, t);
+      for (const t of await this.graph.getEntities(reachedIds)) neighbours.set(t.id, t);
     }
 
     const linked: LinkedEntitySummary[] = [];
@@ -370,11 +370,11 @@ export class ContactsModule {
     const out = new Map<string, Entity[]>();
     if (ids.length === 0) return out;
     const owned = new Set(ids);
-    const edges = (await this.graph.list_links_for_entities(ids)).filter(
+    const edges = (await this.graph.listLinksForEntities(ids)).filter(
       (l) => l.kind === "identity" && owned.has(l.from),
     );
     if (edges.length === 0) return out;
-    const targets = await this.graph.get_entities([...new Set(edges.map((l) => l.to))]);
+    const targets = await this.graph.getEntities([...new Set(edges.map((l) => l.to))]);
     const byId = new Map(targets.map((t) => [t.id, t]));
     for (const edge of edges) {
       const target = byId.get(edge.to);
@@ -390,7 +390,7 @@ export class ContactsModule {
   // values) — the node it just wrote and its identity edges. Not the hot read
   // path (no N+1 loop).
   private async listItemFor(entity: Entity): Promise<ContactListItem> {
-    const fresh = await this.graph.get_entity(entity.id);
+    const fresh = await this.graph.getEntity(entity.id);
     const node = fresh ?? entity;
     const identity = await this.identityNeighboursByEntity([entity.id]);
     return buildListItem({ ...entity, properties: node.properties }, identity.get(entity.id) ?? []);
@@ -430,14 +430,14 @@ export class ContactsModule {
     // Idempotency: an existing client_id returns the existing contact,
     // no re-write (native controller.rs:67 find_entity_for_user).
     if (params.client_id) {
-      const existing = await this.graph.get_entity(params.client_id);
+      const existing = await this.graph.getEntity(params.client_id);
       if (existing) {
         const item = await this.listItemFor(existing);
         return { ...item, fields: { name: item.name, email_address_entity_id: null } };
       }
     }
 
-    const entity = await this.graph.create_entity({
+    const entity = await this.graph.createEntity({
       schemaId: CONTACT,
       name: params.name,
       clientId: params.client_id,
@@ -452,7 +452,7 @@ export class ContactsModule {
     if (params.role) curated.role = params.role;
     if (params.company) curated.company = params.company;
     if (Object.keys(curated).length > 0) {
-      await this.graph.update_properties({ entityId: entity.id, properties: curated });
+      await this.graph.updateProperties({ entityId: entity.id, properties: curated });
     }
 
     // Hub: ask the email module to ensure the email.address entity, then
@@ -465,7 +465,7 @@ export class ContactsModule {
           address: params.email,
         });
         email_address_entity_id = addr.id;
-        await this.graph.add_link({ from: entity.id, to: addr.id, kind: "identity" });
+        await this.graph.addLink({ from: entity.id, to: addr.id, kind: "identity" });
       } catch {
         // Parity with native controller.rs:167 — warn-and-continue. On the
         // single-runtime path (no host AppState) the email hub is unavailable;
@@ -540,19 +540,19 @@ export class ContactsModule {
 
   // Mirrors native contacts.update (controller.rs:562) — name only:
   // rename the entity and rewrite first_name on the replica. The
-  // update_entity_name op is ownership-checked.
+  // updateEntityName op is ownership-checked.
   @rpc("update", CONTACT_UPDATE_SPEC)
   @writeTool("update", { entity: "contacts.person", ...CONTACT_UPDATE_SPEC })
   async update(params: UpdateParams): Promise<ContactListItem> {
-    const existing = await this.graph.get_entity(params.id);
+    const existing = await this.graph.getEntity(params.id);
     if (!existing) throw new Error(`contact not found: ${params.id}`);
 
     if (params.name) {
       // S3: the name vouch lives on the entity row alone.
-      await this.graph.update_entity_name(params.id, params.name);
+      await this.graph.updateEntityName(params.id, params.name);
     }
 
-    const fresh = await this.graph.get_entity(params.id);
+    const fresh = await this.graph.getEntity(params.id);
     return this.listItemFor(fresh ?? existing);
   }
 
@@ -571,7 +571,7 @@ export class ContactsModule {
     },
   })
   async merge_preview(params: Pick<MergeInput, "survivorId" | "retiredId">): Promise<MergePreview> {
-    return this.graph.merge_preview({ survivorId: params.survivorId, retiredId: params.retiredId });
+    return this.graph.mergePreview({ survivorId: params.survivorId, retiredId: params.retiredId });
   }
 
   // Merge two contacts (controller.rs:656): transfer links from
@@ -590,11 +590,11 @@ export class ContactsModule {
   })
   async merge(params: MergeInput): Promise<MergeResult | MergePreview> {
     for (const id of [params.survivorId, params.retiredId]) {
-      const entity = await this.graph.get_entity(id);
+      const entity = await this.graph.getEntity(id);
       if (entity?.schemaId !== CONTACT) throw new Error(`contact not found: ${id}`);
     }
     if (params.preview) return this.merge_preview(params);
-    const result = await this.graph.merge_execute({
+    const result = await this.graph.mergeExecute({
       survivorId: params.survivorId,
       retiredId: params.retiredId,
       overrides: params.overrides,
@@ -604,14 +604,14 @@ export class ContactsModule {
     // S6: re-derive entity name/idx from the survivor's merged DICTIONARY —
     // the canonical map is dead and would always read empty here, silently
     // skipping the rename.
-    const merged = await this.graph.get_entity(params.survivorId);
+    const merged = await this.graph.getEntity(params.survivorId);
     const dict = (merged?.properties ?? {}) as Record<string, unknown>;
     const first = dict.first_name;
     if (typeof first === "string" && first.length > 0) {
       const last = dict.last_name;
       const full = typeof last === "string" && last.length > 0 ? `${first} ${last}` : first;
-      await this.graph.update_entity_name(params.survivorId, full);
-      await this.graph.update_entity_idx(params.survivorId, full.toLowerCase());
+      await this.graph.updateEntityName(params.survivorId, full);
+      await this.graph.updateEntityIdx(params.survivorId, full.toLowerCase());
     }
 
     return result;
@@ -635,15 +635,15 @@ export class ContactsModule {
   })
   async search(params: SearchParams): Promise<ToolResult> {
     // BOUNDED at the DB (reuses the same name search the contacts list uses).
-    // The old path called list_entities_by_context() — which loads EVERY entity
+    // The old path called listEntitiesByContext() — which loads EVERY entity
     // in the context (38k+ on a real account), marshals them all across the V8
     // boundary, and filters in JS with the cap applied AFTER. On a large account
     // that ran ~50s and TAINTED the plugin isolate, bricking every contacts.*
-    // call (search + batch_create) until a backend restart. search_entities_by_name
+    // call (search + batch_create) until a backend restart. searchEntitiesByName
     // caps at the DB, so it stays fast and never poisons the isolate.
     const MAX_LIMIT = 50;
     const limit = Math.min(params.limit ?? 25, MAX_LIMIT);
-    const matched = await this.graph.search_entities_by_name({
+    const matched = await this.graph.searchEntitiesByName({
       query: params.query ?? "",
       schemaIds: [CONTACT],
       limit,
@@ -667,13 +667,13 @@ export class ContactsModule {
   // ── sync ingest (@syncHandler) ────────────────────────────────
   // Invoked by the host PluginModuleController bridge (`contacts.__sync__`) with
   // a WHOLE page of `contacts` envelopes (Google People API snapshots). Mirrors
-  // the email ingest principle: a page's contacts fold into apply_batch chunks —
+  // the email ingest principle: a page's contacts fold into applyBatch chunks —
   // one contacts.person entity per contact + its profile/email/phone/
-  // external_link replicas, all in ONE atomic graph.apply_batch per chunk.
+  // external_link replicas, all in ONE atomic graph.applyBatch per chunk.
   //
   // Idempotency: the entity key AND the external ids are the envelope
   // `remoteId` (`gpeople:{stable_id}`), so re-ingesting the same contact
-  // upserts on that key — no duplicate entity (apply_batch resolves-or-creates
+  // upserts on that key — no duplicate entity (applyBatch resolves-or-creates
   // by external id, like email's message ingest). `generation` is the pass the
   // worker is in; a Source effect outside a worker carries none and states
   // nothing.
@@ -738,13 +738,13 @@ export class ContactsModule {
   /** @tested-by: tst_module_google_002 */
   private async deleteGoogleReplica(env: SyncEnvelope): Promise<boolean> {
     if (!env.remoteId) return false;
-    const id = await this.graph.find_by_external_id(env.remoteId);
+    const id = await this.graph.findByExternalId(env.remoteId);
     if (!id) return false;
-    const replica = await this.graph.get_entity(id);
+    const replica = await this.graph.getEntity(id);
     if (replica?.schemaId !== GOOGLE_CONTACT) return false;
     const properties = replica.properties as Record<string, unknown>;
     if (properties.source_id !== env.sourceId || properties.account_id !== env.accountId) return false;
-    await this.graph.delete_entity(id);
+    await this.graph.deleteEntity(id);
     return true;
   }
 
@@ -760,7 +760,7 @@ export class ContactsModule {
     return { departed: [], plan: { [GOOGLE_CONTACT]: { total: 0, skipped: 0 } } };
   }
 
-  /// One chunk → one apply_batch. Each contact becomes a Google replica
+  /// One chunk → one applyBatch. Each contact becomes a Google replica
   /// whose external id is its stable resourceName-derived remoteId.
   private async ingestContactBatch(envelopes: SyncEnvelope[], generation: string | undefined, fullPass: boolean): Promise<number> {
     // 1. Fold envelopes into rows: payload + its lowercased addresses.
@@ -791,7 +791,7 @@ export class ContactsModule {
     if (rows.length === 0) return 0;
 
     const deltaExternalIds = generation && !fullPass ? rows.map((row) => row.remoteId) : [];
-    const known = deltaExternalIds.length > 0 ? await this.graph.find_by_external_ids(deltaExternalIds) : [];
+    const known = deltaExternalIds.length > 0 ? await this.graph.findByExternalIds(deltaExternalIds) : [];
     const existing = new Set(deltaExternalIds.filter((_, index) => known[index]));
 
     // 2. Address nodes and contact replicas share the sync transaction.
@@ -814,7 +814,7 @@ export class ContactsModule {
         properties: { ...replicaDict(payload), source_id: sourceId, account_id: accountId, ...(generation ? { sync_pass: generation } : {}) },
       };
     })];
-    const batch = await this.graph.apply_batch({ entities, refs: [], links: [] });
+    const batch = await this.graph.applyBatch({ entities, refs: [], links: [] });
     const addressId = new Map(allAddresses.map((address) => {
       const id = batch.ids[`addr:${address}`];
       if (!id) throw new Error(`contacts ingest: address ${address} was not resolved`);
@@ -847,7 +847,7 @@ export class ContactsModule {
     addrIds: string[],
   ): Promise<void> {
     // Re-sync short-circuit: the replica already has its hub.
-    const replicaLinks = await this.graph.list_links_for_entity(replicaId, "identity");
+    const replicaLinks = await this.graph.listLinksForEntity(replicaId, "identity");
     if (replicaLinks.some((l) => l.kind === "identity" && l.to === replicaId)) {
       return;
     }
@@ -856,14 +856,14 @@ export class ContactsModule {
     // identity edges to addresses too — filter to persons.
     const candidates = new Set<string>();
     for (const addrId of addrIds) {
-      const links = await this.graph.list_links_for_entity(addrId, "identity");
+      const links = await this.graph.listLinksForEntity(addrId, "identity");
       for (const l of links) {
         if (l.kind === "identity" && l.to === addrId) candidates.add(l.from);
       }
     }
     let hubs: string[] = [];
     if (candidates.size > 0) {
-      const found = await this.graph.get_entities([...candidates]);
+      const found = await this.graph.getEntities([...candidates]);
       hubs = found.filter((e) => e.schemaId === CONTACT).map((e) => e.id);
     }
 
@@ -887,7 +887,7 @@ export class ContactsModule {
           : undefined) ??
         firstAddress ??
         "Contact";
-      const hub = await this.graph.create_entity({
+      const hub = await this.graph.createEntity({
         schemaId: CONTACT,
         name,
         idx: name.toLowerCase(),
@@ -895,7 +895,7 @@ export class ContactsModule {
       hubId = hub.id;
       // Several hubs claimed one address: record the ambiguity for a human.
       for (const other of mergeCandidates) {
-        await this.graph.add_link({
+        await this.graph.addLink({
           from: hubId,
           to: other,
           kind: "same_as",
@@ -905,13 +905,13 @@ export class ContactsModule {
 
     // The edges: hub → replica, hub → each shared address. Idempotent at the
     // graph layer (re-sync never duplicates an identity edge).
-    await this.graph.add_link({
+    await this.graph.addLink({
       from: hubId,
       to: replicaId,
       kind: "identity",
     });
     for (const addrId of addrIds) {
-      await this.graph.add_link({
+      await this.graph.addLink({
         from: hubId,
         to: addrId,
         kind: "identity",
@@ -937,13 +937,13 @@ export class ContactsModule {
     },
   })
   async rename_if_placeholder(params: RenameIfPlaceholderParams): Promise<{ renamed: boolean }> {
-    const entity = await this.graph.get_entity(params.id);
+    const entity = await this.graph.getEntity(params.id);
     if (entity?.schemaId !== CONTACT) return { renamed: false };
     if (entity.name !== params.expected_name) return { renamed: false };
     if (!params.new_name.trim() || params.new_name === params.expected_name) {
       return { renamed: false };
     }
-    await this.graph.update_entity_name(params.id, params.new_name);
+    await this.graph.updateEntityName(params.id, params.new_name);
     return { renamed: true };
   }
 
@@ -955,7 +955,7 @@ export class ContactsModule {
     const PAGE = 500;
     const out: Entity[] = [];
     for (let offset = 0; ; offset += PAGE) {
-      const page = await this.graph.list_entities_window({
+      const page = await this.graph.listEntitiesWindow({
         schema: CONTACT,
         filterField: { propertyPath: "tracking" },
         filterOp: "exists",
@@ -1041,7 +1041,7 @@ export class ContactsModule {
   // The hub dictionary's tracking view, or {} when the contact has never
   // been tracked (S3: `properties.tracking[]` is the single source).
   private async readSocialTracking(id: string): Promise<SocialTracking> {
-    const e = await this.graph.get_entity(id);
+    const e = await this.graph.getEntity(id);
     return e ? trackingView(e) : {};
   }
 }

@@ -20,12 +20,12 @@ async function writtenProperties(): Promise<Record<string, unknown>[]> {
     properties: { name: "Acme × ExampleCo", status: "active" },
   });
   const graph = mockGraph({
-    create_entity: () => Promise.resolve(existing),
-    get_entity: () => Promise.resolve(existing),
-    get_entity_full: () => Promise.resolve({ entity: existing, links: [] }),
-    get_entities: () => Promise.resolve([]),
-    update_entity_name: () => Promise.resolve(undefined),
-    update_properties: (input: { properties: Record<string, unknown> }) => {
+    createEntity: () => Promise.resolve(existing),
+    getEntity: () => Promise.resolve(existing),
+    getEntityFull: () => Promise.resolve({ entity: existing, links: [] }),
+    getEntities: () => Promise.resolve([]),
+    updateEntityName: () => Promise.resolve(undefined),
+    updateProperties: (input: { properties: Record<string, unknown> }) => {
       written.push(input.properties);
       return Promise.resolve(undefined);
     },

@@ -28,11 +28,11 @@ type G = MockGraph;
 
 function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
   return mockGraph({
-    create_entity: (p: CreateEntityParams) =>
+    createEntity: (p: CreateEntityParams) =>
       Promise.resolve(entity(p.clientId ?? "new-id", p.name, { schemaId: CAL })),
-    update_properties: () => Promise.resolve(undefined),
-    add_link: () => Promise.resolve(undefined),
-    get_entity: () => Promise.resolve(null),
+    updateProperties: () => Promise.resolve(undefined),
+    addLink: () => Promise.resolve(undefined),
+    getEntity: () => Promise.resolve(null),
     ...over,
   } as unknown as GraphOverrides);
 }
@@ -58,39 +58,39 @@ const GOOD = {
 
 describe("meetings.create — validation (rejected input writes nothing)", () => {
   it("rejects an empty / whitespace title", async () => {
-    const create_entity = vi.fn();
-    const mod = makeModule(makeGraph({ create_entity }));
+    const createEntity = vi.fn();
+    const mod = makeModule(makeGraph({ createEntity }));
     await expect(mod.create({ ...GOOD, title: "   " })).rejects.toThrow(/non-empty/);
-    expect(create_entity).not.toHaveBeenCalled();
+    expect(createEntity).not.toHaveBeenCalled();
   });
 
   it("rejects a non-RFC3339 starts_at / ends_at", async () => {
-    const create_entity = vi.fn();
-    const mod = makeModule(makeGraph({ create_entity }));
+    const createEntity = vi.fn();
+    const mod = makeModule(makeGraph({ createEntity }));
     await expect(mod.create({ ...GOOD, starts_at: "not-a-date" })).rejects.toThrow(
       /invalid starts_at/,
     );
     await expect(mod.create({ ...GOOD, ends_at: "2026/02/01" })).rejects.toThrow(/invalid ends_at/);
-    expect(create_entity).not.toHaveBeenCalled();
+    expect(createEntity).not.toHaveBeenCalled();
   });
 
   it("rejects ends_at < starts_at", async () => {
-    const create_entity = vi.fn();
-    const mod = makeModule(makeGraph({ create_entity }));
+    const createEntity = vi.fn();
+    const mod = makeModule(makeGraph({ createEntity }));
     await expect(
       mod.create({ title: "X", starts_at: "2026-02-01T10:00:00Z", ends_at: "2026-02-01T09:00:00Z" }),
     ).rejects.toThrow(/ends_at must be >= starts_at/);
-    expect(create_entity).not.toHaveBeenCalled();
+    expect(createEntity).not.toHaveBeenCalled();
   });
 });
 
 describe("meetings.create — happy path (returns the full meeting snapshot)", () => {
   it("creates the entity, writes its dictionary + attendee edges, returns the snapshot", async () => {
-    const create_entity = vi.fn(async (p: CreateEntityParams): Promise<Entity> =>
+    const createEntity = vi.fn(async (p: CreateEntityParams): Promise<Entity> =>
       entity("m-new", p.name, { schemaId: CAL }));
-    const update_properties = vi.fn().mockResolvedValue(undefined);
-    const add_link = vi.fn().mockResolvedValue(undefined);
-    const mod = makeModule(makeGraph({ create_entity, update_properties, add_link }));
+    const updateProperties = vi.fn().mockResolvedValue(undefined);
+    const addLink = vi.fn().mockResolvedValue(undefined);
+    const mod = makeModule(makeGraph({ createEntity, updateProperties, addLink }));
 
     const snap = await mod.create({
       ...GOOD,
@@ -99,11 +99,11 @@ describe("meetings.create — happy path (returns the full meeting snapshot)", (
       location: "HQ",
     });
 
-    expect(create_entity).toHaveBeenCalledTimes(1);
-    expect(create_entity.mock.calls[0]![0]).toMatchObject({ schemaId: CAL, name: "Sync" });
+    expect(createEntity).toHaveBeenCalledTimes(1);
+    expect(createEntity.mock.calls[0]![0]).toMatchObject({ schemaId: CAL, name: "Sync" });
     // The dictionary is the record — and the attendees are NOT in it.
-    expect(update_properties).toHaveBeenCalledTimes(1);
-    const dictCall = update_properties.mock.calls[0]![0] as PropertiesUpdate & {
+    expect(updateProperties).toHaveBeenCalledTimes(1);
+    const dictCall = updateProperties.mock.calls[0]![0] as PropertiesUpdate & {
       properties: Record<string, unknown>;
     };
     expect(dictCall.entityId).toBe("m-new");
@@ -116,7 +116,7 @@ describe("meetings.create — happy path (returns the full meeting snapshot)", (
     });
     expect("attendees" in dictCall.properties).toBe(false);
     // …they are edges to the shared address node, name on the edge.
-    expect(add_link).toHaveBeenCalledWith({
+    expect(addLink).toHaveBeenCalledWith({
       from: "m-new",
       to: "addr-a@x",
       kind: "attendee",
@@ -147,16 +147,16 @@ describe("meetings.create — happy path (returns the full meeting snapshot)", (
 describe("meetings.create — idempotency", () => {
   it("returns the existing entity for a repeat client_id without re-creating", async () => {
     const existing = entity("cid-1", "Sync", { schemaId: CAL });
-    const get_entity = vi.fn().mockResolvedValue(existing);
-    const create_entity = vi.fn();
-    const update_properties = vi.fn();
-    const mod = makeModule(makeGraph({ get_entity, create_entity, update_properties }));
+    const getEntity = vi.fn().mockResolvedValue(existing);
+    const createEntity = vi.fn();
+    const updateProperties = vi.fn();
+    const mod = makeModule(makeGraph({ getEntity, createEntity, updateProperties }));
 
     const snap = (await mod.create({ ...GOOD, client_id: "cid-1" })) as Record<string, unknown>;
 
-    expect(get_entity).toHaveBeenCalledWith("cid-1");
-    expect(create_entity).not.toHaveBeenCalled();
-    expect(update_properties).not.toHaveBeenCalled();
+    expect(getEntity).toHaveBeenCalledWith("cid-1");
+    expect(createEntity).not.toHaveBeenCalled();
+    expect(updateProperties).not.toHaveBeenCalled();
     expect(snap.id).toBe("cid-1");
   });
 });

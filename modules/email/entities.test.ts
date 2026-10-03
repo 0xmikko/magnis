@@ -19,7 +19,7 @@ const DECLARED = { "email.message": message, "email.address": address } as const
 
 function ingestGraph() {
   return mockGraph({
-    apply_batch: (frag) =>
+    applyBatch: (frag) =>
       Promise.resolve({
         ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
         created: frag.entities.length,
@@ -27,9 +27,9 @@ function ingestGraph() {
         linksAdded: frag.links.length,
         droppedKeys: [],
       }),
-    file_register: () => Promise.resolve("file-id"),
-    find_by_external_id: () => Promise.resolve("existing-id"),
-    delete_entity: () => Promise.resolve(undefined),
+    fileRegister: () => Promise.resolve("file-id"),
+    findByExternalId: () => Promise.resolve("existing-id"),
+    deleteEntity: () => Promise.resolve(undefined),
   });
 }
 
@@ -74,7 +74,7 @@ async function written(): Promise<GraphBatchInput["entities"]> {
   const graph = ingestGraph();
   const mod = mountModule(EmailModule, { graph, ctx: { extensionId: "email" } }).module;
   await mod.ingest({ envelopes: [env({ remoteId: "m1", payload: msgPayload() })] });
-  const call = graph.spies.apply_batch?.mock.calls[0];
+  const call = graph.spies.applyBatch?.mock.calls[0];
   if (call === undefined) throw new Error("ingest wrote nothing");
   return (call[0] as GraphBatchInput).entities;
 }

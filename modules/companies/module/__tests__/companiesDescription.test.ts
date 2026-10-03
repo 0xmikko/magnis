@@ -25,13 +25,13 @@ function writeGraph() {
   return {
     company,
     graph: mockGraph({
-      get_entity: () => Promise.resolve(company),
-      create_entity: () => Promise.resolve(company),
-      search_entities_by_name: () => Promise.resolve([]),
-      update_entity_name: () => Promise.resolve(),
-      update_properties: () => Promise.resolve(),
-      add_link: () => Promise.resolve(undefined),
-      get_entity_full: () =>
+      getEntity: () => Promise.resolve(company),
+      createEntity: () => Promise.resolve(company),
+      searchEntitiesByName: () => Promise.resolve([]),
+      updateEntityName: () => Promise.resolve(),
+      updateProperties: () => Promise.resolve(),
+      addLink: () => Promise.resolve(undefined),
+      getEntityFull: () =>
         Promise.resolve({
           entity: company,
           links: [],
@@ -71,8 +71,8 @@ describe("companies.update emails — the cross-module identity path", () => {
     expect(execute).toHaveBeenCalledWith("email.ensure_addresses", {
       items: [{ address: "a@acme.com" }, { address: "b@acme.com" }],
     });
-    const addLink = graph.spies.add_link;
-    if (!addLink) throw new Error("add_link spy not mounted");
+    const addLink = graph.spies.addLink;
+    if (!addLink) throw new Error("addLink spy not mounted");
     expect(addLink.mock.calls.map(([p]) => p)).toEqual([
       { from: company.id, to: "addr-1", kind: "identity" },
       { from: company.id, to: "addr-2", kind: "identity" },
@@ -91,7 +91,7 @@ describe("companies.update emails — the cross-module identity path", () => {
     await expect(
       module.update({ id: company.id, emails: ["a@acme.com"] }),
     ).rejects.toThrow(/email module down/);
-    expect(graph.spies.add_link).not.toHaveBeenCalled();
+    expect(graph.spies.addLink).not.toHaveBeenCalled();
   });
 });
 
@@ -110,9 +110,9 @@ describe("companies description write contract", () => {
 
     // S5: ONE dictionary merge carries the description — there is no second
     // copy of it anywhere, and no record is written at all.
-    const updateProperties = graph.spies.update_properties;
+    const updateProperties = graph.spies.updateProperties;
     if (updateProperties === undefined) {
-      throw new Error("companies update: missing update_properties spy");
+      throw new Error("companies update: missing updateProperties spy");
     }
     expect(updateProperties).toHaveBeenCalledTimes(1);
     expect(updateProperties).toHaveBeenCalledWith({
@@ -146,9 +146,9 @@ describe("companies description write contract", () => {
       summary: "Initial company description",
     });
 
-    const updateProperties = graph.spies.update_properties;
+    const updateProperties = graph.spies.updateProperties;
     if (updateProperties === undefined) {
-      throw new Error("companies create: missing update_properties spy");
+      throw new Error("companies create: missing updateProperties spy");
     }
     expect(updateProperties).toHaveBeenCalledWith({
       entityId: company.id,

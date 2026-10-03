@@ -84,108 +84,108 @@ export interface SearchEntitiesPageParams {
 /// its own interface at the call sites that care.
 export interface GraphService {
   // All reads are user-scoped host-side.
-  create_entity(p: CreateEntityParams): Promise<Entity>;
-  get_entity(id: string): Promise<Entity | null>;
-  list_entities(p: ListEntitiesParams): Promise<PaginatedResponse<Entity>>;
+  createEntity(p: CreateEntityParams): Promise<Entity>;
+  getEntity(id: string): Promise<Entity | null>;
+  listEntities(p: ListEntitiesParams): Promise<PaginatedResponse<Entity>>;
   // Windowed list with the exact total, in one statement. Filter/order over
   // entity columns or dictionary keys.
-  list_entities_window(p: WindowSpec): Promise<PaginatedResponse<Entity>>;
+  listEntitiesWindow(p: WindowSpec): Promise<PaginatedResponse<Entity>>;
   // One entity (dictionary included) + its links, user-scoped (null for a
   // non-owner).
-  get_entity_full(id: string, opts?: { links?: boolean }): Promise<EntityWithLinks | null>;
+  getEntityFull(id: string, opts?: { links?: boolean }): Promise<EntityWithLinks | null>;
   // A parent's neighbors over a typed link, with the link.
-  list_linked(p: LinkedSpec): Promise<PaginatedResponse<LinkedEntity>>;
+  listLinked(p: LinkedSpec): Promise<PaginatedResponse<LinkedEntity>>;
   // Batch: resolve a set of entity ids in one statement, user-scoped, in
   // input order.
-  get_entities(ids: string[]): Promise<Entity[]>;
+  getEntities(ids: string[]): Promise<Entity[]>;
   // user-scoped; omit/empty context = all of the user's entities.
-  list_entities_by_context(context?: string): Promise<Entity[]>;
-  search_entities_by_name(p: SearchEntitiesParams): Promise<Entity[]>;
+  listEntitiesByContext(context?: string): Promise<Entity[]>;
+  searchEntitiesByName(p: SearchEntitiesParams): Promise<Entity[]>;
   /** Resolve a node by its `source.externalId`. */
-  find_by_external_id(externalId: string): Promise<string | null>;
+  findByExternalId(externalId: string): Promise<string | null>;
   /** Plural resolution in one host call: input order kept, null where absent. */
-  find_by_external_ids(externalIds: string[]): Promise<(string | null)[]>;
+  findByExternalIds(externalIds: string[]): Promise<(string | null)[]>;
   // register a web link (web.link entity + dictionary + bg preview fetch),
   // optionally linked to a parent entity. Returns the web.link entity id.
-  web_register(p: WebRegisterParams): Promise<string>;
+  webRegister(p: WebRegisterParams): Promise<string>;
   // register a downloadable media file (find-or-create file.object entity +
   // parent link + background download). mimeType is computed plugin-side so
   // the op stays source-agnostic. Returns the file.object entity id.
-  file_register(p: FileRegisterParams): Promise<string>;
+  fileRegister(p: FileRegisterParams): Promise<string>;
   /** Batch: every URL a page carries, in ONE host call. Input order is kept;
    *  each position holds that URL's `web.link` entity id, or `""` where the
    *  host could not normalize the URL — one bad URL costs its own row and
    *  never aborts the page. Capability is checked once, before any write. */
-  web_register_batch(links: WebRegisterParams[]): Promise<string[]>;
+  webRegisterBatch(links: WebRegisterParams[]): Promise<string[]>;
   /** Batch: every attachment a page carries, in ONE host call. Input order is
    *  kept; each position holds that file's `file.object` entity id. There is
    *  no empty sentinel: a row the host did not write is an error. One row
    *  whose `linkKind` is not `file.attachment`, or whose `sourceRef` does
    *  not match the admitted worker, refuses the WHOLE call. The same
    *  attachment twice in one page accumulates, as two calls would. */
-  file_register_batch(files: FileRegisterParams[]): Promise<string[]>;
+  fileRegisterBatch(files: FileRegisterParams[]): Promise<string[]>;
   /** Batch: merge a dictionary patch into each node, in ONE host call. Each
    *  patch MERGES — a field it does not name keeps its value — and the same
    *  node twice accumulates. The capability for every row's schema is checked
    *  before any row is written; one refused row refuses the whole call. */
-  update_properties_batch(updates: PropertiesUpdate[]): Promise<void>;
+  updatePropertiesBatch(updates: PropertiesUpdate[]): Promise<void>;
   // route an Execute SourceCommand to this plugin's source (send/reply/backfill)
   // via the host SyncRouter. Returns the source runtime's JSON result.
-  source_command(payload: Record<string, unknown>, account_id?: string): Promise<Record<string, unknown>>;
-  // Like source_command, but FIRE-AND-FORGET: the (slow, network-bound) connector
+  sourceCommand(payload: Record<string, unknown>, accountId?: string): Promise<Record<string, unknown>>;
+  // Like sourceCommand, but FIRE-AND-FORGET: the (slow, network-bound) connector
   // fetch + ingest run as a detached host task, so the plugin's single worker
   // channel is not blocked. Returns immediately ({pending:true}); the page lands
   // asynchronously and the host emits `sync.backfill` so the UI can re-fetch.
-  request_backfill(payload: Record<string, unknown>, account_id?: string): Promise<{ pending: boolean }>;
+  requestBackfill(payload: Record<string, unknown>, accountId?: string): Promise<{ pending: boolean }>;
   // sync control, keyed by the calling module (not telegram). "status" lists the
-  // caller's sync states; "reset" deletes the caller's entities of `reset_schema`
+  // caller's sync states; "reset" deletes the caller's entities of `resetSchema`
   // (which MUST be in the caller's own namespace) and resets sync state. Overloads
-  // make `reset` REQUIRE the schema — `sync_state("reset")` is a compile error, so
+  // make `reset` REQUIRE the schema — `syncState("reset")` is a compile error, so
   // a plugin can't trip the host's namespace guard at runtime.
-  sync_state(action: "status"): Promise<Record<string, unknown>>;
-  sync_state(action: "reset", reset_schema: string): Promise<Record<string, unknown>>;
+  syncState(action: "status"): Promise<Record<string, unknown>>;
+  syncState(action: "reset", resetSchema: string): Promise<Record<string, unknown>>;
   // reply-composer presence: op "read" | "set_text" | "append_text". read
   // reports presence; set_text/append_text gate+bump the revision and publish.
   composer(
     op: string,
-    thread_key?: string,
+    threadKey?: string,
     text?: string,
-    attachment_ids?: string[],
+    attachmentIds?: string[],
   ): Promise<Record<string, unknown>>;
-  update_entity_name(id: string, name: string): Promise<void>;
-  update_entity_idx(id: string, idx: string | null): Promise<void>;
-  delete_entity(id: string): Promise<void>;
+  updateEntityName(id: string, name: string): Promise<void>;
+  updateEntityIdx(id: string, idx: string | null): Promise<void>;
+  deleteEntity(id: string): Promise<void>;
 
   /// S1 (canonical-graph-structure): write the node's dictionary — the
   /// property-graph write path. The host validates ownership (user +
   /// namespace) and an update un-archives.
-  update_properties(p: PropertiesUpdate): Promise<void>;
+  updateProperties(p: PropertiesUpdate): Promise<void>;
   /// S1: filter a FOLDED family's entities by a top-level dictionary key,
   /// user-scoped natively. Returns the page and the exact total.
-  list_entities_by_property_field(p: ListEntitiesByPropertyFieldParams): Promise<PaginatedResponse<Entity>>;
-  add_link(p: AddLinkParams): Promise<void>;
-  delete_link(id: string): Promise<void>;
+  listEntitiesByPropertyField(p: ListEntitiesByPropertyFieldParams): Promise<PaginatedResponse<Entity>>;
+  addLink(p: AddLinkParams): Promise<void>;
+  deleteLink(id: string): Promise<void>;
   /** The link's fact stopped being true at `validUntil`; the row stays, and
    * reads that keep history still see it. One-way — there is no reopen. */
-  end_link(id: string, validUntil: string): Promise<void>;
+  endLink(id: string, validUntil: string): Promise<void>;
   /** The entity's links, ended ones included — an open link reads
    * `validUntil === null`. */
-  list_links_for_entity(entityId: string, linkKind?: string): Promise<Link[]>;
+  listLinksForEntity(entityId: string, linkKind?: string): Promise<Link[]>;
   /** S6 batch: every canonical link of MANY entities in ONE round-trip. Each
    * row carries `from`/`to`, so the caller groups. A page whose cards read
    * their neighbours off the links uses this, never a per-row read. */
-  list_links_for_entities(entityIds: string[]): Promise<Link[]>;
+  listLinksForEntities(entityIds: string[]): Promise<Link[]>;
 
   // batch — apply a whole graph fragment (entities + refs + links) in ONE
   // atomic transaction / one host crossing. The bulk ingest primitive: a page
   // of N messages becomes one call instead of ~3N create/link ops. Entities
   // are keyed by LOCAL `key`s (links/refs wire by key); the `externalId` is
   // the idempotency identity (resolve-or-create).
-  apply_batch(batch: GraphBatchInput): Promise<GraphBatchResult>;
+  applyBatch(batch: GraphBatchInput): Promise<GraphBatchResult>;
 
-  // merge — backed by GraphService::merge_execute, not composed.
-  merge_preview(p: Pick<MergeInput, "survivorId" | "retiredId">): Promise<MergePreview>;
-  merge_execute(p: Omit<MergeInput, "preview">): Promise<MergeResult>;
+  // merge — backed by GraphService::mergeExecute, not composed.
+  mergePreview(p: Pick<MergeInput, "survivorId" | "retiredId">): Promise<MergePreview>;
+  mergeExecute(p: Omit<MergeInput, "preview">): Promise<MergeResult>;
 }
 
 /// Pure, stateless host utilities (no graph/capability surface).

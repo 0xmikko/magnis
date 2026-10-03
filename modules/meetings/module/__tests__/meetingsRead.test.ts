@@ -20,11 +20,11 @@ import type { MeetingsCanonical } from "../../types.ts";
 const CAL = "meetings.calendar_event";
 type G = MockGraph;
 
-// Only get_entities is arranged by default; the read path's other ops are
+// Only getEntities is arranged by default; the read path's other ops are
 // supplied per-test via `over`. Anything else throws via the mockGraph Proxy.
 function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
   return mockGraph({
-    get_entities: () => Promise.resolve([]),
+    getEntities: () => Promise.resolve([]),
     ...over,
   } as unknown as GraphOverrides);
 }
@@ -88,12 +88,12 @@ describe("meetings.list", () => {
         location: "",
       }),
     ]);
-    const list_entities_window = vi.fn().mockResolvedValue(win);
+    const listEntitiesWindow = vi.fn().mockResolvedValue(win);
     const mod = makeModule(
       makeGraph({
-        list_entities_window,
+        listEntitiesWindow,
         // No attendee edges on either row — ONE page-level batch read.
-        list_links_for_entities: vi.fn(async (): Promise<Link[]> => []),
+        listLinksForEntities: vi.fn(async (): Promise<Link[]> => []),
       }),
     );
 
@@ -101,8 +101,8 @@ describe("meetings.list", () => {
 
     // ONE window crossing; ordered by the DICTIONARY's starts_at DESC, and no
     // record schema is named anywhere on the read path.
-    expect(list_entities_window).toHaveBeenCalledTimes(1);
-    const spec = list_entities_window.mock.calls[0]![0];
+    expect(listEntitiesWindow).toHaveBeenCalledTimes(1);
+    const spec = listEntitiesWindow.mock.calls[0]![0];
     expect(spec.schema).toBe(CAL);
     expect(spec.facet_schema).toBeUndefined();
     expect(spec.order).toEqual([{ field: { propertyPath: "starts_at" }, desc: true }]);
@@ -140,8 +140,8 @@ describe("meetings.get", () => {
       ],
     };
     const graph = makeGraph({
-      get_entity_full: vi.fn().mockResolvedValue(detail),
-      get_entities: vi.fn(async (ids: string[]) =>
+      getEntityFull: vi.fn().mockResolvedValue(detail),
+      getEntities: vi.fn(async (ids: string[]) =>
         [
           graphEntity("proj-1", "Proj", { schemaId: "projects.project" }),
           graphEntity("addr-alice", "alice@x.com", { schemaId: "email.address", properties: { address: "alice@x.com" } }),
@@ -151,7 +151,7 @@ describe("meetings.get", () => {
       ),
       // alice's address is claimed by a contact; bob's is not. The batch
       // reads BOTH addresses' edges in one call and the person in another.
-      list_links_for_entities: vi.fn(async (): Promise<Link[]> => [
+      listLinksForEntities: vi.fn(async (): Promise<Link[]> => [
         link("person-1", "addr-alice", "identity", { id: "hl" }),
       ]),
     });
@@ -176,7 +176,7 @@ describe("meetings.get", () => {
   });
 
   it("throws when the meeting is not found / not owned", async () => {
-    const mod = makeModule(makeGraph({ get_entity_full: vi.fn().mockResolvedValue(null) }));
+    const mod = makeModule(makeGraph({ getEntityFull: vi.fn().mockResolvedValue(null) }));
     await expect(mod.get({ id: "nope" })).rejects.toThrow(/not found/);
   });
 });
@@ -199,12 +199,12 @@ describe("meetings.search", () => {
   });
 
   it("searches the meetings.event schema, not calendar_event", async () => {
-    const list_entities_by_context = vi.fn().mockResolvedValue([
+    const listEntitiesByContext = vi.fn().mockResolvedValue([
       graphEntity("e1", "Quarterly review", { schemaId: "meetings.event" }),
       graphEntity("c1", "Quarterly review", { schemaId: "meetings.calendar_event" }),
       graphEntity("e2", "Standup", { schemaId: "meetings.event" }),
     ]);
-    const mod = makeModule(makeGraph({ list_entities_by_context }));
+    const mod = makeModule(makeGraph({ listEntitiesByContext }));
 
     const res = await mod.search({ query: "quarterly" });
     const parsed = JSON.parse((res.content[0] as { text: string }).text);

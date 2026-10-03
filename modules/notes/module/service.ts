@@ -1,9 +1,9 @@
 // Notes plugin — backend module (V8). Decorated class; graph-only port of the
 // native `backend/src/modules/notes` service (no on-disk `.md` mirror, no sync
 // ingest). Ownership: single-entity reads + every mutation enforce it via the
-// user-scoped `get_entity_full` precheck (raw `get_entity`/`attach_facet` are
+// user-scoped `getEntityFull` precheck (raw `getEntity`/`attach_facet` are
 // NOT user-scoped); `list`/`search` rely instead on the host's already
-// user-scoped `list_entities_window` / `search_entities_by_name` ops.
+// user-scoped `listEntitiesWindow` / `searchEntitiesByName` ops.
 
 import { errText, linkedEntitySummary, rpc, tool, writeTool, type GraphService,
   type PluginDeps, type PluginLogger } from "@magnis/plugin-sdk";
@@ -145,7 +145,7 @@ export class NotesModule {
       // batch reads — records (preview/body) AND canonical (pinned/updated_at/
       // title), so the item stays byte-identical to the old per-row build while
       // dropping the 2N+1 N+1.
-      const all = await this.graph.search_entities_by_name({
+      const all = await this.graph.searchEntitiesByName({
         query: search,
         schemaIds: [NOTE],
         limit: limit + offset,
@@ -163,7 +163,7 @@ export class NotesModule {
     // `entity.properties`, and an order key on the frozen record would never
     // see an edit again. Preview renders from the same dictionary; no record
     // is read.
-    const win = await this.graph.list_entities_window({
+    const win = await this.graph.listEntitiesWindow({
       schema: NOTE,
       order: [{ field: { propertyPath: "updated_at" }, desc: true }],
       limit,
@@ -178,8 +178,8 @@ export class NotesModule {
   @rpc("get", GET_SPEC)
   @tool("get", { entity: "notes.note", ...GET_SPEC })
   async get(params: GetParams): Promise<NoteDetailView> {
-    const detail = await this.graph.get_entity_full(params.id, { links: true });
-    // NotFound for a non-owned id (get_entity_full is user-scoped → null) AND for
+    const detail = await this.graph.getEntityFull(params.id, { links: true });
+    // NotFound for a non-owned id (getEntityFull is user-scoped → null) AND for
     // an id that belongs to a different schema — a notes tool must never touch a
     // contact/project/etc. entity.
     if (detail?.entity.schemaId !== NOTE) {
@@ -193,14 +193,14 @@ export class NotesModule {
     const canonical = {};
     const pinned = data.pinned ?? false;
 
-    // Resolve link neighbours via ONE get_entities batch (user-scoped →
+    // Resolve link neighbours via ONE getEntities batch (user-scoped →
     // drops non-owned targets, same visibility rule as the old per-link
-    // get_entity_full) — no per-link N+1.
+    // getEntityFull) — no per-link N+1.
     const linked: LinkedEntitySummary[] = [];
     if (detail.links.length > 0) {
       const neighbourId = (l: { from: string; to: string }): string =>
         l.from === e.id ? l.to : l.from;
-      const targets = await this.graph.get_entities([
+      const targets = await this.graph.getEntities([
         ...new Set(detail.links.map(neighbourId)),
       ]);
       const byId = new Map(targets.map((t) => [t.id, t]));
@@ -238,12 +238,12 @@ export class NotesModule {
     // snapshot), no second entity (native service.rs:376-380).
     if (params.client_id) {
       // Idempotent only against an existing NOTE. A client_id colliding with a
-      // non-note entity is not a note hit — fall through; create_entity will
+      // non-note entity is not a note hit — fall through; createEntity will
       // Conflict on the id rather than return a fake note snapshot.
       // @tested-by: tst_module_notes_identity_001
-      const existingEntity = await this.graph.get_entity(params.client_id);
+      const existingEntity = await this.graph.getEntity(params.client_id);
       if (existingEntity?.schemaId === NOTE) {
-        const existing = await this.graph.get_entity_full(params.client_id, { links: false });
+        const existing = await this.graph.getEntityFull(params.client_id, { links: false });
         if (!existing) {
           throw new Error(`existing note ${params.client_id} has no detail snapshot`);
         }
@@ -261,7 +261,7 @@ export class NotesModule {
     // heading for empty notes (the native file-era default): the title lives in
     // its own field, so a body heading only duplicates it and goes stale on
     // rename (old title left visible in the body).
-    const entity = await this.graph.create_entity({
+    const entity = await this.graph.createEntity({
       schemaId: NOTE,
       name: params.title,
       ...(params.client_id === undefined ? {} : { clientId: params.client_id }),
@@ -274,7 +274,7 @@ export class NotesModule {
       await this.writeContent(entity.id, params.title, body, now);
     } catch (writeError) {
       try {
-        await this.graph.delete_entity(entity.id);
+        await this.graph.deleteEntity(entity.id);
       } catch (rollbackError) {
         await this.logFailure("note create rollback failed", entity.id, writeError, rollbackError);
         throw new Error(
@@ -293,7 +293,7 @@ export class NotesModule {
   @rpc("update", UPDATE_SPEC)
   @writeTool("update", { entity: "notes.note", ...UPDATE_SPEC })
   async update(params: UpdateParams): Promise<NoteSnapshot> {
-    const detail = await this.graph.get_entity_full(params.id, { links: false });
+    const detail = await this.graph.getEntityFull(params.id, { links: false });
     if (detail?.entity.schemaId !== NOTE) {
       throw new Error(`note not found: ${params.id}`);
     }
@@ -318,7 +318,7 @@ export class NotesModule {
     await this.writeContent(params.id, newTitle, newBody, now);
     if (params.title !== undefined && newTitle !== currentTitle) {
       try {
-        await this.graph.update_entity_name(params.id, newTitle);
+        await this.graph.updateEntityName(params.id, newTitle);
       } catch (renameError) {
         try {
           await this.writeContent(params.id, currentTitle, data.body ?? "", previousUpdatedAt);
@@ -346,11 +346,11 @@ export class NotesModule {
   @rpc("delete", DELETE_SPEC)
   @writeTool("delete", { entity: "notes.note", ...DELETE_SPEC })
   async delete(params: DeleteParams): Promise<{ deleted: boolean }> {
-    const detail = await this.graph.get_entity_full(params.id, { links: false });
+    const detail = await this.graph.getEntityFull(params.id, { links: false });
     if (detail?.entity.schemaId !== NOTE) {
       throw new Error(`note not found: ${params.id}`);
     }
-    await this.graph.delete_entity(params.id);
+    await this.graph.deleteEntity(params.id);
     return { deleted: true };
   }
 
@@ -381,7 +381,7 @@ export class NotesModule {
     // S1 (canonical-graph-structure): the note's state is the node's
     // dictionary. One write, no canonical resolution pass, and an edit stops
     // being an accidental collection (the record path appended a row per save).
-    await this.graph.update_properties({
+    await this.graph.updateProperties({
       entityId,
       properties: { title, body, pinned: false, updated_at: updatedAt },
     });

@@ -117,7 +117,7 @@ export function linkedEntitySummary(entity: Entity, link: Link, linkKind: string
 // `total` exceeds the shown page exactly while more matches exist.
 // (Param type: SearchEntitiesPageParams in ./contract/module.)
 export async function searchEntitiesPage(
-  graph: { search_entities_by_name(p: SearchEntitiesParams): Promise<Entity[]> },
+  graph: { searchEntitiesByName(p: SearchEntitiesParams): Promise<Entity[]> },
   p: SearchEntitiesPageParams,
 ): Promise<PaginatedResponse<Entity>> {
   // NO client-side re-sort: the backend order is a stable TOTAL order
@@ -127,7 +127,7 @@ export async function searchEntitiesPage(
   const needed = p.offset + p.limit + 1;
   let fetchLimit = needed;
   for (;;) {
-    const found = await graph.search_entities_by_name({
+    const found = await graph.searchEntitiesByName({
       query: p.query,
       schemaIds: [p.schemaId],
       limit: fetchLimit,
@@ -153,7 +153,7 @@ export async function removeUnseenSourceReplicas(
 ): Promise<void> {
   const rows: Entity[] = [];
   for (let offset = 0;; offset += 500) {
-    const page = await graph.list_entities_by_property_field({
+    const page = await graph.listEntitiesByPropertyField({
       entitySchema: schemaId, key: "account_id", value: accountId, limit: 500, offset,
     });
     rows.push(...page.items);
@@ -163,13 +163,13 @@ export async function removeUnseenSourceReplicas(
     const properties = row.properties;
     if (row.schemaId !== schemaId || properties === null || typeof properties !== "object" || Array.isArray(properties)) continue;
     if (properties.source_id !== sourceId || properties.account_id !== accountId || properties.sync_pass === generation) continue;
-    await graph.delete_entity(row.id);
+    await graph.deleteEntity(row.id);
   }
 }
 
 // ─────────────────── payload coercion helpers ──────────────────────────────
 // Domain-neutral readers for the opaque `Record<string, unknown>` maps every
-// plugin gets back from the graph (window-row `data`, `get_entity_full` record
+// plugin gets back from the graph (window-row `data`, `getEntityFull` record
 // `data`, sync-envelope `payload`). These were copy-pasted VERBATIM across the
 // social modules (linkedin/x) — promoted here so there is ONE spelling. Runtime
 // (not type-only): module code runs the SDK in V8, like `searchEntitiesPage`.

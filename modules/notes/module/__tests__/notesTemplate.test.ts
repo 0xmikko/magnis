@@ -27,8 +27,8 @@ const NOTE_ID = "44444444-4444-4444-8444-444444444444";
 
 function templateGraph() {
   return mockGraph({
-    create_entity: () => Promise.resolve(entity(NOTE_ID, "Template", { schemaId: NOTE })),
-    update_properties: () => Promise.resolve(undefined),
+    createEntity: () => Promise.resolve(entity(NOTE_ID, "Template", { schemaId: NOTE })),
+    updateProperties: () => Promise.resolve(undefined),
   });
 }
 
@@ -45,7 +45,7 @@ describe("tst_module_notes_template_001 — note templates", () => {
     const result = await module.create({ template, title: "Demo" });
 
     expect(result.body).toContain(marker);
-    expect(graph.spies.update_properties).toHaveBeenCalledWith({
+    expect(graph.spies.updateProperties).toHaveBeenCalledWith({
       entityId: NOTE_ID,
       properties: expect.objectContaining({ title: "Demo", body: expect.stringContaining(marker) }),
     });

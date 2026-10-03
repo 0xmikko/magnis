@@ -169,7 +169,7 @@ export class XModule {
     }
 
     if (entities.length > 0) {
-      const applied = await this.graph.apply_batch({ entities, refs: [], links });
+      const applied = await this.graph.applyBatch({ entities, refs: [], links });
       // Identity link + placeholder-name upgrade. A profile is
       // only ever ingested because a contact tracks its handle — resolve the
       // owner and link profile→person (idempotent by (from,to,kind)). Any RPC
@@ -188,7 +188,7 @@ export class XModule {
     const known = new Map<string, JsonObject | null>();
     const externalIds = [...new Set(envelopes.flatMap((env) => (env.remoteId && env.kind !== "delete" ? [env.remoteId] : [])))];
     if (externalIds.length === 0) return known;
-    const ids = await this.graph.find_by_external_ids(externalIds);
+    const ids = await this.graph.findByExternalIds(externalIds);
     const profileIds: { externalId: string; id: string }[] = [];
     externalIds.forEach((externalId, index) => {
       const id = ids[index];
@@ -197,7 +197,7 @@ export class XModule {
       if (externalId.startsWith("x:profile:")) profileIds.push({ externalId, id });
     });
     if (profileIds.length === 0) return known;
-    const profiles = await this.graph.get_entities(profileIds.map(({ id }) => id));
+    const profiles = await this.graph.getEntities(profileIds.map(({ id }) => id));
     const byId = new Map(profiles.map((item) => [item.id, item]));
     for (const { externalId, id } of profileIds) {
       const held = byId.get(id);
@@ -224,7 +224,7 @@ export class XModule {
         if (!owner) continue;
         // S5: `identity` runs hub → channel, so the CONTACT is the from
         // endpoint — the same edge contacts writes to every other replica.
-        await this.graph.add_link({
+        await this.graph.addLink({
           from: owner.contact_id,
           to: profileId,
           kind: IDENTITY,
@@ -260,7 +260,7 @@ export class XModule {
   async postsList(params: PostsListParams): Promise<PaginatedResponse<PostListItem>> {
     const limit = params.limit ?? 100;
     const offset = params.offset ?? 0;
-    const win = await this.graph.list_entities_window({
+    const win = await this.graph.listEntitiesWindow({
       schema: POST,
       order: [{ field: { propertyPath: "created_at" }, desc: true }],
       limit,
@@ -275,7 +275,7 @@ export class XModule {
   @rpc("posts.get", POST_GET_SPEC)
   @tool("get", { entity: "x.post", ...POST_GET_SPEC })
   async postsGet(params: GetParams): Promise<PostListItem> {
-    const detail = await this.graph.get_entity_full(params.id, { links: false });
+    const detail = await this.graph.getEntityFull(params.id, { links: false });
     if (detail?.entity.schemaId !== POST) {
       throw new Error(`x post not found: ${params.id}`);
     }
@@ -296,7 +296,7 @@ export class XModule {
   @rpc("profiles.get", PROFILE_GET_SPEC)
   @tool("get", { entity: "x.profile", ...PROFILE_GET_SPEC })
   async profilesGet(params: GetParams): Promise<ProfileDetail> {
-    const detail = await this.graph.get_entity_full(params.id, { links: false });
+    const detail = await this.graph.getEntityFull(params.id, { links: false });
     if (detail?.entity.schemaId !== PROFILE) {
       throw new Error(`x profile not found: ${params.id}`);
     }
@@ -346,7 +346,7 @@ export class XModule {
       const items = found.items.map((e) => this.profileItem(e));
       return { items, total: found.total, limit, offset };
     }
-    const win = await this.graph.list_entities_window({
+    const win = await this.graph.listEntitiesWindow({
       schema: PROFILE,
       limit,
       offset,

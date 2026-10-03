@@ -20,13 +20,13 @@ const env = (remoteId: string, payload: JsonObject): SyncEnvelope => ({
 async function written(): Promise<GraphBatchInput["entities"]> {
   const batches: GraphBatchInput[] = [];
   const graph = mockGraph({
-    find_by_external_ids: (externalIds) => Promise.resolve(externalIds.map(() => null)),
-    apply_batch: (frag: GraphBatchInput) => {
+    findByExternalIds: (externalIds) => Promise.resolve(externalIds.map(() => null)),
+    applyBatch: (frag: GraphBatchInput) => {
       batches.push(frag);
       return Promise.resolve({ ids: {}, created: 0, updated: 0, linksAdded: 0, droppedKeys: [] });
     },
-    list_entities_window: () => Promise.resolve(page([])),
-    get_entity_full: () => Promise.resolve(null),
+    listEntitiesWindow: () => Promise.resolve(page([])),
+    getEntityFull: () => Promise.resolve(null),
   });
   const mod = mountModule(LinkedinModule, {
     graph, ctx: { extensionId: "linkedin" }, rpc: { execute: vi.fn() },

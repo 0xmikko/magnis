@@ -27,7 +27,7 @@ const invite = {
 
 function graphRecording(written: Record<string, unknown>[]) {
   return mockGraph({
-    apply_batch: (frag: GraphBatchInput): Promise<GraphBatchResult> => {
+    applyBatch: (frag: GraphBatchInput): Promise<GraphBatchResult> => {
       for (const e of frag.entities) {
         if (e.schemaId === CAL) written.push(e.properties as Record<string, unknown>);
       }
@@ -39,18 +39,18 @@ function graphRecording(written: Record<string, unknown>[]) {
         droppedKeys: [],
       });
     },
-    find_by_external_id: () => Promise.resolve(null),
-    list_links_for_entity: () => Promise.resolve([]),
-    delete_entity: () => Promise.resolve(undefined),
-    sync_state: () => Promise.resolve({ ok: true }),
-    create_entity: () => Promise.resolve(entity("cal-1", "Q3 review", { schemaId: CAL })),
-    update_properties: (input: PropertiesUpdate) => {
+    findByExternalId: () => Promise.resolve(null),
+    listLinksForEntity: () => Promise.resolve([]),
+    deleteEntity: () => Promise.resolve(undefined),
+    syncState: () => Promise.resolve({ ok: true }),
+    createEntity: () => Promise.resolve(entity("cal-1", "Q3 review", { schemaId: CAL })),
+    updateProperties: (input: PropertiesUpdate) => {
       written.push(input.properties as Record<string, unknown>);
       return Promise.resolve(undefined);
     },
-    add_link: () => Promise.resolve(undefined),
-    get_entity_full: () => Promise.resolve(null),
-    get_entity: () => Promise.resolve(null),
+    addLink: () => Promise.resolve(undefined),
+    getEntityFull: () => Promise.resolve(null),
+    getEntity: () => Promise.resolve(null),
   } as never);
 }
 

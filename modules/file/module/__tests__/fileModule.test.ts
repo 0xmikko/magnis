@@ -13,10 +13,10 @@ type G = MockGraph;
 
 function makeGraph(): G {
   return mockGraph({
-    get_entity_full: () => Promise.resolve(null),
-    add_link: () => Promise.resolve(undefined),
-    list_entities_window: () => Promise.resolve(page([])),
-    list_links_for_entity: () => Promise.resolve([]),
+    getEntityFull: () => Promise.resolve(null),
+    addLink: () => Promise.resolve(undefined),
+    listEntitiesWindow: () => Promise.resolve(page([])),
+    listLinksForEntity: () => Promise.resolve([]),
   });
 }
 
@@ -45,35 +45,35 @@ const DETAILS = { mime_type: "image/png", source_module: "uploads", source_ref: 
 describe("file.attach (per-user isolation + allowed link kinds)", () => {
   it("attaches when both entities are owned and file_id is a file.object", async () => {
     const g = makeGraph();
-    spy(g, "get_entity_full")
+    spy(g, "getEntityFull")
       .mockResolvedValueOnce(detail(ID_F, "file.object")) // file_id
       .mockResolvedValueOnce(detail(ID_T, "company.org")); // target_id
     const res = await makeModule(g).attach({ file_id: ID_F, target_id: ID_T });
     expect(res).toEqual({ status: "ok", file_id: ID_F, target_id: ID_T, kind: "file.attachment" });
-    expect(g.spies.add_link).toHaveBeenCalledWith({ from: ID_T, to: ID_F, kind: "file.attachment" });
+    expect(g.spies.addLink).toHaveBeenCalledWith({ from: ID_T, to: ID_F, kind: "file.attachment" });
   });
 
-  it("rejects a cross-user / missing file_id (get_entity_full → null) without linking", async () => {
+  it("rejects a cross-user / missing file_id (getEntityFull → null) without linking", async () => {
     const g = makeGraph();
-    spy(g, "get_entity_full").mockResolvedValueOnce(null);
+    spy(g, "getEntityFull").mockResolvedValueOnce(null);
     await expect(makeModule(g).attach({ file_id: ID_F, target_id: ID_T })).rejects.toThrow(/not found/);
-    expect(g.spies.add_link).not.toHaveBeenCalled();
+    expect(g.spies.addLink).not.toHaveBeenCalled();
   });
 
   it("rejects a file_id that is not a file.object", async () => {
     const g = makeGraph();
-    spy(g, "get_entity_full").mockResolvedValueOnce(detail(ID_F, "notes.note"));
+    spy(g, "getEntityFull").mockResolvedValueOnce(detail(ID_F, "notes.note"));
     await expect(makeModule(g).attach({ file_id: ID_F, target_id: ID_T })).rejects.toThrow(/not found/);
-    expect(g.spies.add_link).not.toHaveBeenCalled();
+    expect(g.spies.addLink).not.toHaveBeenCalled();
   });
 
   it("rejects a cross-user / missing target_id without linking", async () => {
     const g = makeGraph();
-    spy(g, "get_entity_full")
+    spy(g, "getEntityFull")
       .mockResolvedValueOnce(detail(ID_F, "file.object"))
       .mockResolvedValueOnce(null);
     await expect(makeModule(g).attach({ file_id: ID_F, target_id: ID_T })).rejects.toThrow(/not found/);
-    expect(g.spies.add_link).not.toHaveBeenCalled();
+    expect(g.spies.addLink).not.toHaveBeenCalled();
   });
 
   it("rejects an unsupported link kind", async () => {
@@ -81,14 +81,14 @@ describe("file.attach (per-user isolation + allowed link kinds)", () => {
     await expect(
       makeModule(g).attach({ file_id: ID_F, target_id: ID_T, kind: "custom" }),
     ).rejects.toThrow(/unsupported attach kind/);
-    expect(g.spies.add_link).not.toHaveBeenCalled();
+    expect(g.spies.addLink).not.toHaveBeenCalled();
   });
 });
 
 describe("file.get (ownership + schema + URL)", () => {
   it("returns details + route-correct url for an owned file", async () => {
     const g = makeGraph();
-    spy(g, "get_entity_full").mockResolvedValueOnce(
+    spy(g, "getEntityFull").mockResolvedValueOnce(
       detail(ID_F, "file.object", DETAILS),
     );
     const res = await makeModule(g).get({ id: ID_F });
@@ -99,7 +99,7 @@ describe("file.get (ownership + schema + URL)", () => {
 
   it("uses cloud_url when there is no local_path", async () => {
     const g = makeGraph();
-    spy(g, "get_entity_full").mockResolvedValueOnce(
+    spy(g, "getEntityFull").mockResolvedValueOnce(
       detail(ID_F, "file.object", { mime_type: "application/pdf", source_module: "s", source_ref: {}, cloud_url: "https://cdn/x.pdf" }),
     );
     const res = await makeModule(g).get({ id: ID_F });
@@ -108,9 +108,9 @@ describe("file.get (ownership + schema + URL)", () => {
 
   it("not-found for a non-owned (null) or wrong-schema id", async () => {
     const g = makeGraph();
-    spy(g, "get_entity_full").mockResolvedValueOnce(null);
+    spy(g, "getEntityFull").mockResolvedValueOnce(null);
     await expect(makeModule(g).get({ id: ID_F })).rejects.toThrow(/not found/);
-    spy(g, "get_entity_full").mockResolvedValueOnce(detail(ID_F, "notes.note"));
+    spy(g, "getEntityFull").mockResolvedValueOnce(detail(ID_F, "notes.note"));
     await expect(makeModule(g).get({ id: ID_F })).rejects.toThrow(/not found/);
   });
 });
@@ -119,7 +119,7 @@ describe("file.list (filters + content skip)", () => {
   it("filters by mime_prefix and skips rows without content", async () => {
     const g = makeGraph();
     // S1: the dictionary rides each entity of the window page.
-    spy(g, "list_entities_window").mockResolvedValue(page([
+    spy(g, "listEntitiesWindow").mockResolvedValue(page([
       entity("i1", "a.png", { schemaId: "file.object", properties: { mime_type: "image/png", source_module: "u", source_ref: {}, local_path: "a" } }),
       entity("i2", "b.pdf", { schemaId: "file.object", properties: { mime_type: "application/pdf", source_module: "u", source_ref: {}, local_path: "b" } }),
       entity("i3", "c.jpg", { schemaId: "file.object", properties: { mime_type: "image/jpeg", source_module: "u", source_ref: {} } }), // no content
@@ -143,18 +143,18 @@ describe("file.list (filters + content skip)", () => {
 describe("tst_cat_entity_one_type_006 — file speaks the SDK shapes", () => {
   it("tst_cat_entity_one_type_006 list reads window entities and filters by a parent link's `from`", async () => {
     const g = makeGraph();
-    spy(g, "list_entities_window").mockResolvedValue(page([
+    spy(g, "listEntitiesWindow").mockResolvedValue(page([
       entity("i1", "a", { schemaId: "file.object", properties: { mime_type: "x/y", source_module: "u", source_ref: {}, local_path: "a" } }),
       entity("i2", "b", { schemaId: "file.object", properties: { mime_type: "x/y", source_module: "u", source_ref: {}, local_path: "b" } }),
     ]));
-    spy(g, "list_links_for_entity").mockImplementation((id: string) =>
+    spy(g, "listLinksForEntity").mockImplementation((id: string) =>
       Promise.resolve(id === "i1" ? [link("parentX", "i1", "file.attachment")] : [link("other", "i2", "file.attachment")]),
     );
 
     const res = await makeModule(g).list({ parent_id: "parentX" });
 
     expect(res.items.map((i) => i.entity_id)).toEqual(["i1"]);
-    expect(g.spies.list_entities_window).toHaveBeenCalledWith({
+    expect(g.spies.listEntitiesWindow).toHaveBeenCalledWith({
       schema: "file.object",
       order: [{ field: { entityField: "date" }, desc: true }],
       limit: 50,
@@ -164,12 +164,12 @@ describe("tst_cat_entity_one_type_006 — file speaks the SDK shapes", () => {
 
   it("tst_cat_entity_one_type_006 attach writes the SDK link input", async () => {
     const g = makeGraph();
-    spy(g, "get_entity_full")
+    spy(g, "getEntityFull")
       .mockResolvedValueOnce(detail(ID_F, "file.object"))
       .mockResolvedValueOnce(detail(ID_T, "companies.company"));
 
     await makeModule(g).attach({ file_id: ID_F, target_id: ID_T });
 
-    expect(g.spies.add_link).toHaveBeenCalledWith({ from: ID_T, to: ID_F, kind: "file.attachment" });
+    expect(g.spies.addLink).toHaveBeenCalledWith({ from: ID_T, to: ID_F, kind: "file.attachment" });
   });
 });

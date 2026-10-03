@@ -112,20 +112,20 @@ export async function attendeesForPage(
   const edges = (
     prefetched
       ? Object.values(prefetched).flat()
-      : await graph.list_links_for_entities(eventIds)
+      : await graph.listLinksForEntities(eventIds)
   ).filter((l) => l.kind === "attendee" && eventSet.has(l.from));
   if (edges.length === 0) return out;
 
   const addressIds = [...new Set(edges.map((e) => e.to))];
-  const addresses = await graph.get_entities(addressIds);
+  const addresses = await graph.getEntities(addressIds);
   const addressById = new Map(addresses.map((a) => [a.id, a]));
 
   // One batch of the addresses' inbound identity edges, one batch of persons.
-  const identityEdges = (await graph.list_links_for_entities(addressIds)).filter(
+  const identityEdges = (await graph.listLinksForEntities(addressIds)).filter(
     (l) => l.kind === "identity" && addressById.has(l.to),
   );
   const personIds = [...new Set(identityEdges.map((l) => l.from))];
-  const persons = personIds.length === 0 ? [] : await graph.get_entities(personIds);
+  const persons = personIds.length === 0 ? [] : await graph.getEntities(personIds);
   const personById = new Map(persons.map((p) => [p.id, p]));
   const contactByAddress = new Map<string, string>();
   for (const edge of identityEdges) {

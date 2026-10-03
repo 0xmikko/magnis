@@ -50,17 +50,17 @@ type G = MockGraph;
 
 function createGraph(overrides: Record<string, unknown> = {}): G {
   return mockGraph({
-    create_entity: () => Promise.resolve(entity(TRIGGER_ID, "T", { schemaId: TRIGGER })),
-    update_properties: () => Promise.resolve(undefined),
-    add_link: () => Promise.resolve(undefined),
-    delete_entity: () => Promise.resolve(undefined),
+    createEntity: () => Promise.resolve(entity(TRIGGER_ID, "T", { schemaId: TRIGGER })),
+    updateProperties: () => Promise.resolve(undefined),
+    addLink: () => Promise.resolve(undefined),
+    deleteEntity: () => Promise.resolve(undefined),
     ...overrides,
   } as never);
 }
 
 function existingTrigger(): G {
   return mockGraph({
-    get_entity_full: () =>
+    getEntityFull: () =>
       Promise.resolve({
         entity: entity(TRIGGER_ID, "watch replies", {
           schemaId: TRIGGER,
@@ -76,8 +76,8 @@ function existingTrigger(): G {
         }),
         links: [],
       }),
-    update_properties: () => Promise.resolve(undefined),
-    update_entity_name: () => Promise.resolve(undefined),
+    updateProperties: () => Promise.resolve(undefined),
+    updateEntityName: () => Promise.resolve(undefined),
   } as never);
 }
 
@@ -100,7 +100,7 @@ describe("triggers.create requires a real gate condition", () => {
     await expect(
       module.create({ name: "n", action_prompt: "a", gate_prompt: "   " }),
     ).rejects.toThrow(/gate_prompt/);
-    expect(graph.spies.create_entity).not.toHaveBeenCalled();
+    expect(graph.spies.createEntity).not.toHaveBeenCalled();
   });
 
   it("tst_module_triggers_write_001 rejects a missing gate", async () => {
@@ -110,12 +110,12 @@ describe("triggers.create requires a real gate condition", () => {
     await expect(module.create({ name: "n", action_prompt: "a" } as never)).rejects.toThrow(
       /gate_prompt/,
     );
-    expect(graph.spies.create_entity).not.toHaveBeenCalled();
+    expect(graph.spies.createEntity).not.toHaveBeenCalled();
   });
 
   it("tst_module_triggers_write_001 leaves no trigger behind when the config write fails", async () => {
     const graph = createGraph({
-      update_properties: () => Promise.reject(new Error("facet store unavailable")),
+      updateProperties: () => Promise.reject(new Error("facet store unavailable")),
     });
     const { module } = mountModule(TriggersModule, { graph, rpc });
 
@@ -123,13 +123,13 @@ describe("triggers.create requires a real gate condition", () => {
       module.create({ name: "n", action_prompt: "a", gate_prompt: "a reply arrived" }),
     ).rejects.toThrow("facet store unavailable");
 
-    expect(graph.spies.delete_entity).toHaveBeenCalledWith(TRIGGER_ID);
+    expect(graph.spies.deleteEntity).toHaveBeenCalledWith(TRIGGER_ID);
   });
 
   it("tst_module_triggers_write_001 leaves no trigger behind when a watch link fails", async () => {
     const graph = createGraph({
-      get_entity_full: () => Promise.resolve(null),
-      add_link: () => Promise.reject(new Error("link store unavailable")),
+      getEntityFull: () => Promise.resolve(null),
+      addLink: () => Promise.reject(new Error("link store unavailable")),
     });
     const { module } = mountModule(TriggersModule, { graph, rpc });
 
@@ -142,7 +142,7 @@ describe("triggers.create requires a real gate condition", () => {
       }),
     ).rejects.toThrow("link store unavailable");
 
-    expect(graph.spies.delete_entity).toHaveBeenCalledWith(TRIGGER_ID);
+    expect(graph.spies.deleteEntity).toHaveBeenCalledWith(TRIGGER_ID);
   });
 });
 
@@ -178,7 +178,7 @@ describe("tst_module_triggers_watch_validation_001 — native watch validation",
         watch_entity_ids: ["33333333-3333-4333-8333-333333333333"],
       }),
     ).resolves.toBe(clarification);
-    expect(graph.spies.create_entity).not.toHaveBeenCalled();
+    expect(graph.spies.createEntity).not.toHaveBeenCalled();
   });
 });
 
@@ -197,12 +197,12 @@ describe("triggers.update keeps the gate real and the write whole", () => {
     const { module } = mountModule(TriggersModule, { graph, rpc });
 
     await expect(module.update({ id: TRIGGER_ID, gate_prompt: "" })).rejects.toThrow(/gate_prompt/);
-    expect(graph.spies.update_properties).not.toHaveBeenCalled();
+    expect(graph.spies.updateProperties).not.toHaveBeenCalled();
   });
 
   it("tst_module_triggers_write_002 does not rename when the config write fails", async () => {
     const graph = mockGraph({
-      get_entity_full: () =>
+      getEntityFull: () =>
         Promise.resolve({
           entity: entity(TRIGGER_ID, "old name", {
             schemaId: TRIGGER,
@@ -218,8 +218,8 @@ describe("triggers.update keeps the gate real and the write whole", () => {
           }),
           links: [],
         }),
-      update_properties: () => Promise.reject(new Error("facet store unavailable")),
-      update_entity_name: () => Promise.resolve(undefined),
+      updateProperties: () => Promise.reject(new Error("facet store unavailable")),
+      updateEntityName: () => Promise.resolve(undefined),
     } as never);
     const { module } = mountModule(TriggersModule, { graph, rpc });
 
@@ -227,7 +227,7 @@ describe("triggers.update keeps the gate real and the write whole", () => {
       "facet store unavailable",
     );
 
-    expect(graph.spies.update_entity_name).not.toHaveBeenCalled();
+    expect(graph.spies.updateEntityName).not.toHaveBeenCalled();
   });
 });
 
@@ -247,7 +247,7 @@ describe("triggers.update compensation restores EVERY field", () => {
   it("tst_module_triggers_write_003 a failed rename keeps the original gate_prompt", async () => {
     const writes: Record<string, unknown>[] = [];
     const graph = mockGraph({
-      get_entity_full: () =>
+      getEntityFull: () =>
         Promise.resolve({
           entity: entity(TRIGGER_ID, "old name", {
             schemaId: TRIGGER,
@@ -263,11 +263,11 @@ describe("triggers.update compensation restores EVERY field", () => {
           }),
           links: [],
         }),
-      update_properties: (p: PropertiesUpdate) => {
+      updateProperties: (p: PropertiesUpdate) => {
         writes.push({ ...(p.properties as JsonObject) });
         return Promise.resolve(undefined);
       },
-      update_entity_name: () => Promise.reject(new Error("rename store unavailable")),
+      updateEntityName: () => Promise.reject(new Error("rename store unavailable")),
     } as never);
     const { module } = mountModule(TriggersModule, { graph, rpc });
 
@@ -282,7 +282,7 @@ describe("triggers.update compensation restores EVERY field", () => {
   it("tst_module_triggers_write_003 a failed rollback names BOTH failures", async () => {
     let attaches = 0;
     const graph = mockGraph({
-      get_entity_full: () =>
+      getEntityFull: () =>
         Promise.resolve({
           entity: entity(TRIGGER_ID, "old name", {
             schemaId: TRIGGER,
@@ -298,13 +298,13 @@ describe("triggers.update compensation restores EVERY field", () => {
           }),
           links: [],
         }),
-      update_properties: () => {
+      updateProperties: () => {
         attaches++;
         return attaches === 1
           ? Promise.resolve(undefined)
           : Promise.reject(new Error("rollback store unavailable"));
       },
-      update_entity_name: () => Promise.reject(new Error("rename store unavailable")),
+      updateEntityName: () => Promise.reject(new Error("rename store unavailable")),
     } as never);
     const { module } = mountModule(TriggersModule, { graph, rpc });
 
@@ -334,7 +334,7 @@ describe("tst_module_triggers_crud_001 — trigger definition commands", () => {
     const targetId = "33333333-3333-4333-8333-333333333333";
     const episodeId = "44444444-4444-4444-8444-444444444444";
     const graph = createGraph({
-      get_entity_full: () =>
+      getEntityFull: () =>
         Promise.resolve({ entity: entity(episodeId, "Parent", { schemaId: "episodes.episode" }), links: [] }),
     });
     const execute = vi.fn((method: string) => {
@@ -361,7 +361,7 @@ describe("tst_module_triggers_crud_001 — trigger definition commands", () => {
       status: "active",
       episode_id: episodeId,
     });
-    expect(graph.spies.update_properties).toHaveBeenCalledWith({
+    expect(graph.spies.updateProperties).toHaveBeenCalledWith({
       entityId: TRIGGER_ID,
       properties: expect.objectContaining({
         name: "Price tracker",
@@ -372,8 +372,8 @@ describe("tst_module_triggers_crud_001 — trigger definition commands", () => {
         firing_count: 0,
       }),
     });
-    const addLink = graph.spies.add_link;
-    if (addLink === undefined) throw new Error("trigger create: add_link spy missing");
+    const addLink = graph.spies.addLink;
+    if (addLink === undefined) throw new Error("trigger create: addLink spy missing");
     expect(addLink.mock.calls.map(([value]) => value)).toEqual([
       { from: TRIGGER_ID, to: targetId, kind: "watches" },
       { from: TRIGGER_ID, to: episodeId, kind: "triggers.belongs_to" },
@@ -392,7 +392,7 @@ describe("tst_module_triggers_crud_001 — trigger definition commands", () => {
       firing_count: 0,
     };
     const graph = mockGraph({
-      get_entity_full: () =>
+      getEntityFull: () =>
         Promise.resolve({
           entity: entity(TRIGGER_ID, "watch replies", {
             schemaId: TRIGGER,
@@ -400,11 +400,11 @@ describe("tst_module_triggers_crud_001 — trigger definition commands", () => {
           }),
           links: [],
         }),
-      update_properties: (params: PropertiesUpdate) => {
+      updateProperties: (params: PropertiesUpdate) => {
         properties = { ...(params.properties as typeof properties) };
         return Promise.resolve(undefined);
       },
-      update_entity_name: () => Promise.resolve(undefined),
+      updateEntityName: () => Promise.resolve(undefined),
     });
     const execute = vi.fn(() => Promise.resolve(null));
     const module = mountModule(TriggersModule, { graph, rpc: { execute } }).module;
@@ -422,8 +422,8 @@ describe("tst_module_triggers_crud_001 — trigger definition commands", () => {
       status: "active",
       debounce_seconds: 600,
     });
-    expect(graph.spies.update_entity_name).not.toHaveBeenCalled();
-    expect(graph.spies.update_properties).toHaveBeenCalledWith({
+    expect(graph.spies.updateEntityName).not.toHaveBeenCalled();
+    expect(graph.spies.updateProperties).toHaveBeenCalledWith({
       entityId: TRIGGER_ID,
       properties: expect.objectContaining({
         name: "watch replies",
@@ -452,16 +452,16 @@ describe("tst_module_triggers_crud_001 — trigger definition commands", () => {
       links: [],
     };
     const graph = mockGraph({
-      get_entity_full: (id: string) =>
+      getEntityFull: (id: string) =>
         Promise.resolve(id === TRIGGER_ID ? triggerDetail : { entity: entity(id, "Target"), links: [] }),
-      add_link: () => Promise.resolve(undefined),
-      list_links_for_entity: () =>
+      addLink: () => Promise.resolve(undefined),
+      listLinksForEntity: () =>
         Promise.resolve([
           link(TRIGGER_ID, targetId, "watches", { id: "drop" }),
           link(TRIGGER_ID, keepId, "watches", { id: "keep" }),
           link(TRIGGER_ID, targetId, "belongs_to", { id: "other-kind" }),
         ]),
-      delete_link: () => Promise.resolve(undefined),
+      deleteLink: () => Promise.resolve(undefined),
     });
     const module = mountModule(TriggersModule, {
       graph,
@@ -474,13 +474,13 @@ describe("tst_module_triggers_crud_001 — trigger definition commands", () => {
     await expect(module.unlink({ trigger_id: TRIGGER_ID, entity_id: targetId })).resolves.toEqual({
       unlinked: true,
     });
-    expect(graph.spies.delete_link).toHaveBeenCalledTimes(1);
-    expect(graph.spies.delete_link).toHaveBeenCalledWith("drop");
+    expect(graph.spies.deleteLink).toHaveBeenCalledTimes(1);
+    expect(graph.spies.deleteLink).toHaveBeenCalledWith("drop");
   });
 
   it("deletes an existing trigger and rejects missing command targets", async () => {
     const graph = mockGraph({
-      get_entity_full: () => Promise.resolve(null),
+      getEntityFull: () => Promise.resolve(null),
     });
     const module = mountModule(TriggersModule, {
       graph,
@@ -495,13 +495,13 @@ describe("tst_module_triggers_crud_001 — trigger definition commands", () => {
     );
 
     const existing = existingTrigger();
-    existing.spies.delete_entity = vi.fn(() => Promise.resolve(undefined));
+    existing.spies.deleteEntity = vi.fn(() => Promise.resolve(undefined));
     const deletable = mountModule(TriggersModule, {
       graph: existing,
       rpc: { execute: vi.fn(() => Promise.resolve(null)) },
     }).module;
     await expect(deletable.delete({ id: TRIGGER_ID })).resolves.toEqual({ deleted: true });
-    expect(existing.spies.delete_entity).toHaveBeenCalledWith(TRIGGER_ID);
+    expect(existing.spies.deleteEntity).toHaveBeenCalledWith(TRIGGER_ID);
   });
 });
 
@@ -511,7 +511,7 @@ describe("tst_module_triggers_crud_001 — trigger definition commands", () => {
  * @deterministic: yes — owner RPC and graph doubles
  */
 it("tst_module_triggers_forms_001 validates raw email form before owner lookup and creates one trigger", async () => {
-  const graph = createGraph({ get_entity_full: () => Promise.resolve(null) });
+  const graph = createGraph({ getEntityFull: () => Promise.resolve(null) });
   const execute = vi.fn(async (method: string) => method === "email.ensure_addresses" ? { ids: ["address-1"] } : null);
   const { module } = mountModule(TriggersModule, { graph, rpc: { execute } });
   await expect(module.create({ from_addresses: ["Morgan@Example.test"], gate_prompt: "receipt", action_prompt: "notify", episode_id: "foreign" })).rejects.toThrow("episode");
@@ -520,9 +520,9 @@ it("tst_module_triggers_forms_001 validates raw email form before owner lookup a
   expect(execute).not.toHaveBeenCalled();
   const result = await module.create({ from_addresses: ["Morgan@Example.test"], gate_prompt: "receipt", action_prompt: "notify", debounce_seconds: 12 });
   expect(execute).toHaveBeenCalledWith("email.ensure_addresses", { items: [{ address: "morgan@example.test" }] });
-  expect(graph.spies.create_entity).toHaveBeenCalledTimes(1);
-  expect(graph.spies.add_link).toHaveBeenCalledWith({ from: TRIGGER_ID, to: "address-1", kind: "watches" });
-  expect(graph.spies.update_properties).toHaveBeenCalledWith(expect.objectContaining({ properties: expect.objectContaining({ debounce_seconds: 12, schema_filter: "email" }) }));
+  expect(graph.spies.createEntity).toHaveBeenCalledTimes(1);
+  expect(graph.spies.addLink).toHaveBeenCalledWith({ from: TRIGGER_ID, to: "address-1", kind: "watches" });
+  expect(graph.spies.updateProperties).toHaveBeenCalledWith(expect.objectContaining({ properties: expect.objectContaining({ debounce_seconds: 12, schema_filter: "email" }) }));
   expect(result.name).toBe("Email trigger: morgan@example.test");
 });
 
@@ -540,7 +540,7 @@ it("tst_module_triggers_forms_002 resolves a raw Telegram chat once and preserve
   const result = await module.create({ chat_id: 42, gate_prompt: "reply", action_prompt: "notify", debounce_seconds: 30 });
   expect(result.name).toBe("Telegram trigger: chat 42");
   expect(execute).toHaveBeenCalledWith("telegram.chats.get", { chat_id: 42 });
-  expect(graph.spies.add_link).toHaveBeenCalledWith({ from: TRIGGER_ID, to: "chat-entity", kind: "watches" });
-  expect(graph.spies.create_entity).toHaveBeenCalledTimes(1);
-  expect(graph.spies.update_properties).toHaveBeenCalledWith(expect.objectContaining({ properties: expect.objectContaining({ debounce_seconds: 30, schema_filter: "telegram" }) }));
+  expect(graph.spies.addLink).toHaveBeenCalledWith({ from: TRIGGER_ID, to: "chat-entity", kind: "watches" });
+  expect(graph.spies.createEntity).toHaveBeenCalledTimes(1);
+  expect(graph.spies.updateProperties).toHaveBeenCalledWith(expect.objectContaining({ properties: expect.objectContaining({ debounce_seconds: 30, schema_filter: "telegram" }) }));
 });

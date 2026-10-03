@@ -29,10 +29,10 @@ describe("tst_module_companies_write_001 — company write contract", () => {
       description: "Local-first operations",
     });
     const graph = mockGraph({
-      search_entities_by_name: () => Promise.resolve([]),
-      create_entity: () => Promise.resolve(company("New Co")),
-      update_properties: () => Promise.resolve(undefined),
-      get_entity: () => Promise.resolve(persisted),
+      searchEntitiesByName: () => Promise.resolve([]),
+      createEntity: () => Promise.resolve(company("New Co")),
+      updateProperties: () => Promise.resolve(undefined),
+      getEntity: () => Promise.resolve(persisted),
     });
     const module = mountModule(CompaniesModule, { graph }).module;
 
@@ -50,13 +50,13 @@ describe("tst_module_companies_write_001 — company write contract", () => {
       website: "https://new.example",
       industry: "AI",
     });
-    expect(graph.spies.create_entity).toHaveBeenCalledWith({
+    expect(graph.spies.createEntity).toHaveBeenCalledWith({
       schemaId: COMPANY,
       name: "New Co",
       clientId: COMPANY_ID,
       idx: "new co",
     });
-    expect(graph.spies.update_properties).toHaveBeenCalledWith({
+    expect(graph.spies.updateProperties).toHaveBeenCalledWith({
       entityId: COMPANY_ID,
       properties: {
         name: "New Co",
@@ -71,7 +71,7 @@ describe("tst_module_companies_write_001 — company write contract", () => {
   it("returns an exact case-insensitive name match without writing", async () => {
     const existing = company(" ACME ", { website: "https://acme.example" });
     const graph = mockGraph({
-      search_entities_by_name: () => Promise.resolve([existing]),
+      searchEntitiesByName: () => Promise.resolve([existing]),
     });
     const module = mountModule(CompaniesModule, { graph }).module;
 
@@ -79,7 +79,7 @@ describe("tst_module_companies_write_001 — company write contract", () => {
       id: COMPANY_ID,
       website: "https://acme.example",
     });
-    expect(graph.spies.search_entities_by_name).toHaveBeenCalledWith({
+    expect(graph.spies.searchEntitiesByName).toHaveBeenCalledWith({
       query: "acme",
       schemaIds: [COMPANY],
       limit: 25,
@@ -96,11 +96,11 @@ describe("tst_module_companies_write_001 — company write contract", () => {
     });
     let readCount = 0;
     const graph = mockGraph({
-      get_entity: () => Promise.resolve(readCount++ === 0 ? original : updated),
-      update_entity_name: () => Promise.resolve(undefined),
-      update_properties: () => Promise.resolve(undefined),
-      add_link: () => Promise.resolve(undefined),
-      get_entity_full: () => Promise.resolve({ entity: updated, links: [] }),
+      getEntity: () => Promise.resolve(readCount++ === 0 ? original : updated),
+      updateEntityName: () => Promise.resolve(undefined),
+      updateProperties: () => Promise.resolve(undefined),
+      addLink: () => Promise.resolve(undefined),
+      getEntityFull: () => Promise.resolve({ entity: updated, links: [] }),
     });
     const execute = vi.fn(() => Promise.resolve({ ids: ["address-1"] }));
     const module = mountModule(CompaniesModule, { graph, rpc: { execute } }).module;
@@ -114,7 +114,7 @@ describe("tst_module_companies_write_001 — company write contract", () => {
     });
 
     expect(result).toMatchObject({ name: "New Co", website: "https://new.example" });
-    expect(graph.spies.update_properties).toHaveBeenCalledWith({
+    expect(graph.spies.updateProperties).toHaveBeenCalledWith({
       entityId: COMPANY_ID,
       properties: {
         name: "New Co",
@@ -123,7 +123,7 @@ describe("tst_module_companies_write_001 — company write contract", () => {
         phones: [{ phone: "+31000000001", type: null, is_primary: true }],
       },
     });
-    expect(graph.spies.add_link).toHaveBeenCalledWith({
+    expect(graph.spies.addLink).toHaveBeenCalledWith({
       from: COMPANY_ID,
       to: "address-1",
       kind: "identity",
@@ -132,9 +132,9 @@ describe("tst_module_companies_write_001 — company write contract", () => {
 
   it("propagates a dictionary write failure and does not fake a readback", async () => {
     const graph = mockGraph({
-      search_entities_by_name: () => Promise.resolve([]),
-      create_entity: () => Promise.resolve(company("Broken")),
-      update_properties: () => Promise.reject(new Error("dictionary unavailable")),
+      searchEntitiesByName: () => Promise.resolve([]),
+      createEntity: () => Promise.resolve(company("Broken")),
+      updateProperties: () => Promise.reject(new Error("dictionary unavailable")),
     });
     const module = mountModule(CompaniesModule, { graph }).module;
 

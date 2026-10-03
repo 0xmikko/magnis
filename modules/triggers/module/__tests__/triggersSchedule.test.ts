@@ -24,17 +24,17 @@ type G = MockGraph;
 
 function createGraph(overrides: Record<string, unknown> = {}): G {
   return mockGraph({
-    create_entity: () => Promise.resolve(entity(TRIGGER_ID, "T", { schemaId: TRIGGER })),
-    update_properties: () => Promise.resolve(undefined),
-    add_link: () => Promise.resolve(undefined),
-    delete_entity: () => Promise.resolve(undefined),
+    createEntity: () => Promise.resolve(entity(TRIGGER_ID, "T", { schemaId: TRIGGER })),
+    updateProperties: () => Promise.resolve(undefined),
+    addLink: () => Promise.resolve(undefined),
+    deleteEntity: () => Promise.resolve(undefined),
     ...overrides,
   } as never);
 }
 
 function existingTrigger(configExtra: JsonObject = {}): G {
   return mockGraph({
-    get_entity_full: () =>
+    getEntityFull: () =>
       Promise.resolve({
         // S1: the trigger config IS the node's dictionary.
         entity: entity(TRIGGER_ID, "digest", {
@@ -52,8 +52,8 @@ function existingTrigger(configExtra: JsonObject = {}): G {
         }),
         links: [],
       }),
-    update_properties: () => Promise.resolve(undefined),
-    update_entity_name: () => Promise.resolve(undefined),
+    updateProperties: () => Promise.resolve(undefined),
+    updateEntityName: () => Promise.resolve(undefined),
   } as never);
 }
 
@@ -69,8 +69,8 @@ function seamRpc() {
 }
 
 function persistedConfig(graph: G): TriggerConfigData {
-  const updateProperties = graph.spies.update_properties;
-  if (!updateProperties) throw new Error("update_properties spy not mounted");
+  const updateProperties = graph.spies.updateProperties;
+  if (!updateProperties) throw new Error("updateProperties spy not mounted");
   const calls = updateProperties.mock.calls as [PropertiesUpdate][];
   expect(calls.length).toBeGreaterThan(0);
   const lastWrite = calls[calls.length - 1];
@@ -187,7 +187,7 @@ describe("triggers.create with an invalid schedule", () => {
         schedule: { cron: "*/4 * * * *" },
       }),
     ).rejects.toThrow(/too frequent/);
-    expect(graph.spies.create_entity).not.toHaveBeenCalled();
+    expect(graph.spies.createEntity).not.toHaveBeenCalled();
   });
 });
 

@@ -49,7 +49,7 @@ const NEIGHBOURS = [
 
 function messageGraph(): G {
   return mockGraph({
-    get_entity_full: () =>
+    getEntityFull: () =>
       Promise.resolve({
         entity: entity(MESSAGE_ID, "", {
           schemaId: MESSAGE,
@@ -58,9 +58,9 @@ function messageGraph(): G {
         links: LINKS,
       }),
     // The sender-name resolution reads the page's author edges in one batch.
-    list_links_for_entity: () => Promise.resolve(LINKS),
-    list_links_for_entities: () => Promise.resolve(LINKS),
-    get_entities: () => Promise.resolve(NEIGHBOURS),
+    listLinksForEntity: () => Promise.resolve(LINKS),
+    listLinksForEntities: () => Promise.resolve(LINKS),
+    getEntities: () => Promise.resolve(NEIGHBOURS),
   });
 }
 
@@ -91,7 +91,7 @@ describe("tst_mod_tg_001 — a message exposes its own links", () => {
     expect(byId.has(MESSAGE_ID)).toBe(false);
     // The batch argument, not just its count: a batch over the wrong ids would
     // otherwise leave every assertion above intact.
-    expect(graph.spies.get_entities).toHaveBeenCalledWith(
+    expect(graph.spies.getEntities).toHaveBeenCalledWith(
       expect.arrayContaining(["c1", "a1", "t1"]),
     );
   });

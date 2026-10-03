@@ -7,7 +7,7 @@ import type { ContactListItem } from "../types.ts";
 
 const AVATAR_COLORS = ["orange", "blue", "green", "red", "purple", "pink"];
 
-/// Max contacts.person entities folded into one apply_batch (mirrors email's
+/// Max contacts.person entities folded into one applyBatch (mirrors email's
 /// INGEST_CHUNK). A whole sync page is sliced into chunks so the lone PGlite
 /// connection is freed between transactions.
 export const INGEST_CHUNK = 200;

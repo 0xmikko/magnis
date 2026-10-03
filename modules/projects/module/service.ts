@@ -1,11 +1,11 @@
 // Projects plugin — backend module (V8). Mirrors the legacy Rust
 // ProjectsModuleController/Service 1:1 (controller.rs + service.rs).
 //
-// Reads use the efficient graph read-API: list → list_entities (order:"date",
-// preserves pinned-first) / search_entities_by_name, then ONE
+// Reads use the efficient graph read-API: list → listEntities (order:"date",
+// preserves pinned-first) / searchEntitiesByName, then ONE
 // list_canonical_for_entities batch (canonical fields, no per-row get_canonical
-// N+1); get → get_entity_full + get_entities; list_for_entity →
-// list_linked + canonical batch. Fixed, N-independent crossing counts.
+// N+1); get → getEntityFull + getEntities; list_for_entity →
+// listLinked + canonical batch. Fixed, N-independent crossing counts.
 
 import {
   tool,
@@ -158,7 +158,7 @@ export class ProjectsModule {
     let total: number;
     if (search) {
       // search returns up to limit+offset, then we page in memory (native parity).
-      const matched = await this.graph.search_entities_by_name({
+      const matched = await this.graph.searchEntitiesByName({
         query: search,
         schemaIds: [PROJECT],
         limit: limit + offset,
@@ -166,10 +166,10 @@ export class ProjectsModule {
       total = matched.length;
       rows = matched.slice(offset, offset + limit);
     } else {
-      // Keep list_entities(order:"date") — its SQL applies pinned-first /
-      // pin_order ASC then date DESC, which list_entities_window does NOT
+      // Keep listEntities(order:"date") — its SQL applies pinned-first /
+      // pin_order ASC then date DESC, which listEntitiesWindow does NOT
       // reproduce. (The window would silently drop the pinned-first ordering.)
-      const page = await this.graph.list_entities({ schemaId: PROJECT, order: "date", limit, offset });
+      const page = await this.graph.listEntities({ schemaId: PROJECT, order: "date", limit, offset });
       rows = page.items;
       total = page.total;
     }
@@ -183,7 +183,7 @@ export class ProjectsModule {
   @tool("get", { entity: "projects.project", ...GET_SPEC })
   async get(params: GetParams): Promise<ProjectDetailView> {
     // Entity + link edges in ONE fetch.
-    const detail = await this.graph.get_entity_full(params.id, { links: true });
+    const detail = await this.graph.getEntityFull(params.id, { links: true });
     if (!detail) throw new Error(`project ${params.id} not found`);
     const { entity, links } = detail;
     const canonical = projectCanonFromProperties(entity);
@@ -195,9 +195,9 @@ export class ProjectsModule {
     const status = canonicalString(canonical, "project.status");
 
     // Batch: resolve ALL link neighbors in ONE statement (was a per-link
-    // get_entity N+1). Outgoing → kind; incoming → "~kind" (native parity).
+    // getEntity N+1). Outgoing → kind; incoming → "~kind" (native parity).
     const neighborIds = links.map((l) => (l.from === entity.id ? l.to : l.from));
-    const byId = new Map((await this.graph.get_entities(neighborIds)).map((n) => [n.id, n]));
+    const byId = new Map((await this.graph.getEntities(neighborIds)).map((n) => [n.id, n]));
     const linked: LinkedEntitySummary[] = [];
     for (const l of links) {
       if (l.from === entity.id) {
@@ -232,7 +232,7 @@ export class ProjectsModule {
     const statusVal = params.status ?? "active";
     // Idempotency on client_id (native service.rs:252).
     if (params.client_id) {
-      const existing = await this.graph.get_entity(params.client_id);
+      const existing = await this.graph.getEntity(params.client_id);
       if (existing) {
         // S1: the dictionary rides the entity.
         const existingStatus = (existing.properties as { status?: string }).status ?? "active";
@@ -246,14 +246,14 @@ export class ProjectsModule {
       }
     }
 
-    const entity = await this.graph.create_entity({
+    const entity = await this.graph.createEntity({
       schemaId: PROJECT,
       name: params.name,
       ...(params.client_id === undefined ? {} : { clientId: params.client_id }),
     });
     // S1: the project's state is the node's dictionary — one write, no
     // canonical resolution pass.
-    await this.graph.update_properties({
+    await this.graph.updateProperties({
       entityId: entity.id,
       properties: { name: params.name, status: statusVal, created_at: new Date().toISOString() },
     });
@@ -263,7 +263,7 @@ export class ProjectsModule {
   @rpc("update", UPDATE_SPEC)
   @writeTool("update", { entity: "projects.project", ...UPDATE_SPEC })
   async update(params: UpdateParams): Promise<ProjectDetailView> {
-    const entity = await this.graph.get_entity(params.id);
+    const entity = await this.graph.getEntity(params.id);
     if (!entity) throw new Error(`project ${params.id} not found`);
 
     const data: Record<string, JsonValue> = { ...(entity.properties as JsonObject) };
@@ -272,23 +272,23 @@ export class ProjectsModule {
     // must never erase the entity name or the existing project record value.
     if (typeof params.name === "string") {
       data.name = params.name;
-      await this.graph.update_entity_name(params.id, params.name);
+      await this.graph.updateEntityName(params.id, params.name);
     }
     if (typeof params.status === "string") data.status = params.status;
     data.updated_at = new Date().toISOString();
 
     // Description overwrites its key in the same dictionary write.
     if (params.description !== undefined) data.description = params.description;
-    await this.graph.update_properties({ entityId: params.id, properties: data });
+    await this.graph.updateProperties({ entityId: params.id, properties: data });
     return this.get({ id: params.id });
   }
 
   @rpc("delete", DELETE_SPEC)
   @writeTool("delete", { entity: "projects.project", ...DELETE_SPEC })
   async delete(params: GetParams): Promise<{ deleted: boolean }> {
-    const entity = await this.graph.get_entity(params.id);
+    const entity = await this.graph.getEntity(params.id);
     if (!entity) throw new Error(`project ${params.id} not found`);
-    await this.graph.delete_entity(params.id);
+    await this.graph.deleteEntity(params.id);
     return { deleted: true };
   }
 
@@ -306,7 +306,7 @@ export class ProjectsModule {
   async checklistUpdate(params: ChecklistUpdateParams): Promise<{ status: string; project_id: string }> {
     if (!params.project_id) throw new Error("missing required param: project_id");
     const entity = await this.requireProject(params.project_id);
-    await this.graph.update_properties({
+    await this.graph.updateProperties({
       entityId: params.project_id,
       properties: {
         ...(entity.properties as JsonObject),
@@ -324,7 +324,7 @@ export class ProjectsModule {
   async addMember(params: MemberParams): Promise<{ status: string }> {
     await this.requireOwned(params.project_id);
     await this.requireOwned(params.entity_id);
-    await this.graph.add_link({ from: params.entity_id, to: params.project_id, kind: MEMBER_LINK });
+    await this.graph.addLink({ from: params.entity_id, to: params.project_id, kind: MEMBER_LINK });
     return { status: "ok" };
   }
 
@@ -335,12 +335,12 @@ export class ProjectsModule {
   async removeMember(params: MemberParams): Promise<{ status: string }> {
     await this.requireOwned(params.project_id);
     await this.requireOwned(params.entity_id);
-    const links = await this.graph.list_links_for_entity(params.entity_id);
+    const links = await this.graph.listLinksForEntity(params.entity_id);
     const link = links.find(
       (l) => l.from === params.entity_id && l.to === params.project_id && l.kind === MEMBER_LINK,
     );
     if (!link) throw new Error("Link not found");
-    await this.graph.delete_link(link.id);
+    await this.graph.deleteLink(link.id);
     return { status: "ok" };
   }
 
@@ -357,10 +357,10 @@ export class ProjectsModule {
     await this.requireOwned(params.entity_id);
     // A parent's member projects over the belongs_to link, each row carrying
     // the projects.project render record inline — ONE statement, replacing the
-    // list_links + per-link get_entity N+1. `child_schema` enforces what the old
+    // list_links + per-link getEntity N+1. `child_schema` enforces what the old
     // loop did with a per-target schema check. (limit 1000: a member entity
     // belongs to far fewer projects; logged cap vs the old unbounded loop.)
-    const linked = await this.graph.list_linked({
+    const linked = await this.graph.listLinked({
       parentId: params.entity_id,
       linkKind: MEMBER_LINK,
       direction: "out",
@@ -376,10 +376,10 @@ export class ProjectsModule {
 
   // ── helpers ──────────────────────────────────────────────────────
   private async requireOwned(id: string): Promise<void> {
-    if (!(await this.graph.get_entity(id))) throw new Error(`entity ${id} not found`);
+    if (!(await this.graph.getEntity(id))) throw new Error(`entity ${id} not found`);
   }
   private async requireProject(id: string): Promise<Entity> {
-    const entity = await this.graph.get_entity(id);
+    const entity = await this.graph.getEntity(id);
     if (!entity) throw new Error(`project not found: ${id}`);
     if (entity.schemaId !== PROJECT) throw new Error(`entity ${id} is not a project (schema: ${entity.schemaId})`);
     return entity;

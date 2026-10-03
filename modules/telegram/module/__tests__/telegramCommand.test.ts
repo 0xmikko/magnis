@@ -29,7 +29,7 @@ interface TelegramCommandInternals {
 describe("tst_module_telegram_command_001 — Telegram command mapping", () => {
   it("delegates sync and composer commands without translating host responses", async () => {
     const graph = mockGraph({
-      sync_state: (...args: unknown[]) => Promise.resolve({ args }),
+      syncState: (...args: unknown[]) => Promise.resolve({ args }),
       composer: (...args: unknown[]) => Promise.resolve({ args }),
     });
     const module = mountModule(TelegramModule, { graph }).module;
@@ -52,7 +52,7 @@ describe("tst_module_telegram_command_001 — Telegram command mapping", () => {
    * @fixtures: strict graph double; no connector process
    */
   it("tst_mod_tg_backfill_wake_001 requests asynchronous backfill without provider payload", async () => {
-    const graph = mockGraph({ request_backfill: () => Promise.resolve({ pending: true }) });
+    const graph = mockGraph({ requestBackfill: () => Promise.resolve({ pending: true }) });
     const module = mountModule(TelegramModule, { graph }).module;
 
     await expect(module.messagesBackfill({
@@ -60,7 +60,7 @@ describe("tst_module_telegram_command_001 — Telegram command mapping", () => {
       before_message_id: 100,
       account_id: "account-1",
     })).resolves.toEqual({ count: 0, skipped: 0, pending: true });
-    expect(graph.spies.request_backfill).toHaveBeenCalledWith({}, "account-1");
+    expect(graph.spies.requestBackfill).toHaveBeenCalledWith({}, "account-1");
   });
 
   it("validates batch input before sending and honors excluded recipients", async () => {
@@ -90,7 +90,7 @@ describe("tst_module_telegram_command_001 — Telegram command mapping", () => {
   });
 
   it("resolves the chat by its external id and delegates trigger definition ownership", async () => {
-    const graph = mockGraph({ find_by_external_id: () => Promise.resolve("chat-entity"), get_entity_full: () => Promise.resolve({ entity: entity("episode-1", "Parent", { schemaId: "episodes.episode" }), links: [] }) });
+    const graph = mockGraph({ findByExternalId: () => Promise.resolve("chat-entity"), getEntityFull: () => Promise.resolve({ entity: entity("episode-1", "Parent", { schemaId: "episodes.episode" }), links: [] }) });
     const execute = vi.fn(() => Promise.resolve({ id: "trigger-1" }));
     const module = mountModule(TelegramModule, { graph, rpc: { execute } }).module;
 
@@ -112,7 +112,7 @@ describe("tst_module_telegram_command_001 — Telegram command mapping", () => {
     });
 
     const missing = mountModule(TelegramModule, {
-      graph: mockGraph({ find_by_external_id: () => Promise.resolve(null) }),
+      graph: mockGraph({ findByExternalId: () => Promise.resolve(null) }),
     }).module;
     await expect(missing.setTrigger({
       chat_id: 42,
@@ -139,13 +139,13 @@ describe("tst_module_telegram_command_001 — Telegram command mapping", () => {
  * @deterministic: yes — provider double, local ingest is independently covered
  */
 it("tst_module_telegram_create_001 preserves replies and one batch while rejecting mixed forms", async () => {
-  const source_command = vi.fn().mockResolvedValue({ message_id: 10 });
-  const module = mountModule(TelegramModule, { graph: mockGraph({ source_command }) }).module;
+  const sourceCommand = vi.fn().mockResolvedValue({ message_id: 10 });
+  const module = mountModule(TelegramModule, { graph: mockGraph({ sourceCommand }) }).module;
   await module.create({ chat_id: 42, reply_to_message_id: 7, text: "Confirmed." });
-  expect(source_command).toHaveBeenCalledWith({ action: "send_message", chat_id: 42, reply_to_message_id: 7, text: "Confirmed." }, undefined);
+  expect(sourceCommand).toHaveBeenCalledWith({ action: "send_message", chat_id: 42, reply_to_message_id: 7, text: "Confirmed." }, undefined);
   const result = await module.create({ messages: [{ chat_id: 43, text: "First" }, { chat_id: 44, text: "Skip" }], excluded_indices: [1] });
   expect(result).toMatchObject({ total: 1, sent: 1, failed: 0 });
-  expect(source_command).toHaveBeenCalledTimes(2);
+  expect(sourceCommand).toHaveBeenCalledTimes(2);
   await expect(module.create({ chat_id: 42, text: "Mixed", messages: [{ chat_id: 44, text: "Bad" }] })).rejects.toThrow("form");
-  expect(source_command).toHaveBeenCalledTimes(2);
+  expect(sourceCommand).toHaveBeenCalledTimes(2);
 });

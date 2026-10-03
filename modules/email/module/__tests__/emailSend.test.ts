@@ -34,17 +34,17 @@ type G = MockGraph;
 
 function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
   const overrides = {
-    apply_batch: async (frag: GraphBatchInput) => ({
+    applyBatch: async (frag: GraphBatchInput) => ({
       ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
       created: frag.entities.length,
       updated: 0,
       linksAdded: frag.links.length,
       droppedKeys: [],
     }),
-    add_link: () => Promise.resolve(undefined),
+    addLink: () => Promise.resolve(undefined),
     // No prior send attempt unless a test arranges one.
-    source_command: () => Promise.resolve({ message_id: "src-1" }),
-    get_entity_full: () => Promise.resolve(null),
+    sourceCommand: () => Promise.resolve({ message_id: "src-1" }),
+    getEntityFull: () => Promise.resolve(null),
     ...over,
   } as unknown as GraphOverrides;
   return mockGraph(overrides);
@@ -53,7 +53,7 @@ function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
 /** A batch entity's dictionary, which the module always writes as an object. */
 const dict = (item: BatchEntityInput): JsonObject => item.properties as JsonObject;
 
-/** An owned entity as get_entity_full answers it, without links. */
+/** An owned entity as getEntityFull answers it, without links. */
 const owned = (id: string, schemaId: string, name: string): EntityWithLinks => ({
   entity: entity(id, name, { schemaId }),
   links: [],
@@ -80,11 +80,11 @@ describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
     // row, the message itself, then the ledger's `sent` row. Two extra writes
     // is the price of being able to answer "did this already leave?" — Gmail
     // has no idempotency key, so the alternative is re-sending real mail.
-    expect(spy(graph, "apply_batch")).toHaveBeenCalledTimes(1);
-    const applyCall0 = spy(graph, "apply_batch").mock.calls.find(
+    expect(spy(graph, "applyBatch")).toHaveBeenCalledTimes(1);
+    const applyCall0 = spy(graph, "applyBatch").mock.calls.find(
       (c) => (c[0] as GraphBatchInput).entities.some((e) => e.schemaId === "email.message"),
     );
-    if (applyCall0 === undefined) throw new Error("send: apply_batch not called");
+    if (applyCall0 === undefined) throw new Error("send: applyBatch not called");
     const frag = applyCall0[0] as GraphBatchInput;
     const msg = frag.entities.find((e) => e.schemaId === "email.message")!;
     const addr = frag.entities.find((e) => e.schemaId === "email.address")!;
@@ -106,7 +106,7 @@ describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
 
     // INV-5: the provider is called BEFORE the message is persisted, so a
     // refusal cannot leave a record of a send that never happened.
-    expect(spy(graph, "source_command")).toHaveBeenCalledTimes(1);
+    expect(spy(graph, "sourceCommand")).toHaveBeenCalledTimes(1);
     // INV-6: the provider's id rides on the stored message so a later ingest
     // of that same mail matches it instead of creating a duplicate.
     expect(dict(msg).provider_message_id).toBe("src-1");
@@ -120,7 +120,7 @@ describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
   // the demo defect — the tool reported a send Gmail never made.
   it("a provider failure is FATAL and persists no message", async () => {
     const graph = makeGraph({
-      source_command: () => Promise.reject(new Error("no connected account")),
+      sourceCommand: () => Promise.reject(new Error("no connected account")),
     });
     const mod = makeModule(graph);
 
@@ -128,9 +128,9 @@ describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
       "no connected account",
     );
 
-    // The only apply_batch calls are the send-attempt ledger (routing, then
+    // The only applyBatch calls are the send-attempt ledger (routing, then
     // failed) — never an email.message.
-    const batched = spy(graph, "apply_batch").mock.calls.flatMap(
+    const batched = spy(graph, "applyBatch").mock.calls.flatMap(
       (c) => (c[0] as GraphBatchInput).entities,
     );
     expect(batched.every((e) => e.schemaId === "email.send_attempt")).toBe(true);
@@ -146,7 +146,7 @@ describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
    */
   it("a graph write that fails AFTER the provider accepted does not fail the send", async () => {
     const graph = makeGraph({
-      apply_batch: () => Promise.reject(new Error("graph unavailable")),
+      applyBatch: () => Promise.reject(new Error("graph unavailable")),
     });
     const mod = makeModule(graph);
 
@@ -156,7 +156,7 @@ describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
     expect(r.provider_message_id).toBe("src-1");
     expect(r.id).toBeNull();
     // Exactly one delivery — nothing invites a second attempt.
-    expect(spy(graph, "source_command")).toHaveBeenCalledTimes(1);
+    expect(spy(graph, "sourceCommand")).toHaveBeenCalledTimes(1);
   });
 
   /**
@@ -168,13 +168,13 @@ describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
    */
   it("stamps the provider ids so the copy arriving from Sent updates this entity", async () => {
     const graph = makeGraph({
-      source_command: () => Promise.resolve({ message_id: "gmail-42", thread_id: "thr-9" }),
+      sourceCommand: () => Promise.resolve({ message_id: "gmail-42", thread_id: "thr-9" }),
     });
     const mod = makeModule(graph);
 
     await mod.emailSend({ to: "b@x.com", subject: "S", body_text: "B" });
 
-    const frag = spy(graph, "apply_batch").mock.calls[0]?.[0] as GraphBatchInput;
+    const frag = spy(graph, "applyBatch").mock.calls[0]?.[0] as GraphBatchInput;
     const msg = frag.entities.find((e) => e.schemaId === "email.message")!;
     // S5: the provider id is the node's EXTERNAL ID — that is what makes the
     // copy arriving from Sent update this node instead of creating a second one.
@@ -184,17 +184,17 @@ describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
 
   it("links attachments and checks ownership", async () => {
     const graph = makeGraph({
-      get_entity_full: () =>
+      getEntityFull: () =>
         Promise.resolve(owned("f1", "file.object", "doc.pdf")),
     });
     const mod = makeModule(graph);
     const r = await mod.emailSend({ to: "b@x.com", subject: "S", body_text: "B", attachment_ids: ["f1"] });
-    expect(spy(graph, "add_link")).toHaveBeenCalledWith({ from: "id-out", to: "f1", kind: "file.attachment" });
+    expect(spy(graph, "addLink")).toHaveBeenCalledWith({ from: "id-out", to: "f1", kind: "file.attachment" });
     expect(r.attachment_count).toBe(1);
   });
 
   it("rejects an unowned attachment", async () => {
-    const graph = makeGraph({ get_entity_full: () => Promise.resolve(null) });
+    const graph = makeGraph({ getEntityFull: () => Promise.resolve(null) });
     const mod = makeModule(graph);
     await expect(
       mod.emailSend({ to: "b@x.com", subject: "S", body_text: "B", attachment_ids: ["f-other"] }),
@@ -203,14 +203,14 @@ describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
 
   it("rejects an owned NON-file entity (no file.details — native strictness, no fallback)", async () => {
     const graph = makeGraph({
-      get_entity_full: () =>
+      getEntityFull: () =>
         Promise.resolve(owned("c1", "company", "Acme")),
     });
     const mod = makeModule(graph);
     await expect(
       mod.emailSend({ to: "b@x.com", subject: "S", body_text: "B", attachment_ids: ["c1"] }),
     ).rejects.toThrow(/not found/);
-    expect(spy(graph, "add_link")).not.toHaveBeenCalled();
+    expect(spy(graph, "addLink")).not.toHaveBeenCalled();
   });
 });
 
@@ -230,7 +230,7 @@ describe("email reply (tst_be_emailreply_003)", () => {
 
   it("threads in_reply_to from the original and links attachments to the ORIGINAL", async () => {
     const graph = makeGraph({
-      get_entity_full: (() => {
+      getEntityFull: (() => {
         let call = 0;
         return () => {
           call += 1;
@@ -242,22 +242,22 @@ describe("email reply (tst_be_emailreply_003)", () => {
     const mod = makeModule(graph);
     const r = await mod.emailReply({ email_id: "orig", body_text: "thanks", attachment_ids: ["f1"] });
 
-    const srcCall0 = spy(graph, "source_command").mock.calls[0];
-    if (srcCall0 === undefined) throw new Error("reply: source_command not called");
+    const srcCall0 = spy(graph, "sourceCommand").mock.calls[0];
+    if (srcCall0 === undefined) throw new Error("reply: sourceCommand not called");
     const draft = srcCall0[0] as Record<string, unknown>;
     const d = draft.draft as Record<string, unknown>;
     expect(d.in_reply_to).toBe("gmail-orig-1");
     expect(d.subject).toBe("Re: Quarterly");
     expect(d.to).toEqual([{ address: "boss@corp.com" }]);
     // attachment linked to the ORIGINAL email, not a new entity
-    expect(spy(graph, "add_link")).toHaveBeenCalledWith({ from: "orig", to: "f1", kind: "file.attachment" });
+    expect(spy(graph, "addLink")).toHaveBeenCalledWith({ from: "orig", to: "f1", kind: "file.attachment" });
     expect(r.reply_to).toBe("boss@corp.com");
-    expect(spy(graph, "apply_batch")).not.toHaveBeenCalled(); // reply creates no new message entity
+    expect(spy(graph, "applyBatch")).not.toHaveBeenCalled(); // reply creates no new message entity
   });
 
   it("rejects an unowned attachment (reply path) BEFORE routing", async () => {
     const graph = makeGraph({
-      get_entity_full: (() => {
+      getEntityFull: (() => {
         let call = 0;
         return () => {
           call += 1;
@@ -270,8 +270,8 @@ describe("email reply (tst_be_emailreply_003)", () => {
     await expect(
       mod.emailReply({ email_id: "orig", body_text: "thanks", attachment_ids: ["f-other"] }),
     ).rejects.toThrow(/not found/);
-    expect(spy(graph, "source_command")).not.toHaveBeenCalled(); // rejected before send
-    expect(spy(graph, "add_link")).not.toHaveBeenCalled();
+    expect(spy(graph, "sourceCommand")).not.toHaveBeenCalled(); // rejected before send
+    expect(spy(graph, "addLink")).not.toHaveBeenCalled();
   });
 
   /**
@@ -284,7 +284,7 @@ describe("email reply (tst_be_emailreply_003)", () => {
    */
   it("tst_module_email_reply_004 a source success without a provider id is not a reply", async () => {
     const graph = makeGraph({
-      get_entity_full: (() => {
+      getEntityFull: (() => {
         let call = 0;
         return () => {
           call += 1;
@@ -292,7 +292,7 @@ describe("email reply (tst_be_emailreply_003)", () => {
           return Promise.resolve(owned("f1", "file.object", "a"));
         };
       })(),
-      source_command: () => Promise.resolve({ thread_id: "thr-1" }), // no message_id
+      sourceCommand: () => Promise.resolve({ thread_id: "thr-1" }), // no message_id
     });
     const mod = makeModule(graph);
 
@@ -300,13 +300,13 @@ describe("email reply (tst_be_emailreply_003)", () => {
       mod.emailReply({ email_id: "orig", body_text: "thanks", attachment_ids: ["f1"] }),
     ).rejects.toThrow(/no provider id/);
 
-    expect(spy(graph, "add_link")).not.toHaveBeenCalled();
+    expect(spy(graph, "addLink")).not.toHaveBeenCalled();
   });
 
   it("source failure is FATAL for reply (native parity)", async () => {
     const graph = makeGraph({
-      get_entity_full: () => Promise.resolve(original()),
-      source_command: () => Promise.reject(new Error("send failed")),
+      getEntityFull: () => Promise.resolve(original()),
+      sourceCommand: () => Promise.reject(new Error("send failed")),
     });
     const mod = makeModule(graph);
     await expect(mod.emailReply({ email_id: "orig", body_text: "x" })).rejects.toThrow(/send failed/);
@@ -351,7 +351,7 @@ describe("email batch_send (tst_module_email_batch_001)", () => {
     expect(result1.status).toBe("excluded");
     expect(result1.id).toBeNull();
     expect(result0.status).toBe("sent");
-    expect(spy(graph, "apply_batch")).toHaveBeenCalledTimes(2); // only the 2 non-excluded
+    expect(spy(graph, "applyBatch")).toHaveBeenCalledTimes(2); // only the 2 non-excluded
   });
 
   it.each([
@@ -378,7 +378,7 @@ describe("email batch_send (tst_module_email_batch_001)", () => {
 
   it("reports a provider success without a receipt as failed and persists nothing", async () => {
     const graph = makeGraph({
-      source_command: () => Promise.resolve({ thread_id: "thr-without-message-id" }),
+      sourceCommand: () => Promise.resolve({ thread_id: "thr-without-message-id" }),
     });
     const mod = makeModule(graph);
 
@@ -390,7 +390,7 @@ describe("email batch_send (tst_module_email_batch_001)", () => {
     expect(r.results).toEqual([
       expect.objectContaining({ id: null, status: "failed", error: expect.stringMatching(/no provider id/) }),
     ]);
-    expect(spy(graph, "apply_batch")).not.toHaveBeenCalled();
+    expect(spy(graph, "applyBatch")).not.toHaveBeenCalled();
   });
 });
 
@@ -448,8 +448,8 @@ describe("batch_send validates every recipient before sending any", () => {
       }),
     ).rejects.toThrow(/message\[1\][\s\S]*single valid address/);
 
-    expect(graph.spies.source_command).not.toHaveBeenCalled();
-    expect(graph.spies.apply_batch).not.toHaveBeenCalled();
+    expect(graph.spies.sourceCommand).not.toHaveBeenCalled();
+    expect(graph.spies.applyBatch).not.toHaveBeenCalled();
   });
 });
 
@@ -463,7 +463,7 @@ describe("batch_send reports every message even when one is refused", () => {
   it("keeps the results of messages already delivered", async () => {
     let call = 0;
     const graph = makeGraph({
-      source_command: () => {
+      sourceCommand: () => {
         call++;
         return call === 2
           ? Promise.reject(new Error("no connected account"))
@@ -497,7 +497,7 @@ describe("batch_send reports every message even when one is refused", () => {
 describe("a source success without a provider id is not a send", () => {
   it("tst_module_email_send_008 rejects and persists nothing", async () => {
     const graph = makeGraph({
-      source_command: () => Promise.resolve({ thread_id: "thr-1" }), // no message_id
+      sourceCommand: () => Promise.resolve({ thread_id: "thr-1" }), // no message_id
     });
     const mod = makeModule(graph);
 
@@ -505,7 +505,7 @@ describe("a source success without a provider id is not a send", () => {
       mod.emailSend({ to: "b@x.com", subject: "S", body_text: "B" }),
     ).rejects.toThrow(/no provider id/);
 
-    expect(spy(graph, "apply_batch")).not.toHaveBeenCalled();
+    expect(spy(graph, "applyBatch")).not.toHaveBeenCalled();
   });
 });
 
@@ -518,9 +518,9 @@ it("tst_module_email_create_001 one create operation sends or batches and reject
   const graph = makeGraph();
   const module = makeModule(graph);
   await module.create({ to: "morgan@example.test", subject: "September", body_text: "Confirm receipt." });
-  expect(spy(graph, "source_command")).toHaveBeenCalledTimes(1);
+  expect(spy(graph, "sourceCommand")).toHaveBeenCalledTimes(1);
   await module.create({ messages: [{ to: "morgan@example.test", subject: "September", body_text: "Confirm receipt." }] });
-  expect(spy(graph, "source_command")).toHaveBeenCalledTimes(2);
+  expect(spy(graph, "sourceCommand")).toHaveBeenCalledTimes(2);
   await expect(module.create({ to: "morgan@example.test", email_id: "original", subject: "September", body_text: "mixed" })).rejects.toThrow("form");
-  expect(spy(graph, "source_command")).toHaveBeenCalledTimes(2);
+  expect(spy(graph, "sourceCommand")).toHaveBeenCalledTimes(2);
 });

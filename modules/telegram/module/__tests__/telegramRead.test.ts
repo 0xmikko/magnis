@@ -40,8 +40,8 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
       properties: { chat_id: 77, title: "Team", last_message_date: "2026-08-12T09:00:00Z" },
     });
     const graph = mockGraph({
-      list_entities_by_property_field: () => Promise.resolve(page([])),
-      list_entities_window: () => Promise.resolve(page([pinned, recent])),
+      listEntitiesByPropertyField: () => Promise.resolve(page([])),
+      listEntitiesWindow: () => Promise.resolve(page([pinned, recent])),
     });
     const module = mountModule(TelegramModule, { graph }).module;
 
@@ -59,7 +59,7 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
       message_count: 1234,
     });
     expect(result.items[1]?.message_count).toBeNull();
-    expect(graph.spies.list_entities_window).toHaveBeenCalledWith({
+    expect(graph.spies.listEntitiesWindow).toHaveBeenCalledWith({
       schema: CHAT,
       order: [
         { field: { propertyPath: "is_pinned" }, desc: true },
@@ -104,18 +104,18 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
     const foreign = entity("other-account", "Other observer", { schemaId: TELEGRAM_ACCOUNT });
     let hasOperator = true;
     const graph = mockGraph({
-      list_entities_by_property_field: () => Promise.resolve(page(hasOperator ? [operator] : [])),
-      get_entity: () => Promise.resolve(pinned),
-      search_entities_by_name: () => Promise.resolve([pinned]),
-      list_entities_window: (spec) => {
+      listEntitiesByPropertyField: () => Promise.resolve(page(hasOperator ? [operator] : [])),
+      getEntity: () => Promise.resolve(pinned),
+      searchEntitiesByName: () => Promise.resolve([pinned]),
+      listEntitiesWindow: (spec) => {
         if (spec.filterOp === "eq") {
           return Promise.resolve(page([pinnedTen, pinned]));
         }
         return Promise.resolve(page([recent]));
       },
-      list_links_for_entities: () => Promise.reject(new Error("Invalid operation: traversal exceeds maxEdges")),
-      list_links_for_entity: () => Promise.reject(new Error("Invalid operation: traversal exceeds maxEdges")),
-      list_linked: (spec) => Promise.resolve(page([
+      listLinksForEntities: () => Promise.reject(new Error("Invalid operation: traversal exceeds maxEdges")),
+      listLinksForEntity: () => Promise.reject(new Error("Invalid operation: traversal exceeds maxEdges")),
+      listLinked: (spec) => Promise.resolve(page([
         linkedEntity(foreign, {
           from: foreign.id, to: spec.parentId, kind: "observed_in",
           metadata: { is_pinned: true, pin_order: -1, sources: [{ account: "foreign-account" }] },
@@ -136,7 +136,7 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
     expect(result.items.map((item) => item.chat_title)).toEqual(["Pinned", "Pinned ten", "Recent"]);
     expect(result).toMatchObject({ total: 3, limit: 20, offset: 0 });
     expect(result.items[0]).toMatchObject({ is_pinned: true, pin_order: 2, account_id: "account-1" });
-    expect(graph.spies.list_entities_window).toHaveBeenNthCalledWith(1, {
+    expect(graph.spies.listEntitiesWindow).toHaveBeenNthCalledWith(1, {
       schema: CHAT,
       filterField: {
         edgeKind: "observed_in",
@@ -149,13 +149,13 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
       limit: 500,
       offset: 0,
     });
-    expect(graph.spies.list_linked).toHaveBeenCalledTimes(2);
+    expect(graph.spies.listLinked).toHaveBeenCalledTimes(2);
     for (const chat of [pinned, pinnedTen]) {
-      expect(graph.spies.list_linked).toHaveBeenCalledWith({
+      expect(graph.spies.listLinked).toHaveBeenCalledWith({
         parentId: chat.id, linkKind: "observed_in", direction: "in", limit: 1000, offset: 0,
       });
     }
-    expect(graph.spies.list_entities_window).toHaveBeenNthCalledWith(2, {
+    expect(graph.spies.listEntitiesWindow).toHaveBeenNthCalledWith(2, {
       schema: CHAT,
       filterField: {
         edgeKind: "observed_in",
@@ -173,15 +173,15 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
     });
     const searched = await module.chatsList({ search: "Pinned", limit: 20, offset: 0 });
     expect(searched.items[0]).toMatchObject({ is_pinned: true, pin_order: 2, account_id: "account-1" });
-    expect(graph.spies.list_linked).toHaveBeenCalledTimes(4);
+    expect(graph.spies.listLinked).toHaveBeenCalledTimes(4);
 
     hasOperator = false;
     await expect(module.chatsGet({ entity_id: CHAT_ID })).resolves.toMatchObject({
       is_pinned: false, pin_order: null, account_id: null,
     });
-    expect(graph.spies.list_linked).toHaveBeenCalledTimes(4);
-    expect(graph.spies.list_links_for_entities).not.toHaveBeenCalled();
-    expect(graph.spies.list_links_for_entity).not.toHaveBeenCalled();
+    expect(graph.spies.listLinked).toHaveBeenCalledTimes(4);
+    expect(graph.spies.listLinksForEntities).not.toHaveBeenCalled();
+    expect(graph.spies.listLinksForEntity).not.toHaveBeenCalled();
   });
 
   /**
@@ -213,10 +213,10 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
     );
     let rows = messages;
     const graph = mockGraph({
-      list_entities_window: () => Promise.resolve(page(rows, 150)),
-      list_links_for_entity: (id) => Promise.resolve(links.filter((l) => l.from === id || l.to === id)),
-      list_links_for_entities: () => Promise.resolve(links),
-      get_entities: () => Promise.resolve([
+      listEntitiesWindow: () => Promise.resolve(page(rows, 150)),
+      listLinksForEntity: (id) => Promise.resolve(links.filter((l) => l.from === id || l.to === id)),
+      listLinksForEntities: () => Promise.resolve(links),
+      getEntities: () => Promise.resolve([
         entity(ACCOUNT_ID, "Alice", { schemaId: TELEGRAM_ACCOUNT }),
         entity(secondAuthorId, "Bob", { schemaId: TELEGRAM_ACCOUNT }),
       ]),
@@ -235,12 +235,12 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
       index % 3 === 0 ? "Alice" : index % 3 === 1 ? "Bob" : "Legacy sender"));
     expect(result.items.map((item) => item.metadata?.message_id))
       .toEqual(messages.map((_, index) => 100 - index));
-    expect(graph.spies.list_links_for_entity).not.toHaveBeenCalled();
-    expect(graph.spies.list_links_for_entities).toHaveBeenCalledTimes(1);
-    expect(graph.spies.list_links_for_entities).toHaveBeenCalledWith(messages.map((message) => message.id));
-    expect(graph.spies.get_entities).toHaveBeenCalledTimes(1);
-    expect(graph.spies.get_entities).toHaveBeenCalledWith([ACCOUNT_ID, secondAuthorId]);
-    expect(graph.spies.list_entities_window).toHaveBeenCalledWith({
+    expect(graph.spies.listLinksForEntity).not.toHaveBeenCalled();
+    expect(graph.spies.listLinksForEntities).toHaveBeenCalledTimes(1);
+    expect(graph.spies.listLinksForEntities).toHaveBeenCalledWith(messages.map((message) => message.id));
+    expect(graph.spies.getEntities).toHaveBeenCalledTimes(1);
+    expect(graph.spies.getEntities).toHaveBeenCalledWith([ACCOUNT_ID, secondAuthorId]);
+    expect(graph.spies.listEntitiesWindow).toHaveBeenCalledWith({
       schema: MESSAGE,
       filterField: { entityField: "idx" },
       filterEq: "42",
@@ -251,21 +251,21 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
     rows = [];
     expect(await module.messagesList({ chat_id: 42, limit: 50, offset: 150 }))
       .toEqual({ items: [], total: 150, limit: 50, offset: 150 });
-    expect(graph.spies.list_links_for_entities).toHaveBeenCalledTimes(1);
-    expect(graph.spies.get_entities).toHaveBeenCalledTimes(1);
+    expect(graph.spies.listLinksForEntities).toHaveBeenCalledTimes(1);
+    expect(graph.spies.getEntities).toHaveBeenCalledTimes(1);
   });
 
   it("resolves an entity_id to chat_id before reading messages", async () => {
     const graph = mockGraph({
-      get_entity: () =>
+      getEntity: () =>
         Promise.resolve(entity(CHAT_ID, "Chat", { schemaId: CHAT, properties: { chat_id: -10042 } })),
-      list_entities_by_property_field: () => Promise.resolve(page([])),
-      list_entities_window: () => Promise.resolve(page([])),
+      listEntitiesByPropertyField: () => Promise.resolve(page([])),
+      listEntitiesWindow: () => Promise.resolve(page([])),
     });
     const module = mountModule(TelegramModule, { graph }).module;
 
     await module.messagesList({ entity_id: CHAT_ID });
-    expect(graph.spies.list_entities_window).toHaveBeenCalledWith(
+    expect(graph.spies.listEntitiesWindow).toHaveBeenCalledWith(
       expect.objectContaining({ filterEq: "-10042" }),
     );
   });
@@ -276,12 +276,12 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
       properties: { chat_id: 42, title: "Investor chat" },
     });
     const graph = mockGraph({
-      find_by_external_id: () => Promise.resolve(CHAT_ID),
-      get_entity: () => Promise.resolve(chat),
-      list_entities_by_property_field: () => Promise.resolve(page([
+      findByExternalId: () => Promise.resolve(CHAT_ID),
+      getEntity: () => Promise.resolve(chat),
+      listEntitiesByPropertyField: () => Promise.resolve(page([
         entity(ACCOUNT_ID, "Operator", { schemaId: TELEGRAM_ACCOUNT, properties: { is_self: true } }),
       ])),
-      list_linked: () => Promise.resolve(page([linkedEntity(entity(ACCOUNT_ID, "Operator"), {
+      listLinked: () => Promise.resolve(page([linkedEntity(entity(ACCOUNT_ID, "Operator"), {
         id: "observed", from: ACCOUNT_ID, to: CHAT_ID, kind: "observed_in",
         metadata: {
           sources: [{ source: "mock-telegram", account: "account-1", surface: "messages" }],
@@ -296,7 +296,7 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
       account_id: "account-1",
     });
     await expect(module.chatsGet({ chat_id: 42 })).resolves.toMatchObject({ entity_id: CHAT_ID, chat_id: "42", account_id: "account-1" });
-    expect(graph.spies.find_by_external_id).toHaveBeenCalledWith("tg:chat:42");
+    expect(graph.spies.findByExternalId).toHaveBeenCalledWith("tg:chat:42");
   });
 
   it("returns exact message detail and rejects missing or foreign schemas", async () => {
@@ -306,8 +306,8 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
       properties: { text: "Full body", date: "2026-08-12T08:00:00Z", sender_name: "Fallback" },
     });
     const graph = mockGraph({
-      get_entity_full: () => Promise.resolve({ entity: message, links: [] }),
-      list_links_for_entities: () => Promise.resolve([]),
+      getEntityFull: () => Promise.resolve({ entity: message, links: [] }),
+      listLinksForEntities: () => Promise.resolve([]),
     });
     const module = mountModule(TelegramModule, { graph }).module;
     await expect(module.messagesGet({ id: MESSAGE_ID })).resolves.toMatchObject({
@@ -320,7 +320,7 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
     });
 
     const missing = mountModule(TelegramModule, {
-      graph: mockGraph({ get_entity_full: () => Promise.resolve(null) }),
+      graph: mockGraph({ getEntityFull: () => Promise.resolve(null) }),
     }).module;
     await expect(missing.messagesGet({ id: MESSAGE_ID })).rejects.toThrow(
       `${MESSAGE} ${MESSAGE_ID} not found`,
@@ -329,23 +329,23 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
 
   it("updates the chat dictionary found by its external id and fails on an unknown chat", async () => {
     const graph = mockGraph({
-      find_by_external_id: () => Promise.resolve(CHAT_ID),
-      update_properties: () => Promise.resolve(undefined),
-      update_properties_batch: () => Promise.resolve(undefined),
+      findByExternalId: () => Promise.resolve(CHAT_ID),
+      updateProperties: () => Promise.resolve(undefined),
+      updatePropertiesBatch: () => Promise.resolve(undefined),
     });
     const module = mountModule(TelegramModule, { graph }).module;
 
     await expect(module.chatsSetIndexed({ chat_id: 42, is_indexed: true })).resolves.toEqual({
       status: "ok",
     });
-    expect(graph.spies.find_by_external_id).toHaveBeenCalledWith("tg:chat:42");
-    expect(graph.spies.update_properties).toHaveBeenCalledWith({
+    expect(graph.spies.findByExternalId).toHaveBeenCalledWith("tg:chat:42");
+    expect(graph.spies.updateProperties).toHaveBeenCalledWith({
       entityId: CHAT_ID,
       properties: { is_indexed: true },
     });
 
     const missing = mountModule(TelegramModule, {
-      graph: mockGraph({ find_by_external_id: () => Promise.resolve(null) }),
+      graph: mockGraph({ findByExternalId: () => Promise.resolve(null) }),
     }).module;
     await expect(missing.chatsSetIndexed({ chat_id: 42, is_indexed: false })).rejects.toThrow(
       "chat 42 not found",
@@ -388,9 +388,9 @@ describe("tst_cat_entity_one_type_004 — messages.get reads SDK links and answe
       properties: { text: "Full body", date: "2026-08-12T08:00:00Z", sender_name: "Fallback" },
     });
     const graph = mockGraph({
-      get_entity_full: () => Promise.resolve({ entity: message, links: [link(MESSAGE_ID, CHAT_ID, "in_chat"), guess] }),
-      list_links_for_entities: () => Promise.resolve([]),
-      get_entities: () => Promise.resolve([
+      getEntityFull: () => Promise.resolve({ entity: message, links: [link(MESSAGE_ID, CHAT_ID, "in_chat"), guess] }),
+      listLinksForEntities: () => Promise.resolve([]),
+      getEntities: () => Promise.resolve([
         entity(CHAT_ID, "Ops chat", { schemaId: CHAT, createdAt: "2026-08-01T00:00:00Z" }),
         entity(watcherId, "Watcher", { schemaId: "contacts.person", createdAt: "2026-08-02T00:00:00Z" }),
       ]),

@@ -144,7 +144,7 @@ export class MeetingsModule {
       // Search path (native domain.list search branch): name match over
       // meetings.calendar_event. S5: the matched rows carry their own
       // dictionaries, so nothing is hydrated after the search.
-      const matched = await this.graph.search_entities_by_name({
+      const matched = await this.graph.searchEntitiesByName({
         query: search,
         schemaIds: [CAL],
         limit: limit + offset,
@@ -160,7 +160,7 @@ export class MeetingsModule {
 
     // ONE window — page of meetings.calendar_event ordered by the dictionary's
     // starts_at DESC, each row carrying its dictionary inline.
-    const win = await this.graph.list_entities_window({
+    const win = await this.graph.listEntitiesWindow({
       schema: CAL,
       order: [{ field: { propertyPath: "starts_at" }, desc: true }],
       limit,
@@ -181,7 +181,7 @@ export class MeetingsModule {
   @rpc("get", GET_SPEC)
   @tool("get", { entity: "meetings.calendar_event", ...GET_SPEC })
   async get(params: GetParams): Promise<MeetingDetailView> {
-    const detail = await this.graph.get_entity_full(params.id, { links: true });
+    const detail = await this.graph.getEntityFull(params.id, { links: true });
     if (detail?.entity.schemaId !== CAL) {
       throw new Error(`meeting ${params.id} not found`);
     }
@@ -199,13 +199,13 @@ export class MeetingsModule {
 
 
     // Resolve link neighbours (created-by project, attendee contacts, …) for the
-    // Context panel. Link edges carry ids + kind only; one batch get_entities
+    // Context panel. Link edges carry ids + kind only; one batch getEntities
     // (user-scoped → drops non-owned targets) hydrates names/schemas.
     const linked_entities: LinkedEntitySummary[] = [];
     if (links.length > 0) {
       const neighbourId = (l: { from: string; to: string }): string =>
         l.from === entity.id ? l.to : l.from;
-      const targets = await this.graph.get_entities([...new Set(links.map(neighbourId))]);
+      const targets = await this.graph.getEntities([...new Set(links.map(neighbourId))]);
       const byId = new Map<string, Entity>(targets.map((t) => [t.id, t]));
       for (const l of links) {
         const t = byId.get(neighbourId(l));
@@ -254,7 +254,7 @@ export class MeetingsModule {
   })
   async search(params: SearchParams): Promise<ToolResult> {
     const query = (params.query ?? "").toLowerCase();
-    const entities = await this.graph.list_entities_by_context(params.context);
+    const entities = await this.graph.listEntitiesByContext(params.context);
 
     let results: EntitySearchHit[] = entities
       .filter((e) => e.schemaId === EVENT)
@@ -304,12 +304,12 @@ export class MeetingsModule {
     // Idempotency: an existing client_id returns the existing entity,
     // no re-write (native repo create_local find_entity_for_user).
     if (params.client_id) {
-      const existing = await this.graph.get_entity(params.client_id);
+      const existing = await this.graph.getEntity(params.client_id);
       if (existing) return this.snapshot(existing.id, params);
     }
 
     const now = new Date().toISOString();
-    const entity = await this.graph.create_entity({
+    const entity = await this.graph.createEntity({
       schemaId: CAL,
       name: params.title,
       ...(params.client_id === undefined ? {} : { clientId: params.client_id }),
@@ -327,7 +327,7 @@ export class MeetingsModule {
       ...(params.location === undefined ? {} : { location: params.location }),
     } satisfies MeetingCalendarEventDetails;
 
-    await this.graph.update_properties({ entityId: entity.id, properties: data });
+    await this.graph.updateProperties({ entityId: entity.id, properties: data });
     await this.writeAttendeeEdges(entity.id, normalizeAttendees(params.attendees));
 
     return this.snapshot(entity.id, params);
@@ -352,7 +352,7 @@ export class MeetingsModule {
   // ── sync ingest (@syncHandler) ────────────────────────────────
   // Invoked by the host PluginModuleController bridge (`meetings.__sync__`) with
   // a WHOLE page of envelopes. Ports the native ingest: each calendar event is
-  // upserted via apply_batch (idempotent on the source external_id, confidence
+  // upserted via applyBatch (idempotent on the source external_id, confidence
   // 90); a LIVE event additionally resolves its attendees to email.address hub
   // entities (via the email plugin's ensure_address RPC) and returns a
   // trigger.check the bridge fans out to the event_bus. `delete` removes the
@@ -381,7 +381,7 @@ export class MeetingsModule {
     const dropped: string[] = [];
     const triggers: TriggerCheckEvent[] = [];
     const deltaExternalIds = fullPass ? [] : [...new Set(envelopes.flatMap((env) => env.kind !== "delete" && payloadOf(env).entity_type !== "calendar" && env.remoteId ? [env.remoteId] : []))];
-    const known = stated && deltaExternalIds.length > 0 ? await this.graph.find_by_external_ids(deltaExternalIds) : [];
+    const known = stated && deltaExternalIds.length > 0 ? await this.graph.findByExternalIds(deltaExternalIds) : [];
     const existing = new Set(deltaExternalIds.filter((_, i) => known[i]));
     const added = new Set<string>();
     for (const env of envelopes) {
@@ -434,13 +434,13 @@ export class MeetingsModule {
     if (!env.remoteId) return false;
     // S5: the remote id IS the node's external id — resolution goes through
     // the one chokepoint, not the retired record external id.
-    const id = await this.graph.find_by_external_id(env.remoteId);
+    const id = await this.graph.findByExternalId(env.remoteId);
     if (!id) return false;
-    const entity = await this.graph.get_entity(id);
+    const entity = await this.graph.getEntity(id);
     if (entity?.schemaId !== CAL) return false;
     const dict = dictOf(entity);
     if (dict.source_id !== env.sourceId || dict.account_id !== env.accountId) return false;
-    await this.graph.delete_entity(id);
+    await this.graph.deleteEntity(id);
     return true;
   }
 
@@ -494,7 +494,7 @@ export class MeetingsModule {
         validUntil: null,
       });
     }
-    const result = await this.graph.apply_batch({ entities: [entity, ...addresses], refs: [], links });
+    const result = await this.graph.applyBatch({ entities: [entity, ...addresses], refs: [], links });
     const entityId = result.ids[remoteId];
     if (!entityId) return false;
     const addressIds = attendees.map((attendee) => {
@@ -508,11 +508,11 @@ export class MeetingsModule {
     // for free by replacing the array wholesale, and edges must not silently
     // accumulate ex-guests.
     const current = new Set(addressIds);
-    const existing = await this.graph.list_links_for_entity(entityId);
+    const existing = await this.graph.listLinksForEntity(entityId);
     for (const edge of existing) {
       if (edge.kind !== "attendee" || edge.from !== entityId) continue;
       if (!current.has(edge.to)) {
-        await this.graph.delete_link(edge.id);
+        await this.graph.deleteLink(edge.id);
       }
     }
 
@@ -566,7 +566,7 @@ export class MeetingsModule {
     for (const [i, a] of attendees.entries()) {
       const to = ids[i];
       if (!to) continue;
-      await this.graph.add_link({
+      await this.graph.addLink({
         from: eventId,
         to,
         kind: "attendee",
@@ -581,7 +581,7 @@ export class MeetingsModule {
     params: { type: "object", properties: {}, additionalProperties: false },
   })
   async syncStatus(): Promise<Record<string, unknown>> {
-    return this.graph.sync_state("status");
+    return this.graph.syncState("status");
   }
 
   @rpc("sync.reset", {
@@ -590,6 +590,6 @@ export class MeetingsModule {
     params: { type: "object", properties: {}, additionalProperties: false },
   })
   async syncReset(): Promise<Record<string, unknown>> {
-    return this.graph.sync_state("reset", CAL);
+    return this.graph.syncState("reset", CAL);
   }
 }

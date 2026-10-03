@@ -41,9 +41,9 @@ function project(
 describe("tst_module_projects_crud_001 — projects CRUD owns its domain contract", () => {
   it("creates once with the requested client id and exact dictionary", async () => {
     const graph = mockGraph({
-      get_entity: () => Promise.resolve(null),
-      create_entity: () => Promise.resolve(project()),
-      update_properties: () => Promise.resolve(undefined),
+      getEntity: () => Promise.resolve(null),
+      createEntity: () => Promise.resolve(project()),
+      updateProperties: () => Promise.resolve(undefined),
     });
     const { module } = mountModule(ProjectsModule, {
       graph,
@@ -62,12 +62,12 @@ describe("tst_module_projects_crud_001 — projects CRUD owns its domain contrac
       status: "blocked",
       schema_id: PROJECT,
     });
-    expect(graph.spies.create_entity).toHaveBeenCalledWith({
+    expect(graph.spies.createEntity).toHaveBeenCalledWith({
       schemaId: PROJECT,
       name: "Investor demo",
       clientId: PROJECT_ID,
     });
-    expect(graph.spies.update_properties).toHaveBeenCalledWith({
+    expect(graph.spies.updateProperties).toHaveBeenCalledWith({
       entityId: PROJECT_ID,
       properties: expect.objectContaining({ name: "Investor demo", status: "blocked" }),
     });
@@ -75,8 +75,8 @@ describe("tst_module_projects_crud_001 — projects CRUD owns its domain contrac
 
   it("lets the host mint an id when no client id is supplied", async () => {
     const graph = mockGraph({
-      create_entity: () => Promise.resolve(project()),
-      update_properties: () => Promise.resolve(undefined),
+      createEntity: () => Promise.resolve(project()),
+      updateProperties: () => Promise.resolve(undefined),
     });
     const { module } = mountModule(ProjectsModule, { graph });
 
@@ -84,7 +84,7 @@ describe("tst_module_projects_crud_001 — projects CRUD owns its domain contrac
       id: PROJECT_ID,
       name: "Host id",
     });
-    expect(graph.spies.create_entity).toHaveBeenCalledWith({
+    expect(graph.spies.createEntity).toHaveBeenCalledWith({
       schemaId: PROJECT,
       name: "Host id",
     });
@@ -92,18 +92,18 @@ describe("tst_module_projects_crud_001 — projects CRUD owns its domain contrac
 
   it("returns the existing client-id entity without a second write", async () => {
     const graph = mockGraph({
-      get_entity: () =>
+      getEntity: () =>
         Promise.resolve(project("Original", { name: "Original", status: "done" })),
-      create_entity: () => Promise.reject(new Error("must not create")),
-      update_properties: () => Promise.reject(new Error("must not update")),
+      createEntity: () => Promise.reject(new Error("must not create")),
+      updateProperties: () => Promise.reject(new Error("must not update")),
     });
     const { module } = mountModule(ProjectsModule, { graph });
 
     const result = await module.create({ name: "Retry", client_id: PROJECT_ID });
 
     expect(result).toMatchObject({ id: PROJECT_ID, name: "Original", status: "done" });
-    expect(graph.spies.create_entity).not.toHaveBeenCalled();
-    expect(graph.spies.update_properties).not.toHaveBeenCalled();
+    expect(graph.spies.createEntity).not.toHaveBeenCalled();
+    expect(graph.spies.updateProperties).not.toHaveBeenCalled();
   });
 
   it("rejects invalid input before touching the graph", async () => {
@@ -122,7 +122,7 @@ describe("tst_module_projects_crud_001 — projects CRUD owns its domain contrac
       properties: { email: "ada@example.test" },
     });
     const graph = mockGraph({
-      get_entity_full: () =>
+      getEntityFull: () =>
         Promise.resolve({
           entity: project("Demo", {
             name: "Demo",
@@ -132,7 +132,7 @@ describe("tst_module_projects_crud_001 — projects CRUD owns its domain contrac
           }),
           links: [link(CONTACT_ID, PROJECT_ID, "projects.belongs_to", { id: "link-1" })],
         }),
-      get_entities: () => Promise.resolve([contact]),
+      getEntities: () => Promise.resolve([contact]),
     });
     const { module } = mountModule(ProjectsModule, { graph });
 
@@ -168,12 +168,12 @@ describe("tst_module_projects_crud_001 — projects CRUD owns its domain contrac
       description: "Ready",
     });
     const graph = mockGraph({
-      get_entity: () => Promise.resolve(original),
-      update_entity_name: () => Promise.resolve(undefined),
-      update_properties: () => Promise.resolve(undefined),
-      get_entity_full: () => Promise.resolve({ entity: updated, links: [] }),
-      get_entities: () => Promise.resolve([]),
-      delete_entity: () => Promise.resolve(undefined),
+      getEntity: () => Promise.resolve(original),
+      updateEntityName: () => Promise.resolve(undefined),
+      updateProperties: () => Promise.resolve(undefined),
+      getEntityFull: () => Promise.resolve({ entity: updated, links: [] }),
+      getEntities: () => Promise.resolve([]),
+      deleteEntity: () => Promise.resolve(undefined),
     });
     const { module } = mountModule(ProjectsModule, { graph });
 
@@ -184,8 +184,8 @@ describe("tst_module_projects_crud_001 — projects CRUD owns its domain contrac
       description: "Ready",
     });
     expect(result).toMatchObject({ name: "Demo ready", status: "done" });
-    expect(graph.spies.update_entity_name).toHaveBeenCalledWith(PROJECT_ID, "Demo ready");
-    expect(graph.spies.update_properties).toHaveBeenCalledWith({
+    expect(graph.spies.updateEntityName).toHaveBeenCalledWith(PROJECT_ID, "Demo ready");
+    expect(graph.spies.updateProperties).toHaveBeenCalledWith({
       entityId: PROJECT_ID,
       properties: expect.objectContaining({
         name: "Demo ready",
@@ -195,13 +195,13 @@ describe("tst_module_projects_crud_001 — projects CRUD owns its domain contrac
     });
 
     expect(await module.delete({ id: PROJECT_ID })).toEqual({ deleted: true });
-    expect(graph.spies.delete_entity).toHaveBeenCalledWith(PROJECT_ID);
+    expect(graph.spies.deleteEntity).toHaveBeenCalledWith(PROJECT_ID);
   });
 
   it("surfaces missing ownership uniformly on get, update, and delete", async () => {
     const graph = mockGraph({
-      get_entity: () => Promise.resolve(null),
-      get_entity_full: () => Promise.resolve(null),
+      getEntity: () => Promise.resolve(null),
+      getEntityFull: () => Promise.resolve(null),
     });
     const { module } = mountModule(ProjectsModule, { graph });
 

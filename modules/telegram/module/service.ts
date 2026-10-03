@@ -183,9 +183,9 @@ interface PageEffects {
   readonly triggers: TriggerCheckEvent[];
 }
 
-type WebLinkInput = Parameters<GraphService["web_register"]>[0];
-type FileRegisterInput = Parameters<GraphService["file_register"]>[0];
-type ChatUpdate = Parameters<GraphService["update_properties"]>[0];
+type WebLinkInput = Parameters<GraphService["webRegister"]>[0];
+type FileRegisterInput = Parameters<GraphService["fileRegister"]>[0];
+type ChatUpdate = Parameters<GraphService["updateProperties"]>[0];
 
 /** What one page states for the worker's plan: per schema, the count
  * relative to the statement the operator's observed_in edges held before the
@@ -465,7 +465,7 @@ export class TelegramModule {
   }
 
   private async operatorAccount(): Promise<Entity | null> {
-    const selves = await this.graph.list_entities_by_property_field({
+    const selves = await this.graph.listEntitiesByPropertyField({
       entitySchema: TELEGRAM_ACCOUNT,
       key: "is_self",
       value: "true",
@@ -533,7 +533,7 @@ export class TelegramModule {
     const pageSize = 500;
     let total: number;
     do {
-      const page = await this.graph.list_entities_window({
+      const page = await this.graph.listEntitiesWindow({
         schema: CHAT,
         filterField: { edgeKind: "observed_in", observerExternalId, edgePath: filter.edgePath },
         filterOp: filter.op,
@@ -557,7 +557,7 @@ export class TelegramModule {
     for (const chatId of chatIds) {
       // @tested-by: tst_module_telegram_read_004
       // Filter before Graph traversal: a dense chat's in_chat edges are not observer state.
-      const page = await this.graph.list_linked({
+      const page = await this.graph.listLinked({
         parentId: chatId,
         linkKind: "observed_in",
         direction: "in",
@@ -597,7 +597,7 @@ export class TelegramModule {
   ): Promise<{ selfId: string | null; edges: Map<string, MembershipEdge> }> {
     const edges = new Map<string, MembershipEdge>();
     if (chatEntityIds.length === 0) return { selfId: null, edges };
-    const selfId = await this.graph.find_by_external_id(accountExternalId(identityKey));
+    const selfId = await this.graph.findByExternalId(accountExternalId(identityKey));
     if (selfId === null) return { selfId, edges };
     for (const [chatId, edge] of await this.observedEdgesFor(chatEntityIds, selfId)) {
       const metadata = metadataOf(edge) ?? {};
@@ -673,7 +673,7 @@ export class TelegramModule {
     // statement, still no N+1.
     const observed = await this.operatorObservedState();
     if (observed === null) {
-      const page = await this.graph.list_entities_window({
+      const page = await this.graph.listEntitiesWindow({
         schema: CHAT,
         order: [
           { field: { propertyPath: "is_pinned" }, desc: true },
@@ -696,7 +696,7 @@ export class TelegramModule {
     const pinned = observed.orderedChats.slice(offset, offset + limit);
     const regularLimit = Math.max(0, limit - pinned.length);
     const regularOffset = Math.max(0, offset - observed.total);
-    const regular = await this.graph.list_entities_window({
+    const regular = await this.graph.listEntitiesWindow({
       schema: CHAT,
       filterField: {
         edgeKind: "observed_in",
@@ -732,7 +732,7 @@ export class TelegramModule {
   async chatsGet(params: { entity_id: string } | { chat_id: number | string }): Promise<TelegramChatListItem> {
     if ("entity_id" in params && "chat_id" in params) throw new Error("Choose one chat get form");
     const entityId = "entity_id" in params ? params.entity_id : await this.chatEntityId(params.chat_id);
-    const entity = await this.graph.get_entity(entityId);
+    const entity = await this.graph.getEntity(entityId);
     if (entity?.schemaId !== CHAT) {
       throw new Error(`${CHAT} ${entityId} not found`);
     }
@@ -751,7 +751,7 @@ export class TelegramModule {
     limit: number,
     offset: number,
   ): Promise<PaginatedResponse<TelegramChatListItem>> {
-    const matches = await this.graph.search_entities_by_name({
+    const matches = await this.graph.searchEntitiesByName({
       query,
       schemaIds: [CHAT],
       limit: limit + offset,
@@ -797,7 +797,7 @@ export class TelegramModule {
     // Resolve chat_id: explicit chat_id, else entity_id → chat.details.chat_id.
     let chatId: string | null = params.chat_id !== undefined ? String(params.chat_id) : null;
     if (chatId === null && params.entity_id) {
-      const chatEntity = await this.graph.get_entity(params.entity_id);
+      const chatEntity = await this.graph.getEntity(params.entity_id);
       const d = chatEntity
         ? {
             ...objectOf(chatEntity.properties, "chat properties"),
@@ -812,7 +812,7 @@ export class TelegramModule {
     }
     // No chat filter → all of the user's telegram messages. ONE bulk record read
     // (not a per-message detailsFacet), same anti-N+1 shape as searchChats.
-    const page = await this.graph.list_entities({ schemaId: MESSAGE, limit, offset });
+    const page = await this.graph.listEntities({ schemaId: MESSAGE, limit, offset });
     const byId = new Map<string, Data>();
     for (const e of page.items) {
       byId.set(e.id, objectOf(e.properties, "message properties"));
@@ -829,7 +829,7 @@ export class TelegramModule {
     // P2 (graph-read-api §4): ONE statement — filter by entity-col idx (= chat_id,
     // index-covered), order by entity-col date DESC, render record inline. Kills the
     // old ~2N hops (op find_entity_for_user + per-message detailsFacet).
-    const page = await this.graph.list_entities_window({
+    const page = await this.graph.listEntitiesWindow({
       schema: MESSAGE,
       filterField: { entityField: "idx" },
       filterEq: chatId,
@@ -856,14 +856,14 @@ export class TelegramModule {
     if (messageIds.length === 0) return out;
     const authorIdByMessage = new Map<string, string>();
     // @tested-by: tst_module_telegram_read_005 — one bounded author-link read per message page.
-    const links = await this.graph.list_links_for_entities(messageIds);
+    const links = await this.graph.listLinksForEntities(messageIds);
     for (const id of messageIds) {
       const edge = links.find((l) => l.kind === "authored_by" && l.from === id);
       if (edge) authorIdByMessage.set(id, edge.to);
     }
     const authorIds = [...new Set(authorIdByMessage.values())];
     if (authorIds.length === 0) return out;
-    const authors = await this.graph.get_entities(authorIds);
+    const authors = await this.graph.getEntities(authorIds);
     const nameById = new Map(authors.map((a) => [a.id, a.name]));
     for (const [messageId, authorId] of authorIdByMessage) {
       out.set(messageId, nameById.get(authorId) ?? null);
@@ -896,7 +896,7 @@ export class TelegramModule {
     // P1 (graph-read-api §4): the entity in ONE fetch, user-scoped.
     // P4: with its links. Returning nothing because the fetch asked for
     // nothing was not a decision about what a message exposes.
-    const detail = await this.graph.get_entity_full(params.id, { links: true });
+    const detail = await this.graph.getEntityFull(params.id, { links: true });
     if (detail?.entity.schemaId !== MESSAGE) {
       throw new Error(`${MESSAGE} ${params.id} not found`);
     }
@@ -925,7 +925,7 @@ export class TelegramModule {
       new Set([entity.id]),
     );
     const endpointIds = [...reached.keys()];
-    const endpoints = endpointIds.length === 0 ? [] : await this.graph.get_entities(endpointIds);
+    const endpoints = endpointIds.length === 0 ? [] : await this.graph.getEntities(endpointIds);
     const endpointById = new Map(endpoints.map((e) => [e.id, e] as const));
     const linked_entities: LinkedEntitySummary[] = [];
     for (const [id, reach] of reached) {
@@ -964,9 +964,9 @@ export class TelegramModule {
   async chatsSetIndexed(params: SetIndexedParams): Promise<{ status: string }> {
     // S4: the chat resolves through its external id and the toggle is
     // ONE dictionary merge — no record, no duplicate-row hazard.
-    const entityId = await this.graph.find_by_external_id(chatExternalId(String(params.chat_id)));
+    const entityId = await this.graph.findByExternalId(chatExternalId(String(params.chat_id)));
     if (!entityId) throw new Error(`chat ${String(params.chat_id)} not found`);
-    await this.graph.update_properties({
+    await this.graph.updateProperties({
       entityId,
       properties: { is_indexed: params.is_indexed },
     });
@@ -979,7 +979,7 @@ export class TelegramModule {
     params: { type: "object", properties: {}, additionalProperties: false },
   })
   async syncStatus(): Promise<Record<string, unknown>> {
-    return this.graph.sync_state("status");
+    return this.graph.syncState("status");
   }
 
   @rpc("sync.reset", {
@@ -989,7 +989,7 @@ export class TelegramModule {
   async syncReset(): Promise<Record<string, unknown>> {
     // Pass our own message schema — op_sync_state clears it, scoped to the
     // telegram namespace (the op is generalised, no longer hard-coded).
-    return this.graph.sync_state("reset", MESSAGE);
+    return this.graph.syncState("reset", MESSAGE);
   }
 
   // ── reply composer (RPC) ──────────────────────────────────────
@@ -1040,7 +1040,7 @@ export class TelegramModule {
   async onConnectionReady(params: SyncHookParams): Promise<void> {
     const key = params.identityKey;
     if (!key) throw new Error("connection_ready: identityKey is required");
-    await this.graph.apply_batch({
+    await this.graph.applyBatch({
       entities: [
         {
           key: "self",
@@ -1075,15 +1075,15 @@ export class TelegramModule {
       throw new Error("telegram membership end requires an exact RFC3339 valid_until");
     }
 
-    const selfId = await this.graph.find_by_external_id(accountExternalId(identityKey));
+    const selfId = await this.graph.findByExternalId(accountExternalId(identityKey));
     if (selfId === null) return;
-    const chatEntityId = await this.graph.find_by_external_id(chatExternalId(chatId));
+    const chatEntityId = await this.graph.findByExternalId(chatExternalId(chatId));
     if (chatEntityId === null) return;
     const edge = (await this.observedEdgesFor([chatEntityId], selfId)).get(chatEntityId);
     if (edge?.validUntil !== null) return;
     // @tested-by: tst_module_telegram_007
     // @invariant: valid_until is provider evidence, never Magnis wall time.
-    await this.graph.end_link(edge.id, validUntil);
+    await this.graph.endLink(edge.id, validUntil);
   }
 
   /// `generation` is the pass the worker is in (`initial:<row>:<lease>`);
@@ -1094,7 +1094,7 @@ export class TelegramModule {
     const statement = emptyStatement();
     // Stage 3: the host bridge dispatches a WHOLE page of envelopes in one call.
     // Chat snapshots + deletes stay per-envelope (few, field-merge / cascade); the
-    // message bulk collapses to ONE graph.apply_batch (the native per-message
+    // message bulk collapses to ONE graph.applyBatch (the native per-message
     // find→create→attach→link pipeline is what made bootstrap take ~5.6h).
     const envelopes = params.envelopes;
     // S4: telegram data is identity-scoped — per-account chat state rides
@@ -1177,14 +1177,14 @@ export class TelegramModule {
     const known = new Map<string, IngestedChatState>();
     const unique = [...new Set(chatIds)];
     if (unique.length === 0) return known;
-    const ids = await this.graph.find_by_external_ids(unique.map((chatId) => chatExternalId(chatId)));
+    const ids = await this.graph.findByExternalIds(unique.map((chatId) => chatExternalId(chatId)));
     const found: { chatId: string; entityId: string }[] = [];
     unique.forEach((chatId, index) => {
       const entityId = ids[index];
       if (entityId) found.push({ chatId, entityId });
     });
     if (found.length === 0) return known;
-    const entities = await this.graph.get_entities(found.map((item) => item.entityId));
+    const entities = await this.graph.getEntities(found.map((item) => item.entityId));
     const byId = new Map(entities.map((item) => [item.id, item]));
     for (const { chatId, entityId } of found) {
       const chat = byId.get(entityId);
@@ -1339,7 +1339,7 @@ export class TelegramModule {
         }
       }
       if (entities.length > 0) {
-        const result = await this.graph.apply_batch({ entities, refs, links });
+        const result = await this.graph.applyBatch({ entities, refs, links });
         for (const [remoteId, state] of stateByRemoteId) {
           const entityId = result.ids[remoteId];
           if (entityId) {
@@ -1385,7 +1385,7 @@ export class TelegramModule {
     return { sync_pass: generation, sync_total: planned, sync_skipped: skipped };
   }
 
-  // Bulk message ingest: the whole page becomes ONE graph.apply_batch (message
+  // Bulk message ingest: the whole page becomes ONE graph.applyBatch (message
   // entities + details records + chat refs + sender contacts + links). Unique chats
   // and senders are read ONCE (not per message), so this kills F1 (the per-message
   // list_links scan — links now dedup via the batch's ON CONFLICT), F2 (per-message
@@ -1411,13 +1411,13 @@ export class TelegramModule {
     // Edits and retries retain their external id. Resolve live identities once per page,
     // before writing them, so neither chat counts nor worker deltas grow twice.
     const liveExternalIds = [...new Set(page.filter((message) => message.isLive).map((message) => message.remoteId))];
-    const existingLive = liveExternalIds.length === 0 ? [] : await this.graph.find_by_external_ids(liveExternalIds);
+    const existingLive = liveExternalIds.length === 0 ? [] : await this.graph.findByExternalIds(liveExternalIds);
     if (existingLive.length !== liveExternalIds.length) throw new Error("Telegram live external id lookup returned an incomplete result");
     const newLiveMessages = new Set(liveExternalIds.filter((_, index) => existingLive[index] === null));
     const fragment = buildFragment(page, identityKey);
     await this.stateLiveMessages(page, chats, fragment, identityKey, generation, statement, newLiveMessages);
 
-    const result = await this.graph.apply_batch({
+    const result = await this.graph.applyBatch({
       entities: [...fragment.entities.values()],
       refs: [...fragment.refs.values()],
       links: [...fragment.links.values()],
@@ -1503,20 +1503,20 @@ export class TelegramModule {
    * of write leaves in ONE call, so what a page costs is set by the kinds it
    * carries, not by how many items it carries. */
   private async flush(effects: PageEffects): Promise<void> {
-    if (effects.webLinks.length > 0) await this.graph.web_register_batch(effects.webLinks);
-    if (effects.files.length > 0) await this.graph.file_register_batch(effects.files);
-    if (effects.chatUpdates.length > 0) await this.graph.update_properties_batch(effects.chatUpdates);
+    if (effects.webLinks.length > 0) await this.graph.webRegisterBatch(effects.webLinks);
+    if (effects.files.length > 0) await this.graph.fileRegisterBatch(effects.files);
+    if (effects.chatUpdates.length > 0) await this.graph.updatePropertiesBatch(effects.chatUpdates);
   }
 
   // Delete the entity behind a remoteId (user-scoped). Mirrors native
-  // ingest_delete; delete_entity cascades the entity's links.
+  // ingest_delete; deleteEntity cascades the entity's links.
   private async ingestDelete(envelope: SyncEnvelope): Promise<void> {
     const remoteId = envelope.remoteId;
     if (!remoteId) return;
     // S4: messages and chats resolve by EXTERNAL ID — their remoteId IS the
     // external id.
-    const entityId = await this.graph.find_by_external_id(remoteId);
-    if (entityId) await this.graph.delete_entity(entityId);
+    const entityId = await this.graph.findByExternalId(remoteId);
+    if (entityId) await this.graph.deleteEntity(entityId);
   }
 
   private shouldIndex(chatDetails: Data | null): boolean {
@@ -1608,7 +1608,7 @@ export class TelegramModule {
   ): Promise<Record<string, unknown>> {
     const payload: Data = { action: "send_message", chat_id: chatId, text };
     if (replyTo !== undefined) payload.reply_to_message_id = replyTo;
-    const result = await this.graph.source_command(payload, accountId);
+    const result = await this.graph.sourceCommand(payload, accountId);
     // The message is DELIVERED past this point. Local ingest + entity lookup are
     // best-effort enrichment: a failure here must NOT propagate as a send failure,
     // else a delivered message is reported "failed" (batch_send / single send) and
@@ -1630,7 +1630,7 @@ export class TelegramModule {
         [],
         undefined,
       );
-      const entityId = await this.graph.find_by_external_id(remoteId);
+      const entityId = await this.graph.findByExternalId(remoteId);
       return entityId ? { ...result, id: entityId } : result;
     } catch {
       return result;
@@ -1655,7 +1655,7 @@ export class TelegramModule {
   ): Promise<{ count: number; skipped: number; pending: boolean }> {
     // The selected chat remains module state. The graph owns target selection
     // and wakes the standard Source fetch without a provider-specific command.
-    await this.graph.request_backfill({}, params.account_id);
+    await this.graph.requestBackfill({}, params.account_id);
     return { count: 0, skipped: 0, pending: true };
   }
 
@@ -1680,7 +1680,7 @@ export class TelegramModule {
     if (!params.gate_prompt.trim() || !params.action_prompt.trim()) throw new Error("gate_prompt and action_prompt are required");
     if (params.debounce_seconds !== undefined && (!Number.isInteger(params.debounce_seconds) || params.debounce_seconds < 0)) throw new Error("invalid debounce_seconds");
     if (params.episode_id !== undefined) {
-      const parent = await this.graph.get_entity_full(params.episode_id, { links: false });
+      const parent = await this.graph.getEntityFull(params.episode_id, { links: false });
       if (parent?.entity.schemaId !== "episodes.episode") throw new Error(`episode not found: ${params.episode_id}`);
     }
     const chatEntityId = await this.chatEntityId(params.chat_id);
@@ -1697,7 +1697,7 @@ export class TelegramModule {
   }
 
   private async chatEntityId(chatId: number | string): Promise<string> {
-    const id = await this.graph.find_by_external_id(chatExternalId(String(chatId)));
+    const id = await this.graph.findByExternalId(chatExternalId(String(chatId)));
     if (!id) throw new Error(`Telegram chat ${String(chatId)} not found. Sync messages first.`);
     return id;
   }

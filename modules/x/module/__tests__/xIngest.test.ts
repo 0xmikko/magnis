@@ -1,4 +1,4 @@
-// tst_plugin_x_ingest — sync ingest builds an idempotent apply_batch
+// tst_plugin_x_ingest — sync ingest builds an idempotent applyBatch
 // (profiles + posts + authored_by link, each node keyed by its remote id as
 // its externalId) and read tools map window entities. Doubles come from
 // @magnis/testkit/module (throwing mockGraph — a read/ingest path hitting an
@@ -35,15 +35,15 @@ const stated = { droppedRemoteIds: [], triggerChecks: [], plan: null, excluded: 
 
 function ingestGraph(): G {
   return mockGraph({
-    apply_batch: () =>
+    applyBatch: () =>
       Promise.resolve({ ids: {}, created: 0, updated: 0, linksAdded: 0, droppedKeys: [] }),
-    list_entities_window: () => Promise.resolve(page([])),
-    get_entity_full: () => Promise.resolve(null),
+    listEntitiesWindow: () => Promise.resolve(page([])),
+    getEntityFull: () => Promise.resolve(null),
   });
 }
 
 describe("x ingest", () => {
-  it("tst_plugin_x_ingest_001 builds one apply_batch with profile+post+link, each node keyed by its externalId", async () => {
+  it("tst_plugin_x_ingest_001 builds one applyBatch with profile+post+link, each node keyed by its externalId", async () => {
     const graph = ingestGraph();
     const mod = mountX(graph);
 
@@ -69,11 +69,11 @@ describe("x ingest", () => {
     });
 
     expect(res).toEqual(stated);
-    const applyBatch = graph.spies.apply_batch;
-    if (applyBatch === undefined) throw new Error("x ingest 001: missing apply_batch spy");
+    const applyBatch = graph.spies.applyBatch;
+    if (applyBatch === undefined) throw new Error("x ingest 001: missing applyBatch spy");
     expect(applyBatch).toHaveBeenCalledTimes(1);
     const batchCall = applyBatch.mock.calls[0];
-    if (batchCall === undefined) throw new Error("x ingest 001: no apply_batch call recorded");
+    if (batchCall === undefined) throw new Error("x ingest 001: no applyBatch call recorded");
     const batch = batchCall[0] as GraphBatchInput;
     expect(batch.entities).toHaveLength(2);
 
@@ -115,11 +115,11 @@ describe("x ingest", () => {
     await mod.ingest({ envelopes: [env("x:post:1", payload)] });
     await mod.ingest({ envelopes: [env("x:post:1", { ...payload, text: "v2" })] });
 
-    const applyBatch = graph.spies.apply_batch;
-    if (applyBatch === undefined) throw new Error("x ingest 002: missing apply_batch spy");
+    const applyBatch = graph.spies.applyBatch;
+    if (applyBatch === undefined) throw new Error("x ingest 002: missing applyBatch spy");
     const firstCall = applyBatch.mock.calls[0];
     const secondCall = applyBatch.mock.calls[1];
-    if (firstCall === undefined || secondCall === undefined) throw new Error("x ingest 002: missing apply_batch call");
+    if (firstCall === undefined || secondCall === undefined) throw new Error("x ingest 002: missing applyBatch call");
     const firstEntity = (firstCall[0] as GraphBatchInput).entities[0];
     const secondEntity = (secondCall[0] as GraphBatchInput).entities[0];
     if (firstEntity === undefined || secondEntity === undefined) throw new Error("x ingest 002: missing batch entity");
@@ -130,8 +130,8 @@ describe("x ingest", () => {
   it("tst_plugin_x_ingest_003 posts.list maps window entities", async () => {
     const graph = ingestGraph();
     const mod = mountX(graph);
-    const listWindow = graph.spies.list_entities_window;
-    if (listWindow === undefined) throw new Error("x ingest 003: missing list_entities_window spy");
+    const listWindow = graph.spies.listEntitiesWindow;
+    if (listWindow === undefined) throw new Error("x ingest 003: missing listEntitiesWindow spy");
     listWindow.mockResolvedValue(page([
       entity("p1", "hello", {
         schemaId: "x.post",
@@ -148,7 +148,7 @@ describe("x ingest", () => {
     const listed = await mod.postsList({});
     expect(listed.total).toBe(1);
     expect(listed.items[0]).toMatchObject({ id: "p1", platform: "x", author_handle: "jack", text: "hello" });
-    expect(graph.spies.list_entities_window).toHaveBeenCalledTimes(1);
+    expect(graph.spies.listEntitiesWindow).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -169,9 +169,9 @@ describe("x ingest — the plan from the pages", () => {
   const post = (id: string): SyncEnvelope => ({ ...env(`x:post:${id}`, { entity_type: "post", platform: "x", post_id: id, author_handle: "jack", text: `post ${id}`, created_at: "2026-06-01T00:00:00Z", metrics: {} }), kind: "live" });
   function planGraph(known: Record<string, JsonObject>): G {
     return mockGraph({
-      find_by_external_ids: (externalIds: string[]) => Promise.resolve(externalIds.map((externalId) => (externalId in known ? `id:${externalId}` : null))),
-      get_entities: (ids: string[]) => Promise.resolve(ids.map((id) => entity(id, "", { schemaId: "x.profile", properties: known[id.slice("id:".length)] ?? {} }))),
-      apply_batch: () => Promise.resolve({ ids: {}, created: 0, updated: 0, linksAdded: 0, droppedKeys: [] }),
+      findByExternalIds: (externalIds: string[]) => Promise.resolve(externalIds.map((externalId) => (externalId in known ? `id:${externalId}` : null))),
+      getEntities: (ids: string[]) => Promise.resolve(ids.map((id) => entity(id, "", { schemaId: "x.profile", properties: known[id.slice("id:".length)] ?? {} }))),
+      applyBatch: () => Promise.resolve({ ids: {}, created: 0, updated: 0, linksAdded: 0, droppedKeys: [] }),
     });
   }
 
@@ -180,7 +180,7 @@ describe("x ingest — the plan from the pages", () => {
     const fresh = planGraph({});
     const first = await mountX(fresh).ingest({ generation: "initial:r:1", envelopes: [profile(), post("1"), post("2")] });
     expect(first).toEqual({ ...stated, plan: { "x.profile": { total: 1, skipped: 0 }, "x.post": { total: 10, skipped: 1190 } } });
-    const batch = fresh.spies.apply_batch?.mock.calls[0]?.[0] as GraphBatchInput;
+    const batch = fresh.spies.applyBatch?.mock.calls[0]?.[0] as GraphBatchInput;
     expect(batch.entities.find((item) => item.schemaId === "x.profile")?.properties).toMatchObject({ handle: "jack", sync_pass: "initial:r:1" });
 
     // The same pass, a later poll: the profile is stamped; post 1 is known, post 3 is new.
@@ -201,7 +201,7 @@ describe("x ingest — the plan from the pages", () => {
 describe("x ingest identity link (tst_ingest_link)", () => {
   function linkGraph(): G {
     return mockGraph({
-      apply_batch: () =>
+      applyBatch: () =>
         Promise.resolve({
           ids: { "x:profile:12": "prof-1" },
           created: 1,
@@ -209,7 +209,7 @@ describe("x ingest identity link (tst_ingest_link)", () => {
           linksAdded: 0,
           droppedKeys: [],
         }),
-      add_link: () => Promise.resolve(),
+      addLink: () => Promise.resolve(),
     });
   }
 
@@ -233,9 +233,9 @@ describe("x ingest identity link (tst_ingest_link)", () => {
 
     await mod.ingest({ envelopes: [profileEnv] });
 
-    expect(graph.spies.add_link).toHaveBeenCalledTimes(1);
+    expect(graph.spies.addLink).toHaveBeenCalledTimes(1);
     // `identity` runs hub → channel: the contact is the FROM endpoint.
-    expect(graph.spies.add_link).toHaveBeenCalledWith({
+    expect(graph.spies.addLink).toHaveBeenCalledWith({
       from: "c1",
       to: "prof-1",
       kind: "identity",
@@ -251,7 +251,7 @@ describe("x ingest identity link (tst_ingest_link)", () => {
     const graph = linkGraph();
     const mod = mountX(graph, vi.fn(async () => null));
     await mod.ingest({ envelopes: [profileEnv] });
-    expect(graph.spies.add_link).not.toHaveBeenCalled();
+    expect(graph.spies.addLink).not.toHaveBeenCalled();
   });
 
   it("rpc failure never fails the ingest (self-healing next cycle)", async () => {
@@ -264,7 +264,7 @@ describe("x ingest identity link (tst_ingest_link)", () => {
     );
     const res = await mod.ingest({ envelopes: [profileEnv] });
     expect(res).toEqual(stated);
-    expect(graph.spies.add_link).not.toHaveBeenCalled();
+    expect(graph.spies.addLink).not.toHaveBeenCalled();
   });
 });
 
@@ -273,9 +273,9 @@ describe("x ingest identity link (tst_ingest_link)", () => {
 // name — previously additionalProperties:false rejected the call and the
 // standard search box silently did nothing on this module.
 describe("x profiles.list search", () => {
-  it("search → search_entities_by_name, dictionaries ride the rows, BACKEND order preserved", async () => {
+  it("search → searchEntitiesByName, dictionaries ride the rows, BACKEND order preserved", async () => {
     const graph = mockGraph({
-      search_entities_by_name: () =>
+      searchEntitiesByName: () =>
         Promise.resolve([
           entity("e2", "Bob Builder", {
             schemaId: "x.profile",
@@ -290,7 +290,7 @@ describe("x profiles.list search", () => {
     const mod = mountX(graph);
 
     const r = await mod.profilesList({ search: "o", limit: 10 });
-    expect(graph.spies.search_entities_by_name).toHaveBeenCalledWith(
+    expect(graph.spies.searchEntitiesByName).toHaveBeenCalledWith(
       expect.objectContaining({ query: "o", schemaIds: ["x.profile"] }),
     );
     // Backend order (stable total order) is preserved — no client re-sort
@@ -307,7 +307,7 @@ describe("x profiles.list search", () => {
 describe("x profiles.list search pagination", () => {
   function pagingGraph(dataset: { id: string; name: string }[]): G {
     return mockGraph({
-      search_entities_by_name: (p) =>
+      searchEntitiesByName: (p) =>
         Promise.resolve(dataset.slice(0, p.limit).map((d) => entity(d.id, d.name, { schemaId: "x.profile" }))),
     });
   }

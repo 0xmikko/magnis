@@ -25,9 +25,9 @@ export type HeaderRow =
 
 export interface CompanyDetailView extends CompanyListItem {
   /** Incoming edges use the shared `~kind` convention. */
-  linked_entities: LinkedEntitySummary[];
+  linkedEntities: LinkedEntitySummary[];
   members: string[];
-  header_rows: HeaderRow[];
+  headerRows: HeaderRow[];
 }
 
 // ── schema → type maps that parameterise GraphService ──────────────

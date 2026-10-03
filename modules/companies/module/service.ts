@@ -3,8 +3,8 @@
 // contract with its RPC handler; definePlugin (index.ts) wires them.
 //
 // Reads use the efficient graph read-API (email parity): list →
-// list_entities_window / search → search_entities_by_name; get →
-// get_entity_full. S5: every one of them renders from the node's own
+// listEntitiesWindow / search → searchEntitiesByName; get →
+// getEntityFull. S5: every one of them renders from the node's own
 // DICTIONARY, which rides the rows they already fetched — fixed,
 // N-independent crossings with no hydrate step at all.
 
@@ -106,13 +106,13 @@ export class CompaniesModule {
     let rows: Entity[];
     let total: number;
     if (search.length > 0) {
-      const matched = await this.graph.search_entities_by_name({
+      const matched = await this.graph.searchEntitiesByName({
         query: search,
         schemaIds: [COMPANY],
         limit: limit + offset,
       });
       // Sort alphabetically by name (parity with staging, which sorted ALL
-      // results; search_entities_by_name returns prefix/date order otherwise).
+      // results; searchEntitiesByName returns prefix/date order otherwise).
       // A nameless company sorts first.
       matched.sort((a, b) => (a.name ?? "").toLowerCase().localeCompare((b.name ?? "").toLowerCase()));
       total = matched.length;
@@ -122,7 +122,7 @@ export class CompaniesModule {
       // case-insensitive name order). The window honors only the explicit
       // order, so it does NOT add pinned-first — matching staging's JS name
       // sort which had no pinned priority.
-      const win = await this.graph.list_entities_window({
+      const win = await this.graph.listEntitiesWindow({
         schema: COMPANY,
         order: [{ field: { entityField: "idx" }, desc: false }],
         limit,
@@ -142,7 +142,7 @@ export class CompaniesModule {
     // User-scoped entity (+ schema guard) and every edge, in one read. S5:
     // the hub's DICTIONARY is the record — one writer, nothing to arbitrate —
     // so the detail needs neither a canonical read nor a record list.
-    const detail = await this.graph.get_entity_full(params.id, { links: true });
+    const detail = await this.graph.getEntityFull(params.id, { links: true });
     if (detail?.entity.schemaId !== COMPANY) {
       throw new Error(`company not found: ${params.id}`);
     }
@@ -155,12 +155,12 @@ export class CompaniesModule {
     }))];
     const endpoints = endpointIds.length === 0
       ? []
-      : await this.graph.get_entities(endpointIds);
+      : await this.graph.getEntities(endpointIds);
     const endpointsById = new Map(endpoints.map((endpoint) => [endpoint.id, endpoint] as const));
     // @tested-by: tst_module_companies_002
     // @invariant: Companies preserve the shared `~kind` convention for
     // incoming edges so EntityDetailTabs can surface works_at contacts.
-    const linked_entities = detail.links.flatMap((link) => {
+    const linkedEntities = detail.links.flatMap((link) => {
       const incoming = link.to === entity.id;
       const endpointId = incoming
         ? link.from
@@ -172,17 +172,17 @@ export class CompaniesModule {
       if (endpoint === undefined) return [];
       return [linkedEntitySummary(endpoint, link, incoming ? `~${link.kind}` : link.kind)];
     });
-    const members = linked_entities.flatMap((linked) =>
+    const members = linkedEntities.flatMap((linked) =>
       linked.schemaId === "contacts.person" && linked.linkKind === "~works_at" && linked.name !== null
         ? [linked.name]
         : []);
-    const header_rows: HeaderRow[] = [
+    const headerRows: HeaderRow[] = [
       { type: "text", label: "Website", value: base.website },
       { type: "text", label: "Industry", value: base.industry },
       { type: "text", label: "Size", value: base.size },
       { type: "chips", label: `Team members (${String(members.length)})`, items: members },
     ];
-    return { ...base, linked_entities, members, header_rows };
+    return { ...base, linkedEntities, members, headerRows };
   }
 
   // The tool's params are AGENT-facing → they omit `client_id` (the
@@ -205,7 +205,7 @@ export class CompaniesModule {
     // existing company if one already matches, so the agent can call create
     // without a pre-search and without producing duplicates.
     const needle = params.name.trim().toLowerCase();
-    const existing = await this.graph.search_entities_by_name({
+    const existing = await this.graph.searchEntitiesByName({
       query: needle,
       schemaIds: [COMPANY],
       limit: 25,
@@ -216,7 +216,7 @@ export class CompaniesModule {
       return buildListItem(match);
     }
 
-    const e = await this.graph.create_entity({
+    const e = await this.graph.createEntity({
       schemaId: COMPANY,
       name: params.name,
       clientId: params.client_id,
@@ -235,7 +235,7 @@ export class CompaniesModule {
     // @invariant: The company Overview and agent writes share one description
     // key; structured details never own a second copy of it.
     if (params.summary) details.description = params.summary;
-    await this.graph.update_properties({ entityId: e.id, properties: { ...details } });
+    await this.graph.updateProperties({ entityId: e.id, properties: { ...details } });
     return this.listItemFor(e.id);
   }
 
@@ -243,7 +243,7 @@ export class CompaniesModule {
   // Single-entity list item for the WRITE paths (create idempotent / new
   // return) — one read of the node it just wrote, then the pure builder.
   private async listItemFor(id: string): Promise<CompanyListItem> {
-    const entity = await this.graph.get_entity(id);
+    const entity = await this.graph.getEntity(id);
     if (!entity) throw new Error(`company not found: ${id}`);
     return buildListItem(entity);
   }
@@ -254,11 +254,11 @@ export class CompaniesModule {
   @rpc("update", COMPANY_UPDATE_SPEC)
   @writeTool("update", { entity: "companies.company", ...COMPANY_UPDATE_SPEC })
   async update(params: UpdateParams): Promise<CompanyDetailView> {
-    const e = await this.graph.get_entity(params.id);
+    const e = await this.graph.getEntity(params.id);
     if (!e) throw new Error(`company not found: ${params.id}`);
 
     if (params.name !== undefined) {
-      await this.graph.update_entity_name(params.id, params.name);
+      await this.graph.updateEntityName(params.id, params.name);
     }
 
     const details: CompanyDetailsFacet = {};
@@ -289,7 +289,7 @@ export class CompaniesModule {
       }));
     }
     if (Object.keys(details).length > 0) {
-      await this.graph.update_properties({ entityId: params.id, properties: { ...details } });
+      await this.graph.updateProperties({ entityId: params.id, properties: { ...details } });
     }
 
     // An email is an identity CHANNEL, not a company field: the email module
@@ -299,7 +299,7 @@ export class CompaniesModule {
         items: params.emails.map((address) => ({ address })),
       });
       for (const to of ids) {
-        await this.graph.add_link({ from: params.id, to, kind: "identity" });
+        await this.graph.addLink({ from: params.id, to, kind: "identity" });
       }
     }
 

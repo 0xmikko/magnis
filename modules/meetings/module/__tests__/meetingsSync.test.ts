@@ -1,10 +1,10 @@
 // Meetings sync ingest (@syncHandler) + control (@rpc sync.status /
 // sync.reset). Exercises the module through @magnis/testkit/module (mockGraph +
 // mountModule + a test RpcExecutor). Asserts: snapshot/live upsert via
-// apply_batch (keyed on the remote id as external id, attendees as `attendee` edges over
+// applyBatch (keyed on the remote id as external id, attendees as `attendee` edges over
 // refs), the full live trigger.check payload with attendee email.address ids
 // resolved through email.ensure_addresses, delete, empty-user hard error,
-// and the sync_state control surface.
+// and the syncState control surface.
 
 /**
  * @test-id: tst_module_meetings_sync_001
@@ -28,7 +28,7 @@ type G = MockGraph;
 
 function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
   return mockGraph({
-    apply_batch: (frag: GraphBatchInput): Promise<GraphBatchResult> =>
+    applyBatch: (frag: GraphBatchInput): Promise<GraphBatchResult> =>
       Promise.resolve({
         ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
         created: frag.entities.length,
@@ -36,14 +36,14 @@ function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
         linksAdded: 0,
         droppedKeys: [],
       }),
-    find_by_external_id: (_id: string): Promise<string | null> => Promise.resolve(null),
-    get_entity: (_id: string) => Promise.resolve(entity("m-del", "", { schemaId: CAL, properties: { source_id: "google", account_id: "acct-1" } })),
-    find_by_external_ids: (externalIds: string[]): Promise<(string | null)[]> => Promise.resolve(externalIds.map(() => null)),
+    findByExternalId: (_id: string): Promise<string | null> => Promise.resolve(null),
+    getEntity: (_id: string) => Promise.resolve(entity("m-del", "", { schemaId: CAL, properties: { source_id: "google", account_id: "acct-1" } })),
+    findByExternalIds: (externalIds: string[]): Promise<(string | null)[]> => Promise.resolve(externalIds.map(() => null)),
     // The upsert reconciles the event's attendee edges against the invite's
     // CURRENT list — one edge read per upserted event.
-    list_links_for_entity: (): Promise<never[]> => Promise.resolve([]),
-    delete_entity: (_id: string): Promise<void> => Promise.resolve(undefined),
-    sync_state: (): Promise<Record<string, unknown>> => Promise.resolve({ ok: true }),
+    listLinksForEntity: (): Promise<never[]> => Promise.resolve([]),
+    deleteEntity: (_id: string): Promise<void> => Promise.resolve(undefined),
+    syncState: (): Promise<Record<string, unknown>> => Promise.resolve({ ok: true }),
     ...over,
   } as unknown as GraphOverrides);
 }
@@ -75,21 +75,21 @@ const env = (over: Partial<SyncEnvelope>): SyncEnvelope => ({
 });
 
 describe("meetings @syncHandler — upsert", () => {
-  it("upserts a snapshot via apply_batch keyed on its external id, no trigger", async () => {
-    const apply_batch = vi.fn(async (frag: GraphBatchInput) => ({
+  it("upserts a snapshot via applyBatch keyed on its external id, no trigger", async () => {
+    const applyBatch = vi.fn(async (frag: GraphBatchInput) => ({
       ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
       created: 1,
       updated: 0,
       linksAdded: 0,
       droppedKeys: [],
     }));
-    const { mod } = makeModule(makeGraph({ apply_batch }));
+    const { mod } = makeModule(makeGraph({ applyBatch }));
 
     const payload = { title: "Past meeting", starts_at: "2026-01-01T09:00:00Z" };
     const res = await mod.ingest({ envelopes: [env({ kind: "snapshot", remoteId: "r2", payload })] });
 
-    expect(apply_batch).toHaveBeenCalledTimes(1);
-    const frag = apply_batch.mock.calls[0]![0];
+    expect(applyBatch).toHaveBeenCalledTimes(1);
+    const frag = applyBatch.mock.calls[0]![0];
     expect(frag.entities).toEqual([
       {
         key: "r2",
@@ -122,14 +122,14 @@ describe("meetings @syncHandler — live envelopes emit a trigger.check", () => 
       title: "Standup", starts_at: "2026-07-28T09:00:00Z", attendees: [{ email: "a@x" }],
     } })] })).resolves.toBeDefined();
     expect(execute).not.toHaveBeenCalled();
-    expect(graph.spies.apply_batch?.mock.calls[0]?.[0].entities).toContainEqual(expect.objectContaining({
+    expect(graph.spies.applyBatch?.mock.calls[0]?.[0].entities).toContainEqual(expect.objectContaining({
       schemaId: "email.address",
       externalId: "email:address:a@x",
     }));
   });
 
   it("ensures attendee addresses via email.ensure_address and returns the full payload", async () => {
-    const apply_batch = vi.fn(async (frag: GraphBatchInput) => ({
+    const applyBatch = vi.fn(async (frag: GraphBatchInput) => ({
       ids: Object.fromEntries(frag.entities.map((entity) => [
         entity.key,
         entity.key === "r5" ? "m-r5" : `addr-${entity.key.slice("addr:".length)}`,
@@ -139,7 +139,7 @@ describe("meetings @syncHandler — live envelopes emit a trigger.check", () => 
       linksAdded: 0,
       droppedKeys: [],
     }));
-    const { mod, execute } = makeModule(makeGraph({ apply_batch }));
+    const { mod, execute } = makeModule(makeGraph({ applyBatch }));
 
     const payload: JsonObject = {
       title: "Standup",
@@ -153,7 +153,7 @@ describe("meetings @syncHandler — live envelopes emit a trigger.check", () => 
     expect(execute).not.toHaveBeenCalled();
     // The attendees are EDGES to the shared address nodes, and the invite's
     // per-event display name rides the edge dictionary.
-    const frag = apply_batch.mock.calls[0]![0] as GraphBatchInput;
+    const frag = applyBatch.mock.calls[0]![0] as GraphBatchInput;
     expect(frag.entities[0]?.properties).toEqual({
       title: "Standup",
       starts_at: "2026-07-28T09:00:00Z",
@@ -208,11 +208,11 @@ describe("meetings @syncHandler — live envelopes emit a trigger.check", () => 
 
 describe("meetings @syncHandler — attendee edge reconcile", () => {
   it("an attendee the provider no longer reports loses its edge; others survive", async () => {
-    const delete_link = vi.fn((_id: string) => Promise.resolve(undefined));
+    const deleteLink = vi.fn((_id: string) => Promise.resolve(undefined));
     // The event already carries edges from an EARLIER invite revision: a
     // now-removed guest, the still-current guest, a non-attendee edge, and an
     // inbound edge that merely points AT the event.
-    const list_links_for_entity = vi.fn(() =>
+    const listLinksForEntity = vi.fn(() =>
       Promise.resolve([
         link("id-r6", "addr-old@x", "attendee", { id: "l-stale" }),
         link("id-r6", "id-addr:ann@x", "attendee", { id: "l-keep" }),
@@ -221,7 +221,7 @@ describe("meetings @syncHandler — attendee edge reconcile", () => {
       ]),
     );
     const { mod } = makeModule(
-      makeGraph({ delete_link, list_links_for_entity } as Record<string, unknown>),
+      makeGraph({ deleteLink, listLinksForEntity } as Record<string, unknown>),
     );
     await mod.ingest({
       envelopes: [
@@ -233,31 +233,31 @@ describe("meetings @syncHandler — attendee edge reconcile", () => {
     });
     // Only the ex-guest's OUTBOUND attendee edge goes — wholesale-replace
     // semantics the earlier design gave for free, now explicit.
-    expect(delete_link.mock.calls.map((c) => c[0])).toEqual(["l-stale"]);
+    expect(deleteLink.mock.calls.map((c) => c[0])).toEqual(["l-stale"]);
   });
 });
 
 describe("meetings @syncHandler — delete", () => {
   it("deletes an existing meeting by its external id", async () => {
-    const find_by_external_id = vi.fn().mockResolvedValue("m-del");
-    const delete_entity = vi.fn().mockResolvedValue(undefined);
-    const { mod } = makeModule(makeGraph({ find_by_external_id, delete_entity }));
+    const findByExternalId = vi.fn().mockResolvedValue("m-del");
+    const deleteEntity = vi.fn().mockResolvedValue(undefined);
+    const { mod } = makeModule(makeGraph({ findByExternalId, deleteEntity }));
 
     const res = await mod.ingest({ envelopes: [env({ kind: "delete", remoteId: "rdel" })] });
 
-    expect(find_by_external_id).toHaveBeenCalledWith("rdel");
-    expect(delete_entity).toHaveBeenCalledWith("m-del");
+    expect(findByExternalId).toHaveBeenCalledWith("rdel");
+    expect(deleteEntity).toHaveBeenCalledWith("m-del");
     expect(res.droppedRemoteIds).toEqual([]);
   });
 
   it("is a no-op (not an error, not dropped) for an unknown delete id", async () => {
-    const find_by_external_id = vi.fn().mockResolvedValue(null);
-    const delete_entity = vi.fn();
-    const { mod } = makeModule(makeGraph({ find_by_external_id, delete_entity }));
+    const findByExternalId = vi.fn().mockResolvedValue(null);
+    const deleteEntity = vi.fn();
+    const { mod } = makeModule(makeGraph({ findByExternalId, deleteEntity }));
 
     const res = await mod.ingest({ envelopes: [env({ kind: "delete", remoteId: "ghost" })] });
 
-    expect(delete_entity).not.toHaveBeenCalled();
+    expect(deleteEntity).not.toHaveBeenCalled();
     expect(res).toEqual({ droppedRemoteIds: [], triggerChecks: [], plan: null, excluded: [] });
   });
 });
@@ -275,17 +275,17 @@ describe("completed Calendar replacement pass", () => {
     const seen = entity("seen", "", { schemaId: CAL, properties: { source_id: "google", account_id: "acct-1", sync_pass: "initial:r:2" } });
     const otherAccount = entity("other", "", { schemaId: CAL, properties: { source_id: "google", account_id: "acct-2", sync_pass: "initial:r:1" } });
     const curated = entity("curated", "", { schemaId: CAL, properties: { account_id: "acct-1" } });
-    const list_entities_by_property_field = vi.fn().mockResolvedValue(page([stale, seen, otherAccount, curated]));
-    const delete_entity = vi.fn().mockResolvedValue(undefined);
-    const { mod } = makeModule(makeGraph({ list_entities_by_property_field, delete_entity }));
+    const listEntitiesByPropertyField = vi.fn().mockResolvedValue(page([stale, seen, otherAccount, curated]));
+    const deleteEntity = vi.fn().mockResolvedValue(undefined);
+    const { mod } = makeModule(makeGraph({ listEntitiesByPropertyField, deleteEntity }));
 
-    expect(delete_entity).not.toHaveBeenCalled(); // an interrupted pass has no completion hook
+    expect(deleteEntity).not.toHaveBeenCalled(); // an interrupted pass has no completion hook
     expect(await mod.onSyncComplete({ userId: "u1", sourceId: "google", accountId: "acct-1", identityKey: null, generation: "initial:r:2" })).toEqual({
       departed: [], plan: { [CAL]: { total: 0, skipped: 0 } },
     });
-    expect(list_entities_by_property_field).toHaveBeenCalledWith({ entitySchema: CAL, key: "account_id", value: "acct-1", limit: 500, offset: 0 });
-    expect(delete_entity).toHaveBeenCalledTimes(1);
-    expect(delete_entity).toHaveBeenCalledWith("old");
+    expect(listEntitiesByPropertyField).toHaveBeenCalledWith({ entitySchema: CAL, key: "account_id", value: "acct-1", limit: 500, offset: 0 });
+    expect(deleteEntity).toHaveBeenCalledTimes(1);
+    expect(deleteEntity).toHaveBeenCalledWith("old");
   });
 });
 
@@ -298,13 +298,13 @@ describe("completed Calendar replacement pass", () => {
  */
 describe("meetings @syncHandler — the plan from the pages", () => {
   it("states the completed full Calendar count once and nothing outside a worker's pass", async () => {
-    const apply_batch = vi.fn().mockResolvedValue({ ids: { r1: "id-r1" }, created: 1, updated: 0, linksAdded: 0, droppedKeys: [] });
-    const { mod } = makeModule(makeGraph({ apply_batch }));
+    const applyBatch = vi.fn().mockResolvedValue({ ids: { r1: "id-r1" }, created: 1, updated: 0, linksAdded: 0, droppedKeys: [] });
+    const { mod } = makeModule(makeGraph({ applyBatch }));
     const calendar = env({ remoteId: "calendar", payload: { entity_type: "calendar", events_total: 3 } });
     const first = await mod.ingest({ command: "bootstrap", generation: "initial:r:1", envelopes: [calendar, env({ payload: { title: "Standup", start_at: "2026-02-01T10:00:00Z", end_at: "2026-02-01T10:15:00Z" } })] });
     expect(first).toEqual({ droppedRemoteIds: [], triggerChecks: [], plan: { "meetings.calendar_event": { total: 3, skipped: 0 } }, excluded: [] });
-    expect(apply_batch).toHaveBeenCalledTimes(1);
-    expect((apply_batch.mock.calls[0]?.[0] as GraphBatchInput).entities.map((item) => item.key)).not.toContain("calendar");
+    expect(applyBatch).toHaveBeenCalledTimes(1);
+    expect((applyBatch.mock.calls[0]?.[0] as GraphBatchInput).entities.map((item) => item.key)).not.toContain("calendar");
     const later = await mod.ingest({ command: "catch_up", generation: "initial:r:1", envelopes: [env({ remoteId: "calendar", payload: { entity_type: "calendar", events_total: 3 } })] });
     expect(later.plan).toEqual({ "meetings.calendar_event": { total: 0, skipped: 0 } });
     const outside = await mod.ingest({ envelopes: [calendar] });
@@ -321,44 +321,44 @@ describe("meetings @syncHandler — the plan from the pages", () => {
  */
 describe("Calendar Poll progress", () => {
   it("counts only a Graph create and a real deletion, not a replay", async () => {
-    const find_by_external_ids = vi.fn().mockResolvedValueOnce([null]).mockResolvedValueOnce(["id-r1"]);
-    const find_by_external_id = vi.fn().mockResolvedValueOnce("id-r1").mockResolvedValueOnce(null);
-    const get_entity = vi.fn().mockResolvedValue(entity("id-r1", "", { schemaId: CAL, properties: { source_id: "google", account_id: "acct-1" } }));
-    const delete_entity = vi.fn().mockResolvedValue(undefined);
-    const { mod } = makeModule(makeGraph({ find_by_external_ids, find_by_external_id, get_entity, delete_entity }));
+    const findByExternalIds = vi.fn().mockResolvedValueOnce([null]).mockResolvedValueOnce(["id-r1"]);
+    const findByExternalId = vi.fn().mockResolvedValueOnce("id-r1").mockResolvedValueOnce(null);
+    const getEntity = vi.fn().mockResolvedValue(entity("id-r1", "", { schemaId: CAL, properties: { source_id: "google", account_id: "acct-1" } }));
+    const deleteEntity = vi.fn().mockResolvedValue(undefined);
+    const { mod } = makeModule(makeGraph({ findByExternalIds, findByExternalId, getEntity, deleteEntity }));
     const event = env({ payload: { title: "New event", starts_at: "2026-02-01T10:00:00Z" } });
     expect((await mod.ingest({ command: "catch_up", generation: "initial:r:1", envelopes: [event] })).plan?.[CAL]).toEqual({ total: 1, skipped: 0 });
     expect((await mod.ingest({ command: "catch_up", generation: "initial:r:1", envelopes: [event] })).plan?.[CAL]).toEqual({ total: 0, skipped: 0 });
     expect((await mod.ingest({ command: "catch_up", generation: "initial:r:1", envelopes: [env({ kind: "delete" })] })).plan?.[CAL]).toEqual({ total: -1, skipped: 0 });
     expect((await mod.ingest({ command: "catch_up", generation: "initial:r:1", envelopes: [env({ kind: "delete" })] })).plan?.[CAL]).toEqual({ total: 0, skipped: 0 });
-    expect(delete_entity).toHaveBeenCalledExactlyOnceWith("id-r1");
+    expect(deleteEntity).toHaveBeenCalledExactlyOnceWith("id-r1");
   });
 });
 
 describe("meetings @syncHandler — empty userId is a hard error", () => {
   it("throws and writes nothing", async () => {
-    const apply_batch = vi.fn();
-    const { mod } = makeModule(makeGraph({ apply_batch }));
+    const applyBatch = vi.fn();
+    const { mod } = makeModule(makeGraph({ applyBatch }));
     await expect(
       mod.ingest({ envelopes: [env({ kind: "live", remoteId: "r9", userId: "" })] }),
     ).rejects.toThrow(/userId/);
-    expect(apply_batch).not.toHaveBeenCalled();
+    expect(applyBatch).not.toHaveBeenCalled();
   });
 });
 
 describe("meetings sync control (@rpc)", () => {
-  it("sync.status reads sync_state('status')", async () => {
-    const sync_state = vi.fn().mockResolvedValue({ states: [] });
-    const { mod } = makeModule(makeGraph({ sync_state }));
+  it("sync.status reads syncState('status')", async () => {
+    const syncState = vi.fn().mockResolvedValue({ states: [] });
+    const { mod } = makeModule(makeGraph({ syncState }));
     await mod.syncStatus();
-    expect(sync_state).toHaveBeenCalledWith("status");
+    expect(syncState).toHaveBeenCalledWith("status");
   });
 
   it("sync.reset resets only the meetings.calendar_event namespace", async () => {
-    const sync_state = vi.fn().mockResolvedValue({ ok: true });
-    const { mod } = makeModule(makeGraph({ sync_state }));
+    const syncState = vi.fn().mockResolvedValue({ ok: true });
+    const { mod } = makeModule(makeGraph({ syncState }));
     await mod.syncReset();
-    expect(sync_state).toHaveBeenCalledWith("reset", CAL);
+    expect(syncState).toHaveBeenCalledWith("reset", CAL);
   });
 });
 

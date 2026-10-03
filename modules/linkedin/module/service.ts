@@ -2,7 +2,7 @@ import { rpc } from "@magnis/plugin-sdk";
 // LinkedIn plugin — backend module (V8 isolate). Read-only ingest of LinkedIn
 // profiles + posts via the `linkedin` surface, plus read tools. Per-platform
 // module (telegram-shaped): a WRITE seam (message / compose) belongs HERE later —
-// add write tools + a source_command grant + op_composer like the telegram
+// add write tools + a sourceCommand grant + op_composer like the telegram
 // module, without touching x. v1 is read-only. (Split from the old shared
 // `social` module, see plan Revision.)
 // Writes ONLY `linkedin.*` (implicit own-namespace grant); soft-reads contacts.person.
@@ -163,7 +163,7 @@ export class LinkedinModule {
     }
 
     if (entities.length > 0) {
-      const applied = await this.graph.apply_batch({ entities, refs: [], links });
+      const applied = await this.graph.applyBatch({ entities, refs: [], links });
       // Identity link + placeholder-name upgrade. A profile is
       // only ever ingested because a contact tracks its handle — resolve the
       // owner and link profile→person (idempotent by (from,to,kind)). Any RPC
@@ -186,11 +186,11 @@ export class LinkedinModule {
       return urn ? [`linkedin:${urn}`] : [];
     }))];
     if (externalIds.length === 0) return stamps;
-    const ids = await this.graph.find_by_external_ids(externalIds);
+    const ids = await this.graph.findByExternalIds(externalIds);
     const found: { externalId: string; id: string }[] = [];
     externalIds.forEach((externalId, index) => { const id = ids[index]; if (id) found.push({ externalId, id }); });
     if (found.length === 0) return stamps;
-    const byId = new Map((await this.graph.get_entities(found.map(({ id }) => id))).map((item) => [item.id, item]));
+    const byId = new Map((await this.graph.getEntities(found.map(({ id }) => id))).map((item) => [item.id, item]));
     for (const { externalId, id } of found) {
       const held = byId.get(id);
       stamps.set(externalId, held === undefined ? null : str(held.properties as JsonObject, "sync_pass") ?? null);
@@ -216,7 +216,7 @@ export class LinkedinModule {
         if (!owner) continue;
         // S5: `identity` runs hub → channel, so the CONTACT is the from
         // endpoint — the same edge contacts writes to every other replica.
-        await this.graph.add_link({
+        await this.graph.addLink({
           from: owner.contact_id,
           to: profileId,
           kind: IDENTITY,
@@ -254,7 +254,7 @@ export class LinkedinModule {
   async postsList(params: PostsListParams): Promise<PaginatedResponse<PostListItem>> {
     const limit = params.limit ?? 100;
     const offset = params.offset ?? 0;
-    const win = await this.graph.list_entities_window({
+    const win = await this.graph.listEntitiesWindow({
       schema: POST,
       order: [{ field: { propertyPath: "created_at" }, desc: true }],
       limit,
@@ -269,7 +269,7 @@ export class LinkedinModule {
   @rpc("posts.get", POST_GET_SPEC)
   @tool("get", { entity: "linkedin.post", ...POST_GET_SPEC })
   async postsGet(params: GetParams): Promise<PostListItem> {
-    const detail = await this.graph.get_entity_full(params.id, { links: false });
+    const detail = await this.graph.getEntityFull(params.id, { links: false });
     if (detail?.entity.schemaId !== POST) {
       throw new Error(`linkedin post not found: ${params.id}`);
     }
@@ -315,7 +315,7 @@ export class LinkedinModule {
         pending: true,
       };
     }
-    const detail = await this.graph.get_entity_full(params.id, { links: false });
+    const detail = await this.graph.getEntityFull(params.id, { links: false });
     if (detail?.entity.schemaId !== PROFILE) {
       throw new Error(`linkedin profile not found: ${params.id}`);
     }
@@ -365,7 +365,7 @@ export class LinkedinModule {
       const items = found.items.map((e) => this.profileItem(e));
       return { items, total: found.total, limit, offset };
     }
-    const win = await this.graph.list_entities_window({
+    const win = await this.graph.listEntitiesWindow({
       schema: PROFILE,
       limit,
       offset,
@@ -404,7 +404,7 @@ export class LinkedinModule {
     const known = new Set(
       pageHandles.filter((h): h is string => !!h).map((h) => h.toLowerCase()),
     );
-    const win = await this.graph.list_entities_window({
+    const win = await this.graph.listEntitiesWindow({
       schema: PROFILE,
       limit: 1000,
       offset: 0,

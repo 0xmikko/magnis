@@ -4,11 +4,11 @@
 // and the UI's plugins/email/ui/types.ts copies.
 //
 // DB-access guarantees (asserted by module/__tests__/emailRead):
-//   - list (no search) = ONE list_entities_window — no canonical read, no
+//   - list (no search) = ONE listEntitiesWindow — no canonical read, no
 //     per-row hydrate.
-//   - list (search)    = ONE search_entities_by_name — the matched rows carry
+//   - list (search)    = ONE searchEntitiesByName — the matched rows carry
 //     their own dictionaries, so there is no hydrate crossing at all.
-//   - get  = ONE get_entity_full. batch = K get_entity_full (one per id).
+//   - get  = ONE getEntityFull. batch = K getEntityFull (one per id).
 //
 // Deferred (read-time enrichment, mirrors the telegram module; verified visually
 // in the frontend, NOT asserted here): link-resolved linked_entities and the
@@ -185,7 +185,7 @@ export class EmailModule {
     if (search.length > 0) {
       // Search path: the matched rows already carry their dictionaries, so the
       // page renders straight off them — ONE crossing, no hydrate.
-      const matched = await this.graph.search_entities_by_name({
+      const matched = await this.graph.searchEntitiesByName({
         query: search,
         schemaIds: [MESSAGE_SCHEMA],
         limit: limit + offset,
@@ -199,7 +199,7 @@ export class EmailModule {
 
     // ONE statement — page of email.message ordered by the indexed entity
     // `date` column DESC; each row's dictionary rides on the entity.
-    const win = await this.graph.list_entities_window({
+    const win = await this.graph.listEntitiesWindow({
       schema: MESSAGE_SCHEMA,
 
       order: [{ field: { entityField: "date" }, desc: true }],
@@ -229,7 +229,7 @@ export class EmailModule {
   async emailBatch(params: BatchParams): Promise<MessageDetailView[]> {
     const views: MessageDetailView[] = [];
     for (const id of params.ids) {
-      // One get_entity_full per id; a not-found id is skipped (native
+      // One getEntityFull per id; a not-found id is skipped (native
       // get_batch parity — it warns + drops rather than failing the batch).
       const view = await this.getDetail(id);
       if (view) views.push(view);
@@ -239,24 +239,24 @@ export class EmailModule {
 
   /// Detail fetch shared by get/batch. Returns null for a missing or
   /// non-email entity (get throws on null; batch skips it). At most TWO fixed
-  /// crossings: get_entity_full (entity + link edges) and, only
-  /// when the entity has links, ONE get_entities batch to resolve the
+  /// crossings: getEntityFull (entity + link edges) and, only
+  /// when the entity has links, ONE getEntities batch to resolve the
   /// neighbours' names — no per-link N+1.
   private async getDetail(id: string): Promise<MessageDetailView | null> {
-    const detail = await this.graph.get_entity_full(id, { links: true });
+    const detail = await this.graph.getEntityFull(id, { links: true });
     if (detail?.entity.schemaId !== MESSAGE_SCHEMA) return null;
     const { entity, links } = detail;
     // S5: the message DICT is the record.
     const d = entity.properties as Data;
 
     // Resolve link neighbours (attachments, address hub, …) for the Context
-    // panel. Link edges carry ids + kind only; one batch get_entities
+    // panel. Link edges carry ids + kind only; one batch getEntities
     // (user-scoped → drops non-owned targets) hydrates names/schemas.
     const linked_entities: LinkedEntitySummary[] = [];
     if (links.length > 0) {
       const neighbourId = (l: { from: string; to: string }): string =>
         l.from === entity.id ? l.to : l.from;
-      const targets = await this.graph.get_entities([...new Set(links.map(neighbourId))]);
+      const targets = await this.graph.getEntities([...new Set(links.map(neighbourId))]);
       const byId = new Map(targets.map((t) => [t.id, t]));
       for (const l of links) {
         const t = byId.get(neighbourId(l));
@@ -290,9 +290,9 @@ export class EmailModule {
 
   // ── sync ingest (@syncHandler) ────────────────────────────────
   // Invoked by the host PluginModuleController bridge (`email.__sync__`) with a
-  // WHOLE page of envelopes. Ports the native ingest pipeline to the apply_batch
+  // WHOLE page of envelopes. Ports the native ingest pipeline to the applyBatch
   // principle: a page's messages + their unique addresses + sent_from/sent_to
-  // links collapse to ONE graph.apply_batch per chunk (idempotent on external_id,
+  // links collapse to ONE graph.applyBatch per chunk (idempotent on external_id,
   // links dedup via ON CONFLICT). Attachments + LIVE trigger.check run post-apply
   // (they need the resolved entity ids). The bridge fans the returned
   // triggerChecks out to the event_bus. `generation` is the pass the worker is
@@ -339,7 +339,7 @@ export class EmailModule {
     }
 
     // Chunk by TOTAL batch entities (messages + unique addresses) so one
-    // apply_batch never exceeds INGEST_CHUNK and the lone PGlite connection is
+    // applyBatch never exceeds INGEST_CHUNK and the lone PGlite connection is
     // freed between chunks.
     let chunk: SyncEnvelope[] = [];
     let chunkAddrs = new Set<string>();
@@ -356,7 +356,7 @@ export class EmailModule {
       const fresh = addrs.filter((a) => !chunkAddrs.has(a));
       // Flush BEFORE adding when this message would push the running chunk past
       // the cap. A single message is never split — its {message + folded
-      // addresses + sent_from/sent_to links} must land in ONE atomic apply_batch
+      // addresses + sent_from/sent_to links} must land in ONE atomic applyBatch
       // or the links would reference entities outside the fragment. So a lone
       // message contributing >INGEST_CHUNK entities is one larger batch (only
       // reachable past provider recipient limits, ~100); the cap governs the
@@ -382,13 +382,13 @@ export class EmailModule {
     if (!env.remoteId) return false;
     // S5: the remote id IS the node's external id — resolution goes through the
     // one chokepoint.
-    const id = await this.graph.find_by_external_id(env.remoteId);
+    const id = await this.graph.findByExternalId(env.remoteId);
     if (!id) return false;
-    await this.graph.delete_entity(id);
+    await this.graph.deleteEntity(id);
     return true;
   }
 
-  /// One chunk → one apply_batch (messages + folded address entities + links),
+  /// One chunk → one applyBatch (messages + folded address entities + links),
   /// then post-apply attachment registration + LIVE trigger.check assembly.
   private async ingestMessageBatch(
     messages: SyncEnvelope[],
@@ -462,11 +462,11 @@ export class EmailModule {
     const liveIds = countLive
       ? [...new Set(messages.filter((env) => env.kind === "live").map((env) => env.remoteId).filter((id): id is string => Boolean(id)))]
       : [];
-    const existing = liveIds.length > 0 ? await this.graph.find_by_external_ids(liveIds) : [];
+    const existing = liveIds.length > 0 ? await this.graph.findByExternalIds(liveIds) : [];
     if (existing.length !== liveIds.length) throw new Error("email ingest: external id lookup length mismatch");
 
     // One atomic op (rolls back on failure; idempotent on external_id).
-    const result = await this.graph.apply_batch({ entities, refs: [], links });
+    const result = await this.graph.applyBatch({ entities, refs: [], links });
     const createdLive = liveIds.filter((id, index) => existing[index] === null && result.ids[id] !== undefined).length;
 
     // Post-apply: needs the resolved message id.
@@ -482,7 +482,7 @@ export class EmailModule {
         const attId = str(att, "attachment_id");
         if (!attId) continue;
         const filename = str(att, "filename") ?? "attachment";
-        await this.graph.file_register({
+        await this.graph.fileRegister({
           externalId: `file:gmail:${env.accountId}:${remoteId}:${attId}`,
           parentExternalId: remoteId,
           linkKind: "file.attachment",
@@ -546,7 +546,7 @@ export class EmailModule {
 
   // ── send / reply / batch_send (@writeTool) ────────────────────
   // Native-parity flow (NOT telegram's route-then-ingest): create the outgoing
-  // email.message FIRST (via apply_batch — recipient email.address + sent_to link
+  // email.message FIRST (via applyBatch — recipient email.address + sent_to link
   // folded in), then route the send command best-effort (source failure leaves the
   // created entity — non-fatal). Reply additionally threads in_reply_to from the
   // original and links attachments to the ORIGINAL email.
@@ -568,7 +568,7 @@ export class EmailModule {
   async emailReply(params: ReplyParams): Promise<Record<string, unknown>> {
     const attachmentIds = params.attachment_ids ?? [];
     // Read the original (user-scoped); reply has no meaning without it.
-    const detail = await this.graph.get_entity_full(params.email_id, { links: false });
+    const detail = await this.graph.getEntityFull(params.email_id, { links: false });
     if (detail?.entity.schemaId !== MESSAGE_SCHEMA) {
       throw new Error(`Email not found: ${params.email_id}`);
     }
@@ -588,7 +588,7 @@ export class EmailModule {
     await this.resolveOwnedFileNames(attachmentIds);
 
     // Route the reply (native parity: FATAL on source failure).
-    const result = await this.graph.source_command({
+    const result = await this.graph.sourceCommand({
       action: "send_message",
       draft: {
         to: [{ address: sender }],
@@ -617,7 +617,7 @@ export class EmailModule {
 
     // Link attachments to the ORIGINAL email (native parity).
     for (const fid of attachmentIds) {
-      await this.graph.add_link({ from: params.email_id, to: fid, kind: "file.attachment" });
+      await this.graph.addLink({ from: params.email_id, to: fid, kind: "file.attachment" });
     }
 
     return {
@@ -718,7 +718,7 @@ export class EmailModule {
     if (!params.gate_prompt.trim() || !params.action_prompt.trim()) throw new Error("gate_prompt and action_prompt are required");
     if (params.debounce_seconds !== undefined && (!Number.isInteger(params.debounce_seconds) || params.debounce_seconds < 0)) throw new Error("invalid debounce_seconds");
     if (params.episode_id !== undefined) {
-      const parent = await this.graph.get_entity_full(params.episode_id, { links: false });
+      const parent = await this.graph.getEntityFull(params.episode_id, { links: false });
       if (parent?.entity.schemaId !== "episodes.episode") throw new Error(`episode not found: ${params.episode_id}`);
     }
     // Normalize watched addresses: lowercase, dedup, sort (native parity).
@@ -730,7 +730,7 @@ export class EmailModule {
     }
 
     // Resolve each address to its email.address entity id. The plugin OWNS
-    // email.address, so one apply_batch resolves-or-creates them all and returns
+    // email.address, so one applyBatch resolves-or-creates them all and returns
     // the ids — no per-address ensure_address RPC.
     const watchIds = await this.ensureAddressBatch(addresses.map((address) => ({ address })));
 
@@ -757,7 +757,7 @@ export class EmailModule {
     params: { type: "object", properties: {}, additionalProperties: false },
   })
   async syncStatus(): Promise<Record<string, unknown>> {
-    return this.graph.sync_state("status");
+    return this.graph.syncState("status");
   }
 
   @rpc("sync.reset", {
@@ -768,7 +768,7 @@ export class EmailModule {
   async syncReset(): Promise<Record<string, unknown>> {
     // Namespace-guarded by the host: reset only clears the caller's own
     // email.message entities — telegram.message and others are untouched.
-    return this.graph.sync_state("reset", MESSAGE_SCHEMA);
+    return this.graph.syncState("reset", MESSAGE_SCHEMA);
   }
 
   // ── ensure_address (cross-module hub RPC) ─────────────────────
@@ -841,7 +841,7 @@ export class EmailModule {
       const item = items[i];
       entities.push(addressBatchEntity(lower, lower, item?.display_name ?? null));
     }
-    const r = await this.graph.apply_batch({ entities, refs: [], links: [] });
+    const r = await this.graph.applyBatch({ entities, refs: [], links: [] });
     return lowers.map((lower) => {
       const id = r.ids[lower];
       if (!id) throw new Error(`email.ensure_address: failed to resolve ${lower}`);
@@ -908,7 +908,7 @@ export class EmailModule {
   }
 
   /// Resolve each attachment id to its filename, enforcing native parity: the
-  /// entity must be owned by the caller (user-scoped get_entity_full → not null)
+  /// entity must be owned by the caller (user-scoped getEntityFull → not null)
   /// AND be a `file.object` whose dictionary names it. A non-file or
   /// nameless entity is rejected (NO fallback name) so only real files can be
   /// attached/linked.
@@ -916,7 +916,7 @@ export class EmailModule {
   private async resolveOwnedFileNames(fileIds: string[]): Promise<string[]> {
     const names: string[] = [];
     for (const fid of fileIds) {
-      const det = await this.graph.get_entity_full(fid, { links: false });
+      const det = await this.graph.getEntityFull(fid, { links: false });
       if (!det) throw new Error(`file ${fid} not found`);
       if (det.entity.schemaId !== "file.object") throw new Error(`file ${fid} not found`);
       const fd = det.entity.properties as Data;
@@ -926,7 +926,7 @@ export class EmailModule {
   }
 
   /// Create one outgoing email (entity + recipient address + sent_to in one
-  /// apply_batch), link attachments, then best-effort source route (non-fatal).
+  /// applyBatch), link attachments, then best-effort source route (non-fatal).
   private async sendSingle(
     to: string,
     subject: string,
@@ -948,7 +948,7 @@ export class EmailModule {
     // trace: the demo's failure was a stored "outgoing" message for mail Gmail
     // had rejected. No ledger is needed to make this safe — see the write
     // below for why the tool never throws once the provider has accepted.
-    const routed = await this.graph.source_command({
+    const routed = await this.graph.sourceCommand({
       action: "send_message",
       draft: {
         to: [{ address: toLower }],
@@ -1003,7 +1003,7 @@ export class EmailModule {
       // recipient address resolves-or-creates by its external_id (the hub).
       const msgKey = "out";
       const addrKey = `addr:${toLower}`;
-      const result = await this.graph.apply_batch({
+      const result = await this.graph.applyBatch({
         entities: [
           {
             key: msgKey,
@@ -1042,7 +1042,7 @@ export class EmailModule {
       if (messageEntityId === undefined) throw new Error(`email.send: missing entity id for ${msgKey}`);
 
       for (const fid of attachmentIds) {
-        await this.graph.add_link({ from: messageEntityId, to: fid, kind: "file.attachment" });
+        await this.graph.addLink({ from: messageEntityId, to: fid, kind: "file.attachment" });
       }
 
       entityId = messageEntityId;

@@ -10,15 +10,15 @@
 // graph-read-api adoption. List fields read CANONICAL (project.* are
 // single_aligned, confidence→recency — a latest-record window would not
 // reproduce it), hydrated per page in ONE list_canonical_for_entities batch:
-//   list (no search): list_entities(order:"date", pinned-first) + batch canonical
-//   list (search):    search_entities_by_name + batch canonical (no sort, native)
-//   list_for_entity:  list_linked + batch canonical (no per-link N+1)
-// get is already efficient (get_entity_full + get_entities + get_canonical) and is NOT
+//   list (no search): listEntities(order:"date", pinned-first) + batch canonical
+//   list (search):    searchEntitiesByName + batch canonical (no sort, native)
+//   list_for_entity:  listLinked + batch canonical (no per-link N+1)
+// get is already efficient (getEntityFull + getEntities + get_canonical) and is NOT
 // retested here. tst_be_projectsread_001 (shape) + tst_be_projectsdb_001 (op-counts).
 //
 // Doubles come from @magnis/testkit/module: `mockGraph` is a throwing Proxy, so
-// any op these read paths did NOT arrange (list_entities_window / get_canonical /
-// list_facets_for_entity / list_links_for_entity — the traps) throws
+// any op these read paths did NOT arrange (listEntitiesWindow / get_canonical /
+// list_facets_for_entity / listLinksForEntity — the traps) throws
 // `unexpected graph op: …` and fails the test.
 
 import { beforeEach, describe, expect, it } from "vitest";
@@ -40,15 +40,15 @@ function spy(g: G, name: string) {
 }
 
 // The read-path ops, arranged with benign defaults; individual tests re-arm them.
-// `get_entity` is allowed (requireOwned uses it once on the listForEntity path).
+// `getEntity` is allowed (requireOwned uses it once on the listForEntity path).
 // Ops NOT listed here stay unarranged, so the throwing Proxy fails the test if
 // the read path hits them.
 function readGraph(): G {
   return mockGraph({
-    list_entities: () => Promise.resolve(page([])),
-    search_entities_by_name: () => Promise.resolve([]),
-    list_linked: () => Promise.resolve(page([])),
-    get_entity: () => Promise.resolve(null),
+    listEntities: () => Promise.resolve(page([])),
+    searchEntitiesByName: () => Promise.resolve([]),
+    listLinked: () => Promise.resolve(page([])),
+    getEntity: () => Promise.resolve(null),
   });
 }
 
@@ -63,8 +63,8 @@ describe("projects read — shape parity (tst_be_projectsread_001)", () => {
     mod = mountModule(ProjectsModule, { graph, ctx: { extensionId: "projects" } }).module;
   });
 
-  it("F1 list (no search): list_entities(order:date, pinned-first); name/status from the dictionary (S1)", async () => {
-    spy(graph, "list_entities").mockResolvedValue(
+  it("F1 list (no search): listEntities(order:date, pinned-first); name/status from the dictionary (S1)", async () => {
+    spy(graph, "listEntities").mockResolvedValue(
       page([ent("b", "Beta", { status: "active" }), ent("a", "", { name: "Alpha", status: "done" })]),
     );
 
@@ -77,14 +77,14 @@ describe("projects read — shape parity (tst_be_projectsread_001)", () => {
     expect(i0).toMatchObject({ name: "Beta", status: "active" });
     expect(i1.name).toBe("Alpha"); // entity.name empty → canonical name
 
-    const call0 = spy(graph, "list_entities").mock.calls[0];
-    if (call0 === undefined) throw new Error("F1: list_entities not called");
+    const call0 = spy(graph, "listEntities").mock.calls[0];
+    if (call0 === undefined) throw new Error("F1: listEntities not called");
     const arg = call0[0];
     expect(arg).toMatchObject({ schemaId: PROJECT, order: "date" }); // pinned-first preserving
   });
 
   it("F1b untitled fallback when entity.name and canonical name both absent", async () => {
-    spy(graph, "list_entities").mockResolvedValue(page([ent("x", "")]));
+    spy(graph, "listEntities").mockResolvedValue(page([ent("x", "")]));
     const listed = await mod.list({});
     const item = listed.items[0];
     if (item === undefined) throw new Error("F1b: expected one item");
@@ -93,7 +93,7 @@ describe("projects read — shape parity (tst_be_projectsread_001)", () => {
   });
 
   it("F2 list (search): the dictionary rides the matches; total = matched.length", async () => {
-    spy(graph, "search_entities_by_name").mockResolvedValue([
+    spy(graph, "searchEntitiesByName").mockResolvedValue([
       ent("a", "Alpha", { status: "active" }),
       ent("b", "Alphabet"),
     ]);
@@ -106,9 +106,9 @@ describe("projects read — shape parity (tst_be_projectsread_001)", () => {
     expect(item.status).toBe("active");
   });
 
-  it("F3 list_for_entity: list_linked, dictionary on each row (no per-link fetch)", async () => {
-    spy(graph, "get_entity").mockResolvedValue(entity("person-1", "Alice", { schemaId: "contacts.person" }));
-    spy(graph, "list_linked").mockResolvedValue(
+  it("F3 list_for_entity: listLinked, dictionary on each row (no per-link fetch)", async () => {
+    spy(graph, "getEntity").mockResolvedValue(entity("person-1", "Alice", { schemaId: "contacts.person" }));
+    spy(graph, "listLinked").mockResolvedValue(
       page([
         linkedEntity(ent("p1", "Proj One", { status: "active" }), { id: "l1", from: "person-1", to: "p1", kind: MEMBER_LINK }),
         linkedEntity(ent("p2", "Proj Two", { status: "done" }), { id: "l2", from: "person-1", to: "p2", kind: MEMBER_LINK }),
@@ -121,19 +121,19 @@ describe("projects read — shape parity (tst_be_projectsread_001)", () => {
     if (out0 === undefined) throw new Error("F3: expected at least one linked project");
     expect(out0).toMatchObject({ name: "Proj One", status: "active" });
 
-    const call0 = spy(graph, "list_linked").mock.calls[0];
-    if (call0 === undefined) throw new Error("F3: list_linked not called");
+    const call0 = spy(graph, "listLinked").mock.calls[0];
+    if (call0 === undefined) throw new Error("F3: listLinked not called");
     const spec = call0[0];
     expect(spec).toMatchObject({ parentId: "person-1", linkKind: MEMBER_LINK, direction: "out", childSchema: PROJECT });
   });
 
   it("F4 list_for_entity throws on a non-owned / missing parent (requireOwned)", async () => {
-    spy(graph, "get_entity").mockResolvedValue(null);
+    spy(graph, "getEntity").mockResolvedValue(null);
     await expect(mod.listForEntity({ entity_id: "ghost" })).rejects.toThrow();
   });
 
   it("F5 empty list → {items:[], total:0}", async () => {
-    spy(graph, "list_entities").mockResolvedValue(page([]));
+    spy(graph, "listEntities").mockResolvedValue(page([]));
     const listed = await mod.list({});
     expect(listed).toMatchObject({ items: [], total: 0 });
   });
@@ -147,25 +147,25 @@ describe("projects read — DB-access guarantees (tst_be_projectsdb_001)", () =>
     mod = mountModule(ProjectsModule, { graph, ctx: { extensionId: "projects" } }).module;
   });
 
-  it("list (no search) = 1 list_entities, 0 0 window, 0 search", async () => {
+  it("list (no search) = 1 listEntities, 0 0 window, 0 search", async () => {
     await mod.list({});
-    expect(graph.spies.list_entities).toHaveBeenCalledTimes(1);
+    expect(graph.spies.listEntities).toHaveBeenCalledTimes(1);
     // S1: the dictionary rides the entity — the canonical batch is gone.
-    expect(graph.spies.search_entities_by_name).toHaveBeenCalledTimes(0);
+    expect(graph.spies.searchEntitiesByName).toHaveBeenCalledTimes(0);
   });
 
-  it("list (search) = 1 search, 0 0 list_entities", async () => {
+  it("list (search) = 1 search, 0 0 listEntities", async () => {
     await mod.list({ search: "x" });
-    expect(graph.spies.search_entities_by_name).toHaveBeenCalledTimes(1);
+    expect(graph.spies.searchEntitiesByName).toHaveBeenCalledTimes(1);
     // S1: the dictionary rides the entity — the canonical batch is gone.
-    expect(graph.spies.list_entities).toHaveBeenCalledTimes(0);
+    expect(graph.spies.listEntities).toHaveBeenCalledTimes(0);
   });
 
-  it("list_for_entity = 1 requireOwned + 1 list_linked, 0 0 per-link", async () => {
-    spy(graph, "get_entity").mockResolvedValue(entity("e", "A", { schemaId: "contacts.person" }));
+  it("list_for_entity = 1 requireOwned + 1 listLinked, 0 0 per-link", async () => {
+    spy(graph, "getEntity").mockResolvedValue(entity("e", "A", { schemaId: "contacts.person" }));
     await mod.listForEntity({ entity_id: "e" });
-    expect(graph.spies.get_entity).toHaveBeenCalledTimes(1);
-    expect(graph.spies.list_linked).toHaveBeenCalledTimes(1);
+    expect(graph.spies.getEntity).toHaveBeenCalledTimes(1);
+    expect(graph.spies.listLinked).toHaveBeenCalledTimes(1);
     // S1: the dictionary rides the entity — the canonical batch is gone.
   });
 });

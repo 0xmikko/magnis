@@ -24,7 +24,7 @@ type G = MockGraph;
 function ingestGraph(): G {
   return mockGraph({
     // No pre-existing chat/sender entities: lookups miss, batch creates.
-    apply_batch: (frag) =>
+    applyBatch: (frag) =>
       Promise.resolve({
         ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
         created: frag.entities.length,
@@ -32,14 +32,14 @@ function ingestGraph(): G {
         linksAdded: 0,
         droppedKeys: [],
       }),
-    web_register: () => Promise.resolve("web-id"),
-    web_register_batch: (links: readonly unknown[]) => Promise.resolve(links.map(() => "web-id")),
-    find_by_external_id: () => Promise.resolve(null),
-    find_by_external_ids: (externalIds) => Promise.resolve(externalIds.map(() => null)),
-    file_register: () => Promise.resolve("file-id"),
-    file_register_batch: (files: readonly unknown[]) => Promise.resolve(files.map(() => "file-id")),
-    create_entity: () => Promise.resolve(entity("created-id", "")),
-    delete_entity: () => Promise.resolve(),
+    webRegister: () => Promise.resolve("web-id"),
+    webRegisterBatch: (links: readonly unknown[]) => Promise.resolve(links.map(() => "web-id")),
+    findByExternalId: () => Promise.resolve(null),
+    findByExternalIds: (externalIds) => Promise.resolve(externalIds.map(() => null)),
+    fileRegister: () => Promise.resolve("file-id"),
+    fileRegisterBatch: (files: readonly unknown[]) => Promise.resolve(files.map(() => "file-id")),
+    createEntity: () => Promise.resolve(entity("created-id", "")),
+    deleteEntity: () => Promise.resolve(),
   });
 }
 
@@ -73,11 +73,11 @@ describe("tst_fe_tg_media_source_routing_001 — file.object sourceModule = enve
 
     await mod.ingest({ envelopes: [mediaEnvelope("telegram-ts")] });
 
-    const fileRegister = graph.spies.file_register_batch;
-    if (fileRegister === undefined) throw new Error("batch ingest: missing file_register_batch spy");
+    const fileRegister = graph.spies.fileRegisterBatch;
+    if (fileRegister === undefined) throw new Error("batch ingest: missing fileRegisterBatch spy");
     expect(fileRegister).toHaveBeenCalledTimes(1);
     const callArgs = fileRegister.mock.calls[0];
-    if (callArgs === undefined) throw new Error("batch ingest: no file_register call recorded");
+    if (callArgs === undefined) throw new Error("batch ingest: no fileRegister call recorded");
     // One call now carries the page's whole attachment list.
     const batch = callArgs[0] as Record<string, unknown>[];
     expect(batch).toHaveLength(1);
@@ -93,8 +93,8 @@ describe("tst_fe_tg_media_source_routing_001 — file.object sourceModule = enve
 
     await mod.ingest({ envelopes: [mediaEnvelope("telegram-ts", { sender_id: 501, sender_name: "Ann" })] });
 
-    const applyBatch = graph.spies.apply_batch;
-    if (applyBatch === undefined) throw new Error("missing apply_batch spy");
+    const applyBatch = graph.spies.applyBatch;
+    if (applyBatch === undefined) throw new Error("missing applyBatch spy");
     const frag = applyBatch.mock.calls[0]?.[0] as GraphBatchInput;
     const msg: BatchEntityInput | undefined = frag.entities.find((e) => e.key === "tg:msg:42:7");
     expect(msg?.externalId).toBe("tg:msg:42:7");

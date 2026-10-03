@@ -19,11 +19,11 @@ describe("tst_module_triggers_list_page_001 — standard module list RPC", () =>
   it("paginates the graph directly beyond the agent list's 1,000-item cap", async () => {
     const last = entity("trigger-1001", "Last trigger", { schemaId: TRIGGER });
     const graph = mockGraph({
-      list_entities: () =>
+      listEntities: () =>
         Promise.reject(new Error("list_page must not call the capped agent list source")),
-      list_entities_window: (params) =>
+      listEntitiesWindow: (params) =>
         Promise.resolve(page(params.offset === 1_000 ? [last] : [], 1_001)),
-      get_entity_full: (id: string) =>
+      getEntityFull: (id: string) =>
         Promise.resolve({
           entity: entity(id, "Last trigger", {
             schemaId: TRIGGER,
@@ -53,14 +53,14 @@ describe("tst_module_triggers_list_page_001 — standard module list RPC", () =>
 
     expect(listed).toMatchObject({ total: 1_001, limit: 1, offset: 1_000 });
     expect(listed.items.map((item) => item.id)).toEqual(["trigger-1001"]);
-    expect(graph.spies.list_entities_window).toHaveBeenCalledWith(
+    expect(graph.spies.listEntitiesWindow).toHaveBeenCalledWith(
       expect.objectContaining({
         schema: TRIGGER,
         limit: 1,
         offset: 1_000,
       }),
     );
-    expect(graph.spies.list_entities).not.toHaveBeenCalled();
+    expect(graph.spies.listEntities).not.toHaveBeenCalled();
     expect(mounted.tools.some((tool) => tool.name === "triggers.list_page")).toBe(false);
   });
 
@@ -71,12 +71,12 @@ describe("tst_module_triggers_list_page_001 — standard module list RPC", () =>
       ["trigger-3", "Incoming reply follow-up"],
     ]);
     const graph = mockGraph({
-      list_entities_window: (params) =>
+      listEntitiesWindow: (params) =>
         Promise.resolve(page(
           params.offset === 0 ? [...details].map(([id, name]) => entity(id, name, { schemaId: TRIGGER })) : [],
           details.size,
         )),
-      get_entity_full: (id: string) => {
+      getEntityFull: (id: string) => {
         const name = details.get(id);
         if (!name) return Promise.resolve(null);
         return Promise.resolve({

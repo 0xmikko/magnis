@@ -123,31 +123,31 @@ The constructor receives `PluginDeps = { graph, ctx, util, rpc, log }`:
 
 **The graph API:**
 
-- **Entities** — `create_entity`, `get_entity`/`get_entities` (batch),
-  `list_entities`, `list_entities_window` (a page + the exact total in ONE
+- **Entities** — `createEntity`, `getEntity`/`getEntities` (batch),
+  `listEntities`, `listEntitiesWindow` (a page + the exact total in ONE
   statement, filtered/ordered over entity columns, dictionary keys or an edge
-  dictionary), `list_entities_by_property_field`, `search_entities_by_name`,
-  `get_entity_full(id, { links? })`, `update_entity_name`, `delete_entity`, …
-- **The node dictionary** — `update_properties({ entityId, properties })`
+  dictionary), `listEntitiesByPropertyField`, `searchEntitiesByName`,
+  `getEntityFull(id, { links? })`, `updateEntityName`, `deleteEntity`, …
+- **The node dictionary** — `updateProperties({ entityId, properties })`
   MERGES the top-level keys you send, and an explicit `null` REMOVES a key.
-  The bulk `apply_batch` lane is the other way round: it REPLACES the
+  The bulk `applyBatch` lane is the other way round: it REPLACES the
   dictionary with the fields as last synced. Know which lane you are on — a
   curated edit that resends the whole map is harmless, a sync that sends a
   partial one silently drops the rest.
 - **Identity** — a node is found by its `source.externalId`: resolve one with
-  `find_by_external_id` (or `find_by_external_ids` for many). A curated
-  `create_entity` does NOT take an external id — it always mints `local:<id>`.
-  The issuer-key lane is `apply_batch`, whose `BatchEntityInput.externalId` IS
+  `findByExternalId` (or `findByExternalIds` for many). A curated
+  `createEntity` does NOT take an external id — it always mints `local:<id>`.
+  The issuer-key lane is `applyBatch`, whose `BatchEntityInput.externalId` IS
   the resolver, so the second sync of the same provider record attaches instead
   of duplicating.
-- **Links** — `add_link`, `delete_link`, `list_links_for_entity`. `add_link`
+- **Links** — `addLink`, `deleteLink`, `listLinksForEntity`. `addLink`
   on an EXISTING edge does not rewrite its dictionary — that is what makes
   re-ingest idempotent; the sync lane refreshes it. Only the host's reserved
   `sources[]` unions across observers.
-- **Batch/merge** — `apply_batch(GraphBatchInput)` (atomic entities+links
-  fragment — the bulk-ingest primitive), `merge_preview`, `merge_execute`.
+- **Batch/merge** — `applyBatch(GraphBatchInput)` (atomic entities+links
+  fragment — the bulk-ingest primitive), `mergePreview`, `mergeExecute`.
 
-**Prefer the batch reads** (`get_entities`, `list_entities_window`) over
+**Prefer the batch reads** (`getEntities`, `listEntitiesWindow`) over
 per-row calls — an N+1 in a list handler is a defect the tests forbid (see the
 Testing section).
 
@@ -207,7 +207,7 @@ async create(params: CreateParams): Promise<ContactCreated> {
     );
     email_address_entity_id = addr.id;
     // link my contact to it — the kind must be granted (see below)
-    await this.graph.add_link({ from: contact.id, to: addr.id, kind: "identity" });
+    await this.graph.addLink({ from: contact.id, to: addr.id, kind: "identity" });
   }
   // return the id your UI + tests read off the result
   return { /* …list item… */, fields: { email_address_entity_id } };
@@ -226,7 +226,7 @@ links = ["identity"]              # foreign-touching link kinds you may create
 
 `call` lists **exact** fully-qualified methods: you may call
 `email.ensure_address` and nothing else. A call to an undeclared method is
-refused, and `add_link` with an ungranted foreign kind is refused — there is
+refused, and `addLink` with an ungranted foreign kind is refused — there is
 **no silent skip**, so a missing grant surfaces as a thrown error, never a
 no-op. The call runs as the same user, so the target module is user-scoped
 exactly as your own reads are.
@@ -278,12 +278,12 @@ namespace are implicitly granted; only foreign asks go in `[permissions]`.
 
 **The two write lanes do NOT behave the same way.**
 
-`apply_batch` — the sync lane — REPLACES a node's dictionary: after the write
+`applyBatch` — the sync lane — REPLACES a node's dictionary: after the write
 it is exactly what the source observed, never a mixture of this sync and the
 last one. That is what makes a re-sync safe, and it is why a sync handler that
 sends a partial map silently drops every key it omitted.
 
-`update_properties` — the curated lane — MERGES the top-level keys you send,
+`updateProperties` — the curated lane — MERGES the top-level keys you send,
 and an explicit `null` removes one. A human correcting a phone number does not
 have to resend the person.
 
@@ -291,7 +291,7 @@ The invariant "one node, one writer" is about WHO writes, not about how much:
 no two sources contend for one dictionary, because each source's view lives on
 its own node and the hub reaches it over `identity`.
 
-An EDGE is not a third lane: `add_link` on an existing edge leaves its
+An EDGE is not a third lane: `addLink` on an existing edge leaves its
 dictionary alone (idempotent re-ingest), and the sync lane refreshes it the way
 it refreshes a node's. Per-observer state — an unread count, a pin order —
 still belongs on the edge rather than the node, because the node has no room
@@ -299,7 +299,7 @@ for two observers' answers; just do not expect two observers' values to merge
 there. The one key that does accumulate is the host-stamped `sources[]`.
 
 Reading is likewise one question, not two. There is no second store to consult:
-`list_entities_window` returns the page and its exact total in one statement,
+`listEntitiesWindow` returns the page and its exact total in one statement,
 with filters and ordering over entity columns, dictionary keys, or an edge
 dictionary. The old "latest record vs merged canonical" fork is gone with the
 two stores that created it.
@@ -314,7 +314,7 @@ reserved `<plugin_id>.__sync__` method. The host invokes it with a
 [source](./source.md) emitted) — and the method
 dispatches internally on `envelope.kind` and a `payload` discriminator (e.g.
 `entity_type`). This is where external data becomes graph writes — typically via
-`apply_batch` for bulk fragments. The source produces envelopes; the module's
+`applyBatch` for bulk fragments. The source produces envelopes; the module's
 sync handler decides how they land in the graph it owns.
 
 **The pass and the receipt.** A page a sync worker admits carries
@@ -430,7 +430,7 @@ Module tests run under **vitest** (`bun run test`) with
 
 - **`mockGraph(overrides?)`** — a throwing Proxy: any graph op you did not
   explicitly stub throws `unexpected graph op: <name>`. That is how a test
-  forbids an N+1 — leave `get_entities` / `list_entities_window` unstubbed and
+  forbids an N+1 — leave `getEntities` / `listEntitiesWindow` unstubbed and
   a per-row read blows up.
 - **`mountModule(TheClass, opts?)`** — runs the class through the real
   `definePlugin`/init path. In dispatch mode it returns `{ rpc, tools }` so you
@@ -460,8 +460,8 @@ A module is done only when all hold:
       `[permissions]`.
 - [ ] Searchable keys are declared in `search.toml`, and what the module
       filters on is what the indexer embeds.
-- [ ] Sync writers send the WHOLE dictionary (`apply_batch` replaces);
-      curated writers send only what changed (`update_properties` merges).
+- [ ] Sync writers send the WHOLE dictionary (`applyBatch` replaces);
+      curated writers send only what changed (`updateProperties` merges).
 - [ ] List handlers use batch reads — no per-row N+1.
 - [ ] Whole-module tests in `module/__tests__/` on `@magnis/testkit/module`,
       green under `bun run test`.

@@ -25,7 +25,7 @@ function mountProfiles(opts: {
     }),
   );
   const graph: G = mockGraph({
-    list_entities_window: (p: WindowSpec) =>
+    listEntitiesWindow: (p: WindowSpec) =>
       Promise.resolve({ items: rows.slice(p.offset, p.offset + p.limit), total: rows.length, limit: p.limit, offset: p.offset }),
   });
   const execute = vi.fn(async (method: string) => {
@@ -83,7 +83,7 @@ describe("linkedin pending profiles", () => {
 
   it("tst_plugin_linkedin_pending_004 a tracking-RPC failure never breaks the list", async () => {
     const graph: G = mockGraph({
-      list_entities_window: () =>
+      listEntitiesWindow: () =>
         Promise.resolve(page([
           entity("e1", "P", {
             schemaId: PROFILE,

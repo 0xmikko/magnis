@@ -16,13 +16,13 @@ const TRIGGER_ID = "33333333-3333-4333-8333-333333333333";
 async function writtenProperties(): Promise<Record<string, unknown>[]> {
   const written: Record<string, unknown>[] = [];
   const graph = mockGraph({
-    create_entity: () => Promise.resolve(graphEntity(TRIGGER_ID, "watch replies", { schemaId: TRIGGER })),
-    update_properties: (input: PropertiesUpdate) => {
+    createEntity: () => Promise.resolve(graphEntity(TRIGGER_ID, "watch replies", { schemaId: TRIGGER })),
+    updateProperties: (input: PropertiesUpdate) => {
       written.push(input.properties as Record<string, unknown>);
       return Promise.resolve(undefined);
     },
-    add_link: () => Promise.resolve(undefined),
-    delete_entity: () => Promise.resolve(undefined),
+    addLink: () => Promise.resolve(undefined),
+    deleteEntity: () => Promise.resolve(undefined),
   } as never);
   const { module } = mountModule(TriggersModule, {
     graph,

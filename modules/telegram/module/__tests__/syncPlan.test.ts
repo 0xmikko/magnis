@@ -68,16 +68,16 @@ class Store {
 
   graph(): ReturnType<typeof mockGraph> {
     return mockGraph({
-      find_by_external_id: (externalId) => Promise.resolve(externalId === SELF ? "self-id" : this.chatsByExternalId.get(externalId)?.id ?? null),
-      find_by_external_ids: (externalIds) => Promise.resolve(externalIds.map((externalId) => this.chatsByExternalId.get(externalId)?.id ?? this.messagesByExternalId.get(externalId) ?? null)),
-      get_entities: (ids) => Promise.resolve(ids.flatMap((id) => { const chat = this.chatOf(id); return chat === undefined ? [] : [chat]; })),
-      list_linked: (spec) => {
+      findByExternalId: (externalId) => Promise.resolve(externalId === SELF ? "self-id" : this.chatsByExternalId.get(externalId)?.id ?? null),
+      findByExternalIds: (externalIds) => Promise.resolve(externalIds.map((externalId) => this.chatsByExternalId.get(externalId)?.id ?? this.messagesByExternalId.get(externalId) ?? null)),
+      getEntities: (ids) => Promise.resolve(ids.flatMap((id) => { const chat = this.chatOf(id); return chat === undefined ? [] : [chat]; })),
+      listLinked: (spec) => {
         expect(spec).toMatchObject({ linkKind: "observed_in", direction: "in" });
         const edge = this.edgesByChat.get(spec.parentId);
         const self = entity("self-id", "Me", { schemaId: "telegram.account", source: { source: "test", account: "a1", externalId: SELF } });
         return Promise.resolve(page(edge === undefined ? [] : [linkedEntity(self, edge)]));
       },
-      apply_batch: (fragment: GraphBatchInput) => {
+      applyBatch: (fragment: GraphBatchInput) => {
         const ids: Record<string, string> = {};
         for (const item of fragment.entities) {
           const id = item.key === "self" ? "self-id" : `id:${item.key}`;
@@ -105,14 +105,14 @@ class Store {
         }
         return Promise.resolve({ ids, created: fragment.entities.length, updated: 0, linksAdded: fragment.links.length, droppedKeys: [] });
       },
-      update_properties: () => Promise.resolve(),
-      update_properties_batch: () => Promise.resolve(),
-      end_link: (id, validUntil) => {
+      updateProperties: () => Promise.resolve(),
+      updatePropertiesBatch: () => Promise.resolve(),
+      endLink: (id, validUntil) => {
         this.endedAt.push([id, validUntil]);
         for (const edge of this.edgesByChat.values()) if (edge.id === id) edge.validUntil = validUntil;
         return Promise.resolve();
       },
-      list_entities_window: (spec: WindowSpec) => {
+      listEntitiesWindow: (spec: WindowSpec) => {
         expect(spec.limit).toBeLessThanOrEqual(500);
         expect(spec.filterField).toEqual({ edgeKind: "observed_in", observerExternalId: SELF, edgePath: "sync_pass" });
         this.windows.push(spec.filterOp ?? "eq");

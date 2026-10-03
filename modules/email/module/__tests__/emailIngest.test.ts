@@ -1,10 +1,10 @@
-// Email ingest (@syncHandler): apply_batch parity + DB-access
+// Email ingest (@syncHandler): applyBatch parity + DB-access
 // guarantees. Exercised through @magnis/testkit/module. Asserts the fragment
 // shape (entities/links/addresses folded in), idempotency seams (external_ids),
 // live trigger.check parity, delete, empty-user skip, and the op-count gate.
 //
-// mockGraph is a throwing Proxy: the per-item write ops (create_entity/
-// attach_facet/add_link) are NOT arranged, so any per-item crossing throws —
+// mockGraph is a throwing Proxy: the per-item write ops (createEntity/
+// attach_facet/addLink) are NOT arranged, so any per-item crossing throws —
 // that guarantee REPLACES the old reject() spies AND their toHaveBeenCalledTimes(0)
 // assertions (an unarranged op has no spy to count).
 
@@ -32,8 +32,8 @@ type G = MockGraph;
 
 function ingestGraph(): G {
   return mockGraph({
-    // apply_batch echoes each key → a deterministic id so post-apply can resolve.
-    apply_batch: (frag) =>
+    // applyBatch echoes each key → a deterministic id so post-apply can resolve.
+    applyBatch: (frag) =>
       Promise.resolve({
         ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
         created: frag.entities.length,
@@ -41,10 +41,10 @@ function ingestGraph(): G {
         linksAdded: frag.links.length,
         droppedKeys: [],
       }),
-    file_register: () => Promise.resolve("file-id"),
-    find_by_external_id: () => Promise.resolve("existing-id"),
-    find_by_external_ids: (externalIds) => Promise.resolve(externalIds.map(() => null)),
-    delete_entity: () => Promise.resolve(undefined),
+    fileRegister: () => Promise.resolve("file-id"),
+    findByExternalId: () => Promise.resolve("existing-id"),
+    findByExternalIds: (externalIds) => Promise.resolve(externalIds.map(() => null)),
+    deleteEntity: () => Promise.resolve(undefined),
   });
 }
 
@@ -86,7 +86,7 @@ const msgPayload = (over: JsonObject = {}): JsonObject => ({
   ...over,
 });
 
-describe("email ingest — apply_batch shape (tst_be_emailingest_001)", () => {
+describe("email ingest — applyBatch shape (tst_be_emailingest_001)", () => {
   let graph: G;
   let mod: EmailModule;
   beforeEach(() => {
@@ -106,7 +106,7 @@ describe("email ingest — apply_batch shape (tst_be_emailingest_001)", () => {
       id: "gmail-1", message_id_header: "<m1@example.com>", thread_id: null,
     });
     await mod.ingest({ envelopes: [env({ payload: gmail })] });
-    const batch = spy(graph, "apply_batch").mock.calls[0]?.[0] as GraphBatchInput | undefined;
+    const batch = spy(graph, "applyBatch").mock.calls[0]?.[0] as GraphBatchInput | undefined;
     const stored = batch?.entities.find((entity) => entity.schemaId === "email.message");
     expect(message.safeParse(stored?.properties).success).toBe(true);
     expect(dict(stored)?.message_id).toBe("<m1@example.com>");
@@ -120,9 +120,9 @@ describe("email ingest — apply_batch shape (tst_be_emailingest_001)", () => {
       ],
     });
 
-    expect(spy(graph, "apply_batch")).toHaveBeenCalledTimes(1);
-    const applyCall0 = spy(graph, "apply_batch").mock.calls[0];
-    if (applyCall0 === undefined) throw new Error("ingest: apply_batch not called");
+    expect(spy(graph, "applyBatch")).toHaveBeenCalledTimes(1);
+    const applyCall0 = spy(graph, "applyBatch").mock.calls[0];
+    if (applyCall0 === undefined) throw new Error("ingest: applyBatch not called");
     const frag = applyCall0[0] as GraphBatchInput;
 
     const msgs = frag.entities.filter((e: BatchEntityInput) => e.schemaId === "email.message");
@@ -179,8 +179,8 @@ describe("email ingest — apply_batch shape (tst_be_emailingest_001)", () => {
         }),
       ],
     });
-    const call = spy(graph, "apply_batch").mock.calls[0] as [GraphBatchInput] | undefined;
-    if (call === undefined) throw new Error("ingest: apply_batch never called");
+    const call = spy(graph, "applyBatch").mock.calls[0] as [GraphBatchInput] | undefined;
+    if (call === undefined) throw new Error("ingest: applyBatch never called");
     const sentTo = call[0].links.filter((l) => l.kind === "sent_to");
     const ann = sentTo.find((l) => l.toKey === "addr:ann@x.com");
     const ben = sentTo.find((l) => l.toKey === "addr:ben@x.com");
@@ -201,8 +201,8 @@ describe("email ingest — apply_batch shape (tst_be_emailingest_001)", () => {
         }),
       ],
     });
-    const applyCall0 = spy(graph, "apply_batch").mock.calls[0];
-    if (applyCall0 === undefined) throw new Error("ingest cc/bcc: apply_batch not called");
+    const applyCall0 = spy(graph, "applyBatch").mock.calls[0];
+    if (applyCall0 === undefined) throw new Error("ingest cc/bcc: applyBatch not called");
     const frag = applyCall0[0] as GraphBatchInput;
     const addrIdx = frag.entities
       .filter((e: BatchEntityInput) => e.schemaId === "email.address")
@@ -258,7 +258,7 @@ describe("email ingest — apply_batch shape (tst_be_emailingest_001)", () => {
     expect((trigger0.context as JsonObject).occurred_at).toBeTruthy();
   });
 
-  it("registers each attachment via file_register with native-parity ids", async () => {
+  it("registers each attachment via fileRegister with native-parity ids", async () => {
     await mod.ingest({
       envelopes: [
         env({
@@ -271,9 +271,9 @@ describe("email ingest — apply_batch shape (tst_be_emailingest_001)", () => {
         }),
       ],
     });
-    expect(spy(graph, "file_register")).toHaveBeenCalledTimes(1);
-    const fileCall0 = spy(graph, "file_register").mock.calls[0];
-    if (fileCall0 === undefined) throw new Error("ingest: file_register not called");
+    expect(spy(graph, "fileRegister")).toHaveBeenCalledTimes(1);
+    const fileCall0 = spy(graph, "fileRegister").mock.calls[0];
+    if (fileCall0 === undefined) throw new Error("ingest: fileRegister not called");
     const call = fileCall0[0] as Record<string, unknown>;
     expect(call.externalId).toBe("file:gmail:acct-1:m1:att-1");
     expect(call.parentExternalId).toBe("m1");
@@ -294,9 +294,9 @@ describe("email ingest — apply_batch shape (tst_be_emailingest_001)", () => {
   it("tst_module_email_ingest_003 defers historical attachment bytes but fetches new ones", async () => {
     const payload = msgPayload({ attachments: [{ attachment_id: "att-1", filename: "photo.jpg" }] });
     await mod.ingest({ envelopes: [env({ kind: "snapshot", payload })] });
-    expect(spy(graph, "file_register").mock.calls[0]?.[0].download).toBe(false);
+    expect(spy(graph, "fileRegister").mock.calls[0]?.[0].download).toBe(false);
     await mod.ingest({ envelopes: [env({ kind: "live", remoteId: "m2", payload })] });
-    expect(spy(graph, "file_register").mock.calls[1]?.[0].download).toBe(true);
+    expect(spy(graph, "fileRegister").mock.calls[1]?.[0].download).toBe(true);
   });
 
   /**
@@ -329,8 +329,8 @@ describe("email ingest — apply_batch shape (tst_be_emailingest_001)", () => {
         }),
       ],
     });
-    const fileCall0 = spy(graph, "file_register").mock.calls[0];
-    if (fileCall0 === undefined) throw new Error("ingest: file_register not called");
+    const fileCall0 = spy(graph, "fileRegister").mock.calls[0];
+    if (fileCall0 === undefined) throw new Error("ingest: fileRegister not called");
     const call = fileCall0[0] as Record<string, unknown>;
     expect(call.sourceModule).toBe("google-ts");
     expect(call.sourceSurface).toBe("email");
@@ -363,16 +363,16 @@ describe("email ingest — trigger / delete / empty-user parity", () => {
     expect(snap.triggerChecks).toHaveLength(0);
   });
 
-  it("DELETE → find_by_external_id + delete_entity, no apply_batch", async () => {
+  it("DELETE → findByExternalId + deleteEntity, no applyBatch", async () => {
     await mod.ingest({ envelopes: [env({ kind: "delete", remoteId: "m-del", payload: {} })] });
-    expect(spy(graph, "find_by_external_id")).toHaveBeenCalledTimes(1);
-    expect(spy(graph, "delete_entity")).toHaveBeenCalledWith("existing-id");
-    expect(spy(graph, "apply_batch")).toHaveBeenCalledTimes(0);
+    expect(spy(graph, "findByExternalId")).toHaveBeenCalledTimes(1);
+    expect(spy(graph, "deleteEntity")).toHaveBeenCalledWith("existing-id");
+    expect(spy(graph, "applyBatch")).toHaveBeenCalledTimes(0);
   });
 
   it("empty userId → skipped (no batch, no entity)", async () => {
     const r = await mod.ingest({ envelopes: [env({ userId: "", remoteId: "m1", payload: msgPayload() })] });
-    expect(spy(graph, "apply_batch")).toHaveBeenCalledTimes(0);
+    expect(spy(graph, "applyBatch")).toHaveBeenCalledTimes(0);
     expect(r.triggerChecks).toHaveLength(0);
   });
 });
@@ -400,7 +400,7 @@ describe("email ingest — the plan from the pages", () => {
   it("states the mailbox in full and never ingests it as a message", async () => {
     const r = await mod.ingest({ generation: "initial:r:1", envelopes: [mailbox, env({ remoteId: "m1", payload: msgPayload() })] });
     expect(r).toEqual({ droppedRemoteIds: [], triggerChecks: [], plan: { "email.message": { total: 100, skipped: 10 } }, excluded: [] });
-    const batch = spy(graph, "apply_batch").mock.calls[0]?.[0] as GraphBatchInput | undefined;
+    const batch = spy(graph, "applyBatch").mock.calls[0]?.[0] as GraphBatchInput | undefined;
     expect(batch?.entities.map((item) => item.key)).not.toContain("mailbox");
     expect(batch?.entities.some((item) => item.key === "m1")).toBe(true);
   });
@@ -431,9 +431,9 @@ describe("email ingest — the plan from the pages", () => {
 it("tst_module_google_003 counts only newly admitted Gmail messages and actual removals", async () => {
   const graph = ingestGraph();
   const mod = mountModule(EmailModule, { graph, ctx: { extensionId: "email" } }).module;
-  spy(graph, "find_by_external_ids").mockImplementation((externalIds: string[]) =>
+  spy(graph, "findByExternalIds").mockImplementation((externalIds: string[]) =>
     Promise.resolve(externalIds.map((externalId) => externalId === "m-existing" ? "id-existing" : null)));
-  spy(graph, "find_by_external_id").mockImplementation((externalId: string) =>
+  spy(graph, "findByExternalId").mockImplementation((externalId: string) =>
     Promise.resolve(externalId === "m-gone" ? "id-gone" : null));
 
   const first = await mod.ingest({ generation: "forward:r:1", envelopes: [
@@ -447,9 +447,9 @@ it("tst_module_google_003 counts only newly admitted Gmail messages and actual r
     env({ kind: "delete", remoteId: "m-missing", payload: {} }),
   ] });
   expect(deleted.plan).toEqual({ "email.message": { total: -1, skipped: 0 } });
-  expect(spy(graph, "delete_entity")).toHaveBeenCalledTimes(1);
+  expect(spy(graph, "deleteEntity")).toHaveBeenCalledTimes(1);
 
-  spy(graph, "find_by_external_ids").mockImplementation((externalIds: string[]) =>
+  spy(graph, "findByExternalIds").mockImplementation((externalIds: string[]) =>
     Promise.resolve(externalIds.map(() => "id-existing")));
   const replay = await mod.ingest({ generation: "forward:r:1", envelopes: [
     env({ kind: "live", remoteId: "m-new", payload: msgPayload() }),
@@ -465,7 +465,7 @@ describe("email ingest — DB-access guarantees (tst_be_emaildb_005 / INV-DB-3)"
     mod = mountModule(EmailModule, { graph, ctx: { extensionId: "email" } }).module;
   });
 
-  it("small page (msgs+addresses < 200) = exactly 1 apply_batch, 0 per-item crossings", async () => {
+  it("small page (msgs+addresses < 200) = exactly 1 applyBatch, 0 per-item crossings", async () => {
     await mod.ingest({
       envelopes: [
         env({ remoteId: "m1", payload: msgPayload() }),
@@ -473,14 +473,14 @@ describe("email ingest — DB-access guarantees (tst_be_emaildb_005 / INV-DB-3)"
         env({ remoteId: "m3", payload: msgPayload({ message_id: "mail-3" }) }),
       ],
     });
-    expect(spy(graph, "apply_batch")).toHaveBeenCalledTimes(1);
-    expect(spy(graph, "find_by_external_id")).toHaveBeenCalledTimes(0); // delete-only
-    // create_entity / add_link / attach_facet (the per-item crossings) are
+    expect(spy(graph, "applyBatch")).toHaveBeenCalledTimes(1);
+    expect(spy(graph, "findByExternalId")).toHaveBeenCalledTimes(0); // delete-only
+    // createEntity / addLink / attach_facet (the per-item crossings) are
     // forbidden, unarranged ops — the throwing mockGraph guarantees they are
     // never hit; there is no spy to assert 0 against.
   });
 
-  it("large page chunks by TOTAL entities — >1 apply_batch, each ≤200, all messages applied", async () => {
+  it("large page chunks by TOTAL entities — >1 applyBatch, each ≤200, all messages applied", async () => {
     // 100 messages, each with a unique sender + 2 unique recipients = 1 msg + 3
     // address entities = 4 entities/msg → 400 total → must split into ≥2 chunks,
     // none exceeding 200, and never split a single message.
@@ -498,7 +498,7 @@ describe("email ingest — DB-access guarantees (tst_be_emaildb_005 / INV-DB-3)"
     );
     await mod.ingest({ envelopes });
 
-    const calls = spy(graph, "apply_batch").mock.calls;
+    const calls = spy(graph, "applyBatch").mock.calls;
     expect(calls.length).toBeGreaterThan(1); // chunked, not one giant batch
     const seenMsgKeys = new Set<string>();
     for (const [frag] of calls as [GraphBatchInput][]) {

@@ -40,8 +40,8 @@ describe("tst_module_projects_checklist_001 — checklist lifecycle", () => {
     const writes: PropertiesUpdate["properties"][] = [];
     let current = project({ status: "active" });
     const graph = mockGraph({
-      get_entity: () => Promise.resolve(current),
-      update_properties: (params: PropertiesUpdate) => {
+      getEntity: () => Promise.resolve(current),
+      updateProperties: (params: PropertiesUpdate) => {
         writes.push(params.properties);
         current = project(params.properties as JsonObject);
         return Promise.resolve(undefined);
@@ -61,7 +61,7 @@ describe("tst_module_projects_checklist_001 — checklist lifecycle", () => {
   });
 
   it("rejects missing, foreign, and non-project ids before writing", async () => {
-    const missingGraph = mockGraph({ get_entity: () => Promise.resolve(null) });
+    const missingGraph = mockGraph({ getEntity: () => Promise.resolve(null) });
     const missing = mountModule(ProjectsModule, { graph: missingGraph }).module;
     await expect(missing.checklistGet({ project_id: "" })).rejects.toThrow(
       "missing required param: project_id",
@@ -71,7 +71,7 @@ describe("tst_module_projects_checklist_001 — checklist lifecycle", () => {
     );
 
     const wrongGraph = mockGraph({
-      get_entity: () =>
+      getEntity: () =>
         Promise.resolve(entity(PROJECT_ID, "Not a project", { schemaId: "notes.note" })),
     });
     const wrong = mountModule(ProjectsModule, { graph: wrongGraph }).module;

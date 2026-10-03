@@ -15,15 +15,15 @@ async function writtenProperties(): Promise<JsonValue[]> {
   const written: JsonValue[] = [];
   const existing = graphEntity("company-1", "Acme Labs", { schemaId: COMPANY });
   const graph = mockGraph({
-    get_entity: () => Promise.resolve(existing),
-    create_entity: () => Promise.resolve(existing),
-    search_entities_by_name: () => Promise.resolve([]),
-    list_entities_window: () => Promise.resolve(page([existing])),
-    get_entities: () => Promise.resolve([existing]),
-    update_entity_name: () => Promise.resolve(undefined),
-    add_link: () => Promise.resolve(undefined),
-    get_entity_full: () => Promise.resolve({ entity: existing, links: [] }),
-    update_properties: (input: { properties: JsonValue }) => {
+    getEntity: () => Promise.resolve(existing),
+    createEntity: () => Promise.resolve(existing),
+    searchEntitiesByName: () => Promise.resolve([]),
+    listEntitiesWindow: () => Promise.resolve(page([existing])),
+    getEntities: () => Promise.resolve([existing]),
+    updateEntityName: () => Promise.resolve(undefined),
+    addLink: () => Promise.resolve(undefined),
+    getEntityFull: () => Promise.resolve({ entity: existing, links: [] }),
+    updateProperties: (input: { properties: JsonValue }) => {
       written.push(input.properties);
       return Promise.resolve(undefined);
     },

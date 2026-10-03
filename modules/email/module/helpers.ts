@@ -10,7 +10,7 @@ export type Data = Record<string, JsonValue>;
 
 // PGlite is single-connection, so a sync page must be applied in CHUNKS — at
 // most this many TOTAL batch entities (messages + their unique addresses) per
-// apply_batch — so each transaction is short and other RPCs aren't starved.
+// applyBatch — so each transaction is short and other RPCs aren't starved.
 export const INGEST_CHUNK = 200;
 
 // Placeholder sender for agent-composed outgoing mail (native parity — the real
@@ -72,7 +72,7 @@ export function recipientsWithRoles(p: Data): { addr: string; role: string }[] {
 }
 
 /// Every unique address (sender + all recipients) a message contributes — used
-/// to size the apply_batch chunk by TOTAL entities, not message count.
+/// to size the applyBatch chunk by TOTAL entities, not message count.
 export function addressesOf(p: Data): string[] {
   const set = new Set<string>(recipientsOf(p));
   const from = lowerAddr(str(p, "from_address"));

@@ -18,7 +18,7 @@ export function objectOf(value: JsonValue, what: string): Data {
 
 // PGlite is single-connection, so a sync page (the telegram dialog list is ONE
 // ~2400-chat page) must be applied in CHUNKS: at most this many entities per
-// graph.apply_batch, so each transaction is short and the lone DB connection is
+// graph.applyBatch, so each transaction is short and the lone DB connection is
 // freed between batches. Without this, one dispatch monopolizes the connection and
 // every other RPC (frontend polls, search indexer) times out.
 export const INGEST_CHUNK = 200;
@@ -72,7 +72,7 @@ export function extractUrls(text: string): string[] {
 
 /// Map a telegram media_type to a MIME type. Mirrors the host's
 /// `media_type_to_mime` (backend/src/services/file/types.rs) so the plugin can
-/// build a source-agnostic file_register command (DEC: file.object survives the
+/// build a source-agnostic fileRegister command (DEC: file.object survives the
 /// cutover).
 export function mediaTypeToMime(mediaType: string): string {
   switch (mediaType) {

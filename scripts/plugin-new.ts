@@ -92,7 +92,7 @@ export class ${cls} {
     },
   })
   async list(params: ItemListParams): Promise<ItemListResponse> {
-    const page = await this.graph.list_entities({
+    const page = await this.graph.listEntities({
       schemaId: ENTITY,
       limit: params.limit ?? 50,
       offset: params.offset ?? 0,
@@ -115,7 +115,7 @@ import { ${cls} } from "../service.ts";
 
 function makeGraph() {
   return {
-    list_entities: vi.fn().mockResolvedValue({
+    listEntities: vi.fn().mockResolvedValue({
       items: [{ id: "e1", schemaId: "${id}.item", name: "First" }],
       total: 1,
       limit: 50,
@@ -143,7 +143,7 @@ describe("${id} read", () => {
     expect(page.total).toBe(1);
     expect(page.items[0]).toEqual({ id: "e1", name: "First" });
     expect(
-      (graph as unknown as { list_entities: ReturnType<typeof vi.fn> }).list_entities,
+      (graph as unknown as { listEntities: ReturnType<typeof vi.fn> }).listEntities,
     ).toHaveBeenCalledTimes(1);
   });
 });

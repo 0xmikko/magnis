@@ -37,7 +37,7 @@ import type {
 
 // ───────────────────────────── mockGraph ─────────────────────────────
 /** A `GraphService` whose overridden methods are `vi.fn` spies, exposed on
- *  `.spies` for arrangement (`graph.spies.list_entities_window.mockResolvedValue`)
+ *  `.spies` for arrangement (`graph.spies.listEntitiesWindow.mockResolvedValue`)
  *  and assertion (`expect(graph.spies.foo).toHaveBeenCalledTimes(1)`). */
 export interface MockGraph
   extends GraphService {

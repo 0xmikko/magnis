@@ -31,7 +31,7 @@ async function replicasWritten(): Promise<BatchEntityInput[]> {
   const batches: GraphBatchInput[] = [];
   let mintSeq = 0;
   const graph = mockGraph({
-    apply_batch: (frag: GraphBatchInput) => {
+    applyBatch: (frag: GraphBatchInput) => {
       batches.push(frag);
       return Promise.resolve({
         ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
@@ -41,13 +41,13 @@ async function replicasWritten(): Promise<BatchEntityInput[]> {
         droppedKeys: [],
       });
     },
-    list_links_for_entity: () => Promise.resolve([]),
-    get_entities: () => Promise.resolve([]),
-    get_entity: () => Promise.resolve(null),
-    create_entity: (input: { schemaId: string; name: string }) =>
+    listLinksForEntity: () => Promise.resolve([]),
+    getEntities: () => Promise.resolve([]),
+    getEntity: () => Promise.resolve(null),
+    createEntity: (input: { schemaId: string; name: string }) =>
       Promise.resolve(graphEntity(`hub-${mintSeq++}`, input.name, { schemaId: input.schemaId })),
-    add_link: () => Promise.resolve(undefined),
-    list_entities: () => Promise.resolve(page([])),
+    addLink: () => Promise.resolve(undefined),
+    listEntities: () => Promise.resolve(page([])),
   } as never);
   const mod = mountModule(ContactsModule, {
     graph,
@@ -78,15 +78,15 @@ async function hubClaimsWritten(): Promise<JsonValue[]> {
   const created = graphEntity(CONTACT_ID, "Alice Smith", { schemaId: CONTACT });
   let exists = false;
   const graph = mockGraph({
-    get_entity: () => Promise.resolve(exists ? created : null),
-    create_entity: () => { exists = true; return Promise.resolve(created); },
-    update_properties: (input: { properties: JsonValue }) => {
+    getEntity: () => Promise.resolve(exists ? created : null),
+    createEntity: () => { exists = true; return Promise.resolve(created); },
+    updateProperties: (input: { properties: JsonValue }) => {
       written.push(input.properties);
       return Promise.resolve(undefined);
     },
-    add_link: () => Promise.resolve(undefined),
-    list_links_for_entities: () => Promise.resolve([]),
-    get_entities: () => Promise.resolve([]),
+    addLink: () => Promise.resolve(undefined),
+    listLinksForEntities: () => Promise.resolve([]),
+    getEntities: () => Promise.resolve([]),
   } as never);
   const mod = mountModule(ContactsModule, {
     graph,

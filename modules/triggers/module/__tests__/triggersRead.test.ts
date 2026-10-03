@@ -43,7 +43,7 @@ function triggerDetail() {
 describe("tst_module_triggers_read_001 — trigger definition reads", () => {
   it("shapes get with watched and parent entities", async () => {
     const graph = mockGraph({
-      get_entity_full: (id: string) => {
+      getEntityFull: (id: string) => {
         if (id === TRIGGER_ID) return Promise.resolve(triggerDetail());
         if (id === TARGET_ID) return Promise.resolve({ entity: entity(id, "Vendor inbox"), links: [] });
         if (id === EPISODE_ID) return Promise.resolve({ entity: entity(id, "Fundraise"), links: [] });
@@ -71,9 +71,9 @@ describe("tst_module_triggers_read_001 — trigger definition reads", () => {
       links: [],
     };
     const graph = mockGraph({
-      list_entities: () =>
+      listEntities: () =>
         Promise.resolve(page([triggerDetail().entity, paused.entity])),
-      get_entity_full: (id: string) => {
+      getEntityFull: (id: string) => {
         if (id === TRIGGER_ID) return Promise.resolve(triggerDetail());
         if (id === "paused") return Promise.resolve(paused);
         if (id === TARGET_ID) return Promise.resolve({ entity: entity(id, "Vendor inbox"), links: [] });
@@ -91,12 +91,12 @@ describe("tst_module_triggers_read_001 — trigger definition reads", () => {
   it("lists each watcher once across direct and resolved watchable anchors", async () => {
     const relatedId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
     const graph = mockGraph({
-      get_entity_full: (id: string) => {
+      getEntityFull: (id: string) => {
         if (id === TARGET_ID) return Promise.resolve({ entity: entity(id, "Contact"), links: [] });
         if (id === TRIGGER_ID) return Promise.resolve(triggerDetail());
         return Promise.resolve(null);
       },
-      list_links_for_entity: () =>
+      listLinksForEntity: () =>
         Promise.resolve([link(TRIGGER_ID, TARGET_ID, "watches", { id: "watch" })]),
     });
     const execute = vi.fn((method: string) => {
@@ -111,7 +111,7 @@ describe("tst_module_triggers_read_001 — trigger definition reads", () => {
 
     const result = await module.list_for_entity({ entity_id: TARGET_ID });
     expect(result.map((item) => item.id)).toEqual([TRIGGER_ID]);
-    expect(graph.spies.list_links_for_entity).toHaveBeenCalledTimes(2);
+    expect(graph.spies.listLinksForEntity).toHaveBeenCalledTimes(2);
   });
 
   it("delegates fire history with a default or explicit bound", async () => {
@@ -130,7 +130,7 @@ describe("tst_module_triggers_read_001 — trigger definition reads", () => {
   });
 
   it("returns no anchor results and a uniform error for missing triggers", async () => {
-    const graph = mockGraph({ get_entity_full: () => Promise.resolve(null) });
+    const graph = mockGraph({ getEntityFull: () => Promise.resolve(null) });
     const module = mountModule(TriggersModule, { graph }).module;
 
     await expect(module.get({ id: TRIGGER_ID })).rejects.toThrow(`trigger not found: ${TRIGGER_ID}`);

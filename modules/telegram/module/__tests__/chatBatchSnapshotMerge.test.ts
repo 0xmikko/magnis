@@ -63,9 +63,9 @@ describe("telegram chat batch ingest", () => {
     const graph = mockGraph({
       // The page asks for its own external ids once and reads the found entities
       // once; the whole-account window is never consulted.
-      find_by_external_ids: (externalIds) =>
+      findByExternalIds: (externalIds) =>
         Promise.resolve(externalIds.map((externalId) => (externalId === "tg:chat:1" ? "chat-entity-1" : null))),
-      get_entities: () =>
+      getEntities: () =>
         Promise.resolve([
           {
             ...entity("chat-entity-1", "Pinned chat", {
@@ -86,12 +86,12 @@ describe("telegram chat batch ingest", () => {
             },
           },
         ]),
-      list_entities_window: () => Promise.reject(new Error("whole-account chat scan is forbidden")),
+      listEntitiesWindow: () => Promise.reject(new Error("whole-account chat scan is forbidden")),
       // The operator's edge to the existing chat is read once (kind-filtered)
       // before it is written again: the page's state joins what it holds.
-      find_by_external_id: (externalId) => Promise.resolve(externalId === "tg:account:9001" ? "self-id" : null),
-      list_linked: () => Promise.resolve(page([])),
-      apply_batch: (fragment) =>
+      findByExternalId: (externalId) => Promise.resolve(externalId === "tg:account:9001" ? "self-id" : null),
+      listLinked: () => Promise.resolve(page([])),
+      applyBatch: (fragment) =>
         Promise.resolve({
           ids: Object.fromEntries(fragment.entities.map((item) => [item.key, item.key])),
           created: 0,
@@ -109,10 +109,10 @@ describe("telegram chat batch ingest", () => {
       envelopes: Array.from({ length: 51 }, (_, index) => chatEnvelope(index + 1)),
     });
 
-    const applyBatch = graph.spies.apply_batch;
-    if (applyBatch === undefined) throw new Error("chat batch merge: missing apply_batch spy");
+    const applyBatch = graph.spies.applyBatch;
+    if (applyBatch === undefined) throw new Error("chat batch merge: missing applyBatch spy");
     const firstCall = applyBatch.mock.calls[0];
-    if (firstCall === undefined) throw new Error("chat batch merge: apply_batch was not called");
+    if (firstCall === undefined) throw new Error("chat batch merge: applyBatch was not called");
     const firstBatch = firstCall[0] as GraphBatchInput;
     const pinnedChat = firstBatch.entities.find((item) => item.key === "tg:chat:1");
 
@@ -150,9 +150,9 @@ describe("telegram chat batch ingest", () => {
    */
   it("tst_mod_tg_ingest_002 reuses chat state within one sync page instead of issuing per-chat reads and updates", async () => {
     const graph = mockGraph({
-      find_by_external_ids: (externalIds) =>
+      findByExternalIds: (externalIds) =>
         Promise.resolve(externalIds.map((externalId) => `chat-entity-${externalId.slice("tg:chat:".length)}`)),
-      get_entities: (ids) =>
+      getEntities: (ids) =>
         Promise.resolve(ids.map((id) => {
           const chatId = Number(id.slice("chat-entity-".length));
           return {
@@ -166,20 +166,20 @@ describe("telegram chat batch ingest", () => {
             },
           };
         })),
-      list_entities_window: () => Promise.reject(new Error("whole-account chat scan is forbidden")),
+      listEntitiesWindow: () => Promise.reject(new Error("whole-account chat scan is forbidden")),
       // One operator lookup per page, one kind-filtered edge read per existing
       // chat: never an external id or entity lookup per chat.
-      find_by_external_id: (externalId) => externalId === "tg:account:9001"
+      findByExternalId: (externalId) => externalId === "tg:account:9001"
         ? Promise.resolve("self-id")
         : Promise.reject(new Error("per-chat external id lookup is forbidden")),
-      list_linked: (spec) => {
+      listLinked: (spec) => {
         expect(spec).toMatchObject({ linkKind: "observed_in", direction: "in" });
         return Promise.resolve(page([]));
       },
-      get_entity: () => Promise.reject(new Error("per-chat entity lookup is forbidden")),
-      update_properties: () => Promise.reject(new Error("per-chat denormalization update is forbidden")),
-      update_properties_batch: () => Promise.reject(new Error("per-chat denormalization update is forbidden")),
-      apply_batch: (fragment) =>
+      getEntity: () => Promise.reject(new Error("per-chat entity lookup is forbidden")),
+      updateProperties: () => Promise.reject(new Error("per-chat denormalization update is forbidden")),
+      updatePropertiesBatch: () => Promise.reject(new Error("per-chat denormalization update is forbidden")),
+      applyBatch: (fragment) =>
         Promise.resolve({
           ids: Object.fromEntries(fragment.entities.map((item) => [item.key, `id:${item.key}`])),
           created: 0,
@@ -198,15 +198,15 @@ describe("telegram chat batch ingest", () => {
       envelopes: chatIds.flatMap((chatId) => [chatEnvelope(chatId), messageEnvelope(chatId)]),
     })).resolves.toEqual({ droppedRemoteIds: [], triggerChecks: [], plan: null, excluded: [] });
 
-    expect(graph.spies.find_by_external_ids).toHaveBeenCalledTimes(1);
-    expect(graph.spies.get_entities).toHaveBeenCalledTimes(1);
-    expect(graph.spies.list_entities_window).not.toHaveBeenCalled();
-    expect(graph.spies.find_by_external_id).toHaveBeenCalledTimes(1);
-    expect(graph.spies.list_linked).toHaveBeenCalledTimes(51);
-    expect(graph.spies.get_entity).not.toHaveBeenCalled();
-    expect(graph.spies.update_properties_batch).not.toHaveBeenCalled();
-    const applyBatch = graph.spies.apply_batch;
-    if (applyBatch === undefined) throw new Error("chat page reuse: missing apply_batch spy");
+    expect(graph.spies.findByExternalIds).toHaveBeenCalledTimes(1);
+    expect(graph.spies.getEntities).toHaveBeenCalledTimes(1);
+    expect(graph.spies.listEntitiesWindow).not.toHaveBeenCalled();
+    expect(graph.spies.findByExternalId).toHaveBeenCalledTimes(1);
+    expect(graph.spies.listLinked).toHaveBeenCalledTimes(51);
+    expect(graph.spies.getEntity).not.toHaveBeenCalled();
+    expect(graph.spies.updatePropertiesBatch).not.toHaveBeenCalled();
+    const applyBatch = graph.spies.applyBatch;
+    if (applyBatch === undefined) throw new Error("chat page reuse: missing applyBatch spy");
     const firstBatch = applyBatch.mock.calls[0]?.[0] as GraphBatchInput | undefined;
     expect(firstBatch?.entities.find((item) => item.key === "tg:chat:1")?.properties).toMatchObject({
       last_message_date: "2026-07-26T20:00:00Z",

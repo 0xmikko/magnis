@@ -17,12 +17,12 @@ const NOTE_ID = "11111111-1111-4111-8111-111111111111";
 async function writtenProperties(): Promise<Record<string, unknown>[]> {
   const written: Record<string, unknown>[] = [];
   const graph = mockGraph({
-    create_entity: () => Promise.resolve(graphEntity(NOTE_ID, "T", { schemaId: NOTE })),
-    update_properties: (input: { properties: Record<string, unknown> }) => {
+    createEntity: () => Promise.resolve(graphEntity(NOTE_ID, "T", { schemaId: NOTE })),
+    updateProperties: (input: { properties: Record<string, unknown> }) => {
       written.push(input.properties);
       return Promise.resolve(undefined);
     },
-    delete_entity: () => Promise.resolve(undefined),
+    deleteEntity: () => Promise.resolve(undefined),
   } as never);
   const mod = mountModule(NotesModule, { graph, ctx: { extensionId: "notes" } }).module;
   await mod.create({ title: "Q3 plan", body: "ship the declaration" });

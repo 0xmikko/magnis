@@ -20,9 +20,9 @@ const NOTE_ID = "11111111-1111-4111-8111-111111111111";
 
 function writeGraph(overrides: Record<string, unknown> = {}): G {
   return mockGraph({
-    create_entity: () => Promise.resolve(entity(NOTE_ID, "T", { schemaId: NOTE })),
-    update_properties: () => Promise.resolve(undefined),
-    delete_entity: () => Promise.resolve(undefined),
+    createEntity: () => Promise.resolve(entity(NOTE_ID, "T", { schemaId: NOTE })),
+    updateProperties: () => Promise.resolve(undefined),
+    deleteEntity: () => Promise.resolve(undefined),
     ...overrides,
   } as never);
 }
@@ -53,7 +53,7 @@ describe("notes.create accepts one body field and is atomic", () => {
     const snap = await module.create({ title: "RFQ", content: "## prices" });
 
     expect(snap.body).toBe("## prices");
-    expect(graph.spies.update_properties).toHaveBeenCalledWith(
+    expect(graph.spies.updateProperties).toHaveBeenCalledWith(
       expect.objectContaining({
         properties: expect.objectContaining({ body: "## prices", title: "RFQ" }),
       }),
@@ -81,7 +81,7 @@ describe("notes.create accepts one body field and is atomic", () => {
     const blankGraph = writeGraph();
     const blank = mountModule(NotesModule, { graph: blankGraph }).module;
     await expect(blank.create({ title: "Blank", body: "   " })).rejects.toThrow(/blank/);
-    expect(blankGraph.spies.create_entity).not.toHaveBeenCalled();
+    expect(blankGraph.spies.createEntity).not.toHaveBeenCalled();
   });
 
   it("tst_module_notes_write_001 rejects both names at once", async () => {
@@ -91,7 +91,7 @@ describe("notes.create accepts one body field and is atomic", () => {
     await expect(
       module.create({ title: "RFQ", body: "a", content: "b" } as never),
     ).rejects.toThrow(/body.*content|content.*body/i);
-    expect(graph.spies.create_entity).not.toHaveBeenCalled();
+    expect(graph.spies.createEntity).not.toHaveBeenCalled();
   });
 
   it("tst_module_notes_write_001 rejects neither name", async () => {
@@ -99,12 +99,12 @@ describe("notes.create accepts one body field and is atomic", () => {
     const { module } = mountModule(NotesModule, { graph });
 
     await expect(module.create({ title: "RFQ" } as never)).rejects.toThrow(/body|content/i);
-    expect(graph.spies.create_entity).not.toHaveBeenCalled();
+    expect(graph.spies.createEntity).not.toHaveBeenCalled();
   });
 
   it("tst_module_notes_write_001 leaves no entity behind when the content write fails", async () => {
     const graph = writeGraph({
-      update_properties: () => Promise.reject(new Error("facet store unavailable")),
+      updateProperties: () => Promise.reject(new Error("facet store unavailable")),
     });
     const { module } = mountModule(NotesModule, { graph });
 
@@ -112,7 +112,7 @@ describe("notes.create accepts one body field and is atomic", () => {
       "facet store unavailable",
     );
 
-    expect(graph.spies.delete_entity).toHaveBeenCalledWith(NOTE_ID);
+    expect(graph.spies.deleteEntity).toHaveBeenCalledWith(NOTE_ID);
   });
 });
 
@@ -138,8 +138,8 @@ describe("notes.create accepts one body field and is atomic", () => {
 describe("notes identity and schema boundaries", () => {
   it("tst_module_notes_identity_001 forwards a valid client id and returns the existing note on retry", async () => {
     const freshGraph = writeGraph({
-      get_entity: () => Promise.resolve(null),
-      get_entity_full: () => Promise.reject(new Error("missing entities must use get_entity")),
+      getEntity: () => Promise.resolve(null),
+      getEntityFull: () => Promise.reject(new Error("missing entities must use getEntity")),
     });
     const fresh = mountModule(NotesModule, { graph: freshGraph }).module;
 
@@ -150,16 +150,16 @@ describe("notes identity and schema boundaries", () => {
     });
 
     expect(created.id).toBe(NOTE_ID);
-    expect(freshGraph.spies.create_entity).toHaveBeenCalledWith({
+    expect(freshGraph.spies.createEntity).toHaveBeenCalledWith({
       schemaId: NOTE,
       name: "Original",
       clientId: NOTE_ID,
     });
 
     const retryGraph = mockGraph({
-      get_entity: () =>
+      getEntity: () =>
         Promise.resolve(entity(NOTE_ID, "Original", { schemaId: NOTE })),
-      get_entity_full: () =>
+      getEntityFull: () =>
         Promise.resolve({
           entity: entity(NOTE_ID, "Original", {
             schemaId: NOTE,
@@ -196,9 +196,9 @@ describe("notes identity and schema boundaries", () => {
 
   it("does not reinterpret a foreign-schema client-id collision as a note", async () => {
     const graph = mockGraph({
-      get_entity: () =>
+      getEntity: () =>
         Promise.resolve(entity(NOTE_ID, "Project", { schemaId: "projects.project" })),
-      create_entity: () => Promise.reject(new Error("entity already exists")),
+      createEntity: () => Promise.reject(new Error("entity already exists")),
     });
     const module = mountModule(NotesModule, { graph }).module;
 
@@ -209,16 +209,16 @@ describe("notes identity and schema boundaries", () => {
 
   it("deletes only an owned note entity", async () => {
     const graph = mockGraph({
-      get_entity_full: () =>
+      getEntityFull: () =>
         Promise.resolve({ entity: entity(NOTE_ID, "Note", { schemaId: NOTE }), links: [] }),
-      delete_entity: () => Promise.resolve(undefined),
+      deleteEntity: () => Promise.resolve(undefined),
     });
     const module = mountModule(NotesModule, { graph }).module;
     await expect(module.delete({ id: NOTE_ID })).resolves.toEqual({ deleted: true });
-    expect(graph.spies.delete_entity).toHaveBeenCalledWith(NOTE_ID);
+    expect(graph.spies.deleteEntity).toHaveBeenCalledWith(NOTE_ID);
 
     const foreignGraph = mockGraph({
-      get_entity_full: () =>
+      getEntityFull: () =>
         Promise.resolve({
           entity: entity(NOTE_ID, "Project", { schemaId: "projects.project" }),
           links: [],
@@ -271,7 +271,7 @@ describe("the approval card reads the same wire names the tool accepts", () => {
 describe("notes.update is atomic", () => {
   it("tst_module_notes_write_002 writes the body and then renames on success", async () => {
     const graph = mockGraph({
-      get_entity_full: () =>
+      getEntityFull: () =>
         Promise.resolve({
           entity: entity(NOTE_ID, "old title", {
             schemaId: NOTE,
@@ -279,26 +279,26 @@ describe("notes.update is atomic", () => {
           }),
           links: [],
         }),
-      update_properties: () => Promise.resolve(undefined),
-      update_entity_name: () => Promise.resolve(undefined),
+      updateProperties: () => Promise.resolve(undefined),
+      updateEntityName: () => Promise.resolve(undefined),
     } as never);
     const { module } = mountModule(NotesModule, { graph });
 
     await expect(
       module.update({ id: NOTE_ID, title: "new title", body: "new body" }),
     ).resolves.toMatchObject({ title: "new title", body: "new body" });
-    expect(graph.spies.update_entity_name).toHaveBeenCalledWith(NOTE_ID, "new title");
+    expect(graph.spies.updateEntityName).toHaveBeenCalledWith(NOTE_ID, "new title");
   });
 
   it("tst_module_notes_write_002 does not rename when the content write fails", async () => {
     const graph = mockGraph({
-      get_entity_full: () =>
+      getEntityFull: () =>
         Promise.resolve({
           entity: entity(NOTE_ID, "old title", { schemaId: NOTE }),
           links: [],
         }),
-      update_properties: () => Promise.reject(new Error("facet store unavailable")),
-      update_entity_name: () => Promise.resolve(undefined),
+      updateProperties: () => Promise.reject(new Error("facet store unavailable")),
+      updateEntityName: () => Promise.resolve(undefined),
     } as never);
     const { module } = mountModule(NotesModule, { graph });
 
@@ -306,7 +306,7 @@ describe("notes.update is atomic", () => {
       "facet store unavailable",
     );
 
-    expect(graph.spies.update_entity_name).not.toHaveBeenCalled();
+    expect(graph.spies.updateEntityName).not.toHaveBeenCalled();
   });
 });
 
@@ -326,7 +326,7 @@ describe("notes.update restores the note unchanged when the rename fails", () =>
   it("tst_module_notes_write_004 title, body and updated_at all come back", async () => {
     const writes: Record<string, unknown>[] = [];
     const graph = mockGraph({
-      get_entity_full: () =>
+      getEntityFull: () =>
         Promise.resolve({
           entity: entity(NOTE_ID, "old title", {
             schemaId: NOTE,
@@ -338,11 +338,11 @@ describe("notes.update restores the note unchanged when the rename fails", () =>
           }),
           links: [],
         }),
-      update_properties: (p: { properties: Record<string, unknown> }) => {
+      updateProperties: (p: { properties: Record<string, unknown> }) => {
         writes.push({ ...p.properties });
         return Promise.resolve(undefined);
       },
-      update_entity_name: () => Promise.reject(new Error("rename store unavailable")),
+      updateEntityName: () => Promise.reject(new Error("rename store unavailable")),
     } as never);
     const { module } = mountModule(NotesModule, { graph });
 
