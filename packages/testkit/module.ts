@@ -15,7 +15,7 @@
 //     assert the DECORATED rpc names + tool defs and their routing.
 
 import { vi, type Mock } from "vitest";
-import { definePlugin } from "@magnis/plugin-sdk";
+import { definePlugin, pageLimitMax } from "@magnis/plugin-sdk";
 import type {
   GraphService,
   LinkSummary,
@@ -49,6 +49,17 @@ export type GraphOverrides = Partial<GraphService>;
 // be interpreted as graph ops (else `await`-ing or printing the graph throws).
 const NON_OP = new Set(["then", "catch", "finally", "constructor"]);
 
+/** What the host refuses before an op runs, checked ahead of a test's
+ * override so a call the host would refuse fails here too. */
+const HOST_CHECKS: Partial<Record<string, (...args: unknown[]) => void>> = {
+  listSyncMigrationEntities: (params) => {
+    const limit = (params as { limit?: unknown } | undefined)?.limit;
+    if (typeof limit !== "number" || !Number.isSafeInteger(limit) || limit < 1 || limit > pageLimitMax) {
+      throw new Error(`migration limit must be between 1 and ${String(pageLimitMax)}`);
+    }
+  },
+};
+
 /**
  * A THROWING `Proxy` over `GraphService`. Any method NOT in `overrides`
  * throws `unexpected graph op: <name>` WHEN CALLED — so a test that hits an op
@@ -63,7 +74,12 @@ export function mockGraph(
 ): MockGraph {
   const spies: Record<string, Mock> = {};
   for (const [name, impl] of Object.entries(overrides)) {
-    spies[name] = vi.fn(impl as (...args: unknown[]) => unknown);
+    const check = HOST_CHECKS[name];
+    const op = impl as (...args: unknown[]) => unknown;
+    spies[name] = vi.fn(check === undefined ? op : (...args: unknown[]): unknown => {
+      check(...args);
+      return op(...args);
+    });
   }
   const proxy = new Proxy(
     {},
