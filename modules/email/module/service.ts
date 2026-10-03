@@ -12,6 +12,7 @@
 
 import {
   connectionReady,
+  pageLimitMax,
   rpc,
   syncHandler,
   tool,
@@ -900,7 +901,7 @@ export class EmailModule {
     const rows: SyncMigrationEntity[] = [];
     let after: string | null = null;
     do {
-      const page = await this.graph.listSyncMigrationEntities({ schemaId: ADDRESS_SCHEMA, after, limit: 500 });
+      const page = await this.graph.listSyncMigrationEntities({ schemaId: ADDRESS_SCHEMA, after, limit: pageLimitMax });
       if (page.next !== null && (page.next === after || page.items.length === 0)) throw new Error("Email migration page did not advance");
       rows.push(...page.items);
       after = page.next;

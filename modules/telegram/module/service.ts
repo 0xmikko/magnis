@@ -12,7 +12,7 @@
 //     Stage 1 uses the record's avatar_url / photo_url.
 //   - message-detail canonical map + linked_entities (Context panel).
 
-import { connectionReady, reachedEndpoints, rpc, syncHandler, tool, writeTool, type GraphService, type PluginDeps } from "@magnis/plugin-sdk";
+import { connectionReady, pageLimitMax, reachedEndpoints, rpc, syncHandler, tool, writeTool, type GraphService, type PluginDeps } from "@magnis/plugin-sdk";
 import type {
   BatchEntityInput,
   BatchLinkInput,
@@ -467,7 +467,7 @@ export class TelegramModule {
     const entities: SyncMigrationEntity[] = [];
     let after: string | null = null;
     do {
-      const page = await this.graph.listSyncMigrationEntities({ schemaId: CHAT, after, limit: 500 });
+      const page = await this.graph.listSyncMigrationEntities({ schemaId: CHAT, after, limit: pageLimitMax });
       if (page.next !== null && (page.next === after || page.items.length === 0)) throw new Error("Telegram migration page did not advance");
       entities.push(...page.items);
       after = page.next;

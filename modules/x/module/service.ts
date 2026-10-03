@@ -1,4 +1,4 @@
-import { connectionReady, rpc, writeTool } from "@magnis/plugin-sdk";
+import { connectionReady, pageLimitMax, rpc, writeTool } from "@magnis/plugin-sdk";
 // X profiles own synchronization choices. The module migrates legacy Contacts
 // entries, supplies Source selection and admits provider events through Graph.
 // Sending posts and DMs remains outside this module's current contract.
@@ -95,7 +95,7 @@ export class XModule {
     const rows: SyncMigrationEntity[] = [];
     let after: string | null = null;
     do {
-      const page = await this.graph.listSyncMigrationEntities({ schemaId: PROFILE, after, limit: 500 });
+      const page = await this.graph.listSyncMigrationEntities({ schemaId: PROFILE, after, limit: pageLimitMax });
       if (page.next !== null && (page.next === after || page.items.length === 0)) throw new Error("X migration page did not advance");
       rows.push(...page.items);
       after = page.next;

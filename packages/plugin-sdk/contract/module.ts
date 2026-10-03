@@ -448,6 +448,9 @@ export interface FileRegisterParams {
   download?: boolean;
 }
 
+/** The largest page the host serves; a larger `limit` is refused. */
+export const pageLimitMax = 200;
+
 export interface GraphService {
   updateEntitySyncEnabled(params: SetSyncEnabledParams): Promise<{ syncRevision: string }>;
   admitSyncEntities(subjects: readonly SyncAdmissionSubject[], controlRemoteIds?: readonly string[]): Promise<readonly string[]>;
@@ -455,6 +458,7 @@ export interface GraphService {
   listSyncMigrationEntities(params: {
     schemaId: string;
     after: string | null;
+    /** 1 to `pageLimitMax`. */
     limit: number;
   }): Promise<{
     items: readonly SyncMigrationEntity[];
