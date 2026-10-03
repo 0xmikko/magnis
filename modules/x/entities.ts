@@ -20,6 +20,7 @@ const platform = z.enum(["x", "linkedin"]);
 export const profile = entity(
   {
     id: "x.profile",
+    syncable: true,
     name: "X profile",
     description: "A tracked person's profile on X (Twitter).",
     roles: ["identity_channel"],

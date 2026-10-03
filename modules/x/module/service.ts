@@ -1,22 +1,27 @@
-import { rpc } from "@magnis/plugin-sdk";
-// X plugin — backend module (V8 isolate). Read-only ingest of X profiles +
-// posts via the `x` surface, plus read tools. Per-platform module (telegram-
-// shaped): a WRITE seam (DM / compose / reply) belongs HERE later — add write
-// tools + op_composer like the telegram module, without
-// touching linkedin. v1 is read-only. (Split from the old shared `social` module,
-// see plan Revision.)
-// Writes ONLY `x.*` (implicit own-namespace grant); soft-reads contacts.person.
-// Idempotent: records carry external_id = the source remote_id (re-poll upserts).
-// Provenance is stamped host-side from the calling plugin + envelope.
+import { connectionReady, rpc, writeTool } from "@magnis/plugin-sdk";
+// X profiles own synchronization choices. The module migrates legacy Contacts
+// entries, supplies Source selection and admits provider events through Graph.
+// Sending posts and DMs remains outside this module's current contract.
 
 import { searchEntitiesPage, syncHandler, tool, type GraphService, type PluginDeps } from "@magnis/plugin-sdk";
 import type {
+  RawEntity,
+  RawSyncableEntity,
+  ResolveSyncMigrationParams,
+  SetSyncEnabledParams,
+  SetSyncEnabledResult,
+  SyncMigrationEntity,
+  SyncMigrationIssue,
+  SyncMigrationStatus,
+  SyncSelection,
+  SyncSelectionRequest,
   BatchEntityInput,
   BatchLinkInput,
   PaginatedResponse,
   WindowRow,
 } from "@magnis/plugin-sdk";
 import type {
+  ResolvedXProfile,
   GetParams,
   Platform,
   PostContent,
@@ -28,8 +33,55 @@ import type {
   ProfilesListParams,
   SyncEnvelope,
 } from "../types.ts";
+import type { CompleteXSyncMigrationParams } from "../../contacts/types.ts";
 import { AUTHORED_BY, IDENTITY, POST, PROFILE } from "../schema.ts";
 import { richPostFields, str } from "./helpers.ts";
+
+interface LegacyXChoice {
+  contactId: string;
+  handle: string;
+  enabled: boolean;
+}
+
+interface XMigrationGroup {
+  anchor: string;
+  profile: ResolvedXProfile;
+  row: SyncMigrationEntity | undefined;
+  entries: LegacyXChoice[];
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function normalizedHandle(value: unknown): string {
+  if (typeof value !== "string" || !/^[A-Za-z0-9_]{1,15}$/.test(value.trim())) throw new Error("X profile has no valid handle");
+  return value.trim().toLowerCase();
+}
+
+function savedProfile(row: RawEntity): RawSyncableEntity {
+  if (row.schema_id !== PROFILE || !("syncEnabled" in row) || typeof row.syncEnabled !== "boolean"
+    || !("syncRevision" in row) || typeof row.syncRevision !== "string" || !/^\d+$/.test(row.syncRevision)) throw new Error("X profile has no saved synchronization choice");
+  return { ...row, syncEnabled: row.syncEnabled, syncRevision: row.syncRevision };
+}
+
+function profileFromEntity(row: RawEntity): ResolvedXProfile {
+  const match = /^x:profile:(\d+)$/.exec(row.anchor ?? "");
+  if (match?.[1] === undefined) throw new Error("X profile has no stable provider identity anchor");
+  return { providerId: match[1], handle: normalizedHandle(row.properties?.handle), displayName: row.name,
+    bio: str(row.properties ?? {}, "bio") ?? null, avatarUrl: str(row.properties ?? {}, "avatar_url") ?? null };
+}
+
+function resolvedProfile(value: Record<string, unknown>): ResolvedXProfile {
+  if (typeof value.providerId !== "string" || !/^\d+$/.test(value.providerId) || typeof value.displayName !== "string"
+    || (value.bio !== null && typeof value.bio !== "string") || (value.avatarUrl !== null && typeof value.avatarUrl !== "string")) throw new Error("X profile lookup returned invalid identity data");
+  return { providerId: value.providerId, handle: normalizedHandle(value.handle), displayName: value.displayName, bio: value.bio, avatarUrl: value.avatarUrl };
+}
+
+function profileProperties(profile: ResolvedXProfile): Record<string, unknown> {
+  return { entity_type: "profile", platform: "x", handle: profile.handle, display_name: profile.displayName,
+    bio: profile.bio, avatar_url: profile.avatarUrl, url: `https://x.com/${profile.handle}` };
+}
 
 export class XModule {
   private readonly graph: GraphService;
@@ -39,8 +91,310 @@ export class XModule {
     this.rpc = deps.rpc;
   }
 
-  /// Sync ingest — one page of canonical envelopes (profile + post). Both X and
-  /// LinkedIn connectors feed the same surface; `payload.entity_type` discriminates.
+  private async profileRows(): Promise<SyncMigrationEntity[]> {
+    const rows: SyncMigrationEntity[] = [];
+    let after: string | null = null;
+    do {
+      const page = await this.graph.listSyncMigrationEntities({ schemaId: PROFILE, after, limit: 500 });
+      if (page.next !== null && (page.next === after || page.items.length === 0)) throw new Error("X migration page did not advance");
+      rows.push(...page.items);
+      after = page.next;
+    } while (after !== null);
+    return rows;
+  }
+
+  private async legacyEntries(): Promise<LegacyXChoice[]> {
+    const entries: LegacyXChoice[] = [];
+    for (let offset = 0; ; offset += 500) {
+      const page = await this.graph.list_entities_window({ schema: "contacts.person", filter_field: { property_path: "tracking" }, filter_op: "exists", limit: 500, offset });
+      for (const { entity } of page.items) {
+        const tracking = entity.properties?.tracking;
+        if (!Array.isArray(tracking)) throw new Error(`Contact ${entity.id} has malformed legacy tracking`);
+        for (const value of tracking) {
+          const item: unknown = value;
+          if (typeof item !== "object" || item === null || !("platform" in item)) throw new Error(`Contact ${entity.id} has malformed legacy tracking`);
+          if (item.platform !== "x") continue;
+          if (!("enabled" in item) || typeof item.enabled !== "boolean" || !("handle" in item) || typeof item.handle !== "string") throw new Error(`Contact ${entity.id} has an invalid X choice`);
+          entries.push({ contactId: entity.id, handle: normalizedHandle(item.handle), enabled: item.enabled });
+        }
+      }
+      if (page.items.length === 0 || offset + page.items.length >= page.total) return entries;
+    }
+  }
+
+  private async migrationGroups(accountId?: string): Promise<{ groups: XMigrationGroup[]; issues: SyncMigrationIssue[] }> {
+    const rows = await this.profileRows();
+    const entries = await this.legacyEntries();
+    const groups = new Map<string, XMigrationGroup>();
+    const issues: SyncMigrationIssue[] = [];
+    const pending = rows.filter((row) => row.syncEnabled === null || row.syncRevision === null);
+    if (entries.length === 0 && pending.length === 0) return { groups: [], issues: [] };
+    const savedIds = rows.filter((row) => row.syncEnabled !== null && row.syncRevision !== null).map((row) => row.id);
+    const saved = new Map((savedIds.length === 0 ? [] : await this.graph.get_entities(savedIds)).map((row) => [row.id, row]));
+    const contacts = [...new Set(entries.map((entry) => entry.contactId))];
+    const links = contacts.length === 0 ? [] : await this.graph.list_links_for_entities(contacts);
+    const resolved = new Map<string, ResolvedXProfile>();
+    const resolve = async (handle: string): Promise<ResolvedXProfile> => {
+      const cached = resolved.get(handle);
+      if (cached !== undefined) return cached;
+      if (accountId === undefined) {
+        const status = await this.graph.syncState("status");
+        const accounts = status.accounts;
+        if (!Array.isArray(accounts) || accounts.length !== 1) throw new Error("X migration requires one connected account");
+        const account: unknown = accounts[0];
+        if (typeof account !== "object" || account === null || !("account_id" in account) || typeof account.account_id !== "string" || account.account_id === "") throw new Error("X migration has no connected account ID");
+        accountId = account.account_id;
+      }
+      const profile = resolvedProfile(await this.graph.source_command({ action: "resolveProfile", handle }, accountId));
+      if (normalizedHandle(profile.handle) !== handle) throw new Error("X lookup returned a different handle identity");
+      resolved.set(handle, profile);
+      return profile;
+    };
+    const include = async (profile: ResolvedXProfile): Promise<XMigrationGroup> => {
+      const anchor = `x:profile:${profile.providerId}`;
+      const existing = groups.get(anchor);
+      if (existing !== undefined) return existing;
+      const id = await this.graph.find_by_anchor(anchor);
+      const row = id === null ? undefined : rows.find((candidate) => candidate.id === id);
+      if (id !== null && row === undefined) throw new Error("X migration anchor does not identify an owned profile");
+      const group: XMigrationGroup = { anchor, profile, row, entries: [] };
+      groups.set(anchor, group);
+      return group;
+    };
+    for (const entry of entries) {
+      try {
+        const linked = links.filter((link) => link.kind === IDENTITY && link.from_id === entry.contactId && link.validUntil === null)
+          .map((link) => saved.get(link.to_id)).filter((row): row is RawEntity => row !== undefined && normalizedHandle(row.properties?.handle) === entry.handle);
+        if (linked.length > 1) throw new Error("Legacy X entry has multiple saved profile identities");
+        const held = linked[0];
+        const profile = held === undefined ? await resolve(entry.handle) : profileFromEntity(held);
+        (await include(profile)).entries.push(entry);
+      } catch (error) {
+        issues.push({ target: null, legacyIds: [entry.contactId], accounts: [], message: errorText(error) });
+      }
+    }
+    for (const row of pending) {
+      if ([...groups.values()].some((group) => group.row?.id === row.id)) continue;
+      try {
+        const group = await include(await resolve(normalizedHandle(row.properties.handle)));
+        if (group.row?.id !== row.id) throw new Error("Existing X profile handle now identifies a different account");
+      } catch (error) {
+        issues.push({ target: null, legacyIds: [row.id], accounts: [], message: errorText(error) });
+      }
+    }
+    return { groups: [...groups.values()], issues };
+  }
+
+  private migrationIssue(group: XMigrationGroup): SyncMigrationIssue {
+    return { target: { schemaId: PROFILE, key: group.row?.id ?? group.anchor },
+      legacyIds: [...new Set([...group.entries.map((entry) => entry.contactId), ...(group.row === undefined ? [] : [group.row.id])])], accounts: [],
+      message: group.entries.length === 0 ? "Profile has no legacy synchronization choice" : new Set(group.entries.map((entry) => entry.enabled)).size > 1
+        ? "Contacts have conflicting X synchronization choices" : "Profile synchronization migration is pending" };
+  }
+
+  @tool("syncMigration", { entity: PROFILE, description: "Read unresolved X profile synchronization migration.", params: { type: "object", properties: {}, additionalProperties: false } })
+  async syncMigration(): Promise<SyncMigrationStatus> {
+    const current = await this.migrationGroups();
+    const issues = [...current.issues, ...current.groups.map((group) => this.migrationIssue(group))];
+    return { complete: issues.length === 0, issues };
+  }
+
+  private async commitMigration(group: XMigrationGroup, syncEnabled: boolean): Promise<void> {
+    let id = group.row?.id;
+    if (id === undefined) {
+      const applied = await this.graph.apply_batch({ entities: [{ key: group.anchor, schema_id: PROFILE, anchor: group.anchor,
+        name: group.profile.displayName, properties: profileProperties(group.profile), syncEnabled }], refs: [], links: [] });
+      id = applied.ids[group.anchor];
+      if (id === undefined) throw new Error("X migration did not create its profile");
+    } else if (group.row?.syncEnabled === null || group.row?.syncRevision === null) {
+      await this.graph.updateEntitySyncEnabled({ id, syncEnabled });
+    }
+    for (const contactId of new Set(group.entries.map((entry) => entry.contactId))) {
+      await this.graph.add_link({ from_id: contactId, to_id: id, kind: IDENTITY });
+    }
+    for (const entry of group.entries) {
+      await this.rpc.execute("contacts.rename_if_placeholder", { id: entry.contactId, expected_name: entry.handle, new_name: group.profile.displayName });
+      await this.rpc.execute("contacts.completeXSyncMigration", { ...entry, profileId: id } satisfies CompleteXSyncMigrationParams);
+    }
+  }
+
+  private async migrateSyncChoices(accountId?: string, explicit?: ResolveSyncMigrationParams): Promise<SyncMigrationStatus> {
+    const current = await this.migrationGroups(accountId);
+    if (explicit !== undefined && (explicit.target.schemaId !== PROFILE || !current.groups.some((group) => (group.row?.id ?? group.anchor) === explicit.target.key))) throw new Error("X migration target is missing or stale");
+    // A failed lookup could belong to any group; do not freeze a partial vote.
+    if (current.issues.length > 0) return { complete: false, issues: [...current.issues, ...current.groups.map((group) => this.migrationIssue(group))] };
+    const issues: SyncMigrationIssue[] = [];
+    for (const group of current.groups) {
+      const initialized = group.row?.syncEnabled !== undefined && group.row.syncEnabled !== null && group.row.syncRevision !== null;
+      const requested = explicit?.target.key === (group.row?.id ?? group.anchor) ? explicit.syncEnabled : undefined;
+      const values = new Set(group.entries.map((entry) => entry.enabled));
+      const choice = initialized ? group.row?.syncEnabled : requested ?? (values.size === 1 ? group.entries[0]?.enabled : undefined);
+      if (choice === undefined || choice === null) { issues.push(this.migrationIssue(group)); continue; }
+      try { await this.commitMigration(group, choice); }
+      catch (error) { issues.push({ ...this.migrationIssue(group), message: errorText(error) }); }
+    }
+    return { complete: issues.length === 0, issues };
+  }
+
+  @connectionReady()
+  async onConnectionReady(params: { account_id: string }): Promise<{ ok: boolean }> {
+    const status = await this.migrateSyncChoices(params.account_id);
+    await this.graph.syncState("apply");
+    return { ok: status.complete };
+  }
+
+  @writeTool("resolveSyncMigration", { entity: "x.profile", description: "Choose synchronization for an unresolved X profile.", params: {
+    type: "object", properties: { target: { type: "object", properties: { schemaId: { const: PROFILE }, key: { type: "string" } }, required: ["schemaId", "key"], additionalProperties: false }, syncEnabled: { type: "boolean" } }, required: ["target", "syncEnabled"], additionalProperties: false,
+  } })
+  async resolveSyncMigration(params: ResolveSyncMigrationParams): Promise<SyncMigrationStatus> {
+    const status = await this.migrateSyncChoices(undefined, params);
+    await this.graph.syncState("apply");
+    return status;
+  }
+
+  @rpc("sync.selection", { description: "Read stable X profile choices after completing legacy migration.", params: {
+    type: "object", properties: { sourceId: { type: "string" }, accountId: { type: "string" }, accountGeneration: { type: "integer" } }, required: ["sourceId", "accountId", "accountGeneration"], additionalProperties: false,
+  } })
+  async syncSelection(params: SyncSelectionRequest): Promise<SyncSelection> {
+    const status = await this.migrateSyncChoices(params.accountId);
+    if (!status.complete) throw new Error(`X synchronization migration is incomplete: ${status.issues.map((issue) => issue.message).join("; ")}`);
+    const rows = await this.profileRows();
+    const profiles = rows.length === 0 ? [] : await this.graph.get_entities(rows.map((row) => row.id));
+    if (profiles.length !== rows.length) throw new Error("X profile selection is incomplete");
+    return { surface: "x", choices: profiles.map((row) => {
+      const saved = savedProfile(row);
+      const profile = profileFromEntity(saved);
+      return { id: row.id, scopeId: profile.providerId, handle: normalizedHandle(profile.handle), syncEnabled: saved.syncEnabled, syncRevision: saved.syncRevision };
+    }) };
+  }
+
+  @writeTool("setSyncEnabled", { entity: "x.profile", description: "Start or stop receiving this X profile and its posts.", params: {
+    type: "object", properties: { id: { type: "string", format: "uuid" }, syncEnabled: { type: "boolean" } }, required: ["id", "syncEnabled"], additionalProperties: false,
+  } })
+  async setSyncEnabled(params: SetSyncEnabledParams): Promise<SetSyncEnabledResult> {
+    let syncRevision: string;
+    try {
+      const row = await this.graph.get_entity(params.id);
+      if (row?.schema_id !== PROFILE) throw new Error("Synchronization target is not an X profile");
+      ({ syncRevision } = await this.graph.updateEntitySyncEnabled(params));
+    } catch (error) {
+      return { results: [{ identityId: params.id, targetId: params.id, kind: "failed", message: errorText(error) }] };
+    }
+    const saved = { identityId: params.id, targetId: params.id, kind: "saved" as const, syncEnabled: params.syncEnabled, syncRevision };
+    try {
+      await this.graph.syncState("apply");
+      return { results: [{ ...saved, application: { kind: "pending" } }] };
+    } catch (error) {
+      return { results: [{ ...saved, application: { kind: "failed", message: errorText(error) } }] };
+    }
+  }
+
+  private async admitEnvelopes(incoming: readonly SyncEnvelope[]): Promise<{ envelopes: SyncEnvelope[]; owners: Map<string, RawSyncableEntity>; deletions: Map<string, string> }> {
+    const profileEvents = incoming.filter((env) => env.kind !== "delete" && env.payload.entity_type === "profile");
+    const anchors = [...new Set(profileEvents.map((env) => {
+      if (env.remote_id === undefined || !/^x:profile:\d+$/.test(env.remote_id)) throw new Error("X profile event has no stable identity");
+      return env.remote_id;
+    }))];
+    const profileByAnchor = new Map<string, RawSyncableEntity>();
+    if (anchors.length > 0) {
+      const ids = await this.graph.find_by_anchors(anchors);
+      if (ids.length !== anchors.length) throw new Error("X profile lookup length mismatch");
+      const found = ids.filter((id): id is string => id !== null);
+      const held = new Map((found.length === 0 ? [] : await this.graph.get_entities(found)).map((row) => [row.id, row]));
+      const missing = anchors.filter((_, index) => ids[index] === null);
+      if (missing.length > 0) {
+        if ((await this.profileRows()).some((row) => row.syncEnabled === null || row.syncRevision === null) || (await this.legacyEntries()).length > 0) throw new Error("X discovery waits for synchronization migration");
+        const rule = (await this.graph.moduleSettings()).newProfileSyncEnabled;
+        if (rule !== "true" && rule !== "false") throw new Error("X newProfileSyncEnabled setting is missing or invalid");
+        const entities = missing.map((anchor) => {
+          const event = profileEvents.find((env) => env.remote_id === anchor);
+          if (event === undefined) throw new Error("Missing X profile discovery event");
+          const handle = normalizedHandle(event.payload.handle);
+          return { key: anchor, schema_id: PROFILE, anchor, name: str(event.payload, "display_name") ?? handle,
+            syncEnabled: rule === "true", properties: profileProperties({ providerId: anchor.slice("x:profile:".length), handle,
+              displayName: str(event.payload, "display_name") ?? handle, bio: str(event.payload, "bio") ?? null, avatarUrl: str(event.payload, "avatar_url") ?? null }) };
+        });
+        const created = await this.graph.apply_batch({ entities, refs: [], links: [] });
+        const createdIds: string[] = [];
+        for (const anchor of missing) {
+          const id = created.ids[anchor];
+          if (id === undefined) throw new Error("X profile discovery did not create an identity");
+          ids[anchors.indexOf(anchor)] = id;
+          createdIds.push(id);
+        }
+        for (const row of await this.graph.get_entities(createdIds)) held.set(row.id, row);
+      }
+      anchors.forEach((anchor, index) => {
+        const id = ids[index];
+        const row = id === null || id === undefined ? undefined : held.get(id);
+        if (row?.anchor !== anchor) throw new Error("X profile lookup returned an incomplete or mismatched identity");
+        profileByAnchor.set(anchor, savedProfile(row));
+      });
+    }
+    const byHandle = new Map<string, RawSyncableEntity>();
+    for (const env of profileEvents) {
+      if (env.remote_id === undefined) throw new Error("X profile event has no remote ID");
+      const profile = profileByAnchor.get(env.remote_id);
+      if (profile === undefined) throw new Error("X profile event has no owner");
+      const handle = normalizedHandle(env.payload.handle);
+      const earlier = byHandle.get(handle);
+      if (earlier !== undefined && earlier.id !== profile.id) throw new Error("X page has ambiguous handle ownership");
+      byHandle.set(handle, profile);
+    }
+    let rows: SyncMigrationEntity[] | undefined;
+    const owners = new Map<string, RawSyncableEntity>();
+    const deletions = new Map<string, string>();
+    for (const env of incoming) {
+      const remoteId = env.remote_id;
+      if (remoteId === undefined) throw new Error("X event has no remote ID");
+      if (env.kind === "delete") {
+        const id = await this.graph.find_by_anchor(remoteId);
+        if (id === null) continue;
+        const stored = await this.graph.get_entity_full(id, { links: true });
+        if (stored === null) throw new Error("X deletion target disappeared");
+        let owner: RawEntity | null;
+        if (stored.entity.schema_id === PROFILE) owner = stored.entity;
+        else if (stored.entity.schema_id === POST) {
+          const authors = stored.links.filter((link) => link.from_id === id && link.kind === AUTHORED_BY && link.validUntil === null);
+          const author = authors[0];
+          if (authors.length !== 1 || author === undefined) throw new Error("X deletion has no unique stored author");
+          owner = await this.graph.get_entity(author.to_id);
+        } else throw new Error("X deletion target has the wrong schema");
+        if (owner === null) throw new Error("X deletion author is missing");
+        owners.set(remoteId, savedProfile(owner));
+        deletions.set(remoteId, id);
+      } else if (env.payload.entity_type === "profile") {
+        const owner = profileByAnchor.get(remoteId);
+        if (owner === undefined) throw new Error("X profile has no owner");
+        owners.set(remoteId, owner);
+      } else if (env.payload.entity_type === "post") {
+        const handle = normalizedHandle(env.payload.author_handle);
+        let owner = byHandle.get(handle);
+        if (owner === undefined) {
+          rows ??= await this.profileRows();
+          const matches = rows.filter((row) => normalizedHandle(row.properties.handle) === handle);
+          const match = matches[0];
+          if (matches.length !== 1 || match === undefined) throw new Error("X post has no unique profile owner");
+          const held = await this.graph.get_entity(match.id);
+          if (held === null) throw new Error("X post author is missing");
+          owner = savedProfile(held);
+          byHandle.set(handle, owner);
+        }
+        owners.set(remoteId, owner);
+      } else throw new Error("Unsupported X event has no profile owner");
+    }
+    const groups = new Map<string, string[]>();
+    for (const [remoteId, owner] of owners) {
+      const ids = groups.get(owner.id) ?? [];
+      ids.push(remoteId);
+      groups.set(owner.id, ids);
+    }
+    const admitted = new Set(await this.graph.admitSyncEntities([...groups].map(([entityId, remoteIds]) => ({ entityId, remoteIds }))));
+    return { envelopes: incoming.filter((env) => env.remote_id !== undefined && admitted.has(env.remote_id)), owners, deletions };
+  }
+
+  /// Sync ingest — one page of canonical envelopes (profile + post). Profile and
+  /// post events use `payload.entity_type` to select the owned schema.
   @syncHandler("x")
   async ingest(params: {
     envelopes?: SyncEnvelope[];
@@ -48,7 +402,9 @@ export class XModule {
      * worker, which states nothing. */
     generation?: string;
   }): Promise<{ dropped_remote_ids: string[]; trigger_checks: []; plan?: Record<string, { total: number; skipped: number }> }> {
-    const envelopes = Array.isArray(params.envelopes) ? params.envelopes : [];
+    const incoming = Array.isArray(params.envelopes) ? params.envelopes : [];
+    if (incoming.length === 0) return { dropped_remote_ids: [], trigger_checks: [] };
+    const { envelopes, owners, deletions } = await this.admitEnvelopes(incoming);
     const dropped: string[] = [];
     // What the page states for the plan: a profile once per pass, with the
     // window of posts it plans (the Source's recent ten of what X counts),
@@ -63,15 +419,18 @@ export class XModule {
 
     const entities: BatchEntityInput[] = [];
     const links: BatchLinkInput[] = [];
-    // handle → batch key of the profile entity (to wire authored_by within the page).
-    const profileKeyByHandle = new Map<string, string>();
 
     for (const env of envelopes) {
       const remoteId = env.remote_id;
       const payload = env.payload;
       const entityType = str(payload, "entity_type");
-      if (!remoteId || env.kind === "delete") {
-        if (remoteId && env.kind === "delete") dropped.push(remoteId); // no delete path yet
+      if (!remoteId) throw new Error("Admitted X event has no remote ID");
+      const owner = owners.get(remoteId);
+      if (owner === undefined) throw new Error("Admitted X event has no profile owner");
+      if (env.kind === "delete") {
+        const id = deletions.get(remoteId);
+        if (id === undefined) throw new Error("Admitted X deletion has no target");
+        await this.graph.delete_entity(id);
         continue;
       }
       if (entityType === "profile") {
@@ -98,10 +457,10 @@ export class XModule {
           name: identity.display_name ?? identity.handle,
           // S5: the profile DICT is the record, under the issuer's own key.
           anchor: profileAnchor,
+          syncEnabled: owner.syncEnabled,
           properties,
           confidence: 100,
         });
-        if (identity.handle) profileKeyByHandle.set(identity.handle.toLowerCase(), remoteId);
       } else if (entityType === "post") {
         const content = payload as unknown as PostContent;
         // A post the graph did not hold, on a profile stated in an earlier
@@ -125,32 +484,16 @@ export class XModule {
       }
     }
 
-    // authored_by links: post → its author profile when present in THIS page.
+    const refs: { key: string; anchor: string }[] = [];
     for (const env of envelopes) {
-      const payload = env.payload;
-      if (str(payload, "entity_type") !== "post" || !env.remote_id) continue;
-      const handle = str(payload, "author_handle");
-      if (!handle) continue;
-      const profileKey = profileKeyByHandle.get(handle.toLowerCase());
-      if (profileKey) {
-        links.push({
-          from_key: env.remote_id,
-          to_key: profileKey,
-          kind: AUTHORED_BY,
-          declared_by: env.remote_id,
-        });
-      }
+      if (env.kind === "delete" || env.payload.entity_type !== "post" || env.remote_id === undefined) continue;
+      const owner = owners.get(env.remote_id);
+      if (owner?.anchor === undefined || owner.anchor === null) throw new Error("X post author has no stable anchor");
+      const key = owner.anchor;
+      if (!entities.some((item) => item.key === key) && !refs.some((item) => item.key === key)) refs.push({ key, anchor: owner.anchor });
+      links.push({ from_key: env.remote_id, to_key: key, kind: AUTHORED_BY, declared_by: env.remote_id });
     }
-
-    if (entities.length > 0) {
-      const applied = await this.graph.apply_batch({ entities, links });
-      // Identity link + placeholder-name upgrade. A profile is
-      // only ever ingested because a contact tracks its handle — resolve the
-      // owner and link profile→person (idempotent by (from,to,kind)). Any RPC
-      // failure is swallowed: the next poll cycle re-ingests the profile and
-      // repairs the link (self-healing).
-      await this.linkProfilesToContacts(envelopes, applied.ids);
-    }
+    if (entities.length > 0) await this.graph.apply_batch({ entities, refs, links });
     if (generation === null) return { dropped_remote_ids: dropped, trigger_checks: [] };
     return { dropped_remote_ids: dropped, trigger_checks: [], plan: { [PROFILE]: plan.profiles, [POST]: plan.posts } };
   }
@@ -175,45 +518,6 @@ export class XModule {
     const byId = new Map(profiles.map((item) => [item.id, item]));
     for (const { anchor, id } of profileIds) known.set(anchor, byId.get(id)?.properties ?? {});
     return known;
-  }
-
-  private async linkProfilesToContacts(
-    envelopes: SyncEnvelope[],
-    ids: Record<string, string>,
-  ): Promise<void> {
-    for (const env of envelopes) {
-      const payload = env.payload;
-      if (str(payload, "entity_type") !== "profile" || !env.remote_id) continue;
-      const handle = str(payload, "handle");
-      const profileId = ids[env.remote_id];
-      if (!handle || !profileId) continue;
-      try {
-        const owner = await this.rpc.execute<{ contact_id: string } | null>(
-          "contacts.get_social_tracking_by_handle",
-          { platform: "x", handle },
-        );
-        if (!owner) continue;
-        // S5: `identity` runs hub → channel, so the CONTACT is the from
-        // endpoint — the same edge contacts writes to every other replica.
-        await this.graph.add_link({
-          from_id: owner.contact_id,
-          to_id: profileId,
-          kind: IDENTITY,
-          declared_by: env.remote_id,
-        });
-        // CAS rename — only upgrades a handle-placeholder name.
-        const displayName = str(payload, "display_name");
-        if (displayName) {
-          await this.rpc.execute("contacts.rename_if_placeholder", {
-            id: owner.contact_id,
-            expected_name: handle,
-            new_name: displayName,
-          });
-        }
-      } catch {
-        // Self-healing: repaired on the next poll cycle.
-      }
-    }
   }
 
   @rpc("posts.list", {

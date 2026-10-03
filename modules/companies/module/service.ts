@@ -10,7 +10,7 @@ import { rpc } from "@magnis/plugin-sdk";
 // N-independent crossings with no hydrate step at all.
 
 import { tool, writeTool, type GraphService, type PluginDeps, type RpcExecutor } from "@magnis/plugin-sdk";
-import type { GetParams, ListParams, PaginatedResponse } from "@magnis/plugin-sdk";
+import type { GetParams, ListParams, PaginatedResponse, RawEntity } from "@magnis/plugin-sdk";
 import type {
   CompanyDetailsFacet,
   CompanyDetailView,
@@ -47,7 +47,7 @@ export class CompaniesModule {
     const offset = params.offset ?? 0;
     const search = (params.search ?? "").trim();
 
-    let rows: { id: string; schema_id: string; name: string; created_at?: string }[];
+    let rows: RawEntity[];
     let total: number;
     if (search.length > 0) {
       const matched = await this.graph.search_entities_by_name({

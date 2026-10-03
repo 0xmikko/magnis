@@ -11,11 +11,12 @@ export const MESSAGE_SCHEMA = "email.message";
 export const ADDRESS_SCHEMA = "email.address";
 
 /** The shared address node shape used by sync batches without a nested module RPC. */
-export function addressBatchEntity(key: string, address: string, displayName: string | null): BatchEntityInput {
+export function addressBatchEntity(key: string, address: string, displayName: string | null, syncEnabled: boolean): BatchEntityInput {
   const lower = address.trim().toLowerCase();
   return {
     key,
     schema_id: ADDRESS_SCHEMA,
+    syncEnabled,
     name: lower,
     idx: lower,
     anchor: `email:address:${lower}`,

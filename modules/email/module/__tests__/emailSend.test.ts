@@ -34,6 +34,7 @@ type G = MockGraph;
 
 function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
   const overrides = {
+    moduleSettings: () => Promise.resolve({ newSenderSyncEnabled: "true" }),
     apply_batch: async (frag: GraphBatchInput) => ({
       ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
       created: frag.entities.length,
@@ -64,6 +65,12 @@ function spy(graph: G, op: string) {
 }
 
 describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
+  it("validates the address creation rule before sending mail", async () => {
+    const graph = makeGraph({ moduleSettings: () => Promise.resolve({}) });
+    await expect(makeModule(graph).emailSend({ to: "b@example.com", subject: "S", body_text: "B" })).rejects.toThrow(/setting/);
+    expect(graph.spies.source_command).not.toHaveBeenCalled();
+    expect(graph.spies.apply_batch).not.toHaveBeenCalled();
+  });
   it("creates the outgoing message + recipient address + sent_to link, then routes", async () => {
     const graph = makeGraph();
     const mod = makeModule(graph);
@@ -168,7 +175,7 @@ describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
     const graph = makeGraph({
       get_entity_full: () =>
         Promise.resolve({
-          entity: { id: "f1", schema_id: "file.object", name: "doc.pdf", created_at: "" },
+          entity: { id: "f1", schema_id: "file.object", name: "doc.pdf", indexed: true, created_at: "" },
           links: [],
         } satisfies EntityDetail),
     });
@@ -190,7 +197,7 @@ describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
     const graph = makeGraph({
       get_entity_full: () =>
         Promise.resolve({
-          entity: { id: "c1", schema_id: "company", name: "Acme", created_at: "" },
+          entity: { id: "c1", schema_id: "company", name: "Acme", indexed: true, created_at: "" },
           links: [],
         } satisfies EntityDetail),
     });
@@ -209,6 +216,7 @@ describe("email reply (tst_be_emailreply_003)", () => {
       id: "orig",
       schema_id: "email.message",
       name: "Quarterly",
+      indexed: true,
       created_at: "",
       properties: {
         from_address: "boss@corp.com",
@@ -227,7 +235,7 @@ describe("email reply (tst_be_emailreply_003)", () => {
           call += 1;
           if (call === 1) return Promise.resolve(original()); // reply reads the original
           return Promise.resolve({
-            entity: { id: "f1", schema_id: "file.object", name: "a", created_at: "" },
+            entity: { id: "f1", schema_id: "file.object", name: "a", indexed: true, created_at: "" },
             links: [],
           } satisfies EntityDetail);
         };
@@ -284,7 +292,7 @@ describe("email reply (tst_be_emailreply_003)", () => {
           call += 1;
           if (call === 1) return Promise.resolve(original());
           return Promise.resolve({
-            entity: { id: "f1", schema_id: "file.object", name: "a", created_at: "" },
+            entity: { id: "f1", schema_id: "file.object", name: "a", indexed: true, created_at: "" },
             links: [],
           } satisfies EntityDetail);
         };

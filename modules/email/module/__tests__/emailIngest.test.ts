@@ -21,7 +21,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { BatchEntityInput, BatchLinkInput, GraphBatchInput } from "@magnis/plugin-sdk";
+import type { BatchEntityInput, BatchLinkInput, GraphBatchInput, RawSyncableEntity } from "@magnis/plugin-sdk";
 import { mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { EmailModule } from "../service.ts";
 import { destSubpath } from "../helpers.ts";
@@ -31,7 +31,17 @@ import type { EmailCanonical, SyncEnvelope } from "../../types.ts";
 type G = MockGraph;
 
 function ingestGraph(): G {
+  const addressRows = new Map<string, RawSyncableEntity>();
   return mockGraph({
+    moduleSettings: () => Promise.resolve({ newSenderSyncEnabled: "true" }),
+    admitSyncEntities: (subjects) => Promise.resolve(subjects.flatMap((subject) => [...subject.remoteIds])),
+    get_entities: (ids) => Promise.resolve(ids.map((id) => {
+      const row = addressRows.get(id);
+      if (row === undefined) throw new Error(`Missing address fixture ${id}`);
+      return row;
+    })),
+    get_entity: (id) => Promise.resolve({ id, schema_id: "email.address", name: "ceo@example.com", properties: { address: "ceo@example.com" }, indexed: true, syncEnabled: true, syncRevision: "0" }),
+    get_entity_full: (id) => Promise.resolve({ entity: { id, schema_id: "email.message", name: "Stored", indexed: true }, links: [{ id: `author-${id}`, from_id: id, to_id: "id-addr:ceo@example.com", kind: "authored_by", validUntil: null }] }),
     // apply_batch echoes each key → a deterministic id so post-apply can resolve.
     apply_batch: (frag) =>
       Promise.resolve({
@@ -43,7 +53,13 @@ function ingestGraph(): G {
       }),
     file_register: () => Promise.resolve("file-id"),
     find_by_anchor: () => Promise.resolve("existing-id"),
-    find_by_anchors: (anchors) => Promise.resolve(anchors.map(() => null)),
+    find_by_anchors: (anchors) => Promise.resolve(anchors.map((anchor) => {
+      if (!anchor.startsWith("email:address:")) return null;
+      const address = anchor.slice("email:address:".length);
+      const id = `id-addr:${address}`;
+      addressRows.set(id, { id, schema_id: "email.address", name: address, properties: { address }, indexed: true, syncEnabled: true, syncRevision: "0" });
+      return id;
+    })),
     delete_entity: () => Promise.resolve(undefined),
   });
 }
@@ -80,6 +96,55 @@ const msgPayload = (over: Record<string, unknown> = {}) => ({
   sent_at: "2026-03-14T09:00:00Z",
   thread_id: "thread-1",
   ...over,
+});
+
+/**
+ * @test-id: tst_module_email_sync_001
+ * @scenario: scn_google_sync_001
+ * @covers: EmailModule.ingest
+ * @deterministic: yes
+ * @fixtures: mixed accounts, stopped sender additions, id-only labels and deletions
+ */
+it("tst_module_email_sync_001 admits only enabled senders before content, attachment and trigger effects", async () => {
+  const rows: RawSyncableEntity[] = [
+    { id: "sender-a", schema_id: "email.address", name: "a@example.com", indexed: true, properties: { address: "a@example.com" }, syncEnabled: true, syncRevision: "1" },
+    { id: "sender-b", schema_id: "email.address", name: "b@example.com", indexed: true, properties: { address: "b@example.com" }, syncEnabled: false, syncRevision: "2" },
+  ];
+  const batches: GraphBatchInput[] = [];
+  const graph = mockGraph({
+    find_by_anchors: (anchors) => Promise.resolve(anchors.map((anchor) => rows.find((row) => anchor === `email:address:${row.name}`)?.id ?? null)),
+    find_by_anchor: (anchor) => Promise.resolve(anchor === "b-label" || anchor === "b-delete" ? `stored-${anchor}` : null),
+    get_entities: (ids) => Promise.resolve(rows.filter((row) => ids.includes(row.id))),
+    get_entity: (id) => Promise.resolve(rows.find((row) => row.id === id) ?? null),
+    get_entity_full: (id) => Promise.resolve({
+      entity: { id, schema_id: "email.message", name: "Stored", indexed: true, properties: { subject: "Stored" } },
+      links: [{ id: `author-${id}`, from_id: id, to_id: "sender-b", kind: "authored_by", validUntil: null }],
+    }),
+    admitSyncEntities: (subjects) => Promise.resolve(subjects.flatMap((subject) => subject.entityId === "sender-a" ? [...subject.remoteIds] : [])),
+    apply_batch: (batch) => {
+      batches.push(batch);
+      return Promise.resolve({ ids: Object.fromEntries([...batch.entities, ...(batch.refs ?? [])].map((item) => [item.key, `id-${item.key}`])), created: batch.entities.length, updated: 0, links_added: batch.links?.length ?? 0, dropped_keys: [] });
+    },
+    file_register: () => Promise.resolve("file-id"),
+    delete_entity: () => Promise.resolve(),
+  });
+  const mod = mountModule(EmailModule, { graph, ctx: { extension_id: "email" } }).module;
+  const result = await mod.ingest({ envelopes: [
+    env({ remote_id: "mailbox", payload: { entity_type: "mailbox", messages_total: 100, skipped: 0 } }),
+    env({ remote_id: "a-new", kind: "live", payload: msgPayload({ from_address: " A@EXAMPLE.com ", to_addresses: "b@example.com" }) }),
+    env({ remote_id: "b-new", account_id: "acct-2", kind: "live", payload: msgPayload({ from_address: "B@example.com", attachments: [{ attachment_id: "blocked-file" }] }) }),
+    env({ remote_id: "b-label", payload: { labels: ["INBOX"] } }),
+    env({ remote_id: "b-delete", account_id: "acct-2", kind: "delete" }),
+  ] });
+  expect(batches.flatMap((batch) => batch.entities.filter((item) => item.schema_id === "email.message").map((item) => item.key))).toEqual(["a-new"]);
+  expect(batches.flatMap((batch) => batch.entities).some((item) => item.anchor === "email:address:b@example.com")).toBe(false);
+  expect(graph.spies.delete_entity).not.toHaveBeenCalled();
+  expect(graph.spies.file_register).not.toHaveBeenCalled();
+  expect(result.trigger_checks.map((check) => check.entity_id)).toEqual(["id-a-new"]);
+  expect(graph.spies.admitSyncEntities).toHaveBeenCalledExactlyOnceWith([
+    { entityId: "sender-a", remoteIds: ["a-new"] },
+    { entityId: "sender-b", remoteIds: ["b-new", "b-label", "b-delete"] },
+  ], ["mailbox"]);
 });
 
 describe("email ingest — apply_batch shape (tst_be_emailingest_001)", () => {
@@ -427,8 +492,10 @@ describe("email ingest — the plan from the pages", () => {
 it("tst_module_google_003 counts only newly admitted Gmail messages and actual removals", async () => {
   const graph = ingestGraph();
   const mod = mountModule(EmailModule, { graph, ctx: { extension_id: "email" } }).module;
+  const lookupAddresses = spy(graph, "find_by_anchors").getMockImplementation();
+  if (lookupAddresses === undefined) throw new Error("Missing address lookup fixture");
   spy(graph, "find_by_anchors").mockImplementation((anchors: string[]) =>
-    Promise.resolve(anchors.map((anchor) => anchor === "m-existing" ? "id-existing" : null)));
+    anchors.some((anchor) => anchor.startsWith("email:address:")) ? lookupAddresses(anchors) : Promise.resolve(anchors.map((anchor) => anchor === "m-existing" ? "id-existing" : null)));
   spy(graph, "find_by_anchor").mockImplementation((anchor: string) =>
     Promise.resolve(anchor === "m-gone" ? "id-gone" : null));
 
@@ -446,7 +513,7 @@ it("tst_module_google_003 counts only newly admitted Gmail messages and actual r
   expect(spy(graph, "delete_entity")).toHaveBeenCalledTimes(1);
 
   spy(graph, "find_by_anchors").mockImplementation((anchors: string[]) =>
-    Promise.resolve(anchors.map(() => "id-existing")));
+    anchors.some((anchor) => anchor.startsWith("email:address:")) ? lookupAddresses(anchors) : Promise.resolve(anchors.map(() => "id-existing")));
   const replay = await mod.ingest({ generation: "forward:r:1", envelopes: [
     env({ kind: "live", remote_id: "m-new", payload: msgPayload() }),
   ] });
@@ -505,4 +572,73 @@ describe("email ingest — DB-access guarantees (tst_be_emaildb_005 / INV-DB-3)"
     }
     expect(seenMsgKeys.size).toBe(100); // every message applied exactly once across chunks
   });
+});
+
+/**
+ * @test-id: tst_module_email_sync_003
+ * @scenario: scn_google_sync_001
+ * @covers: EmailModule.ingest
+ * @deterministic: yes
+ * @fixtures: unknown sender defaults off, then a changed module default and repeated discovery
+ */
+it("tst_module_email_sync_003 creates only selection metadata and preserves Stop when discovery repeats", async () => {
+  const writes: GraphBatchInput[] = [];
+  let sender: RawSyncableEntity | null = null;
+  let rule = "false";
+  const graph = mockGraph({
+    find_by_anchors: (anchors) => Promise.resolve(anchors.map(() => sender?.id ?? null)),
+    get_entities: () => Promise.resolve(sender === null ? [] : [sender]),
+    moduleSettings: () => Promise.resolve({ newSenderSyncEnabled: rule }),
+    admitSyncEntities: (subjects) => Promise.resolve(sender?.syncEnabled === true ? subjects.flatMap((subject) => [...subject.remoteIds]) : []),
+    apply_batch: (batch) => {
+      writes.push(batch);
+      const address = batch.entities[0];
+      if (address?.schema_id !== "email.address" || typeof address.syncEnabled !== "boolean") throw new Error("Expected explicit sender discovery");
+      sender = { id: "sender", schema_id: address.schema_id, name: "unknown@example.com", properties: address.properties, indexed: true, syncEnabled: address.syncEnabled, syncRevision: "0" };
+      return Promise.resolve({ ids: { [address.key]: "sender" }, created: 1, updated: 0, links_added: 0, dropped_keys: [] });
+    },
+  });
+  const mod = mountModule(EmailModule, { graph, ctx: { extension_id: "email" } }).module;
+  const header = env({ payload: { entity_type: "sender", from_address: "unknown@example.com", from_name: "Name" } });
+  expect(await mod.ingest({ envelopes: [header] })).toEqual({ dropped_remote_ids: [], trigger_checks: [] });
+  rule = "true";
+  await mod.ingest({ envelopes: [header, env({ remote_id: "late", kind: "live", payload: msgPayload({ from_address: "unknown@example.com", to_addresses: "", attachments: [{ attachment_id: "must-not-register" }] }) })] });
+  expect(writes).toHaveLength(1);
+  expect(writes[0]?.entities).toEqual([expect.objectContaining({ syncEnabled: false, properties: { address: "unknown@example.com", display_name: "Name" } })]);
+});
+
+it("fails id-only updates without ownership, while an unstored deletion has no effects", async () => {
+  const graph = ingestGraph();
+  spy(graph, "find_by_anchor").mockResolvedValue(null);
+  const mod = mountModule(EmailModule, { graph, ctx: { extension_id: "email" } }).module;
+  await expect(mod.ingest({ envelopes: [env({ payload: { labels: ["INBOX"] } })] })).rejects.toThrow(/ownership/);
+  await expect(mod.ingest({ envelopes: [env({ kind: "delete" })] })).resolves.toEqual({ dropped_remote_ids: [], trigger_checks: [] });
+  expect(graph.spies.apply_batch).not.toHaveBeenCalled();
+  expect(graph.spies.delete_entity).not.toHaveBeenCalled();
+});
+
+it("reuses a recipient created with Stop across chunks of the same page", async () => {
+  const graph = ingestGraph();
+  const find = spy(graph, "find_by_anchors").getMockImplementation();
+  const apply = spy(graph, "apply_batch").getMockImplementation();
+  if (find === undefined || apply === undefined) throw new Error("Missing batch fixture");
+  spy(graph, "moduleSettings").mockResolvedValue({ newSenderSyncEnabled: "false" });
+  spy(graph, "find_by_anchors").mockImplementation(async (anchors: string[]) => {
+    const ids: (string | null)[] = await find(anchors);
+    return ids.map((id, index) => anchors[index] === "email:address:shared@example.com" ? null : id);
+  });
+  let created = false;
+  spy(graph, "apply_batch").mockImplementation((batch: GraphBatchInput) => {
+    if (batch.entities.some((entity) => entity.anchor === "email:address:shared@example.com")) {
+      if (created) throw new Error("sync disabled for shared recipient");
+      created = true;
+    }
+    return apply(batch);
+  });
+  const mod = mountModule(EmailModule, { graph, ctx: { extension_id: "email" } }).module;
+  await mod.ingest({ envelopes: Array.from({ length: 100 }, (_, index) => env({
+    remote_id: `m${index}`, payload: msgPayload({ to_addresses: `shared@example.com, recipient${index}@example.com` }),
+  })) });
+  expect(created).toBe(true);
+  expect(spy(graph, "apply_batch").mock.calls.length).toBeGreaterThan(1);
 });

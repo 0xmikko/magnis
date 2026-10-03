@@ -31,6 +31,8 @@ async function replicasWritten(): Promise<BatchEntityInput[]> {
   const batches: GraphBatchInput[] = [];
   let mintSeq = 0;
   const graph = mockGraph({
+    find_by_anchors: (anchors: readonly string[]) => Promise.resolve(anchors.map(() => null)),
+    moduleSettings: () => Promise.resolve({ newSenderSyncEnabled: "true" }),
     apply_batch: (frag: GraphBatchInput) => {
       batches.push(frag);
       return Promise.resolve({

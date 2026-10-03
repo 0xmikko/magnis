@@ -77,12 +77,14 @@ function ingestWorld(over: Partial<World> = {}): World {
   };
   let mintSeq = 0;
   world.graph = mockGraph({
+    moduleSettings: () => Promise.resolve({ newSenderSyncEnabled: "true" }),
+    find_by_anchors: (anchors: string[]) => Promise.resolve(anchors.map(() => null)),
     apply_batch: (frag: GraphBatchInput) =>
       Promise.resolve({
-        ids: Object.fromEntries(frag.entities.map((e: BatchEntityInput) => [
+        ids: Object.fromEntries([...frag.entities.map((e: BatchEntityInput) => [
           e.key,
           e.schema_id === "email.address" ? `addr-${e.key.slice("addr:".length)}` : `id-${e.key}`,
-        ])),
+        ]), ...(frag.refs ?? []).map((ref) => [ref.key, `addr-${ref.key.slice("addr:".length)}`])]),
         created: frag.entities.length,
         updated: 0,
         links_added: frag.links?.length ?? 0,
@@ -409,7 +411,13 @@ describe("Google contact removal", () => {
  */
 describe("People Poll progress", () => {
   it("counts only the first admitted replica and its first deletion", async () => {
-    const find_by_anchors = vi.fn().mockResolvedValueOnce([null]).mockResolvedValueOnce(["replica"]);
+    let replicaSeen = false;
+    const find_by_anchors = vi.fn((anchors: string[]) => Promise.resolve(anchors.map((anchor) => {
+      if (anchor.startsWith("email:address:")) return null;
+      const id = replicaSeen ? "replica" : null;
+      replicaSeen = true;
+      return id;
+    })));
     const find_by_anchor = vi.fn().mockResolvedValueOnce("replica").mockResolvedValueOnce(null);
     const get_entity = vi.fn().mockResolvedValue({ id: "replica", schema_id: "contacts.google_contact", properties: { source_id: "google", account_id: "acct-1" } });
     const delete_entity = vi.fn().mockResolvedValue(undefined);
@@ -422,4 +430,30 @@ describe("People Poll progress", () => {
     expect((await mod.ingest({ command: "catch_up", generation: "initial:r:1", envelopes: [env({ kind: "delete" })] })).plan?.["contacts.google_contact"]).toEqual({ total: 0, skipped: 0 });
     expect(delete_entity).toHaveBeenCalledExactlyOnceWith("replica");
   });
+});
+
+/**
+ * @test-id: tst_module_contacts_email_sync_001
+ * @scenario: scn_google_sync_001
+ * @covers: ContactsModule.ingest
+ * @deterministic: yes
+ * @fixtures: an existing stopped address and a new address with owner default false
+ */
+it("tst_module_contacts_email_sync_001 preserves existing addresses and uses the email owner's creation rule", async () => {
+  const world = ingestWorld({ graphOverrides: {
+    find_by_anchors: (anchors: string[]) => Promise.resolve(anchors.map((anchor) => anchor === "email:address:old@example.com" ? "old-address" : null)),
+    moduleSettings: (schema: string) => {
+      expect(schema).toBe("email.address");
+      return Promise.resolve({ newSenderSyncEnabled: "false" });
+    },
+  } });
+  await mountWorld(world).ingest({ envelopes: [env({ payload: contactPayload({ emails: [{ address: "old@example.com" }, { address: "new@example.com" }] }) })] });
+  expect(spy(world.graph, "apply_batch")).toHaveBeenCalledWith(expect.objectContaining({
+    entities: expect.arrayContaining([expect.objectContaining({ anchor: "email:address:new@example.com", syncEnabled: false })]),
+    refs: [{ key: "addr:old@example.com", anchor: "email:address:old@example.com" }],
+  }));
+  expect(spy(world.graph, "apply_batch")).not.toHaveBeenCalledWith(expect.objectContaining({
+    entities: expect.arrayContaining([expect.objectContaining({ anchor: "email:address:old@example.com" })]),
+  }));
+  expect(world.rpcCalls).toEqual([]);
 });

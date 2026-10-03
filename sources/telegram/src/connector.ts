@@ -91,24 +91,30 @@ export function buildConnectorConfig(deps: ConnectorDeps = {}): ConnectorConfig 
 
   return {
     name: "magnis-telegram",
-    version: "1.0.1",
+    version: "2.0.0",
     surfaces: [SURFACE_TELEGRAM],
     mode: "push",
     fetch: async (args): Promise<FetchResult> => await providerCall(async () => {
+      if (args.target?.kind !== "gap") {
+        if (args.chatIds === undefined || args.headChatIds === undefined) throw new Error("Telegram fetch requires chatIds and headChatIds");
+        if (args.chatIds.some((id) => !/^-?[1-9]\d*$/.test(id) || !Number.isSafeInteger(Number(id)))
+          || args.headChatIds.some((id) => !args.chatIds?.includes(id))) throw new Error("Telegram headChatIds must be a subset of valid chatIds");
+      }
       if (fixture.fixturePath() !== undefined) {
         const result = args.target?.kind === "gap"
           ? fixture.fetchGapResult(args)
-          : fixture.fetchResult(args.direction ?? "backward", args.cursor);
+          : fixture.fetchResult(args.direction ?? "backward", args.cursor, args.chatIds, args.headChatIds);
         return result as unknown as FetchResult;
       }
       if (args.raw === undefined) throw new Error("Telegram fetch requires raw arguments");
       const { ops, pager, accountId } = await resolveClient(args.raw);
       return await commands.fetch(ops, pager, accountId, args) as unknown as FetchResult;
     }),
-    listenStart: async ({ subscription_id, meta }, emit): Promise<void> => {
-      const args = meta === undefined ? {} : { _meta: meta };
+    listenStart: async ({ subscription_id, meta, chatIds }, emit): Promise<void> => {
+      const args = { chatIds, ...(meta === undefined ? {} : { _meta: meta }) };
       try {
         accountIdFromMeta(args);
+        if (chatIds === undefined || chatIds.some((id) => !/^-?[1-9]\d*$/.test(id) || !Number.isSafeInteger(Number(id)))) throw new Error("Telegram listener requires valid chatIds");
         if (fixture.fixturePath() === undefined) credsFromMeta(args);
       } catch (error) {
         const message = errorText(error);

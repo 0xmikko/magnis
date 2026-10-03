@@ -2,6 +2,7 @@
 // the native module's wire shapes 1:1 (backend/src/modules/telegram/types.rs +
 // backend/src/modules/shared.rs) so list/detail output is byte-compatible and
 // the existing frontend renders unchanged.
+import type { RawSyncableEntity } from "@magnis/plugin-sdk";
 
 /// One row per chat (telegram.chat), showing the latest message.
 /// Mirrors native `TelegramChatListItem`.
@@ -69,7 +70,7 @@ export interface TelegramAccountDetails {
   phone?: string;
 }
 
-export interface TelegramChatListItem {
+export interface TelegramChatListItem extends Pick<RawSyncableEntity, "indexed" | "syncEnabled"> {
   schema_id: string;
   entity_id: string;
   chat_id: string;
@@ -84,7 +85,6 @@ export interface TelegramChatListItem {
   avatar_url: string | null;
   is_pinned: boolean | null;
   pin_order: number | null;
-  is_indexed: boolean | null;
   // Inlined messages for the top chats (page 0 only) — frontend cache seed.
   messages?: PaginatedResponse<MessageListItem>;
 }

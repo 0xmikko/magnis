@@ -41,6 +41,7 @@ export interface RawEntity {
   id: string;
   schema_id: string;
   name: string;
+  indexed: boolean;
   // Always emitted by the host entity serializer (RFC3339). Optional in
   // the type because not every consumer needs it.
   created_at?: string;
@@ -57,9 +58,117 @@ export interface RawEntity {
   anchor?: string | null;
 }
 
+export interface RawSyncableEntity extends RawEntity {
+  syncEnabled: boolean;
+  syncRevision: string;
+}
+
+export interface SetSyncEnabledParams {
+  id: string;
+  syncEnabled: boolean;
+}
+
+export interface SyncSelectionRequest {
+  sourceId: string;
+  accountId: string;
+  accountGeneration: number;
+}
+
+export interface SyncChoice {
+  id: string;
+  scopeId: string;
+  syncEnabled: boolean;
+  syncRevision: string;
+}
+
+export type SyncSelection =
+  | {
+      surface: "telegram";
+      choices: readonly SyncChoice[];
+    }
+  | {
+      surface: "email";
+      choices: readonly SyncChoice[];
+      unknownSenderEnabled: boolean;
+    }
+  | {
+      surface: "x";
+      choices: readonly (SyncChoice & { handle: string })[];
+    };
+
+export type SyncApplication =
+  | { kind: "pending" }
+  | { kind: "applied" }
+  | {
+      kind: "failed";
+      message: string;
+    };
+
+export type SyncTargetResult =
+  | {
+      identityId: string;
+      targetId: string;
+      kind: "saved";
+      syncEnabled: boolean;
+      syncRevision: string;
+      application: Exclude<SyncApplication, { kind: "applied" }>;
+    }
+  | {
+      identityId: string;
+      targetId: string | null;
+      kind: "failed";
+      message: string;
+    };
+
+export interface SetSyncEnabledResult {
+  results: readonly SyncTargetResult[];
+}
+
+export interface SyncAdmissionSubject {
+  entityId: string;
+  remoteIds: readonly string[];
+}
+
+export interface SyncMigrationEntity {
+  id: string;
+  schemaId: string;
+  name: string | null;
+  indexed: boolean;
+  isPinned: boolean | null;
+  properties: Record<string, unknown>;
+  syncEnabled: boolean | null;
+  syncRevision: string | null;
+}
+
+export interface SyncMigrationTarget {
+  schemaId: "telegram.chat" | "email.address" | "x.profile";
+  key: string;
+}
+
+export interface SyncMigrationIssue {
+  target: SyncMigrationTarget | null;
+  legacyIds: readonly string[];
+  accounts: readonly {
+    accountId: string;
+    syncEnabled: boolean;
+  }[];
+  message: string;
+}
+
+export interface SyncMigrationStatus {
+  complete: boolean;
+  issues: readonly SyncMigrationIssue[];
+}
+
+export interface ResolveSyncMigrationParams {
+  target: SyncMigrationTarget;
+  syncEnabled: boolean;
+}
+
 export interface CreateEntityParams {
   schema_id: string;
   name: string;
+  syncEnabled?: boolean;
   // caller-supplied entity UUID (local-first optimistic create). The
   // backend uses it as the entity id; collision → Conflict; omit →
   // backend allocates. Mirrors Rust CreateEntityCommand.client_id.
@@ -251,6 +360,7 @@ export interface MergeResult {
 export interface BatchEntityInput {
   key: string;
   schema_id: string;
+  syncEnabled?: boolean;
   name?: string;
   idx?: string;
   date?: string;
@@ -334,6 +444,17 @@ export interface FileRegisterParams {
 }
 
 export interface GraphService {
+  updateEntitySyncEnabled(params: SetSyncEnabledParams): Promise<{ syncRevision: string }>;
+  admitSyncEntities(subjects: readonly SyncAdmissionSubject[], controlRemoteIds?: readonly string[]): Promise<readonly string[]>;
+  moduleSettings(forSchema?: string): Promise<Readonly<Record<string, string>>>;
+  listSyncMigrationEntities(params: {
+    schemaId: string;
+    after: string | null;
+    limit: number;
+  }): Promise<{
+    items: readonly SyncMigrationEntity[];
+    next: string | null;
+  }>;
   // entities — rows are always {id, schema_id, name}, no map needed.
   // All reads are user-scoped backend-side.
   create_entity(p: CreateEntityParams): Promise<RawEntity>;
@@ -397,10 +518,11 @@ export interface GraphService {
   // sync control, keyed by the calling module (not telegram). "status" lists the
   // caller's sync states; "reset" deletes the caller's entities of `reset_schema`
   // (which MUST be in the caller's own namespace) and resets sync state. Overloads
-  // make `reset` REQUIRE the schema — `sync_state("reset")` is a compile error, so
+  // make `reset` REQUIRE the schema — `syncState("reset")` is a compile error, so
   // a plugin can't trip the host's namespace guard at runtime.
-  sync_state(action: "status"): Promise<Record<string, unknown>>;
-  sync_state(action: "reset", reset_schema: string): Promise<Record<string, unknown>>;
+  syncState(action: "status"): Promise<Record<string, unknown>>;
+  syncState(action: "reset", reset_schema: string): Promise<Record<string, unknown>>;
+  syncState(action: "apply"): Promise<{ pending: true }>;
   // reply-composer presence: op "read" | "set_text" | "append_text". read
   // reports presence; set_text/append_text gate+bump the revision and publish.
   composer(

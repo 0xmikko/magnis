@@ -204,7 +204,7 @@ export function mountModule<T extends object>(
 /** A `RawEntity`. `over` sets `schema_id` (default `""`), `created_at`
  *  (default a fixed timestamp), or any other column. */
 export function entity(id: string, name: string, over: Partial<RawEntity> = {}): RawEntity {
-  return { id, name, schema_id: "", created_at: "2026-01-01T00:00:00Z", ...over };
+  return { id, name, schema_id: "", indexed: true, created_at: "2026-01-01T00:00:00Z", ...over };
 }
 
 /** A `WindowRow` — an entity; its dictionary rides on the entity itself. */

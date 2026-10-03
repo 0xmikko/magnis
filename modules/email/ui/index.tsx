@@ -1,3 +1,4 @@
+import { SyncToolCallRenderer } from "../../contacts/ui/SyncToolCallRenderer";
 import type { AgentHistoryBlock } from "@magnis/host/runtime";
 import { toolNamesEquivalent } from "@magnis/host/agent";
 import { Icon } from "@magnis/host/ui";
@@ -71,7 +72,9 @@ const emailModule = defineModule({
   DetailPanel: EmailDetailPanel,
   detailType: "custom",
   EntityCard: EmailCard,
-  toolCallRenderers: [{ entity: "email.message", actions: ["create"], Render: EmailToolCallRenderer as never }],
+  toolCallRenderers: [
+    { entity: "email.address", actions: ["setSyncEnabled", "resolveSyncMigration"], Render: SyncToolCallRenderer as never },
+{ entity: "email.message", actions: ["create"], Render: EmailToolCallRenderer as never }],
   extractAllowlistTarget: (tc) => {
     const bound = tc.toolBinding;
     if (bound !== undefined && (bound.entity !== "email.message" || bound.operation !== "create")) return null;

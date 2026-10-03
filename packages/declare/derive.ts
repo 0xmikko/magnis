@@ -35,6 +35,7 @@ export interface EntityDescriptor {
   description?: string;
   triggerable?: boolean;
   mergeable?: boolean;
+  syncable?: boolean;
   roles: string[];
   json_schema: unknown;
   search: {
@@ -198,6 +199,7 @@ export function descriptorFrom(schema: z.ZodType): { stem: string; descriptor: E
       ...(identity.description === undefined ? {} : { description: identity.description }),
       ...(identity.triggerable === undefined ? {} : { triggerable: identity.triggerable }),
       ...(identity.mergeable === undefined ? {} : { mergeable: identity.mergeable }),
+      ...(identity.syncable === undefined ? {} : { syncable: identity.syncable }),
       roles: [...(identity.roles ?? [])],
       json_schema,
       search: {

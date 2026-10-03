@@ -15,7 +15,7 @@ export function entityCreatedAt(e: RawEntity & { created_at?: string }): string 
 
 /** Shape a link neighbour into the detail-view summary (native parity). */
 export function linkSummary(
-  e: { id: string; schema_id: string; name: string },
+  e: RawEntity,
   kind: string,
 ): LinkedEntitySummary {
   return {
