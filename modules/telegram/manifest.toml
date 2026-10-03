@@ -17,6 +17,18 @@ summary = "Threaded Telegram chats indexed alongside the rest of your graph."
 publisher = "ai.magnis"
 dependsOn = [ "contacts" ]
 
+[settings]
+moduleId = "telegram"
+label = "Telegram"
+description = "Choose how synchronization starts for newly discovered chats. Existing choices are preserved."
+
+[[settings.fields]]
+key = "newChatSync"
+label = "New chat synchronization"
+description = "The current rule includes direct chats, small groups, explicit choices and pinned chats."
+defaultValue = "current"
+fieldType = { type = "enum", options = [{ value = "current", label = "Current eligibility rule" }, { value = "private", label = "Direct chats only" }, { value = "all", label = "All chats" }, { value = "none", label = "Disabled" }] }
+
 # Sync surface this module consumes (fed by the matching source connector).
 [surfaces.telegram]
 # A missing chat says neither that membership ended nor when. Only a dated

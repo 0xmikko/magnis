@@ -30,7 +30,8 @@ interface TgInternals {
 
 function ingestGraph(): G {
   return mockGraph({
-    // No pre-existing chat/sender entities: lookups miss, batch creates.
+    // Discovery already created the chat; the page creates messages and senders.
+    admitSyncEntities: (subjects) => Promise.resolve(subjects.flatMap((subject) => [...subject.remoteIds])),
     apply_batch: (frag) =>
       Promise.resolve({
         ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
@@ -42,7 +43,9 @@ function ingestGraph(): G {
     web_register: () => Promise.resolve("web-id"),
     web_register_batch: (links: readonly unknown[]) => Promise.resolve(links.map(() => "web-id")),
     find_by_anchor: () => Promise.resolve(null),
-    find_by_anchors: (anchors) => Promise.resolve(anchors.map(() => null)),
+    find_by_anchors: (anchors) => Promise.resolve(anchors.map((anchor) => anchor === "tg:chat:42" ? "chat-42" : null)),
+    get_entities: () => Promise.resolve([{ ...entity("chat-42", "Chat", { schema_id: "telegram.chat", indexed: true }), properties: { chat_id: 42 } }]),
+    update_properties_batch: () => Promise.resolve(),
     file_register: () => Promise.resolve("file-id"),
     file_register_batch: (files: readonly unknown[]) => Promise.resolve(files.map(() => "file-id")),
     create_entity: () => Promise.resolve(entity("created-id", "")),

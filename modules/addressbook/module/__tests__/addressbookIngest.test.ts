@@ -48,6 +48,8 @@ interface WorldNode {
   name: string;
   anchor?: string;
   properties: Record<string, unknown>;
+  /** A synchronizable node's saved choice. */
+  syncEnabled?: boolean;
   archived: boolean;
 }
 
@@ -72,7 +74,15 @@ interface World {
 
 const LINK_FIELDS = ["from_id", "to_id", "kind", "metadata", "validFrom", "validUntil"];
 
-function addressBookWorld(seed: { nodes?: Omit<WorldNode, "archived">[]; links?: Omit<WorldLink, "id">[] } = {}): World {
+/** The email owner's settings the world answers with; its manifest creates
+ * new senders synchronized. */
+const EMAIL_SETTINGS = { newSenderSyncEnabled: "true" };
+
+function addressBookWorld(seed: {
+  nodes?: Omit<WorldNode, "archived">[];
+  links?: Omit<WorldLink, "id">[];
+  emailSettings?: Record<string, string>;
+} = {}): World {
   const nodes = new Map<string, WorldNode>((seed.nodes ?? []).map((node) => [node.id, { ...node, archived: false }]));
   const links: WorldLink[] = (seed.links ?? []).map((link, index) => ({ ...link, id: `seed-${String(index)}` }));
   const added: AddLinkParams[] = [];
@@ -86,7 +96,7 @@ function addressBookWorld(seed: { nodes?: Omit<WorldNode, "archived">[]; links?:
   };
   const byAnchor = (anchor: string): WorldNode | undefined =>
     [...nodes.values()].find((node) => node.anchor === anchor && !node.archived);
-  const raw = (node: WorldNode): RawEntity => ({ id: node.id, schema_id: node.schema_id, name: node.name, properties: node.properties });
+  const raw = (node: WorldNode): RawEntity => ({ id: node.id, schema_id: node.schema_id, name: node.name, indexed: true, properties: node.properties });
   const overrides: Partial<GraphService> = {
     apply_batch: (batch: GraphBatchInput) => {
       const ids: Record<string, string> = {};
@@ -97,11 +107,20 @@ function addressBookWorld(seed: { nodes?: Omit<WorldNode, "archived">[]; links?:
         if (found === undefined) created += 1;
         nodes.set(id, {
           id, schema_id: entity.schema_id, name: entity.name ?? "", anchor: entity.anchor,
-          properties: entity.properties ?? {}, archived: found?.archived ?? false,
+          properties: entity.properties ?? {}, syncEnabled: entity.syncEnabled, archived: found?.archived ?? false,
         });
         ids[entity.key] = id;
       }
+      for (const ref of batch.refs ?? []) {
+        const found = ref.anchor === undefined ? undefined : byAnchor(ref.anchor);
+        if (found === undefined) throw new Error(`apply_batch: ref ${ref.key} resolves to nothing`);
+        ids[ref.key] = found.id;
+      }
       return Promise.resolve({ ids, created, updated: batch.entities.length - created, links_added: 0, dropped_keys: [] });
+    },
+    moduleSettings: (forSchema?: string) => {
+      if (forSchema !== "email.address") throw new Error(`moduleSettings: unexpected schema ${String(forSchema)}`);
+      return Promise.resolve(seed.emailSettings ?? EMAIL_SETTINGS);
     },
     find_by_anchor: (anchor: string) => Promise.resolve(byAnchor(anchor)?.id ?? null),
     find_by_anchors: (anchors: string[]) => Promise.resolve(anchors.map((anchor) => byAnchor(anchor)?.id ?? null)),
@@ -247,6 +266,31 @@ describe("address book ingest — the card model (tst_be_contactsingest_001)", (
       schema_id: "email.address",
       anchor: "email:address:mikhail@example.com",
     }));
+  });
+
+  /**
+   * @test-id: tst_module_addressbook_email_sync_001
+   * @scenario: scn_google_pull_001
+   * @covers: AddressbookModule.ingest
+   * @deterministic: yes
+   * @fixtures: a card listing a stopped address the graph holds and a new
+   *   address; the email owner creates new senders stopped
+   */
+  it("tst_module_addressbook_email_sync_001 keeps a held address's choice and creates a new one by the email owner's rule", async () => {
+    const world = addressBookWorld({
+      nodes: [{ ...address("old@example.com"), syncEnabled: false }],
+      emailSettings: { newSenderSyncEnabled: "false" },
+    });
+    await mountWorld(world).ingest({ envelopes: [card("gpeople:abc123", ["old@example.com", "new@example.com"])] });
+
+    // @tested-by: tst_module_addressbook_email_sync_001
+    // @invariant: an address book card never rewrites a held address's
+    // synchronization choice, and a new address takes the email owner's rule.
+    const batch = lastBatch(world.graph);
+    expect(batch.entities).toContainEqual(expect.objectContaining({ anchor: "email:address:new@example.com", syncEnabled: false }));
+    expect(batch.entities).not.toContainEqual(expect.objectContaining({ anchor: "email:address:old@example.com" }));
+    expect(batch.refs).toEqual([{ key: "addr:old@example.com", anchor: "email:address:old@example.com" }]);
+    expect(world.nodes.get("addr-old@example.com")?.syncEnabled).toBe(false);
   });
 
   it("one envelope → ONE card node: anchored, dictionary as last synced, zero person writes in the batch", async () => {

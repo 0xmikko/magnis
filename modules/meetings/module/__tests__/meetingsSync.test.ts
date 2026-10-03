@@ -4,7 +4,7 @@
 // apply_batch (anchored on the remote id, attendees as `attendee` edges over
 // refs), the full live trigger.check payload with attendee email.address ids
 // resolved through email.ensure_addresses, delete, empty-user hard error,
-// and the sync_state control surface.
+// and the syncState control surface.
 
 /**
  * @test-id: tst_module_meetings_sync_001
@@ -28,9 +28,10 @@ type G = MockGraph;
 
 function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
   return mockGraph({
+    moduleSettings: () => Promise.resolve({ newSenderSyncEnabled: "true" }),
     apply_batch: (frag: GraphBatchInput): Promise<GraphBatchResult> =>
       Promise.resolve({
-        ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
+        ids: Object.fromEntries([...frag.entities, ...(frag.refs ?? [])].map((e) => [e.key, `id-${e.key}`])),
         created: frag.entities.length,
         updated: 0,
         links_added: 0,
@@ -43,7 +44,7 @@ function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
     // CURRENT list — one edge read per upserted event.
     list_links_for_entity: (): Promise<never[]> => Promise.resolve([]),
     delete_entity: (_id: string): Promise<void> => Promise.resolve(undefined),
-    sync_state: (): Promise<Record<string, unknown>> => Promise.resolve({ ok: true }),
+    syncState: (): Promise<Record<string, unknown>> => Promise.resolve({ ok: true }),
     ...over,
   } as unknown as GraphOverrides);
 }
@@ -325,18 +326,18 @@ describe("meetings @syncHandler — empty user_id is a hard error", () => {
 });
 
 describe("meetings sync control (@rpc)", () => {
-  it("sync.status reads sync_state('status')", async () => {
-    const sync_state = vi.fn().mockResolvedValue({ states: [] });
-    const { mod } = makeModule(makeGraph({ sync_state }));
+  it("sync.status reads syncState('status')", async () => {
+    const syncState = vi.fn().mockResolvedValue({ states: [] });
+    const { mod } = makeModule(makeGraph({ syncState }));
     await mod.syncStatus();
-    expect(sync_state).toHaveBeenCalledWith("status");
+    expect(syncState).toHaveBeenCalledWith("status");
   });
 
   it("sync.reset resets only the meetings.calendar_event namespace", async () => {
-    const sync_state = vi.fn().mockResolvedValue({ ok: true });
-    const { mod } = makeModule(makeGraph({ sync_state }));
+    const syncState = vi.fn().mockResolvedValue({ ok: true });
+    const { mod } = makeModule(makeGraph({ syncState }));
     await mod.syncReset();
-    expect(sync_state).toHaveBeenCalledWith("reset", CAL);
+    expect(syncState).toHaveBeenCalledWith("reset", CAL);
   });
 });
 
@@ -360,4 +361,28 @@ describe("meetings trigger.check carries the event's own time", () => {
 
     expect(res.trigger_checks[0]?.context).toHaveProperty("occurred_at", null);
   });
+});
+
+/**
+ * @test-id: tst_module_meetings_email_sync_001
+ * @scenario: scn_google_sync_001
+ * @covers: MeetingsModule.ingest
+ * @deterministic: yes
+ * @fixtures: an existing stopped attendee and a new address with owner default false
+ */
+it("tst_module_meetings_email_sync_001 reuses existing addresses and reads the owner's creation rule without RPC", async () => {
+  const graph = makeGraph({
+    find_by_anchors: (anchors: string[]) => Promise.resolve(anchors.map((anchor) => anchor === "email:address:old@example.com" ? "old-address" : null)),
+    moduleSettings: (schema: string) => {
+      expect(schema).toBe("email.address");
+      return Promise.resolve({ newSenderSyncEnabled: "false" });
+    },
+  });
+  const { mod, execute } = makeModule(graph);
+  await mod.ingest({ envelopes: [env({ payload: { title: "Meeting", attendees: [{ email: "old@example.com" }, { email: "new@example.com" }] } })] });
+  expect(graph.spies.apply_batch).toHaveBeenCalledWith(expect.objectContaining({
+    entities: expect.arrayContaining([expect.objectContaining({ anchor: "email:address:new@example.com", syncEnabled: false })]),
+    refs: [{ key: "addr:old@example.com", anchor: "email:address:old@example.com" }],
+  }));
+  expect(execute).not.toHaveBeenCalled();
 });

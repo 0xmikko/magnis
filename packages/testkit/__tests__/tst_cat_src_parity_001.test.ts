@@ -320,6 +320,7 @@ const CURRENT_OPERATION_EVIDENCE: Readonly<
     "magnis.sync.fetch": { id: "tst_tgts_fx_001", path: "sources/telegram/src/fixture.test.ts" },
   },
   x: {
+    "magnis.execute:resolveProfile": { id: "tst_x_cert_001", path: "sources/x/src/__tests__/certification.test.ts" },
     "magnis.auth.probe": { id: "tst_x_probe", path: "sources/x/src/probe.test.ts" },
     "magnis.sync.fetch": { id: "tst_x_001", path: "sources/x/src/surfaces/x/fetch.test.ts" },
   },
@@ -344,7 +345,7 @@ const GOLDEN_PROVIDERS: readonly GoldenProvider[] = [
   {
     sourceId: "google",
     serverInfoName: "magnis-google",
-    serverInfoVersion: "1.0.0",
+    serverInfoVersion: "2.0.0",
     auth: "oauth2",
     delivery: "poll",
     pollIntervalSecs: 30,
@@ -521,7 +522,7 @@ const GOLDEN_PROVIDERS: readonly GoldenProvider[] = [
   {
     sourceId: "telegram",
     serverInfoName: "magnis-telegram",
-    serverInfoVersion: "1.0.1",
+    serverInfoVersion: "2.0.0",
     auth: "phone_code",
     delivery: "push",
     pollIntervalSecs: null,
@@ -546,12 +547,12 @@ const GOLDEN_PROVIDERS: readonly GoldenProvider[] = [
   {
     sourceId: "x",
     serverInfoName: "x",
-    serverInfoVersion: "0.1.0",
+    serverInfoVersion: "2.0.0",
     auth: "api_key",
     delivery: "poll",
     pollIntervalSecs: 300,
     advertisedTools: SDK_TOOLS,
-    callableOperations: [...SDK_OPERATIONS, "magnis.auth.probe"],
+    callableOperations: [...SDK_OPERATIONS, "magnis.auth.probe", "magnis.execute:resolveProfile"],
     identityRule: "verified_provider_subject",
     credentialKeys: ["bearer_token"],
     mintedCredentialKeys: [],
@@ -856,6 +857,18 @@ describe("tst_cat_src_parity_001 current v1 golden matrix", () => {
             target: { type: "object" },
             forward_checkpoint: {},
             tracked_handles: { type: "array", items: { type: "string" } },
+            chatIds: { type: "array", items: { type: "string" } },
+            headChatIds: { type: "array", items: { type: "string" } },
+            senderSync: {
+              type: "object",
+              properties: {
+                choices: { type: "object", additionalProperties: { type: "boolean" } },
+                unknownSenderEnabled: { type: "boolean" },
+              },
+              required: ["choices", "unknownSenderEnabled"],
+              additionalProperties: false,
+            },
+            expectedProfileIds: { type: "object", additionalProperties: { type: "string" } },
             limit: { type: "integer" },
           },
           required: ["surface"],
@@ -929,7 +942,7 @@ describe("tst_cat_src_parity_001 current v1 golden matrix", () => {
     expect(authored.delivery).toBe("push");
     expect("poll_interval_secs" in authored).toBe(false);
     expect(authored.server_info_name).toBe("magnis-telegram");
-    expect(authored.server_info_version).toBe("1.0.1");
+    expect(authored.server_info_version).toBe("2.0.0");
     expect(authored.advertised_tools).toEqual(["magnis.sync.fetch"]);
     expect(stringArray(authored.callable_operations, "telegram.callable_operations")).toEqual(
       expect.arrayContaining([

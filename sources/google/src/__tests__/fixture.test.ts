@@ -19,6 +19,8 @@ import { stableContactId } from "../surfaces/addressbook/contacts";
 
 import type { FetchLike } from "../http";
 
+const allSenders = { choices: {}, unknownSenderEnabled: true };
+
 const b64url = (s: string) => Buffer.from(s, "utf-8").toString("base64url");
 
 /** Raw-API fixture doc, per the Rust fixture.rs file format. */
@@ -107,7 +109,7 @@ describe("fixture mode end-to-end", () => {
   test("tst_gts_fx_001 exact artifact serves all surfaces and fixture faults fail closed", async () => {
     const fixtureFile = withFixture(FIXTURE_DOC);
 
-    const email = (await call("magnis.sync.fetch", { surface: "email" }))
+    const email = (await call("magnis.sync.fetch", { senderSync: allSenders, surface: "email" }))
       .result as FetchResult;
     expect(email.hasMore).toBe(false);
     expect(email.nextCursor).toBeNull();
@@ -191,7 +193,7 @@ describe("fixture mode end-to-end", () => {
           ["initialize", "magnis.sync.fetch", "tools/list"],
           {
             fixtureEnvironment: { GOOGLE_FIXTURE_FILE: fixtureFile },
-            operationArguments: { "magnis.sync.fetch": { surface } },
+            operationArguments: { "magnis.sync.fetch": { surface, ...(surface === "email" ? { senderSync: allSenders } : {}) } },
           },
         );
         const reply = evidence.operationProbes["magnis.sync.fetch"];
@@ -212,7 +214,7 @@ describe("fixture mode end-to-end", () => {
     // successful empty pages.
     const missingRoot = mkdtempSync(join(tmpdir(), "gts-missing-"));
     process.env.GOOGLE_FIXTURE_FILE = join(missingRoot, "google.json");
-    const missing = await call("magnis.sync.fetch", { surface: "email" });
+    const missing = await call("magnis.sync.fetch", { senderSync: allSenders, surface: "email" });
     expect((missing.error as Record<string, unknown>).message).toContain(
       "cannot read GOOGLE_FIXTURE_FILE",
     );
@@ -220,13 +222,13 @@ describe("fixture mode end-to-end", () => {
     const malformed = join(mkdtempSync(join(tmpdir(), "gts-malformed-")), "google.json");
     writeFileSync(malformed, "{not-json");
     process.env.GOOGLE_FIXTURE_FILE = malformed;
-    const invalid = await call("magnis.sync.fetch", { surface: "email" });
+    const invalid = await call("magnis.sync.fetch", { senderSync: allSenders, surface: "email" });
     expect((invalid.error as Record<string, unknown>).message).toContain(
       "malformed GOOGLE_FIXTURE_FILE",
     );
 
     writeFileSync(malformed, '{"messages":{}}');
-    const wrongShape = await call("magnis.sync.fetch", { surface: "email" });
+    const wrongShape = await call("magnis.sync.fetch", { senderSync: allSenders, surface: "email" });
     expect((wrongShape.error as Record<string, unknown>).message).toContain(
       "field 'messages' must be an array",
     );
@@ -279,12 +281,12 @@ describe("fixture mode end-to-end", () => {
 
 describe("live-mode wire errors (no fixture)", () => {
   test("tst_gts_wire_004 missing _meta / missing credential key", async () => {
-    const noMeta = await call("magnis.sync.fetch", { surface: "email" });
+    const noMeta = await call("magnis.sync.fetch", { senderSync: allSenders, surface: "email" });
     expect((noMeta.error as Record<string, unknown>).message).toBe(
       "missing _meta with Google credentials",
     );
 
-    const partial = await call("magnis.sync.fetch", {
+    const partial = await call("magnis.sync.fetch", { senderSync: allSenders,
       surface: "email",
       _meta: { refresh_token: "rt", client_id: "cid" },
     });
@@ -360,6 +362,7 @@ describe("live-mode wire errors (no fixture)", () => {
           name: "magnis.sync.fetch",
           arguments: {
             surface: "email",
+            senderSync: allSenders,
             _meta: { refresh_token: "r", client_id: "c", client_secret: "s" },
           },
         },

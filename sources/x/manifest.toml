@@ -3,7 +3,7 @@
 # post envelopes, fetching only the handles the user explicitly tracks.
 #
 # READ-ONLY: the only tool is magnis.sync.fetch (provided by the SDK).
-# No write tools, no magnis.execute, no source_commands.
+# The resolveProfile execute action reads identity only; it never fetches posts.
 #
 # Auth: app-only Bearer token. The host resolves it (vault, then the
 # SOURCE_X_BEARER_TOKEN env var) and injects `bearer_token` per call via
@@ -11,7 +11,7 @@
 # credential-less: a missing key fails at fetch, never at registration.
 
 id = "x"
-version = "1.0.0"
+version = "2.0.0"
 title = "X"
 summary = "Sync posts from the X (Twitter) accounts you track."
 publisher = "ai.magnis"
@@ -41,12 +41,12 @@ authority = "module_sync"
 release_tier = "production"
 delivery = "poll"
 poll_interval_secs = 300
-server_info_version = "0.1.0"
+server_info_version = "2.0.0"
 server_info_name = "x"
 runtime_kind = "connector_sdk"
 runtime_version = "0.1.0"
 advertised_tools = ["magnis.sync.fetch"]
-callable_operations = ["initialize", "magnis.auth.probe", "magnis.sync.fetch", "tools/list"]
+callable_operations = ["initialize", "magnis.auth.probe", "magnis.execute:resolveProfile", "magnis.sync.fetch", "tools/list"]
 scenario_ids = ["tst_x_001", "tst_x_005", "tst_x_006", "tst_x_cert_001", "tst_x_cert_002", "tst_x_cert_003", "tst_x_probe"]
 
 [certification.account_compatibility]

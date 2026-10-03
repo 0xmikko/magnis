@@ -7,7 +7,7 @@ import type { GoogleContactPayload } from "../types.ts";
 import { INGEST_CHUNK, replicaDict } from "./helpers.ts";
 import { CARD } from "../schema.ts";
 import { CONTACT } from "../../contacts/schema.ts";
-import { ADDRESS_SCHEMA, addressBatchEntity } from "../../email/schema.ts";
+import { ADDRESS_SCHEMA, addressFragment } from "../../email/schema.ts";
 
 /** The `producer` mark on every link the address book writes. */
 const PRODUCER = "addressbook";
@@ -149,15 +149,17 @@ export class AddressbookModule {
     const known = deltaAnchors.length > 0 ? await this.graph.find_by_anchors(deltaAnchors) : [];
     const existing = new Set(deltaAnchors.filter((_, index) => known[index]));
 
-    // 2. Address nodes and cards share the sync transaction.
+    // 2. Address nodes and cards share the sync transaction. A held address
+    // keeps its synchronization choice; a new one takes the email owner's rule.
     // @tested-by: tst_module_contacts_ingest_002
+    // @tested-by: tst_module_addressbook_email_sync_001
     const allAddresses = [...new Set(rows.flatMap((r) => r.addresses))];
-    const addressEntities = allAddresses.map((address) => addressBatchEntity(`addr:${address}`, address, null));
+    const addressNodes = await addressFragment(this.graph, new Map(allAddresses.map((address) => [address, null])));
 
     // 3. Card nodes: fields-as-last-synced dictionaries, anchored
     // by the stable remote_id — ONE batch, and the sync never writes the
     // person.
-    const entities: BatchEntityInput[] = [...addressEntities, ...rows.map(({ remoteId, p, sourceId, accountId }) => {
+    const entities: BatchEntityInput[] = [...addressNodes.entities, ...rows.map(({ remoteId, p, sourceId, accountId }) => {
       const name = typeof p.display_name === "string" ? p.display_name : "";
       return {
         key: remoteId,
@@ -168,7 +170,7 @@ export class AddressbookModule {
         properties: { ...replicaDict(p), source_id: sourceId, account_id: accountId, ...(generation ? { sync_pass: generation } : {}) },
       };
     })];
-    const batch = await this.graph.apply_batch({ entities, refs: [], links: [] });
+    const batch = await this.graph.apply_batch({ entities, refs: addressNodes.refs, links: [] });
     const addressId = new Map(allAddresses.map((address) => {
       const id = batch.ids[`addr:${address}`];
       if (!id) throw new Error(`addressbook ingest: address ${address} was not resolved`);

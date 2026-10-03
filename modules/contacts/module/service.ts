@@ -1,18 +1,23 @@
 // Contacts plugin — backend module (V8). Decorated class; the
 // read path (list/get) mirrors the legacy Rust ContactsModuleService.
 
-import { reachedEndpoints, rpc, searchEntitiesPage, tool, writeTool, type GraphService, type PluginDeps, type PluginUtil, type RawEntity } from "@magnis/plugin-sdk";
+import { reachedEndpoints, rpc, searchEntitiesPage, tool, writeTool, type GraphService, type PluginDeps, type PluginUtil, type RawEntity, type RpcExecutor } from "@magnis/plugin-sdk";
 import type {
+  SetSyncEnabledParams,
+  SetSyncEnabledResult,
+  SyncTargetResult,
   GetParams,
   MergePreview,
   MergeResult,
   PaginatedResponse,
 } from "@magnis/plugin-sdk";
 import type {
+  CompleteXSyncMigrationParams,
   BatchCreateParams,
   BatchCreateResult,
   BatchCreateRow,
   ContactDetailView,
+  ContactSyncTarget,
   ContactListItem,
   ContactsListParams,
   CreateParams,
@@ -35,12 +40,15 @@ import {
   pickAvatarColor,
 } from "./helpers.ts";
 import { CONTACT } from "../schema.ts";
+import { chatAnchor } from "../../telegram/schema.ts";
 
 /**
  * Bulk message records. A contact's replicas sit on one edge per message ever
  * addressed to them, and those are read through the owning module's own paging
  * surface rather than inherited by the hub. See the note in `get`.
  */
+const SYNC_IDENTITY_SCHEMAS = new Set(["email.address", "x.profile", "telegram.account"]);
+
 const MESSAGE_SCHEMAS = new Set(["email.message", "telegram.message"]);
 
 /** Contacts sits above email: an address reaches a person from the module
@@ -88,9 +96,40 @@ const CONTACT_MERGE_PARAMS = {
 export class ContactsModule {
   private readonly graph: GraphService;
   private readonly util: PluginUtil;
+  private readonly rpc: RpcExecutor;
   constructor(deps: PluginDeps) {
     this.graph = deps.graph;
     this.util = deps.util;
+    this.rpc = deps.rpc;
+  }
+
+  @writeTool("setSyncEnabled", {
+    entity: "contacts.person",
+    description: "Start or stop synchronization for this contact's currently linked email, X and Telegram identities.",
+    params: {
+      type: "object", properties: { id: { type: "string", format: "uuid" }, syncEnabled: { type: "boolean" } },
+      required: ["id", "syncEnabled"], additionalProperties: false,
+    },
+  })
+  async setSyncEnabled(params: SetSyncEnabledParams): Promise<SetSyncEnabledResult> {
+    const detail = await this.graph.get_entity_full(params.id, { links: true });
+    if (detail?.entity.schema_id !== CONTACT) throw new Error(`contact not found: ${params.id}`);
+    const ids = [...new Set(detail.links.filter(link => link.kind === "identity" && link.from_id === params.id && link.validUntil === null).map(link => link.to_id))];
+    const identities = new Map((ids.length === 0 ? [] : await this.graph.get_entities(ids)).map(row => [row.id, row]));
+    const results: SyncTargetResult[] = [];
+    for (const identityId of ids) {
+      try {
+        const identity = identities.get(identityId);
+        if (!identity) throw new Error("Linked identity is unavailable");
+        if (!SYNC_IDENTITY_SCHEMAS.has(identity.schema_id)) continue;
+        const result = await this.rpc.execute<SetSyncEnabledResult>(`${identity.schema_id}.setSyncEnabled`, { id: identityId, syncEnabled: params.syncEnabled });
+        if (result.results.length !== 1 || result.results[0]?.identityId !== identityId) throw new Error("Identity owner returned an invalid synchronization result");
+        results.push(result.results[0]);
+      } catch (error) {
+        results.push({ identityId, targetId: null, kind: "failed", message: error instanceof Error ? error.message : String(error) });
+      }
+    }
+    return { results };
   }
 
   @rpc("list", {
@@ -113,7 +152,7 @@ export class ContactsModule {
     const offset = params.offset ?? 0;
     const search = (params.search ?? "").trim();
 
-    let rows: { id: string; schema_id: string; name: string; created_at?: string; is_pinned?: boolean | null }[];
+    let rows: RawEntity[];
     let total: number;
     if (search) {
       // Shared paging helper (2026-07-03): the old limit+offset fetch truncated
@@ -150,6 +189,27 @@ export class ContactsModule {
     const identityById = await this.identityNeighboursByEntity(ids);
     const items = rows.map((e) => buildListItem(e, identityById.get(e.id) ?? []));
     return { items, total, limit, offset };
+  }
+
+  private async syncTarget(identity: RawEntity): Promise<ContactSyncTarget> {
+    const target = { identityId: identity.id, schemaId: identity.schema_id, name: identity.name };
+    try {
+      let row = identity;
+      if (identity.schema_id === "telegram.account") {
+        const userId = identity.properties?.telegram_user_id;
+        if (typeof userId !== "number" || !Number.isSafeInteger(userId)) throw new Error("Telegram identity has no provider user ID");
+        const id = await this.graph.find_by_anchor(chatAnchor(String(userId)));
+        if (id === null) throw new Error("Telegram identity has no stored direct chat");
+        const chat = await this.graph.get_entity(id);
+        if (chat?.schema_id !== "telegram.chat" || chat.properties?.type !== "private") throw new Error("Telegram identity's stored chat is not a direct chat");
+        row = chat;
+      }
+      if (!("syncEnabled" in row) || typeof row.syncEnabled !== "boolean" || !("syncRevision" in row)
+        || typeof row.syncRevision !== "string" || !/^\d+$/.test(row.syncRevision)) throw new Error("Identity target has no saved synchronization choice");
+      return { ...target, state: { kind: "ready", id: row.id, syncEnabled: row.syncEnabled, syncRevision: row.syncRevision } };
+    } catch (error) {
+      return { ...target, state: { kind: "unavailable", message: error instanceof Error ? error.message : String(error) } };
+    }
   }
 
   @rpc("get")
@@ -237,6 +297,13 @@ export class ContactsModule {
       .map((l) => neighbours.get(l.to_id))
       .filter((n): n is RawEntity & { created_at?: string } => n !== undefined);
     const base = buildListItem(e, identityNeighbours);
+    const syncTargets: ContactSyncTarget[] = [];
+    const activeIds = new Set(links.filter(link => link.kind === "identity" && link.from_id === e.id && link.validUntil === null).map(link => link.to_id));
+    for (const id of activeIds) {
+      const identity = neighbours.get(id);
+      if (!identity) throw new Error(`Linked identity is unavailable: ${id}`);
+      if (SYNC_IDENTITY_SCHEMAS.has(identity.schema_id)) syncTargets.push(await this.syncTarget(identity));
+    }
 
     // ── S3 (§5.1): the card is composed at read time ────────────────────
     // Curated claims = the hub's dictionary. Source claims = the replica
@@ -312,6 +379,7 @@ export class ContactsModule {
       // S6: the canonical block is empty by construction — nothing resolves
       // into it any more, and the DTO keeps the field only until the wire
       // shape drops it.
+      syncTargets,
       canonical: {},
       linked_entities: linked,
       created_at: base.created_at,
@@ -350,7 +418,7 @@ export class ContactsModule {
   // values) — the node it just wrote and its identity edges. Not the hot read
   // path (no N+1 loop).
   private async listItemFor(
-    entity: { id: string; schema_id: string; name: string; created_at?: string; is_pinned?: boolean | null },
+    entity: RawEntity,
   ): Promise<ContactListItem> {
     const fresh = await this.graph.get_entity(entity.id);
     const node = fresh ?? { ...entity, properties: {} };
@@ -642,6 +710,26 @@ export class ContactsModule {
     }
     await this.graph.update_entity_name(params.id, params.new_name);
     return { renamed: true };
+  }
+
+  @rpc("completeXSyncMigration", { description: "Remove an X legacy choice after its profile and identity link are committed.", params: {
+    type: "object", properties: { contactId: { type: "string" }, profileId: { type: "string" }, handle: { type: "string" }, enabled: { type: "boolean" } },
+    required: ["contactId", "profileId", "handle", "enabled"], additionalProperties: false,
+  } })
+  async completeXSyncMigration(params: CompleteXSyncMigrationParams): Promise<{ removed: boolean }> {
+    const detail = await this.graph.get_entity_full(params.contactId, { links: true });
+    if (detail?.entity.schema_id !== CONTACT) throw new Error("X migration contact is missing");
+    if (!detail.links.some((link) => link.from_id === params.contactId && link.to_id === params.profileId && link.kind === "identity" && link.validUntil === null)) throw new Error("X migration identity link is not committed");
+    const profile = await this.graph.get_entity(params.profileId);
+    if (profile?.schema_id !== "x.profile" || !("syncEnabled" in profile) || typeof profile.syncEnabled !== "boolean"
+      || !("syncRevision" in profile) || typeof profile.syncRevision !== "string" || !/^\d+$/.test(profile.syncRevision)) throw new Error("X migration profile has no saved choice");
+    if (typeof profile.anchor !== "string" || !/^x:profile:\d+$/.test(profile.anchor)
+      || typeof profile.properties?.handle !== "string" || profile.properties.handle.trim().toLowerCase() !== params.handle) throw new Error("X migration profile identity does not match the legacy entry");
+    const existing = trackingOf(detail.entity);
+    const remaining = existing.filter((entry) => !(entry.platform === "x" && entry.handle?.trim().toLowerCase() === params.handle && entry.enabled === params.enabled));
+    if (remaining.length === existing.length) return { removed: false };
+    await this.graph.update_properties({ entity_id: params.contactId, properties: { tracking: remaining } });
+    return { removed: true };
   }
 
   // Search-plan stage First: the tracked hubs, straight from the FILTERED

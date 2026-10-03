@@ -442,7 +442,7 @@ export interface TakeoutContext {
  * LIVE impl talks to Telegram; the test fake serves an in-memory list. */
 export interface DialogPager {
   dialogPage(offset: DialogOffset | null, limit: number,
-    options?: { hydrate?: boolean; timeoutMs?: number; takeout?: TakeoutContext }): Promise<DialogPage>;
+    options?: { hydrate?: boolean; timeoutMs?: number; takeout?: TakeoutContext; chatIds?: readonly string[] }): Promise<DialogPage>;
 }
 
 /** The existing dialog owner also owns the one Telegram Takeout lifecycle. */

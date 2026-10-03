@@ -1,3 +1,4 @@
+import type { RawSyncableEntity } from "@magnis/plugin-sdk";
 import type {
   AvatarColor,
   LinkedEntitySummary,
@@ -16,6 +17,7 @@ export interface MessageListItem {
 }
 
 export interface MessageDetailView extends MessageListItem {
+  readonly senderSync: Pick<RawSyncableEntity, "id" | "syncEnabled" | "syncRevision"> | null;
   readonly body: string | null;
   readonly canonical: Record<string, unknown>;
   readonly linked_entities: readonly LinkedEntitySummary[];

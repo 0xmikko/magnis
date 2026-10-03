@@ -1,3 +1,4 @@
+import type { RawSyncableEntity } from "@magnis/plugin-sdk";
 // Shared DTOs for the contacts plugin — wire shapes the host frontend
 // consumes. Mirrors the legacy Rust contacts ContactListItem /
 // ContactDetailView 1:1.
@@ -28,7 +29,17 @@ export interface LinkedEntitySummary {
   data: unknown;
 }
 
+export interface ContactSyncTarget {
+  identityId: string;
+  schemaId: string;
+  name: string;
+  state:
+    | ({ kind: "ready" } & Pick<RawSyncableEntity, "id" | "syncEnabled" | "syncRevision">)
+    | { kind: "unavailable"; message: string };
+}
+
 export interface ContactDetailView {
+  syncTargets: readonly ContactSyncTarget[];
   id: string;
   schema_id: string;
   name: string;
@@ -195,4 +206,11 @@ export interface PersonDetails {
   last_name?: string | null;
   phones?: { phone: string; type: string | null; is_primary: boolean }[];
   tracking?: { platform: "x" | "linkedin"; handle?: string | null; enabled: boolean }[];
+}
+
+export interface CompleteXSyncMigrationParams {
+  contactId: string;
+  profileId: string;
+  handle: string;
+  enabled: boolean;
 }

@@ -15,9 +15,11 @@
  * @scenario: scn_tg_chat_theme_001
  * @deterministic: yes
  */
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { forwardRef, type ReactNode } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { setHostRuntime } from "../../../../packages/host-testdouble/runtime";
 
 import type { TelegramConversation } from "../types";
 
@@ -58,7 +60,9 @@ vi.mock("../TelegramReplyComposer", () => ({
   TelegramReplyComposer: (): ReactNode => <div data-testid="telegram-reply-composer" />,
 }));
 
-vi.mock("../index", () => ({ MESSAGE_MENU_ITEMS: [] }));
+vi.mock("../index", () => ({ MESSAGE_MENU_ITEMS: [], INPUT_PLACEHOLDER: "Write a message", TELEGRAM_AVATAR_COLORS: ["#333"] }));
+vi.mock("../hooks/useTelegramMessages", () => ({ useTelegramMessages: () => ({ conversation: CONVERSATION, canSend: false }) }));
+vi.mock("../hooks/useTelegramSync", () => ({ useTelegramSync: () => undefined }));
 
 const CONVERSATION: TelegramConversation = {
   chatId: "chat-1",
@@ -79,6 +83,71 @@ const CONVERSATION: TelegramConversation = {
 };
 
 describe("TelegramChatView theme isolation", () => {
+  it.each(["denied", "saveFailed", "applyFailed"])("reports %s without confusing a saved choice with an applied choice", async (failure) => {
+    let syncEnabled = true;
+    const rpc = vi.fn(async (method: string) => {
+      if (method === "telegram.chats.get") return { entity_id: "chat-1", chat_id: "42", account_id: "account", chat_title: "Ops", indexed: false, syncEnabled };
+      if (method !== "telegram.chat.setSyncEnabled") throw new Error(`Unexpected operation ${method}`);
+      if (failure === "denied") throw new Error("Approval denied");
+      if (failure === "saveFailed") return { results: [{ identityId: "chat-1", targetId: "chat-1", kind: "failed", message: "Save refused" }] };
+      syncEnabled = false;
+      return { results: [{ identityId: "chat-1", targetId: "chat-1", kind: "saved", syncEnabled, syncRevision: "1", application: { kind: "failed", message: "Worker unavailable" } }] };
+    });
+    setHostRuntime({ transport: { baseUrl: "", rpc } });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { TelegramDetailWrapper } = await import("../TelegramDetailWrapper");
+    const view = render(<QueryClientProvider client={client}><TelegramDetailWrapper entityId="chat-1" /></QueryClientProvider>);
+    fireEvent.click(await screen.findByRole("button", { name: "Chat settings" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Stop synchronization" }));
+    if (failure === "applyFailed") {
+      expect((await screen.findByRole("status")).textContent).toContain("saved, but could not be applied: Worker unavailable");
+    } else {
+      expect((await screen.findByRole("alert")).textContent).toContain(failure === "denied" ? "Approval denied" : "Save refused");
+      expect(screen.queryByRole("status")).toBeNull();
+    }
+    await waitFor(() => { expect(syncEnabled).toBe(failure !== "applyFailed"); });
+    fireEvent.click(screen.getByRole("button", { name: "Chat settings" }));
+    expect(await screen.findByRole("button", { name: failure === "applyFailed" ? "Start synchronization" : "Stop synchronization" })).not.toBeNull();
+    expect(screen.getByText("hello")).not.toBeNull();
+    view.unmount();
+    client.clear();
+  });
+
+  it("persists synchronization independently from indexed through the owning module and reloads the choice", async () => {
+    let syncEnabled = true;
+    let indexed = false;
+    const rpc = vi.fn(async (method: string, params: Record<string, unknown>) => {
+      if (method === "telegram.chats.get") return { entity_id: "chat-1", chat_id: "42", account_id: "account", chat_title: "Ops", indexed, syncEnabled };
+      if (method === "telegram.chat.setSyncEnabled") {
+        syncEnabled = params.syncEnabled === true;
+        return { results: [{ identityId: "chat-1", targetId: "chat-1", kind: "saved", syncEnabled, syncRevision: "1", application: { kind: "pending" } }] };
+      }
+      if (method === "graph.entity.update") { indexed = params.indexed === true; return { ok: true }; }
+      throw new Error(`Unexpected operation ${method}`);
+    });
+    setHostRuntime({ transport: { baseUrl: "", rpc } });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { TelegramDetailWrapper } = await import("../TelegramDetailWrapper");
+    const tree = <QueryClientProvider client={client}><TelegramDetailWrapper entityId="chat-1" /></QueryClientProvider>;
+    const view = render(tree);
+    await waitFor(() => { expect(rpc).toHaveBeenCalledWith("telegram.chats.get", { entity_id: "chat-1" }); });
+    fireEvent.click(await screen.findByRole("button", { name: "Chat settings" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Stop synchronization" }));
+    await waitFor(() => { expect(rpc).toHaveBeenCalledWith("telegram.chat.setSyncEnabled", { id: "chat-1", syncEnabled: false }); });
+    expect(indexed).toBe(false);
+    expect((await screen.findByRole("status")).textContent).toContain("saved");
+    expect(screen.getByText("hello")).not.toBeNull();
+    view.unmount();
+    client.clear();
+    render(tree);
+    fireEvent.click(await screen.findByRole("button", { name: "Chat settings" }));
+    expect(await screen.findByRole("button", { name: "Start synchronization" })).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Enable indexing" }));
+    await waitFor(() => { expect(rpc).toHaveBeenCalledWith("graph.entity.update", { entity_id: "chat-1", indexed: true }); });
+    expect(syncEnabled).toBe(false);
+    client.clear();
+  });
+
   it("tst_fe_tg_theme_001 keeps the dark chat pane layout as it was before design polish", async () => {
     /**
      * @test-id: tst_fe_tg_theme_001

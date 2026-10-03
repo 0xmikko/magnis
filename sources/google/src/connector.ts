@@ -33,6 +33,17 @@ type ExecuteHandler = (
   meta: Record<string, unknown> | undefined,
 ) => Promise<Record<string, unknown>>;
 
+function emailSelection(value: unknown): NonNullable<FetchArgs["senderSync"]> {
+  if (typeof value !== "object" || value === null || !("unknownSenderEnabled" in value) || typeof value.unknownSenderEnabled !== "boolean"
+    || !("choices" in value) || typeof value.choices !== "object" || value.choices === null || Array.isArray(value.choices)) throw new Error("Gmail requires explicit senderSync choices and unknownSenderEnabled");
+  const choices: Record<string, boolean> = {};
+  for (const [address, enabled] of Object.entries(value.choices)) {
+    if (typeof enabled !== "boolean" || address !== address.trim().toLowerCase() || !/^[^\s<>@]+@[^\s<>@]+$/.test(address)) throw new Error("Gmail senderSync requires exact normalized addresses and boolean choices");
+    choices[address] = enabled;
+  }
+  return { choices, unknownSenderEnabled: value.unknownSenderEnabled };
+}
+
 /** Build the connector config. `fetchFn` is injectable for tests; production
  * uses the global fetch. */
 export function buildConnectorConfig(
@@ -46,9 +57,29 @@ export function buildConnectorConfig(
   // ── magnis.sync.fetch ───────────────────────────────────────
   const fetchHandler = async (args: FetchArgs): Promise<FetchResult> => {
     const surface = args.surface;
+    const senderSync = surface === "email" ? emailSelection(args.senderSync) : undefined;
+    let recoverySender: string | undefined;
+    if (surface === "email" && args.target?.kind === "trackedIdentities") {
+      recoverySender = args.target.identities[0];
+      if (args.target.identities.length !== 1 || recoverySender === undefined
+        || senderSync?.choices[recoverySender] !== true) throw new Error("Gmail recovery requires one enabled exact normalized sender");
+    }
 
     // Fixture mode short-circuits BEFORE creds/HTTP (isolated e2e).
-    if (fixturePath() !== undefined) return fixtureFetchResult(surface);
+    if (fixturePath() !== undefined) {
+      const result = fixtureFetchResult(surface);
+      if (senderSync === undefined) return result;
+      return { ...result, envelopes: result.envelopes.flatMap((envelope) => {
+        if (envelope.payload.entity_type === "mailbox" || envelope.kind === "delete") return [envelope];
+        const raw = envelope.payload.from_address;
+        if (typeof raw !== "string") throw new Error("Gmail fixture message has no From address");
+        const address = raw.trim().toLowerCase();
+        const known = Object.hasOwn(senderSync.choices, address);
+        const enabled = known ? senderSync.choices[address] : senderSync.unknownSenderEnabled;
+        return enabled ? [envelope] : known ? [] : [{ ...envelope, kind: "snapshot" as const,
+          payload: { entity_type: "sender", from_address: address, from_name: envelope.payload.from_name } }];
+      }) };
+    }
 
     const direction = args.direction ?? "backward";
     const cursor = args.cursor;
@@ -56,14 +87,21 @@ export function buildConnectorConfig(
 
     switch (surface) {
       case "email": {
+        if (senderSync === undefined) throw new Error("Gmail requires senderSync");
+        if (recoverySender !== undefined) {
+          const r = await fetchMessagePage(token, cursor, fetchFn, senderSync, recoverySender);
+          return { ...r, progress: r.hasMore
+            ? { kind: "continueTarget", continuationToken: r.nextCursor }
+            : { kind: "completeTarget", forwardCheckpoint: { kind: "retain" } } };
+        }
         const oldRestPage = cursor !== null && typeof cursor === "object" &&
           typeof (cursor as Record<string, unknown>).page_token === "string";
         const r =
           direction === "forward"
-            ? await fetchHistoryChanges(token, cursor, fetchFn)
+            ? await fetchHistoryChanges(token, cursor, fetchFn, senderSync)
             : oldRestPage
-              ? await fetchMessagePage(token, cursor, fetchFn)
-              : await fetchImapMessagePage(token, cursor, fetchFn, openImapMailbox);
+              ? await fetchMessagePage(token, cursor, fetchFn, senderSync)
+              : await fetchImapMessagePage(token, cursor, fetchFn, openImapMailbox, senderSync);
         return { envelopes: r.envelopes, nextCursor: r.nextCursor, hasMore: r.hasMore };
       }
       case "meetings": {
@@ -138,7 +176,7 @@ export function buildConnectorConfig(
 
   return {
     name: "magnis-google",
-    version: "1.0.0",
+    version: "2.0.0",
     surfaces: SURFACES,
     mode: "poll",
     intervalSecs: 30,

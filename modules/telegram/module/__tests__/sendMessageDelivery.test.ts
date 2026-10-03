@@ -17,7 +17,7 @@
  * Doubles come from @magnis/testkit/module.
  */
 import { describe, it, expect, vi } from "vitest";
-import { mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
+import { entity, mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { TelegramModule } from "../service.ts";
 import type { TelegramCanonical } from "../../types.ts";
 import type { SourceEnvelope } from "@magnis/plugin-sdk";
@@ -38,10 +38,11 @@ interface TgInternals {
   ): Promise<unknown>;
 }
 
-function makeModule(): { mod: TgInternals; graph: G } {
+function makeModule(syncEnabled = true): { mod: TgInternals; graph: G } {
   const graph = mockGraph({
     source_command: () => Promise.resolve({ message_id: 777 }),
     find_by_anchor: () => Promise.resolve("ent-1"),
+    get_entity: () => Promise.resolve({ ...entity("chat-entity", "Chat", { schema_id: "telegram.chat", properties: { chat_id: 42 } }), syncEnabled, syncRevision: "0" }),
   });
   const mod = mountModule(TelegramModule, { graph, ctx: { extension_id: "telegram" } })
     .module as unknown as TgInternals;
@@ -49,6 +50,14 @@ function makeModule(): { mod: TgInternals; graph: G } {
 }
 
 describe("tst_fe_agent_007 — sendMessage: delivery success survives local enrichment failure", () => {
+  it("delivers a message to a stopped chat without ingesting the Source response", async () => {
+    const { mod, graph } = makeModule(false);
+    const ingest = vi.spyOn(mod, "ingestMessageBatch").mockResolvedValue(undefined);
+    await expect(mod.sendMessage(42, "hi", undefined, "acct")).resolves.toEqual({ message_id: 777 });
+    expect(graph.spies.source_command).toHaveBeenCalledExactlyOnceWith({ action: "send_message", chat_id: 42, text: "hi" }, "acct");
+    expect(ingest).not.toHaveBeenCalled();
+  });
+
   it("resolves (does NOT reject) when ingest fails after a successful delivery", async () => {
     const { mod, graph } = makeModule();
     vi.spyOn(mod, "ingestMessageBatch").mockRejectedValue(new Error("PGlite write failed"));

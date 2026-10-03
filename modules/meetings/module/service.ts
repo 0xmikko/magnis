@@ -53,7 +53,7 @@ import {
   type Data,
 } from "./helpers.ts";
 import { CAL, EVENT, MEETING } from "../schema.ts";
-import { addressBatchEntity } from "../../email/schema.ts";
+import { addressFragment } from "../../email/schema.ts";
 
 /// The node dictionary (S5): the record every read path renders from.
 const dictOf = (e: RawEntity): Data => e.properties ?? {};
@@ -465,16 +465,15 @@ export class MeetingsModule {
     };
     // @tested-by: tst_module_meetings_sync_002
     // Address nodes and attendee edges belong to the same sync transaction.
-    const addresses: BatchEntityInput[] = [];
-    const seenAddresses = new Set<string>();
-    const links: BatchLinkInput[] = [];
+    const named = new Map<string, string | null>();
     for (const a of attendees) {
       const lower = a.email.trim().toLowerCase();
-      const key = `addr:${lower}`;
-      if (!seenAddresses.has(key)) {
-        addresses.push(addressBatchEntity(key, lower, a.name ?? null));
-        seenAddresses.add(key);
-      }
+      if (!named.has(lower)) named.set(lower, a.name ?? null);
+    }
+    const { entities: addresses, refs } = await addressFragment(this.graph, named);
+    const links: BatchLinkInput[] = [];
+    for (const a of attendees) {
+      const key = `addr:${a.email.trim().toLowerCase()}`;
       links.push({
         from_key: remoteId,
         to_key: key,
@@ -483,7 +482,7 @@ export class MeetingsModule {
         ...(a.name === undefined ? {} : { metadata: { display_name: a.name } }),
       });
     }
-    const result = await this.graph.apply_batch({ entities: [entity, ...addresses], refs: [], links });
+    const result = await this.graph.apply_batch({ entities: [entity, ...addresses], refs, links });
     const entityId = result.ids[remoteId];
     if (!entityId) return false;
     const addressIds = attendees.map((attendee) => {
@@ -569,7 +568,7 @@ export class MeetingsModule {
     params: { type: "object", properties: {}, additionalProperties: false },
   })
   async syncStatus(): Promise<Record<string, unknown>> {
-    return this.graph.sync_state("status");
+    return this.graph.syncState("status");
   }
 
   @rpc("sync.reset", {
@@ -578,6 +577,6 @@ export class MeetingsModule {
     params: { type: "object", properties: {}, additionalProperties: false },
   })
   async syncReset(): Promise<Record<string, unknown>> {
-    return this.graph.sync_state("reset", CAL);
+    return this.graph.syncState("reset", CAL);
   }
 }

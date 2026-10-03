@@ -58,13 +58,17 @@ function messageEnvelope(chatId: number): SourceEnvelope {
 describe("telegram chat batch ingest", () => {
   it("tst_mod_tg_ingest_001 preserves derived preview and avatar fields during a repeated bootstrap", async () => {
     const graph = mockGraph({
+      moduleSettings: () => Promise.resolve({ newChatSync: "all" }),
+      admitSyncEntities: (subjects) => Promise.resolve(subjects.flatMap((subject) => [...subject.remoteIds])),
       // The page asks for its own anchors once and reads the found entities once;
       // the whole-account window is never consulted.
       find_by_anchors: (anchors) =>
         Promise.resolve(anchors.map((anchor) => (anchor === "tg:chat:1" ? "chat-entity-1" : null))),
-      get_entities: () =>
-        Promise.resolve([
-          {
+      get_entities: (ids) =>
+        Promise.resolve(ids.map((id) => id !== "chat-entity-1" ? {
+          ...entity(id, "Chat", { schema_id: "telegram.chat" }),
+          properties: { chat_id: Number(id.slice("tg:chat:".length)) },
+        } : {
             ...entity("chat-entity-1", "Pinned chat", {
               schema_id: "telegram.chat",
             }),
@@ -81,8 +85,7 @@ describe("telegram chat batch ingest", () => {
               // omits it (CatchUp, a live page) must not erase it.
               message_count: 4321,
             },
-          },
-        ]),
+          })),
       list_entities_window: () => Promise.reject(new Error("whole-account chat scan is forbidden")),
       // The operator's edge to the existing chat is read once (kind-filtered)
       // before it is written again: the page's state joins what it holds.
@@ -108,7 +111,7 @@ describe("telegram chat batch ingest", () => {
 
     const applyBatch = graph.spies.apply_batch;
     if (applyBatch === undefined) throw new Error("chat batch merge: missing apply_batch spy");
-    const firstCall = applyBatch.mock.calls[0];
+    const firstCall = applyBatch.mock.calls.find((call) => (call[0] as GraphBatchInput).entities.some((item) => item.key === "tg:chat:1"));
     if (firstCall === undefined) throw new Error("chat batch merge: apply_batch was not called");
     const firstBatch = firstCall[0] as GraphBatchInput;
     const pinnedChat = firstBatch.entities.find((item) => item.key === "tg:chat:1");
@@ -147,6 +150,7 @@ describe("telegram chat batch ingest", () => {
    */
   it("tst_mod_tg_ingest_002 reuses chat state within one sync page instead of issuing per-chat reads and updates", async () => {
     const graph = mockGraph({
+      admitSyncEntities: (subjects) => Promise.resolve(subjects.flatMap((subject) => [...subject.remoteIds])),
       find_by_anchors: (anchors) =>
         Promise.resolve(anchors.map((anchor) => `chat-entity-${anchor.slice("tg:chat:".length)}`)),
       get_entities: (ids) =>

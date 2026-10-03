@@ -1,3 +1,4 @@
+import type { ContactSyncTarget } from "../types";
 import type { AvatarColor, LinkedEntitySummary } from "@magnis/host/base";
 export type { LinkedEntitySummary } from "@magnis/host/base";
 
@@ -20,6 +21,7 @@ export interface ContactListItem {
 }
 
 export interface ContactDetailView extends ContactListItem {
+  readonly syncTargets: readonly ContactSyncTarget[];
   readonly canonical: Record<string, unknown>;
   readonly linked_entities: readonly LinkedEntitySummary[];
   /** S3 (§5.1): the composed card sections. */

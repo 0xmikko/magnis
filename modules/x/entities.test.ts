@@ -4,8 +4,9 @@
  * Beside entities.ts and outside module/ on purpose.
  */
 import { describe, expect, it, vi } from "vitest";
+import { descriptorFrom } from "@magnis/declare/derive";
 import type { GraphBatchInput, SourceEnvelope } from "@magnis/plugin-sdk";
-import { mockGraph, mountModule, sourceEnvelope } from "@magnis/testkit/module";
+import { entity, mockGraph, mountModule, sourceEnvelope } from "@magnis/testkit/module";
 
 import { XModule } from "./module/service.ts";
 import { post, profile } from "./entities.ts";
@@ -19,7 +20,9 @@ function env(remote_id: string, payload: Record<string, unknown>): SourceEnvelop
 async function written(): Promise<GraphBatchInput["entities"]> {
   const batches: GraphBatchInput[] = [];
   const graph = mockGraph({
-    find_by_anchors: (anchors) => Promise.resolve(anchors.map(() => null)),
+    find_by_anchors: (anchors) => Promise.resolve(anchors.map(anchor => anchor === "x:profile:12" ? "profile" : null)),
+    get_entities: async ids => ids.includes("profile") ? [{ ...entity("profile", "Jack", { schema_id: "x.profile", anchor: "x:profile:12", properties: { handle: "jack" } }), syncEnabled: true, syncRevision: "0" }] : [],
+    admitSyncEntities: (subjects) => Promise.resolve(subjects.flatMap(subject => [...subject.remoteIds])),
     apply_batch: (frag: GraphBatchInput) => {
       batches.push(frag);
       return Promise.resolve({ ids: {}, created: 0, updated: 0, links_added: 0, dropped_keys: [] });
@@ -33,7 +36,7 @@ async function written(): Promise<GraphBatchInput["entities"]> {
   await mod.ingest({
     generation: "initial:r:1",
     envelopes: [
-      env("x:profile:jack", {
+      env("x:profile:12", {
         entity_type: "profile", platform: "x", handle: "jack",
         display_name: "Jack", bio: "here", verified: true, follower_count: 100,
         url: "https://x.com/jack", avatar_url: "https://x.com/jack.jpg",
@@ -51,6 +54,13 @@ async function written(): Promise<GraphBatchInput["entities"]> {
 }
 
 describe("x declares what it stores", () => {
+  it("declares profile synchronization outside the profile properties", () => {
+    const { descriptor } = descriptorFrom(profile);
+    expect(descriptor).toHaveProperty("syncable", true);
+    expect(descriptor.json_schema).not.toHaveProperty("properties.syncEnabled");
+    expect(descriptorFrom(post).descriptor).not.toHaveProperty("syncable");
+  });
+
   it("every record the module writes today passes its own declaration", async () => {
     const entities = await written();
     expect(entities.length).toBeGreaterThan(1);

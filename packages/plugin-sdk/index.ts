@@ -426,7 +426,7 @@ export function definePlugin(
     // @tested-by: tst_testkit_mount_dispatch_005
     const metas = collectMethodMetadata((ModuleClass as { prototype: object }).prototype);
     for (const m of metas) {
-      if (m.isTool && (typeof m.entity !== "string" || !m.entity.startsWith(`${prefix}.`) || !/^[a-z][a-z0-9_]*$/.test(m.suffix))) {
+      if (m.isTool && (typeof m.entity !== "string" || !m.entity.startsWith(`${prefix}.`) || !/^[a-z][a-zA-Z0-9_]*$/.test(m.suffix))) {
         throw new TypeError(`plugin ${prefix} cannot register ${methodIdentity(m)}`);
       }
       const rpcName = m.isTool ? methodIdentity(m) : `${prefix}.${m.suffix}`;

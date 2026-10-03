@@ -16,6 +16,17 @@ summary = "Ingest, search, and act on email threads from any provider."
 publisher = "ai.magnis"
 dependsOn = [ "contacts" ]
 
+[settings]
+moduleId = "email"
+label = "Email"
+description = "Choose synchronization for newly discovered sender addresses. Existing choices are preserved."
+
+[[settings.fields]]
+key = "newSenderSyncEnabled"
+label = "Synchronize new senders"
+defaultValue = "true"
+fieldType = { type = "boolean" }
+
 [[links]]
 kind = "sent_from"
 from = "email.message"
