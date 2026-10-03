@@ -1,3 +1,4 @@
+import { SyncToolCallRenderer } from "../../contacts/ui/SyncToolCallRenderer";
 import { toolNamesEquivalent } from "@magnis/host/agent";
 import type { ContextMenuEntry } from "@magnis/host/ui";
 import type { AgentHistoryBlock, ModuleAgentContribution } from "@magnis/host/runtime";
@@ -242,7 +243,10 @@ const telegramModule = defineModule({
       hasMore: telegramChatHasMore,
     },
   },
-  toolCallRenderers: [{ entity: "telegram.message", actions: ["create"], Render: TelegramToolCallRenderer as never }],
+  toolCallRenderers: [
+    { entity: "telegram.chat", actions: ["setSyncEnabled", "resolveSyncMigration"], Render: SyncToolCallRenderer as never },
+    { entity: "telegram.account", actions: ["setSyncEnabled"], Render: SyncToolCallRenderer as never },
+{ entity: "telegram.message", actions: ["create"], Render: TelegramToolCallRenderer as never }],
   extraSetup: (runtime) => {
     const unsub2 = setupEventInvalidation(
       runtime.transport,

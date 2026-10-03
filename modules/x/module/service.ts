@@ -243,7 +243,7 @@ export class XModule {
     return { ok: status.complete };
   }
 
-  @writeTool("resolveSyncMigration", { entity: PROFILE, description: "Choose synchronization for an unresolved X profile.", params: {
+  @writeTool("resolveSyncMigration", { entity: "x.profile", description: "Choose synchronization for an unresolved X profile.", params: {
     type: "object", properties: { target: { type: "object", properties: { schemaId: { const: PROFILE }, key: { type: "string" } }, required: ["schemaId", "key"], additionalProperties: false }, syncEnabled: { type: "boolean" } }, required: ["target", "syncEnabled"], additionalProperties: false,
   } })
   async resolveSyncMigration(params: ResolveSyncMigrationParams): Promise<SyncMigrationStatus> {
@@ -268,7 +268,7 @@ export class XModule {
     }) };
   }
 
-  @writeTool("setSyncEnabled", { entity: PROFILE, description: "Start or stop receiving this X profile and its posts.", params: {
+  @writeTool("setSyncEnabled", { entity: "x.profile", description: "Start or stop receiving this X profile and its posts.", params: {
     type: "object", properties: { id: { type: "string", format: "uuid" }, syncEnabled: { type: "boolean" } }, required: ["id", "syncEnabled"], additionalProperties: false,
   } })
   async setSyncEnabled(params: SetSyncEnabledParams): Promise<SetSyncEnabledResult> {

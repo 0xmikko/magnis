@@ -205,3 +205,73 @@ it("reports denied contact approval and keeps saved choices visible", async () =
   expect(screen.getByText("Alice email: On")).not.toBeNull();
   view.unmount(); client.clear();
 });
+
+it.each([true, false])("shows the named sync target and explicit choice %s before approval", async (syncEnabled) => {
+  const { fireEvent, screen, waitFor } = await import("@testing-library/react");
+  const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
+  const { vi } = await import("vitest");
+  const { setHostRuntime } = await import("../../../../packages/host-testdouble/runtime");
+  const { SyncToolCallRenderer } = await import("../SyncToolCallRenderer");
+  const approve = vi.fn(); const deny = vi.fn();
+  setHostRuntime({ transport: { baseUrl: "", rpc: async () => ({ id: "contact", name: "Alice" }) } });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = render(<QueryClientProvider client={client}><SyncToolCallRenderer payload={{
+    toolCall: { id: "tc", name: "contacts.person.setSyncEnabled", toolBinding: { entity: "contacts.person", operation: "setSyncEnabled" }, status: "pending", args: { id: "contact", syncEnabled } },
+    isAllowlisted: false, superseded: false, onApprove: approve, onDeny: deny, onEdit: vi.fn(), onAllowlistToggle: vi.fn(),
+  }} /></QueryClientProvider>);
+  expect(await screen.findByText("Alice")).not.toBeNull();
+  expect(screen.getByText(/Applies once to currently linked/)).not.toBeNull();
+  expect(screen.getByText(/Stored data remains available/)).not.toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: syncEnabled ? "Start" : "Stop" }));
+  await waitFor(() => { expect(approve).toHaveBeenCalledOnce(); });
+  expect(deny).not.toHaveBeenCalled();
+  view.unmount(); client.clear();
+});
+
+it.each(["raw", "text", "content"])("keeps saved pending results beside failed items in the agent card (%s)", async (format) => {
+  const { screen } = await import("@testing-library/react");
+  const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
+  const { vi } = await import("vitest");
+  const { setHostRuntime } = await import("../../../../packages/host-testdouble/runtime");
+  const { SyncToolCallRenderer } = await import("../SyncToolCallRenderer");
+  setHostRuntime({ transport: { baseUrl: "", rpc: async () => ({ id: "contact", name: "Alice" }) } });
+  const encode = (value: unknown): unknown => format === "raw" ? value : format === "text" ? JSON.stringify(value) : { content: [{ type: "text", text: JSON.stringify(value) }] };
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = render(<QueryClientProvider client={client}><SyncToolCallRenderer payload={{
+    toolCall: { id: "tc", name: "contacts.person.setSyncEnabled", toolBinding: { entity: "contacts.person", operation: "setSyncEnabled" }, status: "approved", args: { id: "contact", syncEnabled: false } },
+    toolResult: { id: "tc", result: encode({ results: [
+      { identityId: "mail", targetId: "mail", kind: "saved", syncEnabled: false, syncRevision: "1", application: { kind: "pending" } },
+      { identityId: "x", targetId: "x", kind: "saved", syncEnabled: false, syncRevision: "1", application: { kind: "failed", message: "Worker unavailable" } },
+      { identityId: "tg", targetId: null, kind: "failed", message: "No stored DM" },
+    ] }) }, isAllowlisted: false, superseded: false, onApprove: vi.fn(), onDeny: vi.fn(), onEdit: vi.fn(), onAllowlistToggle: vi.fn(),
+  }} /></QueryClientProvider>);
+  expect(await screen.findByText("Alice")).not.toBeNull();
+  expect(screen.getByText("mail: Saved Off. Applying…")).not.toBeNull();
+  expect(screen.getByText("x: Saved Off. Could not be applied: Worker unavailable")).not.toBeNull();
+  expect(screen.getByText("tg: Not saved: No stored DM")).not.toBeNull();
+  expect(screen.getAllByText("Failed").length).toBeGreaterThan(0);
+  expect(screen.queryByText("Applied")).toBeNull();
+  view.unmount(); client.clear();
+});
+
+it("shows an unresolved migration target and lets the owner deny it without a write", async () => {
+  const { fireEvent, screen, waitFor } = await import("@testing-library/react");
+  const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
+  const { vi } = await import("vitest");
+  const { setHostRuntime } = await import("../../../../packages/host-testdouble/runtime");
+  const { SyncToolCallRenderer } = await import("../SyncToolCallRenderer");
+  const rpc = vi.fn(); const deny = vi.fn(); const approve = vi.fn();
+  setHostRuntime({ transport: { baseUrl: "", rpc } });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = render(<QueryClientProvider client={client}><SyncToolCallRenderer payload={{
+    toolCall: { id: "tc", name: "x.profile.resolveSyncMigration", toolBinding: { entity: "x.profile", operation: "resolveSyncMigration" }, status: "pending",
+      args: { target: { schemaId: "x.profile", key: "x:profile:12" }, syncEnabled: false } },
+    isAllowlisted: false, superseded: false, onApprove: approve, onDeny: deny, onEdit: vi.fn(), onAllowlistToggle: vi.fn(),
+  }} /></QueryClientProvider>);
+  expect(screen.getByText("Resolve migration: Stop synchronization")).not.toBeNull();
+  expect(screen.getByText("x:profile:12")).not.toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Deny" }));
+  await waitFor(() => { expect(deny).toHaveBeenCalledOnce(); });
+  expect(approve).not.toHaveBeenCalled(); expect(rpc).not.toHaveBeenCalled();
+  view.unmount(); client.clear();
+});
