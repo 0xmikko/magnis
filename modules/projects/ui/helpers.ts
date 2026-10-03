@@ -28,7 +28,7 @@ export function mapProject(item: ProjectListItem): ProjectProfile {
     initials: initialsFrom(item.name),
     status: item.status ?? "active",
     preview: item.status ?? "",
-    time: new Date(item.created_at).toLocaleDateString(),
+    time: new Date(item.createdAt).toLocaleDateString(),
     color: colorFromId(item.id),
   };
 }

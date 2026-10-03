@@ -125,7 +125,7 @@ describe("meetings.create — happy path (returns the full meeting snapshot)", (
 
     expect(snap).toMatchObject({
       id: "m-new",
-      schema_id: CAL,
+      schemaId: CAL,
       title: "Sync",
       starts_at: GOOD.starts_at,
       ends_at: GOOD.ends_at,

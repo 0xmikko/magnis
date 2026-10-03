@@ -19,9 +19,9 @@
 import { type ReactNode } from "react";
 import type { EditorView } from "prosemirror-view";
 import { type MentionPluginCallbacks } from "./mentionPlugin";
-import type { EntitySearchResult } from "../../../modules/episodes/types";
+import type { EntitySearchHit } from "@magnis/sdk";
 export interface MentionSuggestionConfig {
-    readonly results: readonly EntitySearchResult[];
+    readonly results: readonly EntitySearchHit[];
     readonly isLoading: boolean;
     readonly onQueryChange: (query: string, active: boolean) => void;
 }

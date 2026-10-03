@@ -14,9 +14,9 @@ export interface CompanyListItem {
   industry: string | null;
   size: string | null;
   location: string | null;
-  avatar_color: string;
+  avatarColor: string;
   initials: string;
-  created_at: string;
+  createdAt: string;
 }
 
 export type HeaderRow =

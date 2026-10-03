@@ -9,7 +9,7 @@
  *     to a live caret rect (notes editor).
  */
 import type { JSX } from "react";
-import type { EntitySearchResult } from "../../modules/episodes/types";
+import type { EntitySearchHit } from "@magnis/sdk";
 export type MentionPopupPlacement = {
     readonly mode: "anchor-bottom";
 } | {
@@ -19,12 +19,12 @@ export type MentionPopupPlacement = {
     readonly rect: DOMRect;
 };
 export interface MentionPopupProps {
-    readonly results: readonly EntitySearchResult[];
+    readonly results: readonly EntitySearchHit[];
     readonly isLoading: boolean;
     readonly selectedIndex: number;
     readonly hasQuery: boolean;
     readonly activeCategory: string | null;
-    readonly onSelect: (item: EntitySearchResult) => void;
+    readonly onSelect: (item: EntitySearchHit) => void;
     readonly onCategorySelect: (schemaId: string) => void;
     readonly onCategoryBack: () => void;
     /** Defaults to `{ mode: "anchor-bottom" }` for back-compat with existing call sites. */

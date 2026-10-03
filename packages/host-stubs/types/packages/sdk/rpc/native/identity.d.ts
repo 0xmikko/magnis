@@ -2,7 +2,7 @@ import { z } from "zod";
 export declare const identityContracts: {
     readonly "identity.create": import("../contract.js").RpcContract<"identity.create", z.ZodObject<{
         name: z.ZodString;
-        content: z.ZodOptional<z.ZodString>;
+        content: z.ZodDefault<z.ZodString>;
         isDefault: z.ZodDefault<z.ZodBoolean>;
         groupIds: z.ZodDefault<z.ZodArray<z.ZodString>>;
     }, z.core.$strip>, z.ZodObject<{
@@ -14,7 +14,7 @@ export declare const identityContracts: {
         groupNames: z.ZodArray<z.ZodString>;
         updatedAt: z.ZodString;
         createdAt: z.ZodString;
-    }, z.core.$strip>, "required">;
+    }, z.core.$strict>, "required">;
     readonly "identity.delete": import("../contract.js").RpcContract<"identity.delete", z.ZodObject<{
         id: z.ZodString;
     }, z.core.$strip>, z.ZodObject<{
@@ -29,7 +29,7 @@ export declare const identityContracts: {
         groupNames: z.ZodArray<z.ZodString>;
         updatedAt: z.ZodString;
         createdAt: z.ZodString;
-    }, z.core.$strip>>, "required">;
+    }, z.core.$strict>>, "required">;
     readonly "identity.update": import("../contract.js").RpcContract<"identity.update", z.ZodObject<{
         id: z.ZodString;
         name: z.ZodOptional<z.ZodString>;
@@ -45,6 +45,6 @@ export declare const identityContracts: {
         groupNames: z.ZodArray<z.ZodString>;
         updatedAt: z.ZodString;
         createdAt: z.ZodString;
-    }, z.core.$strip>, "required">;
+    }, z.core.$strict>, "required">;
 };
 //# sourceMappingURL=identity.d.ts.map

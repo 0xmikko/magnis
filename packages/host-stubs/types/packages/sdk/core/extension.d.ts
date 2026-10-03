@@ -19,7 +19,7 @@ export declare const ExtensionUiDescriptorSchema: z.ZodObject<{
     packageHash: z.ZodString;
     entry: z.ZodString;
     exportName: z.ZodString;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type ExtensionUiDescriptor = z.output<typeof ExtensionUiDescriptorSchema>;
 export declare const ExtensionViewSchema: z.ZodObject<{
     kind: z.ZodEnum<{
@@ -53,13 +53,13 @@ export declare const ExtensionViewSchema: z.ZodObject<{
         packageHash: z.ZodString;
         entry: z.ZodString;
         exportName: z.ZodString;
-    }, z.core.$strip>>;
+    }, z.core.$strict>>;
     removable: z.ZodBoolean;
     position: z.ZodNumber;
-    blockingDependents: z.ZodDefault<z.ZodArray<z.ZodString>>;
-    unmetRequirements: z.ZodDefault<z.ZodArray<z.ZodString>>;
-    surfaces: z.ZodDefault<z.ZodArray<z.ZodString>>;
-}, z.core.$strip>;
+    blockingDependents: z.ZodArray<z.ZodString>;
+    unmetRequirements: z.ZodArray<z.ZodString>;
+    surfaces: z.ZodArray<z.ZodString>;
+}, z.core.$strict>;
 export type ExtensionView = z.output<typeof ExtensionViewSchema>;
 export declare const ExtensionListResultSchema: z.ZodObject<{
     extensions: z.ZodArray<z.ZodObject<{
@@ -94,24 +94,24 @@ export declare const ExtensionListResultSchema: z.ZodObject<{
             packageHash: z.ZodString;
             entry: z.ZodString;
             exportName: z.ZodString;
-        }, z.core.$strip>>;
+        }, z.core.$strict>>;
         removable: z.ZodBoolean;
         position: z.ZodNumber;
-        blockingDependents: z.ZodDefault<z.ZodArray<z.ZodString>>;
-        unmetRequirements: z.ZodDefault<z.ZodArray<z.ZodString>>;
-        surfaces: z.ZodDefault<z.ZodArray<z.ZodString>>;
-    }, z.core.$strip>>;
-}, z.core.$strip>;
+        blockingDependents: z.ZodArray<z.ZodString>;
+        unmetRequirements: z.ZodArray<z.ZodString>;
+        surfaces: z.ZodArray<z.ZodString>;
+    }, z.core.$strict>>;
+}, z.core.$strict>;
 export type ExtensionListResult = z.output<typeof ExtensionListResultSchema>;
 export declare const ExtensionCatalogRefreshResultSchema: z.ZodUnion<readonly [z.ZodObject<{
     available: z.ZodLiteral<true>;
     packages: z.ZodNumber;
     channel: z.ZodString;
     curation: z.ZodNullable<z.ZodUnknown>;
-}, z.core.$strip>, z.ZodObject<{
+}, z.core.$strict>, z.ZodObject<{
     available: z.ZodLiteral<false>;
     reason: z.ZodString;
-}, z.core.$strip>]>;
+}, z.core.$strict>]>;
 export type ExtensionCatalogRefreshResult = z.output<typeof ExtensionCatalogRefreshResultSchema>;
 export declare const MagnisApiVersionSchema: z.ZodString;
 export type MagnisApiVersion = z.output<typeof MagnisApiVersionSchema>;

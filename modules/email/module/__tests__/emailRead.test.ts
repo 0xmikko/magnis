@@ -102,11 +102,11 @@ describe("email read — shape parity (tst_be_emailread_001)", () => {
     expect(view.sender).toBe("Alice Johnson");
     expect(view.channel).toBe("email");
     expect(view.canonical).toEqual({});
-    expect(view.linked_entities).toEqual([]);
+    expect(view.linkedEntities).toEqual([]);
     expect(view.metadata).toHaveProperty("body_html"); // detail keeps HTML
   });
 
-  it("get resolves link neighbours into linked_entities (names via one batch)", async () => {
+  it("get resolves link neighbours into linkedEntities (names via one batch)", async () => {
     const base = DETAIL("x", "2026-06-03T09:00:00Z");
     spy(graph, "getEntityFull").mockResolvedValue({
       ...base,
@@ -121,9 +121,9 @@ describe("email read — shape parity (tst_be_emailread_001)", () => {
     ]);
 
     const view = await mod.emailGet({ id: "x" });
-    expect(view.linked_entities).toHaveLength(2);
-    expect(view.linked_entities.map((l) => l.name)).toEqual(["photo.jpg", "report.pdf"]);
-    expect(view.linked_entities.every((l) => l.linkKind === "file.attachment")).toBe(true);
+    expect(view.linkedEntities).toHaveLength(2);
+    expect(view.linkedEntities.map((l) => l.name)).toEqual(["photo.jpg", "report.pdf"]);
+    expect(view.linkedEntities.every((l) => l.linkKind === "file.attachment")).toBe(true);
     expect(spy(graph, "getEntities")).toHaveBeenCalledTimes(1); // ONE batch, no per-link N+1
   });
 

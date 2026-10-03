@@ -111,7 +111,7 @@ describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
     // of that same mail matches it instead of creating a duplicate.
     expect(dict(msg).provider_message_id).toBe("src-1");
     expect(r.id).toBe("id-out");
-    expect(r.schema_id).toBe("email.message");
+    expect(r.schemaId).toBe("email.message");
     expect(r.attachment_count).toBe(0);
   });
 

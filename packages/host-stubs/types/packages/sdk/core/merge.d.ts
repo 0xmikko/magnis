@@ -93,8 +93,8 @@ export declare const MergeExecuteCommandSchema: z.ZodObject<{
     reason: z.ZodNullable<z.ZodString>;
 }, z.core.$strict>;
 export type MergeExecuteCommand = z.output<typeof MergeExecuteCommandSchema>;
-/** The merge tool's input; a plugin's merge_preview takes its two ids and
- * merge_execute drops `preview`. Absent overrides are none and an absent
+/** The merge tool's input; a plugin's mergePreview takes its two ids and
+ * mergeExecute drops `preview`. Absent overrides are none and an absent
  * reason is null, as the tool reads them today. */
 export declare const MergeInputSchema: z.ZodObject<{
     survivorId: z.ZodGUID;

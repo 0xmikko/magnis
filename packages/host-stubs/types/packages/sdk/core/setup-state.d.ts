@@ -1,12 +1,12 @@
 import { z } from "zod";
-/** The user's onboarding document, version 3 — the SDK half of
- * `backend/src/core/setup.ts::SetupState`, in the SDK's camel-case
- * spelling (`nativeWireCodec` maps `current_step` on the wire).
+/** The user's onboarding document, version 3, as `setup.get` and
+ * `setup.update` carry it. The backend stores it under its own keys
+ * (`backend/src/core/setup.ts::SetupStateSchema`) and maps it to this shape
+ * where it reads and writes the row.
  *
  * This schema sits on BOTH ends of `setup.update`: the client encodes its
- * request through it and the server decodes the request through it before
- * its own decoder sees the document. A key it does not name is stripped in
- * flight, so it must name exactly what the backend's document holds. */
+ * request through it and the server decodes the request through it. It is
+ * strict, so a document in any other spelling is refused. */
 export declare const setupSchemaVersion = 3;
 export declare const SetupStateSchema: z.ZodObject<{
     version: z.ZodNumber;
@@ -14,7 +14,7 @@ export declare const SetupStateSchema: z.ZodObject<{
     currentStep: z.ZodString;
     sources: z.ZodArray<z.ZodString>;
     engine: z.ZodNullable<z.ZodString>;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type SetupState = z.output<typeof SetupStateSchema>;
 /** One screen of a person's onboarding — the SDK half of
  * `backend/src/core/setup.ts::SetupStep`.
@@ -170,7 +170,7 @@ export declare const SetupStepAnswerSchema: z.ZodObject<{
         currentStep: z.ZodString;
         sources: z.ZodArray<z.ZodString>;
         engine: z.ZodNullable<z.ZodString>;
-    }, z.core.$strip>>;
+    }, z.core.$strict>>;
 }, z.core.$strict>;
 export type SetupStepAnswer = z.output<typeof SetupStepAnswerSchema>;
 /** What `setup.get` and `setup.update` both answer. */
@@ -181,7 +181,7 @@ export declare const SetupViewSchema: z.ZodObject<{
         currentStep: z.ZodString;
         sources: z.ZodArray<z.ZodString>;
         engine: z.ZodNullable<z.ZodString>;
-    }, z.core.$strip>;
+    }, z.core.$strict>;
     plan: z.ZodObject<{
         steps: z.ZodReadonly<z.ZodArray<z.ZodDiscriminatedUnion<[z.ZodObject<{
             kind: z.ZodLiteral<"welcome">;

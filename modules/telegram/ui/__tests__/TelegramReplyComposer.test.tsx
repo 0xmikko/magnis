@@ -7,11 +7,11 @@
  * - tst_fe_composer_003 Second Enter during in-flight send is ignored
  * - tst_fe_composer_004 Successful send clears localStorage for telegram:<chatId>
  * - tst_fe_composer_005 onSend rejection preserves text + localStorage
- * - tst_fe_composer_006 Mount calls setPresence({mode:"telegram", thread_key: String(chatId)})
+ * - tst_fe_composer_006 Mount calls setPresence({mode:"telegram", threadKey: String(chatId)})
  * - tst_fe_composer_007 Telegram mode: paperclip absent from DOM
  * - tst_fe_composer_008 Mount/unmount/chatId switch lifecycle on setPresence
- * - tst_fe_composer_028 composer.apply set_text event with matching (mode, thread_key) updates textarea
- * - tst_fe_composer_029 composer.apply event with mismatched thread_key is ignored
+ * - tst_fe_composer_028 composer.apply set_text event with matching (mode, threadKey) updates textarea
+ * - tst_fe_composer_029 composer.apply event with mismatched threadKey is ignored
  * - tst_fe_composer_030 append_text concatenates onto existing draft text
  */
 
@@ -23,7 +23,7 @@ import { ComposerMountProvider } from "@magnis/host/composer";
 import { __INTERNAL } from "@magnis/host/composer";
 import type {
   AppRuntime,
-  ComposerApplyEventPayload,
+  ComposerApplyEvent,
   ComposerPresenceParams,
 } from "@magnis/host/runtime";
 
@@ -37,10 +37,10 @@ interface PresenceCall {
 
 const setPresenceCalls: PresenceCall[] = [];
 
-type ApplyHandler = (event: ComposerApplyEventPayload) => void;
+type ApplyHandler = (event: ComposerApplyEvent) => void;
 const applyHandlers: ApplyHandler[] = [];
 
-function emitApply(event: ComposerApplyEventPayload): void {
+function emitApply(event: ComposerApplyEvent): void {
   for (const h of applyHandlers) h(event);
 }
 
@@ -209,7 +209,7 @@ describe("TelegramReplyComposer", () => {
   });
 
   // tst_fe_composer_006 — presence on mount
-  it("tst_fe_composer_006 mount triggers setPresence with {mode:\"telegram\", thread_key: String(chatId)}", () => {
+  it("tst_fe_composer_006 mount triggers setPresence with {mode:\"telegram\", threadKey: String(chatId)}", () => {
     render(
       <Harness>
         <TelegramReplyComposer chatId={99} />
@@ -218,7 +218,7 @@ describe("TelegramReplyComposer", () => {
     // First call is the mount with the params; there may be subsequent lifecycle calls.
     expect(setPresenceCalls[0]?.params).toEqual({
       mode: "telegram",
-      thread_key: "99",
+      threadKey: "99",
     });
   });
 
@@ -245,7 +245,7 @@ describe("TelegramReplyComposer", () => {
       </Harness>,
     );
     // Mount recorded presence for A.
-    expect(setPresenceCalls.find((c) => c.params?.thread_key === "A")).toBeDefined();
+    expect(setPresenceCalls.find((c) => c.params?.threadKey === "A")).toBeDefined();
 
     // Change chatId: useEffect cleanup should fire setPresence(null), then re-mount with new key.
     setPresenceCalls.length = 0;
@@ -255,7 +255,7 @@ describe("TelegramReplyComposer", () => {
       </Harness>,
     );
     const hadNull = setPresenceCalls.some((c) => c.params === null);
-    const hadB = setPresenceCalls.some((c) => c.params?.thread_key === "B");
+    const hadB = setPresenceCalls.some((c) => c.params?.threadKey === "B");
     expect(hadNull).toBe(true);
     expect(hadB).toBe(true);
 
@@ -266,7 +266,7 @@ describe("TelegramReplyComposer", () => {
   });
 
   // tst_fe_composer_028 — composer.apply routes set_text to textarea
-  it("tst_fe_composer_028 composer.apply set_text with matching (mode, thread_key) updates textarea", () => {
+  it("tst_fe_composer_028 composer.apply set_text with matching (mode, threadKey) updates textarea", () => {
     const { container } = render(
       <Harness>
         <TelegramReplyComposer chatId="42" />
@@ -275,7 +275,7 @@ describe("TelegramReplyComposer", () => {
     act(() => {
       emitApply({
         mode: "telegram",
-        thread_key: "42",
+        threadKey: "42",
         revision: 1,
         op: "set_text",
         text: "from agent",
@@ -284,8 +284,8 @@ describe("TelegramReplyComposer", () => {
     expect(getTextarea(container).value).toBe("from agent");
   });
 
-  // tst_fe_composer_029 — mismatched thread_key is ignored
-  it("tst_fe_composer_029 composer.apply with mismatched thread_key does not update", () => {
+  // tst_fe_composer_029 — mismatched threadKey is ignored
+  it("tst_fe_composer_029 composer.apply with mismatched threadKey does not update", () => {
     const { container } = render(
       <Harness>
         <TelegramReplyComposer chatId="42" />
@@ -296,7 +296,7 @@ describe("TelegramReplyComposer", () => {
     act(() => {
       emitApply({
         mode: "telegram",
-        thread_key: "999",
+        threadKey: "999",
         revision: 1,
         op: "set_text",
         text: "should not apply",
@@ -317,7 +317,7 @@ describe("TelegramReplyComposer", () => {
     act(() => {
       emitApply({
         mode: "telegram",
-        thread_key: "42",
+        threadKey: "42",
         revision: 1,
         op: "append_text",
         text: " world",

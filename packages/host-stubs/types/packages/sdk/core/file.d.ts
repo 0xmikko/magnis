@@ -1,25 +1,29 @@
 import { z } from "zod";
+/** `file.upload`: a display name and an absolute path the host reads the
+ * bytes from. Omitted, the MIME type is derived from the path's extension. */
 export declare const FileUploadParamsSchema: z.ZodObject<{
     name: z.ZodString;
     localPath: z.ZodString;
     mimeType: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>;
 export type FileUploadParams = z.input<typeof FileUploadParamsSchema>;
+/** `file.upload`: the created `file.object` entity, described. */
 export declare const FileUploadResultSchema: z.ZodObject<{
     id: z.ZodString;
     schemaId: z.ZodString;
     name: z.ZodString;
     mimeType: z.ZodString;
     sizeBytes: z.ZodNumber;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type FileUploadResult = z.output<typeof FileUploadResultSchema>;
+/** `POST /files/upload`: the multipart upload's entity and its serve URL. */
 export declare const FileUploadHttpResultSchema: z.ZodObject<{
     entityId: z.ZodString;
     name: z.ZodString;
     mimeType: z.ZodString;
     sizeBytes: z.ZodNumber;
     url: z.ZodString;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type FileUploadHttpResult = z.output<typeof FileUploadHttpResultSchema>;
 export declare const FileExtraSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     kind: z.ZodLiteral<"image">;
@@ -35,6 +39,8 @@ export declare const FileExtraSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     height: z.ZodNumber;
 }, z.core.$strip>], "kind">;
 export type FileExtra = z.output<typeof FileExtraSchema>;
+/** The command `FileService.register` takes: a plugin's `FileRegisterParams`
+ * after the host matched its provenance. */
 export declare const RegisterFileCommandSchema: z.ZodObject<{
     externalId: z.ZodString;
     parentExternalId: z.ZodString;

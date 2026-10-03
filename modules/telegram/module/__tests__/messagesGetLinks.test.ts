@@ -73,7 +73,7 @@ describe("tst_mod_tg_001 — a message exposes its own links", () => {
     }).module;
 
     const view = await mod.messagesGet({ id: MESSAGE_ID });
-    const byId = new Map(view.linked_entities.map((l) => [l.id, l] as const));
+    const byId = new Map(view.linkedEntities.map((l) => [l.id, l] as const));
 
     // Outgoing keeps the kind — an implementation that prefixed everything
     // with `~` would pass a weaker assertion than this one.
@@ -87,7 +87,7 @@ describe("tst_mod_tg_001 — a message exposes its own links", () => {
     expect(byId.has("web-1")).toBe(false);
     expect(byId.has("file-1")).toBe(false);
     // Those three, and the message never lists itself.
-    expect(view.linked_entities).toHaveLength(3);
+    expect(view.linkedEntities).toHaveLength(3);
     expect(byId.has(MESSAGE_ID)).toBe(false);
     // The batch argument, not just its count: a batch over the wrong ids would
     // otherwise leave every assertion above intact.

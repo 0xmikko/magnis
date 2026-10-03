@@ -1,10 +1,13 @@
 import { z } from "zod";
 export declare const runtimeContracts: {
     readonly "runtime.composer.setPresence": import("../contract.js").RpcContract<"runtime.composer.setPresence", z.ZodObject<{
-        presence: z.ZodUnion<readonly [z.ZodObject<{
-            mode: z.ZodString;
+        presence: z.ZodNullable<z.ZodObject<{
+            mode: z.ZodEnum<{
+                email: "email";
+                telegram: "telegram";
+            }>;
             threadKey: z.ZodString;
-        }, z.core.$strip>, z.ZodNull]>;
+        }, z.core.$strict>>;
     }, z.core.$strip>, z.ZodObject<{
         ok: z.ZodLiteral<true>;
     }, z.core.$strict>, "required">;

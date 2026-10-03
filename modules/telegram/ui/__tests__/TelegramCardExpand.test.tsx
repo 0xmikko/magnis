@@ -1,7 +1,7 @@
 /**
  * tst_fe_telegram_expand_001 — telegramMessageHasMore false for short text, true past 140 chars or newline.
  * tst_fe_telegram_expand_002 — TelegramMessageCard expanded layout renders full text.
- * tst_fe_telegram_expand_003 — telegramChatHasMore true for members / chat_type / created_at.
+ * tst_fe_telegram_expand_003 — telegramChatHasMore true for members / chat_type / createdAt.
  * tst_fe_telegram_expand_004 — TelegramChatCard expanded layout renders type/members/created/last-msg.
  * tst_fe_telegram_expand_005 — Chevron flips TelegramMessageCard via context.
  */
@@ -58,7 +58,7 @@ describe("tst_fe_telegram_expand_003 — telegramChatHasMore", () => {
   it.each([
     { members: [{ name: "Anna" }] },
     { chat_type: "group" },
-    { created_at: "2026-04-18T10:00:00Z" },
+    { createdAt: "2026-04-18T10:00:00Z" },
   ])("true for %o", (d) => {
     expect(telegramChatHasMore(d)).toBe(true);
   });
@@ -77,7 +77,7 @@ describe("tst_fe_telegram_expand_004 — TelegramChatCard expanded layout", () =
           data={{
             chat_title: "Launch team",
             chat_type: "group",
-            created_at: "2026-04-18T10:00:00Z",
+            createdAt: "2026-04-18T10:00:00Z",
             last_message: "see you soon",
             members: [{ name: "Anna" }, { username: "bob" }, { display_name: "Clara" }],
           }}
@@ -147,11 +147,11 @@ describe("tst_mod_tg_003 — links do not change how a message is drawn", () => 
     return container.innerHTML;
   }
 
-  it("renders identically with and without linked_entities", () => {
+  it("renders identically with and without linkedEntities", () => {
     const without = markup({ ...BASE });
     const with_ = markup({
       ...BASE,
-      linked_entities: [
+      linkedEntities: [
         { id: "c1", name: "Ops chat", schemaId: "telegram.chat", linkKind: "in_chat" },
         { id: "t1", name: "Watcher", schemaId: "triggers.trigger", linkKind: "~watches" },
       ],

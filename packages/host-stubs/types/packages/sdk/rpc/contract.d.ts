@@ -2,19 +2,6 @@ import { z } from "zod";
 import { type JsonObject, type JsonValue } from "../core/json.js";
 export type RpcParamsMode = "required" | "optional";
 export type ContractBoundary = "input" | "output" | "chunk";
-/**
- * A transport codec keeps the SDK surface canonical while allowing a legacy
- * wire adapter to be explicit at the boundary.  Codec functions receive
- * values only after the public schema has validated them (and return values
- * that are validated again by the corresponding output/chunk schema).
- */
-export interface RpcWireCodec {
-    readonly encodeInput?: (value: unknown) => JsonValue;
-    readonly encodeOutput?: (value: unknown) => JsonValue;
-    readonly decodeInput?: (value: unknown) => unknown;
-    readonly decodeOutput?: (value: unknown) => unknown;
-    readonly decodeChunk?: (value: unknown) => unknown;
-}
 /** RPC inputs are objects; common operations may select among closed object forms. */
 export type RpcInputSchema = z.ZodObject | z.ZodUnion<readonly z.ZodObject[]>;
 type StrictInputSchema<InputSchema extends RpcInputSchema> = InputSchema extends z.ZodObject ? z.ZodObject<InputSchema["shape"], z.core.$strict> : InputSchema;
@@ -24,7 +11,6 @@ export interface RpcContract<Method extends string, InputSchema extends RpcInput
     readonly output: OutputSchema;
     readonly params: Params;
     readonly inputJsonSchema: Readonly<JsonObject>;
-    readonly wire?: RpcWireCodec;
 }
 export interface StreamContract<Method extends string, InputSchema extends z.ZodObject, ChunkSchema extends z.ZodType, OutputSchema extends z.ZodType, Params extends RpcParamsMode = "required"> extends RpcContract<Method, InputSchema, OutputSchema, Params> {
     readonly chunk: ChunkSchema;
@@ -65,6 +51,8 @@ export declare class ContractValidationError extends Error {
 }
 /** Render validation details consistently for backend and client adapters. */
 export declare function renderContractIssues(method: string, boundary: ContractBoundary, issues: readonly ContractIssue[]): string;
+/** Parse one boundary value with its schema, exactly as the schema states it:
+ * a strict object refuses an unknown key at every boundary. */
 export declare function parseContractValue<Schema extends z.ZodType>(method: string, boundary: ContractBoundary, schema: Schema, value: unknown): z.output<Schema>;
 export declare function strictInputSchema<const Input extends RpcInputSchema>(input: Input): StrictInputSchema<Input>;
 /** Render a closed input schema for publication to clients and agents. */
@@ -74,7 +62,6 @@ interface RpcContractDefinition<Method extends string, InputSchema extends RpcIn
     readonly input: InputSchema;
     readonly output: OutputSchema;
     readonly params?: Params;
-    readonly wire?: RpcWireCodec;
 }
 export declare function defineRpcContract<const Method extends string, const InputSchema extends RpcInputSchema, const OutputSchema extends z.ZodType>(definition: RpcContractDefinition<Method, InputSchema, OutputSchema, "optional"> & {
     readonly params: "optional";
@@ -85,24 +72,10 @@ interface StreamContractDefinition<Method extends string, InputSchema extends z.
     readonly input: InputSchema;
     readonly chunk: ChunkSchema;
     readonly output: OutputSchema;
-    readonly wire?: RpcWireCodec;
 }
 export declare function defineStreamContract<const Method extends string, const InputSchema extends z.ZodObject, const ChunkSchema extends z.ZodType, const OutputSchema extends z.ZodType>(definition: StreamContractDefinition<Method, InputSchema, ChunkSchema, OutputSchema>): StreamContract<Method, InputSchema, ChunkSchema, OutputSchema>;
 export declare function parseRpcInput<Contract extends RpcContractLike>(contract: Contract, value: unknown): RpcHandlerInputFor<Contract>;
-/** Parse a backend wire request through the explicit input decoder. Client
- * callers use {@link parseRpcInput} on canonical values; backend adapters use
- * this function for the legacy serialized envelope. */
-export declare function parseRpcWireInput<Contract extends RpcContractLike>(contract: Contract, value: unknown): RpcHandlerInputFor<Contract>;
 export declare function parseRpcOutput<Contract extends RpcContractLike>(contract: Contract, value: unknown): RpcOutputFor<Contract>;
-/** Encode a validated canonical output for a legacy transport envelope. */
-export declare function encodeRpcOutput<Contract extends RpcContractLike>(contract: Contract, value: RpcOutputFor<Contract>): JsonValue;
-/** Validate a backend's legacy wire response without changing the bytes that
- * the transport serializes. The client-side parser performs the canonical
- * decode; this helper lets backend registration enforce the same schema while
- * retaining the existing wire compatibility. */
-export declare function validateRpcOutput<Contract extends RpcContractLike>(contract: Contract, value: unknown): void;
-/** Validate a canonical input and encode it for the actual transport wire. */
-export declare function encodeRpcInput<Contract extends RpcContractLike>(contract: Contract, value: unknown): JsonValue;
 export declare function parseStreamChunk<Contract extends StreamContractLike>(contract: Contract, value: unknown): StreamChunkFor<Contract>;
 export {};
 //# sourceMappingURL=contract.d.ts.map

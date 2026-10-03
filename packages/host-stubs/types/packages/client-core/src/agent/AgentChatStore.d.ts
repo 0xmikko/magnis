@@ -1,3 +1,4 @@
+import type { EpisodeTodoItem } from "@magnis/sdk";
 import type { AppTransport } from "../contracts/transport.ts";
 import type { ChatMessageAttachment, EpisodeState, UIContext } from "../types/episode.ts";
 export type Listener = (state: EpisodeState) => void;
@@ -8,7 +9,7 @@ export type TodoItem = {
 export type TodoSnapshot = {
     readonly contextKey: string;
     readonly episodeId: string | null;
-    readonly items: readonly TodoItem[];
+    readonly items: readonly EpisodeTodoItem[];
 };
 export type TodoListener = (snapshot: TodoSnapshot) => void;
 /** Only an explicit non-retryable server refusal proves no mutation was admitted. */

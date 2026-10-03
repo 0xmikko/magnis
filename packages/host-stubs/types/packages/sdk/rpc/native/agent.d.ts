@@ -12,16 +12,16 @@ export declare const agentContracts: {
             usesLlmRuntime: z.ZodBoolean;
             available: z.ZodOptional<z.ZodBoolean>;
             unavailableReason: z.ZodOptional<z.ZodNullable<z.ZodString>>;
-        }, z.core.$strip>>;
+        }, z.core.$strict>>;
         defaultImplementationId: z.ZodEnum<{
             magnis: "magnis";
             codex: "codex";
             claude: "claude";
         }>;
-    }, z.core.$strip>, "required">;
+    }, z.core.$strict>, "required">;
     readonly "agent.limits.get": import("../contract.js").RpcContract<"agent.limits.get", z.ZodObject<{}, z.core.$strip>, z.ZodObject<{
         maxSteps: z.ZodNumber;
-    }, z.core.$strip>, "required">;
+    }, z.core.$strict>, "required">;
     readonly "agent.models.list": import("../contract.js").RpcContract<"agent.models.list", z.ZodObject<{
         implementationId: z.ZodString;
     }, z.core.$strip>, z.ZodObject<{
@@ -81,6 +81,6 @@ export declare const agentContracts: {
         }, z.core.$strict>>;
         available: z.ZodOptional<z.ZodBoolean>;
         unavailableReason: z.ZodOptional<z.ZodNullable<z.ZodString>>;
-    }, z.core.$strip>, "required">;
+    }, z.core.$strict>, "required">;
 };
 //# sourceMappingURL=agent.d.ts.map

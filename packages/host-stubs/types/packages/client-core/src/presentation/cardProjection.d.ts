@@ -8,8 +8,8 @@ import { type ExtractEntitiesOptions } from "./extractEntities.ts";
  * Flattens a tool-kind envelope to the legacy card data shape so entity
  * renderers can read fields directly (e.g. `data.name`).
  *
- * - `{kind:"created", id, schema_id, fields}` → `{id, schema_id, ...fields}`
- * - `{kind:"updated", id, schema_id, changed}` → `{id, schema_id, ...after-values}`
+ * - `{kind:"created", id, schemaId, fields}` → `{id, schemaId, ...fields}`
+ * - `{kind:"updated", id, schemaId, changed}` → `{id, schemaId, ...after-values}`
  * - anything else passes through unchanged.
  *
  * Envelope is persisted verbatim in chat history so cards render the same

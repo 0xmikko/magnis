@@ -34,13 +34,13 @@ export declare const extensionsContracts: {
             packageHash: z.ZodString;
             entry: z.ZodString;
             exportName: z.ZodString;
-        }, z.core.$strip>>;
+        }, z.core.$strict>>;
         removable: z.ZodBoolean;
         position: z.ZodNumber;
-        blockingDependents: z.ZodDefault<z.ZodArray<z.ZodString>>;
-        unmetRequirements: z.ZodDefault<z.ZodArray<z.ZodString>>;
-        surfaces: z.ZodDefault<z.ZodArray<z.ZodString>>;
-    }, z.core.$strip>, "required">;
+        blockingDependents: z.ZodArray<z.ZodString>;
+        unmetRequirements: z.ZodArray<z.ZodString>;
+        surfaces: z.ZodArray<z.ZodString>;
+    }, z.core.$strict>, "required">;
     readonly "extensions.list": import("../contract.js").RpcContract<"extensions.list", z.ZodObject<{
         kind: z.ZodOptional<z.ZodEnum<{
             source: "source";
@@ -81,13 +81,13 @@ export declare const extensionsContracts: {
                 packageHash: z.ZodString;
                 entry: z.ZodString;
                 exportName: z.ZodString;
-            }, z.core.$strip>>;
+            }, z.core.$strict>>;
             removable: z.ZodBoolean;
             position: z.ZodNumber;
-            blockingDependents: z.ZodDefault<z.ZodArray<z.ZodString>>;
-            unmetRequirements: z.ZodDefault<z.ZodArray<z.ZodString>>;
-            surfaces: z.ZodDefault<z.ZodArray<z.ZodString>>;
-        }, z.core.$strip>>;
-    }, z.core.$strip>, "required">;
+            blockingDependents: z.ZodArray<z.ZodString>;
+            unmetRequirements: z.ZodArray<z.ZodString>;
+            surfaces: z.ZodArray<z.ZodString>;
+        }, z.core.$strict>>;
+    }, z.core.$strict>, "required">;
 };
 //# sourceMappingURL=extensions.d.ts.map

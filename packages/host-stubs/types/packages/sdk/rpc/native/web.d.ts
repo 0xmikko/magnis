@@ -9,7 +9,7 @@ export declare const webContracts: {
         }, z.core.$strict>>>;
     }, z.core.$strict>, "required">;
     readonly "web.link.get": import("../contract.js").RpcContract<"web.link.get", z.ZodObject<{
-        id: z.ZodString;
+        id: z.ZodGUID;
     }, z.core.$strip>, z.ZodObject<{
         id: z.ZodString;
         url: z.ZodString;
@@ -34,10 +34,10 @@ export declare const webContracts: {
                 agent: "agent";
             }>;
             validUntil: z.ZodNullable<z.ZodISODateTime>;
-        }, z.core.$strip>>;
-    }, z.core.$strip>, "required">;
+        }, z.core.$strict>>;
+    }, z.core.$strict>, "required">;
     readonly "web.link.open": import("../contract.js").RpcContract<"web.link.open", z.ZodObject<{
-        id: z.ZodOptional<z.ZodString>;
+        id: z.ZodOptional<z.ZodGUID>;
         url: z.ZodOptional<z.ZodString>;
         forceRefresh: z.ZodDefault<z.ZodBoolean>;
     }, z.core.$strip>, z.ZodObject<{
@@ -48,23 +48,23 @@ export declare const webContracts: {
         contentLength: z.ZodNumber;
         extractedAt: z.ZodString;
         fromCache: z.ZodBoolean;
-    }, z.core.$strip>, "required">;
+    }, z.core.$strict>, "required">;
     readonly "web.search": import("../contract.js").RpcContract<"web.search", z.ZodObject<{
         query: z.ZodString;
-        limit: z.ZodDefault<z.ZodNumber>;
+        limit: z.ZodDefault<z.ZodInt>;
     }, z.core.$strip>, z.ZodObject<{
         query: z.ZodString;
         results: z.ZodArray<z.ZodObject<{
             title: z.ZodString;
             url: z.ZodString;
             snippet: z.ZodString;
-        }, z.core.$strip>>;
-    }, z.core.$strip>, "required">;
+        }, z.core.$strict>>;
+    }, z.core.$strict>, "required">;
     readonly "web.page.search": {
         readonly method: "web.page.search";
         readonly input: z.ZodObject<{
             query: z.ZodString;
-            limit: z.ZodDefault<z.ZodNumber>;
+            limit: z.ZodDefault<z.ZodInt>;
         }, z.core.$strict>;
         readonly output: z.ZodObject<{
             query: z.ZodString;
@@ -72,11 +72,10 @@ export declare const webContracts: {
                 title: z.ZodString;
                 url: z.ZodString;
                 snippet: z.ZodString;
-            }, z.core.$strip>>;
-        }, z.core.$strip>;
+            }, z.core.$strict>>;
+        }, z.core.$strict>;
         readonly params: "required";
         readonly inputJsonSchema: Readonly<import("../../index.js").JsonObject>;
-        readonly wire?: import("../contract.js").RpcWireCodec;
     };
 };
 //# sourceMappingURL=web.d.ts.map

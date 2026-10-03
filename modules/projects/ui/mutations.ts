@@ -48,10 +48,10 @@ export function useCreateProjectMutation(): UseMutationResult<CreateProjectResul
 
       const optimistic: ProjectListItem = {
         id: "_pending",
-        schema_id: PROJECT,
+        schemaId: PROJECT,
         name: variables.name,
         status: variables.status ?? null,
-        created_at: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
       };
 
       queryClient.setQueryData<PaginatedResponse<ProjectListItem>>(listKey, (old) => ({

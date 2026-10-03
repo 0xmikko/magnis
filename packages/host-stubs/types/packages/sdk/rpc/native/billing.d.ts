@@ -22,12 +22,12 @@ export declare const billingContracts: {
             costMicros: z.ZodNullable<z.ZodNumber>;
             status: z.ZodString;
             error: z.ZodNullable<z.ZodString>;
-        }, z.core.$strip>>;
+        }, z.core.$strict>>;
         from: z.ZodString;
         to: z.ZodString;
         limit: z.ZodNumber;
         offset: z.ZodNumber;
-    }, z.core.$strip>, "required">;
+    }, z.core.$strict>, "required">;
     readonly "billing.limits.get": import("../contract.js").RpcContract<"billing.limits.get", z.ZodObject<{}, z.core.$strip>, z.ZodObject<{
         userId: z.ZodString;
         creditLimitMicros: z.ZodNullable<z.ZodNumber>;
@@ -35,6 +35,6 @@ export declare const billingContracts: {
         reservedMicros: z.ZodNumber;
         availableMicros: z.ZodNullable<z.ZodNumber>;
         entitled: z.ZodBoolean;
-    }, z.core.$strip>, "required">;
+    }, z.core.$strict>, "required">;
 };
 //# sourceMappingURL=billing.d.ts.map

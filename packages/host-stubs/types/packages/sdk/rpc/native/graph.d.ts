@@ -1,8 +1,22 @@
 import { z } from "zod";
+/** `graph.relations`: the workspace's link-kind vocabulary. It is dispatched
+ * beside the generated search tools rather than registered as a native
+ * method, so it is not part of {@link graphContracts}. */
+export declare const graphRelationsContract: import("../contract.js").RpcContract<"graph.relations", z.ZodObject<{}, z.core.$strip>, z.ZodObject<{
+    relations: z.ZodArray<z.ZodObject<{
+        kind: z.ZodString;
+        description: z.ZodString;
+        state: z.ZodString;
+        symmetric: z.ZodBoolean;
+        fromRole: z.ZodNullable<z.ZodString>;
+        toRole: z.ZodNullable<z.ZodString>;
+        owner: z.ZodNullable<z.ZodString>;
+    }, z.core.$strict>>;
+}, z.core.$strict>, "required">;
 export declare const graphContracts: {
     readonly "graph.approve": import("../contract.js").RpcContract<"graph.approve", z.ZodObject<{
-        id: z.ZodString;
-        episodeId: z.ZodString;
+        id: z.ZodGUID;
+        episodeId: z.ZodGUID;
     }, z.core.$strip>, z.ZodUnion<readonly [z.ZodDiscriminatedUnion<[z.ZodObject<{
         origin: z.ZodLiteral<"canonical">;
         source: z.ZodObject<{
@@ -76,12 +90,12 @@ export declare const graphContracts: {
         }, z.core.$strict>>>;
     }, z.core.$strict>, "required">;
     readonly "graph.entity.archive": import("../contract.js").RpcContract<"graph.entity.archive", z.ZodObject<{
-        entityId: z.ZodString;
+        entityId: z.ZodGUID;
     }, z.core.$strip>, z.ZodObject<{
         ok: z.ZodLiteral<true>;
     }, z.core.$strict>, "required">;
     readonly "graph.entity.get": import("../contract.js").RpcContract<"graph.entity.get", z.ZodObject<{
-        id: z.ZodString;
+        id: z.ZodGUID;
     }, z.core.$strip>, z.ZodObject<{
         id: z.ZodString;
         schemaId: z.ZodString;
@@ -104,10 +118,10 @@ export declare const graphContracts: {
                 agent: "agent";
             }>;
             validUntil: z.ZodNullable<z.ZodISODateTime>;
-        }, z.core.$strip>>;
-    }, z.core.$strip>, "required">;
+        }, z.core.$strict>>;
+    }, z.core.$strict>, "required">;
     readonly "graph.entity.links": import("../contract.js").RpcContract<"graph.entity.links", z.ZodObject<{
-        id: z.ZodString;
+        id: z.ZodGUID;
         kind: z.ZodOptional<z.ZodString>;
         direction: z.ZodDefault<z.ZodEnum<{
             from: "from";
@@ -116,16 +130,11 @@ export declare const graphContracts: {
         }>>;
     }, z.core.$strip>, z.ZodObject<{
         entityId: z.ZodString;
-        links: z.ZodArray<z.ZodObject<{
-            direction: z.ZodEnum<{
-                from: "from";
-                to: "to";
-            }>;
+        links: z.ZodArray<z.ZodDiscriminatedUnion<[z.ZodObject<{
+            direction: z.ZodLiteral<"from">;
             kind: z.ZodString;
-            targetId: z.ZodOptional<z.ZodString>;
-            targetName: z.ZodOptional<z.ZodNullable<z.ZodString>>;
-            sourceId: z.ZodOptional<z.ZodString>;
-            sourceName: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+            targetId: z.ZodString;
+            targetName: z.ZodNullable<z.ZodString>;
             confidence: z.ZodNullable<z.ZodNumber>;
             origin: z.ZodEnum<{
                 canonical: "canonical";
@@ -133,27 +142,39 @@ export declare const graphContracts: {
             }>;
             validUntil: z.ZodNullable<z.ZodISODateTime>;
             id: z.ZodString;
-        }, z.core.$strip>>;
+        }, z.core.$strict>, z.ZodObject<{
+            direction: z.ZodLiteral<"to">;
+            kind: z.ZodString;
+            sourceId: z.ZodString;
+            sourceName: z.ZodNullable<z.ZodString>;
+            confidence: z.ZodNullable<z.ZodNumber>;
+            origin: z.ZodEnum<{
+                canonical: "canonical";
+                agent: "agent";
+            }>;
+            validUntil: z.ZodNullable<z.ZodISODateTime>;
+            id: z.ZodString;
+        }, z.core.$strict>], "direction">>;
         total: z.ZodNumber;
-    }, z.core.$strip>, "required">;
+    }, z.core.$strict>, "required">;
     readonly "graph.entity.pin": import("../contract.js").RpcContract<"graph.entity.pin", z.ZodObject<{
-        entityId: z.ZodString;
-        pinOrder: z.ZodOptional<z.ZodNumber>;
+        entityId: z.ZodGUID;
+        pinOrder: z.ZodOptional<z.ZodInt>;
     }, z.core.$strip>, z.ZodObject<{
         ok: z.ZodLiteral<true>;
     }, z.core.$strict>, "required">;
     readonly "graph.entity.unarchive": import("../contract.js").RpcContract<"graph.entity.unarchive", z.ZodObject<{
-        entityId: z.ZodString;
+        entityId: z.ZodGUID;
     }, z.core.$strip>, z.ZodObject<{
         ok: z.ZodLiteral<true>;
     }, z.core.$strict>, "required">;
     readonly "graph.entity.unpin": import("../contract.js").RpcContract<"graph.entity.unpin", z.ZodObject<{
-        entityId: z.ZodString;
+        entityId: z.ZodGUID;
     }, z.core.$strip>, z.ZodObject<{
         ok: z.ZodLiteral<true>;
     }, z.core.$strict>, "required">;
     readonly "graph.entity.update_properties": import("../contract.js").RpcContract<"graph.entity.update_properties", z.ZodObject<{
-        entityId: z.ZodString;
+        entityId: z.ZodGUID;
         properties: z.ZodType<import("../../core/json.js").JsonObject, unknown, z.core.$ZodTypeInternals<import("../../core/json.js").JsonObject, unknown>>;
     }, z.core.$strip>, z.ZodObject<{
         ok: z.ZodLiteral<true>;
@@ -164,8 +185,8 @@ export declare const graphContracts: {
         name: z.ZodOptional<z.ZodString>;
         after: z.ZodOptional<z.ZodString>;
         before: z.ZodOptional<z.ZodString>;
-        limit: z.ZodOptional<z.ZodNumber>;
-        offset: z.ZodOptional<z.ZodNumber>;
+        limit: z.ZodDefault<z.ZodInt>;
+        offset: z.ZodDefault<z.ZodInt>;
     }, z.core.$strip>, z.ZodObject<{
         items: z.ZodArray<z.ZodObject<{
             id: z.ZodString;
@@ -174,12 +195,12 @@ export declare const graphContracts: {
             date: z.ZodString;
             idx: z.ZodNullable<z.ZodString>;
             linkKind: z.ZodOptional<z.ZodString>;
-        }, z.core.$strip>>;
+        }, z.core.$strict>>;
         total: z.ZodNumber;
         hasMore: z.ZodBoolean;
-    }, z.core.$strip>, "required">;
+    }, z.core.$strict>, "required">;
     readonly "graph.get": import("../contract.js").RpcContract<"graph.get", z.ZodObject<{
-        id: z.ZodString;
+        id: z.ZodGUID;
     }, z.core.$strip>, z.ZodObject<{
         entity: z.ZodObject<{
             id: z.ZodString;
@@ -187,7 +208,7 @@ export declare const graphContracts: {
             name: z.ZodNullable<z.ZodString>;
             date: z.ZodString;
             idx: z.ZodNullable<z.ZodString>;
-        }, z.core.$strip>;
+        }, z.core.$strict>;
         links: z.ZodArray<z.ZodObject<{
             from: z.ZodString;
             to: z.ZodString;
@@ -199,18 +220,18 @@ export declare const graphContracts: {
             validUntil: z.ZodNullable<z.ZodISODateTime>;
             id: z.ZodString;
             kind: z.ZodString;
-        }, z.core.$strip>>;
+        }, z.core.$strict>>;
         linkCounts: z.ZodRecord<z.ZodString, z.ZodNumber>;
         linksTotal: z.ZodNumber;
         linksHasMore: z.ZodBoolean;
-    }, z.core.$strip>, "required">;
+    }, z.core.$strict>, "required">;
     readonly "graph.link.add": import("../contract.js").RpcContract<"graph.link.add", z.ZodObject<{
         confidence: z.ZodNumber;
         evidence: z.ZodTuple<[z.ZodString], z.ZodString>;
         validFrom: z.ZodNullable<z.ZodISODateTime>;
         validUntil: z.ZodNullable<z.ZodISODateTime>;
-        from: z.ZodString;
-        to: z.ZodString;
+        from: z.ZodGUID;
+        to: z.ZodGUID;
         kind: z.ZodString;
     }, z.core.$strip>, z.ZodObject<{
         id: z.ZodString;
@@ -218,11 +239,11 @@ export declare const graphContracts: {
         from: z.ZodString;
         to: z.ZodString;
         created: z.ZodBoolean;
-    }, z.core.$strip>, "required">;
+    }, z.core.$strict>, "required">;
     readonly "graph.link.end": import("../contract.js").RpcContract<"graph.link.end", z.ZodObject<{
-        id: z.ZodString;
+        id: z.ZodGUID;
         validUntil: z.ZodISODateTime;
-        evidence: z.ZodString;
+        evidence: z.ZodGUID;
     }, z.core.$strip>, z.ZodDiscriminatedUnion<[z.ZodObject<{
         origin: z.ZodLiteral<"canonical">;
         metadata: z.ZodType<import("../../core/json.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("../../core/json.js").JsonValue, unknown>>;
@@ -248,17 +269,17 @@ export declare const graphContracts: {
         createdAt: z.ZodISODateTime;
     }, z.core.$strict>], "origin">, "required">;
     readonly "graph.links": import("../contract.js").RpcContract<"graph.links", z.ZodObject<{
-        id: z.ZodString;
+        id: z.ZodGUID;
         kind: z.ZodString;
-        direction: z.ZodOptional<z.ZodEnum<{
+        direction: z.ZodDefault<z.ZodEnum<{
             in: "in";
             out: "out";
         }>>;
         childType: z.ZodOptional<z.ZodString>;
         after: z.ZodOptional<z.ZodString>;
         before: z.ZodOptional<z.ZodString>;
-        limit: z.ZodOptional<z.ZodNumber>;
-        offset: z.ZodOptional<z.ZodNumber>;
+        limit: z.ZodDefault<z.ZodInt>;
+        offset: z.ZodDefault<z.ZodInt>;
     }, z.core.$strip>, z.ZodObject<{
         items: z.ZodArray<z.ZodObject<{
             id: z.ZodString;
@@ -267,16 +288,16 @@ export declare const graphContracts: {
             date: z.ZodString;
             idx: z.ZodNullable<z.ZodString>;
             linkKind: z.ZodOptional<z.ZodString>;
-        }, z.core.$strip>>;
+        }, z.core.$strict>>;
         total: z.ZodNumber;
         hasMore: z.ZodBoolean;
-    }, z.core.$strip>, "required">;
+    }, z.core.$strict>, "required">;
     readonly "graph.search": import("../contract.js").RpcContract<"graph.search", z.ZodObject<{
         query: z.ZodString;
         type: z.ZodOptional<z.ZodString>;
         after: z.ZodOptional<z.ZodString>;
         before: z.ZodOptional<z.ZodString>;
-        limit: z.ZodOptional<z.ZodNumber>;
+        limit: z.ZodDefault<z.ZodInt>;
     }, z.core.$strip>, z.ZodObject<{
         items: z.ZodArray<z.ZodObject<{
             id: z.ZodString;
@@ -285,20 +306,20 @@ export declare const graphContracts: {
             date: z.ZodString;
             idx: z.ZodNullable<z.ZodString>;
             linkKind: z.ZodOptional<z.ZodString>;
-        }, z.core.$strip>>;
+        }, z.core.$strict>>;
         total: z.ZodNumber;
         hasMore: z.ZodBoolean;
-    }, z.core.$strip>, "required">;
+    }, z.core.$strict>, "required">;
     readonly "graph.withdraw": import("../contract.js").RpcContract<"graph.withdraw", z.ZodObject<{
-        evidenceIds: z.ZodArray<z.ZodString>;
+        evidenceIds: z.ZodArray<z.ZodGUID>;
     }, z.core.$strip>, z.ZodObject<{
         entities: z.ZodNumber;
         links: z.ZodNumber;
-    }, z.core.$strip>, "required">;
+    }, z.core.$strict>, "required">;
     readonly "graph.entity.links.list": {
         readonly method: "graph.entity.links.list";
         readonly input: z.ZodObject<{
-            id: z.ZodString;
+            id: z.ZodGUID;
             kind: z.ZodOptional<z.ZodString>;
             direction: z.ZodDefault<z.ZodEnum<{
                 from: "from";
@@ -308,16 +329,11 @@ export declare const graphContracts: {
         }, z.core.$strict>;
         readonly output: z.ZodObject<{
             entityId: z.ZodString;
-            links: z.ZodArray<z.ZodObject<{
-                direction: z.ZodEnum<{
-                    from: "from";
-                    to: "to";
-                }>;
+            links: z.ZodArray<z.ZodDiscriminatedUnion<[z.ZodObject<{
+                direction: z.ZodLiteral<"from">;
                 kind: z.ZodString;
-                targetId: z.ZodOptional<z.ZodString>;
-                targetName: z.ZodOptional<z.ZodNullable<z.ZodString>>;
-                sourceId: z.ZodOptional<z.ZodString>;
-                sourceName: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+                targetId: z.ZodString;
+                targetName: z.ZodNullable<z.ZodString>;
                 confidence: z.ZodNullable<z.ZodNumber>;
                 origin: z.ZodEnum<{
                     canonical: "canonical";
@@ -325,12 +341,23 @@ export declare const graphContracts: {
                 }>;
                 validUntil: z.ZodNullable<z.ZodISODateTime>;
                 id: z.ZodString;
-            }, z.core.$strip>>;
+            }, z.core.$strict>, z.ZodObject<{
+                direction: z.ZodLiteral<"to">;
+                kind: z.ZodString;
+                sourceId: z.ZodString;
+                sourceName: z.ZodNullable<z.ZodString>;
+                confidence: z.ZodNullable<z.ZodNumber>;
+                origin: z.ZodEnum<{
+                    canonical: "canonical";
+                    agent: "agent";
+                }>;
+                validUntil: z.ZodNullable<z.ZodISODateTime>;
+                id: z.ZodString;
+            }, z.core.$strict>], "direction">>;
             total: z.ZodNumber;
-        }, z.core.$strip>;
+        }, z.core.$strict>;
         readonly params: "required";
         readonly inputJsonSchema: Readonly<import("../../core/json.js").JsonObject>;
-        readonly wire?: import("../contract.js").RpcWireCodec;
     };
     readonly "graph.link.link": {
         readonly method: "graph.link.link";
@@ -339,8 +366,8 @@ export declare const graphContracts: {
             evidence: z.ZodTuple<[z.ZodString], z.ZodString>;
             validFrom: z.ZodNullable<z.ZodISODateTime>;
             validUntil: z.ZodNullable<z.ZodISODateTime>;
-            from: z.ZodString;
-            to: z.ZodString;
+            from: z.ZodGUID;
+            to: z.ZodGUID;
             kind: z.ZodString;
         }, z.core.$strict>;
         readonly output: z.ZodObject<{
@@ -349,17 +376,16 @@ export declare const graphContracts: {
             from: z.ZodString;
             to: z.ZodString;
             created: z.ZodBoolean;
-        }, z.core.$strip>;
+        }, z.core.$strict>;
         readonly params: "required";
         readonly inputJsonSchema: Readonly<import("../../core/json.js").JsonObject>;
-        readonly wire?: import("../contract.js").RpcWireCodec;
     };
     readonly "graph.link.update": {
         readonly method: "graph.link.update";
         readonly input: z.ZodObject<{
-            id: z.ZodString;
+            id: z.ZodGUID;
             validUntil: z.ZodISODateTime;
-            evidence: z.ZodString;
+            evidence: z.ZodGUID;
         }, z.core.$strict>;
         readonly output: z.ZodDiscriminatedUnion<[z.ZodObject<{
             origin: z.ZodLiteral<"canonical">;
@@ -387,22 +413,21 @@ export declare const graphContracts: {
         }, z.core.$strict>], "origin">;
         readonly params: "required";
         readonly inputJsonSchema: Readonly<import("../../core/json.js").JsonObject>;
-        readonly wire?: import("../contract.js").RpcWireCodec;
     };
     readonly "graph.entity.update": import("../contract.js").RpcContract<"graph.entity.update", z.ZodUnion<readonly [z.ZodObject<{
-        entity_id: z.ZodGUID;
-        pin_order: z.ZodNonOptional<z.ZodOptional<z.ZodNullable<z.ZodInt>>>;
+        entityId: z.ZodGUID;
+        pinOrder: z.ZodNonOptional<z.ZodOptional<z.ZodNullable<z.ZodInt>>>;
         archived: z.ZodOptional<z.ZodBoolean>;
     }, z.core.$strict>, z.ZodObject<{
-        entity_id: z.ZodGUID;
-        pin_order: z.ZodOptional<z.ZodNullable<z.ZodInt>>;
+        entityId: z.ZodGUID;
+        pinOrder: z.ZodOptional<z.ZodNullable<z.ZodInt>>;
         archived: z.ZodNonOptional<z.ZodOptional<z.ZodBoolean>>;
     }, z.core.$strict>]>, z.ZodObject<{
         ok: z.ZodLiteral<true>;
     }, z.core.$strict>, "required">;
     readonly "graph.link.unlink": import("../contract.js").RpcContract<"graph.link.unlink", z.ZodObject<{
         id: z.ZodGUID;
-    }, z.core.$strip>, z.ZodObject<{
+    }, z.core.$strict>, z.ZodObject<{
         ok: z.ZodLiteral<true>;
     }, z.core.$strict>, "required">;
 };

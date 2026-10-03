@@ -21,9 +21,17 @@
 import { rpc, tool, writeTool, type GraphService, errText,
   type PluginDeps, type PluginLogger, type RpcExecutor } from "@magnis/plugin-sdk";
 import type { ListParams } from "@magnis/plugin-sdk";
-import type { Entity, EntityWithLinks, JsonObject, Link, PaginatedResponse } from "@magnis/sdk";
 import type {
-  ClarificationResult,
+  Entity,
+  EntityWithLinks,
+  JsonObject,
+  Link,
+  PaginatedResponse,
+  RpcInputFor,
+  RpcOutputFor,
+  rpcContracts,
+} from "@magnis/sdk";
+import type {
   CreateTriggerParams,
   DeleteTriggerParams,
   FireHistoryParams,
@@ -31,12 +39,10 @@ import type {
   LinkTriggerParams,
   ListForEntityParams,
   ListTriggersParams,
-  ResolveWatchableResult,
   ScheduleParam,
   TriggerConfigData,
   TriggerCreated,
   TriggerDetailView,
-  TriggerExecutionData,
   TriggerListItem,
   TriggerScheduleSpec,
   UpdateTriggerParams,
@@ -231,7 +237,9 @@ export class TriggersModule {
       "Create a new trigger with gate and action prompts. Optionally link to watched entities.",
     params: CREATE_PARAMS,
   })
-  async create(params: CreateTriggerParams): Promise<TriggerCreated | Record<string, unknown>> {
+  async create(
+    params: CreateTriggerParams,
+  ): Promise<TriggerCreated | NonNullable<RpcOutputFor<(typeof rpcContracts)["triggers.validate_watch"]>>> {
     // @tested-by: tst_module_triggers_forms_001
     const emailForm = params.from_addresses !== undefined || params.from_address !== undefined;
     const telegramForm = params.chat_id !== undefined;
@@ -303,10 +311,11 @@ export class TriggersModule {
     // its linked watchables) or null. Surfaced verbatim to the agent — NEVER a
     // thrown error (native parity: controller.rs validate_watch_entities).
     if (watch_entity_ids.length > 0) {
-      const clarification = await this.rpc.execute<ClarificationResult>("triggers.validate_watch", {
-        watch_entity_ids,
-      });
-      if (clarification && typeof clarification === "object") {
+      const clarification = await this.rpc.execute<RpcOutputFor<(typeof rpcContracts)["triggers.validate_watch"]>>(
+        "triggers.validate_watch",
+        { watchEntityIds: watch_entity_ids } satisfies RpcInputFor<(typeof rpcContracts)["triggers.validate_watch"]>,
+      );
+      if (clarification) {
         return clarification;
       }
     }
@@ -368,13 +377,13 @@ export class TriggersModule {
       id: entity.id,
       name,
       status: "active",
-      gate_prompt,
-      action_prompt,
-      firing_count: 0,
-      last_fired_at: null,
-      schema_id: TRIGGER,
-      created_at: entity.createdAt,
-      episode_id: params.episode_id ?? null,
+      gatePrompt: gate_prompt,
+      actionPrompt: action_prompt,
+      firingCount: 0,
+      lastFiredAt: null,
+      schemaId: TRIGGER,
+      createdAt: entity.createdAt,
+      episodeId: params.episode_id ?? null,
       schedule: schedule ?? null,
     };
   }
@@ -386,14 +395,27 @@ export class TriggersModule {
   }
 
   @writeTool("fire_now", { entity: "triggers.trigger", description: "Fire a trigger now.", params: { type: "object", properties: { trigger_id: { type: "string", format: "uuid" }, event_entity_id: { type: "string", format: "uuid" }, context: { type: "object" } }, required: ["trigger_id"], additionalProperties: false } })
-  async fireNow(params: { trigger_id: string; event_entity_id?: string; context?: Record<string, unknown> }): Promise<unknown> {
+  async fireNow(params: {
+    trigger_id: string;
+    event_entity_id?: string;
+    context?: Record<string, unknown>;
+  }): Promise<RpcOutputFor<(typeof rpcContracts)["triggers.fire_now"]>> {
     await this.requireTrigger(params.trigger_id);
-    return this.rpc.execute("triggers.fire_now", params);
+    const request: RpcInputFor<(typeof rpcContracts)["triggers.fire_now"]> = {
+      triggerId: params.trigger_id,
+      ...(params.event_entity_id === undefined ? {} : { eventEntityId: params.event_entity_id }),
+      ...(params.context === undefined ? {} : { context: params.context }),
+    };
+    return this.rpc.execute("triggers.fire_now", request);
   }
 
   @tool("resolve_watchable", { entity: "triggers.trigger", description: "Find linked entities that a trigger can watch.", params: { type: "object", properties: { entity_id: { type: "string" } }, required: ["entity_id"], additionalProperties: false } })
-  async resolveWatchable(params: { entity_id: string }): Promise<ResolveWatchableResult> {
-    return this.rpc.execute("triggers.resolve_watchable", params);
+  async resolveWatchable(params: {
+    entity_id: string;
+  }): Promise<RpcOutputFor<(typeof rpcContracts)["triggers.resolve_watchable"]>> {
+    return this.rpc.execute("triggers.resolve_watchable", {
+      entityId: params.entity_id,
+    } satisfies RpcInputFor<(typeof rpcContracts)["triggers.resolve_watchable"]>);
   }
 
   @rpc("get", {
@@ -495,7 +517,7 @@ export class TriggersModule {
       if (page.items.length === 0) break;
       const items = await hydrate(page.items);
       filtered.push(...items.filter((item) =>
-        `${item.name} ${item.gate_prompt} ${item.action_prompt} ${item.watched_entity_names.join(" ")}`
+        `${item.name} ${item.gatePrompt} ${item.actionPrompt} ${item.watchedEntityNames.join(" ")}`
           .toLowerCase()
           .includes(query),
       ));
@@ -660,9 +682,7 @@ export class TriggersModule {
     // contact's address must surface on the contact page. The `triggerable`
     // expansion is a backend/schema read → delegate to the native resolver.
     const anchors: string[] = [params.entity_id];
-    const watchable = await this.rpc.execute<ResolveWatchableResult>("triggers.resolve_watchable", {
-      entity_id: params.entity_id,
-    });
+    const watchable = await this.resolveWatchable({ entity_id: params.entity_id });
     for (const w of watchable.watchable) {
       if (!anchors.includes(w.id)) anchors.push(w.id);
     }
@@ -701,15 +721,17 @@ export class TriggersModule {
       additionalProperties: false,
     },
   })
-  async fire_history(params: FireHistoryParams): Promise<TriggerExecutionData[]> {
+  async fire_history(
+    params: FireHistoryParams,
+  ): Promise<RpcOutputFor<(typeof rpcContracts)["triggers.fire_history"]>> {
     // S1 (canonical-graph-structure): executions are trigger_execution rows,
     // written and owned by the native engine. The native seam replaces the
     // old scan over EVERY record of the trigger — the read is one indexed
     // query, and its cost no longer grows with the trigger's history.
-    return await this.rpc.execute<TriggerExecutionData[]>("triggers.fire_history", {
-      trigger_id: params.trigger_id,
+    return await this.rpc.execute("triggers.fire_history", {
+      triggerId: params.trigger_id,
       limit: params.limit ?? 50,
-    });
+    } satisfies RpcInputFor<(typeof rpcContracts)["triggers.fire_history"]>);
   }
 
   // ── private helpers ──────────────────────────────────────────────
@@ -740,20 +762,21 @@ export class TriggersModule {
   }
 
   /// One parser of record, one clock: the native seam validates the cron
-  /// expression and returns the normalized spec (engine-stamped `activated_at`,
-  /// materialized timezone), persisted verbatim. A caller-supplied
-  /// `activated_at` is never forwarded — only cron + timezone cross the seam.
+  /// expression and returns the normalized spec (engine-stamped `activatedAt`,
+  /// materialized timezone), persisted as the dictionary stores it. A
+  /// caller-supplied `activated_at` is never forwarded — only cron + timezone
+  /// cross the seam.
   private async normalizeSchedule(param: ScheduleParam): Promise<TriggerScheduleSpec> {
-    const request: { cron: string; timezone?: string } = { cron: param.cron };
+    const request: RpcInputFor<(typeof rpcContracts)["triggers.validate_schedule"]> = { cron: param.cron };
     if (param.timezone !== undefined) request.timezone = param.timezone;
-    const spec = await this.rpc.execute<TriggerScheduleSpec | null>(
+    const spec = await this.rpc.execute<RpcOutputFor<(typeof rpcContracts)["triggers.validate_schedule"]> | null>(
       "triggers.validate_schedule",
       request,
     );
     if (!spec || typeof spec !== "object") {
       throw new Error("triggers.validate_schedule returned no normalized spec");
     }
-    return spec;
+    return { cron: spec.cron, timezone: spec.timezone, activated_at: spec.activatedAt };
   }
 
   private watchesLinks(detail: EntityWithLinks): Link[] {
@@ -773,15 +796,15 @@ export class TriggersModule {
       }
     }
     return {
-      schema_id: TRIGGER,
+      schemaId: TRIGGER,
       id: detail.entity.id,
       name: config.name,
       status: config.status,
-      gate_prompt: config.gate_prompt,
-      action_prompt: config.action_prompt,
-      firing_count: config.firing_count,
-      last_fired_at: config.last_fired_at ?? null,
-      watched_entity_names: names,
+      gatePrompt: config.gate_prompt,
+      actionPrompt: config.action_prompt,
+      firingCount: config.firing_count,
+      lastFiredAt: config.last_fired_at ?? null,
+      watchedEntityNames: names,
       schedule: config.schedule ?? null,
     };
   }
@@ -812,20 +835,20 @@ export class TriggersModule {
     return {
       id: detail.entity.id,
       name: config.name,
-      gate_prompt: config.gate_prompt,
-      action_prompt: config.action_prompt,
+      gatePrompt: config.gate_prompt,
+      actionPrompt: config.action_prompt,
       status: config.status,
-      event_kinds: config.event_kinds,
-      schema_filter: config.schema_filter ?? null,
-      expires_at: config.expires_at ?? null,
-      debounce_seconds: config.debounce_seconds,
-      max_wait_seconds: config.max_wait_seconds ?? null,
-      max_firings: config.max_firings ?? null,
-      firing_count: config.firing_count,
-      last_fired_at: config.last_fired_at ?? null,
-      watched_entities: watched,
-      parent_episode_id: parentEpisodeId,
-      parent_episode_name: parentEpisodeName,
+      eventKinds: config.event_kinds,
+      schemaFilter: config.schema_filter ?? null,
+      expiresAt: config.expires_at ?? null,
+      debounceSeconds: config.debounce_seconds,
+      maxWaitSeconds: config.max_wait_seconds ?? null,
+      maxFirings: config.max_firings ?? null,
+      firingCount: config.firing_count,
+      lastFiredAt: config.last_fired_at ?? null,
+      watchedEntities: watched,
+      parentEpisodeId,
+      parentEpisodeName,
       schedule: config.schedule ?? null,
     };
   }

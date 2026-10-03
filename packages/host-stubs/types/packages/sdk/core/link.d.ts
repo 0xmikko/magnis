@@ -4,7 +4,7 @@ export type LinkId = Id;
 export type LinkType = string;
 export declare const LinkUnlinkRequestSchema: z.ZodObject<{
     id: z.ZodGUID;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export declare const linkBaseSchema: z.ZodObject<{
     id: z.ZodString;
     owner: z.ZodString;
@@ -109,6 +109,6 @@ export declare const LinkAddResultSchema: z.ZodObject<{
     from: z.ZodString;
     to: z.ZodString;
     created: z.ZodBoolean;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type LinkAddResult = z.output<typeof LinkAddResultSchema>;
 //# sourceMappingURL=link.d.ts.map

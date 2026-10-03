@@ -16,7 +16,7 @@ export declare const EpisodeTodoItemSchema: z.ZodObject<{
         in_progress: "in_progress";
     }>;
     externalId: z.ZodDefault<z.ZodNullable<z.ZodString>>;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type EpisodeTodoItem = z.output<typeof EpisodeTodoItemSchema>;
 export declare const EpisodeTodoListResultSchema: z.ZodObject<{
     items: z.ZodArray<z.ZodObject<{
@@ -28,16 +28,16 @@ export declare const EpisodeTodoListResultSchema: z.ZodObject<{
             in_progress: "in_progress";
         }>;
         externalId: z.ZodDefault<z.ZodNullable<z.ZodString>>;
-    }, z.core.$strip>>;
-}, z.core.$strip>;
+    }, z.core.$strict>>;
+}, z.core.$strict>;
 export type EpisodeTodoListResult = z.output<typeof EpisodeTodoListResultSchema>;
-export declare const EpisodeWorkspaceTodoListRequestSchema: z.ZodObject<{}, z.core.$strip>;
+export declare const EpisodeWorkspaceTodoListRequestSchema: z.ZodObject<{}, z.core.$strict>;
 export declare const EpisodeWorkspaceTodoAddRequestSchema: z.ZodObject<{
     content: z.ZodString;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export declare const EpisodeWorkspaceTodoRemoveRequestSchema: z.ZodObject<{
     id: z.ZodUUID;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export declare const EpisodeWorkspaceTodoUpdateRequestSchema: z.ZodObject<{
     id: z.ZodUUID;
     content: z.ZodOptional<z.ZodString>;
@@ -47,7 +47,7 @@ export declare const EpisodeWorkspaceTodoUpdateRequestSchema: z.ZodObject<{
         cancelled: "cancelled";
         in_progress: "in_progress";
     }>>;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export declare const EpisodeWorkspaceTodoListResultSchema: z.ZodObject<{
     items: z.ZodArray<z.ZodObject<{
         content: z.ZodString;
@@ -59,6 +59,6 @@ export declare const EpisodeWorkspaceTodoListResultSchema: z.ZodObject<{
         }>;
         externalId: z.ZodDefault<z.ZodNullable<z.ZodString>>;
         id: z.ZodUUID;
-    }, z.core.$strip>>;
-}, z.core.$strip>;
+    }, z.core.$strict>>;
+}, z.core.$strict>;
 //# sourceMappingURL=episode-todo.d.ts.map

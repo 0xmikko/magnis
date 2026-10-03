@@ -144,7 +144,7 @@ export async function attendeesForPage(
     arr.push({
       name: str(edgeDictOf(edge), "display_name"),
       email,
-      contact_id: contactByAddress.get(addr.id) ?? null,
+      contactId: contactByAddress.get(addr.id) ?? null,
     });
     out.set(edge.from, arr);
   }
@@ -188,16 +188,16 @@ export function buildListItem(
   );
   return {
     id: entity.id,
-    schema_id: entity.schemaId,
+    schemaId: entity.schemaId,
     title: entity.name && entity.name.length > 0 ? entity.name : "Untitled Meeting",
     date,
     time,
-    starts_at: str(d, "starts_at"),
-    ends_at: str(d, "ends_at"),
+    startsAt: str(d, "starts_at"),
+    endsAt: str(d, "ends_at"),
     location: nonEmpty(d, "location"),
     description: nonEmpty(d, "description"),
-    conference_link: nonEmpty(d, "conference_link"),
+    conferenceLink: nonEmpty(d, "conference_link"),
     attendees,
-    created_at: entity.createdAt,
+    createdAt: entity.createdAt,
   };
 }

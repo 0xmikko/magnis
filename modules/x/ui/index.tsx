@@ -32,10 +32,10 @@ export const XModule = defineModule({
     return {
       id: typeof raw.id === "string" ? raw.id : "",
       name: typeof raw.display_name === "string" && raw.display_name ? raw.display_name : handle || "Profile",
-      schema_id: "x.profile",
+      schemaId: "x.profile",
       preview: handle ? `@${handle}${fc !== null ? ` · ${fc.toLocaleString()} followers` : ""}` : null,
       timestamp: null,
-      avatar_url: typeof raw.avatar_url === "string" ? proxiedMediaUrl(raw.avatar_url) : null,
+      avatarUrl: typeof raw.avatar_url === "string" ? proxiedMediaUrl(raw.avatar_url) : null,
     };
   },
   // STANDARD detail: DetailPane + TopBarHeader via the framework path; the

@@ -17,7 +17,7 @@ export declare const sourceContracts: {
         ok: z.ZodLiteral<true>;
         accountId: z.ZodString;
         subject: z.ZodString;
-    }, z.core.$strip>, "required">;
+    }, z.core.$strict>, "required">;
     readonly "source.auth.exec": import("../contract.js").RpcContract<"source.auth.exec", z.ZodObject<{
         sourceId: z.ZodString;
         sessionId: z.ZodString;
@@ -26,8 +26,8 @@ export declare const sourceContracts: {
     }, z.core.$strip>, z.ZodObject<{
         status: z.ZodString;
         identity: z.ZodOptional<z.ZodType<import("../../core/json.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("../../core/json.js").JsonValue, unknown>>>;
-        connectionId: z.ZodOptional<z.ZodNullable<z.ZodString>>;
-    }, z.core.$strip>, "required">;
+        connectionId: z.ZodOptional<z.ZodString>;
+    }, z.core.$strict>, "required">;
     readonly "source.auth.oauth.complete": import("../contract.js").RpcContract<"source.auth.oauth.complete", z.ZodObject<{
         sourceId: z.ZodString;
         code: z.ZodString;
@@ -35,15 +35,14 @@ export declare const sourceContracts: {
     }, z.core.$strip>, z.ZodObject<{
         status: z.ZodString;
         identity: z.ZodOptional<z.ZodType<import("../../core/json.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("../../core/json.js").JsonValue, unknown>>>;
-        connectionId: z.ZodOptional<z.ZodNullable<z.ZodString>>;
-    }, z.core.$strip>, "required">;
+        connectionId: z.ZodOptional<z.ZodString>;
+    }, z.core.$strict>, "required">;
     readonly "source.auth.session.cancel": import("../contract.js").RpcContract<"source.auth.session.cancel", z.ZodObject<{
         sourceId: z.ZodString;
         sessionId: z.ZodString;
     }, z.core.$strip>, z.ZodObject<{
         cancelled: z.ZodBoolean;
-        reason: z.ZodOptional<z.ZodString>;
-    }, z.core.$strip>, "required">;
+    }, z.core.$strict>, "required">;
     readonly "source.auth.session.open": import("../contract.js").RpcContract<"source.auth.session.open", z.ZodObject<{
         sourceId: z.ZodString;
         intent: z.ZodEnum<{
@@ -55,13 +54,23 @@ export declare const sourceContracts: {
             cli: "cli";
         }>;
         connectionId: z.ZodOptional<z.ZodString>;
-        repairAction: z.ZodOptional<z.ZodString>;
+        repairAction: z.ZodOptional<z.ZodEnum<{
+            reconnectOauth: "reconnectOauth";
+            reloginPhone: "reloginPhone";
+            enterKey: "enterKey";
+            replaceKey: "replaceKey";
+        }>>;
         redirectUri: z.ZodOptional<z.ZodString>;
     }, z.core.$strip>, z.ZodObject<{
         sessionId: z.ZodString;
-        authType: z.ZodString;
+        authType: z.ZodEnum<{
+            oauth2: "oauth2";
+            phoneCode: "phoneCode";
+            apiKey: "apiKey";
+            sharedProvider: "sharedProvider";
+        }>;
         redirectUrl: z.ZodOptional<z.ZodString>;
-    }, z.core.$strip>, "required">;
+    }, z.core.$strict>, "required">;
     readonly "source.auth.submit": import("../contract.js").RpcContract<"source.auth.submit", z.ZodObject<{
         sourceId: z.ZodString;
         sessionId: z.ZodString;
@@ -83,9 +92,9 @@ export declare const sourceContracts: {
                 helpUrl: z.ZodNullable<z.ZodString>;
                 description: z.ZodNullable<z.ZodString>;
                 vaultConfigured: z.ZodBoolean;
-            }, z.core.$strip>>;
-        }, z.core.$strip>>;
-    }, z.core.$strip>, "required">;
+            }, z.core.$strict>>;
+        }, z.core.$strict>>;
+    }, z.core.$strict>, "required">;
     readonly "source.keys.set": import("../contract.js").RpcContract<"source.keys.set", z.ZodObject<{
         sourceId: z.ZodString;
         key: z.ZodString;
@@ -109,8 +118,8 @@ export declare const sourceContracts: {
             packageHash: z.ZodString;
             connectable: z.ZodBoolean;
             unavailableReason: z.ZodNullable<z.ZodString>;
-        }, z.core.$strip>>;
-    }, z.core.$strip>, "required">;
+        }, z.core.$strict>>;
+    }, z.core.$strict>, "required">;
     readonly "source.status.list": import("../contract.js").RpcContract<"source.status.list", z.ZodObject<{}, z.core.$strip>, z.ZodObject<{
         sources: z.ZodArray<z.ZodObject<{
             sourceId: z.ZodString;
@@ -328,6 +337,6 @@ export declare const sourceContracts: {
     }, z.core.$strip>, z.ZodObject<{
         ok: z.ZodLiteral<true>;
         seeded: z.ZodNumber;
-    }, z.core.$strip>, "required">;
+    }, z.core.$strict>, "required">;
 };
 //# sourceMappingURL=source.d.ts.map

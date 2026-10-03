@@ -6,13 +6,13 @@
  * exactly that contract — a plugin test that needed real ProseMirror
  * behaviour would be testing the host.
  */
-import type { EntitySearchResult } from "@magnis/host/markdown";
+import type { EntitySearchHit } from "@magnis/host/markdown";
 import { useMemo, useState, type JSX } from "react";
 
 import { useMentionSearch } from "@/modules/episodes/hooks/useMentionSearch";
 
 export interface MentionSuggestionConfigLike {
-  readonly results: readonly EntitySearchResult[];
+  readonly results: readonly EntitySearchHit[];
   readonly isLoading: boolean;
   readonly onQueryChange: (query: string, active: boolean) => void;
 }

@@ -297,7 +297,7 @@ export class ContactsModule {
       } else if (t.schemaId !== CONTACT) {
         replicas.push({
           id: t.id,
-          schema_id: t.schemaId,
+          schemaId: t.schemaId,
           name: t.name,
           properties: t.properties as Record<string, unknown>,
         });
@@ -318,7 +318,7 @@ export class ContactsModule {
       }
     }
     for (const r of replicas) {
-      const source = r.schema_id === GOOGLE_CONTACT ? "google" : r.schema_id;
+      const source = r.schemaId === GOOGLE_CONTACT ? "google" : r.schemaId;
       if (Array.isArray(r.properties.phones)) {
         for (const p of r.properties.phones as { number?: unknown; label?: unknown }[]) {
           pushPhone(p.number, p.label, source);
@@ -338,7 +338,7 @@ export class ContactsModule {
 
     return {
       id: e.id,
-      schema_id: e.schemaId,
+      schemaId: e.schemaId,
       name: base.name,
       email: emails[0]?.address ?? base.email,
       phone: phones[0]?.phone ?? base.phone,
@@ -347,14 +347,14 @@ export class ContactsModule {
       company:
         base.company ?? (typeof firstOrg?.name === "string" ? firstOrg.name : null),
       channels: composeChannels(curated, emails.length > 0, replicas),
-      avatar_color: pickAvatarColor(e.id),
+      avatarColor: pickAvatarColor(e.id),
       initials: computeInitials(base.name),
       // S6: the canonical block is empty by construction — nothing resolves
       // into it any more, and the DTO keeps the field only until the wire
       // shape drops it.
       canonical: {},
-      linked_entities: linked,
-      created_at: base.created_at,
+      linkedEntities: linked,
+      createdAt: base.createdAt,
       curated,
       emails,
       phones,

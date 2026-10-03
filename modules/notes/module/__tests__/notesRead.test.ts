@@ -86,7 +86,7 @@ describe("notes read — shape parity (tst_be_notesread_001)", () => {
     if (item === undefined) throw new Error("F1: missing first item");
     expect(item.title).toBe("Dict Title");
     expect(item.pinned).toBe(true);
-    expect(item.updated_at).toBe("2026-03-03T00:00:00Z");
+    expect(item.updatedAt).toBe("2026-03-03T00:00:00Z");
     expect(item.preview).toContain("hello");
   });
 
@@ -102,7 +102,7 @@ describe("notes read — shape parity (tst_be_notesread_001)", () => {
 
     const view = await mod.get({ id: "n1" });
     expect(view.title).toBe("My Note");
-    expect(view.linked_entities.map((l) => l.name)).toEqual(["Alice", "Bob"]);
+    expect(view.linkedEntities.map((l) => l.name)).toEqual(["Alice", "Bob"]);
     expect(graph.spies.getEntities).toHaveBeenCalledTimes(1); // ONE batch, no per-link N+1
   });
 
@@ -216,7 +216,7 @@ describe("tst_cat_entity_one_type_005 — a linked summary carries its statement
 
     const view = await mod.get({ id: "n1" });
 
-    expect(view.linked_entities).toEqual([
+    expect(view.linkedEntities).toEqual([
       {
         id: "c1",
         name: "Alice",

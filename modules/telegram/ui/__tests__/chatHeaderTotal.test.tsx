@@ -167,13 +167,13 @@ vi.mock("@magnis/host/layout", () => ({
 function msgItem(i: number): MessageListItem {
   return {
     id: `msg-${String(i)}`,
-    schema_id: "telegram.message",
+    schemaId: "telegram.message",
     sender: "Someone",
     subject: null,
     preview: `text ${String(i)}`,
     channel: "telegram",
     timestamp: `2026-07-16T10:${String(i % 60).padStart(2, "0")}:00Z`,
-    created_at: `2026-07-16T10:${String(i % 60).padStart(2, "0")}:00Z`,
+    createdAt: `2026-07-16T10:${String(i % 60).padStart(2, "0")}:00Z`,
     metadata: { message_id: i, chat_title: "Gearbox SC devs" },
   } as unknown as MessageListItem;
 }

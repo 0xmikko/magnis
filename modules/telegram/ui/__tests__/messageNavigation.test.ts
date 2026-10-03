@@ -36,7 +36,7 @@ function harness(): {
     if (method === "telegram.messages.get") {
       return Promise.resolve({
         metadata: { message_id: 42 },
-        linked_entities: [
+        linkedEntities: [
           { id: CHAT_ID, schemaId: "telegram.chat" },
           { id: "a1", schemaId: "telegram.account" },
         ],

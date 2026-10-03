@@ -11,8 +11,8 @@
 //   - get  = ONE getEntityFull. batch = K getEntityFull (one per id).
 //
 // Deferred (read-time enrichment, mirrors the telegram module; verified visually
-// in the frontend, NOT asserted here): link-resolved linked_entities and the
-// canonical map. get returns linked_entities: [] / canonical: {} so it stays a
+// in the frontend, NOT asserted here): link-resolved linkedEntities and the
+// canonical map. get returns linkedEntities: [] / canonical: {} so it stays a
 // single fixed-statement op.
 
 import {
@@ -252,7 +252,7 @@ export class EmailModule {
     // Resolve link neighbours (attachments, address hub, …) for the Context
     // panel. Link edges carry ids + kind only; one batch getEntities
     // (user-scoped → drops non-owned targets) hydrates names/schemas.
-    const linked_entities: LinkedEntitySummary[] = [];
+    const linkedEntities: LinkedEntitySummary[] = [];
     if (links.length > 0) {
       const neighbourId = (l: { from: string; to: string }): string =>
         l.from === entity.id ? l.to : l.from;
@@ -261,7 +261,7 @@ export class EmailModule {
       for (const l of links) {
         const t = byId.get(neighbourId(l));
         if (!t) continue;
-        linked_entities.push({
+        linkedEntities.push({
           ...linkedEntitySummary(t, l, l.kind),
           name: t.name && t.name.length > 0 ? t.name : null,
           // S5: a neighbour carries its own dictionary — the attachment row
@@ -275,15 +275,15 @@ export class EmailModule {
     const created = entity.createdAt;
     return {
       id: entity.id,
-      schema_id: entity.schemaId,
+      schemaId: entity.schemaId,
       sender: senderOf(d),
       subject: entity.name && entity.name.length > 0 ? entity.name : null,
       body: str(d, "body_text"),
       channel: "email",
       timestamp: str(d, "sent_at") ?? created,
       canonical: {},
-      linked_entities,
-      created_at: created,
+      linkedEntities,
+      createdAt: created,
       metadata: d,
     };
   }
@@ -1056,7 +1056,7 @@ export class EmailModule {
     }
 
     return {
-      schema_id: MESSAGE_SCHEMA,
+      schemaId: MESSAGE_SCHEMA,
       id: entityId,
       provider_message_id: providerMessageId,
       graph_write_failed: graphWriteFailed,

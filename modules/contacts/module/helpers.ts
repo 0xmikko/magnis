@@ -78,21 +78,21 @@ export function buildListItem(
     : null;
   return {
     id: entity.id,
-    schema_id: entity.schemaId,
+    schemaId: entity.schemaId,
     name,
     email: address ? (dictString(address.properties as Record<string, unknown>, "address") ?? address.name) : null,
     phone,
     role: dictString(dict, "role"),
     company: dictString(dict, "company"),
     channels: channelsOf(identityNeighbours),
-    avatar_color: pickAvatarColor(entity.id),
+    avatarColor: pickAvatarColor(entity.id),
     initials: computeInitials(name),
     // The telegram relevance tier went with the archive that held it: the
     // fold moved every other card field into a dictionary and left the tier
     // without a destination, so nothing has written it since.
-    relevance_tier: null,
-    created_at: entity.createdAt,
-    is_pinned: entity.isPinned,
+    relevanceTier: null,
+    createdAt: entity.createdAt,
+    isPinned: entity.isPinned,
   };
 }
 
@@ -132,16 +132,16 @@ export function replicaDict(payload: JsonObject): JsonObject {
 export function composeChannels(
   curated: Record<string, unknown>,
   hasEmail: boolean,
-  replicas: { schema_id: string }[],
+  replicas: { schemaId: string }[],
 ): string[] {
   const channels = new Set<string>();
   if (hasEmail) channels.add("email");
   if (Array.isArray(curated.phones) && curated.phones.length > 0) channels.add("phone");
   for (const r of replicas) {
-    if (r.schema_id === "contacts.google_contact") channels.add("google");
-    else if (r.schema_id.startsWith("telegram.")) channels.add("telegram");
-    else if (r.schema_id === "x.profile") channels.add("x");
-    else if (r.schema_id === "linkedin.profile") channels.add("linkedin");
+    if (r.schemaId === "contacts.google_contact") channels.add("google");
+    else if (r.schemaId.startsWith("telegram.")) channels.add("telegram");
+    else if (r.schemaId === "x.profile") channels.add("x");
+    else if (r.schemaId === "linkedin.profile") channels.add("linkedin");
   }
   if (Array.isArray(curated.tracking)) {
     for (const t of curated.tracking as { platform?: unknown; enabled?: unknown }[]) {

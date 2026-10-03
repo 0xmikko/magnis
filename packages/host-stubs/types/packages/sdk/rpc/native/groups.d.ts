@@ -16,9 +16,9 @@ export declare const groupsContracts: {
     }, z.core.$strict>, "required">;
     readonly "groups.create": import("../contract.js").RpcContract<"groups.create", z.ZodObject<{
         name: z.ZodString;
-        description: z.ZodOptional<z.ZodString>;
-        memory: z.ZodOptional<z.ZodString>;
-        clientId: z.ZodOptional<z.ZodString>;
+        description: z.ZodDefault<z.ZodString>;
+        memory: z.ZodDefault<z.ZodString>;
+        clientId: z.ZodOptional<z.ZodGUID>;
     }, z.core.$strip>, z.ZodObject<{
         id: z.ZodString;
         name: z.ZodString;
@@ -27,7 +27,7 @@ export declare const groupsContracts: {
         memberCount: z.ZodNumber;
         identityProfileName: z.ZodNullable<z.ZodString>;
         createdAt: z.ZodString;
-    }, z.core.$strip>, "required">;
+    }, z.core.$strict>, "required">;
     readonly "groups.delete": import("../contract.js").RpcContract<"groups.delete", z.ZodObject<{
         id: z.ZodString;
     }, z.core.$strip>, z.ZodObject<{
@@ -46,12 +46,12 @@ export declare const groupsContracts: {
             id: z.ZodString;
             name: z.ZodString;
             contentPreview: z.ZodString;
-        }, z.core.$strip>>;
-    }, z.core.$strip>, "required">;
+        }, z.core.$strict>>;
+    }, z.core.$strict>, "required">;
     readonly "groups.list": import("../contract.js").RpcContract<"groups.list", z.ZodObject<{
+        limit: z.ZodDefault<z.ZodInt>;
+        offset: z.ZodDefault<z.ZodInt>;
         search: z.ZodOptional<z.ZodString>;
-        limit: z.ZodDefault<z.ZodNumber>;
-        offset: z.ZodDefault<z.ZodNumber>;
     }, z.core.$strip>, z.ZodObject<{
         items: z.ZodArray<z.ZodObject<{
             id: z.ZodString;
@@ -61,11 +61,11 @@ export declare const groupsContracts: {
             memberCount: z.ZodNumber;
             identityProfileName: z.ZodNullable<z.ZodString>;
             createdAt: z.ZodString;
-        }, z.core.$strip>>;
-        total: z.ZodNumber;
-        limit: z.ZodNumber;
-        offset: z.ZodNumber;
-    }, z.core.$strip>, "required">;
+        }, z.core.$strict>>;
+        total: z.ZodInt;
+        limit: z.ZodInt;
+        offset: z.ZodInt;
+    }, z.core.$strict>, "required">;
     readonly "groups.list_for_entity": import("../contract.js").RpcContract<"groups.list_for_entity", z.ZodObject<{
         entityId: z.ZodString;
     }, z.core.$strip>, z.ZodArray<z.ZodObject<{
@@ -76,14 +76,14 @@ export declare const groupsContracts: {
         memberCount: z.ZodNumber;
         identityProfileName: z.ZodNullable<z.ZodString>;
         createdAt: z.ZodString;
-    }, z.core.$strip>>, "required">;
+    }, z.core.$strict>>, "required">;
     readonly "groups.list_members": import("../contract.js").RpcContract<"groups.list_members", z.ZodObject<{
         id: z.ZodString;
     }, z.core.$strip>, z.ZodArray<z.ZodObject<{
         entityId: z.ZodString;
         name: z.ZodNullable<z.ZodString>;
         schemaId: z.ZodString;
-    }, z.core.$strip>>, "required">;
+    }, z.core.$strict>>, "required">;
     readonly "groups.remove_member": import("../contract.js").RpcContract<"groups.remove_member", z.ZodObject<{
         groupId: z.ZodString;
         entityId: z.ZodString;
@@ -101,8 +101,8 @@ export declare const groupsContracts: {
             id: z.ZodString;
             name: z.ZodString;
             contentPreview: z.ZodString;
-        }, z.core.$strip>>;
-    }, z.core.$strip>>, "required">;
+        }, z.core.$strict>>;
+    }, z.core.$strict>>, "required">;
     readonly "groups.update": import("../contract.js").RpcContract<"groups.update", z.ZodObject<{
         id: z.ZodString;
         name: z.ZodOptional<z.ZodString>;
@@ -116,7 +116,7 @@ export declare const groupsContracts: {
         memberCount: z.ZodNumber;
         identityProfileName: z.ZodNullable<z.ZodString>;
         createdAt: z.ZodString;
-    }, z.core.$strip>, "required">;
+    }, z.core.$strict>, "required">;
     readonly "groups.update_bio": import("../contract.js").RpcContract<"groups.update_bio", z.ZodObject<{
         groupId: z.ZodString;
         content: z.ZodString;
@@ -134,14 +134,14 @@ export declare const groupsContracts: {
         memberCount: z.ZodNumber;
         identityProfileName: z.ZodNullable<z.ZodString>;
         createdAt: z.ZodString;
-    }, z.core.$strip>, "required">;
+    }, z.core.$strict>, "required">;
     readonly "groups.group.create": {
         readonly method: "groups.group.create";
         readonly input: z.ZodObject<{
             name: z.ZodString;
-            description: z.ZodOptional<z.ZodString>;
-            memory: z.ZodOptional<z.ZodString>;
-            clientId: z.ZodOptional<z.ZodString>;
+            description: z.ZodDefault<z.ZodString>;
+            memory: z.ZodDefault<z.ZodString>;
+            clientId: z.ZodOptional<z.ZodGUID>;
         }, z.core.$strict>;
         readonly output: z.ZodObject<{
             id: z.ZodString;
@@ -151,10 +151,9 @@ export declare const groupsContracts: {
             memberCount: z.ZodNumber;
             identityProfileName: z.ZodNullable<z.ZodString>;
             createdAt: z.ZodString;
-        }, z.core.$strip>;
+        }, z.core.$strict>;
         readonly params: "required";
         readonly inputJsonSchema: Readonly<import("../../index.js").JsonObject>;
-        readonly wire?: import("../contract.js").RpcWireCodec;
     };
     readonly "groups.group.get": {
         readonly method: "groups.group.get";
@@ -172,11 +171,10 @@ export declare const groupsContracts: {
                 id: z.ZodString;
                 name: z.ZodString;
                 contentPreview: z.ZodString;
-            }, z.core.$strip>>;
-        }, z.core.$strip>;
+            }, z.core.$strict>>;
+        }, z.core.$strict>;
         readonly params: "required";
         readonly inputJsonSchema: Readonly<import("../../index.js").JsonObject>;
-        readonly wire?: import("../contract.js").RpcWireCodec;
     };
     readonly "groups.group.link": {
         readonly method: "groups.group.link";
@@ -189,14 +187,13 @@ export declare const groupsContracts: {
         }, z.core.$strict>;
         readonly params: "required";
         readonly inputJsonSchema: Readonly<import("../../index.js").JsonObject>;
-        readonly wire?: import("../contract.js").RpcWireCodec;
     };
     readonly "groups.group.list": {
         readonly method: "groups.group.list";
         readonly input: z.ZodObject<{
+            limit: z.ZodDefault<z.ZodInt>;
+            offset: z.ZodDefault<z.ZodInt>;
             search: z.ZodOptional<z.ZodString>;
-            limit: z.ZodDefault<z.ZodNumber>;
-            offset: z.ZodDefault<z.ZodNumber>;
         }, z.core.$strict>;
         readonly output: z.ZodObject<{
             items: z.ZodArray<z.ZodObject<{
@@ -207,14 +204,13 @@ export declare const groupsContracts: {
                 memberCount: z.ZodNumber;
                 identityProfileName: z.ZodNullable<z.ZodString>;
                 createdAt: z.ZodString;
-            }, z.core.$strip>>;
-            total: z.ZodNumber;
-            limit: z.ZodNumber;
-            offset: z.ZodNumber;
-        }, z.core.$strip>;
+            }, z.core.$strict>>;
+            total: z.ZodInt;
+            limit: z.ZodInt;
+            offset: z.ZodInt;
+        }, z.core.$strict>;
         readonly params: "required";
         readonly inputJsonSchema: Readonly<import("../../index.js").JsonObject>;
-        readonly wire?: import("../contract.js").RpcWireCodec;
     };
     readonly "groups.group.memory.update": {
         readonly method: "groups.group.memory.update";
@@ -230,10 +226,9 @@ export declare const groupsContracts: {
             memberCount: z.ZodNumber;
             identityProfileName: z.ZodNullable<z.ZodString>;
             createdAt: z.ZodString;
-        }, z.core.$strip>;
+        }, z.core.$strict>;
         readonly params: "required";
         readonly inputJsonSchema: Readonly<import("../../index.js").JsonObject>;
-        readonly wire?: import("../contract.js").RpcWireCodec;
     };
     readonly "groups.group.unlink": {
         readonly method: "groups.group.unlink";
@@ -246,7 +241,6 @@ export declare const groupsContracts: {
         }, z.core.$strict>;
         readonly params: "required";
         readonly inputJsonSchema: Readonly<import("../../index.js").JsonObject>;
-        readonly wire?: import("../contract.js").RpcWireCodec;
     };
     readonly "groups.identity.bio.update": {
         readonly method: "groups.identity.bio.update";
@@ -259,7 +253,6 @@ export declare const groupsContracts: {
         }, z.core.$strict>;
         readonly params: "required";
         readonly inputJsonSchema: Readonly<import("../../index.js").JsonObject>;
-        readonly wire?: import("../contract.js").RpcWireCodec;
     };
 };
 //# sourceMappingURL=groups.d.ts.map

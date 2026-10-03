@@ -7,7 +7,7 @@
 // Read-time enrichment ported from the native domain adapter: attendees are the
 // event's `attendee` edges, each resolving through its address node to a
 // contacts.person over `identity` (plan §3/§6), and get's
-// linked_entities resolve the entity's link neighbours. Canonical is deferred to
+// linkedEntities resolve the entity's link neighbours. Canonical is deferred to
 // {} on this hot path (mirrors the email/telegram modules; the detail UI is verified
 // visually in the frontend stage).
 
@@ -201,7 +201,7 @@ export class MeetingsModule {
     // Resolve link neighbours (created-by project, attendee contacts, …) for the
     // Context panel. Link edges carry ids + kind only; one batch getEntities
     // (user-scoped → drops non-owned targets) hydrates names/schemas.
-    const linked_entities: LinkedEntitySummary[] = [];
+    const linkedEntities: LinkedEntitySummary[] = [];
     if (links.length > 0) {
       const neighbourId = (l: { from: string; to: string }): string =>
         l.from === entity.id ? l.to : l.from;
@@ -211,25 +211,25 @@ export class MeetingsModule {
         const t = byId.get(neighbourId(l));
         if (!t) continue;
         // An empty name reads as no name (native parity).
-        linked_entities.push({ ...linkedEntitySummary(t, l, l.kind), name: t.name && t.name.length > 0 ? t.name : null });
+        linkedEntities.push({ ...linkedEntitySummary(t, l, l.kind), name: t.name && t.name.length > 0 ? t.name : null });
       }
     }
 
     return {
       id: entity.id,
-      schema_id: entity.schemaId,
+      schemaId: entity.schemaId,
       title: entity.name && entity.name.length > 0 ? entity.name : "Untitled Meeting",
       date,
       time,
-      starts_at: str(d, "starts_at"),
-      ends_at: str(d, "ends_at"),
+      startsAt: str(d, "starts_at"),
+      endsAt: str(d, "ends_at"),
       location: str(d, "location"),
       description: str(d, "description"),
-      conference_link: str(d, "conference_link"),
+      conferenceLink: str(d, "conference_link"),
       attendees,
       canonical: {},
-      linked_entities,
-      created_at: entity.createdAt,
+      linkedEntities,
+      createdAt: entity.createdAt,
     };
   }
 
@@ -338,7 +338,7 @@ export class MeetingsModule {
   private snapshot(id: string, params: NewMeetingParams): Record<string, unknown> {
     const snap: Record<string, unknown> = {
       id,
-      schema_id: CAL,
+      schemaId: CAL,
       title: params.title,
       starts_at: params.starts_at,
       ends_at: params.ends_at,

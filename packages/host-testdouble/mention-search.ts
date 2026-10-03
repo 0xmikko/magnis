@@ -8,12 +8,12 @@
  * seam only exists if the double has the same seam the host does.
  */
 
-import type { EntitySearchResult } from "@magnis/host/markdown";
+import type { EntitySearchHit } from "@magnis/host/markdown";
 
 export function useMentionSearch(
   _query: string,
   _active: boolean,
-): { readonly results: readonly EntitySearchResult[]; readonly isLoading: boolean } {
+): { readonly results: readonly EntitySearchHit[]; readonly isLoading: boolean } {
   // No graph in a test stand. A test that wants results replaces this module.
   return { results: [], isLoading: false };
 }

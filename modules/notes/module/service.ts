@@ -213,14 +213,14 @@ export class NotesModule {
 
     return {
       id: e.id,
-      schema_id: e.schemaId,
+      schemaId: e.schemaId,
       title: this.titleOf(e, data),
       body: data.body ?? null,
       pinned,
       canonical,
-      linked_entities: linked,
-      created_at: e.createdAt,
-      updated_at: data.updated_at ?? null,
+      linkedEntities: linked,
+      createdAt: e.createdAt,
+      updatedAt: data.updated_at ?? null,
     };
   }
 
@@ -287,7 +287,7 @@ export class NotesModule {
       throw writeError;
     }
 
-    return { id: entity.id, schema_id: NOTE, title: params.title, body, updated_at: now };
+    return { id: entity.id, schemaId: NOTE, title: params.title, body, updatedAt: now };
   }
 
   @rpc("update", UPDATE_SPEC)
@@ -340,7 +340,7 @@ export class NotesModule {
     }
 
     // Full snapshot so the chat surface renders without a lazy fetch.
-    return { id: params.id, schema_id: NOTE, title: newTitle, body: newBody, updated_at: now };
+    return { id: params.id, schemaId: NOTE, title: newTitle, body: newBody, updatedAt: now };
   }
 
   @rpc("delete", DELETE_SPEC)
@@ -404,13 +404,13 @@ export class NotesModule {
   ): NoteListItem {
     return {
       id: e.id,
-      schema_id: e.schemaId,
+      schemaId: e.schemaId,
       title: this.titleOf(e, data),
       preview: previewFromBody(data.body ?? ""),
       pinned: (canonical["note.pinned"] as boolean | null) ?? data.pinned ?? false,
-      created_at: e.createdAt,
-      updated_at: data.updated_at ?? null,
-      is_pinned: e.isPinned,
+      createdAt: e.createdAt,
+      updatedAt: data.updated_at ?? null,
+      isPinned: e.isPinned,
     };
   }
 
@@ -419,10 +419,10 @@ export class NotesModule {
     const data = contentOf(e);
     return {
       id: e.id,
-      schema_id: NOTE,
+      schemaId: NOTE,
       title: this.titleOf(e, data),
       body: data.body ?? "",
-      updated_at: data.updated_at ?? e.createdAt,
+      updatedAt: data.updated_at ?? e.createdAt,
     };
   }
 }

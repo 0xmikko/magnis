@@ -50,7 +50,7 @@ import type {
 import type { InstallContext, LifecycleHooks, MigrationStep } from "./contract/lifecycle";
 
 // ── shared link-endpoint assembly (added 2026-08-12) ────────────────────────
-// Every module that answers `linked_entities` has to turn edges into endpoints:
+// Every module that answers `linkedEntities` has to turn edges into endpoints:
 // take the far side of each edge, label it by direction, drop the node it was
 // read from, and keep one row per endpoint. Seven modules hand-rolled that and
 // four observable divergences followed — some labelled incoming edges with `~`

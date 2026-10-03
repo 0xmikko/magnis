@@ -67,7 +67,7 @@ export interface CalendarAttendee {
 export interface MeetingAttendeeView {
   name: string | null;
   email: string;
-  contact_id: string | null;
+  contactId: string | null;
 }
 
 /** Operator/agent-driven `meetings.create` params (native NewMeetingParams). */
@@ -84,34 +84,34 @@ export interface NewMeetingParams {
 
 export interface MeetingListItem {
   id: string;
-  schema_id: string;
+  schemaId: string;
   title: string;
   date: string | null;
   time: string | null;
-  starts_at: string | null;
-  ends_at: string | null;
+  startsAt: string | null;
+  endsAt: string | null;
   location: string | null;
   description: string | null;
-  conference_link: string | null;
+  conferenceLink: string | null;
   attendees: MeetingAttendeeView[];
-  created_at: string;
+  createdAt: string;
 }
 
 export interface MeetingDetailView {
   id: string;
-  schema_id: string;
+  schemaId: string;
   title: string;
   date: string | null;
   time: string | null;
-  starts_at: string | null;
-  ends_at: string | null;
+  startsAt: string | null;
+  endsAt: string | null;
   location: string | null;
   description: string | null;
-  conference_link: string | null;
+  conferenceLink: string | null;
   attendees: MeetingAttendeeView[];
   canonical: Record<string, unknown>;
-  linked_entities: LinkedEntitySummary[];
-  created_at: string;
+  linkedEntities: LinkedEntitySummary[];
+  createdAt: string;
 }
 
 // ── tool params ───────────────────────────────────────────────────

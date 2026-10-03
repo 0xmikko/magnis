@@ -121,7 +121,7 @@ describe("contacts read — shape parity (tst_be_contactsread_001)", () => {
 
     const listed = await mod.list({});
 
-    expect(listed.items[0]?.relevance_tier).toBeNull();
+    expect(listed.items[0]?.relevanceTier).toBeNull();
   });
 
   it("F4 get throws on a missing / non-contact entity", async () => {
@@ -192,7 +192,7 @@ describe("contacts read — two hops (tst_mod_contacts_001)", () => {
    * @deterministic testkit graph double; no clock, no network
    *
    * INV-P2b.1 a trigger watching the contact's `email.address` appears in
-   *           `linked_entities`, marked `~watches`.
+   *           `linkedEntities`, marked `~watches`.
    * INV-P2b.2 incoming edges are distinguishable from outgoing ones.
    * INV-P2b.3 the contact itself never appears, though its replicas link back.
    * INV-P2b.4 everything else incident to a replica is returned, including a
@@ -227,12 +227,12 @@ describe("contacts read — two hops (tst_mod_contacts_001)", () => {
     ]);
 
     const view = await mod.get({ id: "c1" });
-    const byId = new Map(view.linked_entities.map((l) => [l.id, l] as const));
+    const byId = new Map(view.linkedEntities.map((l) => [l.id, l] as const));
 
     expect(byId.get("t1")?.linkKind).toBe("~watches");
     expect(byId.get("addr-1")?.linkKind).toBe("identity");
     expect(byId.get("co1")?.linkKind).toBe("~identity");
-    expect(view.linked_entities.filter((l) => l.id === "t2")).toHaveLength(1);
+    expect(view.linkedEntities.filter((l) => l.id === "t2")).toHaveLength(1);
     expect(byId.has("c1")).toBe(false);
     expect(graph.spies.listLinksForEntities).toHaveBeenCalledTimes(1);
     expect(graph.spies.getEntities).toHaveBeenCalledTimes(1);
@@ -267,7 +267,7 @@ describe("contacts read — two hops (tst_mod_contacts_001)", () => {
     ]);
 
     const view = await mod.get({ id: "c1" });
-    const ids = view.linked_entities.map((l) => l.id);
+    const ids = view.linkedEntities.map((l) => l.id);
 
     expect(ids).not.toContain("msg-1");
     expect(ids).not.toContain("tg-1");

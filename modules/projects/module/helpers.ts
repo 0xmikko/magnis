@@ -50,10 +50,10 @@ export function buildProjectListItem(
       : (canonicalString(canonical, "project.name") ?? "Untitled Project");
   return {
     id: entity.id,
-    schema_id: entity.schemaId,
+    schemaId: entity.schemaId,
     name,
     status: canonicalString(canonical, "project.status"),
-    created_at: entity.createdAt,
-    is_pinned: entity.isPinned,
+    createdAt: entity.createdAt,
+    isPinned: entity.isPinned,
   };
 }

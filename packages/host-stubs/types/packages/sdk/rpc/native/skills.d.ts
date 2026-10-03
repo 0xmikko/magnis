@@ -3,19 +3,19 @@ export declare const skillListContract: import("../contract.js").RpcContract<"sk
     id: z.ZodString;
     name: z.ZodString;
     description: z.ZodString;
-}, z.core.$strip>>, "required">;
+}, z.core.$strict>>, "required">;
 export declare const skillReadContract: import("../contract.js").RpcContract<"skills.read", z.ZodObject<{
     id: z.ZodString;
     path: z.ZodDefault<z.ZodString>;
 }, z.core.$strip>, z.ZodObject<{
     content: z.ZodString;
     truncated: z.ZodBoolean;
-}, z.core.$strip>, "required">;
+}, z.core.$strict>, "required">;
 export declare const skillListFilesContract: import("../contract.js").RpcContract<"skills.list_files", z.ZodObject<{
     id: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
     files: z.ZodArray<z.ZodString>;
-}, z.core.$strip>, "required">;
+}, z.core.$strict>, "required">;
 export declare const skillsContracts: {
     readonly "skills.capabilities": import("../contract.js").RpcContract<"skills.capabilities", z.ZodObject<{}, z.core.$strip>, z.ZodObject<{
         module: z.ZodString;
@@ -29,19 +29,19 @@ export declare const skillsContracts: {
         id: z.ZodString;
         name: z.ZodString;
         description: z.ZodString;
-    }, z.core.$strip>>, "required">;
+    }, z.core.$strict>>, "required">;
     readonly "skills.list_files": import("../contract.js").RpcContract<"skills.list_files", z.ZodObject<{
         id: z.ZodString;
     }, z.core.$strip>, z.ZodObject<{
         files: z.ZodArray<z.ZodString>;
-    }, z.core.$strip>, "required">;
+    }, z.core.$strict>, "required">;
     readonly "skills.read": import("../contract.js").RpcContract<"skills.read", z.ZodObject<{
         id: z.ZodString;
         path: z.ZodDefault<z.ZodString>;
     }, z.core.$strip>, z.ZodObject<{
         content: z.ZodString;
         truncated: z.ZodBoolean;
-    }, z.core.$strip>, "required">;
+    }, z.core.$strict>, "required">;
     readonly "skills.skill.list": {
         readonly method: "skills.skill.list";
         readonly input: z.ZodObject<{}, z.core.$strict>;
@@ -49,10 +49,9 @@ export declare const skillsContracts: {
             id: z.ZodString;
             name: z.ZodString;
             description: z.ZodString;
-        }, z.core.$strip>>;
+        }, z.core.$strict>>;
         readonly params: "required";
         readonly inputJsonSchema: Readonly<import("../../index.js").JsonObject>;
-        readonly wire?: import("../contract.js").RpcWireCodec;
     };
     readonly "skills.skill.get": {
         readonly method: "skills.skill.get";
@@ -63,10 +62,9 @@ export declare const skillsContracts: {
         readonly output: z.ZodObject<{
             content: z.ZodString;
             truncated: z.ZodBoolean;
-        }, z.core.$strip>;
+        }, z.core.$strict>;
         readonly params: "required";
         readonly inputJsonSchema: Readonly<import("../../index.js").JsonObject>;
-        readonly wire?: import("../contract.js").RpcWireCodec;
     };
     readonly "skills.skill.file.list": {
         readonly method: "skills.skill.file.list";
@@ -75,10 +73,9 @@ export declare const skillsContracts: {
         }, z.core.$strict>;
         readonly output: z.ZodObject<{
             files: z.ZodArray<z.ZodString>;
-        }, z.core.$strip>;
+        }, z.core.$strict>;
         readonly params: "required";
         readonly inputJsonSchema: Readonly<import("../../index.js").JsonObject>;
-        readonly wire?: import("../contract.js").RpcWireCodec;
     };
 };
 //# sourceMappingURL=skills.d.ts.map

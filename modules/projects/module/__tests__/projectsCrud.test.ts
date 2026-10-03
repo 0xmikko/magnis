@@ -60,7 +60,7 @@ describe("tst_module_projects_crud_001 — projects CRUD owns its domain contrac
       id: PROJECT_ID,
       name: "Investor demo",
       status: "blocked",
-      schema_id: PROJECT,
+      schemaId: PROJECT,
     });
     expect(graph.spies.createEntity).toHaveBeenCalledWith({
       schemaId: PROJECT,
@@ -146,7 +146,7 @@ describe("tst_module_projects_crud_001 — projects CRUD owns its domain contrac
         "project.name": "Demo",
         "project.status": "active",
       },
-      linked_entities: [
+      linkedEntities: [
         expect.objectContaining({
           id: CONTACT_ID,
           name: "Ada",

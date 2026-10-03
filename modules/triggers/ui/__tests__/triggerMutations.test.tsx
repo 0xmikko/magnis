@@ -24,13 +24,13 @@ function detailWith(status: string): Record<string, unknown> {
   return {
     id: "trigger-1",
     name: "Reply watch",
-    gate_prompt: "",
-    action_prompt: "draft a reply",
+    gatePrompt: "",
+    actionPrompt: "draft a reply",
     status,
-    event_kinds: ["sync_ingested"],
-    debounce_seconds: 0,
-    firing_count: 2,
-    watched_entities: [],
+    eventKinds: ["sync_ingested"],
+    debounceSeconds: 0,
+    firingCount: 2,
+    watchedEntities: [],
   };
 }
 
@@ -347,7 +347,7 @@ describe("tst_fe_trig_003 — the panel stops and restarts, and cannot delete", 
       if (method === "triggers.get") {
         return Promise.resolve({
           ...detailWith("active"),
-          watched_entities: [
+          watchedEntities: [
             { id: "w-ok", name: "Readable" },
             { id: "w-bad", name: "Unreadable" },
           ],
@@ -356,7 +356,7 @@ describe("tst_fe_trig_003 — the panel stops and restarts, and cannot delete", 
       if (method === "triggers.fire_history") return Promise.resolve([]);
       if (method === "graph.entity.get") {
         if (params?.id === "w-ok") {
-          return Promise.resolve({ id: "w-ok", schema_id: "contacts.person", name: "Readable" });
+          return Promise.resolve({ id: "w-ok", schemaId: "contacts.person", name: "Readable" });
         }
         return Promise.reject(new Error("entity unavailable"));
       }

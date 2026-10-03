@@ -5,34 +5,34 @@ import type { LinkedEntitySummary } from "@magnis/sdk";
 
 export interface ContactListItem {
   id: string;
-  schema_id: string;
+  schemaId: string;
   name: string;
   email: string | null;
   phone: string | null;
   role: string | null;
   company: string | null;
   channels: string[];
-  avatar_color: string;
+  avatarColor: string;
   initials: string;
-  relevance_tier?: string | null;
-  created_at: string;
-  is_pinned?: boolean | null;
+  relevanceTier?: string | null;
+  createdAt: string;
+  isPinned?: boolean | null;
 }
 
 export interface ContactDetailView {
   id: string;
-  schema_id: string;
+  schemaId: string;
   name: string;
   email: string | null;
   phone: string | null;
   role: string | null;
   company: string | null;
   channels: string[];
-  avatar_color: string;
+  avatarColor: string;
   initials: string;
   canonical: Partial<ContactCanonical>;
-  linked_entities: LinkedEntitySummary[];
-  created_at: string;
+  linkedEntities: LinkedEntitySummary[];
+  createdAt: string;
   /** S3 (§5.1): the composed card — the hub's curated dictionary. */
   curated: Record<string, unknown>;
   /** Composed emails: the shared email.address nodes one identity hop away. */
@@ -42,7 +42,7 @@ export interface ContactDetailView {
   phones: { phone: string; type?: string | null; origin: string }[];
   /** Source claims: the replica dictionaries one identity hop away, each
    * labeled by its schema (contacts.google_contact, …). */
-  replicas: { id: string; schema_id: string; name: string | null; properties: Record<string, unknown> }[];
+  replicas: { id: string; schemaId: string; name: string | null; properties: Record<string, unknown> }[];
 }
 
 // ── schema → type maps that parameterise GraphService ──────────────

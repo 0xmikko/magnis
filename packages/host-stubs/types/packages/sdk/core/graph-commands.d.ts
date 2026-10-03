@@ -49,7 +49,7 @@ export declare const BatchLinkSchema: z.ZodObject<{
     validUntil: z.ZodNullable<z.ZodISODateTime>;
 }, z.core.$strict>;
 export type BatchLink = z.output<typeof BatchLinkSchema>;
-/** The batch a plugin sends to `apply_batch`. */
+/** The batch a plugin sends to `applyBatch`. */
 export declare const GraphBatchInputSchema: z.ZodObject<{
     refs: z.ZodReadonly<z.ZodArray<z.ZodObject<{
         key: z.ZodString;
@@ -109,7 +109,7 @@ export declare const GraphBatchSchema: z.ZodObject<{
     }, z.core.$strict>>>;
 }, z.core.$strict>;
 export type GraphBatch = z.output<typeof GraphBatchSchema>;
-/** What `apply_batch` answers a plugin: batch key to entity id, and counts. */
+/** What `applyBatch` answers a plugin: batch key to entity id, and counts. */
 export declare const GraphBatchResultSchema: z.ZodObject<{
     ids: z.ZodReadonly<z.ZodRecord<z.ZodString, z.ZodString>>;
     created: z.ZodInt;

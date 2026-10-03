@@ -211,12 +211,12 @@ export class ProjectsModule {
 
     return {
       id: entity.id,
-      schema_id: entity.schemaId,
+      schemaId: entity.schemaId,
       name,
       status,
       canonical,
-      linked_entities: linked,
-      created_at: entity.createdAt,
+      linkedEntities: linked,
+      createdAt: entity.createdAt,
     };
   }
 
@@ -240,8 +240,8 @@ export class ProjectsModule {
           id: existing.id,
           name: existing.name && existing.name.length > 0 ? existing.name : params.name,
           status: existingStatus,
-          schema_id: PROJECT,
-          created_at: existing.createdAt,
+          schemaId: PROJECT,
+          createdAt: existing.createdAt,
         };
       }
     }
@@ -257,7 +257,7 @@ export class ProjectsModule {
       entityId: entity.id,
       properties: { name: params.name, status: statusVal, created_at: new Date().toISOString() },
     });
-    return { id: entity.id, name: params.name, status: statusVal, schema_id: PROJECT, created_at: entity.createdAt };
+    return { id: entity.id, name: params.name, status: statusVal, schemaId: PROJECT, createdAt: entity.createdAt };
   }
 
   @rpc("update", UPDATE_SPEC)

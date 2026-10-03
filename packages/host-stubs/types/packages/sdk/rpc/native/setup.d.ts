@@ -7,7 +7,7 @@ export declare const setupContracts: {
             currentStep: z.ZodString;
             sources: z.ZodArray<z.ZodString>;
             engine: z.ZodNullable<z.ZodString>;
-        }, z.core.$strip>;
+        }, z.core.$strict>;
         plan: z.ZodObject<{
             steps: z.ZodReadonly<z.ZodArray<z.ZodDiscriminatedUnion<[z.ZodObject<{
                 kind: z.ZodLiteral<"welcome">;
@@ -96,7 +96,7 @@ export declare const setupContracts: {
             currentStep: z.ZodString;
             sources: z.ZodArray<z.ZodString>;
             engine: z.ZodNullable<z.ZodString>;
-        }, z.core.$strip>>;
+        }, z.core.$strict>>;
     }, z.core.$strict>, z.ZodObject<{
         document: z.ZodObject<{
             version: z.ZodNumber;
@@ -104,7 +104,7 @@ export declare const setupContracts: {
             currentStep: z.ZodString;
             sources: z.ZodArray<z.ZodString>;
             engine: z.ZodNullable<z.ZodString>;
-        }, z.core.$strip>;
+        }, z.core.$strict>;
         plan: z.ZodObject<{
             steps: z.ZodReadonly<z.ZodArray<z.ZodDiscriminatedUnion<[z.ZodObject<{
                 kind: z.ZodLiteral<"welcome">;

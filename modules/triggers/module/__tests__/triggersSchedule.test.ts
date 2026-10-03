@@ -17,6 +17,13 @@ const TRIGGER_ID = "22222222-2222-4222-8222-222222222222";
 const NORMALIZED = {
   cron: "0 9 * * MON-FRI",
   timezone: "Europe/Belgrade",
+  activatedAt: "2026-08-07T10:00:00Z",
+};
+
+/// The same spec as the trigger's dictionary stores it.
+const STORED = {
+  cron: "0 9 * * MON-FRI",
+  timezone: "Europe/Belgrade",
   activated_at: "2026-08-07T10:00:00Z",
 };
 
@@ -111,7 +118,7 @@ describe("triggers.create with a schedule", () => {
       cron: "0 9 * * MON-FRI",
       timezone: "Europe/Belgrade",
     });
-    expect(persistedConfig(graph).schedule).toEqual(NORMALIZED);
+    expect(persistedConfig(graph).schedule).toEqual(STORED);
   });
 
   it("tst_module_triggers_sched_001 does not consult the seam without a schedule", async () => {
@@ -150,7 +157,7 @@ describe("triggers.create response carries the schedule", () => {
       schedule: { cron: "0 9 * * MON-FRI", timezone: "Europe/Belgrade" },
     });
 
-    expect((created as { schedule?: unknown }).schedule).toEqual(NORMALIZED);
+    expect((created as { schedule?: unknown }).schedule).toEqual(STORED);
   });
 });
 
@@ -216,11 +223,11 @@ describe("triggers.update schedule set and clear", () => {
       cron: "0 9 * * MON-FRI",
       timezone: "Europe/Belgrade",
     });
-    expect(persistedConfig(graph).schedule).toEqual(NORMALIZED);
+    expect(persistedConfig(graph).schedule).toEqual(STORED);
   });
 
   it("tst_module_triggers_sched_003 clears a schedule with null, seam untouched", async () => {
-    const graph = existingTrigger({ schedule: { ...NORMALIZED } });
+    const graph = existingTrigger({ schedule: { ...STORED } });
     const rpc = seamRpc();
     const { module } = mountModule(TriggersModule, { graph, rpc });
 

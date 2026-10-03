@@ -1,20 +1,21 @@
 import type { ComponentType, ReactNode } from "react";
 import type { StoreApi } from "zustand/vanilla";
 import type { IconName } from "../../components/ui/Icon";
-import type { AvatarColor, LinkedEntitySummary } from "./sharedTypes";
+import type { LinkedEntitySummary } from "@magnis/sdk";
+import type { AvatarColor } from "./sharedTypes";
 import type { AgentRendererProps, EntityRendererProps, ModuleAgentContribution, ToolCallRendererPayload } from "../../runtime/contracts/agent";
 import type { AppRuntime } from "../../runtime/contracts/runtime";
 import type { EntityLinkContribution } from "../../runtime/contracts/module";
 export interface ListItem {
     readonly id: string;
     readonly name: string | null;
-    readonly schema_id: string;
+    readonly schemaId: string;
     readonly preview?: string | null;
     readonly timestamp?: string | null;
     readonly avatarUrl?: string | null;
-    readonly is_pinned?: boolean;
-    readonly is_archived?: boolean;
-    readonly unread_count?: number;
+    readonly isPinned?: boolean;
+    readonly isArchived?: boolean;
+    readonly unreadCount?: number;
     readonly metadata?: Readonly<Record<string, unknown>>;
 }
 export interface ModuleQueryKeys {

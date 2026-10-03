@@ -47,7 +47,7 @@ function emailList(data: Readonly<Record<string, unknown>>): string[] {
       const rec = n as Record<string, unknown>;
       if (
         rec.kind === "identity" &&
-        rec.schema_id === "email.address" &&
+        rec.schemaId === "email.address" &&
         typeof rec.name === "string" &&
         rec.name.length > 0
       ) {

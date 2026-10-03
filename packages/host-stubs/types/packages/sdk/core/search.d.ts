@@ -3,8 +3,7 @@ import { z } from "zod";
  *
  * `data` is intentionally opaque: its shape is supplied by the entity schema
  * that produced the result, while the envelope itself is a shared Magnis
- * contract. The wire adapter maps the legacy `schema_id`/`link_kind` keys to
- * these canonical properties before validation.
+ * contract.
  */
 export declare const SearchResultSchema: z.ZodObject<{
     id: z.ZodString;
@@ -14,7 +13,7 @@ export declare const SearchResultSchema: z.ZodObject<{
     excerpt: z.ZodOptional<z.ZodString>;
     linkKind: z.ZodOptional<z.ZodString>;
     data: z.ZodOptional<z.ZodType<import("./json.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("./json.js").JsonValue, unknown>>>;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type SearchResult = z.output<typeof SearchResultSchema>;
 export declare const MemoryCandidateSchema: z.ZodObject<{
     id: z.ZodString;
@@ -22,7 +21,7 @@ export declare const MemoryCandidateSchema: z.ZodObject<{
     to: z.ZodString;
     kind: z.ZodString;
     p: z.ZodNumber;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type MemoryCandidate = z.output<typeof MemoryCandidateSchema>;
 export declare const MemoryDiagnosticsSchema: z.ZodObject<{
     totalActive: z.ZodNumber;
@@ -31,7 +30,7 @@ export declare const MemoryDiagnosticsSchema: z.ZodObject<{
     byType: z.ZodRecord<z.ZodString, z.ZodNumber>;
     avgConfidence: z.ZodNumber;
     lastConsolidation: z.ZodNullable<z.ZodString>;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type MemoryDiagnostics = z.output<typeof MemoryDiagnosticsSchema>;
 /** Ranked evidence attached only when a declared search used retrieval. */
 export declare const SearchExecutionEvidenceSchema: z.ZodObject<{
@@ -45,7 +44,9 @@ export declare const SearchExecutionEvidenceSchema: z.ZodObject<{
     excerpt: z.ZodString;
 }, z.core.$strict>;
 export type SearchExecutionEvidence = z.output<typeof SearchExecutionEvidenceSchema>;
-/** One item of the agent search tool: the entity and why it ranked. */
+/** One item of the agent search tool: the entity and, when the search ranked
+ * by meaning, why it ranked. A list or a search with no `means` ranks nothing,
+ * so its items carry no relevance. */
 export declare const EntitySearchItemSchema: z.ZodObject<{
     entity: z.ZodDiscriminatedUnion<[z.ZodObject<{
         origin: z.ZodLiteral<"canonical">;
@@ -88,7 +89,7 @@ export declare const EntitySearchItemSchema: z.ZodObject<{
         isArchived: z.ZodNullable<z.ZodBoolean>;
         properties: z.ZodType<import("./json.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("./json.js").JsonValue, unknown>>;
     }, z.core.$strict>], "origin">;
-    relevance: z.ZodObject<{
+    relevance: z.ZodExactOptional<z.ZodObject<{
         score: z.ZodNumber;
         channel: z.ZodEnum<{
             text: "text";
@@ -97,7 +98,7 @@ export declare const EntitySearchItemSchema: z.ZodObject<{
         }>;
         chunkIndex: z.ZodInt;
         excerpt: z.ZodString;
-    }, z.core.$strict>;
+    }, z.core.$strict>>;
 }, z.core.$strict>;
 export type EntitySearchItem = z.output<typeof EntitySearchItemSchema>;
 //# sourceMappingURL=search.d.ts.map

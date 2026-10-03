@@ -26,7 +26,7 @@ export declare const PendingToolCallSchema: z.ZodObject<{
         approved: "approved";
         denied: "denied";
     }>;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type PendingToolCall = z.output<typeof PendingToolCallSchema>;
 export declare const ApprovalDecisionSchema: z.ZodObject<{
     toolCallId: z.ZodString;
@@ -37,6 +37,6 @@ export declare const ApprovalDecisionSchema: z.ZodObject<{
     toolName: z.ZodString;
     args: z.ZodType<import("./json.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("./json.js").JsonValue, unknown>>;
     result: z.ZodOptional<z.ZodType<import("./json.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("./json.js").JsonValue, unknown>>>;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type ApprovalDecision = z.output<typeof ApprovalDecisionSchema>;
 //# sourceMappingURL=approval.d.ts.map

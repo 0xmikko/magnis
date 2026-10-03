@@ -9,7 +9,7 @@ export interface WatchedEntityRef {
 }
 
 export interface TriggerExecutionRef {
-  readonly fired_at: string;
+  readonly firedAt: string;
   readonly outcome: string;
 }
 

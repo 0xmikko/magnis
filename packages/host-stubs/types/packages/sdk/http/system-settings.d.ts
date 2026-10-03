@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { type JsonValue } from "../core/json.js";
 export declare const setDefaultAgentContract: import("./contract.js").HttpContract<"PUT", "/api/settings/agent/default-implementation", z.ZodObject<{
     implementationId: z.ZodEnum<{
         magnis: "magnis";
@@ -20,7 +19,7 @@ export declare const setAgentLimitsContract: import("./contract.js").HttpContrac
 }, z.core.$strict>>;
 export declare const updateModuleSettingsContract: import("./contract.js").HttpContract<"PUT", "/api/settings/modules/:moduleId/settings", z.ZodObject<{
     moduleId: z.ZodString;
-    values: z.ZodRecord<z.ZodString, z.ZodType<JsonValue, unknown, z.core.$ZodTypeInternals<JsonValue, unknown>>>;
+    values: z.ZodRecord<z.ZodString, z.ZodType<import("../index.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("../index.js").JsonValue, unknown>>>;
 }, z.core.$strict>, z.ZodObject<{
     status: z.ZodLiteral<"ok">;
 }, z.core.$strict>>;
@@ -29,10 +28,10 @@ export declare const refreshExtensionsCatalogContract: import("./contract.js").H
     packages: z.ZodNumber;
     channel: z.ZodString;
     curation: z.ZodNullable<z.ZodUnknown>;
-}, z.core.$strip>, z.ZodObject<{
+}, z.core.$strict>, z.ZodObject<{
     available: z.ZodLiteral<false>;
     reason: z.ZodString;
-}, z.core.$strip>]>>;
+}, z.core.$strict>]>>;
 export declare const installExtensionContract: import("./contract.js").HttpContract<"POST", "/api/settings/extensions/install", z.ZodObject<{
     key: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
@@ -67,13 +66,13 @@ export declare const installExtensionContract: import("./contract.js").HttpContr
         packageHash: z.ZodString;
         entry: z.ZodString;
         exportName: z.ZodString;
-    }, z.core.$strip>>;
+    }, z.core.$strict>>;
     removable: z.ZodBoolean;
     position: z.ZodNumber;
-    blockingDependents: z.ZodDefault<z.ZodArray<z.ZodString>>;
-    unmetRequirements: z.ZodDefault<z.ZodArray<z.ZodString>>;
-    surfaces: z.ZodDefault<z.ZodArray<z.ZodString>>;
-}, z.core.$strip>>;
+    blockingDependents: z.ZodArray<z.ZodString>;
+    unmetRequirements: z.ZodArray<z.ZodString>;
+    surfaces: z.ZodArray<z.ZodString>;
+}, z.core.$strict>>;
 export declare const uninstallExtensionContract: import("./contract.js").HttpContract<"DELETE", "/api/settings/extensions/:extensionKey", z.ZodObject<{
     extensionKey: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
@@ -113,13 +112,13 @@ export declare const enableExtensionContract: import("./contract.js").HttpContra
         packageHash: z.ZodString;
         entry: z.ZodString;
         exportName: z.ZodString;
-    }, z.core.$strip>>;
+    }, z.core.$strict>>;
     removable: z.ZodBoolean;
     position: z.ZodNumber;
-    blockingDependents: z.ZodDefault<z.ZodArray<z.ZodString>>;
-    unmetRequirements: z.ZodDefault<z.ZodArray<z.ZodString>>;
-    surfaces: z.ZodDefault<z.ZodArray<z.ZodString>>;
-}, z.core.$strip>>;
+    blockingDependents: z.ZodArray<z.ZodString>;
+    unmetRequirements: z.ZodArray<z.ZodString>;
+    surfaces: z.ZodArray<z.ZodString>;
+}, z.core.$strict>>;
 export declare const disableExtensionContract: import("./contract.js").HttpContract<"POST", "/api/settings/extensions/:extensionKey/disable", z.ZodObject<{
     extensionKey: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
@@ -154,13 +153,13 @@ export declare const disableExtensionContract: import("./contract.js").HttpContr
         packageHash: z.ZodString;
         entry: z.ZodString;
         exportName: z.ZodString;
-    }, z.core.$strip>>;
+    }, z.core.$strict>>;
     removable: z.ZodBoolean;
     position: z.ZodNumber;
-    blockingDependents: z.ZodDefault<z.ZodArray<z.ZodString>>;
-    unmetRequirements: z.ZodDefault<z.ZodArray<z.ZodString>>;
-    surfaces: z.ZodDefault<z.ZodArray<z.ZodString>>;
-}, z.core.$strip>>;
+    blockingDependents: z.ZodArray<z.ZodString>;
+    unmetRequirements: z.ZodArray<z.ZodString>;
+    surfaces: z.ZodArray<z.ZodString>;
+}, z.core.$strict>>;
 export declare const updateExtensionContract: import("./contract.js").HttpContract<"POST", "/api/settings/extensions/:extensionKey/update", z.ZodObject<{
     extensionKey: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
@@ -195,13 +194,13 @@ export declare const updateExtensionContract: import("./contract.js").HttpContra
         packageHash: z.ZodString;
         entry: z.ZodString;
         exportName: z.ZodString;
-    }, z.core.$strip>>;
+    }, z.core.$strict>>;
     removable: z.ZodBoolean;
     position: z.ZodNumber;
-    blockingDependents: z.ZodDefault<z.ZodArray<z.ZodString>>;
-    unmetRequirements: z.ZodDefault<z.ZodArray<z.ZodString>>;
-    surfaces: z.ZodDefault<z.ZodArray<z.ZodString>>;
-}, z.core.$strip>>;
+    blockingDependents: z.ZodArray<z.ZodString>;
+    unmetRequirements: z.ZodArray<z.ZodString>;
+    surfaces: z.ZodArray<z.ZodString>;
+}, z.core.$strict>>;
 export declare const setExtensionPositionContract: import("./contract.js").HttpContract<"PUT", "/api/settings/extensions/:extensionKey/position", z.ZodObject<{
     extensionKey: z.ZodString;
     position: z.ZodNumber;
@@ -237,13 +236,13 @@ export declare const setExtensionPositionContract: import("./contract.js").HttpC
         packageHash: z.ZodString;
         entry: z.ZodString;
         exportName: z.ZodString;
-    }, z.core.$strip>>;
+    }, z.core.$strict>>;
     removable: z.ZodBoolean;
     position: z.ZodNumber;
-    blockingDependents: z.ZodDefault<z.ZodArray<z.ZodString>>;
-    unmetRequirements: z.ZodDefault<z.ZodArray<z.ZodString>>;
-    surfaces: z.ZodDefault<z.ZodArray<z.ZodString>>;
-}, z.core.$strip>>;
+    blockingDependents: z.ZodArray<z.ZodString>;
+    unmetRequirements: z.ZodArray<z.ZodString>;
+    surfaces: z.ZodArray<z.ZodString>;
+}, z.core.$strict>>;
 export declare const reloadExtensionContract: import("./contract.js").HttpContract<"POST", "/api/settings/extensions/:extensionKey/reload", z.ZodObject<{
     extensionKey: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
@@ -278,13 +277,13 @@ export declare const reloadExtensionContract: import("./contract.js").HttpContra
         packageHash: z.ZodString;
         entry: z.ZodString;
         exportName: z.ZodString;
-    }, z.core.$strip>>;
+    }, z.core.$strict>>;
     removable: z.ZodBoolean;
     position: z.ZodNumber;
-    blockingDependents: z.ZodDefault<z.ZodArray<z.ZodString>>;
-    unmetRequirements: z.ZodDefault<z.ZodArray<z.ZodString>>;
-    surfaces: z.ZodDefault<z.ZodArray<z.ZodString>>;
-}, z.core.$strip>>;
+    blockingDependents: z.ZodArray<z.ZodString>;
+    unmetRequirements: z.ZodArray<z.ZodString>;
+    surfaces: z.ZodArray<z.ZodString>;
+}, z.core.$strict>>;
 export declare const listSourceAppConfigContract: import("./contract.js").HttpContract<"GET", "/api/settings/sources/config", z.ZodObject<{}, z.core.$strip>, z.ZodObject<{
     vaultAvailable: z.ZodBoolean;
     sources: z.ZodReadonly<z.ZodArray<z.ZodObject<{
@@ -298,9 +297,9 @@ export declare const listSourceAppConfigContract: import("./contract.js").HttpCo
             key: z.ZodString;
             label: z.ZodString;
             deploymentConfigured: z.ZodBoolean;
-        }, z.core.$strip>>>;
-    }, z.core.$strip>>>;
-}, z.core.$strip>>;
+        }, z.core.$strict>>>;
+    }, z.core.$strict>>>;
+}, z.core.$strict>>;
 export declare const deleteSourceAppConfigContract: import("./contract.js").HttpContract<"DELETE", "/api/settings/sources/:sourceId/config/:key", z.ZodObject<{
     sourceId: z.ZodString;
     key: z.ZodString;
@@ -329,7 +328,7 @@ export declare const createAiProviderContract: import("./contract.js").HttpContr
     apiKeySet: z.ZodBoolean;
     createdAt: z.ZodString;
     updatedAt: z.ZodString;
-}, z.core.$strip>>;
+}, z.core.$strict>>;
 export declare const updateAiProviderContract: import("./contract.js").HttpContract<"PATCH", "/api/settings/ai-models/providers/:providerId", z.ZodObject<{
     providerId: z.ZodString;
     apiKey: z.ZodOptional<z.ZodString>;
@@ -345,7 +344,7 @@ export declare const updateAiProviderContract: import("./contract.js").HttpContr
     apiKeySet: z.ZodBoolean;
     createdAt: z.ZodString;
     updatedAt: z.ZodString;
-}, z.core.$strip>>;
+}, z.core.$strict>>;
 export declare const deleteAiProviderContract: import("./contract.js").HttpContract<"DELETE", "/api/settings/ai-models/providers/:providerId", z.ZodObject<{
     providerId: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
@@ -369,7 +368,7 @@ export declare const createAiModelContract: import("./contract.js").HttpContract
     enabled: z.ZodBoolean;
     configJson: z.ZodNullable<z.ZodString>;
     createdAt: z.ZodString;
-}, z.core.$strip>>;
+}, z.core.$strict>>;
 export declare const updateAiModelContract: import("./contract.js").HttpContract<"PATCH", "/api/settings/ai-models/models/:modelId", z.ZodObject<{
     modelId: z.ZodString;
     enabled: z.ZodOptional<z.ZodBoolean>;
@@ -383,7 +382,7 @@ export declare const updateAiModelContract: import("./contract.js").HttpContract
     enabled: z.ZodBoolean;
     configJson: z.ZodNullable<z.ZodString>;
     createdAt: z.ZodString;
-}, z.core.$strip>>;
+}, z.core.$strict>>;
 export declare const deleteAiModelContract: import("./contract.js").HttpContract<"DELETE", "/api/settings/ai-models/models/:modelId", z.ZodObject<{
     modelId: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
@@ -401,7 +400,7 @@ export declare const enableAiModelContract: import("./contract.js").HttpContract
     enabled: z.ZodBoolean;
     configJson: z.ZodNullable<z.ZodString>;
     createdAt: z.ZodString;
-}, z.core.$strip>>;
+}, z.core.$strict>>;
 export declare const setDefaultAiModelContract: import("./contract.js").HttpContract<"PUT", "/api/settings/ai-models/defaults/:capability", z.ZodObject<{
     capability: z.ZodString;
     modelId: z.ZodString;
@@ -409,7 +408,7 @@ export declare const setDefaultAiModelContract: import("./contract.js").HttpCont
     capability: z.ZodString;
     modelId: z.ZodString;
     updatedAt: z.ZodString;
-}, z.core.$strip>>;
+}, z.core.$strict>>;
 export declare const refreshAiModelCatalogContract: import("./contract.js").HttpContract<"POST", "/api/settings/ai-models/catalog/refresh", z.ZodObject<{}, z.core.$strip>, z.ZodObject<{
     source: z.ZodString;
     version: z.ZodString;
@@ -855,7 +854,7 @@ export declare const setUserCreditLimitContract: import("./contract.js").HttpCon
     userId: z.ZodString;
     limitMicros: z.ZodNumber;
     remainingMicros: z.ZodNumber;
-}, z.core.$strip>>;
+}, z.core.$strict>>;
 export declare const AdminUserSchema: z.ZodObject<{
     id: z.ZodString;
     name: z.ZodString;
@@ -1171,7 +1170,7 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
     maxSteps: z.ZodNumber;
 }, z.core.$strict>>, import("./contract.js").HttpContract<"PUT", "/api/settings/modules/:moduleId/settings", z.ZodObject<{
     moduleId: z.ZodString;
-    values: z.ZodRecord<z.ZodString, z.ZodType<JsonValue, unknown, z.core.$ZodTypeInternals<JsonValue, unknown>>>;
+    values: z.ZodRecord<z.ZodString, z.ZodType<import("../index.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("../index.js").JsonValue, unknown>>>;
 }, z.core.$strict>, z.ZodObject<{
     status: z.ZodLiteral<"ok">;
 }, z.core.$strict>>, import("./contract.js").HttpContract<"POST", "/api/settings/extensions/catalog/refresh", z.ZodObject<{}, z.core.$strip>, z.ZodUnion<readonly [z.ZodObject<{
@@ -1179,10 +1178,10 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
     packages: z.ZodNumber;
     channel: z.ZodString;
     curation: z.ZodNullable<z.ZodUnknown>;
-}, z.core.$strip>, z.ZodObject<{
+}, z.core.$strict>, z.ZodObject<{
     available: z.ZodLiteral<false>;
     reason: z.ZodString;
-}, z.core.$strip>]>>, import("./contract.js").HttpContract<"POST", "/api/settings/extensions/install", z.ZodObject<{
+}, z.core.$strict>]>>, import("./contract.js").HttpContract<"POST", "/api/settings/extensions/install", z.ZodObject<{
     key: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
     kind: z.ZodEnum<{
@@ -1216,13 +1215,13 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
         packageHash: z.ZodString;
         entry: z.ZodString;
         exportName: z.ZodString;
-    }, z.core.$strip>>;
+    }, z.core.$strict>>;
     removable: z.ZodBoolean;
     position: z.ZodNumber;
-    blockingDependents: z.ZodDefault<z.ZodArray<z.ZodString>>;
-    unmetRequirements: z.ZodDefault<z.ZodArray<z.ZodString>>;
-    surfaces: z.ZodDefault<z.ZodArray<z.ZodString>>;
-}, z.core.$strip>>, import("./contract.js").HttpContract<"DELETE", "/api/settings/extensions/:extensionKey", z.ZodObject<{
+    blockingDependents: z.ZodArray<z.ZodString>;
+    unmetRequirements: z.ZodArray<z.ZodString>;
+    surfaces: z.ZodArray<z.ZodString>;
+}, z.core.$strict>>, import("./contract.js").HttpContract<"DELETE", "/api/settings/extensions/:extensionKey", z.ZodObject<{
     extensionKey: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
     ok: z.ZodLiteral<true>;
@@ -1260,13 +1259,13 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
         packageHash: z.ZodString;
         entry: z.ZodString;
         exportName: z.ZodString;
-    }, z.core.$strip>>;
+    }, z.core.$strict>>;
     removable: z.ZodBoolean;
     position: z.ZodNumber;
-    blockingDependents: z.ZodDefault<z.ZodArray<z.ZodString>>;
-    unmetRequirements: z.ZodDefault<z.ZodArray<z.ZodString>>;
-    surfaces: z.ZodDefault<z.ZodArray<z.ZodString>>;
-}, z.core.$strip>>, import("./contract.js").HttpContract<"POST", "/api/settings/extensions/:extensionKey/disable", z.ZodObject<{
+    blockingDependents: z.ZodArray<z.ZodString>;
+    unmetRequirements: z.ZodArray<z.ZodString>;
+    surfaces: z.ZodArray<z.ZodString>;
+}, z.core.$strict>>, import("./contract.js").HttpContract<"POST", "/api/settings/extensions/:extensionKey/disable", z.ZodObject<{
     extensionKey: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
     kind: z.ZodEnum<{
@@ -1300,13 +1299,13 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
         packageHash: z.ZodString;
         entry: z.ZodString;
         exportName: z.ZodString;
-    }, z.core.$strip>>;
+    }, z.core.$strict>>;
     removable: z.ZodBoolean;
     position: z.ZodNumber;
-    blockingDependents: z.ZodDefault<z.ZodArray<z.ZodString>>;
-    unmetRequirements: z.ZodDefault<z.ZodArray<z.ZodString>>;
-    surfaces: z.ZodDefault<z.ZodArray<z.ZodString>>;
-}, z.core.$strip>>, import("./contract.js").HttpContract<"POST", "/api/settings/extensions/:extensionKey/update", z.ZodObject<{
+    blockingDependents: z.ZodArray<z.ZodString>;
+    unmetRequirements: z.ZodArray<z.ZodString>;
+    surfaces: z.ZodArray<z.ZodString>;
+}, z.core.$strict>>, import("./contract.js").HttpContract<"POST", "/api/settings/extensions/:extensionKey/update", z.ZodObject<{
     extensionKey: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
     kind: z.ZodEnum<{
@@ -1340,13 +1339,13 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
         packageHash: z.ZodString;
         entry: z.ZodString;
         exportName: z.ZodString;
-    }, z.core.$strip>>;
+    }, z.core.$strict>>;
     removable: z.ZodBoolean;
     position: z.ZodNumber;
-    blockingDependents: z.ZodDefault<z.ZodArray<z.ZodString>>;
-    unmetRequirements: z.ZodDefault<z.ZodArray<z.ZodString>>;
-    surfaces: z.ZodDefault<z.ZodArray<z.ZodString>>;
-}, z.core.$strip>>, import("./contract.js").HttpContract<"PUT", "/api/settings/extensions/:extensionKey/position", z.ZodObject<{
+    blockingDependents: z.ZodArray<z.ZodString>;
+    unmetRequirements: z.ZodArray<z.ZodString>;
+    surfaces: z.ZodArray<z.ZodString>;
+}, z.core.$strict>>, import("./contract.js").HttpContract<"PUT", "/api/settings/extensions/:extensionKey/position", z.ZodObject<{
     extensionKey: z.ZodString;
     position: z.ZodNumber;
 }, z.core.$strip>, z.ZodObject<{
@@ -1381,13 +1380,13 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
         packageHash: z.ZodString;
         entry: z.ZodString;
         exportName: z.ZodString;
-    }, z.core.$strip>>;
+    }, z.core.$strict>>;
     removable: z.ZodBoolean;
     position: z.ZodNumber;
-    blockingDependents: z.ZodDefault<z.ZodArray<z.ZodString>>;
-    unmetRequirements: z.ZodDefault<z.ZodArray<z.ZodString>>;
-    surfaces: z.ZodDefault<z.ZodArray<z.ZodString>>;
-}, z.core.$strip>>, import("./contract.js").HttpContract<"POST", "/api/settings/extensions/:extensionKey/reload", z.ZodObject<{
+    blockingDependents: z.ZodArray<z.ZodString>;
+    unmetRequirements: z.ZodArray<z.ZodString>;
+    surfaces: z.ZodArray<z.ZodString>;
+}, z.core.$strict>>, import("./contract.js").HttpContract<"POST", "/api/settings/extensions/:extensionKey/reload", z.ZodObject<{
     extensionKey: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
     kind: z.ZodEnum<{
@@ -1421,13 +1420,13 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
         packageHash: z.ZodString;
         entry: z.ZodString;
         exportName: z.ZodString;
-    }, z.core.$strip>>;
+    }, z.core.$strict>>;
     removable: z.ZodBoolean;
     position: z.ZodNumber;
-    blockingDependents: z.ZodDefault<z.ZodArray<z.ZodString>>;
-    unmetRequirements: z.ZodDefault<z.ZodArray<z.ZodString>>;
-    surfaces: z.ZodDefault<z.ZodArray<z.ZodString>>;
-}, z.core.$strip>>, import("./contract.js").HttpContract<"GET", "/api/settings/sources/config", z.ZodObject<{}, z.core.$strip>, z.ZodObject<{
+    blockingDependents: z.ZodArray<z.ZodString>;
+    unmetRequirements: z.ZodArray<z.ZodString>;
+    surfaces: z.ZodArray<z.ZodString>;
+}, z.core.$strict>>, import("./contract.js").HttpContract<"GET", "/api/settings/sources/config", z.ZodObject<{}, z.core.$strip>, z.ZodObject<{
     vaultAvailable: z.ZodBoolean;
     sources: z.ZodReadonly<z.ZodArray<z.ZodObject<{
         sourceId: z.ZodString;
@@ -1440,9 +1439,9 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
             key: z.ZodString;
             label: z.ZodString;
             deploymentConfigured: z.ZodBoolean;
-        }, z.core.$strip>>>;
-    }, z.core.$strip>>>;
-}, z.core.$strip>>, import("./contract.js").HttpContract<"DELETE", "/api/settings/sources/:sourceId/config/:key", z.ZodObject<{
+        }, z.core.$strict>>>;
+    }, z.core.$strict>>>;
+}, z.core.$strict>>, import("./contract.js").HttpContract<"DELETE", "/api/settings/sources/:sourceId/config/:key", z.ZodObject<{
     sourceId: z.ZodString;
     key: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
@@ -1468,7 +1467,7 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
     apiKeySet: z.ZodBoolean;
     createdAt: z.ZodString;
     updatedAt: z.ZodString;
-}, z.core.$strip>>, import("./contract.js").HttpContract<"PATCH", "/api/settings/ai-models/providers/:providerId", z.ZodObject<{
+}, z.core.$strict>>, import("./contract.js").HttpContract<"PATCH", "/api/settings/ai-models/providers/:providerId", z.ZodObject<{
     providerId: z.ZodString;
     apiKey: z.ZodOptional<z.ZodString>;
     baseUrl: z.ZodOptional<z.ZodString>;
@@ -1483,7 +1482,7 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
     apiKeySet: z.ZodBoolean;
     createdAt: z.ZodString;
     updatedAt: z.ZodString;
-}, z.core.$strip>>, import("./contract.js").HttpContract<"DELETE", "/api/settings/ai-models/providers/:providerId", z.ZodObject<{
+}, z.core.$strict>>, import("./contract.js").HttpContract<"DELETE", "/api/settings/ai-models/providers/:providerId", z.ZodObject<{
     providerId: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
     deleted: z.ZodString;
@@ -1505,7 +1504,7 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
     enabled: z.ZodBoolean;
     configJson: z.ZodNullable<z.ZodString>;
     createdAt: z.ZodString;
-}, z.core.$strip>>, import("./contract.js").HttpContract<"PATCH", "/api/settings/ai-models/models/:modelId", z.ZodObject<{
+}, z.core.$strict>>, import("./contract.js").HttpContract<"PATCH", "/api/settings/ai-models/models/:modelId", z.ZodObject<{
     modelId: z.ZodString;
     enabled: z.ZodOptional<z.ZodBoolean>;
     configJson: z.ZodOptional<z.ZodString>;
@@ -1518,7 +1517,7 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
     enabled: z.ZodBoolean;
     configJson: z.ZodNullable<z.ZodString>;
     createdAt: z.ZodString;
-}, z.core.$strip>>, import("./contract.js").HttpContract<"DELETE", "/api/settings/ai-models/models/:modelId", z.ZodObject<{
+}, z.core.$strict>>, import("./contract.js").HttpContract<"DELETE", "/api/settings/ai-models/models/:modelId", z.ZodObject<{
     modelId: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
     deleted: z.ZodString;
@@ -1534,14 +1533,14 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
     enabled: z.ZodBoolean;
     configJson: z.ZodNullable<z.ZodString>;
     createdAt: z.ZodString;
-}, z.core.$strip>>, import("./contract.js").HttpContract<"PUT", "/api/settings/ai-models/defaults/:capability", z.ZodObject<{
+}, z.core.$strict>>, import("./contract.js").HttpContract<"PUT", "/api/settings/ai-models/defaults/:capability", z.ZodObject<{
     capability: z.ZodString;
     modelId: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
     capability: z.ZodString;
     modelId: z.ZodString;
     updatedAt: z.ZodString;
-}, z.core.$strip>>, import("./contract.js").HttpContract<"POST", "/api/settings/ai-models/catalog/refresh", z.ZodObject<{}, z.core.$strip>, z.ZodObject<{
+}, z.core.$strict>>, import("./contract.js").HttpContract<"POST", "/api/settings/ai-models/catalog/refresh", z.ZodObject<{}, z.core.$strip>, z.ZodObject<{
     source: z.ZodString;
     version: z.ZodString;
     providers: z.ZodNumber;
@@ -2213,7 +2212,7 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
     userId: z.ZodString;
     limitMicros: z.ZodNumber;
     remainingMicros: z.ZodNumber;
-}, z.core.$strip>>, import("./contract.js").HttpContract<"GET", "/api/settings/users", z.ZodObject<{}, z.core.$strip>, z.ZodArray<z.ZodObject<{
+}, z.core.$strict>>, import("./contract.js").HttpContract<"GET", "/api/settings/users", z.ZodObject<{}, z.core.$strip>, z.ZodArray<z.ZodObject<{
     id: z.ZodString;
     name: z.ZodString;
     surname: z.ZodNullable<z.ZodString>;

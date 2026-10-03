@@ -12,8 +12,8 @@ export function mapCompany(c: CompanyListItem): CompanyProfile {
     location: c.location ?? "",
     members: [],
     preview: [c.industry, c.location].filter(Boolean).join(" · "),
-    time: new Date(c.created_at).toLocaleDateString(),
-    color: toAvatarColor(c.avatar_color),
+    time: new Date(c.createdAt).toLocaleDateString(),
+    color: toAvatarColor(c.avatarColor),
   };
 }
 

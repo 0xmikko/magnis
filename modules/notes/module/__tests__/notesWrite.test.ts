@@ -178,10 +178,10 @@ describe("notes identity and schema boundaries", () => {
       retry.create({ title: "Ignored retry", client_id: NOTE_ID } as never),
     ).resolves.toEqual({
       id: NOTE_ID,
-      schema_id: NOTE,
+      schemaId: NOTE,
       title: "Original",
       body: "Body",
-      updated_at: "2026-01-02T00:00:00Z",
+      updatedAt: "2026-01-02T00:00:00Z",
     });
   });
 

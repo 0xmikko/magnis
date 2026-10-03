@@ -103,12 +103,12 @@ function mapTelegramChatToListItem(raw: Record<string, unknown>): ListItem {
   return {
     id: c.entity_id,
     name,
-    schema_id: "telegram.chat",
+    schemaId: "telegram.chat",
     preview: c.last_message ?? null,
     timestamp: time,
     avatarUrl: c.avatar_url ?? null,
-    is_pinned: c.is_pinned === true,
-    unread_count: undefined, // Backend doesn't provide unread count in list yet
+    isPinned: c.is_pinned === true,
+    unreadCount: undefined, // Backend doesn't provide unread count in list yet
     metadata: {
       chatId: c.chat_id,
       initials: initialsFromName(name),
@@ -206,7 +206,7 @@ const telegramModule = defineModule({
         // its links and its metadata, so the generic `graph.entity.get` read
         // that used to stand in for the module's own answer is gone.
         const detail = await runtime.transport.rpc<MessageDetailView>("telegram.messages.get", { id: entityId });
-        const chatLink = detail.linked_entities.find((e) => e.schemaId === "telegram.chat");
+        const chatLink = detail.linkedEntities.find((e) => e.schemaId === "telegram.chat");
         chatEntityId = chatLink?.id;
         // `??=`, so a message id already on the card data wins. Telegram ids
         // start at 1, so treating 0 as present rather than missing is moot.

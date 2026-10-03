@@ -101,7 +101,7 @@ export declare const FailedToolAnswerSchema: z.ZodObject<{
     toolCallId: z.ZodString;
 }, z.core.$strict>;
 export type FailedToolAnswer = z.output<typeof FailedToolAnswerSchema>;
-/** `graph.create_entity`. */
+/** `graph.createEntity`. */
 export declare const CreateEntityParamsSchema: z.ZodObject<{
     schemaId: z.ZodString;
     name: z.ZodString;
@@ -110,7 +110,7 @@ export declare const CreateEntityParamsSchema: z.ZodObject<{
     date: z.ZodExactOptional<z.ZodString>;
 }, z.core.$strict>;
 export type CreateEntityParams = z.output<typeof CreateEntityParamsSchema>;
-/** `graph.list_entities`. */
+/** `graph.listEntities`. */
 export declare const ListEntitiesParamsSchema: z.ZodObject<{
     schemaId: z.ZodString;
     limit: z.ZodExactOptional<z.ZodInt>;
@@ -122,7 +122,7 @@ export declare const ListEntitiesParamsSchema: z.ZodObject<{
     showArchived: z.ZodExactOptional<z.ZodBoolean>;
 }, z.core.$strict>;
 export type ListEntitiesParams = z.output<typeof ListEntitiesParamsSchema>;
-/** `graph.search_entities_by_name`. */
+/** `graph.searchEntitiesByName`. */
 export declare const SearchEntitiesParamsSchema: z.ZodObject<{
     query: z.ZodString;
     schemaIds: z.ZodExactOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
@@ -138,9 +138,9 @@ export declare const FieldRefDtoSchema: z.ZodObject<{
         idx: "idx";
         origin: "origin";
         confidence: "confidence";
-        pin_order: "pin_order";
         created_at: "created_at";
         is_pinned: "is_pinned";
+        pin_order: "pin_order";
         valid_from: "valid_from";
         valid_until: "valid_until";
     }>>;
@@ -158,9 +158,9 @@ export declare const OrderKeyDtoSchema: z.ZodObject<{
             idx: "idx";
             origin: "origin";
             confidence: "confidence";
-            pin_order: "pin_order";
             created_at: "created_at";
             is_pinned: "is_pinned";
+            pin_order: "pin_order";
             valid_from: "valid_from";
             valid_until: "valid_until";
         }>>;
@@ -172,7 +172,7 @@ export declare const OrderKeyDtoSchema: z.ZodObject<{
     desc: z.ZodExactOptional<z.ZodBoolean>;
 }, z.core.$strict>;
 export type OrderKeyDto = z.output<typeof OrderKeyDtoSchema>;
-/** `graph.list_entities_window`. */
+/** `graph.listEntitiesWindow`. */
 export declare const WindowSpecSchema: z.ZodObject<{
     schema: z.ZodString;
     filterField: z.ZodExactOptional<z.ZodObject<{
@@ -182,9 +182,9 @@ export declare const WindowSpecSchema: z.ZodObject<{
             idx: "idx";
             origin: "origin";
             confidence: "confidence";
-            pin_order: "pin_order";
             created_at: "created_at";
             is_pinned: "is_pinned";
+            pin_order: "pin_order";
             valid_from: "valid_from";
             valid_until: "valid_until";
         }>>;
@@ -207,9 +207,9 @@ export declare const WindowSpecSchema: z.ZodObject<{
                 idx: "idx";
                 origin: "origin";
                 confidence: "confidence";
-                pin_order: "pin_order";
                 created_at: "created_at";
                 is_pinned: "is_pinned";
+                pin_order: "pin_order";
                 valid_from: "valid_from";
                 valid_until: "valid_until";
             }>>;
@@ -225,7 +225,7 @@ export declare const WindowSpecSchema: z.ZodObject<{
     offset: z.ZodInt;
 }, z.core.$strict>;
 export type WindowSpec = z.output<typeof WindowSpecSchema>;
-/** `graph.list_linked`. */
+/** `graph.listLinked`. */
 export declare const LinkedSpecSchema: z.ZodObject<{
     parentId: z.ZodString;
     linkKind: z.ZodString;
@@ -242,9 +242,9 @@ export declare const LinkedSpecSchema: z.ZodObject<{
                 idx: "idx";
                 origin: "origin";
                 confidence: "confidence";
-                pin_order: "pin_order";
                 created_at: "created_at";
                 is_pinned: "is_pinned";
+                pin_order: "pin_order";
                 valid_from: "valid_from";
                 valid_until: "valid_until";
             }>>;
@@ -259,7 +259,7 @@ export declare const LinkedSpecSchema: z.ZodObject<{
     offset: z.ZodInt;
 }, z.core.$strict>;
 export type LinkedSpec = z.output<typeof LinkedSpecSchema>;
-/** `graph.add_link`: a canonical link, with an optional validity interval. */
+/** `graph.addLink`: a canonical link, with an optional validity interval. */
 export declare const AddLinkParamsSchema: z.ZodObject<{
     from: z.ZodString;
     to: z.ZodString;
@@ -269,7 +269,7 @@ export declare const AddLinkParamsSchema: z.ZodObject<{
     validUntil: z.ZodExactOptional<z.ZodISODateTime>;
 }, z.core.$strict>;
 export type AddLinkParams = z.output<typeof AddLinkParamsSchema>;
-/** `file_register`: a downloadable media file; its bytes never cross the plugin boundary. */
+/** `fileRegister`: a downloadable media file; its bytes never cross the plugin boundary. */
 export declare const FileRegisterParamsSchema: z.ZodObject<{
     externalId: z.ZodString;
     parentExternalId: z.ZodString;
@@ -285,14 +285,14 @@ export declare const FileRegisterParamsSchema: z.ZodObject<{
     download: z.ZodExactOptional<z.ZodBoolean>;
 }, z.core.$strict>;
 export type FileRegisterParams = z.output<typeof FileRegisterParamsSchema>;
-/** `web_register`: a URL the host normalizes; one it cannot is skipped. */
+/** `webRegister`: a URL the host normalizes; one it cannot is skipped. */
 export declare const WebRegisterParamsSchema: z.ZodObject<{
     url: z.ZodString;
     parentEntityId: z.ZodExactOptional<z.ZodString>;
     linkKind: z.ZodExactOptional<z.ZodString>;
 }, z.core.$strict>;
 export type WebRegisterParams = z.output<typeof WebRegisterParamsSchema>;
-/** `graph.list_entities_by_property_field`. */
+/** `graph.listEntitiesByPropertyField`. */
 export declare const ListEntitiesByPropertyFieldParamsSchema: z.ZodObject<{
     entitySchema: z.ZodString;
     key: z.ZodString;

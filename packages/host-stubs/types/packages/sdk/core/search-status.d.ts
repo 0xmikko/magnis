@@ -36,6 +36,6 @@ export declare const SearchStatusSchema: z.ZodObject<{
     }>;
     generation: z.ZodInt;
     lastFailure: z.ZodNullable<z.ZodString>;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type SearchStatus = z.output<typeof SearchStatusSchema>;
 //# sourceMappingURL=search-status.d.ts.map

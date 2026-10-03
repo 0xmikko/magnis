@@ -61,7 +61,7 @@ describe("companies read — shape parity (tst_be_companiesread_001)", () => {
     mod = mountModule(CompaniesModule, { graph, ctx: { extensionId: "companies" } }).module;
   });
 
-  it("F1 list (no search): fields from the dictionary, real created_at, name fallback, idx order", async () => {
+  it("F1 list (no search): fields from the dictionary, real createdAt, name fallback, idx order", async () => {
     spy(graph, "listEntitiesWindow").mockResolvedValue(page([
       entity("a", "", {
         createdAt: "2026-01-01T00:00:00Z",
@@ -84,7 +84,7 @@ describe("companies read — shape parity (tst_be_companiesread_001)", () => {
     const first = listed.items[0];
     if (first === undefined) throw new Error("F1: missing first item");
     expect(first.name).toBe("Acme");
-    expect(first.created_at).toBe("2026-01-01T00:00:00Z"); // real, not Date(0)
+    expect(first.createdAt).toBe("2026-01-01T00:00:00Z"); // real, not Date(0)
     const z = listed.items[1];
     expect(z).toMatchObject({ name: "Zeta", website: "https://zeta.io", industry: "Fintech", size: "50", location: "NYC" });
 

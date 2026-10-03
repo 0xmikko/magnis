@@ -17,27 +17,27 @@ export declare const moduleSettingsContracts: {
                     type: z.ZodLiteral<"number">;
                     min: z.ZodNullable<z.ZodNumber>;
                     max: z.ZodNullable<z.ZodNumber>;
-                }, z.core.$strip>, z.ZodObject<{
+                }, z.core.$strict>, z.ZodObject<{
                     type: z.ZodLiteral<"string">;
                     maxLength: z.ZodNullable<z.ZodNumber>;
-                }, z.core.$strip>, z.ZodObject<{
+                }, z.core.$strict>, z.ZodObject<{
                     type: z.ZodLiteral<"boolean">;
-                }, z.core.$strip>, z.ZodObject<{
+                }, z.core.$strict>, z.ZodObject<{
                     type: z.ZodLiteral<"enum">;
                     options: z.ZodReadonly<z.ZodArray<z.ZodObject<{
                         value: z.ZodString;
                         label: z.ZodString;
                         description: z.ZodNullable<z.ZodString>;
-                    }, z.core.$strip>>>;
-                }, z.core.$strip>], "type">;
+                    }, z.core.$strict>>>;
+                }, z.core.$strict>], "type">;
                 defaultValue: z.ZodString;
                 confirmationMessage: z.ZodNullable<z.ZodString>;
-            }, z.core.$strip>>>;
-        }, z.core.$strip>>;
+            }, z.core.$strict>>>;
+        }, z.core.$strict>>;
         values: z.ZodReadonly<z.ZodArray<z.ZodObject<{
             key: z.ZodString;
             value: z.ZodString;
-        }, z.core.$strip>>>;
-    }, z.core.$strip>>, "required">;
+        }, z.core.$strict>>>;
+    }, z.core.$strict>>, "required">;
 };
 //# sourceMappingURL=module-settings.d.ts.map

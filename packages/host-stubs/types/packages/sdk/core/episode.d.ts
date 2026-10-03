@@ -19,14 +19,14 @@ export declare const EpisodeUpdateRequestSchema: z.ZodObject<{
         idle: "idle";
     }>>;
     archived: z.ZodOptional<z.ZodBoolean>;
-}, z.core.$strip>;
-export declare const EpisodeMemoryGetRequestSchema: z.ZodObject<{}, z.core.$strip>;
+}, z.core.$strict>;
+export declare const EpisodeMemoryGetRequestSchema: z.ZodObject<{}, z.core.$strict>;
 export declare const EpisodeMemorySaveRequestSchema: z.ZodObject<{
     body: z.ZodString;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export declare const EpisodeMemoryResultSchema: z.ZodObject<{
     body: z.ZodNullable<z.ZodString>;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export declare const episodeLinkKindRanks: readonly ["started_with", "created", "triggered_by", "modified", "mentions", "reply_to"];
 export type RankedEpisodeLinkKind = (typeof episodeLinkKindRanks)[number];
 export declare const EpisodeListItemSchema: z.ZodObject<{
@@ -48,7 +48,7 @@ export declare const EpisodeListItemSchema: z.ZodObject<{
     date: z.ZodString;
     updatedAt: z.ZodString;
     lastMessageAt: z.ZodOptional<z.ZodString>;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type EpisodeListItem = z.output<typeof EpisodeListItemSchema>;
 export declare const EpisodeSubtreeQuerySchema: z.ZodObject<{
     episodeId: z.ZodString;
@@ -97,7 +97,7 @@ export declare const EpisodeLinkSummarySchema: z.ZodObject<{
     linkKinds: z.ZodArray<z.ZodString>;
     updatedAt: z.ZodString;
     isEmpty: z.ZodBoolean;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type EpisodeLinkSummary = z.output<typeof EpisodeLinkSummarySchema>;
 /** Search result over episode titles and durable summaries. */
 export declare const EpisodeSearchResultSchema: z.ZodObject<{
@@ -106,7 +106,7 @@ export declare const EpisodeSearchResultSchema: z.ZodObject<{
     status: z.ZodString;
     isArchived: z.ZodBoolean;
     objective: z.ZodNullable<z.ZodString>;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type EpisodeSearchResult = z.output<typeof EpisodeSearchResultSchema>;
 export declare const EpisodeDetailViewSchema: z.ZodObject<{
     id: z.ZodString;
@@ -131,7 +131,7 @@ export declare const EpisodeDetailViewSchema: z.ZodObject<{
         status: z.ZodString;
         createdAt: z.ZodString;
         attachments: z.ZodDefault<z.ZodArray<z.ZodString>>;
-    }, z.core.$strip>>;
+    }, z.core.$strict>>;
     linkedEntities: z.ZodArray<z.ZodObject<{
         id: z.ZodString;
         name: z.ZodNullable<z.ZodString>;
@@ -145,7 +145,7 @@ export declare const EpisodeDetailViewSchema: z.ZodObject<{
             agent: "agent";
         }>;
         validUntil: z.ZodNullable<z.ZodISODateTime>;
-    }, z.core.$strip>>;
+    }, z.core.$strict>>;
     todos: z.ZodOptional<z.ZodArray<z.ZodObject<{
         content: z.ZodString;
         status: z.ZodEnum<{
@@ -155,7 +155,7 @@ export declare const EpisodeDetailViewSchema: z.ZodObject<{
             in_progress: "in_progress";
         }>;
         externalId: z.ZodDefault<z.ZodNullable<z.ZodString>>;
-    }, z.core.$strip>>>;
+    }, z.core.$strict>>>;
     waits: z.ZodOptional<z.ZodArray<z.ZodObject<{
         id: z.ZodString;
         executionId: z.ZodString;
@@ -172,7 +172,7 @@ export declare const EpisodeDetailViewSchema: z.ZodObject<{
     date: z.ZodString;
     updatedAt: z.ZodString;
     lastTurnResolution: z.ZodOptional<z.ZodType<import("./json.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("./json.js").JsonValue, unknown>>>;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type EpisodeDetailView = z.output<typeof EpisodeDetailViewSchema>;
 export interface EpisodeContextView {
     readonly linkedEntities: readonly LinkedEntitySummary[];
@@ -180,7 +180,7 @@ export interface EpisodeContextView {
 }
 export declare const EpisodeCreateParamsSchema: z.ZodObject<{
     title: z.ZodString;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type EpisodeCreateParams = z.input<typeof EpisodeCreateParamsSchema>;
 export declare const agentImplementationIds: readonly ["magnis", "codex", "claude"];
 export declare const AgentImplementationIdSchema: z.ZodEnum<{
@@ -327,7 +327,7 @@ export declare const EpisodeWorkingMemorySchema: z.ZodObject<{
         status: z.ZodString;
         createdAt: z.ZodString;
         attachments: z.ZodDefault<z.ZodArray<z.ZodString>>;
-    }, z.core.$strip>>;
+    }, z.core.$strict>>;
     todos: z.ZodArray<z.ZodObject<{
         content: z.ZodString;
         status: z.ZodEnum<{
@@ -337,7 +337,7 @@ export declare const EpisodeWorkingMemorySchema: z.ZodObject<{
             in_progress: "in_progress";
         }>;
         externalId: z.ZodDefault<z.ZodNullable<z.ZodString>>;
-    }, z.core.$strip>>;
+    }, z.core.$strict>>;
     waits: z.ZodArray<z.ZodObject<{
         id: z.ZodString;
         executionId: z.ZodString;
@@ -383,7 +383,7 @@ export declare const EpisodeAgentSnapshotSchema: z.ZodObject<{
             agent: "agent";
         }>;
         validUntil: z.ZodNullable<z.ZodISODateTime>;
-    }, z.core.$strip>>;
+    }, z.core.$strict>>;
     createdAt: z.ZodString;
     updatedAt: z.ZodString;
     state: z.ZodEnum<{
@@ -449,7 +449,7 @@ export declare const EpisodeAgentSnapshotSchema: z.ZodObject<{
             status: z.ZodString;
             createdAt: z.ZodString;
             attachments: z.ZodDefault<z.ZodArray<z.ZodString>>;
-        }, z.core.$strip>>;
+        }, z.core.$strict>>;
         todos: z.ZodArray<z.ZodObject<{
             content: z.ZodString;
             status: z.ZodEnum<{
@@ -459,7 +459,7 @@ export declare const EpisodeAgentSnapshotSchema: z.ZodObject<{
                 in_progress: "in_progress";
             }>;
             externalId: z.ZodDefault<z.ZodNullable<z.ZodString>>;
-        }, z.core.$strip>>;
+        }, z.core.$strict>>;
         waits: z.ZodArray<z.ZodObject<{
             id: z.ZodString;
             executionId: z.ZodString;

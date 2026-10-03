@@ -11,12 +11,12 @@ export type AccountId = string;
 export type SchemaId = string;
 export type SchemaVersion = number;
 export declare const EntityUpdateStateRequestSchema: z.ZodUnion<readonly [z.ZodObject<{
-    entity_id: z.ZodGUID;
-    pin_order: z.ZodNonOptional<z.ZodOptional<z.ZodNullable<z.ZodInt>>>;
+    entityId: z.ZodGUID;
+    pinOrder: z.ZodNonOptional<z.ZodOptional<z.ZodNullable<z.ZodInt>>>;
     archived: z.ZodOptional<z.ZodBoolean>;
 }, z.core.$strict>, z.ZodObject<{
-    entity_id: z.ZodGUID;
-    pin_order: z.ZodOptional<z.ZodNullable<z.ZodInt>>;
+    entityId: z.ZodGUID;
+    pinOrder: z.ZodOptional<z.ZodNullable<z.ZodInt>>;
     archived: z.ZodNonOptional<z.ZodOptional<z.ZodBoolean>>;
 }, z.core.$strict>]>;
 interface EntityBase<P extends JsonValue = JsonValue> {
@@ -279,9 +279,9 @@ export declare const EntityColSchema: z.ZodEnum<{
     idx: "idx";
     origin: "origin";
     confidence: "confidence";
-    pin_order: "pin_order";
     created_at: "created_at";
     is_pinned: "is_pinned";
+    pin_order: "pin_order";
     valid_from: "valid_from";
     valid_until: "valid_until";
 }>;
@@ -309,22 +309,22 @@ export declare const EntityDetailSchema: z.ZodObject<{
             agent: "agent";
         }>;
         validUntil: z.ZodNullable<z.ZodISODateTime>;
-    }, z.core.$strip>>;
-}, z.core.$strip>;
+    }, z.core.$strict>>;
+}, z.core.$strict>;
 export type EntityDetail = z.output<typeof EntityDetailSchema>;
 export declare const EntitySearchHitSchema: z.ZodObject<{
     id: z.ZodString;
     name: z.ZodNullable<z.ZodString>;
     schemaId: z.ZodString;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type EntitySearchHit = z.output<typeof EntitySearchHitSchema>;
 export declare const EntitySearchResultSchema: z.ZodObject<{
     items: z.ZodArray<z.ZodObject<{
         id: z.ZodString;
         name: z.ZodNullable<z.ZodString>;
         schemaId: z.ZodString;
-    }, z.core.$strip>>;
-}, z.core.$strip>;
+    }, z.core.$strict>>;
+}, z.core.$strict>;
 export type EntitySearchResult = z.output<typeof EntitySearchResultSchema>;
 export declare const EntityBriefSchema: z.ZodObject<{
     id: z.ZodString;
@@ -332,7 +332,7 @@ export declare const EntityBriefSchema: z.ZodObject<{
     name: z.ZodNullable<z.ZodString>;
     date: z.ZodString;
     idx: z.ZodNullable<z.ZodString>;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type EntityBrief = z.output<typeof EntityBriefSchema>;
 /** Paged graph read result used by graph.find/search/links. */
 export declare const GraphEntityPageSchema: z.ZodObject<{
@@ -343,10 +343,10 @@ export declare const GraphEntityPageSchema: z.ZodObject<{
         date: z.ZodString;
         idx: z.ZodNullable<z.ZodString>;
         linkKind: z.ZodOptional<z.ZodString>;
-    }, z.core.$strip>>;
+    }, z.core.$strict>>;
     total: z.ZodNumber;
     hasMore: z.ZodBoolean;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type GraphEntityPage = z.output<typeof GraphEntityPageSchema>;
 /** Bounded graph.get projection. */
 export declare const GraphEntityDetailSchema: z.ZodObject<{
@@ -356,7 +356,7 @@ export declare const GraphEntityDetailSchema: z.ZodObject<{
         name: z.ZodNullable<z.ZodString>;
         date: z.ZodString;
         idx: z.ZodNullable<z.ZodString>;
-    }, z.core.$strip>;
+    }, z.core.$strict>;
     links: z.ZodArray<z.ZodObject<{
         from: z.ZodString;
         to: z.ZodString;
@@ -368,25 +368,20 @@ export declare const GraphEntityDetailSchema: z.ZodObject<{
         validUntil: z.ZodNullable<z.ZodISODateTime>;
         id: z.ZodString;
         kind: z.ZodString;
-    }, z.core.$strip>>;
+    }, z.core.$strict>>;
     linkCounts: z.ZodRecord<z.ZodString, z.ZodNumber>;
     linksTotal: z.ZodNumber;
     linksHasMore: z.ZodBoolean;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type GraphEntityDetail = z.output<typeof GraphEntityDetailSchema>;
 /** Relationship projection returned by graph.entity.links. */
 export declare const GraphEntityLinksSchema: z.ZodObject<{
     entityId: z.ZodString;
-    links: z.ZodArray<z.ZodObject<{
-        direction: z.ZodEnum<{
-            from: "from";
-            to: "to";
-        }>;
+    links: z.ZodArray<z.ZodDiscriminatedUnion<[z.ZodObject<{
+        direction: z.ZodLiteral<"from">;
         kind: z.ZodString;
-        targetId: z.ZodOptional<z.ZodString>;
-        targetName: z.ZodOptional<z.ZodNullable<z.ZodString>>;
-        sourceId: z.ZodOptional<z.ZodString>;
-        sourceName: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+        targetId: z.ZodString;
+        targetName: z.ZodNullable<z.ZodString>;
         confidence: z.ZodNullable<z.ZodNumber>;
         origin: z.ZodEnum<{
             canonical: "canonical";
@@ -394,9 +389,21 @@ export declare const GraphEntityLinksSchema: z.ZodObject<{
         }>;
         validUntil: z.ZodNullable<z.ZodISODateTime>;
         id: z.ZodString;
-    }, z.core.$strip>>;
+    }, z.core.$strict>, z.ZodObject<{
+        direction: z.ZodLiteral<"to">;
+        kind: z.ZodString;
+        sourceId: z.ZodString;
+        sourceName: z.ZodNullable<z.ZodString>;
+        confidence: z.ZodNullable<z.ZodNumber>;
+        origin: z.ZodEnum<{
+            canonical: "canonical";
+            agent: "agent";
+        }>;
+        validUntil: z.ZodNullable<z.ZodISODateTime>;
+        id: z.ZodString;
+    }, z.core.$strict>], "direction">>;
     total: z.ZodNumber;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type GraphEntityLinks = z.output<typeof GraphEntityLinksSchema>;
 export {};
 //# sourceMappingURL=entity.d.ts.map

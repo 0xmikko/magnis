@@ -73,7 +73,7 @@ export function mapEmailDetailFromDetailView(view: MessageDetailView): EmailDeta
   const sentAt = getMetadataString(view.metadata, "sent_at") ?? view.timestamp;
   // S5: the recipients are `sent_to` edges to shared address nodes, not a
   // joined string on the message.
-  const recipients = view.linked_entities
+  const recipients = view.linkedEntities
     .filter((le) => le.linkKind === "sent_to")
     .map((le) => le.name)
     .filter((name): name is string => typeof name === "string" && name.length > 0);
@@ -95,7 +95,7 @@ export function mapEmailDetailFromDetailView(view: MessageDetailView): EmailDeta
     readonly mime_type: string;
     readonly size: number;
     readonly path: string;
-  }[] = view.linked_entities
+  }[] = view.linkedEntities
     .filter((le) => le.linkKind === "file.attachment")
     .map((le) => {
       const d = (le.data ?? {}) as Readonly<Record<string, unknown>>;

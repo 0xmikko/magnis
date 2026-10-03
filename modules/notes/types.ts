@@ -20,25 +20,25 @@ export interface NoteCanonical {
 
 export interface NoteListItem {
   id: string;
-  schema_id: string;
+  schemaId: string;
   title: string;
   preview: string | null;
   pinned: boolean;
-  created_at: string;
-  updated_at: string | null;
-  is_pinned?: boolean | null;
+  createdAt: string;
+  updatedAt: string | null;
+  isPinned?: boolean | null;
 }
 
 export interface NoteDetailView {
   id: string;
-  schema_id: string;
+  schemaId: string;
   title: string;
   body: string | null;
   pinned: boolean;
   canonical: Partial<NoteCanonical>;
-  linked_entities: LinkedEntitySummary[];
-  created_at: string;
-  updated_at: string | null;
+  linkedEntities: LinkedEntitySummary[];
+  createdAt: string;
+  updatedAt: string | null;
 }
 
 /// The full-snapshot shape returned by create/update/template.apply so the
@@ -46,10 +46,10 @@ export interface NoteDetailView {
 /// service.rs:436-443 / 526-537).
 export interface NoteSnapshot {
   id: string;
-  schema_id: string;
+  schemaId: string;
   title: string;
   body: string;
-  updated_at: string;
+  updatedAt: string;
 }
 
 export interface NotesListParams {

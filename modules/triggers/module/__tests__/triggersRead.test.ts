@@ -56,9 +56,9 @@ describe("tst_module_triggers_read_001 — trigger definition reads", () => {
       id: TRIGGER_ID,
       name: "Watch prices",
       status: "active",
-      watched_entities: [{ id: TARGET_ID, name: "Vendor inbox" }],
-      parent_episode_id: EPISODE_ID,
-      parent_episode_name: "Fundraise",
+      watchedEntities: [{ id: TARGET_ID, name: "Vendor inbox" }],
+      parentEpisodeId: EPISODE_ID,
+      parentEpisodeName: "Fundraise",
     });
   });
 
@@ -84,7 +84,7 @@ describe("tst_module_triggers_read_001 — trigger definition reads", () => {
 
     const result = await module.list({ status: "active" });
     expect(result).toEqual([
-      expect.objectContaining({ id: TRIGGER_ID, watched_entity_names: ["Vendor inbox"] }),
+      expect.objectContaining({ id: TRIGGER_ID, watchedEntityNames: ["Vendor inbox"] }),
     ]);
   });
 
@@ -102,7 +102,7 @@ describe("tst_module_triggers_read_001 — trigger definition reads", () => {
     const execute = vi.fn((method: string) => {
       if (method === "triggers.resolve_watchable") {
         return Promise.resolve({
-          watchable: [{ id: relatedId, name: "Email", schema_id: "email.address", link_kind: "identity" }],
+          watchable: [{ id: relatedId, name: "Email", schemaId: "email.address", linkKind: "identity" }],
         });
       }
       throw new Error(`unexpected rpc: ${method}`);
@@ -112,11 +112,12 @@ describe("tst_module_triggers_read_001 — trigger definition reads", () => {
     const result = await module.list_for_entity({ entity_id: TARGET_ID });
     expect(result.map((item) => item.id)).toEqual([TRIGGER_ID]);
     expect(graph.spies.listLinksForEntity).toHaveBeenCalledTimes(2);
+    expect(execute.mock.calls).toEqual([["triggers.resolve_watchable", { entityId: TARGET_ID }]]);
   });
 
   it("delegates fire history with a default or explicit bound", async () => {
     const history = [
-      { fired_at: "2026-08-02T00:00:00Z", event_entity_id: TARGET_ID, outcome: "spawned" },
+      { firedAt: "2026-08-02T00:00:00Z", eventEntityId: TARGET_ID, outcome: "spawned" },
     ];
     const execute = vi.fn(() => Promise.resolve(history));
     const module = mountModule(TriggersModule, { rpc: { execute } }).module;
@@ -124,8 +125,32 @@ describe("tst_module_triggers_read_001 — trigger definition reads", () => {
     await expect(module.fire_history({ trigger_id: TRIGGER_ID })).resolves.toBe(history);
     await module.fire_history({ trigger_id: TRIGGER_ID, limit: 2 });
     expect(execute.mock.calls).toEqual([
-      ["triggers.fire_history", { trigger_id: TRIGGER_ID, limit: 50 }],
-      ["triggers.fire_history", { trigger_id: TRIGGER_ID, limit: 2 }],
+      ["triggers.fire_history", { triggerId: TRIGGER_ID, limit: 50 }],
+      ["triggers.fire_history", { triggerId: TRIGGER_ID, limit: 2 }],
+    ]);
+  });
+
+  it("forwards fire_now and resolve_watchable to the native seams in their camelCase params", async () => {
+    const graph = mockGraph({
+      getEntityFull: (id: string) => Promise.resolve(id === TRIGGER_ID ? triggerDetail() : null),
+    });
+    const fired = { fired: true, episodeId: EPISODE_ID };
+    const execute = vi.fn((method: string) => {
+      if (method === "triggers.fire_now") return Promise.resolve(fired);
+      if (method === "triggers.resolve_watchable") return Promise.resolve({ watchable: [] });
+      throw new Error(`unexpected rpc: ${method}`);
+    });
+    const module = mountModule(TriggersModule, { graph, rpc: { execute } }).module;
+
+    await expect(
+      module.fireNow({ trigger_id: TRIGGER_ID, event_entity_id: TARGET_ID, context: { reason: "manual" } }),
+    ).resolves.toBe(fired);
+    await module.fireNow({ trigger_id: TRIGGER_ID });
+    await expect(module.resolveWatchable({ entity_id: TARGET_ID })).resolves.toEqual({ watchable: [] });
+    expect(execute.mock.calls).toEqual([
+      ["triggers.fire_now", { triggerId: TRIGGER_ID, eventEntityId: TARGET_ID, context: { reason: "manual" } }],
+      ["triggers.fire_now", { triggerId: TRIGGER_ID }],
+      ["triggers.resolve_watchable", { entityId: TARGET_ID }],
     ]);
   });
 

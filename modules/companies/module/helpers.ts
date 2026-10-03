@@ -36,7 +36,7 @@ function dictString(dict: Readonly<Record<string, unknown>>, key: string): strin
 // Pure list-item shaping from an entity and its DICTIONARY. The hub has one
 // writer, so there is nothing to arbitrate between: the dict rides the entity
 // row the list already fetched — no canonical read, no dictionary hydrate, no
-// per-row N+1. `created_at` comes from the real entity column.
+// per-row N+1. `createdAt` comes from the real entity column.
 export function buildListItem(entity: Entity): CompanyListItem {
   const dict = entity.properties as Record<string, unknown>;
   const name =
@@ -48,8 +48,8 @@ export function buildListItem(entity: Entity): CompanyListItem {
     industry: dictString(dict, "industry"),
     size: dictString(dict, "size"),
     location: dictString(dict, "location"),
-    avatar_color: pickAvatarColor(entity.id),
+    avatarColor: pickAvatarColor(entity.id),
     initials: computeInitials(name),
-    created_at: entity.createdAt,
+    createdAt: entity.createdAt,
   };
 }

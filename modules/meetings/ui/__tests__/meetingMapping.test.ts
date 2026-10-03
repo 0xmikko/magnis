@@ -5,20 +5,20 @@ import type { MeetingListItem } from "../types";
 function makeMeeting(overrides: Partial<MeetingListItem> = {}): MeetingListItem {
   return {
     id: "m-1",
-    schema_id: "meetings.calendar_event",
+    schemaId: "meetings.calendar_event",
     title: "Planning sync",
     date: "2026-02-20",
     time: "10:00",
-    starts_at: "2026-02-20T10:00:00Z",
-    ends_at: "2026-02-20T11:00:00Z",
+    startsAt: "2026-02-20T10:00:00Z",
+    endsAt: "2026-02-20T11:00:00Z",
     location: "Room A",
     description: null,
-    conference_link: null,
+    conferenceLink: null,
     attendees: [
-      { name: "Alice Johnson", email: "alice@example.com", contact_id: null },
-      { name: "Bob Smith", email: "bob@example.com", contact_id: null },
+      { name: "Alice Johnson", email: "alice@example.com", contactId: null },
+      { name: "Bob Smith", email: "bob@example.com", contactId: null },
     ],
-    created_at: "2026-02-19T12:00:00Z",
+    createdAt: "2026-02-19T12:00:00Z",
     ...overrides,
   };
 }
@@ -60,8 +60,8 @@ describe("mapMeetingFromApi", () => {
     const result = mapMeetingFromApi(
       makeMeeting({
         attendees: [
-          { name: "Alice", email: "alice@x.test", contact_id: null },
-          { name: null, email: "bob@x.test", contact_id: null },
+          { name: "Alice", email: "alice@x.test", contactId: null },
+          { name: null, email: "bob@x.test", contactId: null },
         ],
       }),
     );
@@ -71,7 +71,7 @@ describe("mapMeetingFromApi", () => {
 
 describe("buildAgendaGroups ordering", () => {
   const at = (id: string, iso: string): MeetingListItem =>
-    makeMeeting({ id, starts_at: iso, date: iso.slice(0, 10) });
+    makeMeeting({ id, startsAt: iso, date: iso.slice(0, 10) });
 
   it("orders day groups chronologically (earliest day first), so upcoming flows downward", () => {
     const groups = buildAgendaGroups(

@@ -1,1 +1,1 @@
-{"version":3,"file":"file.d.ts","sourceRoot":"","sources":["../../../../../../../../../../magnis-app/.worktrees/entity-one-type/packages/sdk/src/rpc/native/file.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,CAAC,EAAE,MAAM,KAAK,CAAC;AAMxB,eAAO,MAAM,aAAa;;;;;;;;;;;;CAOM,CAAC"}
+{"version":3,"file":"file.d.ts","sourceRoot":"","sources":["../../../../../../../../../../magnis-app/.worktrees/eot-sclient/packages/sdk/src/rpc/native/file.ts"],"names":[],"mappings":"AAGA,eAAO,MAAM,aAAa;;;;;;;;;;;;CAMM,CAAC"}

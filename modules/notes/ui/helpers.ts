@@ -30,7 +30,7 @@ export function groupNotesByTime(notes: readonly NoteListItem[]): readonly NoteG
       continue;
     }
 
-    const date = new Date(note.updated_at ?? note.created_at);
+    const date = new Date(note.updatedAt ?? note.createdAt);
 
     if (date >= todayStart) {
       today.push(note);
@@ -70,7 +70,7 @@ export function groupNotesByTime(notes: readonly NoteListItem[]): readonly NoteG
     const label = key.split("|")[1] ?? key;
     const firstNote = bucket.at(0);
     const firstDate = firstNote
-      ? new Date(firstNote.updated_at ?? firstNote.created_at)
+      ? new Date(firstNote.updatedAt ?? firstNote.createdAt)
       : null;
     groups.push({ label, date: firstDate, notes: bucket });
   }

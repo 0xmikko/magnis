@@ -161,7 +161,9 @@ describe("tst_module_triggers_watch_validation_001 — native watch validation",
     const clarification = {
       status: "clarification_needed",
       message: "one target does not produce events",
-      non_triggerable_entities: [{ entity: { id: "subject" }, linked_watchable_entities: [] }],
+      nonTriggerableEntities: [
+        { entity: { id: "subject", name: null, schemaId: "contacts.person" }, linkedWatchableEntities: [] },
+      ],
     };
     const graph = createGraph();
     const execute = vi.fn((method: string) => {
@@ -178,6 +180,9 @@ describe("tst_module_triggers_watch_validation_001 — native watch validation",
         watch_entity_ids: ["33333333-3333-4333-8333-333333333333"],
       }),
     ).resolves.toBe(clarification);
+    expect(execute).toHaveBeenCalledWith("triggers.validate_watch", {
+      watchEntityIds: ["33333333-3333-4333-8333-333333333333"],
+    });
     expect(graph.spies.createEntity).not.toHaveBeenCalled();
   });
 });
@@ -356,11 +361,13 @@ describe("tst_module_triggers_crud_001 — trigger definition commands", () => {
     expect(result).toMatchObject({
       id: TRIGGER_ID,
       name: "Price tracker",
-      gate_prompt: "price changed",
-      action_prompt: "notify me",
+      gatePrompt: "price changed",
+      actionPrompt: "notify me",
       status: "active",
-      episode_id: episodeId,
+      schemaId: TRIGGER,
+      episodeId,
     });
+    expect(execute).toHaveBeenCalledWith("triggers.validate_watch", { watchEntityIds: [targetId] });
     expect(graph.spies.updateProperties).toHaveBeenCalledWith({
       entityId: TRIGGER_ID,
       properties: expect.objectContaining({
@@ -417,10 +424,10 @@ describe("tst_module_triggers_crud_001 — trigger definition commands", () => {
 
     expect(result).toMatchObject({
       name: "watch replies",
-      gate_prompt: "new condition",
-      action_prompt: "update the note",
+      gatePrompt: "new condition",
+      actionPrompt: "update the note",
       status: "active",
-      debounce_seconds: 600,
+      debounceSeconds: 600,
     });
     expect(graph.spies.updateEntityName).not.toHaveBeenCalled();
     expect(graph.spies.updateProperties).toHaveBeenCalledWith({
@@ -523,7 +530,7 @@ it("tst_module_triggers_forms_001 validates raw email form before owner lookup a
   expect(graph.spies.createEntity).toHaveBeenCalledTimes(1);
   expect(graph.spies.addLink).toHaveBeenCalledWith({ from: TRIGGER_ID, to: "address-1", kind: "watches" });
   expect(graph.spies.updateProperties).toHaveBeenCalledWith(expect.objectContaining({ properties: expect.objectContaining({ debounce_seconds: 12, schema_filter: "email" }) }));
-  expect(result.name).toBe("Email trigger: morgan@example.test");
+  expect(result).toMatchObject({ name: "Email trigger: morgan@example.test" });
 });
 
 /** @test-id: tst_module_triggers_forms_002
@@ -538,7 +545,7 @@ it("tst_module_triggers_forms_002 resolves a raw Telegram chat once and preserve
   await expect(module.create({ chat_id: 42, gate_prompt: "reply", action_prompt: "notify", debounce_seconds: -1 })).rejects.toThrow("debounce");
   expect(execute).not.toHaveBeenCalled();
   const result = await module.create({ chat_id: 42, gate_prompt: "reply", action_prompt: "notify", debounce_seconds: 30 });
-  expect(result.name).toBe("Telegram trigger: chat 42");
+  expect(result).toMatchObject({ name: "Telegram trigger: chat 42" });
   expect(execute).toHaveBeenCalledWith("telegram.chats.get", { chat_id: 42 });
   expect(graph.spies.addLink).toHaveBeenCalledWith({ from: TRIGGER_ID, to: "chat-entity", kind: "watches" });
   expect(graph.spies.createEntity).toHaveBeenCalledTimes(1);

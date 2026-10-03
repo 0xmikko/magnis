@@ -1,7 +1,7 @@
 /**
- * The checked-in native method surface. Each method, its schemas and its codec
- * choice are declared in exactly one `native/<domain>.ts`; this map composes
- * the domains so a method cannot be silently absent from the public package.
+ * The checked-in native method surface. Each method and its schemas are
+ * declared in exactly one `native/<domain>.ts`; this map composes the domains
+ * so a method cannot be silently absent from the public package.
  */
 export declare const rpcContracts: {
     readonly "web.capabilities": import("./contract.js").RpcContract<"web.capabilities", import("zod").ZodObject<{}, import("zod/v4/core").$strip>, import("zod").ZodObject<{
@@ -13,7 +13,7 @@ export declare const rpcContracts: {
         }, import("zod/v4/core").$strict>>>;
     }, import("zod/v4/core").$strict>, "required">;
     readonly "web.link.get": import("./contract.js").RpcContract<"web.link.get", import("zod").ZodObject<{
-        id: import("zod").ZodString;
+        id: import("zod").ZodGUID;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         id: import("zod").ZodString;
         url: import("zod").ZodString;
@@ -38,10 +38,10 @@ export declare const rpcContracts: {
                 agent: "agent";
             }>;
             validUntil: import("zod").ZodNullable<import("zod").ZodISODateTime>;
-        }, import("zod/v4/core").$strip>>;
-    }, import("zod/v4/core").$strip>, "required">;
+        }, import("zod/v4/core").$strict>>;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "web.link.open": import("./contract.js").RpcContract<"web.link.open", import("zod").ZodObject<{
-        id: import("zod").ZodOptional<import("zod").ZodString>;
+        id: import("zod").ZodOptional<import("zod").ZodGUID>;
         url: import("zod").ZodOptional<import("zod").ZodString>;
         forceRefresh: import("zod").ZodDefault<import("zod").ZodBoolean>;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
@@ -52,23 +52,23 @@ export declare const rpcContracts: {
         contentLength: import("zod").ZodNumber;
         extractedAt: import("zod").ZodString;
         fromCache: import("zod").ZodBoolean;
-    }, import("zod/v4/core").$strip>, "required">;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "web.search": import("./contract.js").RpcContract<"web.search", import("zod").ZodObject<{
         query: import("zod").ZodString;
-        limit: import("zod").ZodDefault<import("zod").ZodNumber>;
+        limit: import("zod").ZodDefault<import("zod").ZodInt>;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         query: import("zod").ZodString;
         results: import("zod").ZodArray<import("zod").ZodObject<{
             title: import("zod").ZodString;
             url: import("zod").ZodString;
             snippet: import("zod").ZodString;
-        }, import("zod/v4/core").$strip>>;
-    }, import("zod/v4/core").$strip>, "required">;
+        }, import("zod/v4/core").$strict>>;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "web.page.search": {
         readonly method: "web.page.search";
         readonly input: import("zod").ZodObject<{
             query: import("zod").ZodString;
-            limit: import("zod").ZodDefault<import("zod").ZodNumber>;
+            limit: import("zod").ZodDefault<import("zod").ZodInt>;
         }, import("zod/v4/core").$strict>;
         readonly output: import("zod").ZodObject<{
             query: import("zod").ZodString;
@@ -76,11 +76,10 @@ export declare const rpcContracts: {
                 title: import("zod").ZodString;
                 url: import("zod").ZodString;
                 snippet: import("zod").ZodString;
-            }, import("zod/v4/core").$strip>>;
-        }, import("zod/v4/core").$strip>;
+            }, import("zod/v4/core").$strict>>;
+        }, import("zod/v4/core").$strict>;
         readonly params: "required";
         readonly inputJsonSchema: Readonly<import("../index.js").JsonObject>;
-        readonly wire?: import("./contract.js").RpcWireCodec;
     };
     readonly "user_events.track": import("./contract.js").RpcContract<"user_events.track", import("zod").ZodObject<{
         eventName: import("zod").ZodString;
@@ -98,30 +97,63 @@ export declare const rpcContracts: {
         }, import("zod/v4/core").$strict>>>;
     }, import("zod/v4/core").$strict>, "required">;
     readonly "triggers.fire_history": import("./contract.js").RpcContract<"triggers.fire_history", import("zod").ZodObject<{
-        triggerId: import("zod").ZodString;
-        limit: import("zod").ZodDefault<import("zod").ZodNumber>;
-    }, import("zod/v4/core").$strip>, import("zod").ZodArray<import("zod").ZodType<import("../index.js").JsonValue, unknown, import("zod/v4/core").$ZodTypeInternals<import("../index.js").JsonValue, unknown>>>, "required">;
+        triggerId: import("zod").ZodGUID;
+        limit: import("zod").ZodDefault<import("zod").ZodInt>;
+    }, import("zod/v4/core").$strip>, import("zod").ZodArray<import("zod").ZodObject<{
+        firedAt: import("zod").ZodString;
+        eventEntityId: import("zod").ZodString;
+        gateResult: import("zod").ZodExactOptional<import("zod").ZodString>;
+        episodeId: import("zod").ZodExactOptional<import("zod").ZodString>;
+        outcome: import("zod").ZodString;
+    }, import("zod/v4/core").$strict>>, "required">;
     readonly "triggers.fire_now": import("./contract.js").RpcContract<"triggers.fire_now", import("zod").ZodObject<{
-        triggerId: import("zod").ZodString;
-        eventEntityId: import("zod").ZodDefault<import("zod").ZodString>;
+        triggerId: import("zod").ZodGUID;
+        eventEntityId: import("zod").ZodDefault<import("zod").ZodGUID>;
         context: import("zod").ZodDefault<import("zod").ZodRecord<import("zod").ZodString, import("zod").ZodType<import("../index.js").JsonValue, unknown, import("zod/v4/core").$ZodTypeInternals<import("../index.js").JsonValue, unknown>>>>;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         fired: import("zod").ZodLiteral<true>;
-        episodeId: import("zod").ZodOptional<import("zod").ZodNullable<import("zod").ZodString>>;
-    }, import("zod/v4/core").$strip>, "required">;
+        episodeId: import("zod").ZodNullable<import("zod").ZodString>;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "triggers.invalidate_cache": import("./contract.js").RpcContract<"triggers.invalidate_cache", import("zod").ZodObject<{}, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         invalidated: import("zod").ZodLiteral<true>;
-    }, import("zod/v4/core").$strip>, "required">;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "triggers.resolve_watchable": import("./contract.js").RpcContract<"triggers.resolve_watchable", import("zod").ZodObject<{
-        entityId: import("zod").ZodString;
-    }, import("zod/v4/core").$strip>, import("zod").ZodRecord<import("zod").ZodString, import("zod").ZodType<import("../index.js").JsonValue, unknown, import("zod/v4/core").$ZodTypeInternals<import("../index.js").JsonValue, unknown>>>, "required">;
+        entityId: import("zod").ZodGUID;
+    }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
+        watchable: import("zod").ZodArray<import("zod").ZodObject<{
+            id: import("zod").ZodString;
+            name: import("zod").ZodNullable<import("zod").ZodString>;
+            schemaId: import("zod").ZodString;
+            linkKind: import("zod").ZodString;
+        }, import("zod/v4/core").$strict>>;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "triggers.validate_schedule": import("./contract.js").RpcContract<"triggers.validate_schedule", import("zod").ZodObject<{
         cron: import("zod").ZodString;
         timezone: import("zod").ZodDefault<import("zod").ZodNullable<import("zod").ZodString>>;
-    }, import("zod/v4/core").$strip>, import("zod").ZodRecord<import("zod").ZodString, import("zod").ZodType<import("../index.js").JsonValue, unknown, import("zod/v4/core").$ZodTypeInternals<import("../index.js").JsonValue, unknown>>>, "required">;
+    }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
+        cron: import("zod").ZodString;
+        timezone: import("zod").ZodString;
+        activatedAt: import("zod").ZodString;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "triggers.validate_watch": import("./contract.js").RpcContract<"triggers.validate_watch", import("zod").ZodObject<{
-        watchEntityIds: import("zod").ZodArray<import("zod").ZodString>;
-    }, import("zod/v4/core").$strip>, import("zod").ZodNullable<import("zod").ZodRecord<import("zod").ZodString, import("zod").ZodType<import("../index.js").JsonValue, unknown, import("zod/v4/core").$ZodTypeInternals<import("../index.js").JsonValue, unknown>>>>, "required">;
+        watchEntityIds: import("zod").ZodArray<import("zod").ZodGUID>;
+    }, import("zod/v4/core").$strip>, import("zod").ZodNullable<import("zod").ZodObject<{
+        status: import("zod").ZodLiteral<"clarification_needed">;
+        message: import("zod").ZodString;
+        nonTriggerableEntities: import("zod").ZodArray<import("zod").ZodObject<{
+            entity: import("zod").ZodObject<{
+                id: import("zod").ZodString;
+                name: import("zod").ZodNullable<import("zod").ZodString>;
+                schemaId: import("zod").ZodString;
+            }, import("zod/v4/core").$strict>;
+            linkedWatchableEntities: import("zod").ZodArray<import("zod").ZodObject<{
+                id: import("zod").ZodString;
+                name: import("zod").ZodNullable<import("zod").ZodString>;
+                schemaId: import("zod").ZodString;
+                linkKind: import("zod").ZodString;
+            }, import("zod/v4/core").$strict>>;
+        }, import("zod/v4/core").$strict>>;
+    }, import("zod/v4/core").$strict>>, "required">;
     readonly "subagents.create": import("./contract.js").RpcContract<"subagents.create", import("zod").ZodObject<{
         name: import("zod").ZodString;
         description: import("zod").ZodOptional<import("zod").ZodString>;
@@ -129,11 +161,11 @@ export declare const rpcContracts: {
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         id: import("zod").ZodString;
         name: import("zod").ZodString;
-        description: import("zod").ZodOptional<import("zod").ZodNullable<import("zod").ZodString>>;
-        systemPrompt: import("zod").ZodOptional<import("zod").ZodNullable<import("zod").ZodString>>;
+        description: import("zod").ZodOptional<import("zod").ZodString>;
+        systemPrompt: import("zod").ZodOptional<import("zod").ZodString>;
         status: import("zod").ZodString;
         createdAt: import("zod").ZodString;
-    }, import("zod/v4/core").$strip>, "required">;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "subagents.delete": import("./contract.js").RpcContract<"subagents.delete", import("zod").ZodObject<{
         id: import("zod").ZodString;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
@@ -142,11 +174,11 @@ export declare const rpcContracts: {
     readonly "subagents.list": import("./contract.js").RpcContract<"subagents.list", import("zod").ZodObject<{}, import("zod/v4/core").$strip>, import("zod").ZodArray<import("zod").ZodObject<{
         id: import("zod").ZodString;
         name: import("zod").ZodString;
-        description: import("zod").ZodOptional<import("zod").ZodNullable<import("zod").ZodString>>;
-        systemPrompt: import("zod").ZodOptional<import("zod").ZodNullable<import("zod").ZodString>>;
+        description: import("zod").ZodOptional<import("zod").ZodString>;
+        systemPrompt: import("zod").ZodOptional<import("zod").ZodString>;
         status: import("zod").ZodString;
         createdAt: import("zod").ZodString;
-    }, import("zod/v4/core").$strip>>, "required">;
+    }, import("zod/v4/core").$strict>>, "required">;
     readonly "subagents.update": import("./contract.js").RpcContract<"subagents.update", import("zod").ZodObject<{
         id: import("zod").ZodString;
         name: import("zod").ZodOptional<import("zod").ZodString>;
@@ -156,11 +188,11 @@ export declare const rpcContracts: {
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         id: import("zod").ZodString;
         name: import("zod").ZodString;
-        description: import("zod").ZodOptional<import("zod").ZodNullable<import("zod").ZodString>>;
-        systemPrompt: import("zod").ZodOptional<import("zod").ZodNullable<import("zod").ZodString>>;
+        description: import("zod").ZodOptional<import("zod").ZodString>;
+        systemPrompt: import("zod").ZodOptional<import("zod").ZodString>;
         status: import("zod").ZodString;
         createdAt: import("zod").ZodString;
-    }, import("zod/v4/core").$strip>, "required">;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "subagents.roster": import("./contract.js").RpcContract<"subagents.roster", import("zod").ZodObject<{}, import("zod/v4/core").$strict>, import("zod").ZodArray<import("zod").ZodObject<{
         id: import("zod").ZodString;
         name: import("zod").ZodString;
@@ -176,7 +208,6 @@ export declare const rpcContracts: {
         }, import("zod/v4/core").$strict>>;
         readonly params: "required";
         readonly inputJsonSchema: Readonly<import("../index.js").JsonObject>;
-        readonly wire?: import("./contract.js").RpcWireCodec;
     };
     readonly "source.accounts.disconnect": import("./contract.js").RpcContract<"source.accounts.disconnect", import("zod").ZodObject<{
         sourceId: import("zod").ZodString;
@@ -195,7 +226,7 @@ export declare const rpcContracts: {
         ok: import("zod").ZodLiteral<true>;
         accountId: import("zod").ZodString;
         subject: import("zod").ZodString;
-    }, import("zod/v4/core").$strip>, "required">;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "source.auth.exec": import("./contract.js").RpcContract<"source.auth.exec", import("zod").ZodObject<{
         sourceId: import("zod").ZodString;
         sessionId: import("zod").ZodString;
@@ -204,8 +235,8 @@ export declare const rpcContracts: {
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         status: import("zod").ZodString;
         identity: import("zod").ZodOptional<import("zod").ZodType<import("../index.js").JsonValue, unknown, import("zod/v4/core").$ZodTypeInternals<import("../index.js").JsonValue, unknown>>>;
-        connectionId: import("zod").ZodOptional<import("zod").ZodNullable<import("zod").ZodString>>;
-    }, import("zod/v4/core").$strip>, "required">;
+        connectionId: import("zod").ZodOptional<import("zod").ZodString>;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "source.auth.oauth.complete": import("./contract.js").RpcContract<"source.auth.oauth.complete", import("zod").ZodObject<{
         sourceId: import("zod").ZodString;
         code: import("zod").ZodString;
@@ -213,15 +244,14 @@ export declare const rpcContracts: {
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         status: import("zod").ZodString;
         identity: import("zod").ZodOptional<import("zod").ZodType<import("../index.js").JsonValue, unknown, import("zod/v4/core").$ZodTypeInternals<import("../index.js").JsonValue, unknown>>>;
-        connectionId: import("zod").ZodOptional<import("zod").ZodNullable<import("zod").ZodString>>;
-    }, import("zod/v4/core").$strip>, "required">;
+        connectionId: import("zod").ZodOptional<import("zod").ZodString>;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "source.auth.session.cancel": import("./contract.js").RpcContract<"source.auth.session.cancel", import("zod").ZodObject<{
         sourceId: import("zod").ZodString;
         sessionId: import("zod").ZodString;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         cancelled: import("zod").ZodBoolean;
-        reason: import("zod").ZodOptional<import("zod").ZodString>;
-    }, import("zod/v4/core").$strip>, "required">;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "source.auth.session.open": import("./contract.js").RpcContract<"source.auth.session.open", import("zod").ZodObject<{
         sourceId: import("zod").ZodString;
         intent: import("zod").ZodEnum<{
@@ -233,13 +263,23 @@ export declare const rpcContracts: {
             cli: "cli";
         }>;
         connectionId: import("zod").ZodOptional<import("zod").ZodString>;
-        repairAction: import("zod").ZodOptional<import("zod").ZodString>;
+        repairAction: import("zod").ZodOptional<import("zod").ZodEnum<{
+            reconnectOauth: "reconnectOauth";
+            reloginPhone: "reloginPhone";
+            enterKey: "enterKey";
+            replaceKey: "replaceKey";
+        }>>;
         redirectUri: import("zod").ZodOptional<import("zod").ZodString>;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         sessionId: import("zod").ZodString;
-        authType: import("zod").ZodString;
+        authType: import("zod").ZodEnum<{
+            oauth2: "oauth2";
+            phoneCode: "phoneCode";
+            apiKey: "apiKey";
+            sharedProvider: "sharedProvider";
+        }>;
         redirectUrl: import("zod").ZodOptional<import("zod").ZodString>;
-    }, import("zod/v4/core").$strip>, "required">;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "source.auth.submit": import("./contract.js").RpcContract<"source.auth.submit", import("zod").ZodObject<{
         sourceId: import("zod").ZodString;
         sessionId: import("zod").ZodString;
@@ -261,9 +301,9 @@ export declare const rpcContracts: {
                 helpUrl: import("zod").ZodNullable<import("zod").ZodString>;
                 description: import("zod").ZodNullable<import("zod").ZodString>;
                 vaultConfigured: import("zod").ZodBoolean;
-            }, import("zod/v4/core").$strip>>;
-        }, import("zod/v4/core").$strip>>;
-    }, import("zod/v4/core").$strip>, "required">;
+            }, import("zod/v4/core").$strict>>;
+        }, import("zod/v4/core").$strict>>;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "source.keys.set": import("./contract.js").RpcContract<"source.keys.set", import("zod").ZodObject<{
         sourceId: import("zod").ZodString;
         key: import("zod").ZodString;
@@ -287,8 +327,8 @@ export declare const rpcContracts: {
             packageHash: import("zod").ZodString;
             connectable: import("zod").ZodBoolean;
             unavailableReason: import("zod").ZodNullable<import("zod").ZodString>;
-        }, import("zod/v4/core").$strip>>;
-    }, import("zod/v4/core").$strip>, "required">;
+        }, import("zod/v4/core").$strict>>;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "source.status.list": import("./contract.js").RpcContract<"source.status.list", import("zod").ZodObject<{}, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         sources: import("zod").ZodArray<import("zod").ZodObject<{
             sourceId: import("zod").ZodString;
@@ -506,7 +546,7 @@ export declare const rpcContracts: {
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         ok: import("zod").ZodLiteral<true>;
         seeded: import("zod").ZodNumber;
-    }, import("zod/v4/core").$strip>, "required">;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "skills.capabilities": import("./contract.js").RpcContract<"skills.capabilities", import("zod").ZodObject<{}, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         module: import("zod").ZodString;
         entities: import("zod").ZodReadonly<import("zod").ZodArray<import("zod").ZodObject<{
@@ -519,19 +559,19 @@ export declare const rpcContracts: {
         id: import("zod").ZodString;
         name: import("zod").ZodString;
         description: import("zod").ZodString;
-    }, import("zod/v4/core").$strip>>, "required">;
+    }, import("zod/v4/core").$strict>>, "required">;
     readonly "skills.list_files": import("./contract.js").RpcContract<"skills.list_files", import("zod").ZodObject<{
         id: import("zod").ZodString;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         files: import("zod").ZodArray<import("zod").ZodString>;
-    }, import("zod/v4/core").$strip>, "required">;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "skills.read": import("./contract.js").RpcContract<"skills.read", import("zod").ZodObject<{
         id: import("zod").ZodString;
         path: import("zod").ZodDefault<import("zod").ZodString>;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         content: import("zod").ZodString;
         truncated: import("zod").ZodBoolean;
-    }, import("zod/v4/core").$strip>, "required">;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "skills.skill.list": {
         readonly method: "skills.skill.list";
         readonly input: import("zod").ZodObject<{}, import("zod/v4/core").$strict>;
@@ -539,10 +579,9 @@ export declare const rpcContracts: {
             id: import("zod").ZodString;
             name: import("zod").ZodString;
             description: import("zod").ZodString;
-        }, import("zod/v4/core").$strip>>;
+        }, import("zod/v4/core").$strict>>;
         readonly params: "required";
         readonly inputJsonSchema: Readonly<import("../index.js").JsonObject>;
-        readonly wire?: import("./contract.js").RpcWireCodec;
     };
     readonly "skills.skill.get": {
         readonly method: "skills.skill.get";
@@ -553,10 +592,9 @@ export declare const rpcContracts: {
         readonly output: import("zod").ZodObject<{
             content: import("zod").ZodString;
             truncated: import("zod").ZodBoolean;
-        }, import("zod/v4/core").$strip>;
+        }, import("zod/v4/core").$strict>;
         readonly params: "required";
         readonly inputJsonSchema: Readonly<import("../index.js").JsonObject>;
-        readonly wire?: import("./contract.js").RpcWireCodec;
     };
     readonly "skills.skill.file.list": {
         readonly method: "skills.skill.file.list";
@@ -565,10 +603,9 @@ export declare const rpcContracts: {
         }, import("zod/v4/core").$strict>;
         readonly output: import("zod").ZodObject<{
             files: import("zod").ZodArray<import("zod").ZodString>;
-        }, import("zod/v4/core").$strip>;
+        }, import("zod/v4/core").$strict>;
         readonly params: "required";
         readonly inputJsonSchema: Readonly<import("../index.js").JsonObject>;
-        readonly wire?: import("./contract.js").RpcWireCodec;
     };
     readonly "setup.get": import("./contract.js").RpcContract<"setup.get", import("zod").ZodObject<{}, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         document: import("zod").ZodObject<{
@@ -577,7 +614,7 @@ export declare const rpcContracts: {
             currentStep: import("zod").ZodString;
             sources: import("zod").ZodArray<import("zod").ZodString>;
             engine: import("zod").ZodNullable<import("zod").ZodString>;
-        }, import("zod/v4/core").$strip>;
+        }, import("zod/v4/core").$strict>;
         plan: import("zod").ZodObject<{
             steps: import("zod").ZodReadonly<import("zod").ZodArray<import("zod").ZodDiscriminatedUnion<[import("zod").ZodObject<{
                 kind: import("zod").ZodLiteral<"welcome">;
@@ -666,7 +703,7 @@ export declare const rpcContracts: {
             currentStep: import("zod").ZodString;
             sources: import("zod").ZodArray<import("zod").ZodString>;
             engine: import("zod").ZodNullable<import("zod").ZodString>;
-        }, import("zod/v4/core").$strip>>;
+        }, import("zod/v4/core").$strict>>;
     }, import("zod/v4/core").$strict>, import("zod").ZodObject<{
         document: import("zod").ZodObject<{
             version: import("zod").ZodNumber;
@@ -674,7 +711,7 @@ export declare const rpcContracts: {
             currentStep: import("zod").ZodString;
             sources: import("zod").ZodArray<import("zod").ZodString>;
             engine: import("zod").ZodNullable<import("zod").ZodString>;
-        }, import("zod/v4/core").$strip>;
+        }, import("zod/v4/core").$strict>;
         plan: import("zod").ZodObject<{
             steps: import("zod").ZodReadonly<import("zod").ZodArray<import("zod").ZodDiscriminatedUnion<[import("zod").ZodObject<{
                 kind: import("zod").ZodLiteral<"welcome">;
@@ -734,8 +771,8 @@ export declare const rpcContracts: {
         }, import("zod/v4/core").$strict>;
     }, import("zod/v4/core").$strict>, "required">;
     readonly "search.by_graph": import("./contract.js").RpcContract<"search.by_graph", import("zod").ZodObject<{
-        entityId: import("zod").ZodString;
-        depth: import("zod").ZodDefault<import("zod").ZodNumber>;
+        entityId: import("zod").ZodGUID;
+        depth: import("zod").ZodDefault<import("zod").ZodInt>;
         linkKind: import("zod").ZodOptional<import("zod").ZodString>;
     }, import("zod/v4/core").$strip>, import("zod").ZodArray<import("zod").ZodObject<{
         id: import("zod").ZodString;
@@ -745,7 +782,7 @@ export declare const rpcContracts: {
         excerpt: import("zod").ZodOptional<import("zod").ZodString>;
         linkKind: import("zod").ZodOptional<import("zod").ZodString>;
         data: import("zod").ZodOptional<import("zod").ZodType<import("../index.js").JsonValue, unknown, import("zod/v4/core").$ZodTypeInternals<import("../index.js").JsonValue, unknown>>>;
-    }, import("zod/v4/core").$strip>>, "required">;
+    }, import("zod/v4/core").$strict>>, "required">;
     readonly "search.capabilities": import("./contract.js").RpcContract<"search.capabilities", import("zod").ZodObject<{}, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         module: import("zod").ZodString;
         entities: import("zod").ZodReadonly<import("zod").ZodArray<import("zod").ZodObject<{
@@ -756,9 +793,9 @@ export declare const rpcContracts: {
     }, import("zod/v4/core").$strict>, "required">;
     readonly "search.combined": import("./contract.js").RpcContract<"search.combined", import("zod").ZodObject<{
         query: import("zod").ZodString;
-        relatedTo: import("zod").ZodDefault<import("zod").ZodArray<import("zod").ZodString>>;
+        relatedTo: import("zod").ZodDefault<import("zod").ZodArray<import("zod").ZodGUID>>;
         schemaIds: import("zod").ZodOptional<import("zod").ZodArray<import("zod").ZodString>>;
-        limit: import("zod").ZodDefault<import("zod").ZodNumber>;
+        limit: import("zod").ZodDefault<import("zod").ZodInt>;
     }, import("zod/v4/core").$strip>, import("zod").ZodArray<import("zod").ZodObject<{
         id: import("zod").ZodString;
         name: import("zod").ZodNullable<import("zod").ZodString>;
@@ -767,16 +804,16 @@ export declare const rpcContracts: {
         excerpt: import("zod").ZodOptional<import("zod").ZodString>;
         linkKind: import("zod").ZodOptional<import("zod").ZodString>;
         data: import("zod").ZodOptional<import("zod").ZodType<import("../index.js").JsonValue, unknown, import("zod/v4/core").$ZodTypeInternals<import("../index.js").JsonValue, unknown>>>;
-    }, import("zod/v4/core").$strip>>, "required">;
+    }, import("zod/v4/core").$strict>>, "required">;
     readonly "search.fast": import("./contract.js").RpcContract<"search.fast", import("zod").ZodObject<{
         query: import("zod").ZodString;
-        mentionIds: import("zod").ZodDefault<import("zod").ZodArray<import("zod").ZodString>>;
+        mentionIds: import("zod").ZodDefault<import("zod").ZodArray<import("zod").ZodGUID>>;
         schemaIds: import("zod").ZodOptional<import("zod").ZodArray<import("zod").ZodString>>;
         retrieval: import("zod").ZodDefault<import("zod").ZodEnum<{
             text: "text";
             hybrid: "hybrid";
         }>>;
-        limit: import("zod").ZodDefault<import("zod").ZodNumber>;
+        limit: import("zod").ZodDefault<import("zod").ZodInt>;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         results: import("zod").ZodArray<import("zod").ZodObject<{
             id: import("zod").ZodString;
@@ -786,11 +823,11 @@ export declare const rpcContracts: {
             excerpt: import("zod").ZodOptional<import("zod").ZodString>;
             linkKind: import("zod").ZodOptional<import("zod").ZodString>;
             data: import("zod").ZodOptional<import("zod").ZodType<import("../index.js").JsonValue, unknown, import("zod/v4/core").$ZodTypeInternals<import("../index.js").JsonValue, unknown>>>;
-        }, import("zod/v4/core").$strip>>;
-    }, import("zod/v4/core").$strip>, "required">;
+        }, import("zod/v4/core").$strict>>;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "search.hybrid": import("./contract.js").RpcContract<"search.hybrid", import("zod").ZodObject<{
         query: import("zod").ZodString;
-        limit: import("zod").ZodDefault<import("zod").ZodNumber>;
+        limit: import("zod").ZodDefault<import("zod").ZodInt>;
     }, import("zod/v4/core").$strip>, import("zod").ZodArray<import("zod").ZodObject<{
         id: import("zod").ZodString;
         name: import("zod").ZodNullable<import("zod").ZodString>;
@@ -799,7 +836,7 @@ export declare const rpcContracts: {
         excerpt: import("zod").ZodOptional<import("zod").ZodString>;
         linkKind: import("zod").ZodOptional<import("zod").ZodString>;
         data: import("zod").ZodOptional<import("zod").ZodType<import("../index.js").JsonValue, unknown, import("zod/v4/core").$ZodTypeInternals<import("../index.js").JsonValue, unknown>>>;
-    }, import("zod/v4/core").$strip>>, "required">;
+    }, import("zod/v4/core").$strict>>, "required">;
     readonly "search.indexing_status": import("./contract.js").RpcContract<"search.indexing_status", import("zod").ZodObject<{}, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         indexed: import("zod").ZodInt;
         total: import("zod").ZodInt;
@@ -820,20 +857,20 @@ export declare const rpcContracts: {
         }>;
         generation: import("zod").ZodInt;
         lastFailure: import("zod").ZodNullable<import("zod").ZodString>;
-    }, import("zod/v4/core").$strip>, "required">;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "search.model_status": import("./contract.js").RpcContract<"search.model_status", import("zod").ZodObject<{}, import("zod/v4/core").$strip>, import("zod").ZodArray<import("zod").ZodObject<{
         key: import("zod").ZodString;
         downloaded: import("zod").ZodBoolean;
         downloadSize: import("zod").ZodNullable<import("zod").ZodString>;
         diskUsage: import("zod").ZodNullable<import("zod").ZodString>;
-    }, import("zod/v4/core").$strip>>, "required">;
+    }, import("zod/v4/core").$strict>>, "required">;
     readonly "search.entities.search": {
         readonly method: "search.entities.search";
         readonly input: import("zod").ZodObject<{
             query: import("zod").ZodString;
-            relatedTo: import("zod").ZodDefault<import("zod").ZodArray<import("zod").ZodString>>;
+            relatedTo: import("zod").ZodDefault<import("zod").ZodArray<import("zod").ZodGUID>>;
             schemaIds: import("zod").ZodOptional<import("zod").ZodArray<import("zod").ZodString>>;
-            limit: import("zod").ZodDefault<import("zod").ZodNumber>;
+            limit: import("zod").ZodDefault<import("zod").ZodInt>;
         }, import("zod/v4/core").$strict>;
         readonly output: import("zod").ZodArray<import("zod").ZodObject<{
             id: import("zod").ZodString;
@@ -843,16 +880,15 @@ export declare const rpcContracts: {
             excerpt: import("zod").ZodOptional<import("zod").ZodString>;
             linkKind: import("zod").ZodOptional<import("zod").ZodString>;
             data: import("zod").ZodOptional<import("zod").ZodType<import("../index.js").JsonValue, unknown, import("zod/v4/core").$ZodTypeInternals<import("../index.js").JsonValue, unknown>>>;
-        }, import("zod/v4/core").$strip>>;
+        }, import("zod/v4/core").$strict>>;
         readonly params: "required";
         readonly inputJsonSchema: Readonly<import("../index.js").JsonObject>;
-        readonly wire?: import("./contract.js").RpcWireCodec;
     };
     readonly "search.neighborhood.list": {
         readonly method: "search.neighborhood.list";
         readonly input: import("zod").ZodObject<{
-            entityId: import("zod").ZodString;
-            depth: import("zod").ZodDefault<import("zod").ZodNumber>;
+            entityId: import("zod").ZodGUID;
+            depth: import("zod").ZodDefault<import("zod").ZodInt>;
             linkKind: import("zod").ZodOptional<import("zod").ZodString>;
         }, import("zod/v4/core").$strict>;
         readonly output: import("zod").ZodArray<import("zod").ZodObject<{
@@ -863,16 +899,18 @@ export declare const rpcContracts: {
             excerpt: import("zod").ZodOptional<import("zod").ZodString>;
             linkKind: import("zod").ZodOptional<import("zod").ZodString>;
             data: import("zod").ZodOptional<import("zod").ZodType<import("../index.js").JsonValue, unknown, import("zod/v4/core").$ZodTypeInternals<import("../index.js").JsonValue, unknown>>>;
-        }, import("zod/v4/core").$strip>>;
+        }, import("zod/v4/core").$strict>>;
         readonly params: "required";
         readonly inputJsonSchema: Readonly<import("../index.js").JsonObject>;
-        readonly wire?: import("./contract.js").RpcWireCodec;
     };
     readonly "runtime.composer.setPresence": import("./contract.js").RpcContract<"runtime.composer.setPresence", import("zod").ZodObject<{
-        presence: import("zod").ZodUnion<readonly [import("zod").ZodObject<{
-            mode: import("zod").ZodString;
+        presence: import("zod").ZodNullable<import("zod").ZodObject<{
+            mode: import("zod").ZodEnum<{
+                email: "email";
+                telegram: "telegram";
+            }>;
             threadKey: import("zod").ZodString;
-        }, import("zod/v4/core").$strip>, import("zod").ZodNull]>;
+        }, import("zod/v4/core").$strict>>;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         ok: import("zod").ZodLiteral<true>;
     }, import("zod/v4/core").$strict>, "required">;
@@ -893,28 +931,28 @@ export declare const rpcContracts: {
                     type: import("zod").ZodLiteral<"number">;
                     min: import("zod").ZodNullable<import("zod").ZodNumber>;
                     max: import("zod").ZodNullable<import("zod").ZodNumber>;
-                }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
+                }, import("zod/v4/core").$strict>, import("zod").ZodObject<{
                     type: import("zod").ZodLiteral<"string">;
                     maxLength: import("zod").ZodNullable<import("zod").ZodNumber>;
-                }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
+                }, import("zod/v4/core").$strict>, import("zod").ZodObject<{
                     type: import("zod").ZodLiteral<"boolean">;
-                }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
+                }, import("zod/v4/core").$strict>, import("zod").ZodObject<{
                     type: import("zod").ZodLiteral<"enum">;
                     options: import("zod").ZodReadonly<import("zod").ZodArray<import("zod").ZodObject<{
                         value: import("zod").ZodString;
                         label: import("zod").ZodString;
                         description: import("zod").ZodNullable<import("zod").ZodString>;
-                    }, import("zod/v4/core").$strip>>>;
-                }, import("zod/v4/core").$strip>], "type">;
+                    }, import("zod/v4/core").$strict>>>;
+                }, import("zod/v4/core").$strict>], "type">;
                 defaultValue: import("zod").ZodString;
                 confirmationMessage: import("zod").ZodNullable<import("zod").ZodString>;
-            }, import("zod/v4/core").$strip>>>;
-        }, import("zod/v4/core").$strip>>;
+            }, import("zod/v4/core").$strict>>>;
+        }, import("zod/v4/core").$strict>>;
         values: import("zod").ZodReadonly<import("zod").ZodArray<import("zod").ZodObject<{
             key: import("zod").ZodString;
             value: import("zod").ZodString;
-        }, import("zod/v4/core").$strip>>>;
-    }, import("zod/v4/core").$strip>>, "required">;
+        }, import("zod/v4/core").$strict>>>;
+    }, import("zod/v4/core").$strict>>, "required">;
     readonly "memory.capabilities": import("./contract.js").RpcContract<"memory.capabilities", import("zod").ZodObject<{}, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         module: import("zod").ZodString;
         entities: import("zod").ZodReadonly<import("zod").ZodArray<import("zod").ZodObject<{
@@ -924,11 +962,11 @@ export declare const rpcContracts: {
         }, import("zod/v4/core").$strict>>>;
     }, import("zod/v4/core").$strict>, "required">;
     readonly "memory.confirm": import("./contract.js").RpcContract<"memory.confirm", import("zod").ZodObject<{
-        id: import("zod").ZodString;
+        id: import("zod").ZodGUID;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         status: import("zod").ZodLiteral<"ok">;
         confidence: import("zod").ZodNumber;
-    }, import("zod/v4/core").$strip>, "required">;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "memory.diagnostics": import("./contract.js").RpcContract<"memory.diagnostics", import("zod").ZodObject<{}, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         totalActive: import("zod").ZodNumber;
         totalRejected: import("zod").ZodNumber;
@@ -936,12 +974,12 @@ export declare const rpcContracts: {
         byType: import("zod").ZodRecord<import("zod").ZodString, import("zod").ZodNumber>;
         avgConfidence: import("zod").ZodNumber;
         lastConsolidation: import("zod").ZodNullable<import("zod").ZodString>;
-    }, import("zod/v4/core").$strip>, "required">;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "memory.forget": import("./contract.js").RpcContract<"memory.forget", import("zod").ZodObject<{
-        id: import("zod").ZodString;
+        id: import("zod").ZodGUID;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         status: import("zod").ZodLiteral<"forgotten">;
-    }, import("zod/v4/core").$strip>, "required">;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "memory.list": import("./contract.js").RpcContract<"memory.list", import("zod").ZodObject<{
         memoryType: import("zod").ZodOptional<import("zod").ZodEnum<{
             user: "user";
@@ -949,10 +987,9 @@ export declare const rpcContracts: {
             project: "project";
             reference: "reference";
         }>>;
-        subjectEntityId: import("zod").ZodOptional<import("zod").ZodString>;
-        projectEntityId: import("zod").ZodOptional<import("zod").ZodString>;
-        sourceEpisodeId: import("zod").ZodOptional<import("zod").ZodString>;
-        limit: import("zod").ZodDefault<import("zod").ZodNumber>;
+        subjectEntityId: import("zod").ZodOptional<import("zod").ZodGUID>;
+        sourceEpisodeId: import("zod").ZodOptional<import("zod").ZodGUID>;
+        limit: import("zod").ZodDefault<import("zod").ZodInt>;
     }, import("zod/v4/core").$strip>, import("zod").ZodArray<import("zod").ZodObject<{
         id: import("zod").ZodString;
         memoryType: import("zod").ZodString;
@@ -971,12 +1008,12 @@ export declare const rpcContracts: {
         supersededBy: import("zod").ZodNullable<import("zod").ZodString>;
         archivedAt: import("zod").ZodNullable<import("zod").ZodString>;
         createdAt: import("zod").ZodString;
-    }, import("zod/v4/core").$strip>>, "required">;
+    }, import("zod/v4/core").$strict>>, "required">;
     readonly "memory.reject": import("./contract.js").RpcContract<"memory.reject", import("zod").ZodObject<{
-        id: import("zod").ZodString;
+        id: import("zod").ZodGUID;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         status: import("zod").ZodLiteral<"rejected">;
-    }, import("zod/v4/core").$strip>, "required">;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "memory.save": import("./contract.js").RpcContract<"memory.save", import("zod").ZodObject<{
         memoryType: import("zod").ZodEnum<{
             user: "user";
@@ -986,12 +1023,12 @@ export declare const rpcContracts: {
         }>;
         title: import("zod").ZodString;
         body: import("zod").ZodString;
-        subjectEntityId: import("zod").ZodOptional<import("zod").ZodString>;
-        projectEntityId: import("zod").ZodOptional<import("zod").ZodString>;
+        subjectEntityId: import("zod").ZodOptional<import("zod").ZodGUID>;
+        projectEntityId: import("zod").ZodOptional<import("zod").ZodGUID>;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         id: import("zod").ZodString;
         status: import("zod").ZodLiteral<"saved">;
-    }, import("zod/v4/core").$strip>, "required">;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "memory.search": import("./contract.js").RpcContract<"memory.search", import("zod").ZodObject<{
         query: import("zod").ZodString;
         memoryType: import("zod").ZodOptional<import("zod").ZodEnum<{
@@ -1000,7 +1037,7 @@ export declare const rpcContracts: {
             project: "project";
             reference: "reference";
         }>>;
-        limit: import("zod").ZodDefault<import("zod").ZodNumber>;
+        limit: import("zod").ZodDefault<import("zod").ZodInt>;
     }, import("zod/v4/core").$strip>, import("zod").ZodArray<import("zod").ZodObject<{
         id: import("zod").ZodString;
         memoryType: import("zod").ZodString;
@@ -1019,10 +1056,10 @@ export declare const rpcContracts: {
         supersededBy: import("zod").ZodNullable<import("zod").ZodString>;
         archivedAt: import("zod").ZodNullable<import("zod").ZodString>;
         createdAt: import("zod").ZodString;
-    }, import("zod/v4/core").$strip>>, "required">;
+    }, import("zod/v4/core").$strict>>, "required">;
     readonly "identity.create": import("./contract.js").RpcContract<"identity.create", import("zod").ZodObject<{
         name: import("zod").ZodString;
-        content: import("zod").ZodOptional<import("zod").ZodString>;
+        content: import("zod").ZodDefault<import("zod").ZodString>;
         isDefault: import("zod").ZodDefault<import("zod").ZodBoolean>;
         groupIds: import("zod").ZodDefault<import("zod").ZodArray<import("zod").ZodString>>;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
@@ -1034,7 +1071,7 @@ export declare const rpcContracts: {
         groupNames: import("zod").ZodArray<import("zod").ZodString>;
         updatedAt: import("zod").ZodString;
         createdAt: import("zod").ZodString;
-    }, import("zod/v4/core").$strip>, "required">;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "identity.delete": import("./contract.js").RpcContract<"identity.delete", import("zod").ZodObject<{
         id: import("zod").ZodString;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
@@ -1049,7 +1086,7 @@ export declare const rpcContracts: {
         groupNames: import("zod").ZodArray<import("zod").ZodString>;
         updatedAt: import("zod").ZodString;
         createdAt: import("zod").ZodString;
-    }, import("zod/v4/core").$strip>>, "required">;
+    }, import("zod/v4/core").$strict>>, "required">;
     readonly "identity.update": import("./contract.js").RpcContract<"identity.update", import("zod").ZodObject<{
         id: import("zod").ZodString;
         name: import("zod").ZodOptional<import("zod").ZodString>;
@@ -1065,15 +1102,15 @@ export declare const rpcContracts: {
         groupNames: import("zod").ZodArray<import("zod").ZodString>;
         updatedAt: import("zod").ZodString;
         createdAt: import("zod").ZodString;
-    }, import("zod/v4/core").$strip>, "required">;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "hooks.create": import("./contract.js").RpcContract<"hooks.create", import("zod").ZodObject<{
         name: import("zod").ZodString;
         triggerAction: import("zod").ZodString;
         triggerScope: import("zod").ZodOptional<import("zod").ZodNullable<import("zod").ZodString>>;
         description: import("zod").ZodOptional<import("zod").ZodNullable<import("zod").ZodString>>;
         reviewAgentId: import("zod").ZodOptional<import("zod").ZodNullable<import("zod").ZodString>>;
-        onWarning: import("zod").ZodOptional<import("zod").ZodString>;
-        groupIds: import("zod").ZodOptional<import("zod").ZodArray<import("zod").ZodString>>;
+        onWarning: import("zod").ZodDefault<import("zod").ZodString>;
+        groupIds: import("zod").ZodDefault<import("zod").ZodArray<import("zod").ZodString>>;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         id: import("zod").ZodString;
         name: import("zod").ZodString;
@@ -1084,7 +1121,8 @@ export declare const rpcContracts: {
         onWarning: import("zod").ZodString;
         groupIds: import("zod").ZodArray<import("zod").ZodString>;
         enabled: import("zod").ZodBoolean;
-    }, import("zod/v4/core").$strip>, "required">;
+        createdAt: import("zod").ZodString;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "hooks.delete": import("./contract.js").RpcContract<"hooks.delete", import("zod").ZodObject<{
         id: import("zod").ZodString;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
@@ -1101,7 +1139,7 @@ export declare const rpcContracts: {
         groupIds: import("zod").ZodArray<import("zod").ZodString>;
         enabled: import("zod").ZodBoolean;
         createdAt: import("zod").ZodString;
-    }, import("zod/v4/core").$strip>>, "required">;
+    }, import("zod/v4/core").$strict>>, "required">;
     readonly "hooks.update": import("./contract.js").RpcContract<"hooks.update", import("zod").ZodObject<{
         id: import("zod").ZodString;
         name: import("zod").ZodOptional<import("zod").ZodString>;
@@ -1122,7 +1160,8 @@ export declare const rpcContracts: {
         onWarning: import("zod").ZodString;
         groupIds: import("zod").ZodArray<import("zod").ZodString>;
         enabled: import("zod").ZodBoolean;
-    }, import("zod/v4/core").$strip>, "required">;
+        createdAt: import("zod").ZodString;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "groups.add_member": import("./contract.js").RpcContract<"groups.add_member", import("zod").ZodObject<{
         groupId: import("zod").ZodString;
         entityId: import("zod").ZodString;
@@ -1139,9 +1178,9 @@ export declare const rpcContracts: {
     }, import("zod/v4/core").$strict>, "required">;
     readonly "groups.create": import("./contract.js").RpcContract<"groups.create", import("zod").ZodObject<{
         name: import("zod").ZodString;
-        description: import("zod").ZodOptional<import("zod").ZodString>;
-        memory: import("zod").ZodOptional<import("zod").ZodString>;
-        clientId: import("zod").ZodOptional<import("zod").ZodString>;
+        description: import("zod").ZodDefault<import("zod").ZodString>;
+        memory: import("zod").ZodDefault<import("zod").ZodString>;
+        clientId: import("zod").ZodOptional<import("zod").ZodGUID>;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         id: import("zod").ZodString;
         name: import("zod").ZodString;
@@ -1150,7 +1189,7 @@ export declare const rpcContracts: {
         memberCount: import("zod").ZodNumber;
         identityProfileName: import("zod").ZodNullable<import("zod").ZodString>;
         createdAt: import("zod").ZodString;
-    }, import("zod/v4/core").$strip>, "required">;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "groups.delete": import("./contract.js").RpcContract<"groups.delete", import("zod").ZodObject<{
         id: import("zod").ZodString;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
@@ -1169,12 +1208,12 @@ export declare const rpcContracts: {
             id: import("zod").ZodString;
             name: import("zod").ZodString;
             contentPreview: import("zod").ZodString;
-        }, import("zod/v4/core").$strip>>;
-    }, import("zod/v4/core").$strip>, "required">;
+        }, import("zod/v4/core").$strict>>;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "groups.list": import("./contract.js").RpcContract<"groups.list", import("zod").ZodObject<{
+        limit: import("zod").ZodDefault<import("zod").ZodInt>;
+        offset: import("zod").ZodDefault<import("zod").ZodInt>;
         search: import("zod").ZodOptional<import("zod").ZodString>;
-        limit: import("zod").ZodDefault<import("zod").ZodNumber>;
-        offset: import("zod").ZodDefault<import("zod").ZodNumber>;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         items: import("zod").ZodArray<import("zod").ZodObject<{
             id: import("zod").ZodString;
@@ -1184,11 +1223,11 @@ export declare const rpcContracts: {
             memberCount: import("zod").ZodNumber;
             identityProfileName: import("zod").ZodNullable<import("zod").ZodString>;
             createdAt: import("zod").ZodString;
-        }, import("zod/v4/core").$strip>>;
-        total: import("zod").ZodNumber;
-        limit: import("zod").ZodNumber;
-        offset: import("zod").ZodNumber;
-    }, import("zod/v4/core").$strip>, "required">;
+        }, import("zod/v4/core").$strict>>;
+        total: import("zod").ZodInt;
+        limit: import("zod").ZodInt;
+        offset: import("zod").ZodInt;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "groups.list_for_entity": import("./contract.js").RpcContract<"groups.list_for_entity", import("zod").ZodObject<{
         entityId: import("zod").ZodString;
     }, import("zod/v4/core").$strip>, import("zod").ZodArray<import("zod").ZodObject<{
@@ -1199,14 +1238,14 @@ export declare const rpcContracts: {
         memberCount: import("zod").ZodNumber;
         identityProfileName: import("zod").ZodNullable<import("zod").ZodString>;
         createdAt: import("zod").ZodString;
-    }, import("zod/v4/core").$strip>>, "required">;
+    }, import("zod/v4/core").$strict>>, "required">;
     readonly "groups.list_members": import("./contract.js").RpcContract<"groups.list_members", import("zod").ZodObject<{
         id: import("zod").ZodString;
     }, import("zod/v4/core").$strip>, import("zod").ZodArray<import("zod").ZodObject<{
         entityId: import("zod").ZodString;
         name: import("zod").ZodNullable<import("zod").ZodString>;
         schemaId: import("zod").ZodString;
-    }, import("zod/v4/core").$strip>>, "required">;
+    }, import("zod/v4/core").$strict>>, "required">;
     readonly "groups.remove_member": import("./contract.js").RpcContract<"groups.remove_member", import("zod").ZodObject<{
         groupId: import("zod").ZodString;
         entityId: import("zod").ZodString;
@@ -1224,8 +1263,8 @@ export declare const rpcContracts: {
             id: import("zod").ZodString;
             name: import("zod").ZodString;
             contentPreview: import("zod").ZodString;
-        }, import("zod/v4/core").$strip>>;
-    }, import("zod/v4/core").$strip>>, "required">;
+        }, import("zod/v4/core").$strict>>;
+    }, import("zod/v4/core").$strict>>, "required">;
     readonly "groups.update": import("./contract.js").RpcContract<"groups.update", import("zod").ZodObject<{
         id: import("zod").ZodString;
         name: import("zod").ZodOptional<import("zod").ZodString>;
@@ -1239,7 +1278,7 @@ export declare const rpcContracts: {
         memberCount: import("zod").ZodNumber;
         identityProfileName: import("zod").ZodNullable<import("zod").ZodString>;
         createdAt: import("zod").ZodString;
-    }, import("zod/v4/core").$strip>, "required">;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "groups.update_bio": import("./contract.js").RpcContract<"groups.update_bio", import("zod").ZodObject<{
         groupId: import("zod").ZodString;
         content: import("zod").ZodString;
@@ -1257,14 +1296,14 @@ export declare const rpcContracts: {
         memberCount: import("zod").ZodNumber;
         identityProfileName: import("zod").ZodNullable<import("zod").ZodString>;
         createdAt: import("zod").ZodString;
-    }, import("zod/v4/core").$strip>, "required">;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "groups.group.create": {
         readonly method: "groups.group.create";
         readonly input: import("zod").ZodObject<{
             name: import("zod").ZodString;
-            description: import("zod").ZodOptional<import("zod").ZodString>;
-            memory: import("zod").ZodOptional<import("zod").ZodString>;
-            clientId: import("zod").ZodOptional<import("zod").ZodString>;
+            description: import("zod").ZodDefault<import("zod").ZodString>;
+            memory: import("zod").ZodDefault<import("zod").ZodString>;
+            clientId: import("zod").ZodOptional<import("zod").ZodGUID>;
         }, import("zod/v4/core").$strict>;
         readonly output: import("zod").ZodObject<{
             id: import("zod").ZodString;
@@ -1274,10 +1313,9 @@ export declare const rpcContracts: {
             memberCount: import("zod").ZodNumber;
             identityProfileName: import("zod").ZodNullable<import("zod").ZodString>;
             createdAt: import("zod").ZodString;
-        }, import("zod/v4/core").$strip>;
+        }, import("zod/v4/core").$strict>;
         readonly params: "required";
         readonly inputJsonSchema: Readonly<import("../index.js").JsonObject>;
-        readonly wire?: import("./contract.js").RpcWireCodec;
     };
     readonly "groups.group.get": {
         readonly method: "groups.group.get";
@@ -1295,11 +1333,10 @@ export declare const rpcContracts: {
                 id: import("zod").ZodString;
                 name: import("zod").ZodString;
                 contentPreview: import("zod").ZodString;
-            }, import("zod/v4/core").$strip>>;
-        }, import("zod/v4/core").$strip>;
+            }, import("zod/v4/core").$strict>>;
+        }, import("zod/v4/core").$strict>;
         readonly params: "required";
         readonly inputJsonSchema: Readonly<import("../index.js").JsonObject>;
-        readonly wire?: import("./contract.js").RpcWireCodec;
     };
     readonly "groups.group.link": {
         readonly method: "groups.group.link";
@@ -1312,14 +1349,13 @@ export declare const rpcContracts: {
         }, import("zod/v4/core").$strict>;
         readonly params: "required";
         readonly inputJsonSchema: Readonly<import("../index.js").JsonObject>;
-        readonly wire?: import("./contract.js").RpcWireCodec;
     };
     readonly "groups.group.list": {
         readonly method: "groups.group.list";
         readonly input: import("zod").ZodObject<{
+            limit: import("zod").ZodDefault<import("zod").ZodInt>;
+            offset: import("zod").ZodDefault<import("zod").ZodInt>;
             search: import("zod").ZodOptional<import("zod").ZodString>;
-            limit: import("zod").ZodDefault<import("zod").ZodNumber>;
-            offset: import("zod").ZodDefault<import("zod").ZodNumber>;
         }, import("zod/v4/core").$strict>;
         readonly output: import("zod").ZodObject<{
             items: import("zod").ZodArray<import("zod").ZodObject<{
@@ -1330,14 +1366,13 @@ export declare const rpcContracts: {
                 memberCount: import("zod").ZodNumber;
                 identityProfileName: import("zod").ZodNullable<import("zod").ZodString>;
                 createdAt: import("zod").ZodString;
-            }, import("zod/v4/core").$strip>>;
-            total: import("zod").ZodNumber;
-            limit: import("zod").ZodNumber;
-            offset: import("zod").ZodNumber;
-        }, import("zod/v4/core").$strip>;
+            }, import("zod/v4/core").$strict>>;
+            total: import("zod").ZodInt;
+            limit: import("zod").ZodInt;
+            offset: import("zod").ZodInt;
+        }, import("zod/v4/core").$strict>;
         readonly params: "required";
         readonly inputJsonSchema: Readonly<import("../index.js").JsonObject>;
-        readonly wire?: import("./contract.js").RpcWireCodec;
     };
     readonly "groups.group.memory.update": {
         readonly method: "groups.group.memory.update";
@@ -1353,10 +1388,9 @@ export declare const rpcContracts: {
             memberCount: import("zod").ZodNumber;
             identityProfileName: import("zod").ZodNullable<import("zod").ZodString>;
             createdAt: import("zod").ZodString;
-        }, import("zod/v4/core").$strip>;
+        }, import("zod/v4/core").$strict>;
         readonly params: "required";
         readonly inputJsonSchema: Readonly<import("../index.js").JsonObject>;
-        readonly wire?: import("./contract.js").RpcWireCodec;
     };
     readonly "groups.group.unlink": {
         readonly method: "groups.group.unlink";
@@ -1369,7 +1403,6 @@ export declare const rpcContracts: {
         }, import("zod/v4/core").$strict>;
         readonly params: "required";
         readonly inputJsonSchema: Readonly<import("../index.js").JsonObject>;
-        readonly wire?: import("./contract.js").RpcWireCodec;
     };
     readonly "groups.identity.bio.update": {
         readonly method: "groups.identity.bio.update";
@@ -1382,11 +1415,10 @@ export declare const rpcContracts: {
         }, import("zod/v4/core").$strict>;
         readonly params: "required";
         readonly inputJsonSchema: Readonly<import("../index.js").JsonObject>;
-        readonly wire?: import("./contract.js").RpcWireCodec;
     };
     readonly "graph.approve": import("./contract.js").RpcContract<"graph.approve", import("zod").ZodObject<{
-        id: import("zod").ZodString;
-        episodeId: import("zod").ZodString;
+        id: import("zod").ZodGUID;
+        episodeId: import("zod").ZodGUID;
     }, import("zod/v4/core").$strip>, import("zod").ZodUnion<readonly [import("zod").ZodDiscriminatedUnion<[import("zod").ZodObject<{
         origin: import("zod").ZodLiteral<"canonical">;
         source: import("zod").ZodObject<{
@@ -1460,12 +1492,12 @@ export declare const rpcContracts: {
         }, import("zod/v4/core").$strict>>>;
     }, import("zod/v4/core").$strict>, "required">;
     readonly "graph.entity.archive": import("./contract.js").RpcContract<"graph.entity.archive", import("zod").ZodObject<{
-        entityId: import("zod").ZodString;
+        entityId: import("zod").ZodGUID;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         ok: import("zod").ZodLiteral<true>;
     }, import("zod/v4/core").$strict>, "required">;
     readonly "graph.entity.get": import("./contract.js").RpcContract<"graph.entity.get", import("zod").ZodObject<{
-        id: import("zod").ZodString;
+        id: import("zod").ZodGUID;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         id: import("zod").ZodString;
         schemaId: import("zod").ZodString;
@@ -1488,10 +1520,10 @@ export declare const rpcContracts: {
                 agent: "agent";
             }>;
             validUntil: import("zod").ZodNullable<import("zod").ZodISODateTime>;
-        }, import("zod/v4/core").$strip>>;
-    }, import("zod/v4/core").$strip>, "required">;
+        }, import("zod/v4/core").$strict>>;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "graph.entity.links": import("./contract.js").RpcContract<"graph.entity.links", import("zod").ZodObject<{
-        id: import("zod").ZodString;
+        id: import("zod").ZodGUID;
         kind: import("zod").ZodOptional<import("zod").ZodString>;
         direction: import("zod").ZodDefault<import("zod").ZodEnum<{
             from: "from";
@@ -1500,16 +1532,11 @@ export declare const rpcContracts: {
         }>>;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         entityId: import("zod").ZodString;
-        links: import("zod").ZodArray<import("zod").ZodObject<{
-            direction: import("zod").ZodEnum<{
-                from: "from";
-                to: "to";
-            }>;
+        links: import("zod").ZodArray<import("zod").ZodDiscriminatedUnion<[import("zod").ZodObject<{
+            direction: import("zod").ZodLiteral<"from">;
             kind: import("zod").ZodString;
-            targetId: import("zod").ZodOptional<import("zod").ZodString>;
-            targetName: import("zod").ZodOptional<import("zod").ZodNullable<import("zod").ZodString>>;
-            sourceId: import("zod").ZodOptional<import("zod").ZodString>;
-            sourceName: import("zod").ZodOptional<import("zod").ZodNullable<import("zod").ZodString>>;
+            targetId: import("zod").ZodString;
+            targetName: import("zod").ZodNullable<import("zod").ZodString>;
             confidence: import("zod").ZodNullable<import("zod").ZodNumber>;
             origin: import("zod").ZodEnum<{
                 canonical: "canonical";
@@ -1517,27 +1544,39 @@ export declare const rpcContracts: {
             }>;
             validUntil: import("zod").ZodNullable<import("zod").ZodISODateTime>;
             id: import("zod").ZodString;
-        }, import("zod/v4/core").$strip>>;
+        }, import("zod/v4/core").$strict>, import("zod").ZodObject<{
+            direction: import("zod").ZodLiteral<"to">;
+            kind: import("zod").ZodString;
+            sourceId: import("zod").ZodString;
+            sourceName: import("zod").ZodNullable<import("zod").ZodString>;
+            confidence: import("zod").ZodNullable<import("zod").ZodNumber>;
+            origin: import("zod").ZodEnum<{
+                canonical: "canonical";
+                agent: "agent";
+            }>;
+            validUntil: import("zod").ZodNullable<import("zod").ZodISODateTime>;
+            id: import("zod").ZodString;
+        }, import("zod/v4/core").$strict>], "direction">>;
         total: import("zod").ZodNumber;
-    }, import("zod/v4/core").$strip>, "required">;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "graph.entity.pin": import("./contract.js").RpcContract<"graph.entity.pin", import("zod").ZodObject<{
-        entityId: import("zod").ZodString;
-        pinOrder: import("zod").ZodOptional<import("zod").ZodNumber>;
+        entityId: import("zod").ZodGUID;
+        pinOrder: import("zod").ZodOptional<import("zod").ZodInt>;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         ok: import("zod").ZodLiteral<true>;
     }, import("zod/v4/core").$strict>, "required">;
     readonly "graph.entity.unarchive": import("./contract.js").RpcContract<"graph.entity.unarchive", import("zod").ZodObject<{
-        entityId: import("zod").ZodString;
+        entityId: import("zod").ZodGUID;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         ok: import("zod").ZodLiteral<true>;
     }, import("zod/v4/core").$strict>, "required">;
     readonly "graph.entity.unpin": import("./contract.js").RpcContract<"graph.entity.unpin", import("zod").ZodObject<{
-        entityId: import("zod").ZodString;
+        entityId: import("zod").ZodGUID;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         ok: import("zod").ZodLiteral<true>;
     }, import("zod/v4/core").$strict>, "required">;
     readonly "graph.entity.update_properties": import("./contract.js").RpcContract<"graph.entity.update_properties", import("zod").ZodObject<{
-        entityId: import("zod").ZodString;
+        entityId: import("zod").ZodGUID;
         properties: import("zod").ZodType<import("../index.js").JsonObject, unknown, import("zod/v4/core").$ZodTypeInternals<import("../index.js").JsonObject, unknown>>;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         ok: import("zod").ZodLiteral<true>;
@@ -1548,8 +1587,8 @@ export declare const rpcContracts: {
         name: import("zod").ZodOptional<import("zod").ZodString>;
         after: import("zod").ZodOptional<import("zod").ZodString>;
         before: import("zod").ZodOptional<import("zod").ZodString>;
-        limit: import("zod").ZodOptional<import("zod").ZodNumber>;
-        offset: import("zod").ZodOptional<import("zod").ZodNumber>;
+        limit: import("zod").ZodDefault<import("zod").ZodInt>;
+        offset: import("zod").ZodDefault<import("zod").ZodInt>;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         items: import("zod").ZodArray<import("zod").ZodObject<{
             id: import("zod").ZodString;
@@ -1558,12 +1597,12 @@ export declare const rpcContracts: {
             date: import("zod").ZodString;
             idx: import("zod").ZodNullable<import("zod").ZodString>;
             linkKind: import("zod").ZodOptional<import("zod").ZodString>;
-        }, import("zod/v4/core").$strip>>;
+        }, import("zod/v4/core").$strict>>;
         total: import("zod").ZodNumber;
         hasMore: import("zod").ZodBoolean;
-    }, import("zod/v4/core").$strip>, "required">;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "graph.get": import("./contract.js").RpcContract<"graph.get", import("zod").ZodObject<{
-        id: import("zod").ZodString;
+        id: import("zod").ZodGUID;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         entity: import("zod").ZodObject<{
             id: import("zod").ZodString;
@@ -1571,7 +1610,7 @@ export declare const rpcContracts: {
             name: import("zod").ZodNullable<import("zod").ZodString>;
             date: import("zod").ZodString;
             idx: import("zod").ZodNullable<import("zod").ZodString>;
-        }, import("zod/v4/core").$strip>;
+        }, import("zod/v4/core").$strict>;
         links: import("zod").ZodArray<import("zod").ZodObject<{
             from: import("zod").ZodString;
             to: import("zod").ZodString;
@@ -1583,18 +1622,18 @@ export declare const rpcContracts: {
             validUntil: import("zod").ZodNullable<import("zod").ZodISODateTime>;
             id: import("zod").ZodString;
             kind: import("zod").ZodString;
-        }, import("zod/v4/core").$strip>>;
+        }, import("zod/v4/core").$strict>>;
         linkCounts: import("zod").ZodRecord<import("zod").ZodString, import("zod").ZodNumber>;
         linksTotal: import("zod").ZodNumber;
         linksHasMore: import("zod").ZodBoolean;
-    }, import("zod/v4/core").$strip>, "required">;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "graph.link.add": import("./contract.js").RpcContract<"graph.link.add", import("zod").ZodObject<{
         confidence: import("zod").ZodNumber;
         evidence: import("zod").ZodTuple<[import("zod").ZodString], import("zod").ZodString>;
         validFrom: import("zod").ZodNullable<import("zod").ZodISODateTime>;
         validUntil: import("zod").ZodNullable<import("zod").ZodISODateTime>;
-        from: import("zod").ZodString;
-        to: import("zod").ZodString;
+        from: import("zod").ZodGUID;
+        to: import("zod").ZodGUID;
         kind: import("zod").ZodString;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         id: import("zod").ZodString;
@@ -1602,11 +1641,11 @@ export declare const rpcContracts: {
         from: import("zod").ZodString;
         to: import("zod").ZodString;
         created: import("zod").ZodBoolean;
-    }, import("zod/v4/core").$strip>, "required">;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "graph.link.end": import("./contract.js").RpcContract<"graph.link.end", import("zod").ZodObject<{
-        id: import("zod").ZodString;
+        id: import("zod").ZodGUID;
         validUntil: import("zod").ZodISODateTime;
-        evidence: import("zod").ZodString;
+        evidence: import("zod").ZodGUID;
     }, import("zod/v4/core").$strip>, import("zod").ZodDiscriminatedUnion<[import("zod").ZodObject<{
         origin: import("zod").ZodLiteral<"canonical">;
         metadata: import("zod").ZodType<import("../index.js").JsonValue, unknown, import("zod/v4/core").$ZodTypeInternals<import("../index.js").JsonValue, unknown>>;
@@ -1632,17 +1671,17 @@ export declare const rpcContracts: {
         createdAt: import("zod").ZodISODateTime;
     }, import("zod/v4/core").$strict>], "origin">, "required">;
     readonly "graph.links": import("./contract.js").RpcContract<"graph.links", import("zod").ZodObject<{
-        id: import("zod").ZodString;
+        id: import("zod").ZodGUID;
         kind: import("zod").ZodString;
-        direction: import("zod").ZodOptional<import("zod").ZodEnum<{
+        direction: import("zod").ZodDefault<import("zod").ZodEnum<{
             in: "in";
             out: "out";
         }>>;
         childType: import("zod").ZodOptional<import("zod").ZodString>;
         after: import("zod").ZodOptional<import("zod").ZodString>;
         before: import("zod").ZodOptional<import("zod").ZodString>;
-        limit: import("zod").ZodOptional<import("zod").ZodNumber>;
-        offset: import("zod").ZodOptional<import("zod").ZodNumber>;
+        limit: import("zod").ZodDefault<import("zod").ZodInt>;
+        offset: import("zod").ZodDefault<import("zod").ZodInt>;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         items: import("zod").ZodArray<import("zod").ZodObject<{
             id: import("zod").ZodString;
@@ -1651,16 +1690,16 @@ export declare const rpcContracts: {
             date: import("zod").ZodString;
             idx: import("zod").ZodNullable<import("zod").ZodString>;
             linkKind: import("zod").ZodOptional<import("zod").ZodString>;
-        }, import("zod/v4/core").$strip>>;
+        }, import("zod/v4/core").$strict>>;
         total: import("zod").ZodNumber;
         hasMore: import("zod").ZodBoolean;
-    }, import("zod/v4/core").$strip>, "required">;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "graph.search": import("./contract.js").RpcContract<"graph.search", import("zod").ZodObject<{
         query: import("zod").ZodString;
         type: import("zod").ZodOptional<import("zod").ZodString>;
         after: import("zod").ZodOptional<import("zod").ZodString>;
         before: import("zod").ZodOptional<import("zod").ZodString>;
-        limit: import("zod").ZodOptional<import("zod").ZodNumber>;
+        limit: import("zod").ZodDefault<import("zod").ZodInt>;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         items: import("zod").ZodArray<import("zod").ZodObject<{
             id: import("zod").ZodString;
@@ -1669,20 +1708,20 @@ export declare const rpcContracts: {
             date: import("zod").ZodString;
             idx: import("zod").ZodNullable<import("zod").ZodString>;
             linkKind: import("zod").ZodOptional<import("zod").ZodString>;
-        }, import("zod/v4/core").$strip>>;
+        }, import("zod/v4/core").$strict>>;
         total: import("zod").ZodNumber;
         hasMore: import("zod").ZodBoolean;
-    }, import("zod/v4/core").$strip>, "required">;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "graph.withdraw": import("./contract.js").RpcContract<"graph.withdraw", import("zod").ZodObject<{
-        evidenceIds: import("zod").ZodArray<import("zod").ZodString>;
+        evidenceIds: import("zod").ZodArray<import("zod").ZodGUID>;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         entities: import("zod").ZodNumber;
         links: import("zod").ZodNumber;
-    }, import("zod/v4/core").$strip>, "required">;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "graph.entity.links.list": {
         readonly method: "graph.entity.links.list";
         readonly input: import("zod").ZodObject<{
-            id: import("zod").ZodString;
+            id: import("zod").ZodGUID;
             kind: import("zod").ZodOptional<import("zod").ZodString>;
             direction: import("zod").ZodDefault<import("zod").ZodEnum<{
                 from: "from";
@@ -1692,16 +1731,11 @@ export declare const rpcContracts: {
         }, import("zod/v4/core").$strict>;
         readonly output: import("zod").ZodObject<{
             entityId: import("zod").ZodString;
-            links: import("zod").ZodArray<import("zod").ZodObject<{
-                direction: import("zod").ZodEnum<{
-                    from: "from";
-                    to: "to";
-                }>;
+            links: import("zod").ZodArray<import("zod").ZodDiscriminatedUnion<[import("zod").ZodObject<{
+                direction: import("zod").ZodLiteral<"from">;
                 kind: import("zod").ZodString;
-                targetId: import("zod").ZodOptional<import("zod").ZodString>;
-                targetName: import("zod").ZodOptional<import("zod").ZodNullable<import("zod").ZodString>>;
-                sourceId: import("zod").ZodOptional<import("zod").ZodString>;
-                sourceName: import("zod").ZodOptional<import("zod").ZodNullable<import("zod").ZodString>>;
+                targetId: import("zod").ZodString;
+                targetName: import("zod").ZodNullable<import("zod").ZodString>;
                 confidence: import("zod").ZodNullable<import("zod").ZodNumber>;
                 origin: import("zod").ZodEnum<{
                     canonical: "canonical";
@@ -1709,12 +1743,23 @@ export declare const rpcContracts: {
                 }>;
                 validUntil: import("zod").ZodNullable<import("zod").ZodISODateTime>;
                 id: import("zod").ZodString;
-            }, import("zod/v4/core").$strip>>;
+            }, import("zod/v4/core").$strict>, import("zod").ZodObject<{
+                direction: import("zod").ZodLiteral<"to">;
+                kind: import("zod").ZodString;
+                sourceId: import("zod").ZodString;
+                sourceName: import("zod").ZodNullable<import("zod").ZodString>;
+                confidence: import("zod").ZodNullable<import("zod").ZodNumber>;
+                origin: import("zod").ZodEnum<{
+                    canonical: "canonical";
+                    agent: "agent";
+                }>;
+                validUntil: import("zod").ZodNullable<import("zod").ZodISODateTime>;
+                id: import("zod").ZodString;
+            }, import("zod/v4/core").$strict>], "direction">>;
             total: import("zod").ZodNumber;
-        }, import("zod/v4/core").$strip>;
+        }, import("zod/v4/core").$strict>;
         readonly params: "required";
         readonly inputJsonSchema: Readonly<import("../index.js").JsonObject>;
-        readonly wire?: import("./contract.js").RpcWireCodec;
     };
     readonly "graph.link.link": {
         readonly method: "graph.link.link";
@@ -1723,8 +1768,8 @@ export declare const rpcContracts: {
             evidence: import("zod").ZodTuple<[import("zod").ZodString], import("zod").ZodString>;
             validFrom: import("zod").ZodNullable<import("zod").ZodISODateTime>;
             validUntil: import("zod").ZodNullable<import("zod").ZodISODateTime>;
-            from: import("zod").ZodString;
-            to: import("zod").ZodString;
+            from: import("zod").ZodGUID;
+            to: import("zod").ZodGUID;
             kind: import("zod").ZodString;
         }, import("zod/v4/core").$strict>;
         readonly output: import("zod").ZodObject<{
@@ -1733,17 +1778,16 @@ export declare const rpcContracts: {
             from: import("zod").ZodString;
             to: import("zod").ZodString;
             created: import("zod").ZodBoolean;
-        }, import("zod/v4/core").$strip>;
+        }, import("zod/v4/core").$strict>;
         readonly params: "required";
         readonly inputJsonSchema: Readonly<import("../index.js").JsonObject>;
-        readonly wire?: import("./contract.js").RpcWireCodec;
     };
     readonly "graph.link.update": {
         readonly method: "graph.link.update";
         readonly input: import("zod").ZodObject<{
-            id: import("zod").ZodString;
+            id: import("zod").ZodGUID;
             validUntil: import("zod").ZodISODateTime;
-            evidence: import("zod").ZodString;
+            evidence: import("zod").ZodGUID;
         }, import("zod/v4/core").$strict>;
         readonly output: import("zod").ZodDiscriminatedUnion<[import("zod").ZodObject<{
             origin: import("zod").ZodLiteral<"canonical">;
@@ -1771,22 +1815,21 @@ export declare const rpcContracts: {
         }, import("zod/v4/core").$strict>], "origin">;
         readonly params: "required";
         readonly inputJsonSchema: Readonly<import("../index.js").JsonObject>;
-        readonly wire?: import("./contract.js").RpcWireCodec;
     };
     readonly "graph.entity.update": import("./contract.js").RpcContract<"graph.entity.update", import("zod").ZodUnion<readonly [import("zod").ZodObject<{
-        entity_id: import("zod").ZodGUID;
-        pin_order: import("zod").ZodNonOptional<import("zod").ZodOptional<import("zod").ZodNullable<import("zod").ZodInt>>>;
+        entityId: import("zod").ZodGUID;
+        pinOrder: import("zod").ZodNonOptional<import("zod").ZodOptional<import("zod").ZodNullable<import("zod").ZodInt>>>;
         archived: import("zod").ZodOptional<import("zod").ZodBoolean>;
     }, import("zod/v4/core").$strict>, import("zod").ZodObject<{
-        entity_id: import("zod").ZodGUID;
-        pin_order: import("zod").ZodOptional<import("zod").ZodNullable<import("zod").ZodInt>>;
+        entityId: import("zod").ZodGUID;
+        pinOrder: import("zod").ZodOptional<import("zod").ZodNullable<import("zod").ZodInt>>;
         archived: import("zod").ZodNonOptional<import("zod").ZodOptional<import("zod").ZodBoolean>>;
     }, import("zod/v4/core").$strict>]>, import("zod").ZodObject<{
         ok: import("zod").ZodLiteral<true>;
     }, import("zod/v4/core").$strict>, "required">;
     readonly "graph.link.unlink": import("./contract.js").RpcContract<"graph.link.unlink", import("zod").ZodObject<{
         id: import("zod").ZodGUID;
-    }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
+    }, import("zod/v4/core").$strict>, import("zod").ZodObject<{
         ok: import("zod").ZodLiteral<true>;
     }, import("zod/v4/core").$strict>, "required">;
     readonly "file.upload": import("./contract.js").RpcContract<"file.upload", import("zod").ZodObject<{
@@ -1799,7 +1842,7 @@ export declare const rpcContracts: {
         name: import("zod").ZodString;
         mimeType: import("zod").ZodString;
         sizeBytes: import("zod").ZodNumber;
-    }, import("zod/v4/core").$strip>, "required">;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "extensions.get": import("./contract.js").RpcContract<"extensions.get", import("zod").ZodObject<{
         key: import("zod").ZodString;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
@@ -1834,13 +1877,13 @@ export declare const rpcContracts: {
             packageHash: import("zod").ZodString;
             entry: import("zod").ZodString;
             exportName: import("zod").ZodString;
-        }, import("zod/v4/core").$strip>>;
+        }, import("zod/v4/core").$strict>>;
         removable: import("zod").ZodBoolean;
         position: import("zod").ZodNumber;
-        blockingDependents: import("zod").ZodDefault<import("zod").ZodArray<import("zod").ZodString>>;
-        unmetRequirements: import("zod").ZodDefault<import("zod").ZodArray<import("zod").ZodString>>;
-        surfaces: import("zod").ZodDefault<import("zod").ZodArray<import("zod").ZodString>>;
-    }, import("zod/v4/core").$strip>, "required">;
+        blockingDependents: import("zod").ZodArray<import("zod").ZodString>;
+        unmetRequirements: import("zod").ZodArray<import("zod").ZodString>;
+        surfaces: import("zod").ZodArray<import("zod").ZodString>;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "extensions.list": import("./contract.js").RpcContract<"extensions.list", import("zod").ZodObject<{
         kind: import("zod").ZodOptional<import("zod").ZodEnum<{
             source: "source";
@@ -1881,14 +1924,14 @@ export declare const rpcContracts: {
                 packageHash: import("zod").ZodString;
                 entry: import("zod").ZodString;
                 exportName: import("zod").ZodString;
-            }, import("zod/v4/core").$strip>>;
+            }, import("zod/v4/core").$strict>>;
             removable: import("zod").ZodBoolean;
             position: import("zod").ZodNumber;
-            blockingDependents: import("zod").ZodDefault<import("zod").ZodArray<import("zod").ZodString>>;
-            unmetRequirements: import("zod").ZodDefault<import("zod").ZodArray<import("zod").ZodString>>;
-            surfaces: import("zod").ZodDefault<import("zod").ZodArray<import("zod").ZodString>>;
-        }, import("zod/v4/core").$strip>>;
-    }, import("zod/v4/core").$strip>, "required">;
+            blockingDependents: import("zod").ZodArray<import("zod").ZodString>;
+            unmetRequirements: import("zod").ZodArray<import("zod").ZodString>;
+            surfaces: import("zod").ZodArray<import("zod").ZodString>;
+        }, import("zod/v4/core").$strict>>;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "eval.capabilities": import("./contract.js").RpcContract<"eval.capabilities", import("zod").ZodObject<{}, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         module: import("zod").ZodString;
         entities: import("zod").ZodReadonly<import("zod").ZodArray<import("zod").ZodObject<{
@@ -1900,7 +1943,16 @@ export declare const rpcContracts: {
     readonly "eval.fixture.invoke": import("./contract.js").RpcContract<"eval.fixture.invoke", import("zod").ZodObject<{
         actionId: import("zod").ZodString;
         idempotencyKey: import("zod").ZodString;
-    }, import("zod/v4/core").$strip>, import("zod").ZodRecord<import("zod").ZodString, import("zod").ZodType<import("../index.js").JsonValue, unknown, import("zod/v4/core").$ZodTypeInternals<import("../index.js").JsonValue, unknown>>>, "required">;
+    }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
+        invocationId: import("zod").ZodString;
+        actionId: import("zod").ZodString;
+        phase: import("zod").ZodLiteral<"trigger_evaluated">;
+        actionTime: import("zod").ZodISODateTime;
+        eventEntityId: import("zod").ZodNullable<import("zod").ZodString>;
+        episodeId: import("zod").ZodNull;
+        failureCode: import("zod").ZodNull;
+        failureDetail: import("zod").ZodNull;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "episodes.append_message": import("./contract.js").RpcContract<"episodes.append_message", import("zod").ZodObject<{
         episodeId: import("zod").ZodString;
         requestId: import("zod").ZodString;
@@ -1935,7 +1987,7 @@ export declare const rpcContracts: {
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         status: import("zod").ZodLiteral<"question_sent">;
         awaitingResponse: import("zod").ZodBoolean;
-    }, import("zod/v4/core").$strip>, "required">;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "episodes.capabilities": import("./contract.js").RpcContract<"episodes.capabilities", import("zod").ZodObject<{}, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         module: import("zod").ZodString;
         entities: import("zod").ZodReadonly<import("zod").ZodArray<import("zod").ZodObject<{
@@ -2045,7 +2097,7 @@ export declare const rpcContracts: {
                 agent: "agent";
             }>;
             validUntil: import("zod").ZodNullable<import("zod").ZodISODateTime>;
-        }, import("zod/v4/core").$strip>>;
+        }, import("zod/v4/core").$strict>>;
         createdAt: import("zod").ZodString;
         updatedAt: import("zod").ZodString;
         state: import("zod").ZodEnum<{
@@ -2111,7 +2163,7 @@ export declare const rpcContracts: {
                 status: import("zod").ZodString;
                 createdAt: import("zod").ZodString;
                 attachments: import("zod").ZodDefault<import("zod").ZodArray<import("zod").ZodString>>;
-            }, import("zod/v4/core").$strip>>;
+            }, import("zod/v4/core").$strict>>;
             todos: import("zod").ZodArray<import("zod").ZodObject<{
                 content: import("zod").ZodString;
                 status: import("zod").ZodEnum<{
@@ -2121,7 +2173,7 @@ export declare const rpcContracts: {
                     in_progress: "in_progress";
                 }>;
                 externalId: import("zod").ZodDefault<import("zod").ZodNullable<import("zod").ZodString>>;
-            }, import("zod/v4/core").$strip>>;
+            }, import("zod/v4/core").$strict>>;
             waits: import("zod").ZodArray<import("zod").ZodObject<{
                 id: import("zod").ZodString;
                 executionId: import("zod").ZodString;
@@ -2178,11 +2230,11 @@ export declare const rpcContracts: {
             date: import("zod").ZodString;
             updatedAt: import("zod").ZodString;
             lastMessageAt: import("zod").ZodOptional<import("zod").ZodString>;
-        }, import("zod/v4/core").$strip>>;
+        }, import("zod/v4/core").$strict>>;
         total: import("zod").ZodNumber;
         limit: import("zod").ZodNumber;
         offset: import("zod").ZodNumber;
-    }, import("zod/v4/core").$strip>, "required">;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "episodes.list_for_entity": import("./contract.js").RpcContract<"episodes.list_for_entity", import("zod").ZodObject<{
         limit: import("zod").ZodDefault<import("zod").ZodInt>;
         offset: import("zod").ZodDefault<import("zod").ZodInt>;
@@ -2197,7 +2249,7 @@ export declare const rpcContracts: {
         linkKinds: import("zod").ZodArray<import("zod").ZodString>;
         updatedAt: import("zod").ZodString;
         isEmpty: import("zod").ZodBoolean;
-    }, import("zod/v4/core").$strip>>, "required">;
+    }, import("zod/v4/core").$strict>>, "required">;
     readonly "episodes.model.set": import("./contract.js").RpcContract<"episodes.model.set", import("zod").ZodObject<{
         episodeId: import("zod").ZodString;
         requestId: import("zod").ZodString;
@@ -2266,7 +2318,7 @@ export declare const rpcContracts: {
         status: import("zod").ZodString;
         isArchived: import("zod").ZodBoolean;
         objective: import("zod").ZodNullable<import("zod").ZodString>;
-    }, import("zod/v4/core").$strip>>, "required">;
+    }, import("zod/v4/core").$strict>>, "required">;
     readonly "episodes.set_status": import("./contract.js").RpcContract<"episodes.set_status", import("zod").ZodObject<{
         id: import("zod").ZodString;
         status: import("zod").ZodEnum<{
@@ -2353,8 +2405,8 @@ export declare const rpcContracts: {
                 in_progress: "in_progress";
             }>;
             externalId: import("zod").ZodDefault<import("zod").ZodNullable<import("zod").ZodString>>;
-        }, import("zod/v4/core").$strip>>;
-    }, import("zod/v4/core").$strip>, "required">;
+        }, import("zod/v4/core").$strict>>;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "episodes.todo.update": import("./contract.js").RpcContract<"episodes.todo.update", import("zod").ZodObject<{
         episodeId: import("zod").ZodString;
         items: import("zod").ZodArray<import("zod").ZodObject<{
@@ -2366,7 +2418,7 @@ export declare const rpcContracts: {
                 in_progress: "in_progress";
             }>;
             externalId: import("zod").ZodDefault<import("zod").ZodNullable<import("zod").ZodString>>;
-        }, import("zod/v4/core").$strip>>;
+        }, import("zod/v4/core").$strict>>;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         items: import("zod").ZodArray<import("zod").ZodObject<{
             content: import("zod").ZodString;
@@ -2377,8 +2429,8 @@ export declare const rpcContracts: {
                 in_progress: "in_progress";
             }>;
             externalId: import("zod").ZodDefault<import("zod").ZodNullable<import("zod").ZodString>>;
-        }, import("zod/v4/core").$strip>>;
-    }, import("zod/v4/core").$strip>, "required">;
+        }, import("zod/v4/core").$strict>>;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "episodes.unarchive": import("./contract.js").RpcContract<"episodes.unarchive", import("zod").ZodObject<{
         id: import("zod").ZodString;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
@@ -2395,8 +2447,8 @@ export declare const rpcContracts: {
             episodeTitle: import("zod").ZodNullable<import("zod").ZodString>;
             totalTokens: import("zod").ZodNumber;
             costMicros: import("zod").ZodNumber;
-        }, import("zod/v4/core").$strip>>;
-    }, import("zod/v4/core").$strip>, "required">;
+        }, import("zod/v4/core").$strict>>;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "episodes.wait.resolve": import("./contract.js").RpcContract<"episodes.wait.resolve", import("zod").ZodUnion<readonly [import("zod").ZodObject<{
         kind: import("zod").ZodEnum<{
             tool_approval: "tool_approval";
@@ -2434,10 +2486,9 @@ export declare const rpcContracts: {
         readonly output: import("zod").ZodObject<{
             status: import("zod").ZodLiteral<"question_sent">;
             awaitingResponse: import("zod").ZodBoolean;
-        }, import("zod/v4/core").$strip>;
+        }, import("zod/v4/core").$strict>;
         readonly params: "required";
         readonly inputJsonSchema: Readonly<import("../index.js").JsonObject>;
-        readonly wire?: import("./contract.js").RpcWireCodec;
     };
     readonly "episodes.episode.create": {
         readonly method: "episodes.episode.create";
@@ -2455,7 +2506,6 @@ export declare const rpcContracts: {
         }, import("zod/v4/core").$strict>;
         readonly params: "required";
         readonly inputJsonSchema: Readonly<import("../index.js").JsonObject>;
-        readonly wire?: import("./contract.js").RpcWireCodec;
     };
     readonly "episodes.episode.get": {
         readonly method: "episodes.episode.get";
@@ -2483,7 +2533,7 @@ export declare const rpcContracts: {
                     agent: "agent";
                 }>;
                 validUntil: import("zod").ZodNullable<import("zod").ZodISODateTime>;
-            }, import("zod/v4/core").$strip>>;
+            }, import("zod/v4/core").$strict>>;
             createdAt: import("zod").ZodString;
             updatedAt: import("zod").ZodString;
             state: import("zod").ZodEnum<{
@@ -2549,7 +2599,7 @@ export declare const rpcContracts: {
                     status: import("zod").ZodString;
                     createdAt: import("zod").ZodString;
                     attachments: import("zod").ZodDefault<import("zod").ZodArray<import("zod").ZodString>>;
-                }, import("zod/v4/core").$strip>>;
+                }, import("zod/v4/core").$strict>>;
                 todos: import("zod").ZodArray<import("zod").ZodObject<{
                     content: import("zod").ZodString;
                     status: import("zod").ZodEnum<{
@@ -2559,7 +2609,7 @@ export declare const rpcContracts: {
                         in_progress: "in_progress";
                     }>;
                     externalId: import("zod").ZodDefault<import("zod").ZodNullable<import("zod").ZodString>>;
-                }, import("zod/v4/core").$strip>>;
+                }, import("zod/v4/core").$strict>>;
                 waits: import("zod").ZodArray<import("zod").ZodObject<{
                     id: import("zod").ZodString;
                     executionId: import("zod").ZodString;
@@ -2584,7 +2634,6 @@ export declare const rpcContracts: {
         }, import("zod/v4/core").$strict>;
         readonly params: "required";
         readonly inputJsonSchema: Readonly<import("../index.js").JsonObject>;
-        readonly wire?: import("./contract.js").RpcWireCodec;
     };
     readonly "episodes.episode.link": {
         readonly method: "episodes.episode.link";
@@ -2598,7 +2647,6 @@ export declare const rpcContracts: {
         }, import("zod/v4/core").$strict>;
         readonly params: "required";
         readonly inputJsonSchema: Readonly<import("../index.js").JsonObject>;
-        readonly wire?: import("./contract.js").RpcWireCodec;
     };
     readonly "episodes.episode.report": {
         readonly method: "episodes.episode.report";
@@ -2611,7 +2659,6 @@ export declare const rpcContracts: {
         }, import("zod/v4/core").$strict>;
         readonly params: "required";
         readonly inputJsonSchema: Readonly<import("../index.js").JsonObject>;
-        readonly wire?: import("./contract.js").RpcWireCodec;
     };
     readonly "episodes.episode.search": {
         readonly method: "episodes.episode.search";
@@ -2627,10 +2674,9 @@ export declare const rpcContracts: {
             status: import("zod").ZodString;
             isArchived: import("zod").ZodBoolean;
             objective: import("zod").ZodNullable<import("zod").ZodString>;
-        }, import("zod/v4/core").$strip>>;
+        }, import("zod/v4/core").$strict>>;
         readonly params: "required";
         readonly inputJsonSchema: Readonly<import("../index.js").JsonObject>;
-        readonly wire?: import("./contract.js").RpcWireCodec;
     };
     readonly "episodes.episode.list": import("./contract.js").RpcContract<"episodes.episode.list", import("zod").ZodUnion<readonly [import("zod").ZodObject<{
         includeChildren: import("zod").ZodOptional<import("zod").ZodBoolean>;
@@ -2665,11 +2711,11 @@ export declare const rpcContracts: {
             date: import("zod").ZodString;
             updatedAt: import("zod").ZodString;
             lastMessageAt: import("zod").ZodOptional<import("zod").ZodString>;
-        }, import("zod/v4/core").$strip>>;
+        }, import("zod/v4/core").$strict>>;
         total: import("zod").ZodNumber;
         limit: import("zod").ZodNumber;
         offset: import("zod").ZodNumber;
-    }, import("zod/v4/core").$strip>, import("zod").ZodArray<import("zod").ZodObject<{
+    }, import("zod/v4/core").$strict>, import("zod").ZodArray<import("zod").ZodObject<{
         episodeId: import("zod").ZodString;
         title: import("zod").ZodString;
         status: import("zod").ZodString;
@@ -2677,7 +2723,7 @@ export declare const rpcContracts: {
         linkKinds: import("zod").ZodArray<import("zod").ZodString>;
         updatedAt: import("zod").ZodString;
         isEmpty: import("zod").ZodBoolean;
-    }, import("zod/v4/core").$strip>>]>, "required">;
+    }, import("zod/v4/core").$strict>>]>, "required">;
     readonly "episodes.episode.update": import("./contract.js").RpcContract<"episodes.episode.update", import("zod").ZodObject<{
         id: import("zod").ZodString;
         title: import("zod").ZodOptional<import("zod").ZodString>;
@@ -2688,10 +2734,10 @@ export declare const rpcContracts: {
             idle: "idle";
         }>>;
         archived: import("zod").ZodOptional<import("zod").ZodBoolean>;
-    }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
+    }, import("zod/v4/core").$strict>, import("zod").ZodObject<{
         status: import("zod").ZodString;
     }, import("zod/v4/core").$strict>, "required">;
-    readonly "episodes.workspace.todo.list": import("./contract.js").RpcContract<"episodes.workspace.todo.list", import("zod").ZodObject<{}, import("zod/v4/core").$strip>, import("zod").ZodObject<{
+    readonly "episodes.workspace.todo.list": import("./contract.js").RpcContract<"episodes.workspace.todo.list", import("zod").ZodObject<{}, import("zod/v4/core").$strict>, import("zod").ZodObject<{
         items: import("zod").ZodArray<import("zod").ZodObject<{
             content: import("zod").ZodString;
             status: import("zod").ZodEnum<{
@@ -2702,11 +2748,11 @@ export declare const rpcContracts: {
             }>;
             externalId: import("zod").ZodDefault<import("zod").ZodNullable<import("zod").ZodString>>;
             id: import("zod").ZodUUID;
-        }, import("zod/v4/core").$strip>>;
-    }, import("zod/v4/core").$strip>, "required">;
+        }, import("zod/v4/core").$strict>>;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "episodes.workspace.todo.add": import("./contract.js").RpcContract<"episodes.workspace.todo.add", import("zod").ZodObject<{
         content: import("zod").ZodString;
-    }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
+    }, import("zod/v4/core").$strict>, import("zod").ZodObject<{
         items: import("zod").ZodArray<import("zod").ZodObject<{
             content: import("zod").ZodString;
             status: import("zod").ZodEnum<{
@@ -2717,11 +2763,11 @@ export declare const rpcContracts: {
             }>;
             externalId: import("zod").ZodDefault<import("zod").ZodNullable<import("zod").ZodString>>;
             id: import("zod").ZodUUID;
-        }, import("zod/v4/core").$strip>>;
-    }, import("zod/v4/core").$strip>, "required">;
+        }, import("zod/v4/core").$strict>>;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "episodes.workspace.todo.rm": import("./contract.js").RpcContract<"episodes.workspace.todo.rm", import("zod").ZodObject<{
         id: import("zod").ZodUUID;
-    }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
+    }, import("zod/v4/core").$strict>, import("zod").ZodObject<{
         items: import("zod").ZodArray<import("zod").ZodObject<{
             content: import("zod").ZodString;
             status: import("zod").ZodEnum<{
@@ -2732,8 +2778,8 @@ export declare const rpcContracts: {
             }>;
             externalId: import("zod").ZodDefault<import("zod").ZodNullable<import("zod").ZodString>>;
             id: import("zod").ZodUUID;
-        }, import("zod/v4/core").$strip>>;
-    }, import("zod/v4/core").$strip>, "required">;
+        }, import("zod/v4/core").$strict>>;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "episodes.workspace.todo.update": import("./contract.js").RpcContract<"episodes.workspace.todo.update", import("zod").ZodObject<{
         id: import("zod").ZodUUID;
         content: import("zod").ZodOptional<import("zod").ZodString>;
@@ -2743,7 +2789,7 @@ export declare const rpcContracts: {
             cancelled: "cancelled";
             in_progress: "in_progress";
         }>>;
-    }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
+    }, import("zod/v4/core").$strict>, import("zod").ZodObject<{
         items: import("zod").ZodArray<import("zod").ZodObject<{
             content: import("zod").ZodString;
             status: import("zod").ZodEnum<{
@@ -2754,21 +2800,21 @@ export declare const rpcContracts: {
             }>;
             externalId: import("zod").ZodDefault<import("zod").ZodNullable<import("zod").ZodString>>;
             id: import("zod").ZodUUID;
-        }, import("zod/v4/core").$strip>>;
-    }, import("zod/v4/core").$strip>, "required">;
-    readonly "episodes.workspace.memory.get": import("./contract.js").RpcContract<"episodes.workspace.memory.get", import("zod").ZodObject<{}, import("zod/v4/core").$strip>, import("zod").ZodObject<{
+        }, import("zod/v4/core").$strict>>;
+    }, import("zod/v4/core").$strict>, "required">;
+    readonly "episodes.workspace.memory.get": import("./contract.js").RpcContract<"episodes.workspace.memory.get", import("zod").ZodObject<{}, import("zod/v4/core").$strict>, import("zod").ZodObject<{
         body: import("zod").ZodNullable<import("zod").ZodString>;
-    }, import("zod/v4/core").$strip>, "required">;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "episodes.workspace.memory.save": import("./contract.js").RpcContract<"episodes.workspace.memory.save", import("zod").ZodObject<{
         body: import("zod").ZodString;
-    }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
+    }, import("zod/v4/core").$strict>, import("zod").ZodObject<{
         body: import("zod").ZodNullable<import("zod").ZodString>;
-    }, import("zod/v4/core").$strip>, "required">;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "credits.balance.get": import("./contract.js").RpcContract<"credits.balance.get", import("zod").ZodObject<{}, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         userId: import("zod").ZodString;
         limitMicros: import("zod").ZodNumber;
         remainingMicros: import("zod").ZodNumber;
-    }, import("zod/v4/core").$strip>, "required">;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "billing.ledger.query": import("./contract.js").RpcContract<"billing.ledger.query", import("zod").ZodObject<{
         from: import("zod").ZodOptional<import("zod").ZodString>;
         to: import("zod").ZodOptional<import("zod").ZodString>;
@@ -2791,12 +2837,12 @@ export declare const rpcContracts: {
             costMicros: import("zod").ZodNullable<import("zod").ZodNumber>;
             status: import("zod").ZodString;
             error: import("zod").ZodNullable<import("zod").ZodString>;
-        }, import("zod/v4/core").$strip>>;
+        }, import("zod/v4/core").$strict>>;
         from: import("zod").ZodString;
         to: import("zod").ZodString;
         limit: import("zod").ZodNumber;
         offset: import("zod").ZodNumber;
-    }, import("zod/v4/core").$strip>, "required">;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "billing.limits.get": import("./contract.js").RpcContract<"billing.limits.get", import("zod").ZodObject<{}, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         userId: import("zod").ZodString;
         creditLimitMicros: import("zod").ZodNullable<import("zod").ZodNumber>;
@@ -2804,7 +2850,7 @@ export declare const rpcContracts: {
         reservedMicros: import("zod").ZodNumber;
         availableMicros: import("zod").ZodNullable<import("zod").ZodNumber>;
         entitled: import("zod").ZodBoolean;
-    }, import("zod/v4/core").$strip>, "required">;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "allowlist.add": import("./contract.js").RpcContract<"allowlist.add", import("zod").ZodObject<{
         action: import("zod").ZodString;
         targetType: import("zod").ZodString;
@@ -2822,7 +2868,7 @@ export declare const rpcContracts: {
         hookIds: import("zod").ZodArray<import("zod").ZodString>;
         episodeId: import("zod").ZodNullable<import("zod").ZodString>;
         createdAt: import("zod").ZodString;
-    }, import("zod/v4/core").$strip>, "required">;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "allowlist.delete": import("./contract.js").RpcContract<"allowlist.delete", import("zod").ZodObject<{
         id: import("zod").ZodString;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
@@ -2841,7 +2887,7 @@ export declare const rpcContracts: {
         hookIds: import("zod").ZodArray<import("zod").ZodString>;
         episodeId: import("zod").ZodNullable<import("zod").ZodString>;
         createdAt: import("zod").ZodString;
-    }, import("zod/v4/core").$strip>, "required">;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "allowlist.list": import("./contract.js").RpcContract<"allowlist.list", import("zod").ZodObject<{}, import("zod/v4/core").$strip>, import("zod").ZodArray<import("zod").ZodObject<{
         id: import("zod").ZodString;
         action: import("zod").ZodString;
@@ -2853,12 +2899,12 @@ export declare const rpcContracts: {
         hookIds: import("zod").ZodArray<import("zod").ZodString>;
         episodeId: import("zod").ZodNullable<import("zod").ZodString>;
         createdAt: import("zod").ZodString;
-    }, import("zod/v4/core").$strip>>, "required">;
+    }, import("zod/v4/core").$strict>>, "required">;
     readonly "allowlist.update_access": import("./contract.js").RpcContract<"allowlist.update_access", import("zod").ZodObject<{
         id: import("zod").ZodString;
         accessLevel: import("zod").ZodString;
-        groupIds: import("zod").ZodOptional<import("zod").ZodArray<import("zod").ZodString>>;
-        hookIds: import("zod").ZodOptional<import("zod").ZodArray<import("zod").ZodString>>;
+        groupIds: import("zod").ZodDefault<import("zod").ZodArray<import("zod").ZodString>>;
+        hookIds: import("zod").ZodDefault<import("zod").ZodArray<import("zod").ZodString>>;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         id: import("zod").ZodString;
         action: import("zod").ZodString;
@@ -2870,7 +2916,7 @@ export declare const rpcContracts: {
         hookIds: import("zod").ZodArray<import("zod").ZodString>;
         episodeId: import("zod").ZodNullable<import("zod").ZodString>;
         createdAt: import("zod").ZodString;
-    }, import("zod/v4/core").$strip>, "required">;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "ai_models.catalog": import("./contract.js").RpcContract<"ai_models.catalog", import("zod").ZodObject<{
         providerId: import("zod").ZodString;
     }, import("zod/v4/core").$strip>, import("zod").ZodArray<import("zod").ZodObject<{
@@ -2878,7 +2924,7 @@ export declare const rpcContracts: {
         name: import("zod").ZodString;
         promptUsdPerToken: import("zod").ZodNullable<import("zod").ZodString>;
         completionUsdPerToken: import("zod").ZodNullable<import("zod").ZodString>;
-    }, import("zod/v4/core").$strip>>, "required">;
+    }, import("zod/v4/core").$strict>>, "required">;
     readonly "ai_models.catalog_models": import("./contract.js").RpcContract<"ai_models.catalog_models", import("zod").ZodObject<{
         search: import("zod").ZodOptional<import("zod").ZodString>;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
@@ -2893,7 +2939,7 @@ export declare const rpcContracts: {
             family: import("zod").ZodString;
             api: import("zod").ZodNullable<import("zod").ZodString>;
             logoUrl: import("zod").ZodString;
-        }, import("zod/v4/core").$strip>>;
+        }, import("zod/v4/core").$strict>>;
         models: import("zod").ZodArray<import("zod").ZodObject<{
             providerId: import("zod").ZodString;
             modelId: import("zod").ZodString;
@@ -2906,13 +2952,13 @@ export declare const rpcContracts: {
             contextLimit: import("zod").ZodNullable<import("zod").ZodNumber>;
             reasoning: import("zod").ZodBoolean;
             logoUrl: import("zod").ZodString;
-        }, import("zod/v4/core").$strip>>;
-    }, import("zod/v4/core").$strip>, "required">;
+        }, import("zod/v4/core").$strict>>;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "ai_models.get_defaults": import("./contract.js").RpcContract<"ai_models.get_defaults", import("zod").ZodObject<{}, import("zod/v4/core").$strip>, import("zod").ZodArray<import("zod").ZodObject<{
         capability: import("zod").ZodString;
         modelId: import("zod").ZodString;
         updatedAt: import("zod").ZodString;
-    }, import("zod/v4/core").$strip>>, "required">;
+    }, import("zod/v4/core").$strict>>, "required">;
     readonly "ai_models.list_models": import("./contract.js").RpcContract<"ai_models.list_models", import("zod").ZodObject<{
         capability: import("zod").ZodOptional<import("zod").ZodString>;
     }, import("zod/v4/core").$strip>, import("zod").ZodArray<import("zod").ZodObject<{
@@ -2924,7 +2970,7 @@ export declare const rpcContracts: {
         enabled: import("zod").ZodBoolean;
         configJson: import("zod").ZodNullable<import("zod").ZodString>;
         createdAt: import("zod").ZodString;
-    }, import("zod/v4/core").$strip>>, "required">;
+    }, import("zod/v4/core").$strict>>, "required">;
     readonly "ai_models.list_providers": import("./contract.js").RpcContract<"ai_models.list_providers", import("zod").ZodObject<{}, import("zod/v4/core").$strip>, import("zod").ZodArray<import("zod").ZodObject<{
         id: import("zod").ZodString;
         name: import("zod").ZodString;
@@ -2935,11 +2981,11 @@ export declare const rpcContracts: {
         apiKeySet: import("zod").ZodBoolean;
         createdAt: import("zod").ZodString;
         updatedAt: import("zod").ZodString;
-    }, import("zod/v4/core").$strip>>, "required">;
+    }, import("zod/v4/core").$strict>>, "required">;
     readonly "ai_models.subscription_status": import("./contract.js").RpcContract<"ai_models.subscription_status", import("zod").ZodObject<{}, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         connected: import("zod").ZodBoolean;
         accountId: import("zod").ZodOptional<import("zod").ZodNullable<import("zod").ZodString>>;
-    }, import("zod/v4/core").$strip>, "required">;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "ai_models.directory.language.list": import("./contract.js").RpcContract<"ai_models.directory.language.list", import("zod").ZodObject<{}, import("zod/v4/core").$strip>, import("zod").ZodArray<import("zod").ZodObject<{
         id: import("zod").ZodString;
         displayName: import("zod").ZodString;
@@ -2953,7 +2999,7 @@ export declare const rpcContracts: {
             vision: import("zod").ZodBoolean;
             reasoning: import("zod").ZodBoolean;
             structuredOutput: import("zod").ZodBoolean;
-        }, import("zod/v4/core").$strip>;
+        }, import("zod/v4/core").$strict>;
         available: import("zod").ZodBoolean;
         isGlobalDefault: import("zod").ZodBoolean;
         reasoning: import("zod").ZodOptional<import("zod").ZodDiscriminatedUnion<[import("zod").ZodObject<{
@@ -2996,7 +3042,7 @@ export declare const rpcContracts: {
             canUseProviderDefault: import("zod").ZodBoolean;
         }, import("zod/v4/core").$strict>], "state">>;
         providerConnectionId: import("zod").ZodOptional<import("zod").ZodNullable<import("zod").ZodString>>;
-    }, import("zod/v4/core").$strip>>, "required">;
+    }, import("zod/v4/core").$strict>>, "required">;
     readonly "ai_models.directory.embedding.list": import("./contract.js").RpcContract<"ai_models.directory.embedding.list", import("zod").ZodObject<{}, import("zod/v4/core").$strip>, import("zod").ZodArray<import("zod").ZodObject<{
         id: import("zod").ZodString;
         displayName: import("zod").ZodString;
@@ -3011,26 +3057,26 @@ export declare const rpcContracts: {
         }>;
         revision: import("zod").ZodString;
         available: import("zod").ZodBoolean;
-    }, import("zod/v4/core").$strip>>, "required">;
+    }, import("zod/v4/core").$strict>>, "required">;
     readonly "ai_models.directory.language_default.get": import("./contract.js").RpcContract<"ai_models.directory.language_default.get", import("zod").ZodObject<{}, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         modelId: import("zod").ZodNullable<import("zod").ZodString>;
-    }, import("zod/v4/core").$strip>, "required">;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "ai_models.preferences.language.get": import("./contract.js").RpcContract<"ai_models.preferences.language.get", import("zod").ZodObject<{}, import("zod/v4/core").$strip>, import("zod").ZodDiscriminatedUnion<[import("zod").ZodObject<{
         mode: import("zod").ZodLiteral<"inherit">;
         modelId: import("zod").ZodNull;
-    }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
+    }, import("zod/v4/core").$strict>, import("zod").ZodObject<{
         mode: import("zod").ZodLiteral<"model">;
         modelId: import("zod").ZodString;
-    }, import("zod/v4/core").$strip>], "mode">, "required">;
+    }, import("zod/v4/core").$strict>], "mode">, "required">;
     readonly "ai_models.preferences.language.set": import("./contract.js").RpcContract<"ai_models.preferences.language.set", import("zod").ZodObject<{
         modelId: import("zod").ZodNullable<import("zod").ZodString>;
     }, import("zod/v4/core").$strip>, import("zod").ZodDiscriminatedUnion<[import("zod").ZodObject<{
         mode: import("zod").ZodLiteral<"inherit">;
         modelId: import("zod").ZodNull;
-    }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
+    }, import("zod/v4/core").$strict>, import("zod").ZodObject<{
         mode: import("zod").ZodLiteral<"model">;
         modelId: import("zod").ZodString;
-    }, import("zod/v4/core").$strip>], "mode">, "required">;
+    }, import("zod/v4/core").$strict>], "mode">, "required">;
     readonly "agent.implementations": import("./contract.js").RpcContract<"agent.implementations", import("zod").ZodObject<{}, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         implementations: import("zod").ZodArray<import("zod").ZodObject<{
             id: import("zod").ZodEnum<{
@@ -3043,16 +3089,16 @@ export declare const rpcContracts: {
             usesLlmRuntime: import("zod").ZodBoolean;
             available: import("zod").ZodOptional<import("zod").ZodBoolean>;
             unavailableReason: import("zod").ZodOptional<import("zod").ZodNullable<import("zod").ZodString>>;
-        }, import("zod/v4/core").$strip>>;
+        }, import("zod/v4/core").$strict>>;
         defaultImplementationId: import("zod").ZodEnum<{
             magnis: "magnis";
             codex: "codex";
             claude: "claude";
         }>;
-    }, import("zod/v4/core").$strip>, "required">;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "agent.limits.get": import("./contract.js").RpcContract<"agent.limits.get", import("zod").ZodObject<{}, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         maxSteps: import("zod").ZodNumber;
-    }, import("zod/v4/core").$strip>, "required">;
+    }, import("zod/v4/core").$strict>, "required">;
     readonly "agent.models.list": import("./contract.js").RpcContract<"agent.models.list", import("zod").ZodObject<{
         implementationId: import("zod").ZodString;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
@@ -3112,7 +3158,7 @@ export declare const rpcContracts: {
         }, import("zod/v4/core").$strict>>;
         available: import("zod").ZodOptional<import("zod").ZodBoolean>;
         unavailableReason: import("zod").ZodOptional<import("zod").ZodNullable<import("zod").ZodString>>;
-    }, import("zod/v4/core").$strip>, "required">;
+    }, import("zod/v4/core").$strict>, "required">;
 };
 export type MagnisRpcMethod = keyof typeof rpcContracts & string;
 export type MagnisRpcContracts = typeof rpcContracts;

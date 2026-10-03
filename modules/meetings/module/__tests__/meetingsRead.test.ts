@@ -111,7 +111,7 @@ describe("meetings.list", () => {
     expect(res.items.map((m) => m.id)).toEqual(["m2", "m1"]);
     const m2 = res.items[0]!;
     expect(m2.title).toBe("Later meeting");
-    expect(m2.starts_at).toBe("2026-02-02T15:00:00Z");
+    expect(m2.startsAt).toBe("2026-02-02T15:00:00Z");
     expect(m2.location).toBe("Room B");
     expect(m2.description).toBe("Agenda 2");
     expect(m2.date).toBe("2026-02-02");
@@ -163,12 +163,12 @@ describe("meetings.get", () => {
     expect(view.title).toBe("Sync meeting");
     expect(view.location).toBe("HQ");
     expect(view.attendees).toEqual([
-      { name: "Alice", email: "alice@x.com", contact_id: "person-1" },
-      { name: null, email: "bob@x.com", contact_id: null },
+      { name: "Alice", email: "alice@x.com", contactId: "person-1" },
+      { name: null, email: "bob@x.com", contactId: null },
     ]);
     // Every link neighbour is a Context-panel row — the project that created
     // the meeting and both attendee addresses.
-    expect(view.linked_entities).toEqual([
+    expect(view.linkedEntities).toEqual([
       expect.objectContaining({ id: "proj-1", linkKind: "created", schemaId: "projects.project" }),
       expect.objectContaining({ id: "addr-alice", linkKind: "attendee" }),
       expect.objectContaining({ id: "addr-bob", linkKind: "attendee" }),

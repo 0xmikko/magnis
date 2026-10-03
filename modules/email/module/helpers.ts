@@ -112,13 +112,13 @@ export function buildListItem(entity: Entity, d: Data): MessageListItem {
   const created = entity.createdAt;
   return {
     id: entity.id,
-    schema_id: entity.schemaId,
+    schemaId: entity.schemaId,
     sender: senderOf(d),
     subject: entity.name && entity.name.length > 0 ? entity.name : null,
     preview: previewOf(d),
     channel: "email",
     timestamp: str(d, "sent_at") ?? created,
-    created_at: created,
+    createdAt: created,
     metadata: stripBodyHtml(d),
   };
 }

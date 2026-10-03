@@ -30,7 +30,7 @@ import type { JSX, ReactNode } from "react";
 
 import type { MentionSuggestionConfig } from "@magnis/host/markdown";
 import type { MarkdownEditorProps } from "@magnis/host/markdown";
-import type { EntitySearchResult } from "@magnis/host/markdown";
+import type { EntitySearchHit } from "@magnis/host/markdown";
 import type { NoteDetailView } from "../types";
 import { NoteDetail } from "../NoteDetail";
 
@@ -55,15 +55,15 @@ vi.mock("@magnis/host/markdown", async (importOriginal) => ({
 
 // ─── Mock useMentionSearch with a query-driven response ───────────────
 
-const ALEX: EntitySearchResult = {
+const ALEX: EntitySearchHit = {
   id: "alex-uuid",
   name: "Alex Park",
-  schema_id: "contacts.person",
+  schemaId: "contacts.person",
 };
 
 const searchSpy = vi.fn<
   (query: string, active: boolean) => {
-    readonly results: readonly EntitySearchResult[];
+    readonly results: readonly EntitySearchHit[];
     readonly isLoading: boolean;
   }
 >();
@@ -72,7 +72,7 @@ const searchSpy = vi.fn<
 // from the host; mock it by its host-resolved specifier so the mock intercepts.
 vi.mock("@/modules/episodes/hooks/useMentionSearch", () => ({
   useMentionSearch: (query: string, active: boolean): {
-    readonly results: readonly EntitySearchResult[];
+    readonly results: readonly EntitySearchHit[];
     readonly isLoading: boolean;
   } => searchSpy(query, active),
 }));
@@ -87,8 +87,8 @@ const SEEDED_NOTE: NoteDetailView = {
   title: "Test note",
   body: "Notes for ",
   pinned: false,
-  created_at: "2026-05-01T00:00:00Z",
-  updated_at: "2026-05-01T00:00:00Z",
+  createdAt: "2026-05-01T00:00:00Z",
+  updatedAt: "2026-05-01T00:00:00Z",
   path: null,
 } as unknown as NoteDetailView;
 

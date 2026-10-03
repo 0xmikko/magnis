@@ -61,12 +61,12 @@ const moduleDefinition = defineModule({
   mapListItem: (raw) => ({
     id: raw.id as string,
     name: (raw.name as string | undefined) ?? null,
-    schema_id: (raw.schema_id as string | undefined) ?? "",
+    schemaId: (raw.schemaId as string | undefined) ?? "",
     preview: (raw.email as string | undefined) ?? (raw.phone as string | undefined) ?? null,
     timestamp: null,
-    avatar_url: (raw.avatar_url as string | undefined) ?? null,
-    is_pinned: (raw.is_pinned as boolean | undefined) ?? undefined,
-    is_archived: (raw.is_archived as boolean | undefined) ?? undefined,
+    avatarUrl: (raw.avatarUrl as string | undefined) ?? null,
+    isPinned: (raw.isPinned as boolean | undefined) ?? undefined,
+    isArchived: (raw.isArchived as boolean | undefined) ?? undefined,
   }),
 });
 

@@ -11,6 +11,9 @@
  * @covers packages/plugin-sdk/index.ts::reachedEndpoints
  * @deterministic pure function; no clock, no IO
  */
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { Entity, Link } from "@magnis/sdk";
 import { describe, expect, it } from "vitest";
 import { linkedEntitySummary, reachedEndpoints } from "../index.ts";
@@ -148,5 +151,29 @@ describe("tst_cat_entity_one_type_001 — linked summaries carry the reaching li
       confidence: null,
       validUntil: "2026-06-01T00:00:00Z",
     });
+  });
+});
+
+/**
+ * @test-id: tst_cat_entity_one_type_007
+ * @scenario: scn_plugin_sdk_001
+ * @covers packages/host-stubs/types/packages/sdk/rpc/contract.d.ts
+ * @deterministic reads the committed stub declarations; no clock, no network
+ *
+ * plugin-sdk compiles against the host's SDK through `@magnis/host-stubs`. The
+ * host deleted its wire codec, so stubs that still declare `RpcWireCodec` were
+ * generated before the host's final contract and type the catalog against a
+ * wire the host no longer speaks.
+ */
+describe("tst_cat_entity_one_type_007 — host stubs match the host's final contract", () => {
+  it("tst_cat_entity_one_type_007 no host stub declaration names RpcWireCodec", () => {
+    const stubRoot = fileURLToPath(new URL("../../host-stubs/types/", import.meta.url));
+    const declarations = readdirSync(stubRoot, { recursive: true, encoding: "utf8" }).filter((path) =>
+      path.endsWith(".d.ts"),
+    );
+    const naming = declarations.filter((path) => /\bRpcWireCodec\b/.test(readFileSync(join(stubRoot, path), "utf8")));
+
+    expect(declarations.length).toBeGreaterThan(0);
+    expect(naming).toEqual([]);
   });
 });

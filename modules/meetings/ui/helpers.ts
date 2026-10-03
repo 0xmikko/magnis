@@ -29,8 +29,8 @@ export function attendeeDisplay(a: MeetingAttendeeView): string {
  * `starts_at`, so a missing value is a programming error, not a runtime case.
  */
 function requireStart(m: MeetingListItem): Date {
-  if (m.starts_at === null) throw new Error("meeting has no starts_at");
-  return new Date(m.starts_at);
+  if (m.startsAt === null) throw new Error("meeting has no starts_at");
+  return new Date(m.startsAt);
 }
 
 export function mapMeetingFromApi(m: MeetingListItem): MeetingItem {
@@ -60,7 +60,7 @@ export function mapMeetingFromApi(m: MeetingListItem): MeetingItem {
     kind: attendeeLabels.length > 0 ? "meeting" : "person",
     preview,
     color: pickAvatarColor(m.id),
-    starts_at: m.starts_at ?? undefined,
+    starts_at: m.startsAt ?? undefined,
     description: undefined,
     location: m.location ?? undefined,
   };
@@ -69,7 +69,7 @@ export function mapMeetingFromApi(m: MeetingListItem): MeetingItem {
 export function buildDayEvents(meetings: readonly MeetingListItem[]): MeetingCalendarEvent[] {
   const today = new Date().toISOString().slice(0, 10);
   return meetings
-    .filter((m) => m.starts_at?.slice(0, 10) === today)
+    .filter((m) => m.startsAt?.slice(0, 10) === today)
     .map((m) => ({
       title: m.title,
       time: m.time ?? "",
@@ -88,8 +88,8 @@ export function buildWeekEvents(meetings: readonly MeetingListItem[]): MeetingCa
 
   return meetings
     .filter((m) => {
-      if (!m.starts_at) return false;
-      const d = new Date(m.starts_at);
+      if (!m.startsAt) return false;
+      const d = new Date(m.startsAt);
       return d >= monday && d < sunday;
     })
     .map((m) => {
@@ -111,8 +111,8 @@ export function buildMonthEvents(meetings: readonly MeetingListItem[]): MeetingM
 
   return meetings
     .filter((m) => {
-      if (!m.starts_at) return false;
-      const d = new Date(m.starts_at);
+      if (!m.startsAt) return false;
+      const d = new Date(m.startsAt);
       return d.getFullYear() === year && d.getMonth() === month;
     })
     .map((m) => {
@@ -180,8 +180,8 @@ export function buildDayEventsForRange(
 ): MeetingCalendarEvent[] {
   return meetings
     .filter((m) => {
-      if (!m.starts_at) return false;
-      const d = new Date(m.starts_at);
+      if (!m.startsAt) return false;
+      const d = new Date(m.startsAt);
       return d >= start && d < end;
     })
     .map((m) => ({
@@ -202,8 +202,8 @@ export function buildWeekEventsForRange(
 
   return meetings
     .filter((m) => {
-      if (!m.starts_at) return false;
-      const d = new Date(m.starts_at);
+      if (!m.startsAt) return false;
+      const d = new Date(m.startsAt);
       return d >= monday && d < sunday;
     })
     .map((m) => {
@@ -225,8 +225,8 @@ export function buildMonthEventsForRange(
 ): MeetingMonthEvent[] {
   return meetings
     .filter((m) => {
-      if (!m.starts_at) return false;
-      const d = new Date(m.starts_at);
+      if (!m.startsAt) return false;
+      const d = new Date(m.startsAt);
       return d >= start && d < end;
     })
     .map((m) => {
@@ -288,8 +288,8 @@ export function buildAgendaGroups(
   const byDate = new Map<string, { date: Date; items: { id: string; startsAt: number }[] }>();
 
   for (const m of meetings) {
-    if (!m.starts_at) continue;
-    const d = new Date(m.starts_at);
+    if (!m.startsAt) continue;
+    const d = new Date(m.startsAt);
     if (d < start || d >= end) continue;
     const key = d.toISOString().slice(0, 10);
     let bucket = byDate.get(key);
@@ -322,8 +322,8 @@ export function getMeeting(
 }
 
 export function buildMeetingDetail(m: MeetingListItem): MeetingDetailData {
-  const startsAt = m.starts_at ? new Date(m.starts_at) : null;
-  const endsAt = m.ends_at ? new Date(m.ends_at) : null;
+  const startsAt = m.startsAt ? new Date(m.startsAt) : null;
+  const endsAt = m.endsAt ? new Date(m.endsAt) : null;
 
   const dateDay = startsAt ? String(startsAt.getDate()) : "";
   const dateMonth = startsAt ? (MONTH_ABBR_UPPER[startsAt.getMonth()] ?? "") : "";
@@ -350,7 +350,7 @@ export function buildMeetingDetail(m: MeetingListItem): MeetingDetailData {
       email: a.email,
       role: i === 0 ? "Organizer" : "Required",
       color: pickAvatarColor(a.email),
-      contactId: a.contact_id ?? undefined,
+      contactId: a.contactId ?? undefined,
     };
   });
 
@@ -360,7 +360,7 @@ export function buildMeetingDetail(m: MeetingListItem): MeetingDetailData {
     subtitle,
     location: m.location ?? "",
     description: m.description ?? "",
-    conferenceLink: m.conference_link ?? "",
+    conferenceLink: m.conferenceLink ?? "",
     attendees,
     // No stub actions. Real management actions (RSVP, reschedule,
     // cancel, join-with-meet) need either a write-back path into the

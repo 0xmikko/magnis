@@ -1,1 +1,1 @@
-export type { LinkedEntitySummary, AvatarColor, SidebarIcon, SidebarItem, SidebarSection, SidebarData, } from "../_base/sharedTypes";
+export type { AvatarColor, SidebarIcon, SidebarItem, SidebarSection, SidebarData, } from "../_base/sharedTypes";

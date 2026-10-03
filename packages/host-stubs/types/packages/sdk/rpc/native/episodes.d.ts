@@ -34,7 +34,7 @@ export declare const episodesContracts: {
     }, z.core.$strip>, z.ZodObject<{
         status: z.ZodLiteral<"question_sent">;
         awaitingResponse: z.ZodBoolean;
-    }, z.core.$strip>, "required">;
+    }, z.core.$strict>, "required">;
     readonly "episodes.capabilities": import("../contract.js").RpcContract<"episodes.capabilities", z.ZodObject<{}, z.core.$strip>, z.ZodObject<{
         module: z.ZodString;
         entities: z.ZodReadonly<z.ZodArray<z.ZodObject<{
@@ -144,7 +144,7 @@ export declare const episodesContracts: {
                 agent: "agent";
             }>;
             validUntil: z.ZodNullable<z.ZodISODateTime>;
-        }, z.core.$strip>>;
+        }, z.core.$strict>>;
         createdAt: z.ZodString;
         updatedAt: z.ZodString;
         state: z.ZodEnum<{
@@ -210,7 +210,7 @@ export declare const episodesContracts: {
                 status: z.ZodString;
                 createdAt: z.ZodString;
                 attachments: z.ZodDefault<z.ZodArray<z.ZodString>>;
-            }, z.core.$strip>>;
+            }, z.core.$strict>>;
             todos: z.ZodArray<z.ZodObject<{
                 content: z.ZodString;
                 status: z.ZodEnum<{
@@ -220,7 +220,7 @@ export declare const episodesContracts: {
                     in_progress: "in_progress";
                 }>;
                 externalId: z.ZodDefault<z.ZodNullable<z.ZodString>>;
-            }, z.core.$strip>>;
+            }, z.core.$strict>>;
             waits: z.ZodArray<z.ZodObject<{
                 id: z.ZodString;
                 executionId: z.ZodString;
@@ -277,11 +277,11 @@ export declare const episodesContracts: {
             date: z.ZodString;
             updatedAt: z.ZodString;
             lastMessageAt: z.ZodOptional<z.ZodString>;
-        }, z.core.$strip>>;
+        }, z.core.$strict>>;
         total: z.ZodNumber;
         limit: z.ZodNumber;
         offset: z.ZodNumber;
-    }, z.core.$strip>, "required">;
+    }, z.core.$strict>, "required">;
     readonly "episodes.list_for_entity": import("../contract.js").RpcContract<"episodes.list_for_entity", z.ZodObject<{
         limit: z.ZodDefault<z.ZodInt>;
         offset: z.ZodDefault<z.ZodInt>;
@@ -296,7 +296,7 @@ export declare const episodesContracts: {
         linkKinds: z.ZodArray<z.ZodString>;
         updatedAt: z.ZodString;
         isEmpty: z.ZodBoolean;
-    }, z.core.$strip>>, "required">;
+    }, z.core.$strict>>, "required">;
     readonly "episodes.model.set": import("../contract.js").RpcContract<"episodes.model.set", z.ZodObject<{
         episodeId: z.ZodString;
         requestId: z.ZodString;
@@ -365,7 +365,7 @@ export declare const episodesContracts: {
         status: z.ZodString;
         isArchived: z.ZodBoolean;
         objective: z.ZodNullable<z.ZodString>;
-    }, z.core.$strip>>, "required">;
+    }, z.core.$strict>>, "required">;
     readonly "episodes.set_status": import("../contract.js").RpcContract<"episodes.set_status", z.ZodObject<{
         id: z.ZodString;
         status: z.ZodEnum<{
@@ -452,8 +452,8 @@ export declare const episodesContracts: {
                 in_progress: "in_progress";
             }>;
             externalId: z.ZodDefault<z.ZodNullable<z.ZodString>>;
-        }, z.core.$strip>>;
-    }, z.core.$strip>, "required">;
+        }, z.core.$strict>>;
+    }, z.core.$strict>, "required">;
     readonly "episodes.todo.update": import("../contract.js").RpcContract<"episodes.todo.update", z.ZodObject<{
         episodeId: z.ZodString;
         items: z.ZodArray<z.ZodObject<{
@@ -465,7 +465,7 @@ export declare const episodesContracts: {
                 in_progress: "in_progress";
             }>;
             externalId: z.ZodDefault<z.ZodNullable<z.ZodString>>;
-        }, z.core.$strip>>;
+        }, z.core.$strict>>;
     }, z.core.$strip>, z.ZodObject<{
         items: z.ZodArray<z.ZodObject<{
             content: z.ZodString;
@@ -476,8 +476,8 @@ export declare const episodesContracts: {
                 in_progress: "in_progress";
             }>;
             externalId: z.ZodDefault<z.ZodNullable<z.ZodString>>;
-        }, z.core.$strip>>;
-    }, z.core.$strip>, "required">;
+        }, z.core.$strict>>;
+    }, z.core.$strict>, "required">;
     readonly "episodes.unarchive": import("../contract.js").RpcContract<"episodes.unarchive", z.ZodObject<{
         id: z.ZodString;
     }, z.core.$strip>, z.ZodObject<{
@@ -494,8 +494,8 @@ export declare const episodesContracts: {
             episodeTitle: z.ZodNullable<z.ZodString>;
             totalTokens: z.ZodNumber;
             costMicros: z.ZodNumber;
-        }, z.core.$strip>>;
-    }, z.core.$strip>, "required">;
+        }, z.core.$strict>>;
+    }, z.core.$strict>, "required">;
     readonly "episodes.wait.resolve": import("../contract.js").RpcContract<"episodes.wait.resolve", z.ZodUnion<readonly [z.ZodObject<{
         kind: z.ZodEnum<{
             tool_approval: "tool_approval";
@@ -533,10 +533,9 @@ export declare const episodesContracts: {
         readonly output: z.ZodObject<{
             status: z.ZodLiteral<"question_sent">;
             awaitingResponse: z.ZodBoolean;
-        }, z.core.$strip>;
+        }, z.core.$strict>;
         readonly params: "required";
         readonly inputJsonSchema: Readonly<import("../../core/json.js").JsonObject>;
-        readonly wire?: import("../contract.js").RpcWireCodec;
     };
     readonly "episodes.episode.create": {
         readonly method: "episodes.episode.create";
@@ -554,7 +553,6 @@ export declare const episodesContracts: {
         }, z.core.$strict>;
         readonly params: "required";
         readonly inputJsonSchema: Readonly<import("../../core/json.js").JsonObject>;
-        readonly wire?: import("../contract.js").RpcWireCodec;
     };
     readonly "episodes.episode.get": {
         readonly method: "episodes.episode.get";
@@ -582,7 +580,7 @@ export declare const episodesContracts: {
                     agent: "agent";
                 }>;
                 validUntil: z.ZodNullable<z.ZodISODateTime>;
-            }, z.core.$strip>>;
+            }, z.core.$strict>>;
             createdAt: z.ZodString;
             updatedAt: z.ZodString;
             state: z.ZodEnum<{
@@ -648,7 +646,7 @@ export declare const episodesContracts: {
                     status: z.ZodString;
                     createdAt: z.ZodString;
                     attachments: z.ZodDefault<z.ZodArray<z.ZodString>>;
-                }, z.core.$strip>>;
+                }, z.core.$strict>>;
                 todos: z.ZodArray<z.ZodObject<{
                     content: z.ZodString;
                     status: z.ZodEnum<{
@@ -658,7 +656,7 @@ export declare const episodesContracts: {
                         in_progress: "in_progress";
                     }>;
                     externalId: z.ZodDefault<z.ZodNullable<z.ZodString>>;
-                }, z.core.$strip>>;
+                }, z.core.$strict>>;
                 waits: z.ZodArray<z.ZodObject<{
                     id: z.ZodString;
                     executionId: z.ZodString;
@@ -683,7 +681,6 @@ export declare const episodesContracts: {
         }, z.core.$strict>;
         readonly params: "required";
         readonly inputJsonSchema: Readonly<import("../../core/json.js").JsonObject>;
-        readonly wire?: import("../contract.js").RpcWireCodec;
     };
     readonly "episodes.episode.link": {
         readonly method: "episodes.episode.link";
@@ -697,7 +694,6 @@ export declare const episodesContracts: {
         }, z.core.$strict>;
         readonly params: "required";
         readonly inputJsonSchema: Readonly<import("../../core/json.js").JsonObject>;
-        readonly wire?: import("../contract.js").RpcWireCodec;
     };
     readonly "episodes.episode.report": {
         readonly method: "episodes.episode.report";
@@ -710,7 +706,6 @@ export declare const episodesContracts: {
         }, z.core.$strict>;
         readonly params: "required";
         readonly inputJsonSchema: Readonly<import("../../core/json.js").JsonObject>;
-        readonly wire?: import("../contract.js").RpcWireCodec;
     };
     readonly "episodes.episode.search": {
         readonly method: "episodes.episode.search";
@@ -726,10 +721,9 @@ export declare const episodesContracts: {
             status: z.ZodString;
             isArchived: z.ZodBoolean;
             objective: z.ZodNullable<z.ZodString>;
-        }, z.core.$strip>>;
+        }, z.core.$strict>>;
         readonly params: "required";
         readonly inputJsonSchema: Readonly<import("../../core/json.js").JsonObject>;
-        readonly wire?: import("../contract.js").RpcWireCodec;
     };
     readonly "episodes.episode.list": import("../contract.js").RpcContract<"episodes.episode.list", z.ZodUnion<readonly [z.ZodObject<{
         includeChildren: z.ZodOptional<z.ZodBoolean>;
@@ -764,11 +758,11 @@ export declare const episodesContracts: {
             date: z.ZodString;
             updatedAt: z.ZodString;
             lastMessageAt: z.ZodOptional<z.ZodString>;
-        }, z.core.$strip>>;
+        }, z.core.$strict>>;
         total: z.ZodNumber;
         limit: z.ZodNumber;
         offset: z.ZodNumber;
-    }, z.core.$strip>, z.ZodArray<z.ZodObject<{
+    }, z.core.$strict>, z.ZodArray<z.ZodObject<{
         episodeId: z.ZodString;
         title: z.ZodString;
         status: z.ZodString;
@@ -776,7 +770,7 @@ export declare const episodesContracts: {
         linkKinds: z.ZodArray<z.ZodString>;
         updatedAt: z.ZodString;
         isEmpty: z.ZodBoolean;
-    }, z.core.$strip>>]>, "required">;
+    }, z.core.$strict>>]>, "required">;
     readonly "episodes.episode.update": import("../contract.js").RpcContract<"episodes.episode.update", z.ZodObject<{
         id: z.ZodString;
         title: z.ZodOptional<z.ZodString>;
@@ -787,10 +781,10 @@ export declare const episodesContracts: {
             idle: "idle";
         }>>;
         archived: z.ZodOptional<z.ZodBoolean>;
-    }, z.core.$strip>, z.ZodObject<{
+    }, z.core.$strict>, z.ZodObject<{
         status: z.ZodString;
     }, z.core.$strict>, "required">;
-    readonly "episodes.workspace.todo.list": import("../contract.js").RpcContract<"episodes.workspace.todo.list", z.ZodObject<{}, z.core.$strip>, z.ZodObject<{
+    readonly "episodes.workspace.todo.list": import("../contract.js").RpcContract<"episodes.workspace.todo.list", z.ZodObject<{}, z.core.$strict>, z.ZodObject<{
         items: z.ZodArray<z.ZodObject<{
             content: z.ZodString;
             status: z.ZodEnum<{
@@ -801,11 +795,11 @@ export declare const episodesContracts: {
             }>;
             externalId: z.ZodDefault<z.ZodNullable<z.ZodString>>;
             id: z.ZodUUID;
-        }, z.core.$strip>>;
-    }, z.core.$strip>, "required">;
+        }, z.core.$strict>>;
+    }, z.core.$strict>, "required">;
     readonly "episodes.workspace.todo.add": import("../contract.js").RpcContract<"episodes.workspace.todo.add", z.ZodObject<{
         content: z.ZodString;
-    }, z.core.$strip>, z.ZodObject<{
+    }, z.core.$strict>, z.ZodObject<{
         items: z.ZodArray<z.ZodObject<{
             content: z.ZodString;
             status: z.ZodEnum<{
@@ -816,11 +810,11 @@ export declare const episodesContracts: {
             }>;
             externalId: z.ZodDefault<z.ZodNullable<z.ZodString>>;
             id: z.ZodUUID;
-        }, z.core.$strip>>;
-    }, z.core.$strip>, "required">;
+        }, z.core.$strict>>;
+    }, z.core.$strict>, "required">;
     readonly "episodes.workspace.todo.rm": import("../contract.js").RpcContract<"episodes.workspace.todo.rm", z.ZodObject<{
         id: z.ZodUUID;
-    }, z.core.$strip>, z.ZodObject<{
+    }, z.core.$strict>, z.ZodObject<{
         items: z.ZodArray<z.ZodObject<{
             content: z.ZodString;
             status: z.ZodEnum<{
@@ -831,8 +825,8 @@ export declare const episodesContracts: {
             }>;
             externalId: z.ZodDefault<z.ZodNullable<z.ZodString>>;
             id: z.ZodUUID;
-        }, z.core.$strip>>;
-    }, z.core.$strip>, "required">;
+        }, z.core.$strict>>;
+    }, z.core.$strict>, "required">;
     readonly "episodes.workspace.todo.update": import("../contract.js").RpcContract<"episodes.workspace.todo.update", z.ZodObject<{
         id: z.ZodUUID;
         content: z.ZodOptional<z.ZodString>;
@@ -842,7 +836,7 @@ export declare const episodesContracts: {
             cancelled: "cancelled";
             in_progress: "in_progress";
         }>>;
-    }, z.core.$strip>, z.ZodObject<{
+    }, z.core.$strict>, z.ZodObject<{
         items: z.ZodArray<z.ZodObject<{
             content: z.ZodString;
             status: z.ZodEnum<{
@@ -853,15 +847,15 @@ export declare const episodesContracts: {
             }>;
             externalId: z.ZodDefault<z.ZodNullable<z.ZodString>>;
             id: z.ZodUUID;
-        }, z.core.$strip>>;
-    }, z.core.$strip>, "required">;
-    readonly "episodes.workspace.memory.get": import("../contract.js").RpcContract<"episodes.workspace.memory.get", z.ZodObject<{}, z.core.$strip>, z.ZodObject<{
+        }, z.core.$strict>>;
+    }, z.core.$strict>, "required">;
+    readonly "episodes.workspace.memory.get": import("../contract.js").RpcContract<"episodes.workspace.memory.get", z.ZodObject<{}, z.core.$strict>, z.ZodObject<{
         body: z.ZodNullable<z.ZodString>;
-    }, z.core.$strip>, "required">;
+    }, z.core.$strict>, "required">;
     readonly "episodes.workspace.memory.save": import("../contract.js").RpcContract<"episodes.workspace.memory.save", z.ZodObject<{
         body: z.ZodString;
-    }, z.core.$strip>, z.ZodObject<{
+    }, z.core.$strict>, z.ZodObject<{
         body: z.ZodNullable<z.ZodString>;
-    }, z.core.$strip>, "required">;
+    }, z.core.$strict>, "required">;
 };
 //# sourceMappingURL=episodes.d.ts.map

@@ -316,7 +316,7 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
       sender: "Fallback",
       channel: "telegram",
       canonical: {},
-      linked_entities: [],
+      linkedEntities: [],
     });
 
     const missing = mountModule(TelegramModule, {
@@ -399,7 +399,7 @@ describe("tst_cat_entity_one_type_004 — messages.get reads SDK links and answe
 
     const view = await module.messagesGet({ id: MESSAGE_ID });
 
-    expect(view.linked_entities).toEqual([
+    expect(view.linkedEntities).toEqual([
       {
         id: CHAT_ID,
         name: "Ops chat",

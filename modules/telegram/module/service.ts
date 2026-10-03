@@ -10,7 +10,7 @@
 //     Stage 1 uses the record's own sender_name, which ingest writes.
 //   - filesystem avatar resolution (native resolve_sender_avatar_fs / resolve_chat_avatar_fs);
 //     Stage 1 uses the record's avatar_url / photo_url.
-//   - message-detail canonical map + linked_entities (Context panel).
+//   - message-detail canonical map + linkedEntities (Context panel).
 
 import {
   connectionReady,
@@ -875,13 +875,13 @@ export class TelegramModule {
     const created = entity.createdAt;
     return {
       id: entity.id,
-      schema_id: entity.schemaId,
+      schemaId: entity.schemaId,
       sender: sender ?? str(d, "sender_name"),
       subject: entity.name && entity.name.length > 0 ? entity.name : null,
       preview: null,
       channel: "telegram",
       timestamp: typeof d.date === "string" ? (d.date) : created,
-      created_at: created,
+      createdAt: created,
       metadata: d,
     };
   }
@@ -927,23 +927,23 @@ export class TelegramModule {
     const endpointIds = [...reached.keys()];
     const endpoints = endpointIds.length === 0 ? [] : await this.graph.getEntities(endpointIds);
     const endpointById = new Map(endpoints.map((e) => [e.id, e] as const));
-    const linked_entities: LinkedEntitySummary[] = [];
+    const linkedEntities: LinkedEntitySummary[] = [];
     for (const [id, reach] of reached) {
       const target = endpointById.get(id);
       if (target === undefined) continue;
-      linked_entities.push(linkedEntitySummary(target, reach.link, reach.linkKind));
+      linkedEntities.push(linkedEntitySummary(target, reach.link, reach.linkKind));
     }
     return {
       id: entity.id,
-      schema_id: entity.schemaId,
+      schemaId: entity.schemaId,
       sender: senderName ?? str(d, "sender_name"),
       subject: entity.name && entity.name.length > 0 ? entity.name : null,
       body: str(d, "text"),
       channel: "telegram",
       timestamp: typeof d.date === "string" ? (d.date) : created,
       canonical: {},
-      linked_entities,
-      created_at: created,
+      linkedEntities,
+      createdAt: created,
       metadata: d,
     };
   }

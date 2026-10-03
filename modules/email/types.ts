@@ -47,27 +47,27 @@ export interface EmailCanonical {
 
 export interface MessageListItem {
   id: string;
-  schema_id: string;
+  schemaId: string;
   sender: string | null;
   subject: string | null;
   preview: string | null;
   channel: string;
   timestamp: string;
-  created_at: string;
+  createdAt: string;
   metadata?: Record<string, unknown> | null;
 }
 
 export interface MessageDetailView {
   id: string;
-  schema_id: string;
+  schemaId: string;
   sender: string | null;
   subject: string | null;
   body: string | null;
   channel: string;
   timestamp: string;
   canonical: Record<string, unknown>;
-  linked_entities: LinkedEntitySummary[];
-  created_at: string;
+  linkedEntities: LinkedEntitySummary[];
+  createdAt: string;
   metadata?: Record<string, unknown> | null;
 }
 
