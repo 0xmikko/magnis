@@ -21,6 +21,9 @@ const DECLARED = { "email.message": message, "email.address": address } as const
 
 function ingestGraph() {
   return mockGraph({
+    find_by_anchors: (anchors) => Promise.resolve(anchors.map(() => null)),
+    moduleSettings: () => Promise.resolve({ newSenderSyncEnabled: "true" }),
+    admitSyncEntities: (subjects) => Promise.resolve(subjects.flatMap(subject => [...subject.remoteIds])),
     apply_batch: (frag) =>
       Promise.resolve({
         ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
@@ -76,9 +79,9 @@ async function written(): Promise<GraphBatchInput["entities"]> {
   const graph = ingestGraph();
   const mod = mountModule(EmailModule, { graph, ctx: { extension_id: "email" } }).module;
   await mod.ingest({ envelopes: [env({ remote_id: "m1", payload: msgPayload() })] });
-  const call = graph.spies.apply_batch?.mock.calls[0];
-  if (call === undefined) throw new Error("ingest wrote nothing");
-  return (call[0] as GraphBatchInput).entities;
+  const calls = graph.spies.apply_batch?.mock.calls;
+  if (calls === undefined || calls.length === 0) throw new Error("ingest wrote nothing");
+  return calls.flatMap(call => (call[0] as GraphBatchInput).entities);
 }
 
 describe("email declares what it writes", () => {
@@ -91,7 +94,7 @@ describe("email declares what it writes", () => {
 
   it("every record the module writes today passes its own declaration", async () => {
     const entities = await written();
-    expect(entities.length).toBeGreaterThan(0);
+    expect(new Set(entities.map(entity => entity.schema_id))).toEqual(new Set(["email.address", "email.message"]));
     for (const written of entities) {
       const declared = DECLARED[written.schema_id as keyof typeof DECLARED];
       expect(declared, `${written.schema_id} is written but not declared`).toBeDefined();

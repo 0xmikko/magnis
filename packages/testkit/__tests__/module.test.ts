@@ -241,7 +241,7 @@ describe("builders", () => {
     expect(entity("a", "Acme")).toMatchObject({ id: "a", name: "Acme", schema_id: "" });
     expect(entity("a", "Acme", { schema_id: "companies.company" }).schema_id).toBe("companies.company");
     expect(windowRow(entity("a", "Acme"))).toEqual({
-      entity: { id: "a", name: "Acme", schema_id: "", created_at: "2026-01-01T00:00:00Z" },
+      entity: { id: "a", name: "Acme", schema_id: "", indexed: true, created_at: "2026-01-01T00:00:00Z" },
     });
     expect(linkedRow(entity("a", "Acme"), { kind: "authored_by" }).link).toMatchObject({
       from_id: "a",

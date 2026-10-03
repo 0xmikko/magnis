@@ -36,6 +36,8 @@ const base = (over: Partial<SyncEnvelope>): SyncEnvelope => ({
 async function written(): Promise<GraphBatchInput["entities"]> {
   const batches: GraphBatchInput[] = [];
   const graph = mockGraph({
+    moduleSettings: () => Promise.resolve({ newChatSync: "all" }),
+    admitSyncEntities: (subjects) => Promise.resolve(subjects.flatMap(subject => [...subject.remoteIds])),
     find_by_anchor: () => Promise.resolve(null),
     find_by_anchors: (anchors) => Promise.resolve(anchors.map(() => null)),
     apply_batch: (fragment: GraphBatchInput) => {
@@ -49,7 +51,7 @@ async function written(): Promise<GraphBatchInput["entities"]> {
       });
     },
     list_entities_window: () => Promise.resolve({ items: [], total: 0 }),
-    get_entities: () => Promise.resolve([]),
+    get_entities: (ids) => Promise.resolve(ids.map(id => ({ id, name: "Magnis Builders", schema_id: "telegram.chat", indexed: true, syncEnabled: true, syncRevision: "0" }))),
     // The message carries a link and a photo: a link becomes a web entity of
     // its own, and downloadable media becomes a file entity.
     web_register: () => Promise.resolve("web-1"),
