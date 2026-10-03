@@ -707,7 +707,6 @@ export class TriggersModule {
     return items;
   }
 
-  @rpc("fire_history", { description: "Read trigger fire history.", params: { type: "object", properties: { trigger_id: { type: "string" }, limit: { type: "integer" } }, required: ["trigger_id"], additionalProperties: false } })
   @tool("list", {
     entity: "triggers.trigger.history",
     description: "List trigger execution history sorted by fired_at desc.",

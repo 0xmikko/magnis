@@ -48,9 +48,9 @@ export function useTriggerDetail(
 }
 
 /**
- * The trigger's own execution history. `@tool("fire_history")` forwards the
- * native indexed read, so the cost does not grow with the trigger's past — the
- * panel asks the module, not the graph.
+ * The trigger's own execution history, read from the native indexed
+ * `triggers.fire_history` seam, so the cost does not grow with the trigger's
+ * past — the panel asks the engine, not the graph.
  */
 export function useTriggerHistory(
   entityId: string | undefined,
@@ -61,7 +61,7 @@ export function useTriggerHistory(
     queryFn: () => {
       if (entityId === undefined) throw new Error("triggers.fire_history: missing entityId");
       return runtime.transport.rpc<readonly TriggerExecutionRef[]>("triggers.fire_history", {
-        trigger_id: entityId,
+        triggerId: entityId,
       });
     },
     enabled: typeof entityId === "string" && entityId.length > 0,

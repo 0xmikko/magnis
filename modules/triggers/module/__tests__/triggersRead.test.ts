@@ -11,6 +11,7 @@
  * @legacy-id: tst_trig_plugin_108_not_found_paths_error
  */
 import { describe, expect, it, vi } from "vitest";
+import type { PluginModuleShape } from "@magnis/plugin-sdk";
 import { entity, link, mockGraph, mountModule, page } from "@magnis/testkit/module";
 import { TRIGGER } from "../../schema.ts";
 import { TriggersModule } from "../service.ts";
@@ -113,6 +114,28 @@ describe("tst_module_triggers_read_001 — trigger definition reads", () => {
     expect(result.map((item) => item.id)).toEqual([TRIGGER_ID]);
     expect(graph.spies.listLinksForEntity).toHaveBeenCalledTimes(2);
     expect(execute.mock.calls).toEqual([["triggers.resolve_watchable", { entityId: TARGET_ID }]]);
+  });
+
+  /**
+   * @test-id: tst_cat_entity_one_type_009
+   * @covers modules/triggers/module/service.ts::TriggersModule
+   *
+   * The host registers every published rpc() method and refuses one whose name
+   * a native method already serves, which takes the whole channel down.
+   */
+  it("tst_cat_entity_one_type_009 publishes no rpc() method under a native seam it calls", async () => {
+    await mountModule(TriggersModule, { mode: "dispatch", ctx: { extensionId: "triggers" } });
+    const shape = (globalThis as unknown as { __magnis_plugin_module: PluginModuleShape }).__magnis_plugin_module;
+    // The native triggers seams this module calls (manifest `call`).
+    const nativeSeams = [
+      "triggers.validate_watch",
+      "triggers.resolve_watchable",
+      "triggers.invalidate_cache",
+      "triggers.fire_history",
+      "triggers.validate_schedule",
+      "triggers.fire_now",
+    ];
+    expect(shape.rpcDeclarations.map((declaration) => declaration.name).filter((name) => nativeSeams.includes(name))).toEqual([]);
   });
 
   it("delegates fire history with a default or explicit bound", async () => {

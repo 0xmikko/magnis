@@ -70,7 +70,7 @@ describe("tst_fe_trig_002 — the panel shows fire history", () => {
     // One row per execution, in the module's own vocabulary.
     expect(section?.textContent).toContain("Fired");
     expect(section?.textContent).toContain("Skipped (not relevant)");
-    expect(rpc).toHaveBeenCalledWith("triggers.fire_history", { trigger_id: "trigger-1" });
+    expect(rpc).toHaveBeenCalledWith("triggers.fire_history", { triggerId: "trigger-1" });
   });
 
   it("reads the event kind in the operator's words, not the backend's", async () => {
