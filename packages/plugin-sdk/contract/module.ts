@@ -22,6 +22,7 @@
 import type {
   AddLinkParams,
   AllowlistGate,
+  BatchEntityInput,
   CreateEntityParams,
   Entity,
   EntityWithLinks,
@@ -61,6 +62,124 @@ export interface GetParams {
   id: string;
 }
 
+// ───────────────────────── entity synchronization ─────────────────────
+// A schema that supports synchronization carries the user's saved choice on
+// each entity: `syncEnabled` and the graph-owned decimal `syncRevision`.
+
+/** An entity of a syncable schema, read with its saved choice. */
+export type RawSyncableEntity = Entity & {
+  syncEnabled: boolean;
+  syncRevision: string;
+};
+
+/** A batch entity of a syncable schema, sent with the initial choice the
+ * owning module supplies; a rediscovered entity keeps its saved choice. */
+export type SyncableBatchEntityInput = BatchEntityInput & {
+  syncEnabled?: boolean;
+};
+
+export interface SetSyncEnabledParams {
+  id: string;
+  syncEnabled: boolean;
+}
+
+export interface SyncSelectionRequest {
+  sourceId: string;
+  accountId: string;
+  accountGeneration: number;
+}
+
+export interface SyncChoice {
+  id: string;
+  scopeId: string;
+  syncEnabled: boolean;
+  syncRevision: string;
+}
+
+export type SyncSelection =
+  | {
+      surface: "telegram";
+      choices: readonly SyncChoice[];
+    }
+  | {
+      surface: "email";
+      choices: readonly SyncChoice[];
+      unknownSenderEnabled: boolean;
+    }
+  | {
+      surface: "x";
+      choices: readonly (SyncChoice & { handle: string })[];
+    };
+
+export type SyncApplication =
+  | { kind: "pending" }
+  | { kind: "applied" }
+  | {
+      kind: "failed";
+      message: string;
+    };
+
+export type SyncTargetResult =
+  | {
+      identityId: string;
+      targetId: string;
+      kind: "saved";
+      syncEnabled: boolean;
+      syncRevision: string;
+      application: Exclude<SyncApplication, { kind: "applied" }>;
+    }
+  | {
+      identityId: string;
+      targetId: string | null;
+      kind: "failed";
+      message: string;
+    };
+
+export interface SetSyncEnabledResult {
+  results: readonly SyncTargetResult[];
+}
+
+export interface SyncAdmissionSubject {
+  entityId: string;
+  remoteIds: readonly string[];
+}
+
+export interface SyncMigrationEntity {
+  id: string;
+  schemaId: string;
+  name: string | null;
+  indexed: boolean;
+  isPinned: boolean | null;
+  properties: JsonObject;
+  syncEnabled: boolean | null;
+  syncRevision: string | null;
+}
+
+export interface SyncMigrationTarget {
+  schemaId: "telegram.chat" | "email.address" | "x.profile";
+  key: string;
+}
+
+export interface SyncMigrationIssue {
+  target: SyncMigrationTarget | null;
+  legacyIds: readonly string[];
+  accounts: readonly {
+    accountId: string;
+    syncEnabled: boolean;
+  }[];
+  message: string;
+}
+
+export interface SyncMigrationStatus {
+  complete: boolean;
+  issues: readonly SyncMigrationIssue[];
+}
+
+export interface ResolveSyncMigrationParams {
+  target: SyncMigrationTarget;
+  syncEnabled: boolean;
+}
+
 // ── shared list-search paging (added 2026-07-03) ────────────────────────────
 // The `searchEntitiesPage` helper (runtime, in ../index.ts) consumes these and
 // answers a `PaginatedResponse<Entity>`. The host list pane pages via
@@ -76,6 +195,9 @@ export interface SearchEntitiesPageParams {
   filter?: (entities: Entity[]) => Promise<Entity[]>;
 }
 
+/** The largest page the host serves; a larger `limit` is refused. */
+export const pageLimitMax = 200;
+
 /// The host graph, injected into each plugin module. Operation names stay
 /// flat snake_case; every input and answer is an SDK shape. The user and the
 /// actor are stamped host-side from the plugin context, never supplied by JS.
@@ -83,6 +205,18 @@ export interface SearchEntitiesPageParams {
 /// Not parameterised: a node's dictionary is JSON, and a module types it with
 /// its own interface at the call sites that care.
 export interface GraphService {
+  updateEntitySyncEnabled(params: SetSyncEnabledParams): Promise<{ syncRevision: string }>;
+  admitSyncEntities(subjects: readonly SyncAdmissionSubject[], controlRemoteIds?: readonly string[]): Promise<readonly string[]>;
+  moduleSettings(forSchema?: string): Promise<Readonly<Record<string, string>>>;
+  listSyncMigrationEntities(params: {
+    schemaId: string;
+    after: string | null;
+    /** 1 to `pageLimitMax`. */
+    limit: number;
+  }): Promise<{
+    items: readonly SyncMigrationEntity[];
+    next: string | null;
+  }>;
   // All reads are user-scoped host-side.
   createEntity(p: CreateEntityParams): Promise<Entity>;
   getEntity(id: string): Promise<Entity | null>;
@@ -144,6 +278,7 @@ export interface GraphService {
   // a plugin can't trip the host's namespace guard at runtime.
   syncState(action: "status"): Promise<Record<string, unknown>>;
   syncState(action: "reset", resetSchema: string): Promise<Record<string, unknown>>;
+  syncState(action: "apply"): Promise<{ pending: true }>;
   // reply-composer presence: op "read" | "set_text" | "append_text". read
   // reports presence; set_text/append_text gate+bump the revision and publish.
   composer(

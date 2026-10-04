@@ -5,23 +5,14 @@
 // Proxy, so any op a test does not arrange fails loudly).
 import { describe, expect, it, vi } from "vitest";
 import type { BatchEntityInput, GraphBatchInput, JsonObject, SyncEnvelope } from "@magnis/sdk";
-import { entity, mockGraph, mountModule, page, type MockGraph } from "@magnis/testkit/module";
+import { entity, mockGraph, mountModule, page, sourceEnvelope, type MockGraph } from "@magnis/testkit/module";
 import { LinkedinModule } from "../service.ts";
 import { AUTHORED_BY, IDENTITY, POST, PROFILE } from "../../schema.ts";
 
 type G = MockGraph;
 
 function env(remoteId: string, payload: JsonObject): SyncEnvelope {
-  return {
-    sourceId: "x",
-    surface: "linkedin",
-    accountId: "a1",
-    userId: "u1",
-    kind: "snapshot",
-    remoteId,
-    payload,
-    timestamp: "2026-06-26T00:00:00Z",
-  };
+  return sourceEnvelope("linkedin", payload, { sourceId: "x", accountId: "a1", userId: "u1", remoteId, timestamp: "2026-06-26T00:00:00Z" });
 }
 
 const emptyBatch = { ids: {}, created: 0, updated: 0, linksAdded: 0, droppedKeys: [] };

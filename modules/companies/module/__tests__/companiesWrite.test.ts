@@ -8,7 +8,7 @@
  * @legacy-id: tst_companies_write_create_persists_and_reads_back
  */
 import type { JsonObject } from "@magnis/sdk";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { entity, mockGraph, mountModule } from "@magnis/testkit/module";
 import { COMPANY } from "../../schema.ts";
 import { CompaniesModule } from "../service.ts";
@@ -86,7 +86,7 @@ describe("tst_module_companies_write_001 — company write contract", () => {
     });
   });
 
-  it("merges provided enrichment and links email identities", async () => {
+  it("merges provided enrichment", async () => {
     const original = company("Old Co");
     const updated = company("New Co", {
       name: "New Co",
@@ -99,18 +99,15 @@ describe("tst_module_companies_write_001 — company write contract", () => {
       getEntity: () => Promise.resolve(readCount++ === 0 ? original : updated),
       updateEntityName: () => Promise.resolve(undefined),
       updateProperties: () => Promise.resolve(undefined),
-      addLink: () => Promise.resolve(undefined),
       getEntityFull: () => Promise.resolve({ entity: updated, links: [] }),
     });
-    const execute = vi.fn(() => Promise.resolve({ ids: ["address-1"] }));
-    const module = mountModule(CompaniesModule, { graph, rpc: { execute } }).module;
+    const module = mountModule(CompaniesModule, { graph }).module;
 
     const result = await module.update({
       id: COMPANY_ID,
       name: "New Co",
       domain: "new.example",
       phones: ["+31000000001"],
-      emails: ["demo@new.example"],
     });
 
     expect(result).toMatchObject({ name: "New Co", website: "https://new.example" });
@@ -122,11 +119,6 @@ describe("tst_module_companies_write_001 — company write contract", () => {
         website: "https://new.example",
         phones: [{ phone: "+31000000001", type: null, is_primary: true }],
       },
-    });
-    expect(graph.spies.addLink).toHaveBeenCalledWith({
-      from: COMPANY_ID,
-      to: "address-1",
-      kind: "identity",
     });
   });
 

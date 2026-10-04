@@ -27,15 +27,60 @@ interface TelegramCommandInternals {
 }
 
 describe("tst_module_telegram_command_001 — Telegram command mapping", () => {
+  it.each([true, false])("delegates an account identity only to its existing direct chat (exists: %s)", async (exists) => {
+    const graph = mockGraph({
+      getEntity: (id) => Promise.resolve(id === "identity" ? entity(id, "Person", { schemaId: "telegram.account", properties: { telegram_user_id: 42 } }) : entity(id, "DM", { schemaId: "telegram.chat", properties: { chat_id: 42, type: "private" } })),
+      findByExternalId: () => Promise.resolve(exists ? "chat-id" : null),
+      updateEntitySyncEnabled: () => Promise.resolve({ syncRevision: "8" }),
+      syncState: () => Promise.resolve({ pending: true }),
+    });
+    const mounted = await mountModule(TelegramModule, { mode: "dispatch", graph, ctx: { extensionId: "telegram" } });
+    const result = await mounted.rpc("telegram.account.setSyncEnabled", { id: "identity", syncEnabled: true });
+    expect(graph.spies.findByExternalId).toHaveBeenCalledWith("tg:chat:42");
+    expect(result).toEqual({ results: [exists ? {
+      identityId: "identity", targetId: "chat-id", kind: "saved", syncEnabled: true, syncRevision: "8", application: { kind: "pending" },
+    } : { identityId: "identity", targetId: null, kind: "failed", message: "Telegram identity has no stored direct chat" }] });
+    if (exists) expect(graph.spies.updateEntitySyncEnabled).toHaveBeenCalledExactlyOnceWith({ id: "chat-id", syncEnabled: true });
+    else expect(graph.spies.updateEntitySyncEnabled).not.toHaveBeenCalled();
+  });
+
+  it("reports persistence failure without requesting worker application", async () => {
+    const graph = mockGraph({
+      getEntity: () => Promise.resolve(entity("chat-id", "Chat", { schemaId: "telegram.chat" })),
+      updateEntitySyncEnabled: () => Promise.reject(new Error("save failed")),
+      syncState: () => Promise.resolve({ pending: true }),
+    });
+    const mounted = await mountModule(TelegramModule, { mode: "dispatch", graph, ctx: { extensionId: "telegram" } });
+    await expect(mounted.rpc("telegram.chat.setSyncEnabled", { id: "chat-id", syncEnabled: true })).resolves.toEqual({ results: [{ identityId: "chat-id", targetId: "chat-id", kind: "failed", message: "save failed" }] });
+    expect(graph.spies.syncState).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])("saves the chat choice before requesting application (apply fails: %s)", async (applyFails) => {
+    const calls: string[] = [];
+    const graph = mockGraph({
+      getEntity: () => Promise.resolve(entity("chat-id", "Chat", { schemaId: "telegram.chat" })),
+      updateEntitySyncEnabled: () => { calls.push("save"); return Promise.resolve({ syncRevision: "9" }); },
+      syncState: () => { calls.push("apply"); return applyFails ? Promise.reject(new Error("worker unavailable")) : Promise.resolve({ pending: true }); },
+    });
+    const mounted = await mountModule(TelegramModule, { mode: "dispatch", graph, ctx: { extensionId: "telegram" } });
+    expect(mounted.tools.find((entry) => entry.name === "telegram.chat.setSyncEnabled")?.requiresApproval).toBe(true);
+    await expect(mounted.rpc("telegram.chat.setSyncEnabled", { id: "chat-id", syncEnabled: false })).resolves.toEqual({ results: [{
+      identityId: "chat-id", targetId: "chat-id", kind: "saved", syncEnabled: false, syncRevision: "9",
+      application: applyFails ? { kind: "failed", message: "worker unavailable" } : { kind: "pending" },
+    }] });
+    expect(calls).toEqual(["save", "apply"]);
+    expect(graph.spies.updateEntitySyncEnabled).toHaveBeenCalledWith({ id: "chat-id", syncEnabled: false });
+  });
+
   it("delegates sync and composer commands without translating host responses", async () => {
     const graph = mockGraph({
-      syncState: (...args: unknown[]) => Promise.resolve({ args }),
+      syncState: (...args: unknown[]) => Promise.resolve({ args, pending: true as const }),
       composer: (...args: unknown[]) => Promise.resolve({ args }),
     });
     const module = mountModule(TelegramModule, { graph }).module;
 
-    await expect(module.syncStatus()).resolves.toEqual({ args: ["status"] });
-    await expect(module.syncReset()).resolves.toEqual({ args: ["reset", "telegram.message"] });
+    await expect(module.syncStatus()).resolves.toEqual({ args: ["status"], pending: true });
+    await expect(module.syncReset()).resolves.toEqual({ args: ["reset", "telegram.message"], pending: true });
     await expect(module.composerRead()).resolves.toEqual({ args: ["read"] });
     await expect(module.composerSetText({ thread_key: "chat:42", text: "Hello" })).resolves.toEqual({
       args: ["set_text", "chat:42", "Hello"],

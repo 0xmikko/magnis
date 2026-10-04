@@ -5,17 +5,16 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import type { GraphBatchInput, JsonObject, SyncEnvelope } from "@magnis/sdk";
-import { mockGraph, mountModule, page } from "@magnis/testkit/module";
+import { mockGraph, mountModule, page, sourceEnvelope } from "@magnis/testkit/module";
 
 import { LinkedinModule } from "./module/service.ts";
 import { post, profile } from "./entities.ts";
 
 const DECLARED = { "linkedin.profile": profile, "linkedin.post": post } as const;
 
-const env = (remoteId: string, payload: JsonObject): SyncEnvelope => ({
-  sourceId: "x", surface: "linkedin", accountId: "a1", userId: "u1",
-  kind: "snapshot", remoteId, payload, timestamp: "2026-06-26T00:00:00Z",
-});
+function env(remoteId: string, payload: JsonObject): SyncEnvelope {
+  return sourceEnvelope("linkedin", payload, { sourceId: "x", accountId: "a1", userId: "u1", remoteId, timestamp: "2026-06-26T00:00:00Z" });
+}
 
 async function written(): Promise<GraphBatchInput["entities"]> {
   const batches: GraphBatchInput[] = [];

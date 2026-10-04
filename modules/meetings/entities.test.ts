@@ -6,7 +6,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import type { GraphBatchInput, GraphBatchResult, PropertiesUpdate } from "@magnis/sdk";
-import { entity, mockGraph, mountModule } from "@magnis/testkit/module";
+import { entity, mockGraph, mountModule, sourceEnvelope } from "@magnis/testkit/module";
 
 import { MeetingsModule } from "./module/service.ts";
 import { calendarEvent } from "./entities.ts";
@@ -27,6 +27,8 @@ const invite = {
 
 function graphRecording(written: Record<string, unknown>[]) {
   return mockGraph({
+    findByExternalIds: (externalIds: readonly string[]) => Promise.resolve(externalIds.map(() => null)),
+    moduleSettings: () => Promise.resolve({ newSenderSyncEnabled: "true" }),
     applyBatch: (frag: GraphBatchInput): Promise<GraphBatchResult> => {
       for (const e of frag.entities) {
         if (e.schemaId === CAL) written.push(e.properties as Record<string, unknown>);
@@ -69,11 +71,10 @@ async function writtenRecords(): Promise<Record<string, unknown>[]> {
   await mod.ingest({
     command: "bootstrap",
     generation: "initial:r:1",
-    envelopes: [{
-      sourceId: "google", surface: "meetings", accountId: "acct-1", userId: "u1",
-      kind: "snapshot", remoteId: "evt-abc123", payload: invite,
+    envelopes: [sourceEnvelope("meetings", invite, {
+      sourceId: "google", accountId: "acct-1", userId: "u1", remoteId: "evt-abc123",
       timestamp: "2026-02-01T00:00:00Z",
-    }],
+    })],
   });
   return written;
 }

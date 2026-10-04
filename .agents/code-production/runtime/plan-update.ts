@@ -124,6 +124,28 @@ export interface DeliveryMeta {
   readonly depends: readonly string[];
   readonly branch: string;
   readonly predictedExternalWaitMinutes: number;
+  /** The repository the Delivery lives in, by name; null for the plan's own. */
+  readonly repository: string | null;
+}
+
+/** Select a repository explicitly without inheriting a calling hook's local Git paths. */
+export function repositoryEnvironment(): NodeJS.ProcessEnv {
+  const local = execFileSync("git", ["rev-parse", "--local-env-vars"], { encoding: "utf8" }).trim().split("\n");
+  return Object.fromEntries(Object.entries(process.env).filter(([name]) => !local.includes(name)));
+}
+
+/** The checkout a Delivery's operations run in: the plan's root, or the configured checkout of its named repository. */
+export function deliveryRoot(planRoot: string, delivery: DeliveryMeta): string {
+  if (delivery.repository === null) return planRoot;
+  const key = `code-production.repository.${delivery.repository}`;
+  const env = repositoryEnvironment();
+  const configured = spawnSync("git", ["-C", planRoot, "config", "--get", key], { encoding: "utf8", env });
+  const path = configured.status === 0 ? configured.stdout.trim() : "";
+  if (path === "") throw new Error(`repository ${delivery.repository} has no checkout on this machine; run: git config ${key} <path>`);
+  const top = spawnSync("git", ["-C", path, "rev-parse", "--show-toplevel"], { encoding: "utf8", env });
+  const toplevel = top.status === 0 ? top.stdout.trim() : "";
+  if (toplevel === "" || toplevel !== resolve(path)) throw new Error(`${key} = ${path} is not a repository checkout`);
+  return toplevel;
 }
 
 export interface StageResultReceipt {
@@ -902,7 +924,7 @@ export function deliveryMetas(body: string): readonly DeliveryMeta[] {
     if (branch === null) throw new Error(`Delivery ${id} lacks a Branch line`);
     // The header says which Delivery is active: execution moves it without
     // touching the frozen contract, whose metadata keeps the authored flag.
-    values.push({ id, active: activeDeliveryId(body) === id, depends, branch: capture(branch, 1, `Delivery ${id} branch`), predictedExternalWaitMinutes: wait });
+    values.push({ id, active: activeDeliveryId(body) === id, depends, branch: capture(branch, 1, `Delivery ${id} branch`), predictedExternalWaitMinutes: wait, repository: typeof meta.repository === "string" ? meta.repository : null });
   }
   return values;
 }

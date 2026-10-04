@@ -1,0 +1,35 @@
+# addressbook — Address book module (V8 plugin), with no UI of its own.
+#
+# Owns `addressbook.card`: one card per contact of a provider's address book
+# (Google's today). Ingests the `addressbook` sync surface, writes the email
+# addresses a card lists as the email module's shared address nodes, and links
+# each card to the person it belongs to; a person's cards show in contacts.
+# Sandboxed V8 isolate.
+
+id = "addressbook"
+version = "0.1.0"
+# Plugin API version this manifest targets; the host accepts exactly 0.2.0.
+magnis_api_version = "0.2.0"
+title = "Address book"
+summary = "Address book contacts from your accounts, linked to the people they describe."
+# Reverse-domain publisher identity.
+publisher = "ai.magnis"
+dependsOn = [ "email" ]
+
+# Sync surface this module consumes (fed by the matching source connector).
+[surfaces.addressbook]
+reconciliation = { mode = "full_snapshot" }
+# The surface's primary-item schema.
+item = "addressbook.card"
+# The schemas the surface reports progress on, with the names the Accounts
+# panel prints; the host counts them and reads the plan from page receipts.
+progress = { "addressbook.card" = "contacts" }
+
+# Foreign asks beyond the implicit own namespace: writes to `addressbook.`
+# records, own:own links, and reads of own schemas need no declaration.
+[permissions]
+# The addresses a card lists, and the person a card with no known address
+# starts.
+create = [ "email.address", "contacts.person" ]
+# identity joins a person to its cards and addresses.
+links = [ "identity" ]

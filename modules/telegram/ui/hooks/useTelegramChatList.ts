@@ -1,5 +1,5 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import type { TelegramChat, TelegramChatListItem, MessageListItem } from "../types";
+import type { TelegramChat, TelegramChatListItem } from "../types";
 import type { PaginationParams, PaginatedResponse } from "@magnis/host/runtime";
 import { normalizeTelegramChatTitle } from "../chatTitle";
 import { useRouterContext } from "@magnis/host/runtime";
@@ -43,7 +43,8 @@ function mapChatItems(items: readonly TelegramChatListItem[], baseUrl: string): 
         ? formatChatListTime(c.last_message_time)
         : "",
       pinned: c.is_pinned === true,
-      isIndexed: c.is_indexed ?? undefined,
+      isIndexed: c.indexed,
+      syncEnabled: c.syncEnabled,
     };
   });
 }
@@ -182,7 +183,7 @@ export function useTelegramChatList(): UseTelegramChatListResult {
   );
 
   // If the selected chat isn't in the loaded list (e.g. opened via URL/search),
-  // fetch its latest message and build a sidebar entry from metadata.
+  // fetch its stored chat, including both choices, through the same projection.
   useEffect(() => {
     if (!selectedChatId || isSearching) return;
     if (chats.some((c) => c.id === selectedChatId)) return;
@@ -193,25 +194,11 @@ export function useTelegramChatList(): UseTelegramChatListResult {
     let cancelled = false as boolean;
     void (async (): Promise<void> => {
       try {
-        const result = await runtime.transport.rpc<PaginatedResponse<MessageListItem>>(
-          "telegram.messages.list",
-          { entity_id: selectedChatId, limit: 1, offset: 0 },
+        const result = await runtime.transport.rpc<TelegramChatListItem>(
+          "telegram.chats.get", { entity_id: selectedChatId },
         );
-        const msg = result.items.at(0);
-        if (cancelled || !msg) return;
-        const title = (msg.metadata?.chat_title as string | undefined) ?? msg.sender ?? selectedChatId;
-        const name = normalizeTelegramChatTitle(title);
-        const entry: TelegramChat = {
-          id: selectedChatId,
-          chatId: selectedChatId, // fallback — may not have native chat_id
-          accountId: null,
-          name,
-          initials: initialsFromName(name),
-          avatarColor: pickAvatarColor(name),
-          lastMessage: msg.preview ?? "",
-          time: msg.timestamp ? formatChatListTime(msg.timestamp) : "",
-          pinned: false,
-        };
+        const entry = mapChatItems([result], baseUrl)[0];
+        if (cancelled || !entry) return;
         setExtraChats((prev) => {
           if (prev.some((c) => c.id === selectedChatId)) return prev;
           return [...prev, entry];

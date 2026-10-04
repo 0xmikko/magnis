@@ -9,8 +9,9 @@
  * declaration's test, and the module's own tsconfig must never see zod.
  */
 import { describe, expect, it } from "vitest";
+import { descriptorFrom } from "@magnis/declare/derive";
 import type { GraphBatchInput, JsonObject, SyncEnvelope } from "@magnis/sdk";
-import { mockGraph, mountModule } from "@magnis/testkit/module";
+import { mockGraph, mountModule, sourceEnvelope } from "@magnis/testkit/module";
 
 import { EmailModule } from "./module/service.ts";
 import { address, message } from "./entities.ts";
@@ -19,6 +20,9 @@ const DECLARED = { "email.message": message, "email.address": address } as const
 
 function ingestGraph() {
   return mockGraph({
+    findByExternalIds: (externalIds) => Promise.resolve(externalIds.map(() => null)),
+    moduleSettings: () => Promise.resolve({ newSenderSyncEnabled: "true" }),
+    admitSyncEntities: (subjects) => Promise.resolve(subjects.flatMap(subject => [...subject.remoteIds])),
     applyBatch: (frag) =>
       Promise.resolve({
         ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
@@ -33,17 +37,8 @@ function ingestGraph() {
   });
 }
 
-const env = (over: Partial<SyncEnvelope>): SyncEnvelope => ({
-  sourceId: "google",
-  surface: "email",
-  accountId: "acct-1",
-  userId: "u1",
-  kind: "snapshot",
-  remoteId: "m1",
-  payload: {},
-  timestamp: "2026-03-14T09:00:00Z",
-  ...over,
-});
+const env = (over: Partial<SyncEnvelope>): SyncEnvelope =>
+  sourceEnvelope("email", {}, { sourceId: "google", accountId: "acct-1", userId: "u1", remoteId: "m1", timestamp: "2026-03-14T09:00:00Z", ...over });
 
 /** A provider's message, with every key the module stores. */
 const msgPayload = (over: JsonObject = {}): JsonObject => ({
@@ -74,15 +69,22 @@ async function written(): Promise<GraphBatchInput["entities"]> {
   const graph = ingestGraph();
   const mod = mountModule(EmailModule, { graph, ctx: { extensionId: "email" } }).module;
   await mod.ingest({ envelopes: [env({ remoteId: "m1", payload: msgPayload() })] });
-  const call = graph.spies.applyBatch?.mock.calls[0];
-  if (call === undefined) throw new Error("ingest wrote nothing");
-  return (call[0] as GraphBatchInput).entities;
+  const calls = graph.spies.applyBatch?.mock.calls;
+  if (calls === undefined || calls.length === 0) throw new Error("ingest wrote nothing");
+  return calls.flatMap(call => (call[0] as GraphBatchInput).entities);
 }
 
 describe("email declares what it writes", () => {
+  it("declares sender synchronization outside the address properties", () => {
+    const { descriptor } = descriptorFrom(address);
+    expect(descriptor).toHaveProperty("syncable", true);
+    expect(descriptor.json_schema).not.toHaveProperty("properties.syncEnabled");
+    expect(descriptorFrom(message).descriptor).not.toHaveProperty("syncable");
+  });
+
   it("every record the module writes today passes its own declaration", async () => {
     const entities = await written();
-    expect(entities.length).toBeGreaterThan(0);
+    expect(new Set(entities.map(entity => entity.schemaId))).toEqual(new Set(["email.address", "email.message"]));
     for (const written of entities) {
       const declared = DECLARED[written.schemaId as keyof typeof DECLARED];
       expect(declared, `${written.schemaId} is written but not declared`).toBeDefined();

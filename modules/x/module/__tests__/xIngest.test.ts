@@ -4,8 +4,10 @@
 // @magnis/testkit/module (throwing mockGraph — a read/ingest path hitting an
 // unarranged op fails loudly).
 import { describe, expect, it, vi } from "vitest";
-import type { GraphBatchInput, JsonObject, SyncEnvelope } from "@magnis/sdk";
-import { entity, mockGraph, mountModule, page, type MockGraph } from "@magnis/testkit/module";
+import type { RawSyncableEntity, SyncMigrationEntity } from "@magnis/plugin-sdk";
+import type { Entity, GraphBatchInput, JsonObject, JsonValue, Link, SyncEnvelope, SyncHookParams } from "@magnis/sdk";
+import { entity, link, mockGraph, mountModule, page, sourceEnvelope, type MockGraph } from "@magnis/testkit/module";
+import { ContactsModule } from "../../../contacts/module/service.ts";
 import { XModule } from "../service.ts";
 
 type G = MockGraph;
@@ -19,26 +21,29 @@ function mountX(graph: G, execute: (method: string, params?: unknown) => unknown
 }
 
 function env(remoteId: string, payload: JsonObject): SyncEnvelope {
-  return {
-    sourceId: "x",
-    surface: "x",
-    accountId: "a1",
-    userId: "u1",
-    kind: "snapshot",
-    remoteId,
-    payload,
-    timestamp: "2026-06-26T00:00:00Z",
-  };
+  return sourceEnvelope("x", payload, { sourceId: "x", accountId: "a1", userId: "u1", remoteId, timestamp: "2026-06-26T00:00:00Z" });
+}
+
+/** A stored X profile with its saved synchronization choice. */
+function profileEntity(id: string, name: string, externalId: string, properties: JsonObject, syncEnabled: boolean, syncRevision: string): RawSyncableEntity {
+  return { ...entity(id, name, { schemaId: "x.profile", source: { source: "test", account: "a1", externalId }, properties }), syncEnabled, syncRevision };
 }
 
 const stated = { droppedRemoteIds: [], triggerChecks: [], plan: null, excluded: [] };
+const ready: SyncHookParams = { userId: "u1", sourceId: "x", accountId: "x-account", identityKey: null };
+const trackingOf = (contact: Entity): unknown => (contact.properties as JsonObject).tracking;
 
 function ingestGraph(): G {
+  const profile = profileEntity("profile-12", "Jack", "x:profile:12", { handle: "jack" }, true, "0");
   return mockGraph({
-    applyBatch: () =>
-      Promise.resolve({ ids: {}, created: 0, updated: 0, linksAdded: 0, droppedKeys: [] }),
-    listEntitiesWindow: () => Promise.resolve(page([])),
-    getEntityFull: () => Promise.resolve(null),
+    findByExternalIds: async (externalIds) => externalIds.map(externalId => externalId === "x:profile:12" ? profile.id : null),
+    getEntities: async (ids) => ids.includes(profile.id) ? [profile] : [],
+    getEntity: async (id) => id === profile.id ? profile : null,
+    listSyncMigrationEntities: async () => ({ items: [{ id: profile.id, schemaId: "x.profile", name: "Jack", indexed: true, isPinned: null, properties: { handle: "jack" }, syncEnabled: true, syncRevision: "0" }], next: null }),
+    admitSyncEntities: async (subjects) => subjects.flatMap(subject => [...subject.remoteIds]),
+    applyBatch: async () => ({ ids: {}, created: 0, updated: 0, linksAdded: 0, droppedKeys: [] }),
+    listEntitiesWindow: async () => page([]),
+    getEntityFull: async () => null,
   });
 }
 
@@ -49,7 +54,7 @@ describe("x ingest", () => {
 
     const res = await mod.ingest({
       envelopes: [
-        env("x:profile:jack", {
+        env("x:profile:12", {
           entity_type: "profile",
           platform: "x",
           handle: "jack",
@@ -81,7 +86,7 @@ describe("x ingest", () => {
     const post = batch.entities.find((e) => e.schemaId === "x.post")!;
     // The dictionary IS the record; X renames handles, never account ids, so
     // the remote id is the externalId.
-    expect(profile.externalId).toBe("x:profile:jack");
+    expect(profile.externalId).toBe("x:profile:12");
     expect(profile.properties).toMatchObject({ handle: "jack", follower_count: 100 });
     expect(post.externalId).toBe("x:post:1");
     // content AND metrics in ONE dictionary.
@@ -90,7 +95,7 @@ describe("x ingest", () => {
     expect(batch.links).toEqual([
       {
         fromKey: "x:post:1",
-        toKey: "x:profile:jack",
+        toKey: "x:profile:12",
         kind: "authored_by",
         confidence: null,
         metadata: null,
@@ -152,9 +157,6 @@ describe("x ingest", () => {
   });
 });
 
-// tst_ingest_link:
-// a tracked-handle profile gets exactly one person→profile identity edge and
-// the placeholder-name CAS upgrade; an untracked handle gets neither.
 /**
  * @test-id: tst_plugin_x_plan_001
  * @scenario: scn_x_sync_001
@@ -169,8 +171,9 @@ describe("x ingest — the plan from the pages", () => {
   const post = (id: string): SyncEnvelope => ({ ...env(`x:post:${id}`, { entity_type: "post", platform: "x", post_id: id, author_handle: "jack", text: `post ${id}`, created_at: "2026-06-01T00:00:00Z", metrics: {} }), kind: "live" });
   function planGraph(known: Record<string, JsonObject>): G {
     return mockGraph({
-      findByExternalIds: (externalIds: string[]) => Promise.resolve(externalIds.map((externalId) => (externalId in known ? `id:${externalId}` : null))),
-      getEntities: (ids: string[]) => Promise.resolve(ids.map((id) => entity(id, "", { schemaId: "x.profile", properties: known[id.slice("id:".length)] ?? {} }))),
+      admitSyncEntities: async (subjects) => subjects.flatMap(subject => [...subject.remoteIds]),
+      findByExternalIds: (externalIds: string[]) => Promise.resolve(externalIds.map((externalId) => (externalId === "x:profile:12" || externalId in known ? `id:${externalId}` : null))),
+      getEntities: (ids: string[]) => Promise.resolve(ids.map((id) => profileEntity(id, "", "x:profile:12", known[id.slice("id:".length)] ?? { handle: "jack" }, true, "0"))),
       applyBatch: () => Promise.resolve({ ids: {}, created: 0, updated: 0, linksAdded: 0, droppedKeys: [] }),
     });
   }
@@ -198,75 +201,8 @@ describe("x ingest — the plan from the pages", () => {
   });
 });
 
-describe("x ingest identity link (tst_ingest_link)", () => {
-  function linkGraph(): G {
-    return mockGraph({
-      applyBatch: () =>
-        Promise.resolve({
-          ids: { "x:profile:12": "prof-1" },
-          created: 1,
-          updated: 0,
-          linksAdded: 0,
-          droppedKeys: [],
-        }),
-      addLink: () => Promise.resolve(),
-    });
-  }
-
-  const profileEnv = env("x:profile:12", {
-    entity_type: "profile",
-    platform: "x",
-    handle: "jack",
-    display_name: "Jack",
-  });
-
-  it("tracked handle → one identity link + CAS rename call", async () => {
-    const graph = linkGraph();
-    const execute = vi.fn(async (method: string) => {
-      if (method === "contacts.get_social_tracking_by_handle") {
-        return { contact_id: "c1", tracked: true, handle: "jack" };
-      }
-      if (method === "contacts.rename_if_placeholder") return { renamed: true };
-      throw new Error(`unexpected rpc ${method}`);
-    });
-    const mod = mountX(graph, execute);
-
-    await mod.ingest({ envelopes: [profileEnv] });
-
-    expect(graph.spies.addLink).toHaveBeenCalledTimes(1);
-    // `identity` runs hub → channel: the contact is the FROM endpoint.
-    expect(graph.spies.addLink).toHaveBeenCalledWith({
-      from: "c1",
-      to: "prof-1",
-      kind: "identity",
-    });
-    expect(execute).toHaveBeenCalledWith("contacts.rename_if_placeholder", {
-      id: "c1",
-      expected_name: "jack",
-      new_name: "Jack",
-    });
-  });
-
-  it("untracked handle → no link, no rename", async () => {
-    const graph = linkGraph();
-    const mod = mountX(graph, vi.fn(async () => null));
-    await mod.ingest({ envelopes: [profileEnv] });
-    expect(graph.spies.addLink).not.toHaveBeenCalled();
-  });
-
-  it("rpc failure never fails the ingest (self-healing next cycle)", async () => {
-    const graph = linkGraph();
-    const mod = mountX(
-      graph,
-      vi.fn(async () => {
-        throw new Error("hub unavailable");
-      }),
-    );
-    const res = await mod.ingest({ envelopes: [profileEnv] });
-    expect(res).toEqual(stated);
-    expect(graph.spies.addLink).not.toHaveBeenCalled();
-  });
-});
+// Legacy contact links and placeholder names are migrated before acquisition.
+// The restartable migration tests below exercise that path through Contacts.
 
 // tst_profiles_search (live bug 2026-07-03): the framework list pane passes
 // `search` into profiles.list; the tool must accept it (schema) and filter by
@@ -330,4 +266,241 @@ describe("x profiles.list search pagination", () => {
     expect(r.items.map((i) => i.display_name)).toEqual(["Cat"]);
     expect(r.total).toBe(3);
   });
+});
+
+/** @test-id: tst_module_x_sync_001
+ * @scenario: scn_x_sync_001
+ * @covers: XModule migration, selection and approved resolution
+ * @deterministic: yes
+ * @fixtures: conflicting legacy contacts resolve to the same stable provider ID
+ */
+describe("X profile synchronization migration", () => {
+  it("reports conflicting contact choices before creating a profile or requesting posts", async () => {
+    const contacts = [true, false].map((enabled, index) => entity(`contact-${index}`, "Jack", {
+      schemaId: "contacts.person", properties: { tracking: [{ platform: "x", handle: index === 0 ? "Jack" : "jack", enabled }] },
+    }));
+    const graph = mockGraph({
+      listEntitiesWindow: async () => page(contacts),
+      listSyncMigrationEntities: async () => ({ items: [], next: null }),
+      listLinksForEntities: async () => [],
+      syncState: vi.fn().mockResolvedValue({ accounts: [{ account_id: "x-account" }] }),
+      sourceCommand: async () => ({ providerId: "12", handle: "jack", displayName: "Jack", bio: null, avatarUrl: null }),
+      findByExternalId: async () => null,
+      findByExternalIds: async (externalIds) => externalIds.map(() => null),
+      getEntities: async () => [],
+      applyBatch: async () => { throw new Error("Conflict must not initialize a profile"); },
+    });
+    const mounted = await mountModule(XModule, { mode: "dispatch", graph, ctx: { extensionId: "x" } });
+    const status = await mounted.rpc("x.profile.syncMigration", {});
+    expect(status).toMatchObject({ complete: false, issues: [{
+      target: { schemaId: "x.profile", key: "x:profile:12" }, legacyIds: ["contact-0", "contact-1"],
+    }] });
+    expect(graph.spies.applyBatch).not.toHaveBeenCalled();
+    expect(graph.spies.sourceCommand).toHaveBeenCalledWith({ action: "resolveProfile", handle: "jack" }, "x-account");
+    await expect(mounted.rpc("sync.selection", { sourceId: "x", accountId: "x-account", accountGeneration: 1 })).rejects.toThrow("migration");
+  });
+});
+
+/** @test-id: tst_module_x_sync_002
+ * @scenario: scn_x_sync_001
+ * @covers: XModule.onConnectionReady, resolveSyncMigration, syncSelection
+ * @deterministic: yes
+ * @fixtures: durable Graph maps shared by fresh module instances and real Contacts cleanup
+ */
+describe("X restartable migration", () => {
+  async function fixture() {
+    const contacts = [true, false].map((enabled, index) => entity(`contact-${index}`, "jack", {
+      schemaId: "contacts.person", properties: { tracking: [{ platform: "x", handle: "jack", enabled }, { platform: "linkedin", handle: "jack", enabled: true }] },
+    }));
+    const rows = new Map<string, SyncMigrationEntity>();
+    const externalIds = new Map<string, string>();
+    const links: Link[] = [];
+    const faults = { lookup: false, cleanup: false };
+    const raw = (row: SyncMigrationEntity): RawSyncableEntity => {
+      if (row.syncEnabled === null || row.syncRevision === null) throw new Error("Uninitialized ordinary profile read");
+      const externalId = [...externalIds].find(([, id]) => id === row.id)?.[0];
+      if (externalId === undefined) throw new Error("Profile has no external id");
+      return { ...entity(row.id, row.name ?? "", { schemaId: row.schemaId, indexed: row.indexed,
+        source: { source: "test", account: "a1", externalId }, properties: row.properties as JsonObject }),
+        syncEnabled: row.syncEnabled, syncRevision: row.syncRevision };
+    };
+    const graph = mockGraph({
+      listEntitiesWindow: async () => page(contacts),
+      listSyncMigrationEntities: async () => ({ items: [...rows.values()], next: null }),
+      listLinksForEntities: async (ids) => links.filter(item => ids.includes(item.from) || ids.includes(item.to)),
+      syncState: vi.fn().mockResolvedValue({ accounts: [{ account_id: "x-account" }] }),
+      sourceCommand: async (payload, accountId) => {
+        expect(payload).toEqual({ action: "resolveProfile", handle: "jack" });
+        expect(accountId).toBe("x-account");
+        if (faults.lookup) throw new Error("X lookup unavailable");
+        return { providerId: "12", handle: "jack", displayName: "Jack", bio: "Bio", avatarUrl: null };
+      },
+      findByExternalId: async (externalId) => externalIds.get(externalId) ?? null,
+      findByExternalIds: async (items) => items.map(externalId => externalIds.get(externalId) ?? null),
+      getEntities: async (ids) => ids.map(id => {
+        const row = rows.get(id);
+        if (row === undefined) throw new Error("Missing profile");
+        return raw(row);
+      }),
+      getEntity: async (id) => { const row = rows.get(id); return row === undefined ? contacts.find(item => item.id === id) ?? null : raw(row); },
+      updateEntityName: async (id, name) => { const contact = contacts.find(item => item.id === id); if (contact === undefined) throw new Error("Missing contact"); contact.name = name; },
+      getEntityFull: async (id) => {
+        const contact = contacts.find(item => item.id === id);
+        return contact === undefined ? null : { entity: contact, links: links.filter(item => item.from === id) };
+      },
+      updateProperties: async (params) => {
+        const contact = contacts.find(item => item.id === params.entityId);
+        if (contact === undefined) throw new Error("Missing contact");
+        contact.properties = { ...(contact.properties as JsonObject), ...(params.properties as JsonObject) };
+      },
+      updateEntitySyncEnabled: async (params) => {
+        const row = rows.get(params.id);
+        if (row === undefined) throw new Error("Missing profile");
+        if (row.syncRevision === null) row.syncRevision = "0";
+        else if (row.syncEnabled !== params.syncEnabled) row.syncRevision = String(BigInt(row.syncRevision) + 1n);
+        row.syncEnabled = params.syncEnabled;
+        return { syncRevision: row.syncRevision };
+      },
+      applyBatch: async (batch) => {
+        const ids: Record<string, string> = {};
+        for (const item of batch.entities) {
+          if (item.schemaId !== "x.profile" || item.externalId === null || item.properties === null
+            || !("syncEnabled" in item) || typeof item.syncEnabled !== "boolean") throw new Error("Invalid migration create");
+          const id = externalIds.get(item.externalId) ?? `profile-${rows.size}`;
+          externalIds.set(item.externalId, id);
+          if (!rows.has(id)) rows.set(id, { id, schemaId: "x.profile", name: item.name, indexed: false, isPinned: null,
+            properties: item.properties as JsonObject, syncEnabled: item.syncEnabled, syncRevision: "0" });
+          ids[item.key] = id;
+        }
+        return { ids, created: batch.entities.length, updated: 0, linksAdded: 0, droppedKeys: [] };
+      },
+      addLink: async (input) => {
+        if (!links.some(item => item.from === input.from && item.to === input.to && item.kind === input.kind)) links.push(link(input.from, input.to, input.kind, { id: `link-${links.length}` }));
+      },
+    });
+    const owner = await mountModule(ContactsModule, { mode: "dispatch", graph, ctx: { extensionId: "contacts" } });
+    const execute = async (method: string, params?: unknown) => {
+      if (faults.cleanup) { faults.cleanup = false; throw new Error("Cleanup interrupted"); }
+      // The X module calls through RpcExecutor; the mounted Contacts surface takes JSON params.
+      return owner.rpc(method, params as JsonValue);
+    };
+    return { graph, contacts, rows, links, faults, fresh: () => mountX(graph, execute) };
+  }
+
+  it("an explicit conflict choice survives interruption and restart without duplicate profiles or links", async () => {
+    const f = await fixture();
+    // The host reads no answer from the hook; the migration status says the conflict is open.
+    await f.fresh().onConnectionReady(ready);
+    expect(await f.fresh().syncMigration()).toMatchObject({ complete: false });
+    expect(f.rows.size).toBe(0);
+    f.faults.cleanup = true;
+    expect(await f.fresh().resolveSyncMigration({ target: { schemaId: "x.profile", key: "x:profile:12" }, syncEnabled: true }))
+      .toMatchObject({ complete: false, issues: [{ message: "Cleanup interrupted" }] });
+    expect(f.rows.size).toBe(1);
+    expect(f.links).toHaveLength(2);
+    expect(f.contacts.every(contact => { const tracking = trackingOf(contact); return Array.isArray(tracking) && tracking.length === 2; })).toBe(true);
+    f.faults.lookup = true;
+    const lookupCount = f.graph.spies.sourceCommand?.mock.calls.length;
+    const next = f.fresh();
+    await next.onConnectionReady(ready);
+    expect(f.graph.spies.sourceCommand).toHaveBeenCalledTimes(lookupCount!);
+    expect(await next.syncMigration()).toEqual({ complete: true, issues: [] });
+    expect(f.rows.size).toBe(1);
+    expect(f.links).toHaveLength(2);
+    for (const contact of f.contacts) expect(trackingOf(contact)).toEqual([{ platform: "linkedin", handle: "jack", enabled: true }]);
+    expect(await next.syncSelection({ sourceId: "x", accountId: "x-account", accountGeneration: 1 })).toEqual({ surface: "x", choices: [
+      { id: "profile-0", scopeId: "12", handle: "jack", syncEnabled: true, syncRevision: "0" },
+    ] });
+    expect(f.rows.get("profile-0")?.indexed).toBe(false);
+    const first = await next.setSyncEnabled({ id: "profile-0", syncEnabled: false });
+    expect(await next.setSyncEnabled({ id: "profile-0", syncEnabled: false })).toEqual(first);
+    expect(first.results).toMatchObject([{ kind: "saved", syncEnabled: false, syncRevision: "1" }]);
+  });
+
+  it("lookup failure keeps legacy records and never starts content acquisition", async () => {
+    const f = await fixture();
+    f.faults.lookup = true;
+    await f.fresh().onConnectionReady(ready);
+    expect(await f.fresh().syncMigration()).toMatchObject({ complete: false });
+    expect(f.rows.size).toBe(0);
+    expect(f.links).toEqual([]);
+    expect(f.graph.spies.updateProperties).not.toHaveBeenCalled();
+    await expect(f.fresh().syncSelection({ sourceId: "x", accountId: "x-account", accountGeneration: 1 })).rejects.toThrow("migration");
+  });
+});
+
+/** @test-id: tst_module_x_sync_003
+ * @scenario: scn_x_sync_001
+ * @covers: XModule.ingest
+ * @deterministic: yes
+ * @fixtures: enabled and stopped profiles; profile metadata, posts and id-only deletions
+ */
+it("admits X updates and deletions only for the saved profile choice", async () => {
+  const profiles = [
+    profileEntity("profile-a", "Jack", "x:profile:12", { handle: "jack" }, true, "1"),
+    profileEntity("profile-b", "Ann", "x:profile:99", { handle: "ann" }, false, "2"),
+  ];
+  const ids = new Map([["x:profile:12", "profile-a"], ["x:profile:99", "profile-b"], ["x:post:old-a", "old-a"], ["x:post:old-b", "old-b"]]);
+  const graph = mockGraph({
+    findByExternalIds: async (externalIds) => externalIds.map(externalId => ids.get(externalId) ?? null),
+    findByExternalId: async (externalId) => ids.get(externalId) ?? null,
+    getEntities: async (wanted) => profiles.filter(row => wanted.includes(row.id)),
+    getEntity: async (id) => profiles.find(row => row.id === id) ?? null,
+    getEntityFull: async (id) => ({ entity: entity(id, "Old", { schemaId: "x.post" }), links: [
+      link(id, id === "old-a" ? "profile-a" : "profile-b", "authored_by", { id: `link-${id}` }),
+    ] }),
+    admitSyncEntities: async (subjects) => subjects.flatMap(subject => profiles.find(row => row.id === subject.entityId)?.syncEnabled ? [...subject.remoteIds] : []),
+    applyBatch: async () => ({ ids: {}, created: 0, updated: 0, linksAdded: 0, droppedKeys: [] }),
+    deleteEntity: async () => undefined,
+  });
+  const mod = mountX(graph);
+  await mod.ingest({ envelopes: [
+    env("x:profile:12", { entity_type: "profile", handle: "jack", display_name: "Updated Jack", platform: "x" }),
+    env("x:profile:99", { entity_type: "profile", handle: "ann", display_name: "Stopped Ann", platform: "x" }),
+    env("x:post:new-a", { entity_type: "post", author_handle: "jack", text: "Allowed", platform: "x" }),
+    env("x:post:new-b", { entity_type: "post", author_handle: "ann", text: "Stopped", platform: "x" }),
+    { ...env("x:post:old-a", {}), kind: "delete" }, { ...env("x:post:old-b", {}), kind: "delete" },
+  ] });
+  const batch = graph.spies.applyBatch?.mock.calls[0]?.[0] as GraphBatchInput;
+  expect(batch.entities.map(item => item.externalId)).toEqual(["x:profile:12", "x:post:new-a"]);
+  expect(graph.spies.deleteEntity).toHaveBeenCalledExactlyOnceWith("old-a");
+  expect(graph.spies.admitSyncEntities).toHaveBeenCalledTimes(1);
+});
+
+/** @test-id: tst_module_x_sync_004
+ * @scenario: scn_x_sync_001
+ * @covers: XModule.ingest discovery
+ * @deterministic: yes
+ * @fixtures: explicit disabled creation rule, changed rule and repeated discovery
+ */
+it("creates a minimal selectable profile under its explicit rule without admitting posts or resetting Stop", async () => {
+  let stored: RawSyncableEntity | undefined;
+  let storedExternalId: string | null = null;
+  let rule = "false";
+  const graph = mockGraph({
+    findByExternalIds: async (externalIds) => externalIds.map(externalId => stored !== undefined && storedExternalId === externalId ? stored.id : null),
+    getEntities: async () => stored === undefined ? [] : [stored],
+    listSyncMigrationEntities: async () => ({ items: [], next: null }),
+    listEntitiesWindow: async () => page([]),
+    moduleSettings: async () => ({ newProfileSyncEnabled: rule }),
+    admitSyncEntities: async () => [],
+    applyBatch: async (batch) => {
+      const profile = batch.entities[0];
+      if (profile === undefined || !("syncEnabled" in profile) || profile.syncEnabled !== false
+        || profile.externalId === null || profile.properties === null) throw new Error("Expected disabled profile discovery");
+      storedExternalId = profile.externalId;
+      stored = profileEntity("new-profile", profile.name ?? "", profile.externalId, profile.properties as JsonObject, false, "0");
+      return { ids: { "x:profile:12": "new-profile" }, created: 1, updated: 0, linksAdded: 0, droppedKeys: [] };
+    },
+  });
+  const envelopes = [env("x:profile:12", { entity_type: "profile", platform: "x", handle: "jack", bio: "Bio", posts_total: 10 }),
+    env("x:post:1", { entity_type: "post", platform: "x", author_handle: "jack", text: "Do not store" })];
+  await mountX(graph).ingest({ envelopes });
+  expect(stored?.properties).toMatchObject({ handle: "jack", bio: "Bio" });
+  expect(stored?.properties).not.toHaveProperty("posts_total");
+  expect(graph.spies.applyBatch).toHaveBeenCalledTimes(1);
+  rule = "true";
+  await mountX(graph).ingest({ envelopes: envelopes.map(item => ({ ...item, payload: { ...(item.payload as JsonObject), bio: "Do not refresh" } })) });
+  expect(graph.spies.applyBatch).toHaveBeenCalledTimes(1);
+  expect((stored?.properties as JsonObject | undefined)?.bio).toBe("Bio");
 });

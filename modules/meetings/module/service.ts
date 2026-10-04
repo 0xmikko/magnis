@@ -60,7 +60,7 @@ import {
   str,
 } from "./helpers.ts";
 import { CAL, EVENT, MEETING } from "../schema.ts";
-import { addressBatchEntity } from "../../email/schema.ts";
+import { addressFragment } from "../../email/schema.ts";
 
 /// A Source message's payload is the event's JSON object; anything else is a
 /// malformed envelope.
@@ -473,16 +473,15 @@ export class MeetingsModule {
     };
     // @tested-by: tst_module_meetings_sync_002
     // Address nodes and attendee edges belong to the same sync transaction.
-    const addresses: BatchEntityInput[] = [];
-    const seenAddresses = new Set<string>();
-    const links: BatchLink[] = [];
+    const named = new Map<string, string | null>();
     for (const a of attendees) {
       const lower = a.email.trim().toLowerCase();
-      const key = `addr:${lower}`;
-      if (!seenAddresses.has(key)) {
-        addresses.push(addressBatchEntity(key, lower, a.name ?? null));
-        seenAddresses.add(key);
-      }
+      if (!named.has(lower)) named.set(lower, a.name ?? null);
+    }
+    const { entities: addresses, refs } = await addressFragment(this.graph, named);
+    const links: BatchLink[] = [];
+    for (const a of attendees) {
+      const key = `addr:${a.email.trim().toLowerCase()}`;
       links.push({
         fromKey: remoteId,
         toKey: key,
@@ -494,7 +493,7 @@ export class MeetingsModule {
         validUntil: null,
       });
     }
-    const result = await this.graph.applyBatch({ entities: [entity, ...addresses], refs: [], links });
+    const result = await this.graph.applyBatch({ entities: [entity, ...addresses], refs, links });
     const entityId = result.ids[remoteId];
     if (!entityId) return false;
     const addressIds = attendees.map((attendee) => {

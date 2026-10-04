@@ -1,3 +1,4 @@
+import { SyncToolCallRenderer } from "../../contacts/ui/SyncToolCallRenderer";
 import { XIcon } from "./XIcon";
 import { defineModule } from "@magnis/host/base";
 import { setupEventInvalidation } from "@magnis/host/runtime";
@@ -20,6 +21,9 @@ export const XModule = defineModule({
   icon: <XIcon />,
   iconName: "hash",
   themeColor: "blue",
+  toolCallRenderers: [
+    { entity: "x.profile", actions: ["setSyncEnabled", "resolveSyncMigration"], Render: SyncToolCallRenderer as never },
+  ],
   entityTypes: ["profile", "post"],
   // Per-type entity cards: a profile in a contact\u2019s dynamic tab is an
   // identity card, not a post.

@@ -143,14 +143,14 @@ export async function searchEntitiesPage(
   }
 }
 
-/** Remove only this account's source replicas left unseen by a completed pass. */
-export async function removeUnseenSourceReplicas(
+/** Only this account's source replicas left unseen by a completed pass. */
+export async function unseenSourceReplicas(
   graph: GraphService,
   schemaId: string,
   sourceId: string,
   accountId: string,
   generation: string,
-): Promise<void> {
+): Promise<Entity[]> {
   const rows: Entity[] = [];
   for (let offset = 0;; offset += 500) {
     const page = await graph.listEntitiesByPropertyField({
@@ -159,10 +159,22 @@ export async function removeUnseenSourceReplicas(
     rows.push(...page.items);
     if (offset + page.items.length >= page.total) break;
   }
-  for (const row of rows) {
+  return rows.filter((row) => {
     const properties = row.properties;
-    if (row.schemaId !== schemaId || properties === null || typeof properties !== "object" || Array.isArray(properties)) continue;
-    if (properties.source_id !== sourceId || properties.account_id !== accountId || properties.sync_pass === generation) continue;
+    if (row.schemaId !== schemaId || properties === null || typeof properties !== "object" || Array.isArray(properties)) return false;
+    return properties.source_id === sourceId && properties.account_id === accountId && properties.sync_pass !== generation;
+  });
+}
+
+/** Remove only this account's source replicas left unseen by a completed pass. */
+export async function removeUnseenSourceReplicas(
+  graph: GraphService,
+  schemaId: string,
+  sourceId: string,
+  accountId: string,
+  generation: string,
+): Promise<void> {
+  for (const row of await unseenSourceReplicas(graph, schemaId, sourceId, accountId, generation)) {
     await graph.deleteEntity(row.id);
   }
 }
@@ -452,7 +464,7 @@ export function definePlugin(
     // @tested-by: tst_testkit_mount_dispatch_005
     const metas = collectMethodMetadata((ModuleClass as { prototype: object }).prototype);
     for (const m of metas) {
-      if (m.kind === "tool" && (typeof m.entity !== "string" || !m.entity.startsWith(`${prefix}.`) || !/^[a-z][a-z0-9_]*$/.test(m.suffix))) {
+      if (m.kind === "tool" && (typeof m.entity !== "string" || !m.entity.startsWith(`${prefix}.`) || !/^[a-z][a-zA-Z0-9_]*$/.test(m.suffix))) {
         throw new TypeError(`plugin ${prefix} cannot register ${methodIdentity(m)}`);
       }
       const rpcName = m.kind === "tool" ? methodIdentity(m) : `${prefix}.${m.suffix}`;

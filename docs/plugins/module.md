@@ -188,29 +188,26 @@ skip**, a write that "does nothing" almost always means a missing grant in
 ## 6. Cross-module calls — using another module's tools
 
 A module often needs an effect that belongs to **another** module.
-`contacts.create` needs an `email.address` entity, but contacts must not write
-the `email.*` schema — that is the email module's. Instead it **calls the email
-module's method** over RPC and links the result into its own slice of the graph.
+`meetings` points an `attendee` edge at each guest's `email.address` entity,
+but meetings must not write the `email.*` schema — that is the email module's.
+Instead it **calls the email module's method** over RPC and links the result
+into its own slice of the graph. A module calls only modules it lists in
+`dependsOn`: meetings depends on email, so the call always has a callee.
 
 That is what `deps.rpc` is for. `rpc.execute<T>(method, params)` invokes another
 module's method by its fully-qualified name and returns the result, so you can
 use the id it hands back:
 
 ```ts
-@writeTool("create", { /* … */ })
-async create(params: CreateParams): Promise<ContactCreated> {
-  let email_address_entity_id: string | null = null;
-  if (params.email) {
-    // ask the email module to find-or-create its own entity
-    const addr = await this.rpc.execute<{ id: string }>(
-      "email.ensure_address", { address: params.email },
-    );
-    email_address_entity_id = addr.id;
-    // link my contact to it — the kind must be granted (see below)
-    await this.graph.addLink({ from: contact.id, to: addr.id, kind: "identity" });
+private async writeAttendeeEdges(eventId: string, attendees: { email: string }[]): Promise<void> {
+  // ask the email module to find-or-create its own entities, one crossing
+  const { ids } = await this.rpc.execute<{ ids: string[] }>(
+    "email.ensure_addresses", { items: attendees.map((a) => ({ address: a.email })) },
+  );
+  // link my event to each — the kind must be granted (see below)
+  for (const to of ids) {
+    await this.graph.addLink({ from: eventId, to, kind: "attendee" });
   }
-  // return the id your UI + tests read off the result
-  return { /* …list item… */, fields: { email_address_entity_id } };
 }
 ```
 
@@ -219,13 +216,14 @@ own-namespace writes never need declaring — `[permissions]` lists only the
 foreign asks):
 
 ```toml
+dependsOn = ["email"]
 [permissions]
-call  = ["email.ensure_address"]   # EXACT methods you may call — no wildcards
-links = ["identity"]              # foreign-touching link kinds you may create
+call  = ["email.ensure_addresses"]  # EXACT methods you may call — no wildcards
+links = ["attendee"]                # foreign-touching link kinds you may create
 ```
 
 `call` lists **exact** fully-qualified methods: you may call
-`email.ensure_address` and nothing else. A call to an undeclared method is
+`email.ensure_addresses` and nothing else. A call to an undeclared method is
 refused, and `addLink` with an ungranted foreign kind is refused — there is
 **no silent skip**, so a missing grant surfaces as a thrown error, never a
 no-op. The call runs as the same user, so the target module is user-scoped

@@ -18,6 +18,7 @@ title = "Anysite"
 summary = "LinkedIn profiles and posts of the people you track, via anysite.io. More surfaces may follow."
 publisher = "ai.magnis"
 surfaces = ["linkedin"]
+dependsOn = ["linkedin"]
 account_mode = "single"
 
 [auth]

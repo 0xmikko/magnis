@@ -93,7 +93,6 @@ export interface UpdateParams {
   stage?: string;
   headcount?: number;
   funding_total?: string;
-  emails?: string[];
   phones?: string[];
   external_links?: ExternalLinkInput[];
 }

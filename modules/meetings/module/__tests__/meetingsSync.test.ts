@@ -19,7 +19,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 import type { GraphBatchInput, GraphBatchResult, JsonObject, SyncEnvelope } from "@magnis/sdk";
-import { entity, link, mockGraph, mountModule, page, type GraphOverrides, type MockGraph } from "@magnis/testkit/module";
+import { entity, link, mockGraph, mountModule, page, sourceEnvelope, type GraphOverrides, type MockGraph } from "@magnis/testkit/module";
 import { MeetingsModule } from "../service.ts";
 import type { MeetingsCanonical } from "../../types.ts";
 
@@ -28,9 +28,10 @@ type G = MockGraph;
 
 function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
   return mockGraph({
+    moduleSettings: () => Promise.resolve({ newSenderSyncEnabled: "true" }),
     applyBatch: (frag: GraphBatchInput): Promise<GraphBatchResult> =>
       Promise.resolve({
-        ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
+        ids: Object.fromEntries([...frag.entities, ...frag.refs].map((e) => [e.key, `id-${e.key}`])),
         created: frag.entities.length,
         updated: 0,
         linksAdded: 0,
@@ -62,17 +63,8 @@ function makeModule(
   return { mod, execute };
 }
 
-const env = (over: Partial<SyncEnvelope>): SyncEnvelope => ({
-  sourceId: "google",
-  surface: "meetings",
-  accountId: "acct-1",
-  userId: "u1",
-  kind: "snapshot",
-  remoteId: "r1",
-  payload: {},
-  timestamp: "2026-02-01T00:00:00Z",
-  ...over,
-});
+const env = (over: Partial<SyncEnvelope>): SyncEnvelope =>
+  sourceEnvelope("meetings", {}, { sourceId: "google", accountId: "acct-1", userId: "u1", remoteId: "r1", timestamp: "2026-02-01T00:00:00Z", ...over });
 
 describe("meetings @syncHandler — upsert", () => {
   it("upserts a snapshot via applyBatch keyed on its external id, no trigger", async () => {
@@ -382,4 +374,28 @@ describe("meetings trigger.check carries the event's own time", () => {
 
     expect(res.triggerChecks[0]?.context).toHaveProperty("occurred_at", null);
   });
+});
+
+/**
+ * @test-id: tst_module_meetings_email_sync_001
+ * @scenario: scn_google_sync_001
+ * @covers: MeetingsModule.ingest
+ * @deterministic: yes
+ * @fixtures: an existing stopped attendee and a new address with owner default false
+ */
+it("tst_module_meetings_email_sync_001 reuses existing addresses and reads the owner's creation rule without RPC", async () => {
+  const graph = makeGraph({
+    findByExternalIds: (externalIds: string[]) => Promise.resolve(externalIds.map((externalId) => externalId === "email:address:old@example.com" ? "old-address" : null)),
+    moduleSettings: (schema: string) => {
+      expect(schema).toBe("email.address");
+      return Promise.resolve({ newSenderSyncEnabled: "false" });
+    },
+  });
+  const { mod, execute } = makeModule(graph);
+  await mod.ingest({ envelopes: [env({ payload: { title: "Meeting", attendees: [{ email: "old@example.com" }, { email: "new@example.com" }] } })] });
+  expect(graph.spies.applyBatch).toHaveBeenCalledWith(expect.objectContaining({
+    entities: expect.arrayContaining([expect.objectContaining({ externalId: "email:address:new@example.com", syncEnabled: false })]),
+    refs: [{ key: "addr:old@example.com", externalId: "email:address:old@example.com" }],
+  }));
+  expect(execute).not.toHaveBeenCalled();
 });

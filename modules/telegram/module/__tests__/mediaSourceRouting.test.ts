@@ -16,14 +16,15 @@
  */
 import type { BatchEntityInput, BatchLink, GraphBatchInput, JsonObject, SyncEnvelope } from "@magnis/sdk";
 import { describe, expect, it } from "vitest";
-import { entity, mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
+import { entity, mockGraph, mountModule, sourceEnvelope, type MockGraph } from "@magnis/testkit/module";
 import { TelegramModule } from "../service.ts";
 
 type G = MockGraph;
 
 function ingestGraph(): G {
   return mockGraph({
-    // No pre-existing chat/sender entities: lookups miss, batch creates.
+    // Discovery already created the chat; the page creates messages and senders.
+    admitSyncEntities: (subjects) => Promise.resolve(subjects.flatMap((subject) => [...subject.remoteIds])),
     applyBatch: (frag) =>
       Promise.resolve({
         ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
@@ -35,7 +36,9 @@ function ingestGraph(): G {
     webRegister: () => Promise.resolve("web-id"),
     webRegisterBatch: (links: readonly unknown[]) => Promise.resolve(links.map(() => "web-id")),
     findByExternalId: () => Promise.resolve(null),
-    findByExternalIds: (externalIds) => Promise.resolve(externalIds.map(() => null)),
+    findByExternalIds: (externalIds) => Promise.resolve(externalIds.map((externalId) => externalId === "tg:chat:42" ? "chat-42" : null)),
+    getEntities: () => Promise.resolve([{ ...entity("chat-42", "Chat", { schemaId: "telegram.chat", indexed: true }), properties: { chat_id: 42 } }]),
+    updatePropertiesBatch: () => Promise.resolve(),
     fileRegister: () => Promise.resolve("file-id"),
     fileRegisterBatch: (files: readonly unknown[]) => Promise.resolve(files.map(() => "file-id")),
     createEntity: () => Promise.resolve(entity("created-id", "")),
@@ -43,15 +46,8 @@ function ingestGraph(): G {
   });
 }
 
-const mediaEnvelope = (sourceId: string, sender: JsonObject = {}): SyncEnvelope => ({
-  sourceId,
-  surface: "telegram",
-  accountId: "acct-1",
-  userId: "u1",
-  kind: "snapshot",
-  identityKey: "9001",
-  remoteId: "tg:msg:42:7",
-  payload: {
+const mediaEnvelope = (sourceId: string, sender: JsonObject = {}): SyncEnvelope =>
+  sourceEnvelope("telegram", {
     entity_type: "message",
     message_id: 7,
     chat_id: 42,
@@ -62,9 +58,14 @@ const mediaEnvelope = (sourceId: string, sender: JsonObject = {}): SyncEnvelope 
     file_name: "photo.jpg",
     source_ref: { chat_id: 42, message_id: 7, dest_subpath: "telegram/42/7/photo.jpg" },
     ...sender,
-  },
-  timestamp: "2026-07-01T00:00:00Z",
-});
+  }, {
+    sourceId,
+    accountId: "acct-1",
+    userId: "u1",
+    identityKey: "9001",
+    remoteId: "tg:msg:42:7",
+    timestamp: "2026-07-01T00:00:00Z",
+  });
 
 describe("tst_fe_tg_media_source_routing_001 — file.object sourceModule = envelope sourceId", () => {
   it("batch ingest stamps the envelope's sourceId (telegram-ts), never a hardcoded name", async () => {

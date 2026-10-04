@@ -47,7 +47,7 @@ describe("tst_pub_item_schemas_001", () => {
     ["telegram", "telegram", "telegram.message"],
     ["email", "email", "email.message"],
     ["meetings", "meetings", "meetings.calendar_event"],
-    ["contacts", "contacts", "contacts.google_contact"],
+    ["addressbook", "addressbook", "addressbook.card"],
   ];
 
   for (const [moduleId, surface, schema] of expected) {
@@ -74,13 +74,13 @@ describe("tst_pub_item_schemas_001", () => {
     telegram: { mode: "none" },
     email: { mode: "none" },
     meetings: { mode: "full_snapshot" },
-    contacts: { mode: "full_snapshot" },
+    addressbook: { mode: "full_snapshot" },
   };
 
   /**
    * @test-id: tst_cert_google_003
    * @scenario: scn_google_pull_005
-   * @covers: modules/meetings/manifest.toml, modules/contacts/manifest.toml
+   * @covers: modules/meetings/manifest.toml, modules/addressbook/manifest.toml
    * @deterministic: yes
    * @fixtures: bundled module manifests only
    */
@@ -100,7 +100,7 @@ describe("tst_pub_item_schemas_001", () => {
   const progress: readonly (readonly [string, string, Record<string, string>])[] = [
     ["telegram", "telegram", { "telegram.chat": "chats", "telegram.message": "messages" }],
     ["email", "email", { "email.message": "messages" }],
-    ["contacts", "contacts", { "contacts.google_contact": "contacts" }],
+    ["addressbook", "addressbook", { "addressbook.card": "contacts" }],
     ["meetings", "meetings", { "meetings.calendar_event": "events" }],
     ["x", "x", { "x.post": "posts", "x.profile": "profiles" }],
     ["linkedin", "linkedin", { "linkedin.profile": "profiles", "linkedin.post": "posts" }],

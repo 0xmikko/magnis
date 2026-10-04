@@ -1,29 +1,24 @@
 // Contacts plugin — backend module (V8). Decorated class; the
 // read path (list/get) mirrors the legacy Rust ContactsModuleService.
 
-import { linkedEntitySummary, reachedEndpoints, removeUnseenSourceReplicas, rpc, searchEntitiesPage, syncComplete, syncHandler, tool, writeTool, type GetParams, type GraphService, type PluginDeps, type PluginUtil, type RpcExecutor } from "@magnis/plugin-sdk";
+import { linkedEntitySummary, reachedEndpoints, rpc, searchEntitiesPage, tool, writeTool, type GetParams, type GraphService, type PluginDeps, type PluginUtil, type RpcExecutor, type SetSyncEnabledParams, type SetSyncEnabledResult, type SyncTargetResult } from "@magnis/plugin-sdk";
 import type {
-  BatchEntityInput,
   Entity,
   EntitySearchHit,
-  JsonObject,
   JsonValue,
   LinkedEntitySummary,
   MergeInput,
   MergePreview,
   MergeResult,
   PaginatedResponse,
-  SyncEnvelope,
-  SyncHandlerParams,
-  SyncHookParams,
-  SyncReceipt,
-  SyncReconcileAnswer,
 } from "@magnis/sdk";
 import type {
+  CompleteXSyncMigrationParams,
   BatchCreateParams,
   BatchCreateResult,
   BatchCreateRow,
   ContactDetailView,
+  ContactSyncTarget,
   ContactListItem,
   ContactsListParams,
   CreateParams,
@@ -34,34 +29,33 @@ import type {
   SocialTracking,
   ToolResult,
   UpdateParams,
-  GoogleContactPayload,
 } from "../types.ts";
 import {
   buildListItem,
   computeInitials,
-  INGEST_CHUNK,
   composeChannels,
   pickAvatarColor,
-  replicaDict,
 } from "./helpers.ts";
-import {
-  CONTACT,
-  GOOGLE_CONTACT,
-} from "../schema.ts";
-import { addressBatchEntity } from "../../email/schema.ts";
+import { CONTACT } from "../schema.ts";
+import { chatExternalId } from "../../telegram/schema.ts";
 
 /**
  * Bulk message records. A contact's replicas sit on one edge per message ever
  * addressed to them, and those are read through the owning module's own paging
  * surface rather than inherited by the hub. See the note in `get`.
  */
+const SYNC_IDENTITY_SCHEMAS = new Set(["email.address", "x.profile", "telegram.account"]);
+
 const MESSAGE_SCHEMAS = new Set(["email.message", "telegram.message"]);
+
+/** Contacts sits above email: an address reaches a person from the module
+ * that syncs it, never through the hub's create. */
+const NO_EMAIL = "contacts.create takes no email: an address reaches a person from the module that syncs it";
 
 const CONTACT_CREATE_PARAMS = {
   type: "object",
   properties: {
     name: { type: "string" },
-    email: { type: "string" },
     phone: { type: "string" },
     company: { type: "string" },
     role: { type: "string" },
@@ -151,6 +145,35 @@ export class ContactsModule {
     this.rpc = deps.rpc;
   }
 
+  @writeTool("setSyncEnabled", {
+    entity: "contacts.person",
+    description: "Start or stop synchronization for this contact's currently linked email, X and Telegram identities.",
+    params: {
+      type: "object", properties: { id: { type: "string", format: "uuid" }, syncEnabled: { type: "boolean" } },
+      required: ["id", "syncEnabled"], additionalProperties: false,
+    },
+  })
+  async setSyncEnabled(params: SetSyncEnabledParams): Promise<SetSyncEnabledResult> {
+    const detail = await this.graph.getEntityFull(params.id, { links: true });
+    if (detail?.entity.schemaId !== CONTACT) throw new Error(`contact not found: ${params.id}`);
+    const ids = [...new Set(detail.links.filter(link => link.kind === "identity" && link.from === params.id && link.validUntil === null).map(link => link.to))];
+    const identities = new Map((ids.length === 0 ? [] : await this.graph.getEntities(ids)).map(row => [row.id, row]));
+    const results: SyncTargetResult[] = [];
+    for (const identityId of ids) {
+      try {
+        const identity = identities.get(identityId);
+        if (!identity) throw new Error("Linked identity is unavailable");
+        if (!SYNC_IDENTITY_SCHEMAS.has(identity.schemaId)) continue;
+        const result = await this.rpc.execute<SetSyncEnabledResult>(`${identity.schemaId}.setSyncEnabled`, { id: identityId, syncEnabled: params.syncEnabled });
+        if (result.results.length !== 1 || result.results[0]?.identityId !== identityId) throw new Error("Identity owner returned an invalid synchronization result");
+        results.push(result.results[0]);
+      } catch (error) {
+        results.push({ identityId, targetId: null, kind: "failed", message: error instanceof Error ? error.message : String(error) });
+      }
+    }
+    return { results };
+  }
+
   @rpc("list", {
     description: "List contacts with pagination and optional name search.",
     params: {
@@ -208,6 +231,27 @@ export class ContactsModule {
     const identityById = await this.identityNeighboursByEntity(ids);
     const items = rows.map((e) => buildListItem(e, identityById.get(e.id) ?? []));
     return { items, total, limit, offset };
+  }
+
+  private async syncTarget(identity: Entity): Promise<ContactSyncTarget> {
+    const target = { identityId: identity.id, schemaId: identity.schemaId, name: identity.name };
+    try {
+      let row = identity;
+      if (identity.schemaId === "telegram.account") {
+        const userId = (identity.properties as Record<string, unknown>).telegram_user_id;
+        if (typeof userId !== "number" || !Number.isSafeInteger(userId)) throw new Error("Telegram identity has no provider user ID");
+        const id = await this.graph.findByExternalId(chatExternalId(String(userId)));
+        if (id === null) throw new Error("Telegram identity has no stored direct chat");
+        const chat = await this.graph.getEntity(id);
+        if (chat?.schemaId !== "telegram.chat" || (chat.properties as Record<string, unknown>).type !== "private") throw new Error("Telegram identity's stored chat is not a direct chat");
+        row = chat;
+      }
+      if (!("syncEnabled" in row) || typeof row.syncEnabled !== "boolean" || !("syncRevision" in row)
+        || typeof row.syncRevision !== "string" || !/^\d+$/.test(row.syncRevision)) throw new Error("Identity target has no saved synchronization choice");
+      return { ...target, state: { kind: "ready", id: row.id, syncEnabled: row.syncEnabled, syncRevision: row.syncRevision } };
+    } catch (error) {
+      return { ...target, state: { kind: "unavailable", message: error instanceof Error ? error.message : String(error) } };
+    }
   }
 
   @rpc("get", CONTACT_GET_SPEC)
@@ -279,6 +323,13 @@ export class ContactsModule {
       .map((l) => neighbours.get(l.to))
       .filter((n): n is Entity => n !== undefined);
     const base = buildListItem(e, identityNeighbours);
+    const syncTargets: ContactSyncTarget[] = [];
+    const activeIds = new Set(links.filter(link => link.kind === "identity" && link.from === e.id && link.validUntil === null).map(link => link.to));
+    for (const id of activeIds) {
+      const identity = neighbours.get(id);
+      if (!identity) throw new Error(`Linked identity is unavailable: ${id}`);
+      if (SYNC_IDENTITY_SCHEMAS.has(identity.schemaId)) syncTargets.push(await this.syncTarget(identity));
+    }
 
     // ── S3 (§5.1): the card is composed at read time ────────────────────
     // Curated claims = the hub's dictionary. Source claims = the replica
@@ -318,7 +369,7 @@ export class ContactsModule {
       }
     }
     for (const r of replicas) {
-      const source = r.schemaId === GOOGLE_CONTACT ? "google" : r.schemaId;
+      const source = r.schemaId === "addressbook.card" ? "google" : r.schemaId;
       if (Array.isArray(r.properties.phones)) {
         for (const p of r.properties.phones as { number?: unknown; label?: unknown }[]) {
           pushPhone(p.number, p.label, source);
@@ -352,6 +403,7 @@ export class ContactsModule {
       // S6: the canonical block is empty by construction — nothing resolves
       // into it any more, and the DTO keeps the field only until the wire
       // shape drops it.
+      syncTargets,
       canonical: {},
       linkedEntities: linked,
       createdAt: base.createdAt,
@@ -397,13 +449,11 @@ export class ContactsModule {
   }
 
   // Mirrors the native ContactsModuleController::create_single_contact
-  // graph writes (controller.rs:43-211). The `email.address` entity +
-  // `has_email` link are created via the cross-module RPC hub:
-  // contacts asks the `email` module to ensure the address entity, then
-  // links it — contacts never writes the foreign `email.address` schema
-  // itself. `params` is agent-facing: it omits `client_id` so the
-  // agent never invents an id; the handler still accepts it from the
-  // frontend WS path via CreateParams.
+  // graph writes (controller.rs:43-211): the person and its curated claims.
+  // Contacts sits above email in the dependency graph, so it never asks
+  // email for an address; an `email` argument is refused. `params` is
+  // agent-facing: it omits `client_id` so the agent never invents an id;
+  // the handler still accepts it from the frontend WS path via CreateParams.
   async create(params: CreateParams): Promise<ContactListItem & { fields: Record<string, unknown> }>;
   async create(params: BatchCreateParams): Promise<BatchCreateResult>;
   @rpc("create", {
@@ -427,13 +477,14 @@ export class ContactsModule {
   }
 
   private async createSingle(params: CreateParams): Promise<ContactListItem & { fields: Record<string, unknown> }> {
+    if ("email" in params) throw new Error(NO_EMAIL);
     // Idempotency: an existing client_id returns the existing contact,
     // no re-write (native controller.rs:67 find_entity_for_user).
     if (params.client_id) {
       const existing = await this.graph.getEntity(params.client_id);
       if (existing) {
         const item = await this.listItemFor(existing);
-        return { ...item, fields: { name: item.name, email_address_entity_id: null } };
+        return { ...item, fields: { name: item.name } };
       }
     }
 
@@ -443,8 +494,7 @@ export class ContactsModule {
       clientId: params.client_id,
       idx: params.name.toLowerCase(),
     });
-    // S3: the hub dict takes the curated claims. The
-    // email becomes an identity edge to the shared address node below.
+    // S3: the hub dict takes the curated claims.
     const curated: Record<string, JsonValue> = {};
     if (params.phone) {
       curated.phones = [{ phone: params.phone, type: null, is_primary: true }];
@@ -455,33 +505,11 @@ export class ContactsModule {
       await this.graph.updateProperties({ entityId: entity.id, properties: curated });
     }
 
-    // Hub: ask the email module to ensure the email.address entity, then
-    // join them with an identity edge (S3: has_email retired — an address IS
-    // an identity channel of the person).
-    let email_address_entity_id: string | null = null;
-    if (params.email) {
-      try {
-        const addr = await this.rpc.execute<{ id: string }>("email.ensure_address", {
-          address: params.email,
-        });
-        email_address_entity_id = addr.id;
-        await this.graph.addLink({ from: entity.id, to: addr.id, kind: "identity" });
-      } catch {
-        // Parity with native controller.rs:167 — warn-and-continue. On the
-        // single-runtime path (no host AppState) the email hub is unavailable;
-        // the contact + its email node still persist, just without the
-        // email.address entity and has_email link.
-        email_address_entity_id = null;
-      }
-    }
-
     const item = await this.listItemFor(entity);
     return {
       ...item,
       fields: {
         name: params.name,
-        email_address_entity_id,
-        ...(params.email ? { email: params.email } : {}),
         ...(params.role ? { role: params.role } : {}),
         ...(params.company ? { company: params.company } : {}),
       },
@@ -492,8 +520,7 @@ export class ContactsModule {
   // ids derive as uuid_v5(batch client_id, "contacts.batch_create:{i}")
   // so a retried batch reuses the same entity ids (idempotent), exactly
   // as the native handler (controller.rs:531). Each row delegates to
-  // create(), inheriting the same dictionary writes AND the email.address +
-  // has_email hub path when a row carries an email.
+  // create(), inheriting the same dictionary writes.
   @rpc("batch_create", {
     description: "Create a batch of contacts; a retried batch with the same client_id reuses its ids.",
     params: { ...CONTACT_BATCH_CREATE_PARAMS, properties: { ...CONTACT_BATCH_CREATE_PARAMS.properties, ...CLIENT_ID_PROPERTY } },
@@ -507,6 +534,7 @@ export class ContactsModule {
       if (!c.name || c.name.trim().length === 0) {
         throw new Error(`contact[${String(i)}]: missing or empty name`);
       }
+      if ("email" in c) throw new Error(`contact[${String(i)}]: ${NO_EMAIL}`);
     });
 
     const excluded = new Set(params.excluded_indices ?? []);
@@ -525,14 +553,13 @@ export class ContactsModule {
         : undefined;
       const item = await this.createSingle({
         name: c.name,
-        email: c.email,
         phone: c.phone,
         company: c.company,
         role: c.role,
         client_id: rowClientId,
       });
       created += 1;
-      results.push({ id: item.id, name: c.name, email: c.email ?? null, status: "created" });
+      results.push({ id: item.id, name: c.name, status: "created" });
     }
 
     return { results, total: contacts.length, created, excluded: excludedCount };
@@ -664,261 +691,6 @@ export class ContactsModule {
     return { content: [{ type: "text", text: JSON.stringify(results, null, 2) }] };
   }
 
-  // ── sync ingest (@syncHandler) ────────────────────────────────
-  // Invoked by the host PluginModuleController bridge (`contacts.__sync__`) with
-  // a WHOLE page of `contacts` envelopes (Google People API snapshots). Mirrors
-  // the email ingest principle: a page's contacts fold into applyBatch chunks —
-  // one contacts.person entity per contact + its profile/email/phone/
-  // external_link replicas, all in ONE atomic graph.applyBatch per chunk.
-  //
-  // Idempotency: the entity key AND the external ids are the envelope
-  // `remoteId` (`gpeople:{stable_id}`), so re-ingesting the same contact
-  // upserts on that key — no duplicate entity (applyBatch resolves-or-creates
-  // by external id, like email's message ingest). `generation` is the pass the
-  // worker is in; a Source effect outside a worker carries none and states
-  // nothing.
-  @syncHandler("contacts")
-  async ingest(params: SyncHandlerParams): Promise<SyncReceipt> {
-    const envelopes = params.envelopes;
-    const dropped: string[] = [];
-    // What the page states for the plan, as the People API counts the list:
-    // the whole of it on the list envelope that opens a pass, and the persons
-    // a page left out as skipped.
-    // @tested-by: tst_module_contacts_plan_001
-    const stated = typeof params.generation === "string" && params.generation !== "";
-    const fullPass = params.command === "bootstrap";
-    const plan = { total: 0, skipped: 0 };
-
-    // Fold by remote_id so two envelopes for the same resourceName collapse to
-    // ONE entity in the batch (last-write-wins on payload). Native parity: an
-    // envelope with no owning user is skipped — the dispatcher couldn't resolve
-    // user_id, so we cannot user-scope the write.
-    const byRemoteId = new Map<string, SyncEnvelope>();
-    for (const env of envelopes) {
-      if (!env.userId) continue;
-      if (env.kind === "delete") {
-        if (await this.deleteGoogleReplica(env) && stated && !fullPass) plan.total -= 1;
-        continue;
-      }
-      if (env.kind !== "snapshot" && env.kind !== "live") continue;
-      if (!env.remoteId) continue;
-      const payload = env.payload as Record<string, unknown>;
-      if (payload.entity_type === "list") {
-        const total = payload.total_people;
-        const skipped = payload.skipped;
-        if (typeof total === "number" && stated && fullPass) plan.total += total;
-        if (typeof skipped === "number" && stated && fullPass) plan.skipped += skipped;
-        continue;
-      }
-      byRemoteId.set(env.remoteId, env);
-    }
-
-    let chunk: SyncEnvelope[] = [];
-    const flush = async (): Promise<void> => {
-      if (chunk.length > 0) {
-        plan.total += await this.ingestContactBatch(chunk, params.generation, fullPass);
-        await Promise.resolve(); // yield so waiting RPCs get the connection
-      }
-      chunk = [];
-    };
-    for (const env of byRemoteId.values()) {
-      if (chunk.length >= INGEST_CHUNK) await flush();
-      chunk.push(env);
-    }
-    await flush();
-
-    return {
-      droppedRemoteIds: dropped,
-      triggerChecks: [],
-      plan: stated ? { [GOOGLE_CONTACT]: plan } : null,
-      excluded: [],
-    };
-  }
-
-  /** @tested-by: tst_module_google_002 */
-  private async deleteGoogleReplica(env: SyncEnvelope): Promise<boolean> {
-    if (!env.remoteId) return false;
-    const id = await this.graph.findByExternalId(env.remoteId);
-    if (!id) return false;
-    const replica = await this.graph.getEntity(id);
-    if (replica?.schemaId !== GOOGLE_CONTACT) return false;
-    const properties = replica.properties as Record<string, unknown>;
-    if (properties.source_id !== env.sourceId || properties.account_id !== env.accountId) return false;
-    await this.graph.deleteEntity(id);
-    return true;
-  }
-
-  /** The host calls this only after the complete replacement pass. Never
-   * delete a curated person hub; only this account's Google replicas depart.
-   * @tested-by: tst_module_google_002 */
-  @syncComplete()
-  async onSyncComplete(params: SyncHookParams): Promise<SyncReconcileAnswer> {
-    if (!params.sourceId || !params.accountId || !params.generation) {
-      throw new Error("contacts sync complete requires source, account and generation");
-    }
-    await removeUnseenSourceReplicas(this.graph, GOOGLE_CONTACT, params.sourceId, params.accountId, params.generation);
-    return { departed: [], plan: { [GOOGLE_CONTACT]: { total: 0, skipped: 0 } } };
-  }
-
-  /// One chunk → one applyBatch. Each contact becomes a Google replica
-  /// whose external id is its stable resourceName-derived remoteId.
-  private async ingestContactBatch(envelopes: SyncEnvelope[], generation: string | undefined, fullPass: boolean): Promise<number> {
-    // 1. Fold envelopes into rows: payload + its lowercased addresses.
-    interface Row {
-      remoteId: string;
-      payload: JsonObject;
-      p: GoogleContactPayload;
-      addresses: string[];
-      sourceId: string;
-      accountId: string;
-    }
-    const rows: Row[] = [];
-    for (const env of envelopes) {
-      const remoteId = env.remoteId;
-      if (!remoteId) continue;
-      if (!env.sourceId || !env.accountId) throw new Error("contacts ingest requires source and account");
-      const payload = env.payload as JsonObject;
-      const p = payload as GoogleContactPayload;
-      const addresses = [
-        ...new Set(
-          (p.emails ?? [])
-            .map((e) => (typeof e.address === "string" ? e.address.trim().toLowerCase() : ""))
-            .filter((a) => a.length > 0),
-        ),
-      ];
-      rows.push({ remoteId, payload, p, addresses, sourceId: env.sourceId, accountId: env.accountId });
-    }
-    if (rows.length === 0) return 0;
-
-    const deltaExternalIds = generation && !fullPass ? rows.map((row) => row.remoteId) : [];
-    const known = deltaExternalIds.length > 0 ? await this.graph.findByExternalIds(deltaExternalIds) : [];
-    const existing = new Set(deltaExternalIds.filter((_, index) => known[index]));
-
-    // 2. Address nodes and contact replicas share the sync transaction.
-    // @tested-by: tst_module_contacts_ingest_002
-    const allAddresses = [...new Set(rows.flatMap((r) => r.addresses))];
-    const addressEntities = allAddresses.map((address) => addressBatchEntity(`addr:${address}`, address, null));
-
-    // 3. Replica nodes (plan §5): fields-as-last-synced dictionaries,
-    // identified by the stable remoteId — ONE batch, and the sync
-    // never writes the hub again.
-    const entities: BatchEntityInput[] = [...addressEntities, ...rows.map(({ remoteId, payload, p, sourceId, accountId }) => {
-      const name = typeof p.display_name === "string" ? p.display_name : "";
-      return {
-        key: remoteId,
-        schemaId: GOOGLE_CONTACT,
-        name,
-        idx: name.toLowerCase() || null,
-        date: null,
-        externalId: remoteId,
-        properties: { ...replicaDict(payload), source_id: sourceId, account_id: accountId, ...(generation ? { sync_pass: generation } : {}) },
-      };
-    })];
-    const batch = await this.graph.applyBatch({ entities, refs: [], links: [] });
-    const addressId = new Map(allAddresses.map((address) => {
-      const id = batch.ids[`addr:${address}`];
-      if (!id) throw new Error(`contacts ingest: address ${address} was not resolved`);
-      return [address, id] as const;
-    }));
-    const created = deltaExternalIds.filter((externalId) => !existing.has(externalId) && batch.ids[externalId]).length;
-
-    // 4. Auto-attach (plan §5.2): attach / mint / merge-candidate, on
-    // identity-grade external ids only. Fuzzy name matching is never automatic.
-    for (const row of rows) {
-      const replicaId = batch.ids[row.remoteId];
-      if (!replicaId) continue;
-      const addrIds = row.addresses
-        .map((a) => addressId.get(a))
-        .filter((id): id is string => typeof id === "string");
-      await this.attachReplica(replicaId, row.p, addrIds);
-    }
-    return created;
-  }
-
-  /// The three outcomes, in order (plan §5.2 + the S3 legacy probe):
-  /// already-attached (re-sync) → done; exactly one hub holds identity to a
-  /// shared address → attach; none → probe the legacy fleet by the hashed
-  /// anchor, else mint a hub (name vouch, empty dictionary);
-  /// several → mint a separate hub and record merge-candidate rows —
-  /// ambiguity is a human decision, not a guess.
-  private async attachReplica(
-    replicaId: string,
-    p: GoogleContactPayload,
-    addrIds: string[],
-  ): Promise<void> {
-    // Re-sync short-circuit: the replica already has its hub.
-    const replicaLinks = await this.graph.listLinksForEntity(replicaId, "identity");
-    if (replicaLinks.some((l) => l.kind === "identity" && l.to === replicaId)) {
-      return;
-    }
-
-    // Hubs holding identity edges to any shared address. Companies hold
-    // identity edges to addresses too — filter to persons.
-    const candidates = new Set<string>();
-    for (const addrId of addrIds) {
-      const links = await this.graph.listLinksForEntity(addrId, "identity");
-      for (const l of links) {
-        if (l.kind === "identity" && l.to === addrId) candidates.add(l.from);
-      }
-    }
-    let hubs: string[] = [];
-    if (candidates.size > 0) {
-      const found = await this.graph.getEntities([...candidates]);
-      hubs = found.filter((e) => e.schemaId === CONTACT).map((e) => e.id);
-    }
-
-    let hubId: string | null = null;
-    let mergeCandidates: string[] = [];
-    if (hubs.length === 1) {
-      hubId = hubs[0] ?? null;
-    } else if (hubs.length > 1) {
-      mergeCandidates = hubs;
-    }
-
-    if (hubId === null) {
-      // Mint: the name vouch and an empty dictionary — the card composes
-      // everything else from the replica at read time.
-      const firstAddress = (p.emails ?? []).find(
-        (e) => typeof e.address === "string" && e.address.length > 0,
-      )?.address;
-      const name =
-        (typeof p.display_name === "string" && p.display_name.length > 0
-          ? p.display_name
-          : undefined) ??
-        firstAddress ??
-        "Contact";
-      const hub = await this.graph.createEntity({
-        schemaId: CONTACT,
-        name,
-        idx: name.toLowerCase(),
-      });
-      hubId = hub.id;
-      // Several hubs claimed one address: record the ambiguity for a human.
-      for (const other of mergeCandidates) {
-        await this.graph.addLink({
-          from: hubId,
-          to: other,
-          kind: "same_as",
-        });
-      }
-    }
-
-    // The edges: hub → replica, hub → each shared address. Idempotent at the
-    // graph layer (re-sync never duplicates an identity edge).
-    await this.graph.addLink({
-      from: hubId,
-      to: replicaId,
-      kind: "identity",
-    });
-    for (const addrId of addrIds) {
-      await this.graph.addLink({
-        from: hubId,
-        to: addrId,
-        kind: "identity",
-      });
-    }
-  }
-
   // Compare-and-set rename — a contact auto-created from a URL
   // carries its handle as a placeholder name; the first profile ingest upgrades
   // it to the real display name ONLY while the placeholder is still in place.
@@ -945,6 +717,28 @@ export class ContactsModule {
     }
     await this.graph.updateEntityName(params.id, params.new_name);
     return { renamed: true };
+  }
+
+  @rpc("completeXSyncMigration", { description: "Remove an X legacy choice after its profile and identity link are committed.", params: {
+    type: "object", properties: { contactId: { type: "string" }, profileId: { type: "string" }, handle: { type: "string" }, enabled: { type: "boolean" } },
+    required: ["contactId", "profileId", "handle", "enabled"], additionalProperties: false,
+  } })
+  async completeXSyncMigration(params: CompleteXSyncMigrationParams): Promise<{ removed: boolean }> {
+    const detail = await this.graph.getEntityFull(params.contactId, { links: true });
+    if (detail?.entity.schemaId !== CONTACT) throw new Error("X migration contact is missing");
+    if (!detail.links.some((link) => link.from === params.contactId && link.to === params.profileId && link.kind === "identity" && link.validUntil === null)) throw new Error("X migration identity link is not committed");
+    const profile = await this.graph.getEntity(params.profileId);
+    if (profile?.schemaId !== "x.profile" || !("syncEnabled" in profile) || typeof profile.syncEnabled !== "boolean"
+      || !("syncRevision" in profile) || typeof profile.syncRevision !== "string" || !/^\d+$/.test(profile.syncRevision)) throw new Error("X migration profile has no saved choice");
+    const handle = (profile.properties as Record<string, unknown>).handle;
+    if (profile.origin !== "canonical" || !/^x:profile:\d+$/.test(profile.source.externalId)
+      || typeof handle !== "string" || handle.trim().toLowerCase() !== params.handle) throw new Error("X migration profile identity does not match the legacy entry");
+    const existing = trackingOf(detail.entity);
+    const remaining = existing.filter((entry) => !(entry.platform === "x" && entry.handle?.trim().toLowerCase() === params.handle && entry.enabled === params.enabled));
+    if (remaining.length === existing.length) return { removed: false };
+    const tracking = remaining.map(({ platform, handle, enabled }) => ({ platform, ...(handle === undefined ? {} : { handle }), enabled }));
+    await this.graph.updateProperties({ entityId: params.contactId, properties: { tracking } });
+    return { removed: true };
   }
 
   // Search-plan stage First: the tracked hubs, straight from the FILTERED

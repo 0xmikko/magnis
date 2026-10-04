@@ -21,20 +21,18 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
-import type { RpcExecutor } from "@magnis/plugin-sdk";
+import type { RpcExecutor, SyncMigrationEntity } from "@magnis/plugin-sdk";
 import type { GraphBatchInput } from "@magnis/sdk";
-import { mockGraph, mountModule, type GraphOverrides } from "@magnis/testkit/module";
+import { entity, mockGraph, mountModule, type GraphOverrides } from "@magnis/testkit/module";
 import { EmailModule } from "../service.ts";
 import type { EmailCanonical } from "../../types.ts";
 
 function makeModule(
-  graph: Partial<Record<string, unknown>>,
+  graph: GraphOverrides,
   rpc: RpcExecutor = { execute: vi.fn() },
 ): EmailModule {
   return mountModule(EmailModule, {
-    graph: mockGraph(
-      graph as unknown as GraphOverrides,
-    ),
+    graph: mockGraph({ moduleSettings: () => Promise.resolve({ newSenderSyncEnabled: "true" }), ...graph }),
     ctx: { extensionId: "email" },
     rpc,
   }).module;
@@ -53,6 +51,90 @@ describe("email sync control", () => {
     const mod = makeModule({ syncState });
     await mod.syncReset();
     expect(syncState).toHaveBeenCalledWith("reset", "email.message");
+  });
+});
+
+/**
+ * @test-id: tst_module_email_sync_002
+ * @scenario: scn_google_sync_001
+ * @covers: EmailModule.syncSelection, EmailModule.onConnectionReady, EmailModule.setSyncEnabled
+ * @deterministic: yes
+ * @fixtures: one legacy sender and one stopped sender shared across accounts
+ */
+describe("tst_module_email_sync_002 saved sender selection", () => {
+  const ready = { userId: "u1", sourceId: "google", accountId: "one", identityKey: null };
+  function fixture() {
+    const rows: SyncMigrationEntity[] = [
+      { id: "legacy", schemaId: "email.address", name: "Old", indexed: false, isPinned: null, properties: { address: " OLD@example.com " }, syncEnabled: null, syncRevision: null },
+      { id: "stopped", schemaId: "email.address", name: "Stopped", indexed: true, isPinned: null, properties: { address: "stop@example.com" }, syncEnabled: false, syncRevision: "7" },
+    ];
+    const graph = mockGraph({
+      listSyncMigrationEntities: () => Promise.resolve({ items: rows, next: null }),
+      moduleSettings: () => Promise.resolve({ newSenderSyncEnabled: "false" }),
+      updateEntitySyncEnabled: (params) => {
+        const row = rows.find((item) => item.id === params.id);
+        if (row === undefined) throw new Error("Missing sender");
+        if (row.syncEnabled === null) row.syncRevision = "0";
+        else if (row.syncEnabled !== params.syncEnabled) {
+          if (row.syncRevision === null) throw new Error("Missing revision");
+          row.syncRevision = String(BigInt(row.syncRevision) + 1n);
+        }
+        row.syncEnabled = params.syncEnabled;
+        if (row.syncRevision === null) throw new Error("Missing revision");
+        return Promise.resolve({ syncRevision: row.syncRevision });
+      },
+      getEntity: (id) => {
+        const row = rows.find((item) => item.id === id);
+        return Promise.resolve(row === undefined ? null : entity(id, row.name ?? "", { schemaId: row.schemaId, indexed: row.indexed }));
+      },
+      syncState: () => Promise.resolve({ pending: true }),
+    });
+    return { rows, graph, mod: mountModule(EmailModule, { graph, ctx: { extensionId: "email" } }).module };
+  }
+
+  it("migrates legacy enabled behavior once; selection is read-only and shared across accounts", async () => {
+    const { mod, graph, rows } = fixture();
+    const request = { sourceId: "google", accountId: "one", accountGeneration: 1 };
+    await expect(mod.syncSelection(request)).rejects.toThrow(/migration/i);
+    expect(graph.spies.updateEntitySyncEnabled).not.toHaveBeenCalled();
+    await mod.onConnectionReady(ready);
+    await mod.onConnectionReady(ready);
+    expect(graph.spies.updateEntitySyncEnabled).toHaveBeenCalledExactlyOnceWith({ id: "legacy", syncEnabled: true });
+    const selected = await mod.syncSelection(request);
+    expect(selected).toEqual({ surface: "email", unknownSenderEnabled: false, choices: [
+      { id: "legacy", scopeId: "old@example.com", syncEnabled: true, syncRevision: "0" },
+      { id: "stopped", scopeId: "stop@example.com", syncEnabled: false, syncRevision: "7" },
+    ] });
+    expect(await mod.syncSelection({ ...request, accountId: "two" })).toEqual(selected);
+    expect(rows[0]?.indexed).toBe(false);
+  });
+
+  it("reports saved-but-not-applied separately and repeated Start preserves the revision", async () => {
+    const { mod, graph } = fixture();
+    const first = await mod.setSyncEnabled({ id: "stopped", syncEnabled: true });
+    const again = await mod.setSyncEnabled({ id: "stopped", syncEnabled: true });
+    expect(first).toEqual(again);
+    expect(first.results).toMatchObject([{ kind: "saved", syncRevision: "8", application: { kind: "pending" } }]);
+    graph.spies.syncState?.mockRejectedValueOnce(new Error("Worker unavailable"));
+    expect((await mod.setSyncEnabled({ id: "stopped", syncEnabled: false })).results).toMatchObject([
+      { kind: "saved", syncRevision: "9", syncEnabled: false, application: { kind: "failed", message: "Worker unavailable" } },
+    ]);
+    graph.spies.updateEntitySyncEnabled?.mockRejectedValueOnce(new Error("Save failed"));
+    expect((await mod.setSyncEnabled({ id: "stopped", syncEnabled: true })).results).toMatchObject([{ kind: "failed", message: "Save failed" }]);
+  });
+
+  it("does not invent choices for malformed identities or missing settings", async () => {
+    const { mod, graph, rows } = fixture();
+    const legacy = rows[0];
+    if (legacy === undefined) throw new Error("Missing fixture row");
+    legacy.properties = {};
+    await mod.onConnectionReady(ready);
+    expect(await mod.syncMigration()).toMatchObject({ complete: false, issues: [{ legacyIds: ["legacy"] }] });
+    expect(graph.spies.updateEntitySyncEnabled).not.toHaveBeenCalled();
+    await expect(mod.syncSelection({ sourceId: "google", accountId: "one", accountGeneration: 1 })).rejects.toThrow(/migration/i);
+    rows.shift();
+    graph.spies.moduleSettings?.mockResolvedValueOnce({});
+    await expect(mod.syncSelection({ sourceId: "google", accountId: "one", accountGeneration: 1 })).rejects.toThrow(/setting/i);
   });
 });
 

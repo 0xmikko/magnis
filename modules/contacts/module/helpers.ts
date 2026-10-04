@@ -2,15 +2,10 @@
 // (compute_initials, pick_avatar_color, detect_channels) so list/detail
 // output matches pre-migration.
 
-import type { Entity, JsonObject, JsonValue } from "@magnis/sdk";
+import type { Entity } from "@magnis/sdk";
 import type { ContactListItem } from "../types.ts";
 
 const AVATAR_COLORS = ["orange", "blue", "green", "red", "purple", "pink"];
-
-/// Max contacts.person entities folded into one applyBatch (mirrors email's
-/// INGEST_CHUNK). A whole sync page is sliced into chunks so the lone PGlite
-/// connection is freed between transactions.
-export const INGEST_CHUNK = 200;
 
 // Handles are stored bare: no leading `@`, trimmed. The sync scheduler builds
 // the tracked-handle set from these; the connectors query the platform APIs by
@@ -96,34 +91,6 @@ export function buildListItem(
   };
 }
 
-/** The keys of a Google payload a replica keeps. */
-const REPLICA_KEYS = [
-  "resource_name",
-  "etag",
-  "display_name",
-  "given_name",
-  "family_name",
-  "emails",
-  "phones",
-  "organizations",
-  "photo_url",
-  "external_url",
-] as const;
-
-/** The google replica's dictionary (S3, plan §5): the payload's fields as
- * last synced, verbatim — including resource_name + etag (the write-back
- * base). Empty fields stay out, and so does the hashed legacy id (it is the
- * node's external id). */
-export function replicaDict(payload: JsonObject): JsonObject {
-  const d: Record<string, JsonValue> = {};
-  for (const key of REPLICA_KEYS) {
-    const value = payload[key];
-    if (value === undefined) continue;
-    if (Array.isArray(value) ? value.length > 0 : Boolean(value)) d[key] = value;
-  }
-  return d;
-}
-
 /** The card's channel badges, composed (S3 §5.1 / S6): an email channel when
  * an address node is linked, a phone channel from the composed phone section,
  * x / linkedin from the hub's tracking entries, and every replica the hub
@@ -138,7 +105,7 @@ export function composeChannels(
   if (hasEmail) channels.add("email");
   if (Array.isArray(curated.phones) && curated.phones.length > 0) channels.add("phone");
   for (const r of replicas) {
-    if (r.schemaId === "contacts.google_contact") channels.add("google");
+    if (r.schemaId === "addressbook.card") channels.add("google");
     else if (r.schemaId.startsWith("telegram.")) channels.add("telegram");
     else if (r.schemaId === "x.profile") channels.add("x");
     else if (r.schemaId === "linkedin.profile") channels.add("linkedin");

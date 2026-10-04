@@ -27,7 +27,7 @@ function fieldLabel(key: string): string {
   return last.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function parseResult(raw: unknown): Record<string, unknown> | null {
+export function parseResult(raw: unknown): Record<string, unknown> | null {
   if (typeof raw === "string") {
     try { return parseResult(JSON.parse(raw)); } catch { return null; }
   }

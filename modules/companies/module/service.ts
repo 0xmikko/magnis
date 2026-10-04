@@ -8,7 +8,7 @@
 // DICTIONARY, which rides the rows they already fetched — fixed,
 // N-independent crossings with no hydrate step at all.
 
-import { linkedEntitySummary, rpc, tool, writeTool, type GetParams, type GraphService, type ListParams, type PluginDeps, type RpcExecutor } from "@magnis/plugin-sdk";
+import { linkedEntitySummary, rpc, tool, writeTool, type GetParams, type GraphService, type ListParams, type PluginDeps } from "@magnis/plugin-sdk";
 import type { Entity, PaginatedResponse } from "@magnis/sdk";
 import type {
   CompanyDetailsFacet,
@@ -54,8 +54,7 @@ const COMPANY_UPDATE_SPEC = {
   description:
     "Update / enrich a company. Provided fields are layered on; omitted " +
     "fields stay untouched. `domain` derives the website; `summary` replaces " +
-    "the description; `emails` become identity edges to shared address " +
-    "nodes and `phones` are multi-instance.",
+    "the description; `phones` are multi-instance.",
   params: {
     type: "object",
     properties: {
@@ -70,7 +69,6 @@ const COMPANY_UPDATE_SPEC = {
       stage: { type: "string" },
       headcount: { type: "integer" },
       funding_total: { type: "string" },
-      emails: { type: "array", items: { type: "string" } },
       phones: { type: "array", items: { type: "string" } },
     },
     required: ["id"],
@@ -80,10 +78,8 @@ const COMPANY_UPDATE_SPEC = {
 
 export class CompaniesModule {
   private readonly graph: GraphService;
-  private readonly rpc: RpcExecutor;
   constructor(deps: PluginDeps) {
     this.graph = deps.graph;
-    this.rpc = deps.rpc;
   }
 
   @rpc("list", {
@@ -254,6 +250,11 @@ export class CompaniesModule {
   @rpc("update", COMPANY_UPDATE_SPEC)
   @writeTool("update", { entity: "companies.company", ...COMPANY_UPDATE_SPEC })
   async update(params: UpdateParams): Promise<CompanyDetailView> {
+    // Companies sits above email: an address reaches a company from the module
+    // that syncs it, never through this update.
+    if ("emails" in params) {
+      throw new Error("companies.update takes no emails: an address reaches a company from the module that syncs it");
+    }
     const e = await this.graph.getEntity(params.id);
     if (!e) throw new Error(`company not found: ${params.id}`);
 
@@ -290,17 +291,6 @@ export class CompaniesModule {
     }
     if (Object.keys(details).length > 0) {
       await this.graph.updateProperties({ entityId: params.id, properties: { ...details } });
-    }
-
-    // An email is an identity CHANNEL, not a company field: the email module
-    // owns the address node, this module owns the edge to it (plan §3).
-    if (params.emails && params.emails.length > 0) {
-      const { ids } = await this.rpc.execute<{ ids: string[] }>("email.ensure_addresses", {
-        items: params.emails.map((address) => ({ address })),
-      });
-      for (const to of ids) {
-        await this.graph.addLink({ from: params.id, to, kind: "identity" });
-      }
     }
 
     return this.get({ id: params.id });

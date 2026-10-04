@@ -1,77 +1,18 @@
-/** The declaration is not a wish: both records this module writes have to pass
- * it — the Google replica its ingest writes, and the curated hub claims its
- * create writes — through the module's REAL paths rather than copied records.
+/** The declaration is not a wish: the curated hub claims this module's create
+ * writes have to pass it, through the module's REAL path rather than copied
+ * records.
  *
  * Beside entities.ts and outside module/ on purpose.
  */
-import { describe, expect, it, vi } from "vitest";
-import type { BatchEntityInput, GraphBatchInput, JsonValue } from "@magnis/sdk";
-import { entity as graphEntity, mockGraph, mountModule, page } from "@magnis/testkit/module";
+import { describe, expect, it } from "vitest";
+import type { JsonValue } from "@magnis/sdk";
+import { entity as graphEntity, mockGraph, mountModule } from "@magnis/testkit/module";
 
 import { ContactsModule } from "./module/service.ts";
-import { googleContact, person } from "./entities.ts";
+import { person } from "./entities.ts";
 import { CONTACT } from "./schema.ts";
 
 const CONTACT_ID = "44444444-4444-4444-8444-444444444444";
-
-/** One Google connector Contact payload, as the ingest test spells it. */
-const contactPayload = {
-  id: "abc123",
-  display_name: "Mikhail Lazarev",
-  given_name: "Mikhail",
-  family_name: "Lazarev",
-  emails: [{ address: "mikhail@example.com", label: "work", is_primary: true }],
-  phones: [{ number: "+4930 1234567", label: "mobile", is_primary: true }],
-  organizations: [{ name: "Acme", title: "Engineer", is_current: true }],
-  photo_url: "https://photos.example.com/a.jpg",
-  external_url: "https://contacts.google.com/person/c12345",
-};
-
-async function replicasWritten(): Promise<BatchEntityInput[]> {
-  const batches: GraphBatchInput[] = [];
-  let mintSeq = 0;
-  const graph = mockGraph({
-    applyBatch: (frag: GraphBatchInput) => {
-      batches.push(frag);
-      return Promise.resolve({
-        ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
-        created: frag.entities.length,
-        updated: 0,
-        linksAdded: frag.links.length,
-        droppedKeys: [],
-      });
-    },
-    listLinksForEntity: () => Promise.resolve([]),
-    getEntities: () => Promise.resolve([]),
-    getEntity: () => Promise.resolve(null),
-    createEntity: (input: { schemaId: string; name: string }) =>
-      Promise.resolve(graphEntity(`hub-${mintSeq++}`, input.name, { schemaId: input.schemaId })),
-    addLink: () => Promise.resolve(undefined),
-    listEntities: () => Promise.resolve(page([])),
-  } as never);
-  const mod = mountModule(ContactsModule, {
-    graph,
-    ctx: { extensionId: "contacts" },
-    rpc: {
-      execute: (method: string, params: unknown) =>
-        method === "email.ensure_addresses"
-          ? Promise.resolve({
-              ids: (params as { items: { address: string }[] }).items.map((i) => `addr-${i.address}`),
-            })
-          : Promise.reject(new Error(`unexpected rpc: ${method}`)),
-    } as never,
-  }).module;
-  await mod.ingest({
-    command: "bootstrap",
-    generation: "initial:r:1",
-    envelopes: [{
-      sourceId: "google", surface: "contacts", accountId: "acct-1", userId: "u1",
-      kind: "snapshot", remoteId: "gpeople:abc123", payload: contactPayload,
-      timestamp: "2026-03-14T09:00:00Z",
-    }],
-  });
-  return batches.flatMap((b) => b.entities);
-}
 
 async function hubClaimsWritten(): Promise<JsonValue[]> {
   const written: JsonValue[] = [];
@@ -88,13 +29,9 @@ async function hubClaimsWritten(): Promise<JsonValue[]> {
     listLinksForEntities: () => Promise.resolve([]),
     getEntities: () => Promise.resolve([]),
   } as never);
-  const mod = mountModule(ContactsModule, {
-    graph,
-    rpc: { execute: vi.fn(() => Promise.resolve({ id: "address-1" })) },
-  }).module;
+  const mod = mountModule(ContactsModule, { graph }).module;
   await mod.create({
     name: "Alice Smith",
-    email: "alice@example.test",
     phone: "+15551234567",
     role: "Founder",
     client_id: CONTACT_ID,
@@ -103,15 +40,6 @@ async function hubClaimsWritten(): Promise<JsonValue[]> {
 }
 
 describe("contacts declares what it writes", () => {
-  it("every replica the ingest writes passes the replica's declaration", async () => {
-    const written = await replicasWritten();
-    const replicas = written.filter((e) => e.schemaId === "contacts.google_contact");
-    expect(replicas.length).toBeGreaterThan(0);
-    for (const replica of replicas) {
-      expect(googleContact.safeParse(replica.properties ?? {}).error?.issues ?? []).toEqual([]);
-    }
-  });
-
   it("every curated claim the hub writes passes the hub's declaration", async () => {
     const records = await hubClaimsWritten();
     expect(records.length).toBeGreaterThan(0);

@@ -1,3 +1,4 @@
+import { SyncToolCallRenderer } from "./SyncToolCallRenderer";
 import { toolNamesEquivalent } from "@magnis/host/agent";
 import type { AgentHistoryRendererRegistration } from "@magnis/host/runtime";
 import { Icon } from "@magnis/host/ui";
@@ -47,6 +48,8 @@ const moduleDefinition = defineModule({
   hasMore: contactHasMore,
   DetailsTabContent: ContactOverview,
   toolCallRenderers: [
+    { entity: "contacts.person", actions: ["setSyncEnabled"], Render: SyncToolCallRenderer as never },
+
     { entity: "contacts.person", actions: ["create"], Render: ContactCreateRenderer as never },
     { entity: "contacts.person", actions: ["merge"], Render: ContactMergeRenderer as never },
   ],

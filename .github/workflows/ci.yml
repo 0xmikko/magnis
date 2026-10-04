@@ -86,5 +86,5 @@ jobs:
             --verify-tag \
             --title "Plugin catalog (${TAG})" \
             --notes "Built from ${GITHUB_SHA}. Fetched anonymously by the Magnis app." \
-            catalog/index.json catalog/index.v2.json catalog/onboarding.json \
+            catalog/index.json catalog/index.v3.json catalog/onboarding.json \
             catalog/receipt-*.json catalog/*.tgz

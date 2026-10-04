@@ -11,63 +11,61 @@
  * Mocks: GraphService only; no live Telegram session.
  * Data: one existing pinned chat and a bootstrap-sized dialog page.
  */
-import type { GraphBatchInput, SyncEnvelope } from "@magnis/sdk";
+import type { Entity, GraphBatchInput, SyncEnvelope } from "@magnis/sdk";
 import { describe, expect, it } from "vitest";
-import { entity, mockGraph, mountModule, page } from "@magnis/testkit/module";
+import { entity, mockGraph, mountModule, page, sourceEnvelope } from "@magnis/testkit/module";
 import { TelegramModule } from "../service.ts";
 
 function chatEnvelope(chatId: number): SyncEnvelope {
-  return {
+  return sourceEnvelope("telegram", {
+    entity_type: "telegram_chat",
+    chat_id: chatId,
+    title: chatId === 1 ? "Pinned chat" : `Chat ${String(chatId)}`,
+    is_pinned: chatId === 1,
+    pin_order: chatId - 1,
+  }, {
     sourceId: "telegram",
-    surface: "telegram",
     accountId: "acct-1",
     userId: "u1",
-    kind: "snapshot",
     identityKey: "9001",
     remoteId: `tg:chat:${String(chatId)}`,
-    payload: {
-      entity_type: "telegram_chat",
-      chat_id: chatId,
-      title: chatId === 1 ? "Pinned chat" : `Chat ${String(chatId)}`,
-      is_pinned: chatId === 1,
-      pin_order: chatId - 1,
-    },
     timestamp: "2026-07-26T19:30:00Z",
-  };
+  });
 }
 
 function messageEnvelope(chatId: number): SyncEnvelope {
-  return {
+  return sourceEnvelope("telegram", {
+    entity_type: "message",
+    message_id: 7,
+    chat_id: chatId,
+    sender_id: 5000 + chatId,
+    sender_name: `Sender ${String(chatId)}`,
+    text: `Latest message ${String(chatId)}`,
+    date: "2026-07-26T20:00:00Z",
+  }, {
     sourceId: "telegram",
-    surface: "telegram",
     accountId: "acct-1",
     userId: "u1",
-    kind: "snapshot",
     identityKey: "9001",
     remoteId: `tg:msg:${String(chatId)}:7`,
-    payload: {
-      entity_type: "message",
-      message_id: 7,
-      chat_id: chatId,
-      sender_id: 5000 + chatId,
-      sender_name: `Sender ${String(chatId)}`,
-      text: `Latest message ${String(chatId)}`,
-      date: "2026-07-26T20:00:00Z",
-    },
     timestamp: "2026-07-26T20:00:01Z",
-  };
+  });
 }
 
 describe("telegram chat batch ingest", () => {
   it("tst_mod_tg_ingest_001 preserves derived preview and avatar fields during a repeated bootstrap", async () => {
     const graph = mockGraph({
+      moduleSettings: () => Promise.resolve({ newChatSync: "all" }),
+      admitSyncEntities: (subjects) => Promise.resolve(subjects.flatMap((subject) => [...subject.remoteIds])),
       // The page asks for its own external ids once and reads the found entities
       // once; the whole-account window is never consulted.
       findByExternalIds: (externalIds) =>
         Promise.resolve(externalIds.map((externalId) => (externalId === "tg:chat:1" ? "chat-entity-1" : null))),
-      getEntities: () =>
-        Promise.resolve([
-          {
+      getEntities: (ids) =>
+        Promise.resolve(ids.map((id): Entity => id !== "chat-entity-1" ? {
+          ...entity(id, "Chat", { schemaId: "telegram.chat" }),
+          properties: { chat_id: Number(id.slice("tg:chat:".length)) },
+        } : {
             ...entity("chat-entity-1", "Pinned chat", {
               schemaId: "telegram.chat",
             }),
@@ -84,8 +82,7 @@ describe("telegram chat batch ingest", () => {
               // omits it (CatchUp, a live page) must not erase it.
               message_count: 4321,
             },
-          },
-        ]),
+          })),
       listEntitiesWindow: () => Promise.reject(new Error("whole-account chat scan is forbidden")),
       // The operator's edge to the existing chat is read once (kind-filtered)
       // before it is written again: the page's state joins what it holds.
@@ -111,7 +108,7 @@ describe("telegram chat batch ingest", () => {
 
     const applyBatch = graph.spies.applyBatch;
     if (applyBatch === undefined) throw new Error("chat batch merge: missing applyBatch spy");
-    const firstCall = applyBatch.mock.calls[0];
+    const firstCall = applyBatch.mock.calls.find((call) => (call[0] as GraphBatchInput).entities.some((item) => item.key === "tg:chat:1"));
     if (firstCall === undefined) throw new Error("chat batch merge: applyBatch was not called");
     const firstBatch = firstCall[0] as GraphBatchInput;
     const pinnedChat = firstBatch.entities.find((item) => item.key === "tg:chat:1");
@@ -150,6 +147,7 @@ describe("telegram chat batch ingest", () => {
    */
   it("tst_mod_tg_ingest_002 reuses chat state within one sync page instead of issuing per-chat reads and updates", async () => {
     const graph = mockGraph({
+      admitSyncEntities: (subjects) => Promise.resolve(subjects.flatMap((subject) => [...subject.remoteIds])),
       findByExternalIds: (externalIds) =>
         Promise.resolve(externalIds.map((externalId) => `chat-entity-${externalId.slice("tg:chat:".length)}`)),
       getEntities: (ids) =>
