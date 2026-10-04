@@ -31,7 +31,7 @@ function ingestGraph(): G {
         created: frag.entities.length,
         updated: 0,
         linksAdded: 0,
-        droppedKeys: [],
+        droppedKeys: [], resolved: [],
       }),
     webRegister: () => Promise.resolve("web-id"),
     webRegisterBatch: (links: readonly unknown[]) => Promise.resolve(links.map(() => "web-id")),

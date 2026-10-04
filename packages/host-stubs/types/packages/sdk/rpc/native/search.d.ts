@@ -11,8 +11,8 @@ export declare const searchIndexingStatusContract: import("../contract.js").RpcC
     }>;
     activeModelId: z.ZodNullable<z.ZodString>;
     lifecycleState: z.ZodEnum<{
-        ready: "ready";
         failed: "failed";
+        ready: "ready";
         unconfigured: "unconfigured";
         catching_up: "catching_up";
         reconfiguring: "reconfiguring";
@@ -108,8 +108,8 @@ export declare const searchContracts: {
         }>;
         activeModelId: z.ZodNullable<z.ZodString>;
         lifecycleState: z.ZodEnum<{
-            ready: "ready";
             failed: "failed";
+            ready: "ready";
             unconfigured: "unconfigured";
             catching_up: "catching_up";
             reconfiguring: "reconfiguring";

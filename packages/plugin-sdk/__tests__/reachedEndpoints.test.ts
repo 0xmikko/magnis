@@ -107,6 +107,7 @@ describe("tst_cat_entity_one_type_001 — linked summaries carry the reaching li
     properties: {},
     origin: "canonical",
     source: { source: "google", account: "a1", externalId: "people/1" },
+    canonicalKey: null,
   };
 
   it("tst_cat_entity_one_type_001 an endpoint keeps the agent link that reached it, statement included", () => {

@@ -117,6 +117,15 @@ export declare const SourceAccountStatusSchema: z.ZodDiscriminatedUnion<[z.ZodOb
     surfaces: z.ZodArray<z.ZodObject<{
         surface: z.ZodString;
         sync: z.ZodNullable<z.ZodObject<{
+            syncApplication: z.ZodNullable<z.ZodDiscriminatedUnion<[z.ZodObject<{
+                kind: z.ZodLiteral<"pending">;
+            }, z.core.$strict>, z.ZodObject<{
+                kind: z.ZodLiteral<"applied">;
+            }, z.core.$strict>, z.ZodObject<{
+                kind: z.ZodLiteral<"failed">;
+                message: z.ZodString;
+            }, z.core.$strict>], "kind">>;
+            appliedSyncRevisions: z.ZodReadonly<z.ZodRecord<z.ZodString, z.ZodString>>;
             status: z.ZodUnion<readonly [z.ZodDiscriminatedUnion<[z.ZodObject<{
                 kind: z.ZodLiteral<"bootstrap">;
                 estimatedAt: z.ZodUnion<readonly [z.ZodISODateTime, z.ZodLiteral<"unknown">]>;
@@ -211,6 +220,15 @@ export declare const SourceAccountStatusSchema: z.ZodDiscriminatedUnion<[z.ZodOb
     surfaces: z.ZodArray<z.ZodObject<{
         surface: z.ZodString;
         sync: z.ZodNullable<z.ZodObject<{
+            syncApplication: z.ZodNullable<z.ZodDiscriminatedUnion<[z.ZodObject<{
+                kind: z.ZodLiteral<"pending">;
+            }, z.core.$strict>, z.ZodObject<{
+                kind: z.ZodLiteral<"applied">;
+            }, z.core.$strict>, z.ZodObject<{
+                kind: z.ZodLiteral<"failed">;
+                message: z.ZodString;
+            }, z.core.$strict>], "kind">>;
+            appliedSyncRevisions: z.ZodReadonly<z.ZodRecord<z.ZodString, z.ZodString>>;
             status: z.ZodUnion<readonly [z.ZodDiscriminatedUnion<[z.ZodObject<{
                 kind: z.ZodLiteral<"bootstrap">;
                 estimatedAt: z.ZodUnion<readonly [z.ZodISODateTime, z.ZodLiteral<"unknown">]>;
@@ -325,6 +343,15 @@ export declare const SourceStatusSchema: z.ZodObject<{
         surfaces: z.ZodArray<z.ZodObject<{
             surface: z.ZodString;
             sync: z.ZodNullable<z.ZodObject<{
+                syncApplication: z.ZodNullable<z.ZodDiscriminatedUnion<[z.ZodObject<{
+                    kind: z.ZodLiteral<"pending">;
+                }, z.core.$strict>, z.ZodObject<{
+                    kind: z.ZodLiteral<"applied">;
+                }, z.core.$strict>, z.ZodObject<{
+                    kind: z.ZodLiteral<"failed">;
+                    message: z.ZodString;
+                }, z.core.$strict>], "kind">>;
+                appliedSyncRevisions: z.ZodReadonly<z.ZodRecord<z.ZodString, z.ZodString>>;
                 status: z.ZodUnion<readonly [z.ZodDiscriminatedUnion<[z.ZodObject<{
                     kind: z.ZodLiteral<"bootstrap">;
                     estimatedAt: z.ZodUnion<readonly [z.ZodISODateTime, z.ZodLiteral<"unknown">]>;
@@ -419,6 +446,15 @@ export declare const SourceStatusSchema: z.ZodObject<{
         surfaces: z.ZodArray<z.ZodObject<{
             surface: z.ZodString;
             sync: z.ZodNullable<z.ZodObject<{
+                syncApplication: z.ZodNullable<z.ZodDiscriminatedUnion<[z.ZodObject<{
+                    kind: z.ZodLiteral<"pending">;
+                }, z.core.$strict>, z.ZodObject<{
+                    kind: z.ZodLiteral<"applied">;
+                }, z.core.$strict>, z.ZodObject<{
+                    kind: z.ZodLiteral<"failed">;
+                    message: z.ZodString;
+                }, z.core.$strict>], "kind">>;
+                appliedSyncRevisions: z.ZodReadonly<z.ZodRecord<z.ZodString, z.ZodString>>;
                 status: z.ZodUnion<readonly [z.ZodDiscriminatedUnion<[z.ZodObject<{
                     kind: z.ZodLiteral<"bootstrap">;
                     estimatedAt: z.ZodUnion<readonly [z.ZodISODateTime, z.ZodLiteral<"unknown">]>;
@@ -535,6 +571,15 @@ export declare const SourceStatusListResponseSchema: z.ZodObject<{
             surfaces: z.ZodArray<z.ZodObject<{
                 surface: z.ZodString;
                 sync: z.ZodNullable<z.ZodObject<{
+                    syncApplication: z.ZodNullable<z.ZodDiscriminatedUnion<[z.ZodObject<{
+                        kind: z.ZodLiteral<"pending">;
+                    }, z.core.$strict>, z.ZodObject<{
+                        kind: z.ZodLiteral<"applied">;
+                    }, z.core.$strict>, z.ZodObject<{
+                        kind: z.ZodLiteral<"failed">;
+                        message: z.ZodString;
+                    }, z.core.$strict>], "kind">>;
+                    appliedSyncRevisions: z.ZodReadonly<z.ZodRecord<z.ZodString, z.ZodString>>;
                     status: z.ZodUnion<readonly [z.ZodDiscriminatedUnion<[z.ZodObject<{
                         kind: z.ZodLiteral<"bootstrap">;
                         estimatedAt: z.ZodUnion<readonly [z.ZodISODateTime, z.ZodLiteral<"unknown">]>;
@@ -629,6 +674,15 @@ export declare const SourceStatusListResponseSchema: z.ZodObject<{
             surfaces: z.ZodArray<z.ZodObject<{
                 surface: z.ZodString;
                 sync: z.ZodNullable<z.ZodObject<{
+                    syncApplication: z.ZodNullable<z.ZodDiscriminatedUnion<[z.ZodObject<{
+                        kind: z.ZodLiteral<"pending">;
+                    }, z.core.$strict>, z.ZodObject<{
+                        kind: z.ZodLiteral<"applied">;
+                    }, z.core.$strict>, z.ZodObject<{
+                        kind: z.ZodLiteral<"failed">;
+                        message: z.ZodString;
+                    }, z.core.$strict>], "kind">>;
+                    appliedSyncRevisions: z.ZodReadonly<z.ZodRecord<z.ZodString, z.ZodString>>;
                     status: z.ZodUnion<readonly [z.ZodDiscriminatedUnion<[z.ZodObject<{
                         kind: z.ZodLiteral<"bootstrap">;
                         estimatedAt: z.ZodUnion<readonly [z.ZodISODateTime, z.ZodLiteral<"unknown">]>;

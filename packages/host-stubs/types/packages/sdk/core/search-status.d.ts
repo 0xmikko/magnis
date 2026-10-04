@@ -8,8 +8,8 @@ export declare const SearchIndexingStateSchema: z.ZodEnum<{
 }>;
 export type SearchIndexingState = z.output<typeof SearchIndexingStateSchema>;
 export declare const SearchIndexLifecycleStateSchema: z.ZodEnum<{
-    ready: "ready";
     failed: "failed";
+    ready: "ready";
     unconfigured: "unconfigured";
     catching_up: "catching_up";
     reconfiguring: "reconfiguring";
@@ -28,8 +28,8 @@ export declare const SearchStatusSchema: z.ZodObject<{
     }>;
     activeModelId: z.ZodNullable<z.ZodString>;
     lifecycleState: z.ZodEnum<{
-        ready: "ready";
         failed: "failed";
+        ready: "ready";
         unconfigured: "unconfigured";
         catching_up: "catching_up";
         reconfiguring: "reconfiguring";

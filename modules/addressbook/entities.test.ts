@@ -36,7 +36,7 @@ async function cardsWritten(): Promise<BatchEntityInput[]> {
         created: frag.entities.length,
         updated: 0,
         linksAdded: 0,
-        droppedKeys: [],
+        droppedKeys: [], resolved: [],
       });
     },
     listLinksForEntity: () => Promise.resolve([]),

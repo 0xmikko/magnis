@@ -4,9 +4,8 @@
 // @magnis/testkit/module (throwing mockGraph — a read/ingest path hitting an
 // unarranged op fails loudly).
 import { describe, expect, it, vi } from "vitest";
-import type { RawSyncableEntity, SyncMigrationEntity } from "@magnis/plugin-sdk";
-import type { Entity, GraphBatchInput, JsonObject, JsonValue, Link, SyncEnvelope, SyncHookParams } from "@magnis/sdk";
-import { entity, link, mockGraph, mountModule, page, sourceEnvelope, type MockGraph } from "@magnis/testkit/module";
+import type { Entity, GraphBatchInput, JsonObject, JsonValue, Link, Syncable, SyncEnvelope, SyncHookParams, SyncMigrationEntity } from "@magnis/sdk";
+import { entity, link, mockGraph, mountModule, page, sourceEnvelope, syncStateDouble, type MockGraph } from "@magnis/testkit/module";
 import { ContactsModule } from "../../../contacts/module/service.ts";
 import { XModule } from "../service.ts";
 
@@ -25,7 +24,7 @@ function env(remoteId: string, payload: JsonObject): SyncEnvelope {
 }
 
 /** A stored X profile with its saved synchronization choice. */
-function profileEntity(id: string, name: string, externalId: string, properties: JsonObject, syncEnabled: boolean, syncRevision: string): RawSyncableEntity {
+function profileEntity(id: string, name: string, externalId: string, properties: JsonObject, syncEnabled: boolean, syncRevision: string): Entity & Syncable {
   return { ...entity(id, name, { schemaId: "x.profile", source: { source: "test", account: "a1", externalId }, properties }), syncEnabled, syncRevision };
 }
 
@@ -41,7 +40,7 @@ function ingestGraph(): G {
     getEntity: async (id) => id === profile.id ? profile : null,
     listSyncMigrationEntities: async () => ({ items: [{ id: profile.id, schemaId: "x.profile", name: "Jack", indexed: true, isPinned: null, properties: { handle: "jack" }, syncEnabled: true, syncRevision: "0" }], next: null }),
     admitSyncEntities: async (subjects) => subjects.flatMap(subject => [...subject.remoteIds]),
-    applyBatch: async () => ({ ids: {}, created: 0, updated: 0, linksAdded: 0, droppedKeys: [] }),
+    applyBatch: async () => ({ ids: {}, created: 0, updated: 0, linksAdded: 0, droppedKeys: [], resolved: [] }),
     listEntitiesWindow: async () => page([]),
     getEntityFull: async () => null,
   });
@@ -174,7 +173,7 @@ describe("x ingest — the plan from the pages", () => {
       admitSyncEntities: async (subjects) => subjects.flatMap(subject => [...subject.remoteIds]),
       findByExternalIds: (externalIds: string[]) => Promise.resolve(externalIds.map((externalId) => (externalId === "x:profile:12" || externalId in known ? `id:${externalId}` : null))),
       getEntities: (ids: string[]) => Promise.resolve(ids.map((id) => profileEntity(id, "", "x:profile:12", known[id.slice("id:".length)] ?? { handle: "jack" }, true, "0"))),
-      applyBatch: () => Promise.resolve({ ids: {}, created: 0, updated: 0, linksAdded: 0, droppedKeys: [] }),
+      applyBatch: () => Promise.resolve({ ids: {}, created: 0, updated: 0, linksAdded: 0, droppedKeys: [], resolved: [] }),
     });
   }
 
@@ -283,7 +282,7 @@ describe("X profile synchronization migration", () => {
       listEntitiesWindow: async () => page(contacts),
       listSyncMigrationEntities: async () => ({ items: [], next: null }),
       listLinksForEntities: async () => [],
-      syncState: vi.fn().mockResolvedValue({ accounts: [{ account_id: "x-account" }] }),
+      syncState: syncStateDouble({ status: () => Promise.resolve({ accounts: [{ accountId: "x-account", sync: null }] }) }),
       sourceCommand: async () => ({ providerId: "12", handle: "jack", displayName: "Jack", bio: null, avatarUrl: null }),
       findByExternalId: async () => null,
       findByExternalIds: async (externalIds) => externalIds.map(() => null),
@@ -316,7 +315,7 @@ describe("X restartable migration", () => {
     const externalIds = new Map<string, string>();
     const links: Link[] = [];
     const faults = { lookup: false, cleanup: false };
-    const raw = (row: SyncMigrationEntity): RawSyncableEntity => {
+    const raw = (row: SyncMigrationEntity): Entity & Syncable => {
       if (row.syncEnabled === null || row.syncRevision === null) throw new Error("Uninitialized ordinary profile read");
       const externalId = [...externalIds].find(([, id]) => id === row.id)?.[0];
       if (externalId === undefined) throw new Error("Profile has no external id");
@@ -328,7 +327,7 @@ describe("X restartable migration", () => {
       listEntitiesWindow: async () => page(contacts),
       listSyncMigrationEntities: async () => ({ items: [...rows.values()], next: null }),
       listLinksForEntities: async (ids) => links.filter(item => ids.includes(item.from) || ids.includes(item.to)),
-      syncState: vi.fn().mockResolvedValue({ accounts: [{ account_id: "x-account" }] }),
+      syncState: syncStateDouble({ status: () => Promise.resolve({ accounts: [{ accountId: "x-account", sync: null }] }) }),
       sourceCommand: async (payload, accountId) => {
         expect(payload).toEqual({ action: "resolveProfile", handle: "jack" });
         expect(accountId).toBe("x-account");
@@ -372,7 +371,7 @@ describe("X restartable migration", () => {
             properties: item.properties as JsonObject, syncEnabled: item.syncEnabled, syncRevision: "0" });
           ids[item.key] = id;
         }
-        return { ids, created: batch.entities.length, updated: 0, linksAdded: 0, droppedKeys: [] };
+        return { ids, created: batch.entities.length, updated: 0, linksAdded: 0, droppedKeys: [], resolved: [] };
       },
       addLink: async (input) => {
         if (!links.some(item => item.from === input.from && item.to === input.to && item.kind === input.kind)) links.push(link(input.from, input.to, input.kind, { id: `link-${links.length}` }));
@@ -450,7 +449,7 @@ it("admits X updates and deletions only for the saved profile choice", async () 
       link(id, id === "old-a" ? "profile-a" : "profile-b", "authored_by", { id: `link-${id}` }),
     ] }),
     admitSyncEntities: async (subjects) => subjects.flatMap(subject => profiles.find(row => row.id === subject.entityId)?.syncEnabled ? [...subject.remoteIds] : []),
-    applyBatch: async () => ({ ids: {}, created: 0, updated: 0, linksAdded: 0, droppedKeys: [] }),
+    applyBatch: async () => ({ ids: {}, created: 0, updated: 0, linksAdded: 0, droppedKeys: [], resolved: [] }),
     deleteEntity: async () => undefined,
   });
   const mod = mountX(graph);
@@ -474,7 +473,7 @@ it("admits X updates and deletions only for the saved profile choice", async () 
  * @fixtures: explicit disabled creation rule, changed rule and repeated discovery
  */
 it("creates a minimal selectable profile under its explicit rule without admitting posts or resetting Stop", async () => {
-  let stored: RawSyncableEntity | undefined;
+  let stored: Entity & Syncable | undefined;
   let storedExternalId: string | null = null;
   let rule = "false";
   const graph = mockGraph({
@@ -490,7 +489,7 @@ it("creates a minimal selectable profile under its explicit rule without admitti
         || profile.externalId === null || profile.properties === null) throw new Error("Expected disabled profile discovery");
       storedExternalId = profile.externalId;
       stored = profileEntity("new-profile", profile.name ?? "", profile.externalId, profile.properties as JsonObject, false, "0");
-      return { ids: { "x:profile:12": "new-profile" }, created: 1, updated: 0, linksAdded: 0, droppedKeys: [] };
+      return { ids: { "x:profile:12": "new-profile" }, created: 1, updated: 0, linksAdded: 0, droppedKeys: [], resolved: [] };
     },
   });
   const envelopes = [env("x:profile:12", { entity_type: "profile", platform: "x", handle: "jack", bio: "Bio", posts_total: 10 }),

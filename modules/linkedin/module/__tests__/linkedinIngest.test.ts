@@ -15,7 +15,7 @@ function env(remoteId: string, payload: JsonObject): SyncEnvelope {
   return sourceEnvelope("linkedin", payload, { sourceId: "x", accountId: "a1", userId: "u1", remoteId, timestamp: "2026-06-26T00:00:00Z" });
 }
 
-const emptyBatch = { ids: {}, created: 0, updated: 0, linksAdded: 0, droppedKeys: [] };
+const emptyBatch = { ids: {}, created: 0, updated: 0, linksAdded: 0, droppedKeys: [], resolved: [] };
 const stated = { droppedRemoteIds: [], triggerChecks: [], plan: null, excluded: [] };
 
 describe("linkedin ingest", () => {
@@ -171,7 +171,7 @@ describe("linkedin ingest identity link (tst_ingest_link)", () => {
   function linkGraph(): G {
     return mockGraph({
       applyBatch: () =>
-        Promise.resolve({ ids: { "linkedin:profile:12": "prof-1" }, created: 1, updated: 0, linksAdded: 0, droppedKeys: [] }),
+        Promise.resolve({ ids: { "linkedin:profile:12": "prof-1" }, created: 1, updated: 0, linksAdded: 0, droppedKeys: [], resolved: [] }),
       addLink: () => Promise.resolve(),
     });
   }

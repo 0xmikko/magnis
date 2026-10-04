@@ -22,7 +22,7 @@ async function written(): Promise<GraphBatchInput["entities"]> {
     findByExternalIds: (externalIds) => Promise.resolve(externalIds.map(() => null)),
     applyBatch: (frag: GraphBatchInput) => {
       batches.push(frag);
-      return Promise.resolve({ ids: {}, created: 0, updated: 0, linksAdded: 0, droppedKeys: [] });
+      return Promise.resolve({ ids: {}, created: 0, updated: 0, linksAdded: 0, droppedKeys: [], resolved: [] });
     },
     listEntitiesWindow: () => Promise.resolve(page([])),
     getEntityFull: () => Promise.resolve(null),

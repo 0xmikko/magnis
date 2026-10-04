@@ -24,30 +24,32 @@ import {
   type RpcExecutor,
 } from "@magnis/plugin-sdk";
 import type {
+  BatchEntityInput,
   BatchLink,
   BatchRef,
   Entity,
   JsonValue,
   LinkedEntitySummary,
   PaginatedResponse,
+  SetSyncEnabledParams,
+  SyncChoice,
+  Syncable,
   SyncEnvelope,
   SyncHandlerParams,
   SyncHookParams,
+  SyncMigrationEntity,
   SyncReceipt,
+  SyncSelection,
+  SyncSelectionRequest,
+  SyncStateResetResult,
+  SyncStateStatusResult,
   TriggerCheckEvent,
 } from "@magnis/sdk";
 import type {
-  RawSyncableEntity,
   ResolveSyncMigrationParams,
-  SetSyncEnabledParams,
   SetSyncEnabledResult,
-  SyncableBatchEntityInput,
-  SyncChoice,
-  SyncMigrationEntity,
   SyncMigrationIssue,
   SyncMigrationStatus,
-  SyncSelection,
-  SyncSelectionRequest,
 } from "@magnis/plugin-sdk";
 import type {
   BatchParams,
@@ -90,7 +92,7 @@ function senderAddress(properties: Readonly<Record<string, unknown>>): string {
   return address;
 }
 
-function savedAddress(entity: Entity): RawSyncableEntity {
+function savedAddress(entity: Entity): Entity & Syncable {
   if (entity.schemaId !== ADDRESS_SCHEMA || !("syncEnabled" in entity) || typeof entity.syncEnabled !== "boolean"
     || !("syncRevision" in entity) || typeof entity.syncRevision !== "string" || !/^\d+$/.test(entity.syncRevision)) {
     throw new Error(`Email address ${entity.id} has no valid saved synchronization choice`);
@@ -522,7 +524,7 @@ export class EmailModule {
     countLive: boolean,
     addresses: Map<string, AddressSyncState>,
   ): Promise<number> {
-    const entities: SyncableBatchEntityInput[] = [];
+    const entities: BatchEntityInput[] = [];
     const refs: BatchRef[] = [];
     const links: BatchLink[] = [];
     const addrSeen = new Set<string>();
@@ -990,7 +992,7 @@ export class EmailModule {
     description: "List the email sync state per connected account for the current user.",
     params: { type: "object", properties: {}, additionalProperties: false },
   })
-  async syncStatus(): Promise<Record<string, unknown>> {
+  async syncStatus(): Promise<SyncStateStatusResult> {
     return this.graph.syncState("status");
   }
 
@@ -999,7 +1001,7 @@ export class EmailModule {
       "Reset email sync: delete the caller's email messages and reset sync state to bootstrap.",
     params: { type: "object", properties: {}, additionalProperties: false },
   })
-  async syncReset(): Promise<Record<string, unknown>> {
+  async syncReset(): Promise<SyncStateResetResult> {
     // Namespace-guarded by the host: reset only clears the caller's own
     // email.message entities — telegram.message and others are untouched.
     return this.graph.syncState("reset", MESSAGE_SCHEMA);

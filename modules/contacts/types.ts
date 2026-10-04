@@ -1,8 +1,7 @@
 // Shared DTOs for the contacts plugin — wire shapes the host frontend
 // consumes, declared once for module/ and ui/. The SDK shapes inside them
 // (the linked summaries) are the SDK's.
-import type { RawSyncableEntity } from "@magnis/plugin-sdk";
-import type { LinkedEntitySummary } from "@magnis/sdk";
+import type { LinkedEntitySummary, Syncable } from "@magnis/sdk";
 
 export interface ContactListItem {
   id: string;
@@ -25,7 +24,7 @@ export interface ContactSyncTarget {
   schemaId: string;
   name: string | null;
   state:
-    | ({ kind: "ready" } & Pick<RawSyncableEntity, "id" | "syncEnabled" | "syncRevision">)
+    | ({ kind: "ready" } & Pick<Syncable, "id" | "syncEnabled" | "syncRevision">)
     | { kind: "unavailable"; message: string };
 }
 

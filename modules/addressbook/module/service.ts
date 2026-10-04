@@ -2,8 +2,8 @@
 // `addressbook` surface: provider address book contacts become cards, and a
 // card finds the person it belongs to by its email addresses.
 
-import { type GraphService, type PluginDeps, type SyncableBatchEntityInput, syncComplete, syncHandler, unseenSourceReplicas } from "@magnis/plugin-sdk";
-import type { JsonObject, Link, SyncEnvelope, SyncHandlerParams, SyncHookParams, SyncReceipt, SyncReconcileAnswer } from "@magnis/sdk";
+import { type GraphService, type PluginDeps, syncComplete, syncHandler, unseenSourceReplicas } from "@magnis/plugin-sdk";
+import type { BatchEntityInput, JsonObject, Link, SyncEnvelope, SyncHandlerParams, SyncHookParams, SyncReceipt, SyncReconcileAnswer } from "@magnis/sdk";
 import type { GoogleContactPayload } from "../types.ts";
 import { INGEST_CHUNK, replicaDict } from "./helpers.ts";
 import { CARD } from "../schema.ts";
@@ -157,7 +157,7 @@ export class AddressbookModule {
     // 3. Card nodes: fields-as-last-synced dictionaries, identified
     // by the stable remoteId — ONE batch, and the sync never writes the
     // person.
-    const entities: SyncableBatchEntityInput[] = [...addressNodes.entities, ...rows.map(({ remoteId, payload, p, sourceId, accountId }) => {
+    const entities: BatchEntityInput[] = [...addressNodes.entities, ...rows.map(({ remoteId, payload, p, sourceId, accountId }) => {
       const name = typeof p.display_name === "string" ? p.display_name : "";
       return {
         key: remoteId,

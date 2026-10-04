@@ -693,8 +693,8 @@ export declare const AiCallAccountingSchema: z.ZodObject<{
     totalTokens: z.ZodNumber;
     costMicros: z.ZodNumber;
     status: z.ZodEnum<{
-        complete: "complete";
         failed: "failed";
+        complete: "complete";
         aborted: "aborted";
     }>;
 }, z.core.$strip>;
@@ -805,6 +805,7 @@ export declare const OllamaModelPullSchema: z.ZodObject<{
     modelTag: z.ZodString;
     logicalModelId: z.ZodString;
     phase: z.ZodEnum<{
+        interrupted: "interrupted";
         failed: "failed";
         preparing: "preparing";
         downloading: "downloading";
@@ -812,7 +813,6 @@ export declare const OllamaModelPullSchema: z.ZodObject<{
         adding: "adding";
         completed: "completed";
         cancelled: "cancelled";
-        interrupted: "interrupted";
     }>;
     layerDigest: z.ZodNullable<z.ZodString>;
     completedBytes: z.ZodNullable<z.ZodNumber>;

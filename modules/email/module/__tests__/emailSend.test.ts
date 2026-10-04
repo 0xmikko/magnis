@@ -40,7 +40,7 @@ function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
       created: frag.entities.length,
       updated: 0,
       linksAdded: frag.links.length,
-      droppedKeys: [],
+      droppedKeys: [], resolved: [],
     }),
     addLink: () => Promise.resolve(undefined),
     // No prior send attempt unless a test arranges one.

@@ -24,6 +24,7 @@ export declare const graphContracts: {
             account: z.ZodString;
             externalId: z.ZodString;
         }, z.core.$strict>;
+        canonicalKey: z.ZodNullable<z.ZodString>;
         id: z.ZodString;
         owner: z.ZodString;
         schemaId: z.ZodString;
@@ -31,6 +32,8 @@ export declare const graphContracts: {
         createdAt: z.ZodISODateTime;
         name: z.ZodNullable<z.ZodString>;
         indexed: z.ZodBoolean;
+        syncEnabled: z.ZodExactOptional<z.ZodBoolean>;
+        syncRevision: z.ZodExactOptional<z.ZodString>;
         date: z.ZodISODateTime;
         idx: z.ZodNullable<z.ZodString>;
         isPinned: z.ZodNullable<z.ZodBoolean>;
@@ -51,6 +54,8 @@ export declare const graphContracts: {
         createdAt: z.ZodISODateTime;
         name: z.ZodNullable<z.ZodString>;
         indexed: z.ZodBoolean;
+        syncEnabled: z.ZodExactOptional<z.ZodBoolean>;
+        syncRevision: z.ZodExactOptional<z.ZodString>;
         date: z.ZodISODateTime;
         idx: z.ZodNullable<z.ZodString>;
         isPinned: z.ZodNullable<z.ZodBoolean>;
@@ -418,10 +423,17 @@ export declare const graphContracts: {
         entityId: z.ZodGUID;
         pinOrder: z.ZodNonOptional<z.ZodOptional<z.ZodNullable<z.ZodInt>>>;
         archived: z.ZodOptional<z.ZodBoolean>;
+        indexed: z.ZodOptional<z.ZodBoolean>;
     }, z.core.$strict>, z.ZodObject<{
         entityId: z.ZodGUID;
         pinOrder: z.ZodOptional<z.ZodNullable<z.ZodInt>>;
         archived: z.ZodNonOptional<z.ZodOptional<z.ZodBoolean>>;
+        indexed: z.ZodOptional<z.ZodBoolean>;
+    }, z.core.$strict>, z.ZodObject<{
+        entityId: z.ZodGUID;
+        pinOrder: z.ZodOptional<z.ZodNullable<z.ZodInt>>;
+        archived: z.ZodOptional<z.ZodBoolean>;
+        indexed: z.ZodNonOptional<z.ZodOptional<z.ZodBoolean>>;
     }, z.core.$strict>]>, z.ZodObject<{
         ok: z.ZodLiteral<true>;
     }, z.core.$strict>, "required">;

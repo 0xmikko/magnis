@@ -22,8 +22,9 @@ export declare function AccountRowSync({ sync }: {
  *
  * @tested-by: tst_fe_unit_accountsync_001..006
  */
-export declare function AccountSync({ sync, expanded, showStatus }: {
+export declare function AccountSync({ sync, surface, expanded, showStatus }: {
     sync: AccountSyncState | null;
+    surface?: string;
     expanded?: boolean;
     showStatus?: boolean;
 }): JSX.Element;

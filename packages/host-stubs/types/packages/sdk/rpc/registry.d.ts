@@ -407,6 +407,15 @@ export declare const rpcContracts: {
                 surfaces: import("zod").ZodArray<import("zod").ZodObject<{
                     surface: import("zod").ZodString;
                     sync: import("zod").ZodNullable<import("zod").ZodObject<{
+                        syncApplication: import("zod").ZodNullable<import("zod").ZodDiscriminatedUnion<[import("zod").ZodObject<{
+                            kind: import("zod").ZodLiteral<"pending">;
+                        }, import("zod/v4/core").$strict>, import("zod").ZodObject<{
+                            kind: import("zod").ZodLiteral<"applied">;
+                        }, import("zod/v4/core").$strict>, import("zod").ZodObject<{
+                            kind: import("zod").ZodLiteral<"failed">;
+                            message: import("zod").ZodString;
+                        }, import("zod/v4/core").$strict>], "kind">>;
+                        appliedSyncRevisions: import("zod").ZodReadonly<import("zod").ZodRecord<import("zod").ZodString, import("zod").ZodString>>;
                         status: import("zod").ZodUnion<readonly [import("zod").ZodDiscriminatedUnion<[import("zod").ZodObject<{
                             kind: import("zod").ZodLiteral<"bootstrap">;
                             estimatedAt: import("zod").ZodUnion<readonly [import("zod").ZodISODateTime, import("zod").ZodLiteral<"unknown">]>;
@@ -501,6 +510,15 @@ export declare const rpcContracts: {
                 surfaces: import("zod").ZodArray<import("zod").ZodObject<{
                     surface: import("zod").ZodString;
                     sync: import("zod").ZodNullable<import("zod").ZodObject<{
+                        syncApplication: import("zod").ZodNullable<import("zod").ZodDiscriminatedUnion<[import("zod").ZodObject<{
+                            kind: import("zod").ZodLiteral<"pending">;
+                        }, import("zod/v4/core").$strict>, import("zod").ZodObject<{
+                            kind: import("zod").ZodLiteral<"applied">;
+                        }, import("zod/v4/core").$strict>, import("zod").ZodObject<{
+                            kind: import("zod").ZodLiteral<"failed">;
+                            message: import("zod").ZodString;
+                        }, import("zod/v4/core").$strict>], "kind">>;
+                        appliedSyncRevisions: import("zod").ZodReadonly<import("zod").ZodRecord<import("zod").ZodString, import("zod").ZodString>>;
                         status: import("zod").ZodUnion<readonly [import("zod").ZodDiscriminatedUnion<[import("zod").ZodObject<{
                             kind: import("zod").ZodLiteral<"bootstrap">;
                             estimatedAt: import("zod").ZodUnion<readonly [import("zod").ZodISODateTime, import("zod").ZodLiteral<"unknown">]>;
@@ -849,8 +867,8 @@ export declare const rpcContracts: {
         }>;
         activeModelId: import("zod").ZodNullable<import("zod").ZodString>;
         lifecycleState: import("zod").ZodEnum<{
-            ready: "ready";
             failed: "failed";
+            ready: "ready";
             unconfigured: "unconfigured";
             catching_up: "catching_up";
             reconfiguring: "reconfiguring";
@@ -1426,6 +1444,7 @@ export declare const rpcContracts: {
             account: import("zod").ZodString;
             externalId: import("zod").ZodString;
         }, import("zod/v4/core").$strict>;
+        canonicalKey: import("zod").ZodNullable<import("zod").ZodString>;
         id: import("zod").ZodString;
         owner: import("zod").ZodString;
         schemaId: import("zod").ZodString;
@@ -1433,6 +1452,8 @@ export declare const rpcContracts: {
         createdAt: import("zod").ZodISODateTime;
         name: import("zod").ZodNullable<import("zod").ZodString>;
         indexed: import("zod").ZodBoolean;
+        syncEnabled: import("zod").ZodExactOptional<import("zod").ZodBoolean>;
+        syncRevision: import("zod").ZodExactOptional<import("zod").ZodString>;
         date: import("zod").ZodISODateTime;
         idx: import("zod").ZodNullable<import("zod").ZodString>;
         isPinned: import("zod").ZodNullable<import("zod").ZodBoolean>;
@@ -1453,6 +1474,8 @@ export declare const rpcContracts: {
         createdAt: import("zod").ZodISODateTime;
         name: import("zod").ZodNullable<import("zod").ZodString>;
         indexed: import("zod").ZodBoolean;
+        syncEnabled: import("zod").ZodExactOptional<import("zod").ZodBoolean>;
+        syncRevision: import("zod").ZodExactOptional<import("zod").ZodString>;
         date: import("zod").ZodISODateTime;
         idx: import("zod").ZodNullable<import("zod").ZodString>;
         isPinned: import("zod").ZodNullable<import("zod").ZodBoolean>;
@@ -1820,10 +1843,17 @@ export declare const rpcContracts: {
         entityId: import("zod").ZodGUID;
         pinOrder: import("zod").ZodNonOptional<import("zod").ZodOptional<import("zod").ZodNullable<import("zod").ZodInt>>>;
         archived: import("zod").ZodOptional<import("zod").ZodBoolean>;
+        indexed: import("zod").ZodOptional<import("zod").ZodBoolean>;
     }, import("zod/v4/core").$strict>, import("zod").ZodObject<{
         entityId: import("zod").ZodGUID;
         pinOrder: import("zod").ZodOptional<import("zod").ZodNullable<import("zod").ZodInt>>;
         archived: import("zod").ZodNonOptional<import("zod").ZodOptional<import("zod").ZodBoolean>>;
+        indexed: import("zod").ZodOptional<import("zod").ZodBoolean>;
+    }, import("zod/v4/core").$strict>, import("zod").ZodObject<{
+        entityId: import("zod").ZodGUID;
+        pinOrder: import("zod").ZodOptional<import("zod").ZodNullable<import("zod").ZodInt>>;
+        archived: import("zod").ZodOptional<import("zod").ZodBoolean>;
+        indexed: import("zod").ZodNonOptional<import("zod").ZodOptional<import("zod").ZodBoolean>>;
     }, import("zod/v4/core").$strict>]>, import("zod").ZodObject<{
         ok: import("zod").ZodLiteral<true>;
     }, import("zod/v4/core").$strict>, "required">;

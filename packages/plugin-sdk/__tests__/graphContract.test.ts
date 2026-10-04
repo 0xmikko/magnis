@@ -7,9 +7,10 @@
  * @fixtures: none
  */
 import { expect, expectTypeOf, test } from "vitest";
-import { mockGraph, mountModule } from "@magnis/testkit/module";
+import { mockGraph, mountModule, syncStateDouble } from "@magnis/testkit/module";
+import type { SetSyncEnabledParams, UpdateEntitySyncEnabledResult } from "@magnis/sdk";
 import { writeTool } from "../index.ts";
-import type { GraphService, PluginDeps, SetSyncEnabledParams } from "../contract/module.ts";
+import type { GraphService, PluginDeps } from "../contract/module.ts";
 
 test("tst_pkg_sdk_graph_001 accepts a link kind in listLinksForEntity", () => {
   expectTypeOf<Parameters<GraphService["listLinksForEntity"]>[1]>()
@@ -31,7 +32,7 @@ class SyncModule {
       additionalProperties: false,
     },
   })
-  async setSyncEnabled(params: SetSyncEnabledParams): Promise<{ syncRevision: string }> {
+  async setSyncEnabled(params: SetSyncEnabledParams): Promise<UpdateEntitySyncEnabledResult> {
     const result = await this.deps.graph.updateEntitySyncEnabled(params);
     await this.deps.graph.syncState("apply");
     return result;
@@ -41,7 +42,7 @@ class SyncModule {
 test("registers an approved camelCase operation and dispatches its saved revision unchanged", async () => {
   const graph = mockGraph({
     updateEntitySyncEnabled: () => Promise.resolve({ syncRevision: "9007199254740993" }),
-    syncState: () => Promise.resolve({ pending: true }),
+    syncState: syncStateDouble(),
   });
   const mounted = await mountModule(SyncModule, { mode: "dispatch", graph, ctx: { extensionId: "telegram" } });
   expect(mounted.tools).toMatchObject([{

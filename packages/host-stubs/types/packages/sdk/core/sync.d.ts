@@ -92,6 +92,15 @@ export type CanonicalEntityProgress = z.output<typeof CanonicalEntityProgressSch
  * A Google account has one per surface (mail, events, contacts); a Telegram account
  * has one. Null on the wire when the surface has no worker. */
 export declare const AccountSyncStateSchema: z.ZodObject<{
+    syncApplication: z.ZodNullable<z.ZodDiscriminatedUnion<[z.ZodObject<{
+        kind: z.ZodLiteral<"pending">;
+    }, z.core.$strict>, z.ZodObject<{
+        kind: z.ZodLiteral<"applied">;
+    }, z.core.$strict>, z.ZodObject<{
+        kind: z.ZodLiteral<"failed">;
+        message: z.ZodString;
+    }, z.core.$strict>], "kind">>;
+    appliedSyncRevisions: z.ZodReadonly<z.ZodRecord<z.ZodString, z.ZodString>>;
     status: z.ZodUnion<readonly [z.ZodDiscriminatedUnion<[z.ZodObject<{
         kind: z.ZodLiteral<"bootstrap">;
         estimatedAt: z.ZodUnion<readonly [z.ZodISODateTime, z.ZodLiteral<"unknown">]>;
@@ -127,6 +136,54 @@ export declare const AccountSyncStateSchema: z.ZodObject<{
     }, z.core.$strict>>;
 }, z.core.$strict>;
 export type AccountSyncState = z.output<typeof AccountSyncStateSchema>;
+/** One saved sync choice a syncable module reports: the entity, the provider
+ * scope it names, the choice and its graph-owned revision. */
+export declare const SyncChoiceSchema: z.ZodObject<{
+    id: z.ZodUUID;
+    scopeId: z.ZodString;
+    syncEnabled: z.ZodBoolean;
+    syncRevision: z.ZodString;
+}, z.core.$strict>;
+export type SyncChoice = z.output<typeof SyncChoiceSchema>;
+/** What the host asks a syncable module's `sync.selection` method for: one
+ * connected account at one account generation. */
+export declare const SyncSelectionRequestSchema: z.ZodObject<{
+    sourceId: z.ZodString;
+    accountId: z.ZodString;
+    accountGeneration: z.ZodInt;
+}, z.core.$strict>;
+export type SyncSelectionRequest = z.output<typeof SyncSelectionRequestSchema>;
+/** What a syncable module's `sync.selection` method answers: every saved
+ * choice of its surface. An entity, a provider scope and an X handle each
+ * appear once. */
+export declare const SyncSelectionSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
+    surface: z.ZodLiteral<"telegram">;
+    choices: z.ZodReadonly<z.ZodArray<z.ZodObject<{
+        id: z.ZodUUID;
+        scopeId: z.ZodString;
+        syncEnabled: z.ZodBoolean;
+        syncRevision: z.ZodString;
+    }, z.core.$strict>>>;
+}, z.core.$strict>, z.ZodObject<{
+    surface: z.ZodLiteral<"email">;
+    choices: z.ZodReadonly<z.ZodArray<z.ZodObject<{
+        id: z.ZodUUID;
+        scopeId: z.ZodString;
+        syncEnabled: z.ZodBoolean;
+        syncRevision: z.ZodString;
+    }, z.core.$strict>>>;
+    unknownSenderEnabled: z.ZodBoolean;
+}, z.core.$strict>, z.ZodObject<{
+    surface: z.ZodLiteral<"x">;
+    choices: z.ZodReadonly<z.ZodArray<z.ZodObject<{
+        id: z.ZodUUID;
+        scopeId: z.ZodString;
+        syncEnabled: z.ZodBoolean;
+        syncRevision: z.ZodString;
+        handle: z.ZodString;
+    }, z.core.$strict>>>;
+}, z.core.$strict>], "surface">;
+export type SyncSelection = z.output<typeof SyncSelectionSchema>;
 /** A Source message as a plugin receives it: the host's envelope without its
  * account generation. */
 export declare const SyncEnvelopeSchema: z.ZodObject<{

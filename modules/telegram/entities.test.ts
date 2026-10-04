@@ -46,7 +46,7 @@ async function written(): Promise<GraphBatchInput["entities"]> {
         created: fragment.entities.length,
         updated: 0,
         linksAdded: fragment.links.length,
-        droppedKeys: [],
+        droppedKeys: [], resolved: [],
       });
     },
     listEntitiesWindow: () => Promise.resolve(page([])),

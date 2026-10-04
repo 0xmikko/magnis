@@ -7,27 +7,27 @@ import { connectionReady, pageLimitMax, rpc, writeTool } from "@magnis/plugin-sd
 
 import { searchEntitiesPage, syncHandler, tool, type GraphService, type PluginDeps } from "@magnis/plugin-sdk";
 import type {
-  RawSyncableEntity,
   ResolveSyncMigrationParams,
-  SetSyncEnabledParams,
   SetSyncEnabledResult,
-  SyncableBatchEntityInput,
-  SyncMigrationEntity,
   SyncMigrationIssue,
   SyncMigrationStatus,
-  SyncSelection,
-  SyncSelectionRequest,
 } from "@magnis/plugin-sdk";
 import type {
+  BatchEntityInput,
   BatchLink,
   BatchRef,
   Entity,
   JsonObject,
   PaginatedResponse,
+  SetSyncEnabledParams,
+  Syncable,
   SyncEnvelope,
   SyncHandlerParams,
   SyncHookParams,
+  SyncMigrationEntity,
   SyncReceipt,
+  SyncSelection,
+  SyncSelectionRequest,
 } from "@magnis/sdk";
 import type {
   ResolvedXProfile,
@@ -94,7 +94,7 @@ function sourceExternalId(row: Entity): string | null {
   return row.origin === "canonical" ? row.source.externalId : null;
 }
 
-function savedProfile(row: Entity): RawSyncableEntity {
+function savedProfile(row: Entity): Entity & Syncable {
   if (row.schemaId !== PROFILE || !("syncEnabled" in row) || typeof row.syncEnabled !== "boolean"
     || !("syncRevision" in row) || typeof row.syncRevision !== "string" || !/^\d+$/.test(row.syncRevision)) throw new Error("X profile has no saved synchronization choice");
   return { ...row, syncEnabled: row.syncEnabled, syncRevision: row.syncRevision };
@@ -175,13 +175,11 @@ export class XModule {
       const cached = resolved.get(handle);
       if (cached !== undefined) return cached;
       if (accountId === undefined) {
-        // The host's sync status answer keys each account by `account_id`.
-        const status = await this.graph.syncState("status");
-        const accounts = status.accounts;
-        if (!Array.isArray(accounts) || accounts.length !== 1) throw new Error("X migration requires one connected account");
-        const account: unknown = accounts[0];
-        if (typeof account !== "object" || account === null || !("account_id" in account) || typeof account.account_id !== "string" || account.account_id === "") throw new Error("X migration has no connected account ID");
-        accountId = account.account_id;
+        const { accounts } = await this.graph.syncState("status");
+        const account = accounts[0];
+        if (accounts.length !== 1 || account === undefined) throw new Error("X migration requires one connected account");
+        if (account.accountId === "") throw new Error("X migration has no connected account ID");
+        accountId = account.accountId;
       }
       const profile = resolvedProfile(await this.graph.sourceCommand({ action: "resolveProfile", handle }, accountId));
       if (normalizedHandle(profile.handle) !== handle) throw new Error("X lookup returned a different handle identity");
@@ -240,7 +238,7 @@ export class XModule {
   private async commitMigration(group: XMigrationGroup, syncEnabled: boolean): Promise<void> {
     let id = group.row?.id;
     if (id === undefined) {
-      const profile: SyncableBatchEntityInput = { key: group.externalId, schemaId: PROFILE, name: group.profile.displayName,
+      const profile: BatchEntityInput = { key: group.externalId, schemaId: PROFILE, name: group.profile.displayName,
         idx: null, date: null, externalId: group.externalId, properties: profileProperties(group.profile), syncEnabled };
       const applied = await this.graph.applyBatch({ entities: [profile], refs: [], links: [] });
       id = applied.ids[group.externalId];
@@ -329,13 +327,13 @@ export class XModule {
     }
   }
 
-  private async admitEnvelopes(incoming: readonly SyncEnvelope[]): Promise<{ envelopes: SyncEnvelope[]; owners: Map<string, RawSyncableEntity>; deletions: Map<string, string> }> {
+  private async admitEnvelopes(incoming: readonly SyncEnvelope[]): Promise<{ envelopes: SyncEnvelope[]; owners: Map<string, Entity & Syncable>; deletions: Map<string, string> }> {
     const profileEvents = incoming.filter((env) => env.kind !== "delete" && (env.payload as JsonObject).entity_type === "profile");
     const externalIds = [...new Set(profileEvents.map((env) => {
       if (typeof env.remoteId !== "string" || !/^x:profile:\d+$/.test(env.remoteId)) throw new Error("X profile event has no stable identity");
       return env.remoteId;
     }))];
-    const profileByExternalId = new Map<string, RawSyncableEntity>();
+    const profileByExternalId = new Map<string, Entity & Syncable>();
     if (externalIds.length > 0) {
       const ids = await this.graph.findByExternalIds(externalIds);
       if (ids.length !== externalIds.length) throw new Error("X profile lookup length mismatch");
@@ -346,7 +344,7 @@ export class XModule {
         if ((await this.profileRows()).some((row) => row.syncEnabled === null || row.syncRevision === null) || (await this.legacyEntries()).length > 0) throw new Error("X discovery waits for synchronization migration");
         const rule = (await this.graph.moduleSettings()).newProfileSyncEnabled;
         if (rule !== "true" && rule !== "false") throw new Error("X newProfileSyncEnabled setting is missing or invalid");
-        const entities = missing.map((externalId): SyncableBatchEntityInput => {
+        const entities = missing.map((externalId): BatchEntityInput => {
           const event = profileEvents.find((env) => env.remoteId === externalId);
           if (event === undefined) throw new Error("Missing X profile discovery event");
           const payload = event.payload as JsonObject;
@@ -372,7 +370,7 @@ export class XModule {
         profileByExternalId.set(externalId, savedProfile(row));
       });
     }
-    const byHandle = new Map<string, RawSyncableEntity>();
+    const byHandle = new Map<string, Entity & Syncable>();
     for (const env of profileEvents) {
       if (typeof env.remoteId !== "string") throw new Error("X profile event has no remote ID");
       const profile = profileByExternalId.get(env.remoteId);
@@ -383,7 +381,7 @@ export class XModule {
       byHandle.set(handle, profile);
     }
     let rows: SyncMigrationEntity[] | undefined;
-    const owners = new Map<string, RawSyncableEntity>();
+    const owners = new Map<string, Entity & Syncable>();
     const deletions = new Map<string, string>();
     for (const env of incoming) {
       const remoteId = env.remoteId;
@@ -457,7 +455,7 @@ export class XModule {
     const known = generation === null ? new Map<string, JsonObject | null>() : await this.knownByExternalId(envelopes);
     const restatedProfiles = new Set<string>();
 
-    const entities: SyncableBatchEntityInput[] = [];
+    const entities: BatchEntityInput[] = [];
     const links: BatchLink[] = [];
 
     for (const env of envelopes) {

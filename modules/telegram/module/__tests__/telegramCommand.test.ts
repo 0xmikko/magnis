@@ -14,7 +14,7 @@
  * @legacy-id: tst_be_tgtrigger_013_set_trigger_creates_trigger
  */
 import { describe, expect, it, vi } from "vitest";
-import { entity, mockGraph, mountModule } from "@magnis/testkit/module";
+import { entity, mockGraph, mountModule, syncStateDouble } from "@magnis/testkit/module";
 import { TelegramModule } from "../service.ts";
 
 interface TelegramCommandInternals {
@@ -32,7 +32,7 @@ describe("tst_module_telegram_command_001 — Telegram command mapping", () => {
       getEntity: (id) => Promise.resolve(id === "identity" ? entity(id, "Person", { schemaId: "telegram.account", properties: { telegram_user_id: 42 } }) : entity(id, "DM", { schemaId: "telegram.chat", properties: { chat_id: 42, type: "private" } })),
       findByExternalId: () => Promise.resolve(exists ? "chat-id" : null),
       updateEntitySyncEnabled: () => Promise.resolve({ syncRevision: "8" }),
-      syncState: () => Promise.resolve({ pending: true }),
+      syncState: syncStateDouble(),
     });
     const mounted = await mountModule(TelegramModule, { mode: "dispatch", graph, ctx: { extensionId: "telegram" } });
     const result = await mounted.rpc("telegram.account.setSyncEnabled", { id: "identity", syncEnabled: true });
@@ -48,7 +48,7 @@ describe("tst_module_telegram_command_001 — Telegram command mapping", () => {
     const graph = mockGraph({
       getEntity: () => Promise.resolve(entity("chat-id", "Chat", { schemaId: "telegram.chat" })),
       updateEntitySyncEnabled: () => Promise.reject(new Error("save failed")),
-      syncState: () => Promise.resolve({ pending: true }),
+      syncState: syncStateDouble(),
     });
     const mounted = await mountModule(TelegramModule, { mode: "dispatch", graph, ctx: { extensionId: "telegram" } });
     await expect(mounted.rpc("telegram.chat.setSyncEnabled", { id: "chat-id", syncEnabled: true })).resolves.toEqual({ results: [{ identityId: "chat-id", targetId: "chat-id", kind: "failed", message: "save failed" }] });
@@ -60,7 +60,7 @@ describe("tst_module_telegram_command_001 — Telegram command mapping", () => {
     const graph = mockGraph({
       getEntity: () => Promise.resolve(entity("chat-id", "Chat", { schemaId: "telegram.chat" })),
       updateEntitySyncEnabled: () => { calls.push("save"); return Promise.resolve({ syncRevision: "9" }); },
-      syncState: () => { calls.push("apply"); return applyFails ? Promise.reject(new Error("worker unavailable")) : Promise.resolve({ pending: true }); },
+      syncState: syncStateDouble({ apply: () => { calls.push("apply"); return applyFails ? Promise.reject(new Error("worker unavailable")) : Promise.resolve({ pending: true }); } }),
     });
     const mounted = await mountModule(TelegramModule, { mode: "dispatch", graph, ctx: { extensionId: "telegram" } });
     expect(mounted.tools.find((entry) => entry.name === "telegram.chat.setSyncEnabled")?.requiresApproval).toBe(true);
@@ -73,14 +73,21 @@ describe("tst_module_telegram_command_001 — Telegram command mapping", () => {
   });
 
   it("delegates sync and composer commands without translating host responses", async () => {
+    const status = { accounts: [{ accountId: "account-1", sync: null }] };
+    const reset = { status: "ok" as const, deletedMessages: 3 };
+    const resets: string[] = [];
     const graph = mockGraph({
-      syncState: (...args: unknown[]) => Promise.resolve({ args, pending: true as const }),
+      syncState: syncStateDouble({
+        status: () => Promise.resolve(status),
+        reset: (resetSchema) => { resets.push(resetSchema); return Promise.resolve(reset); },
+      }),
       composer: (...args: unknown[]) => Promise.resolve({ args }),
     });
     const module = mountModule(TelegramModule, { graph }).module;
 
-    await expect(module.syncStatus()).resolves.toEqual({ args: ["status"], pending: true });
-    await expect(module.syncReset()).resolves.toEqual({ args: ["reset", "telegram.message"], pending: true });
+    await expect(module.syncStatus()).resolves.toBe(status);
+    await expect(module.syncReset()).resolves.toBe(reset);
+    expect(resets).toEqual(["telegram.message"]);
     await expect(module.composerRead()).resolves.toEqual({ args: ["read"] });
     await expect(module.composerSetText({ thread_key: "chat:42", text: "Hello" })).resolves.toEqual({
       args: ["set_text", "chat:42", "Hello"],

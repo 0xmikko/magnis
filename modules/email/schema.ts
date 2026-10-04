@@ -3,8 +3,8 @@
 // namespace string). The schemas/ files are the source of truth for REGISTRATION
 // (registered natively at install); these consts are for read/write
 // call sites only.
-import type { GraphService, SyncableBatchEntityInput } from "@magnis/plugin-sdk";
-import type { BatchRef } from "@magnis/sdk";
+import type { GraphService } from "@magnis/plugin-sdk";
+import type { BatchEntityInput, BatchRef } from "@magnis/sdk";
 
 /** Message entity schema. */
 export const MESSAGE_SCHEMA = "email.message";
@@ -12,7 +12,7 @@ export const MESSAGE_SCHEMA = "email.message";
 export const ADDRESS_SCHEMA = "email.address";
 
 /** The shared address node shape used by sync batches without a nested module RPC. */
-export function addressBatchEntity(key: string, address: string, displayName: string | null, syncEnabled: boolean): SyncableBatchEntityInput {
+export function addressBatchEntity(key: string, address: string, displayName: string | null, syncEnabled: boolean): BatchEntityInput {
   const lower = address.trim().toLowerCase();
   return {
     key,
@@ -36,7 +36,7 @@ export function addressBatchEntity(key: string, address: string, displayName: st
 export async function addressFragment(
   graph: Pick<GraphService, "findByExternalIds" | "moduleSettings">,
   addresses: ReadonlyMap<string, string | null>,
-): Promise<{ entities: SyncableBatchEntityInput[]; refs: BatchRef[] }> {
+): Promise<{ entities: BatchEntityInput[]; refs: BatchRef[] }> {
   const all = [...addresses.keys()];
   if (all.length === 0) return { entities: [], refs: [] };
   const ids = await graph.findByExternalIds(all.map((address) => `email:address:${address}`));

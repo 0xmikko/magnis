@@ -1066,6 +1066,7 @@ export declare const startOllamaModelPullContract: import("./contract.js").HttpC
     modelTag: z.ZodString;
     logicalModelId: z.ZodString;
     phase: z.ZodEnum<{
+        interrupted: "interrupted";
         failed: "failed";
         preparing: "preparing";
         downloading: "downloading";
@@ -1073,7 +1074,6 @@ export declare const startOllamaModelPullContract: import("./contract.js").HttpC
         adding: "adding";
         completed: "completed";
         cancelled: "cancelled";
-        interrupted: "interrupted";
     }>;
     layerDigest: z.ZodNullable<z.ZodString>;
     completedBytes: z.ZodNullable<z.ZodNumber>;
@@ -1098,6 +1098,7 @@ export declare const listOllamaModelPullsContract: import("./contract.js").HttpC
     modelTag: z.ZodString;
     logicalModelId: z.ZodString;
     phase: z.ZodEnum<{
+        interrupted: "interrupted";
         failed: "failed";
         preparing: "preparing";
         downloading: "downloading";
@@ -1105,7 +1106,6 @@ export declare const listOllamaModelPullsContract: import("./contract.js").HttpC
         adding: "adding";
         completed: "completed";
         cancelled: "cancelled";
-        interrupted: "interrupted";
     }>;
     layerDigest: z.ZodNullable<z.ZodString>;
     completedBytes: z.ZodNullable<z.ZodNumber>;
@@ -1131,6 +1131,7 @@ export declare const cancelOllamaModelPullContract: import("./contract.js").Http
     modelTag: z.ZodString;
     logicalModelId: z.ZodString;
     phase: z.ZodEnum<{
+        interrupted: "interrupted";
         failed: "failed";
         preparing: "preparing";
         downloading: "downloading";
@@ -1138,7 +1139,6 @@ export declare const cancelOllamaModelPullContract: import("./contract.js").Http
         adding: "adding";
         completed: "completed";
         cancelled: "cancelled";
-        interrupted: "interrupted";
     }>;
     layerDigest: z.ZodNullable<z.ZodString>;
     completedBytes: z.ZodNullable<z.ZodNumber>;
@@ -1713,6 +1713,7 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
     modelTag: z.ZodString;
     logicalModelId: z.ZodString;
     phase: z.ZodEnum<{
+        interrupted: "interrupted";
         failed: "failed";
         preparing: "preparing";
         downloading: "downloading";
@@ -1720,7 +1721,6 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
         adding: "adding";
         completed: "completed";
         cancelled: "cancelled";
-        interrupted: "interrupted";
     }>;
     layerDigest: z.ZodNullable<z.ZodString>;
     completedBytes: z.ZodNullable<z.ZodNumber>;
@@ -1744,6 +1744,7 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
     modelTag: z.ZodString;
     logicalModelId: z.ZodString;
     phase: z.ZodEnum<{
+        interrupted: "interrupted";
         failed: "failed";
         preparing: "preparing";
         downloading: "downloading";
@@ -1751,7 +1752,6 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
         adding: "adding";
         completed: "completed";
         cancelled: "cancelled";
-        interrupted: "interrupted";
     }>;
     layerDigest: z.ZodNullable<z.ZodString>;
     completedBytes: z.ZodNullable<z.ZodNumber>;
@@ -1776,6 +1776,7 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
     modelTag: z.ZodString;
     logicalModelId: z.ZodString;
     phase: z.ZodEnum<{
+        interrupted: "interrupted";
         failed: "failed";
         preparing: "preparing";
         downloading: "downloading";
@@ -1783,7 +1784,6 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
         adding: "adding";
         completed: "completed";
         cancelled: "cancelled";
-        interrupted: "interrupted";
     }>;
     layerDigest: z.ZodNullable<z.ZodString>;
     completedBytes: z.ZodNullable<z.ZodNumber>;

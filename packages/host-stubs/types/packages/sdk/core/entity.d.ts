@@ -14,10 +14,17 @@ export declare const EntityUpdateStateRequestSchema: z.ZodUnion<readonly [z.ZodO
     entityId: z.ZodGUID;
     pinOrder: z.ZodNonOptional<z.ZodOptional<z.ZodNullable<z.ZodInt>>>;
     archived: z.ZodOptional<z.ZodBoolean>;
+    indexed: z.ZodOptional<z.ZodBoolean>;
 }, z.core.$strict>, z.ZodObject<{
     entityId: z.ZodGUID;
     pinOrder: z.ZodOptional<z.ZodNullable<z.ZodInt>>;
     archived: z.ZodNonOptional<z.ZodOptional<z.ZodBoolean>>;
+    indexed: z.ZodOptional<z.ZodBoolean>;
+}, z.core.$strict>, z.ZodObject<{
+    entityId: z.ZodGUID;
+    pinOrder: z.ZodOptional<z.ZodNullable<z.ZodInt>>;
+    archived: z.ZodOptional<z.ZodBoolean>;
+    indexed: z.ZodNonOptional<z.ZodOptional<z.ZodBoolean>>;
 }, z.core.$strict>]>;
 interface EntityBase<P extends JsonValue = JsonValue> {
     id: EntityId;
@@ -27,12 +34,22 @@ interface EntityBase<P extends JsonValue = JsonValue> {
     createdAt: DateTimeUtc;
     name: string | null;
     indexed: boolean;
+    /** Present only when the registered schema supports synchronization. */
+    syncEnabled?: boolean;
+    /** Graph-owned decimal revision; accompanies a persisted sync choice. */
+    syncRevision?: string;
     date: DateTimeUtc;
     idx: string | null;
     isPinned: boolean | null;
     pinOrder: number | null;
     isArchived: boolean | null;
     properties: P;
+}
+/** An entity of a schema that supports synchronization: it always carries the
+ * user's saved choice and its revision. */
+export interface Syncable extends EntityBase {
+    syncEnabled: boolean;
+    syncRevision: string;
 }
 /** An entity a connector delivered. Its names are its declared fields; its
  *  provenance is `source`, the connector's stamp —
@@ -42,6 +59,8 @@ interface EntityBase<P extends JsonValue = JsonValue> {
 export interface CanonicalEntity<P extends JsonValue = JsonValue> extends EntityBase<P> {
     origin: "canonical";
     source: SourceRef;
+    /** Exact module-owned key; null when this record has no canonical key. */
+    canonicalKey: string | null;
 }
 /** An entity a model created: a project nobody named, an organisation living
  *  only in prose, a person known only by a nickname. Its names live in keys. */
@@ -51,6 +70,8 @@ export interface AgentEntity<P extends JsonValue = JsonValue> extends EntityBase
     keys: string[];
 }
 export type Entity<P extends JsonValue = JsonValue> = CanonicalEntity<P> | AgentEntity<P>;
+/** The graph-owned decimal revision of a saved sync choice. */
+export declare const syncRevisionSchema: z.ZodString;
 export declare const entitySchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     origin: z.ZodLiteral<"canonical">;
     source: z.ZodObject<{
@@ -58,6 +79,7 @@ export declare const entitySchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         account: z.ZodString;
         externalId: z.ZodString;
     }, z.core.$strict>;
+    canonicalKey: z.ZodNullable<z.ZodString>;
     id: z.ZodString;
     owner: z.ZodString;
     schemaId: z.ZodString;
@@ -65,6 +87,8 @@ export declare const entitySchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     createdAt: z.ZodISODateTime;
     name: z.ZodNullable<z.ZodString>;
     indexed: z.ZodBoolean;
+    syncEnabled: z.ZodExactOptional<z.ZodBoolean>;
+    syncRevision: z.ZodExactOptional<z.ZodString>;
     date: z.ZodISODateTime;
     idx: z.ZodNullable<z.ZodString>;
     isPinned: z.ZodNullable<z.ZodBoolean>;
@@ -85,6 +109,8 @@ export declare const entitySchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     createdAt: z.ZodISODateTime;
     name: z.ZodNullable<z.ZodString>;
     indexed: z.ZodBoolean;
+    syncEnabled: z.ZodExactOptional<z.ZodBoolean>;
+    syncRevision: z.ZodExactOptional<z.ZodString>;
     date: z.ZodISODateTime;
     idx: z.ZodNullable<z.ZodString>;
     isPinned: z.ZodNullable<z.ZodBoolean>;
@@ -99,6 +125,7 @@ export declare const EntitySchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         account: z.ZodString;
         externalId: z.ZodString;
     }, z.core.$strict>;
+    canonicalKey: z.ZodNullable<z.ZodString>;
     id: z.ZodString;
     owner: z.ZodString;
     schemaId: z.ZodString;
@@ -106,6 +133,8 @@ export declare const EntitySchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     createdAt: z.ZodISODateTime;
     name: z.ZodNullable<z.ZodString>;
     indexed: z.ZodBoolean;
+    syncEnabled: z.ZodExactOptional<z.ZodBoolean>;
+    syncRevision: z.ZodExactOptional<z.ZodString>;
     date: z.ZodISODateTime;
     idx: z.ZodNullable<z.ZodString>;
     isPinned: z.ZodNullable<z.ZodBoolean>;
@@ -126,6 +155,8 @@ export declare const EntitySchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     createdAt: z.ZodISODateTime;
     name: z.ZodNullable<z.ZodString>;
     indexed: z.ZodBoolean;
+    syncEnabled: z.ZodExactOptional<z.ZodBoolean>;
+    syncRevision: z.ZodExactOptional<z.ZodString>;
     date: z.ZodISODateTime;
     idx: z.ZodNullable<z.ZodString>;
     isPinned: z.ZodNullable<z.ZodBoolean>;
@@ -142,6 +173,7 @@ export declare const EntityWithLinksSchema: z.ZodObject<{
             account: z.ZodString;
             externalId: z.ZodString;
         }, z.core.$strict>;
+        canonicalKey: z.ZodNullable<z.ZodString>;
         id: z.ZodString;
         owner: z.ZodString;
         schemaId: z.ZodString;
@@ -149,6 +181,8 @@ export declare const EntityWithLinksSchema: z.ZodObject<{
         createdAt: z.ZodISODateTime;
         name: z.ZodNullable<z.ZodString>;
         indexed: z.ZodBoolean;
+        syncEnabled: z.ZodExactOptional<z.ZodBoolean>;
+        syncRevision: z.ZodExactOptional<z.ZodString>;
         date: z.ZodISODateTime;
         idx: z.ZodNullable<z.ZodString>;
         isPinned: z.ZodNullable<z.ZodBoolean>;
@@ -169,6 +203,8 @@ export declare const EntityWithLinksSchema: z.ZodObject<{
         createdAt: z.ZodISODateTime;
         name: z.ZodNullable<z.ZodString>;
         indexed: z.ZodBoolean;
+        syncEnabled: z.ZodExactOptional<z.ZodBoolean>;
+        syncRevision: z.ZodExactOptional<z.ZodString>;
         date: z.ZodISODateTime;
         idx: z.ZodNullable<z.ZodString>;
         isPinned: z.ZodNullable<z.ZodBoolean>;
@@ -211,6 +247,7 @@ export declare const LinkedEntitySchema: z.ZodObject<{
             account: z.ZodString;
             externalId: z.ZodString;
         }, z.core.$strict>;
+        canonicalKey: z.ZodNullable<z.ZodString>;
         id: z.ZodString;
         owner: z.ZodString;
         schemaId: z.ZodString;
@@ -218,6 +255,8 @@ export declare const LinkedEntitySchema: z.ZodObject<{
         createdAt: z.ZodISODateTime;
         name: z.ZodNullable<z.ZodString>;
         indexed: z.ZodBoolean;
+        syncEnabled: z.ZodExactOptional<z.ZodBoolean>;
+        syncRevision: z.ZodExactOptional<z.ZodString>;
         date: z.ZodISODateTime;
         idx: z.ZodNullable<z.ZodString>;
         isPinned: z.ZodNullable<z.ZodBoolean>;
@@ -238,6 +277,8 @@ export declare const LinkedEntitySchema: z.ZodObject<{
         createdAt: z.ZodISODateTime;
         name: z.ZodNullable<z.ZodString>;
         indexed: z.ZodBoolean;
+        syncEnabled: z.ZodExactOptional<z.ZodBoolean>;
+        syncRevision: z.ZodExactOptional<z.ZodString>;
         date: z.ZodISODateTime;
         idx: z.ZodNullable<z.ZodString>;
         isPinned: z.ZodNullable<z.ZodBoolean>;

@@ -1,7 +1,8 @@
 /** What a plugin and the agent tool surface share with the host: the plugin
  * context, the tools and rpc() methods a plugin declares, the tool answers,
- * the capability answer and every plugin operation input. An optional field
- * is `exactOptional`: absent, never undefined, so its output is `field?: T`. */
+ * the capability answer, every plugin operation input and the answers of the
+ * sync operations. An optional field is `exactOptional`: absent, never
+ * undefined, so its output is `field?: T`. */
 import { z } from "zod";
 /** Who a plugin call runs for and which extension makes it. */
 export declare const PluginContextSchema: z.ZodObject<{
@@ -108,8 +109,134 @@ export declare const CreateEntityParamsSchema: z.ZodObject<{
     clientId: z.ZodExactOptional<z.ZodString>;
     idx: z.ZodExactOptional<z.ZodString>;
     date: z.ZodExactOptional<z.ZodString>;
+    syncEnabled: z.ZodExactOptional<z.ZodBoolean>;
 }, z.core.$strict>;
 export type CreateEntityParams = z.output<typeof CreateEntityParamsSchema>;
+/** `graph.updateEntitySyncEnabled`: the user's sync choice for one entity. */
+export declare const SetSyncEnabledParamsSchema: z.ZodObject<{
+    id: z.ZodString;
+    syncEnabled: z.ZodBoolean;
+}, z.core.$strict>;
+export type SetSyncEnabledParams = z.output<typeof SetSyncEnabledParamsSchema>;
+/** What `graph.updateEntitySyncEnabled` answers: the revision the saved choice now has. */
+export declare const UpdateEntitySyncEnabledResultSchema: z.ZodObject<{
+    syncRevision: z.ZodString;
+}, z.core.$strict>;
+export type UpdateEntitySyncEnabledResult = z.output<typeof UpdateEntitySyncEnabledResultSchema>;
+/** `graph.admitSyncEntities`: an entity and the page's events it owns. */
+export declare const SyncAdmissionSubjectSchema: z.ZodObject<{
+    entityId: z.ZodUUID;
+    remoteIds: z.ZodReadonly<z.ZodArray<z.ZodString>>;
+}, z.core.$strict>;
+export type SyncAdmissionSubject = z.output<typeof SyncAdmissionSubjectSchema>;
+/** What `graph.admitSyncEntities` answers: the page's remote ids whose owning entity syncs. */
+export declare const AdmitSyncEntitiesResultSchema: z.ZodReadonly<z.ZodArray<z.ZodString>>;
+export type AdmitSyncEntitiesResult = z.output<typeof AdmitSyncEntitiesResultSchema>;
+/** `graph.listSyncMigrationEntities`: one page of a schema's entities with
+ * their stored sync choice, in id order after the id `after`. */
+export declare const ListSyncMigrationEntitiesParamsSchema: z.ZodObject<{
+    schemaId: z.ZodString;
+    after: z.ZodNullable<z.ZodString>;
+    limit: z.ZodNumber;
+}, z.core.$strict>;
+export type ListSyncMigrationEntitiesParams = z.output<typeof ListSyncMigrationEntitiesParamsSchema>;
+/** An entity of a syncable schema as the sync migration reads it: its saved
+ * choice and revision are null until the owning module initializes them. */
+export declare const SyncMigrationEntitySchema: z.ZodObject<{
+    id: z.ZodString;
+    schemaId: z.ZodString;
+    name: z.ZodNullable<z.ZodString>;
+    indexed: z.ZodBoolean;
+    isPinned: z.ZodNullable<z.ZodBoolean>;
+    properties: z.ZodType<import("./json.js").JsonObject, unknown, z.core.$ZodTypeInternals<import("./json.js").JsonObject, unknown>>;
+    syncEnabled: z.ZodNullable<z.ZodBoolean>;
+    syncRevision: z.ZodNullable<z.ZodString>;
+}, z.core.$strict>;
+export type SyncMigrationEntity = z.output<typeof SyncMigrationEntitySchema>;
+/** What `graph.listSyncMigrationEntities` answers: one page, and the id the
+ * next page starts after, or null at the end. */
+export declare const ListSyncMigrationEntitiesResultSchema: z.ZodObject<{
+    items: z.ZodReadonly<z.ZodArray<z.ZodObject<{
+        id: z.ZodString;
+        schemaId: z.ZodString;
+        name: z.ZodNullable<z.ZodString>;
+        indexed: z.ZodBoolean;
+        isPinned: z.ZodNullable<z.ZodBoolean>;
+        properties: z.ZodType<import("./json.js").JsonObject, unknown, z.core.$ZodTypeInternals<import("./json.js").JsonObject, unknown>>;
+        syncEnabled: z.ZodNullable<z.ZodBoolean>;
+        syncRevision: z.ZodNullable<z.ZodString>;
+    }, z.core.$strict>>>;
+    next: z.ZodNullable<z.ZodString>;
+}, z.core.$strict>;
+export type ListSyncMigrationEntitiesResult = z.output<typeof ListSyncMigrationEntitiesResultSchema>;
+/** What `graph.moduleSettings` answers: the module's setting values by key. */
+export declare const ModuleSettingsResultSchema: z.ZodReadonly<z.ZodRecord<z.ZodString, z.ZodString>>;
+export type ModuleSettingsResult = z.output<typeof ModuleSettingsResultSchema>;
+/** What `graph.syncState("status")` answers: each account of the calling
+ * module's surface, and the sync its worker reports, null without a worker. */
+export declare const SyncStateStatusResultSchema: z.ZodObject<{
+    accounts: z.ZodReadonly<z.ZodArray<z.ZodObject<{
+        accountId: z.ZodString;
+        sync: z.ZodNullable<z.ZodObject<{
+            syncApplication: z.ZodNullable<z.ZodDiscriminatedUnion<[z.ZodObject<{
+                kind: z.ZodLiteral<"pending">;
+            }, z.core.$strict>, z.ZodObject<{
+                kind: z.ZodLiteral<"applied">;
+            }, z.core.$strict>, z.ZodObject<{
+                kind: z.ZodLiteral<"failed">;
+                message: z.ZodString;
+            }, z.core.$strict>], "kind">>;
+            appliedSyncRevisions: z.ZodReadonly<z.ZodRecord<z.ZodString, z.ZodString>>;
+            status: z.ZodUnion<readonly [z.ZodDiscriminatedUnion<[z.ZodObject<{
+                kind: z.ZodLiteral<"bootstrap">;
+                estimatedAt: z.ZodUnion<readonly [z.ZodISODateTime, z.ZodLiteral<"unknown">]>;
+            }, z.core.$strict>, z.ZodObject<{
+                kind: z.ZodLiteral<"reconcile">;
+            }, z.core.$strict>, z.ZodObject<{
+                kind: z.ZodLiteral<"backfill">;
+                estimatedAt: z.ZodUnion<readonly [z.ZodISODateTime, z.ZodLiteral<"unknown">]>;
+            }, z.core.$strict>, z.ZodObject<{
+                kind: z.ZodLiteral<"catchingUp">;
+            }, z.core.$strict>, z.ZodObject<{
+                kind: z.ZodLiteral<"live">;
+            }, z.core.$strict>, z.ZodObject<{
+                kind: z.ZodLiteral<"polling">;
+                nextAt: z.ZodISODateTime;
+            }, z.core.$strict>], "kind">, z.ZodDiscriminatedUnion<[z.ZodObject<{
+                kind: z.ZodLiteral<"rateLimited">;
+                retryAt: z.ZodISODateTime;
+            }, z.core.$strict>, z.ZodObject<{
+                kind: z.ZodLiteral<"interrupted">;
+                retryAt: z.ZodISODateTime;
+                message: z.ZodString;
+            }, z.core.$strict>, z.ZodObject<{
+                kind: z.ZodLiteral<"signInRequired">;
+            }, z.core.$strict>], "kind">]>;
+            progress: z.ZodRecord<z.ZodString, z.ZodObject<{
+                name: z.ZodString;
+                synced: z.ZodNumber;
+                estimation: z.ZodUnion<readonly [z.ZodLiteral<"unplanned">, z.ZodObject<{
+                    total: z.ZodNumber;
+                    skipped: z.ZodNumber;
+                }, z.core.$strict>]>;
+            }, z.core.$strict>>;
+        }, z.core.$strict>>;
+    }, z.core.$strict>>>;
+}, z.core.$strict>;
+export type SyncStateStatusResult = z.output<typeof SyncStateStatusResultSchema>;
+/** What `graph.syncState("apply")` answers: the surface's worker was asked to
+ * apply the saved choices. */
+export declare const SyncStateApplyResultSchema: z.ZodObject<{
+    pending: z.ZodLiteral<true>;
+}, z.core.$strict>;
+export type SyncStateApplyResult = z.output<typeof SyncStateApplyResultSchema>;
+/** What `graph.syncState("reset")` answers: the schema's records were archived
+ * and the surface's sync rows reset. */
+export declare const SyncStateResetResultSchema: z.ZodObject<{
+    status: z.ZodLiteral<"ok">;
+    deletedMessages: z.ZodInt;
+}, z.core.$strict>;
+export type SyncStateResetResult = z.output<typeof SyncStateResetResultSchema>;
 /** `graph.listEntities`. */
 export declare const ListEntitiesParamsSchema: z.ZodObject<{
     schemaId: z.ZodString;

@@ -35,6 +35,9 @@ import type {
   PluginContext,
   PluginToolDeclaration,
   SyncEnvelope,
+  SyncStateApplyResult,
+  SyncStateResetResult,
+  SyncStateStatusResult,
 } from "@magnis/sdk";
 
 // ───────────────────────────── mockGraph ─────────────────────────────
@@ -100,6 +103,30 @@ export function mockGraph(
     },
   );
   return proxy as unknown as MockGraph;
+}
+
+/** A `syncState` double typed against its three host answers. "apply" runs
+ *  `apply`, which answers pending unless the test supplies its own; "status"
+ *  and "reset" answer only what the test supplies and are refused otherwise,
+ *  so a module that asks for them unexpectedly fails. */
+export function syncStateDouble(answers: {
+  apply?: () => Promise<SyncStateApplyResult>;
+  status?: () => Promise<SyncStateStatusResult>;
+  reset?: (resetSchema: string) => Promise<SyncStateResetResult>;
+} = {}): GraphService["syncState"] {
+  function syncState(action: "status"): Promise<SyncStateStatusResult>;
+  function syncState(action: "reset", resetSchema: string): Promise<SyncStateResetResult>;
+  function syncState(action: "apply"): Promise<SyncStateApplyResult>;
+  function syncState(
+    action: "status" | "reset" | "apply",
+    resetSchema?: string,
+  ): Promise<SyncStateStatusResult | SyncStateResetResult | SyncStateApplyResult> {
+    if (action === "apply") return answers.apply === undefined ? Promise.resolve({ pending: true }) : answers.apply();
+    if (action === "status" && answers.status !== undefined) return answers.status();
+    if (action === "reset" && answers.reset !== undefined && resetSchema !== undefined) return answers.reset(resetSchema);
+    return Promise.reject(new Error(`unexpected syncState("${action}")`));
+  }
+  return syncState;
 }
 
 // ──────────────────────────── mountModule ────────────────────────────
@@ -265,6 +292,7 @@ export function entity(id: string, name: string, over: Partial<CanonicalEntity> 
     properties: {},
     origin: "canonical",
     source: { source: "test", account: "a1", externalId: id },
+    canonicalKey: null,
     ...over,
   };
 }

@@ -46,6 +46,7 @@ export declare const IndexingInputSchema: z.ZodObject<{
             account: z.ZodString;
             externalId: z.ZodString;
         }, z.core.$strict>;
+        canonicalKey: z.ZodNullable<z.ZodString>;
         id: z.ZodString;
         owner: z.ZodString;
         schemaId: z.ZodString;
@@ -53,6 +54,8 @@ export declare const IndexingInputSchema: z.ZodObject<{
         createdAt: z.ZodISODateTime;
         name: z.ZodNullable<z.ZodString>;
         indexed: z.ZodBoolean;
+        syncEnabled: z.ZodExactOptional<z.ZodBoolean>;
+        syncRevision: z.ZodExactOptional<z.ZodString>;
         date: z.ZodISODateTime;
         idx: z.ZodNullable<z.ZodString>;
         isPinned: z.ZodNullable<z.ZodBoolean>;
@@ -73,6 +76,8 @@ export declare const IndexingInputSchema: z.ZodObject<{
         createdAt: z.ZodISODateTime;
         name: z.ZodNullable<z.ZodString>;
         indexed: z.ZodBoolean;
+        syncEnabled: z.ZodExactOptional<z.ZodBoolean>;
+        syncRevision: z.ZodExactOptional<z.ZodString>;
         date: z.ZodISODateTime;
         idx: z.ZodNullable<z.ZodString>;
         isPinned: z.ZodNullable<z.ZodBoolean>;
@@ -86,6 +91,7 @@ export declare const IndexingInputSchema: z.ZodObject<{
             account: string;
             externalId: string;
         };
+        canonicalKey: string | null;
         id: string;
         owner: string;
         schemaId: string;
@@ -99,6 +105,8 @@ export declare const IndexingInputSchema: z.ZodObject<{
         pinOrder: number | null;
         isArchived: boolean | null;
         properties: import("./json.js").JsonValue;
+        syncEnabled?: boolean;
+        syncRevision?: string;
     }, {
         origin: "canonical";
         source: {
@@ -106,6 +114,7 @@ export declare const IndexingInputSchema: z.ZodObject<{
             account: string;
             externalId: string;
         };
+        canonicalKey: string | null;
         id: string;
         owner: string;
         schemaId: string;
@@ -119,6 +128,8 @@ export declare const IndexingInputSchema: z.ZodObject<{
         pinOrder: number | null;
         isArchived: boolean | null;
         properties: unknown;
+        syncEnabled?: boolean;
+        syncRevision?: string;
     } | {
         keys: string[];
         origin: "agent";
@@ -139,6 +150,8 @@ export declare const IndexingInputSchema: z.ZodObject<{
         pinOrder: number | null;
         isArchived: boolean | null;
         properties: unknown;
+        syncEnabled?: boolean;
+        syncRevision?: string;
     }, z.core.$ZodTypeInternals<{
         origin: "canonical";
         source: {
@@ -146,6 +159,7 @@ export declare const IndexingInputSchema: z.ZodObject<{
             account: string;
             externalId: string;
         };
+        canonicalKey: string | null;
         id: string;
         owner: string;
         schemaId: string;
@@ -159,6 +173,8 @@ export declare const IndexingInputSchema: z.ZodObject<{
         pinOrder: number | null;
         isArchived: boolean | null;
         properties: import("./json.js").JsonValue;
+        syncEnabled?: boolean;
+        syncRevision?: string;
     }, {
         origin: "canonical";
         source: {
@@ -166,6 +182,7 @@ export declare const IndexingInputSchema: z.ZodObject<{
             account: string;
             externalId: string;
         };
+        canonicalKey: string | null;
         id: string;
         owner: string;
         schemaId: string;
@@ -179,6 +196,8 @@ export declare const IndexingInputSchema: z.ZodObject<{
         pinOrder: number | null;
         isArchived: boolean | null;
         properties: unknown;
+        syncEnabled?: boolean;
+        syncRevision?: string;
     } | {
         keys: string[];
         origin: "agent";
@@ -199,6 +218,8 @@ export declare const IndexingInputSchema: z.ZodObject<{
         pinOrder: number | null;
         isArchived: boolean | null;
         properties: unknown;
+        syncEnabled?: boolean;
+        syncRevision?: string;
     }>>>;
     links: z.ZodArray<z.ZodDiscriminatedUnion<[z.ZodObject<{
         origin: z.ZodLiteral<"canonical">;

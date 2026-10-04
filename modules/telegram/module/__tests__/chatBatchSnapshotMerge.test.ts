@@ -94,7 +94,7 @@ describe("telegram chat batch ingest", () => {
           created: 0,
           updated: fragment.entities.length,
           linksAdded: 0,
-          droppedKeys: [],
+          droppedKeys: [], resolved: [],
         }),
     });
     const module = mountModule(TelegramModule, {
@@ -183,7 +183,7 @@ describe("telegram chat batch ingest", () => {
           created: 0,
           updated: fragment.entities.length,
           linksAdded: fragment.links.length,
-          droppedKeys: [],
+          droppedKeys: [], resolved: [],
         }),
     });
     const module = mountModule(TelegramModule, {

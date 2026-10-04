@@ -38,7 +38,7 @@ function graphRecording(written: Record<string, unknown>[]) {
         created: frag.entities.length,
         updated: 0,
         linksAdded: 0,
-        droppedKeys: [],
+        droppedKeys: [], resolved: [],
       });
     },
     findByExternalId: () => Promise.resolve(null),

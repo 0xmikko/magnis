@@ -29,7 +29,7 @@ function ingestGraph() {
         created: frag.entities.length,
         updated: 0,
         linksAdded: frag.links.length,
-        droppedKeys: [],
+        droppedKeys: [], resolved: [],
       }),
     fileRegister: () => Promise.resolve("file-id"),
     findByExternalId: () => Promise.resolve("existing-id"),

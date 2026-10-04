@@ -26,7 +26,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { GraphService, SyncableBatchEntityInput } from "@magnis/plugin-sdk";
+import type { GraphService } from "@magnis/plugin-sdk";
 import type { AddLinkParams, BatchEntityInput, Entity, GraphBatchInput, JsonObject, Link, SyncEnvelope } from "@magnis/sdk";
 import { entity, link, mockGraph, mountModule, sourceEnvelope, type MockGraph } from "@magnis/testkit/module";
 import { AddressbookModule } from "../service.ts";
@@ -105,7 +105,7 @@ function addressBookWorld(seed: {
     applyBatch: (batch: GraphBatchInput) => {
       const ids: Record<string, string> = {};
       let created = 0;
-      for (const item of batch.entities as readonly SyncableBatchEntityInput[]) {
+      for (const item of batch.entities as readonly BatchEntityInput[]) {
         const found = [...nodes.values()].find((node) => node.externalId !== undefined && node.externalId === item.externalId);
         const id = found?.id ?? (item.schemaId === "email.address" ? `addr-${item.name ?? ""}` : `id-${item.key}`);
         if (found === undefined) created += 1;
@@ -121,7 +121,7 @@ function addressBookWorld(seed: {
         if (found === undefined) throw new Error(`applyBatch: ref ${ref.key} resolves to nothing`);
         ids[ref.key] = found.id;
       }
-      return Promise.resolve({ ids, created, updated: batch.entities.length - created, linksAdded: 0, droppedKeys: [] });
+      return Promise.resolve({ ids, created, updated: batch.entities.length - created, linksAdded: 0, droppedKeys: [], resolved: [] });
     },
     moduleSettings: (forSchema?: string) => {
       if (forSchema !== "email.address") throw new Error(`moduleSettings: unexpected schema ${String(forSchema)}`);

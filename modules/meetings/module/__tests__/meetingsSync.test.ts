@@ -35,7 +35,7 @@ function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
         created: frag.entities.length,
         updated: 0,
         linksAdded: 0,
-        droppedKeys: [],
+        droppedKeys: [], resolved: [],
       }),
     findByExternalId: (_id: string): Promise<string | null> => Promise.resolve(null),
     getEntity: (_id: string) => Promise.resolve(entity("m-del", "", { schemaId: CAL, properties: { source_id: "google", account_id: "acct-1" } })),
@@ -73,7 +73,7 @@ describe("meetings @syncHandler — upsert", () => {
       created: 1,
       updated: 0,
       linksAdded: 0,
-      droppedKeys: [],
+      droppedKeys: [], resolved: [],
     }));
     const { mod } = makeModule(makeGraph({ applyBatch }));
 
@@ -129,7 +129,7 @@ describe("meetings @syncHandler — live envelopes emit a trigger.check", () => 
       created: 1,
       updated: 0,
       linksAdded: 0,
-      droppedKeys: [],
+      droppedKeys: [], resolved: [],
     }));
     const { mod, execute } = makeModule(makeGraph({ applyBatch }));
 
@@ -290,7 +290,7 @@ describe("completed Calendar replacement pass", () => {
  */
 describe("meetings @syncHandler — the plan from the pages", () => {
   it("states the completed full Calendar count once and nothing outside a worker's pass", async () => {
-    const applyBatch = vi.fn().mockResolvedValue({ ids: { r1: "id-r1" }, created: 1, updated: 0, linksAdded: 0, droppedKeys: [] });
+    const applyBatch = vi.fn().mockResolvedValue({ ids: { r1: "id-r1" }, created: 1, updated: 0, linksAdded: 0, droppedKeys: [], resolved: [] });
     const { mod } = makeModule(makeGraph({ applyBatch }));
     const calendar = env({ remoteId: "calendar", payload: { entity_type: "calendar", events_total: 3 } });
     const first = await mod.ingest({ command: "bootstrap", generation: "initial:r:1", envelopes: [calendar, env({ payload: { title: "Standup", start_at: "2026-02-01T10:00:00Z", end_at: "2026-02-01T10:15:00Z" } })] });

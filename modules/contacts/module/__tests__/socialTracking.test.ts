@@ -8,7 +8,7 @@
  */
 import type { JsonObject, JsonValue } from "@magnis/sdk";
 import { describe, expect, it } from "vitest";
-import { entity, link, mockGraph, mountModule, page } from "@magnis/testkit/module";
+import { entity, link, mockGraph, mountModule, page, syncStateDouble } from "@magnis/testkit/module";
 import { ContactsModule } from "../service.ts";
 
 describe("retained social ingestion reads", () => {
@@ -93,7 +93,7 @@ it("fans one approved contact action out to current identities through permitted
       if (row.syncEnabled !== params.syncEnabled) { row.syncEnabled = params.syncEnabled; row.syncRevision = String(Number(row.syncRevision) + 1); }
       return { syncRevision: row.syncRevision };
     },
-    syncState: async () => ({ pending: true }),
+    syncState: syncStateDouble(),
   });
   const email = await mountModule(EmailModule, { mode: "dispatch", graph, ctx: { extensionId: "email" } });
   const x = await mountModule(XModule, { mode: "dispatch", graph, ctx: { extensionId: "x" } });

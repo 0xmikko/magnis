@@ -55,6 +55,7 @@ export declare const EntitySearchItemSchema: z.ZodObject<{
             account: z.ZodString;
             externalId: z.ZodString;
         }, z.core.$strict>;
+        canonicalKey: z.ZodNullable<z.ZodString>;
         id: z.ZodString;
         owner: z.ZodString;
         schemaId: z.ZodString;
@@ -62,6 +63,8 @@ export declare const EntitySearchItemSchema: z.ZodObject<{
         createdAt: z.ZodISODateTime;
         name: z.ZodNullable<z.ZodString>;
         indexed: z.ZodBoolean;
+        syncEnabled: z.ZodExactOptional<z.ZodBoolean>;
+        syncRevision: z.ZodExactOptional<z.ZodString>;
         date: z.ZodISODateTime;
         idx: z.ZodNullable<z.ZodString>;
         isPinned: z.ZodNullable<z.ZodBoolean>;
@@ -82,6 +85,8 @@ export declare const EntitySearchItemSchema: z.ZodObject<{
         createdAt: z.ZodISODateTime;
         name: z.ZodNullable<z.ZodString>;
         indexed: z.ZodBoolean;
+        syncEnabled: z.ZodExactOptional<z.ZodBoolean>;
+        syncRevision: z.ZodExactOptional<z.ZodString>;
         date: z.ZodISODateTime;
         idx: z.ZodNullable<z.ZodString>;
         isPinned: z.ZodNullable<z.ZodBoolean>;

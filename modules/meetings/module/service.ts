@@ -36,6 +36,8 @@ import type {
   SyncHookParams,
   SyncReceipt,
   SyncReconcileAnswer,
+  SyncStateResetResult,
+  SyncStateStatusResult,
   TriggerCheckEvent,
 } from "@magnis/sdk";
 import type {
@@ -579,7 +581,7 @@ export class MeetingsModule {
     description: "List the meetings sync state per connected account for the current user.",
     params: { type: "object", properties: {}, additionalProperties: false },
   })
-  async syncStatus(): Promise<Record<string, unknown>> {
+  async syncStatus(): Promise<SyncStateStatusResult> {
     return this.graph.syncState("status");
   }
 
@@ -588,7 +590,7 @@ export class MeetingsModule {
       "Reset meetings sync: delete the caller's calendar events and reset sync state to bootstrap.",
     params: { type: "object", properties: {}, additionalProperties: false },
   })
-  async syncReset(): Promise<Record<string, unknown>> {
+  async syncReset(): Promise<SyncStateResetResult> {
     return this.graph.syncState("reset", CAL);
   }
 }

@@ -21,8 +21,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { RawSyncableEntity, SyncableBatchEntityInput } from "@magnis/plugin-sdk";
-import type { BatchEntityInput, BatchLink, GraphBatchInput, JsonObject, SyncEnvelope } from "@magnis/sdk";
+import type { BatchEntityInput, BatchLink, Entity, GraphBatchInput, JsonObject, Syncable, SyncEnvelope } from "@magnis/sdk";
 import { entity, link, mockGraph, mountModule, sourceEnvelope, type MockGraph } from "@magnis/testkit/module";
 import { EmailModule } from "../service.ts";
 import { destSubpath } from "../helpers.ts";
@@ -32,14 +31,14 @@ import type { EmailCanonical } from "../../types.ts";
 type G = MockGraph;
 
 /** A stored sender address with its saved synchronization choice. */
-const syncable = (id: string, address: string, syncEnabled: boolean, syncRevision: string): RawSyncableEntity => ({
+const syncable = (id: string, address: string, syncEnabled: boolean, syncRevision: string): Entity & Syncable => ({
   ...entity(id, address, { schemaId: "email.address", indexed: true, properties: { address } }),
   syncEnabled,
   syncRevision,
 });
 
 function ingestGraph(): G {
-  const addressRows = new Map<string, RawSyncableEntity>();
+  const addressRows = new Map<string, Entity & Syncable>();
   return mockGraph({
     moduleSettings: () => Promise.resolve({ newSenderSyncEnabled: "true" }),
     admitSyncEntities: (subjects) => Promise.resolve(subjects.flatMap((subject) => [...subject.remoteIds])),
@@ -60,7 +59,7 @@ function ingestGraph(): G {
         created: frag.entities.length,
         updated: 0,
         linksAdded: frag.links.length,
-        droppedKeys: [],
+        droppedKeys: [], resolved: [],
       }),
     fileRegister: () => Promise.resolve("file-id"),
     findByExternalId: () => Promise.resolve("existing-id"),
@@ -112,7 +111,7 @@ const msgPayload = (over: JsonObject = {}): JsonObject => ({
  * @fixtures: mixed accounts, stopped sender additions, id-only labels and deletions
  */
 it("tst_module_email_sync_001 admits only enabled senders before content, attachment and trigger effects", async () => {
-  const rows: RawSyncableEntity[] = [
+  const rows: (Entity & Syncable)[] = [
     syncable("sender-a", "a@example.com", true, "1"),
     syncable("sender-b", "b@example.com", false, "2"),
   ];
@@ -129,7 +128,7 @@ it("tst_module_email_sync_001 admits only enabled senders before content, attach
     admitSyncEntities: (subjects) => Promise.resolve(subjects.flatMap((subject) => subject.entityId === "sender-a" ? [...subject.remoteIds] : [])),
     applyBatch: (batch) => {
       batches.push(batch);
-      return Promise.resolve({ ids: Object.fromEntries([...batch.entities, ...batch.refs].map((item) => [item.key, `id-${item.key}`])), created: batch.entities.length, updated: 0, linksAdded: batch.links.length, droppedKeys: [] });
+      return Promise.resolve({ ids: Object.fromEntries([...batch.entities, ...batch.refs].map((item) => [item.key, `id-${item.key}`])), created: batch.entities.length, updated: 0, linksAdded: batch.links.length, droppedKeys: [], resolved: [] });
     },
     fileRegister: () => Promise.resolve("file-id"),
     deleteEntity: () => Promise.resolve(),
@@ -589,7 +588,7 @@ describe("email ingest — DB-access guarantees (tst_be_emaildb_005 / INV-DB-3)"
  */
 it("tst_module_email_sync_003 creates only selection metadata and preserves Stop when discovery repeats", async () => {
   const writes: GraphBatchInput[] = [];
-  let sender: RawSyncableEntity | null = null;
+  let sender: Entity & Syncable | null = null;
   let rule = "false";
   const graph = mockGraph({
     findByExternalIds: (externalIds) => Promise.resolve(externalIds.map(() => sender?.id ?? null)),
@@ -598,10 +597,10 @@ it("tst_module_email_sync_003 creates only selection metadata and preserves Stop
     admitSyncEntities: (subjects) => Promise.resolve(sender?.syncEnabled === true ? subjects.flatMap((subject) => [...subject.remoteIds]) : []),
     applyBatch: (batch) => {
       writes.push(batch);
-      const address: SyncableBatchEntityInput | undefined = batch.entities[0];
+      const address: BatchEntityInput | undefined = batch.entities[0];
       if (address?.schemaId !== "email.address" || typeof address.syncEnabled !== "boolean") throw new Error("Expected explicit sender discovery");
       sender = { ...entity("sender", "unknown@example.com", { schemaId: address.schemaId, properties: address.properties, indexed: true }), syncEnabled: address.syncEnabled, syncRevision: "0" };
-      return Promise.resolve({ ids: { [address.key]: "sender" }, created: 1, updated: 0, linksAdded: 0, droppedKeys: [] });
+      return Promise.resolve({ ids: { [address.key]: "sender" }, created: 1, updated: 0, linksAdded: 0, droppedKeys: [], resolved: [] });
     },
   });
   const mod = mountModule(EmailModule, { graph, ctx: { extensionId: "email" } }).module;

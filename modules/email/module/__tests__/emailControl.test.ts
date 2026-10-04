@@ -21,9 +21,9 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
-import type { RpcExecutor, SyncMigrationEntity } from "@magnis/plugin-sdk";
-import type { GraphBatchInput } from "@magnis/sdk";
-import { entity, mockGraph, mountModule, type GraphOverrides } from "@magnis/testkit/module";
+import type { RpcExecutor } from "@magnis/plugin-sdk";
+import type { GraphBatchInput, SyncMigrationEntity } from "@magnis/sdk";
+import { entity, mockGraph, mountModule, syncStateDouble, type GraphOverrides } from "@magnis/testkit/module";
 import { EmailModule } from "../service.ts";
 import type { EmailCanonical } from "../../types.ts";
 
@@ -87,7 +87,7 @@ describe("tst_module_email_sync_002 saved sender selection", () => {
         const row = rows.find((item) => item.id === id);
         return Promise.resolve(row === undefined ? null : entity(id, row.name ?? "", { schemaId: row.schemaId, indexed: row.indexed }));
       },
-      syncState: () => Promise.resolve({ pending: true }),
+      syncState: syncStateDouble(),
     });
     return { rows, graph, mod: mountModule(EmailModule, { graph, ctx: { extensionId: "email" } }).module };
   }
@@ -171,7 +171,7 @@ describe("email ensure_address hub RPC (cross-module)", () => {
       created: 1,
       updated: 0,
       linksAdded: 0,
-      droppedKeys: [],
+      droppedKeys: [], resolved: [],
     }));
     const mod = makeModule({ applyBatch });
     const out = await mod.ensureAddress({ address: "Alice@Example.com", display_name: "Alice" });
@@ -204,7 +204,7 @@ describe("email set_trigger", () => {
       created: frag.entities.length,
       updated: 0,
       linksAdded: 0,
-      droppedKeys: [],
+      droppedKeys: [], resolved: [],
     }));
     const execute = vi.fn().mockResolvedValue({ id: "trig-1" });
     const mod = makeModule({ applyBatch }, { execute });

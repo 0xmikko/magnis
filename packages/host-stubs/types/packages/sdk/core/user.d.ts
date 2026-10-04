@@ -8,8 +8,8 @@ export declare const GraphStatisticsSchema: z.ZodObject<{
 export type GraphStatistics = z.output<typeof GraphStatisticsSchema>;
 export declare const WorkspaceProvisioningViewSchema: z.ZodObject<{
     status: z.ZodEnum<{
-        ready: "ready";
         failed: "failed";
+        ready: "ready";
         provisioning: "provisioning";
     }>;
     progress: z.ZodNullable<z.ZodObject<{
@@ -45,8 +45,8 @@ export declare const UserProfileSchema: z.ZodObject<{
     }, z.core.$strict>;
     workspaceProvisioning: z.ZodOptional<z.ZodObject<{
         status: z.ZodEnum<{
-            ready: "ready";
             failed: "failed";
+            ready: "ready";
             provisioning: "provisioning";
         }>;
         progress: z.ZodNullable<z.ZodObject<{

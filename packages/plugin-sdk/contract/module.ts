@@ -20,9 +20,10 @@
 // arrives here type-only through `@magnis/host-stubs`. A module imports them
 // from `@magnis/sdk`; nothing below repeats one.
 import type {
+  AccountSyncState,
   AddLinkParams,
+  AdmitSyncEntitiesResult,
   AllowlistGate,
-  BatchEntityInput,
   CreateEntityParams,
   Entity,
   EntityWithLinks,
@@ -36,15 +37,24 @@ import type {
   LinkedSpec,
   ListEntitiesByPropertyFieldParams,
   ListEntitiesParams,
+  ListSyncMigrationEntitiesParams,
+  ListSyncMigrationEntitiesResult,
   MergeInput,
   MergePreview,
   MergeResult,
+  ModuleSettingsResult,
   PaginatedResponse,
   PluginContext,
   PluginRpcDeclaration,
   PluginToolDeclaration,
   PropertiesUpdate,
   SearchEntitiesParams,
+  SetSyncEnabledParams,
+  SyncAdmissionSubject,
+  SyncStateApplyResult,
+  SyncStateResetResult,
+  SyncStateStatusResult,
+  UpdateEntitySyncEnabledResult,
   WebRegisterParams,
   WindowSpec,
 } from "@magnis/sdk";
@@ -64,60 +74,12 @@ export interface GetParams {
 
 // ───────────────────────── entity synchronization ─────────────────────
 // A schema that supports synchronization carries the user's saved choice on
-// each entity: `syncEnabled` and the graph-owned decimal `syncRevision`.
-
-/** An entity of a syncable schema, read with its saved choice. */
-export type RawSyncableEntity = Entity & {
-  syncEnabled: boolean;
-  syncRevision: string;
-};
-
-/** A batch entity of a syncable schema, sent with the initial choice the
- * owning module supplies; a rediscovered entity keeps its saved choice. */
-export type SyncableBatchEntityInput = BatchEntityInput & {
-  syncEnabled?: boolean;
-};
-
-export interface SetSyncEnabledParams {
-  id: string;
-  syncEnabled: boolean;
-}
-
-export interface SyncSelectionRequest {
-  sourceId: string;
-  accountId: string;
-  accountGeneration: number;
-}
-
-export interface SyncChoice {
-  id: string;
-  scopeId: string;
-  syncEnabled: boolean;
-  syncRevision: string;
-}
-
-export type SyncSelection =
-  | {
-      surface: "telegram";
-      choices: readonly SyncChoice[];
-    }
-  | {
-      surface: "email";
-      choices: readonly SyncChoice[];
-      unknownSenderEnabled: boolean;
-    }
-  | {
-      surface: "x";
-      choices: readonly (SyncChoice & { handle: string })[];
-    };
-
-export type SyncApplication =
-  | { kind: "pending" }
-  | { kind: "applied" }
-  | {
-      kind: "failed";
-      message: string;
-    };
+// each entity: `syncEnabled` and the graph-owned decimal `syncRevision`
+// (the SDK's `Syncable`). The choice shapes the host reads — `SyncChoice`,
+// `SyncSelection`, `SyncSelectionRequest`, `SyncMigrationEntity` — are SDK
+// shapes. The ones below are module-owned: the `setSyncEnabled`,
+// `syncMigration` and `resolveSyncMigration` methods modules answer each
+// other and their UIs.
 
 export type SyncTargetResult =
   | {
@@ -126,7 +88,7 @@ export type SyncTargetResult =
       kind: "saved";
       syncEnabled: boolean;
       syncRevision: string;
-      application: Exclude<SyncApplication, { kind: "applied" }>;
+      application: Exclude<NonNullable<AccountSyncState["syncApplication"]>, { kind: "applied" }>;
     }
   | {
       identityId: string;
@@ -137,22 +99,6 @@ export type SyncTargetResult =
 
 export interface SetSyncEnabledResult {
   results: readonly SyncTargetResult[];
-}
-
-export interface SyncAdmissionSubject {
-  entityId: string;
-  remoteIds: readonly string[];
-}
-
-export interface SyncMigrationEntity {
-  id: string;
-  schemaId: string;
-  name: string | null;
-  indexed: boolean;
-  isPinned: boolean | null;
-  properties: JsonObject;
-  syncEnabled: boolean | null;
-  syncRevision: string | null;
 }
 
 export interface SyncMigrationTarget {
@@ -205,18 +151,11 @@ export const pageLimitMax = 200;
 /// Not parameterised: a node's dictionary is JSON, and a module types it with
 /// its own interface at the call sites that care.
 export interface GraphService {
-  updateEntitySyncEnabled(params: SetSyncEnabledParams): Promise<{ syncRevision: string }>;
-  admitSyncEntities(subjects: readonly SyncAdmissionSubject[], controlRemoteIds?: readonly string[]): Promise<readonly string[]>;
-  moduleSettings(forSchema?: string): Promise<Readonly<Record<string, string>>>;
-  listSyncMigrationEntities(params: {
-    schemaId: string;
-    after: string | null;
-    /** 1 to `pageLimitMax`. */
-    limit: number;
-  }): Promise<{
-    items: readonly SyncMigrationEntity[];
-    next: string | null;
-  }>;
+  updateEntitySyncEnabled(params: SetSyncEnabledParams): Promise<UpdateEntitySyncEnabledResult>;
+  admitSyncEntities(subjects: readonly SyncAdmissionSubject[], controlRemoteIds?: readonly string[]): Promise<AdmitSyncEntitiesResult>;
+  moduleSettings(forSchema?: string): Promise<ModuleSettingsResult>;
+  /** `limit` is 1 to `pageLimitMax`. */
+  listSyncMigrationEntities(params: ListSyncMigrationEntitiesParams): Promise<ListSyncMigrationEntitiesResult>;
   // All reads are user-scoped host-side.
   createEntity(p: CreateEntityParams): Promise<Entity>;
   getEntity(id: string): Promise<Entity | null>;
@@ -276,9 +215,9 @@ export interface GraphService {
   // (which MUST be in the caller's own namespace) and resets sync state. Overloads
   // make `reset` REQUIRE the schema — `syncState("reset")` is a compile error, so
   // a plugin can't trip the host's namespace guard at runtime.
-  syncState(action: "status"): Promise<Record<string, unknown>>;
-  syncState(action: "reset", resetSchema: string): Promise<Record<string, unknown>>;
-  syncState(action: "apply"): Promise<{ pending: true }>;
+  syncState(action: "status"): Promise<SyncStateStatusResult>;
+  syncState(action: "reset", resetSchema: string): Promise<SyncStateResetResult>;
+  syncState(action: "apply"): Promise<SyncStateApplyResult>;
   // reply-composer presence: op "read" | "set_text" | "append_text". read
   // reports presence; set_text/append_text gate+bump the revision and publish.
   composer(

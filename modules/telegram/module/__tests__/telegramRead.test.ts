@@ -11,9 +11,8 @@
  * @legacy-id: tst_be_tgchatmeta_001_chats_list_last_message_and_order
  */
 import { describe, expect, it } from "vitest";
-import type { AgentLink } from "@magnis/sdk";
+import type { AgentLink, Entity, Syncable } from "@magnis/sdk";
 import { entity, link, linkedEntity, mockGraph, mountModule, page } from "@magnis/testkit/module";
-import type { RawSyncableEntity } from "@magnis/plugin-sdk";
 import { CHAT, MESSAGE, TELEGRAM_ACCOUNT } from "../../schema.ts";
 import { TelegramModule } from "../service.ts";
 
@@ -21,7 +20,7 @@ const CHAT_ID = "11111111-aaaa-4111-8111-111111111111";
 const MESSAGE_ID = "22222222-aaaa-4222-8222-222222222222";
 const ACCOUNT_ID = "33333333-aaaa-4333-8333-333333333333";
 
-function chatEntity(id: string, name: string, overrides: Parameters<typeof entity>[2]): RawSyncableEntity {
+function chatEntity(id: string, name: string, overrides: Parameters<typeof entity>[2]): Entity & Syncable {
   return { ...entity(id, name, overrides), syncEnabled: true, syncRevision: "0" };
 }
 

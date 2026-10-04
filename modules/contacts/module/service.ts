@@ -1,7 +1,7 @@
 // Contacts plugin — backend module (V8). Decorated class; the
 // read path (list/get) mirrors the legacy Rust ContactsModuleService.
 
-import { linkedEntitySummary, reachedEndpoints, rpc, searchEntitiesPage, tool, writeTool, type GetParams, type GraphService, type PluginDeps, type PluginUtil, type RpcExecutor, type SetSyncEnabledParams, type SetSyncEnabledResult, type SyncTargetResult } from "@magnis/plugin-sdk";
+import { linkedEntitySummary, reachedEndpoints, rpc, searchEntitiesPage, tool, writeTool, type GetParams, type GraphService, type PluginDeps, type PluginUtil, type RpcExecutor, type SetSyncEnabledResult, type SyncTargetResult } from "@magnis/plugin-sdk";
 import type {
   Entity,
   EntitySearchHit,
@@ -11,6 +11,7 @@ import type {
   MergePreview,
   MergeResult,
   PaginatedResponse,
+  SetSyncEnabledParams,
 } from "@magnis/sdk";
 import type {
   CompleteXSyncMigrationParams,

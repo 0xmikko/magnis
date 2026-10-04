@@ -25,15 +25,9 @@ import {
   type PluginDeps,
   type ResolveSyncMigrationParams,
   type RpcExecutor,
-  type SetSyncEnabledParams,
   type SetSyncEnabledResult,
-  type SyncableBatchEntityInput,
-  type SyncChoice,
-  type SyncMigrationEntity,
   type SyncMigrationIssue,
   type SyncMigrationStatus,
-  type SyncSelection,
-  type SyncSelectionRequest,
   type SyncTargetResult,
 } from "@magnis/plugin-sdk";
 import type {
@@ -46,11 +40,18 @@ import type {
   LinkedEntity,
   LinkedEntitySummary,
   PaginatedResponse,
+  SetSyncEnabledParams,
+  SyncChoice,
   SyncEnvelope,
   SyncHandlerParams,
   SyncHookParams,
+  SyncMigrationEntity,
   SyncPlanDelta,
   SyncReceipt,
+  SyncSelection,
+  SyncSelectionRequest,
+  SyncStateResetResult,
+  SyncStateStatusResult,
   TriggerCheckEvent,
 } from "@magnis/sdk";
 import type {
@@ -1158,7 +1159,7 @@ export class TelegramModule {
     description: "List the telegram sync state per account.",
     params: { type: "object", properties: {}, additionalProperties: false },
   })
-  async syncStatus(): Promise<Record<string, unknown>> {
+  async syncStatus(): Promise<SyncStateStatusResult> {
     return this.graph.syncState("status");
   }
 
@@ -1166,7 +1167,7 @@ export class TelegramModule {
     description: "Reset telegram sync: delete the caller's telegram messages and reset sync state to bootstrap.",
     params: { type: "object", properties: {}, additionalProperties: false },
   })
-  async syncReset(): Promise<Record<string, unknown>> {
+  async syncReset(): Promise<SyncStateResetResult> {
     // Pass our own message schema — op_sync_state clears it, scoped to the
     // telegram namespace (the op is generalised, no longer hard-coded).
     return this.graph.syncState("reset", MESSAGE);
@@ -1525,7 +1526,7 @@ export class TelegramModule {
     const ingestedByChatId = new Map<string, IngestedChatState>();
 
     for (let i = 0; i < chats.length; i += INGEST_CHUNK) {
-      const entities: SyncableBatchEntityInput[] = [];
+      const entities: BatchEntityInput[] = [];
       const refs: BatchRef[] = [];
       const links: BatchLink[] = [];
       const stateByRemoteId = new Map<string, { readonly chatId: string; readonly details: Data }>();

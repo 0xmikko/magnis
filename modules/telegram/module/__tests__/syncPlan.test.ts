@@ -12,10 +12,9 @@
  * the difference for a restatement, one for a live message — and names the
  * chats it leaves out of history. Snapshot omission does not end membership.
  */
-import type { CanonicalEntity, CanonicalLink, GraphBatchInput, JsonObject, JsonValue, SyncEnvelope, WindowSpec } from "@magnis/sdk";
+import type { CanonicalEntity, CanonicalLink, Entity, GraphBatchInput, JsonObject, JsonValue, Syncable, SyncEnvelope, SyncMigrationEntity, WindowSpec } from "@magnis/sdk";
 import { describe, expect, it } from "vitest";
-import type { RawSyncableEntity, SyncMigrationEntity } from "@magnis/plugin-sdk";
-import { entity, link, linkedEntity, mockGraph, mountModule, page } from "@magnis/testkit/module";
+import { entity, link, linkedEntity, mockGraph, mountModule, page, syncStateDouble } from "@magnis/testkit/module";
 import { CHAT, MESSAGE } from "../../schema.ts";
 import { TelegramModule } from "../service.ts";
 
@@ -57,14 +56,14 @@ function keysOf(value: JsonValue | undefined): JsonObject {
 
 /** The Graph as the module leaves it: chats by external id, the operator's edges by chat. */
 class Store {
-  readonly chatsByExternalId = new Map<string, RawSyncableEntity>();
+  readonly chatsByExternalId = new Map<string, Entity & Syncable>();
   newChatSync = "current";
   readonly edgesByChat = new Map<string, CanonicalLink>();
   readonly messagesByExternalId = new Map<string, string>();
   readonly endedAt: [string, string][] = [];
   windows: string[] = [];
 
-  chatOf(id: string): RawSyncableEntity | undefined {
+  chatOf(id: string): Entity & Syncable | undefined {
     return [...this.chatsByExternalId.values()].find((chat) => chat.id === id);
   }
 
@@ -114,7 +113,7 @@ class Store {
             origin: "canonical", validFrom: known?.validFrom ?? null, validUntil: known?.validUntil ?? null, metadata: link.metadata,
           });
         }
-        return Promise.resolve({ ids, created: fragment.entities.length, updated: 0, linksAdded: fragment.links.length, droppedKeys: [] });
+        return Promise.resolve({ ids, created: fragment.entities.length, updated: 0, linksAdded: fragment.links.length, droppedKeys: [], resolved: [] });
       },
       updateProperties: () => Promise.resolve(),
       updatePropertiesBatch: () => Promise.resolve(),
@@ -168,7 +167,7 @@ describe("tst_module_telegram_plan_001 — the module states its plan from the p
       { id: "agrees", schemaId: CHAT, name: "DM", indexed: false, isPinned: null, properties: { chat_id: 2, type: "private" }, syncEnabled: null, syncRevision: null },
     ];
     const graph = mockGraph({
-      applyBatch: () => Promise.resolve({ ids: { self: "self-id" }, created: 0, updated: 1, linksAdded: 0, droppedKeys: [] }),
+      applyBatch: () => Promise.resolve({ ids: { self: "self-id" }, created: 0, updated: 1, linksAdded: 0, droppedKeys: [], resolved: [] }),
       listSyncMigrationEntities: () => Promise.resolve({ items: legacy, next: null }),
       listLinked: (spec) => Promise.resolve(page([false, true].map((pinned, i) => linkedEntity(
         entity(`self-${String(i)}`, "Me", { schemaId: "telegram.account", source: { source: "telegram-ts", account: `account-${String(i)}`, externalId: `tg:account:${String(i)}` } }),
@@ -181,7 +180,7 @@ describe("tst_module_telegram_plan_001 — the module states its plan from the p
         row.syncRevision = "0";
         return Promise.resolve({ syncRevision: "0" });
       },
-      syncState: () => Promise.resolve({ pending: true }),
+      syncState: syncStateDouble(),
     });
     const mounted = await mountModule(TelegramModule, { mode: "dispatch", graph, ctx: { extensionId: "telegram" } });
     const module = mountModule(TelegramModule, { graph }).module;
@@ -201,7 +200,7 @@ describe("tst_module_telegram_plan_001 — the module states its plan from the p
   });
 
   it("selects saved chat choices for the exact observing account without deriving them from indexing or pinning", async () => {
-    const rows: RawSyncableEntity[] = [
+    const rows: (Entity & Syncable)[] = [
       { ...entity("chat-a", "A", { schemaId: CHAT, indexed: false, properties: { chat_id: 1, type: "supergroup", member_count: 100000 } }), syncEnabled: true, syncRevision: "2" },
       { ...entity("chat-b", "B", { schemaId: CHAT, indexed: true, properties: { chat_id: 2, type: "private" } }), syncEnabled: false, syncRevision: "9" },
     ];

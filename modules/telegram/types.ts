@@ -3,8 +3,7 @@
 // backend/src/modules/shared.rs) so list/detail output is byte-compatible and
 // the existing frontend renders unchanged. The SDK shapes they carry — pages,
 // linked summaries — are the SDK's.
-import type { RawSyncableEntity } from "@magnis/plugin-sdk";
-import type { LinkedEntitySummary, PaginatedResponse } from "@magnis/sdk";
+import type { LinkedEntitySummary, PaginatedResponse, Syncable } from "@magnis/sdk";
 
 /// One row per chat (telegram.chat), showing the latest message.
 /// Mirrors native `TelegramChatListItem`.
@@ -72,7 +71,7 @@ export interface TelegramAccountDetails {
   phone?: string;
 }
 
-export interface TelegramChatListItem extends Pick<RawSyncableEntity, "indexed" | "syncEnabled"> {
+export interface TelegramChatListItem extends Pick<Syncable, "indexed" | "syncEnabled"> {
   schema_id: string;
   entity_id: string;
   chat_id: string;

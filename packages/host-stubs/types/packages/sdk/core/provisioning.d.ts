@@ -1,8 +1,8 @@
 import { z } from "zod";
 export declare const provisioningStatuses: readonly ["provisioning", "ready", "failed"];
 export declare const WorkspaceProvisioningStatusSchema: z.ZodEnum<{
-    ready: "ready";
     failed: "failed";
+    ready: "ready";
     provisioning: "provisioning";
 }>;
 export type WorkspaceProvisioningStatus = z.output<typeof WorkspaceProvisioningStatusSchema>;

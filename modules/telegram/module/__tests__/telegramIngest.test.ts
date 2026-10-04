@@ -25,7 +25,7 @@
  */
 import type { GraphBatchInput, JsonObject, SyncEnvelope } from "@magnis/sdk";
 import { describe, expect, it } from "vitest";
-import { entity, link, linkedEntity, mockGraph, mountModule, page, type GraphOverrides } from "@magnis/testkit/module";
+import { entity, link, linkedEntity, mockGraph, mountModule, page, syncStateDouble, type GraphOverrides } from "@magnis/testkit/module";
 import { CHAT, MESSAGE, TELEGRAM_ACCOUNT } from "../../schema.ts";
 import { TelegramModule } from "../service.ts";
 
@@ -62,7 +62,7 @@ const admittedGraph: GraphOverrides = {
   admitSyncEntities: (subjects) => Promise.resolve(subjects.flatMap((subject) => [...subject.remoteIds])),
   moduleSettings: () => Promise.resolve({ newChatSync: "all" }),
   listSyncMigrationEntities: () => Promise.resolve({ items: [], next: null }),
-  syncState: () => Promise.resolve({ pending: true }),
+  syncState: syncStateDouble(),
 };
 
 describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
@@ -100,7 +100,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
       ...admittedGraph,
       findByExternalIds: (externalIds) => Promise.resolve(externalIds.map(() => "chat-entity")),
       getEntities: () => Promise.resolve([entity("chat-entity", "Chat", { schemaId: CHAT, indexed, properties: { chat_id: 42, type: "private", is_indexed: !indexed } })]),
-      applyBatch: (fragment) => Promise.resolve({ ids: Object.fromEntries(fragment.entities.map((item) => [item.key, `id:${item.key}`])), created: fragment.entities.length, updated: 0, linksAdded: 0, droppedKeys: [] }),
+      applyBatch: (fragment) => Promise.resolve({ ids: Object.fromEntries(fragment.entities.map((item) => [item.key, `id:${item.key}`])), created: fragment.entities.length, updated: 0, linksAdded: 0, droppedKeys: [], resolved: [] }),
       fileRegisterBatch: () => Promise.resolve(["file-id"]),
       updatePropertiesBatch: () => Promise.resolve(),
     });
@@ -153,7 +153,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
         for (const item of fragment.entities) if (item.externalId !== null) externalIds.add(item.externalId);
         return Promise.resolve({
           ids: Object.fromEntries(fragment.entities.map((item) => [item.key, `id:${item.key}`])),
-          created: fragment.entities.length, updated: 0, linksAdded: 0, droppedKeys: [],
+          created: fragment.entities.length, updated: 0, linksAdded: 0, droppedKeys: [], resolved: [],
         });
       },
       webRegisterBatch: (links) => Promise.resolve(links.map(() => "web-id")),
@@ -187,7 +187,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
     const graph = mockGraph({
       ...admittedGraph,
       applyBatch: () =>
-        Promise.resolve({ ids: { self: "self-id" }, created: 1, updated: 0, linksAdded: 0, droppedKeys: [] }),
+        Promise.resolve({ ids: { self: "self-id" }, created: 1, updated: 0, linksAdded: 0, droppedKeys: [], resolved: [] }),
     });
     const module = mountModule(TelegramModule, { graph }).module;
 
@@ -238,7 +238,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
           created: fragment.entities.length,
           updated: 0,
           linksAdded: fragment.links.length,
-          droppedKeys: [],
+          droppedKeys: [], resolved: [],
         }),
     });
     const module = mountModule(TelegramModule, { graph }).module;
@@ -291,7 +291,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
           created: fragment.entities.length,
           updated: 0,
           linksAdded: fragment.links.length,
-          droppedKeys: [],
+          droppedKeys: [], resolved: [],
         }),
       webRegister: () => Promise.resolve("web-id"),
       webRegisterBatch: (links: readonly unknown[]) => Promise.resolve(links.map(() => "web-id")),
@@ -348,7 +348,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
           created: fragment.entities.length,
           updated: 0,
           linksAdded: fragment.links.length,
-          droppedKeys: [],
+          droppedKeys: [], resolved: [],
         }),
     });
     const module = mountModule(TelegramModule, { graph }).module;
@@ -399,7 +399,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
           created: fragment.entities.length,
           updated: 0,
           linksAdded: fragment.links.length,
-          droppedKeys: [],
+          droppedKeys: [], resolved: [],
         }),
       updateProperties: () => Promise.resolve(undefined),
       updatePropertiesBatch: () => Promise.resolve(undefined),
@@ -434,7 +434,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
           created: fragment.entities.length,
           updated: 0,
           linksAdded: fragment.links.length,
-          droppedKeys: [],
+          droppedKeys: [], resolved: [],
         }),
       webRegister: () => Promise.resolve("web-id"),
       webRegisterBatch: (links: readonly unknown[]) => Promise.resolve(links.map(() => "web-id")),
@@ -469,7 +469,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
           created: fragment.entities.length,
           updated: 0,
           linksAdded: fragment.links.length,
-          droppedKeys: [],
+          droppedKeys: [], resolved: [],
         }),
       webRegister: () => Promise.resolve("web-id"),
       webRegisterBatch: (links: readonly unknown[]) => Promise.resolve(links.map(() => "web-id")),
@@ -581,7 +581,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
         return Promise.resolve(undefined);
       },
       applyBatch: () => Promise.resolve({
-        ids: {}, created: 0, updated: 0, linksAdded: 0, droppedKeys: [],
+        ids: {}, created: 0, updated: 0, linksAdded: 0, droppedKeys: [], resolved: [],
       }),
     });
     const module = mountModule(TelegramModule, { graph }).module;
@@ -677,7 +677,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
           created: 0,
           updated: fragment.entities.length,
           linksAdded: fragment.links.length,
-          droppedKeys: [],
+          droppedKeys: [], resolved: [],
         }),
     });
     const module = mountModule(TelegramModule, { graph, ctx: { extensionId: "telegram" } }).module;
