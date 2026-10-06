@@ -28,14 +28,14 @@ export type DateTimeUtc = string;
 export const NIL_ID = "00000000-0000-0000-0000-000000000000";
 export type NilId = typeof NIL_ID;
 
-export const EntityIdSchema = UuidShapeSchema
-  .refine((id) => id !== NIL_ID, "Entity ID must not be nil")
-  .brand<"EntityId">();
+export const PersistentEntityIdSchema = UuidShapeSchema
+  .refine((id) => id !== NIL_ID, "Persistent Entity ID must not be nil")
+  .brand<"PersistentEntityId">();
 
-export type EntityId = z.output<typeof EntityIdSchema>;
-export type NullableId = EntityId | NilId;
+export type PersistentEntityId = z.output<typeof PersistentEntityIdSchema>;
+export type EntityId = PersistentEntityId | NilId;
 
-export type UserId = EntityId;
+export type UserId = PersistentEntityId;
 
 export type JsonPrimitive = null | boolean | number | string;
 export type JsonObject = { readonly [key: string]: JsonValue };
@@ -44,7 +44,7 @@ export type JsonValue = JsonPrimitive | JsonValue[] | JsonObject;
 export type Origin = "canonical" | "agent";
 ```
 
-`EntityIdSchema` currently names the **assigned, non-nil** form. `NullableId` is the working name for assigned ID or nil UUID, not JavaScript `null`. The migration plan proposes clearer names; their adoption is separate from this documentation edit. A plain `string | NilId` would lose the distinction because the literal already belongs to `string`.
+**Target:** `PersistentEntityIdSchema` validates an assigned, non-nil ID. `PersistentEntityId` is its branded output; `EntityId` also admits the nil UUID for an unsaved value. Neither type admits JavaScript `null`. A plain `string | NilId` would lose the distinction because the literal already belongs to `string`.
 
 A non-nil UUID proves neither existence nor access. Graph must check both. Keep meaningful aliases such as Link endpoint IDs, User IDs and schema IDs; there is no decision to replace every identifier with a generic string. `SchemaId`, such as `email.address`, is a schema name, not a UUID. Current local auth users can have a nil ID; the proposed graph-user type must not silently invalidate those accounts.
 
@@ -64,7 +64,7 @@ export interface SourceRef {
 
 ```typescript
 interface EntityBase<P extends JsonValue = JsonValue> {
-  id: NullableId;
+  id: EntityId;
   schemaId: SchemaId;
   schemaVersion: SchemaVersion;
   createdAt: DateTimeUtc;
@@ -98,7 +98,7 @@ Canonical means a record written under Source/host authority. It does not mean e
 export interface AgentStatement {
   origin: "agent";
   confidence: number;
-  evidence: [EntityId, ...EntityId[]];
+  evidence: [PersistentEntityId, ...PersistentEntityId[]];
   validFrom: DateTimeUtc | null;
   validUntil: DateTimeUtc | null;
 }
@@ -111,7 +111,7 @@ export interface AgentEntity<P extends JsonValue = JsonValue>
 
 `AgentEntity` is the current SDK name; **`InferredEntity` is the proposed replacement**. The stored discriminator is still `origin: "agent"`. `keys` contains alternative names used by identity lookup. Nonempty keys require a hub-role schema in the ordinary creation path. Canonical currently has no equivalent keys field; moving aliases into shared domain identity still needs a rule for their provenance and merge.
 
-Evidence is a nonempty list of existing Entity IDs in the same owner scope. `0 < confidence <= 1`; only human approval can produce `1`, and approval leaves the origin inferred. `validFrom` and `validUntil` describe when the assertion holds, independently of when it was processed.
+Evidence is a nonempty list of `PersistentEntityId` values identifying existing entities in the same owner scope. `0 < confidence <= 1`; only human approval can produce `1`, and approval leaves the origin inferred. `validFrom` and `validUntil` describe when the assertion holds, independently of when it was processed.
 
 ### Saved and unsaved values
 
@@ -121,7 +121,7 @@ export type Entity<P extends JsonValue = JsonValue> =
   | AgentEntity<P>;
 
 export type PersistentEntity<P extends JsonValue = JsonValue> =
-  Entity<P> & { id: EntityId };
+  Entity<P> & { id: PersistentEntityId };
 
 export type TransientEntity<P extends JsonValue = JsonValue> =
   Entity<P> & { id: NilId };
@@ -131,7 +131,7 @@ export declare function isPersistent<P extends JsonValue>(
 ): entity is PersistentEntity<P>;
 ```
 
-`isPersistent` narrows the ID representation, not database existence. Multiple transient results share nil; it cannot serve as a cache key, evidence ID or Link endpoint. The WebSource draft uses provider identity/URL to continue reading a transient result.
+`isPersistent` narrows `EntityId` to `PersistentEntityId`, not database existence. Multiple transient results share nil; it cannot serve as a cache key, evidence ID or Link endpoint. The WebSource draft uses provider identity/URL to continue reading a transient result.
 
 | Operation | Persistence behavior |
 | --- | --- |
@@ -190,8 +190,8 @@ export interface EntityRead<P extends JsonValue = JsonValue> {
 }
 
 export interface GraphReader {
-  get(id: EntityId): Promise<PersistentEntity>;
-  get(id: EntityId, options: { extras: true }): Promise<EntityRead>;
+  get(id: PersistentEntityId): Promise<PersistentEntity>;
+  get(id: PersistentEntityId, options: { extras: true }): Promise<EntityRead>;
 }
 
 export declare function isSyncable(
@@ -263,8 +263,8 @@ The current `entities.indexed` processing-permission boolean is independent of t
 ```typescript
 interface LinkBase {
   id: LinkId;
-  from: EntityId;
-  to: EntityId;
+  from: PersistentEntityId;
+  to: PersistentEntityId;
   kind: LinkType;
   createdAt: DateTimeUtc;
 }
@@ -384,8 +384,8 @@ A declaration resolves `(kind, fromSchema, toSchema)`, checks endpoint roles and
 ```typescript
 interface AddLinkBase {
   owner: UserId;
-  from: EntityId;
-  to: EntityId;
+  from: PersistentEntityId;
+  to: PersistentEntityId;
   kind: LinkType;
 }
 
@@ -401,8 +401,8 @@ export type AddLinkCommand =
 export interface LinkAddResult {
   id: LinkId;
   kind: LinkType;
-  from: EntityId;
-  to: EntityId;
+  from: PersistentEntityId;
+  to: PersistentEntityId;
   created: boolean;
 }
 
@@ -410,7 +410,7 @@ export interface EndLinkCommand {
   owner: UserId;
   id: LinkId;
   validUntil: DateTimeUtc;
-  evidence: EntityId | null;
+  evidence: PersistentEntityId | null;
 }
 ```
 
@@ -472,7 +472,7 @@ export interface OwnerLink extends CanonicalLink {
 }
 
 export interface TransferOwnershipRequest {
-  entityId: EntityId;
+  entityId: PersistentEntityId;
   newOwnerId: UserId;
 }
 ```
@@ -828,17 +828,17 @@ export interface GraphBatch {
 ```typescript
 export interface GraphResolvedRef {
   ref: GraphRef;
-  id: EntityId;
+  id: PersistentEntityId;
   created: boolean;
 }
 
 export interface GraphBatchResult {
-  ids: Record<string, EntityId>;
+  ids: Record<string, PersistentEntityId>;
   created: number;
   createdBySchema: Record<SchemaId, number>;
   updated: number;
   stampMoves: {
-    id: EntityId;
+    id: PersistentEntityId;
     schema: SchemaId;
     from: string;
   }[];
@@ -857,7 +857,7 @@ export interface GraphBatchResult {
 | Source record | `(owner, externalId)` | Source/account are provenance, not extra key dimensions |
 | Domain value | `(owner, schemaId, canonicalKey)` | Address identity is not person identity |
 | Batch position | Local `key` | Duplicate position keys fail; different positions may resolve to the same Entity |
-| Repeated observation in one batch | Resolved EntityId | Last properties write wins within that batch; this is not provider-version conflict resolution |
+| Repeated observation in one batch | Resolved PersistentEntityId | Last properties write wins within that batch; this is not provider-version conflict resolution |
 | Repeated owner declaration | Same GraphRef | Inconsistent initial declarations fail |
 | Link | Pair, kind, origin, period start | Period/end rules still apply; symmetry normalizes endpoints |
 | Extraction | Source plus committed reread | Replace the old claim set; do not accumulate confidence on retries |
@@ -1009,8 +1009,8 @@ export interface MergeOverride {
 
 export interface MergePreviewCommand {
   userId: UserId;
-  survivorId: EntityId;
-  retiredId: EntityId;
+  survivorId: PersistentEntityId;
+  retiredId: PersistentEntityId;
 }
 
 export interface MergeExecuteCommand extends MergePreviewCommand {
@@ -1035,7 +1035,7 @@ The exception requires both nodes to be eligible, unarchived canonical hubs with
 
 ```typescript
 export interface MergeEntityInfo {
-  id: EntityId;
+  id: PersistentEntityId;
   name: string | null;
   schemaId: SchemaId;
   propertyCount: number;
@@ -1052,7 +1052,7 @@ export interface MergeField {
 
 export interface MergeSource {
   source: string;
-  entityId: EntityId;
+  entityId: PersistentEntityId;
   propertyCount: number;
 }
 ```
@@ -1071,8 +1071,8 @@ export interface MergePreview {
 }
 
 export interface MergeResult {
-  survivorId: EntityId;
-  retiredId: EntityId;
+  survivorId: PersistentEntityId;
+  retiredId: PersistentEntityId;
   linksRepointed: number;
   linksDeduplicated: number;
   linksReflexiveRemoved: number;
@@ -1521,12 +1521,12 @@ Errors identify method, boundary and issues with field paths. “Parse once” m
 ```typescript
 const entityGetContract = defineRpcContract({
   method: "graph.entity.get",
-  input: z.object({ id: UuidShapeSchema }),
+  input: z.object({ id: PersistentEntityIdSchema }),
   output: EntityDetailSchema,
 });
 ```
 
-`defineRpcContract` makes input strict and publishes its JSON Schema. The example imports the UUID and Entity detail schemas from the SDK.
+`defineRpcContract` makes input strict and publishes its JSON Schema. The target example uses the persistent-ID and Entity detail schemas: a read by saved ID rejects nil before Graph checks existence and access.
 
 ```typescript
 export const sourceRefSchema = z.strictObject({
@@ -1538,7 +1538,7 @@ export const sourceRefSchema = z.strictObject({
 export const agentStatementSchema = z.strictObject({
   origin: z.literal("agent"),
   confidence: z.number().gt(0).lte(1),
-  evidence: z.tuple([IdSchema], IdSchema),
+  evidence: z.tuple([PersistentEntityIdSchema], PersistentEntityIdSchema),
   validFrom: dateTimeSchema.nullable(),
   validUntil: dateTimeSchema.nullable(),
 });
@@ -1573,7 +1573,7 @@ export type GraphTraversalDirection = LinkDir | "both";
 
 export interface GraphTraversalQuery extends GraphValidity {
   userId: string;
-  startEntityIds: readonly EntityId[];
+  startEntityIds: readonly PersistentEntityId[];
   maxDepth: number; // 0..8
   maxNodes: number; // 1..1000
   maxEdges: number; // 0..5000
@@ -1591,7 +1591,7 @@ Traversal is deterministic breadth-first within the declared depth, with limits 
 
 ```typescript
 export interface EntityBrief {
-  id: EntityId;
+  id: PersistentEntityId;
   schemaId: string;
   name: string | null;
   date: string;
@@ -1785,7 +1785,7 @@ Revision is a nonnegative decimal string, monotonic per Entity and indexer. Conf
 
 ```typescript
 export interface EntityIndexState {
-  entityId: EntityId;
+  entityId: PersistentEntityId;
   indexer: EntityIndexer;
   requested: EntityIndexRevision;
 
@@ -1793,7 +1793,7 @@ export interface EntityIndexState {
 }
 
 export interface EntityIndexTask extends EntityIndexRevision {
-  entityId: EntityId;
+  entityId: PersistentEntityId;
   indexer: EntityIndexer;
 }
 ```
@@ -1811,7 +1811,7 @@ Policy gates still apply before external calls and during result reads. Hashes m
 
 ```typescript
 export interface IndexingContext {
-  startEntityIds: EntityId[];
+  startEntityIds: PersistentEntityId[];
   maxDepth: number;
   maxNodes: number;
   maxEdges: number;
@@ -1820,11 +1820,11 @@ export interface IndexingContext {
 }
 
 export interface IndexingInput {
-  entity: EntityId;
+  entity: PersistentEntityId;
   context: IndexingContext;
-  entities: Array<CanonicalEntity & { id: EntityId }>;
+  entities: Array<CanonicalEntity & { id: PersistentEntityId }>;
   links: CanonicalLink[];
-  text: Record<EntityId, string>;
+  text: Record<PersistentEntityId, string>;
 }
 ```
 
@@ -1859,7 +1859,7 @@ export interface IndexingVocabulary {
   readonly schemas: readonly string[];
   readonly linkKinds: readonly string[];
   readonly candidates: readonly {
-    readonly id: EntityId;
+    readonly id: PersistentEntityId;
     readonly schemaId: string;
     readonly name: string | null;
   }[];
@@ -2014,7 +2014,7 @@ export interface DerivedEntity {
   eligible: boolean;
   reason: string | null;
   confidence: number;
-  evidence: EntityId[];
+  evidence: PersistentEntityId[];
 }
 
 export declare function deriveRelation(
@@ -2041,7 +2041,7 @@ export interface DerivedPeriod {
   eligible: boolean;
   reason: string | null;
   confidence: number;
-  evidence: EntityId[];
+  evidence: PersistentEntityId[];
 }
 
 export interface RelationDerivation {
