@@ -1,7 +1,8 @@
 // Shared schema→type maps for the meetings plugin (single source of truth for
 // module/service.ts + ui/). Record schema_id → payload type; canonical key →
 // value. Read DTOs are byte-compatible with the native module (types.rs
-// MeetingListItem / MeetingDetailView) and the UI's plugins/meetings/ui copies.
+// MeetingListItem / MeetingDetailView); the UI imports them from here.
+import type { LinkedEntitySummary } from "@magnis/sdk";
 
 /** One stored calendar-event record — the provider's dictionary MINUS the
  * attendees, which are the event's `attendee` edges. `entities.ts` declares
@@ -66,7 +67,7 @@ export interface CalendarAttendee {
 export interface MeetingAttendeeView {
   name: string | null;
   email: string;
-  contact_id: string | null;
+  contactId: string | null;
 }
 
 /** Operator/agent-driven `meetings.create` params (native NewMeetingParams). */
@@ -81,45 +82,36 @@ export interface NewMeetingParams {
 }
 
 
-export interface LinkedEntitySummary {
-  id: string;
-  name: string | null;
-  schema_id: string;
-  link_kind: string;
-  created_at: string;
-  data?: Record<string, unknown> | null;
-}
-
 export interface MeetingListItem {
   id: string;
-  schema_id: string;
+  schemaId: string;
   title: string;
   date: string | null;
   time: string | null;
-  starts_at: string | null;
-  ends_at: string | null;
+  startsAt: string | null;
+  endsAt: string | null;
   location: string | null;
   description: string | null;
-  conference_link: string | null;
+  conferenceLink: string | null;
   attendees: MeetingAttendeeView[];
-  created_at: string;
+  createdAt: string;
 }
 
 export interface MeetingDetailView {
   id: string;
-  schema_id: string;
+  schemaId: string;
   title: string;
   date: string | null;
   time: string | null;
-  starts_at: string | null;
-  ends_at: string | null;
+  startsAt: string | null;
+  endsAt: string | null;
   location: string | null;
   description: string | null;
-  conference_link: string | null;
+  conferenceLink: string | null;
   attendees: MeetingAttendeeView[];
   canonical: Record<string, unknown>;
-  linked_entities: LinkedEntitySummary[];
-  created_at: string;
+  linkedEntities: LinkedEntitySummary[];
+  createdAt: string;
 }
 
 // ── tool params ───────────────────────────────────────────────────
@@ -141,38 +133,7 @@ export interface SearchParams {
   limit?: number;
 }
 
-export interface SearchResultItem {
-  id: string;
-  name: string | null;
-  schema_id: string;
-  schema_version: number;
-}
-
 /** MCP tool result envelope (mirrors services/tools ToolResult). */
 export interface ToolResult {
   content: { type: "text"; text: string }[];
-}
-
-// ── sync ────────────────────────────────────────────────────────
-
-/// A trigger.check the host bridge forwards to the event_bus for LIVE calendar
-/// events (mirrors native ingest's `new_meeting` event). Snapshot/delete emit
-/// none. `schema_id` keeps the native value "meetings.meeting" verbatim.
-export interface MeetingTriggerCheck {
-  type: "trigger.check";
-  event_kind: "new_meeting";
-  schema_id: "meetings.meeting";
-  entity_id: string;
-  phase: "live";
-  touched_entity_ids: string[];
-  user_id: string;
-  context: {
-    title: string | null;
-    remote_id: string | null;
-    /** When the meeting itself happens (its start). The trigger engine compares
-     *  this against the trigger's creation time so a backfilled calendar cannot
-     *  fire a trigger that did not exist yet; absent means the engine fails
-     *  closed, which is why every emitter must carry it. */
-    occurred_at: string | null;
-  };
 }

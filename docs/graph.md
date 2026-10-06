@@ -6,21 +6,21 @@ One graph per deployment — one connected data model, partitioned by entity own
 
 ## Anatomy
 
-It is a **property graph**: nodes and edges each carry a dictionary, and identity is resolved by an anchor. Two rules explain almost everything else.
+It is a **property graph**: nodes and edges each carry a dictionary, and identity is resolved by an external id. Two rules explain almost everything else.
 
 > **A node has ONE writer. An edge has MANY observers.**
 
-**Entity** — the base object: a person, message, meeting, company, project. Fields: `id`, `user_id` (exactly one owner, enforced at the schema level), `schema_id` + `schema_version`, optional `name`, `date` (domain timestamp — when the thing happened, not when it was ingested), `idx` (a module-defined lookup key — see Indexes), an `indexed` flag (opt-out from the embedding pipeline), pin/archive state, plus the three that make it a property graph:
+**Entity** — the base object: a person, message, meeting, company, project. A plugin reads it as the SDK `Entity`. Fields: `id`, `owner` (exactly one owner, enforced at the schema level), `schemaId` + `schemaVersion`, optional `name`, `date` (domain timestamp — when the thing happened, not when it was ingested), `idx` (a module-defined lookup key — see Indexes), an `indexed` flag (opt-out from the embedding pipeline), pin/archive state, plus the three that make it a property graph:
 
-- **`properties`** — the node's dictionary, a flat JSON map of what the module knows about it. There are TWO write paths and they differ on purpose. A **sync** (`apply_batch`) REPLACES the dictionary wholesale — the fields as last synced — so a re-sync of a provider record cannot leave a node half-updated. A **curated edit** (`graph.update_properties`) MERGES the top-level keys it is given, and an explicit `null` removes one: a human fixing a phone number should not have to resend the person. "One node, one writer" is about WHO writes, not how much: two sources never contend for one dictionary, because each source's view lives on its own node.
-- **`anchor`** — the node's identity, and the ONE resolver. An issuer key (`tg:user:501`, `email:address:ann@x.com`) when something external names it, otherwise `local:<id>`. Claimed through the `entity_anchors` chokepoint, which is what makes a re-sync attach to the existing node instead of minting a duplicate. Claiming an issuer key demotes an earlier `local:` claim to an alias; the alias keeps resolving.
-- **`source`** — node-level provenance stamped by the HOST, not by the plugin: which source and account observed this dictionary, through which surface, and when. A plugin cannot forge it.
+- **`properties`** — the node's dictionary, a flat JSON map of what the module knows about it. There are TWO write paths and they differ on purpose. A **sync** (`applyBatch`) REPLACES the dictionary wholesale — the fields as last synced — so a re-sync of a provider record cannot leave a node half-updated. A **curated edit** (`graph.updateProperties`) MERGES the top-level keys it is given, and an explicit `null` removes one: a human fixing a phone number should not have to resend the person. "One node, one writer" is about WHO writes, not how much: two sources never contend for one dictionary, because each source's view lives on its own node.
+- **`source`** — node-level provenance stamped by the HOST, not by the plugin: which source and account observed this dictionary. A plugin cannot forge it.
+- **`source.externalId`** — the node's identity, and the ONE resolver. An issuer key (`tg:user:501`, `email:address:ann@x.com`) when something external names it, otherwise `local:<id>`. Claimed through the `entity_anchors` chokepoint, which is what makes a re-sync attach to the existing node instead of minting a duplicate. Claiming an issuer key demotes an earlier `local:` claim to an alias; the alias keeps resolving. A plugin writes it as a batch entity's `externalId` and resolves one with `findByExternalId`.
 
 **Links** — typed edges that make the graph a graph. A kind names a RELATION, not a pair of types: bare kinds are host-owned entries in the relation registry (`backend/src/services/graph/link_kinds.rs`), and a module references one rather than claiming it, declaring the grant in its manifest. Endpoints are constrained by the ROLES a module's entity descriptors declare (`content`, `container`, `identity_channel`, `hub`, `event`, `file_object`), never by schema id.
 
 Relations in use include `identity` (hub → its channels: an address, an account, a profile), `authored_by` (content → the identity that produced it), `sent_to`, `in_chat`, `observed_in`, `observed_participant`, `attendee`, `works_at`, `references`, `mentions`, `reply_to`, and `same_as` (speculative identity — symmetric, direction-normalized). A kind a module genuinely owns still carries its namespace prefix (`file.attachment`, `projects.belongs_to`) and is validated by prefix.
 
-An edge carries a **dictionary** of its own (`metadata`): the per-pair facts that belong to neither endpoint — an invite's display name on `attendee`, an unread count on `observed_in`. Its domain keys are NOT merged across observers: a sync REFRESHES them (fields as last synced, same contract as a node's), and `add_link` on an existing edge leaves them alone entirely, which is what keeps re-ingest idempotent.
+An edge carries a **dictionary** of its own (`metadata`): the per-pair facts that belong to neither endpoint — an invite's display name on `attendee`, an unread count on `observed_in`. Its domain keys are NOT merged across observers: a sync REFRESHES them (fields as last synced, same contract as a node's), and `addLink` on an existing edge leaves them alone entirely, which is what keeps re-ingest idempotent.
 
 Exactly one key behaves differently, and it is the host's: `sources[]`. The host stamps it — a plugin cannot supply one — and it UNIONS, the incoming stamp replacing its own (source, account) entry while every other observer's survives, so corroboration accumulates instead of overwriting. Because it is the provenance record, a query may not read it: an `edge` clause naming `sources`, or any path beneath it, is rejected by the resolver.
 
@@ -28,7 +28,7 @@ Roles matter more than they look. After the accounts migration a chat's particip
 
 **Events** — an append-only log of every mutation, with an actor (`user` / `system` / `agent` / `plugin`): `entity_created`, `entity_properties_updated`, `link_added`, `link_status_changed`, `override_applied`, `entities_merged`, and their removal counterparts. The graph's history is never rewritten.
 
-**Merging two nodes.** The merged truth is the dictionary UNION: the survivor's value wins, the retired value fills a gap, and a key both hubs claim with DIFFERENT values is a conflict the merge refuses to guess (`phones` is the one exemption — it unions mechanically) — it aborts, naming the keys, having written nothing. The operator answers with an override, which lands straight in the survivor's dictionary. The retired node's anchor survives as an alias of the survivor, so the next re-sync of the absorbed identity resolves to the right node.
+**Merging two nodes.** The merged truth is the dictionary UNION: the survivor's value wins, the retired value fills a gap, and a key both hubs claim with DIFFERENT values is a conflict the merge refuses to guess (`phones` is the one exemption — it unions mechanically) — it aborts, naming the keys, having written nothing. The operator answers with an override, which lands straight in the survivor's dictionary. The retired node's external id survives as an alias of the survivor, so the next re-sync of the absorbed identity resolves to the right node.
 
 ## Synchronization choices
 
@@ -98,7 +98,7 @@ element = [                              # conditions apply within ONE element
 
 Declare only what the entity OWNS. Facts that live on replicas the hub reaches over `identity`, or on shared nodes it links to, are link conditions — a hub field for them would silently match curated rows only.
 
-Links need no schema file: they are created at runtime (`graph.add_link({ from_id, to_id, kind })`). A module declares only what it touches across a boundary:
+Links need no schema file: they are created at runtime (`graph.addLink({ from, to, kind })`). A module declares only what it touches across a boundary:
 
 ```toml
 [permissions]
@@ -112,7 +112,7 @@ call  = [ "email.ensure_address", "email.ensure_addresses" ]  # exact foreign RP
 Four layers, each for a different question shape:
 
 1. **The `idx` lookup key.** Every entity carries a module-defined key — a chat id, a thread id, a lowercase name — backed by B-tree indexes for exact and prefix lookups. "Find the Telegram chat with this id" never scans.
-2. **The anchor.** `entity_anchors` is a unique index per (user, anchor): identity resolution is a single indexed lookup, not a search.
+2. **The external id.** `entity_anchors` is a unique index per (user, external id): identity resolution is a single indexed lookup, not a search.
 3. **Full-text.** The text a declaration marks `embed` is chunked into a dedicated FTS table with a generated `tsvector` column under a GIN index — classic Postgres full-text, no external search service.
 4. **Vectors.** The same chunks are embedded in parallel — see below.
 

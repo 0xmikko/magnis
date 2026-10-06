@@ -1,26 +1,27 @@
-// tst_plugin_linkedin_ingest — sync ingest builds an idempotent apply_batch
-// (profiles + posts + authored_by link, each node anchored: a profile on its
-// URN, a post on its remote id) and read tools map window rows. Doubles from @magnis/testkit/module (mockGraph = throwing
+// tst_plugin_linkedin_ingest — sync ingest builds an idempotent applyBatch
+// (profiles + posts + authored_by link, each node keyed by its externalId: a
+// profile on its URN, a post on its remote id) and read tools map window
+// entities. Doubles from @magnis/testkit/module (mockGraph = throwing
 // Proxy, so any op a test does not arrange fails loudly).
 import { describe, expect, it, vi } from "vitest";
-import type { GraphBatchInput, SourceEnvelope } from "@magnis/plugin-sdk";
-import { entity, mockGraph, mountModule, sourceEnvelope, windowRow, type MockGraph } from "@magnis/testkit/module";
+import type { BatchEntityInput, GraphBatchInput, JsonObject, SyncEnvelope } from "@magnis/sdk";
+import { entity, mockGraph, mountModule, page, sourceEnvelope, type MockGraph } from "@magnis/testkit/module";
 import { LinkedinModule } from "../service.ts";
 import { AUTHORED_BY, IDENTITY, POST, PROFILE } from "../../schema.ts";
-import type { LinkedinCanonical } from "../../types.ts";
 
 type G = MockGraph;
 
-function env(remote_id: string, payload: Record<string, unknown>): SourceEnvelope {
-  return sourceEnvelope("linkedin", payload, { source_id: "x", account_id: "a1", user_id: "u1", remote_id, timestamp: "2026-06-26T00:00:00Z" });
+function env(remoteId: string, payload: JsonObject): SyncEnvelope {
+  return sourceEnvelope("linkedin", payload, { sourceId: "x", accountId: "a1", userId: "u1", remoteId, timestamp: "2026-06-26T00:00:00Z" });
 }
 
-const emptyBatch = { ids: {}, created: 0, updated: 0, links_added: 0, dropped_keys: [] };
+const emptyBatch = { ids: {}, created: 0, updated: 0, linksAdded: 0, droppedKeys: [], resolved: [] };
+const stated = { droppedRemoteIds: [], triggerChecks: [], plan: null, excluded: [] };
 
 describe("linkedin ingest", () => {
-  it("tst_plugin_linkedin_ingest_001 builds one apply_batch with profile+post+link, each node anchored", async () => {
-    const graph: G = mockGraph({ apply_batch: () => Promise.resolve(emptyBatch) });
-    const { module: mod } = mountModule(LinkedinModule, { graph, ctx: { extension_id: "linkedin" } });
+  it("tst_plugin_linkedin_ingest_001 builds one applyBatch with profile+post+link, each node keyed by its externalId", async () => {
+    const graph: G = mockGraph({ applyBatch: () => Promise.resolve(emptyBatch) });
+    const { module: mod } = mountModule(LinkedinModule, { graph, ctx: { extensionId: "linkedin" } });
 
     const res = await mod.ingest({
       envelopes: [
@@ -44,86 +45,85 @@ describe("linkedin ingest", () => {
       ],
     });
 
-    expect(res).toEqual({ dropped_remote_ids: [], trigger_checks: [] });
-    const applyBatch = graph.spies.apply_batch;
-    if (applyBatch === undefined) throw new Error("linkedin ingest 001: missing apply_batch spy");
+    expect(res).toEqual(stated);
+    const applyBatch = graph.spies.applyBatch;
+    if (applyBatch === undefined) throw new Error("linkedin ingest 001: missing applyBatch spy");
     expect(applyBatch).toHaveBeenCalledTimes(1);
     const batchCall = applyBatch.mock.calls[0];
-    if (batchCall === undefined) throw new Error("linkedin ingest 001: no apply_batch call recorded");
+    if (batchCall === undefined) throw new Error("linkedin ingest 001: no applyBatch call recorded");
     const batch = batchCall[0];
     expect(batch.entities).toHaveLength(2);
 
-    const profile = batch.entities.find((e: { schema_id: string }) => e.schema_id === PROFILE);
-    const post = batch.entities.find((e: { schema_id: string }) => e.schema_id === POST);
-    // The dictionary IS the record, under an anchor its issuer will not rename.
-    expect(profile.anchor).toBe("linkedin:ACoAAB123");
+    const profile = batch.entities.find((e: BatchEntityInput) => e.schemaId === PROFILE);
+    const post = batch.entities.find((e: BatchEntityInput) => e.schemaId === POST);
+    // The dictionary IS the record, under an externalId its issuer will not rename.
+    expect(profile.externalId).toBe("linkedin:ACoAAB123");
     expect(profile.properties).toMatchObject({ handle: "jack", follower_count: 100 });
-    expect(post.anchor).toBe("linkedin:post:1");
+    expect(post.externalId).toBe("linkedin:post:1");
     // content AND metrics in ONE dictionary.
     expect(post.properties).toMatchObject({ text: "hello world", metrics: { likes: 5 } });
     // authored_by link wired within the page (author_handle "Jack" → profile "jack").
     expect(batch.links).toEqual([
       {
-        from_key: "linkedin:post:1",
-        to_key: "linkedin:profile:ACoAAB123",
+        fromKey: "linkedin:post:1",
+        toKey: "linkedin:profile:ACoAAB123",
         kind: AUTHORED_BY,
-        declared_by: "linkedin:post:1",
+        confidence: null,
+        metadata: null,
+        declaredBy: "linkedin:post:1",
+        validFrom: null,
+        validUntil: null,
       },
     ]);
   });
 
-  it("tst_plugin_linkedin_ingest_002 re-ingest keeps the same external_id (idempotent)", async () => {
-    const graph: G = mockGraph({ apply_batch: () => Promise.resolve(emptyBatch) });
-    const { module: mod } = mountModule(LinkedinModule, { graph, ctx: { extension_id: "linkedin" } });
-    const e = env("linkedin:post:1", {
+  it("tst_plugin_linkedin_ingest_002 re-ingest keeps the same externalId (idempotent)", async () => {
+    const graph: G = mockGraph({ applyBatch: () => Promise.resolve(emptyBatch) });
+    const { module: mod } = mountModule(LinkedinModule, { graph, ctx: { extensionId: "linkedin" } });
+    const payload = {
       entity_type: "post",
       platform: "x",
       post_id: "1",
       author_handle: "jack",
       text: "v1",
-    });
+    };
 
-    await mod.ingest({ envelopes: [e] });
-    await mod.ingest({ envelopes: [{ ...e, payload: { ...e.payload, text: "v2" } }] });
+    await mod.ingest({ envelopes: [env("linkedin:post:1", payload)] });
+    await mod.ingest({ envelopes: [env("linkedin:post:1", { ...payload, text: "v2" })] });
 
-    const applyBatch = graph.spies.apply_batch;
-    if (applyBatch === undefined) throw new Error("linkedin ingest 002: missing apply_batch spy");
+    const applyBatch = graph.spies.applyBatch;
+    if (applyBatch === undefined) throw new Error("linkedin ingest 002: missing applyBatch spy");
     const firstCall = applyBatch.mock.calls[0];
     const secondCall = applyBatch.mock.calls[1];
-    if (firstCall === undefined || secondCall === undefined) throw new Error("linkedin ingest 002: missing apply_batch call");
-    const first = firstCall[0].entities[0].anchor;
-    const second = secondCall[0].entities[0].anchor;
+    if (firstCall === undefined || secondCall === undefined) throw new Error("linkedin ingest 002: missing applyBatch call");
+    const first = firstCall[0].entities[0].externalId;
+    const second = secondCall[0].entities[0].externalId;
     expect(first).toBe("linkedin:post:1");
-    expect(second).toBe("linkedin:post:1"); // same anchor → host upserts, no duplicate entity
+    expect(second).toBe("linkedin:post:1"); // same externalId → host upserts, no duplicate entity
   });
 
-  it("tst_plugin_linkedin_ingest_003 posts.list maps window rows", async () => {
+  it("tst_plugin_linkedin_ingest_003 posts.list maps window entities", async () => {
     const graph: G = mockGraph({
-      list_entities_window: () =>
-        Promise.resolve({
-          items: [
-            windowRow(
-              entity("p1", "hello", {
-                schema_id: POST,
-                properties: {
-                  platform: "x",
-                  author_handle: "jack",
-                  text: "hello",
-                  created_at: "t",
-                  url: null,
-                },
-              }),
-            ),
-          ],
-          total: 1,
-        }),
+      listEntitiesWindow: () =>
+        Promise.resolve(page([
+          entity("p1", "hello", {
+            schemaId: POST,
+            properties: {
+              platform: "x",
+              author_handle: "jack",
+              text: "hello",
+              created_at: "t",
+              url: null,
+            },
+          }),
+        ])),
     });
-    const { module: mod } = mountModule(LinkedinModule, { graph, ctx: { extension_id: "linkedin" } });
+    const { module: mod } = mountModule(LinkedinModule, { graph, ctx: { extensionId: "linkedin" } });
 
-    const page = await mod.postsList({});
-    expect(page.total).toBe(1);
-    expect(page.items[0]).toMatchObject({ id: "p1", platform: "x", author_handle: "jack", text: "hello" });
-    expect(graph.spies.list_entities_window).toHaveBeenCalledTimes(1);
+    const listed = await mod.postsList({});
+    expect(listed.total).toBe(1);
+    expect(listed.items[0]).toMatchObject({ id: "p1", platform: "x", author_handle: "jack", text: "hello" });
+    expect(graph.spies.listEntitiesWindow).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -138,41 +138,41 @@ describe("linkedin ingest", () => {
  * @fixtures: a profile envelope with its urn and a post; the profile known with a pass stamp
  */
 describe("linkedin ingest — the plan from the pages", () => {
-  const profile = (): SourceEnvelope => env("linkedin:profile:jane", { entity_type: "profile", platform: "linkedin", handle: "jane", urn: "urn:li:person:1", display_name: "Jane" });
-  const post = (): SourceEnvelope => env("linkedin:post:1", { entity_type: "post", platform: "linkedin", post_id: "1", author_handle: "jane", text: "hello", created_at: "2026-06-01T00:00:00Z", metrics: {} });
-  function planGraph(known: Record<string, Record<string, unknown>>): G {
+  const profile = (): SyncEnvelope => env("linkedin:profile:jane", { entity_type: "profile", platform: "linkedin", handle: "jane", urn: "urn:li:person:1", display_name: "Jane" });
+  const post = (): SyncEnvelope => env("linkedin:post:1", { entity_type: "post", platform: "linkedin", post_id: "1", author_handle: "jane", text: "hello", created_at: "2026-06-01T00:00:00Z", metrics: {} });
+  function planGraph(known: Record<string, JsonObject>): G {
     return mockGraph({
-      find_by_anchors: (anchors: string[]) => Promise.resolve(anchors.map((anchor) => (anchor in known ? `id:${anchor}` : null))),
-      get_entities: (ids: string[]) => Promise.resolve(ids.map((id) => ({ ...entity(id, "", { schema_id: PROFILE }), properties: known[id.slice("id:".length)] ?? {} }))),
-      apply_batch: () => Promise.resolve(emptyBatch),
+      findByExternalIds: (externalIds: string[]) => Promise.resolve(externalIds.map((externalId) => (externalId in known ? `id:${externalId}` : null))),
+      getEntities: (ids: string[]) => Promise.resolve(ids.map((id) => entity(id, "", { schemaId: PROFILE, properties: known[id.slice("id:".length)] ?? {} }))),
+      applyBatch: () => Promise.resolve(emptyBatch),
     });
   }
 
   it("states a profile once per pass, stamps the pass, and states nothing for posts", async () => {
     const fresh = planGraph({});
-    const first = await mountModule(LinkedinModule, { graph: fresh, ctx: { extension_id: "linkedin" }, rpc: { execute: vi.fn() } }).module
+    const first = await mountModule(LinkedinModule, { graph: fresh, ctx: { extensionId: "linkedin" }, rpc: { execute: vi.fn() } }).module
       .ingest({ generation: "initial:r:1", envelopes: [profile(), post()] });
-    expect(first).toEqual({ dropped_remote_ids: [], trigger_checks: [], plan: { [PROFILE]: { total: 1, skipped: 0 } } });
-    const batch = fresh.spies.apply_batch?.mock.calls[0]?.[0] as GraphBatchInput;
-    expect(batch.entities.find((item) => item.schema_id === PROFILE)?.properties).toMatchObject({ urn: "urn:li:person:1", sync_pass: "initial:r:1" });
+    expect(first).toEqual({ ...stated, plan: { [PROFILE]: { total: 1, skipped: 0 } } });
+    const batch = fresh.spies.applyBatch?.mock.calls[0]?.[0] as GraphBatchInput;
+    expect(batch.entities.find((item) => item.schemaId === PROFILE)?.properties).toMatchObject({ urn: "urn:li:person:1", sync_pass: "initial:r:1" });
 
     const stamped = planGraph({ "linkedin:urn:li:person:1": { handle: "jane", sync_pass: "initial:r:1" } });
-    const later = await mountModule(LinkedinModule, { graph: stamped, ctx: { extension_id: "linkedin" }, rpc: { execute: vi.fn() } }).module
+    const later = await mountModule(LinkedinModule, { graph: stamped, ctx: { extensionId: "linkedin" }, rpc: { execute: vi.fn() } }).module
       .ingest({ generation: "initial:r:1", envelopes: [profile(), post()] });
     expect(later.plan).toEqual({ [PROFILE]: { total: 0, skipped: 0 } });
 
-    const outside = await mountModule(LinkedinModule, { graph: mockGraph({ apply_batch: () => Promise.resolve(emptyBatch) }), ctx: { extension_id: "linkedin" }, rpc: { execute: vi.fn() } }).module
+    const outside = await mountModule(LinkedinModule, { graph: mockGraph({ applyBatch: () => Promise.resolve(emptyBatch) }), ctx: { extensionId: "linkedin" }, rpc: { execute: vi.fn() } }).module
       .ingest({ envelopes: [profile(), post()] });
-    expect(outside).toEqual({ dropped_remote_ids: [], trigger_checks: [] });
+    expect(outside).toEqual(stated);
   });
 });
 
 describe("linkedin ingest identity link (tst_ingest_link)", () => {
   function linkGraph(): G {
     return mockGraph({
-      apply_batch: () =>
-        Promise.resolve({ ids: { "linkedin:profile:12": "prof-1" }, created: 1, updated: 0, links_added: 0, dropped_keys: [] }),
-      add_link: () => Promise.resolve(),
+      applyBatch: () =>
+        Promise.resolve({ ids: { "linkedin:profile:12": "prof-1" }, created: 1, updated: 0, linksAdded: 0, droppedKeys: [], resolved: [] }),
+      addLink: () => Promise.resolve(),
     });
   }
 
@@ -193,17 +193,16 @@ describe("linkedin ingest identity link (tst_ingest_link)", () => {
       if (method === "contacts.rename_if_placeholder") return { renamed: true };
       throw new Error(`unexpected rpc ${method}`);
     });
-    const { module: mod } = mountModule(LinkedinModule, { graph, ctx: { extension_id: "linkedin" }, rpc: { execute } });
+    const { module: mod } = mountModule(LinkedinModule, { graph, ctx: { extensionId: "linkedin" }, rpc: { execute } });
 
     await mod.ingest({ envelopes: [profileEnv] });
 
-    expect(graph.spies.add_link).toHaveBeenCalledTimes(1);
+    expect(graph.spies.addLink).toHaveBeenCalledTimes(1);
     // `identity` runs hub → channel: the contact is the FROM endpoint.
-    expect(graph.spies.add_link).toHaveBeenCalledWith({
-      from_id: "c1",
-      to_id: "prof-1",
+    expect(graph.spies.addLink).toHaveBeenCalledWith({
+      from: "c1",
+      to: "prof-1",
       kind: IDENTITY,
-      declared_by: "linkedin:profile:12",
     });
     expect(execute).toHaveBeenCalledWith("contacts.rename_if_placeholder", {
       id: "c1",
@@ -215,9 +214,9 @@ describe("linkedin ingest identity link (tst_ingest_link)", () => {
   it("untracked handle → no link, no rename", async () => {
     const graph = linkGraph();
     const execute = vi.fn(async () => null);
-    const { module: mod } = mountModule(LinkedinModule, { graph, ctx: { extension_id: "linkedin" }, rpc: { execute } });
+    const { module: mod } = mountModule(LinkedinModule, { graph, ctx: { extensionId: "linkedin" }, rpc: { execute } });
     await mod.ingest({ envelopes: [profileEnv] });
-    expect(graph.spies.add_link).not.toHaveBeenCalled();
+    expect(graph.spies.addLink).not.toHaveBeenCalled();
   });
 
   it("rpc failure never fails the ingest (self-healing next cycle)", async () => {
@@ -225,10 +224,10 @@ describe("linkedin ingest identity link (tst_ingest_link)", () => {
     const execute = vi.fn(async () => {
       throw new Error("hub unavailable");
     });
-    const { module: mod } = mountModule(LinkedinModule, { graph, ctx: { extension_id: "linkedin" }, rpc: { execute } });
+    const { module: mod } = mountModule(LinkedinModule, { graph, ctx: { extensionId: "linkedin" }, rpc: { execute } });
     const res = await mod.ingest({ envelopes: [profileEnv] });
-    expect(res).toEqual({ dropped_remote_ids: [], trigger_checks: [] });
-    expect(graph.spies.add_link).not.toHaveBeenCalled();
+    expect(res).toEqual(stated);
+    expect(graph.spies.addLink).not.toHaveBeenCalled();
   });
 });
 
@@ -237,25 +236,25 @@ describe("linkedin ingest identity link (tst_ingest_link)", () => {
 // name — previously additionalProperties:false rejected the call and the
 // standard search box silently did nothing on this module.
 describe("linkedin profiles.list search", () => {
-  it("search → search_entities_by_name, dictionaries ride the rows, BACKEND order preserved", async () => {
+  it("search → searchEntitiesByName, dictionaries ride the rows, BACKEND order preserved", async () => {
     const graph: G = mockGraph({
-      search_entities_by_name: () =>
+      searchEntitiesByName: () =>
         Promise.resolve([
           entity("e2", "Bob Builder", {
-            schema_id: PROFILE,
+            schemaId: PROFILE,
             properties: { handle: "bob", follower_count: 7, avatar_url: null },
           }),
           entity("e1", "Ann Doe", {
-            schema_id: PROFILE,
+            schemaId: PROFILE,
             properties: { handle: "ann", follower_count: 5, avatar_url: "https://a/1.jpg" },
           }),
         ]),
     });
-    const { module: mod } = mountModule(LinkedinModule, { graph, ctx: { extension_id: "linkedin" } });
+    const { module: mod } = mountModule(LinkedinModule, { graph, ctx: { extensionId: "linkedin" } });
 
     const r = await mod.profilesList({ search: "o", limit: 10 });
-    expect(graph.spies.search_entities_by_name).toHaveBeenCalledWith(
-      expect.objectContaining({ query: "o", schema_ids: [PROFILE] }),
+    expect(graph.spies.searchEntitiesByName).toHaveBeenCalledWith(
+      expect.objectContaining({ query: "o", schemaIds: [PROFILE] }),
     );
     // Backend order (stable total order) is preserved — no client re-sort
     // (re-sorting broke pagination windows, live bug #3).

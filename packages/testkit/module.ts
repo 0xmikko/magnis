@@ -18,24 +18,31 @@ import { vi, type Mock } from "vitest";
 import { definePlugin, pageLimitMax } from "@magnis/plugin-sdk";
 import type {
   GraphService,
-  LinkSummary,
-  LinkedRow,
-  PluginContext,
   PluginDeps,
   PluginLogLevel,
   PluginLogger,
   PluginModuleShape,
   PluginUtil,
-  RawEntity,
   RpcExecutor,
-  SourceEnvelope,
-  ToolDefinitionWire,
-  WindowRow,
 } from "@magnis/plugin-sdk";
+import type {
+  CanonicalEntity,
+  CanonicalLink,
+  JsonObject,
+  JsonValue,
+  LinkedEntity,
+  PaginatedResponse,
+  PluginContext,
+  PluginToolDeclaration,
+  SyncEnvelope,
+  SyncStateApplyResult,
+  SyncStateResetResult,
+  SyncStateStatusResult,
+} from "@magnis/sdk";
 
 // ───────────────────────────── mockGraph ─────────────────────────────
 /** A `GraphService` whose overridden methods are `vi.fn` spies, exposed on
- *  `.spies` for arrangement (`graph.spies.list_entities_window.mockResolvedValue`)
+ *  `.spies` for arrangement (`graph.spies.listEntitiesWindow.mockResolvedValue`)
  *  and assertion (`expect(graph.spies.foo).toHaveBeenCalledTimes(1)`). */
 export interface MockGraph
   extends GraphService {
@@ -98,6 +105,30 @@ export function mockGraph(
   return proxy as unknown as MockGraph;
 }
 
+/** A `syncState` double typed against its three host answers. "apply" runs
+ *  `apply`, which answers pending unless the test supplies its own; "status"
+ *  and "reset" answer only what the test supplies and are refused otherwise,
+ *  so a module that asks for them unexpectedly fails. */
+export function syncStateDouble(answers: {
+  apply?: () => Promise<SyncStateApplyResult>;
+  status?: () => Promise<SyncStateStatusResult>;
+  reset?: (resetSchema: string) => Promise<SyncStateResetResult>;
+} = {}): GraphService["syncState"] {
+  function syncState(action: "status"): Promise<SyncStateStatusResult>;
+  function syncState(action: "reset", resetSchema: string): Promise<SyncStateResetResult>;
+  function syncState(action: "apply"): Promise<SyncStateApplyResult>;
+  function syncState(
+    action: "status" | "reset" | "apply",
+    resetSchema?: string,
+  ): Promise<SyncStateStatusResult | SyncStateResetResult | SyncStateApplyResult> {
+    if (action === "apply") return answers.apply === undefined ? Promise.resolve({ pending: true }) : answers.apply();
+    if (action === "status" && answers.status !== undefined) return answers.status();
+    if (action === "reset" && answers.reset !== undefined && resetSchema !== undefined) return answers.reset(resetSchema);
+    return Promise.reject(new Error(`unexpected syncState("${action}")`));
+  }
+  return syncState;
+}
+
 // ──────────────────────────── mountModule ────────────────────────────
 export interface MountOpts {
   /** "direct" (default): `new Cls(deps)`. "dispatch": run through the SDK's
@@ -105,8 +136,8 @@ export interface MountOpts {
   mode?: "direct" | "dispatch";
   /** The graph the module gets; defaults to an empty (fully-throwing) `mockGraph`. */
   graph?: MockGraph;
-  /** Partial `PluginContext` merged over the defaults `{ user_id: "u1",
-   *  extension_kind: "plugin", extension_id: "test" }`. */
+  /** Partial `PluginContext` merged over the defaults `{ userId: "u1",
+   *  extensionKind: "plugin", extensionId: "test" }`. */
   ctx?: Partial<PluginContext>;
   util?: PluginUtil;
   /** A test rpc double. Looser than `RpcExecutor` (whose `execute` is generic
@@ -150,11 +181,12 @@ export interface DirectMount<T> {
 
 export interface DispatchMount {
   /** Route to a decorated handler by its full name (`"companies.list"`) or bare
-   *  suffix (`"list"`) — the `ctx.extension_id` prefix is tried automatically. */
-  rpc: (name: string, args?: unknown) => unknown;
-  /** The agent tool definitions `definePlugin` harvested (read tools + write
+   *  suffix (`"list"`) — the `ctx.extensionId` prefix is tried automatically.
+   *  `args` is the JSON the host would send. */
+  rpc: (name: string, args: JsonValue) => unknown;
+  /** The agent tool declarations `definePlugin` harvested (read tools + write
    *  tools; RPC-only handlers are excluded, matching the runtime). */
-  tools: ToolDefinitionWire[];
+  tools: PluginToolDeclaration[];
   graph: MockGraph;
   deps: PluginDeps;
 }
@@ -164,9 +196,9 @@ function buildDeps(
 ): { deps: PluginDeps; graph: MockGraph } {
   const graph = opts.graph ?? mockGraph();
   const ctx: PluginContext = {
-    user_id: "u1",
-    extension_kind: "plugin",
-    extension_id: "test",
+    userId: "u1",
+    extensionKind: "plugin",
+    extensionId: "test",
     ...opts.ctx,
   };
   // NB: `RpcExecutor` is `{ execute }` (contract/module.ts) — the default is a
@@ -201,9 +233,9 @@ export function mountModule<T extends object>(
       const shape = (globalThis as unknown as { __magnis_plugin_module: PluginModuleShape })
         .__magnis_plugin_module;
       await shape.init(deps.graph, deps.ctx, deps.util, deps.rpc, deps.log);
-      const lookup = (n: string): ((params: unknown) => unknown) | undefined => shape.rpcHandlers[n];
-      const call = (name: string, args?: unknown): unknown => {
-        const handler = lookup(name) ?? lookup(`${deps.ctx.extension_id}.${name}`);
+      const lookup = (n: string): ((params: JsonValue) => unknown) | undefined => shape.rpcHandlers[n];
+      const call = (name: string, args: JsonValue): unknown => {
+        const handler = lookup(name) ?? lookup(`${deps.ctx.extensionId}.${name}`);
         if (!handler) throw new Error(`no rpc handler: ${name}`);
         return handler(args);
       };
@@ -215,45 +247,81 @@ export function mountModule<T extends object>(
 }
 
 // ─────────────────────────────── builders ────────────────────────────
-// The row/DTO builders the module tests copy-paste, typed against the real
-// `@magnis/plugin-sdk` DTOs so a wire-shape change surfaces here once.
+// The row builders the module tests copy-paste, typed against the SDK shapes
+// the host answers, so a shape change surfaces here once.
 
-/** A `RawEntity`. `over` sets `schema_id` (default `""`), `created_at`
- *  (default a fixed timestamp), or any other column. */
-export function entity(id: string, name: string, over: Partial<RawEntity> = {}): RawEntity {
-  return { id, name, schema_id: "", indexed: true, created_at: "2026-01-01T00:00:00Z", ...over };
-}
+const CREATED_AT = "2026-01-01T00:00:00Z";
 
-/** A `SourceEnvelope` — one item on `surface`, as the host passes it to a
+/** A `SyncEnvelope` — one item on `surface`, as the host passes it to a
  *  sync handler. `over` sets the source, account, kind, remote id or any
  *  other field; the defaults are fixed so a test's bytes never change. */
 export function sourceEnvelope(
   surface: string,
-  payload: Record<string, unknown>,
-  over: Partial<SourceEnvelope> = {},
-): SourceEnvelope {
+  payload: JsonObject,
+  over: Partial<SyncEnvelope> = {},
+): SyncEnvelope {
   return {
-    source_id: "fixture",
+    sourceId: "fixture",
     surface,
-    account_id: "account-1",
-    user_id: "user-1",
+    accountId: "account-1",
+    userId: "user-1",
     kind: "snapshot",
     payload,
-    timestamp: "2026-01-01T00:00:00Z",
+    timestamp: CREATED_AT,
     ...over,
   };
 }
 
-/** A `WindowRow` — an entity; its dictionary rides on the entity itself. */
-export function windowRow(ent: RawEntity): WindowRow {
-  return { entity: ent };
+/** A canonical `Entity`, as a connector delivered it. `over` sets `schemaId`
+ *  (default `""`), `createdAt` (default a fixed timestamp), the
+ *  `source.externalId` (default the id) or any other column. */
+export function entity(id: string, name: string, over: Partial<CanonicalEntity> = {}): CanonicalEntity {
+  return {
+    id,
+    owner: "u1",
+    schemaId: "",
+    schemaVersion: 1,
+    createdAt: CREATED_AT,
+    name,
+    indexed: false,
+    date: CREATED_AT,
+    idx: null,
+    isPinned: null,
+    pinOrder: null,
+    isArchived: null,
+    properties: {},
+    origin: "canonical",
+    source: { source: "test", account: "a1", externalId: id },
+    canonicalKey: null,
+    ...over,
+  };
 }
 
-/** A `LinkedRow` — a neighbor entity + the edge that reached it. The edge
- * defaults open (`validUntil: null`); an ended one overrides the pair. */
-export function linkedRow(ent: RawEntity, link: Partial<LinkSummary> = {}): LinkedRow {
+/** A canonical `Link`. It defaults open (`validUntil: null`); an ended one
+ *  overrides the pair. */
+export function link(from: string, to: string, kind: string, over: Partial<CanonicalLink> = {}): CanonicalLink {
   return {
-    entity: ent,
-    link: { id: "l1", from_id: ent.id, to_id: "to", kind: "link", validFrom: null, validUntil: null, ...link },
+    id: `${from}-${kind}-${to}`,
+    owner: "u1",
+    from,
+    to,
+    kind,
+    createdAt: CREATED_AT,
+    origin: "canonical",
+    metadata: {},
+    validFrom: null,
+    validUntil: null,
+    ...over,
   };
+}
+
+/** A `LinkedEntity` — a neighbor entity + the link that reached it. */
+export function linkedEntity(ent: CanonicalEntity, over: Partial<CanonicalLink> = {}): LinkedEntity {
+  return { entity: ent, link: link(ent.id, "to", "link", over) };
+}
+
+/** A `PaginatedResponse` holding `items` from the first row, every match on it
+ *  unless the test says how many matched. */
+export function page<Item>(items: Item[], total: number = items.length): PaginatedResponse<Item> {
+  return { items, total, limit: Math.max(items.length, 1), offset: 0 };
 }

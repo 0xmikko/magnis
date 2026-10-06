@@ -4,30 +4,31 @@
  * Beside entities.ts and outside module/ on purpose.
  */
 import { describe, expect, it } from "vitest";
-import { entity as graphEntity, mockGraph, mountModule } from "@magnis/testkit/module";
+import type { JsonValue } from "@magnis/sdk";
+import { entity as graphEntity, mockGraph, mountModule, page } from "@magnis/testkit/module";
 
 import { CompaniesModule } from "./module/service.ts";
 import { company } from "./entities.ts";
 import { COMPANY } from "./schema.ts";
 
-async function writtenProperties(): Promise<Record<string, unknown>[]> {
-  const written: Record<string, unknown>[] = [];
-  const existing = graphEntity("company-1", "Acme Labs", { schema_id: COMPANY });
+async function writtenProperties(): Promise<JsonValue[]> {
+  const written: JsonValue[] = [];
+  const existing = graphEntity("company-1", "Acme Labs", { schemaId: COMPANY });
   const graph = mockGraph({
-    get_entity: () => Promise.resolve(existing),
-    create_entity: () => Promise.resolve(existing),
-    search_entities_by_name: () => Promise.resolve([]),
-    list_entities_window: () => Promise.resolve({ items: [existing], total: 1 }),
-    get_entities: () => Promise.resolve([existing]),
-    update_entity_name: () => Promise.resolve(undefined),
-    add_link: () => Promise.resolve(undefined),
-    get_entity_full: () => Promise.resolve({ entity: existing, links: [] }),
-    update_properties: (input: { properties: Record<string, unknown> }) => {
+    getEntity: () => Promise.resolve(existing),
+    createEntity: () => Promise.resolve(existing),
+    searchEntitiesByName: () => Promise.resolve([]),
+    listEntitiesWindow: () => Promise.resolve(page([existing])),
+    getEntities: () => Promise.resolve([existing]),
+    updateEntityName: () => Promise.resolve(undefined),
+    addLink: () => Promise.resolve(undefined),
+    getEntityFull: () => Promise.resolve({ entity: existing, links: [] }),
+    updateProperties: (input: { properties: JsonValue }) => {
       written.push(input.properties);
       return Promise.resolve(undefined);
     },
   } as never);
-  const mod = mountModule(CompaniesModule, { graph, ctx: { extension_id: "companies" } }).module;
+  const mod = mountModule(CompaniesModule, { graph, ctx: { extensionId: "companies" } }).module;
   await mod.create({
     name: "Acme Labs",
     domain: "acme.example",

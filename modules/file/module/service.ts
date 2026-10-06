@@ -4,18 +4,17 @@ import { rpc } from "@magnis/plugin-sdk";
 // `file.get`, `file.attach`. Bytes/storage/upload stay in core `FileService`;
 // this module only touches graph metadata + links.
 //
-// Ownership: `get`/`attach` precheck via the user-scoped `get_entity_full`
-// (raw `add_link` is NOT user-scoped). `list` relies on the host's
-// already user-scoped `list_entities_window` / `list_entities_by_facet_field`.
+// Ownership: `get`/`attach` precheck via the user-scoped `getEntityFull`
+// (raw `addLink` is NOT user-scoped). `list` relies on the host's
+// already user-scoped `listEntitiesWindow` / `list_entities_by_facet_field`.
 
 import {
   tool,
   writeTool,
   type GraphService,
   type PluginDeps,
-  type RawEntity,
 } from "@magnis/plugin-sdk";
-import type { WindowPage } from "@magnis/plugin-sdk";
+import type { Entity, PaginatedResponse } from "@magnis/sdk";
 import type {
   FileAttachParams,
   FileAttachResult,
@@ -29,6 +28,32 @@ import { hasContent, itemFromDetails } from "./helpers.ts";
 import {
   FILE_OBJECT,
 } from "../schema.ts";
+
+/** `file.get`'s input, shared by the RPC method and the agent tool. */
+const GET_SPEC = {
+  description: "Get a file by entity id, with its details + a serving URL.",
+  params: {
+    type: "object",
+    properties: { id: { type: "string", format: "uuid" } },
+    required: ["id"],
+    additionalProperties: false,
+  },
+};
+
+/** `file.attach`'s input, shared by the RPC method and the agent tool. */
+const ATTACH_SPEC = {
+  description: "Attach a file entity to a target entity via a 'file.attachment' link.",
+  params: {
+    type: "object",
+    properties: {
+      file_id: { type: "string", format: "uuid" },
+      target_id: { type: "string", format: "uuid" },
+      kind: { type: "string", enum: ["file.attachment"] },
+    },
+    required: ["file_id", "target_id"],
+    additionalProperties: false,
+  },
+};
 
 export class FileModule {
   private readonly graph: GraphService;
@@ -62,51 +87,36 @@ export class FileModule {
     const offset = params.offset ?? 0;
 
     // Candidate page (host-side user-scoped) + the exact total.
-    let entityIds: string[];
-    let total: number;
-    let pageEntities: RawEntity[];
-    if (params.source_module) {
+    const found: PaginatedResponse<Entity> = params.source_module
       // S1: the dictionary is the state — filter by the properties key.
-      const page = await this.graph.list_entities_by_property_field({
-        entity_schema: FILE_OBJECT,
+      ? await this.graph.listEntitiesByPropertyField({
+        entitySchema: FILE_OBJECT,
         key: "source_module",
         value: params.source_module,
         limit,
         offset,
-      });
-      pageEntities = page.items;
-      entityIds = page.items.map((e) => e.id);
-      total = page.total;
-    } else {
-      const win: WindowPage = await this.graph.list_entities_window({
+      })
+      : await this.graph.listEntitiesWindow({
         schema: FILE_OBJECT,
-        order: [{ field: { entity_field: "date" }, desc: true }],
+        order: [{ field: { entityField: "date" }, desc: true }],
         limit,
         offset,
       });
-      pageEntities = win.items.map((r) => r.entity);
-      entityIds = win.items.map((r) => r.entity.id);
-      total = win.total;
-    }
+    const total = found.total;
 
-    if (entityIds.length === 0) return { items: [], total, limit, offset };
-
-    // S1: the dictionary rides the entity — the page-wide record batch is gone.
-    const detailsById = new Map<string, FileDetails>();
-    for (const e of pageEntities) {
-      detailsById.set(e.id, (e.properties ?? {}) as unknown as FileDetails);
-    }
+    if (found.items.length === 0) return { items: [], total, limit, offset };
 
     const items: FileItem[] = [];
-    for (const id of entityIds) {
-      const details = detailsById.get(id);
-      if (!details) continue;
+    for (const e of found.items) {
+      // S1: the dictionary rides the entity — the page-wide record batch is gone.
+      const id = e.id;
+      const details = e.properties as unknown as FileDetails;
 
       // parent_id: keep only files linked from the given parent (a links
       // query, not a record filter).
       if (params.parent_id) {
-        const links = await this.graph.list_links_for_entity(id);
-        if (!(links).some((l) => l.from_id === params.parent_id)) continue;
+        const links = await this.graph.listLinksForEntity(id);
+        if (!links.some((l) => l.from === params.parent_id)) continue;
       }
       // mime_prefix: prefix match, refined in-TS (window filter is exact).
       if (params.mime_prefix && !details.mime_type.startsWith(params.mime_prefix)) {
@@ -120,70 +130,38 @@ export class FileModule {
     return { items, total, limit, offset };
   }
 
-  @rpc("get")
-  @tool("get", {
-    entity: "file.object",
-    description: "Get a file by entity id, with its details + a serving URL.",
-    params: {
-      type: "object",
-      properties: { id: { type: "string", format: "uuid" } },
-      required: ["id"],
-      additionalProperties: false,
-    },
-  })
+  @rpc("get", GET_SPEC)
+  @tool("get", { entity: "file.object", ...GET_SPEC })
   async get(params: FileGetParams): Promise<Record<string, unknown>> {
     // user-scoped → null for a non-owned id; a wrong-schema id must never resolve.
-    const detail = await this.graph.get_entity_full(params.id, { links: false });
-    if (detail?.entity.schema_id !== FILE_OBJECT) {
+    const detail = await this.graph.getEntityFull(params.id, { links: false });
+    if (detail?.entity.schemaId !== FILE_OBJECT) {
       throw new Error(`file not found: ${params.id}`);
     }
-    // S1: the dictionary is the state.
-    const details = (detail.entity.properties ?? {}) as unknown as FileDetails;
-
-    const base = itemFromDetails(params.id, details) as unknown as Record<string, unknown>;
-    // S1: the typed extras are dictionary keys.
-    const props = (detail.entity.properties ?? {});
-    const image = props.image;
-    const audio = props.audio;
-    const video = props.video;
-    if (image) base.image = image;
-    if (audio) base.audio = audio;
-    if (video) base.video = video;
-    return base;
+    // S1: the dictionary is the state; its typed extras (image, audio, video)
+    // are dictionary keys and ride along.
+    return itemFromDetails(params.id, detail.entity.properties as unknown as FileDetails) as unknown as Record<string, unknown>;
   }
 
-  @rpc("attach")
-  @writeTool("create", {
-    entity: "file.object",
-    description: "Attach a file entity to a target entity via a 'file.attachment' link.",
-    params: {
-      type: "object",
-      properties: {
-        file_id: { type: "string", format: "uuid" },
-        target_id: { type: "string", format: "uuid" },
-        kind: { type: "string", enum: ["file.attachment"] },
-      },
-      required: ["file_id", "target_id"],
-      additionalProperties: false,
-    },
-  })
+  @rpc("attach", ATTACH_SPEC)
+  @writeTool("create", { entity: "file.object", ...ATTACH_SPEC })
   async attach(params: FileAttachParams): Promise<FileAttachResult> {
     const kind = params.kind ?? "file.attachment";
     // Only the "file.attachment" kind is supported (the sole kind any caller uses).
     if (kind !== "file.attachment") throw new Error(`unsupported attach kind: ${kind}`);
 
-    // Own-check both (raw add_link is not user-scoped) and file_id must be
+    // Own-check both (raw addLink is not user-scoped) and file_id must be
     // a file.object — cross-user/invalid ids surface as not-found, no link.
-    const file = await this.graph.get_entity_full(params.file_id, { links: false });
-    if (file?.entity.schema_id !== FILE_OBJECT) {
+    const file = await this.graph.getEntityFull(params.file_id, { links: false });
+    if (file?.entity.schemaId !== FILE_OBJECT) {
       throw new Error(`file not found: ${params.file_id}`);
     }
-    const target = await this.graph.get_entity_full(params.target_id, { links: false });
+    const target = await this.graph.getEntityFull(params.target_id, { links: false });
     if (!target) {
       throw new Error(`target not found: ${params.target_id}`);
     }
 
-    await this.graph.add_link({ from_id: params.target_id, to_id: params.file_id, kind });
+    await this.graph.addLink({ from: params.target_id, to: params.file_id, kind });
     return { status: "ok", file_id: params.file_id, target_id: params.target_id, kind };
   }
 }

@@ -5,6 +5,7 @@
  * Beside entities.ts and outside module/ on purpose.
  */
 import { describe, expect, it } from "vitest";
+import type { JsonValue } from "@magnis/sdk";
 import { entity as graphEntity, mockGraph, mountModule } from "@magnis/testkit/module";
 
 import { ContactsModule } from "./module/service.ts";
@@ -13,20 +14,20 @@ import { CONTACT } from "./schema.ts";
 
 const CONTACT_ID = "44444444-4444-4444-8444-444444444444";
 
-async function hubClaimsWritten(): Promise<Record<string, unknown>[]> {
-  const written: Record<string, unknown>[] = [];
-  const created = graphEntity(CONTACT_ID, "Alice Smith", { schema_id: CONTACT });
+async function hubClaimsWritten(): Promise<JsonValue[]> {
+  const written: JsonValue[] = [];
+  const created = graphEntity(CONTACT_ID, "Alice Smith", { schemaId: CONTACT });
   let exists = false;
   const graph = mockGraph({
-    get_entity: () => Promise.resolve(exists ? created : null),
-    create_entity: () => { exists = true; return Promise.resolve(created); },
-    update_properties: (input: { properties: Record<string, unknown> }) => {
+    getEntity: () => Promise.resolve(exists ? created : null),
+    createEntity: () => { exists = true; return Promise.resolve(created); },
+    updateProperties: (input: { properties: JsonValue }) => {
       written.push(input.properties);
       return Promise.resolve(undefined);
     },
-    add_link: () => Promise.resolve(undefined),
-    list_links_for_entities: () => Promise.resolve([]),
-    get_entities: () => Promise.resolve([]),
+    addLink: () => Promise.resolve(undefined),
+    listLinksForEntities: () => Promise.resolve([]),
+    getEntities: () => Promise.resolve([]),
   } as never);
   const mod = mountModule(ContactsModule, { graph }).module;
   await mod.create({

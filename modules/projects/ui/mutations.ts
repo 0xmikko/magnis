@@ -3,7 +3,8 @@ import type { UseMutationResult } from "@tanstack/react-query";
 import { useAppRuntime } from "@magnis/host/runtime";
 import { projectKeys } from "./queries";
 import type { ProjectListItem } from "./types";
-import type { PaginatedResponse } from "@magnis/plugin-sdk";
+import type { PaginatedResponse } from "@magnis/sdk";
+import { PROJECT } from "../schema.ts";
 
 interface CreateProjectParams {
   readonly name: string;
@@ -47,11 +48,10 @@ export function useCreateProjectMutation(): UseMutationResult<CreateProjectResul
 
       const optimistic: ProjectListItem = {
         id: "_pending",
+        schemaId: PROJECT,
         name: variables.name,
         status: variables.status ?? null,
-        avatar_color: "blue",
-        initials: variables.name.split(/\s+/).slice(0, 2).map((w) => w.at(0)?.toUpperCase() ?? "").join(""),
-        created_at: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
       };
 
       queryClient.setQueryData<PaginatedResponse<ProjectListItem>>(listKey, (old) => ({

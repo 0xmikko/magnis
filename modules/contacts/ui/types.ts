@@ -1,40 +1,5 @@
-import type { ContactSyncTarget } from "../types";
-import type { AvatarColor, LinkedEntitySummary } from "@magnis/host/base";
-export type { LinkedEntitySummary } from "@magnis/host/base";
-
-export interface ContactListItem {
-  readonly id: string;
-  readonly name: string;
-  readonly email: string | null;
-  readonly phone: string | null;
-  readonly role: string | null;
-  readonly company: string | null;
-  readonly channels: readonly string[];
-  readonly avatar_color: string;
-  readonly initials: string;
-  readonly created_at: string;
-  /** True iff the operator authored this contact as part of their
-   *  team (employee / co-founder). Distinguishes team members from
-   *  contacts ingested via Gmail/Telegram sync. Sourced from the
-   *  `contacts.person.profile.is_team_member` record. */
-  readonly is_team_member?: boolean;
-}
-
-export interface ContactDetailView extends ContactListItem {
-  readonly syncTargets: readonly ContactSyncTarget[];
-  readonly canonical: Record<string, unknown>;
-  readonly linked_entities: readonly LinkedEntitySummary[];
-  /** S3 (§5.1): the composed card sections. */
-  readonly curated: Record<string, unknown>;
-  readonly emails: readonly { id: string; address: string }[];
-  readonly phones: readonly { phone: string; type?: string | null; origin: string }[];
-  readonly replicas: readonly {
-    id: string;
-    schema_id: string;
-    name: string | null;
-    properties: Record<string, unknown>;
-  }[];
-}
+import type { AvatarColor } from "@magnis/host/base";
+export type { ContactDetailView, ContactListItem } from "../types";
 
 export interface ContactProfile {
   readonly id: string;

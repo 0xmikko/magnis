@@ -1,27 +1,5 @@
-import type { RawSyncableEntity } from "@magnis/plugin-sdk";
-import type {
-  AvatarColor,
-  LinkedEntitySummary,
-  SidebarData,
-} from "@magnis/host/base";
-
-export interface MessageListItem {
-  readonly id: string;
-  readonly sender: string | null;
-  readonly subject: string | null;
-  readonly preview: string | null;
-  readonly channel: string;
-  readonly timestamp: string;
-  readonly created_at: string;
-  readonly metadata?: Readonly<Record<string, unknown>>;
-}
-
-export interface MessageDetailView extends MessageListItem {
-  readonly senderSync: Pick<RawSyncableEntity, "id" | "syncEnabled" | "syncRevision"> | null;
-  readonly body: string | null;
-  readonly canonical: Record<string, unknown>;
-  readonly linked_entities: readonly LinkedEntitySummary[];
-}
+import type { AvatarColor, SidebarData } from "@magnis/host/base";
+export type { MessageDetailView, MessageListItem } from "../types";
 
 export interface EmailItem {
   readonly id: string;

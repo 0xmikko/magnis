@@ -2,7 +2,7 @@
 // (compute_initials, pick_avatar_color, detect_channels) so list/detail
 // output matches pre-migration.
 
-import type { RawEntity } from "@magnis/plugin-sdk";
+import type { Entity } from "@magnis/sdk";
 import type { ContactListItem } from "../types.ts";
 
 const AVATAR_COLORS = ["orange", "blue", "green", "red", "purple", "pink"];
@@ -42,13 +42,13 @@ function dictString(dict: Readonly<Record<string, unknown>>, key: string): strin
   return typeof v === "string" && v.length > 0 ? v : null;
 }
 
-export function channelsOf(identityNeighbours: readonly RawEntity[]): string[] {
+export function channelsOf(identityNeighbours: readonly Entity[]): string[] {
   const out = new Set<string>();
   for (const n of identityNeighbours) {
-    if (n.schema_id === "email.address") out.add("Email");
-    else if (n.schema_id.startsWith("telegram.")) out.add("Telegram");
-    else if (n.schema_id === "x.profile") out.add("X");
-    else if (n.schema_id === "linkedin.profile") out.add("LinkedIn");
+    if (n.schemaId === "email.address") out.add("Email");
+    else if (n.schemaId.startsWith("telegram.")) out.add("Telegram");
+    else if (n.schemaId === "x.profile") out.add("X");
+    else if (n.schemaId === "linkedin.profile") out.add("LinkedIn");
   }
   return [...out].sort();
 }
@@ -58,13 +58,13 @@ export function channelsOf(identityNeighbours: readonly RawEntity[]): string[] {
 // writer, nothing to arbitrate); the email is the address node an identity
 // edge reaches. The hot list path batches the edges — no per-row graph access.
 export function buildListItem(
-  entity: RawEntity & { created_at?: string; is_pinned?: boolean | null },
-  identityNeighbours: readonly RawEntity[],
+  entity: Entity,
+  identityNeighbours: readonly Entity[],
 ): ContactListItem {
-  const dict = entity.properties ?? {};
+  const dict = entity.properties as Record<string, unknown>;
   const name =
     entity.name && entity.name.length > 0 ? entity.name : (dictString(dict, "name") ?? "Unknown");
-  const address = identityNeighbours.find((n) => n.schema_id === "email.address");
+  const address = identityNeighbours.find((n) => n.schemaId === "email.address");
   const phones = dict.phones;
   const phone = Array.isArray(phones)
     ? (phones
@@ -73,21 +73,21 @@ export function buildListItem(
     : null;
   return {
     id: entity.id,
-    schema_id: entity.schema_id,
+    schemaId: entity.schemaId,
     name,
-    email: address ? (dictString(address.properties ?? {}, "address") ?? address.name) : null,
+    email: address ? (dictString(address.properties as Record<string, unknown>, "address") ?? address.name) : null,
     phone,
     role: dictString(dict, "role"),
     company: dictString(dict, "company"),
     channels: channelsOf(identityNeighbours),
-    avatar_color: pickAvatarColor(entity.id),
+    avatarColor: pickAvatarColor(entity.id),
     initials: computeInitials(name),
     // The telegram relevance tier went with the archive that held it: the
     // fold moved every other card field into a dictionary and left the tier
     // without a destination, so nothing has written it since.
-    relevance_tier: null,
-    created_at: entity.created_at ?? new Date(0).toISOString(),
-    is_pinned: entity.is_pinned ?? null,
+    relevanceTier: null,
+    createdAt: entity.createdAt,
+    isPinned: entity.isPinned,
   };
 }
 
@@ -99,16 +99,16 @@ export function buildListItem(
 export function composeChannels(
   curated: Record<string, unknown>,
   hasEmail: boolean,
-  replicas: { schema_id: string }[],
+  replicas: { schemaId: string }[],
 ): string[] {
   const channels = new Set<string>();
   if (hasEmail) channels.add("email");
   if (Array.isArray(curated.phones) && curated.phones.length > 0) channels.add("phone");
   for (const r of replicas) {
-    if (r.schema_id === "addressbook.card") channels.add("google");
-    else if (r.schema_id.startsWith("telegram.")) channels.add("telegram");
-    else if (r.schema_id === "x.profile") channels.add("x");
-    else if (r.schema_id === "linkedin.profile") channels.add("linkedin");
+    if (r.schemaId === "addressbook.card") channels.add("google");
+    else if (r.schemaId.startsWith("telegram.")) channels.add("telegram");
+    else if (r.schemaId === "x.profile") channels.add("x");
+    else if (r.schemaId === "linkedin.profile") channels.add("linkedin");
   }
   if (Array.isArray(curated.tracking)) {
     for (const t of curated.tracking as { platform?: unknown; enabled?: unknown }[]) {

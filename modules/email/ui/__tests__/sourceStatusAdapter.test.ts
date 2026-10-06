@@ -1,22 +1,29 @@
 import { describe, expect, it } from "vitest";
 
-import type { SourceStatusListResponse } from "@magnis/client-core";
+import type { SourceStatus, SourceStatusListResponse } from "@magnis/sdk";
 
 import { googleSourceConnected } from "../sourceStatus";
 
+type SourceAccount = SourceStatus["accounts"][number];
+
 const GOOGLE_ACCOUNT = {
-  account_id: "google-account",
-  display: "owner@example.com",
-  state: {
-    state: "connected",
-    auth: {
-      kind: "oauth",
-      connection_id: "google-connection",
-      subject: "owner@example.com",
-    },
-    since: "2026-08-12T00:00:00Z",
-  },
+  accountId: "google-account",
+  displayName: "owner@example.com",
+  providerAccountId: "owner@example.com",
+  authKind: "oauth2",
+  generation: 1,
+  invalidReason: null,
+  credential: { state: "ready", kind: "minted", revision: 1 },
+  runtime: { state: "ready" },
   surfaces: [],
+  lifecycle: "connected",
+  repair: null,
+} satisfies SourceAccount;
+
+const GOOGLE = {
+  sourceId: "google",
+  displayName: "Google",
+  availability: { state: "active", packageHash: "sha256:google" },
 } as const;
 
 describe("email source-status adapter", () => {
@@ -28,7 +35,7 @@ describe("email source-status adapter", () => {
    */
   it("tst_plugin_emailstatus_001 returns false without a Google account", () => {
     const response = {
-      sources: [{ source_id: "google", kind: "oauth2", accounts: [] }],
+      sources: [{ ...GOOGLE, accounts: [] }],
     } satisfies SourceStatusListResponse;
 
     expect(googleSourceConnected(response)).toBe(false);
@@ -42,7 +49,7 @@ describe("email source-status adapter", () => {
    */
   it("tst_plugin_emailstatus_002 returns true for a connected Google account", () => {
     const response = {
-      sources: [{ source_id: "google", kind: "oauth2", accounts: [GOOGLE_ACCOUNT] }],
+      sources: [{ ...GOOGLE, accounts: [GOOGLE_ACCOUNT] }],
     } satisfies SourceStatusListResponse;
 
     expect(googleSourceConnected(response)).toBe(true);
@@ -58,19 +65,8 @@ describe("email source-status adapter", () => {
     const response = {
       sources: [
         {
-          source_id: "google",
-          kind: "oauth2",
-          accounts: [
-            {
-              ...GOOGLE_ACCOUNT,
-              state: {
-                state: "auth_lost",
-                reason: { reason: "oauth_revoked" },
-                since: "2026-08-12T00:00:00Z",
-                repair: "reconnect_oauth",
-              },
-            },
-          ],
+          ...GOOGLE,
+          accounts: [{ ...GOOGLE_ACCOUNT, lifecycle: "authRequired", repair: "reconnectOauth" }],
         },
       ],
     } satisfies SourceStatusListResponse;

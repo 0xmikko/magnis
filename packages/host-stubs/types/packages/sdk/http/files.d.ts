@@ -5,5 +5,5 @@ export declare const fileUploadContract: import("./contract.js").HttpContract<"P
     mimeType: z.ZodString;
     sizeBytes: z.ZodNumber;
     url: z.ZodString;
-}, z.core.$strip>>;
+}, z.core.$strict>>;
 //# sourceMappingURL=files.d.ts.map

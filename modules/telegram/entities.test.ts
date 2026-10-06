@@ -4,11 +4,11 @@
  *
  * Beside entities.ts and outside module/ on purpose.
  */
+import type { GraphBatchInput, SyncEnvelope } from "@magnis/sdk";
 import { describe, expect, it } from "vitest";
 import { entity } from "@magnis/declare";
 import { descriptorFrom } from "@magnis/declare/derive";
-import type { GraphBatchInput, SourceEnvelope } from "@magnis/plugin-sdk";
-import { mockGraph, mountModule, sourceEnvelope } from "@magnis/testkit/module";
+import { entity as storedEntity, mockGraph, mountModule, page } from "@magnis/testkit/module";
 
 import { TelegramModule } from "./module/service.ts";
 import { account, chat, message } from "./entities.ts";
@@ -19,40 +19,52 @@ const DECLARED = {
   "telegram.message": message,
 } as const;
 
-const base = (over: Partial<SourceEnvelope>): SourceEnvelope =>
-  sourceEnvelope("telegram", {}, { source_id: "telegram-ts", user_id: "u1", identity_key: "9001", remote_id: "tg:msg:42:7", timestamp: "2026-08-12T08:00:01Z", ...over });
+const base = (over: Partial<SyncEnvelope>): SyncEnvelope => ({
+  sourceId: "telegram-ts",
+  surface: "telegram",
+  accountId: "account-1",
+  userId: "u1",
+  identityKey: "9001",
+  kind: "snapshot",
+  remoteId: "tg:msg:42:7",
+  payload: {},
+  timestamp: "2026-08-12T08:00:01Z",
+  ...over,
+});
 
 async function written(): Promise<GraphBatchInput["entities"]> {
   const batches: GraphBatchInput[] = [];
   const graph = mockGraph({
     moduleSettings: () => Promise.resolve({ newChatSync: "all" }),
-    admitSyncEntities: (subjects) => Promise.resolve(subjects.flatMap(subject => [...subject.remoteIds])),
-    find_by_anchor: () => Promise.resolve(null),
-    find_by_anchors: (anchors) => Promise.resolve(anchors.map(() => null)),
-    apply_batch: (fragment: GraphBatchInput) => {
+    admitSyncEntities: (subjects) => Promise.resolve(subjects.flatMap((subject) => [...subject.remoteIds])),
+    findByExternalId: () => Promise.resolve(null),
+    findByExternalIds: (externalIds) => Promise.resolve(externalIds.map(() => null)),
+    applyBatch: (fragment: GraphBatchInput) => {
       batches.push(fragment);
       return Promise.resolve({
         ids: Object.fromEntries(fragment.entities.map((e) => [e.key, `id:${e.key}`])),
         created: fragment.entities.length,
         updated: 0,
-        links_added: fragment.links?.length ?? 0,
-        dropped_keys: [],
+        linksAdded: fragment.links.length,
+        droppedKeys: [], resolved: [],
       });
     },
-    list_entities_window: () => Promise.resolve({ items: [], total: 0 }),
-    get_entities: (ids) => Promise.resolve(ids.map(id => ({ id, name: "Magnis Builders", schema_id: "telegram.chat", indexed: true, syncEnabled: true, syncRevision: "0" }))),
+    listEntitiesWindow: () => Promise.resolve(page([])),
+    getEntities: (ids) => Promise.resolve(ids.map((id) => ({
+      ...storedEntity(id, "Magnis Builders", { schemaId: "telegram.chat", indexed: true }), syncEnabled: true, syncRevision: "0",
+    }))),
     // The message carries a link and a photo: a link becomes a web entity of
     // its own, and downloadable media becomes a file entity.
-    web_register: () => Promise.resolve("web-1"),
-    web_register_batch: (links: readonly unknown[]) => Promise.resolve(links.map(() => "web-1")),
-    file_register: () => Promise.resolve("file-1"),
-    file_register_batch: (files: readonly unknown[]) => Promise.resolve(files.map(() => "file-1")),
+    webRegister: () => Promise.resolve("web-1"),
+    webRegisterBatch: (links: readonly unknown[]) => Promise.resolve(links.map(() => "web-1")),
+    fileRegister: () => Promise.resolve("file-1"),
+    fileRegisterBatch: (files: readonly unknown[]) => Promise.resolve(files.map(() => "file-1")),
   });
   const mod = mountModule(TelegramModule, { graph }).module;
   await mod.ingest({
     envelopes: [
       base({
-        remote_id: "tg:chat:42",
+        remoteId: "tg:chat:42",
         payload: {
           entity_type: "chat", chat_id: 42, title: "Magnis Builders", type: "group",
           username: "builders", member_count: 12, message_count: 5001, avatar_url: "https://example.test/avatar", pts: 9, unread_count: 3, is_pinned: true, is_indexed: true,
@@ -99,10 +111,10 @@ describe("telegram declares what it writes", () => {
   it("every record the module writes today passes its own declaration", async () => {
     const entities = await written();
     // An account, a chat and a message — a run that wrote fewer proves less.
-    expect(new Set(entities.map((e) => e.schema_id)).size).toBeGreaterThan(2);
+    expect(new Set(entities.map((e) => e.schemaId)).size).toBeGreaterThan(2);
     for (const e of entities) {
-      const declared = DECLARED[e.schema_id as keyof typeof DECLARED];
-      expect(declared, `${e.schema_id} is written but not declared`).toBeDefined();
+      const declared = DECLARED[e.schemaId as keyof typeof DECLARED];
+      expect(declared, `${e.schemaId} is written but not declared`).toBeDefined();
       expect(declared.safeParse(e.properties ?? {}).error?.issues ?? []).toEqual([]);
     }
   });

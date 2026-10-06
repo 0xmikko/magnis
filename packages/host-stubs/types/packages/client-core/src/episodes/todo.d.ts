@@ -1,4 +1,4 @@
-import { type EpisodeTodoItem } from "@magnis/sdk";
+import type { EpisodeTodoItem } from "@magnis/sdk";
 import type { AgentChatStore } from "../agent/AgentChatStore.ts";
 import type { AppTransport } from "../contracts/transport.ts";
 import type { ClientError, ResourceStatus } from "../errors.ts";

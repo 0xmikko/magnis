@@ -22,13 +22,13 @@ import { TriggerCard } from "../TriggerCard";
 const PAUSED_DETAIL = {
   id: "trigger-1",
   name: "Reply watch",
-  gate_prompt: "",
-  action_prompt: "draft a reply",
+  gatePrompt: "",
+  actionPrompt: "draft a reply",
   status: "paused",
-  event_kinds: ["sync_ingested"],
-  debounce_seconds: 0,
-  firing_count: 2,
-  watched_entities: [],
+  eventKinds: ["sync_ingested"],
+  debounceSeconds: 0,
+  firingCount: 2,
+  watchedEntities: [],
 };
 
 /** A runtime whose `triggers.get` never settles — the in-flight case. */
@@ -67,7 +67,7 @@ function withProviders(node: JSX.Element): JSX.Element {
 describe("tst_fe_trig_001 — the card shows only a status it read", () => {
   // A link summary carries id and name and nothing else, so this is what the
   // generic linked-entity tab actually hands the card.
-  const SUMMARY = { id: "trigger-1", schema_id: "triggers.trigger", name: "Reply watch" };
+  const SUMMARY = { id: "trigger-1", schemaId: "triggers.trigger", name: "Reply watch" };
 
   it("Step 1 → renders no status marker while the detail is in flight", () => {
     const { queryByLabelText } = render(

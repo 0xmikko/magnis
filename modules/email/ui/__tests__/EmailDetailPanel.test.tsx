@@ -15,9 +15,9 @@ describe("email sender synchronization", () => {
     let syncEnabled = true;
     const rpc = vi.fn(async (method: string, params: Record<string, unknown>) => {
       if (method === "email.get") return {
-        id: "email-1", schema_id: "email.message", sender: "Alice", subject: "Hello", body: "Saved mail body",
-        channel: "email", timestamp: "2026-10-02T12:00:00Z", created_at: "2026-10-02T12:00:00Z",
-        canonical: {}, linked_entities: [], metadata: { from_address: "alice@example.com", body_text: "Saved mail body" },
+        id: "email-1", schemaId: "email.message", sender: "Alice", subject: "Hello", body: "Saved mail body",
+        channel: "email", timestamp: "2026-10-02T12:00:00Z", createdAt: "2026-10-02T12:00:00Z",
+        canonical: {}, linkedEntities: [], metadata: { from_address: "alice@example.com", body_text: "Saved mail body" },
         senderSync: { id: "sender-uuid", syncEnabled, syncRevision: syncEnabled ? "0" : "1" },
       };
       if (method !== "email.address.setSyncEnabled") throw new Error(`Unexpected RPC ${method}`);

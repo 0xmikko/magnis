@@ -4,31 +4,31 @@
  * Beside entities.ts and outside module/ on purpose.
  */
 import { describe, expect, it, vi } from "vitest";
-import type { GraphBatchInput, SourceEnvelope } from "@magnis/plugin-sdk";
-import { mockGraph, mountModule, sourceEnvelope } from "@magnis/testkit/module";
+import type { GraphBatchInput, JsonObject, SyncEnvelope } from "@magnis/sdk";
+import { mockGraph, mountModule, page, sourceEnvelope } from "@magnis/testkit/module";
 
 import { LinkedinModule } from "./module/service.ts";
 import { post, profile } from "./entities.ts";
 
 const DECLARED = { "linkedin.profile": profile, "linkedin.post": post } as const;
 
-function env(remote_id: string, payload: Record<string, unknown>): SourceEnvelope {
-  return sourceEnvelope("linkedin", payload, { source_id: "x", account_id: "a1", user_id: "u1", remote_id, timestamp: "2026-06-26T00:00:00Z" });
+function env(remoteId: string, payload: JsonObject): SyncEnvelope {
+  return sourceEnvelope("linkedin", payload, { sourceId: "x", accountId: "a1", userId: "u1", remoteId, timestamp: "2026-06-26T00:00:00Z" });
 }
 
 async function written(): Promise<GraphBatchInput["entities"]> {
   const batches: GraphBatchInput[] = [];
   const graph = mockGraph({
-    find_by_anchors: (anchors) => Promise.resolve(anchors.map(() => null)),
-    apply_batch: (frag: GraphBatchInput) => {
+    findByExternalIds: (externalIds) => Promise.resolve(externalIds.map(() => null)),
+    applyBatch: (frag: GraphBatchInput) => {
       batches.push(frag);
-      return Promise.resolve({ ids: {}, created: 0, updated: 0, links_added: 0, dropped_keys: [] });
+      return Promise.resolve({ ids: {}, created: 0, updated: 0, linksAdded: 0, droppedKeys: [], resolved: [] });
     },
-    list_entities_window: () => Promise.resolve({ items: [], total: 0 }),
-    get_entity_full: () => Promise.resolve(null),
+    listEntitiesWindow: () => Promise.resolve(page([])),
+    getEntityFull: () => Promise.resolve(null),
   });
   const mod = mountModule(LinkedinModule, {
-    graph, ctx: { extension_id: "linkedin" }, rpc: { execute: vi.fn() },
+    graph, ctx: { extensionId: "linkedin" }, rpc: { execute: vi.fn() },
   }).module;
   await mod.ingest({
     generation: "initial:r:1",
@@ -54,8 +54,8 @@ describe("linkedin declares what it stores", () => {
     const entities = await written();
     expect(entities.length).toBeGreaterThan(1);
     for (const e of entities) {
-      const declared = DECLARED[e.schema_id as keyof typeof DECLARED];
-      expect(declared, `${e.schema_id} is written but not declared`).toBeDefined();
+      const declared = DECLARED[e.schemaId as keyof typeof DECLARED];
+      expect(declared, `${e.schemaId} is written but not declared`).toBeDefined();
       expect(declared.safeParse(e.properties ?? {}).error?.issues ?? []).toEqual([]);
     }
   });

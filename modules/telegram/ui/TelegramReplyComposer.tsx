@@ -11,7 +11,6 @@ import { MessageComposer } from "@magnis/host/composer";
 import { useComposerDraft } from "@magnis/host/composer";
 import { useComposerMountRegistry } from "@magnis/host/composer";
 import { applyComposerEvent, type ComposerApplyEvent } from "@magnis/host/composer";
-import type { ComposerApplyEventPayload } from "@magnis/host/runtime";
 import { useAppRuntime } from "@magnis/host/runtime";
 
 export interface TelegramReplyComposerProps {
@@ -34,14 +33,14 @@ export function TelegramReplyComposer({
   const { draft, setText, clear, applyRemote } = useComposerDraft("telegram", threadKey);
 
   // Register mount in the single-slot registry + manage presence lifecycle.
-  // Mount → setPresence({mode, thread_key}); unmount or thread switch → setPresence(null).
+  // Mount → setPresence({mode, threadKey}); unmount or thread switch → setPresence(null).
   useEffect(() => {
     const unregister = registry.register({
       mode: "telegram",
       threadKey,
       applyOp: applyRemote,
     });
-    runtime.composer.setPresence({ mode: "telegram", thread_key: threadKey });
+    runtime.composer.setPresence({ mode: "telegram", threadKey });
     return (): void => {
       runtime.composer.setPresence(null);
       unregister();
@@ -58,15 +57,14 @@ export function TelegramReplyComposer({
 
   // Subscribe to runtime.composer.onApply so agent tool calls
   // (`*.composer.set_text` / `append_text` / `set_attachments`) reach this
-  // mounted wrapper's draft. Filter by (mode, thread_key) here before
+  // mounted wrapper's draft. Filter by (mode, threadKey) here before
   // delegating to applyComposerEvent so we read the freshest draft text.
   useEffect(() => {
-    const unsubscribe = runtime.composer.onApply((event: ComposerApplyEventPayload): void => {
+    const unsubscribe = runtime.composer.onApply((event: ComposerApplyEvent): void => {
       if (event.mode !== "telegram") return;
-      if (event.thread_key !== threadKey) return;
-      const typed = event as unknown as ComposerApplyEvent;
+      if (event.threadKey !== threadKey) return;
       applyComposerEvent(
-        typed,
+        event,
         { mode: "telegram", threadKey, applyOp: applyRemote },
         draftTextRef.current,
       );

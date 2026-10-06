@@ -42,7 +42,7 @@ function makeProps(
         id: "email-tool-1",
         result: {
           id: "email-1",
-          schema_id: "emails.message",
+          schemaId: "emails.message",
           subject: "YC",
         },
       },

@@ -1,6 +1,6 @@
-import type { RawSyncableEntity } from "@magnis/plugin-sdk";
 // Shared schema→type maps for the email plugin (single source of truth for
 // module/service.ts + ui/). Record schema_id → payload type; canonical key → value.
+import type { LinkedEntitySummary, Syncable } from "@magnis/sdk";
 
 /** One stored message record — the provider's dictionary MINUS what edges
  * carry: the recipients are `sent_to`, the sender's address is `authored_by`,
@@ -42,45 +42,33 @@ export interface EmailCanonical {
   "email.address.canonical": string;
 }
 
-// ── Read-surface DTOs — byte-compatible with the native module's
-// MessageListItem / MessageDetailView (and the UI's plugins/email/ui/types.ts
-// copies). These cross the RPC boundary, so they must stay structurally
-// identical to both sides.
-
-
-export interface LinkedEntitySummary {
-  id: string;
-  name: string | null;
-  schema_id: string;
-  link_kind: string;
-  created_at: string;
-  data?: Record<string, unknown> | null;
-}
+// ── Read-surface DTOs — what email.list / email.get answer, declared once
+// for module/ and ui/. The linked summaries inside them are the SDK's.
 
 export interface MessageListItem {
   id: string;
-  schema_id: string;
+  schemaId: string;
   sender: string | null;
   subject: string | null;
   preview: string | null;
   channel: string;
   timestamp: string;
-  created_at: string;
+  createdAt: string;
   metadata?: Record<string, unknown> | null;
 }
 
 export interface MessageDetailView {
-  senderSync: Pick<RawSyncableEntity, "id" | "syncEnabled" | "syncRevision"> | null;
+  senderSync: Pick<Syncable, "id" | "syncEnabled" | "syncRevision"> | null;
   id: string;
-  schema_id: string;
+  schemaId: string;
   sender: string | null;
   subject: string | null;
   body: string | null;
   channel: string;
   timestamp: string;
   canonical: Record<string, unknown>;
-  linked_entities: LinkedEntitySummary[];
-  created_at: string;
+  linkedEntities: LinkedEntitySummary[];
+  createdAt: string;
   metadata?: Record<string, unknown> | null;
 }
 
@@ -124,26 +112,4 @@ export interface SetTriggerParams {
   action_prompt: string;
   debounce_seconds?: number;
   episode_id?: string;
-}
-
-/// A trigger.check event the host bridge forwards to the event_bus for LIVE
-/// emails (mirrors native ingest's `new_email` event). Snapshot/backfill
-/// ingests emit none.
-export interface EmailTriggerCheck {
-  type: "trigger.check";
-  event_kind: "new_email";
-  schema_id: "email.message";
-  entity_id: string;
-  phase: "live";
-  touched_entity_ids: string[];
-  user_id: string;
-  context: {
-    from_address: string | null;
-    from_name: string | null;
-    subject: string | null;
-    /** When the message itself happened (RFC3339). The trigger engine compares
-     *  it against the trigger's creation time so a delayed backfill cannot fire
-     *  a trigger that did not exist yet; absent means the engine fails closed. */
-    occurred_at: string | null;
-  };
 }

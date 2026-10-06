@@ -6,13 +6,13 @@
 // `belongs_to` links.
 
 /// `config` is written by the plugin (create/update) AND by the native engine
-/// (firing_count / last_fired_at); `execution` is written by the engine and
-/// read by the plugin's `fire_history`.
+/// (firing_count / last_fired_at); executions are written by the engine and
+/// read through the native `triggers.fire_history` seam.
 
-/// Mirrors native `ScheduleSpec` (docs/plans/cron-triggers.md). The plugin
-/// never constructs one itself — it persists VERBATIM what the native
-/// `triggers.validate_schedule` seam returns (engine-stamped `activated_at`,
-/// materialized timezone).
+/// Mirrors native `ScheduleSpec` (docs/plans/cron-triggers.md), as the trigger's
+/// dictionary stores it. The plugin never constructs one itself — it persists
+/// what the native `triggers.validate_schedule` seam returns (engine-stamped
+/// `activatedAt`, stored as `activated_at`; materialized timezone).
 export interface TriggerScheduleSpec {
   cron: string;
   timezone: string;
@@ -48,26 +48,17 @@ export interface TriggerConfigData {
   schedule?: TriggerScheduleSpec;
 }
 
-/// Mirrors native `TriggerExecution` (the `.execution` record the engine writes).
-export interface TriggerExecutionData {
-  fired_at: string;
-  event_entity_id: string;
-  gate_result?: string;
-  episode_id?: string;
-  outcome: string;
-}
-
 /// Mirrors native `TriggerListItem`.
 export interface TriggerListItem {
-  schema_id: string;
+  schemaId: string;
   id: string;
   name: string;
   status: string;
-  gate_prompt: string;
-  action_prompt: string;
-  firing_count: number;
-  last_fired_at?: string | null;
-  watched_entity_names: string[];
+  gatePrompt: string;
+  actionPrompt: string;
+  firingCount: number;
+  lastFiredAt?: string | null;
+  watchedEntityNames: string[];
   schedule?: TriggerScheduleSpec | null;
 }
 
@@ -81,20 +72,20 @@ export interface WatchedEntity {
 export interface TriggerDetailView {
   id: string;
   name: string;
-  gate_prompt: string;
-  action_prompt: string;
+  gatePrompt: string;
+  actionPrompt: string;
   status: string;
-  event_kinds: string[];
-  schema_filter?: string | null;
-  expires_at?: string | null;
-  debounce_seconds: number;
-  max_wait_seconds?: number | null;
-  max_firings?: number | null;
-  firing_count: number;
-  last_fired_at?: string | null;
-  watched_entities: WatchedEntity[];
-  parent_episode_id?: string | null;
-  parent_episode_name?: string | null;
+  eventKinds: string[];
+  schemaFilter?: string | null;
+  expiresAt?: string | null;
+  debounceSeconds: number;
+  maxWaitSeconds?: number | null;
+  maxFirings?: number | null;
+  firingCount: number;
+  lastFiredAt?: string | null;
+  watchedEntities: WatchedEntity[];
+  parentEpisodeId?: string | null;
+  parentEpisodeName?: string | null;
   schedule?: TriggerScheduleSpec | null;
 }
 
@@ -103,13 +94,13 @@ export interface TriggerCreated {
   id: string;
   name: string;
   status: string;
-  gate_prompt: string;
-  action_prompt: string;
-  firing_count: number;
-  last_fired_at: string | null;
-  schema_id: string;
-  created_at: string;
-  episode_id: string | null;
+  gatePrompt: string;
+  actionPrompt: string;
+  firingCount: number;
+  lastFiredAt: string | null;
+  schemaId: string;
+  createdAt: string;
+  episodeId: string | null;
   /// The persisted schedule, echoed so the tool-call card can render it.
   schedule?: TriggerScheduleSpec | null;
 }
@@ -170,18 +161,4 @@ export interface ListForEntityParams {
 export interface FireHistoryParams {
   trigger_id: string;
   limit?: number;
-}
-
-/// The native `validate_watch` rpc returns either `null` (all watchable) or a
-/// `clarification_needed` payload — passed back to the agent verbatim.
-export type ClarificationResult = Record<string, unknown> | null;
-
-/// Native `triggers.resolve_watchable` rpc response.
-export interface ResolveWatchableResult {
-  watchable: {
-    id: string;
-    name: string | null;
-    schema_id: string;
-    link_kind: string;
-  }[];
 }

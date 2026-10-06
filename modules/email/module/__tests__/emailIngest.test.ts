@@ -1,10 +1,10 @@
-// Email ingest (@syncHandler): apply_batch parity + DB-access
+// Email ingest (@syncHandler): applyBatch parity + DB-access
 // guarantees. Exercised through @magnis/testkit/module. Asserts the fragment
 // shape (entities/links/addresses folded in), idempotency seams (external_ids),
 // live trigger.check parity, delete, empty-user skip, and the op-count gate.
 //
-// mockGraph is a throwing Proxy: the per-item write ops (create_entity/
-// attach_facet/add_link) are NOT arranged, so any per-item crossing throws —
+// mockGraph is a throwing Proxy: the per-item write ops (createEntity/
+// attach_facet/addLink) are NOT arranged, so any per-item crossing throws —
 // that guarantee REPLACES the old reject() spies AND their toHaveBeenCalledTimes(0)
 // assertions (an unarranged op has no spy to count).
 
@@ -21,8 +21,8 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { BatchEntityInput, BatchLinkInput, GraphBatchInput, RawSyncableEntity, SourceEnvelope } from "@magnis/plugin-sdk";
-import { mockGraph, mountModule, sourceEnvelope, type MockGraph } from "@magnis/testkit/module";
+import type { BatchEntityInput, BatchLink, Entity, GraphBatchInput, JsonObject, Syncable, SyncEnvelope } from "@magnis/sdk";
+import { entity, link, mockGraph, mountModule, sourceEnvelope, type MockGraph } from "@magnis/testkit/module";
 import { EmailModule } from "../service.ts";
 import { destSubpath } from "../helpers.ts";
 import { message } from "../../entities.ts";
@@ -30,37 +30,47 @@ import type { EmailCanonical } from "../../types.ts";
 
 type G = MockGraph;
 
+/** A stored sender address with its saved synchronization choice. */
+const syncable = (id: string, address: string, syncEnabled: boolean, syncRevision: string): Entity & Syncable => ({
+  ...entity(id, address, { schemaId: "email.address", indexed: true, properties: { address } }),
+  syncEnabled,
+  syncRevision,
+});
+
 function ingestGraph(): G {
-  const addressRows = new Map<string, RawSyncableEntity>();
+  const addressRows = new Map<string, Entity & Syncable>();
   return mockGraph({
     moduleSettings: () => Promise.resolve({ newSenderSyncEnabled: "true" }),
     admitSyncEntities: (subjects) => Promise.resolve(subjects.flatMap((subject) => [...subject.remoteIds])),
-    get_entities: (ids) => Promise.resolve(ids.map((id) => {
+    getEntities: (ids) => Promise.resolve(ids.map((id) => {
       const row = addressRows.get(id);
       if (row === undefined) throw new Error(`Missing address fixture ${id}`);
       return row;
     })),
-    get_entity: (id) => Promise.resolve({ id, schema_id: "email.address", name: "ceo@example.com", properties: { address: "ceo@example.com" }, indexed: true, syncEnabled: true, syncRevision: "0" }),
-    get_entity_full: (id) => Promise.resolve({ entity: { id, schema_id: "email.message", name: "Stored", indexed: true }, links: [{ id: `author-${id}`, from_id: id, to_id: "id-addr:ceo@example.com", kind: "authored_by", validUntil: null }] }),
-    // apply_batch echoes each key → a deterministic id so post-apply can resolve.
-    apply_batch: (frag) =>
+    getEntity: (id) => Promise.resolve(syncable(id, "ceo@example.com", true, "0")),
+    getEntityFull: (id) => Promise.resolve({
+      entity: entity(id, "Stored", { schemaId: "email.message", indexed: true }),
+      links: [link(id, "id-addr:ceo@example.com", "authored_by", { id: `author-${id}` })],
+    }),
+    // applyBatch echoes each key → a deterministic id so post-apply can resolve.
+    applyBatch: (frag) =>
       Promise.resolve({
         ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
         created: frag.entities.length,
         updated: 0,
-        links_added: frag.links?.length ?? 0,
-        dropped_keys: [],
+        linksAdded: frag.links.length,
+        droppedKeys: [], resolved: [],
       }),
-    file_register: () => Promise.resolve("file-id"),
-    find_by_anchor: () => Promise.resolve("existing-id"),
-    find_by_anchors: (anchors) => Promise.resolve(anchors.map((anchor) => {
-      if (!anchor.startsWith("email:address:")) return null;
-      const address = anchor.slice("email:address:".length);
+    fileRegister: () => Promise.resolve("file-id"),
+    findByExternalId: () => Promise.resolve("existing-id"),
+    findByExternalIds: (externalIds) => Promise.resolve(externalIds.map((externalId) => {
+      if (!externalId.startsWith("email:address:")) return null;
+      const address = externalId.slice("email:address:".length);
       const id = `id-addr:${address}`;
-      addressRows.set(id, { id, schema_id: "email.address", name: address, properties: { address }, indexed: true, syncEnabled: true, syncRevision: "0" });
+      addressRows.set(id, syncable(id, address, true, "0"));
       return id;
     })),
-    delete_entity: () => Promise.resolve(undefined),
+    deleteEntity: () => Promise.resolve(undefined),
   });
 }
 
@@ -73,10 +83,14 @@ function spy(graph: G, op: string) {
   return s;
 }
 
-const env = (over: Partial<SourceEnvelope>): SourceEnvelope =>
-  sourceEnvelope("email", {}, { source_id: "google", account_id: "acct-1", user_id: "u1", remote_id: "m1", timestamp: "2026-03-14T09:00:00Z", ...over });
+const env = (over: Partial<SyncEnvelope>): SyncEnvelope =>
+  sourceEnvelope("email", {}, { sourceId: "google", accountId: "acct-1", userId: "u1", remoteId: "m1", timestamp: "2026-03-14T09:00:00Z", ...over });
 
-const msgPayload = (over: Record<string, unknown> = {}) => ({
+/** A batch entity's dictionary, which the module always writes as an object. */
+const dict = (entity: BatchEntityInput | undefined): JsonObject | undefined =>
+  entity?.properties as JsonObject | undefined;
+
+const msgPayload = (over: JsonObject = {}): JsonObject => ({
   message_id: "mail-1",
   subject: "Report Q3",
   from_address: "CEO@example.com",
@@ -97,53 +111,53 @@ const msgPayload = (over: Record<string, unknown> = {}) => ({
  * @fixtures: mixed accounts, stopped sender additions, id-only labels and deletions
  */
 it("tst_module_email_sync_001 admits only enabled senders before content, attachment and trigger effects", async () => {
-  const rows: RawSyncableEntity[] = [
-    { id: "sender-a", schema_id: "email.address", name: "a@example.com", indexed: true, properties: { address: "a@example.com" }, syncEnabled: true, syncRevision: "1" },
-    { id: "sender-b", schema_id: "email.address", name: "b@example.com", indexed: true, properties: { address: "b@example.com" }, syncEnabled: false, syncRevision: "2" },
+  const rows: (Entity & Syncable)[] = [
+    syncable("sender-a", "a@example.com", true, "1"),
+    syncable("sender-b", "b@example.com", false, "2"),
   ];
   const batches: GraphBatchInput[] = [];
   const graph = mockGraph({
-    find_by_anchors: (anchors) => Promise.resolve(anchors.map((anchor) => rows.find((row) => anchor === `email:address:${row.name}`)?.id ?? null)),
-    find_by_anchor: (anchor) => Promise.resolve(anchor === "b-label" || anchor === "b-delete" ? `stored-${anchor}` : null),
-    get_entities: (ids) => Promise.resolve(rows.filter((row) => ids.includes(row.id))),
-    get_entity: (id) => Promise.resolve(rows.find((row) => row.id === id) ?? null),
-    get_entity_full: (id) => Promise.resolve({
-      entity: { id, schema_id: "email.message", name: "Stored", indexed: true, properties: { subject: "Stored" } },
-      links: [{ id: `author-${id}`, from_id: id, to_id: "sender-b", kind: "authored_by", validUntil: null }],
+    findByExternalIds: (externalIds) => Promise.resolve(externalIds.map((externalId) => rows.find((row) => externalId === `email:address:${row.name ?? ""}`)?.id ?? null)),
+    findByExternalId: (externalId) => Promise.resolve(externalId === "b-label" || externalId === "b-delete" ? `stored-${externalId}` : null),
+    getEntities: (ids) => Promise.resolve(rows.filter((row) => ids.includes(row.id))),
+    getEntity: (id) => Promise.resolve(rows.find((row) => row.id === id) ?? null),
+    getEntityFull: (id) => Promise.resolve({
+      entity: entity(id, "Stored", { schemaId: "email.message", indexed: true, properties: { subject: "Stored" } }),
+      links: [link(id, "sender-b", "authored_by", { id: `author-${id}` })],
     }),
     admitSyncEntities: (subjects) => Promise.resolve(subjects.flatMap((subject) => subject.entityId === "sender-a" ? [...subject.remoteIds] : [])),
-    apply_batch: (batch) => {
+    applyBatch: (batch) => {
       batches.push(batch);
-      return Promise.resolve({ ids: Object.fromEntries([...batch.entities, ...(batch.refs ?? [])].map((item) => [item.key, `id-${item.key}`])), created: batch.entities.length, updated: 0, links_added: batch.links?.length ?? 0, dropped_keys: [] });
+      return Promise.resolve({ ids: Object.fromEntries([...batch.entities, ...batch.refs].map((item) => [item.key, `id-${item.key}`])), created: batch.entities.length, updated: 0, linksAdded: batch.links.length, droppedKeys: [], resolved: [] });
     },
-    file_register: () => Promise.resolve("file-id"),
-    delete_entity: () => Promise.resolve(),
+    fileRegister: () => Promise.resolve("file-id"),
+    deleteEntity: () => Promise.resolve(),
   });
-  const mod = mountModule(EmailModule, { graph, ctx: { extension_id: "email" } }).module;
+  const mod = mountModule(EmailModule, { graph, ctx: { extensionId: "email" } }).module;
   const result = await mod.ingest({ envelopes: [
-    env({ remote_id: "mailbox", payload: { entity_type: "mailbox", messages_total: 100, skipped: 0 } }),
-    env({ remote_id: "a-new", kind: "live", payload: msgPayload({ from_address: " A@EXAMPLE.com ", to_addresses: "b@example.com" }) }),
-    env({ remote_id: "b-new", account_id: "acct-2", kind: "live", payload: msgPayload({ from_address: "B@example.com", attachments: [{ attachment_id: "blocked-file" }] }) }),
-    env({ remote_id: "b-label", payload: { labels: ["INBOX"] } }),
-    env({ remote_id: "b-delete", account_id: "acct-2", kind: "delete" }),
+    env({ remoteId: "mailbox", payload: { entity_type: "mailbox", messages_total: 100, skipped: 0 } }),
+    env({ remoteId: "a-new", kind: "live", payload: msgPayload({ from_address: " A@EXAMPLE.com ", to_addresses: "b@example.com" }) }),
+    env({ remoteId: "b-new", accountId: "acct-2", kind: "live", payload: msgPayload({ from_address: "B@example.com", attachments: [{ attachment_id: "blocked-file" }] }) }),
+    env({ remoteId: "b-label", payload: { labels: ["INBOX"] } }),
+    env({ remoteId: "b-delete", accountId: "acct-2", kind: "delete" }),
   ] });
-  expect(batches.flatMap((batch) => batch.entities.filter((item) => item.schema_id === "email.message").map((item) => item.key))).toEqual(["a-new"]);
-  expect(batches.flatMap((batch) => batch.entities).some((item) => item.anchor === "email:address:b@example.com")).toBe(false);
-  expect(graph.spies.delete_entity).not.toHaveBeenCalled();
-  expect(graph.spies.file_register).not.toHaveBeenCalled();
-  expect(result.trigger_checks.map((check) => check.entity_id)).toEqual(["id-a-new"]);
+  expect(batches.flatMap((batch) => batch.entities.filter((item) => item.schemaId === "email.message").map((item) => item.key))).toEqual(["a-new"]);
+  expect(batches.flatMap((batch) => batch.entities).some((item) => item.externalId === "email:address:b@example.com")).toBe(false);
+  expect(graph.spies.deleteEntity).not.toHaveBeenCalled();
+  expect(graph.spies.fileRegister).not.toHaveBeenCalled();
+  expect(result.triggerChecks.map((check) => check.entityId)).toEqual(["id-a-new"]);
   expect(graph.spies.admitSyncEntities).toHaveBeenCalledExactlyOnceWith([
     { entityId: "sender-a", remoteIds: ["a-new"] },
     { entityId: "sender-b", remoteIds: ["b-new", "b-label", "b-delete"] },
   ], ["mailbox"]);
 });
 
-describe("email ingest — apply_batch shape (tst_be_emailingest_001)", () => {
+describe("email ingest — applyBatch shape (tst_be_emailingest_001)", () => {
   let graph: G;
   let mod: EmailModule;
   beforeEach(() => {
     graph = ingestGraph();
-    mod = mountModule(EmailModule, { graph, ctx: { extension_id: "email" } }).module;
+    mod = mountModule(EmailModule, { graph, ctx: { extensionId: "email" } }).module;
   });
 
   /**
@@ -154,61 +168,62 @@ describe("email ingest — apply_batch shape (tst_be_emailingest_001)", () => {
    * @fixtures: flattened Gmail message with provider id, Message-ID header, null thread
    */
   it("tst_module_email_ingest_002 stores a Gmail payload in the declared message schema", async () => {
-    await mod.ingest({ envelopes: [env({ payload: msgPayload({
-      id: "gmail-1", message_id: undefined, message_id_header: "<m1@example.com>", thread_id: null,
-    }) })] });
-    const batch = spy(graph, "apply_batch").mock.calls[0]?.[0] as GraphBatchInput | undefined;
-    const stored = batch?.entities.find((entity) => entity.schema_id === "email.message");
+    const { message_id: _replaced, ...gmail } = msgPayload({
+      id: "gmail-1", message_id_header: "<m1@example.com>", thread_id: null,
+    });
+    await mod.ingest({ envelopes: [env({ payload: gmail })] });
+    const batch = spy(graph, "applyBatch").mock.calls[0]?.[0] as GraphBatchInput | undefined;
+    const stored = batch?.entities.find((entity) => entity.schemaId === "email.message");
     expect(message.safeParse(stored?.properties).success).toBe(true);
-    expect(stored?.properties?.message_id).toBe("<m1@example.com>");
+    expect(dict(stored)?.message_id).toBe("<m1@example.com>");
   });
 
   it("folds messages + unique addresses + sent_from/sent_to links into one batch", async () => {
     await mod.ingest({
       envelopes: [
-        env({ remote_id: "m1", payload: msgPayload() }),
-        env({ remote_id: "m2", payload: msgPayload({ message_id: "mail-2", from_address: "ceo@example.com", to_addresses: "me@example.com" }) }),
+        env({ remoteId: "m1", payload: msgPayload() }),
+        env({ remoteId: "m2", payload: msgPayload({ message_id: "mail-2", from_address: "ceo@example.com", to_addresses: "me@example.com" }) }),
       ],
     });
 
-    expect(spy(graph, "apply_batch")).toHaveBeenCalledTimes(1);
-    const applyCall0 = spy(graph, "apply_batch").mock.calls[0];
-    if (applyCall0 === undefined) throw new Error("ingest: apply_batch not called");
+    expect(spy(graph, "applyBatch")).toHaveBeenCalledTimes(1);
+    const applyCall0 = spy(graph, "applyBatch").mock.calls[0];
+    if (applyCall0 === undefined) throw new Error("ingest: applyBatch not called");
     const frag = applyCall0[0] as GraphBatchInput;
 
-    const msgs = frag.entities.filter((e: BatchEntityInput) => e.schema_id === "email.message");
-    const addrs = frag.entities.filter((e: BatchEntityInput) => e.schema_id === "email.address");
+    const msgs = frag.entities.filter((e: BatchEntityInput) => e.schemaId === "email.message");
+    const addrs = frag.entities.filter((e: BatchEntityInput) => e.schemaId === "email.address");
     expect(msgs.map((m) => m.key).sort()).toEqual(["m1", "m2"]);
     // unique, lowercased addresses: ceo@, me@, ops@ (m1+m2 share ceo@ and me@)
     expect(addrs.map((a) => a.idx).sort()).toEqual(["ceo@example.com", "me@example.com", "ops@example.com"]);
 
-    // message entity: name=subject, idx=thread_id, date=sent_at, anchor=remote_id
+    // message entity: name=subject, idx=thread_id, date=sent_at, externalId=remoteId
     const m1 = msgs.find((m) => m.key === "m1")!;
     expect(m1.name).toBe("Report Q3");
     expect(m1.idx).toBe("thread-1");
     expect(m1.date).toBe("2026-03-14T09:00:00Z");
-    // S5: the message node is its DICTIONARY under the remote_id anchor —
+    // S5: the message node is its DICTIONARY under the remoteId external id —
     // the details record retired, and the fields the edges now represent
     // (attachments, the joined recipient strings) left the dict.
-    expect(m1.anchor).toBe("m1");
-    expect(m1.properties?.subject).toBe("Report Q3");
-    expect(m1.properties?.attachments).toBeUndefined();
-    expect(m1.properties?.to_addresses).toBeUndefined();
+    expect(m1.externalId).toBe("m1");
+    expect(dict(m1)?.subject).toBe("Report Q3");
+    expect(dict(m1)?.attachments).toBeUndefined();
+    expect(dict(m1)?.to_addresses).toBeUndefined();
 
-    // address entity resolves by its chokepoint anchor (idempotent)
+    // address entity resolves by its chokepoint external id (idempotent)
     const ceo = addrs.find((a) => a.idx === "ceo@example.com")!;
-    expect(ceo.anchor).toBe("email:address:ceo@example.com");
-    expect(ceo.properties?.address).toBe("ceo@example.com");
+    expect(ceo.externalId).toBe("email:address:ceo@example.com");
+    expect(dict(ceo)?.address).toBe("ceo@example.com");
 
     // links: sent_from (msg→sender) + sent_to (msg→each recipient)
-    const links = frag.links ?? [];
-    const m1from = links.filter((l: BatchLinkInput) => l.from_key === "m1" && l.kind === "authored_by");
-    const m1to = links.filter((l: BatchLinkInput) => l.from_key === "m1" && l.kind === "sent_to");
+    const links = frag.links;
+    const m1from = links.filter((l: BatchLink) => l.fromKey === "m1" && l.kind === "authored_by");
+    const m1to = links.filter((l: BatchLink) => l.fromKey === "m1" && l.kind === "sent_to");
     expect(m1from).toHaveLength(1);
     const m1from0 = m1from[0];
     if (m1from0 === undefined) throw new Error("ingest: missing m1from[0] link");
-    expect(m1from0.to_key).toBe("addr:ceo@example.com");
-    expect(m1to.map((l) => l.to_key).sort()).toEqual(["addr:me@example.com", "addr:ops@example.com"]);
+    expect(m1from0.toKey).toBe("addr:ceo@example.com");
+    expect(m1to.map((l) => l.toKey).sort()).toEqual(["addr:me@example.com", "addr:ops@example.com"]);
     // S5 review: the To/Cc/Bcc ROLE rides the edge dictionary — once the
     // joined strings leave the dict, the edge is the only place it survives.
     for (const l of m1to) {
@@ -220,7 +235,7 @@ describe("email ingest — apply_batch shape (tst_be_emailingest_001)", () => {
     await mod.ingest({
       envelopes: [
         env({
-          remote_id: "dup-1",
+          remoteId: "dup-1",
           payload: {
             subject: "Dup",
             from_address: "boss@corp.com",
@@ -230,11 +245,11 @@ describe("email ingest — apply_batch shape (tst_be_emailingest_001)", () => {
         }),
       ],
     });
-    const call = spy(graph, "apply_batch").mock.calls[0] as [GraphBatchInput] | undefined;
-    if (call === undefined) throw new Error("ingest: apply_batch never called");
-    const sentTo = (call[0].links ?? []).filter((l) => l.kind === "sent_to");
-    const ann = sentTo.find((l) => l.to_key === "addr:ann@x.com");
-    const ben = sentTo.find((l) => l.to_key === "addr:ben@x.com");
+    const call = spy(graph, "applyBatch").mock.calls[0] as [GraphBatchInput] | undefined;
+    if (call === undefined) throw new Error("ingest: applyBatch never called");
+    const sentTo = call[0].links.filter((l) => l.kind === "sent_to");
+    const ann = sentTo.find((l) => l.toKey === "addr:ann@x.com");
+    const ben = sentTo.find((l) => l.toKey === "addr:ben@x.com");
     expect(ann?.metadata).toEqual({ role: "to" });
     expect(ben?.metadata).toEqual({ role: "cc" });
   });
@@ -243,7 +258,7 @@ describe("email ingest — apply_batch shape (tst_be_emailingest_001)", () => {
     await mod.ingest({
       envelopes: [
         env({
-          remote_id: "m1",
+          remoteId: "m1",
           payload: msgPayload({
             to_addresses: "to@x.com",
             cc_addresses: "Cc1@x.com, cc2@x.com",
@@ -252,18 +267,18 @@ describe("email ingest — apply_batch shape (tst_be_emailingest_001)", () => {
         }),
       ],
     });
-    const applyCall0 = spy(graph, "apply_batch").mock.calls[0];
-    if (applyCall0 === undefined) throw new Error("ingest cc/bcc: apply_batch not called");
+    const applyCall0 = spy(graph, "applyBatch").mock.calls[0];
+    if (applyCall0 === undefined) throw new Error("ingest cc/bcc: applyBatch not called");
     const frag = applyCall0[0] as GraphBatchInput;
     const addrIdx = frag.entities
-      .filter((e: BatchEntityInput) => e.schema_id === "email.address")
+      .filter((e: BatchEntityInput) => e.schemaId === "email.address")
       .map((e) => e.idx)
       .sort();
     // sender + to + cc(×2, lowercased) + bcc — all folded as address entities
     expect(addrIdx).toEqual(["bcc@x.com", "cc1@x.com", "cc2@x.com", "ceo@example.com", "to@x.com"]);
-    const sentTo = (frag.links ?? [])
-      .filter((l: BatchLinkInput) => l.kind === "sent_to")
-      .map((l) => l.to_key)
+    const sentTo = (frag.links)
+      .filter((l: BatchLink) => l.kind === "sent_to")
+      .map((l) => l.toKey)
       .sort();
     expect(sentTo).toEqual(["addr:bcc@x.com", "addr:cc1@x.com", "addr:cc2@x.com", "addr:to@x.com"]);
   });
@@ -279,19 +294,19 @@ describe("email ingest — apply_batch shape (tst_be_emailingest_001)", () => {
         envelopes: [
           env({
             kind: "live",
-            remote_id: "m1",
+            remoteId: "m1",
             payload: msgPayload({ to_addresses: "to@x.com", cc_addresses: "cc@x.com", bcc_addresses: "bcc@x.com" }),
           }),
         ],
       })
-    ).trigger_checks;
+    ).triggerChecks;
     expect(triggers).toHaveLength(1);
     const trigger0 = triggers[0];
     if (trigger0 === undefined) throw new Error("ingest: missing trigger[0]");
-    expect(trigger0.touched_entity_ids).not.toEqual(
+    expect(trigger0.touchedEntityIds).not.toEqual(
       expect.arrayContaining(["id-addr:cc@x.com", "id-addr:bcc@x.com", "id-addr:to@x.com"]),
     );
-    expect(trigger0.touched_entity_ids).toEqual(["id-m1", "id-addr:ceo@example.com"]);
+    expect(trigger0.touchedEntityIds).toEqual(["id-m1", "id-addr:ceo@example.com"]);
   });
 
   // tst_be_emailingest_trigger_007 — INV-10. The engine needs the event's own
@@ -300,20 +315,20 @@ describe("email ingest — apply_batch shape (tst_be_emailingest_001)", () => {
   it("LIVE trigger context carries the message's occurred_at", async () => {
     const triggers = (
       await mod.ingest({
-        envelopes: [env({ kind: "live", remote_id: "m1", payload: msgPayload() })],
+        envelopes: [env({ kind: "live", remoteId: "m1", payload: msgPayload() })],
       })
-    ).trigger_checks;
+    ).triggerChecks;
     const trigger0 = triggers[0];
     if (trigger0 === undefined) throw new Error("ingest: missing trigger[0]");
     expect(trigger0.context).toHaveProperty("occurred_at");
-    expect(trigger0.context.occurred_at).toBeTruthy();
+    expect((trigger0.context as JsonObject).occurred_at).toBeTruthy();
   });
 
-  it("registers each attachment via file_register with native-parity ids", async () => {
+  it("registers each attachment via fileRegister with native-parity ids", async () => {
     await mod.ingest({
       envelopes: [
         env({
-          remote_id: "m1",
+          remoteId: "m1",
           payload: msgPayload({
             attachments: [
               { attachment_id: "att-1", filename: "photo.jpg", mime_type: "image/jpeg", size: 150000 },
@@ -322,17 +337,17 @@ describe("email ingest — apply_batch shape (tst_be_emailingest_001)", () => {
         }),
       ],
     });
-    expect(spy(graph, "file_register")).toHaveBeenCalledTimes(1);
-    const fileCall0 = spy(graph, "file_register").mock.calls[0];
-    if (fileCall0 === undefined) throw new Error("ingest: file_register not called");
+    expect(spy(graph, "fileRegister")).toHaveBeenCalledTimes(1);
+    const fileCall0 = spy(graph, "fileRegister").mock.calls[0];
+    if (fileCall0 === undefined) throw new Error("ingest: fileRegister not called");
     const call = fileCall0[0] as Record<string, unknown>;
-    expect(call.external_id).toBe("file:gmail:acct-1:m1:att-1");
-    expect(call.parent_external_id).toBe("m1");
-    expect(call.link_kind).toBe("file.attachment");
+    expect(call.externalId).toBe("file:gmail:acct-1:m1:att-1");
+    expect(call.parentExternalId).toBe("m1");
+    expect(call.linkKind).toBe("file.attachment");
     expect(call.name).toBe("photo.jpg");
-    expect(call.mime_type).toBe("image/jpeg");
-    expect(call.source_module).toBe("google");
-    expect(call.source_surface).toBe("email");
+    expect(call.mimeType).toBe("image/jpeg");
+    expect(call.sourceModule).toBe("google");
+    expect(call.sourceSurface).toBe("email");
   });
 
   /**
@@ -345,9 +360,9 @@ describe("email ingest — apply_batch shape (tst_be_emailingest_001)", () => {
   it("tst_module_email_ingest_003 defers historical attachment bytes but fetches new ones", async () => {
     const payload = msgPayload({ attachments: [{ attachment_id: "att-1", filename: "photo.jpg" }] });
     await mod.ingest({ envelopes: [env({ kind: "snapshot", payload })] });
-    expect(spy(graph, "file_register").mock.calls[0]?.[0].download).toBe(false);
-    await mod.ingest({ envelopes: [env({ kind: "live", remote_id: "m2", payload })] });
-    expect(spy(graph, "file_register").mock.calls[1]?.[0].download).toBe(true);
+    expect(spy(graph, "fileRegister").mock.calls[0]?.[0].download).toBe(false);
+    await mod.ingest({ envelopes: [env({ kind: "live", remoteId: "m2", payload })] });
+    expect(spy(graph, "fileRegister").mock.calls[1]?.[0].download).toBe(true);
   });
 
   /**
@@ -362,16 +377,16 @@ describe("email ingest — apply_batch shape (tst_be_emailingest_001)", () => {
     expect(path.split("/").every((segment) => segment.length <= 255)).toBe(true);
   });
 
-  // tst_fe_email_media_source_routing_001: source_module must be the ENVELOPE's
-  // source_id — the host file worker routes download_file by (source_module,
-  // source_surface). A hardcoded "google" breaks attachment downloads when the
+  // tst_fe_email_media_source_routing_001: sourceModule must be the ENVELOPE's
+  // sourceId — the host file worker routes download_file by (sourceModule,
+  // sourceSurface). A hardcoded "google" breaks attachment downloads when the
   // email surface is served by a differently-named connector (google-ts).
-  it("stamps the envelope's source_id as source_module (google-ts connector)", async () => {
+  it("stamps the envelope's sourceId as sourceModule (google-ts connector)", async () => {
     await mod.ingest({
       envelopes: [
         env({
-          source_id: "google-ts",
-          remote_id: "m1",
+          sourceId: "google-ts",
+          remoteId: "m1",
           payload: msgPayload({
             attachments: [
               { attachment_id: "att-1", filename: "photo.jpg", mime_type: "image/jpeg", size: 150000 },
@@ -380,11 +395,11 @@ describe("email ingest — apply_batch shape (tst_be_emailingest_001)", () => {
         }),
       ],
     });
-    const fileCall0 = spy(graph, "file_register").mock.calls[0];
-    if (fileCall0 === undefined) throw new Error("ingest: file_register not called");
+    const fileCall0 = spy(graph, "fileRegister").mock.calls[0];
+    if (fileCall0 === undefined) throw new Error("ingest: fileRegister not called");
     const call = fileCall0[0] as Record<string, unknown>;
-    expect(call.source_module).toBe("google-ts");
-    expect(call.source_surface).toBe("email");
+    expect(call.sourceModule).toBe("google-ts");
+    expect(call.sourceSurface).toBe("email");
   });
 });
 
@@ -393,38 +408,38 @@ describe("email ingest — trigger / delete / empty-user parity", () => {
   let mod: EmailModule;
   beforeEach(() => {
     graph = ingestGraph();
-    mod = mountModule(EmailModule, { graph, ctx: { extension_id: "email" } }).module;
+    mod = mountModule(EmailModule, { graph, ctx: { extensionId: "email" } }).module;
   });
 
   it("LIVE → one trigger.check (touched = message + sender only); SNAPSHOT → none", async () => {
-    const live = await mod.ingest({ envelopes: [env({ kind: "live", remote_id: "m1", payload: msgPayload() })] });
-    expect(Object.keys(live).sort()).toEqual(["dropped_remote_ids", "trigger_checks"]);
-    expect(live.trigger_checks).toHaveLength(1);
-    const tc = live.trigger_checks[0];
-    if (tc === undefined) throw new Error("ingest: missing live trigger_check[0]");
-    expect(tc.event_kind).toBe("new_email");
-    expect(tc.entity_id).toBe("id-m1");
-    expect(tc.context.from_address).toBe("CEO@example.com");
+    const live = await mod.ingest({ envelopes: [env({ kind: "live", remoteId: "m1", payload: msgPayload() })] });
+    expect(Object.keys(live).sort()).toEqual(["droppedRemoteIds", "excluded", "plan", "triggerChecks"]);
+    expect(live.triggerChecks).toHaveLength(1);
+    const tc = live.triggerChecks[0];
+    if (tc === undefined) throw new Error("ingest: missing live triggerChecks[0]");
+    expect(tc.eventKind).toBe("new_email");
+    expect(tc.entityId).toBe("id-m1");
+    expect(tc.context).toMatchObject({ from_address: "CEO@example.com" });
     // INV-9: message id + the SENDER's address id. Recipients are deliberately
     // absent — including them made the user's own address a trigger candidate.
-    expect(tc.touched_entity_ids).toEqual(["id-m1", "id-addr:ceo@example.com"]);
-    expect(tc.touched_entity_ids).not.toContain("id-addr:me@example.com");
+    expect(tc.touchedEntityIds).toEqual(["id-m1", "id-addr:ceo@example.com"]);
+    expect(tc.touchedEntityIds).not.toContain("id-addr:me@example.com");
 
-    const snap = await mod.ingest({ envelopes: [env({ kind: "snapshot", remote_id: "m2", payload: msgPayload() })] });
-    expect(snap.trigger_checks).toHaveLength(0);
+    const snap = await mod.ingest({ envelopes: [env({ kind: "snapshot", remoteId: "m2", payload: msgPayload() })] });
+    expect(snap.triggerChecks).toHaveLength(0);
   });
 
-  it("DELETE → find_by_anchor + delete_entity, no apply_batch", async () => {
-    await mod.ingest({ envelopes: [env({ kind: "delete", remote_id: "m-del", payload: {} })] });
-    expect(spy(graph, "find_by_anchor")).toHaveBeenCalledTimes(1);
-    expect(spy(graph, "delete_entity")).toHaveBeenCalledWith("existing-id");
-    expect(spy(graph, "apply_batch")).toHaveBeenCalledTimes(0);
+  it("DELETE → findByExternalId + deleteEntity, no applyBatch", async () => {
+    await mod.ingest({ envelopes: [env({ kind: "delete", remoteId: "m-del", payload: {} })] });
+    expect(spy(graph, "findByExternalId")).toHaveBeenCalledTimes(1);
+    expect(spy(graph, "deleteEntity")).toHaveBeenCalledWith("existing-id");
+    expect(spy(graph, "applyBatch")).toHaveBeenCalledTimes(0);
   });
 
-  it("empty user_id → skipped (no batch, no entity)", async () => {
-    const r = await mod.ingest({ envelopes: [env({ user_id: "", remote_id: "m1", payload: msgPayload() })] });
-    expect(spy(graph, "apply_batch")).toHaveBeenCalledTimes(0);
-    expect(r.trigger_checks).toHaveLength(0);
+  it("empty userId → skipped (no batch, no entity)", async () => {
+    const r = await mod.ingest({ envelopes: [env({ userId: "", remoteId: "m1", payload: msgPayload() })] });
+    expect(spy(graph, "applyBatch")).toHaveBeenCalledTimes(0);
+    expect(r.triggerChecks).toHaveLength(0);
   });
 });
 
@@ -444,32 +459,31 @@ describe("email ingest — the plan from the pages", () => {
   let mod: EmailModule;
   beforeEach(() => {
     graph = ingestGraph();
-    mod = mountModule(EmailModule, { graph, ctx: { extension_id: "email" } }).module;
+    mod = mountModule(EmailModule, { graph, ctx: { extensionId: "email" } }).module;
   });
-  const mailbox = env({ remote_id: "mailbox", payload: { entity_type: "mailbox", messages_total: 100, skipped: 10 } });
+  const mailbox = env({ remoteId: "mailbox", payload: { entity_type: "mailbox", messages_total: 100, skipped: 10 } });
 
   it("states the mailbox in full and never ingests it as a message", async () => {
-    const r = await mod.ingest({ generation: "initial:r:1", envelopes: [mailbox, env({ remote_id: "m1", payload: msgPayload() })] });
-    expect(r).toEqual({ dropped_remote_ids: [], trigger_checks: [], plan: { "email.message": { total: 100, skipped: 10 } } });
-    const batch = spy(graph, "apply_batch").mock.calls[0]?.[0] as GraphBatchInput | undefined;
+    const r = await mod.ingest({ generation: "initial:r:1", envelopes: [mailbox, env({ remoteId: "m1", payload: msgPayload() })] });
+    expect(r).toEqual({ droppedRemoteIds: [], triggerChecks: [], plan: { "email.message": { total: 100, skipped: 10 } }, excluded: [] });
+    const batch = spy(graph, "applyBatch").mock.calls[0]?.[0] as GraphBatchInput | undefined;
     expect(batch?.entities.map((item) => item.key)).not.toContain("mailbox");
     expect(batch?.entities.some((item) => item.key === "m1")).toBe(true);
   });
 
   it("moves the count by one per new mail and per removal on a history page", async () => {
     const r = await mod.ingest({ generation: "initial:r:1", envelopes: [
-      env({ kind: "live", remote_id: "m-new", payload: msgPayload({ message_id: "m-new" }) }),
-      env({ kind: "snapshot", remote_id: "m-relabelled", payload: msgPayload({ message_id: "m-relabelled" }) }),
-      env({ kind: "delete", remote_id: "m-gone", payload: {} }),
-      env({ kind: "delete", remote_id: "m-gone-too", payload: {} }),
+      env({ kind: "live", remoteId: "m-new", payload: msgPayload({ message_id: "m-new" }) }),
+      env({ kind: "snapshot", remoteId: "m-relabelled", payload: msgPayload({ message_id: "m-relabelled" }) }),
+      env({ kind: "delete", remoteId: "m-gone", payload: {} }),
+      env({ kind: "delete", remoteId: "m-gone-too", payload: {} }),
     ] });
     expect(r.plan).toEqual({ "email.message": { total: -1, skipped: 0 } });
   });
 
   it("states nothing outside a worker's pass", async () => {
-    const r = await mod.ingest({ envelopes: [mailbox, env({ kind: "live", remote_id: "m-new", payload: msgPayload() })] });
-    expect(r).toEqual({ dropped_remote_ids: [], trigger_checks: expect.any(Array) as never });
-    expect("plan" in r).toBe(false);
+    const r = await mod.ingest({ envelopes: [mailbox, env({ kind: "live", remoteId: "m-new", payload: msgPayload() })] });
+    expect(r).toEqual({ droppedRemoteIds: [], triggerChecks: expect.any(Array) as never, plan: null, excluded: [] });
   });
 });
 
@@ -482,31 +496,31 @@ describe("email ingest — the plan from the pages", () => {
  */
 it("tst_module_google_003 counts only newly admitted Gmail messages and actual removals", async () => {
   const graph = ingestGraph();
-  const mod = mountModule(EmailModule, { graph, ctx: { extension_id: "email" } }).module;
-  const lookupAddresses = spy(graph, "find_by_anchors").getMockImplementation();
+  const mod = mountModule(EmailModule, { graph, ctx: { extensionId: "email" } }).module;
+  const lookupAddresses = spy(graph, "findByExternalIds").getMockImplementation();
   if (lookupAddresses === undefined) throw new Error("Missing address lookup fixture");
-  spy(graph, "find_by_anchors").mockImplementation((anchors: string[]) =>
-    anchors.some((anchor) => anchor.startsWith("email:address:")) ? lookupAddresses(anchors) : Promise.resolve(anchors.map((anchor) => anchor === "m-existing" ? "id-existing" : null)));
-  spy(graph, "find_by_anchor").mockImplementation((anchor: string) =>
-    Promise.resolve(anchor === "m-gone" ? "id-gone" : null));
+  spy(graph, "findByExternalIds").mockImplementation((externalIds: string[]) =>
+    externalIds.some((externalId) => externalId.startsWith("email:address:")) ? lookupAddresses(externalIds) : Promise.resolve(externalIds.map((externalId) => externalId === "m-existing" ? "id-existing" : null)));
+  spy(graph, "findByExternalId").mockImplementation((externalId: string) =>
+    Promise.resolve(externalId === "m-gone" ? "id-gone" : null));
 
   const first = await mod.ingest({ generation: "forward:r:1", envelopes: [
-    env({ kind: "live", remote_id: "m-existing", payload: msgPayload() }),
-    env({ kind: "live", remote_id: "m-new", payload: msgPayload() }),
+    env({ kind: "live", remoteId: "m-existing", payload: msgPayload() }),
+    env({ kind: "live", remoteId: "m-new", payload: msgPayload() }),
   ] });
   expect(first.plan).toEqual({ "email.message": { total: 1, skipped: 0 } });
 
   const deleted = await mod.ingest({ generation: "forward:r:1", envelopes: [
-    env({ kind: "delete", remote_id: "m-gone", payload: {} }),
-    env({ kind: "delete", remote_id: "m-missing", payload: {} }),
+    env({ kind: "delete", remoteId: "m-gone", payload: {} }),
+    env({ kind: "delete", remoteId: "m-missing", payload: {} }),
   ] });
   expect(deleted.plan).toEqual({ "email.message": { total: -1, skipped: 0 } });
-  expect(spy(graph, "delete_entity")).toHaveBeenCalledTimes(1);
+  expect(spy(graph, "deleteEntity")).toHaveBeenCalledTimes(1);
 
-  spy(graph, "find_by_anchors").mockImplementation((anchors: string[]) =>
-    anchors.some((anchor) => anchor.startsWith("email:address:")) ? lookupAddresses(anchors) : Promise.resolve(anchors.map(() => "id-existing")));
+  spy(graph, "findByExternalIds").mockImplementation((externalIds: string[]) =>
+    externalIds.some((externalId) => externalId.startsWith("email:address:")) ? lookupAddresses(externalIds) : Promise.resolve(externalIds.map(() => "id-existing")));
   const replay = await mod.ingest({ generation: "forward:r:1", envelopes: [
-    env({ kind: "live", remote_id: "m-new", payload: msgPayload() }),
+    env({ kind: "live", remoteId: "m-new", payload: msgPayload() }),
   ] });
   expect(replay.plan).toEqual({ "email.message": { total: 0, skipped: 0 } });
 });
@@ -516,31 +530,31 @@ describe("email ingest — DB-access guarantees (tst_be_emaildb_005 / INV-DB-3)"
   let mod: EmailModule;
   beforeEach(() => {
     graph = ingestGraph();
-    mod = mountModule(EmailModule, { graph, ctx: { extension_id: "email" } }).module;
+    mod = mountModule(EmailModule, { graph, ctx: { extensionId: "email" } }).module;
   });
 
-  it("small page (msgs+addresses < 200) = exactly 1 apply_batch, 0 per-item crossings", async () => {
+  it("small page (msgs+addresses < 200) = exactly 1 applyBatch, 0 per-item crossings", async () => {
     await mod.ingest({
       envelopes: [
-        env({ remote_id: "m1", payload: msgPayload() }),
-        env({ remote_id: "m2", payload: msgPayload({ message_id: "mail-2" }) }),
-        env({ remote_id: "m3", payload: msgPayload({ message_id: "mail-3" }) }),
+        env({ remoteId: "m1", payload: msgPayload() }),
+        env({ remoteId: "m2", payload: msgPayload({ message_id: "mail-2" }) }),
+        env({ remoteId: "m3", payload: msgPayload({ message_id: "mail-3" }) }),
       ],
     });
-    expect(spy(graph, "apply_batch")).toHaveBeenCalledTimes(1);
-    expect(spy(graph, "find_by_anchor")).toHaveBeenCalledTimes(0); // delete-only
-    // create_entity / add_link / attach_facet (the per-item crossings) are
+    expect(spy(graph, "applyBatch")).toHaveBeenCalledTimes(1);
+    expect(spy(graph, "findByExternalId")).toHaveBeenCalledTimes(0); // delete-only
+    // createEntity / addLink / attach_facet (the per-item crossings) are
     // forbidden, unarranged ops — the throwing mockGraph guarantees they are
     // never hit; there is no spy to assert 0 against.
   });
 
-  it("large page chunks by TOTAL entities — >1 apply_batch, each ≤200, all messages applied", async () => {
+  it("large page chunks by TOTAL entities — >1 applyBatch, each ≤200, all messages applied", async () => {
     // 100 messages, each with a unique sender + 2 unique recipients = 1 msg + 3
     // address entities = 4 entities/msg → 400 total → must split into ≥2 chunks,
     // none exceeding 200, and never split a single message.
     const envelopes = Array.from({ length: 100 }, (_, i) =>
       env({
-        remote_id: `m${i}`,
+        remoteId: `m${i}`,
         payload: msgPayload({
           message_id: `mail-${i}`,
           from_address: `s${i}@x.com`,
@@ -552,13 +566,13 @@ describe("email ingest — DB-access guarantees (tst_be_emaildb_005 / INV-DB-3)"
     );
     await mod.ingest({ envelopes });
 
-    const calls = spy(graph, "apply_batch").mock.calls;
+    const calls = spy(graph, "applyBatch").mock.calls;
     expect(calls.length).toBeGreaterThan(1); // chunked, not one giant batch
     const seenMsgKeys = new Set<string>();
     for (const [frag] of calls as [GraphBatchInput][]) {
       expect(frag.entities.length).toBeLessThanOrEqual(200); // cap holds per chunk
       for (const e of frag.entities) {
-        if (e.schema_id === "email.message") seenMsgKeys.add(e.key);
+        if (e.schemaId === "email.message") seenMsgKeys.add(e.key);
       }
     }
     expect(seenMsgKeys.size).toBe(100); // every message applied exactly once across chunks
@@ -574,62 +588,62 @@ describe("email ingest — DB-access guarantees (tst_be_emaildb_005 / INV-DB-3)"
  */
 it("tst_module_email_sync_003 creates only selection metadata and preserves Stop when discovery repeats", async () => {
   const writes: GraphBatchInput[] = [];
-  let sender: RawSyncableEntity | null = null;
+  let sender: Entity & Syncable | null = null;
   let rule = "false";
   const graph = mockGraph({
-    find_by_anchors: (anchors) => Promise.resolve(anchors.map(() => sender?.id ?? null)),
-    get_entities: () => Promise.resolve(sender === null ? [] : [sender]),
+    findByExternalIds: (externalIds) => Promise.resolve(externalIds.map(() => sender?.id ?? null)),
+    getEntities: () => Promise.resolve(sender === null ? [] : [sender]),
     moduleSettings: () => Promise.resolve({ newSenderSyncEnabled: rule }),
     admitSyncEntities: (subjects) => Promise.resolve(sender?.syncEnabled === true ? subjects.flatMap((subject) => [...subject.remoteIds]) : []),
-    apply_batch: (batch) => {
+    applyBatch: (batch) => {
       writes.push(batch);
-      const address = batch.entities[0];
-      if (address?.schema_id !== "email.address" || typeof address.syncEnabled !== "boolean") throw new Error("Expected explicit sender discovery");
-      sender = { id: "sender", schema_id: address.schema_id, name: "unknown@example.com", properties: address.properties, indexed: true, syncEnabled: address.syncEnabled, syncRevision: "0" };
-      return Promise.resolve({ ids: { [address.key]: "sender" }, created: 1, updated: 0, links_added: 0, dropped_keys: [] });
+      const address: BatchEntityInput | undefined = batch.entities[0];
+      if (address?.schemaId !== "email.address" || typeof address.syncEnabled !== "boolean") throw new Error("Expected explicit sender discovery");
+      sender = { ...entity("sender", "unknown@example.com", { schemaId: address.schemaId, properties: address.properties, indexed: true }), syncEnabled: address.syncEnabled, syncRevision: "0" };
+      return Promise.resolve({ ids: { [address.key]: "sender" }, created: 1, updated: 0, linksAdded: 0, droppedKeys: [], resolved: [] });
     },
   });
-  const mod = mountModule(EmailModule, { graph, ctx: { extension_id: "email" } }).module;
+  const mod = mountModule(EmailModule, { graph, ctx: { extensionId: "email" } }).module;
   const header = env({ payload: { entity_type: "sender", from_address: "unknown@example.com", from_name: "Name" } });
-  expect(await mod.ingest({ envelopes: [header] })).toEqual({ dropped_remote_ids: [], trigger_checks: [] });
+  expect(await mod.ingest({ envelopes: [header] })).toEqual({ droppedRemoteIds: [], triggerChecks: [], plan: null, excluded: [] });
   rule = "true";
-  await mod.ingest({ envelopes: [header, env({ remote_id: "late", kind: "live", payload: msgPayload({ from_address: "unknown@example.com", to_addresses: "", attachments: [{ attachment_id: "must-not-register" }] }) })] });
+  await mod.ingest({ envelopes: [header, env({ remoteId: "late", kind: "live", payload: msgPayload({ from_address: "unknown@example.com", to_addresses: "", attachments: [{ attachment_id: "must-not-register" }] }) })] });
   expect(writes).toHaveLength(1);
   expect(writes[0]?.entities).toEqual([expect.objectContaining({ syncEnabled: false, properties: { address: "unknown@example.com", display_name: "Name" } })]);
 });
 
 it("fails id-only updates without ownership, while an unstored deletion has no effects", async () => {
   const graph = ingestGraph();
-  spy(graph, "find_by_anchor").mockResolvedValue(null);
-  const mod = mountModule(EmailModule, { graph, ctx: { extension_id: "email" } }).module;
+  spy(graph, "findByExternalId").mockResolvedValue(null);
+  const mod = mountModule(EmailModule, { graph, ctx: { extensionId: "email" } }).module;
   await expect(mod.ingest({ envelopes: [env({ payload: { labels: ["INBOX"] } })] })).rejects.toThrow(/ownership/);
-  await expect(mod.ingest({ envelopes: [env({ kind: "delete" })] })).resolves.toEqual({ dropped_remote_ids: [], trigger_checks: [] });
-  expect(graph.spies.apply_batch).not.toHaveBeenCalled();
-  expect(graph.spies.delete_entity).not.toHaveBeenCalled();
+  await expect(mod.ingest({ envelopes: [env({ kind: "delete" })] })).resolves.toEqual({ droppedRemoteIds: [], triggerChecks: [], plan: null, excluded: [] });
+  expect(graph.spies.applyBatch).not.toHaveBeenCalled();
+  expect(graph.spies.deleteEntity).not.toHaveBeenCalled();
 });
 
 it("reuses a recipient created with Stop across chunks of the same page", async () => {
   const graph = ingestGraph();
-  const find = spy(graph, "find_by_anchors").getMockImplementation();
-  const apply = spy(graph, "apply_batch").getMockImplementation();
+  const find = spy(graph, "findByExternalIds").getMockImplementation();
+  const apply = spy(graph, "applyBatch").getMockImplementation();
   if (find === undefined || apply === undefined) throw new Error("Missing batch fixture");
   spy(graph, "moduleSettings").mockResolvedValue({ newSenderSyncEnabled: "false" });
-  spy(graph, "find_by_anchors").mockImplementation(async (anchors: string[]) => {
-    const ids: (string | null)[] = await find(anchors);
-    return ids.map((id, index) => anchors[index] === "email:address:shared@example.com" ? null : id);
+  spy(graph, "findByExternalIds").mockImplementation(async (externalIds: string[]) => {
+    const ids: (string | null)[] = await find(externalIds);
+    return ids.map((id, index) => externalIds[index] === "email:address:shared@example.com" ? null : id);
   });
   let created = false;
-  spy(graph, "apply_batch").mockImplementation((batch: GraphBatchInput) => {
-    if (batch.entities.some((entity) => entity.anchor === "email:address:shared@example.com")) {
+  spy(graph, "applyBatch").mockImplementation((batch: GraphBatchInput) => {
+    if (batch.entities.some((item) => item.externalId === "email:address:shared@example.com")) {
       if (created) throw new Error("sync disabled for shared recipient");
       created = true;
     }
     return apply(batch);
   });
-  const mod = mountModule(EmailModule, { graph, ctx: { extension_id: "email" } }).module;
+  const mod = mountModule(EmailModule, { graph, ctx: { extensionId: "email" } }).module;
   await mod.ingest({ envelopes: Array.from({ length: 100 }, (_, index) => env({
-    remote_id: `m${index}`, payload: msgPayload({ to_addresses: `shared@example.com, recipient${index}@example.com` }),
+    remoteId: `m${index}`, payload: msgPayload({ to_addresses: `shared@example.com, recipient${index}@example.com` }),
   })) });
   expect(created).toBe(true);
-  expect(spy(graph, "apply_batch").mock.calls.length).toBeGreaterThan(1);
+  expect(spy(graph, "applyBatch").mock.calls.length).toBeGreaterThan(1);
 });

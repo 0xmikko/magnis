@@ -143,7 +143,7 @@ describe("TelegramChatView theme isolation", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Chat settings" }));
     expect(await screen.findByRole("button", { name: "Start synchronization" })).not.toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Enable indexing" }));
-    await waitFor(() => { expect(rpc).toHaveBeenCalledWith("graph.entity.update", { entity_id: "chat-1", indexed: true }); });
+    await waitFor(() => { expect(rpc).toHaveBeenCalledWith("graph.entity.update", { entityId: "chat-1", indexed: true }); });
     expect(syncEnabled).toBe(false);
     client.clear();
   });

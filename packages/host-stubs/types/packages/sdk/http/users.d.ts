@@ -21,8 +21,8 @@ export declare const userProfileContract: import("./contract.js").HttpContract<"
     }, z.core.$strict>;
     workspaceProvisioning: z.ZodOptional<z.ZodObject<{
         status: z.ZodEnum<{
-            ready: "ready";
             failed: "failed";
+            ready: "ready";
             provisioning: "provisioning";
         }>;
         progress: z.ZodNullable<z.ZodObject<{
@@ -61,8 +61,8 @@ export declare const updateUserProfileContract: import("./contract.js").HttpCont
     }, z.core.$strict>;
     workspaceProvisioning: z.ZodOptional<z.ZodObject<{
         status: z.ZodEnum<{
-            ready: "ready";
             failed: "failed";
+            ready: "ready";
             provisioning: "provisioning";
         }>;
         progress: z.ZodNullable<z.ZodObject<{

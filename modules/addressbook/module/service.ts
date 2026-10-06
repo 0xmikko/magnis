@@ -2,7 +2,8 @@
 // `addressbook` surface: provider address book contacts become cards, and a
 // card finds the person it belongs to by its email addresses.
 
-import { type BatchEntityInput, type GraphService, type PluginDeps, type SourceEnvelope, syncComplete, syncHandler, unseenSourceReplicas } from "@magnis/plugin-sdk";
+import { type GraphService, type PluginDeps, syncComplete, syncHandler, unseenSourceReplicas } from "@magnis/plugin-sdk";
+import type { BatchEntityInput, JsonObject, Link, SyncEnvelope, SyncHandlerParams, SyncHookParams, SyncReceipt, SyncReconcileAnswer } from "@magnis/sdk";
 import type { GoogleContactPayload } from "../types.ts";
 import { INGEST_CHUNK, replicaDict } from "./helpers.ts";
 import { CARD } from "../schema.ts";
@@ -21,27 +22,18 @@ export class AddressbookModule {
   // ── sync ingest (@syncHandler) ────────────────────────────────
   // Invoked by the host PluginModuleController bridge (`addressbook.__sync__`)
   // with a WHOLE page of `addressbook` envelopes (Google People API
-  // snapshots). A page's contacts fold into apply_batch chunks — one card per
-  // contact plus the address nodes it lists, in ONE atomic graph.apply_batch
+  // snapshots). A page's contacts fold into applyBatch chunks — one card per
+  // contact plus the address nodes it lists, in ONE atomic graph.applyBatch
   // per chunk.
   //
-  // Idempotency: the entity key AND the anchors are the envelope
-  // `remote_id` (`gpeople:{stable_id}`), so re-ingesting the same contact
-  // upserts on that key — no duplicate entity (apply_batch resolves-or-creates
-  // by anchor, like email's message ingest).
+  // Idempotency: the entity key AND the external ids are the envelope
+  // `remoteId` (`gpeople:{stable_id}`), so re-ingesting the same contact
+  // upserts on that key — no duplicate entity (applyBatch resolves-or-creates
+  // by external id, like email's message ingest). `generation` is the pass
+  // the worker is in; a Source effect outside a worker states nothing.
   @syncHandler("addressbook")
-  async ingest(params: {
-    envelopes?: SourceEnvelope[];
-    command?: "bootstrap" | "catch_up" | "backfill";
-    /** The pass the worker is in; absent for a Source effect outside a
-     * worker, which states nothing. */
-    generation?: string;
-  }): Promise<{
-    dropped_remote_ids: string[];
-    trigger_checks: [];
-    plan?: Record<string, { total: number; skipped: number }>;
-  }> {
-    const envelopes = Array.isArray(params.envelopes) ? params.envelopes : [];
+  async ingest(params: SyncHandlerParams): Promise<SyncReceipt> {
+    const envelopes = params.envelopes;
     const dropped: string[] = [];
     // The sync time: the moment the links this page opens begin.
     const at = new Date().toISOString();
@@ -53,30 +45,31 @@ export class AddressbookModule {
     const fullPass = params.command === "bootstrap";
     const plan = { total: 0, skipped: 0 };
 
-    // Fold by remote_id so two envelopes for the same resourceName collapse to
+    // Fold by remoteId so two envelopes for the same resourceName collapse to
     // ONE entity in the batch (last-write-wins on payload). Native parity: an
     // envelope with no owning user is skipped — the dispatcher couldn't resolve
-    // user_id, so we cannot user-scope the write.
-    const byRemoteId = new Map<string, SourceEnvelope>();
+    // userId, so we cannot user-scope the write.
+    const byRemoteId = new Map<string, SyncEnvelope>();
     for (const env of envelopes) {
-      if (!env.user_id) continue;
+      if (!env.userId) continue;
       if (env.kind === "delete") {
         if (await this.deleteGoogleReplica(env, at) && stated && !fullPass) plan.total -= 1;
         continue;
       }
       if (env.kind !== "snapshot" && env.kind !== "live") continue;
-      if (!env.remote_id) continue;
-      if (env.payload.entity_type === "list") {
-        const total = env.payload.total_people;
-        const skipped = env.payload.skipped;
+      if (!env.remoteId) continue;
+      const payload = env.payload as JsonObject;
+      if (payload.entity_type === "list") {
+        const total = payload.total_people;
+        const skipped = payload.skipped;
         if (typeof total === "number" && stated && fullPass) plan.total += total;
         if (typeof skipped === "number" && stated && fullPass) plan.skipped += skipped;
         continue;
       }
-      byRemoteId.set(env.remote_id, env);
+      byRemoteId.set(env.remoteId, env);
     }
 
-    let chunk: SourceEnvelope[] = [];
+    let chunk: SyncEnvelope[] = [];
     const flush = async (): Promise<void> => {
       if (chunk.length > 0) {
         plan.total += await this.ingestContactBatch(chunk, params.generation, fullPass, at);
@@ -90,17 +83,23 @@ export class AddressbookModule {
     }
     await flush();
 
-    if (!stated) return { dropped_remote_ids: dropped, trigger_checks: [] };
-    return { dropped_remote_ids: dropped, trigger_checks: [], plan: { [CARD]: plan } };
+    return {
+      droppedRemoteIds: dropped,
+      triggerChecks: [],
+      plan: stated ? { [CARD]: plan } : null,
+      excluded: [],
+    };
   }
 
   /** @tested-by: tst_module_google_002, tst_module_addressbook_006 */
-  private async deleteGoogleReplica(env: SourceEnvelope, at: string): Promise<boolean> {
-    if (!env.remote_id) return false;
-    const id = await this.graph.find_by_anchor(env.remote_id);
+  private async deleteGoogleReplica(env: SyncEnvelope, at: string): Promise<boolean> {
+    if (!env.remoteId) return false;
+    const id = await this.graph.findByExternalId(env.remoteId);
     if (!id) return false;
-    const replica = await this.graph.get_entity(id);
-    if (replica?.schema_id !== CARD || replica.properties?.source_id !== env.source_id || replica.properties.account_id !== env.account_id) return false;
+    const replica = await this.graph.getEntity(id);
+    if (replica?.schemaId !== CARD) return false;
+    const properties = replica.properties as Record<string, unknown>;
+    if (properties.source_id !== env.sourceId || properties.account_id !== env.accountId) return false;
     await this.archiveCard(id, at);
     return true;
   }
@@ -109,26 +108,24 @@ export class AddressbookModule {
    * touch a person; only this account's cards depart.
    * @tested-by: tst_module_google_002, tst_module_addressbook_006 */
   @syncComplete()
-  async onSyncComplete(params: { source_id: string; account_id: string; generation: string }): Promise<{
-    departed: string[];
-    plan: Record<string, { total: number; skipped: number }>;
-  }> {
-    if (!params.source_id || !params.account_id || !params.generation) {
+  async onSyncComplete(params: SyncHookParams): Promise<SyncReconcileAnswer> {
+    if (!params.sourceId || !params.accountId || !params.generation) {
       throw new Error("addressbook sync complete requires source, account and generation");
     }
     const at = new Date().toISOString();
-    for (const card of await unseenSourceReplicas(this.graph, CARD, params.source_id, params.account_id, params.generation)) {
+    for (const card of await unseenSourceReplicas(this.graph, CARD, params.sourceId, params.accountId, params.generation)) {
       await this.archiveCard(card.id, at);
     }
     return { departed: [], plan: { [CARD]: { total: 0, skipped: 0 } } };
   }
 
-  /// One chunk → one apply_batch. Each contact becomes a card anchored on its
-  /// stable resourceName-derived remote_id.
-  private async ingestContactBatch(envelopes: SourceEnvelope[], generation: string | undefined, fullPass: boolean, at: string): Promise<number> {
+  /// One chunk → one applyBatch. Each contact becomes a card whose external
+  /// id is its stable resourceName-derived remoteId.
+  private async ingestContactBatch(envelopes: SyncEnvelope[], generation: string | undefined, fullPass: boolean, at: string): Promise<number> {
     // 1. Fold envelopes into rows: payload + its lowercased addresses.
     interface Row {
       remoteId: string;
+      payload: JsonObject;
       p: GoogleContactPayload;
       addresses: string[];
       sourceId: string;
@@ -136,18 +133,19 @@ export class AddressbookModule {
     }
     const rows: Row[] = [];
     for (const env of envelopes) {
-      const remoteId = env.remote_id;
+      const remoteId = env.remoteId;
       if (!remoteId) continue;
-      if (!env.source_id || !env.account_id) throw new Error("addressbook ingest requires source and account");
-      const p = env.payload as GoogleContactPayload;
+      if (!env.sourceId || !env.accountId) throw new Error("addressbook ingest requires source and account");
+      const payload = env.payload as JsonObject;
+      const p = payload as GoogleContactPayload;
       const addresses = cardAddresses(p);
-      rows.push({ remoteId, p, addresses, sourceId: env.source_id, accountId: env.account_id });
+      rows.push({ remoteId, payload, p, addresses, sourceId: env.sourceId, accountId: env.accountId });
     }
     if (rows.length === 0) return 0;
 
-    const deltaAnchors = generation && !fullPass ? rows.map((row) => row.remoteId) : [];
-    const known = deltaAnchors.length > 0 ? await this.graph.find_by_anchors(deltaAnchors) : [];
-    const existing = new Set(deltaAnchors.filter((_, index) => known[index]));
+    const deltaExternalIds = generation && !fullPass ? rows.map((row) => row.remoteId) : [];
+    const known = deltaExternalIds.length > 0 ? await this.graph.findByExternalIds(deltaExternalIds) : [];
+    const existing = new Set(deltaExternalIds.filter((_, index) => known[index]));
 
     // 2. Address nodes and cards share the sync transaction. A held address
     // keeps its synchronization choice; a new one takes the email owner's rule.
@@ -156,29 +154,30 @@ export class AddressbookModule {
     const allAddresses = [...new Set(rows.flatMap((r) => r.addresses))];
     const addressNodes = await addressFragment(this.graph, new Map(allAddresses.map((address) => [address, null])));
 
-    // 3. Card nodes: fields-as-last-synced dictionaries, anchored
-    // by the stable remote_id — ONE batch, and the sync never writes the
+    // 3. Card nodes: fields-as-last-synced dictionaries, identified
+    // by the stable remoteId — ONE batch, and the sync never writes the
     // person.
-    const entities: BatchEntityInput[] = [...addressNodes.entities, ...rows.map(({ remoteId, p, sourceId, accountId }) => {
+    const entities: BatchEntityInput[] = [...addressNodes.entities, ...rows.map(({ remoteId, payload, p, sourceId, accountId }) => {
       const name = typeof p.display_name === "string" ? p.display_name : "";
       return {
         key: remoteId,
-        schema_id: CARD,
+        schemaId: CARD,
         name,
-        idx: name.toLowerCase() || undefined,
-        anchor: remoteId,
-        properties: { ...replicaDict(p), source_id: sourceId, account_id: accountId, ...(generation ? { sync_pass: generation } : {}) },
+        idx: name.toLowerCase() || null,
+        date: null,
+        externalId: remoteId,
+        properties: { ...replicaDict(payload), source_id: sourceId, account_id: accountId, ...(generation ? { sync_pass: generation } : {}) },
       };
     })];
-    const batch = await this.graph.apply_batch({ entities, refs: addressNodes.refs, links: [] });
+    const batch = await this.graph.applyBatch({ entities, refs: addressNodes.refs, links: [] });
     const addressId = new Map(allAddresses.map((address) => {
       const id = batch.ids[`addr:${address}`];
       if (!id) throw new Error(`addressbook ingest: address ${address} was not resolved`);
       return [address, id] as const;
     }));
-    const created = deltaAnchors.filter((anchor) => !existing.has(anchor) && batch.ids[anchor]).length;
+    const created = deltaExternalIds.filter((externalId) => !existing.has(externalId) && batch.ids[externalId]).length;
 
-    // 4. Owners, on identity-grade anchors only. Fuzzy name
+    // 4. Owners, on identity-grade external ids only. Fuzzy name
     // matching is never automatic.
     for (const row of rows) {
       const replicaId = batch.ids[row.remoteId];
@@ -228,12 +227,12 @@ export class AddressbookModule {
     for (const person of owners) await this.endUnlistedAddresses(person, at);
   }
 
-  /// A contact that left the provider: its card is archived — `delete_entity`
+  /// A contact that left the provider: its card is archived — `deleteEntity`
   /// archives, it never deletes — and its owners' address links are re-checked
   /// without it. The owners are read first: an archived card has no links.
   private async archiveCard(cardId: string, at: string): Promise<void> {
     const owners = await this.identityOwners(cardId);
-    await this.graph.delete_entity(cardId);
+    await this.graph.deleteEntity(cardId);
     for (const person of owners) await this.endUnlistedAddresses(person, at);
   }
 
@@ -242,14 +241,14 @@ export class AddressbookModule {
   /// hand, by email or by another module is never touched. Archived cards
   /// are gone from the person's links, so they list nothing.
   private async endUnlistedAddresses(personId: string, at: string): Promise<void> {
-    const links = (await this.graph.list_links_for_entity(personId, "identity"))
-      .filter((l) => l.from_id === personId && l.validUntil === null);
+    const links = (await this.graph.listLinksForEntity(personId, "identity"))
+      .filter((l) => l.from === personId && l.validUntil === null);
     if (links.length === 0) return;
-    const reached = await this.graph.get_entities([...new Set(links.map((l) => l.to_id))]);
-    const listed = new Set(reached.filter((e) => e.schema_id === CARD).flatMap((e) => cardAddresses(e.properties)));
-    const unlisted = new Set(reached.filter((e) => e.schema_id === ADDRESS_SCHEMA && !listed.has(e.name)).map((e) => e.id));
+    const reached = await this.graph.getEntities([...new Set(links.map((l) => l.to))]);
+    const listed = new Set(reached.filter((e) => e.schemaId === CARD).flatMap((e) => cardAddresses(e.properties)));
+    const unlisted = new Set(reached.filter((e) => e.schemaId === ADDRESS_SCHEMA && (e.name === null || !listed.has(e.name))).map((e) => e.id));
     for (const link of links) {
-      if (unlisted.has(link.to_id) && link.metadata?.producer === PRODUCER) await this.graph.end_link(link.id, at);
+      if (unlisted.has(link.to) && producedHere(link)) await this.graph.endLink(link.id, at);
     }
   }
 
@@ -257,10 +256,10 @@ export class AddressbookModule {
   /// ended links too, so only a link without `validUntil` counts. Companies
   /// hold identity links to addresses too — filtered to persons.
   private async identityOwners(entityId: string): Promise<string[]> {
-    const links = await this.graph.list_links_for_entity(entityId, "identity");
-    const from = [...new Set(links.filter((l) => l.to_id === entityId && l.validUntil === null).map((l) => l.from_id))];
+    const links = await this.graph.listLinksForEntity(entityId, "identity");
+    const from = [...new Set(links.filter((l) => l.to === entityId && l.validUntil === null).map((l) => l.from))];
     if (from.length === 0) return [];
-    return (await this.graph.get_entities(from)).filter((e) => e.schema_id === CONTACT).map((e) => e.id);
+    return (await this.graph.getEntities(from)).filter((e) => e.schemaId === CONTACT).map((e) => e.id);
   }
 
   /// A new person: the name vouch and an empty dictionary — the person's card
@@ -275,8 +274,8 @@ export class AddressbookModule {
         : undefined) ??
       firstAddress ??
       "Contact";
-    const person = await this.graph.create_entity({
-      schema_id: CONTACT,
+    const person = await this.graph.createEntity({
+      schemaId: CONTACT,
       name,
       idx: name.toLowerCase(),
     });
@@ -287,21 +286,29 @@ export class AddressbookModule {
   /// producer, so a later sync ends only its own links, and dated from the
   /// sync, so a returning address opens a new period beside the ended one.
   private async openLink(fromId: string, toId: string, at: string): Promise<void> {
-    await this.graph.add_link({
-      from_id: fromId,
-      to_id: toId,
+    await this.graph.addLink({
+      from: fromId,
+      to: toId,
       kind: "identity",
       metadata: { producer: PRODUCER },
       validFrom: at,
-      validUntil: null,
     });
   }
 }
 
+/** Whether the address book wrote this link: its metadata names the producer. */
+function producedHere(link: Link): boolean {
+  if (link.origin !== "canonical") return false;
+  const metadata = link.metadata;
+  return metadata !== null && typeof metadata === "object" && !Array.isArray(metadata) && metadata.producer === PRODUCER;
+}
+
 /** The addresses a card lists, as the address nodes spell them: trimmed,
  * lowercased, once each. Reads the payload and the stored card alike. */
-function cardAddresses(card: { emails?: unknown } | undefined): string[] {
-  const emails = Array.isArray(card?.emails) ? (card.emails as { address?: unknown }[]) : [];
+function cardAddresses(card: unknown): string[] {
+  const emails = card !== null && typeof card === "object" && "emails" in card && Array.isArray(card.emails)
+    ? (card.emails as { address?: unknown }[])
+    : [];
   return [
     ...new Set(
       emails

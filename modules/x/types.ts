@@ -1,5 +1,6 @@
-// X plugin — types. Mirrors the manifest schemas + the canonical source
-// envelope. X and LinkedIn connectors both feed these via the `x` surface.
+// X plugin — types. Mirrors the manifest schemas; the source envelope is the
+// SDK `SyncEnvelope`. X and LinkedIn connectors both feed these via the `x`
+// surface.
 
 export type Platform = "x" | "linkedin";
 

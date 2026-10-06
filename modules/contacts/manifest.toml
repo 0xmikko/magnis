@@ -10,7 +10,7 @@
 id = "contacts"
 version = "0.1.0"
 # SDK contract version this manifest targets (host accepts 0.x).
-magnis_api_version = "0.1.0"
+magnis_api_version = "0.2.0"
 title = "Contacts"
 summary = "People from every source, merged into one identity."
 # Reverse-domain publisher identity.

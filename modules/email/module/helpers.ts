@@ -3,21 +3,21 @@
 // shaping of source `Data` payloads into wire DTOs, mirroring the native module
 // (extract_sender / extract_preview / strip_body_html / MessageListItem).
 
-import type { RawEntity } from "@magnis/plugin-sdk";
+import type { Entity, JsonValue } from "@magnis/sdk";
 import type { MessageListItem } from "../types.ts";
 
-export type Data = Record<string, unknown>;
+export type Data = Record<string, JsonValue>;
 
 // PGlite is single-connection, so a sync page must be applied in CHUNKS — at
 // most this many TOTAL batch entities (messages + their unique addresses) per
-// apply_batch — so each transaction is short and other RPCs aren't starved.
+// applyBatch — so each transaction is short and other RPCs aren't starved.
 export const INGEST_CHUNK = 200;
 
 // Placeholder sender for agent-composed outgoing mail (native parity — the real
 // from-address is stamped by the connector when the message actually sends).
 export const OUTGOING_FROM = "user@magnis.local";
 
-export const str = (d: Data, k: string): string | null => {
+export const str = (d: Readonly<Record<string, unknown>>, k: string): string | null => {
   const v = d[k];
   return typeof v === "string" && v.length > 0 ? v : null;
 };
@@ -72,7 +72,7 @@ export function recipientsWithRoles(p: Data): { addr: string; role: string }[] {
 }
 
 /// Every unique address (sender + all recipients) a message contributes — used
-/// to size the apply_batch chunk by TOTAL entities, not message count.
+/// to size the applyBatch chunk by TOTAL entities, not message count.
 export function addressesOf(p: Data): string[] {
   const set = new Set<string>(recipientsOf(p));
   const from = lowerAddr(str(p, "from_address"));
@@ -108,17 +108,17 @@ function stripBodyHtml(d: Data): Data {
   return rest;
 }
 
-export function buildListItem(entity: RawEntity, d: Data): MessageListItem {
-  const created = entity.created_at ?? "";
+export function buildListItem(entity: Entity, d: Data): MessageListItem {
+  const created = entity.createdAt;
   return {
     id: entity.id,
-    schema_id: entity.schema_id,
+    schemaId: entity.schemaId,
     sender: senderOf(d),
     subject: entity.name && entity.name.length > 0 ? entity.name : null,
     preview: previewOf(d),
     channel: "email",
     timestamp: str(d, "sent_at") ?? created,
-    created_at: created,
+    createdAt: created,
     metadata: stripBodyHtml(d),
   };
 }

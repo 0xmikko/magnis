@@ -1,28 +1,14 @@
 /**
  * File upload utility — picks a file via native dialog (Tauri) or
- * HTML file input (browser), then uploads it to the backend.
+ * HTML file input (browser), then uploads it to the backend. Both paths
+ * parse the SDK answer once: `file.upload` through its RPC contract, and
+ * `POST /files/upload` through its HTTP contract.
  */
+import { type FileUploadResult } from "@magnis/sdk";
 import type { AppTransport } from "../runtime/contracts/transport";
-export interface UploadedFile {
-    readonly id: string;
-    readonly name: string;
-    readonly mimeType: string;
-    readonly sizeBytes: number;
-}
-/** Map RPC response (file.upload) to UploadedFile. */
-export declare function mapRpcResult(result: {
-    id: string;
-    name: string;
-    mime_type: string;
-    size_bytes: number;
-}): UploadedFile;
-/** Map HTTP response (POST /files/upload) to UploadedFile. */
-export declare function mapHttpResult(result: {
-    entity_id: string;
-    name: string;
-    mime_type: string;
-    size_bytes: number;
-}): UploadedFile;
+/** The file either upload path created: the `file.upload` answer's fields
+ * that the multipart answer carries too. */
+export type UploadedFile = Readonly<Pick<FileUploadResult, "id" | "name" | "mimeType" | "sizeBytes">>;
 /** Extract filename from an absolute path (handles both / and \ separators). */
 export declare function extractFilename(filePath: string): string;
 /**

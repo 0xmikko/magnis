@@ -97,7 +97,7 @@ export function TelegramDetailWrapper({
           ? "Synchronization setting saved. Applying…"
           : `Synchronization setting saved, but could not be applied: ${result.application.message}`);
       } else {
-        await runtime.transport.rpc("graph.entity.update", { entity_id: entityId, indexed: !selectedChat.isIndexed });
+        await runtime.transport.rpc("graph.entity.update", { entityId, indexed: !selectedChat.isIndexed });
         setSettingsStatus("Indexing setting saved.");
       }
       await Promise.all([

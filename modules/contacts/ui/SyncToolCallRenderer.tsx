@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { BaseToolCallCard } from "@magnis/host/base";
 import { useAppRuntime, type AgentRendererProps, type ToolCallRendererPayload } from "@magnis/host/runtime";
 import { parseResult } from "./ContactMergeRenderer";
-import type { RawEntity } from "@magnis/plugin-sdk";
+import type { RpcOutputFor, rpcContracts } from "@magnis/sdk";
 
 function record(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null;
@@ -47,7 +47,7 @@ export function SyncToolCallRenderer({ payload }: Pick<AgentRendererProps<ToolCa
   const valid = typeof target === "string" && target.length > 0 && typeof enabled === "boolean";
   const entity = useQuery({
     queryKey: ["entity-properties", target],
-    queryFn: () => runtime.transport.rpc<RawEntity | null>("graph.entity.get", { id: target }),
+    queryFn: () => runtime.transport.rpc<RpcOutputFor<(typeof rpcContracts)["graph.entity.get"]>>("graph.entity.get", { id: target }),
     enabled: valid && !migration,
   });
   const scope = toolCall.toolBinding?.entity === "contacts.person"
@@ -59,14 +59,14 @@ export function SyncToolCallRenderer({ payload }: Pick<AgentRendererProps<ToolCa
   const failedResult = summary?.failed && toolResult !== undefined
     ? { ...toolResult, result: { error: summary.lines.join("; ") } } : toolResult;
   const action = enabled === true ? "Start" : "Stop";
-  const unavailable = !valid || (!migration && (entity.isPending || entity.isError || entity.data === null));
+  const unavailable = !valid || (!migration && (entity.isPending || entity.isError));
 
   return <BaseToolCallCard icon="repeat-2" variant="sky"
     title={`${migration ? "Resolve migration: " : ""}${action} synchronization`}
     status={toolCall.status} toolResult={failedResult} superseded={superseded} isAllowlisted={isAllowlisted}
     primaryLabel={action} primaryIcon="check" doneLabel="Saved"
     onApprove={onApprove} onDeny={onDeny} onAllowlistToggle={onAllowlistToggle}
-    customActions={unavailable ? <div role="alert">{!valid ? "Invalid synchronization target or choice" : entity.isError ? entity.error.message : entity.data === null ? "Target not found" : "Loading target…"}</div> : undefined}
+    customActions={unavailable ? <div role="alert">{!valid ? "Invalid synchronization target or choice" : entity.isError ? entity.error.message : "Loading target…"}</div> : undefined}
   >
     <p>{migration ? String(target) : entity.data?.name}</p>
     <p>{scope}</p>

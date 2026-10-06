@@ -24,7 +24,7 @@ import { ContactInfoColumn, type ContactReplica } from "../ContactInfoColumn";
 function replica(schemaId: string, properties: Record<string, unknown>): ContactReplica {
   return {
     id: `r-${schemaId}-${JSON.stringify(properties).length.toString()}`,
-    schema_id: schemaId,
+    schemaId,
     name: null,
     properties,
   };

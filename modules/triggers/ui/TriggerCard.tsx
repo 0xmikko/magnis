@@ -14,7 +14,7 @@ import { useTriggerDetail, type WatchedEntityRef } from "./useTriggerDetail";
 
 interface ResolvedEntity {
   readonly id: string;
-  readonly schema_id: string;
+  readonly schemaId: string;
   readonly data: Record<string, unknown>;
 }
 
@@ -36,7 +36,7 @@ function useResolvedWatches(
           .rpc<Record<string, unknown>>("graph.entity.get", { id: w.id })
           .then((e) => ({
             id: w.id,
-            schema_id: (e.schema_id as string | undefined) ?? "",
+            schemaId: (e.schemaId as string | undefined) ?? "",
             data: e,
           }))
           .catch(() => null),
@@ -73,8 +73,8 @@ export function TriggerCard(props: EntityRendererProps): JSX.Element {
   const detail = useTriggerDetail(entityId, runtime);
   const status = detail?.status ?? null;
   const { expanded } = useContext(ExpansionContext);
-  const watches = useResolvedWatches(expanded ? detail?.watched_entities : undefined, runtime);
-  const watchedNames = detail?.watched_entities.map((e) => e.name ?? "?") ?? [];
+  const watches = useResolvedWatches(expanded ? detail?.watchedEntities : undefined, runtime);
+  const watchedNames = detail?.watchedEntities.map((e) => e.name ?? "?") ?? [];
   // INV-UI-1 (plan Stage 5): a scheduled trigger's "when" IS its cron — a
   // watch-less scheduled trigger must never render as a card with no
   // subtitle at all.
@@ -118,7 +118,7 @@ export function TriggerCard(props: EntityRendererProps): JSX.Element {
                     {watches.map((e) => (
                       <EntityCardRenderer
                         key={e.id}
-                        schemaId={e.schema_id}
+                        schemaId={e.schemaId}
                         data={e.data}
                         runtime={runtime}
                       />
@@ -127,22 +127,22 @@ export function TriggerCard(props: EntityRendererProps): JSX.Element {
                 </div>
               </div>
             )}
-            {detail.gate_prompt && (
+            {detail.gatePrompt && (
               <div className="flex gap-2">
                 <span className="w-20 shrink-0 text-content-tertiary">Gate</span>
-                <span className="min-w-0 flex-1 break-words text-content">{detail.gate_prompt}</span>
+                <span className="min-w-0 flex-1 break-words text-content">{detail.gatePrompt}</span>
               </div>
             )}
-            {detail.action_prompt && (
+            {detail.actionPrompt && (
               <div className="flex gap-2">
                 <span className="w-20 shrink-0 text-content-tertiary">Action</span>
                 <span className="min-w-0 flex-1 break-words text-content">
-                  {detail.action_prompt}
+                  {detail.actionPrompt}
                 </span>
               </div>
             )}
-            {detail.firing_count > 0 && (
-              <div className="text-[10px] text-content-tertiary">Fired {detail.firing_count}x</div>
+            {detail.firingCount > 0 && (
+              <div className="text-[10px] text-content-tertiary">Fired {detail.firingCount}x</div>
             )}
           </div>
         )}

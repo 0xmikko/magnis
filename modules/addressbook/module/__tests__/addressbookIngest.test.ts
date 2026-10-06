@@ -1,12 +1,12 @@
 // Address book sync ingest (@syncHandler "addressbook"): a page of Google
-// contacts folds into ONE apply_batch of addressbook.card nodes (anchored by
-// remote_id, dictionary = fields as last synced) and the email.address nodes
+// contacts folds into ONE applyBatch of addressbook.card nodes (identified by
+// remoteId, dictionary = fields as last synced) and the email.address nodes
 // they list. A card then finds its person by those addresses — none holds
 // one: a new person; one does: attach; several do: each gets an identity link
 // to the card and nothing merges. The sync never writes the person.
 //
-// The graph below keeps state across syncs the way the host does: anchors
-// resolve, `end_link` dates a link and keeps the row, `delete_entity`
+// The graph below keeps state across syncs the way the host does: external
+// ids resolve, `endLink` dates a link and keeps the row, `deleteEntity`
 // archives, and link reads return ended links but not archived endpoints.
 
 /**
@@ -26,8 +26,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AddLinkParams, BatchEntityInput, GraphBatchInput, GraphService, LinkSummary, RawEntity, SourceEnvelope } from "@magnis/plugin-sdk";
-import { mockGraph, mountModule, sourceEnvelope, type MockGraph } from "@magnis/testkit/module";
+import type { GraphService } from "@magnis/plugin-sdk";
+import type { AddLinkParams, BatchEntityInput, Entity, GraphBatchInput, JsonObject, Link, SyncEnvelope } from "@magnis/sdk";
+import { entity, link, mockGraph, mountModule, sourceEnvelope, type MockGraph } from "@magnis/testkit/module";
 import { AddressbookModule } from "../service.ts";
 
 const T0 = "2026-03-14T09:00:00.000Z";
@@ -44,10 +45,10 @@ afterEach(() => {
 
 interface WorldNode {
   id: string;
-  schema_id: string;
+  schemaId: string;
   name: string;
-  anchor?: string;
-  properties: Record<string, unknown>;
+  externalId?: string;
+  properties: JsonObject;
   /** A synchronizable node's saved choice. */
   syncEnabled?: boolean;
   archived: boolean;
@@ -55,24 +56,24 @@ interface WorldNode {
 
 interface WorldLink {
   id: string;
-  from_id: string;
-  to_id: string;
+  from: string;
+  to: string;
   kind: string;
   validFrom: string | null;
   validUntil: string | null;
-  metadata: Record<string, unknown> | null;
+  metadata: JsonObject | null;
 }
 
 interface World {
   graph: MockGraph;
   nodes: Map<string, WorldNode>;
   links: WorldLink[];
-  /** Every add_link call, as the module made it. */
+  /** Every addLink call, as the module made it. */
   added: AddLinkParams[];
-  minted: { schema_id: string; name: string }[];
+  minted: { schemaId: string; name: string }[];
 }
 
-const LINK_FIELDS = ["from_id", "to_id", "kind", "metadata", "validFrom", "validUntil"];
+const LINK_FIELDS = ["from", "to", "kind", "metadata", "validFrom", "validUntil"];
 
 /** The email owner's settings the world answers with; its manifest creates
  * new senders synchronized. */
@@ -84,9 +85,9 @@ function addressBookWorld(seed: {
   emailSettings?: Record<string, string>;
 } = {}): World {
   const nodes = new Map<string, WorldNode>((seed.nodes ?? []).map((node) => [node.id, { ...node, archived: false }]));
-  const links: WorldLink[] = (seed.links ?? []).map((link, index) => ({ ...link, id: `seed-${String(index)}` }));
+  const links: WorldLink[] = (seed.links ?? []).map((held, index) => ({ ...held, id: `seed-${String(index)}` }));
   const added: AddLinkParams[] = [];
-  const minted: { schema_id: string; name: string }[] = [];
+  const minted: { schemaId: string; name: string }[] = [];
   let hubSeq = 0;
   const isLive = (id: string): boolean => nodes.get(id)?.archived === false;
   const live = (id: string): WorldNode => {
@@ -94,86 +95,95 @@ function addressBookWorld(seed: {
     if (node === undefined || node.archived) throw new Error(`Not found: Entity ${id}`);
     return node;
   };
-  const byAnchor = (anchor: string): WorldNode | undefined =>
-    [...nodes.values()].find((node) => node.anchor === anchor && !node.archived);
-  const raw = (node: WorldNode): RawEntity => ({ id: node.id, schema_id: node.schema_id, name: node.name, indexed: true, properties: node.properties });
+  const byExternalId = (externalId: string): WorldNode | undefined =>
+    [...nodes.values()].find((node) => node.externalId === externalId && !node.archived);
+  const raw = (node: WorldNode): Entity => entity(node.id, node.name, {
+    schemaId: node.schemaId, indexed: true, properties: node.properties,
+    source: { source: "google", account: "acct-1", externalId: node.externalId ?? node.id },
+  });
   const overrides: Partial<GraphService> = {
-    apply_batch: (batch: GraphBatchInput) => {
+    applyBatch: (batch: GraphBatchInput) => {
       const ids: Record<string, string> = {};
       let created = 0;
-      for (const entity of batch.entities) {
-        const found = [...nodes.values()].find((node) => node.anchor !== undefined && node.anchor === entity.anchor);
-        const id = found?.id ?? (entity.schema_id === "email.address" ? `addr-${entity.name ?? ""}` : `id-${entity.key}`);
+      for (const item of batch.entities as readonly BatchEntityInput[]) {
+        const found = [...nodes.values()].find((node) => node.externalId !== undefined && node.externalId === item.externalId);
+        const id = found?.id ?? (item.schemaId === "email.address" ? `addr-${item.name ?? ""}` : `id-${item.key}`);
         if (found === undefined) created += 1;
         nodes.set(id, {
-          id, schema_id: entity.schema_id, name: entity.name ?? "", anchor: entity.anchor,
-          properties: entity.properties ?? {}, syncEnabled: entity.syncEnabled, archived: found?.archived ?? false,
+          id, schemaId: item.schemaId, name: item.name ?? "", ...(item.externalId === null ? {} : { externalId: item.externalId }),
+          properties: (item.properties ?? {}) as JsonObject, ...(item.syncEnabled === undefined ? {} : { syncEnabled: item.syncEnabled }),
+          archived: found?.archived ?? false,
         });
-        ids[entity.key] = id;
+        ids[item.key] = id;
       }
-      for (const ref of batch.refs ?? []) {
-        const found = ref.anchor === undefined ? undefined : byAnchor(ref.anchor);
-        if (found === undefined) throw new Error(`apply_batch: ref ${ref.key} resolves to nothing`);
+      for (const ref of batch.refs) {
+        const found = ref.externalId === null ? undefined : byExternalId(ref.externalId);
+        if (found === undefined) throw new Error(`applyBatch: ref ${ref.key} resolves to nothing`);
         ids[ref.key] = found.id;
       }
-      return Promise.resolve({ ids, created, updated: batch.entities.length - created, links_added: 0, dropped_keys: [] });
+      return Promise.resolve({ ids, created, updated: batch.entities.length - created, linksAdded: 0, droppedKeys: [], resolved: [] });
     },
     moduleSettings: (forSchema?: string) => {
       if (forSchema !== "email.address") throw new Error(`moduleSettings: unexpected schema ${String(forSchema)}`);
       return Promise.resolve(seed.emailSettings ?? EMAIL_SETTINGS);
     },
-    find_by_anchor: (anchor: string) => Promise.resolve(byAnchor(anchor)?.id ?? null),
-    find_by_anchors: (anchors: string[]) => Promise.resolve(anchors.map((anchor) => byAnchor(anchor)?.id ?? null)),
-    get_entity: (id: string) => Promise.resolve(isLive(id) ? raw(live(id)) : null),
-    get_entities: (ids: string[]) => Promise.resolve(ids.map((id) => raw(live(id)))),
-    create_entity: (input) => {
+    findByExternalId: (externalId: string) => Promise.resolve(byExternalId(externalId)?.id ?? null),
+    findByExternalIds: (externalIds: string[]) => Promise.resolve(externalIds.map((externalId) => byExternalId(externalId)?.id ?? null)),
+    getEntity: (id: string) => Promise.resolve(isLive(id) ? raw(live(id)) : null),
+    getEntities: (ids: string[]) => Promise.resolve(ids.map((id) => raw(live(id)))),
+    createEntity: (input) => {
       const id = `hub-${String(hubSeq++)}`;
-      nodes.set(id, { id, schema_id: input.schema_id, name: input.name, properties: {}, archived: false });
-      minted.push({ schema_id: input.schema_id, name: input.name });
+      nodes.set(id, { id, schemaId: input.schemaId, name: input.name, properties: {}, archived: false });
+      minted.push({ schemaId: input.schemaId, name: input.name });
       return Promise.resolve(raw(live(id)));
     },
-    add_link: (params: AddLinkParams) => {
+    addLink: (params: AddLinkParams) => {
       const unknown = Object.keys(params).filter((key) => !LINK_FIELDS.includes(key));
       if (unknown.length > 0) throw new Error(`link: unknown fields ${unknown.join(", ")}`);
-      if (("validFrom" in params) !== ("validUntil" in params)) throw new Error("link: a period names validFrom and validUntil");
-      live(params.from_id);
-      live(params.to_id);
+      if (params.validFrom !== undefined && params.validUntil !== undefined && params.validUntil < params.validFrom) {
+        throw new Error("link: validUntil must follow validFrom");
+      }
+      live(params.from);
+      live(params.to);
       added.push(params);
       const validFrom = params.validFrom ?? null;
-      const same = links.some((link) =>
-        link.from_id === params.from_id && link.to_id === params.to_id && link.kind === params.kind && link.validFrom === validFrom);
+      const same = links.some((held) =>
+        held.from === params.from && held.to === params.to && held.kind === params.kind && held.validFrom === validFrom);
       if (!same) {
         links.push({
-          id: `link-${String(links.length)}`, from_id: params.from_id, to_id: params.to_id, kind: params.kind,
-          validFrom, validUntil: params.validUntil ?? null, metadata: params.metadata ?? null,
+          id: `link-${String(links.length)}`, from: params.from, to: params.to, kind: params.kind,
+          validFrom, validUntil: params.validUntil ?? null, metadata: (params.metadata ?? null) as JsonObject | null,
         });
       }
       return Promise.resolve();
     },
-    end_link: (id: string, validUntil: string) => {
-      const link = links.find((candidate) => candidate.id === id);
-      if (link === undefined) throw new Error(`Not found: Link ${id}`);
-      if (link.validUntil !== null) throw new Error(`link ${id} has already ended`);
-      link.validUntil = validUntil;
+    endLink: (id: string, validUntil: string) => {
+      const held = links.find((candidate) => candidate.id === id);
+      if (held === undefined) throw new Error(`Not found: Link ${id}`);
+      if (held.validUntil !== null) throw new Error(`link ${id} has already ended`);
+      held.validUntil = validUntil;
       return Promise.resolve();
     },
-    list_links_for_entity: (id: string, kind?: string) => {
+    listLinksForEntity: (id: string, kind?: string) => {
       live(id);
       return Promise.resolve(links
-        .filter((link) => (link.from_id === id || link.to_id === id) && (kind === undefined || link.kind === kind))
-        .filter((link) => isLive(link.from_id) && isLive(link.to_id))
-        .map((link): LinkSummary => ({ ...link })));
+        .filter((held) => (held.from === id || held.to === id) && (kind === undefined || held.kind === kind))
+        .filter((held) => isLive(held.from) && isLive(held.to))
+        .map((held): Link => link(held.from, held.to, held.kind, {
+          id: held.id, validFrom: held.validFrom, validUntil: held.validUntil, metadata: held.metadata,
+        })));
     },
-    delete_entity: (id: string) => {
+    deleteEntity: (id: string) => {
       live(id).archived = true;
       return Promise.resolve();
     },
-    list_entities_by_property_field: (params) => {
+    listEntitiesByPropertyField: (params) => {
       const rows = [...nodes.values()]
-        .filter((node) => !node.archived && node.schema_id === params.entity_schema && node.properties[params.key] === params.value)
+        .filter((node) => !node.archived && node.schemaId === params.entitySchema && node.properties[params.key] === params.value)
         .map(raw);
       const offset = params.offset ?? 0;
-      return Promise.resolve({ items: rows.slice(offset, offset + (params.limit ?? rows.length)), total: rows.length });
+      const limit = params.limit ?? rows.length;
+      return Promise.resolve({ items: rows.slice(offset, offset + limit), total: rows.length, limit, offset });
     },
   };
   return { graph: mockGraph(overrides), nodes, links, added, minted };
@@ -182,33 +192,36 @@ function addressBookWorld(seed: {
 function mountWorld(world: World): AddressbookModule {
   return mountModule(AddressbookModule, {
     graph: world.graph,
-    ctx: { extension_id: "addressbook" },
+    ctx: { extensionId: "addressbook" },
     rpc: { execute: () => Promise.reject(new Error("op_plugin_rpc_call forbidden in sync")) },
   }).module;
 }
 
-const person = (id: string, name = id): Omit<WorldNode, "archived"> => ({ id, schema_id: "contacts.person", name, properties: {} });
+const person = (id: string, name = id): Omit<WorldNode, "archived"> => ({ id, schemaId: "contacts.person", name, properties: {} });
 const address = (value: string): Omit<WorldNode, "archived"> => ({
-  id: `addr-${value}`, schema_id: "email.address", name: value, anchor: `email:address:${value}`, properties: { address: value },
+  id: `addr-${value}`, schemaId: "email.address", name: value, externalId: `email:address:${value}`, properties: { address: value },
 });
 /** A link nobody marked: made by hand, by email or by another module. */
-const heldBy = (from_id: string, to_id: string): Omit<WorldLink, "id"> => ({
-  from_id, to_id, kind: "identity", validFrom: null, validUntil: null, metadata: null,
+const heldBy = (from: string, to: string): Omit<WorldLink, "id"> => ({
+  from, to, kind: "identity", validFrom: null, validUntil: null, metadata: null,
 });
 /** The link the address book opens at sync time `at`. */
-const opened = (from_id: string, to_id: string, at: string): AddLinkParams => ({
-  from_id, to_id, kind: "identity", metadata: { producer: "addressbook" }, validFrom: at, validUntil: null,
+const opened = (from: string, to: string, at: string): AddLinkParams => ({
+  from, to, kind: "identity", metadata: { producer: "addressbook" }, validFrom: at,
 });
-const periodsOf = (world: World, from_id: string, to_id: string): { validFrom: string | null; validUntil: string | null }[] =>
+const periodsOf = (world: World, from: string, to: string): { validFrom: string | null; validUntil: string | null }[] =>
   world.links
-    .filter((link) => link.from_id === from_id && link.to_id === to_id)
+    .filter((held) => held.from === from && held.to === to)
     .map(({ validFrom, validUntil }) => ({ validFrom, validUntil }));
 
-const env = (over: Partial<SourceEnvelope>): SourceEnvelope =>
-  sourceEnvelope("addressbook", {}, { source_id: "google", account_id: "acct-1", user_id: "u1", remote_id: "gpeople:abc123", timestamp: "2026-03-14T09:00:00Z", ...over });
+const env = (over: Partial<SyncEnvelope>): SyncEnvelope =>
+  sourceEnvelope("addressbook", {}, { sourceId: "google", accountId: "acct-1", userId: "u1", remoteId: "gpeople:abc123", timestamp: "2026-03-14T09:00:00Z", ...over });
+
+/** The hook the host calls after a complete pass of this account. */
+const complete = (generation: string) => ({ userId: "u1", sourceId: "google", accountId: "acct-1", identityKey: null, generation });
 
 // A Google connector `Contact` payload (sources/google/src/surfaces/addressbook/contacts.ts).
-const contactPayload = (over: Record<string, unknown> = {}) => ({
+const contactPayload = (over: JsonObject = {}): JsonObject => ({
   id: "abc123",
   display_name: "Mikhail Lazarev",
   given_name: "Mikhail",
@@ -221,19 +234,19 @@ const contactPayload = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 /** A card listing exactly these addresses. */
-const card = (remoteId: string, addresses: string[]): SourceEnvelope =>
-  env({ remote_id: remoteId, payload: contactPayload({ id: remoteId, emails: addresses.map((value) => ({ address: value })) }) });
+const card = (remoteId: string, addresses: string[]): SyncEnvelope =>
+  env({ remoteId, payload: contactPayload({ id: remoteId, emails: addresses.map((value) => ({ address: value })) }) });
 
 const cardOf = (frag: GraphBatchInput, key: string): BatchEntityInput => {
-  const e = frag.entities.find((e) => e.key === key);
+  const e = frag.entities.find((item) => item.key === key);
   if (e === undefined) throw new Error(`cardOf: no entity with key ${key}`);
   return e;
 };
 
 function lastBatch(graph: MockGraph): GraphBatchInput {
-  const calls = graph.spies.apply_batch?.mock.calls ?? [];
+  const calls = graph.spies.applyBatch?.mock.calls ?? [];
   const last = calls[calls.length - 1];
-  if (last === undefined) throw new Error("lastBatch: apply_batch never called");
+  if (last === undefined) throw new Error("lastBatch: applyBatch never called");
   return last[0] as GraphBatchInput;
 }
 
@@ -249,7 +262,7 @@ describe("address book ingest — the card model (tst_be_contactsingest_001)", (
     const world = addressBookWorld();
     await expect(mountWorld(world).ingest({ envelopes: [env({ payload: contactPayload() })] }))
       .resolves.toBeDefined();
-    expect(world.graph.spies.list_links_for_entity?.mock.calls.every((call) => call[1] === "identity")).toBe(true);
+    expect(world.graph.spies.listLinksForEntity?.mock.calls.every((call) => call[1] === "identity")).toBe(true);
   });
 
   /**
@@ -263,8 +276,8 @@ describe("address book ingest — the card model (tst_be_contactsingest_001)", (
     const world = addressBookWorld();
     await expect(mountWorld(world).ingest({ envelopes: [env({ payload: contactPayload() })] })).resolves.toBeDefined();
     expect(lastBatch(world.graph).entities).toContainEqual(expect.objectContaining({
-      schema_id: "email.address",
-      anchor: "email:address:mikhail@example.com",
+      schemaId: "email.address",
+      externalId: "email:address:mikhail@example.com",
     }));
   });
 
@@ -287,24 +300,24 @@ describe("address book ingest — the card model (tst_be_contactsingest_001)", (
     // @invariant: an address book card never rewrites a held address's
     // synchronization choice, and a new address takes the email owner's rule.
     const batch = lastBatch(world.graph);
-    expect(batch.entities).toContainEqual(expect.objectContaining({ anchor: "email:address:new@example.com", syncEnabled: false }));
-    expect(batch.entities).not.toContainEqual(expect.objectContaining({ anchor: "email:address:old@example.com" }));
-    expect(batch.refs).toEqual([{ key: "addr:old@example.com", anchor: "email:address:old@example.com" }]);
+    expect(batch.entities).toContainEqual(expect.objectContaining({ externalId: "email:address:new@example.com", syncEnabled: false }));
+    expect(batch.entities).not.toContainEqual(expect.objectContaining({ externalId: "email:address:old@example.com" }));
+    expect(batch.refs).toEqual([{ key: "addr:old@example.com", externalId: "email:address:old@example.com" }]);
     expect(world.nodes.get("addr-old@example.com")?.syncEnabled).toBe(false);
   });
 
-  it("one envelope → ONE card node: anchored, dictionary as last synced, zero person writes in the batch", async () => {
+  it("one envelope → ONE card node: by external id, dictionary as last synced, zero person writes in the batch", async () => {
     const world = addressBookWorld();
-    await mountWorld(world).ingest({ envelopes: [env({ remote_id: "gpeople:abc123", payload: contactPayload() })] });
+    await mountWorld(world).ingest({ envelopes: [env({ remoteId: "gpeople:abc123", payload: contactPayload() })] });
 
-    expect(world.graph.spies.apply_batch).toHaveBeenCalledTimes(1);
+    expect(world.graph.spies.applyBatch).toHaveBeenCalledTimes(1);
     const frag = lastBatch(world.graph);
-    expect(frag.entities.map((e) => e.schema_id)).toEqual(["email.address", "addressbook.card"]);
+    expect(frag.entities.map((e) => e.schemaId)).toEqual(["email.address", "addressbook.card"]);
 
     const stored = cardOf(frag, "gpeople:abc123");
-    expect(stored.anchor).toBe("gpeople:abc123");
+    expect(stored.externalId).toBe("gpeople:abc123");
     expect(stored.name).toBe("Mikhail Lazarev");
-    const props = stored.properties ?? {};
+    const props = stored.properties as JsonObject;
     expect(props.given_name).toBe("Mikhail");
     expect(props.family_name).toBe("Lazarev");
     expect(props.photo_url).toBe("https://photos.example.com/a.jpg");
@@ -314,9 +327,9 @@ describe("address book ingest — the card model (tst_be_contactsingest_001)", (
 
   it("no person anywhere → one person (name vouch) + identity links to the card and the address", async () => {
     const world = addressBookWorld();
-    await mountWorld(world).ingest({ envelopes: [env({ remote_id: "gpeople:abc123", payload: contactPayload() })] });
+    await mountWorld(world).ingest({ envelopes: [env({ remoteId: "gpeople:abc123", payload: contactPayload() })] });
 
-    expect(world.minted).toEqual([{ schema_id: "contacts.person", name: "Mikhail Lazarev" }]);
+    expect(world.minted).toEqual([{ schemaId: "contacts.person", name: "Mikhail Lazarev" }]);
     expect(world.added).toEqual([
       opened("hub-0", "id-gpeople:abc123", T0),
       opened("hub-0", "addr-mikhail@example.com", T0),
@@ -328,7 +341,7 @@ describe("address book ingest — the card model (tst_be_contactsingest_001)", (
       nodes: [person("hub-X", "Mika"), address("mikhail@example.com")],
       links: [heldBy("hub-X", "addr-mikhail@example.com")],
     });
-    await mountWorld(world).ingest({ envelopes: [env({ remote_id: "gpeople:abc123", payload: contactPayload() })] });
+    await mountWorld(world).ingest({ envelopes: [env({ remoteId: "gpeople:abc123", payload: contactPayload() })] });
 
     expect(world.minted).toEqual([]);
     expect(world.added).toEqual([opened("hub-X", "id-gpeople:abc123", T0)]);
@@ -355,7 +368,7 @@ describe("address book ingest — the card model (tst_be_contactsingest_001)", (
       opened("hub-B", "id-gpeople:c1", T0),
     ]);
     // Nothing merges: the address nobody holds stays unattached.
-    expect(world.links.filter((link) => link.to_id === "addr-cat@example.com")).toEqual([]);
+    expect(world.links.filter((held) => held.to === "addr-cat@example.com")).toEqual([]);
   });
 
   // The legacy-fleet probe retired with the archive it read: a pre-anchor hub
@@ -366,10 +379,10 @@ describe("address book ingest — the card model (tst_be_contactsingest_001)", (
   it("a pre-anchor hub is no longer recognised — ingest mints a fresh one", async () => {
     const world = addressBookWorld({ nodes: [person("old-hub", "Old")] });
     await mountWorld(world).ingest({
-      envelopes: [env({ remote_id: "gpeople:abc123", payload: contactPayload({ emails: [] }) })],
+      envelopes: [env({ remoteId: "gpeople:abc123", payload: contactPayload({ emails: [] }) })],
     });
 
-    expect(world.minted).toEqual([{ schema_id: "contacts.person", name: "Mikhail Lazarev" }]);
+    expect(world.minted).toEqual([{ schemaId: "contacts.person", name: "Mikhail Lazarev" }]);
     expect(world.added).toEqual([opened("hub-0", "id-gpeople:abc123", T0)]);
   });
 
@@ -377,11 +390,11 @@ describe("address book ingest — the card model (tst_be_contactsingest_001)", (
     const world = addressBookWorld({
       nodes: [
         person("hub-X"), address("mikhail@example.com"),
-        { id: "id-gpeople:abc123", schema_id: "addressbook.card", name: "Mikhail Lazarev", anchor: "gpeople:abc123", properties: {} },
+        { id: "id-gpeople:abc123", schemaId: "addressbook.card", name: "Mikhail Lazarev", externalId: "gpeople:abc123", properties: {} },
       ],
       links: [heldBy("hub-X", "id-gpeople:abc123"), heldBy("hub-X", "addr-mikhail@example.com")],
     });
-    await mountWorld(world).ingest({ envelopes: [env({ remote_id: "gpeople:abc123", payload: contactPayload() })] });
+    await mountWorld(world).ingest({ envelopes: [env({ remoteId: "gpeople:abc123", payload: contactPayload() })] });
 
     expect(world.minted).toEqual([]);
     expect(world.added).toEqual([]);
@@ -391,19 +404,19 @@ describe("address book ingest — the card model (tst_be_contactsingest_001)", (
     const world = addressBookWorld();
     await mountWorld(world).ingest({
       envelopes: [
-        env({ remote_id: "gpeople:abc123", payload: contactPayload() }),
-        env({ remote_id: "gpeople:abc123", payload: contactPayload({ display_name: "Mikhail L." }) }),
+        env({ remoteId: "gpeople:abc123", payload: contactPayload() }),
+        env({ remoteId: "gpeople:abc123", payload: contactPayload({ display_name: "Mikhail L." }) }),
       ],
     });
     const frag = lastBatch(world.graph);
-    expect(frag.entities.filter((entity) => entity.schema_id === "addressbook.card")).toHaveLength(1);
+    expect(frag.entities.filter((item) => item.schemaId === "addressbook.card")).toHaveLength(1);
   });
 
-  it("empty envelopes → no apply_batch", async () => {
+  it("empty envelopes → no applyBatch", async () => {
     const world = addressBookWorld();
     const r = await mountWorld(world).ingest({ envelopes: [] });
-    expect(world.graph.spies.apply_batch).toHaveBeenCalledTimes(0);
-    expect(r).toEqual({ dropped_remote_ids: [], trigger_checks: [] });
+    expect(world.graph.spies.applyBatch).toHaveBeenCalledTimes(0);
+    expect(r).toEqual({ droppedRemoteIds: [], triggerChecks: [], plan: null, excluded: [] });
   });
 
   /**
@@ -416,14 +429,14 @@ describe("address book ingest — the card model (tst_be_contactsingest_001)", (
   it("states the list's count in full, the persons a page leaves out as skipped, and nothing outside a worker's pass", async () => {
     const world = addressBookWorld();
     const mod = mountWorld(world);
-    const list = env({ remote_id: "list", payload: { entity_type: "list", total_people: 3 } });
+    const list = env({ remoteId: "list", payload: { entity_type: "list", total_people: 3 } });
     const first = await mod.ingest({ command: "bootstrap", generation: "initial:r:1", envelopes: [list, env({ payload: contactPayload() })] });
-    expect(first).toEqual({ dropped_remote_ids: [], trigger_checks: [], plan: { "addressbook.card": { total: 3, skipped: 0 } } });
+    expect(first).toEqual({ droppedRemoteIds: [], triggerChecks: [], plan: { "addressbook.card": { total: 3, skipped: 0 } }, excluded: [] });
     expect(lastBatch(world.graph).entities.map((item) => item.key)).not.toContain("list");
-    const later = await mod.ingest({ command: "bootstrap", generation: "initial:r:1", envelopes: [env({ remote_id: "list", payload: { entity_type: "list", skipped: 1 } }), env({ remote_id: "gpeople:c2", payload: contactPayload({ id: "c2" }) })] });
+    const later = await mod.ingest({ command: "bootstrap", generation: "initial:r:1", envelopes: [env({ remoteId: "list", payload: { entity_type: "list", skipped: 1 } }), env({ remoteId: "gpeople:c2", payload: contactPayload({ id: "c2" }) })] });
     expect(later.plan).toEqual({ "addressbook.card": { total: 0, skipped: 1 } });
     const outside = await mod.ingest({ envelopes: [list] });
-    expect(outside).toEqual({ dropped_remote_ids: [], trigger_checks: [] });
+    expect(outside).toEqual({ droppedRemoteIds: [], triggerChecks: [], plan: null, excluded: [] });
   });
 });
 
@@ -435,12 +448,12 @@ describe("address book ingest — the card model (tst_be_contactsingest_001)", (
  * @fixtures: one Google card attached to a person; unseen cards after token expiry
  */
 describe("Google contact removal", () => {
-  it("archives the anchored card on a People deletion and leaves its person untouched", async () => {
+  it("archives the card on a People deletion and leaves its person untouched", async () => {
     const world = addressBookWorld();
     const mod = mountWorld(world);
     await mod.ingest({ command: "catch_up", generation: "initial:r:1", envelopes: [env({ payload: contactPayload() })] });
-    await mod.ingest({ command: "catch_up", generation: "initial:r:1", envelopes: [env({ kind: "delete", remote_id: "gpeople:abc123" })] });
-    expect(world.graph.spies.delete_entity).toHaveBeenCalledExactlyOnceWith("id-gpeople:abc123");
+    await mod.ingest({ command: "catch_up", generation: "initial:r:1", envelopes: [env({ kind: "delete", remoteId: "gpeople:abc123" })] });
+    expect(world.graph.spies.deleteEntity).toHaveBeenCalledExactlyOnceWith("id-gpeople:abc123");
     expect(world.nodes.get("id-gpeople:abc123")?.archived).toBe(true);
     expect(world.nodes.get("hub-0")?.archived).toBe(false);
     expect(world.minted).toHaveLength(1);
@@ -448,16 +461,16 @@ describe("Google contact removal", () => {
 
   it("reconciles only unseen Google cards after a complete pass", async () => {
     const stored = (id: string, account_id: string, sync_pass: string): Omit<WorldNode, "archived"> => ({
-      id, schema_id: "addressbook.card", name: id, anchor: `gpeople:${id}`, properties: { source_id: "google", account_id, sync_pass },
+      id, schemaId: "addressbook.card", name: id, externalId: `gpeople:${id}`, properties: { source_id: "google", account_id, sync_pass },
     });
     const world = addressBookWorld({
       nodes: [stored("old", "acct-1", "initial:r:1"), stored("seen", "acct-1", "initial:r:2"), stored("other", "acct-2", "initial:r:1")],
     });
     const mod = mountWorld(world);
-    expect(await mod.onSyncComplete({ source_id: "google", account_id: "acct-1", generation: "initial:r:2" })).toEqual({
+    expect(await mod.onSyncComplete(complete("initial:r:2"))).toEqual({
       departed: [], plan: { "addressbook.card": { total: 0, skipped: 0 } },
     });
-    expect(world.graph.spies.delete_entity).toHaveBeenCalledExactlyOnceWith("old");
+    expect(world.graph.spies.deleteEntity).toHaveBeenCalledExactlyOnceWith("old");
   });
 });
 
@@ -477,7 +490,7 @@ describe("People Poll progress", () => {
     expect((await mod.ingest({ command: "catch_up", generation: "initial:r:1", envelopes: [contact] })).plan?.["addressbook.card"]).toEqual({ total: 0, skipped: 0 });
     expect((await mod.ingest({ command: "catch_up", generation: "initial:r:1", envelopes: [env({ kind: "delete" })] })).plan?.["addressbook.card"]).toEqual({ total: -1, skipped: 0 });
     expect((await mod.ingest({ command: "catch_up", generation: "initial:r:1", envelopes: [env({ kind: "delete" })] })).plan?.["addressbook.card"]).toEqual({ total: 0, skipped: 0 });
-    expect(world.graph.spies.delete_entity).toHaveBeenCalledExactlyOnceWith("id-gpeople:abc123");
+    expect(world.graph.spies.deleteEntity).toHaveBeenCalledExactlyOnceWith("id-gpeople:abc123");
   });
 });
 
@@ -542,7 +555,7 @@ describe("every sync re-checks the card", () => {
     expect(periodsOf(world, "hub-P", "addr-ann@example.com")).toEqual([{ validFrom: null, validUntil: null }]);
     // A card's owners are never ended by an address change.
     expect(periodsOf(world, "hub-P", "id-gpeople:c1")).toEqual([{ validFrom: T0, validUntil: null }]);
-    expect(world.graph.spies.end_link).toHaveBeenCalledTimes(1);
+    expect(world.graph.spies.endLink).toHaveBeenCalledTimes(1);
   });
 
   /**
@@ -561,7 +574,7 @@ describe("every sync re-checks the card", () => {
     ] });
 
     vi.setSystemTime(new Date(T1));
-    await mod.ingest({ command: "catch_up", generation: "initial:r:1", envelopes: [env({ kind: "delete", remote_id: "gpeople:c1" })] });
+    await mod.ingest({ command: "catch_up", generation: "initial:r:1", envelopes: [env({ kind: "delete", remoteId: "gpeople:c1" })] });
     expect(world.nodes.get("id-gpeople:c1")?.archived).toBe(true);
     expect(periodsOf(world, "hub-0", "addr-ann@example.com")).toEqual([{ validFrom: T0, validUntil: T1 }]);
     expect(periodsOf(world, "hub-0", "addr-bob@example.com")).toEqual([{ validFrom: T0, validUntil: null }]);
@@ -569,10 +582,10 @@ describe("every sync re-checks the card", () => {
 
     // The other way a contact leaves: a full pass that never saw it.
     vi.setSystemTime(new Date(T2));
-    await mod.onSyncComplete({ source_id: "google", account_id: "acct-1", generation: "initial:r:2" });
+    await mod.onSyncComplete(complete("initial:r:2"));
     expect(world.nodes.get("id-gpeople:c2")?.archived).toBe(true);
     expect(periodsOf(world, "hub-0", "addr-bob@example.com")).toEqual([{ validFrom: T0, validUntil: T2 }]);
-    expect(world.graph.spies.delete_entity?.mock.calls).toEqual([["id-gpeople:c1"], ["id-gpeople:c2"]]);
+    expect(world.graph.spies.deleteEntity?.mock.calls).toEqual([["id-gpeople:c1"], ["id-gpeople:c2"]]);
     expect(world.nodes.get("hub-0")?.archived).toBe(false);
   });
 
@@ -602,7 +615,7 @@ describe("every sync re-checks the card", () => {
       { validFrom: T0, validUntil: T1 },
       { validFrom: T2, validUntil: null },
     ]);
-    expect(world.graph.spies.end_link).toHaveBeenCalledTimes(1);
+    expect(world.graph.spies.endLink).toHaveBeenCalledTimes(1);
     expect(world.added).toEqual([
       opened("hub-0", "id-gpeople:c1", T0),
       opened("hub-0", "addr-ann@example.com", T0),

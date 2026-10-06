@@ -1,8 +1,7 @@
 // Notes plugin — shared wire types (backend module + frontend UI).
 // Graph-only port of the native `backend/src/modules/notes` types: no
 // `file_path` / `content_hash` (the on-disk markdown mirror was dropped).
-
-
+import type { LinkedEntitySummary } from "@magnis/sdk";
 
 /// Payload of a `notes.note.content` record as read back inside the module.
 export interface ContentData {
@@ -21,34 +20,25 @@ export interface NoteCanonical {
 
 export interface NoteListItem {
   id: string;
-  schema_id: string;
+  schemaId: string;
   title: string;
   preview: string | null;
   pinned: boolean;
-  created_at: string;
-  updated_at: string | null;
-  is_pinned?: boolean | null;
-}
-
-export interface LinkedEntitySummary {
-  id: string;
-  name: string;
-  schema_id: string;
-  link_kind: string;
-  created_at: string;
-  data: unknown;
+  createdAt: string;
+  updatedAt: string | null;
+  isPinned?: boolean | null;
 }
 
 export interface NoteDetailView {
   id: string;
-  schema_id: string;
+  schemaId: string;
   title: string;
   body: string | null;
   pinned: boolean;
   canonical: Partial<NoteCanonical>;
-  linked_entities: LinkedEntitySummary[];
-  created_at: string;
-  updated_at: string | null;
+  linkedEntities: LinkedEntitySummary[];
+  createdAt: string;
+  updatedAt: string | null;
 }
 
 /// The full-snapshot shape returned by create/update/template.apply so the
@@ -56,10 +46,10 @@ export interface NoteDetailView {
 /// service.rs:436-443 / 526-537).
 export interface NoteSnapshot {
   id: string;
-  schema_id: string;
+  schemaId: string;
   title: string;
   body: string;
-  updated_at: string;
+  updatedAt: string;
 }
 
 export interface NotesListParams {

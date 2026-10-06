@@ -21,18 +21,18 @@ import { TriggerDetailPanel } from "../TriggerDetailPanel";
 const DETAIL = {
   id: "trigger-1",
   name: "Reply watch",
-  gate_prompt: "",
-  action_prompt: "draft a reply",
+  gatePrompt: "",
+  actionPrompt: "draft a reply",
   status: "active",
-  event_kinds: ["sync_ingested"],
-  debounce_seconds: 0,
-  firing_count: 2,
-  watched_entities: [],
+  eventKinds: ["sync_ingested"],
+  debounceSeconds: 0,
+  firingCount: 2,
+  watchedEntities: [],
 };
 
 const HISTORY = [
-  { fired_at: "2026-08-11T10:00:00Z", event_entity_id: "e1", outcome: "spawned" },
-  { fired_at: "2026-08-11T09:00:00Z", event_entity_id: "e2", outcome: "skipped_gate" },
+  { firedAt: "2026-08-11T10:00:00Z", eventEntityId: "e1", outcome: "spawned" },
+  { firedAt: "2026-08-11T09:00:00Z", eventEntityId: "e2", outcome: "skipped_gate" },
 ];
 
 function runtime(rpc: ReturnType<typeof vi.fn>): AppRuntime {
@@ -70,7 +70,7 @@ describe("tst_fe_trig_002 — the panel shows fire history", () => {
     // One row per execution, in the module's own vocabulary.
     expect(section?.textContent).toContain("Fired");
     expect(section?.textContent).toContain("Skipped (not relevant)");
-    expect(rpc).toHaveBeenCalledWith("triggers.fire_history", { trigger_id: "trigger-1" });
+    expect(rpc).toHaveBeenCalledWith("triggers.fire_history", { triggerId: "trigger-1" });
   });
 
   it("reads the event kind in the operator's words, not the backend's", async () => {

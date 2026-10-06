@@ -4,15 +4,15 @@
  * Beside entities.ts and outside module/ on purpose.
  */
 import { describe, expect, it } from "vitest";
-import type { BatchEntityInput, GraphBatchInput } from "@magnis/plugin-sdk";
-import { mockGraph, mountModule, sourceEnvelope } from "@magnis/testkit/module";
+import type { BatchEntityInput, GraphBatchInput, JsonObject } from "@magnis/sdk";
+import { entity, mockGraph, mountModule, sourceEnvelope } from "@magnis/testkit/module";
 
 import { AddressbookModule } from "./module/service.ts";
 import { card } from "./entities.ts";
 import { CARD } from "./schema.ts";
 
 /** One Google connector Contact payload, as the ingest test spells it. */
-const contactPayload = {
+const contactPayload: JsonObject = {
   id: "abc123",
   display_name: "Mikhail Lazarev",
   given_name: "Mikhail",
@@ -27,29 +27,28 @@ const contactPayload = {
 async function cardsWritten(): Promise<BatchEntityInput[]> {
   const batches: GraphBatchInput[] = [];
   const graph = mockGraph({
-    find_by_anchors: (anchors: readonly string[]) => Promise.resolve(anchors.map(() => null)),
+    findByExternalIds: (externalIds) => Promise.resolve(externalIds.map(() => null)),
     moduleSettings: () => Promise.resolve({ newSenderSyncEnabled: "true" }),
-    apply_batch: (frag: GraphBatchInput) => {
+    applyBatch: (frag) => {
       batches.push(frag);
       return Promise.resolve({
         ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
         created: frag.entities.length,
         updated: 0,
-        links_added: 0,
-        dropped_keys: [],
+        linksAdded: 0,
+        droppedKeys: [], resolved: [],
       });
     },
-    list_links_for_entity: () => Promise.resolve([]),
-    create_entity: (input: { schema_id: string; name: string }) =>
-      Promise.resolve({ id: "hub-0", schema_id: input.schema_id, name: input.name }),
-    add_link: () => Promise.resolve(undefined),
-  } as never);
-  const mod = mountModule(AddressbookModule, { graph, ctx: { extension_id: "addressbook" } }).module;
+    listLinksForEntity: () => Promise.resolve([]),
+    createEntity: (input) => Promise.resolve(entity("hub-0", input.name, { schemaId: input.schemaId })),
+    addLink: () => Promise.resolve(undefined),
+  });
+  const mod = mountModule(AddressbookModule, { graph, ctx: { extensionId: "addressbook" } }).module;
   await mod.ingest({
     command: "bootstrap",
     generation: "initial:r:1",
     envelopes: [sourceEnvelope("addressbook", contactPayload, {
-      source_id: "google", account_id: "acct-1", user_id: "u1", remote_id: "gpeople:abc123",
+      sourceId: "google", accountId: "acct-1", userId: "u1", remoteId: "gpeople:abc123",
       timestamp: "2026-03-14T09:00:00Z",
     })],
   });
@@ -58,7 +57,7 @@ async function cardsWritten(): Promise<BatchEntityInput[]> {
 
 describe("addressbook declares what it writes", () => {
   it("every card the ingest writes passes the card's declaration", async () => {
-    const cards = (await cardsWritten()).filter((e) => e.schema_id === CARD);
+    const cards = (await cardsWritten()).filter((e) => e.schemaId === CARD);
     expect(cards.length).toBeGreaterThan(0);
     for (const written of cards) {
       expect(card.safeParse(written.properties ?? {}).error?.issues ?? []).toEqual([]);

@@ -8,7 +8,7 @@
  * @deterministic: yes
  *
  * sendMessage delivers the message via
- * graph.source_command, THEN runs local enrichment (ingest + entity lookup). If
+ * graph.sourceCommand, THEN runs local enrichment (ingest + entity lookup). If
  * that local post-processing throws AFTER a successful delivery, the send must
  * still be reported as succeeded — otherwise a delivered message is recorded
  * "failed" (in a batch or single send) and a manual retry double-sends it. The
@@ -19,8 +19,8 @@
 import { describe, it, expect, vi } from "vitest";
 import { entity, mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { TelegramModule } from "../service.ts";
+import type { SyncEnvelope } from "@magnis/sdk";
 import type { TelegramCanonical } from "../../types.ts";
-import type { SourceEnvelope } from "@magnis/plugin-sdk";
 
 type G = MockGraph;
 
@@ -33,18 +33,18 @@ interface TgInternals {
     accountId: string | undefined,
   ): Promise<Record<string, unknown>>;
   ingestMessageBatch(
-    messages: { env: SourceEnvelope; payload: Record<string, unknown> }[],
+    messages: { env: SyncEnvelope; payload: Record<string, unknown> }[],
     triggers: unknown[],
   ): Promise<unknown>;
 }
 
 function makeModule(syncEnabled = true): { mod: TgInternals; graph: G } {
   const graph = mockGraph({
-    source_command: () => Promise.resolve({ message_id: 777 }),
-    find_by_anchor: () => Promise.resolve("ent-1"),
-    get_entity: () => Promise.resolve({ ...entity("chat-entity", "Chat", { schema_id: "telegram.chat", properties: { chat_id: 42 } }), syncEnabled, syncRevision: "0" }),
+    sourceCommand: () => Promise.resolve({ message_id: 777 }),
+    findByExternalId: () => Promise.resolve("ent-1"),
+    getEntity: () => Promise.resolve({ ...entity("chat-entity", "Chat", { schemaId: "telegram.chat", properties: { chat_id: 42 } }), syncEnabled, syncRevision: "0" }),
   });
-  const mod = mountModule(TelegramModule, { graph, ctx: { extension_id: "telegram" } })
+  const mod = mountModule(TelegramModule, { graph, ctx: { extensionId: "telegram" } })
     .module as unknown as TgInternals;
   return { mod, graph };
 }
@@ -54,7 +54,7 @@ describe("tst_fe_agent_007 — sendMessage: delivery success survives local enri
     const { mod, graph } = makeModule(false);
     const ingest = vi.spyOn(mod, "ingestMessageBatch").mockResolvedValue(undefined);
     await expect(mod.sendMessage(42, "hi", undefined, "acct")).resolves.toEqual({ message_id: 777 });
-    expect(graph.spies.source_command).toHaveBeenCalledExactlyOnceWith({ action: "send_message", chat_id: 42, text: "hi" }, "acct");
+    expect(graph.spies.sourceCommand).toHaveBeenCalledExactlyOnceWith({ action: "send_message", chat_id: 42, text: "hi" }, "acct");
     expect(ingest).not.toHaveBeenCalled();
   });
 
@@ -64,7 +64,7 @@ describe("tst_fe_agent_007 — sendMessage: delivery success survives local enri
 
     const result = await mod.sendMessage(42, "hi", undefined, "acct");
 
-    expect(graph.spies.source_command).toHaveBeenCalledTimes(1); // the message WAS delivered
+    expect(graph.spies.sourceCommand).toHaveBeenCalledTimes(1); // the message WAS delivered
     expect(result).toEqual({ message_id: 777 }); // reported as sent, not failed
   });
 

@@ -696,7 +696,7 @@ export async function runCatchup(
   return { envelopes, nextCursor, hasMore, traversed };
 }
 
-/** Extract an integer argument tolerant of how the host's V8 `source_command`
+/** Extract an integer argument tolerant of how the host's V8 `sourceCommand`
  * boundary encodes it. Telegram chat_ids exceed i32 and JS numbers are f64, so
  * the value can arrive as a JSON i64, an f64, or a numeric string — accepting
  * only a plain integer surfaced as the bogus "missing chat_id" error on

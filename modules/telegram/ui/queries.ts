@@ -4,7 +4,7 @@
 
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { useAppRuntime } from "@magnis/host/runtime";
-import type { TelegramChatListItem, TelegramMessageListItem } from "./types";
+import type { TelegramChatListItem, MessageListItem } from "./types";
 import type { PaginatedResponse } from "@magnis/host/runtime";
 
 export const telegramKeys = {
@@ -44,11 +44,11 @@ export function useTelegramMessagesQuery(
   chatId: string | undefined,
   limit: number,
   offset: number,
-): UseQueryResult<PaginatedResponse<TelegramMessageListItem>> {
+): UseQueryResult<PaginatedResponse<MessageListItem>> {
   const runtime = useAppRuntime();
   return useQuery({
     queryKey: telegramKeys.messages(chatId ?? "", { limit, offset }),
-    queryFn: () => runtime.transport.rpc<PaginatedResponse<TelegramMessageListItem>>(
+    queryFn: () => runtime.transport.rpc<PaginatedResponse<MessageListItem>>(
       "telegram.messages.list",
       { entity_id: chatId, limit, offset },
     ),

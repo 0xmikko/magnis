@@ -1,58 +1,48 @@
-import type { RawSyncableEntity } from "@magnis/plugin-sdk";
 // Shared DTOs for the contacts plugin — wire shapes the host frontend
-// consumes. Mirrors the legacy Rust contacts ContactListItem /
-// ContactDetailView 1:1.
-
+// consumes, declared once for module/ and ui/. The SDK shapes inside them
+// (the linked summaries) are the SDK's.
+import type { LinkedEntitySummary, Syncable } from "@magnis/sdk";
 
 export interface ContactListItem {
   id: string;
-  schema_id: string;
+  schemaId: string;
   name: string;
   email: string | null;
   phone: string | null;
   role: string | null;
   company: string | null;
   channels: string[];
-  avatar_color: string;
+  avatarColor: string;
   initials: string;
-  relevance_tier?: string | null;
-  created_at: string;
-  is_pinned?: boolean | null;
-}
-
-export interface LinkedEntitySummary {
-  id: string;
-  name: string | null;
-  schema_id: string;
-  link_kind: string;
-  created_at: string;
-  data: unknown;
+  relevanceTier?: string | null;
+  createdAt: string;
+  isPinned?: boolean | null;
 }
 
 export interface ContactSyncTarget {
   identityId: string;
   schemaId: string;
-  name: string;
+  name: string | null;
   state:
-    | ({ kind: "ready" } & Pick<RawSyncableEntity, "id" | "syncEnabled" | "syncRevision">)
+    | ({ kind: "ready" } & Pick<Syncable, "id" | "syncEnabled" | "syncRevision">)
     | { kind: "unavailable"; message: string };
 }
 
 export interface ContactDetailView {
   syncTargets: readonly ContactSyncTarget[];
   id: string;
-  schema_id: string;
+  schemaId: string;
   name: string;
   email: string | null;
   phone: string | null;
   role: string | null;
   company: string | null;
   channels: string[];
-  avatar_color: string;
+  avatarColor: string;
   initials: string;
   canonical: Partial<ContactCanonical>;
-  linked_entities: LinkedEntitySummary[];
-  created_at: string;
+  linkedEntities: LinkedEntitySummary[];
+  createdAt: string;
   /** S3 (§5.1): the composed card — the hub's curated dictionary. */
   curated: Record<string, unknown>;
   /** Composed emails: the shared email.address nodes one identity hop away. */
@@ -62,7 +52,7 @@ export interface ContactDetailView {
   phones: { phone: string; type?: string | null; origin: string }[];
   /** Source claims: the replica dictionaries one identity hop away, each
    * labeled by its schema (addressbook.card, …). */
-  replicas: { id: string; schema_id: string; name: string | null; properties: Record<string, unknown> }[];
+  replicas: { id: string; schemaId: string; name: string | null; properties: Record<string, unknown> }[];
 }
 
 // ── schema → type maps that parameterise GraphService ──────────────
@@ -116,34 +106,15 @@ export interface UpdateParams {
   name?: string;
 }
 
-// contacts.search — agent tool returning an MCP ToolResult of
-// SearchResultItem[] (shared::search_entities, shared.rs:447).
+// contacts.search — agent tool returning an MCP ToolResult of the SDK
+// EntitySearchHit[].
 export interface SearchParams {
   query?: string;
   context?: string;
   limit?: number;
 }
-export interface SearchResultItem {
-  id: string;
-  name: string | null;
-  schema_id: string;
-  schema_version: number;
-}
 export interface ToolResult {
   content: { type: "text"; text: string }[];
-}
-
-// contacts.merge / merge_preview — mirror the native handlers
-// (controller.rs:631,656).
-export interface MergePreviewParams {
-  survivor_id: string;
-  retired_id: string;
-}
-export interface MergeParams {
-  survivor_id: string;
-  retired_id: string;
-  overrides?: { key: string; value: unknown }[];
-  reason?: string;
 }
 
 // contacts.batch_create — mirrors the native handler (controller.rs:469).
