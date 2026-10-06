@@ -319,9 +319,6 @@ export type BuiltinLinkType =
   | "sent_to"
   | "received_from"
   | "belongs_to"
-  | "observed_in"
-  | "observed_participant"
-  | "attendee"
   | "works_at"
   | "child_of"
   | "mentions"
@@ -346,9 +343,6 @@ export type LinkType = BuiltinLinkType | (string & {});
 | `sent_to` | content → identity_channel | Message → addressed recipient, including To/CC/BCC; does not assert delivery |
 | `received_from` | content → identity_channel | Message → sender reported by the source, such as the email From address; does not assert observed delivery or verified sender identity |
 | `belongs_to` | Registered schema pairs | Organizational membership, such as Trigger → Episode or member → project; not proof of communication |
-| `observed_in` | identity_channel → container | Connected observer account → accessible container; Telegram also stores its per-account sync state on this edge |
-| `observed_participant` | identity_channel → container | Account → container where its participation was observed, such as a message author in a chat |
-| `attendee` | event → identity_channel | Event → attendee |
 | `works_at` | hub → hub | Person/hub → workplace |
 | `child_of` | * → * | Child → parent in a hierarchy; Episode trees use this for delegation and inherited configuration |
 | `mentions` | * → * | Entity → mentioned Entity |
@@ -396,7 +390,7 @@ flowchart LR
 | `child_of` / `belongs_to` | Keep distinct. A hierarchical parent and membership in a collection have different cardinality and execution rules |
 | `authored_by` / `created` / `sent` / `received` / `sent_to` / `received_from` | Keep distinct: content author, creation context, observed sending/delivery and reported recipient/sender. Do not duplicate a sender-only fact as authored_by. Headers alone do not prove transmission or delivery |
 | `started_with` / `reply_to` / `mentions` / `references` | Keep distinct: opening context, response target, semantic mention and explicit resource reference. One Entity can serve several roles |
-| `observed_in` / `observed_participant` / `attendee` | Keep distinct: observer access, observed participation and event attendance. A participant edge must not acquire the observer's sync state |
+| `observed_in` / `observed_participant` / `attendee` | Move out of the built-ins into Telegram and Meetings declarations. Preserve distinct meanings and Telegram observer state; see module-owned kinds below |
 | `identity` / `same_as` | Keep separate from merge and ACL. `identity` connects a hub to a representation. Resolve the mismatch between an unconfirmed duplicate hint and a confirmed `same_as` assertion before treating the latter as equality |
 | `watches` / `owner` | Replace legacy watch-based execution selection with event subscriptions; retain protected ownership. Membership or provenance grants neither authority |
 | `sent_by` | Remove from the target: incoming traversal of `sent` already finds the sender. Reverse historical rows only when their endpoints and evidence meet the communication contract; do not infer a mailbox or successful send from an Episode link |
@@ -443,6 +437,18 @@ Repeated ingestion of the same provider message and endpoint reuses the fact and
 
 Messages and their communication Links commit together. `belongs_to` remains useful for deliberate organizational membership, such as a letter attached to an Episode or a project; it does not stand for sending or receipt. Existing `sent` Episode links and historical `in_chat` links cannot be blindly converted into communication facts.
 
+### Module-owned kinds
+
+Domain relations belong to the module that defines their meaning. Their qualified names remain discoverable in the graph registry and usable by other authorized modules; ownership of a contract does not make its data a separate private graph. Adding a module kind does not require extending the host's BuiltinLinkType union.
+
+| Target kind | Owner and direction | Meaning preserved from current code |
+| --- | --- | --- |
+| `meetings.attendee` | Meetings: meeting → email.address | An attendee listed by the event; it does not prove that the person physically attended |
+| `telegram.observed_in` | Telegram: connected account → chat | The account's observed chat access/membership, with its per-account sync state, unread counts and pins |
+| `telegram.observed_participant` | Telegram: participant account → chat | Participation observed through a message; it grants no observer access and carries no observer sync state |
+
+These replace the three unqualified built-ins in the target. The two Telegram facts cannot be merged without confusing participation with the connected account's view. Current writers still use unqualified names; conversion must preserve producer metadata, periods and existing state, and update registry ownership, permissions, queries and imports together. Do not rewrite unknown producers by string alone.
+
 ### Registration and endpoint validation
 
 ```typescript
@@ -461,6 +467,19 @@ export interface LinkContractDeclaration {
   toRole?: string;
 }
 ```
+
+A normalized module declaration can use the existing interface. The registry supplies and verifies its registration owner from the installed module:
+
+```typescript
+const attendeeContract: Omit<LinkContractDeclaration, "owner"> = {
+  kind: "meetings.attendee",
+  from: { kind: "exact", schema: "meetings.calendar_event" },
+  to: { kind: "exact", schema: "email.address" },
+  symmetric: false,
+};
+```
+
+Namespaced kinds must belong to their registered module; another module cannot claim that namespace. Other writers need explicit permission and must satisfy the same endpoint/metadata contract. Shared host kinds keep their common meaning and system kinds remain protected.
 
 A declaration resolves `(kind, fromSchema, toSchema)`, checks endpoint roles and validates canonical metadata. An exact schema selector is narrower than `any_registered_entity`; equal-priority conflicting declarations fail registration. Without a metadata JSON Schema, no additional JSON restriction is implied. Link metadata has no separately stored schema version.
 
@@ -1001,15 +1020,15 @@ type CompanyEnsureItem = {
 These are walkthrough/test owner inputs, not a claim that every production handler is connected. For a meeting participant, Email normalizes the address, Web normalizes the domain, Contacts resolves the person and Companies decides whether a company may be created.
 
 ```text
-meeting --attendee--> email.address: ann@acme.nl
-                           ^                 |
-                        identity        domain relation
-                           |                 v
-                    contacts.person    web.domain: acme.nl
-                                             ^
-                                          identity
-                                             |
-                                      companies.company
+meeting --meetings.attendee--> email.address: ann@acme.nl
+                                    ^                 |
+                                 identity        domain relation
+                                    |                 v
+                             contacts.person    web.domain: acme.nl
+                                                      ^
+                                                   identity
+                                                      |
+                                               companies.company
 ```
 
 The domain label is illustrative; actual kinds come from the registry. This chain does not assert `works_at`: a shared email domain does not prove employment. Repeating ensure reuses identities without overwriting user-edited fields.
@@ -2193,6 +2212,18 @@ flowchart LR
 | Trigger | Define what should happen when a selected event meets its conditions |
 | TriggerExecution | Record one Trigger's handling of one input, including its resulting Episode when any |
 | Episode | Perform the admitted action |
+
+Event types describe graph operations; Link kinds and Entity schemas describe the domain. Registering `meetings.attendee` makes it selectable through the same event contract as every other registered kind. The module does not declare separate attendee-created/attendee-deleted event types or embed callbacks in the Link.
+
+| Subscription intent | Event type | Domain filter | State to match |
+| --- | --- | --- | --- |
+| An attendee Link was added | `link_added` | kind = `meetings.attendee` | after |
+| Attendee Link metadata changed | `link_updated` | kind = `meetings.attendee` | before/after as requested |
+| An attendee Link was deleted | `link_removed` | kind = `meetings.attendee` | before |
+| A message's properties changed | `entity_properties_updated` | schemaId = `telegram.message`, optionally a specific ID | before/after as requested |
+| A message was deleted | `entity_deleted` | schemaId = `telegram.message` | before |
+
+Ending a Link's validity period updates the retained historical row; it is not physical deletion. Merely reaching a stored time boundary is not a database mutation. These cases must not be presented as `link_removed`. The event's registered payload defines its state, and subscriber execution happens after commit. Here the subscriber is a Trigger; how it invokes deterministic code or creates an Episode remains in the next logic story. An Episode's `modified` provenance Link is also distinct from the event that reports an Entity update.
 
 For incoming mail, the module creates the message and its observed `received` Link. A subscription selects `link_added`, kind `received` and the receiving mailbox. `received_from` supplies the reported sender; adding sender information alone is not a delivery event.
 
