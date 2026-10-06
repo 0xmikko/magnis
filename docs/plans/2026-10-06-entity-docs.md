@@ -10,7 +10,7 @@ Unattended decisions: allowed
 ## The Goal
 
 1. Establish one English developer reference in `docs/vision.md`, with each type next to its behavior and exceptions, and use it as the migration contract for the app and plugin catalog.
-2. Adopt explicit persistent/transient and inferred types across the shared SDK and its consumers, then separate domain Entity values from requested operational extras without changing identity, evidence or access scope.
+2. Adopt explicit persistent/transient and derived types across the shared SDK and its consumers, then separate domain Entity values from requested operational extras without changing identity, evidence or access scope.
 3. Migrate pin, archive, privacy and indexing projections and consolidate membership relations into `belongs_to`, preserving sync choices, temporal history and repeat-ingestion behavior.
 4. Give each Magnis auth user a canonical `users.user` Entity, connect people to it through `identity`, and maintain protected temporal `owner` Links through system GraphService functions only.
 5. Bring Graph reads, Search, merge, extraction and workspace transfer onto those same boundaries; prove that generic writers cannot change ownership and that replay, ambiguity and conflicting periods remain deterministic.
@@ -38,7 +38,7 @@ Evidence owners:
 
 ### Interfaces
 
-The following signatures declare migration differences, not new parallel SDKs. Definitions belong in the existing SDK owner files. The reference's working spellings remain understandable until approval; this table is the explicit proposed naming decision.
+The following signatures declare migration differences, not new parallel SDKs. Definitions belong in the existing SDK owner files. Persistent-ID and Derived naming follow the owner decisions. Other proposals remain explicitly marked; the New names table records their reasons.
 
 ```typescript
 // SDK core/entity.ts; Id and UuidShapeSchema remain canonical imports.
@@ -57,10 +57,46 @@ export interface UserEntityBinding {
   entityId: UserId;
 }
 
+export type Origin = "canonical" | "derived";
+
+export interface DerivedStatement {
+  origin: "derived";
+  confidence: number;
+  evidence: [PersistentEntityId, ...PersistentEntityId[]];
+  validFrom: DateTimeUtc | null;
+  validUntil: DateTimeUtc | null;
+}
+export interface DerivedEntity<P extends JsonValue = JsonValue>
+  extends EntityBase<P>, DerivedStatement {
+  keys: string[];
+}
+export interface DerivedLink extends LinkBase, DerivedStatement {}
+export type Link = CanonicalLink | DerivedLink;
+
+// Internal deriveEntity result; not a graph Entity.
+export interface EntityDerivation {
+  eligible: boolean;
+  reason: string | null;
+  confidence: number;
+  evidence: PersistentEntityId[];
+}
+export declare function deriveEntity(
+  claims: readonly GraphClaim[],
+  withdrawn: boolean,
+): EntityDerivation;
+
+export const derivedStatementSchema = z.strictObject({
+  origin: z.literal("derived"),
+  confidence: z.number().gt(0).lte(1),
+  evidence: z.tuple([PersistentEntityIdSchema], PersistentEntityIdSchema),
+  validFrom: dateTimeSchema.nullable(),
+  validUntil: dateTimeSchema.nullable(),
+});
+
 // Existing generic Entity variants are renamed, not duplicated.
 export type Entity<P extends JsonValue = JsonValue> =
   | CanonicalEntity<P>
-  | InferredEntity<P>;
+  | DerivedEntity<P>;
 export type PersistentEntity<P extends JsonValue = JsonValue> =
   Entity<P> & { id: PersistentEntityId };
 export type TransientEntity<P extends JsonValue = JsonValue> =
@@ -92,7 +128,7 @@ export interface TransferOwnershipRequest {
 }
 ```
 
-EntityBase.id becomes EntityId; Link endpoints and every saved evidence/reference become PersistentEntityId. Other Source/account/schema IDs retain their existing domains. InferredEntity, InferredLink and InferredStatement replace AgentEntity, AgentLink and AgentStatement throughout compiler-reported consumers. The stored `origin: "agent"` remains unchanged in this migration: it records existing provenance and keeps workspace history compatible. Changing its serialized value would require a separate explicit data-format decision.
+EntityBase.id becomes EntityId; Link endpoints and every saved evidence/reference become PersistentEntityId. Other Source/account/schema IDs retain their existing domains. DerivedEntity, DerivedLink and DerivedStatement replace AgentEntity, AgentLink and AgentStatement throughout compiler-reported consumers. The target discriminator is `origin: "derived"`, covering extraction, aggregation and inference. `GraphClaim` remains the source assertion, while DerivedStatement carries the graph result supported by those claims. Rename the existing internal `DerivedEntity` computation result to `EntityDerivation`, matching `RelationDerivation`, before reusing DerivedEntity for the full graph value.
 
 EntityExtras is the reference's flat required shape: `pinOrder: number | null`, `archived: boolean`, `private: boolean`, read-only `indexed: "pending" | "indexed" | "refused"`, plus either `{syncEnabled: boolean; syncRevision: string}` or the complete pair of nulls. There is no pinned boolean, trigger array, owner or independent indexingPending. Public parsers reject missing fields and half-present sync pairs. The Graph read projection maps a missing graph_index row to pending.
 
@@ -113,18 +149,23 @@ Reuse existing Graph queries and response schemas. Persisted internal rows may c
 | Implementation map | Core and extras |
 | --- | --- |
 | Owner | SDK entity/link/statement definitions; GraphService and repository readers |
-| Target files | MODIFY `../../../magnis-app/packages/sdk/src/core/entity.ts`, `../../../magnis-app/packages/sdk/src/core/link.ts`, `../../../magnis-app/packages/sdk/src/core/statement.ts`, `../../../magnis-app/packages/sdk/src/rpc/registry.ts`, `../../../magnis-app/backend/src/core/entity.ts`, `../../../magnis-app/backend/src/services/graph/entity.repository.ts`, `../../../magnis-app/backend/src/services/graph/graph.service.ts`, `../../../magnis-app/backend/src/services/graph/graph.controller.ts`, `../../../magnis-app/backend/src/db/repository-helpers.ts` |
+| Target files | CREATE `../../../magnis-app/backend/migrations/20261006000000_graph_derived_origin.sql`; MODIFY `../../../magnis-app/packages/sdk/src/core/entity.ts`, `../../../magnis-app/packages/sdk/src/core/link.ts`, `../../../magnis-app/packages/sdk/src/core/statement.ts`, `../../../magnis-app/packages/sdk/src/rpc/registry.ts`, `../../../magnis-app/backend/src/core/entity.ts`, `../../../magnis-app/backend/src/services/graph/entity.repository.ts`, `../../../magnis-app/backend/src/services/graph/graph.service.ts`, `../../../magnis-app/backend/src/services/graph/graph.controller.ts`, `../../../magnis-app/backend/src/db/repository-helpers.ts` |
 | Input / wake | Known-ID reads, list/detail requests, explicit extras request, existing mutation commands |
 | Output / durable state | One domain type, explicit extras responses, hidden auth owner; existing sync revision and processing permission retained |
-| RED test | Extend `backend/test/tst_bts_graph_entity_repo_contract.test.ts` and `tst_bts_graph_pins.test.ts`: bare read omits operational fields; extras read preserves two viewers' distinct preferences |
+| RED test | Extend `backend/test/tst_bts_graph_entity_repo_contract.test.ts`, `tst_bts_graph_pins.test.ts` and SDK `test/graph.contract.test.ts`: bare read omits operational fields; extras read preserves two viewers' distinct preferences; current parsers accept derived and reject agent |
 
 Use `/rename` during implementation for symbol changes: change the owning declaration, follow compiler errors and run the affected project typecheck; do not perform text-search-driven symbol replacement. Runtime strings such as relation kinds and stored JSON need explicit migration fixtures independently of the compiler.
+
+Migrate Entity and Link origin values from `agent` to `derived` with a dedicated SQL migration. Update the origin-value and statement constraints, SQL predicates, SDK discriminated unions and the agentStatementSchema export (renamed derivedStatementSchema). Preserve IDs, evidence, confidence, keys, eligibility and periods. GraphClaim.origin remains indexed/manual; auth agent settings, event producers and domain properties containing the string agent are unrelated.
+
+Versioned workspace import translates the legacy Entity/Link discriminator explicitly; new exports and current public parsers use derived only. Update app and catalog artifacts together at the existing compatibility boundary. Stop old writers for the database cutover and validate the new constraints before activating the new runtime. A repeated upgrade changes no additional rows; an unrecognized origin aborts the transaction. No permanent third origin or silent generic string replacement is introduced.
+
 
 ### B. Migrate operational storage without inventing input values
 
 Keep typed columns; do not introduce a JSONB extras table. Normalize archived null/false to false and retain true. Add private using the previously approved privacy contract's initial false. Keep the current internal processing-permission boolean separate from read-only indexed status. Move sync fields only in the public projection, preserving stored booleans, decimal revisions and pending/applied selections.
 
-**Proposed legacy pin rule for approval:** pin status follows the old pinned flag. Preserve numeric orders of actually pinned rows. Append pinned rows lacking an order after existing pinned orders, deterministically by Entity createdAt then ID for each viewer; when no ordered pin exists, this migration starts the sequence at zero. An order-only unpinned row becomes null. Keep the old columns as deprecated migration evidence during this rollout and export the pre-migration fixture/backup for rollback. Removing those columns is a later cleanup after migrated counts and UI ordering pass, not part of the three migrations below. If appending would overflow the storage integer, fail preflight and request an explicit resequencing decision. Runtime pin commands require a supplied integer, including zero; no missing-value default.
+**Proposed legacy pin rule for approval:** pin status follows the old pinned flag. Preserve numeric orders of actually pinned rows. Append pinned rows lacking an order after existing pinned orders, deterministically by Entity createdAt then ID for each viewer; when no ordered pin exists, this migration starts the sequence at zero. An order-only unpinned row becomes null. Keep the old columns as deprecated migration evidence during this rollout and export the pre-migration fixture/backup for rollback. Removing those columns is a later cleanup after migrated counts and UI ordering pass, not part of the four migrations below. If appending would overflow the storage integer, fail preflight and request an explicit resequencing decision. Runtime pin commands require a supplied integer, including zero; no missing-value default.
 
 Implement the embedding privacy scope already described: device-only models may process private records, cloud-allowed selection/audit/count/ranked hydration excludes them. Stop excludes a scope's new Source changes, not its saved graph or local manual writes. Do not claim protection of chat/completion or extraction until their separate policy is approved.
 
@@ -181,9 +222,9 @@ Every new Entity gets its current owner Link in the same transaction. Generic ad
 
 ### E. Preserve identity and temporal claims through the new boundary
 
-Do not turn this migration into a new entity resolver. Reuse exact Source/canonical keys, preparation, identity Links, merge preview/execute and deterministic derive functions. Preserve the canonical identity-hub exception and repeated ensure after merge. Add the ordinary domain validator and protected-kind checks at extraction commit and merge result validation, so repository use cannot bypass them. Canonical/inferred origin separation, explicit field conflicts, interval overlap refusal and source-claim replacement remain intact.
+Do not turn this migration into a new entity resolver. Reuse exact Source/canonical keys, preparation, identity Links, merge preview/execute and deterministic derive functions. Preserve the canonical identity-hub exception and repeated ensure after merge. Add the ordinary domain validator and protected-kind checks at extraction commit and merge result validation, so repository use cannot bypass them. Canonical/derived origin separation, explicit field conflicts, interval overlap refusal and source-claim replacement remain intact.
 
-For this migration, same-schema different-version merge fails explicitly unless an existing approved version conversion is available. Keep current property merge behavior documented; do not silently add field claims or promote inferred values. **Proposed conservative extras rule:** refuse merge when privacy, syncEnabled or per-viewer pinOrder differ (absent viewer preference means null); do not add an undeclared extras override to the properties-only MergeOverride. Equal choices survive; keep the survivor's syncRevision as its own counter, rather than comparing counters from different entities. Both participants must already be unarchived. Reconcile/invalidate derived indexing through the existing graph mutation path, never choose the better-looking status. A richer extras arbitration command remains a separate contract. System merge retains the survivor owner and retires the duplicate same-owner relationship through the protected path; it does not transfer ownership. Replay must still resolve both representations to the survivor.
+For this migration, same-schema different-version merge fails explicitly unless an existing approved version conversion is available. Keep current property merge behavior documented; do not silently add field claims or promote derived values. **Proposed conservative extras rule:** refuse merge when privacy, syncEnabled or per-viewer pinOrder differ (absent viewer preference means null); do not add an undeclared extras override to the properties-only MergeOverride. Equal choices survive; keep the survivor's syncRevision as its own counter, rather than comparing counters from different entities. Both participants must already be unarchived. Reconcile/invalidate derived indexing through the existing graph mutation path, never choose the better-looking status. A richer extras arbitration command remains a separate contract. System merge retains the survivor owner and retires the duplicate same-owner relationship through the protected path; it does not transfer ownership. Replay must still resolve both representations to the survivor.
 
 Keep pending/indexed/refused with the existing owner revision fence. The revision-based search queue remains a follow-up design already described in the reference: requested/processed and configuration revisions, dependency invalidation, retry/refusal and crash recovery must be completed before that queue replaces digest selection. Do not claim it has been implemented by exposing the status field.
 
@@ -216,10 +257,10 @@ This is the complete SPEC-level migration sequence. The executable Delivery/Stag
 | Order | Proposed PR boundary | Depends on | Completion evidence |
 | --- | --- | --- | --- |
 | 0 | Reconcile SDK/identity/entity-sync/claims/module-dependency prerequisites on the actual integration head | Their existing owners' work | Record integrated commits and compile the baseline; do not duplicate their implementations |
-| 1 | App SDK names, persistent IDs, strict Entity/extras and storage migration | 0, approval of naming/pin proposals | Core parser, viewer preference, sync and read-projection scenarios; matched client changes in the same releasable boundary |
+| 1 | App SDK names, derived-origin migration, persistent IDs, strict Entity/extras and storage migration | 0, approval of legacy pin proposal | Core parser, viewer preference, sync and read-projection scenarios; matched client changes in the same releasable boundary |
 | 2 | App + catalog membership conversion | 1 | Old-data migration, temporal duplicate preflight, permissions and Telegram/Triggers scenarios |
 | 3 | App graph users, protected ownership and bounded transfer | 1–2, approval of bootstrap/mapping/transfer proposals | Nil-auth-user bootstrap, all-writer rejection matrix, rollback/race and owner-search isolation |
-| 4 | App merge/extraction/import validation and catalog consumer completion | 1–3 | Canonical/inferred and period scenarios, repeated ensure, exported/restored workspace equivalence |
+| 4 | App merge/extraction/import validation and catalog consumer completion | 1–3 | Canonical/derived and period scenarios, repeated ensure, exported/restored workspace equivalence |
 | 5 | Compatible runtime/SDK/catalog release and reference reconciliation | All above | Full affected gates, package/API compatibility, migration and restore verification; release approval remains separate |
 
 Cross-repository implementation uses one shared plan. App Deliveries name repository `app`, catalog Deliveries name `catalog`; implementation setup configures `code-production.repository.app` / `.catalog` to the owner's intended checkouts. This authoring turn does not repoint shared repository configuration or create implementation worktrees. Active-time estimates and concrete Stage writes will be derived from the integrated baseline, not guessed across unmerged prerequisite branches.
@@ -234,6 +275,7 @@ App paths in the maps are relative to this plan checkout: `../../../magnis-app`.
 | CREATE | Catalog `docs/plans/2026-10-06-entity-docs.md` | One migration plan, authored and journaled through planctl |
 | MODIFY | App existing SDK, core and RPC files enumerated in maps A–F | Single shared definitions and runtime validators; no parallel type package |
 | MODIFY | App existing Graph, Search, Users, transport and compiler-reported client files in A–F | Remove leaked operational fields and enforce the same authority in every writer and reader |
+| CREATE | `../../../magnis-app/backend/migrations/20261006000000_graph_derived_origin.sql` | Entity and Link origin discriminator and constraint migration |
 | CREATE | `../../../magnis-app/backend/migrations/20261006000001_graph_extras.sql` | Typed extras and legacy pin conversion |
 | CREATE | `../../../magnis-app/backend/migrations/20261006000002_graph_membership.sql` | Membership vocabulary and history conversion |
 | CREATE | `../../../magnis-app/backend/migrations/20261006000003_graph_user_ownership.sql` | Auth-to-graph-user binding and protected ownership |
@@ -252,7 +294,7 @@ This bounds owners rather than guessing every compiler caller. Before executable
 4. Owner is hidden system state and a protected canonical temporal Link. Generic RPC, plugins, model output, import and ordinary merge never acquire ownership-writing authority.
 5. Source identity, domain identity, identity Links and physical merge retain distinct meanings. No automatic person merge by name, shared address or same_as chain.
 6. Merge and extraction validate final domain data and registered endpoint rules under the same transaction/fence that records the result; stale model work cannot overwrite a newer graph.
-7. Human approval does not change inferred origin; repeated evidence does not add to confidence; a changed ending source cannot silently reopen a relation.
+7. Human approval does not change derived origin; repeated evidence does not add to confidence; a changed ending source cannot silently reopen a relation.
 8. Migration preserves explicit sync decisions, applicable periods, auth bindings and access scope. Destructive ambiguity fails preflight rather than choosing silently.
 
 ### Acceptance cases
@@ -275,6 +317,7 @@ This bounds owners rather than guessing every compiler caller. Before executable
 | KG-14 | Step 1 → mark data private and use a cloud embedding model. Verify → no selection/audit/ranked hydration of private content. Step 2 → use device-only model. Verify → local behavior allowed; ordinary ACL remains enforced independently |
 | KG-15 | Step 1 → export upgraded workspace and restore for its target auth user. Step 2 → compare domain identities, claims, periods, preferences, sync choices and protected owner bindings. Verify → intentional ID mappings only, no cross-owner disclosure or direct owner injection. Step 3 → install incompatible module artifact. Verify → rejected activation leaves prior accepted module active |
 | KG-16 | Step 1 → preview/execute a merge with differing privacy, syncEnabled or viewer pinOrder. Verify → refusal without mutation, even if all property conflicts were resolved. Step 2 → equalize the choices through existing explicit commands and merge. Verify → survivor revision and equal choices retained; indexing invalidated/reconciled through the normal mutation path |
+| KG-17 | Step 1 → upgrade a workspace with agent-origin Entity and Link rows, canonical rows, claims and unrelated domain properties containing agent. Verify → only Entity/Link discriminators become derived; IDs, evidence, confidence, periods and other origin domains stay intact; constraints validate. Step 2 → repeat the upgrade and import an old-version export. Verify → stable mapping without duplicates. Step 3 → parse current responses with derived, then agent. Verify → derived succeeds, agent is rejected; unknown stored origins abort migration without partial updates |
 
 ### Test strategy and publication
 
@@ -292,7 +335,9 @@ Reuse SDK Entity/Link/statement/RPC schemas; existing UuidShapeSchema and GraphR
 | --- | --- |
 | PersistentEntityId / PersistentEntityIdSchema | Makes non-nil validation explicit instead of hiding it behind the general EntityId name |
 | EntityId as assigned-or-nil | Represents a domain value before persistence; retires ambiguous NullableId terminology without admitting JavaScript null |
-| InferredEntity / InferredLink / InferredStatement | Describes inferred knowledge rather than the producing agent; keeps stored agent discriminator for compatibility |
+| DerivedEntity / DerivedLink / DerivedStatement | Owner-selected names for graph values derived from claims through extraction, aggregation or inference |
+| EntityDerivation | Frees the existing helper name DerivedEntity for the graph Entity; parallels RelationDerivation |
+| derivedStatementSchema / origin: derived | Aligns the runtime validator and serialized discriminator with DerivedStatement; migrates the legacy agent spelling explicitly |
 | EntityExtras / EntityRead | Separates requested operational state from the domain value, reusing names already discussed |
 | AuthUserId / UserEntityBinding | Separates existing auth scope, including nil, from the new graph node; maps through users.entity_id instead of rekeying sessions |
 | UserEntityProperties | Minimal public graph-user shape; deliberately excludes auth/admin/secrets fields |
@@ -303,7 +348,7 @@ Reuse SDK Entity/Link/statement/RPC schemas; existing UuidShapeSchema and GraphR
 
 No product changes or migrations were executed in this authoring turn. The exact integration head after the prerequisite work, complete compiler-derived consumer file list, migration row counts, data-dependent overlap conflicts, generated API version and release artifact compatibility must be measured before executable Stage approval. No PR publication or deployment is authorized by this documentation commit.
 
-Naming, legacy pin ordering, auth-user mapping/self-owned bootstrap, bounded transfer and refusal of conflicting extras on merge are explicit proposals presented for SPEC approval, not claims of prior owner approval. Wider ACL, connected cross-owner transfer, field-level inferred provenance, richer merge extras arbitration, unmerge, general alias consolidation, revision-queue storage/recovery and cloud policy beyond the existing embedding scope remain follow-up contracts. The plan does not silently manufacture answers to them or promise they are already implemented.
+Persistent-ID and Derived naming reflect owner decisions. Legacy pin ordering, auth-user mapping/self-owned bootstrap, bounded transfer and refusal of conflicting extras on merge are explicit proposals presented for SPEC approval, not claims of prior owner approval. Wider ACL, connected cross-owner transfer, field-level derived provenance, richer merge extras arbitration, unmerge, general alias consolidation, revision-queue storage/recovery and cloud policy beyond the existing embedding scope remain follow-up contracts. The plan does not silently manufacture answers to them or promise they are already implemented.
 <!-- plan:spec:end -->
 
 <!-- plan:implementation:start -->

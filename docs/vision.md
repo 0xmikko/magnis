@@ -41,7 +41,7 @@ export type JsonPrimitive = null | boolean | number | string;
 export type JsonObject = { readonly [key: string]: JsonValue };
 export type JsonValue = JsonPrimitive | JsonValue[] | JsonObject;
 
-export type Origin = "canonical" | "agent";
+export type Origin = "canonical" | "derived";
 ```
 
 **Target:** `PersistentEntityIdSchema` validates an assigned, non-nil ID. `PersistentEntityId` is its branded output; `EntityId` also admits the nil UUID for an unsaved value. Neither type admits JavaScript `null`. A plain `string | NilId` would lose the distinction because the literal already belongs to `string`.
@@ -92,33 +92,37 @@ export interface CanonicalEntity<P extends JsonValue = JsonValue>
 
 Canonical means a record written under Source/host authority. It does not mean every provider statement is objectively true. A non-null `canonicalKey` supplies exact domain identity within `(owner, schemaId)`; it is nonempty and must not be casually reassigned. An email address key identifies the address, not every person associated with it.
 
-### Inferred statements
+### Derived statements
 
 ```typescript
-export interface AgentStatement {
-  origin: "agent";
+export interface DerivedStatement {
+  origin: "derived";
   confidence: number;
   evidence: [PersistentEntityId, ...PersistentEntityId[]];
   validFrom: DateTimeUtc | null;
   validUntil: DateTimeUtc | null;
 }
 
-export interface AgentEntity<P extends JsonValue = JsonValue>
-  extends EntityBase<P>, AgentStatement {
+export interface DerivedEntity<P extends JsonValue = JsonValue>
+  extends EntityBase<P>, DerivedStatement {
   keys: string[];
 }
 ```
 
-`AgentEntity` is the current SDK name; **`InferredEntity` is the proposed replacement**. The stored discriminator is still `origin: "agent"`. `keys` contains alternative names used by identity lookup. Nonempty keys require a hub-role schema in the ordinary creation path. Canonical currently has no equivalent keys field; moving aliases into shared domain identity still needs a rule for their provenance and merge.
+**Target:** `DerivedStatement`, `DerivedEntity` and `DerivedLink` describe knowledge reconstructed from claims and evidence. Derivation includes extraction, aggregation and inference; it does not identify the producing agent or require a new logical deduction. `GraphClaim` retains the source's assertion; the derived graph value is the result of reconciling its supporting claims.
 
-Evidence is a nonempty list of `PersistentEntityId` values identifying existing entities in the same owner scope. `0 < confidence <= 1`; only human approval can produce `1`, and approval leaves the origin inferred. `validFrom` and `validUntil` describe when the assertion holds, independently of when it was processed.
+The current SDK uses `AgentStatement`, `AgentEntity`, `AgentLink` and `origin: "agent"`. The target discriminator is `"derived"`; adopting it requires an explicit migration of Entity and Link origin values, validators and versioned workspace formats. This naming decision does not change confidence, evidence or canonical authority.
+
+`keys` contains alternative names used by identity lookup. Nonempty keys require a hub-role schema in the ordinary creation path. Canonical currently has no equivalent keys field; moving aliases into shared domain identity still needs a rule for their provenance and merge.
+
+Evidence is a nonempty list of `PersistentEntityId` values identifying existing entities in the same owner scope. `0 < confidence <= 1`; only human approval can produce `1`, and approval leaves the origin derived. `validFrom` and `validUntil` describe when the assertion holds, independently of when it was processed.
 
 ### Saved and unsaved values
 
 ```typescript
 export type Entity<P extends JsonValue = JsonValue> =
   | CanonicalEntity<P>
-  | AgentEntity<P>;
+  | DerivedEntity<P>;
 
 export type PersistentEntity<P extends JsonValue = JsonValue> =
   Entity<P> & { id: PersistentEntityId };
@@ -276,12 +280,12 @@ export interface CanonicalLink extends LinkBase {
   validUntil: DateTimeUtc | null;
 }
 
-export interface AgentLink extends LinkBase, AgentStatement {}
+export interface DerivedLink extends LinkBase, DerivedStatement {}
 
-export type Link = CanonicalLink | AgentLink;
+export type Link = CanonicalLink | DerivedLink;
 ```
 
-A Link joins two saved Entity IDs. It has its own ID but is not an Entity: no Entity schema, properties or extras. Canonical Links contain metadata; inferred Links contain the statement's confidence and evidence. Their parser rejects mixed forms. A Source Link derives provenance from the source Entity; it has no separate `SourceRef` field.
+A Link joins two saved Entity IDs. It has its own ID but is not an Entity: no Entity schema, properties or extras. Canonical Links contain metadata; derived Links contain the statement's confidence and evidence. Their parser rejects mixed forms. A Source Link derives provenance from the source Entity; it has no separate `SourceRef` field.
 
 ### Built-in and extensible kinds
 
@@ -396,7 +400,7 @@ export type AddLinkCommand =
       validFrom: DateTimeUtc | null;
       validUntil: DateTimeUtc | null;
     })
-  | (AddLinkBase & AgentStatement);
+  | (AddLinkBase & DerivedStatement);
 
 export interface LinkAddResult {
   id: LinkId;
@@ -414,7 +418,7 @@ export interface EndLinkCommand {
 }
 ```
 
-These are internal commands; owner comes from trusted execution context. The external `graph.link.add` controller constructs an inferred statement. Source/host paths create canonical records. Models cannot choose canonical origin or set confidence to one. Ordinary endpoints must exist under the caller and not be archived; evidence must exist under that owner, but may be archived.
+These are internal commands; owner comes from trusted execution context. The external `graph.link.add` controller constructs a derived statement. Source/host paths create canonical records. Models cannot choose canonical origin or set confidence to one. Ordinary endpoints must exist under the caller and not be archived; evidence must exist under that owner, but may be archived.
 
 The interval is `[validFrom, validUntil)`. A null boundary is unbounded, not creation time or processing time. A known end must be strictly later than a known start. Adjacent periods do not overlap.
 
@@ -426,10 +430,10 @@ The interval is `[validFrom, validUntil)`. A null boundary is unbounded, not cre
 | Same start, different specified end | Conflict |
 | Different start | Allowed only without overlap for the same pair, kind and origin |
 | Canonical add repeated with different metadata | Not a metadata patch |
-| `end` / `graph.link.end` | Closes an open Link; inferred ending needs evidence; repeating end fails |
+| `end` / `graph.link.end` | Closes an open Link; derived ending needs evidence; repeating end fails |
 | `deleteLink` / `graph.link.unlink` | Physical removal with audit, not interval closure |
-| `approve` | Human confirmation of an inferred row; origin stays inferred |
-| `withdraw` | Removes selected inferred statements with dependency checks |
+| `approve` | Human confirmation of a derived row; origin stays derived |
+| `withdraw` | Removes selected derived statements with dependency checks |
 
 `graph.link.update` currently aliases end, not arbitrary patch; `graph.link.link` aliases add. Archive changes Entity visibility, not Link periods. Pin preferences do not change Links. Both endpoint foreign keys currently cascade on final Entity deletion. Semantic writes and audit commit together under the owner's mutation lock.
 
@@ -477,7 +481,7 @@ export interface TransferOwnershipRequest {
 }
 ```
 
-**Agreed target:** only system GraphService functions create, close, transfer or delete `owner` Links. The relationship is stored with history; the Entity's hidden owner field is its current authoritative projection. It is not merely a virtual edge synthesized on reads. Ownership is canonical even when the owned Entity is inferred.
+**Agreed target:** only system GraphService functions create, close, transfer or delete `owner` Links. The relationship is stored with history; the Entity's hidden owner field is its current authoritative projection. It is not merely a virtual edge synthesized on reads. Ownership is canonical even when the owned Entity is derived.
 
 An ordinary saved Entity has exactly one current owner and no overlapping ownership periods, even across different `to` IDs. Transfer at T closes the old interval, inserts a new Link ID starting at T, updates the hidden projection and writes audit atomically. Repeating the same owner assignment adds no interval. The service supplies time and caller identity; the caller cannot invent an ownership history.
 
@@ -991,11 +995,11 @@ Address Book marks its Links with this producer. Removing an address ends its ow
 
 The inspected module still uses its existing batch/link workflow; host preparation support does not imply production conversion to `rpc.ensure` is complete.
 
-### Canonical and inferred identity matching
+### Canonical and derived identity matching
 
-Extraction may reuse a shown canonical ID of the requested schema. Otherwise `findByIdentity` searches name/keys under the owner and schema: input NFC normalization, trimming and case folding; zero matches creates inferred, one reuses, several refuse. Canonical-first sorting does not resolve ambiguity. This is a naming heuristic, not proof that two people are identical.
+Extraction may reuse a shown canonical ID of the requested schema. Otherwise `findByIdentity` searches name/keys under the owner and schema: input NFC normalization, trimming and case folding; zero matches creates derived, one reuses, several refuse. Canonical-first sorting does not resolve ambiguity. This is a naming heuristic, not proof that two people are identical.
 
-Reusing canonical creates no entity-claim and changes no canonical properties; inferred Links may refer to it. Reusing inferred adds support but does not automatically choose new field values. A later Source record resolves external/canonical keys, not a general automatic merge with an earlier inferred namesake.
+Reusing canonical creates no entity-claim and changes no canonical properties; derived Links may refer to it. Reusing derived adds support but does not automatically choose new field values. A later Source record resolves external/canonical keys, not a general automatic merge with an earlier derived namesake.
 
 **Current limitations:** name lookup also includes archived/ineligible rows. New proposals in one model answer are not themselves a saved identity index, so repeated new names within that answer are not guaranteed to deduplicate. Alias migration, archived-candidate reuse and stronger domain matching remain open.
 
@@ -1023,9 +1027,9 @@ The caller chooses `retiredId → survivorId`; this direction determines the ret
 
 | Survivor / retired | Current rule |
 | --- | --- |
-| Inferred / inferred | Allowed subject to the common rules |
-| Canonical / inferred | Allowed; canonical identity and Source remain |
-| Inferred / canonical | Rejected |
+| Derived / derived | Allowed subject to the common rules |
+| Canonical / derived | Allowed; canonical identity and Source remain |
+| Derived / canonical | Rejected |
 | Canonical / canonical with different Source keys | Normally rejected; preserve provider representations through identity |
 | Internal canonical identity-hubs | Special exception below |
 
@@ -1094,10 +1098,10 @@ One transaction writes survivor properties, repoints/collapses Links, rewrites s
 | Override key absent from both sides | Reject |
 | Override value null | Store JSON null, unlike patch's remove-key meaning |
 | Shared fields: name, idx, dates, Source, key | Base merge retains survivor values |
-| Inferred keys | Current merge does not union aliases |
+| Derived keys | Current merge does not union aliases |
 | Extras | No general merge policy yet for pins, privacy or sync |
 
-The implementation has an array-union helper, but preview still requires overrides for differing ordinary arrays. Copying a missing inferred property into canonical currently loses field-level origin: it does not prove the provider supplied that value. A later Source snapshot may replace canonical properties again. Persistent user overrides and field claims need an explicit design.
+The implementation has an array-union helper, but preview still requires overrides for differing ordinary arrays. Copying a missing derived property into canonical currently loses field-level origin: it does not prove the provider supplied that value. A later Source snapshot may replace canonical properties again. Persistent user overrides and field claims need an explicit design.
 
 ### Relationship decisions
 
@@ -1106,16 +1110,16 @@ Replace retired in both endpoints, normalize symmetric kinds, then group by pair
 | Resulting relationships | Decision |
 | --- | --- |
 | New pair | Repoint the existing Link |
-| Canonical and inferred for the same pair | Retain separate origins |
+| Canonical and derived for the same pair | Retain separate origins |
 | Identical periods in one origin | Collapse duplicates |
 | Separate or adjacent periods | Retain both |
 | Different overlapping periods | Reject the whole merge |
 | Retired/survivor connection becomes a self-loop | Remove the induced loop |
 | Duplicate canonical metadata | Retain winner values, fill missing top-level keys; not an Entity override conflict |
-| Duplicate inferred evidence | Union evidence, then reconcile claims |
+| Duplicate derived evidence | Union evidence, then reconcile claims |
 | System owner Links | Target requires special system handling, never ordinary collapse/repoint rules |
 
-The surviving Link ID need not be the one originally attached to survivor. Current ordering prefers higher inferred confidence, then earlier createdAt and ID. Preview counts incident retired Links, including future deletions; execution counts actual surviving repoints, so totals may differ.
+The surviving Link ID need not be the one originally attached to survivor. Current ordering prefers higher derived confidence, then earlier createdAt and ID. Preview counts incident retired Links, including future deletions; execution counts actual surviving repoints, so totals may differ.
 
 A single `metadata.producer` cannot preserve independent producers' support. Multi-producer provenance and interval handling remain open; metadata collapse does not establish that guarantee.
 
@@ -1137,7 +1141,7 @@ A single `metadata.producer` cannot preserve independent producers' support. Mul
 
 1. Work and home addresses each resolve to a different internal person, P1/P2. Equal names do not combine them.
 2. A card lists both addresses. Address Book links the card to both people; an ensure requiring one person refuses ambiguity.
-3. A message says “Anna works at X.” Extraction can reuse a specifically shown candidate; ambiguous name lookup refuses. Reusing canonical P1 creates an inferred relationship without replacing P1's properties.
+3. A message says “Anna works at X.” Extraction can reuse a specifically shown candidate; ambiguous name lookup refuses. Reusing canonical P1 creates a derived relationship without replacing P1's properties.
 4. The user identifies the duplicate and chooses P1 as survivor. After preview/conflict resolution, eligible internal hubs can merge; address and card nodes remain.
 5. Repeating ensure through either address now returns P1. Existing scenario `tst_bts_graph_merge_pg_054` covers this replay without creating nodes or Links.
 6. Deleting the provider card archives that representation and revisits only its supported relationships. The person and unrelated evidence remain.
@@ -1535,8 +1539,8 @@ export const sourceRefSchema = z.strictObject({
   externalId: z.string(),
 });
 
-export const agentStatementSchema = z.strictObject({
-  origin: z.literal("agent"),
+export const derivedStatementSchema = z.strictObject({
+  origin: z.literal("derived"),
   confidence: z.number().gt(0).lte(1),
   evidence: z.tuple([PersistentEntityIdSchema], PersistentEntityIdSchema),
   validFrom: dateTimeSchema.nullable(),
@@ -1830,7 +1834,7 @@ export interface IndexingInput {
 
 Here source means one saved canonical Entity, such as a message, not the entire connected account. The module supplies a bounded context query. Host adds the source, keeps canonical rows/Links, and renders declared text. Runtime checks require unique complete IDs, matching text keys, source membership, owned endpoints and nonempty startEntityIds.
 
-Context helps interpret the source; facts must quote the source itself. Inferred context is not recycled as primary evidence. Separate identity candidates may still include inferred nodes.
+Context helps interpret the source; facts must quote the source itself. Derived context is not recycled as primary evidence. Separate identity candidates may still include derived nodes.
 
 ### Read the assertions before proposing graph writes
 
@@ -1954,7 +1958,7 @@ export interface ClaimedLink {
 }
 ```
 
-These shapes contain resolved IDs, distinct from the model's original mention. Canonical reuse does not create an entity-claim or replace its properties. An inferred target gains support without automatic field replacement.
+These shapes contain resolved IDs, distinct from the model's original mention. Canonical reuse does not create an entity-claim or replace its properties. A derived target gains support without automatic field replacement.
 
 ```typescript
 export type GraphClaim = {
@@ -2006,11 +2010,11 @@ Refusal stores refused; technical/model parsing errors store pending on the hand
 | Successful reread | Prior active/inactive source claims become replaced; new claims replace the set; old and new targets reconcile |
 | Another source still supports a fact | Its claims remain and may keep the row eligible |
 | Entity loses all active support | Becomes ineligible, not automatically deleted |
-| Human approve | Adds a manual confidence-one claim citing an owned episode; origin stays inferred |
+| Human approve | Adds a manual confidence-one claim citing an owned episode; origin stays derived |
 | Archive | Changes visibility; not equivalent to withdrawing all source claims |
 
 ```typescript
-export interface DerivedEntity {
+export interface EntityDerivation {
   eligible: boolean;
   reason: string | null;
   confidence: number;
@@ -2025,12 +2029,14 @@ export declare function deriveRelation(
 export declare function deriveEntity(
   claims: readonly GraphClaim[],
   withdrawn: boolean,
-): DerivedEntity;
+): EntityDerivation;
 ```
+
+`EntityDerivation` is the internal computation result returned by `deriveEntity`; it has no identity or domain properties. It replaces the inspected helper's old `DerivedEntity` name, freeing that name for the complete graph Entity and matching `RelationDerivation`.
 
 `deriveEntity` computes eligibility, evidence and maximum active confidence. It does not vote on properties, change name/keys or promote repeated speculation into confidence one. The stored values remain those already written. When support disappears, the hidden row may keep older confidence/evidence; eligibility controls visibility.
 
-`withdraw(evidenceIds)` is stronger than automatic source invalidation: it selects dependent agent statements, physically removes them and records the owner's decision. It refuses if deleting an Entity would strand an incident Link outside the withdrawal. Decisions identify an Entity ID or `(from, to, kind, validFrom)`; they block rematerializing that identity, not every future similar node with a new ID. Undoing withdrawal and carrying decisions through merge remain open.
+`withdraw(evidenceIds)` is stronger than automatic source invalidation: it selects dependent derived statements, physically removes them and records the owner's decision. It refuses if deleting an Entity would strand an incident Link outside the withdrawal. Decisions identify an Entity ID or `(from, to, kind, validFrom)`; they block rematerializing that identity, not every future similar node with a new ID. Undoing withdrawal and carrying decisions through merge remain open.
 
 ### Temporal derivation and out-of-order evidence
 
@@ -2173,7 +2179,7 @@ Delivery ordering, retries, event deduplication and recovery still need a comple
 
 | Area | Decision still required |
 | --- | --- |
-| Identity types | Final names for assigned/nil IDs and inferred variants; alias provenance and archived-candidate reuse |
+| Identity | Alias provenance and archived-candidate reuse |
 | Ownership | Auth-to-graph-user mapping, bootstrap, user-node ownership, cross-owner Link/evidence policy and historical visibility |
 | Merge | Field provenance, schema version compatibility, final domain validation, extras, multi-producer metadata, protected owner handling, old-ID recovery and split |
 | Extraction | Shared domain admission, corrections, unresolved explanation API and withdrawal restoration |
