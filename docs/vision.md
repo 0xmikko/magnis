@@ -317,6 +317,7 @@ export type BuiltinLinkType =
   | "identity"
   | "authored_by"
   | "sent_to"
+  | "received_from"
   | "belongs_to"
   | "observed_in"
   | "observed_participant"
@@ -336,13 +337,14 @@ export type BuiltinLinkType =
 export type LinkType = BuiltinLinkType | (string & {});
 ```
 
-`LinkType` retains its SDK name. This is the target vocabulary, not an inventory of historical registry entries. It generalizes `triggers.belongs_to` to `belongs_to`, replaces `episode → triggered_by → trigger` with `trigger → created → episode`, and adds protected `owner`. Communication uses `sent`, `received` and `sent_to`; historical `in_chat` needs a separate context mapping. `string & {}` allows registered module kinds; it grants no write permission or right to recreate retired kinds. The existing `link_kinds` registry remains authoritative.
+`LinkType` retains its SDK name. This is the target vocabulary, not an inventory of historical registry entries. It generalizes `triggers.belongs_to` to `belongs_to`, replaces `episode → triggered_by → trigger` with `trigger → created → episode`, and adds protected `owner`. Communication uses `sent`/`received` for observed events and `sent_to`/`received_from` for addressed parties; historical `in_chat` needs a separate context mapping. `string & {}` allows registered module kinds; it grants no write permission or right to recreate retired kinds. The existing `link_kinds` registry remains authoritative.
 
 | Kind | Endpoint roles | Direction and meaning |
 | --- | --- | --- |
 | `identity` | hub → identity_channel | Person/company → its account, address or card |
 | `authored_by` | content → identity_channel | Content → author |
 | `sent_to` | content → identity_channel | Message → addressed recipient, including To/CC/BCC; does not assert delivery |
+| `received_from` | content → identity_channel | Message → sender reported by the source, such as the email From address; does not assert observed delivery or verified sender identity |
 | `belongs_to` | Registered schema pairs | Organizational membership, such as Trigger → Episode or member → project; not proof of communication |
 | `observed_in` | identity_channel → container | Connected observer account → accessible container; Telegram also stores its per-account sync state on this edge |
 | `observed_participant` | identity_channel → container | Account → container where its participation was observed, such as a message author in a chat |
@@ -392,7 +394,7 @@ flowchart LR
 | --- | --- |
 | `projects.belongs_to` | Proposed consolidation into `belongs_to`: the current writer is member → project. Preserve project endpoint checks and replace implicit namespace permission with an explicit host-kind grant |
 | `child_of` / `belongs_to` | Keep distinct. A hierarchical parent and membership in a collection have different cardinality and execution rules |
-| `authored_by` / `created` / `sent` / `received` / `sent_to` | Keep distinct: author, creation context, observed sending, observed delivery and addressed recipient. Draft creation does not prove sending; recipient headers do not prove delivery |
+| `authored_by` / `created` / `sent` / `received` / `sent_to` / `received_from` | Keep distinct: content author, creation context, observed sending/delivery and reported recipient/sender. Do not duplicate a sender-only fact as authored_by. Headers alone do not prove transmission or delivery |
 | `started_with` / `reply_to` / `mentions` / `references` | Keep distinct: opening context, response target, semantic mention and explicit resource reference. One Entity can serve several roles |
 | `observed_in` / `observed_participant` / `attendee` | Keep distinct: observer access, observed participation and event attendance. A participant edge must not acquire the observer's sync state |
 | `identity` / `same_as` | Keep separate from merge and ACL. `identity` connects a hub to a representation. Resolve the mismatch between an unconfirmed duplicate hint and a confirmed `same_as` assertion before treating the latter as equality |
@@ -408,7 +410,16 @@ Current code still writes `in_chat`, `triggers.belongs_to`, `projects.belongs_to
 
 ### Communication is an observed event
 
-The communication vocabulary has three kinds: `sent` records sending, `received` records delivery to an observed endpoint, and `sent_to` identifies an addressed recipient. There is no separately stored inverse `sent_by`: to ask who sent a message, traverse incoming `sent` Links. `reply_to` is a separate message → original-message relation; it says which message is being answered, not how it was delivered. `authored_by` remains the general content-author relation and does not establish a successful send.
+The communication vocabulary has two pairs:
+
+| Pair | Meaning |
+| --- | --- |
+| `sent` / `received` | Account/mailbox → message: observed sending or delivery, with an occurrence time |
+| `sent_to` / `received_from` | Message → address/account: to whom it is addressed and from whom the source reports it came |
+
+`received_from` supplies sender information even when Magnis cannot observe that sender's account. It does not invert `received`, which identifies the receiving endpoint, or manufacture a `sent` event from a From header. There is no separately stored inverse `sent_by`: incoming `sent` traversal already finds an observed sending endpoint. `reply_to` is message → original message and identifies what is being answered.
+
+`authored_by` remains for actual content authorship. The inspected email writer currently maps `from_address` to `authored_by`; the target maps this sender-only fact to `received_from` instead. Migrate only the known email producer/schema pair, preserving provenance and history; do not rename authorship across the graph or write both Links from the same sender field. A domain can record both only when it independently knows the author and the sender. Other communication adapters must declare which fact their source supplies.
 
 ```typescript
 export type CommunicationLink = CanonicalLink & {
