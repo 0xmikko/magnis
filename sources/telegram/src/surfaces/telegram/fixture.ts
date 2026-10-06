@@ -139,7 +139,8 @@ function asObject(v: unknown): Record<string, unknown> | undefined {
  * `direction = "forward"` (CatchUp) drops messages at/below the per-chat cursor
  * `last_msg_id`; `"backward"` (or absent) is a Bootstrap page returning
  * everything. */
-export function fetchResult(direction: string, cursor: unknown): Record<string, unknown> {
+export function fetchResult(direction: string, cursor: unknown, selected: readonly string[] | undefined, heads: readonly string[] | undefined): Record<string, unknown> {
+  if (selected === undefined || heads === undefined) throw new Error("Telegram fixture fetch requires explicit selection");
   const fx = load();
 
   const cursorChats = asObject(asObject(cursor)?.chats);
@@ -150,15 +151,16 @@ export function fetchResult(direction: string, cursor: unknown): Record<string, 
   };
 
   const envelopes: Record<string, unknown>[] = [];
-  const nextChats: Record<string, unknown> = {};
+  const nextChats: Record<string, unknown> = { ...cursorChats };
   const traversed: Record<string, [number, number]> = {};
 
   // Interleave: each chat's envelope, then its (filtered) messages — the same
   // ordering the in-backend bootstrap/catch-up emit.
   for (const chat of fx.chats) {
     envelopes.push(chatEnvelope(chat));
+    if (!selected.includes(String(chat.chat_id))) continue;
 
-    const offset = direction === "forward" ? offsetFor(chat.chat_id) : 0;
+    const offset = direction === "forward" && !heads.includes(String(chat.chat_id)) ? offsetFor(chat.chat_id) : 0;
     let highest = offset;
     let served = 0;
     for (const m of fx.messages) {
@@ -179,8 +181,9 @@ export function fetchResult(direction: string, cursor: unknown): Record<string, 
   const orphanHigh = new Map<number, number>();
   for (const m of fx.messages) {
     if (chatIds.has(m.chat_id)) continue;
+    if (!selected.includes(String(m.chat_id))) continue;
     if (m.live) continue;
-    const offset = direction === "forward" ? offsetFor(m.chat_id) : 0;
+    const offset = direction === "forward" && !heads.includes(String(m.chat_id)) ? offsetFor(m.chat_id) : 0;
     if (direction === "forward" && offset > 0 && m.message_id <= offset) continue;
     envelopes.push(messageEnvelope(m, "snapshot"));
     const entry = orphanHigh.get(m.chat_id) ?? offset;
@@ -189,7 +192,7 @@ export function fetchResult(direction: string, cursor: unknown): Record<string, 
   }
   for (const [chatId, high] of orphanHigh) {
     if (high > 0) nextChats[String(chatId)] = { last_msg_id: high };
-    const offset = direction === "forward" ? offsetFor(chatId) : 0;
+    const offset = direction === "forward" && !heads.includes(String(chatId)) ? offsetFor(chatId) : 0;
     if (high > offset) traversed[String(chatId)] = [offset + 1, high];
   }
 

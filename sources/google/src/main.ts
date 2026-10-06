@@ -1,6 +1,6 @@
 // External `google` connector — Gmail + Calendar + Contacts as a Magnis MCP
 // source. It speaks the Magnis Sync Profile over stdio JSON-RPC and feeds three
-// surfaces (email, meetings, contacts) with canonical envelopes the
+// surfaces (email, meetings, addressbook) with canonical envelopes the
 // corresponding modules ingest unchanged. Poll-only; credentials arrive per
 // call as `_meta = { refresh_token, client_id, client_secret }`.
 //

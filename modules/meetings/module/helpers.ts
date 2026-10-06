@@ -3,7 +3,8 @@
 // repaired), read-time attendee→contact enrichment over the `attendee` edges,
 // RFC-3339 → date/time display, and the list-item builder.
 
-import type { GraphService, LinkSummary, RawEntity } from "@magnis/plugin-sdk";
+import type { GraphService } from "@magnis/plugin-sdk";
+import type { Entity, Link } from "@magnis/sdk";
 import type {
   CalendarAttendee,
   MeetingAttendeeView,
@@ -11,6 +12,17 @@ import type {
 } from "../types.ts";
 
 export type Data = Record<string, unknown>;
+
+/// The node dictionary (S5): the record every read path renders from.
+export const dictOf = (e: Entity): Data => e.properties as Data;
+
+/// An edge's own dictionary — the per-invite facts on an `attendee` edge. An
+/// agent link carries none, and a canonical link written without one is null.
+function edgeDictOf(edge: Link): Data {
+  if (edge.origin !== "canonical") return {};
+  const metadata = edge.metadata;
+  return metadata !== null && typeof metadata === "object" && !Array.isArray(metadata) ? metadata : {};
+}
 
 export const str = (d: Data, k: string): string | null => {
   const v = d[k];
@@ -79,7 +91,7 @@ export function parseAttendees(
 export async function enrichAttendees(
   graph: GraphService,
   eventId: string,
-  links?: LinkSummary[],
+  links?: readonly Link[],
 ): Promise<MeetingAttendeeView[]> {
   const page = await attendeesForPage(graph, [eventId], links ? { [eventId]: links } : undefined);
   return page.get(eventId) ?? [];
@@ -92,7 +104,7 @@ export async function enrichAttendees(
 export async function attendeesForPage(
   graph: GraphService,
   eventIds: string[],
-  prefetched?: Record<string, LinkSummary[]>,
+  prefetched?: Record<string, readonly Link[]>,
 ): Promise<Map<string, MeetingAttendeeView[]>> {
   const out = new Map<string, MeetingAttendeeView[]>();
   if (eventIds.length === 0) return out;
@@ -100,40 +112,41 @@ export async function attendeesForPage(
   const edges = (
     prefetched
       ? Object.values(prefetched).flat()
-      : await graph.list_links_for_entities(eventIds)
-  ).filter((l) => l.kind === "attendee" && eventSet.has(l.from_id));
+      : await graph.listLinksForEntities(eventIds)
+  ).filter((l) => l.kind === "attendee" && eventSet.has(l.from));
   if (edges.length === 0) return out;
 
-  const addressIds = [...new Set(edges.map((e) => e.to_id))];
-  const addresses = await graph.get_entities(addressIds);
+  const addressIds = [...new Set(edges.map((e) => e.to))];
+  const addresses = await graph.getEntities(addressIds);
   const addressById = new Map(addresses.map((a) => [a.id, a]));
 
   // One batch of the addresses' inbound identity edges, one batch of persons.
-  const identityEdges = (await graph.list_links_for_entities(addressIds)).filter(
-    (l) => l.kind === "identity" && addressById.has(l.to_id),
+  const identityEdges = (await graph.listLinksForEntities(addressIds)).filter(
+    (l) => l.kind === "identity" && addressById.has(l.to),
   );
-  const personIds = [...new Set(identityEdges.map((l) => l.from_id))];
-  const persons = personIds.length === 0 ? [] : await graph.get_entities(personIds);
+  const personIds = [...new Set(identityEdges.map((l) => l.from))];
+  const persons = personIds.length === 0 ? [] : await graph.getEntities(personIds);
   const personById = new Map(persons.map((p) => [p.id, p]));
   const contactByAddress = new Map<string, string>();
   for (const edge of identityEdges) {
-    const person = personById.get(edge.from_id);
-    if (person?.schema_id === "contacts.person" && !contactByAddress.has(edge.to_id)) {
-      contactByAddress.set(edge.to_id, person.id);
+    const person = personById.get(edge.from);
+    if (person?.schemaId === "contacts.person" && !contactByAddress.has(edge.to)) {
+      contactByAddress.set(edge.to, person.id);
     }
   }
 
   for (const edge of edges) {
-    const addr = addressById.get(edge.to_id);
+    const addr = addressById.get(edge.to);
     if (!addr) continue;
-    const meta = (edge.metadata ?? {}) as Data;
-    const arr = out.get(edge.from_id) ?? [];
+    const email = str(dictOf(addr), "address") ?? addr.name;
+    if (email === null) throw new Error(`meetings: address ${addr.id} carries no address`);
+    const arr = out.get(edge.from) ?? [];
     arr.push({
-      name: str(meta, "display_name"),
-      email: str(addr.properties ?? {}, "address") ?? addr.name,
-      contact_id: contactByAddress.get(addr.id) ?? null,
+      name: str(edgeDictOf(edge), "display_name"),
+      email,
+      contactId: contactByAddress.get(addr.id) ?? null,
     });
-    out.set(edge.from_id, arr);
+    out.set(edge.from, arr);
   }
   return out;
 }
@@ -165,7 +178,7 @@ export function formatDateTime(
 /// Build a list/detail base item from an entity + its details record data +
 /// already-enriched attendees. Native title default = "Untitled Meeting".
 export function buildListItem(
-  entity: RawEntity,
+  entity: Entity,
   d: Data,
   attendees: MeetingAttendeeView[],
 ): MeetingListItem {
@@ -175,16 +188,16 @@ export function buildListItem(
   );
   return {
     id: entity.id,
-    schema_id: entity.schema_id,
+    schemaId: entity.schemaId,
     title: entity.name && entity.name.length > 0 ? entity.name : "Untitled Meeting",
     date,
     time,
-    starts_at: str(d, "starts_at"),
-    ends_at: str(d, "ends_at"),
+    startsAt: str(d, "starts_at"),
+    endsAt: str(d, "ends_at"),
     location: nonEmpty(d, "location"),
     description: nonEmpty(d, "description"),
-    conference_link: nonEmpty(d, "conference_link"),
+    conferenceLink: nonEmpty(d, "conference_link"),
     attendees,
-    created_at: entity.created_at ?? "",
+    createdAt: entity.createdAt,
   };
 }

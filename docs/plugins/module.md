@@ -93,10 +93,16 @@ definePlugin(CompaniesModule);
 
 `definePlugin` takes the **class constructor**, not an instance. At load it
 instantiates the class, reads the decorated methods back off the prototype, and
-publishes a handler table keyed by `<plugin_id>.<method-suffix>` plus the
-agent-facing tool definitions. `GraphService` is not generic: a node's
-dictionary is a plain JSON map, and a module types it with its own interface at
-the call sites that care.
+publishes a handler table keyed by `<plugin_id>.<method-suffix>`, the
+agent-facing tool declarations and an RPC declaration per `@rpc` method.
+`GraphService` is not generic: a node's dictionary is a plain JSON map, and a
+module types it with its own interface at the call sites that care.
+
+Every shape the host and the module exchange — `Entity`, `Link`,
+`EntityWithLinks`, `LinkedEntity`, `PaginatedResponse`, `GraphBatchInput`, the
+operation inputs, `PluginContext`, the sync params and receipts — is the SDK's,
+imported type-only from `@magnis/sdk`. `@magnis/plugin-sdk` declares none of
+them; a module never redeclares one.
 
 ---
 
@@ -104,8 +110,8 @@ the call sites that care.
 
 The constructor receives `PluginDeps = { graph, ctx, util, rpc, log }`:
 
-- **`ctx: PluginContext`** — `{ user_id, extension_kind, extension_id }`.
-  `extension_id` is the RPC-name prefix; `user_id` is stamped host-side for
+- **`ctx: PluginContext`** — `{ userId, extensionKind, extensionId }`.
+  `extensionId` is the RPC-name prefix; `userId` is stamped host-side for
   scoping, never supplied by JS.
 - **`util`** — `uuid_v5(namespace, name)`, a deterministic UUIDv5 byte-equal to
   the Rust side, for deriving ids that match native handlers.
@@ -117,30 +123,31 @@ The constructor receives `PluginDeps = { graph, ctx, util, rpc, log }`:
 
 **The graph API:**
 
-- **Entities** — `create_entity`, `get_entity`/`get_entities` (batch),
-  `list_entities`, `list_entities_window` (a page + the exact total in ONE
+- **Entities** — `createEntity`, `getEntity`/`getEntities` (batch),
+  `listEntities`, `listEntitiesWindow` (a page + the exact total in ONE
   statement, filtered/ordered over entity columns, dictionary keys or an edge
-  dictionary), `list_entities_by_property_field`, `search_entities_by_name`,
-  `get_entity_full(id, { links? })`, `update_entity_name`, `delete_entity`, …
-- **The node dictionary** — `update_properties({ entity_id, properties })`
+  dictionary), `listEntitiesByPropertyField`, `searchEntitiesByName`,
+  `getEntityFull(id, { links? })`, `updateEntityName`, `deleteEntity`, …
+- **The node dictionary** — `updateProperties({ entityId, properties })`
   MERGES the top-level keys you send, and an explicit `null` REMOVES a key.
-  The bulk `apply_batch` lane is the other way round: it REPLACES the
+  The bulk `applyBatch` lane is the other way round: it REPLACES the
   dictionary with the fields as last synced. Know which lane you are on — a
   curated edit that resends the whole map is harmless, a sync that sends a
   partial one silently drops the rest.
-- **Identity** — a node is found by its `anchor`, not by an external id
-  column: read one with `find_by_anchor`. A curated `create_entity` does NOT
-  take an anchor — it always mints `local:<id>`. The issuer-key lane is
-  `apply_batch`, whose `BatchEntityInput.anchor` IS the resolver, so the second
-  sync of the same provider record attaches instead of duplicating.
-- **Links** — `add_link`, `delete_link`, `list_links_for_entity`. `add_link`
+- **Identity** — a node is found by its `source.externalId`: resolve one with
+  `findByExternalId` (or `findByExternalIds` for many). A curated
+  `createEntity` does NOT take an external id — it always mints `local:<id>`.
+  The issuer-key lane is `applyBatch`, whose `BatchEntityInput.externalId` IS
+  the resolver, so the second sync of the same provider record attaches instead
+  of duplicating.
+- **Links** — `addLink`, `deleteLink`, `listLinksForEntity`. `addLink`
   on an EXISTING edge does not rewrite its dictionary — that is what makes
   re-ingest idempotent; the sync lane refreshes it. Only the host's reserved
   `sources[]` unions across observers.
-- **Batch/merge** — `apply_batch(GraphBatchInput)` (atomic entities+links
-  fragment — the bulk-ingest primitive), `merge_preview`, `merge_execute`.
+- **Batch/merge** — `applyBatch(GraphBatchInput)` (atomic entities+links
+  fragment — the bulk-ingest primitive), `mergePreview`, `mergeExecute`.
 
-**Prefer the batch reads** (`get_entities`, `list_entities_window`) over
+**Prefer the batch reads** (`getEntities`, `listEntitiesWindow`) over
 per-row calls — an N+1 in a list handler is a defect the tests forbid (see the
 Testing section).
 
@@ -154,11 +161,12 @@ Four decorators declare a method's role; the callable name is always
 | Decorator | Role | Agent-visible? | Approval |
 |---|---|---|---|
 | `@tool(suffix, spec)` | read tool | yes | no |
-| `@writeTool(suffix, spec)` | write tool | yes | `requires_approval: true` |
-| `@rpc(suffix, spec?)` | internal RPC (for other modules / UI) | no | — |
+| `@writeTool(suffix, spec)` | write tool | yes | `requiresApproval: true` |
+| `@rpc(suffix, spec)` | internal RPC (for other modules / UI) | no | — |
 | `@syncHandler(surface?)` | the reserved `__sync__` ingest hook | no | — |
 
-`spec.params` is a JSON schema the agent sees. The suffix is the method's public
+`spec.params` is a JSON schema: the agent sees a tool's, and the host parses an
+`@rpc` method's input with its own before the handler runs. The suffix is the method's public
 name — `@tool("list")` → `companies.list`. Dotted suffixes make sub-namespaces:
 `@tool("posts.list")` → `linkedin.posts.list`. The decorators are the ONLY
 declaration: the host routes any `<id>.…` method to the module by prefix and
@@ -180,29 +188,26 @@ skip**, a write that "does nothing" almost always means a missing grant in
 ## 6. Cross-module calls — using another module's tools
 
 A module often needs an effect that belongs to **another** module.
-`contacts.create` needs an `email.address` entity, but contacts must not write
-the `email.*` schema — that is the email module's. Instead it **calls the email
-module's method** over RPC and links the result into its own slice of the graph.
+`meetings` points an `attendee` edge at each guest's `email.address` entity,
+but meetings must not write the `email.*` schema — that is the email module's.
+Instead it **calls the email module's method** over RPC and links the result
+into its own slice of the graph. A module calls only modules it lists in
+`dependsOn`: meetings depends on email, so the call always has a callee.
 
 That is what `deps.rpc` is for. `rpc.execute<T>(method, params)` invokes another
 module's method by its fully-qualified name and returns the result, so you can
 use the id it hands back:
 
 ```ts
-@writeTool("create", { /* … */ })
-async create(params: CreateParams): Promise<ContactCreated> {
-  let email_address_entity_id: string | null = null;
-  if (params.email) {
-    // ask the email module to find-or-create its own entity
-    const addr = await this.rpc.execute<{ id: string }>(
-      "email.ensure_address", { address: params.email },
-    );
-    email_address_entity_id = addr.id;
-    // link my contact to it — the kind must be granted (see below)
-    await this.graph.add_link({ from_id: contact.id, to_id: addr.id, kind: "identity" });
+private async writeAttendeeEdges(eventId: string, attendees: { email: string }[]): Promise<void> {
+  // ask the email module to find-or-create its own entities, one crossing
+  const { ids } = await this.rpc.execute<{ ids: string[] }>(
+    "email.ensure_addresses", { items: attendees.map((a) => ({ address: a.email })) },
+  );
+  // link my event to each — the kind must be granted (see below)
+  for (const to of ids) {
+    await this.graph.addLink({ from: eventId, to, kind: "attendee" });
   }
-  // return the id your UI + tests read off the result
-  return { /* …list item… */, fields: { email_address_entity_id } };
 }
 ```
 
@@ -211,14 +216,15 @@ own-namespace writes never need declaring — `[permissions]` lists only the
 foreign asks):
 
 ```toml
+dependsOn = ["email"]
 [permissions]
-call  = ["email.ensure_address"]   # EXACT methods you may call — no wildcards
-links = ["identity"]              # foreign-touching link kinds you may create
+call  = ["email.ensure_addresses"]  # EXACT methods you may call — no wildcards
+links = ["attendee"]                # foreign-touching link kinds you may create
 ```
 
 `call` lists **exact** fully-qualified methods: you may call
-`email.ensure_address` and nothing else. A call to an undeclared method is
-refused, and `add_link` with an ungranted foreign kind is refused — there is
+`email.ensure_addresses` and nothing else. A call to an undeclared method is
+refused, and `addLink` with an ungranted foreign kind is refused — there is
 **no silent skip**, so a missing grant surfaces as a thrown error, never a
 no-op. The call runs as the same user, so the target module is user-scoped
 exactly as your own reads are.
@@ -270,12 +276,12 @@ namespace are implicitly granted; only foreign asks go in `[permissions]`.
 
 **The two write lanes do NOT behave the same way.**
 
-`apply_batch` — the sync lane — REPLACES a node's dictionary: after the write
+`applyBatch` — the sync lane — REPLACES a node's dictionary: after the write
 it is exactly what the source observed, never a mixture of this sync and the
 last one. That is what makes a re-sync safe, and it is why a sync handler that
 sends a partial map silently drops every key it omitted.
 
-`update_properties` — the curated lane — MERGES the top-level keys you send,
+`updateProperties` — the curated lane — MERGES the top-level keys you send,
 and an explicit `null` removes one. A human correcting a phone number does not
 have to resend the person.
 
@@ -283,7 +289,7 @@ The invariant "one node, one writer" is about WHO writes, not about how much:
 no two sources contend for one dictionary, because each source's view lives on
 its own node and the hub reaches it over `identity`.
 
-An EDGE is not a third lane: `add_link` on an existing edge leaves its
+An EDGE is not a third lane: `addLink` on an existing edge leaves its
 dictionary alone (idempotent re-ingest), and the sync lane refreshes it the way
 it refreshes a node's. Per-observer state — an unread count, a pin order —
 still belongs on the edge rather than the node, because the node has no room
@@ -291,7 +297,7 @@ for two observers' answers; just do not expect two observers' values to merge
 there. The one key that does accumulate is the host-stamped `sources[]`.
 
 Reading is likewise one question, not two. There is no second store to consult:
-`list_entities_window` returns the page and its exact total in one statement,
+`listEntitiesWindow` returns the page and its exact total in one statement,
 with filters and ordering over entity columns, dictionary keys, or an edge
 dictionary. The old "latest record vs merged canonical" fork is gone with the
 two stores that created it.
@@ -301,17 +307,20 @@ two stores that created it.
 ## 9. Sync ingest — receiving from a source
 
 A module that owns a surface implements `@syncHandler`, which registers the
-reserved `<plugin_id>.__sync__` method. The host invokes it with a page of
-`SourceEnvelope`s (the things a [source](./source.md) emitted), and the method
+reserved `<plugin_id>.__sync__` method. The host invokes it with a
+`SyncHandlerParams` — a page of `SyncEnvelope`s (the things a
+[source](./source.md) emitted) — and the method
 dispatches internally on `envelope.kind` and a `payload` discriminator (e.g.
 `entity_type`). This is where external data becomes graph writes — typically via
-`apply_batch` for bulk fragments. The source produces envelopes; the module's
+`applyBatch` for bulk fragments. The source produces envelopes; the module's
 sync handler decides how they land in the graph it owns.
 
 **The pass and the receipt.** A page a sync worker admits carries
 `generation` (`initial:<row>:<lease>`), the pass the worker is in; a page
 outside a worker (a Source effect) carries none, and the module states nothing
-for it. The answer is `{ dropped_remote_ids, trigger_checks, plan?, excluded? }`:
+for it. The answer is the SDK `SyncReceipt`, `{ droppedRemoteIds,
+triggerChecks, plan, excluded }`, with `plan: null` and `excluded: []` when the
+page states nothing:
 
 - `plan` — per schema the manifest declares under `progress`, `{ total,
   skipped }` **relative to the module's last statement** for the scopes on the
@@ -332,8 +341,9 @@ for it. The answer is `{ dropped_remote_ids, trigger_checks, plan?, excluded? }`
 
 A module whose surface declares `reconciliation = { mode = "full_snapshot" }`
 implements `@syncComplete`, the reserved `<plugin_id>.__sync_complete__` hook
-the host calls at the end of a pass with `{ user_id, source_id, account_id,
-identity_key, generation }`. Telegram instead declares `mode = "none"`:
+the host calls at the end of a pass with a `SyncHookParams` — `{ userId,
+sourceId, accountId, identityKey, generation }` — and reads its
+`SyncReconcileAnswer`. Telegram instead declares `mode = "none"`:
 snapshot omission says neither that a membership ended nor when it ended. Its
 `observed_in` edge closes only from a dated Telegram participant update.
 
@@ -398,7 +408,8 @@ paths. The curated entry points:
 | `@magnis/host/agent` | `ExpandableEntityCard`, `AllowlistDropdown`, `ExpansionContext` |
 | `@magnis/host/markdown` | `MarkdownEditor`, `useEditorMentionSuggestion` |
 | `@magnis/host/utils` | `toAvatarColor`, … |
-| `@magnis/plugin-sdk` | shared wire types (`PaginatedResponse`, …) |
+| `@magnis/plugin-sdk` | decorators, `definePlugin`, `GraphService`, `ListParams` |
+| `@magnis/sdk` | the SDK shapes, type-only (`Entity`, `PaginatedResponse`, …) |
 
 Tailwind utility classes used directly in a plugin `.tsx` are picked up by the
 host's build; if a brand-new plugin lays out fine but renders flat/unstyled,
@@ -417,7 +428,7 @@ Module tests run under **vitest** (`bun run test`) with
 
 - **`mockGraph(overrides?)`** — a throwing Proxy: any graph op you did not
   explicitly stub throws `unexpected graph op: <name>`. That is how a test
-  forbids an N+1 — leave `get_entities` / `list_entities_window` unstubbed and
+  forbids an N+1 — leave `getEntities` / `listEntitiesWindow` unstubbed and
   a per-row read blows up.
 - **`mountModule(TheClass, opts?)`** — runs the class through the real
   `definePlugin`/init path. In dispatch mode it returns `{ rpc, tools }` so you
@@ -447,8 +458,8 @@ A module is done only when all hold:
       `[permissions]`.
 - [ ] Searchable keys are declared in `search.toml`, and what the module
       filters on is what the indexer embeds.
-- [ ] Sync writers send the WHOLE dictionary (`apply_batch` replaces);
-      curated writers send only what changed (`update_properties` merges).
+- [ ] Sync writers send the WHOLE dictionary (`applyBatch` replaces);
+      curated writers send only what changed (`updateProperties` merges).
 - [ ] List handlers use batch reads — no per-row N+1.
 - [ ] Whole-module tests in `module/__tests__/` on `@magnis/testkit/module`,
       green under `bun run test`.

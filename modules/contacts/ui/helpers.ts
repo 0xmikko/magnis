@@ -22,14 +22,13 @@ export function mapContact(c: ContactListItem): ContactProfile {
     email: c.email ?? "",
     channels: [...c.channels],
     preview: c.email ?? c.phone ?? "",
-    time: new Date(c.created_at).toLocaleDateString(),
+    time: new Date(c.createdAt).toLocaleDateString(),
     listChannel: c.channels.includes("Telegram")
       ? "telegram"
       : c.channels.includes("Email")
         ? "email"
         : "file",
-    color: toAvatarColor(c.avatar_color),
-    isTeamMember: c.is_team_member ?? false,
+    color: toAvatarColor(c.avatarColor),
   };
 }
 

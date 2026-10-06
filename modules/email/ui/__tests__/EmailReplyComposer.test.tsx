@@ -2,7 +2,7 @@
  * EmailReplyComposer — component behavior tests.
  *
  * Traceability:
- * - tst_fe_composer_020 mount calls setPresence({mode:"email", thread_key}); unmount null; threadId change null then new
+ * - tst_fe_composer_020 mount calls setPresence({mode:"email", threadKey}); unmount null; threadId change null then new
  * - tst_fe_composer_021 two EmailReplyComposer instances sharing threadId see the same draft text
  * - tst_fe_composer_022 different threadId → different drafts
  * - tst_fe_composer_023 successful email.reply RPC clears draft + localStorage
@@ -30,7 +30,7 @@ import {
 } from "@magnis/host/composer";
 import type {
   AppRuntime,
-  ComposerApplyEventPayload,
+  ComposerApplyEvent,
   ComposerPresenceParams,
 } from "@magnis/host/runtime";
 
@@ -49,10 +49,10 @@ const rpcSpy = vi.fn(
   (method: string, params: unknown): Promise<unknown> => rpcImpl(method, params),
 );
 
-type ApplyHandler = (event: ComposerApplyEventPayload) => void;
+type ApplyHandler = (event: ComposerApplyEvent) => void;
 const applyHandlers: ApplyHandler[] = [];
 
-function emitApply(event: ComposerApplyEventPayload): void {
+function emitApply(event: ComposerApplyEvent): void {
   for (const h of applyHandlers) h(event);
 }
 
@@ -156,7 +156,7 @@ describe("EmailReplyComposer", () => {
         <EmailReplyComposer emailId="e1" threadId="T1" />
       </Harness>,
     );
-    expect(setPresenceCalls[0]?.params).toEqual({ mode: "email", thread_key: "T1" });
+    expect(setPresenceCalls[0]?.params).toEqual({ mode: "email", threadKey: "T1" });
 
     setPresenceCalls.length = 0;
     rerender(
@@ -166,7 +166,7 @@ describe("EmailReplyComposer", () => {
     );
     const hadNull = setPresenceCalls.some((c) => c.params === null);
     const hadT2 = setPresenceCalls.some(
-      (c) => c.params?.mode === "email" && c.params.thread_key === "T2",
+      (c) => c.params?.mode === "email" && c.params.threadKey === "T2",
     );
     expect(hadNull).toBe(true);
     expect(hadT2).toBe(true);
@@ -363,7 +363,7 @@ describe("EmailReplyComposer", () => {
   });
 
   // tst_fe_composer_031 — composer.apply set_text updates textarea
-  it("tst_fe_composer_031 composer.apply set_text with matching (mode, thread_key) updates textarea", () => {
+  it("tst_fe_composer_031 composer.apply set_text with matching (mode, threadKey) updates textarea", () => {
     const { container } = render(
       <Harness>
         <EmailReplyComposer emailId="e1" threadId="T1" />
@@ -372,7 +372,7 @@ describe("EmailReplyComposer", () => {
     act(() => {
       emitApply({
         mode: "email",
-        thread_key: "T1",
+        threadKey: "T1",
         revision: 1,
         op: "set_text",
         text: "drafted by agent",
@@ -559,10 +559,10 @@ describe("EmailReplyComposer", () => {
     act(() => {
       emitApply({
         mode: "email",
-        thread_key: "T1",
+        threadKey: "T1",
         revision: 1,
         op: "set_attachments",
-        attachment_ids: ["att-X", "att-Y"],
+        attachmentIds: ["att-X", "att-Y"],
       });
     });
 

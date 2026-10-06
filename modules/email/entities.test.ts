@@ -9,45 +9,39 @@
  * declaration's test, and the module's own tsconfig must never see zod.
  */
 import { describe, expect, it } from "vitest";
-import type { GraphBatchInput } from "@magnis/plugin-sdk";
-import { mockGraph, mountModule } from "@magnis/testkit/module";
+import { descriptorFrom } from "@magnis/declare/derive";
+import type { GraphBatchInput, JsonObject, SyncEnvelope } from "@magnis/sdk";
+import { mockGraph, mountModule, sourceEnvelope } from "@magnis/testkit/module";
 
 import { EmailModule } from "./module/service.ts";
 import { address, message } from "./entities.ts";
-import type { SyncEnvelope } from "./types.ts";
 
 const DECLARED = { "email.message": message, "email.address": address } as const;
 
 function ingestGraph() {
   return mockGraph({
-    apply_batch: (frag) =>
+    findByExternalIds: (externalIds) => Promise.resolve(externalIds.map(() => null)),
+    moduleSettings: () => Promise.resolve({ newSenderSyncEnabled: "true" }),
+    admitSyncEntities: (subjects) => Promise.resolve(subjects.flatMap(subject => [...subject.remoteIds])),
+    applyBatch: (frag) =>
       Promise.resolve({
         ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
         created: frag.entities.length,
         updated: 0,
-        links_added: frag.links?.length ?? 0,
-        dropped_keys: [],
+        linksAdded: frag.links.length,
+        droppedKeys: [], resolved: [],
       }),
-    file_register: () => Promise.resolve("file-id"),
-    find_by_anchor: () => Promise.resolve("existing-id"),
-    delete_entity: () => Promise.resolve(undefined),
+    fileRegister: () => Promise.resolve("file-id"),
+    findByExternalId: () => Promise.resolve("existing-id"),
+    deleteEntity: () => Promise.resolve(undefined),
   });
 }
 
-const env = (over: Partial<SyncEnvelope> & { payload?: Record<string, unknown> }): SyncEnvelope => ({
-  source_id: "google",
-  surface: "email",
-  account_id: "acct-1",
-  user_id: "u1",
-  kind: "snapshot",
-  remote_id: "m1",
-  payload: {},
-  timestamp: "2026-03-14T09:00:00Z",
-  ...over,
-});
+const env = (over: Partial<SyncEnvelope>): SyncEnvelope =>
+  sourceEnvelope("email", {}, { sourceId: "google", accountId: "acct-1", userId: "u1", remoteId: "m1", timestamp: "2026-03-14T09:00:00Z", ...over });
 
 /** A provider's message, with every key the module stores. */
-const msgPayload = (over: Record<string, unknown> = {}) => ({
+const msgPayload = (over: JsonObject = {}): JsonObject => ({
   message_id: "mail-1",
   subject: "Report Q3",
   from_address: "CEO@example.com",
@@ -73,20 +67,27 @@ const msgPayload = (over: Record<string, unknown> = {}) => ({
 
 async function written(): Promise<GraphBatchInput["entities"]> {
   const graph = ingestGraph();
-  const mod = mountModule(EmailModule, { graph, ctx: { extension_id: "email" } }).module;
-  await mod.ingest({ envelopes: [env({ remote_id: "m1", payload: msgPayload() })] });
-  const call = graph.spies.apply_batch?.mock.calls[0];
-  if (call === undefined) throw new Error("ingest wrote nothing");
-  return (call[0] as GraphBatchInput).entities;
+  const mod = mountModule(EmailModule, { graph, ctx: { extensionId: "email" } }).module;
+  await mod.ingest({ envelopes: [env({ remoteId: "m1", payload: msgPayload() })] });
+  const calls = graph.spies.applyBatch?.mock.calls;
+  if (calls === undefined || calls.length === 0) throw new Error("ingest wrote nothing");
+  return calls.flatMap(call => (call[0] as GraphBatchInput).entities);
 }
 
 describe("email declares what it writes", () => {
+  it("declares sender synchronization outside the address properties", () => {
+    const { descriptor } = descriptorFrom(address);
+    expect(descriptor).toHaveProperty("syncable", true);
+    expect(descriptor.json_schema).not.toHaveProperty("properties.syncEnabled");
+    expect(descriptorFrom(message).descriptor).not.toHaveProperty("syncable");
+  });
+
   it("every record the module writes today passes its own declaration", async () => {
     const entities = await written();
-    expect(entities.length).toBeGreaterThan(0);
+    expect(new Set(entities.map(entity => entity.schemaId))).toEqual(new Set(["email.address", "email.message"]));
     for (const written of entities) {
-      const declared = DECLARED[written.schema_id as keyof typeof DECLARED];
-      expect(declared, `${written.schema_id} is written but not declared`).toBeDefined();
+      const declared = DECLARED[written.schemaId as keyof typeof DECLARED];
+      expect(declared, `${written.schemaId} is written but not declared`).toBeDefined();
       const verdict = declared.safeParse(written.properties ?? {});
       expect(verdict.error?.issues ?? []).toEqual([]);
     }

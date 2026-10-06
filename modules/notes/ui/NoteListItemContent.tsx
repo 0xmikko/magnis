@@ -24,7 +24,7 @@ function formatDate(dateStr: string | null): string {
 
 export function NoteListItemContent({ note }: NoteListItemContentProps): JSX.Element {
   const preview = note.preview ?? extractPreview(note.title, 60);
-  const dateStr = formatDate(note.updated_at ?? note.created_at);
+  const dateStr = formatDate(note.updatedAt ?? note.createdAt);
 
   return (
     <Stack gap={0.5} flex1>

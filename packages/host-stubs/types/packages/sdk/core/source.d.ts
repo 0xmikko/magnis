@@ -301,7 +301,7 @@ export declare const SourceManifestSchema: z.ZodObject<{
     packageHash: z.ZodString;
     connectable: z.ZodBoolean;
     unavailableReason: z.ZodNullable<z.ZodString>;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type SourceManifest = z.output<typeof SourceManifestSchema>;
 export declare const SourceListResponseSchema: z.ZodObject<{
     sources: z.ZodArray<z.ZodObject<{
@@ -318,8 +318,8 @@ export declare const SourceListResponseSchema: z.ZodObject<{
         packageHash: z.ZodString;
         connectable: z.ZodBoolean;
         unavailableReason: z.ZodNullable<z.ZodString>;
-    }, z.core.$strip>>;
-}, z.core.$strip>;
+    }, z.core.$strict>>;
+}, z.core.$strict>;
 export type SourceListResponse = z.output<typeof SourceListResponseSchema>;
 export declare const SourceAccountSchema: z.ZodObject<{
     sourceId: z.ZodString;
@@ -359,7 +359,7 @@ export declare const SourceKeyStatusSchema: z.ZodObject<{
     helpUrl: z.ZodNullable<z.ZodString>;
     description: z.ZodNullable<z.ZodString>;
     vaultConfigured: z.ZodBoolean;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type SourceKeyStatus = z.output<typeof SourceKeyStatusSchema>;
 export declare const SourceKeysEntrySchema: z.ZodObject<{
     sourceId: z.ZodString;
@@ -370,8 +370,8 @@ export declare const SourceKeysEntrySchema: z.ZodObject<{
         helpUrl: z.ZodNullable<z.ZodString>;
         description: z.ZodNullable<z.ZodString>;
         vaultConfigured: z.ZodBoolean;
-    }, z.core.$strip>>;
-}, z.core.$strip>;
+    }, z.core.$strict>>;
+}, z.core.$strict>;
 export type SourceKeysEntry = z.output<typeof SourceKeysEntrySchema>;
 export declare const SourceKeysListSchema: z.ZodObject<{
     vaultAvailable: z.ZodBoolean;
@@ -384,58 +384,53 @@ export declare const SourceKeysListSchema: z.ZodObject<{
             helpUrl: z.ZodNullable<z.ZodString>;
             description: z.ZodNullable<z.ZodString>;
             vaultConfigured: z.ZodBoolean;
-        }, z.core.$strip>>;
-    }, z.core.$strip>>;
-}, z.core.$strip>;
+        }, z.core.$strict>>;
+    }, z.core.$strict>>;
+}, z.core.$strict>;
 export type SourceKeysList = z.output<typeof SourceKeysListSchema>;
-export interface SourceAppConfigKey {
-    readonly key: string;
-    readonly label: string;
-    readonly deploymentConfigured: boolean;
-}
 export declare const SourceAppConfigKeySchema: z.ZodObject<{
     key: z.ZodString;
     label: z.ZodString;
     deploymentConfigured: z.ZodBoolean;
-}, z.core.$strip>;
-export type SourceAppConfigCategory = "sharedProvider" | "module";
-export interface SourceAppConfigEntry {
-    readonly sourceId: string;
-    readonly displayName: string;
-    readonly category: SourceAppConfigCategory;
-    readonly keys: readonly SourceAppConfigKey[];
-}
+}, z.core.$strict>;
+export type SourceAppConfigKey = z.output<typeof SourceAppConfigKeySchema>;
 export declare const SourceAppConfigEntrySchema: z.ZodObject<{
     sourceId: z.ZodString;
     displayName: z.ZodString;
     category: z.ZodEnum<{
-        sharedProvider: "sharedProvider";
         module: "module";
+        sharedProvider: "sharedProvider";
     }>;
-    keys: z.ZodArray<z.ZodObject<{
+    keys: z.ZodReadonly<z.ZodArray<z.ZodObject<{
         key: z.ZodString;
         label: z.ZodString;
         deploymentConfigured: z.ZodBoolean;
-    }, z.core.$strip>>;
-}, z.core.$strip>;
-export interface SourceAppConfigList {
-    readonly vaultAvailable: boolean;
-    readonly sources: readonly SourceAppConfigEntry[];
-}
+    }, z.core.$strict>>>;
+}, z.core.$strict>;
+export type SourceAppConfigEntry = z.output<typeof SourceAppConfigEntrySchema>;
+export type SourceAppConfigCategory = SourceAppConfigEntry["category"];
 export declare const SourceAppConfigListSchema: z.ZodObject<{
     vaultAvailable: z.ZodBoolean;
-    sources: z.ZodArray<z.ZodObject<{
+    sources: z.ZodReadonly<z.ZodArray<z.ZodObject<{
         sourceId: z.ZodString;
         displayName: z.ZodString;
         category: z.ZodEnum<{
-            sharedProvider: "sharedProvider";
             module: "module";
+            sharedProvider: "sharedProvider";
         }>;
-        keys: z.ZodArray<z.ZodObject<{
+        keys: z.ZodReadonly<z.ZodArray<z.ZodObject<{
             key: z.ZodString;
             label: z.ZodString;
             deploymentConfigured: z.ZodBoolean;
-        }, z.core.$strip>>;
-    }, z.core.$strip>>;
-}, z.core.$strip>;
+        }, z.core.$strict>>>;
+    }, z.core.$strict>>>;
+}, z.core.$strict>;
+export type SourceAppConfigList = z.output<typeof SourceAppConfigListSchema>;
+export declare const SourceFixtureProvisionInputSchema: z.ZodObject<{
+    sourceId: z.ZodString;
+    fixtureId: z.ZodString;
+    identityKey: z.ZodString;
+    identityLabel: z.ZodString;
+}, z.core.$strict>;
+export type SourceFixtureProvisionInput = z.output<typeof SourceFixtureProvisionInputSchema>;
 //# sourceMappingURL=source.d.ts.map

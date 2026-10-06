@@ -15,6 +15,7 @@ summary = "Dataset-driven mock email + meetings source for evals and e2e."
 publisher = "ai.magnis"
 dev = true
 surfaces = ["email", "meetings"]
+dependsOn = ["email", "meetings"]
 kind = "mock"
 account_mode = "single"
 accounts = ["eval"]

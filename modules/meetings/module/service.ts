@@ -7,11 +7,12 @@
 // Read-time enrichment ported from the native domain adapter: attendees are the
 // event's `attendee` edges, each resolving through its address node to a
 // contacts.person over `identity` (plan §3/§6), and get's
-// linked_entities resolve the entity's link neighbours. Canonical is deferred to
+// linkedEntities resolve the entity's link neighbours. Canonical is deferred to
 // {} on this hot path (mirrors the email/telegram modules; the detail UI is verified
 // visually in the frontend stage).
 
 import {
+  linkedEntitySummary,
   rpc,
   removeUnseenSourceReplicas,
   syncComplete,
@@ -20,43 +21,98 @@ import {
   writeTool,
   type GraphService,
   type PluginDeps,
+  type RpcExecutor,
 } from "@magnis/plugin-sdk";
 import type {
   BatchEntityInput,
-  BatchLinkInput,
-  RawEntity,
-  RpcExecutor,
-} from "@magnis/plugin-sdk";
+  BatchLink,
+  Entity,
+  EntitySearchHit,
+  JsonObject,
+  JsonValue,
+  LinkedEntitySummary,
+  SyncEnvelope,
+  SyncHandlerParams,
+  SyncHookParams,
+  SyncReceipt,
+  SyncReconcileAnswer,
+  SyncStateResetResult,
+  SyncStateStatusResult,
+  TriggerCheckEvent,
+} from "@magnis/sdk";
 import type {
   GetParams,
-  LinkedEntitySummary,
   ListParams,
   MeetingCalendarEventDetails,
   MeetingDetailView,
   MeetingListItem,
-  MeetingTriggerCheck,
   NewMeetingParams,
   SearchParams,
-  SearchResultItem,
-  SyncEnvelope,
   ToolResult,
 } from "../types.ts";
 import {
   attendeesForPage,
   buildListItem,
+  dictOf,
   enrichAttendees,
   formatDateTime,
   normalizeAttendees,
   parseAttendees,
   parseRfc3339,
   str,
-  type Data,
 } from "./helpers.ts";
 import { CAL, EVENT, MEETING } from "../schema.ts";
-import { addressBatchEntity } from "../../email/schema.ts";
+import { addressFragment } from "../../email/schema.ts";
 
-/// The node dictionary (S5): the record every read path renders from.
-const dictOf = (e: RawEntity): Data => e.properties ?? {};
+/// A Source message's payload is the event's JSON object; anything else is a
+/// malformed envelope.
+function payloadOf(env: SyncEnvelope): JsonObject {
+  const payload = env.payload;
+  if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new Error(`meetings ingest: envelope payload is not an object (remoteId=${env.remoteId ?? "unknown"})`);
+  }
+  return payload;
+}
+
+// One spec per method: an rpc() stacked on a tool publishes the same input.
+const GET_SPEC = {
+  description: "Get a full meeting detail view by entity id.",
+  params: {
+    type: "object",
+    properties: { id: { type: "string", format: "uuid" } },
+    required: ["id"],
+    additionalProperties: false,
+  },
+};
+
+const CREATE_SPEC = {
+  description:
+    "Create a new meeting (calendar event) with title, start/end times, and optional attendees.",
+  params: {
+    type: "object",
+    properties: {
+      title: { type: "string", description: "Meeting title (non-empty)" },
+      starts_at: { type: "string", format: "date-time" },
+      ends_at: { type: "string", format: "date-time" },
+      attendees: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            name: { type: ["string", "null"] },
+            email: { type: "string" },
+          },
+          required: ["email"],
+        },
+      },
+      description: { type: "string" },
+      location: { type: "string" },
+      client_id: { type: "string", format: "uuid" },
+    },
+    required: ["title", "starts_at", "ends_at"],
+    additionalProperties: false,
+  },
+};
 
 export class MeetingsModule {
   private readonly graph: GraphService;
@@ -90,9 +146,9 @@ export class MeetingsModule {
       // Search path (native domain.list search branch): name match over
       // meetings.calendar_event. S5: the matched rows carry their own
       // dictionaries, so nothing is hydrated after the search.
-      const matched = await this.graph.search_entities_by_name({
+      const matched = await this.graph.searchEntitiesByName({
         query: search,
-        schema_ids: [CAL],
+        schemaIds: [CAL],
         limit: limit + offset,
       });
       const total = matched.length;
@@ -106,38 +162,29 @@ export class MeetingsModule {
 
     // ONE window — page of meetings.calendar_event ordered by the dictionary's
     // starts_at DESC, each row carrying its dictionary inline.
-    const win = await this.graph.list_entities_window({
+    const win = await this.graph.listEntitiesWindow({
       schema: CAL,
-      order: [{ field: { property_path: "starts_at" }, desc: true }],
+      order: [{ field: { propertyPath: "starts_at" }, desc: true }],
       limit,
       offset,
     });
     // S6: the whole page's attendees in four fixed crossings.
     const pageAttendees = await attendeesForPage(
       this.graph,
-      win.items.map((r) => r.entity.id),
+      win.items.map((entity) => entity.id),
     );
-    const items = win.items.map(({ entity }) =>
+    const items = win.items.map((entity) =>
       buildListItem(entity, dictOf(entity), pageAttendees.get(entity.id) ?? []),
     );
     return { items, total: win.total, limit, offset };
   }
 
   // ── meetings.get ──────────────────────────────────────────────
-  @rpc("get")
-  @tool("get", {
-    entity: "meetings.calendar_event",
-    description: "Get a full meeting detail view by entity id.",
-    params: {
-      type: "object",
-      properties: { id: { type: "string", format: "uuid" } },
-      required: ["id"],
-      additionalProperties: false,
-    },
-  })
+  @rpc("get", GET_SPEC)
+  @tool("get", { entity: "meetings.calendar_event", ...GET_SPEC })
   async get(params: GetParams): Promise<MeetingDetailView> {
-    const detail = await this.graph.get_entity_full(params.id, { links: true });
-    if (detail?.entity.schema_id !== CAL) {
+    const detail = await this.graph.getEntityFull(params.id, { links: true });
+    if (detail?.entity.schemaId !== CAL) {
       throw new Error(`meeting ${params.id} not found`);
     }
     const { entity, links } = detail;
@@ -154,43 +201,37 @@ export class MeetingsModule {
 
 
     // Resolve link neighbours (created-by project, attendee contacts, …) for the
-    // Context panel. Link edges carry ids + kind only; one batch get_entities
+    // Context panel. Link edges carry ids + kind only; one batch getEntities
     // (user-scoped → drops non-owned targets) hydrates names/schemas.
-    const linked_entities: LinkedEntitySummary[] = [];
+    const linkedEntities: LinkedEntitySummary[] = [];
     if (links.length > 0) {
-      const neighbourId = (l: { from_id: string; to_id: string }): string =>
-        l.from_id === entity.id ? l.to_id : l.from_id;
-      const targets = await this.graph.get_entities([...new Set(links.map(neighbourId))]);
-      const byId = new Map<string, RawEntity>(targets.map((t) => [t.id, t]));
+      const neighbourId = (l: { from: string; to: string }): string =>
+        l.from === entity.id ? l.to : l.from;
+      const targets = await this.graph.getEntities([...new Set(links.map(neighbourId))]);
+      const byId = new Map<string, Entity>(targets.map((t) => [t.id, t]));
       for (const l of links) {
         const t = byId.get(neighbourId(l));
         if (!t) continue;
-        linked_entities.push({
-          id: t.id,
-          name: t.name && t.name.length > 0 ? t.name : null,
-          schema_id: t.schema_id,
-          link_kind: l.kind,
-          created_at: t.created_at ?? "",
-          data: null,
-        });
+        // An empty name reads as no name (native parity).
+        linkedEntities.push({ ...linkedEntitySummary(t, l, l.kind), name: t.name && t.name.length > 0 ? t.name : null });
       }
     }
 
     return {
       id: entity.id,
-      schema_id: entity.schema_id,
+      schemaId: entity.schemaId,
       title: entity.name && entity.name.length > 0 ? entity.name : "Untitled Meeting",
       date,
       time,
-      starts_at: str(d, "starts_at"),
-      ends_at: str(d, "ends_at"),
+      startsAt: str(d, "starts_at"),
+      endsAt: str(d, "ends_at"),
       location: str(d, "location"),
       description: str(d, "description"),
-      conference_link: str(d, "conference_link"),
+      conferenceLink: str(d, "conference_link"),
       attendees,
       canonical: {},
-      linked_entities,
-      created_at: entity.created_at ?? "",
+      linkedEntities,
+      createdAt: entity.createdAt,
     };
   }
 
@@ -215,16 +256,15 @@ export class MeetingsModule {
   })
   async search(params: SearchParams): Promise<ToolResult> {
     const query = (params.query ?? "").toLowerCase();
-    const entities = await this.graph.list_entities_by_context(params.context);
+    const entities = await this.graph.listEntitiesByContext(params.context);
 
-    let results: SearchResultItem[] = entities
-      .filter((e) => e.schema_id === EVENT)
-      .filter((e) => (query.length === 0 ? true : e.name.toLowerCase().includes(query)))
+    let results: EntitySearchHit[] = entities
+      .filter((e) => e.schemaId === EVENT)
+      .filter((e) => (query.length === 0 ? true : e.name?.toLowerCase().includes(query) === true))
       .map((e) => ({
         id: e.id,
         name: e.name && e.name.length > 0 ? e.name : null,
-        schema_id: e.schema_id,
-        schema_version: 1,
+        schemaId: e.schemaId,
       }));
 
     results.sort((a, b) => {
@@ -248,36 +288,8 @@ export class MeetingsModule {
   // agent-side "created" link (ToolDefinition.with_link_kind) is not expressible
   // through the @writeTool decorator and is dropped — consistent with the
   // contacts plugin precedent.
-  @rpc("create")
-  @writeTool("create", {
-    entity: "meetings.calendar_event",
-    description:
-      "Create a new meeting (calendar event) with title, start/end times, and optional attendees.",
-    params: {
-      type: "object",
-      properties: {
-        title: { type: "string", description: "Meeting title (non-empty)" },
-        starts_at: { type: "string", format: "date-time" },
-        ends_at: { type: "string", format: "date-time" },
-        attendees: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              name: { type: ["string", "null"] },
-              email: { type: "string" },
-            },
-            required: ["email"],
-          },
-        },
-        description: { type: "string" },
-        location: { type: "string" },
-        client_id: { type: "string", format: "uuid" },
-      },
-      required: ["title", "starts_at", "ends_at"],
-      additionalProperties: false,
-    },
-  })
+  @rpc("create", CREATE_SPEC)
+  @writeTool("create", { entity: "meetings.calendar_event", ...CREATE_SPEC })
   async create(params: NewMeetingParams): Promise<Record<string, unknown>> {
     // Validate BEFORE touching the graph (matches native messages).
     if (!params.title || params.title.trim().length === 0) {
@@ -294,30 +306,30 @@ export class MeetingsModule {
     // Idempotency: an existing client_id returns the existing entity,
     // no re-write (native repo create_local find_entity_for_user).
     if (params.client_id) {
-      const existing = await this.graph.get_entity(params.client_id);
+      const existing = await this.graph.getEntity(params.client_id);
       if (existing) return this.snapshot(existing.id, params);
     }
 
     const now = new Date().toISOString();
-    const entity = await this.graph.create_entity({
-      schema_id: CAL,
+    const entity = await this.graph.createEntity({
+      schemaId: CAL,
       name: params.title,
-      client_id: params.client_id,
+      ...(params.client_id === undefined ? {} : { clientId: params.client_id }),
       date: now,
     });
 
     // S5: the dictionary is the record — the attendees are NOT in it, they are
     // the event's `attendee` edges.
-    const data: MeetingCalendarEventDetails = {
+    const data = {
       title: params.title,
       starts_at: params.starts_at,
       ends_at: params.ends_at,
       updated_at: now,
-    };
-    if (params.description !== undefined) data.description = params.description;
-    if (params.location !== undefined) data.location = params.location;
+      ...(params.description === undefined ? {} : { description: params.description }),
+      ...(params.location === undefined ? {} : { location: params.location }),
+    } satisfies MeetingCalendarEventDetails;
 
-    await this.graph.update_properties({ entity_id: entity.id, properties: { ...data } });
+    await this.graph.updateProperties({ entityId: entity.id, properties: data });
     await this.writeAttendeeEdges(entity.id, normalizeAttendees(params.attendees));
 
     return this.snapshot(entity.id, params);
@@ -328,7 +340,7 @@ export class MeetingsModule {
   private snapshot(id: string, params: NewMeetingParams): Record<string, unknown> {
     const snap: Record<string, unknown> = {
       id,
-      schema_id: CAL,
+      schemaId: CAL,
       title: params.title,
       starts_at: params.starts_at,
       ends_at: params.ends_at,
@@ -342,20 +354,14 @@ export class MeetingsModule {
   // ── sync ingest (@syncHandler) ────────────────────────────────
   // Invoked by the host PluginModuleController bridge (`meetings.__sync__`) with
   // a WHOLE page of envelopes. Ports the native ingest: each calendar event is
-  // upserted via apply_batch (idempotent on the source external_id, confidence
+  // upserted via applyBatch (idempotent on the source external_id, confidence
   // 90); a LIVE event additionally resolves its attendees to email.address hub
   // entities (via the email plugin's ensure_address RPC) and returns a
   // trigger.check the bridge fans out to the event_bus. `delete` removes the
   // entity. An empty envelope user_id is a HARD ERROR (no silent attribution).
   @syncHandler("meetings")
-  async ingest(params: {
-    envelopes?: SyncEnvelope[];
-    command?: "bootstrap" | "catch_up" | "backfill";
-    /** The pass the worker is in; absent for a Source effect outside a
-     * worker, which states nothing. */
-    generation?: string;
-  }): Promise<{ dropped_remote_ids: string[]; trigger_checks: MeetingTriggerCheck[]; plan?: Record<string, { total: number; skipped: number }> }> {
-    const envelopes = Array.isArray(params.envelopes) ? params.envelopes : [];
+  async ingest(params: SyncHandlerParams): Promise<SyncReceipt> {
+    const envelopes = params.envelopes;
     // What the page states for the plan, as the Source counted the window:
     // the whole of it on the calendar envelope that opens a pass, and the
     // events a page left out as skipped.
@@ -367,123 +373,129 @@ export class MeetingsModule {
     // Validate ALL user_ids before any write so a bad envelope writes
     // nothing (native bails on empty user_id; no "" attribution).
     for (const env of envelopes) {
-      if (!env.user_id) {
+      if (!env.userId) {
         throw new Error(
-          `meetings ingest: envelope.user_id is required (remote_id=${env.remote_id ?? "unknown"})`,
+          `meetings ingest: envelope.userId is required (remoteId=${env.remoteId ?? "unknown"})`,
         );
       }
     }
 
     const dropped: string[] = [];
-    const triggers: MeetingTriggerCheck[] = [];
-    const deltaAnchors = fullPass ? [] : [...new Set(envelopes.flatMap((env) => env.kind !== "delete" && env.payload.entity_type !== "calendar" && env.remote_id ? [env.remote_id] : []))];
-    const known = stated && deltaAnchors.length > 0 ? await this.graph.find_by_anchors(deltaAnchors) : [];
-    const existing = new Set(deltaAnchors.filter((_, i) => known[i]));
+    const triggers: TriggerCheckEvent[] = [];
+    const deltaExternalIds = fullPass ? [] : [...new Set(envelopes.flatMap((env) => env.kind !== "delete" && payloadOf(env).entity_type !== "calendar" && env.remoteId ? [env.remoteId] : []))];
+    const known = stated && deltaExternalIds.length > 0 ? await this.graph.findByExternalIds(deltaExternalIds) : [];
+    const existing = new Set(deltaExternalIds.filter((_, i) => known[i]));
     const added = new Set<string>();
     for (const env of envelopes) {
       if (env.kind === "delete") {
         try {
           if (await this.ingestDelete(env) && stated && !fullPass) plan.total -= 1;
         } catch {
-          if (env.remote_id) dropped.push(env.remote_id);
+          if (env.remoteId) dropped.push(env.remoteId);
         }
         continue;
       }
       if (env.kind !== "snapshot" && env.kind !== "live") continue;
-      if (!env.remote_id) continue;
-      if (env.payload.entity_type === "calendar") {
-        const total = env.payload.events_total;
+      if (!env.remoteId) continue;
+      const payload = payloadOf(env);
+      if (payload.entity_type === "calendar") {
+        const total = payload.events_total;
         if (typeof total === "number" && stated && fullPass) plan.total += total;
         continue;
       }
       const written = await this.ingestUpsert(env, triggers, params.generation);
-      if (written && stated && !fullPass && !existing.has(env.remote_id) && !added.has(env.remote_id)) {
+      if (written && stated && !fullPass && !existing.has(env.remoteId) && !added.has(env.remoteId)) {
         plan.total += 1;
-        added.add(env.remote_id);
+        added.add(env.remoteId);
       }
     }
 
-    if (!stated) return { dropped_remote_ids: dropped, trigger_checks: triggers };
-    return { dropped_remote_ids: dropped, trigger_checks: triggers, plan: { [CAL]: plan } };
+    return {
+      droppedRemoteIds: dropped,
+      triggerChecks: triggers,
+      plan: stated ? { [CAL]: plan } : null,
+      excluded: [],
+    };
   }
 
   /** A full Calendar pass is complete only when the host calls this hook.
    * An interrupted pass never reaches it and cannot erase unseen meetings.
    * @tested-by: tst_module_google_001 */
   @syncComplete()
-  async onSyncComplete(params: { source_id: string; account_id: string; generation: string }): Promise<{
-    departed: string[];
-    plan: Record<string, { total: number; skipped: number }>;
-  }> {
-    if (!params.source_id || !params.account_id || !params.generation) {
+  async onSyncComplete(params: SyncHookParams): Promise<SyncReconcileAnswer> {
+    if (!params.sourceId || !params.accountId || !params.generation) {
       throw new Error("meetings sync complete requires source, account and generation");
     }
-    await removeUnseenSourceReplicas(this.graph, CAL, params.source_id, params.account_id, params.generation);
+    await removeUnseenSourceReplicas(this.graph, CAL, params.sourceId, params.accountId, params.generation);
     return { departed: [], plan: { [CAL]: { total: 0, skipped: 0 } } };
   }
 
   /// Delete envelope: resolve the meeting by its source external_id and remove
   /// it. An unknown id is a silent no-op (native delete_by_remote_id parity).
   private async ingestDelete(env: SyncEnvelope): Promise<boolean> {
-    if (!env.remote_id) return false;
-    // S5: the remote id IS the node's anchor — resolution goes through the
-    // one chokepoint, not the retired record external id.
-    const id = await this.graph.find_by_anchor(env.remote_id);
+    if (!env.remoteId) return false;
+    // S5: the remote id IS the node's external id — resolution goes through
+    // the one chokepoint, not the retired record external id.
+    const id = await this.graph.findByExternalId(env.remoteId);
     if (!id) return false;
-    const entity = await this.graph.get_entity(id);
-    if (entity?.schema_id !== CAL || !entity.properties) return false;
-    if (entity.properties.source_id !== env.source_id || entity.properties.account_id !== env.account_id) return false;
-    await this.graph.delete_entity(id);
+    const entity = await this.graph.getEntity(id);
+    if (entity?.schemaId !== CAL) return false;
+    const dict = dictOf(entity);
+    if (dict.source_id !== env.sourceId || dict.account_id !== env.accountId) return false;
+    await this.graph.deleteEntity(id);
     return true;
   }
 
-  /// Upsert one calendar event as a NODE (idempotent on its anchor) plus the
+  /// Upsert one calendar event as a NODE (idempotent on its external id) plus the
   /// `attendee` edges its invite lists, then, for LIVE events, assemble the
   /// trigger.check with those attendees' address ids.
-  private async ingestUpsert(env: SyncEnvelope, triggers: MeetingTriggerCheck[], generation?: string): Promise<boolean> {
-    const remoteId = env.remote_id;
-    if (!remoteId) throw new Error("meetings ingest: envelope missing remote_id");
-    const payload = env.payload as Data;
+  private async ingestUpsert(env: SyncEnvelope, triggers: TriggerCheckEvent[], generation: string | undefined): Promise<boolean> {
+    const remoteId = env.remoteId;
+    if (!remoteId) throw new Error("meetings ingest: envelope missing remoteId");
+    const payload = payloadOf(env);
     const name = str(payload, "title") ?? "";
 
     // The attendees are edges now, so they leave the dictionary — the invite's
     // per-event display name rides the edge, the address rides the node.
     const attendees = parseAttendees(payload, remoteId);
-    const dict: Data = { ...payload };
+    const dict: Record<string, JsonValue> = { ...payload };
     delete dict.attendees;
-    dict.source_id = env.source_id;
-    dict.account_id = env.account_id;
+    dict.source_id = env.sourceId;
+    dict.account_id = env.accountId;
     if (generation) dict.sync_pass = generation;
 
     const entity: BatchEntityInput = {
       key: remoteId,
-      schema_id: CAL,
+      schemaId: CAL,
       name,
-      anchor: remoteId,
+      idx: null,
+      date: null,
+      externalId: remoteId,
       properties: dict,
-      confidence: 90,
     };
     // @tested-by: tst_module_meetings_sync_002
     // Address nodes and attendee edges belong to the same sync transaction.
-    const addresses: BatchEntityInput[] = [];
-    const seenAddresses = new Set<string>();
-    const links: BatchLinkInput[] = [];
+    const named = new Map<string, string | null>();
     for (const a of attendees) {
       const lower = a.email.trim().toLowerCase();
-      const key = `addr:${lower}`;
-      if (!seenAddresses.has(key)) {
-        addresses.push(addressBatchEntity(key, lower, a.name ?? null));
-        seenAddresses.add(key);
-      }
+      if (!named.has(lower)) named.set(lower, a.name ?? null);
+    }
+    const { entities: addresses, refs } = await addressFragment(this.graph, named);
+    const links: BatchLink[] = [];
+    for (const a of attendees) {
+      const key = `addr:${a.email.trim().toLowerCase()}`;
       links.push({
-        from_key: remoteId,
-        to_key: key,
+        fromKey: remoteId,
+        toKey: key,
         kind: "attendee",
-        declared_by: remoteId,
-        ...(a.name === undefined ? {} : { metadata: { display_name: a.name } }),
+        confidence: null,
+        metadata: a.name === undefined ? null : { display_name: a.name },
+        declaredBy: remoteId,
+        validFrom: null,
+        validUntil: null,
       });
     }
-    const result = await this.graph.apply_batch({ entities: [entity, ...addresses], refs: [], links });
+    const result = await this.graph.applyBatch({ entities: [entity, ...addresses], refs, links });
     const entityId = result.ids[remoteId];
     if (!entityId) return false;
     const addressIds = attendees.map((attendee) => {
@@ -497,11 +509,11 @@ export class MeetingsModule {
     // for free by replacing the array wholesale, and edges must not silently
     // accumulate ex-guests.
     const current = new Set(addressIds);
-    const existing = await this.graph.list_links_for_entity(entityId);
+    const existing = await this.graph.listLinksForEntity(entityId);
     for (const edge of existing) {
-      if (edge.kind !== "attendee" || edge.from_id !== entityId) continue;
-      if (!current.has(edge.to_id)) {
-        await this.graph.delete_link(edge.id);
+      if (edge.kind !== "attendee" || edge.from !== entityId) continue;
+      if (!current.has(edge.to)) {
+        await this.graph.deleteLink(edge.id);
       }
     }
 
@@ -509,13 +521,14 @@ export class MeetingsModule {
 
     triggers.push({
       type: "trigger.check",
-      event_kind: "new_meeting",
-      schema_id: MEETING,
-      entity_id: entityId,
+      eventKind: "new_meeting",
+      schemaId: MEETING,
+      entityId,
       phase: "live",
       // touched = [meeting, every attendee's email.address id].
-      touched_entity_ids: [entityId, ...addressIds],
-      user_id: env.user_id,
+      touchedEntityIds: [entityId, ...addressIds],
+      userId: env.userId,
+      // The context is the trigger engine's own JSON and keeps its keys.
       context: {
         title: name.length > 0 ? name : null,
         remote_id: remoteId,
@@ -552,11 +565,11 @@ export class MeetingsModule {
       attendees.map((a) => ({ email: a.email, ...(a.name === null ? {} : { name: a.name }) })),
     );
     for (const [i, a] of attendees.entries()) {
-      const to_id = ids[i];
-      if (!to_id) continue;
-      await this.graph.add_link({
-        from_id: eventId,
-        to_id,
+      const to = ids[i];
+      if (!to) continue;
+      await this.graph.addLink({
+        from: eventId,
+        to,
         kind: "attendee",
         ...(a.name === null ? {} : { metadata: { display_name: a.name } }),
       });
@@ -568,8 +581,8 @@ export class MeetingsModule {
     description: "List the meetings sync state per connected account for the current user.",
     params: { type: "object", properties: {}, additionalProperties: false },
   })
-  async syncStatus(): Promise<Record<string, unknown>> {
-    return this.graph.sync_state("status");
+  async syncStatus(): Promise<SyncStateStatusResult> {
+    return this.graph.syncState("status");
   }
 
   @rpc("sync.reset", {
@@ -577,7 +590,7 @@ export class MeetingsModule {
       "Reset meetings sync: delete the caller's calendar events and reset sync state to bootstrap.",
     params: { type: "object", properties: {}, additionalProperties: false },
   })
-  async syncReset(): Promise<Record<string, unknown>> {
-    return this.graph.sync_state("reset", CAL);
+  async syncReset(): Promise<SyncStateResetResult> {
+    return this.graph.syncState("reset", CAL);
   }
 }

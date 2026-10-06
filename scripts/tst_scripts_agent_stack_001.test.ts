@@ -139,3 +139,106 @@ test("tst_scripts_agent_stack_004 root Vitest configs have a scoped TypeScript o
   expect(config.include).toContain("../vitest.config.ts");
   expect(config.include).toContain("../vitest.ui.config.ts");
 });
+
+/** @test-id: tst_scripts_agent_stack_005
+ * @scenario: scn_socials_publication_001
+ * @covers: plan-gate::gatePlan,shaKnownAndAncestor
+ * @deterministic: yes
+ * @fixtures: two isolated Git repositories and an inherited hook environment
+ */
+test("tst_scripts_agent_stack_005 validates Delivery receipts in the configured checkout under Git hooks", () => {
+  const directory = mkdtempSync(join(tmpdir(), "socials-delivery-gate-"));
+  const gitVars = spawnSync("git", ["rev-parse", "--local-env-vars"], { encoding: "utf8" }).stdout.trim().split("\n");
+  const clean = Object.fromEntries(Object.entries(process.env).filter(([key]) => !gitVars.includes(key)));
+  const git = (cwd: string, ...args: string[]): string => {
+    const run = spawnSync("git", args, { cwd, env: clean, encoding: "utf8" });
+    if (run.status !== 0) throw new Error(run.stderr);
+    return run.stdout.trim();
+  };
+  try {
+    const makeRepo = (name: string): string => {
+      const path = join(directory, name);
+      git(directory, "init", "-q", path);
+      git(path, "config", "user.name", "Fixture");
+      git(path, "config", "user.email", "fixture@example.test");
+      writeFileSync(join(path, `${name}.txt`), name);
+      git(path, "add", "."); git(path, "commit", "-qm", name);
+      return path;
+    };
+    const catalog = makeRepo("catalog");
+    const app = makeRepo("app");
+    const localSha = git(catalog, "rev-parse", "HEAD");
+    const remoteSha = git(app, "rev-parse", "HEAD");
+    git(catalog, "config", "code-production.repository.app", app);
+    const plan = join(catalog, "plan.md");
+    const body = ["# Fixture", "Status: APPROVED", "Active Delivery: D2",
+      "<!-- plan:delivery:D1:start -->", '<!-- plan:delivery-meta:{"active":false,"repository":"app"} -->',
+      "Branch: `feat/fixture`;", `- [x] \`test -f app.txt\` exits 0 — ${remoteSha}`, "<!-- plan:delivery:D1:end -->",
+      "<!-- plan:delivery:D2:start -->", '<!-- plan:delivery-meta:{"active":true} -->',
+      "Branch: `feat/fixture`;", `- [x] \`test -f catalog.txt\` exits 0 — ${localSha}`, "<!-- plan:delivery:D2:end -->",
+    ].join("\n");
+    writeFileSync(plan, body);
+    const check = () => spawnSync(process.execPath, [join(root, ".agents/code-production/runtime/plan-gate.ts"), plan, "--root", catalog], {
+      cwd: catalog, encoding: "utf8", env: { ...clean, GIT_DIR: join(catalog, ".git"), GIT_WORK_TREE: catalog },
+    });
+    const passed = check();
+    expect(passed.stdout + passed.stderr).not.toContain("VIOLATION");
+    expect(passed.status).toBe(0);
+    writeFileSync(plan, body.replace(`exits 0 — ${localSha}`, `exits 0 — ${remoteSha}`));
+    expect(check().stdout).toContain("unknown-receipt");
+    git(catalog, "config", "--unset", "code-production.repository.app");
+    expect(check().status).not.toBe(0);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+/** @test-id: tst_scripts_agent_stack_006
+ * @scenario: scn_socials_publication_001
+ * @covers: plan-gate::shaKnownAndAncestor
+ * @deterministic: yes
+ * @fixtures: one Git repository with a merge in progress
+ */
+test("tst_scripts_agent_stack_006 a receipt that arrives with the merge being committed is known", () => {
+  const directory = mkdtempSync(join(tmpdir(), "merge-receipt-gate-"));
+  const gitVars = spawnSync("git", ["rev-parse", "--local-env-vars"], { encoding: "utf8" }).stdout.trim().split("\n");
+  const clean = Object.fromEntries(Object.entries(process.env).filter(([key]) => !gitVars.includes(key)));
+  const git = (cwd: string, ...args: string[]): string => {
+    const run = spawnSync("git", args, { cwd, env: clean, encoding: "utf8" });
+    if (run.status !== 0) throw new Error(run.stderr);
+    return run.stdout.trim();
+  };
+  try {
+    const repo = join(directory, "catalog");
+    git(directory, "init", "-q", "--initial-branch=main", repo);
+    git(repo, "config", "user.name", "Fixture");
+    git(repo, "config", "user.email", "fixture@example.test");
+    const commit = (name: string): string => {
+      writeFileSync(join(repo, `${name}.txt`), name);
+      git(repo, "add", "."); git(repo, "commit", "-qm", name);
+      return git(repo, "rev-parse", "HEAD");
+    };
+    commit("base");
+    git(repo, "checkout", "-qb", "side");
+    const incoming = commit("incoming");
+    git(repo, "checkout", "-q", "main");
+    commit("ours");
+    git(repo, "checkout", "-qb", "elsewhere", "main~1");
+    const unrelated = commit("unrelated");
+    git(repo, "checkout", "-q", "main");
+    git(repo, "merge", "--no-commit", "--no-ff", "side");
+    const plan = join(directory, "plan.md");
+    const body = (receipt: string) => ["# Fixture", "Status: APPROVED", `- [x] \`test -f incoming.txt\` exits 0 — ${receipt}`].join("\n");
+    const check = () => spawnSync(process.execPath, [join(root, ".agents/code-production/runtime/plan-gate.ts"), plan, "--root", repo, "--no-exec"], {
+      cwd: repo, encoding: "utf8", env: { ...clean, GIT_DIR: join(repo, ".git"), GIT_WORK_TREE: repo },
+    });
+
+    // @tested-by: tst_scripts_agent_stack_006
+    // @invariant: the merge being committed makes MERGE_HEAD a parent, so its
+    // receipts are known; a commit on neither side stays unknown.
+    writeFileSync(plan, body(incoming));
+    const passed = check();
+    expect(passed.stdout + passed.stderr).not.toContain("VIOLATION");
+    expect(passed.status).toBe(0);
+    writeFileSync(plan, body(unrelated));
+    expect(check().stdout).toContain("unknown-receipt");
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});

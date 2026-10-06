@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { mockLogger, mountModule } from "@magnis/testkit/module";
 import { definePlugin } from "@magnis/plugin-sdk";
-import type { PluginDeps, PluginContext, PluginModuleShape } from "@magnis/plugin-sdk";
+import type { PluginDeps, PluginModuleShape } from "@magnis/plugin-sdk";
+import type { PluginContext } from "@magnis/sdk";
 
-const ctx: PluginContext = { user_id: "u1", extension_kind: "plugin", extension_id: "test" };
+const ctx: PluginContext = { userId: "u1", extensionKind: "plugin", extensionId: "test" };
 
 /**
  * @test-id: tst_sdk_log_001

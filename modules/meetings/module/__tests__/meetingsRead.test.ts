@@ -11,8 +11,8 @@
 // REPLACES the old hand-rolled per-op reject() spies.
 
 import { describe, expect, it, vi } from "vitest";
-import type { EntityDetail, LinkSummary, RawEntity, WindowPage } from "@magnis/plugin-sdk";
-import { mockGraph, mountModule, type GraphOverrides, type MockGraph } from "@magnis/testkit/module";
+import type { Entity, EntityWithLinks, JsonObject, Link } from "@magnis/sdk";
+import { entity as graphEntity, link, mockGraph, mountModule, page, type GraphOverrides, type MockGraph } from "@magnis/testkit/module";
 import { MeetingsModule } from "../service.ts";
 import { parseAttendees } from "../helpers.ts";
 import type { MeetingsCanonical } from "../../types.ts";
@@ -20,25 +20,25 @@ import type { MeetingsCanonical } from "../../types.ts";
 const CAL = "meetings.calendar_event";
 type G = MockGraph;
 
-// Only get_entities is arranged by default; the read path's other ops are
+// Only getEntities is arranged by default; the read path's other ops are
 // supplied per-test via `over`. Anything else throws via the mockGraph Proxy.
 function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
   return mockGraph({
-    get_entities: () => Promise.resolve([]),
+    getEntities: () => Promise.resolve([]),
     ...over,
   } as unknown as GraphOverrides);
 }
 
 function makeModule(graph: G): MeetingsModule {
-  return mountModule(MeetingsModule, { graph, ctx: { extension_id: "meetings" } }).module;
+  return mountModule(MeetingsModule, { graph, ctx: { extensionId: "meetings" } }).module;
 }
 
 const entity = (
   id: string,
   name: string,
-  properties: Record<string, unknown> = {},
+  properties: JsonObject = {},
   created = "2026-01-01T00:00:00Z",
-): RawEntity => ({ id, schema_id: CAL, name, created_at: created, properties }) as RawEntity;
+): Entity => graphEntity(id, name, { schemaId: CAL, createdAt: created, properties });
 
 // ── parseAttendees (strict — malformed input throws) ──────────────
 describe("parseAttendees", () => {
@@ -75,32 +75,25 @@ describe("parseAttendees", () => {
 // ── meetings.list ─────────────────────────────────────────────────
 describe("meetings.list", () => {
   it("windows meetings.calendar_event by starts_at DESC and shapes list items", async () => {
-    const win: WindowPage = {
-      items: [
-        {
-          entity: entity("m2", "Later meeting", {
-            starts_at: "2026-02-02T15:00:00Z",
-            ends_at: "2026-02-02T16:00:00Z",
-            location: "Room B",
-            description: "Agenda 2",
-          }),
-        },
-        {
-          entity: entity("m1", "Earlier meeting", {
-            starts_at: "2026-02-01T09:00:00Z",
-            ends_at: "2026-02-01T10:00:00Z",
-            location: "",
-          }),
-        },
-      ],
-      total: 2,
-    };
-    const list_entities_window = vi.fn().mockResolvedValue(win);
+    const win = page([
+      entity("m2", "Later meeting", {
+        starts_at: "2026-02-02T15:00:00Z",
+        ends_at: "2026-02-02T16:00:00Z",
+        location: "Room B",
+        description: "Agenda 2",
+      }),
+      entity("m1", "Earlier meeting", {
+        starts_at: "2026-02-01T09:00:00Z",
+        ends_at: "2026-02-01T10:00:00Z",
+        location: "",
+      }),
+    ]);
+    const listEntitiesWindow = vi.fn().mockResolvedValue(win);
     const mod = makeModule(
       makeGraph({
-        list_entities_window,
+        listEntitiesWindow,
         // No attendee edges on either row — ONE page-level batch read.
-        list_links_for_entities: vi.fn(async (): Promise<LinkSummary[]> => []),
+        listLinksForEntities: vi.fn(async (): Promise<Link[]> => []),
       }),
     );
 
@@ -108,17 +101,17 @@ describe("meetings.list", () => {
 
     // ONE window crossing; ordered by the DICTIONARY's starts_at DESC, and no
     // record schema is named anywhere on the read path.
-    expect(list_entities_window).toHaveBeenCalledTimes(1);
-    const spec = list_entities_window.mock.calls[0]![0];
+    expect(listEntitiesWindow).toHaveBeenCalledTimes(1);
+    const spec = listEntitiesWindow.mock.calls[0]![0];
     expect(spec.schema).toBe(CAL);
     expect(spec.facet_schema).toBeUndefined();
-    expect(spec.order).toEqual([{ field: { property_path: "starts_at" }, desc: true }]);
+    expect(spec.order).toEqual([{ field: { propertyPath: "starts_at" }, desc: true }]);
 
     expect(res.total).toBe(2);
     expect(res.items.map((m) => m.id)).toEqual(["m2", "m1"]);
     const m2 = res.items[0]!;
     expect(m2.title).toBe("Later meeting");
-    expect(m2.starts_at).toBe("2026-02-02T15:00:00Z");
+    expect(m2.startsAt).toBe("2026-02-02T15:00:00Z");
     expect(m2.location).toBe("Room B");
     expect(m2.description).toBe("Agenda 2");
     expect(m2.date).toBe("2026-02-02");
@@ -132,7 +125,7 @@ describe("meetings.list", () => {
 // ── meetings.get ──────────────────────────────────────────────────
 describe("meetings.get", () => {
   it("returns the detail view with enriched attendees + linked entities", async () => {
-    const detail: EntityDetail = {
+    const detail: EntityWithLinks = {
       entity: entity("m1", "Sync meeting", {
         starts_at: "2026-02-01T09:00:00Z",
         ends_at: "2026-02-01T10:00:00Z",
@@ -141,41 +134,25 @@ describe("meetings.get", () => {
       }),
       // The attendee edges ride the detail's own links — no second crossing.
       links: [
-        { id: "l1", from_id: "proj-1", to_id: "m1", kind: "created" },
-        {
-          id: "l2",
-          from_id: "m1",
-          to_id: "addr-alice",
-          kind: "attendee",
-          metadata: { display_name: "Alice" },
-        },
-        { id: "l3", from_id: "m1", to_id: "addr-bob", kind: "attendee" },
+        link("proj-1", "m1", "created", { id: "l1" }),
+        link("m1", "addr-alice", "attendee", { id: "l2", metadata: { display_name: "Alice" } }),
+        link("m1", "addr-bob", "attendee", { id: "l3" }),
       ],
     };
     const graph = makeGraph({
-      get_entity_full: vi.fn().mockResolvedValue(detail),
-      get_entities: vi.fn(async (ids: string[]) =>
+      getEntityFull: vi.fn().mockResolvedValue(detail),
+      getEntities: vi.fn(async (ids: string[]) =>
         [
-          { id: "proj-1", schema_id: "projects.project", name: "Proj" },
-          {
-            id: "addr-alice",
-            schema_id: "email.address",
-            name: "alice@x.com",
-            properties: { address: "alice@x.com" },
-          },
-          {
-            id: "addr-bob",
-            schema_id: "email.address",
-            name: "bob@x.com",
-            properties: { address: "bob@x.com" },
-          },
-          { id: "person-1", schema_id: "contacts.person", name: "Alice" },
+          graphEntity("proj-1", "Proj", { schemaId: "projects.project" }),
+          graphEntity("addr-alice", "alice@x.com", { schemaId: "email.address", properties: { address: "alice@x.com" } }),
+          graphEntity("addr-bob", "bob@x.com", { schemaId: "email.address", properties: { address: "bob@x.com" } }),
+          graphEntity("person-1", "Alice", { schemaId: "contacts.person" }),
         ].filter((e) => ids.includes(e.id)),
       ),
       // alice's address is claimed by a contact; bob's is not. The batch
       // reads BOTH addresses' edges in one call and the person in another.
-      list_links_for_entities: vi.fn(async (): Promise<LinkSummary[]> => [
-        { id: "hl", from_id: "person-1", to_id: "addr-alice", kind: "identity" },
+      listLinksForEntities: vi.fn(async (): Promise<Link[]> => [
+        link("person-1", "addr-alice", "identity", { id: "hl" }),
       ]),
     });
     const mod = makeModule(graph);
@@ -186,20 +163,20 @@ describe("meetings.get", () => {
     expect(view.title).toBe("Sync meeting");
     expect(view.location).toBe("HQ");
     expect(view.attendees).toEqual([
-      { name: "Alice", email: "alice@x.com", contact_id: "person-1" },
-      { name: null, email: "bob@x.com", contact_id: null },
+      { name: "Alice", email: "alice@x.com", contactId: "person-1" },
+      { name: null, email: "bob@x.com", contactId: null },
     ]);
     // Every link neighbour is a Context-panel row — the project that created
     // the meeting and both attendee addresses.
-    expect(view.linked_entities).toEqual([
-      expect.objectContaining({ id: "proj-1", link_kind: "created", schema_id: "projects.project" }),
-      expect.objectContaining({ id: "addr-alice", link_kind: "attendee" }),
-      expect.objectContaining({ id: "addr-bob", link_kind: "attendee" }),
+    expect(view.linkedEntities).toEqual([
+      expect.objectContaining({ id: "proj-1", linkKind: "created", schemaId: "projects.project" }),
+      expect.objectContaining({ id: "addr-alice", linkKind: "attendee" }),
+      expect.objectContaining({ id: "addr-bob", linkKind: "attendee" }),
     ]);
   });
 
   it("throws when the meeting is not found / not owned", async () => {
-    const mod = makeModule(makeGraph({ get_entity_full: vi.fn().mockResolvedValue(null) }));
+    const mod = makeModule(makeGraph({ getEntityFull: vi.fn().mockResolvedValue(null) }));
     await expect(mod.get({ id: "nope" })).rejects.toThrow(/not found/);
   });
 });
@@ -216,23 +193,23 @@ describe("meetings.search", () => {
   it("tst_plugin_meetings_search_002 leaves graph search to the declared entity", async () => {
     const { tools } = await mountModule(MeetingsModule, {
       mode: "dispatch",
-      ctx: { extension_id: "meetings" },
+      ctx: { extensionId: "meetings" },
     });
     expect(tools.some((candidate) => candidate.name === "meetings.search")).toBe(false);
   });
 
   it("searches the meetings.event schema, not calendar_event", async () => {
-    const list_entities_by_context = vi.fn().mockResolvedValue([
-      { id: "e1", schema_id: "meetings.event", name: "Quarterly review" },
-      { id: "c1", schema_id: "meetings.calendar_event", name: "Quarterly review" },
-      { id: "e2", schema_id: "meetings.event", name: "Standup" },
+    const listEntitiesByContext = vi.fn().mockResolvedValue([
+      graphEntity("e1", "Quarterly review", { schemaId: "meetings.event" }),
+      graphEntity("c1", "Quarterly review", { schemaId: "meetings.calendar_event" }),
+      graphEntity("e2", "Standup", { schemaId: "meetings.event" }),
     ]);
-    const mod = makeModule(makeGraph({ list_entities_by_context }));
+    const mod = makeModule(makeGraph({ listEntitiesByContext }));
 
     const res = await mod.search({ query: "quarterly" });
     const parsed = JSON.parse((res.content[0] as { text: string }).text);
 
     expect(parsed.map((r: { id: string }) => r.id)).toEqual(["e1"]);
-    expect(parsed[0].schema_id).toBe("meetings.event");
+    expect(parsed[0]).toEqual({ id: "e1", name: "Quarterly review", schemaId: "meetings.event" });
   });
 });

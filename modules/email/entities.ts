@@ -50,6 +50,7 @@ void _messageIsTheModulesOwnType;
 export const address = entity(
   {
     id: "email.address",
+    syncable: true,
     name: "Email address",
     description: "An email address entity (sender/recipient hub).",
     roles: ["identity_channel"],

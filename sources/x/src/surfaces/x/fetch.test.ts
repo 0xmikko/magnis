@@ -41,7 +41,7 @@ describe("x connector fetch", () => {
   test("tst_x_001 tracked handle → profile + post envelopes", async () => {
     const { fetchFn } = fakeApi();
     const { envelopes } = await fetchX(
-      { surface: "x", tracked_handles: ["jack"], ...META },
+      { surface: "x", tracked_handles: ["jack"], expectedProfileIds: { jack: "12" }, ...META },
       fetchFn,
     );
     const profile = envelopes.find((e) => e.payload.entity_type === "profile")!;
@@ -63,13 +63,13 @@ describe("x connector fetch", () => {
   test("tst_x_002 untracked handle → ZERO API calls", async () => {
     const { fetchFn, calls } = fakeApi();
     // jack is not in the tracked set → never queried; an empty set → no loop.
-    const r1 = await fetchX({ surface: "x", tracked_handles: [], ...META }, fetchFn);
+    const r1 = await fetchX({ surface: "x", tracked_handles: [], expectedProfileIds: {}, ...META }, fetchFn);
     expect(r1.envelopes).toHaveLength(0);
     expect(calls).toHaveLength(0);
 
     // a different (untracked-here) handle that 404s still only hits the lookup
     // for the handles actually in the set.
-    await fetchX({ surface: "x", tracked_handles: ["ghost"], ...META }, fetchFn);
+    await expect(fetchX({ surface: "x", tracked_handles: ["ghost"], expectedProfileIds: { ghost: "99" }, ...META }, fetchFn)).rejects.toThrow("identity");
     expect(calls.every((u) => u.includes("/username/ghost"))).toBe(true);
   });
 
@@ -80,13 +80,12 @@ describe("x connector fetch", () => {
     ).rejects.toThrow(/bearer_token/);
   });
 
-  test("tst_x_004 unknown handle (404) → skipped, no envelope", async () => {
+  test("tst_x_004 missing selected handle fails visibly", async () => {
     const { fetchFn } = fakeApi();
-    const { envelopes } = await fetchX(
-      { surface: "x", tracked_handles: ["ghost"], ...META },
+    await expect(fetchX(
+      { surface: "x", tracked_handles: ["ghost"], expectedProfileIds: { ghost: "99" }, ...META },
       fetchFn,
-    );
-    expect(envelopes).toHaveLength(0);
+    )).rejects.toThrow("identity");
   });
 
   test("tst_x_005 429 → RateLimitError with retry-after (S6 backoff)", async () => {
@@ -98,7 +97,7 @@ describe("x connector fetch", () => {
       json: async () => ({}),
     });
     await expect(
-      fetchX({ surface: "x", tracked_handles: ["jack"], ...META }, fetchFn),
+      fetchX({ surface: "x", tracked_handles: ["jack"], expectedProfileIds: { jack: "12" }, ...META }, fetchFn),
     ).rejects.toBeInstanceOf(RateLimitError);
   });
 
@@ -111,7 +110,7 @@ describe("x connector fetch", () => {
       json: async () => ({ detail: "credits depleted" }),
     });
     await expect(
-      fetchX({ surface: "x", tracked_handles: ["jack"], ...META }, fetchFn),
+      fetchX({ surface: "x", tracked_handles: ["jack"], expectedProfileIds: { jack: "12" }, ...META }, fetchFn),
     ).rejects.toBeInstanceOf(RateLimitError);
   });
 
@@ -173,7 +172,7 @@ describe("x connector fetch", () => {
 
   test("tst_x_008 note_tweet → FULL text + post_type long_form", async () => {
     const { envelopes } = await fetchX(
-      { surface: "x", tracked_handles: ["jack"], ...META },
+      { surface: "x", tracked_handles: ["jack"], expectedProfileIds: { jack: "12" }, ...META },
       richApi(),
     );
     const p = envelopes.find((e) => e.remote_id === "x:post:t1")!.payload;
@@ -184,7 +183,7 @@ describe("x connector fetch", () => {
 
   test("tst_x_009 article → plain_text + title + post_type article", async () => {
     const { envelopes } = await fetchX(
-      { surface: "x", tracked_handles: ["jack"], ...META },
+      { surface: "x", tracked_handles: ["jack"], expectedProfileIds: { jack: "12" }, ...META },
       richApi(),
     );
     const p = envelopes.find((e) => e.remote_id === "x:post:t2")!.payload;
@@ -195,7 +194,7 @@ describe("x connector fetch", () => {
 
   test("tst_x_010 media keys resolve against includes; urls mapped; absent stays absent", async () => {
     const { envelopes } = await fetchX(
-      { surface: "x", tracked_handles: ["jack"], ...META },
+      { surface: "x", tracked_handles: ["jack"], expectedProfileIds: { jack: "12" }, ...META },
       richApi(),
     );
     const p3 = envelopes.find((e) => e.remote_id === "x:post:t3")!.payload;
@@ -228,7 +227,7 @@ describe("x connector fetch", () => {
       if (url.includes("/tweets")) return ok([]);
       return { ok: false, status: 404, json: async () => ({ detail: "not found" }) };
     };
-    const { envelopes } = await fetchX({ surface: "x", tracked_handles: ["few", "mute"], ...META }, fetchFn);
+    const { envelopes } = await fetchX({ surface: "x", tracked_handles: ["few", "mute"], expectedProfileIds: { few: "2", mute: "3" }, ...META }, fetchFn);
     const few = envelopes.find((e) => e.remote_id === "x:profile:2")!;
     const mute = envelopes.find((e) => e.remote_id === "x:profile:3")!;
     expect(few.payload).toMatchObject({ posts_total: 4, posts_skipped: 0 });
@@ -238,9 +237,44 @@ describe("x connector fetch", () => {
 
   test("tst_x_006 re-poll is idempotent — identical remote_ids", async () => {
     const { fetchFn } = fakeApi();
-    const a = await fetchX({ surface: "x", tracked_handles: ["jack"], ...META }, fetchFn);
-    const b = await fetchX({ surface: "x", tracked_handles: ["jack"], ...META }, fetchFn);
+    const a = await fetchX({ surface: "x", tracked_handles: ["jack"], expectedProfileIds: { jack: "12" }, ...META }, fetchFn);
+    const b = await fetchX({ surface: "x", tracked_handles: ["jack"], expectedProfileIds: { jack: "12" }, ...META }, fetchFn);
     // Stable remote_ids → the x module upserts (no dup entity) on re-poll.
     expect(a.envelopes.map((e) => e.remote_id)).toEqual(b.envelopes.map((e) => e.remote_id));
   });
+});
+
+/** @test-id: tst_x_sync_selection_001
+ * @scenario: scn_x_sync_001
+ * @covers: fetchX
+ * @deterministic: yes
+ * @fixtures: reassigned handle and omitted explicit selection
+ */
+test("tst_x_sync_selection_001 rejects a reassigned handle before requesting its posts", async () => {
+  const { fetchFn, calls } = fakeApi();
+  await expect(fetchX({ surface: "x", tracked_handles: ["jack"], expectedProfileIds: { jack: "999" }, ...META }, fetchFn))
+    .rejects.toThrow("identity");
+  expect(calls.some(url => url.includes("/tweets"))).toBe(false);
+  const count = calls.length;
+  await expect(fetchX({ surface: "x", ...META }, fetchFn)).rejects.toThrow("selection");
+  expect(calls).toHaveLength(count);
+});
+
+/** @test-id: tst_x_sync_selection_002
+ * @scenario: scn_x_sync_001
+ * @covers: resolveProfile
+ * @deterministic: yes
+ * @fixtures: profile-only execute through the real SDK; no tweet request
+ */
+test("tst_x_sync_selection_002 resolveProfile uses only the identity lookup", async () => {
+  const { handleMessage } = await import("@magnis/connector-sdk");
+  const { buildConnectorConfig } = await import("../../connector");
+  const { fetchFn, calls } = fakeApi();
+  const reply = await handleMessage({ id: 1, method: "tools/call", params: { name: "magnis.execute", arguments: {
+    action: "resolveProfile", handle: "jack", _meta: { bearer_token: "token" },
+  } } }, buildConnectorConfig(fetchFn));
+  expect(reply?.error).toBeUndefined();
+  expect(reply?.result).toEqual({ providerId: "12", handle: "jack", displayName: "Jack", bio: "ceo", avatarUrl: null });
+  expect(calls).toHaveLength(1);
+  expect(calls[0]).toContain("/users/by/username/jack");
 });

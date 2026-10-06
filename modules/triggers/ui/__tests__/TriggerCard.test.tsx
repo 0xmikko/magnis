@@ -19,13 +19,13 @@ import { mapTriggerListItem } from "../index";
 const SCHEDULED_DETAIL = {
   id: "trigger-1",
   name: "Morning digest",
-  gate_prompt: "always",
-  action_prompt: "summarize the inbox",
+  gatePrompt: "always",
+  actionPrompt: "summarize the inbox",
   status: "active",
-  event_kinds: ["schedule_tick"],
-  debounce_seconds: 0,
-  firing_count: 3,
-  watched_entities: [],
+  eventKinds: ["schedule_tick"],
+  debounceSeconds: 0,
+  firingCount: 3,
+  watchedEntities: [],
   schedule: {
     cron: "0 9 * * MON-FRI",
     timezone: "Europe/Belgrade",
@@ -67,7 +67,7 @@ describe("tst_fe_agent_triggers_card_001 — schedule on the canonical card", ()
           schemaId="triggers.trigger"
           data={{
             id: "trigger-1",
-            schema_id: "triggers.trigger",
+            schemaId: "triggers.trigger",
             name: "Morning digest",
             status: "active",
           }}
@@ -86,7 +86,7 @@ describe("tst_fe_agent_triggers_card_001 — schedule on the canonical card", ()
           schemaId="triggers.trigger"
           data={{
             id: "trigger-1",
-            schema_id: "triggers.trigger",
+            schemaId: "triggers.trigger",
             name: "Morning digest",
             status: "active",
           }}
@@ -105,8 +105,8 @@ describe("tst_fe_agent_triggers_card_002 — list preview precedence", () => {
     const item = mapTriggerListItem({
       id: "trigger-1",
       name: "Morning digest",
-      action_prompt: "summarize the inbox",
-      watched_entity_names: [],
+      actionPrompt: "summarize the inbox",
+      watchedEntityNames: [],
       schedule: {
         cron: "0 9 * * MON-FRI",
         timezone: "Europe/Belgrade",
@@ -120,8 +120,8 @@ describe("tst_fe_agent_triggers_card_002 — list preview precedence", () => {
     const item = mapTriggerListItem({
       id: "trigger-2",
       name: "Reply watch",
-      action_prompt: "update the note",
-      watched_entity_names: ["info@hedgemasters.nl"],
+      actionPrompt: "update the note",
+      watchedEntityNames: ["info@hedgemasters.nl"],
     });
     expect(item.preview).toBe("Watches info@hedgemasters.nl");
   });

@@ -2,9 +2,9 @@
  * SearchResults — dropdown overlay showing search results as entity cards.
  */
 import type { JSX } from "react";
-import type { SearchResultItem } from "./useSearch";
+import type { SearchResult } from "@magnis/sdk";
 interface SearchResultsProps {
-    readonly results: readonly SearchResultItem[];
+    readonly results: readonly SearchResult[];
     readonly isSearching: boolean;
     readonly query: string;
     readonly onSelect: (id: string, schemaId: string) => void;

@@ -1,5 +1,6 @@
 import { ImapFlow } from "imapflow";
 import PostalMime from "postal-mime";
+import type { Envelope, FetchArgs } from "@magnis/connector-sdk";
 import type { GmailMessage } from "./gmail";
 
 const PAGE_SIZE = 100;
@@ -17,14 +18,20 @@ export interface ImapRawMessage {
 export interface ImapMailbox {
   uidValidity: string;
   searchBelow(uid: number | undefined): Promise<number[]>;
+  fetchHeaders(uids: number[]): AsyncIterable<ImapHeaderMessage>;
   fetch(uids: number[]): AsyncIterable<ImapRawMessage>;
   close(): Promise<void>;
+}
+
+export interface ImapHeaderMessage extends Pick<ImapRawMessage, "uid" | "emailId"> {
+  headers: Buffer;
 }
 
 export type OpenImapMailbox = (email: string, accessToken: string) => Promise<ImapMailbox>;
 
 export interface ImapPage {
   messages: GmailMessage[];
+  discoveries: Envelope[];
   remaining: number;
   nextCursor: { uid_validity: string; before_uid: number } | null;
   hasMore: boolean;
@@ -53,6 +60,13 @@ export async function openGoogleImapMailbox(email: string, accessToken: string):
         const found = await client.search({ uid: uid === undefined ? "1:*" : `1:${String(uid - 1)}` }, { uid: true });
         if (!Array.isArray(found)) throw new Error("Gmail IMAP UID SEARCH did not return a list");
         return found;
+      },
+      fetchHeaders: async function* (uids): AsyncGenerator<ImapHeaderMessage> {
+        if (uids.length === 0) return;
+        for await (const message of client.fetch(uids.join(","), { uid: true, threadId: true, headers: ["From"] }, { uid: true })) {
+          if (message.emailId === undefined || message.headers === undefined) throw new Error(`Gmail IMAP message ${String(message.uid)} lacks ID or From headers`);
+          yield { uid: message.uid, emailId: message.emailId, headers: message.headers };
+        }
       },
       fetch: async function* (uids): AsyncGenerator<ImapRawMessage> {
         if (uids.length === 0) return;
@@ -97,8 +111,9 @@ function jsonbText(value: string): string {
     .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "\uFFFD");
 }
 
-async function toGmailMessage(raw: ImapRawMessage, uidValidity: string): Promise<GmailMessage> {
+async function toGmailMessage(raw: ImapRawMessage, uidValidity: string, expectedSender: string): Promise<GmailMessage> {
   const parsed = await PostalMime.parse(raw.source);
+  if (parsed.from?.address?.trim().toLowerCase() !== expectedSender) throw new Error("Gmail IMAP sender changed during hydration");
   const text = jsonbText(parsed.text ?? "");
   const html = jsonbText(parsed.html ?? "");
   let snippet = "";
@@ -141,6 +156,7 @@ export async function readImapPage(
   email: string,
   accessToken: string,
   cursor: { uid_validity: string; before_uid: number } | undefined,
+  senderSync: NonNullable<FetchArgs["senderSync"]>,
   openMailbox: OpenImapMailbox = openGoogleImapMailbox,
 ): Promise<ImapPage> {
   const mailbox = await openMailbox(email, accessToken);
@@ -152,15 +168,42 @@ export async function readImapPage(
     }
     const uids = (await mailbox.searchBelow(cursor?.before_uid)).sort((a, b) => b - a);
     const selected = uids.slice(0, PAGE_SIZE);
-    const fetched = new Map<number, GmailMessage>();
-    for await (const raw of mailbox.fetch(selected)) {
-      fetched.set(raw.uid, await toGmailMessage(raw, mailbox.uidValidity));
+    const selectedSet = new Set(selected);
+    const seen = new Set<number>();
+    const enabled = new Map<number, { address: string; emailId: string }>();
+    const discoveries: Envelope[] = [];
+    for await (const header of mailbox.fetchHeaders(selected)) {
+      if (!selectedSet.has(header.uid) || seen.has(header.uid)) throw new Error("Gmail IMAP returned an unexpected or duplicate header UID");
+      seen.add(header.uid);
+      const parsed = await PostalMime.parse(header.headers);
+      const address = parsed.from?.address?.trim().toLowerCase();
+      if (address === undefined || !/^[^\s<>@]+@[^\s<>@]+$/.test(address)) throw new Error("Gmail IMAP message has no exact From address");
+      const known = Object.hasOwn(senderSync.choices, address);
+      const syncEnabled = known ? senderSync.choices[address] : senderSync.unknownSenderEnabled;
+      if (typeof syncEnabled !== "boolean") throw new Error("Gmail IMAP sender selection is invalid");
+      if (syncEnabled) enabled.set(header.uid, { address, emailId: header.emailId });
+      else if (!known) discoveries.push({ surface: "email", kind: "snapshot", remote_id: gmailHexId(header.emailId),
+        payload: { entity_type: "sender", from_address: address, from_name: parsed.from?.name ?? null } });
     }
-    const messages = selected.map((uid) => fetched.get(uid)).filter((message): message is GmailMessage => message !== undefined);
+    if (seen.size !== selected.length) throw new Error("Gmail IMAP header response is incomplete");
+    const bodyUids = selected.filter((uid) => enabled.has(uid));
+    const fetched = new Map<number, GmailMessage>();
+    for await (const raw of mailbox.fetch(bodyUids)) {
+      const header = enabled.get(raw.uid);
+      if (header === undefined || fetched.has(raw.uid)) throw new Error("Gmail IMAP returned an unexpected or duplicate body UID");
+      if (raw.emailId !== header.emailId) throw new Error("Gmail IMAP message ID changed during hydration");
+      fetched.set(raw.uid, await toGmailMessage(raw, mailbox.uidValidity, header.address));
+    }
+    const messages = bodyUids.map((uid) => {
+      const message = fetched.get(uid);
+      if (message === undefined) throw new Error("Gmail IMAP body response is incomplete");
+      return message;
+    });
     const hasMore = uids.length > PAGE_SIZE;
     const lastUid = selected.at(-1);
     return {
       messages,
+      discoveries,
       remaining: uids.length,
       nextCursor: hasMore && lastUid !== undefined ? { uid_validity: mailbox.uidValidity, before_uid: lastUid } : null,
       hasMore,

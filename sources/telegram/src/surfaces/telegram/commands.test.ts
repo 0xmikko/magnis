@@ -30,6 +30,39 @@ const unusedPager: DialogPager = {
   dialogPage: async () => ({ dialogs: [], next_offset: null, total: null }),
 };
 
+const selections: { chatIds: string[] }[] = [{ chatIds: [] }, { chatIds: ["1"] }];
+test.each(selections)("tst_src_tg_selection_wire_001 discovers dialogs and only hydrates selected peers: %j", async ({ chatIds }) => {
+  const f = await createTransport(new VirtualClock());
+  const read = f.tg.getMessages.bind(f.tg);
+  const requested: number[] = [];
+  const guard = spyOn(f.tg, "getMessages").mockImplementation(async (peer, params, timeout) => {
+    if (peer === null || typeof peer !== "object" || !("id" in peer) || typeof peer.id !== "number") throw new Error("test expects a stored peer ID");
+    const id = peer.id;
+    requested.push(id);
+    if (!chatIds.includes(String(id))) throw new Error("disabled chat history requested");
+    return read(peer, params, timeout);
+  });
+  try {
+    const reading = fetch(f.tg, new LiveDialogPager(f.tg, "account"), "account", { surface: "telegram", direction: "backward", chatIds, headChatIds: [] });
+    const request = await f.application(0);
+    expect(request.method).toBe("messages.GetDialogs");
+    await f.reply(request, new Api.messages.Dialogs({ dialogs: [1, 2].map((id) => new Api.Dialog({
+      peer: new Api.PeerChat({ chatId: bigInt(id) }), topMessage: 20,
+      readInboxMaxId: 0, readOutboxMaxId: 0, unreadCount: 0, unreadMentionsCount: 0, unreadReactionsCount: 0,
+      notifySettings: new Api.PeerNotifySettings({}),
+    })), chats: [wireChat(1), wireChat(2)], users: [], messages: [wireMessage(1, 20), wireMessage(2, 20)] }));
+    if (chatIds.length > 0) {
+      const history = await f.application(1);
+      expect(history.method).toBe("messages.GetHistory");
+      await f.reply(history, new Api.messages.MessagesSlice({ count: 20, messages: [wireMessage(1, 20)], chats: [], users: [] }));
+    }
+    const out = await reading;
+    expect(requested).toEqual(chatIds.map(Number));
+    expect(f.writes).toHaveLength(1 + chatIds.length);
+    expect((out.envelopes as { remote_id: string }[]).map((item) => item.remote_id)).toEqual(chatIds.length === 0 ? ["tg:chat:1", "tg:chat:2"] : ["tg:chat:1", "tg:msg:1:20", "tg:chat:2"]);
+  } finally { guard.mockRestore(); await f.close(); }
+});
+
 const gapArgs = (scopeId: string, start: number, end: number, messageCount = end) => {
   const chatId = Number(scopeId);
   return {
@@ -239,13 +272,13 @@ test("tst_src_tg_takeout_resume_002 resumes bounded Takeout history and finishes
       forwardCheckpoint: { value: unknown };
     }).forwardCheckpoint.value;
     const intent = await fetch(f.tg, new LiveDialogPager(f.tg, "fixture-takeout"), "fixture-takeout",
-      { surface: "telegram", direction: "forward", cursor: promoted });
+      { surface: "telegram", direction: "forward", cursor: promoted, chatIds: ["1"], headChatIds: [] });
     expect(intent.envelopes).toEqual([]);
     expect(intent.nextCursor).toMatchObject({ takeout: { phase: "finish" } });
     expect(f.writes).toHaveLength(2);
 
     const finishing = fetch(f.tg, new LiveDialogPager(f.tg, "fixture-takeout"), "fixture-takeout",
-      { surface: "telegram", direction: "forward", cursor: intent.nextCursor });
+      { surface: "telegram", direction: "forward", cursor: intent.nextCursor, chatIds: ["1"], headChatIds: [] });
     sent = await f.application(2);
     expect(sent.state.request).toBeInstanceOf(Api.InvokeWithTakeout);
     const outer = sent.state.request as Api.InvokeWithTakeout;
@@ -257,7 +290,7 @@ test("tst_src_tg_takeout_resume_002 resumes bounded Takeout history and finishes
     expect(finished.nextCursor).toMatchObject({ chats: { "1": { last_msg_id: 250, message_count: 250 } } });
 
     const alreadyFinished = fetch(f.tg, new LiveDialogPager(f.tg, "fixture-takeout"), "fixture-takeout",
-      { surface: "telegram", direction: "forward", cursor: intent.nextCursor });
+      { surface: "telegram", direction: "forward", cursor: intent.nextCursor, chatIds: ["1"], headChatIds: [] });
     sent = await f.application(3);
     await f.reply(sent, new Api.RpcError({ errorCode: 400, errorMessage: "TAKEOUT_INVALID" }));
     expect((await alreadyFinished).nextCursor).not.toHaveProperty("takeout");
@@ -283,6 +316,7 @@ test("tst_src_tg_takeout_resume_002 resumes bounded Takeout history and finishes
 test("tst_src_tg_history_default_003 starts ordinary history and only resumes persisted Takeout", async () => {
   const ordinary = await fetch({} as TgOps, new FakePager(simpleDialogs(1), 50), "fixture-history", {
     surface: "telegram",
+    chatIds: ["1000"], headChatIds: [],
     direction: "backward",
   });
   expect((ordinary.envelopes as { remote_id: string }[]).map((envelope) => envelope.remote_id)).toEqual([
@@ -303,6 +337,7 @@ test("tst_src_tg_history_default_003 starts ordinary history and only resumes pe
   } as DialogPager;
   const resumed = await fetch({} as TgOps, reservePager, "fixture-history", {
     surface: "telegram",
+    chatIds: ["7"], headChatIds: [],
     direction: "backward",
     cursor: {
       takeout: { id: "7", phase: "publish", ranges: [], range_index: 0,
@@ -987,6 +1022,34 @@ function fakeOps(
 }
 
 describe("catch-up", () => {
+  test("tst_src_tg_selection_head_001 fetches a forced head below an advanced checkpoint and preserves stopped gaps", async () => {
+    const calls = { getMessages: [] as number[] };
+    const ops = fakeOps([{ chatId: 5, topMessage: 100, messages: [100, 99] }, { chatId: 6, topMessage: 200, messages: [200] }], calls);
+    const stopped = { last_msg_id: 10, target_last_msg_id: 200, before_message_id: 180 };
+    const out = await runCatchup(ops, "account", { chats: { "5": { last_msg_id: 100 }, "6": stopped } }, undefined, ["5"], ["5"]);
+    expect(calls.getMessages).toEqual([5]);
+    expect(out.traversed).toEqual({ "5": [99, 100] });
+    expect(out.hasMore).toBe(false);
+    expect(out.nextCursor).toMatchObject({ chats: { "6": stopped } });
+    expect((out.envelopes as { remote_id: string }[]).map((entry) => entry.remote_id)).toEqual(["tg:chat:5", "tg:msg:5:100", "tg:msg:5:99", "tg:chat:6"]);
+  });
+
+  test("tst_src_tg_selection_gap_001 recovers retained ordinary history without a Takeout checkpoint", async () => {
+    const calls: { peer: unknown; before: number | undefined }[] = [];
+    const ops = fakeOps([]);
+    ops.getMessages = async (peer, params) => {
+      calls.push({ peer, before: params.offsetId });
+      return [liveMsg(98), liveMsg(97), liveMsg(96)];
+    };
+    const out = await fetch(ops, unusedPager, "account", {
+      surface: "telegram", direction: "backward", scope_id: "5", target: { kind: "gap", start: 97, end: 98 },
+      forward_checkpoint: { chats: { "5": { last_msg_id: 100 } } },
+    });
+    expect(calls).toEqual([{ peer: 5, before: 99 }]);
+    expect(out.traversed).toEqual({ "5": [97, 98] });
+    expect(out.progress).toEqual({ kind: "completeTarget", forwardCheckpoint: { kind: "retain" } });
+    expect((out.envelopes as { remote_id: string }[]).map((entry) => entry.remote_id)).toEqual(["tg:msg:5:98", "tg:msg:5:97"]);
+  });
   test("tst_tgts_catch_001 emits only messages ABOVE the watermark; no total/discovered", async () => {
     const ops = fakeOps([{ chatId: 5, topMessage: 20, messages: [10, 20] }]);
     const out = await runCatchup(ops, "acct", { chats: { "5": { last_msg_id: 10 } } });

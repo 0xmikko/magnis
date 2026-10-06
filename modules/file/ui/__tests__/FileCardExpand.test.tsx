@@ -1,6 +1,6 @@
 /**
  * tst_fe_files_expand_001 — fileHasMore false for name+mime+size only.
- * tst_fe_files_expand_002 — fileHasMore true for preview_url/url/description/created_at.
+ * tst_fe_files_expand_002 — fileHasMore true for preview_url/url/description/createdAt.
  * tst_fe_files_expand_003 — FileCard expanded layout renders rows + download link.
  * tst_fe_files_expand_004 — Chevron flips the same FileCard via context.
  */
@@ -30,8 +30,8 @@ describe("tst_fe_files_expand_001/002 — fileHasMore", () => {
   it("true with description", () => {
     expect(fileHasMore({ description: "Final draft" })).toBe(true);
   });
-  it("true with created_at", () => {
-    expect(fileHasMore({ created_at: "2026-05-12T10:00:00Z" })).toBe(true);
+  it("true with createdAt", () => {
+    expect(fileHasMore({ createdAt: "2026-05-12T10:00:00Z" })).toBe(true);
   });
 });
 
@@ -47,7 +47,7 @@ describe("tst_fe_files_expand_003 — FileCard expanded layout", () => {
             mime_type: "application/pdf",
             size_bytes: 2048,
             description: "Final draft",
-            created_at: "2026-05-12T10:00:00Z",
+            createdAt: "2026-05-12T10:00:00Z",
             url: "https://x/report.pdf",
           }}
           runtime={runtime}

@@ -164,3 +164,18 @@ test("tst_pub_double_pairs_002 rejects foreign and duplicate candidates atomical
   expect(wrongOwner).not.toHaveBeenCalled();
   expect(owner).toHaveBeenCalledWith(call);
 });
+
+/** @test-id: tst_pub_double_pairs_003
+ * @scenario: scn_entity_sync_approval_001
+ * @covers: AgentContributionRegistry.register
+ * @deterministic: yes — the host EntityOperationBindingSchema accepts camelCase
+ */
+test.each(["setSyncEnabled", "resolveSyncMigration"])("tst_pub_double_pairs_003 resolves %s and still rejects invalid operations", (operation) => {
+  const registry = new AgentContributionRegistry();
+  const binding = { entity: "email.address", operation };
+  const renderer = { id: operation, moduleId: "email", binding, match: () => true, Render: (): null => null };
+  registry.register("email", { historyRenderers: [renderer] });
+  expect(registry.resolveHistoryRenderer({ id: "call", kind: "tool_call", toolBinding: binding, payload: {} })).toBe(renderer);
+  expect(() => registry.register("email", { historyRenderers: [{ ...renderer, binding: { ...binding, operation: "sync.apply" } }] })).toThrow("Invalid renderer operation");
+  expect(registry.resolveHistoryRenderer({ id: "call", kind: "tool_call", toolBinding: binding, payload: {} })).toBe(renderer);
+});

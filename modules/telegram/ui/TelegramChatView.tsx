@@ -39,6 +39,11 @@ export interface TelegramChatViewProps {
   readonly isIndexed?: boolean;
   /** Toggle indexing for the current chat */
   readonly onToggleIndexing?: () => void;
+  readonly syncEnabled?: boolean;
+  readonly onToggleSync?: () => void;
+  readonly savingSettings?: boolean;
+  readonly settingsStatus?: string;
+  readonly settingsError?: string;
 }
 
 /**
@@ -599,6 +604,11 @@ export function TelegramChatView({
   onReplyByAgent,
   isIndexed,
   onToggleIndexing,
+  syncEnabled,
+  onToggleSync,
+  savingSettings,
+  settingsStatus,
+  settingsError,
 }: TelegramChatViewProps): JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null);
   const virtuosoRef = useRef<VirtuosoHandle>(null);
@@ -614,13 +624,20 @@ export function TelegramChatView({
   const pendingMessageId = useTelegramStore((s) => s.pendingMessageId);
 
   const headerBtnRef = useRef<HTMLDivElement>(null);
-  const headerMenuItems: readonly ContextMenuEntry[] = useMemo(() => [
-    {
+  const headerMenuItems: readonly ContextMenuEntry[] = useMemo(() => {
+    if (savingSettings) return [];
+    const items: ContextMenuEntry[] = [];
+    if (syncEnabled !== undefined) items.push({
+      id: "toggleSync",
+      label: syncEnabled ? "Stop synchronization" : "Start synchronization",
+    });
+    if (isIndexed !== undefined) items.push({
       id: "toggle_indexing",
-      label: isIndexed === false ? "Enable indexing" : "Disable indexing",
-      icon: isIndexed === false ? "circle-check" : "circle-alert",
-    },
-  ], [isIndexed]);
+      label: isIndexed ? "Disable indexing" : "Enable indexing",
+      icon: isIndexed ? "circle-alert" : "circle-check",
+    });
+    return items;
+  }, [isIndexed, syncEnabled, savingSettings]);
 
   const handleOpenHeaderMenu = useCallback(() => {
     const rect = headerBtnRef.current?.getBoundingClientRect();
@@ -634,10 +651,12 @@ export function TelegramChatView({
 
   const handleHeaderMenuSelect = useCallback((itemId: string) => {
     headerMenu.close();
+    if (savingSettings) return;
+    if (itemId === "toggleSync") onToggleSync?.();
     if (itemId === "toggle_indexing") {
       onToggleIndexing?.();
     }
-  }, [headerMenu, onToggleIndexing]);
+  }, [headerMenu, onToggleIndexing, onToggleSync, savingSettings]);
 
   const handleMenuSelect = useCallback((itemId: string) => {
     const msg = contextMenu.state.data;
@@ -828,7 +847,7 @@ export function TelegramChatView({
           subtitle={`${String(conversation.messageTotal)} messages`}
           actions={(
             <div ref={headerBtnRef}>
-              <IconButton variant="ghost" onClick={handleOpenHeaderMenu}>
+              <IconButton variant="ghost" label="Chat settings" onClick={handleOpenHeaderMenu}>
                 <Icon name="ellipsis-vertical" size={18} />
               </IconButton>
             </div>
@@ -860,6 +879,8 @@ export function TelegramChatView({
       )}
 
       <div className="flex h-full flex-1 flex-col">
+        {settingsStatus && <p role="status" className="px-4 py-2 text-content-secondary text-sm">{settingsStatus}</p>}
+        {settingsError && <p role="alert" className="px-4 py-2 text-sm">{settingsError}</p>}
         {(loading === true || backfilling === true) && (
           <div className="flex justify-center py-2">
             <span className="text-content-tertiary text-xs animate-pulse">

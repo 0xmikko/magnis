@@ -1,5 +1,5 @@
 // Sync control + reply composer. Thin @rpc wrappers that delegate
-// to the host graph ops (sync_state / composer), keyed by the calling module.
+// to the host graph ops (syncState / composer), keyed by the calling module.
 // Exercised through @magnis/testkit/module: the passed-in spies are wrapped by
 // mockGraph's Proxy (which forwards args to them), so `expect(spy).toHaveBeen…`
 // still observes the delegated call; any op NOT provided throws.
@@ -21,37 +21,120 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
-import type { GraphBatchInput, RpcExecutor } from "@magnis/plugin-sdk";
-import { mockGraph, mountModule, type GraphOverrides } from "@magnis/testkit/module";
+import type { RpcExecutor } from "@magnis/plugin-sdk";
+import type { GraphBatchInput, SyncMigrationEntity } from "@magnis/sdk";
+import { entity, mockGraph, mountModule, syncStateDouble, type GraphOverrides } from "@magnis/testkit/module";
 import { EmailModule } from "../service.ts";
 import type { EmailCanonical } from "../../types.ts";
 
 function makeModule(
-  graph: Partial<Record<string, unknown>>,
+  graph: GraphOverrides,
   rpc: RpcExecutor = { execute: vi.fn() },
 ): EmailModule {
   return mountModule(EmailModule, {
-    graph: mockGraph(
-      graph as unknown as GraphOverrides,
-    ),
-    ctx: { extension_id: "email" },
+    graph: mockGraph({ moduleSettings: () => Promise.resolve({ newSenderSyncEnabled: "true" }), ...graph }),
+    ctx: { extensionId: "email" },
     rpc,
   }).module;
 }
 
 describe("email sync control", () => {
-  it("sync.status delegates to graph.sync_state('status')", async () => {
-    const sync_state = vi.fn().mockResolvedValue({ accounts: [] });
-    const mod = makeModule({ sync_state });
+  it("sync.status delegates to graph.syncState('status')", async () => {
+    const syncState = vi.fn().mockResolvedValue({ accounts: [] });
+    const mod = makeModule({ syncState });
     await mod.syncStatus();
-    expect(sync_state).toHaveBeenCalledWith("status");
+    expect(syncState).toHaveBeenCalledWith("status");
   });
 
   it("sync.reset clears ONLY email.message (namespace-scoped)", async () => {
-    const sync_state = vi.fn().mockResolvedValue({ ok: true });
-    const mod = makeModule({ sync_state });
+    const syncState = vi.fn().mockResolvedValue({ ok: true });
+    const mod = makeModule({ syncState });
     await mod.syncReset();
-    expect(sync_state).toHaveBeenCalledWith("reset", "email.message");
+    expect(syncState).toHaveBeenCalledWith("reset", "email.message");
+  });
+});
+
+/**
+ * @test-id: tst_module_email_sync_002
+ * @scenario: scn_google_sync_001
+ * @covers: EmailModule.syncSelection, EmailModule.onConnectionReady, EmailModule.setSyncEnabled
+ * @deterministic: yes
+ * @fixtures: one legacy sender and one stopped sender shared across accounts
+ */
+describe("tst_module_email_sync_002 saved sender selection", () => {
+  const ready = { userId: "u1", sourceId: "google", accountId: "one", identityKey: null };
+  function fixture() {
+    const rows: SyncMigrationEntity[] = [
+      { id: "legacy", schemaId: "email.address", name: "Old", indexed: false, isPinned: null, properties: { address: " OLD@example.com " }, syncEnabled: null, syncRevision: null },
+      { id: "stopped", schemaId: "email.address", name: "Stopped", indexed: true, isPinned: null, properties: { address: "stop@example.com" }, syncEnabled: false, syncRevision: "7" },
+    ];
+    const graph = mockGraph({
+      listSyncMigrationEntities: () => Promise.resolve({ items: rows, next: null }),
+      moduleSettings: () => Promise.resolve({ newSenderSyncEnabled: "false" }),
+      updateEntitySyncEnabled: (params) => {
+        const row = rows.find((item) => item.id === params.id);
+        if (row === undefined) throw new Error("Missing sender");
+        if (row.syncEnabled === null) row.syncRevision = "0";
+        else if (row.syncEnabled !== params.syncEnabled) {
+          if (row.syncRevision === null) throw new Error("Missing revision");
+          row.syncRevision = String(BigInt(row.syncRevision) + 1n);
+        }
+        row.syncEnabled = params.syncEnabled;
+        if (row.syncRevision === null) throw new Error("Missing revision");
+        return Promise.resolve({ syncRevision: row.syncRevision });
+      },
+      getEntity: (id) => {
+        const row = rows.find((item) => item.id === id);
+        return Promise.resolve(row === undefined ? null : entity(id, row.name ?? "", { schemaId: row.schemaId, indexed: row.indexed }));
+      },
+      syncState: syncStateDouble(),
+    });
+    return { rows, graph, mod: mountModule(EmailModule, { graph, ctx: { extensionId: "email" } }).module };
+  }
+
+  it("migrates legacy enabled behavior once; selection is read-only and shared across accounts", async () => {
+    const { mod, graph, rows } = fixture();
+    const request = { sourceId: "google", accountId: "one", accountGeneration: 1 };
+    await expect(mod.syncSelection(request)).rejects.toThrow(/migration/i);
+    expect(graph.spies.updateEntitySyncEnabled).not.toHaveBeenCalled();
+    await mod.onConnectionReady(ready);
+    await mod.onConnectionReady(ready);
+    expect(graph.spies.updateEntitySyncEnabled).toHaveBeenCalledExactlyOnceWith({ id: "legacy", syncEnabled: true });
+    const selected = await mod.syncSelection(request);
+    expect(selected).toEqual({ surface: "email", unknownSenderEnabled: false, choices: [
+      { id: "legacy", scopeId: "old@example.com", syncEnabled: true, syncRevision: "0" },
+      { id: "stopped", scopeId: "stop@example.com", syncEnabled: false, syncRevision: "7" },
+    ] });
+    expect(await mod.syncSelection({ ...request, accountId: "two" })).toEqual(selected);
+    expect(rows[0]?.indexed).toBe(false);
+  });
+
+  it("reports saved-but-not-applied separately and repeated Start preserves the revision", async () => {
+    const { mod, graph } = fixture();
+    const first = await mod.setSyncEnabled({ id: "stopped", syncEnabled: true });
+    const again = await mod.setSyncEnabled({ id: "stopped", syncEnabled: true });
+    expect(first).toEqual(again);
+    expect(first.results).toMatchObject([{ kind: "saved", syncRevision: "8", application: { kind: "pending" } }]);
+    graph.spies.syncState?.mockRejectedValueOnce(new Error("Worker unavailable"));
+    expect((await mod.setSyncEnabled({ id: "stopped", syncEnabled: false })).results).toMatchObject([
+      { kind: "saved", syncRevision: "9", syncEnabled: false, application: { kind: "failed", message: "Worker unavailable" } },
+    ]);
+    graph.spies.updateEntitySyncEnabled?.mockRejectedValueOnce(new Error("Save failed"));
+    expect((await mod.setSyncEnabled({ id: "stopped", syncEnabled: true })).results).toMatchObject([{ kind: "failed", message: "Save failed" }]);
+  });
+
+  it("does not invent choices for malformed identities or missing settings", async () => {
+    const { mod, graph, rows } = fixture();
+    const legacy = rows[0];
+    if (legacy === undefined) throw new Error("Missing fixture row");
+    legacy.properties = {};
+    await mod.onConnectionReady(ready);
+    expect(await mod.syncMigration()).toMatchObject({ complete: false, issues: [{ legacyIds: ["legacy"] }] });
+    expect(graph.spies.updateEntitySyncEnabled).not.toHaveBeenCalled();
+    await expect(mod.syncSelection({ sourceId: "google", accountId: "one", accountGeneration: 1 })).rejects.toThrow(/migration/i);
+    rows.shift();
+    graph.spies.moduleSettings?.mockResolvedValueOnce({});
+    await expect(mod.syncSelection({ sourceId: "google", accountId: "one", accountGeneration: 1 })).rejects.toThrow(/setting/i);
   });
 });
 
@@ -82,51 +165,49 @@ describe("email reply composer", () => {
 });
 
 describe("email ensure_address hub RPC (cross-module)", () => {
-  it("resolves-or-creates email.address via apply_batch and returns the id", async () => {
-    const apply_batch = vi.fn(async (frag: { entities: { key: string; schema_id: string; facets: { external_id?: string }[] }[] }) => ({
+  it("resolves-or-creates email.address via applyBatch and returns the id", async () => {
+    const applyBatch = vi.fn(async (frag: GraphBatchInput) => ({
       ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
       created: 1,
       updated: 0,
-      links_added: 0,
-      dropped_keys: [],
+      linksAdded: 0,
+      droppedKeys: [], resolved: [],
     }));
-    const mod = makeModule({ apply_batch });
+    const mod = makeModule({ applyBatch });
     const out = await mod.ensureAddress({ address: "Alice@Example.com", display_name: "Alice" });
 
-    // S3: the batch key is the lowered address; the node is ANCHORED by the
-    // email:address chokepoint key.
+    // S3: the batch key is the lowered address; the node's external id is
+    // the email:address chokepoint key.
     expect(out).toEqual({ id: "id-alice@example.com" });
-    const call0 = apply_batch.mock.calls[0];
-    if (call0 === undefined) throw new Error("ensure_address: apply_batch not called");
+    const call0 = applyBatch.mock.calls[0];
+    if (call0 === undefined) throw new Error("ensure_address: applyBatch not called");
     const frag = call0[0];
-    const addr = frag.entities[0] as
-      | { schema_id: string; anchor?: string; properties?: Record<string, unknown>; facets: unknown[] }
-      | undefined;
+    const addr = frag.entities[0];
     if (addr === undefined) throw new Error("ensure_address: missing address entity");
-    expect(addr.schema_id).toBe("email.address");
-    // S5: the address node is its DICTIONARY under the chokepoint anchor —
+    expect(addr.schemaId).toBe("email.address");
+    // S5: the address node is its DICTIONARY under the chokepoint external id —
     // the details record retired with the writer.
-    expect(addr.anchor).toBe("email:address:alice@example.com");
+    expect(addr.externalId).toBe("email:address:alice@example.com");
     expect(addr.properties).toMatchObject({ address: "alice@example.com" });
   });
 
   it("rejects an empty address", async () => {
-    const mod = makeModule({ apply_batch: vi.fn() });
+    const mod = makeModule({ applyBatch: vi.fn() });
     await expect(mod.ensureAddress({ address: "   " })).rejects.toThrow(/required/);
   });
 });
 
 describe("email set_trigger", () => {
-  it("normalizes addresses, resolves them via apply_batch, delegates to triggers.create", async () => {
-    const apply_batch = vi.fn(async (frag: GraphBatchInput) => ({
+  it("normalizes addresses, resolves them via applyBatch, delegates to triggers.create", async () => {
+    const applyBatch = vi.fn(async (frag: GraphBatchInput) => ({
       ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
       created: frag.entities.length,
       updated: 0,
-      links_added: 0,
-      dropped_keys: [],
+      linksAdded: 0,
+      droppedKeys: [], resolved: [],
     }));
     const execute = vi.fn().mockResolvedValue({ id: "trig-1" });
-    const mod = makeModule({ apply_batch }, { execute });
+    const mod = makeModule({ applyBatch }, { execute });
 
     await mod.setTrigger({
       from_addresses: ["B@X.com", "a@x.com", "a@x.com"], // mixed case + dup
@@ -136,11 +217,11 @@ describe("email set_trigger", () => {
     });
 
     // resolve-or-create email.address entities (lowercased, deduped, sorted)
-    const call0 = apply_batch.mock.calls[0];
-    if (call0 === undefined) throw new Error("set_trigger: apply_batch not called");
+    const call0 = applyBatch.mock.calls[0];
+    if (call0 === undefined) throw new Error("set_trigger: applyBatch not called");
     const frag = call0[0] as GraphBatchInput;
     expect(frag.entities.map((e) => e.idx)).toEqual(["a@x.com", "b@x.com", "c@x.com"]);
-    expect(frag.entities.every((e) => e.schema_id === "email.address")).toBe(true);
+    expect(frag.entities.every((e) => e.schemaId === "email.address")).toBe(true);
 
     // delegate to triggers.create with resolved watch ids + schema_filter "email"
     expect(execute).toHaveBeenCalledTimes(1);
@@ -153,7 +234,7 @@ describe("email set_trigger", () => {
   });
 
   it("throws when no addresses are provided", async () => {
-    const mod = makeModule({ apply_batch: vi.fn() }, { execute: vi.fn() });
+    const mod = makeModule({ applyBatch: vi.fn() }, { execute: vi.fn() });
     await expect(
       mod.setTrigger({ from_addresses: [], gate_prompt: "g", action_prompt: "a" }),
     ).rejects.toThrow(/missing from_addresses/);
@@ -166,11 +247,11 @@ describe("email set_trigger", () => {
  * @deterministic: yes — rejected parent before owner writes
  */
 it("tst_module_email_trigger_validation_001 compatibility trigger refuses invalid settings and foreign parent before addresses", async () => {
-  const apply_batch = vi.fn();
+  const applyBatch = vi.fn();
   const execute = vi.fn();
-  const module = makeModule({ apply_batch, get_entity_full: vi.fn().mockResolvedValue(null) }, { execute });
+  const module = makeModule({ applyBatch, getEntityFull: vi.fn().mockResolvedValue(null) }, { execute });
   await expect(module.setTrigger({ from_addresses: ["morgan@example.test"], gate_prompt: "reply", action_prompt: "notify", debounce_seconds: -1 })).rejects.toThrow("debounce");
   await expect(module.setTrigger({ from_addresses: ["morgan@example.test"], gate_prompt: "reply", action_prompt: "notify", episode_id: "foreign" })).rejects.toThrow("episode");
-  expect(apply_batch).not.toHaveBeenCalled();
+  expect(applyBatch).not.toHaveBeenCalled();
   expect(execute).not.toHaveBeenCalled();
 });

@@ -19,6 +19,39 @@ import { messagePayload } from "./surfaces/telegram/envelope";
 import { messageRemoteId } from "./surfaces/telegram/schema";
 import { createTransport, setupConfig, VirtualClock } from "./testing/mtproto-transport";
 
+test("tst_src_tg_selection_live_001 filters new/edit events and restores selection with deletions after replacement", () => {
+  const client = new TelegramClient(new StringSession(""), 1, "hash", {});
+  const tg = new TgClient(client);
+  const pushes: ReturnType<typeof liveUpdatePushes> = [];
+  const receive = (update: Parameters<typeof liveUpdatePushes>[0]): void => { pushes.push(...liveUpdatePushes(update, "account-1")); };
+  const stop = tg.addLiveHandler(receive, new Set(["5"]));
+  const handlers = client.listEventHandlers();
+  for (const chatId of [5, 6]) {
+    const message = new Api.Message({ id: 7, peerId: new Api.PeerUser({ userId: bigInt(chatId) }), date: 1_700_000_000, message: "hello" });
+    for (const edited of [false, true]) {
+      const update = edited ? new Api.UpdateEditMessage({ message, pts: 1, ptsCount: 1 }) : new Api.UpdateNewMessage({ message, pts: 1, ptsCount: 1 });
+      const event = edited ? new EditedMessageEvent(message, update) : new NewMessageEvent(message, update);
+      event._setClient(client);
+      const handler = handlers[edited ? 1 : 0];
+      if (handler === undefined) throw new Error("missing message handler");
+      handler[1](event);
+    }
+  }
+  expect(pushes.map((push) => push.remote_id)).toEqual(["tg:msg:5:7", "tg:msg:5:7"]);
+  stop();
+  expect(client.listEventHandlers()).toHaveLength(0);
+  const stopRestored = tg.addLiveHandler(receive, new Set(["6"]));
+  const raw = client.listEventHandlers()[2];
+  if (raw === undefined) throw new Error("missing raw handler");
+  for (const channelId of [5, 6]) raw[1](new Api.UpdateDeleteChannelMessages({ channelId: bigInt(channelId), messages: [7], pts: 1, ptsCount: 1 }));
+  raw[1](new Api.UpdateDeleteMessages({ messages: [8], pts: 2, ptsCount: 1 }));
+  expect(pushes.slice(2)).toEqual([
+    { surface: "telegram", kind: "delete", remote_id: "tg:msg:6:7", payload: { message_id: 7, chat_id: 6 } },
+    { surface: "telegram", kind: "delete", remote_id: "tg:deleted:8", payload: { message_id: 8 } },
+  ]);
+  stopRestored();
+});
+
 /** @test-id: tst_src_tg_takeout_wire_001
  * @scenario: scn_tg_takeout_001
  * @covers: TgClient Takeout lifecycle and ranged history/dialog wire wrappers

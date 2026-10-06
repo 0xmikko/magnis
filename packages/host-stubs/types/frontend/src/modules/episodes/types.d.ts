@@ -1,6 +1,6 @@
 import type { AvatarColor } from "../shared/types";
 import type { AgentMessage as CoreAgentMessage } from "@magnis/client-core";
-export type { AgentFailure, AgentMessage, AskUserOption, AskUserPayload, AskUserQuestion, AskUserTab, ChatMessage, ChatMessageAttachment, CompletedToolResult, ContentBlock, EntityMention, EntitySearchResult, EpisodeState, PendingToolCall, ReplyToContext, ToolCallEvent, ToolResultEvent, UIContext } from "@magnis/client-core";
+export type { AgentFailure, AgentMessage, AskUserOption, AskUserPayload, AskUserQuestion, AskUserTab, ChatMessage, ChatMessageAttachment, CompletedToolResult, ContentBlock, EntityMention, EpisodeState, PendingToolCall, ReplyToContext, ToolCallEvent, ToolResultEvent, UIContext } from "@magnis/client-core";
 export type { EpisodeListItem, EpisodeMessage } from "@magnis/sdk";
 export interface AgentChat {
     readonly id: string;

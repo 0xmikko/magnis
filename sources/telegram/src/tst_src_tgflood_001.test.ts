@@ -121,7 +121,7 @@ test("tst_src_tgflood_005 the Source command loop preserves runtime flood replie
   const f = await createTransport(clock, guard, true, async (transport, session) => {
     options.transport = transport;
     stream.send(1, "listen_start", {
-      subscription_id: "fixture-listen", _meta: { account_id: "fixture-stdio", api_id: 1, api_hash: "fixture-only", session },
+      subscription_id: "fixture-listen", chatIds: ["101", "102", "103"], _meta: { account_id: "fixture-stdio", api_id: 1, api_hash: "fixture-only", session },
     });
     return stream.reply(1);
   });
@@ -158,7 +158,7 @@ test("tst_src_tgflood_005 the Source command loop preserves runtime flood replie
   const actual = await createTransport(runningClock, runningGuard, true, (transport, session) => {
     runningOptions.transport = transport;
     meta = { account_id: "fixture-stdio-main", api_id: 1, api_hash: "fixture-only", session };
-    io.send(10, "listen_start", { subscription_id: "active", _meta: meta });
+    io.send(10, "listen_start", { subscription_id: "active", chatIds: ["101", "102", "103"], _meta: meta });
     return io.reply(10);
   });
   try {

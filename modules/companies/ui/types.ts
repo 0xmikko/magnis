@@ -1,21 +1,5 @@
-import type { AvatarColor, LinkedEntitySummary, SidebarData } from "@magnis/host/base";
-
-export interface CompanyListItem {
-  readonly id: string;
-  readonly name: string;
-  readonly website: string | null;
-  readonly industry: string | null;
-  readonly size: string | null;
-  readonly location: string | null;
-  readonly avatar_color: string;
-  readonly initials: string;
-  readonly created_at: string;
-}
-
-export interface CompanyDetailView extends CompanyListItem {
-  readonly canonical: Record<string, unknown>;
-  readonly linked_entities: readonly LinkedEntitySummary[];
-}
+import type { AvatarColor, SidebarData } from "@magnis/host/base";
+export type { CompanyDetailView, CompanyListItem } from "../types";
 
 export interface CompanyProfile {
   readonly id: string;

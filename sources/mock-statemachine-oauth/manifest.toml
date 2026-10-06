@@ -9,6 +9,7 @@ summary = "Shared state-machine mock connector in an oauth2/poll shape."
 publisher = "ai.magnis"
 dev = true
 surfaces = ["email"]
+dependsOn = ["email"]
 kind = "mock"
 account_mode = "single"
 

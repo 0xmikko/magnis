@@ -5,7 +5,7 @@
 // flattened MailMessage (see `flattenMailPayload`) and `remote_id` is the
 // Gmail message id.
 
-import { RateLimitError, type Envelope } from "@magnis/connector-sdk";
+import { CursorExpiredError, RateLimitError, type Envelope, type FetchArgs } from "@magnis/connector-sdk";
 import {
   checkRateLimit,
   fetchWithRetry,
@@ -46,6 +46,7 @@ const GMAIL_MESSAGE_START_INTERVAL_MS = 250;
 const nextMessageStart = new WeakMap<FetchLike, number>();
 const pendingMessagePage = new WeakMap<FetchLike, {
   key: string;
+  headers: Map<string, GmailMessage | null>;
   messages: Map<string, GmailMessage | null>;
 }>();
 
@@ -658,14 +659,17 @@ async function listMessagesPage(
   token: string,
   pageToken: string | undefined,
   fetchFn: FetchLike,
+  recoverySender?: string,
 ): Promise<ListMessagesResponse> {
   let url = "https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=50";
-  if (pageToken !== undefined) url += `&pageToken=${pageToken}`;
+  if (pageToken !== undefined) url += `&pageToken=${encodeURIComponent(pageToken)}`;
+  if (recoverySender !== undefined) url += `&q=${encodeURIComponent(`from:${JSON.stringify(recoverySender)}`)}`;
   const resp = await fetchWithRetry(fetchFn, url, {
     headers: { authorization: `Bearer ${token}` },
   });
   checkRateLimit(resp);
   if (!resp.ok) {
+    if (recoverySender !== undefined && pageToken !== undefined && resp.status === 400) throw new CursorExpiredError("Gmail sender continuation expired");
     await throwGoogleResponseError(resp, "Gmail list messages failed", Date.now());
   }
   return parseListMessagesResponse(await resp.json());
@@ -675,8 +679,9 @@ async function fetchMessage(
   token: string,
   gmailMsgId: string,
   fetchFn: FetchLike,
+  format: "metadata" | "full",
 ): Promise<GmailMessage | null> {
-  const url = `https://gmail.googleapis.com/gmail/v1/users/me/messages/${gmailMsgId}?format=full`;
+  const url = `https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(gmailMsgId)}?format=${format}${format === "metadata" ? "&metadataHeaders=From" : ""}`;
   const resp = await fetchWithRetry(fetchFn, url, {
     headers: { authorization: `Bearer ${token}` },
   });
@@ -833,27 +838,26 @@ export function snapshotEnvelopesFromFetched(fetched: Fetched[]): Envelope[] {
   return envelopes;
 }
 
-async function fetchSnapshotEnvelopes(
-  token: string,
-  ids: string[],
-  fetchFn: FetchLike,
-): Promise<Envelope[]> {
-  return fetchEnvelopes(
-    token,
-    ids.map((id) => ({ id, kind: "snapshot" })),
-    fetchFn,
-  );
+function synchronizationSender(message: GmailMessage): EmailAddress {
+  const raw = getHeader(message.payload?.headers ?? [], "From");
+  if (raw === null) throw new Error(`Gmail message ${message.id} has no From header`);
+  const sender = parseEmailAddress(raw);
+  const address = sender.address.trim().toLowerCase();
+  if (!/^[^\s<>@]+@[^\s<>@]+$/.test(address)) throw new Error(`Gmail message ${message.id} has no exact sender address`);
+  return { ...sender, address };
 }
 
 async function fetchEnvelopes(
   token: string,
   requests: { id: string; kind: MessageEnvelopeKind }[],
   fetchFn: FetchLike,
+  senderSync: NonNullable<FetchArgs["senderSync"]>,
+  recoverySender?: string,
 ): Promise<Envelope[]> {
-  const key = JSON.stringify(requests);
+  const key = JSON.stringify([token, requests, senderSync, recoverySender]);
   let pending = pendingMessagePage.get(fetchFn);
   if (pending?.key !== key) {
-    pending = { key, messages: new Map() };
+    pending = { key, headers: new Map(), messages: new Map() };
     pendingMessagePage.set(fetchFn, pending);
   }
   const page = pending;
@@ -862,19 +866,45 @@ async function fetchEnvelopes(
     // A quota hold rejects the page and leaves its cursor untouched, but a
     // retry need only read the IDs that did not complete before the hold.
     await mapConcurrent(
-      requests.filter(({ id }) => !page.messages.has(id)),
+      requests.filter(({ id }) => !page.headers.has(id)),
       GMAIL_FETCH_CONCURRENCY,
       fetchFn,
       async ({ id }): Promise<void> => {
-        page.messages.set(id, await fetchMessage(token, id, fetchFn));
+        page.headers.set(id, await fetchMessage(token, id, fetchFn, "metadata"));
       },
     );
-    const fetched = requests.map(({ id, kind }): Fetched => {
+    const selected: { id: string; kind: MessageEnvelopeKind }[] = [];
+    const discoveries = new Map<string, Envelope>();
+    for (const request of requests) {
+      const header = page.headers.get(request.id);
+      if (header === undefined) throw new Error(`Gmail message ${request.id} missing after header lookup`);
+      if (header === null) continue;
+      const sender = synchronizationSender(header);
+      if (recoverySender !== undefined && sender.address !== recoverySender) continue;
+      const known = Object.hasOwn(senderSync.choices, sender.address);
+      const enabled = known ? senderSync.choices[sender.address] : senderSync.unknownSenderEnabled;
+      if (typeof enabled !== "boolean") throw new Error("Gmail sender selection is invalid");
+      if (enabled) selected.push(request);
+      else if (!known) discoveries.set(request.id, { surface: "email", kind: "snapshot", remote_id: request.id,
+        payload: { entity_type: "sender", from_address: sender.address, from_name: sender.name } });
+    }
+    await mapConcurrent(selected.filter(({ id }) => !page.messages.has(id)), GMAIL_FETCH_CONCURRENCY, fetchFn, async ({ id }) => {
+      page.messages.set(id, await fetchMessage(token, id, fetchFn, "full"));
+    });
+    const fetched = selected.map(({ id, kind }): Fetched => {
       const msg = page.messages.get(id);
       if (msg === undefined) throw new Error(`Gmail message ${id} missing after hydration`);
+      const header = page.headers.get(id);
+      if (msg !== null && header !== undefined && header !== null && synchronizationSender(msg).address !== synchronizationSender(header).address) {
+        throw new Error(`Gmail message ${id} sender changed during hydration`);
+      }
       return { id, kind, msg };
     });
-    const envelopes = snapshotEnvelopesFromFetched(fetched);
+    const messages = new Map(snapshotEnvelopesFromFetched(fetched).map((envelope) => [envelope.remote_id, envelope]));
+    const envelopes = requests.flatMap(({ id }) => {
+      const envelope = messages.get(id) ?? discoveries.get(id);
+      return envelope === undefined ? [] : [envelope];
+    });
     if (pendingMessagePage.get(fetchFn) === page) pendingMessagePage.delete(fetchFn);
     return envelopes;
   } catch (error) {
@@ -900,6 +930,7 @@ export async function fetchImapMessagePage(
   cursor: unknown,
   fetchFn: FetchLike,
   openMailbox: OpenImapMailbox,
+  senderSync: NonNullable<FetchArgs["senderSync"]>,
 ): Promise<EmailFetchResult> {
   const c = cursorObj(cursor);
   const continuing = c?.imap_uid_validity !== undefined || c?.imap_before_uid !== undefined || c?.imap_email !== undefined;
@@ -929,7 +960,7 @@ export async function fetchImapMessagePage(
 
   // @tested-by: tst_src_iso_google_021
   // @invariant: IMAP pages carry the initial REST watermark until terminal admission.
-  const page = await readImapPage(email, token, imapCursor, openMailbox);
+  const page = await readImapPage(email, token, imapCursor, senderSync, openMailbox);
   if (skipped !== undefined) {
     envelopes.push({
       surface: "email",
@@ -938,7 +969,7 @@ export async function fetchImapMessagePage(
       payload: { entity_type: "mailbox", messages_total: page.remaining + skipped, skipped },
     });
   }
-  envelopes.push(...snapshotEnvelopesFromFetched(page.messages.map((msg) => ({ id: msg.id, kind: "snapshot", msg }))));
+  envelopes.push(...page.discoveries, ...snapshotEnvelopesFromFetched(page.messages.map((msg) => ({ id: msg.id, kind: "snapshot", msg }))));
   return {
     envelopes,
     hasMore: page.hasMore,
@@ -971,13 +1002,21 @@ export async function fetchMessagePage(
   token: string,
   cursor: unknown,
   fetchFn: FetchLike,
+  senderSync: NonNullable<FetchArgs["senderSync"]>,
+  recoverySender?: string,
 ): Promise<EmailFetchResult> {
   const c = cursorObj(cursor);
+  if (recoverySender !== undefined) {
+    if (senderSync.choices[recoverySender] !== true) throw new Error("Gmail sender recovery requires an enabled sender");
+    if (cursor !== undefined && cursor !== null && (c?.recoverySender !== recoverySender || typeof c.page_token !== "string")) {
+      throw new Error("Gmail sender recovery cursor belongs to a different target or is malformed");
+    }
+  }
   const pageToken = typeof c?.page_token === "string" ? c.page_token : undefined;
 
   let historyId: string | undefined;
   const envelopes: Envelope[] = [];
-  if (pageToken === undefined) {
+  if (pageToken === undefined && recoverySender === undefined) {
     const profile = await getProfile(token, fetchFn);
     historyId = profile.historyId;
     if (typeof profile.messagesTotal === "number") {
@@ -993,13 +1032,14 @@ export async function fetchMessagePage(
     historyId = typeof c?.history_id === "string" ? c.history_id : undefined;
   }
 
-  const page = await listMessagesPage(token, pageToken, fetchFn);
+  const page = await listMessagesPage(token, pageToken, fetchFn, recoverySender);
   const ids = (page.messages ?? []).map((m) => m.id);
-  envelopes.push(...(await fetchSnapshotEnvelopes(token, ids, fetchFn)));
+  envelopes.push(...(await fetchEnvelopes(token, ids.map((id) => ({ id, kind: "snapshot" })), fetchFn, senderSync, recoverySender)));
 
   const hasMore = typeof page.nextPageToken === "string";
   const nextCursor: Record<string, unknown> = {};
   if (hasMore) nextCursor.page_token = page.nextPageToken;
+  if (hasMore && recoverySender !== undefined) nextCursor.recoverySender = recoverySender;
   if (historyId !== undefined) nextCursor.history_id = historyId;
 
   return { envelopes, nextCursor, hasMore };
@@ -1014,6 +1054,7 @@ export async function fetchHistoryChanges(
   token: string,
   cursor: unknown,
   fetchFn: FetchLike,
+  senderSync: NonNullable<FetchArgs["senderSync"]>,
 ): Promise<EmailFetchResult> {
   const c = cursorObj(cursor);
   const historyId = typeof c?.history_id === "string" ? c.history_id : undefined;
@@ -1043,7 +1084,7 @@ export async function fetchHistoryChanges(
       id,
       kind: action === "live" ? "live" as const : "snapshot" as const,
     }));
-  envelopes.push(...(await fetchEnvelopes(token, fetchRequests, fetchFn)));
+  envelopes.push(...(await fetchEnvelopes(token, fetchRequests, fetchFn, senderSync)));
 
   const hasMore = typeof resp.nextPageToken === "string";
   const nextCursor: Record<string, unknown> = hasMore

@@ -7,6 +7,7 @@
  * runtime out of thin air fails loudly rather than rendering against an
  * invented default.
  */
+import type { FileUploadHttpResult } from "@magnis/sdk";
 import { useSyncExternalStore, type JSX, type ReactNode } from "react";
 
 import { BaseEntityCard } from "./internal/entity-card";
@@ -139,13 +140,9 @@ export async function uploadBrowserFile(transport: TransportLike, file: File): P
   if (!response.ok) {
     throw new Error(`upload failed: ${String(response.status)}`);
   }
-  const raw = (await response.json()) as {
-    id: string;
-    name: string;
-    mime_type: string;
-    size_bytes: number;
-  };
-  return { id: raw.id, name: raw.name, mimeType: raw.mime_type, sizeBytes: raw.size_bytes };
+  // The host parses the SDK `FileUploadHttpResult` and names the file by its entity.
+  const { entityId, name, mimeType, sizeBytes } = (await response.json()) as FileUploadHttpResult;
+  return { id: entityId, name, mimeType, sizeBytes };
 }
 
 export async function uploadFile(_transport: TransportLike): Promise<UploadedFile | null> {

@@ -16,7 +16,7 @@ import { livePushes, fixturePath } from "./surfaces/telegram/fixture";
 import { messageToIntermediate, peerIdentity } from "./client";
 // `import type` ONLY: the gramjs stack is loaded LAZILY (live mode alone needs
 // it) so fixture-mode runs and the unit tests never load the MTProto stack.
-import type { LiveUpdate, MembershipEndUpdate, TgClient } from "./live";
+import type { LiveUpdate, TgClient } from "./live";
 
 /** Listener mode — explicit (not read from env) so unit tests can drive the
  * registry without mutating process-global state. */
@@ -30,12 +30,14 @@ interface ListenerHandle {
 /** Convert a live message or dated membership end to a standard SDK envelope.
  * Missing message identity is an error. Membership is not message coverage.
  * @tested-by: tst_src_tg_032, tst_src_tg_033 */
-function isMembershipEnd(update: LiveUpdate): update is MembershipEndUpdate {
-  return "kind" in update;
-}
-
 export function liveUpdatePushes(update: LiveUpdate, accountId: string): Envelope[] {
-  if (isMembershipEnd(update)) {
+  if ("kind" in update && update.kind === "delete") {
+    return update.messageIds.map((messageId) => ({
+      surface: "telegram", kind: "delete", remote_id: update.chatId === null ? `tg:deleted:${String(messageId)}` : messageRemoteId(update.chatId, messageId),
+      payload: { message_id: messageId, ...(update.chatId === null ? {} : { chat_id: update.chatId }) },
+    }));
+  }
+  if ("kind" in update) {
     return [{
       surface: "telegram",
       kind: "live",
@@ -117,14 +119,16 @@ export class SubscriptionRegistry {
     // NO FALLBACKS: account_id is required for SessionPool routing AND for
     // notification stamping. Missing → error, the caller fixes their _meta.
     const accountId = accountIdFromMeta(args);
+    if (!Array.isArray(args.chatIds) || args.chatIds.some((id) => typeof id !== "string")) throw new Error("Telegram listener requires chatIds");
+    const chatIds = new Set<string>(args.chatIds);
 
     if (mode === "fixture") {
-      return spawnFixtureListener(emit);
+      return spawnFixtureListener(emit, chatIds);
     }
     const creds = credsFromMeta(args);
     const { pool } = await import("./live");
     const client = await pool().getOrCreate(accountId, creds);
-    return spawnLiveListener(accountId, client, emit);
+    return spawnLiveListener(accountId, client, emit, chatIds);
   }
 
   /** Cancel the named listener. Returns whether one was found and cancelled.
@@ -147,6 +151,7 @@ export class SubscriptionRegistry {
  * fixture is finite). Cancelling interrupts mid-replay. */
 function spawnFixtureListener(
   emit: (envelope: Envelope) => void,
+  chatIds: ReadonlySet<string>,
 ): ListenerHandle {
   let cancelled = false;
   // WIRE PARITY (Rust-vs-TS parity diff): the replay MUST NOT start until the
@@ -162,6 +167,7 @@ function spawnFixtureListener(
   const replay = async (): Promise<void> => {
     for (const envelope of livePushes()) {
       if (cancelled) return;
+      if (!chatIds.has(String(envelope.payload.chat_id))) continue;
       emit(envelope);
       // Yield so a concurrent stop can interrupt the replay.
       await Promise.resolve();
@@ -185,9 +191,10 @@ function spawnLiveListener(
   accountId: string,
   client: TgClient,
   emit: (envelope: Envelope) => void,
+  chatIds: ReadonlySet<string>,
 ): ListenerHandle {
   let cancelled = false;
-  client.addLiveHandler((message) => {
+  const unsubscribe = client.addLiveHandler((message) => {
     if (cancelled) return;
     try {
       for (const envelope of liveUpdatePushes(message, accountId)) emit(envelope);
@@ -195,10 +202,11 @@ function spawnLiveListener(
       console.error(`magnis-telegram: live update error: ${String(e)}`);
       cancelled = true;
     }
-  });
+  }, chatIds);
   return {
     cancel: (): void => {
       cancelled = true;
+      unsubscribe();
     },
   };
 }

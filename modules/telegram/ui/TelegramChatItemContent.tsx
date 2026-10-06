@@ -53,7 +53,7 @@ export function TelegramChatItemContent({
   const avatarColor = (item.metadata?.avatarColor as string | undefined) ?? "#4A90D9";
   const avatarUrl = resolveAvatarUrl(runtime.transport.baseUrl, item.avatarUrl ?? null);
   const muted = item.metadata?.muted as boolean | undefined;
-  const unreadCount = item.unread_count;
+  const unreadCount = item.unreadCount;
   const isIndexed = item.metadata?.isIndexed as boolean | undefined;
 
   return (
@@ -102,7 +102,7 @@ export function TelegramChatItemContent({
           >
             {item.preview ?? ""}
           </span>
-          {item.is_pinned && !unreadCount && (
+          {item.isPinned && !unreadCount && (
             <Icon
               name="pin"
               size={14}

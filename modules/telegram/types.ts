@@ -1,7 +1,9 @@
 // Shared DTOs for the telegram plugin (backend module + UI). These mirror
 // the native module's wire shapes 1:1 (backend/src/modules/telegram/types.rs +
 // backend/src/modules/shared.rs) so list/detail output is byte-compatible and
-// the existing frontend renders unchanged.
+// the existing frontend renders unchanged. The SDK shapes they carry — pages,
+// linked summaries — are the SDK's.
+import type { LinkedEntitySummary, PaginatedResponse, Syncable } from "@magnis/sdk";
 
 /// One row per chat (telegram.chat), showing the latest message.
 /// Mirrors native `TelegramChatListItem`.
@@ -69,7 +71,7 @@ export interface TelegramAccountDetails {
   phone?: string;
 }
 
-export interface TelegramChatListItem {
+export interface TelegramChatListItem extends Pick<Syncable, "indexed" | "syncEnabled"> {
   schema_id: string;
   entity_id: string;
   chat_id: string;
@@ -84,7 +86,6 @@ export interface TelegramChatListItem {
   avatar_url: string | null;
   is_pinned: boolean | null;
   pin_order: number | null;
-  is_indexed: boolean | null;
   // Inlined messages for the top chats (page 0 only) — frontend cache seed.
   messages?: PaginatedResponse<MessageListItem>;
 }
@@ -95,66 +96,30 @@ export interface TelegramChatListItem {
 /// which is the message-details record payload.
 export interface MessageListItem {
   id: string;
-  schema_id: string;
+  schemaId: string;
   sender: string | null;
   subject: string | null;
   preview: string | null;
   channel: string;
   timestamp: string;
-  created_at: string;
+  createdAt: string;
   metadata?: Record<string, unknown> | null;
 }
 
 
-export interface LinkedEntitySummary {
-  id: string;
-  name: string | null;
-  schema_id: string;
-  link_kind: string;
-  created_at: string;
-  data?: Record<string, unknown> | null;
-}
-
 /// Message detail view. Mirrors native `MessageDetailView`.
 export interface MessageDetailView {
   id: string;
-  schema_id: string;
+  schemaId: string;
   sender: string | null;
   subject: string | null;
   body: string | null;
   channel: string;
   timestamp: string;
   canonical: Record<string, unknown>;
-  linked_entities: LinkedEntitySummary[];
-  created_at: string;
+  linkedEntities: LinkedEntitySummary[];
+  createdAt: string;
   metadata?: Record<string, unknown> | null;
-}
-
-export interface PaginatedResponse<T> {
-  items: T[];
-  total: number;
-  limit: number;
-  offset: number;
-}
-
-/// A sync event from a source connector. Mirrors the Rust `SourceEnvelope`
-/// (serde snake_case; `kind` is "snapshot"|"live"|"delete"|…). `user_id` is
-/// injected host-side; the ingest handler's graph writes are owner-scoped by
-/// the dispatch context, not by this field.
-export interface SyncEnvelope {
-  source_id: string;
-  surface: string;
-  account_id: string;
-  user_id: string;
-  /** S4: the provider-verified identity that observed this envelope —
-   * stamped HOST-side from the account row's ProbeAuth subject. The
-   * telegram ingest refuses envelopes without it (identity-scoped data). */
-  identity_key?: string;
-  kind: string;
-  remote_id?: string;
-  cursor?: unknown;
-  payload: Record<string, unknown>;
-  timestamp: string;
 }
 
 // chat_id accepts the telegram numeric id (string|number) OR — for messages
@@ -231,18 +196,4 @@ export interface TelegramCanonical {
   "telegram.chat.title": string;
   "telegram.message.text": string;
   "telegram.message.sender": string;
-}
-
-/// A trigger.check event the host PluginModuleController bridge forwards to the
-/// event_bus for LIVE messages (mirrors native ingest.rs). The trigger
-/// evaluator consumes it; bulk Snapshot/backfill ingests never emit one.
-export interface TriggerCheck {
-  type: "trigger.check";
-  event_kind: "new_message";
-  schema_id: string;
-  entity_id: string;
-  phase: "live";
-  touched_entity_ids: string[];
-  user_id: string;
-  context: { text: string; sender_name: string };
 }

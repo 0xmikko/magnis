@@ -15,13 +15,13 @@ import { TriggerDetailPanel } from "../TriggerDetailPanel";
 const TRIGGER_DETAIL = {
   id: "trigger-1",
   name: "Incoming reply monitor",
-  gate_prompt: "Only relevant replies",
-  action_prompt: "Update the shared status note",
+  gatePrompt: "Only relevant replies",
+  actionPrompt: "Update the shared status note",
   status: "active",
-  event_kinds: ["entity.created"],
-  debounce_seconds: 0,
-  firing_count: 0,
-  watched_entities: [
+  eventKinds: ["entity.created"],
+  debounceSeconds: 0,
+  firingCount: 0,
+  watchedEntities: [
     { id: "chat-1", name: "Shared channel" },
     { id: "chat-duplicate", name: "Shared channel" },
   ],
@@ -39,13 +39,13 @@ function withQuery(node: JSX.Element): JSX.Element {
  * @test-id: tst_fe_agent_triggers_detail_002
  *
  * A scheduled trigger renders its cron + timezone instead of the dead
- * `event_kinds` "When" row; a watched-only trigger keeps the "When" row.
+ * `eventKinds` "When" row; a watched-only trigger keeps the "When" row.
  */
 describe("tst_fe_agent_triggers_detail_002 — schedule rendering", () => {
   it("shows cron + timezone for a scheduled trigger and drops the When row", async () => {
     const scheduled = {
       ...TRIGGER_DETAIL,
-      watched_entities: [],
+      watchedEntities: [],
       schedule: {
         cron: "0 9 * * MON-FRI",
         timezone: "Europe/Belgrade",
@@ -82,7 +82,7 @@ describe("tst_fe_agent_triggers_detail_001 — canonical watched entity rows", (
         const id = (params as { id: string }).id;
         return Promise.resolve({
           id,
-          schema_id: "telegram.chat",
+          schemaId: "telegram.chat",
           name: "Shared channel",
         });
       }

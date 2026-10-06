@@ -60,6 +60,13 @@ export interface FetchArgs {
   forward_checkpoint?: unknown;
   /** Tracked handles for this platform — the host passes the opt-in set. */
   tracked_handles?: string[];
+  chatIds?: readonly string[];
+  headChatIds?: readonly string[];
+  senderSync?: {
+    choices: Readonly<Record<string, boolean>>;
+    unknownSenderEnabled: boolean;
+  };
+  expectedProfileIds?: Readonly<Record<string, string>>;
   limit?: number;
   /** Host-injected credentials: the `_meta` object the host attaches to
    * each tools/call — e.g. `{ bearer_token }` (X) / `{ api_key }` (Anysite). */
@@ -147,7 +154,11 @@ export type ProbeAuthHandler = (meta: Record<string, unknown> | undefined) => Pr
 /** Push session open: called on `listen_start`. `emit` stamps + writes one
  * envelope notification for THIS subscription; after `listen_stop` it no-ops. */
 export type ListenStartHandler = (
-  args: { subscription_id: string; meta?: Record<string, unknown> },
+  args: {
+    subscription_id: string;
+    meta?: Record<string, unknown>;
+    chatIds?: readonly string[];
+  },
   emit: (envelope: Envelope) => void,
 ) => Promise<void>;
 

@@ -50,6 +50,7 @@ export interface EntityIdentity {
   readonly roles?: readonly string[];
   readonly triggerable?: boolean;
   readonly mergeable?: boolean;
+  readonly syncable?: boolean;
 }
 
 export interface Searched<Shape extends z.ZodRawShape> {

@@ -1,38 +1,7 @@
-import type { AvatarColor, LinkedEntitySummary, SidebarData } from "@magnis/host/base";
+import type { AvatarColor, SidebarData } from "@magnis/host/base";
+import type { MeetingListItem } from "../types.ts";
 
-/**
- * Canonical API attendee — mirrors Rust `CalendarAttendee` at
- * `backend/src/sources/surfaces/calendar.rs:27-30`. Kept
- * distinct from the UI-display `MeetingAttendee` below:
- * helpers construct UI attendees from API attendees (no leak of
- * rendering-only fields like `initials` / `color` into the wire type).
- */
-export interface CalendarAttendee {
-  readonly name: string | null;
-  readonly email: string;
-  /** Backend-resolved contacts.person id (email → email.address →
-   *  has_email → contacts.person). Null when no contact owns it. */
-  readonly contact_id?: string | null;
-}
-
-export interface MeetingListItem {
-  readonly id: string;
-  readonly title: string;
-  readonly date: string | null;
-  readonly time: string | null;
-  readonly starts_at: string | null;
-  readonly ends_at: string | null;
-  readonly location: string | null;
-  readonly description: string | null;
-  readonly conference_link: string | null;
-  readonly attendees: readonly CalendarAttendee[];
-  readonly created_at: string;
-}
-
-export interface MeetingDetailView extends MeetingListItem {
-  readonly canonical: Record<string, unknown>;
-  readonly linked_entities: readonly LinkedEntitySummary[];
-}
+export type { MeetingAttendeeView, MeetingDetailView, MeetingListItem } from "../types.ts";
 
 export interface MeetingItem {
   readonly id: string;

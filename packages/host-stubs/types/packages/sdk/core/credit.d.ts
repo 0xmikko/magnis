@@ -4,6 +4,6 @@ export declare const CreditBalanceSchema: z.ZodObject<{
     userId: z.ZodString;
     limitMicros: z.ZodNumber;
     remainingMicros: z.ZodNumber;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type CreditBalance = z.output<typeof CreditBalanceSchema>;
 //# sourceMappingURL=credit.d.ts.map

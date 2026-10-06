@@ -34,6 +34,10 @@
         "zustand": "^5.0.11",
       },
     },
+    "modules/addressbook": {
+      "name": "@magnis/plugin-addressbook",
+      "version": "0.1.0",
+    },
     "modules/companies": {
       "name": "@magnis/plugin-companies",
       "version": "0.1.0",
@@ -280,6 +284,8 @@
     "@magnis/host-stubs": ["@magnis/host-stubs@workspace:packages/host-stubs"],
 
     "@magnis/host-testdouble": ["@magnis/host-testdouble@workspace:packages/host-testdouble"],
+
+    "@magnis/plugin-addressbook": ["@magnis/plugin-addressbook@workspace:modules/addressbook"],
 
     "@magnis/plugin-companies": ["@magnis/plugin-companies@workspace:modules/companies"],
 

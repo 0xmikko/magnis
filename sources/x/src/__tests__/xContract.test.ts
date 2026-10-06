@@ -32,7 +32,7 @@ function happyRoutes() {
 runSourceContract(buildConnectorConfig(mockFetch(happyRoutes())), {
   fetch: {
     // Tracked handle → 1 profile + 1 post envelope; snapshot poll, single page.
-    x: { meta: META, args: { tracked_handles: ["jack"] }, minEnvelopes: 2 },
+    x: { meta: META, args: { tracked_handles: ["jack"], expectedProfileIds: { jack: "12" } }, minEnvelopes: 2 },
   },
   rateLimit: {
     config: buildConnectorConfig(
@@ -42,7 +42,7 @@ runSourceContract(buildConnectorConfig(mockFetch(happyRoutes())), {
     ),
     surface: "x",
     meta: META,
-    args: { tracked_handles: ["jack"] },
+    args: { tracked_handles: ["jack"], expectedProfileIds: { jack: "12" } },
     retryAfter: 50,
   },
 });

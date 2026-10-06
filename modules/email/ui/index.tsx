@@ -1,3 +1,4 @@
+import { SyncToolCallRenderer } from "../../contacts/ui/SyncToolCallRenderer";
 import type { AgentHistoryBlock } from "@magnis/host/runtime";
 import { toolNamesEquivalent } from "@magnis/host/agent";
 import { Icon } from "@magnis/host/ui";
@@ -35,18 +36,18 @@ function mapEmailListItem(raw: Record<string, unknown>): ListItem {
   const fromAddr = metaStr(meta, "from_address");
   const subject = metaStr(meta, "subject") ?? (raw.name as string | undefined) ?? null;
   const sender = fromName ?? fromAddr ?? (raw.sender as string | undefined) ?? null;
-  const sentAt = metaStr(meta, "sent_at") ?? (raw.timestamp as string | undefined) ?? (raw.created_at as string | undefined) ?? null;
+  const sentAt = metaStr(meta, "sent_at") ?? (raw.timestamp as string | undefined) ?? (raw.createdAt as string | undefined) ?? null;
   const preview = (raw.preview as string | undefined) ?? null;
 
   return {
     id: raw.id as string,
     name: sender,
-    schema_id: (raw.schema_id as string | undefined) ?? "",
+    schemaId: (raw.schemaId as string | undefined) ?? "",
     preview: subject ? decodeHtmlEntities(subject) : (preview ? decodeHtmlEntities(preview) : null),
     timestamp: sentAt ?? null,
     avatarUrl: null,
-    is_pinned: (raw.is_pinned as boolean | undefined) ?? undefined,
-    is_archived: (raw.is_archived as boolean | undefined) ?? undefined,
+    isPinned: (raw.isPinned as boolean | undefined) ?? undefined,
+    isArchived: (raw.isArchived as boolean | undefined) ?? undefined,
   };
 }
 
@@ -71,7 +72,9 @@ const emailModule = defineModule({
   DetailPanel: EmailDetailPanel,
   detailType: "custom",
   EntityCard: EmailCard,
-  toolCallRenderers: [{ entity: "email.message", actions: ["create"], Render: EmailToolCallRenderer as never }],
+  toolCallRenderers: [
+    { entity: "email.address", actions: ["setSyncEnabled", "resolveSyncMigration"], Render: SyncToolCallRenderer as never },
+{ entity: "email.message", actions: ["create"], Render: EmailToolCallRenderer as never }],
   extractAllowlistTarget: (tc) => {
     const bound = tc.toolBinding;
     if (bound !== undefined && (bound.entity !== "email.message" || bound.operation !== "create")) return null;

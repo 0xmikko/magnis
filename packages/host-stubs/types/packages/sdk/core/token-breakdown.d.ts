@@ -6,7 +6,7 @@ export declare const TokenBreakdownSchema: z.ZodObject<{
     cacheWrite: z.ZodNumber;
     cacheWriteOneHour: z.ZodNumber;
     reasoning: z.ZodNumber;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type TokenBreakdown = z.output<typeof TokenBreakdownSchema>;
 export declare const tokenBreakdownZero: TokenBreakdown;
 //# sourceMappingURL=token-breakdown.d.ts.map

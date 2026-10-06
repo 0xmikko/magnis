@@ -142,9 +142,11 @@ describe("X exact-artifact certification", () => {
         fixtureEnvironment: { X_FIXTURE_FILE: fixtureFile },
         operationArguments: {
           "magnis.auth.probe": { _meta: { bearer_token: "cert-key" } },
+          "magnis.execute:resolveProfile": { action: "resolveProfile", handle: "jack", _meta: { bearer_token: "cert-key" } },
           "magnis.sync.fetch": {
             surface: "x",
             tracked_handles: ["jack"],
+            expectedProfileIds: { jack: "12" },
             cursor: 41,
             _meta: { bearer_token: "cert-key" },
           },
@@ -153,6 +155,7 @@ describe("X exact-artifact certification", () => {
     );
 
     expect(replyResult(evidence, "magnis.auth.probe")).toEqual({ subject: "@jack" });
+    expect(replyResult(evidence, "magnis.execute:resolveProfile")).toMatchObject({ providerId: "12", handle: "jack", displayName: "Jack" });
     const page = replyResult(evidence, "magnis.sync.fetch");
     expect(page.hasMore).toBe(false);
     expect(page.nextCursor).toBe(42);
@@ -208,9 +211,11 @@ describe("X exact-artifact certification", () => {
         fixtureEnvironment: { X_FIXTURE_FILE: fixtureFile },
         operationArguments: {
           "magnis.auth.probe": { _meta: { bearer_token: "cert-key" } },
+          "magnis.execute:resolveProfile": { action: "resolveProfile", handle: "jack", _meta: { bearer_token: "cert-key" } },
           "magnis.sync.fetch": {
             surface: "x",
             tracked_handles: ["jack"],
+            expectedProfileIds: { jack: "12" },
             cursor: 41,
             _meta: { bearer_token: "cert-key" },
           },
@@ -255,6 +260,7 @@ describe("X exact-artifact certification", () => {
             "magnis.sync.fetch": {
               surface: "x",
               tracked_handles: ["jack"],
+            expectedProfileIds: { jack: "12" },
               cursor: 41,
               _meta: { bearer_token: "cert-key" },
             },

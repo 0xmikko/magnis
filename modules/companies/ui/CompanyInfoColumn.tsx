@@ -134,7 +134,7 @@ function buildRows(
   // An address is an identity CHANNEL the company reaches over an edge, not
   // a field of the company (plan §3).
   for (const linked of linkedEntities) {
-    if (linked.schema_id !== "email.address" || linked.link_kind !== "identity") continue;
+    if (linked.schemaId !== "email.address" || linked.linkKind !== "identity") continue;
     if (!linked.name) continue;
     rows.push({
       iconName: "mail",

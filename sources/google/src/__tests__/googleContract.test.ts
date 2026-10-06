@@ -28,7 +28,7 @@ const fullMessage = {
   internalDate: "1700000000000",
   payload: {
     mimeType: "text/plain",
-    headers: [{ name: "Subject", value: "Hi" }],
+    headers: [{ name: "From", value: "sender@example.com" }, { name: "Subject", value: "Hi" }],
     body: { size: 5, data: b64url("Hello") },
   },
 };
@@ -42,7 +42,7 @@ function happyRoutes() {
     { match: "/users/me/labels/SPAM", response: { body: { id: "SPAM", messagesTotal: 0 } } },
     { match: "/users/me/labels/TRASH", response: { body: { id: "TRASH", messagesTotal: 0 } } },
     { match: "/messages/send", response: { body: { id: "sent1", threadId: "t1" } } },
-    { match: "/messages/m1?format=full", response: { body: fullMessage } },
+    { match: "/messages/m1?format=", response: { body: fullMessage } },
     { match: "/users/me/messages?", response: { body: { messages: [{ id: "m1" }] } } },
     {
       match: "/calendar/v3/calendars/primary/events",
@@ -88,6 +88,7 @@ function happyRoutes() {
 const openImap = async (): Promise<ImapMailbox> => ({
   uidValidity: "42",
   searchBelow: async () => [9],
+  fetchHeaders: async function* () { yield { uid: 9, emailId: "12345", headers: Buffer.from("From: sender@example.com\r\n\r\n") }; },
   fetch: async function* () {
     yield {
       uid: 9,
@@ -96,7 +97,7 @@ const openImap = async (): Promise<ImapMailbox> => ({
       flags: new Set<string>(),
       labels: new Set<string>(),
       internalDate: new Date("2026-09-24T10:00:00Z"),
-      source: Buffer.from("Subject: Hi\r\nContent-Type: text/plain\r\n\r\nHello"),
+      source: Buffer.from("From: sender@example.com\r\nSubject: Hi\r\nContent-Type: text/plain\r\n\r\nHello"),
     };
   },
   close: async () => {},
@@ -107,11 +108,11 @@ const openImap = async (): Promise<ImapMailbox> => ({
 describe("google", () => runSourceContract(buildConnectorConfig(mockFetch(happyRoutes()), openImap), {
   fetch: {
     // The mailbox envelope precedes the one message: two envelopes, no counters.
-    email: { meta: META, minEnvelopes: 2 },
+    email: { meta: META, args: { senderSync: { choices: {}, unknownSenderEnabled: true } }, minEnvelopes: 2 },
     // The calendar envelope precedes the one event: two envelopes, no counters.
     meetings: { meta: META, minEnvelopes: 2 },
     // The list envelope precedes the two persons: three envelopes, no counters.
-    contacts: { meta: META, minEnvelopes: 3 },
+    addressbook: { meta: META, minEnvelopes: 3 },
   },
   execute: [
     {
@@ -133,7 +134,7 @@ describe("google", () => runSourceContract(buildConnectorConfig(mockFetch(happyR
         },
       ]),
     ),
-    surface: "contacts",
+    surface: "addressbook",
     meta: META,
     retryAfter: 30,
   },

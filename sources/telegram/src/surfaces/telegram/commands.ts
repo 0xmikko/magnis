@@ -72,7 +72,7 @@ export interface TgOps {
 interface TakeoutChatCheckpoint {
   chat: TgChat;
   peer: OffsetPeer;
-  message_count: number;
+  message_count?: number;
   ranges: number[];
   last_msg_id: number;
 }
@@ -172,9 +172,12 @@ export async function fetch(
   if (args.target?.kind === "gap") {
     return await fetchGap(ops, accountId, args.scope_id, args.target, args.cursor, args.forward_checkpoint);
   }
+  const { chatIds, headChatIds } = args;
+  if (chatIds === undefined || headChatIds === undefined) throw new Error("Telegram fetch requires chatIds and headChatIds");
+  if (headChatIds.some((id) => !chatIds.includes(id))) throw new Error("Telegram headChatIds must be a subset of chatIds");
   if (args.direction === "forward") {
     const state = checkpoint(args.cursor);
-    if (state === undefined) return await runCatchup(ops, accountId, args.cursor, pager);
+    if (state === undefined) return await runCatchup(ops, accountId, args.cursor, pager, chatIds, headChatIds);
     if (state.takeout.phase === "download") {
       if (state.takeout.download_index !== Object.keys(state.chats).length) {
         throw new CursorExpiredError("Telegram Takeout seed is incomplete");
@@ -203,8 +206,8 @@ export async function fetch(
   // @invariant: a new account starts ordinary history immediately; only a
   // persisted Takeout checkpoint enters the Takeout state machine.
   return checkpoint(args.cursor) === undefined
-    ? await runBootstrap(args.cursor, pager)
-    : await runTakeoutBootstrap(ops, takeoutPager(pager), accountId, args.cursor);
+    ? await runBootstrap(args.cursor, pager, chatIds)
+    : await runTakeoutBootstrap(ops, takeoutPager(pager), accountId, args.cursor, chatIds);
 }
 
 function takeoutInvalid(error: unknown): boolean {
@@ -225,6 +228,7 @@ export async function runTakeoutBootstrap(
   pager: TakeoutPager,
   accountId: string,
   cursor: unknown,
+  chatIds?: readonly string[],
 ): Promise<Record<string, unknown>> {
   let state = checkpoint(cursor);
   if (state === undefined) {
@@ -270,13 +274,18 @@ export async function runTakeoutBootstrap(
           state.chats[key] = chat;
         }
         if (!chat.ranges.includes(rangeIndex)) {
+          chat.ranges.push(rangeIndex);
+          if (chatIds !== undefined && !chatIds.includes(key)) {
+            delete chat.message_count;
+            delete chat.chat.message_count;
+            continue;
+          }
           const counted = await ops.getMessages(dialog.peer, {
             limit: 1,
             takeout: takeoutContext(state, rangeIndex),
           }, remainingPageBudget(deadline));
           if (counted.total === undefined) throw new Error("Telegram Takeout history count is missing");
-          chat.message_count += counted.total;
-          chat.ranges.push(rangeIndex);
+          if (chat.message_count !== undefined) chat.message_count += counted.total;
           chat.chat = { ...dialog.chat, pin_order: chat.chat.pin_order, message_count: chat.message_count };
         }
       }
@@ -328,6 +337,10 @@ export async function runTakeoutBootstrap(
     if (key === undefined) throw new Error("Telegram Takeout download checkpoint is invalid");
     const chat = state.chats[key];
     if (chat === undefined) throw new Error("Telegram Takeout download checkpoint is invalid");
+    if (chatIds !== undefined && !chatIds.includes(key)) {
+      state.takeout.download_index += 1;
+      continue;
+    }
     const rangeIndex = [...chat.ranges].sort((left, right) =>
       (state.takeout.ranges[right]?.max_id ?? -1) - (state.takeout.ranges[left]?.max_id ?? -1))[0];
     if (rangeIndex === undefined) throw new Error("Telegram Takeout chat has no recorded range");
@@ -367,6 +380,7 @@ export async function runTakeoutBootstrap(
 export async function runBootstrap(
   cursor: unknown,
   pager: DialogPager,
+  chatIds?: readonly string[],
 ): Promise<Record<string, unknown>> {
   const c = asObject(cursor);
 
@@ -382,7 +396,7 @@ export async function runBootstrap(
       ? (rawOffset as DialogOffset)
       : null;
 
-  const page = await pager.dialogPage(startOffset, BOOTSTRAP_BATCH_DIALOGS);
+  const page = await pager.dialogPage(startOffset, BOOTSTRAP_BATCH_DIALOGS, chatIds === undefined ? undefined : { chatIds });
 
   const envelopes: Record<string, unknown>[] = [];
   const traversed: TraversedRanges = {};
@@ -397,6 +411,7 @@ export async function runBootstrap(
     }
     // Emission order: the chat envelope FIRST, then its messages.
     envelopes.push(chatEnvelope(paged.chat));
+    if (chatIds !== undefined && !chatIds.includes(String(paged.chat.chat_id))) continue;
 
     let highest = 0;
     let oldest = 0;
@@ -509,6 +524,8 @@ export async function runCatchup(
   accountId: string,
   cursor: unknown,
   pager?: DialogPager,
+  chatIds?: readonly string[],
+  headChatIds: readonly string[] = [],
 ): Promise<Record<string, unknown>> {
   const deadline = performance.now() + SOURCE_PAGE_BUDGET_MS;
   const c = asObject(cursor);
@@ -520,6 +537,10 @@ export async function runCatchup(
   // provider walk. Dropping one would turn a later reappearance into a fresh
   // account and replay its entire history.
   const newCursorChats: Record<string, unknown> = { ...inChats };
+  const savedHeads = c?.pending_heads;
+  if (savedHeads !== undefined && (!Array.isArray(savedHeads) || savedHeads.some((id) => typeof id !== "string"))) throw new Error("Telegram pending heads are invalid");
+  const pendingHeads = new Set<string>(savedHeads ?? headChatIds);
+  for (const id of pendingHeads) if (chatIds !== undefined && !chatIds.includes(id)) pendingHeads.delete(id);
   let page = asObject(c?.catchup_page) as unknown as CatchupPage | undefined;
   if (page !== undefined && (!Array.isArray(page.pending) ||
     page.pending.some((item) => item.peer === undefined))) {
@@ -562,6 +583,29 @@ export async function runCatchup(
     if (saved.messageCount !== undefined) dialog.chat.message_count = saved.messageCount;
     const chatEnvelopeIndex = envelopes.length;
     envelopes.push(chatEnvelope(dialog.chat));
+    if (chatIds !== undefined && !chatIds.includes(chatKey)) continue;
+
+    if (pendingHeads.has(chatKey)) {
+      reads += 1;
+      const messages = await ops.getMessages(dialog.peer, { limit: TELEGRAM_HISTORY_PAGE_SIZE }, remainingPageBudget(deadline));
+      if (messages.total !== undefined) {
+        dialog.chat.message_count = messages.total;
+        envelopes[chatEnvelopeIndex] = chatEnvelope(dialog.chat);
+      }
+      let newest = 0;
+      let oldest = Infinity;
+      for (const message of messages) {
+        newest = Math.max(newest, message.id);
+        oldest = Math.min(oldest, message.id);
+        envelopes.push(messageEnvelope(messageToIntermediate(message, accountId, chatId), "snapshot"));
+      }
+      if (newest > 0) {
+        traversed[chatKey] = [messages.total === messages.length ? 1 : oldest, newest];
+        newCursorChats[chatKey] = { last_msg_id: newest, ...(messages.total === undefined ? {} : { message_count: messages.total }) };
+      }
+      pendingHeads.delete(chatKey);
+      continue;
+    }
 
     const committed = saved.lastMessageId;
     // The count rides on every entry this walk writes: kept from the entry,
@@ -635,23 +679,24 @@ export async function runCatchup(
   if (page.next_offset === null) {
     const listedChatKeys = new Set(pending.map((dialog) => String(dialog.chat.chat_id)));
     for (const [chatKey, progress] of Object.entries(newCursorChats)) {
-      if (hasPendingCatchup(progress) && !listedChatKeys.has(chatKey)) {
+      if ((chatIds === undefined || chatIds.includes(chatKey)) && hasPendingCatchup(progress) && !listedChatKeys.has(chatKey)) {
         throw new Error(`telegram CatchUp pending chat '${chatKey}' is absent from the dialog snapshot`);
       }
     }
   }
   const hasMore = pending.length > 0 || page.next_offset !== null;
+  if (!hasMore && pendingHeads.size > 0) throw new Error(`Telegram head chats are absent from discovery: ${[...pendingHeads].join(", ")}`);
   const nextCursor =
     Object.keys(newCursorChats).length === 0 && !hasMore
       ? null
       : { date: toRfc3339Utc(new Date()), chats: newCursorChats,
-          ...(hasMore ? { catchup_page: { ...page, pending } } : {}),
+          ...(hasMore ? { catchup_page: { ...page, pending }, pending_heads: [...pendingHeads] } : {}),
         };
 
   return { envelopes, nextCursor, hasMore, traversed };
 }
 
-/** Extract an integer argument tolerant of how the host's V8 `source_command`
+/** Extract an integer argument tolerant of how the host's V8 `sourceCommand`
  * boundary encodes it. Telegram chat_ids exceed i32 and JS numbers are f64, so
  * the value can arrive as a JSON i64, an f64, or a numeric string — accepting
  * only a plain integer surfaced as the bogus "missing chat_id" error on
@@ -786,6 +831,41 @@ async function fetchGap(
     !Number.isSafeInteger(target.end) || target.end < target.start
   ) {
     throw new Error("gap fetch requires a positive ordered target");
+  }
+  if (checkpoint(forwardCheckpoint) === undefined && checkpoint(asObject(cursor)?.checkpoint) === undefined) {
+    const known = asObject(asObject(forwardCheckpoint)?.chats)?.[scopeId];
+    if (known === undefined) throw new CursorExpiredError("Telegram bounded history has no discovered chat checkpoint");
+    const saved = asObject(cursor);
+    if (cursor !== undefined && (saved?.scope_id !== scopeId || saved.start !== target.start || saved.end !== target.end)) throw new Error("Telegram history cursor does not match its target");
+    const before = saved === undefined ? target.end + 1 : saved.before_message_id;
+    if (typeof before !== "number" || !Number.isSafeInteger(before) || before <= target.start || before > target.end + 1) throw new Error("Telegram history cursor is outside its gap");
+    const peer = await ops.resolvePeer(chatId);
+    const messages = await ops.getMessages(peer, { limit: TELEGRAM_HISTORY_PAGE_SIZE, offsetId: before }, SOURCE_PAGE_BUDGET_MS);
+    const envelopes: Record<string, unknown>[] = [];
+    let oldest = before;
+    let bytes = 0;
+    let truncated = false;
+    for (const message of messages) {
+      if (!Number.isSafeInteger(message.id) || message.id <= 0 || message.id >= oldest) throw new Error("Telegram history did not advance within its gap");
+      if (message.id < target.start) break;
+      const envelope = messageEnvelope(messageToIntermediate(message, accountId, chatId), "snapshot");
+      const size = new TextEncoder().encode(JSON.stringify(envelope)).byteLength + (envelopes.length === 0 ? 0 : 1);
+      if (bytes + size > SOURCE_PAGE_BUDGET_BYTES) {
+        if (envelopes.length === 0) throw new Error("Telegram history envelope exceeds the Source page budget");
+        truncated = true;
+        break;
+      }
+      envelopes.push(envelope);
+      bytes += size;
+      oldest = message.id;
+    }
+    const complete = !truncated && (messages.length < TELEGRAM_HISTORY_PAGE_SIZE || messages.some((message) => message.id <= target.start));
+    if (!complete && oldest === before) throw new Error("Telegram history did not advance");
+    return {
+      envelopes, traversed: { [scopeId]: [complete ? target.start : oldest, before - 1] },
+      progress: complete ? { kind: "completeTarget", forwardCheckpoint: { kind: "retain" } }
+        : { kind: "continueTarget", continuationToken: { scope_id: scopeId, start: target.start, end: target.end, before_message_id: oldest } },
+    };
   }
   let continuation: TakeoutTargetCursor;
   if (cursor === undefined) {

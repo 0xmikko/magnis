@@ -3,7 +3,7 @@ import { useAppRuntime } from "@magnis/host/runtime";
 
 import { googleSourceConnected } from "./sourceStatus";
 
-import type { SourceStatusListResponse } from "@magnis/client-core";
+import type { SourceStatusListResponse } from "@magnis/sdk";
 import type { MessageDetailView } from "./types";
 
 export const emailKeys = {

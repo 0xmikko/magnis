@@ -35,20 +35,50 @@ export declare const getWorkspaceInstallationContract: import("./contract.js").H
     totalItems: z.ZodNumber;
 }, z.core.$strict>, z.ZodObject<{
     state: z.ZodLiteral<"ready">;
-    document: z.ZodObject<{
+    document: z.ZodNullable<z.ZodObject<{
         name: z.ZodString;
         sources: z.ZodReadonly<z.ZodArray<z.ZodString>>;
         embeddingModel: z.ZodString;
-    }, z.core.$strip>;
+        engine: z.ZodEnum<{
+            magnis: "magnis";
+            codex: "codex";
+            claude: "claude";
+        }>;
+        moduleSettings: z.ZodReadonly<z.ZodArray<z.ZodObject<{
+            moduleId: z.ZodString;
+            values: z.ZodRecord<z.ZodString, z.ZodType<import("../index.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("../index.js").JsonValue, unknown>>>;
+        }, z.core.$strict>>>;
+        accounts: z.ZodReadonly<z.ZodArray<z.ZodObject<{
+            sourceId: z.ZodString;
+            fixtureId: z.ZodString;
+            identityKey: z.ZodString;
+            identityLabel: z.ZodString;
+        }, z.core.$strict>>>;
+    }, z.core.$strict>>;
 }, z.core.$strict>, z.ZodObject<{
     state: z.ZodLiteral<"failed">;
     step: z.ZodString;
     failure: z.ZodString;
-    document: z.ZodObject<{
+    document: z.ZodNullable<z.ZodObject<{
         name: z.ZodString;
         sources: z.ZodReadonly<z.ZodArray<z.ZodString>>;
         embeddingModel: z.ZodString;
-    }, z.core.$strip>;
+        engine: z.ZodEnum<{
+            magnis: "magnis";
+            codex: "codex";
+            claude: "claude";
+        }>;
+        moduleSettings: z.ZodReadonly<z.ZodArray<z.ZodObject<{
+            moduleId: z.ZodString;
+            values: z.ZodRecord<z.ZodString, z.ZodType<import("../index.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("../index.js").JsonValue, unknown>>>;
+        }, z.core.$strict>>>;
+        accounts: z.ZodReadonly<z.ZodArray<z.ZodObject<{
+            sourceId: z.ZodString;
+            fixtureId: z.ZodString;
+            identityKey: z.ZodString;
+            identityLabel: z.ZodString;
+        }, z.core.$strict>>>;
+    }, z.core.$strict>>;
 }, z.core.$strict>], "state">>;
 /** Submit the ONE document the server installs. Admin only; 409 while a run
  * is in progress. Answers once the row says installing — the run continues on
@@ -57,8 +87,26 @@ export declare const startWorkspaceInstallationContract: import("./contract.js")
     name: z.ZodString;
     sources: z.ZodReadonly<z.ZodArray<z.ZodString>>;
     embeddingModel: z.ZodString;
-}, z.core.$strip>, z.ZodObject<{
-    status: z.ZodLiteral<"installing">;
+    engine: z.ZodEnum<{
+        magnis: "magnis";
+        codex: "codex";
+        claude: "claude";
+    }>;
+    moduleSettings: z.ZodReadonly<z.ZodArray<z.ZodObject<{
+        moduleId: z.ZodString;
+        values: z.ZodRecord<z.ZodString, z.ZodType<import("../index.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("../index.js").JsonValue, unknown>>>;
+    }, z.core.$strict>>>;
+    accounts: z.ZodReadonly<z.ZodArray<z.ZodObject<{
+        sourceId: z.ZodString;
+        fixtureId: z.ZodString;
+        identityKey: z.ZodString;
+        identityLabel: z.ZodString;
+    }, z.core.$strict>>>;
+}, z.core.$strict>, z.ZodObject<{
+    status: z.ZodEnum<{
+        ready: "ready";
+        installing: "installing";
+    }>;
 }, z.core.$strict>>;
 /** What that document WOULD install, in the order the run would walk it —
  * every key, `module:` and `source:` and the embedding model, as the run
@@ -68,7 +116,22 @@ export declare const previewWorkspaceInstallationContract: import("./contract.js
     name: z.ZodString;
     sources: z.ZodReadonly<z.ZodArray<z.ZodString>>;
     embeddingModel: z.ZodString;
-}, z.core.$strip>, z.ZodObject<{
+    engine: z.ZodEnum<{
+        magnis: "magnis";
+        codex: "codex";
+        claude: "claude";
+    }>;
+    moduleSettings: z.ZodReadonly<z.ZodArray<z.ZodObject<{
+        moduleId: z.ZodString;
+        values: z.ZodRecord<z.ZodString, z.ZodType<import("../index.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("../index.js").JsonValue, unknown>>>;
+    }, z.core.$strict>>>;
+    accounts: z.ZodReadonly<z.ZodArray<z.ZodObject<{
+        sourceId: z.ZodString;
+        fixtureId: z.ZodString;
+        identityKey: z.ZodString;
+        identityLabel: z.ZodString;
+    }, z.core.$strict>>>;
+}, z.core.$strict>, z.ZodObject<{
     steps: z.ZodArray<z.ZodString>;
 }, z.core.$strict>>;
 export declare const workspaceLoginContract: import("./contract.js").HttpContract<"POST", "/api/workspace/auth/login", z.ZodObject<{
@@ -93,5 +156,26 @@ export declare const workspaceGoogleAuthExchangeContract: import("./contract.js"
     redirectUri: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
     token: z.ZodString;
+}, z.core.$strict>>;
+/** Effective portable configuration for the requesting administrator. */
+export declare const getWorkspaceInstallationDocumentContract: import("./contract.js").HttpContract<"GET", "/api/workspace/installation/document", z.ZodObject<{}, z.core.$strip>, z.ZodObject<{
+    name: z.ZodString;
+    sources: z.ZodReadonly<z.ZodArray<z.ZodString>>;
+    embeddingModel: z.ZodString;
+    engine: z.ZodEnum<{
+        magnis: "magnis";
+        codex: "codex";
+        claude: "claude";
+    }>;
+    moduleSettings: z.ZodReadonly<z.ZodArray<z.ZodObject<{
+        moduleId: z.ZodString;
+        values: z.ZodRecord<z.ZodString, z.ZodType<import("../index.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("../index.js").JsonValue, unknown>>>;
+    }, z.core.$strict>>>;
+    accounts: z.ZodReadonly<z.ZodArray<z.ZodObject<{
+        sourceId: z.ZodString;
+        fixtureId: z.ZodString;
+        identityKey: z.ZodString;
+        identityLabel: z.ZodString;
+    }, z.core.$strict>>>;
 }, z.core.$strict>>;
 //# sourceMappingURL=workspace.d.ts.map

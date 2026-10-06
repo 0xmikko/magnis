@@ -3,7 +3,7 @@
  *
  * Owns: draft persistence (via useComposerDraft, keyed by thread_id),
  * presence RPC on mount/unmount and thread switch, mount-registry
- * registration for composer.apply events, attachment_ids forwarding,
+ * registration for composer.apply events, attachment id forwarding,
  * attachment picker UI, and draft clearing on successful send while
  * preserving on rejection.
  */
@@ -14,7 +14,6 @@ import type { MessageComposerAttachment } from "@magnis/host/composer";
 import { useComposerDraft } from "@magnis/host/composer";
 import { useComposerMountRegistry } from "@magnis/host/composer";
 import { applyComposerEvent, type ComposerApplyEvent } from "@magnis/host/composer";
-import type { ComposerApplyEventPayload } from "@magnis/host/runtime";
 import { useAppRuntime } from "@magnis/host/runtime";
 import { uploadBrowserFile } from "@magnis/host/runtime";
 
@@ -37,14 +36,14 @@ export function EmailReplyComposer({
   // same thread share one draft.
   const { draft, setText, setAttachments, clear, applyRemote } = useComposerDraft("email", threadId);
 
-  // Mount → setPresence({mode:"email", thread_key}); unmount/thread switch → null.
+  // Mount → setPresence({mode:"email", threadKey}); unmount/thread switch → null.
   useEffect(() => {
     const unregister = registry.register({
       mode: "email",
       threadKey: threadId,
       applyOp: applyRemote,
     });
-    runtime.composer.setPresence({ mode: "email", thread_key: threadId });
+    runtime.composer.setPresence({ mode: "email", threadKey: threadId });
     return (): void => {
       runtime.composer.setPresence(null);
       unregister();
@@ -66,14 +65,13 @@ export function EmailReplyComposer({
   }, [draft.attachmentMeta]);
 
   // Subscribe to runtime.composer.onApply. Filter by
-  // (mode, thread_key) before delegating to applyComposerEvent.
+  // (mode, threadKey) before delegating to applyComposerEvent.
   useEffect(() => {
-    const unsubscribe = runtime.composer.onApply((event: ComposerApplyEventPayload): void => {
+    const unsubscribe = runtime.composer.onApply((event: ComposerApplyEvent): void => {
       if (event.mode !== "email") return;
-      if (event.thread_key !== threadId) return;
-      const typed = event as unknown as ComposerApplyEvent;
+      if (event.threadKey !== threadId) return;
       applyComposerEvent(
-        typed,
+        event,
         { mode: "email", threadKey: threadId, applyOp: applyRemote },
         draftTextRef.current,
         attachmentMetaRef.current,

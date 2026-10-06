@@ -14,7 +14,6 @@ export { ContextPanel } from "./context/ContextPanel";
 export type { ContextPanelProps } from "./context/ContextPanel";
 export { AgentStatsRegion, AgentStatsRegionConnected } from "./context/AgentStatsRegion";
 export { ContextStatsLine } from "./context/ContextStatsLine";
-export { formatTokens } from "./context/formatStats";
 export { PanelRegion } from "./context/PanelRegion";
 export { TodoBlock } from "./context/TodoBlock";
 export { mergeContextPanelEpisodes } from "./context/contextPanelMerge";

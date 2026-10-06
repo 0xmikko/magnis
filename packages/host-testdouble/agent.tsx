@@ -185,8 +185,8 @@ function withSchema(
   fallback: string | null,
 ): Record<string, unknown> | null {
   if (item.id === null || item.id === undefined) return null;
-  if (typeof item.schema_id === "string") return item;
-  if (fallback !== null) return { ...item, schema_id: fallback };
+  if (typeof item.schemaId === "string") return item;
+  if (fallback !== null) return { ...item, schemaId: fallback };
   return null;
 }
 

@@ -1,41 +1,16 @@
+import type { ComposerApplyEvent } from "@magnis/sdk";
 import type { MountedComposer } from "./ComposerMountContext";
-import type { AttachmentMeta, ComposerMode } from "./useComposerDraft";
-/**
- * Shape of a `composer.apply` event delivered over the WS bus.
- *
- * Stage 4 adds `append_text` and `set_attachments`. `applyComposerEvent`
- * drops unknown ops silently so an older frontend deployed against a newer
- * backend does not crash.
- */
-export type ComposerApplyEvent = {
-    readonly type: "composer.apply";
-    readonly mode: ComposerMode;
-    readonly thread_key: string;
-    readonly revision: number;
-    readonly op: "set_text";
-    readonly text: string;
-} | {
-    readonly type: "composer.apply";
-    readonly mode: ComposerMode;
-    readonly thread_key: string;
-    readonly revision: number;
-    readonly op: "append_text";
-    readonly text: string;
-} | {
-    readonly type: "composer.apply";
-    readonly mode: ComposerMode;
-    readonly thread_key: string;
-    readonly revision: number;
-    readonly op: "set_attachments";
-    readonly attachment_ids: readonly string[];
-};
+import type { AttachmentMeta } from "./useComposerDraft";
 /**
  * Dispatch a `composer.apply` event into the currently-mounted composer.
  *
- * Drops silently when there is no mounted composer or when (mode, thread_key)
+ * Drops silently when there is no mounted composer or when (mode, threadKey)
  * mismatches. Per INV-15: cross-user isolation is handled upstream by the WS
  * filter; this layer only filters within a user's own tabs to the matching
  * mounted view.
+ *
+ * A text op without `text`, or `set_attachments` without `attachmentIds`,
+ * is a protocol bug and throws.
  *
  * Never invokes onSend (INV-10). Only mutates draft state via mounted.applyOp.
  */

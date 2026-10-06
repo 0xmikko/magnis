@@ -7,7 +7,7 @@ import { BaseToolCallCard } from "@magnis/host/base";
 
 interface ResolvedEntity {
   readonly id: string;
-  readonly schema_id: string;
+  readonly schemaId: string;
   readonly name?: string;
   readonly data: Record<string, unknown>;
 }
@@ -27,7 +27,7 @@ function useResolvedEntities(
           .rpc<Record<string, unknown>>("graph.entity.get", { id })
           .then((e) => ({
             id,
-            schema_id: (e.schema_id as string | undefined) ?? "",
+            schemaId: (e.schemaId as string | undefined) ?? "",
             name: e.name as string | undefined,
             data: e,
           }))
@@ -67,10 +67,10 @@ export function TriggerToolCallRenderer({
   const [expanded, setExpanded] = useState(false);
 
   const name = (result?.name ?? args.name) as string | undefined;
-  const gatePrompt = (result?.gate_prompt ?? args.gate_prompt) as string | undefined;
-  const actionPrompt = (result?.action_prompt ?? args.action_prompt) as string | undefined;
+  const gatePrompt = (result?.gatePrompt ?? args.gate_prompt) as string | undefined;
+  const actionPrompt = (result?.actionPrompt ?? args.action_prompt) as string | undefined;
   const watchIds = args.watch_entity_ids as readonly string[] | undefined;
-  const watchedNames = result?.watched_entity_names as readonly string[] | undefined;
+  const watchedNames = result?.watchedEntityNames as readonly string[] | undefined;
   const rawAddresses = Array.isArray(args.from_addresses) ? args.from_addresses.filter((value): value is string => typeof value === "string") : [];
   if (typeof args.from_address === "string") rawAddresses.push(args.from_address);
   const rawTarget = rawAddresses.length > 0 ? rawAddresses.join(", ")
@@ -124,7 +124,7 @@ export function TriggerToolCallRenderer({
           {watchedEntities.map((entity) => (
             <EntityCardRenderer
               key={entity.id}
-              schemaId={entity.schema_id}
+              schemaId={entity.schemaId}
               data={entity.data}
               runtime={runtime}
             />

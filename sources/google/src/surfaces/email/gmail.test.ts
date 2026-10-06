@@ -30,6 +30,8 @@ import {
 import { buildConnectorConfig } from "../../connector";
 import type { ImapMailbox, ImapRawMessage } from "./imap";
 
+const allSenders = { choices: {}, unknownSenderEnabled: true };
+
 // ── Shared fakes ────────────────────────────────────────────────────────────
 
 function ok(data: unknown): HttpResponse {
@@ -86,19 +88,20 @@ test("tst_src_iso_google_021 new Gmail bootstrap uses IMAP and keeps REST histor
     return {
       uidValidity: "42",
       searchBelow: async () => [9],
+      fetchHeaders: async function* () { yield { uid: raw.uid, emailId: raw.emailId, headers: Buffer.from("From: sender@example.com\r\n\r\n") }; },
       fetch: async function* () { yield raw; },
       close: async () => {},
     };
   };
   const source = buildConnectorConfig(fetchFn, open);
   const meta = { client_id: "imap-client", client_secret: "secret", refresh_token: "refresh" };
-  const first = await source.fetch({ surface: "email", meta });
+  const first = await source.fetch({ senderSync: allSenders, surface: "email", meta });
   expect(first.envelopes.map((envelope) => envelope.remote_id)).toEqual(["mailbox", BigInt(12345).toString(16)]);
   expect(first.envelopes[0]?.payload).toEqual({ entity_type: "mailbox", messages_total: 2, skipped: 1 });
   expect(String(first.envelopes[1]?.payload.body_text).trim()).toBe("Message body");
   expect(first.nextCursor).toEqual({ history_id: "h1" });
   expect(first.hasMore).toBe(false);
-  await source.fetch({ surface: "email", direction: "forward", cursor: first.nextCursor, meta });
+  await source.fetch({ senderSync: allSenders, surface: "email", direction: "forward", cursor: first.nextCursor, meta });
   expect(urls.some((url) => url.includes("/history?startHistoryId=h1"))).toBe(true);
   expect(urls.some((url) => url.includes("/messages?"))).toBe(false);
 });
@@ -287,11 +290,11 @@ describe("history action resolution", () => {
           historyId: "999",
         });
       }
-      if (url.includes("/messages/mA?format=full")) return ok(fullGmailMessage());
+      if (url.includes("/messages/mA?format=")) return ok(fullGmailMessage());
       throw new Error(`unexpected url ${url}`);
     };
 
-    const r = await fetchHistoryChanges("tok", { history_id: "100" }, fetchFn);
+    const r = await fetchHistoryChanges("tok", { history_id: "100" }, fetchFn, allSenders);
     // Deletes first (BTreeMap order within kind), then hydrated live messages.
     expect(r.envelopes[0]).toEqual({
       surface: "email",
@@ -336,16 +339,16 @@ describe("history action resolution", () => {
           historyId: "101",
         });
       }
-      if (url.includes("/messages/new-mail?format=full")) {
+      if (url.includes("/messages/new-mail?format=")) {
         return ok({ ...fullGmailMessage(), id: "new-mail" });
       }
-      if (url.includes("/messages/existing-mail?format=full")) {
+      if (url.includes("/messages/existing-mail?format=")) {
         return ok({ ...fullGmailMessage(), id: "existing-mail" });
       }
       throw new Error(`unexpected url ${url}`);
     };
 
-    const r = await fetchHistoryChanges("tok", { history_id: "100" }, fetchFn);
+    const r = await fetchHistoryChanges("tok", { history_id: "100" }, fetchFn, allSenders);
     const byId = new Map(r.envelopes.map((envelope) => [envelope.remote_id, envelope]));
 
     expect(byId.get("new-mail")?.kind).toBe("live");
@@ -356,18 +359,18 @@ describe("history action resolution", () => {
     const never: FetchLike = async () => {
       throw new Error("no network expected");
     };
-    await expect(fetchHistoryChanges("tok", {}, never)).rejects.toThrow(
+    await expect(fetchHistoryChanges("tok", {}, never, allSenders)).rejects.toThrow(
       "Gmail historyId expired (404)",
     );
 
     const notFound: FetchLike = async () => status(404, "gone");
     await expect(
-      fetchHistoryChanges("tok", { history_id: "1" }, notFound),
+      fetchHistoryChanges("tok", { history_id: "1" }, notFound, allSenders),
     ).rejects.toThrow("Gmail historyId expired (404)");
 
     // Both expiry paths are CursorExpiredError so the SDK maps them to -32003.
     for (const cursor of [{}, { history_id: "1" }]) {
-      const e = await fetchHistoryChanges("tok", cursor, notFound).catch((x) => x);
+      const e = await fetchHistoryChanges("tok", cursor, notFound, allSenders).catch((x) => x);
       expect(e).toBeInstanceOf(HistoryExpiredError);
       expect(e).toBeInstanceOf(CursorExpiredError);
     }
@@ -392,7 +395,7 @@ describe("history action resolution", () => {
         version: "0.0.1",
         surfaces: ["email"],
         fetch: async () =>
-          (await fetchHistoryChanges("tok", { history_id: "1" }, notFound)) as never,
+          (await fetchHistoryChanges("tok", { history_id: "1" }, notFound, allSenders)) as never,
       },
     );
     const err = reply!.error as Record<string, unknown>;
@@ -421,7 +424,7 @@ describe("email bootstrap cursor", () => {
         }
         return ok({ messages: [{ id: "m1" }, { id: "m2" }], nextPageToken: "p2" });
       }
-      if (url.includes("?format=full")) {
+      if (url.includes("?format=")) {
         const seg = url.split("/messages/")[1];
         if (seg === undefined)
           throw new Error("gmail url: missing message segment");
@@ -460,23 +463,24 @@ describe("email bootstrap cursor", () => {
       flags: new Set(),
       labels: new Set(),
       internalDate: new Date("2026-09-24T10:00:00Z"),
-      source: Buffer.from(`Subject: Mail ${index + 1}\r\nContent-Type: text/plain\r\n\r\nBody`),
+      source: Buffer.from(`From: sender@example.com\r\nSubject: Mail ${index + 1}\r\nContent-Type: text/plain\r\n\r\nBody`),
     }));
     const open = async (): Promise<ImapMailbox> => ({
       uidValidity: "42",
       searchBelow: async (before) => messages.map((message) => message.uid).filter((uid) => before === undefined || uid < before),
+      fetchHeaders: async function* (uids) { for (const message of messages.filter((item) => uids.includes(item.uid))) yield { uid: message.uid, emailId: message.emailId, headers: Buffer.from("From: sender@example.com\r\n\r\n") }; },
       fetch: async function* (uids) { for (const message of messages.filter((item) => uids.includes(item.uid))) yield message; },
       close: async () => {},
     });
     const source = buildConnectorConfig(fetchFn, open);
     const meta = { client_id: "gmail-pages-client", client_secret: "secret", refresh_token: "gmail-pages-a" };
-    const first = await source.fetch({ surface: "email", meta });
-    const second = await source.fetch({ surface: "email", cursor: first.nextCursor, meta });
+    const first = await source.fetch({ senderSync: allSenders, surface: "email", meta });
+    const second = await source.fetch({ senderSync: allSenders, surface: "email", cursor: first.nextCursor, meta });
     expect(first.envelopes).toHaveLength(101);
     expect(first.envelopes[1]?.remote_id).toBe(BigInt(10_101).toString(16));
     expect(second.envelopes.map((e) => e.remote_id)).toEqual([BigInt(10_001).toString(16)]);
     expect(tokenCalls).toEqual(["gmail-pages-a"]);
-    await source.fetch({ surface: "email", meta: { ...meta, refresh_token: "gmail-pages-b" } });
+    await source.fetch({ senderSync: allSenders, surface: "email", meta: { ...meta, refresh_token: "gmail-pages-b" } });
     expect(tokenCalls).toEqual(["gmail-pages-a", "gmail-pages-b"]);
   });
 
@@ -489,7 +493,7 @@ describe("email bootstrap cursor", () => {
   test("tst_gts_email_009 cursor ALWAYS present; the mailbox states its count first on the first page only", async () => {
     const { fetchFn, calls } = pagedApi();
 
-    const p1 = await fetchMessagePage("tok", undefined, fetchFn);
+    const p1 = await fetchMessagePage("tok", undefined, fetchFn, allSenders);
     expect(p1.hasMore).toBe(true);
     expect(p1.nextCursor).toEqual({ page_token: "p2", history_id: "h1" });
     expect("total" in p1).toBe(false);
@@ -516,7 +520,7 @@ describe("email bootstrap cursor", () => {
 
     const profileCalls = calls.filter((u) => u.endsWith("/profile") || u.includes("/labels/")).length;
     expect(profileCalls).toBe(3);
-    const p2 = await fetchMessagePage("tok", p1.nextCursor, fetchFn);
+    const p2 = await fetchMessagePage("tok", p1.nextCursor, fetchFn, allSenders);
     // Page 2+ never re-hits the profile or the labels (history_id read from cursor).
     expect(calls.filter((u) => u.endsWith("/profile") || u.includes("/labels/")).length).toBe(profileCalls);
     expect(p2.hasMore).toBe(false);
@@ -546,7 +550,7 @@ describe("email bootstrap cursor", () => {
       const id = seg.split("?")[0];
       return ok({ ...fullGmailMessage(), id });
     };
-    const r = await fetchMessagePage("tok", undefined, fetchFn);
+    const r = await fetchMessagePage("tok", undefined, fetchFn, allSenders);
     // No messagesTotal in the profile: the mailbox states no count, and the
     // cursor carries none.
     expect(r.envelopes.map((e) => e.remote_id)).toEqual(["a", "c"]);
@@ -556,13 +560,13 @@ describe("email bootstrap cursor", () => {
       if (url.includes("/messages/b?")) return status(500, "boom");
       return fetchFn(url);
     };
-    await expect(fetchMessagePage("tok", undefined, hardFailure)).rejects.toThrow("boom");
+    await expect(fetchMessagePage("tok", undefined, hardFailure, allSenders)).rejects.toThrow("boom");
 
     const malformed: FetchLike = async (url) => {
       if (url.includes("/messages/b?")) return ok({ id: "b", payload: { headers: [{ name: "Subject" }] } });
       return fetchFn(url);
     };
-    await expect(fetchMessagePage("tok", undefined, malformed)).rejects.toThrow();
+    await expect(fetchMessagePage("tok", undefined, malformed, allSenders)).rejects.toThrow();
 
     // Fatal: a 429 during hydration aborts the whole batch, typed.
     const rateLimited: FetchLike = async (url) => {
@@ -570,7 +574,7 @@ describe("email bootstrap cursor", () => {
       if (url.includes("maxResults=50")) return ok({ messages: [{ id: "a" }] });
       return status(429, "", "30");
     };
-    const err = await fetchMessagePage("tok", undefined, rateLimited).catch((e) => e);
+    const err = await fetchMessagePage("tok", undefined, rateLimited, allSenders).catch((e) => e);
     expect(err).toBeInstanceOf(GoogleRateLimitError);
     expect(err).toBeInstanceOf(RateLimitError);
     expect(err.retryAfterSecs).toBe(30);
@@ -597,7 +601,7 @@ describe("email bootstrap cursor", () => {
       if (id === "m0") return status(429, "quota", "17");
       return ok({ ...fullGmailMessage(), id });
     };
-    const page = fetchMessagePage("tok", undefined, fetchFn);
+    const page = fetchMessagePage("tok", undefined, fetchFn, allSenders);
     await expect(page).rejects.toBeInstanceOf(GoogleRateLimitError);
     expect(started).toEqual(["m0"]);
   });
@@ -609,7 +613,7 @@ describe("email bootstrap cursor", () => {
    * @deterministic: yes
    * @fixtures: two scripted eight-message pages and a simulated clock
    */
-  test("tst_src_iso_google_016 spaces full-message requests across pages", async () => {
+  test("tst_src_iso_google_016 spaces header and full-message requests across pages", async () => {
     jest.useFakeTimers();
     jest.setSystemTime(new Date("2026-09-24T00:00:00Z"));
     try {
@@ -624,7 +628,7 @@ describe("email bootstrap cursor", () => {
             nextPageToken: second ? undefined : "next",
           });
         }
-        if (url.includes("?format=full")) {
+        if (url.includes("?format=")) {
           starts.push(Date.now());
           return ok(fullGmailMessage());
         }
@@ -638,13 +642,13 @@ describe("email bootstrap cursor", () => {
         }
         throw new Error(`only ${starts.length} of ${count} Gmail requests started`);
       };
-      const first = fetchMessagePage("tok", undefined, fetchFn);
-      await advanceUntil(8);
-      const firstPage = await first;
-      const second = fetchMessagePage("tok", firstPage.nextCursor, fetchFn);
+      const first = fetchMessagePage("tok", undefined, fetchFn, allSenders);
       await advanceUntil(16);
+      const firstPage = await first;
+      const second = fetchMessagePage("tok", firstPage.nextCursor, fetchFn, allSenders);
+      await advanceUntil(32);
       await second;
-      expect(starts).toHaveLength(16);
+      expect(starts).toHaveLength(32);
       expect(starts.every((start, i) => i === 0 || start - starts[i - 1]! >= 250)).toBe(true);
     } finally {
       jest.useRealTimers();
@@ -669,6 +673,7 @@ describe("email bootstrap cursor", () => {
       }
       const id = url.split("/messages/")[1]?.split("?")[0];
       if (id === undefined) throw new Error(`unexpected Gmail URL: ${url}`);
+      if (url.includes("format=metadata")) return ok({ ...fullGmailMessage(), id });
       reads.set(id, (reads.get(id) ?? 0) + 1);
       if (id === "m8" && !held) {
         held = true;
@@ -676,9 +681,9 @@ describe("email bootstrap cursor", () => {
       }
       return ok({ ...fullGmailMessage(), id });
     };
-    await expect(fetchMessagePage("tok", undefined, fetchFn)).rejects.toBeInstanceOf(GoogleRateLimitError);
+    await expect(fetchMessagePage("tok", undefined, fetchFn, allSenders)).rejects.toBeInstanceOf(GoogleRateLimitError);
     const completed = new Map([...reads].filter(([id]) => id !== "m8"));
-    const retried = await fetchMessagePage("tok", undefined, fetchFn);
+    const retried = await fetchMessagePage("tok", undefined, fetchFn, allSenders);
     expect(retried.envelopes.filter((envelope) => envelope.remote_id !== "mailbox")).toHaveLength(12);
     for (const [id, count] of completed) expect(reads.get(id)).toBe(count);
   }, 15_000);
@@ -705,7 +710,7 @@ describe("email bootstrap cursor", () => {
         if (url.includes("/messages/m1?")) return status(403, quota);
         throw new Error(`unexpected Gmail URL: ${url}`);
       };
-      await expect(fetchMessagePage("tok", { history_id: "h1" }, fetchFn))
+      await expect(fetchMessagePage("tok", { history_id: "h1" }, fetchFn, allSenders))
         .rejects.toBeInstanceOf(GoogleRateLimitError);
     }
   });
@@ -832,4 +837,131 @@ describe("RFC 2822 build + send", () => {
       }),
     ).toThrow(/^Invalid MailDraft payload: /);
   });
+});
+
+/**
+ * @test-id: tst_src_google_sender_sync_001
+ * @scenario: scn_google_sync_001
+ * @covers: buildConnectorConfig, fetchHistoryChanges
+ * @deterministic: yes
+ * @fixtures: enabled, stopped and unknown senders on one Gmail history page
+ */
+test("tst_src_google_sender_sync_001 reads From before bodies and advances history past stopped senders", async () => {
+  const bodies: string[] = [];
+  const addresses: Record<string, string> = { a: "A@example.com", b: "b@example.com", c: "new@example.com" };
+  const fetchFn: FetchLike = async (url) => {
+    if (url.includes("oauth2.googleapis.com/token")) return ok({ access_token: "sender-filter-token", expires_in: 3600 });
+    if (url.includes("/history?")) return ok({ historyId: "200", history: [{ messagesAdded: ["a", "b", "c"].map((id) => ({ message: { id } })), messagesDeleted: [{ message: { id: "deleted-b" } }] }] });
+    const match = /\/messages\/([^?]+)\?/.exec(url);
+    const id = match?.[1];
+    if (id === undefined || addresses[id] === undefined) throw new Error(`Unexpected URL ${url}`);
+    const payload = { headers: [{ name: "From", value: `Name <${addresses[id]}>` }] };
+    if (url.includes("format=metadata")) return ok({ id, payload });
+    if (!url.includes("format=full")) throw new Error(`Unexpected format ${url}`);
+    bodies.push(id);
+    return ok({ id, payload: { ...payload, mimeType: "text/plain", body: { data: b64url("Body") } } });
+  };
+  const page = await buildConnectorConfig(fetchFn).fetch({
+    surface: "email", direction: "forward", cursor: { history_id: "100" },
+    senderSync: { choices: { "a@example.com": true, "b@example.com": false }, unknownSenderEnabled: false },
+    meta: { client_id: "sender-filter-client", client_secret: "secret", refresh_token: "sender-filter-refresh" },
+  });
+  expect(bodies).toEqual(["a"]);
+  expect(page.nextCursor).toEqual({ history_id: "200" });
+  expect(page.envelopes.map((item) => item.remote_id).sort()).toEqual(["a", "c", "deleted-b"]);
+  expect(page.envelopes.find((item) => item.remote_id === "c")).toMatchObject({ kind: "snapshot", payload: { entity_type: "sender", from_address: "new@example.com", from_name: "Name" } });
+  expect(page.envelopes.find((item) => item.remote_id === "c")?.payload.body_text).toBeUndefined();
+});
+
+/**
+ * @test-id: tst_src_google_sender_sync_003
+ * @scenario: scn_google_sync_001
+ * @covers: buildConnectorConfig, fetchMessagePage
+ * @deterministic: yes
+ * @fixtures: two sender pages with a provider alias and an expired continuation
+ */
+test("tst_src_google_sender_sync_003 sender recovery keeps mailbox checkpoint and filters exact addresses", async () => {
+  const requests: string[] = [];
+  const bodies: string[] = [];
+  const fetchFn: FetchLike = async (url) => {
+    requests.push(url);
+    if (url.includes("oauth2.googleapis.com/token")) return ok({ access_token: "sender-recovery-token", expires_in: 3600 });
+    if (url.includes("/messages?")) {
+      const query = new URL(url).searchParams;
+      expect(query.get("q")).toBe('from:"a@example.com"');
+      if (query.get("pageToken") === "expired") return status(400, "Invalid pageToken");
+      return ok(query.get("pageToken") === "older" ? { messages: [{ id: "old" }] }
+        : { messages: [{ id: "recent" }, { id: "alias" }], nextPageToken: "older" });
+    }
+    const id = new URL(url).pathname.split("/").at(-1)!;
+    if (url.includes("format=full")) bodies.push(id);
+    const address = id === "alias" ? "alias@example.com" : "a@example.com";
+    return ok({ ...fullGmailMessage(), id, payload: { headers: [{ name: "From", value: address }], body: { data: b64url(id) } } });
+  };
+  const source = buildConnectorConfig(fetchFn);
+  const args = {
+    surface: "email", direction: "backward" as const,
+    senderSync: { choices: { "a@example.com": true, "alias@example.com": true }, unknownSenderEnabled: false },
+    target: { kind: "trackedIdentities" as const, identities: ["a@example.com"] },
+    meta: { client_id: "sender-recovery-client", client_secret: "secret", refresh_token: "sender-recovery-refresh" },
+  };
+  const first = await source.fetch(args);
+  expect(first.envelopes.map(item => item.remote_id)).toEqual(["recent"]);
+  expect(first.progress).toEqual({ kind: "continueTarget", continuationToken: { page_token: "older", recoverySender: "a@example.com" } });
+  const second = await source.fetch({ ...args, cursor: first.nextCursor });
+  expect(second.envelopes.map(item => item.remote_id)).toEqual(["old"]);
+  expect(second.progress).toEqual({ kind: "completeTarget", forwardCheckpoint: { kind: "retain" } });
+  expect(bodies).toEqual(["recent", "old"]);
+  expect(requests.some(url => url.includes("/profile") || url.includes("/history?") || url.includes("/labels/"))).toBe(false);
+  await expect(source.fetch({ ...args, cursor: { page_token: "expired", recoverySender: "a@example.com" } })).rejects.toBeInstanceOf(CursorExpiredError);
+  const count = requests.length;
+  await expect(source.fetch({ ...args, cursor: { page_token: "older", recoverySender: "someone@example.com" } })).rejects.toThrow();
+  expect(requests).toHaveLength(count);
+});
+
+/**
+ * @test-id: tst_src_google_sender_sync_004
+ * @scenario: scn_google_sync_001
+ * @covers: buildConnectorConfig
+ * @deterministic: yes
+ * @fixtures: missing selection and disabled recovery target; zero provider requests
+ */
+test("tst_src_google_sender_sync_004 invalid selection fails before credentials or provider access", async () => {
+  const requests: string[] = [];
+  const source = buildConnectorConfig(async (url) => { requests.push(url); return ok({ access_token: "unused", expires_in: 3600 }); });
+  await expect(source.fetch({ surface: "email" })).rejects.toThrow("senderSync");
+  await expect(source.fetch({
+    surface: "email", senderSync: { choices: { "stopped@example.com": false }, unknownSenderEnabled: true },
+    target: { kind: "trackedIdentities", identities: ["stopped@example.com"] },
+    meta: { client_id: "disabled-recovery-client", client_secret: "secret", refresh_token: "disabled-recovery-refresh" },
+  })).rejects.toThrow();
+  expect(requests).toEqual([]);
+});
+
+/**
+ * @test-id: tst_src_google_sender_sync_005
+ * @scenario: scn_google_sync_001
+ * @covers: fetchMessagePage
+ * @deterministic: yes
+ * @fixtures: quota hold after one full read; Stop before retry
+ */
+test("tst_src_google_sender_sync_005 a stopped sender cannot escape through the quota retry cache", async () => {
+  const bodies: string[] = [];
+  const fetchFn: FetchLike = async (url) => {
+    if (url.includes("/messages?")) return ok({ messages: [{ id: "a" }, { id: "b" }] });
+    const id = new URL(url).pathname.split("/").at(-1)!;
+    if (url.includes("format=full")) {
+      bodies.push(id);
+      if (id === "b") return status(429, "quota", "1");
+    }
+    return ok({ ...fullGmailMessage(), id });
+  };
+  await expect(fetchMessagePage("retry-token", { history_id: "h1", page_token: "same-page" }, fetchFn, allSenders)).rejects.toBeInstanceOf(GoogleRateLimitError);
+  expect(bodies).toContain("a");
+  const count = bodies.length;
+  const page = await fetchMessagePage("retry-token", { history_id: "h1", page_token: "same-page" }, fetchFn,
+    { choices: { "alice@example.com": false }, unknownSenderEnabled: true });
+  expect(page.envelopes).toEqual([]);
+  expect(page.nextCursor).toEqual({ history_id: "h1" });
+  expect(bodies).toHaveLength(count);
 });

@@ -114,14 +114,14 @@ function flatten(row: Readonly<Record<string, unknown>>): Readonly<Record<string
     Object.assign(flat, props as Record<string, unknown>);
   }
 
-  const linked = row.linked_entities;
+  const linked = row.linkedEntities;
   if (
     (flat.to === null || flat.to === undefined) &&
     (flat.to_addresses === null || flat.to_addresses === undefined) &&
     Array.isArray(linked)
   ) {
     const recipient = (linked as Record<string, unknown>[]).find(
-      (e) => e.link_kind === "sent_to" && e.schema_id === "email.address",
+      (e) => e.linkKind === "sent_to" && e.schemaId === "email.address",
     );
     if (recipient && typeof recipient.name === "string") {
       flat.to = recipient.name;

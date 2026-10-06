@@ -6,7 +6,7 @@
  * Each module can wrap this with module-specific header content.
  */
 import type { JSX } from "react";
-import type { LinkedEntitySummary } from "./sharedTypes";
+import type { LinkedEntitySummary } from "@magnis/sdk";
 export interface EntityDetailTabsProps {
     readonly entityId: string;
     readonly linkedEntities: readonly LinkedEntitySummary[];

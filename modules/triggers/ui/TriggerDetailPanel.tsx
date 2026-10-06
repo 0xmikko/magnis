@@ -77,8 +77,8 @@ export function TriggerDetailPanel({
   });
 
   const watchIds = useMemo(
-    () => detail.data?.watched_entities.map((entity) => entity.id) ?? [],
-    [detail.data?.watched_entities],
+    () => detail.data?.watchedEntities.map((entity) => entity.id) ?? [],
+    [detail.data?.watchedEntities],
   );
   const watchedEntities = useQuery<readonly ResolvedEntity[]>({
     queryKey: triggerKeys.watchedEntities(entityId, watchIds),
@@ -96,7 +96,7 @@ export function TriggerDetailPanel({
             );
             return {
               id,
-              schemaId: data.schema_id as string,
+              schemaId: data.schemaId as string,
               name: (data.name as string | undefined) ?? "",
               data: { ...data, id },
               unreadable: false,
@@ -137,22 +137,22 @@ export function TriggerDetailPanel({
       : [
           {
             label: "When",
-            value: trigger.event_kinds
+            value: trigger.eventKinds
               .map((kind) => EVENT_KIND_LABELS[kind] ?? kind)
               .join(", "),
           },
         ]),
-    ...(trigger.gate_prompt
-      ? [{ label: "Gate", value: trigger.gate_prompt }]
+    ...(trigger.gatePrompt
+      ? [{ label: "Gate", value: trigger.gatePrompt }]
       : []),
-    { label: "Action", value: trigger.action_prompt },
-    { label: "Fired", value: `${String(trigger.firing_count)}×` },
-    { label: "Debounce", value: `${String(trigger.debounce_seconds)}s` },
-    ...(trigger.max_firings !== null && trigger.max_firings !== undefined
-      ? [{ label: "Maximum firings", value: String(trigger.max_firings) }]
+    { label: "Action", value: trigger.actionPrompt },
+    { label: "Fired", value: `${String(trigger.firingCount)}×` },
+    { label: "Debounce", value: `${String(trigger.debounceSeconds)}s` },
+    ...(trigger.maxFirings !== null && trigger.maxFirings !== undefined
+      ? [{ label: "Maximum firings", value: String(trigger.maxFirings) }]
       : []),
-    ...(trigger.parent_episode_name
-      ? [{ label: "Episode", value: trigger.parent_episode_name }]
+    ...(trigger.parentEpisodeName
+      ? [{ label: "Episode", value: trigger.parentEpisodeName }]
       : []),
   ];
 
@@ -226,7 +226,7 @@ export function TriggerDetailPanel({
                 nothing derived from the row's content is unique. */}
             {history.map((execution, index) => (
               <Row
-                key={`${String(index)}-${execution.fired_at}`}
+                key={`${String(index)}-${execution.firedAt}`}
                 justify="between"
                 px={2}
                 py={1}
@@ -238,7 +238,7 @@ export function TriggerDetailPanel({
                   {OUTCOME_LABELS[execution.outcome] ?? execution.outcome}
                 </Text>
                 <Text variant="caption" color="tertiary">
-                  {formatTimeAgo(execution.fired_at)}
+                  {formatTimeAgo(execution.firedAt)}
                 </Text>
               </Row>
             ))}

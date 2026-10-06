@@ -16,7 +16,6 @@ export function ContactCreateRenderer(props: AgentRendererProps<ToolCallRenderer
   const args = tc.args as Record<string, unknown>;
 
   const name = (args.name as string | undefined) ?? "";
-  const email = (args.email as string | undefined) ?? "";
   const phone = (args.phone as string | undefined) ?? "";
   const company = (args.company as string | undefined) ?? "";
   const role = (args.role as string | undefined) ?? "";
@@ -48,7 +47,6 @@ export function ContactCreateRenderer(props: AgentRendererProps<ToolCallRenderer
       onAllowlistToggle={onAllowlistToggle}
     >
       {field("Name", name)}
-      {field("Email", email)}
       {field("Phone", phone)}
       {field("Company", company)}
       {field("Role", role)}

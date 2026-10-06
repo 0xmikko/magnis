@@ -10,6 +10,7 @@
  * Mocks: AppRuntime transport
  * Data: fixed survivor and retired contacts
  */
+import type { MergePreview, MergeResult } from "@magnis/sdk";
 import { fireEvent, render, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { AppRuntime } from "@magnis/host/runtime";
@@ -30,28 +31,34 @@ describe("tst_fe_contacts_browser_002 browser contact merge", () => {
         });
       }
       if (method === "contacts.merge_preview") {
-        return Promise.resolve({
-          survivor: { id: "survivor", name: "Ada", property_count: 1 },
-          retired: { id: "retired", name: "Ada Duplicate", property_count: 1 },
+        const preview: MergePreview = {
+          survivor: { id: "survivor", name: "Ada", schemaId: "contacts.person", propertyCount: 1, linkCount: 2 },
+          retired: { id: "retired", name: "Ada Duplicate", schemaId: "contacts.person", propertyCount: 1, linkCount: 2 },
+          sources: [],
           fields: {
             email: {
               key: "email",
-              survivor_value: "ada@example.com",
-              retired_value: null,
-              auto_resolved: "ada@example.com",
+              survivorValue: "ada@example.com",
+              retiredValue: null,
+              autoResolved: "ada@example.com",
+              conflict: false,
             },
           },
-          links_to_repoint: 2,
-          duplicate_links_to_remove: 0,
-        });
+          linksToRepoint: 2,
+          duplicateLinksToRemove: 0,
+          reflexiveLinksToRemove: 0,
+        };
+        return Promise.resolve(preview);
       }
       if (method === "contacts.merge") {
-        return Promise.resolve({
-          survivor_id: "survivor",
-          retired_id: "retired",
-          links_repointed: 2,
-          links_deduplicated: 0,
-        });
+        const merged: MergeResult = {
+          survivorId: "survivor",
+          retiredId: "retired",
+          linksRepointed: 2,
+          linksDeduplicated: 0,
+          linksReflexiveRemoved: 0,
+        };
+        return Promise.resolve(merged);
       }
       return Promise.reject(new Error(`unexpected RPC: ${method}`));
     });
@@ -67,8 +74,8 @@ describe("tst_fe_contacts_browser_002 browser contact merge", () => {
     expect(await view.findByText("Ada Duplicate")).toBeTruthy();
     await waitFor(() =>
       expect(rpc).toHaveBeenCalledWith("contacts.merge_preview", {
-        survivor_id: "survivor",
-        retired_id: "retired",
+        survivorId: "survivor",
+        retiredId: "retired",
       }),
     );
 
@@ -76,9 +83,11 @@ describe("tst_fe_contacts_browser_002 browser contact merge", () => {
 
     await waitFor(() =>
       expect(rpc).toHaveBeenCalledWith("contacts.merge", {
-        survivor_id: "survivor",
-        retired_id: "retired",
+        survivorId: "survivor",
+        retiredId: "retired",
+        preview: false,
         overrides: [],
+        reason: null,
       }),
     );
     expect(await view.findByText("Contacts merged successfully")).toBeTruthy();

@@ -78,6 +78,9 @@ export declare class WebSocketClient {
     connect(): void;
     disconnect(): void;
     http<Contract extends HttpContractLike>(contract: Contract, input: HttpInputFor<Contract>): Promise<HttpOutputFor<Contract>>;
+    /** One RPC exchange: the frame carries the params as given and the answer
+     * comes back as sent. The server parses the params once; a native answer is
+     * parsed once, by `rpcWithContract`. */
     rpc<T = unknown>(method: string, params?: Record<string, unknown>): Promise<T>;
     onSchemaEvent(schemaIds: readonly string[], handler: (e: StreamEvent) => void): () => void;
     onEventType(types: readonly string[], handler: (e: StreamEvent) => void): () => void;

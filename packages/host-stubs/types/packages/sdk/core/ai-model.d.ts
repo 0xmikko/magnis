@@ -137,7 +137,7 @@ export declare const AiModelSchema: z.ZodObject<{
     enabled: z.ZodBoolean;
     configJson: z.ZodNullable<z.ZodString>;
     createdAt: z.ZodString;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type AiModel = z.output<typeof AiModelSchema>;
 export declare const AiProviderSchema: z.ZodObject<{
     id: z.ZodString;
@@ -149,13 +149,13 @@ export declare const AiProviderSchema: z.ZodObject<{
     apiKeySet: z.ZodBoolean;
     createdAt: z.ZodString;
     updatedAt: z.ZodString;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type AiProvider = z.output<typeof AiProviderSchema>;
 export declare const ModelDefaultSchema: z.ZodObject<{
     capability: z.ZodString;
     modelId: z.ZodString;
     updatedAt: z.ZodString;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type ModelDefault = z.output<typeof ModelDefaultSchema>;
 export declare const CatalogModelSchema: z.ZodObject<{
     providerId: z.ZodString;
@@ -169,7 +169,7 @@ export declare const CatalogModelSchema: z.ZodObject<{
     contextLimit: z.ZodNullable<z.ZodNumber>;
     reasoning: z.ZodBoolean;
     logoUrl: z.ZodString;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type CatalogModel = z.output<typeof CatalogModelSchema>;
 /** One model returned by a provider-owned catalog (for example OpenRouter).
  * This is a flat list, distinct from the models.dev catalog page below. */
@@ -178,7 +178,7 @@ export declare const ProviderCatalogModelSchema: z.ZodObject<{
     name: z.ZodString;
     promptUsdPerToken: z.ZodNullable<z.ZodString>;
     completionUsdPerToken: z.ZodNullable<z.ZodString>;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type ProviderCatalogModel = z.output<typeof ProviderCatalogModelSchema>;
 export declare const CatalogProviderSchema: z.ZodObject<{
     id: z.ZodString;
@@ -186,7 +186,7 @@ export declare const CatalogProviderSchema: z.ZodObject<{
     family: z.ZodString;
     api: z.ZodNullable<z.ZodString>;
     logoUrl: z.ZodString;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type CatalogProvider = z.output<typeof CatalogProviderSchema>;
 export declare const ModelCatalogPageSchema: z.ZodObject<{
     source: z.ZodEnum<{
@@ -200,7 +200,7 @@ export declare const ModelCatalogPageSchema: z.ZodObject<{
         family: z.ZodString;
         api: z.ZodNullable<z.ZodString>;
         logoUrl: z.ZodString;
-    }, z.core.$strip>>;
+    }, z.core.$strict>>;
     models: z.ZodArray<z.ZodObject<{
         providerId: z.ZodString;
         modelId: z.ZodString;
@@ -213,8 +213,8 @@ export declare const ModelCatalogPageSchema: z.ZodObject<{
         contextLimit: z.ZodNullable<z.ZodNumber>;
         reasoning: z.ZodBoolean;
         logoUrl: z.ZodString;
-    }, z.core.$strip>>;
-}, z.core.$strip>;
+    }, z.core.$strict>>;
+}, z.core.$strict>;
 export type ModelCatalogPage = z.output<typeof ModelCatalogPageSchema>;
 export declare const LlmModelInfoSchema: z.ZodObject<{
     id: z.ZodString;
@@ -229,7 +229,7 @@ export declare const LlmModelInfoSchema: z.ZodObject<{
         vision: z.ZodBoolean;
         reasoning: z.ZodBoolean;
         structuredOutput: z.ZodBoolean;
-    }, z.core.$strip>;
+    }, z.core.$strict>;
     available: z.ZodBoolean;
     isGlobalDefault: z.ZodBoolean;
     reasoning: z.ZodOptional<z.ZodDiscriminatedUnion<[z.ZodObject<{
@@ -272,7 +272,7 @@ export declare const LlmModelInfoSchema: z.ZodObject<{
         canUseProviderDefault: z.ZodBoolean;
     }, z.core.$strict>], "state">>;
     providerConnectionId: z.ZodOptional<z.ZodNullable<z.ZodString>>;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type LlmModelInfo = z.output<typeof LlmModelInfoSchema>;
 export declare const EmbeddingModelInfoSchema: z.ZodObject<{
     id: z.ZodString;
@@ -288,18 +288,25 @@ export declare const EmbeddingModelInfoSchema: z.ZodObject<{
     }>;
     revision: z.ZodString;
     available: z.ZodBoolean;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type EmbeddingModelInfo = z.output<typeof EmbeddingModelInfoSchema>;
 /** A personal language selection is either one exact logical model or an
  * explicit request to inherit the deployment-wide default. */
 export declare const UserLanguagePreferenceSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     mode: z.ZodLiteral<"inherit">;
     modelId: z.ZodNull;
-}, z.core.$strip>, z.ZodObject<{
+}, z.core.$strict>, z.ZodObject<{
     mode: z.ZodLiteral<"model">;
     modelId: z.ZodString;
-}, z.core.$strip>], "mode">;
+}, z.core.$strict>], "mode">;
 export type UserLanguagePreference = z.output<typeof UserLanguagePreferenceSchema>;
+/** Codex subscription connection state, as the host's auth store reads it
+ * and `ai_models.subscription_status` answers it. */
+export declare const CodexAuthStatusSchema: z.ZodObject<{
+    connected: z.ZodBoolean;
+    accountId: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+}, z.core.$strict>;
+export type CodexAuthStatus = z.output<typeof CodexAuthStatusSchema>;
 export declare const AiProviderAdapterIdSchema: z.ZodEnum<{
     anthropic: "anthropic";
     openai: "openai";
@@ -682,12 +689,12 @@ export declare const AiCallAccountingSchema: z.ZodObject<{
         cacheWrite: z.ZodNumber;
         cacheWriteOneHour: z.ZodNumber;
         reasoning: z.ZodNumber;
-    }, z.core.$strip>;
+    }, z.core.$strict>;
     totalTokens: z.ZodNumber;
     costMicros: z.ZodNumber;
     status: z.ZodEnum<{
-        complete: "complete";
         failed: "failed";
+        complete: "complete";
         aborted: "aborted";
     }>;
 }, z.core.$strip>;
@@ -798,6 +805,7 @@ export declare const OllamaModelPullSchema: z.ZodObject<{
     modelTag: z.ZodString;
     logicalModelId: z.ZodString;
     phase: z.ZodEnum<{
+        interrupted: "interrupted";
         failed: "failed";
         preparing: "preparing";
         downloading: "downloading";
@@ -805,7 +813,6 @@ export declare const OllamaModelPullSchema: z.ZodObject<{
         adding: "adding";
         completed: "completed";
         cancelled: "cancelled";
-        interrupted: "interrupted";
     }>;
     layerDigest: z.ZodNullable<z.ZodString>;
     completedBytes: z.ZodNullable<z.ZodNumber>;

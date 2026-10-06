@@ -6,14 +6,14 @@
 import type { ConnectorConfig } from "@magnis/connector-sdk";
 import type { FetchLike } from "./api";
 import { fixtureFetch } from "./fixture";
-import { fetchX } from "./surfaces/x/fetch";
+import { fetchX, resolveProfile } from "./surfaces/x/fetch";
 import { probeXAuth } from "./probe";
 import { SURFACE_X } from "./schema";
 
 /**
  * Build the X connector config. Read-only: the host passes the opt-in handle
  * set and the app-only bearer via _meta; this fetches profiles and recent
- * tweets. There is no magnis.execute command surface.
+ * tweets. The resolveProfile action reads identity without posts.
  *
  * @tested-by: tst_x_cert_001
  * @invariant: certification uses only its explicit captured transport; an
@@ -26,10 +26,11 @@ function runtimeFetch(): FetchLike {
 export function buildConnectorConfig(fetchFn: FetchLike = runtimeFetch()): ConnectorConfig {
   return {
     name: "x",
-    version: "0.1.0",
+    version: "2.0.0",
     surfaces: [SURFACE_X],
     intervalSecs: 300,
     fetch: (args) => fetchX(args, fetchFn),
+    execute: { resolveProfile: async (args, meta) => ({ ...await resolveProfile(args, meta, fetchFn) }) },
     // ProbeAuth — see probe.ts for the unit-tested probe contract.
     probeAuth: (meta) => probeXAuth(meta, fetchFn),
   };

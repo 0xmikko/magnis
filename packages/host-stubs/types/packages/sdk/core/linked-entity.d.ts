@@ -13,6 +13,6 @@ export declare const LinkedEntitySummarySchema: z.ZodObject<{
         agent: "agent";
     }>;
     validUntil: z.ZodNullable<z.ZodISODateTime>;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type LinkedEntitySummary = z.output<typeof LinkedEntitySummarySchema>;
 //# sourceMappingURL=linked-entity.d.ts.map

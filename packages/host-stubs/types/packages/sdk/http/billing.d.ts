@@ -1,7 +1,8 @@
 import { z } from "zod";
+/** The server answers its default window when both bounds are absent. */
 export declare const billingDailyContract: import("./contract.js").HttpContract<"GET", "/api/billing/daily", z.ZodObject<{
-    from: z.ZodString;
-    to: z.ZodString;
+    from: z.ZodOptional<z.ZodString>;
+    to: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>, z.ZodObject<{
     rows: z.ZodArray<z.ZodObject<{
         day: z.ZodString;
@@ -14,11 +15,11 @@ export declare const billingDailyContract: import("./contract.js").HttpContract<
             cacheWrite: z.ZodNumber;
             cacheWriteOneHour: z.ZodNumber;
             reasoning: z.ZodNumber;
-        }, z.core.$strip>;
+        }, z.core.$strict>;
         costMicros: z.ZodNumber;
         callCount: z.ZodNumber;
-    }, z.core.$strip>>;
-}, z.core.$strip>>;
+    }, z.core.$strict>>;
+}, z.core.$strict>>;
 export declare const billingEpisodesContract: import("./contract.js").HttpContract<"GET", "/api/billing/episodes", z.ZodObject<{
     limit: z.ZodNumber;
     offset: z.ZodNumber;
@@ -30,8 +31,8 @@ export declare const billingEpisodesContract: import("./contract.js").HttpContra
         totalTokens: z.ZodNumber;
         costMicros: z.ZodNumber;
         callCount: z.ZodNumber;
-    }, z.core.$strip>>;
-}, z.core.$strip>>;
+    }, z.core.$strict>>;
+}, z.core.$strict>>;
 export declare const billingEpisodeUsageContract: import("./contract.js").HttpContract<"GET", "/api/billing/episodes/:id/usage", z.ZodObject<{
     id: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
@@ -46,5 +47,5 @@ export declare const billingEpisodeUsageContract: import("./contract.js").HttpCo
     callCount: z.ZodNumber;
     firstCallAt: z.ZodNullable<z.ZodString>;
     lastCallAt: z.ZodNullable<z.ZodString>;
-}, z.core.$strip>>;
+}, z.core.$strict>>;
 //# sourceMappingURL=billing.d.ts.map

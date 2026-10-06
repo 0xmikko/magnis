@@ -1,0 +1,7 @@
+{
+  "name": "@magnis/plugin-addressbook",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Magnis address book plugin — backend module served via the V8 plugin runtime; no UI of its own."
+}

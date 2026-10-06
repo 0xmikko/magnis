@@ -10,52 +10,52 @@
  * Doubles come from @magnis/testkit/module.
  */
 import { describe, it, expect } from "vitest";
-import { mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
+import { mockGraph, mountModule, page, type MockGraph } from "@magnis/testkit/module";
 import { TelegramModule } from "../service.ts";
 import type { TelegramCanonical } from "../../types.ts";
 
 type G = MockGraph;
 
-// No chat filter → messagesList takes the list_entities path, hydrating the page
+// No chat filter → messagesList takes the listEntities path, hydrating the page
 // via one list_facets_for_entities batch.
 function listGraph(): G {
   return mockGraph({
-    list_entities: () => Promise.resolve({ items: [], total: 0 }),
+    listEntities: () => Promise.resolve(page([])),
   });
 }
 
 describe("tst_fe_tg_messages_list_cap_001 — messages.list hard cap", () => {
   it("clamps a huge limit to 50 (no full-history dump)", async () => {
     const graph = listGraph();
-    const mod = mountModule(TelegramModule, { graph, ctx: { extension_id: "telegram" } }).module;
+    const mod = mountModule(TelegramModule, { graph, ctx: { extensionId: "telegram" } }).module;
     await mod.messagesList({ limit: 100000 });
-    const listEntities = graph.spies.list_entities;
-    if (listEntities === undefined) throw new Error("messages.list cap: missing list_entities spy");
+    const listEntities = graph.spies.listEntities;
+    if (listEntities === undefined) throw new Error("messages.list cap: missing listEntities spy");
     expect(listEntities).toHaveBeenCalledTimes(1);
     const call = listEntities.mock.calls[0];
-    if (call === undefined) throw new Error("messages.list cap: no list_entities call recorded");
+    if (call === undefined) throw new Error("messages.list cap: no listEntities call recorded");
     expect((call[0] as { limit?: number }).limit).toBe(50);
   });
 
   it("defaults to 50 when no limit is given", async () => {
     const graph = listGraph();
-    const mod = mountModule(TelegramModule, { graph, ctx: { extension_id: "telegram" } }).module;
+    const mod = mountModule(TelegramModule, { graph, ctx: { extensionId: "telegram" } }).module;
     await mod.messagesList({});
-    const listEntities = graph.spies.list_entities;
-    if (listEntities === undefined) throw new Error("messages.list default: missing list_entities spy");
+    const listEntities = graph.spies.listEntities;
+    if (listEntities === undefined) throw new Error("messages.list default: missing listEntities spy");
     const call = listEntities.mock.calls[0];
-    if (call === undefined) throw new Error("messages.list default: no list_entities call recorded");
+    if (call === undefined) throw new Error("messages.list default: no listEntities call recorded");
     expect((call[0] as { limit?: number }).limit).toBe(50);
   });
 
   it("passes through a small explicit limit unchanged", async () => {
     const graph = listGraph();
-    const mod = mountModule(TelegramModule, { graph, ctx: { extension_id: "telegram" } }).module;
+    const mod = mountModule(TelegramModule, { graph, ctx: { extensionId: "telegram" } }).module;
     await mod.messagesList({ limit: 10 });
-    const listEntities = graph.spies.list_entities;
-    if (listEntities === undefined) throw new Error("messages.list passthrough: missing list_entities spy");
+    const listEntities = graph.spies.listEntities;
+    if (listEntities === undefined) throw new Error("messages.list passthrough: missing listEntities spy");
     const call = listEntities.mock.calls[0];
-    if (call === undefined) throw new Error("messages.list passthrough: no list_entities call recorded");
+    if (call === undefined) throw new Error("messages.list passthrough: no listEntities call recorded");
     expect((call[0] as { limit?: number }).limit).toBe(10);
   });
 });

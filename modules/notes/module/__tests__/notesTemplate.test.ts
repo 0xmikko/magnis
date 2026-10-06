@@ -27,8 +27,8 @@ const NOTE_ID = "44444444-4444-4444-8444-444444444444";
 
 function templateGraph() {
   return mockGraph({
-    create_entity: () => Promise.resolve(entity(NOTE_ID, "Template", { schema_id: NOTE })),
-    update_properties: () => Promise.resolve(undefined),
+    createEntity: () => Promise.resolve(entity(NOTE_ID, "Template", { schemaId: NOTE })),
+    updateProperties: () => Promise.resolve(undefined),
   });
 }
 
@@ -45,8 +45,8 @@ describe("tst_module_notes_template_001 — note templates", () => {
     const result = await module.create({ template, title: "Demo" });
 
     expect(result.body).toContain(marker);
-    expect(graph.spies.update_properties).toHaveBeenCalledWith({
-      entity_id: NOTE_ID,
+    expect(graph.spies.updateProperties).toHaveBeenCalledWith({
+      entityId: NOTE_ID,
       properties: expect.objectContaining({ title: "Demo", body: expect.stringContaining(marker) }),
     });
   });
@@ -87,11 +87,11 @@ describe("tst_module_notes_template_001 — note templates", () => {
   it("advertises a single create with template and content forms", async () => {
     const { tools } = await mountModule(NotesModule, {
       mode: "dispatch",
-      ctx: { extension_id: "notes" },
+      ctx: { extensionId: "notes" },
     });
     const template = tools.find((tool) => tool.binding?.entity === "notes.note" && tool.binding.operation === "create");
 
-    expect(template).toMatchObject({ requires_approval: true });
+    expect(template).toMatchObject({ requiresApproval: true });
     expect(template?.inputSchema).toMatchObject({ oneOf: expect.arrayContaining([expect.objectContaining({ required: ["template", "title"] })]) });
   });
 });

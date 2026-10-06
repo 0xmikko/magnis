@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { UseQueryResult } from "@tanstack/react-query";
 import { useAppRuntime } from "@magnis/host/runtime";
 import type { ProjectListItem, ProjectDetailView } from "./types";
-import type { PaginatedResponse } from "@magnis/plugin-sdk";
+import type { PaginatedResponse } from "@magnis/sdk";
 
 export const projectKeys = {
   all: ["projects"] as const,

@@ -11,6 +11,7 @@ summary = "X fixture source for tests and e2e."
 publisher = "ai.magnis"
 dev = true
 surfaces = ["x"]
+dependsOn = ["x"]
 kind = "mock"
 account_mode = "single"
 accounts = ["default"]

@@ -1,4 +1,11 @@
 import { z } from "zod";
+/** The kinds a memory is saved and filtered as. */
+export declare const MemoryTypeSchema: z.ZodEnum<{
+    user: "user";
+    feedback: "feedback";
+    project: "project";
+    reference: "reference";
+}>;
 export declare const MemoryRecordSchema: z.ZodObject<{
     id: z.ZodString;
     memoryType: z.ZodString;
@@ -17,12 +24,17 @@ export declare const MemoryRecordSchema: z.ZodObject<{
     supersededBy: z.ZodNullable<z.ZodString>;
     archivedAt: z.ZodNullable<z.ZodString>;
     createdAt: z.ZodString;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type MemoryRecord = z.output<typeof MemoryRecordSchema>;
 export declare const MemorySearchParamsSchema: z.ZodObject<{
     query: z.ZodString;
-    memoryType: z.ZodOptional<z.ZodString>;
-    limit: z.ZodDefault<z.ZodNumber>;
+    memoryType: z.ZodOptional<z.ZodEnum<{
+        user: "user";
+        feedback: "feedback";
+        project: "project";
+        reference: "reference";
+    }>>;
+    limit: z.ZodDefault<z.ZodInt>;
 }, z.core.$strip>;
 export type MemorySearchParams = z.input<typeof MemorySearchParamsSchema>;
 //# sourceMappingURL=memory.d.ts.map

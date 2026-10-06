@@ -5,7 +5,8 @@
  * and inserts inline chips into the editable div.
  */
 import { type KeyboardEvent, type RefObject } from "react";
-import type { EntityMention, EntitySearchResult } from "../types";
+import type { EntitySearchHit } from "@magnis/sdk";
+import type { EntityMention } from "../types";
 /**
  * Build a DocumentFragment for inserting plain (pasted/dictated) text into the
  * contentEditable. Line endings are normalized to `\n` (CRLF / bare CR collapse
@@ -25,12 +26,12 @@ export interface UseMentionComposerResult {
     readonly isMentionActive: boolean;
     readonly mentionQuery: string;
     readonly selectedIndex: number;
-    readonly searchResults: readonly EntitySearchResult[];
+    readonly searchResults: readonly EntitySearchHit[];
     readonly isSearchLoading: boolean;
     readonly activeCategory: string | null;
     readonly handleKeyDown: (e: KeyboardEvent<HTMLDivElement>) => boolean;
     readonly handleInput: () => void;
-    readonly handleSelect: (item: EntitySearchResult) => void;
+    readonly handleSelect: (item: EntitySearchHit) => void;
     readonly handleCategorySelect: (schemaId: string) => void;
     readonly handleCategoryBack: () => void;
     readonly clearAll: () => void;

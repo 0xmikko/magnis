@@ -16,7 +16,7 @@ export declare const EpisodeMessageSchema: z.ZodObject<{
     status: z.ZodString;
     createdAt: z.ZodString;
     attachments: z.ZodDefault<z.ZodArray<z.ZodString>>;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type EpisodeMessage = z.output<typeof EpisodeMessageSchema>;
 export declare const NewEpisodeMessageSchema: z.ZodObject<{
     status: z.ZodString;
@@ -30,6 +30,6 @@ export declare const NewEpisodeMessageSchema: z.ZodObject<{
     content: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     toolArgs: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     toolResult: z.ZodOptional<z.ZodNullable<z.ZodString>>;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type NewEpisodeMessage = z.output<typeof NewEpisodeMessageSchema>;
 //# sourceMappingURL=episode-message.d.ts.map

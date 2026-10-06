@@ -6,7 +6,6 @@
  * @tested-by: tst_bts_core_link_010
  */
 import { z } from "zod";
-import type { EntityId } from "./entity.js";
 /** RFC3339 with offset — the spelling the graph's own compiler pins. */
 export type DateTimeUtc = string;
 /** Two kinds of row, and the type says so. The only question that changes how
@@ -21,32 +20,25 @@ export type Origin = "canonical" | "agent";
  *  row has no stamp and needs no key: an agent write is a decision, not a
  *  re-sync. A canonical link carries no stamp of its own; its provenance IS
  *  its `from` entity's `source`. */
-export interface SourceRef {
-    source: string;
-    account: string;
-    externalId: string;
-}
 export declare const sourceRefSchema: z.ZodObject<{
     source: z.ZodString;
     account: z.ZodString;
     externalId: z.ZodString;
 }, z.core.$strict>;
+export type SourceRef = z.output<typeof sourceRefSchema>;
+/** Parse a stored timestamp to epoch MICROSECONDS — the module's currency.
+ *
+ * The parse twin of `formatRfc3339Micros`, replacing the two rival readers
+ * (`dataset/time.ts` and `graph/repo-common.ts`): it accepts the union of
+ * their inputs and agrees with each to the microsecond
+ * (`tst_bts_utils_time_parse`). Sub-microsecond digits truncate — this
+ * module's precision is what the TEXT columns hold. */
+export declare function parseRfc3339Micros(raw: string): number;
 /** Every date in these schemas — one definition, reused, never z.string(). */
 export declare const dateTimeSchema: z.ZodISODateTime;
 /** What an AGENT row says about its own truth. A canonical row says nothing
  *  of the kind: it is a record, its provenance is the connector's stamp, and
  *  a record does not become false — a claim about the world does. */
-export interface AgentStatement {
-    origin: "agent";
-    /** 0 < c <= 1. Exactly 1 means a person approved it. */
-    confidence: number;
-    /** Never empty: what it was read from, plus any approval episode. */
-    evidence: [EntityId, ...EntityId[]];
-    /** When the claim became true; null = for as long as we have known it. */
-    validFrom: DateTimeUtc | null;
-    /** When it stopped; null = still true. Set, never deleted. */
-    validUntil: DateTimeUtc | null;
-}
 export declare const agentStatementSchema: z.ZodObject<{
     origin: z.ZodLiteral<"agent">;
     confidence: z.ZodNumber;
@@ -54,4 +46,5 @@ export declare const agentStatementSchema: z.ZodObject<{
     validFrom: z.ZodNullable<z.ZodISODateTime>;
     validUntil: z.ZodNullable<z.ZodISODateTime>;
 }, z.core.$strict>;
+export type AgentStatement = z.output<typeof agentStatementSchema>;
 //# sourceMappingURL=statement.d.ts.map

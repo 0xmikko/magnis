@@ -47,6 +47,7 @@ void _accountIsTheModulesOwnType;
 export const chat = entity(
   {
     id: "telegram.chat",
+    syncable: true,
     name: "Telegram chat",
     description: "A telegram chat/dialog entity.",
     roles: ["container"],

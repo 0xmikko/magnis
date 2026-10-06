@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { TelegramChat, TelegramConversation, TelegramMessage } from "../types";
 import type { PaginatedResponse } from "@magnis/host/runtime";
-import type { TelegramMessageListItem } from "../types";
+import type { MessageListItem } from "../types";
 import { normalizeTelegramChatTitle } from "../chatTitle";
 import { useAppRuntime } from "@magnis/host/runtime";
 import { telegramKeys, useTelegramMessagesQuery } from "../queries";
@@ -24,7 +24,7 @@ export interface UseTelegramMessagesResult {
   readonly handleReplyByAgent: (message: TelegramMessage) => void;
 }
 
-function mapMessages(items: readonly TelegramMessageListItem[], baseUrl: string): TelegramMessage[] {
+function mapMessages(items: readonly MessageListItem[], baseUrl: string): TelegramMessage[] {
   return items
     .map((m) => {
       const mMediaUrl = m.metadata?.media_url as string | undefined;
@@ -189,7 +189,7 @@ export function useTelegramMessages(
       pageInFlightRef.current = true;
       setLoading(true);
       try {
-        const result = await runtime.transport.rpc<PaginatedResponse<TelegramMessageListItem>>(
+        const result = await runtime.transport.rpc<PaginatedResponse<MessageListItem>>(
           "telegram.messages.list",
           { entity_id: chatId, limit: PAGE_SIZE, offset },
         );

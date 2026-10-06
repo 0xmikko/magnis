@@ -17,6 +17,7 @@
  * actually broke: the preview resolves to a renderer, and that renderer draws
  * nothing.
  */
+import type { MergePreview } from "@magnis/sdk";
 import { describe, it, expect, vi } from "vitest";
 import { render } from "@testing-library/react";
 import { AgentContributionRegistry } from "@/runtime/agent/contributions";
@@ -70,12 +71,14 @@ it.each([false, true])("renders compact merge preview without claiming or approv
   const onApprove = vi.fn();
   const payload: ToolCallRendererPayload = {
     toolCall: { id: "preview", name: "merge", toolBinding: { entity: "contacts.person", operation: "merge" },
-      args: { survivor_id: "a", retired_id: "b", preview: true }, status: "approved" },
+      args: { survivorId: "a", retiredId: "b", preview: true, overrides: [], reason: null }, status: "approved" },
     toolResult: { id: "preview", result: {
-      survivor: { id: "a", name: "Ada", property_count: 1 }, retired: { id: "b", name: "Grace", property_count: 1 },
-      fields: { name: { key: "name", survivor_value: "Ada", retired_value: "Grace", auto_resolved: "Ada" } },
-      links_to_repoint: 2, duplicate_links_to_remove: 0,
-    } }, isAllowlisted: false, onApprove, onDeny: vi.fn(), onEdit: vi.fn(), onAllowlistToggle: vi.fn(),
+      survivor: { id: "a", name: "Ada", schemaId: "contacts.person", propertyCount: 1, linkCount: 0 },
+      retired: { id: "b", name: "Grace", schemaId: "contacts.person", propertyCount: 1, linkCount: 0 },
+      sources: [],
+      fields: { name: { key: "name", survivorValue: "Ada", retiredValue: "Grace", autoResolved: "Ada", conflict: false } },
+      linksToRepoint: 2, duplicateLinksToRemove: 0, reflexiveLinksToRemove: 0,
+    } satisfies MergePreview }, isAllowlisted: false, onApprove, onDeny: vi.fn(), onEdit: vi.fn(), onAllowlistToggle: vi.fn(),
   };
   const result = payload.toolResult;
   if (result === undefined) throw new Error("preview result missing");
@@ -87,4 +90,41 @@ it.each([false, true])("renders compact merge preview without claiming or approv
   expect(view.queryByText("Contacts merged successfully")).toBeNull();
   expect(rpc).not.toHaveBeenCalled();
   expect(onApprove).not.toHaveBeenCalled();
+});
+
+/** @test-id: tst_cat_entity_one_type_003
+ * @scenario: scn_compact_merge_preview_001
+ * @covers: modules/contacts/ui/ContactMergeRenderer.tsx
+ * @deterministic: yes
+ * @fixtures: a pending merge call and the host's SDK MergePreview
+ *
+ * The merge card fetches the preview the host answers — the SDK `MergePreview`
+ * — and shows each field's survivor and retired values and what the merge
+ * writes. It read snake keys the host never sends, so every cell was empty.
+ */
+it("tst_cat_entity_one_type_003 shows survivor and retired values from the host's MergePreview", async () => {
+  const preview: MergePreview = {
+    survivor: { id: "a", name: "Ada", schemaId: "contacts.person", propertyCount: 1, linkCount: 3 },
+    retired: { id: "b", name: "Grace", schemaId: "contacts.person", propertyCount: 1, linkCount: 2 },
+    sources: [],
+    fields: {
+      title: { key: "title", survivorValue: "Engineer", retiredValue: "Admiral", autoResolved: "Engineer", conflict: false },
+    },
+    linksToRepoint: 2,
+    duplicateLinksToRemove: 0,
+    reflexiveLinksToRemove: 0,
+  };
+  const rpc = vi.fn(() => Promise.resolve(preview));
+  const payload: ToolCallRendererPayload = {
+    toolCall: { id: "merge", name: "merge", toolBinding: { entity: "contacts.person", operation: "merge" },
+      args: { survivorId: "a", retiredId: "b", preview: false }, status: "pending" },
+    toolResult: undefined, isAllowlisted: false, onApprove: vi.fn(), onDeny: vi.fn(), onEdit: vi.fn(), onAllowlistToggle: vi.fn(),
+  };
+
+  const view = render(<ContactMergeRenderer payload={payload} runtime={{ transport: { rpc } } as unknown as AppRuntime} agent={{} as AgentRuntime} />);
+
+  expect(await view.findByText("Admiral")).toBeTruthy();
+  expect(view.getAllByText("Engineer")).toHaveLength(2);
+  expect(view.getByText("2 links to transfer")).toBeTruthy();
+  expect(rpc).toHaveBeenCalledWith("contacts.merge_preview", { survivorId: "a", retiredId: "b" });
 });

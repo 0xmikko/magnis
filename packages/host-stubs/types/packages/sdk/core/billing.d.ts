@@ -7,7 +7,7 @@ export declare const LiveEntitlementSchema: z.ZodObject<{
     reservedMicros: z.ZodNumber;
     availableMicros: z.ZodNumber;
     entitled: z.ZodBoolean;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type LiveEntitlement = z.output<typeof LiveEntitlementSchema>;
 export declare const EpisodeCostSchema: z.ZodObject<{
     episodeId: z.ZodString;
@@ -18,9 +18,9 @@ export declare const EpisodeCostSchema: z.ZodObject<{
         cacheWrite: z.ZodNumber;
         cacheWriteOneHour: z.ZodNumber;
         reasoning: z.ZodNumber;
-    }, z.core.$strip>;
+    }, z.core.$strict>;
     costMicros: z.ZodNumber;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type EpisodeCost = z.output<typeof EpisodeCostSchema>;
 export declare const BillingDailyRowSchema: z.ZodObject<{
     day: z.ZodString;
@@ -33,10 +33,10 @@ export declare const BillingDailyRowSchema: z.ZodObject<{
         cacheWrite: z.ZodNumber;
         cacheWriteOneHour: z.ZodNumber;
         reasoning: z.ZodNumber;
-    }, z.core.$strip>;
+    }, z.core.$strict>;
     costMicros: z.ZodNumber;
     callCount: z.ZodNumber;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type BillingDailyRow = z.output<typeof BillingDailyRowSchema>;
 export declare const BillingEpisodeRowSchema: z.ZodObject<{
     episodeId: z.ZodString;
@@ -45,6 +45,6 @@ export declare const BillingEpisodeRowSchema: z.ZodObject<{
     totalTokens: z.ZodNumber;
     costMicros: z.ZodNumber;
     callCount: z.ZodNumber;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type BillingEpisodeRow = z.output<typeof BillingEpisodeRowSchema>;
 //# sourceMappingURL=billing.d.ts.map

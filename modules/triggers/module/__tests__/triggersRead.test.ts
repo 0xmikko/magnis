@@ -11,7 +11,8 @@
  * @legacy-id: tst_trig_plugin_108_not_found_paths_error
  */
 import { describe, expect, it, vi } from "vitest";
-import { entity, mockGraph, mountModule } from "@magnis/testkit/module";
+import type { PluginModuleShape } from "@magnis/plugin-sdk";
+import { entity, link, mockGraph, mountModule, page } from "@magnis/testkit/module";
 import { TRIGGER } from "../../schema.ts";
 import { TriggersModule } from "../service.ts";
 
@@ -32,10 +33,10 @@ const CONFIG = {
 
 function triggerDetail() {
   return {
-    entity: entity(TRIGGER_ID, "Watch prices", { schema_id: TRIGGER, properties: CONFIG }),
+    entity: entity(TRIGGER_ID, "Watch prices", { schemaId: TRIGGER, properties: CONFIG }),
     links: [
-      { id: "watch", from_id: TRIGGER_ID, to_id: TARGET_ID, kind: "watches" },
-      { id: "parent", from_id: TRIGGER_ID, to_id: EPISODE_ID, kind: "triggers.belongs_to" },
+      link(TRIGGER_ID, TARGET_ID, "watches", { id: "watch" }),
+      link(TRIGGER_ID, EPISODE_ID, "triggers.belongs_to", { id: "parent" }),
     ],
   };
 }
@@ -43,7 +44,7 @@ function triggerDetail() {
 describe("tst_module_triggers_read_001 — trigger definition reads", () => {
   it("shapes get with watched and parent entities", async () => {
     const graph = mockGraph({
-      get_entity_full: (id: string) => {
+      getEntityFull: (id: string) => {
         if (id === TRIGGER_ID) return Promise.resolve(triggerDetail());
         if (id === TARGET_ID) return Promise.resolve({ entity: entity(id, "Vendor inbox"), links: [] });
         if (id === EPISODE_ID) return Promise.resolve({ entity: entity(id, "Fundraise"), links: [] });
@@ -56,24 +57,24 @@ describe("tst_module_triggers_read_001 — trigger definition reads", () => {
       id: TRIGGER_ID,
       name: "Watch prices",
       status: "active",
-      watched_entities: [{ id: TARGET_ID, name: "Vendor inbox" }],
-      parent_episode_id: EPISODE_ID,
-      parent_episode_name: "Fundraise",
+      watchedEntities: [{ id: TARGET_ID, name: "Vendor inbox" }],
+      parentEpisodeId: EPISODE_ID,
+      parentEpisodeName: "Fundraise",
     });
   });
 
   it("filters list by config status and includes watched names", async () => {
     const paused = {
       entity: entity("paused", "Paused", {
-        schema_id: TRIGGER,
+        schemaId: TRIGGER,
         properties: { ...CONFIG, name: "Paused", status: "paused" },
       }),
       links: [],
     };
     const graph = mockGraph({
-      list_entities: () =>
-        Promise.resolve({ items: [triggerDetail().entity, paused.entity], total: 2 }),
-      get_entity_full: (id: string) => {
+      listEntities: () =>
+        Promise.resolve(page([triggerDetail().entity, paused.entity])),
+      getEntityFull: (id: string) => {
         if (id === TRIGGER_ID) return Promise.resolve(triggerDetail());
         if (id === "paused") return Promise.resolve(paused);
         if (id === TARGET_ID) return Promise.resolve({ entity: entity(id, "Vendor inbox"), links: [] });
@@ -84,25 +85,25 @@ describe("tst_module_triggers_read_001 — trigger definition reads", () => {
 
     const result = await module.list({ status: "active" });
     expect(result).toEqual([
-      expect.objectContaining({ id: TRIGGER_ID, watched_entity_names: ["Vendor inbox"] }),
+      expect.objectContaining({ id: TRIGGER_ID, watchedEntityNames: ["Vendor inbox"] }),
     ]);
   });
 
   it("lists each watcher once across direct and resolved watchable anchors", async () => {
     const relatedId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
     const graph = mockGraph({
-      get_entity_full: (id: string) => {
+      getEntityFull: (id: string) => {
         if (id === TARGET_ID) return Promise.resolve({ entity: entity(id, "Contact"), links: [] });
         if (id === TRIGGER_ID) return Promise.resolve(triggerDetail());
         return Promise.resolve(null);
       },
-      list_links_for_entity: () =>
-        Promise.resolve([{ id: "watch", from_id: TRIGGER_ID, to_id: TARGET_ID, kind: "watches" }]),
+      listLinksForEntity: () =>
+        Promise.resolve([link(TRIGGER_ID, TARGET_ID, "watches", { id: "watch" })]),
     });
     const execute = vi.fn((method: string) => {
       if (method === "triggers.resolve_watchable") {
         return Promise.resolve({
-          watchable: [{ id: relatedId, name: "Email", schema_id: "email.address", link_kind: "identity" }],
+          watchable: [{ id: relatedId, name: "Email", schemaId: "email.address", linkKind: "identity" }],
         });
       }
       throw new Error(`unexpected rpc: ${method}`);
@@ -111,12 +112,35 @@ describe("tst_module_triggers_read_001 — trigger definition reads", () => {
 
     const result = await module.list_for_entity({ entity_id: TARGET_ID });
     expect(result.map((item) => item.id)).toEqual([TRIGGER_ID]);
-    expect(graph.spies.list_links_for_entity).toHaveBeenCalledTimes(2);
+    expect(graph.spies.listLinksForEntity).toHaveBeenCalledTimes(2);
+    expect(execute.mock.calls).toEqual([["triggers.resolve_watchable", { entityId: TARGET_ID }]]);
+  });
+
+  /**
+   * @test-id: tst_cat_entity_one_type_009
+   * @covers modules/triggers/module/service.ts::TriggersModule
+   *
+   * The host registers every published rpc() method and refuses one whose name
+   * a native method already serves, which takes the whole channel down.
+   */
+  it("tst_cat_entity_one_type_009 publishes no rpc() method under a native seam it calls", async () => {
+    await mountModule(TriggersModule, { mode: "dispatch", ctx: { extensionId: "triggers" } });
+    const shape = (globalThis as unknown as { __magnis_plugin_module: PluginModuleShape }).__magnis_plugin_module;
+    // The native triggers seams this module calls (manifest `call`).
+    const nativeSeams = [
+      "triggers.validate_watch",
+      "triggers.resolve_watchable",
+      "triggers.invalidate_cache",
+      "triggers.fire_history",
+      "triggers.validate_schedule",
+      "triggers.fire_now",
+    ];
+    expect(shape.rpcDeclarations.map((declaration) => declaration.name).filter((name) => nativeSeams.includes(name))).toEqual([]);
   });
 
   it("delegates fire history with a default or explicit bound", async () => {
     const history = [
-      { fired_at: "2026-08-02T00:00:00Z", event_entity_id: TARGET_ID, outcome: "spawned" },
+      { firedAt: "2026-08-02T00:00:00Z", eventEntityId: TARGET_ID, outcome: "spawned" },
     ];
     const execute = vi.fn(() => Promise.resolve(history));
     const module = mountModule(TriggersModule, { rpc: { execute } }).module;
@@ -124,13 +148,37 @@ describe("tst_module_triggers_read_001 — trigger definition reads", () => {
     await expect(module.fire_history({ trigger_id: TRIGGER_ID })).resolves.toBe(history);
     await module.fire_history({ trigger_id: TRIGGER_ID, limit: 2 });
     expect(execute.mock.calls).toEqual([
-      ["triggers.fire_history", { trigger_id: TRIGGER_ID, limit: 50 }],
-      ["triggers.fire_history", { trigger_id: TRIGGER_ID, limit: 2 }],
+      ["triggers.fire_history", { triggerId: TRIGGER_ID, limit: 50 }],
+      ["triggers.fire_history", { triggerId: TRIGGER_ID, limit: 2 }],
+    ]);
+  });
+
+  it("forwards fire_now and resolve_watchable to the native seams in their camelCase params", async () => {
+    const graph = mockGraph({
+      getEntityFull: (id: string) => Promise.resolve(id === TRIGGER_ID ? triggerDetail() : null),
+    });
+    const fired = { fired: true, episodeId: EPISODE_ID };
+    const execute = vi.fn((method: string) => {
+      if (method === "triggers.fire_now") return Promise.resolve(fired);
+      if (method === "triggers.resolve_watchable") return Promise.resolve({ watchable: [] });
+      throw new Error(`unexpected rpc: ${method}`);
+    });
+    const module = mountModule(TriggersModule, { graph, rpc: { execute } }).module;
+
+    await expect(
+      module.fireNow({ trigger_id: TRIGGER_ID, event_entity_id: TARGET_ID, context: { reason: "manual" } }),
+    ).resolves.toBe(fired);
+    await module.fireNow({ trigger_id: TRIGGER_ID });
+    await expect(module.resolveWatchable({ entity_id: TARGET_ID })).resolves.toEqual({ watchable: [] });
+    expect(execute.mock.calls).toEqual([
+      ["triggers.fire_now", { triggerId: TRIGGER_ID, eventEntityId: TARGET_ID, context: { reason: "manual" } }],
+      ["triggers.fire_now", { triggerId: TRIGGER_ID }],
+      ["triggers.resolve_watchable", { entityId: TARGET_ID }],
     ]);
   });
 
   it("returns no anchor results and a uniform error for missing triggers", async () => {
-    const graph = mockGraph({ get_entity_full: () => Promise.resolve(null) });
+    const graph = mockGraph({ getEntityFull: () => Promise.resolve(null) });
     const module = mountModule(TriggersModule, { graph }).module;
 
     await expect(module.get({ id: TRIGGER_ID })).rejects.toThrow(`trigger not found: ${TRIGGER_ID}`);

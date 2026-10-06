@@ -32,9 +32,8 @@ export declare function extractResultCountLabel(result: unknown): string | null;
  *  (builtin engine, AI_ToolExecutionError). Lets every surface render a
  *  terminal error card instead of an infinite spinner. */
 export declare const TOOL_ERROR_MARKER = "__tool_error";
-/** If a tool_result is a tool-execution error, return its message; else null.
- *  The marker (not a bare `error` field) is required so a normal result that
- *  merely carries an `error` key is not mistaken for a failed tool. */
+/** Recognize durable failed calls and the legacy tool-error marker, without
+ *  treating a domain payload's bare `error` field as an execution failure. */
 export declare function toolResultError(result: unknown): string | null;
 /** Build a copyable JSON string from tool args + result. */
 export declare function buildCopyPayload(args: unknown, result: unknown): string;

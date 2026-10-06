@@ -1,8 +1,10 @@
-import type { JSX } from "react";
+import { useRef, useState, type JSX } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useAppRuntime } from "@magnis/host/runtime";
+import type { SetSyncEnabledResult } from "@magnis/plugin-sdk";
 import {
   Avatar,
-  Icon,
-  IconButton,
+  ActionButton,
   Row,
   Stack,
   Text,
@@ -14,7 +16,7 @@ import { PaneFooterBar } from "@magnis/host/layout";
 import { EmailReplyComposer } from "./EmailReplyComposer";
 import { EmailDetailContent, isRichHtml } from "./EmailDetailContent";
 import { mapEmailDetailFromDetailView } from "./helpers";
-import { useEmailDetailQuery } from "./queries";
+import { emailKeys, useEmailDetailQuery } from "./queries";
 import type { DetailPanelProps } from "@magnis/host/base";
 
 function EmailHeaderExtra({ toAddresses, replyTo }: { toAddresses?: string; replyTo?: string }): JSX.Element | null {
@@ -37,9 +39,40 @@ function EmailHeaderExtra({ toAddresses, replyTo }: { toAddresses?: string; repl
   );
 }
 
-export function EmailDetailPanel({ entityId }: DetailPanelProps): JSX.Element {
+export function EmailDetailPanel({ entityId }: Pick<DetailPanelProps, "entityId">): JSX.Element {
   const { data: detailView, isLoading } = useEmailDetailQuery(entityId);
   const detail = detailView ? mapEmailDetailFromDetailView(detailView) : undefined;
+  const runtime = useAppRuntime();
+  const queryClient = useQueryClient();
+  const saving = useRef(false);
+  const [syncStatus, setSyncStatus] = useState<string>();
+  const [syncError, setSyncError] = useState<string>();
+
+  const toggleSenderSync = async (): Promise<void> => {
+    const sender = detailView?.senderSync;
+    if (sender === undefined || sender === null || saving.current) return;
+    saving.current = true;
+    setSyncError(undefined);
+    setSyncStatus("Saving…");
+    try {
+      const response = await runtime.transport.rpc<SetSyncEnabledResult>("email.address.setSyncEnabled", {
+        id: sender.id,
+        syncEnabled: !sender.syncEnabled,
+      });
+      const result = response.results.find((item) => item.identityId === sender.id);
+      if (!result) throw new Error("The synchronization change returned no result.");
+      if (result.kind === "failed") throw new Error(result.message);
+      setSyncStatus(result.application.kind === "pending"
+        ? "Synchronization setting saved. Applying…"
+        : `Synchronization setting saved, but could not be applied: ${result.application.message}`);
+      await queryClient.invalidateQueries({ queryKey: emailKeys.all });
+    } catch (error) {
+      setSyncStatus(undefined);
+      setSyncError(error instanceof Error ? error.message : String(error));
+    } finally {
+      saving.current = false;
+    }
+  };
 
   if (isLoading || !detail || !detailView) {
     return (
@@ -72,11 +105,20 @@ export function EmailDetailPanel({ entityId }: DetailPanelProps): JSX.Element {
           }
           title={detail.senderName}
           subtitle={detail.fromEmail !== detail.senderName ? detail.fromEmail : undefined}
-          extra={<EmailHeaderExtra toAddresses={detail.toAddresses} replyTo={detail.replyTo} />}
+          extra={<>
+            <EmailHeaderExtra toAddresses={detail.toAddresses} replyTo={detail.replyTo} />
+            {syncStatus && <div role="status" className="text-xs text-content-secondary">{syncStatus}</div>}
+            {syncError && <div role="alert" className="text-xs text-content-secondary">{syncError}</div>}
+          </>}
           actions={
             <>
               <Text variant="caption" className="text-content-tertiary">{detail.sentAt}</Text>
-              <IconButton variant="ghost"><Icon name="ellipsis-vertical" size={15} /></IconButton>
+              {detailView.senderSync && <ActionButton
+                variant="default"
+                size="sm"
+                label={detailView.senderSync.syncEnabled ? "Stop sender synchronization" : "Start sender synchronization"}
+                onClick={() => { void toggleSenderSync(); }}
+              />}
             </>
           }
         />

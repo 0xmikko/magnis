@@ -23,11 +23,6 @@ export interface EntityMention {
     readonly name: string;
     readonly schemaId: string;
 }
-export interface EntitySearchResult {
-    readonly id: string;
-    readonly name: string | null;
-    readonly schema_id: string;
-}
 export interface ChatMessage {
     readonly role: "user" | "assistant";
     readonly content: string;

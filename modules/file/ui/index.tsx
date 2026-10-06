@@ -68,7 +68,7 @@ export const FilesModule = defineModule({
   mapListItem: (raw) => ({
     id: (raw.entity_id as string | undefined) ?? (raw.id as string),
     name: (raw.name as string | undefined) ?? null,
-    schema_id: "file.object",
+    schemaId: "file.object",
     preview: [
       raw.mime_type as string | undefined,
       raw.source_module ? sourceLabel(raw.source_module as string) : null,

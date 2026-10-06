@@ -12,4 +12,5 @@ export type { PaginatedResponse, PaginationParams } from "@/hooks/types";
 export type { AppRuntime } from "@/runtime/contracts";
 export type { ModuleDefinition } from "@/runtime/contracts";
 export type { EntityCardRendererProps } from "@/runtime/EntityCardRenderer";
-export type { EntityRendererProps, EntityRendererRegistration, AgentRendererProps, AgentHistoryBlock, AgentHistoryRendererRegistration, ToolCallRendererPayload, AgentRuntime, ModuleAgentContribution, ComposerApplyEventPayload, ComposerPresenceParams, } from "@/runtime/contracts/agent";
+export type { EntityRendererProps, EntityRendererRegistration, AgentRendererProps, AgentHistoryBlock, AgentHistoryRendererRegistration, ToolCallRendererPayload, AgentRuntime, ModuleAgentContribution, } from "@/runtime/contracts/agent";
+export type { ComposerApplyEvent, ComposerPresenceParams } from "@magnis/sdk";

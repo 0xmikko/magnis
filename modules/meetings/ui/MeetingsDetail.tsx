@@ -13,7 +13,7 @@ import {
   Row,
   Text,
 } from "@magnis/host/ui";
-import { useAppRuntime } from "@magnis/host/runtime";
+import { useAppRuntime, type AppRuntime } from "@magnis/host/runtime";
 import { useRouterContext } from "@magnis/host/runtime";
 import type { MeetingAttendee, MeetingDetailData, MeetingItem, MeetingsModuleData } from "./types";
 
@@ -57,6 +57,44 @@ export function MeetingsDetail({ meeting, data }: MeetingsDetailProps): JSX.Elem
   return <MeetingsDetailBody detail={detail} />;
 }
 
+/** Make an unknown guest a contact and return its id. The contacts hub takes
+ * no email, so the meeting composes the parts: the hub creates the person by
+ * name, email ensures the guest's address, an identity link joins them so the
+ * guest resolves to that person next time, and a company whose name matches
+ * the address domain gets a best-effort works_at link. */
+export async function createGuestContact(
+  runtime: AppRuntime,
+  guest: { readonly name: string; readonly email: string },
+): Promise<string> {
+  const created = await runtime.transport.rpc<{ id: string }>("contacts.create", {
+    name: guest.name || guest.email,
+  });
+  const address = await runtime.transport.rpc<{ id: string }>("email.ensure_address", {
+    address: guest.email,
+  });
+  await runtime.transport.rpc("graph.link.add", { from: created.id, to: address.id, kind: "identity" });
+  const domain = guest.email.split("@")[1] ?? "";
+  const root = domain.split(".")[0] ?? "";
+  if (root) {
+    try {
+      const companies = await runtime.transport.rpc<{
+        items: { id: string; name: string }[];
+      }>("companies.list", { search: root });
+      const match = companies.items.at(0);
+      if (match) {
+        await runtime.transport.rpc("graph.link.add", {
+          from: created.id,
+          to: match.id,
+          kind: "works_at",
+        });
+      }
+    } catch {
+      /* best-effort company link; ignore */
+    }
+  }
+  return created.id;
+}
+
 function MeetingsDetailBody({ detail }: { readonly detail: MeetingDetailData }): JSX.Element {
   const runtime = useAppRuntime();
   const router = useRouterContext();
@@ -69,37 +107,14 @@ function MeetingsDetailBody({ detail }: { readonly detail: MeetingDetailData }):
     [router],
   );
 
-  // Unknown guest: materialize the contact, best-effort link works_at
-  // by sender domain, then navigate to the freshly-created contact.
+  // Unknown guest: materialize the contact, then navigate to it.
   const createContactAndGo = useCallback(
     async (attendee: MeetingAttendee): Promise<void> => {
-      if (!attendee.email) return;
-      setBusyEmail(attendee.email);
+      const email = attendee.email;
+      if (!email) return;
+      setBusyEmail(email);
       try {
-        const created = await runtime.transport.rpc<{ id: string }>(
-          "contacts.create",
-          { name: attendee.name || attendee.email, email: attendee.email },
-        );
-        const domain = attendee.email.split("@")[1] ?? "";
-        const root = domain.split(".")[0] ?? "";
-        if (root) {
-          try {
-            const companies = await runtime.transport.rpc<{
-              items: { id: string; name: string }[];
-            }>("companies.list", { search: root });
-            const match = companies.items.at(0);
-            if (match) {
-              await runtime.transport.rpc("graph.link.add", {
-                from: created.id,
-                to: match.id,
-                kind: "works_at",
-              });
-            }
-          } catch {
-            /* best-effort company link; ignore */
-          }
-        }
-        goToContact(created.id);
+        goToContact(await createGuestContact(runtime, { name: attendee.name, email }));
       } finally {
         setBusyEmail(null);
       }

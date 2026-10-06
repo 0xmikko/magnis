@@ -38,14 +38,14 @@ export const LinkedinModule = defineModule({
     return {
       id: asStr(raw.id),
       name: asStr(raw.display_name) || handle || "Profile",
-      schema_id: "linkedin.profile",
+      schemaId: "linkedin.profile",
       preview: pending
         ? `@${handle} · Syncing…`
         : handle
           ? `@${handle}${fc !== null ? ` · ${fc.toLocaleString()} followers` : ""}`
           : null,
       timestamp: null,
-      avatar_url: typeof raw.avatar_url === "string" && raw.avatar_url ? proxiedMediaUrl(raw.avatar_url) : null,
+      avatarUrl: typeof raw.avatar_url === "string" && raw.avatar_url ? proxiedMediaUrl(raw.avatar_url) : null,
     };
   },
   // STANDARD detail: DetailPane + TopBarHeader via the framework path; the

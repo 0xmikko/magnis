@@ -31,7 +31,7 @@ export interface EntityContextMenuConfig<T> {
     /** Suppress specific "Link to X" submenus by their `idPrefix`
      *  (e.g. ["project"] to hide "Link to Project" in a given module). */
     readonly disabledEntityLinks?: readonly string[];
-    /** Enable pin/unpin item. If provided, item's is_pinned state is read from this callback. */
+    /** Enable pin/unpin item. If provided, item's pinned state is read from this callback. */
     readonly isPinned?: (data: T) => boolean;
     /** Called on delete action. If omitted, delete item is hidden. */
     readonly onDelete?: (data: T) => void;

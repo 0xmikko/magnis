@@ -15,7 +15,7 @@ export declare function useEntityProperty(entityId: string | undefined, key: str
 /** The whole dictionary of an entity, read-only (S5). One crossing, cached
  *  with `useEntityProperty` under the same key so an edit refreshes both. */
 export declare function useEntityProperties(entityId: string | undefined): {
-    readonly properties: Record<string, unknown>;
+    readonly properties: Readonly<Record<string, unknown>>;
     readonly isLoading: boolean;
 };
 export {};

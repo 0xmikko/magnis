@@ -11,7 +11,7 @@ export declare const EpisodeUsageSchema: z.ZodObject<{
     callCount: z.ZodNumber;
     firstCallAt: z.ZodNullable<z.ZodString>;
     lastCallAt: z.ZodNullable<z.ZodString>;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type EpisodeUsage = z.output<typeof EpisodeUsageSchema>;
 export declare const EpisodeUsageQuerySchema: z.ZodObject<{
     from: z.ZodISODateTime;
@@ -22,7 +22,7 @@ export declare const EpisodeUsageSummarySchema: z.ZodObject<{
     episodeTitle: z.ZodNullable<z.ZodString>;
     totalTokens: z.ZodNumber;
     costMicros: z.ZodNumber;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export declare const EpisodeUsageQueryResultSchema: z.ZodObject<{
     from: z.ZodString;
     to: z.ZodString;
@@ -31,8 +31,8 @@ export declare const EpisodeUsageQueryResultSchema: z.ZodObject<{
         episodeTitle: z.ZodNullable<z.ZodString>;
         totalTokens: z.ZodNumber;
         costMicros: z.ZodNumber;
-    }, z.core.$strip>>;
-}, z.core.$strip>;
+    }, z.core.$strict>>;
+}, z.core.$strict>;
 export type EpisodeUsageQuery = z.output<typeof EpisodeUsageQuerySchema>;
 export type EpisodeUsageSummary = z.output<typeof EpisodeUsageSummarySchema>;
 export type EpisodeUsageQueryResult = z.output<typeof EpisodeUsageQueryResultSchema>;

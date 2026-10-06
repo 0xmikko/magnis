@@ -1,18 +1,6 @@
-import type { AvatarColor, LinkedEntitySummary } from "@magnis/host/base";
+import type { AvatarColor } from "@magnis/host/base";
 
-export interface ProjectListItem {
-  readonly id: string;
-  readonly name: string;
-  readonly status: string | null;
-  readonly avatar_color: string;
-  readonly initials: string;
-  readonly created_at: string;
-}
-
-export interface ProjectDetailView extends ProjectListItem {
-  readonly canonical: Record<string, unknown>;
-  readonly linked_entities: readonly LinkedEntitySummary[];
-}
+export type { ProjectDetailView, ProjectListItem } from "../types.ts";
 
 export interface ProjectProfile {
   readonly id: string;

@@ -10,6 +10,7 @@ summary = "LinkedIn fixture source for tests and e2e."
 publisher = "ai.magnis"
 dev = true
 surfaces = ["linkedin"]
+dependsOn = ["linkedin"]
 kind = "mock"
 account_mode = "single"
 accounts = ["default"]

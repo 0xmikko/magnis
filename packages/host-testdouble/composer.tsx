@@ -25,6 +25,8 @@ import {
   type ReactNode,
 } from "react";
 
+import type { ComposerApplyEvent } from "@magnis/sdk";
+
 import { Icon } from "./ui";
 import { mimeToIcon } from "./utils";
 
@@ -226,32 +228,10 @@ export function useComposerMountRegistry(): MountRegistry {
 
 /* ── Apply handler ──────────────────────────────────────────── */
 
-export type ComposerApplyEvent =
-  | {
-      readonly type: "composer.apply";
-      readonly mode: ComposerMode;
-      readonly thread_key: string;
-      readonly revision: number;
-      readonly op: "set_text";
-      readonly text: string;
-    }
-  | {
-      readonly type: "composer.apply";
-      readonly mode: ComposerMode;
-      readonly thread_key: string;
-      readonly revision: number;
-      readonly op: "append_text";
-      readonly text: string;
-    }
-  | {
-      readonly type: "composer.apply";
-      readonly mode: ComposerMode;
-      readonly thread_key: string;
-      readonly revision: number;
-      readonly op: "set_attachments";
-      readonly attachment_ids: readonly string[];
-    };
+export type { ComposerApplyEvent } from "@magnis/sdk";
 
+/** The host's handler: a text op without `text`, or `set_attachments`
+ *  without `attachmentIds`, is a protocol bug and throws. */
 export function applyComposerEvent(
   event: ComposerApplyEvent,
   mounted: MountedComposer | null,
@@ -260,19 +240,23 @@ export function applyComposerEvent(
 ): void {
   if (!mounted) return;
   if (mounted.mode !== event.mode) return;
-  if (mounted.threadKey !== event.thread_key) return;
+  if (mounted.threadKey !== event.threadKey) return;
   switch (event.op) {
     case "set_text":
-      mounted.applyOp({ text: event.text, revision: event.revision });
+      mounted.applyOp({ text: requireText(event), revision: event.revision });
       return;
     case "append_text":
-      mounted.applyOp({ text: currentText + event.text, revision: event.revision });
+      mounted.applyOp({ text: currentText + requireText(event), revision: event.revision });
       return;
     case "set_attachments": {
+      const { attachmentIds } = event;
+      if (attachmentIds === undefined) {
+        throw new Error("composer.apply set_attachments carries no attachmentIds");
+      }
       const metaById = new Map(currentAttachmentMeta.map((m) => [m.id, m]));
       mounted.applyOp({
-        attachments: event.attachment_ids,
-        attachmentMeta: event.attachment_ids.map((id) => metaById.get(id) ?? { id, name: id }),
+        attachments: attachmentIds,
+        attachmentMeta: attachmentIds.map((id) => metaById.get(id) ?? { id, name: id }),
         revision: event.revision,
       });
       return;
@@ -281,6 +265,13 @@ export function applyComposerEvent(
       // Forward-compat: an op this build does not know is dropped.
       return;
   }
+}
+
+function requireText(event: ComposerApplyEvent): string {
+  if (event.text === undefined) {
+    throw new Error(`composer.apply ${event.op} carries no text`);
+  }
+  return event.text;
 }
 
 /* ── The composer view ──────────────────────────────────────── */

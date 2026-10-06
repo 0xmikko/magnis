@@ -77,7 +77,7 @@ describe("tst_fe_meetings_create_001 — + button dispatches meetings.create", (
 });
 
 describe("tst_fe_meetings_create_002 — DecisionSummary single-entity collapse", () => {
-  it("infers schema_id=meetings.calendar_event from a meetings.create result", () => {
+  it("infers schemaId=meetings.calendar_event from a meetings.create result", () => {
     // TOOL_PREFIX_TO_SCHEMA.meetings === "meetings.calendar_event".
     // The unified MeetingCard resolves via the canonical schema.
     const entities = extractEntities(
@@ -85,7 +85,7 @@ describe("tst_fe_meetings_create_002 — DecisionSummary single-entity collapse"
       { toolName: "meetings.create" },
     );
     expect(entities).toHaveLength(1);
-    expect(entities[0]?.schema_id).toBe("meetings.calendar_event");
+    expect(entities[0]?.schemaId).toBe("meetings.calendar_event");
     expect(entities[0]?.title).toBe("Standup");
   });
 });

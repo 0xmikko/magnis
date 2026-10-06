@@ -76,7 +76,7 @@ export class AgentContributionRegistry {
       const binding = renderer.binding;
       if (binding === undefined) continue;
       if (!binding.entity.startsWith(`${moduleId}.`)) throw new Error(`Renderer entity '${binding.entity}' has a different owner`);
-      if (!/^[a-z][a-z0-9_]*$/.test(binding.operation)) throw new Error(`Invalid renderer operation '${binding.operation}'`);
+      if (!/^[a-z][a-zA-Z0-9_]*$/.test(binding.operation)) throw new Error(`Invalid renderer operation '${binding.operation}'`);
       const pair = `${binding.entity}.${binding.operation}`;
       if (pairs.has(pair)) throw new Error(`duplicate renderer pair '${pair}'`);
       pairs.add(pair);

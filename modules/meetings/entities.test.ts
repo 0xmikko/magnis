@@ -5,8 +5,8 @@
  * Beside entities.ts and outside module/ on purpose.
  */
 import { describe, expect, it, vi } from "vitest";
-import type { GraphBatchInput, GraphBatchResult } from "@magnis/plugin-sdk";
-import { mockGraph, mountModule } from "@magnis/testkit/module";
+import type { GraphBatchInput, GraphBatchResult, PropertiesUpdate } from "@magnis/sdk";
+import { entity, mockGraph, mountModule, sourceEnvelope } from "@magnis/testkit/module";
 
 import { MeetingsModule } from "./module/service.ts";
 import { calendarEvent } from "./entities.ts";
@@ -27,30 +27,32 @@ const invite = {
 
 function graphRecording(written: Record<string, unknown>[]) {
   return mockGraph({
-    apply_batch: (frag: GraphBatchInput): Promise<GraphBatchResult> => {
+    findByExternalIds: (externalIds: readonly string[]) => Promise.resolve(externalIds.map(() => null)),
+    moduleSettings: () => Promise.resolve({ newSenderSyncEnabled: "true" }),
+    applyBatch: (frag: GraphBatchInput): Promise<GraphBatchResult> => {
       for (const e of frag.entities) {
-        if (e.schema_id === CAL) written.push(e.properties ?? {});
+        if (e.schemaId === CAL) written.push(e.properties as Record<string, unknown>);
       }
       return Promise.resolve({
         ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
         created: frag.entities.length,
         updated: 0,
-        links_added: 0,
-        dropped_keys: [],
+        linksAdded: 0,
+        droppedKeys: [], resolved: [],
       });
     },
-    find_by_anchor: () => Promise.resolve(null),
-    list_links_for_entity: () => Promise.resolve([]),
-    delete_entity: () => Promise.resolve(undefined),
-    sync_state: () => Promise.resolve({ ok: true }),
-    create_entity: () => Promise.resolve({ id: "cal-1", schema_id: CAL, name: "Q3 review" }),
-    update_properties: (input: { properties: Record<string, unknown> }) => {
-      written.push(input.properties);
+    findByExternalId: () => Promise.resolve(null),
+    listLinksForEntity: () => Promise.resolve([]),
+    deleteEntity: () => Promise.resolve(undefined),
+    syncState: () => Promise.resolve({ ok: true }),
+    createEntity: () => Promise.resolve(entity("cal-1", "Q3 review", { schemaId: CAL })),
+    updateProperties: (input: PropertiesUpdate) => {
+      written.push(input.properties as Record<string, unknown>);
       return Promise.resolve(undefined);
     },
-    add_link: () => Promise.resolve(undefined),
-    get_entity_full: () => Promise.resolve(null),
-    get_entity: () => Promise.resolve(null),
+    addLink: () => Promise.resolve(undefined),
+    getEntityFull: () => Promise.resolve(null),
+    getEntity: () => Promise.resolve(null),
   } as never);
 }
 
@@ -58,7 +60,7 @@ async function writtenRecords(): Promise<Record<string, unknown>[]> {
   const written: Record<string, unknown>[] = [];
   const mod = mountModule(MeetingsModule, {
     graph: graphRecording(written),
-    ctx: { extension_id: "meetings" },
+    ctx: { extensionId: "meetings" },
     rpc: {
       execute: vi.fn((_m: string, p?: unknown) =>
         Promise.resolve({
@@ -69,11 +71,10 @@ async function writtenRecords(): Promise<Record<string, unknown>[]> {
   await mod.ingest({
     command: "bootstrap",
     generation: "initial:r:1",
-    envelopes: [{
-      source_id: "google", surface: "meetings", account_id: "acct-1", user_id: "u1",
-      kind: "snapshot", remote_id: "evt-abc123", payload: invite,
+    envelopes: [sourceEnvelope("meetings", invite, {
+      sourceId: "google", accountId: "acct-1", userId: "u1", remoteId: "evt-abc123",
       timestamp: "2026-02-01T00:00:00Z",
-    }],
+    })],
   });
   return written;
 }
