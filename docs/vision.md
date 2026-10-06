@@ -325,12 +325,12 @@ export type BuiltinLinkType =
   | "child_of"
   | "watches"
   | "mentions"
-  | "triggered_by"
   | "started_with"
   | "created"
   | "modified"
   | "reply_to"
   | "sent"
+  | "received"
   | "sent_by"
   | "account"
   | "prospect"
@@ -341,44 +341,100 @@ export type BuiltinLinkType =
 export type LinkType = BuiltinLinkType | (string & {});
 ```
 
-`LinkType` retains its SDK name. The target literal set generalizes existing `in_chat` and `triggers.belongs_to` to `belongs_to`, and adds protected `owner`. `string & {}` keeps editor suggestions while allowing module names; it grants no runtime write permission. The existing `link_kinds` registry remains authoritative.
+`LinkType` retains its SDK name. The agreed target generalizes `triggers.belongs_to` to `belongs_to`, replaces `episode → triggered_by → trigger` with `trigger → created → episode`, and adds protected `owner`. Communication uses the `sent`/`received` proposal below; historical `in_chat` needs a separate context mapping. `string & {}` allows registered module kinds; it grants no write permission. The list still includes legacy registered names awaiting the review below. The existing `link_kinds` registry remains authoritative.
 
 | Kind | Endpoint roles | Direction and meaning |
 | --- | --- | --- |
 | `identity` | hub → identity_channel | Person/company → its account, address or card |
 | `authored_by` | content → identity_channel | Content → author |
 | `sent_to` | content → identity_channel | Content → recipient |
-| `belongs_to` | Registered schema pairs | Element → container: message → chat, trigger → episode |
-| `observed_in` | identity_channel → container | Account → container where observed |
-| `observed_participant` | identity_channel → container | Participant → container of observed participation |
+| `belongs_to` | Registered schema pairs | Organizational membership, such as Trigger → Episode or member → project; not proof of communication |
+| `observed_in` | identity_channel → container | Connected observer account → accessible container; Telegram also stores its per-account sync state on this edge |
+| `observed_participant` | identity_channel → container | Account → container where its participation was observed, such as a message author in a chat |
 | `attendee` | event → identity_channel | Event → attendee |
 | `works_at` | hub → hub | Person/hub → workplace |
-| `child_of` | * → * | Child → parent; currently used for episode trees |
-| `watches` | * → * | Observer → watched target |
+| `child_of` | * → * | Child → parent in a hierarchy; Episode trees use this for delegation and inherited configuration |
+| `watches` | * → * | Legacy Trigger → watched target; the target replaces execution selection with typed event subscriptions |
 | `mentions` | * → * | Entity → mentioned Entity |
-| `triggered_by` | * → * | Work/result → initiating trigger |
-| `started_with` | * → * | Episode → starting Entity |
-| `created`, `modified` | * → * | Episode → affected Entity |
+| `started_with` | * → * | Episode → initial context Entity, for example the email from which a conversation was opened |
+| `created` | Registered schema pairs | Producing Episode or Trigger → newly created Entity; historical provenance |
+| `modified` | * → * | Episode → Entity it changed; does not imply creation or containment |
 | `reply_to` | * → * | Reply → original record |
-| `sent`, `sent_by` | * → * | Sender → sent record; sent record → sender |
-| `account` | * → * | Entity → associated account |
-| `prospect` | * → * | Possible association; meaning belongs to its domain |
-| `supports` | * → * | Supporting → supported Entity |
-| `references` | * → * | Entity → explicit reference |
-| `same_as` | * → * | Symmetric identity assertion; does not merge nodes |
+| `sent`, `received` | Registered communication endpoints → message | Target observed transmission/delivery, with an occurrence timestamp; current `sent` is also declared for Episode action provenance and needs explicit migration |
+| `references` | * → * | Entity → explicitly referenced resource; URL registration uses parent → web.link |
+| `same_as` | * → * | Symmetric identity assertion; Contacts also uses it for unresolved duplicate candidates, so existence is not proof of equality |
 | `owner` | Owned Entity → users.user | Target system-only ownership relation |
+| `sent_by`, `account`, `prospect`, `supports` | * → * | Retained registry vocabulary; no dedicated producer was found in the inspected host/catalog paths. Meanings need the review below |
 
 Only `same_as` is symmetric in the inspected built-ins; endpoints are sorted by ID before writing. Other kinds retain direction. `*` means no global role restriction, not an exemption from registered schemas, domain rules or access checks.
 
 ```typescript
+export type CreatedLink = Link & {
+  kind: "created";
+};
+
 export type BelongsToLink = Link & {
   kind: "belongs_to";
 };
 ```
 
-`belongs_to` is shared membership semantics. A trigger is not `content`, so carrying over `in_chat`'s global `content → container` restriction would exclude it. Registry declarations determine allowed schema pairs. An incoming traversal lists a container's elements; no separately stored inverse is needed. Cardinality and transitivity are domain rules. Membership does not confer ownership.
+`created` records how an Entity appeared. `belongs_to` describes its organizational context. Creating a Trigger in Episode A can establish both A → created → Trigger and Trigger → belongs_to → A. Moving it to another context, if the domain permits that operation, changes membership without rewriting its creation history. A letter written in an Episode has creation provenance; membership additionally requires that it is included as that Episode's content.
 
-Current code still uses `in_chat` and the module-owned `triggers.belongs_to`. Moving to the shared host kind also requires explicit module permissions; implicit rights to the `triggers.` prefix do not transfer automatically. `child_of` is not included in this consolidation. WebSource's proposed `contents` relation remains a separate, not-yet-installed addition.
+```mermaid
+flowchart LR
+  A[Episode A] -->|created| T[Trigger]
+  T -->|belongs_to| A
+  T -->|created| C[Episode C]
+  C -->|child_of| A
+```
+
+**Target:** a Trigger firing creates C and records Trigger → created → C. It does not make the Trigger C's container. Replaying one firing reuses the same Episode and creation edge; distinct firings can produce distinct Episodes. Resuming an existing Episode is an execution event, not another creation. Execution history retains the firing time, observed event and outcome.
+
+`belongs_to` has no universal `content → container` restriction: Triggers and project members need other registered schema pairs. Incoming traversal lists members; no stored inverse is needed. Cardinality and transitivity are domain rules, not properties of the shared kind. The trigger runtime must select `episodes.episode` targets and require exactly one active parent; project membership must not affect that lookup. It currently selects the first matching edge, so ambiguous parents need explicit rejection. Membership confers neither ownership nor permission to execute.
+
+### Review of the remaining vocabulary
+
+| Kinds | Review conclusion |
+| --- | --- |
+| `projects.belongs_to` | Proposed consolidation into `belongs_to`: the current writer is member → project. Preserve project endpoint checks and replace implicit namespace permission with an explicit host-kind grant |
+| `child_of` / `belongs_to` | Keep distinct. A hierarchical parent and membership in a collection have different cardinality and execution rules |
+| `authored_by` / `created` / `sent` / `received` / `sent_to` | Keep distinct: author, creation context, observed sending, observed delivery and addressed recipient. Draft creation does not prove sending; recipient headers do not prove delivery |
+| `started_with` / `reply_to` / `mentions` / `references` | Keep distinct: opening context, response target, semantic mention and explicit resource reference. One Entity can serve several roles |
+| `observed_in` / `observed_participant` / `attendee` | Keep distinct: observer access, observed participation and event attendance. A participant edge must not acquire the observer's sync state |
+| `identity` / `same_as` | Keep separate from merge and ACL. `identity` connects a hub to a representation. Resolve the mismatch between an unconfirmed duplicate hint and a confirmed `same_as` assertion before treating the latter as equality |
+| `watches` / `owner` | Replace legacy watch-based execution selection with event subscriptions; retain protected ownership. Membership or provenance grants neither authority |
+| `sent_by` | Candidate for retirement if stored rows only invert `sent`. First establish whether any producer means a sender account rather than an Episode; do not rewrite it as `authored_by` by name alone |
+| `account`, `prospect`, `supports` | No dedicated producer found in this inspection. Keep stored data readable while inventorying it; do not invent generic semantics. A `supports` Link is not automatically a GraphClaim or approval evidence |
+| Email `sent_from`, X/LinkedIn schema-pair kind names | Manifests retain these declarations while inspected writers use `authored_by` and `identity`. Review historical rows before retiring declarations; profile → person also reverses the current identity direction |
+| `file.attachment` | Keep the module kind: owning content → attached file, with file-role validation. Generic membership would lose attachment semantics |
+
+The review inspected host registry seeds, Episode/Web contracts, Telegram observer/participant writers, Contacts identity resolution and catalog manifests/services. Absence of a writer in those paths does not prove an empty database or exclude generic or external writers. Creation-link conversion is agreed; project membership is proposed; communication and event subscriptions are developed below. Other retirement candidates remain open.
+
+Current code still writes `in_chat`, `triggers.belongs_to`, `projects.belongs_to` and `triggered_by`. Creation migration must reverse endpoints and preserve periods, evidence and producer metadata. The communication proposal supersedes the earlier blanket `in_chat` → `belongs_to` conversion: chat membership alone supplies neither direction nor delivery time. Keep historical rows until the communication context can be reconstructed without inventing facts. WebSource's proposed `contents` relation also needs its extraction semantics checked before consolidation.
+
+### Communication is an observed event
+
+```typescript
+export type CommunicationLink = CanonicalLink & {
+  kind: "sent" | "received";
+  from: PersistentEntityId; // Concrete sending/receiving account or mailbox.
+  to: PersistentEntityId;   // Message instance.
+  metadata: {
+    occurredAt: DateTimeUtc | null; // Provider occurrence time; null = unknown.
+    conversationId: PersistentEntityId | null;
+  };
+};
+```
+
+**Working proposal for endpoint direction:** mailbox/account → sent/received → message. The same message can be sent by one account and received by another, including two accounts of one user. A shared chat has no single incoming/outgoing direction independent of an account. `conversationId` carries the chat/thread context in this proposal; it must resolve to a registered, same-scope conversation through Graph validation, including merge/deletion handling. Account and conversation must remain separately queryable. Endpoint schemas and whether conversation should instead be an explicit structural edge remain a design decision; do not add an unvalidated ID hidden in metadata or create per-account copies of a shared chat implicitly.
+
+`sent` requires a successful provider send or an authoritative source observation. A draft, failed send or From header is insufficient. `received` requires observed delivery at the receiving endpoint; To/CC/BCC identifies intended recipients, including recipients whose delivery Magnis cannot observe. A self-addressed message can correctly have both facts. An address identifies a channel; a concrete connected mailbox may require its own domain Entity when an address does not identify the receiving endpoint uniquely. Source credentials remain outside the graph.
+
+`metadata.occurredAt` is the communication timestamp. `Link.createdAt` is graph insertion time; validity bounds retain their separate meaning. Do not substitute import time, an email Date header or epoch zero for unknown receipt time. The inspected Gmail adapter currently folds Date/internalDate into `sent_at`, while the Entity schema already allows `received_at`; those are not yet a reliable receipt-time contract.
+
+Repeated ingestion of the same provider message and endpoint reuses the fact and emits no new `link_added`. A genuine resend with a new provider message identity is a new message instance. Several distinct deliveries of the same instance to the same endpoint need an occurrence identity: the present pair/kind/period rules cannot represent them by changing metadata alone. Preserve that distinction as an explicit extension decision, not a fake new delivery on every sync.
+
+Messages and their communication Links commit together. `belongs_to` remains useful for deliberate organizational membership, such as a letter attached to an Episode or a project; it does not stand for sending or receipt. Existing `sent` Episode links and historical `in_chat` links cannot be blindly converted into communication facts.
 
 ### Registration and endpoint validation
 
@@ -458,6 +514,17 @@ The interval is `[validFrom, validUntil)`. A null boundary is unbounded, not cre
 `graph.link.update` currently aliases end, not arbitrary patch; `graph.link.link` aliases add. Archive changes Entity visibility, not Link periods. Pin preferences do not change Links. Both endpoint foreign keys currently cascade on final Entity deletion. Semantic writes and audit commit together under the owner's mutation lock.
 
 ### Reading relationships
+
+```typescript
+// Proposed addition to the existing SDK LinkedEntitySummary;
+// the remaining fields retain their existing types.
+export interface LinkedEntitySummary {
+  linkKind: LinkType;
+  direction: "out" | "in"; // Relative to the Entity being viewed.
+}
+```
+
+Keep the stored kind in neighbor responses and carry direction separately. On Episode C, incoming `created` means "created by this Trigger"; on the Trigger, outgoing `created` lists its results. Do not invent inverse stored kinds. A self-link has one `out` summary; symmetric kinds use one label regardless of direction. Current Episode summaries rewrite some incoming kinds as `triggers`, `child_episodes` or `watched_by`, but leave incoming `created` unchanged and expose no direction. This projection must change with the creation-link migration.
 
 `graph.entity.links.list` returns adjacent Links; `graph.links` returns a page of related Entities. Normal reads check internal `eligible`, interval and endpoint visibility. `{ at: null }` removes the time filter but keeps eligibility. Structural reconciliation reads may bypass eligibility while retaining owner scope. A displayed `~kind` is an incoming-direction label, not a stored kind.
 
@@ -547,13 +614,12 @@ export interface EntityIdentity {
   readonly name: string;
   readonly description?: string;
   readonly roles?: readonly string[];
-  readonly triggerable?: boolean;
   readonly mergeable?: boolean;
   readonly syncable?: boolean;
 }
 ```
 
-`@magnis/declare` is a build-time catalog API. A domain supplies its stable schema name, roles and capabilities. `mergeable`, `triggerable` and `syncable` are independent permissions of the schema, not the current state of an Entity. Declaring a schema does not supply CRUD or grant caller access.
+`@magnis/declare` is a build-time catalog API. A domain supplies its stable schema name, roles and capabilities. `mergeable` and `syncable` are independent permissions of the schema, not the current state of an Entity. Target event subscriptions do not require a `triggerable` flag: they validate registered events, predicates and caller access. The inspected code still exposes that legacy capability. Declaring a schema does not supply CRUD or grant caller access.
 
 ```typescript
 export interface Searched<Shape extends z.ZodRawShape> {
@@ -595,7 +661,6 @@ export const address = entity(
     name: "Email address",
     description: "An email address entity (sender/recipient hub).",
     roles: ["identity_channel"],
-    triggerable: true,
     syncable: true,
   },
   {
@@ -610,7 +675,7 @@ const _addressIsTheModulesOwnType:
 void _addressIsTheModulesOwnType;
 ```
 
-This existing `email.address` example preserves domain spelling such as `display_name`. SDK camelCase does not rename arbitrary properties or metadata. `satisfies` and `AssertEqual` keep lightweight module interfaces aligned with the build-time schema.
+This `email.address` example preserves existing domain spelling such as `display_name` while omitting the legacy triggerable flag in the target. SDK camelCase does not rename arbitrary properties or metadata. `satisfies` and `AssertEqual` keep lightweight module interfaces aligned with the build-time schema.
 
 ```typescript
 export interface Schema {
@@ -618,7 +683,6 @@ export interface Schema {
   version: SchemaVersion;
   description: string;
   json_schema: JsonValue;
-  triggerable: boolean;
   syncable: boolean;
   can_merge: boolean;
   roles: string[];
@@ -948,7 +1012,7 @@ The domain label is illustrative; actual kinds come from the registry. This chai
 
 ### Distinguish the operations
 
-`identity` connects a hub to its representation. `same_as` asserts equivalence while retaining both nodes. `merge` removes one saved node and keeps another. None grants ACL rights. A chain of `same_as` Links is not automatically collapsed into a single ID.
+`identity` connects a hub to its representation. `same_as` is an identity assertion between retained nodes, but the current Contacts importer also emits it when several hubs share an address and need human review. Such a Link is not proof of equivalence. `merge` removes one saved node and keeps another. None grants ACL rights; a chain of `same_as` Links does not collapse into one ID. Separating candidate and confirmed identity assertions remains open.
 
 `GraphRef.identity` resolves its representation first, then finds current eligible, unarchived hubs of the requested schema under the owner, including relevant prepared Links. No candidate requires an allowed creation declaration; one is reused; multiple cause `ambiguous identity owner`. A declaration/version mismatch or unresolved dependency aborts apply. Here “identity owner” means the hub, not the security principal.
 
@@ -2097,35 +2161,98 @@ These are internal computation results, not new Link fields or indexing statuses
 For example, A states employment from January 1 and B states departure on June 1. Given the same resolved IDs, A→B and B→A yield the same closed interval. If B changes, the relation is hidden pending resolution rather than becoming open-ended. Re-employment with a new start is another period.
 
 <a id="triggers"></a>
-## 12. Triggers: observing changes and resuming work
+## 12. Triggers: subscriptions to committed graph events
 
-### Resolving a watchable Entity
+### Event identity and ordering
 
 ```typescript
-export interface WatchableEntity {
-  id: string;
-  name: string | null;
-  schemaId: string;
-  linkKind: string;
+export interface GraphEventCursor {
+  revision: string; // Owner mutation revision, serialized decimal bigint.
+  ordinal: number;  // Event order within that mutation.
 }
 
-export interface TriggerWatchClarification {
-  status: "clarification_needed";
-  message: string;
-  nonTriggerableEntities: {
-    entity: {
-      id: string;
-      name: string | null;
-      schemaId: string;
+// Names from the existing core EventPayload; availability is registered.
+export type GraphEventType =
+  | "entity_created" | "entity_properties_updated" | "entity_updated"
+  | "entity_archived" | "entity_unarchived" | "entity_deleted"
+  | "entities_merged" | "override_applied"
+  | "link_added" | "link_updated" | "link_removed"
+  | "link_evidence_recorded";
+
+export type GraphChange =
+  | {
+      subject: "entity";
+      before: PersistentEntity | null;
+      after: PersistentEntity | null;
+    }
+  | {
+      subject: "link";
+      before: Link | null;
+      after: Link | null;
     };
-    linkedWatchableEntities: WatchableEntity[];
-  }[];
+
+// Target dispatcher projection of the existing durable graph Event.
+// This is an internal envelope, not a second source of graph truth.
+export interface GraphMutationEvent {
+  id: Id;
+  owner: Id; // Trusted auth scope; never accepted from a subscription caller.
+  cursor: GraphEventCursor;
+  type: GraphEventType;
+  recordedAt: DateTimeUtc;
+  occurredAt: DateTimeUtc | null;
+  phase: "local" | "live" | "bootstrap" | "catchup" | "migration";
+  changes: readonly GraphChange[];
+  causedBy: Id | null;
+  triggerChain: readonly PersistentEntityId[];
 }
 ```
 
-`Schema.triggerable` is a capability, not an invented `Triggerable extends Entity` interface. `resolve_watchable({ entityId })` returns alternatives for a non-triggerable hub; a directly watchable Entity needs no alternatives and returns an empty list. `validate_watch` returns null on success or the clarification shape above.
+**Target:** every supported semantic graph mutation writes its event in the same transaction as the affected rows. A DB hook may append that record, but it must not run a model or action inside the transaction. Dispatch reads committed records; an in-process notification only wakes that reader. Rollback produces neither a visible Link nor a deliverable event. A no-op replay produces no new mutation event. Event types have registered payload contracts; this is not a subscription to arbitrary physical SQL writes.
 
-### Definition and schedule
+The existing owner mutation lock and revision provide a proposed ordering boundary: events carry the committed owner revision and an ordinal. Trigger activation takes its starting cursor under that same boundary, so a concurrent transaction cannot commit behind an already-consumed watermark. A UUID identifies an event but does not order events. A database sequence allocated before commit also needs commit-order handling; polling MAX(id) is insufficient.
+
+`recordedAt` is database recording time. `occurredAt` is the domain occurrence time, when known; for a communication event it comes from the confirmed sent/received observation. These clocks must not be substituted for one another. Bootstrap, catchup, live and migration provenance is assigned by the trusted ingestion/mutation context. Immutable before/after snapshots allow matching updates and deletions after the live rows change. Creation has null before; deletion has null after; both null is invalid. Actor/audit information remains in the underlying Event.
+
+**Current gap:** Graph mutations already append audit events, and GraphRepository serializes mutations per owner. The current events table has no owner cursor or delivery acknowledgements, and the process EventBus is not durable delivery. Before/after snapshots and complete batch/import/merge coverage also need implementation. The target extends those existing owners instead of assuming a completed event stream exists.
+
+### Typed subscriptions
+
+```typescript
+export type GraphEventFilter =
+  | {
+      subject: "link";
+      types: readonly GraphEventType[];
+      kind: LinkType | null;
+      from: PersistentEntityId | null;
+      to: PersistentEntityId | null;
+      metadata: JsonObject; // Equality predicates on declared metadata fields.
+      match: "before" | "after" | "either";
+    }
+  | {
+      subject: "entity";
+      types: readonly GraphEventType[];
+      schemaId: SchemaId | null;
+      id: PersistentEntityId | null;
+      match: "before" | "after" | "either";
+    };
+
+export interface GraphSubscription {
+  filter: GraphEventFilter;
+  startAfter: GraphEventCursor; // Assigned atomically on activation/revision.
+  phases: readonly GraphMutationEvent["phase"][];
+  occurredAtOrAfter: DateTimeUtc | null;
+}
+```
+
+Null endpoint/schema filters mean unconstrained; an empty metadata object adds no predicate. Reject empty event/phase lists, incompatible event/subject combinations and unknown metadata fields. Metadata predicates require a concrete registered kind. Match against the specified event snapshots, not whatever a later live read happens to return. Conditions across multiple subscriptions are alternatives: one event matching two subscriptions admits one execution for that Trigger revision.
+
+For an incoming-mail rule, use `subject: "link"`, `types: ["link_added"]`, `kind: "received"`, `from: mailboxId`, `to: null`, `metadata: {}` and `match: "after"`. The working account-based chat variant adds `metadata: { conversationId: chatId }`. This selects delivery facts without a watchable Entity or a dedicated new_email emitter. More specific predicates, such as resolving the sender through identity, must have explicit snapshot/join semantics before being admitted; they are not arbitrary code supplied by a model.
+
+A fresh-communication subscription explicitly chooses live and catchup events with `occurredAtOrAfter` equal to activation time. Bootstrap and migration do not fire it. Catchup can recover a genuinely new delivery that happened while Magnis was offline; an old message imported today is rejected by its occurrence time. If that time is unknown, it cannot satisfy a time-bounded subscription. A separate history-aware rule may choose other phases and null occurrence bound. Runtime does not invent missing configuration values.
+
+Any registered Entity/Link event within the caller's access scope can be selected. `Schema.triggerable`, WatchableEntity and watch-target resolution no longer decide event availability. Legacy Trigger → watches links are migrated into explicit predicates only where their old meaning is known. For example, the old email watch selects the sender, which is not equivalent to a received filter on the receiving mailbox.
+
+### Trigger configuration and admission
 
 ```typescript
 export interface ScheduleSpec {
@@ -2136,11 +2263,10 @@ export interface ScheduleSpec {
 
 export interface TriggerConfig {
   name: string;
-  gate_prompt: string;
+  subscriptions: readonly GraphSubscription[];
+  gate_prompt: string | null; // null explicitly selects a deterministic rule.
   action_prompt: string;
   status: string;
-  event_kinds: string[];
-  schema_filter: string | null;
   expires_at: DateTimeUtc | null;
   debounce_seconds: number;
   max_wait_seconds: number | null;
@@ -2151,25 +2277,11 @@ export interface TriggerConfig {
 }
 
 export interface TriggerDefinition {
-  id: string;
-  ownerId: string;
+  id: PersistentEntityId;
+  ownerId: Id;
   createdAt: DateTimeUtc;
+  revision: string; // Revision of the rule, not the source Entity's revision.
   config: TriggerConfig;
-}
-```
-
-These existing internal fields retain their spelling; public SDK responses use their declared camelCase form. A schedule has five cron fields, minute precision and a timezone fixed on creation. Watches are graph subscriptions, not a hidden field in TriggerConfig. Target `belongs_to` connects trigger → episode; `watches` connects trigger → observed Entity.
-
-### Events, gate and execution history
-
-```typescript
-export interface TriggerEvent {
-  event_kind: string;
-  event_entity_id: string;
-  eventSchema: string | null;
-  relatedEntityIds: string[];
-  context: JsonValue;
-  user_id: string;
 }
 
 export interface GateResult {
@@ -2181,25 +2293,67 @@ export interface TriggerGatePort {
   evaluate: (gatePrompt: string, context: JsonValue) => Promise<GateResult>;
 }
 
+export type TriggerInput =
+  | { kind: "event"; eventId: Id }
+  | { kind: "schedule"; scheduledFor: DateTimeUtc }
+  | { kind: "manual"; requestId: Id };
+
 export interface TriggerExecution {
-  fired_at: DateTimeUtc;
-  event_entity_id: string;
-  gate_result: string | null;
-  episode_id: string | null;
+  triggerId: PersistentEntityId;
+  triggerRevision: string;
+  input: TriggerInput;
+  firedAt: DateTimeUtc;
+  gateResult: string | null;
+  episodeId: PersistentEntityId | null;
   outcome: string;
 }
 ```
 
-An admitted event or due schedule runs the gate. If relevant, it starts an episode with the trigger instruction and context, recording execution history. It does not restart a stopped Source. The definition is an independent Entity and its history/list are paginated separately from the watched Entity's extras.
+The target reuses Trigger definitions, gate evaluation, the scheduler and durable Episode creation. `subscriptions` replaces `event_kinds`, `schema_filter` and watch-based candidate selection. TriggerConfig retains existing internal field spellings; the proposed TriggerExecution response uses camelCase and replaces the old event_entity_id with typed input identity. Graph events use their actual Event ID; scheduled and manual executions do not fabricate one. Storage adapters must migrate this explicitly. Blank gate prompts remain invalid; explicit null avoids an unnecessary model call for an exact event filter. Existing limits and schedule validation remain applicable. A schedule has five cron fields, minute precision and a timezone fixed on creation; its admitted slot uses the same execution path without fabricating a graph Link.
 
-Delivery ordering, retries, event deduplication and recovery still need a complete contract. TriggerExecution and firing_count alone do not establish exactly-once delivery.
+```mermaid
+flowchart LR
+  T[Graph transaction: message + received Link + Event] --> C[Commit]
+  C --> D[Durable event reader]
+  D --> F[Typed subscription + access + time filters]
+  F --> G[Optional gate]
+  G --> E[Idempotent Episode admission]
+  E --> R[Trigger -- created --> Episode]
+```
+
+Delivery is at least once. The durable admission identity is `(triggerId, triggerRevision, eventId)`, with a uniqueness constraint and deterministic Episode firing identity. Claim that identity before gate evaluation; only its current lease may commit a decision, and retries reuse a persisted decision. Episode admission and its delivery receipt must commit atomically. A worker acknowledges only after admission/rejection is durable. Two genuine updates to one Entity have two Event IDs; deduplicating by Entity ID would lose the second. A rule edit creates a new activation boundary and does not silently replay old events. Disabling a rule cancels its not-yet-admitted work; stopping already-admitted Episode work follows the existing explicit Episode controls.
+
+Debounce cannot simply discard an event before durable acknowledgement. Admission records whether it is scheduled, explicitly suppressed or included in a durable coalesced group; a coalesced execution retains every member event ID. The precise coalescing rule is an implementation-contract decision. Other inputs are deduplicated by `(triggerId, triggerRevision, input.kind, scheduledFor/requestId)`: scheduledFor is the UTC slot instant, and a manual retry retains its requestId. A new manual request supplies a new identity. Delivery/admission uniqueness does not promise exactly-once external email or tool side effects; those require the existing operation-specific idempotency contracts.
+
+Trigger actions carry causal context into subsequent graph writes. Reject a firing when its Trigger is already in the event's triggerChain; a fresh Event ID alone does not prevent self-trigger loops. Apply current owner/ACL checks before delivery and action, including queued events after ownership changes. Event snapshots are subject to private-data rules before any model gate sees them. Snapshot authorization after deletion or transfer must be defined before enabling those event subscriptions.
+
+Trigger → belongs_to → parent Episode remains organizational/execution context. A new firing records Trigger → created → new Episode and Episode → child_of → parent Episode. Execution history is separately paginated; it is not attached to every observed Entity's extras.
+
+### Concept review and migration limits
+
+| Case | Required result / finding |
+| --- | --- |
+| Incoming email | Commit message, observed received Link and event together; one admitted firing after commit |
+| Failed send / draft / To header only | No invented sent or received observation |
+| Old-mail import | Persist facts without treating import time as a new delivery |
+| Live delivery missed during downtime | Admit from catchup only when the configured occurrence bound is met; deduplicate source replay |
+| Rollback or crash before notification | Rollback is invisible; a committed event remains recoverable without the process notification |
+| Two updates to one Entity / delivery replay | Two mutation Event IDs can fire twice; replay of one Event ID cannot create a second Episode |
+| Two accounts in one chat | Direction is account-relative; do not overwrite a shared message with one global is_outgoing |
+| Update/removal and later graph changes | Match the recorded before/after state; recheck authorization at delivery |
+| Generic trigger writes matching data | Causal-chain protection stops recursive firings; deduplication alone is insufficient |
+| Migration from watches | Preserve known semantics; sender watch is not a mailbox-receipt subscription. Unmappable rules remain paused for review |
+| Historical communications | Do not derive receipts, occurrence times or observer accounts from in_chat/started_with alone |
+| Decisions before executable stages | Concrete mailbox/account identity, conversation representation, repeated-delivery identity, deletion/transfer snapshot access and durable debounce policy |
+
+The concept is consistent at the event/subscription boundary. Communication endpoint representation and the listed admission policies are still proposals, not implemented guarantees. Current triggers use module-produced trigger.check, watches/triggerable, live-only admission and occurred_at; that path must be cut over without dispatching one event through both engines.
 
 <a id="open-contracts"></a>
 ## 13. Open contracts and evidence
 
 | Area | Decision still required |
 | --- | --- |
-| Identity | Alias provenance and archived-candidate reuse |
+| Identity | Alias provenance, archived-candidate reuse and candidate versus confirmed same_as assertions |
 | Ownership | Auth-to-graph-user mapping, bootstrap, user-node ownership, cross-owner Link/evidence policy and historical visibility |
 | Merge | Field provenance, schema version compatibility, final domain validation, extras, multi-producer metadata, protected owner handling, old-ID recovery and split |
 | Extraction | Shared domain admission, corrections, unresolved explanation API and withdrawal restoration |
@@ -2207,7 +2361,7 @@ Delivery ordering, retries, event deduplication and recovery still need a comple
 | Privacy | Knowledge/chat/completion boundaries, inheritance and concurrent external calls |
 | Schema evolution | Immutable versions, stored-record migration and unavailable required versions |
 | Runtime domains | Who may register a new domain without installing a module and who owns its behavior |
-| Triggers | Published events, matching, retries, deduplication and recovery |
+| Communication and Triggers | Endpoint/conversation and repeated-delivery identity, snapshot access after deletion/transfer, durable debounce policy and physical event/admission storage |
 
 These are explicit limits, not defaults inferred from incidental code. The migration plan distinguishes implementation-ready decisions from proposals awaiting the owner's approval.
 

@@ -11,9 +11,9 @@ Unattended decisions: allowed
 
 1. Establish one English developer reference in `docs/vision.md`, with each type next to its behavior and exceptions, and use it as the migration contract for the app and plugin catalog.
 2. Adopt explicit persistent/transient and derived types across the shared SDK and its consumers, then separate domain Entity values from requested operational extras without changing identity, evidence or access scope.
-3. Migrate pin, archive, privacy, configured model trust and indexing projections and consolidate membership relations into `belongs_to`, preserving sync choices, temporal history and repeat-ingestion behavior.
+3. Migrate pin, archive, privacy, configured model trust and indexing projections and consolidate organizational membership relations into `belongs_to`, preserving sync choices, temporal history and repeat-ingestion behavior.
 4. Give each Magnis auth user a canonical `users.user` Entity, connect people to it through `identity`, and maintain protected temporal `owner` Links through system GraphService functions only.
-5. Bring Graph reads, Search, merge, extraction and workspace transfer onto those same boundaries; prove that generic writers cannot change ownership and that replay, ambiguity and conflicting periods remain deterministic.
+5. Bring Graph reads, Search, merge, extraction and workspace transfer onto those same boundaries; preserve deterministic replay and protected ownership. Generalize creation provenance to created, and develop communication facts and typed subscriptions to committed graph events without treating historical imports as new deliveries.
 6. Publish compatible app/catalog changes through the existing SDK and package activation mechanism, with migration fixtures, scoped checks and the complete affected repository gates. Implementation begins only after the owner approves the SPEC and the resulting Delivery/Stage contract.
 
 ## Why now
@@ -33,7 +33,9 @@ Evidence owners:
 | Claims, pending/indexed/refused and temporal derivation exist in inspected working code | Reference sections 10–11; SDK indexing, Graph derive/claim.repository and search graph-indexer |
 | Earlier privacy work is a contract, not a completed implementation | App `feat/private-entity-flag`, commit `2ea08b25957bbb3d60bdeb144d19f2d24d3d4665`; model trust replaces its local/cloud eligibility test by owner decision |
 | Model execution metadata already exists; model trust does not | Identity checkout `packages/sdk/src/core/ai-model.ts`, `backend/src/agent/models/types.ts`, `ai-model-directory.service.ts` and `provider-model-catalog.source.ts`; existing `dataBoundary` comes from catalog metadata |
-| Shared membership replaces two spellings | Existing host `in_chat`, module `triggers.belongs_to`, owner decision to use `belongs_to` |
+| Shared organizational membership and creation provenance | Owner retains belongs_to and replaces Episode → triggered_by → Trigger with Trigger → created → Episode; projects.belongs_to has matching member → project semantics |
+| Communication changes the earlier chat-membership proposal | Current Telegram in_chat supplies conversation membership, not delivery direction/time; Google folds Date/internalDate into sent_at; email schema allows received_at |
+| Trigger delivery requires a graph event contract | Identity Graph EventRepository/owner mutation revision and TriggersService; current EventBus is in-process, trigger.check is module-produced and live-only |
 
 ## The target
 
@@ -121,6 +123,39 @@ export interface LlmModelInfo {
   readonly private: boolean;
 }
 
+export type CreatedLink = Link & { kind: "created" };
+export type BelongsToLink = Link & { kind: "belongs_to" };
+
+// Existing SDK neighbor projection; unchanged fields omitted.
+export interface LinkedEntitySummary {
+  linkKind: LinkType;
+  direction: "out" | "in";
+}
+
+export type CommunicationLink = CanonicalLink & {
+  kind: "sent" | "received";
+  from: PersistentEntityId;
+  to: PersistentEntityId;
+  metadata: {
+    occurredAt: DateTimeUtc | null;
+    conversationId: PersistentEntityId | null;
+  };
+};
+
+// GraphMutationEvent, GraphEventFilter and GraphSubscription are declared
+// together with ordering/matching rules in reference section 12.
+// Target changes to existing Trigger types; unchanged fields omitted.
+export interface TriggerDefinition { revision: string; }
+export type TriggerInput =
+  | { kind: "event"; eventId: Id }
+  | { kind: "schedule"; scheduledFor: DateTimeUtc }
+  | { kind: "manual"; requestId: Id };
+export interface TriggerExecution {
+  triggerId: PersistentEntityId;
+  triggerRevision: string;
+  input: TriggerInput;
+}
+
 export interface EntitySystemState {
   owner: AuthUserId; // Hidden existing SQL ownership scope.
 }
@@ -203,19 +238,25 @@ Use existing settings permissions; model output, discovery metadata and generic 
 | Output / durable state | Required model private boolean, persisted declaration for the current endpoint, updated model-policy revision |
 | RED test | Extend `backend/test/tst_bts_ai_models_contract.test.ts`, `tst_bts_ai_models_control_plane.test.ts`, `tst_bts_search_visibility.test.ts` and frontend `hooks/__tests__/useAiModels.test.tsx`: known local, declared-private cluster, unknown endpoint, restart/refresh and subsequent work after revocation |
 
-### C. Consolidate membership and retain its history
+### C. Consolidate organizational membership and creation provenance
 
-Register host-owned `belongs_to`; convert `in_chat` and `triggers.belongs_to` in stored Links, claims/withdrawal identities, workspace format handling, module manifests, tools and queries. It means element → container and is not globally restricted to content. Preserve from/to direction and periods; do not consolidate child_of. Update explicit module permissions rather than inheriting old prefix grants.
+Register host-owned belongs_to for organizational membership. Convert triggers.belongs_to without reversing endpoints; projects.belongs_to → belongs_to is an explicit review proposal with the same member → container direction. Preserve endpoint schemas, periods, claims and producer metadata, and replace implicit prefix grants with explicit module permissions. Retain child_of for Episode hierarchy. Trigger parent lookup must filter belongs_to targets to episodes.episode and reject zero or multiple distinct active parents; project membership must not affect it.
 
-Before rewriting, enumerate duplicate keys caused by convergence. Identical pair/origin/period duplicates may use the existing deterministic Link collapse mechanism with an ID mapping; differing overlapping periods or conflicting producer provenance fail migration preflight without changing rows. Do not silently discard temporal history. Old workspace input is upgraded at its versioned import boundary; all new exports and live writes use belongs_to. No permanent runtime alias namespace is introduced.
+The owner's communication correction supersedes the earlier blanket in_chat → belongs_to migration. Preserve historical in_chat until section G establishes how to retain conversation context and whether transmission/delivery facts can be recovered. A chat-membership edge alone cannot establish a received fact, an observer account or a receipt time.
 
-| Implementation map | Membership |
+Replace Episode → triggered_by → Trigger with Trigger → created → Episode. created now covers a producing Episode or Trigger. Register the Trigger-to-Episode pair and update the trigger writer, replay path, SDK ranks, readers and versioned import/export. Preserve Link IDs unless collision handling produces an explicit mapping, and retain metadata, evidence, origin, periods and timestamps. Rewrite effective claim/withdrawal identities consistently, while leaving raw source text and immutable audit history in their original versioned form. Non-Episode/Trigger historical endpoints require explicit review before conversion.
+
+The existing LinkedEntitySummary gains direction out/in relative to the viewed Entity and retains the stored linkKind. Stop serializing inverse presentation labels as kinds. The Trigger displays outgoing created results; its Episode displays incoming created provenance. Existing reverse labels such as watched_by and child_episodes are view labels only. A self-link emits one out summary; same_as uses a symmetric label. These are projections over one stored edge, not additional inverse relations.
+
+Before rewriting, enumerate duplicate keys caused by convergence. Identical pair/origin/period duplicates may use the existing deterministic Link collapse mechanism with an ID mapping; differing overlapping periods or conflicting producer provenance fail migration preflight without changing rows. Do not silently discard temporal history. Old workspace input is upgraded at its versioned import boundary; new organizational-membership exports and writes use belongs_to, and new creation provenance uses created. No permanent runtime alias namespace is introduced.
+
+| Implementation map | Membership and creation |
 | --- | --- |
-| Owner | Graph registry, workspace codecs and Telegram/Triggers modules |
-| Target files | CREATE `../../../magnis-app/backend/migrations/20261006000002_graph_membership.sql`; MODIFY `../../../magnis-app/packages/sdk/src/core/link.ts`, `../../../magnis-app/backend/src/services/graph/graph-contracts.ts`, `../../../magnis-app/backend/src/services/graph/link.repository.ts`, `../../../magnis-app/backend/src/services/graph/graph.transfer.ts`, `../../../magnis-app/backend/src/services/triggers/triggers.repository.ts`, `../../../magnis-app/backend/src/services/episodes/episodes.repository.ts`, `modules/telegram/module/service.ts`, `modules/triggers/manifest.toml`, `modules/triggers/module/service.ts` |
+| Owner | Graph registry, workspace codecs, Trigger/Episode writers and readers, Projects/Triggers modules |
+| Target files | CREATE `../../../magnis-app/backend/migrations/20261006000002_graph_membership.sql`; MODIFY `../../../magnis-app/packages/sdk/src/core/link.ts`, `../../../magnis-app/packages/sdk/src/core/episode.ts`, `../../../magnis-app/packages/sdk/src/core/linked-entity.ts`, `../../../magnis-app/backend/src/core/episode.ts`, `../../../magnis-app/backend/src/core/graph-view.ts`, `../../../magnis-app/backend/src/services/graph/graph-contracts.ts`, `../../../magnis-app/backend/src/services/graph/link.repository.ts`, `../../../magnis-app/backend/src/services/graph/graph.transfer.ts`, `../../../magnis-app/backend/src/services/triggers/triggers.repository.ts`, `../../../magnis-app/backend/src/services/triggers/triggers.service.ts`, `../../../magnis-app/.worktrees/identity/backend/src/agent/episodes/episode.ts`, `../../../magnis-app/.worktrees/identity/backend/src/agent/episodes/episodes.service.ts`, `../../../magnis-app/.worktrees/identity/backend/src/agent/episodes/episodes-dataset-contract.ts`, `../../../magnis-app/frontend/src/modules/episodes/helpers.ts`, `modules/triggers/manifest.toml`, `modules/triggers/schema.ts`, `modules/triggers/module/service.ts`, `modules/projects/manifest.toml`, `modules/projects/schema.ts`, `modules/projects/module/service.ts`; identity paths name prerequisite owners on the integrated app head |
 | Input / wake | Upgrade, module activation, message/trigger creation, import and relation queries |
-| Output / durable state | One active host kind, correct permissions, preserved IDs or explicit collapse mapping and periods |
-| RED test | Extend app `backend/test/tst_bts_graph_link_kinds.test.ts`, `tst_bts_graph_merge_pg.test.ts`, `tst_bts_dataset_format.test.ts`; catalog `modules/telegram/module/__tests__/telegramIngest.test.ts` and trigger CRUD scenarios |
+| Output / durable state | Shared organizational membership, created provenance in the correct direction, direction-preserving views, retained temporal/provenance data and unresolved communication history |
+| RED test | Extend app `backend/test/tst_bts_graph_link_kinds.test.ts`, `tst_bts_graph_merge_pg.test.ts`, `tst_bts_dataset_format.test.ts`, `tst_bts_triggers_repository.test.ts`, `tst_bts_triggers_service.test.ts`, `tst_bts_episodes_snapshot.test.ts`; catalog `modules/projects/module/__tests__/projectsCrud.test.ts` and trigger CRUD/read scenarios |
 
 ### D. Bootstrap graph users and protect ownership at every writer
 
@@ -276,18 +317,43 @@ Do not support two permanent public Entity formats. Version the shared SDK/packa
 | Output / durable state | Compatible artifacts and strict runtime contracts, no handwritten replacement host stubs |
 | RED test | Existing package smoke, plugin graph contract and affected module/UI scenarios; one migrated-workspace integration fixture |
 
+### G. Communication facts and committed graph subscriptions
+
+This is the newly requested concept, developed in reference sections 3 and 12. Its event boundary is the target; concrete endpoint/conversation representation and the admission policies below remain proposals to resolve before executable Stage approval. Do not pretend those decisions are already deployed.
+
+Communication records use sent/received with an occurrence time, independently of graph createdAt and validity periods. The working direction is concrete mailbox/account → message, with conversation context separately identified. A shared chat has no account-independent incoming/outgoing direction. A successful send or authoritative source observation can establish sent; recipient headers alone cannot establish received. Keep authored_by, sent_to, created and reply_to as distinct facts. Validate conversation references through Graph, including merge/deletion handling; do not hide unchecked IDs in metadata. Choose a concrete mailbox Entity when email.address does not identify the receiving endpoint uniquely. Repeated physical deliveries of the same message/endpoint need an occurrence identity before they can be represented; current Link period constraints do not supply one.
+
+Extend the existing graph Event/audit path with a durable, owner-scoped mutation projection: stable Event ID, owner revision plus ordinal cursor, recording/occurrence times, trusted ingestion phase, causal context and before/after snapshots. Assign event order and subscription activation under the existing owner mutation fence. Append events in the same transaction as message and communication Links. Cover GraphService, batch ingestion, merge, transfer/import and remaining repository writers; rollback must expose no event. A wake notification is optional acceleration. The current EventBus and timestamp-ordered audit table alone are not a durable subscription stream.
+
+GraphSubscription selects registered event types and typed Entity/Link predicates, with explicit phase/occurrence bounds and before/after matching. The received template selects link_added for its receiving endpoint. Validate filters and derive owner scope server-side. Any accessible registered Entity/Link event can be selected; remove Schema.triggerable/watchable admission once legacy rules are translated. Replace trigger.check-only production with committed Graph events without double dispatch. Legacy sender-based email watches require a sender predicate; never translate them into mailbox-receipt subscriptions by matching IDs alone.
+
+Reuse Trigger configuration, optional gate, scheduler and Episode creation. Explicit gate_prompt null bypasses the model; blank strings remain invalid. TriggerConfig gains subscriptions: readonly GraphSubscription[] and its existing gate_prompt becomes string | null. The public TriggerExecution projection uses camelCase (firedAt, gateResult, episodeId); storage decoding migrates explicitly. The durable admission key is trigger ID, rule revision and Event ID, not event Entity ID. Claim before gate evaluation, persist/reuse the decision under a lease, and commit the resulting Episode admission with the delivery receipt. At-least-once delivery must survive restart without creating duplicate Episodes. Two updates to one Entity are distinct events. TriggerInput distinguishes actual graph Event IDs, UTC schedule slots and manual request IDs. Schedule/manual admission uses trigger ID, rule revision and typed input identity; retries retain that identity without fabricating graph events. Causal ancestry prevents a Trigger from firing on its own descendant writes. Recheck current access and private-data policy before model/action execution.
+
+Fresh-communication rules explicitly admit live and catchup events occurring since activation; bootstrap/migration and unknown occurrence time do not satisfy that rule. This deliberately improves on current blanket live-only filtering for deliveries missed during downtime. A rule can request historical processing explicitly. Do not infer receivedAt from Date headers, epoch zero or insertion time. Migrate source adapters to preserve the distinct available timestamps and classification, without manufacturing missing provider evidence.
+
+**Decisions required before executable stages:** choose mailbox/account identity and conversation representation; define repeated-delivery identity, snapshot authorization after deletion/transfer and durable debounce/coalescing. Inventory existing watches, in_chat and Episode sent rows and document a deterministic mapping for each supported case. Unmappable historical relations remain readable and unresolved; unmappable automation stays paused for owner review. These rules are not deleted or silently broadened. Delivery uniqueness does not establish exactly-once external side effects.
+
+| Implementation map | Communication and event subscriptions |
+| --- | --- |
+| Owner | Existing graph Event/transaction owners, Trigger repository/engine, communication adapters and domain modules |
+| Target files | MODIFY `../../../magnis-app/backend/src/core/event.ts`, `../../../magnis-app/backend/src/core/trigger.ts`, `../../../magnis-app/backend/src/core/schema.ts`, `../../../magnis-app/backend/src/db/schema/graph.ts`, `../../../magnis-app/backend/src/db/schema/triggers.ts`, `../../../magnis-app/backend/src/services/graph/event.repository.ts`, `../../../magnis-app/backend/src/services/graph/graph.repository.ts`, `../../../magnis-app/backend/src/services/graph/graph.service.ts`, `../../../magnis-app/backend/src/services/graph/graph.transfer.ts`, `../../../magnis-app/backend/src/services/triggers/types.ts`, `../../../magnis-app/backend/src/services/triggers/triggers.repository.ts`, `../../../magnis-app/backend/src/services/triggers/triggers.service.ts`, `../../../magnis-app/backend/src/services/triggers/triggers.controller.ts`, `../../../magnis-app/backend/src/services/triggers/triggers.scheduler.ts`, `../../../magnis-app/backend/src/process/event-bus.ts`, `../../../magnis-app/packages/sdk/src/rpc/registry.ts`, `packages/declare/index.ts`, `packages/declare/derive.ts`, `modules/triggers/types.ts`, `modules/triggers/module/service.ts`, `modules/email/entities.ts`, `modules/email/types.ts`, `modules/email/module/service.ts`, `modules/telegram/module/service.ts`, `sources/google/src/surfaces/email/gmail.ts`, `sources/google/src/surfaces/email/imap.ts`, `sources/telegram/src/surfaces/telegram/envelope.ts`; exact delivery-storage migration and new endpoint declarations are chosen after the decisions above, not guessed now |
+| Input / wake | Committed graph mutations, subscription activation/revision, source live/catchup/history, replay and schedule slots |
+| Output / durable state | Confirmed communication facts, recoverable mutation events and idempotent admission with distinct event/Entity identities |
+| RED test | Extend app Trigger repository/service and graph batch tests, plus catalog `modules/email/module/__tests__/emailIngest.test.ts`, `emailSend.test.ts`, `modules/telegram/module/__tests__/telegramIngest.test.ts`, `sources/google/src/surfaces/email/gmail.test.ts`; commit/rollback, competing-worker/restart and activation-race scenarios require PostgreSQL coverage |
+
 ### Adoption order and proposed Delivery boundaries
 
-This is the complete SPEC-level migration sequence. The executable Delivery/Stage/Task graph is authored after SPEC approval through planctl; none is approved or running in this commit.
+This is the complete SPEC-level migration sequence. The executable Delivery/Stage/Task graph is authored after SPEC approval and resolution of section G's endpoint/admission decisions through planctl; none is approved or running in this commit.
 
 | Order | Proposed PR boundary | Depends on | Completion evidence |
 | --- | --- | --- | --- |
 | 0 | Reconcile SDK/identity/entity-sync/claims/module-dependency prerequisites on the actual integration head | Their existing owners' work | Record integrated commits and compile the baseline; do not duplicate their implementations |
 | 1 | App SDK names, derived-origin migration, persistent IDs, strict Entity/extras, model trust and storage migration | 0, approval of legacy pin proposal | Core parser, viewer preference, sync and read-projection scenarios; matched client changes in the same releasable boundary |
-| 2 | App + catalog membership conversion | 1 | Old-data migration, temporal duplicate preflight, permissions and Telegram/Triggers scenarios |
+| 2 | App + catalog organizational membership and creation conversion | 1; project-membership proposal | Direction reversal, temporal collision preflight, permissions and Trigger/Project/Episode scenarios; no invented chat delivery facts |
 | 3 | App graph users, protected ownership and bounded transfer | 1–2, approval of bootstrap/mapping/transfer proposals | Nil-auth-user bootstrap, all-writer rejection matrix, rollback/race and owner-search isolation |
 | 4 | App merge/extraction/import validation and catalog consumer completion | 1–3 | Canonical/derived and period scenarios, repeated ensure, exported/restored workspace equivalence |
-| 5 | Compatible runtime/SDK/catalog release and reference reconciliation | All above | Full affected gates, package/API compatibility, migration and restore verification; release approval remains separate |
+| 5 | App + catalog communication events and Trigger subscriptions | 1–4; resolve G's domain/admission contracts | Confirmed observations, atomic event persistence, restart/replay/race and history-admission evidence |
+| 6 | Compatible runtime/SDK/catalog release and reference reconciliation | All above | Full affected gates, package/API compatibility, migration and restore verification; release approval remains separate |
 
 Cross-repository implementation uses one shared plan. App Deliveries name repository `app`, catalog Deliveries name `catalog`; implementation setup configures `code-production.repository.app` / `.catalog` to the owner's intended checkouts. This authoring turn does not repoint shared repository configuration or create implementation worktrees. Active-time estimates and concrete Stage writes will be derived from the integrated baseline, not guessed across unmerged prerequisite branches.
 
@@ -299,19 +365,19 @@ App paths in the maps are relative to this plan checkout: `../../../magnis-app`.
 | --- | --- | --- |
 | MODIFY | Catalog `docs/vision.md`, `README.md`, `docs/typing.md` | English reference, navigation, historical-status clarification |
 | CREATE | Catalog `docs/plans/2026-10-06-entity-docs.md` | One migration plan, authored and journaled through planctl |
-| MODIFY | App existing SDK, core and RPC files enumerated in maps A–F | Single shared definitions and runtime validators; no parallel type package |
-| MODIFY | App existing Graph, Search, Users, transport and compiler-reported client files in A–F | Remove leaked operational fields and enforce the same authority in every writer and reader |
+| MODIFY | App existing SDK, core and RPC files enumerated in maps A–G | Single shared definitions and runtime validators; no parallel type package |
+| MODIFY | App existing Graph, Search, Users, transport and compiler-reported client files in A–G | Remove leaked operational fields and enforce the same authority in every writer and reader |
 | MODIFY | App existing AI model contracts, model configuration services, Settings and model UI files in B | Persist configured model trust and expose it through existing administration and directory contracts |
 | CREATE | `../../../magnis-app/backend/migrations/20261006000000_graph_derived_origin.sql` | Entity and Link origin discriminator and constraint migration |
 | CREATE | `../../../magnis-app/backend/migrations/20261006000001_graph_extras.sql` | Typed extras, logical-model trust and legacy pin conversion |
-| CREATE | `../../../magnis-app/backend/migrations/20261006000002_graph_membership.sql` | Membership vocabulary and history conversion |
+| CREATE | `../../../magnis-app/backend/migrations/20261006000002_graph_membership.sql` | Organizational membership and creation direction/history conversion |
 | CREATE | `../../../magnis-app/backend/migrations/20261006000003_graph_user_ownership.sql` | Auth-to-graph-user binding and protected ownership |
 | MODIFY, generated | App DB schema files and catalog host stubs | Regenerate from canonical SQL and SDK; never hand-edit generated declarations |
 | MODIFY | Existing catalog plugin SDK, affected modules and manifests in maps C and F | Consume the new SDK and shared membership permissions |
-| MODIFY | Existing scoped tests named in A–F | Reuse Graph, workspace, User and Source harnesses and fixtures |
+| MODIFY | Existing scoped tests named in A–G | Reuse Graph, workspace, User and Source harnesses and fixtures |
 | CREATE | `../../../magnis-app/backend/test/tst_bts_graph_owner.test.ts`, `../../../magnis-app/backend/test/tst_bts_graph_contract_admission.test.ts` | Missing cross-writer ownership and domain-admission behavioral scenarios |
 
-This bounds owners rather than guessing every compiler caller. Before executable Stage approval, enumerate the actual affected caller paths on the integrated head; unexpected files require an explicit Stage update. New services, queues, runners, auth systems and generic resolver frameworks are not part of the change.
+This bounds owners rather than guessing every compiler caller. Before executable Stage approval, enumerate the actual affected caller paths on the integrated head; unexpected files require an explicit Stage update. Reuse the existing graph Event and Trigger services. Section G will need durable delivery state, but its physical tables/migration are gated by its listed decisions and must be declared before Stage approval. No unrelated runner, auth system or generic resolver framework is introduced.
 
 ## Invariants
 
@@ -324,6 +390,8 @@ This bounds owners rather than guessing every compiler caller. Before executable
 7. Human approval does not change derived origin; repeated evidence does not add to confidence; a changed ending source cannot silently reopen a relation.
 8. Migration preserves explicit sync decisions, applicable periods, auth bindings and access scope. Destructive ambiguity fails preflight rather than choosing silently.
 9. Private Entity processing requires model private true. Known local execution and an explicit declaration for a configured cluster both qualify; physical location metadata alone does not authorize private-data processing.
+10. Creation provenance, organizational membership and observed communication are distinct. A reversed created Link replaces triggered_by; belonging to a chat does not prove delivery.
+11. Trigger admission consumes committed, authorized graph events. Occurrence time differs from insertion time; replay identity is an Event ID, not an Entity ID.
 
 ### Acceptance cases
 
@@ -334,7 +402,7 @@ This bounds owners rather than guessing every compiler caller. Before executable
 | KG-03 | Step 1 → upgrade fixtures for pinned numeric zero, pinned unordered, unpinned order-only and no preference row. Step 2 → repeat migration and read/order/unpin. Verify → deterministic approved mapping, zero stays pinned, second migration makes no new change, original state remains recoverable during rollout |
 | KG-04 | Step 1 → omit/null an archived/private/indexed field or supply a half sync pair to the public parser. Verify → rejection. Step 2 → read an actual missing graph_index row. Verify → explicit pending without inserting status or inventing metadata |
 | KG-05 | Step 1 → Stop a scope while a fetched page waits to commit. Step 2 → release the page and restart worker. Verify → no new content/triggers after the committed Stop; saved choice/revision survives and old acknowledgement does not apply a newer choice |
-| KG-06 | Step 1 → migrate old message/trigger membership with adjacent and duplicate intervals. Step 2 → read, ingest again and import an old-version workspace. Verify → belongs_to everywhere, periods intact, repeats stable; overlapping conflicting conversion aborts with no partial writes |
+| KG-06 | Step 1 → migrate Trigger and proposed Project membership with adjacent/duplicate periods. Step 2 → read, repeat ingestion and import an old workspace. Verify → shared belongs_to, retained periods/provenance and no repeat rows. Step 3 → inspect historical in_chat. Verify → retained until its communication/context mapping is defined; no invented received fact. Conflicting overlapping membership conversion aborts atomically |
 | KG-07 | Step 1 → bootstrap the default nil auth user concurrently twice. Step 2 → restart and authenticate/read existing data. Verify → one assigned users.user, one binding and self-owner Link; auth ID and existing workspace access unchanged; no secrets in properties. Step 3 → query ownership before the backfill timestamp without historical evidence. Verify → no invented past owner |
 | KG-08 | Step 1 → try owner add/end/unlink/patch through RPC, aliases, plugin batch, model output, registration, import and merge. Verify → rejection or the defined system route, with no forged owner. Step 2 → normal Entity creation. Verify → exactly one owner and matching internal scope/audit |
 | KG-09 | Step 1 → transfer an isolated non-user Entity at T. Verify → old interval ends at T, new starts at T, one current owner, old user gains no current read right. Step 2 → retry same owner and test rollback midway. Verify → no extra interval; failure leaves original state. Step 3 → transfer a connected/claimed/user Entity. Verify → explicit conflict, no partial reassignment |
@@ -347,6 +415,15 @@ This bounds owners rather than guessing every compiler caller. Before executable
 | KG-16 | Step 1 → preview/execute a merge with differing privacy, syncEnabled or viewer pinOrder. Verify → refusal without mutation, even if all property conflicts were resolved. Step 2 → equalize the choices through existing explicit commands and merge. Verify → survivor revision and equal choices retained; indexing invalidated/reconciled through the normal mutation path |
 | KG-17 | Step 1 → upgrade a workspace with agent-origin Entity and Link rows, canonical rows, claims and unrelated domain properties containing agent. Verify → only Entity/Link discriminators become derived; IDs, evidence, confidence, periods and other origin domains stay intact; constraints validate. Step 2 → repeat the upgrade and import an old-version export. Verify → stable mapping without duplicates. Step 3 → parse current responses with derived, then agent. Verify → derived succeeds, agent is rejected; unknown stored origins abort migration without partial updates |
 | KG-18 | Step 1 → upgrade known local and unclassified model bindings. Verify → local private true, unclassified private false; missing/null directory values are rejected. Step 2 → authorize a cluster through model settings, restart and refresh its catalog. Verify → trust survives at the same endpoint; an unauthorized settings write fails. Step 3 → revoke trust and await the saved configuration change. Verify → subsequent indexing/search excludes private content using the new policy. Step 4 → change the trusted model's endpoint. Verify → the old declaration does not authorize the new endpoint without fresh classification |
+| KG-19 | Step 1 → migrate Episode → triggered_by → Trigger beside existing Trigger → created → Episode rows. Verify → correct direction, preserved IDs or explicit duplicate mapping, periods/claims/metadata retained; ambiguous collision aborts. Step 2 → replay a firing and read both endpoints. Verify → one created edge, correct incoming/outgoing meaning, child_of retained and no runtime triggered_by write |
+| KG-20 | Step 1 → give a Trigger one parent Episode and a project membership. Verify → parent lookup selects the Episode. Step 2 → add a second active Episode parent and attempt firing. Verify → explicit ambiguity before any child is created. Step 3 → read organizational, authored_by, sent_to and observed-participant facts. Verify → none confers ownership or proves receipt |
+| KG-21 | Step 1 → observe confirmed inbound delivery and commit its message/received Link/event. Verify → a matching rule admits one Episode after commit. Step 2 → roll back the same batch or fail a send. Verify → no deliverable graph event or invented communication. Step 3 → ingest To/CC headers without delivery evidence. Verify → recipient facts only |
+| KG-22 | Step 1 → import old mail after rule activation. Verify → no fresh-mail firing from insertion time. Step 2 → recover a delivery that occurred after activation through catchup. Verify → admission under the explicit phase/time rule. Step 3 → omit receipt time. Verify → it remains unknown and cannot satisfy the bounded rule |
+| KG-23 | Step 1 → crash after graph commit before wake. Verify → recovery discovers the durable event. Step 2 → deliver the same Event ID to competing workers and restart after Episode admission. Verify → one persisted decision/receipt and one Episode. Step 3 → commit two genuine updates to one Entity. Verify → distinct Event IDs and two eligible admissions. Step 4 → retry a schedule slot and a manual request, then submit a new manual request. Verify → one admission per typed input identity; no synthetic graph Event |
+| KG-24 | Step 1 → hold a graph mutation while activating a rule. Step 2 → release commits in both valid orders. Verify → the owner cursor boundary admits exactly the intended side, with no lost behind-watermark event. Step 3 → edit/disable the rule with queued work. Verify → revision boundary and cancellation policy, no silent historical replay |
+| KG-25 | Step 1 → match an update/removal then change the live rows. Verify → snapshot matching remains stable. Step 2 → revoke access or use a non-private model on private snapshots. Verify → delivery/action gate refuses unauthorized disclosure. Deletion/transfer cases use the policy chosen before Stage approval |
+| KG-26 | Step 1 → let Trigger A write data matching A, then let A invoke B whose output matches A. Verify → causal-chain policy stops recursive A admissions. Step 2 → debounce multiple admitted event candidates and restart. Verify → durable suppression/coalescing retains their event identities under the chosen policy |
+| KG-27 | Step 1 → import sender-based watches and historical in_chat/Episode sent relations. Verify → only evidence-backed mappings activate; unresolved facts remain readable and unmappable rules stay paused for review. Step 2 → run cutover with duplicate legacy notifications. Verify → one engine admits each event |
 
 ### Test strategy and publication
 
@@ -371,14 +448,20 @@ Reuse SDK Entity/Link/statement/model/RPC schemas; existing UuidShapeSchema and 
 | Model private | Required boolean on existing configured model types; authorizes private-data processing, including a declared-private cluster, independently of dataBoundary |
 | AuthUserId / UserEntityBinding | Separates existing auth scope, including nil, from the new graph node; maps through users.entity_id instead of rekeying sessions |
 | UserEntityProperties | Minimal public graph-user shape; deliberately excludes auth/admin/secrets fields |
-| belongs_to | Unifies in_chat and triggers.belongs_to membership without a domain-specific verb |
+| belongs_to | Shared organizational membership: triggers.belongs_to and proposed projects.belongs_to; chat communication needs its own evidence-backed mapping |
+| CreatedLink / created | Generalizes the existing creation relation to Trigger → Episode and retires the inverse triggered_by spelling |
+| LinkedEntitySummary.direction | Distinguishes incoming provenance from outgoing results without additional stored inverse kinds |
+| CommunicationLink / received | Explicit observed transmission/delivery and occurrence time; account/conversation representation remains a proposal |
+| GraphMutationEvent / GraphEventCursor / GraphChange | Typed dispatch projection and ordered snapshots over existing graph Event storage |
+| GraphSubscription / GraphEventFilter | Declarative event selection replaces watchable capability checks and bespoke trigger.check emitters |
+| TriggerDefinition.revision / TriggerInput | Stable rule and typed event/schedule/manual admission identity, independent of the affected Entity ID |
 | owner | Protected system relationship, with ordinary write rejection on every route |
 
 ## Not verified
 
 No product changes or migrations were executed in this authoring turn. The exact integration head after the prerequisite work, complete compiler-derived consumer file list, migration row counts, data-dependent overlap conflicts, generated API version and release artifact compatibility must be measured before executable Stage approval. No PR publication or deployment is authorized by this documentation commit.
 
-Persistent-ID and Derived naming and the configured-model trust rule reflect owner decisions. Legacy pin ordering, auth-user mapping/self-owned bootstrap, bounded transfer and refusal of conflicting extras on merge are explicit proposals presented for SPEC approval, not claims of prior owner approval. Wider ACL, connected cross-owner transfer, field-level derived provenance, richer merge extras arbitration, unmerge, general alias consolidation, revision-queue storage/recovery and cloud policy beyond the existing embedding scope remain follow-up contracts. The plan does not silently manufacture answers to them or promise they are already implemented.
+Persistent-ID and Derived naming and the configured-model trust rule reflect owner decisions. Legacy pin ordering, auth-user mapping/self-owned bootstrap, bounded transfer and refusal of conflicting extras on merge are explicit proposals presented for SPEC approval, not claims of prior owner approval. Wider ACL, connected cross-owner transfer, field-level derived provenance, richer merge extras arbitration, unmerge, general alias consolidation, revision-queue storage/recovery and cloud policy beyond the existing embedding scope remain follow-up contracts. Section G additionally requires endpoint/conversation identity, repeated-delivery identity, snapshot access and durable debounce decisions before implementation. Project-membership consolidation and the direction-preserving neighbor projection are review proposals. Creation-link reversal and event-based Trigger selection reflect the owner's requests. The plan does not silently manufacture missing facts or promise these changes are implemented.
 <!-- plan:spec:end -->
 
 <!-- plan:implementation:start -->
