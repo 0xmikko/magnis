@@ -645,7 +645,7 @@ export interface EntityIdentity {
 }
 ```
 
-`@magnis/declare` is a build-time catalog API. A domain supplies its stable schema name, roles and capabilities. `mergeable` and `syncable` are independent permissions of the schema, not the current state of an Entity. Target event subscriptions do not require a `triggerable` flag: they validate registered events, predicates and caller access. The inspected code still exposes that legacy capability. Declaring a schema does not supply CRUD or grant caller access.
+`@magnis/declare` is a build-time catalog API. A domain supplies its stable schema name, roles and capabilities. `mergeable` and `syncable` are independent permissions of the schema, not the current state of an Entity. Target event subscriptions do not require a `triggerable` flag: they validate event selection and caller access. The inspected code still exposes that legacy capability. Declaring a schema does not supply CRUD or grant caller access.
 
 ```typescript
 export interface Searched<Shape extends z.ZodRawShape> {
@@ -2189,186 +2189,106 @@ For example, A states employment from January 1 and B states departure on June 1
 <a id="triggers"></a>
 ## 12. Subscriptions and Triggers: the graph boundary
 
-This section defines the connection between the graph and future automation. The execution engine and classification logic belong to the next story. The declarations below are boundary excerpts, not a complete queue or Trigger configuration API.
-
-### From a module declaration to an Episode
-
-A module uses the existing `LinkContractDeclaration` to declare a kind, allowed endpoint schemas and metadata. Standard kinds retain their shared meaning; a module can register its own kind for a distinct domain relation. Registration and write permissions are validated by Graph. Registered changes can be selected by subscriptions within the user's access scope; a separate watchable/triggerable Entity capability is unnecessary in the target.
+The initial subscription contract covers two cases: a Link was added, or an existing Entity's domain data changed. A module declares its Link kinds and Entity schemas through the existing registry. Graph records the change, selects subscriptions and passes the event to the Trigger. A separate watchable/triggerable Entity capability is unnecessary in this target.
 
 ```mermaid
 flowchart LR
-  M[Module declares a Link contract] --> G[Module writes through Graph]
-  G --> E[Committed GraphMutationEvent]
-  E --> S[Matching GraphSubscription]
-  S --> T[Persisted TriggerExecution]
-  T --> P[Episode when the rule admits execution]
+  G[Graph commits a change] --> E[Event]
+  E --> S[Matching subscription]
+  S --> T[Trigger handles the event]
+  T --> P[Episode if needed]
 ```
 
-| Element | Responsibility |
-| --- | --- |
-| Module | Describe domain facts and create them through Graph; it does not invoke subscribed Triggers |
-| GraphMutationEvent | Record what changed, with a stable event identity and the relevant state |
-| GraphSubscription | Select registered changes by type, kind, endpoints or Entity schema |
-| Trigger | Define what should happen when a selected event meets its conditions |
-| TriggerExecution | Record one Trigger's handling of one input, including its resulting Episode when any |
-| Episode | Perform the admitted action |
-
-Event types describe graph operations; Link kinds and Entity schemas describe the domain. Registering `meetings.attendee` makes it selectable through the same event contract as every other registered kind. The module does not declare separate attendee-created/attendee-deleted event types or embed callbacks in the Link.
-
-| Subscription intent | Event type | Domain filter | State to match |
-| --- | --- | --- | --- |
-| An attendee Link was added | `link_added` | kind = `meetings.attendee` | after |
-| Attendee Link metadata changed | `link_updated` | kind = `meetings.attendee` | before/after as requested |
-| An attendee Link was deleted | `link_removed` | kind = `meetings.attendee` | before |
-| A message's properties changed | `entity_properties_updated` or a properties-bearing `entity_updated` | schemaId = `telegram.message`, optionally a specific ID | before/after as requested |
-| A message was deleted | `entity_deleted` | schemaId = `telegram.message` | before |
-
-Ending a Link's validity period updates the retained historical row; it is not physical deletion. Merely reaching a stored time boundary is not a database mutation. These cases must not be presented as `link_removed`. The event's registered payload defines its state, and subscriber execution happens after commit. Here the subscriber is a Trigger; how it invokes deterministic code or creates an Episode remains in the next logic story. An Episode's `modified` provenance Link is also distinct from the event that reports an Entity update.
-
-For incoming mail, the module creates the message and its observed `received` Link. A subscription selects `link_added`, kind `received` and the receiving mailbox. `received_from` supplies the reported sender; adding sender information alone is not a delivery event.
-
-### The event records the change
-
-```typescript
-// Names from the existing core EventPayload; availability is registered.
-export type GraphEventType =
-  | "entity_created" | "entity_properties_updated" | "entity_updated"
-  | "entity_archived" | "entity_unarchived" | "entity_deleted"
-  | "entities_merged" | "override_applied"
-  | "link_added" | "link_updated" | "link_removed"
-  | "link_evidence_recorded";
-
-export type GraphChange =
-  | {
-      subject: "entity";
-      before: PersistentEntity | null;
-      after: PersistentEntity | null;
-    }
-  | {
-      subject: "link";
-      before: Link | null;
-      after: Link | null;
-    };
-
-// Boundary excerpt; internal delivery/authorization fields are omitted.
-export interface GraphMutationEvent {
-  id: Id;
-  type: GraphEventType;
-  recordedAt: DateTimeUtc;
-  occurredAt: DateTimeUtc | null;
-  changes: readonly GraphChange[];
-}
-```
-
-The source of a firing is the mutation Event ID. The affected Link is in the event's snapshot. Creating and later updating one Link produces distinct events; rereading a changed or deleted live Link cannot replace the original event state. Creation has null before, deletion has null after, and both null is invalid. `recordedAt` is graph recording time; `occurredAt` is domain occurrence time when known. Import time does not establish a new delivery.
-
-**Target guarantee:** Graph saves the mutation and its event atomically. A DB hook may append the event; notification can wake the reader after commit. Trigger actions run after commit. Rollback exposes no event, a no-op replay creates none, and a committed event remains recoverable after a process restart. Physical event storage and dispatch are part of the next implementation story.
-
-### A subscription selects events
+### A subscription selects a Link or an Entity
 
 ```typescript
 export type GraphEventFilter =
   | {
-      subject: "link";
-      types: readonly GraphEventType[];
-      kind: LinkType | null;
+      type: "link_added";
+      kind: LinkType;
       from: PersistentEntityId | null;
       to: PersistentEntityId | null;
-      metadata: JsonObject;
-      match: "before" | "after" | "either";
     }
   | {
-      subject: "entity";
-      types: readonly GraphEventType[];
-      schemaId: SchemaId | null;
+      type: "entity_updated";
+      schemaId: SchemaId;
       id: PersistentEntityId | null;
-      match: "before" | "after" | "either";
     };
 
-// Boundary excerpt; activation/history policy belongs to the logic contract.
 export interface GraphSubscription {
   filter: GraphEventFilter;
 }
 ```
 
-Filters select recorded before/after state. Null means no restriction; empty metadata adds no condition. Metadata predicates must name fields declared for a concrete Link kind. Registration, filter validity and access are checked before a subscription can run. Multiple subscriptions on one Trigger are alternatives; matching two does not duplicate its handling of the same event.
+Null means no endpoint or ID restriction. Link selection uses its registered kind and optional endpoints; Entity selection uses its registered schema and optional ID. Graph checks the subscriber's access. There are no field predicates or conditions in this subscription contract. The handler receives the change and decides what to do.
 
-For a new-mail subscription, the filter is `subject: "link"`, `types: ["link_added"]`, `kind: "received"`, `from: mailboxId`, `to: null`, `metadata: {}` and `match: "after"`. Activation and history rules must distinguish fresh delivery from old imports; they are not inferred from insertion time.
+| Use case | Subscription |
+| --- | --- |
+| Mail arrived in a mailbox | link_added, kind received, from = mailbox ID |
+| Something was attached to a container | link_added, kind belongs_to, to = container ID |
+| An attendee was added to a meeting | link_added, kind meetings.attendee, from = meeting ID |
+| A meeting or message was edited | entity_updated, schemaId = its schema, optionally id = that Entity |
 
-### Signals around an Entity
-
-A subscription can select one Entity by ID or all Entities of a registered schema. Useful signals extend beyond Link creation, but not all require a new graph event type:
-
-| Signal family | Example use | Basis and scope |
-| --- | --- | --- |
-| Entity lifecycle | Process a new document; react to archive, restoration or deletion | Existing entity_created/archived/unarchived/deleted vocabulary |
-| Domain data changed | A meeting time moved, message text was edited, or a value crossed a threshold | Existing entity_properties_updated/entity_updated plus a before/after condition |
-| Identity changed | Reconcile a reference after two contacts were merged | Existing entities_merged with survivor and retired IDs; subscription retargeting must be explicit |
-| Relationships changed | A meeting gained an attendee or a contact lost a relationship | Existing link_added/updated/removed and a kind/endpoint filter |
-| Knowledge changed | New evidence arrived, a derived confidence crossed a threshold, or a correction was applied | Existing link_evidence_recorded/override_applied where applicable and actual derived-state changes; evidence arrival need not change the result |
-| Operational state changed | Indexing finished, sync was disabled, or a viewer pinned an Entity | A separately scoped extras/processing contract in the next story; viewer preferences are not global knowledge |
-| A module operation finished | A send failed or a Source sync completed | A typed module-operation contract when needed; it must not duplicate an existing graph mutation |
-| Time or absence | A meeting starts soon, or no reply arrived for two days | Scheduler plus an explicit condition; absence of a write is not a graph mutation |
-| A query's result changed | A contact entered or left a selected set | A derived subscription over declared dependencies, with transaction/revision semantics; not a new base event for every query |
-
-The first five rows reuse names in the inspected audit vocabulary; their presence does not prove complete, durable subscription delivery. The remaining rows are design directions for the next logic story, not additions to GraphEventType or implementation requirements for the graph migration.
-
-For example, this boundary excerpt selects message updates across both existing update variants:
+For incoming mail, the module creates the message and its observed received Link. The Link addition is the signal. Adding received_from sender information alone does not establish delivery. Replaying the same stored fact without a change does not create another event.
 
 ```typescript
 const messageUpdates: GraphSubscription = {
   filter: {
-    subject: "entity",
-    types: ["entity_properties_updated", "entity_updated"],
+    type: "entity_updated",
     schemaId: "telegram.message",
-    id: null, // Set an assigned ID to observe one message only.
-    match: "either",
+    id: null,
   },
 };
 ```
 
-This selects candidate updates; a content-specific rule still compares the relevant domain fields. Current batch property writes emit entity_updated, and current sync-setting writes use that same event type. A classifier must not infer a content change from the event name alone. Extras remain outside domain Entity snapshots; operational subscriptions need their own typed state projection and access scope rather than putting those fields back into Entity.
+This selects changes to Telegram messages. Setting id restricts it to one message. Entity updates here mean changes to domain data; pin, sync and other extras are outside this contract.
 
-The logic contract should distinguish a changed value, a condition that is currently true, and a transition from false to true or true to false. Unrelated edits must not repeatedly fire a threshold-crossing rule. Compare the relevant committed before/after state, including absent versus explicit null; classify creation/deletion separately. Atomic changes and merge side effects must not expose intermediate query membership. The current GraphEventFilter excerpt does not yet define a property-predicate language or maintained query subscriptions.
-
-Actor and provenance can further select user, module or derived changes using the existing audit context. A confidence of one alone does not prove human approval: that requires the recorded manual decision and actor. Exact predicates, query dependency tracking, timer cancellation and typed operation/extra signals remain in the next story; they do not create more domain Link kinds.
-
-### A firing refers to its event and result
+### The event carries the change
 
 ```typescript
-// Boundary excerpts; the full execution configuration is deferred.
+// Target subscription payload, not the complete audit-event vocabulary.
+export type GraphMutationEvent = {
+  id: Id;
+  recordedAt: DateTimeUtc;
+  occurredAt: DateTimeUtc | null;
+} & (
+  | { type: "link_added"; link: Link }
+  | {
+      type: "entity_updated";
+      before: PersistentEntity;
+      after: PersistentEntity;
+    }
+);
+
+export type GraphEventType = GraphMutationEvent["type"];
+```
+
+The event identifies a committed change. A Link event contains the added Link; an Entity event contains the same Entity before and after its update. The handler can inspect changed data without a graph-level rule language. recordedAt is recording time; occurredAt is domain occurrence time when known. An import timestamp does not prove fresh delivery.
+
+Graph saves the change and event together and dispatches after commit. A repeated delivery of the same event must not start the same Trigger twice. The later implementation chooses how to reuse event storage and the execution queue.
+
+The current audit vocabulary is broader than this subscription contract. In particular, property changes can emit entity_properties_updated or entity_updated, while sync settings also use entity_updated. The future subscription producer must select actual domain changes across these write paths. This does not rename or remove existing audit events.
+
+### A Trigger handles the selected event
+
+```typescript
+// Excerpts for event-driven execution, not a complete Trigger API.
 export interface TriggerConfig {
   subscriptions: readonly GraphSubscription[];
 }
 
-export interface TriggerDefinition {
-  id: PersistentEntityId;
-  revision: string;
-  config: TriggerConfig;
-}
-
-export type TriggerInput =
-  | { kind: "event"; eventId: Id }
-  | { kind: "schedule"; scheduledFor: DateTimeUtc }
-  | { kind: "manual"; requestId: Id };
-
 export interface TriggerExecution {
   triggerId: PersistentEntityId;
-  triggerRevision: string;
-  input: TriggerInput;
+  eventId: Id;
   episodeId: PersistentEntityId | null;
 }
 ```
 
-One graph event can produce separate execution records for several matching Triggers. Repeated delivery to the same Trigger revision reuses its execution identity. Two real changes to one Entity remain distinct inputs. Schedule slots and manual requests have their own identity without fabricating a graph event. `episodeId: null` means no Episode has been assigned; it does not distinguish pending, rejected and failed execution by itself. Those states belong to the later execution contract.
+Multiple subscriptions on one Trigger are alternatives. TriggerExecution records which event caused a run and the resulting Episode, if any; it is operational history. The source is the Event ID, with the affected Link or Entity in the event payload. Trigger → created → Episode records creation provenance. Trigger → belongs_to → parent Episode and the resulting Episode's child_of relation retain their existing meaning.
 
-The record exists before action execution and lets the worker resume handling an input. When the rule admits an action, it records the resulting Episode. TriggerExecution is operational history, not another knowledge Entity or an item in Entity extras. `Trigger → created → Episode` records creation provenance; `Trigger → belongs_to → parent Episode` retains the Trigger's context. The firing Episode also keeps its `child_of` parent relation.
+This chapter defines event selection and its connection to a Trigger. The next logic story covers handling that event using the existing Trigger and Episode mechanisms. Timers, query subscriptions and a general rule engine are not requirements of this contract.
 
-### Scope of the next logic story
-
-The next story defines classification inputs and module-provided context, condition evaluation, execution states, queue ordering/claiming, retries, activation/history policy, debounce, schedules and recursion protection. It must preserve current access/private-data rules and define snapshot access after deletion or transfer. Persisted event identity and recoverable, non-duplicating admission remain required outcomes; this chapter does not choose their storage or worker protocol.
-
-**Current:** modules emit `trigger.check`, Triggers use watches/triggerable and live-only admission, and the EventBus is in-process. The inspected `TriggerGate` always returns relevant; it is not a working semantic classifier. Email currently supplies sender, subject and time without its body; Telegram supplies text, sender name and time. A typed classification context is therefore an explicit follow-up, not an implemented part of this graph contract. Keep the existing runtime compatible until the later cutover.
+**Current:** modules emit trigger.check, Triggers use watches/triggerable, and the EventBus is in-process. TriggerGate currently always returns relevant. The subscription contract above is the target; keep existing automation working until its later replacement.
 
 <a id="open-contracts"></a>
 ## 13. Open contracts and evidence
@@ -2384,7 +2304,7 @@ The next story defines classification inputs and module-provided context, condit
 | Schema evolution | Immutable versions, stored-record migration and unavailable required versions |
 | Runtime domains | Who may register a new domain without installing a module and who owns its behavior |
 | Communication | Concrete endpoint/conversation representation and repeated-delivery identity |
-| Trigger logic — next story | Classification context, execution states, activation/history, queue/retry/debounce/schedule policy, recursion protection and snapshot access after deletion/transfer |
+| Trigger logic — next story | Connect Link additions and Entity updates to the existing Trigger/Episode execution mechanism |
 
 These are explicit limits, not defaults inferred from incidental code. The migration plan distinguishes implementation-ready decisions from proposals awaiting the owner's approval.
 
