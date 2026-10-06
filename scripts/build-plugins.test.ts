@@ -2,21 +2,74 @@
 // only imports are host-shim URLs (relatives inlined), with the PRODUCTION JSX
 // runtime (no jsxDEV / no vite dep paths). Run: `bun test scripts/`.
 import { test, expect, beforeAll } from "bun:test";
-import { buildPlugin } from "./build-plugins.ts";
-import { readFileSync, readdirSync, writeFileSync, rmSync } from "fs";
+import { buildPlugin, discoverPlugins } from "./build-plugins.ts";
+import { existsSync, readFileSync, readdirSync, writeFileSync, rmSync } from "fs";
 import { join } from "path";
+import { parse as parseToml } from "smol-toml";
 
 const REPO = join(import.meta.dir, "..");
 const DIST = join(REPO, "plugins_dist");
 
+/**
+ * @test-id: tst_cat_manifest_001
+ * @scenario: scn_google_pull_001
+ * @covers: modules/addressbook/manifest.toml, modules/meetings/manifest.toml
+ * @deterministic: yes
+ * @fixtures: checked-in module manifests
+ */
+test("tst_cat_manifest_001 Google sync modules may create shared email addresses", () => {
+  for (const moduleId of ["addressbook", "meetings"]) {
+    const manifest = parseToml(readFileSync(join(REPO, "modules", moduleId, "manifest.toml"), "utf8")) as {
+      permissions?: { create?: string[] };
+    };
+    expect(manifest.permissions?.create).toContain("email.address");
+  }
+});
+
 let bundleRel: string;
+
+/**
+ * @test-id: tst_cat_layout_001
+ * @scenario: scn_google_pull_007
+ * @covers: scripts/build-plugins.ts::buildPlugin
+ * @deterministic: yes
+ * @fixtures: the checked-in file module at the repository root
+ */
+test("tst_cat_layout_001 builds a root-level Module with the existing builder", async () => {
+  const result = await buildPlugin("file", { pluginsDir: REPO, distDir: DIST });
+  expect(result.pluginId).toBe("file");
+});
+
+/**
+ * @test-id: tst_build_ui_less_001
+ * @scenario: scn_compact_artifact_install_001
+ * @covers: scripts/build-plugins.ts::discoverPlugins, scripts/build-plugins.ts::buildPlugin
+ * @deterministic: yes
+ * @fixtures: the checked-in addressbook module, which has no ui/
+ */
+test("tst_build_ui_less_001 a module without ui/ is discovered and built without a UI bundle", async () => {
+  expect(existsSync(join(REPO, "modules", "addressbook", "ui"))).toBe(false);
+  expect(discoverPlugins(REPO)).toContain("addressbook");
+
+  await buildPlugin("addressbook", { pluginsDir: REPO, distDir: DIST });
+  const pkg = join(DIST, "modules", "addressbook");
+  const bundle = JSON.parse(readFileSync(join(pkg, "bundle.json"), "utf8")) as Record<string, unknown> & {
+    module: { dist: string };
+  };
+  expect(bundle.ui).toBeUndefined();
+  expect(bundle.uiHash).toBeUndefined();
+  expect(existsSync(join(pkg, "ui"))).toBe(false);
+  expect(existsSync(join(pkg, "module", "dist", bundle.module.dist))).toBe(true);
+  expect(readdirSync(join(pkg, "schemas"))).toEqual(["card.json"]);
+});
 
 beforeAll(async () => {
   const res = await buildPlugin("file", {
-    pluginsDir: join(REPO, "plugins"),
+    pluginsDir: REPO,
     distDir: DIST,
   });
-  bundleRel = res.bundleFile; // e.g. "index.<hash>.js"
+  if (res.ui === null) throw new Error("file builds without a UI bundle");
+  bundleRel = res.ui.bundleFile; // e.g. "index.<hash>.js"
 });
 
 /**
@@ -31,7 +84,7 @@ test("tst_build_schemas_001 rebuilding removes retired entity descriptors", asyn
   const retired = join(schemas, "retired.json");
   writeFileSync(retired, JSON.stringify({ version: 1, name: "Retired" }));
   try {
-    await buildPlugin("file", { pluginsDir: join(REPO, "plugins"), distDir: DIST });
+    await buildPlugin("file", { pluginsDir: REPO, distDir: DIST });
     expect(readdirSync(schemas)).toEqual(["object.json"]);
     expect(JSON.parse(readFileSync(join(schemas, "object.json"), "utf8"))).toHaveProperty("json_schema");
   } finally {
@@ -44,7 +97,7 @@ test("tst_build_schemas_001 rebuilding removes retired entity descriptors", asyn
 // bundle.json.assets with a content hash.
 test("tst_build_icon_001: icon.svg → dist copy + bundle.json.assets", async () => {
   // x ships plugins/x/icon.svg (the brand glyph, package root).
-  await buildPlugin("x", { pluginsDir: join(REPO, "plugins"), distDir: DIST });
+  await buildPlugin("x", { pluginsDir: REPO, distDir: DIST });
   const svg = readFileSync(join(DIST, "modules", "x", "icon.svg"), "utf8");
   expect(svg).toContain("<svg");
   const bj = JSON.parse(readFileSync(join(DIST, "modules", "x", "bundle.json"), "utf8"));
@@ -108,7 +161,7 @@ test("tst_build_bundle_001: file ui → one bundle, externals→shim, relatives 
 //     per plugin. Measured while planning this: the naive form emits 7.5 KB
 //     with a `@layer base`, the correct one 441 bytes with none.
 test("tst_build_styles_001: the bundle carries the package's own utilities, and no reset", async () => {
-  await buildPlugin("companies", { pluginsDir: join(REPO, "plugins"), distDir: DIST });
+  await buildPlugin("companies", { pluginsDir: REPO, distDir: DIST });
   const uiDir = join(DIST, "modules", "companies", "ui");
   const file = readdirSync(uiDir).find((f) => f.endsWith(".js"));
   expect(file, "companies ui bundle").toBeDefined();

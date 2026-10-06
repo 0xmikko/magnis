@@ -1,68 +1,33 @@
 import { z } from "zod";
-export interface EnumOption {
-    readonly value: string;
-    readonly label: string;
-    readonly description: string | null;
-}
-export type ModuleSettingFieldType = {
-    readonly type: "number";
-    readonly min: number | null;
-    readonly max: number | null;
-} | {
-    readonly type: "string";
-    readonly maxLength: number | null;
-} | {
-    readonly type: "boolean";
-} | {
-    readonly type: "enum";
-    readonly options: readonly EnumOption[];
-};
-export interface ModuleSettingField {
-    readonly key: string;
-    readonly label: string;
-    readonly description: string | null;
-    readonly fieldType: ModuleSettingFieldType;
-    readonly defaultValue: string;
-    readonly confirmationMessage: string | null;
-}
-export interface ModuleSettingsSchema {
-    readonly moduleId: string;
-    readonly label: string;
-    readonly description: string | null;
-    readonly fields: readonly ModuleSettingField[];
-}
-export interface ModuleSettingValue {
-    readonly key: string;
-    readonly value: string;
-}
-export interface ModuleSettingsEntry {
-    readonly moduleId: string;
-    readonly label: string;
-    readonly schema: ModuleSettingsSchema | null;
-    readonly values: readonly ModuleSettingValue[];
-}
+export declare const ModuleSettingsUpdateParamsSchema: z.ZodObject<{
+    moduleId: z.ZodString;
+    values: z.ZodRecord<z.ZodString, z.ZodType<import("./json.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("./json.js").JsonValue, unknown>>>;
+}, z.core.$strict>;
+export type ModuleSettingsUpdateParams = z.output<typeof ModuleSettingsUpdateParamsSchema>;
 export declare const EnumOptionSchema: z.ZodObject<{
     value: z.ZodString;
     label: z.ZodString;
     description: z.ZodNullable<z.ZodString>;
-}, z.core.$strip>;
+}, z.core.$strict>;
+export type EnumOption = z.output<typeof EnumOptionSchema>;
 export declare const ModuleSettingFieldTypeSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     type: z.ZodLiteral<"number">;
     min: z.ZodNullable<z.ZodNumber>;
     max: z.ZodNullable<z.ZodNumber>;
-}, z.core.$strip>, z.ZodObject<{
+}, z.core.$strict>, z.ZodObject<{
     type: z.ZodLiteral<"string">;
     maxLength: z.ZodNullable<z.ZodNumber>;
-}, z.core.$strip>, z.ZodObject<{
+}, z.core.$strict>, z.ZodObject<{
     type: z.ZodLiteral<"boolean">;
-}, z.core.$strip>, z.ZodObject<{
+}, z.core.$strict>, z.ZodObject<{
     type: z.ZodLiteral<"enum">;
-    options: z.ZodArray<z.ZodObject<{
+    options: z.ZodReadonly<z.ZodArray<z.ZodObject<{
         value: z.ZodString;
         label: z.ZodString;
         description: z.ZodNullable<z.ZodString>;
-    }, z.core.$strip>>;
-}, z.core.$strip>], "type">;
+    }, z.core.$strict>>>;
+}, z.core.$strict>], "type">;
+export type ModuleSettingFieldType = z.output<typeof ModuleSettingFieldTypeSchema>;
 export declare const ModuleSettingFieldSchema: z.ZodObject<{
     key: z.ZodString;
     label: z.ZodString;
@@ -71,27 +36,28 @@ export declare const ModuleSettingFieldSchema: z.ZodObject<{
         type: z.ZodLiteral<"number">;
         min: z.ZodNullable<z.ZodNumber>;
         max: z.ZodNullable<z.ZodNumber>;
-    }, z.core.$strip>, z.ZodObject<{
+    }, z.core.$strict>, z.ZodObject<{
         type: z.ZodLiteral<"string">;
         maxLength: z.ZodNullable<z.ZodNumber>;
-    }, z.core.$strip>, z.ZodObject<{
+    }, z.core.$strict>, z.ZodObject<{
         type: z.ZodLiteral<"boolean">;
-    }, z.core.$strip>, z.ZodObject<{
+    }, z.core.$strict>, z.ZodObject<{
         type: z.ZodLiteral<"enum">;
-        options: z.ZodArray<z.ZodObject<{
+        options: z.ZodReadonly<z.ZodArray<z.ZodObject<{
             value: z.ZodString;
             label: z.ZodString;
             description: z.ZodNullable<z.ZodString>;
-        }, z.core.$strip>>;
-    }, z.core.$strip>], "type">;
+        }, z.core.$strict>>>;
+    }, z.core.$strict>], "type">;
     defaultValue: z.ZodString;
     confirmationMessage: z.ZodNullable<z.ZodString>;
-}, z.core.$strip>;
+}, z.core.$strict>;
+export type ModuleSettingField = z.output<typeof ModuleSettingFieldSchema>;
 export declare const ModuleSettingsSchemaSchema: z.ZodObject<{
     moduleId: z.ZodString;
     label: z.ZodString;
     description: z.ZodNullable<z.ZodString>;
-    fields: z.ZodArray<z.ZodObject<{
+    fields: z.ZodReadonly<z.ZodArray<z.ZodObject<{
         key: z.ZodString;
         label: z.ZodString;
         description: z.ZodNullable<z.ZodString>;
@@ -99,27 +65,29 @@ export declare const ModuleSettingsSchemaSchema: z.ZodObject<{
             type: z.ZodLiteral<"number">;
             min: z.ZodNullable<z.ZodNumber>;
             max: z.ZodNullable<z.ZodNumber>;
-        }, z.core.$strip>, z.ZodObject<{
+        }, z.core.$strict>, z.ZodObject<{
             type: z.ZodLiteral<"string">;
             maxLength: z.ZodNullable<z.ZodNumber>;
-        }, z.core.$strip>, z.ZodObject<{
+        }, z.core.$strict>, z.ZodObject<{
             type: z.ZodLiteral<"boolean">;
-        }, z.core.$strip>, z.ZodObject<{
+        }, z.core.$strict>, z.ZodObject<{
             type: z.ZodLiteral<"enum">;
-            options: z.ZodArray<z.ZodObject<{
+            options: z.ZodReadonly<z.ZodArray<z.ZodObject<{
                 value: z.ZodString;
                 label: z.ZodString;
                 description: z.ZodNullable<z.ZodString>;
-            }, z.core.$strip>>;
-        }, z.core.$strip>], "type">;
+            }, z.core.$strict>>>;
+        }, z.core.$strict>], "type">;
         defaultValue: z.ZodString;
         confirmationMessage: z.ZodNullable<z.ZodString>;
-    }, z.core.$strip>>;
-}, z.core.$strip>;
+    }, z.core.$strict>>>;
+}, z.core.$strict>;
+export type ModuleSettingsSchema = z.output<typeof ModuleSettingsSchemaSchema>;
 export declare const ModuleSettingValueSchema: z.ZodObject<{
     key: z.ZodString;
     value: z.ZodString;
-}, z.core.$strip>;
+}, z.core.$strict>;
+export type ModuleSettingValue = z.output<typeof ModuleSettingValueSchema>;
 export declare const ModuleSettingsEntrySchema: z.ZodObject<{
     moduleId: z.ZodString;
     label: z.ZodString;
@@ -127,7 +95,7 @@ export declare const ModuleSettingsEntrySchema: z.ZodObject<{
         moduleId: z.ZodString;
         label: z.ZodString;
         description: z.ZodNullable<z.ZodString>;
-        fields: z.ZodArray<z.ZodObject<{
+        fields: z.ZodReadonly<z.ZodArray<z.ZodObject<{
             key: z.ZodString;
             label: z.ZodString;
             description: z.ZodNullable<z.ZodString>;
@@ -135,26 +103,27 @@ export declare const ModuleSettingsEntrySchema: z.ZodObject<{
                 type: z.ZodLiteral<"number">;
                 min: z.ZodNullable<z.ZodNumber>;
                 max: z.ZodNullable<z.ZodNumber>;
-            }, z.core.$strip>, z.ZodObject<{
+            }, z.core.$strict>, z.ZodObject<{
                 type: z.ZodLiteral<"string">;
                 maxLength: z.ZodNullable<z.ZodNumber>;
-            }, z.core.$strip>, z.ZodObject<{
+            }, z.core.$strict>, z.ZodObject<{
                 type: z.ZodLiteral<"boolean">;
-            }, z.core.$strip>, z.ZodObject<{
+            }, z.core.$strict>, z.ZodObject<{
                 type: z.ZodLiteral<"enum">;
-                options: z.ZodArray<z.ZodObject<{
+                options: z.ZodReadonly<z.ZodArray<z.ZodObject<{
                     value: z.ZodString;
                     label: z.ZodString;
                     description: z.ZodNullable<z.ZodString>;
-                }, z.core.$strip>>;
-            }, z.core.$strip>], "type">;
+                }, z.core.$strict>>>;
+            }, z.core.$strict>], "type">;
             defaultValue: z.ZodString;
             confirmationMessage: z.ZodNullable<z.ZodString>;
-        }, z.core.$strip>>;
-    }, z.core.$strip>>;
-    values: z.ZodArray<z.ZodObject<{
+        }, z.core.$strict>>>;
+    }, z.core.$strict>>;
+    values: z.ZodReadonly<z.ZodArray<z.ZodObject<{
         key: z.ZodString;
         value: z.ZodString;
-    }, z.core.$strip>>;
-}, z.core.$strip>;
+    }, z.core.$strict>>>;
+}, z.core.$strict>;
+export type ModuleSettingsEntry = z.output<typeof ModuleSettingsEntrySchema>;
 //# sourceMappingURL=module-settings.d.ts.map

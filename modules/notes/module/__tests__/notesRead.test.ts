@@ -1,0 +1,232 @@
+/**
+ * @test-id: tst_module_notes_read_001
+ * @scenario: scn_notes_identity_001
+ * @covers: NotesModule.get, NotesModule.list
+ * @deterministic: yes
+ * @fixtures: strict graph read doubles
+ * @legacy-id: tst_notes_e2e_canonical_resolved_on_get
+ */
+// Notes read surface — shape parity + DB-access guarantees after the
+// graph-read-api adoption. The no-search list already used listEntitiesWindow;
+// this stage fixes the two remaining N+1s: search (was per-row
+// list_facets_for_entity + get_canonical) now uses list_facets_for_entities +
+// list_canonical_for_entities (batch, byte-parity with the old canonical-aware
+// item), and get's link resolution (was per-link getEntityFull) now uses one
+// getEntities batch. Mirrors companies/module/__tests__/companiesRead.test.ts.
+// tst_be_notesread_001 (shape) + tst_be_notesdb_001 (op-counts).
+//
+// Doubles come from @magnis/testkit/module: `mockGraph` is a throwing Proxy, so
+// the read path hitting ANY op it did not arrange (getEntity /
+// list_facets_for_entity — the N+1 traps) throws `unexpected graph op: …` and
+// fails the test. That single guarantee REPLACES the old per-op `reject()` spies.
+
+import { beforeEach, describe, expect, it } from "vitest";
+import {
+  entity,
+  link,
+  mockGraph,
+  mountModule,
+  page,
+  type MockGraph,
+} from "@magnis/testkit/module";
+import { NotesModule } from "../service.ts";
+import { previewFromBody } from "../helpers.ts";
+import { NOTE, NOTE_CONTENT } from "../../schema.ts";
+import type { NoteCanonical } from "../../types.ts";
+
+type G = MockGraph;
+
+// The read-path ops, arranged with benign defaults; individual tests re-arm them
+// via `graph.spies.<op>.mockResolvedValue(...)`. Ops NOT listed here
+// (list_facets_for_entity, getEntity) stay unarranged, so the throwing Proxy
+// fails the test if the read path hits them.
+function readGraph(): G {
+  return mockGraph({
+    listEntitiesWindow: () => Promise.resolve(page([])),
+    searchEntitiesByName: () => Promise.resolve([]),
+    getEntityFull: () => Promise.resolve(null),
+    getEntities: () => Promise.resolve([]),
+  });
+}
+
+// noUncheckedIndexedAccess: `spies` is Record<string, Mock>, so each lookup is
+// `Mock | undefined`. Every op referenced below IS arranged by readGraph, so a
+// missing spy is a harness bug — surface it, never mask it.
+function spy(graph: G, op: string): G["spies"][string] {
+  const s = graph.spies[op];
+  if (s === undefined) throw new Error(`notes read test: spy '${op}' not arranged`);
+  return s;
+}
+
+describe("notes read — shape parity (tst_be_notesread_001)", () => {
+  let graph: G;
+  let mod: NotesModule;
+  beforeEach(() => {
+    graph = readGraph();
+    mod = mountModule(NotesModule, { graph, ctx: { extensionId: "notes" } }).module;
+  });
+
+  it("F1 search reads the dictionary riding the entity (S1: no batch facets, no canonical)", async () => {
+    spy(graph, "searchEntitiesByName").mockResolvedValue([
+      entity("n1", "", {
+        schemaId: NOTE,
+        createdAt: "2026-01-01T00:00:00Z",
+        properties: {
+          title: "Dict Title",
+          body: "hello world",
+          pinned: true,
+          updated_at: "2026-03-03T00:00:00Z",
+        },
+      }),
+    ]);
+
+    const page = await mod.list({ search: "dict", limit: 50, offset: 0 });
+    expect(page.total).toBe(1);
+    const item = page.items[0];
+    if (item === undefined) throw new Error("F1: missing first item");
+    expect(item.title).toBe("Dict Title");
+    expect(item.pinned).toBe(true);
+    expect(item.updatedAt).toBe("2026-03-03T00:00:00Z");
+    expect(item.preview).toContain("hello");
+  });
+
+  it("F2 get resolves link neighbours via ONE getEntities batch (no per-link fetch)", async () => {
+    spy(graph, "getEntityFull").mockResolvedValue({
+      entity: entity("n1", "My Note", { schemaId: NOTE, properties: { body: "b" } }),
+      links: [link("n1", "c1", "mentions"), link("n1", "c2", "mentions")],
+    });
+    spy(graph, "getEntities").mockResolvedValue([
+      entity("c1", "Alice", { schemaId: "contacts.person" }),
+      entity("c2", "Bob", { schemaId: "contacts.person" }),
+    ]);
+
+    const view = await mod.get({ id: "n1" });
+    expect(view.title).toBe("My Note");
+    expect(view.linkedEntities.map((l) => l.name)).toEqual(["Alice", "Bob"]);
+    expect(graph.spies.getEntities).toHaveBeenCalledTimes(1); // ONE batch, no per-link N+1
+  });
+
+  it("F3 get throws on a non-notes / missing entity", async () => {
+    spy(graph, "getEntityFull").mockResolvedValue(null);
+    await expect(mod.get({ id: "nope" })).rejects.toThrow();
+  });
+
+  it("F4 list (no search) maps window rows", async () => {
+    spy(graph, "listEntitiesWindow").mockResolvedValue(
+      page([entity("n1", "Title", { schemaId: NOTE, properties: { body: "body", pinned: true } })]),
+    );
+    const listed = await mod.list({});
+    expect(listed.items[0]).toMatchObject({ title: "Title", pinned: true });
+    const call = spy(graph, "listEntitiesWindow").mock.calls[0]?.[0];
+    expect(call?.order).toEqual([{ field: { propertyPath: "updated_at" }, desc: true }]);
+  });
+
+  /**
+   * @test-id: tst_module_notes_preview_001
+   * @scenario: scn_backend_tests_006
+   * @covers: previewFromBody, NotesModule.list
+   * @legacy-id: tst_notes_e2e_list_orders_recent_first_with_preview
+   * @legacy-id: tst_notes_e2e_preview_truncates_unicode_on_boundary
+   * @deterministic: yes
+   */
+  it("tst_module_notes_preview_001 skips headings and truncates Unicode by codepoint", () => {
+    expect(previewFromBody("# Heading\n\nfirst useful line")).toBe("first useful line");
+    const unicode = "🙂".repeat(81);
+    expect(previewFromBody(unicode)).toBe(`${"🙂".repeat(80)}…`);
+  });
+});
+
+describe("notes read — DB-access guarantees (tst_be_notesdb_001)", () => {
+  let graph: G;
+  let mod: NotesModule;
+  beforeEach(() => {
+    graph = readGraph();
+    mod = mountModule(NotesModule, { graph, ctx: { extensionId: "notes" } }).module;
+  });
+
+  it("search = 1 search, 0 batch facets, 0 0 per-row reads, 0 window", async () => {
+    spy(graph, "searchEntitiesByName").mockResolvedValue([
+      entity("n1", "n", { schemaId: NOTE }),
+    ]);
+    await mod.list({ search: "x" });
+    expect(graph.spies.searchEntitiesByName).toHaveBeenCalledTimes(1);
+    // S1: the dictionary rides the entity — the two page-wide batch reads are gone.
+    expect(graph.spies.listEntitiesWindow).toHaveBeenCalledTimes(0);
+  });
+
+  it("get = 1 getEntityFull + 1 getEntities (links present), 0 0 per-link", async () => {
+    spy(graph, "getEntityFull").mockResolvedValue({
+      entity: entity("n1", "N", { schemaId: NOTE }),
+      links: [link("n1", "c1", "mentions")],
+    });
+    spy(graph, "getEntities").mockResolvedValue([
+      entity("c1", "Alice", { schemaId: "contacts.person" }),
+    ]);
+    await mod.get({ id: "n1" });
+    expect(graph.spies.getEntityFull).toHaveBeenCalledTimes(1);
+    expect(graph.spies.getEntities).toHaveBeenCalledTimes(1);
+  });
+
+  it("get with no links makes 0 getEntities", async () => {
+    spy(graph, "getEntityFull").mockResolvedValue({
+      entity: entity("n1", "N", { schemaId: NOTE }),
+      links: [],
+    });
+    await mod.get({ id: "n1" });
+    expect(graph.spies.getEntities).toHaveBeenCalledTimes(0);
+  });
+});
+
+/**
+ * @test-id: tst_cat_entity_one_type_005
+ * @scenario: scn_notes_identity_001
+ * @covers: NotesModule.get
+ * @deterministic: yes
+ * @fixtures: strict graph read doubles
+ *
+ * A note's linked neighbour is the SDK `LinkedEntitySummary`: an agent's guess
+ * that the note mentions a person carries the agent statement — origin,
+ * confidence and when it stops — so the reader can tell a guess from a record.
+ */
+describe("tst_cat_entity_one_type_005 — a linked summary carries its statement", () => {
+  it("tst_cat_entity_one_type_005 lists an agent link's neighbour with origin, confidence and validUntil", async () => {
+    const graph = readGraph();
+    const mod = mountModule(NotesModule, { graph, ctx: { extensionId: "notes" } }).module;
+    spy(graph, "getEntityFull").mockResolvedValue({
+      entity: entity("n1", "My Note", { schemaId: NOTE, properties: { body: "b" } }),
+      links: [
+        {
+          id: "l1",
+          owner: "u1",
+          from: "n1",
+          to: "c1",
+          kind: "mentions",
+          createdAt: "2026-02-01T00:00:00Z",
+          origin: "agent",
+          confidence: 0.7,
+          evidence: ["episode-1"],
+          validFrom: null,
+          validUntil: "2027-01-01T00:00:00Z",
+        },
+      ],
+    });
+    spy(graph, "getEntities").mockResolvedValue([
+      entity("c1", "Alice", { schemaId: "contacts.person", createdAt: "2026-01-05T00:00:00Z" }),
+    ]);
+
+    const view = await mod.get({ id: "n1" });
+
+    expect(view.linkedEntities).toEqual([
+      {
+        id: "c1",
+        name: "Alice",
+        schemaId: "contacts.person",
+        linkKind: "mentions",
+        createdAt: "2026-01-05T00:00:00Z",
+        origin: "agent",
+        confidence: 0.7,
+        validUntil: "2027-01-01T00:00:00Z",
+      },
+    ]);
+  });
+});

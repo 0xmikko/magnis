@@ -12,6 +12,7 @@ import { join } from "node:path";
 
 import {
   appIdentity,
+  assertLiveSources,
   buildCatalog,
   clearStoppedDatabaseRecord,
   parseOptions,
@@ -87,14 +88,17 @@ test("tst_cat_tg_performance_runner_002 reset clears sync results without touchi
  */
 test("tst_cat_tg_performance_runner_003 reports only real Telegram turns after the run marker", () => {
   const lines = [
-    { sourceId: "telegram", msg: "sync turn", ts: "2026-09-21T09:59:59.000Z", durationMs: 10, fetchMs: 4, admitMs: 6, overlapMs: 0, envelopes: 1, inserted: 1, removed: 0 },
-    { sourceId: "google", msg: "sync turn", ts: "2026-09-21T10:00:01.000Z", durationMs: 20, fetchMs: 8, admitMs: 12, overlapMs: 0, envelopes: 2, inserted: 2, removed: 0 },
-    { sourceId: "telegram", msg: "sync turn", ts: "2026-09-21T10:00:02.000Z", durationMs: 1000, fetchMs: 600, admitMs: 700, overlapMs: 300, envelopes: 100, inserted: 101, removed: 1 },
-    { sourceId: "telegram", msg: "sync turn", ts: "2026-09-21T10:00:04.000Z", durationMs: 1500, fetchMs: 1000, admitMs: 700, overlapMs: 200, envelopes: 50, inserted: 50, removed: 0 },
+    { sourceId: "telegram", surface: "telegram", msg: "sync turn", ts: "2026-09-21T09:59:59.000Z", durationMs: 10, fetchMs: 4, admitMs: 6, overlapMs: 0, pages: 1, bytes: 100, envelopes: 1, inserted: 1, removed: 0 },
+    { sourceId: "telegram", surface: "telegram", msg: "sync turn", ts: "2026-09-21T10:00:02.000Z", durationMs: 1000, fetchMs: 600, admitMs: 700, overlapMs: 300, pages: 2, bytes: 2000, envelopes: 100, inserted: 101, removed: 1 },
+    { sourceId: "telegram", surface: "telegram", msg: "sync turn", ts: "2026-09-21T10:00:04.000Z", durationMs: 1500, fetchMs: 1000, admitMs: 700, overlapMs: 200, pages: 1, bytes: 1000, envelopes: 50, inserted: 50, removed: 0 },
   ].map((line) => JSON.stringify(line)).join("\n");
 
-  expect(summarizeSyncTurns(lines, "2026-09-21T10:00:00.000Z")).toEqual({
+  expect(summarizeSyncTurns(lines, "2026-09-21T10:00:00.000Z")).toEqual([{
+    sourceId: "telegram",
+    surface: "telegram",
     turns: 2,
+    pages: 3,
+    bytes: 3000,
     envelopes: 150,
     inserted: 151,
     removed: 1,
@@ -103,9 +107,81 @@ test("tst_cat_tg_performance_runner_003 reports only real Telegram turns after t
     admitMs: 1400,
     overlapMs: 500,
     wallMs: 3000,
+    envelopesPerSecond: 50,
     firstTurnAt: "2026-09-21T10:00:02.000Z",
     lastTurnAt: "2026-09-21T10:00:04.000Z",
+  }]);
+});
+
+/**
+ * @test-id: tst_cert_google_001
+ * @scenario: scn_google_pull_005
+ * @covers: acceptance/telegram-performance/run.ts::summarizeSyncTurns
+ * @deterministic: yes
+ * @fixtures: synthetic production sync-turn JSON; no provider or database
+ */
+test("tst_cert_google_001 reports Telegram and three Google surfaces separately", () => {
+  const turn = (sourceId: string, surface: string, ts: string, envelopes: number, durationMs: number) => ({
+    msg: "sync turn", sourceId, surface, ts, pages: 1, bytes: envelopes * 10,
+    envelopes, inserted: envelopes, removed: 0, durationMs, fetchMs: durationMs / 2,
+    admitMs: durationMs / 2, overlapMs: 0,
   });
+  const log = [
+    turn("telegram", "telegram", "2026-09-21T10:00:01.000Z", 20, 1000),
+    turn("google", "email", "2026-09-21T10:00:02.000Z", 100, 1000),
+    turn("google", "meetings", "2026-09-21T10:00:03.000Z", 8, 800),
+    turn("google", "contacts", "2026-09-21T10:00:04.000Z", 10, 500),
+    turn("google", "email", "2026-09-21T10:00:05.000Z", 50, 1000),
+    turn("google", "email", "2026-09-21T09:59:59.000Z", 999, 1000),
+    { ...turn("google", "email", "2026-09-21T10:00:06.000Z", 999, 1000), bytes: "invalid" },
+  ].map((line) => JSON.stringify(line)).join("\n");
+  expect(summarizeSyncTurns(log, "2026-09-21T10:00:00.000Z")).toEqual([
+    { sourceId: "google", surface: "contacts", turns: 1, pages: 1, bytes: 100, envelopes: 10, inserted: 10, removed: 0,
+      durationMs: 500, fetchMs: 250, admitMs: 250, overlapMs: 0, wallMs: 500, envelopesPerSecond: 20,
+      firstTurnAt: "2026-09-21T10:00:04.000Z", lastTurnAt: "2026-09-21T10:00:04.000Z" },
+    { sourceId: "google", surface: "email", turns: 2, pages: 2, bytes: 1500, envelopes: 150, inserted: 150, removed: 0,
+      durationMs: 2000, fetchMs: 1000, admitMs: 1000, overlapMs: 0, wallMs: 4000, envelopesPerSecond: 37.5,
+      firstTurnAt: "2026-09-21T10:00:02.000Z", lastTurnAt: "2026-09-21T10:00:05.000Z" },
+    { sourceId: "google", surface: "meetings", turns: 1, pages: 1, bytes: 80, envelopes: 8, inserted: 8, removed: 0,
+      durationMs: 800, fetchMs: 400, admitMs: 400, overlapMs: 0, wallMs: 800, envelopesPerSecond: 10,
+      firstTurnAt: "2026-09-21T10:00:03.000Z", lastTurnAt: "2026-09-21T10:00:03.000Z" },
+    { sourceId: "telegram", surface: "telegram", turns: 1, pages: 1, bytes: 200, envelopes: 20, inserted: 20, removed: 0,
+      durationMs: 1000, fetchMs: 500, admitMs: 500, overlapMs: 0, wallMs: 1000, envelopesPerSecond: 20,
+      firstTurnAt: "2026-09-21T10:00:01.000Z", lastTurnAt: "2026-09-21T10:00:01.000Z" },
+  ]);
+});
+
+/**
+ * @test-id: tst_cert_google_002
+ * @scenario: scn_google_pull_005
+ * @covers: acceptance/telegram-performance/run.ts::RESET_SQL; assertLiveSources
+ * @deterministic: yes
+ * @fixtures: one temporary env file; no provider or database
+ */
+test("tst_cert_google_002 preserves both providers' credentials and refuses Google fixture mode", () => {
+  const root = mkdtempSync(join(tmpdir(), "magnis-google-stand-"));
+  const envFile = join(root, "provider.env");
+  const original = process.env.GOOGLE_FIXTURE_FILE;
+  const originalTelegram = process.env.TELEGRAM_FIXTURE_FILE;
+  try {
+    writeFileSync(envFile, "GOOGLE_FIXTURE_FILE=/tmp/mock-google.json\n");
+    delete process.env.GOOGLE_FIXTURE_FILE;
+    delete process.env.TELEGRAM_FIXTURE_FILE;
+    expect(() => assertLiveSources(root, envFile)).toThrow("GOOGLE_FIXTURE_FILE");
+    process.env.GOOGLE_FIXTURE_FILE = "/tmp/mock-google.json";
+    expect(() => assertLiveSources(root, null)).toThrow("GOOGLE_FIXTURE_FILE");
+    for (const table of ["secrets", "source_credentials", "source_connections", "source_accounts"]) {
+      expect(RESET_SQL).toContain(`FROM ${table} AS row_value`);
+      expect(RESET_SQL).not.toMatch(new RegExp(`(?:TRUNCATE|DELETE\\s+FROM)[^;]*\\b${table}\\b`, "i"));
+    }
+    expect(RESET_SQL).toContain("UPDATE sync_state");
+  } finally {
+    if (original === undefined) delete process.env.GOOGLE_FIXTURE_FILE;
+    else process.env.GOOGLE_FIXTURE_FILE = original;
+    if (originalTelegram === undefined) delete process.env.TELEGRAM_FIXTURE_FILE;
+    else process.env.TELEGRAM_FIXTURE_FILE = originalTelegram;
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 /**

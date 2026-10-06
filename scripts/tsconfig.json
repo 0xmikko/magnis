@@ -5,7 +5,9 @@
     "composite": false
   },
   "include": [
-    "**/*.ts"
+    "**/*.ts",
+    "../vitest.config.ts",
+    "../vitest.ui.config.ts"
   ],
   "exclude": [
     "**/*.test.ts"

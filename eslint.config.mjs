@@ -52,7 +52,7 @@ export default tseslint.config(
   },
   // React lives only in module UI (.tsx).
   {
-    files: ["plugins/modules/**/ui/**/*.{ts,tsx}"],
+    files: ["modules/**/ui/**/*.{ts,tsx}"],
     plugins: { react, "react-hooks": reactHooks },
     languageOptions: { globals: { window: "readonly", document: "readonly" } },
     settings: { react: { version: "detect" } },
@@ -68,7 +68,7 @@ export default tseslint.config(
     // its UI. tsconfig.declarations.json is the project that owns these files,
     // so the type-aware rules are told where to look rather than the module
     // being made to look at zod.
-    files: ["plugins/modules/*/entities.ts"],
+    files: ["modules/*/entities.ts"],
     languageOptions: {
       parserOptions: {
         project: "./tsconfig.declarations.json",

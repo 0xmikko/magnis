@@ -15,6 +15,50 @@
 // in `../index.ts` and import their types from here. Every name below is
 // re-exported from `@magnis/plugin-sdk`, so this move changes no consumer.
 
+// ───────────────────────── SDK shapes ─────────────────────
+// Every shape the host and a plugin exchange is declared once, in the SDK, and
+// arrives here type-only through `@magnis/host-stubs`. A module imports them
+// from `@magnis/sdk`; nothing below repeats one.
+import type {
+  AccountSyncState,
+  AddLinkParams,
+  AdmitSyncEntitiesResult,
+  AllowlistGate,
+  CreateEntityParams,
+  Entity,
+  EntityWithLinks,
+  FileRegisterParams,
+  GraphBatchInput,
+  GraphBatchResult,
+  JsonObject,
+  JsonValue,
+  Link,
+  LinkedEntity,
+  LinkedSpec,
+  ListEntitiesByPropertyFieldParams,
+  ListEntitiesParams,
+  ListSyncMigrationEntitiesParams,
+  ListSyncMigrationEntitiesResult,
+  MergeInput,
+  MergePreview,
+  MergeResult,
+  ModuleSettingsResult,
+  PaginatedResponse,
+  PluginContext,
+  PluginRpcDeclaration,
+  PluginToolDeclaration,
+  PropertiesUpdate,
+  SearchEntitiesParams,
+  SetSyncEnabledParams,
+  SyncAdmissionSubject,
+  SyncStateApplyResult,
+  SyncStateResetResult,
+  SyncStateStatusResult,
+  UpdateEntitySyncEnabledResult,
+  WebRegisterParams,
+  WindowSpec,
+} from "@magnis/sdk";
+
 // ───────────────────────── RPC contract types ─────────────────────
 /// Standard `<module>.list` RPC input.
 export interface ListParams {
@@ -28,444 +72,194 @@ export interface GetParams {
   id: string;
 }
 
-/// Standard `<module>.list` RPC envelope.
-export interface PaginatedResponse<T> {
-  items: T[];
-  total: number;
-  limit: number;
-  offset: number;
+// ───────────────────────── entity synchronization ─────────────────────
+// A schema that supports synchronization carries the user's saved choice on
+// each entity: `syncEnabled` and the graph-owned decimal `syncRevision`
+// (the SDK's `Syncable`). The choice shapes the host reads — `SyncChoice`,
+// `SyncSelection`, `SyncSelectionRequest`, `SyncMigrationEntity` — are SDK
+// shapes. The ones below are module-owned: the `setSyncEnabled`,
+// `syncMigration` and `resolveSyncMigration` methods modules answer each
+// other and their UIs.
+
+export type SyncTargetResult =
+  | {
+      identityId: string;
+      targetId: string;
+      kind: "saved";
+      syncEnabled: boolean;
+      syncRevision: string;
+      application: Exclude<NonNullable<AccountSyncState["syncApplication"]>, { kind: "applied" }>;
+    }
+  | {
+      identityId: string;
+      targetId: string | null;
+      kind: "failed";
+      message: string;
+    };
+
+export interface SetSyncEnabledResult {
+  results: readonly SyncTargetResult[];
 }
 
-// ──────────────── injected backend service — mirrors Rust ──────────
-export interface RawEntity {
-  id: string;
-  schema_id: string;
-  name: string;
-  // Always emitted by the host entity serializer (RFC3339). Optional in
-  // the type because not every consumer needs it.
-  created_at?: string;
-  // The host serializes `Option<bool>` as `null` when unset (core/entity.rs)
-  // — the wire carries boolean | null, never just absence.
-  is_pinned?: boolean | null;
-  // Additive: index-backed columns some lists render/sort by.
-  date?: string | null;
-  idx?: string | null;
-  /// S1: the node's dictionary. Present on every entity the host serializes;
-  /// `{}` for entities whose family has not folded yet.
-  properties?: Record<string, unknown>;
-  /// S1: identity anchor (null until the family's backfill).
-  anchor?: string | null;
-  /// A canonical record's source: the Source and the Source account that
-  /// delivered it, and its external id. Absent on an agent statement.
-  source?: { source: string; account: string; externalId: string };
+export interface SyncMigrationTarget {
+  schemaId: "telegram.chat" | "email.address" | "x.profile";
+  key: string;
 }
 
-export interface CreateEntityParams {
-  schema_id: string;
-  name: string;
-  // caller-supplied entity UUID (local-first optimistic create). The
-  // backend uses it as the entity id; collision → Conflict; omit →
-  // backend allocates. Mirrors Rust CreateEntityCommand.client_id.
-  client_id?: string;
-  // sort key (Rust CreateEntityCommand.idx). Contacts set it to the
-  // lowercased name so list order ("idx") is alphabetical; omit →
-  // backend leaves it null.
-  idx?: string;
-  // explicit entity date (RFC3339, Rust CreateEntityCommand.date). Telegram
-  // messages set it to the message date so the chat index
-  // entities(schema_id, idx, date DESC) orders them; omit → backend defaults.
-  date?: string;
-  // the entity's dictionary, validated against its schema in the same
-  // write; omit → the entity starts empty. A schema with required fields
-  // needs them here.
-  properties?: Record<string, unknown>;
-}
-export interface ListEntitiesParams {
-  schema_id: string;
-  limit?: number;
-  offset?: number;
-  order?: "idx" | "date";
-  show_archived?: boolean;
-}
-export interface SearchEntitiesParams {
-  query: string;
-  schema_ids?: string[];
-  limit?: number;
-}
-/// A filter/order field for `list_entities_window` (a FieldRef): an entity
-/// column, a key of the node's dictionary, or a key of an edge dictionary.
-export interface FieldRefDto {
-  entity_field?: "idx" | "date" | "name" | "created_at" | "is_pinned" | "pin_order" | "context";
-  /** A key of the node's dictionary (S1): `entities.properties->>path`. */
-  property_path?: string;
-  /** S4: a key of an EDGE dictionary — per-observer state (unread, pins).
-   * The edge is the one of `edge_kind` whose other endpoint carries
-   * `observer_anchor`. All three are required together. */
-  edge_kind?: string;
-  observer_anchor?: string;
-  edge_path?: string;
-}
-export interface OrderKeyDto {
-  field: FieldRefDto;
-  /** desc → NULLS LAST, asc (default false) → NULLS FIRST. */
-  desc?: boolean;
-}
-/// Windowed list: page of a schema, ordered/filtered by entity column or
-/// dictionary key, with the exact total — one DB statement. Each row's
-/// dictionary rides on the entity itself.
-export interface WindowSpec {
-  schema: string;
-  filter_field?: FieldRefDto;
-  filter_eq?: string;
-  /** How `filter_field` is compared to `filter_eq`. Default `"eq"` (=).
-   *  `"distinct"` uses SQL `IS DISTINCT FROM` — i.e. "not equal, NULL counts as
-   *  not-equal" — so it KEEPS rows whose field is NULL (e.g. untiered contacts)
-   *  while excluding the given value. `"exists"` is `IS NOT NULL` — the field
-   *  carries ANY value; `filter_eq` is ignored. */
-  filter_op?: "eq" | "distinct" | "exists";
-  order?: OrderKeyDto[];
-  show_archived?: boolean;
-  limit: number;
-  offset: number;
-}
-export interface WindowRow {
-  entity: RawEntity;
-}
-export interface WindowPage {
-  items: WindowRow[];
-  total: number;
-}
-/// Detail: an entity (dictionary included) + its link edges (one fetch).
-export interface EntityDetail {
-  entity: RawEntity;
-  links: LinkSummary[];
-}
-/// A parent's neighbors over a typed link.
-export interface LinkedSpec {
-  parent_id: string;
-  link_kind: string;
-  direction: "out" | "in";
-  child_schema?: string;
-  order?: OrderKeyDto[];
-  limit: number;
-  offset: number;
-}
-export interface LinkedRow {
-  entity: RawEntity;
-  link: LinkSummary;
-}
-export interface LinkedPage {
-  items: LinkedRow[];
-  total: number;
+export interface SyncMigrationIssue {
+  target: SyncMigrationTarget | null;
+  legacyIds: readonly string[];
+  accounts: readonly {
+    accountId: string;
+    syncEnabled: boolean;
+  }[];
+  message: string;
 }
 
+export interface SyncMigrationStatus {
+  complete: boolean;
+  issues: readonly SyncMigrationIssue[];
+}
+
+export interface ResolveSyncMigrationParams {
+  target: SyncMigrationTarget;
+  syncEnabled: boolean;
+}
 
 // ── shared list-search paging (added 2026-07-03) ────────────────────────────
-// The `searchEntitiesPage` helper (runtime, in ../index.ts) consumes these. The
-// host list pane pages via {limit, offset, search} and computes
-// hasMore = items.length < total.
+// The `searchEntitiesPage` helper (runtime, in ../index.ts) consumes these and
+// answers a `PaginatedResponse<Entity>`. The host list pane pages via
+// {limit, offset, search} and computes hasMore = items.length < total.
 export interface SearchEntitiesPageParams {
   query: string;
-  schema_id: string;
+  schemaId: string;
   limit: number;
   offset: number;
   /** Optional visibility filter (e.g. contacts' group-tier hiding). The helper
    * re-fetches with a growing window until the page (+1) is filled with
    * SURVIVORS or the source is exhausted — filtering never truncates totals. */
-  filter?: (entities: RawEntity[]) => Promise<RawEntity[]>;
-}
-export interface SearchEntitiesPage {
-  entities: RawEntity[];
-  /** > offset+limit while more matches exist; exact count on the last page. */
-  total: number;
+  filter?: (entities: Entity[]) => Promise<Entity[]>;
 }
 
-export interface AddLinkParams {
-  from_id: string;
-  to_id: string;
-  kind: string;
-  /** S5: the EDGE dictionary (plan §2) — the per-pair facts that belong to
-   * neither endpoint (an invite's display name, an attendee's response). The
-   * curated twin of `BatchLinkInput.metadata`. */
-  metadata?: Record<string, unknown>;
-  /** S3 (plan §5.2): "candidate" records a merge-candidate row, invisible to
-   * canonical readers until promoted. Default: canonical. */
-  status?: "canonical" | "candidate";
-  /** S1 (plan §2): the envelope remote_id that witnessed this edge. On the
-   * sync dispatch the host stamps the edge's reserved `metadata.sources`
-   * entry and resolves its `observed_at` through THIS key. Meaningless off
-   * the sync path. */
-  declared_by?: string;
-}
-export interface LinkSummary {
-  id: string;
-  from_id: string;
-  to_id: string;
-  kind: string;
-  /** The edge's fact is true from `validFrom` until `validUntil`; a null
-   * `validUntil` is an open edge, a dated one an ended edge the row keeps.
-   * Always emitted by the host link serializer; optional in the type because
-   * not every consumer needs it (as `RawEntity.created_at`). */
-  validFrom?: string | null;
-  validUntil?: string | null;
-  /** S4: the edge dictionary — per-observer state (unread, pins). */
-  metadata?: Record<string, unknown> | null;
-}
-/// `list_entities` returns the page + exact user-scoped total,
-/// mirroring native list_entities_for_user + count_entities_for_user.
-export interface EntityPage {
-  items: RawEntity[];
-  total: number;
-}
+/** The largest page the host serves; a larger `limit` is refused. */
+export const pageLimitMax = 200;
 
-/// Mirrors Rust core/merge.rs MergePreview / MergeResult 1:1.
-export interface MergeField {
-  /** The DICTIONARY key the two hubs agree or disagree on. */
-  key: string;
-  survivor_value: unknown;
-  retired_value: unknown;
-  /** What the merge will write — null when it will write NOTHING because the
-   *  key needs an answer. */
-  auto_resolved: unknown;
-  /** Both dictionaries claim this key with DIFFERENT values; the merge
-   *  REFUSES to run until an override answers it. */
-  conflict: boolean;
-}
-export interface MergeSource {
-  source: string;
-  entity_id: string;
-  property_count: number;
-}
-export interface MergePreview {
-  survivor: unknown;
-  retired: unknown;
-  sources: MergeSource[];
-  fields: Record<string, MergeField>;
-  links_to_repoint: number;
-  duplicate_links_to_remove: number;
-  reflexive_links_to_remove: number;
-}
-export interface MergeResult {
-  survivor_id: string;
-  retired_id: string;
-  links_repointed: number;
-  links_deduplicated: number;
-  links_reflexive_removed: number;
-}
-
-/// One entity in an `apply_batch` fragment, identified within the batch by
-/// `key` (NOT a graph id). Its `anchor` is its resolve-or-create identity.
-export interface BatchEntityInput {
-  key: string;
-  schema_id: string;
-  name?: string;
-  idx?: string;
-  date?: string;
-
-  /** S3: the node's identity anchor — THE resolver when present. */
-  anchor?: string;
-  /** S3: the node's dictionary as this sync observed it. The replica
-   * contract is fields-as-last-synced — a re-apply REPLACES the dict
-   * wholesale (one node, one writer). */
-  properties?: Record<string, unknown>;
-  /** S5: how sure this module is of the dictionary it just wrote (0-100).
-   * The only part of the node's provenance stamp a module supplies — source,
-   * account, surface and observed_at are stamped host-side from the sync
-   * dispatch context. */
-  confidence?: number;
-}
-
-/// A pre-existing entity an `apply_batch` link points to — resolved
-/// (user-scoped) through the `anchor` chokepoint, never created. A ref that
-/// resolves to nothing drops its links.
-export interface BatchRefInput {
-  key: string;
-  anchor?: string;
-}
-
-/// A link in an `apply_batch` fragment, wiring two batch `key`s (entity or ref).
-export interface BatchLinkInput {
-  from_key: string;
-  to_key: string;
-  kind: string;
-  confidence?: number;
-  metadata?: Record<string, unknown>;
-  /** S1 (plan §2): the key of the batch item whose mapper emitted this edge.
-   * On the sync dispatch the HOST stamps the edge's reserved
-   * `metadata.sources` array from the envelope context and resolves the
-   * stamp's `observed_at` through THIS key — an edge joins two nodes that may
-   * arrive in different envelopes, so neither endpoint's timestamp can stand
-   * in. A module never writes `sources` itself; the host strips it. */
-  declared_by?: string;
-}
-
-export interface GraphBatchInput {
-  entities: BatchEntityInput[];
-  refs?: BatchRefInput[];
-  links?: BatchLinkInput[];
-}
-
-/// Result of `apply_batch`: batch `key` → resolved/created entity id, plus counts.
-export interface GraphBatchResult {
-  ids: Record<string, string>;
-  created: number;
-  updated: number;
-  links_added: number;
-  dropped_keys: string[];
-}
-
-/// The host graph, injected into each plugin module. Mirrors the Rust
-/// `GraphService` (flat snake_case names); `actor` / `user_id` are
-/// stamped backend-side from `ModuleContext`, never supplied by JS.
+/// The host graph, injected into each plugin module. Operation names stay
+/// flat snake_case; every input and answer is an SDK shape. The user and the
+/// actor are stamped host-side from the plugin context, never supplied by JS.
 ///
-/// Not parameterised: a node's dictionary is a plain JSON map, and a module
-/// types it with its own interface at the call sites that care. The `Canon`
-/// type parameter went with the canonical layer it existed to type.
-/** What one file registration carries. One shape, two arities — `file_register`
- * and `file_register_batch` take exactly this. */
-export interface FileRegisterParams {
-  external_id: string;
-  parent_external_id: string;
-  link_kind: string;
-  name?: string;
-  mime_type: string;
-  size_bytes?: number;
-  local_path?: string;
-  cloud_url?: string;
-  source_ref?: Record<string, unknown>;
-  source_module: string;
-  source_surface: string;
-  /** Enqueue the background byte download now. Defaults to `true` host-side;
-   *  pass `false` to register the entity without fetching (non-indexed chats). */
-  download?: boolean;
-}
-
+/// Not parameterised: a node's dictionary is JSON, and a module types it with
+/// its own interface at the call sites that care.
 export interface GraphService {
-  // entities — rows are always {id, schema_id, name}, no map needed.
-  // All reads are user-scoped backend-side.
-  create_entity(p: CreateEntityParams): Promise<RawEntity>;
-  get_entity(id: string): Promise<RawEntity | null>;
-  list_entities(p: ListEntitiesParams): Promise<EntityPage>;
+  updateEntitySyncEnabled(params: SetSyncEnabledParams): Promise<UpdateEntitySyncEnabledResult>;
+  admitSyncEntities(subjects: readonly SyncAdmissionSubject[], controlRemoteIds?: readonly string[]): Promise<AdmitSyncEntitiesResult>;
+  moduleSettings(forSchema?: string): Promise<ModuleSettingsResult>;
+  /** `limit` is 1 to `pageLimitMax`. */
+  listSyncMigrationEntities(params: ListSyncMigrationEntitiesParams): Promise<ListSyncMigrationEntitiesResult>;
+  // All reads are user-scoped host-side.
+  createEntity(p: CreateEntityParams): Promise<Entity>;
+  getEntity(id: string): Promise<Entity | null>;
+  listEntities(p: ListEntitiesParams): Promise<PaginatedResponse<Entity>>;
   // Windowed list with the exact total, in one statement. Filter/order over
   // entity columns or dictionary keys.
-  list_entities_window(p: WindowSpec): Promise<WindowPage>;
-  // One entity (dictionary included) + its link edges, user-scoped (null for
-  // a non-owner).
-  get_entity_full(id: string, opts?: { links?: boolean }): Promise<EntityDetail | null>;
-  // A parent's neighbors over a typed link, with the edge.
-  list_linked(p: LinkedSpec): Promise<LinkedPage>;
+  listEntitiesWindow(p: WindowSpec): Promise<PaginatedResponse<Entity>>;
+  // One entity (dictionary included) + its links, user-scoped (null for a
+  // non-owner).
+  getEntityFull(id: string, opts?: { links?: boolean }): Promise<EntityWithLinks | null>;
+  // A parent's neighbors over a typed link, with the link.
+  listLinked(p: LinkedSpec): Promise<PaginatedResponse<LinkedEntity>>;
   // Batch: resolve a set of entity ids in one statement, user-scoped, in
   // input order.
-  get_entities(ids: string[]): Promise<RawEntity[]>;
+  getEntities(ids: string[]): Promise<Entity[]>;
   // user-scoped; omit/empty context = all of the user's entities.
-  list_entities_by_context(context?: string): Promise<RawEntity[]>;
-  search_entities_by_name(p: SearchEntitiesParams): Promise<RawEntity[]>;
-  /** S1/S4: resolve a node by its identity ANCHOR through the chokepoint. */
-  find_by_anchor(anchor: string): Promise<string | null>;
-  /** Plural anchor resolution in one host call: input order kept, null where absent. */
-  find_by_anchors(anchors: string[]): Promise<(string | null)[]>;
+  listEntitiesByContext(context?: string): Promise<Entity[]>;
+  searchEntitiesByName(p: SearchEntitiesParams): Promise<Entity[]>;
+  /** Resolve a node by its `source.externalId`. */
+  findByExternalId(externalId: string): Promise<string | null>;
+  /** Plural resolution in one host call: input order kept, null where absent. */
+  findByExternalIds(externalIds: string[]): Promise<(string | null)[]>;
   // register a web link (web.link entity + dictionary + bg preview fetch),
   // optionally linked to a parent entity. Returns the web.link entity id.
-  web_register(p: { url: string; parent_entity_id?: string; link_kind?: string }): Promise<string>;
+  webRegister(p: WebRegisterParams): Promise<string>;
   // register a downloadable media file (find-or-create file.object entity +
-  // parent link + background download). mime_type is
-  // computed plugin-side so the op stays source-agnostic. Returns the
-  // file.object entity id.
-  file_register(p: FileRegisterParams): Promise<string>;
+  // parent link + background download). mimeType is computed plugin-side so
+  // the op stays source-agnostic. Returns the file.object entity id.
+  fileRegister(p: FileRegisterParams): Promise<string>;
   /** Batch: every URL a page carries, in ONE host call. Input order is kept;
    *  each position holds that URL's `web.link` entity id, or `""` where the
    *  host could not normalize the URL — one bad URL costs its own row and
    *  never aborts the page. Capability is checked once, before any write. */
-  web_register_batch(
-    links: { url: string; parent_entity_id?: string; link_kind?: string }[],
-  ): Promise<string[]>;
+  webRegisterBatch(links: WebRegisterParams[]): Promise<string[]>;
   /** Batch: every attachment a page carries, in ONE host call. Input order is
    *  kept; each position holds that file's `file.object` entity id. There is
    *  no empty sentinel: a row the host did not write is an error. One row
-   *  whose `link_kind` is not `file.attachment`, or whose `source_ref` does
+   *  whose `linkKind` is not `file.attachment`, or whose `sourceRef` does
    *  not match the admitted worker, refuses the WHOLE call. The same
    *  attachment twice in one page accumulates, as two calls would. */
-  file_register_batch(files: FileRegisterParams[]): Promise<string[]>;
+  fileRegisterBatch(files: FileRegisterParams[]): Promise<string[]>;
   /** Batch: merge a dictionary patch into each node, in ONE host call. Each
    *  patch MERGES — a field it does not name keeps its value — and the same
    *  node twice accumulates. The capability for every row's schema is checked
    *  before any row is written; one refused row refuses the whole call. */
-  update_properties_batch(
-    updates: { entity_id: string; properties: Record<string, unknown> }[],
-  ): Promise<void>;
+  updatePropertiesBatch(updates: PropertiesUpdate[]): Promise<void>;
   // route an Execute SourceCommand to this plugin's source (send/reply/backfill)
   // via the host SyncRouter. Returns the source runtime's JSON result.
-  source_command(payload: Record<string, unknown>, account_id?: string): Promise<Record<string, unknown>>;
-  // Like source_command, but FIRE-AND-FORGET: the (slow, network-bound) connector
+  sourceCommand(payload: Record<string, unknown>, accountId?: string): Promise<Record<string, unknown>>;
+  // Like sourceCommand, but FIRE-AND-FORGET: the (slow, network-bound) connector
   // fetch + ingest run as a detached host task, so the plugin's single worker
   // channel is not blocked. Returns immediately ({pending:true}); the page lands
   // asynchronously and the host emits `sync.backfill` so the UI can re-fetch.
-  request_backfill(payload: Record<string, unknown>, account_id?: string): Promise<{ pending: boolean }>;
+  requestBackfill(payload: Record<string, unknown>, accountId?: string): Promise<{ pending: boolean }>;
   // sync control, keyed by the calling module (not telegram). "status" lists the
-  // caller's sync states; "reset" deletes the caller's entities of `reset_schema`
+  // caller's sync states; "reset" deletes the caller's entities of `resetSchema`
   // (which MUST be in the caller's own namespace) and resets sync state. Overloads
-  // make `reset` REQUIRE the schema — `sync_state("reset")` is a compile error, so
+  // make `reset` REQUIRE the schema — `syncState("reset")` is a compile error, so
   // a plugin can't trip the host's namespace guard at runtime.
-  sync_state(action: "status"): Promise<Record<string, unknown>>;
-  sync_state(action: "reset", reset_schema: string): Promise<Record<string, unknown>>;
+  syncState(action: "status"): Promise<SyncStateStatusResult>;
+  syncState(action: "reset", resetSchema: string): Promise<SyncStateResetResult>;
+  syncState(action: "apply"): Promise<SyncStateApplyResult>;
   // reply-composer presence: op "read" | "set_text" | "append_text". read
   // reports presence; set_text/append_text gate+bump the revision and publish.
   composer(
     op: string,
-    thread_key?: string,
+    threadKey?: string,
     text?: string,
-    attachment_ids?: string[],
+    attachmentIds?: string[],
   ): Promise<Record<string, unknown>>;
-  update_entity_name(id: string, name: string): Promise<void>;
-  update_entity_idx(id: string, idx: string | null): Promise<void>;
-  delete_entity(id: string): Promise<void>;
+  updateEntityName(id: string, name: string): Promise<void>;
+  updateEntityIdx(id: string, idx: string | null): Promise<void>;
+  deleteEntity(id: string): Promise<void>;
 
   /// S1 (canonical-graph-structure): write the node's dictionary — the
   /// property-graph write path. The host validates ownership (user +
   /// namespace) and an update un-archives.
-  update_properties(
-    p: { entity_id: string; properties: Record<string, unknown> },
-  ): Promise<void>;
+  updateProperties(p: PropertiesUpdate): Promise<void>;
   /// S1: filter a FOLDED family's entities by a top-level dictionary key,
   /// user-scoped natively. Returns the page and the exact total.
-  list_entities_by_property_field(
-    p: { entity_schema: string; key: string; value: string; limit?: number; offset?: number },
-  ): Promise<{ items: RawEntity[]; total: number }>;
-  // links — LinkSummary carries the link `id` for targeted deletion.
-  add_link(p: AddLinkParams): Promise<void>;
-  delete_link(id: string): Promise<void>;
-  /** The link's fact stopped being true at `valid_until`; the row stays, and
+  listEntitiesByPropertyField(p: ListEntitiesByPropertyFieldParams): Promise<PaginatedResponse<Entity>>;
+  addLink(p: AddLinkParams): Promise<void>;
+  deleteLink(id: string): Promise<void>;
+  /** The link's fact stopped being true at `validUntil`; the row stays, and
    * reads that keep history still see it. One-way — there is no reopen. */
-  end_link(id: string, valid_until: string): Promise<void>;
-  /** The entity's edges, ended ones included — an open edge reads
+  endLink(id: string, validUntil: string): Promise<void>;
+  /** The entity's links, ended ones included — an open link reads
    * `validUntil === null`. */
-  list_links_for_entity(entity_id: string): Promise<LinkSummary[]>;
-  /** S6 batch: every canonical edge of MANY entities in ONE round-trip. Each
-   * row carries `from_id`/`to_id`, so the caller groups. A page whose cards
-   * read their neighbours off the edges uses this, never a per-row read. */
-  list_links_for_entities(entity_ids: string[]): Promise<LinkSummary[]>;
+  listLinksForEntity(entityId: string, linkKind?: string): Promise<Link[]>;
+  /** S6 batch: every canonical link of MANY entities in ONE round-trip. Each
+   * row carries `from`/`to`, so the caller groups. A page whose cards read
+   * their neighbours off the links uses this, never a per-row read. */
+  listLinksForEntities(entityIds: string[]): Promise<Link[]>;
 
-  // batch — apply a whole graph fragment (entities + links + events) in ONE
+  // batch — apply a whole graph fragment (entities + refs + links) in ONE
   // atomic transaction / one host crossing. The bulk ingest primitive: a page
   // of N messages becomes one call instead of ~3N create/link ops. Entities
-  // are keyed by LOCAL `key`s (links/refs wire by key); the `anchor` is the
-  // idempotency identity (resolve-or-create).
-  apply_batch(batch: GraphBatchInput): Promise<GraphBatchResult>;
+  // are keyed by LOCAL `key`s (links/refs wire by key); the `externalId` is
+  // the idempotency identity (resolve-or-create).
+  applyBatch(batch: GraphBatchInput): Promise<GraphBatchResult>;
 
-  // merge — backed by GraphService::merge_execute, not composed.
-  merge_preview(p: { survivor_id: string; retired_id: string }): Promise<MergePreview>;
-  merge_execute(p: {
-    survivor_id: string;
-    retired_id: string;
-    overrides?: { key: string; value: unknown }[];
-    reason?: string;
-  }): Promise<MergeResult>;
-}
-
-export interface PluginContext {
-  user_id: string;
-  extension_kind: string;
-  extension_id: string;
+  // merge — backed by GraphService::mergeExecute, not composed.
+  mergePreview(p: Pick<MergeInput, "survivorId" | "retiredId">): Promise<MergePreview>;
+  mergeExecute(p: Omit<MergeInput, "preview">): Promise<MergeResult>;
 }
 
 /// Pure, stateless host utilities (no graph/capability surface).
@@ -512,12 +306,12 @@ export interface PluginDeps {
 // describe what those decorators consume and produce.
 
 /// The spec object each `@tool/@writeTool/@rpc` decorator takes: the agent-facing
-/// description + the JSON-schema `params` for the tool's input.
+/// description + the JSON-schema `params` for the method's input.
 export interface ToolSpecInput {
   entity: string;
-  allowlist_gate?: { target_type: string; target_arg: string; batch_arg?: string };
+  allowlistGate?: AllowlistGate;
   description: string;
-  params: Record<string, unknown>;
+  params: JsonObject;
 }
 
 /** The standard decorator context Bun supplies when it executes TypeScript
@@ -542,21 +336,22 @@ export interface MethodRecorder {
   (method: object, context: StandardMethodDecoratorContext): void;
 }
 
-/// The tool wire shape matches the Rust `ToolDefinition` serde
-/// (`inputSchema` MCP field; `requires_approval` write flag) so it
-/// deserializes straight into it.
-export interface ToolDefinitionWire {
-  name: string;
-  binding: { readonly entity: string; readonly operation: string };
-  allowlist_gate?: { target_type: string; target_arg: string; batch_arg?: string };
-  description: string;
-  inputSchema: Record<string, unknown>;
-  requires_approval: boolean;
+/** Decorator for a host-invoked hook. It records the method as
+ * `MethodRecorder` does, and its type holds the method to what the host sends
+ * and reads back, so a handler that drifts from the SDK shape does not compile. */
+export interface HookRecorder<Params, Answer> {
+  (
+    target: object,
+    methodName: string | symbol,
+    descriptor: TypedPropertyDescriptor<(params: Params) => Promise<Answer>>,
+  ): void;
+  (method: (params: Params) => Promise<Answer>, context: StandardMethodDecoratorContext): void;
 }
 
 /// The shape `definePlugin` publishes on the well-known global for the host
 /// runtime: a lazy `init` (wires the decorated instance), the post-init RPC
-/// handler table, and the harvested agent-tool definitions.
+/// handler table, the harvested agent tools and the rpc() methods the host
+/// registers with their input schemas.
 export interface PluginModuleShape {
   /// The host supplies every dependency positionally. `log` is REQUIRED: a
   /// host that does not pass it leaves modules unable to report failures, so
@@ -570,6 +365,7 @@ export interface PluginModuleShape {
     rpc: RpcExecutor,
     log: PluginLogger,
   ) => Promise<void>;
-  rpcHandlers: Record<string, (params: unknown) => unknown>;
-  toolDefinitions: ToolDefinitionWire[];
+  rpcHandlers: Record<string, (params: JsonValue) => unknown>;
+  toolDefinitions: PluginToolDeclaration[];
+  rpcDeclarations: PluginRpcDeclaration[];
 }

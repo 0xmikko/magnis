@@ -25,7 +25,7 @@ ingests, and its foreign permission asks. Everything else is discovered by
 convention inside the package:
 
 ```
-plugins/modules/<id>/
+modules/<id>/
   manifest.toml    identity + [surfaces] + [permissions]
   README.md        catalog description (markdown detail page)
   icon.svg|png     catalog icon, at the package ROOT
@@ -42,14 +42,28 @@ Example fields below are the real `companies` / `contacts` manifests.
 ```toml
 id = "companies"                 # plugin id == RPC prefix == route key == namespace
 version = "0.1.0"
-magnis_api_version = "0.1.0"     # host SDK contract this manifest targets
+magnis_api_version = "0.2.0"     # plugin API this manifest targets; the host accepts exactly 0.2.0
 title = "Companies"              # catalog card
 summary = "Track companies you interact with across email, meetings, and notes."
 publisher = "ai.magnis"          # reverse-domain publisher identity
 ```
 
 `tier = "system"` (optional) marks a mandatory, always-loaded module that
-cannot be uninstalled or disabled (`triggers` is the only one).
+cannot be uninstalled or disabled (`file`, `notes` and `triggers`).
+
+`dependsOn` (optional) names the modules this module needs directly:
+
+```toml
+id = "meetings"
+dependsOn = ["email"]   # direct only: email brings contacts in turn
+```
+
+Installing a package installs its whole `dependsOn` closure first, and a
+module cannot be disabled or removed while an enabled package lists it. An
+absent `dependsOn` means no dependencies. The catalog build refuses a
+`dependsOn` entry that is not a catalog module, a cycle, and a `[[links]]`
+endpoint or `permissions.create` entry owned by a module outside the
+closure. `call` and `read` permissions never make a dependency.
 
 ### `schemas/` — the data model the module owns
 
@@ -138,7 +152,7 @@ installs it the standard way, and finds the auth screen at `auth/index.tsx`.
 Examples below are the real `x` (api_key) and `google` (oauth2) manifests.
 
 ```
-plugins/sources/<id>/
+sources/<id>/
   manifest.toml    identity + [auth] + [credentials] + [sync]
   README.md        catalog description (markdown detail page)
   icon.svg|png     catalog icon, at the package ROOT (optional)
@@ -154,9 +168,14 @@ version = "1.0.0"
 title = "X"                    # catalog card
 summary = "Sync posts from the X (Twitter) accounts you track."
 publisher = "ai.magnis"        # reverse-domain publisher identity
-surfaces = ["x", "contacts"]   # the named streams it fetches
+surfaces = ["x"]               # the named streams it fetches
+dependsOn = ["x"]              # the modules its surfaces feed
 account_mode = "single"        # single | multi
 ```
+
+`dependsOn` names the modules the source's surfaces feed; the catalog build
+refuses a surface whose module lies outside that closure. Picking the source
+installs them first.
 
 Optional flags: `kind = "core"` (always loaded) or `kind = "mock"` (loaded only
 when `ENABLED_SOURCES` lists it) — the default, a regular installable source,

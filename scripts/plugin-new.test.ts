@@ -95,3 +95,30 @@ test("tst_build_plugin_new_001: scaffold produces a contract-satisfying v3 skele
 
   rmSync(out, { recursive: true, force: true });
 });
+
+// tst_cat_entity_one_type_002 — a new plugin starts on plugin API 0.2.0: the
+// manifest targets it, and the scaffolded service and its unit test speak the
+// SDK shapes (camelCase graph inputs and plugin context), so the first build a
+// 0.2.0 host loads is not refused and reads no snake key.
+test("tst_cat_entity_one_type_002: the scaffold targets plugin API 0.2.0 with SDK shapes", () => {
+  const out = join(tmpdir(), `plugin-new-sdk-test-${process.pid}`);
+  rmSync(out, { recursive: true, force: true });
+
+  const dir = scaffoldPlugin("acme_crm", out);
+
+  const manifest = tomlParse(readFileSync(join(dir, "manifest.toml"), "utf8")) as unknown as Record<
+    string,
+    unknown
+  >;
+  expect(manifest.magnis_api_version).toBe("0.2.0");
+
+  const service = readFileSync(join(dir, "module", "service.ts"), "utf8");
+  expect(service).toContain("schemaId: ENTITY");
+  const unitTest = readFileSync(join(dir, "module", "__tests__", "acme_crmRead.test.ts"), "utf8");
+  expect(unitTest).toContain('extensionId: "acme_crm"');
+  for (const source of [service, unitTest]) {
+    expect(source).not.toMatch(/schema_id|extension_id|user_id/);
+  }
+
+  rmSync(out, { recursive: true, force: true });
+});

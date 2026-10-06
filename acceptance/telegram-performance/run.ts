@@ -46,7 +46,11 @@ export interface AppIdentity {
 }
 
 export interface SyncSummary {
+  readonly sourceId: string;
+  readonly surface: string;
   readonly turns: number;
+  readonly pages: number;
+  readonly bytes: number;
   readonly envelopes: number;
   readonly inserted: number;
   readonly removed: number;
@@ -55,6 +59,7 @@ export interface SyncSummary {
   readonly admitMs: number;
   readonly overlapMs: number;
   readonly wallMs: number;
+  readonly envelopesPerSecond: number;
   readonly firstTurnAt: string | null;
   readonly lastTurnAt: string | null;
 }
@@ -72,7 +77,7 @@ interface RunMarker {
  * raises and rolls the statement back.
  *
  * @tested-by: tst_cat_tg_performance_runner_002
- * @invariant: a performance reset never changes a saved Telegram session
+ * @invariant: a performance reset never changes saved Source credentials
  */
 export const RESET_SQL = `
 DO $telegram_performance_reset$
@@ -99,7 +104,7 @@ BEGIN
     INTO sync_rows_before, sync_bindings_before
     FROM sync_state;
   IF sync_rows_before = 0 THEN
-    RAISE EXCEPTION 'Telegram performance reset requires an existing sync_state row';
+    RAISE EXCEPTION 'Performance reset requires an existing sync_state row';
   END IF;
 
   TRUNCATE TABLE
@@ -147,7 +152,7 @@ BEGIN
         '' ORDER BY jsonb_build_array(user_id, module_id, source_id, account_id, account_generation)::text
       ), '')) FROM sync_state
     ) THEN
-    RAISE EXCEPTION 'Telegram performance reset changed authentication or account binding state';
+    RAISE EXCEPTION 'Performance reset changed authentication or account binding state';
   END IF;
 END
 $telegram_performance_reset$;
@@ -311,12 +316,13 @@ function numberField(value: unknown): number | null {
 
 /**
  * @tested-by: tst_cat_tg_performance_runner_003
- * @invariant: the report includes only live app Telegram turns after this run began
+ * @invariant: each Source surface has its own timing and count after this run began
  */
-export function summarizeSyncTurns(log: string, since: string): SyncSummary {
+export function summarizeSyncTurns(log: string, since: string): SyncSummary[] {
   const sinceMs = Date.parse(since);
   if (!Number.isFinite(sinceMs)) throw new Error(`Invalid run marker timestamp: ${since}`);
-  const turns: (Record<string, unknown> & { ts: string })[] = [];
+  // @tested-by: tst_cert_google_001
+  const groups = new Map<string, { sourceId: string; surface: string; turns: (Record<string, unknown> & { ts: string })[] }>();
   for (const line of log.split("\n")) {
     if (line.trim() === "") continue;
     let value: unknown;
@@ -327,31 +333,39 @@ export function summarizeSyncTurns(log: string, since: string): SyncSummary {
     }
     if (value === null || typeof value !== "object" || Array.isArray(value)) continue;
     const record = value as Record<string, unknown>;
-    if (record.sourceId !== "telegram" || record.msg !== "sync turn" || typeof record.ts !== "string") continue;
-    if (Date.parse(record.ts) < sinceMs) continue;
-    const fields = ["durationMs", "fetchMs", "admitMs", "overlapMs", "envelopes", "inserted", "removed"];
+    if (typeof record.sourceId !== "string" || record.sourceId === "" ||
+      typeof record.surface !== "string" || record.surface === "" ||
+      record.msg !== "sync turn" || typeof record.ts !== "string") continue;
+    const at = Date.parse(record.ts);
+    if (!Number.isFinite(at) || at < sinceMs) continue;
+    const fields = ["durationMs", "fetchMs", "admitMs", "overlapMs", "pages", "bytes", "envelopes", "inserted", "removed"];
     if (fields.some((field) => numberField(record[field]) === null)) continue;
-    turns.push({ ...record, ts: record.ts });
+    const key = JSON.stringify([record.sourceId, record.surface]);
+    let group = groups.get(key);
+    if (group === undefined) {
+      group = { sourceId: record.sourceId, surface: record.surface, turns: [] };
+      groups.set(key, group);
+    }
+    group.turns.push({ ...record, ts: record.ts });
   }
-  turns.sort((left, right) => Date.parse(left.ts) - Date.parse(right.ts));
-  const sum = (field: string): number => turns.reduce((total, turn) => total + (numberField(turn[field]) ?? 0), 0);
-  const first = turns[0];
-  const last = turns.at(-1);
-  const firstStart = first === undefined ? null : Date.parse(first.ts) - (numberField(first.durationMs) ?? 0);
-  const lastEnd = last === undefined ? null : Date.parse(last.ts);
-  return {
-    turns: turns.length,
-    envelopes: sum("envelopes"),
-    inserted: sum("inserted"),
-    removed: sum("removed"),
-    durationMs: sum("durationMs"),
-    fetchMs: sum("fetchMs"),
-    admitMs: sum("admitMs"),
-    overlapMs: sum("overlapMs"),
-    wallMs: firstStart === null || lastEnd === null ? 0 : lastEnd - firstStart,
-    firstTurnAt: first?.ts ?? null,
-    lastTurnAt: last?.ts ?? null,
-  };
+  return [...groups.values()]
+    .sort((left, right) => left.sourceId.localeCompare(right.sourceId) || left.surface.localeCompare(right.surface))
+    .map(({ sourceId, surface, turns }) => {
+      turns.sort((left, right) => Date.parse(left.ts) - Date.parse(right.ts));
+      const sum = (field: string): number => turns.reduce((total, turn) => total + (numberField(turn[field]) ?? 0), 0);
+      const first = turns[0];
+      const last = turns.at(-1);
+      const firstStart = first === undefined ? null : Date.parse(first.ts) - (numberField(first.durationMs) ?? 0);
+      const wallMs = firstStart === null || last === undefined ? 0 : Date.parse(last.ts) - firstStart;
+      const envelopes = sum("envelopes");
+      return {
+        sourceId, surface, turns: turns.length, pages: sum("pages"), bytes: sum("bytes"), envelopes,
+        inserted: sum("inserted"), removed: sum("removed"), durationMs: sum("durationMs"),
+        fetchMs: sum("fetchMs"), admitMs: sum("admitMs"), overlapMs: sum("overlapMs"), wallMs,
+        envelopesPerSecond: wallMs === 0 ? 0 : envelopes / (wallMs / 1000),
+        firstTurnAt: first?.ts ?? null, lastTurnAt: last?.ts ?? null,
+      };
+    });
 }
 
 export async function runCommand(command: readonly string[], root: string, env: Record<string, string | undefined> = process.env): Promise<void> {
@@ -385,17 +399,20 @@ export async function buildCatalog(channelRoot: string, revision: string): Promi
   });
 }
 
-function fixtureConfigured(text: string): boolean {
-  return /^\s*(?:export\s+)?TELEGRAM_FIXTURE_FILE\s*=\s*[^\s#]+/mu.test(text);
+function fixtureConfigured(text: string, variable: string): boolean {
+  return new RegExp(`^\\s*(?:export\\s+)?${variable}\\s*=\\s*[^\\s#]+`, "mu").test(text);
 }
 
-function assertLiveTelegram(appRoot: string, envFile: string | null): void {
-  if ((process.env.TELEGRAM_FIXTURE_FILE ?? "").trim() !== "") {
-    throw new Error("TELEGRAM_FIXTURE_FILE is set; the performance stand accepts only live Telegram");
-  }
-  for (const path of [envFile, join(appRoot, ".env")]) {
-    if (path !== null && existsSync(path) && fixtureConfigured(readFileSync(path, "utf8"))) {
-      throw new Error(`${path} configures TELEGRAM_FIXTURE_FILE; the performance stand accepts only live Telegram`);
+export function assertLiveSources(appRoot: string, envFile: string | null): void {
+  // @tested-by: tst_cert_google_002
+  for (const variable of ["TELEGRAM_FIXTURE_FILE", "GOOGLE_FIXTURE_FILE"]) {
+    if ((process.env[variable] ?? "").trim() !== "") {
+      throw new Error(`${variable} is set; the performance stand accepts only live providers`);
+    }
+    for (const path of [envFile, join(appRoot, ".env")]) {
+      if (path !== null && existsSync(path) && fixtureConfigured(readFileSync(path, "utf8"), variable)) {
+        throw new Error(`${path} configures ${variable}; the performance stand accepts only live providers`);
+      }
     }
   }
 }
@@ -407,7 +424,7 @@ async function start(options: Options): Promise<void> {
   const app = appIdentity(options.appRoot);
   const catalog = catalogIdentity();
   const envFile = options.envFile === null ? null : realpathSync(options.envFile);
-  assertLiveTelegram(app.root, envFile);
+  assertLiveSources(app.root, envFile);
   await clearStoppedDatabaseRecord(options.dataRoot);
   const channelRoot = join(options.dataRoot, "catalog");
   await buildCatalog(channelRoot, catalog.commit);
@@ -475,7 +492,7 @@ async function reset(options: Options): Promise<void> {
     } finally {
       await database.close();
     }
-    console.log("telegram-performance: sync data reset; Telegram secrets and account binding preserved");
+    console.log("telegram-performance: sync data reset; Source secrets and account bindings preserved");
   } finally {
     await runCommand(["bun", "scripts/db/postgres.ts", "down", "--data-root", options.dataRoot], app.root);
   }
@@ -485,9 +502,8 @@ function report(dataRoot: string): void {
   const marker = readJson(join(dataRoot, RUN_MARKER)) as unknown as RunMarker;
   if (typeof marker.startedAt !== "string") throw new Error("Performance run marker has no startedAt");
   const logPath = join(dataRoot, "logs", "backend.log");
-  const summary = summarizeSyncTurns(readFileSync(logPath, "utf8"), marker.startedAt);
-  const envelopesPerSecond = summary.wallMs === 0 ? 0 : summary.envelopes / (summary.wallMs / 1000);
-  console.log(JSON.stringify({ marker, summary, envelopesPerSecond }, null, 2));
+  const summaries = summarizeSyncTurns(readFileSync(logPath, "utf8"), marker.startedAt);
+  console.log(JSON.stringify({ marker, summaries }, null, 2));
 }
 
 async function main(args: readonly string[]): Promise<void> {

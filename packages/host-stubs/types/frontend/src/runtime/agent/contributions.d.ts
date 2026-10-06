@@ -6,7 +6,8 @@
  * The AgentPanel host resolves renderers through this registry instead of
  * hardcoding module-specific branches.
  */
-import type { EntityOperationBinding } from "@magnis/sdk/core/approval";
+import { type EntityOperationBinding } from "@magnis/sdk/core/approval";
+import type { ComponentType } from "react";
 import type { AgentHistoryBlock, AgentHistoryRendererRegistration, AgentTodoItem, AgentTodoRendererRegistration, ModuleAgentContribution, AgentContextAction, AgentEntityContextResolver, AllowlistTarget, AppRuntime, EntityRendererRegistration } from "../contracts";
 export declare class AgentContributionRegistry {
     private readonly contributions;
@@ -15,6 +16,7 @@ export declare class AgentContributionRegistry {
     resolveTodoRenderer(item: AgentTodoItem): AgentTodoRendererRegistration | null;
     resolveSystemPrompt(moduleId: string): string | undefined;
     getContextActions(moduleId: string): readonly AgentContextAction[];
+    getPropertiesPanel(moduleId: string): ComponentType | null;
     getEntityContextResolvers(): readonly AgentEntityContextResolver[];
     resolveEntityRenderer(schemaId: string): EntityRendererRegistration | null;
     navigateToEntity(schemaId: string, entityId: string, data: Readonly<Record<string, unknown>>, runtime: AppRuntime, navigate: (moduleId: string, entityType?: string, entityId?: string) => void): boolean;

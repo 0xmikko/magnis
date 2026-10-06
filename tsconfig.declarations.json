@@ -5,8 +5,8 @@
     "composite": false
   },
   "include": [
-    "plugins/modules/*/entities.ts",
-    "plugins/modules/*/entities.test.ts",
-    "plugins/modules/*/types.ts"
+    "modules/*/entities.ts",
+    "modules/*/entities.test.ts",
+    "modules/*/types.ts"
   ]
 }

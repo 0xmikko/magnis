@@ -6,6 +6,7 @@
 // empty → no tools → every plugin breaks in prod. `__decorate` is plain
 // engine-agnostic JS (no reflect-metadata), so verifying in Bun is sufficient.
 import type { PluginModuleShape } from "@magnis/plugin-sdk";
+import type { PluginContext } from "@magnis/sdk";
 import { test, expect, beforeAll } from "bun:test";
 import { buildPlugin, buildAll, discoverPlugins } from "./build-plugins.ts";
 import { existsSync, readFileSync } from "fs";
@@ -23,7 +24,7 @@ type ModuleShape = PluginModuleShape;
 let mod: ModuleShape;
 
 beforeAll(async () => {
-  await buildPlugin("file", { pluginsDir: join(REPO, "plugins"), distDir: DIST });
+  await buildPlugin("file", { pluginsDir: REPO, distDir: DIST });
   const bundle = JSON.parse(readFileSync(join(DIST, "modules", "file", "bundle.json"), "utf8")) as {
     module?: { dist: string };
   };
@@ -43,7 +44,7 @@ beforeAll(async () => {
 test("tst_module_decorators_001: bundled module decorators register the plugin's tools", async () => {
   expect(mod).toBeTruthy();
   // toolDefinitions are empty until init() reads the decorator registry.
-  const ctx = { extension_id: "file", user_id: "system", extension_kind: "module" };
+  const ctx: PluginContext = { extensionId: "file", userId: "system", extensionKind: "module" };
   await mod.init({}, ctx, {}, { execute: async () => undefined }, { log: async () => undefined });
 
   const names = mod.toolDefinitions.map((t) => t.name).sort();
@@ -51,22 +52,22 @@ test("tst_module_decorators_001: bundled module decorators register the plugin's
   expect(names).toContain("file.object.get");
   expect(names).toContain("file.object.create");
 
-  // file.object.create is a @writeTool → requires_approval true (decorator carried the flag)
+  // file.object.create is a @writeTool → requiresApproval true (decorator carried the flag)
   const attach = mod.toolDefinitions.find((t) => t.name === "file.object.create");
-  expect(attach?.requires_approval).toBe(true);
+  expect(attach?.requiresApproval).toBe(true);
   expect(attach?.binding).toEqual({ entity: "file.object", operation: "create" });
   expect(typeof mod.rpcHandlers["file.attach"]).toBe("function");
   expect(typeof mod.rpcHandlers["file.list"]).toBe("function");
-  // file.object.get is a read @tool → requires_approval false
+  // file.object.get is a read @tool → requiresApproval false
   const get = mod.toolDefinitions.find((t) => t.name === "file.object.get");
-  expect(get?.requires_approval).toBe(false);
+  expect(get?.requiresApproval).toBe(false);
 });
 
 // All-plugin guard: NO module bundle may contain the TC39 decorator marker
 // (`__decorateElement`). If it does, Bun's decorator lowering leaked past the
 // tsc onLoad hook and that plugin's tools would silently fail to register.
 test("tst_module_decorators_002: no module bundle emits TC39 decorators", async () => {
-  const pluginsDir = join(REPO, "plugins");
+  const pluginsDir = REPO;
   await buildAll({ pluginsDir, distDir: DIST });
   const offenders: string[] = [];
   for (const id of discoverPlugins(pluginsDir)) {
@@ -86,7 +87,7 @@ test("tst_module_decorators_002: no module bundle emits TC39 decorators", async 
 // inside a bare V8 isolate that has no business running one. The declaration's
 // own marker keyword is checked too, because it is what would arrive first.
 test("tst_module_decorators_003: no module bundle reaches its declaration", () => {
-  const pluginsDir = join(REPO, "plugins");
+  const pluginsDir = REPO;
   const declaring = discoverPlugins(pluginsDir)
     .filter((id) => existsSync(join(pluginsDir, "modules", id, "entities.ts")));
   // A guard over an empty set is green about nothing: this must run on real

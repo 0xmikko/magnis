@@ -5,6 +5,7 @@ import { dirname, join, resolve } from "node:path";
 const root = resolve(import.meta.dir, "..");
 const runtime = ".agents/code-production/runtime";
 const prepTest = "scripts/tst_scripts_agent_stack_001.test.ts";
+const vitestConfigs = new Set(["vitest.config.ts", "vitest.ui.config.ts"]);
 
 function git(...args: string[]): string {
   return execFileSync("git", args, { cwd: root, encoding: "utf8" });
@@ -26,14 +27,18 @@ function docs(): void {
   }
 }
 
-function typeConfig(path: string): string {
+/** The tsconfig that owns `path`, or null when none does — a file deleted
+ * with its whole project leaves no owner behind. */
+export function typeConfig(path: string): string | null {
+  // @tested-by: tst_scripts_agent_stack_004, tst_scripts_agent_stack_007
+  if (vitestConfigs.has(path)) return "scripts/tsconfig.json";
   let dir = dirname(path);
   while (dir !== ".") {
     const config = join(dir, "tsconfig.json");
     if (existsSync(join(root, config))) return config;
     dir = dirname(dir);
   }
-  throw new Error(`No TypeScript owner for ${path}; declare its scoped check before committing.`);
+  return null;
 }
 
 /** The backend adapter runs one engine per call: bun:test targets first, then vitest targets. */
@@ -41,7 +46,12 @@ export function backendLanes(paths: readonly string[], source: (path: string) =>
   // @tested-by: tst_scripts_agent_stack_003
   const bun: string[] = [];
   const vitest: string[] = [];
-  for (const path of paths) (/["']bun:test["']/.test(source(path)) ? bun : vitest).push(path);
+  for (const path of paths) {
+    const contents = source(path);
+    const isBun = /["']bun:test["']/.test(contents)
+      || (path.startsWith("sources/") && !/["']vitest["']/.test(contents));
+    (isBun ? bun : vitest).push(path);
+  }
   return [bun, vitest].filter((lane) => lane.length > 0);
 }
 
@@ -61,14 +71,20 @@ function commit(): void {
     }
     if (path.startsWith(`${runtime}/`)) continue; // Generated, version-pinned upstream runtime.
     if (!/\.(ts|tsx)$/.test(path)) continue;
-    configs.add(typeConfig(path));
-    if (!existsSync(join(root, path))) continue;
+    const exists = existsSync(join(root, path));
+    const config = typeConfig(path);
+    if (config === null) {
+      if (exists) throw new Error(`No TypeScript owner for ${path}; declare its scoped check before committing.`);
+      continue; // Deleted with its whole project: nothing is left to check.
+    }
+    configs.add(config);
+    if (!exists) continue;
     const isTest = /\.test\.tsx?$/.test(path);
     if (isTest) tests.add(path);
     else {
       const neighbor = path.replace(/\.(ts|tsx)$/, ".test.$1");
       if (existsSync(join(root, neighbor))) tests.add(neighbor);
-      if (!path.endsWith(".d.ts") && !path.includes("/__tests__/")) lint.push(path);
+      if (!path.endsWith(".d.ts") && !path.includes("/__tests__/") && !vitestConfigs.has(path)) lint.push(path);
     }
   }
   const productChanged = paths.some((path) => /^(plugins|packages)\/.*\.(ts|tsx)$/.test(path));
@@ -80,7 +96,7 @@ function commit(): void {
   else for (const config of configs) run("x", "tsc", "-p", config);
   if (lint.length) run("x", "eslint", "--max-warnings", "0", ...lint);
   // Reuse the public test adapters; runner ownership lives in test-connectors.sh.
-  const frontend = [...tests].filter((path) => path.includes("/ui/") && !path.endsWith("sourceStatusAdapter.test.ts"));
+  const frontend = [...tests].filter((path) => (path.includes("/ui/") || path.startsWith("packages/host-testdouble/")) && !path.endsWith("sourceStatusAdapter.test.ts"));
   const backend = [...tests].filter((path) => !frontend.includes(path));
   for (const lane of backendLanes(backend, (path) => readFileSync(join(root, path), "utf8"))) {
     run("run", "agent:test:backend", "--", ...lane);

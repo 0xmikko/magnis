@@ -6,8 +6,8 @@ import { join, resolve } from "node:path";
 import { expect, test } from "bun:test";
 
 const root = resolve(import.meta.dir, "..");
-const sourceTest = "plugins/sources/telegram/src/client.test.ts";
-const moduleTest = "plugins/modules/triggers/module/__tests__/triggersRead.test.ts";
+const sourceTest = "sources/telegram/src/client.test.ts";
+const moduleTest = "modules/triggers/module/__tests__/triggersRead.test.ts";
 
 /**
  * @test-id: tst_scripts_tgflood_001
@@ -35,7 +35,12 @@ exit "$FLOOD_RUNNER_EXIT"
       if (result.error) throw result.error;
       return { status: result.status, output: result.stdout + result.stderr, calls: readFileSync(calls, "utf8").trim().split("\n").filter(Boolean) };
     };
-    for (const [target, runner] of [[sourceTest, ["bun", "test"]], [moduleTest, ["bunx", "vitest", "run"]]] as const) {
+    for (const [target, runner] of [
+      [sourceTest, ["bun", "test"]],
+      ["sources/x/src/__tests__/xContract.test.ts", ["bun", "test"]],
+      ["sources/mock-gmail/src/execute.test.ts", ["bunx", "vitest", "run"]],
+      [moduleTest, ["bunx", "vitest", "run"]],
+    ] as const) {
       const args = [target, "-t", "keeps a spaced filter"];
       const passed = invoke(["--agent", ...args]);
       expect(passed.status).toBe(0);
@@ -80,7 +85,7 @@ exit 0
 `, { mode: 0o755 });
     }
     writeFileSync(calls, "");
-    const declarationTest = "plugins/modules/telegram/entities.test.ts";
+    const declarationTest = "modules/telegram/entities.test.ts";
     const result = spawnSync("bash", [join(root, "scripts/test-connectors.sh"), "--agent", declarationTest, "-t", "carries the index flag"], {
       cwd: root, encoding: "utf8", timeout: 10_000,
       env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, FLOOD_RUNNER_CALLS: calls },

@@ -1,11 +1,14 @@
 /**
  * Tab computation utility for entity detail pages.
  *
- * Groups linked entities by schema_id and maps them to tab definitions
+ * Groups linked entities by schema id and maps them to tab definitions
  * using the shared schemaVisual() registry.
  */
+import type { LinkedEntitySummary } from "@magnis/sdk";
 import type { IconName } from "../../components/ui/Icon";
-import type { LinkedEntitySummary } from "./sharedTypes";
+/** What an entity card renders for a linked entity or a search hit: its
+ * identity and, when the answer carries one, its card dictionary. */
+export declare function entityCardData(entity: Pick<LinkedEntitySummary, "id" | "name" | "data">): Readonly<Record<string, unknown>>;
 /** A group of entities of the same type within a module tab */
 export interface EntityTypeGroup {
     readonly schemaId: string;
@@ -31,7 +34,7 @@ export interface FixedTab {
 export declare const FIXED_TABS: readonly FixedTab[];
 /**
  * Compute dynamic tabs from linked entities.
- * Groups by MODULE (schema_id prefix before dot), tab label = module title from registry.
+ * Groups by MODULE (schema id prefix before dot), tab label = module title from registry.
  *
  * @param moduleTitles — map of moduleId → title from runtime.modules (e.g. { telegram: "Telegram" })
  */

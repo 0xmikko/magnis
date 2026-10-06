@@ -9,7 +9,7 @@ implementation at load time.
 
 A plugin UI compiles against `@magnis/host-stubs` (types) and *runs* against
 whatever the host injects on `window.__magnis_host`. Between those two there
-was a hole: the UI tests under `plugins/modules/*/ui/__tests__/` had no way
+was a hole: the UI tests under `modules/*/ui/__tests__/` had no way
 to run in this repository at all. They ran in the closed frontend's vitest,
 which checked this repo out as a git submodule and aliased `@magnis/host/*`
 at its real shims.

@@ -1,0 +1,112 @@
+/** The declaration is not a wish: every record this module writes has to pass
+ * it, and a record it does not write has to be refused with the field named.
+ *
+ * Proven through the module's REAL ingest — the same path a provider's
+ * envelope takes — rather than against hand-copied dictionaries, because a
+ * fixture list would drift from the code the moment either changed.
+ *
+ * This file sits beside entities.ts and outside module/ on purpose: it is the
+ * declaration's test, and the module's own tsconfig must never see zod.
+ */
+import { describe, expect, it } from "vitest";
+import { descriptorFrom } from "@magnis/declare/derive";
+import type { GraphBatchInput, JsonObject, SyncEnvelope } from "@magnis/sdk";
+import { mockGraph, mountModule, sourceEnvelope } from "@magnis/testkit/module";
+
+import { EmailModule } from "./module/service.ts";
+import { address, message } from "./entities.ts";
+
+const DECLARED = { "email.message": message, "email.address": address } as const;
+
+function ingestGraph() {
+  return mockGraph({
+    findByExternalIds: (externalIds) => Promise.resolve(externalIds.map(() => null)),
+    moduleSettings: () => Promise.resolve({ newSenderSyncEnabled: "true" }),
+    admitSyncEntities: (subjects) => Promise.resolve(subjects.flatMap(subject => [...subject.remoteIds])),
+    applyBatch: (frag) =>
+      Promise.resolve({
+        ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
+        created: frag.entities.length,
+        updated: 0,
+        linksAdded: frag.links.length,
+        droppedKeys: [], resolved: [],
+      }),
+    fileRegister: () => Promise.resolve("file-id"),
+    findByExternalId: () => Promise.resolve("existing-id"),
+    deleteEntity: () => Promise.resolve(undefined),
+    sourceCommand: () => Promise.resolve({ message_id: "sent-1" }),
+    // One connected mailbox: a new email leaves through it.
+    syncState: (() => Promise.resolve({ accounts: [{ accountId: "acct-1", sync: null }] })) as never,
+  });
+}
+
+const env = (over: Partial<SyncEnvelope>): SyncEnvelope =>
+  sourceEnvelope("email", {}, { sourceId: "google", accountId: "acct-1", userId: "u1", remoteId: "m1", timestamp: "2026-03-14T09:00:00Z", ...over });
+
+/** A provider's message, with every key the module stores. */
+const msgPayload = (over: JsonObject = {}): JsonObject => ({
+  message_id: "mail-1",
+  subject: "Report Q3",
+  from_address: "CEO@example.com",
+  from_name: "CEO",
+  to_addresses: "me@example.com, ops@example.com",
+  cc_addresses: "cc@example.com",
+  bcc_addresses: "bcc@example.com",
+  snippet: "Q3 results",
+  body_text: "see attached",
+  body_html: "<p>see attached</p>",
+  has_html_body: true,
+  sent_at: "2026-03-14T09:00:00Z",
+  received_at: "2026-03-14T09:01:00Z",
+  labels: ["INBOX", "IMPORTANT"],
+  is_read: false,
+  is_starred: false,
+  is_important: true,
+  has_attachments: true,
+  thread_id: "thread-1",
+  attachments: [{ filename: "q3.pdf", mime_type: "application/pdf", size: 12, path: "q3.pdf" }],
+  ...over,
+});
+
+async function written(): Promise<GraphBatchInput["entities"]> {
+  const graph = ingestGraph();
+  const mod = mountModule(EmailModule, { graph, ctx: { extensionId: "email" } }).module;
+  await mod.ingest({ envelopes: [env({ remoteId: "m1", payload: msgPayload() })] });
+  const ingested = graph.spies.applyBatch?.mock.calls.length ?? 0;
+  if (ingested === 0) throw new Error("ingest wrote nothing");
+  await mod.emailSend({ to: "ops@example.com", subject: "Report Q3", body_text: "see attached" });
+  const calls = graph.spies.applyBatch?.mock.calls ?? [];
+  if (calls.length !== ingested + 1) throw new Error("send must write once");
+  return calls.flatMap(call => (call[0] as GraphBatchInput).entities);
+}
+
+describe("email declares what it writes", () => {
+  it("declares sender synchronization outside the address properties", () => {
+    const { descriptor } = descriptorFrom(address);
+    expect(descriptor).toHaveProperty("syncable", true);
+    expect(descriptor.json_schema).not.toHaveProperty("properties.syncEnabled");
+    expect(descriptorFrom(message).descriptor).not.toHaveProperty("syncable");
+  });
+
+  it("every record the module writes today passes its own declaration", async () => {
+    const entities = await written();
+    expect(new Set(entities.map(entity => entity.schemaId))).toEqual(new Set(["email.address", "email.message"]));
+    for (const written of entities) {
+      const declared = DECLARED[written.schemaId as keyof typeof DECLARED];
+      expect(declared, `${written.schemaId} is written but not declared`).toBeDefined();
+      const verdict = declared.safeParse(written.properties ?? {});
+      expect(verdict.error?.issues ?? []).toEqual([]);
+    }
+  });
+
+  it("a field the module does not declare is refused, and the error names it", () => {
+    const verdict = message.safeParse({ subject: "Report Q3", priority: "high" });
+    expect(verdict.success).toBe(false);
+    expect(JSON.stringify(verdict.error?.issues)).toContain("priority");
+  });
+
+  it("a recipient list is an edge, so writing it back as a string is refused", () => {
+    const verdict = message.safeParse({ to_addresses: "me@example.com" });
+    expect(verdict.success).toBe(false);
+  });
+});

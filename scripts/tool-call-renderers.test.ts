@@ -17,7 +17,7 @@ import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
 
-const MODULES = join(import.meta.dir, "..", "plugins", "modules");
+const MODULES = join(import.meta.dir, "..", "modules");
 
 function renderers(): readonly { readonly id: string; readonly path: string }[] {
   const found: { id: string; path: string }[] = [];

@@ -15,6 +15,8 @@ import { join } from "node:path";
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 
+import { checkDependencyGraph } from "./build-catalog-index";
+
 const ROOT = join(import.meta.dir, "..");
 const SHA = "0123456789abcdef0123456789abcdef01234567";
 const SLUG = "owner/repo";
@@ -37,18 +39,13 @@ interface Index {
 }
 
 interface Curation {
-  schema_version: number;
-  capabilities: {
-    id: string;
-    title: string;
-    modules: string[];
-    source: string | null;
-    people: boolean;
-    local: boolean;
-  }[];
-  always: string[];
-  hard_deps: Record<string, string[]>;
-  install_order: string[];
+  schemaVersion: number;
+  modules: string[];
+}
+
+interface IndexV3 {
+  modules: { id: string; tier: string; dependsOn: string[] }[];
+  sources: { id: string; dependsOn: string[] }[];
 }
 
 const outputs: string[] = [];
@@ -73,28 +70,104 @@ function build(): { out: string; index: Index } {
 
 let first: { out: string; index: Index };
 
-beforeAll(() => {
-  // The builder refuses without `plugins_dist`, and refusing is right — it
-  // will not silently publish a catalog built from stale bundles. But that
-  // makes the bundles this test's PRECONDITION, not something to inherit
-  // from whatever command ran before it. Locally `plugins_dist` was left
-  // over from an earlier build and this passed; CI runs the tooling tests
-  // without building plugins first, and it failed there for exactly that
-  // reason.
-  const bundles = Bun.spawnSync(["bun", "scripts/build-plugins.ts"], { cwd: ROOT });
-  if (bundles.exitCode !== 0) {
-    throw new Error(`build-plugins failed: ${bundles.stderr.toString("utf8")}`);
-  }
-  first = build();
-}, 600_000);
-
 afterAll(() => {
   for (const dir of outputs.splice(0)) {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
+/**
+ * @test-id: tst_pub_catalog_index_003
+ * @test-id: tst_pub_catalog_index_004
+ * @test-id: tst_pub_catalog_index_005
+ * @scenario: scn_catalog_dependency_graph_001
+ * @covers: scripts/build-catalog-index.ts::checkDependencyGraph
+ * @deterministic: yes
+ * @fixtures: in-memory manifests
+ *
+ * Every package names its direct dependencies in dependsOn, and the build is
+ * the one place that sees every manifest at once, so it refuses a graph the
+ * host could not install: a reference to a module outside the closure, a
+ * cycle, and a source feeding a module it does not depend on.
+ */
+describe("tst_pub_catalog_index dependency graph checks", () => {
+  const projects = { dependsOn: [] };
+  const contacts = { dependsOn: [] };
+
+  test("tst_pub_catalog_index_003 a module linking to a module outside its closure fails the build", () => {
+    const meetings = {
+      dependsOn: ["contacts"],
+      links: [{ from: "meetings.calendar_event", to: "projects.project" }],
+    };
+    expect(() =>
+      checkDependencyGraph(new Map([["meetings", meetings], ["contacts", contacts], ["projects", projects]]), new Map()),
+    ).toThrow("module 'meetings': 'projects.project' belongs to module 'projects', outside its dependsOn closure");
+    const creating = { dependsOn: [], permissions: { create: ["contacts.person"] } };
+    expect(() => checkDependencyGraph(new Map([["addressbook", creating], ["contacts", contacts]]), new Map())).toThrow(
+      "module 'addressbook': 'contacts.person' belongs to module 'contacts', outside its dependsOn closure",
+    );
+    expect(() =>
+      checkDependencyGraph(new Map([["email", { dependsOn: ["web"] }]]), new Map()),
+    ).toThrow("module 'email': dependsOn 'web' is not a catalog module");
+  });
+
+  test("tst_pub_catalog_index_004 a dependency cycle fails the build", () => {
+    expect(() =>
+      checkDependencyGraph(
+        new Map([["email", { dependsOn: ["contacts"] }], ["contacts", { dependsOn: ["email"] }]]),
+        new Map(),
+      ),
+    ).toThrow("dependency cycle: contacts -> email -> contacts");
+  });
+
+  test("tst_pub_catalog_index_005 a source feeding a module outside its closure fails the build", () => {
+    const modules = new Map([
+      ["contacts", contacts],
+      ["email", { dependsOn: ["contacts"], surfaces: { email: {} } }],
+      ["meetings", { dependsOn: ["email"], surfaces: { meetings: {} } }],
+    ]);
+    expect(() =>
+      checkDependencyGraph(modules, new Map([["google", { dependsOn: ["email"], surfaces: ["email", "meetings"] }]])),
+    ).toThrow("source 'google': surface 'meetings' belongs to module 'meetings', outside its dependsOn closure");
+    // A surface no module declares is not checked, and a closed graph passes.
+    expect(() =>
+      checkDependencyGraph(modules, new Map([["google", { dependsOn: ["meetings"], surfaces: ["email", "meetings", "smk"] }]])),
+    ).not.toThrow();
+  });
+});
+
 describe("tst_pub_catalog_index_001", () => {
+  beforeAll(() => {
+    // The builder refuses without `plugins_dist`, and refusing is right — it
+    // will not silently publish a catalog built from stale bundles. But that
+    // makes the bundles this test's PRECONDITION, not something to inherit
+    // from whatever command ran before it. Locally `plugins_dist` was left
+    // over from an earlier build and this passed; CI runs the tooling tests
+    // without building plugins first, and it failed there for exactly that
+    // reason.
+    const bundles = Bun.spawnSync(["bun", "scripts/build-plugins.ts"], { cwd: ROOT });
+    if (bundles.exitCode !== 0) {
+      throw new Error(`build-plugins failed: ${bundles.stderr.toString("utf8")}`);
+    }
+    first = build();
+  }, 600_000);
+
+  /**
+   * @test-id: tst_cat_layout_002
+   * @scenario: scn_google_pull_007
+   * @covers: scripts/build-catalog-index.ts
+   * @deterministic: yes
+   * @fixtures: root Module and Source manifests and a built catalog index
+   */
+  test("tst_cat_layout_002 publishes Module and Source identities from the root directories", () => {
+    expect(first.index.packages.some((entry) => entry.kind === "module")).toBe(true);
+    expect(first.index.packages.some((entry) => entry.kind === "source")).toBe(true);
+    for (const entry of first.index.packages) {
+      const directory = entry.kind === "module" ? "modules" : "sources";
+      expect(existsSync(join(ROOT, directory, entry.id, "manifest.toml"))).toBe(true);
+    }
+  });
+
   test("every package is ONE flat asset named after its kind and id", () => {
     expect(first.index.packages.length).toBeGreaterThan(0);
     for (const pkg of first.index.packages) {
@@ -109,12 +182,12 @@ describe("tst_pub_catalog_index_001", () => {
   /**
    * @test-id: tst_pub_catalog_index_002
    * @scenario: scn_catalog_module_install_001
-   * @covers: plugins/modules/<module>/manifest.toml sync-surface declarations
+   * @covers: modules/<module>/manifest.toml sync-surface declarations
    * @deterministic: yes
    * @fixtures: checked-in module manifests
    */
   test("tst_pub_catalog_index_002 every module surface declares reconciliation", () => {
-    const modulesRoot = join(ROOT, "plugins", "modules");
+    const modulesRoot = join(ROOT, "modules");
     for (const entry of readdirSync(modulesRoot, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
       const manifestPath = join(modulesRoot, entry.name, "manifest.toml");
@@ -168,86 +241,32 @@ describe("tst_pub_catalog_index_001", () => {
     expect(readdirSync(first.out)).not.toContain(".stage");
   });
 
-  test("the curation names capabilities the catalog can actually install", () => {
+  test("onboarding.json version 2 names default modules the catalog carries", () => {
     const curation = JSON.parse(
       readFileSync(join(first.out, "onboarding.json"), "utf8"),
     ) as Curation;
-    const carried = new Set(first.index.packages.map((entry) => entry.id));
-    expect(curation.capabilities.length).toBeGreaterThan(0);
-    for (const capability of curation.capabilities) {
-      for (const id of capability.modules) {
-        expect(carried.has(id), `capability '${capability.id}' names module '${id}'`).toBe(true);
-      }
-      if (capability.source !== null) {
-        expect(
-          carried.has(capability.source),
-          `capability '${capability.id}' names source '${capability.source}'`,
-        ).toBe(true);
-      }
+    expect(curation.schemaVersion).toBe(2);
+    expect(curation.modules.length).toBeGreaterThan(0);
+    const modules = new Set(
+      first.index.packages.filter((entry) => entry.kind === "module").map((entry) => entry.id),
+    );
+    for (const id of curation.modules) {
+      expect(modules.has(id), `default module '${id}'`).toBe(true);
     }
   });
 
-  test("the always-installed set is DERIVED from tier, not restated", () => {
-    // `triggers` and `file` manifests say `tier = "system"`. The application used
-    // to carry an `ALWAYS` literal — a copy of a fact the
-    // package already stated, which is exactly the duplicate this document
-    // exists to delete rather than relocate.
-    const curation = JSON.parse(
-      readFileSync(join(first.out, "onboarding.json"), "utf8"),
-    ) as Curation;
-    expect(curation.always).toContain("triggers");
-    expect(curation.always).toContain("file");
-    for (const id of ["triggers", "file"]) {
+  test("the system tier is read from the manifests, not restated", () => {
+    const index = JSON.parse(readFileSync(join(first.out, "index.v3.json"), "utf8")) as IndexV3;
+    const system = index.modules.filter((entry) => entry.tier === "system").map((entry) => entry.id);
+    for (const id of system) {
       const declaresSystem = readFileSync(
-        join(ROOT, "plugins", "modules", id, "manifest.toml"),
+        join(ROOT, "modules", id, "manifest.toml"),
         "utf8",
       ).includes('tier = "system"');
       expect(declaresSystem, `${id} must declare its system lifecycle`).toBe(true);
     }
-  });
-
-  test("hard dependencies come from the manifests and name only modules", () => {
-    const curation = JSON.parse(
-      readFileSync(join(first.out, "onboarding.json"), "utf8"),
-    ) as Curation;
-    // Explicit schema requirements survive even though RPC grants are optional.
-    expect(curation.hard_deps["contacts"]).toContain("email");
-    expect(curation.hard_deps["companies"]).toContain("email");
-    expect(curation.hard_deps["meetings"]).toContain("email");
-    expect(curation.hard_deps["linkedin"]).toContain("contacts");
-    expect(curation.hard_deps["triggers"] ?? []).not.toContain("email");
-    expect(curation.hard_deps["triggers"] ?? []).not.toContain("telegram");
-    expect(curation.hard_deps["email"] ?? []).not.toContain("triggers");
-    // It only READS `companies.company`, which never blocks enabling — a
-    // soft edge, and the hand-written table this replaced had them merged.
-    expect(curation.hard_deps["contacts"] ?? []).not.toContain("companies");
-    // `x` calls `source.sync.bootstrap`; `source` is the HOST, not a
-    // package, and publishing it would send the wizard installing a module
-    // nobody wrote.
-    const modules = new Set(
-      first.index.packages.filter((entry) => entry.kind === "module").map((entry) => entry.id),
-    );
-    for (const deps of Object.values(curation.hard_deps)) {
-      for (const dep of deps) {
-        expect(modules.has(dep), `hard dependency '${dep}' must be a module`).toBe(true);
-      }
-    }
-  });
-
-  test("the install order puts every hard dependency before its dependent", () => {
-    const curation = JSON.parse(
-      readFileSync(join(first.out, "onboarding.json"), "utf8"),
-    ) as Curation;
-    const at = (id: string): number => curation.install_order.indexOf(id);
-    for (const [id, deps] of Object.entries(curation.hard_deps)) {
-      for (const dep of deps) {
-        expect(at(dep), `${dep} must install before ${id}`).toBeLessThan(at(id));
-      }
-    }
-    // Every module the catalog carries has a place in it.
-    for (const entry of first.index.packages) {
-      if (entry.kind === "module") expect(curation.install_order).toContain(entry.id);
-    }
+    expect(system).toContain("file");
+    expect(system).toContain("triggers");
   });
 
   test("two builds of the same tree produce byte-identical assets", () => {

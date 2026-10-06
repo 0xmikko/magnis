@@ -1,0 +1,104 @@
+// Shared DTOs for the companies plugin.
+//
+// Imported by both `module/` (V8 isolate, backend dispatch) and `ui/`
+// (browser, transpiled on the fly by the backend transpile endpoint).
+// Single source of truth for the wire shape that the host frontend
+// consumes via `useModuleList` and `useQuery(getRpcMethod)`; the linked
+// summaries inside it are the SDK's.
+import type { LinkedEntitySummary } from "@magnis/sdk";
+
+export interface CompanyListItem {
+  id: string;
+  name: string;
+  website: string | null;
+  industry: string | null;
+  size: string | null;
+  location: string | null;
+  avatarColor: string;
+  initials: string;
+  createdAt: string;
+}
+
+export type HeaderRow =
+  | { type: "text"; label: string; value: string | null }
+  | { type: "chips"; label: string; items: string[] };
+
+export interface CompanyDetailView extends CompanyListItem {
+  /** Incoming edges use the shared `~kind` convention. */
+  linkedEntities: LinkedEntitySummary[];
+  members: string[];
+  headerRows: HeaderRow[];
+}
+
+// ── schema → type maps that parameterise GraphService ──────────────
+// record schema_id → payload shape
+/** The company hub's DICTIONARY (S5). Named for the record it replaced; the
+ *  keys are the same, plus the curated collections the hub now owns. */
+export interface CompanyDetailsFacet {
+  name?: string | null;
+  phones?: { phone: string; type: string | null; is_primary: boolean }[];
+  description?: string | null;
+  industry?: string | null;
+  domain?: string | null;
+  website?: string | null;
+  location?: string | null;
+  size?: string | null;
+  founded?: string | null;
+  stage?: string | null;
+  headcount?: number | null;
+  funding_total?: string | null;
+}
+
+// canonical key → value
+export interface CompanyCanonical {
+  "companies.name": string;
+  "companies.description": string | null;
+  "companies.website": string | null;
+  "companies.industry": string | null;
+  "companies.size": string | null;
+  "companies.location": string | null;
+}
+
+export interface ExternalLinkInput {
+  source_type: string;
+  external_id: string;
+  external_url?: string;
+  external_name?: string;
+}
+
+export interface CreateParams {
+  name: string;
+  website?: string;
+  industry?: string;
+  domain?: string;
+  summary?: string;
+  // caller-supplied entity UUID (local-first optimistic create); the
+  // backend uses it as the entity id, or allocates one if omitted.
+  // Frontend-only — kept out of the agent tool schema.
+  client_id?: string;
+}
+
+/** Full enrichment patch for companies.update. Each undefined field is
+ *  left untouched; provided fields are layered on as fresh record
+ *  versions (single-aligned details / collection email+phone). */
+export interface UpdateParams {
+  id: string;
+  name?: string;
+  domain?: string;
+  summary?: string;
+  industry?: string;
+  size?: string;
+  location?: string;
+  founded?: string;
+  stage?: string;
+  headcount?: number;
+  funding_total?: string;
+  phones?: string[];
+  external_links?: ExternalLinkInput[];
+}
+
+// Generic RPC envelopes are shared, not declared here: ListParams and
+// GetParams come from `@magnis/plugin-sdk`, PaginatedResponse from the SDK:
+//
+//   import type { GetParams, ListParams } from "@magnis/plugin-sdk";
+//   import type { PaginatedResponse } from "@magnis/sdk";

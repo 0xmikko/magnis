@@ -1,0 +1,86 @@
+// Shared DTOs for the projects plugin — wire shapes the host frontend
+// consumes. Mirrors the legacy Rust projects ProjectListItem /
+// ProjectDetailView 1:1.
+import type { LinkedEntitySummary } from "@magnis/sdk";
+
+export interface ProjectListItem {
+  id: string;
+  schemaId: string;
+  name: string;
+  status: string | null;
+  createdAt: string;
+  isPinned?: boolean | null;
+}
+
+export interface ProjectDetailView {
+  id: string;
+  schemaId: string;
+  name: string;
+  status: string | null;
+  canonical: Partial<ProjectCanonical>;
+  linkedEntities: LinkedEntitySummary[];
+  createdAt: string;
+}
+
+/** One stored project record — the node's dictionary, as `create` writes it
+ * and `update` rewrites it. `entities.ts` declares exactly this and the build
+ * proves the two are one type. */
+
+
+// ── schema → type maps that parameterise GraphService ──────────────
+export interface ChecklistItem {
+  id: string;
+  text: string;
+  status: "pending" | "in_progress" | "done" | "blocked";
+  notes?: string;
+  updated_at?: string;
+}
+
+export interface ProjectDetails {
+  name?: string;
+  status?: string;
+  description?: string;
+  created_at?: string;
+  updated_at?: string;
+  /** The operational checklist `checklist.update` writes into this same
+   * dictionary — one key, replaced whole. */
+  checklist?: ChecklistItem[];
+}
+
+
+export interface ProjectCanonical {
+  "project.name": string | null;
+  "project.status": string | null;
+}
+
+// ── RPC params ──────────────────────────────────────────────────────
+export interface ProjectsListParams {
+  limit?: number;
+  offset?: number;
+  search?: string;
+}
+export interface CreateParams {
+  name: string;
+  status?: string;
+  client_id?: string;
+}
+export interface UpdateParams {
+  id: string;
+  name?: string;
+  status?: string;
+  description?: string;
+}
+export interface ChecklistGetParams {
+  project_id: string;
+}
+export interface ChecklistUpdateParams {
+  project_id: string;
+  items: ChecklistItem[];
+}
+export interface MemberParams {
+  project_id: string;
+  entity_id: string;
+}
+export interface ListForEntityParams {
+  entity_id: string;
+}

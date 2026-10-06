@@ -2,7 +2,7 @@
 // scope. A module that reaches for `document` fails here, and that is the
 // point of keeping this lane separate.
 //
-// The UI suites under `plugins/modules/*/ui/__tests__/` are the OTHER lane —
+// The UI suites under `modules/*/ui/__tests__/` are the OTHER lane —
 // `vitest.ui.config.ts`, happy-dom, `@magnis/host/*` resolved at
 // `packages/host-testdouble`. They used to run in the closed frontend's
 // vitest, which checked this repository out as a git submodule; the submodule
@@ -14,16 +14,16 @@ export default defineConfig({
   test: {
     environment: "node",
     include: [
-      "plugins/modules/**/module/**/*.test.ts",
+      "modules/**/module/**/*.test.ts",
       // A source's auth SCREEN is React, and its DOM belongs to the closed
       // frontend's lane — but the pure decisions it makes (which the host's
       // ceremony vocabulary drives) are logic, and they belong here, beside
       // the package that gets them wrong.
-      "plugins/sources/**/auth/**/*.test.ts",
+      "sources/**/auth/**/*.test.ts",
       // A module's declaration is tested beside it, OUTSIDE module/: the module's
       // own tsconfig must never see zod.
-      "plugins/modules/*/entities.test.ts",
-      "plugins/modules/**/ui/**/sourceStatusAdapter.test.ts",
+      "modules/*/entities.test.ts",
+      "modules/**/ui/**/sourceStatusAdapter.test.ts",
       "packages/plugin-sdk/__tests__/**/*.test.ts",
       // Build-time declaration helpers: what a module's entities.ts becomes.
       "packages/declare/__tests__/**/*.test.ts",

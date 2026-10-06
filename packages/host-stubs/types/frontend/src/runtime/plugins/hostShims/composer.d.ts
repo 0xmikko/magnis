@@ -3,6 +3,6 @@ export type { MessageComposerAttachment } from "@/components/shared/MessageCompo
 export { useComposerDraft, writeDraftDirect } from "@/components/shared/composer/useComposerDraft";
 export { useComposerMountRegistry } from "@/components/shared/composer/ComposerMountContext";
 export { applyComposerEvent } from "@/components/shared/composer/composerApplyHandler";
-export type { ComposerApplyEvent } from "@/components/shared/composer/composerApplyHandler";
+export type { ComposerApplyEvent } from "@magnis/sdk";
 export { ComposerMountProvider } from "@/components/shared/composer/ComposerMountContext";
 export { __INTERNAL } from "@/components/shared/composer/useComposerDraft";

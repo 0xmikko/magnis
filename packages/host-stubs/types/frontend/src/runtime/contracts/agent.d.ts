@@ -1,4 +1,5 @@
 import type { ComponentType } from "react";
+import type { ComposerApplyEvent, ComposerPresenceParams } from "@magnis/sdk";
 import type { EntityOperationBinding } from "@magnis/sdk/core/approval";
 import type { StoreApi } from "zustand/vanilla";
 import type { AppRuntime } from "./runtime";
@@ -80,6 +81,8 @@ export interface ModuleAgentContribution {
     readonly entityRenderers?: readonly EntityRendererRegistration[];
     readonly entityContextResolvers?: readonly AgentEntityContextResolver[];
     readonly navigateToEntity?: EntityNavigationHandler;
+    /** The module's settings, shown as the agent panel's Properties mode. */
+    readonly propertiesPanel?: ComponentType;
     readonly onDraftRequest?: (payload: unknown, runtime: AppRuntime) => void;
     readonly extractAllowlistTarget?: (toolCall: {
         name: string;
@@ -110,30 +113,12 @@ export interface ToolCallRendererPayload {
     readonly onEdit: () => void;
     readonly onAllowlistToggle: (scope?: AllowlistScope) => void;
 }
-export interface ComposerPresenceParams {
-    readonly mode: "email" | "telegram";
-    readonly thread_key: string;
-}
-/**
- * Payload of a `composer.apply` event as delivered to `onApply` subscribers.
- * Mirrors `ComposerApplyEvent` in `composerApplyHandler.ts` but lives on the
- * runtime contract so modules can subscribe without reaching into the
- * composer package.
- */
-export interface ComposerApplyEventPayload {
-    readonly mode: "email" | "telegram";
-    readonly thread_key: string;
-    readonly revision: number;
-    readonly op: "set_text" | "append_text" | "set_attachments";
-    readonly text?: string;
-    readonly attachment_ids?: readonly string[];
-}
 export interface ComposerRuntimeSurface {
     /**
      * Announce or retire the currently-mounted composer.
      *
-     * Backend stores the presence per user_id; scoped apply events are
-     * filtered by matching (mode, thread_key) against the mounted composer.
+     * Backend stores the presence per user; scoped apply events are
+     * filtered by matching (mode, threadKey) against the mounted composer.
      * Pass `null` on unmount (or before re-mounting on a different key).
      */
     setPresence(params: ComposerPresenceParams | null): void;
@@ -141,9 +126,9 @@ export interface ComposerRuntimeSurface {
      * Stage 4: subscribe to `composer.apply` events routed from the backend
      * over the WS event bus. Returns an unsubscribe fn. Per INV-15, the WS
      * filter on the backend already restricts delivery to the authenticated
-     * user; subscribers only need to filter on (mode, thread_key).
+     * user; subscribers only need to filter on (mode, threadKey).
      */
-    onApply(handler: (event: ComposerApplyEventPayload) => void): () => void;
+    onApply(handler: (event: ComposerApplyEvent) => void): () => void;
 }
 export interface AgentRuntime {
     readonly store: StoreApi<AgentRuntimeState>;
@@ -161,5 +146,6 @@ export interface AgentRuntime {
         toolBinding?: EntityOperationBinding;
     }): AllowlistTarget | null;
     resolveSystemPrompt(moduleId: string): string | undefined;
+    getPropertiesPanel(moduleId: string): ComponentType | null;
     dispatchContextAction(moduleId: string, actionId: string, payload?: unknown): void;
 }

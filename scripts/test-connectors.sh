@@ -21,9 +21,15 @@ if [[ "${1:-}" == "--agent" ]]; then
     fi
     if grep -Eq "[\"']bun:test[\"']" "$argument"; then
       selected="bun"
+    elif [[ "$argument" == sources/* ]]; then
+      if grep -Eq "[\"']vitest[\"']" "$argument"; then
+        selected="vitest"
+      else
+        selected="bun"
+      fi
     else
       case "$argument" in
-        plugins/modules/*/module/*.test.ts|plugins/modules/*/entities.test.ts|plugins/modules/*/ui/*/sourceStatusAdapter.test.ts|packages/plugin-sdk/__tests__/*.test.ts|packages/testkit/__tests__/module.test.ts)
+        modules/*/module/*.test.ts|modules/*/entities.test.ts|modules/*/ui/*/sourceStatusAdapter.test.ts|packages/plugin-sdk/__tests__/*.test.ts|packages/testkit/__tests__/module.test.ts)
           selected="vitest" ;;
         *) echo "Unsupported backend lane: $argument; use its owning agent:test adapter." >&2; exit 64 ;;
       esac
@@ -42,9 +48,9 @@ if [[ "${1:-}" == "--agent" ]]; then
   exec bunx vitest run "$@"
 fi
 
-for d in plugins/sources/x plugins/sources/anysite plugins/sources/google plugins/sources/telegram \
-         plugins/sources/mock-x plugins/sources/mock-linkedin plugins/sources/mock-gmail \
-         plugins/sources/mock-telegram plugins/sources/local packages/source-statemachine \
+for d in sources/x sources/anysite sources/google sources/telegram \
+         sources/mock-x sources/mock-linkedin sources/mock-gmail \
+         sources/mock-telegram sources/local packages/source-statemachine \
          packages/connector-sdk; do
   echo "bun test: $d"
   (cd "$d" && bun test)

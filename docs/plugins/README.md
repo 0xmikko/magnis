@@ -56,8 +56,8 @@ bun run build:plugins    # bundle every module's UI
 Run one plugin's tests:
 
 ```bash
-bun run test plugins/modules/<name>     # a module (vitest)
-bun test plugins/sources/<name>/src     # a source (bun test)
+bun run test modules/<name>     # a module (vitest)
+bun test sources/<name>/src     # a source (bun test)
 ```
 
 ## Dev loop — no rebuild while you write

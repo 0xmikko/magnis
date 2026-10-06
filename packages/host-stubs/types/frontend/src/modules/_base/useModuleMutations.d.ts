@@ -13,16 +13,24 @@ export declare function useModuleDelete(queryKeys: ModuleQueryKeys, rpcMethod: s
 }, {
     previous: PaginatedResponse<ListItem> | undefined;
 }>;
-export declare function useModulePin(queryKeys: ModuleQueryKeys): import("@tanstack/react-query").UseMutationResult<void, Error, {
-    entity_id: string;
-    pin_order?: number;
+export declare function useModulePin(queryKeys: ModuleQueryKeys): import("@tanstack/react-query").UseMutationResult<{
+    ok: true;
+}, Error, {
+    entityId: string;
+    pinOrder?: number | undefined;
 }, unknown>;
-export declare function useModuleUnpin(queryKeys: ModuleQueryKeys): import("@tanstack/react-query").UseMutationResult<void, Error, {
-    entity_id: string;
+export declare function useModuleUnpin(queryKeys: ModuleQueryKeys): import("@tanstack/react-query").UseMutationResult<{
+    ok: true;
+}, Error, {
+    entityId: string;
 }, unknown>;
-export declare function useModuleArchive(queryKeys: ModuleQueryKeys): import("@tanstack/react-query").UseMutationResult<void, Error, {
-    entity_id: string;
+export declare function useModuleArchive(queryKeys: ModuleQueryKeys): import("@tanstack/react-query").UseMutationResult<{
+    ok: true;
+}, Error, {
+    entityId: string;
 }, unknown>;
-export declare function useModuleUnarchive(queryKeys: ModuleQueryKeys): import("@tanstack/react-query").UseMutationResult<void, Error, {
-    entity_id: string;
+export declare function useModuleUnarchive(queryKeys: ModuleQueryKeys): import("@tanstack/react-query").UseMutationResult<{
+    ok: true;
+}, Error, {
+    entityId: string;
 }, unknown>;

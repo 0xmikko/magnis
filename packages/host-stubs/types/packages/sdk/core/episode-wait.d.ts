@@ -33,6 +33,6 @@ export declare const EpisodeWaitListSchema: z.ZodObject<{
         request: z.ZodType<import("./json.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("./json.js").JsonValue, unknown>>;
         createdAt: z.ZodString;
     }, z.core.$strict>>;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type EpisodeWaitList = z.output<typeof EpisodeWaitListSchema>;
 //# sourceMappingURL=episode-wait.d.ts.map

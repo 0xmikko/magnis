@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   mkdirSync,
+  existsSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
@@ -28,6 +29,7 @@ import {
   reconcileSourceReceiptFixtures,
   writeCertifiedCatalogIndexes,
 } from "./certify-sources";
+import type { PublishedCatalogPackage, StagedCatalogPackage } from "./certify-sources";
 import { canonicalizeBundledSourceBuildRoot, stageSourcePackage } from "./build-catalog-index";
 import { collectSourceHostEvidence, terminateSourceHostProcess } from "../packages/testkit/host-driver";
 
@@ -43,11 +45,12 @@ function sha256(value: string): string {
   return `sha256:${createHash("sha256").update(value).digest("hex")}`;
 }
 
-function sourceManifest(id: string): string {
+function sourceManifest(id: string, dependsOn: readonly string[] = []): string {
   const receiverInterfaceHash = v1ReceiverInterfaceHash("email");
   return [
     `id = "${id}"`,
     'version = "1.0.0"',
+    `dependsOn = ${JSON.stringify(dependsOn)}`,
     `title = "${id}"`,
     'summary = "fixture"',
     'publisher = "ai.magnis"',
@@ -91,10 +94,10 @@ function sourceManifest(id: string): string {
   ].join("\n");
 }
 
-function stageSource(root: string, id: string): string {
+function stageSource(root: string, id: string, dependsOn: readonly string[] = []): string {
   const packageRoot = join(root, "packages", "source", id);
   mkdirSync(join(packageRoot, "dist"), { recursive: true });
-  writeFileSync(join(packageRoot, "manifest.toml"), sourceManifest(id));
+  writeFileSync(join(packageRoot, "manifest.toml"), sourceManifest(id, dependsOn));
   writeFileSync(
     join(packageRoot, "dist", "main.js"),
     `import { createInterface } from "node:readline";
@@ -188,6 +191,26 @@ function receipt(
   };
 }
 
+/** The published cards of `discovered`: a source depends on email, a module
+ * is community. */
+function published(discovered: readonly StagedCatalogPackage[]): PublishedCatalogPackage[] {
+  return discovered.map((entry) => ({
+    kind: entry.kind,
+    id: entry.id,
+    version: entry.version,
+    title: entry.title,
+    summary: entry.summary,
+    publisher: entry.publisher,
+    dev: entry.dev,
+    archive: {
+      name: `${entry.kind}__${entry.id}.tgz`,
+      sha256: createHash("sha256").update(`${entry.kind}:${entry.id}`).digest("hex"),
+    },
+    dependsOn: entry.kind === "source" ? ["email"] : [],
+    ...(entry.kind === "module" ? { tier: "community" as const } : {}),
+  }));
+}
+
 function writeReceiptInput(
   root: string,
   sourceId: string,
@@ -271,11 +294,20 @@ describe("tst_cat_src_cert_001 staged Source certification", () => {
     expect(upgraded.definitionHash).not.toBe(original.definitionHash);
   });
 
-  test("emits external receipts and both indexes from the same discovered set", async () => {
+  /**
+   * @test-id: tst_cat_index_v3_001
+   * @scenario: scn_catalog_dependency_graph_001
+   * @covers: scripts/certify-sources.ts::writeCertifiedCatalogIndexes
+   * @covers: scripts/certify-sources.ts::sourceDefinitionHash
+   * @deterministic: yes
+   * @fixtures: temporary staged catalog tree; the host's definition hash for
+   *   the alpha fixture, computed by the app's sourceManifestContract
+   */
+  test("tst_cat_index_v3_001 writes index.v3.json with modules and sources apart, beside index.json as before", async () => {
     const root = temporaryRoot();
-    stageSource(root, "zeta");
-    stageModule(root, "contacts");
-    stageSource(root, "alpha");
+    stageSource(root, "zeta", ["email"]);
+    stageModule(root, "email");
+    stageSource(root, "alpha", ["email"]);
 
     const discovered = discoverStagedCatalog(root);
     for (const entry of discovered) {
@@ -287,68 +319,71 @@ describe("tst_cat_src_cert_001 staged Source certification", () => {
       }
     }
 
+    // @tested-by: tst_cat_index_v3_001
+    // @invariant: the catalog's definition hash covers dependsOn exactly as
+    // the app's sourceManifestContract does, or every certificate fails
+    // admission.
+    expect(discovered.find((entry) => entry.id === "alpha")?.definitionHash).toBe(
+      "sha256:874eb32b79915e2fa24b623977e82082a432726e6fb3294166936bb635daa060",
+    );
+
     const result = await writeCertifiedCatalogIndexes({
       catalogOut: root,
       generatedFrom: "fixture-sha",
       receiptInputDir: join(root, "receipt-input"),
       discovered,
-      publishedPackages: discovered.map((entry) => ({
-        kind: entry.kind,
-        id: entry.id,
-        version: entry.version,
-        title: entry.title,
-        summary: entry.summary,
-        publisher: entry.publisher,
-        dev: entry.dev,
-        archive: {
-          name: `${entry.kind}__${entry.id}.tgz`,
-          sha256: createHash("sha256").update(`${entry.kind}:${entry.id}`).digest("hex"),
-        },
-      })),
+      publishedPackages: published(discovered),
     });
     const legacy = JSON.parse(readFileSync(join(root, "index.json"), "utf8")) as {
       schema_version: number;
-      packages: Array<{
-        kind: string;
-        id: string;
-        archive?: { name: string; sha256: string };
-        files?: unknown;
-      }>;
+      packages: Record<string, unknown>[];
     };
-    const strict = JSON.parse(readFileSync(join(root, "index.v2.json"), "utf8")) as {
-      schema_version: number;
-      packages: Array<{
-        kind: string;
-        id: string;
-        package_hash?: string;
-        certification?: { path: string; sha256: string };
-      }>;
+    const index = JSON.parse(readFileSync(join(root, "index.v3.json"), "utf8")) as {
+      schemaVersion: number;
+      generatedFrom: string;
+      modules: Record<string, unknown>[];
+      sources: { id: string; packageHash: string; certification: { path: string; sha256: string } }[];
     };
 
+    // @tested-by: tst_cat_index_v3_001
+    // @invariant: index.json version 1 is written exactly as before, without
+    // the graph; index.v3.json replaces index.v2.json.
     expect(legacy.schema_version).toBe(1);
-    expect(strict.schema_version).toBe(2);
-    expect(legacy.packages.map(({ kind, id }) => `${kind}:${id}`)).toEqual(
-      strict.packages.map(({ kind, id }) => `${kind}:${id}`),
+    expect(legacy.packages.map((entry) => Object.keys(entry).sort())).toEqual(
+      discovered.map(() => ["archive", "dev", "id", "kind", "publisher", "summary", "title", "version"]),
     );
-    for (const entry of legacy.packages) {
-      expect(entry.archive?.name).toBe(`${entry.kind}__${entry.id}.tgz`);
-      expect(entry.archive?.sha256).toMatch(/^[0-9a-f]{64}$/);
-      expect(entry.files).toBeUndefined();
-    }
+    expect(existsSync(join(root, "index.v2.json"))).toBe(false);
+
+    // @tested-by: tst_cat_index_v3_001
+    // @invariant: the list is the kind; every entry carries dependsOn in
+    // camelCase, a module its tier, a source its package hash and certificate.
+    expect([index.schemaVersion, index.generatedFrom]).toEqual([3, "fixture-sha"]);
+    expect(index.modules).toEqual([{
+      id: "email",
+      version: "1.0.0",
+      title: "email",
+      summary: "fixture",
+      publisher: "ai.magnis",
+      dev: false,
+      archive: { name: "module__email.tgz", sha256: createHash("sha256").update("module:email").digest("hex") },
+      iconUrl: null,
+      detailsUrl: null,
+      dependsOn: [],
+      tier: "community",
+    }]);
+    expect(index.sources.map((entry) => [entry.id, Object.keys(entry).sort()])).toEqual(
+      ["alpha", "zeta"].map((id) => [id, [
+        "archive", "certification", "dependsOn", "detailsUrl", "dev", "iconUrl", "id",
+        "packageHash", "publisher", "summary", "title", "version",
+      ]]),
+    );
     expect(result.discovered).toBe(discovered);
-    for (const entry of strict.packages) {
-      if (entry.kind !== "source") continue;
-      expect(entry.package_hash).toMatch(/^sha256:[0-9a-f]{64}$/);
-      const reference = entry.certification;
-      expect(reference?.path).toMatch(/^receipt-[0-9a-f]{64}\.json$/);
-      expect(reference?.path).not.toContain("/");
-      expect(reference?.path).not.toContain(":");
-      expect(reference?.sha256).toMatch(/^sha256:[0-9a-f]{64}$/);
-      const sidecar = readFileSync(join(root, reference?.path ?? ""));
-      expect(`sha256:${createHash("sha256").update(sidecar).digest("hex")}`).toBe(
-        reference?.sha256,
-      );
-      expect(sidecar.toString("utf8")).toContain(`"packageHash":"${entry.package_hash}"`);
+    for (const entry of index.sources) {
+      expect(entry.packageHash).toMatch(/^sha256:[0-9a-f]{64}$/);
+      expect(entry.certification.path).toBe(`receipt-${entry.packageHash.slice("sha256:".length)}.json`);
+      const sidecar = readFileSync(join(root, entry.certification.path));
+      expect(`sha256:${createHash("sha256").update(sidecar).digest("hex")}`).toBe(entry.certification.sha256);
+      expect(sidecar.toString("utf8")).toContain(`"packageHash":"${entry.packageHash}"`);
     }
   });
 
@@ -363,6 +398,7 @@ describe("tst_cat_src_cert_001 staged Source certification", () => {
         generatedFrom: "fixture-sha",
         receiptInputDir: join(root, "receipt-input"),
         discovered,
+        publishedPackages: published(discovered),
       }),
     ).rejects.toThrow("source 'alpha' has no receipt for staged package");
 
@@ -375,6 +411,7 @@ describe("tst_cat_src_cert_001 staged Source certification", () => {
         generatedFrom: "fixture-sha",
         receiptInputDir: join(root, "receipt-input"),
         discovered,
+        publishedPackages: published(discovered),
       }),
     ).rejects.toThrow("receipt definitionHash does not match staged definition");
   });
@@ -615,7 +652,7 @@ describe("tst_cat_src_cert_001 staged Source certification", () => {
 
   test("stages Telegram without its build checkout and launches the exact bundle", async () => {
     const repoRoot = join(import.meta.dir, "..");
-    const release = discoverSourceReleaseManifests(join(repoRoot, "plugins", "sources"))
+    const release = discoverSourceReleaseManifests(join(repoRoot, "sources"))
       .find(({ id }) => id === "telegram");
     if (release === undefined || release.disposition !== "admissible") {
       throw new Error("Telegram must be an admissible Source release");
