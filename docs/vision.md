@@ -245,19 +245,39 @@ No JSONB `extras` object is proposed. These fields have different owners and con
 
 **Archive normalization:** legacy SQL null/false mean not archived. Normalize them at the storage boundary; the public parser still requires a boolean. An ordinary Source update does not unarchive a record.
 
-### Privacy boundary
+### Private data and trusted models
 
-The [existing privacy draft](https://github.com/0xmikko/magnis-app/blob/2ea08b25957bbb3d60bdeb144d19f2d24d3d4665/docs/plans/private-entity-flag.md) was approved on 2026-08-25, but its inspected branch contains documentation changes only. Its `isPrivate` becomes target `extras.private`. It is Entity-wide, not a viewer preference; that draft initializes newly created records to false.
+`extras.private` requires a model authorized to process private data. This is an Entity-wide restriction, independent of viewer preferences and ACL. A model running in the owner's cluster can qualify even when Magnis cannot establish its physical location.
 
-| Privacy and active embedding model | Behavior in that contract |
+```typescript
+// Target addition to the existing SDK model directory: private.
+export interface EmbeddingModelInfo {
+  readonly id: string;
+  readonly displayName: string;
+  readonly private: boolean; // Authorized to process private data.
+  readonly dataBoundary: "device_only" | "cloud_allowed";
+  readonly dimensions: number;
+  readonly normalization: "none" | "l2";
+  readonly revision: string;
+  readonly available: boolean;
+}
+```
+
+The existing `LlmModelInfo` gains the same required `private: boolean`. This flag belongs to a configured logical model and its execution endpoint, not to a model name or its weights. Known local execution qualifies automatically. For other endpoints, an authorized configuration owner explicitly declares the model private; an unclassified endpoint does not qualify. Magnis relies on that declaration rather than claiming to verify the remote operator's infrastructure. Changing the endpoint requires a fresh classification.
+
+`dataBoundary` is existing model-directory metadata, stored as `ai_models.data_boundary`. It describes local/cloud execution for display; it does not decide permission to process private data. In particular, `cloud_allowed` does not disqualify an explicitly trusted cluster, and a provider name or local-looking URL does not establish local execution.
+
+| Entity and selected model | Target embedding/search behavior |
 | --- | --- |
-| `private: false` | No additional restriction from this flag |
-| Private + `dataBoundary: "device_only"` | Local indexing and results are allowed |
-| Private + `dataBoundary: "cloud_allowed"` | Exclude from candidate selection, index audit, counts and ranked results |
+| `extras.private: false` | No additional restriction from this flag |
+| `extras.private: true`, model `private: true` | Indexing and results are allowed, including an explicitly trusted cluster |
+| `extras.private: true`, model `private: false` | Exclude from candidate selection, index audit, counts and ranked results |
 
-The current `entities.indexed` processing-permission boolean is independent of this restriction and of the proposed status. Private data may be indexed locally. The draft does not define a new public status for privacy rejection.
+The privacy eligibility condition is `!extras.private || model.private`. Ordinary ACL, model availability and processing permission still apply. Store model trust as a typed configuration boolean and expose a required boolean in the directory; missing response fields are invalid. Configuration changes must invalidate the existing model-policy projection before subsequent work uses it. No additional public indexing status is introduced.
 
-**Open:** chat/completion, the knowledge extractor, derived-data privacy, Source-account policy and ordering concurrent privacy changes against external requests. The embedding-only draft must not be described as a complete cloud-data boundary.
+**Current versus target:** the [earlier privacy draft](https://github.com/0xmikko/magnis-app/blob/2ea08b25957bbb3d60bdeb144d19f2d24d3d4665/docs/plans/private-entity-flag.md), approved on 2026-08-25, used `dataBoundary` as the eligibility test. Its inspected branch contains documentation changes only. The owner decision above replaces that test with model trust. Its Entity `isPrivate` becomes `extras.private`, retaining the initial false value for newly created records. The inspected SDK has `dataBoundary` but does not yet expose model `private`. The existing `entities.indexed` processing-permission boolean remains independent of privacy and of the proposed indexing status.
+
+**Open:** enforcement in chat/completion and the knowledge extractor, derived-data privacy, Source-account policy and ordering concurrent privacy changes against requests already in flight. The model-trust rule applies conceptually to all private-data processing; the migration's implementation scope here remains embeddings/search and must not be presented as complete enforcement across all AI calls.
 
 <a id="links"></a>
 ## 3. Links: relation, provenance and time
