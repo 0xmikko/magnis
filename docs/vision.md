@@ -323,7 +323,6 @@ export type BuiltinLinkType =
   | "attendee"
   | "works_at"
   | "child_of"
-  | "watches"
   | "mentions"
   | "started_with"
   | "created"
@@ -331,40 +330,35 @@ export type BuiltinLinkType =
   | "reply_to"
   | "sent"
   | "received"
-  | "sent_by"
-  | "account"
-  | "prospect"
-  | "supports"
   | "references"
   | "same_as";
 
 export type LinkType = BuiltinLinkType | (string & {});
 ```
 
-`LinkType` retains its SDK name. The agreed target generalizes `triggers.belongs_to` to `belongs_to`, replaces `episode → triggered_by → trigger` with `trigger → created → episode`, and adds protected `owner`. Communication uses the `sent`/`received` proposal below; historical `in_chat` needs a separate context mapping. `string & {}` allows registered module kinds; it grants no write permission. The list still includes legacy registered names awaiting the review below. The existing `link_kinds` registry remains authoritative.
+`LinkType` retains its SDK name. This is the target vocabulary, not an inventory of historical registry entries. It generalizes `triggers.belongs_to` to `belongs_to`, replaces `episode → triggered_by → trigger` with `trigger → created → episode`, and adds protected `owner`. Communication uses `sent`, `received` and `sent_to`; historical `in_chat` needs a separate context mapping. `string & {}` allows registered module kinds; it grants no write permission or right to recreate retired kinds. The existing `link_kinds` registry remains authoritative.
 
 | Kind | Endpoint roles | Direction and meaning |
 | --- | --- | --- |
 | `identity` | hub → identity_channel | Person/company → its account, address or card |
 | `authored_by` | content → identity_channel | Content → author |
-| `sent_to` | content → identity_channel | Content → recipient |
+| `sent_to` | content → identity_channel | Message → addressed recipient, including To/CC/BCC; does not assert delivery |
 | `belongs_to` | Registered schema pairs | Organizational membership, such as Trigger → Episode or member → project; not proof of communication |
 | `observed_in` | identity_channel → container | Connected observer account → accessible container; Telegram also stores its per-account sync state on this edge |
 | `observed_participant` | identity_channel → container | Account → container where its participation was observed, such as a message author in a chat |
 | `attendee` | event → identity_channel | Event → attendee |
 | `works_at` | hub → hub | Person/hub → workplace |
 | `child_of` | * → * | Child → parent in a hierarchy; Episode trees use this for delegation and inherited configuration |
-| `watches` | * → * | Legacy Trigger → watched target; the target replaces execution selection with typed event subscriptions |
 | `mentions` | * → * | Entity → mentioned Entity |
 | `started_with` | * → * | Episode → initial context Entity, for example the email from which a conversation was opened |
 | `created` | Registered schema pairs | Producing Episode or Trigger → newly created Entity; historical provenance |
 | `modified` | * → * | Episode → Entity it changed; does not imply creation or containment |
 | `reply_to` | * → * | Reply → original record |
-| `sent`, `received` | Registered communication endpoints → message | Target observed transmission/delivery, with an occurrence timestamp; current `sent` is also declared for Episode action provenance and needs explicit migration |
+| `sent` | Registered sending endpoint → message | Account/mailbox → message it sent; observed transmission with an occurrence timestamp |
+| `received` | Registered receiving endpoint → message | Account/mailbox → message delivered to it; observed receipt with an occurrence timestamp |
 | `references` | * → * | Entity → explicitly referenced resource; URL registration uses parent → web.link |
 | `same_as` | * → * | Symmetric identity assertion; Contacts also uses it for unresolved duplicate candidates, so existence is not proof of equality |
 | `owner` | Owned Entity → users.user | Target system-only ownership relation |
-| `sent_by`, `account`, `prospect`, `supports` | * → * | Retained registry vocabulary; no dedicated producer was found in the inspected host/catalog paths. Meanings need the review below |
 
 Only `same_as` is symmetric in the inspected built-ins; endpoints are sorted by ID before writing. Other kinds retain direction. `*` means no global role restriction, not an exemption from registered schemas, domain rules or access checks.
 
@@ -403,16 +397,18 @@ flowchart LR
 | `observed_in` / `observed_participant` / `attendee` | Keep distinct: observer access, observed participation and event attendance. A participant edge must not acquire the observer's sync state |
 | `identity` / `same_as` | Keep separate from merge and ACL. `identity` connects a hub to a representation. Resolve the mismatch between an unconfirmed duplicate hint and a confirmed `same_as` assertion before treating the latter as equality |
 | `watches` / `owner` | Replace legacy watch-based execution selection with event subscriptions; retain protected ownership. Membership or provenance grants neither authority |
-| `sent_by` | Candidate for retirement if stored rows only invert `sent`. First establish whether any producer means a sender account rather than an Episode; do not rewrite it as `authored_by` by name alone |
-| `account`, `prospect`, `supports` | No dedicated producer found in this inspection. Keep stored data readable while inventorying it; do not invent generic semantics. A `supports` Link is not automatically a GraphClaim or approval evidence |
+| `sent_by` | Remove from the target: incoming traversal of `sent` already finds the sender. Reverse historical rows only when their endpoints and evidence meet the communication contract; do not infer a mailbox or successful send from an Episode link |
+| `account`, `prospect`, `supports` | Remove from the target: no required contract or dedicated producer was established in this inspection. Preserve historical rows for explicit migration; do not invent generic semantics. A `supports` Link is not automatically a GraphClaim or approval evidence |
 | Email `sent_from`, X/LinkedIn schema-pair kind names | Manifests retain these declarations while inspected writers use `authored_by` and `identity`. Review historical rows before retiring declarations; profile → person also reverses the current identity direction |
 | `file.attachment` | Keep the module kind: owning content → attached file, with file-role validation. Generic membership would lose attachment semantics |
 
-The review inspected host registry seeds, Episode/Web contracts, Telegram observer/participant writers, Contacts identity resolution and catalog manifests/services. Absence of a writer in those paths does not prove an empty database or exclude generic or external writers. Creation-link conversion is agreed; project membership is proposed; communication and event subscriptions are developed below. Other retirement candidates remain open.
+The review inspected host registry seeds, Episode/Web contracts, Telegram observer/participant writers, Contacts identity resolution and catalog manifests/services. Absence of a writer in those paths does not prove an empty database or exclude generic or external writers. The target removes `sent_by`, `watches`, `account`, `prospect` and `supports` from standard declarations and ordinary new writes. Historical rows remain readable through explicit migration/import compatibility until their semantics can be mapped; removing a name from this union does not delete data. Creation-link conversion is agreed; project membership and concrete communication endpoint schemas remain proposals.
 
 Current code still writes `in_chat`, `triggers.belongs_to`, `projects.belongs_to` and `triggered_by`. Creation migration must reverse endpoints and preserve periods, evidence and producer metadata. The communication proposal supersedes the earlier blanket `in_chat` → `belongs_to` conversion: chat membership alone supplies neither direction nor delivery time. Keep historical rows until the communication context can be reconstructed without inventing facts. WebSource's proposed `contents` relation also needs its extraction semantics checked before consolidation.
 
 ### Communication is an observed event
+
+The communication vocabulary has three kinds: `sent` records sending, `received` records delivery to an observed endpoint, and `sent_to` identifies an addressed recipient. There is no separately stored inverse `sent_by`: to ask who sent a message, traverse incoming `sent` Links. `reply_to` is a separate message → original-message relation; it says which message is being answered, not how it was delivered. `authored_by` remains the general content-author relation and does not establish a successful send.
 
 ```typescript
 export type CommunicationLink = CanonicalLink & {
