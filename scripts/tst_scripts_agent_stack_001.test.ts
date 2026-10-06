@@ -140,6 +140,21 @@ test("tst_scripts_agent_stack_004 root Vitest configs have a scoped TypeScript o
   expect(config.include).toContain("../vitest.ui.config.ts");
 });
 
+/**
+ * @test-id: tst_scripts_agent_stack_007
+ * @scenario: scn_catalog_layout_001
+ * @covers: scripts/agent-verify.ts::typeConfig
+ * @deterministic: yes
+ * @fixtures: repository TypeScript project configuration; no provider calls
+ *
+ * A merge that moves a module deletes files whose whole project went with
+ * them: such a path has no TypeScript owner left, and nothing to check.
+ */
+test("tst_scripts_agent_stack_007 a path whose project is gone has no TypeScript owner", () => {
+  expect(agentVerify.typeConfig("plugins/modules/gone/module/service.ts")).toBeNull();
+  expect(agentVerify.typeConfig("modules/email/module/service.ts")).toBe("modules/email/tsconfig.json");
+});
+
 /** @test-id: tst_scripts_agent_stack_005
  * @scenario: scn_socials_publication_001
  * @covers: plan-gate::gatePlan,shaKnownAndAncestor

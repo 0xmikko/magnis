@@ -91,6 +91,7 @@ export interface SendParams {
   subject: string;
   body_text: string;
   attachment_ids?: string[];
+  account_id?: string;
 }
 
 export interface ReplyParams {
@@ -100,8 +101,9 @@ export interface ReplyParams {
 }
 
 export interface BatchSendParams {
-  messages: SendParams[];
+  messages: Omit<SendParams, "account_id">[];
   excluded_indices?: number[];
+  account_id?: string;
 }
 
 export interface SetTriggerParams {

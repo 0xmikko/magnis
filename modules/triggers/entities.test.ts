@@ -3,7 +3,7 @@
  *
  * Beside entities.ts and outside module/ on purpose.
  */
-import type { PropertiesUpdate } from "@magnis/sdk";
+import type { CreateEntityParams, PropertiesUpdate } from "@magnis/sdk";
 import { describe, expect, it, vi } from "vitest";
 import { entity as graphEntity, mockGraph, mountModule } from "@magnis/testkit/module";
 
@@ -16,7 +16,10 @@ const TRIGGER_ID = "33333333-3333-4333-8333-333333333333";
 async function writtenProperties(): Promise<Record<string, unknown>[]> {
   const written: Record<string, unknown>[] = [];
   const graph = mockGraph({
-    createEntity: () => Promise.resolve(graphEntity(TRIGGER_ID, "watch replies", { schemaId: TRIGGER })),
+    createEntity: (input: CreateEntityParams) => {
+      written.push(input.properties as Record<string, unknown>);
+      return Promise.resolve(graphEntity(TRIGGER_ID, "watch replies", { schemaId: TRIGGER }));
+    },
     updateProperties: (input: PropertiesUpdate) => {
       written.push(input.properties as Record<string, unknown>);
       return Promise.resolve(undefined);
@@ -44,6 +47,15 @@ describe("triggers declares what it writes", () => {
     for (const record of records) {
       expect(trigger.safeParse(record).error?.issues ?? []).toEqual([]);
     }
+  });
+
+  it("the stopped state the trigger page writes passes the declaration", () => {
+    // TriggerDetailPanel's stop button writes status "stopped".
+    const verdict = trigger.safeParse({
+      name: "n", gate_prompt: "g", action_prompt: "a", status: "stopped",
+      event_kinds: [], debounce_seconds: 0, firing_count: 0,
+    });
+    expect(verdict.error?.issues ?? []).toEqual([]);
   });
 
   it("a field the module does not declare is refused, and the error names it", () => {

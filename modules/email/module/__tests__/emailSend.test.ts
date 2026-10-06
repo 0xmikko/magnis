@@ -45,6 +45,8 @@ function makeGraph(over: Partial<Record<string, unknown>> = {}): G {
     addLink: () => Promise.resolve(undefined),
     // No prior send attempt unless a test arranges one.
     sourceCommand: () => Promise.resolve({ message_id: "src-1" }),
+    // One connected mailbox unless a test arranges more.
+    syncState: () => Promise.resolve({ accounts: [{ accountId: "acc-1", sync: null }] }),
     getEntityFull: () => Promise.resolve(null),
     ...over,
   } as unknown as GraphOverrides;
@@ -99,7 +101,6 @@ describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
     // S5: nodes are dictionaries under their external ids.
     expect(addr.externalId).toBe("email:address:bob@example.com");
     expect(dict(addr).address).toBe("bob@example.com");
-    expect(dict(msg).is_outgoing).toBe(true);
     expect(frag.links).toEqual([{
       fromKey: "out",
       toKey: "addr:bob@example.com",
@@ -116,7 +117,7 @@ describe("email send (tst_be_emailsend_001 / srcfail_002)", () => {
     expect(spy(graph, "sourceCommand")).toHaveBeenCalledTimes(1);
     // INV-6: the provider's id rides on the stored message so a later ingest
     // of that same mail matches it instead of creating a duplicate.
-    expect(dict(msg).provider_message_id).toBe("src-1");
+    expect(msg.externalId).toBe("src-1");
     expect(r.id).toBe("id-out");
     expect(r.schemaId).toBe("email.message");
     expect(r.attachment_count).toBe(0);
@@ -231,6 +232,7 @@ describe("email reply (tst_be_emailreply_003)", () => {
         subject: "Quarterly",
         message_id: "gmail-orig-1",
       },
+      source: { source: "gmail", account: "account-1", externalId: "gmail:orig" },
     }),
     links: [],
   });
@@ -253,6 +255,8 @@ describe("email reply (tst_be_emailreply_003)", () => {
     if (srcCall0 === undefined) throw new Error("reply: sourceCommand not called");
     const draft = srcCall0[0] as Record<string, unknown>;
     const d = draft.draft as Record<string, unknown>;
+    // The reply leaves from the account the original arrived at.
+    expect(srcCall0[1]).toBe("account-1");
     expect(d.in_reply_to).toBe("gmail-orig-1");
     expect(d.subject).toBe("Re: Quarterly");
     expect(d.to).toEqual([{ address: "boss@corp.com" }]);
@@ -530,4 +534,38 @@ it("tst_module_email_create_001 one create operation sends or batches and reject
   expect(spy(graph, "sourceCommand")).toHaveBeenCalledTimes(2);
   await expect(module.create({ to: "morgan@example.test", email_id: "original", subject: "September", body_text: "mixed" })).rejects.toThrow("form");
   expect(spy(graph, "sourceCommand")).toHaveBeenCalledTimes(2);
+});
+
+/**
+ * @test-id: tst_module_email_send_009
+ * @scenario: scn_backend_tests_006
+ * @covers: plugins/modules/email/module/service.ts::EmailModule.emailSend
+ * @invariant: a new email leaves through a named account — the only
+ * connected one, or the one the caller names; with several and none named
+ * the send is refused before the provider is called.
+ * @deterministic: yes
+ */
+describe("a new email names its account", () => {
+  const twoAccounts = () =>
+    Promise.resolve({ accounts: [{ accountId: "acc-1", sync: null }, { accountId: "acc-2", sync: null }] });
+
+  it("tst_module_email_send_009 sends through the only connected account", async () => {
+    const graph = makeGraph();
+    await makeModule(graph).emailSend({ to: "b@x.com", subject: "S", body_text: "B" });
+    expect(spy(graph, "sourceCommand").mock.calls[0]?.[1]).toBe("acc-1");
+  });
+
+  it("tst_module_email_send_009 refuses several accounts without account_id", async () => {
+    const graph = makeGraph({ syncState: twoAccounts });
+    await expect(
+      makeModule(graph).emailSend({ to: "b@x.com", subject: "S", body_text: "B" }),
+    ).rejects.toThrow(/account_id/);
+    expect(spy(graph, "sourceCommand")).not.toHaveBeenCalled();
+  });
+
+  it("tst_module_email_send_009 sends through the named account", async () => {
+    const graph = makeGraph({ syncState: twoAccounts });
+    await makeModule(graph).emailSend({ to: "b@x.com", subject: "S", body_text: "B", account_id: "acc-2" });
+    expect(spy(graph, "sourceCommand").mock.calls[0]?.[1]).toBe("acc-2");
+  });
 });

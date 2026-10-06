@@ -1582,6 +1582,20 @@ export declare const rpcContracts: {
         }, import("zod/v4/core").$strict>], "direction">>;
         total: import("zod").ZodNumber;
     }, import("zod/v4/core").$strict>, "required">;
+    readonly "graph.entity.list": import("./contract.js").RpcContract<"graph.entity.list", import("zod").ZodObject<{
+        limit: import("zod").ZodInt;
+        offset: import("zod").ZodInt;
+        search: import("zod").ZodOptional<import("zod").ZodString>;
+        hiddenRoles: import("zod").ZodArray<import("zod").ZodString>;
+    }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
+        items: import("zod").ZodArray<import("zod").ZodObject<{
+            name: import("zod").ZodNullable<import("zod").ZodString>;
+            id: import("zod").ZodString;
+            schemaId: import("zod").ZodString;
+            isPinned: import("zod").ZodBoolean;
+        }, import("zod/v4/core").$strict>>;
+        total: import("zod").ZodInt;
+    }, import("zod/v4/core").$strip>, "required">;
     readonly "graph.entity.pin": import("./contract.js").RpcContract<"graph.entity.pin", import("zod").ZodObject<{
         entityId: import("zod").ZodGUID;
         pinOrder: import("zod").ZodOptional<import("zod").ZodInt>;
@@ -1735,6 +1749,44 @@ export declare const rpcContracts: {
         total: import("zod").ZodNumber;
         hasMore: import("zod").ZodBoolean;
     }, import("zod/v4/core").$strict>, "required">;
+    readonly "graph.subgraph": import("./contract.js").RpcContract<"graph.subgraph", import("zod").ZodObject<{
+        id: import("zod").ZodGUID;
+        depth: import("zod").ZodInt;
+        direction: import("zod").ZodEnum<{
+            in: "in";
+            out: "out";
+            both: "both";
+        }>;
+        kinds: import("zod").ZodOptional<import("zod").ZodArray<import("zod").ZodString>>;
+        hiddenRoles: import("zod").ZodArray<import("zod").ZodString>;
+        groupAbove: import("zod").ZodNullable<import("zod").ZodInt>;
+    }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
+        entities: import("zod").ZodArray<import("zod").ZodObject<{
+            id: import("zod").ZodString;
+            schemaId: import("zod").ZodString;
+            name: import("zod").ZodNullable<import("zod").ZodString>;
+            date: import("zod").ZodString;
+            idx: import("zod").ZodNullable<import("zod").ZodString>;
+        }, import("zod/v4/core").$strict>>;
+        links: import("zod").ZodArray<import("zod").ZodObject<{
+            from: import("zod").ZodString;
+            to: import("zod").ZodString;
+            confidence: import("zod").ZodNullable<import("zod").ZodNumber>;
+            origin: import("zod").ZodEnum<{
+                canonical: "canonical";
+                agent: "agent";
+            }>;
+            validUntil: import("zod").ZodNullable<import("zod").ZodISODateTime>;
+            id: import("zod").ZodString;
+            kind: import("zod").ZodString;
+        }, import("zod/v4/core").$strict>>;
+        groups: import("zod").ZodArray<import("zod").ZodObject<{
+            entityId: import("zod").ZodString;
+            kind: import("zod").ZodString;
+            schemaId: import("zod").ZodString;
+            count: import("zod").ZodInt;
+        }, import("zod/v4/core").$strip>>;
+    }, import("zod/v4/core").$strip>, "required">;
     readonly "graph.withdraw": import("./contract.js").RpcContract<"graph.withdraw", import("zod").ZodObject<{
         evidenceIds: import("zod").ZodArray<import("zod").ZodGUID>;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{

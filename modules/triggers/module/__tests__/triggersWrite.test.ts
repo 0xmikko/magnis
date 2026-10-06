@@ -113,17 +113,19 @@ describe("triggers.create requires a real gate condition", () => {
     expect(graph.spies.createEntity).not.toHaveBeenCalled();
   });
 
-  it("tst_module_triggers_write_001 leaves no trigger behind when the config write fails", async () => {
-    const graph = createGraph({
-      updateProperties: () => Promise.reject(new Error("facet store unavailable")),
-    });
+  it("tst_module_triggers_write_001 creates the trigger whole: its config is the create's dictionary", async () => {
+    // The published schema requires the config fields, so an entity created
+    // bare and filled afterwards is refused by the host.
+    const graph = createGraph();
     const { module } = mountModule(TriggersModule, { graph, rpc });
 
-    await expect(
-      module.create({ name: "n", action_prompt: "a", gate_prompt: "a reply arrived" }),
-    ).rejects.toThrow("facet store unavailable");
+    await module.create({ name: "n", action_prompt: "a", gate_prompt: "a reply arrived" });
 
-    expect(graph.spies.deleteEntity).toHaveBeenCalledWith(TRIGGER_ID);
+    expect(graph.spies.createEntity).toHaveBeenCalledWith(expect.objectContaining({
+      name: "n",
+      properties: expect.objectContaining({ name: "n", gate_prompt: "a reply arrived", action_prompt: "a", status: "active", firing_count: 0 }),
+    }));
+    expect(graph.spies.updateProperties).not.toHaveBeenCalled();
   });
 
   it("tst_module_triggers_write_001 leaves no trigger behind when a watch link fails", async () => {
@@ -368,8 +370,7 @@ describe("tst_module_triggers_crud_001 — trigger definition commands", () => {
       episodeId,
     });
     expect(execute).toHaveBeenCalledWith("triggers.validate_watch", { watchEntityIds: [targetId] });
-    expect(graph.spies.updateProperties).toHaveBeenCalledWith({
-      entityId: TRIGGER_ID,
+    expect(graph.spies.createEntity).toHaveBeenCalledWith(expect.objectContaining({
       properties: expect.objectContaining({
         name: "Price tracker",
         gate_prompt: "price changed",
@@ -378,7 +379,7 @@ describe("tst_module_triggers_crud_001 — trigger definition commands", () => {
         debounce_seconds: 30,
         firing_count: 0,
       }),
-    });
+    }));
     const addLink = graph.spies.addLink;
     if (addLink === undefined) throw new Error("trigger create: addLink spy missing");
     expect(addLink.mock.calls.map(([value]) => value)).toEqual([
@@ -529,7 +530,7 @@ it("tst_module_triggers_forms_001 validates raw email form before owner lookup a
   expect(execute).toHaveBeenCalledWith("email.ensure_addresses", { items: [{ address: "morgan@example.test" }] });
   expect(graph.spies.createEntity).toHaveBeenCalledTimes(1);
   expect(graph.spies.addLink).toHaveBeenCalledWith({ from: TRIGGER_ID, to: "address-1", kind: "watches" });
-  expect(graph.spies.updateProperties).toHaveBeenCalledWith(expect.objectContaining({ properties: expect.objectContaining({ debounce_seconds: 12, schema_filter: "email" }) }));
+  expect(graph.spies.createEntity).toHaveBeenCalledWith(expect.objectContaining({ properties: expect.objectContaining({ debounce_seconds: 12, schema_filter: "email" }) }));
   expect(result).toMatchObject({ name: "Email trigger: morgan@example.test" });
 });
 
@@ -549,5 +550,5 @@ it("tst_module_triggers_forms_002 resolves a raw Telegram chat once and preserve
   expect(execute).toHaveBeenCalledWith("telegram.chats.get", { chat_id: 42 });
   expect(graph.spies.addLink).toHaveBeenCalledWith({ from: TRIGGER_ID, to: "chat-entity", kind: "watches" });
   expect(graph.spies.createEntity).toHaveBeenCalledTimes(1);
-  expect(graph.spies.updateProperties).toHaveBeenCalledWith(expect.objectContaining({ properties: expect.objectContaining({ debounce_seconds: 30, schema_filter: "telegram" }) }));
+  expect(graph.spies.createEntity).toHaveBeenCalledWith(expect.objectContaining({ properties: expect.objectContaining({ debounce_seconds: 30, schema_filter: "telegram" }) }));
 });

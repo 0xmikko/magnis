@@ -26,6 +26,54 @@ export declare const searchModelStatusContract: import("../contract.js").RpcCont
     downloadSize: z.ZodNullable<z.ZodString>;
     diskUsage: z.ZodNullable<z.ZodString>;
 }, z.core.$strict>>, "required">;
+/** `search.table_types`: each declared type the agent derived rows for (or
+ * the one named type), its default order and its columns, each saying where
+ * a `<type>.search` row carries the value. Dispatched beside the generated
+ * search tools, as `graph.relations` is, so it is not part of
+ * {@link searchContracts}. */
+export declare const searchTableTypesContract: import("../contract.js").RpcContract<"search.table_types", z.ZodObject<{
+    type: z.ZodOptional<z.ZodString>;
+}, z.core.$strip>, z.ZodObject<{
+    items: z.ZodArray<z.ZodObject<{
+        type: z.ZodString;
+        derived: z.ZodInt;
+        all: z.ZodInt;
+        defaultOrder: z.ZodArray<z.ZodObject<{
+            key: z.ZodString;
+            dir: z.ZodEnum<{
+                asc: "asc";
+                desc: "desc";
+            }>;
+            nulls: z.ZodEnum<{
+                first: "first";
+                last: "last";
+            }>;
+        }, z.core.$strict>>;
+        columns: z.ZodArray<z.ZodUnion<readonly [z.ZodObject<{
+            column: z.ZodString;
+            key: z.ZodString;
+            kind: z.ZodEnum<{
+                number: "number";
+                boolean: "boolean";
+                date: "date";
+                enum: "enum";
+                text: "text";
+            }>;
+            ops: z.ZodArray<z.ZodString>;
+        }, z.core.$strict>, z.ZodObject<{
+            path: z.ZodString;
+            key: z.ZodString;
+            kind: z.ZodEnum<{
+                number: "number";
+                boolean: "boolean";
+                date: "date";
+                enum: "enum";
+                text: "text";
+            }>;
+            ops: z.ZodArray<z.ZodString>;
+        }, z.core.$strict>]>>;
+    }, z.core.$strict>>;
+}, z.core.$strict>, "required">;
 export declare const searchContracts: {
     readonly "search.by_graph": import("../contract.js").RpcContract<"search.by_graph", z.ZodObject<{
         entityId: z.ZodGUID;

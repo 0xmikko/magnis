@@ -60,7 +60,7 @@ export interface RightPaneProps {
     readonly runtime: AppRuntime;
 }
 export type { ContextMenuEntry } from "../../components/ui/ContextMenu";
-export type ModuleId = "companies" | "contacts" | "email" | "episodes" | "file" | "groups" | "meetings" | "notes" | "projects" | "settings" | "telegram" | "triggers" | "linkedin" | "x";
+export type ModuleId = "companies" | "contacts" | "email" | "episodes" | "file" | "graph" | "groups" | "meetings" | "notes" | "projects" | "settings" | "telegram" | "triggers" | "linkedin" | "x";
 export interface ModuleConfig {
     readonly id: ModuleId;
     readonly title: string;
@@ -180,6 +180,8 @@ export interface ModuleConfig {
     readonly systemPrompt?: string;
     /** Agent navigateToEntity override (default: router navigate) */
     readonly navigateToEntity?: ModuleAgentContribution["navigateToEntity"];
+    /** Module settings shown in the agent panel's Properties mode. */
+    readonly PropertiesPanel?: ComponentType;
 }
 export interface SidebarModuleDefinition<TState = unknown> {
     readonly id: string;
