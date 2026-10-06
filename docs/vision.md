@@ -2168,16 +2168,37 @@ These are internal computation results, not new Link fields or indexing statuses
 For example, A states employment from January 1 and B states departure on June 1. Given the same resolved IDs, A→B and B→A yield the same closed interval. If B changes, the relation is hidden pending resolution rather than becoming open-ended. Re-employment with a new start is another period.
 
 <a id="triggers"></a>
-## 12. Triggers: subscriptions to committed graph events
+## 12. Subscriptions and Triggers: the graph boundary
 
-### Event identity and ordering
+This section defines the connection between the graph and future automation. The execution engine and classification logic belong to the next story. The declarations below are boundary excerpts, not a complete queue or Trigger configuration API.
+
+### From a module declaration to an Episode
+
+A module uses the existing `LinkContractDeclaration` to declare a kind, allowed endpoint schemas and metadata. Standard kinds retain their shared meaning; a module can register its own kind for a distinct domain relation. Registration and write permissions are validated by Graph. Registered changes can be selected by subscriptions within the user's access scope; a separate watchable/triggerable Entity capability is unnecessary in the target.
+
+```mermaid
+flowchart LR
+  M[Module declares a Link contract] --> G[Module writes through Graph]
+  G --> E[Committed GraphMutationEvent]
+  E --> S[Matching GraphSubscription]
+  S --> T[Persisted TriggerExecution]
+  T --> P[Episode when the rule admits execution]
+```
+
+| Element | Responsibility |
+| --- | --- |
+| Module | Describe domain facts and create them through Graph; it does not invoke subscribed Triggers |
+| GraphMutationEvent | Record what changed, with a stable event identity and the relevant state |
+| GraphSubscription | Select registered changes by type, kind, endpoints or Entity schema |
+| Trigger | Define what should happen when a selected event meets its conditions |
+| TriggerExecution | Record one Trigger's handling of one input, including its resulting Episode when any |
+| Episode | Perform the admitted action |
+
+For incoming mail, the module creates the message and its observed `received` Link. A subscription selects `link_added`, kind `received` and the receiving mailbox. `received_from` supplies the reported sender; adding sender information alone is not a delivery event.
+
+### The event records the change
 
 ```typescript
-export interface GraphEventCursor {
-  revision: string; // Owner mutation revision, serialized decimal bigint.
-  ordinal: number;  // Event order within that mutation.
-}
-
 // Names from the existing core EventPayload; availability is registered.
 export type GraphEventType =
   | "entity_created" | "entity_properties_updated" | "entity_updated"
@@ -2198,31 +2219,21 @@ export type GraphChange =
       after: Link | null;
     };
 
-// Target dispatcher projection of the existing durable graph Event.
-// This is an internal envelope, not a second source of graph truth.
+// Boundary excerpt; internal delivery/authorization fields are omitted.
 export interface GraphMutationEvent {
   id: Id;
-  owner: Id; // Trusted auth scope; never accepted from a subscription caller.
-  cursor: GraphEventCursor;
   type: GraphEventType;
   recordedAt: DateTimeUtc;
   occurredAt: DateTimeUtc | null;
-  phase: "local" | "live" | "bootstrap" | "catchup" | "migration";
   changes: readonly GraphChange[];
-  causedBy: Id | null;
-  triggerChain: readonly PersistentEntityId[];
 }
 ```
 
-**Target:** every supported semantic graph mutation writes its event in the same transaction as the affected rows. A DB hook may append that record, but it must not run a model or action inside the transaction. Dispatch reads committed records; an in-process notification only wakes that reader. Rollback produces neither a visible Link nor a deliverable event. A no-op replay produces no new mutation event. Event types have registered payload contracts; this is not a subscription to arbitrary physical SQL writes.
+The source of a firing is the mutation Event ID. The affected Link is in the event's snapshot. Creating and later updating one Link produces distinct events; rereading a changed or deleted live Link cannot replace the original event state. Creation has null before, deletion has null after, and both null is invalid. `recordedAt` is graph recording time; `occurredAt` is domain occurrence time when known. Import time does not establish a new delivery.
 
-The existing owner mutation lock and revision provide a proposed ordering boundary: events carry the committed owner revision and an ordinal. Trigger activation takes its starting cursor under that same boundary, so a concurrent transaction cannot commit behind an already-consumed watermark. A UUID identifies an event but does not order events. A database sequence allocated before commit also needs commit-order handling; polling MAX(id) is insufficient.
+**Target guarantee:** Graph saves the mutation and its event atomically. A DB hook may append the event; notification can wake the reader after commit. Trigger actions run after commit. Rollback exposes no event, a no-op replay creates none, and a committed event remains recoverable after a process restart. Physical event storage and dispatch are part of the next implementation story.
 
-`recordedAt` is database recording time. `occurredAt` is the domain occurrence time, when known; for a communication event it comes from the confirmed sent/received observation. These clocks must not be substituted for one another. Bootstrap, catchup, live and migration provenance is assigned by the trusted ingestion/mutation context. Immutable before/after snapshots allow matching updates and deletions after the live rows change. Creation has null before; deletion has null after; both null is invalid. Actor/audit information remains in the underlying Event.
-
-**Current gap:** Graph mutations already append audit events, and GraphRepository serializes mutations per owner. The current events table has no owner cursor or delivery acknowledgements, and the process EventBus is not durable delivery. Before/after snapshots and complete batch/import/merge coverage also need implementation. The target extends those existing owners instead of assuming a completed event stream exists.
-
-### Typed subscriptions
+### A subscription selects events
 
 ```typescript
 export type GraphEventFilter =
@@ -2232,7 +2243,7 @@ export type GraphEventFilter =
       kind: LinkType | null;
       from: PersistentEntityId | null;
       to: PersistentEntityId | null;
-      metadata: JsonObject; // Equality predicates on declared metadata fields.
+      metadata: JsonObject;
       match: "before" | "after" | "either";
     }
   | {
@@ -2243,61 +2254,28 @@ export type GraphEventFilter =
       match: "before" | "after" | "either";
     };
 
+// Boundary excerpt; activation/history policy belongs to the logic contract.
 export interface GraphSubscription {
   filter: GraphEventFilter;
-  startAfter: GraphEventCursor; // Assigned atomically on activation/revision.
-  phases: readonly GraphMutationEvent["phase"][];
-  occurredAtOrAfter: DateTimeUtc | null;
 }
 ```
 
-Null endpoint/schema filters mean unconstrained; an empty metadata object adds no predicate. Reject empty event/phase lists, incompatible event/subject combinations and unknown metadata fields. Metadata predicates require a concrete registered kind. Match against the specified event snapshots, not whatever a later live read happens to return. Conditions across multiple subscriptions are alternatives: one event matching two subscriptions admits one execution for that Trigger revision.
+Filters select recorded before/after state. Null means no restriction; empty metadata adds no condition. Metadata predicates must name fields declared for a concrete Link kind. Registration, filter validity and access are checked before a subscription can run. Multiple subscriptions on one Trigger are alternatives; matching two does not duplicate its handling of the same event.
 
-For an incoming-mail rule, use `subject: "link"`, `types: ["link_added"]`, `kind: "received"`, `from: mailboxId`, `to: null`, `metadata: {}` and `match: "after"`. The working account-based chat variant adds `metadata: { conversationId: chatId }`. This selects delivery facts without a watchable Entity or a dedicated new_email emitter. More specific predicates, such as resolving the sender through identity, must have explicit snapshot/join semantics before being admitted; they are not arbitrary code supplied by a model.
+For a new-mail subscription, the filter is `subject: "link"`, `types: ["link_added"]`, `kind: "received"`, `from: mailboxId`, `to: null`, `metadata: {}` and `match: "after"`. Activation and history rules must distinguish fresh delivery from old imports; they are not inferred from insertion time.
 
-A fresh-communication subscription explicitly chooses live and catchup events with `occurredAtOrAfter` equal to activation time. Bootstrap and migration do not fire it. Catchup can recover a genuinely new delivery that happened while Magnis was offline; an old message imported today is rejected by its occurrence time. If that time is unknown, it cannot satisfy a time-bounded subscription. A separate history-aware rule may choose other phases and null occurrence bound. Runtime does not invent missing configuration values.
-
-Any registered Entity/Link event within the caller's access scope can be selected. `Schema.triggerable`, WatchableEntity and watch-target resolution no longer decide event availability. Legacy Trigger → watches links are migrated into explicit predicates only where their old meaning is known. For example, the old email watch selects the sender, which is not equivalent to a received filter on the receiving mailbox.
-
-### Trigger configuration and admission
+### A firing refers to its event and result
 
 ```typescript
-export interface ScheduleSpec {
-  cron: string;
-  timezone: string;
-  activated_at: DateTimeUtc;
-}
-
+// Boundary excerpts; the full execution configuration is deferred.
 export interface TriggerConfig {
-  name: string;
   subscriptions: readonly GraphSubscription[];
-  gate_prompt: string | null; // null explicitly selects a deterministic rule.
-  action_prompt: string;
-  status: string;
-  expires_at: DateTimeUtc | null;
-  debounce_seconds: number;
-  max_wait_seconds: number | null;
-  max_firings: number | null;
-  firing_count: number;
-  last_fired_at: DateTimeUtc | null;
-  schedule: ScheduleSpec | null;
 }
 
 export interface TriggerDefinition {
   id: PersistentEntityId;
-  ownerId: Id;
-  createdAt: DateTimeUtc;
-  revision: string; // Revision of the rule, not the source Entity's revision.
+  revision: string;
   config: TriggerConfig;
-}
-
-export interface GateResult {
-  relevant: boolean;
-  reason: string | null;
-}
-
-export interface TriggerGatePort {
-  evaluate: (gatePrompt: string, context: JsonValue) => Promise<GateResult>;
 }
 
 export type TriggerInput =
@@ -2309,51 +2287,19 @@ export interface TriggerExecution {
   triggerId: PersistentEntityId;
   triggerRevision: string;
   input: TriggerInput;
-  firedAt: DateTimeUtc;
-  gateResult: string | null;
   episodeId: PersistentEntityId | null;
-  outcome: string;
 }
 ```
 
-The target reuses Trigger definitions, gate evaluation, the scheduler and durable Episode creation. `subscriptions` replaces `event_kinds`, `schema_filter` and watch-based candidate selection. TriggerConfig retains existing internal field spellings; the proposed TriggerExecution response uses camelCase and replaces the old event_entity_id with typed input identity. Graph events use their actual Event ID; scheduled and manual executions do not fabricate one. Storage adapters must migrate this explicitly. Blank gate prompts remain invalid; explicit null avoids an unnecessary model call for an exact event filter. Existing limits and schedule validation remain applicable. A schedule has five cron fields, minute precision and a timezone fixed on creation; its admitted slot uses the same execution path without fabricating a graph Link.
+One graph event can produce separate execution records for several matching Triggers. Repeated delivery to the same Trigger revision reuses its execution identity. Two real changes to one Entity remain distinct inputs. Schedule slots and manual requests have their own identity without fabricating a graph event. `episodeId: null` means no Episode has been assigned; it does not distinguish pending, rejected and failed execution by itself. Those states belong to the later execution contract.
 
-```mermaid
-flowchart LR
-  T[Graph transaction: message + received Link + Event] --> C[Commit]
-  C --> D[Durable event reader]
-  D --> F[Typed subscription + access + time filters]
-  F --> G[Optional gate]
-  G --> E[Idempotent Episode admission]
-  E --> R[Trigger -- created --> Episode]
-```
+The record exists before action execution and lets the worker resume handling an input. When the rule admits an action, it records the resulting Episode. TriggerExecution is operational history, not another knowledge Entity or an item in Entity extras. `Trigger → created → Episode` records creation provenance; `Trigger → belongs_to → parent Episode` retains the Trigger's context. The firing Episode also keeps its `child_of` parent relation.
 
-Delivery is at least once. The durable admission identity is `(triggerId, triggerRevision, eventId)`, with a uniqueness constraint and deterministic Episode firing identity. Claim that identity before gate evaluation; only its current lease may commit a decision, and retries reuse a persisted decision. Episode admission and its delivery receipt must commit atomically. A worker acknowledges only after admission/rejection is durable. Two genuine updates to one Entity have two Event IDs; deduplicating by Entity ID would lose the second. A rule edit creates a new activation boundary and does not silently replay old events. Disabling a rule cancels its not-yet-admitted work; stopping already-admitted Episode work follows the existing explicit Episode controls.
+### Scope of the next logic story
 
-Debounce cannot simply discard an event before durable acknowledgement. Admission records whether it is scheduled, explicitly suppressed or included in a durable coalesced group; a coalesced execution retains every member event ID. The precise coalescing rule is an implementation-contract decision. Other inputs are deduplicated by `(triggerId, triggerRevision, input.kind, scheduledFor/requestId)`: scheduledFor is the UTC slot instant, and a manual retry retains its requestId. A new manual request supplies a new identity. Delivery/admission uniqueness does not promise exactly-once external email or tool side effects; those require the existing operation-specific idempotency contracts.
+The next story defines classification inputs and module-provided context, condition evaluation, execution states, queue ordering/claiming, retries, activation/history policy, debounce, schedules and recursion protection. It must preserve current access/private-data rules and define snapshot access after deletion or transfer. Persisted event identity and recoverable, non-duplicating admission remain required outcomes; this chapter does not choose their storage or worker protocol.
 
-Trigger actions carry causal context into subsequent graph writes. Reject a firing when its Trigger is already in the event's triggerChain; a fresh Event ID alone does not prevent self-trigger loops. Apply current owner/ACL checks before delivery and action, including queued events after ownership changes. Event snapshots are subject to private-data rules before any model gate sees them. Snapshot authorization after deletion or transfer must be defined before enabling those event subscriptions.
-
-Trigger → belongs_to → parent Episode remains organizational/execution context. A new firing records Trigger → created → new Episode and Episode → child_of → parent Episode. Execution history is separately paginated; it is not attached to every observed Entity's extras.
-
-### Concept review and migration limits
-
-| Case | Required result / finding |
-| --- | --- |
-| Incoming email | Commit message, observed received Link and event together; one admitted firing after commit |
-| Failed send / draft / To header only | No invented sent or received observation |
-| Old-mail import | Persist facts without treating import time as a new delivery |
-| Live delivery missed during downtime | Admit from catchup only when the configured occurrence bound is met; deduplicate source replay |
-| Rollback or crash before notification | Rollback is invisible; a committed event remains recoverable without the process notification |
-| Two updates to one Entity / delivery replay | Two mutation Event IDs can fire twice; replay of one Event ID cannot create a second Episode |
-| Two accounts in one chat | Direction is account-relative; do not overwrite a shared message with one global is_outgoing |
-| Update/removal and later graph changes | Match the recorded before/after state; recheck authorization at delivery |
-| Generic trigger writes matching data | Causal-chain protection stops recursive firings; deduplication alone is insufficient |
-| Migration from watches | Preserve known semantics; sender watch is not a mailbox-receipt subscription. Unmappable rules remain paused for review |
-| Historical communications | Do not derive receipts, occurrence times or observer accounts from in_chat/started_with alone |
-| Decisions before executable stages | Concrete mailbox/account identity, conversation representation, repeated-delivery identity, deletion/transfer snapshot access and durable debounce policy |
-
-The concept is consistent at the event/subscription boundary. Communication endpoint representation and the listed admission policies are still proposals, not implemented guarantees. Current triggers use module-produced trigger.check, watches/triggerable, live-only admission and occurred_at; that path must be cut over without dispatching one event through both engines.
+**Current:** modules emit `trigger.check`, Triggers use watches/triggerable and live-only admission, and the EventBus is in-process. The inspected `TriggerGate` always returns relevant; it is not a working semantic classifier. Email currently supplies sender, subject and time without its body; Telegram supplies text, sender name and time. A typed classification context is therefore an explicit follow-up, not an implemented part of this graph contract. Keep the existing runtime compatible until the later cutover.
 
 <a id="open-contracts"></a>
 ## 13. Open contracts and evidence
@@ -2368,7 +2314,8 @@ The concept is consistent at the event/subscription boundary. Communication endp
 | Privacy | Knowledge/chat/completion boundaries, inheritance and concurrent external calls |
 | Schema evolution | Immutable versions, stored-record migration and unavailable required versions |
 | Runtime domains | Who may register a new domain without installing a module and who owns its behavior |
-| Communication and Triggers | Endpoint/conversation and repeated-delivery identity, snapshot access after deletion/transfer, durable debounce policy and physical event/admission storage |
+| Communication | Concrete endpoint/conversation representation and repeated-delivery identity |
+| Trigger logic — next story | Classification context, execution states, activation/history, queue/retry/debounce/schedule policy, recursion protection and snapshot access after deletion/transfer |
 
 These are explicit limits, not defaults inferred from incidental code. The migration plan distinguishes implementation-ready decisions from proposals awaiting the owner's approval.
 
