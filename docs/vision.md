@@ -2220,7 +2220,7 @@ Event types describe graph operations; Link kinds and Entity schemas describe th
 | An attendee Link was added | `link_added` | kind = `meetings.attendee` | after |
 | Attendee Link metadata changed | `link_updated` | kind = `meetings.attendee` | before/after as requested |
 | An attendee Link was deleted | `link_removed` | kind = `meetings.attendee` | before |
-| A message's properties changed | `entity_properties_updated` | schemaId = `telegram.message`, optionally a specific ID | before/after as requested |
+| A message's properties changed | `entity_properties_updated` or a properties-bearing `entity_updated` | schemaId = `telegram.message`, optionally a specific ID | before/after as requested |
 | A message was deleted | `entity_deleted` | schemaId = `telegram.message` | before |
 
 Ending a Link's validity period updates the retained historical row; it is not physical deletion. Merely reaching a stored time boundary is not a database mutation. These cases must not be presented as `link_removed`. The event's registered payload defines its state, and subscriber execution happens after commit. Here the subscriber is a Trigger; how it invokes deterministic code or creates an Episode remains in the next logic story. An Episode's `modified` provenance Link is also distinct from the event that reports an Entity update.
@@ -2294,6 +2294,44 @@ export interface GraphSubscription {
 Filters select recorded before/after state. Null means no restriction; empty metadata adds no condition. Metadata predicates must name fields declared for a concrete Link kind. Registration, filter validity and access are checked before a subscription can run. Multiple subscriptions on one Trigger are alternatives; matching two does not duplicate its handling of the same event.
 
 For a new-mail subscription, the filter is `subject: "link"`, `types: ["link_added"]`, `kind: "received"`, `from: mailboxId`, `to: null`, `metadata: {}` and `match: "after"`. Activation and history rules must distinguish fresh delivery from old imports; they are not inferred from insertion time.
+
+### Signals around an Entity
+
+A subscription can select one Entity by ID or all Entities of a registered schema. Useful signals extend beyond Link creation, but not all require a new graph event type:
+
+| Signal family | Example use | Basis and scope |
+| --- | --- | --- |
+| Entity lifecycle | Process a new document; react to archive, restoration or deletion | Existing entity_created/archived/unarchived/deleted vocabulary |
+| Domain data changed | A meeting time moved, message text was edited, or a value crossed a threshold | Existing entity_properties_updated/entity_updated plus a before/after condition |
+| Identity changed | Reconcile a reference after two contacts were merged | Existing entities_merged with survivor and retired IDs; subscription retargeting must be explicit |
+| Relationships changed | A meeting gained an attendee or a contact lost a relationship | Existing link_added/updated/removed and a kind/endpoint filter |
+| Knowledge changed | New evidence arrived, a derived confidence crossed a threshold, or a correction was applied | Existing link_evidence_recorded/override_applied where applicable and actual derived-state changes; evidence arrival need not change the result |
+| Operational state changed | Indexing finished, sync was disabled, or a viewer pinned an Entity | A separately scoped extras/processing contract in the next story; viewer preferences are not global knowledge |
+| A module operation finished | A send failed or a Source sync completed | A typed module-operation contract when needed; it must not duplicate an existing graph mutation |
+| Time or absence | A meeting starts soon, or no reply arrived for two days | Scheduler plus an explicit condition; absence of a write is not a graph mutation |
+| A query's result changed | A contact entered or left a selected set | A derived subscription over declared dependencies, with transaction/revision semantics; not a new base event for every query |
+
+The first five rows reuse names in the inspected audit vocabulary; their presence does not prove complete, durable subscription delivery. The remaining rows are design directions for the next logic story, not additions to GraphEventType or implementation requirements for the graph migration.
+
+For example, this boundary excerpt selects message updates across both existing update variants:
+
+```typescript
+const messageUpdates: GraphSubscription = {
+  filter: {
+    subject: "entity",
+    types: ["entity_properties_updated", "entity_updated"],
+    schemaId: "telegram.message",
+    id: null, // Set an assigned ID to observe one message only.
+    match: "either",
+  },
+};
+```
+
+This selects candidate updates; a content-specific rule still compares the relevant domain fields. Current batch property writes emit entity_updated, and current sync-setting writes use that same event type. A classifier must not infer a content change from the event name alone. Extras remain outside domain Entity snapshots; operational subscriptions need their own typed state projection and access scope rather than putting those fields back into Entity.
+
+The logic contract should distinguish a changed value, a condition that is currently true, and a transition from false to true or true to false. Unrelated edits must not repeatedly fire a threshold-crossing rule. Compare the relevant committed before/after state, including absent versus explicit null; classify creation/deletion separately. Atomic changes and merge side effects must not expose intermediate query membership. The current GraphEventFilter excerpt does not yet define a property-predicate language or maintained query subscriptions.
+
+Actor and provenance can further select user, module or derived changes using the existing audit context. A confidence of one alone does not prove human approval: that requires the recorded manual decision and actor. Exact predicates, query dependency tracking, timer cancellation and typed operation/extra signals remain in the next story; they do not create more domain Link kinds.
 
 ### A firing refers to its event and result
 
