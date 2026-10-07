@@ -15,7 +15,7 @@ title = "Telegram Messages"
 summary = "Threaded Telegram chats indexed alongside the rest of your graph."
 # Reverse-domain publisher identity.
 publisher = "ai.magnis"
-dependsOn = [ "contacts" ]
+dependsOn = [ "contacts", "web" ]
 
 [settings]
 moduleId = "telegram"
@@ -47,9 +47,9 @@ read = [ "contacts.person", "episodes.episode" ]
 # S4: the module writes REGISTRY relations now (authored_by / in_chat /
 # observed_in / observed_participant) between its own nodes; the colon
 # pairs retire with the migration.
-links = [ "authored_by", "in_chat", "observed_in", "observed_participant" ]
-call = [ "triggers.create" ]
-host = [ "source_commands", "sync_state", "composer", "file_register", "web_register", "external_id_reads" ]
+links = [ "authored_by", "in_chat", "observed_in", "observed_participant", "references" ]
+call = [ "triggers.create", "web.link.ensure" ]
+host = [ "source_commands", "sync_state", "composer", "file_register", "external_id_reads" ]
 
 # Extra bare import specifiers the UI bundle may reference beyond the host-shim
 # defaults — rewritten to host-shim URLs at build/transpile time.

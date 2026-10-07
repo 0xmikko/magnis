@@ -66,15 +66,6 @@ import type {
   WindowSpec,
 } from "@magnis/sdk";
 
-/** The input the host's retired `webRegister` took. The SDK no longer
- * declares it; Telegram's move to `web.link.ensure` removes the two members
- * below that still name it. */
-interface WebRegisterParams {
-  url: string;
-  parentEntityId?: string;
-  linkKind?: string;
-}
-
 // ───────────────────────── RPC contract types ─────────────────────
 /// Standard `<module>.list` RPC input.
 export interface ListParams {
@@ -194,9 +185,6 @@ export interface GraphService {
   findByExternalId(externalId: string): Promise<string | null>;
   /** Plural resolution in one host call: input order kept, null where absent. */
   findByExternalIds(externalIds: string[]): Promise<(string | null)[]>;
-  // register a web link (web.link entity + dictionary + bg preview fetch),
-  // optionally linked to a parent entity. Returns the web.link entity id.
-  webRegister(p: WebRegisterParams): Promise<string>;
   /** The caller's entity ids of one schema by canonical key, in input order,
    *  null where absent. A declared entity's external id is its own UUID, so
    *  this is how a declared entity is found by its key. */
@@ -214,11 +202,6 @@ export interface GraphService {
   // parent link + background download). mimeType is computed plugin-side so
   // the op stays source-agnostic. Returns the file.object entity id.
   fileRegister(p: FileRegisterParams): Promise<string>;
-  /** Batch: every URL a page carries, in ONE host call. Input order is kept;
-   *  each position holds that URL's `web.link` entity id, or `""` where the
-   *  host could not normalize the URL — one bad URL costs its own row and
-   *  never aborts the page. Capability is checked once, before any write. */
-  webRegisterBatch(links: WebRegisterParams[]): Promise<string[]>;
   /** Batch: every attachment a page carries, in ONE host call. Input order is
    *  kept; each position holds that file's `file.object` entity id. There is
    *  no empty sentinel: a row the host did not write is an error. One row

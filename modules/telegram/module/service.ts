@@ -35,6 +35,7 @@ import type {
   BatchLink,
   BatchRef,
   Entity,
+  GraphLinkDeclaration,
   JsonObject,
   Link,
   LinkedEntity,
@@ -89,6 +90,11 @@ import {
   type Data,
 } from "./helpers.ts";
 import { runBatchSend } from "./batchSend.ts";
+
+/** The Web module's link schema; `web.link.ensure` declares its entities. */
+const WEB_LINK = "web.link";
+/** The host relation from a message to a link it mentions. */
+const REFERENCES = "references";
 
 /**
  * What a message exposes on its own initiative: its chat and its sender. Web
@@ -193,13 +199,18 @@ interface Fragment {
 /** What the page produces once its fragment holds resolved ids: the host calls
  * it still owes, gathered so they leave in as few calls as the host allows. */
 interface PageEffects {
-  readonly webLinks: WebLinkInput[];
+  /** Each URL a written message carries, once per message. */
+  readonly messageUrls: MessageUrl[];
   readonly files: FileRegisterInput[];
   readonly chatUpdates: ChatUpdate[];
   readonly triggers: TriggerCheckEvent[];
 }
 
-type WebLinkInput = Parameters<GraphService["webRegister"]>[0];
+/** One URL in one written message. */
+interface MessageUrl {
+  readonly url: string;
+  readonly messageId: string;
+}
 type FileRegisterInput = Parameters<GraphService["fileRegister"]>[0];
 type ChatUpdate = Parameters<GraphService["updateProperties"]>[0];
 
@@ -429,22 +440,29 @@ function buildEffects(
   chats: ChatContext,
   pageChatState: ReadonlyMap<string, IngestedChatState>,
   newLiveMessages: ReadonlySet<string>,
+  linkUrls: boolean,
 ): PageEffects {
   const written = page.flatMap((message) => {
     const entityId = ids[message.remoteId];
     return entityId === undefined ? [] : [{ message, entityId }];
   });
   return {
-    webLinks: written.flatMap(({ message, entityId }) =>
-      extractUrls(str(message.payload, "text") ?? "").map((url) => ({
-        url,
-        parentEntityId: entityId,
-        linkKind: "references",
-      }))),
+    messageUrls: linkUrls
+      ? written.flatMap(({ message, entityId }) =>
+        [...new Set(extractUrls(str(message.payload, "text") ?? "").filter(isWebUrl))].map((url) => ({ url, messageId: entityId })))
+      : [],
     files: written.flatMap(({ message }) => attachmentOf(message, chats)),
     chatUpdates: chatUpdatesOf(page, chats, pageChatState, newLiveMessages),
     triggers: written.flatMap(({ message, entityId }) => (message.isLive ? [triggerOf(message, entityId, ids)] : [])),
   };
+}
+
+/** Only an http or https URL the URL parser accepts reaches `web.link.ensure`,
+ * which fails the whole call on any other. */
+function isWebUrl(url: string): boolean {
+  if (!URL.canParse(url)) return false;
+  const { protocol } = new URL(url);
+  return protocol === "http:" || protocol === "https:";
 }
 
 function emptyStatement(): PageStatement {
@@ -1449,7 +1467,8 @@ export class TelegramModule {
     }
 
     // @tested-by: tst_module_telegram_004
-    await this.ingestMessageBatch(messages, triggers, identityKey, pageChatState, generation, statement, new Map([...admitted.chats, ...pageChatState]));
+    // The page's last Graph work: its messages, then their files, chats and links.
+    await this.ingestMessageBatch(messages, triggers, identityKey, pageChatState, generation, statement, new Map([...admitted.chats, ...pageChatState]), true);
 
     // @tested-by: tst_module_telegram_plan_001 — a page outside a worker states nothing.
     if (generation === null) return { droppedRemoteIds: dropped, triggerChecks: triggers, plan: null, excluded: [] };
@@ -1695,6 +1714,7 @@ export class TelegramModule {
     generation: string | null = null,
     statement: PageStatement = emptyStatement(),
     chats: ChatContext,
+    linkUrls: boolean,
   ): Promise<void> {
     const page = messages.map(pageMessageOf).filter((message) => message.remoteId !== "");
     if (page.length === 0) return;
@@ -1714,7 +1734,7 @@ export class TelegramModule {
       links: [...fragment.links.values()],
     });
 
-    const effects = buildEffects(page, result.ids, chats, pageChatState, newLiveMessages);
+    const effects = buildEffects(page, result.ids, chats, pageChatState, newLiveMessages, linkUrls);
     triggers.push(...effects.triggers);
     await this.flush(effects);
   }
@@ -1762,16 +1782,33 @@ export class TelegramModule {
     }
   }
 
-  /** The host calls a committed page still owes: links, attachments and the
-   * chat denorm. One call each today; the host's batch twins replace the loops
-   * without touching what is collected. */
   /** The only place a page still talks to the host after its body. Each kind
    * of write leaves in ONE call, so what a page costs is set by the kinds it
-   * carries, not by how many items it carries. */
+   * carries, not by how many items it carries. Links go last: the apply that
+   * carries `ensure` declarations ends the root's Graph work. */
   private async flush(effects: PageEffects): Promise<void> {
-    if (effects.webLinks.length > 0) await this.graph.webRegisterBatch(effects.webLinks);
     if (effects.files.length > 0) await this.graph.fileRegisterBatch(effects.files);
     if (effects.chatUpdates.length > 0) await this.graph.updatePropertiesBatch(effects.chatUpdates);
+    if (effects.messageUrls.length > 0) await this.referenceUrls(effects.messageUrls);
+  }
+
+  /** The Web module declares a link for each URL through `rpc.ensure`, with no
+   * Graph or network call; this page's last apply references them from the
+   * messages, and carries the declarations. */
+  private async referenceUrls(urls: readonly MessageUrl[]): Promise<void> {
+    const unique = [...new Set(urls.map(({ url }) => url))];
+    const { refs } = await this.rpc.ensure({ schemaId: WEB_LINK, items: unique.map((url) => ({ url })) });
+    if (refs.length !== unique.length) throw new Error("web.link.ensure answered a different number of refs");
+    const refByUrl = new Map(unique.map((url, index) => [url, refs[index] ?? null]));
+    const links: GraphLinkDeclaration[] = urls.map(({ url, messageId }) => {
+      const ref = refByUrl.get(url) ?? null;
+      if (ref === null) throw new Error(`web.link.ensure declared no link for ${url}`);
+      return {
+        from: { kind: "id", schemaId: MESSAGE, id: messageId }, to: ref, kind: REFERENCES,
+        confidence: null, metadata: null, declaredBy: null, validFrom: null, validUntil: null,
+      };
+    });
+    await this.graph.applyBatch({ entities: [], refs: [], links: [], fragment: { entities: [], links } });
   }
 
   // Delete the entity behind a remoteId (user-scoped). Mirrors native
@@ -1904,6 +1941,9 @@ export class TelegramModule {
         null,
         emptyStatement(),
         new Map([[String(chatId), { entityId: chat.id, details: objectOf(chat.properties, "chat properties"), indexed: chat.indexed }]]),
+        // The sent message's own sync page declares its links: a last apply
+        // here would end the root before the next send of a batch.
+        false,
       );
       const entityId = await this.graph.findByExternalId(remoteId);
       return entityId ? { ...result, id: entityId } : result;

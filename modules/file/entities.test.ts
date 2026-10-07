@@ -17,7 +17,7 @@ const uploaded = {
   name: "q3.pdf",
   mime_type: "application/pdf",
   size_bytes: 12_345,
-  local_path: "2026-09/email/q3.pdf",
+  contentHash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
   source_module: "email",
   source_surface: "file",
   source_ref: {},
@@ -30,7 +30,7 @@ const registered = {
   source_ref: { account_id: "a1", chat_id: 42, message_id: 7 },
   name: "photo.png",
   size_bytes: 900,
-  local_path: "telegram/photos/tg_42_7.png",
+  contentHash: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
   cloud_url: "https://cdn.example.test/tg_42_7.png",
   image: { width: 1024, height: 768 },
 };
