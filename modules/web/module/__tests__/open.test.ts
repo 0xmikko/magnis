@@ -11,7 +11,7 @@ import type { EnsureRequest } from "@magnis/sdk";
 import { WebModule } from "../service.ts";
 import { link as linkDeclaration, page as pageDeclaration } from "../../entities.ts";
 import type { WebOpenParams, WebSourcePage } from "../../types.ts";
-import { webGraph } from "./webGraph.ts";
+import { canonicalEntity, contentsRow, webGraph } from "./webGraph.ts";
 
 type SourceAnswer = NonNullable<Parameters<typeof webGraph>[0]>[number];
 
@@ -142,6 +142,35 @@ describe("web.link.open", () => {
       .rejects.toThrow("no version at or before 2026-09-30T00:00:00.000Z");
     await expect(module.open({ id: linkId, url: KEY, at: null, forceRefresh: false })).rejects.toThrow("give either id or url");
     await expect(module.open(byUrl("ftp://example.com/a"))).rejects.toThrow("is not an http or https URL");
+  });
+});
+
+describe("web.link.get", () => {
+  it("tst_web_open_003 web.link.get pages the versions newest first and lists the entities that reference the link", async () => {
+    const { state, module } = mount([
+      changed("# A", "2026-10-01T09:00:00.000Z"),
+      changed("# B", "2026-10-02T09:00:00.000Z"),
+      changed("# A", "2026-10-03T09:00:00.000Z"),
+    ]);
+    for (let read = 0; read < 3; read += 1) await module.open(byUrl(KEY));
+    const link = [...state.entities.values()].find((entity) => entity.schemaId === "web.link");
+    if (link === undefined) throw new Error("the link was not recorded");
+    const message = canonicalEntity("telegram.message", null, "msg", "2026-10-04T00:00:00.000Z", {});
+    state.entities.set(message.id, message);
+    state.links.push({ ...contentsRow(message.id, link.id, null, "2026-10-04T00:00:00.000Z", null), kind: "references", validFrom: null });
+
+    const first = await module.linkGet({ id: link.id, offset: 0, limit: 2 });
+    expect(first.link.id).toBe(link.id);
+    expect(first.versions.map(({ page, period }) => [page.name, period.validFrom, period.validUntil])).toEqual([
+      ["Title at 2026-10-01T09:00:00.000Z", "2026-10-03T09:00:00.000Z", null],
+      ["Title at 2026-10-02T09:00:00.000Z", "2026-10-02T09:00:00.000Z", "2026-10-03T09:00:00.000Z"],
+    ]);
+    expect(first.nextOffset).toBe(2);
+    expect(first.referencedBy.map((entity) => entity.id)).toEqual([message.id]);
+    const rest = await module.linkGet({ id: link.id, offset: 2, limit: 2 });
+    expect(rest.versions.map(({ period }) => period.validFrom)).toEqual(["2026-10-01T09:00:00.000Z"]);
+    expect(rest.nextOffset).toBeNull();
+    expect(state.batches).toHaveLength(3);
   });
 });
 
