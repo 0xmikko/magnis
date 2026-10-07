@@ -101,7 +101,7 @@ export interface StagedCatalogPackage {
   certification: SourceCertificationDeclaration | null;
 }
 
-/** A module's tier: a `system` module runs in every workspace. */
+/** A package's tier: a `system` module or Source runs in every workspace. */
 export type PluginTier = "system" | "community";
 
 /** The catalog channel's current flat-archive package shape. Certification
@@ -122,7 +122,7 @@ export interface PublishedCatalogPackage {
   /** The modules this package names in `dependsOn`. Published in
    * `index.v3.json` only; `index.json` keeps its version 1 shape. */
   dependsOn: string[];
-  /** A module's tier; a source has none. */
+  /** A module's or a Source's tier, written into its `index.v3.json` entry. */
   tier?: PluginTier;
 }
 
@@ -152,6 +152,7 @@ interface CatalogIndexV3Module extends CatalogIndexV3Entry {
 }
 
 interface CatalogIndexV3Source extends CatalogIndexV3Entry {
+  tier: PluginTier;
   packageHash: string;
   certification: { path: string; sha256: string };
 }
@@ -394,6 +395,7 @@ function unorderedStrings(value: unknown, label: string): readonly string[] {
 function decodeAccountCompatibility(
   sourceId: string,
   raw: Record<string, unknown>,
+  delivery: SourceCertificationDeclaration["delivery"],
 ): SourceCertificationDeclaration["accountCompatibility"] {
   const account = raw.account_compatibility;
   if (!isRecord(account)) {
@@ -432,6 +434,14 @@ function decodeAccountCompatibility(
     );
     if (receiverInterfaceHash !== v1ReceiverInterfaceHash(name)) {
       throw new Error(`${label}.receiver_interface_hash does not match the canonical v1 receiver contract`);
+    }
+    // A `none` surface delivers no pages, so it has no cursor rule and no
+    // progress contract; TOML has no null, so the entry leaves both out.
+    if (delivery === "none") {
+      if (surface.cursor_terminal_null !== undefined || surface.progress !== undefined) {
+        throw new Error(`${label} of a delivery=none Source has no cursor_terminal_null and no progress`);
+      }
+      return { name, cursorTerminalNull: null, progress: null, receiverInterfaceHash };
     }
     const progress = surface.progress;
     if (!isRecord(progress)) {
@@ -608,7 +618,7 @@ export function decodeSourceCertificationDeclaration(
       throw new Error(`source '${sourceId}' certification.callable_operations must include ${operation}`);
     }
   }
-  if (authority === "module_sync" && !callableOperations.includes("magnis.sync.fetch")) {
+  if (authority === "module_sync" && delivery !== "none" && !callableOperations.includes("magnis.sync.fetch")) {
     throw new Error(`source '${sourceId}' certification.callable_operations must include magnis.sync.fetch`);
   }
   if (callableOperations.includes("magnis.sync.listen")) {
@@ -627,7 +637,7 @@ export function decodeSourceCertificationDeclaration(
     `source '${sourceId}' certification.scenario_ids`,
     false,
   );
-  const accountCompatibility = decodeAccountCompatibility(sourceId, raw);
+  const accountCompatibility = decodeAccountCompatibility(sourceId, raw, delivery);
   assertManifestAuthCoherence(manifest, accountCompatibility.input.auth, `source '${sourceId}'`);
   const interval = raw.poll_interval_secs;
   const pollIntervalSecs = interval === undefined ? null : interval;
@@ -647,9 +657,6 @@ export function decodeSourceCertificationDeclaration(
   }
   if (authority === "tools_only" && delivery !== "none") {
     throw new Error(`source '${sourceId}' tools_only authority requires delivery=none`);
-  }
-  if (authority === "module_sync" && delivery === "none") {
-    throw new Error(`source '${sourceId}' module_sync authority forbids delivery=none`);
   }
 
   return {
@@ -1167,6 +1174,7 @@ export async function writeCertifiedCatalogIndexes(
       modules.push({ ...indexV3Entry(card), tier: card.tier });
       continue;
     }
+    if (card.tier === undefined) throw new Error(`source '${entry.id}' has no tier for index.v3.json`);
     if (!HASH_PATTERN.test(entry.packageHash)) {
       throw new Error(`source '${entry.id}' has an invalid staged package hash`);
     }
@@ -1187,6 +1195,7 @@ export async function writeCertifiedCatalogIndexes(
     const reference = certificationReference(receipt);
     sources.push({
       ...indexV3Entry(card),
+      tier: card.tier,
       packageHash: entry.packageHash,
       certification: reference,
     });

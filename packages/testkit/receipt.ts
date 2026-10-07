@@ -17,8 +17,10 @@ type JsonValue =
 
 export interface SourceAccountCompatibilitySurface {
   name: string;
-  cursorTerminalNull: "retain" | "clear";
-  progress: V1ProgressContract;
+  /** Null for a `none` surface, which has no cursor. */
+  cursorTerminalNull: "retain" | "clear" | null;
+  /** Null for a `none` surface, which delivers no pages. */
+  progress: V1ProgressContract | null;
   receiverInterfaceHash: string;
 }
 
@@ -251,11 +253,13 @@ function validateReceipt(value: unknown): SourceCertificationReceipt {
   if (authority === "tools_only" && (auth !== null || delivery !== "none" || surfaces.length !== 0)) {
     throw new Error("tools_only receipt must declare auth=null, delivery=none and no surfaces");
   }
-  if (authority === "module_sync" && (delivery === "none" || surfaces.length === 0)) {
-    throw new Error("module_sync receipt must declare poll or push delivery and at least one surface");
+  if (authority === "module_sync" && surfaces.length === 0) {
+    throw new Error("module_sync receipt must declare at least one surface");
   }
-  if (authority === "module_sync" && releaseTier === "production" && auth === null) {
-    throw new Error("production module_sync receipt must declare auth");
+  // A Source that only answers commands has no login: its one account per
+  // user carries no credentials.
+  if (authority === "module_sync" && releaseTier === "production" && auth === null && delivery !== "none") {
+    throw new Error("production module_sync receipt must declare auth unless its delivery is none");
   }
 
   const sourceId = requireString(value.sourceId, "receipt sourceId");
@@ -394,8 +398,13 @@ export function accountCompatibilityHash(input: SourceAccountCompatibilityInput)
   }
   for (const surface of surfaces) {
     requireString(surface.name, "account compatibility surface name");
-    validateV1ProgressContract(surface.progress, `account compatibility surface '${surface.name}' progress`);
     requireHash(surface.receiverInterfaceHash, "account compatibility receiverInterfaceHash");
+    // A `none` surface has neither; a delivering surface has both.
+    if (surface.progress === null && surface.cursorTerminalNull === null) continue;
+    if (surface.progress === null || surface.cursorTerminalNull === null) {
+      throw new Error(`account compatibility surface '${surface.name}' needs both a cursor rule and progress, or neither`);
+    }
+    validateV1ProgressContract(surface.progress, `account compatibility surface '${surface.name}' progress`);
     requireOneOf(
       surface.cursorTerminalNull,
       ["retain", "clear"],
@@ -412,7 +421,7 @@ export function accountCompatibilityHash(input: SourceAccountCompatibilityInput)
       surfaces: surfaces.map((surface) => ({
         name: surface.name,
         cursorTerminalNull: surface.cursorTerminalNull,
-        progress: {
+        progress: surface.progress === null ? null : {
           target: surface.progress.target,
           continuation: surface.progress.continuation,
           forwardCheckpoint: surface.progress.forwardCheckpoint,

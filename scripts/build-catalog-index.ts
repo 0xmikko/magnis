@@ -223,8 +223,9 @@ interface ManifestFacts {
 }
 
 /** A source manifest's place in the graph: its `dependsOn` and the surfaces
- * it feeds. */
+ * it feeds, and its tier. */
 interface SourceFacts {
+  tier?: string;
   dependsOn?: string[];
   surfaces?: string[];
 }
@@ -559,6 +560,12 @@ for (const release of discoverSourceReleaseManifests(sourcesRoot)) {
     console.error(`source '${id}': manifest.toml has no version — refusing`);
     process.exit(1);
   }
+  // An absent tier is community, as the host's manifest codec reads it.
+  const tier = manifest.tier ?? "community";
+  if (tier !== "system" && tier !== "community") {
+    console.error(`source '${id}': manifest.toml tier '${tier}' is neither system nor community — refusing`);
+    process.exit(1);
+  }
   const archive = stagePackage("source", id, (dst) => {
     stageBundledSourcePackage(release, dst);
   });
@@ -571,6 +578,7 @@ for (const release of discoverSourceReleaseManifests(sourcesRoot)) {
     archive,
     ...cardLinks("sources", id, dir),
     dependsOn: manifest.dependsOn ?? [],
+    tier,
   });
 }
 checkDependencyGraph(moduleGraph, sourceGraph);
