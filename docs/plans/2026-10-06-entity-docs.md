@@ -1,8 +1,8 @@
 # Adopt the knowledge graph contracts
 
-Status: SPEC_LOCKED  
+Status: APPROVED  
 Spec lock: sha256:eb8320ff041bbeaabddb325576ce9ddfc2d7f0bb4d3dbf27f4053f1558a352a5 owner:SPEC is approved, lets plan  
-Implementation lock: unlocked  
+Implementation lock: sha256:f307b8b036aacffb4ad979a4325946abc00e1e5d9c93d87d30cf6e062a32fe42 owner:$blueprint-start  
 Active Delivery: D1  
 Unattended decisions: allowed  
 
@@ -1030,4 +1030,6 @@ Required handoff evidence: Matching catalog/SDK artifact digests recorded; no un
 ## Execution log
 
 - lock-spec sha256:eb8320ff041bbeaabddb325576ce9ddfc2d7f0bb4d3dbf27f4053f1558a352a5 owner:SPEC is approved, lets plan
+
+- approve sha256:f307b8b036aacffb4ad979a4325946abc00e1e5d9c93d87d30cf6e062a32fe42 owner:$blueprint-start
 <!-- plan:execution:end -->
