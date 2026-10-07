@@ -2189,14 +2189,24 @@ For example, A states employment from January 1 and B states departure on June 1
 <a id="triggers"></a>
 ## 12. Subscriptions and Triggers: the graph boundary
 
-The initial subscription contract covers two cases: a Link was added, or an existing Entity's domain data changed. A module declares its Link kinds and Entity schemas through the existing registry. Graph records the change, selects subscriptions and passes the event to the Trigger. A separate watchable/triggerable Entity capability is unnecessary in this target.
+The subscription boundary separates an event, a subscription and an action. Graph records committed changes; Triggers select accessible events through their subscriptions and run their existing action. A module declares Link kinds and Entity schemas through the existing registry and writes domain data through Graph. A separate watchable/triggerable Entity capability is unnecessary in this target.
 
 ```mermaid
-flowchart LR
-  G[Graph commits a change] --> E[Event]
-  E --> S[Matching subscription]
-  S --> T[Trigger handles the event]
-  T --> P[Episode if needed]
+sequenceDiagram
+  participant M as Domain module
+  participant G as Graph
+  participant T as Triggers
+  participant P as Episode
+  M->>G: Save message and received Link
+  Note over G: Commit domain change and event together
+  G-->>T: Committed event
+  T->>T: Match subscriptions and check access
+  T->>T: Record execution with source eventId
+  opt Action requires an Episode
+    T->>P: Existing createTriggeredChild with action_prompt and context
+    T->>G: Record Trigger → created → Episode
+    T->>T: Record resulting episodeId
+  end
 ```
 
 ### A subscription selects a Link or an Entity
@@ -2204,7 +2214,7 @@ flowchart LR
 ```typescript
 export type GraphEventFilter =
   | {
-      type: "link_added";
+      type: "link_added" | "link_updated";
       kind: LinkType;
       from: PersistentEntityId | null;
       to: PersistentEntityId | null;
@@ -2220,13 +2230,14 @@ export interface GraphSubscription {
 }
 ```
 
-Null means no endpoint or ID restriction. Link selection uses its registered kind and optional endpoints; Entity selection uses its registered schema and optional ID. Graph checks the subscriber's access. There are no field predicates or conditions in this subscription contract. The handler receives the change and decides what to do.
+Null means no endpoint or ID restriction. Link selection uses its registered kind and optional endpoints; Entity selection uses its registered schema and optional ID. Updates match the committed after state, with before available to the handler. Triggers enforce Graph access when selecting and handling an event. There are no field predicates or conditions in this subscription contract. The handler receives the change and decides what to do.
 
 | Use case | Subscription |
 | --- | --- |
 | Mail arrived in a mailbox | link_added, kind received, from = mailbox ID |
 | Something was attached to a container | link_added, kind belongs_to, to = container ID |
 | An attendee was added to a meeting | link_added, kind meetings.attendee, from = meeting ID |
+| A known relationship was updated | link_updated, kind works_at, from = the person's ID |
 | A meeting or message was edited | entity_updated, schemaId = its schema, optionally id = that Entity |
 
 For incoming mail, the module creates the message and its observed received Link. The Link addition is the signal. Adding received_from sender information alone does not establish delivery. Replaying the same stored fact without a change does not create another event.
@@ -2253,6 +2264,7 @@ export type GraphMutationEvent = {
   occurredAt: DateTimeUtc | null;
 } & (
   | { type: "link_added"; link: Link }
+  | { type: "link_updated"; before: Link; after: Link }
   | {
       type: "entity_updated";
       before: PersistentEntity;
@@ -2263,7 +2275,9 @@ export type GraphMutationEvent = {
 export type GraphEventType = GraphMutationEvent["type"];
 ```
 
-The event identifies a committed change. A Link event contains the added Link; an Entity event contains the same Entity before and after its update. The handler can inspect changed data without a graph-level rule language. recordedAt is recording time; occurredAt is domain occurrence time when known. An import timestamp does not prove fresh delivery.
+The event identifies a committed change. link_added contains the added Link; update events contain the same Link or Entity before and after its update. The handler can inspect changed data without a graph-level rule language. recordedAt is recording time; occurredAt is domain occurrence time when known. validFrom/validUntil retain the relation's own dates.
+
+The target reacts when new information is recorded. If a message processed on October 7 reports a departure on October 1, the new information can reach a Trigger on October 7; it does not wait for a validity boundary. Source synchronization and later extraction can commit different events. A no-change sync emits none. Whether an initial historical import should run existing actions is a separate import policy to settle before cutover; recording time alone does not prove fresh mail delivery.
 
 Graph saves the change and event together and dispatches after commit. A repeated delivery of the same event must not start the same Trigger twice. The later implementation chooses how to reuse event storage and the execution queue.
 
@@ -2275,6 +2289,7 @@ The current audit vocabulary is broader than this subscription contract. In part
 // Excerpts for event-driven execution, not a complete Trigger API.
 export interface TriggerConfig {
   subscriptions: readonly GraphSubscription[];
+  action_prompt: string; // Existing configuration field and spelling.
 }
 
 export interface TriggerExecution {
@@ -2284,7 +2299,27 @@ export interface TriggerExecution {
 }
 ```
 
-Multiple subscriptions on one Trigger are alternatives. TriggerExecution records which event caused a run and the resulting Episode, if any; it is operational history. The source is the Event ID, with the affected Link or Entity in the event payload. Trigger → created → Episode records creation provenance. Trigger → belongs_to → parent Episode and the resulting Episode's child_of relation retain their existing meaning.
+Multiple subscriptions on one Trigger are alternatives. The action remains the existing action_prompt passed to EpisodesService.createTriggeredChild with event context. For a received Link, the message is available through Graph at link.to. This reuses the Episode execution mechanism; it does not add a new action language. Existing status, gate_prompt, limits and schedule fields are omitted from this excerpt.
+
+TriggerExecution records which event caused a run and the resulting Episode, if any; it is operational history. The source is the Event ID, with the affected Link or Entity in the event payload. Distinct changes to the same Entity have distinct event IDs; retrying one event reuses its execution. The event-driven excerpt does not replace existing manual/scheduled history or fabricate Event IDs for it. Trigger → created → Episode records creation provenance. Trigger → belongs_to → parent Episode and the resulting Episode's child_of relation retain their existing meaning.
+
+### Learning that a relationship ended
+
+The initial types above cover stored Link changes. The Katya example additionally requires receiving an ending assertion before a Link exists: GraphClaim already has kind ending, and its validFrom may be null. Current derivation retains an unmatched ending as no matching period and materializes no Link. Thus link_updated alone cannot cover this case. A historical Link created with a known end must not be interpreted as employment starting now.
+
+The required meaning is "Graph recorded that this relationship ended", using endpoints/kind and the source assertion even without a Link ID. link_ended is the discussed name, not yet an adopted audit literal. Its payload and admission from existing claims must be settled before enabling that subscription. It must distinguish an ending from lost evidence or physical deletion, and retain an unknown ending date without replacing it with sync time. This uses the same subscription/action path.
+
+### Moving from watches to subscriptions
+
+| Existing responsibility | Transition |
+| --- | --- |
+| Email/Telegram return live trigger.check notifications | Modules write domain facts; Graph supplies the corresponding committed events |
+| TriggersRepository selects watches via touched Entity IDs | Store typed subscriptions in the existing Trigger configuration and match kind/endpoints or schema/ID |
+| TriggersService compares occurred_at with Trigger creation time | Use the recording of new graph information for event admission; decide historical-import behavior explicitly |
+| Event-driven Episode identity uses Trigger ID and event Entity ID | Use Trigger ID and source Event ID so two edits of one Entity remain distinct runs |
+| action_prompt, createTriggeredChild and execution history | Reuse them; extend existing execution storage with the source Event reference |
+
+Switch only definitions whose old selection can be represented faithfully. Email watches currently identify senders; they cannot become a subscription to every message received by a mailbox. Telegram watches can identify a chat or sender. Keep an unmapped definition on its legacy path until explicitly converted; one definition must not execute through both paths. Remove old module notifications and watch APIs only after their consumers are converted. Scheduled/manual execution retains its existing path; the scheduler also currently emits trigger.check.
 
 This chapter defines event selection and its connection to a Trigger. The next logic story covers handling that event using the existing Trigger and Episode mechanisms. Timers, query subscriptions and a general rule engine are not requirements of this contract.
 
@@ -2304,7 +2339,7 @@ This chapter defines event selection and its connection to a Trigger. The next l
 | Schema evolution | Immutable versions, stored-record migration and unavailable required versions |
 | Runtime domains | Who may register a new domain without installing a module and who owns its behavior |
 | Communication | Concrete endpoint/conversation representation and repeated-delivery identity |
-| Trigger logic — next story | Connect Link additions and Entity updates to the existing Trigger/Episode execution mechanism |
+| Trigger logic — next story | Connect subscriptions to existing execution; settle historical imports, legacy sender/chat selection and endings without a prior Link |
 
 These are explicit limits, not defaults inferred from incidental code. The migration plan distinguishes implementation-ready decisions from proposals awaiting the owner's approval.
 

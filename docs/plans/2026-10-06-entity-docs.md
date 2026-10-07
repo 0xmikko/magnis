@@ -13,7 +13,7 @@ Unattended decisions: allowed
 2. Adopt explicit persistent/transient and derived types across the shared SDK and its consumers, then separate domain Entity values from requested operational extras without changing identity, evidence or access scope.
 3. Migrate pin, archive, privacy, configured model trust and indexing projections and consolidate organizational membership relations into `belongs_to`; register domain-specific Link kinds in their modules, preserving sync choices, temporal history and repeat-ingestion behavior.
 4. Give each Magnis auth user a canonical `users.user` Entity, connect people to it through `identity`, and maintain protected temporal `owner` Links through system GraphService functions only.
-5. Bring Graph reads, Search, merge, extraction and workspace transfer onto those same boundaries; preserve deterministic replay and protected ownership. Generalize creation provenance to created and define communication facts. Describe the boundary from committed graph changes through subscriptions to Trigger execution; implement the logic engine in a later story.
+5. Bring Graph reads, Search, merge, extraction and workspace transfer onto those same boundaries; preserve deterministic replay and protected ownership. Generalize creation provenance to created and define communication facts. Describe the event/subscription/action boundary and the later migration from watches to subscriptions, reusing existing Trigger and Episode execution.
 6. Publish compatible app/catalog changes through the existing SDK and package activation mechanism, with migration fixtures, scoped checks and the complete affected repository gates. Implementation begins only after the owner approves the SPEC and the resulting Delivery/Stage contract.
 
 ## Why now
@@ -36,6 +36,9 @@ Evidence owners:
 | Shared organizational membership and creation provenance | Owner retains belongs_to and replaces Episode → triggered_by → Trigger with Trigger → created → Episode; projects.belongs_to has matching member → project semantics |
 | Communication changes the earlier chat-membership proposal | Current Telegram in_chat supplies conversation membership, not delivery direction/time; Google folds Date/internalDate into sent_at; email schema allows received_at |
 | Trigger delivery requires a graph event contract | Identity Graph EventRepository/owner mutation revision and TriggersService; current EventBus is in-process, trigger.check is module-produced and live-only |
+| Execution can be reused; selection and identity must change | October 7 inspection: TriggersService already calls EpisodesService.createTriggeredChild with action_prompt; firing identity uses Trigger ID plus event Entity ID; trigger_execution stores history |
+| Current time admission differs from recording new knowledge | TriggersService requires context.occurred_at and compares it with Trigger creation time; the scheduler also emits trigger.check |
+| Ending evidence can exist without a Link | GraphClaim.kind ending is persisted; deriveRelation returns no matching period without an assertion. GraphService.end updates an existing Link and emits link_updated |
 
 ## The target
 
@@ -104,6 +107,23 @@ export type PersistentEntity<P extends JsonValue = JsonValue> =
   Entity<P> & { id: PersistentEntityId };
 export type TransientEntity<P extends JsonValue = JsonValue> =
   Entity<P> & { id: NilId };
+
+// Same flat operational contract as reference section 2.
+export type IndexingStatus = "pending" | "indexed" | "refused";
+export interface EntityExtrasBase {
+  pinOrder: number | null;
+  archived: boolean;
+  readonly indexed: IndexingStatus;
+  private: boolean;
+}
+export interface Syncable {
+  syncEnabled: boolean;
+  syncRevision: string;
+}
+export type EntityExtras = EntityExtrasBase & (
+  | Syncable
+  | { syncEnabled: null; syncRevision: null }
+);
 
 export interface EntityRead<P extends JsonValue = JsonValue> {
   entity: PersistentEntity<P>;
@@ -180,6 +200,21 @@ flowchart LR
   R --> X[Requested EntityRead with extras]
   X --> C[SDK clients and module UI]
 ```
+
+#### Adopt the agreed extras shape at every boundary
+
+| Current or discussed field | Target response | Storage and migration |
+| --- | --- | --- |
+| Entity.isPinned and pinOrder | extras.pinOrder only | Viewer-specific entity_preferences.pin_order; null is unpinned, zero is a valid order. Apply B's explicit legacy mapping before dropping the boolean |
+| Entity.isArchived | extras.archived: boolean | Keep entities.is_archived; normalize legacy null to false at storage/read boundary |
+| Privacy draft isPrivate | extras.private: boolean | Add typed entities.is_private; Entity-wide, not a viewer preference; apply B's private-model policy |
+| Entity.indexed processing boolean | extras.indexed: IndexingStatus | Read graph_index.status, with pending for no row. Keep the old processing permission internal and distinct; never translate true into indexed or false into pending |
+| Entity sync fields / Syncable base | Flat extras.syncEnabled and extras.syncRevision | Preserve entities.sync_enabled and bigint sync_revision; serialize the revision as a decimal string. Unsupported sync uses both nulls |
+| Public owner / proposed trigger list | Neither Entity nor extras | Owner remains protected system storage and owner Links; Triggers and execution history have separate paginated reads |
+
+Remove the nested preferences/lifecycle/indexing/sync objects, the pinned flag and indexingPending from the target public shape. Extras remains a requested read projection over typed columns; there is no extras JSONB store. Its fields are required when extras is requested, and public parsers never repair a missing value with a default.
+
+Migrate read consumers to EntityRead where they need operational state: Graph detail/list/traversal and search responses, SDK/RPC serializers, plugin graph adapters, UI pin/archive/sync controls and workspace codecs. Domain ingestion, identity, merge and extraction use the domain Entity projection; Source writes must not reset viewer preferences or prepared sync choices. Keep scoped pin/archive/privacy/sync mutations and their permissions; moving their read values into extras does not grant a generic domain-properties write authority over them. indexed status remains read-only; the legacy processing-permission command must retain its distinct boolean meaning while its public naming is reconciled before API activation.
 
 Reuse existing Graph queries and response schemas. Persisted internal rows may contain owner and operational columns; they are not serialized by spreading a storage object into Entity. Ordinary reads can omit preference/index-status joins while still enforcing ACL, archive and privacy. Detail, traversal, lists, tools and transfer must each declare their projection explicitly; no accidental second Entity shape in plugins.
 
@@ -313,7 +348,7 @@ Do not support two permanent public Entity formats. Version the shared SDK/packa
 
 ### G. Communication facts and the automation boundary
 
-The owner's current scope is a simpler graph contract. Implement communication facts and declarations as part of the graph migration; retain the subscription/Trigger chain as its documented boundary. Classification and the execution engine belong to the next logic story and do not block the graph release.
+The owner's current scope is a simpler graph contract. Implement communication facts and declarations as part of the graph migration; retain the subscription/Trigger chain as its documented boundary. Connecting subscriptions to the existing execution mechanism belongs to the next logic story and does not block the graph release.
 
 Communication records use sent/received with an occurrence time, independently of graph createdAt and validity periods. The working direction is concrete mailbox/account → message, with conversation context separately identified. A shared chat has no account-independent incoming/outgoing direction. A successful send or authoritative source observation can establish sent; recipient headers alone cannot establish received. Keep authorship, creation and reply context distinct from communication. The communication vocabulary has two pairs: account/mailbox → sent/received → message records observed transmission/delivery; message → sent_to/received_from → address/account records the addressed recipient and source-reported sender. received_from is not the inverse of received and does not establish a sent event from an email From header. sent_by stays retired: incoming sent traversal already resolves an observed sending endpoint. The inspected email writer uses authored_by for from_address; migrate that sender-only fact to received_from for the known email producer/schema pair, preserving provenance and history. Update its registry permissions, manifest and UI readers together; do not globally rename authored_by or emit both from one sender field. Other adapters must distinguish known content authorship from reported sender information.
 
@@ -321,9 +356,9 @@ Remove watches, account, prospect and supports from the target standard vocabula
 
 Validate conversation references through Graph, including merge/deletion handling; do not hide unchecked IDs in metadata. Choose a concrete mailbox Entity when email.address does not identify the receiving endpoint uniquely. Repeated physical deliveries of the same message/endpoint need an occurrence identity before they can be represented; current Link period constraints do not supply one.
 
-Modules declare kinds, endpoint schemas, metadata and write permissions through the existing registry. The initial subscription contract has two cases: link_added selected by kind and optional endpoints, and entity_updated selected by schema and optional ID. The event contains the added Link or the Entity before and after a domain-data update. Graph selects accessible subscriptions; the handler decides what to do. A TriggerExecution refers to the source Event ID and any resulting Episode. There is no field-predicate language, condition engine or module-specific event name. Current property writes use both entity_properties_updated and entity_updated, and sync settings also use the latter, so the later subscription producer must select actual domain changes without altering audit history. Extras are outside this contract.
+Modules declare kinds, endpoint schemas, metadata and write permissions through the existing registry. The basic subscription contract selects link_added/link_updated by kind and optional endpoints, and entity_updated by schema and optional ID. Updates match the committed after state; the event carries before/after for the handler. Graph records the event; Triggers matches accessible subscriptions and runs the existing action_prompt through Episode execution. A TriggerExecution refers to the source Event ID and any resulting Episode. There is no field-predicate language, condition engine or module-specific event name. Current property writes use both entity_properties_updated and entity_updated, and sync settings also use the latter, so the later subscription producer must select actual domain changes without altering audit history. Extras are outside this contract.
 
-The target records the mutation and event together, dispatches after commit and avoids starting the same Trigger twice for repeated delivery of one event. Occurrence time remains distinct from insertion time. Event storage and execution are implemented in the later logic story using the existing owners; this graph migration does not add a queue.
+The target records the mutation and event together, dispatches after commit and deduplicates one Trigger's handling by source Event ID. Recording new information is the wake, independently of source occurrence and relation-validity dates; an unchanged sync creates no event. Historical-import admission remains an explicit cutover decision. Event delivery is connected to the existing execution owners in the later logic story; this graph migration does not add a queue.
 
 The inspected TriggerGate is an auto-pass stub. No classification context or classifier is specified for implementation here. Keep existing Trigger notifications and capability contracts working during graph adoption; translate their readers/writers only where required by the agreed Link changes. Retiring watch-based selection and replacing trigger.check belongs to the later coordinated cutover.
 
@@ -418,11 +453,34 @@ This bounds owners rather than guessing every compiler caller. Before executable
 | KG-29 | Step 1 → ingest a message with a reported From address and no observed sending account. Verify → received_from identifies the sender; no invented sent event or duplicate authored_by from the sender field. Step 2 → upgrade the known email-producer authored_by rows beside non-email authorship. Verify → only sender-only email relations become received_from, preserving provenance/history and repeat-ingestion identity; independent authorship stays unchanged. Step 3 → read message sender, recipient and delivery facts. Verify → correct received_from/sent_to display; sender information alone creates no received fact |
 | KG-30 | Step 1 → migrate attendee and both Telegram observation kinds from known producers beside existing target rows. Verify → namespaced module ownership, preserved IDs or explicit collision mapping, periods/claims/metadata retained and repeat upgrade is stable. Step 2 → query Meetings attendees and Telegram observed chat state/participants. Verify → equivalent reads; participant edges gain no observer state. Step 3 → try an undeclared kind, claim another module's namespace or write without permission, then perform an authorized cross-module write. Verify → invalid operations fail and the authorized write satisfies the same contract. Step 4 → uninstall the declaring module. Verify → historical rows stay readable and orphan declarations authorize no new writes. Unknown-producer conversion aborts atomically |
 
-### Next logic story
+### Next logic story — migrate selection, reuse execution
 
-Reuse the existing Event, TriggerExecution and Episode mechanisms to handle the two subscription cases in reference section 12: Link addition and Entity domain-data update. Keep access/private-data checks and current automation working until that cutover. Sender-based watches and historical imports must retain their known meaning; importing an old message is not proof of fresh delivery.
+This is a concrete continuation of the graph migration, not an additional release gate or a new automation engine. No implementation Delivery is approved here. The reference separates Graph events, subscriptions in Trigger configuration and actions through the existing TriggersService/EpisodesService path.
 
-The current TriggerGate always returns relevant; classification is not claimed to work. Detailed execution design belongs to that later story. This graph migration does not prescribe a predicate language, threshold transitions, timers, query subscriptions, debounce or a separate operational-signal framework. No Trigger-engine behavioral specification or executable Delivery is added here.
+| Order | Migration work | Existing mechanism retained |
+| --- | --- | --- |
+| 1 | Produce typed committed events for domain Entity updates and Link additions/updates, including ordinary and batch writers | EventRepository and Graph mutation transactions; modules keep producing domain facts |
+| 2 | Add subscriptions to the existing Trigger configuration, validators, CRUD, RPC and UI; replace watches-based candidate lookup for converted definitions | TriggersRepository and schema/kind registry; action_prompt, status, limits and existing schedule configuration |
+| 3 | Feed selected events to TriggersService; use source Event ID for event-driven admission, child identity and execution history | Existing trigger_execution storage, createTriggeredChild, agent wake, parent context and created provenance |
+| 4 | Convert supported legacy definitions without broadening their meaning; enable exactly one execution route for each converted Trigger | Old definitions remain on the legacy route until mapped; historical executions remain readable |
+| 5 | Retire converted Email/Telegram trigger_checks and then obsolete watches/triggerable APIs and UI | Manual and scheduled execution; the scheduler also uses trigger.check, so the bus route is not removed indiscriminately |
+
+A mailbox receipt subscription is not a replacement for an old sender watch. Email currently supplies sender-based candidates; Telegram supplies chat/sender candidates. Convert only definitions whose selection can be preserved with the available event payload and handler context. Inventory the remaining definitions and settle their mapping before retiring the old route. No hidden predicate language or new action configuration is introduced by this migration.
+
+For event-driven runs, replace the current Trigger-ID-plus-Entity-ID firing key with Trigger ID plus Event ID. Record the input before action execution and attach the resulting Episode using the existing execution store. Preserve the old event_entity_id as context/history where applicable; never invent graph Event IDs for historical, manual or scheduled runs. Reuse current recovery behavior while adapting its identity, rather than introducing a second worker/state machine.
+
+The new event wake is when information is committed to Graph. Current source-date admission must not silently discard newly learned past facts, and unknown occurrence time must remain unknown. Decide initial historical-import behavior explicitly before enabling actions on imported data; source recording is not evidence of fresh delivery. Keep existing access/private-data checks. TriggerGate currently always returns relevant; retaining gate_prompt does not establish semantic classification.
+
+**Ending without a prior Link:** preserve the owner's Katya scenario as a required extension of this same path. Existing GraphClaim.kind ending can record an unknown start or end date without a Link row. The later contract must expose the accepted ending with endpoints/kind and source evidence even when deriveRelation produces no Link. link_ended is a discussed name; its payload and admission are still open, and neither link_updated nor a created historical Link alone proves a new departure. Resolve this before enabling ending subscriptions; do not add an employment-start date, use sync time for a missing end or mistake evidence withdrawal for departure.
+
+| Follow-up change map | Existing owners; these are later-story writes |
+| --- | --- |
+| MODIFY: event production | App backend/src/core/event.ts and services/graph/event.repository.ts, graph.service.ts, graph.repository.ts, entity.repository.ts, link.repository.ts; claim.repository.ts and derive.ts for the ending decision |
+| MODIFY: selection and execution | App backend/src/core/trigger.ts, services/triggers/types.ts, triggers.repository.ts, triggers.service.ts, triggers.controller.ts; extend db/schema/triggers.ts through the existing SQL migration/generation workflow |
+| MODIFY: configuration and consumers | Catalog modules/triggers/entities.ts, types.ts, schema.ts, manifest.toml, module/service.ts and existing ui readers; SDK/RPC declarations on the integrated head |
+| MODIFY: producer cutover | Catalog modules/email and modules/telegram service/type/manifest contracts; app backend/src/plugin-runtime/plugin-module-controller.ts and sync-receipt.ts; retain scheduler compatibility |
+
+Before the later implementation is approved, name the SQL migration and exact compiler-reported callers on the integrated head. Reuse existing app backend/test/tst_bts_triggers_service.test.ts, tst_bts_triggers_repository.test.ts, tst_bts_triggers_executions.test.ts, tst_bts_triggers_schedule.test.ts and graph writer tests, plus catalog Trigger CRUD/history and Email/Telegram ingest tests. Focus verification on a received message reaching the existing Episode path, two distinct updates of one Entity, duplicate delivery of one Event, unchanged sender/chat selection, manual/schedule compatibility and an ending learned without a prior Link. This retains the concrete checks without specifying a new general rules engine.
 
 ### Test strategy and publication
 
@@ -443,7 +501,7 @@ Reuse SDK Entity/Link/statement/model/RPC schemas; existing UuidShapeSchema and 
 | DerivedEntity / DerivedLink / DerivedStatement | Owner-selected names for graph values derived from claims through extraction, aggregation or inference |
 | EntityDerivation | Frees the existing helper name DerivedEntity for the graph Entity; parallels RelationDerivation |
 | derivedStatementSchema / origin: derived | Aligns the runtime validator and serialized discriminator with DerivedStatement; migrates the legacy agent spelling explicitly |
-| EntityExtras / EntityRead | Separates requested operational state from the domain value, reusing names already discussed |
+| EntityExtras / EntityRead / IndexingStatus | Flat requested operational projection: pinOrder, archived, private, indexed status and the sync pair; typed columns and separate mutation authority |
 | Model private | Required boolean on existing configured model types; authorizes private-data processing, including a declared-private cluster, independently of dataBoundary |
 | AuthUserId / UserEntityBinding | Separates existing auth scope, including nil, from the new graph node; maps through users.entity_id instead of rekeying sessions |
 | UserEntityProperties | Minimal public graph-user shape; deliberately excludes auth/admin/secrets fields |
@@ -452,16 +510,16 @@ Reuse SDK Entity/Link/statement/model/RPC schemas; existing UuidShapeSchema and 
 | meetings.attendee / telegram.observed_in / telegram.observed_participant | Move domain meanings from unqualified built-ins into the declaring module's namespace; preserve semantics and observer state |
 | LinkedEntitySummary.direction | Distinguishes incoming provenance from outgoing results without additional stored inverse kinds |
 | CommunicationLink / sent / received / sent_to / received_from | Two communication pairs: observed transmission/delivery and reported recipient/sender; received_from replaces sender-only email use of authored_by, not general content authorship. No stored inverse sent_by. Account/conversation representation remains a proposal |
-| GraphMutationEvent | Identified Link addition or Entity domain-data update; event delivery is implemented in the later logic story |
+| GraphMutationEvent | Identified Link addition/update or Entity domain-data update; recorded-time notification connects to existing execution in the later story |
 | GraphSubscription / GraphEventFilter | Select a Link kind and endpoints or an Entity schema and ID; runtime replacement of watches/trigger.check is deferred |
-| TriggerExecution event excerpt | Relates a Trigger run to its source Event and optional Episode using the existing execution concept |
+| TriggerExecution event excerpt | Adds source Event identity to existing execution history; retains Episode/action_prompt and separate manual/schedule paths |
 | owner | Protected system relationship, with ordinary write rejection on every route |
 
 ## Not verified
 
 No product changes or migrations were executed in this authoring turn. The exact integration head after the prerequisite work, complete compiler-derived consumer file list, migration row counts, data-dependent overlap conflicts, generated API version and release artifact compatibility must be measured before executable Stage approval. No PR publication or deployment is authorized by this documentation commit.
 
-Persistent-ID and Derived naming and the configured-model trust rule reflect owner decisions. Legacy pin ordering, auth-user mapping/self-owned bootstrap, bounded transfer and refusal of conflicting extras on merge are explicit proposals presented for SPEC approval, not claims of prior owner approval. Wider ACL, connected cross-owner transfer, field-level derived provenance, richer merge extras arbitration, unmerge, general alias consolidation, revision-queue storage/recovery and cloud policy beyond the existing embedding scope remain follow-up contracts. Section G requires endpoint/conversation and repeated-delivery identity decisions for communication. The minimal subscription contract is documented only; its connection to Trigger execution belongs to the next logic story and is not a graph-release gate. Project-membership consolidation and the direction-preserving neighbor projection are review proposals. Creation-link reversal and event-based Trigger selection reflect the owner's requests. The plan does not silently manufacture missing facts or promise these changes are implemented.
+Persistent-ID and Derived naming and the configured-model trust rule reflect owner decisions. Legacy pin ordering, auth-user mapping/self-owned bootstrap, bounded transfer and refusal of conflicting extras on merge are explicit proposals presented for SPEC approval, not claims of prior owner approval. Wider ACL, connected cross-owner transfer, field-level derived provenance, richer merge extras arbitration, unmerge, general alias consolidation, revision-queue storage/recovery and cloud policy beyond the existing embedding scope remain follow-up contracts. Section G requires endpoint/conversation and repeated-delivery identity decisions for communication. The subscription migration is documented as a follow-up using existing Trigger execution and is not a graph-release gate. Historical-import policy, faithful sender/chat mapping and the ending-without-Link event contract remain explicit decisions before their affected paths are enabled. Project-membership consolidation and the direction-preserving neighbor projection are review proposals. Creation-link reversal and event-based Trigger selection reflect the owner's requests. The plan does not silently manufacture missing facts or promise these changes are implemented.
 <!-- plan:spec:end -->
 
 <!-- plan:implementation:start -->
