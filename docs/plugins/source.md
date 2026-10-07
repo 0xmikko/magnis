@@ -23,7 +23,9 @@ envelopes** the host routes into the graph. It owns **no schema**: the module
 that owns a surface (contacts, email, meetings) owns the graph shape; the source
 only produces data for it.
 
-A source is, concretely, a `ConnectorConfig` object handed to `runConnector`.
+A source is, concretely, a `ConnectorConfig` object handed to `runConnector`,
+or, for a Source that only answers commands (`[sync] mode = "none"`), a
+`CommandConnectorConfig` with `execute` and no `fetch`.
 The host cannot tell one source from another as long as the wire matches — so a
 source can be written in any language that speaks the profile. This guide covers
 the TypeScript/Bun path, which the SDK makes short.
