@@ -407,7 +407,7 @@ describe("tst_module_triggers_crud_001 — trigger definition commands", () => {
           }),
           links: [],
         }),
-      updateProperties: (params: PropertiesUpdate) => {
+      updateProperties: (params) => {
         properties = { ...(params.properties as typeof properties) };
         return Promise.resolve(undefined);
       },

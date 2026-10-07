@@ -11,7 +11,7 @@
 import { describe, expect, it } from "vitest";
 import { descriptorFrom } from "@magnis/declare/derive";
 import type { GraphBatchInput, JsonObject, SyncEnvelope } from "@magnis/sdk";
-import { mockGraph, mountModule, sourceEnvelope } from "@magnis/testkit/module";
+import { entityId, mockGraph, mountModule, sourceEnvelope } from "@magnis/testkit/module";
 
 import { EmailModule } from "./module/service.ts";
 import { address, message } from "./entities.ts";
@@ -25,7 +25,7 @@ function ingestGraph() {
     admitSyncEntities: (subjects) => Promise.resolve(subjects.flatMap(subject => [...subject.remoteIds])),
     applyBatch: (frag) =>
       Promise.resolve({
-        ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
+        ids: Object.fromEntries(frag.entities.map((e) => [e.key, entityId(`id-${e.key}`)])),
         created: frag.entities.length,
         updated: 0,
         linksAdded: frag.links.length,

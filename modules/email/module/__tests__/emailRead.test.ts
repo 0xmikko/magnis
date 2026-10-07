@@ -11,8 +11,8 @@
 // AND the `toHaveBeenCalledTimes(0)` assertions on those forbidden ops.
 
 import { beforeEach, describe, expect, it } from "vitest";
-import type { CanonicalEntity, EntityWithLinks, JsonObject } from "@magnis/sdk";
-import { entity, link, mockGraph, mountModule, page, type MockGraph } from "@magnis/testkit/module";
+import type { PersistentEntity, EntityWithLinks, JsonObject } from "@magnis/sdk";
+import { entity, entityId, entityRead, entityExtras, link, mockGraph, mountModule, page, type MockGraph } from "@magnis/testkit/module";
 import { EmailModule } from "../service.ts";
 import type { EmailCanonical } from "../../types.ts";
 
@@ -39,7 +39,7 @@ function spy(graph: G, op: string) {
 }
 
 // S5: the message DICT rides the entity; `data` (the render record) is dead.
-const ROW = (id: string, date: string, over: JsonObject = {}): CanonicalEntity =>
+const ROW = (id: string, date: string, over: JsonObject = {}): PersistentEntity =>
   entity(id, "Subject " + id, {
     schemaId: "email.message",
     createdAt: date,
@@ -55,7 +55,9 @@ const ROW = (id: string, date: string, over: JsonObject = {}): CanonicalEntity =
   });
 
 // S5: the detail reads the DICT.
-const DETAIL = (id: string, date: string): EntityWithLinks => ({ entity: ROW(id, date), links: [] });
+const READ = (...args: Parameters<typeof ROW>) => entityRead(ROW(...args), entityExtras());
+
+const DETAIL = (id: string, date: string): EntityWithLinks => ({ ...entityRead(ROW(id, date), entityExtras({ pinOrder: 0 })), links: [] });
 
 describe("email read — shape parity (tst_be_emailread_001)", () => {
   let graph: G;
@@ -66,12 +68,12 @@ describe("email read — shape parity (tst_be_emailread_001)", () => {
   });
 
   it("list maps window rows to MessageListItem (sender fallback, snippet preview, body_html stripped)", async () => {
-    spy(graph, "listEntitiesWindow").mockResolvedValue(page([ROW("b", "2026-06-02T10:00:00Z"), ROW("a", "2026-06-01T10:00:00Z")]));
+    spy(graph, "listEntitiesWindow").mockResolvedValue(page([READ("b", "2026-06-02T10:00:00Z"), READ("a", "2026-06-01T10:00:00Z")]));
 
     const listed = await mod.emailList({ limit: 50, offset: 0 });
 
     expect(listed.total).toBe(2);
-    expect(listed.items.map((i) => i.id)).toEqual(["b", "a"]); // DB date-desc order preserved
+    expect(listed.items.map((i) => i.id)).toEqual([entityId("b"), entityId("a")]); // DB date-desc order preserved
     const first = listed.items[0];
     if (first === undefined) throw new Error("list: missing first item");
     expect(first.sender).toBe("Alice Johnson"); // from_name preferred over from_address
@@ -85,7 +87,7 @@ describe("email read — shape parity (tst_be_emailread_001)", () => {
   });
 
   it("list falls back to from_address when from_name is absent", async () => {
-    spy(graph, "listEntitiesWindow").mockResolvedValue(page([ROW("a", "2026-06-01T10:00:00Z", { from_name: "" })]));
+    spy(graph, "listEntitiesWindow").mockResolvedValue(page([READ("a", "2026-06-01T10:00:00Z", { from_name: "" })]));
     const listed = await mod.emailList({});
     const first = listed.items[0];
     if (first === undefined) throw new Error("list fallback: missing first item");
@@ -97,7 +99,8 @@ describe("email read — shape parity (tst_be_emailread_001)", () => {
 
     const view = await mod.emailGet({ id: "x" });
 
-    expect(view.id).toBe("x");
+    expect(view.extras).toEqual(entityExtras({ pinOrder: 0 }));
+    expect(view.id).toBe(entityId("x"));
     expect(view.body).toBe("full body x"); // body_text
     expect(view.sender).toBe("Alice Johnson");
     expect(view.channel).toBe("email");
@@ -116,8 +119,8 @@ describe("email read — shape parity (tst_be_emailread_001)", () => {
       ],
     });
     spy(graph, "getEntities").mockResolvedValue([
-      entity("file-1", "photo.jpg", { schemaId: "file.object", createdAt: "2026-06-03T09:00:00Z" }),
-      entity("file-2", "report.pdf", { schemaId: "file.object", createdAt: "2026-06-03T09:00:00Z" }),
+      entityRead(entity("file-1", "photo.jpg", { schemaId: "file.object", createdAt: "2026-06-03T09:00:00Z" }), entityExtras()),
+      entityRead(entity("file-2", "report.pdf", { schemaId: "file.object", createdAt: "2026-06-03T09:00:00Z" }), entityExtras()),
     ]);
 
     const view = await mod.emailGet({ id: "x" });
@@ -132,9 +135,9 @@ describe("email read — shape parity (tst_be_emailread_001)", () => {
     const author = link("x", "sender-id", "authored_by", { id: "author-link" });
     const sender = entity("sender-id", "Alice", { schemaId: "email.address", properties: { address: "alice@example.com" } });
     spy(graph, "getEntityFull").mockResolvedValue({ ...detail, links: [author] });
-    spy(graph, "getEntities").mockResolvedValue([{ ...sender, syncEnabled: false, syncRevision: "9007199254740993" }]);
+    spy(graph, "getEntities").mockResolvedValue([entityRead(sender, { pinOrder: 0, archived: false, private: false, indexed: "pending", syncEnabled: false, syncRevision: "9007199254740993" })]);
     expect(await mod.emailGet({ id: "x" })).toMatchObject({ body: "full body x",
-      senderSync: { id: "sender-id", syncEnabled: false, syncRevision: "9007199254740993" } });
+      senderSync: { id: entityId("sender-id"), syncEnabled: false, syncRevision: "9007199254740993" } });
     expect(spy(graph, "getEntities")).toHaveBeenCalledTimes(1);
     spy(graph, "getEntityFull").mockResolvedValue(detail);
     expect(await mod.emailGet({ id: "x" })).toMatchObject({ senderSync: null });
@@ -157,12 +160,12 @@ describe("email read — shape parity (tst_be_emailread_001)", () => {
       .mockResolvedValueOnce(DETAIL("c", "2026-06-03T10:00:00Z"));
 
     const views = await mod.emailBatch({ ids: ["a", "b", "c"] });
-    expect(views.map((v) => v.id)).toEqual(["a", "c"]); // 'b' skipped
+    expect(views.map((v) => v.id)).toEqual([entityId("a"), entityId("c")]); // 'b' skipped
   });
 
   it("search reads the dictionary off the matched rows", async () => {
     spy(graph, "searchEntitiesByName").mockResolvedValue([
-      entity("a", "Subject a", {
+      entityRead(entity("a", "Subject a", {
         schemaId: "email.message",
         createdAt: "2026-06-01T10:00:00Z",
         properties: {
@@ -170,7 +173,7 @@ describe("email read — shape parity (tst_be_emailread_001)", () => {
           snippet: "preview text a",
           sent_at: "2026-06-01T10:00:00Z",
         },
-      }),
+      }), entityExtras()),
     ]);
 
     const listed = await mod.emailList({ search: "invoice" });
@@ -191,7 +194,7 @@ describe("email read — DB-access guarantees (tst_be_emaildb_003 / INV-DB-1,2,4
   });
 
   it("list (no search) = exactly 1 listEntitiesWindow, 0 facet/canonical reads (INV-DB-1)", async () => {
-    spy(graph, "listEntitiesWindow").mockResolvedValue(page([ROW("a", "2026-06-01T10:00:00Z"), ROW("b", "2026-06-02T10:00:00Z")]));
+    spy(graph, "listEntitiesWindow").mockResolvedValue(page([READ("a", "2026-06-01T10:00:00Z"), READ("b", "2026-06-02T10:00:00Z")]));
     await mod.emailList({ limit: 50 });
     expect(spy(graph, "listEntitiesWindow")).toHaveBeenCalledTimes(1);
     expect(spy(graph, "searchEntitiesByName")).toHaveBeenCalledTimes(0);

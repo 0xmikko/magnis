@@ -136,12 +136,16 @@ export declare const episodesContracts: {
             name: z.ZodNullable<z.ZodString>;
             schemaId: z.ZodString;
             linkKind: z.ZodString;
+            direction: z.ZodEnum<{
+                in: "in";
+                out: "out";
+            }>;
             createdAt: z.ZodString;
             data: z.ZodOptional<z.ZodType<import("../../core/json.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("../../core/json.js").JsonValue, unknown>>>;
             confidence: z.ZodNullable<z.ZodNumber>;
             origin: z.ZodEnum<{
                 canonical: "canonical";
-                agent: "agent";
+                derived: "derived";
             }>;
             validUntil: z.ZodNullable<z.ZodISODateTime>;
         }, z.core.$strict>>;
@@ -572,12 +576,16 @@ export declare const episodesContracts: {
                 name: z.ZodNullable<z.ZodString>;
                 schemaId: z.ZodString;
                 linkKind: z.ZodString;
+                direction: z.ZodEnum<{
+                    in: "in";
+                    out: "out";
+                }>;
                 createdAt: z.ZodString;
                 data: z.ZodOptional<z.ZodType<import("../../core/json.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("../../core/json.js").JsonValue, unknown>>>;
                 confidence: z.ZodNullable<z.ZodNumber>;
                 origin: z.ZodEnum<{
                     canonical: "canonical";
-                    agent: "agent";
+                    derived: "derived";
                 }>;
                 validUntil: z.ZodNullable<z.ZodISODateTime>;
             }, z.core.$strict>>;

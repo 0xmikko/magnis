@@ -1,6 +1,7 @@
 // @magnis/testkit/module — self-tests. Proves the throwing mockGraph, both
 // mountModule modes, and the DTO builders, so the 9 modules that depend on the
 // kit inherit a verified harness.
+import { nilId } from "@magnis/sdk";
 import { describe, expect, it, vi } from "vitest";
 import {
   definePlugin,
@@ -14,6 +15,7 @@ import {
 } from "@magnis/plugin-sdk";
 import {
   entity,
+  entityId,
   link,
   linkedEntity,
   mockGraph,
@@ -276,12 +278,21 @@ describe("mountModule — dispatch", () => {
 });
 
 describe("builders", () => {
+  it("tst_testkit_graph_domain_001 excludes operational fields from a domain Entity", () => {
+    const value = entity("10000000-0000-0000-0000-000000000001", "Acme");
+    for (const key of ["owner", "indexed", "isPinned", "pinOrder", "isArchived", "syncEnabled", "syncRevision", "extras"]) {
+      expect(value).not.toHaveProperty(key);
+    }
+  });
+
   it("tst_testkit_builders_001 produce the real DTO shapes", () => {
-    expect(entity("a", "Acme")).toMatchObject({ id: "a", name: "Acme", schemaId: "", origin: "canonical" });
+    expect(() => entity(nilId, "Transient")).toThrow("transient nil ID");
+    expect(entityId(entityId("a"))).toBe(entityId("a"));
+    expect(entity("a", "Acme")).toMatchObject({ id: entityId("a"), name: "Acme", schemaId: "", origin: "canonical" });
     expect(entity("a", "Acme", { schemaId: "companies.company" }).schemaId).toBe("companies.company");
-    expect(link("a", "b", "works_at")).toMatchObject({ from: "a", to: "b", kind: "works_at", validUntil: null });
+    expect(link("a", "b", "works_at")).toMatchObject({ from: entityId("a"), to: entityId("b"), kind: "works_at", validUntil: null });
     expect(linkedEntity(entity("a", "Acme"), { kind: "authored_by" }).link).toMatchObject({
-      from: "a",
+      from: entityId("a"),
       kind: "authored_by",
     });
     expect(page([entity("a", "Acme")])).toMatchObject({ total: 1, offset: 0 });

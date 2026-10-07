@@ -17,7 +17,7 @@
  * Doubles come from @magnis/testkit/module.
  */
 import { describe, it, expect, vi } from "vitest";
-import { entity, mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
+import { entityId, entityRead, entityExtras, entity, mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { TelegramModule } from "../service.ts";
 import type { SyncEnvelope } from "@magnis/sdk";
 import type { TelegramCanonical } from "../../types.ts";
@@ -41,8 +41,8 @@ interface TgInternals {
 function makeModule(syncEnabled = true): { mod: TgInternals; graph: G } {
   const graph = mockGraph({
     sourceCommand: () => Promise.resolve({ message_id: 777 }),
-    findByExternalId: () => Promise.resolve("ent-1"),
-    getEntity: () => Promise.resolve({ ...entity("chat-entity", "Chat", { schemaId: "telegram.chat", properties: { chat_id: 42 } }), syncEnabled, syncRevision: "0" }),
+    findByExternalId: () => Promise.resolve(entityId("ent-1")),
+    getEntity: () => Promise.resolve(entityRead(entity("chat-entity", "Chat", { schemaId: "telegram.chat", properties: { chat_id: 42 } }), entityExtras({ syncEnabled, syncRevision: "0" }))),
   });
   const mod = mountModule(TelegramModule, { graph, ctx: { extensionId: "telegram" } })
     .module as unknown as TgInternals;
@@ -74,6 +74,6 @@ describe("tst_fe_agent_007 — sendMessage: delivery success survives local enri
 
     const result = await mod.sendMessage(42, "hi", undefined, "acct");
 
-    expect(result).toEqual({ message_id: 777, id: "ent-1" });
+    expect(result).toEqual({ message_id: 777, id: entityId("ent-1") });
   });
 });

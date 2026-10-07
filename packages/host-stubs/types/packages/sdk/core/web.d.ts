@@ -46,12 +46,16 @@ export declare const WebLinkDetailViewSchema: z.ZodObject<{
         name: z.ZodNullable<z.ZodString>;
         schemaId: z.ZodString;
         linkKind: z.ZodString;
+        direction: z.ZodEnum<{
+            in: "in";
+            out: "out";
+        }>;
         createdAt: z.ZodString;
         data: z.ZodOptional<z.ZodType<import("./json.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("./json.js").JsonValue, unknown>>>;
         confidence: z.ZodNullable<z.ZodNumber>;
         origin: z.ZodEnum<{
             canonical: "canonical";
-            agent: "agent";
+            derived: "derived";
         }>;
         validUntil: z.ZodNullable<z.ZodISODateTime>;
     }, z.core.$strict>>;

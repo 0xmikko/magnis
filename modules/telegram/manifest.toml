@@ -10,7 +10,7 @@
 id = "telegram"
 version = "0.1.0"
 # SDK contract version this manifest targets (host accepts 0.x).
-magnis_api_version = "0.2.0"
+magnis_api_version = "0.3.0"
 title = "Telegram Messages"
 summary = "Threaded Telegram chats indexed alongside the rest of your graph."
 # Reverse-domain publisher identity.

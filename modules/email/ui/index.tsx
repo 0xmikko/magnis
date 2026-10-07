@@ -1,3 +1,4 @@
+import { EntityExtrasSchema } from "@magnis/sdk";
 import { SyncToolCallRenderer } from "../../contacts/ui/SyncToolCallRenderer";
 import type { AgentHistoryBlock } from "@magnis/host/runtime";
 import { toolNamesEquivalent } from "@magnis/host/agent";
@@ -31,6 +32,7 @@ function metaStr(meta: Record<string, unknown> | undefined, key: string): string
 }
 
 function mapEmailListItem(raw: Record<string, unknown>): ListItem {
+  const extras = EntityExtrasSchema.parse(raw.extras);
   const meta = raw.metadata as Record<string, unknown> | undefined;
   const fromName = metaStr(meta, "from_name");
   const fromAddr = metaStr(meta, "from_address");
@@ -46,8 +48,8 @@ function mapEmailListItem(raw: Record<string, unknown>): ListItem {
     preview: subject ? decodeHtmlEntities(subject) : (preview ? decodeHtmlEntities(preview) : null),
     timestamp: sentAt ?? null,
     avatarUrl: null,
-    isPinned: (raw.isPinned as boolean | undefined) ?? undefined,
-    isArchived: (raw.isArchived as boolean | undefined) ?? undefined,
+    pinOrder: extras.pinOrder,
+    isArchived: extras.archived,
   };
 }
 

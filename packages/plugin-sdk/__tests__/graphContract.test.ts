@@ -7,10 +7,24 @@
  * @fixtures: none
  */
 import { expect, expectTypeOf, test } from "vitest";
-import { mockGraph, mountModule, syncStateDouble } from "@magnis/testkit/module";
+import { entity, mockGraph, mountModule, syncStateDouble } from "@magnis/testkit/module";
 import type { SetSyncEnabledParams, UpdateEntitySyncEnabledResult } from "@magnis/sdk";
-import { writeTool } from "../index.ts";
+import { searchEntitiesPage, writeTool } from "../index.ts";
 import type { GraphService, PluginDeps } from "../contract/module.ts";
+
+test("tst_pkg_sdk_graph_extras_001 requests extras across every search page without losing pin zero or stopped sync", async () => {
+  const record = entity("10000000-0000-0000-0000-000000000001", "Acme");
+  const extras = { pinOrder: 0, archived: false, private: true, indexed: "pending" as const,
+    syncEnabled: false, syncRevision: "9007199254740993" };
+  const graph = mockGraph({ searchEntitiesByName: async (params) => params.extras === true
+    ? [{ entity: record, extras }]
+    : [record] });
+  const result = await searchEntitiesPage(graph, { query: "Acme", schemaId: "companies.company", limit: 1, offset: 0, extras: true });
+  expect(result.items).toEqual([{ entity: record, extras }]);
+  expect(graph.spies.searchEntitiesByName).toHaveBeenCalledWith({ query: "Acme", schemaIds: ["companies.company"], limit: 2, extras: true });
+  await expect(searchEntitiesPage(graph, { query: "Acme", schemaId: "companies.company", limit: 1, offset: 0 }))
+    .resolves.toMatchObject({ items: [record] });
+});
 
 test("tst_pkg_sdk_graph_001 accepts a link kind in listLinksForEntity", () => {
   expectTypeOf<Parameters<GraphService["listLinksForEntity"]>[1]>()

@@ -71,7 +71,7 @@ export declare const GraphRefSchema: z.ZodUnion<readonly [z.ZodObject<{
 }, z.core.$strict>, z.ZodObject<{
     kind: z.ZodLiteral<"id">;
     schemaId: z.ZodString;
-    id: z.ZodUUID;
+    id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
 }, z.core.$strict>]>;
 export type GraphRef = z.output<typeof GraphRefSchema>;
 /** An entity its schema's owner declares, created or updated where its
@@ -111,7 +111,7 @@ export declare const GraphLinkDeclarationSchema: z.ZodObject<{
     }, z.core.$strict>, z.ZodObject<{
         kind: z.ZodLiteral<"id">;
         schemaId: z.ZodString;
-        id: z.ZodUUID;
+        id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
     }, z.core.$strict>]>;
     to: z.ZodUnion<readonly [z.ZodObject<{
         kind: z.ZodLiteral<"canonical">;
@@ -128,7 +128,7 @@ export declare const GraphLinkDeclarationSchema: z.ZodObject<{
     }, z.core.$strict>, z.ZodObject<{
         kind: z.ZodLiteral<"id">;
         schemaId: z.ZodString;
-        id: z.ZodUUID;
+        id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
     }, z.core.$strict>]>;
     kind: z.ZodString;
     confidence: z.ZodNull;
@@ -148,7 +148,7 @@ export declare const GraphLinkDeclarationSchema: z.ZodObject<{
     }, z.core.$strict>, z.ZodObject<{
         kind: z.ZodLiteral<"id">;
         schemaId: z.ZodString;
-        id: z.ZodUUID;
+        id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
     }, z.core.$strict>]>>;
     validFrom: z.ZodNullable<z.ZodISODateTime>;
     validUntil: z.ZodNullable<z.ZodISODateTime>;
@@ -189,7 +189,7 @@ export declare const GraphOwnerFragmentSchema: z.ZodObject<{
         }, z.core.$strict>, z.ZodObject<{
             kind: z.ZodLiteral<"id">;
             schemaId: z.ZodString;
-            id: z.ZodUUID;
+            id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
         }, z.core.$strict>]>;
         to: z.ZodUnion<readonly [z.ZodObject<{
             kind: z.ZodLiteral<"canonical">;
@@ -206,7 +206,7 @@ export declare const GraphOwnerFragmentSchema: z.ZodObject<{
         }, z.core.$strict>, z.ZodObject<{
             kind: z.ZodLiteral<"id">;
             schemaId: z.ZodString;
-            id: z.ZodUUID;
+            id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
         }, z.core.$strict>]>;
         kind: z.ZodString;
         confidence: z.ZodNull;
@@ -226,7 +226,7 @@ export declare const GraphOwnerFragmentSchema: z.ZodObject<{
         }, z.core.$strict>, z.ZodObject<{
             kind: z.ZodLiteral<"id">;
             schemaId: z.ZodString;
-            id: z.ZodUUID;
+            id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
         }, z.core.$strict>]>>;
         validFrom: z.ZodNullable<z.ZodISODateTime>;
         validUntil: z.ZodNullable<z.ZodISODateTime>;
@@ -271,7 +271,7 @@ export declare const GraphPreparedFragmentSchema: z.ZodObject<{
             }, z.core.$strict>, z.ZodObject<{
                 kind: z.ZodLiteral<"id">;
                 schemaId: z.ZodString;
-                id: z.ZodUUID;
+                id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
             }, z.core.$strict>]>;
             to: z.ZodUnion<readonly [z.ZodObject<{
                 kind: z.ZodLiteral<"canonical">;
@@ -288,7 +288,7 @@ export declare const GraphPreparedFragmentSchema: z.ZodObject<{
             }, z.core.$strict>, z.ZodObject<{
                 kind: z.ZodLiteral<"id">;
                 schemaId: z.ZodString;
-                id: z.ZodUUID;
+                id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
             }, z.core.$strict>]>;
             kind: z.ZodString;
             confidence: z.ZodNull;
@@ -308,7 +308,7 @@ export declare const GraphPreparedFragmentSchema: z.ZodObject<{
             }, z.core.$strict>, z.ZodObject<{
                 kind: z.ZodLiteral<"id">;
                 schemaId: z.ZodString;
-                id: z.ZodUUID;
+                id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
             }, z.core.$strict>]>>;
             validFrom: z.ZodNullable<z.ZodISODateTime>;
             validUntil: z.ZodNullable<z.ZodISODateTime>;
@@ -340,7 +340,7 @@ export declare const EnsureResultSchema: z.ZodObject<{
     }, z.core.$strict>, z.ZodObject<{
         kind: z.ZodLiteral<"id">;
         schemaId: z.ZodString;
-        id: z.ZodUUID;
+        id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
     }, z.core.$strict>]>>>>;
 }, z.core.$strict>;
 export type EnsureResult = z.output<typeof EnsureResultSchema>;
@@ -362,7 +362,7 @@ export declare const EnsureHandlerResultSchema: z.ZodObject<{
     }, z.core.$strict>, z.ZodObject<{
         kind: z.ZodLiteral<"id">;
         schemaId: z.ZodString;
-        id: z.ZodUUID;
+        id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
     }, z.core.$strict>]>>>>;
     fragment: z.ZodObject<{
         entities: z.ZodReadonly<z.ZodArray<z.ZodObject<{
@@ -398,7 +398,7 @@ export declare const EnsureHandlerResultSchema: z.ZodObject<{
             }, z.core.$strict>, z.ZodObject<{
                 kind: z.ZodLiteral<"id">;
                 schemaId: z.ZodString;
-                id: z.ZodUUID;
+                id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
             }, z.core.$strict>]>;
             to: z.ZodUnion<readonly [z.ZodObject<{
                 kind: z.ZodLiteral<"canonical">;
@@ -415,7 +415,7 @@ export declare const EnsureHandlerResultSchema: z.ZodObject<{
             }, z.core.$strict>, z.ZodObject<{
                 kind: z.ZodLiteral<"id">;
                 schemaId: z.ZodString;
-                id: z.ZodUUID;
+                id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
             }, z.core.$strict>]>;
             kind: z.ZodString;
             confidence: z.ZodNull;
@@ -435,7 +435,7 @@ export declare const EnsureHandlerResultSchema: z.ZodObject<{
             }, z.core.$strict>, z.ZodObject<{
                 kind: z.ZodLiteral<"id">;
                 schemaId: z.ZodString;
-                id: z.ZodUUID;
+                id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
             }, z.core.$strict>]>>;
             validFrom: z.ZodNullable<z.ZodISODateTime>;
             validUntil: z.ZodNullable<z.ZodISODateTime>;
@@ -493,7 +493,7 @@ export declare const GraphBatchInputSchema: z.ZodObject<{
             }, z.core.$strict>, z.ZodObject<{
                 kind: z.ZodLiteral<"id">;
                 schemaId: z.ZodString;
-                id: z.ZodUUID;
+                id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
             }, z.core.$strict>]>;
             to: z.ZodUnion<readonly [z.ZodObject<{
                 kind: z.ZodLiteral<"canonical">;
@@ -510,7 +510,7 @@ export declare const GraphBatchInputSchema: z.ZodObject<{
             }, z.core.$strict>, z.ZodObject<{
                 kind: z.ZodLiteral<"id">;
                 schemaId: z.ZodString;
-                id: z.ZodUUID;
+                id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
             }, z.core.$strict>]>;
             kind: z.ZodString;
             confidence: z.ZodNull;
@@ -530,7 +530,7 @@ export declare const GraphBatchInputSchema: z.ZodObject<{
             }, z.core.$strict>, z.ZodObject<{
                 kind: z.ZodLiteral<"id">;
                 schemaId: z.ZodString;
-                id: z.ZodUUID;
+                id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
             }, z.core.$strict>]>>;
             validFrom: z.ZodNullable<z.ZodISODateTime>;
             validUntil: z.ZodNullable<z.ZodISODateTime>;
@@ -587,7 +587,7 @@ export declare const GraphBatchSchema: z.ZodObject<{
                 }, z.core.$strict>, z.ZodObject<{
                     kind: z.ZodLiteral<"id">;
                     schemaId: z.ZodString;
-                    id: z.ZodUUID;
+                    id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
                 }, z.core.$strict>]>;
                 to: z.ZodUnion<readonly [z.ZodObject<{
                     kind: z.ZodLiteral<"canonical">;
@@ -604,7 +604,7 @@ export declare const GraphBatchSchema: z.ZodObject<{
                 }, z.core.$strict>, z.ZodObject<{
                     kind: z.ZodLiteral<"id">;
                     schemaId: z.ZodString;
-                    id: z.ZodUUID;
+                    id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
                 }, z.core.$strict>]>;
                 kind: z.ZodString;
                 confidence: z.ZodNull;
@@ -624,7 +624,7 @@ export declare const GraphBatchSchema: z.ZodObject<{
                 }, z.core.$strict>, z.ZodObject<{
                     kind: z.ZodLiteral<"id">;
                     schemaId: z.ZodString;
-                    id: z.ZodUUID;
+                    id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
                 }, z.core.$strict>]>>;
                 validFrom: z.ZodNullable<z.ZodISODateTime>;
                 validUntil: z.ZodNullable<z.ZodISODateTime>;
@@ -679,7 +679,7 @@ export declare const GraphBatchSchema: z.ZodObject<{
             }, z.core.$strict>, z.ZodObject<{
                 kind: z.ZodLiteral<"id">;
                 schemaId: z.ZodString;
-                id: z.ZodUUID;
+                id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
             }, z.core.$strict>]>;
             to: z.ZodUnion<readonly [z.ZodObject<{
                 kind: z.ZodLiteral<"canonical">;
@@ -696,7 +696,7 @@ export declare const GraphBatchSchema: z.ZodObject<{
             }, z.core.$strict>, z.ZodObject<{
                 kind: z.ZodLiteral<"id">;
                 schemaId: z.ZodString;
-                id: z.ZodUUID;
+                id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
             }, z.core.$strict>]>;
             kind: z.ZodString;
             confidence: z.ZodNull;
@@ -716,7 +716,7 @@ export declare const GraphBatchSchema: z.ZodObject<{
             }, z.core.$strict>, z.ZodObject<{
                 kind: z.ZodLiteral<"id">;
                 schemaId: z.ZodString;
-                id: z.ZodUUID;
+                id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
             }, z.core.$strict>]>>;
             validFrom: z.ZodNullable<z.ZodISODateTime>;
             validUntil: z.ZodNullable<z.ZodISODateTime>;
@@ -758,15 +758,15 @@ export declare const GraphResolvedRefSchema: z.ZodObject<{
     }, z.core.$strict>, z.ZodObject<{
         kind: z.ZodLiteral<"id">;
         schemaId: z.ZodString;
-        id: z.ZodUUID;
+        id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
     }, z.core.$strict>]>;
-    id: z.ZodString;
+    id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
     created: z.ZodBoolean;
 }, z.core.$strict>;
 export type GraphResolvedRef = z.output<typeof GraphResolvedRefSchema>;
 /** What `applyBatch` answers a plugin: batch key to entity id, and counts. */
 export declare const GraphBatchResultSchema: z.ZodObject<{
-    ids: z.ZodReadonly<z.ZodRecord<z.ZodString, z.ZodString>>;
+    ids: z.ZodReadonly<z.ZodRecord<z.ZodString, z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">>>;
     created: z.ZodInt;
     updated: z.ZodInt;
     linksAdded: z.ZodInt;
@@ -787,9 +787,9 @@ export declare const GraphBatchResultSchema: z.ZodObject<{
         }, z.core.$strict>, z.ZodObject<{
             kind: z.ZodLiteral<"id">;
             schemaId: z.ZodString;
-            id: z.ZodUUID;
+            id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
         }, z.core.$strict>]>;
-        id: z.ZodString;
+        id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
         created: z.ZodBoolean;
     }, z.core.$strict>>>;
 }, z.core.$strict>;
@@ -798,13 +798,13 @@ export type GraphBatchResult = z.output<typeof GraphBatchResultSchema>;
  * and a null member removes its key; a null `pin` unpins. */
 export declare const UpdateEntityCommandSchema: z.ZodObject<{
     userId: z.ZodString;
-    entityId: z.ZodString;
+    entityId: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
     name: z.ZodExactOptional<z.ZodNullable<z.ZodString>>;
     date: z.ZodExactOptional<z.ZodString>;
     idx: z.ZodExactOptional<z.ZodNullable<z.ZodString>>;
     properties: z.ZodExactOptional<z.ZodType<import("./json.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("./json.js").JsonValue, unknown>>>;
     pin: z.ZodExactOptional<z.ZodNullable<z.ZodObject<{
-        order: z.ZodNullable<z.ZodInt>;
+        order: z.ZodInt;
     }, z.core.$strict>>>;
     syncEnabled: z.ZodExactOptional<z.ZodBoolean>;
     indexed: z.ZodExactOptional<z.ZodBoolean>;
@@ -812,7 +812,7 @@ export declare const UpdateEntityCommandSchema: z.ZodObject<{
 export type UpdateEntityCommand = z.output<typeof UpdateEntityCommandSchema>;
 /** One entity's dictionary patch in a batch update; it merges as `UpdateEntityCommand.properties` does. */
 export declare const PropertiesUpdateSchema: z.ZodObject<{
-    entityId: z.ZodString;
+    entityId: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
     properties: z.ZodType<import("./json.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("./json.js").JsonValue, unknown>>;
 }, z.core.$strict>;
 export type PropertiesUpdate = z.output<typeof PropertiesUpdateSchema>;
@@ -821,7 +821,7 @@ export type PropertiesUpdate = z.output<typeof PropertiesUpdateSchema>;
 export declare const UpdatePropertiesBatchCommandSchema: z.ZodObject<{
     userId: z.ZodString;
     updates: z.ZodReadonly<z.ZodArray<z.ZodObject<{
-        entityId: z.ZodString;
+        entityId: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
         properties: z.ZodType<import("./json.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("./json.js").JsonValue, unknown>>;
     }, z.core.$strict>>>;
 }, z.core.$strict>;

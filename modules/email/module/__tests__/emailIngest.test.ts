@@ -21,8 +21,8 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { BatchEntityInput, BatchLink, Entity, GraphBatchInput, JsonObject, Syncable, SyncEnvelope } from "@magnis/sdk";
-import { entity, link, mockGraph, mountModule, sourceEnvelope, type MockGraph } from "@magnis/testkit/module";
+import type { BatchEntityInput, BatchLink, EntityRead, GraphBatchInput, JsonObject, Syncable, SyncEnvelope } from "@magnis/sdk";
+import { entity, entityRead, entityExtras, entityId, link, mockGraph, mountModule, sourceEnvelope, type MockGraph } from "@magnis/testkit/module";
 import { EmailModule } from "../service.ts";
 import { destSubpath } from "../helpers.ts";
 import { message } from "../../entities.ts";
@@ -31,14 +31,11 @@ import type { EmailCanonical } from "../../types.ts";
 type G = MockGraph;
 
 /** A stored sender address with its saved synchronization choice. */
-const syncable = (id: string, address: string, syncEnabled: boolean, syncRevision: string): Entity & Syncable => ({
-  ...entity(id, address, { schemaId: "email.address", indexed: true, properties: { address } }),
-  syncEnabled,
-  syncRevision,
-});
+const syncable = (id: string, address: string, syncEnabled: boolean, syncRevision: string): EntityRead =>
+  entityRead(entity(id, address, { schemaId: "email.address", properties: { address } }), entityExtras({ syncEnabled, syncRevision }));
 
 function ingestGraph(): G {
-  const addressRows = new Map<string, Entity & Syncable>();
+  const addressRows = new Map<string, EntityRead>();
   return mockGraph({
     moduleSettings: () => Promise.resolve({ newSenderSyncEnabled: "true" }),
     admitSyncEntities: (subjects) => Promise.resolve(subjects.flatMap((subject) => [...subject.remoteIds])),
@@ -49,24 +46,24 @@ function ingestGraph(): G {
     })),
     getEntity: (id) => Promise.resolve(syncable(id, "ceo@example.com", true, "0")),
     getEntityFull: (id) => Promise.resolve({
-      entity: entity(id, "Stored", { schemaId: "email.message", indexed: true }),
-      links: [link(id, "id-addr:ceo@example.com", "authored_by", { id: `author-${id}` })],
+      entity: entity(id, "Stored", { schemaId: "email.message" }),
+      links: [link(id, entityId("id-addr:ceo@example.com"), "authored_by", { id: `author-${id}` })],
     }),
     // applyBatch echoes each key → a deterministic id so post-apply can resolve.
     applyBatch: (frag) =>
       Promise.resolve({
-        ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
+        ids: Object.fromEntries(frag.entities.map((e) => [e.key, entityId(`id-${e.key}`)])),
         created: frag.entities.length,
         updated: 0,
         linksAdded: frag.links.length,
         droppedKeys: [], resolved: [],
       }),
     fileRegister: () => Promise.resolve("file-id"),
-    findByExternalId: () => Promise.resolve("existing-id"),
+    findByExternalId: () => Promise.resolve(entityId("existing-id")),
     findByExternalIds: (externalIds) => Promise.resolve(externalIds.map((externalId) => {
       if (!externalId.startsWith("email:address:")) return null;
       const address = externalId.slice("email:address:".length);
-      const id = `id-addr:${address}`;
+      const id = entityId(`id-addr:${address}`);
       addressRows.set(id, syncable(id, address, true, "0"));
       return id;
     })),
@@ -111,24 +108,24 @@ const msgPayload = (over: JsonObject = {}): JsonObject => ({
  * @fixtures: mixed accounts, stopped sender additions, id-only labels and deletions
  */
 it("tst_module_email_sync_001 admits only enabled senders before content, attachment and trigger effects", async () => {
-  const rows: (Entity & Syncable)[] = [
-    syncable("sender-a", "a@example.com", true, "1"),
-    syncable("sender-b", "b@example.com", false, "2"),
+  const rows: (EntityRead)[] = [
+    syncable(entityId("sender-a"), "a@example.com", true, "1"),
+    syncable(entityId("sender-b"), "b@example.com", false, "2"),
   ];
   const batches: GraphBatchInput[] = [];
   const graph = mockGraph({
-    findByExternalIds: (externalIds) => Promise.resolve(externalIds.map((externalId) => rows.find((row) => externalId === `email:address:${row.name ?? ""}`)?.id ?? null)),
-    findByExternalId: (externalId) => Promise.resolve(externalId === "b-label" || externalId === "b-delete" ? `stored-${externalId}` : null),
-    getEntities: (ids) => Promise.resolve(rows.filter((row) => ids.includes(row.id))),
-    getEntity: (id) => Promise.resolve(rows.find((row) => row.id === id) ?? null),
+    findByExternalIds: (externalIds) => Promise.resolve(externalIds.map((externalId) => rows.find((row) => externalId === `email:address:${row.entity.name ?? ""}`)?.entity.id ?? null)),
+    findByExternalId: (externalId) => Promise.resolve(externalId === "b-label" || externalId === "b-delete" ? entityId(`stored-${externalId}`) : null),
+    getEntities: (ids) => Promise.resolve(rows.filter((row) => ids.includes(row.entity.id))),
+    getEntity: (id) => Promise.resolve(rows.find((row) => row.entity.id === id) ?? null),
     getEntityFull: (id) => Promise.resolve({
-      entity: entity(id, "Stored", { schemaId: "email.message", indexed: true, properties: { subject: "Stored" } }),
-      links: [link(id, "sender-b", "authored_by", { id: `author-${id}` })],
+      entity: entity(id, "Stored", { schemaId: "email.message", properties: { subject: "Stored" } }),
+      links: [link(id, entityId("sender-b"), "authored_by", { id: `author-${id}` })],
     }),
-    admitSyncEntities: (subjects) => Promise.resolve(subjects.flatMap((subject) => subject.entityId === "sender-a" ? [...subject.remoteIds] : [])),
+    admitSyncEntities: (subjects) => Promise.resolve(subjects.flatMap((subject) => subject.entityId === entityId("sender-a") ? [...subject.remoteIds] : [])),
     applyBatch: (batch) => {
       batches.push(batch);
-      return Promise.resolve({ ids: Object.fromEntries([...batch.entities, ...batch.refs].map((item) => [item.key, `id-${item.key}`])), created: batch.entities.length, updated: 0, linksAdded: batch.links.length, droppedKeys: [], resolved: [] });
+      return Promise.resolve({ ids: Object.fromEntries([...batch.entities, ...batch.refs].map((item) => [item.key, entityId(`id-${item.key}`)])), created: batch.entities.length, updated: 0, linksAdded: batch.links.length, droppedKeys: [], resolved: [] });
     },
     fileRegister: () => Promise.resolve("file-id"),
     deleteEntity: () => Promise.resolve(),
@@ -145,10 +142,10 @@ it("tst_module_email_sync_001 admits only enabled senders before content, attach
   expect(batches.flatMap((batch) => batch.entities).some((item) => item.externalId === "email:address:b@example.com")).toBe(false);
   expect(graph.spies.deleteEntity).not.toHaveBeenCalled();
   expect(graph.spies.fileRegister).not.toHaveBeenCalled();
-  expect(result.triggerChecks.map((check) => check.entityId)).toEqual(["id-a-new"]);
+  expect(result.triggerChecks.map((check) => check.entityId)).toEqual([entityId("id-a-new")]);
   expect(graph.spies.admitSyncEntities).toHaveBeenCalledExactlyOnceWith([
-    { entityId: "sender-a", remoteIds: ["a-new"] },
-    { entityId: "sender-b", remoteIds: ["b-new", "b-label", "b-delete"] },
+    { entityId: entityId("sender-a"), remoteIds: ["a-new"] },
+    { entityId: entityId("sender-b"), remoteIds: ["b-new", "b-label", "b-delete"] },
   ], ["mailbox"]);
 });
 
@@ -304,9 +301,9 @@ describe("email ingest — applyBatch shape (tst_be_emailingest_001)", () => {
     const trigger0 = triggers[0];
     if (trigger0 === undefined) throw new Error("ingest: missing trigger[0]");
     expect(trigger0.touchedEntityIds).not.toEqual(
-      expect.arrayContaining(["id-addr:cc@x.com", "id-addr:bcc@x.com", "id-addr:to@x.com"]),
+      expect.arrayContaining([entityId("id-addr:cc@x.com"), entityId("id-addr:bcc@x.com"), entityId("id-addr:to@x.com")]),
     );
-    expect(trigger0.touchedEntityIds).toEqual(["id-m1", "id-addr:ceo@example.com"]);
+    expect(trigger0.touchedEntityIds).toEqual([entityId("id-m1"), entityId("id-addr:ceo@example.com")]);
   });
 
   // tst_be_emailingest_trigger_007 — INV-10. The engine needs the event's own
@@ -418,12 +415,12 @@ describe("email ingest — trigger / delete / empty-user parity", () => {
     const tc = live.triggerChecks[0];
     if (tc === undefined) throw new Error("ingest: missing live triggerChecks[0]");
     expect(tc.eventKind).toBe("new_email");
-    expect(tc.entityId).toBe("id-m1");
+    expect(tc.entityId).toBe(entityId("id-m1"));
     expect(tc.context).toMatchObject({ from_address: "CEO@example.com" });
     // INV-9: message id + the SENDER's address id. Recipients are deliberately
     // absent — including them made the user's own address a trigger candidate.
-    expect(tc.touchedEntityIds).toEqual(["id-m1", "id-addr:ceo@example.com"]);
-    expect(tc.touchedEntityIds).not.toContain("id-addr:me@example.com");
+    expect(tc.touchedEntityIds).toEqual([entityId("id-m1"), entityId("id-addr:ceo@example.com")]);
+    expect(tc.touchedEntityIds).not.toContain(entityId("id-addr:me@example.com"));
 
     const snap = await mod.ingest({ envelopes: [env({ kind: "snapshot", remoteId: "m2", payload: msgPayload() })] });
     expect(snap.triggerChecks).toHaveLength(0);
@@ -432,7 +429,7 @@ describe("email ingest — trigger / delete / empty-user parity", () => {
   it("DELETE → findByExternalId + deleteEntity, no applyBatch", async () => {
     await mod.ingest({ envelopes: [env({ kind: "delete", remoteId: "m-del", payload: {} })] });
     expect(spy(graph, "findByExternalId")).toHaveBeenCalledTimes(1);
-    expect(spy(graph, "deleteEntity")).toHaveBeenCalledWith("existing-id");
+    expect(spy(graph, "deleteEntity")).toHaveBeenCalledWith(entityId("existing-id"));
     expect(spy(graph, "applyBatch")).toHaveBeenCalledTimes(0);
   });
 
@@ -500,9 +497,9 @@ it("tst_module_google_003 counts only newly admitted Gmail messages and actual r
   const lookupAddresses = spy(graph, "findByExternalIds").getMockImplementation();
   if (lookupAddresses === undefined) throw new Error("Missing address lookup fixture");
   spy(graph, "findByExternalIds").mockImplementation((externalIds: string[]) =>
-    externalIds.some((externalId) => externalId.startsWith("email:address:")) ? lookupAddresses(externalIds) : Promise.resolve(externalIds.map((externalId) => externalId === "m-existing" ? "id-existing" : null)));
+    externalIds.some((externalId) => externalId.startsWith("email:address:")) ? lookupAddresses(externalIds) : Promise.resolve(externalIds.map((externalId) => externalId === "m-existing" ? entityId("id-existing") : null)));
   spy(graph, "findByExternalId").mockImplementation((externalId: string) =>
-    Promise.resolve(externalId === "m-gone" ? "id-gone" : null));
+    Promise.resolve(externalId === "m-gone" ? entityId("id-gone") : null));
 
   const first = await mod.ingest({ generation: "forward:r:1", envelopes: [
     env({ kind: "live", remoteId: "m-existing", payload: msgPayload() }),
@@ -518,7 +515,7 @@ it("tst_module_google_003 counts only newly admitted Gmail messages and actual r
   expect(spy(graph, "deleteEntity")).toHaveBeenCalledTimes(1);
 
   spy(graph, "findByExternalIds").mockImplementation((externalIds: string[]) =>
-    externalIds.some((externalId) => externalId.startsWith("email:address:")) ? lookupAddresses(externalIds) : Promise.resolve(externalIds.map(() => "id-existing")));
+    externalIds.some((externalId) => externalId.startsWith("email:address:")) ? lookupAddresses(externalIds) : Promise.resolve(externalIds.map(() => entityId("id-existing"))));
   const replay = await mod.ingest({ generation: "forward:r:1", envelopes: [
     env({ kind: "live", remoteId: "m-new", payload: msgPayload() }),
   ] });
@@ -588,23 +585,23 @@ describe("email ingest — DB-access guarantees (tst_be_emaildb_005 / INV-DB-3)"
  */
 it("tst_module_email_sync_003 creates only selection metadata and preserves Stop when discovery repeats", async () => {
   const writes: GraphBatchInput[] = [];
-  let sender: Entity & Syncable | null = null;
+  let sender: EntityRead | null = null;
   let rule = "false";
   const graph = mockGraph({
-    findByExternalIds: (externalIds) => Promise.resolve(externalIds.map(() => sender?.id ?? null)),
+    findByExternalIds: (externalIds) => Promise.resolve(externalIds.map(() => sender?.entity.id ?? null)),
     getEntities: () => Promise.resolve(sender === null ? [] : [sender]),
     moduleSettings: () => Promise.resolve({ newSenderSyncEnabled: rule }),
-    admitSyncEntities: (subjects) => Promise.resolve(sender?.syncEnabled === true ? subjects.flatMap((subject) => [...subject.remoteIds]) : []),
+    admitSyncEntities: (subjects) => Promise.resolve(sender?.extras.syncEnabled === true ? subjects.flatMap((subject) => [...subject.remoteIds]) : []),
     applyBatch: (batch) => {
       writes.push(batch);
       const address: BatchEntityInput | undefined = batch.entities[0];
       if (address?.schemaId !== "email.address" || typeof address.syncEnabled !== "boolean") throw new Error("Expected explicit sender discovery");
-      sender = { ...entity("sender", "unknown@example.com", { schemaId: address.schemaId, properties: address.properties, indexed: true }), syncEnabled: address.syncEnabled, syncRevision: "0" };
-      return Promise.resolve({ ids: { [address.key]: "sender" }, created: 1, updated: 0, linksAdded: 0, droppedKeys: [], resolved: [] });
+      sender = entityRead(entity(entityId("sender"), "unknown@example.com", { schemaId: address.schemaId, properties: address.properties }), entityExtras({ syncEnabled: address.syncEnabled, syncRevision: "0" }));
+      return Promise.resolve({ ids: { [address.key]: entityId("sender") }, created: 1, updated: 0, linksAdded: 0, droppedKeys: [], resolved: [] });
     },
   });
   const mod = mountModule(EmailModule, { graph, ctx: { extensionId: "email" } }).module;
-  const header = env({ payload: { entity_type: "sender", from_address: "unknown@example.com", from_name: "Name" } });
+  const header = env({ payload: { entity_type: entityId("sender"), from_address: "unknown@example.com", from_name: "Name" } });
   expect(await mod.ingest({ envelopes: [header] })).toEqual({ droppedRemoteIds: [], triggerChecks: [], plan: null, excluded: [] });
   rule = "true";
   await mod.ingest({ envelopes: [header, env({ remoteId: "late", kind: "live", payload: msgPayload({ from_address: "unknown@example.com", to_addresses: "", attachments: [{ attachment_id: "must-not-register" }] }) })] });

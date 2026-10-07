@@ -6,7 +6,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { descriptorFrom } from "@magnis/declare/derive";
 import type { GraphBatchInput, JsonObject, SyncEnvelope } from "@magnis/sdk";
-import { entity, mockGraph, mountModule, page, sourceEnvelope } from "@magnis/testkit/module";
+import { entityId, entityRead, entityExtras, entity, mockGraph, mountModule, page, sourceEnvelope } from "@magnis/testkit/module";
 
 import { XModule } from "./module/service.ts";
 import { post, profile } from "./entities.ts";
@@ -20,8 +20,11 @@ function env(remoteId: string, payload: JsonObject): SyncEnvelope {
 async function written(): Promise<GraphBatchInput["entities"]> {
   const batches: GraphBatchInput[] = [];
   const graph = mockGraph({
-    findByExternalIds: (externalIds) => Promise.resolve(externalIds.map(externalId => externalId === "x:profile:12" ? "profile" : null)),
-    getEntities: async ids => ids.includes("profile") ? [{ ...entity("profile", "Jack", { schemaId: "x.profile", source: { source: "test", account: "a1", externalId: "x:profile:12" }, properties: { handle: "jack" } }), syncEnabled: true, syncRevision: "0" }] : [],
+    findByExternalIds: (externalIds) => Promise.resolve(externalIds.map(externalId => externalId === "x:profile:12" ? entityId("profile") : null)),
+    getEntities: async (ids, opts) => {
+      const value = entity("profile", "Jack", { schemaId: "x.profile", source: { source: "test", account: "a1", externalId: "x:profile:12" }, properties: { handle: "jack" } });
+      return ids.includes(value.id) ? [opts?.extras ? entityRead(value, entityExtras({ syncEnabled: true, syncRevision: "0" })) : value] : [];
+    },
     admitSyncEntities: (subjects) => Promise.resolve(subjects.flatMap(subject => [...subject.remoteIds])),
     applyBatch: (frag: GraphBatchInput) => {
       batches.push(frag);

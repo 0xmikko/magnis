@@ -19,27 +19,30 @@
 // Every shape the host and a plugin exchange is declared once, in the SDK, and
 // arrives here type-only through `@magnis/host-stubs`. A module imports them
 // from `@magnis/sdk`; nothing below repeats one.
+import type { z } from "zod";
 import type {
+  EntityRead,
+  PersistentEntity,
+  EntityExtras,
   AccountSyncState,
-  AddLinkParams,
+  AddLinkParamsSchema,
   AdmitSyncEntitiesResult,
   AllowlistGate,
-  CreateEntityParams,
-  Entity,
+  CreateEntityParamsSchema,
   EntityWithLinks,
-  FileRegisterParams,
+  FileRegisterParamsSchema,
   GraphBatchInput,
   GraphBatchResult,
   JsonObject,
   JsonValue,
   Link,
   LinkedEntity,
-  LinkedSpec,
+  LinkedSpecSchema,
   ListEntitiesByPropertyFieldParams,
   ListEntitiesParams,
   ListSyncMigrationEntitiesParams,
   ListSyncMigrationEntitiesResult,
-  MergeInput,
+  MergeInputSchema,
   MergePreview,
   MergeResult,
   ModuleSettingsResult,
@@ -47,15 +50,15 @@ import type {
   PluginContext,
   PluginRpcDeclaration,
   PluginToolDeclaration,
-  PropertiesUpdate,
+  PropertiesUpdateSchema,
   SearchEntitiesParams,
-  SetSyncEnabledParams,
-  SyncAdmissionSubject,
+  SetSyncEnabledParamsSchema,
+  SyncAdmissionSubjectSchema,
   SyncStateApplyResult,
   SyncStateResetResult,
   SyncStateStatusResult,
   UpdateEntitySyncEnabledResult,
-  WebRegisterParams,
+  WebRegisterParamsSchema,
   WindowSpec,
 } from "@magnis/sdk";
 
@@ -130,7 +133,8 @@ export interface ResolveSyncMigrationParams {
 // The `searchEntitiesPage` helper (runtime, in ../index.ts) consumes these and
 // answers a `PaginatedResponse<Entity>`. The host list pane pages via
 // {limit, offset, search} and computes hasMore = items.length < total.
-export interface SearchEntitiesPageParams {
+export interface SearchEntitiesPageParams<T = PersistentEntity> {
+  extras?: true;
   query: string;
   schemaId: string;
   limit: number;
@@ -138,7 +142,7 @@ export interface SearchEntitiesPageParams {
   /** Optional visibility filter (e.g. contacts' group-tier hiding). The helper
    * re-fetches with a growing window until the page (+1) is filled with
    * SURVIVORS or the source is exhausted — filtering never truncates totals. */
-  filter?: (entities: Entity[]) => Promise<Entity[]>;
+  filter?: (entities: T[]) => Promise<T[]>;
 }
 
 /** The largest page the host serves; a larger `limit` is refused. */
@@ -151,57 +155,71 @@ export const pageLimitMax = 200;
 /// Not parameterised: a node's dictionary is JSON, and a module types it with
 /// its own interface at the call sites that care.
 export interface GraphService {
-  updateEntitySyncEnabled(params: SetSyncEnabledParams): Promise<UpdateEntitySyncEnabledResult>;
-  admitSyncEntities(subjects: readonly SyncAdmissionSubject[], controlRemoteIds?: readonly string[]): Promise<AdmitSyncEntitiesResult>;
+  updateEntitySyncEnabled(params: z.input<typeof SetSyncEnabledParamsSchema>): Promise<UpdateEntitySyncEnabledResult>;
+  admitSyncEntities(subjects: readonly z.input<typeof SyncAdmissionSubjectSchema>[], controlRemoteIds?: readonly string[]): Promise<AdmitSyncEntitiesResult>;
   moduleSettings(forSchema?: string): Promise<ModuleSettingsResult>;
   /** `limit` is 1 to `pageLimitMax`. */
   listSyncMigrationEntities(params: ListSyncMigrationEntitiesParams): Promise<ListSyncMigrationEntitiesResult>;
   // All reads are user-scoped host-side.
-  createEntity(p: CreateEntityParams): Promise<Entity>;
-  getEntity(id: string): Promise<Entity | null>;
-  listEntities(p: ListEntitiesParams): Promise<PaginatedResponse<Entity>>;
+  createEntity(p: z.input<typeof CreateEntityParamsSchema>): Promise<PersistentEntity>;
+  getEntity(id: string, opts: { extras: true }): Promise<EntityRead | null>;
+  getEntity(id: string, opts?: { extras?: undefined }): Promise<PersistentEntity | null>;
+  getEntity(id: string, opts?: { extras?: true }): Promise<PersistentEntity | EntityRead | null>;
+  listEntities(p: ListEntitiesParams & { extras: true }): Promise<PaginatedResponse<EntityRead>>;
+  listEntities(p: ListEntitiesParams & { extras?: undefined }): Promise<PaginatedResponse<PersistentEntity>>;
+  listEntities(p: ListEntitiesParams): Promise<PaginatedResponse<PersistentEntity | EntityRead>>;
   // Windowed list with the exact total, in one statement. Filter/order over
   // entity columns or dictionary keys.
-  listEntitiesWindow(p: WindowSpec): Promise<PaginatedResponse<Entity>>;
+  listEntitiesWindow(p: WindowSpec & { extras: true }): Promise<PaginatedResponse<EntityRead>>;
+  listEntitiesWindow(p: WindowSpec & { extras?: undefined }): Promise<PaginatedResponse<PersistentEntity>>;
+  listEntitiesWindow(p: WindowSpec): Promise<PaginatedResponse<PersistentEntity | EntityRead>>;
   // One entity (dictionary included) + its links, user-scoped (null for a
   // non-owner).
-  getEntityFull(id: string, opts?: { links?: boolean }): Promise<EntityWithLinks | null>;
+  getEntityFull(id: string, opts: { links?: boolean; extras: true }): Promise<(EntityWithLinks & { extras: EntityExtras }) | null>;
+  getEntityFull(id: string, opts?: { links?: boolean; extras?: true }): Promise<EntityWithLinks | null>;
   // A parent's neighbors over a typed link, with the link.
-  listLinked(p: LinkedSpec): Promise<PaginatedResponse<LinkedEntity>>;
+  listLinked(p: z.input<typeof LinkedSpecSchema> & { extras: true }): Promise<PaginatedResponse<LinkedEntity & { extras: EntityExtras }>>;
+  listLinked(p: z.input<typeof LinkedSpecSchema>): Promise<PaginatedResponse<LinkedEntity>>;
   // Batch: resolve a set of entity ids in one statement, user-scoped, in
   // input order.
-  getEntities(ids: string[]): Promise<Entity[]>;
+  getEntities(ids: string[], opts: { extras: true }): Promise<EntityRead[]>;
+  getEntities(ids: string[], opts?: { extras?: undefined }): Promise<PersistentEntity[]>;
+  getEntities(ids: string[], opts?: { extras?: true }): Promise<(PersistentEntity | EntityRead)[]>;
   // user-scoped; omit/empty context = all of the user's entities.
-  listEntitiesByContext(context?: string): Promise<Entity[]>;
-  searchEntitiesByName(p: SearchEntitiesParams): Promise<Entity[]>;
+  listEntitiesByContext(context: string | undefined, opts: { extras: true }): Promise<EntityRead[]>;
+  listEntitiesByContext(context?: string, opts?: { extras?: undefined }): Promise<PersistentEntity[]>;
+  listEntitiesByContext(context?: string, opts?: { extras?: true }): Promise<(PersistentEntity | EntityRead)[]>;
+  searchEntitiesByName(p: SearchEntitiesParams & { extras: true }): Promise<EntityRead[]>;
+  searchEntitiesByName(p: SearchEntitiesParams & { extras?: undefined }): Promise<PersistentEntity[]>;
+  searchEntitiesByName(p: SearchEntitiesParams): Promise<(PersistentEntity | EntityRead)[]>;
   /** Resolve a node by its `source.externalId`. */
   findByExternalId(externalId: string): Promise<string | null>;
   /** Plural resolution in one host call: input order kept, null where absent. */
   findByExternalIds(externalIds: string[]): Promise<(string | null)[]>;
   // register a web link (web.link entity + dictionary + bg preview fetch),
   // optionally linked to a parent entity. Returns the web.link entity id.
-  webRegister(p: WebRegisterParams): Promise<string>;
+  webRegister(p: z.input<typeof WebRegisterParamsSchema>): Promise<string>;
   // register a downloadable media file (find-or-create file.object entity +
   // parent link + background download). mimeType is computed plugin-side so
   // the op stays source-agnostic. Returns the file.object entity id.
-  fileRegister(p: FileRegisterParams): Promise<string>;
+  fileRegister(p: z.input<typeof FileRegisterParamsSchema>): Promise<string>;
   /** Batch: every URL a page carries, in ONE host call. Input order is kept;
    *  each position holds that URL's `web.link` entity id, or `""` where the
    *  host could not normalize the URL — one bad URL costs its own row and
    *  never aborts the page. Capability is checked once, before any write. */
-  webRegisterBatch(links: WebRegisterParams[]): Promise<string[]>;
+  webRegisterBatch(links: z.input<typeof WebRegisterParamsSchema>[]): Promise<string[]>;
   /** Batch: every attachment a page carries, in ONE host call. Input order is
    *  kept; each position holds that file's `file.object` entity id. There is
    *  no empty sentinel: a row the host did not write is an error. One row
    *  whose `linkKind` is not `file.attachment`, or whose `sourceRef` does
    *  not match the admitted worker, refuses the WHOLE call. The same
    *  attachment twice in one page accumulates, as two calls would. */
-  fileRegisterBatch(files: FileRegisterParams[]): Promise<string[]>;
+  fileRegisterBatch(files: z.input<typeof FileRegisterParamsSchema>[]): Promise<string[]>;
   /** Batch: merge a dictionary patch into each node, in ONE host call. Each
    *  patch MERGES — a field it does not name keeps its value — and the same
    *  node twice accumulates. The capability for every row's schema is checked
    *  before any row is written; one refused row refuses the whole call. */
-  updatePropertiesBatch(updates: PropertiesUpdate[]): Promise<void>;
+  updatePropertiesBatch(updates: (z.input<typeof PropertiesUpdateSchema> & Pick<z.output<typeof PropertiesUpdateSchema>, "properties">)[]): Promise<void>;
   // route an Execute SourceCommand to this plugin's source (send/reply/backfill)
   // via the host SyncRouter. Returns the source runtime's JSON result.
   sourceCommand(payload: Record<string, unknown>, accountId?: string): Promise<Record<string, unknown>>;
@@ -233,11 +251,13 @@ export interface GraphService {
   /// S1 (canonical-graph-structure): write the node's dictionary — the
   /// property-graph write path. The host validates ownership (user +
   /// namespace) and an update un-archives.
-  updateProperties(p: PropertiesUpdate): Promise<void>;
+  updateProperties(p: z.input<typeof PropertiesUpdateSchema> & Pick<z.output<typeof PropertiesUpdateSchema>, "properties">): Promise<void>;
   /// S1: filter a FOLDED family's entities by a top-level dictionary key,
   /// user-scoped natively. Returns the page and the exact total.
-  listEntitiesByPropertyField(p: ListEntitiesByPropertyFieldParams): Promise<PaginatedResponse<Entity>>;
-  addLink(p: AddLinkParams): Promise<void>;
+  listEntitiesByPropertyField(p: ListEntitiesByPropertyFieldParams & { extras: true }): Promise<PaginatedResponse<EntityRead>>;
+  listEntitiesByPropertyField(p: ListEntitiesByPropertyFieldParams & { extras?: undefined }): Promise<PaginatedResponse<PersistentEntity>>;
+  listEntitiesByPropertyField(p: ListEntitiesByPropertyFieldParams): Promise<PaginatedResponse<PersistentEntity | EntityRead>>;
+  addLink(p: z.input<typeof AddLinkParamsSchema>): Promise<void>;
   deleteLink(id: string): Promise<void>;
   /** The link's fact stopped being true at `validUntil`; the row stays, and
    * reads that keep history still see it. One-way — there is no reopen. */
@@ -258,8 +278,8 @@ export interface GraphService {
   applyBatch(batch: GraphBatchInput): Promise<GraphBatchResult>;
 
   // merge — backed by GraphService::mergeExecute, not composed.
-  mergePreview(p: Pick<MergeInput, "survivorId" | "retiredId">): Promise<MergePreview>;
-  mergeExecute(p: Omit<MergeInput, "preview">): Promise<MergeResult>;
+  mergePreview(p: Pick<z.input<typeof MergeInputSchema>, "survivorId" | "retiredId">): Promise<MergePreview>;
+  mergeExecute(p: Omit<z.input<typeof MergeInputSchema>, "preview">): Promise<MergeResult>;
 }
 
 /// Pure, stateless host utilities (no graph/capability surface).

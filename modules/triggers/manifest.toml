@@ -9,7 +9,7 @@
 id = "triggers"
 version = "0.1.0"
 # Plugin API version this manifest targets; the host accepts exactly 0.2.0.
-magnis_api_version = "0.2.0"
+magnis_api_version = "0.3.0"
 # tier = "system": mandatory, always-loaded, cannot be uninstalled/disabled.
 # Still V8-sandboxed.
 tier = "system"

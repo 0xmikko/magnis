@@ -102,7 +102,7 @@ export function TelegramChatItemContent({
           >
             {item.preview ?? ""}
           </span>
-          {item.isPinned && !unreadCount && (
+          {item.pinOrder !== undefined && item.pinOrder !== null && !unreadCount && (
             <Icon
               name="pin"
               size={14}

@@ -27,7 +27,8 @@ import type {
   BatchEntityInput,
   BatchLink,
   BatchRef,
-  Entity,
+  EntityRead,
+  EntityExtras,
   JsonValue,
   LinkedEntitySummary,
   PaginatedResponse,
@@ -92,12 +93,12 @@ function senderAddress(properties: Readonly<Record<string, unknown>>): string {
   return address;
 }
 
-function savedAddress(entity: Entity): Entity & Syncable {
-  if (entity.schemaId !== ADDRESS_SCHEMA || !("syncEnabled" in entity) || typeof entity.syncEnabled !== "boolean"
-    || !("syncRevision" in entity) || typeof entity.syncRevision !== "string" || !/^\d+$/.test(entity.syncRevision)) {
+function savedAddress(read: EntityRead): EntityRead & { extras: EntityExtras & Syncable } {
+  const { entity, extras } = read;
+  if (entity.schemaId !== ADDRESS_SCHEMA || extras.syncEnabled === null) {
     throw new Error(`Email address ${entity.id} has no valid saved synchronization choice`);
   }
-  return { ...entity, syncEnabled: entity.syncEnabled, syncRevision: entity.syncRevision };
+  return { entity, extras: { ...extras, syncEnabled: extras.syncEnabled, syncRevision: extras.syncRevision } };
 }
 
 const SEND_PARAMS = {
@@ -222,12 +223,13 @@ export class EmailModule {
       const matched = await this.graph.searchEntitiesByName({
         query: search,
         schemaIds: [MESSAGE_SCHEMA],
+        extras: true,
         limit: limit + offset,
       });
       const total = matched.length;
       const page = matched.slice(offset, offset + limit);
       // S5: the dictionary rides the entity rows the search returned.
-      const items = page.map((e) => buildListItem(e, e.properties as Data));
+      const items = page.map((e) => buildListItem(e, e.entity.properties as Data));
       return { items, total, limit, offset };
     }
 
@@ -235,12 +237,13 @@ export class EmailModule {
     // `date` column DESC; each row's dictionary rides on the entity.
     const win = await this.graph.listEntitiesWindow({
       schema: MESSAGE_SCHEMA,
+      extras: true,
 
       order: [{ field: { entityField: "date" }, desc: true }],
       limit,
       offset,
     });
-    const items = win.items.map((entity) => buildListItem(entity, entity.properties as Data));
+    const items = win.items.map((entity) => buildListItem(entity, entity.entity.properties as Data));
     return { items, total: win.total, limit, offset };
   }
 
@@ -277,7 +280,7 @@ export class EmailModule {
   /// when the entity has links, ONE getEntities batch to resolve the
   /// neighbours' names — no per-link N+1.
   private async getDetail(id: string): Promise<MessageDetailView | null> {
-    const detail = await this.graph.getEntityFull(id, { links: true });
+    const detail = await this.graph.getEntityFull(id, { links: true, extras: true });
     if (detail?.entity.schemaId !== MESSAGE_SCHEMA) return null;
     const { entity, links } = detail;
     // S5: the message DICT is the record.
@@ -293,17 +296,17 @@ export class EmailModule {
     if (links.length > 0) {
       const neighbourId = (l: { from: string; to: string }): string =>
         l.from === entity.id ? l.to : l.from;
-      const targets = await this.graph.getEntities([...new Set(links.map(neighbourId))]);
-      const byId = new Map(targets.map((t) => [t.id, t]));
+      const targets = await this.graph.getEntities([...new Set(links.map(neighbourId))], { extras: true });
+      const byId = new Map<string, EntityRead>(targets.map((t) => [t.entity.id, t]));
       const author = authors[0];
       if (author !== undefined) {
         const target = byId.get(author.to);
         if (target === undefined) throw new Error(`Email ${id} sender is missing`);
         const saved = savedAddress(target);
-        senderSync = { id: saved.id, syncEnabled: saved.syncEnabled, syncRevision: saved.syncRevision };
+        senderSync = { id: saved.entity.id, syncEnabled: saved.extras.syncEnabled, syncRevision: saved.extras.syncRevision };
       }
       for (const l of links) {
-        const t = byId.get(neighbourId(l));
+        const t = byId.get(neighbourId(l))?.entity;
         if (!t) continue;
         linkedEntities.push({
           ...linkedEntitySummary(t, l, l.kind),
@@ -318,6 +321,7 @@ export class EmailModule {
 
     const created = entity.createdAt;
     return {
+      extras: detail.extras,
       id: entity.id,
       schemaId: entity.schemaId,
       sender: senderOf(d),
@@ -342,15 +346,15 @@ export class EmailModule {
     if (ids.length !== unique.length) throw new Error("Email address lookup length mismatch");
     const found = ids.filter((id): id is string => id !== null);
     if (found.length === 0) return known;
-    const rows = new Map((await this.graph.getEntities(found)).map((row) => [row.id, row]));
+    const rows = new Map<string, EntityRead>((await this.graph.getEntities(found, { extras: true })).map((row) => [row.entity.id, row]));
     unique.forEach((address, index) => {
       const id = ids[index];
       if (id === null) return;
       const row = id === undefined ? undefined : rows.get(id);
       if (row === undefined) throw new Error("Email address lookup returned an incomplete result");
       const saved = savedAddress(row);
-      if (senderAddress(saved.properties as Data) !== address) throw new Error("Email address external id does not match its identity");
-      known.set(address, { id: saved.id, syncEnabled: saved.syncEnabled });
+      if (senderAddress(saved.entity.properties as Data) !== address) throw new Error("Email address external id does not match its identity");
+      known.set(address, { id: saved.entity.id, syncEnabled: saved.extras.syncEnabled });
     });
     return known;
   }
@@ -378,9 +382,9 @@ export class EmailModule {
       const authors = stored.links.filter((link) => link.from === id && link.kind === "authored_by" && link.validUntil === null);
       const author = authors[0];
       if (authors.length !== 1 || author === undefined) throw new Error("Email event has no unique stored sender");
-      const row = await this.graph.getEntity(author.to);
+      const row = await this.graph.getEntity(author.to, { extras: true });
       if (row === null) throw new Error("Email event refers to a missing sender");
-      const address = senderAddress(savedAddress(row).properties as Data);
+      const address = senderAddress(savedAddress(row).entity.properties as Data);
       owned.push({ env: env.kind === "delete" ? env : { ...env, payload: { ...(stored.entity.properties as Data), ...payload, from_address: address } }, address });
     }
     const addresses = await this.readAddresses(owned.flatMap(({ env, address }) => [address, ...addressesOf(env.payload as Data)]));

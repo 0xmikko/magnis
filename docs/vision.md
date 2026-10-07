@@ -1425,6 +1425,10 @@ This `GraphService` is a plugin SDK excerpt, not the backend class. Admission re
 
 Telegram account identity delegates to an existing direct chat; it does not implicitly create a chat. One target's success survives another target's failure. Later-added identities use their module's creation rule. Stop retains saved data, indexing permission and manual edits while blocking new Source changes in that scope; triggers do not override Stop.
 
+Telegram uses the saved chat `syncEnabled` choice for both message admission and automatic attachment downloads. An admitted message may register its files with `download: true`; a stopped chat admits neither message writes nor new file registrations. The same transaction/owner lock orders admission against Stop. Existing messages and files remain stored.
+
+The chat UI exposes Start/Stop synchronization only. Retire `telegram.chats.set_indexed` and the separate indexing toggle. Legacy chat `is_indexed` may inform the existing one-time sync migration or initial-selection rule, but never overrides an initialized sync choice. This introduces no `processingEnabled` field or extra Graph read. `extras.indexed` remains the read-only knowledge-indexing status; the internal Entity processing column retains its existing non-Telegram index/search meaning.
+
 ### Ambiguous legacy selection
 
 ```typescript

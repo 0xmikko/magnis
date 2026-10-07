@@ -26,12 +26,16 @@ export declare const webContracts: {
             name: z.ZodNullable<z.ZodString>;
             schemaId: z.ZodString;
             linkKind: z.ZodString;
+            direction: z.ZodEnum<{
+                in: "in";
+                out: "out";
+            }>;
             createdAt: z.ZodString;
             data: z.ZodOptional<z.ZodType<import("../../index.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("../../index.js").JsonValue, unknown>>>;
             confidence: z.ZodNullable<z.ZodNumber>;
             origin: z.ZodEnum<{
                 canonical: "canonical";
-                agent: "agent";
+                derived: "derived";
             }>;
             validUntil: z.ZodNullable<z.ZodISODateTime>;
         }, z.core.$strict>>;

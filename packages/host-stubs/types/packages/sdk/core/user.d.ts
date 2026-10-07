@@ -1,4 +1,22 @@
 import { z } from "zod";
+import { type Id, type PersistentEntityId } from "./id.js";
+import type { CanonicalEntity } from "./entity.js";
+import type { JsonObject } from "./json.js";
+/** Authentication scope may include nil; a graph user always has an assigned ID. */
+export type AuthUserId = Id;
+export type { UserId } from "./entity.js";
+export interface UserEntityBinding {
+    authUserId: AuthUserId;
+    entityId: PersistentEntityId;
+}
+export interface UserEntityProperties extends JsonObject {
+    name: string;
+    surname: string | null;
+}
+export interface UserEntity extends CanonicalEntity<UserEntityProperties> {
+    id: PersistentEntityId;
+    schemaId: "users.user";
+}
 export declare const GraphStatisticsSchema: z.ZodObject<{
     entities: z.ZodNumber;
     links: z.ZodNumber;

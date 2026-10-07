@@ -1,6 +1,6 @@
 // Shared schema→type maps for the email plugin (single source of truth for
 // module/service.ts + ui/). Record schema_id → payload type; canonical key → value.
-import type { LinkedEntitySummary, Syncable } from "@magnis/sdk";
+import type { EntityExtras, LinkedEntitySummary, Syncable } from "@magnis/sdk";
 
 /** One stored message record — the provider's dictionary MINUS what edges
  * carry: the recipients are `sent_to`, the sender's address is `authored_by`,
@@ -46,6 +46,7 @@ export interface EmailCanonical {
 // for module/ and ui/. The linked summaries inside them are the SDK's.
 
 export interface MessageListItem {
+  extras: EntityExtras;
   id: string;
   schemaId: string;
   sender: string | null;
@@ -58,7 +59,8 @@ export interface MessageListItem {
 }
 
 export interface MessageDetailView {
-  senderSync: Pick<Syncable, "id" | "syncEnabled" | "syncRevision"> | null;
+  extras: EntityExtras;
+  senderSync: (Syncable & { id: string }) | null;
   id: string;
   schemaId: string;
   sender: string | null;

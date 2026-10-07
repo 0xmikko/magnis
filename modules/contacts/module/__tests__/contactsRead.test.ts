@@ -21,7 +21,7 @@
  */
 
 import { beforeEach, describe, expect, it } from "vitest";
-import { entity, link, mockGraph, mountModule, page, type MockGraph } from "@magnis/testkit/module";
+import { entityId, entityRead, entityExtras, entity, link, mockGraph, mountModule, page, type MockGraph } from "@magnis/testkit/module";
 import { ContactsModule } from "../service.ts";
 import { CONTACT } from "../../schema.ts";
 import type { ContactCanonical } from "../../types.ts";
@@ -62,18 +62,18 @@ describe("contacts read — shape parity (tst_be_contactsread_001)", () => {
 
   it("F1 list builds items from the hub DICTIONARY + its identity EDGES", async () => {
     spy(graph, "listEntities").mockResolvedValue(page([
-        entity("c1", "Alice Smith", {
+        entityRead(entity(entityId("c1"), "Alice Smith", {
           schemaId: SCHEMA,
           properties: { role: "CEO", phones: [{ phone: "+1 555", is_primary: true }] },
-        }),
-        entity("c2", "Bob", { schemaId: SCHEMA }),
+        }), entityExtras()),
+        entityRead(entity(entityId("c2"), "Bob", { schemaId: SCHEMA }), entityExtras()),
       ], 2));
     // c1 reaches an address node over `identity`; c2 reaches nothing.
     spy(graph, "listLinksForEntities").mockResolvedValue([
-      link("c1", "addr-1", "identity", { id: "l1" }),
+      link(entityId("c1"), entityId("addr-1"), "identity", { id: "l1" }),
     ]);
     spy(graph, "getEntities").mockResolvedValue([
-      entity("addr-1", "canon@x.com", {
+      entity(entityId("addr-1"), "canon@x.com", {
         schemaId: "email.address",
         properties: { address: "canon@x.com" },
       }),
@@ -104,20 +104,20 @@ describe("contacts read — shape parity (tst_be_contactsread_001)", () => {
 
   it("F2 the default list no longer filters by tier — every contact is visible", async () => {
     spy(graph, "listEntities").mockResolvedValue(page([
-        entity("c1", "Real DM Person", { schemaId: SCHEMA }),
-        entity("c2", "Group Co-member", { schemaId: SCHEMA }),
+        entityRead(entity(entityId("c1"), "Real DM Person", { schemaId: SCHEMA }), entityExtras()),
+        entityRead(entity(entityId("c2"), "Group Co-member", { schemaId: SCHEMA }), entityExtras()),
       ], 2));
 
     const listed = await mod.list({});
 
-    expect(listed.items.map((i) => i.id)).toEqual(["c1", "c2"]);
+    expect(listed.items.map((i) => i.id)).toEqual([entityId("c1"), entityId("c2")]);
     expect(listed.total).toBe(2);
     // No windowed read: there is no dictionary key left to filter on.
     expect(graph.spies.listEntitiesWindow).toBeUndefined();
   });
 
   it("F2b relevance_tier is reported as unknown, not guessed", async () => {
-    spy(graph, "listEntities").mockResolvedValue(page([entity("c1", "Real DM Person", { schemaId: SCHEMA })], 1));
+    spy(graph, "listEntities").mockResolvedValue(page([entityRead(entity(entityId("c1"), "Real DM Person", { schemaId: SCHEMA }), entityExtras())], 1));
 
     const listed = await mod.list({});
 
@@ -139,7 +139,7 @@ describe("contacts read — DB-access guarantees (tst_be_contactsdb_001)", () =>
   });
 
   it("list (no search) = 1 listEntities + 1 batch edges, 0 0 per-row reads", async () => {
-    spy(graph, "listEntities").mockResolvedValue(page([entity("c1", "A", { schemaId: SCHEMA })], 1));
+    spy(graph, "listEntities").mockResolvedValue(page([entityRead(entity(entityId("c1"), "A", { schemaId: SCHEMA }), entityExtras())], 1));
     await mod.list({});
     expect(graph.spies.listEntities).toHaveBeenCalledTimes(1);
     expect(graph.spies.listLinksForEntities).toHaveBeenCalledTimes(1);
@@ -149,7 +149,7 @@ describe("contacts read — DB-access guarantees (tst_be_contactsdb_001)", () =>
 
   it("list (search) = 1 search + 1 batch edges, 0 listEntities", async () => {
     spy(graph, "searchEntitiesByName").mockResolvedValue([
-      entity("c1", "A", { schemaId: SCHEMA }),
+      entityRead(entity(entityId("c1"), "A", { schemaId: SCHEMA }), entityExtras()),
     ]);
     await mod.list({ search: "a" });
     expect(graph.spies.searchEntitiesByName).toHaveBeenCalledTimes(1);
@@ -159,13 +159,13 @@ describe("contacts read — DB-access guarantees (tst_be_contactsdb_001)", () =>
 
   it("get = 1 getEntityFull + 1 getEntities, 0 canonical", async () => {
     spy(graph, "getEntityFull").mockResolvedValue({
-      entity: entity("c1", "A", { schemaId: SCHEMA }),
-      links: [link("c1", "co1", "works_at", { id: "l1" })],
+      ...entityRead(entity(entityId("c1"), "A", { schemaId: SCHEMA }), entityExtras()),
+      links: [link(entityId("c1"), entityId("co1"), "works_at", { id: "l1" })],
     });
     spy(graph, "getEntities").mockResolvedValue([
-      entity("co1", "Acme", { schemaId: "companies.company" }),
+      entityRead(entity(entityId("co1"), "Acme", { schemaId: "companies.company" }), entityExtras()),
     ]);
-    await mod.get({ id: "c1" });
+    await mod.get({ id: entityId("c1") });
     expect(graph.spies.getEntityFull).toHaveBeenCalledTimes(1);
     expect(graph.spies.getEntities).toHaveBeenCalledTimes(1);
   });
@@ -203,37 +203,37 @@ describe("contacts read — two hops (tst_mod_contacts_001)", () => {
    */
   it("returns what hangs off its replicas, once each, without itself", async () => {
     spy(graph, "getEntityFull").mockResolvedValue({
-      entity: entity("c1", "Alice", { schemaId: SCHEMA }),
+      ...entityRead(entity(entityId("c1"), "Alice", { schemaId: SCHEMA }), entityExtras()),
       links: [
-        link("c1", "addr-1", "identity", { id: "l1" }),
-        link("t2", "c1", "watches", { id: "l2" }),
+        link(entityId("c1"), entityId("addr-1"), "identity", { id: "l1" }),
+        link(entityId("t2"), entityId("c1"), "watches", { id: "l2" }),
       ],
     });
     // Everything incident to the address — including the edge back to the hub.
     spy(graph, "listLinksForEntities").mockResolvedValue([
-      link("c1", "addr-1", "identity", { id: "l1" }),
-      link("t1", "addr-1", "watches", { id: "l3" }),
-      link("t2", "addr-1", "watches", { id: "l4" }),
-      link("co1", "addr-1", "identity", { id: "l5" }),
+      link(entityId("c1"), entityId("addr-1"), "identity", { id: "l1" }),
+      link(entityId("t1"), entityId("addr-1"), "watches", { id: "l3" }),
+      link(entityId("t2"), entityId("addr-1"), "watches", { id: "l4" }),
+      link(entityId("co1"), entityId("addr-1"), "identity", { id: "l5" }),
     ]);
     spy(graph, "getEntities").mockResolvedValue([
-      entity("addr-1", "alice@x.com", {
+      entityRead(entity(entityId("addr-1"), "alice@x.com", {
         schemaId: "email.address",
         properties: { address: "alice@x.com" },
-      }),
-      entity("t1", "watch the address", { schemaId: "triggers.trigger" }),
-      entity("t2", "watch both", { schemaId: "triggers.trigger" }),
-      entity("co1", "Acme", { schemaId: "companies.company" }),
+      }), entityExtras()),
+      entityRead(entity(entityId("t1"), "watch the address", { schemaId: "triggers.trigger" }), entityExtras()),
+      entityRead(entity(entityId("t2"), "watch both", { schemaId: "triggers.trigger" }), entityExtras()),
+      entityRead(entity(entityId("co1"), "Acme", { schemaId: "companies.company" }), entityExtras()),
     ]);
 
-    const view = await mod.get({ id: "c1" });
+    const view = await mod.get({ id: entityId("c1") });
     const byId = new Map(view.linkedEntities.map((l) => [l.id, l] as const));
 
-    expect(byId.get("t1")?.linkKind).toBe("~watches");
-    expect(byId.get("addr-1")?.linkKind).toBe("identity");
-    expect(byId.get("co1")?.linkKind).toBe("~identity");
-    expect(view.linkedEntities.filter((l) => l.id === "t2")).toHaveLength(1);
-    expect(byId.has("c1")).toBe(false);
+    expect(byId.get(entityId("t1"))).toMatchObject({ linkKind: "watches", direction: "in" });
+    expect(byId.get(entityId("addr-1"))?.linkKind).toBe("identity");
+    expect(byId.get(entityId("co1"))).toMatchObject({ linkKind: "identity", direction: "in" });
+    expect(view.linkedEntities.filter((l) => l.id === entityId("t2"))).toHaveLength(1);
+    expect(byId.has(entityId("c1"))).toBe(false);
     expect(graph.spies.listLinksForEntities).toHaveBeenCalledTimes(1);
     expect(graph.spies.getEntities).toHaveBeenCalledTimes(1);
     // The BATCH ARGUMENT, not just the call count. The double answers with a
@@ -241,38 +241,38 @@ describe("contacts read — two hops (tst_mod_contacts_001)", () => {
     // ids — the replicas instead of the endpoints, say — still produces the
     // rows above and every assertion here passes while the feature is gone.
     expect(graph.spies.getEntities).toHaveBeenCalledWith(
-      expect.arrayContaining(["addr-1", "t1", "t2", "co1"]),
+      expect.arrayContaining([entityId("addr-1"), entityId("t1"), entityId("t2"), entityId("co1")]), { extras: true },
     );
     const batched = spy(graph, "getEntities").mock.calls[0]?.[0] as string[];
-    expect(batched).not.toContain("c1");
+    expect(batched).not.toContain(entityId("c1"));
   });
 
   it("does not inherit its replicas' message traffic", async () => {
     // A shared address sits on one edge per message ever sent to it. Those are
     // read through the owning module's paging surface, not returned here.
     spy(graph, "getEntityFull").mockResolvedValue({
-      entity: entity("c1", "Alice", { schemaId: SCHEMA }),
-      links: [link("c1", "addr-1", "identity", { id: "l1" })],
+      ...entityRead(entity(entityId("c1"), "Alice", { schemaId: SCHEMA }), entityExtras()),
+      links: [link(entityId("c1"), entityId("addr-1"), "identity", { id: "l1" })],
     });
     spy(graph, "listLinksForEntities").mockResolvedValue([
-      link("msg-1", "addr-1", "sent_to", { id: "l2" }),
-      link("tg-1", "addr-1", "sent_to", { id: "l3" }),
-      link("co1", "addr-1", "identity", { id: "l4" }),
+      link(entityId("msg-1"), entityId("addr-1"), "sent_to", { id: "l2" }),
+      link(entityId("tg-1"), entityId("addr-1"), "sent_to", { id: "l3" }),
+      link(entityId("co1"), entityId("addr-1"), "identity", { id: "l4" }),
     ]);
     spy(graph, "getEntities").mockResolvedValue([
-      entity("addr-1", "alice@x.com", { schemaId: "email.address" }),
-      entity("msg-1", "Re: invoice", { schemaId: "email.message" }),
-      entity("tg-1", "hi", { schemaId: "telegram.message" }),
-      entity("co1", "Acme", { schemaId: "companies.company" }),
+      entityRead(entity(entityId("addr-1"), "alice@x.com", { schemaId: "email.address" }), entityExtras()),
+      entityRead(entity(entityId("msg-1"), "Re: invoice", { schemaId: "email.message" }), entityExtras()),
+      entityRead(entity(entityId("tg-1"), "hi", { schemaId: "telegram.message" }), entityExtras()),
+      entityRead(entity(entityId("co1"), "Acme", { schemaId: "companies.company" }), entityExtras()),
     ]);
 
-    const view = await mod.get({ id: "c1" });
+    const view = await mod.get({ id: entityId("c1") });
     const ids = view.linkedEntities.map((l) => l.id);
 
-    expect(ids).not.toContain("msg-1");
-    expect(ids).not.toContain("tg-1");
+    expect(ids).not.toContain(entityId("msg-1"));
+    expect(ids).not.toContain(entityId("tg-1"));
     // Everything else incident to the replica still comes back.
-    expect(ids).toContain("co1");
-    expect(ids).toContain("addr-1");
+    expect(ids).toContain(entityId("co1"));
+    expect(ids).toContain(entityId("addr-1"));
   });
 });

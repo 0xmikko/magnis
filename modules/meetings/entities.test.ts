@@ -6,7 +6,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import type { GraphBatchInput, GraphBatchResult, PropertiesUpdate } from "@magnis/sdk";
-import { entity, mockGraph, mountModule, sourceEnvelope } from "@magnis/testkit/module";
+import { entityId, entity, mockGraph, mountModule, sourceEnvelope } from "@magnis/testkit/module";
 
 import { MeetingsModule } from "./module/service.ts";
 import { calendarEvent } from "./entities.ts";
@@ -34,7 +34,7 @@ function graphRecording(written: Record<string, unknown>[]) {
         if (e.schemaId === CAL) written.push(e.properties as Record<string, unknown>);
       }
       return Promise.resolve({
-        ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
+        ids: Object.fromEntries(frag.entities.map((e) => [e.key, entityId(`id-${e.key}`)])),
         created: frag.entities.length,
         updated: 0,
         linksAdded: 0,

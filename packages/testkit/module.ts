@@ -14,7 +14,9 @@
 //     `definePlugin`/`init` and get a `{ rpc, tools }` surface, so a test can
 //     assert the DECORATED rpc names + tool defs and their routing.
 
+import { createHash } from "node:crypto";
 import { vi, type Mock } from "vitest";
+import { nilId, PersistentEntityIdSchema, EntityReadSchema, EntityExtrasSchema } from "@magnis/sdk";
 import { definePlugin, pageLimitMax } from "@magnis/plugin-sdk";
 import type {
   GraphService,
@@ -28,6 +30,10 @@ import type {
 import type {
   CanonicalEntity,
   CanonicalLink,
+  EntityExtras,
+  EntityRead,
+  PersistentEntity,
+  PersistentEntityId,
   JsonObject,
   JsonValue,
   LinkedEntity,
@@ -51,7 +57,9 @@ export interface MockGraph
 }
 
 /** The impls a test wants to install, typed against the REAL `GraphService`. */
-export type GraphOverrides = Partial<GraphService>;
+export type GraphOverrides = {
+  [K in keyof GraphService]?: (...args: Parameters<GraphService[K]>) => ReturnType<GraphService[K]>;
+};
 
 // Property accesses vitest/promise machinery makes on the proxy that must NOT
 // be interpreted as graph ops (else `await`-ing or printing the graph throws).
@@ -272,29 +280,44 @@ export function sourceEnvelope(
   };
 }
 
+/** A stable stored UUID for a fixture label; UUID inputs retain their identity. */
+export function entityId(label: string): PersistentEntityId {
+  if (label === nilId) throw new Error("A stored fixture cannot use the transient nil ID");
+  const parsed = PersistentEntityIdSchema.safeParse(label);
+  if (parsed.success) return parsed.data;
+  const hash = createHash("sha256").update(`magnis:test:${label}`).digest("hex");
+  return PersistentEntityIdSchema.parse(`${hash.slice(0, 8)}-${hash.slice(8, 12)}-8${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}`);
+}
+
 /** A canonical `Entity`, as a connector delivered it. `over` sets `schemaId`
  *  (default `""`), `createdAt` (default a fixed timestamp), the
  *  `source.externalId` (default the id) or any other column. */
-export function entity(id: string, name: string, over: Partial<CanonicalEntity> = {}): CanonicalEntity {
+export function entity(id: string, name: string, over: Partial<CanonicalEntity> = {}): CanonicalEntity & { id: PersistentEntityId } {
   return {
-    id,
-    owner: "u1",
     schemaId: "",
     schemaVersion: 1,
     createdAt: CREATED_AT,
     name,
-    indexed: false,
     date: CREATED_AT,
     idx: null,
-    isPinned: null,
-    pinOrder: null,
-    isArchived: null,
     properties: {},
     origin: "canonical",
     source: { source: "test", account: "a1", externalId: id },
     canonicalKey: null,
     ...over,
+    id: over.id === undefined ? entityId(id) : PersistentEntityIdSchema.parse(over.id),
   };
+}
+
+/** Operational state is supplied explicitly, including both sync fields. */
+export function entityRead(value: PersistentEntity, extras: EntityExtras): EntityRead {
+  return EntityReadSchema.parse({ entity: value, extras });
+}
+
+/** Complete fixture state; unlike a read parser this deliberately constructs data. */
+export function entityExtras(over: Partial<EntityExtras> = {}): EntityExtras {
+  return EntityExtrasSchema.parse({ pinOrder: null, archived: false, private: false,
+    indexed: "pending", syncEnabled: null, syncRevision: null, ...over });
 }
 
 /** A canonical `Link`. It defaults open (`validUntil: null`); an ended one
@@ -303,8 +326,8 @@ export function link(from: string, to: string, kind: string, over: Partial<Canon
   return {
     id: `${from}-${kind}-${to}`,
     owner: "u1",
-    from,
-    to,
+    from: entityId(from),
+    to: entityId(to),
     kind,
     createdAt: CREATED_AT,
     origin: "canonical",
@@ -316,7 +339,7 @@ export function link(from: string, to: string, kind: string, over: Partial<Canon
 }
 
 /** A `LinkedEntity` — a neighbor entity + the link that reached it. */
-export function linkedEntity(ent: CanonicalEntity, over: Partial<CanonicalLink> = {}): LinkedEntity {
+export function linkedEntity(ent: PersistentEntity, over: Partial<CanonicalLink> = {}): LinkedEntity {
   return { entity: ent, link: link(ent.id, "to", "link", over) };
 }
 

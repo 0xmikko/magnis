@@ -27,7 +27,7 @@ export declare const EpisodeMemorySaveRequestSchema: z.ZodObject<{
 export declare const EpisodeMemoryResultSchema: z.ZodObject<{
     body: z.ZodNullable<z.ZodString>;
 }, z.core.$strict>;
-export declare const episodeLinkKindRanks: readonly ["started_with", "created", "triggered_by", "modified", "mentions", "reply_to"];
+export declare const episodeLinkKindRanks: readonly ["started_with", "created", "modified", "mentions", "reply_to"];
 export type RankedEpisodeLinkKind = (typeof episodeLinkKindRanks)[number];
 export declare const EpisodeListItemSchema: z.ZodObject<{
     id: z.ZodString;
@@ -137,12 +137,16 @@ export declare const EpisodeDetailViewSchema: z.ZodObject<{
         name: z.ZodNullable<z.ZodString>;
         schemaId: z.ZodString;
         linkKind: z.ZodString;
+        direction: z.ZodEnum<{
+            in: "in";
+            out: "out";
+        }>;
         createdAt: z.ZodString;
         data: z.ZodOptional<z.ZodType<import("./json.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("./json.js").JsonValue, unknown>>>;
         confidence: z.ZodNullable<z.ZodNumber>;
         origin: z.ZodEnum<{
             canonical: "canonical";
-            agent: "agent";
+            derived: "derived";
         }>;
         validUntil: z.ZodNullable<z.ZodISODateTime>;
     }, z.core.$strict>>;
@@ -375,12 +379,16 @@ export declare const EpisodeAgentSnapshotSchema: z.ZodObject<{
         name: z.ZodNullable<z.ZodString>;
         schemaId: z.ZodString;
         linkKind: z.ZodString;
+        direction: z.ZodEnum<{
+            in: "in";
+            out: "out";
+        }>;
         createdAt: z.ZodString;
         data: z.ZodOptional<z.ZodType<import("./json.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("./json.js").JsonValue, unknown>>>;
         confidence: z.ZodNullable<z.ZodNumber>;
         origin: z.ZodEnum<{
             canonical: "canonical";
-            agent: "agent";
+            derived: "derived";
         }>;
         validUntil: z.ZodNullable<z.ZodISODateTime>;
     }, z.core.$strict>>;

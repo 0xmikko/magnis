@@ -14,6 +14,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { entityId } from "@magnis/testkit/module";
 import type { Entity, Link } from "@magnis/sdk";
 import { describe, expect, it } from "vitest";
 import { linkedEntitySummary, reachedEndpoints } from "../index.ts";
@@ -22,8 +23,8 @@ function link(from: string, to: string, kind: string, validUntil: string | null 
   return {
     id: `${from}-${to}-${kind}`,
     owner: "u1",
-    from,
-    to,
+    from: entityId(from),
+    to: entityId(to),
     kind,
     createdAt: "2026-01-01T00:00:00Z",
     origin: "canonical",
@@ -38,15 +39,15 @@ describe("tst_pkg_sdk_endpoints_001 — reachedEndpoints", () => {
     const reached = reachedEndpoints(
       [
         {
-          links: [link("self", "out", "in_chat"), link("watcher", "self", "watches")],
-          ownerIds: new Set(["self"]),
+          links: [link(entityId("self"), entityId("out"), "in_chat"), link(entityId("watcher"), entityId("self"), "watches")],
+          ownerIds: new Set([entityId("self")]),
         },
       ],
-      new Set(["self"]),
+      new Set([entityId("self")]),
     );
 
-    expect(reached.get("out")?.linkKind).toBe("in_chat");
-    expect(reached.get("watcher")?.linkKind).toBe("~watches");
+    expect(reached.get(entityId("out"))?.linkKind).toBe("in_chat");
+    expect(reached.get(entityId("watcher"))?.linkKind).toBe("~watches");
   });
 
   it("the FIRST pass to reach an endpoint supplies its label", () => {
@@ -55,28 +56,28 @@ describe("tst_pkg_sdk_endpoints_001 — reachedEndpoints", () => {
     // contact would report its own relation using its replica's label.
     const reached = reachedEndpoints(
       [
-        { links: [link("hub", "shared", "works_at")], ownerIds: new Set(["hub"]) },
-        { links: [link("replica", "shared", "identity")], ownerIds: new Set(["replica"]) },
+        { links: [link(entityId("hub"), entityId("shared"), "works_at")], ownerIds: new Set([entityId("hub")]) },
+        { links: [link(entityId("replica"), entityId("shared"), "identity")], ownerIds: new Set([entityId("replica")]) },
       ],
-      new Set(["hub"]),
+      new Set([entityId("hub")]),
     );
 
-    expect(reached.get("shared")?.linkKind).toBe("works_at");
+    expect(reached.get(entityId("shared"))?.linkKind).toBe("works_at");
     // Only the endpoint. `replica` is pass two's OWNER, never its own neighbour.
-    expect([...reached.keys()]).toEqual(["shared"]);
+    expect([...reached.keys()]).toEqual([entityId("shared")]);
   });
 
   it("excludes every id it is told to, from any pass", () => {
     const reached = reachedEndpoints(
       [
-        { links: [link("hub", "addr", "identity")], ownerIds: new Set(["hub"]) },
+        { links: [link(entityId("hub"), entityId("addr"), "identity")], ownerIds: new Set([entityId("hub")]) },
         // The replica's edge back to the hub: the hub is not its own neighbour.
-        { links: [link("addr", "hub", "identity")], ownerIds: new Set(["addr"]) },
+        { links: [link(entityId("addr"), entityId("hub"), "identity")], ownerIds: new Set([entityId("addr")]) },
       ],
-      new Set(["hub"]),
+      new Set([entityId("hub")]),
     );
 
-    expect([...reached.keys()]).toEqual(["addr"]);
+    expect([...reached.keys()]).toEqual([entityId("addr")]);
   });
 });
 
@@ -92,18 +93,13 @@ describe("tst_pkg_sdk_endpoints_001 — reachedEndpoints", () => {
  */
 describe("tst_cat_entity_one_type_001 — linked summaries carry the reaching link's statement", () => {
   const watcher: Entity = {
-    id: "watcher",
-    owner: "u1",
+    id: entityId("watcher"),
     schemaId: "contacts.person",
     schemaVersion: 1,
     createdAt: "2026-01-02T00:00:00Z",
     name: "Watcher",
-    indexed: false,
     date: "2026-01-02T00:00:00Z",
     idx: null,
-    isPinned: null,
-    pinOrder: null,
-    isArchived: null,
     properties: {},
     origin: "canonical",
     source: { source: "google", account: "a1", externalId: "people/1" },
@@ -114,39 +110,41 @@ describe("tst_cat_entity_one_type_001 — linked summaries carry the reaching li
     const guess: Link = {
       id: "l-guess",
       owner: "u1",
-      from: "watcher",
-      to: "self",
+      from: entityId("watcher"),
+      to: entityId("self"),
       kind: "mentions",
       createdAt: "2026-01-03T00:00:00Z",
-      origin: "agent",
+      origin: "derived",
       confidence: 0.6,
-      evidence: ["episode-1"],
+      evidence: [entityId("episode-1")],
       validFrom: null,
       validUntil: "2027-01-01T00:00:00Z",
     };
-    const reached = reachedEndpoints([{ links: [guess], ownerIds: new Set(["self"]) }], new Set(["self"]));
+    const reached = reachedEndpoints([{ links: [guess], ownerIds: new Set([entityId("self")]) }], new Set([entityId("self")]));
 
-    expect(reached.get("watcher")).toEqual({ link: guess, linkKind: "~mentions" });
+    expect(reached.get(entityId("watcher"))).toEqual({ link: guess, linkKind: "~mentions" });
     expect(linkedEntitySummary(watcher, guess, "~mentions")).toEqual({
-      id: "watcher",
+      id: entityId("watcher"),
       name: "Watcher",
       schemaId: "contacts.person",
-      linkKind: "~mentions",
+      linkKind: "mentions",
+      direction: "in",
       createdAt: "2026-01-02T00:00:00Z",
-      origin: "agent",
+      origin: "derived",
       confidence: 0.6,
       validUntil: "2027-01-01T00:00:00Z",
     });
   });
 
   it("tst_cat_entity_one_type_001 a canonical link's summary has no confidence and keeps its end", () => {
-    const record = link("self", "watcher", "member_of", "2026-06-01T00:00:00Z");
+    const record = link(entityId("self"), entityId("watcher"), "member_of", "2026-06-01T00:00:00Z");
 
     expect(linkedEntitySummary(watcher, record, "member_of")).toEqual({
-      id: "watcher",
+      id: entityId("watcher"),
       name: "Watcher",
       schemaId: "contacts.person",
       linkKind: "member_of",
+      direction: "out",
       createdAt: "2026-01-02T00:00:00Z",
       origin: "canonical",
       confidence: null,

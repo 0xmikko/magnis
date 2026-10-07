@@ -9,7 +9,7 @@
 id = "companies"
 version = "0.1.0"
 # SDK contract version this manifest targets (host accepts 0.x).
-magnis_api_version = "0.2.0"
+magnis_api_version = "0.3.0"
 title = "Companies"
 summary = "Track companies you interact with across email, meetings, and notes."
 # Reverse-domain publisher identity.

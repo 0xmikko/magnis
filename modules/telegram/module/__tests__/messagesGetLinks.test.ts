@@ -21,28 +21,28 @@
  * any op the read path takes without being arranged here fails the test.
  */
 import { describe, expect, it } from "vitest";
-import { entity, link, mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
+import { entityId, entity, link, mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { TelegramModule } from "../service.ts";
 import { MESSAGE } from "../../schema.ts";
 
 type G = MockGraph;
 
-const MESSAGE_ID = "m1";
+const MESSAGE_ID = entityId("m1");
 
 // m1 —in_chat→ c1, m1 —authored_by→ a1, t1 —watches→ m1, plus the two outgoing
 // edges a real message also carries and this module does NOT claim to expose.
 const LINKS = [
-  link(MESSAGE_ID, "c1", "in_chat", { id: "l1" }),
-  link(MESSAGE_ID, "a1", "authored_by", { id: "l2" }),
-  link("t1", MESSAGE_ID, "watches", { id: "l3" }),
+  link(MESSAGE_ID, entityId("c1"), "in_chat", { id: "l1" }),
+  link(MESSAGE_ID, entityId("a1"), "authored_by", { id: "l2" }),
+  link(entityId("t1"), MESSAGE_ID, "watches", { id: "l3" }),
   link(MESSAGE_ID, "web-1", "references", { id: "l4" }),
   link(MESSAGE_ID, "file-1", "attachment", { id: "l5" }),
 ];
 
 const NEIGHBOURS = [
-  entity("c1", "Ops chat", { schemaId: "telegram.chat" }),
-  entity("a1", "Alice", { schemaId: "telegram.account" }),
-  entity("t1", "Watch the thread", { schemaId: "triggers.trigger" }),
+  entity(entityId("c1"), "Ops chat", { schemaId: "telegram.chat" }),
+  entity(entityId("a1"), "Alice", { schemaId: "telegram.account" }),
+  entity(entityId("t1"), "Watch the thread", { schemaId: "triggers.trigger" }),
   entity("web-1", "example.com", { schemaId: "web.link" }),
   entity("file-1", "invoice.pdf", { schemaId: "file.object" }),
 ];
@@ -77,11 +77,11 @@ describe("tst_mod_tg_001 — a message exposes its own links", () => {
 
     // Outgoing keeps the kind — an implementation that prefixed everything
     // with `~` would pass a weaker assertion than this one.
-    expect(byId.get("c1")?.linkKind).toBe("in_chat");
-    expect(byId.get("a1")?.linkKind).toBe("authored_by");
+    expect(byId.get(entityId("c1"))?.linkKind).toBe("in_chat");
+    expect(byId.get(entityId("a1"))?.linkKind).toBe("authored_by");
     // Incoming wears the tilde — anything that points AT the message is
     // returned whatever it is.
-    expect(byId.get("t1")?.linkKind).toBe("~watches");
+    expect(byId.get(entityId("t1"))).toMatchObject({ linkKind: "watches", direction: "in" });
     // Outgoing is only what the module says a message exposes: the web link and
     // the attachment hang off this message too, and are not part of the answer.
     expect(byId.has("web-1")).toBe(false);
@@ -92,7 +92,7 @@ describe("tst_mod_tg_001 — a message exposes its own links", () => {
     // The batch argument, not just its count: a batch over the wrong ids would
     // otherwise leave every assertion above intact.
     expect(graph.spies.getEntities).toHaveBeenCalledWith(
-      expect.arrayContaining(["c1", "a1", "t1"]),
+      expect.arrayContaining([entityId("c1"), entityId("a1"), entityId("t1")]),
     );
   });
 });

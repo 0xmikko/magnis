@@ -13,13 +13,13 @@
  * ```ts
  * export interface SourceRef { source: string; account: string; externalId: string }
  *
- * export const sourceRefSchema = z.strictObject({
+ * export const SourceRefSchema = z.strictObject({
  *   source: z.string(),
  *   account: z.string(),
  *   externalId: z.string(),
  * }) satisfies z.ZodType<SourceRef>;
  *
- * const _exact: AssertEqual<z.infer<typeof sourceRefSchema>, SourceRef> = true;
+ * const _exact: AssertEqual<z.infer<typeof SourceRefSchema>, SourceRef> = true;
  * void _exact;
  * ```
  *
@@ -27,7 +27,7 @@
  * pinned to its interface this way.
  *
  * A drifted schema fails to compile, and the error names both sides:
- * `Type 'boolean' is not assignable to type '{ ERROR: "schema drifted from
+ * `Type 'boolean' is not assignable to type '{ error: "schema drifted from
  * type"; A: …; B: … }'`.
  *
  * The `Equal` conditional is the standard identity check: two types are the
@@ -51,7 +51,7 @@ export type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T exte
 /** `true` when the types match; otherwise a shape that names both sides, so
  * the compiler error says what drifted instead of "type mismatch". */
 export type AssertEqual<A, B> = Equal<A, B> extends true ? true : {
-    ERROR: "schema drifted from type";
+    error: "schema drifted from type";
     A: A;
     B: B;
 };

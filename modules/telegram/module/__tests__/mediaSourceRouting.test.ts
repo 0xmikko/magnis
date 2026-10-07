@@ -16,7 +16,7 @@
  */
 import type { BatchEntityInput, BatchLink, GraphBatchInput, JsonObject, SyncEnvelope } from "@magnis/sdk";
 import { describe, expect, it } from "vitest";
-import { entity, mockGraph, mountModule, sourceEnvelope, type MockGraph } from "@magnis/testkit/module";
+import { entityId, entity, mockGraph, mountModule, sourceEnvelope, type MockGraph } from "@magnis/testkit/module";
 import { TelegramModule } from "../service.ts";
 
 type G = MockGraph;
@@ -27,7 +27,7 @@ function ingestGraph(): G {
     admitSyncEntities: (subjects) => Promise.resolve(subjects.flatMap((subject) => [...subject.remoteIds])),
     applyBatch: (frag) =>
       Promise.resolve({
-        ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
+        ids: Object.fromEntries(frag.entities.map((e) => [e.key, entityId(`id-${e.key}`)])),
         created: frag.entities.length,
         updated: 0,
         linksAdded: 0,
@@ -36,8 +36,8 @@ function ingestGraph(): G {
     webRegister: () => Promise.resolve("web-id"),
     webRegisterBatch: (links: readonly unknown[]) => Promise.resolve(links.map(() => "web-id")),
     findByExternalId: () => Promise.resolve(null),
-    findByExternalIds: (externalIds) => Promise.resolve(externalIds.map((externalId) => externalId === "tg:chat:42" ? "chat-42" : null)),
-    getEntities: () => Promise.resolve([{ ...entity("chat-42", "Chat", { schemaId: "telegram.chat", indexed: true }), properties: { chat_id: 42 } }]),
+    findByExternalIds: (externalIds) => Promise.resolve(externalIds.map((externalId) => externalId === "tg:chat:42" ? entityId("chat-42") : null)),
+    getEntities: () => Promise.resolve([{ ...entity(entityId("chat-42"), "Chat", { schemaId: "telegram.chat" }), properties: { chat_id: 42 } }]),
     updatePropertiesBatch: () => Promise.resolve(),
     fileRegister: () => Promise.resolve("file-id"),
     fileRegisterBatch: (files: readonly unknown[]) => Promise.resolve(files.map(() => "file-id")),
