@@ -48,7 +48,7 @@ if [[ "${1:-}" == "--agent" ]]; then
   exec bunx vitest run "$@"
 fi
 
-for d in sources/x sources/anysite sources/google sources/telegram \
+for d in sources/x sources/anysite sources/google sources/telegram sources/web \
          sources/mock-x sources/mock-linkedin sources/mock-gmail \
          sources/mock-telegram sources/local packages/source-statemachine \
          packages/connector-sdk; do
