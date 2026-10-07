@@ -4,83 +4,6 @@
  * so a method cannot be silently absent from the public package.
  */
 export declare const rpcContracts: {
-    readonly "web.capabilities": import("./contract.js").RpcContract<"web.capabilities", import("zod").ZodObject<{}, import("zod/v4/core").$strip>, import("zod").ZodObject<{
-        module: import("zod").ZodString;
-        entities: import("zod").ZodReadonly<import("zod").ZodArray<import("zod").ZodObject<{
-            entity: import("zod").ZodString;
-            operations: import("zod").ZodReadonly<import("zod").ZodArray<import("zod").ZodString>>;
-            forms: import("zod").ZodExactOptional<import("zod").ZodReadonly<import("zod").ZodRecord<import("zod").ZodString, import("zod").ZodType<import("../index.js").JsonValue, unknown, import("zod/v4/core").$ZodTypeInternals<import("../index.js").JsonValue, unknown>>>>>;
-        }, import("zod/v4/core").$strict>>>;
-    }, import("zod/v4/core").$strict>, "required">;
-    readonly "web.link.get": import("./contract.js").RpcContract<"web.link.get", import("zod").ZodObject<{
-        id: import("zod").ZodGUID;
-    }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
-        id: import("zod").ZodString;
-        url: import("zod").ZodString;
-        domain: import("zod").ZodString;
-        title: import("zod").ZodNullable<import("zod").ZodString>;
-        description: import("zod").ZodNullable<import("zod").ZodString>;
-        faviconUrl: import("zod").ZodOptional<import("zod").ZodNullable<import("zod").ZodString>>;
-        ogImageUrl: import("zod").ZodOptional<import("zod").ZodNullable<import("zod").ZodString>>;
-        createdAt: import("zod").ZodString;
-        hasContent: import("zod").ZodBoolean;
-        contentExtractedAt: import("zod").ZodNullable<import("zod").ZodString>;
-        linkedEntities: import("zod").ZodArray<import("zod").ZodObject<{
-            id: import("zod").ZodString;
-            name: import("zod").ZodNullable<import("zod").ZodString>;
-            schemaId: import("zod").ZodString;
-            linkKind: import("zod").ZodString;
-            createdAt: import("zod").ZodString;
-            data: import("zod").ZodOptional<import("zod").ZodType<import("../index.js").JsonValue, unknown, import("zod/v4/core").$ZodTypeInternals<import("../index.js").JsonValue, unknown>>>;
-            confidence: import("zod").ZodNullable<import("zod").ZodNumber>;
-            origin: import("zod").ZodEnum<{
-                canonical: "canonical";
-                agent: "agent";
-            }>;
-            validUntil: import("zod").ZodNullable<import("zod").ZodISODateTime>;
-        }, import("zod/v4/core").$strict>>;
-    }, import("zod/v4/core").$strict>, "required">;
-    readonly "web.link.open": import("./contract.js").RpcContract<"web.link.open", import("zod").ZodObject<{
-        id: import("zod").ZodOptional<import("zod").ZodGUID>;
-        url: import("zod").ZodOptional<import("zod").ZodString>;
-        forceRefresh: import("zod").ZodDefault<import("zod").ZodBoolean>;
-    }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
-        id: import("zod").ZodString;
-        url: import("zod").ZodString;
-        title: import("zod").ZodNullable<import("zod").ZodString>;
-        contentMarkdown: import("zod").ZodString;
-        contentLength: import("zod").ZodNumber;
-        extractedAt: import("zod").ZodString;
-        fromCache: import("zod").ZodBoolean;
-    }, import("zod/v4/core").$strict>, "required">;
-    readonly "web.search": import("./contract.js").RpcContract<"web.search", import("zod").ZodObject<{
-        query: import("zod").ZodString;
-        limit: import("zod").ZodDefault<import("zod").ZodInt>;
-    }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
-        query: import("zod").ZodString;
-        results: import("zod").ZodArray<import("zod").ZodObject<{
-            title: import("zod").ZodString;
-            url: import("zod").ZodString;
-            snippet: import("zod").ZodString;
-        }, import("zod/v4/core").$strict>>;
-    }, import("zod/v4/core").$strict>, "required">;
-    readonly "web.page.search": {
-        readonly method: "web.page.search";
-        readonly input: import("zod").ZodObject<{
-            query: import("zod").ZodString;
-            limit: import("zod").ZodDefault<import("zod").ZodInt>;
-        }, import("zod/v4/core").$strict>;
-        readonly output: import("zod").ZodObject<{
-            query: import("zod").ZodString;
-            results: import("zod").ZodArray<import("zod").ZodObject<{
-                title: import("zod").ZodString;
-                url: import("zod").ZodString;
-                snippet: import("zod").ZodString;
-            }, import("zod/v4/core").$strict>>;
-        }, import("zod/v4/core").$strict>;
-        readonly params: "required";
-        readonly inputJsonSchema: Readonly<import("../index.js").JsonObject>;
-    };
     readonly "user_events.track": import("./contract.js").RpcContract<"user_events.track", import("zod").ZodObject<{
         eventName: import("zod").ZodString;
         source: import("zod").ZodString;
@@ -1872,6 +1795,12 @@ export declare const rpcContracts: {
         name: import("zod").ZodString;
         mimeType: import("zod").ZodString;
         sizeBytes: import("zod").ZodNumber;
+    }, import("zod/v4/core").$strict>, "required">;
+    readonly "file.repair": import("./contract.js").RpcContract<"file.repair", import("zod").ZodObject<{
+        limit: import("zod").ZodInt;
+    }, import("zod/v4/core").$strict>, import("zod").ZodObject<{
+        repaired: import("zod").ZodInt;
+        remaining: import("zod").ZodInt;
     }, import("zod/v4/core").$strict>, "required">;
     readonly "extensions.get": import("./contract.js").RpcContract<"extensions.get", import("zod").ZodObject<{
         key: import("zod").ZodString;

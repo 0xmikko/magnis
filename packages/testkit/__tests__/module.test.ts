@@ -98,6 +98,28 @@ describe("mockGraph", () => {
     await expect(graph.listSyncMigrationEntities({ schemaId: "x.profile", after: null, limit: pageLimitMax }))
       .resolves.toEqual({ items: [], next: null });
   });
+
+  /**
+   * @test-id: tst_testkit_mockgraph_005
+   * @covers: packages/testkit/module.ts::mockGraph
+   * @deterministic: yes
+   * @fixtures: overridden period listing and byte store write
+   */
+  it("tst_testkit_mockgraph_005 refuses a period page and a byte write the host refuses, ahead of the override", async () => {
+    const graph = mockGraph({
+      listLinkPeriods: (params) => Promise.resolve({ items: [], total: 0, limit: params.limit, offset: params.offset }),
+      bytesPut: () => Promise.resolve({ contentHash: "a".repeat(64), sizeBytes: 1 }),
+    });
+    const periods = { fromEntityId: "00000000-0000-4000-8000-000000000001", kind: "contents", notAfter: null, offset: 0 };
+
+    // @tested-by: tst_testkit_mockgraph_005
+    // @invariant: the host serves at most 100 periods and stores at most 3 MiB
+    // of text per call; a module asking for more fails in its tests too.
+    expect(() => graph.listLinkPeriods({ ...periods, limit: 101 })).toThrow("link period limit must be between 1 and 100");
+    await expect(graph.listLinkPeriods({ ...periods, limit: 100 })).resolves.toMatchObject({ limit: 100 });
+    expect(() => graph.bytesPut({ text: "x".repeat(3 * 1024 * 1024 + 1) })).toThrow("bytesPut takes at most 3 MiB of UTF-8 text");
+    await expect(graph.bytesPut({ text: "x" })).resolves.toMatchObject({ sizeBytes: 1 });
+  });
 });
 
 describe("mountModule — direct", () => {

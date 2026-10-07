@@ -396,7 +396,8 @@ export declare const AddLinkParamsSchema: z.ZodObject<{
     validUntil: z.ZodExactOptional<z.ZodISODateTime>;
 }, z.core.$strict>;
 export type AddLinkParams = z.output<typeof AddLinkParamsSchema>;
-/** `fileRegister`: a downloadable media file; its bytes never cross the plugin boundary. */
+/** `fileRegister`: a downloadable media file; its bytes never cross the
+ * plugin boundary, and a module never names a path for them. */
 export declare const FileRegisterParamsSchema: z.ZodObject<{
     externalId: z.ZodString;
     parentExternalId: z.ZodString;
@@ -404,7 +405,6 @@ export declare const FileRegisterParamsSchema: z.ZodObject<{
     name: z.ZodExactOptional<z.ZodString>;
     mimeType: z.ZodString;
     sizeBytes: z.ZodExactOptional<z.ZodInt>;
-    localPath: z.ZodExactOptional<z.ZodString>;
     cloudUrl: z.ZodExactOptional<z.ZodString>;
     sourceRef: z.ZodExactOptional<z.ZodType<import("./json.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("./json.js").JsonValue, unknown>>>;
     sourceModule: z.ZodString;
@@ -412,13 +412,56 @@ export declare const FileRegisterParamsSchema: z.ZodObject<{
     download: z.ZodExactOptional<z.ZodBoolean>;
 }, z.core.$strict>;
 export type FileRegisterParams = z.output<typeof FileRegisterParamsSchema>;
-/** `webRegister`: a URL the host normalizes; one it cannot is skipped. */
-export declare const WebRegisterParamsSchema: z.ZodObject<{
-    url: z.ZodString;
-    parentEntityId: z.ZodExactOptional<z.ZodString>;
-    linkKind: z.ZodExactOptional<z.ZodString>;
+/** SHA-256 of stored bytes: 64 lowercase hex characters, no prefix. */
+export declare const ContentHashSchema: z.ZodString;
+export type ContentHash = z.output<typeof ContentHashSchema>;
+/** What the host byte store answers after a write. */
+export declare const StoredBytesSchema: z.ZodObject<{
+    contentHash: z.ZodString;
+    sizeBytes: z.ZodInt;
 }, z.core.$strict>;
-export type WebRegisterParams = z.output<typeof WebRegisterParamsSchema>;
+export type StoredBytes = z.output<typeof StoredBytesSchema>;
+/** `graph.bytesPut`: UTF-8 text of at most 3 MiB, stored once under its hash. */
+export declare const BytesPutParamsSchema: z.ZodObject<{
+    text: z.ZodString;
+}, z.core.$strict>;
+export type BytesPutParams = z.output<typeof BytesPutParamsSchema>;
+/** `graph.bytesRead`: a window of the bytes that an entity of the calling
+ * user names in `properties.contentHash`. */
+export declare const BytesReadParamsSchema: z.ZodObject<{
+    entityId: z.ZodString;
+    offset: z.ZodInt;
+    length: z.ZodInt;
+}, z.core.$strict>;
+export type BytesReadParams = z.output<typeof BytesReadParamsSchema>;
+/** At most 1 MiB, cut on a UTF-8 boundary; `length` is the real byte count
+ * and `sizeBytes` the full size of the stored content. */
+export declare const BytesReadResultSchema: z.ZodObject<{
+    text: z.ZodString;
+    offset: z.ZodInt;
+    length: z.ZodInt;
+    sizeBytes: z.ZodInt;
+}, z.core.$strict>;
+export type BytesReadResult = z.output<typeof BytesReadResultSchema>;
+/** `graph.findByCanonicalKeys`: the caller's entity ids of one schema, in
+ * input order, null where absent. A declared entity's external id is its own
+ * UUID, so this is how a module finds it by its key. */
+export declare const FindByCanonicalKeysParamsSchema: z.ZodObject<{
+    schemaId: z.ZodString;
+    canonicalKeys: z.ZodArray<z.ZodString>;
+}, z.core.$strict>;
+export type FindByCanonicalKeysParams = z.output<typeof FindByCanonicalKeysParamsSchema>;
+/** `graph.listLinkPeriods`: the periods of one link kind from one entity of
+ * the calling user, newest `validFrom` first; `notAfter` keeps periods that
+ * start at or before that moment. */
+export declare const ListLinkPeriodsParamsSchema: z.ZodObject<{
+    fromEntityId: z.ZodString;
+    kind: z.ZodString;
+    notAfter: z.ZodNullable<z.ZodISODateTime>;
+    offset: z.ZodInt;
+    limit: z.ZodInt;
+}, z.core.$strict>;
+export type ListLinkPeriodsParams = z.output<typeof ListLinkPeriodsParamsSchema>;
 /** `graph.listEntitiesByPropertyField`. */
 export declare const ListEntitiesByPropertyFieldParamsSchema: z.ZodObject<{
     entitySchema: z.ZodString;

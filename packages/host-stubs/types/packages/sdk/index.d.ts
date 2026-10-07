@@ -79,8 +79,6 @@ export { OkAckSchema, StatusAckSchema } from "./core/rpc-response.js";
 export type { OkAck, StatusAck } from "./core/rpc-response.js";
 export { SkillInfoSchema, SkillListFilesParamsSchema, SkillListFilesResultSchema, SkillReadParamsSchema, SkillReadResultSchema } from "./core/skill.js";
 export type { SkillInfo, SkillListFilesParams, SkillListFilesResult, SkillReadParams, SkillReadResult } from "./core/skill.js";
-export { WebLinkDetailViewSchema, WebLinkListItemSchema, WebLinkOpenResultSchema, WebSearchParamsSchema, WebSearchResultSchema, WebSearchResultsSchema } from "./core/web.js";
-export type { WebLinkDetailView, WebLinkListItem, WebLinkOpenResult, WebSearchParams, WebSearchResult, WebSearchResults } from "./core/web.js";
 export { FileExtraSchema, FileUploadHttpResultSchema, FileUploadParamsSchema, FileUploadResultSchema, RegisterFileCommandSchema } from "./core/file.js";
 export type { FileExtra, FileUploadHttpResult, FileUploadParams, FileUploadResult, RegisterFileCommand } from "./core/file.js";
 export { GroupDetailViewSchema, GroupListItemSchema, GroupMemberItemSchema, ResolvedGroupIdentitySchema } from "./core/group.js";

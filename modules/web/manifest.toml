@@ -1,0 +1,35 @@
+# web — Web domain module (V8 plugin).
+#
+# Owns `web.link`, one URL of one user, and `web.page`, one content that URL
+# served, which never changes. A host `contents` period from the link to a page
+# says which page the URL served when, so every old version stays readable.
+# Page text lives in the host byte store. The `sources/web` Source fetches,
+# converts and searches; this module commands it and writes what it saw.
+# Sandboxed V8 isolate; a system module, installed in every workspace.
+
+id = "web"
+version = "0.1.0"
+# Plugin API version this manifest targets; the host accepts exactly 0.2.0.
+magnis_api_version = "0.2.0"
+# Other modules declare links to URLs through `web.link.ensure`, so the schema
+# owner exists in every workspace.
+tier = "system"
+title = "Web"
+summary = "Links you came across and the pages they served, with every version kept."
+# Reverse-domain publisher identity.
+publisher = "ai.magnis"
+
+# The surface `sources/web` answers commands on. It delivers no pages: the
+# module's sync handler exists because the host lets a module command only a
+# surface it receives.
+[surfaces.web]
+reconciliation = { mode = "none" }
+
+# Foreign asks beyond the implicit own namespace: writes to `web.` records and
+# reads of own schemas need no declaration.
+[permissions]
+# The host relation from a link to each version of its content.
+links = [ "contents" ]
+# `bytes`: the page text in the host byte store; `source_commands`: `read` and
+# `search` of `sources/web`.
+host = [ "bytes", "source_commands" ]

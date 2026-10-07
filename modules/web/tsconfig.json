@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "experimentalDecorators": true
+  },
+  "include": [
+    "module/**/*.ts",
+    "schema.ts",
+    "types.ts"
+  ]
+}

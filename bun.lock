@@ -78,6 +78,10 @@
       "name": "@magnis/plugin-triggers",
       "version": "0.1.0",
     },
+    "modules/web": {
+      "name": "@magnis/plugin-web",
+      "version": "0.1.0",
+    },
     "modules/x": {
       "name": "@magnis/plugin-x",
       "version": "0.1.0",
@@ -308,6 +312,8 @@
     "@magnis/plugin-telegram": ["@magnis/plugin-telegram@workspace:modules/telegram"],
 
     "@magnis/plugin-triggers": ["@magnis/plugin-triggers@workspace:modules/triggers"],
+
+    "@magnis/plugin-web": ["@magnis/plugin-web@workspace:modules/web"],
 
     "@magnis/plugin-x": ["@magnis/plugin-x@workspace:modules/x"],
 

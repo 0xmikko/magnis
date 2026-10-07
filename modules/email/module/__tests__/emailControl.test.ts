@@ -29,7 +29,7 @@ import type { EmailCanonical } from "../../types.ts";
 
 function makeModule(
   graph: GraphOverrides,
-  rpc: RpcExecutor = { execute: vi.fn() },
+  rpc: RpcExecutor = { execute: vi.fn(), ensure: vi.fn() },
 ): EmailModule {
   return mountModule(EmailModule, {
     graph: mockGraph({ moduleSettings: () => Promise.resolve({ newSenderSyncEnabled: "true" }), ...graph }),
@@ -207,7 +207,7 @@ describe("email set_trigger", () => {
       droppedKeys: [], resolved: [],
     }));
     const execute = vi.fn().mockResolvedValue({ id: "trig-1" });
-    const mod = makeModule({ applyBatch }, { execute });
+    const mod = makeModule({ applyBatch }, { execute, ensure: vi.fn() });
 
     await mod.setTrigger({
       from_addresses: ["B@X.com", "a@x.com", "a@x.com"], // mixed case + dup
@@ -234,7 +234,7 @@ describe("email set_trigger", () => {
   });
 
   it("throws when no addresses are provided", async () => {
-    const mod = makeModule({ applyBatch: vi.fn() }, { execute: vi.fn() });
+    const mod = makeModule({ applyBatch: vi.fn() }, { execute: vi.fn(), ensure: vi.fn() });
     await expect(
       mod.setTrigger({ from_addresses: [], gate_prompt: "g", action_prompt: "a" }),
     ).rejects.toThrow(/missing from_addresses/);
@@ -249,7 +249,7 @@ describe("email set_trigger", () => {
 it("tst_module_email_trigger_validation_001 compatibility trigger refuses invalid settings and foreign parent before addresses", async () => {
   const applyBatch = vi.fn();
   const execute = vi.fn();
-  const module = makeModule({ applyBatch, getEntityFull: vi.fn().mockResolvedValue(null) }, { execute });
+  const module = makeModule({ applyBatch, getEntityFull: vi.fn().mockResolvedValue(null) }, { execute, ensure: vi.fn() });
   await expect(module.setTrigger({ from_addresses: ["morgan@example.test"], gate_prompt: "reply", action_prompt: "notify", debounce_seconds: -1 })).rejects.toThrow("debounce");
   await expect(module.setTrigger({ from_addresses: ["morgan@example.test"], gate_prompt: "reply", action_prompt: "notify", episode_id: "foreign" })).rejects.toThrow("episode");
   expect(applyBatch).not.toHaveBeenCalled();

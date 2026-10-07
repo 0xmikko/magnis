@@ -53,6 +53,10 @@ export interface MockGraph
 /** The impls a test wants to install, typed against the REAL `GraphService`. */
 export type GraphOverrides = Partial<GraphService>;
 
+/** The host's bounds on `listLinkPeriods` and `bytesPut`. */
+const LINK_PERIOD_LIMIT_MAX = 100;
+const BYTES_PUT_MAX = 3 * 1024 * 1024;
+
 // Property accesses vitest/promise machinery makes on the proxy that must NOT
 // be interpreted as graph ops (else `await`-ing or printing the graph throws).
 const NON_OP = new Set(["then", "catch", "finally", "constructor"]);
@@ -64,6 +68,18 @@ const HOST_CHECKS: Partial<Record<string, (...args: unknown[]) => void>> = {
     const limit = (params as { limit?: unknown } | undefined)?.limit;
     if (typeof limit !== "number" || !Number.isSafeInteger(limit) || limit < 1 || limit > pageLimitMax) {
       throw new Error(`migration limit must be between 1 and ${String(pageLimitMax)}`);
+    }
+  },
+  listLinkPeriods: (params) => {
+    const limit = (params as { limit?: unknown } | undefined)?.limit;
+    if (typeof limit !== "number" || !Number.isSafeInteger(limit) || limit < 1 || limit > LINK_PERIOD_LIMIT_MAX) {
+      throw new Error(`link period limit must be between 1 and ${String(LINK_PERIOD_LIMIT_MAX)}`);
+    }
+  },
+  bytesPut: (params) => {
+    const text = (params as { text?: unknown } | undefined)?.text;
+    if (typeof text !== "string" || new TextEncoder().encode(text).length > BYTES_PUT_MAX) {
+      throw new Error("bytesPut takes at most 3 MiB of UTF-8 text");
     }
   },
 };

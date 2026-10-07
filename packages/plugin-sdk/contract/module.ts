@@ -24,10 +24,16 @@ import type {
   AddLinkParams,
   AdmitSyncEntitiesResult,
   AllowlistGate,
+  BytesPutParams,
+  BytesReadParams,
+  BytesReadResult,
   CreateEntityParams,
   Entity,
+  EnsureRequest,
+  EnsureResult,
   EntityWithLinks,
   FileRegisterParams,
+  FindByCanonicalKeysParams,
   GraphBatchInput,
   GraphBatchResult,
   JsonObject,
@@ -37,6 +43,7 @@ import type {
   LinkedSpec,
   ListEntitiesByPropertyFieldParams,
   ListEntitiesParams,
+  ListLinkPeriodsParams,
   ListSyncMigrationEntitiesParams,
   ListSyncMigrationEntitiesResult,
   MergeInput,
@@ -50,14 +57,23 @@ import type {
   PropertiesUpdate,
   SearchEntitiesParams,
   SetSyncEnabledParams,
+  StoredBytes,
   SyncAdmissionSubject,
   SyncStateApplyResult,
   SyncStateResetResult,
   SyncStateStatusResult,
   UpdateEntitySyncEnabledResult,
-  WebRegisterParams,
   WindowSpec,
 } from "@magnis/sdk";
+
+/** The input the host's retired `webRegister` took. The SDK no longer
+ * declares it; Telegram's move to `web.link.ensure` removes the two members
+ * below that still name it. */
+interface WebRegisterParams {
+  url: string;
+  parentEntityId?: string;
+  linkKind?: string;
+}
 
 // ───────────────────────── RPC contract types ─────────────────────
 /// Standard `<module>.list` RPC input.
@@ -181,6 +197,19 @@ export interface GraphService {
   // register a web link (web.link entity + dictionary + bg preview fetch),
   // optionally linked to a parent entity. Returns the web.link entity id.
   webRegister(p: WebRegisterParams): Promise<string>;
+  /** The caller's entity ids of one schema by canonical key, in input order,
+   *  null where absent. A declared entity's external id is its own UUID, so
+   *  this is how a declared entity is found by its key. */
+  findByCanonicalKeys(params: FindByCanonicalKeysParams): Promise<(string | null)[]>;
+  /** The periods of one link kind from one entity of the caller, newest
+   *  `validFrom` first, ended ones included; `limit` is 1 to 100. */
+  listLinkPeriods(params: ListLinkPeriodsParams): Promise<PaginatedResponse<Link>>;
+  /** Store text in the host byte store under its SHA-256; storing it again
+   *  answers the same hash. At most 3 MiB of UTF-8; needs the `bytes` grant. */
+  bytesPut(params: BytesPutParams): Promise<StoredBytes>;
+  /** Read a window of the bytes an entity of the caller names in
+   *  `properties.contentHash`, cut on a UTF-8 boundary; needs the `bytes` grant. */
+  bytesRead(params: BytesReadParams): Promise<BytesReadResult>;
   // register a downloadable media file (find-or-create file.object entity +
   // parent link + background download). mimeType is computed plugin-side so
   // the op stays source-agnostic. Returns the file.object entity id.
@@ -275,6 +304,10 @@ export interface PluginUtil {
 /// manifest `[permissions]` `call` list, including calls to other plugins.
 export interface RpcExecutor {
   execute<T = unknown>(method: string, params?: unknown): Promise<T>;
+  /** The host's `rpc.ensure`: ask the owning module for refs to entities of
+   *  its schema, without Graph access on its side; the refs it answers are
+   *  declared by the fragment the next `applyBatch` carries. */
+  ensure(request: EnsureRequest): Promise<EnsureResult>;
 }
 
 /// Severity of a plugin log entry. Mirrors the host's `LogLevel` so an entry
