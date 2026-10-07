@@ -36,6 +36,7 @@ export type PersistentEntityId = z.output<typeof PersistentEntityIdSchema>;
 export type EntityId = PersistentEntityId | NilId;
 
 export type UserId = PersistentEntityId;
+export type AuthUserId = Id;
 
 export type JsonPrimitive = null | boolean | number | string;
 export type JsonObject = { readonly [key: string]: JsonValue };
@@ -240,6 +241,8 @@ This illustrative response parser is strict. It rejects unknown fields and missi
 | `indexed` | `graph_index.status`, projected as `pending` when absent |
 
 No JSONB `extras` object is proposed. These fields have different owners and constraints; JSONB remains appropriate for domain properties. Omitting extras avoids its preference/status joins, but never skips ACL, archive or privacy filtering.
+
+Workspace export uses its versioned storage contract, not `EntityRead`. It preserves stored processing permission separately from the projected indexing status; a read-time `pending` default is not a stored index result.
 
 **Legacy pin exception:** current code permits `pinned: true, pinOrder: null`, and order without pinning. The target cannot represent either combination. Migration must explicitly assign an order to unordered pinned records and account for obsolete order-only state. It must not invent missing request values at runtime. Missing viewer preferences read as `pinOrder: null`.
 
@@ -569,13 +572,13 @@ export type UserEntity<P extends JsonValue = JsonValue> =
   };
 
 export interface EntitySystemState {
-  owner: UserId;
+  owner: AuthUserId;
 }
 ```
 
 **Target:** `users.user` is the canonical graph representation of a Magnis user, with role `identity_channel`; `contacts.person --identity--> users.user` connects it to a person. Passwords, sessions and auth secrets remain in specialized storage. Contact matching and merge never change authentication or ACL.
 
-`EntitySystemState.owner` is hidden from public Entity and extras. Current `entities.owner` references the separate auth `users` table. The migration plan must explicitly map that identity to the graph user, including the existing nil-ID local account. Bootstrap and ownership of user nodes cannot be inferred from a string alias.
+`EntitySystemState.owner` is hidden from public Entity and extras. Current `entities.owner` references the separate auth `users` table. The migration proposal preserves those auth IDs, including the nil-ID local account, and adds a unique `users.entity_id` binding to the assigned graph UserId. The internal owner column stores AuthUserId; an owner Link targets the mapped graph UserId. This storage/bootstrap proposal still requires approval.
 
 ### System-only ownership operations
 
@@ -601,7 +604,7 @@ An ordinary saved Entity has exactly one current owner and no overlapping owners
 ```text
 document --owner--> kolyaUser    [created, T)
 document --owner--> annaUser     [T, ∞)
-entities.owner = annaUser.id
+entities.owner = annaAuthUser.id  // mapped to annaUser.id by users.entity_id
 ```
 
 Anna owns the document at T; Kolya's historical Link gives no current access. Ordinary pair-level Link uniqueness is insufficient to enforce this invariant.
@@ -624,6 +627,8 @@ Anna owns the document at T; Kolya's historical Link gives no current access. Or
 To count Kolya's contacts whose first name starts with M, resolve his user identity and authorize that owner scope first. A relation filter does not grant access. For Kolya's own query, declared `contacts.person.first_name`, `starts_with: "M"` and `count: "exact"` suffice; the current SQL prefix comparison is case-sensitive.
 
 Stored owner Links support relationship queries, but present queries scope the Link and both endpoints to one owner. Graph-user bootstrap, historical ownership visibility and cross-owner transfer of ordinary Links/evidence require explicit rules. Do not relax generic owner checks to make the query work. Full shared ACL remains open.
+
+Even transfer of an otherwise isolated Entity leaves a historical owner Link across auth scopes. Bounded transfer remains unavailable until its history visibility and workspace export mapping are defined; exports must neither disclose another user's node nor contain dangling endpoints.
 
 <a id="domains"></a>
 ## 5. Domain declarations and module loading
