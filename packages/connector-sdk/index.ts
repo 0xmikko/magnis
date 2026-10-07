@@ -19,7 +19,7 @@ export * from "./contract/source";
 export * from "./codec";
 export * from "./server";
 
-import type { ConnectorConfig, DatasetActionArgs, Envelope, SyncTarget } from "./contract/source";
+import type { ConnectorConfig, DatasetActionArgs, Envelope, FetchArgs, SyncTarget } from "./contract/source";
 
 /** JSON-RPC error codes shared with the host runtime.
  * RATE_LIMIT carries `retry_after=<secs>` in the message so the host backs off
@@ -35,6 +35,46 @@ const GENERIC_FETCH_ERROR_CODE = -32000;
 const INVALID_PARAMS_CODE = -32602;
 const MAX_INFLIGHT_TOOL_CALLS = 8;
 const MAX_INFLIGHT_DOWNLOADS = 2;
+
+function invalidSelection(name: string): never {
+  throw new ConnectorError(`invalid selection argument '${name}'`, { kind: "validation" }, INVALID_PARAMS_CODE);
+}
+
+function chatIdsFrom(value: unknown, name: string): string[] {
+  if (!Array.isArray(value) || !value.every((id): id is string => typeof id === "string" && id.length > 0)) {
+    invalidSelection(name);
+  }
+  return value;
+}
+
+function selectionFrom(args: Record<string, unknown>): Pick<FetchArgs, "chatIds" | "headChatIds" | "senderSync" | "expectedProfileIds"> {
+  const selection: ReturnType<typeof selectionFrom> = {};
+  if (args.chatIds !== undefined) selection.chatIds = chatIdsFrom(args.chatIds, "chatIds");
+  if (args.headChatIds !== undefined) selection.headChatIds = chatIdsFrom(args.headChatIds, "headChatIds");
+  if (args.senderSync !== undefined) {
+    const raw = args.senderSync;
+    if (raw === null || typeof raw !== "object" || Array.isArray(raw) || !("unknownSenderEnabled" in raw)
+      || typeof raw.unknownSenderEnabled !== "boolean" || !("choices" in raw)
+      || raw.choices === null || typeof raw.choices !== "object" || Array.isArray(raw.choices)) invalidSelection("senderSync");
+    const choices: Record<string, boolean> = {};
+    for (const [key, enabled] of Object.entries(raw.choices)) {
+      if (key.length === 0 || typeof enabled !== "boolean") invalidSelection("senderSync.choices");
+      Object.defineProperty(choices, key, { value: enabled, enumerable: true });
+    }
+    selection.senderSync = { choices, unknownSenderEnabled: raw.unknownSenderEnabled };
+  }
+  if (args.expectedProfileIds !== undefined) {
+    const raw = args.expectedProfileIds;
+    if (raw === null || typeof raw !== "object" || Array.isArray(raw)) invalidSelection("expectedProfileIds");
+    const ids: Record<string, string> = {};
+    for (const [handle, id] of Object.entries(raw)) {
+      if (handle.length === 0 || typeof id !== "string" || id.length === 0) invalidSelection("expectedProfileIds");
+      Object.defineProperty(ids, handle, { value: id, enumerable: true });
+    }
+    selection.expectedProfileIds = ids;
+  }
+  return selection;
+}
 
 /** Throw this from a connector `fetch` on an upstream 429 so the host backs off
  * for `retryAfterSecs` rather than treating it as a hard failure. */
@@ -227,7 +267,11 @@ export async function handleMessage(
       liveSubscriptions.add(subscriptionId);
       try {
         await config.listenStart(
-          { subscription_id: subscriptionId, meta: metaArg },
+          {
+            subscription_id: subscriptionId,
+            meta: metaArg,
+            ...(rawArgs.chatIds === undefined ? {} : { chatIds: chatIdsFrom(rawArgs.chatIds, "chatIds") }),
+          },
           makeEmitter(config, subscriptionId),
         );
         return { jsonrpc: "2.0", id, result: { ok: true, subscription_id: subscriptionId } };
@@ -363,6 +407,7 @@ export async function handleMessage(
     // the host degrades the surface (and backs off on a rate limit, S6).
     try {
       const result = await config.fetch({
+        ...selectionFrom(args),
         surface,
         cursor,
         direction,
@@ -396,6 +441,18 @@ export async function handleMessage(
             target: { type: "object" },
             forward_checkpoint: {},
             tracked_handles: { type: "array", items: { type: "string" } },
+            chatIds: { type: "array", items: { type: "string" } },
+            headChatIds: { type: "array", items: { type: "string" } },
+            senderSync: {
+              type: "object",
+              properties: {
+                choices: { type: "object", additionalProperties: { type: "boolean" } },
+                unknownSenderEnabled: { type: "boolean" },
+              },
+              required: ["choices", "unknownSenderEnabled"],
+              additionalProperties: false,
+            },
+            expectedProfileIds: { type: "object", additionalProperties: { type: "string" } },
             limit: { type: "integer" },
           },
           required: ["surface"],

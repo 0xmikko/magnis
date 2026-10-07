@@ -1,47 +1,48 @@
 // Shared DTOs for the contacts plugin — wire shapes the host frontend
-// consumes. Mirrors the legacy Rust contacts ContactListItem /
-// ContactDetailView 1:1.
-
+// consumes, declared once for module/ and ui/. The SDK shapes inside them
+// (the linked summaries) are the SDK's.
+import type { LinkedEntitySummary, Syncable } from "@magnis/sdk";
 
 export interface ContactListItem {
   id: string;
-  schema_id: string;
+  schemaId: string;
   name: string;
   email: string | null;
   phone: string | null;
   role: string | null;
   company: string | null;
   channels: string[];
-  avatar_color: string;
+  avatarColor: string;
   initials: string;
-  relevance_tier?: string | null;
-  created_at: string;
-  is_pinned?: boolean | null;
+  relevanceTier?: string | null;
+  createdAt: string;
+  isPinned?: boolean | null;
 }
 
-export interface LinkedEntitySummary {
-  id: string;
+export interface ContactSyncTarget {
+  identityId: string;
+  schemaId: string;
   name: string | null;
-  schema_id: string;
-  link_kind: string;
-  created_at: string;
-  data: unknown;
+  state:
+    | ({ kind: "ready" } & Pick<Syncable, "id" | "syncEnabled" | "syncRevision">)
+    | { kind: "unavailable"; message: string };
 }
 
 export interface ContactDetailView {
+  syncTargets: readonly ContactSyncTarget[];
   id: string;
-  schema_id: string;
+  schemaId: string;
   name: string;
   email: string | null;
   phone: string | null;
   role: string | null;
   company: string | null;
   channels: string[];
-  avatar_color: string;
+  avatarColor: string;
   initials: string;
   canonical: Partial<ContactCanonical>;
-  linked_entities: LinkedEntitySummary[];
-  created_at: string;
+  linkedEntities: LinkedEntitySummary[];
+  createdAt: string;
   /** S3 (§5.1): the composed card — the hub's curated dictionary. */
   curated: Record<string, unknown>;
   /** Composed emails: the shared email.address nodes one identity hop away. */
@@ -50,8 +51,8 @@ export interface ContactDetailView {
    * value, labeled by origin ("curated" | source id). */
   phones: { phone: string; type?: string | null; origin: string }[];
   /** Source claims: the replica dictionaries one identity hop away, each
-   * labeled by its schema (contacts.google_contact, …). */
-  replicas: { id: string; schema_id: string; name: string | null; properties: Record<string, unknown> }[];
+   * labeled by its schema (addressbook.card, …). */
+  replicas: { id: string; schemaId: string; name: string | null; properties: Record<string, unknown> }[];
 }
 
 // ── schema → type maps that parameterise GraphService ──────────────
@@ -93,7 +94,6 @@ export interface RenameIfPlaceholderParams {
 // create UUID — kept out of the agent-facing tool schema.
 export interface CreateParams {
   name: string;
-  email?: string;
   phone?: string;
   company?: string;
   role?: string;
@@ -106,40 +106,20 @@ export interface UpdateParams {
   name?: string;
 }
 
-// contacts.search — agent tool returning an MCP ToolResult of
-// SearchResultItem[] (shared::search_entities, shared.rs:447).
+// contacts.search — agent tool returning an MCP ToolResult of the SDK
+// EntitySearchHit[].
 export interface SearchParams {
   query?: string;
   context?: string;
   limit?: number;
 }
-export interface SearchResultItem {
-  id: string;
-  name: string | null;
-  schema_id: string;
-  schema_version: number;
-}
 export interface ToolResult {
   content: { type: "text"; text: string }[];
-}
-
-// contacts.merge / merge_preview — mirror the native handlers
-// (controller.rs:631,656).
-export interface MergePreviewParams {
-  survivor_id: string;
-  retired_id: string;
-}
-export interface MergeParams {
-  survivor_id: string;
-  retired_id: string;
-  overrides?: { key: string; value: unknown }[];
-  reason?: string;
 }
 
 // contacts.batch_create — mirrors the native handler (controller.rs:469).
 export interface BatchCreateContact {
   name: string;
-  email?: string;
   phone?: string;
   company?: string;
   role?: string;
@@ -154,7 +134,6 @@ export interface BatchCreateParams {
 export interface BatchCreateRow {
   id: string | null;
   name: string;
-  email?: string | null;
   status: "created" | "excluded";
 }
 export interface BatchCreateResult {
@@ -185,25 +164,6 @@ export interface ContactsListParams {
   include_all?: boolean;
 }
 
-// ── sync-ingest envelope shapes (@syncHandler "contacts") ──────────
-// Internal to the ingest path; the host bridge routes Google People-API
-// snapshots to `contacts.__sync__` as these envelopes.
-
-/// A sync envelope routed to the contacts surface by the host bridge.
-/// `payload` is a Google connector `Contact` (sources/google/src/
-/// surfaces.rs): { id, display_name, given_name, family_name, emails[],
-/// phones[], organizations[], photo_url, external_url }.
-export interface ContactsSyncEnvelope {
-  source_id?: string;
-  surface?: string;
-  account_id?: string;
-  user_id?: string;
-  kind?: string;
-  remote_id?: string;
-  payload?: Record<string, unknown>;
-  timestamp?: string;
-}
-
 /** One stored hub record — the curated claims the module writes onto a person,
  * plus the name parts its merge path reads back out of the dictionary.
  * `entities.ts` declares exactly this and the build proves the two are one
@@ -219,46 +179,9 @@ export interface PersonDetails {
   tracking?: { platform: "x" | "linkedin"; handle?: string | null; enabled: boolean }[];
 }
 
-/** One stored replica record — exactly what `replicaDict` writes. The payload
- * type above it is the connector's INPUT; this is what lands in the graph. */
-export interface GoogleContactRecord {
-  source_id?: string;
-  account_id?: string;
-  sync_pass?: string;
-  resource_name?: string;
-  etag?: string;
-  display_name?: string;
-  given_name?: string;
-  family_name?: string;
-  emails?: GoogleContactEmail[];
-  phones?: GoogleContactPhone[];
-  organizations?: { name?: string | null; title?: string | null; is_current?: boolean }[];
-  photo_url?: string;
-  external_url?: string;
-}
-
-export interface GoogleContactEmail {
-  address?: string;
-  label?: string | null;
-  is_primary?: boolean;
-}
-export interface GoogleContactPhone {
-  number?: string;
-  label?: string | null;
-  is_primary?: boolean;
-}
-export interface GoogleContactPayload {
-  id?: string;
-  /** S3: verbatim People API identity — the replica's write-back base. */
-  resource_name?: string | null;
-  /** S3: verbatim optimistic-concurrency tag. */
-  etag?: string | null;
-  display_name?: string | null;
-  given_name?: string | null;
-  family_name?: string | null;
-  emails?: GoogleContactEmail[];
-  phones?: GoogleContactPhone[];
-  organizations?: { name?: string | null; title?: string | null; is_current?: boolean }[];
-  photo_url?: string | null;
-  external_url?: string | null;
+export interface CompleteXSyncMigrationParams {
+  contactId: string;
+  profileId: string;
+  handle: string;
+  enabled: boolean;
 }

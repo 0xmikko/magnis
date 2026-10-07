@@ -88,7 +88,7 @@ function commit(): void {
   else for (const config of configs) run("x", "tsc", "-p", config);
   if (lint.length) run("x", "eslint", "--max-warnings", "0", ...lint);
   // Reuse the public test adapters; runner ownership lives in test-connectors.sh.
-  const frontend = [...tests].filter((path) => path.includes("/ui/") && !path.endsWith("sourceStatusAdapter.test.ts"));
+  const frontend = [...tests].filter((path) => (path.includes("/ui/") || path.startsWith("packages/host-testdouble/")) && !path.endsWith("sourceStatusAdapter.test.ts"));
   const backend = [...tests].filter((path) => !frontend.includes(path));
   for (const lane of backendLanes(backend, (path) => readFileSync(join(root, path), "utf8"))) {
     run("run", "agent:test:backend", "--", ...lane);

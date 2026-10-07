@@ -61,11 +61,12 @@ async function call(
   name: string,
   args: Record<string, unknown>,
   d: TestConnector = deps(),
+  explicitSelection = true,
 ): Promise<Record<string, unknown>> {
   const authModeArg = d.authMode ? process.argv.push("--auth-mode") - 1 : -1;
   try {
     const reply = await handleSdkMessage(
-      { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } },
+      { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: explicitSelection && (name === "magnis.sync.fetch" || name === "listen_start") ? { chatIds: ["5", "6", "42"], headChatIds: [], ...args } : args } },
       d.config,
     );
     return reply as Record<string, unknown>;
@@ -105,7 +106,7 @@ test("tst_src_tg_runtime_001 uses the standard Source program for every operatio
   };
   const sdkCall = async (id: number, name: string, args: Record<string, unknown>): Promise<Record<string, unknown>> =>
     await handleSdkMessage(
-      { jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: args } },
+      { jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: { chatIds: ["5", "6"], headChatIds: [], ...args } } },
       config,
     ) as Record<string, unknown>;
 
@@ -159,6 +160,18 @@ test("tst_src_tg_runtime_001 uses the standard Source program for every operatio
 // ── fixture fetch ───────────────────────────────────────────────────────────
 
 describe("fixture fetch", () => {
+  test("tst_src_tg_selection_001 discovers with no content, forces a selected head and leaves disabled coverage untouched", async () => {
+    withFixture(FIXTURE_DOC);
+    const discovery = await call("magnis.sync.fetch", { direction: "backward", chatIds: [], headChatIds: [] });
+    expect(envIds(discovery)).toEqual(["tg:chat:5", "tg:chat:6"]);
+    expect(discovery.result).toMatchObject({ traversed: {} });
+    const started = await call("magnis.sync.fetch", { direction: "forward", chatIds: ["5"], headChatIds: ["5"], cursor: { chats: { "5": { last_msg_id: 20 }, "6": { last_msg_id: 30 } } } });
+    expect(envIds(started)).toEqual(["tg:chat:5", "tg:msg:5:10", "tg:msg:5:20", "tg:chat:6"]);
+    expect(started.result).toMatchObject({ traversed: { "5": [1, 20] }, nextCursor: { chats: { "6": { last_msg_id: 30 } } } });
+    for (const args of [{}, { chatIds: [] }, { chatIds: ["5"], headChatIds: ["6"] }]) {
+      expect((await call("magnis.sync.fetch", args, deps(), false)).error).toBeDefined();
+    }
+  });
   /**
    * @test-id: tst_tgts_fx_001
    * @scenario: scn_backend_tests_006
@@ -298,6 +311,23 @@ describe("fixture execute", () => {
 // ── fixture listener ────────────────────────────────────────────────────────
 
 describe("fixture listener", () => {
+  test("tst_src_tg_selection_listener_001 replaces the in-memory selection without changing another subscription", async () => {
+    withFixture(FIXTURE_DOC);
+    const pushed: string[] = [];
+    const d = deps({ onNotification: (line) => { pushed.push(line); } });
+    const start = (subscription_id: string, chatIds: string[]) => call("listen_start", { subscription_id, chatIds, _meta: { account_id: "acct-1" } }, d);
+    await start("a", []);
+    await start("b", ["5"]);
+    await new Promise<void>((resolve) => { setImmediate(resolve); });
+    expect(pushed).toHaveLength(1);
+    expect(pushed[0]).toContain('"subscription_id":"b"');
+    await call("listen_stop", { subscription_id: "a" }, d);
+    await start("a", ["5"]);
+    await new Promise<void>((resolve) => { setImmediate(resolve); });
+    expect(pushed).toHaveLength(2);
+    expect(pushed[1]).toContain('"subscription_id":"a"');
+    expect(d.registry.size()).toBe(2);
+  });
   test("tst_tgts_fx_010 listen_start replays live messages with the EXACT push params", async () => {
     withFixture(FIXTURE_DOC);
     const lines: string[] = [];
@@ -450,7 +480,7 @@ describe("wire: initialize / tools/list", () => {
     )) as Record<string, unknown>;
     const result = reply.result as Record<string, unknown>;
     expect(result.protocolVersion).toBe("2025-06-18");
-    expect(result.serverInfo).toEqual({ name: "magnis-telegram", version: "1.0.1" });
+    expect(result.serverInfo).toEqual({ name: "magnis-telegram", version: "2.0.0" });
     expect(result.capabilities).toEqual({
       tools: {},
       experimental: { magnis: { sync: { surfaces: ["telegram"], mode: "push" } } },

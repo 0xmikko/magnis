@@ -17,7 +17,7 @@ import { EmptyState, Icon, Stack, Text } from "@magnis/host/ui";
 /** One source-node dictionary the hub reaches over `identity`. */
 export interface ContactReplica {
   readonly id: string;
-  readonly schema_id: string;
+  readonly schemaId: string;
   readonly name: string | null;
   readonly properties: Readonly<Record<string, unknown>>;
 }
@@ -120,7 +120,7 @@ function buildRows(
   // Telegram identity. The handle goes BEFORE an external link so
   // "@handle · Telegram" beats a Google-imported link at the same t.me URL.
   for (const r of replicas ?? []) {
-    if (!r.schema_id.startsWith("telegram.")) continue;
+    if (!r.schemaId.startsWith("telegram.")) continue;
     const username = dictString(r.properties, "username");
     if (username) {
       rows.push({
@@ -134,7 +134,7 @@ function buildRows(
   for (const r of replicas ?? []) {
     const url = dictString(r.properties, "external_url");
     if (!url) continue;
-    const platform = dictString(r.properties, "platform") ?? sourceOf(r.schema_id);
+    const platform = dictString(r.properties, "platform") ?? sourceOf(r.schemaId);
     rows.push({
       iconName: platform === "slack" ? "slack" : "link",
       value: dictString(r.properties, "display_name") ?? r.name ?? url,

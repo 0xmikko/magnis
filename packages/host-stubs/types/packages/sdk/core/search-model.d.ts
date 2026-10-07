@@ -5,6 +5,6 @@ export declare const SearchModelAvailabilitySchema: z.ZodObject<{
     downloaded: z.ZodBoolean;
     downloadSize: z.ZodNullable<z.ZodString>;
     diskUsage: z.ZodNullable<z.ZodString>;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type SearchModelAvailability = z.output<typeof SearchModelAvailabilitySchema>;
 //# sourceMappingURL=search-model.d.ts.map

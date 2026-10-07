@@ -8,10 +8,10 @@ import { TriggerDetailPanel } from "./TriggerDetailPanel";
 import { TriggerToolCallRenderer } from "./TriggerToolCallRenderer";
 
 export function mapTriggerListItem(raw: Record<string, unknown>): ListItem {
-  const watchedEntityNames = Array.isArray(raw.watched_entity_names)
-    ? raw.watched_entity_names.filter((name): name is string => typeof name === "string")
+  const watchedEntityNames = Array.isArray(raw.watchedEntityNames)
+    ? raw.watchedEntityNames.filter((name): name is string => typeof name === "string")
     : [];
-  const actionPrompt = typeof raw.action_prompt === "string" ? raw.action_prompt : "";
+  const actionPrompt = typeof raw.actionPrompt === "string" ? raw.actionPrompt : "";
   // INV-UI-1 (plan Stage 5): the schedule IS a scheduled trigger's "when" —
   // it outranks both the (empty) watches list and the action-prompt fallback.
   const schedule = raw.schedule as { cron?: unknown } | null | undefined;
@@ -20,13 +20,13 @@ export function mapTriggerListItem(raw: Record<string, unknown>): ListItem {
   return {
     id: raw.id as string,
     name: typeof raw.name === "string" ? raw.name : null,
-    schema_id: "triggers.trigger",
+    schemaId: "triggers.trigger",
     preview: cron
       ? `Schedule ${cron}`
       : watchedEntityNames.length > 0
         ? `Watches ${watchedEntityNames.join(", ")}`
         : actionPrompt,
-    timestamp: typeof raw.last_fired_at === "string" ? raw.last_fired_at : null,
+    timestamp: typeof raw.lastFiredAt === "string" ? raw.lastFiredAt : null,
   };
 }
 

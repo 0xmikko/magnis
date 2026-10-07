@@ -6,7 +6,7 @@
  * The AgentPanel host resolves renderers through this registry instead of
  * hardcoding module-specific branches.
  */
-import type { EntityOperationBinding } from "@magnis/sdk/core/approval";
+import { type EntityOperationBinding } from "@magnis/sdk/core/approval";
 import type { AgentHistoryBlock, AgentHistoryRendererRegistration, AgentTodoItem, AgentTodoRendererRegistration, ModuleAgentContribution, AgentContextAction, AgentEntityContextResolver, AllowlistTarget, AppRuntime, EntityRendererRegistration } from "../contracts";
 export declare class AgentContributionRegistry {
     private readonly contributions;

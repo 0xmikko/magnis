@@ -163,14 +163,14 @@ export function EmailToolCallRenderer({
   // APPROVED — collapsed unified EmailCard with bold "Send:" / "Reply:"
   // prefix. Chevron raskryvает full body / To / Attached внутри той же
   // карточки. Snapshot берётся из toolResult.result (backend кладёт
-  // schema_id="email.message" + full row at controller.rs:378-394).
+  // schemaId="email.message" + full row at controller.rs:378-394).
   if (tc.status === "approved" && toolResult) {
     const entity = extractEntities(toolResult.result, { toolName: tc.name }).at(0);
     if (entity) {
       return (
         <div className="space-y-2">
           <ExpandableEntityCard
-            schemaId={entity.schema_id as string}
+            schemaId={entity.schemaId}
             data={entity}
             runtime={runtime}
             action={verb}

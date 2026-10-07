@@ -2,19 +2,19 @@
 #
 # Owns the `x.*` graph namespace: profile + post entities and their
 # dictionaries for the X accounts you track. Ingests the `x` sync surface fed
-# by the X source connector, joins each profile to the matching contact with an
-# `identity` edge (reads contacts.person), and reads contacts' social-tracking
-# over RPC. Read-only today.
+# by the X source connector. Migrates legacy Contacts choices to stable profile
+# entities and identity links; synchronization choices then belong to profiles.
 # Sandboxed V8 isolate; presence-seeded at boot.
 
 id = "x"
 version = "0.1.0"
-# SDK contract version this manifest targets (host accepts 0.x).
-magnis_api_version = "0.1.0"
+# Plugin API version this manifest targets; the host accepts exactly 0.2.0.
+magnis_api_version = "0.2.0"
 title = "X"
 summary = "X (Twitter) profiles and posts of the people you track, linked to contacts."
 # Reverse-domain publisher identity.
 publisher = "ai.magnis"
+dependsOn = [ "contacts" ]
 
 [[links]]
 kind = "x.post:x.profile"
@@ -40,9 +40,19 @@ progress = { "x.post" = "posts", "x.profile" = "profiles" }
 [permissions]
 read = [ "contacts.person" ]
 links = [ "authored_by", "identity" ]
-call = [ "contacts.get_social_tracking_by_handle", "contacts.rename_if_placeholder" ]
-host = [ "external_id_reads" ]
+call = [ "contacts.completeXSyncMigration", "contacts.rename_if_placeholder" ]
+host = [ "external_id_reads", "source_commands", "sync_state" ]
 
 # S5: this module owns no link kinds. Authorship and identity are host-owned
 # RELATIONS (backend/src/services/graph/link_kinds.rs), constrained by the
 # endpoint ROLES its own descriptors declare.
+
+[settings]
+moduleId = "x"
+label = "X"
+
+[[settings.fields]]
+key = "newProfileSyncEnabled"
+label = "Synchronize newly discovered profiles"
+defaultValue = "false"
+fieldType = { type = "boolean" }

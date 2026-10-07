@@ -16,7 +16,7 @@
 import { useCallback, useRef, useState } from "react";
 import type { JSX } from "react";
 
-import { Icon, IconButton, Stack, Text } from "@magnis/host/ui";
+import { ActionButton, Icon, IconButton, Stack, Text } from "@magnis/host/ui";
 import { MarkdownEditor } from "@magnis/host/markdown";
 import { useEditorMentionSuggestion } from "@magnis/host/markdown";
 import { useEntityProperty } from "@magnis/host/base";
@@ -24,6 +24,9 @@ import { useAppRuntime } from "@magnis/host/runtime";
 
 import { ContactInfoColumn } from "./ContactInfoColumn";
 import { ContactMergeAction } from "./ContactMergeAction";
+import { useQueryClient } from "@tanstack/react-query";
+import type { SetSyncEnabledResult, SyncTargetResult } from "@magnis/plugin-sdk";
+import type { ContactSyncTarget } from "../types";
 import { useContactDetailQuery } from "./queries";
 
 
@@ -40,6 +43,8 @@ export function ContactOverview({ entityId }: ContactOverviewProps): JSX.Element
       <div className="flex justify-end">
         <ContactMergeAction entityId={entityId} runtime={runtime} />
       </div>
+      {detail.error ? <div role="alert">{detail.error.message}</div> : null}
+      {detail.data ? <ContactSyncControls key={entityId} entityId={entityId} targets={detail.data.syncTargets} /> : null}
       <div className="grid grid-cols-1 gap-6 md:grid-cols-[2fr_3fr] md:gap-6">
         <div>
           <ContactInfoColumn
@@ -54,6 +59,55 @@ export function ContactOverview({ entityId }: ContactOverviewProps): JSX.Element
       </div>
     </div>
   );
+}
+
+function ContactSyncControls({ entityId, targets }: { readonly entityId: string; readonly targets: readonly ContactSyncTarget[] }): JSX.Element {
+  const runtime = useAppRuntime();
+  const client = useQueryClient();
+  const saving = useRef(false);
+  const [results, setResults] = useState<readonly SyncTargetResult[]>([]);
+  const [error, setError] = useState<string>();
+  const [pending, setPending] = useState(false);
+
+  const setSyncEnabled = async (syncEnabled: boolean): Promise<void> => {
+    if (saving.current) return;
+    saving.current = true;
+    setPending(true);
+    setError(undefined);
+    setResults([]);
+    try {
+      const response = await runtime.transport.rpc<SetSyncEnabledResult>("contacts.person.setSyncEnabled", { id: entityId, syncEnabled });
+      if (response.results.length === 0 && targets.length > 0) throw new Error("No identity synchronization results were returned.");
+      setResults(response.results);
+      await Promise.all(["contacts", "email", "telegram", "x"].map(key => client.invalidateQueries({ queryKey: [key] })));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      saving.current = false;
+      setPending(false);
+    }
+  };
+
+  return <section className="rounded-2xl bg-surface-secondary/50 px-5 py-3" aria-label="Contact synchronization">
+    <Text variant="title">Synchronization</Text>
+    {targets.length === 0 ? <Text>No supported identities linked.</Text> : <>
+      <ul>{targets.map(target => <li key={target.identityId}>
+        {target.name}: {target.state.kind === "ready" ? target.state.syncEnabled ? "On" : "Off" : target.state.message}
+      </li>)}</ul>
+      <div className="flex gap-2 mt-2">
+        <ActionButton label="Start synchronization" onClick={() => { void setSyncEnabled(true); }} />
+        <ActionButton label="Stop synchronization" onClick={() => { void setSyncEnabled(false); }} />
+      </div>
+    </>}
+    {pending ? <div role="status">Saving…</div> : null}
+    {error ? <div role="alert">{error}</div> : null}
+    {results.map(result => {
+      const name = targets.find(target => target.identityId === result.identityId)?.name ?? result.identityId;
+      const message = result.kind === "failed" ? `Not saved: ${result.message}`
+        : result.application.kind === "pending" ? "Saved. Applying…" : `Saved, but could not be applied: ${result.application.message}`;
+      return <div key={result.identityId} role={result.kind === "failed" || result.application.kind === "failed" ? "alert" : "status"}>{name}: {message}</div>;
+    })}
+  </section>;
 }
 
 function DescriptionPanel({ entityId }: { readonly entityId: string }): JSX.Element {

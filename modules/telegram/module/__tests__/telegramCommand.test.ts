@@ -14,7 +14,7 @@
  * @legacy-id: tst_be_tgtrigger_013_set_trigger_creates_trigger
  */
 import { describe, expect, it, vi } from "vitest";
-import { mockGraph, mountModule } from "@magnis/testkit/module";
+import { entity, mockGraph, mountModule, syncStateDouble } from "@magnis/testkit/module";
 import { TelegramModule } from "../service.ts";
 
 interface TelegramCommandInternals {
@@ -27,15 +27,67 @@ interface TelegramCommandInternals {
 }
 
 describe("tst_module_telegram_command_001 — Telegram command mapping", () => {
-  it("delegates sync and composer commands without translating host responses", async () => {
+  it.each([true, false])("delegates an account identity only to its existing direct chat (exists: %s)", async (exists) => {
     const graph = mockGraph({
-      sync_state: (...args: unknown[]) => Promise.resolve({ args }),
+      getEntity: (id) => Promise.resolve(id === "identity" ? entity(id, "Person", { schemaId: "telegram.account", properties: { telegram_user_id: 42 } }) : entity(id, "DM", { schemaId: "telegram.chat", properties: { chat_id: 42, type: "private" } })),
+      findByExternalId: () => Promise.resolve(exists ? "chat-id" : null),
+      updateEntitySyncEnabled: () => Promise.resolve({ syncRevision: "8" }),
+      syncState: syncStateDouble(),
+    });
+    const mounted = await mountModule(TelegramModule, { mode: "dispatch", graph, ctx: { extensionId: "telegram" } });
+    const result = await mounted.rpc("telegram.account.setSyncEnabled", { id: "identity", syncEnabled: true });
+    expect(graph.spies.findByExternalId).toHaveBeenCalledWith("tg:chat:42");
+    expect(result).toEqual({ results: [exists ? {
+      identityId: "identity", targetId: "chat-id", kind: "saved", syncEnabled: true, syncRevision: "8", application: { kind: "pending" },
+    } : { identityId: "identity", targetId: null, kind: "failed", message: "Telegram identity has no stored direct chat" }] });
+    if (exists) expect(graph.spies.updateEntitySyncEnabled).toHaveBeenCalledExactlyOnceWith({ id: "chat-id", syncEnabled: true });
+    else expect(graph.spies.updateEntitySyncEnabled).not.toHaveBeenCalled();
+  });
+
+  it("reports persistence failure without requesting worker application", async () => {
+    const graph = mockGraph({
+      getEntity: () => Promise.resolve(entity("chat-id", "Chat", { schemaId: "telegram.chat" })),
+      updateEntitySyncEnabled: () => Promise.reject(new Error("save failed")),
+      syncState: syncStateDouble(),
+    });
+    const mounted = await mountModule(TelegramModule, { mode: "dispatch", graph, ctx: { extensionId: "telegram" } });
+    await expect(mounted.rpc("telegram.chat.setSyncEnabled", { id: "chat-id", syncEnabled: true })).resolves.toEqual({ results: [{ identityId: "chat-id", targetId: "chat-id", kind: "failed", message: "save failed" }] });
+    expect(graph.spies.syncState).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])("saves the chat choice before requesting application (apply fails: %s)", async (applyFails) => {
+    const calls: string[] = [];
+    const graph = mockGraph({
+      getEntity: () => Promise.resolve(entity("chat-id", "Chat", { schemaId: "telegram.chat" })),
+      updateEntitySyncEnabled: () => { calls.push("save"); return Promise.resolve({ syncRevision: "9" }); },
+      syncState: syncStateDouble({ apply: () => { calls.push("apply"); return applyFails ? Promise.reject(new Error("worker unavailable")) : Promise.resolve({ pending: true }); } }),
+    });
+    const mounted = await mountModule(TelegramModule, { mode: "dispatch", graph, ctx: { extensionId: "telegram" } });
+    expect(mounted.tools.find((entry) => entry.name === "telegram.chat.setSyncEnabled")?.requiresApproval).toBe(true);
+    await expect(mounted.rpc("telegram.chat.setSyncEnabled", { id: "chat-id", syncEnabled: false })).resolves.toEqual({ results: [{
+      identityId: "chat-id", targetId: "chat-id", kind: "saved", syncEnabled: false, syncRevision: "9",
+      application: applyFails ? { kind: "failed", message: "worker unavailable" } : { kind: "pending" },
+    }] });
+    expect(calls).toEqual(["save", "apply"]);
+    expect(graph.spies.updateEntitySyncEnabled).toHaveBeenCalledWith({ id: "chat-id", syncEnabled: false });
+  });
+
+  it("delegates sync and composer commands without translating host responses", async () => {
+    const status = { accounts: [{ accountId: "account-1", sync: null }] };
+    const reset = { status: "ok" as const, deletedMessages: 3 };
+    const resets: string[] = [];
+    const graph = mockGraph({
+      syncState: syncStateDouble({
+        status: () => Promise.resolve(status),
+        reset: (resetSchema) => { resets.push(resetSchema); return Promise.resolve(reset); },
+      }),
       composer: (...args: unknown[]) => Promise.resolve({ args }),
     });
     const module = mountModule(TelegramModule, { graph }).module;
 
-    await expect(module.syncStatus()).resolves.toEqual({ args: ["status"] });
-    await expect(module.syncReset()).resolves.toEqual({ args: ["reset", "telegram.message"] });
+    await expect(module.syncStatus()).resolves.toBe(status);
+    await expect(module.syncReset()).resolves.toBe(reset);
+    expect(resets).toEqual(["telegram.message"]);
     await expect(module.composerRead()).resolves.toEqual({ args: ["read"] });
     await expect(module.composerSetText({ thread_key: "chat:42", text: "Hello" })).resolves.toEqual({
       args: ["set_text", "chat:42", "Hello"],
@@ -52,7 +104,7 @@ describe("tst_module_telegram_command_001 — Telegram command mapping", () => {
    * @fixtures: strict graph double; no connector process
    */
   it("tst_mod_tg_backfill_wake_001 requests asynchronous backfill without provider payload", async () => {
-    const graph = mockGraph({ request_backfill: () => Promise.resolve({ pending: true }) });
+    const graph = mockGraph({ requestBackfill: () => Promise.resolve({ pending: true }) });
     const module = mountModule(TelegramModule, { graph }).module;
 
     await expect(module.messagesBackfill({
@@ -60,7 +112,7 @@ describe("tst_module_telegram_command_001 — Telegram command mapping", () => {
       before_message_id: 100,
       account_id: "account-1",
     })).resolves.toEqual({ count: 0, skipped: 0, pending: true });
-    expect(graph.spies.request_backfill).toHaveBeenCalledWith({}, "account-1");
+    expect(graph.spies.requestBackfill).toHaveBeenCalledWith({}, "account-1");
   });
 
   it("validates batch input before sending and honors excluded recipients", async () => {
@@ -89,8 +141,8 @@ describe("tst_module_telegram_command_001 — Telegram command mapping", () => {
     expect(sendMessage).toHaveBeenCalledWith(1, "first", undefined, "account-1");
   });
 
-  it("resolves the chat anchor and delegates trigger definition ownership", async () => {
-    const graph = mockGraph({ find_by_anchor: () => Promise.resolve("chat-entity"), get_entity_full: () => Promise.resolve({ entity: { id: "episode-1", name: "Parent", schema_id: "episodes.episode", created_at: "" }, links: [] }) });
+  it("resolves the chat by its external id and delegates trigger definition ownership", async () => {
+    const graph = mockGraph({ findByExternalId: () => Promise.resolve("chat-entity"), getEntityFull: () => Promise.resolve({ entity: entity("episode-1", "Parent", { schemaId: "episodes.episode" }), links: [] }) });
     const execute = vi.fn(() => Promise.resolve({ id: "trigger-1" }));
     const module = mountModule(TelegramModule, { graph, rpc: { execute } }).module;
 
@@ -112,7 +164,7 @@ describe("tst_module_telegram_command_001 — Telegram command mapping", () => {
     });
 
     const missing = mountModule(TelegramModule, {
-      graph: mockGraph({ find_by_anchor: () => Promise.resolve(null) }),
+      graph: mockGraph({ findByExternalId: () => Promise.resolve(null) }),
     }).module;
     await expect(missing.setTrigger({
       chat_id: 42,
@@ -124,10 +176,10 @@ describe("tst_module_telegram_command_001 — Telegram command mapping", () => {
   it("publishes one create operation while retaining old names only as client RPCs", async () => {
     const { tools } = await mountModule(TelegramModule, {
       mode: "dispatch",
-      ctx: { extension_id: "telegram" },
+      ctx: { extensionId: "telegram" },
     });
     const byName = new Map(tools.map((tool) => [tool.name, tool]));
-    expect(byName.get("telegram.message.create")).toMatchObject({ requires_approval: true, binding: { entity: "telegram.message", operation: "create" } });
+    expect(byName.get("telegram.message.create")).toMatchObject({ requiresApproval: true, binding: { entity: "telegram.message", operation: "create" } });
     for (const name of ["telegram.messages.send", "telegram.messages.reply", "telegram.batch_send", "telegram.set_trigger"]) expect(byName.has(name)).toBe(false);
     expect(byName.has("telegram.messages.backfill")).toBe(false);
   });
@@ -139,13 +191,13 @@ describe("tst_module_telegram_command_001 — Telegram command mapping", () => {
  * @deterministic: yes — provider double, local ingest is independently covered
  */
 it("tst_module_telegram_create_001 preserves replies and one batch while rejecting mixed forms", async () => {
-  const source_command = vi.fn().mockResolvedValue({ message_id: 10 });
-  const module = mountModule(TelegramModule, { graph: mockGraph({ source_command }) }).module;
+  const sourceCommand = vi.fn().mockResolvedValue({ message_id: 10 });
+  const module = mountModule(TelegramModule, { graph: mockGraph({ sourceCommand }) }).module;
   await module.create({ chat_id: 42, reply_to_message_id: 7, text: "Confirmed." });
-  expect(source_command).toHaveBeenCalledWith({ action: "send_message", chat_id: 42, reply_to_message_id: 7, text: "Confirmed." }, undefined);
+  expect(sourceCommand).toHaveBeenCalledWith({ action: "send_message", chat_id: 42, reply_to_message_id: 7, text: "Confirmed." }, undefined);
   const result = await module.create({ messages: [{ chat_id: 43, text: "First" }, { chat_id: 44, text: "Skip" }], excluded_indices: [1] });
   expect(result).toMatchObject({ total: 1, sent: 1, failed: 0 });
-  expect(source_command).toHaveBeenCalledTimes(2);
+  expect(sourceCommand).toHaveBeenCalledTimes(2);
   await expect(module.create({ chat_id: 42, text: "Mixed", messages: [{ chat_id: 44, text: "Bad" }] })).rejects.toThrow("form");
-  expect(source_command).toHaveBeenCalledTimes(2);
+  expect(sourceCommand).toHaveBeenCalledTimes(2);
 });

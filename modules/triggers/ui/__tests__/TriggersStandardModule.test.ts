@@ -18,14 +18,14 @@ describe("tst_fe_agent_triggers_layout_001 — standard module shell", () => {
     expect(mapTriggerListItem({
       id: "trigger-1",
       name: "Incoming reply monitor",
-      schema_id: "triggers.trigger",
-      watched_entity_names: ["Channel Alpha", "Channel Beta"],
-      action_prompt: "Update the shared status note",
-      last_fired_at: "2026-07-27T12:00:00Z",
+      schemaId: "triggers.trigger",
+      watchedEntityNames: ["Channel Alpha", "Channel Beta"],
+      actionPrompt: "Update the shared status note",
+      lastFiredAt: "2026-07-27T12:00:00Z",
     })).toEqual({
       id: "trigger-1",
       name: "Incoming reply monitor",
-      schema_id: "triggers.trigger",
+      schemaId: "triggers.trigger",
       preview: "Watches Channel Alpha, Channel Beta",
       timestamp: "2026-07-27T12:00:00Z",
     });

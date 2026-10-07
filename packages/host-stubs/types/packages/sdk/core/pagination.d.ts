@@ -8,7 +8,7 @@ export declare const PageOffsetSchema: z.ZodDefault<z.ZodInt>;
 export declare const PaginationSchema: z.ZodObject<{
     limit: z.ZodDefault<z.ZodInt>;
     offset: z.ZodDefault<z.ZodInt>;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type PaginationParams = z.input<typeof PaginationSchema>;
 export type Pagination = z.output<typeof PaginationSchema>;
 /** Create the canonical paginated response schema for one item type. */
@@ -17,7 +17,7 @@ export declare function paginatedResponseSchema<const ItemSchema extends z.ZodTy
     total: z.ZodInt;
     limit: z.ZodInt;
     offset: z.ZodInt;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type PaginatedResponse<Item> = z.output<ReturnType<typeof paginatedResponseSchema<z.ZodType<Item>>>>;
 /** Create a named endpoint-specific limit without changing the general limit. */
 export declare function boundedPageLimit(maximum: number, fallback: number): z.ZodType<number>;

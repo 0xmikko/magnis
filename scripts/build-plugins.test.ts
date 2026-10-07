@@ -2,8 +2,8 @@
 // only imports are host-shim URLs (relatives inlined), with the PRODUCTION JSX
 // runtime (no jsxDEV / no vite dep paths). Run: `bun test scripts/`.
 import { test, expect, beforeAll } from "bun:test";
-import { buildPlugin } from "./build-plugins.ts";
-import { readFileSync, readdirSync, writeFileSync, rmSync } from "fs";
+import { buildPlugin, discoverPlugins } from "./build-plugins.ts";
+import { existsSync, readFileSync, readdirSync, writeFileSync, rmSync } from "fs";
 import { join } from "path";
 import { parse as parseToml } from "smol-toml";
 
@@ -13,12 +13,12 @@ const DIST = join(REPO, "plugins_dist");
 /**
  * @test-id: tst_cat_manifest_001
  * @scenario: scn_google_pull_001
- * @covers: modules/contacts/manifest.toml, modules/meetings/manifest.toml
+ * @covers: modules/addressbook/manifest.toml, modules/meetings/manifest.toml
  * @deterministic: yes
  * @fixtures: checked-in module manifests
  */
 test("tst_cat_manifest_001 Google sync modules may create shared email addresses", () => {
-  for (const moduleId of ["contacts", "meetings"]) {
+  for (const moduleId of ["addressbook", "meetings"]) {
     const manifest = parseToml(readFileSync(join(REPO, "modules", moduleId, "manifest.toml"), "utf8")) as {
       permissions?: { create?: string[] };
     };
@@ -40,12 +40,36 @@ test("tst_cat_layout_001 builds a root-level Module with the existing builder", 
   expect(result.pluginId).toBe("file");
 });
 
+/**
+ * @test-id: tst_build_ui_less_001
+ * @scenario: scn_compact_artifact_install_001
+ * @covers: scripts/build-plugins.ts::discoverPlugins, scripts/build-plugins.ts::buildPlugin
+ * @deterministic: yes
+ * @fixtures: the checked-in addressbook module, which has no ui/
+ */
+test("tst_build_ui_less_001 a module without ui/ is discovered and built without a UI bundle", async () => {
+  expect(existsSync(join(REPO, "modules", "addressbook", "ui"))).toBe(false);
+  expect(discoverPlugins(REPO)).toContain("addressbook");
+
+  await buildPlugin("addressbook", { pluginsDir: REPO, distDir: DIST });
+  const pkg = join(DIST, "modules", "addressbook");
+  const bundle = JSON.parse(readFileSync(join(pkg, "bundle.json"), "utf8")) as Record<string, unknown> & {
+    module: { dist: string };
+  };
+  expect(bundle.ui).toBeUndefined();
+  expect(bundle.uiHash).toBeUndefined();
+  expect(existsSync(join(pkg, "ui"))).toBe(false);
+  expect(existsSync(join(pkg, "module", "dist", bundle.module.dist))).toBe(true);
+  expect(readdirSync(join(pkg, "schemas"))).toEqual(["card.json"]);
+});
+
 beforeAll(async () => {
   const res = await buildPlugin("file", {
     pluginsDir: REPO,
     distDir: DIST,
   });
-  bundleRel = res.bundleFile; // e.g. "index.<hash>.js"
+  if (res.ui === null) throw new Error("file builds without a UI bundle");
+  bundleRel = res.ui.bundleFile; // e.g. "index.<hash>.js"
 });
 
 /**

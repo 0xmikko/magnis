@@ -227,7 +227,7 @@ export function NoteDetail({ noteId }: NoteDetailProps): JSX.Element {
     );
   }
 
-  const lastUpdated = formatLastUpdated(note.updated_at ?? note.created_at);
+  const lastUpdated = formatLastUpdated(note.updatedAt ?? note.createdAt);
 
   return (
     <DetailPane contentClassName="bg-surface flex flex-col">

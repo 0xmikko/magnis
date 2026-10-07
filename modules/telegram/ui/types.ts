@@ -1,29 +1,6 @@
-/** Backend message shape returned by telegram.messages.list RPC */
-export interface TelegramMessageListItem {
-  readonly id: string;
-  readonly sender: string | null;
-  readonly subject: string | null;
-  readonly preview: string | null;
-  readonly channel: string;
-  readonly timestamp: string;
-  readonly created_at: string;
-  readonly metadata?: Readonly<Record<string, unknown>>;
-}
-
-export interface TelegramChatListItem {
-  readonly entity_id: string;
-  readonly chat_id: string;
-  readonly account_id: string | null;
-  readonly chat_title: string | null;
-  readonly last_message: string | null;
-  readonly last_message_time: string | null;
-  readonly last_message_sender: string | null;
-  readonly is_outgoing: boolean | null;
-  readonly message_count: number | null;
-  readonly avatar_url: string | null;
-  readonly is_pinned: boolean | null;
-  readonly is_indexed: boolean | null;
-}
+/** The chat and message rows the module's `chats.list` and `messages.list`
+ * answer, declared once in the module's own types. */
+export type { MessageListItem, TelegramChatListItem } from "../types.ts";
 
 export interface TelegramChat {
   /** Entity UUID — used for selection, routing, graph operations */
@@ -41,7 +18,8 @@ export interface TelegramChat {
   readonly pinned?: boolean;
   readonly muted?: boolean;
   readonly unreadCount?: number;
-  readonly isIndexed?: boolean;
+  readonly isIndexed: boolean;
+  readonly syncEnabled: boolean;
 }
 
 export interface TelegramMessage {

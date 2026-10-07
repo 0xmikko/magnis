@@ -1,3 +1,4 @@
+import { SyncToolCallRenderer } from "./SyncToolCallRenderer";
 import { toolNamesEquivalent } from "@magnis/host/agent";
 import type { AgentHistoryRendererRegistration } from "@magnis/host/runtime";
 import { Icon } from "@magnis/host/ui";
@@ -47,6 +48,8 @@ const moduleDefinition = defineModule({
   hasMore: contactHasMore,
   DetailsTabContent: ContactOverview,
   toolCallRenderers: [
+    { entity: "contacts.person", actions: ["setSyncEnabled"], Render: SyncToolCallRenderer as never },
+
     { entity: "contacts.person", actions: ["create"], Render: ContactCreateRenderer as never },
     { entity: "contacts.person", actions: ["merge"], Render: ContactMergeRenderer as never },
   ],
@@ -61,12 +64,12 @@ const moduleDefinition = defineModule({
   mapListItem: (raw) => ({
     id: raw.id as string,
     name: (raw.name as string | undefined) ?? null,
-    schema_id: (raw.schema_id as string | undefined) ?? "",
+    schemaId: (raw.schemaId as string | undefined) ?? "",
     preview: (raw.email as string | undefined) ?? (raw.phone as string | undefined) ?? null,
     timestamp: null,
-    avatar_url: (raw.avatar_url as string | undefined) ?? null,
-    is_pinned: (raw.is_pinned as boolean | undefined) ?? undefined,
-    is_archived: (raw.is_archived as boolean | undefined) ?? undefined,
+    avatarUrl: (raw.avatarUrl as string | undefined) ?? null,
+    isPinned: (raw.isPinned as boolean | undefined) ?? undefined,
+    isArchived: (raw.isArchived as boolean | undefined) ?? undefined,
   }),
 });
 

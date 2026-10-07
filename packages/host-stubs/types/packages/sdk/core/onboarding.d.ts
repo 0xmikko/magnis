@@ -11,6 +11,6 @@ export declare const OnboardingProfileSchema: z.ZodObject<{
         full: "full";
     }>;
     completedAt: z.ZodNullable<z.ZodString>;
-}, z.core.$strip>;
+}, z.core.$strict>;
 export type OnboardingProfile = z.output<typeof OnboardingProfileSchema>;
 //# sourceMappingURL=onboarding.d.ts.map

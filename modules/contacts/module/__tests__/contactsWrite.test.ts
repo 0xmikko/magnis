@@ -7,47 +7,49 @@
  * @fixtures: fixed contacts and strict graph/RPC/util doubles
  * @legacy-id: tst_contacts_create_persists_dictionary_no_email_entity
  * @legacy-id: tst_contacts_batch_create_idempotent_rows_no_email_entity
+ *
+ * @test-id: tst_module_contacts_write_002
+ * @scenario: scn_contacts_write_001
+ * @covers: modules/contacts/module/service.ts::create,batch_create
+ * @deterministic: yes
+ * @fixtures: strict graph/RPC doubles
  * @legacy-id: tst_contacts_update_renames_entity_and_profile
  * @legacy-id: tst_contacts_merge_moves_the_dictionary_and_deletes_retired
  * @legacy-id: tst_contacts_search_returns_tool_result_sorted_and_limited
  */
+import type { JsonObject, MergePreview, MergeResult } from "@magnis/sdk";
 import { describe, expect, it, vi } from "vitest";
-import { entity, mockGraph, mountModule } from "@magnis/testkit/module";
+import { entity, link, mockGraph, mountModule } from "@magnis/testkit/module";
 import { CONTACT } from "../../schema.ts";
 import { ContactsModule } from "../service.ts";
 
 const CONTACT_ID = "66666666-6666-4666-8666-666666666666";
 
-function contact(id: string, name: string, properties: Record<string, unknown> = {}) {
-  return entity(id, name, { schema_id: CONTACT, properties });
+function contact(id: string, name: string, properties: JsonObject = {}) {
+  return entity(id, name, { schemaId: CONTACT, properties });
 }
 
 describe("tst_module_contacts_write_001 — contact commands", () => {
-  it("creates curated claims and delegates email identity ownership", async () => {
+  it("creates curated claims and nothing beside them", async () => {
     const created = contact(CONTACT_ID, "Alice Smith", {
       phones: [{ phone: "+15551234567", type: null, is_primary: true }],
       role: "Founder",
     });
     let exists = false;
     const graph = mockGraph({
-      get_entity: () => Promise.resolve(exists ? created : null),
-      create_entity: () => {
+      getEntity: () => Promise.resolve(exists ? created : null),
+      createEntity: () => {
         exists = true;
         return Promise.resolve(created);
       },
-      update_properties: () => Promise.resolve(undefined),
-      add_link: () => Promise.resolve(undefined),
-      list_links_for_entities: () =>
-        Promise.resolve([{ id: "identity-1", from_id: CONTACT_ID, to_id: "address-1", kind: "identity" }]),
-      get_entities: () =>
-        Promise.resolve([entity("address-1", "alice@example.test", { schema_id: "email.address" })]),
+      updateProperties: () => Promise.resolve(undefined),
+      listLinksForEntities: () => Promise.resolve([]),
     });
-    const execute = vi.fn(() => Promise.resolve({ id: "address-1" }));
+    const execute = vi.fn();
     const module = mountModule(ContactsModule, { graph, rpc: { execute } }).module;
 
     const result = await module.create({
       name: "Alice Smith",
-      email: "alice@example.test",
       phone: "+15551234567",
       role: "Founder",
       client_id: CONTACT_ID,
@@ -56,20 +58,17 @@ describe("tst_module_contacts_write_001 — contact commands", () => {
     expect(result).toMatchObject({
       id: CONTACT_ID,
       name: "Alice Smith",
-      email: "alice@example.test",
       phone: "+15551234567",
       role: "Founder",
-      fields: { email_address_entity_id: "address-1" },
+      fields: { name: "Alice Smith", role: "Founder" },
     });
-    expect(graph.spies.create_entity).toHaveBeenCalledWith({
-      schema_id: CONTACT,
+    expect(graph.spies.createEntity).toHaveBeenCalledWith({
+      schemaId: CONTACT,
       name: "Alice Smith",
-      client_id: CONTACT_ID,
+      clientId: CONTACT_ID,
       idx: "alice smith",
     });
-    expect(execute).toHaveBeenCalledWith("email.ensure_address", {
-      address: "alice@example.test",
-    });
+    expect(execute).not.toHaveBeenCalled();
   });
 
   it("derives stable row ids, skips exclusions, and is idempotent on retry", async () => {
@@ -79,14 +78,14 @@ describe("tst_module_contacts_write_001 — contact commands", () => {
     ];
     const stored = new Map<string, ReturnType<typeof contact>>();
     const graph = mockGraph({
-      get_entity: (id: string) => Promise.resolve(stored.get(id) ?? null),
-      create_entity: (params: { client_id?: string; name: string }) => {
-        const id = params.client_id ?? "generated";
+      getEntity: (id: string) => Promise.resolve(stored.get(id) ?? null),
+      createEntity: (params: { clientId?: string; name: string }) => {
+        const id = params.clientId ?? "generated";
         const value = contact(id, params.name);
         stored.set(id, value);
         return Promise.resolve(value);
       },
-      list_links_for_entities: () => Promise.resolve([]),
+      listLinksForEntities: () => Promise.resolve([]),
     });
     const uuid_v5 = vi.fn((_namespace: string, name: string) =>
       Promise.resolve(rows[Number(name.at(-1))] ?? "unexpected"),
@@ -106,8 +105,8 @@ describe("tst_module_contacts_write_001 — contact commands", () => {
 
     expect(first).toEqual({
       results: [
-        { id: rows[0], name: "Ann", email: null, status: "created" },
-        { id: rows[1], name: "Bob", email: null, status: "created" },
+        { id: rows[0], name: "Ann", status: "created" },
+        { id: rows[1], name: "Bob", status: "created" },
         { id: null, name: "Excluded", status: "excluded" },
       ],
       total: 3,
@@ -115,7 +114,7 @@ describe("tst_module_contacts_write_001 — contact commands", () => {
       excluded: 1,
     });
     expect(retry.results.map((row) => row.id)).toEqual([rows[0], rows[1], null]);
-    expect(graph.spies.create_entity).toHaveBeenCalledTimes(2);
+    expect(graph.spies.createEntity).toHaveBeenCalledTimes(2);
     expect(uuid_v5).toHaveBeenCalledTimes(4);
   });
 
@@ -134,9 +133,9 @@ describe("tst_module_contacts_write_001 — contact commands", () => {
     const fresh = contact(CONTACT_ID, "New Name");
     let reads = 0;
     const graph = mockGraph({
-      get_entity: () => Promise.resolve(reads++ === 0 ? old : fresh),
-      update_entity_name: () => Promise.resolve(undefined),
-      list_links_for_entities: () => Promise.resolve([]),
+      getEntity: () => Promise.resolve(reads++ === 0 ? old : fresh),
+      updateEntityName: () => Promise.resolve(undefined),
+      listLinksForEntities: () => Promise.resolve([]),
     });
     const module = mountModule(ContactsModule, { graph }).module;
 
@@ -144,47 +143,47 @@ describe("tst_module_contacts_write_001 — contact commands", () => {
       id: CONTACT_ID,
       name: "New Name",
     });
-    expect(graph.spies.update_entity_name).toHaveBeenCalledWith(CONTACT_ID, "New Name");
+    expect(graph.spies.updateEntityName).toHaveBeenCalledWith(CONTACT_ID, "New Name");
   });
 
   it("delegates merge planning and re-derives the survivor name deterministically", async () => {
-    const preview = {
-      survivor: { id: CONTACT_ID },
-      retired: { id: "retired" },
+    const preview: MergePreview = {
+      survivor: { id: CONTACT_ID, name: "Old", schemaId: CONTACT, propertyCount: 2, linkCount: 2 },
+      retired: { id: "retired", name: "Ann", schemaId: CONTACT, propertyCount: 0, linkCount: 2 },
       sources: [],
       fields: {},
-      links_to_repoint: 2,
-      duplicate_links_to_remove: 0,
-      reflexive_links_to_remove: 0,
+      linksToRepoint: 2,
+      duplicateLinksToRemove: 0,
+      reflexiveLinksToRemove: 0,
     };
-    const merged = {
-      survivor_id: CONTACT_ID,
-      retired_id: "retired",
-      links_repointed: 2,
-      links_deduplicated: 0,
-      links_reflexive_removed: 0,
+    const merged: MergeResult = {
+      survivorId: CONTACT_ID,
+      retiredId: "retired",
+      linksRepointed: 2,
+      linksDeduplicated: 0,
+      linksReflexiveRemoved: 0,
     };
     const graph = mockGraph({
-      merge_preview: () => Promise.resolve(preview),
-      merge_execute: () => Promise.resolve(merged),
-      get_entity: () =>
+      mergePreview: () => Promise.resolve(preview),
+      mergeExecute: () => Promise.resolve(merged),
+      getEntity: () =>
         Promise.resolve(contact(CONTACT_ID, "Old", { first_name: "Ann", last_name: "Lee" })),
-      update_entity_name: () => Promise.resolve(undefined),
-      update_entity_idx: () => Promise.resolve(undefined),
+      updateEntityName: () => Promise.resolve(undefined),
+      updateEntityIdx: () => Promise.resolve(undefined),
     });
     const module = mountModule(ContactsModule, { graph }).module;
 
     await expect(
-      module.merge({ survivor_id: CONTACT_ID, retired_id: "retired", preview: true }),
+      module.merge({ survivorId: CONTACT_ID, retiredId: "retired", preview: true, overrides: [], reason: null }),
     ).resolves.toBe(preview);
-    expect(graph.spies.merge_execute).not.toHaveBeenCalled();
-    expect(graph.spies.update_entity_name).not.toHaveBeenCalled();
+    expect(graph.spies.mergeExecute).not.toHaveBeenCalled();
+    expect(graph.spies.updateEntityName).not.toHaveBeenCalled();
     await expect(
-      module.merge({ survivor_id: CONTACT_ID, retired_id: "retired", preview: false, reason: "duplicate", overrides: [{ key: "first_name", value: "Ann" }] }),
+      module.merge({ survivorId: CONTACT_ID, retiredId: "retired", preview: false, reason: "duplicate", overrides: [{ key: "first_name", value: "Ann" }] }),
     ).resolves.toBe(merged);
-    expect(graph.spies.merge_execute).toHaveBeenCalledExactlyOnceWith({ survivor_id: CONTACT_ID, retired_id: "retired", reason: "duplicate", overrides: [{ key: "first_name", value: "Ann" }] });
-    expect(graph.spies.update_entity_name).toHaveBeenCalledWith(CONTACT_ID, "Ann Lee");
-    expect(graph.spies.update_entity_idx).toHaveBeenCalledWith(CONTACT_ID, "ann lee");
+    expect(graph.spies.mergeExecute).toHaveBeenCalledExactlyOnceWith({ survivorId: CONTACT_ID, retiredId: "retired", reason: "duplicate", overrides: [{ key: "first_name", value: "Ann" }] });
+    expect(graph.spies.updateEntityName).toHaveBeenCalledWith(CONTACT_ID, "Ann Lee");
+    expect(graph.spies.updateEntityIdx).toHaveBeenCalledWith(CONTACT_ID, "ann lee");
   });
 
   it.each([
@@ -194,23 +193,23 @@ describe("tst_module_contacts_write_001 — contact commands", () => {
     { preview: false, foreignId: "retired" },
   ])("rejects non-contact $foreignId before merge (preview=$preview)", async ({ preview, foreignId }) => {
     const graph = mockGraph({
-      get_entity: (id: string) => Promise.resolve(id === foreignId
-        ? entity(id, "Company", { schema_id: "companies.company" })
+      getEntity: (id: string) => Promise.resolve(id === foreignId
+        ? entity(id, "Company", { schemaId: "companies.company" })
         : contact(id, "Contact")),
-      merge_preview: () => Promise.reject(new Error("Preview must not run")),
-      merge_execute: () => Promise.reject(new Error("Merge must not run")),
+      mergePreview: () => Promise.reject(new Error("Preview must not run")),
+      mergeExecute: () => Promise.reject(new Error("Merge must not run")),
     });
     const module = mountModule(ContactsModule, { graph }).module;
 
-    await expect(module.merge({ survivor_id: CONTACT_ID, retired_id: "retired", preview }))
+    await expect(module.merge({ survivorId: CONTACT_ID, retiredId: "retired", preview, overrides: [], reason: null }))
       .rejects.toThrow(`contact not found: ${foreignId}`);
-    expect(graph.spies.merge_preview).not.toHaveBeenCalled();
-    expect(graph.spies.merge_execute).not.toHaveBeenCalled();
+    expect(graph.spies.mergePreview).not.toHaveBeenCalled();
+    expect(graph.spies.mergeExecute).not.toHaveBeenCalled();
   });
 
   it("bounds host search, then sorts the returned ToolResult by name and id", async () => {
     const graph = mockGraph({
-      search_entities_by_name: () =>
+      searchEntitiesByName: () =>
         Promise.resolve([
           contact("b", "Bob"),
           contact("z", "Ann"),
@@ -220,15 +219,34 @@ describe("tst_module_contacts_write_001 — contact commands", () => {
     const module = mountModule(ContactsModule, { graph }).module;
 
     const result = await module.search({ query: "a", limit: 500 });
-    expect(graph.spies.search_entities_by_name).toHaveBeenCalledWith({
+    expect(graph.spies.searchEntitiesByName).toHaveBeenCalledWith({
       query: "a",
-      schema_ids: [CONTACT],
+      schemaIds: [CONTACT],
       limit: 50,
     });
     expect(JSON.parse(result.content[0]?.text ?? "null")).toEqual([
-      { id: "a", name: "Ann", schema_id: CONTACT, schema_version: 1 },
-      { id: "z", name: "Ann", schema_id: CONTACT, schema_version: 1 },
-      { id: "b", name: "Bob", schema_id: CONTACT, schema_version: 1 },
+      { id: "a", name: "Ann", schemaId: CONTACT },
+      { id: "z", name: "Ann", schemaId: CONTACT },
+      { id: "b", name: "Bob", schemaId: CONTACT },
     ]);
+  });
+});
+
+describe("tst_module_contacts_write_002 — the hub takes no email", () => {
+  it("tst_module_contacts_write_002 refuses an email on create and on a batch row, and calls nothing", async () => {
+    const graph = mockGraph();
+    const execute = vi.fn();
+    const module = mountModule(ContactsModule, { graph, rpc: { execute } }).module;
+
+    // @tested-by: tst_module_contacts_write_002
+    // @invariant: contacts sits above email, so creating a person never asks
+    // email for an address; an email argument is refused, never dropped.
+    await expect(
+      module.create({ name: "Alice Smith", email: "alice@example.test" } as never),
+    ).rejects.toThrow("contacts.create takes no email");
+    await expect(
+      module.batch_create({ contacts: [{ name: "Ann" }, { name: "Bob", email: "bob@example.test" } as never] }),
+    ).rejects.toThrow("contact[1]: contacts.create takes no email");
+    expect(execute).not.toHaveBeenCalled();
   });
 });

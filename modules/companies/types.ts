@@ -3,7 +3,9 @@
 // Imported by both `module/` (V8 isolate, backend dispatch) and `ui/`
 // (browser, transpiled on the fly by the backend transpile endpoint).
 // Single source of truth for the wire shape that the host frontend
-// consumes via `useModuleList` and `useQuery(getRpcMethod)`.
+// consumes via `useModuleList` and `useQuery(getRpcMethod)`; the linked
+// summaries inside it are the SDK's.
+import type { LinkedEntitySummary } from "@magnis/sdk";
 
 export interface CompanyListItem {
   id: string;
@@ -12,27 +14,20 @@ export interface CompanyListItem {
   industry: string | null;
   size: string | null;
   location: string | null;
-  avatar_color: string;
+  avatarColor: string;
   initials: string;
-  created_at: string;
+  createdAt: string;
 }
 
 export type HeaderRow =
   | { type: "text"; label: string; value: string | null }
   | { type: "chips"; label: string; items: string[] };
 
-export interface CompanyLinkedEntity {
-  id: string;
-  name: string;
-  schema_id: string;
-  /** Incoming edges use the shared `~kind` convention. */
-  link_kind: string;
-}
-
 export interface CompanyDetailView extends CompanyListItem {
-  linked_entities: CompanyLinkedEntity[];
+  /** Incoming edges use the shared `~kind` convention. */
+  linkedEntities: LinkedEntitySummary[];
   members: string[];
-  header_rows: HeaderRow[];
+  headerRows: HeaderRow[];
 }
 
 // ── schema → type maps that parameterise GraphService ──────────────
@@ -98,13 +93,12 @@ export interface UpdateParams {
   stage?: string;
   headcount?: number;
   funding_total?: string;
-  emails?: string[];
   phones?: string[];
   external_links?: ExternalLinkInput[];
 }
 
-// Generic RPC envelopes — ListParams / GetParams / PaginatedResponse —
-// moved to `@magnis/plugin-sdk` so every plugin shares the same wire
-// contract. Import from there directly:
+// Generic RPC envelopes are shared, not declared here: ListParams and
+// GetParams come from `@magnis/plugin-sdk`, PaginatedResponse from the SDK:
 //
-//   import type { ListParams, GetParams, PaginatedResponse } from "@magnis/plugin-sdk";
+//   import type { GetParams, ListParams } from "@magnis/plugin-sdk";
+//   import type { PaginatedResponse } from "@magnis/sdk";

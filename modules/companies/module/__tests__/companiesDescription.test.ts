@@ -21,17 +21,17 @@ import { CompaniesModule } from "../service.ts";
 const COMPANY_DESCRIPTION = "companies.description";
 
 function writeGraph() {
-  const company = entity("company-1", "Acme Labs", { schema_id: COMPANY });
+  const company = entity("company-1", "Acme Labs", { schemaId: COMPANY });
   return {
     company,
     graph: mockGraph({
-      get_entity: () => Promise.resolve(company),
-      create_entity: () => Promise.resolve(company),
-      search_entities_by_name: () => Promise.resolve([]),
-      update_entity_name: () => Promise.resolve(),
-      update_properties: () => Promise.resolve(),
-      add_link: () => Promise.resolve(undefined),
-      get_entity_full: () =>
+      getEntity: () => Promise.resolve(company),
+      createEntity: () => Promise.resolve(company),
+      searchEntitiesByName: () => Promise.resolve([]),
+      updateEntityName: () => Promise.resolve(),
+      updateProperties: () => Promise.resolve(),
+      addLink: () => Promise.resolve(undefined),
+      getEntityFull: () =>
         Promise.resolve({
           entity: company,
           links: [],
@@ -40,58 +40,27 @@ function writeGraph() {
   };
 }
 
-describe("companies.update emails — the cross-module identity path", () => {
+describe("companies.update takes no emails", () => {
   /**
-   * @test-id: tst_mod_companies_emails_001
+   * @test-id: tst_mod_companies_emails_003
    * @covers: modules/companies/module/service.ts::CompaniesModule.update
-   * @invariant: an email is an identity CHANNEL — the email module mints the
-   * address nodes over ONE batched RPC and this module writes one `identity`
-   * edge per returned id. The manifest grant for both is what this guards:
-   * delete either permission and this call chain is denied at runtime.
+   * @invariant: companies sits above email, so an update never asks email
+   * for addresses; an emails argument is refused, never dropped.
    */
-  it("tst_mod_companies_emails_001 mints addresses over RPC and writes identity edges", async () => {
+  it("tst_mod_companies_emails_003 refuses emails and calls nothing", async () => {
     const { company, graph } = writeGraph();
-    const execute = vi.fn((method: string) => {
-      if (method === "email.ensure_addresses") {
-        return Promise.resolve({ ids: ["addr-1", "addr-2"] });
-      }
-      throw new Error(`unexpected rpc ${method}`);
-    });
+    const execute = vi.fn();
     const module = mountModule(CompaniesModule, {
       graph,
-      ctx: { extension_id: "companies" },
-      rpc: { execute },
-    }).module;
-
-    await module.update({
-      id: company.id,
-      emails: ["a@acme.com", "b@acme.com"],
-    });
-
-    expect(execute).toHaveBeenCalledWith("email.ensure_addresses", {
-      items: [{ address: "a@acme.com" }, { address: "b@acme.com" }],
-    });
-    const addLink = graph.spies.add_link;
-    if (!addLink) throw new Error("add_link spy not mounted");
-    expect(addLink.mock.calls.map(([p]) => p)).toEqual([
-      { from_id: company.id, to_id: "addr-1", kind: "identity" },
-      { from_id: company.id, to_id: "addr-2", kind: "identity" },
-    ]);
-  });
-
-  it("tst_mod_companies_emails_002 an RPC failure propagates — no silent half-write", async () => {
-    const { company, graph } = writeGraph();
-    const execute = vi.fn(() => Promise.reject(new Error("email module down")));
-    const module = mountModule(CompaniesModule, {
-      graph,
-      ctx: { extension_id: "companies" },
+      ctx: { extensionId: "companies" },
       rpc: { execute },
     }).module;
 
     await expect(
-      module.update({ id: company.id, emails: ["a@acme.com"] }),
-    ).rejects.toThrow(/email module down/);
-    expect(graph.spies.add_link).not.toHaveBeenCalled();
+      module.update({ id: company.id, emails: ["a@acme.com"] } as never),
+    ).rejects.toThrow("companies.update takes no emails");
+    expect(execute).not.toHaveBeenCalled();
+    expect(graph.spies.updateProperties).not.toHaveBeenCalled();
   });
 });
 
@@ -100,7 +69,7 @@ describe("companies description write contract", () => {
     const { company, graph } = writeGraph();
     const module = mountModule(CompaniesModule, {
       graph,
-      ctx: { extension_id: "companies" },
+      ctx: { extensionId: "companies" },
     }).module;
 
     await module.update({
@@ -110,13 +79,13 @@ describe("companies description write contract", () => {
 
     // S5: ONE dictionary merge carries the description — there is no second
     // copy of it anywhere, and no record is written at all.
-    const updateProperties = graph.spies.update_properties;
+    const updateProperties = graph.spies.updateProperties;
     if (updateProperties === undefined) {
-      throw new Error("companies update: missing update_properties spy");
+      throw new Error("companies update: missing updateProperties spy");
     }
     expect(updateProperties).toHaveBeenCalledTimes(1);
     expect(updateProperties).toHaveBeenCalledWith({
-      entity_id: company.id,
+      entityId: company.id,
       properties: { description: "Updated company description" },
     });
     expect(graph.spies.attach_facet).toBeUndefined();
@@ -138,21 +107,21 @@ describe("companies description write contract", () => {
     const { company, graph } = writeGraph();
     const module = mountModule(CompaniesModule, {
       graph,
-      ctx: { extension_id: "companies" },
+      ctx: { extensionId: "companies" },
     }).module;
 
     await module.create({
-      name: company.name,
+      name: "Acme Labs",
       summary: "Initial company description",
     });
 
-    const updateProperties = graph.spies.update_properties;
+    const updateProperties = graph.spies.updateProperties;
     if (updateProperties === undefined) {
-      throw new Error("companies create: missing update_properties spy");
+      throw new Error("companies create: missing updateProperties spy");
     }
     expect(updateProperties).toHaveBeenCalledWith({
-      entity_id: company.id,
-      properties: { name: company.name, description: "Initial company description" },
+      entityId: company.id,
+      properties: { name: "Acme Labs", description: "Initial company description" },
     });
     expect(graph.spies.attach_facet).toBeUndefined();
   });

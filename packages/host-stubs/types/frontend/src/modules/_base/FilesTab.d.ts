@@ -6,7 +6,7 @@
  * row shows without a round-trip to the parent loader.
  */
 import type { JSX } from "react";
-import type { LinkedEntitySummary } from "./sharedTypes";
+import type { LinkedEntitySummary } from "@magnis/sdk";
 export interface FilesTabProps {
     readonly entityId: string;
     readonly attachedFiles: readonly LinkedEntitySummary[];

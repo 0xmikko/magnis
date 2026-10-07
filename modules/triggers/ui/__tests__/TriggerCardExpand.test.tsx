@@ -42,16 +42,16 @@ function withQuery(node: JSX.Element): JSX.Element {
 
 const TRIGGER_DETAIL = {
   name: "Nudge Anna",
-  gate_prompt: "No reply from Anna for 48h",
-  action_prompt: "Send a gentle nudge",
+  gatePrompt: "No reply from Anna for 48h",
+  actionPrompt: "Send a gentle nudge",
   status: "active",
-  watched_entities: [{ id: "c1", name: "Anna Komarova" }],
-  firing_count: 3,
+  watchedEntities: [{ id: "c1", name: "Anna Komarova" }],
+  firingCount: 3,
 };
 
 const ANNA_ENTITY = {
   id: "c1",
-  schema_id: "contacts.contact",
+  schemaId: "contacts.contact",
   name: "Anna Komarova",
 };
 

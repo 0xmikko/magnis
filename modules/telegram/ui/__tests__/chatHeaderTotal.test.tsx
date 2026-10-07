@@ -7,7 +7,7 @@
  *
  * Bug (live-verified, stack A): the chat header said "50 messages" while the
  * chat held far more in the graph. `messages.list` returns the chat's REAL
- * graph total (`page.total` via list_entities_window filter_eq chat_id), but
+ * graph total (`page.total` via listEntitiesWindow filter_eq chat_id), but
  * the conversation model froze the total of the FIRST cached page and never
  * advanced it as later pages / backfills reported a larger one — so the header
  * number degenerated to the loaded-page length.
@@ -27,7 +27,7 @@ import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { TelegramChat } from "../types";
 import type { TelegramConversation } from "../types";
-import type { TelegramMessageListItem } from "../types";
+import type { MessageListItem } from "../types";
 
 // ── Mocks ────────────────────────────────────────────────────────
 
@@ -164,22 +164,22 @@ vi.mock("@magnis/host/layout", () => ({
 
 // ── Helpers ──────────────────────────────────────────────────────
 
-function msgItem(i: number): TelegramMessageListItem {
+function msgItem(i: number): MessageListItem {
   return {
     id: `msg-${String(i)}`,
-    schema_id: "telegram.message",
+    schemaId: "telegram.message",
     sender: "Someone",
     subject: null,
     preview: `text ${String(i)}`,
     channel: "telegram",
     timestamp: `2026-07-16T10:${String(i % 60).padStart(2, "0")}:00Z`,
-    created_at: `2026-07-16T10:${String(i % 60).padStart(2, "0")}:00Z`,
+    createdAt: `2026-07-16T10:${String(i % 60).padStart(2, "0")}:00Z`,
     metadata: { message_id: i, chat_title: "Gearbox SC devs" },
-  } as unknown as TelegramMessageListItem;
+  } as unknown as MessageListItem;
 }
 
 function page(count: number, total: number, offset: number): {
-  items: TelegramMessageListItem[];
+  items: MessageListItem[];
   total: number;
   limit: number;
   offset: number;
@@ -221,6 +221,7 @@ describe("telegram chat header total (graph total, never page length)", () => {
       return offsets.length === 2 ? Promise.resolve(page(50, 150, params.offset)) : lastPage;
     });
     const chat: TelegramChat = {
+      isIndexed: true, syncEnabled: true,
       id: "chat-entity-1", chatId: "4242", accountId: "source-account-1",
       name: "Fixture chat", initials: "FC", avatarColor: "#333", lastMessage: "Fixture", time: "12:00",
     };
@@ -322,6 +323,7 @@ describe("telegram chat header total (graph total, never page length)", () => {
     rpcMock.mockResolvedValue({ message_id: 101 });
     const { useTelegramMessages } = await import("../hooks/useTelegramMessages");
     const chat: TelegramChat = {
+      isIndexed: true, syncEnabled: true,
       id: "chat-entity-1",
       chatId: "4242",
       accountId: "source-account-1",
@@ -372,6 +374,7 @@ describe("telegram chat header total (graph total, never page length)", () => {
       return Promise.reject(new Error(`unexpected rpc ${method}`));
     });
     const chat: TelegramChat = {
+      isIndexed: true, syncEnabled: true,
       id: "chat-entity-1",
       chatId: "4242",
       accountId: "source-account-1",

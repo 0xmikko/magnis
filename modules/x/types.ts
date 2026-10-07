@@ -1,20 +1,8 @@
-// X plugin — types. Mirrors the manifest schemas + the canonical source
-// envelope. X and LinkedIn connectors both feed these via the `x` surface.
+// X plugin — types. Mirrors the manifest schemas; the source envelope is the
+// SDK `SyncEnvelope`. X and LinkedIn connectors both feed these via the `x`
+// surface.
 
 export type Platform = "x" | "linkedin";
-
-/** Canonical source envelope (same shape every plugin sync handler receives). */
-export interface SyncEnvelope {
-  source_id: string;
-  surface: string;
-  account_id: string;
-  user_id: string;
-  kind: string; // "snapshot" | "live" | "delete"
-  remote_id?: string;
-  cursor?: unknown;
-  payload: Record<string, unknown>;
-  timestamp: string;
-}
 
 /** `x.profile.identity` record data. */
 export interface ProfileIdentity {
@@ -149,4 +137,16 @@ export interface ProfileListItem {
 export interface ProfileDetail extends ProfileListItem {
   bio: string | null;
   url: string | null;
+}
+
+export interface ResolveProfileParams {
+  handle: string;
+}
+
+export interface ResolvedXProfile {
+  providerId: string;
+  handle: string;
+  displayName: string;
+  bio: string | null;
+  avatarUrl: string | null;
 }

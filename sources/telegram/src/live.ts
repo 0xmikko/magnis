@@ -38,6 +38,7 @@ import {
   buildDialogMeta,
   chatToIntermediate,
   messageToIntermediate,
+  peerIdentity,
   MTPROTO_REQUEST_TIMEOUT_MS,
   MtprotoTimeoutError,
   offsetPeerFromEntity,
@@ -208,7 +209,13 @@ export interface MembershipEndUpdate {
   readonly validUntil: string;
 }
 
-export type LiveUpdate = MessageLike | MembershipEndUpdate;
+interface MessageDeletionUpdate {
+  readonly kind: "delete";
+  readonly chatId: number | null;
+  readonly messageIds: readonly number[];
+}
+
+export type LiveUpdate = MessageLike | MembershipEndUpdate | MessageDeletionUpdate;
 
 function positiveTelegramId(value: unknown, field: string): number {
   const id = toNum(value);
@@ -484,21 +491,40 @@ export class TgClient implements TgOps {
   }
 
   /** Stream live messages and provider-dated membership ends. */
-  addLiveHandler(handler: (update: LiveUpdate) => void | Promise<void>): void {
+  addLiveHandler(handler: (update: LiveUpdate) => void | Promise<void>, chatIds?: ReadonlySet<string>): () => void {
     const cb = (event: { message?: unknown }): void => {
       const msg = event.message as MessageLike | undefined;
       if (msg !== undefined) {
+        const peer = peerIdentity(msg.peerId);
+        if (peer === undefined) throw new Error("live update requires a valid Telegram peer identity");
+        if (chatIds !== undefined && !chatIds.has(String(peer.id))) return;
         if (msg.chat) this.cachePeer(toNum(msg.chat.id), msg.chat);
         void handler(msg);
       }
     };
-    this.client.addEventHandler(cb, new NewMessage({}));
-    this.client.addEventHandler(cb, new EditedMessage({}));
-    this.client.addEventHandler((update: Api.TypeUpdate): void => {
+    const messages = new NewMessage({});
+    const edits = new EditedMessage({});
+    const raw = new Raw({ types: [Api.UpdateChatParticipant, Api.UpdateChannelParticipant, Api.UpdateDeleteMessages, Api.UpdateDeleteChannelMessages] });
+    const rawHandler = (update: Api.TypeUpdate): void => {
+      if (update instanceof Api.UpdateDeleteMessages || update instanceof Api.UpdateDeleteChannelMessages) {
+        const chatId = update instanceof Api.UpdateDeleteChannelMessages ? positiveTelegramId(update.channelId, "channel_id") : null;
+        if (chatId !== null && chatIds !== undefined && !chatIds.has(String(chatId))) return;
+        if (update.messages.some((id) => !Number.isSafeInteger(id) || id <= 0)) throw new Error("Telegram deletion requires positive message IDs");
+        void handler({ kind: "delete", chatId, messageIds: update.messages });
+        return;
+      }
       if (!(update instanceof Api.UpdateChatParticipant) && !(update instanceof Api.UpdateChannelParticipant)) return;
       const ended = membershipEndOf(update);
-      if (ended !== null) void handler(ended);
-    }, new Raw({ types: [Api.UpdateChatParticipant, Api.UpdateChannelParticipant] }));
+      if (ended !== null && (chatIds === undefined || chatIds.has(String(ended.chatId)))) void handler(ended);
+    };
+    this.client.addEventHandler(cb, messages);
+    this.client.addEventHandler(cb, edits);
+    this.client.addEventHandler(rawHandler, raw);
+    return (): void => {
+      this.client.removeEventHandler(cb, messages);
+      this.client.removeEventHandler(cb, edits);
+      this.client.removeEventHandler(rawHandler, raw);
+    };
   }
 }
 
@@ -683,7 +709,7 @@ export class LiveDialogPager implements TakeoutPager {
   }
 
   async dialogPage(offset: DialogOffset | null, limit: number,
-    options: { hydrate?: boolean; timeoutMs?: number; takeout?: TakeoutContext } = {}): Promise<DialogPage> {
+    options: { hydrate?: boolean; timeoutMs?: number; takeout?: TakeoutContext; chatIds?: readonly string[] } = {}): Promise<DialogPage> {
     const deadline = performance.now() + Math.min(options.timeoutMs ?? SOURCE_PAGE_BUDGET_MS, SOURCE_PAGE_BUDGET_MS);
     remainingPageBudget(deadline);
     let continuation = offset?.hydration;
@@ -704,11 +730,17 @@ export class LiveDialogPager implements TakeoutPager {
       next_offset: continuation.next_offset, total: continuation.total,
     };
     const dialogs: PagedDialog[] = [];
+    let historyReads = 0;
     // @tested-by: tst_src_tgfast_002 — TGFAST_002 retains unhydrated pins and peers.
     for (const item of continuation.pending) {
-      if (dialogs.length >= SOURCE_PAGE_HISTORY_LIMIT || (dialogs.length > 0 && performance.now() >= deadline)) break;
+      if (historyReads >= SOURCE_PAGE_HISTORY_LIMIT || (dialogs.length > 0 && performance.now() >= deadline)) break;
       const chat = { ...item.chat };
       const chatId = chat.chat_id;
+      if (options.chatIds !== undefined && !options.chatIds.includes(String(chatId))) {
+        dialogs.push({ chat, messages: [] });
+        continue;
+      }
+      historyReads += 1;
       // GetDialogs carries only the top message. An uncertain timed-out
       // snapshot cannot certify a successful page or advance its cursor.
       let fetched: { ok: true; messages: ReturnType<typeof messageToIntermediate>[] } | { ok: false; error: unknown };

@@ -31,9 +31,6 @@ export function CompanyCreateRenderer({
   const stage = (args.stage as string | undefined) ?? "";
   const headcount = typeof args.headcount === "number" ? String(args.headcount) : "";
   const fundingTotal = (args.funding_total as string | undefined) ?? "";
-  const emails = Array.isArray(args.emails)
-    ? args.emails.filter((value): value is string => typeof value === "string").join(", ")
-    : "";
   const phones = Array.isArray(args.phones)
     ? args.phones.filter((value): value is string => typeof value === "string").join(", ")
     : "";
@@ -75,7 +72,6 @@ export function CompanyCreateRenderer({
       {field("Stage", stage)}
       {field("Headcount", headcount)}
       {field("Funding", fundingTotal)}
-      {field("Emails", emails)}
       {field("Phones", phones)}
     </BaseToolCallCard>
   );

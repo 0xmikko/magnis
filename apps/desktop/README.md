@@ -111,3 +111,9 @@ FastEmbed remains an in-process TypeScript library and verified cache of the
 closed backend; it is not a desktop process or artifact protocol. macOS signing
 and notarization remain separate credentialed release steps; a candidate
 package is intentionally unsigned.
+
+## Error handling and tests
+
+Keep `anyhow` at the binary and orchestration boundaries; library-like shell
+APIs expose typed errors. A behavior change in the shell starts with a RED
+test, like the Bun suites of the catalog.

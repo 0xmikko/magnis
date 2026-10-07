@@ -61,7 +61,7 @@ export function telegramChatHasMore(data: Readonly<Record<string, unknown>>): bo
   return (
     memberNames(data).length > 0 ||
     (typeof data.chat_type === "string" && data.chat_type.length > 0) ||
-    (typeof data.created_at === "string" && data.created_at.length > 0)
+    (typeof data.createdAt === "string" && data.createdAt.length > 0)
   );
 }
 
@@ -156,7 +156,7 @@ export function TelegramChatCard(props: EntityRendererProps): JSX.Element {
   const messageCount = resolved.message_count as number | undefined;
 
   const chatType = typeof resolved.chat_type === "string" ? resolved.chat_type : undefined;
-  const createdAt = typeof resolved.created_at === "string" ? resolved.created_at : undefined;
+  const createdAt = typeof resolved.createdAt === "string" ? resolved.createdAt : undefined;
   const members = memberNames(resolved);
   const memberPreview =
     members.length > 5 ? `${members.slice(0, 5).join(", ")} …` : members.join(", ");

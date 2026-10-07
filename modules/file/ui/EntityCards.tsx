@@ -24,7 +24,7 @@ export function fileHasMore(data: Readonly<Record<string, unknown>>): boolean {
     str(data, "preview_url") !== undefined ||
     str(data, "url") !== undefined ||
     str(data, "description") !== undefined ||
-    str(data, "created_at") !== undefined
+    str(data, "createdAt") !== undefined
   );
 }
 
@@ -48,7 +48,7 @@ export function FileCard(props: EntityRendererProps): JSX.Element {
   const previewUrl = str(data, "preview_url");
   const url = str(data, "url");
   const description = str(data, "description");
-  const createdAt = str(data, "created_at");
+  const createdAt = str(data, "createdAt");
 
   const isImage = mimeType.startsWith("image/");
   const isAudio = mimeType.startsWith("audio/");

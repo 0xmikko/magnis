@@ -1,3 +1,4 @@
+import { SyncToolCallRenderer } from "../../contacts/ui/SyncToolCallRenderer";
 import { toolNamesEquivalent } from "@magnis/host/agent";
 import type { ContextMenuEntry } from "@magnis/host/ui";
 import type { AgentHistoryBlock, ModuleAgentContribution } from "@magnis/host/runtime";
@@ -23,6 +24,7 @@ import { initialsFromName } from "./utils/text";
 import { formatChatListTime, pickAvatarColor } from "./helpers";
 import type { ListItem } from "@magnis/host/base";
 import type { TelegramChatListItem } from "./types";
+import type { MessageDetailView } from "../types.ts";
 
 export const SEARCH_PLACEHOLDER = "Search chats...";
 export const INPUT_PLACEHOLDER = "Type a message...";
@@ -102,18 +104,19 @@ function mapTelegramChatToListItem(raw: Record<string, unknown>): ListItem {
   return {
     id: c.entity_id,
     name,
-    schema_id: "telegram.chat",
+    schemaId: "telegram.chat",
     preview: c.last_message ?? null,
     timestamp: time,
     avatarUrl: c.avatar_url ?? null,
-    is_pinned: c.is_pinned === true,
-    unread_count: undefined, // Backend doesn't provide unread count in list yet
+    isPinned: c.is_pinned === true,
+    unreadCount: undefined, // Backend doesn't provide unread count in list yet
     metadata: {
       chatId: c.chat_id,
       initials: initialsFromName(name),
       avatarColor: pickAvatarColor(name),
       muted: false,
-      isIndexed: c.is_indexed ?? undefined,
+      isIndexed: c.indexed,
+      syncEnabled: c.syncEnabled,
     },
   };
 }
@@ -204,11 +207,8 @@ const telegramModule = defineModule({
         // P4: one call, to the module that owns the message. It answers with
         // its links and its metadata, so the generic `graph.entity.get` read
         // that used to stand in for the module's own answer is gone.
-        const detail = await runtime.transport.rpc<{
-          metadata?: Record<string, unknown>;
-          linked_entities?: readonly { id: string; schema_id: string }[];
-        }>("telegram.messages.get", { id: entityId });
-        const chatLink = detail.linked_entities?.find((e) => e.schema_id === "telegram.chat");
+        const detail = await runtime.transport.rpc<MessageDetailView>("telegram.messages.get", { id: entityId });
+        const chatLink = detail.linkedEntities.find((e) => e.schemaId === "telegram.chat");
         chatEntityId = chatLink?.id;
         // `??=`, so a message id already on the card data wins. Telegram ids
         // start at 1, so treating 0 as present rather than missing is moot.
@@ -241,7 +241,10 @@ const telegramModule = defineModule({
       hasMore: telegramChatHasMore,
     },
   },
-  toolCallRenderers: [{ entity: "telegram.message", actions: ["create"], Render: TelegramToolCallRenderer as never }],
+  toolCallRenderers: [
+    { entity: "telegram.chat", actions: ["setSyncEnabled", "resolveSyncMigration"], Render: SyncToolCallRenderer as never },
+    { entity: "telegram.account", actions: ["setSyncEnabled"], Render: SyncToolCallRenderer as never },
+{ entity: "telegram.message", actions: ["create"], Render: TelegramToolCallRenderer as never }],
   extraSetup: (runtime) => {
     const unsub2 = setupEventInvalidation(
       runtime.transport,

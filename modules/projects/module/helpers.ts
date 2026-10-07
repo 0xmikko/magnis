@@ -1,5 +1,6 @@
-import type { RawEntity } from "@magnis/plugin-sdk";
-import type { LinkedEntitySummary, ProjectCanonical, ProjectListItem } from "../types.ts";
+import { linkedEntitySummary } from "@magnis/plugin-sdk";
+import type { Entity, Link, LinkedEntitySummary } from "@magnis/sdk";
+import type { ProjectCanonical, ProjectListItem } from "../types.ts";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -8,31 +9,17 @@ export function isUuid(s: string): boolean {
   return UUID_RE.test(s);
 }
 
-/** Entity `created_at`, falling back to the epoch when absent (native parity). */
-export function entityCreatedAt(e: RawEntity & { created_at?: string }): string {
-  return e.created_at ?? new Date(0).toISOString();
-}
-
-/** Shape a link neighbour into the detail-view summary (native parity). */
-export function linkSummary(
-  e: { id: string; schema_id: string; name: string },
-  kind: string,
-): LinkedEntitySummary {
-  return {
-    id: e.id,
-    name: e.name && e.name.length > 0 ? e.name : null,
-    schema_id: e.schema_id,
-    link_kind: kind,
-    created_at: entityCreatedAt(e),
-    data: null,
-  };
+/** Shape a link neighbour into the detail-view summary; an empty name reads
+ * as no name (native parity). */
+export function linkSummary(e: Entity, link: Link, kind: string): LinkedEntitySummary {
+  return { ...linkedEntitySummary(e, link, kind), name: e.name && e.name.length > 0 ? e.name : null };
 }
 
 /// S1: project the node's dictionary into the canonical-keyed map the shaping
 /// helpers already consume — the seam that let every reader move to the
 /// dictionary without reshaping the list item.
-export function projectCanonFromProperties(e: RawEntity): Partial<ProjectCanonical> {
-  const p = (e.properties ?? {});
+export function projectCanonFromProperties(e: Entity): Partial<ProjectCanonical> {
+  const p = e.properties as { name?: unknown; status?: unknown };
   const out: Record<string, unknown> = {};
   if (typeof p.name === "string") out["project.name"] = p.name;
   if (typeof p.status === "string") out["project.status"] = p.status;
@@ -54,7 +41,7 @@ export function canonicalString(
 // would not reproduce it). The per-page canonical map is fetched in one
 // list_canonical_for_entities batch — no per-row N+1.
 export function buildProjectListItem(
-  entity: RawEntity & { created_at?: string; is_pinned?: boolean | null },
+  entity: Entity,
   canonical: Partial<ProjectCanonical>,
 ): ProjectListItem {
   const name =
@@ -63,10 +50,10 @@ export function buildProjectListItem(
       : (canonicalString(canonical, "project.name") ?? "Untitled Project");
   return {
     id: entity.id,
-    schema_id: entity.schema_id,
+    schemaId: entity.schemaId,
     name,
     status: canonicalString(canonical, "project.status"),
-    created_at: entity.created_at ?? new Date(0).toISOString(),
-    is_pinned: entity.is_pinned ?? null,
+    createdAt: entity.createdAt,
+    isPinned: entity.isPinned,
   };
 }

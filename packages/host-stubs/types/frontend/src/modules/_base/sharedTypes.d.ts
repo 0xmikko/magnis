@@ -1,10 +1,3 @@
-export interface LinkedEntitySummary {
-    readonly id: string;
-    readonly name: string | null;
-    readonly schema_id: string;
-    readonly link_kind: string;
-    readonly data?: Readonly<Record<string, unknown>>;
-}
 export type AvatarColor = "orange" | "blue" | "green" | "red" | "purple" | "pink" | "gray";
 export declare const AVATAR_COLOR_CLASSES: Readonly<Record<AvatarColor, string>>;
 export type SidebarIcon = "mail" | "send" | "calendar" | "phone" | "file";

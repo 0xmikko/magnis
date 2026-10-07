@@ -5,6 +5,7 @@
 // verbatim. A caller-supplied `activated_at` never reaches the config.
 
 import { describe, expect, it, vi } from "vitest";
+import type { JsonObject, PropertiesUpdate } from "@magnis/sdk";
 import { entity, mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { TriggersModule } from "../service.ts";
 import { TRIGGER, TRIGGER_CONFIG } from "../../schema.ts";
@@ -16,6 +17,13 @@ const TRIGGER_ID = "22222222-2222-4222-8222-222222222222";
 const NORMALIZED = {
   cron: "0 9 * * MON-FRI",
   timezone: "Europe/Belgrade",
+  activatedAt: "2026-08-07T10:00:00Z",
+};
+
+/// The same spec as the trigger's dictionary stores it.
+const STORED = {
+  cron: "0 9 * * MON-FRI",
+  timezone: "Europe/Belgrade",
   activated_at: "2026-08-07T10:00:00Z",
 };
 
@@ -23,21 +31,21 @@ type G = MockGraph;
 
 function createGraph(overrides: Record<string, unknown> = {}): G {
   return mockGraph({
-    create_entity: () => Promise.resolve(entity(TRIGGER_ID, "T", { schema_id: TRIGGER })),
-    update_properties: () => Promise.resolve(undefined),
-    add_link: () => Promise.resolve(undefined),
-    delete_entity: () => Promise.resolve(undefined),
+    createEntity: () => Promise.resolve(entity(TRIGGER_ID, "T", { schemaId: TRIGGER })),
+    updateProperties: () => Promise.resolve(undefined),
+    addLink: () => Promise.resolve(undefined),
+    deleteEntity: () => Promise.resolve(undefined),
     ...overrides,
   } as never);
 }
 
-function existingTrigger(configExtra: Partial<TriggerConfigData> = {}): G {
+function existingTrigger(configExtra: JsonObject = {}): G {
   return mockGraph({
-    get_entity_full: () =>
+    getEntityFull: () =>
       Promise.resolve({
         // S1: the trigger config IS the node's dictionary.
         entity: entity(TRIGGER_ID, "digest", {
-          schema_id: TRIGGER,
+          schemaId: TRIGGER,
           properties: {
             name: "digest",
             gate_prompt: "always",
@@ -51,8 +59,8 @@ function existingTrigger(configExtra: Partial<TriggerConfigData> = {}): G {
         }),
         links: [],
       }),
-    update_properties: () => Promise.resolve(undefined),
-    update_entity_name: () => Promise.resolve(undefined),
+    updateProperties: () => Promise.resolve(undefined),
+    updateEntityName: () => Promise.resolve(undefined),
   } as never);
 }
 
@@ -68,15 +76,13 @@ function seamRpc() {
 }
 
 function persistedConfig(graph: G): TriggerConfigData {
-  const updateProperties = graph.spies.update_properties;
-  if (!updateProperties) throw new Error("update_properties spy not mounted");
-  const calls = updateProperties.mock.calls as [
-    { entity_id: string; properties: TriggerConfigData },
-  ][];
+  const updateProperties = graph.spies.updateProperties;
+  if (!updateProperties) throw new Error("updateProperties spy not mounted");
+  const calls = updateProperties.mock.calls as [PropertiesUpdate][];
   expect(calls.length).toBeGreaterThan(0);
   const lastWrite = calls[calls.length - 1];
   if (!lastWrite) throw new Error("no config write recorded");
-  return lastWrite[0].properties;
+  return lastWrite[0].properties as unknown as TriggerConfigData;
 }
 
 /**
@@ -112,7 +118,7 @@ describe("triggers.create with a schedule", () => {
       cron: "0 9 * * MON-FRI",
       timezone: "Europe/Belgrade",
     });
-    expect(persistedConfig(graph).schedule).toEqual(NORMALIZED);
+    expect(persistedConfig(graph).schedule).toEqual(STORED);
   });
 
   it("tst_module_triggers_sched_001 does not consult the seam without a schedule", async () => {
@@ -151,7 +157,7 @@ describe("triggers.create response carries the schedule", () => {
       schedule: { cron: "0 9 * * MON-FRI", timezone: "Europe/Belgrade" },
     });
 
-    expect((created as { schedule?: unknown }).schedule).toEqual(NORMALIZED);
+    expect((created as { schedule?: unknown }).schedule).toEqual(STORED);
   });
 });
 
@@ -188,7 +194,7 @@ describe("triggers.create with an invalid schedule", () => {
         schedule: { cron: "*/4 * * * *" },
       }),
     ).rejects.toThrow(/too frequent/);
-    expect(graph.spies.create_entity).not.toHaveBeenCalled();
+    expect(graph.spies.createEntity).not.toHaveBeenCalled();
   });
 });
 
@@ -217,11 +223,11 @@ describe("triggers.update schedule set and clear", () => {
       cron: "0 9 * * MON-FRI",
       timezone: "Europe/Belgrade",
     });
-    expect(persistedConfig(graph).schedule).toEqual(NORMALIZED);
+    expect(persistedConfig(graph).schedule).toEqual(STORED);
   });
 
   it("tst_module_triggers_sched_003 clears a schedule with null, seam untouched", async () => {
-    const graph = existingTrigger({ schedule: { ...NORMALIZED } });
+    const graph = existingTrigger({ schedule: { ...STORED } });
     const rpc = seamRpc();
     const { module } = mountModule(TriggersModule, { graph, rpc });
 

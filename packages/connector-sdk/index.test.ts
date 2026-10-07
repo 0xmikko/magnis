@@ -28,6 +28,59 @@ function cfg(
 }
 
 describe("connector SDK dispatch", () => {
+  test.each([
+    { chatIds: ["1", "3"], headChatIds: ["3"], senderSync: { choices: { "a@example.com": false }, unknownSenderEnabled: true }, expectedProfileIds: { alice: "42" } },
+    { chatIds: [], headChatIds: [], senderSync: { choices: {}, unknownSenderEnabled: false }, expectedProfileIds: {} },
+  ])("forwards explicit selection, including empty selections, through fetch", async (selection) => {
+    let seen: FetchArgs | undefined;
+    const bounded = { scope_id: "3", target: { kind: "gap", start: 10, end: 20 }, cursor: { page: 2 } };
+    const reply = await handleMessage({
+      id: 301, method: "tools/call",
+      params: { name: "magnis.sync.fetch", arguments: { surface: "telegram", ...bounded, ...selection } },
+    }, cfg((args) => {
+      seen = args;
+      return Promise.resolve({ envelopes: [] });
+    }));
+    expect(reply).toHaveProperty("result");
+    expect(seen).toMatchObject({ ...bounded, ...selection });
+  });
+
+  test("keeps missing selection distinct from an explicit empty selection", async () => {
+    let seen: FetchArgs | undefined;
+    await handleMessage({ id: 302, method: "tools/call", params: { name: "magnis.sync.fetch", arguments: { surface: "meetings" } } }, cfg((args) => {
+      seen = args;
+      return Promise.resolve({ envelopes: [] });
+    }));
+    for (const key of ["chatIds", "headChatIds", "senderSync", "expectedProfileIds"]) expect(seen).not.toHaveProperty(key);
+  });
+
+  test.each([["1", "3"], []])("forwards chat selection to the live subscription", async (...chatIds) => {
+    let seen: unknown;
+    const reply = await handleMessage({
+      id: 303, method: "tools/call",
+      params: { name: "listen_start", arguments: { subscription_id: "selected-chats", chatIds, _meta: { account_id: "a1" } } },
+    }, {
+      ...cfg(), mode: "push",
+      listenStart: (args) => { seen = args; return Promise.resolve(); },
+    });
+    expect(reply).toHaveProperty("result");
+    expect(seen).toEqual({ subscription_id: "selected-chats", chatIds, meta: { account_id: "a1" } });
+  });
+
+  test.each([
+    { chatIds: [42] }, { headChatIds: "all" },
+    { senderSync: { choices: { alice: "yes" }, unknownSenderEnabled: true } },
+    { senderSync: { choices: {} } }, { expectedProfileIds: { alice: 42 } },
+  ])("rejects malformed selection before dispatch", async (selection) => {
+    let called = false;
+    const reply = await handleMessage({ id: 304, method: "tools/call", params: { name: "magnis.sync.fetch", arguments: { surface: "telegram", ...selection } } }, cfg(() => {
+      called = true;
+      return Promise.resolve({ envelopes: [] });
+    }));
+    expect(reply).toMatchObject({ error: { code: -32602 } });
+    expect(called).toBe(false);
+  });
+
   /**
    * @test-id: tst_src_sdk_runtime_001
    * @scenario: scn_source_runtime_shared_dispatch_001
