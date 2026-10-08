@@ -151,6 +151,12 @@ export interface SearchEntitiesPageParams {
 /** The largest page the host serves; a larger `limit` is refused. */
 export const pageLimitMax = 200;
 
+/** The largest page of `listLinkPeriods` the host serves. */
+export const linkPeriodLimitMax = 100;
+
+/** The most UTF-8 bytes one `bytesPut` stores. */
+export const bytesPutMax = 3 * 1024 * 1024;
+
 /// The host graph, injected into each plugin module. Operation names stay
 /// flat snake_case; every input and answer is an SDK shape. The user and the
 /// actor are stamped host-side from the plugin context, never supplied by JS.

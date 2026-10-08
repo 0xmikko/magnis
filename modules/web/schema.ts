@@ -16,3 +16,6 @@ export const REFERENCES = "references";
 
 /** The surface `sources/web` answers commands on; it delivers no pages. */
 export const SURFACE_WEB = "web";
+/** The account every command names: a Source without login gives each user one
+ * account, whose id is the Source id. */
+export const SOURCE_ACCOUNT = "web";

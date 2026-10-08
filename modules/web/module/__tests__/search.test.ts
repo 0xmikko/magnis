@@ -10,10 +10,10 @@ import { WebModule } from "../service.ts";
 
 describe("web.link.search_global", () => {
   it("tst_web_search_001 answers the Source's results, and the Graph sees no write", async () => {
-    const commands: Record<string, unknown>[] = [];
+    const commands: { payload: Record<string, unknown>; accountId: string | undefined }[] = [];
     const graph = mockGraph({
-      sourceCommand: (payload) => {
-        commands.push(payload);
+      sourceCommand: (payload, accountId) => {
+        commands.push({ payload, accountId });
         return Promise.resolve({ results: [
           { url: "https://example.com/a", title: "A", snippet: "first" },
           { url: "https://example.org/b", title: "B", snippet: "second" },
@@ -26,7 +26,7 @@ describe("web.link.search_global", () => {
       { url: "https://example.com/a", title: "A", snippet: "first" },
       { url: "https://example.org/b", title: "B", snippet: "second" },
     ] });
-    expect(commands).toEqual([{ action: "search", query: "magnis web", limit: 2 }]);
+    expect(commands).toEqual([{ payload: { action: "search", query: "magnis web", limit: 2 }, accountId: "web" }]);
     // Any other Graph operation would have thrown: the mock knows only sourceCommand.
     expect(Object.keys(graph.spies)).toEqual(["sourceCommand"]);
 

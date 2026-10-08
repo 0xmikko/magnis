@@ -5,13 +5,13 @@
  * @test-id: tst_web_open_001, tst_web_open_002, tst_web_open_003, tst_web_ensure_001
  */
 import { describe, expect, it } from "vitest";
-import { mockGraph, mountModule } from "@magnis/testkit/module";
+import { link as linkRow, mockGraph, mountModule } from "@magnis/testkit/module";
 import type { EnsureRequest } from "@magnis/sdk";
 
 import { WebModule } from "../service.ts";
 import { link as linkDeclaration, page as pageDeclaration } from "../../entities.ts";
 import type { WebOpenParams, WebSourcePage } from "../../types.ts";
-import { canonicalEntity, contentsRow, webGraph } from "./webGraph.ts";
+import { canonicalEntity, webGraph } from "./webGraph.ts";
 
 type SourceAnswer = NonNullable<Parameters<typeof webGraph>[0]>[number];
 
@@ -61,6 +61,8 @@ describe("web.link.open", () => {
       { action: "read", url: KEY, etag: "\"a1\"", lastModified: null, forceRefresh: false },
       { action: "read", url: KEY, etag: "\"b1\"", lastModified: null, forceRefresh: false },
     ]);
+    // The account of a Source without login is the Source itself.
+    expect(state.accounts).toEqual(["web", "web", "web"]);
     const links = [...state.entities.values()].filter((entity) => entity.schemaId === "web.link");
     const pages = [...state.entities.values()].filter((entity) => entity.schemaId === "web.page");
     expect(links.map((entity) => [entity.canonicalKey, entity.properties])).toEqual([[KEY, { url: KEY, domain: "example.com" }]]);
@@ -109,10 +111,18 @@ describe("web.link.open", () => {
     expect(state.links.map((row) => row.metadata)).toEqual([{ lastGet: "2026-10-03T09:00:00.000Z", expiresAt: null }]);
     const pages = [...state.entities.values()].filter((entity) => entity.schemaId === "web.page");
     expect(pages.map((entity) => (entity.properties as { etag: string }).etag)).toEqual(["\"a1\""]);
+
+    // A Source error, or an answer of the wrong shape, rejects and writes nothing.
+    const failing = mount([new Error("reading https://example.com/a?x=1 took longer than 20 s"), { status: "changed" }]);
+    await expect(failing.module.open(byUrl(KEY))).rejects.toThrow("took longer than 20 s");
+    await expect(failing.module.open(byUrl(KEY))).rejects.toThrow("read answer page must be an object");
+    expect(failing.state.batches).toEqual([]);
+    expect(failing.state.bytes.size).toBe(0);
   });
 
   it("tst_web_open_003 the text comes in windows of 50 KiB, a past moment is read from storage, and before the first version it fails", async () => {
-    const text = `# Long\n\n${"Ж".repeat(40_000)}${"x".repeat(30_000)}`;
+    // A 7-byte header and 3-byte characters put both window ends inside a character.
+    const text = `# Long\n${"界".repeat(40_000)}${"x".repeat(30_000)}`;
     const { state, module } = mount([
       changed(text, "2026-10-01T09:00:00.000Z"),
       changed("# Short", "2026-10-02T09:00:00.000Z"),
@@ -120,11 +130,13 @@ describe("web.link.open", () => {
     const first = await module.open(byUrl(KEY));
     const size = new TextEncoder().encode(text).length;
     expect(first.sizeBytes).toBe(size);
+    expect(first.nextOffset).toBe(51_199);
     let content = first.content;
     let next = first.nextOffset;
     let windows = 1;
     while (next !== null) {
       const window = await module.pageGet({ id: first.pageId, offset: next });
+      if (windows === 1) expect(window.nextOffset).toBe(102_397);
       expect(new TextEncoder().encode(window.content).length).toBeLessThanOrEqual(50 * 1024);
       content += window.content;
       next = window.nextOffset;
@@ -157,7 +169,7 @@ describe("web.link.get", () => {
     if (link === undefined) throw new Error("the link was not recorded");
     const message = canonicalEntity("telegram.message", null, "msg", "2026-10-04T00:00:00.000Z", {});
     state.entities.set(message.id, message);
-    state.links.push({ ...contentsRow(message.id, link.id, null, "2026-10-04T00:00:00.000Z", null), kind: "references", validFrom: null });
+    state.links.push(linkRow(message.id, link.id, "references", { createdAt: "2026-10-04T00:00:00.000Z", metadata: null }));
 
     const first = await module.linkGet({ id: link.id, offset: 0, limit: 2 });
     expect(first.link.id).toBe(link.id);

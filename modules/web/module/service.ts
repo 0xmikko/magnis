@@ -33,7 +33,7 @@ import type {
   WebSearchAnswer,
   WebSearchParams,
 } from "../types.ts";
-import { CONTENTS, LINK, PAGE, REFERENCES, SURFACE_WEB } from "../schema.ts";
+import { CONTENTS, LINK, PAGE, REFERENCES, SOURCE_ACCOUNT, SURFACE_WEB } from "../schema.ts";
 import {
   asObject,
   contentsLink,
@@ -79,9 +79,8 @@ interface Version {
   declaration: GraphEntityDeclaration | null;
 }
 
-/** The link `open` reads: its id when it is in the Graph, and its URL. */
+/** The link `open` reads: its URL, and its entity when it is in the Graph. */
 interface Target {
-  id: string | null;
   url: string;
   entity: Entity | null;
 }
@@ -161,7 +160,7 @@ export class WebModule {
   async open(params: WebOpenParams): Promise<WebPageRead> {
     const target = await this.target(params);
     const now = new Date().toISOString();
-    const newest = target.id === null ? null : await this.newestPeriod(target.id, params.at ?? now);
+    const newest = target.entity === null ? null : await this.newestPeriod(target.entity.id, params.at ?? now);
     if (params.at !== null) {
       if (newest === null) throw new Error(`web.link.open: no version at or before ${params.at}`);
       return this.readStored(newest.pageId, 0);
@@ -178,7 +177,7 @@ export class WebModule {
       etag: base?.details.etag ?? null,
       lastModified: base?.details.lastModified ?? null,
       forceRefresh: params.forceRefresh,
-    }));
+    }, SOURCE_ACCOUNT));
     return this.record(target.url, base, answer);
   }
 
@@ -207,7 +206,7 @@ export class WebModule {
 
   @tool("search_global", SEARCH_GLOBAL_SPEC)
   async searchGlobal(params: WebSearchParams): Promise<WebSearchAnswer> {
-    return searchAnswerOf(await this.graph.sourceCommand({ action: "search", query: params.query, limit: params.limit }));
+    return searchAnswerOf(await this.graph.sourceCommand({ action: "search", query: params.query, limit: params.limit }, SOURCE_ACCOUNT));
   }
 
   /** `rpc.ensure` for `web.link`: one canonical ref per URL, in order, and a
@@ -277,17 +276,23 @@ export class WebModule {
 
   /** The link by id, read as the caller, or by its normalized URL. */
   private async target(params: WebOpenParams): Promise<Target> {
-    if ((params.id === null) === (params.url === null)) throw new Error("web.link.open: give either id or url");
     if (params.id !== null) {
+      if (params.url !== null) throw new Error("web.link.open: give either id or url");
       const entity = canonicalOf(await this.graph.getEntity(params.id), LINK, params.id);
-      return { id: entity.id, url: urlOf(entity), entity };
+      return { url: urlOf(entity), entity };
     }
-    const url = normalizeUrl(params.url ?? "");
+    if (params.url === null) throw new Error("web.link.open: give either id or url");
+    const url = normalizeUrl(params.url);
     if (url === null) throw new Error(`web.link.open: ${JSON.stringify(params.url)} is not an http or https URL`);
-    const [id] = await this.graph.findByCanonicalKeys({ schemaId: LINK, canonicalKeys: [url] });
-    if (id === undefined) throw new Error("findByCanonicalKeys answered no position for the URL");
-    if (id === null) return { id: null, url, entity: null };
-    return { id, url, entity: canonicalOf(await this.graph.getEntity(id), LINK, id) };
+    const id = await this.canonicalId(LINK, url);
+    return { url, entity: id === null ? null : canonicalOf(await this.graph.getEntity(id), LINK, id) };
+  }
+
+  /** The caller's entity of one schema holding a canonical key, or null. */
+  private async canonicalId(schemaId: string, key: string): Promise<string | null> {
+    const [id] = await this.graph.findByCanonicalKeys({ schemaId, canonicalKeys: [key] });
+    if (id === undefined) throw new Error(`findByCanonicalKeys answered no position for ${schemaId} ${key}`);
+    return id;
   }
 
   /** The link's period with the latest `validFrom` not after `notAfter`. */
@@ -359,8 +364,8 @@ export class WebModule {
     };
     // A text this link served before keeps its page, with its first title and
     // first-seen time: resolving the declaration never rewrites it.
-    const [knownId] = await this.graph.findByCanonicalKeys({ schemaId: PAGE, canonicalKeys: [pageKey(stored.contentHash, url)] });
-    const known = knownId === undefined || knownId === null ? null : canonicalOf(await this.graph.getEntity(knownId), PAGE, knownId);
+    const knownId = await this.canonicalId(PAGE, pageKey(stored.contentHash, url));
+    const known = knownId === null ? null : canonicalOf(await this.graph.getEntity(knownId), PAGE, knownId);
     fragment.entities.push(pageDeclaration(details, answer.page.title, fetchedAt));
     if (base !== null) {
       fragment.links.push(contentsLink(url, pageRef(base.details.contentHash, url), metadataOf(base.period), base.period.validFrom, fetchedAt));

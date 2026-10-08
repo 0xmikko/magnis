@@ -5,11 +5,11 @@
  * @test-id: tst_web_repair_001
  */
 import { describe, expect, it } from "vitest";
-import { mockGraph, mountModule } from "@magnis/testkit/module";
+import { link as linkRow, mockGraph, mountModule } from "@magnis/testkit/module";
 import type { JsonObject } from "@magnis/sdk";
 
 import { WebModule } from "../service.ts";
-import { canonicalEntity, contentsRow, webGraph } from "./webGraph.ts";
+import { canonicalEntity, webGraph } from "./webGraph.ts";
 
 type SourceAnswer = NonNullable<Parameters<typeof webGraph>[0]>[number];
 
@@ -39,7 +39,7 @@ describe("web.repair", () => {
     for (const entity of [...links, plain, message]) state.entities.set(entity.id, entity);
     const [first] = links;
     if (first === undefined) throw new Error("fixture links missing");
-    state.links.push({ ...contentsRow(message.id, first.id, null, "2026-09-05T00:00:00.000Z", null), kind: "references", validFrom: null });
+    state.links.push(linkRow(message.id, first.id, "references", { createdAt: "2026-09-05T00:00:00.000Z", metadata: null }));
     const dictionaries = links.map((entity) => structuredClone(entity.properties));
 
     expect(await module.repair({ offset: 0, limit: 2 })).toEqual({ repaired: 2, scanned: 2, nextOffset: 2 });

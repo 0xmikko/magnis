@@ -16,7 +16,7 @@ import type {
   JsonValue,
   LinkedEntity,
 } from "@magnis/sdk";
-import type { GraphOverrides } from "@magnis/testkit/module";
+import { entity, link, type GraphOverrides } from "@magnis/testkit/module";
 
 const OWNER = "00000000-0000-4000-8000-000000000001";
 
@@ -26,6 +26,8 @@ interface WebGraphState {
   bytes: Map<string, Uint8Array>;
   batches: GraphBatchInput[];
   commands: Record<string, unknown>[];
+  /** The account each command named, beside its payload. */
+  accounts: (string | undefined)[];
 }
 
 /** A scripted Source: each command takes the next answer. */
@@ -43,19 +45,18 @@ export function canonicalEntity(
   properties: JsonValue,
   createdAt = date,
 ): CanonicalEntity {
-  return {
-    id: randomUUID(), owner: OWNER, schemaId, schemaVersion: 1, createdAt, name, indexed: true, date, idx: null,
-    isPinned: null, pinOrder: null, isArchived: null, properties, origin: "canonical",
-    source: { source: "web", account: OWNER, externalId: canonicalKey ?? randomUUID() }, canonicalKey,
-  };
+  return entity(randomUUID(), "", {
+    owner: OWNER, schemaId, createdAt, name, indexed: true, date, properties, canonicalKey,
+    source: { source: "web", account: OWNER, externalId: canonicalKey ?? randomUUID() },
+  });
 }
 
-export function contentsRow(from: string, to: string, metadata: JsonValue, validFrom: string, validUntil: string | null): CanonicalLink {
-  return { id: randomUUID(), owner: OWNER, from, to, kind: "contents", createdAt: validFrom, origin: "canonical", metadata, validFrom, validUntil };
+function contentsRow(from: string, to: string, metadata: JsonValue, validFrom: string, validUntil: string | null): CanonicalLink {
+  return link(from, to, "contents", { id: randomUUID(), owner: OWNER, createdAt: validFrom, metadata, validFrom, validUntil });
 }
 
 export function webGraph(answers: SourceAnswer[] = []): { state: WebGraphState; overrides: GraphOverrides } {
-  const state: WebGraphState = { entities: new Map(), links: [], bytes: new Map(), batches: [], commands: [] };
+  const state: WebGraphState = { entities: new Map(), links: [], bytes: new Map(), batches: [], commands: [], accounts: [] };
   const byKey = (schemaId: string, key: string): CanonicalEntity | undefined =>
     [...state.entities.values()].find((entity) => entity.schemaId === schemaId && entity.canonicalKey === key);
 
@@ -101,12 +102,14 @@ export function webGraph(answers: SourceAnswer[] = []): { state: WebGraphState; 
       const bytes = typeof hash === "string" ? state.bytes.get(hash) : undefined;
       if (bytes === undefined) return Promise.reject(new Error(`bytesRead: entity ${entityId} names no stored contentHash`));
       const slice = bytes.subarray(offset, offset + length);
+      // Back off while the byte after the window continues a character.
       let cut = slice.length;
-      while (cut > 0 && cut < slice.length && ((slice[cut] ?? 0) & 0xc0) === 0x80) cut -= 1;
+      while (cut > 0 && offset + cut < bytes.length && ((bytes[offset + cut] ?? 0) & 0xc0) === 0x80) cut -= 1;
       return Promise.resolve({ text: new TextDecoder().decode(slice.subarray(0, cut)), offset, length: cut, sizeBytes: bytes.length });
     },
-    sourceCommand: (payload) => {
+    sourceCommand: (payload, accountId) => {
       state.commands.push(payload);
+      state.accounts.push(accountId);
       const answer = answers.shift();
       if (answer === undefined) return Promise.reject(new Error("no scripted Source answer"));
       return answer instanceof Error ? Promise.reject(answer) : Promise.resolve(answer);
