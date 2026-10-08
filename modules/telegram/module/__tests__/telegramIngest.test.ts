@@ -751,7 +751,8 @@ describe("tst_cat_tg_web_ensure_001 — Telegram links a message to its URLs thr
     };
     const module = mountModule(TelegramModule, { graph, rpc }).module;
     const photo = messageEnvelope("snapshot", {
-      ...messagePayload(), text: "Known https://example.test/demo and new https://new.example/x?y=1 and again https://new.example/x?y=1",
+      // The last address matches the message's URL pattern but is no URL: it never reaches ensure.
+      ...messagePayload(), text: "Known https://example.test/demo and new https://new.example/x?y=1 and again https://new.example/x?y=1, not http://999.999.999.999/",
       media_type: "photo", source_ref: { chat_id: 42, message_id: 7 },
     });
 
