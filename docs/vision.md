@@ -401,9 +401,9 @@ flowchart LR
 | Email `sent_from`, X/LinkedIn schema-pair kind names | Manifests retain these declarations while inspected writers use `authored_by` and `identity`. Review historical rows before retiring declarations; profile → person also reverses the current identity direction |
 | `file.attachment` | Keep the module kind: owning content → attached file, with file-role validation. Generic membership would lose attachment semantics |
 
-The review inspected host registry seeds, Episode/Web contracts, Telegram observer/participant writers, Contacts identity resolution and catalog manifests/services. Absence of a writer in those paths does not prove an empty database or exclude generic or external writers. The target removes `sent_by`, `watches`, `account`, `prospect` and `supports` from standard declarations and ordinary new writes. Historical rows remain readable through explicit migration/import compatibility until their semantics can be mapped; removing a name from this union does not delete data. Creation-link conversion is agreed; project membership and concrete communication endpoint schemas remain proposals.
+The review inspected host registry seeds, Episode/Web contracts, Telegram observer/participant writers, Contacts identity resolution and catalog manifests/services. Absence of a writer in those paths does not prove an empty database or exclude generic or external writers. The target removes `sent_by`, `watches`, `account`, `prospect` and `supports` from standard declarations and ordinary new writes. Historical rows remain readable through explicit migration/import compatibility until their semantics can be mapped; removing a name from this union does not delete data. Creation provenance uses `created`; organizational membership uses `belongs_to`. Communication endpoint schemas are defined below.
 
-Current code still writes `in_chat`, `triggers.belongs_to`, `projects.belongs_to` and `triggered_by`. Creation migration must reverse endpoints and preserve periods, evidence and producer metadata. The communication proposal supersedes the earlier blanket `in_chat` → `belongs_to` conversion: chat membership alone supplies neither direction nor delivery time. Keep historical rows until the communication context can be reconstructed without inventing facts. WebSource's proposed `contents` relation also needs its extraction semantics checked before consolidation.
+The migration converts `triggers.belongs_to` and `projects.belongs_to` to `belongs_to`, and reverses `triggered_by` into `created`, preserving periods, evidence and producer metadata. `in_chat` remains a structural context link for existing Telegram readers. The communication proposal supersedes the earlier blanket `in_chat` → `belongs_to` conversion: chat membership alone supplies neither direction nor delivery time. Keep historical rows until the communication context can be reconstructed without inventing facts. WebSource's proposed `contents` relation also needs its extraction semantics checked before consolidation.
 
 ### Communication is an observed event
 
@@ -416,13 +416,15 @@ The communication vocabulary has two pairs:
 
 `received_from` supplies sender information even when Magnis cannot observe that sender's account. It does not invert `received`, which identifies the receiving endpoint, or manufacture a `sent` event from a From header. There is no separately stored inverse `sent_by`: incoming `sent` traversal already finds an observed sending endpoint. `reply_to` is message → original message and identifies what is being answered.
 
-`authored_by` remains for actual content authorship. The inspected email writer currently maps `from_address` to `authored_by`; the target maps this sender-only fact to `received_from` instead. Migrate only the known email producer/schema pair, preserving provenance and history; do not rename authorship across the graph or write both Links from the same sender field. A domain can record both only when it independently knows the author and the sender. Other communication adapters must declare which fact their source supplies.
+`authored_by` remains for actual content authorship. The email writer maps `from_address` to `received_from`. Migrate only the known email producer/schema pair, preserving provenance and history; do not rename authorship across the graph or write both Links from the same sender field. A domain can record both only when it independently knows the author and the sender. Other communication adapters must declare which fact their source supplies.
 
 ```typescript
 export type CommunicationLink = CanonicalLink & {
   kind: "sent" | "received";
   from: PersistentEntityId; // Concrete sending/receiving account or mailbox.
   to: PersistentEntityId;   // Message instance.
+  validFrom: null;
+  validUntil: null;
   metadata: {
     occurredAt: DateTimeUtc | null; // Provider occurrence time; null = unknown.
     conversationId: PersistentEntityId | null;
@@ -430,15 +432,44 @@ export type CommunicationLink = CanonicalLink & {
 };
 ```
 
-**Working proposal for endpoint direction:** mailbox/account → sent/received → message. The same message can be sent by one account and received by another, including two accounts of one user. A shared chat has no single incoming/outgoing direction independent of an account. `conversationId` carries the chat/thread context in this proposal; it must resolve to a registered, same-scope conversation through Graph validation, including merge/deletion handling. Account and conversation must remain separately queryable. Endpoint schemas and whether conversation should instead be an explicit structural edge remain a design decision; do not add an unvalidated ID hidden in metadata or create per-account copies of a shared chat implicitly.
+Mailbox/account → `sent`/`received` → message is the approved direction. Message instances are scoped by domain, connected account and provider ID, using SDK `communicationMessageExternalId`. The same email visible in two connected mailboxes has two observed message instances. Telegram keeps its shared chat and account Entities; it does not make a conversation copy per connection.
 
-`sent` requires a successful provider send or an authoritative source observation. A draft, failed send or From header is insufficient. `received` requires observed delivery at the receiving endpoint; To/CC/BCC identifies intended recipients, including recipients whose delivery Magnis cannot observe. A self-addressed message can correctly have both facts. An address identifies a channel; a concrete connected mailbox may require its own domain Entity when an address does not identify the receiving endpoint uniquely. Source credentials remain outside the graph.
+```typescript
+export interface EmailMailboxDetails {
+  address: string | null;
+}
 
-`metadata.occurredAt` is the communication timestamp. `Link.createdAt` is graph insertion time; validity bounds retain their separate meaning. Do not substitute import time, an email Date header or epoch zero for unknown receipt time. The inspected Gmail adapter currently folds Date/internalDate into `sent_at`, while the Entity schema already allows `received_at`; those are not yet a reliable receipt-time contract.
+export interface EmailThreadDetails {
+  threadId: string;
+}
+```
 
-Repeated ingestion of the same provider message and endpoint reuses the fact and emits no new `link_added`. A genuine resend with a new provider message identity is a new message instance. Several distinct deliveries of the same instance to the same endpoint need an occurrence identity: the present pair/kind/period rules cannot represent them by changing metadata alone. Preserve that distinction as an explicit extension decision, not a fake new delivery on every sync.
+`email.mailbox` has role `identity_channel`, with one Entity per connected account. Source/account identity lives in `CanonicalEntity.source`; an unknown mailbox address is explicitly `null`. The shared `email.address` remains the address hub for `received_from` and `sent_to`. `email.thread` has role `container`; its provider thread ID is scoped by the same account. A mailbox control envelope establishes the mailbox even when there are no messages.
 
-Messages and their communication Links commit together. `belongs_to` remains useful for deliberate organizational membership, such as a letter attached to an Episode or a project; it does not stand for sending or receipt. Existing `sent` Episode links and historical `in_chat` links cannot be blindly converted into communication facts.
+`conversationId` is a validated reference to `email.thread` or `telegram.chat`. Graph validates ownership, active canonical endpoints and the observing account. Email threads must match the mailbox's Source/account; Telegram chats remain shared. Workspace transfer remaps this reference to restored IDs. Deletion or merge that would retire a referenced conversation is refused until its communication references are explicitly handled.
+
+`sent` requires a successful provider send or an authoritative source observation. A draft, failed send or From header is insufficient. `received` requires observed delivery at the receiving endpoint; To/CC/BCC identifies intended recipients, including recipients whose delivery Magnis cannot observe. A self-addressed message can correctly have both facts. An address identifies a channel; the connected mailbox is a separate Entity identifying the observed endpoint. Source credentials remain outside the graph.
+
+`metadata.occurredAt` is the communication timestamp. `Link.createdAt` is graph insertion time; validity bounds retain their separate meaning. Do not substitute import time, an email Date header or epoch zero for unknown receipt time. The additive Source payload `communication` carries account-relative observations; modules remove it from message properties and write its facts as Links:
+
+```typescript
+interface MessageObservationPayload {
+  communication: readonly {
+    kind: "sent" | "received";
+    occurredAt: string | null;
+  }[];
+}
+```
+
+Gmail `SENT` establishes `sent`, `INBOX` establishes `received`, and both labels may establish both; drafts establish neither. IMAP preserves those system labels. Occurrence time comes from provider `internalDate`, never the Date header; absent time stays null. Archived records with no authoritative direction produce no observation. Telegram uses its account-relative outgoing flag; outgoing messages carry their provider date, while receipt time for incoming messages stays unknown. The existing display fields do not override these evidence rules.
+
+Older Source payloads without `communication` still ingest content but establish no observed delivery. A present malformed observation fails ingestion. Envelope, cursor and error-code contracts are unchanged.
+
+Repeated ingestion of the same provider message and endpoint reuses the fact and emits no new `link_added`. A genuine resend with a new provider message identity is a new message instance. Several distinct deliveries of the same instance to the same endpoint need an occurrence identity: the present pair/kind/period rules cannot represent them by changing metadata alone. Distinct repeated physical deliveries to the same endpoint are outside this release; no occurrence-ID mechanism is introduced. A replay may fill an unknown timestamp/context, preserves previously known values and rejects contradictory known values.
+
+Messages and their communication Links commit together. Email resolves mailbox/thread Entities first within the existing Source page transaction, then commits message and observation Links in one batch. Telegram preserves a connected operator's Source anchor when another account merely observes that operator as a peer.
+
+Manual send/reply calls use an explicit `account_id`, or resolve it only when exactly one account is connected. Only a successful provider response creates the local `sent` fact; without a provider occurrence timestamp it uses null. A local write failure after delivery is reported as an enrichment failure and must not cause another provider send. A missing synchronized endpoint can therefore leave the local observation to the next Source sync. `belongs_to` remains useful for deliberate organizational membership, such as a letter attached to an Episode or a project; it does not stand for sending or receipt. Existing `sent` Episode links and historical `in_chat` links cannot be blindly converted into communication facts.
 
 ### Module-owned kinds
 
@@ -1427,7 +1458,7 @@ Telegram account identity delegates to an existing direct chat; it does not impl
 
 Telegram uses the saved chat `syncEnabled` choice for both message admission and automatic attachment downloads. An admitted message may register its files with `download: true`; a stopped chat admits neither message writes nor new file registrations. The same transaction/owner lock orders admission against Stop. Existing messages and files remain stored.
 
-The chat UI exposes Start/Stop synchronization only. Retire `telegram.chats.set_indexed` and the separate indexing toggle. Legacy chat `is_indexed` may inform the existing one-time sync migration or initial-selection rule, but never overrides an initialized sync choice. This introduces no `processingEnabled` field or extra Graph read. `extras.indexed` remains the read-only knowledge-indexing status; the internal Entity processing column retains its existing non-Telegram index/search meaning.
+The chat UI exposes Start/Stop synchronization only. Retire `telegram.chats.set_indexed` and the separate indexing toggle. Legacy chat `is_indexed` may inform the existing one-time sync migration or initial-selection rule, but never overrides an initialized sync choice. This introduces no `processingEnabled` field or extra Graph read. `extras.indexed` remains the read-only knowledge-indexing status; the internal Entity processing column retains its existing non-Telegram index/search meaning. The SQL and legacy-workspace migrations clear historical `indexed: false` only for `telegram.chat`, preserving the saved sync choice; otherwise that retired UI setting would remain a hidden search gate.
 
 ### Ambiguous legacy selection
 

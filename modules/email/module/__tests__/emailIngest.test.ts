@@ -115,7 +115,7 @@ it("tst_module_email_sync_001 admits only enabled senders before content, attach
   const batches: GraphBatchInput[] = [];
   const graph = mockGraph({
     findByExternalIds: (externalIds) => Promise.resolve(externalIds.map((externalId) => rows.find((row) => externalId === `email:address:${row.entity.name ?? ""}`)?.entity.id ?? null)),
-    findByExternalId: (externalId) => Promise.resolve(externalId === "b-label" || externalId === "b-delete" ? entityId(`stored-${externalId}`) : null),
+    findByExternalId: (externalId) => Promise.resolve(externalId === 'email.message:"acct-1":"b-label"' || externalId === 'email.message:"acct-2":"b-delete"' ? entityId(`stored-${externalId}`) : null),
     getEntities: (ids) => Promise.resolve(rows.filter((row) => ids.includes(row.entity.id))),
     getEntity: (id) => Promise.resolve(rows.find((row) => row.entity.id === id) ?? null),
     getEntityFull: (id) => Promise.resolve({
@@ -150,6 +150,38 @@ it("tst_module_email_sync_001 admits only enabled senders before content, attach
 });
 
 describe("email ingest — applyBatch shape (tst_be_emailingest_001)", () => {
+  it("tst_module_communication_email_003 discovers a mailbox even when it contains no messages", async () => {
+    const graph = ingestGraph();
+    const mod = mountModule(EmailModule, { graph, ctx: { extensionId: "email" } }).module;
+    await mod.ingest({ envelopes: [env({ remoteId: "mailbox", payload: { entity_type: "mailbox", messages_total: 0, skipped: 0 } })] });
+    expect(spy(graph, "applyBatch")).toHaveBeenCalledWith({
+      entities: [expect.objectContaining({ schemaId: "email.mailbox", externalId: 'email.mailbox:"acct-1"', properties: { address: null } })], refs: [], links: [],
+    });
+  });
+
+  it("tst_module_communication_email_001 stores account-scoped observations beside the message", async () => {
+    const batches: GraphBatchInput[] = [];
+    const graph = ingestGraph();
+    spy(graph, "applyBatch").mockImplementation(async (batch: GraphBatchInput) => {
+      batches.push(batch);
+      return { ids: Object.fromEntries(batch.entities.map((item) => [item.key, entityId(`id-${item.key}`)])), created: batch.entities.length, updated: 0, linksAdded: batch.links.length, droppedKeys: [], resolved: [] };
+    });
+    const mod = mountModule(EmailModule, { graph, ctx: { extensionId: "email" } }).module;
+    const payload = msgPayload({ communication: [{ kind: "received", occurredAt: null }] });
+    await mod.ingest({ envelopes: [env({ payload })] });
+    const batch = batches.find((item) => item.entities.some((item) => item.schemaId === "email.message"));
+    expect(batch?.entities.find((item) => item.schemaId === "email.message")?.externalId).toBe('email.message:"acct-1":"m1"');
+    expect(batch?.links).toContainEqual(expect.objectContaining({
+      fromKey: 'email.mailbox:"acct-1"', toKey: "m1", kind: "received",
+      metadata: { occurredAt: null, conversationId: entityId('id-email.thread:"acct-1":"thread-1"') },
+    }));
+    expect(batch?.entities.find((item) => item.schemaId === "email.message")?.properties).not.toHaveProperty("communication");
+    expect(batches.flatMap((item) => item.entities)).toContainEqual(expect.objectContaining({ schemaId: "email.mailbox", properties: { address: null } }));
+    const before = batches.length;
+    await expect(mod.ingest({ envelopes: [env({ payload: msgPayload({ communication: [{ kind: "sent", occurredAt: "bad date" }] }) })] })).rejects.toThrow();
+    expect(batches).toHaveLength(before);
+  });
+
   let graph: G;
   let mod: EmailModule;
   beforeEach(() => {
@@ -202,7 +234,7 @@ describe("email ingest — applyBatch shape (tst_be_emailingest_001)", () => {
     // S5: the message node is its DICTIONARY under the remoteId external id —
     // the details record retired, and the fields the edges now represent
     // (attachments, the joined recipient strings) left the dict.
-    expect(m1.externalId).toBe("m1");
+    expect(m1.externalId).toBe('email.message:"acct-1":"m1"');
     expect(dict(m1)?.subject).toBe("Report Q3");
     expect(dict(m1)?.attachments).toBeUndefined();
     expect(dict(m1)?.to_addresses).toBeUndefined();
@@ -339,7 +371,7 @@ describe("email ingest — applyBatch shape (tst_be_emailingest_001)", () => {
     if (fileCall0 === undefined) throw new Error("ingest: fileRegister not called");
     const call = fileCall0[0] as Record<string, unknown>;
     expect(call.externalId).toBe("file:gmail:acct-1:m1:att-1");
-    expect(call.parentExternalId).toBe("m1");
+    expect(call.parentExternalId).toBe('email.message:"acct-1":"m1"');
     expect(call.linkKind).toBe("file.attachment");
     expect(call.name).toBe("photo.jpg");
     expect(call.mimeType).toBe("image/jpeg");
@@ -465,7 +497,7 @@ describe("email ingest — the plan from the pages", () => {
     expect(r).toEqual({ droppedRemoteIds: [], triggerChecks: [], plan: { "email.message": { total: 100, skipped: 10 } }, excluded: [] });
     const batch = spy(graph, "applyBatch").mock.calls[0]?.[0] as GraphBatchInput | undefined;
     expect(batch?.entities.map((item) => item.key)).not.toContain("mailbox");
-    expect(batch?.entities.some((item) => item.key === "m1")).toBe(true);
+    expect(spy(graph, "applyBatch").mock.calls.some((call) => (call[0] as GraphBatchInput).entities.some((item) => item.key === "m1"))).toBe(true);
   });
 
   it("moves the count by one per new mail and per removal on a history page", async () => {
@@ -497,9 +529,9 @@ it("tst_module_google_003 counts only newly admitted Gmail messages and actual r
   const lookupAddresses = spy(graph, "findByExternalIds").getMockImplementation();
   if (lookupAddresses === undefined) throw new Error("Missing address lookup fixture");
   spy(graph, "findByExternalIds").mockImplementation((externalIds: string[]) =>
-    externalIds.some((externalId) => externalId.startsWith("email:address:")) ? lookupAddresses(externalIds) : Promise.resolve(externalIds.map((externalId) => externalId === "m-existing" ? entityId("id-existing") : null)));
+    externalIds.some((externalId) => externalId.startsWith("email:address:")) ? lookupAddresses(externalIds) : Promise.resolve(externalIds.map((externalId) => externalId === 'email.message:"acct-1":"m-existing"' ? entityId("id-existing") : null)));
   spy(graph, "findByExternalId").mockImplementation((externalId: string) =>
-    Promise.resolve(externalId === "m-gone" ? entityId("id-gone") : null));
+    Promise.resolve(externalId === 'email.message:"acct-1":"m-gone"' ? entityId("id-gone") : null));
 
   const first = await mod.ingest({ generation: "forward:r:1", envelopes: [
     env({ kind: "live", remoteId: "m-existing", payload: msgPayload() }),

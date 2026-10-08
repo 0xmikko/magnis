@@ -142,6 +142,10 @@ export function messagePayload(m: TgMessage): Record<string, unknown> {
     text: m.text,
     date: m.date,
     is_outgoing: m.is_outgoing,
+    communication: [{
+      kind: m.is_outgoing ? "sent" : "received",
+      occurredAt: m.is_outgoing ? new Date(m.date).toISOString().replace(/\.000Z$/, "Z") : null,
+    }],
   };
 
   if (m.chat_title !== undefined) payload.chat_title = m.chat_title;

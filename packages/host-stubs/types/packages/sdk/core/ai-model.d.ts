@@ -597,6 +597,7 @@ export declare const AiCatalogCandidateInfoSchema: z.ZodObject<{
 }, z.core.$strip>;
 export type AiCatalogCandidateInfo = z.output<typeof AiCatalogCandidateInfoSchema>;
 export declare const AiLogicalModelAdminInfoSchema: z.ZodObject<{
+    displayName: z.ZodString;
     reasoning: z.ZodOptional<z.ZodDiscriminatedUnion<[z.ZodObject<{
         state: z.ZodLiteral<"none">;
         revision: z.ZodString;
@@ -640,7 +641,6 @@ export declare const AiLogicalModelAdminInfoSchema: z.ZodObject<{
         language: "language";
         embedding: "embedding";
     }>;
-    displayName: z.ZodString;
     dataBoundary: z.ZodEnum<{
         device_only: "device_only";
         cloud_allowed: "cloud_allowed";

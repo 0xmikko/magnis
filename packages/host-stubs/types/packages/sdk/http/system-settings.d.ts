@@ -290,8 +290,8 @@ export declare const listSourceAppConfigContract: import("./contract.js").HttpCo
         sourceId: z.ZodString;
         displayName: z.ZodString;
         category: z.ZodEnum<{
-            module: "module";
             sharedProvider: "sharedProvider";
+            module: "module";
         }>;
         keys: z.ZodReadonly<z.ZodArray<z.ZodObject<{
             key: z.ZodString;
@@ -640,6 +640,7 @@ export declare const materializeAiModelContract: import("./contract.js").HttpCon
         embedding: "embedding";
     }>;
 }, z.core.$strip>, z.ZodObject<{
+    displayName: z.ZodString;
     reasoning: z.ZodOptional<z.ZodDiscriminatedUnion<[z.ZodObject<{
         state: z.ZodLiteral<"none">;
         revision: z.ZodString;
@@ -683,7 +684,6 @@ export declare const materializeAiModelContract: import("./contract.js").HttpCon
         language: "language";
         embedding: "embedding";
     }>;
-    displayName: z.ZodString;
     dataBoundary: z.ZodEnum<{
         device_only: "device_only";
         cloud_allowed: "cloud_allowed";
@@ -729,6 +729,7 @@ export declare const setAiModelPrivateContract: import("./contract.js").HttpCont
     modelId: z.ZodString;
     private: z.ZodBoolean;
 }, z.core.$strict>, z.ZodObject<{
+    displayName: z.ZodString;
     reasoning: z.ZodOptional<z.ZodDiscriminatedUnion<[z.ZodObject<{
         state: z.ZodLiteral<"none">;
         revision: z.ZodString;
@@ -772,7 +773,6 @@ export declare const setAiModelPrivateContract: import("./contract.js").HttpCont
         language: "language";
         embedding: "embedding";
     }>;
-    displayName: z.ZodString;
     dataBoundary: z.ZodEnum<{
         device_only: "device_only";
         cloud_allowed: "cloud_allowed";
@@ -818,6 +818,7 @@ export declare const setAiModelEnabledContract: import("./contract.js").HttpCont
     modelId: z.ZodString;
     enabled: z.ZodBoolean;
 }, z.core.$strip>, z.ZodObject<{
+    displayName: z.ZodString;
     reasoning: z.ZodOptional<z.ZodDiscriminatedUnion<[z.ZodObject<{
         state: z.ZodLiteral<"none">;
         revision: z.ZodString;
@@ -861,7 +862,6 @@ export declare const setAiModelEnabledContract: import("./contract.js").HttpCont
         language: "language";
         embedding: "embedding";
     }>;
-    displayName: z.ZodString;
     dataBoundary: z.ZodEnum<{
         device_only: "device_only";
         cloud_allowed: "cloud_allowed";
@@ -987,6 +987,7 @@ export declare const updateWorkspaceContract: import("./contract.js").HttpContra
     }>;
 }, z.core.$strict>>;
 export declare const listConfiguredAiModelsContract: import("./contract.js").HttpContract<"GET", "/api/settings/ai-models/runtime/models", z.ZodObject<{}, z.core.$strict>, z.ZodArray<z.ZodObject<{
+    displayName: z.ZodString;
     reasoning: z.ZodOptional<z.ZodDiscriminatedUnion<[z.ZodObject<{
         state: z.ZodLiteral<"none">;
         revision: z.ZodString;
@@ -1030,7 +1031,6 @@ export declare const listConfiguredAiModelsContract: import("./contract.js").Htt
         language: "language";
         embedding: "embedding";
     }>;
-    displayName: z.ZodString;
     dataBoundary: z.ZodEnum<{
         device_only: "device_only";
         cloud_allowed: "cloud_allowed";
@@ -1524,8 +1524,8 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
         sourceId: z.ZodString;
         displayName: z.ZodString;
         category: z.ZodEnum<{
-            module: "module";
             sharedProvider: "sharedProvider";
+            module: "module";
         }>;
         keys: z.ZodReadonly<z.ZodArray<z.ZodObject<{
             key: z.ZodString;
@@ -1638,6 +1638,7 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
     providers: z.ZodNumber;
     models: z.ZodNumber;
 }, z.core.$strict>>, import("./contract.js").HttpContract<"GET", "/api/settings/ai-models/runtime/models", z.ZodObject<{}, z.core.$strict>, z.ZodArray<z.ZodObject<{
+    displayName: z.ZodString;
     reasoning: z.ZodOptional<z.ZodDiscriminatedUnion<[z.ZodObject<{
         state: z.ZodLiteral<"none">;
         revision: z.ZodString;
@@ -1681,7 +1682,6 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
         language: "language";
         embedding: "embedding";
     }>;
-    displayName: z.ZodString;
     dataBoundary: z.ZodEnum<{
         device_only: "device_only";
         cloud_allowed: "cloud_allowed";
@@ -2106,6 +2106,7 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
         embedding: "embedding";
     }>;
 }, z.core.$strip>, z.ZodObject<{
+    displayName: z.ZodString;
     reasoning: z.ZodOptional<z.ZodDiscriminatedUnion<[z.ZodObject<{
         state: z.ZodLiteral<"none">;
         revision: z.ZodString;
@@ -2149,7 +2150,6 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
         language: "language";
         embedding: "embedding";
     }>;
-    displayName: z.ZodString;
     dataBoundary: z.ZodEnum<{
         device_only: "device_only";
         cloud_allowed: "cloud_allowed";
@@ -2194,6 +2194,7 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
     modelId: z.ZodString;
     private: z.ZodBoolean;
 }, z.core.$strict>, z.ZodObject<{
+    displayName: z.ZodString;
     reasoning: z.ZodOptional<z.ZodDiscriminatedUnion<[z.ZodObject<{
         state: z.ZodLiteral<"none">;
         revision: z.ZodString;
@@ -2237,7 +2238,6 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
         language: "language";
         embedding: "embedding";
     }>;
-    displayName: z.ZodString;
     dataBoundary: z.ZodEnum<{
         device_only: "device_only";
         cloud_allowed: "cloud_allowed";
@@ -2282,6 +2282,7 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
     modelId: z.ZodString;
     enabled: z.ZodBoolean;
 }, z.core.$strip>, z.ZodObject<{
+    displayName: z.ZodString;
     reasoning: z.ZodOptional<z.ZodDiscriminatedUnion<[z.ZodObject<{
         state: z.ZodLiteral<"none">;
         revision: z.ZodString;
@@ -2325,7 +2326,6 @@ export declare const systemSettingsHttpContracts: readonly [import("./contract.j
         language: "language";
         embedding: "embedding";
     }>;
-    displayName: z.ZodString;
     dataBoundary: z.ZodEnum<{
         device_only: "device_only";
         cloud_allowed: "cloud_allowed";

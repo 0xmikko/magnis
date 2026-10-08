@@ -109,11 +109,11 @@ export declare const sourceContracts: {
             displayName: z.ZodString;
             surfaces: z.ZodArray<z.ZodString>;
             authType: z.ZodEnum<{
-                none: "none";
                 oauth2: "oauth2";
                 phoneCode: "phoneCode";
                 apiKey: "apiKey";
                 sharedProvider: "sharedProvider";
+                none: "none";
             }>;
             packageHash: z.ZodString;
             connectable: z.ZodBoolean;
@@ -249,11 +249,11 @@ export declare const sourceContracts: {
                 displayName: z.ZodString;
                 providerAccountId: z.ZodNullable<z.ZodString>;
                 authKind: z.ZodEnum<{
-                    none: "none";
                     oauth2: "oauth2";
                     phoneCode: "phoneCode";
                     apiKey: "apiKey";
                     sharedProvider: "sharedProvider";
+                    none: "none";
                 }>;
                 generation: z.ZodNumber;
                 invalidReason: z.ZodNullable<z.ZodString>;

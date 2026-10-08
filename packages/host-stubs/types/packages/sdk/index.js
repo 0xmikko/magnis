@@ -4,6 +4,8 @@ export { boundedPageLimit, paginatedResponseSchema, PageLimitSchema, PageOffsetS
 export { EntityIdSchema, IdSchema, nilId, PersistentEntityIdSchema } from "./core/id.js";
 export { EntityDetailSchema, EntityExtrasSchema, EntityReadSchema, EntityReadOptionsSchema, IndexingStatusSchema, EntitySchema, PersistentEntitySchema, EntitySearchHitSchema, EntitySearchResultSchema, EntityBriefSchema, EntityColSchema, EntityWithLinksSchema, GraphEntityDetailSchema, GraphEntityLinksSchema, GraphEntityPageSchema, LinkedEntitySchema, } from "./core/entity.js";
 export { DerivedLinkSchema, CanonicalLinkSchema, LinkBaseSchema, LinkSchema, LinkAddResultSchema, } from "./core/link.js";
+export { CommunicationMetadataSchema, CommunicationLinkSchema } from "./core/link.js";
+export { communicationMessageExternalId } from "./core/source.js";
 export * from "./core/graph-commands.js";
 export * from "./core/merge.js";
 export * from "./core/plugin.js";

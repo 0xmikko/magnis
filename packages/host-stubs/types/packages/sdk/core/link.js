@@ -28,6 +28,17 @@ export const CanonicalLinkSchema = z.strictObject({
     validFrom: DateTimeSchema.nullable(),
     validUntil: DateTimeSchema.nullable(),
 });
+/** An observation at a connected account, independent of insertion/validity time. */
+export const CommunicationMetadataSchema = z.strictObject({
+    occurredAt: DateTimeSchema.nullable(),
+    conversationId: PersistentEntityIdSchema.nullable(),
+});
+export const CommunicationLinkSchema = CanonicalLinkSchema.extend({
+    kind: z.enum(["sent", "received"]),
+    metadata: CommunicationMetadataSchema,
+    validFrom: z.null(),
+    validUntil: z.null(),
+});
 /** A link a model wrote. */
 export const DerivedLinkSchema = z.strictObject({ ...LinkBaseSchema.shape, ...DerivedStatementSchema.shape });
 export const LinkSchema = z.discriminatedUnion("origin", [CanonicalLinkSchema, DerivedLinkSchema]);

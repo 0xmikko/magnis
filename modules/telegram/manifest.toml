@@ -42,12 +42,22 @@ progress = { "telegram.chat" = "chats", "telegram.message" = "messages" }
 
 # Foreign asks beyond the implicit own namespace: writes to `telegram.` records,
 # own:own links, and reads of own schemas need no declaration.
+[[links]]
+kind = "sent"
+from = "telegram.account"
+to = "telegram.message"
+
+[[links]]
+kind = "received"
+from = "telegram.account"
+to = "telegram.message"
+
 [permissions]
 read = [ "contacts.person", "episodes.episode" ]
 # S4: the module writes REGISTRY relations now (authored_by / in_chat /
 # telegram.observed_in / telegram.observed_participant) between its own nodes; the colon
 # pairs retire with the migration.
-links = [ "authored_by", "in_chat", "telegram.observed_in", "telegram.observed_participant" ]
+links = [ "sent", "received", "authored_by", "in_chat", "telegram.observed_in", "telegram.observed_participant" ]
 call = [ "triggers.create" ]
 host = [ "source_commands", "sync_state", "composer", "file_register", "web_register", "external_id_reads" ]
 

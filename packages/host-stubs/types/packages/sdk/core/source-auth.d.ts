@@ -10,11 +10,11 @@ export type SourceAuthKind = z.output<typeof SourceAuthKindSchema>;
 /** Source manifests and connected fixture status may describe an auth-less
  * connector. Credential-repair contracts intentionally exclude it. */
 export declare const SourceManifestAuthKindSchema: z.ZodEnum<{
-    none: "none";
     oauth2: "oauth2";
     phoneCode: "phoneCode";
     apiKey: "apiKey";
     sharedProvider: "sharedProvider";
+    none: "none";
 }>;
 export type SourceManifestAuthKind = z.output<typeof SourceManifestAuthKindSchema>;
 export declare const repairActions: readonly ["reconnectOauth", "reloginPhone", "enterKey", "replaceKey"];

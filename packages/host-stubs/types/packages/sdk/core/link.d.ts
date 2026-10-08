@@ -30,6 +30,30 @@ export declare const CanonicalLinkSchema: z.ZodObject<{
     createdAt: z.ZodISODateTime;
 }, z.core.$strict>;
 export type CanonicalLink = z.output<typeof CanonicalLinkSchema>;
+/** An observation at a connected account, independent of insertion/validity time. */
+export declare const CommunicationMetadataSchema: z.ZodObject<{
+    occurredAt: z.ZodNullable<z.ZodISODateTime>;
+    conversationId: z.ZodNullable<z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">>;
+}, z.core.$strict>;
+export declare const CommunicationLinkSchema: z.ZodObject<{
+    origin: z.ZodLiteral<"canonical">;
+    id: z.ZodString;
+    owner: z.ZodString;
+    from: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
+    to: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
+    createdAt: z.ZodISODateTime;
+    kind: z.ZodEnum<{
+        sent: "sent";
+        received: "received";
+    }>;
+    metadata: z.ZodObject<{
+        occurredAt: z.ZodNullable<z.ZodISODateTime>;
+        conversationId: z.ZodNullable<z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">>;
+    }, z.core.$strict>;
+    validFrom: z.ZodNull;
+    validUntil: z.ZodNull;
+}, z.core.$strict>;
+export type CommunicationLink = z.output<typeof CommunicationLinkSchema>;
 /** A link a model wrote. */
 export declare const DerivedLinkSchema: z.ZodObject<{
     origin: z.ZodLiteral<"derived">;

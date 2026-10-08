@@ -11,7 +11,9 @@ export type { AccountId, CanonicalEntity, DerivedEntity, Entity, EntityBrief, En
 export type { PersistentEntity, TransientEntity } from "./core/entity.js";
 export type { EntityExtrasBase, EntityExtras, EntityRead, IndexingStatus } from "./core/entity.js";
 export { DerivedLinkSchema, CanonicalLinkSchema, LinkBaseSchema, LinkSchema, LinkAddResultSchema, } from "./core/link.js";
-export type { BelongsToLink, CanonicalLink, CreatedLink, DerivedLink, Link, LinkAddResult, LinkBase, LinkId, LinkType } from "./core/link.js";
+export { CommunicationMetadataSchema, CommunicationLinkSchema } from "./core/link.js";
+export type { BelongsToLink, CanonicalLink, CommunicationLink, CreatedLink, DerivedLink, Link, LinkAddResult, LinkBase, LinkId, LinkType } from "./core/link.js";
+export { communicationMessageExternalId } from "./core/source.js";
 export * from "./core/graph-commands.js";
 export * from "./core/merge.js";
 export * from "./core/plugin.js";

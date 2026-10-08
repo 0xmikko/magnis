@@ -132,6 +132,27 @@ function fullGmailMessage(): GmailMessage {
 // ── Conversion (spec test 1) ────────────────────────────────────────────────
 
 describe("gmail message conversion", () => {
+  test("tst_src_communication_001 system labels establish observations; headers do not", () => {
+    const message = fullGmailMessage();
+    message.internalDate = "1700000001000";
+    for (const [labels, kinds] of [
+      [["INBOX"], ["received"]],
+      [["SENT"], ["sent"]],
+      [["SENT", "INBOX"], ["sent", "received"]],
+      [["SENT", "DRAFT"], []],
+      [[], []],
+    ] satisfies [string[], string[]][]) {
+      const mail = gmailMessageToMailMessage({ ...message, labelIds: labels });
+      expect(mail).toHaveProperty("communication", kinds.map((kind) => ({
+        kind, occurredAt: "2023-11-14T22:13:21Z",
+      })));
+    }
+    expect(() => gmailMessageToMailMessage({ ...message, internalDate: "" })).toThrow(/internalDate/);
+    expect(gmailMessageToMailMessage({ ...message, internalDate: null })).toHaveProperty(
+      "communication", [{ kind: "received", occurredAt: null }],
+    );
+  });
+
   test("tst_gts_gmail_001 full message → flattened canonical fields", () => {
     const mail = gmailMessageToMailMessage(fullGmailMessage());
     expect(mail.id).toBe("msg_1");

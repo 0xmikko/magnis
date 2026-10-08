@@ -17,7 +17,7 @@
  * Doubles come from @magnis/testkit/module.
  */
 import { describe, it, expect, vi } from "vitest";
-import { entityId, entityRead, entityExtras, entity, mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
+import { entityId, entityRead, entityExtras, entity, page, syncStateDouble, mockGraph, mountModule, type MockGraph } from "@magnis/testkit/module";
 import { TelegramModule } from "../service.ts";
 import type { SyncEnvelope } from "@magnis/sdk";
 import type { TelegramCanonical } from "../../types.ts";
@@ -40,6 +40,8 @@ interface TgInternals {
 
 function makeModule(syncEnabled = true): { mod: TgInternals; graph: G } {
   const graph = mockGraph({
+    syncState: syncStateDouble({ status: async () => ({ accounts: [{ accountId: "acct", sync: null }] }) }),
+    listEntitiesByPropertyField: async () => page([entity("operator", "Me", { schemaId: "telegram.account", properties: { telegram_user_id: 9001, is_self: true }, source: { source: "telegram-ts", account: "acct", externalId: "tg:account:9001" } })]),
     sourceCommand: () => Promise.resolve({ message_id: 777 }),
     findByExternalId: () => Promise.resolve(entityId("ent-1")),
     getEntity: () => Promise.resolve(entityRead(entity("chat-entity", "Chat", { schemaId: "telegram.chat", properties: { chat_id: 42 } }), entityExtras({ syncEnabled, syncRevision: "0" }))),
@@ -50,6 +52,15 @@ function makeModule(syncEnabled = true): { mod: TgInternals; graph: G } {
 }
 
 describe("tst_fe_agent_007 — sendMessage: delivery success survives local enrichment failure", () => {
+  it("tst_module_communication_telegram_002 sends through one account and keeps unknown send time", async () => {
+    const { mod, graph } = makeModule();
+    const ingest = vi.spyOn(mod, "ingestMessageBatch").mockResolvedValue(undefined);
+    await mod.sendMessage(42, "hi", undefined, undefined);
+    expect(graph.spies.sourceCommand).toHaveBeenCalledWith({ action: "send_message", chat_id: 42, text: "hi" }, "acct");
+    expect(ingest.mock.calls[0]?.[0][0]?.payload.communication).toEqual([{ kind: "sent", occurredAt: null }]);
+    expect(ingest.mock.calls[0]?.[0][0]?.env.accountId).toBe("acct");
+  });
+
   it("delivers a message to a stopped chat without ingesting the Source response", async () => {
     const { mod, graph } = makeModule(false);
     const ingest = vi.spyOn(mod, "ingestMessageBatch").mockResolvedValue(undefined);

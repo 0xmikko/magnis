@@ -9,8 +9,19 @@
 import { expect, expectTypeOf, test } from "vitest";
 import { entity, mockGraph, mountModule, syncStateDouble } from "@magnis/testkit/module";
 import type { SetSyncEnabledParams, UpdateEntitySyncEnabledResult } from "@magnis/sdk";
+import { CommunicationMetadataSchema, communicationMessageExternalId } from "@magnis/sdk";
 import { searchEntitiesPage, writeTool } from "../index.ts";
 import type { GraphService, PluginDeps } from "../contract/module.ts";
+
+test("tst_pkg_sdk_communication_001 generated SDK keeps account identities disjoint and unknown occurrence explicit", () => {
+  const id = communicationMessageExternalId("email.message", "account:1", 'provider:"id"');
+  expect(id).toBe(communicationMessageExternalId("email.message", "account:1", 'provider:"id"'));
+  expect(id).not.toBe(communicationMessageExternalId("email.message", "account:2", 'provider:"id"'));
+  expect(id).not.toBe(communicationMessageExternalId("telegram.message", "account:1", 'provider:"id"'));
+  expect(() => communicationMessageExternalId("email.message", "", "id")).toThrow();
+  expect(CommunicationMetadataSchema.parse({ occurredAt: null, conversationId: null })).toEqual({ occurredAt: null, conversationId: null });
+  expect(CommunicationMetadataSchema.safeParse({ conversationId: null }).success).toBe(false);
+});
 
 test("tst_pkg_sdk_graph_extras_001 requests extras across every search page without losing pin zero or stopped sync", async () => {
   const record = entity("10000000-0000-0000-0000-000000000001", "Acme");

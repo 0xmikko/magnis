@@ -256,6 +256,10 @@ export interface EmailAddress {
 }
 
 export interface MailMessage {
+  communication: readonly {
+    kind: "sent" | "received";
+    occurredAt: string | null;
+  }[];
   id: string;
   thread_id: string | null;
   message_id_header: string | null;
@@ -341,6 +345,16 @@ export function gmailMessageToMailMessage(msg: GmailMessage): MailMessage {
     new Date(0);
 
   const labels = msg.labelIds ?? [];
+  const observedAt = (msg.internalDate === null || msg.internalDate === undefined) ? null : internalDateToDate(msg.internalDate);
+  if (msg.internalDate !== null && msg.internalDate !== undefined && (!/^\d+$/.test(msg.internalDate) || observedAt === null || !Number.isFinite(observedAt.getTime()))) {
+    throw new Error(`message ${msg.id} has invalid internalDate`);
+  }
+  const communication: MailMessage["communication"][number][] = [];
+  if (!labels.includes("DRAFT")) {
+    const occurredAt = observedAt === null ? null : formatUtc(observedAt);
+    if (labels.includes("SENT")) communication.push({ kind: "sent", occurredAt });
+    if (labels.includes("INBOX")) communication.push({ kind: "received", occurredAt });
+  }
   const isRead = !labels.includes("UNREAD");
   const isStarred = labels.includes("STARRED");
 
@@ -358,6 +372,7 @@ export function gmailMessageToMailMessage(msg: GmailMessage): MailMessage {
 
   return {
     id: msg.id,
+    communication,
     thread_id: msg.threadId ?? null,
     message_id_header: messageIdHeader,
     subject,

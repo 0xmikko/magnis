@@ -192,9 +192,9 @@ describe("tst_module_telegram_command_001 — Telegram command mapping", () => {
  */
 it("tst_module_telegram_create_001 preserves replies and one batch while rejecting mixed forms", async () => {
   const sourceCommand = vi.fn().mockResolvedValue({ message_id: 10 });
-  const module = mountModule(TelegramModule, { graph: mockGraph({ sourceCommand }) }).module;
+  const module = mountModule(TelegramModule, { graph: mockGraph({ sourceCommand, syncState: syncStateDouble({ status: async () => ({ accounts: [{ accountId: "acct", sync: null }] }) }) }) }).module;
   await module.create({ chat_id: 42, reply_to_message_id: 7, text: "Confirmed." });
-  expect(sourceCommand).toHaveBeenCalledWith({ action: "send_message", chat_id: 42, reply_to_message_id: 7, text: "Confirmed." }, undefined);
+  expect(sourceCommand).toHaveBeenCalledWith({ action: "send_message", chat_id: 42, reply_to_message_id: 7, text: "Confirmed." }, "acct");
   const result = await module.create({ messages: [{ chat_id: 43, text: "First" }, { chat_id: 44, text: "Skip" }], excluded_indices: [1] });
   expect(result).toMatchObject({ total: 1, sent: 1, failed: 0 });
   expect(sourceCommand).toHaveBeenCalledTimes(2);

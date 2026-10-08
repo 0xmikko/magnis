@@ -98,7 +98,7 @@ describe("tst_fe_tg_media_source_routing_001 — file.object sourceModule = enve
     if (applyBatch === undefined) throw new Error("missing applyBatch spy");
     const frag = applyBatch.mock.calls[0]?.[0] as GraphBatchInput;
     const msg: BatchEntityInput | undefined = frag.entities.find((e) => e.key === "tg:msg:42:7");
-    expect(msg?.externalId).toBe("tg:msg:42:7");
+    expect(msg?.externalId).toBe('telegram.message:"acct-1":"tg:msg:42:7"');
     expect(msg?.properties).not.toHaveProperty("chat_id");
     expect(msg?.properties).not.toHaveProperty("sender_id");
     const acct = frag.entities.find((e) => e.key === "acct:501");
@@ -108,6 +108,6 @@ describe("tst_fe_tg_media_source_routing_001 — file.object sourceModule = enve
     const kinds = frag.links.map((l: BatchLink) => `${l.fromKey}→${l.toKey}:${l.kind}`);
     expect(kinds).toContain("tg:msg:42:7→acct:501:authored_by");
     expect(kinds).toContain("tg:msg:42:7→chat:42:in_chat");
-    expect(kinds).toContain("acct:501→chat:42:observed_participant");
+    expect(kinds).toContain("acct:501→chat:42:telegram.observed_participant");
   });
 });

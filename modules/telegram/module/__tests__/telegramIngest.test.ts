@@ -66,6 +66,34 @@ const admittedGraph: GraphOverrides = {
 };
 
 describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
+  it("tst_module_communication_telegram_001 writes the observation in the message batch", async () => {
+    const batches: GraphBatchInput[] = [];
+    const graph = mockGraph({
+      ...admittedGraph,
+      updatePropertiesBatch: async () => {},
+      findByExternalIds: (ids) => Promise.resolve(ids.map((id) => id === "tg:chat:42" ? entityId("chat-entity") : id.endsWith(":9001") ? entityId("operator") : id.endsWith(":501") ? entityId("peer-operator") : null)),
+      getEntities: (ids) => Promise.resolve([
+        entity("chat-entity", "Chat", { schemaId: CHAT, properties: { chat_id: 42, type: "private" } }),
+        entity("operator", "My name", { schemaId: TELEGRAM_ACCOUNT, properties: { telegram_user_id: 9001, is_self: true, display_name: "My name" }, source: { source: "telegram-ts", account: "other-account", externalId: "tg:account:9001" } }),
+        entity("peer-operator", "Other connected account", { schemaId: TELEGRAM_ACCOUNT, properties: { telegram_user_id: 501, is_self: true }, source: { source: "telegram-ts", account: "peer-account", externalId: "tg:account:501" } }),
+      ].filter((item) => ids.includes(item.id))),
+      applyBatch: async (batch) => {
+        batches.push(batch);
+        return { ids: Object.fromEntries(batch.entities.map((item) => [item.key, entityId(`id:${item.key}`)])), created: batch.entities.length, updated: 0, linksAdded: batch.links.length, droppedKeys: [], resolved: [] };
+      },
+    });
+    await mountModule(TelegramModule, { graph }).module.ingest({ envelopes: [messageEnvelope("snapshot", {
+      ...messagePayload(), text: "Hello", communication: [{ kind: "received", occurredAt: null }],
+    })] });
+    const batch = batches.find((item) => item.entities.some((item) => item.schemaId === MESSAGE));
+    expect(batch?.entities.find((item) => item.schemaId === MESSAGE)?.externalId).toBe('telegram.message:"account-1":"tg:msg:42:7"');
+    expect(batch?.links).toContainEqual(expect.objectContaining({ fromKey: "acct:9001", toKey: "tg:msg:42:7", kind: "received", metadata: { occurredAt: null, conversationId: entityId("chat-entity") } }));
+    expect(batch?.entities.find((item) => item.schemaId === MESSAGE)?.properties).not.toHaveProperty("communication");
+    expect(batch?.entities.some((item) => item.key === "acct:501")).toBe(false);
+    expect(batch?.refs).toContainEqual({ key: "acct:501", externalId: "tg:account:501" });
+    expect(batch?.entities).toContainEqual(expect.objectContaining({ key: "acct:9001", schemaId: TELEGRAM_ACCOUNT, properties: { telegram_user_id: 9001, is_self: true, display_name: "My name" } }));
+  });
+
   it.each([false, true])("resolves a peerless deletion within its Source account before admission (enabled: %s)", async (enabled) => {
     const stored = entity("stored-message", "Message", {
       schemaId: MESSAGE, properties: { message_id: 7 }, source: { source: "telegram-ts", account: "account-1", externalId: "tg:msg:42:7" },

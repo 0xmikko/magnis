@@ -25,6 +25,14 @@ export interface EmailMessageDetails {
   thread_id?: string;
 }
 
+export interface EmailMailboxDetails {
+  address: string | null;
+}
+
+export interface EmailThreadDetails {
+  threadId: string;
+}
+
 export interface EmailAddressDetails {
   address: string;
   display_name?: string | null;
@@ -89,6 +97,7 @@ export interface BatchParams {
 }
 
 export interface SendParams {
+  account_id?: string;
   to: string;
   subject: string;
   body_text: string;
@@ -96,12 +105,14 @@ export interface SendParams {
 }
 
 export interface ReplyParams {
+  account_id?: string;
   email_id: string;
   body_text: string;
   attachment_ids?: string[];
 }
 
 export interface BatchSendParams {
+  account_id?: string;
   messages: SendParams[];
   excluded_indices?: number[];
 }

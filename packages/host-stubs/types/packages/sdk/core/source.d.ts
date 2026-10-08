@@ -1,4 +1,6 @@
 import { z } from "zod";
+/** Provider message identity is local to the connected account and domain. */
+export declare function communicationMessageExternalId(schemaId: "email.message" | "telegram.message", accountId: string, remoteId: string): string;
 export declare const SourceProtocolVersionSchema: z.ZodEnum<{
     "magnis.source/1": "magnis.source/1";
     "magnis.source/2": "magnis.source/2";
@@ -91,8 +93,8 @@ export declare const SourceCertificationReceiptWireSchema: z.ZodPipe<z.ZodObject
         development_fixture: "development_fixture";
     }>;
     auth: z.ZodNullable<z.ZodEnum<{
-        api_key: "api_key";
         oauth2: "oauth2";
+        api_key: "api_key";
         phone_code: "phone_code";
         shared_provider: "shared_provider";
     }>>;
@@ -170,7 +172,7 @@ export declare const SourceCertificationReceiptWireSchema: z.ZodPipe<z.ZodObject
 }, {
     authority: "module_sync" | "tools_only";
     releaseTier: "production" | "development_fixture";
-    auth: "api_key" | "oauth2" | "phone_code" | "shared_provider" | null;
+    auth: "oauth2" | "api_key" | "phone_code" | "shared_provider" | null;
     runtime: {
         kind: "custom" | "connector_sdk" | "external_wrapped";
         implementationHash: string;
@@ -292,11 +294,11 @@ export declare const SourceManifestSchema: z.ZodObject<{
     displayName: z.ZodString;
     surfaces: z.ZodArray<z.ZodString>;
     authType: z.ZodEnum<{
-        none: "none";
         oauth2: "oauth2";
         phoneCode: "phoneCode";
         apiKey: "apiKey";
         sharedProvider: "sharedProvider";
+        none: "none";
     }>;
     packageHash: z.ZodString;
     connectable: z.ZodBoolean;
@@ -309,11 +311,11 @@ export declare const SourceListResponseSchema: z.ZodObject<{
         displayName: z.ZodString;
         surfaces: z.ZodArray<z.ZodString>;
         authType: z.ZodEnum<{
-            none: "none";
             oauth2: "oauth2";
             phoneCode: "phoneCode";
             apiKey: "apiKey";
             sharedProvider: "sharedProvider";
+            none: "none";
         }>;
         packageHash: z.ZodString;
         connectable: z.ZodBoolean;
@@ -398,8 +400,8 @@ export declare const SourceAppConfigEntrySchema: z.ZodObject<{
     sourceId: z.ZodString;
     displayName: z.ZodString;
     category: z.ZodEnum<{
-        module: "module";
         sharedProvider: "sharedProvider";
+        module: "module";
     }>;
     keys: z.ZodReadonly<z.ZodArray<z.ZodObject<{
         key: z.ZodString;
@@ -415,8 +417,8 @@ export declare const SourceAppConfigListSchema: z.ZodObject<{
         sourceId: z.ZodString;
         displayName: z.ZodString;
         category: z.ZodEnum<{
-            module: "module";
             sharedProvider: "sharedProvider";
+            module: "module";
         }>;
         keys: z.ZodReadonly<z.ZodArray<z.ZodObject<{
             key: z.ZodString;

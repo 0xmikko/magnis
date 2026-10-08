@@ -168,11 +168,11 @@ export declare const SourceAccountStatusSchema: z.ZodDiscriminatedUnion<[z.ZodOb
     displayName: z.ZodString;
     providerAccountId: z.ZodNullable<z.ZodString>;
     authKind: z.ZodEnum<{
-        none: "none";
         oauth2: "oauth2";
         phoneCode: "phoneCode";
         apiKey: "apiKey";
         sharedProvider: "sharedProvider";
+        none: "none";
     }>;
     generation: z.ZodNumber;
     invalidReason: z.ZodNullable<z.ZodString>;
@@ -394,11 +394,11 @@ export declare const SourceStatusSchema: z.ZodObject<{
         displayName: z.ZodString;
         providerAccountId: z.ZodNullable<z.ZodString>;
         authKind: z.ZodEnum<{
-            none: "none";
             oauth2: "oauth2";
             phoneCode: "phoneCode";
             apiKey: "apiKey";
             sharedProvider: "sharedProvider";
+            none: "none";
         }>;
         generation: z.ZodNumber;
         invalidReason: z.ZodNullable<z.ZodString>;
@@ -622,11 +622,11 @@ export declare const SourceStatusListResponseSchema: z.ZodObject<{
             displayName: z.ZodString;
             providerAccountId: z.ZodNullable<z.ZodString>;
             authKind: z.ZodEnum<{
-                none: "none";
                 oauth2: "oauth2";
                 phoneCode: "phoneCode";
                 apiKey: "apiKey";
                 sharedProvider: "sharedProvider";
+                none: "none";
             }>;
             generation: z.ZodNumber;
             invalidReason: z.ZodNullable<z.ZodString>;
