@@ -132,7 +132,7 @@ describe("email read — shape parity (tst_be_emailread_001)", () => {
 
   it("returns the saved sender state from one active authored_by link without extra Graph reads", async () => {
     const detail = DETAIL("x", "2026-10-02T12:00:00Z");
-    const author = link("x", "sender-id", "authored_by", { id: "author-link" });
+    const author = link("x", "sender-id", "received_from", { id: "author-link" });
     const sender = entity("sender-id", "Alice", { schemaId: "email.address", properties: { address: "alice@example.com" } });
     spy(graph, "getEntityFull").mockResolvedValue({ ...detail, links: [author] });
     spy(graph, "getEntities").mockResolvedValue([entityRead(sender, { pinOrder: 0, archived: false, private: false, indexed: "pending", syncEnabled: false, syncRevision: "9007199254740993" })]);

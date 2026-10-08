@@ -291,7 +291,7 @@ export class EmailModule {
     // (user-scoped → drops non-owned targets) hydrates names/schemas.
     const linkedEntities: LinkedEntitySummary[] = [];
     let senderSync: MessageDetailView["senderSync"] = null;
-    const authors = links.filter((link) => link.from === entity.id && link.kind === "authored_by" && link.validUntil === null);
+    const authors = links.filter((link) => link.from === entity.id && link.kind === "received_from" && link.validUntil === null);
     if (authors.length > 1) throw new Error(`Email ${id} has conflicting sender links`);
     if (links.length > 0) {
       const neighbourId = (l: { from: string; to: string }): string =>
@@ -379,7 +379,7 @@ export class EmailModule {
       if (env.kind === "delete") deleteTargets.set(env.remoteId, id);
       const stored = await this.graph.getEntityFull(id, { links: true });
       if (stored?.entity.schemaId !== MESSAGE_SCHEMA) throw new Error("Email event does not refer to a stored message");
-      const authors = stored.links.filter((link) => link.from === id && link.kind === "authored_by" && link.validUntil === null);
+      const authors = stored.links.filter((link) => link.from === id && link.kind === "received_from" && link.validUntil === null);
       const author = authors[0];
       if (authors.length !== 1 || author === undefined) throw new Error("Email event has no unique stored sender");
       const row = await this.graph.getEntity(author.to, { extras: true });
@@ -594,7 +594,7 @@ export class EmailModule {
       const from = lowerAddr(str(p, "from_address"));
       // S5: authorship is `authored_by` — the relation, not a channel-shaped
       // kind. `sent_from` retires with this writer.
-      if (from) addLink(remoteId, addAddress(from, str(p, "from_name")), "authored_by", remoteId, null);
+      if (from) addLink(remoteId, addAddress(from, str(p, "from_name")), "received_from", remoteId, null);
       for (const r of recipientsWithRoles(p)) {
         addLink(remoteId, addAddress(r.addr, null), "sent_to", remoteId, { role: r.role });
       }

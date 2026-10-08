@@ -126,7 +126,7 @@ describe("telegram chat batch ingest", () => {
     });
     expect(pinnedChat?.properties).not.toHaveProperty("is_pinned");
     const stateLink = firstBatch.links.find(
-      (l) => l.toKey === "tg:chat:1" && l.kind === "observed_in",
+      (l) => l.toKey === "tg:chat:1" && l.kind === "telegram.observed_in",
     );
     expect(stateLink?.fromKey).toBe("self");
     expect(stateLink?.metadata).toMatchObject({ is_pinned: true, pin_order: 0 });
@@ -173,7 +173,7 @@ describe("telegram chat batch ingest", () => {
         ? Promise.resolve(entityId("self-id"))
         : Promise.reject(new Error("per-chat external id lookup is forbidden")),
       listLinked: (spec) => {
-        expect(spec).toMatchObject({ linkKind: "observed_in", direction: "in" });
+        expect(spec).toMatchObject({ linkKind: "telegram.observed_in", direction: "in" });
         return Promise.resolve(page([]));
       },
       getEntity: () => Promise.reject(new Error("per-chat entity lookup is forbidden")),

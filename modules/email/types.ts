@@ -3,7 +3,7 @@
 import type { EntityExtras, LinkedEntitySummary, Syncable } from "@magnis/sdk";
 
 /** One stored message record — the provider's dictionary MINUS what edges
- * carry: the recipients are `sent_to`, the sender's address is `authored_by`,
+ * carry: the recipients are `sent_to`, the sender's address is `received_from`,
  * the attachments are `file.attachment`. `entities.ts` declares exactly this
  * and the build proves the two are one type. */
 export interface EmailMessageDetails {

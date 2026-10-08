@@ -121,11 +121,11 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
       listLinksForEntity: () => Promise.reject(new Error("Invalid operation: traversal exceeds maxEdges")),
       listLinked: (spec) => Promise.resolve(page([
         linkedEntity(foreign, {
-          from: foreign.id, to: entityId(spec.parentId), kind: "observed_in",
+          from: foreign.id, to: entityId(spec.parentId), kind: "telegram.observed_in",
           metadata: { is_pinned: true, pin_order: -1, sources: [{ account: "foreign-account" }] },
         }),
         linkedEntity(operator, {
-          from: ACCOUNT_ID, to: entityId(spec.parentId), kind: "observed_in",
+          from: ACCOUNT_ID, to: entityId(spec.parentId), kind: "telegram.observed_in",
           metadata: {
             is_pinned: true, pin_order: spec.parentId === CHAT_ID ? 2 : 10,
             sources: [{ account: "account-1" }],
@@ -144,7 +144,7 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
       schema: CHAT,
       extras: true,
       filterField: {
-        edgeKind: "observed_in",
+        edgeKind: "telegram.observed_in",
         observerExternalId: "tg:account:9001",
         edgePath: "is_pinned",
       },
@@ -157,14 +157,14 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
     expect(graph.spies.listLinked).toHaveBeenCalledTimes(2);
     for (const chat of [pinned, pinnedTen]) {
       expect(graph.spies.listLinked).toHaveBeenCalledWith({
-        parentId: chat.entity.id, linkKind: "observed_in", direction: "in", limit: 1000, offset: 0,
+        parentId: chat.entity.id, linkKind: "telegram.observed_in", direction: "in", limit: 1000, offset: 0,
       });
     }
     expect(graph.spies.listEntitiesWindow).toHaveBeenNthCalledWith(2, {
       schema: CHAT,
       extras: true,
       filterField: {
-        edgeKind: "observed_in",
+        edgeKind: "telegram.observed_in",
         observerExternalId: "tg:account:9001",
         edgePath: "is_pinned",
       },
@@ -288,7 +288,7 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
         entity(ACCOUNT_ID, "Operator", { schemaId: TELEGRAM_ACCOUNT, properties: { is_self: true } }),
       ])),
       listLinked: () => Promise.resolve(page([linkedEntity(entity(ACCOUNT_ID, "Operator"), {
-        id: "observed", from: ACCOUNT_ID, to: CHAT_ID, kind: "observed_in",
+        id: "observed", from: ACCOUNT_ID, to: CHAT_ID, kind: "telegram.observed_in",
         metadata: {
           sources: [{ source: "mock-telegram", account: "account-1", surface: "messages" }],
         },

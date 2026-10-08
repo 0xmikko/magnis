@@ -275,7 +275,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
       links: [{
         fromKey: "self",
         toKey: "tg:chat:42",
-        kind: "observed_in",
+        kind: "telegram.observed_in",
         confidence: null,
         metadata: {},
         declaredBy: "tg:chat:42",
@@ -326,7 +326,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
     expect(fragment.links.map((link) => `${link.fromKey}:${link.kind}:${link.toKey}`)).toEqual([
       "tg:msg:42:7:in_chat:chat:42",
       "tg:msg:42:7:authored_by:acct:501",
-      "acct:501:observed_participant:chat:42",
+      "acct:501:telegram.observed_participant:chat:42",
     ]);
     expect(graph.spies.webRegisterBatch).toHaveBeenCalledWith([expect.objectContaining({
       url: "https://example.test/demo",
@@ -579,7 +579,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
         return Promise.resolve(null);
       },
       listLinked: () => Promise.resolve(page(edgeExists ? [linkedEntity(entity(entityId("self-id"), "Me"), {
-        id: "edge-42", from: entityId("self-id"), to: entityId("chat-id"), kind: "observed_in", validUntil, metadata: null,
+        id: "edge-42", from: entityId("self-id"), to: entityId("chat-id"), kind: "telegram.observed_in", validUntil, metadata: null,
       })] : [])),
       endLink: (_id, endedAt) => {
         if (endError !== null) return Promise.reject(endError);

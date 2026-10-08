@@ -4,7 +4,7 @@
  * from here.
  *
  * The attendees are NOT in the calendar event's dictionary: they are its
- * `attendee` edges, and the invite's per-event display name rides the edge
+ * `meetings.attendee` edges, and the invite's per-event display name rides the edge
  * while the address rides the node.
  */
 import { z } from "zod";

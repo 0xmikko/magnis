@@ -6,7 +6,7 @@
  * What the edges carry is not in a dictionary: a message's chat is an
  * `in_chat` edge and its sender an `authored_by` edge, and what ONE account
  * observes about a chat — unread counts, pins — rides that account's
- * `observed_in` edge rather than the chat itself.
+ * `telegram.observed_in` edge rather than the chat itself.
  */
 import { z } from "zod";
 import { column, entity, moment, type AssertEqual } from "@magnis/declare";
@@ -59,7 +59,7 @@ export const chat = entity(
     type: z.string().optional(),
     username: z.string().optional(),
     avatar_url: z.string().optional(),
-    /** The operator's choice to index a chat's media; set through telegram.chats.set_indexed. */
+    /** Legacy choice retained for one-time sync migration and initial selection only. */
     is_indexed: z.boolean().optional(),
     /** The exact message count Telegram reported for the chat when it was last read. */
     message_count: z.number().int().nonnegative().optional(),

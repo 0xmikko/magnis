@@ -1,6 +1,6 @@
 // Meetings read helpers — ports the native domain adapter (types.rs):
 // strict attendee parsing (malformed input is rejected, never silently
-// repaired), read-time attendee→contact enrichment over the `attendee` edges,
+// repaired), read-time attendee→contact enrichment over the `meetings.attendee` edges,
 // RFC-3339 → date/time display, and the list-item builder.
 
 import type { GraphService } from "@magnis/plugin-sdk";
@@ -16,7 +16,7 @@ export type Data = Record<string, unknown>;
 /// The node dictionary (S5): the record every read path renders from.
 export const dictOf = (e: Entity): Data => e.properties as Data;
 
-/// An edge's own dictionary — the per-invite facts on an `attendee` edge. An
+/// An edge's own dictionary — the per-invite facts on an `meetings.attendee` edge. An
 /// agent link carries none, and a canonical link written without one is null.
 function edgeDictOf(edge: Link): Data {
   if (edge.origin !== "canonical") return {};
@@ -84,7 +84,7 @@ export function parseAttendees(
   });
 }
 
-/// The event's attendees, read from its `attendee` edges (plan §6): the edge
+/// The event's attendees, read from its `meetings.attendee` edges (plan §6): the edge
 /// ends at the shared `email.address` node, and the display name the invite
 /// carried rides the edge dictionary — the address node is shared by every
 /// event, so a per-invite name could never live on it.
@@ -113,7 +113,7 @@ export async function attendeesForPage(
     prefetched
       ? Object.values(prefetched).flat()
       : await graph.listLinksForEntities(eventIds)
-  ).filter((l) => l.kind === "attendee" && eventSet.has(l.from));
+  ).filter((l) => l.kind === "meetings.attendee" && eventSet.has(l.from));
   if (edges.length === 0) return out;
 
   const addressIds = [...new Set(edges.map((e) => e.to))];

@@ -383,7 +383,7 @@ describe("tst_module_triggers_crud_001 — trigger definition commands", () => {
     if (addLink === undefined) throw new Error("trigger create: addLink spy missing");
     expect(addLink.mock.calls.map(([value]) => value)).toEqual([
       { from: TRIGGER_ID, to: targetId, kind: "watches" },
-      { from: TRIGGER_ID, to: episodeId, kind: "triggers.belongs_to" },
+      { from: TRIGGER_ID, to: episodeId, kind: "belongs_to" },
     ]);
     expect(execute).toHaveBeenLastCalledWith("triggers.invalidate_cache", {});
   });

@@ -298,7 +298,7 @@ function buildFragment(page: readonly PageMessage[], identityKey: string | undef
     if (sender === null) continue;
     if (!fragment.entities.has(sender.key)) fragment.entities.set(sender.key, sender);
     link(message.remoteId, sender.key, "authored_by", message.remoteId);
-    if (chatKey !== null) link(sender.key, chatKey, "observed_participant", message.remoteId);
+    if (chatKey !== null) link(sender.key, chatKey, "telegram.observed_participant", message.remoteId);
   }
   return fragment;
 }
@@ -505,7 +505,7 @@ export class TelegramModule {
     const rows: LinkedEntity[] = [];
     let total: number;
     do {
-      const page = await this.graph.listLinked({ parentId: chatId, linkKind: "observed_in", direction: "in", limit: 1000, offset: rows.length });
+      const page = await this.graph.listLinked({ parentId: chatId, linkKind: "telegram.observed_in", direction: "in", limit: 1000, offset: rows.length });
       total = page.total;
       if (page.items.length === 0 && rows.length < total) throw new Error("Telegram observer page ended before its declared total");
       rows.push(...page.items);
@@ -608,7 +608,7 @@ export class TelegramModule {
         let linkedOffset = 0;
         let linkedTotal: number;
         do {
-          const linked = await this.graph.listLinked({ extras: true, parentId: self.id, linkKind: "observed_in", direction: "out", childSchema: CHAT, limit: 500, offset: linkedOffset });
+          const linked = await this.graph.listLinked({ extras: true, parentId: self.id, linkKind: "telegram.observed_in", direction: "out", childSchema: CHAT, limit: 500, offset: linkedOffset });
           linkedTotal = linked.total;
           if (linked.items.length === 0 && linkedOffset < linkedTotal) throw new Error("Telegram membership page ended before its declared total");
           linkedOffset += linked.items.length;
@@ -683,7 +683,7 @@ export class TelegramModule {
       const page = await this.graph.listEntitiesWindow({
         schema: CHAT,
         extras: true,
-        filterField: { edgeKind: "observed_in", observerExternalId, edgePath: filter.edgePath },
+        filterField: { edgeKind: "telegram.observed_in", observerExternalId, edgePath: filter.edgePath },
         filterOp: filter.op,
         filterEq: filter.eq,
         ...(filter.order === undefined ? {} : { order: filter.order }),
@@ -706,7 +706,7 @@ export class TelegramModule {
       // @tested-by: tst_module_telegram_read_004
       // Filter before Graph traversal: a dense chat's in_chat edges are not observer state.
       const edge = (await this.chatObservers(chatId)).find(({ link }) =>
-        link.kind === "observed_in" && link.from === observerId && link.to === chatId
+        link.kind === "telegram.observed_in" && link.from === observerId && link.to === chatId
       )?.link;
       if (edge !== undefined) out.set(chatId, edge);
     }
@@ -841,7 +841,7 @@ export class TelegramModule {
       schema: CHAT,
         extras: true,
       filterField: {
-        edgeKind: "observed_in",
+        edgeKind: "telegram.observed_in",
         observerExternalId: observed.observerExternalId,
         edgePath: "is_pinned",
       },
@@ -1594,7 +1594,7 @@ export class TelegramModule {
           links.push({
             fromKey: "self",
             toKey: remoteId,
-            kind: "observed_in",
+            kind: "telegram.observed_in",
             confidence: null,
             metadata,
             declaredBy: remoteId,
@@ -1720,7 +1720,7 @@ export class TelegramModule {
       fragment.links.set(`self observed_in chat:${chatId}`, {
         fromKey: "self",
         toKey: `chat:${chatId}`,
-        kind: "observed_in",
+        kind: "telegram.observed_in",
         confidence: null,
         metadata: { ...held.metadata, sync_total: held.stated.total + live },
         declaredBy: `chat:${chatId}`,

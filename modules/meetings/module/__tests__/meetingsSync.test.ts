@@ -162,7 +162,7 @@ describe("meetings @syncHandler — live envelopes emit a trigger.check", () => 
       {
         fromKey: "r5",
         toKey: "addr:a@x",
-        kind: "attendee",
+        kind: "meetings.attendee",
         confidence: null,
         metadata: { display_name: "Alice" },
         declaredBy: "r5",
@@ -172,7 +172,7 @@ describe("meetings @syncHandler — live envelopes emit a trigger.check", () => 
       {
         fromKey: "r5",
         toKey: "addr:b@x",
-        kind: "attendee",
+        kind: "meetings.attendee",
         confidence: null,
         metadata: null,
         declaredBy: "r5",
@@ -206,10 +206,10 @@ describe("meetings @syncHandler — attendee edge reconcile", () => {
     // inbound edge that merely points AT the event.
     const listLinksForEntity = vi.fn(() =>
       Promise.resolve([
-        link("id-r6", "addr-old@x", "attendee", { id: "l-stale" }),
-        link("id-r6", "id-addr:ann@x", "attendee", { id: "l-keep" }),
+        link("id-r6", "addr-old@x", "meetings.attendee", { id: "l-stale" }),
+        link("id-r6", "id-addr:ann@x", "meetings.attendee", { id: "l-keep" }),
         link("id-r6", "proj-1", "created_by", { id: "l-proj" }),
-        link("other", "id-r6", "attendee", { id: "l-inbound" }),
+        link("other", "id-r6", "meetings.attendee", { id: "l-inbound" }),
       ]),
     );
     const { mod } = makeModule(

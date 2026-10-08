@@ -80,7 +80,7 @@ class Store {
       findByExternalIds: (externalIds) => Promise.resolve(externalIds.map((externalId) => this.chatsByExternalId.get(externalId)?.id ?? this.messagesByExternalId.get(externalId) ?? null)),
       getEntities: (ids, options) => Promise.resolve(ids.flatMap((id) => { const chat = this.chatOf(id); if (chat === undefined) return []; const read = storedRead(chat); return [options?.extras === true ? read : read.entity]; })),
       listLinked: (spec) => {
-        expect(spec).toMatchObject({ linkKind: "observed_in", direction: "in" });
+        expect(spec).toMatchObject({ linkKind: "telegram.observed_in", direction: "in" });
         const edge = this.edgesByChat.get(spec.parentId);
         const self = entity(entityId("self-id"), "Me", { schemaId: "telegram.account", source: { source: "test", account: "a1", externalId: SELF } });
         return Promise.resolve(page(edge === undefined ? [] : [linkedEntity(self, edge)]));
@@ -108,13 +108,13 @@ class Store {
           }
         }
         for (const link of fragment.links) {
-          if (link.kind !== "observed_in") continue;
+          if (link.kind !== "telegram.observed_in") continue;
           const refExternalId = fragment.refs.find((ref) => ref.key === link.toKey)?.externalId;
           const chatId = ids[link.toKey] ?? (refExternalId === undefined || refExternalId === null ? undefined : this.chatsByExternalId.get(refExternalId)?.id);
           if (chatId === undefined) throw new Error(`observed_in link to unknown chat ${link.toKey}`);
           const known = this.edgesByChat.get(chatId);
           this.edgesByChat.set(chatId, {
-            id: `edge:${chatId}`, owner: "u1", from: entityId("self-id"), to: chatId, kind: "observed_in", createdAt: "2026-09-02T00:00:00Z",
+            id: `edge:${chatId}`, owner: "u1", from: entityId("self-id"), to: chatId, kind: "telegram.observed_in", createdAt: "2026-09-02T00:00:00Z",
             origin: "canonical", validFrom: known?.validFrom ?? null, validUntil: known?.validUntil ?? null, metadata: link.metadata,
           });
         }
@@ -129,7 +129,7 @@ class Store {
       },
       listEntitiesWindow: (spec: WindowSpec) => {
         expect(spec.limit).toBeLessThanOrEqual(500);
-        expect(spec.filterField).toEqual({ edgeKind: "observed_in", observerExternalId: SELF, edgePath: "sync_pass" });
+        expect(spec.filterField).toEqual({ edgeKind: "telegram.observed_in", observerExternalId: SELF, edgePath: "sync_pass" });
         this.windows.push(spec.filterOp ?? "eq");
         // "distinct" is IS DISTINCT FROM: an unstamped edge, or no edge at all, is kept.
         const rows = [...this.chatsByExternalId.values()].filter((chat) => {
@@ -176,7 +176,7 @@ describe("tst_module_telegram_plan_001 — the module states its plan from the p
       listSyncMigrationEntities: () => Promise.resolve({ items: legacy, next: null }),
       listLinked: (spec) => Promise.resolve(page([false, true].map((pinned, i) => linkedEntity(
         entity(entityId(`self-${String(i)}`), "Me", { schemaId: "telegram.account", source: { source: "telegram-ts", account: `account-${String(i)}`, externalId: `tg:account:${String(i)}` } }),
-        { id: `edge-${String(i)}`, from: entityId(`self-${String(i)}`), to: entityId(spec.parentId), kind: "observed_in", metadata: { is_pinned: pinned } },
+        { id: `edge-${String(i)}`, from: entityId(`self-${String(i)}`), to: entityId(spec.parentId), kind: "telegram.observed_in", metadata: { is_pinned: pinned } },
       )))),
       updateEntitySyncEnabled: (params) => {
         const row = legacy.find((item) => item.id === params.id);
@@ -218,10 +218,10 @@ describe("tst_module_telegram_plan_001 — the module states its plan from the p
       })), next: null }),
       listEntitiesByPropertyField: () => Promise.resolve(page([self, other])),
       listLinked: (spec) => {
-        expect(spec).toMatchObject({ parentId: entityId("self-id"), linkKind: "observed_in", direction: "out" });
+        expect(spec).toMatchObject({ parentId: entityId("self-id"), linkKind: "telegram.observed_in", direction: "out" });
         return Promise.resolve(page(rows.map((row) => ({
           ...storedRead(row),
-          link: link(self.id, row.id, "observed_in", { id: `edge:${row.id}`, metadata: { is_pinned: true } }),
+          link: link(self.id, row.id, "telegram.observed_in", { id: `edge:${row.id}`, metadata: { is_pinned: true } }),
         }))));
       },
     });

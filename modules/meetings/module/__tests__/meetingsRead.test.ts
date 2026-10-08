@@ -135,8 +135,8 @@ describe("meetings.get", () => {
       // The attendee edges ride the detail's own links — no second crossing.
       links: [
         link(entityId("proj-1"), entityId("m1"), "created", { id: "l1" }),
-        link(entityId("m1"), entityId("addr-alice"), "attendee", { id: "l2", metadata: { display_name: "Alice" } }),
-        link(entityId("m1"), entityId("addr-bob"), "attendee", { id: "l3" }),
+        link(entityId("m1"), entityId("addr-alice"), "meetings.attendee", { id: "l2", metadata: { display_name: "Alice" } }),
+        link(entityId("m1"), entityId("addr-bob"), "meetings.attendee", { id: "l3" }),
       ],
     };
     const graph = makeGraph({
@@ -170,8 +170,8 @@ describe("meetings.get", () => {
     // the meeting and both attendee addresses.
     expect(view.linkedEntities).toEqual([
       expect.objectContaining({ id: entityId("proj-1"), linkKind: "created", schemaId: "projects.project" }),
-      expect.objectContaining({ id: entityId("addr-alice"), linkKind: "attendee" }),
-      expect.objectContaining({ id: entityId("addr-bob"), linkKind: "attendee" }),
+      expect.objectContaining({ id: entityId("addr-alice"), linkKind: "meetings.attendee" }),
+      expect.objectContaining({ id: entityId("addr-bob"), linkKind: "meetings.attendee" }),
     ]);
   });
 

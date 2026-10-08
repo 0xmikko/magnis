@@ -47,7 +47,7 @@ function ingestGraph(): G {
     getEntity: (id) => Promise.resolve(syncable(id, "ceo@example.com", true, "0")),
     getEntityFull: (id) => Promise.resolve({
       entity: entity(id, "Stored", { schemaId: "email.message" }),
-      links: [link(id, entityId("id-addr:ceo@example.com"), "authored_by", { id: `author-${id}` })],
+      links: [link(id, entityId("id-addr:ceo@example.com"), "received_from", { id: `author-${id}` })],
     }),
     // applyBatch echoes each key → a deterministic id so post-apply can resolve.
     applyBatch: (frag) =>
@@ -120,7 +120,7 @@ it("tst_module_email_sync_001 admits only enabled senders before content, attach
     getEntity: (id) => Promise.resolve(rows.find((row) => row.entity.id === id) ?? null),
     getEntityFull: (id) => Promise.resolve({
       entity: entity(id, "Stored", { schemaId: "email.message", properties: { subject: "Stored" } }),
-      links: [link(id, entityId("sender-b"), "authored_by", { id: `author-${id}` })],
+      links: [link(id, entityId("sender-b"), "received_from", { id: `author-${id}` })],
     }),
     admitSyncEntities: (subjects) => Promise.resolve(subjects.flatMap((subject) => subject.entityId === entityId("sender-a") ? [...subject.remoteIds] : [])),
     applyBatch: (batch) => {
@@ -214,7 +214,7 @@ describe("email ingest — applyBatch shape (tst_be_emailingest_001)", () => {
 
     // links: sent_from (msg→sender) + sent_to (msg→each recipient)
     const links = frag.links;
-    const m1from = links.filter((l: BatchLink) => l.fromKey === "m1" && l.kind === "authored_by");
+    const m1from = links.filter((l: BatchLink) => l.fromKey === "m1" && l.kind === "received_from");
     const m1to = links.filter((l: BatchLink) => l.fromKey === "m1" && l.kind === "sent_to");
     expect(m1from).toHaveLength(1);
     const m1from0 = m1from[0];

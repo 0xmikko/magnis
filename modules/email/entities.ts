@@ -7,7 +7,7 @@
  * reverse, so zod reaches neither the isolate's bundle nor the UI's types.
  *
  * The message record is the provider's dictionary MINUS what edges now carry:
- * the recipients (sent_to), the sender's address (authored_by) and the
+ * the recipients (sent_to), the sender's address (received_from) and the
  * attachments (file.attachment). Declaring them here would invite writing them
  * again as strings beside the edges that replaced them.
  */

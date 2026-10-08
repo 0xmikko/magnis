@@ -19,7 +19,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 import type { CreateEntityParams, Entity, PropertiesUpdate } from "@magnis/sdk";
-import { entity, mockGraph, mountModule, type GraphOverrides, type MockGraph } from "@magnis/testkit/module";
+import { entity, entityId, mockGraph, mountModule, type GraphOverrides, type MockGraph } from "@magnis/testkit/module";
 import { MeetingsModule } from "../service.ts";
 import type { MeetingsCanonical } from "../../types.ts";
 
@@ -87,7 +87,7 @@ describe("meetings.create — validation (rejected input writes nothing)", () =>
 describe("meetings.create — happy path (returns the full meeting snapshot)", () => {
   it("creates the entity, writes its dictionary + attendee edges, returns the snapshot", async () => {
     const createEntity = vi.fn(async (p: CreateEntityParams): Promise<Entity> =>
-      entity("m-new", p.name, { schemaId: CAL }));
+      entity(entityId("m-new"), p.name, { schemaId: CAL }));
     const updateProperties = vi.fn().mockResolvedValue(undefined);
     const addLink = vi.fn().mockResolvedValue(undefined);
     const mod = makeModule(makeGraph({ createEntity, updateProperties, addLink }));
@@ -106,7 +106,7 @@ describe("meetings.create — happy path (returns the full meeting snapshot)", (
     const dictCall = updateProperties.mock.calls[0]![0] as PropertiesUpdate & {
       properties: Record<string, unknown>;
     };
-    expect(dictCall.entityId).toBe("m-new");
+    expect(dictCall.entityId).toBe(entityId("m-new"));
     expect(dictCall.properties).toMatchObject({
       title: "Sync",
       starts_at: GOOD.starts_at,
@@ -117,14 +117,14 @@ describe("meetings.create — happy path (returns the full meeting snapshot)", (
     expect("attendees" in dictCall.properties).toBe(false);
     // …they are edges to the shared address node, name on the edge.
     expect(addLink).toHaveBeenCalledWith({
-      from: "m-new",
+      from: entityId("m-new"),
       to: "addr-a@x",
-      kind: "attendee",
+      kind: "meetings.attendee",
       metadata: { display_name: "Alice" },
     });
 
     expect(snap).toMatchObject({
-      id: "m-new",
+      id: entityId("m-new"),
       schemaId: CAL,
       title: "Sync",
       starts_at: GOOD.starts_at,
@@ -146,17 +146,17 @@ describe("meetings.create — happy path (returns the full meeting snapshot)", (
 
 describe("meetings.create — idempotency", () => {
   it("returns the existing entity for a repeat client_id without re-creating", async () => {
-    const existing = entity("cid-1", "Sync", { schemaId: CAL });
+    const existing = entity(entityId("cid-1"), "Sync", { schemaId: CAL });
     const getEntity = vi.fn().mockResolvedValue(existing);
     const createEntity = vi.fn();
     const updateProperties = vi.fn();
     const mod = makeModule(makeGraph({ getEntity, createEntity, updateProperties }));
 
-    const snap = (await mod.create({ ...GOOD, client_id: "cid-1" })) as Record<string, unknown>;
+    const snap = (await mod.create({ ...GOOD, client_id: entityId("cid-1") })) as Record<string, unknown>;
 
-    expect(getEntity).toHaveBeenCalledWith("cid-1");
+    expect(getEntity).toHaveBeenCalledWith(entityId("cid-1"));
     expect(createEntity).not.toHaveBeenCalled();
     expect(updateProperties).not.toHaveBeenCalled();
-    expect(snap.id).toBe("cid-1");
+    expect(snap.id).toBe(entityId("cid-1"));
   });
 });

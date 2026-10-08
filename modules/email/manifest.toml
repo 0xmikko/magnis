@@ -28,7 +28,7 @@ defaultValue = "true"
 fieldType = { type = "boolean" }
 
 [[links]]
-kind = "sent_from"
+kind = "received_from"
 from = "email.message"
 to = "email.address"
 
@@ -50,6 +50,6 @@ progress = { "email.message" = "messages" }
 # own:own links, and reads of own schemas need no declaration.
 [permissions]
 read = [ "episodes.episode" ]
-links = [ "authored_by", "sent_to", "file.attachment" ]
+links = [ "received_from", "sent_to", "file.attachment" ]
 call = [ "triggers.create" ]
 host = [ "file_register", "external_id_reads", "source_commands", "sync_state", "composer" ]
