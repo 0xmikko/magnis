@@ -76,12 +76,6 @@ export interface WebLinkDetail {
   referencedBy: Entity[];
 }
 
-/** One pass over the links that hold native text, in creation order; `limit`
- * is 1 to 50. */
-export interface WebRepairParams { offset: number; limit: number; }
-
-export interface WebRepairAnswer { repaired: number; scanned: number; nextOffset: number | null; }
-
 // ── what sources/web answers ─────────────────────────────────────────────────
 
 /** What the Source learned from one response's headers. */

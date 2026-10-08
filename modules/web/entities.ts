@@ -16,29 +16,6 @@ import type { WebLinkDetails, WebPageDetails } from "./types.ts";
  * rather than the way the type was written. */
 type Flat<T> = { [K in keyof T]: T[K] };
 
-/** The keys a link written by the native Web module still carries. New links
- * write none of them; `content` holds the native text that `web.repair` turns
- * into the link's first page. */
-interface NativeLinkKeys {
-  title?: string;
-  description?: string;
-  favicon_url?: string;
-  og_image_url?: string;
-  etag?: string;
-  last_modified?: string;
-  maxAgeSeconds?: number;
-  expires_at?: string;
-  content?: {
-    content_markdown?: string;
-    content_length?: number;
-    extracted_at?: string;
-    etag?: string;
-    last_modified?: string;
-    maxAgeSeconds?: number;
-    expires_at?: string;
-  };
-}
-
 export const link = entity(
   {
     id: "web.link",
@@ -48,30 +25,11 @@ export const link = entity(
   {
     url: z.string(),
     domain: z.string(),
-    title: z.string().optional(),
-    description: z.string().optional(),
-    favicon_url: z.string().optional(),
-    og_image_url: z.string().optional(),
-    etag: z.string().optional(),
-    last_modified: z.string().optional(),
-    maxAgeSeconds: z.number().optional(),
-    expires_at: z.string().optional(),
-    content: z
-      .object({
-        content_markdown: z.string().optional(),
-        content_length: z.number().optional(),
-        extracted_at: z.string().optional(),
-        etag: z.string().optional(),
-        last_modified: z.string().optional(),
-        maxAgeSeconds: z.number().optional(),
-        expires_at: z.string().optional(),
-      })
-      .optional(),
   },
   { order: ["url", "asc"] },
-) satisfies z.ZodType<WebLinkDetails & NativeLinkKeys>;
+) satisfies z.ZodType<WebLinkDetails>;
 
-const _linkIsTheModulesOwnType: AssertEqual<z.infer<typeof link>, Flat<WebLinkDetails & NativeLinkKeys>> = true;
+const _linkIsTheModulesOwnType: AssertEqual<z.infer<typeof link>, Flat<WebLinkDetails>> = true;
 void _linkIsTheModulesOwnType;
 
 export const page = entity(

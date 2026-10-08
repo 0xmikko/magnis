@@ -17,17 +17,9 @@ function fields(schema: Parameters<typeof descriptorFrom>[0]) {
 describe("web declares a link and a page", () => {
   it("tst_web_entities_001 the derived declarations have the declared fields and no embed", () => {
     const linkFields = fields(link);
-    expect(linkFields.filter((field) => !field.key.includes(".")).map(({ key, kind }) => [key, kind])).toEqual([
+    expect(linkFields.map(({ key, kind }) => [key, kind])).toEqual([
       ["url", "text"],
       ["domain", "text"],
-      ["title", "text"],
-      ["description", "text"],
-      ["favicon_url", "text"],
-      ["og_image_url", "text"],
-      ["etag", "text"],
-      ["last_modified", "text"],
-      ["maxAgeSeconds", "number"],
-      ["expires_at", "text"],
     ]);
     const { json_schema: linkSchema } = descriptorFrom(link).descriptor;
     expect(linkSchema).toMatchObject({ additionalProperties: false, required: ["url", "domain"] });

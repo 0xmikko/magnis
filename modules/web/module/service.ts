@@ -28,14 +28,11 @@ import type {
   WebPageGetParams,
   WebPageRead,
   WebReadAnswer,
-  WebRepairAnswer,
-  WebRepairParams,
   WebSearchAnswer,
   WebSearchParams,
 } from "../types.ts";
 import { CONTENTS, LINK, PAGE, REFERENCES, SOURCE_ACCOUNT, SURFACE_WEB } from "../schema.ts";
 import {
-  asObject,
   contentsLink,
   isFresh,
   linkDeclaration,
@@ -53,19 +50,8 @@ import {
   windowOf,
 } from "./helpers.ts";
 
-/** The text a link written by the native Web module still carries under
- * `content`, with what it knew about that text. */
-interface NativeText {
-  markdown: string;
-  extractedAt: string;
-  etag: string | null;
-  lastModified: string | null;
-  expiresAt: string | null;
-  title: string | null;
-}
-
-/** The version a fetch compares against: the page of the open period, or the
- * native text a link carries while it has no period yet. */
+/** A version of a link: the page of the open period a fetch compares
+ * against, or the page a fetch just recorded. */
 interface Version {
   details: WebPageDetails;
   title: string | null;
@@ -73,10 +59,6 @@ interface Version {
   /** Null while this call's batch is the one that declares the page. */
   pageId: string | null;
   period: ContentsPeriod;
-  /** The text in hand; null when it is only in the byte store. */
-  text: string | null;
-  /** The page declaration a native link's first version needs. */
-  declaration: GraphEntityDeclaration | null;
 }
 
 /** The link `open` reads: its URL, and its entity when it is in the Graph. */
@@ -168,9 +150,7 @@ export class WebModule {
     const open = newest !== null && newest.period.validUntil === null ? newest : null;
     if (open !== null && !params.forceRefresh && isFresh(open.period, now)) return this.readStored(open.pageId, 0);
 
-    const base = open !== null
-      ? await this.storedVersion(open.pageId, open.period)
-      : newest === null && target.entity !== null ? await this.nativeVersion(target.url, target.entity) : null;
+    const base = open === null ? null : await this.storedVersion(open.pageId, open.period);
     const answer = readAnswerOf(await this.graph.sourceCommand({
       action: "read",
       url: target.url,
@@ -231,47 +211,6 @@ export class WebModule {
     return Promise.resolve().then(() => ensureLinks(request));
   }
 
-  /** One bounded pass that turns each native link's stored text into its first
-   * page. The set is fixed: new links never write `content`, and repair keeps
-   * every dictionary, so a repeated call continues at `nextOffset`. */
-  @rpc("repair", {
-    description: "Move the text native Web links stored into their first page, one window of links per call.",
-    params: {
-      type: "object",
-      properties: { offset: { type: "integer", minimum: 0 }, limit: { type: "integer", minimum: 1, maximum: 50 } },
-      required: ["offset", "limit"],
-      additionalProperties: false,
-    },
-  })
-  async repair(params: WebRepairParams): Promise<WebRepairAnswer> {
-    const window = await this.graph.listEntitiesWindow({
-      schema: LINK,
-      filterField: { propertyPath: "content" },
-      filterOp: "exists",
-      order: [{ field: { entityField: "created_at" } }],
-      showArchived: true,
-      limit: params.limit,
-      offset: params.offset,
-    });
-    const fragment: { entities: GraphEntityDeclaration[]; links: GraphLinkDeclaration[] } = { entities: [], links: [] };
-    for (const link of window.items) {
-      const periods = await this.graph.listLinkPeriods({ fromEntityId: link.id, kind: CONTENTS, notAfter: null, offset: 0, limit: 1 });
-      if (periods.items.length > 0) continue;
-      const native = nativeTextOf(link);
-      if (native === null) throw new Error(`web.link ${link.id} has no native text to repair`);
-      const version = await this.storeNative(urlOf(link), native);
-      fragment.entities.push(pageDeclaration(version.details, version.title, version.firstSeen));
-      fragment.links.push(contentsLink(version.details.url, pageRef(version.details.contentHash, version.details.url),
-        metadataOf(version.period), version.period.validFrom, null));
-    }
-    if (fragment.entities.length > 0) await this.apply(fragment);
-    return {
-      repaired: fragment.entities.length,
-      scanned: window.items.length,
-      nextOffset: nextOffsetOf(params.offset, window.items.length, window.total),
-    };
-  }
-
   // ── open ───────────────────────────────────────────────────────────────────
 
   /** The link by id, read as the caller, or by its normalized URL. */
@@ -306,29 +245,7 @@ export class WebModule {
     const page = canonicalOf(await this.graph.getEntity(pageId), PAGE, pageId);
     return {
       details: pageDetailsOf(page.id, page.properties), title: page.name, firstSeen: page.date,
-      pageId: page.id, period, text: null, declaration: null,
-    };
-  }
-
-  /** The first version of a link the native Web module wrote: its stored
-   * text, stored in the byte store, with its old validators and one period
-   * from `extracted_at`. A link without native text has no version. */
-  private async nativeVersion(url: string, link: Entity): Promise<Version | null> {
-    const native = nativeTextOf(link);
-    return native === null ? null : this.storeNative(url, native);
-  }
-
-  private async storeNative(url: string, native: NativeText): Promise<Version> {
-    const stored = await this.graph.bytesPut({ text: native.markdown });
-    const details: WebPageDetails = {
-      url, contentHash: stored.contentHash, mimeType: "text/markdown", sizeBytes: stored.sizeBytes,
-      etag: native.etag, lastModified: native.lastModified,
-    };
-    return {
-      details, title: native.title, firstSeen: native.extractedAt, pageId: null,
-      period: { lastGet: native.extractedAt, expiresAt: native.expiresAt, validFrom: native.extractedAt, validUntil: null },
-      text: native.markdown,
-      declaration: pageDeclaration(details, native.title, native.extractedAt),
+      pageId: page.id, period,
     };
   }
 
@@ -336,17 +253,17 @@ export class WebModule {
    * operation, and answer the first window from the text in hand. */
   private async record(url: string, base: Version | null, answer: WebReadAnswer): Promise<WebPageRead> {
     const fragment: { entities: GraphEntityDeclaration[]; links: GraphLinkDeclaration[] } = { entities: [linkDeclaration(url)], links: [] };
-    if (base !== null && base.declaration !== null) fragment.entities.push(base.declaration);
     const fetchedAt = answer.status === "changed" ? answer.page.fetchedAt : answer.fetchedAt;
     const freshness = answer.status === "changed" ? answer.page : answer.freshness;
     const confirmed: ContentsMetadata = { lastGet: fetchedAt, expiresAt: freshness.expiresAt };
 
     if (answer.status === "unchanged") {
       if (base === null) throw new Error(`sources/web answered unchanged for ${url} without validators`);
-      const window = base.text === null ? await this.readStored(requiredId(base), 0) : null;
+      // Every read happens before the batch, which is the call's last Graph operation.
+      const window = await this.readStored(requiredId(base), 0);
       fragment.links.push(contentsLink(url, pageRef(base.details.contentHash, url), confirmed, base.period.validFrom, null));
-      const result = await this.apply(fragment);
-      return window ?? this.windowRead(base, base.text ?? "", resolvedPage(result, base.details));
+      await this.apply(fragment);
+      return window;
     }
 
     const stored = await this.graph.bytesPut({ text: answer.page.content });
@@ -354,8 +271,8 @@ export class WebModule {
       // The same text again: the open period is confirmed, and the page keeps
       // the validators it was first stored with.
       fragment.links.push(contentsLink(url, pageRef(base.details.contentHash, url), confirmed, base.period.validFrom, null));
-      const result = await this.apply(fragment);
-      return this.windowRead(base, answer.page.content, base.pageId ?? resolvedPage(result, base.details));
+      await this.apply(fragment);
+      return this.windowRead(base, answer.page.content, requiredId(base));
     }
 
     const details: WebPageDetails = {
@@ -374,7 +291,7 @@ export class WebModule {
     const result = await this.apply(fragment);
     const page: Version = {
       details, title: known === null ? answer.page.title : known.name, firstSeen: known === null ? fetchedAt : known.date,
-      pageId: known?.id ?? null, period: { ...confirmed, validFrom: fetchedAt, validUntil: null }, text: answer.page.content, declaration: null,
+      pageId: known?.id ?? null, period: { ...confirmed, validFrom: fetchedAt, validUntil: null },
     };
     return this.windowRead(page, answer.page.content, page.pageId ?? resolvedPage(result, details));
   }
@@ -408,8 +325,7 @@ function canonicalOf(entity: Entity | null, schemaId: string, id: string): Canon
   return entity;
 }
 
-/** A link's URL is its canonical key; the native `url` key, which preview
- * enrichment overwrote, is never read. */
+/** A link's URL is its canonical key. */
 function urlOf(link: Entity): string {
   if (link.origin !== "canonical" || link.canonicalKey === null) throw new Error(`web.link ${link.id} has no canonical key`);
   return link.canonicalKey;
@@ -448,29 +364,3 @@ function ensureItemOf(item: unknown, index: number): WebLinkEnsureItem {
   return { url };
 }
 
-function optionalString(value: unknown, label: string): string | null {
-  if (value === undefined) return null;
-  if (typeof value !== "string") throw new Error(`${label} must be a string`);
-  return value;
-}
-
-/** The native text a link carries under `content`, or null when it has none;
- * text without `extracted_at` is an error, because the period would have no
- * start. */
-function nativeTextOf(link: Entity): NativeText | null {
-  const properties = asObject(link.properties);
-  const content = asObject(properties?.content);
-  if (content === null) return null;
-  const markdown = content.content_markdown;
-  if (typeof markdown !== "string") throw new Error(`web.link ${link.id} content has no content_markdown`);
-  const extractedAt = content.extracted_at;
-  if (typeof extractedAt !== "string") throw new Error(`web.link ${link.id} has native text but no extracted_at`);
-  return {
-    markdown,
-    extractedAt,
-    etag: optionalString(content.etag, `web.link ${link.id} content.etag`),
-    lastModified: optionalString(content.last_modified, `web.link ${link.id} content.last_modified`),
-    expiresAt: optionalString(content.expires_at, `web.link ${link.id} content.expires_at`),
-    title: optionalString(properties?.title, `web.link ${link.id} title`),
-  };
-}

@@ -1,6 +1,6 @@
 // Web plugin — pure helpers: URL normalization, Graph refs, period and Source
 // answer decoding, and the window cut. No host calls.
-import type { GraphEntityDeclaration, GraphLinkDeclaration, GraphRef, JsonObject, JsonValue, Link } from "@magnis/sdk";
+import type { GraphEntityDeclaration, GraphLinkDeclaration, GraphRef, JsonValue, Link } from "@magnis/sdk";
 
 import type {
   ContentsMetadata,
@@ -200,8 +200,4 @@ export function windowOf(text: string, offset: number): { content: string; lengt
 /** Where the next window starts, or null at the end. */
 export function nextOffsetOf(offset: number, length: number, sizeBytes: number): number | null {
   return offset + length < sizeBytes ? offset + length : null;
-}
-
-export function asObject(value: JsonValue | undefined): JsonObject | null {
-  return isObject(value) ? value : null;
 }
