@@ -1,11 +1,11 @@
 // The CommandConnectorConfig for the Web Source — kept apart from main.ts so
 // tests drive the exact handlers the host talks to. It answers commands only:
-// `read` and `search`, with no login, no sync and no state. `transport` is
-// injectable for tests; production uses the network.
+// `read` and `search`, with no login, no sync and no state. main.ts hands it
+// the network transport.
 import { ConnectorError, type CommandConnectorConfig } from "@magnis/connector-sdk";
 
 import type { WebReadParams, WebSearchParams } from "../../../modules/web/types";
-import { liveTransport, readUrl } from "./http";
+import { readUrl } from "./http";
 import { searchWeb } from "./search";
 
 type Transport = Parameters<typeof readUrl>[1];
@@ -33,7 +33,7 @@ function searchParamsOf(args: Record<string, unknown>): WebSearchParams {
   return { query: args.query, limit: args.limit };
 }
 
-export function buildConnectorConfig(transport: Transport = liveTransport()): CommandConnectorConfig {
+export function buildConnectorConfig(transport: Transport): CommandConnectorConfig {
   return {
     name: "web",
     version: "1.0.0",

@@ -135,7 +135,7 @@ export async function fetchPublic(
 /** Read a body, refusing one larger than `maxBytes` instead of cutting it. */
 export async function readBody(response: Response, maxBytes: number, url: string): Promise<Uint8Array> {
   const reader = response.body?.getReader();
-  if (reader === undefined) return new Uint8Array(0);
+  if (reader === undefined) throw new ConnectorError(`${url} answered without a body`, { kind: "network" });
   const chunks: Uint8Array[] = [];
   let total = 0;
   for (;;) {
@@ -179,7 +179,7 @@ export function freshnessOf(headers: Headers, now: Date): WebFreshness {
 }
 
 /** Seconds a 429 asks to wait, from `Retry-After` as seconds or as a date. */
-function retryAfterOf(headers: Headers, now: Date, url: string): number {
+export function retryAfterOf(headers: Headers, now: Date, url: string): number {
   const value = headers.get("retry-after");
   if (value !== null) {
     const seconds = Number(value);
@@ -194,6 +194,7 @@ function retryAfterOf(headers: Headers, now: Date, url: string): number {
 export async function withDeadline<T>(ms: number, label: string, work: (signal: AbortSignal) => Promise<T>): Promise<T> {
   const controller = new AbortController();
   const timeout = (): ConnectorError => new ConnectorError(`${label} took longer than ${String(ms / 1000)} s`, { kind: "timeout" });
+  const started = performance.now();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<never>((_resolve, reject) => {
     timer = setTimeout(() => {
@@ -212,8 +213,8 @@ export async function withDeadline<T>(ms: number, label: string, work: (signal: 
     clearTimeout(timer);
   }
   // Conversion runs on the event loop and cannot be interrupted, so the
-  // deadline is checked again once it is done.
-  if (controller.signal.aborted) throw timeout();
+  // deadline is checked again once it is done: a timer it blocked never fired.
+  if (performance.now() - started > ms) throw timeout();
   return result;
 }
 
@@ -222,18 +223,20 @@ function mediaTypeOf(headers: Headers): string | null {
   return value === null ? null : (value.split(";")[0] ?? "").trim().toLowerCase();
 }
 
-function decode(body: Uint8Array, headers: Headers): string {
-  const charset = /charset=([^;]+)/iu.exec(headers.get("content-type") ?? "")?.[1]?.trim().replace(/^"|"$/gu, "");
+function decode(body: Uint8Array, headers: Headers, url: string): string {
+  const charset = /charset=([^;]+)/iu.exec(headers.get("content-type") ?? "")?.[1]?.trim().replace(/^"|"$/gu, "") ?? "utf-8";
+  let decoder: TextDecoder;
   try {
-    return new TextDecoder(charset ?? "utf-8").decode(body);
+    decoder = new TextDecoder(charset);
   } catch {
-    return new TextDecoder("utf-8").decode(body);
+    throw new ConnectorError(`${url} is in an unknown charset ${charset}`, { kind: "unsupported_content" });
   }
+  return decoder.decode(body);
 }
 
 /** Action `read`: one conditional request when validators are given and no
  * `forceRefresh`, the page as Markdown, and its freshness. */
-export function readUrl(params: WebReadParams, transport: Transport = liveTransport()): Promise<WebReadAnswer> {
+export function readUrl(params: WebReadParams, transport: Transport): Promise<WebReadAnswer> {
   return withDeadline(COMMAND_TIMEOUT_MS, `reading ${params.url}`, async (signal) => {
     const headers: Record<string, string> = { accept: "text/html,application/xhtml+xml,text/markdown,text/plain;q=0.9" };
     const conditional = !params.forceRefresh && (params.etag !== null || params.lastModified !== null);
@@ -259,7 +262,7 @@ export function readUrl(params: WebReadParams, transport: Transport = liveTransp
     if (!html && mediaType !== "text/markdown" && mediaType !== "text/plain") {
       throw new ConnectorError(`${params.url} is ${mediaType ?? "of no content type"}, not a page`, { kind: "unsupported_content" });
     }
-    const text = decode(await readBody(response, MAX_BODY_BYTES, params.url), response.headers);
+    const text = decode(await readBody(response, MAX_BODY_BYTES, params.url), response.headers, params.url);
     const converted = html ? htmlToMarkdown(text, url.href) : { title: null, markdown: withoutControlCharacters(text).replaceAll("\r", "") };
     if (new TextEncoder().encode(converted.markdown).length > MAX_MARKDOWN_BYTES) {
       throw new ConnectorError(`${params.url} is more than ${String(MAX_MARKDOWN_BYTES)} bytes of Markdown`, { kind: "too_large" });

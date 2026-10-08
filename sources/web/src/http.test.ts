@@ -10,7 +10,7 @@ import { describe, expect, test } from "bun:test";
 
 import { RateLimitError } from "@magnis/connector-sdk";
 
-import { freshnessOf, readUrl, withDeadline } from "./http";
+import { freshnessOf, isPrivateAddress, readUrl, withDeadline } from "./http";
 import { parseResults, searchWeb } from "./search";
 
 const NOW = new Date("2026-10-07T10:00:00.000Z");
@@ -109,6 +109,28 @@ describe("reading a URL", () => {
     await expect(withDeadline(10, "reading https://public.example/a", (signal) => new Promise((_resolve, reject) => {
       signal.addEventListener("abort", () => { reject(new Error("aborted")); });
     }))).rejects.toMatchObject({ data: { kind: "timeout" } });
+    // Conversion cannot be interrupted, and work that ran past the deadline still times out.
+    await expect(withDeadline(5, "converting https://public.example/a", () => {
+      const end = performance.now() + 30;
+      while (performance.now() < end) { /* synchronous work */ }
+      return Promise.resolve("converted");
+    })).rejects.toMatchObject({ data: { kind: "timeout" } });
+
+    // A response without a body, or in a charset nobody knows, is an error, never an empty or guessed page.
+    await expect(readUrl(read, transport({ "https://public.example/a": () => new Response(null, { headers: { "content-type": "text/markdown" } }) }).transport))
+      .rejects.toMatchObject({ data: { kind: "network" } });
+    await expect(readUrl(read, transport({ "https://public.example/a": () => page("text", { "content-type": "text/plain; charset=x-unknown-9" }) }).transport))
+      .rejects.toMatchObject({ data: { kind: "unsupported_content" } });
+  });
+
+  test("tst_web_src_read_001 private and reserved addresses are refused, public ones allowed", () => {
+    for (const ip of ["127.0.0.1", "::1", "10.0.0.1", "192.168.1.1", "172.16.0.1", "172.31.255.255", "169.254.169.254", "169.254.0.1",
+      "0.0.0.0", "fd00::1", "fc00::1", "fe80::1", "::", "::ffff:127.0.0.1", "::ffff:10.0.0.1"]) {
+      expect(isPrivateAddress(ip), ip).toBe(true);
+    }
+    for (const ip of ["8.8.8.8", "1.1.1.1", "93.184.216.34", "172.15.255.255", "172.32.0.1", "::ffff:8.8.8.8", "2606:4700::1111"]) {
+      expect(isPrivateAddress(ip), ip).toBe(false);
+    }
   });
 
   test("tst_web_src_read_001 freshness comes from Cache-Control, Age, Expires and Date, and is never invented", () => {
@@ -164,6 +186,12 @@ describe("searching the web", () => {
 
     await expect(searchWeb({ query: " ", limit: 1 }, ddg.transport)).rejects.toMatchObject({ data: { kind: "validation" } });
     await expect(searchWeb({ query: "x", limit: 11 }, ddg.transport)).rejects.toMatchObject({ data: { kind: "validation" } });
+    // Retry-After is read as the read action reads it: seconds or a date, and its absence is an error.
+    const limited = (headers: Record<string, string>) =>
+      transport({ "https://html.duckduckgo.com/html/?q=x": () => new Response("slow down", { status: 429, headers }) }, { "html.duckduckgo.com": [PUBLIC] }).transport;
+    await expect(searchWeb({ query: "x", limit: 1 }, limited({ "retry-after": "Wed, 07 Oct 2026 10:02:00 GMT" }))).rejects.toMatchObject({ retryAfterSecs: 120 });
+    await expect(searchWeb({ query: "x", limit: 1 }, limited({}))).rejects.toMatchObject({ data: { kind: "rate_limited" } });
+    await expect(searchWeb({ query: "x", limit: 1 }, limited({}))).rejects.not.toBeInstanceOf(RateLimitError);
     const down = transport({ "https://html.duckduckgo.com/html/?q=x": () => new Response("busy", { status: 503 }) }, { "html.duckduckgo.com": [PUBLIC] });
     await expect(searchWeb({ query: "x", limit: 1 }, down.transport)).rejects.toMatchObject({ data: { kind: "http_status", status: 503 } });
   });
