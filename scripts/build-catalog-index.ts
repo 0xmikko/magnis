@@ -56,6 +56,17 @@ interface Entry extends PublishedCatalogPackage {
   details_url?: string;
 }
 
+/** A package's tier; an absent one is community, as the host's manifest
+ * parser and codec read it, and anything else is refused. */
+function tierOf(kind: "module" | "source", id: string, tier: string | undefined): "system" | "community" {
+  const value = tier ?? "community";
+  if (value !== "system" && value !== "community") {
+    console.error(`${kind} '${id}': manifest.toml tier '${value}' is neither system nor community — refusing`);
+    process.exit(1);
+  }
+  return value;
+}
+
 function sha256(buf: Buffer | string): string {
   return createHash("sha256").update(buf).digest("hex");
 }
@@ -521,12 +532,7 @@ for (const id of readdirSync(distModules).sort()) {
     console.error(`module '${id}': manifest.toml has no version — refusing`);
     process.exit(1);
   }
-  // An absent tier is community, as the host's manifest parser reads it.
-  const tier = manifestRaw.tier ?? "community";
-  if (tier !== "system" && tier !== "community") {
-    console.error(`module '${id}': manifest.toml tier '${tier}' is neither system nor community — refusing`);
-    process.exit(1);
-  }
+  const tier = tierOf("module", id, manifestRaw.tier);
   const archive = stagePackage("module", id, (dst) => {
     cpSync(join(distModules, id), dst, { recursive: true });
   });
@@ -560,12 +566,7 @@ for (const release of discoverSourceReleaseManifests(sourcesRoot)) {
     console.error(`source '${id}': manifest.toml has no version — refusing`);
     process.exit(1);
   }
-  // An absent tier is community, as the host's manifest codec reads it.
-  const tier = manifest.tier ?? "community";
-  if (tier !== "system" && tier !== "community") {
-    console.error(`source '${id}': manifest.toml tier '${tier}' is neither system nor community — refusing`);
-    process.exit(1);
-  }
+  const tier = tierOf("source", id, manifest.tier);
   const archive = stagePackage("source", id, (dst) => {
     stageBundledSourcePackage(release, dst);
   });
