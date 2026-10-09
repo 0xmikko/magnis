@@ -1,9 +1,9 @@
 # Adopt the knowledge graph contracts
 
 Status: APPROVED  
-Spec lock: sha256:b540529f74803c318bd9d9e6401216d742a5c136ecbfc7b6e852450cd5b39271 owner:$blueprint-start  
+Spec lock: sha256:289e55a269c39c14305c595356be46a6245dffef17299e9bbcadbcbb24de965d owner:$blueprint-start  
 Implementation lock: sha256:c1f863e815c5ad064bc530f8674e9b4c8a072e090935e768f2388b96a9946216 owner:$blueprint-start  
-Active Delivery: D1  
+Active Delivery: D2  
 Unattended decisions: allowed  
 Ledger: implemented  
 
@@ -48,6 +48,9 @@ Evidence owners:
 The following signatures declare migration differences, not new parallel SDKs. Definitions belong in the existing SDK owner files. Persistent-ID and Derived naming follow the owner decisions. Other proposals remain explicitly marked; the New names table records their reasons.
 
 ```typescript
+// Existing catalog Trigger states; stopped is the current Stop/Start UI state.
+export type TriggerStatus = "active" | "stopped" | "paused" | "disabled" | "expired";
+
 // SDK core/entity.ts; Id and UuidShapeSchema remain canonical imports.
 export const PersistentEntityIdSchema = UuidShapeSchema
   .refine((id: string) => id !== NIL_ID, "Persistent Entity ID must not be nil")
@@ -1272,17 +1275,17 @@ Acceptance: KG-02 and KG-15 at transport and activation boundaries. Commit: refa
 
 ##### Tasks
 
-- [x] KG_API_001 — Incompatible modules fail activation before replacing their accepted version. (55 min) — 592a0335722d26c66d146c945143798f3f5211c4
+- [x] KG_API_001 — Incompatible modules fail activation before replacing their accepted version. (55 min) — 230d38182
 <!-- plan:task-meta:{"writes":["backend/src/plugin-runtime/manifest-parser.ts","backend/src/plugin-runtime/manifest-types.ts","backend/src/services/extensions/extension-artifact-codec.ts","backend/src/services/extensions/extension.repository.ts","packages/sdk/src/core/plugin.ts","packages/sdk/src/rpc/registry.ts","packages/sdk/package.json","scripts/sdk-contract-audit.ts","scripts/sdk-package-smoke.ts","backend/test/tst_bts_entity_one_type_version.test.ts","backend/test/tst_bts_workspace_installation.test.ts","backend/test/tst_bts_prt_ops.test.ts"],"predictedActiveMinutes":55,"predictedCredits":0,"how":"1. Reproduce KG-15 activation failure using the existing version tests; retain the previously accepted package on rejection. 2. Use the existing manifest API compatibility mechanism for the new Entity/extras response contract. Record the exact host API version and SDK artifact digest for D2; do not silently accept old Entity consumers. 3. The existing EntityUpdateStateRequestSchema indexed input keeps its legacy boolean processing-permission meaning. It does not write extras.indexed; retain that distinction in schemas and generated docs instead of inventing another status. 4. Build/check the SDK and preserve exact response validation on native RPC and plugin host adapters.","red":"bun run agent:test:backend -- test/tst_bts_entity_one_type_version.test.ts test/tst_bts_workspace_installation.test.ts"} -->
 - [x] KG_API_002 — App client and plugin host adapters agree on the final domain and extras shapes. (40 min) — 30bae8c7a44d7a1d7a92d8c509b11b1cd88c9ad1
 <!-- plan:task-meta:{"writes":["frontend/src/runtime/contracts/agent.ts","frontend/src/runtime/contracts/index.ts","frontend/src/runtime/agent/contributions.ts","frontend/src/runtime/contracts/__tests__/contracts.test.ts","backend/src/plugin-runtime/ops/graph-entity-ops.ts","backend/src/plugin-runtime/ops/graph-integration-ops.ts","backend/src/plugin-runtime/ops/graph-mutation-ops.ts","backend/src/plugin-runtime/ops/graph-op-support.ts","backend/src/plugin-runtime/ops/graph-query-ops.ts","backend/src/plugin-runtime/ops/graph-targeted-ops.ts","backend/src/plugin-runtime/ops/graph-window-ops.ts","backend/test/tst_bts_entity_one_type_host_protocol.test.ts","backend/test/tst_bts_entity_one_type_transport.test.ts","scripts/gen-host-stubs.sh"],"predictedActiveMinutes":40,"predictedCredits":0,"how":"1. Run the existing host-protocol/transport tests and strict SDK contract audit against the final app shapes. 2. Generate host declarations through the existing workflow for D2-S1; do not hand-edit generated .d.ts files. 3. Complete compiler-reported app callers inside declared boundaries. Stage declarations must name additional discovered paths before edits; keep module/domain behavior unchanged except the approved contracts.","red":"bun run agent:test:backend -- test/tst_bts_entity_one_type_host_protocol.test.ts test/tst_bts_entity_one_type_transport.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [x] `bun run agent:typecheck` exits 0 — 30bae8c7a44d7a1d7a92d8c509b11b1cd88c9ad1
-- [x] `bun run check:sdk` exits 0 — 30bae8c7a44d7a1d7a92d8c509b11b1cd88c9ad1
-- [x] `bun run agent:test:backend -- test/tst_bts_entity_one_type_version.test.ts test/tst_bts_workspace_installation.test.ts test/tst_bts_entity_one_type_host_protocol.test.ts test/tst_bts_entity_one_type_transport.test.ts` exits 0 — 30bae8c7a44d7a1d7a92d8c509b11b1cd88c9ad1
-- [x] Commit — 30bae8c7a44d7a1d7a92d8c509b11b1cd88c9ad1
+- [x] `bun run agent:typecheck` exits 0 — 230d38182222d1666a0814da40ad3d97e9cc7d4f
+- [x] `bun run check:sdk` exits 0 — 230d38182222d1666a0814da40ad3d97e9cc7d4f
+- [x] `bun run agent:test:backend -- test/tst_bts_entity_one_type_version.test.ts test/tst_bts_workspace_installation.test.ts test/tst_bts_entity_one_type_host_protocol.test.ts test/tst_bts_entity_one_type_transport.test.ts` exits 0 — 230d38182222d1666a0814da40ad3d97e9cc7d4f
+- [x] Commit — 230d38182222d1666a0814da40ad3d97e9cc7d4f
 
 ##### Results
 
@@ -1292,6 +1295,7 @@ Acceptance: KG-02 and KG-15 at transport and activation boundaries. Commit: refa
 | KG_API_001 | 592a0335722d26c66d146c945143798f3f5211c4 | 2026-10-07T14:39:13.453Z–2026-10-07T15:19:15.993Z | 40.04233333333333 / 40.04233333333333 min | unavailable: not measured by planctl | Module API 0.3.0 rejects incompatible candidates while preserving the active artifact; SDK 0.2.0 strict audit and external consumer smoke pass (67 SDK tests), host/transport checks and commit gate pass (481 backend and 682 frontend tests). Generated 348 host declarations. Handoff /tmp/magnis-knowledge-graph-sdk/magnis-sdk-0.2.0.tgz SHA256 f956a90388a54e5edd8632903bbd44172c0d7bdbc830037989472418a68ce1ff. — beyond writes: backend/src/core/assert-equal.ts, backend/src/services/graph/graph.repository.ts, backend/src/services/graph/graph.service.ts, backend/src/services/graph/graph.transfer.ts, backend/src/services/graph/types.ts, backend/src/services/workspace/workspace-document.ts, backend/test/fixtures/plugin_root/modules/fx/manifest.toml, backend/test/fixtures/plugin_root/modules/triggers/manifest.toml, backend/test/harness/fixture-packages.ts, backend/test/tst_bts_api_ctl_module_settings.test.ts, backend/test/tst_bts_api_rpc_manifest.test.ts, backend/test/tst_bts_core_link.test.ts, backend/test/tst_bts_ext_artifact_001.test.ts, backend/test/tst_bts_ext_assets_001.test.ts, backend/test/tst_bts_ext_boot_001.test.ts, backend/test/tst_bts_ext_deps.test.ts, backend/test/tst_bts_ext_owner_001.test.ts, backend/test/tst_bts_ext_pg_repo.test.ts, backend/test/tst_bts_ext_update_001.test.ts, backend/test/tst_bts_graph_statement_write.test.ts, backend/test/tst_bts_prt_catalog_seam.test.ts, backend/test/tst_bts_schema_001.test.ts, backend/test/tst_bts_src_mode_001.test.ts, backend/test/tst_bts_src_module_adapter_001.test.ts, docs/agent/memory-roadmap.md, docs/agent/speculative-graph-overlay.md, docs/architecture/entity-lifecycle.md, docs/backend/episodes.md, docs/backend/graph-service.md, docs/backend/modules.md, docs/backend/workspace-transfer.md, docs/datasets.md, docs/plugins/authoring.md, packages/sdk/src/core/assert-equal.ts, packages/sdk/src/core/entity.ts, packages/sdk/src/core/graph-commands.ts, packages/sdk/src/core/id.ts, packages/sdk/src/core/indexing.ts, packages/sdk/src/core/link.ts, packages/sdk/src/core/search.ts, packages/sdk/src/core/statement.ts, packages/sdk/src/core/sync.ts, packages/sdk/src/index.ts, packages/sdk/src/rpc/native/eval.ts, packages/sdk/src/rpc/native/graph.ts, packages/sdk/test/contract-kernel.test.ts |
 | KG_API_002 | 592a0335722d26c66d146c945143798f3f5211c4 | 2026-10-07T14:39:13.453Z–2026-10-07T15:19:15.993Z | 40.04233333333333 / 40.04233333333333 min | unavailable: not measured by planctl | Module API 0.3.0 rejects incompatible candidates while preserving the active artifact; SDK 0.2.0 strict audit and external consumer smoke pass (67 SDK tests), host/transport checks and commit gate pass (481 backend and 682 frontend tests). Generated 348 host declarations. Handoff /tmp/magnis-knowledge-graph-sdk/magnis-sdk-0.2.0.tgz SHA256 f956a90388a54e5edd8632903bbd44172c0d7bdbc830037989472418a68ce1ff. — beyond writes: backend/src/core/assert-equal.ts, backend/src/services/graph/graph.repository.ts, backend/src/services/graph/graph.service.ts, backend/src/services/graph/graph.transfer.ts, backend/src/services/graph/types.ts, backend/src/services/workspace/workspace-document.ts, backend/test/fixtures/plugin_root/modules/fx/manifest.toml, backend/test/fixtures/plugin_root/modules/triggers/manifest.toml, backend/test/harness/fixture-packages.ts, backend/test/tst_bts_api_ctl_module_settings.test.ts, backend/test/tst_bts_api_rpc_manifest.test.ts, backend/test/tst_bts_core_link.test.ts, backend/test/tst_bts_ext_artifact_001.test.ts, backend/test/tst_bts_ext_assets_001.test.ts, backend/test/tst_bts_ext_boot_001.test.ts, backend/test/tst_bts_ext_deps.test.ts, backend/test/tst_bts_ext_owner_001.test.ts, backend/test/tst_bts_ext_pg_repo.test.ts, backend/test/tst_bts_ext_update_001.test.ts, backend/test/tst_bts_graph_statement_write.test.ts, backend/test/tst_bts_prt_catalog_seam.test.ts, backend/test/tst_bts_schema_001.test.ts, backend/test/tst_bts_src_mode_001.test.ts, backend/test/tst_bts_src_module_adapter_001.test.ts, docs/agent/memory-roadmap.md, docs/agent/speculative-graph-overlay.md, docs/architecture/entity-lifecycle.md, docs/backend/episodes.md, docs/backend/graph-service.md, docs/backend/modules.md, docs/backend/workspace-transfer.md, docs/datasets.md, docs/plugins/authoring.md, packages/sdk/src/core/assert-equal.ts, packages/sdk/src/core/entity.ts, packages/sdk/src/core/graph-commands.ts, packages/sdk/src/core/id.ts, packages/sdk/src/core/indexing.ts, packages/sdk/src/core/link.ts, packages/sdk/src/core/search.ts, packages/sdk/src/core/statement.ts, packages/sdk/src/core/sync.ts, packages/sdk/src/index.ts, packages/sdk/src/rpc/native/eval.ts, packages/sdk/src/rpc/native/graph.ts, packages/sdk/test/contract-kernel.test.ts |
 | KG_API_002 | 30bae8c7a44d7a1d7a92d8c509b11b1cd88c9ad1 | 2026-10-07T15:21:57.766Z–2026-10-07T15:25:53.756Z | 3.9331666666666667 / 3.9331666666666667 min | unavailable: not measured by planctl | The existing generator emits executable SDK contracts beside 348 declarations, disables the SDK incremental cache when replacing the output tree, and preserves the catalog declaration tsconfig. The generated PersistentEntityIdSchema accepts stored UUIDs and rejects nil; unchanged SDK version and artifact, commit hooks pass. |
+| KG_API_001 | 230d38182 | 2026-10-09T06:32:04.746Z–2026-10-09T06:37:15.419Z | 5.177883333333333 / 5.177883333333333 min | unavailable: not measured by planctl | Integration repair passes initial domain properties through the canonical SDK CreateEntityParams and host creation operation. Real host RED rejected properties; GREEN validates required fields, preserves the value and refuses missing/invalid properties without extra rows (20 scoped tests). Enabled hooks passed 92 plugin runtime tests, backend/frontend types and lint, 683 frontend tests and documentation checks. SDK 0.2.0 artifact SHA256 21d2a1a30f7797d309877b93c91aed99883eec71708694f5dbdf97e82e9e60cf; catalog declarations regenerated. — beyond writes: backend/src/plugin-runtime/ops/graph-entity-ops.ts, docs/plugins/authoring.md |
 <!-- plan:results:D1-S7:end -->
 <!-- plan:stage:D1-S7:end -->
 
@@ -1349,7 +1353,7 @@ Required handoff evidence: Both exact app/catalog heads and artifact digests rec
 
 ##### Tasks
 
-- [ ] KG_RELEASE_002 — Upgraded workspaces and matching packages pass app integration without widening scope. (45 min)
+- [x] KG_RELEASE_002 — Upgraded workspaces and matching packages pass app integration without widening scope. (45 min) — 29de0e110
 <!-- plan:task-meta:{"writes":["backend/test/tst_bts_workspace_transfer.test.ts","backend/test/tst_bts_workspace_installation.test.ts","backend/test/tst_bts_graph_owner.test.ts","backend/test/tst_bts_graph_contract_admission.test.ts","test-e2e/context-panel-entity-graph.spec.ts","test-e2e/entity-triggers.spec.ts","test-e2e/plugin-store-install.spec.ts","test-e2e/fixtures/channel/module__companies.tgz","test-e2e/fixtures/channel/module__contacts.tgz","test-e2e/fixtures/channel/module__email.tgz","test-e2e/fixtures/channel/module__file.tgz","test-e2e/fixtures/channel/module__linkedin.tgz","test-e2e/fixtures/channel/module__meetings.tgz","test-e2e/fixtures/channel/module__notes.tgz","test-e2e/fixtures/channel/module__projects.tgz","test-e2e/fixtures/channel/module__telegram.tgz","test-e2e/fixtures/channel/module__triggers.tgz","test-e2e/fixtures/channel/module__x.tgz","test-e2e/fixtures/channel/onboarding.json","test-e2e/fixtures/channel/packages.json","test-e2e/fixtures/channel/receipt-0811825f7e6d038eb9a7b29312f5693c39d1ddab9c5e8594bfecb004ff06d07b.json","test-e2e/fixtures/channel/receipt-2999561ffd1f3da9049448fe3e1445bc8839717d55b23b6b0430109440c80a36.json","test-e2e/fixtures/channel/receipt-7f5aa349fa28b77e44067f6346a76af1738bd3a61521c5260ed6ca4f6936453c.json","test-e2e/fixtures/channel/receipt-c0dbeb09ce971c7459ff56335a8ca2e906f910d6e1fbebb47f78c5f5c21fee0a.json","test-e2e/fixtures/channel/receipt-eb68cc2a79a1f63972551bd760a274a80d063f0576de9d0517490515cd385c83.json","test-e2e/fixtures/channel/source__local.tgz","test-e2e/fixtures/channel/source__mock-gmail.tgz","test-e2e/fixtures/channel/source__mock-statemachine-oauth.tgz","test-e2e/fixtures/channel/source__mock-statemachine-phone.tgz","test-e2e/fixtures/channel/source__mock-telegram.tgz","scripts/refresh-e2e-mocks.sh"],"predictedActiveMinutes":45,"predictedCredits":0,"how":"1. Use the exact D2-S4 catalog artifact in the existing E2E channel workflow; regenerate only its established fixtures. 2. Verify upgraded SQL constraints, versioned restore, nil auth-user binding, pin/archive/privacy/sync choices, protected owner rejection and domain merge/extraction scenarios. Run PostgreSQL migration/concurrency cases through the existing harness. 3. Run the complete app agent:verify:pr once after scoped checks; retain hooks and reuse unchanged passing results. Reproduce any new failure before a scoped repair. 4. Record KG coverage and remaining owner-gated transfer/Trigger work. CI must be green on both matching PR heads before the owner chooses merge/release; do not waive failures inherited from older plans.","red":"bun run agent:test:e2e -- test-e2e/context-panel-entity-graph.spec.ts test-e2e/entity-triggers.spec.ts test-e2e/plugin-store-install.spec.ts"} -->
 
 ##### Acceptance criteria
@@ -1362,6 +1366,7 @@ Required handoff evidence: Both exact app/catalog heads and artifact digests rec
 <!-- plan:results:D1-S9:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| KG_RELEASE_002 | 29de0e110 | 2026-10-09T06:11:11.293Z–2026-10-09T06:44:15.080Z | 33.063116666666666 / 33.063116666666666 min | unavailable: not measured by planctl | Matched catalog 86532 package fixtures pass all seven targeted E2E scenarios (4 context-panel cases rerun green plus unchanged 3 Trigger/store cases). Migration/restore/owner/compatibility backend suites: 31 pass; existing PostgreSQL-protocol harness graph batch/merge/end/workspace suites: 85 pass. Fixture refresh uses current catalog layout and agent scripts. Commit gate passes; complete app publication gate follows. |
 <!-- plan:results:D1-S9:end -->
 <!-- plan:stage:D1-S9:end -->
 <!-- plan:delivery:D1:end -->
@@ -1510,14 +1515,14 @@ Required handoff evidence: Matching catalog/SDK artifact digests recorded; no un
 
 ##### Tasks
 
-- [x] KG_RELEASE_001 — The built catalog accepts the new graph contract and retains domain behavior. (40 min) — 8484aaf19eb493404f3cc2430d721011b5dbe164
+- [x] KG_RELEASE_001 — The built catalog accepts the new graph contract and retains domain behavior. (40 min) — 86532f89bf4f78eb7d7550a4039c34aaa83051e2
 <!-- plan:task-meta:{"writes":["packages/plugin-sdk/__tests__/graphContract.test.ts","packages/host-stubs/types/","packages/host-stubs/package.json","packages/testkit/module.ts","packages/testkit/__tests__/module.test.ts","scripts/module-bundle.test.ts","scripts/build-catalog-index.test.ts","scripts/build-catalog-index.ts","docs/vision.md","docs/typing.md","README.md","modules/contacts/entities.test.ts","modules/companies/module/__tests__/companiesRead.test.ts","modules/file/module/__tests__/fileModule.test.ts","modules/triggers/module/__tests__/triggersListPage.test.ts","modules/companies/module/service.ts","modules/triggers/module/service.ts","modules/triggers/module/__tests__/triggersWrite.test.ts","modules/triggers/module/__tests__/triggersSchedule.test.ts","modules/triggers/entities.ts","modules/triggers/types.ts","modules/triggers/entities.test.ts"],"predictedActiveMinutes":40,"predictedCredits":0,"how":"1. Build the catalog against D1's exact SDK and regenerate declarations only if their inputs changed. 2. Run the complete catalog agent:verify:pr once on these final inputs. Check incompatible activation and preserve the previously accepted version using the app scenarios in D1-S9. 3. Reconcile the reference with actual merged implementations and keep the event/subscription/action transition documented as the next logic story. Do not mark deferred ending events, Trigger dispatch or ownership transfer implemented. 4. Record artifact digests and all Goal/acceptance-case coverage in the plan results. Do not deploy or publish a channel before the separate release authorization.","red":"bun run agent:test:backend -- packages/plugin-sdk/__tests__/graphContract.test.ts packages/testkit/__tests__/module.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [x] `bun run agent:verify:pr` exits 0 — 8484aaf19eb493404f3cc2430d721011b5dbe164
-- [x] `bun run agent:verify:docs` exits 0 — 8484aaf19eb493404f3cc2430d721011b5dbe164
-- [x] Commit — 8484aaf19eb493404f3cc2430d721011b5dbe164
+- [ ] `bun run agent:verify:pr` exits 0
+- [ ] `bun run agent:verify:docs` exits 0
+- [ ] Commit
 
 ##### Results
 
@@ -1525,6 +1530,7 @@ Required handoff evidence: Matching catalog/SDK artifact digests recorded; no un
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
 | KG_RELEASE_001 | 8484aaf19eb493404f3cc2430d721011b5dbe164 | 2026-10-09T05:19:55.516Z–2026-10-09T06:08:15.150Z | 48.32723333333333 / 48.32723333333333 min | unavailable: not measured by planctl | Reconciled the developer reference with app 17ad36b/catalog 8484aaf, kept deferred transfer/Trigger behavior explicit, and passed 26 corrected consumer tests plus scoped types/lint. Packed SDK 0.2.0 SHA256 e9ebe3f9dfcbd8de259fffcecb775d6ba01b05928834799825d356a3fe70790a; catalog index dfdbad84853c052e6c78be30515ecac8bcccc69f285ca1edc209615e66d78f6e; email c1075ef8c8f86281d980b1050ae143aef8d2dce44d68da6487cf6976a52c2a71; Telegram 502614927e41a193bb65bc5d898cf7dee317745671456a13648f61cd89862c20. Stage closure runs the complete catalog gate; D1-S9 verifies the matching app fixtures and incompatible activation. No release/channel publication. |
+| KG_RELEASE_001 | 86532f89bf4f78eb7d7550a4039c34aaa83051e2 | 2026-10-09T06:15:48.015Z–2026-10-09T06:41:29.186Z | 25.686183333333332 / 25.686183333333332 min | unavailable: not measured by planctl | Trigger creation supplies validated required properties in its first graph write; existing stopped UI state is accepted by domain/RPC validators. Generated SDK declarations/runtime schemas match app host repair 230d381. Scoped module tests and commit gate pass; paired app E2E confirms Stop/Start and package installation. |
 <!-- plan:results:D2-S4:end -->
 <!-- plan:stage:D2-S4:end -->
 <!-- plan:delivery:D2:end -->
@@ -1988,4 +1994,24 @@ Required handoff evidence: Matching catalog/SDK artifact digests recorded; no un
 - amend implementation owner:$blueprint-start sha256:3d06f30df07a1eadbf4e9310322f13bb18dc31ccf9f2a5ea23c555288bddc91c
 
 - amend implementation owner:$blueprint-start sha256:c1f863e815c5ad064bc530f8674e9b4c8a072e090935e768f2388b96a9946216
+
+- record-result D1-S7 commit:230d38182
+
+- deviation D1-S7: App E2E exposed a pre-existing creation API gap under strict domain admission. Added the existing optional properties: JsonObject to CreateEntityParams and forwarded it unchanged; omitted properties still validate as an empty object, so required values are never invented. Source protocol and module API 0.3.0 unchanged.
+
+- close D1-S7 closed commit:230d38182222d1666a0814da40ad3d97e9cc7d4f
+
+- close D2-S4 closed commit:86532f89bf4f78eb7d7550a4039c34aaa83051e2
+
+- amend spec owner:$blueprint-start sha256:289e55a269c39c14305c595356be46a6245dffef17299e9bbcadbcbb24de965d
+
+- record-result D2-S4 commit:86532f89bf4f78eb7d7550a4039c34aaa83051e2
+
+- deviation D2-S4: Release E2E reproduced invalid Trigger create-then-patch. Repaired with existing CreateEntityParams.properties without a new execution mechanism. SDK archive SHA256 21d2a1a30f7797d309877b93c91aed99883eec71708694f5dbdf97e82e9e60cf; catalog index 196f7e7c3638d99c5d43fd57fb6adc8789a74349b4980ab3e22755248edbbc75. No release published.
+
+- deviation D1-S9: Observed release limit: ExtensionService.onApplicationBootstrap resolves installed enabled artifacts through the strict manifest decoder, so retained API 0.2.0 artifacts prevent host 0.3.0 startup. Matching-package E2E and incompatible-candidate rollback do not prove an in-place package upgrade. No automatic installed-package transition is implemented or authorized by these fixture checks; release to existing installations remains contingent on verifying that transition. Recorded in docs/vision.md; no channel publication.
+
+- record-result D1-S9 commit:29de0e110
+
+- deviation D1-S9: Current native firing creates Trigger -> created -> Episode but does not attach the event Entity; the context-panel fixture retains its explicit started_with link. No future subscription behavior is inferred from this test. Installed API 0.2 package transition remains an explicit release limit, separate from successful SQL/workspace-data and matching-package verification.
 <!-- plan:execution:end -->
