@@ -1364,8 +1364,8 @@ Required handoff evidence: Both exact app/catalog heads and artifact digests rec
 
 ##### Acceptance criteria
 
-- [ ] `bash .githooks/pre-push < /dev/null > /tmp/kg-app-final-gate.log 2>&1` exits 0
-- [ ] Commit
+- [x] `bash .githooks/pre-push < /dev/null > /tmp/kg-app-final-gate.log 2>&1` exits 0 — 3332d11a58fa64f2da2902ff5fc9acc064d2e5a6
+- [x] Commit — 3332d11a58fa64f2da2902ff5fc9acc064d2e5a6
 
 ##### Results
 
@@ -1528,7 +1528,7 @@ Required handoff evidence: Matching catalog/SDK artifact digests recorded; no un
 
 ##### Acceptance criteria
 
-- [ ] `bash .githooks/pre-push < /dev/null > /tmp/kg-catalog-prepush.log 2>&1` exits 0
+- [x] `bash .githooks/pre-push < /dev/null > /tmp/kg-catalog-prepush.log 2>&1` exits 0 — d449e08fc8eb752329289906f8edbc43f8c09fa1
 - [x] `bun run agent:verify:docs` exits 0 — 545b5a048b1c3002f6aecad8624ed0fc4a4a3a9e
 - [x] Commit — 545b5a048b1c3002f6aecad8624ed0fc4a4a3a9e
 
@@ -2076,4 +2076,10 @@ Required handoff evidence: Matching catalog/SDK artifact digests recorded; no un
 - record-result D2-S4 commit:545b5a048b1c3002f6aecad8624ed0fc4a4a3a9e
 
 - close D2-S4 partial commit:545b5a048b1c3002f6aecad8624ed0fc4a4a3a9e
+
+- close D2-S4 closed commit:d449e08fc8eb752329289906f8edbc43f8c09fa1
+
+- deviation D1-S9: After merging owner-integrated staging, complete app publication gate passed on 3332d11a58fa64f2da2902ff5fc9acc064d2e5a6: 72 SDK, 2345 backend (1 existing skip), 689 frontend (3 existing TODO), 48 eval-worker, 12 runner and 4 ownership-boundary checks. All seven targeted E2E scenarios passed again on this integrated head. App PR 308 replaces merged PR 306; catalog PR is 51. Release/channel publication remains excluded.
+
+- close D1-S9 closed commit:3332d11a58fa64f2da2902ff5fc9acc064d2e5a6
 <!-- plan:execution:end -->
