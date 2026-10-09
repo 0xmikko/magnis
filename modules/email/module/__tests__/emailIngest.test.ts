@@ -178,7 +178,7 @@ describe("email ingest — applyBatch shape (tst_be_emailingest_001)", () => {
     expect(batch?.entities.find((item) => item.schemaId === "email.message")?.properties).not.toHaveProperty("communication");
     expect(batches.flatMap((item) => item.entities)).toContainEqual(expect.objectContaining({ schemaId: "email.mailbox", properties: { address: null } }));
     const before = batches.length;
-    await expect(mod.ingest({ envelopes: [env({ payload: msgPayload({ communication: [{ kind: "sent", occurredAt: "bad date" }] }) })] })).rejects.toThrow();
+    await expect(mod.ingest({ envelopes: [env({ payload: msgPayload({ communication: [{ kind: "sent", occurredAt: 123 }] }) })] })).rejects.toThrow();
     expect(batches).toHaveLength(before);
   });
 

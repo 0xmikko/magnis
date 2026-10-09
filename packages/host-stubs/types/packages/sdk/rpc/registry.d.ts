@@ -322,11 +322,11 @@ export declare const rpcContracts: {
             displayName: import("zod").ZodString;
             surfaces: import("zod").ZodArray<import("zod").ZodString>;
             authType: import("zod").ZodEnum<{
+                none: "none";
                 oauth2: "oauth2";
                 phoneCode: "phoneCode";
                 apiKey: "apiKey";
                 sharedProvider: "sharedProvider";
-                none: "none";
             }>;
             packageHash: import("zod").ZodString;
             connectable: import("zod").ZodBoolean;
@@ -462,11 +462,11 @@ export declare const rpcContracts: {
                 displayName: import("zod").ZodString;
                 providerAccountId: import("zod").ZodNullable<import("zod").ZodString>;
                 authKind: import("zod").ZodEnum<{
+                    none: "none";
                     oauth2: "oauth2";
                     phoneCode: "phoneCode";
                     apiKey: "apiKey";
                     sharedProvider: "sharedProvider";
-                    none: "none";
                 }>;
                 generation: import("zod").ZodNumber;
                 invalidReason: import("zod").ZodNullable<import("zod").ZodString>;

@@ -5,7 +5,7 @@ export { EntityIdSchema, IdSchema, nilId, PersistentEntityIdSchema } from "./cor
 export { EntityDetailSchema, EntityExtrasSchema, EntityReadSchema, EntityReadOptionsSchema, IndexingStatusSchema, EntitySchema, PersistentEntitySchema, EntitySearchHitSchema, EntitySearchResultSchema, EntityBriefSchema, EntityColSchema, EntityWithLinksSchema, GraphEntityDetailSchema, GraphEntityLinksSchema, GraphEntityPageSchema, LinkedEntitySchema, } from "./core/entity.js";
 export { DerivedLinkSchema, CanonicalLinkSchema, LinkBaseSchema, LinkSchema, LinkAddResultSchema, } from "./core/link.js";
 export { CommunicationMetadataSchema, CommunicationLinkSchema } from "./core/link.js";
-export { communicationMessageExternalId } from "./core/source.js";
+export { communicationMessageExternalId } from "./core/communication.js";
 export * from "./core/graph-commands.js";
 export * from "./core/merge.js";
 export * from "./core/plugin.js";

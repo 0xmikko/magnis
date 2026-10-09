@@ -1,11 +1,5 @@
 import { z } from "zod";
 import { SourceManifestAuthKindSchema } from "./source-auth.js";
-/** Provider message identity is local to the connected account and domain. */
-export function communicationMessageExternalId(schemaId, accountId, remoteId) {
-    if (accountId.length === 0 || remoteId.length === 0)
-        throw new Error("Communication message requires an account and provider ID");
-    return `${schemaId}:${JSON.stringify(accountId)}:${JSON.stringify(remoteId)}`;
-}
 export const SourceProtocolVersionSchema = z.enum(["magnis.source/1", "magnis.source/2"]);
 export const SourceAuthoritySchema = z.enum(["moduleSync", "toolsOnly"]);
 export const SourceReleaseTierSchema = z.enum(["production", "developmentFixture"]);

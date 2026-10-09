@@ -33,6 +33,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
+      "@magnis/sdk/core/communication": resolve(__dirname, "./packages/host-stubs/types/packages/sdk/core/communication.js"),
       "@magnis/sdk": resolve(__dirname, "./packages/host-stubs/types/packages/sdk/index.js"),
       "@magnis/host/ui": double("ui.tsx"),
       "@magnis/host/base": double("base.tsx"),

@@ -9,7 +9,8 @@
 import { expect, expectTypeOf, test } from "vitest";
 import { entity, mockGraph, mountModule, syncStateDouble } from "@magnis/testkit/module";
 import type { SetSyncEnabledParams, UpdateEntitySyncEnabledResult } from "@magnis/sdk";
-import { CommunicationMetadataSchema, communicationMessageExternalId } from "@magnis/sdk";
+import { CommunicationMetadataSchema } from "@magnis/sdk";
+import { communicationMessageExternalId } from "@magnis/sdk/core/communication";
 import { searchEntitiesPage, writeTool } from "../index.ts";
 import type { GraphService, PluginDeps } from "../contract/module.ts";
 

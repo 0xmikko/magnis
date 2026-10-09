@@ -23,14 +23,14 @@ import {
   type PluginLogger,
   type RpcExecutor,
 } from "@magnis/plugin-sdk";
-import { CommunicationMetadataSchema, communicationMessageExternalId } from "@magnis/sdk";
+import { communicationMessageExternalId } from "@magnis/sdk/core/communication";
 import type {
-  CommunicationLink,
   BatchEntityInput,
   BatchLink,
   BatchRef,
   EntityRead,
   EntityExtras,
+  JsonObject,
   JsonValue,
   LinkedEntitySummary,
   PaginatedResponse,
@@ -83,12 +83,15 @@ import {
   addressBatchEntity,
 } from "../schema.ts";
 
-function communicationOf(payload: Data): Pick<CommunicationLink, "kind" | "metadata">[] {
+function communicationOf(payload: Data): (Pick<BatchLink, "kind"> & { metadata: JsonObject })[] {
   if (payload.communication === undefined) return [];
   if (!Array.isArray(payload.communication)) throw new Error("Invalid email communication observations");
   return payload.communication.map((value) => {
     if (value === null || typeof value !== "object" || Array.isArray(value) || (value.kind !== "sent" && value.kind !== "received")) throw new Error("Invalid email communication observation");
-    return { kind: value.kind, metadata: CommunicationMetadataSchema.parse({ occurredAt: value.occurredAt, conversationId: null }) };
+    const occurredAt = value.occurredAt;
+    if (occurredAt !== null && typeof occurredAt !== "string") throw new Error("Communication observation requires an explicit occurrence time or null");
+    // Graph owns the canonical timestamp and conversation validators.
+    return { kind: value.kind, metadata: { occurredAt, conversationId: null } };
   });
 }
 
