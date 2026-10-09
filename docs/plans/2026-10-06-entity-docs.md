@@ -1523,14 +1523,14 @@ Required handoff evidence: Matching catalog/SDK artifact digests recorded; no un
 
 ##### Tasks
 
-- [x] KG_RELEASE_001 — The built catalog accepts the new graph contract and retains domain behavior. (40 min) — 9411e3c85297c92f5671bf861b25462c1507fdcb
+- [x] KG_RELEASE_001 — The built catalog accepts the new graph contract and retains domain behavior. (40 min) — 545b5a048b1c3002f6aecad8624ed0fc4a4a3a9e
 <!-- plan:task-meta:{"writes":["packages/plugin-sdk/__tests__/graphContract.test.ts","packages/host-stubs/types/","packages/host-stubs/package.json","packages/testkit/module.ts","packages/testkit/__tests__/module.test.ts","scripts/module-bundle.test.ts","scripts/build-catalog-index.test.ts","scripts/build-catalog-index.ts","docs/vision.md","docs/typing.md","README.md","modules/contacts/entities.test.ts","modules/companies/module/__tests__/companiesRead.test.ts","modules/file/module/__tests__/fileModule.test.ts","modules/triggers/module/__tests__/triggersListPage.test.ts","modules/companies/module/service.ts","modules/triggers/module/service.ts","modules/triggers/module/__tests__/triggersWrite.test.ts","modules/triggers/module/__tests__/triggersSchedule.test.ts","modules/triggers/entities.ts","modules/triggers/types.ts","modules/triggers/entities.test.ts","scripts/build-plugins.ts"],"predictedActiveMinutes":40,"predictedCredits":0,"how":"1. Build the catalog against D1's exact SDK and regenerate declarations only if their inputs changed. 2. Run the complete catalog agent:verify:pr once on these final inputs. Check incompatible activation and preserve the previously accepted version using the app scenarios in D1-S9. 3. Reconcile the reference with actual merged implementations and keep the event/subscription/action transition documented as the next logic story. Do not mark deferred ending events, Trigger dispatch or ownership transfer implemented. 4. Record artifact digests and all Goal/acceptance-case coverage in the plan results. Do not deploy or publish a channel before the separate release authorization.","red":"bun run agent:test:backend -- packages/plugin-sdk/__tests__/graphContract.test.ts packages/testkit/__tests__/module.test.ts"} -->
 
 ##### Acceptance criteria
 
 - [ ] `bash .githooks/pre-push < /dev/null > /tmp/kg-catalog-prepush.log 2>&1` exits 0
-- [x] `bun run agent:verify:docs` exits 0 — 9411e3c85297c92f5671bf861b25462c1507fdcb
-- [x] Commit — 9411e3c85297c92f5671bf861b25462c1507fdcb
+- [x] `bun run agent:verify:docs` exits 0 — 545b5a048b1c3002f6aecad8624ed0fc4a4a3a9e
+- [x] Commit — 545b5a048b1c3002f6aecad8624ed0fc4a4a3a9e
 
 ##### Results
 
@@ -1540,6 +1540,7 @@ Required handoff evidence: Matching catalog/SDK artifact digests recorded; no un
 | KG_RELEASE_001 | 8484aaf19eb493404f3cc2430d721011b5dbe164 | 2026-10-09T05:19:55.516Z–2026-10-09T06:08:15.150Z | 48.32723333333333 / 48.32723333333333 min | unavailable: not measured by planctl | Reconciled the developer reference with app 17ad36b/catalog 8484aaf, kept deferred transfer/Trigger behavior explicit, and passed 26 corrected consumer tests plus scoped types/lint. Packed SDK 0.2.0 SHA256 e9ebe3f9dfcbd8de259fffcecb775d6ba01b05928834799825d356a3fe70790a; catalog index dfdbad84853c052e6c78be30515ecac8bcccc69f285ca1edc209615e66d78f6e; email c1075ef8c8f86281d980b1050ae143aef8d2dce44d68da6487cf6976a52c2a71; Telegram 502614927e41a193bb65bc5d898cf7dee317745671456a13648f61cd89862c20. Stage closure runs the complete catalog gate; D1-S9 verifies the matching app fixtures and incompatible activation. No release/channel publication. |
 | KG_RELEASE_001 | 86532f89bf4f78eb7d7550a4039c34aaa83051e2 | 2026-10-09T06:15:48.015Z–2026-10-09T06:41:29.186Z | 25.686183333333332 / 25.686183333333332 min | unavailable: not measured by planctl | Trigger creation supplies validated required properties in its first graph write; existing stopped UI state is accepted by domain/RPC validators. Generated SDK declarations/runtime schemas match app host repair 230d381. Scoped module tests and commit gate pass; paired app E2E confirms Stop/Start and package installation. |
 | KG_RELEASE_001 | 9411e3c85297c92f5671bf861b25462c1507fdcb | 2026-10-09T06:43:38.696Z–2026-10-09T07:16:40.388Z | 33.0282 / 33.0282 min | unavailable: not measured by planctl | Declaration-level Trigger fixture parses canonical CreateEntityParams input before asserting stored properties. Full catalog typecheck and seven scoped tests pass. Reference records implementation heads and installed-package upgrade release limit. Artifact inputs remain identical to catalog 86532. |
+| KG_RELEASE_001 | 545b5a048b1c3002f6aecad8624ed0fc4a4a3a9e | 2026-10-09T08:52:54.311Z–2026-10-09T08:56:33.266Z | 3.64925 / 3.64925 min | unavailable: not measured by planctl | Reproduced catalog CI's in-process SDK bundling failure on pinned Bun 1.3.13. The existing bundle gate now invokes the production build command before inspecting all module artifacts; production builder and artifact inputs remain unchanged. All 91 tooling tests pass on the CI runtime; full catalog typecheck and commit hooks pass. |
 <!-- plan:results:D2-S4:end -->
 <!-- plan:stage:D2-S4:end -->
 <!-- plan:delivery:D2:end -->
@@ -2071,4 +2072,8 @@ Required handoff evidence: Matching catalog/SDK artifact digests recorded; no un
 - amend implementation owner:$blueprint-start sha256:8c0e96a93ca3c0aab8dc4bbcd2404aa79d2403416d86fe0bd8daba41cfdada37
 
 - amend implementation owner:$blueprint-start sha256:89b00e129065b63d79aea65c2f8a799d54f79ee85cb2050c1f29235ccf7fe025
+
+- record-result D2-S4 commit:545b5a048b1c3002f6aecad8624ed0fc4a4a3a9e
+
+- close D2-S4 partial commit:545b5a048b1c3002f6aecad8624ed0fc4a4a3a9e
 <!-- plan:execution:end -->
