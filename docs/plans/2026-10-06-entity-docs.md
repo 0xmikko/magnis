@@ -1364,8 +1364,8 @@ Required handoff evidence: Both exact app/catalog heads and artifact digests rec
 
 ##### Acceptance criteria
 
-- [ ] `bash .githooks/pre-push < /dev/null > /tmp/kg-app-final-gate.log 2>&1` exits 0
-- [ ] Commit
+- [x] `bash .githooks/pre-push < /dev/null > /tmp/kg-app-final-gate.log 2>&1` exits 0 — 0afd4a412d9a1a1ebea7bbd1ea9ed1639e4cdc2f
+- [x] Commit — 0afd4a412d9a1a1ebea7bbd1ea9ed1639e4cdc2f
 
 ##### Results
 
@@ -1529,9 +1529,9 @@ Required handoff evidence: Matching catalog/SDK artifact digests recorded; no un
 
 ##### Acceptance criteria
 
-- [ ] `bash .githooks/pre-push < /dev/null > /tmp/kg-catalog-prepush.log 2>&1` exits 0
-- [ ] `bun run agent:verify:docs` exits 0
-- [ ] Commit
+- [x] `bash .githooks/pre-push < /dev/null > /tmp/kg-catalog-prepush.log 2>&1` exits 0 — fcc6b8c3fb130fe6601e105a33b91d67ce4b3d87
+- [x] `bun run agent:verify:docs` exits 0 — fcc6b8c3fb130fe6601e105a33b91d67ce4b3d87
+- [x] Commit — fcc6b8c3fb130fe6601e105a33b91d67ce4b3d87
 
 ##### Results
 
@@ -2096,4 +2096,8 @@ Required handoff evidence: Matching catalog/SDK artifact digests recorded; no un
 - deviation D1-S9: Owner-requested verification only: no startup updater or automatic package-set migration implemented. Fixtures seed persisted API 0.2 metadata/artifact trees; this is not a production workspace export or a provider-specific data migration. Release to existing installations remains blocked by bootstrap refusal and partial package-set updates.
 
 - record-result D2-S4 commit:83000bb
+
+- close D2-S4 closed commit:fcc6b8c3fb130fe6601e105a33b91d67ce4b3d87
+
+- close D1-S9 closed commit:0afd4a412d9a1a1ebea7bbd1ea9ed1639e4cdc2f
 <!-- plan:execution:end -->
