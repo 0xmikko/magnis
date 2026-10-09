@@ -8,6 +8,7 @@
   "include": [
     "module/**/*.ts",
     "schema.ts",
-    "types.ts"
+    "types.ts",
+    "../../sources/web/src/turndown-plugin-gfm.d.ts"
   ]
 }
