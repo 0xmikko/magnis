@@ -2,8 +2,8 @@
 
 Status: APPROVED  
 Spec lock: sha256:86bdd075418f6d513691ea0e934ea58b82e9556e1f6abc81f2e425e47b2e54b2 owner:Минимальная модель (рекомендую)  
-Implementation lock: sha256:894f3cd6d76575b899b51e56445f0e9f240cb7169b209075d5487ef94b9d50d4 owner:$blueprint-start  
-Active Delivery: D1  
+Implementation lock: sha256:cdc9043ca2b580cf6fa69c035d502ffd5fd2cad4b42014e92219a8034e9cd459 owner:$blueprint-start  
+Active Delivery: D2  
 Unattended decisions: allowed  
 
 <!-- plan:spec:start -->
@@ -1313,13 +1313,13 @@ Required handoff evidence: Owner-approved mailbox/account, conversation and repe
 
 ##### Tasks
 
-- [x] KG_COMM_001 — Communication Links reference concrete authorized endpoints and preserve occurrence identity. (75 min) — 59faa711c631212398bb917b55fdd3c53abef1aa
+- [x] KG_COMM_001 — Communication Links reference concrete authorized endpoints and preserve occurrence identity. (75 min) — 17ad36bb16e9f082731835153cc750073d20daee
 <!-- plan:task-meta:{"writes":["packages/sdk/src/core/link.ts","backend/src/services/graph/graph-contracts.ts","backend/src/services/graph/graph.registrar.ts","backend/src/services/graph/graph.repository.ts","backend/src/services/graph/graph.transfer.ts","backend/migrations/20261007000004_graph_communication.sql","backend/src/db/schema/graph.ts","backend/test/tst_bts_graph_link_kinds.test.ts","backend/test/tst_bts_graph_batch.test.ts","backend/test/tst_bts_workspace_transfer.test.ts"],"predictedActiveMinutes":75,"predictedCredits":0,"how":"1. Before code changes, obtain the SPEC G decision on concrete mailbox/account and conversation representation plus repeated-delivery identity. Use planctl needs_owner for this task if absent; SPEC approval does not supply those choices. 2. Record the chosen interfaces, endpoint schemas, migration mapping and exact affected paths through an owner-backed plan amendment before resuming this stage. This is an execution prerequisite, not permission to invent missing fields or IDs. 3. Reproduce KG-21/KG-28 with confirmed delivery, unknown occurrence time, rollback, repeat ingestion and legacy context-only rows. 4. Validate sent/received metadata and all referenced endpoints through Graph. Preserve temporal facts and unresolved legacy history in a transactional migration; reject unjustified conversions.","red":"bun run agent:test:backend -- test/tst_bts_graph_link_kinds.test.ts test/tst_bts_graph_batch.test.ts test/tst_bts_workspace_transfer.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [x] `bun run agent:test:backend -- test/tst_bts_graph_link_kinds.test.ts test/tst_bts_graph_batch.test.ts test/tst_bts_workspace_transfer.test.ts` exits 0 — 59faa711c631212398bb917b55fdd3c53abef1aa
-- [x] Commit — 59faa711c631212398bb917b55fdd3c53abef1aa
+- [x] `bun run agent:test:backend -- test/tst_bts_graph_link_kinds.test.ts test/tst_bts_graph_batch.test.ts test/tst_bts_workspace_transfer.test.ts` exits 0 — 17ad36bb16e9f082731835153cc750073d20daee
+- [x] Commit — 17ad36bb16e9f082731835153cc750073d20daee
 
 ##### Results
 
@@ -1327,6 +1327,7 @@ Required handoff evidence: Owner-approved mailbox/account, conversation and repe
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
 | KG_COMM_001 | 59faa711c631212398bb917b55fdd3c53abef1aa | 2026-10-08T07:33:06.221Z–2026-10-08T14:25:15.746Z | 412.15875 / 412.15875 min | unavailable: not measured by planctl | Graph validates canonical sent/received observations, scoped accounts and conversation IDs; preserves unknown times, no-change replay and atomic conflict rollback. SQL/v6 upgrades scope message anchors without fabricating historical delivery. Transfer remaps and validates conversation IDs. 55 scoped tests/typechecks passed; commit hook passed 336 backend and 683 frontend tests. — beyond writes: backend/src/services/graph/entity.repository.ts, backend/src/services/graph/link.repository.ts, backend/src/services/workspace/workspace-document.ts, backend/test/tst_bts_graph_relations_table.test.ts, backend/test/tst_bts_workspace_document.test.ts, docs/backend/workspace-transfer.md, docs/datasets.md, packages/sdk/src/core/source.ts, packages/sdk/src/index.ts |
+| KG_COMM_001 | 17ad36bb16e9f082731835153cc750073d20daee | 2026-10-08T18:29:58.527Z–2026-10-09T05:18:59.916Z | 649.02315 / 649.02315 min | unavailable: not measured by planctl | Preserved the canonical communication contract while moving its identity helper to the schema-free SDK core/communication entry point. The reproduced catalog bundle failure is green (3 bundle tests); app hooks passed SDK checks, backend checks, 683 frontend tests and docs. — beyond writes: docs/agent/memory-roadmap.md, docs/agent/speculative-graph-overlay.md, docs/architecture/entity-lifecycle.md, packages/sdk/package.json, packages/sdk/src/core/communication.ts, packages/sdk/src/core/source.ts, packages/sdk/src/index.ts |
 <!-- plan:results:D1-S8:end -->
 <!-- plan:stage:D1-S8:end -->
 
@@ -1470,31 +1471,33 @@ Acceptance: KG-21, KG-28 and KG-29. Commit: feat(catalog): record observed messa
 
 ##### Tasks
 
-- [ ] KG_COMM_002 — Confirmed incoming and outgoing observations create message and communication Links together. (85 min)
+- [x] KG_COMM_002 — Confirmed incoming and outgoing observations create message and communication Links together. (85 min) — 7f966c61b341c543aaca4a66f819019c83ad3f22
 <!-- plan:task-meta:{"writes":["modules/email/entities.ts","modules/email/types.ts","modules/email/manifest.toml","modules/email/module/service.ts","modules/email/module/helpers.ts","modules/email/ui/helpers.ts","modules/email/ui/EntityCards.tsx","modules/email/module/__tests__/emailIngest.test.ts","modules/email/module/__tests__/emailSend.test.ts","modules/telegram/entities.ts","modules/telegram/types.ts","modules/telegram/manifest.toml","modules/telegram/module/service.ts","modules/telegram/module/helpers.ts","modules/telegram/module/__tests__/telegramIngest.test.ts","modules/telegram/module/__tests__/sendMessageDelivery.test.ts"],"predictedActiveMinutes":85,"predictedCredits":0,"how":"1. Use only the endpoint/conversation/occurrence contract approved in D1-S8. Declare any added exact schema/type paths before writes. 2. Reproduce confirmed receipt, successful send, failed send, header-only metadata, no-change replay and rollback in existing ingest/source tests. 3. Commit the message and supported sent/received fact in one Graph batch; retain source occurrence time independently of insertion time and preserve unknown times. 4. Keep sent_to/received_from separate from observed delivery. Retain existing live Trigger notifications with unchanged sender/chat semantics until the later logic story.","red":"bun run agent:test:backend -- modules/email/module/__tests__/emailIngest.test.ts modules/email/module/__tests__/emailSend.test.ts modules/telegram/module/__tests__/telegramIngest.test.ts"} -->
-- [ ] KG_COMM_003 — Source adapters preserve delivery evidence and unknown timestamps. (35 min)
+- [x] KG_COMM_003 — Source adapters preserve delivery evidence and unknown timestamps. (35 min) — 7f966c61b341c543aaca4a66f819019c83ad3f22
 <!-- plan:task-meta:{"writes":["sources/google/src/surfaces/email/gmail.ts","sources/google/src/surfaces/email/gmail.test.ts","sources/google/src/surfaces/email/imap.ts","sources/google/src/surfaces/email/imap.test.ts","sources/telegram/src/surfaces/telegram/envelope.ts","sources/telegram/src/surfaces/telegram/envelope.test.ts"],"predictedActiveMinutes":35,"predictedCredits":0,"how":"1. Use the existing Source fixtures to verify which timestamps and observing accounts are actually supplied. 2. Do not turn Date headers, recipient lists or a shared chat membership into proof of receipt; preserve provenance needed by the module's approved observation contract. 3. Run Bun Source targets separately from Vitest module targets through the existing agent:test:backend adapter.","red":"bun run agent:test:backend -- sources/google/src/surfaces/email/gmail.test.ts sources/google/src/surfaces/email/imap.test.ts sources/telegram/src/surfaces/telegram/envelope.test.ts"} -->
 
 ##### Acceptance criteria
 
-- [ ] `bun run agent:test:backend -- modules/email/module/__tests__/emailIngest.test.ts modules/email/module/__tests__/emailSend.test.ts modules/telegram/module/__tests__/telegramIngest.test.ts` exits 0
-- [ ] `bun run agent:test:backend -- sources/google/src/surfaces/email/gmail.test.ts sources/google/src/surfaces/email/imap.test.ts sources/telegram/src/surfaces/telegram/envelope.test.ts` exits 0
-- [ ] Commit
+- [x] `bun run agent:test:backend -- modules/email/module/__tests__/emailIngest.test.ts modules/email/module/__tests__/emailSend.test.ts modules/telegram/module/__tests__/telegramIngest.test.ts` exits 0 — 08592e459841fe36ee8b202f4244a8ef438e669a
+- [x] `bun run agent:test:backend -- sources/google/src/surfaces/email/gmail.test.ts sources/google/src/surfaces/email/imap.test.ts sources/telegram/src/surfaces/telegram/envelope.test.ts` exits 0 — 08592e459841fe36ee8b202f4244a8ef438e669a
+- [x] Commit — 08592e459841fe36ee8b202f4244a8ef438e669a
 
 ##### Results
 
 <!-- plan:results:D2-S3:start -->
 | Task | Commit | UTC start-end | Active / elapsed | Usage | Result / proof |
 |---|---|---|---:|---|---|
+| KG_COMM_002 | 7f966c61b341c543aaca4a66f819019c83ad3f22 | 2026-10-08T14:26:21.531Z–2026-10-09T05:18:50.874Z | 892.48905 / 892.48905 min | unavailable: not measured by planctl | Email/Telegram record account-scoped provider observations atomically with messages, preserve unknown times, reject ambiguous send accounts and protect operator Source anchors. Gmail/IMAP use system-label evidence; legacy payloads establish no delivery. RED→GREEN: 53 Source tests, 134 scoped module/SDK tests; typechecks and hooks passed. Packaging repair 08592e459841fe36ee8b202f4244a8ef438e669a removes runtime schemas from module imports; all three existing bundle gates pass. — beyond writes: docs/vision.md, modules/telegram/module/__tests__/mediaSourceRouting.test.ts, modules/telegram/module/__tests__/telegramCommand.test.ts, packages/host-stubs/types/frontend/src/runtime/hooks/useRpc.d.ts, packages/host-stubs/types/packages/sdk/core/ai-model.d.ts, packages/host-stubs/types/packages/sdk/core/link.d.ts, packages/host-stubs/types/packages/sdk/core/link.d.ts.map, packages/host-stubs/types/packages/sdk/core/link.js, packages/host-stubs/types/packages/sdk/core/source-auth.d.ts, packages/host-stubs/types/packages/sdk/core/source-status.d.ts, packages/host-stubs/types/packages/sdk/core/source.d.ts, packages/host-stubs/types/packages/sdk/core/source.d.ts.map, packages/host-stubs/types/packages/sdk/core/source.js, packages/host-stubs/types/packages/sdk/http/system-settings.d.ts, packages/host-stubs/types/packages/sdk/index.d.ts, packages/host-stubs/types/packages/sdk/index.d.ts.map, packages/host-stubs/types/packages/sdk/index.js, packages/host-stubs/types/packages/sdk/rpc/native/source.d.ts, packages/host-stubs/types/packages/sdk/rpc/registry.d.ts, packages/plugin-sdk/__tests__/graphContract.test.ts |
+| KG_COMM_003 | 7f966c61b341c543aaca4a66f819019c83ad3f22 | 2026-10-08T14:26:21.531Z–2026-10-09T05:18:50.874Z | 892.48905 / 892.48905 min | unavailable: not measured by planctl | Email/Telegram record account-scoped provider observations atomically with messages, preserve unknown times, reject ambiguous send accounts and protect operator Source anchors. Gmail/IMAP use system-label evidence; legacy payloads establish no delivery. RED→GREEN: 53 Source tests, 134 scoped module/SDK tests; typechecks and hooks passed. Packaging repair 08592e459841fe36ee8b202f4244a8ef438e669a removes runtime schemas from module imports; all three existing bundle gates pass. — beyond writes: docs/vision.md, modules/telegram/module/__tests__/mediaSourceRouting.test.ts, modules/telegram/module/__tests__/telegramCommand.test.ts, packages/host-stubs/types/frontend/src/runtime/hooks/useRpc.d.ts, packages/host-stubs/types/packages/sdk/core/ai-model.d.ts, packages/host-stubs/types/packages/sdk/core/link.d.ts, packages/host-stubs/types/packages/sdk/core/link.d.ts.map, packages/host-stubs/types/packages/sdk/core/link.js, packages/host-stubs/types/packages/sdk/core/source-auth.d.ts, packages/host-stubs/types/packages/sdk/core/source-status.d.ts, packages/host-stubs/types/packages/sdk/core/source.d.ts, packages/host-stubs/types/packages/sdk/core/source.d.ts.map, packages/host-stubs/types/packages/sdk/core/source.js, packages/host-stubs/types/packages/sdk/http/system-settings.d.ts, packages/host-stubs/types/packages/sdk/index.d.ts, packages/host-stubs/types/packages/sdk/index.d.ts.map, packages/host-stubs/types/packages/sdk/index.js, packages/host-stubs/types/packages/sdk/rpc/native/source.d.ts, packages/host-stubs/types/packages/sdk/rpc/registry.d.ts, packages/plugin-sdk/__tests__/graphContract.test.ts |
 <!-- plan:results:D2-S3:end -->
 <!-- plan:stage:D2-S3:end -->
 
 <!-- plan:stage:D2-S4:start -->
-<!-- plan:stage-meta:{"deliveryId":"D2","depends":["D2-S3"],"parallelWith":[],"writes":["packages/plugin-sdk/__tests__/graphContract.test.ts","packages/host-stubs/types/","packages/host-stubs/package.json","packages/testkit/module.ts","packages/testkit/__tests__/module.test.ts","scripts/module-bundle.test.ts","scripts/build-catalog-index.test.ts","scripts/build-catalog-index.ts","docs/vision.md","docs/typing.md","README.md"],"tempRoot":".tmp/code-production/entity-docs/D2-S4","predictedActiveMinutes":65,"predictedCredits":0,"verifyActiveMinutes":25,"verifyCredits":0} -->
+<!-- plan:stage-meta:{"deliveryId":"D2","depends":["D2-S3"],"parallelWith":[],"writes":["packages/plugin-sdk/__tests__/graphContract.test.ts","packages/host-stubs/types/","packages/host-stubs/package.json","packages/testkit/module.ts","packages/testkit/__tests__/module.test.ts","scripts/module-bundle.test.ts","scripts/build-catalog-index.test.ts","scripts/build-catalog-index.ts","docs/vision.md","docs/typing.md","README.md","modules/contacts/entities.test.ts","modules/companies/module/__tests__/companiesRead.test.ts","modules/file/module/__tests__/fileModule.test.ts","modules/triggers/module/__tests__/triggersListPage.test.ts","modules/companies/module/service.ts"],"tempRoot":".tmp/code-production/entity-docs/D2-S4","predictedActiveMinutes":65,"predictedCredits":0,"verifyActiveMinutes":25,"verifyCredits":0} -->
 #### Stage D2-S4 — Build and verify the matching catalog artifacts
 
 - Owner: Codex; Profile: strong; Depends: D2-S3; Parallel with: none.
-- Writes: `packages/plugin-sdk/__tests__/graphContract.test.ts`, `packages/host-stubs/types/`, `packages/host-stubs/package.json`, `packages/testkit/module.ts`, `packages/testkit/__tests__/module.test.ts`, `scripts/module-bundle.test.ts`, `scripts/build-catalog-index.test.ts`, `scripts/build-catalog-index.ts`, `docs/vision.md`, `docs/typing.md`, `README.md`.
+- Writes: `packages/plugin-sdk/__tests__/graphContract.test.ts`, `packages/host-stubs/types/`, `packages/host-stubs/package.json`, `packages/testkit/module.ts`, `packages/testkit/__tests__/module.test.ts`, `scripts/module-bundle.test.ts`, `scripts/build-catalog-index.test.ts`, `scripts/build-catalog-index.ts`, `docs/vision.md`, `docs/typing.md`, `README.md`, `modules/contacts/entities.test.ts`, `modules/companies/module/__tests__/companiesRead.test.ts`, `modules/file/module/__tests__/fileModule.test.ts`, `modules/triggers/module/__tests__/triggersListPage.test.ts`, `modules/companies/module/service.ts`.
 - Temp root: `.tmp/code-production/entity-docs/D2-S4` (must be absent at handoff).
 - Of which verification: 25 active min / 0 credits.
 
@@ -1507,7 +1510,7 @@ Required handoff evidence: Matching catalog/SDK artifact digests recorded; no un
 ##### Tasks
 
 - [ ] KG_RELEASE_001 — The built catalog accepts the new graph contract and retains domain behavior. (40 min)
-<!-- plan:task-meta:{"writes":["packages/plugin-sdk/__tests__/graphContract.test.ts","packages/host-stubs/types/","packages/host-stubs/package.json","packages/testkit/module.ts","packages/testkit/__tests__/module.test.ts","scripts/module-bundle.test.ts","scripts/build-catalog-index.test.ts","scripts/build-catalog-index.ts","docs/vision.md","docs/typing.md","README.md"],"predictedActiveMinutes":40,"predictedCredits":0,"how":"1. Build the catalog against D1's exact SDK and regenerate declarations only if their inputs changed. 2. Run the complete catalog agent:verify:pr once on these final inputs. Check incompatible activation and preserve the previously accepted version using the app scenarios in D1-S9. 3. Reconcile the reference with actual merged implementations and keep the event/subscription/action transition documented as the next logic story. Do not mark deferred ending events, Trigger dispatch or ownership transfer implemented. 4. Record artifact digests and all Goal/acceptance-case coverage in the plan results. Do not deploy or publish a channel before the separate release authorization.","red":"bun run agent:test:backend -- packages/plugin-sdk/__tests__/graphContract.test.ts packages/testkit/__tests__/module.test.ts"} -->
+<!-- plan:task-meta:{"writes":["packages/plugin-sdk/__tests__/graphContract.test.ts","packages/host-stubs/types/","packages/host-stubs/package.json","packages/testkit/module.ts","packages/testkit/__tests__/module.test.ts","scripts/module-bundle.test.ts","scripts/build-catalog-index.test.ts","scripts/build-catalog-index.ts","docs/vision.md","docs/typing.md","README.md","modules/contacts/entities.test.ts","modules/companies/module/__tests__/companiesRead.test.ts","modules/file/module/__tests__/fileModule.test.ts","modules/triggers/module/__tests__/triggersListPage.test.ts","modules/companies/module/service.ts"],"predictedActiveMinutes":40,"predictedCredits":0,"how":"1. Build the catalog against D1's exact SDK and regenerate declarations only if their inputs changed. 2. Run the complete catalog agent:verify:pr once on these final inputs. Check incompatible activation and preserve the previously accepted version using the app scenarios in D1-S9. 3. Reconcile the reference with actual merged implementations and keep the event/subscription/action transition documented as the next logic story. Do not mark deferred ending events, Trigger dispatch or ownership transfer implemented. 4. Record artifact digests and all Goal/acceptance-case coverage in the plan results. Do not deploy or publish a channel before the separate release authorization.","red":"bun run agent:test:backend -- packages/plugin-sdk/__tests__/graphContract.test.ts packages/testkit/__tests__/module.test.ts"} -->
 
 ##### Acceptance criteria
 
@@ -1921,4 +1924,30 @@ Required handoff evidence: Matching catalog/SDK artifact digests recorded; no un
 - amend implementation owner:$blueprint-start sha256:6e093fa65f272459b76c19b6770cb43c8a50ddb7bce2410adfcd6ab78168cc96
 
 - amend implementation owner:$blueprint-start sha256:894f3cd6d76575b899b51e56445f0e9f240cb7169b209075d5487ef94b9d50d4
+
+- record-result D2-S3 commit:7f966c61b341c543aaca4a66f819019c83ad3f22
+
+- deviation D2-S3: An additional scoped repair commit was needed after the existing bundle gate reproduced Zod initialization in V8 modules. The same SDK helper now has a pure entry point; the host still owns canonical metadata validation.
+
+- deviation D2-S3: Email reply now reuses confirmed-send persistence and attaches files to the outgoing message; a delivered send remains successful when local enrichment fails.
+
+- record-result D1-S8 commit:17ad36bb16e9f082731835153cc750073d20daee
+
+- deviation D1-S8: A second app communication commit repairs an observed catalog packaging regression after 59faa711c. It changes the SDK entry point, not the communication encoding or validation policy.
+
+- close D1-S8 closed commit:17ad36bb16e9f082731835153cc750073d20daee
+
+- close D2-S3 closed commit:08592e459841fe36ee8b202f4244a8ef438e669a
+
+- amend implementation owner:$blueprint-start sha256:172b51e15662d8d0dfa5501650ade3129021a663df48c46120e1243c2b224a1d
+
+- amend implementation owner:$blueprint-start sha256:ba4da64ebda1e248decff692a55a89ba79d6e5a34f92988cdb6880bcae34702d
+
+- amend implementation owner:$blueprint-start sha256:1b0d8d4a2537028d878255f8d780c215cabb083585bbc98d50423a163f576731
+
+- amend implementation owner:$blueprint-start sha256:a1bdd33b93b953f5ed153b2a966ba02358614bf7cdaf0513196bd3ed25fc49cf
+
+- amend implementation owner:$blueprint-start sha256:660e7214bb4f4c34a47ef69a8973c517bd7d154efed95cc121e0a146bd0ee06c
+
+- amend implementation owner:$blueprint-start sha256:cdc9043ca2b580cf6fa69c035d502ffd5fd2cad4b42014e92219a8034e9cd459
 <!-- plan:execution:end -->

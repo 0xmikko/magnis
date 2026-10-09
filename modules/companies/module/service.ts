@@ -169,7 +169,7 @@ export class CompaniesModule {
       return [linkedEntitySummary(endpoint, link, incoming ? `~${link.kind}` : link.kind)];
     });
     const members = linkedEntities.flatMap((linked) =>
-      linked.schemaId === "contacts.person" && linked.linkKind === "~works_at" && linked.name !== null
+      linked.schemaId === "contacts.person" && linked.linkKind === "works_at" && linked.direction === "in" && linked.name !== null
         ? [linked.name]
         : []);
     const headerRows: HeaderRow[] = [

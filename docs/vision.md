@@ -2,9 +2,9 @@
 
 This is the developer reference for the graph: domain values, identity, provenance, relationships, module loading, synchronization and the processes that turn observations into knowledge. Each declaration is followed by its meaning, runtime rules and relevant exceptions.
 
-**Target** identifies a decision made in the design discussion. **Current** describes inspected code. **Open** identifies a contract that still needs a decision. The examples expand canonical SDK definitions for reading; they are not a second implementation. Different inspected branches do not yet form one released system.
+**Target** identifies a decision made in the design discussion. **Current** describes inspected code. **Open** identifies a contract that still needs a decision. The examples expand canonical SDK definitions for reading; they are not a second implementation. The implementation checkpoint below identifies the matching work branches; they are not yet a released system.
 
-The [migration plan](plans/2026-10-06-entity-docs.md) describes adoption and proposed names. The [earlier typing draft](typing.md) is historical and superseded. This reference defines behavior; the plan orders implementation.
+The [migration plan](plans/2026-10-06-entity-docs.md) records adoption and verification. The [earlier typing draft](typing.md) is historical and superseded. This reference defines behavior; the plan orders implementation.
 
 Read by concern: [Entity](#entity), [extras](#extras), [links](#links), [users and ownership](#ownership), [domains and modules](#domains), [loading and deduplication](#ingestion), [identity and merge](#identity), [Source and sync](#sync), [tools and parsing](#boundaries), [search and indexing](#search), [extraction and claims](#extraction), [triggers](#triggers), [open contracts](#open-contracts).
 
@@ -47,7 +47,7 @@ export type Origin = "canonical" | "derived";
 
 **Target:** `PersistentEntityIdSchema` validates an assigned, non-nil ID. `PersistentEntityId` is its branded output; `EntityId` also admits the nil UUID for an unsaved value. Neither type admits JavaScript `null`. A plain `string | NilId` would lose the distinction because the literal already belongs to `string`.
 
-A non-nil UUID proves neither existence nor access. Graph must check both. Keep meaningful aliases such as Link endpoint IDs, User IDs and schema IDs; there is no decision to replace every identifier with a generic string. `SchemaId`, such as `email.address`, is a schema name, not a UUID. Current local auth users can have a nil ID; the proposed graph-user type must not silently invalidate those accounts.
+A non-nil UUID proves neither existence nor access. Graph must check both. Keep meaningful aliases such as Link endpoint IDs, User IDs and schema IDs; there is no decision to replace every identifier with a generic string. `SchemaId`, such as `email.address`, is a schema name, not a UUID. Local auth users can retain a nil auth ID. The unique `users.entity_id` binding assigns them a non-nil graph UserId without changing authentication.
 
 ### Source identity
 
@@ -236,7 +236,7 @@ This illustrative response parser is strict. It rejects unknown fields and missi
 | --- | --- |
 | `pinOrder` | Viewer-specific `entity_preferences.pin_order`, keyed by `(user_id, entity_id)` |
 | `archived` | Existing `entities.is_archived` column |
-| `private` | Proposed `entities.is_private` boolean; not yet implemented in the inspected privacy work |
+| `private` | `entities.is_private`, a required boolean initialized to false |
 | Sync pair | `entities.sync_enabled` and bigint `sync_revision`, serialized as a decimal string |
 | `indexed` | `graph_index.status`, projected as `pending` when absent |
 
@@ -244,7 +244,7 @@ No JSONB `extras` object is proposed. These fields have different owners and con
 
 Workspace export uses its versioned storage contract, not `EntityRead`. It preserves stored processing permission separately from the projected indexing status; a read-time `pending` default is not a stored index result.
 
-**Legacy pin exception:** current code permits `pinned: true, pinOrder: null`, and order without pinning. The target cannot represent either combination. Migration must explicitly assign an order to unordered pinned records and account for obsolete order-only state. It must not invent missing request values at runtime. Missing viewer preferences read as `pinOrder: null`.
+**Legacy pin migration:** preserve orders of pinned records; append unordered pinned records per viewer in creation-time/ID order. An integer overflow refuses migration and requires explicit resequencing. Order-only legacy state becomes unpinned. The old `pinned` and `legacy_pin_order` columns retain migration evidence; readers use only `pin_order`. Missing viewer preferences read as `pinOrder: null`.
 
 **Archive normalization:** legacy SQL null/false mean not archived. Normalize them at the storage boundary; the public parser still requires a boolean. An ordinary Source update does not unarchive a record.
 
@@ -253,7 +253,7 @@ Workspace export uses its versioned storage contract, not `EntityRead`. It prese
 `extras.private` requires a model authorized to process private data. This is an Entity-wide restriction, independent of viewer preferences and ACL. A model running in the owner's cluster can qualify even when Magnis cannot establish its physical location.
 
 ```typescript
-// Target addition to the existing SDK model directory: private.
+// Configured model trust in the SDK model directory.
 export interface EmbeddingModelInfo {
   readonly id: string;
   readonly displayName: string;
@@ -266,7 +266,7 @@ export interface EmbeddingModelInfo {
 }
 ```
 
-The existing `LlmModelInfo` gains the same required `private: boolean`. This flag belongs to a configured logical model and its execution endpoint, not to a model name or its weights. Known local execution qualifies automatically. For other endpoints, an authorized configuration owner explicitly declares the model private; an unclassified endpoint does not qualify. Magnis relies on that declaration rather than claiming to verify the remote operator's infrastructure. Changing the endpoint requires a fresh classification.
+`LlmModelInfo` exposes the same required `private: boolean`. This flag belongs to a configured logical model and its execution endpoint, not to a model name or its weights. Known local execution qualifies automatically. For other endpoints, an authorized configuration owner explicitly declares the model private; an unclassified endpoint does not qualify. Magnis relies on that declaration rather than claiming to verify the remote operator's infrastructure. Changing the endpoint requires a fresh classification.
 
 `dataBoundary` is existing model-directory metadata, stored as `ai_models.data_boundary`. It describes local/cloud execution for display; it does not decide permission to process private data. In particular, `cloud_allowed` does not disqualify an explicitly trusted cluster, and a provider name or local-looking URL does not establish local execution.
 
@@ -278,7 +278,7 @@ The existing `LlmModelInfo` gains the same required `private: boolean`. This fla
 
 The privacy eligibility condition is `!extras.private || model.private`. Ordinary ACL, model availability and processing permission still apply. Store model trust as a typed configuration boolean and expose a required boolean in the directory; missing response fields are invalid. Configuration changes must invalidate the existing model-policy projection before subsequent work uses it. No additional public indexing status is introduced.
 
-**Current versus target:** the [earlier privacy draft](https://github.com/0xmikko/magnis-app/blob/2ea08b25957bbb3d60bdeb144d19f2d24d3d4665/docs/plans/private-entity-flag.md), approved on 2026-08-25, used `dataBoundary` as the eligibility test. Its inspected branch contains documentation changes only. The owner decision above replaces that test with model trust. Its Entity `isPrivate` becomes `extras.private`, retaining the initial false value for newly created records. The inspected SDK has `dataBoundary` but does not yet expose model `private`. The existing `entities.indexed` processing-permission boolean remains independent of privacy and of the proposed indexing status.
+**Implementation:** the [earlier privacy draft](https://github.com/0xmikko/magnis-app/blob/2ea08b25957bbb3d60bdeb144d19f2d24d3d4665/docs/plans/private-entity-flag.md), approved on 2026-08-25, used `dataBoundary` as the eligibility test. Its inspected branch contains documentation changes only. The owner decision above replaces that test with model trust. Its Entity `isPrivate` becomes `extras.private`, retaining the initial false value for newly created records. The SDK now exposes both `dataBoundary` and configured model `private`; embedding selection and ranked search use model trust. The existing `entities.indexed` processing-permission boolean remains independent of privacy and of the projected indexing status.
 
 **Open:** enforcement in chat/completion and the knowledge extractor, derived-data privacy, Source-account policy and ordering concurrent privacy changes against requests already in flight. The model-trust rule applies conceptually to all private-data processing; the migration's implementation scope here remains embeddings/search and must not be presented as complete enforcement across all AI calls.
 
@@ -481,7 +481,7 @@ Domain relations belong to the module that defines their meaning. Their qualifie
 | `telegram.observed_in` | Telegram: connected account → chat | The account's observed chat access/membership, with its per-account sync state, unread counts and pins |
 | `telegram.observed_participant` | Telegram: participant account → chat | Participation observed through a message; it grants no observer access and carries no observer sync state |
 
-These replace the three unqualified built-ins in the target. The two Telegram facts cannot be merged without confusing participation with the connected account's view. Current writers still use unqualified names; conversion must preserve producer metadata, periods and existing state, and update registry ownership, permissions, queries and imports together. Do not rewrite unknown producers by string alone.
+These replace the three unqualified built-ins. The two Telegram facts cannot be merged without confusing participation with the connected account's view. Catalog writers, registry declarations, permissions and queries use the qualified kinds. SQL migration and versioned import convert recognized legacy producers while preserving metadata and periods; unknown producers are not rewritten by string alone.
 
 ### Registration and endpoint validation
 
@@ -576,7 +576,7 @@ The interval is `[validFrom, validUntil)`. A null boundary is unbounded, not cre
 ### Reading relationships
 
 ```typescript
-// Proposed addition to the existing SDK LinkedEntitySummary;
+// Direction in the SDK LinkedEntitySummary;
 // the remaining fields retain their existing types.
 export interface LinkedEntitySummary {
   linkKind: LinkType;
@@ -584,7 +584,7 @@ export interface LinkedEntitySummary {
 }
 ```
 
-Keep the stored kind in neighbor responses and carry direction separately. On Episode C, incoming `created` means "created by this Trigger"; on the Trigger, outgoing `created` lists its results. Do not invent inverse stored kinds. A self-link has one `out` summary; symmetric kinds use one label regardless of direction. Current Episode summaries rewrite some incoming kinds as `triggers`, `child_episodes` or `watched_by`, but leave incoming `created` unchanged and expose no direction. This projection must change with the creation-link migration.
+Keep the stored kind in neighbor responses and carry direction separately. On Episode C, incoming `created` means "created by this Trigger"; on the Trigger, outgoing `created` lists its results. Do not invent inverse stored kinds. A self-link has one `out` summary; symmetric kinds use one label regardless of direction. Episode summaries now retain the stored kind and expose direction. Older responses used inverse labels such as `triggers`, `child_episodes` or `watched_by`; those labels are not additional stored relations.
 
 `graph.entity.links.list` returns adjacent Links; `graph.links` returns a page of related Entities. Normal reads check internal `eligible`, interval and endpoint visibility. `{ at: null }` removes the time filter but keeps eligibility. Structural reconciliation reads may bypass eligibility while retaining owner scope. A displayed `~kind` is an incoming-direction label, not a stored kind.
 
@@ -609,7 +609,7 @@ export interface EntitySystemState {
 
 **Target:** `users.user` is the canonical graph representation of a Magnis user, with role `identity_channel`; `contacts.person --identity--> users.user` connects it to a person. Passwords, sessions and auth secrets remain in specialized storage. Contact matching and merge never change authentication or ACL.
 
-`EntitySystemState.owner` is hidden from public Entity and extras. Current `entities.owner` references the separate auth `users` table. The migration proposal preserves those auth IDs, including the nil-ID local account, and adds a unique `users.entity_id` binding to the assigned graph UserId. The internal owner column stores AuthUserId; an owner Link targets the mapped graph UserId. This storage/bootstrap proposal still requires approval.
+`EntitySystemState.owner` is hidden from public Entity and extras. `entities.owner` references the separate auth `users` table. Migration and bootstrap preserve those auth IDs, including the nil-ID local account, and establish a unique `users.entity_id` binding to the assigned graph UserId. The internal owner column stores AuthUserId; an owner Link targets the mapped graph UserId. Each graph user is owned by its corresponding auth account. Backfilled ownership starts at migration time: it does not invent an earlier ownership history.
 
 ### System-only ownership operations
 
@@ -651,13 +651,13 @@ Anna owns the document at T; Kolya's historical Link gives no current access. Or
 
 `OwnerLink` is a read shape, not write authority. An open string union cannot express the protection through `Exclude<LinkType, "owner">`; runtime enforcement is mandatory. No external `allowSystemLinks` switch is proposed.
 
-**Current exception to fix:** `GraphTransfer.restore` inserts through repositories directly. Repositories are private to the Graph module but internal code and fixtures can call them. Every writer must preserve the system boundary, not just the public controller.
+**Implementation:** `GraphTransfer.restore` resolves the target auth-to-graph-user binding and refuses an imported assignment to a different user or a closed owner interval. Entity insertion creates the system owner relation; imported owner references map to that relation and never enter generic Link insertion. Repository guards also reject ordinary owner mutations. Ownership transfer remains unavailable until historical visibility and export rules are defined.
 
 ### Ownership queries and ACL
 
 To count Kolya's contacts whose first name starts with M, resolve his user identity and authorize that owner scope first. A relation filter does not grant access. For Kolya's own query, declared `contacts.person.first_name`, `starts_with: "M"` and `count: "exact"` suffice; the current SQL prefix comparison is case-sensitive.
 
-Stored owner Links support relationship queries, but present queries scope the Link and both endpoints to one owner. Graph-user bootstrap, historical ownership visibility and cross-owner transfer of ordinary Links/evidence require explicit rules. Do not relax generic owner checks to make the query work. Full shared ACL remains open.
+Stored owner Links support relationship queries, but present queries scope the Link and both endpoints to one owner. Graph-user bootstrap is implemented. Historical ownership visibility and cross-owner transfer of ordinary Links/evidence still require explicit rules. Do not relax generic owner checks to make the query work. Full shared ACL remains open.
 
 Even transfer of an otherwise isolated Entity leaves a historical owner Link across auth scopes. Bounded transfer remains unavailable until its history visibility and workspace export mapping are defined; exports must neither disclose another user's node nor contain dangling endpoints.
 
@@ -1245,7 +1245,7 @@ One transaction writes survivor properties, repoints/collapses Links, rewrites s
 | Override value null | Store JSON null, unlike patch's remove-key meaning |
 | Shared fields: name, idx, dates, Source, key | Base merge retains survivor values |
 | Derived keys | Current merge does not union aliases |
-| Extras | No general merge policy yet for pins, privacy or sync |
+| Extras | Reject different privacy, syncEnabled or per-viewer pinOrder choices; retain the survivor's sync revision |
 
 The implementation has an array-union helper, but preview still requires overrides for differing ordinary arrays. Copying a missing derived property into canonical currently loses field-level origin: it does not prove the provider supplied that value. A later Source snapshot may replace canonical properties again. Persistent user overrides and field claims need an explicit design.
 
@@ -1263,7 +1263,7 @@ Replace retired in both endpoints, normalize symmetric kinds, then group by pair
 | Retired/survivor connection becomes a self-loop | Remove the induced loop |
 | Duplicate canonical metadata | Retain winner values, fill missing top-level keys; not an Entity override conflict |
 | Duplicate derived evidence | Union evidence, then reconcile claims |
-| System owner Links | Target requires special system handling, never ordinary collapse/repoint rules |
+| System owner Links | Excluded from ordinary collapse/repoint; the survivor keeps its owner and system retirement removes the retired Entity's owner relation |
 
 The surviving Link ID need not be the one originally attached to survivor. Current ordering prefers higher derived confidence, then earlier createdAt and ID. Preview counts incident retired Links, including future deletions; execution counts actual surviving repoints, so totals may differ.
 
@@ -1278,8 +1278,8 @@ A single `metadata.producer` cannot preserve independent producers' support. Mul
 | A client retained retiredId | No automatic redirect; use the returned survivorId |
 | IDs embedded in arbitrary JSON/text | No universal rewrite; structured endpoints, evidence and claim sourceId/statement references are the handled paths |
 | Original model mention names retired | Original mention/quote remain historical, unlike resolved statement references |
-| Same schemaId, different versions | No implicit property migration into survivor's version |
-| Result violates domain schema | Inspected merge lacks the ordinary patch path's explicit final validateEntity; target requires it |
+| Same schemaId, different versions | Reject; no implicit property migration into survivor's version |
+| Result violates domain schema | Validate final properties against the survivor's schema version before writing; failure rolls back |
 | Need to undo | Audit is not an implemented split/unmerge operation |
 | Candidate belongs to another user | Merge does not transfer ownership |
 
@@ -2150,7 +2150,7 @@ The indexer captures owner revision before reading and making two model calls. I
 
 Refusal stores refused; technical/model parsing errors store pending on the handled retry path. Missing context/model prevents a run; a missing module handler excludes that schema in the process. Success with zero claims is still indexed. No result means no automatic assertion of truth.
 
-**Current validation gap:** `admit` checks known schema/kind but commitIndexing writes through repositories without the ordinary paths' explicit domain `validateEntity` and pair `resolveLink` calls. The target requires complete schema-version, property, endpoint-role and protected-owner validation at commit. A typed IndexingProposal alone does not prove those guarantees.
+**Commit validation:** GraphService validates complete domain properties and schema versions, owned endpoints and canonical evidence, declared Link pairs and validity periods under the mutation lock. Extraction may introduce only derived Entities, cannot replace an existing identity and cannot write system user/owner contracts. A typed IndexingProposal alone does not bypass these checks.
 
 ### Rereading and withdrawing support
 
@@ -2371,17 +2371,21 @@ This chapter defines event selection and its connection to a Trigger. The next l
 | Area | Decision still required |
 | --- | --- |
 | Identity | Alias provenance, archived-candidate reuse and candidate versus confirmed same_as assertions |
-| Ownership | Auth-to-graph-user mapping, bootstrap, user-node ownership, cross-owner Link/evidence policy and historical visibility |
-| Merge | Field provenance, schema version compatibility, final domain validation, extras, multi-producer metadata, protected owner handling, old-ID recovery and split |
-| Extraction | Shared domain admission, corrections, unresolved explanation API and withdrawal restoration |
+| Ownership | Enabled ownership transfer, cross-owner Link/evidence policy, historical visibility and shared ACL |
+| Merge | Field provenance, explicit cross-version migration, multi-producer metadata, old-ID recovery and split; incompatible operational choices currently refuse merge |
+| Extraction | Corrections, unresolved explanation API and withdrawal restoration |
 | Indexing | Processing-permission control, embedding state, dependency revisions, queue claiming and crash recovery |
 | Privacy | Knowledge/chat/completion boundaries, inheritance and concurrent external calls |
 | Schema evolution | Immutable versions, stored-record migration and unavailable required versions |
 | Runtime domains | Who may register a new domain without installing a module and who owns its behavior |
-| Communication | Concrete endpoint/conversation representation and repeated-delivery identity |
+| Communication | Distinct repeated physical deliveries of one provider message to the same endpoint; the current contract deduplicates endpoint/message/direction |
 | Trigger logic — next story | Connect subscriptions to existing execution; settle historical imports, legacy sender/chat selection and endings without a prior Link |
 
-These are explicit limits, not defaults inferred from incidental code. The migration plan distinguishes implementation-ready decisions from proposals awaiting the owner's approval.
+These are explicit limits, not defaults inferred from incidental code. The migration plan records completed contract changes separately from deferred transfer and Trigger execution work.
+
+### Implementation checkpoint
+
+The matching development heads are app [`17ad36b`](https://github.com/0xmikko/magnis-app/commit/17ad36bb16e9f082731835153cc750073d20daee) and catalog [`08592e4`](https://github.com/0xmikko/magnis/commit/08592e459841fe36ee8b202f4244a8ef438e669a). They use SDK 0.2.0 and module API 0.3.0; the Source protocol is unchanged. Persistent/derived values, flat extras, configured model trust for embeddings/search, protected graph users/ownership, shared domain admission and observed communication facts are implemented on those branches. Final package/upgrade verification is recorded in the migration plan. Event dispatch to subscriptions, ending events and ownership transfer remain deferred. This checkpoint does not imply merge or channel publication.
 
 ### Sources of the contracts
 
@@ -2399,7 +2403,7 @@ Initial inspection covered working branches on October 3–5, 2026; this English
 | Search, RPC and tools | App entity-one-type SDK/rpc, services/modules/search and `core/graph-query.ts` |
 | Merge and identity-hub replay | SDK `core/merge.ts`; Graph merge/entity.repository/graph.repository/graph.service; existing merge PG scenarios including 054 and 055 |
 | Extraction and temporal claims | SDK `core/indexing.ts`; search graph-indexer/indexing-model; Graph claim.repository/derive/graph.repository |
-| Import and protected writing | Graph graph.transfer/link.repository/graph.service; owner protection is the target discussion contract |
+| Import and protected writing | Graph graph.transfer/link.repository/graph.service; implemented protection is identified by the checkpoint above |
 | Privacy draft | App feat/private-entity-flag, commit 2ea08b259; documentation-only in that branch |
 
 Integrating branches must retain canonicalKey, complete sync pairs, prepared syncEnabled and the explicit sync operations. Older plugin RawEntity and wire codecs are transition artifacts, not an alternative target model.
