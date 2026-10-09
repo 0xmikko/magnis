@@ -2387,7 +2387,20 @@ These are explicit limits, not defaults inferred from incidental code. The migra
 
 The matching implementation heads are app [`230d381`](https://github.com/0xmikko/magnis-app/commit/230d38182222d1666a0814da40ad3d97e9cc7d4f) and catalog [`86532f8`](https://github.com/0xmikko/magnis/commit/86532f89bf4f78eb7d7550a4039c34aaa83051e2). They use SDK 0.2.0 and module API 0.3.0; the Source protocol is unchanged. Persistent/derived values, flat extras, configured model trust for embeddings/search, protected graph users/ownership, shared domain admission and observed communication facts are implemented on those branches. Initial Entity properties are validated before storage, including complete Trigger definitions. Final integration commits and artifact digests are recorded in the migration plan. Event dispatch to subscriptions, ending events and ownership transfer remain deferred. This checkpoint does not imply merge or channel publication.
 
-Release compatibility has a separate limit: the new host rejects module API 0.2.0, including an incompatible artifact already installed in a workspace. Bootstrap resolves enabled artifacts before restoring their activation descriptors; it does not convert or replace their code. The integration fixtures verify matching API 0.3.0 packages and refusal of incompatible replacement candidates. SQL and workspace-data migration do not establish an in-place package upgrade. A coordinated installed-package transition must be verified before releasing this host to existing installations.
+### Updating installed module API 0.2 packages
+
+The installed-package transition is a release blocker. [Integration tests](https://github.com/0xmikko/magnis-app/blob/0afd4a412d9a1a1ebea7bbd1ea9ed1639e4cdc2f/backend/test/tst_bts_ext_update_001.test.ts) seed persisted API 0.2.0 artifacts and exercise the real package store, database, ExtensionService and V8 runtime against API 0.3.0 candidates.
+
+| Existing installation | Verified behavior |
+| --- | --- |
+| One enabled API 0.2 package | Bootstrap fails with `unsupported magnis_api_version 0.2.0` before restoring activation descriptors. The ordinary HTTP/RPC update path is unavailable. |
+| One disabled API 0.2 package | Bootstrap succeeds. Channel refresh and update replace the artifact while keeping it disabled. A fresh service/store/runtime bootstrap succeeds; enabling then runs the new bundle. |
+| One enabled API 0.2 package, update invoked directly in the test | Replacement and subsequent fresh bootstrap succeed. This verifies the replacement primitive, but does not provide a reachable user update path after failed startup. |
+| Two enabled API 0.2 packages, first update invoked directly | The first package's API 0.3 pointer is committed. Publishing search declarations then resolves the second old package and throws. The mixed installation still cannot bootstrap. |
+
+Successful single-package replacement preserves Entity and Link rows, settings, pin order, privacy/archive flags, sync choice and revision, and the installation's enabled intent, original install time and position. The fixture also verifies replacement when the package version stays the same and only its content hash/API change. API compatibility and package version are separate values.
+
+These are deterministic stored-artifact fixtures, not an exported production workspace or a provider-specific data migration. Their passing assertions reproduce both release blockers. SQL/workspace migration and matching-package browser tests do not establish a working in-place package upgrade. Existing installations need a coordinated package transition before ordinary bootstrap, with defined failure recovery for the whole affected set; that mechanism is not implemented by this graph migration.
 
 ### Sources of the contracts
 
