@@ -106,6 +106,7 @@ export type FailedToolAnswer = z.output<typeof FailedToolAnswerSchema>;
 export declare const CreateEntityParamsSchema: z.ZodObject<{
     schemaId: z.ZodString;
     name: z.ZodString;
+    properties: z.ZodExactOptional<z.ZodType<import("./json.js").JsonObject, unknown, z.core.$ZodTypeInternals<import("./json.js").JsonObject, unknown>>>;
     clientId: z.ZodExactOptional<z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">>;
     idx: z.ZodExactOptional<z.ZodString>;
     date: z.ZodExactOptional<z.ZodString>;

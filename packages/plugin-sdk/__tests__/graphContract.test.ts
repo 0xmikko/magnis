@@ -9,10 +9,18 @@
 import { expect, expectTypeOf, test } from "vitest";
 import { entity, mockGraph, mountModule, syncStateDouble } from "@magnis/testkit/module";
 import type { SetSyncEnabledParams, UpdateEntitySyncEnabledResult } from "@magnis/sdk";
-import { CommunicationMetadataSchema } from "@magnis/sdk";
+import { CommunicationMetadataSchema, CreateEntityParamsSchema } from "@magnis/sdk";
 import { communicationMessageExternalId } from "@magnis/sdk/core/communication";
 import { searchEntitiesPage, writeTool } from "../index.ts";
 import type { GraphService, PluginDeps } from "../contract/module.ts";
+
+test("tst_pkg_sdk_graph_create_001 generated creation contract preserves initial domain properties", () => {
+  const input = { schemaId: "triggers.trigger", name: "Reply", properties: {
+    gate_prompt: "A reply arrived", action_prompt: "Notify", schedule: { cron: "0 9 * * *", timezone: "UTC" },
+  } } satisfies Parameters<GraphService["createEntity"]>[0];
+  expect(CreateEntityParamsSchema.parse(input)).toEqual(input);
+  expect(CreateEntityParamsSchema.safeParse({ ...input, properties: null }).success).toBe(false);
+});
 
 test("tst_pkg_sdk_communication_001 generated SDK keeps account identities disjoint and unknown occurrence explicit", () => {
   const id = communicationMessageExternalId("email.message", "account:1", 'provider:"id"');

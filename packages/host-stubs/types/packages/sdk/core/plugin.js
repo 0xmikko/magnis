@@ -94,6 +94,8 @@ const pageBoundSchema = z.int().nonnegative();
 export const CreateEntityParamsSchema = z.strictObject({
     schemaId: z.string(),
     name: z.string(),
+    /** Initial domain data, validated before the Entity is stored. */
+    properties: JsonObjectSchema.exactOptional(),
     clientId: PersistentEntityIdSchema.exactOptional(),
     idx: z.string().exactOptional(),
     date: z.string().exactOptional(),

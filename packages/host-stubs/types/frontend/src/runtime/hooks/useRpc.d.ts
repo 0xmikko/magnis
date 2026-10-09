@@ -226,8 +226,8 @@ export declare function useRpcQuery<Method extends MagnisRpcMethod>(queryKey: re
     readonly "source.accounts.provision": import("@magnis/sdk").RpcContract<"source.accounts.provision", import("zod").ZodObject<{
         sourceId: import("zod").ZodString;
         intent: import("zod").ZodDefault<import("zod").ZodEnum<{
-            repair: "repair";
             add: "add";
+            repair: "repair";
         }>>;
         connectionId: import("zod").ZodOptional<import("zod").ZodString>;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
@@ -263,8 +263,8 @@ export declare function useRpcQuery<Method extends MagnisRpcMethod>(queryKey: re
     readonly "source.auth.session.open": import("@magnis/sdk").RpcContract<"source.auth.session.open", import("zod").ZodObject<{
         sourceId: import("zod").ZodString;
         intent: import("zod").ZodEnum<{
-            repair: "repair";
             add: "add";
+            repair: "repair";
         }>;
         presentation: import("zod").ZodEnum<{
             web: "web";
@@ -281,9 +281,9 @@ export declare function useRpcQuery<Method extends MagnisRpcMethod>(queryKey: re
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
         sessionId: import("zod").ZodString;
         authType: import("zod").ZodEnum<{
-            apiKey: "apiKey";
             oauth2: "oauth2";
             phoneCode: "phoneCode";
+            apiKey: "apiKey";
             sharedProvider: "sharedProvider";
         }>;
         redirectUrl: import("zod").ZodOptional<import("zod").ZodString>;
@@ -327,9 +327,9 @@ export declare function useRpcQuery<Method extends MagnisRpcMethod>(queryKey: re
             surfaces: import("zod").ZodArray<import("zod").ZodString>;
             authType: import("zod").ZodEnum<{
                 none: "none";
-                apiKey: "apiKey";
                 oauth2: "oauth2";
                 phoneCode: "phoneCode";
+                apiKey: "apiKey";
                 sharedProvider: "sharedProvider";
             }>;
             packageHash: import("zod").ZodString;
@@ -354,9 +354,9 @@ export declare function useRpcQuery<Method extends MagnisRpcMethod>(queryKey: re
             }, import("zod/v4/core").$strict>], "state">;
             accounts: import("zod").ZodArray<import("zod").ZodDiscriminatedUnion<[import("zod").ZodObject<{
                 authKind: import("zod").ZodEnum<{
-                    apiKey: "apiKey";
                     oauth2: "oauth2";
                     phoneCode: "phoneCode";
+                    apiKey: "apiKey";
                     sharedProvider: "sharedProvider";
                 }>;
                 lifecycle: import("zod").ZodLiteral<"authRequired">;
@@ -467,9 +467,9 @@ export declare function useRpcQuery<Method extends MagnisRpcMethod>(queryKey: re
                 providerAccountId: import("zod").ZodNullable<import("zod").ZodString>;
                 authKind: import("zod").ZodEnum<{
                     none: "none";
-                    apiKey: "apiKey";
                     oauth2: "oauth2";
                     phoneCode: "phoneCode";
+                    apiKey: "apiKey";
                     sharedProvider: "sharedProvider";
                 }>;
                 generation: import("zod").ZodNumber;
@@ -972,8 +972,8 @@ export declare function useRpcQuery<Method extends MagnisRpcMethod>(queryKey: re
         activeModelId: import("zod").ZodNullable<import("zod").ZodString>;
         lifecycleState: import("zod").ZodEnum<{
             failed: "failed";
-            ready: "ready";
             unconfigured: "unconfigured";
+            ready: "ready";
             catching_up: "catching_up";
             reconfiguring: "reconfiguring";
         }>;
@@ -1076,8 +1076,8 @@ export declare function useRpcQuery<Method extends MagnisRpcMethod>(queryKey: re
     readonly "runtime.composer.setPresence": import("@magnis/sdk").RpcContract<"runtime.composer.setPresence", import("zod").ZodObject<{
         presence: import("zod").ZodNullable<import("zod").ZodObject<{
             mode: import("zod").ZodEnum<{
-                telegram: "telegram";
                 email: "email";
+                telegram: "telegram";
             }>;
             threadKey: import("zod").ZodString;
         }, import("zod/v4/core").$strict>>;
@@ -1368,10 +1368,10 @@ export declare function useRpcQuery<Method extends MagnisRpcMethod>(queryKey: re
     readonly "groups.get": import("@magnis/sdk").RpcContract<"groups.get", import("zod").ZodObject<{
         id: import("zod").ZodString;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
-        id: import("zod").ZodString;
-        description: import("zod").ZodString;
-        createdAt: import("zod").ZodString;
         name: import("zod").ZodString;
+        description: import("zod").ZodString;
+        id: import("zod").ZodString;
+        createdAt: import("zod").ZodString;
         memory: import("zod").ZodString;
         memberCount: import("zod").ZodNumber;
         identityProfiles: import("zod").ZodArray<import("zod").ZodObject<{
@@ -1493,10 +1493,10 @@ export declare function useRpcQuery<Method extends MagnisRpcMethod>(queryKey: re
             id: import("zod").ZodString;
         }, import("zod/v4/core").$strict>;
         readonly output: import("zod").ZodObject<{
-            id: import("zod").ZodString;
-            description: import("zod").ZodString;
-            createdAt: import("zod").ZodString;
             name: import("zod").ZodString;
+            description: import("zod").ZodString;
+            id: import("zod").ZodString;
+            createdAt: import("zod").ZodString;
             memory: import("zod").ZodString;
             memberCount: import("zod").ZodNumber;
             identityProfiles: import("zod").ZodArray<import("zod").ZodObject<{
@@ -1885,9 +1885,9 @@ export declare function useRpcQuery<Method extends MagnisRpcMethod>(queryKey: re
         linksHasMore: import("zod").ZodBoolean;
     }, import("zod/v4/core").$strict>, "required">;
     readonly "graph.link.add": import("@magnis/sdk").RpcContract<"graph.link.add", import("zod").ZodObject<{
+        confidence: import("zod").ZodNumber;
         validFrom: import("zod").ZodNullable<import("zod").ZodISODateTime>;
         validUntil: import("zod").ZodNullable<import("zod").ZodISODateTime>;
-        confidence: import("zod").ZodNumber;
         evidence: import("zod").ZodTuple<[import("zod/v4/core").$ZodBranded<import("zod").ZodGUID, "PersistentEntityId", "out">], import("zod/v4/core").$ZodBranded<import("zod").ZodGUID, "PersistentEntityId", "out">>;
         from: import("zod/v4/core").$ZodBranded<import("zod").ZodGUID, "PersistentEntityId", "out">;
         to: import("zod/v4/core").$ZodBranded<import("zod").ZodGUID, "PersistentEntityId", "out">;
@@ -2069,9 +2069,9 @@ export declare function useRpcQuery<Method extends MagnisRpcMethod>(queryKey: re
     readonly "graph.link.link": {
         readonly method: "graph.link.link";
         readonly input: import("zod").ZodObject<{
+            confidence: import("zod").ZodNumber;
             validFrom: import("zod").ZodNullable<import("zod").ZodISODateTime>;
             validUntil: import("zod").ZodNullable<import("zod").ZodISODateTime>;
-            confidence: import("zod").ZodNumber;
             evidence: import("zod").ZodTuple<[import("zod/v4/core").$ZodBranded<import("zod").ZodGUID, "PersistentEntityId", "out">], import("zod/v4/core").$ZodBranded<import("zod").ZodGUID, "PersistentEntityId", "out">>;
             from: import("zod/v4/core").$ZodBranded<import("zod").ZodGUID, "PersistentEntityId", "out">;
             to: import("zod/v4/core").$ZodBranded<import("zod").ZodGUID, "PersistentEntityId", "out">;
@@ -2417,9 +2417,9 @@ export declare function useRpcQuery<Method extends MagnisRpcMethod>(queryKey: re
         createdAt: import("zod").ZodString;
         updatedAt: import("zod").ZodString;
         state: import("zod").ZodEnum<{
+            idle: "idle";
             active: "active";
             needs_input: "needs_input";
-            idle: "idle";
         }>;
         binding: import("zod").ZodObject<{
             revision: import("zod").ZodNumber;
@@ -2484,8 +2484,8 @@ export declare function useRpcQuery<Method extends MagnisRpcMethod>(queryKey: re
                 content: import("zod").ZodString;
                 status: import("zod").ZodEnum<{
                     pending: "pending";
-                    completed: "completed";
                     in_progress: "in_progress";
+                    completed: "completed";
                     cancelled: "cancelled";
                 }>;
                 externalId: import("zod").ZodDefault<import("zod").ZodNullable<import("zod").ZodString>>;
@@ -2494,10 +2494,10 @@ export declare function useRpcQuery<Method extends MagnisRpcMethod>(queryKey: re
                 id: import("zod").ZodString;
                 executionId: import("zod").ZodString;
                 kind: import("zod").ZodEnum<{
+                    subagent: "subagent";
                     tool_approval: "tool_approval";
                     ask_user: "ask_user";
                     native_approval: "native_approval";
-                    subagent: "subagent";
                 }>;
                 request: import("zod").ZodType<import("@magnis/sdk").JsonValue, unknown, import("zod/v4/core").$ZodTypeInternals<import("@magnis/sdk").JsonValue, unknown>>;
                 createdAt: import("zod").ZodString;
@@ -2535,9 +2535,9 @@ export declare function useRpcQuery<Method extends MagnisRpcMethod>(queryKey: re
             rootTitle: import("zod").ZodString;
             openDelegations: import("zod").ZodInt;
             status: import("zod").ZodUnion<[import("zod").ZodEnum<{
+                idle: "idle";
                 active: "active";
                 needs_input: "needs_input";
-                idle: "idle";
                 completed: "completed";
             }>, import("zod").ZodString]>;
             isArchived: import("zod").ZodBoolean;
@@ -2638,9 +2638,9 @@ export declare function useRpcQuery<Method extends MagnisRpcMethod>(queryKey: re
     readonly "episodes.set_status": import("@magnis/sdk").RpcContract<"episodes.set_status", import("zod").ZodObject<{
         id: import("zod").ZodString;
         status: import("zod").ZodEnum<{
+            idle: "idle";
             active: "active";
             needs_input: "needs_input";
-            idle: "idle";
             completed: "completed";
         }>;
     }, import("zod/v4/core").$strip>, import("zod").ZodObject<{
@@ -2674,9 +2674,9 @@ export declare function useRpcQuery<Method extends MagnisRpcMethod>(queryKey: re
             rootEpisodeId: import("zod").ZodString;
             title: import("zod").ZodString;
             status: import("zod").ZodEnum<{
+                idle: "idle";
                 active: "active";
                 needs_input: "needs_input";
-                idle: "idle";
                 completed: "completed";
             }>;
             depth: import("zod").ZodInt;
@@ -2716,8 +2716,8 @@ export declare function useRpcQuery<Method extends MagnisRpcMethod>(queryKey: re
             content: import("zod").ZodString;
             status: import("zod").ZodEnum<{
                 pending: "pending";
-                completed: "completed";
                 in_progress: "in_progress";
+                completed: "completed";
                 cancelled: "cancelled";
             }>;
             externalId: import("zod").ZodDefault<import("zod").ZodNullable<import("zod").ZodString>>;
@@ -2729,8 +2729,8 @@ export declare function useRpcQuery<Method extends MagnisRpcMethod>(queryKey: re
             content: import("zod").ZodString;
             status: import("zod").ZodEnum<{
                 pending: "pending";
-                completed: "completed";
                 in_progress: "in_progress";
+                completed: "completed";
                 cancelled: "cancelled";
             }>;
             externalId: import("zod").ZodDefault<import("zod").ZodNullable<import("zod").ZodString>>;
@@ -2740,8 +2740,8 @@ export declare function useRpcQuery<Method extends MagnisRpcMethod>(queryKey: re
             content: import("zod").ZodString;
             status: import("zod").ZodEnum<{
                 pending: "pending";
-                completed: "completed";
                 in_progress: "in_progress";
+                completed: "completed";
                 cancelled: "cancelled";
             }>;
             externalId: import("zod").ZodDefault<import("zod").ZodNullable<import("zod").ZodString>>;
@@ -2857,9 +2857,9 @@ export declare function useRpcQuery<Method extends MagnisRpcMethod>(queryKey: re
             createdAt: import("zod").ZodString;
             updatedAt: import("zod").ZodString;
             state: import("zod").ZodEnum<{
+                idle: "idle";
                 active: "active";
                 needs_input: "needs_input";
-                idle: "idle";
             }>;
             binding: import("zod").ZodObject<{
                 revision: import("zod").ZodNumber;
@@ -2924,8 +2924,8 @@ export declare function useRpcQuery<Method extends MagnisRpcMethod>(queryKey: re
                     content: import("zod").ZodString;
                     status: import("zod").ZodEnum<{
                         pending: "pending";
-                        completed: "completed";
                         in_progress: "in_progress";
+                        completed: "completed";
                         cancelled: "cancelled";
                     }>;
                     externalId: import("zod").ZodDefault<import("zod").ZodNullable<import("zod").ZodString>>;
@@ -2934,10 +2934,10 @@ export declare function useRpcQuery<Method extends MagnisRpcMethod>(queryKey: re
                     id: import("zod").ZodString;
                     executionId: import("zod").ZodString;
                     kind: import("zod").ZodEnum<{
+                        subagent: "subagent";
                         tool_approval: "tool_approval";
                         ask_user: "ask_user";
                         native_approval: "native_approval";
-                        subagent: "subagent";
                     }>;
                     request: import("zod").ZodType<import("@magnis/sdk").JsonValue, unknown, import("zod/v4/core").$ZodTypeInternals<import("@magnis/sdk").JsonValue, unknown>>;
                     createdAt: import("zod").ZodString;
@@ -3020,9 +3020,9 @@ export declare function useRpcQuery<Method extends MagnisRpcMethod>(queryKey: re
             rootTitle: import("zod").ZodString;
             openDelegations: import("zod").ZodInt;
             status: import("zod").ZodUnion<[import("zod").ZodEnum<{
+                idle: "idle";
                 active: "active";
                 needs_input: "needs_input";
-                idle: "idle";
                 completed: "completed";
             }>, import("zod").ZodString]>;
             isArchived: import("zod").ZodBoolean;
@@ -3048,9 +3048,9 @@ export declare function useRpcQuery<Method extends MagnisRpcMethod>(queryKey: re
         id: import("zod").ZodString;
         title: import("zod").ZodOptional<import("zod").ZodString>;
         status: import("zod").ZodOptional<import("zod").ZodEnum<{
+            idle: "idle";
             active: "active";
             needs_input: "needs_input";
-            idle: "idle";
             completed: "completed";
         }>>;
         archived: import("zod").ZodOptional<import("zod").ZodBoolean>;
@@ -3062,8 +3062,8 @@ export declare function useRpcQuery<Method extends MagnisRpcMethod>(queryKey: re
             content: import("zod").ZodString;
             status: import("zod").ZodEnum<{
                 pending: "pending";
-                completed: "completed";
                 in_progress: "in_progress";
+                completed: "completed";
                 cancelled: "cancelled";
             }>;
             externalId: import("zod").ZodDefault<import("zod").ZodNullable<import("zod").ZodString>>;
@@ -3077,8 +3077,8 @@ export declare function useRpcQuery<Method extends MagnisRpcMethod>(queryKey: re
             content: import("zod").ZodString;
             status: import("zod").ZodEnum<{
                 pending: "pending";
-                completed: "completed";
                 in_progress: "in_progress";
+                completed: "completed";
                 cancelled: "cancelled";
             }>;
             externalId: import("zod").ZodDefault<import("zod").ZodNullable<import("zod").ZodString>>;
@@ -3092,8 +3092,8 @@ export declare function useRpcQuery<Method extends MagnisRpcMethod>(queryKey: re
             content: import("zod").ZodString;
             status: import("zod").ZodEnum<{
                 pending: "pending";
-                completed: "completed";
                 in_progress: "in_progress";
+                completed: "completed";
                 cancelled: "cancelled";
             }>;
             externalId: import("zod").ZodDefault<import("zod").ZodNullable<import("zod").ZodString>>;
@@ -3105,8 +3105,8 @@ export declare function useRpcQuery<Method extends MagnisRpcMethod>(queryKey: re
         content: import("zod").ZodOptional<import("zod").ZodString>;
         status: import("zod").ZodOptional<import("zod").ZodEnum<{
             pending: "pending";
-            completed: "completed";
             in_progress: "in_progress";
+            completed: "completed";
             cancelled: "cancelled";
         }>>;
     }, import("zod/v4/core").$strict>, import("zod").ZodObject<{
@@ -3114,8 +3114,8 @@ export declare function useRpcQuery<Method extends MagnisRpcMethod>(queryKey: re
             content: import("zod").ZodString;
             status: import("zod").ZodEnum<{
                 pending: "pending";
-                completed: "completed";
                 in_progress: "in_progress";
+                completed: "completed";
                 cancelled: "cancelled";
             }>;
             externalId: import("zod").ZodDefault<import("zod").ZodNullable<import("zod").ZodString>>;
