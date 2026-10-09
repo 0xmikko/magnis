@@ -16,7 +16,7 @@ export declare const graphRelationsContract: import("../contract.js").RpcContrac
 export declare const graphContracts: {
     readonly "graph.approve": import("../contract.js").RpcContract<"graph.approve", z.ZodObject<{
         id: z.ZodGUID;
-        episodeId: z.ZodGUID;
+        episodeId: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
     }, z.core.$strip>, z.ZodUnion<readonly [z.ZodDiscriminatedUnion<[z.ZodObject<{
         origin: z.ZodLiteral<"canonical">;
         source: z.ZodObject<{
@@ -25,42 +25,28 @@ export declare const graphContracts: {
             externalId: z.ZodString;
         }, z.core.$strict>;
         canonicalKey: z.ZodNullable<z.ZodString>;
-        id: z.ZodString;
-        owner: z.ZodString;
+        id: z.ZodUnion<readonly [z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">, z.ZodLiteral<"00000000-0000-0000-0000-000000000000">]>;
         schemaId: z.ZodString;
         schemaVersion: z.ZodInt;
         createdAt: z.ZodISODateTime;
         name: z.ZodNullable<z.ZodString>;
-        indexed: z.ZodBoolean;
-        syncEnabled: z.ZodExactOptional<z.ZodBoolean>;
-        syncRevision: z.ZodExactOptional<z.ZodString>;
         date: z.ZodISODateTime;
         idx: z.ZodNullable<z.ZodString>;
-        isPinned: z.ZodNullable<z.ZodBoolean>;
-        pinOrder: z.ZodNullable<z.ZodNumber>;
-        isArchived: z.ZodNullable<z.ZodBoolean>;
         properties: z.ZodType<import("../../core/json.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("../../core/json.js").JsonValue, unknown>>;
     }, z.core.$strict>, z.ZodObject<{
         keys: z.ZodArray<z.ZodString>;
-        origin: z.ZodLiteral<"agent">;
+        origin: z.ZodLiteral<"derived">;
         confidence: z.ZodNumber;
-        evidence: z.ZodTuple<[z.ZodString], z.ZodString>;
+        evidence: z.ZodTuple<[z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">], z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">>;
         validFrom: z.ZodNullable<z.ZodISODateTime>;
         validUntil: z.ZodNullable<z.ZodISODateTime>;
-        id: z.ZodString;
-        owner: z.ZodString;
+        id: z.ZodUnion<readonly [z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">, z.ZodLiteral<"00000000-0000-0000-0000-000000000000">]>;
         schemaId: z.ZodString;
         schemaVersion: z.ZodInt;
         createdAt: z.ZodISODateTime;
         name: z.ZodNullable<z.ZodString>;
-        indexed: z.ZodBoolean;
-        syncEnabled: z.ZodExactOptional<z.ZodBoolean>;
-        syncRevision: z.ZodExactOptional<z.ZodString>;
         date: z.ZodISODateTime;
         idx: z.ZodNullable<z.ZodString>;
-        isPinned: z.ZodNullable<z.ZodBoolean>;
-        pinOrder: z.ZodNullable<z.ZodNumber>;
-        isArchived: z.ZodNullable<z.ZodBoolean>;
         properties: z.ZodType<import("../../core/json.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("../../core/json.js").JsonValue, unknown>>;
     }, z.core.$strict>], "origin">, z.ZodDiscriminatedUnion<[z.ZodObject<{
         origin: z.ZodLiteral<"canonical">;
@@ -69,20 +55,20 @@ export declare const graphContracts: {
         validUntil: z.ZodNullable<z.ZodISODateTime>;
         id: z.ZodString;
         owner: z.ZodString;
-        from: z.ZodString;
-        to: z.ZodString;
+        from: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
+        to: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
         kind: z.ZodString;
         createdAt: z.ZodISODateTime;
     }, z.core.$strict>, z.ZodObject<{
-        origin: z.ZodLiteral<"agent">;
+        origin: z.ZodLiteral<"derived">;
         confidence: z.ZodNumber;
-        evidence: z.ZodTuple<[z.ZodString], z.ZodString>;
+        evidence: z.ZodTuple<[z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">], z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">>;
         validFrom: z.ZodNullable<z.ZodISODateTime>;
         validUntil: z.ZodNullable<z.ZodISODateTime>;
         id: z.ZodString;
         owner: z.ZodString;
-        from: z.ZodString;
-        to: z.ZodString;
+        from: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
+        to: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
         kind: z.ZodString;
         createdAt: z.ZodISODateTime;
     }, z.core.$strict>], "origin">]>, "required">;
@@ -95,38 +81,63 @@ export declare const graphContracts: {
         }, z.core.$strict>>>;
     }, z.core.$strict>, "required">;
     readonly "graph.entity.archive": import("../contract.js").RpcContract<"graph.entity.archive", z.ZodObject<{
-        entityId: z.ZodGUID;
+        entityId: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
     }, z.core.$strip>, z.ZodObject<{
         ok: z.ZodLiteral<true>;
     }, z.core.$strict>, "required">;
     readonly "graph.entity.get": import("../contract.js").RpcContract<"graph.entity.get", z.ZodObject<{
-        id: z.ZodGUID;
+        extras: z.ZodExactOptional<z.ZodLiteral<true>>;
+        id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
     }, z.core.$strip>, z.ZodObject<{
         id: z.ZodString;
         schemaId: z.ZodString;
         name: z.ZodNullable<z.ZodString>;
         createdAt: z.ZodString;
-        isPinned: z.ZodNullable<z.ZodBoolean>;
-        pinOrder: z.ZodNullable<z.ZodNumber>;
-        isArchived: z.ZodNullable<z.ZodBoolean>;
+        extras: z.ZodExactOptional<z.ZodUnion<readonly [z.ZodObject<{
+            syncEnabled: z.ZodBoolean;
+            syncRevision: z.ZodString;
+            pinOrder: z.ZodNullable<z.ZodInt>;
+            archived: z.ZodBoolean;
+            private: z.ZodBoolean;
+            indexed: z.ZodEnum<{
+                indexed: "indexed";
+                pending: "pending";
+                refused: "refused";
+            }>;
+        }, z.core.$strict>, z.ZodObject<{
+            syncEnabled: z.ZodNull;
+            syncRevision: z.ZodNull;
+            pinOrder: z.ZodNullable<z.ZodInt>;
+            archived: z.ZodBoolean;
+            private: z.ZodBoolean;
+            indexed: z.ZodEnum<{
+                indexed: "indexed";
+                pending: "pending";
+                refused: "refused";
+            }>;
+        }, z.core.$strict>]>>;
         properties: z.ZodType<import("../../core/json.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("../../core/json.js").JsonValue, unknown>>;
         linkedEntities: z.ZodArray<z.ZodObject<{
             id: z.ZodString;
             name: z.ZodNullable<z.ZodString>;
             schemaId: z.ZodString;
             linkKind: z.ZodString;
+            direction: z.ZodEnum<{
+                in: "in";
+                out: "out";
+            }>;
             createdAt: z.ZodString;
             data: z.ZodOptional<z.ZodType<import("../../core/json.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("../../core/json.js").JsonValue, unknown>>>;
             confidence: z.ZodNullable<z.ZodNumber>;
             origin: z.ZodEnum<{
                 canonical: "canonical";
-                agent: "agent";
+                derived: "derived";
             }>;
             validUntil: z.ZodNullable<z.ZodISODateTime>;
         }, z.core.$strict>>;
     }, z.core.$strict>, "required">;
     readonly "graph.entity.links": import("../contract.js").RpcContract<"graph.entity.links", z.ZodObject<{
-        id: z.ZodGUID;
+        id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
         kind: z.ZodOptional<z.ZodString>;
         direction: z.ZodDefault<z.ZodEnum<{
             from: "from";
@@ -143,7 +154,7 @@ export declare const graphContracts: {
             confidence: z.ZodNullable<z.ZodNumber>;
             origin: z.ZodEnum<{
                 canonical: "canonical";
-                agent: "agent";
+                derived: "derived";
             }>;
             validUntil: z.ZodNullable<z.ZodISODateTime>;
             id: z.ZodString;
@@ -155,7 +166,7 @@ export declare const graphContracts: {
             confidence: z.ZodNullable<z.ZodNumber>;
             origin: z.ZodEnum<{
                 canonical: "canonical";
-                agent: "agent";
+                derived: "derived";
             }>;
             validUntil: z.ZodNullable<z.ZodISODateTime>;
             id: z.ZodString;
@@ -163,23 +174,23 @@ export declare const graphContracts: {
         total: z.ZodNumber;
     }, z.core.$strict>, "required">;
     readonly "graph.entity.pin": import("../contract.js").RpcContract<"graph.entity.pin", z.ZodObject<{
-        entityId: z.ZodGUID;
-        pinOrder: z.ZodOptional<z.ZodInt>;
+        entityId: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
+        pinOrder: z.ZodInt;
     }, z.core.$strip>, z.ZodObject<{
         ok: z.ZodLiteral<true>;
     }, z.core.$strict>, "required">;
     readonly "graph.entity.unarchive": import("../contract.js").RpcContract<"graph.entity.unarchive", z.ZodObject<{
-        entityId: z.ZodGUID;
+        entityId: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
     }, z.core.$strip>, z.ZodObject<{
         ok: z.ZodLiteral<true>;
     }, z.core.$strict>, "required">;
     readonly "graph.entity.unpin": import("../contract.js").RpcContract<"graph.entity.unpin", z.ZodObject<{
-        entityId: z.ZodGUID;
+        entityId: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
     }, z.core.$strip>, z.ZodObject<{
         ok: z.ZodLiteral<true>;
     }, z.core.$strict>, "required">;
     readonly "graph.entity.update_properties": import("../contract.js").RpcContract<"graph.entity.update_properties", z.ZodObject<{
-        entityId: z.ZodGUID;
+        entityId: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
         properties: z.ZodType<import("../../core/json.js").JsonObject, unknown, z.core.$ZodTypeInternals<import("../../core/json.js").JsonObject, unknown>>;
     }, z.core.$strip>, z.ZodObject<{
         ok: z.ZodLiteral<true>;
@@ -192,8 +203,32 @@ export declare const graphContracts: {
         before: z.ZodOptional<z.ZodString>;
         limit: z.ZodDefault<z.ZodInt>;
         offset: z.ZodDefault<z.ZodInt>;
+        extras: z.ZodExactOptional<z.ZodLiteral<true>>;
     }, z.core.$strip>, z.ZodObject<{
         items: z.ZodArray<z.ZodObject<{
+            extras: z.ZodExactOptional<z.ZodUnion<readonly [z.ZodObject<{
+                syncEnabled: z.ZodBoolean;
+                syncRevision: z.ZodString;
+                pinOrder: z.ZodNullable<z.ZodInt>;
+                archived: z.ZodBoolean;
+                private: z.ZodBoolean;
+                indexed: z.ZodEnum<{
+                    indexed: "indexed";
+                    pending: "pending";
+                    refused: "refused";
+                }>;
+            }, z.core.$strict>, z.ZodObject<{
+                syncEnabled: z.ZodNull;
+                syncRevision: z.ZodNull;
+                pinOrder: z.ZodNullable<z.ZodInt>;
+                archived: z.ZodBoolean;
+                private: z.ZodBoolean;
+                indexed: z.ZodEnum<{
+                    indexed: "indexed";
+                    pending: "pending";
+                    refused: "refused";
+                }>;
+            }, z.core.$strict>]>>;
             id: z.ZodString;
             schemaId: z.ZodString;
             name: z.ZodNullable<z.ZodString>;
@@ -205,22 +240,69 @@ export declare const graphContracts: {
         hasMore: z.ZodBoolean;
     }, z.core.$strict>, "required">;
     readonly "graph.get": import("../contract.js").RpcContract<"graph.get", z.ZodObject<{
-        id: z.ZodGUID;
+        id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
+        extras: z.ZodExactOptional<z.ZodLiteral<true>>;
     }, z.core.$strip>, z.ZodObject<{
         entity: z.ZodObject<{
+            extras: z.ZodExactOptional<z.ZodUnion<readonly [z.ZodObject<{
+                syncEnabled: z.ZodBoolean;
+                syncRevision: z.ZodString;
+                pinOrder: z.ZodNullable<z.ZodInt>;
+                archived: z.ZodBoolean;
+                private: z.ZodBoolean;
+                indexed: z.ZodEnum<{
+                    indexed: "indexed";
+                    pending: "pending";
+                    refused: "refused";
+                }>;
+            }, z.core.$strict>, z.ZodObject<{
+                syncEnabled: z.ZodNull;
+                syncRevision: z.ZodNull;
+                pinOrder: z.ZodNullable<z.ZodInt>;
+                archived: z.ZodBoolean;
+                private: z.ZodBoolean;
+                indexed: z.ZodEnum<{
+                    indexed: "indexed";
+                    pending: "pending";
+                    refused: "refused";
+                }>;
+            }, z.core.$strict>]>>;
             id: z.ZodString;
             schemaId: z.ZodString;
             name: z.ZodNullable<z.ZodString>;
             date: z.ZodString;
             idx: z.ZodNullable<z.ZodString>;
         }, z.core.$strict>;
+        extras: z.ZodExactOptional<z.ZodUnion<readonly [z.ZodObject<{
+            syncEnabled: z.ZodBoolean;
+            syncRevision: z.ZodString;
+            pinOrder: z.ZodNullable<z.ZodInt>;
+            archived: z.ZodBoolean;
+            private: z.ZodBoolean;
+            indexed: z.ZodEnum<{
+                indexed: "indexed";
+                pending: "pending";
+                refused: "refused";
+            }>;
+        }, z.core.$strict>, z.ZodObject<{
+            syncEnabled: z.ZodNull;
+            syncRevision: z.ZodNull;
+            pinOrder: z.ZodNullable<z.ZodInt>;
+            archived: z.ZodBoolean;
+            private: z.ZodBoolean;
+            indexed: z.ZodEnum<{
+                indexed: "indexed";
+                pending: "pending";
+                refused: "refused";
+            }>;
+        }, z.core.$strict>]>>;
         links: z.ZodArray<z.ZodObject<{
             from: z.ZodString;
             to: z.ZodString;
             confidence: z.ZodNullable<z.ZodNumber>;
             origin: z.ZodEnum<{
                 canonical: "canonical";
-                agent: "agent";
+                derived: "derived";
             }>;
             validUntil: z.ZodNullable<z.ZodISODateTime>;
             id: z.ZodString;
@@ -232,11 +314,11 @@ export declare const graphContracts: {
     }, z.core.$strict>, "required">;
     readonly "graph.link.add": import("../contract.js").RpcContract<"graph.link.add", z.ZodObject<{
         confidence: z.ZodNumber;
-        evidence: z.ZodTuple<[z.ZodString], z.ZodString>;
+        evidence: z.ZodTuple<[z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">], z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">>;
         validFrom: z.ZodNullable<z.ZodISODateTime>;
         validUntil: z.ZodNullable<z.ZodISODateTime>;
-        from: z.ZodGUID;
-        to: z.ZodGUID;
+        from: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
+        to: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
         kind: z.ZodString;
     }, z.core.$strip>, z.ZodObject<{
         id: z.ZodString;
@@ -248,7 +330,7 @@ export declare const graphContracts: {
     readonly "graph.link.end": import("../contract.js").RpcContract<"graph.link.end", z.ZodObject<{
         id: z.ZodGUID;
         validUntil: z.ZodISODateTime;
-        evidence: z.ZodGUID;
+        evidence: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
     }, z.core.$strip>, z.ZodDiscriminatedUnion<[z.ZodObject<{
         origin: z.ZodLiteral<"canonical">;
         metadata: z.ZodType<import("../../core/json.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("../../core/json.js").JsonValue, unknown>>;
@@ -256,25 +338,25 @@ export declare const graphContracts: {
         validUntil: z.ZodNullable<z.ZodISODateTime>;
         id: z.ZodString;
         owner: z.ZodString;
-        from: z.ZodString;
-        to: z.ZodString;
+        from: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
+        to: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
         kind: z.ZodString;
         createdAt: z.ZodISODateTime;
     }, z.core.$strict>, z.ZodObject<{
-        origin: z.ZodLiteral<"agent">;
+        origin: z.ZodLiteral<"derived">;
         confidence: z.ZodNumber;
-        evidence: z.ZodTuple<[z.ZodString], z.ZodString>;
+        evidence: z.ZodTuple<[z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">], z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">>;
         validFrom: z.ZodNullable<z.ZodISODateTime>;
         validUntil: z.ZodNullable<z.ZodISODateTime>;
         id: z.ZodString;
         owner: z.ZodString;
-        from: z.ZodString;
-        to: z.ZodString;
+        from: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
+        to: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
         kind: z.ZodString;
         createdAt: z.ZodISODateTime;
     }, z.core.$strict>], "origin">, "required">;
     readonly "graph.links": import("../contract.js").RpcContract<"graph.links", z.ZodObject<{
-        id: z.ZodGUID;
+        id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
         kind: z.ZodString;
         direction: z.ZodDefault<z.ZodEnum<{
             in: "in";
@@ -285,8 +367,32 @@ export declare const graphContracts: {
         before: z.ZodOptional<z.ZodString>;
         limit: z.ZodDefault<z.ZodInt>;
         offset: z.ZodDefault<z.ZodInt>;
+        extras: z.ZodExactOptional<z.ZodLiteral<true>>;
     }, z.core.$strip>, z.ZodObject<{
         items: z.ZodArray<z.ZodObject<{
+            extras: z.ZodExactOptional<z.ZodUnion<readonly [z.ZodObject<{
+                syncEnabled: z.ZodBoolean;
+                syncRevision: z.ZodString;
+                pinOrder: z.ZodNullable<z.ZodInt>;
+                archived: z.ZodBoolean;
+                private: z.ZodBoolean;
+                indexed: z.ZodEnum<{
+                    indexed: "indexed";
+                    pending: "pending";
+                    refused: "refused";
+                }>;
+            }, z.core.$strict>, z.ZodObject<{
+                syncEnabled: z.ZodNull;
+                syncRevision: z.ZodNull;
+                pinOrder: z.ZodNullable<z.ZodInt>;
+                archived: z.ZodBoolean;
+                private: z.ZodBoolean;
+                indexed: z.ZodEnum<{
+                    indexed: "indexed";
+                    pending: "pending";
+                    refused: "refused";
+                }>;
+            }, z.core.$strict>]>>;
             id: z.ZodString;
             schemaId: z.ZodString;
             name: z.ZodNullable<z.ZodString>;
@@ -303,8 +409,32 @@ export declare const graphContracts: {
         after: z.ZodOptional<z.ZodString>;
         before: z.ZodOptional<z.ZodString>;
         limit: z.ZodDefault<z.ZodInt>;
+        extras: z.ZodExactOptional<z.ZodLiteral<true>>;
     }, z.core.$strip>, z.ZodObject<{
         items: z.ZodArray<z.ZodObject<{
+            extras: z.ZodExactOptional<z.ZodUnion<readonly [z.ZodObject<{
+                syncEnabled: z.ZodBoolean;
+                syncRevision: z.ZodString;
+                pinOrder: z.ZodNullable<z.ZodInt>;
+                archived: z.ZodBoolean;
+                private: z.ZodBoolean;
+                indexed: z.ZodEnum<{
+                    indexed: "indexed";
+                    pending: "pending";
+                    refused: "refused";
+                }>;
+            }, z.core.$strict>, z.ZodObject<{
+                syncEnabled: z.ZodNull;
+                syncRevision: z.ZodNull;
+                pinOrder: z.ZodNullable<z.ZodInt>;
+                archived: z.ZodBoolean;
+                private: z.ZodBoolean;
+                indexed: z.ZodEnum<{
+                    indexed: "indexed";
+                    pending: "pending";
+                    refused: "refused";
+                }>;
+            }, z.core.$strict>]>>;
             id: z.ZodString;
             schemaId: z.ZodString;
             name: z.ZodNullable<z.ZodString>;
@@ -316,7 +446,7 @@ export declare const graphContracts: {
         hasMore: z.ZodBoolean;
     }, z.core.$strict>, "required">;
     readonly "graph.withdraw": import("../contract.js").RpcContract<"graph.withdraw", z.ZodObject<{
-        evidenceIds: z.ZodArray<z.ZodGUID>;
+        evidenceIds: z.ZodArray<z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">>;
     }, z.core.$strip>, z.ZodObject<{
         entities: z.ZodNumber;
         links: z.ZodNumber;
@@ -324,7 +454,7 @@ export declare const graphContracts: {
     readonly "graph.entity.links.list": {
         readonly method: "graph.entity.links.list";
         readonly input: z.ZodObject<{
-            id: z.ZodGUID;
+            id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
             kind: z.ZodOptional<z.ZodString>;
             direction: z.ZodDefault<z.ZodEnum<{
                 from: "from";
@@ -342,7 +472,7 @@ export declare const graphContracts: {
                 confidence: z.ZodNullable<z.ZodNumber>;
                 origin: z.ZodEnum<{
                     canonical: "canonical";
-                    agent: "agent";
+                    derived: "derived";
                 }>;
                 validUntil: z.ZodNullable<z.ZodISODateTime>;
                 id: z.ZodString;
@@ -354,7 +484,7 @@ export declare const graphContracts: {
                 confidence: z.ZodNullable<z.ZodNumber>;
                 origin: z.ZodEnum<{
                     canonical: "canonical";
-                    agent: "agent";
+                    derived: "derived";
                 }>;
                 validUntil: z.ZodNullable<z.ZodISODateTime>;
                 id: z.ZodString;
@@ -368,11 +498,11 @@ export declare const graphContracts: {
         readonly method: "graph.link.link";
         readonly input: z.ZodObject<{
             confidence: z.ZodNumber;
-            evidence: z.ZodTuple<[z.ZodString], z.ZodString>;
+            evidence: z.ZodTuple<[z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">], z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">>;
             validFrom: z.ZodNullable<z.ZodISODateTime>;
             validUntil: z.ZodNullable<z.ZodISODateTime>;
-            from: z.ZodGUID;
-            to: z.ZodGUID;
+            from: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
+            to: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
             kind: z.ZodString;
         }, z.core.$strict>;
         readonly output: z.ZodObject<{
@@ -390,7 +520,7 @@ export declare const graphContracts: {
         readonly input: z.ZodObject<{
             id: z.ZodGUID;
             validUntil: z.ZodISODateTime;
-            evidence: z.ZodGUID;
+            evidence: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
         }, z.core.$strict>;
         readonly output: z.ZodDiscriminatedUnion<[z.ZodObject<{
             origin: z.ZodLiteral<"canonical">;
@@ -399,20 +529,20 @@ export declare const graphContracts: {
             validUntil: z.ZodNullable<z.ZodISODateTime>;
             id: z.ZodString;
             owner: z.ZodString;
-            from: z.ZodString;
-            to: z.ZodString;
+            from: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
+            to: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
             kind: z.ZodString;
             createdAt: z.ZodISODateTime;
         }, z.core.$strict>, z.ZodObject<{
-            origin: z.ZodLiteral<"agent">;
+            origin: z.ZodLiteral<"derived">;
             confidence: z.ZodNumber;
-            evidence: z.ZodTuple<[z.ZodString], z.ZodString>;
+            evidence: z.ZodTuple<[z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">], z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">>;
             validFrom: z.ZodNullable<z.ZodISODateTime>;
             validUntil: z.ZodNullable<z.ZodISODateTime>;
             id: z.ZodString;
             owner: z.ZodString;
-            from: z.ZodString;
-            to: z.ZodString;
+            from: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
+            to: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
             kind: z.ZodString;
             createdAt: z.ZodISODateTime;
         }, z.core.$strict>], "origin">;
@@ -420,17 +550,17 @@ export declare const graphContracts: {
         readonly inputJsonSchema: Readonly<import("../../core/json.js").JsonObject>;
     };
     readonly "graph.entity.update": import("../contract.js").RpcContract<"graph.entity.update", z.ZodUnion<readonly [z.ZodObject<{
-        entityId: z.ZodGUID;
+        entityId: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
         pinOrder: z.ZodNonOptional<z.ZodOptional<z.ZodNullable<z.ZodInt>>>;
         archived: z.ZodOptional<z.ZodBoolean>;
         indexed: z.ZodOptional<z.ZodBoolean>;
     }, z.core.$strict>, z.ZodObject<{
-        entityId: z.ZodGUID;
+        entityId: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
         pinOrder: z.ZodOptional<z.ZodNullable<z.ZodInt>>;
         archived: z.ZodNonOptional<z.ZodOptional<z.ZodBoolean>>;
         indexed: z.ZodOptional<z.ZodBoolean>;
     }, z.core.$strict>, z.ZodObject<{
-        entityId: z.ZodGUID;
+        entityId: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
         pinOrder: z.ZodOptional<z.ZodNullable<z.ZodInt>>;
         archived: z.ZodOptional<z.ZodBoolean>;
         indexed: z.ZodNonOptional<z.ZodOptional<z.ZodBoolean>>;

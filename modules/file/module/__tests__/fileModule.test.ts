@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { EntityWithLinks, JsonObject } from "@magnis/sdk";
-import { entity, link, mockGraph, mountModule, page, type MockGraph } from "@magnis/testkit/module";
+import { entity, entityId, link, mockGraph, mountModule, page, type MockGraph } from "@magnis/testkit/module";
 import { FileModule } from "../service.ts";
 
 type G = MockGraph;
@@ -134,7 +134,7 @@ describe("tst_file_hash_002 availability comes from contentHash", () => {
       entity("h3", "c.png", { schemaId: "file.object", properties: { mime_type: "image/png", source_module: "u", source_ref: {}, contentHash: null, cloud_url: "https://cdn/c.png" } }),
     ]));
     const res = await makeModule(g).list({});
-    expect(res.items.map((item) => [item.entity_id, item.url])).toEqual([["h1", "/files/h1"], ["h3", "https://cdn/c.png"]]);
+    expect(res.items.map((item) => [item.entity_id, item.url])).toEqual([[entityId("h1"), `/files/${entityId("h1")}`], [entityId("h3"), "https://cdn/c.png"]]);
   });
 });
 
@@ -149,7 +149,7 @@ describe("file.list (filters + content skip)", () => {
     ]));
     const res = await makeModule(g).list({ mime_prefix: "image/" });
     expect(res.total).toBe(3); // total is the unfiltered count (matches native)
-    expect(res.items.map((i) => i.entity_id)).toEqual(["i1"]); // i2 wrong mime, i3 no content
+    expect(res.items.map((i) => i.entity_id)).toEqual([entityId("i1")]); // i2 wrong mime, i3 no content
   });
 });
 
@@ -171,12 +171,12 @@ describe("tst_cat_entity_one_type_006 — file speaks the SDK shapes", () => {
       entity("i2", "b", { schemaId: "file.object", properties: { mime_type: "x/y", source_module: "u", source_ref: {}, contentHash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" } }),
     ]));
     spy(g, "listLinksForEntity").mockImplementation((id: string) =>
-      Promise.resolve(id === "i1" ? [link("parentX", "i1", "file.attachment")] : [link("other", "i2", "file.attachment")]),
+      Promise.resolve(id === entityId("i1") ? [link("parentX", "i1", "file.attachment")] : [link("other", "i2", "file.attachment")]),
     );
 
-    const res = await makeModule(g).list({ parent_id: "parentX" });
+    const res = await makeModule(g).list({ parent_id: entityId("parentX") });
 
-    expect(res.items.map((i) => i.entity_id)).toEqual(["i1"]);
+    expect(res.items.map((i) => i.entity_id)).toEqual([entityId("i1")]);
     expect(g.spies.listEntitiesWindow).toHaveBeenCalledWith({
       schema: "file.object",
       order: [{ field: { entityField: "date" }, desc: true }],

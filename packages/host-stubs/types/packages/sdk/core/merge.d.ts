@@ -3,7 +3,7 @@
 import { z } from "zod";
 /** One entity taking part in a merge. */
 export declare const MergeEntityInfoSchema: z.ZodObject<{
-    id: z.ZodString;
+    id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
     name: z.ZodNullable<z.ZodString>;
     schemaId: z.ZodString;
     propertyCount: z.ZodInt;
@@ -24,21 +24,21 @@ export type MergeField = z.output<typeof MergeFieldSchema>;
 /** One side of the merge, labelled by the provenance stamp its entity carries. */
 export declare const MergeSourceSchema: z.ZodObject<{
     source: z.ZodString;
-    entityId: z.ZodString;
+    entityId: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
     propertyCount: z.ZodInt;
 }, z.core.$strict>;
 export type MergeSource = z.output<typeof MergeSourceSchema>;
 /** What a merge would do, read without writing. `fields` keeps key order. */
 export declare const MergePreviewSchema: z.ZodObject<{
     survivor: z.ZodObject<{
-        id: z.ZodString;
+        id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
         name: z.ZodNullable<z.ZodString>;
         schemaId: z.ZodString;
         propertyCount: z.ZodInt;
         linkCount: z.ZodInt;
     }, z.core.$strict>;
     retired: z.ZodObject<{
-        id: z.ZodString;
+        id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
         name: z.ZodNullable<z.ZodString>;
         schemaId: z.ZodString;
         propertyCount: z.ZodInt;
@@ -46,7 +46,7 @@ export declare const MergePreviewSchema: z.ZodObject<{
     }, z.core.$strict>;
     sources: z.ZodReadonly<z.ZodArray<z.ZodObject<{
         source: z.ZodString;
-        entityId: z.ZodString;
+        entityId: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
         propertyCount: z.ZodInt;
     }, z.core.$strict>>>;
     fields: z.ZodReadonly<z.ZodRecord<z.ZodString, z.ZodObject<{
@@ -63,8 +63,8 @@ export declare const MergePreviewSchema: z.ZodObject<{
 export type MergePreview = z.output<typeof MergePreviewSchema>;
 /** What an executed merge did. */
 export declare const MergeResultSchema: z.ZodObject<{
-    survivorId: z.ZodString;
-    retiredId: z.ZodString;
+    survivorId: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
+    retiredId: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
     linksRepointed: z.ZodInt;
     linksDeduplicated: z.ZodInt;
     linksReflexiveRemoved: z.ZodInt;
@@ -78,14 +78,14 @@ export declare const MergeOverrideSchema: z.ZodObject<{
 export type MergeOverride = z.output<typeof MergeOverrideSchema>;
 export declare const MergePreviewCommandSchema: z.ZodObject<{
     userId: z.ZodString;
-    survivorId: z.ZodString;
-    retiredId: z.ZodString;
+    survivorId: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
+    retiredId: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
 }, z.core.$strict>;
 export type MergePreviewCommand = z.output<typeof MergePreviewCommandSchema>;
 export declare const MergeExecuteCommandSchema: z.ZodObject<{
     userId: z.ZodString;
-    survivorId: z.ZodString;
-    retiredId: z.ZodString;
+    survivorId: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
+    retiredId: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
     overrides: z.ZodReadonly<z.ZodArray<z.ZodObject<{
         key: z.ZodString;
         value: z.ZodType<import("./json.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("./json.js").JsonValue, unknown>>;
@@ -97,8 +97,8 @@ export type MergeExecuteCommand = z.output<typeof MergeExecuteCommandSchema>;
  * mergeExecute drops `preview`. Absent overrides are none and an absent
  * reason is null, as the tool reads them today. */
 export declare const MergeInputSchema: z.ZodObject<{
-    survivorId: z.ZodGUID;
-    retiredId: z.ZodGUID;
+    survivorId: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
+    retiredId: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
     preview: z.ZodBoolean;
     overrides: z.ZodDefault<z.ZodReadonly<z.ZodArray<z.ZodObject<{
         key: z.ZodString;

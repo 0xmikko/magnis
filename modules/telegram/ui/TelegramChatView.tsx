@@ -35,10 +35,6 @@ export interface TelegramChatViewProps {
   readonly onSendMessage?: (text: string) => void;
   /** Called when user selects "Reply by Agent" from the context menu */
   readonly onReplyByAgent?: (message: TelegramMessage) => void;
-  /** Whether the current chat is indexed for contact creation */
-  readonly isIndexed?: boolean;
-  /** Toggle indexing for the current chat */
-  readonly onToggleIndexing?: () => void;
   readonly syncEnabled?: boolean;
   readonly onToggleSync?: () => void;
   readonly savingSettings?: boolean;
@@ -602,8 +598,6 @@ export function TelegramChatView({
   onBackfill,
   onSendMessage,
   onReplyByAgent,
-  isIndexed,
-  onToggleIndexing,
   syncEnabled,
   onToggleSync,
   savingSettings,
@@ -631,13 +625,8 @@ export function TelegramChatView({
       id: "toggleSync",
       label: syncEnabled ? "Stop synchronization" : "Start synchronization",
     });
-    if (isIndexed !== undefined) items.push({
-      id: "toggle_indexing",
-      label: isIndexed ? "Disable indexing" : "Enable indexing",
-      icon: isIndexed ? "circle-alert" : "circle-check",
-    });
     return items;
-  }, [isIndexed, syncEnabled, savingSettings]);
+  }, [syncEnabled, savingSettings]);
 
   const handleOpenHeaderMenu = useCallback(() => {
     const rect = headerBtnRef.current?.getBoundingClientRect();
@@ -653,10 +642,7 @@ export function TelegramChatView({
     headerMenu.close();
     if (savingSettings) return;
     if (itemId === "toggleSync") onToggleSync?.();
-    if (itemId === "toggle_indexing") {
-      onToggleIndexing?.();
-    }
-  }, [headerMenu, onToggleIndexing, onToggleSync, savingSettings]);
+  }, [headerMenu, onToggleSync, savingSettings]);
 
   const handleMenuSelect = useCallback((itemId: string) => {
     const msg = contextMenu.state.data;

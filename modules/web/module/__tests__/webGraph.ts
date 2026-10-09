@@ -7,7 +7,6 @@ import { createHash, randomUUID } from "node:crypto";
 
 import type {
   BytesReadResult,
-  CanonicalEntity,
   CanonicalLink,
   GraphBatchInput,
   GraphBatchResult,
@@ -18,10 +17,13 @@ import type {
 } from "@magnis/sdk";
 import { entity, link, type GraphOverrides } from "@magnis/testkit/module";
 
+/** A stored entity, with its persistent id. */
+type StoredEntity = ReturnType<typeof entity>;
+
 const OWNER = "00000000-0000-4000-8000-000000000001";
 
 interface WebGraphState {
-  entities: Map<string, CanonicalEntity>;
+  entities: Map<string, StoredEntity>;
   links: CanonicalLink[];
   bytes: Map<string, Uint8Array>;
   batches: GraphBatchInput[];
@@ -44,9 +46,9 @@ export function canonicalEntity(
   date: string,
   properties: JsonValue,
   createdAt = date,
-): CanonicalEntity {
+): StoredEntity {
   return entity(randomUUID(), "", {
-    owner: OWNER, schemaId, createdAt, name, indexed: true, date, properties, canonicalKey,
+    schemaId, createdAt, name, date, properties, canonicalKey,
     source: { source: "web", account: OWNER, externalId: canonicalKey ?? randomUUID() },
   });
 }
@@ -57,7 +59,7 @@ function contentsRow(from: string, to: string, metadata: JsonValue, validFrom: s
 
 export function webGraph(answers: SourceAnswer[] = []): { state: WebGraphState; overrides: GraphOverrides } {
   const state: WebGraphState = { entities: new Map(), links: [], bytes: new Map(), batches: [], commands: [], accounts: [] };
-  const byKey = (schemaId: string, key: string): CanonicalEntity | undefined =>
+  const byKey = (schemaId: string, key: string): StoredEntity | undefined =>
     [...state.entities.values()].find((entity) => entity.schemaId === schemaId && entity.canonicalKey === key);
 
   const overrides: GraphOverrides = {
@@ -79,15 +81,6 @@ export function webGraph(answers: SourceAnswer[] = []): { state: WebGraphState; 
           return entity === undefined ? [] : [{ entity, link }];
         });
       return Promise.resolve({ items: rows.slice(offset, offset + limit), total: rows.length, limit, offset });
-    },
-    listEntitiesWindow: (spec) => {
-      const rows = [...state.entities.values()]
-        .filter((entity) => entity.schemaId === spec.schema)
-        .filter((entity) => spec.filterOp !== "exists" || spec.filterField?.propertyPath === undefined
-          || (typeof entity.properties === "object" && entity.properties !== null && !Array.isArray(entity.properties)
-            && spec.filterField.propertyPath in entity.properties))
-        .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
-      return Promise.resolve({ items: rows.slice(spec.offset, spec.offset + spec.limit), total: rows.length, limit: spec.limit, offset: spec.offset });
     },
     bytesPut: ({ text }) => {
       const bytes = new TextEncoder().encode(text);
@@ -125,7 +118,7 @@ export function webGraph(answers: SourceAnswer[] = []): { state: WebGraphState; 
 function apply(
   state: WebGraphState,
   batch: GraphBatchInput,
-  byKey: (schemaId: string, key: string) => CanonicalEntity | undefined,
+  byKey: (schemaId: string, key: string) => StoredEntity | undefined,
 ): GraphBatchResult {
   const fragment = batch.fragment ?? { entities: [], links: [] };
   const resolved = new Map<string, GraphResolvedRef>();

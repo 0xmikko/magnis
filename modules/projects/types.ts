@@ -1,7 +1,7 @@
 // Shared DTOs for the projects plugin — wire shapes the host frontend
 // consumes. Mirrors the legacy Rust projects ProjectListItem /
 // ProjectDetailView 1:1.
-import type { LinkedEntitySummary } from "@magnis/sdk";
+import type { EntityExtras, LinkedEntitySummary } from "@magnis/sdk";
 
 export interface ProjectListItem {
   id: string;
@@ -9,10 +9,11 @@ export interface ProjectListItem {
   name: string;
   status: string | null;
   createdAt: string;
-  isPinned?: boolean | null;
+  extras: EntityExtras;
 }
 
 export interface ProjectDetailView {
+  extras: EntityExtras;
   id: string;
   schemaId: string;
   name: string;

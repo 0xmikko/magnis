@@ -25,7 +25,7 @@
  */
 import type { EnsureRequest, EnsureResult, GraphBatchInput, JsonObject, SyncEnvelope } from "@magnis/sdk";
 import { describe, expect, it } from "vitest";
-import { entity, link, linkedEntity, mockGraph, mountModule, page, syncStateDouble, type GraphOverrides } from "@magnis/testkit/module";
+import { entityId, entityRead, entityExtras, entity, link, linkedEntity, mockGraph, mountModule, page, syncStateDouble, type GraphOverrides } from "@magnis/testkit/module";
 import { CHAT, MESSAGE, TELEGRAM_ACCOUNT } from "../../schema.ts";
 import { TelegramModule } from "../service.ts";
 
@@ -74,22 +74,50 @@ const webRpc = {
 };
 
 describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
+  it("tst_module_communication_telegram_001 writes the observation in the message batch", async () => {
+    const batches: GraphBatchInput[] = [];
+    const graph = mockGraph({
+      ...admittedGraph,
+      updatePropertiesBatch: async () => {},
+      findByExternalIds: (ids) => Promise.resolve(ids.map((id) => id === "tg:chat:42" ? entityId("chat-entity") : id.endsWith(":9001") ? entityId("operator") : id.endsWith(":501") ? entityId("peer-operator") : null)),
+      getEntities: (ids) => Promise.resolve([
+        entity("chat-entity", "Chat", { schemaId: CHAT, properties: { chat_id: 42, type: "private" } }),
+        entity("operator", "My name", { schemaId: TELEGRAM_ACCOUNT, properties: { telegram_user_id: 9001, is_self: true, display_name: "My name" }, source: { source: "telegram-ts", account: "other-account", externalId: "tg:account:9001" } }),
+        entity("peer-operator", "Other connected account", { schemaId: TELEGRAM_ACCOUNT, properties: { telegram_user_id: 501, is_self: true }, source: { source: "telegram-ts", account: "peer-account", externalId: "tg:account:501" } }),
+      ].filter((item) => ids.includes(item.id))),
+      applyBatch: async (batch) => {
+        batches.push(batch);
+        return { ids: Object.fromEntries(batch.entities.map((item) => [item.key, entityId(`id:${item.key}`)])), created: batch.entities.length, updated: 0, linksAdded: batch.links.length, droppedKeys: [], resolved: [] };
+      },
+    });
+    await mountModule(TelegramModule, { graph }).module.ingest({ envelopes: [messageEnvelope("snapshot", {
+      ...messagePayload(), text: "Hello", communication: [{ kind: "received", occurredAt: null }],
+    })] });
+    const batch = batches.find((item) => item.entities.some((item) => item.schemaId === MESSAGE));
+    expect(batch?.entities.find((item) => item.schemaId === MESSAGE)?.externalId).toBe('telegram.message:"account-1":"tg:msg:42:7"');
+    expect(batch?.links).toContainEqual(expect.objectContaining({ fromKey: "acct:9001", toKey: "tg:msg:42:7", kind: "received", metadata: { occurredAt: null, conversationId: entityId("chat-entity") } }));
+    expect(batch?.entities.find((item) => item.schemaId === MESSAGE)?.properties).not.toHaveProperty("communication");
+    expect(batch?.entities.some((item) => item.key === "acct:501")).toBe(false);
+    expect(batch?.refs).toContainEqual({ key: "acct:501", externalId: "tg:account:501" });
+    expect(batch?.entities).toContainEqual(expect.objectContaining({ key: "acct:9001", schemaId: TELEGRAM_ACCOUNT, properties: { telegram_user_id: 9001, is_self: true, display_name: "My name" } }));
+  });
+
   it.each([false, true])("resolves a peerless deletion within its Source account before admission (enabled: %s)", async (enabled) => {
     const stored = entity("stored-message", "Message", {
       schemaId: MESSAGE, properties: { message_id: 7 }, source: { source: "telegram-ts", account: "account-1", externalId: "tg:msg:42:7" },
     });
-    const chat = { ...entity("chat-entity", "Chat", { schemaId: CHAT, properties: { chat_id: 42, type: "private" } }), syncEnabled: enabled, syncRevision: "3" };
+    const chat = { ...entity(entityId("chat-entity"), "Chat", { schemaId: CHAT, properties: { chat_id: 42, type: "private" } }), syncEnabled: enabled, syncRevision: "3" };
     const graph = mockGraph({
       findByExternalId: () => Promise.resolve(null),
       listEntitiesByPropertyField: (spec) => {
         expect(spec).toMatchObject({ entitySchema: MESSAGE, key: "message_id", value: "7" });
-        return Promise.resolve(page([stored, { ...stored, id: "other-account", source: { ...stored.source, account: "account-2" } }]));
+        return Promise.resolve(page([stored, { ...stored, id: entityId("other-account"), source: { ...stored.source, account: "account-2" } }]));
       },
       getEntityFull: (id) => {
         expect(id).toBe(stored.id);
         return Promise.resolve({ entity: stored, links: [link(stored.id, chat.id, "in_chat", { id: "parent" })] });
       },
-      getEntity: () => Promise.resolve(chat),
+      getEntity: () => Promise.resolve(entityRead(entity(chat.id, "Chat", { schemaId: CHAT, properties: chat.properties }), entityExtras({ syncEnabled: enabled, syncRevision: "3" }))),
       findByExternalIds: () => Promise.resolve([chat.id]),
       getEntities: () => Promise.resolve([chat]),
       admitSyncEntities: (subjects) => Promise.resolve(enabled ? subjects.flatMap((subject) => [...subject.remoteIds]) : []),
@@ -103,24 +131,30 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
     if (enabled) expect(graph.spies.deleteEntity).toHaveBeenCalledWith(stored.id);
   });
 
-  it.each([false, true])("uses the required entity indexed field for admitted media (indexed: %s)", async (indexed) => {
+  it.each([false, true])("tst_module_telegram_sync_media_001 uses sync admission for messages and attachments despite the opposite legacy choice (enabled: %s)", async (syncEnabled) => {
     const graph = mockGraph({
       ...admittedGraph,
-      findByExternalIds: (externalIds) => Promise.resolve(externalIds.map(() => "chat-entity")),
-      getEntities: () => Promise.resolve([entity("chat-entity", "Chat", { schemaId: CHAT, indexed, properties: { chat_id: 42, type: "private", is_indexed: !indexed } })]),
-      applyBatch: (fragment) => Promise.resolve({ ids: Object.fromEntries(fragment.entities.map((item) => [item.key, `id:${item.key}`])), created: fragment.entities.length, updated: 0, linksAdded: 0, droppedKeys: [], resolved: [] }),
+      findByExternalIds: (externalIds) => Promise.resolve(externalIds.map(() => entityId("chat-entity"))),
+      getEntities: () => Promise.resolve([entity(entityId("chat-entity"), "Chat", { schemaId: CHAT, properties: { chat_id: 42, type: "private", is_indexed: !syncEnabled } })]),
+      admitSyncEntities: (subjects) => Promise.resolve(syncEnabled ? subjects.flatMap((subject) => [...subject.remoteIds]) : []),
+      applyBatch: (fragment) => Promise.resolve({ ids: Object.fromEntries(fragment.entities.map((item) => [item.key, entityId(`id:${item.key}`)])), created: fragment.entities.length, updated: 0, linksAdded: 0, droppedKeys: [], resolved: [] }),
       fileRegisterBatch: () => Promise.resolve(["file-id"]),
       updatePropertiesBatch: () => Promise.resolve(),
     });
     const module = mountModule(TelegramModule, { graph, rpc: webRpc }).module;
     const envelope = messageEnvelope("snapshot", { ...messagePayload(), text: "Attached", media_type: "document", source_ref: { chat_id: 42, message_id: 7 } });
     await module.ingest({ envelopes: [envelope] });
-    expect(graph.spies.fileRegisterBatch).toHaveBeenCalledWith([expect.objectContaining({ download: indexed })]);
-    expect(graph.spies.applyBatch).toHaveBeenCalledTimes(1);
+    expect(graph.spies.applyBatch).toHaveBeenCalledTimes(syncEnabled ? 1 : 0);
+    if (syncEnabled) {
+      expect(graph.spies.fileRegisterBatch).toHaveBeenCalledWith([expect.objectContaining({ download: true })]);
+    } else {
+      expect(graph.spies.fileRegisterBatch).not.toHaveBeenCalled();
+      expect(graph.spies.updatePropertiesBatch).not.toHaveBeenCalled();
+    }
   });
 
   it("rejects every queued stopped-chat event before metadata, content, membership, attachments or triggers", async () => {
-    const stored = { ...entity("chat-entity", "Stored chat", { schemaId: CHAT, indexed: true, properties: { chat_id: 42, type: "private" } }), syncEnabled: false, syncRevision: "4" };
+    const stored = { ...entity(entityId("chat-entity"), "Stored chat", { schemaId: CHAT, properties: { chat_id: 42, type: "private" } }), syncEnabled: false, syncRevision: "4" };
     const graph = mockGraph({
       ...admittedGraph,
       findByExternalIds: (externalIds) => Promise.resolve(externalIds.map((externalId) => externalId === "tg:chat:42" ? stored.id : null)),
@@ -152,14 +186,14 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
     const externalIds = new Set<string>();
     const graph = mockGraph({
       ...admittedGraph,
-      findByExternalIds: (requested) => Promise.resolve(requested.map((externalId) => externalId === "tg:chat:42" ? "chat-entity" : externalIds.has(externalId) ? `id:${externalId}` : null)),
-      getEntities: () => Promise.resolve([entity("chat-entity", "Chat", {
+      findByExternalIds: (requested) => Promise.resolve(requested.map((externalId) => externalId === "tg:chat:42" ? entityId("chat-entity") : externalIds.has(externalId) ? `id:${externalId}` : null)),
+      getEntities: () => Promise.resolve([entity(entityId("chat-entity"), "Chat", {
         schemaId: CHAT, properties: { chat_id: 42, type: "private", message_count: count, last_message_date: lastMessageDate },
       })]),
       applyBatch: (fragment) => {
         for (const item of fragment.entities) if (item.externalId !== null) externalIds.add(item.externalId);
         return Promise.resolve({
-          ids: Object.fromEntries(fragment.entities.map((item) => [item.key, `id:${item.key}`])),
+          ids: Object.fromEntries(fragment.entities.map((item) => [item.key, entityId(`id:${item.key}`)])),
           created: fragment.entities.length, updated: 0, linksAdded: 0, droppedKeys: [], resolved: [],
         });
       },
@@ -182,7 +216,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
     await module.ingest({ envelopes: [edited] });
     expect(count).toBe(197);
     expect(graph.spies.updatePropertiesBatch).toHaveBeenCalledWith([{
-      entityId: "chat-entity", properties: lastMessageDate > "2026-08-12T08:00:00Z" ? { message_count: 197 } : {
+      entityId: entityId("chat-entity"), properties: lastMessageDate > "2026-08-12T08:00:00Z" ? { message_count: 197 } : {
         message_count: 197, last_message_date: "2026-08-12T08:00:00Z",
         last_message_preview: "Read https://example.test/demo", last_sender_name: "Alice",
       },
@@ -193,7 +227,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
     const graph = mockGraph({
       ...admittedGraph,
       applyBatch: () =>
-        Promise.resolve({ ids: { self: "self-id" }, created: 1, updated: 0, linksAdded: 0, droppedKeys: [], resolved: [] }),
+        Promise.resolve({ ids: { self: entityId("self-id") }, created: 1, updated: 0, linksAdded: 0, droppedKeys: [], resolved: [] }),
     });
     const module = mountModule(TelegramModule, { graph, rpc: webRpc }).module;
 
@@ -235,12 +269,12 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
     const graph = mockGraph({
       ...admittedGraph,
       getEntities: (ids) => Promise.resolve(ids.map((id) => entity(id, "Chat", { schemaId: CHAT, properties: { chat_id: 42 } }))),
-      findByExternalId: () => Promise.resolve("self-id"),
+      findByExternalId: () => Promise.resolve(entityId("self-id")),
       listLinked: () => Promise.resolve(page([])),
       findByExternalIds: (externalIds) => Promise.resolve(externalIds.map(() => null)),
       applyBatch: (fragment) =>
         Promise.resolve({
-          ids: Object.fromEntries(fragment.entities.map((item) => [item.key, `id:${item.key}`])),
+          ids: Object.fromEntries(fragment.entities.map((item) => [item.key, entityId(`id:${item.key}`)])),
           created: fragment.entities.length,
           updated: 0,
           linksAdded: fragment.links.length,
@@ -275,7 +309,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
       links: [{
         fromKey: "self",
         toKey: "tg:chat:42",
-        kind: "observed_in",
+        kind: "telegram.observed_in",
         confidence: null,
         metadata: {},
         declaredBy: "tg:chat:42",
@@ -288,12 +322,12 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
   it("maps message/account nodes and structural links in one batch", async () => {
     const graph = mockGraph({
       ...admittedGraph,
-      findByExternalIds: (externalIds) => Promise.resolve(externalIds.map(() => "chat-entity")),
+      findByExternalIds: (externalIds) => Promise.resolve(externalIds.map(() => entityId("chat-entity"))),
       getEntities: (ids) =>
         Promise.resolve(ids.map((id) => entity(id, "Chat", { schemaId: CHAT, properties: { chat_id: 42, type: "private" } }))),
       applyBatch: (fragment) =>
         Promise.resolve({
-          ids: Object.fromEntries(fragment.entities.map((item) => [item.key, `id:${item.key}`])),
+          ids: Object.fromEntries(fragment.entities.map((item) => [item.key, entityId(`id:${item.key}`)])),
           created: fragment.entities.length,
           updated: 0,
           linksAdded: fragment.links.length,
@@ -324,10 +358,10 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
     expect(fragment.links.map((link) => `${link.fromKey}:${link.kind}:${link.toKey}`)).toEqual([
       "tg:msg:42:7:in_chat:chat:42",
       "tg:msg:42:7:authored_by:acct:501",
-      "acct:501:observed_participant:chat:42",
+      "acct:501:telegram.observed_participant:chat:42",
     ]);
     expect(applyBatch.mock.calls[1]?.[0]).toMatchObject({ fragment: { links: [{
-      from: { kind: "id", schemaId: MESSAGE, id: "id:tg:msg:42:7" },
+      from: { kind: "id", schemaId: MESSAGE, id: entityId("id:tg:msg:42:7") },
       to: { kind: "canonical", schemaId: "web.link", canonicalKey: "https://example.test/demo" },
       kind: "references",
     }] } });
@@ -343,12 +377,12 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
   it("tst_module_telegram_005 truncates titles at complete code points without changing message bodies", async () => {
     const graph = mockGraph({
       ...admittedGraph,
-      findByExternalIds: (externalIds) => Promise.resolve(externalIds.map((externalId) => externalId === "tg:chat:42" ? "chat-entity" : null)),
-      getEntities: () => Promise.resolve([entity("chat-entity", "Chat", { schemaId: CHAT, properties: { chat_id: 42, type: "private" } })]),
+      findByExternalIds: (externalIds) => Promise.resolve(externalIds.map((externalId) => externalId === "tg:chat:42" ? entityId("chat-entity") : null)),
+      getEntities: () => Promise.resolve([entity(entityId("chat-entity"), "Chat", { schemaId: CHAT, properties: { chat_id: 42, type: "private" } })]),
       updatePropertiesBatch: () => Promise.resolve(),
       applyBatch: (fragment) =>
         Promise.resolve({
-          ids: Object.fromEntries(fragment.entities.map((item) => [item.key, `id:${item.key}`])),
+          ids: Object.fromEntries(fragment.entities.map((item) => [item.key, entityId(`id:${item.key}`)])),
           created: fragment.entities.length,
           updated: 0,
           linksAdded: fragment.links.length,
@@ -391,7 +425,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
     const messageCount = 1_001;
     const graph = mockGraph({
       ...admittedGraph,
-      findByExternalIds: (externalIds) => Promise.resolve(externalIds.map(() => "chat-entity")),
+      findByExternalIds: (externalIds) => Promise.resolve(externalIds.map(() => entityId("chat-entity"))),
       getEntities: (ids) =>
         Promise.resolve(ids.map((id) => entity(id, "Chat", {
           schemaId: CHAT,
@@ -399,7 +433,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
         }))),
       applyBatch: (fragment) =>
         Promise.resolve({
-          ids: Object.fromEntries(fragment.entities.map((item) => [item.key, `id:${item.key}`])),
+          ids: Object.fromEntries(fragment.entities.map((item) => [item.key, entityId(`id:${item.key}`)])),
           created: fragment.entities.length,
           updated: 0,
           linksAdded: fragment.links.length,
@@ -426,7 +460,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
     const outgoing = messageEnvelope("snapshot", { ...messagePayload(), sender_id: 9001, sender_name: "Operator" });
     const graph = mockGraph({
       ...admittedGraph,
-      findByExternalIds: (externalIds) => Promise.resolve(externalIds.map(() => "chat-entity")),
+      findByExternalIds: (externalIds) => Promise.resolve(externalIds.map(() => entityId("chat-entity"))),
       getEntities: (ids) =>
         Promise.resolve(ids.map((id) => entity(id, "Chat", {
           schemaId: CHAT,
@@ -434,7 +468,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
         }))),
       applyBatch: (fragment) =>
         Promise.resolve({
-          ids: Object.fromEntries(fragment.entities.map((item) => [item.key, `id:${item.key}`])),
+          ids: Object.fromEntries(fragment.entities.map((item) => [item.key, entityId(`id:${item.key}`)])),
           created: fragment.entities.length,
           updated: 0,
           linksAdded: fragment.links.length,
@@ -464,10 +498,10 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
     const graph = mockGraph({
       ...admittedGraph,
       // The live message's chat is already known to the graph.
-      findByExternalIds: (externalIds) => Promise.resolve(externalIds.map((externalId) => (externalId === "tg:chat:42" ? "chat-entity-42" : null))),
+      findByExternalIds: (externalIds) => Promise.resolve(externalIds.map((externalId) => (externalId === "tg:chat:42" ? entityId("chat-entity-42") : null))),
       applyBatch: (fragment) =>
         Promise.resolve({
-          ids: Object.fromEntries(fragment.entities.map((item) => [item.key, `id:${item.key}`])),
+          ids: Object.fromEntries(fragment.entities.map((item) => [item.key, entityId(`id:${item.key}`)])),
           created: fragment.entities.length,
           updated: 0,
           linksAdded: fragment.links.length,
@@ -494,7 +528,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
       triggerChecks: [expect.objectContaining({
         type: "trigger.check",
         phase: "live",
-        entityId: "id:tg:msg:42:7",
+        entityId: entityId("id:tg:msg:42:7"),
         userId: "u1",
         context: {
           text: "Read https://example.test/demo",
@@ -513,11 +547,11 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
     };
     const graph = mockGraph({
       ...admittedGraph,
-      findByExternalIds: (externalIds) => Promise.resolve(externalIds.map(() => "chat-entity")),
-      getEntities: () => Promise.resolve([entity("chat-entity", "Chat", { schemaId: CHAT, properties: { chat_id: 42 } })]),
-      getEntity: () => Promise.resolve({ ...entity("chat-entity", "Chat", { schemaId: CHAT, properties: { chat_id: 42 } }), syncEnabled: true, syncRevision: "0" }),
-      getEntityFull: () => Promise.resolve({ entity: entity("message-entity", "Message", { schemaId: MESSAGE }), links: [link("message-entity", "chat-entity", "in_chat", { id: "parent" })] }),
-      findByExternalId: () => Promise.resolve("message-entity"),
+      findByExternalIds: (externalIds) => Promise.resolve(externalIds.map(() => entityId("chat-entity"))),
+      getEntities: () => Promise.resolve([entity(entityId("chat-entity"), "Chat", { schemaId: CHAT, properties: { chat_id: 42 } })]),
+      getEntity: () => Promise.resolve(entityRead(entity(entityId("chat-entity"), "Chat", { schemaId: CHAT, properties: { chat_id: 42 } }), entityExtras({ syncEnabled: true, syncRevision: "0" }))),
+      getEntityFull: () => Promise.resolve({ entity: entity(entityId("message-entity"), "Message", { schemaId: MESSAGE }), links: [link(entityId("message-entity"), entityId("chat-entity"), "in_chat", { id: "parent" })] }),
+      findByExternalId: () => Promise.resolve(entityId("message-entity")),
       deleteEntity: () => Promise.resolve(undefined),
     });
     const module = mountModule(TelegramModule, { graph, rpc: webRpc }).module;
@@ -526,16 +560,16 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
       triggerChecks: [],
       ...NOTHING_STATED,
     });
-    expect(graph.spies.deleteEntity).toHaveBeenCalledWith("message-entity");
+    expect(graph.spies.deleteEntity).toHaveBeenCalledWith(entityId("message-entity"));
 
     const failing = mountModule(TelegramModule, {
       graph: mockGraph({
         ...admittedGraph,
-        findByExternalIds: (externalIds) => Promise.resolve(externalIds.map(() => "chat-entity")),
-        getEntities: () => Promise.resolve([entity("chat-entity", "Chat", { schemaId: CHAT, properties: { chat_id: 42 } })]),
-        getEntity: () => Promise.resolve({ ...entity("chat-entity", "Chat", { schemaId: CHAT, properties: { chat_id: 42 } }), syncEnabled: true, syncRevision: "0" }),
-        getEntityFull: () => Promise.resolve({ entity: entity("message-entity", "Message", { schemaId: MESSAGE }), links: [link("message-entity", "chat-entity", "in_chat", { id: "parent" })] }),
-        findByExternalId: () => Promise.resolve("message-entity"),
+        findByExternalIds: (externalIds) => Promise.resolve(externalIds.map(() => entityId("chat-entity"))),
+        getEntities: () => Promise.resolve([entity(entityId("chat-entity"), "Chat", { schemaId: CHAT, properties: { chat_id: 42 } })]),
+        getEntity: () => Promise.resolve(entityRead(entity(entityId("chat-entity"), "Chat", { schemaId: CHAT, properties: { chat_id: 42 } }), entityExtras({ syncEnabled: true, syncRevision: "0" }))),
+        getEntityFull: () => Promise.resolve({ entity: entity(entityId("message-entity"), "Message", { schemaId: MESSAGE }), links: [link(entityId("message-entity"), entityId("chat-entity"), "in_chat", { id: "parent" })] }),
+        findByExternalId: () => Promise.resolve(entityId("message-entity")),
         deleteEntity: () => Promise.reject(new Error("delete failed")),
       }),
     }).module;
@@ -565,15 +599,15 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
     let endError: Error | null = null;
     const graph = mockGraph({
       ...admittedGraph,
-      findByExternalIds: (externalIds) => Promise.resolve(externalIds.map(() => "chat-entity")),
-      getEntities: () => Promise.resolve([entity("chat-entity", "Chat", { schemaId: CHAT, properties: { chat_id: 42 } })]),
+      findByExternalIds: (externalIds) => Promise.resolve(externalIds.map(() => entityId("chat-entity"))),
+      getEntities: () => Promise.resolve([entity(entityId("chat-entity"), "Chat", { schemaId: CHAT, properties: { chat_id: 42 } })]),
       findByExternalId: (externalId) => {
-        if (externalId === "tg:account:9001") return Promise.resolve(selfExists ? "self-id" : null);
-        if (externalId === "tg:chat:42") return Promise.resolve(chatExists ? "chat-id" : null);
+        if (externalId === "tg:account:9001") return Promise.resolve(selfExists ? entityId("self-id") : null);
+        if (externalId === "tg:chat:42") return Promise.resolve(chatExists ? entityId("chat-id") : null);
         return Promise.resolve(null);
       },
-      listLinked: () => Promise.resolve(page(edgeExists ? [linkedEntity(entity("self-id", "Me"), {
-        id: "edge-42", from: "self-id", to: "chat-id", kind: "observed_in", validUntil, metadata: null,
+      listLinked: () => Promise.resolve(page(edgeExists ? [linkedEntity(entity(entityId("self-id"), "Me"), {
+        id: "edge-42", from: entityId("self-id"), to: entityId("chat-id"), kind: "telegram.observed_in", validUntil, metadata: null,
       })] : [])),
       endLink: (_id, endedAt) => {
         if (endError !== null) return Promise.reject(endError);
@@ -650,11 +684,11 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
    * @fixtures: one packet of three chat snapshots and two messages; three chats already in the graph
    */
   it("tst_module_telegram_006 batches existing chat reads and reads the required fields of newly created chats", async () => {
-    const known: Record<string, string> = { "tg:chat:1": "chat-1", "tg:chat:2": "chat-2", "tg:chat:4": "chat-4" };
+    const known: Record<string, string> = { "tg:chat:1": entityId("chat-1"), "tg:chat:2": entityId("chat-2"), "tg:chat:4": entityId("chat-4") };
     const stored: Record<string, JsonObject> = {
-      "chat-1": { chat_id: 1, title: "One", avatar_url: "/a/1.jpg" },
-      "chat-2": { chat_id: 2, title: "Two", last_message_preview: "kept two", last_sender_name: "Kept" },
-      "chat-4": { chat_id: 4, title: "Four", last_message_date: "2026-08-01T00:00:00Z" },
+      [entityId("chat-1")]: { chat_id: 1, title: "One", avatar_url: "/a/1.jpg" },
+      [entityId("chat-2")]: { chat_id: 2, title: "Two", last_message_preview: "kept two", last_sender_name: "Kept" },
+      [entityId("chat-4")]: { chat_id: 4, title: "Four", last_message_date: "2026-08-01T00:00:00Z" },
     };
     const graph = mockGraph({
       ...admittedGraph,
@@ -664,7 +698,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
         properties: stored[id] ?? {},
       }))),
       findByExternalId: (externalId) => externalId === "tg:account:9001"
-        ? Promise.resolve("self-id")
+        ? Promise.resolve(entityId("self-id"))
         : Promise.reject(new Error("per-chat external id lookup is forbidden")),
       listLinked: () => Promise.resolve(page([])),
       getEntity: () => Promise.reject(new Error("per-chat entity lookup is forbidden")),
@@ -673,7 +707,7 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
       updatePropertiesBatch: () => Promise.resolve(),
       applyBatch: (fragment) =>
         Promise.resolve({
-          ids: Object.fromEntries(fragment.entities.map((item) => [item.key, `id:${item.key}`])),
+          ids: Object.fromEntries(fragment.entities.map((item) => [item.key, entityId(`id:${item.key}`)])),
           created: 0,
           updated: fragment.entities.length,
           linksAdded: fragment.links.length,
@@ -695,10 +729,10 @@ describe("tst_module_telegram_ingest_002 — Telegram envelope mapping", () => {
     })).resolves.toEqual({ droppedRemoteIds: [], triggerChecks: [], ...NOTHING_STATED });
 
     expect(graph.spies.findByExternalIds?.mock.calls).toEqual([[["tg:chat:1", "tg:chat:2", "tg:chat:3", "tg:chat:4"]]]);
-    expect(graph.spies.getEntities?.mock.calls).toEqual([[["chat-1", "chat-2", "chat-4"]], [["id:tg:chat:3"]]]);
+    expect(graph.spies.getEntities?.mock.calls).toEqual([[[entityId("chat-1"), entityId("chat-2"), entityId("chat-4")]]]);
     // One operator lookup for the admitted snapshots; the newly discovered chat now has an observer edge too.
     expect(graph.spies.findByExternalId?.mock.calls).toEqual([["tg:account:9001"]]);
-    expect(graph.spies.listLinked?.mock.calls.map(([spec]) => (spec as { parentId: string }).parentId)).toEqual(["chat-1", "chat-2", "id:tg:chat:3"]);
+    expect(graph.spies.listLinked?.mock.calls.map(([spec]) => (spec as { parentId: string }).parentId)).toEqual([entityId("chat-1"), entityId("chat-2"), entityId("id:tg:chat:3")]);
     expect(graph.spies.getEntity).not.toHaveBeenCalled();
     expect(graph.spies.listEntitiesWindow).not.toHaveBeenCalled();
     const firstBatch = graph.spies.applyBatch?.mock.calls[1]?.[0] as GraphBatchInput | undefined;
@@ -729,12 +763,12 @@ describe("tst_cat_tg_web_ensure_001 — Telegram links a message to its URLs thr
     const batches: GraphBatchInput[] = [];
     const graph = mockGraph({
       ...admittedGraph,
-      findByExternalIds: (externalIds) => Promise.resolve(externalIds.map(() => "chat-entity")),
-      getEntities: (ids) => Promise.resolve(ids.map((id) => entity(id, "Chat", { schemaId: CHAT, properties: { chat_id: 42, type: "private" } }))),
+      findByExternalIds: (externalIds) => Promise.resolve(externalIds.map(() => entityId("chat-entity"))),
+      getEntities: (ids) => Promise.resolve(ids.map((id) => entity(entityId(id), "Chat", { schemaId: CHAT, properties: { chat_id: 42, type: "private" } }))),
       applyBatch: (batch) => {
         order.push("applyBatch");
         batches.push(batch);
-        return Promise.resolve({ ids: Object.fromEntries(batch.entities.map((item) => [item.key, `00000000-0000-4000-8000-00000000000${String(batches.length)}`])), created: batch.entities.length, updated: 0, linksAdded: 0, droppedKeys: [], resolved: [] });
+        return Promise.resolve({ ids: Object.fromEntries(batch.entities.map((item) => [item.key, entityId(`00000000-0000-4000-8000-00000000000${String(batches.length)}`)])), created: batch.entities.length, updated: 0, linksAdded: 0, droppedKeys: [], resolved: [] });
       },
       fileRegisterBatch: (files) => { order.push("fileRegisterBatch"); return Promise.resolve(files.map(() => "file-id")); },
       updatePropertiesBatch: () => { order.push("updatePropertiesBatch"); return Promise.resolve(); },
@@ -776,14 +810,16 @@ describe("tst_cat_tg_web_ensure_001 — Telegram links a message to its URLs thr
 
   it("a batch send of two messages succeeds and leaves the sent messages' URLs to their sync page", async () => {
     let sent = 0;
-    const chat = { ...entity("chat-entity", "Chat", { schemaId: CHAT, properties: { chat_id: 42, type: "private" } }), syncEnabled: true, syncRevision: "1" };
+    const chat = entityRead(entity(entityId("chat-entity"), "Chat", { schemaId: CHAT, properties: { chat_id: 42, type: "private" } }), entityExtras({ syncEnabled: true, syncRevision: "1" }));
     const graph = mockGraph({
       ...admittedGraph,
       sourceCommand: () => { sent += 1; return Promise.resolve({ message_id: 100 + sent }); },
-      findByExternalId: (externalId) => Promise.resolve(externalId === "tg:chat:42" ? chat.id : `sent:${externalId}`),
+      syncState: syncStateDouble({ status: async () => ({ accounts: [{ accountId: "acct", sync: null }] }) }),
+      listEntitiesByPropertyField: async () => page([entity("operator", "Me", { schemaId: "telegram.account", properties: { telegram_user_id: 9001, is_self: true }, source: { source: "telegram-ts", account: "acct", externalId: "tg:account:9001" } })]),
+      findByExternalId: (externalId) => Promise.resolve(externalId === "tg:chat:42" ? chat.entity.id : entityId(`sent:${externalId}`)),
       getEntity: () => Promise.resolve(chat),
       findByExternalIds: (externalIds) => Promise.resolve(externalIds.map(() => null)),
-      applyBatch: (batch) => Promise.resolve({ ids: Object.fromEntries(batch.entities.map((item) => [item.key, `id:${item.key}`])), created: batch.entities.length, updated: 0, linksAdded: 0, droppedKeys: [], resolved: [] }),
+      applyBatch: (batch) => Promise.resolve({ ids: Object.fromEntries(batch.entities.map((item) => [item.key, entityId(`id:${item.key}`)])), created: batch.entities.length, updated: 0, linksAdded: 0, droppedKeys: [], resolved: [] }),
       updatePropertiesBatch: () => Promise.resolve(),
     });
     // The send path swallows a failed local ingest, so the calls are counted:

@@ -190,7 +190,7 @@ export class LinkedinModule {
     const found: { externalId: string; id: string }[] = [];
     externalIds.forEach((externalId, index) => { const id = ids[index]; if (id) found.push({ externalId, id }); });
     if (found.length === 0) return stamps;
-    const byId = new Map((await this.graph.getEntities(found.map(({ id }) => id))).map((item) => [item.id, item]));
+    const byId = new Map<string, Entity>((await this.graph.getEntities(found.map(({ id }) => id))).map((item) => [item.id, item]));
     for (const { externalId, id } of found) {
       const held = byId.get(id);
       stamps.set(externalId, held === undefined ? null : str(held.properties as JsonObject, "sync_pass") ?? null);

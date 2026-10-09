@@ -1,3 +1,4 @@
+import { EntityExtrasSchema } from "@magnis/sdk";
 import { SyncToolCallRenderer } from "./SyncToolCallRenderer";
 import { toolNamesEquivalent } from "@magnis/host/agent";
 import type { AgentHistoryRendererRegistration } from "@magnis/host/runtime";
@@ -61,16 +62,19 @@ const moduleDefinition = defineModule({
     return { action, targetType: "tool_action", targetId: action, targetLabel: `${binding.operation === "create" ? "Create" : binding.operation === "merge" ? "Merge" : "Update"} contact` };
   },  groupBy: "letter",
   getGroupLetter: (item) => item.name?.[0]?.toUpperCase() ?? "#",
-  mapListItem: (raw) => ({
-    id: raw.id as string,
-    name: (raw.name as string | undefined) ?? null,
-    schemaId: (raw.schemaId as string | undefined) ?? "",
-    preview: (raw.email as string | undefined) ?? (raw.phone as string | undefined) ?? null,
-    timestamp: null,
-    avatarUrl: (raw.avatarUrl as string | undefined) ?? null,
-    isPinned: (raw.isPinned as boolean | undefined) ?? undefined,
-    isArchived: (raw.isArchived as boolean | undefined) ?? undefined,
-  }),
+  mapListItem: (raw) => {
+    const extras = EntityExtrasSchema.parse(raw.extras);
+    return {
+      id: raw.id as string,
+      name: (raw.name as string | undefined) ?? null,
+      schemaId: (raw.schemaId as string | undefined) ?? "",
+      preview: (raw.email as string | undefined) ?? (raw.phone as string | undefined) ?? null,
+      timestamp: null,
+      avatarUrl: (raw.avatarUrl as string | undefined) ?? null,
+      pinOrder: extras.pinOrder,
+      isArchived: extras.archived,
+    };
+  },
 });
 
 const legacyRenderers: readonly AgentHistoryRendererRegistration[] = [

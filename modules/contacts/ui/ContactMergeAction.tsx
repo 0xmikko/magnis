@@ -1,4 +1,5 @@
-import type { MergeInput, MergePreview } from "@magnis/sdk";
+import type { MergeInputSchema, MergePreview } from "@magnis/sdk";
+import type { z } from "zod";
 import { useState } from "react";
 import type { ChangeEvent, JSX } from "react";
 import { ActionButton, Icon } from "@magnis/host/ui";
@@ -85,7 +86,7 @@ export function ContactMergeAction({
     setError(null);
     try {
       // @tested-by: tst_fe_contacts_browser_002
-      const merge: MergeInput = {
+      const merge: z.input<typeof MergeInputSchema> = {
         survivorId: entityId,
         retiredId,
         preview: false,

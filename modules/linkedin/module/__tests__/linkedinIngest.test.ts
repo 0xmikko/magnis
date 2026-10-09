@@ -5,7 +5,7 @@
 // Proxy, so any op a test does not arrange fails loudly).
 import { describe, expect, it, vi } from "vitest";
 import type { BatchEntityInput, GraphBatchInput, JsonObject, SyncEnvelope } from "@magnis/sdk";
-import { entity, mockGraph, mountModule, page, sourceEnvelope, type MockGraph } from "@magnis/testkit/module";
+import { entityId, entity, mockGraph, mountModule, page, sourceEnvelope, type MockGraph } from "@magnis/testkit/module";
 import { LinkedinModule } from "../service.ts";
 import { AUTHORED_BY, IDENTITY, POST, PROFILE } from "../../schema.ts";
 
@@ -122,7 +122,7 @@ describe("linkedin ingest", () => {
 
     const listed = await mod.postsList({});
     expect(listed.total).toBe(1);
-    expect(listed.items[0]).toMatchObject({ id: "p1", platform: "x", author_handle: "jack", text: "hello" });
+    expect(listed.items[0]).toMatchObject({ id: entityId("p1"), platform: "x", author_handle: "jack", text: "hello" });
     expect(graph.spies.listEntitiesWindow).toHaveBeenCalledTimes(1);
   });
 });
@@ -141,9 +141,10 @@ describe("linkedin ingest — the plan from the pages", () => {
   const profile = (): SyncEnvelope => env("linkedin:profile:jane", { entity_type: "profile", platform: "linkedin", handle: "jane", urn: "urn:li:person:1", display_name: "Jane" });
   const post = (): SyncEnvelope => env("linkedin:post:1", { entity_type: "post", platform: "linkedin", post_id: "1", author_handle: "jane", text: "hello", created_at: "2026-06-01T00:00:00Z", metrics: {} });
   function planGraph(known: Record<string, JsonObject>): G {
+    const byId = new Map(Object.entries(known).map(([externalId, properties]) => [entityId(`id:${externalId}`), entity(entityId(`id:${externalId}`), "", { schemaId: PROFILE, properties })]));
     return mockGraph({
-      findByExternalIds: (externalIds: string[]) => Promise.resolve(externalIds.map((externalId) => (externalId in known ? `id:${externalId}` : null))),
-      getEntities: (ids: string[]) => Promise.resolve(ids.map((id) => entity(id, "", { schemaId: PROFILE, properties: known[id.slice("id:".length)] ?? {} }))),
+      findByExternalIds: (externalIds: string[]) => Promise.resolve(externalIds.map((externalId) => (externalId in known ? entityId(`id:${externalId}`) : null))),
+      getEntities: (ids: string[]) => Promise.resolve(ids.map((id) => { const row = byId.get(entityId(id)); if (row === undefined) throw new Error("Unknown fixture row"); return row; })),
       applyBatch: () => Promise.resolve(emptyBatch),
     });
   }
@@ -171,7 +172,7 @@ describe("linkedin ingest identity link (tst_ingest_link)", () => {
   function linkGraph(): G {
     return mockGraph({
       applyBatch: () =>
-        Promise.resolve({ ids: { "linkedin:profile:12": "prof-1" }, created: 1, updated: 0, linksAdded: 0, droppedKeys: [], resolved: [] }),
+        Promise.resolve({ ids: { "linkedin:profile:12": entityId("prof-1") }, created: 1, updated: 0, linksAdded: 0, droppedKeys: [], resolved: [] }),
       addLink: () => Promise.resolve(),
     });
   }
@@ -201,7 +202,7 @@ describe("linkedin ingest identity link (tst_ingest_link)", () => {
     // `identity` runs hub → channel: the contact is the FROM endpoint.
     expect(graph.spies.addLink).toHaveBeenCalledWith({
       from: "c1",
-      to: "prof-1",
+      to: entityId("prof-1"),
       kind: IDENTITY,
     });
     expect(execute).toHaveBeenCalledWith("contacts.rename_if_placeholder", {

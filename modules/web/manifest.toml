@@ -10,7 +10,7 @@
 id = "web"
 version = "0.1.0"
 # Plugin API version this manifest targets; the host accepts exactly 0.2.0.
-magnis_api_version = "0.2.0"
+magnis_api_version = "0.3.0"
 # Other modules declare links to URLs through `web.link.ensure`, so the schema
 # owner exists in every workspace.
 tier = "system"

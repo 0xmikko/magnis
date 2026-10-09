@@ -2,7 +2,7 @@
 // (compute_initials, pick_avatar_color, detect_channels) so list/detail
 // output matches pre-migration.
 
-import type { Entity } from "@magnis/sdk";
+import type { Entity, EntityRead } from "@magnis/sdk";
 import type { ContactListItem } from "../types.ts";
 
 const AVATAR_COLORS = ["orange", "blue", "green", "red", "purple", "pink"];
@@ -58,9 +58,10 @@ export function channelsOf(identityNeighbours: readonly Entity[]): string[] {
 // writer, nothing to arbitrate); the email is the address node an identity
 // edge reaches. The hot list path batches the edges — no per-row graph access.
 export function buildListItem(
-  entity: Entity,
+  read: EntityRead,
   identityNeighbours: readonly Entity[],
 ): ContactListItem {
+  const { entity, extras } = read;
   const dict = entity.properties as Record<string, unknown>;
   const name =
     entity.name && entity.name.length > 0 ? entity.name : (dictString(dict, "name") ?? "Unknown");
@@ -87,7 +88,7 @@ export function buildListItem(
     // without a destination, so nothing has written it since.
     relevanceTier: null,
     createdAt: entity.createdAt,
-    isPinned: entity.isPinned,
+    extras,
   };
 }
 

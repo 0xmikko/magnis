@@ -9,7 +9,7 @@
 id = "meetings"
 version = "0.1.0"
 # Plugin API version this manifest targets; the host accepts exactly 0.2.0.
-magnis_api_version = "0.2.0"
+magnis_api_version = "0.3.0"
 title = "Meetings"
 summary = "Schedule, track, and recap meetings across calendars."
 # Reverse-domain publisher identity.
@@ -35,7 +35,7 @@ progress = { "meetings.calendar_event" = "events" }
 [permissions]
 read = [ "contacts.person" ]
 create = [ "email.address" ]
-links = [ "attendee" ]
+links = [ "meetings.attendee" ]
 call = [ "email.ensure_address", "email.ensure_addresses" ]
 host = [ "external_id_reads", "sync_state" ]
 
@@ -43,3 +43,8 @@ host = [ "external_id_reads", "sync_state" ]
 # defaults — rewritten to host-shim URLs at build/transpile time.
 [ui]
 extra_bare_imports = [ "zustand", "zustand/vanilla" ]
+
+[[links]]
+kind = "meetings.attendee"
+from = "meetings.calendar_event"
+to = "email.address"

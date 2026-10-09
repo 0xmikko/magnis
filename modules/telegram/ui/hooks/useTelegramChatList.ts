@@ -42,9 +42,8 @@ function mapChatItems(items: readonly TelegramChatListItem[], baseUrl: string): 
       time: c.last_message_time
         ? formatChatListTime(c.last_message_time)
         : "",
-      pinned: c.is_pinned === true,
-      isIndexed: c.indexed,
-      syncEnabled: c.syncEnabled,
+      pinned: c.extras.pinOrder !== null,
+      syncEnabled: c.extras.syncEnabled,
     };
   });
 }

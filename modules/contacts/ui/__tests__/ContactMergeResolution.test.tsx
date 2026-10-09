@@ -1,3 +1,4 @@
+import { entityId } from "@magnis/testkit/module";
 /**
  * @layer: fe_agent
  * @test-id: tst_fe_agent_010
@@ -71,10 +72,10 @@ it.each([false, true])("renders compact merge preview without claiming or approv
   const onApprove = vi.fn();
   const payload: ToolCallRendererPayload = {
     toolCall: { id: "preview", name: "merge", toolBinding: { entity: "contacts.person", operation: "merge" },
-      args: { survivorId: "a", retiredId: "b", preview: true, overrides: [], reason: null }, status: "approved" },
+      args: { survivorId: entityId("a"), retiredId: entityId("b"), preview: true, overrides: [], reason: null }, status: "approved" },
     toolResult: { id: "preview", result: {
-      survivor: { id: "a", name: "Ada", schemaId: "contacts.person", propertyCount: 1, linkCount: 0 },
-      retired: { id: "b", name: "Grace", schemaId: "contacts.person", propertyCount: 1, linkCount: 0 },
+      survivor: { id: entityId("a"), name: "Ada", schemaId: "contacts.person", propertyCount: 1, linkCount: 0 },
+      retired: { id: entityId("b"), name: "Grace", schemaId: "contacts.person", propertyCount: 1, linkCount: 0 },
       sources: [],
       fields: { name: { key: "name", survivorValue: "Ada", retiredValue: "Grace", autoResolved: "Ada", conflict: false } },
       linksToRepoint: 2, duplicateLinksToRemove: 0, reflexiveLinksToRemove: 0,
@@ -104,8 +105,8 @@ it.each([false, true])("renders compact merge preview without claiming or approv
  */
 it("tst_cat_entity_one_type_003 shows survivor and retired values from the host's MergePreview", async () => {
   const preview: MergePreview = {
-    survivor: { id: "a", name: "Ada", schemaId: "contacts.person", propertyCount: 1, linkCount: 3 },
-    retired: { id: "b", name: "Grace", schemaId: "contacts.person", propertyCount: 1, linkCount: 2 },
+    survivor: { id: entityId("a"), name: "Ada", schemaId: "contacts.person", propertyCount: 1, linkCount: 3 },
+    retired: { id: entityId("b"), name: "Grace", schemaId: "contacts.person", propertyCount: 1, linkCount: 2 },
     sources: [],
     fields: {
       title: { key: "title", survivorValue: "Engineer", retiredValue: "Admiral", autoResolved: "Engineer", conflict: false },
@@ -117,7 +118,7 @@ it("tst_cat_entity_one_type_003 shows survivor and retired values from the host'
   const rpc = vi.fn(() => Promise.resolve(preview));
   const payload: ToolCallRendererPayload = {
     toolCall: { id: "merge", name: "merge", toolBinding: { entity: "contacts.person", operation: "merge" },
-      args: { survivorId: "a", retiredId: "b", preview: false }, status: "pending" },
+      args: { survivorId: entityId("a"), retiredId: entityId("b"), preview: false }, status: "pending" },
     toolResult: undefined, isAllowlisted: false, onApprove: vi.fn(), onDeny: vi.fn(), onEdit: vi.fn(), onAllowlistToggle: vi.fn(),
   };
 
@@ -126,5 +127,5 @@ it("tst_cat_entity_one_type_003 shows survivor and retired values from the host'
   expect(await view.findByText("Admiral")).toBeTruthy();
   expect(view.getAllByText("Engineer")).toHaveLength(2);
   expect(view.getByText("2 links to transfer")).toBeTruthy();
-  expect(rpc).toHaveBeenCalledWith("contacts.merge_preview", { survivorId: "a", retiredId: "b" });
+  expect(rpc).toHaveBeenCalledWith("contacts.merge_preview", { survivorId: entityId("a"), retiredId: entityId("b") });
 });

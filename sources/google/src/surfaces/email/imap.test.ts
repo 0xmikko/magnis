@@ -26,6 +26,23 @@ function mailbox(messages: ImapRawMessage[], uidValidity = "42"): ImapMailbox {
   };
 }
 
+test("tst_src_communication_002 IMAP preserves system-label evidence", async () => {
+  for (const [labels, kinds] of [
+    [["\\Inbox"], ["received"]],
+    [["\\Sent"], ["sent"]],
+    [["\\Sent", "\\Inbox"], ["sent", "received"]],
+    [["\\Drafts", "\\Inbox"], []],
+  ] satisfies [string[], string[]][]) {
+    const message = { ...raw(1), labels: new Set(labels) };
+    const page = await readImapPage("user@example.com", "token", undefined, allSenders, async () => mailbox([message]));
+    const hydrated = page.messages[0];
+    if (!hydrated) throw new Error("expected hydrated message");
+    expect(gmailMessageToMailMessage(hydrated)).toHaveProperty("communication", kinds.map((kind) => ({
+      kind, occurredAt: "2026-09-24T10:00:00Z",
+    })));
+  }
+});
+
 /**
  * @test-id: tst_src_iso_google_018
  * @scenario: scn_google_pull_001
