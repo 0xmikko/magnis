@@ -1391,8 +1391,8 @@ Required handoff evidence: Both exact app/catalog heads and artifact digests rec
 
 ##### Acceptance criteria
 
-- [ ] `bash .githooks/pre-push < /dev/null > /tmp/kg-app-final-gate.log 2>&1` exits 0
-- [ ] Commit
+- [x] `bash .githooks/pre-push < /dev/null > /tmp/kg-app-final-gate.log 2>&1` exits 0 — 44f4661c928e1dd8aac9d9040df9febdfc88013b
+- [x] Commit — 44f4661c928e1dd8aac9d9040df9febdfc88013b
 
 ##### Results
 
@@ -1558,9 +1558,9 @@ Required handoff evidence: Matching catalog/SDK artifact digests recorded; no un
 
 ##### Acceptance criteria
 
-- [ ] `bash .githooks/pre-push < /dev/null > /tmp/kg-catalog-prepush.log 2>&1` exits 0
-- [ ] `bun run agent:verify:docs` exits 0
-- [ ] Commit
+- [x] `bash .githooks/pre-push < /dev/null > /tmp/kg-catalog-prepush.log 2>&1` exits 0 — a495452f7f70d1e974d2801019851a9039daeb0f
+- [x] `bun run agent:verify:docs` exits 0 — a495452f7f70d1e974d2801019851a9039daeb0f
+- [x] Commit — a495452f7f70d1e974d2801019851a9039daeb0f
 
 ##### Results
 
@@ -2152,4 +2152,8 @@ Required handoff evidence: Matching catalog/SDK artifact digests recorded; no un
 - record-result D2-S4 commit:6899bcfb47aaa75ff2c4cace43e6620973d49cad
 
 - amend implementation owner:Давай тогда мигрируем - и потом сделаем smore тест что работает sha256:912f0714bb6980ceddc40d0ff91bbff1d892ae699fc02bbb5f8ffaa36ef4ea13
+
+- close D2-S4 closed commit:a495452f7f70d1e974d2801019851a9039daeb0f
+
+- close D1-S9 closed commit:44f4661c928e1dd8aac9d9040df9febdfc88013b
 <!-- plan:execution:end -->
