@@ -2389,18 +2389,31 @@ The matching implementation heads are app [`230d381`](https://github.com/0xmikko
 
 ### Updating installed module API 0.2 packages
 
-The installed-package transition is a release blocker. [Integration tests](https://github.com/0xmikko/magnis-app/blob/0afd4a412d9a1a1ebea7bbd1ea9ed1639e4cdc2f/backend/test/tst_bts_ext_update_001.test.ts) seed persisted API 0.2.0 artifacts and exercise the real package store, database, ExtensionService and V8 runtime against API 0.3.0 candidates.
+Before restoring modules, ExtensionService migrates every content-addressed installed module whose stored API is `0.2.0`, including disabled modules. The configured channel must provide an exact compatible `0.3.0` candidate for each affected module. Package version and API version are independent: replacement also works when the package version stays the same and its content hash changes. An installation with no old modules makes no migration channel request and can restart offline.
+
+The transition reuses the package store, V8 descriptor preparation and existing graph/search validation:
+
+1. Stage and verify all candidates: channel identity, archive hash, API, schema and bundle. Prepare activation descriptors without running module effects.
+2. Validate dependencies and contracts for the resulting enabled set, including unchanged compatible modules. Register all schema owners before Link declarations; stored sidebar position is not dependency order. A missing enabled dependency is an error, not permission to enable it.
+3. Publish immutable package files, then replace all affected installation pointers, normalized manifests, module contracts and enabled activation descriptors in one database transaction. Compare-and-swap checks the inspected package/manifest identity and enabled choice. Disabled modules retain a null activation descriptor.
+4. Restore the complete enabled set through ordinary bootstrap. Preserve enabled choices, original install times and positions, Entity/Link rows, settings, pin order, privacy/archive flags and sync choice/revision.
+
+This is a startup compatibility transition, not periodic package updating. Compatible modules are unchanged. Source/Skill protocols and the older hash-less artifact adoption path are unchanged.
 
 | Existing installation | Verified behavior |
 | --- | --- |
-| One enabled API 0.2 package | Bootstrap fails with `unsupported magnis_api_version 0.2.0` before restoring activation descriptors. The ordinary HTTP/RPC update path is unavailable. |
-| One disabled API 0.2 package | Bootstrap succeeds. Channel refresh and update replace the artifact while keeping it disabled. A fresh service/store/runtime bootstrap succeeds; enabling then runs the new bundle. |
-| One enabled API 0.2 package, update invoked directly in the test | Replacement and subsequent fresh bootstrap succeed. This verifies the replacement primitive, but does not provide a reachable user update path after failed startup. |
-| Two enabled API 0.2 packages, first update invoked directly | The first package's API 0.3 pointer is committed. Publishing search declarations then resolves the second old package and throws. The mixed installation still cannot bootstrap. |
+| Enabled or disabled API 0.2 modules | Bootstrap replaces the whole old set and preserves each enabled choice. Disabled modules can subsequently run the new bundle when enabled. |
+| Old modules alongside compatible modules | Migrate only the old modules; an unchanged compatible module needs no channel offer. |
+| Offline channel, missing offer, bad API/hash/bundle or missing enabled dependency | Fail explicitly before changing installed rows or activating candidates. |
+| Database failure on the second replacement | Roll back the entire transaction, including manifests and contracts; a retry succeeds after the fault is removed. |
+| Enabled choice changes after preparation | Compare-and-swap refuses the transaction and preserves the newer choice; retry uses that choice. |
+| Restoration fails after the transaction commits | Retain the complete new installation, report the error and restore it on restart without fetching the channel. |
 
-Successful single-package replacement preserves Entity and Link rows, settings, pin order, privacy/archive flags, sync choice and revision, and the installation's enabled intent, original install time and position. The fixture also verifies replacement when the package version stays the same and only its content hash/API change. API compatibility and package version are separate values.
+Before commit, a failed transition leaves all installed rows and contracts unchanged. Files already published without a committed reference are ordinary package-store garbage; retry verifies/reuses the same exact candidate files. After commit, recovery uses the complete new set rather than rolling back individual packages.
 
-These are deterministic stored-artifact fixtures, not an exported production workspace or a provider-specific data migration. Their passing assertions reproduce both release blockers. SQL/workspace migration and matching-package browser tests do not establish a working in-place package upgrade. Existing installations need a coordinated package transition before ordinary bootstrap, with defined failure recovery for the whole affected set; that mechanism is not implemented by this graph migration.
+[Integration tests](https://github.com/0xmikko/magnis-app/blob/b3977537b6c2d59682afefc480a2b024692dadb0/backend/test/tst_bts_ext_update_001.test.ts) exercise the real database, package store, ExtensionService and V8 runtime. The smoke test migrates five real catalog bundles in reverse dependency order—Meetings, Email, Contacts, Projects and Notes—creates a note, then reads it after an offline restart. Separate browser smoke tests cover the store and installation of Meetings with its dependencies.
+
+These fixtures seed persisted API 0.2 artifact metadata; they are not an exported production workspace or evidence of provider-specific data migration. The implementation and smoke tests do not publish a release or channel. The initial transition requires compatible candidates for every installed old module, including disabled ones.
 
 ### Sources of the contracts
 
