@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { JsonValue } from "@magnis/sdk";
-import { entity as graphEntity, mockGraph, mountModule } from "@magnis/testkit/module";
+import { entity as graphEntity, entityRead, entityExtras, mockGraph, mountModule } from "@magnis/testkit/module";
 
 import { ContactsModule } from "./module/service.ts";
 import { person } from "./entities.ts";
@@ -19,7 +19,7 @@ async function hubClaimsWritten(): Promise<JsonValue[]> {
   const created = graphEntity(CONTACT_ID, "Alice Smith", { schemaId: CONTACT });
   let exists = false;
   const graph = mockGraph({
-    getEntity: () => Promise.resolve(exists ? created : null),
+    getEntity: (_id: string, options?: { extras: true }) => Promise.resolve(exists ? (options?.extras ? entityRead(created, entityExtras()) : created) : null),
     createEntity: () => { exists = true; return Promise.resolve(created); },
     updateProperties: (input: { properties: JsonValue }) => {
       written.push(input.properties);

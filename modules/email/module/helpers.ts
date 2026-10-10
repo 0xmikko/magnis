@@ -3,7 +3,7 @@
 // shaping of source `Data` payloads into wire DTOs, mirroring the native module
 // (extract_sender / extract_preview / strip_body_html / MessageListItem).
 
-import type { Entity, JsonValue } from "@magnis/sdk";
+import type { EntityRead, JsonValue } from "@magnis/sdk";
 import type { MessageListItem } from "../types.ts";
 
 export type Data = Record<string, JsonValue>;
@@ -108,10 +108,12 @@ function stripBodyHtml(d: Data): Data {
   return rest;
 }
 
-export function buildListItem(entity: Entity, d: Data): MessageListItem {
+export function buildListItem(read: EntityRead, d: Data): MessageListItem {
+  const { entity, extras } = read;
   const created = entity.createdAt;
   return {
     id: entity.id,
+    extras,
     schemaId: entity.schemaId,
     sender: senderOf(d),
     subject: entity.name && entity.name.length > 0 ? entity.name : null,

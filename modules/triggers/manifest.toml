@@ -9,7 +9,7 @@
 id = "triggers"
 version = "0.1.0"
 # Plugin API version this manifest targets; the host accepts exactly 0.2.0.
-magnis_api_version = "0.2.0"
+magnis_api_version = "0.3.0"
 # tier = "system": mandatory, always-loaded, cannot be uninstalled/disabled.
 # Still V8-sandboxed.
 tier = "system"
@@ -23,10 +23,12 @@ resources = [ "triggers.trigger.history" ]
 # own:own links, and reads of own schemas need no declaration.
 [permissions]
 read = [ "episodes.episode" ]
-# triggers.belongs_to is own-prefixed — implicit (S2).
-links = [ "watches" ]
+# Shared membership requires an explicit host-kind write permission.
+links = [ "watches", "belongs_to" ]
 call = [ "triggers.validate_watch", "triggers.resolve_watchable", "triggers.invalidate_cache", "triggers.fire_history", "triggers.validate_schedule", "triggers.fire_now", "email.ensure_addresses", "telegram.chats.get" ]
 
-# The kind this module OWNS (S2): a trigger belongs to a parent episode.
+# The host kind this module uses: a trigger belongs to a parent episode.
 [[links]]
-kind = "triggers.belongs_to"
+kind = "belongs_to"
+from = "triggers.trigger"
+to = "episodes.episode"

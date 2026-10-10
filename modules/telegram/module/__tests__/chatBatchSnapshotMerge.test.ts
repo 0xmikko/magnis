@@ -11,9 +11,9 @@
  * Mocks: GraphService only; no live Telegram session.
  * Data: one existing pinned chat and a bootstrap-sized dialog page.
  */
-import type { Entity, GraphBatchInput, SyncEnvelope } from "@magnis/sdk";
+import type { PersistentEntity, GraphBatchInput, SyncEnvelope } from "@magnis/sdk";
 import { describe, expect, it } from "vitest";
-import { entity, mockGraph, mountModule, page, sourceEnvelope } from "@magnis/testkit/module";
+import { entityId, entity, mockGraph, mountModule, page, sourceEnvelope } from "@magnis/testkit/module";
 import { TelegramModule } from "../service.ts";
 
 function chatEnvelope(chatId: number): SyncEnvelope {
@@ -60,13 +60,13 @@ describe("telegram chat batch ingest", () => {
       // The page asks for its own external ids once and reads the found entities
       // once; the whole-account window is never consulted.
       findByExternalIds: (externalIds) =>
-        Promise.resolve(externalIds.map((externalId) => (externalId === "tg:chat:1" ? "chat-entity-1" : null))),
+        Promise.resolve(externalIds.map((externalId) => (externalId === "tg:chat:1" ? entityId("chat-entity-1") : null))),
       getEntities: (ids) =>
-        Promise.resolve(ids.map((id): Entity => id !== "chat-entity-1" ? {
+        Promise.resolve(ids.map((id): PersistentEntity => id !== entityId("chat-entity-1") ? {
           ...entity(id, "Chat", { schemaId: "telegram.chat" }),
           properties: { chat_id: Number(id.slice("tg:chat:".length)) },
         } : {
-            ...entity("chat-entity-1", "Pinned chat", {
+            ...entity(entityId("chat-entity-1"), "Pinned chat", {
               schemaId: "telegram.chat",
             }),
             // S4: the chat DICT is the record — the entity row carries it; the
@@ -86,11 +86,11 @@ describe("telegram chat batch ingest", () => {
       listEntitiesWindow: () => Promise.reject(new Error("whole-account chat scan is forbidden")),
       // The operator's edge to the existing chat is read once (kind-filtered)
       // before it is written again: the page's state joins what it holds.
-      findByExternalId: (externalId) => Promise.resolve(externalId === "tg:account:9001" ? "self-id" : null),
+      findByExternalId: (externalId) => Promise.resolve(externalId === "tg:account:9001" ? entityId("self-id") : null),
       listLinked: () => Promise.resolve(page([])),
       applyBatch: (fragment) =>
         Promise.resolve({
-          ids: Object.fromEntries(fragment.entities.map((item) => [item.key, item.key])),
+          ids: Object.fromEntries(fragment.entities.map((item) => [item.key, entityId(item.key)])),
           created: 0,
           updated: fragment.entities.length,
           linksAdded: 0,
@@ -126,7 +126,7 @@ describe("telegram chat batch ingest", () => {
     });
     expect(pinnedChat?.properties).not.toHaveProperty("is_pinned");
     const stateLink = firstBatch.links.find(
-      (l) => l.toKey === "tg:chat:1" && l.kind === "observed_in",
+      (l) => l.toKey === "tg:chat:1" && l.kind === "telegram.observed_in",
     );
     expect(stateLink?.fromKey).toBe("self");
     expect(stateLink?.metadata).toMatchObject({ is_pinned: true, pin_order: 0 });
@@ -146,13 +146,15 @@ describe("telegram chat batch ingest", () => {
    * Data: one bounded source page containing chats before their messages.
    */
   it("tst_mod_tg_ingest_002 reuses chat state within one sync page instead of issuing per-chat reads and updates", async () => {
+    const chatIdsByEntity = new Map(Array.from({ length: 51 }, (_, index) => [entityId(`chat-entity-${index + 1}`), index + 1]));
     const graph = mockGraph({
       admitSyncEntities: (subjects) => Promise.resolve(subjects.flatMap((subject) => [...subject.remoteIds])),
       findByExternalIds: (externalIds) =>
-        Promise.resolve(externalIds.map((externalId) => `chat-entity-${externalId.slice("tg:chat:".length)}`)),
+        Promise.resolve(externalIds.map((externalId) => entityId(`chat-entity-${externalId.slice("tg:chat:".length)}`))),
       getEntities: (ids) =>
         Promise.resolve(ids.map((id) => {
-          const chatId = Number(id.slice("chat-entity-".length));
+          const chatId = chatIdsByEntity.get(entityId(id));
+          if (chatId === undefined) throw new Error("Unknown fixture chat");
           return {
             ...entity(id, `Chat ${String(chatId)}`, { schemaId: "telegram.chat" }),
             properties: {
@@ -168,10 +170,10 @@ describe("telegram chat batch ingest", () => {
       // One operator lookup per page, one kind-filtered edge read per existing
       // chat: never an external id or entity lookup per chat.
       findByExternalId: (externalId) => externalId === "tg:account:9001"
-        ? Promise.resolve("self-id")
+        ? Promise.resolve(entityId("self-id"))
         : Promise.reject(new Error("per-chat external id lookup is forbidden")),
       listLinked: (spec) => {
-        expect(spec).toMatchObject({ linkKind: "observed_in", direction: "in" });
+        expect(spec).toMatchObject({ linkKind: "telegram.observed_in", direction: "in" });
         return Promise.resolve(page([]));
       },
       getEntity: () => Promise.reject(new Error("per-chat entity lookup is forbidden")),
@@ -179,7 +181,7 @@ describe("telegram chat batch ingest", () => {
       updatePropertiesBatch: () => Promise.reject(new Error("per-chat denormalization update is forbidden")),
       applyBatch: (fragment) =>
         Promise.resolve({
-          ids: Object.fromEntries(fragment.entities.map((item) => [item.key, `id:${item.key}`])),
+          ids: Object.fromEntries(fragment.entities.map((item) => [item.key, entityId(`id:${item.key}`)])),
           created: 0,
           updated: fragment.entities.length,
           linksAdded: fragment.links.length,

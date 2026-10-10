@@ -12,7 +12,7 @@ export declare const GraphValiditySchema: z.ZodObject<{
 }, z.core.$strict>;
 export type GraphValidity = z.output<typeof GraphValiditySchema>;
 export declare const IndexingContextSchema: z.ZodObject<{
-    startEntityIds: z.ZodArray<z.ZodString>;
+    startEntityIds: z.ZodArray<z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">>;
     maxDepth: z.ZodInt;
     maxNodes: z.ZodInt;
     maxEdges: z.ZodInt;
@@ -26,9 +26,9 @@ export declare const IndexingContextSchema: z.ZodObject<{
 export type IndexingContext = z.output<typeof IndexingContextSchema>;
 /** What the model is shown: the source, its context rows and their rendered text. */
 export declare const IndexingInputSchema: z.ZodObject<{
-    entity: z.ZodString;
+    entity: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
     context: z.ZodObject<{
-        startEntityIds: z.ZodArray<z.ZodString>;
+        startEntityIds: z.ZodArray<z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">>;
         maxDepth: z.ZodInt;
         maxNodes: z.ZodInt;
         maxEdges: z.ZodInt;
@@ -47,43 +47,29 @@ export declare const IndexingInputSchema: z.ZodObject<{
             externalId: z.ZodString;
         }, z.core.$strict>;
         canonicalKey: z.ZodNullable<z.ZodString>;
-        id: z.ZodString;
-        owner: z.ZodString;
         schemaId: z.ZodString;
         schemaVersion: z.ZodInt;
         createdAt: z.ZodISODateTime;
         name: z.ZodNullable<z.ZodString>;
-        indexed: z.ZodBoolean;
-        syncEnabled: z.ZodExactOptional<z.ZodBoolean>;
-        syncRevision: z.ZodExactOptional<z.ZodString>;
         date: z.ZodISODateTime;
         idx: z.ZodNullable<z.ZodString>;
-        isPinned: z.ZodNullable<z.ZodBoolean>;
-        pinOrder: z.ZodNullable<z.ZodNumber>;
-        isArchived: z.ZodNullable<z.ZodBoolean>;
         properties: z.ZodType<import("./json.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("./json.js").JsonValue, unknown>>;
+        id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
     }, z.core.$strict>, z.ZodObject<{
         keys: z.ZodArray<z.ZodString>;
-        origin: z.ZodLiteral<"agent">;
+        origin: z.ZodLiteral<"derived">;
         confidence: z.ZodNumber;
-        evidence: z.ZodTuple<[z.ZodString], z.ZodString>;
+        evidence: z.ZodTuple<[z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">], z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">>;
         validFrom: z.ZodNullable<z.ZodISODateTime>;
         validUntil: z.ZodNullable<z.ZodISODateTime>;
-        id: z.ZodString;
-        owner: z.ZodString;
         schemaId: z.ZodString;
         schemaVersion: z.ZodInt;
         createdAt: z.ZodISODateTime;
         name: z.ZodNullable<z.ZodString>;
-        indexed: z.ZodBoolean;
-        syncEnabled: z.ZodExactOptional<z.ZodBoolean>;
-        syncRevision: z.ZodExactOptional<z.ZodString>;
         date: z.ZodISODateTime;
         idx: z.ZodNullable<z.ZodString>;
-        isPinned: z.ZodNullable<z.ZodBoolean>;
-        pinOrder: z.ZodNullable<z.ZodNumber>;
-        isArchived: z.ZodNullable<z.ZodBoolean>;
         properties: z.ZodType<import("./json.js").JsonValue, unknown, z.core.$ZodTypeInternals<import("./json.js").JsonValue, unknown>>;
+        id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
     }, z.core.$strict>], "origin"> & z.ZodType<{
         origin: "canonical";
         source: {
@@ -92,21 +78,14 @@ export declare const IndexingInputSchema: z.ZodObject<{
             externalId: string;
         };
         canonicalKey: string | null;
-        id: string;
-        owner: string;
         schemaId: string;
         schemaVersion: number;
         createdAt: string;
         name: string | null;
-        indexed: boolean;
         date: string;
         idx: string | null;
-        isPinned: boolean | null;
-        pinOrder: number | null;
-        isArchived: boolean | null;
         properties: import("./json.js").JsonValue;
-        syncEnabled?: boolean;
-        syncRevision?: string;
+        id: string & z.core.$brand<"PersistentEntityId">;
     }, {
         origin: "canonical";
         source: {
@@ -115,43 +94,29 @@ export declare const IndexingInputSchema: z.ZodObject<{
             externalId: string;
         };
         canonicalKey: string | null;
-        id: string;
-        owner: string;
         schemaId: string;
         schemaVersion: number;
         createdAt: string;
         name: string | null;
-        indexed: boolean;
         date: string;
         idx: string | null;
-        isPinned: boolean | null;
-        pinOrder: number | null;
-        isArchived: boolean | null;
         properties: unknown;
-        syncEnabled?: boolean;
-        syncRevision?: string;
+        id: string;
     } | {
         keys: string[];
-        origin: "agent";
+        origin: "derived";
         confidence: number;
         evidence: [string, ...string[]];
         validFrom: string | null;
         validUntil: string | null;
-        id: string;
-        owner: string;
         schemaId: string;
         schemaVersion: number;
         createdAt: string;
         name: string | null;
-        indexed: boolean;
         date: string;
         idx: string | null;
-        isPinned: boolean | null;
-        pinOrder: number | null;
-        isArchived: boolean | null;
         properties: unknown;
-        syncEnabled?: boolean;
-        syncRevision?: string;
+        id: string;
     }, z.core.$ZodTypeInternals<{
         origin: "canonical";
         source: {
@@ -160,21 +125,14 @@ export declare const IndexingInputSchema: z.ZodObject<{
             externalId: string;
         };
         canonicalKey: string | null;
-        id: string;
-        owner: string;
         schemaId: string;
         schemaVersion: number;
         createdAt: string;
         name: string | null;
-        indexed: boolean;
         date: string;
         idx: string | null;
-        isPinned: boolean | null;
-        pinOrder: number | null;
-        isArchived: boolean | null;
         properties: import("./json.js").JsonValue;
-        syncEnabled?: boolean;
-        syncRevision?: string;
+        id: string & z.core.$brand<"PersistentEntityId">;
     }, {
         origin: "canonical";
         source: {
@@ -183,43 +141,29 @@ export declare const IndexingInputSchema: z.ZodObject<{
             externalId: string;
         };
         canonicalKey: string | null;
-        id: string;
-        owner: string;
         schemaId: string;
         schemaVersion: number;
         createdAt: string;
         name: string | null;
-        indexed: boolean;
         date: string;
         idx: string | null;
-        isPinned: boolean | null;
-        pinOrder: number | null;
-        isArchived: boolean | null;
         properties: unknown;
-        syncEnabled?: boolean;
-        syncRevision?: string;
+        id: string;
     } | {
         keys: string[];
-        origin: "agent";
+        origin: "derived";
         confidence: number;
         evidence: [string, ...string[]];
         validFrom: string | null;
         validUntil: string | null;
-        id: string;
-        owner: string;
         schemaId: string;
         schemaVersion: number;
         createdAt: string;
         name: string | null;
-        indexed: boolean;
         date: string;
         idx: string | null;
-        isPinned: boolean | null;
-        pinOrder: number | null;
-        isArchived: boolean | null;
         properties: unknown;
-        syncEnabled?: boolean;
-        syncRevision?: string;
+        id: string;
     }>>>;
     links: z.ZodArray<z.ZodDiscriminatedUnion<[z.ZodObject<{
         origin: z.ZodLiteral<"canonical">;
@@ -228,20 +172,20 @@ export declare const IndexingInputSchema: z.ZodObject<{
         validUntil: z.ZodNullable<z.ZodISODateTime>;
         id: z.ZodString;
         owner: z.ZodString;
-        from: z.ZodString;
-        to: z.ZodString;
+        from: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
+        to: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
         kind: z.ZodString;
         createdAt: z.ZodISODateTime;
     }, z.core.$strict>, z.ZodObject<{
-        origin: z.ZodLiteral<"agent">;
+        origin: z.ZodLiteral<"derived">;
         confidence: z.ZodNumber;
-        evidence: z.ZodTuple<[z.ZodString], z.ZodString>;
+        evidence: z.ZodTuple<[z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">], z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">>;
         validFrom: z.ZodNullable<z.ZodISODateTime>;
         validUntil: z.ZodNullable<z.ZodISODateTime>;
         id: z.ZodString;
         owner: z.ZodString;
-        from: z.ZodString;
-        to: z.ZodString;
+        from: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
+        to: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
         kind: z.ZodString;
         createdAt: z.ZodISODateTime;
     }, z.core.$strict>], "origin"> & z.ZodType<{
@@ -251,8 +195,8 @@ export declare const IndexingInputSchema: z.ZodObject<{
         validUntil: string | null;
         id: string;
         owner: string;
-        from: string;
-        to: string;
+        from: string & z.core.$brand<"PersistentEntityId">;
+        to: string & z.core.$brand<"PersistentEntityId">;
         kind: string;
         createdAt: string;
     }, {
@@ -267,7 +211,7 @@ export declare const IndexingInputSchema: z.ZodObject<{
         kind: string;
         createdAt: string;
     } | {
-        origin: "agent";
+        origin: "derived";
         confidence: number;
         evidence: [string, ...string[]];
         validFrom: string | null;
@@ -285,8 +229,8 @@ export declare const IndexingInputSchema: z.ZodObject<{
         validUntil: string | null;
         id: string;
         owner: string;
-        from: string;
-        to: string;
+        from: string & z.core.$brand<"PersistentEntityId">;
+        to: string & z.core.$brand<"PersistentEntityId">;
         kind: string;
         createdAt: string;
     }, {
@@ -301,7 +245,7 @@ export declare const IndexingInputSchema: z.ZodObject<{
         kind: string;
         createdAt: string;
     } | {
-        origin: "agent";
+        origin: "derived";
         confidence: number;
         evidence: [string, ...string[]];
         validFrom: string | null;
@@ -313,7 +257,7 @@ export declare const IndexingInputSchema: z.ZodObject<{
         kind: string;
         createdAt: string;
     }>>>;
-    text: z.ZodRecord<z.ZodString, z.ZodString>;
+    text: z.ZodRecord<z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">, z.ZodString>;
 }, z.core.$strict>;
 export type IndexingInput = z.output<typeof IndexingInputSchema>;
 /** Whether the author states a fact or merely asks, offers or imagines it. */
@@ -338,13 +282,13 @@ export declare const IndexingReadSchema: z.ZodObject<{
 }, z.core.$strict>;
 export type IndexingRead = z.output<typeof IndexingReadSchema>;
 export declare const RefSchema: z.ZodUnion<readonly [z.ZodObject<{
-    id: z.ZodString;
+    id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
 }, z.core.$strict>, z.ZodObject<{
     proposed: z.ZodInt;
 }, z.core.$strict>]>;
 export type Ref = z.output<typeof RefSchema>;
 export declare const ProposedEntitySchema: z.ZodObject<{
-    existing: z.ZodNullable<z.ZodString>;
+    existing: z.ZodNullable<z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">>;
     schemaId: z.ZodString;
     schemaVersion: z.ZodInt;
     name: z.ZodString;
@@ -358,12 +302,12 @@ export declare const ProposedEntitySchema: z.ZodObject<{
 export type ProposedEntity = z.output<typeof ProposedEntitySchema>;
 export declare const ProposedLinkSchema: z.ZodObject<{
     from: z.ZodUnion<readonly [z.ZodObject<{
-        id: z.ZodString;
+        id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
     }, z.core.$strict>, z.ZodObject<{
         proposed: z.ZodInt;
     }, z.core.$strict>]>;
     to: z.ZodUnion<readonly [z.ZodObject<{
-        id: z.ZodString;
+        id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
     }, z.core.$strict>, z.ZodObject<{
         proposed: z.ZodInt;
     }, z.core.$strict>]>;
@@ -379,12 +323,12 @@ export type ProposedLink = z.output<typeof ProposedLinkSchema>;
  *  a null validUntil is an ending whose date the source does not give. */
 export declare const ChangeSchema: z.ZodObject<{
     from: z.ZodUnion<readonly [z.ZodObject<{
-        id: z.ZodString;
+        id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
     }, z.core.$strict>, z.ZodObject<{
         proposed: z.ZodInt;
     }, z.core.$strict>]>;
     to: z.ZodUnion<readonly [z.ZodObject<{
-        id: z.ZodString;
+        id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
     }, z.core.$strict>, z.ZodObject<{
         proposed: z.ZodInt;
     }, z.core.$strict>]>;
@@ -397,7 +341,7 @@ export declare const ChangeSchema: z.ZodObject<{
 export type Change = z.output<typeof ChangeSchema>;
 export declare const IndexingProposalSchema: z.ZodObject<{
     entities: z.ZodArray<z.ZodObject<{
-        existing: z.ZodNullable<z.ZodString>;
+        existing: z.ZodNullable<z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">>;
         schemaId: z.ZodString;
         schemaVersion: z.ZodInt;
         name: z.ZodString;
@@ -410,12 +354,12 @@ export declare const IndexingProposalSchema: z.ZodObject<{
     }, z.core.$strict>>;
     links: z.ZodArray<z.ZodObject<{
         from: z.ZodUnion<readonly [z.ZodObject<{
-            id: z.ZodString;
+            id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
         }, z.core.$strict>, z.ZodObject<{
             proposed: z.ZodInt;
         }, z.core.$strict>]>;
         to: z.ZodUnion<readonly [z.ZodObject<{
-            id: z.ZodString;
+            id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
         }, z.core.$strict>, z.ZodObject<{
             proposed: z.ZodInt;
         }, z.core.$strict>]>;
@@ -427,12 +371,12 @@ export declare const IndexingProposalSchema: z.ZodObject<{
     }, z.core.$strict>>;
     changes: z.ZodArray<z.ZodObject<{
         from: z.ZodUnion<readonly [z.ZodObject<{
-            id: z.ZodString;
+            id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
         }, z.core.$strict>, z.ZodObject<{
             proposed: z.ZodInt;
         }, z.core.$strict>]>;
         to: z.ZodUnion<readonly [z.ZodObject<{
-            id: z.ZodString;
+            id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
         }, z.core.$strict>, z.ZodObject<{
             proposed: z.ZodInt;
         }, z.core.$strict>]>;
@@ -444,9 +388,9 @@ export declare const IndexingProposalSchema: z.ZodObject<{
     }, z.core.$strict>>;
 }, z.core.$strict>;
 export type IndexingProposal = z.output<typeof IndexingProposalSchema>;
-/** The values one source claims for one agent entity, resolved to its row ID. */
+/** The values one source claims for one derived entity, resolved to its row ID. */
 export declare const ClaimedEntitySchema: z.ZodObject<{
-    id: z.ZodString;
+    id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
     schemaId: z.ZodString;
     schemaVersion: z.ZodInt;
     name: z.ZodNullable<z.ZodString>;
@@ -460,19 +404,19 @@ export type ClaimedEntity = z.output<typeof ClaimedEntitySchema>;
  *  claim the dates are its period; for an ending claim validFrom selects the
  *  period and validUntil is the end. */
 export declare const ClaimedLinkSchema: z.ZodObject<{
-    from: z.ZodString;
-    to: z.ZodString;
+    from: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
+    to: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
     kind: z.ZodString;
     validFrom: z.ZodNullable<z.ZodISODateTime>;
     validUntil: z.ZodNullable<z.ZodISODateTime>;
 }, z.core.$strict>;
 export type ClaimedLink = z.output<typeof ClaimedLinkSchema>;
-/** What one canonical source said about one entity, link or ending. Agent rows
+/** What one canonical source said about one entity, link or ending. Derived rows
  *  are derived from active claims; a source change retires only its own claims. */
 export declare const GraphClaimSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     kind: z.ZodLiteral<"entity">;
     statement: z.ZodObject<{
-        id: z.ZodString;
+        id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
         schemaId: z.ZodString;
         schemaVersion: z.ZodInt;
         name: z.ZodNullable<z.ZodString>;
@@ -483,7 +427,7 @@ export declare const GraphClaimSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }, z.core.$strict>;
     id: z.ZodString;
     owner: z.ZodString;
-    sourceId: z.ZodString;
+    sourceId: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
     origin: z.ZodEnum<{
         indexed: "indexed";
         manual: "manual";
@@ -493,7 +437,7 @@ export declare const GraphClaimSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         reports: "reports";
     }>>;
     mention: z.ZodNullable<z.ZodUnion<readonly [z.ZodObject<{
-        existing: z.ZodNullable<z.ZodString>;
+        existing: z.ZodNullable<z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">>;
         schemaId: z.ZodString;
         schemaVersion: z.ZodInt;
         name: z.ZodString;
@@ -505,12 +449,12 @@ export declare const GraphClaimSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         fact: z.ZodInt;
     }, z.core.$strict>, z.ZodObject<{
         from: z.ZodUnion<readonly [z.ZodObject<{
-            id: z.ZodString;
+            id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
         }, z.core.$strict>, z.ZodObject<{
             proposed: z.ZodInt;
         }, z.core.$strict>]>;
         to: z.ZodUnion<readonly [z.ZodObject<{
-            id: z.ZodString;
+            id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
         }, z.core.$strict>, z.ZodObject<{
             proposed: z.ZodInt;
         }, z.core.$strict>]>;
@@ -521,12 +465,12 @@ export declare const GraphClaimSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         fact: z.ZodInt;
     }, z.core.$strict>, z.ZodObject<{
         from: z.ZodUnion<readonly [z.ZodObject<{
-            id: z.ZodString;
+            id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
         }, z.core.$strict>, z.ZodObject<{
             proposed: z.ZodInt;
         }, z.core.$strict>]>;
         to: z.ZodUnion<readonly [z.ZodObject<{
-            id: z.ZodString;
+            id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
         }, z.core.$strict>, z.ZodObject<{
             proposed: z.ZodInt;
         }, z.core.$strict>]>;
@@ -548,15 +492,15 @@ export declare const GraphClaimSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
 }, z.core.$strict>, z.ZodObject<{
     kind: z.ZodLiteral<"link">;
     statement: z.ZodObject<{
-        from: z.ZodString;
-        to: z.ZodString;
+        from: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
+        to: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
         kind: z.ZodString;
         validFrom: z.ZodNullable<z.ZodISODateTime>;
         validUntil: z.ZodNullable<z.ZodISODateTime>;
     }, z.core.$strict>;
     id: z.ZodString;
     owner: z.ZodString;
-    sourceId: z.ZodString;
+    sourceId: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
     origin: z.ZodEnum<{
         indexed: "indexed";
         manual: "manual";
@@ -566,7 +510,7 @@ export declare const GraphClaimSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         reports: "reports";
     }>>;
     mention: z.ZodNullable<z.ZodUnion<readonly [z.ZodObject<{
-        existing: z.ZodNullable<z.ZodString>;
+        existing: z.ZodNullable<z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">>;
         schemaId: z.ZodString;
         schemaVersion: z.ZodInt;
         name: z.ZodString;
@@ -578,12 +522,12 @@ export declare const GraphClaimSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         fact: z.ZodInt;
     }, z.core.$strict>, z.ZodObject<{
         from: z.ZodUnion<readonly [z.ZodObject<{
-            id: z.ZodString;
+            id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
         }, z.core.$strict>, z.ZodObject<{
             proposed: z.ZodInt;
         }, z.core.$strict>]>;
         to: z.ZodUnion<readonly [z.ZodObject<{
-            id: z.ZodString;
+            id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
         }, z.core.$strict>, z.ZodObject<{
             proposed: z.ZodInt;
         }, z.core.$strict>]>;
@@ -594,12 +538,12 @@ export declare const GraphClaimSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         fact: z.ZodInt;
     }, z.core.$strict>, z.ZodObject<{
         from: z.ZodUnion<readonly [z.ZodObject<{
-            id: z.ZodString;
+            id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
         }, z.core.$strict>, z.ZodObject<{
             proposed: z.ZodInt;
         }, z.core.$strict>]>;
         to: z.ZodUnion<readonly [z.ZodObject<{
-            id: z.ZodString;
+            id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
         }, z.core.$strict>, z.ZodObject<{
             proposed: z.ZodInt;
         }, z.core.$strict>]>;
@@ -621,15 +565,15 @@ export declare const GraphClaimSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
 }, z.core.$strict>, z.ZodObject<{
     kind: z.ZodLiteral<"ending">;
     statement: z.ZodObject<{
-        from: z.ZodString;
-        to: z.ZodString;
+        from: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
+        to: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
         kind: z.ZodString;
         validFrom: z.ZodNullable<z.ZodISODateTime>;
         validUntil: z.ZodNullable<z.ZodISODateTime>;
     }, z.core.$strict>;
     id: z.ZodString;
     owner: z.ZodString;
-    sourceId: z.ZodString;
+    sourceId: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
     origin: z.ZodEnum<{
         indexed: "indexed";
         manual: "manual";
@@ -639,7 +583,7 @@ export declare const GraphClaimSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         reports: "reports";
     }>>;
     mention: z.ZodNullable<z.ZodUnion<readonly [z.ZodObject<{
-        existing: z.ZodNullable<z.ZodString>;
+        existing: z.ZodNullable<z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">>;
         schemaId: z.ZodString;
         schemaVersion: z.ZodInt;
         name: z.ZodString;
@@ -651,12 +595,12 @@ export declare const GraphClaimSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         fact: z.ZodInt;
     }, z.core.$strict>, z.ZodObject<{
         from: z.ZodUnion<readonly [z.ZodObject<{
-            id: z.ZodString;
+            id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
         }, z.core.$strict>, z.ZodObject<{
             proposed: z.ZodInt;
         }, z.core.$strict>]>;
         to: z.ZodUnion<readonly [z.ZodObject<{
-            id: z.ZodString;
+            id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
         }, z.core.$strict>, z.ZodObject<{
             proposed: z.ZodInt;
         }, z.core.$strict>]>;
@@ -667,12 +611,12 @@ export declare const GraphClaimSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         fact: z.ZodInt;
     }, z.core.$strict>, z.ZodObject<{
         from: z.ZodUnion<readonly [z.ZodObject<{
-            id: z.ZodString;
+            id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
         }, z.core.$strict>, z.ZodObject<{
             proposed: z.ZodInt;
         }, z.core.$strict>]>;
         to: z.ZodUnion<readonly [z.ZodObject<{
-            id: z.ZodString;
+            id: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
         }, z.core.$strict>, z.ZodObject<{
             proposed: z.ZodInt;
         }, z.core.$strict>]>;
@@ -696,7 +640,7 @@ export type GraphClaim = z.output<typeof GraphClaimSchema>;
 /** The indexing status of one canonical source. */
 export declare const GraphIndexEntrySchema: z.ZodObject<{
     owner: z.ZodString;
-    entityId: z.ZodString;
+    entityId: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
     status: z.ZodEnum<{
         indexed: "indexed";
         pending: "pending";
@@ -716,12 +660,12 @@ export declare const GraphDecisionSchema: z.ZodObject<{
         entity: "entity";
     }>;
     identity: z.ZodString;
-    evidence: z.ZodArray<z.ZodString>;
+    evidence: z.ZodArray<z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">>;
 }, z.core.$strict>;
 export type GraphDecision = z.output<typeof GraphDecisionSchema>;
 export declare const GraphMergeSchema: z.ZodObject<{
     owner: z.ZodString;
-    entities: z.ZodRecord<z.ZodString, z.ZodString>;
+    entities: z.ZodRecord<z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">, z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">>;
     links: z.ZodRecord<z.ZodString, z.ZodString>;
 }, z.core.$strict>;
 export type GraphMerge = z.output<typeof GraphMergeSchema>;

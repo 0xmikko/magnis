@@ -10,5 +10,5 @@ export const PROJECT = "projects.project";
 export const PROJECT_CHECKLIST = "projects.project.checklist";
 /** Markdown description record (body). */
 export const PROJECT_DESCRIPTION = "projects.description";
-/** Link kind: a member entity belongs to a project (member → project). Own-prefixed (S2): the kind is projects vocabulary by construction. */
-export const MEMBER_LINK = "projects.belongs_to";
+/** Link kind: a member entity belongs to a project (member → project). Shared organizational membership. */
+export const MEMBER_LINK = "belongs_to";

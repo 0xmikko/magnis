@@ -4,8 +4,8 @@
 // @magnis/testkit/module (throwing mockGraph — a read/ingest path hitting an
 // unarranged op fails loudly).
 import { describe, expect, it, vi } from "vitest";
-import type { Entity, GraphBatchInput, JsonObject, JsonValue, Link, Syncable, SyncEnvelope, SyncHookParams, SyncMigrationEntity } from "@magnis/sdk";
-import { entity, link, mockGraph, mountModule, page, sourceEnvelope, syncStateDouble, type MockGraph } from "@magnis/testkit/module";
+import type { Entity, PersistentEntity, PersistentEntityId, EntityRead, GraphBatchInput, JsonObject, JsonValue, Link, Syncable, SyncEnvelope, SyncHookParams, SyncMigrationEntity } from "@magnis/sdk";
+import { entity, entityRead, entityExtras, entityId, link, mockGraph, mountModule, page, sourceEnvelope, syncStateDouble, type MockGraph } from "@magnis/testkit/module";
 import { ContactsModule } from "../../../contacts/module/service.ts";
 import { XModule } from "../service.ts";
 
@@ -24,8 +24,13 @@ function env(remoteId: string, payload: JsonObject): SyncEnvelope {
 }
 
 /** A stored X profile with its saved synchronization choice. */
-function profileEntity(id: string, name: string, externalId: string, properties: JsonObject, syncEnabled: boolean, syncRevision: string): Entity & Syncable {
+function profileEntity(id: string, name: string, externalId: string, properties: JsonObject, syncEnabled: boolean, syncRevision: string): PersistentEntity & Syncable {
   return { ...entity(id, name, { schemaId: "x.profile", source: { source: "test", account: "a1", externalId }, properties }), syncEnabled, syncRevision };
+}
+
+function storedRead(row: PersistentEntity & Syncable): EntityRead {
+  const { syncEnabled, syncRevision, ...value } = row;
+  return entityRead(value, entityExtras({ syncEnabled, syncRevision }));
 }
 
 const stated = { droppedRemoteIds: [], triggerChecks: [], plan: null, excluded: [] };
@@ -36,8 +41,8 @@ function ingestGraph(): G {
   const profile = profileEntity("profile-12", "Jack", "x:profile:12", { handle: "jack" }, true, "0");
   return mockGraph({
     findByExternalIds: async (externalIds) => externalIds.map(externalId => externalId === "x:profile:12" ? profile.id : null),
-    getEntities: async (ids) => ids.includes(profile.id) ? [profile] : [],
-    getEntity: async (id) => id === profile.id ? profile : null,
+    getEntities: async (ids, opts) => ids.includes(profile.id) ? [opts?.extras ? storedRead(profile) : storedRead(profile).entity] : [],
+    getEntity: async (id, opts) => id === profile.id ? opts?.extras ? storedRead(profile) : storedRead(profile).entity : null,
     listSyncMigrationEntities: async () => ({ items: [{ id: profile.id, schemaId: "x.profile", name: "Jack", indexed: true, isPinned: null, properties: { handle: "jack" }, syncEnabled: true, syncRevision: "0" }], next: null }),
     admitSyncEntities: async (subjects) => subjects.flatMap(subject => [...subject.remoteIds]),
     applyBatch: async () => ({ ids: {}, created: 0, updated: 0, linksAdded: 0, droppedKeys: [], resolved: [] }),
@@ -151,7 +156,7 @@ describe("x ingest", () => {
 
     const listed = await mod.postsList({});
     expect(listed.total).toBe(1);
-    expect(listed.items[0]).toMatchObject({ id: "p1", platform: "x", author_handle: "jack", text: "hello" });
+    expect(listed.items[0]).toMatchObject({ id: entityId("p1"), platform: "x", author_handle: "jack", text: "hello" });
     expect(graph.spies.listEntitiesWindow).toHaveBeenCalledTimes(1);
   });
 });
@@ -169,10 +174,19 @@ describe("x ingest — the plan from the pages", () => {
   });
   const post = (id: string): SyncEnvelope => ({ ...env(`x:post:${id}`, { entity_type: "post", platform: "x", post_id: id, author_handle: "jack", text: `post ${id}`, created_at: "2026-06-01T00:00:00Z", metrics: {} }), kind: "live" });
   function planGraph(known: Record<string, JsonObject>): G {
+    const rows = new Map([...new Set(["x:profile:12", ...Object.keys(known)])].map(externalId => {
+      const row = profileEntity(entityId(`id:${externalId}`), "", externalId, known[externalId] ?? { handle: "jack" }, true, "0");
+      return [row.id, row];
+    }));
     return mockGraph({
       admitSyncEntities: async (subjects) => subjects.flatMap(subject => [...subject.remoteIds]),
-      findByExternalIds: (externalIds: string[]) => Promise.resolve(externalIds.map((externalId) => (externalId === "x:profile:12" || externalId in known ? `id:${externalId}` : null))),
-      getEntities: (ids: string[]) => Promise.resolve(ids.map((id) => profileEntity(id, "", "x:profile:12", known[id.slice("id:".length)] ?? { handle: "jack" }, true, "0"))),
+      findByExternalIds: (externalIds: string[]) => Promise.resolve(externalIds.map((externalId) => (externalId === "x:profile:12" || externalId in known ? entityId(`id:${externalId}`) : null))),
+      getEntities: async (ids, opts) => ids.map(id => {
+        const row = rows.get(entityId(id));
+        if (row === undefined) throw new Error("Missing fixture row");
+        const read = storedRead(row);
+        return opts?.extras ? read : read.entity;
+      }),
       applyBatch: () => Promise.resolve({ ids: {}, created: 0, updated: 0, linksAdded: 0, droppedKeys: [], resolved: [] }),
     });
   }
@@ -292,7 +306,7 @@ describe("X profile synchronization migration", () => {
     const mounted = await mountModule(XModule, { mode: "dispatch", graph, ctx: { extensionId: "x" } });
     const status = await mounted.rpc("x.profile.syncMigration", {});
     expect(status).toMatchObject({ complete: false, issues: [{
-      target: { schemaId: "x.profile", key: "x:profile:12" }, legacyIds: ["contact-0", "contact-1"],
+      target: { schemaId: "x.profile", key: "x:profile:12" }, legacyIds: [entityId("contact-0"), entityId("contact-1")],
     }] });
     expect(graph.spies.applyBatch).not.toHaveBeenCalled();
     expect(graph.spies.sourceCommand).toHaveBeenCalledWith({ action: "resolveProfile", handle: "jack" }, "x-account");
@@ -312,14 +326,14 @@ describe("X restartable migration", () => {
       schemaId: "contacts.person", properties: { tracking: [{ platform: "x", handle: "jack", enabled }, { platform: "linkedin", handle: "jack", enabled: true }] },
     }));
     const rows = new Map<string, SyncMigrationEntity>();
-    const externalIds = new Map<string, string>();
+    const externalIds = new Map<string, PersistentEntityId>();
     const links: Link[] = [];
     const faults = { lookup: false, cleanup: false };
-    const raw = (row: SyncMigrationEntity): Entity & Syncable => {
+    const raw = (row: SyncMigrationEntity): PersistentEntity & Syncable => {
       if (row.syncEnabled === null || row.syncRevision === null) throw new Error("Uninitialized ordinary profile read");
       const externalId = [...externalIds].find(([, id]) => id === row.id)?.[0];
       if (externalId === undefined) throw new Error("Profile has no external id");
-      return { ...entity(row.id, row.name ?? "", { schemaId: row.schemaId, indexed: row.indexed,
+      return { ...entity(row.id, row.name ?? "", { schemaId: row.schemaId,
         source: { source: "test", account: "a1", externalId }, properties: row.properties as JsonObject }),
         syncEnabled: row.syncEnabled, syncRevision: row.syncRevision };
     };
@@ -336,12 +350,13 @@ describe("X restartable migration", () => {
       },
       findByExternalId: async (externalId) => externalIds.get(externalId) ?? null,
       findByExternalIds: async (items) => items.map(externalId => externalIds.get(externalId) ?? null),
-      getEntities: async (ids) => ids.map(id => {
+      getEntities: async (ids, opts) => ids.map(id => {
         const row = rows.get(id);
         if (row === undefined) throw new Error("Missing profile");
-        return raw(row);
+        const read = storedRead(raw(row));
+        return opts?.extras ? read : read.entity;
       }),
-      getEntity: async (id) => { const row = rows.get(id); return row === undefined ? contacts.find(item => item.id === id) ?? null : raw(row); },
+      getEntity: async (id, opts) => { const row = rows.get(id); if (row === undefined) return contacts.find(item => item.id === id) ?? null; const read = storedRead(raw(row)); return opts?.extras ? read : read.entity; },
       updateEntityName: async (id, name) => { const contact = contacts.find(item => item.id === id); if (contact === undefined) throw new Error("Missing contact"); contact.name = name; },
       getEntityFull: async (id) => {
         const contact = contacts.find(item => item.id === id);
@@ -361,11 +376,11 @@ describe("X restartable migration", () => {
         return { syncRevision: row.syncRevision };
       },
       applyBatch: async (batch) => {
-        const ids: Record<string, string> = {};
+        const ids: Record<string, PersistentEntityId> = {};
         for (const item of batch.entities) {
           if (item.schemaId !== "x.profile" || item.externalId === null || item.properties === null
             || !("syncEnabled" in item) || typeof item.syncEnabled !== "boolean") throw new Error("Invalid migration create");
-          const id = externalIds.get(item.externalId) ?? `profile-${rows.size}`;
+          const id = externalIds.get(item.externalId) ?? entityId(`profile-${rows.size}`);
           externalIds.set(item.externalId, id);
           if (!rows.has(id)) rows.set(id, { id, schemaId: "x.profile", name: item.name, indexed: false, isPinned: null,
             properties: item.properties as JsonObject, syncEnabled: item.syncEnabled, syncRevision: "0" });
@@ -408,11 +423,11 @@ describe("X restartable migration", () => {
     expect(f.links).toHaveLength(2);
     for (const contact of f.contacts) expect(trackingOf(contact)).toEqual([{ platform: "linkedin", handle: "jack", enabled: true }]);
     expect(await next.syncSelection({ sourceId: "x", accountId: "x-account", accountGeneration: 1 })).toEqual({ surface: "x", choices: [
-      { id: "profile-0", scopeId: "12", handle: "jack", syncEnabled: true, syncRevision: "0" },
+      { id: entityId("profile-0"), scopeId: "12", handle: "jack", syncEnabled: true, syncRevision: "0" },
     ] });
-    expect(f.rows.get("profile-0")?.indexed).toBe(false);
-    const first = await next.setSyncEnabled({ id: "profile-0", syncEnabled: false });
-    expect(await next.setSyncEnabled({ id: "profile-0", syncEnabled: false })).toEqual(first);
+    expect(f.rows.get(entityId("profile-0"))?.indexed).toBe(false);
+    const first = await next.setSyncEnabled({ id: entityId("profile-0"), syncEnabled: false });
+    expect(await next.setSyncEnabled({ id: entityId("profile-0"), syncEnabled: false })).toEqual(first);
     expect(first.results).toMatchObject([{ kind: "saved", syncEnabled: false, syncRevision: "1" }]);
   });
 
@@ -439,14 +454,14 @@ it("admits X updates and deletions only for the saved profile choice", async () 
     profileEntity("profile-a", "Jack", "x:profile:12", { handle: "jack" }, true, "1"),
     profileEntity("profile-b", "Ann", "x:profile:99", { handle: "ann" }, false, "2"),
   ];
-  const ids = new Map([["x:profile:12", "profile-a"], ["x:profile:99", "profile-b"], ["x:post:old-a", "old-a"], ["x:post:old-b", "old-b"]]);
+  const ids = new Map([["x:profile:12", entityId("profile-a")], ["x:profile:99", entityId("profile-b")], ["x:post:old-a", entityId("old-a")], ["x:post:old-b", entityId("old-b")]]);
   const graph = mockGraph({
     findByExternalIds: async (externalIds) => externalIds.map(externalId => ids.get(externalId) ?? null),
     findByExternalId: async (externalId) => ids.get(externalId) ?? null,
-    getEntities: async (wanted) => profiles.filter(row => wanted.includes(row.id)),
-    getEntity: async (id) => profiles.find(row => row.id === id) ?? null,
+    getEntities: async (wanted, opts) => profiles.filter(row => wanted.includes(row.id)).map(row => opts?.extras ? storedRead(row) : storedRead(row).entity),
+    getEntity: async (id, opts) => { const row = profiles.find(row => row.id === id); return row === undefined ? null : opts?.extras ? storedRead(row) : storedRead(row).entity; },
     getEntityFull: async (id) => ({ entity: entity(id, "Old", { schemaId: "x.post" }), links: [
-      link(id, id === "old-a" ? "profile-a" : "profile-b", "authored_by", { id: `link-${id}` }),
+      link(id, id === entityId("old-a") ? "profile-a" : "profile-b", "authored_by", { id: `link-${id}` }),
     ] }),
     admitSyncEntities: async (subjects) => subjects.flatMap(subject => profiles.find(row => row.id === subject.entityId)?.syncEnabled ? [...subject.remoteIds] : []),
     applyBatch: async () => ({ ids: {}, created: 0, updated: 0, linksAdded: 0, droppedKeys: [], resolved: [] }),
@@ -462,7 +477,7 @@ it("admits X updates and deletions only for the saved profile choice", async () 
   ] });
   const batch = graph.spies.applyBatch?.mock.calls[0]?.[0] as GraphBatchInput;
   expect(batch.entities.map(item => item.externalId)).toEqual(["x:profile:12", "x:post:new-a"]);
-  expect(graph.spies.deleteEntity).toHaveBeenCalledExactlyOnceWith("old-a");
+  expect(graph.spies.deleteEntity).toHaveBeenCalledExactlyOnceWith(entityId("old-a"));
   expect(graph.spies.admitSyncEntities).toHaveBeenCalledTimes(1);
 });
 
@@ -473,12 +488,12 @@ it("admits X updates and deletions only for the saved profile choice", async () 
  * @fixtures: explicit disabled creation rule, changed rule and repeated discovery
  */
 it("creates a minimal selectable profile under its explicit rule without admitting posts or resetting Stop", async () => {
-  let stored: Entity & Syncable | undefined;
+  let stored: PersistentEntity & Syncable | undefined;
   let storedExternalId: string | null = null;
   let rule = "false";
   const graph = mockGraph({
     findByExternalIds: async (externalIds) => externalIds.map(externalId => stored !== undefined && storedExternalId === externalId ? stored.id : null),
-    getEntities: async () => stored === undefined ? [] : [stored],
+    getEntities: async (_ids, opts) => stored === undefined ? [] : [opts?.extras ? storedRead(stored) : storedRead(stored).entity],
     listSyncMigrationEntities: async () => ({ items: [], next: null }),
     listEntitiesWindow: async () => page([]),
     moduleSettings: async () => ({ newProfileSyncEnabled: rule }),
@@ -489,7 +504,7 @@ it("creates a minimal selectable profile under its explicit rule without admitti
         || profile.externalId === null || profile.properties === null) throw new Error("Expected disabled profile discovery");
       storedExternalId = profile.externalId;
       stored = profileEntity("new-profile", profile.name ?? "", profile.externalId, profile.properties as JsonObject, false, "0");
-      return { ids: { "x:profile:12": "new-profile" }, created: 1, updated: 0, linksAdded: 0, droppedKeys: [], resolved: [] };
+      return { ids: { "x:profile:12": entityId("new-profile") }, created: 1, updated: 0, linksAdded: 0, droppedKeys: [], resolved: [] };
     },
   });
   const envelopes = [env("x:profile:12", { entity_type: "profile", platform: "x", handle: "jack", bio: "Bio", posts_total: 10 }),

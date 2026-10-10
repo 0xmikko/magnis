@@ -52,6 +52,7 @@ export function useCreateProjectMutation(): UseMutationResult<CreateProjectResul
         name: variables.name,
         status: variables.status ?? null,
         createdAt: new Date().toISOString(),
+        extras: { pinOrder: null, archived: false, private: false, indexed: "pending", syncEnabled: null, syncRevision: null },
       };
 
       queryClient.setQueryData<PaginatedResponse<ProjectListItem>>(listKey, (old) => ({

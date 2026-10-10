@@ -51,7 +51,7 @@
         "./packages/host-stubs/types/packages/client-core/src/index.d.ts"
       ],
       "@magnis/sdk": [
-        "./packages/host-stubs/types/packages/sdk/index.d.ts"
+        "./packages/host-stubs/types/packages/sdk/index"
       ],
       "@magnis/sdk/*": [
         "./packages/host-stubs/types/packages/sdk/*"

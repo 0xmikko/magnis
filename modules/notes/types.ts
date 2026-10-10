@@ -1,7 +1,7 @@
 // Notes plugin — shared wire types (backend module + frontend UI).
 // Graph-only port of the native `backend/src/modules/notes` types: no
 // `file_path` / `content_hash` (the on-disk markdown mirror was dropped).
-import type { LinkedEntitySummary } from "@magnis/sdk";
+import type { EntityExtras, LinkedEntitySummary } from "@magnis/sdk";
 
 /// Payload of a `notes.note.content` record as read back inside the module.
 export interface ContentData {
@@ -26,10 +26,11 @@ export interface NoteListItem {
   pinned: boolean;
   createdAt: string;
   updatedAt: string | null;
-  isPinned?: boolean | null;
+  extras: EntityExtras;
 }
 
 export interface NoteDetailView {
+  extras: EntityExtras;
   id: string;
   schemaId: string;
   title: string;

@@ -7,7 +7,7 @@
 
 import { errText, linkedEntitySummary, rpc, tool, writeTool, type GraphService,
   type PluginDeps, type PluginLogger } from "@magnis/plugin-sdk";
-import type { Entity, EntityWithLinks, LinkedEntitySummary, PaginatedResponse } from "@magnis/sdk";
+import type { EntityRead, Entity, EntityWithLinks, LinkedEntitySummary, PaginatedResponse } from "@magnis/sdk";
 import type {
   ContentData,
   CreateParams,
@@ -148,13 +148,14 @@ export class NotesModule {
       const all = await this.graph.searchEntitiesByName({
         query: search,
         schemaIds: [NOTE],
+        extras: true,
         limit: limit + offset,
       });
       const total = all.length;
       const page = all.slice(offset, offset + limit);
       // S1: the dictionary rides the entity — the record and canonical batch
       // reads (two round-trips per page) are gone.
-      const items = page.map((e) => this.listItemFromParts(e, contentOf(e), {}));
+      const items = page.map((e) => this.listItemFromParts(e, contentOf(e.entity), {}));
       return { items, total, limit, offset };
     }
 
@@ -165,20 +166,21 @@ export class NotesModule {
     // is read.
     const win = await this.graph.listEntitiesWindow({
       schema: NOTE,
+      extras: true,
       order: [{ field: { propertyPath: "updated_at" }, desc: true }],
       limit,
       offset,
     });
     // S1: the dictionary rides the window's entity; the inlined render record
     // is the frozen archive and is not read.
-    const items = win.items.map((e) => this.listItemFromParts(e, contentOf(e), {}));
+    const items = win.items.map((e) => this.listItemFromParts(e, contentOf(e.entity), {}));
     return { items, total: win.total, limit, offset };
   }
 
   @rpc("get", GET_SPEC)
   @tool("get", { entity: "notes.note", ...GET_SPEC })
   async get(params: GetParams): Promise<NoteDetailView> {
-    const detail = await this.graph.getEntityFull(params.id, { links: true });
+    const detail = await this.graph.getEntityFull(params.id, { links: true, extras: true });
     // NotFound for a non-owned id (getEntityFull is user-scoped → null) AND for
     // an id that belongs to a different schema — a notes tool must never touch a
     // contact/project/etc. entity.
@@ -203,7 +205,7 @@ export class NotesModule {
       const targets = await this.graph.getEntities([
         ...new Set(detail.links.map(neighbourId)),
       ]);
-      const byId = new Map(targets.map((t) => [t.id, t]));
+      const byId = new Map<string, Entity>(targets.map((t) => [t.id, t]));
       for (const link of detail.links) {
         const t = byId.get(neighbourId(link));
         if (!t) continue;
@@ -219,6 +221,7 @@ export class NotesModule {
       pinned,
       canonical,
       linkedEntities: linked,
+      extras: detail.extras,
       createdAt: e.createdAt,
       updatedAt: data.updated_at ?? null,
     };
@@ -398,10 +401,11 @@ export class NotesModule {
   // stays byte-identical to the old per-row build; the window path passes `{}`
   // canonical. No graph access.
   private listItemFromParts(
-    e: Entity,
+    read: EntityRead,
     data: ContentData,
     canonical: Partial<NoteCanonical>,
   ): NoteListItem {
+    const e = read.entity;
     return {
       id: e.id,
       schemaId: e.schemaId,
@@ -410,7 +414,7 @@ export class NotesModule {
       pinned: (canonical["note.pinned"] as boolean | null) ?? data.pinned ?? false,
       createdAt: e.createdAt,
       updatedAt: data.updated_at ?? null,
-      isPinned: e.isPinned,
+      extras: read.extras,
     };
   }
 

@@ -28,10 +28,34 @@ export declare const searchModelStatusContract: import("../contract.js").RpcCont
 }, z.core.$strict>>, "required">;
 export declare const searchContracts: {
     readonly "search.by_graph": import("../contract.js").RpcContract<"search.by_graph", z.ZodObject<{
-        entityId: z.ZodGUID;
+        entityId: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
         depth: z.ZodDefault<z.ZodInt>;
         linkKind: z.ZodOptional<z.ZodString>;
+        extras: z.ZodExactOptional<z.ZodLiteral<true>>;
     }, z.core.$strip>, z.ZodArray<z.ZodObject<{
+        extras: z.ZodExactOptional<z.ZodUnion<readonly [z.ZodObject<{
+            syncEnabled: z.ZodBoolean;
+            syncRevision: z.ZodString;
+            pinOrder: z.ZodNullable<z.ZodInt>;
+            archived: z.ZodBoolean;
+            private: z.ZodBoolean;
+            indexed: z.ZodEnum<{
+                indexed: "indexed";
+                pending: "pending";
+                refused: "refused";
+            }>;
+        }, z.core.$strict>, z.ZodObject<{
+            syncEnabled: z.ZodNull;
+            syncRevision: z.ZodNull;
+            pinOrder: z.ZodNullable<z.ZodInt>;
+            archived: z.ZodBoolean;
+            private: z.ZodBoolean;
+            indexed: z.ZodEnum<{
+                indexed: "indexed";
+                pending: "pending";
+                refused: "refused";
+            }>;
+        }, z.core.$strict>]>>;
         id: z.ZodString;
         name: z.ZodNullable<z.ZodString>;
         schemaId: z.ZodString;
@@ -50,10 +74,34 @@ export declare const searchContracts: {
     }, z.core.$strict>, "required">;
     readonly "search.combined": import("../contract.js").RpcContract<"search.combined", z.ZodObject<{
         query: z.ZodString;
-        relatedTo: z.ZodDefault<z.ZodArray<z.ZodGUID>>;
+        relatedTo: z.ZodDefault<z.ZodArray<z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">>>;
         schemaIds: z.ZodOptional<z.ZodArray<z.ZodString>>;
         limit: z.ZodDefault<z.ZodInt>;
+        extras: z.ZodExactOptional<z.ZodLiteral<true>>;
     }, z.core.$strip>, z.ZodArray<z.ZodObject<{
+        extras: z.ZodExactOptional<z.ZodUnion<readonly [z.ZodObject<{
+            syncEnabled: z.ZodBoolean;
+            syncRevision: z.ZodString;
+            pinOrder: z.ZodNullable<z.ZodInt>;
+            archived: z.ZodBoolean;
+            private: z.ZodBoolean;
+            indexed: z.ZodEnum<{
+                indexed: "indexed";
+                pending: "pending";
+                refused: "refused";
+            }>;
+        }, z.core.$strict>, z.ZodObject<{
+            syncEnabled: z.ZodNull;
+            syncRevision: z.ZodNull;
+            pinOrder: z.ZodNullable<z.ZodInt>;
+            archived: z.ZodBoolean;
+            private: z.ZodBoolean;
+            indexed: z.ZodEnum<{
+                indexed: "indexed";
+                pending: "pending";
+                refused: "refused";
+            }>;
+        }, z.core.$strict>]>>;
         id: z.ZodString;
         name: z.ZodNullable<z.ZodString>;
         schemaId: z.ZodString;
@@ -66,15 +114,39 @@ export declare const searchContracts: {
      * `{results}` wrapper. */
     readonly "search.fast": import("../contract.js").RpcContract<"search.fast", z.ZodObject<{
         query: z.ZodString;
-        mentionIds: z.ZodDefault<z.ZodArray<z.ZodGUID>>;
+        mentionIds: z.ZodDefault<z.ZodArray<z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">>>;
         schemaIds: z.ZodOptional<z.ZodArray<z.ZodString>>;
         retrieval: z.ZodDefault<z.ZodEnum<{
             text: "text";
             hybrid: "hybrid";
         }>>;
         limit: z.ZodDefault<z.ZodInt>;
+        extras: z.ZodExactOptional<z.ZodLiteral<true>>;
     }, z.core.$strip>, z.ZodObject<{
         results: z.ZodArray<z.ZodObject<{
+            extras: z.ZodExactOptional<z.ZodUnion<readonly [z.ZodObject<{
+                syncEnabled: z.ZodBoolean;
+                syncRevision: z.ZodString;
+                pinOrder: z.ZodNullable<z.ZodInt>;
+                archived: z.ZodBoolean;
+                private: z.ZodBoolean;
+                indexed: z.ZodEnum<{
+                    indexed: "indexed";
+                    pending: "pending";
+                    refused: "refused";
+                }>;
+            }, z.core.$strict>, z.ZodObject<{
+                syncEnabled: z.ZodNull;
+                syncRevision: z.ZodNull;
+                pinOrder: z.ZodNullable<z.ZodInt>;
+                archived: z.ZodBoolean;
+                private: z.ZodBoolean;
+                indexed: z.ZodEnum<{
+                    indexed: "indexed";
+                    pending: "pending";
+                    refused: "refused";
+                }>;
+            }, z.core.$strict>]>>;
             id: z.ZodString;
             name: z.ZodNullable<z.ZodString>;
             schemaId: z.ZodString;
@@ -87,7 +159,31 @@ export declare const searchContracts: {
     readonly "search.hybrid": import("../contract.js").RpcContract<"search.hybrid", z.ZodObject<{
         query: z.ZodString;
         limit: z.ZodDefault<z.ZodInt>;
+        extras: z.ZodExactOptional<z.ZodLiteral<true>>;
     }, z.core.$strip>, z.ZodArray<z.ZodObject<{
+        extras: z.ZodExactOptional<z.ZodUnion<readonly [z.ZodObject<{
+            syncEnabled: z.ZodBoolean;
+            syncRevision: z.ZodString;
+            pinOrder: z.ZodNullable<z.ZodInt>;
+            archived: z.ZodBoolean;
+            private: z.ZodBoolean;
+            indexed: z.ZodEnum<{
+                indexed: "indexed";
+                pending: "pending";
+                refused: "refused";
+            }>;
+        }, z.core.$strict>, z.ZodObject<{
+            syncEnabled: z.ZodNull;
+            syncRevision: z.ZodNull;
+            pinOrder: z.ZodNullable<z.ZodInt>;
+            archived: z.ZodBoolean;
+            private: z.ZodBoolean;
+            indexed: z.ZodEnum<{
+                indexed: "indexed";
+                pending: "pending";
+                refused: "refused";
+            }>;
+        }, z.core.$strict>]>>;
         id: z.ZodString;
         name: z.ZodNullable<z.ZodString>;
         schemaId: z.ZodString;
@@ -127,11 +223,35 @@ export declare const searchContracts: {
         readonly method: "search.entities.search";
         readonly input: z.ZodObject<{
             query: z.ZodString;
-            relatedTo: z.ZodDefault<z.ZodArray<z.ZodGUID>>;
+            relatedTo: z.ZodDefault<z.ZodArray<z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">>>;
             schemaIds: z.ZodOptional<z.ZodArray<z.ZodString>>;
             limit: z.ZodDefault<z.ZodInt>;
+            extras: z.ZodExactOptional<z.ZodLiteral<true>>;
         }, z.core.$strict>;
         readonly output: z.ZodArray<z.ZodObject<{
+            extras: z.ZodExactOptional<z.ZodUnion<readonly [z.ZodObject<{
+                syncEnabled: z.ZodBoolean;
+                syncRevision: z.ZodString;
+                pinOrder: z.ZodNullable<z.ZodInt>;
+                archived: z.ZodBoolean;
+                private: z.ZodBoolean;
+                indexed: z.ZodEnum<{
+                    indexed: "indexed";
+                    pending: "pending";
+                    refused: "refused";
+                }>;
+            }, z.core.$strict>, z.ZodObject<{
+                syncEnabled: z.ZodNull;
+                syncRevision: z.ZodNull;
+                pinOrder: z.ZodNullable<z.ZodInt>;
+                archived: z.ZodBoolean;
+                private: z.ZodBoolean;
+                indexed: z.ZodEnum<{
+                    indexed: "indexed";
+                    pending: "pending";
+                    refused: "refused";
+                }>;
+            }, z.core.$strict>]>>;
             id: z.ZodString;
             name: z.ZodNullable<z.ZodString>;
             schemaId: z.ZodString;
@@ -146,11 +266,35 @@ export declare const searchContracts: {
     readonly "search.neighborhood.list": {
         readonly method: "search.neighborhood.list";
         readonly input: z.ZodObject<{
-            entityId: z.ZodGUID;
+            entityId: z.core.$ZodBranded<z.ZodGUID, "PersistentEntityId", "out">;
             depth: z.ZodDefault<z.ZodInt>;
             linkKind: z.ZodOptional<z.ZodString>;
+            extras: z.ZodExactOptional<z.ZodLiteral<true>>;
         }, z.core.$strict>;
         readonly output: z.ZodArray<z.ZodObject<{
+            extras: z.ZodExactOptional<z.ZodUnion<readonly [z.ZodObject<{
+                syncEnabled: z.ZodBoolean;
+                syncRevision: z.ZodString;
+                pinOrder: z.ZodNullable<z.ZodInt>;
+                archived: z.ZodBoolean;
+                private: z.ZodBoolean;
+                indexed: z.ZodEnum<{
+                    indexed: "indexed";
+                    pending: "pending";
+                    refused: "refused";
+                }>;
+            }, z.core.$strict>, z.ZodObject<{
+                syncEnabled: z.ZodNull;
+                syncRevision: z.ZodNull;
+                pinOrder: z.ZodNullable<z.ZodInt>;
+                archived: z.ZodBoolean;
+                private: z.ZodBoolean;
+                indexed: z.ZodEnum<{
+                    indexed: "indexed";
+                    pending: "pending";
+                    refused: "refused";
+                }>;
+            }, z.core.$strict>]>>;
             id: z.ZodString;
             name: z.ZodNullable<z.ZodString>;
             schemaId: z.ZodString;

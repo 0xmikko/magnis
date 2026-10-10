@@ -36,7 +36,7 @@ function triggerDetail() {
     entity: entity(TRIGGER_ID, "Watch prices", { schemaId: TRIGGER, properties: CONFIG }),
     links: [
       link(TRIGGER_ID, TARGET_ID, "watches", { id: "watch" }),
-      link(TRIGGER_ID, EPISODE_ID, "triggers.belongs_to", { id: "parent" }),
+      link(TRIGGER_ID, EPISODE_ID, "belongs_to", { id: "parent" }),
     ],
   };
 }
@@ -44,6 +44,7 @@ function triggerDetail() {
 describe("tst_module_triggers_read_001 — trigger definition reads", () => {
   it("shapes get with watched and parent entities", async () => {
     const graph = mockGraph({
+      getEntities: () => Promise.resolve([entity(EPISODE_ID, "Fundraise", { schemaId: "episodes.episode" })]),
       getEntityFull: (id: string) => {
         if (id === TRIGGER_ID) return Promise.resolve(triggerDetail());
         if (id === TARGET_ID) return Promise.resolve({ entity: entity(id, "Vendor inbox"), links: [] });
@@ -61,6 +62,30 @@ describe("tst_module_triggers_read_001 — trigger definition reads", () => {
       parentEpisodeId: EPISODE_ID,
       parentEpisodeName: "Fundraise",
     });
+  });
+
+  it("tst_module_trigger_parent_001 ignores project membership and ended parents, and rejects multiple active Episode parents", async () => {
+    const project = entity("project", "Launch", { schemaId: "projects.project" });
+    const ended = entity("ended-episode", "Old", { schemaId: "episodes.episode" });
+    const parent = entity(EPISODE_ID, "Current", { schemaId: "episodes.episode" });
+    const other = entity("other-episode", "Other", { schemaId: "episodes.episode" });
+    const detail = {
+      entity: triggerDetail().entity,
+      links: [
+        link(TRIGGER_ID, project.id, "belongs_to"),
+        link(TRIGGER_ID, ended.id, "belongs_to", { validUntil: "2026-01-01T00:00:00Z" }),
+        link(TRIGGER_ID, parent.id, "belongs_to"),
+      ],
+    };
+    const rows = [project, ended, parent, other];
+    const graph = mockGraph({
+      getEntityFull: (id) => Promise.resolve(id === TRIGGER_ID ? detail : null),
+      getEntities: (ids) => Promise.resolve(rows.filter((row) => ids.includes(row.id))),
+    });
+    const module = mountModule(TriggersModule, { graph }).module;
+    await expect(module.get({ id: TRIGGER_ID })).resolves.toMatchObject({ parentEpisodeId: parent.id, parentEpisodeName: "Current" });
+    detail.links.push(link(TRIGGER_ID, other.id, "belongs_to"));
+    await expect(module.get({ id: TRIGGER_ID })).rejects.toThrow("multiple active parent Episodes");
   });
 
   it("filters list by config status and includes watched names", async () => {

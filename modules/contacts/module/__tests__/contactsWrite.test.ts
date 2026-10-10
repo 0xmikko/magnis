@@ -19,11 +19,11 @@
  */
 import type { JsonObject, MergePreview, MergeResult } from "@magnis/sdk";
 import { describe, expect, it, vi } from "vitest";
-import { entity, link, mockGraph, mountModule } from "@magnis/testkit/module";
+import { entityId, entityRead, entityExtras, entity, link, mockGraph, mountModule } from "@magnis/testkit/module";
 import { CONTACT } from "../../schema.ts";
 import { ContactsModule } from "../service.ts";
 
-const CONTACT_ID = "66666666-6666-4666-8666-666666666666";
+const CONTACT_ID = entityId("66666666-6666-4666-8666-666666666666");
 
 function contact(id: string, name: string, properties: JsonObject = {}) {
   return entity(id, name, { schemaId: CONTACT, properties });
@@ -37,7 +37,7 @@ describe("tst_module_contacts_write_001 — contact commands", () => {
     });
     let exists = false;
     const graph = mockGraph({
-      getEntity: () => Promise.resolve(exists ? created : null),
+      getEntity: (_id, opts) => Promise.resolve(exists ? opts?.extras ? entityRead(created, entityExtras()) : created : null),
       createEntity: () => {
         exists = true;
         return Promise.resolve(created);
@@ -78,7 +78,7 @@ describe("tst_module_contacts_write_001 — contact commands", () => {
     ];
     const stored = new Map<string, ReturnType<typeof contact>>();
     const graph = mockGraph({
-      getEntity: (id: string) => Promise.resolve(stored.get(id) ?? null),
+      getEntity: async (id, opts) => { const value = stored.get(id); return value === undefined ? null : opts?.extras ? entityRead(value, entityExtras()) : value; },
       createEntity: (params: { clientId?: string; name: string }) => {
         const id = params.clientId ?? "generated";
         const value = contact(id, params.name);
@@ -133,7 +133,7 @@ describe("tst_module_contacts_write_001 — contact commands", () => {
     const fresh = contact(CONTACT_ID, "New Name");
     let reads = 0;
     const graph = mockGraph({
-      getEntity: () => Promise.resolve(reads++ === 0 ? old : fresh),
+      getEntity: (_id, opts) => Promise.resolve(opts?.extras ? entityRead(fresh, entityExtras()) : reads++ === 0 ? old : fresh),
       updateEntityName: () => Promise.resolve(undefined),
       listLinksForEntities: () => Promise.resolve([]),
     });
@@ -149,7 +149,7 @@ describe("tst_module_contacts_write_001 — contact commands", () => {
   it("delegates merge planning and re-derives the survivor name deterministically", async () => {
     const preview: MergePreview = {
       survivor: { id: CONTACT_ID, name: "Old", schemaId: CONTACT, propertyCount: 2, linkCount: 2 },
-      retired: { id: "retired", name: "Ann", schemaId: CONTACT, propertyCount: 0, linkCount: 2 },
+      retired: { id: entityId("retired"), name: "Ann", schemaId: CONTACT, propertyCount: 0, linkCount: 2 },
       sources: [],
       fields: {},
       linksToRepoint: 2,
@@ -158,7 +158,7 @@ describe("tst_module_contacts_write_001 — contact commands", () => {
     };
     const merged: MergeResult = {
       survivorId: CONTACT_ID,
-      retiredId: "retired",
+      retiredId: entityId("retired"),
       linksRepointed: 2,
       linksDeduplicated: 0,
       linksReflexiveRemoved: 0,
@@ -174,14 +174,14 @@ describe("tst_module_contacts_write_001 — contact commands", () => {
     const module = mountModule(ContactsModule, { graph }).module;
 
     await expect(
-      module.merge({ survivorId: CONTACT_ID, retiredId: "retired", preview: true, overrides: [], reason: null }),
+      module.merge({ survivorId: CONTACT_ID, retiredId: entityId("retired"), preview: true, overrides: [], reason: null }),
     ).resolves.toBe(preview);
     expect(graph.spies.mergeExecute).not.toHaveBeenCalled();
     expect(graph.spies.updateEntityName).not.toHaveBeenCalled();
     await expect(
-      module.merge({ survivorId: CONTACT_ID, retiredId: "retired", preview: false, reason: "duplicate", overrides: [{ key: "first_name", value: "Ann" }] }),
+      module.merge({ survivorId: CONTACT_ID, retiredId: entityId("retired"), preview: false, reason: "duplicate", overrides: [{ key: "first_name", value: "Ann" }] }),
     ).resolves.toBe(merged);
-    expect(graph.spies.mergeExecute).toHaveBeenCalledExactlyOnceWith({ survivorId: CONTACT_ID, retiredId: "retired", reason: "duplicate", overrides: [{ key: "first_name", value: "Ann" }] });
+    expect(graph.spies.mergeExecute).toHaveBeenCalledExactlyOnceWith({ survivorId: CONTACT_ID, retiredId: entityId("retired"), reason: "duplicate", overrides: [{ key: "first_name", value: "Ann" }] });
     expect(graph.spies.updateEntityName).toHaveBeenCalledWith(CONTACT_ID, "Ann Lee");
     expect(graph.spies.updateEntityIdx).toHaveBeenCalledWith(CONTACT_ID, "ann lee");
   });
@@ -189,8 +189,8 @@ describe("tst_module_contacts_write_001 — contact commands", () => {
   it.each([
     { preview: true, foreignId: CONTACT_ID },
     { preview: false, foreignId: CONTACT_ID },
-    { preview: true, foreignId: "retired" },
-    { preview: false, foreignId: "retired" },
+    { preview: true, foreignId: entityId("retired") },
+    { preview: false, foreignId: entityId("retired") },
   ])("rejects non-contact $foreignId before merge (preview=$preview)", async ({ preview, foreignId }) => {
     const graph = mockGraph({
       getEntity: (id: string) => Promise.resolve(id === foreignId
@@ -201,7 +201,7 @@ describe("tst_module_contacts_write_001 — contact commands", () => {
     });
     const module = mountModule(ContactsModule, { graph }).module;
 
-    await expect(module.merge({ survivorId: CONTACT_ID, retiredId: "retired", preview, overrides: [], reason: null }))
+    await expect(module.merge({ survivorId: CONTACT_ID, retiredId: entityId("retired"), preview, overrides: [], reason: null }))
       .rejects.toThrow(`contact not found: ${foreignId}`);
     expect(graph.spies.mergePreview).not.toHaveBeenCalled();
     expect(graph.spies.mergeExecute).not.toHaveBeenCalled();
@@ -225,9 +225,9 @@ describe("tst_module_contacts_write_001 — contact commands", () => {
       limit: 50,
     });
     expect(JSON.parse(result.content[0]?.text ?? "null")).toEqual([
-      { id: "a", name: "Ann", schemaId: CONTACT },
-      { id: "z", name: "Ann", schemaId: CONTACT },
-      { id: "b", name: "Bob", schemaId: CONTACT },
+      { id: entityId("a"), name: "Ann", schemaId: CONTACT },
+      { id: entityId("z"), name: "Ann", schemaId: CONTACT },
+      { id: entityId("b"), name: "Bob", schemaId: CONTACT },
     ]);
   });
 });

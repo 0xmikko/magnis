@@ -67,7 +67,7 @@ const CREATE_SETTINGS = {
         episode_id: {
           type: "string",
           format: "uuid",
-          description: "Parent episode ID — creates a triggers.belongs_to link",
+          description: "Parent episode ID — creates a belongs_to link",
         },
         schema_filter: { type: "string", description: "Only trigger for events with this schema" },
         expires_at: { type: "string", format: "date-time" },
@@ -148,7 +148,7 @@ const UPDATE_PARAMS: JsonObject = {
         name: { type: "string" },
         gate_prompt: { type: "string" },
         action_prompt: { type: "string" },
-        status: { type: "string", enum: ["active", "paused", "disabled", "expired"] },
+        status: { type: "string", enum: ["active", "stopped", "paused", "disabled", "expired"] },
         event_kinds: { type: "array", items: { type: "string" } },
         schema_filter: { type: "string" },
         expires_at: { type: "string", format: "date-time" },
@@ -320,8 +320,6 @@ export class TriggersModule {
       }
     }
 
-    const entity = await this.graph.createEntity({ schemaId: TRIGGER, name });
-
     const config: TriggerConfigData = {
       name,
       gate_prompt,
@@ -338,14 +336,22 @@ export class TriggersModule {
     if (params.max_firings !== undefined) config.max_firings = params.max_firings;
     if (schedule !== undefined) config.schedule = schedule;
 
+    const { schedule: configuredSchedule, ...properties } = config;
+    const entity = await this.graph.createEntity({
+      schemaId: TRIGGER,
+      name,
+      properties: {
+        ...properties,
+        ...(configuredSchedule === undefined ? {} : { schedule: { ...configuredSchedule } }),
+      },
+    });
+
     // @tested-by: tst_module_triggers_write_001
     // @invariant: INV-25 — create is externally atomic. Config and watch links
     // were written one by one with nothing undone on failure, so a half-built
     // trigger could survive: an entity with no condition, or one that watches
     // nothing. Any failure after the entity exists removes it again.
     try {
-      // S1: the config IS the node's dictionary.
-      await this.graph.updateProperties({ entityId: entity.id, properties: config as unknown as JsonObject });
       for (const target of watch_entity_ids) {
         await this.graph.addLink({ from: entity.id, to: target, kind: WATCHES });
       }
@@ -434,7 +440,7 @@ export class TriggersModule {
       properties: {
         status: {
           type: "string",
-          description: "Filter by status: active, paused, disabled, expired",
+          description: "Filter by status: active, stopped, paused, disabled, expired",
         },
       },
       additionalProperties: false,
@@ -819,17 +825,16 @@ export class TriggersModule {
       watched.push({ id: link.to, name: target?.entity.name ?? null });
     }
 
-    const belongs = detail.links.find(
-      (l) => l.kind === BELONGS_TO && l.from === detail.entity.id,
-    );
-    let parentEpisodeId: string | null = null;
-    let parentEpisodeName: string | null = null;
-    if (belongs) {
-      parentEpisodeId = belongs.to;
-      // User-scoped (native guard): a foreign parent-episode name resolves to null.
-      const parent = await this.graph.getEntityFull(belongs.to, { links: false });
-      parentEpisodeName = parent?.entity.name ?? null;
-    }
+    const parentIds = [...new Set(detail.links.filter(
+      (link) => link.kind === BELONGS_TO && link.from === detail.entity.id && link.validUntil === null,
+    ).map((link) => link.to))];
+    // The same membership kind also links triggers to Projects. Only an active
+    // Episode target can be the execution parent; a foreign target is omitted.
+    const parents = (parentIds.length === 0 ? [] : await this.graph.getEntities(parentIds))
+      .filter((entity) => entity.schemaId === "episodes.episode");
+    if (parents.length > 1) throw new Error(`Trigger ${detail.entity.id} has multiple active parent Episodes`);
+    const parentEpisodeId = parents[0]?.id ?? null;
+    const parentEpisodeName = parents[0]?.name ?? null;
 
     return {
       id: detail.entity.id,

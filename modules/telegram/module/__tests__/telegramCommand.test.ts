@@ -14,7 +14,7 @@
  * @legacy-id: tst_be_tgtrigger_013_set_trigger_creates_trigger
  */
 import { describe, expect, it, vi } from "vitest";
-import { entity, mockGraph, mountModule, syncStateDouble } from "@magnis/testkit/module";
+import { entityId, entity, mockGraph, mountModule, syncStateDouble } from "@magnis/testkit/module";
 import { TelegramModule } from "../service.ts";
 
 interface TelegramCommandInternals {
@@ -29,47 +29,47 @@ interface TelegramCommandInternals {
 describe("tst_module_telegram_command_001 — Telegram command mapping", () => {
   it.each([true, false])("delegates an account identity only to its existing direct chat (exists: %s)", async (exists) => {
     const graph = mockGraph({
-      getEntity: (id) => Promise.resolve(id === "identity" ? entity(id, "Person", { schemaId: "telegram.account", properties: { telegram_user_id: 42 } }) : entity(id, "DM", { schemaId: "telegram.chat", properties: { chat_id: 42, type: "private" } })),
-      findByExternalId: () => Promise.resolve(exists ? "chat-id" : null),
+      getEntity: (id) => Promise.resolve(id === entityId("identity") ? entity(id, "Person", { schemaId: "telegram.account", properties: { telegram_user_id: 42 } }) : entity(id, "DM", { schemaId: "telegram.chat", properties: { chat_id: 42, type: "private" } })),
+      findByExternalId: () => Promise.resolve(exists ? entityId("chat-id") : null),
       updateEntitySyncEnabled: () => Promise.resolve({ syncRevision: "8" }),
       syncState: syncStateDouble(),
     });
     const mounted = await mountModule(TelegramModule, { mode: "dispatch", graph, ctx: { extensionId: "telegram" } });
-    const result = await mounted.rpc("telegram.account.setSyncEnabled", { id: "identity", syncEnabled: true });
+    const result = await mounted.rpc("telegram.account.setSyncEnabled", { id: entityId("identity"), syncEnabled: true });
     expect(graph.spies.findByExternalId).toHaveBeenCalledWith("tg:chat:42");
     expect(result).toEqual({ results: [exists ? {
-      identityId: "identity", targetId: "chat-id", kind: "saved", syncEnabled: true, syncRevision: "8", application: { kind: "pending" },
-    } : { identityId: "identity", targetId: null, kind: "failed", message: "Telegram identity has no stored direct chat" }] });
-    if (exists) expect(graph.spies.updateEntitySyncEnabled).toHaveBeenCalledExactlyOnceWith({ id: "chat-id", syncEnabled: true });
+      identityId: entityId("identity"), targetId: entityId("chat-id"), kind: "saved", syncEnabled: true, syncRevision: "8", application: { kind: "pending" },
+    } : { identityId: entityId("identity"), targetId: null, kind: "failed", message: "Telegram identity has no stored direct chat" }] });
+    if (exists) expect(graph.spies.updateEntitySyncEnabled).toHaveBeenCalledExactlyOnceWith({ id: entityId("chat-id"), syncEnabled: true });
     else expect(graph.spies.updateEntitySyncEnabled).not.toHaveBeenCalled();
   });
 
   it("reports persistence failure without requesting worker application", async () => {
     const graph = mockGraph({
-      getEntity: () => Promise.resolve(entity("chat-id", "Chat", { schemaId: "telegram.chat" })),
+      getEntity: () => Promise.resolve(entity(entityId("chat-id"), "Chat", { schemaId: "telegram.chat" })),
       updateEntitySyncEnabled: () => Promise.reject(new Error("save failed")),
       syncState: syncStateDouble(),
     });
     const mounted = await mountModule(TelegramModule, { mode: "dispatch", graph, ctx: { extensionId: "telegram" } });
-    await expect(mounted.rpc("telegram.chat.setSyncEnabled", { id: "chat-id", syncEnabled: true })).resolves.toEqual({ results: [{ identityId: "chat-id", targetId: "chat-id", kind: "failed", message: "save failed" }] });
+    await expect(mounted.rpc("telegram.chat.setSyncEnabled", { id: entityId("chat-id"), syncEnabled: true })).resolves.toEqual({ results: [{ identityId: entityId("chat-id"), targetId: entityId("chat-id"), kind: "failed", message: "save failed" }] });
     expect(graph.spies.syncState).not.toHaveBeenCalled();
   });
 
   it.each([false, true])("saves the chat choice before requesting application (apply fails: %s)", async (applyFails) => {
     const calls: string[] = [];
     const graph = mockGraph({
-      getEntity: () => Promise.resolve(entity("chat-id", "Chat", { schemaId: "telegram.chat" })),
+      getEntity: () => Promise.resolve(entity(entityId("chat-id"), "Chat", { schemaId: "telegram.chat" })),
       updateEntitySyncEnabled: () => { calls.push("save"); return Promise.resolve({ syncRevision: "9" }); },
       syncState: syncStateDouble({ apply: () => { calls.push("apply"); return applyFails ? Promise.reject(new Error("worker unavailable")) : Promise.resolve({ pending: true }); } }),
     });
     const mounted = await mountModule(TelegramModule, { mode: "dispatch", graph, ctx: { extensionId: "telegram" } });
     expect(mounted.tools.find((entry) => entry.name === "telegram.chat.setSyncEnabled")?.requiresApproval).toBe(true);
-    await expect(mounted.rpc("telegram.chat.setSyncEnabled", { id: "chat-id", syncEnabled: false })).resolves.toEqual({ results: [{
-      identityId: "chat-id", targetId: "chat-id", kind: "saved", syncEnabled: false, syncRevision: "9",
+    await expect(mounted.rpc("telegram.chat.setSyncEnabled", { id: entityId("chat-id"), syncEnabled: false })).resolves.toEqual({ results: [{
+      identityId: entityId("chat-id"), targetId: entityId("chat-id"), kind: "saved", syncEnabled: false, syncRevision: "9",
       application: applyFails ? { kind: "failed", message: "worker unavailable" } : { kind: "pending" },
     }] });
     expect(calls).toEqual(["save", "apply"]);
-    expect(graph.spies.updateEntitySyncEnabled).toHaveBeenCalledWith({ id: "chat-id", syncEnabled: false });
+    expect(graph.spies.updateEntitySyncEnabled).toHaveBeenCalledWith({ id: entityId("chat-id"), syncEnabled: false });
   });
 
   it("delegates sync and composer commands without translating host responses", async () => {
@@ -192,9 +192,9 @@ describe("tst_module_telegram_command_001 — Telegram command mapping", () => {
  */
 it("tst_module_telegram_create_001 preserves replies and one batch while rejecting mixed forms", async () => {
   const sourceCommand = vi.fn().mockResolvedValue({ message_id: 10 });
-  const module = mountModule(TelegramModule, { graph: mockGraph({ sourceCommand }) }).module;
+  const module = mountModule(TelegramModule, { graph: mockGraph({ sourceCommand, syncState: syncStateDouble({ status: async () => ({ accounts: [{ accountId: "acct", sync: null }] }) }) }) }).module;
   await module.create({ chat_id: 42, reply_to_message_id: 7, text: "Confirmed." });
-  expect(sourceCommand).toHaveBeenCalledWith({ action: "send_message", chat_id: 42, reply_to_message_id: 7, text: "Confirmed." }, undefined);
+  expect(sourceCommand).toHaveBeenCalledWith({ action: "send_message", chat_id: 42, reply_to_message_id: 7, text: "Confirmed." }, "acct");
   const result = await module.create({ messages: [{ chat_id: 43, text: "First" }, { chat_id: 44, text: "Skip" }], excluded_indices: [1] });
   expect(result).toMatchObject({ total: 1, sent: 1, failed: 0 });
   expect(sourceCommand).toHaveBeenCalledTimes(2);

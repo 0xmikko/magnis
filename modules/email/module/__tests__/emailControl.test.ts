@@ -23,7 +23,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { RpcExecutor } from "@magnis/plugin-sdk";
 import type { GraphBatchInput, SyncMigrationEntity } from "@magnis/sdk";
-import { entity, mockGraph, mountModule, syncStateDouble, type GraphOverrides } from "@magnis/testkit/module";
+import { entity, entityId, mockGraph, mountModule, syncStateDouble, type GraphOverrides } from "@magnis/testkit/module";
 import { EmailModule } from "../service.ts";
 import type { EmailCanonical } from "../../types.ts";
 
@@ -65,8 +65,8 @@ describe("tst_module_email_sync_002 saved sender selection", () => {
   const ready = { userId: "u1", sourceId: "google", accountId: "one", identityKey: null };
   function fixture() {
     const rows: SyncMigrationEntity[] = [
-      { id: "legacy", schemaId: "email.address", name: "Old", indexed: false, isPinned: null, properties: { address: " OLD@example.com " }, syncEnabled: null, syncRevision: null },
-      { id: "stopped", schemaId: "email.address", name: "Stopped", indexed: true, isPinned: null, properties: { address: "stop@example.com" }, syncEnabled: false, syncRevision: "7" },
+      { id: entityId("legacy"), schemaId: "email.address", name: "Old", indexed: false, isPinned: null, properties: { address: " OLD@example.com " }, syncEnabled: null, syncRevision: null },
+      { id: entityId("stopped"), schemaId: "email.address", name: "Stopped", indexed: true, isPinned: null, properties: { address: "stop@example.com" }, syncEnabled: false, syncRevision: "7" },
     ];
     const graph = mockGraph({
       listSyncMigrationEntities: () => Promise.resolve({ items: rows, next: null }),
@@ -85,7 +85,7 @@ describe("tst_module_email_sync_002 saved sender selection", () => {
       },
       getEntity: (id) => {
         const row = rows.find((item) => item.id === id);
-        return Promise.resolve(row === undefined ? null : entity(id, row.name ?? "", { schemaId: row.schemaId, indexed: row.indexed }));
+        return Promise.resolve(row === undefined ? null : entity(id, row.name ?? "", { schemaId: row.schemaId }));
       },
       syncState: syncStateDouble(),
     });
@@ -99,11 +99,11 @@ describe("tst_module_email_sync_002 saved sender selection", () => {
     expect(graph.spies.updateEntitySyncEnabled).not.toHaveBeenCalled();
     await mod.onConnectionReady(ready);
     await mod.onConnectionReady(ready);
-    expect(graph.spies.updateEntitySyncEnabled).toHaveBeenCalledExactlyOnceWith({ id: "legacy", syncEnabled: true });
+    expect(graph.spies.updateEntitySyncEnabled).toHaveBeenCalledExactlyOnceWith({ id: entityId("legacy"), syncEnabled: true });
     const selected = await mod.syncSelection(request);
     expect(selected).toEqual({ surface: "email", unknownSenderEnabled: false, choices: [
-      { id: "legacy", scopeId: "old@example.com", syncEnabled: true, syncRevision: "0" },
-      { id: "stopped", scopeId: "stop@example.com", syncEnabled: false, syncRevision: "7" },
+      { id: entityId("legacy"), scopeId: "old@example.com", syncEnabled: true, syncRevision: "0" },
+      { id: entityId("stopped"), scopeId: "stop@example.com", syncEnabled: false, syncRevision: "7" },
     ] });
     expect(await mod.syncSelection({ ...request, accountId: "two" })).toEqual(selected);
     expect(rows[0]?.indexed).toBe(false);
@@ -111,16 +111,16 @@ describe("tst_module_email_sync_002 saved sender selection", () => {
 
   it("reports saved-but-not-applied separately and repeated Start preserves the revision", async () => {
     const { mod, graph } = fixture();
-    const first = await mod.setSyncEnabled({ id: "stopped", syncEnabled: true });
-    const again = await mod.setSyncEnabled({ id: "stopped", syncEnabled: true });
+    const first = await mod.setSyncEnabled({ id: entityId("stopped"), syncEnabled: true });
+    const again = await mod.setSyncEnabled({ id: entityId("stopped"), syncEnabled: true });
     expect(first).toEqual(again);
     expect(first.results).toMatchObject([{ kind: "saved", syncRevision: "8", application: { kind: "pending" } }]);
     graph.spies.syncState?.mockRejectedValueOnce(new Error("Worker unavailable"));
-    expect((await mod.setSyncEnabled({ id: "stopped", syncEnabled: false })).results).toMatchObject([
+    expect((await mod.setSyncEnabled({ id: entityId("stopped"), syncEnabled: false })).results).toMatchObject([
       { kind: "saved", syncRevision: "9", syncEnabled: false, application: { kind: "failed", message: "Worker unavailable" } },
     ]);
     graph.spies.updateEntitySyncEnabled?.mockRejectedValueOnce(new Error("Save failed"));
-    expect((await mod.setSyncEnabled({ id: "stopped", syncEnabled: true })).results).toMatchObject([{ kind: "failed", message: "Save failed" }]);
+    expect((await mod.setSyncEnabled({ id: entityId("stopped"), syncEnabled: true })).results).toMatchObject([{ kind: "failed", message: "Save failed" }]);
   });
 
   it("does not invent choices for malformed identities or missing settings", async () => {
@@ -129,7 +129,7 @@ describe("tst_module_email_sync_002 saved sender selection", () => {
     if (legacy === undefined) throw new Error("Missing fixture row");
     legacy.properties = {};
     await mod.onConnectionReady(ready);
-    expect(await mod.syncMigration()).toMatchObject({ complete: false, issues: [{ legacyIds: ["legacy"] }] });
+    expect(await mod.syncMigration()).toMatchObject({ complete: false, issues: [{ legacyIds: [entityId("legacy")] }] });
     expect(graph.spies.updateEntitySyncEnabled).not.toHaveBeenCalled();
     await expect(mod.syncSelection({ sourceId: "google", accountId: "one", accountGeneration: 1 })).rejects.toThrow(/migration/i);
     rows.shift();
@@ -167,7 +167,7 @@ describe("email reply composer", () => {
 describe("email ensure_address hub RPC (cross-module)", () => {
   it("resolves-or-creates email.address via applyBatch and returns the id", async () => {
     const applyBatch = vi.fn(async (frag: GraphBatchInput) => ({
-      ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
+      ids: Object.fromEntries(frag.entities.map((e) => [e.key, entityId(`id-${e.key}`)])),
       created: 1,
       updated: 0,
       linksAdded: 0,
@@ -178,7 +178,7 @@ describe("email ensure_address hub RPC (cross-module)", () => {
 
     // S3: the batch key is the lowered address; the node's external id is
     // the email:address chokepoint key.
-    expect(out).toEqual({ id: "id-alice@example.com" });
+    expect(out).toEqual({ id: entityId("id-alice@example.com") });
     const call0 = applyBatch.mock.calls[0];
     if (call0 === undefined) throw new Error("ensure_address: applyBatch not called");
     const frag = call0[0];
@@ -200,7 +200,7 @@ describe("email ensure_address hub RPC (cross-module)", () => {
 describe("email set_trigger", () => {
   it("normalizes addresses, resolves them via applyBatch, delegates to triggers.create", async () => {
     const applyBatch = vi.fn(async (frag: GraphBatchInput) => ({
-      ids: Object.fromEntries(frag.entities.map((e) => [e.key, `id-${e.key}`])),
+      ids: Object.fromEntries(frag.entities.map((e) => [e.key, entityId(`id-${e.key}`)])),
       created: frag.entities.length,
       updated: 0,
       linksAdded: 0,
@@ -227,7 +227,7 @@ describe("email set_trigger", () => {
     expect(execute).toHaveBeenCalledTimes(1);
     const [method, params] = execute.mock.calls[0] as [string, Record<string, unknown>];
     expect(method).toBe("triggers.create");
-    expect(params.watch_entity_ids).toEqual(["id-a@x.com", "id-b@x.com", "id-c@x.com"]);
+    expect(params.watch_entity_ids).toEqual([entityId("id-a@x.com"), entityId("id-b@x.com"), entityId("id-c@x.com")]);
     expect(params.schema_filter).toBe("email");
     expect(params.gate_prompt).toBe("is it urgent");
     expect(params.debounce_seconds).toBe(0);

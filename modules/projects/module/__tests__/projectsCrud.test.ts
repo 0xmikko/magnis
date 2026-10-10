@@ -24,7 +24,7 @@
  */
 import type { JsonObject } from "@magnis/sdk";
 import { describe, expect, it } from "vitest";
-import { entity, link, mockGraph, mountModule } from "@magnis/testkit/module";
+import { entity, entityExtras, link, mockGraph, mountModule } from "@magnis/testkit/module";
 import { PROJECT } from "../../schema.ts";
 import { ProjectsModule } from "../service.ts";
 
@@ -117,6 +117,7 @@ describe("tst_module_projects_crud_001 — projects CRUD owns its domain contrac
   });
 
   it("rehydrates linked detail with direction and dictionary values", async () => {
+    const extras = entityExtras({ pinOrder: 0, archived: true });
     const contact = entity(CONTACT_ID, "Ada", {
       schemaId: "contacts.person",
       properties: { email: "ada@example.test" },
@@ -130,7 +131,8 @@ describe("tst_module_projects_crud_001 — projects CRUD owns its domain contrac
             description: "Investor walkthrough",
             agent_memory: "Lead with local-first",
           }),
-          links: [link(CONTACT_ID, PROJECT_ID, "projects.belongs_to", { id: "link-1" })],
+          links: [link(CONTACT_ID, PROJECT_ID, "belongs_to", { id: "link-1" })],
+          extras,
         }),
       getEntities: () => Promise.resolve([contact]),
     });
@@ -139,6 +141,7 @@ describe("tst_module_projects_crud_001 — projects CRUD owns its domain contrac
     const detail = await module.get({ id: PROJECT_ID });
 
     expect(detail).toMatchObject({
+      extras,
       id: PROJECT_ID,
       name: "Demo",
       status: "active",
@@ -151,13 +154,14 @@ describe("tst_module_projects_crud_001 — projects CRUD owns its domain contrac
           id: CONTACT_ID,
           name: "Ada",
           schemaId: "contacts.person",
-          linkKind: "~projects.belongs_to",
+          linkKind: "belongs_to", direction: "in",
           origin: "canonical",
           confidence: null,
           validUntil: null,
         }),
       ],
     });
+    expect(graph.spies.getEntityFull).toHaveBeenCalledWith(PROJECT_ID, { links: true, extras: true });
   });
 
   it("updates the dictionary and name, then deletes only an existing project", async () => {
@@ -171,7 +175,7 @@ describe("tst_module_projects_crud_001 — projects CRUD owns its domain contrac
       getEntity: () => Promise.resolve(original),
       updateEntityName: () => Promise.resolve(undefined),
       updateProperties: () => Promise.resolve(undefined),
-      getEntityFull: () => Promise.resolve({ entity: updated, links: [] }),
+      getEntityFull: () => Promise.resolve({ entity: updated, extras: entityExtras(), links: [] }),
       getEntities: () => Promise.resolve([]),
       deleteEntity: () => Promise.resolve(undefined),
     });

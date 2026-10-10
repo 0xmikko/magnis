@@ -12,9 +12,9 @@
  * the difference for a restatement, one for a live message — and names the
  * chats it leaves out of history. Snapshot omission does not end membership.
  */
-import type { CanonicalEntity, CanonicalLink, Entity, GraphBatchInput, JsonObject, JsonValue, Syncable, SyncEnvelope, SyncMigrationEntity, WindowSpec } from "@magnis/sdk";
+import type { CanonicalEntity, CanonicalLink, EntityRead, PersistentEntity, PersistentEntityId, GraphBatchInput, JsonObject, JsonValue, Syncable, SyncEnvelope, SyncMigrationEntity, WindowSpec } from "@magnis/sdk";
 import { describe, expect, it } from "vitest";
-import { entity, link, linkedEntity, mockGraph, mountModule, page, syncStateDouble } from "@magnis/testkit/module";
+import { entity, entityRead, entityExtras, entityId, link, linkedEntity, mockGraph, mountModule, page, syncStateDouble } from "@magnis/testkit/module";
 import { CHAT, MESSAGE } from "../../schema.ts";
 import { TelegramModule } from "../service.ts";
 
@@ -54,16 +54,21 @@ function keysOf(value: JsonValue | undefined): JsonObject {
   return value !== undefined && value !== null && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
 
+function storedRead(row: PersistentEntity & Syncable): EntityRead {
+  const { syncEnabled, syncRevision, ...record } = row;
+  return entityRead(record, entityExtras({ syncEnabled, syncRevision }));
+}
+
 /** The Graph as the module leaves it: chats by external id, the operator's edges by chat. */
 class Store {
-  readonly chatsByExternalId = new Map<string, Entity & Syncable>();
+  readonly chatsByExternalId = new Map<string, PersistentEntity & Syncable>();
   newChatSync = "current";
   readonly edgesByChat = new Map<string, CanonicalLink>();
   readonly messagesByExternalId = new Map<string, string>();
   readonly endedAt: [string, string][] = [];
   windows: string[] = [];
 
-  chatOf(id: string): Entity & Syncable | undefined {
+  chatOf(id: string): PersistentEntity & Syncable | undefined {
     return [...this.chatsByExternalId.values()].find((chat) => chat.id === id);
   }
 
@@ -71,19 +76,19 @@ class Store {
     return mockGraph({
       moduleSettings: () => Promise.resolve({ newChatSync: this.newChatSync }),
       admitSyncEntities: (subjects) => Promise.resolve(subjects.flatMap((subject) => this.chatOf(subject.entityId)?.syncEnabled === true ? [...subject.remoteIds] : [])),
-      findByExternalId: (externalId) => Promise.resolve(externalId === SELF ? "self-id" : this.chatsByExternalId.get(externalId)?.id ?? null),
+      findByExternalId: (externalId) => Promise.resolve(externalId === SELF ? entityId("self-id") : this.chatsByExternalId.get(externalId)?.id ?? null),
       findByExternalIds: (externalIds) => Promise.resolve(externalIds.map((externalId) => this.chatsByExternalId.get(externalId)?.id ?? this.messagesByExternalId.get(externalId) ?? null)),
-      getEntities: (ids) => Promise.resolve(ids.flatMap((id) => { const chat = this.chatOf(id); return chat === undefined ? [] : [chat]; })),
+      getEntities: (ids, options) => Promise.resolve(ids.flatMap((id) => { const chat = this.chatOf(id); if (chat === undefined) return []; const read = storedRead(chat); return [options?.extras === true ? read : read.entity]; })),
       listLinked: (spec) => {
-        expect(spec).toMatchObject({ linkKind: "observed_in", direction: "in" });
+        expect(spec).toMatchObject({ linkKind: "telegram.observed_in", direction: "in" });
         const edge = this.edgesByChat.get(spec.parentId);
-        const self = entity("self-id", "Me", { schemaId: "telegram.account", source: { source: "test", account: "a1", externalId: SELF } });
+        const self = entity(entityId("self-id"), "Me", { schemaId: "telegram.account", source: { source: "test", account: "a1", externalId: SELF } });
         return Promise.resolve(page(edge === undefined ? [] : [linkedEntity(self, edge)]));
       },
       applyBatch: (fragment: GraphBatchInput) => {
-        const ids: Record<string, string> = {};
+        const ids: Record<string, PersistentEntityId> = {};
         for (const item of fragment.entities) {
-          const id = item.key === "self" ? "self-id" : `id:${item.key}`;
+          const id = item.key === "self" ? entityId("self-id") : entityId(`id:${item.key}`);
           ids[item.key] = id;
           if (item.schemaId === MESSAGE && item.externalId !== null) this.messagesByExternalId.set(item.externalId, id);
           if (item.schemaId === CHAT && item.externalId !== null) {
@@ -103,13 +108,13 @@ class Store {
           }
         }
         for (const link of fragment.links) {
-          if (link.kind !== "observed_in") continue;
+          if (link.kind !== "telegram.observed_in") continue;
           const refExternalId = fragment.refs.find((ref) => ref.key === link.toKey)?.externalId;
           const chatId = ids[link.toKey] ?? (refExternalId === undefined || refExternalId === null ? undefined : this.chatsByExternalId.get(refExternalId)?.id);
           if (chatId === undefined) throw new Error(`observed_in link to unknown chat ${link.toKey}`);
           const known = this.edgesByChat.get(chatId);
           this.edgesByChat.set(chatId, {
-            id: `edge:${chatId}`, owner: "u1", from: "self-id", to: chatId, kind: "observed_in", createdAt: "2026-09-02T00:00:00Z",
+            id: `edge:${chatId}`, owner: "u1", from: entityId("self-id"), to: chatId, kind: "telegram.observed_in", createdAt: "2026-09-02T00:00:00Z",
             origin: "canonical", validFrom: known?.validFrom ?? null, validUntil: known?.validUntil ?? null, metadata: link.metadata,
           });
         }
@@ -124,14 +129,14 @@ class Store {
       },
       listEntitiesWindow: (spec: WindowSpec) => {
         expect(spec.limit).toBeLessThanOrEqual(500);
-        expect(spec.filterField).toEqual({ edgeKind: "observed_in", observerExternalId: SELF, edgePath: "sync_pass" });
+        expect(spec.filterField).toEqual({ edgeKind: "telegram.observed_in", observerExternalId: SELF, edgePath: "sync_pass" });
         this.windows.push(spec.filterOp ?? "eq");
         // "distinct" is IS DISTINCT FROM: an unstamped edge, or no edge at all, is kept.
         const rows = [...this.chatsByExternalId.values()].filter((chat) => {
           const pass = keysOf(this.edgesByChat.get(chat.id)?.metadata).sync_pass;
           return spec.filterOp === "distinct" ? pass !== spec.filterEq : pass === spec.filterEq;
         });
-        return Promise.resolve(page(rows.slice(spec.offset, spec.offset + spec.limit), rows.length));
+        return Promise.resolve(page(rows.slice(spec.offset, spec.offset + spec.limit).map((row) => { const read = storedRead(row); return spec.extras === true ? read : read.entity; }), rows.length));
       },
     });
   }
@@ -163,15 +168,15 @@ describe("tst_module_telegram_plan_001 — the module states its plan from the p
 
   it("migrates agreeing legacy choices, retains multi-account conflicts and resumes after an explicit choice", async () => {
     const legacy: SyncMigrationEntity[] = [
-      { id: "conflict", schemaId: CHAT, name: "Large", indexed: true, isPinned: null, properties: { chat_id: 1, type: "supergroup", member_count: 5000 }, syncEnabled: null, syncRevision: null },
-      { id: "agrees", schemaId: CHAT, name: "DM", indexed: false, isPinned: null, properties: { chat_id: 2, type: "private" }, syncEnabled: null, syncRevision: null },
+      { id: entityId("conflict"), schemaId: CHAT, name: "Large", indexed: true, isPinned: null, properties: { chat_id: 1, type: "supergroup", member_count: 5000 }, syncEnabled: null, syncRevision: null },
+      { id: entityId("agrees"), schemaId: CHAT, name: "DM", indexed: false, isPinned: null, properties: { chat_id: 2, type: "private" }, syncEnabled: null, syncRevision: null },
     ];
     const graph = mockGraph({
-      applyBatch: () => Promise.resolve({ ids: { self: "self-id" }, created: 0, updated: 1, linksAdded: 0, droppedKeys: [], resolved: [] }),
+      applyBatch: () => Promise.resolve({ ids: { self: entityId("self-id") }, created: 0, updated: 1, linksAdded: 0, droppedKeys: [], resolved: [] }),
       listSyncMigrationEntities: () => Promise.resolve({ items: legacy, next: null }),
       listLinked: (spec) => Promise.resolve(page([false, true].map((pinned, i) => linkedEntity(
-        entity(`self-${String(i)}`, "Me", { schemaId: "telegram.account", source: { source: "telegram-ts", account: `account-${String(i)}`, externalId: `tg:account:${String(i)}` } }),
-        { id: `edge-${String(i)}`, from: `self-${String(i)}`, to: spec.parentId, kind: "observed_in", metadata: { is_pinned: pinned } },
+        entity(entityId(`self-${String(i)}`), "Me", { schemaId: "telegram.account", source: { source: "telegram-ts", account: `account-${String(i)}`, externalId: `tg:account:${String(i)}` } }),
+        { id: `edge-${String(i)}`, from: entityId(`self-${String(i)}`), to: entityId(spec.parentId), kind: "telegram.observed_in", metadata: { is_pinned: pinned } },
       )))),
       updateEntitySyncEnabled: (params) => {
         const row = legacy.find((item) => item.id === params.id);
@@ -186,45 +191,45 @@ describe("tst_module_telegram_plan_001 — the module states its plan from the p
     const module = mountModule(TelegramModule, { graph }).module;
     const connection = { userId: "u1", sourceId: "telegram-ts", accountId: "account-0", identityKey: "9001" };
     await module.onConnectionReady(connection);
-    expect(graph.spies.updateEntitySyncEnabled).toHaveBeenCalledExactlyOnceWith({ id: "agrees", syncEnabled: true });
+    expect(graph.spies.updateEntitySyncEnabled).toHaveBeenCalledExactlyOnceWith({ id: entityId("agrees"), syncEnabled: true });
     await module.onConnectionReady(connection);
     expect(graph.spies.updateEntitySyncEnabled).toHaveBeenCalledTimes(1);
     await expect(mounted.rpc("telegram.chat.syncMigration", {})).resolves.toMatchObject({ complete: false, issues: [{
-      target: { schemaId: CHAT, key: "conflict" }, legacyIds: ["conflict"],
+      target: { schemaId: CHAT, key: entityId("conflict") }, legacyIds: [entityId("conflict")],
       accounts: [{ accountId: "account-0", syncEnabled: false }, { accountId: "account-1", syncEnabled: true }],
     }] });
     await expect(mounted.rpc("sync.selection", { sourceId: "telegram-ts", accountId: "account-0", accountGeneration: 1 })).rejects.toThrow("migration is incomplete");
     expect(mounted.tools.find((entry) => entry.name === "telegram.chat.resolveSyncMigration")?.requiresApproval).toBe(true);
-    await expect(mounted.rpc("telegram.chat.resolveSyncMigration", { target: { schemaId: CHAT, key: "conflict" }, syncEnabled: false })).resolves.toEqual({ complete: true, issues: [] });
-    expect(legacy.map((item) => [item.id, item.syncEnabled, item.indexed])).toEqual([["conflict", false, true], ["agrees", true, false]]);
+    await expect(mounted.rpc("telegram.chat.resolveSyncMigration", { target: { schemaId: CHAT, key: entityId("conflict") }, syncEnabled: false })).resolves.toEqual({ complete: true, issues: [] });
+    expect(legacy.map((item) => [item.id, item.syncEnabled, item.indexed])).toEqual([[entityId("conflict"), false, true], [entityId("agrees"), true, false]]);
   });
 
   it("selects saved chat choices for the exact observing account without deriving them from indexing or pinning", async () => {
-    const rows: (Entity & Syncable)[] = [
-      { ...entity("chat-a", "A", { schemaId: CHAT, indexed: false, properties: { chat_id: 1, type: "supergroup", member_count: 100000 } }), syncEnabled: true, syncRevision: "2" },
-      { ...entity("chat-b", "B", { schemaId: CHAT, indexed: true, properties: { chat_id: 2, type: "private" } }), syncEnabled: false, syncRevision: "9" },
+    const rows: (PersistentEntity & Syncable)[] = [
+      { ...entity(entityId("chat-a"), "A", { schemaId: CHAT, properties: { chat_id: 1, type: "supergroup", member_count: 100000 } }), syncEnabled: true, syncRevision: "2" },
+      { ...entity(entityId("chat-b"), "B", { schemaId: CHAT, properties: { chat_id: 2, type: "private" } }), syncEnabled: false, syncRevision: "9" },
     ];
-    const self = entity("self-id", "Me", { schemaId: "telegram.account", source: { source: "telegram-ts", account: "account-1", externalId: SELF } });
-    const other = { ...self, id: "other-self", source: { ...self.source, account: "account-2" } };
+    const self = entity(entityId("self-id"), "Me", { schemaId: "telegram.account", source: { source: "telegram-ts", account: "account-1", externalId: SELF } });
+    const other = { ...self, id: entityId("other-self"), source: { ...self.source, account: "account-2" } };
     const graph = mockGraph({
       listSyncMigrationEntities: () => Promise.resolve({ items: rows.map((row) => ({
-        id: row.id, schemaId: CHAT, name: row.name, indexed: row.indexed, isPinned: null,
+        id: row.id, schemaId: CHAT, name: row.name, indexed: !row.syncEnabled, isPinned: null,
         properties: keysOf(row.properties), syncEnabled: row.syncEnabled, syncRevision: row.syncRevision,
       })), next: null }),
       listEntitiesByPropertyField: () => Promise.resolve(page([self, other])),
       listLinked: (spec) => {
-        expect(spec).toMatchObject({ parentId: "self-id", linkKind: "observed_in", direction: "out" });
+        expect(spec).toMatchObject({ parentId: entityId("self-id"), linkKind: "telegram.observed_in", direction: "out" });
         return Promise.resolve(page(rows.map((row) => ({
-          entity: row,
-          link: link(self.id, row.id, "observed_in", { id: `edge:${row.id}`, metadata: { is_pinned: true } }),
+          ...storedRead(row),
+          link: link(self.id, row.id, "telegram.observed_in", { id: `edge:${row.id}`, metadata: { is_pinned: true } }),
         }))));
       },
     });
     const mounted = await mountModule(TelegramModule, { mode: "dispatch", graph, ctx: { extensionId: "telegram" } });
     const result = await mounted.rpc("sync.selection", { sourceId: "telegram-ts", accountId: "account-1", accountGeneration: 4 });
     expect(result).toEqual({ surface: "telegram", choices: [
-      { id: "chat-a", scopeId: "1", syncEnabled: true, syncRevision: "2" },
-      { id: "chat-b", scopeId: "2", syncEnabled: false, syncRevision: "9" },
+      { id: entityId("chat-a"), scopeId: "1", syncEnabled: true, syncRevision: "2" },
+      { id: entityId("chat-b"), scopeId: "2", syncEnabled: false, syncRevision: "9" },
     ] });
   });
 
@@ -239,10 +244,10 @@ describe("tst_module_telegram_plan_001 — the module states its plan from the p
       plan: { [CHAT]: { total: 5, skipped: 0 }, [MESSAGE]: { total: 1200 + 300 + 7000 + 100, skipped: 0 } },
       excluded: [],
     });
-    expect(store.edgesByChat.get("id:tg:chat:7")?.metadata).toMatchObject({ is_pinned: true, sync_pass: FIRST, sync_total: 100, sync_skipped: 0 });
-    expect(store.edgesByChat.get("id:tg:chat:3")?.metadata).not.toHaveProperty("sync_pass");
-    expect(store.edgesByChat.get("id:tg:chat:6")?.metadata).toMatchObject({ sync_pass: FIRST });
-    expect(store.edgesByChat.get("id:tg:chat:6")?.metadata).not.toHaveProperty("sync_total");
+    expect(store.edgesByChat.get(entityId("id:tg:chat:7"))?.metadata).toMatchObject({ is_pinned: true, sync_pass: FIRST, sync_total: 100, sync_skipped: 0 });
+    expect(store.edgesByChat.get(entityId("id:tg:chat:3"))?.metadata).not.toHaveProperty("sync_pass");
+    expect(store.edgesByChat.get(entityId("id:tg:chat:6"))?.metadata).toMatchObject({ sync_pass: FIRST });
+    expect(store.edgesByChat.get(entityId("id:tg:chat:6"))?.metadata).not.toHaveProperty("sync_total");
 
     // The same page again in the same pass states nothing new.
     await expect(module.ingest({ generation: FIRST, envelopes: chatPage })).resolves.toEqual({
@@ -260,19 +265,19 @@ describe("tst_module_telegram_plan_001 — the module states its plan from the p
     await expect(module.ingest({ generation: FIRST, envelopes: [liveMessage(1, 1206)] })).resolves.toMatchObject({
       plan: { [CHAT]: { total: 0, skipped: 0 }, [MESSAGE]: { total: 1, skipped: 0 } }, excluded: [],
     });
-    expect(store.edgesByChat.get("id:tg:chat:1")?.metadata).toMatchObject({ sync_pass: FIRST, sync_total: 1206 });
+    expect(store.edgesByChat.get(entityId("id:tg:chat:1"))?.metadata).toMatchObject({ sync_pass: FIRST, sync_total: 1206 });
     // The Source uses the same live identity for edits and retries; neither grows the plan.
     const edited = liveMessage(1, 1206, "Edited message");
     for (const envelope of [edited, edited]) {
       await expect(module.ingest({ generation: FIRST, envelopes: [envelope] })).resolves.toMatchObject({ plan: zero });
-      expect(store.edgesByChat.get("id:tg:chat:1")?.metadata).toMatchObject({ sync_total: 1206 });
+      expect(store.edgesByChat.get(entityId("id:tg:chat:1"))?.metadata).toMatchObject({ sync_total: 1206 });
     }
     await expect(module.ingest({ generation: FIRST, envelopes: [liveMessage(3, 900000)] })).resolves.toMatchObject({ plan: zero, excluded: [] });
 
     // A page outside a worker states nothing and stamps nothing.
     const outside = await module.ingest({ envelopes: [chatEnvelope(first, { message_count: 1300 })] });
     expect(outside).toEqual({ droppedRemoteIds: [], triggerChecks: [], plan: null, excluded: [] });
-    expect(store.edgesByChat.get("id:tg:chat:1")?.metadata).toMatchObject({ sync_pass: FIRST, sync_total: 1206 });
+    expect(store.edgesByChat.get(entityId("id:tg:chat:1"))?.metadata).toMatchObject({ sync_pass: FIRST, sync_total: 1206 });
 
     // A new pass states everything in full again; chat 6 is not on its page.
     const secondPage = chats.filter((chat) => chat.id !== 6).map((chat) => chatEnvelope(chat, chat.id === 1 ? { message_count: 1206 } : {}));
@@ -292,6 +297,6 @@ describe("tst_module_telegram_plan_001 — the module states its plan from the p
       droppedRemoteIds: [], triggerChecks: [], plan: { [CHAT]: { total: 1, skipped: 0 }, [MESSAGE]: { total: 40, skipped: 0 } }, excluded: [],
     });
     expect(store.endedAt).toEqual([]);
-    expect(store.edgesByChat.get("id:tg:chat:6")?.validUntil).toBeNull();
+    expect(store.edgesByChat.get(entityId("id:tg:chat:6"))?.validUntil).toBeNull();
   });
 });

@@ -135,7 +135,14 @@ async function toGmailMessage(raw: ImapRawMessage, uidValidity: string, expected
       },
     })),
   ];
-  const labels = [...raw.labels].map((label) => jsonbText(label === "\\Inbox" ? "INBOX" : label));
+  const labels = [...raw.labels].map((label) => {
+    switch (label) {
+      case "\\Inbox": return "INBOX";
+      case "\\Sent": return "SENT";
+      case "\\Drafts": return "DRAFT";
+      default: return jsonbText(label);
+    }
+  });
   if (!raw.flags.has("\\Seen")) labels.push("UNREAD");
   if (raw.flags.has("\\Flagged")) labels.push("STARRED");
   return {

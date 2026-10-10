@@ -2,26 +2,25 @@
  * @layer: module
  * @test-id: tst_module_telegram_read_001
  * @scenario: scn_telegram_read_001
- * @covers: modules/telegram/module/service.ts::chatsList,messagesList,messagesGet,chatsSetIndexed
+ * @covers: modules/telegram/module/service.ts::chatsList,messagesList,messagesGet
  * @deterministic: yes
  * @fixtures: fixed chat/message/account entities and strict graph doubles
  * @legacy-id: tst_be_tgread_001
  * @legacy-id: tst_be_tgread_001_read_path_served_by_plugin
- * @legacy-id: tst_be_tgread_003_set_indexed_cross_user_denied
  * @legacy-id: tst_be_tgchatmeta_001_chats_list_last_message_and_order
  */
 import { describe, expect, it } from "vitest";
-import type { AgentLink, Entity, Syncable } from "@magnis/sdk";
-import { entity, link, linkedEntity, mockGraph, mountModule, page } from "@magnis/testkit/module";
+import type { DerivedLink, EntityRead } from "@magnis/sdk";
+import { entityId, entityRead, entityExtras, entity, link, linkedEntity, mockGraph, mountModule, page } from "@magnis/testkit/module";
 import { CHAT, MESSAGE, TELEGRAM_ACCOUNT } from "../../schema.ts";
 import { TelegramModule } from "../service.ts";
 
-const CHAT_ID = "11111111-aaaa-4111-8111-111111111111";
-const MESSAGE_ID = "22222222-aaaa-4222-8222-222222222222";
-const ACCOUNT_ID = "33333333-aaaa-4333-8333-333333333333";
+const CHAT_ID = entityId("11111111-aaaa-4111-8111-111111111111");
+const MESSAGE_ID = entityId("22222222-aaaa-4222-8222-222222222222");
+const ACCOUNT_ID = entityId("33333333-aaaa-4333-8333-333333333333");
 
-function chatEntity(id: string, name: string, overrides: Parameters<typeof entity>[2]): Entity & Syncable {
-  return { ...entity(id, name, overrides), syncEnabled: true, syncRevision: "0" };
+function chatEntity(id: string, name: string, overrides: Parameters<typeof entity>[2]): EntityRead {
+  return entityRead(entity(id, name, overrides), entityExtras({ syncEnabled: true, syncRevision: "0" }));
 }
 
 describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
@@ -65,6 +64,7 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
     expect(result.items[1]?.message_count).toBeNull();
     expect(graph.spies.listEntitiesWindow).toHaveBeenCalledWith({
       schema: CHAT,
+      extras: true,
       order: [
         { field: { propertyPath: "is_pinned" }, desc: true },
         { field: { propertyPath: "pin_order" }, desc: false },
@@ -121,11 +121,11 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
       listLinksForEntity: () => Promise.reject(new Error("Invalid operation: traversal exceeds maxEdges")),
       listLinked: (spec) => Promise.resolve(page([
         linkedEntity(foreign, {
-          from: foreign.id, to: spec.parentId, kind: "observed_in",
+          from: foreign.id, to: entityId(spec.parentId), kind: "telegram.observed_in",
           metadata: { is_pinned: true, pin_order: -1, sources: [{ account: "foreign-account" }] },
         }),
         linkedEntity(operator, {
-          from: ACCOUNT_ID, to: spec.parentId, kind: "observed_in",
+          from: ACCOUNT_ID, to: entityId(spec.parentId), kind: "telegram.observed_in",
           metadata: {
             is_pinned: true, pin_order: spec.parentId === CHAT_ID ? 2 : 10,
             sources: [{ account: "account-1" }],
@@ -142,8 +142,9 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
     expect(result.items[0]).toMatchObject({ is_pinned: true, pin_order: 2, account_id: "account-1" });
     expect(graph.spies.listEntitiesWindow).toHaveBeenNthCalledWith(1, {
       schema: CHAT,
+      extras: true,
       filterField: {
-        edgeKind: "observed_in",
+        edgeKind: "telegram.observed_in",
         observerExternalId: "tg:account:9001",
         edgePath: "is_pinned",
       },
@@ -156,13 +157,14 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
     expect(graph.spies.listLinked).toHaveBeenCalledTimes(2);
     for (const chat of [pinned, pinnedTen]) {
       expect(graph.spies.listLinked).toHaveBeenCalledWith({
-        parentId: chat.id, linkKind: "observed_in", direction: "in", limit: 1000, offset: 0,
+        parentId: chat.entity.id, linkKind: "telegram.observed_in", direction: "in", limit: 1000, offset: 0,
       });
     }
     expect(graph.spies.listEntitiesWindow).toHaveBeenNthCalledWith(2, {
       schema: CHAT,
+      extras: true,
       filterField: {
-        edgeKind: "observed_in",
+        edgeKind: "telegram.observed_in",
         observerExternalId: "tg:account:9001",
         edgePath: "is_pinned",
       },
@@ -262,7 +264,7 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
   it("resolves an entity_id to chat_id before reading messages", async () => {
     const graph = mockGraph({
       getEntity: () =>
-        Promise.resolve(chatEntity(CHAT_ID, "Chat", { schemaId: CHAT, properties: { chat_id: -10042 } })),
+        Promise.resolve(entity(CHAT_ID, "Chat", { schemaId: CHAT, properties: { chat_id: -10042 } })),
       listEntitiesByPropertyField: () => Promise.resolve(page([])),
       listEntitiesWindow: () => Promise.resolve(page([])),
     });
@@ -286,7 +288,7 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
         entity(ACCOUNT_ID, "Operator", { schemaId: TELEGRAM_ACCOUNT, properties: { is_self: true } }),
       ])),
       listLinked: () => Promise.resolve(page([linkedEntity(entity(ACCOUNT_ID, "Operator"), {
-        id: "observed", from: ACCOUNT_ID, to: CHAT_ID, kind: "observed_in",
+        id: "observed", from: ACCOUNT_ID, to: CHAT_ID, kind: "telegram.observed_in",
         metadata: {
           sources: [{ source: "mock-telegram", account: "account-1", surface: "messages" }],
         },
@@ -331,29 +333,13 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
     );
   });
 
-  it("updates the chat dictionary found by its external id and fails on an unknown chat", async () => {
-    const graph = mockGraph({
-      findByExternalId: () => Promise.resolve(CHAT_ID),
-      updateProperties: () => Promise.resolve(undefined),
-      updatePropertiesBatch: () => Promise.resolve(undefined),
+  it("tst_module_telegram_sync_only_001 retires the duplicate chat indexing RPC", async () => {
+    const mounted = await mountModule(TelegramModule, {
+      mode: "dispatch", ctx: { extensionId: "telegram" },
+      graph: mockGraph({ findByExternalId: () => Promise.resolve(CHAT_ID), updateProperties: () => Promise.resolve() }),
     });
-    const module = mountModule(TelegramModule, { graph }).module;
-
-    await expect(module.chatsSetIndexed({ chat_id: 42, is_indexed: true })).resolves.toEqual({
-      status: "ok",
-    });
-    expect(graph.spies.findByExternalId).toHaveBeenCalledWith("tg:chat:42");
-    expect(graph.spies.updateProperties).toHaveBeenCalledWith({
-      entityId: CHAT_ID,
-      properties: { is_indexed: true },
-    });
-
-    const missing = mountModule(TelegramModule, {
-      graph: mockGraph({ findByExternalId: () => Promise.resolve(null) }),
-    }).module;
-    await expect(missing.chatsSetIndexed({ chat_id: 42, is_indexed: false })).rejects.toThrow(
-      "chat 42 not found",
-    );
+    await expect(async () => await mounted.rpc("chats.set_indexed", { chat_id: 42, is_indexed: true }))
+      .rejects.toThrow("no rpc handler: chats.set_indexed");
   });
 });
 
@@ -373,17 +359,17 @@ describe("tst_module_telegram_read_001 — Telegram read mapping", () => {
  */
 describe("tst_cat_entity_one_type_004 — messages.get reads SDK links and answers SDK linked summaries", () => {
   it("tst_cat_entity_one_type_004 lists the chat and an agent's watcher with their links' statements", async () => {
-    const watcherId = "44444444-aaaa-4444-8444-444444444444";
-    const guess: AgentLink = {
+    const watcherId = entityId("44444444-aaaa-4444-8444-444444444444");
+    const guess: DerivedLink = {
       id: "guess",
       owner: "u1",
       from: watcherId,
       to: MESSAGE_ID,
       kind: "mentions",
       createdAt: "2026-08-12T09:00:00Z",
-      origin: "agent",
+      origin: "derived",
       confidence: 0.7,
-      evidence: ["episode-1"],
+      evidence: [entityId("episode-1")],
       validFrom: null,
       validUntil: "2027-01-01T00:00:00Z",
     };
@@ -409,6 +395,7 @@ describe("tst_cat_entity_one_type_004 — messages.get reads SDK links and answe
         name: "Ops chat",
         schemaId: CHAT,
         linkKind: "in_chat",
+        direction: "out",
         createdAt: "2026-08-01T00:00:00Z",
         origin: "canonical",
         confidence: null,
@@ -418,9 +405,10 @@ describe("tst_cat_entity_one_type_004 — messages.get reads SDK links and answe
         id: watcherId,
         name: "Watcher",
         schemaId: "contacts.person",
-        linkKind: "~mentions",
+        linkKind: "mentions",
+        direction: "in",
         createdAt: "2026-08-02T00:00:00Z",
-        origin: "agent",
+        origin: "derived",
         confidence: 0.7,
         validUntil: "2027-01-01T00:00:00Z",
       },

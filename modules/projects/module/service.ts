@@ -15,7 +15,7 @@ import {
   type PluginDeps,
   type GetParams,
 } from "@magnis/plugin-sdk";
-import type { Entity, JsonObject, JsonValue, LinkedEntitySummary, PaginatedResponse } from "@magnis/sdk";
+import type { EntityRead, Entity, JsonObject, JsonValue, LinkedEntitySummary, PaginatedResponse } from "@magnis/sdk";
 import type {
   ChecklistGetParams,
   ChecklistItem,
@@ -154,13 +154,14 @@ export class ProjectsModule {
     const offset = params.offset ?? 0;
     const search = params.search?.trim();
 
-    let rows: Entity[];
+    let rows: EntityRead[];
     let total: number;
     if (search) {
       // search returns up to limit+offset, then we page in memory (native parity).
       const matched = await this.graph.searchEntitiesByName({
         query: search,
         schemaIds: [PROJECT],
+        extras: true,
         limit: limit + offset,
       });
       total = matched.length;
@@ -169,13 +170,13 @@ export class ProjectsModule {
       // Keep listEntities(order:"date") — its SQL applies pinned-first /
       // pin_order ASC then date DESC, which listEntitiesWindow does NOT
       // reproduce. (The window would silently drop the pinned-first ordering.)
-      const page = await this.graph.listEntities({ schemaId: PROJECT, order: "date", limit, offset });
+      const page = await this.graph.listEntities({ extras: true, schemaId: PROJECT, order: "date", limit, offset });
       rows = page.items;
       total = page.total;
     }
 
     // S1: the dictionary rides the entity — the page-wide canonical batch is gone.
-    const items = rows.map((e) => buildProjectListItem(e, projectCanonFromProperties(e)));
+    const items = rows.map((e) => buildProjectListItem(e, projectCanonFromProperties(e.entity)));
     return { items, total, limit, offset };
   }
 
@@ -183,7 +184,7 @@ export class ProjectsModule {
   @tool("get", { entity: "projects.project", ...GET_SPEC })
   async get(params: GetParams): Promise<ProjectDetailView> {
     // Entity + link edges in ONE fetch.
-    const detail = await this.graph.getEntityFull(params.id, { links: true });
+    const detail = await this.graph.getEntityFull(params.id, { links: true, extras: true });
     if (!detail) throw new Error(`project ${params.id} not found`);
     const { entity, links } = detail;
     const canonical = projectCanonFromProperties(entity);
@@ -216,6 +217,7 @@ export class ProjectsModule {
       status,
       canonical,
       linkedEntities: linked,
+      extras: detail.extras,
       createdAt: entity.createdAt,
     };
   }
@@ -361,6 +363,7 @@ export class ProjectsModule {
     // loop did with a per-target schema check. (limit 1000: a member entity
     // belongs to far fewer projects; logged cap vs the old unbounded loop.)
     const linked = await this.graph.listLinked({
+      extras: true,
       parentId: params.entity_id,
       linkKind: MEMBER_LINK,
       direction: "out",
@@ -369,8 +372,8 @@ export class ProjectsModule {
       offset: 0,
     });
     // S1: the dictionary rides each linked entity.
-    return linked.items.map(({ entity }) =>
-      buildProjectListItem(entity, projectCanonFromProperties(entity)),
+    return linked.items.map((read) =>
+      buildProjectListItem(read, projectCanonFromProperties(read.entity)),
     );
   }
 

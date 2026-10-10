@@ -22,6 +22,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { setHostRuntime } from "../../../../packages/host-testdouble/runtime";
 
 import type { TelegramConversation } from "../types";
+import { entityExtras } from "@magnis/testkit/module";
+import { TelegramChatItemContent } from "../TelegramChatItemContent";
 
 // Virtuoso virtualises; render every row inline so the DOM is inspectable.
 vi.mock("react-virtuoso", () => ({
@@ -83,10 +85,20 @@ const CONVERSATION: TelegramConversation = {
 };
 
 describe("TelegramChatView theme isolation", () => {
+  it("shows pin order zero and removes the pin for null", () => {
+    setHostRuntime({ transport: { baseUrl: "", rpc: vi.fn() } });
+    const item = { id: "chat", schemaId: "telegram.chat", name: "Ops", pinOrder: 0 };
+    const view = render(<TelegramChatItemContent item={item} selected={false} />);
+    expect(view.container.querySelector('[data-icon="pin"]')).not.toBeNull();
+    view.rerender(<TelegramChatItemContent item={{ ...item, pinOrder: null }} selected={false} />);
+    expect(view.container.querySelector('[data-icon="pin"]')).toBeNull();
+    view.unmount();
+  });
   it.each(["denied", "saveFailed", "applyFailed"])("reports %s without confusing a saved choice with an applied choice", async (failure) => {
     let syncEnabled = true;
     const rpc = vi.fn(async (method: string) => {
-      if (method === "telegram.chats.get") return { entity_id: "chat-1", chat_id: "42", account_id: "account", chat_title: "Ops", indexed: false, syncEnabled };
+      if (method === "telegram.chats.get") return { entity_id: "chat-1", chat_id: "42", account_id: "account", chat_title: "Ops", is_indexed: false,
+        extras: entityExtras({ pinOrder: 0, syncEnabled, syncRevision: "0" }) };
       if (method !== "telegram.chat.setSyncEnabled") throw new Error(`Unexpected operation ${method}`);
       if (failure === "denied") throw new Error("Approval denied");
       if (failure === "saveFailed") return { results: [{ identityId: "chat-1", targetId: "chat-1", kind: "failed", message: "Save refused" }] };
@@ -113,16 +125,15 @@ describe("TelegramChatView theme isolation", () => {
     client.clear();
   });
 
-  it("persists synchronization independently from indexed through the owning module and reloads the choice", async () => {
+  it("tst_fe_telegram_sync_only_001 exposes one saved synchronization choice and keeps stored messages after Stop", async () => {
     let syncEnabled = true;
-    let indexed = false;
     const rpc = vi.fn(async (method: string, params: Record<string, unknown>) => {
-      if (method === "telegram.chats.get") return { entity_id: "chat-1", chat_id: "42", account_id: "account", chat_title: "Ops", indexed, syncEnabled };
+      if (method === "telegram.chats.get") return { entity_id: "chat-1", chat_id: "42", account_id: "account", chat_title: "Ops", downloadMedia: false,
+        extras: entityExtras({ pinOrder: 0, syncEnabled, syncRevision: "0" }) };
       if (method === "telegram.chat.setSyncEnabled") {
         syncEnabled = params.syncEnabled === true;
         return { results: [{ identityId: "chat-1", targetId: "chat-1", kind: "saved", syncEnabled, syncRevision: "1", application: { kind: "pending" } }] };
       }
-      if (method === "graph.entity.update") { indexed = params.indexed === true; return { ok: true }; }
       throw new Error(`Unexpected operation ${method}`);
     });
     setHostRuntime({ transport: { baseUrl: "", rpc } });
@@ -134,17 +145,20 @@ describe("TelegramChatView theme isolation", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Chat settings" }));
     fireEvent.click(await screen.findByRole("button", { name: "Stop synchronization" }));
     await waitFor(() => { expect(rpc).toHaveBeenCalledWith("telegram.chat.setSyncEnabled", { id: "chat-1", syncEnabled: false }); });
-    expect(indexed).toBe(false);
+    expect(syncEnabled).toBe(false);
     expect((await screen.findByRole("status")).textContent).toContain("saved");
     expect(screen.getByText("hello")).not.toBeNull();
     view.unmount();
     client.clear();
-    render(tree);
+    const reloaded = render(tree);
     fireEvent.click(await screen.findByRole("button", { name: "Chat settings" }));
     expect(await screen.findByRole("button", { name: "Start synchronization" })).not.toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Enable indexing" }));
-    await waitFor(() => { expect(rpc).toHaveBeenCalledWith("graph.entity.update", { entityId: "chat-1", indexed: true }); });
-    expect(syncEnabled).toBe(false);
+    expect(screen.queryByRole("button", { name: /indexing/i })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Start synchronization" }));
+    await waitFor(() => { expect(rpc).toHaveBeenCalledWith("telegram.chat.setSyncEnabled", { id: "chat-1", syncEnabled: true }); });
+    expect(syncEnabled).toBe(true);
+    expect(rpc.mock.calls.some(([method]) => method === "graph.entity.update")).toBe(false);
+    reloaded.unmount();
     client.clear();
   });
 

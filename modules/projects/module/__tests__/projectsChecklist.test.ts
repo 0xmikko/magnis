@@ -41,7 +41,7 @@ describe("tst_module_projects_checklist_001 — checklist lifecycle", () => {
     let current = project({ status: "active" });
     const graph = mockGraph({
       getEntity: () => Promise.resolve(current),
-      updateProperties: (params: PropertiesUpdate) => {
+      updateProperties: (params) => {
         writes.push(params.properties);
         current = project(params.properties as JsonObject);
         return Promise.resolve(undefined);

@@ -23,7 +23,7 @@
 
 import { beforeEach, describe, expect, it } from "vitest";
 import type { JsonObject } from "@magnis/sdk";
-import { entity, linkedEntity, mockGraph, mountModule, page, type MockGraph } from "@magnis/testkit/module";
+import { entityId, entityExtras, entityRead, entity, linkedEntity, mockGraph, mountModule, page, type MockGraph } from "@magnis/testkit/module";
 import { ProjectsModule } from "../service.ts";
 import { MEMBER_LINK, PROJECT } from "../../schema.ts";
 import type { ProjectCanonical } from "../../types.ts";
@@ -53,7 +53,7 @@ function readGraph(): G {
 }
 
 const ent = (id: string, name: string, props: JsonObject = {}) =>
-  entity(id, name, { schemaId: PROJECT, properties: props });
+  entityRead(entity(id, name, { schemaId: PROJECT, properties: props }), entityExtras());
 
 describe("projects read — shape parity (tst_be_projectsread_001)", () => {
   let graph: G;
@@ -73,7 +73,7 @@ describe("projects read — shape parity (tst_be_projectsread_001)", () => {
     const i0 = listed.items[0];
     const i1 = listed.items[1];
     if (i0 === undefined || i1 === undefined) throw new Error("F1: expected two items");
-    expect(listed.items.map((i) => i.id)).toEqual(["b", "a"]); // DB order preserved
+    expect(listed.items.map((i) => i.id)).toEqual([entityId("b"), entityId("a")]); // DB order preserved
     expect(i0).toMatchObject({ name: "Beta", status: "active" });
     expect(i1.name).toBe("Alpha"); // entity.name empty → canonical name
 
@@ -100,7 +100,7 @@ describe("projects read — shape parity (tst_be_projectsread_001)", () => {
 
     const listed = await mod.list({ search: "alph", limit: 1, offset: 0 });
     expect(listed.total).toBe(2);
-    expect(listed.items.map((i) => i.id)).toEqual(["a"]);
+    expect(listed.items.map((i) => i.id)).toEqual([entityId("a")]);
     const item = listed.items[0];
     if (item === undefined) throw new Error("F2: expected one matched item");
     expect(item.status).toBe("active");
@@ -110,13 +110,13 @@ describe("projects read — shape parity (tst_be_projectsread_001)", () => {
     spy(graph, "getEntity").mockResolvedValue(entity("person-1", "Alice", { schemaId: "contacts.person" }));
     spy(graph, "listLinked").mockResolvedValue(
       page([
-        linkedEntity(ent("p1", "Proj One", { status: "active" }), { id: "l1", from: "person-1", to: "p1", kind: MEMBER_LINK }),
-        linkedEntity(ent("p2", "Proj Two", { status: "done" }), { id: "l2", from: "person-1", to: "p2", kind: MEMBER_LINK }),
+        { ...linkedEntity(ent("p1", "Proj One", { status: "active" }).entity, { id: "l1", from: entityId("person-1"), to: entityId("p1"), kind: MEMBER_LINK }), extras: entityExtras() },
+        { ...linkedEntity(ent("p2", "Proj Two", { status: "done" }).entity, { id: "l2", from: entityId("person-1"), to: entityId("p2"), kind: MEMBER_LINK }), extras: entityExtras() },
       ]),
     );
 
     const out = await mod.listForEntity({ entity_id: "person-1" });
-    expect(out.map((p) => p.id)).toEqual(["p1", "p2"]);
+    expect(out.map((p) => p.id)).toEqual([entityId("p1"), entityId("p2")]);
     const out0 = out[0];
     if (out0 === undefined) throw new Error("F3: expected at least one linked project");
     expect(out0).toMatchObject({ name: "Proj One", status: "active" });
